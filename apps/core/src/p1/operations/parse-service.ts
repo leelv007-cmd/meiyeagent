@@ -98,6 +98,52 @@ export interface ParseRepository {
   getTask(workspaceId: string, taskId: string): Promise<ParseTask | null>;
 }
 
+const TERMINAL_PARSE_TASK_STATUSES = new Set<ParseTask['status']>([
+  'completed',
+  'completed_with_fallback',
+  'failed',
+]);
+
+export function selectMonotonicParseTaskUpdate(
+  current: ParseTask,
+  next: ParseTask,
+) {
+  if (
+    current.mode !== next.mode ||
+    !isDeepStrictEqual(current.sourceAssetIds, next.sourceAssetIds) ||
+    current.createdAt !== next.createdAt ||
+    current.disclosure !== next.disclosure
+  ) {
+    throw new ParseServiceError(
+      'TASK_CONFLICT',
+      `Parse task ${next.taskId} identity fields cannot change.`,
+    );
+  }
+  const currentAttempt = current.carrierAttempt ?? 0;
+  const nextAttempt = next.carrierAttempt ?? 0;
+  if (
+    nextAttempt < currentAttempt ||
+    TERMINAL_PARSE_TASK_STATUSES.has(current.status) ||
+    (nextAttempt === currentAttempt &&
+      (next.progress.completed < current.progress.completed ||
+        (current.status === 'running' && next.status === 'queued')))
+  ) {
+    return current;
+  }
+  if (
+    nextAttempt > currentAttempt &&
+    (current.status !== 'queued' ||
+      next.status !== 'queued' ||
+      next.progress.completed !== current.progress.completed)
+  ) {
+    throw new ParseServiceError(
+      'TASK_CONFLICT',
+      `Parse task ${next.taskId} carrier attempt cannot replace active progress.`,
+    );
+  }
+  return next;
+}
+
 function identity(workspaceId: string, id: string) {
   return JSON.stringify([workspaceId, id]);
 }
@@ -222,19 +268,9 @@ export class MemoryParseRepository implements ParseRepository {
         `Parse task ${task.taskId} was not found.`,
       );
     }
-    if (
-      current.mode !== task.mode ||
-      !isDeepStrictEqual(current.sourceAssetIds, task.sourceAssetIds) ||
-      current.createdAt !== task.createdAt ||
-      current.disclosure !== task.disclosure
-    ) {
-      throw new ParseServiceError(
-        'TASK_CONFLICT',
-        `Parse task ${task.taskId} identity fields cannot change.`,
-      );
-    }
-    this.tasks.set(key, structuredClone(task));
-    return structuredClone(task);
+    const selected = selectMonotonicParseTaskUpdate(current, task);
+    this.tasks.set(key, structuredClone(selected));
+    return structuredClone(selected);
   }
 
   async getTask(workspaceId: string, taskId: string) {
@@ -575,22 +611,39 @@ export class ParseService {
       sourceAssetIds: sources.map((source) => source.assetId),
       status: 'queued',
     });
+    if (task.status !== 'queued') return task;
+    const carrierAttempt = (task.carrierAttempt ?? 0) + 1;
+    const queued = await this.repository.updateTask({
+      ...task,
+      carrierAttempt,
+      updatedAt: this.now(),
+    });
     await this.jobs.submit({
       workspaceId: context.workspaceId,
-      jobId: command.taskId,
+      jobId: `${command.taskId}:carrier:${carrierAttempt}`,
       kind: PARSE_BATCH_JOB_KIND,
-      payload: { taskId: command.taskId },
+      payload: { taskId: command.taskId, carrierAttempt },
     });
-    return task;
+    return queued;
   }
 
-  async runBatchTask(workspaceId: string, taskId: string) {
+  async runBatchTask(
+    workspaceId: string,
+    taskId: string,
+    carrierAttempt?: number,
+  ) {
     const task = await this.requireTask(workspaceId, taskId);
     if (task.mode !== 'batch_async') {
       throw new ParseServiceError(
         'TASK_CONFLICT',
         `Parse task ${taskId} is not a batch task.`,
       );
+    }
+    if (
+      task.carrierAttempt !== undefined &&
+      carrierAttempt !== task.carrierAttempt
+    ) {
+      return task;
     }
     if (
       task.status === 'completed' ||
@@ -1043,20 +1096,30 @@ export class ParseBatchJobEffect implements TracerExternalEffect {
   }
 
   private async run(request: TracerExternalRequest) {
+    const taskId =
+      typeof request.payload.taskId === 'string'
+        ? request.payload.taskId
+        : request.jobId;
+    const carrierAttempt =
+      typeof request.payload.carrierAttempt === 'number' &&
+      Number.isInteger(request.payload.carrierAttempt)
+        ? request.payload.carrierAttempt
+        : undefined;
     let task: ParseTask;
     try {
       task = await this.service.runBatchTask(
         request.workspaceId,
-        request.jobId,
+        taskId,
+        carrierAttempt,
       );
     } catch (error) {
-      await this.service.failBatchTask(request.workspaceId, request.jobId);
+      await this.service.failBatchTask(request.workspaceId, taskId);
       throw error;
     }
     return {
       acceptance: 'accepted' as const,
       delivery: 'completed' as const,
-      taskRef: request.jobId,
+      taskRef: taskId,
       output: {
         taskId: task.taskId,
         status: task.status,

@@ -186,3 +186,58 @@ test(
     }
   },
 );
+
+test(
+  'Postgres serializes carrier fencing and keeps parse progress monotonic',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const repository = new PostgresParseRepository(pool);
+    const workspaceId = `t24-parse-fencing-${randomUUID()}`;
+    await repository.migrate();
+    try {
+      const queued = await repository.recordTask({
+        taskId: 'fenced-carrier-pg',
+        workspaceId,
+        mode: 'batch_async',
+        status: 'queued',
+        carrierAttempt: 2,
+        sourceAssetIds: ['source-a', 'source-b'],
+        progress: {
+          completed: 0,
+          total: 2,
+          message: '正在整理你上传的资料，已完成 0/2 份；离开后也会继续处理。',
+        },
+        disclosure:
+          '为了帮你少打字，上传的内容会交给第三方解析服务处理；也可以随时跳过，直接手动填写。',
+        createdAt: now,
+        updatedAt: now,
+      });
+      const running = await repository.updateTask({
+        ...queued,
+        status: 'running',
+        progress: {
+          completed: 1,
+          total: 2,
+          message: '正在整理你上传的资料，已完成 1/2 份；离开后也会继续处理。',
+        },
+        updatedAt: '2026-07-26T01:00:01.000Z',
+      });
+
+      const stale = await repository.updateTask({
+        ...queued,
+        carrierAttempt: 1,
+        updatedAt: '2026-07-26T01:00:02.000Z',
+      });
+
+      assert.deepEqual(stale, running);
+      assert.deepEqual(
+        await repository.getTask(workspaceId, queued.taskId),
+        running,
+      );
+    } finally {
+      await repository.deleteWorkspaceForTest(workspaceId);
+      await pool.end();
+    }
+  },
+);

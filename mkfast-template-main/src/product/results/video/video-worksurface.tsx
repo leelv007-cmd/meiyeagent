@@ -26,7 +26,7 @@ const FULL_COMPOSE_UNAVAILABLE = '整段视频重新合成已下线，本次未�
 const VIDEO_REGENERATION_UNAVAILABLE = '视频重生成能力升级中，本次未产生扣费。';
 
 export type VideoRegenerationQuoteRequest = {
-  scope: 'shot' | 'full_compose';
+  scope: 'shot';
   sourceRunId: string;
   shotId?: string;
 };
@@ -47,11 +47,11 @@ export type VideoRegenerationServerQuote = {
     formulaExpression: string;
     quoteId: string;
     quoteRevision: string;
-    scope: 'shot' | 'full_compose';
+    scope: 'shot';
     targetSeconds: number;
   };
   quote: { formula: { currency?: string } };
-  scope: 'shot' | 'full_compose';
+  scope: 'shot';
 };
 
 export type VideoCanonicalEditCommand =
@@ -281,7 +281,7 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
           <Badge variant="outline">
             {state.subtitle.mode === 'independent_asset'
               ? '独立字幕资产 · 免费修改'
-              : '烧录字幕 · 需重新合成'}
+              : '烧录字幕 · 不支持修改'}
           </Badge>
         </div>
         <textarea
@@ -294,7 +294,7 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
           onChange={(event) => {
             const result = editSubtitleText(state, event.target.value);
             props.onSubtitleChange?.(event.target.value, result.fee);
-            if (result.fee.fee === 'billable') {
+            if (result.fee.fee === 'unavailable') {
               showFullComposeUnavailable(result.state);
               return;
             }
@@ -334,7 +334,7 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
           disabled={commandPending}
           onClick={() => {
             const result = toggleSubtitleEnabled(state);
-            if (result.fee.fee === 'billable') {
+            if (result.fee.fee === 'unavailable') {
               showFullComposeUnavailable(result.state);
               return;
             }

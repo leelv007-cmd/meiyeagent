@@ -131,7 +131,7 @@ test('keeps mobile identity and assets reachable during a slow canonical query',
       'href',
       '/dashboard/assets'
     );
-    await expect(page).toHaveURL(/\/dashboard\/tasks/u);
+    await expect(page).toHaveURL(/\/dashboard\/?(?:\?.*)?$/u);
 
     holdWorkbenchQuery = false;
     releaseWorkbenchQuery();

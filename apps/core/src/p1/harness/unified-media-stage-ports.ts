@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import type {
 	ContentPackage,
 	ContentPackageRevisionDelivery,
+	ImageModelRecipeProfile,
 	NotePlan,
 } from "@meiye/contracts";
 import { questionCardSchema } from "@meiye/contracts";
@@ -12,6 +13,7 @@ import type {
 	ModelSupplyResult,
 	ModelSupplySubmission,
 } from "../model-supply/index.js";
+import { isOfficialNeutralIdentity } from "../execution-spine/creation-execution-snapshot.js";
 import type { ContentPackageRevisionWritePort } from "../execution-spine/content-package-revision-port.js";
 import {
 	compileExecutionBrief,
@@ -36,7 +38,10 @@ import {
 	executeImageSelection,
 	HarnessSelectionError,
 } from "./execution-selection.js";
-import { nativeSupplyOperation } from "./image-intent-compiler.js";
+import {
+	compileImageIntentForProfile,
+	IMAGE_MODEL_RECIPE_PROFILE,
+} from "./image-intent-compiler.js";
 import { projectMarketingPackageEvidence } from "./marketing-scene-policy.js";
 import {
 	merchantExactTextMismatch,
@@ -124,6 +129,12 @@ export class UnifiedHarnessStagePorts
 		return this.copy.fenceContext(input);
 	}
 
+	assessFacts(
+		input: Parameters<NonNullable<HarnessStagePorts["assessFacts"]>>[0],
+	) {
+		return this.copy.assessFacts?.(input) ?? Promise.resolve(null);
+	}
+
 	compileBrief(input: Parameters<HarnessStagePorts["compileBrief"]>[0]) {
 		return this.copy.compileBrief(input);
 	}
@@ -154,6 +165,9 @@ export class UnifiedHarnessStagePorts
 				bundle: input.context.bundle,
 				executionSnapshot: requireSnapshot(input.request),
 				prompt: input.request.prompts?.briefCompilation,
+				...(input.skillInstructions?.length
+					? { skillInstructions: input.skillInstructions }
+					: {}),
 			},
 			this.runners.create({
 				actorId: input.request.actorId,
@@ -212,7 +226,7 @@ export class UnifiedHarnessStagePorts
 				title: input.brief.intent.purpose,
 				topics: [],
 			};
-			const claimExtraction = assertMediaVisibleDelivery(input, version);
+			const claimExtraction = assertMediaVisibleDelivery(input, version, now);
 			const revision = {
 				claimExtraction,
 				expectedRevision: input.request.expectedRevision,
@@ -282,7 +296,7 @@ export class UnifiedHarnessStagePorts
 			title: "视频成品",
 			topics: [],
 		};
-		const claimExtraction = assertMediaVisibleDelivery(input, version);
+		const claimExtraction = assertMediaVisibleDelivery(input, version, now);
 		const revision = {
 			claimExtraction,
 			expectedRevision: input.request.expectedRevision,
@@ -591,12 +605,19 @@ function assertMediaVisibleDelivery(
 		id: string;
 		title: string;
 	},
+	evaluatedAt: string,
 ) {
+	const snapshot = requireSnapshot(input.request);
+	const expressionIdentityRef = isOfficialNeutralIdentity(snapshot.identity)
+		? undefined
+		: `marketing_identity:${snapshot.identity.id}:${snapshot.identity.revision}`;
 	const result = validateHarnessVisibleDelivery({
-		assetRefs: [],
+		assetRefs: [...input.brief.referenceAssetIds],
 		brief: input.brief,
 		candidateId: version.id,
 		context: input.context,
+		evaluatedAt,
+		...(expressionIdentityRef ? { expressionIdentityRef } : {}),
 		visibleText: [
 			{ field: "title", text: version.title },
 			{ field: "body", text: version.body },
@@ -652,6 +673,7 @@ export interface ImageExactTextVerifier {
 const exactTextObservationSchema = z
 	.object({
 		observedText: z.array(z.string()),
+		conflictingText: z.array(z.string()),
 	})
 	.strict();
 
@@ -693,7 +715,12 @@ export class ModelSupplyImageExactTextVerifier
 			prompt: JSON.stringify({
 				task: "Read all visible text in the supplied image.",
 				expectedExactText: input.expected,
-				responseContract: { observedText: ["each visible text segment verbatim"] },
+				responseContract: {
+					observedText: ["each visible text segment verbatim"],
+					conflictingText: [
+						"visible text that alters or contradicts an expected exact value",
+					],
+				},
 			}),
 			selection: { mode: "auto", profile: "quality" },
 			workspaceId: input.request.workspaceId,
@@ -707,19 +734,22 @@ export class ModelSupplyImageExactTextVerifier
 				result.attempt.acceptance,
 			);
 		}
-		const observed = exactTextObservationSchema.parse(
+		const observation = exactTextObservationSchema.parse(
 			JSON.parse(jsonObject(result.text)),
-		).observedText;
-		const passed = input.expected.every((expected) =>
-			observed.includes(expected),
 		);
+		const observed = observation.observedText;
+		const passed =
+			input.expected.every((expected) => observed.includes(expected)) &&
+			observation.conflictingText.length === 0;
 		return {
 			passed,
 			expected: [...input.expected],
 			observed,
 			reason: passed
 				? "Every exact text value matched."
-				: "The generated image did not preserve every exact text value.",
+				: observation.conflictingText.length > 0
+					? "The generated image contains conflicting exact text."
+					: "The generated image did not preserve every exact text value.",
 		};
 	}
 }
@@ -754,6 +784,8 @@ export class ModelSupplyHarnessMediaExecutionPort
 		>,
 		private readonly exactText?: ImageExactTextVerifier,
 		private readonly noteAdmission?: NoteMediaAdmissionPort,
+		private readonly imageProfile: ImageModelRecipeProfile =
+			IMAGE_MODEL_RECIPE_PROFILE,
 	) {}
 
 	async execute(input: {
@@ -763,6 +795,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 		workflowId: string;
 	}): Promise<HarnessMediaSelectionResult> {
 		const snapshot = requireSnapshot(input.request);
+		assertBriefMatchesSnapshot(input.brief, snapshot);
 		const noteAdmissionInput =
 			snapshot.lens === "image_text_note"
 				? {
@@ -794,6 +827,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 							input.brief,
 							attempt,
 							exactTextFailure?.reason,
+							this.imageProfile,
 						),
 						noteAdmissionInput,
 					),
@@ -1021,6 +1055,7 @@ function mediaSubmission(
 	brief: MediaBrief,
 	attempt: "primary" | "retry" = "primary",
 	exactTextFailure?: string,
+	imageProfile: ImageModelRecipeProfile = IMAGE_MODEL_RECIPE_PROFILE,
 ): ModelSupplySubmission {
 	const snapshot = requireSnapshot(request);
 	if (snapshot.modelPolicy.mode !== "fixed") {
@@ -1030,6 +1065,10 @@ function mediaSubmission(
 			409,
 		);
 	}
+	const compiledImage =
+		brief.kind === "image"
+			? compileImageIntentForProfile(brief.intent, imageProfile)
+			: undefined;
 	return {
 		actorId: request.actorId,
 		...(snapshot.lens === "image_text_note"
@@ -1045,8 +1084,8 @@ function mediaSubmission(
 		input:
 			brief.kind === "image"
 				? {
+					inputAssets: compiledImage!.inputAssets,
 					ratio: brief.parameters.ratio,
-					referenceAssetIds: [...brief.referenceAssetIds],
 					resolution: brief.parameters.resolution,
 				}
 				: {
@@ -1056,7 +1095,7 @@ function mediaSubmission(
 				},
 		operation:
 			brief.kind === "image"
-				? nativeSupplyOperation(brief.intent.operation)
+				? compiledImage!.operation
 				: "video.generate",
 		productUsageQuantity: 0,
 		prompt:
@@ -1065,6 +1104,7 @@ function mediaSubmission(
 						brief.prompt,
 						JSON.stringify({
 							imageIntent: brief.intent,
+							imageModelRecipeProfile: compiledImage!.profile,
 							...(exactTextFailure
 								? { exactTextFailureToCorrect: exactTextFailure }
 								: {}),
@@ -1118,6 +1158,23 @@ function assertBriefMatchesSnapshot(
 			"The image intent operation no longer matches the frozen merchant request.",
 			409,
 		);
+	}
+	if (brief.kind === "image") {
+		const intentReferenceAssetIds = brief.intent.references.map(
+			({ assetId }) => assetId,
+		);
+		if (
+			intentReferenceAssetIds.length !== brief.referenceAssetIds.length ||
+			intentReferenceAssetIds.some(
+				(assetId, index) => assetId !== brief.referenceAssetIds[index],
+			)
+		) {
+			throw new HarnessMediaExecutionError(
+				"MEDIA_SNAPSHOT_MISMATCH",
+				"The image intent references do not match the frozen media brief.",
+				409,
+			);
+		}
 	}
 	const sourceAssetIds = new Set(snapshot.sources.assets.map((asset) => asset.id));
 	if (brief.referenceAssetIds.some((assetId) => !sourceAssetIds.has(assetId))) {

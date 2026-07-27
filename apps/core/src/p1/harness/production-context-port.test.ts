@@ -13,9 +13,76 @@ import {
 } from './structured-nodes.js';
 import {
   HarnessSnapshotIdentityError,
+  LedgerBackedFactRightsAuthorizationPort,
   LedgerBackedHarnessContextPort,
 } from './production-context-port.js';
 import { createHarnessCandidateValidator } from './policy-gates.js';
+
+test('production fact rights re-resolve the frozen fact and rights head fail closed', async () => {
+  const facts = new MemoryStoreFactLedger();
+  const heads = new MemoryContextSourceRevisionRepository();
+  const fact = await facts.append({
+    workspaceId: 'workspace-1',
+    factId: 'price-rights',
+    kind: 'price',
+    key: 'offer.price',
+    value: 398,
+    scope: { storeId: 'workspace-1' },
+    source: {
+      kind: 'user_confirmation',
+      referenceId: 'decision-price',
+      capturedAt: '2026-07-18T00:00:00.000Z',
+    },
+    effectiveFrom: '2026-07-18T00:00:00.000Z',
+    expiresAt: null,
+    expectedRevision: 0,
+    recordedAt: '2026-07-18T00:00:00.000Z',
+    recordedBy: 'owner-1',
+  });
+  const rights = new LedgerBackedFactRightsAuthorizationPort(
+    facts,
+    heads,
+    () => '2026-07-18T00:01:00.000Z',
+  );
+  const frozenFact = {
+    factId: fact.factId,
+    kind: fact.kind,
+    revision: fact.revision,
+    source: fact.source,
+    effectiveFrom: fact.effectiveFrom,
+    expiresAt: fact.expiresAt,
+  };
+
+  assert.equal(
+    await rights.isAuthorized({
+      workspaceId: 'workspace-1',
+      rightsRevision: 0,
+      fact: frozenFact,
+    }),
+    true,
+  );
+  await heads.advance({
+    workspaceId: 'workspace-1',
+    key: 'rights',
+    expectedRevision: 0,
+  });
+  assert.equal(
+    await rights.isAuthorized({
+      workspaceId: 'workspace-1',
+      rightsRevision: 0,
+      fact: frozenFact,
+    }),
+    false,
+  );
+  assert.equal(
+    await rights.isAuthorized({
+      workspaceId: 'workspace-other',
+      rightsRevision: 1,
+      fact: frozenFact,
+    }),
+    false,
+  );
+});
 
 test('production context port freezes the real #32 bundle and fact references', async () => {
   const facts = new MemoryStoreFactLedger();

@@ -18,6 +18,8 @@ function signed(
   overrides: Partial<ComposerSubmissionSignedFields> = {}
 ): ComposerSubmissionSignedFields {
   return composerSubmissionSignedFieldsSchema.parse({
+    creationMode: 'customized',
+    intent: '写一条周末预约文案',
     catalogModel: { id: 'deepseek-v4-pro', revision: 'catalog-7' },
     recipe: { id: 'recipe-weekend', revision: 'rev-3' },
     contentPackagePlatform: 'xiaohongshu',
@@ -95,6 +97,13 @@ test('the frozen value must equal what was shown, field by field', () => {
   assert.equal(composerSignedPreviewMatchesFrozen(shown, signed()), true);
 
   const overrides: Array<Partial<ComposerSubmissionSignedFields>> = [
+    { creationMode: 'free' },
+    { intent: '改成夏日护理预约文案' },
+    {
+      creationMode: 'free',
+      imageOperation: 'image.generate',
+      deliverable: { kind: 'image_set', quantity: 1 },
+    },
     { contentPackagePlatform: 'douyin' },
     { distributionTarget: 'manual_copy' },
     { catalogModel: { id: 'deepseek-v4-flash', revision: 'catalog-7' } },

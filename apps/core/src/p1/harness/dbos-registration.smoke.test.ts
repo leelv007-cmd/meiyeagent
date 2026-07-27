@@ -266,6 +266,35 @@ test(
         skillReceiptIds: [
           `skill-materialized:${workflowId}:intent_naming:skill.intent-one%402`,
         ],
+        stageSkillResolutions: {
+          intent_naming: {
+            skillRevisionRefs: ['skill.intent-one@2'],
+            skillContentHashes: ['hash-skill-2'],
+            skillReceiptIds: [
+              `skill-materialized:${workflowId}:intent_naming:skill.intent-one%402`,
+            ],
+          },
+          context_injection: {
+            skillRevisionRefs: [],
+            skillContentHashes: [],
+            skillReceiptIds: [],
+          },
+          brief_compilation: {
+            skillRevisionRefs: [],
+            skillContentHashes: [],
+            skillReceiptIds: [],
+          },
+          execution_selection: {
+            skillRevisionRefs: [],
+            skillContentHashes: [],
+            skillReceiptIds: [],
+          },
+          assembly_delivery: {
+            skillRevisionRefs: [],
+            skillContentHashes: [],
+            skillReceiptIds: [],
+          },
+        },
       });
       assert.equal(
         JSON.stringify(afterSteps).includes(SMOKE_PRIVATE_INSTRUCTION),
@@ -361,6 +390,7 @@ test(
       },
     });
     let pendingQuestionId: string | null = null;
+    let pendingTimeoutSeconds: number | null | undefined;
     let configReads = 0;
     const persistedTimeouts: string[] = [];
     DBOS.setConfig({
@@ -371,8 +401,9 @@ test(
     const workflow = registerHarnessDbosWorkflow(
       ports,
       {
-        async registerPending(_workspaceId, question) {
+        async registerPending(_workspaceId, question, projection) {
           pendingQuestionId = question.questionId;
+          pendingTimeoutSeconds = projection?.timeoutSeconds;
         },
         async readPending() {
           return null;
@@ -436,6 +467,7 @@ test(
         (pending as { questionId?: string } | null)?.questionId,
         `${workflowId}:offer-price`,
       );
+      assert.equal(pendingTimeoutSeconds, 2);
       assert.equal((await handle.getStatus())?.status, 'PENDING');
 
       const result = await handle.getResult();

@@ -62,6 +62,7 @@ export type FieldMeta = {
 
 export type DeliverySuggestion = {
   platform: string | null;
+  distributionTarget: string | null;
   deliverableKind: string | null;
 };
 
@@ -216,6 +217,7 @@ export function emptyComposerDraft(
     },
     delivery: {
       platform: null,
+      distributionTarget: null,
       deliverableKind: null,
       ...(deliveryPartial ?? {}),
     },
@@ -718,21 +720,53 @@ export function updateAssetRights(
  */
 export function updateDeliverySuggestion(
   state: ComposerLensState,
-  delivery: Partial<DeliverySuggestion>
+  delivery: Partial<DeliverySuggestion>,
+  ownership: FieldOwnership = 'user'
 ): ComposerLensState {
   if (state.phase === 'frozen') return state;
+  const userConfirmedDestination =
+    state.draft.fieldMeta.deliveryPlatform?.ownership === 'user' &&
+    state.draft.fieldMeta.deliveryPlatform.dirty;
+  if (ownership !== 'user' && userConfirmedDestination) return state;
+
+  const nextPlatform =
+    delivery.platform !== undefined
+      ? delivery.platform
+      : state.draft.delivery.platform;
+  const nextDistributionTarget =
+    delivery.distributionTarget !== undefined
+      ? delivery.distributionTarget
+      : state.draft.delivery.distributionTarget;
+  const destinationChanged =
+    nextPlatform !== state.draft.delivery.platform ||
+    nextDistributionTarget !== state.draft.delivery.distributionTarget;
+  const fieldMeta = { ...state.draft.fieldMeta };
+  if (delivery.platform !== undefined) {
+    fieldMeta.deliveryPlatform = {
+      ownership,
+      dirty: ownership === 'user' && delivery.platform != null,
+    };
+  }
+  if (delivery.distributionTarget !== undefined) {
+    fieldMeta.distributionTarget = {
+      ownership,
+      dirty: ownership === 'user' && delivery.distributionTarget != null,
+    };
+  }
+
   return withDraft(state, {
     ...state.draft,
     delivery: {
-      platform:
-        delivery.platform !== undefined
-          ? delivery.platform
-          : state.draft.delivery.platform,
+      platform: nextPlatform,
+      distributionTarget: nextDistributionTarget,
       deliverableKind:
         delivery.deliverableKind !== undefined
           ? delivery.deliverableKind
           : state.draft.delivery.deliverableKind,
     },
+    fieldMeta,
+    quoteRevisionId: destinationChanged ? null : state.draft.quoteRevisionId,
+    quoteView: destinationChanged ? null : state.draft.quoteView,
   });
 }
 

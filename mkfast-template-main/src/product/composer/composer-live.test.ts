@@ -124,6 +124,8 @@ describe('Composer live public contracts', () => {
       lensId: 'video',
       catalogRevision: 'catalog-r1',
       submission: {
+        creationMode: 'customized',
+        intent: '生成一条竖屏护理项目视频',
         catalogModel: { id: 'model-video', revision: 'catalog-r1' },
         recipe: { id: 'recipe-video', revision: 'recipe-video@1' },
         contentPackagePlatform: 'douyin',
@@ -153,11 +155,13 @@ describe('Composer live public contracts', () => {
     });
     assert.deepEqual(input, {
       quoteId:
-        'composer:session-1:video:model-video:catalog-r1:1:15:douyin:export:video_package',
+        'composer:session-1:video:model-video:catalog-r1:1:15:douyin:export:video_package:auto',
       catalogModelId: 'model-video',
       operation: 'video.generate',
       quantity: 1,
       submission: {
+        creationMode: 'customized',
+        intent: '生成一条竖屏护理项目视频',
         catalogModel: { id: 'model-video', revision: 'catalog-r1' },
         recipe: { id: 'recipe-video', revision: 'recipe-video@1' },
         contentPackagePlatform: 'douyin',
@@ -221,8 +225,43 @@ describe('Composer live public contracts', () => {
     assert.notEqual(portrait.quoteId, square.quoteId);
   });
 
-  function imageSubmission(aspectRatio: '1:1' | '3:4') {
+  it('binds the explicit free-image operation into the quote request and id', () => {
+    const model = {
+      id: 'model-image',
+      displayName: '图像模型',
+      modality: 'image' as const,
+      qualityRank: 1,
+      capabilityLabels: [],
+      available: true,
+      availabilityKind: 'production' as const,
+    };
+    const generate = buildLiveQuoteInput({
+      catalogRevision: 'catalog-r1',
+      lensId: 'image_text',
+      model,
+      sessionId: 'session-operation',
+      submission: imageSubmission('3:4', 'image.generate'),
+    });
+    const edit = buildLiveQuoteInput({
+      catalogRevision: 'catalog-r1',
+      lensId: 'image_text',
+      model,
+      sessionId: 'session-operation',
+      submission: imageSubmission('3:4', 'image.edit'),
+    });
+
+    assert.equal(edit.submission.imageOperation, 'image.edit');
+    assert.notEqual(generate.quoteId, edit.quoteId);
+  });
+
+  function imageSubmission(
+    aspectRatio: '1:1' | '3:4',
+    imageOperation: 'image.generate' | 'image.edit' = 'image.generate'
+  ) {
     return {
+      creationMode: 'free' as const,
+      intent: '生成一张夏日护理海报',
+      imageOperation,
       catalogModel: { id: 'model-image', revision: 'catalog-r1' },
       recipe: { id: 'recipe-image', revision: 'recipe-image@1' },
       contentPackagePlatform: 'xiaohongshu' as const,

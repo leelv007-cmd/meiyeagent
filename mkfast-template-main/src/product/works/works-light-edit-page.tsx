@@ -17,7 +17,7 @@ import type { PromotionalMaterialReceiptExtension } from '@meiye/contracts';
 
 import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { formatBytes } from '@/lib/formatter';
-import { formatLocaleDateTime } from '@/lib/locale';
+import { formatLocaleDateTime, getLocale } from '@/lib/locale';
 import { canvasName } from '@/p1/canvas-name';
 import { productAssetsToCanvasLibrary } from '@/p1/canvas-product-assets';
 import type { RawTemplate } from '@/p1/operations-view-model';
@@ -33,7 +33,7 @@ import type { parseLightComposerCarrier } from '@/p1/content-package-export-carr
 import { parseLightCanvasDocument } from '@/product/light-composer-document';
 import { PromotionalMaterialReceiptStatus } from '@/product/promotional-material-receipt';
 
-import { WORKS_TITLE } from './works-queries';
+import { worksCopy } from './works-copy';
 import { canvasRenderEvidenceMarker } from './works-render-evidence';
 
 type ExportCarrier = ReturnType<typeof parseLightComposerCarrier>;
@@ -55,6 +55,8 @@ export function WorksLightEditPage({
   exportUseDelivery?: ExportCarrier;
   workId: string;
 }) {
+  const locale = getLocale();
+  const copy = worksCopy(locale);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const product = useProductState();
@@ -96,14 +98,19 @@ export function WorksLightEditPage({
     mutationFn: (input: { action: string; payload: Record<string, unknown> }) =>
       operationsCommand(input.action, input.payload),
     onSuccess: refreshWork,
-    onError: () => toast.error('这一步没成功，请再试一次。'),
+    onError: () =>
+      toast.error(
+        locale === 'en'
+          ? 'This action failed. Please try again.'
+          : '这一步没成功，请再试一次。'
+      ),
   });
 
   const frame = (children: React.ReactNode, title: string) => (
     <>
       <DashboardHeader
         breadcrumbs={[
-          { label: WORKS_TITLE, href: '/dashboard/works' },
+          { label: copy.title, href: '/dashboard/works' },
           { label: title, isCurrentPage: true },
         ]}
       />
@@ -124,20 +131,22 @@ export function WorksLightEditPage({
         className="text-muted-foreground text-sm"
         data-testid="works-light-edit-loading"
       >
-        正在打开轻编辑…
+        {copy.light.loading}
       </p>,
-      WORKS_TITLE
+      copy.title
     );
   }
   if (workQuery.isError || !work || !revision) {
     return frame(
       <div className="meiye-porcelain rounded-2xl p-6">
-        <p className="meiye-type-body font-semibold">没找到这份内容</p>
+        <p className="meiye-type-body font-semibold">
+          {copy.light.missingTitle}
+        </p>
         <p className="text-muted-foreground mt-2 text-sm">
-          它可能已经被替换或删除了。
+          {copy.light.missingDescription}
         </p>
       </div>,
-      WORKS_TITLE
+      copy.title
     );
   }
 
@@ -161,17 +170,22 @@ export function WorksLightEditPage({
       <div className="meiye-ambient-copy">
         <div className="flex flex-wrap items-center gap-2">
           <span className="meiye-glass-piece rounded-full px-2.5 py-0.5 text-xs">
-            轻编辑
+            {copy.light.title}
           </span>
           <span
             className="text-muted-foreground text-xs"
             data-revision={revision.revision}
             data-testid="works-light-edit-revision"
           >
-            第 {revision.revision} 版 · 共 {work.revisions.length} 版
+            {copy.light.revision(revision.revision, work.revisions.length)}
           </span>
         </div>
-        <h1 className="meiye-type-title mt-2">{displayName}</h1>
+        <h1
+          className="meiye-type-title mt-2"
+          data-i18n-pass-through="content-title"
+        >
+          {displayName}
+        </h1>
       </div>
 
       {templateUpdate ? (
@@ -179,9 +193,11 @@ export function WorksLightEditPage({
           className="meiye-porcelain rounded-2xl p-4"
           data-testid="works-template-update"
         >
-          <p className="meiye-type-body font-semibold">这个版式有新版本</p>
+          <p className="meiye-type-body font-semibold">
+            {copy.light.updateTitle}
+          </p>
           <p className="text-muted-foreground mt-1 text-sm">
-            可以把这份内容换到新版式，也可以另存一份再改。
+            {copy.light.updateDescription}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
@@ -198,7 +214,7 @@ export function WorksLightEditPage({
               }
               type="button"
             >
-              换到新版式
+              {copy.light.upgrade}
             </button>
             <button
               className="meiye-glass-piece rounded-full px-4 py-2 text-sm disabled:opacity-50"
@@ -215,7 +231,7 @@ export function WorksLightEditPage({
               }
               type="button"
             >
-              另存一份新的
+              {copy.light.copyAsNew}
             </button>
           </div>
         </section>
@@ -305,7 +321,9 @@ export function WorksLightEditPage({
             workId: work.id,
           });
           await refreshWork();
-          toast.success('这一版已保存。');
+          toast.success(
+            locale === 'en' ? 'This version is saved.' : '这一版已保存。'
+          );
         }}
         onSaveAsTemplate={async (snapshot) => {
           const name = templateName.trim();
@@ -316,7 +334,9 @@ export function WorksLightEditPage({
             workId: work.id,
           });
           await refreshWork();
-          toast.success('已存为你的模板。');
+          toast.success(
+            locale === 'en' ? 'Saved as your template.' : '已存为你的模板。'
+          );
         }}
         onWatermarkChange={(enabled) =>
           command.mutate({
@@ -339,12 +359,16 @@ export function WorksLightEditPage({
           className="grid max-w-md gap-1.5 text-sm font-medium"
           htmlFor="works-template-name"
         >
-          存为模板时叫什么
+          {locale === 'en' ? 'Template name' : '存为模板时叫什么'}
           <input
             className="meiye-glass-piece rounded-full px-3 py-2 text-sm outline-none"
             id="works-template-name"
             onChange={(event) => setTemplateName(event.target.value)}
-            placeholder={`${displayName} 模板`}
+            placeholder={
+              locale === 'en'
+                ? `${displayName} template`
+                : `${displayName} 模板`
+            }
             value={templateName}
           />
         </label>
@@ -354,7 +378,9 @@ export function WorksLightEditPage({
             download={`${displayName}.png`}
             href={exportUrl}
           >
-            下载刚导出的这张
+            {locale === 'en'
+              ? 'Download the latest export'
+              : '下载刚导出的这张'}
           </a>
         ) : null}
         {(receiptsQuery.data ?? []).length > 0 ? (
@@ -372,7 +398,9 @@ export function WorksLightEditPage({
             ))}
           </ol>
         ) : (
-          <p className="text-muted-foreground mt-3 text-sm">还没有导出记录。</p>
+          <p className="text-muted-foreground mt-3 text-sm">
+            {locale === 'en' ? 'No exports yet.' : '还没有导出记录。'}
+          </p>
         )}
       </section>
     </>,

@@ -1,4 +1,5 @@
 import heroUiGlassCss from '@/components/heroui-pro/heroui-glass.css?url';
+import { useQuery } from '@tanstack/react-query';
 import { ObjectEvidence } from '@/components/uiux/object-evidence';
 import { EmptyState, Widget } from '@/components/heroui-pro';
 import { Skeleton } from '@heroui/react';
@@ -36,7 +37,9 @@ import {
   product_navigation_leads,
 } from '@/locale/paraglide/messages';
 import { useProductState } from '@/product/client';
-import type { Lead, LeadStatus } from '@meiye/contracts';
+import { operationsQuery } from '@/p1/client';
+import { p1QueryKeys } from '@/p1/query-keys';
+import type { Lead, LeadStatus, PublicContentPackage } from '@meiye/contracts';
 import { IconFolderOff } from '@tabler/icons-react';
 import { createFileRoute } from '@tanstack/react-router';
 
@@ -91,6 +94,18 @@ function LeadDetailRoute() {
   const { leadId } = Route.useParams();
   const product = useProductState();
   const lead = product.state?.leads.find((item) => item.id === leadId);
+  const contentPackages = useQuery({
+    queryKey: p1QueryKeys.request('operations', 'content_packages'),
+    queryFn: ({ signal }) =>
+      operationsQuery<PublicContentPackage[]>('content_packages', {}, signal),
+    retry: false,
+  });
+  const canonicalContent = contentPackages.data?.find(
+    (item) => item.id === lead?.canonicalContentPackage?.packageId
+  );
+  const canonicalVersion = canonicalContent?.versions.find(
+    (version) => version.id === lead?.canonicalContentPackage?.versionId
+  );
   const content = product.state?.contents.find(
     (item) => item.id === lead?.contentId
   );
@@ -153,9 +168,11 @@ function LeadDetailRoute() {
                 source={dashboard_lead_detail_evidence_source()}
               />
               <Widget.Title className="text-base">
-                {content?.variants[0]?.versions.find(
-                  (version) => version.id === lead.contentVersionId
-                )?.title ?? dashboard_lead_detail_fallback_title()}
+                {canonicalVersion?.title ??
+                  content?.variants[0]?.versions.find(
+                    (version) => version.id === lead.contentVersionId
+                  )?.title ??
+                  dashboard_lead_detail_fallback_title()}
               </Widget.Title>
             </Widget.Header>
             <Widget.Content className="space-y-2 text-sm">
@@ -166,9 +183,10 @@ function LeadDetailRoute() {
               </p>
               <p>
                 {dashboard_lead_detail_linked_content({
-                  linked: content
-                    ? common_table_bool_true()
-                    : common_table_bool_false(),
+                  linked:
+                    content || canonicalContent
+                      ? common_table_bool_true()
+                      : common_table_bool_false(),
                 })}
               </p>
               <p>

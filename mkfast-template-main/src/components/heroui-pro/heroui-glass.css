@@ -71,6 +71,15 @@
   box-shadow: var(--meiye-shadow-ambient);
 }
 
+/*
+ * HeroUI EmptyState uses --muted as a foreground token. The product shell uses
+ * that same name for a muted background, so adapt it once at the shared
+ * component boundary instead of relying on per-page inline overrides.
+ */
+.meiye-product-shell [data-slot="empty-state"] {
+  --muted: var(--ink-60);
+}
+
 /* DESIGN.md §3 — single family, weight contrast carries the personality. */
 .meiye-heroui-glass {
   font-family:

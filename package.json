@@ -19,6 +19,7 @@
     "eval:import": "pnpm --filter @meiye/core eval:import",
     "eval:merchant-language": "pnpm --filter @meiye/core eval:merchant-language",
     "eval:merchant-language:promptfoo": "node scripts/evals/run-promptfoo-merchant-language.mjs",
+    "eval:merchant-language:promptfoo:control": "node scripts/evals/run-promptfoo-merchant-language.mjs --control",
     "eval:preference-memory": "pnpm --filter @meiye/core eval:preference-memory",
     "eval:redlines": "pnpm --filter @meiye/core eval:redlines",
     "eval:redlines:promptfoo": "node scripts/evals/run-promptfoo-redlines.mjs",

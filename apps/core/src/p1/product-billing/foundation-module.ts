@@ -83,6 +83,7 @@ const SERVER_AUTHORITATIVE_QUOTE_FIELDS = [
   'clientQuote',
   'contract',
   'currency',
+  'debitUnits',
   'formulaExpression',
   'frozenCandidateDeploymentIds',
   'minChargeSeconds',

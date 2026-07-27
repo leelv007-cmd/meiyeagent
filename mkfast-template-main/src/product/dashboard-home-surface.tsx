@@ -25,6 +25,7 @@ import {
   exampleStoreVisibility,
   writeCreationDraftIntent,
 } from './creation-entry-model';
+import { DashboardBalanceCard } from './dashboard-balance-card';
 import { ExampleStoreShowcase } from './example-store-showcase';
 import { TodayRecommendationCard } from './today-recommendation-card';
 
@@ -105,6 +106,7 @@ export function DashboardHomeSurface({
 
   return (
     <div className="space-y-6" data-testid="dashboard-home-surface">
+      <DashboardBalanceCard />
       <TodayRecommendationCard onStart={onStart} onUse={prefill} />
 
       {visibility === 'visible' && stores.length > 0 ? (

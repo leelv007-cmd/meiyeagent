@@ -278,24 +278,43 @@ export const productCommandSchema = z.discriminatedUnion('type', [
     packageId: id,
     platformUrl: z.url().optional(),
   }),
-  z.object({
-    type: z.literal('create_lead'),
-    contentId: id,
-    lead: z.object({
-      source: z.enum([
-        'direct_message',
-        'comment',
-        'wechat',
-        'booking',
-        'coupon',
-        'redemption',
-        'visit',
-      ]),
-      projectId: id,
-      amountCents: z.number().int().nonnegative().optional(),
-      note: z.string().optional(),
+  z
+    .object({
+      type: z.literal('create_lead'),
+      contentId: id.optional(),
+      packageId: id.optional(),
+      lead: z.object({
+        source: z.enum([
+          'direct_message',
+          'comment',
+          'wechat',
+          'booking',
+          'coupon',
+          'redemption',
+          'visit',
+        ]),
+        projectId: id.optional(),
+        amountCents: z.number().int().nonnegative().optional(),
+        note: z.string().optional(),
+      }),
+    })
+    .superRefine((command, context) => {
+      if (Boolean(command.contentId) === Boolean(command.packageId)) {
+        context.addIssue({
+          code: 'custom',
+          message:
+            'Exactly one canonical packageId or legacy contentId is required.',
+          path: ['packageId'],
+        });
+      }
+      if (command.contentId && !command.lead.projectId) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Legacy content leads require projectId.',
+          path: ['lead', 'projectId'],
+        });
+      }
     }),
-  }),
   z.object({
     type: z.literal('update_lead'),
     leadId: id,

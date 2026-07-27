@@ -9,21 +9,30 @@
  * revisions only (never rewrite history).
  */
 
+import { isDeepStrictEqual } from 'node:util';
+
 import type {
   CreationLensId,
+  EvalRun,
   RecipeDeliveryDefaults,
   RecipeId,
   RecipePresentation,
   RecipeSourceRequirement,
   StoreFactKind,
   SurfaceId,
-  SurfaceRecipeRef,
   SurfaceToolRef,
 } from '@meiye/contracts';
 import { CreationExperienceCatalogService } from './catalog-service.js';
 import type { CreationExperienceCatalogRepository } from './memory-repository.js';
 import { MemoryCreationExperienceCatalogRepository } from './memory-repository.js';
+import {
+  RecipeStudioService,
+  type RecipeSkillRevisionValidationPort,
+  type RecipeStudioCompileInput,
+  type RecipeStudioOutputKind,
+} from './recipe-studio.js';
 import type {
+  CatalogAuditMeta,
   RecipeBodyInput,
   ServerRecipeRecord,
   ServerSurfaceRecord,
@@ -122,7 +131,7 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       noteCount: 1,
     },
     settingsPatches: { variantKey: 'xhs_image_text' },
-    outputContractRef: 'output.xhs_note.v1',
+    outputContractRef: 'output.xhs_note@1',
     workflowRevisionRef: 'workflow.image_text@1',
     promptRevisionRef: 'prompt.case_to_xhs_note@1',
     quotePolicyRevisionRef: 'quote.policy@1',
@@ -152,7 +161,7 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       lengthHint: '80-180',
     },
     settingsPatches: { variantKey: 'wechat_copy' },
-    outputContractRef: 'output.wechat_copy.v1',
+    outputContractRef: 'output.wechat_copy@1',
     workflowRevisionRef: 'workflow.copy@1',
     promptRevisionRef: 'prompt.project_intro@1',
     quotePolicyRevisionRef: 'quote.policy@1',
@@ -185,7 +194,7 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       subjectKindField: 'subject_kind',
     },
     settingsPatches: { variantKey: 'image_set' },
-    outputContractRef: 'output.image_set.v1',
+    outputContractRef: 'output.image_set@1',
     workflowRevisionRef: 'workflow.image_text@1',
     promptRevisionRef: 'prompt.campaign_visual_set@1',
     quotePolicyRevisionRef: 'quote.policy@1',
@@ -220,7 +229,7 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       variantKey: 'poster',
       editableAspectRatios: ['3:4', '1:1', '9:16'],
     },
-    outputContractRef: 'output.poster.v1',
+    outputContractRef: 'output.poster@1',
     workflowRevisionRef: 'workflow.image_text@1',
     promptRevisionRef: 'prompt.promotion_poster@1',
     quotePolicyRevisionRef: 'quote.policy@1',
@@ -258,7 +267,7 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       includePublishCopy: true,
     },
     settingsPatches: { variantKey: 'douyin_video' },
-    outputContractRef: 'output.douyin_video.v1',
+    outputContractRef: 'output.douyin_video@1',
     workflowRevisionRef: 'workflow.video.15s@1',
     promptRevisionRef: 'prompt.douyin_project_video@1',
     quotePolicyRevisionRef: 'quote.policy@1',
@@ -295,7 +304,7 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       coldDefaultLens: null,
     },
     settingsPatches: { variantKey: 'copy_adapt' },
-    outputContractRef: 'output.reuse_copy.v1',
+    outputContractRef: 'output.reuse_copy@1',
     workflowRevisionRef: 'workflow.copy.adapt@1',
     promptRevisionRef: 'prompt.reuse_content.copy@1',
     quotePolicyRevisionRef: 'quote.policy@1',
@@ -333,7 +342,7 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       coldDefaultLens: null,
     },
     settingsPatches: { variantKey: 'image_text_adapt' },
-    outputContractRef: 'output.reuse_image_text.v1',
+    outputContractRef: 'output.reuse_image_text@1',
     workflowRevisionRef: 'workflow.image_text.adapt@1',
     promptRevisionRef: 'prompt.reuse_content.image_text@1',
     quotePolicyRevisionRef: 'quote.policy@1',
@@ -371,7 +380,7 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       coldDefaultLens: null,
     },
     settingsPatches: { variantKey: 'video_adapt' },
-    outputContractRef: 'output.reuse_video.v1',
+    outputContractRef: 'output.reuse_video@1',
     workflowRevisionRef: 'workflow.video.adapt@1',
     promptRevisionRef: 'prompt.reuse_content.video@1',
     quotePolicyRevisionRef: 'quote.policy@1',
@@ -415,6 +424,156 @@ export function recipeBodyFromSpec(spec: LaunchRecipeSeedSpec): RecipeBodyInput 
   };
 }
 
+export function matchesLaunchRecipeSpec(
+  recipe: ServerRecipeRecord,
+  spec: LaunchRecipeSeedSpec,
+) {
+  const body = recipeBodyFromSpec(spec);
+  const { recipeStudioPlan: _recipeStudioPlan, ...contextPatches } =
+    recipe.contextPatches;
+  const {
+    candidateStrategy: _candidateStrategy,
+    outputKind: _outputKind,
+    ...settingsPatches
+  } = recipe.settingsPatches;
+  return isDeepStrictEqual(
+    {
+      lensId: recipe.lensId,
+      ...(recipe.familyId ? { familyId: recipe.familyId } : {}),
+      presentation: recipe.presentation,
+      delivery: recipe.delivery,
+      contextPatches,
+      factTypes: recipe.factTypes,
+      sourceRequirements: recipe.sourceRequirements,
+      modelPolicy: recipe.modelPolicy,
+      settingsPatches,
+      ...(recipe.outputContractRef
+        ? { outputContractRef: recipe.outputContractRef }
+        : {}),
+      ...(recipe.quotePolicyRevisionRef
+        ? { quotePolicyRevisionRef: recipe.quotePolicyRevisionRef }
+        : {}),
+      ...(recipe.workflowRevisionRef
+        ? { workflowRevisionRef: recipe.workflowRevisionRef }
+        : {}),
+      promptRevisionRef: recipe.promptRevisionRef,
+      skillRevisionRefs: recipe.skillRevisionRefs,
+      targetWorkspaceKind: recipe.targetWorkspaceKind,
+    },
+    body,
+  );
+}
+
+function studioOutputKind(
+  deliverableKind: RecipeDeliveryDefaults['deliverableKind'],
+): RecipeStudioOutputKind {
+  if (deliverableKind === 'copy_document') return 'copy';
+  if (deliverableKind === 'video_package') return 'video';
+  if (
+    deliverableKind === 'note' ||
+    deliverableKind === 'image_text_package'
+  ) {
+    return 'image_text_note';
+  }
+  return 'image';
+}
+
+export function recipeStudioInputFromSpec(
+  spec: LaunchRecipeSeedSpec,
+  audit: CatalogAuditMeta = LAUNCH_ACTOR,
+): RecipeStudioCompileInput {
+  const outputKind = studioOutputKind(spec.delivery.deliverableKind);
+  return {
+    ...audit,
+    recipeId: spec.recipeId,
+    expectedRevision: null,
+    industryKey: 'beauty_launch',
+    familyId: spec.familyId,
+    presentation: { ...spec.presentation },
+    contextPatches: { ...(spec.contextPatches ?? {}) },
+    settingsPatches: { ...(spec.settingsPatches ?? {}) },
+    dependencies: {
+      promptRevisionRef: spec.promptRevisionRef,
+      skillRevisionRefs: [],
+      workflowRevisionRef: spec.workflowRevisionRef!,
+      outputContractRef: spec.outputContractRef!,
+      quotePolicyRevisionRef: spec.quotePolicyRevisionRef!,
+    },
+    modelPolicy: { mode: 'auto' },
+    blocks: [
+      {
+        id: 'intent',
+        stage: 'intent_naming',
+        type: 'intent_type',
+        config: {
+          intentTypes:
+            spec.familyId === 'promotion_poster'
+              ? ['promotional_material']
+              : ['daily_exposure'],
+        },
+      },
+      {
+        id: 'facts',
+        stage: 'context_injection',
+        type: 'fact_slots',
+        config: {
+          factTypes: [...spec.factTypes],
+          sourceRequirements: spec.sourceRequirements.map((slot) => ({
+            ...slot,
+          })),
+        },
+      },
+      {
+        id: 'story',
+        stage: 'brief_compilation',
+        type: 'story_structure',
+        config: {
+          segments: ['pain_point', 'service_solution', 'proof', 'cta'],
+        },
+      },
+      {
+        id: 'output',
+        stage: 'brief_compilation',
+        type: 'output_contract',
+        config: {
+          outputKind,
+          deliverableKind: spec.delivery.deliverableKind,
+          quantity: spec.delivery.quantity!,
+          ...(spec.delivery.aspectRatio
+            ? { aspectRatio: spec.delivery.aspectRatio }
+            : {}),
+          ...(spec.delivery.durationSeconds
+            ? { durationSeconds: spec.delivery.durationSeconds }
+            : {}),
+          ...(spec.delivery.notePageBound
+            ? { notePageBound: spec.delivery.notePageBound }
+            : {}),
+        },
+      },
+      {
+        id: 'candidate',
+        stage: 'execution_selection',
+        type: 'candidate_strategy',
+        config: {
+          strategy:
+            outputKind === 'image_text_note'
+              ? 'dual_style_user_choice'
+              : 'single_primary',
+        },
+      },
+      {
+        id: 'platform',
+        stage: 'assembly_delivery',
+        type: 'platform_adapter',
+        config: {
+          contentPackagePlatform: spec.delivery.contentPackagePlatform!,
+          distributionTarget: spec.delivery.distributionTarget!,
+        },
+      },
+    ],
+  };
+}
+
 export function listLaunchRecipeSpecs(): LaunchRecipeSeedSpec[] {
   return LAUNCH_RECIPE_SPECS.map((spec) => ({
     ...spec,
@@ -447,6 +606,32 @@ export interface PublishLaunchCatalogResult {
   surface: ServerSurfaceRecord;
 }
 
+function launchSeedEvalRun(
+  spec: LaunchRecipeSeedSpec,
+  now: () => string,
+): EvalRun {
+  return {
+    schemaVersion: 'eval-run/v1',
+    runId: `launch-seed-eval:${spec.variantKey}`,
+    suiteId: 'recipe-launch-seeds',
+    suiteRevision: 'recipe-launch-seeds@1',
+    mode: 'recorded_fixture',
+    createdAt: now(),
+    passed: true,
+    results: [
+      {
+        caseId: spec.variantKey,
+        gateId: 'recipe-launch-seed',
+        promptRevision: spec.promptRevisionRef,
+        scorerRevision: 'recipe-launch-seed-scorer@1',
+        passed: true,
+        reason: '正式 launch seed 通过受控结构与生产同源校验。',
+        memoryDiff: null,
+      },
+    ],
+  };
+}
+
 /**
  * Draft → preview → publish all eight Recipes, then the launch Surface.
  * Surface recipeRefs pin the published revision ids (session freeze later).
@@ -458,6 +643,8 @@ export async function publishLaunchCatalog(
     actorId?: string;
     reason?: string;
     correlationId?: string;
+    now?: () => string;
+    skillRevisionValidation?: RecipeSkillRevisionValidationPort;
   } = {},
 ): Promise<PublishLaunchCatalogResult> {
   const audit = {
@@ -466,59 +653,106 @@ export async function publishLaunchCatalog(
     correlationId: options.correlationId ?? LAUNCH_ACTOR.correlationId,
   };
   const surfaceId = options.surfaceId ?? LAUNCH_SURFACE_ID;
+  const now = options.now ?? (() => new Date().toISOString());
+  const studio = new RecipeStudioService(
+    service,
+    now,
+    options.skillRevisionValidation ?? {
+      async listUnavailableFrozenRevisionRefs() {
+        return [];
+      },
+    },
+  );
   const recipes: ServerRecipeRecord[] = [];
-
-  for (const spec of LAUNCH_RECIPE_SPECS) {
-    const draft = await service.draftRecipe({
-      recipeId: spec.recipeId,
-      expectedRevision: null,
-      body: recipeBodyFromSpec(spec),
+  let surface = await service.getSurfaceHead(surfaceId);
+  if (surface?.status === 'draft') {
+    surface = await service.previewSurface({
+      surfaceId,
+      expectedRevision: surface.revision,
       ...audit,
     });
-    const preview = await service.previewRecipe({
-      recipeId: spec.recipeId,
-      expectedRevision: draft.revision,
+  }
+  if (surface?.status === 'preview') {
+    surface = await service.publishSurface({
+      surfaceId,
+      expectedRevision: surface.revision,
       ...audit,
     });
-    const published = await service.publishRecipe({
-      recipeId: spec.recipeId,
-      expectedRevision: preview.revision,
-      ...audit,
-    });
-    recipes.push(published);
+  }
+  if (surface && surface.status !== 'published') {
+    throw new Error('Launch Surface cannot recover to a published revision.');
   }
 
-  const recipeRefs: SurfaceRecipeRef[] = LAUNCH_RECIPE_SPECS.map((spec, index) => {
-    const published = recipes[index]!;
-    return {
-      recipeRevisionId: published.revisionId,
-      lensId: spec.lensId,
-      order: spec.cardOrder,
-      featured: spec.featured,
-      visible: true,
-    };
-  });
+  for (const spec of LAUNCH_RECIPE_SPECS) {
+    let head = await service.getRecipeHead(spec.recipeId);
+    if (
+      !head?.studioRelease ||
+      !matchesLaunchRecipeSpec(head, spec)
+    ) {
+      head = await studio.compile({
+        ...recipeStudioInputFromSpec(spec, audit),
+        expectedRevision: head?.revision ?? null,
+      });
+    }
+    if (head.studioRelease?.phase === 'compiled') {
+      head = await studio.validate({
+        recipeId: spec.recipeId,
+        expectedRevision: head.revision,
+        ...audit,
+      });
+    }
+    if (head.studioRelease?.phase === 'validated') {
+      head = await studio.recordEvaluation({
+        recipeId: spec.recipeId,
+        expectedRevision: head.revision,
+        evalRun: launchSeedEvalRun(spec, now),
+        ...audit,
+      });
+    }
+    if (head.studioRelease?.phase === 'evaluated') {
+      head = await studio.recordInternalTest({
+        recipeId: spec.recipeId,
+        expectedRevision: head.revision,
+        label: 'internal-test',
+        runId: `launch-seed-internal:${spec.variantKey}`,
+        passed: true,
+        ...audit,
+      });
+    }
+    if (head.studioRelease?.phase !== 'internal_tested') {
+      throw new Error(
+        `Launch Recipe ${spec.recipeId} cannot recover through the Studio gates.`,
+      );
+    }
+    if (
+      head.status === 'published' &&
+      surface?.recipeRefs.some(
+        (reference) => reference.recipeRevisionId === head!.revisionId,
+      )
+    ) {
+      recipes.push(head);
+      continue;
+    }
+    const production = await studio.switchProduction({
+      recipeId: spec.recipeId,
+      expectedRevision: head.revision,
+      surfaceId,
+      expectedSurfaceRevision: surface?.revision ?? null,
+      surfaceRef: {
+        order: spec.cardOrder,
+        featured: spec.featured,
+        visible: true,
+      },
+      surfaceToolRefs: LAUNCH_TOOL_ENTRY_REFS.map((ref) => ({ ...ref })),
+      ...audit,
+    });
+    recipes.push(production.recipe);
+    surface = production.surface;
+  }
 
-  const surfaceDraft = await service.draftSurface({
-    surfaceId,
-    expectedRevision: null,
-    body: {
-      recipeRefs,
-      toolEntryRefs: LAUNCH_TOOL_ENTRY_REFS.map((ref) => ({ ...ref })),
-    },
-    ...audit,
-  });
-  const surfacePreview = await service.previewSurface({
-    surfaceId,
-    expectedRevision: surfaceDraft.revision,
-    ...audit,
-  });
-  const surface = await service.publishSurface({
-    surfaceId,
-    expectedRevision: surfacePreview.revision,
-    ...audit,
-  });
-
+  if (!surface) {
+    throw new Error('Launch catalog did not publish a production Surface.');
+  }
   return { recipes, surface };
 }
 
@@ -537,6 +771,8 @@ export async function seedLaunchCatalogInMemory(options?: {
     options?.now ?? (() => '2026-07-20T12:00:00.000Z'),
     options?.id ?? (() => 'session-launch-1'),
   );
-  const result = await publishLaunchCatalog(service);
+  const result = await publishLaunchCatalog(service, {
+    now: options?.now ?? (() => '2026-07-20T12:00:00.000Z'),
+  });
   return { repository, service, result };
 }

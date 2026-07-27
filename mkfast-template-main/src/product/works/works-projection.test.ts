@@ -17,6 +17,7 @@ import {
   workExportIdempotencyKey,
   workHandoffHref,
   workOutputShape,
+  workTextExport,
   workUsageGuidance,
   worksListItems,
   worksShapeCounts,
@@ -680,6 +681,21 @@ test('使用导购 stops promising 导出 to a 文案 作品', () => {
       '复制正文就能贴到平台或发给顾客。',
     ]
   );
+});
+
+test('a canonical text revision produces a version-bound downloadable file', () => {
+  const detail = workDetail({
+    contentPackages: [copyPackage],
+    id: copyPackage.id,
+  });
+  assert.equal(detail.kind, 'package');
+  if (detail.kind !== 'package') return;
+
+  assert.deepEqual(workTextExport(detail), {
+    contentType: 'text/plain;charset=utf-8',
+    fileName: '夏日美甲新色-r3.txt',
+    text: '夏日美甲新色\n\n到店体验夏日美甲，预约有礼。\n\n#夏日系列',
+  });
 });
 
 test('non-ready image guidance does not promise export', () => {

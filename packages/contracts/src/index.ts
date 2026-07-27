@@ -21,6 +21,7 @@ export * from './supply-registry.js';
 export * from './eval-run.js';
 export * from './creation-experience.js';
 export * from './product-quote.js';
+export * from './billing-balance.js';
 export * from './composer-submission.js';
 export * from './result-center.js';
 export * from './video-workflow.js';

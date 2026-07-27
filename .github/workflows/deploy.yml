@@ -5,15 +5,20 @@
 # directory as the working directory. It now lives at the repository root with
 # explicit per-step working directories.
 #
-# The trigger is `workflow_dispatch` only: this workflow deploys production
-# without depending on any quality job, so an unconditional `push: main` trigger
-# would ship code that no required check has cleared. Re-evaluate automating it
-# only after branch protection is live (docs/ops/branch-protection-ruleset.json)
-# and this workflow gates itself on the `required` aggregation job.
+# The trigger is the completed Core quality run for main. The source workflow
+# mints and consumes the staging release manifest at the same SHA before this
+# workflow can start, so production cannot bypass required or RC evidence.
 name: Deploy to Cloudflare Workers
 
 on:
-  workflow_dispatch:
+  workflow_run:
+    workflows: ['Core quality']
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
 
 # Ensure only one deployment runs at a time
 concurrency:
@@ -23,6 +28,10 @@ concurrency:
 jobs:
   deploy:
     name: Build & Deploy
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -52,6 +61,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -68,6 +79,23 @@ jobs:
       # live there and the Web unit depends on workspace packages.
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Download same-SHA staging release manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: staging-release-manifest
+          path: output/release
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Verify same-SHA release evidence
+        env:
+          RELEASE_COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+          RELEASE_MANIFEST_PATH: output/release/release-manifest.json
+        run: node scripts/ci/verify-release-manifest.mjs
+
+      - name: Require real Cloudflare resources
+        run: node scripts/ops/verify-wrangler-config.mjs --require-real-resources
 
       - name: Apply PostgreSQL migrations before release
         working-directory: mkfast-template-main

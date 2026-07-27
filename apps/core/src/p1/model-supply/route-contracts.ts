@@ -87,6 +87,7 @@ export type RouteCandidateExclusionReason =
   | 'operation_unsupported'
   | 'fixed_model_mismatch'
   | 'custom_requires_fixed_selection'
+  | 'manual_selection_required'
   | 'data_class_disallowed'
   | 'simulated_unavailable'
   /** G4 RoutePolicy cost boundary (only when a published policy sets one). */

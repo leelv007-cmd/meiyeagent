@@ -13,15 +13,6 @@ import { operationsQuery } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import type { RawCanonicalHistory } from '@/product/canonical-history-model';
 
-/**
- * 商家语言统一为「内容」(T34 / #228): this surface is where 一级导航「内容」lands,
- * and the product's own word root is 内容 (ContentPackage / 内容编译器, D-118).
- * The route, the directory and the test ids stay `works` — only what a merchant
- * reads changes.
- */
-export const WORKS_TITLE = '内容';
-export const WORKS_DESCRIPTION = '你做过的文案、图片、图文和视频都在这里。';
-
 export function useWorksProjection() {
   const contentPackages = useQuery({
     queryKey: p1QueryKeys.request('operations', 'content_packages'),

@@ -13,17 +13,14 @@ import { IconPhoto, IconSearch } from '@tabler/icons-react';
 
 import { EmptyState, Segment } from '@/components/heroui-pro';
 import { DashboardHeader } from '@/components/layout/dashboard-header';
+import { getLocale } from '@/lib/locale';
 import { getPathWithLocale } from '@/lib/urls';
 import { cn } from '@/lib/utils';
 
+import { translateWorksSystemText, worksCopy } from './works-copy';
 import { WorksMediaGallery } from './works-media-gallery';
+import { useWorksProjection } from './works-queries';
 import {
-  WORKS_DESCRIPTION,
-  WORKS_TITLE,
-  useWorksProjection,
-} from './works-queries';
-import {
-  WORK_OUTPUT_SHAPE_LABELS,
   WORK_OUTPUT_SHAPE_ORDER,
   worksListItems,
   worksShapeCounts,
@@ -34,6 +31,8 @@ import {
 type ShapeFilter = WorkOutputShape | 'all';
 
 function WorkCard({ item }: { item: WorkListItem }) {
+  const locale = getLocale();
+  const copy = worksCopy(locale);
   return (
     <li>
       <Link
@@ -62,21 +61,24 @@ function WorkCard({ item }: { item: WorkListItem }) {
               className="meiye-glass-piece rounded-full px-2.5 py-0.5 text-xs"
               data-testid="works-card-shape"
             >
-              {WORK_OUTPUT_SHAPE_LABELS[item.outputShape]}
+              {copy.shapes[item.outputShape]}
             </span>
             <span className="text-muted-foreground text-xs">
-              {item.statusLabel}
+              {translateWorksSystemText(locale, item.statusLabel)}
             </span>
             {item.revision === null ? null : (
               <span
                 className="text-muted-foreground ml-auto text-xs"
                 data-revision={item.revision}
               >
-                第 {item.revision} 版
+                {copy.revision(item.revision)}
               </span>
             )}
           </div>
-          <h3 className="meiye-type-body line-clamp-2 font-semibold">
+          <h3
+            className="meiye-type-body line-clamp-2 font-semibold"
+            data-i18n-pass-through="content-title"
+          >
             {item.title}
           </h3>
           {item.excerpt ? (
@@ -84,8 +86,9 @@ function WorkCard({ item }: { item: WorkListItem }) {
               className={`text-muted-foreground text-sm ${
                 item.outputShape === 'copy' ? 'line-clamp-6' : 'line-clamp-2'
               }`}
+              data-i18n-pass-through="content-excerpt"
             >
-              {item.excerpt}
+              {translateWorksSystemText(locale, item.excerpt)}
             </p>
           ) : null}
         </div>
@@ -95,6 +98,7 @@ function WorkCard({ item }: { item: WorkListItem }) {
 }
 
 export function WorksListPage() {
+  const copy = worksCopy(getLocale());
   const { failed, loading, source } = useWorksProjection();
   const [shape, setShape] = useState<ShapeFilter>('all');
   const [query, setQuery] = useState('');
@@ -109,8 +113,8 @@ export function WorksListPage() {
     <>
       <DashboardHeader
         breadcrumbs={[
-          { label: '工作台', isCurrentPage: false },
-          { label: WORKS_TITLE, isCurrentPage: true },
+          { label: copy.dashboard, isCurrentPage: false },
+          { label: copy.title, isCurrentPage: true },
         ]}
       />
       <div
@@ -120,10 +124,10 @@ export function WorksListPage() {
         <div className="flex flex-col gap-4 px-4 py-4 lg:gap-6 lg:px-6 lg:py-6">
           <div className="meiye-ambient-copy">
             <h1 className="meiye-type-title" data-testid="works-ambient-title">
-              {WORKS_TITLE}
+              {copy.title}
             </h1>
             <p className="meiye-type-aux mt-1" data-testid="works-ambient-aux">
-              {WORKS_DESCRIPTION}
+              {copy.description}
             </p>
           </div>
 
@@ -148,13 +152,13 @@ export function WorksListPage() {
               style={{ '--muted': 'var(--ink-90)' } as CSSProperties}
             >
               <Segment
-                aria-label="内容类型"
+                aria-label={copy.shapeFilter}
                 data-testid="works-shape-filter"
                 onSelectionChange={(key) => setShape(key as ShapeFilter)}
                 selectedKey={shape}
               >
                 <Segment.Item data-testid="works-shape-all" id="all">
-                  全部
+                  {copy.all}
                 </Segment.Item>
                 {WORK_OUTPUT_SHAPE_ORDER.map((candidate) => (
                   <Segment.Item
@@ -162,7 +166,7 @@ export function WorksListPage() {
                     id={candidate}
                     key={candidate}
                   >
-                    {WORK_OUTPUT_SHAPE_LABELS[candidate]}
+                    {copy.shapes[candidate]}
                     {counts[candidate] > 0 ? ` ${counts[candidate]}` : ''}
                   </Segment.Item>
                 ))}
@@ -174,13 +178,13 @@ export function WorksListPage() {
               htmlFor="works-search"
             >
               <IconSearch aria-hidden="true" className="size-4 shrink-0" />
-              <span className="sr-only">搜索内容</span>
+              <span className="sr-only">{copy.searchLabel}</span>
               <input
                 className="w-full bg-transparent text-sm outline-none"
                 data-testid="works-search"
                 id="works-search"
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="搜内容标题或正文"
+                placeholder={copy.searchPlaceholder}
                 type="search"
                 value={query}
               />
@@ -192,7 +196,7 @@ export function WorksListPage() {
               className="text-muted-foreground text-sm"
               data-testid="works-loading"
             >
-              正在整理你的内容…
+              {copy.loading}
             </p>
           ) : failed ? (
             // A failed read must never read as 「你还没有内容」.
@@ -201,47 +205,22 @@ export function WorksListPage() {
               data-testid="works-unavailable"
               role="alert"
             >
-              内容暂时没能取回来，刷新一下再看。
+              {copy.unavailable}
             </p>
           ) : items.length === 0 ? (
-            /*
-              OI-73. 一级导航「内容」 lands here, so this empty state is the
-              first screen a cold-start merchant sees — and its three lines were
-              floating straight on the shell's 门店橱窗 photo. Both faults were
-              measured, not guessed: the title takes --foreground (ink) and came
-              back 2.27:1 on the photo (light/desktop, drifting with whatever
-              the image is bright or dark under), while the description and the
-              call to action take --muted — the vendored empty-state.css uses it
-              as a foreground, but inside .meiye-product-shell that token is the
-              muted *background* (--tint-hover, 4% ink / 6% white), measuring
-              1.02–1.18:1, i.e. the whole line is invisible. That second trap is
-              the one T32 already wrote up for the Segment above.
-
-              The fix stays inside DESIGN.md's existing vocabulary rather than
-              inventing a new one: the empty state sits on a porcelain base
-              (实体内容区一律白瓷, and the Don't list is explicit that text is
-              never laid straight on media without a scrim), matching its
-              works-unavailable sibling; --muted maps back to --ink-60, the
-              lowest body step. --default is deliberately left alone — the
-              vendored CSS only uses it as the icon medallion's background, the
-              token bridge already gives it a background value, and pointing it
-              at a foreground would turn that medallion into a dark blob.
-              Per-site stops here: the shared-layer --muted fix is OI-48.
-            */
             <EmptyState
               className="meiye-porcelain rounded-2xl"
               data-testid="works-empty"
-              style={{ '--muted': 'var(--ink-60)' } as CSSProperties}
             >
               <EmptyState.Header>
                 <EmptyState.Media variant="icon">
                   <IconPhoto aria-hidden="true" />
                 </EmptyState.Media>
                 <EmptyState.Title data-testid="works-empty-title">
-                  还没有内容
+                  {copy.emptyTitle}
                 </EmptyState.Title>
                 <EmptyState.Description data-testid="works-empty-description">
-                  去创作一条内容，做出来的成品会自动进到这里。
+                  {copy.emptyDescription}
                 </EmptyState.Description>
               </EmptyState.Header>
               <EmptyState.Content>
@@ -250,7 +229,7 @@ export function WorksListPage() {
                   data-testid="works-empty-cta"
                   href={getPathWithLocale('/dashboard')}
                 >
-                  去创作
+                  {copy.emptyAction}
                 </a>
               </EmptyState.Content>
             </EmptyState>

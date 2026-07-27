@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { publicBillingBalanceSchema } from '@meiye/contracts';
 import {
   P1DomainError,
   USAGE_RESOURCES,
@@ -493,6 +494,24 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
         addOns: structuredClone(catalog.addOns),
         trialEnabled: catalog.trialEnabled,
       };
+    }
+    if (action === 'balance') {
+      const projection = await this.entitlements.getProjection(args.context);
+      const bucket = (resource: 'copy' | 'image' | 'video') => {
+        const usage = projection.usage[resource];
+        return {
+          allowance: usage.allowance,
+          reserved: usage.reserved,
+          committed: usage.committed,
+          released: usage.released,
+          available: usage.available,
+        };
+      };
+      return publicBillingBalanceSchema.parse({
+        copy: bucket('copy'),
+        image: bucket('image'),
+        video: bucket('video'),
+      });
     }
     if (action === 'projection') {
       const month =

@@ -3,32 +3,30 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const binary = resolve('node_modules/.bin/promptfoo');
-if (!existsSync(binary)) {
-  console.error(
-    'promptfoo 0.121.19 is not installed. Install the pinned dev dependency when registry access is available; the provider tests remain runnable with pnpm --filter @meiye/core eval:merchant-language.',
-  );
-  process.exitCode = 2;
-} else {
-  const output =
-    process.argv[2] ?? 'output/evals/promptfoo-merchant-language.json';
-  const result = spawnSync(
-    binary,
-    [
-      'eval',
-      '-c',
-      'promptfooconfig.merchant-language.yaml',
-      '--no-cache',
-      '-o',
-      output,
-    ],
-    {
-      env: {
-        ...process.env,
-        PROMPTFOO_DISABLE_REMOTE_GENERATION: 'true',
-      },
-      stdio: 'inherit',
-    },
-  );
-  if (result.error) throw result.error;
-  process.exitCode = result.status ?? 1;
-}
+const control = process.argv.includes('--control');
+const output =
+  process.argv.find((argument, index) => index > 1 && argument !== '--control') ??
+  (control
+    ? 'output/evals/promptfoo-merchant-language-control.json'
+    : 'output/evals/promptfoo-merchant-language.json');
+const command = existsSync(binary) ? binary : 'pnpm';
+const args = [
+  ...(command === binary ? [] : ['dlx', 'promptfoo@0.121.19']),
+  'eval',
+  '-c',
+  control
+    ? 'promptfooconfig.merchant-language.assertion-control.yaml'
+    : 'promptfooconfig.merchant-language.yaml',
+  '--no-cache',
+  '-o',
+  output,
+];
+const result = spawnSync(command, args, {
+  env: {
+    ...process.env,
+    PROMPTFOO_DISABLE_REMOTE_GENERATION: 'true',
+  },
+  stdio: 'inherit',
+});
+if (result.error) throw result.error;
+process.exitCode = result.status ?? 1;

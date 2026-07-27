@@ -136,6 +136,8 @@ describe('entry and destination are conversation affordances, not a form', () =>
         signedPreview: projectComposerSignedPreview({
           signed: {
             catalogModel: { id: 'deepseek-v4-pro', revision: 'catalog-7' },
+            creationMode: 'customized',
+            intent: '写一条周末预约文案',
             recipe: { id: 'recipe-weekend', revision: 'rev-3' },
             contentPackagePlatform: 'xiaohongshu',
             distributionTarget: 'export',
@@ -477,5 +479,32 @@ describe('成品交付卡', () => {
         DELIVERY.versionId,
       ])
     ).toEqual([]);
+  });
+});
+
+describe('终态申报', () => {
+  it('shows hold expiry cancellation and refund instead of an empty delivery card', () => {
+    const stream = projectResultTokenStream({ workspaceKind: 'copy' });
+    const session = applyComposerWorkflowState(
+      running(),
+      'success',
+      undefined,
+      {
+        merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+        outcome: 'cancelled',
+        resolutionSource: 'core_hold_expired',
+      }
+    );
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={session}
+        stream={stream}
+      />
+    );
+    expect(screen.getByTestId('composer-terminal-outcome')).toHaveTextContent(
+      '已取消，额度已退回'
+    );
+    expect(screen.queryByTestId('composer-delivery-card')).toBeNull();
   });
 });

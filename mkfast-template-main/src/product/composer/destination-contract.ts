@@ -1,19 +1,30 @@
 import {
   composerContentPackagePlatformSchema,
+  composerDistributionTargetSchema,
   type ComposerContentPackagePlatform,
   type ComposerDistributionTarget,
 } from '@meiye/contracts';
 
-export function composerDestinationContract(value: string | null | undefined): {
+export function composerDestinationContract(
+  value: string | null | undefined,
+  target?: string | null
+): {
   contentPackagePlatform: ComposerContentPackagePlatform;
   distributionTarget: ComposerDistributionTarget;
 } | null {
   const parsed = composerContentPackagePlatformSchema.safeParse(value);
   if (!parsed.success) return null;
+  const parsedTarget = composerDistributionTargetSchema.safeParse(target);
   return {
     contentPackagePlatform: parsed.data,
     distributionTarget:
-      parsed.data === 'wechat_moments' ? 'assisted_handoff' : 'export',
+      target == null
+        ? parsed.data === 'wechat_moments'
+          ? 'assisted_handoff'
+          : 'export'
+        : parsedTarget.success
+          ? parsedTarget.data
+          : 'export',
   };
 }
 

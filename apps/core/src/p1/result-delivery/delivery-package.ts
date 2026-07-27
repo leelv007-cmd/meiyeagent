@@ -42,6 +42,11 @@ export type ImageTextDeliveryPackageInput = {
   variantVersionId: string;
 };
 
+export type CopyDeliveryPackageInput = Omit<
+  ImageTextDeliveryPackageInput,
+  'images'
+>;
+
 export type VideoFullDeliveryPackageInput = {
   caption: DeliveryPackageCaption;
   compliance: {
@@ -385,6 +390,73 @@ export function buildImageTextDeliveryPackage(
   return finalizePackage({
     contentPackageRevision: input.contentPackageRevision,
     fileEntries,
+    files,
+    generatedAt: input.generatedAt,
+    kind: 'image_text',
+    packageId: input.packageId,
+    platform: input.platform,
+    rightsSummary: rightsSummaryFrom(input),
+    storeName: input.storeName,
+    variantVersionId: input.variantVersionId,
+  });
+}
+
+/**
+ * Build the text-only form of an image_text ContentPackage.
+ *
+ * ContentPackage v1 represents Composer copy and image-text output with the
+ * same `image_text` kind. A copy revision therefore has no ordered image
+ * assets, but still needs the canonical manifest, checklist and rights
+ * evidence instead of failing export or inventing a cover image.
+ */
+export function buildCopyDeliveryPackage(
+  input: CopyDeliveryPackageInput,
+): BuiltDeliveryPackage {
+  const captionText = buildCaptionText(input.caption);
+  const checklist = [
+    `# ${PLATFORM_LABEL[input.platform]}文案发布核对清单`,
+    '',
+    '- [ ] 核对门店名称、价格与活动事实',
+    '- [ ] 复制 caption 文案与话题',
+    '- [ ] 确认 AIGC 标识符合平台规则',
+    '',
+  ].join('\n');
+  const rightsJson = buildRightsAndFactsJson({
+    compliance: input.compliance,
+    contentPackageRevision: input.contentPackageRevision,
+    factSummary: input.factSummary,
+    packageId: input.packageId,
+    platform: input.platform,
+    rightsState: input.rightsState ?? 'authorized',
+    variantVersionId: input.variantVersionId,
+  });
+  const files = {
+    'caption.txt': strToU8(captionText),
+    'evidence/rights-and-facts.json': strToU8(rightsJson),
+    'platform-checklist.md': strToU8(checklist),
+  };
+  return finalizePackage({
+    contentPackageRevision: input.contentPackageRevision,
+    fileEntries: [
+      {
+        bytes: files['caption.txt'],
+        mimeType: 'text/plain; charset=utf-8',
+        path: 'caption.txt',
+        role: 'caption',
+      },
+      {
+        bytes: files['platform-checklist.md'],
+        mimeType: 'text/markdown; charset=utf-8',
+        path: 'platform-checklist.md',
+        role: 'checklist',
+      },
+      {
+        bytes: files['evidence/rights-and-facts.json'],
+        mimeType: 'application/json',
+        path: 'evidence/rights-and-facts.json',
+        role: 'rights_evidence',
+      },
+    ],
     files,
     generatedAt: input.generatedAt,
     kind: 'image_text',

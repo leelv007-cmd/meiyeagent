@@ -15,6 +15,7 @@ import { TaskBlockingNodeConflictError } from '../operations/repository.js';
 import { HarnessApplicationService } from './application-service.js';
 import {
   HarnessDecisionService,
+  type HarnessPendingDecisionProjection,
   type HarnessDecisionStore,
 } from './decision-service.js';
 import {
@@ -56,6 +57,7 @@ test('memory harness registry rejects a question while the task has a pending ap
 
 test('harness HTTP boundary admits, reads and answers one authoritative question', async (t) => {
   const registry = new MemoryHarnessStore();
+  let currentTimeoutSeconds = 29;
   const resumed: string[] = [];
   const successors: Array<{
     command: StructuredDecisionInput;
@@ -82,6 +84,11 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
     registry,
     registry,
     registry,
+    {
+      async readTimeoutSeconds() {
+        return currentTimeoutSeconds;
+      },
+    },
   );
   const server = createCoreServer({
     diagnosticRepository: diagnostics,
@@ -244,10 +251,34 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
     'INVALID_HARNESS_PRODUCT_METRIC',
   );
 
-  await registry.registerPending('workspace-1', question());
+  await registry.registerPending('workspace-1', question(), {
+    timeoutSeconds: 17,
+  });
+  currentTimeoutSeconds = 29;
   const pending = await fetch(`${base}/task-http-1/decision`, { headers });
   assert.equal(pending.status, 200);
-  assert.equal((await pending.json()).data.question.questionId, 'question-1');
+  assert.deepEqual((await pending.json()).data, {
+    question: question(),
+    resolutionSource: null,
+    status: 'pending',
+    timeoutSeconds: 17,
+  });
+
+  await harnessService.submit({
+    ...taskRequest('task-http-legacy'),
+    actorId: 'owner-1',
+    workspaceId: 'workspace-1',
+  });
+  await registry.registerPending(
+    'workspace-1',
+    question('task-http-legacy'),
+  );
+  const legacyPending = await fetch(
+    `${base}/task-http-legacy/decision`,
+    { headers },
+  );
+  assert.equal(legacyPending.status, 200);
+  assert.equal((await legacyPending.json()).data.timeoutSeconds, 29);
 
   const unavailable = await fetch(`${base}/task-http-1/decision`, {
     method: 'POST',
@@ -282,6 +313,17 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
     'task-http-late',
     coreTimeoutDecision(),
   );
+  const timedOutSnapshot = await fetch(
+    `${base}/task-http-late/decision`,
+    { headers },
+  );
+  assert.equal(timedOutSnapshot.status, 200);
+  assert.deepEqual((await timedOutSnapshot.json()).data, {
+    question: question('task-http-late'),
+    resolutionSource: 'core_timeout',
+    status: 'resolved',
+    timeoutSeconds: null,
+  });
 
   const consumedSentinel = await fetch(
     `${base}/task-http-late/decision`,
@@ -449,6 +491,10 @@ class MemoryHarnessStore
   private readonly resumedEvents = new Set<string>();
   private readonly resumeClaims = new Set<string>();
   private readonly pending = new Map<string, QuestionCard>();
+  private readonly pendingProjections = new Map<
+    string,
+    HarnessPendingDecisionProjection
+  >();
   private readonly resolvedByCoreTimeout = new Map<string, QuestionCard>();
   private readonly audits = new Map<
     string,
@@ -503,7 +549,11 @@ class MemoryHarnessStore
     } as const;
   }
 
-  async registerPending(workspaceId: string, question: QuestionCard) {
+  async registerPending(
+    workspaceId: string,
+    question: QuestionCard,
+    projection?: HarnessPendingDecisionProjection,
+  ) {
     if (
       await this.approvals.hasPendingApproval(
         workspaceId,
@@ -512,10 +562,12 @@ class MemoryHarnessStore
     ) {
       throw new TaskBlockingNodeConflictError(question.workflowId);
     }
-    this.pending.set(
-      JSON.stringify([workspaceId, question.workflowId]),
-      structuredClone(question),
-    );
+    const identity = JSON.stringify([workspaceId, question.workflowId]);
+    this.pending.set(identity, structuredClone(question));
+    if (projection) {
+      this.pendingProjections.set(identity, structuredClone(projection));
+    }
+    return projection ? structuredClone(projection) : undefined;
   }
 
   async readPending(workspaceId: string, taskId: string) {
@@ -529,6 +581,7 @@ class MemoryHarnessStore
       this.pending.get(identity) ?? this.resolvedByCoreTimeout.get(identity);
     const request = this.tasks.get(identity)?.request;
     if (!question || !request) return null;
+    const projection = this.pendingProjections.get(identity);
     return {
       question: structuredClone(question),
       request: structuredClone(request),
@@ -538,6 +591,9 @@ class MemoryHarnessStore
       status: this.pending.has(identity)
         ? ('pending' as const)
         : ('resolved' as const),
+      ...(projection
+        ? { timeoutSeconds: projection.timeoutSeconds }
+        : {}),
     };
   }
 
@@ -689,6 +745,7 @@ function question(workflowId = 'task-http-1'): QuestionCard {
       field: 'offer_price',
       reason: '补充当前任务所需的权威事实',
     },
+    unattended: 'continue',
     scope: 'current_task',
   };
 }

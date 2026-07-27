@@ -282,7 +282,11 @@ export class CreationSubmissionCoordinator {
 				? { routeSnapshotRef: sourceQuote.routeSnapshotRef }
 				: {}),
 			submissionContractHash: fingerprintValue(
-				pickComposerSubmissionSignedFields(source),
+				pickComposerSubmissionSignedFields({
+					...source,
+					creationMode: source.creationMode,
+					intent: source.intent.text,
+				}),
 			),
 			...(sourceQuote.targetSeconds !== undefined
 				? { targetSeconds: sourceQuote.targetSeconds }
@@ -416,7 +420,8 @@ function operationForRequest(
 	referenceCount: number,
 ) {
 	if (lens === "copy") return "copy.generate" as const;
-	if (lens === "image" || lens === "image_text_note") {
+	if (lens === "image_text_note") return "image.generate" as const;
+	if (lens === "image") {
 		return selectImageIntentOperation({ referenceCount });
 	}
 	return "video.generate" as const;

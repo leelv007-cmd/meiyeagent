@@ -6,7 +6,14 @@ import { SkillFoundationModule } from './foundation-module.js';
 import { PostgresSkillRepository } from './postgres-repository.js';
 import { SkillService } from './service.js';
 
-class DurableSkillInstructionResolver
+export type DurableSkillInstructionResolutionInput = Parameters<
+  HarnessSkillInstructionResolverPort['resolve']
+>[0] & {
+  plannerSelectedSkillRefs?: readonly string[];
+  userSelectedSkillRefs?: readonly string[];
+};
+
+export class DurableSkillInstructionResolver
   implements HarnessSkillInstructionResolverPort
 {
   constructor(
@@ -14,7 +21,7 @@ class DurableSkillInstructionResolver
     private readonly recipes: PostgresCreationExperienceCatalogRepository,
   ) {}
 
-  async resolve(input: Parameters<HarnessSkillInstructionResolverPort['resolve']>[0]) {
+  async resolve(input: DurableSkillInstructionResolutionInput) {
     let workflowRevisionRef = `workflow.copy@${input.workflowRevision}`;
     if (input.recipeRevisionId) {
       let recipe = await this.recipes.getRecipeByRevisionId(
@@ -35,8 +42,10 @@ class DurableSkillInstructionResolver
           await this.service.resolveStage({
             workflowRevisionRef,
             stage: input.stage,
-            plannerSelectedSkillRefs: [],
-            userSelectedSkillRefs: [],
+            plannerSelectedSkillRefs: [
+              ...(input.plannerSelectedSkillRefs ?? []),
+            ],
+            userSelectedSkillRefs: [...(input.userSelectedSkillRefs ?? [])],
           })
         ).selected;
     const receipts = await this.service.recordPromptMaterializationReceipts({

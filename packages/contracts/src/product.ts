@@ -372,6 +372,11 @@ export interface Lead {
   id: string;
   contentId: string;
   contentVersionId: string;
+  canonicalContentPackage?: {
+    packageId: string;
+    revision: number;
+    versionId: string;
+  };
   source: 'direct_message' | 'comment' | 'wechat' | 'booking' | 'coupon' | 'redemption' | 'visit';
   projectId: string;
   amountCents?: number;
@@ -689,17 +694,20 @@ export type ProductCommand =
   | { type: 'mark_published'; packageId: string; platformUrl?: string }
   | {
       type: 'create_lead';
-      contentId: string;
+      contentId?: string;
+      packageId?: string;
       lead: Omit<
         Lead,
         | 'id'
         | 'contentId'
         | 'contentVersionId'
+        | 'canonicalContentPackage'
+        | 'projectId'
         | 'status'
         | 'createdAt'
         | 'updatedAt'
         | 'retentionExpiresAt'
-      >;
+      > & { projectId?: string };
     }
   | { type: 'update_lead'; leadId: string; status: LeadStatus }
   | { type: 'record_insight'; contentId?: string; kind: string; note: string }

@@ -18,7 +18,17 @@ test('copy compiler makes one model call and returns one primary candidate', asy
   const scorer = new FixedScorer({});
 
   const result = await executeCopySelection(
-    selectionInput(),
+    {
+      ...selectionInput(),
+      skillInstructions: [
+        {
+          contentHash: 'hash-execution-skill',
+          executionMode: 'prompt_materialized',
+          instruction: 'Prefer a calm, evidence-first primary result.',
+          skillRevisionRef: 'skill.execution-selection@2',
+        },
+      ],
+    },
     { runner, scorer, validator: new PassValidator() },
   );
 
@@ -36,6 +46,10 @@ test('copy compiler makes one model call and returns one primary candidate', asy
   );
   assert.deepEqual(scorer.effectKeys, []);
   assert.match(runner.requests[0]!.instructions, /single primary/iu);
+  assert.match(
+    runner.requests[0]!.instructions,
+    /\[skill\.execution-selection@2\] Prefer a calm, evidence-first primary result\./u,
+  );
   assert.match(runner.requests[0]!.prompt, /identity-owner-1/u);
   assert.match(runner.requests[0]!.prompt, /xiaohongshu/u);
 });

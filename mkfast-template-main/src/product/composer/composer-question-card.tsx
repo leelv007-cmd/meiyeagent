@@ -15,18 +15,25 @@
  * The card renders inline in the flow — not a modal, not a slot form (D-031).
  */
 
-import type { QuestionCard, StructuredDecisionInput } from '@meiye/contracts';
+import {
+  questionCardUnattended,
+  type HarnessDecisionSubmitResult,
+  type QuestionCard,
+  type StructuredDecisionInput,
+} from '@meiye/contracts';
 import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 import {
-  COMPOSER_QUESTION_TIMEOUT_SECONDS,
   projectComposerQuestionCard,
   type ComposerQuestionHold,
+  type ComposerQuestionResolutionSource,
   type ComposerQuestionSettlement,
 } from './composer-question-timeout';
+
+type ComposerQuestionDecisionResult = undefined | HarnessDecisionSubmitResult;
 
 /** The merchant tapped 「继续」 — they really performed that act. */
 export const COMPOSER_QUESTION_SKIP_VALUE = '这次先跳过';
@@ -40,12 +47,9 @@ export const COMPOSER_QUESTION_SKIP_VALUE = '这次先跳过';
  * It is not the empty string only because the seam forbids one:
  * `assistantPatchDecisionSchema.value` is `min(1)` (packages/contracts).
  */
-export const COMPOSER_QUESTION_TIMEOUT_VALUE = '未作答';
-
 /**
- * Both non-answers are `ignored` — the harness route is the same — but they are
- * distinguishable in the ledger by value and by idempotency key, so a later
- * reader can tell a merchant who chose to move on from one who never saw this.
+ * The browser only submits merchant acts. Core records unattended timeout
+ * decisions itself, so this builder cannot create a browser timeout sentinel.
  */
 export function composerQuestionDecision(input: {
   question: QuestionCard;
@@ -53,12 +57,13 @@ export function composerQuestionDecision(input: {
   settlement: ComposerQuestionSettlement;
   idempotencyKey: string;
 }): StructuredDecisionInput {
+  if (input.settlement !== 'answered' && input.settlement !== 'skipped') {
+    throw new Error('Only a merchant act can create a browser decision.');
+  }
   const value =
     input.settlement === 'skipped'
       ? COMPOSER_QUESTION_SKIP_VALUE
-      : input.settlement === 'timed_out'
-        ? COMPOSER_QUESTION_TIMEOUT_VALUE
-        : input.value.trim();
+      : input.value.trim();
   if (!value) throw new Error('An answered question requires a value.');
   return {
     idempotencyKey: input.idempotencyKey,
@@ -82,7 +87,8 @@ export function ComposerQuestionCard({
   onDecide,
   pending = false,
   question,
-  timeoutSeconds = COMPOSER_QUESTION_TIMEOUT_SECONDS,
+  resolutionSource = null,
+  timeoutSeconds = null,
 }: {
   disabled?: boolean;
   /** Withholds auto-release per D-116 safety edge ② — host-computed. */
@@ -94,15 +100,17 @@ export function ComposerQuestionCard({
   onDecide: (input: {
     settlement: ComposerQuestionSettlement;
     value: string;
-  }) => void | Promise<void>;
+  }) =>
+    | ComposerQuestionDecisionResult
+    | Promise<ComposerQuestionDecisionResult>;
   pending?: boolean;
   question: QuestionCard;
-  /** Overridable so a test does not have to wait out the real countdown. */
-  timeoutSeconds?: number;
+  resolutionSource?: ComposerQuestionResolutionSource;
+  /** Core projection of the durable admin-config value. */
+  timeoutSeconds?: number | null;
 }) {
   const [answer, setAnswer] = useState('');
-  const [editing, setEditing] = useState(false);
-  const [remaining, setRemaining] = useState(timeoutSeconds);
+  const [remaining, setRemaining] = useState(timeoutSeconds ?? 0);
   const [settlement, setSettlement] =
     useState<ComposerQuestionSettlement | null>(null);
   const [failed, setFailed] = useState(false);
@@ -126,7 +134,12 @@ export function ComposerQuestionCard({
     setSettlement(as);
     setFailed(false);
     try {
-      await onDecide({ settlement: as, value });
+      const result = await onDecide({ settlement: as, value });
+      if (result && 'consumedByOther' in result) {
+        setSettlement('continued_elsewhere');
+      } else if (result?.successor) {
+        setSettlement('late_answered');
+      }
     } catch {
       // Nothing landed. Release the claim, drop the settled notice, say so —
       // and re-arm the countdown so a failed auto-release still ends up
@@ -135,49 +148,36 @@ export function ComposerQuestionCard({
       settledRef.current = false;
       setSettlement(null);
       setFailed(true);
-      setRemaining(timeoutSeconds);
+      setRemaining(timeoutSeconds ?? 0);
     }
   };
-  /** Keeps the timeout effect off `decide` in its dependency list. */
-  const decideRef = useRef(decide);
-  decideRef.current = decide;
-
   const view = projectComposerQuestionCard({
-    editing,
     failed,
     hold,
     remainingSeconds: remaining,
+    resolutionSource,
     settlement,
+    timeoutSeconds,
+    unattended: questionCardUnattended(question),
   });
 
   // A different question is a different countdown.
   useEffect(() => {
     settledRef.current = false;
     setAnswer('');
-    setEditing(false);
-    setRemaining(timeoutSeconds);
+    setRemaining(timeoutSeconds ?? 0);
     setSettlement(null);
     setFailed(false);
   }, [question.questionId, timeoutSeconds]);
 
-  // Tick, then fire on the next pass. Releasing from inside the state updater
-  // would post a decision during render; releasing from the timeout callback
-  // would read a stale `settledRef` capture — this way the guard is re-read
-  // after every tick, which is what makes the t=29 answer win the race.
+  // The timer is display-only. Core's durable recv owns the terminal
+  // transition and persists the timeout decision exactly once.
   useEffect(() => {
     if (!view.autoContinueEnabled || disabled) return;
-    if (remaining <= 0) {
-      void decideRef.current('', 'timed_out');
-      return;
-    }
+    if (remaining <= 0) return;
     const timer = setTimeout(() => setRemaining((value) => value - 1), 1_000);
     return () => clearTimeout(timer);
   }, [view.autoContinueEnabled, disabled, remaining]);
-
-  const startEditing = () => {
-    // D-116 safety edge ①: 用户开始编辑卡片即暂停倒计时.
-    if (!editing) setEditing(true);
-  };
 
   return (
     <section
@@ -223,11 +223,7 @@ export function ComposerQuestionCard({
             className="h-9 max-w-xs"
             data-testid="composer-question-answer"
             disabled={busy}
-            onChange={(event) => {
-              startEditing();
-              setAnswer(event.target.value);
-            }}
-            onFocus={startEditing}
+            onChange={(event) => setAnswer(event.target.value)}
             placeholder={question.freeText.placeholder ?? '也可以直接告诉我'}
             value={answer}
           />

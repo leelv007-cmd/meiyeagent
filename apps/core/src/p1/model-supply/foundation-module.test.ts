@@ -945,7 +945,7 @@ describe('ModelSupplyFoundationModule', () => {
   it('routes production simulation through published policy, health, data, and three-layer control-plane state', async () => {
     const deployments = createDefaultDeployments({
       activatedDeploymentIds: [
-        'openai-direct-recorded',
+        'deepseek-v4-pro-direct',
         'anthropic-direct-recorded',
         'gemini-direct-recorded',
         'domestic-llm-direct-recorded',
@@ -1051,7 +1051,7 @@ describe('ModelSupplyFoundationModule', () => {
             qualityTier: 'quality',
             hardConstraints: ['deployment_active', 'data_class'],
             candidateDeploymentIds: [
-              'openai-direct-recorded',
+              'deepseek-v4-pro-direct',
               'anthropic-direct-recorded',
               'gemini-direct-recorded',
               'domestic-llm-direct-recorded',
@@ -1076,8 +1076,8 @@ describe('ModelSupplyFoundationModule', () => {
           ]),
           rankingInputsByDeploymentId: new Map([
             [
-              'openai-direct-recorded',
-              rankingInput('openai-direct-recorded', 30_000),
+              'deepseek-v4-pro-direct',
+              rankingInput('deepseek-v4-pro-direct', 30_000),
             ],
             [
               'domestic-llm-direct-recorded',
@@ -1130,7 +1130,7 @@ describe('ModelSupplyFoundationModule', () => {
     );
     assert.deepEqual(
       simulation.rankedCandidates.map((candidate) => candidate.deploymentId),
-      ['domestic-llm-direct-recorded', 'openai-direct-recorded'],
+      ['domestic-llm-direct-recorded', 'deepseek-v4-pro-direct'],
     );
     assert.ok(
       simulation.candidateEvaluations
@@ -1159,7 +1159,7 @@ describe('ModelSupplyFoundationModule', () => {
       attemptLimit: 2,
       expectedAttempts: 2,
       primaryDeploymentId: 'domestic-llm-direct-recorded',
-      fallbackDeploymentId: 'openai-direct-recorded',
+      fallbackDeploymentId: 'deepseek-v4-pro-direct',
       reason: 'safe_auto_fallback',
     });
     assert.deepEqual(simulation.decisionExplanation.sort.layerOrder, [
@@ -1227,9 +1227,8 @@ describe('ModelSupplyFoundationModule', () => {
     const simulation = await controlPlane.simulateRoute(admin, {
       operation: 'copy.generate',
       selection: {
-        mode: 'auto',
-        profile: 'quality',
-        fallbackConsent: true,
+        mode: 'fixed',
+        catalogModelId: 'llm-openai',
       },
       dataClass: [],
       failureScenario: 'success',
@@ -1247,9 +1246,8 @@ describe('ModelSupplyFoundationModule', () => {
       controlPlane.simulateRoute(admin, {
         operation: 'copy.generate',
         selection: {
-          mode: 'auto',
-          profile: 'quality',
-          fallbackConsent: true,
+          mode: 'fixed',
+          catalogModelId: 'llm-openai',
         },
         dataClass: [],
         failureScenario: 'success',

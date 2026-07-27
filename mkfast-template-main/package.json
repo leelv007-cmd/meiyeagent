@@ -10,6 +10,7 @@
     "e2e:install": "playwright install",
     "e2e:ui": "playwright test --ui",
     "knip": "knip",
+    "knip:production": "knip --production --include files",
     "check": "biome check",
     "lint": "biome check --write .",
     "format": "biome format --write .",

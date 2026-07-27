@@ -61,7 +61,7 @@ export type VideoRegenIntent = 'retry' | 'recover';
 
 /** Confirm-zone fields shown before user accepts a billable regen. */
 export interface VideoRegenConfirmView {
-  /** 重新生成此镜头 | 重新合成整段 */
+  /** 重新生成此镜头 */
   actionLabel: string;
   scope: VideoRegenScope;
   /** Product CatalogModel id only — never Provider / Deployment / Credential. */

@@ -176,6 +176,7 @@ export const parseTaskSchema = z
       'completed_with_fallback',
       'failed',
     ]),
+    carrierAttempt: z.number().int().nonnegative().optional(),
     sourceAssetIds: z.array(idSchema).min(1).max(200),
     progress: z
       .object({

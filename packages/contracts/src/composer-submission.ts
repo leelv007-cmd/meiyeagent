@@ -3,6 +3,8 @@ import {
   MAX_NOTE_PLAN_PAGE_COUNT,
   MIN_NOTE_PLAN_PAGE_COUNT,
 } from './note-plan.js';
+import { creationModeSchema } from './harness.js';
+import { imageIntentOperationSchema } from './image-intent.js';
 
 const identifierSchema = z.string().trim().min(1).max(200);
 const revisionSchema = z.string().trim().min(1).max(200);
@@ -75,8 +77,11 @@ export const composerSubmissionDeliverableSchema = z
  * signed field (for example `creationMode`) extends the contract without
  * creating a second signing or freeze mechanism.
  */
-export const composerSubmissionSignedFieldsSchema = z
+export const composerSubmissionSignedFieldsBaseSchema = z
   .object({
+    creationMode: creationModeSchema,
+    intent: z.string().trim().min(1).max(4_000),
+    imageOperation: imageIntentOperationSchema.optional(),
     catalogModel: composerRevisionReferenceSchema,
     recipe: composerRevisionReferenceSchema,
     contentPackagePlatform: composerContentPackagePlatformSchema,
@@ -84,6 +89,30 @@ export const composerSubmissionSignedFieldsSchema = z
     deliverable: composerSubmissionDeliverableSchema,
   })
   .strict();
+
+export const composerSubmissionSignedFieldsSchema =
+  composerSubmissionSignedFieldsBaseSchema.superRefine((submission, context) => {
+    if (submission.imageOperation === undefined) return;
+    if (submission.creationMode !== 'free') {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'Only free image creation may declare an explicit image operation.',
+        path: ['imageOperation'],
+      });
+    }
+    if (
+      submission.deliverable.kind !== 'image_set' &&
+      submission.deliverable.kind !== 'poster'
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'An explicit image operation requires an image deliverable.',
+        path: ['imageOperation'],
+      });
+    }
+  });
 
 export type ComposerContentPackagePlatform = z.infer<
   typeof composerContentPackagePlatformSchema
@@ -102,8 +131,8 @@ export function pickComposerSubmissionSignedFields(
   input: Record<string, unknown>,
 ): ComposerSubmissionSignedFields {
   const picked: Record<string, unknown> = {};
-  for (const key of Object.keys(composerSubmissionSignedFieldsSchema.shape)) {
-    picked[key] = input[key];
+  for (const key of Object.keys(composerSubmissionSignedFieldsBaseSchema.shape)) {
+    if (input[key] !== undefined) picked[key] = input[key];
   }
   return composerSubmissionSignedFieldsSchema.parse(picked);
 }

@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: Control proving merchant-language assertions reject false output
+
+prompts:
+  - '{{caseId}}'
+
+providers:
+  - id: file://apps/core/src/evals/merchant-language/promptfoo-false-control-provider.ts
+    label: merchant-language-false-output-without-provider-error
+
+tests:
+  - file://apps/core/src/evals/merchant-language/promptfoo-assertion-control-case.ts
+
+evaluateOptions:
+  maxConcurrency: 1

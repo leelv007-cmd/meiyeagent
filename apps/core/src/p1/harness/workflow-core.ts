@@ -18,6 +18,7 @@ import type { HarnessWorkflowInput } from './task-admission.js';
 import type {
   ResolvedSkillInstruction,
   SkillInvocationReceipt,
+  SkillStage,
 } from '../skills/types.js';
 import { promptTraceReference } from './langfuse-prompts.js';
 import type { HarnessPolicyInput } from './policy-gates.js';
@@ -32,6 +33,7 @@ import {
   merchantProgressMessage,
   merchantTaskSummary,
 } from './merchant-delivery-language.js';
+import type { RecipeFactSatisfaction } from './fact-satisfaction.js';
 
 type CopyBrief = Extract<ExecutionBrief, { kind: 'copy' }>;
 type MediaBrief = Exclude<ExecutionBrief, { kind: 'copy' }>;
@@ -112,7 +114,9 @@ export interface HarnessStagePorts {
   resolveStageSkills?(input: {
     workflowId: string;
     request: HarnessWorkflowInput;
-    stage: 'intent_naming';
+    stage: SkillStage;
+    plannerSelectedSkillRefs?: readonly string[];
+    userSelectedSkillRefs?: readonly string[];
     skillRevisionRefs?: readonly string[];
   }): Promise<{
     instructions: ResolvedSkillInstruction[];
@@ -137,6 +141,7 @@ export interface HarnessStagePorts {
     workflowId: string;
     request: HarnessWorkflowInput;
     declaration: IntentDeclaration;
+    skillInstructions?: readonly ResolvedSkillInstruction[];
   }): Promise<HarnessContextSnapshot>;
   fenceContext(input: {
     workflowId: string;
@@ -144,17 +149,26 @@ export interface HarnessStagePorts {
     declaration: IntentDeclaration;
     context: HarnessContextSnapshot;
   }): Promise<HarnessContextSnapshot>;
+  assessFacts?(input: {
+    workflowId: string;
+    request: HarnessWorkflowInput;
+    declaration: IntentDeclaration;
+    context: HarnessContextSnapshot;
+  }): Promise<RecipeFactSatisfaction | null>;
   compileBrief(input: {
     workflowId: string;
     request: HarnessWorkflowInput;
     declaration: IntentDeclaration;
     context: HarnessContextSnapshot;
+    allowedFactRefs?: readonly string[];
+    skillInstructions?: readonly ResolvedSkillInstruction[];
   }): Promise<CopyBrief | MeasuredCopyBrief>;
   executeAndSelect(input: {
     workflowId: string;
     request: HarnessWorkflowInput;
     brief: CopyBrief;
     context: HarnessContextSnapshot;
+    skillInstructions?: readonly ResolvedSkillInstruction[];
     onToken?: (token: {
       candidateId: string;
       channel: 'copy.title' | 'copy.body' | 'copy.cta';
@@ -168,6 +182,7 @@ export interface HarnessStagePorts {
     context: HarnessContextSnapshot;
     brief: CopyBrief;
     selection: HarnessSelectionResult;
+    skillInstructions?: readonly ResolvedSkillInstruction[];
   }): Promise<ContentPackageRevisionDelivery>;
 }
 
@@ -177,12 +192,14 @@ export interface HarnessMediaStagePorts extends HarnessStagePorts {
     request: HarnessWorkflowInput;
     declaration: IntentDeclaration;
     context: HarnessContextSnapshot;
+    skillInstructions?: readonly ResolvedSkillInstruction[];
   }): Promise<MediaBrief | MeasuredMediaBrief>;
   executeMediaAndSelect(input: {
     workflowId: string;
     request: HarnessWorkflowInput;
     brief: MediaBrief;
     context: HarnessContextSnapshot;
+    skillInstructions?: readonly ResolvedSkillInstruction[];
   }): Promise<HarnessMediaSelectionResult>;
   assembleMediaAndDeliver(input: {
     workflowId: string;
@@ -191,6 +208,7 @@ export interface HarnessMediaStagePorts extends HarnessStagePorts {
     context: HarnessContextSnapshot;
     brief: MediaBrief;
     selection: HarnessMediaSelectionResult;
+    skillInstructions?: readonly ResolvedSkillInstruction[];
   }): Promise<ContentPackageRevisionDelivery>;
 }
 
@@ -200,6 +218,7 @@ export interface HarnessNoteStagePorts extends HarnessStagePorts {
     request: HarnessWorkflowInput;
     declaration: IntentDeclaration;
     context: HarnessContextSnapshot;
+    skillInstructions?: readonly ResolvedSkillInstruction[];
   }): Promise<HarnessNoteBrief>;
   executeNoteAndSelect(input: {
     workflowId: string;
@@ -207,6 +226,7 @@ export interface HarnessNoteStagePorts extends HarnessStagePorts {
     brief: HarnessNoteBrief;
     context: HarnessContextSnapshot;
     selectedStyleId: string;
+    skillInstructions?: readonly ResolvedSkillInstruction[];
   }): Promise<HarnessNoteSelectionResult>;
   assembleNoteAndDeliver(input: {
     workflowId: string;
@@ -215,6 +235,7 @@ export interface HarnessNoteStagePorts extends HarnessStagePorts {
     context: HarnessContextSnapshot;
     brief: HarnessNoteBrief;
     selection: HarnessNoteSelectionResult;
+    skillInstructions?: readonly ResolvedSkillInstruction[];
   }): Promise<ContentPackageRevisionDelivery>;
 }
 
@@ -290,49 +311,97 @@ export class HarnessSnapshotDecisionError extends Error {
   }
 }
 
-const INTENT_SKILL_RESOLUTION_STEP = 'skill:resolve:intent';
+const SKILL_RESOLUTION_STEP = 'skill:resolve:intent';
+const SKILL_STAGES: readonly SkillStage[] = [
+  'intent_naming',
+  'context_injection',
+  'brief_compilation',
+  'execution_selection',
+  'assembly_delivery',
+];
 
-async function resolveIntentStageSkills(
+interface FrozenSkillStageResolution {
+  skillRevisionRefs: string[];
+  skillContentHashes: string[];
+  skillReceiptIds: string[];
+}
+
+type FrozenSkillStageResolutions = Record<
+  SkillStage,
+  FrozenSkillStageResolution
+>;
+
+type ResolvedSkillStages = Record<
+  SkillStage,
+  {
+    instructions: ResolvedSkillInstruction[];
+    receipts: SkillInvocationReceipt[];
+  }
+>;
+
+async function resolveWorkflowStageSkills(
   workflowId: string,
   request: HarnessWorkflowInput,
   ports: HarnessStagePorts,
   runtime: HarnessWorkflowRuntime,
-) {
+) : Promise<ResolvedSkillStages> {
   const frozen = await runtime.runStep(
-    INTENT_SKILL_RESOLUTION_STEP,
+    SKILL_RESOLUTION_STEP,
     async () => {
-      const resolved =
-        (await ports.resolveStageSkills?.({
-          workflowId,
-          request,
-          stage: 'intent_naming',
-        })) ?? { instructions: [], receipts: [] };
+      const stageSkillResolutions = emptyFrozenSkillStages();
+      for (const stage of SKILL_STAGES) {
+        const resolved =
+          (await ports.resolveStageSkills?.({
+            workflowId,
+            request,
+            stage,
+          })) ?? { instructions: [], receipts: [] };
+        stageSkillResolutions[stage] = freezeSkillResolution(resolved);
+      }
       return {
-        skillRevisionRefs: resolved.instructions.map(
-          ({ skillRevisionRef }) => skillRevisionRef,
-        ),
-        skillContentHashes: resolved.instructions.map(
-          ({ contentHash }) => contentHash,
-        ),
-        skillReceiptIds: resolved.receipts.map(
-          ({ invocationId }) => invocationId,
-        ),
+        ...stageSkillResolutions.intent_naming,
+        stageSkillResolutions,
       };
     },
   );
-  if (frozen.skillRevisionRefs.length === 0) {
-    return { instructions: [], receipts: [] };
+  const stageSkillResolutions = normalizeFrozenSkillStages(frozen);
+  const resolvedStages = emptyResolvedSkillStages();
+  for (const stage of SKILL_STAGES) {
+    const stageFrozen = stageSkillResolutions[stage];
+    if (stageFrozen.skillRevisionRefs.length === 0) continue;
+    if (!ports.resolveStageSkills) {
+      throw new Error('Skill 解析端口不可用，无法恢复已冻结的 Skill。');
+    }
+    const resolved = await ports.resolveStageSkills({
+      workflowId,
+      request,
+      stage,
+      skillRevisionRefs: stageFrozen.skillRevisionRefs,
+    });
+    const current = freezeSkillResolution(resolved);
+    if (
+      !sameOrderedValues(
+        current.skillRevisionRefs,
+        stageFrozen.skillRevisionRefs,
+      ) ||
+      !sameOrderedValues(
+        current.skillContentHashes,
+        stageFrozen.skillContentHashes,
+      ) ||
+      !sameOrderedValues(current.skillReceiptIds, stageFrozen.skillReceiptIds)
+    ) {
+      throw new Error('已冻结的 Skill 版本、内容哈希或回执不一致。');
+    }
+    resolvedStages[stage] = resolved;
   }
-  if (!ports.resolveStageSkills) {
-    throw new Error('Skill 解析端口不可用，无法恢复已冻结的 Skill。');
-  }
-  const resolved = await ports.resolveStageSkills({
-    workflowId,
-    request,
-    stage: 'intent_naming',
-    skillRevisionRefs: frozen.skillRevisionRefs,
-  });
-  const current = {
+  return resolvedStages;
+}
+
+function freezeSkillResolution(resolved: {
+  instructions: readonly ResolvedSkillInstruction[];
+  receipts: readonly SkillInvocationReceipt[];
+}): FrozenSkillStageResolution {
+  return {
     skillRevisionRefs: resolved.instructions.map(
       ({ skillRevisionRef }) => skillRevisionRef,
     ),
@@ -343,17 +412,75 @@ async function resolveIntentStageSkills(
       ({ invocationId }) => invocationId,
     ),
   };
-  if (
-    !sameOrderedValues(current.skillRevisionRefs, frozen.skillRevisionRefs) ||
-    !sameOrderedValues(
-      current.skillContentHashes,
-      frozen.skillContentHashes,
-    ) ||
-    !sameOrderedValues(current.skillReceiptIds, frozen.skillReceiptIds)
-  ) {
-    throw new Error('已冻结的 Skill 版本、内容哈希或回执不一致。');
+}
+
+function normalizeFrozenSkillStages(input: unknown): FrozenSkillStageResolutions {
+  const stages = emptyFrozenSkillStages();
+  if (!isRecord(input)) return stages;
+  if (isRecord(input.stageSkillResolutions)) {
+    for (const stage of SKILL_STAGES) {
+      const resolution = input.stageSkillResolutions[stage];
+      if (isFrozenSkillStageResolution(resolution)) {
+        stages[stage] = resolution;
+      }
+    }
+    return stages;
   }
-  return resolved;
+  if (isFrozenSkillStageResolution(input)) {
+    stages.intent_naming = input;
+  }
+  return stages;
+}
+
+function emptyFrozenSkillStages(): FrozenSkillStageResolutions {
+  return {
+    intent_naming: emptyFrozenSkillStage(),
+    context_injection: emptyFrozenSkillStage(),
+    brief_compilation: emptyFrozenSkillStage(),
+    execution_selection: emptyFrozenSkillStage(),
+    assembly_delivery: emptyFrozenSkillStage(),
+  };
+}
+
+function emptyFrozenSkillStage(): FrozenSkillStageResolution {
+  return {
+    skillRevisionRefs: [],
+    skillContentHashes: [],
+    skillReceiptIds: [],
+  };
+}
+
+function emptyResolvedSkillStages(): ResolvedSkillStages {
+  return {
+    intent_naming: emptyResolvedSkillStage(),
+    context_injection: emptyResolvedSkillStage(),
+    brief_compilation: emptyResolvedSkillStage(),
+    execution_selection: emptyResolvedSkillStage(),
+    assembly_delivery: emptyResolvedSkillStage(),
+  };
+}
+
+function emptyResolvedSkillStage() {
+  return { instructions: [], receipts: [] };
+}
+
+function isFrozenSkillStageResolution(
+  input: unknown,
+): input is FrozenSkillStageResolution {
+  return (
+    isRecord(input) &&
+    isStringArray(input.skillRevisionRefs) &&
+    isStringArray(input.skillContentHashes) &&
+    isStringArray(input.skillReceiptIds)
+  );
+}
+
+function isStringArray(input: unknown): input is string[] {
+  return Array.isArray(input) && input.every((value) => typeof value === 'string');
+}
+
+function isRecord(input: unknown): input is Record<string, unknown> {
+  return typeof input === 'object' && input !== null && !Array.isArray(input);
 }
 
 function sameOrderedValues(
@@ -364,6 +491,22 @@ function sameOrderedValues(
     left.length === right.length &&
     left.every((value, index) => value === right[index])
   );
+}
+
+function skillTraceLineage(input: {
+  instructions: readonly ResolvedSkillInstruction[];
+  receipts: readonly SkillInvocationReceipt[];
+}) {
+  if (input.instructions.length === 0) return {};
+  return {
+    skillRevisionRefs: input.instructions.map(
+      ({ skillRevisionRef }) => skillRevisionRef,
+    ),
+    skillContentHashes: input.instructions.map(
+      ({ contentHash }) => contentHash,
+    ),
+    skillReceiptIds: input.receipts.map(({ invocationId }) => invocationId),
+  };
 }
 
 export class HarnessWorkflowCancellation extends Error {
@@ -438,12 +581,13 @@ export async function runHarnessWorkflow(
     return executed.selection;
   };
   let activeRequest = request;
-  const intentSkills = await resolveIntentStageSkills(
+  const stageSkills = await resolveWorkflowStageSkills(
     workflowId,
     request,
     ports,
     runtime,
   );
+  const intentSkills = stageSkills.intent_naming;
   const intent = await runtime.runStep(
     harnessEffectKey(
       workflowId,
@@ -499,13 +643,22 @@ export async function runHarnessWorkflow(
     message: merchantRouteMessage(routed.declaration, routed.notice),
   });
 
+  const contextSkills = stageSkills.context_injection;
   let bundle = await runtime.runStep(
-    harnessEffectKey(workflowId, 2, 'context', '0'),
+    harnessEffectKey(
+      workflowId,
+      2,
+      skillEffectUnit('context', contextSkills.instructions),
+      '0',
+    ),
     () =>
       ports.injectContext({
         workflowId,
         request: activeRequest,
         declaration: routed.declaration,
+        ...(contextSkills.instructions.length > 0
+          ? { skillInstructions: contextSkills.instructions }
+          : {}),
       }),
   );
   await trace(runtime, workflowId, 'context_injection', {
@@ -513,21 +666,45 @@ export async function runHarnessWorkflow(
     revision: bundle.bundle.revision,
     hash: bundle.bundle.hash,
     sourceRevisions: recommendationSourceRevisions(bundle),
+    ...skillTraceLineage(contextSkills),
   }, `r${bundle.bundle.revision}`);
   await reportProgress({
     stage: 'context_injection',
     state: 'success',
     message: merchantContextMessage(activeRequest),
   });
+  let factGate = await resolveFactSatisfaction({
+    workflowId,
+    request: activeRequest,
+    declaration: routed.declaration,
+    context: bundle,
+    ports,
+    runtime,
+    reportProgress,
+  });
+  activeRequest = factGate.request;
+  bundle = factGate.context;
 
+  const briefSkills = stageSkills.brief_compilation;
   let compiledBrief = await runtime.runStep(
-    harnessEffectKey(workflowId, 3, 'copy', '0'),
+    harnessEffectKey(
+      workflowId,
+      3,
+      skillEffectUnit('copy', briefSkills.instructions),
+      '0',
+    ),
     () =>
       ports.compileBrief({
         workflowId,
         request: activeRequest,
         declaration: routed.declaration,
         context: bundle,
+        ...(factGate.allowedFactRefs
+          ? { allowedFactRefs: factGate.allowedFactRefs }
+          : {}),
+        ...(briefSkills.instructions.length > 0
+          ? { skillInstructions: briefSkills.instructions }
+          : {}),
       }),
   );
   let { brief, metrics: briefMetrics } = unpackBrief(compiledBrief);
@@ -541,6 +718,7 @@ export async function runHarnessWorkflow(
       ? { prompt: promptTraceReference(request.prompts.briefCompilation) }
       : {}),
     ...(briefMetrics ? { metrics: briefMetrics } : {}),
+    ...skillTraceLineage(briefSkills),
   }, `r${bundle.bundle.revision}`);
   await reportProgress({
     stage: 'brief_compilation',
@@ -548,20 +726,29 @@ export async function runHarnessWorkflow(
     message: merchantProgressMessage('brief_compilation'),
   });
 
+  const executionSkills = stageSkills.execution_selection;
   let selection = await executeSelection(
-    harnessEffectKey(workflowId, 4, 'copy', 'selection'),
+    harnessEffectKey(
+      workflowId,
+      4,
+      skillEffectUnit('copy', executionSkills.instructions),
+      'selection',
+    ),
     {
       workflowId,
       request: activeRequest,
       brief,
       context: bundle,
+      ...(executionSkills.instructions.length > 0
+        ? { skillInstructions: executionSkills.instructions }
+        : {}),
     },
   );
   await trace(
     runtime,
     workflowId,
     'execution_selection',
-    selection.trace,
+    { ...selection.trace, ...skillTraceLineage(executionSkills) },
     `r${bundle.bundle.revision}`,
   );
   await reportProgress({
@@ -593,17 +780,32 @@ export async function runHarnessWorkflow(
       hash: bundle.bundle.hash,
       sourceRevisions: recommendationSourceRevisions(bundle),
       recompiled: true,
+      ...skillTraceLineage(contextSkills),
     }, `r${bundle.bundle.revision}`);
     await reportProgress({
       stage: 'context_injection',
       state: 'success',
       message: '资料有更新，已同步到本次创作',
     });
+    factGate = await resolveFactSatisfaction({
+      workflowId,
+      request: activeRequest,
+      declaration: routed.declaration,
+      context: bundle,
+      ports,
+      runtime,
+      reportProgress,
+    });
+    activeRequest = factGate.request;
+    bundle = factGate.context;
     compiledBrief = await runtime.runStep(
       harnessEffectKey(
         workflowId,
         3,
-        `copy-r${bundle.bundle.revision}`,
+        skillEffectUnit(
+          `copy-r${bundle.bundle.revision}`,
+          briefSkills.instructions,
+        ),
         '0',
       ),
       () =>
@@ -612,6 +814,12 @@ export async function runHarnessWorkflow(
           request: activeRequest,
           declaration: routed.declaration,
           context: bundle,
+          ...(factGate.allowedFactRefs
+            ? { allowedFactRefs: factGate.allowedFactRefs }
+            : {}),
+          ...(briefSkills.instructions.length > 0
+            ? { skillInstructions: briefSkills.instructions }
+            : {}),
         }),
     );
     ({ brief, metrics: briefMetrics } = unpackBrief(compiledBrief));
@@ -626,12 +834,16 @@ export async function runHarnessWorkflow(
         ? { prompt: promptTraceReference(request.prompts.briefCompilation) }
         : {}),
       ...(briefMetrics ? { metrics: briefMetrics } : {}),
+      ...skillTraceLineage(briefSkills),
     }, `r${bundle.bundle.revision}`);
     selection = await executeSelection(
       harnessEffectKey(
         workflowId,
         4,
-        `copy-r${bundle.bundle.revision}`,
+        skillEffectUnit(
+          `copy-r${bundle.bundle.revision}`,
+          executionSkills.instructions,
+        ),
         'selection',
       ),
       {
@@ -639,13 +851,16 @@ export async function runHarnessWorkflow(
         request: activeRequest,
         brief,
         context: bundle,
+        ...(executionSkills.instructions.length > 0
+          ? { skillInstructions: executionSkills.instructions }
+          : {}),
       },
     );
     await trace(
       runtime,
       workflowId,
       'execution_selection',
-      selection.trace,
+      { ...selection.trace, ...skillTraceLineage(executionSkills) },
       `r${bundle.bundle.revision}`,
     );
     await reportProgress({
@@ -655,8 +870,14 @@ export async function runHarnessWorkflow(
     });
   }
 
+  const assemblySkills = stageSkills.assembly_delivery;
   const delivery = await runtime.runStep(
-    harnessEffectKey(workflowId, 5, 'package', '0'),
+    harnessEffectKey(
+      workflowId,
+      5,
+      skillEffectUnit('package', assemblySkills.instructions),
+      '0',
+    ),
     () =>
       ports.assembleAndDeliver({
         workflowId,
@@ -665,6 +886,9 @@ export async function runHarnessWorkflow(
         context: bundle,
         brief,
         selection,
+        ...(assemblySkills.instructions.length > 0
+          ? { skillInstructions: assemblySkills.instructions }
+          : {}),
       }),
   );
   const recommendation = {
@@ -678,6 +902,7 @@ export async function runHarnessWorkflow(
   await trace(runtime, workflowId, 'assembly_delivery', {
     delivery,
     recommendation,
+    ...skillTraceLineage(assemblySkills),
   });
   await reportProgress({
     stage: 'assembly_delivery',
@@ -708,12 +933,13 @@ async function runNoteHarnessWorkflow(
   const reportProgress = (
     event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
   ) => runtime.progress({ ...event, sequence: eventSequence++ });
-  const intentSkills = await resolveIntentStageSkills(
+  const stageSkills = await resolveWorkflowStageSkills(
     workflowId,
     request,
     ports,
     runtime,
   );
+  const intentSkills = stageSkills.intent_naming;
   const intent = await runtime.runStep(
     harnessEffectKey(
       workflowId,
@@ -756,13 +982,22 @@ async function runNoteHarnessWorkflow(
     message: merchantRouteMessage(routed.declaration),
   });
 
+  const contextSkills = stageSkills.context_injection;
   let context = await runtime.runStep(
-    harnessEffectKey(workflowId, 2, 'context', '0'),
+    harnessEffectKey(
+      workflowId,
+      2,
+      skillEffectUnit('context', contextSkills.instructions),
+      '0',
+    ),
     () =>
       ports.injectContext({
         workflowId,
         request: activeRequest,
         declaration: routed.declaration,
+        ...(contextSkills.instructions.length > 0
+          ? { skillInstructions: contextSkills.instructions }
+          : {}),
       }),
   );
   await trace(runtime, workflowId, 'context_injection', {
@@ -771,6 +1006,7 @@ async function runNoteHarnessWorkflow(
     revision: context.bundle.revision,
     hash: context.bundle.hash,
     sourceRevisions: recommendationSourceRevisions(context),
+    ...skillTraceLineage(contextSkills),
   }, `r${context.bundle.revision}`);
   await reportProgress({
     stage: 'context_injection',
@@ -778,14 +1014,23 @@ async function runNoteHarnessWorkflow(
     message: merchantContextMessage(activeRequest),
   });
 
+  const briefSkills = stageSkills.brief_compilation;
   let brief = await runtime.runStep(
-    harnessEffectKey(workflowId, 3, 'image_text_note', '0'),
+    harnessEffectKey(
+      workflowId,
+      3,
+      skillEffectUnit('image_text_note', briefSkills.instructions),
+      '0',
+    ),
     () =>
       ports.compileNoteBrief({
         workflowId,
         request: activeRequest,
         declaration: routed.declaration,
         context,
+        ...(briefSkills.instructions.length > 0
+          ? { skillInstructions: briefSkills.instructions }
+          : {}),
       }),
   );
   await trace(runtime, workflowId, 'brief_compilation', {
@@ -798,6 +1043,7 @@ async function runNoteHarnessWorkflow(
     pageRoles: brief.candidates.candidates[0]?.plan.pages.map(
       ({ pageRole }) => pageRole,
     ),
+    ...skillTraceLineage(briefSkills),
   }, `r${context.bundle.revision}`);
   await reportProgress({
     stage: 'brief_compilation',
@@ -833,7 +1079,10 @@ async function runNoteHarnessWorkflow(
       harnessEffectKey(
         workflowId,
         3,
-        `image_text_note-r${context.bundle.revision}`,
+        skillEffectUnit(
+          `image_text_note-r${context.bundle.revision}`,
+          briefSkills.instructions,
+        ),
         '0',
       ),
       () =>
@@ -842,6 +1091,9 @@ async function runNoteHarnessWorkflow(
           request: activeRequest,
           declaration: routed.declaration,
           context,
+          ...(briefSkills.instructions.length > 0
+            ? { skillInstructions: briefSkills.instructions }
+            : {}),
         }),
     );
     if (
@@ -857,11 +1109,18 @@ async function runNoteHarnessWorkflow(
       revision: context.bundle.revision,
       hash: context.bundle.hash,
       recompiled: true,
+      ...skillTraceLineage(contextSkills),
     }, `r${context.bundle.revision}`);
   }
 
+  const executionSkills = stageSkills.execution_selection;
   const selection = await runtime.runStep(
-    harnessEffectKey(workflowId, 4, 'image_text_note', 'selection'),
+    harnessEffectKey(
+      workflowId,
+      4,
+      skillEffectUnit('image_text_note', executionSkills.instructions),
+      'selection',
+    ),
     () =>
       ports.executeNoteAndSelect({
         workflowId,
@@ -869,12 +1128,16 @@ async function runNoteHarnessWorkflow(
         brief,
         context,
         selectedStyleId,
+        ...(executionSkills.instructions.length > 0
+          ? { skillInstructions: executionSkills.instructions }
+          : {}),
       }),
   );
   await trace(runtime, workflowId, 'execution_selection', {
     executionRoot: mediaExecutionRoot(activeRequest),
     ...selection.trace,
     auditSignals: selection.auditSignals,
+    ...skillTraceLineage(executionSkills),
   }, `r${context.bundle.revision}`);
   await reportProgress({
     stage: 'execution_selection',
@@ -882,8 +1145,14 @@ async function runNoteHarnessWorkflow(
     message: merchantNoteProgressMessage('consistency_checked'),
   });
 
+  const assemblySkills = stageSkills.assembly_delivery;
   const delivery = await runtime.runStep(
-    harnessEffectKey(workflowId, 5, 'package', '0'),
+    harnessEffectKey(
+      workflowId,
+      5,
+      skillEffectUnit('package', assemblySkills.instructions),
+      '0',
+    ),
     () =>
       ports.assembleNoteAndDeliver({
         workflowId,
@@ -892,6 +1161,9 @@ async function runNoteHarnessWorkflow(
         context,
         brief,
         selection,
+        ...(assemblySkills.instructions.length > 0
+          ? { skillInstructions: assemblySkills.instructions }
+          : {}),
       }),
   );
   const recommendation = {
@@ -907,6 +1179,7 @@ async function runNoteHarnessWorkflow(
     executionRoot: mediaExecutionRoot(activeRequest),
     delivery,
     recommendation,
+    ...skillTraceLineage(assemblySkills),
   });
   await reportProgress({
     stage: 'assembly_delivery',
@@ -956,12 +1229,13 @@ async function runMediaHarnessWorkflow(
     event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
   ) => runtime.progress({ ...event, sequence: eventSequence++ });
   let activeRequest = request;
-  const intentSkills = await resolveIntentStageSkills(
+  const stageSkills = await resolveWorkflowStageSkills(
     workflowId,
     request,
     ports,
     runtime,
   );
+  const intentSkills = stageSkills.intent_naming;
   const intent = await runtime.runStep(
     harnessEffectKey(
       workflowId,
@@ -1023,13 +1297,22 @@ async function runMediaHarnessWorkflow(
     message: merchantRouteMessage(routed.declaration, routed.notice),
   });
 
+  const contextSkills = stageSkills.context_injection;
   let bundle = await runtime.runStep(
-    harnessEffectKey(workflowId, 2, 'context', '0'),
+    harnessEffectKey(
+      workflowId,
+      2,
+      skillEffectUnit('context', contextSkills.instructions),
+      '0',
+    ),
     () =>
       ports.injectContext({
         workflowId,
         request: activeRequest,
         declaration: routed.declaration,
+        ...(contextSkills.instructions.length > 0
+          ? { skillInstructions: contextSkills.instructions }
+          : {}),
       }),
   );
   await trace(runtime, workflowId, 'context_injection', {
@@ -1038,6 +1321,7 @@ async function runMediaHarnessWorkflow(
     revision: bundle.bundle.revision,
     hash: bundle.bundle.hash,
     sourceRevisions: recommendationSourceRevisions(bundle),
+    ...skillTraceLineage(contextSkills),
   }, `r${bundle.bundle.revision}`);
   await reportProgress({
     stage: 'context_injection',
@@ -1045,14 +1329,23 @@ async function runMediaHarnessWorkflow(
     message: merchantContextMessage(activeRequest),
   });
 
+  const briefSkills = stageSkills.brief_compilation;
   let compiledBrief = await runtime.runStep(
-    harnessEffectKey(workflowId, 3, kind, '0'),
+    harnessEffectKey(
+      workflowId,
+      3,
+      skillEffectUnit(kind, briefSkills.instructions),
+      '0',
+    ),
     () =>
       ports.compileMediaBrief({
         workflowId,
         request: activeRequest,
         declaration: routed.declaration,
         context: bundle,
+        ...(briefSkills.instructions.length > 0
+          ? { skillInstructions: briefSkills.instructions }
+          : {}),
       }),
   );
   let { brief, metrics: briefMetrics } = unpackMediaBrief(compiledBrief);
@@ -1063,6 +1356,7 @@ async function runMediaHarnessWorkflow(
       ? { prompt: promptTraceReference(request.prompts.briefCompilation) }
       : {}),
     ...(briefMetrics ? { metrics: briefMetrics } : {}),
+    ...skillTraceLineage(briefSkills),
   }, `r${bundle.bundle.revision}`);
   await reportProgress({
     stage: 'brief_compilation',
@@ -1070,19 +1364,29 @@ async function runMediaHarnessWorkflow(
     message: merchantProgressMessage('brief_compilation'),
   });
 
+  const executionSkills = stageSkills.execution_selection;
   let selection = await runtime.runStep(
-    harnessEffectKey(workflowId, 4, kind, 'selection'),
+    harnessEffectKey(
+      workflowId,
+      4,
+      skillEffectUnit(kind, executionSkills.instructions),
+      'selection',
+    ),
     () =>
       ports.executeMediaAndSelect({
         workflowId,
         request: activeRequest,
         brief,
         context: bundle,
+        ...(executionSkills.instructions.length > 0
+          ? { skillInstructions: executionSkills.instructions }
+          : {}),
       }),
   );
   await trace(runtime, workflowId, 'execution_selection', {
     executionRoot: mediaExecutionRoot(request),
     ...selection.trace,
+    ...skillTraceLineage(executionSkills),
   }, `r${bundle.bundle.revision}`);
   await reportProgress({
     stage: 'execution_selection',
@@ -1109,6 +1413,7 @@ async function runMediaHarnessWorkflow(
       hash: bundle.bundle.hash,
       sourceRevisions: recommendationSourceRevisions(bundle),
       recompiled: true,
+      ...skillTraceLineage(contextSkills),
     }, `r${bundle.bundle.revision}`);
     await reportProgress({
       stage: 'context_injection',
@@ -1116,13 +1421,24 @@ async function runMediaHarnessWorkflow(
       message: '资料有更新，已同步到本次创作',
     });
     compiledBrief = await runtime.runStep(
-      harnessEffectKey(workflowId, 3, `${kind}-r${bundle.bundle.revision}`, '0'),
+      harnessEffectKey(
+        workflowId,
+        3,
+        skillEffectUnit(
+          `${kind}-r${bundle.bundle.revision}`,
+          briefSkills.instructions,
+        ),
+        '0',
+      ),
       () =>
         ports.compileMediaBrief({
           workflowId,
           request: activeRequest,
           declaration: routed.declaration,
           context: bundle,
+          ...(briefSkills.instructions.length > 0
+            ? { skillInstructions: briefSkills.instructions }
+            : {}),
         }),
     );
     ({ brief, metrics: briefMetrics } = unpackMediaBrief(compiledBrief));
@@ -1134,20 +1450,33 @@ async function runMediaHarnessWorkflow(
         ? { prompt: promptTraceReference(request.prompts.briefCompilation) }
         : {}),
       ...(briefMetrics ? { metrics: briefMetrics } : {}),
+      ...skillTraceLineage(briefSkills),
     }, `r${bundle.bundle.revision}`);
     selection = await runtime.runStep(
-      harnessEffectKey(workflowId, 4, `${kind}-r${bundle.bundle.revision}`, 'selection'),
+      harnessEffectKey(
+        workflowId,
+        4,
+        skillEffectUnit(
+          `${kind}-r${bundle.bundle.revision}`,
+          executionSkills.instructions,
+        ),
+        'selection',
+      ),
       () =>
         ports.executeMediaAndSelect({
           workflowId,
           request: activeRequest,
           brief,
           context: bundle,
+          ...(executionSkills.instructions.length > 0
+            ? { skillInstructions: executionSkills.instructions }
+            : {}),
         }),
     );
     await trace(runtime, workflowId, 'execution_selection', {
       executionRoot: mediaExecutionRoot(request),
       ...selection.trace,
+      ...skillTraceLineage(executionSkills),
     }, `r${bundle.bundle.revision}`);
     await reportProgress({
       stage: 'execution_selection',
@@ -1156,8 +1485,14 @@ async function runMediaHarnessWorkflow(
     });
   }
 
+  const assemblySkills = stageSkills.assembly_delivery;
   const delivery = await runtime.runStep(
-    harnessEffectKey(workflowId, 5, 'package', '0'),
+    harnessEffectKey(
+      workflowId,
+      5,
+      skillEffectUnit('package', assemblySkills.instructions),
+      '0',
+    ),
     () =>
       ports.assembleMediaAndDeliver({
         workflowId,
@@ -1166,6 +1501,9 @@ async function runMediaHarnessWorkflow(
         context: bundle,
         brief,
         selection,
+        ...(assemblySkills.instructions.length > 0
+          ? { skillInstructions: assemblySkills.instructions }
+          : {}),
       }),
   );
   const recommendation = {
@@ -1181,6 +1519,7 @@ async function runMediaHarnessWorkflow(
     executionRoot: mediaExecutionRoot(request),
     delivery,
     recommendation,
+    ...skillTraceLineage(assemblySkills),
   });
   await reportProgress({
     stage: 'assembly_delivery',
@@ -1447,6 +1786,151 @@ async function applyCurrentTaskDecision(
   };
 }
 
+async function resolveFactSatisfaction(input: {
+  workflowId: string;
+  request: HarnessWorkflowInput;
+  declaration: IntentDeclaration;
+  context: HarnessContextSnapshot;
+  ports: HarnessStagePorts;
+  runtime: HarnessWorkflowRuntime;
+  reportProgress: (
+    event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
+  ) => Promise<void>;
+}) {
+  if (input.declaration.route === 'free') {
+    return {
+      request: input.request,
+      context: input.context,
+      allowedFactRefs: [],
+    };
+  }
+  if (!input.ports.assessFacts) {
+    return {
+      request: input.request,
+      context: input.context,
+      allowedFactRefs: undefined,
+    };
+  }
+  const assessment = await input.runtime.runStep(
+    harnessEffectKey(
+      input.workflowId,
+      2,
+      'fact-satisfaction',
+      `r${input.context.bundle.revision}`,
+    ),
+    () =>
+      input.ports.assessFacts!({
+        workflowId: input.workflowId,
+        request: input.request,
+        declaration: input.declaration,
+        context: input.context,
+      }),
+  );
+  if (!assessment) {
+    return {
+      request: input.request,
+      context: input.context,
+      allowedFactRefs: undefined,
+    };
+  }
+  await trace(
+    input.runtime,
+    input.workflowId,
+    'context_injection',
+    {
+      factSatisfaction: {
+        status: assessment.status,
+        action: assessment.action,
+        factRefs: assessment.factRefs,
+        ...('missingFactTypes' in assessment
+          ? { missingFactTypes: assessment.missingFactTypes }
+          : {}),
+      },
+    },
+    `facts-r${input.context.bundle.revision}`,
+  );
+  if (assessment.action === 'execute') {
+    return {
+      request: input.request,
+      context: input.context,
+      allowedFactRefs: assessment.factRefs,
+    };
+  }
+  if (assessment.action === 'execute_with_notice') {
+    await input.reportProgress({
+      stage: 'context_injection',
+      state: 'success',
+      message: assessment.resultNotice,
+    });
+    return {
+      request: input.request,
+      context: input.context,
+      allowedFactRefs: assessment.factRefs,
+    };
+  }
+  if (assessment.action === 'conservative_guidance') {
+    await input.reportProgress({
+      stage: 'context_injection',
+      state: 'success',
+      message: assessment.guidance,
+    });
+    return {
+      request: input.request,
+      context: input.context,
+      allowedFactRefs: assessment.factRefs,
+    };
+  }
+
+  await input.reportProgress({
+    stage: 'context_injection',
+    state: 'suspended',
+    message: assessment.question.question,
+  });
+  const resolved = await input.runtime.awaitDecision(assessment.question);
+  if ('cancelled' in resolved) {
+    throw new HarnessWorkflowCancellation(resolved.merchantMessage);
+  }
+  const command = 'command' in resolved ? resolved.command : resolved;
+  const request = await applyCurrentTaskDecision(
+    input.workflowId,
+    input.request,
+    command,
+    input.runtime,
+  );
+  if (command.decision.state === 'ignored') {
+    return {
+      request,
+      context: input.context,
+      allowedFactRefs: assessment.factRefs,
+    };
+  }
+  const context = await input.runtime.runStep(
+    harnessEffectKey(
+      input.workflowId,
+      2,
+      'fact-decision-fence',
+      `r${input.context.bundle.revision}`,
+    ),
+    () =>
+      input.ports.fenceContext({
+        workflowId: input.workflowId,
+        request,
+        declaration: input.declaration,
+        context: input.context,
+      }),
+  );
+  await input.reportProgress({
+    stage: 'context_injection',
+    state: 'success',
+    message: '已收到，继续为你生成。',
+  });
+  return {
+    request,
+    context,
+    allowedFactRefs: assessment.factRefs,
+  };
+}
+
 async function resolveIntentRoute(input: {
   workflowId: string;
   request: HarnessWorkflowInput;
@@ -1481,11 +1965,15 @@ async function resolveIntentRoute(input: {
       gapGrounding,
     )
   ) {
+    const hasConfirmedMaterials =
+      (gapGrounding?.activeConfirmedFactCount ?? 0) > 0;
     return {
-      declaration: policyContinuationDeclaration(input.intent.declaration),
+      declaration: hasConfirmedMaterials
+        ? policyContinuationDeclaration(input.intent.declaration)
+        : freeRouteDeclaration(input.intent.declaration, 'policy'),
       request: input.request,
       notice:
-        (gapGrounding?.activeConfirmedFactCount ?? 0) > 0
+        hasConfirmedMaterials
           ? ('confirmed_materials' as const)
           : ('neutral_fallback' as const),
     };

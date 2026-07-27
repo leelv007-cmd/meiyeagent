@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { fetchHealthy } from './health-fetch.mjs';
 
 const execFileAsync = promisify(execFile);
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -33,11 +34,7 @@ async function retry(label, assertion, timeoutMs = 45_000) {
 }
 
 async function expectOk(label, url, init) {
-  const response = await fetch(url, init);
-  if (!response.ok) {
-    throw new Error(`${label} returned HTTP ${response.status}.`);
-  }
-  return response;
+  return fetchHealthy(label, url, init);
 }
 
 await retry('Web', () => expectOk('Web', 'http://localhost:3000/auth/login'));

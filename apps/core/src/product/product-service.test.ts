@@ -32,6 +32,87 @@ const worker = {
 };
 
 describe('product golden journey', () => {
+  it('creates and updates a lead from a published canonical ContentPackage without legacy contents', async () => {
+    const repository = new MemoryProductRepository();
+    repository.grantMembership(merchant.userId, merchant.workspaceId);
+    let publicationStatus = 'unknown';
+    const service = new ProductService(
+      repository,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'legacy',
+      {
+        canonicalLeadContentPackages: {
+          async get({ packageId, workspaceId }) {
+            assert.equal(packageId, 'package-canonical-lead');
+            assert.equal(workspaceId, merchant.workspaceId);
+            return {
+              currentVersionId: 'package-canonical-lead-v3',
+              deliveryEvents: [
+                {
+                  type: 'manual_publish_result' as const,
+                  status: publicationStatus,
+                },
+              ],
+              id: packageId,
+              revision: 3,
+              source: { workId: 'work-canonical-lead' },
+              status: 'accepted',
+            };
+          },
+        },
+      }
+    );
+
+    await assert.rejects(
+      service.execute(
+        merchant,
+        {
+          type: 'create_lead',
+          packageId: 'package-canonical-lead',
+          lead: { source: 'direct_message' },
+        },
+        'canonical-lead-unpublished'
+      ),
+      (error) =>
+        error instanceof DomainError &&
+        error.code === 'LEAD_REQUIRES_PUBLISHED_CONTENT'
+    );
+    publicationStatus = 'published';
+    const created = await service.execute(
+      merchant,
+      {
+        type: 'create_lead',
+        packageId: 'package-canonical-lead',
+        lead: {
+          amountCents: 29900,
+          note: '顾客私信询问同款',
+          source: 'direct_message',
+        },
+      },
+      'canonical-lead-create'
+    );
+    const leadId = created.output.leadId;
+    assert.ok(leadId);
+    assert.equal(created.state.contents.length, 0);
+    assert.deepEqual(created.state.leads[0]?.canonicalContentPackage, {
+      packageId: 'package-canonical-lead',
+      revision: 3,
+      versionId: 'package-canonical-lead-v3',
+    });
+    assert.equal(created.state.leads[0]?.projectId, 'work-canonical-lead');
+
+    const updated = await service.execute(
+      merchant,
+      { type: 'update_lead', leadId, status: 'contacted' },
+      'canonical-lead-contacted'
+    );
+    assert.equal(updated.state.leads[0]?.status, 'contacted');
+  });
+
   it('persists complete restricted-asset authorization and rejects incomplete or expired grants', async () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership(merchant.userId, merchant.workspaceId);
@@ -2157,7 +2238,7 @@ describe('product golden journey', () => {
       (item) => item.id === variant.currentVersionId
     );
     assert.equal(version?.generationEvidence?.requestedModel, 'auto');
-    assert.equal(version?.generationEvidence?.actualModel, 'llm-openai');
+    assert.equal(version?.generationEvidence?.actualModel, 'llm-anthropic');
     assert.equal(
       version?.generationEvidence?.promptRevision,
       'beauty-copy-prompt-v1'
@@ -2183,7 +2264,7 @@ describe('product golden journey', () => {
         brief: {
           ...copyCommand('显式选择模型').brief,
           requestedSelection: {
-            catalogModelId: 'llm-anthropic',
+            catalogModelId: 'llm-openai',
             mode: 'fixed',
           },
         },
@@ -2195,11 +2276,11 @@ describe('product golden journey', () => {
     )?.variants[0]?.versions[0];
     assert.equal(
       fixedVersion?.generationEvidence?.requestedModel,
-      'llm-anthropic'
+      'llm-openai'
     );
     assert.equal(
       fixedVersion?.generationEvidence?.actualModel,
-      'llm-anthropic'
+      'llm-openai'
     );
 
     await service.execute(

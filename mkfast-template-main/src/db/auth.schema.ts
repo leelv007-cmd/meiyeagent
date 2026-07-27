@@ -39,6 +39,24 @@ export const user = pgTable(
   ]
 );
 
+export const adminAssistedAccountAudit = pgTable(
+  'admin_assisted_account_audit',
+  {
+    id: text('id').primaryKey(),
+    action: text('action').notNull(),
+    actorUserId: text('actor_user_id').notNull(),
+    subjectUserId: text('subject_user_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('admin_assisted_account_audit_subject_uidx').on(
+      table.subjectUserId
+    ),
+  ]
+);
+
 export const session = pgTable(
   'session',
   {

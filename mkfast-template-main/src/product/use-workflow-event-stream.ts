@@ -140,6 +140,28 @@ export function harnessDeliveryFromState(
   return parsed.success ? parsed.data : undefined;
 }
 
+export type HarnessCancellationOutcome = {
+  merchantMessage: string;
+  outcome: 'cancelled';
+  resolutionSource: 'core_hold_expired';
+};
+
+export function harnessCancellationFromState(
+  state: WorkflowStateEnvelope
+): HarnessCancellationOutcome | undefined {
+  if (state.status !== 'success') return undefined;
+  const { merchantMessage, outcome, resolutionSource } = state.snapshot;
+  if (
+    outcome !== 'cancelled' ||
+    resolutionSource !== 'core_hold_expired' ||
+    typeof merchantMessage !== 'string' ||
+    !merchantMessage.trim()
+  ) {
+    return undefined;
+  }
+  return { merchantMessage, outcome, resolutionSource };
+}
+
 export type WorkflowEventTransportStatus =
   | 'idle'
   | 'connecting'
@@ -169,6 +191,9 @@ export function useWorkflowEventStream(input: {
   const [harnessDelivery, setHarnessDelivery] = useState<
     ContentPackageRevisionDelivery | undefined
   >();
+  const [harnessCancellation, setHarnessCancellation] = useState<
+    HarnessCancellationOutcome | undefined
+  >();
   const [transportStatus, setTransportStatus] =
     useState<WorkflowEventTransportStatus>('idle');
 
@@ -178,6 +203,7 @@ export function useWorkflowEventStream(input: {
     setCopyCandidates([]);
     setWorkflowState(undefined);
     setHarnessDelivery(undefined);
+    setHarnessCancellation(undefined);
     if (!input.enabled || !input.workflowId) {
       setTransportStatus('idle');
       return;
@@ -217,6 +243,8 @@ export function useWorkflowEventStream(input: {
         setWorkflowState(frame.data.status);
         const delivery = harnessDeliveryFromState(frame.data);
         if (delivery) setHarnessDelivery(delivery);
+        const cancellation = harnessCancellationFromState(frame.data);
+        if (cancellation) setHarnessCancellation(cancellation);
         const envelope = videoWorkflowEnvelopeFromState(frame.data);
         if (envelope) {
           queryClient.setQueryData(input.workflowQueryKey, envelope);
@@ -266,6 +294,7 @@ export function useWorkflowEventStream(input: {
 
   return {
     copyCandidates,
+    harnessCancellation,
     harnessDelivery,
     latestProgress,
     transportStatus,

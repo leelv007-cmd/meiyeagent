@@ -806,6 +806,52 @@ function fixtureCopyResult(prompt: string): GeneratedCopyResult {
 function fixtureStructuredOutput(schemaName: string, prompt: string) {
   const payload = parseFixtureRecord(prompt);
   switch (schemaName) {
+    case 'composer_destination_mapping_v1': {
+      const destination =
+        typeof payload.destination === 'string' ? payload.destination : '';
+      const mentionedPlatforms = [
+        /小红书|xiaohongshu/iu.test(destination) && 'xiaohongshu',
+        /抖音|douyin/iu.test(destination) && 'douyin',
+        /视频号|video.?account/iu.test(destination) && 'video_account',
+        /朋友圈|moments/iu.test(destination) && 'wechat_moments',
+        /线下|店内|立牌|海报|offline/iu.test(destination) &&
+          'offline_material',
+      ].filter(Boolean);
+      if (mentionedPlatforms.length !== 1) {
+        return {
+          options: [
+            {
+              contentPackagePlatform: 'xiaohongshu',
+              distributionTarget: 'manual_copy',
+              label: '小红书，生成后手动复制',
+            },
+            {
+              contentPackagePlatform: 'douyin',
+              distributionTarget: 'manual_copy',
+              label: '抖音，生成后手动复制',
+            },
+          ],
+          question: '这份内容具体准备发到哪里？',
+          status: 'needs_clarification',
+        };
+      }
+      const contentPackagePlatform = mentionedPlatforms[0];
+      const distributionTarget = /协助|同事|代发|handoff/iu.test(destination)
+        ? 'assisted_handoff'
+        : /导出|下载|文件|export/iu.test(destination)
+          ? 'export'
+          : /直接发布|自动发布|publish/iu.test(destination) &&
+              (contentPackagePlatform === 'xiaohongshu' ||
+                contentPackagePlatform === 'douyin' ||
+                contentPackagePlatform === 'video_account')
+            ? `publish:${contentPackagePlatform}`
+            : 'manual_copy';
+      return {
+        contentPackagePlatform,
+        distributionTarget,
+        status: 'mapped',
+      };
+    }
     case 'harness_intent_naming_v1': {
       const context = fixtureRecord(payload.context);
       const intent = typeof context.intent === 'string' ? context.intent : '';

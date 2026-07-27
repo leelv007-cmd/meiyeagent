@@ -24,7 +24,7 @@ import {
   today_recommendation_why,
 } from '@/locale/paraglide/messages';
 import { todayRecommendationIntent } from '@/product/creation-entry-model';
-import { readTodayRecommendation } from '@/product/harness-client';
+import { readDashboardHomeRecommendation } from '@/product/dashboard-home-recommendation';
 import { HotTopicOpportunityCardView } from './hot-topic-opportunity-card';
 
 export type TodayRecommendationView =
@@ -51,7 +51,7 @@ export function TodayRecommendationCard({
 }) {
   const recommendation = useQuery({
     queryKey: ['harness', 'today-recommendation'],
-    queryFn: ({ signal }) => readTodayRecommendation(signal),
+    queryFn: ({ signal }) => readDashboardHomeRecommendation(signal),
     retry: false,
   });
   const view = todayRecommendationView(recommendation.data);

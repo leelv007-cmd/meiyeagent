@@ -13,13 +13,11 @@ import {
   adoptComposedFilm,
   buildVideoProStudioRefineHandoff,
   buildVideoWorksurfaceState,
-  classifyFullRecompose,
   classifyShotRegen,
   classifySubtitleEdit,
   editSubtitleText,
   projectVideoWorksurfaceActions,
   reorderShots,
-  requestFullRecompose,
   requestShotRegen,
   seekPlayer,
   selectShotCandidate,
@@ -206,7 +204,7 @@ describe('storyboard selection / reorder / regen intents', () => {
     ]);
   });
 
-  it('shot regen and full recompose open independent billable quotes', () => {
+  it('only shot regeneration opens a billable quote', () => {
     const base = videoWorksurfaceFixture();
 
     const shot = requestShotRegen(base, 'shot-service');
@@ -221,14 +219,7 @@ describe('storyboard selection / reorder / regen intents', () => {
       true
     );
 
-    const full = requestFullRecompose(base);
-    assert.equal(full.fee.scope, 'full_compose');
-    assert.equal(full.fee.actionLabel, '重新合成整段');
-    assert.equal(full.state.pendingQuote?.scope, 'full_compose');
-    assert.equal(full.fee.requiresFullRecomposeQuote, true);
-
     assert.equal(classifyShotRegen('shot-x').scope, 'shot');
-    assert.equal(classifyFullRecompose().scope, 'full_compose');
   });
 });
 
@@ -325,7 +316,7 @@ describe('Pro Studio refine handoff', () => {
 });
 
 describe('subtitle independent vs burned-in classification', () => {
-  it('independent asset text is free; burned-in requires full_compose quote', () => {
+  it('independent asset text is free; burned-in edits are unavailable', () => {
     const free = classifySubtitleEdit({
       mode: 'independent_asset',
       change: 'text',
@@ -339,14 +330,13 @@ describe('subtitle independent vs burned-in classification', () => {
       mode: 'burned_in',
       change: 'text',
     });
-    assert.equal(burned.fee, 'billable');
-    assert.equal(burned.scope, 'full_compose');
-    assert.equal(burned.createsProductUsage, true);
-    assert.equal(burned.requiresFullRecomposeQuote, true);
-    assert.equal(burned.actionLabel, '重新合成整段');
+    assert.equal(burned.fee, 'unavailable');
+    assert.equal(burned.createsProductUsage, false);
+    assert.equal(burned.requiresFullRecomposeQuote, false);
+    assert.match(burned.reason, /已下线/);
   });
 
-  it('editSubtitleText applies free path or opens full_compose pending quote', () => {
+  it('editSubtitleText applies the free path or leaves burned-in media unchanged', () => {
     const independent = videoWorksurfaceFixture({
       subtitleMode: 'independent_asset',
     });
@@ -356,11 +346,11 @@ describe('subtitle independent vs burned-in classification', () => {
     assert.equal(freeEdit.pendingQuote, null);
 
     const burned = videoWorksurfaceFixture({ subtitleMode: 'burned_in' });
-    const billable = editSubtitleText(burned, '烧录改动');
-    assert.equal(billable.fee.createsProductUsage, true);
-    assert.equal(billable.pendingQuote?.scope, 'full_compose');
-    // Text not applied until recompose confirms.
-    assert.equal(billable.state.subtitle.text, burned.subtitle.text);
+    const unavailable = editSubtitleText(burned, '烧录改动');
+    assert.equal(unavailable.fee.fee, 'unavailable');
+    assert.equal(unavailable.fee.createsProductUsage, false);
+    assert.equal(unavailable.pendingQuote, null);
+    assert.equal(unavailable.state.subtitle.text, burned.subtitle.text);
   });
 
   it('toggle independent subtitle stays free and updates track binding', () => {

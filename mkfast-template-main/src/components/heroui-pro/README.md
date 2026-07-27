@@ -27,24 +27,28 @@
 需用 `HEROUI_PRO_MIRROR` 指过去）。
 
 ```bash
-# 1. 把镜像切到 components.json 里钉扎的 ref
-git -C references/repos/herouipro-v3 checkout 0358aeb
+# 1. 把镜像切到 components.json 里钉扎的完整 commit
+git -C references/repos/herouipro-v3 checkout --detach 0358aeb2476d580984b2cda10047339592eace8c
 
-# 2. 同步（默认读 <repo>/references/repos/herouipro-v3）
+# 2. 只校验 package/version 与真实 Git HEAD，不改 vendor
+pnpm --filter @meiye/web heroui:sync -- --verify-pin
+
+# 3. 同步（默认读 <repo>/references/repos/herouipro-v3）
 pnpm --filter @meiye/web heroui:sync
 
-# 2'. 镜像在别处（例如 Orca 子 worktree）
+# 3'. 镜像在别处（例如共享 worktree）
 HEROUI_PRO_MIRROR=/path/to/herouipro-v3 pnpm --filter @meiye/web heroui:sync
 
-# 3. 验证
+# 4. 验证
 pnpm --filter @meiye/web typecheck
 pnpm --filter @meiye/web test
 ```
 
 sync 做四件事：
 
-1. **校验钉扎**——镜像 `package.json` 的 name/version 必须等于
-   `components.json` 的 `package`/`version`，否则直接失败。
+1. **校验钉扎**——镜像 `package.json` 的 name/version 与真实 Git `HEAD`
+   必须分别等于 `components.json` 的 `package`/`version`/`mirrorCommit`；
+   仅伪造同版本 package 或切错 commit 都会直接失败。
 2. **解闭包**——从 `components` 列出的组件出发，跟着源码里的 `../` 相对
    import 递归拉全（`sidebar` → `sheet` + `icons` + 三个 utils），保持镜像原有
    目录布局，所以拷进来的相对 import 不用改写就能解析。

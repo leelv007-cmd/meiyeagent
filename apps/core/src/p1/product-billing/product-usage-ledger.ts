@@ -68,7 +68,7 @@ function assertNonNegativeQuantity(quantity: number, field: string) {
 
 /**
  * In-memory ProductUsage ledger.
- * Stores copy items, image points, or whole video seconds.
+ * Stores whole merchant entitlement units (copy, image, or video tickets).
  */
 export class MemoryProductUsageLedger implements ProductUsageLedger {
   private readonly byTask = new Map<string, ProductUsageRecord>();

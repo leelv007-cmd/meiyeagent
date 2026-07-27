@@ -754,6 +754,12 @@ abstract class ImageRecordedAdapter implements ProviderExecutionPort {
   }
 
   private validate(request: ProviderExecutionRequest) {
+    const referenceAssetCount =
+      request.submission.input?.inputAssets?.filter(
+        ({ role }) => role === 'reference_image',
+      ).length ??
+      request.submission.input?.referenceAssetIds?.length ??
+      0;
     if (
       request.model.id !== this.catalogModelId ||
       !this.contract.operations.includes(
@@ -766,7 +772,7 @@ abstract class ImageRecordedAdapter implements ProviderExecutionPort {
     }
     if (
       request.submission.operation === 'image.edit' &&
-      !request.submission.input?.referenceAssetIds?.length
+      referenceAssetCount === 0
     ) {
       throw new Error(
         `${this.catalogModelId} image.edit requires at least one reference asset.`
@@ -785,8 +791,7 @@ abstract class ImageRecordedAdapter implements ProviderExecutionPort {
       );
     }
     if (
-      (request.submission.input?.referenceAssetIds?.length ?? 0) >
-      this.contract.maxReferenceAssets
+      referenceAssetCount > this.contract.maxReferenceAssets
     ) {
       throw new Error(
         `${this.catalogModelId} accepts at most ${this.contract.maxReferenceAssets} reference assets.`

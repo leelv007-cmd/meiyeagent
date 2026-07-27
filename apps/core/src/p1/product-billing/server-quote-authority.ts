@@ -54,6 +54,38 @@ export interface ProductPricingCatalogPort {
   }>;
 }
 
+function debitUnitsFor(
+  input: PublicProductQuoteIntent,
+  quantity: number,
+): BuildProductQuoteInput['debitUnits'] {
+  switch (input.submission?.deliverable.kind) {
+    case 'image_text_package':
+    case 'note':
+      return [
+        { resource: 'copy', quantity: 1 },
+        {
+          resource: 'image',
+          quantity: input.submission.deliverable.notePageBound ?? quantity,
+        },
+      ];
+    case 'image_set':
+    case 'poster':
+      return [{ resource: 'image', quantity }];
+    case 'video_package':
+      return [{ resource: 'video', quantity }];
+    case 'copy_document':
+      return [{ resource: 'copy', quantity }];
+    default:
+      if (input.operation === 'image.generate') {
+        return [{ resource: 'image', quantity }];
+      }
+      if (input.operation === 'video.generate') {
+        return [{ resource: 'video', quantity }];
+      }
+      return [{ resource: 'copy', quantity }];
+  }
+}
+
 /** Resolves every money and policy fact from the current server catalog. */
 export class CatalogProductQuoteAuthority implements ProductQuoteAuthority {
   constructor(private readonly catalog: ProductPricingCatalogPort) {}
@@ -89,19 +121,27 @@ export class CatalogProductQuoteAuthority implements ProductQuoteAuthority {
         `CatalogModel ${input.catalogModelId} has invalid server pricing.`,
       );
     }
-    const quantity = input.quantity ?? 1;
+    if (
+      input.quantity !== undefined &&
+      input.submission !== undefined &&
+      input.quantity !== input.submission.deliverable.quantity
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'quantity must match the signed deliverable quantity.',
+      );
+    }
+    const quantity =
+      input.submission?.deliverable.quantity ?? input.quantity ?? 1;
     if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 20) {
       throw new P1DomainError(
         'INVALID_STATE',
         'quantity must be an integer between 1 and 20.',
       );
     }
-    const billingMode =
-      input.operation === 'video.generate'
-        ? ('per_output_second' as const)
-        : ('per_request' as const);
+    const billingMode = 'per_request' as const;
     if (
-      billingMode === 'per_output_second' &&
+      input.operation === 'video.generate' &&
       (input.targetSeconds === undefined ||
         !Number.isFinite(input.targetSeconds) ||
         input.targetSeconds <= 0)
@@ -119,31 +159,30 @@ export class CatalogProductQuoteAuthority implements ProductQuoteAuthority {
           ? '三平台版本'
         : input.operation === 'image.generate'
           ? `${quantity} 张 ${input.aspectRatio ?? '3:4'} 图片`
-          : '1 段竖屏视频';
+          : `${quantity} 段竖屏视频`;
+    const unitRate =
+      input.operation === 'video.generate'
+        ? baseUnitRate * (input.targetSeconds as number) * quantity
+        : baseUnitRate * quantity;
     return {
       billingMode,
       catalogModelId: model.id,
       catalogModelRevision: view.revisionId,
       currency: model.unitPrice.currency,
+      debitUnits: debitUnitsFor(input, quantity),
       outputCount: quantity,
       outputLabel,
-      ...(billingMode === 'per_request'
-        ? {
-            formulaExpression: `per_request × ${baseUnitRate} × ${quantity} outputs`,
-          }
-        : {
-            formulaExpression: `per_output_second × ${baseUnitRate} × billableSeconds`,
-            minChargeSeconds: 2,
-            roundingStepSeconds: 1,
-            targetSeconds: input.targetSeconds,
-          }),
+      formulaExpression: `per_request × ${unitRate}`,
+      ...(input.operation === 'video.generate'
+        ? { targetSeconds: input.targetSeconds }
+        : {}),
       quoteId: input.quoteId,
       // Product policy is code-owned. Supplier price revision is separate.
       quotePolicyRevision: 'quote.policy@1',
       ...(input.submission
         ? { submissionContractHash: fingerprintValue(input.submission) }
         : {}),
-      unitRate: billingMode === 'per_request' ? baseUnitRate * quantity : baseUnitRate,
+      unitRate,
       workspaceId: input.workspaceId,
     };
   }

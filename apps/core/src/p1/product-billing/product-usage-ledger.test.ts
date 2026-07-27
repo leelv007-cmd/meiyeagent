@@ -5,7 +5,7 @@ import { P1DomainError } from '../foundation/domain.js';
 import { MemoryProductUsageLedger } from './product-usage-ledger.js';
 
 describe('MemoryProductUsageLedger product units', () => {
-  it('reserves and settles whole video seconds', () => {
+  it('reserves and settles whole video ticket units', () => {
     const ledger = new MemoryProductUsageLedger();
     const reserved = ledger.reserve({
       id: 'usage-1',

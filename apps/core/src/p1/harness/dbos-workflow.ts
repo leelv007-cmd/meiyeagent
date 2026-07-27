@@ -75,6 +75,33 @@ const PROGRESS_STREAM = 'progress';
 const DECISION_TIMEOUT_SECONDS = 48 * 60 * 60;
 export const DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS = 30;
 
+async function readConfirmationCardTimeoutSeconds(
+  config?: Pick<AdminConfigRepository, 'get'>,
+) {
+  const configured = (
+    await config?.get(
+      'global',
+      '__global__',
+      HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
+    )
+  )?.value;
+  const timeoutSeconds =
+    configured === undefined
+      ? DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS
+      : configured;
+  if (
+    typeof timeoutSeconds !== 'number' ||
+    !Number.isSafeInteger(timeoutSeconds) ||
+    timeoutSeconds < 1 ||
+    timeoutSeconds > 3_600
+  ) {
+    throw new Error(
+      'Confirmation-card timeout config must be an integer from 1 to 3600.',
+    );
+  }
+  return timeoutSeconds;
+}
+
 export function registerHarnessDbosWorkflow(
   ports: HarnessStagePorts,
   persistence: HarnessWorkflowPersistence,
@@ -136,8 +163,20 @@ export function registerHarnessDbosWorkflow(
         );
       },
       async awaitDecision(question) {
-        await DBOS.runStep(
-          () => persistence.registerPending(request.workspaceId, question),
+        const pendingProjection = await DBOS.runStep(
+          async () => {
+            const timeoutSeconds =
+              request.usageReservation &&
+              question.unattended === 'continue'
+                ? await readConfirmationCardTimeoutSeconds(config)
+                : null;
+            const registered = await persistence.registerPending(
+              request.workspaceId,
+              question,
+              { timeoutSeconds },
+            );
+            return registered ?? { timeoutSeconds };
+          },
           { name: `persist-pending-${question.questionId}` },
         );
         await DBOS.setEvent('pending-structured-decision', question);
@@ -184,30 +223,11 @@ export function registerHarnessDbosWorkflow(
             resolutionSource: 'core_hold_expired' as const,
           };
         }
-        // Keep this read outside DBOS.runStep: the durable recv deadline is
-        // persisted on first execution, while recovered workflows must retain
-        // the pre-T45 function-ID layout.
-        const configured = (
-          await config?.get(
-            'global',
-            '__global__',
-            HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
-          )
-        )?.value;
+        // Pre-projection workflow records return no value from function ID 4.
+        // Only those legacy records retain the previous live-config fallback.
         const timeoutSeconds =
-          configured === undefined
-            ? DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS
-            : configured;
-        if (
-          typeof timeoutSeconds !== 'number' ||
-          !Number.isSafeInteger(timeoutSeconds) ||
-          timeoutSeconds < 1 ||
-          timeoutSeconds > 3_600
-        ) {
-          throw new Error(
-            'Confirmation-card timeout config must be an integer from 1 to 3600.',
-          );
-        }
+          pendingProjection?.timeoutSeconds ??
+          (await readConfirmationCardTimeoutSeconds(config));
         const decision = await DBOS.recv<StructuredDecisionInput>(
           decisionTopic(question.questionId),
           { timeoutSeconds },

@@ -103,6 +103,7 @@ function revisionFor(input: BuildProductQuoteInput): string {
         billingMode: input.billingMode,
         catalogModelId: input.catalogModelId,
         catalogModelRevision: input.catalogModelRevision,
+        debitUnits: input.debitUnits,
         minChargeSeconds: input.minChargeSeconds,
         outputCount: input.outputCount,
         outputLabel: input.outputLabel,
@@ -192,6 +193,9 @@ export class ProductQuoteService {
         'outputLabel must be a non-empty string.',
       );
     }
+    if (input.debitUnits !== undefined) {
+      assertProductUsageUnits(input.debitUnits);
+    }
     if (
       input.billingMode === 'per_output_second' &&
       (input.targetSeconds === undefined ||
@@ -257,6 +261,9 @@ export class ProductQuoteService {
         input.quotePolicyRevision,
       ),
       billingMode: input.billingMode,
+      ...(input.debitUnits
+        ? { debitUnits: structuredClone(input.debitUnits) }
+        : {}),
       ...(input.outputCount !== undefined
         ? { outputCount: input.outputCount }
         : {}),
@@ -420,6 +427,15 @@ export class ProductQuoteService {
     }
 
     assertProductUsageUnits(input.units);
+    if (
+      quote.debitUnits &&
+      !sameProductUsageUnits(quote.debitUnits, input.units)
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `Quote ${input.quoteId} reservation does not match the frozen debit preview.`,
+      );
+    }
     const usage = this.usage.reserve({
       id: input.usageId ?? usageIdFor(quote.taskId, quote.quoteId),
       taskId: quote.taskId,
@@ -718,8 +734,8 @@ export class ProductQuoteService {
   }
 
   /**
-   * Failure path: release product reservation (full or by second delta).
-   * Td: video failure refund by second delta / attempt reconciliation.
+   * Failure path: release the frozen product-unit reservation. Legacy
+   * per-second quotes retain their historical partial-settlement behavior.
    */
   failAndRefund(input: {
     quoteId: string;
@@ -881,7 +897,12 @@ export class ProductQuoteService {
 
 export function productUsageUnitsForQuote(
   quote: ProductQuoteSnapshot,
+  legacyResource?: ProductUsageUnit['resource'],
 ) {
+  if (quote.debitUnits) {
+    assertProductUsageUnits(quote.debitUnits);
+    return structuredClone(quote.debitUnits);
+  }
   const quantity =
     quote.billingMode === 'per_output_second'
       ? (quote.quotedSeconds ?? quote.targetSeconds)
@@ -890,9 +911,10 @@ export function productUsageUnitsForQuote(
   return [
     {
       resource:
-        quote.billingMode === 'per_output_second'
+        legacyResource ??
+        (quote.billingMode === 'per_output_second'
           ? ('video' as const)
-          : ('copy' as const),
+          : ('copy' as const)),
       quantity: quantity as number,
     },
   ];
@@ -945,6 +967,19 @@ function reconcileTrustedProductUsageUnits(
       trustedByResource.get(reserved.resource) ?? reserved.quantity,
     ),
   }));
+}
+
+function sameProductUsageUnits(
+  left: ProductUsageUnit[],
+  right: ProductUsageUnit[],
+) {
+  if (left.length !== right.length) return false;
+  const byResource = new Map(
+    right.map((unit) => [unit.resource, unit.quantity]),
+  );
+  return left.every(
+    (unit) => byResource.get(unit.resource) === unit.quantity,
+  );
 }
 
 function assertProductUsageUnitQuantity(

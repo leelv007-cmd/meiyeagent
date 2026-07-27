@@ -14,11 +14,13 @@ import {
   listLaunchRecipeSpecs,
   listReuseContentVariants,
   publishLaunchCatalog,
+  recipeStudioInputFromSpec,
   seedLaunchCatalogInMemory,
 } from './launch-seeds.js';
 import { CreationExperienceCatalogService } from './catalog-service.js';
 import { MemoryCreationExperienceCatalogRepository } from './memory-repository.js';
 import { findForbiddenBrowserKey } from './browser-projection.js';
+import { RecipeStudioService } from './recipe-studio.js';
 
 describe('launch seeds (D-082 / D-083)', () => {
   it('defines eight Recipe variants mapping to six cold cards', () => {
@@ -220,10 +222,26 @@ describe('launch seeds (D-082 / D-083)', () => {
     );
   });
 
-  it('publishes eight recipes + launch surface via CatalogService', async () => {
-    const { service, result } = await seedLaunchCatalogInMemory();
+  it('publishes all eight formal seeds through the Recipe Studio four-gate chain', async () => {
+    const { repository, service, result } = await seedLaunchCatalogInMemory();
     assert.equal(result.recipes.length, 8);
     assert.ok(result.recipes.every((r) => r.status === 'published'));
+    assert.ok(result.recipes.every((r) => r.studioRelease));
+    for (const recipe of result.recipes) {
+      const history = await repository.listRecipeHistory(recipe.recipeId);
+      assert.deepEqual(
+        history.slice(0, 4).map((revision) => revision.studioRelease?.phase),
+        ['compiled', 'validated', 'evaluated', 'internal_tested'],
+      );
+      assert.ok(
+        history[0]?.studioRelease?.compilationReceipt.promptRevisionRef.endsWith(
+          '@1',
+        ),
+      );
+      assert.equal(history[1]?.studioRelease?.validation?.passed, true);
+      assert.equal(history[2]?.studioRelease?.evaluation?.passed, true);
+      assert.equal(history[3]?.studioRelease?.internalTest?.passed, true);
+    }
     const validations = await Promise.all(
       result.recipes.map((recipe) =>
         service.validateRecipe(recipe.recipeId, recipe.revision),
@@ -262,12 +280,13 @@ describe('launch seeds (D-082 / D-083)', () => {
     const { recipes, surface } = await publishLaunchCatalog(service);
 
     for (const recipe of recipes) {
-      // Lifecycle: draft@1 → preview@2 → published@3 — first published is rev 3.
-      assert.equal(recipe.revision, 3);
+      // Studio gates @1..4 → preview@5 → published@6.
+      assert.equal(recipe.revision, 6);
       assert.equal(recipe.status, 'published');
       assert.ok(recipe.publishedAt);
     }
-    assert.equal(surface.revision, 3);
+    // The first gated seed creates Surface @3; each remaining seed switches one ref.
+    assert.equal(surface.revision, 24);
     assert.equal(surface.status, 'published');
 
     // New revision path still works (later product adjustments).
@@ -291,10 +310,55 @@ describe('launch seeds (D-082 / D-083)', () => {
       reason: 'later adjustment',
       correlationId: 'adj-1',
     });
-    assert.equal(nextDraft.revision, 4);
+    assert.equal(nextDraft.revision, 7);
     assert.equal(nextDraft.status, 'draft');
     // Prior published revision remains readable.
     const prior = await service.getRecipeByRevisionId(head.revisionId);
     assert.equal(prior?.presentation.summary, head.presentation.summary);
+  });
+
+  it('resumes an interrupted formal seed gate chain without bypassing or duplicating completed gates', async () => {
+    const repository = new MemoryCreationExperienceCatalogRepository();
+    const now = () => '2026-07-20T12:00:00.000Z';
+    const service = new CreationExperienceCatalogService(repository, now);
+    const studio = new RecipeStudioService(service, now, {
+      async listUnavailableFrozenRevisionRefs() {
+        return [];
+      },
+    });
+    const firstSpec = LAUNCH_RECIPE_SPECS[0]!;
+    const compiled = await studio.compile(
+      recipeStudioInputFromSpec(firstSpec),
+    );
+    await studio.validate({
+      recipeId: compiled.recipeId,
+      expectedRevision: compiled.revision,
+      actorId: 'system.launch-seed',
+      reason: 'resume test',
+      correlationId: 'launch-resume-test',
+    });
+
+    const first = await publishLaunchCatalog(service, { now });
+    assert.equal(first.recipes.length, 8);
+    assert.deepEqual(
+      (
+        await repository.listRecipeHistory(firstSpec.recipeId)
+      ).map((revision) => revision.studioRelease?.phase),
+      [
+        'compiled',
+        'validated',
+        'evaluated',
+        'internal_tested',
+        'internal_tested',
+        'internal_tested',
+      ],
+    );
+
+    const restarted = await publishLaunchCatalog(service, { now });
+    assert.equal(restarted.surface.revisionId, first.surface.revisionId);
+    assert.equal(
+      (await repository.listRecipeHistory(firstSpec.recipeId)).length,
+      6,
+    );
   });
 });

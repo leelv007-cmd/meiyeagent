@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
-import type { ProductState } from '@meiye/contracts';
+import type { ProductState, PublicBillingBalance } from '@meiye/contracts';
+import { readFile } from 'node:fs/promises';
 
 import {
   cleanupE2EUsers,
@@ -64,6 +65,47 @@ async function p1Query<T>(
   ) as Promise<T>;
 }
 
+async function p1Command<T>(
+  page: Page,
+  module: string,
+  action: string,
+  payload: Record<string, unknown>
+) {
+  return page.evaluate(
+    async ({ commandAction, commandModule, commandPayload }) => {
+      const response = await fetch('/api/core/p1/commands', {
+        body: JSON.stringify({
+          action: commandAction,
+          module: commandModule,
+          payload: commandPayload,
+        }),
+        credentials: 'same-origin',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': `dashboard-home-e2e:${commandAction}:${crypto.randomUUID()}`,
+        },
+        method: 'POST',
+      });
+      const envelope = (await response.json()) as {
+        data?: unknown;
+        error?: { message?: string };
+      };
+      if (!response.ok || envelope.data === undefined) {
+        throw new Error(
+          envelope.error?.message ??
+            `${commandModule}.${commandAction} command failed`
+        );
+      }
+      return envelope.data;
+    },
+    {
+      commandAction: action,
+      commandModule: module,
+      commandPayload: payload,
+    }
+  ) as Promise<T>;
+}
+
 async function productState(page: Page) {
   return page.evaluate(async () => {
     const response = await fetch('/api/core/product/state', {
@@ -78,6 +120,62 @@ async function productState(page: Page) {
     }
     return envelope.data;
   });
+}
+
+async function seedConfirmedAssetFact(page: Page) {
+  const { workspaceId } = await productState(page);
+  const suffix = crypto.randomUUID();
+  const batchId = `dashboard-home-batch-${suffix}`;
+  const candidateId = `dashboard-home-candidate-${suffix}`;
+  const factId = `dashboard-home-service-${suffix}`;
+  const capturedAt = new Date(Date.now() - 1_000).toISOString();
+  const referenceId = `dashboard-home-reference-${suffix}`;
+  await p1Command(page, 'asset-memory', 'record_asset_intake_batch', {
+    batchId,
+    candidates: [
+      {
+        candidateId,
+        fact: {
+          effectiveFrom: capturedAt,
+          expiresAt: null,
+          key: 'service.project-grounded-creation',
+          kind: 'service',
+          scope: { storeId: workspaceId },
+          source: {
+            capturedAt,
+            kind: 'user_confirmation',
+            referenceId,
+          },
+          value: { name: '透亮猫眼' },
+        },
+        objectKind: 'store_fact',
+        status: 'pending',
+      },
+    ],
+    source: {
+      capabilityStatus: 'assisted',
+      capturedAt,
+      example: false,
+      kind: 'pasted_text',
+      referenceId,
+      sourceId: `dashboard-home-source-${suffix}`,
+      sourceWorkspaceId: workspaceId,
+    },
+    summary: '已整理出 1 项待确认服务资料。',
+    taskId: `dashboard-home-intake-${suffix}`,
+  });
+  const fact = await p1Command<{ factId: string; revision: number }>(
+    page,
+    'asset-memory',
+    'confirm_asset_intake_fact',
+    {
+      batchId,
+      candidateId,
+      expectedFactRevision: 0,
+      factId,
+    }
+  );
+  expect(fact).toMatchObject({ factId, revision: 1 });
 }
 
 async function creativeWorkbench(page: Page) {
@@ -184,6 +282,16 @@ async function submitPrefilledCopy(page: Page, prefilled = false) {
   const taskId = body.data?.task?.id;
   expect(workId, 'sample task must create a real work').toBeTruthy();
   expect(taskId, 'sample task must create a real billable task').toBeTruthy();
+  // ADR-0014 keeps the merchant in the conversation after submission. The
+  // delivered card is the single navigation into Result Center, so this helper
+  // must exercise that real click instead of assuming the retired redirect.
+  const deliveryCard = page.getByTestId('composer-delivery-card');
+  await expect(deliveryCard).toBeVisible({ timeout: 180_000 });
+  await deliveryCard.click();
+  await expect(page).toHaveURL(
+    new RegExp(`/dashboard/results/${encodeURIComponent(workId!)}`, 'u'),
+    { timeout: 60_000 }
+  );
   return { taskId: taskId!, workId: workId! };
 }
 
@@ -210,6 +318,20 @@ test.describe('D-126 dashboard home mount', () => {
 
     // --- Cold home ------------------------------------------------------
     await expect(page.getByTestId('dashboard-home-surface')).toBeVisible();
+    const balance = await p1Query<PublicBillingBalance>(
+      page,
+      'entitlements',
+      'balance'
+    );
+    const balanceCard = page.getByTestId('dashboard-balance');
+    for (const bucket of ['copy', 'image', 'video'] as const) {
+      const row = balanceCard.locator(`[data-bucket="${bucket}"]`);
+      await expect(row).toContainText(String(balance[bucket].available));
+      await expect(row).toContainText(String(balance[bucket].allowance));
+    }
+    await expect(balanceCard).not.toContainText(
+      /provider|cost|micros|秒|音频/iu
+    );
     await expect(
       page.getByRole('heading', { name: '今天值得发什么' })
     ).toBeVisible();
@@ -317,8 +439,21 @@ test.describe('D-126 dashboard home mount', () => {
     expect(['reserved', 'committed']).toContain(usage.status);
 
     // 成品真的写出来了，而且采用不是必经动作。导出止步于此：这条 Day-0 脊柱
-    // 目前不往 canonical ContentPackage 写内容，交付面板里三条出口都拿不到文件。
+    // 产生 canonical ContentPackage 后，作品页能从当前 revision 下载文字文件。
     await assertFinishedPieceBeforeAdopt(page);
+    await page.goto(`/dashboard/works/${encodeURIComponent(workId)}`);
+    await expect(page.getByTestId('works-detail-revision')).toBeVisible({
+      timeout: 60_000,
+    });
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByTestId('works-action-download-text').click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/-r\d+\.txt$/u);
+    const downloadPath = await download.path();
+    expect(downloadPath).toBeTruthy();
+    expect(
+      (await readFile(downloadPath!, 'utf8')).trim().length
+    ).toBeGreaterThan(20);
   });
 
   test('platform_sample material never reaches the merchant workspace', async ({
@@ -391,6 +526,7 @@ test.describe('D-126 dashboard home mount', () => {
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
     await seedConfirmedStore(page);
+    await seedConfirmedAssetFact(page);
     await page.goto('/dashboard');
 
     // Real history through the Composer execution spine — direct Harness task
@@ -402,25 +538,28 @@ test.describe('D-126 dashboard home mount', () => {
     await waitForResultJourney(page, COPY_CONTRACT, workId);
     await assertFinishedPieceBeforeAdopt(page);
 
-    // 这条 fixture 链路今天产不出主推荐（brief 交回的事实引用恒为空），所以首页
-    // 必须诚实地说"还没有"，并把下一步给出来 —— 不是空壳，也不是卡在加载态。
+    // Harness recommendation is preferred; when an older real delivery lacks
+    // that audit shape, the latest canonical ContentPackage is the stable
+    // fallback. Real history must not remain in the cold state forever.
     await page.goto('/dashboard');
     const card = page.getByTestId('today-recommendation');
     await expect(card).toBeVisible();
     await expect(
-      card.getByRole('heading', {
-        level: 3,
-        name: '还没有基于本店事实的推荐',
-      })
+      card.getByRole('heading', { level: 3, name: /\S/u })
     ).toBeVisible();
-    await expect(card.getByTestId('today-recommendation-use')).toHaveCount(0);
+    await expect(card.getByText('为什么适合现在')).toBeVisible();
+    await expect(card.getByText('用了本店什么')).toBeVisible();
+    await expect(card.getByText('希望顾客做什么')).toBeVisible();
+    await expect(card.getByTestId('today-recommendation-use')).toBeVisible();
     expect((await card.innerText()).trim().length).toBeGreaterThan(0);
     await expect(
       card.getByText(/store_fact:|platform-sample|null|undefined/u)
     ).toHaveCount(0);
 
-    // 下一步入口仍然在场：商家可以直接去创作，不必自己找路。
-    await expect(page.getByTestId('composer-intent-input')).toBeVisible();
+    await card.getByTestId('today-recommendation-use').click();
+    const intentInput = page.getByTestId('composer-intent-input');
+    await expect(intentInput).toBeFocused();
+    await expect(intentInput).not.toHaveValue('');
   });
 
   for (const theme of [

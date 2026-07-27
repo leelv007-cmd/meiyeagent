@@ -211,6 +211,56 @@ describe('ProductEntitlementFoundationModule', () => {
     assert.equal(projection.plan.concurrencyLimit, 5);
   });
 
+  it('exposes a strict three-bucket balance sourced from configured entitlements', async () => {
+    const { service } = setupHotCatalog();
+    await applyConfig(
+      service,
+      'plan.allowances.growth',
+      {
+        allowance: { audio: 0, copy: 12, image: 7, video: 2 },
+        concurrencyLimit: 2,
+        queuePriority: 3,
+        supportLabel: 'priority',
+      },
+      null,
+    );
+    await service.executeModule(
+      owner,
+      'entitlements',
+      { action: 'checkout_plan', payload: { tier: 'growth' } },
+      'checkout-balance-growth',
+    );
+
+    const balance = await service.queryModule(owner, 'entitlements', {
+      action: 'balance',
+      payload: {},
+    });
+
+    assert.deepEqual(balance, {
+      copy: {
+        allowance: 12,
+        available: 12,
+        committed: 0,
+        released: 0,
+        reserved: 0,
+      },
+      image: {
+        allowance: 7,
+        available: 7,
+        committed: 0,
+        released: 0,
+        reserved: 0,
+      },
+      video: {
+        allowance: 2,
+        available: 2,
+        committed: 0,
+        released: 0,
+        reserved: 0,
+      },
+    });
+  });
+
   it('hot-reads add-on price for checkout and automatic top-up configuration', async () => {
     const { service } = setupHotCatalog();
     await applyConfig(

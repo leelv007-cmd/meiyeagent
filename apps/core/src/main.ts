@@ -1,5 +1,8 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { ASSET_INTAKE_GUIDANCE_CONFIG_KEY } from '@meiye/contracts';
+import {
+  ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
+  confirmationCardTimeoutSecondsSchema,
+} from '@meiye/contracts';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { PostgresDiagnosticRepository } from './diagnostics/postgres-repository.js';
@@ -185,8 +188,12 @@ import {
   registerHarnessDbosWorkflow,
   resumeHarnessDbosWorkflow,
 } from './p1/harness/dbos-workflow.js';
-import { LedgerBackedHarnessContextPort } from './p1/harness/production-context-port.js';
+import {
+  LedgerBackedFactRightsAuthorizationPort,
+  LedgerBackedHarnessContextPort,
+} from './p1/harness/production-context-port.js';
 import { ProductionHarnessStagePorts } from './p1/harness/production-stage-ports.js';
+import { IMAGE_MODEL_RECIPE_PROFILE } from './p1/harness/image-intent-compiler.js';
 import {
   FixtureImageExactTextVerifier,
   ModelSupplyHarnessMediaExecutionPort,
@@ -206,6 +213,10 @@ import {
   CapabilityHotAssemblyComposerReadiness,
   ComposerSubmissionAdmissionGate,
 } from './p1/execution-spine/composer-submission-gate.js';
+import {
+  StructuredComposerDestinationMapper,
+  type ComposerDestinationMappingPort,
+} from './p1/execution-spine/composer-destination-mapper.js';
 import { ModelSupplyComposerRouteResolver } from './p1/execution-spine/composer-route-resolver.js';
 import { PostgresContentPackageRevisionWritePort } from './p1/execution-spine/content-package-revision-port.js';
 import { CreationStagePort } from './p1/execution-spine/creation-stage-port.js';
@@ -1021,6 +1032,23 @@ const relationalProductService = new ProductService(
   legacyInFlightDecisions,
   'p1',
   {
+    canonicalLeadContentPackages: {
+      async get({ packageId, workspaceId }) {
+        const contentPackage = (
+          await operationsRepository.loadWorkspace(workspaceId)
+        )?.contentPackages.find((candidate) => candidate.id === packageId);
+        return contentPackage
+          ? {
+              currentVersionId: contentPackage.currentVersionId,
+              deliveryEvents: contentPackage.deliveryEvents,
+              id: contentPackage.id,
+              revision: contentPackage.revision,
+              source: { workId: contentPackage.source.workId },
+              status: contentPackage.status,
+            }
+          : null;
+      },
+    },
     contentWriteOwnership: contentPackageWriteOwnership,
     copyUsageAuthority: 'foundation_ledger',
     legacyVideoPath: 'disabled',
@@ -1178,6 +1206,7 @@ const reuseMemoryService = new ReuseMemoryService(
   )
 );
 let harnessService: HarnessApplicationService | undefined;
+let composerDestinationMapper: ComposerDestinationMappingPort | undefined;
 let composerSubmissionCoordinator: CreationSubmissionCoordinator | undefined;
 // Pending-actions is an unconditional platform service (Z2-WIRING / #94 handoff).
 // Harness questions need the harness_runtime schema; approvals come from operations.
@@ -1539,6 +1568,9 @@ expirationInvalidationInterval.unref();
 void runExpirationInvalidation();
 if (harnessRuntimeConfig) {
   const structuredExecutor = createHarnessStructuredModelExecutor(modelRuntime);
+  composerDestinationMapper = new StructuredComposerDestinationMapper(
+    structuredExecutor
+  );
   // Reuse the unconditionally applied pending-actions harness store for DBOS.
   const harnessStore = pendingActionsQuestionStore;
   const contentPackageRevisionWriter =
@@ -1607,7 +1639,13 @@ if (harnessRuntimeConfig) {
     reuseMemoryService,
     contentPackageRevisionWriter,
     sourceContentPackages,
-    skillRuntime.instructionResolver
+    skillRuntime.instructionResolver,
+    creationExperienceRuntime.repository,
+    new LedgerBackedFactRightsAuthorizationPort(
+      storeFactLedger,
+      contextSourceRevisions,
+      () => new Date().toISOString()
+    )
   );
   // Single wiring owner: wrap copy ports so image/video share the same
   // Coordinator → StagePort → Harness path (#139/#140).
@@ -1626,6 +1664,7 @@ if (harnessRuntimeConfig) {
         ? new FixtureImageExactTextVerifier()
         : new ModelSupplyImageExactTextVerifier(p1ModelSupplyService),
       noteMediaAdmission,
+      IMAGE_MODEL_RECIPE_PROFILE,
     ),
     contentPackageRevisionWriter,
     () => new Date().toISOString(),
@@ -1687,6 +1726,18 @@ if (harnessRuntimeConfig) {
     harnessStore,
     harnessStore,
     harnessStore,
+    {
+      async readTimeoutSeconds() {
+        const revision = await adminConfigRepository.get(
+          'global',
+          '__global__',
+          HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
+        );
+        return confirmationCardTimeoutSecondsSchema.parse(
+          revision?.value ?? DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS,
+        );
+      },
+    },
   );
   composerSubmissionCoordinator = new CreationSubmissionCoordinator(
     creationSubmissionStore,
@@ -1886,6 +1937,7 @@ const server = createCoreServer({
   canvasTextStreams: modelControlPlane,
   executionModeGate: streamingModeGate,
   assetReader: assetStorage,
+  composerDestinationMapper,
   composerSubmission: composerSubmissionCoordinator
     ? { coordinator: composerSubmissionCoordinator }
     : undefined,

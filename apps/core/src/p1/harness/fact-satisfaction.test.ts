@@ -67,7 +67,7 @@ test('partial critical facts ask through QuestionCard and retain canonical ledge
   assert.equal(result.action, 'ask_user');
   if (result.action !== 'ask_user') assert.fail('expected ask_user');
   assert.equal(result.question.response.field, 'store_facts');
-  assert.equal(result.question.unattended, 'hold');
+  assert.equal(result.question.unattended, 'continue');
   assert.equal(
     result.question.question.includes(STORE_FACT_KIND_LABELS.group_buy),
     true,
