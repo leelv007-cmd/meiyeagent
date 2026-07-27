@@ -38,7 +38,7 @@ test('Composer routes the quote line through the precondition state machine', as
     ['hasModel', 'selectedModel != null'],
     ['hasDestination', 'destination != null'],
     ['hasSignedSubmission', 'signedSubmission != null'],
-    ['hasQuoteView', 'quoteView != null'],
+    ['hasQuoteView', 'currentQuoteView != null'],
   ] as const) {
     assert.match(
       source,
@@ -58,4 +58,39 @@ test('Composer routes the quote line through the precondition state machine', as
     /requestComposerQuote\(\s*quoteInput,\s*commandP1,\s*\{\s*signal\s*\}\s*\)/u
   );
   assert.match(source, /retry:\s*1,/u);
+});
+
+/**
+ * #240 P1: a price the current input no longer produces must not render as a
+ * settled quote, and must not get a run admitted. The rule itself is
+ * `currentComposerQuoteView` (unit-tested); this pins that every gate reads the
+ * checked view rather than the raw draft one.
+ */
+test('Composer gates render and submission on the current quote, not the bound one', async () => {
+  const source = await readFile(
+    new URL('./composer-home.tsx', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(
+    source,
+    /const currentQuoteView = currentComposerQuoteView\(\s*quoteView,\s*quoteInput\?\.quoteId\s*\)/u
+  );
+  // The rendered price line, the submit button and both submission paths.
+  assert.match(source, /\{currentQuoteView \? \(/u);
+  assert.match(source, /currentQuoteView\.billingNote/u);
+  assert.match(source, /lensId != null && !currentQuoteView/u);
+  assert.match(
+    source,
+    /!quoteQuery\.data \|\| !currentQuoteView \|\| !submissionRecipe/u
+  );
+
+  // None of those gates may fall back to the unchecked draft view.
+  assert.doesNotMatch(source, /\{quoteView \? \(/u);
+  assert.doesNotMatch(source, /lensId != null && !quoteView\b/u);
+  assert.doesNotMatch(source, /!quoteQuery\.data \|\| !quoteView\b/u);
+  // The Brief surface is deliberately not on this list: it carries its own
+  // revision-bound staleness contract (`confirmation_invalid` covers 报价已变化)
+  // and only opens from a submission path that already required a fresh view.
+  assert.match(source, /quote: quoteView,/u);
 });

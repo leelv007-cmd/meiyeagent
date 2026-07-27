@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import type {
   BrowserSurfaceProjection,
+  ComposerSubmissionSignedFields,
   CreativeToolEntry,
   ProductQuoteSnapshot,
 } from '@meiye/contracts';
@@ -122,7 +123,6 @@ describe('Composer live public contracts', () => {
     const input = buildLiveQuoteInput({
       sessionId: 'session-1',
       lensId: 'video',
-      catalogRevision: 'catalog-r1',
       submission: {
         creationMode: 'customized',
         intent: '生成一条竖屏护理项目视频',
@@ -154,8 +154,10 @@ describe('Composer live public contracts', () => {
       },
     });
     assert.deepEqual(input, {
-      quoteId:
-        'composer:session-1:video:model-video:catalog-r1:1:15:douyin:export:video_package:auto',
+      // Session and lens stay readable; the tail is a digest of everything
+      // else in this object (#240 P0). Pinned rather than recomputed so a
+      // silent change to what the digest covers shows up here.
+      quoteId: 'composer:session-1:video:446da3bd5a608f63',
       catalogModelId: 'model-video',
       operation: 'video.generate',
       quantity: 1,
@@ -208,7 +210,6 @@ describe('Composer live public contracts', () => {
     };
     const portrait = buildLiveQuoteInput({
       aspectRatio: '3:4',
-      catalogRevision: 'catalog-r1',
       lensId: 'image_text',
       model,
       quantity: 3,
@@ -217,7 +218,6 @@ describe('Composer live public contracts', () => {
     });
     const square = buildLiveQuoteInput({
       aspectRatio: '1:1',
-      catalogRevision: 'catalog-r1',
       lensId: 'image_text',
       model,
       quantity: 3,
@@ -240,14 +240,12 @@ describe('Composer live public contracts', () => {
       availabilityKind: 'production' as const,
     };
     const generate = buildLiveQuoteInput({
-      catalogRevision: 'catalog-r1',
       lensId: 'image_text',
       model,
       sessionId: 'session-operation',
       submission: imageSubmission('3:4', 'image.generate'),
     });
     const edit = buildLiveQuoteInput({
-      catalogRevision: 'catalog-r1',
       lensId: 'image_text',
       model,
       sessionId: 'session-operation',
@@ -256,6 +254,105 @@ describe('Composer live public contracts', () => {
 
     assert.equal(edit.submission.imageOperation, 'image.edit');
     assert.notEqual(generate.quoteId, edit.quoteId);
+  });
+
+  /**
+   * #240 P0 negative control. The retired quote id listed model, catalog
+   * revision, quantity, duration, ratio, platform, target, deliverable kind and
+   * image operation — and nothing from `intent`, `creationMode` or `recipe`,
+   * all of which travel in the same payload. Under that id every assertion in
+   * this block is false: the edited quotes collapse onto one key, the command
+   * re-sends a different body under it, and the server conflicts on
+   * key + payload hash. Derive the id from anything less than the whole payload
+   * and this test goes red.
+   */
+  it('gives every payload change its own quote identity and command key', async () => {
+    const model = {
+      id: 'model-copy',
+      displayName: '文案模型',
+      modality: 'llm' as const,
+      qualityRank: 1,
+      capabilityLabels: [],
+      available: true,
+      availabilityKind: 'production' as const,
+    };
+    const base: ComposerSubmissionSignedFields = {
+      creationMode: 'customized',
+      intent: '写一条周末皮肤护理到店预约文案',
+      catalogModel: { id: 'model-copy', revision: 'catalog-r1' },
+      recipe: { id: 'recipe-copy', revision: 'recipe-copy@1' },
+      contentPackagePlatform: 'xiaohongshu',
+      distributionTarget: 'export',
+      deliverable: { kind: 'copy_document', quantity: 1 },
+    };
+    const quoteFor = (submission: ComposerSubmissionSignedFields) =>
+      buildLiveQuoteInput({
+        lensId: 'copy',
+        model,
+        sessionId: 'session-copy',
+        submission,
+      });
+
+    const original = quoteFor(base);
+    // The exact field the triage predicted would collide: the merchant edits
+    // the sentence and re-quotes inside the same session.
+    const editedIntent = quoteFor({
+      ...base,
+      intent: `${base.intent}，附门店地址`,
+    });
+    const editedMode = quoteFor({ ...base, creationMode: 'free' });
+    const editedRecipe = quoteFor({
+      ...base,
+      recipe: { id: 'recipe-copy', revision: 'recipe-copy@2' },
+    });
+    const editedCatalogRevision = quoteFor({
+      ...base,
+      catalogModel: { id: 'model-copy', revision: 'catalog-r2' },
+    });
+
+    const identities = [
+      original.quoteId,
+      editedIntent.quoteId,
+      editedMode.quoteId,
+      editedRecipe.quoteId,
+      editedCatalogRevision.quoteId,
+    ];
+    assert.equal(new Set(identities).size, 5);
+
+    // Same payload, different key insertion order — one identity, so an
+    // unchanged re-quote is a genuine retry rather than a new request.
+    const reordered = buildLiveQuoteInput({
+      model,
+      submission: {
+        deliverable: { kind: 'copy_document', quantity: 1 },
+        distributionTarget: 'export',
+        contentPackagePlatform: 'xiaohongshu',
+        recipe: { id: 'recipe-copy', revision: 'recipe-copy@1' },
+        catalogModel: { id: 'model-copy', revision: 'catalog-r1' },
+        intent: '写一条周末皮肤护理到店预约文案',
+        creationMode: 'customized',
+      },
+      sessionId: 'session-copy',
+      lensId: 'copy',
+    });
+    assert.equal(reordered.quoteId, original.quoteId);
+
+    // And the identity is what the idempotency key is built from, so a changed
+    // payload can never reach the server under the previous key.
+    const keys: string[] = [];
+    const record = async (input: ReturnType<typeof buildLiveQuoteInput>) => {
+      await requestComposerQuote(input, async (_module, _call, key) => {
+        keys.push(key ?? '');
+        return {} as ProductQuoteSnapshot;
+      });
+    };
+    await record(original);
+    await record(editedIntent);
+    assert.deepEqual(keys, [
+      `composer-quote:${original.quoteId}`,
+      `composer-quote:${editedIntent.quoteId}`,
+    ]);
+    assert.notEqual(keys[0], keys[1]);
   });
 
   function imageSubmission(

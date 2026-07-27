@@ -122,6 +122,7 @@ import {
 import { projectComposerQuoteView } from './quote-wiring';
 import {
   composerQueryPhase,
+  currentComposerQuoteView,
   resolveComposerQuoteReadiness,
   type ComposerQuoteRetryTarget,
 } from './quote-readiness';
@@ -663,8 +664,10 @@ export function ComposerHome({
     return buildLiveQuoteInput({
       sessionId: sessionIdRef.current,
       lensId,
-      catalogRevision,
       model: selectedModel,
+      // `signedSubmission` already carries the catalog revision, and quote
+      // identity is derived from this payload — so the revision moves the key
+      // through the submission rather than through a parallel argument.
       submission: signedSubmission,
       quantity: submissionQuantity,
       durationSeconds: submissionDurationSeconds,
@@ -676,7 +679,6 @@ export function ComposerHome({
           : undefined,
     });
   }, [
-    catalogRevision,
     lensId,
     selectedModel,
     signedSubmission,
@@ -699,6 +701,19 @@ export function ComposerHome({
     staleTime: Number.POSITIVE_INFINITY,
   });
   /**
+   * The bound view survives edits — it lives in the draft, and nothing clears
+   * it when the merchant keeps typing. Held against the identity that produced
+   * it, that is a stale price: the intent has moved on, the new quote is still
+   * in flight (or conflicted, or timed out), and the old number would sit there
+   * looking settled. Since quote identity is now a digest of the whole billable
+   * payload, "still the current quote" is exactly "same quoteId", and anything
+   * else falls back to the live state (#240 P1).
+   */
+  const currentQuoteView = currentComposerQuoteView(
+    quoteView,
+    quoteInput?.quoteId
+  );
+  /**
    * #240: "a query is in flight" and "a precondition never came together" used
    * to render the same 正在读取模型与报价… line, so a missing recipe, an absent
    * or unpriced default model, a missing destination and a failed preferences
@@ -715,7 +730,7 @@ export function ComposerHome({
     hasModel: selectedModel != null,
     hasDestination: destination != null,
     hasSignedSubmission: signedSubmission != null,
-    hasQuoteView: quoteView != null,
+    hasQuoteView: currentQuoteView != null,
   });
   const retryQuoteReadiness = (
     target: Exclude<ComposerQuoteRetryTarget, null>
@@ -1508,7 +1523,9 @@ export function ComposerHome({
       setSubmissionQuotaBlocked(true);
       return;
     }
-    if (!quoteQuery.data || !quoteView || !submissionRecipe) {
+    // `currentQuoteView`, not `quoteView`: a run must never be admitted against
+    // a price the merchant's current input no longer produces (#240 P1).
+    if (!quoteQuery.data || !currentQuoteView || !submissionRecipe) {
       setShowRequiredHint(true);
       return;
     }
@@ -1636,7 +1653,7 @@ export function ComposerHome({
         mapped.distributionTarget ||
       destinationMapPending ||
       !quoteQuery.data ||
-      !quoteView ||
+      !currentQuoteView ||
       !submissionRecipe
     ) {
       return;
@@ -1644,12 +1661,12 @@ export function ComposerHome({
     destinationAutoSubmitIntentRef.current = null;
     void attemptSubmit();
   }, [
+    currentQuoteView,
     destinationMapPending,
     destinationPreflight,
     lensState.draft.delivery.distributionTarget,
     lensState.draft.delivery.platform,
     quoteQuery.data,
-    quoteView,
     submissionRecipe,
     userText,
   ]);
@@ -1951,7 +1968,7 @@ export function ComposerHome({
           !imageCardinality.valid ||
           lensState.phase === 'frozen' ||
           quotaBlocked ||
-          (lensId != null && !quoteView)
+          (lensId != null && !currentQuoteView)
         }
         lensSlot={
           <>
@@ -2039,7 +2056,7 @@ export function ComposerHome({
         </div>
       ) : null}
 
-      {quoteView ? (
+      {currentQuoteView ? (
         <p
           className="text-muted text-xs"
           data-quote-revision={quoteQuery.data?.revision}
@@ -2048,7 +2065,8 @@ export function ComposerHome({
           }
           data-testid="composer-quote-line"
         >
-          {quoteView.billingNote ?? `预计消耗 ${quoteView.amount}`}
+          {currentQuoteView.billingNote ??
+            `预计消耗 ${currentQuoteView.amount}`}
         </p>
       ) : (
         <ComposerQuoteStatusLine

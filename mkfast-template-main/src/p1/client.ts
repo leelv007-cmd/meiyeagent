@@ -4,6 +4,7 @@ import {
   parseApiErrorEnvelope,
 } from '@/lib/correlated-api-error';
 import { emitTelemetry, telemetryFetch } from '@/lib/product-telemetry';
+import { canonicalJsonString } from './canonical-json';
 
 type P1Module = P1ModuleRequest['module'];
 
@@ -151,55 +152,77 @@ export async function commandP1<T>(
   const request = moduleRequest(module, call);
   const requestId = idempotencyKey ?? crypto.randomUUID();
   const bounded = boundedCommandSignal(wait);
-  let response: Response;
+  // Held open across the body read, not just the round trip: a server that
+  // sends headers and then stalls its body would otherwise leave the caller
+  // waiting forever on `response.json()` with the timer already cleared — the
+  // same permanent "requesting" this ticket removes, one layer down (#240 P1).
   try {
-    response = await telemetryFetch('/api/core/p1/commands', {
-      body: JSON.stringify(request),
-      credentials: 'same-origin',
-      headers: {
-        'content-type': 'application/json',
-        'idempotency-key': requestId,
-      },
-      method: 'POST',
-      signal: bounded.signal,
-    });
-  } catch (error) {
-    if (error instanceof DOMException && error.name === 'TimeoutError') {
+    let response: Response;
+    try {
+      response = await telemetryFetch('/api/core/p1/commands', {
+        body: JSON.stringify(request),
+        credentials: 'same-origin',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': requestId,
+        },
+        method: 'POST',
+        signal: bounded.signal,
+      });
+    } catch (error) {
+      // Caller cancellation and plain network failures are rethrown untouched;
+      // only our own deadline becomes a P1 error.
+      throw commandDeadlineError(module, call, wait, error) ?? error;
+    }
+    if (response.status === 403) {
+      emitTelemetry('permission_denied', {
+        capability: 'p1.command',
+        surface: `${module}.${call.action}`,
+      });
+    }
+    try {
+      return await readEnvelope<T>(response);
+    } catch (error) {
+      const deadline = commandDeadlineError(module, call, wait, error);
+      if (deadline) throw deadline;
       emitTelemetry('query_error', {
         action: call.action,
-        errorCode: 'timeout',
+        errorCode: 'api_error',
         module,
       });
-      // Internal wording on purpose: what the merchant reads about a timed-out
-      // quote is owned by `quote-readiness.ts`, not by the transport.
-      throw new P1RequestError(
-        `P1 command ${module}.${call.action} timed out.`,
-        P1_COMMAND_TIMEOUT_CODE,
-        { timeoutMs: wait.timeoutMs }
-      );
+      throw error;
     }
-    throw error;
   } finally {
-    // The deadline covers the round trip, not the body read — same shape as
-    // `coreFetch`. Releasing here also drops the caller's abort listener.
     bounded.release();
   }
-  if (response.status === 403) {
-    emitTelemetry('permission_denied', {
-      capability: 'p1.command',
-      surface: `${module}.${call.action}`,
-    });
+}
+
+/**
+ * Translate our own deadline abort into a retryable P1 failure, or return null
+ * when the error is something else (a caller cancellation, a network fault, an
+ * error envelope) that the caller must see unchanged.
+ */
+function commandDeadlineError(
+  module: P1Module,
+  call: P1ModuleCall,
+  wait: P1CommandWait,
+  error: unknown
+) {
+  if (!(error instanceof DOMException) || error.name !== 'TimeoutError') {
+    return null;
   }
-  try {
-    return await readEnvelope<T>(response);
-  } catch (error) {
-    emitTelemetry('query_error', {
-      action: call.action,
-      errorCode: 'api_error',
-      module,
-    });
-    throw error;
-  }
+  emitTelemetry('query_error', {
+    action: call.action,
+    errorCode: 'timeout',
+    module,
+  });
+  // Internal wording on purpose: what the merchant reads about a timed-out
+  // quote is owned by `quote-readiness.ts`, not by the transport.
+  return new P1RequestError(
+    `P1 command ${module}.${call.action} timed out.`,
+    P1_COMMAND_TIMEOUT_CODE,
+    { timeoutMs: wait.timeoutMs }
+  );
 }
 
 export function operationsQuery<T>(
@@ -225,10 +248,7 @@ export function createOperationsCommandIntentRegistry(
   const pendingKeys = new Map<string, string>();
   return {
     async execute<T>(action: string, payload: Record<string, unknown>) {
-      const fingerprint = JSON.stringify([
-        action,
-        canonicalIntentValue(payload),
-      ]);
+      const fingerprint = canonicalJsonString([action, payload]);
       const idempotencyKey =
         pendingKeys.get(fingerprint) ?? createIdempotencyKey();
       pendingKeys.set(fingerprint, idempotencyKey);
@@ -239,18 +259,4 @@ export function createOperationsCommandIntentRegistry(
       return result as T;
     },
   };
-}
-
-function canonicalIntentValue(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(canonicalIntentValue);
-  }
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, entry]) => [key, canonicalIntentValue(entry)])
-    );
-  }
-  return value;
 }

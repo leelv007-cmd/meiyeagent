@@ -23,6 +23,30 @@ function stubNeverAnsweringFetch() {
   };
 }
 
+/**
+ * A server that answers with headers and then stalls its body — the shape a
+ * round-trip-only deadline misses. Mirrors real fetch, whose body read rejects
+ * with the abort reason once the request signal fires.
+ */
+function stubHeadersThenStalledBody() {
+  const original = globalThis.fetch;
+  globalThis.fetch = ((_input: unknown, init?: RequestInit) => {
+    const signal = init?.signal;
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      json: () =>
+        new Promise((_resolve, reject) => {
+          if (!signal) return;
+          signal.addEventListener('abort', () => reject(signal.reason));
+        }),
+    } as unknown as Response);
+  }) as typeof fetch;
+  return () => {
+    globalThis.fetch = original;
+  };
+}
+
 test('keeps a stable P1 error code without exposing the server message', () => {
   const error = new P1RequestError(
     'The P1 command could not be processed.',
@@ -55,6 +79,32 @@ test('a command that never answers fails on its own deadline (#240)', async () =
       }
     );
     // The point of the bound: it settles on the deadline, not on the fetch.
+    assert.equal(Date.now() - startedAt < 5_000, true);
+  } finally {
+    restore();
+  }
+});
+
+test('the deadline covers a stalled body, not just the response headers', async () => {
+  // Negative control for the round-trip-only deadline: with the timer cleared
+  // when `telemetryFetch` resolves, this call would hang on `response.json()`
+  // forever and the Composer would sit in `requesting` with no way out.
+  const restore = stubHeadersThenStalledBody();
+  try {
+    const startedAt = Date.now();
+    await assert.rejects(
+      commandP1(
+        'product-billing',
+        { action: 'quote', payload: {} },
+        'composer-quote:stalled-body',
+        { timeoutMs: 40 }
+      ),
+      (error: unknown) => {
+        assert.equal(p1ErrorCode(error), P1_COMMAND_TIMEOUT_CODE);
+        assert.deepEqual((error as P1RequestError).details, { timeoutMs: 40 });
+        return true;
+      }
+    );
     assert.equal(Date.now() - startedAt < 5_000, true);
   } finally {
     restore();

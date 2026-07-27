@@ -118,6 +118,24 @@ export function resolveComposerQuoteReadiness(
   return { state: 'requesting', message: MESSAGES.requesting, retry: null };
 }
 
+/**
+ * The bound quote view, but only while it still belongs to the input on screen.
+ *
+ * The view lives in the draft and nothing clears it when the merchant keeps
+ * typing, so after an edit the old price would otherwise keep rendering as a
+ * settled number while the new quote is still in flight — or has conflicted, or
+ * timed out — and the submit gate would happily admit a run against it. Quote
+ * identity is a digest of the whole billable payload, so "same quoteId" is
+ * exactly "still the quote for what is on screen" (#240 P1).
+ */
+export function currentComposerQuoteView<View extends { quoteId: string }>(
+  view: View | null | undefined,
+  quoteId: string | null | undefined
+): View | null {
+  if (!view || !quoteId) return null;
+  return view.quoteId === quoteId ? view : null;
+}
+
 /** Phase of a TanStack query, narrowed to what this state machine reads. */
 export function composerQueryPhase(query: {
   isError: boolean;

@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   composerQueryPhase,
+  currentComposerQuoteView,
   resolveComposerQuoteReadiness,
   type ComposerQuoteReadinessInput,
 } from './quote-readiness';
@@ -199,6 +200,37 @@ test('the enumeration covers every reachable shape exactly once', () => {
     'ready',
     'requesting',
   ]);
+});
+
+test('a bound view survives only while it belongs to the current input', () => {
+  const view = { quoteId: 'composer:s1:copy:446da3bd5a608f63', amount: 12 };
+
+  assert.equal(currentComposerQuoteView(view, view.quoteId), view);
+  // The merchant edited the sentence: quote identity moved, the old price did
+  // not, and #240 P1 says the old price must stop counting as ready.
+  assert.equal(
+    currentComposerQuoteView(view, 'composer:s1:copy:4fd11c8c222ce6ae'),
+    null
+  );
+  // No current input at all (a precondition dropped out) is equally not ready.
+  assert.equal(currentComposerQuoteView(view, undefined), null);
+  assert.equal(currentComposerQuoteView(view, null), null);
+  assert.equal(currentComposerQuoteView(null, view.quoteId), null);
+});
+
+test('a stale view does not reach ready, the live state does', () => {
+  // `hasQuoteView` is what the host feeds from `currentComposerQuoteView`, so a
+  // stale view arrives here as false and the merchant sees the real state.
+  const stale = resolveComposerQuoteReadiness(
+    settled({ hasQuoteView: false, quote: 'pending' })
+  );
+  assert.equal(stale.state, 'requesting');
+
+  const staleAfterConflict = resolveComposerQuoteReadiness(
+    settled({ hasQuoteView: false, quote: 'error' })
+  );
+  assert.equal(staleAfterConflict.state, 'failed');
+  assert.equal(staleAfterConflict.retry, 'quote');
 });
 
 test('query phase reads error before success', () => {
