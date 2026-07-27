@@ -174,6 +174,10 @@ test('accepted task keeps its frozen prompt while only a new task observes a pub
     starter.requests.map((request) => request.prompts?.intentNaming.content),
     ['intent-v7', 'intent-v7', 'intent-v8', 'intent-v8', 'intent-v6'],
   );
+  assert.deepEqual(
+    starter.requests.map((request) => request.promptRevisionRefs?.intentNaming?.version),
+    ['7', '7', '8', '8', '6'],
+  );
   assert.equal(registry.claims[0]?.fingerprint, registry.claims[1]?.fingerprint);
 });
 
