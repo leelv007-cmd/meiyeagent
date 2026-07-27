@@ -191,13 +191,50 @@ function excerptOf(text: string, limit = 60) {
   return `${normalized.slice(0, limit)}…`;
 }
 
+/** The shape 血缘 needs off a CreativeWork — nothing else is read. */
+export type WorkLineageSource = {
+  id: string;
+  sourceReferences: readonly { id: string; kind: string }[];
+};
+
+/**
+ * Which ContentPackage this 作品 was made from, or undefined for a first draft.
+ *
+ * W08 has two writers and they do not meet. `source.sourceContentPackage` is
+ * the canonical field, and only a Composer submission can set it: it is frozen
+ * into the creation execution snapshot before the package shell exists, and the
+ * revision port refuses a package whose shell does not already carry it.
+ * 「基于此再创作」/「下一轮」 go the other way — `derive_creative_work` mints a
+ * draft Work with the source package on `sourceReferences`, and no snapshot is
+ * produced at that moment (the Composer coordinator mints its own Work id, so a
+ * derived Work can never become that snapshot's Work). On that path the
+ * canonical field stays empty, which is why both 「基于 X」 surfaces stayed
+ * silent on exactly the flow that creates lineage.
+ *
+ * So both writers are read, canonical first. One predicate, so 结果中心 and
+ * 作品面 can never disagree about whether a 作品 is a re-creation.
+ */
+export function workLineageSourcePackageId(input: {
+  contentPackage?: Pick<PublicContentPackage, 'source'> | undefined;
+  /** The Work this surface is showing, when it has one. */
+  work?: WorkLineageSource | undefined;
+}): string | undefined {
+  return (
+    input.contentPackage?.source.sourceContentPackage?.id ??
+    input.work?.sourceReferences.find(
+      (reference) => reference.kind === 'content'
+    )?.id
+  );
+}
+
 /**
  * 生成依据 — why this 作品 looks the way it does, in merchant words.
  * Only canonical, merchant-safe facts: no prompt, no model id, no route
  * snapshot, no cost (D-123). Absent evidence is simply omitted, never guessed.
  */
 export function workEvidence(
-  contentPackage: PublicContentPackage
+  contentPackage: PublicContentPackage,
+  work?: WorkLineageSource
 ): WorkEvidenceChip[] {
   const chips: WorkEvidenceChip[] = [];
   const version = currentVersion(contentPackage);
@@ -230,9 +267,10 @@ export function workEvidence(
   if (version?.source === 'merchant_edited') {
     chips.push({ id: 'edited', label: '这一版含你自己的修改' });
   }
-  // W08: a re-creation used to look exactly like a first draft. The lineage was
-  // stored on the package all along; this is the first place it is said.
-  if (contentPackage.source.sourceContentPackage) {
+  // W08: a re-creation used to look exactly like a first draft. Read through
+  // both lineage writers (workLineageSourcePackageId) — the canonical field is
+  // empty on the 再创作 path that produces most of this surface's lineage.
+  if (workLineageSourcePackageId({ contentPackage, work })) {
     chips.push({ id: 'lineage', label: '基于你之前的一条内容再创作' });
   }
   if (contentPackage.source.aigcLabelEnabled) {
@@ -474,6 +512,8 @@ export function worksShapeCounts(input: {
 export function workDetail(input: {
   canvasWorks?: readonly RawCanvasWorkSummary[];
   contentPackages: readonly PublicContentPackage[];
+  /** Canonical `creative_workbench`/`canonical_history` Works — 血缘 only. */
+  creativeWorks?: readonly WorkLineageSource[];
   id: string;
 }): WorkDetail {
   const byId = input.contentPackages.find(
@@ -489,7 +529,15 @@ export function workDetail(input: {
             right.revision - left.revision
         )[0];
   const contentPackage = byId ?? byWorkId;
-  if (contentPackage) return packageDetail(contentPackage);
+  if (contentPackage) {
+    const workId = contentPackage.source.workId;
+    return packageDetail(
+      contentPackage,
+      workId
+        ? (input.creativeWorks ?? []).find((work) => work.id === workId)
+        : undefined
+    );
+  }
   if ((input.canvasWorks ?? []).some((work) => work.id === input.id)) {
     return { kind: 'canvas', workId: input.id };
   }
@@ -497,7 +545,8 @@ export function workDetail(input: {
 }
 
 function packageDetail(
-  contentPackage: PublicContentPackage
+  contentPackage: PublicContentPackage,
+  work?: WorkLineageSource
 ): WorkPackageDetail {
   const version = currentVersion(contentPackage);
   const shape = workOutputShape(contentPackage);
@@ -513,7 +562,7 @@ function packageDetail(
             versionId: contentPackage.currentVersionId,
           }
         : null,
-    evidence: workEvidence(contentPackage),
+    evidence: workEvidence(contentPackage, work),
     exportability,
     guidance: workUsageGuidance(contentPackage, shape, exportability),
     kind: 'package',

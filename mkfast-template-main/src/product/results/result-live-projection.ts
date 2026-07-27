@@ -139,6 +139,55 @@ export function resultContentPackageMutationFacts(
   };
 }
 
+/** Charset `create_creative_work` accepts for a creative session id. */
+const CREATIVE_SESSION_ID = /^[A-Za-z0-9._:-]{1,160}$/u;
+
+/**
+ * The session id 「基于此再创作」 may carry.
+ *
+ * A Composer-created Work does not have one that core would take back: the
+ * submission coordinator writes the Work row itself with
+ * `composer:<surfaceId>:<surfaceId>@<revision>`, and the `@` in a surface
+ * revision id is outside the charset `create_creative_work` enforces. Forwarding
+ * the Work's own sessionId therefore failed with INVALID_CREATIVE_SESSION on
+ * exactly the 作品 the button is offered on — the derive never happened, so the
+ * lineage it was supposed to write never existed either. A re-creation is its
+ * own session, so mint a stable one from the Work when the inherited one cannot
+ * be used.
+ */
+export function resultDeriveSessionId(work: {
+  id: string;
+  sessionId?: string;
+}): string {
+  const inherited = work.sessionId?.trim() ?? '';
+  if (CREATIVE_SESSION_ID.test(inherited)) return inherited;
+  return `result-derive:${work.id}`
+    .replace(/[^A-Za-z0-9._:-]/gu, '-')
+    .slice(0, 160);
+}
+
+/**
+ * The platform (and exact platform version) the page is currently acting on.
+ * Absent means the whole package — the pre-W09 reading.
+ */
+export type ResultDeliveryScope = {
+  platform?: PublicContentPackage['exportReceipts'][number]['platform'] | null;
+  variantVersionId?: string;
+};
+
+/** Does this delivery row belong to the platform the page is looking at? */
+function inDeliveryScope(
+  row: { platform: string; variantVersionId: string },
+  scope: ResultDeliveryScope | undefined
+) {
+  if (!scope?.platform) return true;
+  if (row.platform !== scope.platform) return false;
+  return (
+    scope.variantVersionId === undefined ||
+    row.variantVersionId === scope.variantVersionId
+  );
+}
+
 /**
  * Which delivery attempt state this package is in (W09).
  *
@@ -146,6 +195,11 @@ export function resultContentPackageMutationFacts(
  * awaiting-approval branches since WT-D, and the page never supplied it — so
  * those branches were unreachable and a half-delivered package looked finished.
  * Derived only from canonical package facts; it is not a second Result status.
+ *
+ * Read whole-package it also lies the other way round: one platform published
+ * makes every platform read 已交付, so a merchant standing on the 抖音 tab of a
+ * package that published on 小红书 and failed on 抖音 was told the failed
+ * delivery was done. A delivery is per platform version, so the answer is too.
  */
 export function resultDeliveryAttemptState(
   contentPackage:
@@ -153,10 +207,13 @@ export function resultDeliveryAttemptState(
         PublicContentPackage,
         'approvalRequests' | 'deliveryEvents' | 'exportReceipts' | 'status'
       >
-    | undefined
+    | undefined,
+  scope?: ResultDeliveryScope
 ): ResultShellDeliveryAttemptState {
   if (!contentPackage) return 'none';
-  const events = contentPackage.deliveryEvents ?? [];
+  const events = (contentPackage.deliveryEvents ?? []).filter((event) =>
+    inDeliveryScope(event, scope)
+  );
   const published = events.some(
     (event) =>
       (event.type === 'manual_publish_result' ||
@@ -171,16 +228,21 @@ export function resultDeliveryAttemptState(
         event.type === 'automatic_publish_result') &&
       event.status === 'failed'
   );
+  const failedExports = contentPackage.exportReceipts.filter(
+    (receipt) => receipt.status === 'failed' && inDeliveryScope(receipt, scope)
+  );
+  // `export_failed` is a package-wide status with no platform on it. Once the
+  // page is standing on one platform, only that platform's receipts may speak
+  // for it — otherwise another platform's failure follows the merchant around.
   const exportFailed =
-    contentPackage.status === 'export_failed' ||
-    contentPackage.exportReceipts.some(
-      (receipt) => receipt.status === 'failed'
-    );
+    failedExports.length > 0 ||
+    (!scope?.platform && contentPackage.status === 'export_failed');
   if (publishFailed || exportFailed) return 'failed';
 
   if (
     (contentPackage.approvalRequests ?? []).some(
-      (request) => request.status === 'pending'
+      (request) =>
+        request.status === 'pending' && inDeliveryScope(request, scope)
     )
   ) {
     return 'awaiting_approval';

@@ -170,3 +170,21 @@ test('result route wires the Result close-loop panels to public P1 operations', 
     /onConfirmWeeklyRecommendation=\{async[\s\S]*?derive_creative_work/u
   );
 });
+
+test('result route reads 血缘 through the shared predicate, with the Work', () => {
+  // Reading `source.sourceContentPackage` directly is what made 「基于 X」
+  // unreachable on the 再创作 path, and duplicating the predicate here is what
+  // would let 结果中心 and 作品面 disagree again.
+  assert.match(
+    route,
+    /workLineageSourcePackageId\(\{[\s\S]*?contentPackage,[\s\S]*?work: selected\.work/u
+  );
+  assert.doesNotMatch(route, /contentPackage\?\.source\.sourceContentPackage/u);
+});
+
+test('result route asks the delivery attempt about the platform it is showing', () => {
+  assert.match(
+    route,
+    /resultDeliveryAttemptState\(contentPackage, \{[\s\S]*?platform: canonicalDeliveryPlatform/u
+  );
+});

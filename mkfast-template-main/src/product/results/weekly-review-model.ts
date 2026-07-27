@@ -420,7 +420,13 @@ export type WeeklyDeriveInheritanceField =
   | 'visual_style';
 
 export type WeeklyDerivePayload = {
-  autoConfirmBrief: false;
+  /**
+   * D-046: a derived Work confirms its Brief from the sentence below rather
+   * than minting a new creation-experience context. With the server Brief gate
+   * on, `false` here is not 「先不确认」 — it is BRIEF_CONTEXT_REQUIRED, and the
+   * next round never gets created at all.
+   */
+  autoConfirmBrief: true;
   intent: string;
   sessionId: string;
   sourceReferences: Array<{
@@ -441,7 +447,7 @@ export function weeklyReviewDerivePayload(input: {
 }): WeeklyDerivePayload {
   const title = input.title?.trim() || '上一条内容';
   const shared = {
-    autoConfirmBrief: false as const,
+    autoConfirmBrief: true as const,
     sessionId: `weekly:${input.action}:${input.sourceWorkId}`,
     sourceWorkId: input.sourceWorkId,
   };

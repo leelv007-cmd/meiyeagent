@@ -32,6 +32,7 @@ import {
   projectResultCenterLiveProjection,
   resultContentPackageMutationFacts,
   resultDeliveryAttemptState,
+  resultDeriveSessionId,
   resultHarnessStreamLifecycle,
   resultWorkflowIdForWork,
   runDetailFactsFromLiveSelection,
@@ -60,6 +61,7 @@ import { buildCaptionText } from '@/product/results/delivery-full-package';
 import { shareCanonicalHandoff } from '@/product/results/delivery-handoff-live';
 import { projectResultCloseLoopFacts } from '@/product/results/result-close-loop-live';
 import { weeklyReviewDerivePayload } from '@/product/results/weekly-review-model';
+import { workLineageSourcePackageId } from '@/product/works/works-projection';
 import {
   deliveryTargetForIntent,
   useDeliveryViewport,
@@ -904,9 +906,13 @@ function ResultCenterRoutePage() {
       {
         action: 'derive_creative_work',
         payload: {
-          autoConfirmBrief: false,
+          // D-046: the derived Work confirms its Brief from the intent it
+          // carries. `false` reads as 「先不确认」 and is in fact
+          // BRIEF_CONTEXT_REQUIRED wherever the server Brief gate is on — the
+          // re-creation was refused before it could record any lineage.
+          autoConfirmBrief: true,
           intent: selected.work.intent,
-          sessionId: selected.work.sessionId,
+          sessionId: resultDeriveSessionId(selected.work),
           // W08: carry the ContentPackage forward, not only the Work. Without
           // it the derived creation had no record of what it was based on and
           // 「基于 X 生成」 had nothing to read.
@@ -1072,7 +1078,15 @@ function ResultCenterRoutePage() {
   // definition — the branch that reads this already requires nothing adopted.
   const hasUsableCandidate =
     selected?.hasUsableCandidate || Boolean(currentPackageVersion);
-  const deliveryAttempt = resultDeliveryAttemptState(contentPackage);
+  // Scoped to the platform the page is currently acting on: 「小红书已发布、抖音
+  // 失败」 is one package with two answers, and the merchant is standing on one
+  // of them.
+  const deliveryAttempt = resultDeliveryAttemptState(contentPackage, {
+    platform: canonicalDeliveryPlatform,
+    ...(deliveryVariant?.currentVersionId
+      ? { variantVersionId: deliveryVariant.currentVersionId }
+      : {}),
+  });
   const shellPhase = projectResultShellPhase({
     target,
     workspaceKind,
@@ -1082,17 +1096,22 @@ function ResultCenterRoutePage() {
     ...packageMutationFacts,
   });
   /**
-   * W08: 「基于 X 生成」. The lineage has been stored on
-   * `source.sourceContentPackage` since the revision port shipped and was never
-   * shown, so a re-creation looked exactly like a first draft.
+   * W08: 「基于 X 生成」. Read through both lineage writers — the canonical
+   * `source.sourceContentPackage` only exists on the Composer path, and
+   * 「基于此再创作」 parks the source package on the derived Work instead, which
+   * is why the label never appeared on the one flow that creates lineage.
+   * Same predicate as 作品面, so the two surfaces cannot disagree.
    */
-  const lineageSource = contentPackage?.source.sourceContentPackage;
-  const lineagePackage = lineageSource
+  const lineageSourceId = workLineageSourcePackageId({
+    contentPackage,
+    ...(selected?.work ? { work: selected.work } : {}),
+  });
+  const lineagePackage = lineageSourceId
     ? contentPackagesQuery.data?.find(
-        (candidate) => candidate.id === lineageSource.id
+        (candidate) => candidate.id === lineageSourceId
       )
     : undefined;
-  const basedOnLabel = lineageSource
+  const basedOnLabel = lineageSourceId
     ? result_lineage_based_on({
         title:
           lineagePackage?.versions.find(
