@@ -118,10 +118,11 @@
  * 的「定制创作 / 自由创作」双入口是 D-111 要店主一眼分得清的两条线，未选中那格
  * 却与轨道近乎同色。选中项走的是 --segment-foreground，不能一并盖掉，所以只指
  * 未选中项——`:not([data-selected="true"])` 把权重抬到 0,3,0，稳过 vendored 的
- * `.segment__item[data-selected="true"]`（同为 0,2,0，只靠源序决胜）。
+ * `.segment__item[data-selected="true"]`（同为 0,2,0，只靠源序决胜）。局部玻璃底
+ * 可用 --meiye-segment-unselected 提高一档，不必重新争 specificity。
  */
 .meiye-product-shell .segment__item:not([data-selected="true"]) {
-  color: var(--ink-60);
+  color: var(--meiye-segment-unselected, var(--ink-60));
 }
 
 /*

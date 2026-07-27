@@ -14,12 +14,13 @@ import { setTheme } from '../fixtures/page-health';
  *
  * `--muted` 在 HeroUI（含 vendored 组件表）是**前景色**，在 `.meiye-product-shell`
  * 里是 4%/6% 的底色 tint-hover（src/styles.css）。T46 已经在 EmptyState 这一面收过
- * 一次，换壳把 Glass 表铺到全部 /dashboard 与 /settings 之后，同一个破口还剩两面：
+ * 一次，换壳把 Glass 表铺到全部 /dashboard 与 /settings 之后，同一个破口还剩三面：
  *
  *  - vendored Segment 的未选中项 `color: var(--muted)`（vendor/css/segment.css），
  *    也就是 /dashboard 上 D-111 双入口「定制创作 / 自由创作」里没选中的那一格；
  *  - Tailwind 工具类 `text-muted`（→ --color-muted → --muted），素材面与获客台账
  *    的说明文案都在用。
+ *  - 作品页的 Segment 位于更透的玻璃底，需通过局部变量把未选中项提到 --ink-90。
  *
  * 修在 heroui-pro/heroui-glass.css 的共享边界上（映到壳自己的 muted 前景 --ink-60），
  * 这里量的是**画出来的**对比度：底图、压暗遮罩、玻璃三层合成后是什么颜色，只有真拍
@@ -37,6 +38,14 @@ const SURFACES = [
     path: '/dashboard',
     ready: 'composer-prompt-bar',
     unselected: 'composer-creation-mode-free',
+  },
+  {
+    /* 默认 shape = 'all'（works-list-page.tsx），未选中的是「文案」。 */
+    copy: [['works-shape-copy', '未选中作品类型标签']],
+    label: '作品筛选分段控件',
+    path: '/dashboard/works',
+    ready: 'works-shape-filter',
+    unselected: 'works-shape-copy',
   },
   {
     /*
@@ -62,7 +71,13 @@ const SURFACES = [
 ] as const;
 
 /** 失败时说清是哪个 token 没给对，而不只是数字太小。 */
-const TOKENS_OF_INTEREST = ['--muted', '--ink-60', '--foreground', '--default'];
+const TOKENS_OF_INTEREST = [
+  '--muted',
+  '--meiye-segment-unselected',
+  '--ink-60',
+  '--foreground',
+  '--default',
+];
 
 test.describe('S7 商家壳里 --muted 消费点的文案可读性', () => {
   test.beforeAll(async ({ request }) => cleanupE2EUsers(request));

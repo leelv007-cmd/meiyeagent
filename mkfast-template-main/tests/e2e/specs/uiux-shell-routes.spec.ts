@@ -237,7 +237,12 @@ test('sidebar links keep their accessible names when the shell is collapsed', as
   await expect(sidebar).toHaveAttribute('data-state', 'collapsed');
   // 标签的 visibility 过渡带 delay：不等它真收完就断言，名字还来自可见文案，
   // 这条用例会在修复前也变绿。
-  await expect(sidebar.locator('[data-sidebar="label"]').first()).toBeHidden();
+  const firstBusinessLabel = sidebar
+    .getByRole('navigation', { name: '业务导航' })
+    .locator('a.meiye-sidebar-nav-item')
+    .first()
+    .locator('[data-sidebar="label"]');
+  await expect(firstBusinessLabel).toBeHidden();
 
   // exact: name 默认是子串匹配，品牌链接「美业内容簿标志」会连「内容」一起吃掉。
   for (const label of [...businessNavigation, '设置']) {

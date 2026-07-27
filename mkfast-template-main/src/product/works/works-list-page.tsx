@@ -149,7 +149,11 @@ export function WorksListPage() {
             */}
             <div
               className="meiye-glass-piece inline-flex rounded-full p-0.5"
-              style={{ '--muted': 'var(--ink-90)' } as CSSProperties}
+              style={
+                {
+                  '--meiye-segment-unselected': 'var(--ink-90)',
+                } as CSSProperties
+              }
             >
               <Segment
                 aria-label={copy.shapeFilter}
