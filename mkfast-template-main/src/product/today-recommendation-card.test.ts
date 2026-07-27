@@ -72,7 +72,55 @@ test('reads work in hand from the creative workbench projection', () => {
     workbenchHasWork({ ...empty, assets: [{ kind: 'image' }] } as never),
     true
   );
-  assert.equal(workbenchHasWork({ ...empty, works: [{}] } as never), true);
+  assert.equal(
+    workbenchHasWork({ ...empty, works: [{ status: 'completed' }] } as never),
+    true
+  );
+  assert.equal(
+    workbenchHasWork({
+      ...empty,
+      jobs: [{ outputAssetIds: ['asset-1'], outputContentIds: [] }],
+    } as never),
+    true
+  );
+});
+
+test('an attempt that produced nothing is not work in hand', () => {
+  // 首访和全失败：Job/Work 行存在≠成品存在。没有产出就不许说「今天这条没排
+  // 出来」——那句话暗示这个账号有历史，冷启动才是诚实的说法。
+  const empty = { assets: [], contents: [], events: [], jobs: [], works: [] };
+  for (const status of ['submitting', 'failed', 'unknown'] as const) {
+    assert.equal(
+      workbenchHasWork({
+        ...empty,
+        jobs: [{ status, outputAssetIds: [], outputContentIds: [] }],
+      } as never),
+      false
+    );
+  }
+  for (const status of ['draft', 'running', 'failed'] as const) {
+    assert.equal(
+      workbenchHasWork({ ...empty, works: [{ status }] } as never),
+      false
+    );
+  }
+  // 整个工作台只剩一条失败记录 → 冷启动文案，不是 pending。
+  assert.deepEqual(
+    todayRecommendationView(
+      {
+        workspaceId: 'workspace-1',
+        currentFactsRevision: 1,
+        recommendation: null,
+        stale: false,
+      },
+      workbenchHasWork({
+        ...empty,
+        works: [{ status: 'failed' }],
+        jobs: [{ status: 'failed', outputAssetIds: [], outputContentIds: [] }],
+      } as never)
+    ),
+    { kind: 'cold' }
+  );
 });
 
 test('names the store facts a recommendation used instead of counting them', () => {
@@ -126,6 +174,64 @@ test('keeps ledger keys and ids out of the named facts', () => {
       ]
     ),
     ['优惠', '团购信息']
+  );
+});
+
+test('admits only values that look like merchant language', () => {
+  // Fail-closed 白名单：证明不了是人话的值一律退回计数（只留 kind 标签）。
+  const rejected = [
+    'fact-price',
+    'asset-abc',
+    '01J8XK2M3N4P5Q6R',
+    'SKU_1234',
+    'a3f9c2e1b4d6',
+    'deadbeef',
+    'ABCDEF',
+    'v2/store/name',
+    '猫眼加固 01J8XK2M3N4P',
+  ];
+  for (const value of rejected) {
+    assert.deepEqual(
+      recommendationFactLabels(
+        ['store_fact:fact-a:1'],
+        [storeFact({ factId: 'fact-a', kind: 'price', value })]
+      ),
+      ['价格'],
+      `${value} must not reach the card`
+    );
+  }
+
+  const admitted: [string, string][] = [
+    ['猫眼加固', '价格·猫眼加固'],
+    ['199 元洗剪吹', '价格·199 元洗剪吹'],
+    ['Balayage', '价格·Balayage'],
+  ];
+  for (const [value, label] of admitted) {
+    assert.deepEqual(
+      recommendationFactLabels(
+        ['store_fact:fact-a:1'],
+        [storeFact({ factId: 'fact-a', kind: 'price', value })]
+      ),
+      [label]
+    );
+  }
+});
+
+test('drops a fact whose kind this build has no merchant word for', () => {
+  // 未知 kind fail-closed：整项退回计数，不渲染 `undefined·名称`。
+  assert.deepEqual(
+    recommendationFactLabels(
+      ['store_fact:fact-a:1', 'store_fact:fact-b:1'],
+      [
+        storeFact({
+          factId: 'fact-a',
+          kind: 'loyalty_tier' as never,
+          value: { name: '金卡专享' },
+        }),
+        storeFact({ factId: 'fact-b', kind: 'price', value: '猫眼加固' }),
+      ]
+    ),
+    ['价格·猫眼加固']
   );
 });
 

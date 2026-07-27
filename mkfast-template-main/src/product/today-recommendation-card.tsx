@@ -1,5 +1,7 @@
 import {
   STORE_FACT_KIND_LABELS,
+  type CreativeJob,
+  type CreativeWork,
   type CreativeWorkbenchProjection,
   type StoreFact,
   type TodayRecommendation,
@@ -40,9 +42,25 @@ const STORE_FACT_REFERENCE_PATTERN = /^store_fact:(.+):\d+$/u;
 /** Ledger keys, ids and slugs are never merchant language (D-116). */
 const INTERNAL_NAME_PATTERN =
   /(?:^[a-z][a-z0-9_]*:[a-z0-9]|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/iu;
+/** Merchants write Chinese; a Han character is the strongest signal of it. */
+const HAN_PATTERN = /\p{Script=Han}/u;
+/** Only machines join words with these — merchant copy never carries them. */
+const MACHINE_PUNCTUATION_PATTERN = /[:_/\\]/u;
+/** `asset-abc`, `01J8XK2M3N4P`, `sku-99`: an id-shaped run inside merchant text. */
+const MACHINE_TOKEN_RUN_PATTERN = /[0-9A-Za-z][0-9A-Za-z-]{7,}/u;
+/** Latin admission: whole words, spaces or apostrophes only — no digits, no glue. */
+const NATURAL_LATIN_NAME_PATTERN = /^[A-Za-z]+(?:[ '][A-Za-z]+)*$/u;
+/** `deadbeef` reads as a word but is a hex digest; all-caps reads as a code. */
+const HEX_DIGEST_PATTERN = /^[0-9a-f]{6,}$/iu;
+const LOWERCASE_LETTER_PATTERN = /[a-z]/u;
 const READABLE_NAME_KEYS = ['name', 'title', 'label'] as const;
 const MAX_FACT_LABELS = 6;
 const MAX_FACT_NAME_LENGTH = 24;
+/** A Work counts as produced only after it reached a finished state. */
+const PRODUCED_WORK_STATUSES = new Set<CreativeWork['status']>([
+  'completed',
+  'accepted',
+]);
 
 export type TodayRecommendationView =
   | { kind: 'cold' }
@@ -83,15 +101,32 @@ export function recommendationFactLabels(
     const factId = STORE_FACT_REFERENCE_PATTERN.exec(reference)?.[1];
     const fact = factId ? byFactId.get(factId) : undefined;
     if (!fact) continue;
+    // Fail-closed: a kind outside the shipped label whitelist (a newer core, a
+    // corrupted row) contributes to the count only — the card never renders
+    // `undefined·名称`, and never hands React a non-string child.
+    const kindLabel = storeFactKindLabel(fact.kind);
+    if (!kindLabel) continue;
     const name = readableFactName(fact.value);
-    const label = name
-      ? `${STORE_FACT_KIND_LABELS[fact.kind]}·${name}`
-      : STORE_FACT_KIND_LABELS[fact.kind];
+    const label = name ? `${kindLabel}·${name}` : kindLabel;
     if (!labels.includes(label)) labels.push(label);
   }
   return labels.slice(0, MAX_FACT_LABELS);
 }
 
+/** Only the kinds this build ships a merchant word for may be spoken aloud. */
+function storeFactKindLabel(kind: StoreFact['kind']): string | undefined {
+  return Object.hasOwn(STORE_FACT_KIND_LABELS, kind)
+    ? STORE_FACT_KIND_LABELS[kind]
+    : undefined;
+}
+
+/**
+ * D-116 fail-closed: a fact value reaches the card only when it *looks like*
+ * merchant language. Admission is a whitelist — anything that cannot be proven
+ * human-readable degrades to the kind label, which is always safe. Over-
+ * rejecting a real name costs the merchant one word; under-rejecting leaks an
+ * internal id into the storefront.
+ */
 function readableFactName(value: StoreFact['value']) {
   const candidate =
     typeof value === 'string'
@@ -102,23 +137,48 @@ function readableFactName(value: StoreFact['value']) {
           ).find((entry) => typeof entry === 'string')
         : undefined;
   const name = typeof candidate === 'string' ? candidate.trim() : '';
-  return name &&
-    name.length <= MAX_FACT_NAME_LENGTH &&
-    !INTERNAL_NAME_PATTERN.test(name)
+  if (!name || name.length > MAX_FACT_NAME_LENGTH) return undefined;
+  // Fast path: the two id shapes the ledger is known to mint.
+  if (INTERNAL_NAME_PATTERN.test(name)) return undefined;
+  // No merchant types a colon, underscore or slash into a service name.
+  if (MACHINE_PUNCTUATION_PATTERN.test(name)) return undefined;
+  if (HAN_PATTERN.test(name)) {
+    // Chinese text is admitted unless an id-shaped run rides along with it.
+    return MACHINE_TOKEN_RUN_PATTERN.test(name) ? undefined : name;
+  }
+  // Latin-only values must be plain words: no digits (kills ULID/base32/hex
+  // ids), no glue characters (kills `fact-price`, `asset-abc`), not all caps
+  // (kills `SKU`, `ABCDEF`), and not a hex digest (kills `deadbeef`).
+  return NATURAL_LATIN_NAME_PATTERN.test(name) &&
+    LOWERCASE_LETTER_PATTERN.test(name) &&
+    !HEX_DIGEST_PATTERN.test(name)
     ? name
     : undefined;
 }
 
-/** Anything already produced in this workspace counts as work in hand. */
+/**
+ * Work in hand means *produced*, not *attempted*. A submitted-then-failed job
+ * leaves rows behind but nothing the merchant can hold; telling that workspace
+ * "today's pick did not come out" would imply a history it does not have. Only
+ * finished output breaks the cold start.
+ */
 export function workbenchHasWork(
   workbench: CreativeWorkbenchProjection | undefined
 ) {
   if (!workbench) return false;
   return (
-    workbench.works.length > 0 ||
-    workbench.jobs.length > 0 ||
     workbench.assets.length > 0 ||
-    workbench.contents.length > 0
+    workbench.contents.length > 0 ||
+    workbench.works.some((work) => PRODUCED_WORK_STATUSES.has(work.status)) ||
+    workbench.jobs.some(jobHasOutput)
+  );
+}
+
+/** uiux.ts CreativeJob: outputs are the only proof a job produced anything. */
+function jobHasOutput(job: CreativeJob) {
+  return (
+    (job.outputAssetIds?.length ?? 0) > 0 ||
+    (job.outputContentIds?.length ?? 0) > 0
   );
 }
 

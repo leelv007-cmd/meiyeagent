@@ -577,7 +577,9 @@ test.describe('D-126 dashboard home mount', () => {
     await page.goto('/dashboard');
 
     // Real history through the Composer execution spine — direct Harness task
-    // admission is retired, and no route is stubbed anywhere in this journey.
+    // admission is retired, and no route is stubbed while that history is
+    // produced (the degraded-projection tail below stubs the recommendation
+    // read only, after the real work already exists).
     await page
       .getByTestId('composer-intent-input')
       .fill('把本周护理项目做成一条可以发的小红书文案');
@@ -626,6 +628,55 @@ test.describe('D-126 dashboard home mount', () => {
     const intentInput = page.getByTestId('composer-intent-input');
     await expect(intentInput).toBeFocused();
     await expect(intentInput).not.toHaveValue('');
+
+    // 降级投影腿：真实成品原封不动留在工作台，只把推荐这一路的两个来源
+    // （Harness 投影 + ContentPackage 兜底）排空。此时唯一诚实的说法是
+    // 「今天的主推荐还没排出来」——不许退回冷启动，也不许是空壳。
+    await page.route('**/api/core/p1/harness/recommendation', async (route) => {
+      await route.fulfill({
+        json: {
+          data: {
+            workspaceId: 'workspace-e2e',
+            currentFactsRevision: 1,
+            recommendation: null,
+            stale: false,
+          },
+        },
+        status: 200,
+      });
+    });
+    await page.route('**/api/core/p1/query', async (route) => {
+      const body = route.request().postDataJSON() as { action?: string };
+      if (body?.action !== 'content_packages') {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({ json: { data: [] }, status: 200 });
+    });
+    await page.goto('/dashboard');
+    const degraded = page.getByTestId('today-recommendation');
+    await expect(degraded).toHaveAttribute(
+      'data-recommendation-state',
+      'pending'
+    );
+    await expect(
+      degraded.getByRole('heading', {
+        level: 3,
+        name: '今天的主推荐还没排出来',
+      })
+    ).toBeVisible();
+    await expect(
+      degraded.getByRole('heading', {
+        level: 3,
+        name: '还没有基于本店事实的推荐',
+      })
+    ).toHaveCount(0);
+    await expect(
+      degraded.getByRole('button', { name: '开始下一次任务' })
+    ).toBeVisible();
+    await expect(
+      degraded.getByText(/store_fact:|platform-sample|null|undefined/u)
+    ).toHaveCount(0);
   });
 
   for (const theme of [
