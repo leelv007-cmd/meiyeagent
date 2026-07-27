@@ -99,6 +99,20 @@
 }
 
 /*
+ * `chat-conversation` fades its own top and bottom 32px — a soft edge that
+ * reads well when the pane carries chat bubbles you skim. The composer's
+ * transcript carries cards the merchant has to read: the 进度宣告卡, the
+ * 引导补问卡, the 成品交付卡. Whichever card happens to sit at the pane edge
+ * would fade to nothing, which the browser gate caught on both viewports.
+ * The pane keeps its scroll and its follow-the-newest-turn behaviour; only the
+ * decoration that hides content goes.
+ */
+.meiye-conversation-pane {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+/*
  * `chain-of-thought` is upstream's reasoning trace: a thing you glance at and
  * fold away, so its step labels are `--muted`. The 白话进度 rail reuses the
  * component but not that premise — D-116 makes those announcements a delivery
@@ -107,7 +121,8 @@
  * `.meiye-item-card-stack`: the vendored sheet is unlayered, so Tailwind
  * utilities on the call site cannot reach it.
  */
-.meiye-progress-rail .chain-of-thought__step-label {
+.meiye-progress-rail .chain-of-thought__step-label,
+.meiye-progress-rail .chain-of-thought__trigger {
   color: var(--foreground);
 }
 

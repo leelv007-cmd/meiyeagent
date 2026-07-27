@@ -341,7 +341,7 @@ export function ComposerConversation({
     */
     <ChatConversation
       aria-live="off"
-      className="max-h-[min(70svh,44rem)]"
+      className="meiye-conversation-pane max-h-[min(70svh,44rem)]"
       data-motion={prefersReducedMotion ? 'off' : 'on'}
       data-phase={session.phase}
       data-testid="composer-conversation"

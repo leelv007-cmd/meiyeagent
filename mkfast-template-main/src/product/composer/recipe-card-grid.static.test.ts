@@ -44,6 +44,17 @@ test('merchant sentences on the cards still wrap after the item-card swap (D-084
  * because the vendored sheet is unlayered, a Tailwind colour on the call site
  * loses to it silently. D-116 makes those lines something the merchant reads.
  */
+test('the transcript pane never fades a card the merchant has to read', () => {
+  const conversation = read('./composer-conversation.tsx');
+  const glass = read('../../components/heroui-pro/heroui-glass.css');
+
+  assert.match(conversation, /meiye-conversation-pane/u);
+  assert.match(
+    glass,
+    /\.meiye-conversation-pane\s*\{[\s\S]*?mask-image:\s*none/u
+  );
+});
+
 test('白话进度 announcements keep delivery-statement contrast (D-116)', () => {
   const card = read('./composer-progress-card.tsx');
   const glass = read('../../components/heroui-pro/heroui-glass.css');
@@ -51,7 +62,7 @@ test('白话进度 announcements keep delivery-statement contrast (D-116)', () =
   assert.match(card, /meiye-progress-rail/u);
   assert.match(
     glass,
-    /\.meiye-progress-rail \.chain-of-thought__step-label\s*\{[\s\S]*?color:\s*var\(--foreground\)/u
+    /\.meiye-progress-rail \.chain-of-thought__step-label,[\s\S]*?\.chain-of-thought__trigger\s*\{[\s\S]*?color:\s*var\(--foreground\)/u
   );
   // The reduced-motion fallback for the shimmering trigger drops it to 60%
   // opacity upstream; less motion must not mean less contrast.
