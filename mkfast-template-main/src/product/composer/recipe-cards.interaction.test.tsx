@@ -14,8 +14,6 @@ import {
   type ComposerLensState,
 } from './lens-state-machine';
 import { RecipeCardsPanel } from './recipe-cards-panel';
-import { ComposerBriefChips } from './brief-chips';
-import type { CreativeBrief } from '@meiye/contracts';
 
 afterEach(() => {
   cleanup();
@@ -222,47 +220,6 @@ describe('Reuse content hands off to the conversation (D-031)', () => {
       'data-phase',
       'idle'
     );
-  });
-});
-
-describe('T1 brief chips re-hang', () => {
-  it('shows compact chips without expand-four-card control', () => {
-    const brief: CreativeBrief = {
-      confirmedAt: '2026-07-20T00:00:00.000Z',
-      updatedAt: '2026-07-20T00:00:00.000Z',
-      fields: {
-        intent: { current: '促销引流', owner: 'merchant' },
-        scene: { current: '美甲店', owner: 'merchant' },
-        tone: { current: '亲切', owner: 'ai' },
-        audience: { current: '附近宝妈', owner: 'merchant' },
-      },
-    };
-
-    render(<ComposerBriefChips brief={brief} />);
-
-    expect(screen.getByTestId('composer-brief-chips')).toHaveTextContent(
-      '本次将使用'
-    );
-    expect(screen.getByTestId('composer-brief-chip-intent')).toHaveTextContent(
-      '促销引流'
-    );
-    // No expand button / four-card editor.
-    expect(
-      screen.queryByTestId('creative-brief-editor')
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole('button', { name: /展开/ })
-    ).not.toBeInTheDocument();
-  });
-
-  it('auto-confirming keeps core seam without expand path', () => {
-    render(<ComposerBriefChips autoConfirming />);
-    expect(
-      screen.getByTestId('composer-brief-auto-confirming')
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByTestId('composer-brief-chips')
-    ).not.toBeInTheDocument();
   });
 });
 

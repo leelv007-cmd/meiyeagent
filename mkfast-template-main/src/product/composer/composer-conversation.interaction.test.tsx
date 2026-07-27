@@ -130,6 +130,25 @@ describe('entry and destination are conversation affordances, not a form', () =>
     expect(onDestinationChange).toHaveBeenCalledWith('douyin');
   });
 
+  it('offers 旧内容换平台 as supply-layer suggestions, and one tap seeds the draft (U04)', async () => {
+    const user = userEvent.setup();
+    const onReuseChip = vi.fn();
+    const chip = {
+      id: 'xiaohongshu',
+      intent: '把我之前发过的一条内容改成适合小红书的版本',
+      label: '发小红书',
+    };
+    render(promptBar({ onReuseChip, reuseChips: [chip] }));
+
+    const suggestions = screen.getByTestId('composer-reuse-chips');
+    // Written by the vendored unit — red if the hand-rolled pill row returns.
+    expect(suggestions.dataset.slot).toBe('prompt-suggestion');
+    expect(suggestions).toHaveTextContent('想把旧内容换个平台再发？');
+
+    await user.click(screen.getByTestId('composer-reuse-chip-xiaohongshu'));
+    expect(onReuseChip).toHaveBeenCalledWith(chip);
+  });
+
   it('shows the signed fields read-only, with no editable control', () => {
     render(
       promptBar({

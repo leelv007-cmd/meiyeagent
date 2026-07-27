@@ -11,11 +11,9 @@ import type {
   BrowserRecipeProjection,
   BrowserSurfaceProjection,
   CreationLensId,
-  CreativeBrief,
   RecipePatchPreview,
 } from '@meiye/contracts';
 
-import { ComposerBriefChips } from './brief-chips';
 import {
   createComposerBottomSheetState,
   syncSheetWithApplyPhase,
@@ -48,9 +46,6 @@ export type RecipeCardsPanelProps = {
   onLensStateChange?: (state: ComposerLensState) => void;
   surface?: BrowserSurfaceProjection | null;
   recipes?: readonly BrowserRecipeProjection[] | null;
-  /** Optional brief chips (T1 re-hang). */
-  brief?: CreativeBrief;
-  autoConfirmingBrief?: boolean;
   /**
    * Called when the merchant picks the 旧内容换平台 card. The host answers it in
    * the conversation; this panel no longer owns a reuse form.
@@ -79,8 +74,6 @@ export function RecipeCardsPanel({
   onLensStateChange,
   surface,
   recipes,
-  brief,
-  autoConfirmingBrief,
   onReuseRequested,
   className,
   singleColumn,
@@ -201,8 +194,6 @@ export function RecipeCardsPanel({
       data-sheet-open={sheet.open ?? 'none'}
       className={className}
     >
-      <ComposerBriefChips brief={brief} autoConfirming={autoConfirmingBrief} />
-
       <RecipeApplyTip session={activeSession} onUndo={handleUndo} />
 
       {previewError ? (

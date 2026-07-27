@@ -12,9 +12,21 @@
  * D-150①). Anything still unconsumed when its ticket closes leaves both this
  * barrel and `components.json` rather than sitting in the tree "for later":
  *
- *   AI Chat 族   → U03 对话流容器替换
+ *   AI Chat 族   → U03 对话流容器替换 — 已结：ChatConversation（对话流容器）、
+ *                  ChainOfThought（进度宣告卡）、Markdown/StreamMarkdown +
+ *                  CodeBlock（候选正文）、ChatLoader/ChatMessage/PromptInput
+ *                  （原有采用面）全部有生产消费点。
+ *   卡片家族     → U04 对话流卡片替换 — 已结，见下
  *   表单族       → U05 admin 表单族重组（D-107）— 已结，见下
  *   可视化族     → U06 admin 可视化三面板 — 已结，见下
+ *
+ * U04 关票时撤下一件：
+ *   trend-chip        对话流半边没有任何「和上一次比」的投影：报价是单次价格，
+ *                     额度是余额，进度是状态。要让趋势箭头指向什么，得先编一个
+ *                     上期数——那正是 D-116 禁止的那类假信息。撤的是这里的导出
+ *                     与 components.json 的钉扎；`vendor/components/trend-chip`
+ *                     仍在树上，因为 `kpi` 内部 import 它（同 `Sheet` ←
+ *                     `sidebar` 的先例），删文件会连锁掀掉 U06 的三面板。
  *
  * U05/U06 关票时撤下六件，理由随件记在这里，不留「以后可能用得上」：
  *   rich-text-editor  受控配置里的长文（写作要点、结构模板）按契约是纯文本，
@@ -60,7 +72,7 @@ export { KPIGroup } from './vendor/components/kpi-group';
 export { PieChart } from './vendor/components/pie-chart';
 export { Timeline } from './vendor/components/timeline';
 
-/* ── 壳与卡片（既有采用面 + U04 接手的卡片家族） ── */
+/* ── 壳与卡片（既有采用面 + U04 已消费的卡片家族） ── */
 export { EmptyState } from './vendor/components/empty-state';
 export { ItemCard } from './vendor/components/item-card';
 export { ItemCardGroup } from './vendor/components/item-card-group';
@@ -68,5 +80,4 @@ export { ListView } from './vendor/components/list-view';
 export { PromptSuggestion } from './vendor/components/prompt-suggestion';
 export { Segment } from './vendor/components/segment';
 export { Sidebar, useSidebar } from './vendor/components/sidebar';
-export { TrendChip } from './vendor/components/trend-chip';
 export { Widget } from './vendor/components/widget';

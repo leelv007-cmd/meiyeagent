@@ -18,10 +18,12 @@ import {
   ChatLoader,
   ChatMessage,
   PromptInput,
+  PromptSuggestion,
   Segment,
 } from '@/components/heroui-pro';
 import {
   composer_conversation_scroll_to_latest,
+  composer_reuse_suggestion_group,
   model_card_channel_multi,
   model_card_channel_single,
 } from '@/locale/paraglide/messages';
@@ -515,24 +517,30 @@ export function ComposerPromptBar({
         ) : null}
       </div>
 
+      {/*
+        U04: the 旧内容换平台 openers are the supply layer's PromptSuggestion —
+        one-tap sentences that drop into the merchant's own draft. This is the
+        composer's cold surface too: before there is any transcript, these
+        pills and the intent box are the whole offer, so the 空态 is a
+        suggestion rather than an empty panel.
+      */}
       {reuseChips.length > 0 ? (
-        <div
-          className="flex flex-wrap items-center gap-2"
-          data-testid="composer-reuse-chips"
-        >
-          <span className="text-muted text-xs">想把旧内容换个平台再发？</span>
-          {reuseChips.map((chip) => (
-            <button
-              className="meiye-glass-piece rounded-full px-3 py-1 text-xs"
-              data-testid={`composer-reuse-chip-${chip.id}`}
-              key={chip.id}
-              onClick={() => onReuseChip(chip)}
-              type="button"
-            >
-              {chip.label}
-            </button>
-          ))}
-        </div>
+        <PromptSuggestion data-testid="composer-reuse-chips" variant="pill">
+          <PromptSuggestion.Group label={composer_reuse_suggestion_group()}>
+            <PromptSuggestion.Items>
+              {reuseChips.map((chip) => (
+                <PromptSuggestion.Item
+                  className="meiye-glass-piece"
+                  data-testid={`composer-reuse-chip-${chip.id}`}
+                  key={chip.id}
+                  onPress={() => onReuseChip(chip)}
+                >
+                  {chip.label}
+                </PromptSuggestion.Item>
+              ))}
+            </PromptSuggestion.Items>
+          </PromptSuggestion.Group>
+        </PromptSuggestion>
       ) : null}
 
       {/* Read-only echo of what the server will sign and freeze (T08). */}

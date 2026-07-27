@@ -70,6 +70,34 @@
   --muted: var(--ink-60);
 }
 
+/*
+ * `item-card` upstream is a dense list row: a centred flex row whose title and
+ * description each end in an ellipsis. The composer's card family is the other
+ * shape — a standing card whose merchant sentence must wrap, because D-084
+ * forbids truncation on the narrow / 200%-zoom path. Adapt the unit here rather
+ * than at the call sites: the vendored component sheet is imported without a
+ * layer, so Tailwind utilities (which are layered) cannot reach it.
+ */
+.meiye-item-card-stack {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.meiye-item-card-stack [data-slot="item-card-title"],
+.meiye-item-card-stack [data-slot="item-card-description"] {
+  width: auto;
+  max-width: 100%;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.meiye-item-card-stack > [data-slot="item-card-action"] {
+  margin-top: calc(var(--spacing, 0.25rem) * 1);
+  margin-left: 0;
+  padding-left: 0;
+}
+
 /* DESIGN.md §3 — single family, weight contrast carries the personality. */
 .meiye-heroui-glass {
   font-family:
