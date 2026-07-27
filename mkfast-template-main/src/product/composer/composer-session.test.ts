@@ -352,8 +352,26 @@ test('a second attempt in the same conversation starts with its own progress and
   );
   assert.equal(failed.progressSequence, 8);
 
+  // Asserted on the rebind itself, before anything is bound: this is the state
+  // the merchant sits in while they rewrite, and the window a later
+  // bindComposerTask would otherwise paper over.
   const rebound = rebindComposerSession(failed, 'session-2');
   assert.equal(rebound.sessionId, 'session-2');
+  // The finished run is unbound — the event stream keys on this handle, so
+  // leaving it would let that run keep writing into the new session.
+  assert.equal(rebound.task, null);
+  assert.equal(rebound.progressSequence, -1);
+  assert.equal(rebound.deliveryStatement, null);
+  assert.equal(rebound.phase, 'idle');
+  assert.equal(
+    rebound.turns.filter((turn) => turn.kind === 'report').length,
+    0
+  );
+  // The conversation itself is not the run's: what they said stays on screen.
+  assert.deepEqual(
+    rebound.turns.filter((turn) => turn.kind === 'merchant').length,
+    1
+  );
   const retried = bindComposerTask(
     openComposerTurn(rebound, '写一条不提价格的到店体验文案'),
     { taskId: 'task-2', workId: 'work-2', packageId: 'package-2' }

@@ -1509,6 +1509,11 @@ export function ComposerHome({
       setSessionEpoch((current) => current + 1);
       briefContextRevisionRef.current = null;
       briefInputRef.current = null;
+      // Rebinding unbinds the finished run, which would otherwise look to the
+      // mount-time restore like a composer with nothing in it and invite some
+      // other in-flight run into the tab mid-edit. The merchant has taken this
+      // conversation over; the restore decision is behind us.
+      restoredFromServerRef.current = true;
       setSession((current) =>
         rebindComposerSession(current, sessionIdRef.current)
       );

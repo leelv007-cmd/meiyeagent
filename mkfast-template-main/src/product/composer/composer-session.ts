@@ -166,17 +166,41 @@ export function createComposerSession(sessionId: string): ComposerSession {
 }
 
 /**
- * Move the container onto a new attempt id while keeping what was said.
+ * Move the container onto a new attempt while keeping what was said.
  *
  * 报价 and Brief context are idempotent on the session id, so a second attempt
- * needs a new one. The transcript is not part of that identity — the merchant is
- * still reading the 申报 that told them to try again, so it stays on screen.
+ * needs a new one. Everything the previous run owned goes with it: its task
+ * handle, its progress cursor, its 任务总结 and its 申报. The handle in
+ * particular is what the event stream keys on — leaving it behind would let the
+ * finished run keep writing into a session that is no longer its own.
+ *
+ * What survives is the conversation: the merchant's sentences stay on screen,
+ * because this is the same conversation continuing, not a new one.
  */
 export function rebindComposerSession(
   session: ComposerSession,
   sessionId: string
 ): ComposerSession {
-  return session.sessionId === sessionId ? session : { ...session, sessionId };
+  if (session.sessionId === sessionId) return session;
+  return {
+    ...session,
+    sessionId,
+    phase: 'idle',
+    task: null,
+    progressSequence: -1,
+    deliveryStatement: null,
+    turns: session.turns.filter(
+      // Turns that cannot function once the handle is gone: the candidate area
+      // has no stream to fill it, the question card has nowhere to post an
+      // answer, and the 申报 describes a run this container no longer holds.
+      // 交付卡 stays — a partial delivery also offers 再生成一次, and throwing
+      // away the part that did land would undo the honesty it was built for.
+      (turn) =>
+        turn.kind !== 'report' &&
+        turn.kind !== 'candidate' &&
+        turn.kind !== 'question'
+    ),
+  };
 }
 
 /** The merchant's sentence opens the run; the send button is the only click. */
