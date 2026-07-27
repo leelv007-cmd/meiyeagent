@@ -34,6 +34,10 @@ import {
   type ComposerDeliveryOpenInput,
 } from './composer-delivery-card';
 import { ComposerProgressCard } from './composer-progress-card';
+import {
+  ComposerReportCard,
+  type ComposerRecoveryInput,
+} from './composer-report-card';
 import type {
   ComposerSession,
   ComposerStageTurn,
@@ -188,6 +192,8 @@ export type ComposerConversationProps = {
   questionSlot?: React.ReactNode;
   /** Opens the Result Center for a finished run — the only navigation. */
   onOpenDelivery: (input: ComposerDeliveryOpenInput) => void;
+  /** 失败/partial 申报卡 recovery entry (W03). */
+  onRecover?: (input: ComposerRecoveryInput) => void;
 };
 
 export function ComposerConversation({
@@ -196,6 +202,7 @@ export function ComposerConversation({
   identitySlot,
   questionSlot,
   onOpenDelivery,
+  onRecover,
 }: ComposerConversationProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
   const turnCount = session.turns.length;
@@ -258,6 +265,14 @@ export function ComposerConversation({
             statement={session.deliveryStatement}
             taskId={turn.taskId}
             workId={turn.workId}
+          />
+        );
+      case 'report':
+        return (
+          <ComposerReportCard
+            key={turn.id}
+            onRecover={(input) => onRecover?.(input)}
+            report={turn.report}
           />
         );
       case 'terminal':

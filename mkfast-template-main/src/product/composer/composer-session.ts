@@ -15,7 +15,9 @@
 
 import type {
   ContentPackageRevisionDelivery,
+  HarnessActiveTask,
   HarnessStage,
+  MerchantReport,
   WorkflowProgressEnvelope,
 } from '@meiye/contracts';
 
@@ -97,6 +99,21 @@ export type ComposerTerminalTurn = {
   message: string;
 };
 
+/**
+ * 申报卡 (P0-2 / D-096 / D-116). A run that failed, or that delivered only part
+ * of what it promised, says so in the conversation — 白话原因, 下一步动作, and a
+ * way back in. Before this turn existed a failure rendered as nothing at all and
+ * the merchant was left with a generic toast.
+ *
+ * `report` comes from Core on the terminal frame; the browser owns only how it
+ * is presented, never what it says.
+ */
+export type ComposerReportTurn = {
+  kind: 'report';
+  id: string;
+  report: MerchantReport;
+};
+
 export type ComposerTurn =
   | ComposerMerchantTurn
   | ComposerRouteNoticeTurn
@@ -104,6 +121,7 @@ export type ComposerTurn =
   | ComposerQuestionTurn
   | ComposerCandidateTurn
   | ComposerDeliveryTurn
+  | ComposerReportTurn
   | ComposerTerminalTurn;
 
 export type ComposerHarnessTerminal = {
@@ -283,9 +301,24 @@ export function applyComposerWorkflowState(
   session: ComposerSession,
   status: 'waiting' | 'running' | 'suspended' | 'success' | 'failed',
   delivery?: ContentPackageRevisionDelivery,
-  terminal?: ComposerHarnessTerminal
+  terminal?: ComposerHarnessTerminal,
+  report?: MerchantReport
 ): ComposerSession {
-  if (status === 'failed') return { ...session, phase: 'failed' };
+  if (status === 'failed') {
+    // A failed run leaves the transcript standing and adds the 申报 to it. The
+    // candidate area goes: streaming a draft that will never be delivered is
+    // the shell of a result the merchant cannot use.
+    return withReportTurn(
+      {
+        ...session,
+        phase: 'failed',
+        turns: session.turns.filter(
+          (turn) => turn.kind !== 'candidate' && turn.kind !== 'question'
+        ),
+      },
+      report
+    );
+  }
   if (status !== 'success') return session;
   const task = session.task;
   if (!task) return session;
@@ -317,29 +350,58 @@ export function applyComposerWorkflowState(
     // A late state frame may be the one that carries the revision — bind it,
     // but never downgrade a revision already confirmed.
     if (!revision || existing.revision) {
-      return { ...session, phase: 'delivered' };
+      return withReportTurn({ ...session, phase: 'delivered' }, report);
     }
-    return {
+    return withReportTurn(
+      {
+        ...session,
+        phase: 'delivered',
+        turns: session.turns.map((turn) =>
+          turn.kind === 'delivery' ? { ...turn, revision } : turn
+        ),
+      },
+      report
+    );
+  }
+  return withReportTurn(
+    {
       ...session,
       phase: 'delivered',
-      turns: session.turns.map((turn) =>
-        turn.kind === 'delivery' ? { ...turn, revision } : turn
-      ),
-    };
-  }
+      turns: [
+        ...session.turns.filter((turn) => turn.kind !== 'question'),
+        {
+          kind: 'delivery',
+          id: `delivery:${task.workId}`,
+          workId: task.workId,
+          taskId: task.taskId,
+          packageId: task.packageId,
+          revision,
+        },
+      ],
+    },
+    report
+  );
+}
+
+/**
+ * Append the 申报 exactly once. Replay hands the same terminal frame back on
+ * every reconnect, and a transcript that grows a second failure card each time
+ * the browser reconnects would be its own kind of dishonesty.
+ */
+function withReportTurn(
+  session: ComposerSession,
+  report: MerchantReport | undefined
+): ComposerSession {
+  if (!report) return session;
+  const existing = session.turns.find(
+    (turn): turn is ComposerReportTurn => turn.kind === 'report'
+  );
+  if (existing?.report.kind === report.kind) return session;
   return {
     ...session,
-    phase: 'delivered',
     turns: [
-      ...session.turns.filter((turn) => turn.kind !== 'question'),
-      {
-        kind: 'delivery',
-        id: `delivery:${task.workId}`,
-        workId: task.workId,
-        taskId: task.taskId,
-        packageId: task.packageId,
-        revision,
-      },
+      ...session.turns.filter((turn) => turn.kind !== 'report'),
+      { kind: 'report', id: `report:${report.kind}`, report },
     ],
   };
 }
@@ -403,6 +465,27 @@ function parseTask(value: unknown): ComposerSessionTask | null {
     return null;
   }
   return { taskId, workId, packageId };
+}
+
+/**
+ * 时间桥 (D-145). The same rebuild as the sessionStorage restore, but from the
+ * server's own list of runs still in flight — which is why closing the tab is no
+ * longer a way to lose the conversation. The browser handle was never the truth;
+ * this makes that literal.
+ */
+export function restoreComposerSessionFromActiveTask(input: {
+  sessionId: string;
+  task: HarnessActiveTask;
+}): ComposerSession {
+  const opened = openComposerTurn(
+    createComposerSession(input.sessionId),
+    input.task.merchantText
+  );
+  return bindComposerTask(opened, {
+    taskId: input.task.taskId,
+    workId: input.task.workId,
+    packageId: input.task.packageId,
+  });
 }
 
 export type RestoreComposerSessionResult =

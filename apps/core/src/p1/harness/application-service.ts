@@ -9,6 +9,8 @@ import {
   questionCardUnattended,
 } from '@meiye/contracts';
 
+import { harnessActiveTaskListSchema } from '@meiye/contracts';
+
 import type { HarnessDecisionService } from './decision-service.js';
 import type { TodayRecommendationState } from '@meiye/contracts';
 import type {
@@ -18,6 +20,16 @@ import type {
 
 export interface HarnessTaskAccess {
   taskBelongsToWorkspace(taskId: string, workspaceId: string): Promise<boolean>;
+  /** 时间桥 (D-145): runs still on the server, newest first. */
+  listActiveTasks?(workspaceId: string): Promise<
+    Array<{
+      taskId: string;
+      workId: string;
+      packageId: string;
+      merchantText: string;
+      submittedAt: string;
+    }>
+  >;
 }
 
 export interface HarnessRecommendationReader {
@@ -108,6 +120,16 @@ export class HarnessApplicationService {
       status: target.status,
       timeoutSeconds,
     });
+  }
+
+  /**
+   * The server side of 时间桥拉回 (D-145). Returns an empty list rather than
+   * failing when the store cannot answer: a missing bridge must never be the
+   * reason a composer will not mount.
+   */
+  async listActiveTasks(workspaceId: string) {
+    const tasks = (await this.access.listActiveTasks?.(workspaceId)) ?? [];
+    return harnessActiveTaskListSchema.parse({ tasks });
   }
 
   async submitDecision(

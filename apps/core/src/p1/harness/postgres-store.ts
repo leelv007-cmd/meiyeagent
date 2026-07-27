@@ -271,6 +271,55 @@ export class PostgresHarnessStore
     return result.rows[0]?.runtime_id ?? null;
   }
 
+  /**
+   * 时间桥把手 (D-145). Runs that are still on the server for this workspace:
+   * admitted, not yet delivered, not yet failed. The browser asks this on mount
+   * so closing the tab stops being a way to lose the run — the handle comes back
+   * from the server and the transcript comes back from the event replay.
+   *
+   * Bounded to the same 24 hours the browser handle used to live for: a run
+   * older than that is not something a merchant is still waiting on.
+   */
+  async listActiveTasks(workspaceId: string) {
+    const result = await this.pool.query<{
+      task_id: string;
+      request: HarnessWorkflowInput;
+      created_at: Date | string;
+    }>(
+      `select requests.workflow_id as task_id,
+              requests.request,
+              requests.created_at
+       from harness_runtime.task_requests requests
+       where requests.request->>'workspaceId'=$1
+         and requests.created_at > now() - interval '24 hours'
+         and not exists (
+           select 1 from harness_runtime.audit_events events
+           where events.workflow_id=requests.task_id
+             and events.event_type in (
+               'package_delivered', 'workflow_failed', 'revision_conflict'
+             )
+         )
+       order by requests.created_at desc
+       limit 20`,
+      [workspaceId],
+    );
+    return result.rows.flatMap((row) => {
+      const workId = row.request?.executionSnapshot?.work.id;
+      const merchantText = row.request?.rawInput?.trim();
+      // A run with no Composer snapshot has no conversation to return to.
+      if (!workId || !merchantText) return [];
+      return [
+        {
+          taskId: row.task_id,
+          workId,
+          packageId: row.request.packageId,
+          merchantText,
+          submittedAt: new Date(row.created_at).toISOString(),
+        },
+      ];
+    });
+  }
+
   async readTerminalFailure(workspaceId: string, workflowId: string) {
     const runtimeWorkflowId = await this.workflowRuntimeId(
       workspaceId,

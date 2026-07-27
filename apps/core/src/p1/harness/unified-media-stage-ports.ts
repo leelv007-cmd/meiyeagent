@@ -45,6 +45,7 @@ import {
 import { projectMarketingPackageEvidence } from "./marketing-scene-policy.js";
 import {
 	merchantExactTextMismatch,
+	merchantImageGenerationFailure,
 	merchantNoteConfirmationCard,
 	merchantNoteSelectionReason,
 	merchantVideoGenerationFailure,
@@ -546,9 +547,9 @@ export class UnifiedHarnessStagePorts
 				this.now,
 			),
 			{
-				generate: async ({ page, reason }) => {
+				generate: async ({ page, reason, evaluationReason }) => {
 					const result = await this.media.execute({
-						brief: notePageImageBrief(page, snapshot),
+						brief: notePageImageBrief(page, snapshot, evaluationReason),
 						context: input.context,
 						request: input.request,
 						workflowId:
@@ -567,6 +568,9 @@ export class UnifiedHarnessStagePorts
 function notePageImageBrief(
 	page: NotePlan["pages"][number],
 	snapshot: NonNullable<HarnessWorkflowInput["executionSnapshot"]>,
+	// D-122 回炉: a retry that does not carry what the evaluator objected to is
+	// the same prompt run twice.
+	evaluationReason?: string,
 ): Extract<ExecutionBrief, { kind: "image" }> {
 	const aspectRatio = snapshot.deliverable.aspectRatio ?? "3:4";
 	return {
@@ -574,7 +578,10 @@ function notePageImageBrief(
 		intent: page.imageIntent,
 		prompt:
 			`为图文笔记第 ${page.order} 页生成配图：${page.imageIntent.purpose}。` +
-			`图文必须围绕“${page.textBlock.title}”一致表达。`,
+			`图文必须围绕“${page.textBlock.title}”一致表达。` +
+			(evaluationReason
+				? `上一版没有通过一致性核对：${evaluationReason}请针对该问题重新出图。`
+				: ""),
 		referenceAssetIds: page.imageIntent.references.map(
 			({ assetId }) => assetId,
 		),
@@ -971,9 +978,12 @@ function requireCompletedMediaResult(
 			502,
 			result.jobId,
 			result.attempt.acceptance,
+			// Every media kind gets a sentence a merchant can read. Leaving image
+			// undefined is what left the browser with the English engineering line
+			// the P0-2 audit found on screen.
 			kind === "video"
 				? merchantVideoGenerationFailure(timedOut ? "timed_out" : "failed")
-				: undefined,
+				: merchantImageGenerationFailure(timedOut ? "timed_out" : "failed"),
 		);
 	}
 	if (result.status !== "completed" || !result.asset) {

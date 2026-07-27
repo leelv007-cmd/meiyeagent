@@ -4,6 +4,7 @@ import {
   workflowStateFrameSchema,
   workflowTokenFrameSchema,
   type ContentPackageRevisionDelivery,
+  type MerchantReport,
   type WorkflowProgressEnvelope,
   type WorkflowProgressFrame,
   type WorkflowStateEnvelope,
@@ -194,6 +195,9 @@ export function useWorkflowEventStream(input: {
   const [harnessCancellation, setHarnessCancellation] = useState<
     HarnessCancellationOutcome | undefined
   >();
+  const [merchantReport, setMerchantReport] = useState<
+    MerchantReport | undefined
+  >();
   const [transportStatus, setTransportStatus] =
     useState<WorkflowEventTransportStatus>('idle');
 
@@ -204,6 +208,7 @@ export function useWorkflowEventStream(input: {
     setWorkflowState(undefined);
     setHarnessDelivery(undefined);
     setHarnessCancellation(undefined);
+    setMerchantReport(undefined);
     if (!input.enabled || !input.workflowId) {
       setTransportStatus('idle');
       return;
@@ -241,6 +246,11 @@ export function useWorkflowEventStream(input: {
           return;
         }
         setWorkflowState(frame.data.status);
+        // 失败/partial 申报 rides the same terminal frame as the status, so the
+        // conversation can state what happened without a second fetch (P0-2).
+        if (frame.data.merchantReport) {
+          setMerchantReport(frame.data.merchantReport);
+        }
         const delivery = harnessDeliveryFromState(frame.data);
         if (delivery) setHarnessDelivery(delivery);
         const cancellation = harnessCancellationFromState(frame.data);
@@ -297,6 +307,7 @@ export function useWorkflowEventStream(input: {
     harnessCancellation,
     harnessDelivery,
     latestProgress,
+    merchantReport,
     transportStatus,
     workflowState,
   };

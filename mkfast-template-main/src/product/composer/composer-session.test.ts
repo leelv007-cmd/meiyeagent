@@ -13,10 +13,12 @@ import {
   bindComposerTask,
   COMPOSER_SESSION_STORAGE_VERSION,
   COMPOSER_SESSION_TTL_MS,
+  composerSessionMerchantText,
   createComposerSession,
   failComposerSession,
   openComposerTurn,
   restoreComposerSession,
+  restoreComposerSessionFromActiveTask,
   serializeComposerSession,
   type ComposerSession,
 } from './composer-session';
@@ -263,9 +265,13 @@ test('a delivery card created before the revision arrived binds it late', () => 
 test('failure keeps the transcript so the merchant can retry in place', () => {
   const failed = applyComposerWorkflowState(runningSession(), 'failed');
   assert.equal(failed.phase, 'failed');
+  // W03: the merchant's own sentence stays; the candidate area goes. A draft
+  // that was blocked and will never be delivered must not be left on screen as
+  // if it were usable — for a source/redline block it is exactly the text the
+  // gate refused.
   assert.deepEqual(
     failed.turns.map((turn) => turn.kind),
-    ['merchant', 'candidate']
+    ['merchant']
   );
 
   const rejected = failComposerSession(
@@ -273,6 +279,100 @@ test('failure keeps the transcript so the merchant can retry in place', () => {
   );
   assert.equal(rejected.phase, 'failed');
   assert.equal(rejected.task, null);
+});
+
+/**
+ * P0-2 / W03. Before this the transcript simply stopped on failure and the only
+ * thing a merchant saw was a generic toast.
+ */
+test('a failed run states its reason, its next step and the refund in the flow', () => {
+  const report = {
+    kind: 'failure' as const,
+    category: 'media_generation' as const,
+    message: '这次图片没有顺利生成。你可以重新生成，或换一张参考素材再试。',
+    nextStep: '可以直接重新生成，或者先改用文字方案发布。',
+    actions: ['retry' as const, 'switch_form' as const],
+    quotaRefunded: true,
+  };
+  const failed = applyComposerWorkflowState(
+    runningSession(),
+    'failed',
+    undefined,
+    undefined,
+    report
+  );
+
+  assert.equal(failed.phase, 'failed');
+  const turn = failed.turns.at(-1);
+  assert.equal(turn?.kind, 'report');
+  if (turn?.kind !== 'report') return;
+  assert.deepEqual(turn.report, report);
+
+  // Replay hands the same terminal frame back on every reconnect; the card must
+  // not multiply.
+  const replayed = applyComposerWorkflowState(
+    failed,
+    'failed',
+    undefined,
+    undefined,
+    report
+  );
+  assert.equal(
+    replayed.turns.filter((item) => item.kind === 'report').length,
+    1
+  );
+});
+
+test('a partial delivery shows both the deliverable and what did not land', () => {
+  const delivered = applyComposerWorkflowState(
+    runningSession(),
+    'success',
+    { packageId: 'package-1', versionId: 'version-1', revision: 3 },
+    undefined,
+    {
+      kind: 'partial',
+      category: 'consistency',
+      message: '整套图文已经生成好了；其中 1 页的画面和文字还没完全对上。',
+      nextStep: '可以先用已经对好的页面发布，稍后再让我重做那一页。',
+      actions: ['review_partial', 'retry'],
+      quotaRefunded: false,
+    }
+  );
+
+  assert.equal(delivered.phase, 'delivered');
+  assert.equal(
+    delivered.turns.some((turn) => turn.kind === 'delivery'),
+    true,
+    'a partial run still delivers what it has'
+  );
+  assert.equal(
+    delivered.turns.some((turn) => turn.kind === 'report'),
+    true,
+    'and says what it could not finish'
+  );
+});
+
+test('an in-flight run is rebuilt from the server, not from the browser', () => {
+  const restored = restoreComposerSessionFromActiveTask({
+    sessionId: 'session-9',
+    task: {
+      taskId: 'task-1',
+      workId: 'work-1',
+      packageId: 'package-1',
+      merchantText: '写一条周末预约文案',
+      submittedAt: '2026-07-27T08:00:00.000Z',
+    },
+  });
+
+  assert.equal(restored.phase, 'running');
+  assert.deepEqual(restored.task, TASK);
+  // Same shape as the sessionStorage restore: merchant turn + candidate area,
+  // everything else comes back from the event replay.
+  assert.deepEqual(
+    restored.turns.map((turn) => turn.kind),
+    ['merchant', 'candidate']
+  );
+  assert.equal(composerSessionMerchantText(restored), '写一条周末预约文案');
 });
 
 test('hold expiry is a visible cancelled/refunded terminal, never a delivery', () => {

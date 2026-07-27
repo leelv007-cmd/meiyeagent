@@ -26,6 +26,8 @@ interface DashboardSearch {
   identity?: string;
   packageId?: string;
   stage?: 'action' | 'progress' | 'handoff';
+  /** D-145 时间桥: reopen the conversation for one in-flight run. */
+  taskId?: string;
   view?: 'recent' | 'works';
   /** @deprecated Z1: accepted only to redirect → /dashboard/results/$workId */
   workId?: string;
@@ -55,6 +57,9 @@ export const Route = createFileRoute('/dashboard/')({
     search.stage === 'progress' ||
     search.stage === 'handoff'
       ? { stage: search.stage }
+      : {}),
+    ...(typeof search.taskId === 'string' && search.taskId.length > 0
+      ? { taskId: search.taskId }
       : {}),
     ...(search.view === 'recent' || search.view === 'works'
       ? { view: search.view }
@@ -113,6 +118,7 @@ function DashboardHome() {
       initialRecipeRevisionId={search.catalogRecipeRevisionId}
       initialSessionIdentityId={search.identity}
       initialSurfaceRevisionId={search.catalogSurfaceRevisionId}
+      initialTaskId={search.taskId}
     />
   );
 }

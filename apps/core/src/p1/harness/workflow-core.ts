@@ -23,13 +23,16 @@ import type {
 import { promptTraceReference } from './langfuse-prompts.js';
 import type { HarnessPolicyInput } from './policy-gates.js';
 import {
+  merchantBriefFallbackNotice,
   merchantConfirmedMaterialsContinuationNotice,
   merchantGenericModeNotice,
   merchantIdentityVoiceNotice,
   merchantNeutralIndustryContinuationNotice,
   merchantNoteProgressMessage,
+  merchantNotePartialConsistency,
   merchantNoteStyleUnavailable,
   merchantNoteStyleQuestion,
+  merchantPartialDeliveryReport,
   merchantProgressMessage,
   merchantTaskSummary,
 } from './merchant-delivery-language.js';
@@ -41,6 +44,8 @@ type MediaBrief = Exclude<ExecutionBrief, { kind: 'copy' }>;
 interface MeasuredCopyBrief {
   brief: CopyBrief;
   metrics: StructuredNodeMetricsSnapshot;
+  /** ③段 fell back to the conservative brief (D-122) — the merchant is told. */
+  degraded?: boolean;
 }
 
 interface MeasuredMediaBrief {
@@ -89,6 +94,8 @@ export interface HarnessNoteSelectionResult {
   childRuns: ContentPackage['generated']['childRuns'];
   ownedAssets: NonNullable<ContentPackage['generated']['ownedAssets']>;
   selectedStyleId: string;
+  /** Pages whose image and text still disagree after the bounded retry (D-122). */
+  partial?: { unresolvedPageIds: string[] };
   trace: DecisionTraceFragment;
   version: NonNullable<ContentPackage['versions'][number]['note']>;
 }
@@ -707,7 +714,11 @@ export async function runHarnessWorkflow(
           : {}),
       }),
   );
-  let { brief, metrics: briefMetrics } = unpackBrief(compiledBrief);
+  let {
+    brief,
+    metrics: briefMetrics,
+    degraded: briefDegraded,
+  } = unpackBrief(compiledBrief);
   await trace(runtime, workflowId, 'brief_compilation', {
     kind: brief.kind,
     platform: brief.platform,
@@ -723,7 +734,11 @@ export async function runHarnessWorkflow(
   await reportProgress({
     stage: 'brief_compilation',
     state: 'success',
-    message: merchantProgressMessage('brief_compilation'),
+    // 声明降级、不阻塞 (D-122): the merchant reads that this run took the safe
+    // route, in the same rail the other four stages announce themselves in.
+    message: briefDegraded
+      ? merchantBriefFallbackNotice()
+      : merchantProgressMessage('brief_compilation'),
   });
 
   const executionSkills = stageSkills.execution_selection;
@@ -1191,7 +1206,17 @@ async function runNoteHarnessWorkflow(
       useSuggestion: '建议逐页核对画面、文字和预约引导，确认后再发布',
     }),
   });
+  const partialReport = selection.partial
+    ? merchantPartialDeliveryReport({
+        message: merchantNotePartialConsistency(
+          selection.partial.unresolvedPageIds.length,
+        ),
+        nextStep:
+          '可以先用已经对好的页面发布，或者让我把没对上的那几页重做一次。',
+      })
+    : undefined;
   return {
+    ...(partialReport ? { merchantReport: partialReport } : {}),
     billingReceipt: {
       trustedUsage: {
         kind: 'product_units' as const,
@@ -1737,7 +1762,7 @@ function mediaExecutionRoot(request: HarnessWorkflowInput) {
 function unpackBrief(input: CopyBrief | MeasuredCopyBrief) {
   return 'brief' in input
     ? input
-    : { brief: input, metrics: undefined };
+    : { brief: input, metrics: undefined, degraded: undefined };
 }
 
 async function applyCurrentTaskDecision(

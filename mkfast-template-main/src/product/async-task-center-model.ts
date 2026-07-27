@@ -12,7 +12,10 @@ import {
 } from '@/locale/paraglide/messages';
 import { creativeOutputLabel } from './creative-quote';
 
-import type { VideoWorkflowPublicProjection } from '@meiye/contracts';
+import type {
+  HarnessActiveTask,
+  VideoWorkflowPublicProjection,
+} from '@meiye/contracts';
 
 import type { RawCanonicalHistory } from './canonical-history-model';
 import type {
@@ -37,11 +40,11 @@ export interface AsyncTaskSummary {
   creativeJobId?: string;
   href: string;
   id: string;
-  kind: 'image' | 'video';
+  kind: 'image' | 'video' | 'creation';
   label: string;
-  operation: 'image.generate' | 'video.generate';
+  operation: 'image.generate' | 'video.generate' | 'harness.create';
   providerJobId: string;
-  source: 'creative' | 'canvas' | 'video_workflow';
+  source: 'creative' | 'canvas' | 'video_workflow' | 'harness';
   status: AsyncTaskStatus;
   updatedAt: string;
   workId?: string;
@@ -183,6 +186,37 @@ export function canonicalAsyncTaskSummaries(
       })
     ),
   ].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+/**
+ * 时间桥 (D-145). Creation runs the server still has in flight, so the task
+ * centre stops being blind to the one kind of task that mattered most: the
+ * conversation the merchant was in when they closed the tab. Each row deep links
+ * back to the composer bound to that task, which is what 回活对话 means here —
+ * the transcript comes back from the event replay, not from this row.
+ */
+export function harnessAsyncTaskSummaries(
+  tasks: HarnessActiveTask[]
+): AsyncTaskSummary[] {
+  return tasks
+    .map(
+      (task): AsyncTaskSummary => ({
+        createdAt: task.submittedAt,
+        href: `/dashboard?taskId=${encodeURIComponent(task.taskId)}`,
+        id: `harness-task:${task.taskId}`,
+        kind: 'creation',
+        label: task.merchantText,
+        operation: 'harness.create',
+        providerJobId: task.taskId,
+        source: 'harness',
+        // The list only ever contains runs that are neither delivered nor
+        // failed, so a row here is by construction still going.
+        status: 'running',
+        updatedAt: task.submittedAt,
+        workId: task.workId,
+      })
+    )
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
 export function composedVideoAsyncTaskSummaries(

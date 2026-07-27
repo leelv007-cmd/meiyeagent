@@ -613,6 +613,36 @@ outbound seam messages against real core SSE. The container journey itself
   numbers — those belong to the entitlements projection.
 - Both themes × mobile/desktop render the family and write walkthrough shots.
 
+## S2 失败申报与时间桥（#236）
+
+`specs/composer-failure-recovery.spec.ts` covers the two journeys W03 and W10
+exist to make true, both against the real Web → Core → Harness/DBOS chain.
+
+- **失败申报 (P0-2)**: a run whose candidate is blocked by the canonical
+  `critical_fact_source` gate reaches the conversation as a 申报卡 carrying a
+  Chinese 白话原因, a 下一步动作, at least one recovery entry, and the 额度
+  outcome — asserted both on the card and as an observed return of the passive
+  quota number, not only as a sentence the card makes about itself. The blocked
+  draft is gone from the transcript: a refused candidate must not be left on
+  screen as if it were usable. Every visible sentence passes the D-116 language
+  gate.
+  - **失败档 (fixture failure profile)**: the only deterministic boundary is the
+    model provider, the same as every other fixture journey. A merchant intent
+    containing 「失败档」 makes the fixture structured runner
+    (`apps/core/src/p1/model-supply/ai-sdk-runner.ts`) emit a price claim with no
+    traceable source. Everything downstream is production code — the real gate
+    blocks it, the real workflow fails, the real reservation is refunded, the
+    real audit fact is written and the real terminal frame carries the 申报.
+    Fixture mode is `APP_ENV=e2e` only, so the drill cannot arm in production.
+- **时间桥 (D-145)**: a run held on a question survives closing the tab. The
+  spec closes the page and opens a new one in the same browser context — login
+  kept, per-tab `sessionStorage` gone — and asserts `sessionStorage.length === 0`
+  so the restore cannot be the browser handle. The conversation comes back with
+  the merchant sentence, the 进度宣告卡 with at least as many stage lines as
+  before, and the pending question still in place, all rebuilt from the server
+  event replay. The async task centre then shows the same run and offers the
+  `?taskId=` deep link back into it.
+
 ## T32 作品与对象页换壳（#226）
 
 `specs/works-reshell.spec.ts` covers the reshelled 作品 surface against real

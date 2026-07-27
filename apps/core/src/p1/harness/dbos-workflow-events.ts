@@ -1,5 +1,6 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import {
+  merchantReportSchema,
   workflowProgressEnvelopeSchema,
   workflowStateEnvelopeSchema,
   workflowTokenEnvelopeSchema,
@@ -8,6 +9,7 @@ import {
 } from '@meiye/contracts';
 
 import type { HarnessWorkflowEventReader } from '../workflow-events.js';
+import { merchantFailureReport } from './merchant-delivery-language.js';
 import { harnessRuntimeId } from './workspace-scope.js';
 
 export interface HarnessWorkflowEventAccess {
@@ -81,12 +83,18 @@ export class HarnessDbosWorkflowEventReader
     try {
       const result = await this.transport.getResult(runtimeWorkflowId);
       const snapshot = asSnapshot(result);
+      // 诚实交付: a run that finished with part of the deliverable missing is a
+      // success the merchant must still be told about (D-122). The workflow
+      // result carries the 申报; the envelope lifts it so the browser never has
+      // to read Core's result shape.
+      const partial = merchantReportSchema.safeParse(snapshot.merchantReport);
       return workflowStateEnvelopeSchema.parse({
         workflowId,
         sourceRevision: deliveryRevision(snapshot),
         status: 'success',
         occurredAt: this.now(),
         snapshot,
+        ...(partial.success ? { merchantReport: partial.data } : {}),
       });
     } catch (error) {
       const failure = await this.access.readTerminalFailure(
@@ -103,6 +111,10 @@ export class HarnessDbosWorkflowEventReader
           outcome: 'failed',
           error: failure,
         },
+        // The 白话原因 + 下一步动作 the failure card renders. Deriving it here —
+        // one deterministic mapping over the persisted failure — is what keeps
+        // Core's failure copy from dying in the transport layer (P0-2).
+        merchantReport: merchantFailureReport(failure),
       });
     }
   }

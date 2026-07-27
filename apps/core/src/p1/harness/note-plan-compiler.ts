@@ -40,8 +40,19 @@ export interface NotePlanStructuredPort {
   draftPage(input: {
     page: NotePlan['pages'][number];
     previousTextBlock?: NotePlan['pages'][number]['textBlock'];
-    style: NoteStyleConfig['styles'][number];
+    /**
+     * Structural on purpose: a rewrite only knows the style the plan carries
+     * (id / name / positioning), not the full configured entry.
+     */
+    style: {
+      id: string;
+      name: string;
+      writingGuide: string;
+      structureTemplate?: string;
+    };
     themeAnchor: string;
+    /** Why the previous text failed the consistency check (D-122 回炉). */
+    consistencyFailure?: string;
   }): Promise<NotePlan['pages'][number]['textBlock']>;
   evaluate(input: {
     plan: NotePlan;
@@ -53,10 +64,45 @@ export interface NotePlanImagePort {
   generate(input: {
     page: NotePlan['pages'][number];
     reason: 'initial' | 'consistency_conflict' | 'merchant_request';
+    /**
+     * What the evaluator actually objected to. Without it a 回炉 is the same
+     * prompt run twice, which cannot fix anything it did not know was wrong.
+     */
+    evaluationReason?: string;
   }): Promise<{
     asset: NonNullable<ContentPackage['generated']['ownedAssets']>[number];
     childRun: ContentPackage['generated']['childRuns'][number];
   }>;
+}
+
+/**
+ * Dimensions a *text* rewrite can fix. The other two (visual consistency,
+ * image-text cross reference) are about the picture, so they stay on the image
+ * branch — regenerating an image for a repetition problem is the 回炉 that
+ * cannot converge (D-122).
+ */
+const TEXT_SIDE_CONSISTENCY_DIMENSIONS = new Set([
+  'theme_continuity',
+  'non_repetition',
+  'role_coverage',
+]);
+
+export function notePageRegenerationPlan(
+  evaluation: NotePlanConsistencyEvaluation,
+  pageId: string,
+): { reason: string; side: 'text' | 'image' } {
+  const failing = evaluation.dimensions.filter(
+    (dimension) => !dimension.passed && dimension.pageIds.includes(pageId),
+  );
+  const reason =
+    failing.map(({ reason: text }) => text).join('；') ||
+    '整篇一致性仍需调整。';
+  const textOnly =
+    failing.length > 0 &&
+    failing.every(({ dimension }) =>
+      TEXT_SIDE_CONSISTENCY_DIMENSIONS.has(dimension),
+    );
+  return { reason, side: textOnly ? 'text' : 'image' };
 }
 
 export interface NotePlanCompilerAuditSignal {
@@ -188,14 +234,62 @@ export class NotePlanCompiler {
     const regenerationReceipts: ImageTextNoteVersion['regenerationReceipts'] =
       [];
     const regenerated = [];
+    const rewriteStyle = {
+      id: selected.plan.style.id,
+      name: selected.plan.style.name,
+      writingGuide: selected.plan.style.positioning,
+    };
+    let textRewrites = 0;
     for (const pageId of initialEvaluation.regenerationPageIds) {
       const page = plan.pages.find(({ id }) => id === pageId);
       if (!page) {
         throw new Error('Consistency evaluation referenced an unknown page.');
       }
+      const regeneration = notePageRegenerationPlan(initialEvaluation, pageId);
+      if (regeneration.side === 'text') {
+        const index = plan.pages.findIndex(({ id }) => id === pageId);
+        const previousTextBlock = plan.pages[index - 1]?.textBlock;
+        const rewritten = await this.structured.draftPage({
+          page,
+          ...(previousTextBlock ? { previousTextBlock } : {}),
+          style: rewriteStyle,
+          themeAnchor: plan.themeAnchor,
+          consistencyFailure: regeneration.reason,
+        });
+        plan = notePlanSchema.parse({
+          ...plan,
+          pages: plan.pages.map((candidate) =>
+            candidate.id === page.id
+              ? {
+                  ...candidate,
+                  revision: candidate.revision + 1,
+                  // The picture already passed; keeping its exact text keeps the
+                  // image the rewrite is supposed to match still matching.
+                  textBlock: {
+                    ...rewritten,
+                    exactText: candidate.textBlock.exactText,
+                  },
+                }
+              : candidate,
+          ),
+        });
+        assertNotePlanWithinBound(plan, input.notePageBound);
+        textRewrites += 1;
+        auditSignals.push({
+          eventType: 'note_page_regenerated',
+          payload: {
+            auditRef: `note-page-rewrite:${page.id}:r${page.revision + 1}`,
+            imagePoints: 0,
+            pageId: page.id,
+            side: 'text',
+          },
+        });
+        continue;
+      }
       const generation = await this.images.generate({
         page,
         reason: 'consistency_conflict',
+        evaluationReason: regeneration.reason,
       });
       regenerated.push(generation);
       const auditRef = `note-page-regeneration:${page.id}:r${page.revision + 1}`;
@@ -225,16 +319,17 @@ export class NotePlanCompiler {
         payload: { auditRef, imagePoints: 1, pageId: page.id },
       });
     }
-    const evaluation =
-      regenerationReceipts.length === 0
-        ? initialEvaluation
-        : notePlanConsistencyEvaluationSchema.parse(
-            await this.structured.evaluate({
-              plan,
-              attempt: 'after_regeneration',
-            }),
-          );
-    if (regenerationReceipts.length > 0) {
+    const regeneratedAnything =
+      regenerationReceipts.length > 0 || textRewrites > 0;
+    const evaluation = !regeneratedAnything
+      ? initialEvaluation
+      : notePlanConsistencyEvaluationSchema.parse(
+          await this.structured.evaluate({
+            plan,
+            attempt: 'after_regeneration',
+          }),
+        );
+    if (regeneratedAnything) {
       auditSignals.push({
         eventType: 'note_consistency_evaluated',
         payload: {
@@ -244,17 +339,20 @@ export class NotePlanCompiler {
         },
       });
     }
-    if (evaluation.regenerationPageIds.length > 0) {
-      throw new Error(
-        'NotePlan consistency remained incomplete after one bounded regeneration.',
-      );
-    }
+    // D-122 诚实交付: one bounded regeneration is the contract, and pages that
+    // still disagree after it do not void the whole run. The merchant gets the
+    // set that did come out right, plus a 申报 naming the pages that did not —
+    // failing the task outright would throw away work they can already use.
+    const unresolvedPageIds = evaluation.regenerationPageIds;
 
     return {
       auditSignals,
       childRuns: [...initial, ...regenerated].map(({ childRun }) => childRun),
       ownedAssets: [...initial, ...regenerated].map(({ asset }) => asset),
       selectedStyleId: selected.styleId,
+      ...(unresolvedPageIds.length > 0
+        ? { partial: { unresolvedPageIds: [...unresolvedPageIds] } }
+        : {}),
       version: imageTextNoteVersionSchema.parse({
         schema: 'image-text-note-version/v1',
         plan,

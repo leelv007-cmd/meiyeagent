@@ -508,3 +508,124 @@ describe('终态申报', () => {
     expect(screen.queryByTestId('composer-delivery-card')).toBeNull();
   });
 });
+
+/**
+ * W03 / P0-2 申报卡. The audit found a failed run rendering as *nothing* — the
+ * transcript stopped and a generic toast was the whole story. These cover what
+ * replaced it: the reason, the next step, the refund, and a way back in.
+ */
+describe('失败/partial 申报卡', () => {
+  const failureReport = {
+    kind: 'failure' as const,
+    category: 'media_generation' as const,
+    message: '这次图片没有顺利生成。你可以重新生成，或换一张参考素材再试。',
+    nextStep: '可以直接重新生成，或者先改用文字方案发布。',
+    actions: ['retry' as const, 'switch_form' as const],
+    quotaRefunded: true,
+  };
+
+  function failed(report = failureReport) {
+    return applyComposerWorkflowState(
+      running(),
+      'failed',
+      undefined,
+      undefined,
+      report
+    );
+  }
+
+  it('states 白话原因, 下一步动作 and the refund, in merchant language', () => {
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        onRecover={() => {}}
+        session={failed()}
+        stream={projectResultTokenStream({ workspaceKind: 'copy' })}
+      />
+    );
+
+    const card = screen.getByTestId('composer-report-card');
+    expect(card).toHaveAttribute('data-report-kind', 'failure');
+    expect(screen.getByTestId('composer-report-reason')).toHaveTextContent(
+      '这次图片没有顺利生成'
+    );
+    expect(screen.getByTestId('composer-report-next-step')).toHaveTextContent(
+      '先改用文字方案发布'
+    );
+    expect(screen.getByTestId('composer-report-quota')).toHaveTextContent(
+      '已经退回'
+    );
+    // D-116: nothing on a merchant card may read as engineering output.
+    expect(
+      cardLanguageIssues(card.textContent ?? '', ['task-1', 'work-1'])
+    ).toEqual([]);
+  });
+
+  it('offers a way back in rather than a dead end', async () => {
+    const user = userEvent.setup();
+    const onRecover = vi.fn();
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        onRecover={onRecover}
+        session={failed()}
+        stream={projectResultTokenStream({ workspaceKind: 'copy' })}
+      />
+    );
+
+    const actions = within(screen.getByTestId('composer-report-actions'));
+    await user.click(screen.getByTestId('composer-report-action-retry'));
+    expect(onRecover).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'retry' })
+    );
+    expect(
+      actions.getByTestId('composer-report-action-switch_form')
+    ).toBeInTheDocument();
+  });
+
+  it('never claims a refund the run did not make', () => {
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        onRecover={() => {}}
+        session={failed({ ...failureReport, quotaRefunded: false })}
+        stream={projectResultTokenStream({ workspaceKind: 'copy' })}
+      />
+    );
+
+    expect(screen.queryByTestId('composer-report-quota')).toBeNull();
+  });
+
+  it('a partial delivery keeps the deliverable and declares the rest', () => {
+    const delivered = applyComposerWorkflowState(
+      running(),
+      'success',
+      { packageId: 'package-1', versionId: 'version-1', revision: 3 },
+      undefined,
+      {
+        kind: 'partial',
+        category: 'consistency',
+        message: '整套图文已经生成好了；其中 1 页的画面和文字还没完全对上。',
+        nextStep: '可以先用已经对好的页面发布，稍后再让我重做那一页。',
+        actions: ['review_partial', 'retry'],
+        quotaRefunded: false,
+      }
+    );
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        onRecover={() => {}}
+        session={delivered}
+        stream={projectResultTokenStream({ workspaceKind: 'copy' })}
+      />
+    );
+
+    expect(screen.getByTestId('composer-delivery-turn')).toBeInTheDocument();
+    const card = screen.getByTestId('composer-report-card');
+    expect(card).toHaveAttribute('data-report-kind', 'partial');
+    expect(
+      screen.getByTestId('composer-report-action-review_partial')
+    ).toBeInTheDocument();
+    expect(cardLanguageIssues(card.textContent ?? '', [])).toEqual([]);
+  });
+});

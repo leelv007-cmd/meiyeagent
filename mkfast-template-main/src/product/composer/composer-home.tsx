@@ -68,6 +68,7 @@ import {
   type CreativeGroundingRequirement,
 } from '@/product/creative-brief-editor';
 import {
+  readActiveHarnessTasks,
   readPendingHarnessDecision,
   submitHarnessDecision,
 } from '@/product/harness-client';
@@ -172,13 +173,16 @@ import {
   applyComposerWorkflowState,
   bindComposerTask,
   COMPOSER_SESSION_STORAGE_KEY,
+  composerSessionMerchantText,
   createComposerSession,
   failComposerSession,
   openComposerTurn,
   restoreComposerSession,
+  restoreComposerSessionFromActiveTask,
   serializeComposerSession,
   type ComposerSession,
 } from './composer-session';
+import type { ComposerRecoveryInput } from './composer-report-card';
 
 /** Which Result Center panel each 成品交付卡 action opens (T31 / #225). */
 const DELIVERY_ACTION_PANELS: Record<
@@ -298,6 +302,8 @@ export type ComposerHomeProps = {
   initialSurfaceRevisionId?: string;
   /** T33: identity handed over by the identity page for this session only. */
   initialSessionIdentityId?: string;
+  /** D-145 时间桥深链: reopen this in-flight run rather than the newest one. */
+  initialTaskId?: string;
   /** Injectable for tests; browser sessionStorage is used by default. */
   sessionStore?: Storage;
 };
@@ -308,6 +314,7 @@ export function ComposerHome({
   initialRecipeRevisionId,
   initialSessionIdentityId,
   initialSurfaceRevisionId,
+  initialTaskId,
   sessionStore,
 }: ComposerHomeProps = {}) {
   const isMobile = useIsMobile();
@@ -812,6 +819,44 @@ export function ComposerHome({
     store.setItem(COMPOSER_SESSION_STORAGE_KEY, JSON.stringify(persisted));
   }, [session, store]);
 
+  /**
+   * 时间桥拉回 (D-145). The browser handle lives in sessionStorage, so closing
+   * the tab used to be a permanent way out of a run that was still going. The
+   * server keeps the only truth, so the composer asks it on mount: if something
+   * is still in flight the handle comes back, and the event log replay rebuilds
+   * the transcript exactly as it stood.
+   *
+   * Deliberately never overrides a live session — only a composer with nothing
+   * bound adopts a server-side run.
+   */
+  const activeTasksQuery = useQuery({
+    queryKey: ['harness', 'active-tasks'],
+    queryFn: ({ signal }) => readActiveHarnessTasks(signal),
+    // One shot per mount; the run itself streams over SSE from there on.
+    refetchOnWindowFocus: false,
+    retry: false,
+    staleTime: 30_000,
+  });
+  const restoredFromServerRef = useRef(false);
+
+  useEffect(() => {
+    if (restoredFromServerRef.current || session.task) return;
+    const tasks = activeTasksQuery.data?.tasks ?? [];
+    // A deep link from the task centre names the run it wants reopened; without
+    // one the newest in-flight run is the conversation to come back to.
+    const task = initialTaskId
+      ? tasks.find((candidate) => candidate.taskId === initialTaskId)
+      : tasks[0];
+    if (!task) return;
+    restoredFromServerRef.current = true;
+    const restored = restoreComposerSessionFromActiveTask({
+      sessionId: sessionIdRef.current,
+      task,
+    });
+    setSession(restored);
+    setLensState((current) => updateUserText(current, task.merchantText));
+  }, [activeTasksQuery.data, initialTaskId, session.task]);
+
   const taskId = session.task?.taskId ?? '';
   // Harness tasks are not a P1 query module — the existing harness surfaces key
   // them by hand (see product/harness-question-card.tsx).
@@ -839,20 +884,33 @@ export function ComposerHome({
   useEffect(() => {
     if (!workflowStream.workflowState) return;
     // 成品版本 rides the same terminal frame as the status, so the delivery card
-    // binds its actions to the revision the server actually delivered.
+    // binds its actions to the revision the server actually delivered — and so
+    // does the 失败/partial 申报 (W03), which is why neither needs a second read.
     setSession((current) =>
       applyComposerWorkflowState(
         current,
         workflowStream.workflowState!,
         workflowStream.harnessDelivery,
-        workflowStream.harnessCancellation
+        workflowStream.harnessCancellation,
+        workflowStream.merchantReport
       )
     );
   }, [
     workflowStream.workflowState,
     workflowStream.harnessDelivery,
     workflowStream.harnessCancellation,
+    workflowStream.merchantReport,
   ]);
+
+  useEffect(() => {
+    // 额度退还可见: a failed run gives the reservation back, so the passive quota
+    // line must stop showing the number from before the run.
+    if (workflowStream.workflowState !== 'failed') return;
+    void queryClient.invalidateQueries({
+      queryKey: ['harness', 'active-tasks'],
+    });
+    void usageQuery.refetch();
+  }, [workflowStream.workflowState]);
 
   // 需要用户的一个问题 — the third inbound seam message. Polled while the run is
   // live so a suspended workflow surfaces its card without a page action.
@@ -1340,6 +1398,47 @@ export function ComposerHome({
     });
   };
 
+  /**
+   * 可恢复入口 (W03). A 申报卡 without a way back in is just a nicer dead end, so
+   * every entry lands the merchant somewhere they can act: back in the composer
+   * with their own sentence, on a different form, or on the part that did land.
+   */
+  const recoverFromReport = (input: ComposerRecoveryInput) => {
+    const merchantText = composerSessionMerchantText(session);
+    if (merchantText) {
+      setLensState((current) => updateUserText(current, merchantText));
+    }
+    switch (input.action) {
+      case 'retry':
+        setSession((current) => createComposerSession(current.sessionId));
+        void attemptSubmit();
+        return;
+      case 'adjust_intent':
+        focusComposerIntentInput();
+        return;
+      case 'switch_form':
+        // The lens radiogroup is the one place a form is chosen; sending the
+        // merchant there beats inventing a second switch inside the card.
+        document
+          .querySelector<HTMLElement>(
+            '[data-testid="composer-lens-radiogroup"]'
+          )
+          ?.scrollIntoView?.({ block: 'nearest' });
+        focusComposerIntentInput();
+        return;
+      case 'review_partial': {
+        const task = session.task;
+        if (!task) return;
+        openDelivery({
+          action: 'open',
+          revision: null,
+          taskId: task.taskId,
+          workId: task.workId,
+        });
+      }
+    }
+  };
+
   const attemptSubmit = async () => {
     if (!imageCardinality.valid) {
       document
@@ -1758,6 +1857,7 @@ export function ComposerHome({
           />
         }
         onOpenDelivery={openDelivery}
+        onRecover={recoverFromReport}
         questionSlot={
           pendingQuestion ? (
             <ComposerQuestionCard

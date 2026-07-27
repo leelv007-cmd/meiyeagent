@@ -320,6 +320,10 @@ export function registerHarnessDbosWorkflow(
           request,
           workflowId,
         );
+        // Whether the reserved 额度 came back is part of what the merchant is
+        // told (D-096 申报). It is known here and nowhere downstream, so it
+        // travels with the persisted failure rather than being guessed later.
+        const refunded = Boolean(billing && settlement);
         if (billing && settlement) {
           await failHarnessWorkflowPreservingExecutionError({
             billing,
@@ -330,7 +334,10 @@ export function registerHarnessDbosWorkflow(
               persistence.recordTerminalFailure({
                 workspaceId: request.workspaceId,
                 workflowId,
-                failure: normalizeHarnessTerminalFailure(error),
+                failure: {
+                  ...normalizeHarnessTerminalFailure(error),
+                  quotaRefunded: true,
+                },
               }),
           });
         }
@@ -339,7 +346,10 @@ export function registerHarnessDbosWorkflow(
             persistence.recordTerminalFailure({
               workspaceId: request.workspaceId,
               workflowId,
-              failure: normalizeHarnessTerminalFailure(error),
+              failure: {
+                ...normalizeHarnessTerminalFailure(error),
+                quotaRefunded: refunded,
+              },
             }),
           { name: 'persist-terminal-failure' },
         );
