@@ -800,6 +800,13 @@ export function ComposerHome({
   const quoteId = quoteInput?.quoteId ?? null;
   const [settledQuoteId, setSettledQuoteId] = useState<string | null>(null);
   const quoteSettling = quoteId !== null && settledQuoteId !== quoteId;
+  /**
+   * The sentence the merchant pressed send on. Pressing inside the window ends
+   * it *and* stands as the submit they asked for, so the run starts on the
+   * price that sentence produces — otherwise the first press would only change
+   * a status line and they would have to press again to be heard.
+   */
+  const armedQuoteIdRef = useRef<string | null>(null);
   const flushQuoteSettle = () => {
     if (quoteId !== null && settledQuoteId !== quoteId) {
       setSettledQuoteId(quoteId);
@@ -996,7 +1003,18 @@ export function ComposerHome({
       quoteQuery.data,
       lensState.draft.settings.quantity ?? 1
     );
-    if (lensState.draft.quoteRevisionId === nextView.revision) return;
+    // Revision alone is not identity. The server fingerprints a revision by the
+    // priced facts, so 再生成一次 — same sentence, same model, new session —
+    // comes back on the revision already bound while the quote *id* has moved.
+    // The gate compares ids (`currentComposerQuoteView`), so a bind that only
+    // watches revisions would leave the failed run's id bound forever and the
+    // send button disabled with nothing on screen to explain it (#236 W03).
+    if (
+      lensState.draft.quoteRevisionId === nextView.revision &&
+      lensState.draft.quoteView?.quoteId === nextView.quoteId
+    ) {
+      return;
+    }
     setLensState((current) => bindQuoteView(current, nextView));
   }, [quoteQuery.data, lensState]);
 
@@ -1796,9 +1814,11 @@ export function ComposerHome({
     if (!quoteQuery.data || !currentQuoteView || !submissionRecipe) {
       if (quoteSettling) {
         // Pressing send *is* the merchant saying the sentence is final. End the
-        // window and ask for the price now: the line moves from 「等你改完这句」
-        // to 「正在算…」, so the click has a visible effect rather than raising a
-        // hint about something they did not get wrong.
+        // window, ask for the price now, and remember that they asked: the run
+        // starts as soon as that price lands. Flushing without arming would
+        // make the first press change a status line and nothing else — a dead
+        // press, which is the defect this ticket exists to remove.
+        armedQuoteIdRef.current = quoteId;
         flushQuoteSettle();
         return;
       }
@@ -1971,6 +1991,38 @@ export function ComposerHome({
     lensState,
     quoteQuery.data,
     retryAfterReport,
+    submissionRecipe,
+  ]);
+
+  /**
+   * The armed press, second half: the merchant pressed send while the quote was
+   * still held, and this is where that press finally reaches Core — against the
+   * price of the exact sentence they pressed on, never a later one.
+   */
+  useEffect(() => {
+    const armed = armedQuoteIdRef.current;
+    if (armed === null) return;
+    if (quoteId !== armed) {
+      // They kept writing after pressing. The sentence they sent is not the one
+      // on screen any more, so the press expires with it rather than submitting
+      // something they never asked for.
+      if (quoteId !== null) armedQuoteIdRef.current = null;
+      return;
+    }
+    if (quoteQuery.isError) {
+      // The price never came back. The failure line owns the recovery from
+      // here; a press held across it would submit long after they gave up.
+      armedQuoteIdRef.current = null;
+      return;
+    }
+    if (!quoteQuery.data || !currentQuoteView || !submissionRecipe) return;
+    armedQuoteIdRef.current = null;
+    void attemptSubmit();
+  }, [
+    currentQuoteView,
+    quoteId,
+    quoteQuery.data,
+    quoteQuery.isError,
     submissionRecipe,
   ]);
 

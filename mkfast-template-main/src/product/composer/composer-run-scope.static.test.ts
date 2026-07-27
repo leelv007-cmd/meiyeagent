@@ -52,6 +52,24 @@ test('send stays pressable while the quote is only being held back', () => {
   // something the merchant did not get wrong.
   assert.match(submit, /if \(quoteSettling\) \{\s*\/\//u);
   assert.match(submit, /flushQuoteSettle\(\);/u);
+  // The press is also remembered. A flush on its own would move a status line
+  // and nothing else, so the first press would be one the merchant has to
+  // repeat — a dead press by any other name.
+  assert.match(submit, /armedQuoteIdRef\.current = quoteId;/u);
+  assert.match(home, /if \(quoteId !== armed\)/u);
+});
+
+/**
+ * 再生成一次 keeps the sentence and the model, so the server prices it at the
+ * revision already bound while the quote id moves with the new session. The
+ * gate compares ids, so the bind has to as well — otherwise the recovery ends
+ * on a send button that is disabled forever with nothing explaining why.
+ */
+test('the bound price is replaced when quote identity moves, not only its revision', () => {
+  assert.match(
+    home,
+    /lensState\.draft\.quoteRevisionId === nextView\.revision &&\s*lensState\.draft\.quoteView\?\.quoteId === nextView\.quoteId/u
+  );
 });
 
 /**
