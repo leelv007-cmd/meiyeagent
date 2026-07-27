@@ -227,6 +227,7 @@ test('revision zero creates a complete profile patch without promoting fallbacks
     capturedAt: '2026-07-27T10:00:00.000Z',
     expectedRevision: 0,
     referenceId: 'progressive-card-day-zero',
+    regulatedDefault: false,
     taskId: 'progressive-task-day-zero',
     workspaceId: 'workspace-a',
   });
@@ -261,6 +262,46 @@ test('revision zero creates a complete profile patch without promoting fallbacks
   assert.equal(factKeys.includes('store.profile.district'), false);
   assert.equal(factKeys.includes('store.fulfillment.address'), false);
   assert.equal(factKeys.includes('store.fulfillment.booking'), false);
+});
+
+test('revision zero seeds the platform regulated default instead of false', () => {
+  let draft = createProgressiveFactDraft();
+  draft = answerProgressiveFact(draft, 'name', '青禾医美');
+  draft = answerProgressiveFact(draft, 'city', '杭州');
+  draft = answerProgressiveFact(draft, 'projectName', '光子嫩肤');
+  draft = answerProgressiveFact(draft, 'projectPrice', '1299');
+
+  const command = buildFinalizeStoreIntakeCommand(draft, {
+    batchId: 'progressive-batch-regulated',
+    capturedAt: '2026-07-27T10:00:00.000Z',
+    expectedRevision: 0,
+    referenceId: 'progressive-card-regulated',
+    regulatedDefault: true,
+    taskId: 'progressive-task-regulated',
+    workspaceId: 'workspace-a',
+  });
+
+  assert.equal(command?.payload.profilePatch.regulated, true);
+});
+
+test('revision zero is withheld until the platform regulated default is known', () => {
+  let draft = createProgressiveFactDraft();
+  draft = answerProgressiveFact(draft, 'name', '青禾美甲');
+  draft = answerProgressiveFact(draft, 'city', '杭州');
+  draft = answerProgressiveFact(draft, 'projectName', '透亮猫眼');
+  draft = answerProgressiveFact(draft, 'projectPrice', '299');
+
+  assert.equal(
+    buildFinalizeStoreIntakeCommand(draft, {
+      batchId: 'progressive-batch-unknown-default',
+      capturedAt: '2026-07-27T10:00:00.000Z',
+      expectedRevision: 0,
+      referenceId: 'progressive-card-unknown-default',
+      taskId: 'progressive-task-unknown-default',
+      workspaceId: 'workspace-a',
+    }),
+    null
+  );
 });
 
 test('a fully prefilled profile cannot create an empty finalize batch', () => {

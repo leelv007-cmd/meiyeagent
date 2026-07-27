@@ -746,6 +746,23 @@ function fixtureCopyResult(prompt: string): GeneratedCopyResult {
   };
 }
 
+/**
+ * 失败档 (W03 / P0-2). Fixture mode has always been able to produce a delivery;
+ * it could not produce a *failure*, so the whole 申报 chain — Core's Chinese
+ * failure copy, the refund, the conversation card — had no journey to prove it
+ * on. A merchant intent carrying this word arms one: the fixture emits a price
+ * claim with no traceable source, which the real canonical gate then blocks.
+ *
+ * Fixture mode is `APP_ENV=e2e` only (model-supply/runtime-config.ts), so this
+ * cannot arm anything in production.
+ */
+const FIXTURE_FAILURE_DRILL_MARKER = '失败档';
+const FIXTURE_FAILURE_DRILL_CONSTRAINT = 'fixture-failure-drill';
+
+function isFixtureFailureDrill(intent: string) {
+  return intent.includes(FIXTURE_FAILURE_DRILL_MARKER);
+}
+
 function fixtureStructuredOutput(schemaName: string, prompt: string) {
   const payload = parseFixtureRecord(prompt);
   switch (schemaName) {
@@ -869,7 +886,9 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
         factRefs: fixturePromptFactRefs(payload),
         assetRefs: [],
         identityRefs: [],
-        constraints: ['不得编造价格、效果或顾客案例'],
+        constraints: isFixtureFailureDrill(normalizedIntent)
+          ? ['不得编造价格、效果或顾客案例', FIXTURE_FAILURE_DRILL_CONSTRAINT]
+          : ['不得编造价格、效果或顾客案例'],
       };
     }
     case 'harness_image_brief_v1': {
@@ -1167,7 +1186,15 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
               title: `${frozenIntent.slice(0, 120)}｜${(candidates[index] ?? candidates[0]).title}`,
             }
           : {}),
-        factClaims: [],
+        // 失败档: an ungrounded price claim. Nothing about the failure is faked
+        // downstream — the real canonical `critical_fact_source` gate blocks
+        // this candidate and its retry, the real workflow fails, the real
+        // reservation is refunded, and the real terminal frame carries the
+        // merchant 申报. Only the model output is deterministic, which is the
+        // same boundary every other fixture journey runs on.
+        factClaims: prompt.includes(FIXTURE_FAILURE_DRILL_CONSTRAINT)
+          ? [{ kind: 'price', value: '演练价 888 元' }]
+          : [],
         assetRefs: [],
       };
     }

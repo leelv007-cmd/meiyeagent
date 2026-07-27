@@ -265,6 +265,99 @@ test('brief compilation produces complete copy, image and video unit briefs', as
   }
 });
 
+/**
+ * D-122 ③段兜底. A brief that will not compile must not end the run — but the
+ * conservative brief it degrades to may not claim anything either, or the
+ * fallback would smuggle in exactly the ungrounded content the gates exist to
+ * stop.
+ */
+test('a copy brief that will not compile degrades instead of ending the run', async () => {
+  const declaration = {
+    normalizedIntent: '介绍夏日头皮护理服务',
+    taskType: 'daily_service_exposure' as const,
+    deliveryLayer: 'copy' as const,
+    relevantAssetCategories: ['industry_category' as const],
+    usedAssetCategories: ['industry_category' as const],
+    route: 'customized' as const,
+    routingSource: 'model' as const,
+    implicitConstraints: ['只使用已确认信息'],
+  };
+  const failingRunner: StructuredNodeRunner = {
+    async run() {
+      throw new StructuredNodeRunError('failed', 'rejected_before_accept');
+    },
+  };
+  let degraded = 0;
+
+  const brief = await compileExecutionBrief(
+    {
+      workflowId: 'workflow-brief-fallback',
+      unitId: 'copy-primary',
+      unitKind: 'copy',
+      declaration,
+      bundle: contextBundleFixture(),
+    },
+    failingRunner,
+    undefined,
+    () => {
+      degraded += 1;
+    },
+  );
+
+  assert.equal(degraded, 1);
+  assert.equal(brief.kind, 'copy');
+  if (brief.kind !== 'copy') return;
+  assert.deepEqual(brief.factRefs, []);
+  assert.deepEqual(brief.assetRefs, []);
+  assert.deepEqual(brief.identityRefs, []);
+  assert.match(brief.instructions, /介绍夏日头皮护理服务/u);
+  assert.ok(
+    brief.constraints.some((constraint) => constraint.includes('不得编造')),
+  );
+
+  // Without the fallback hook the failure still surfaces — the resilience is
+  // opt-in per call site, never a silent swallow.
+  await assert.rejects(
+    compileExecutionBrief(
+      {
+        workflowId: 'workflow-brief-fallback',
+        unitId: 'copy-primary',
+        unitKind: 'copy',
+        declaration,
+        bundle: contextBundleFixture(),
+      },
+      failingRunner,
+    ),
+    /Structured node execution failed/u,
+  );
+
+  // And a hard gate stays hard: a source-fence or authorization failure is not
+  // a model failure, so it reaches the caller even with the hook armed.
+  let degradedOnFence = 0;
+  await assert.rejects(
+    compileExecutionBrief(
+      {
+        workflowId: 'workflow-brief-fallback',
+        unitId: 'copy-primary',
+        unitKind: 'copy',
+        declaration,
+        bundle: contextBundleFixture(),
+      },
+      {
+        async run() {
+          throw new Error('SOURCE_REFERENCE_UNVERIFIED');
+        },
+      },
+      undefined,
+      () => {
+        degradedOnFence += 1;
+      },
+    ),
+    /SOURCE_REFERENCE_UNVERIFIED/u,
+  );
+  assert.equal(degradedOnFence, 0);
+});
+
 test('brief compilation exposes only fact refs authorized by satisfaction', async () => {
   const bundle = contextBundleFixture();
   bundle.referencedFactRevisions = [

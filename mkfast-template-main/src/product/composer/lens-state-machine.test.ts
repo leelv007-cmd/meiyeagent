@@ -11,6 +11,7 @@ import {
   confirmSwitch,
   createComposerLensState,
   lensStateView,
+  reopenComposer,
   requestSwitchLens,
   selectLens,
   submitComposer,
@@ -314,6 +315,30 @@ test('submit freezes lens and revisions; further select is no-op', () => {
   const blocked = selectLens(result.state, 'video');
   assert.equal(blocked.phase, 'frozen');
   assert.equal(blocked.lensId, 'copy');
+
+  // 可恢复入口 (W03): a declared failure invites the merchant to act, and the
+  // freeze is what would make every one of those entries a dead button — the
+  // composer stays disabled and canSubmit refuses. Reopening keeps their draft
+  // and drops only the revision pins.
+  const reopened = reopenComposer(result.state);
+  assert.equal(reopened.phase, 'selected');
+  assert.equal(reopened.lensId, 'copy');
+  assert.equal(reopened.draft.userText, '提交文案');
+  assert.equal(canSubmit(reopened).allowed, true);
+  // 换种形式 has to reach the switch path again; while frozen it was a no-op.
+  const switching = selectLens(reopened, 'video');
+  assert.notEqual(switching.phase, 'frozen');
+  assert.ok(
+    switching.lensId === 'video' || switching.phase === 'switch_preview',
+    'the lens switch is live again'
+  );
+});
+
+test('reopening anything that is not frozen changes nothing', () => {
+  let state: ComposerLensState = createComposerLensState();
+  assert.equal(reopenComposer(state), state);
+  state = selectLens(state, 'copy');
+  assert.equal(reopenComposer(state), state);
 });
 
 test('video submit requires confirm; zone includes 按生成成片 N 秒计费', () => {

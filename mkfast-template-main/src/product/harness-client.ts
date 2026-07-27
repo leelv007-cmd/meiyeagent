@@ -1,4 +1,5 @@
 import {
+  harnessActiveTaskListSchema,
   harnessTaskSubmissionSchema,
   harnessDecisionSnapshotSchema,
   harnessDecisionSubmitResultSchema,
@@ -65,6 +66,21 @@ export async function submitHarnessTask(input: HarnessTaskSubmission) {
     method: 'POST',
   });
   return taskHandleSchema.parse(await readEnvelope<unknown>(response));
+}
+
+/**
+ * 时间桥 (D-145). What is still running for this workspace, straight from the
+ * server. Asked on composer mount so a closed tab is no longer a lost run —
+ * the browser handle stops being the only way back in.
+ */
+export async function readActiveHarnessTasks(signal?: AbortSignal) {
+  const response = await telemetryFetch('/api/core/p1/harness/tasks', {
+    credentials: 'same-origin',
+    signal,
+  });
+  return harnessActiveTaskListSchema.parse(
+    await readEnvelope<unknown>(response)
+  );
 }
 
 export async function readPendingHarnessDecision(

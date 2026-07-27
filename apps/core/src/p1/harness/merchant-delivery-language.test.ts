@@ -3,15 +3,24 @@ import test from 'node:test';
 
 import {
   merchantAssetRightsSoftPrompt,
+  merchantBriefFallbackNotice,
   merchantConfirmedMaterialsContinuationNotice,
   merchantConfirmationQuestion,
+  merchantContentSourceBlocked,
+  merchantDeliveryConflict,
   merchantExactTextMismatch,
+  merchantFailureReport,
   merchantGenericModeNotice,
+  merchantImageGenerationFailure,
+  merchantNotePartialConsistency,
+  merchantNotePartialPageMarker,
+  merchantPartialDeliveryReport,
   merchantIdentityVoiceNotice,
   merchantNeutralIndustryContinuationNotice,
   merchantNoteProgressMessage,
   merchantNoteSelectionReason,
   merchantNoteStyleQuestion,
+  merchantNoteStyleUnavailable,
   merchantParseDisclosure,
   merchantParseFallback,
   merchantParseProgress,
@@ -67,11 +76,107 @@ test('five merchant-facing positions stay free of engineering language', () => {
     merchantSensitiveDocumentFallback(),
     merchantParseTaskFailed(),
     merchantAssetRightsSoftPrompt(),
+    merchantImageGenerationFailure('failed'),
+    merchantImageGenerationFailure('timed_out'),
+    merchantContentSourceBlocked(),
+    merchantDeliveryConflict(),
+    merchantBriefFallbackNotice(),
+    merchantNotePartialConsistency(2),
   ];
 
   for (const message of messages) {
     assert.deepEqual(merchantVisibleLanguageIssues(message), []);
   }
+});
+
+test('every failure category reports merchant language and a way forward', () => {
+  const failures: Array<Record<string, unknown>> = [
+    { code: 'MEDIA_GENERATION_FAILED', quotaRefunded: true },
+    {
+      code: 'MEDIA_GENERATION_FAILED',
+      merchantMessage: merchantVideoGenerationFailure('timed_out'),
+      quotaRefunded: true,
+    },
+    {
+      code: 'HARNESS_ALL_CANDIDATES_BLOCKED',
+      gateIds: ['critical_fact_source'],
+      quotaRefunded: true,
+    },
+    {
+      code: 'HARNESS_ALL_CANDIDATES_BLOCKED',
+      gateIds: ['image_exact_text'],
+      merchantMessage: merchantExactTextMismatch({
+        expected: ['价格 398'],
+        observed: ['价格 389'],
+      }),
+      quotaRefunded: true,
+    },
+    { code: 'MEDIA_EXACT_TEXT_VERIFIER_UNAVAILABLE', quotaRefunded: true },
+    { code: 'CONTENT_PACKAGE_REVISION_CONFLICT', quotaRefunded: true },
+    { code: 'HARNESS_WORKFLOW_FAILED', quotaRefunded: true },
+    {},
+  ];
+
+  const categories = new Set<string>();
+  for (const failure of failures) {
+    const report = merchantFailureReport(failure);
+    categories.add(report.category);
+    assert.equal(report.kind, 'failure');
+    assert.ok(report.actions.length > 0, 'a failure must offer a way forward');
+    assert.deepEqual(merchantVisibleLanguageIssues(report.message), []);
+    assert.deepEqual(merchantVisibleLanguageIssues(report.nextStep), []);
+  }
+  assert.ok(categories.has('exact_text'));
+  assert.ok(categories.has('content_source'));
+  assert.ok(categories.has('media_generation'));
+  assert.ok(categories.has('consistency'));
+  assert.ok(categories.has('unknown'));
+});
+
+test('a failure only claims the quota came back when it actually did', () => {
+  assert.equal(
+    merchantFailureReport({
+      code: 'MEDIA_GENERATION_FAILED',
+      quotaRefunded: true,
+    }).quotaRefunded,
+    true,
+  );
+  assert.equal(
+    merchantFailureReport({ code: 'MEDIA_GENERATION_FAILED' }).quotaRefunded,
+    false,
+  );
+});
+
+test('a partial delivery keeps the run honest instead of throwing it away', () => {
+  const report = merchantPartialDeliveryReport({
+    message: merchantNotePartialConsistency(2),
+    nextStep: '可以先用已经对好的页面，稍后再让我重做那两页。',
+  });
+
+  assert.equal(report.kind, 'partial');
+  assert.equal(report.quotaRefunded, false);
+  assert.ok(report.actions.includes('review_partial'));
+  assert.deepEqual(merchantVisibleLanguageIssues(report.message), []);
+  assert.deepEqual(merchantVisibleLanguageIssues(report.nextStep), []);
+
+  // The count alone leaves the merchant unable to tell which page to hold
+  // back, so the marker rides on the delivered copy too — and it is merchant
+  // language like everything else they read.
+  const marker = merchantNotePartialPageMarker();
+  assert.match(marker, /还没对上/u);
+  assert.deepEqual(merchantVisibleLanguageIssues(marker), []);
+});
+
+test('an unavailable note style speaks to the merchant instead of dying in an error message', () => {
+  const report = merchantFailureReport({
+    code: 'HARNESS_MEDIA_SCOPE_INVALID',
+    merchantMessage: merchantNoteStyleUnavailable(),
+  });
+
+  assert.equal(report.message, merchantNoteStyleUnavailable());
+  assert.notEqual(report.category, 'unknown');
+  assert.ok(report.actions.length > 0);
+  assert.deepEqual(merchantVisibleLanguageIssues(report.nextStep), []);
 });
 
 test('video failure language offers safe retry and fallback choices', () => {

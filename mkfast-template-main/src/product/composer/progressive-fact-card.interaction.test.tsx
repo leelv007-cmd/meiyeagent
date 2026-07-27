@@ -89,3 +89,48 @@ describe('ProgressiveFactCard finalizer retry', () => {
     expect(onConfirm.mock.calls[1]?.[1]).toBe(firstKey);
   });
 });
+
+describe('ProgressiveFactCard Day-0 regulated default', () => {
+  const answerDayZero = () => {
+    for (const value of ['青禾美甲', '杭州', '透亮猫眼', '299']) {
+      const input = screen.getByTestId('progressive-fact-input');
+      fireEvent.change(input, { target: { value } });
+      fireEvent.click(screen.getByTestId('progressive-fact-continue'));
+    }
+  };
+
+  it('withholds confirm until the platform default resolves, then seeds it', async () => {
+    const onConfirm = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = render(
+      <ProgressiveFactCard
+        activeFacts={[]}
+        createConfirmationId={() => 'confirmation-day-zero'}
+        factHeads={[]}
+        now={() => '2026-07-27T10:00:00.000Z'}
+        onConfirm={onConfirm}
+        workspaceId="workspace-a"
+      />
+    );
+
+    answerDayZero();
+    expect(screen.getByTestId('progressive-fact-confirm')).toBeDisabled();
+
+    rerender(
+      <ProgressiveFactCard
+        activeFacts={[]}
+        createConfirmationId={() => 'confirmation-day-zero'}
+        factHeads={[]}
+        now={() => '2026-07-27T10:00:00.000Z'}
+        onConfirm={onConfirm}
+        regulatedDefault={true}
+        workspaceId="workspace-a"
+      />
+    );
+
+    fireEvent.click(screen.getByTestId('progressive-fact-confirm'));
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+    expect(onConfirm.mock.calls[0]?.[0].payload.profilePatch.regulated).toBe(
+      true
+    );
+  });
+});

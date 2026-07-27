@@ -60,6 +60,13 @@ export type ProgressiveFactCardProps = {
     idempotencyKey: string
   ) => Promise<void> | void;
   pending?: boolean;
+  /**
+   * Platform default for `regulated`, read from `admin-config`
+   * `config_defaults`. Undefined while it is still loading — Day-0 confirm
+   * stays disabled until it resolves, because the first patch has to carry the
+   * platform's call rather than a web-side guess.
+   */
+  regulatedDefault?: boolean;
   store?: StoreProfile;
   workspaceId: string;
 };
@@ -74,6 +81,7 @@ export function ProgressiveFactCard({
   now = () => new Date().toISOString(),
   onConfirm,
   pending = false,
+  regulatedDefault,
   store,
   workspaceId,
 }: ProgressiveFactCardProps) {
@@ -89,6 +97,11 @@ export function ProgressiveFactCard({
   } | null>(null);
   const view = useMemo(() => projectProgressiveFactView(draft), [draft]);
   const current = view.current;
+  // Day-0 creates the profile, and creation carries `regulated`. Until the
+  // platform default arrives the command cannot be built, so confirm would be
+  // a silent no-op — keep it disabled instead.
+  const awaitingRegulatedDefault =
+    (store?.revision ?? 0) === 0 && regulatedDefault === undefined;
 
   useEffect(() => {
     setValue(current ? draft[current.id] : '');
@@ -122,6 +135,7 @@ export function ProgressiveFactCard({
         expectedRevision: store?.revision ?? 0,
         factRevisions: progressiveFactRevisionMap(factHeads),
         referenceId: `progressive-card:${id}`,
+        regulatedDefault,
         taskId: `progressive-task:${id}`,
         workspaceId,
       });
@@ -248,7 +262,7 @@ export function ProgressiveFactCard({
           ) : (
             <Button
               data-testid="progressive-fact-confirm"
-              disabled={pending || submitting}
+              disabled={pending || submitting || awaitingRegulatedDefault}
               onClick={() => void handleConfirm()}
               type="button"
             >

@@ -23,6 +23,7 @@ function settled(
     hasDestination: true,
     hasSignedSubmission: true,
     hasQuoteView: false,
+    settling: false,
     ...overrides,
   };
 }
@@ -160,6 +161,48 @@ test('every precondition met and the request in flight is requesting, not loadin
   assert.equal(readiness.retry, null);
 });
 
+/**
+ * Held is not in flight. The composer holds the request back while the billable
+ * payload is still moving, and borrowing `requesting` for that would claim a
+ * request the merchant could never see land — a request state with no request
+ * behind it (#236 轮 3 P1-b).
+ */
+test('a held request says it is waiting for the merchant, never that it is calculating', () => {
+  const readiness = resolveComposerQuoteReadiness(settled({ settling: true }));
+  assert.equal(readiness.state, 'settling');
+  assert.equal(readiness.message, '等你改完这句就去算这次花多少。');
+  assert.notEqual(readiness.message, '正在算这次大概花多少…');
+  // It ends by itself the moment they stop typing, so there is nothing to retry.
+  assert.equal(readiness.retry, null);
+});
+
+test('settling never outranks a state that will not resolve by waiting', () => {
+  // A failed read, a missing precondition and an already-bound price all stand
+  // whatever the window is doing: none of them are 「still being written」.
+  assert.equal(
+    resolveComposerQuoteReadiness(settled({ settling: true, surface: 'error' }))
+      .state,
+    'failed'
+  );
+  assert.equal(
+    resolveComposerQuoteReadiness(settled({ settling: true, hasModel: false }))
+      .state,
+    'no_model'
+  );
+  assert.equal(
+    resolveComposerQuoteReadiness(
+      settled({ settling: true, hasSignedSubmission: false })
+    ).state,
+    'invalid_submission'
+  );
+  assert.equal(
+    resolveComposerQuoteReadiness(
+      settled({ settling: true, hasQuoteView: true })
+    ).state,
+    'ready'
+  );
+});
+
 test('missing preconditions outrank the quote query phase', () => {
   // The quote query is disabled precisely *because* the model is missing; the
   // merchant is told which one, not that something is being requested.
@@ -187,6 +230,7 @@ test('the enumeration covers every reachable shape exactly once', () => {
       settled({ hasRecipe: false }),
       settled({ hasModel: false }),
       settled({ hasSignedSubmission: false }),
+      settled({ settling: true }),
       settled(),
     ].map((input) => resolveComposerQuoteReadiness(input).state)
   );
@@ -199,6 +243,7 @@ test('the enumeration covers every reachable shape exactly once', () => {
     'no_recipe',
     'ready',
     'requesting',
+    'settling',
   ]);
 });
 

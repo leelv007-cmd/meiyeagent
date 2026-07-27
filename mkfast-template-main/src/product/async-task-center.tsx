@@ -8,6 +8,7 @@ import {
   async_task_center_description,
   async_task_center_title,
   async_task_empty,
+  async_task_kind_creation,
   async_task_kind_image,
   async_task_kind_video,
   async_task_load_error,
@@ -42,6 +43,7 @@ import {
   asyncTaskStorageKey,
   canonicalAsyncTaskSummaries,
   composedVideoAsyncTaskSummaries,
+  harnessAsyncTaskSummaries,
   markAsyncTasksRead,
   reconcileAsyncTaskReadState,
   type AsyncTaskReadState,
@@ -52,6 +54,7 @@ import {
   useCreativeJobObserver,
   useVideoWorkflowListObserver,
 } from './creative-job-observer';
+import { readActiveHarnessTasks } from './harness-client';
 import { PendingActionsInbox } from './pending-actions-inbox';
 import {
   pendingActionsQueryKey,
@@ -188,6 +191,12 @@ function writeState(userId: string, state: AsyncTaskReadState) {
   );
 }
 
+function asyncTaskKindLabel(kind: AsyncTaskSummary['kind']) {
+  if (kind === 'video') return async_task_kind_video();
+  if (kind === 'creation') return async_task_kind_creation();
+  return async_task_kind_image();
+}
+
 function AsyncTaskRow({ task }: { task: AsyncTaskSummary }) {
   const elapsed = asyncTaskElapsedLabel(task);
   return (
@@ -201,10 +210,7 @@ function AsyncTaskRow({ task }: { task: AsyncTaskSummary }) {
             <ProductStatus announce className="shrink-0" status={task.status} />
           </div>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
-            {task.kind === 'video'
-              ? async_task_kind_video()
-              : async_task_kind_image()}{' '}
-            · {async_task_row_hint()}
+            {asyncTaskKindLabel(task.kind)} · {async_task_row_hint()}
             {elapsed ? ` · ${elapsed}` : null}
           </p>
         </div>
@@ -252,10 +258,7 @@ function AsyncTaskNotification({
             <ProductStatus announce className="shrink-0" status={task.status} />
           </div>
           <p className="mt-1 text-sm leading-5 text-muted-foreground">
-            {task.kind === 'video'
-              ? async_task_kind_video()
-              : async_task_kind_image()}{' '}
-            · {async_task_row_hint()}
+            {asyncTaskKindLabel(task.kind)} · {async_task_row_hint()}
             {elapsed ? ` · ${elapsed}` : null}
           </p>
           <div className="mt-3 flex items-center gap-6">
@@ -285,7 +288,9 @@ function AsyncTaskNotification({
 function CreativeTaskObserver({ task }: { task: AsyncTaskSummary }) {
   useCreativeJobObserver({
     creativeJobId: task.creativeJobId,
-    operation: task.operation,
+    // Only creative rows reach this observer; harness rows return above.
+    operation:
+      task.operation === 'video.generate' ? task.operation : 'image.generate',
     providerJobId: task.providerJobId,
     status: task.status,
     workId: task.workId!,
@@ -299,7 +304,10 @@ function CanvasTaskObserver({ task }: { task: AsyncTaskSummary }) {
 }
 
 function AsyncTaskObserver({ task }: { task: AsyncTaskSummary }) {
-  if (task.source === 'video_workflow') return null;
+  // Harness runs already stream over SSE inside the composer; polling them a
+  // second time here would be a second truth about the same run.
+  if (task.source === 'video_workflow' || task.source === 'harness')
+    return null;
   return task.source === 'canvas' ? (
     <CanvasTaskObserver task={task} />
   ) : (
@@ -342,6 +350,16 @@ export function AsyncTaskCenter({
         : []
       : [item]
   );
+  // 时间桥 (D-145): the creation conversation is a task too. Without this the
+  // one run a merchant is actually waiting on was the only one the centre could
+  // not show them.
+  const harnessTasksQuery = useQuery({
+    queryKey: ['harness', 'active-tasks'],
+    queryFn: ({ signal }) => readActiveHarnessTasks(signal),
+    refetchInterval: 10_000,
+    refetchOnWindowFocus: true,
+    retry: false,
+  });
   const tasks = useMemo(
     () =>
       [
@@ -351,12 +369,17 @@ export function AsyncTaskCenter({
         ...(videoWorkflowQuery.data
           ? composedVideoAsyncTaskSummaries(videoWorkflowQuery.data)
           : []),
+        ...(harnessTasksQuery.data
+          ? harnessAsyncTaskSummaries(harnessTasksQuery.data.tasks)
+          : []),
       ].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
-    [historyQuery.data, videoWorkflowQuery.data]
+    [harnessTasksQuery.data, historyQuery.data, videoWorkflowQuery.data]
   );
 
   useEffect(() => {
     if (!historyQuery.isSuccess || !videoWorkflowQuery.isSuccess) return;
+    // Harness rows are never terminal, so read-state reconciliation is
+    // unaffected by whether that query has answered yet.
     const next = reconcileAsyncTaskReadState(readState(userId), tasks);
     writeState(userId, next);
     setReadStateValue(next);

@@ -999,6 +999,28 @@ export function submitComposer(
   };
 }
 
+/**
+ * Thaw a submitted composer back into an editable draft (W03 可恢复入口).
+ *
+ * The freeze exists so a delivered run cannot be silently re-submitted under
+ * the same revisions. A declared failure is the opposite situation: nothing was
+ * delivered, and the merchant is being invited to act. So reopening keeps the
+ * draft they wrote (their sentence, sources, settings) and drops only the
+ * frozen revision pins, putting the state back where `canSubmit` allows a fresh
+ * run. Any other phase is already editable and passes through untouched.
+ */
+export function reopenComposer(state: ComposerLensState): ComposerLensState {
+  if (state.phase !== 'frozen') return state;
+  return {
+    phase: 'selected',
+    lensId: state.lensId,
+    source: state.source,
+    draft: state.draft,
+    stashByLens: state.stashByLens,
+    undoStack: state.undoStack,
+  };
+}
+
 export function videoConfirmForState(
   state: ComposerLensState
 ): VideoConfirmZone {
