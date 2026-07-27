@@ -156,7 +156,7 @@ async function seedConfirmedAssetFact(page: Page) {
       capabilityStatus: 'assisted',
       capturedAt,
       example: false,
-      kind: 'pasted_text',
+      kind: 'manual',
       referenceId,
       sourceId: `dashboard-home-source-${suffix}`,
       sourceWorkspaceId: workspaceId,
