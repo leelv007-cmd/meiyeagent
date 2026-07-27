@@ -183,11 +183,15 @@ describe('Composer live public contracts', () => {
       return snapshot;
     });
     assert.equal(result, snapshot);
+    // The fourth argument is the #240 bounded wait: a quote that never returns
+    // has to become a retryable failure, so the default deadline travels with
+    // every quote command whether or not the caller asked for one.
     assert.deepEqual(calls, [
       [
         'product-billing',
         { action: 'quote', payload: input },
         `composer-quote:${input.quoteId}`,
+        { signal: undefined, timeoutMs: 12_000 },
       ],
     ]);
   });

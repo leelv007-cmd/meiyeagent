@@ -121,6 +121,12 @@ import {
 } from './composer-destination-preflight';
 import { projectComposerQuoteView } from './quote-wiring';
 import {
+  composerQueryPhase,
+  resolveComposerQuoteReadiness,
+  type ComposerQuoteRetryTarget,
+} from './quote-readiness';
+import { ComposerQuoteStatusLine } from './quote-status-line';
+import {
   listColdCardsFromSeeds,
   listColdCardsFromSurface,
 } from './recipe-cards';
@@ -681,12 +687,51 @@ export function ComposerHome({
   const quoteQuery = useQuery({
     enabled: quoteInput != null,
     queryKey: p1QueryKeys.request('product-billing', 'quote', quoteInput ?? {}),
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       if (!quoteInput) throw new Error('Composer quote input is required.');
-      return requestComposerQuote(quoteInput);
+      // The signal cancels a quote whose input the merchant already changed;
+      // the command's own deadline bounds one that the server never answers.
+      return requestComposerQuote(quoteInput, commandP1, { signal });
     },
+    // One retry, not the default three: past that the merchant is waiting on
+    // backoff with nothing on screen, which is the defect this ticket removes.
+    retry: 1,
     staleTime: Number.POSITIVE_INFINITY,
   });
+  /**
+   * #240: "a query is in flight" and "a precondition never came together" used
+   * to render the same 正在读取模型与报价… line, so a missing recipe, an absent
+   * or unpriced default model, a missing destination and a failed preferences
+   * read all looked like loading that would never end. Recomputed every render
+   * rather than memoised — it is nine booleans and a lookup table.
+   */
+  const quoteReadiness = resolveComposerQuoteReadiness({
+    lensSelected: lensId != null,
+    surface: composerQueryPhase(surfaceQuery),
+    catalog: composerQueryPhase(catalogQuery),
+    preferences: composerQueryPhase(preferencesQuery),
+    quote: quoteInput == null ? 'disabled' : composerQueryPhase(quoteQuery),
+    hasRecipe: submissionRecipe != null,
+    hasModel: selectedModel != null,
+    hasDestination: destination != null,
+    hasSignedSubmission: signedSubmission != null,
+    hasQuoteView: quoteView != null,
+  });
+  const retryQuoteReadiness = (
+    target: Exclude<ComposerQuoteRetryTarget, null>
+  ) => {
+    if (target === 'surface') {
+      void surfaceQuery.refetch();
+      return;
+    }
+    if (target === 'catalog') {
+      // Both feed `selectedModel`; retrying one alone leaves the other stale.
+      void catalogQuery.refetch();
+      void preferencesQuery.refetch();
+      return;
+    }
+    void quoteQuery.refetch();
+  };
   const coldCards = useMemo(
     () =>
       surfaceQuery.data
@@ -751,6 +796,17 @@ export function ComposerHome({
   useEffect(() => {
     emitTelemetry('identity_state', { state: identitySelection.state });
   }, [identitySelection.state]);
+
+  // `quote_state` was reserved in the telemetry allowlist with nothing emitting
+  // it; with the states enumerated there is finally something to report, and a
+  // precondition that silently blocks quoting is now visible off-box (#240).
+  useEffect(() => {
+    if (!lensId) return;
+    emitTelemetry('quote_state', {
+      operation: COMPOSER_OPERATION_BY_LENS[lensId],
+      state: quoteReadiness.state,
+    });
+  }, [lensId, quoteReadiness.state]);
 
   useEffect(() => {
     if (
@@ -1994,13 +2050,12 @@ export function ComposerHome({
         >
           {quoteView.billingNote ?? `预计消耗 ${quoteView.amount}`}
         </p>
-      ) : lensId ? (
-        <output className="text-muted text-xs">
-          {catalogQuery.isError || quoteQuery.isError
-            ? '当前模型或报价暂不可用'
-            : '正在读取模型与报价…'}
-        </output>
-      ) : null}
+      ) : (
+        <ComposerQuoteStatusLine
+          onRetry={retryQuoteReadiness}
+          readiness={quoteReadiness}
+        />
+      )}
 
       {submissionGroundingBlocked === 'store' ? (
         <p

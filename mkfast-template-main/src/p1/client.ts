@@ -92,22 +92,65 @@ export async function queryP1<T>(
   }
 }
 
+export interface P1CommandWait {
+  /** Caller cancellation — e.g. the TanStack Query signal for a stale key. */
+  signal?: AbortSignal;
+  /** Upper bound on the wait; omitted means wait as long as the fetch does. */
+  timeoutMs?: number;
+}
+
+/**
+ * A command that never returns leaves the caller with no state to render but
+ * "still waiting", which is exactly how the Composer quote used to hang
+ * forever (#240). A bounded wait turns that into a failure the caller can show
+ * and retry. Caller cancellation is left alone — it is not a failure — so only
+ * the deadline is translated into a P1 error.
+ */
+function boundedCommandSignal(wait: P1CommandWait) {
+  if (wait.timeoutMs == null) return wait.signal;
+  const deadline = AbortSignal.timeout(wait.timeoutMs);
+  return wait.signal ? AbortSignal.any([wait.signal, deadline]) : deadline;
+}
+
+export const P1_COMMAND_TIMEOUT_CODE = 'P1_COMMAND_TIMEOUT';
+
 export async function commandP1<T>(
   module: P1Module,
   call: P1ModuleCall,
-  idempotencyKey?: string
+  idempotencyKey?: string,
+  wait: P1CommandWait = {}
 ) {
   const request = moduleRequest(module, call);
   const requestId = idempotencyKey ?? crypto.randomUUID();
-  const response = await telemetryFetch('/api/core/p1/commands', {
-    body: JSON.stringify(request),
-    credentials: 'same-origin',
-    headers: {
-      'content-type': 'application/json',
-      'idempotency-key': requestId,
-    },
-    method: 'POST',
-  });
+  let response: Response;
+  try {
+    response = await telemetryFetch('/api/core/p1/commands', {
+      body: JSON.stringify(request),
+      credentials: 'same-origin',
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': requestId,
+      },
+      method: 'POST',
+      signal: boundedCommandSignal(wait),
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
+      emitTelemetry('query_error', {
+        action: call.action,
+        errorCode: 'timeout',
+        module,
+      });
+      // Internal wording on purpose: what the merchant reads about a timed-out
+      // quote is owned by `quote-readiness.ts`, not by the transport.
+      throw new P1RequestError(
+        `P1 command ${module}.${call.action} timed out.`,
+        P1_COMMAND_TIMEOUT_CODE,
+        { timeoutMs: wait.timeoutMs }
+      );
+    }
+    throw error;
+  }
   if (response.status === 403) {
     emitTelemetry('permission_denied', {
       capability: 'p1.command',

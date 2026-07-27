@@ -14,7 +14,7 @@ import type {
   RecipePatchPreview,
 } from '@meiye/contracts';
 
-import { commandP1, queryP1 } from '@/p1/client';
+import { commandP1, type P1CommandWait, queryP1 } from '@/p1/client';
 import type { CatalogModelView } from '@/p1/settings-view-model';
 
 export type RawComposerCatalog = {
@@ -32,7 +32,8 @@ export type ComposerQueryTransport = (
 type CommandTransport = (
   module: Parameters<typeof commandP1>[0],
   call: Parameters<typeof commandP1>[1],
-  idempotencyKey?: string
+  idempotencyKey?: string,
+  wait?: P1CommandWait
 ) => Promise<unknown>;
 
 export const COMPOSER_LAUNCH_SURFACE_ID = 'surface.home.launch';
@@ -152,14 +153,26 @@ export function buildLiveQuoteInput(input: {
   } as const;
 }
 
+/**
+ * Upper bound on one quote round trip (#240). Long enough that a warm core
+ * answers well inside it, short enough that a stuck one becomes a retryable
+ * failure the merchant can see rather than an endless 正在读取.
+ */
+export const COMPOSER_QUOTE_TIMEOUT_MS = 12_000;
+
 export async function requestComposerQuote(
   input: ReturnType<typeof buildLiveQuoteInput>,
-  command: CommandTransport = commandP1
+  command: CommandTransport = commandP1,
+  wait: P1CommandWait = {}
 ) {
   return (await command(
     'product-billing',
     { action: 'quote', payload: input },
-    `composer-quote:${input.quoteId}`
+    `composer-quote:${input.quoteId}`,
+    {
+      signal: wait.signal,
+      timeoutMs: wait.timeoutMs ?? COMPOSER_QUOTE_TIMEOUT_MS,
+    }
   )) as ProductQuoteSnapshot;
 }
 
