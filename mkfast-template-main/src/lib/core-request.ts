@@ -40,7 +40,7 @@ export async function readRequestText(
 ) {
   const declaredLength = Number(request.headers.get('content-length'));
   if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
-    throw requestBodyTooLarge();
+    throw requestBodyTooLarge(maxBytes);
   }
   if (!request.body) return '';
 
@@ -175,7 +175,7 @@ function combinedSignal(
     : deadlineSignal;
 }
 
-function requestBodyTooLarge(maxBytes = MAX_CORE_REQUEST_BYTES) {
+function requestBodyTooLarge(maxBytes: number) {
   return new CoreRequestBoundaryError(
     413,
     'REQUEST_BODY_TOO_LARGE',
