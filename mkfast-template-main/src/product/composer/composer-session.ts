@@ -445,9 +445,9 @@ export function failComposerSession(session: ComposerSession): ComposerSession {
  * the handle this pairs with — persisted or restored — belongs to the latest.
  */
 export function composerSessionMerchantText(session: ComposerSession): string {
-  const turn = session.turns.findLast(
-    (item): item is ComposerMerchantTurn => item.kind === 'merchant'
-  );
+  const turn = session.turns
+    .filter((item): item is ComposerMerchantTurn => item.kind === 'merchant')
+    .at(-1);
   return turn?.text ?? '';
 }
 

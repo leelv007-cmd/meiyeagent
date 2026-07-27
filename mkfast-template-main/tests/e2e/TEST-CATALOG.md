@@ -647,6 +647,12 @@ exist to make true, both against the real Web → Core → Harness/DBOS chain.
       the second run's progress lines are visible (a progress cursor left at the
       first run's high-water mark would swallow them) and the previous 申报 is
       gone from the transcript rather than describing work this run never did.
+      **`test.fixme` pending quotefix**: the quote id does not cover the signed
+      payload the server fingerprints it by, so re-quoting a rewritten sentence
+      inside one session returns IDEMPOTENCY_CONFLICT and the composer has no
+      price to submit with. The key belongs to quotefix as a single point; this
+      path is written against the behaviour that arrives with it and needs no
+      edit to be enabled.
   - **失败档 (fixture failure profile)**: the only deterministic boundary is the
     model provider, the same as every other fixture journey. A merchant intent
     containing 「失败档」 makes the fixture structured runner
