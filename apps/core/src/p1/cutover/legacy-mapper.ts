@@ -394,12 +394,6 @@ export function mapLegacyProductState(
       sequence: auditSequence++,
     });
   }
-  for (const insight of state.insights ?? []) {
-    add('audit', `insight:${insight.id}`, insight, {
-      createdAt: insight.createdAt,
-      sequence: auditSequence++,
-    });
-  }
   for (const event of state.preflightEvents ?? []) {
     add('audit', `preflight:${event.id}`, event, {
       createdAt: event.createdAt,

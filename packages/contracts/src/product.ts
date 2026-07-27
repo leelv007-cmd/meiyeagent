@@ -501,7 +501,6 @@ export interface ProductState {
   agentRuns: AgentRun[];
   toolCalls: ToolCall[];
   handoffPackages: HandoffPackage[];
-  insights: Array<{ id: string; contentId?: string; kind: string; note: string; createdAt: string }>;
   preflightEvents: Array<{
     id: string;
     contentId: string;
@@ -695,7 +694,6 @@ export type ProductCommand =
       platformUrl?: string;
     }
   | { type: 'mark_published'; packageId: string; platformUrl?: string }
-  | { type: 'record_insight'; contentId?: string; kind: string; note: string }
   | {
       type: 'apply_plan';
       plan: Entitlement['plan'];

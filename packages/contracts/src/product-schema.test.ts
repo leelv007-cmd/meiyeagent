@@ -20,4 +20,13 @@ test('D-144 retires the lead ledger commands from the product contract', () => {
     }).success,
     false
   );
+  assert.equal(
+    productCommandSchema.safeParse({
+      type: 'record_insight',
+      contentId: 'content-1',
+      kind: 'manual_note',
+      note: 'retired secondary ledger',
+    }).success,
+    false
+  );
 });

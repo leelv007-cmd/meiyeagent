@@ -178,12 +178,31 @@ describe('P1 operations application service', () => {
         sourceId: 'publication-1',
       }
     );
+    const stateWithRetiredFact = await repository.loadWorkspace(
+      owner.workspaceId
+    );
+    assert.ok(stateWithRetiredFact);
+    (
+      stateWithRetiredFact.weeklyFacts as unknown as Array<
+        Record<string, unknown>
+      >
+    ).push({
+      correlationId: 'historical-correlation',
+      createdAt: '2026-07-16T11:00:00.000Z',
+      id: 'historical-human-lead',
+      kind: 'human_lead',
+      occurredAt: '2026-07-16T11:00:00.000Z',
+      origin: 'trusted',
+      sourceId: 'historical-lead',
+      workspaceId: owner.workspaceId,
+    });
+    await repository.saveWorkspace(stateWithRetiredFact);
     const review = await service.createWeeklyReview(owner, {
       from: '2026-07-13T00:00:00.000Z',
       to: '2026-07-19T23:59:59.999Z',
     });
     assert.deepEqual(review.metrics.published, { status: 'known', value: 1 });
-    assert.deepEqual(review.metrics.humanLeads, { status: 'unknown' });
+    assert.equal('humanLeads' in review.metrics, false);
     assert.ok(review.nextWeekCandidates.length > 0);
 
     const confirmed = await service.confirmNextWeekCandidates(

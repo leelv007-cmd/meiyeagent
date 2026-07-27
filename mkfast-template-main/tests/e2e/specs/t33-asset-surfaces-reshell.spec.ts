@@ -7,7 +7,7 @@ import {
 } from '../fixtures/auth';
 
 /**
- * T33 / #227 — the four asset surfaces after the reshell.
+ * T33 / #227 — the retained asset surfaces after the reshell.
  *
  * Journey acceptance: store, identity and workspace all render in the
  * one 门店橱窗 language (HeroUI Pro V3 on the Glass sheet), in both themes and
@@ -56,7 +56,7 @@ async function readSurface(page: Page, path: string) {
   }, SHADCN_RESIDUE);
 }
 
-test('the four asset surfaces render one Glass shell in both themes', async ({
+test('the retained asset surfaces render one Glass shell in both themes', async ({
   page,
   request,
 }) => {
@@ -84,7 +84,7 @@ test('the four asset surfaces render one Glass shell in both themes', async ({
   }
 });
 
-test('the four asset surfaces fit a phone viewport without overflow', async ({
+test('the retained asset surfaces fit a phone viewport without overflow', async ({
   page,
   request,
 }) => {

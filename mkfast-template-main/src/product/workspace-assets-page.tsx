@@ -85,7 +85,7 @@ export function WorkspaceAssetsPage() {
         已在共享边界上把它映回壳的 muted 前景），但即便映成 --ink-60，深灰压在照片上
         实测也只有 1.6:1——这是「层」的问题，不是 token 的问题，token 侧收不动。
         压在氛围层上的字走 DESIGN.md 的 .meiye-ambient-copy：白字 + 投影，和 works /
-        leads / store 的页头副行同一套（T46 已按这套量过）。
+        store / identity 的页头副行同一套（T46 已按这套量过）。
       */}
       <div className="meiye-ambient-copy">
         <p

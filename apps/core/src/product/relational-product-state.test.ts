@@ -158,6 +158,29 @@ describe('relational product state revisions', () => {
     assert.notEqual(rebuilt, baseline);
   });
 
+  it('ignores retired lead entity revisions at the projection parser', async () => {
+    const { first } = await productStatesWithEntities();
+    const revision = createProductRelationRevisionFacts(first, 1, context);
+    const rebuilt = rebuildProductStateFromRelationFacts(null, [
+      {
+        data: {
+          factKind: 'lead',
+          logicalFactId: 'product:store:profile',
+          parentLogicalFactId: null,
+          recordType: 'product_entity_revision',
+          revisionNumber: 1,
+          sequence: 0,
+          value: { id: 'historical-lead' },
+          valueHash: 'historical-retired-value',
+        },
+      },
+      ...revision.entityFacts,
+      revision.metaFact,
+    ]);
+
+    assert.deepEqual(rebuilt, first);
+  });
+
   it('persists abandoned content as an immutable relation revision', async () => {
     const { third } = await productStatesWithEntities();
     const generated = third.contents[0];

@@ -165,8 +165,8 @@ object graph.
 
 | # | Test name | Flow |
 |---|---|---|
-| 1 | Product shell exposes one six-item business navigation | Sign in as an admin, verify the six business destinations appear once and in the frozen order, settings stays in the utility area, the locked product brand and guide tokens are active, light-mode action text and page focus use accessible tokens, a real Tab-focused control retains a visible high-contrast sidebar ring, and admin mode is reachable only from the user menu. |
-| 2 | Canonical routes survive deep links and reloads | Open the task, asset, session, work, job, settings, and six admin routes directly; reload each route and verify its canonical heading remains available. |
+| 1 | Product shell exposes one four-item business navigation | Sign in as an admin, verify the four business destinations appear once and in the frozen order, settings stays in the utility area, the locked product brand and guide tokens are active, light-mode action text and page focus use accessible tokens, a real Tab-focused control retains a visible high-contrast sidebar ring, and admin mode is reachable only from the user menu. |
+| 2 | Canonical routes survive deep links and reloads | Open Content, Assets, Recent activity, Work history, Session, Work, Job, settings, and six admin routes directly; reload each route and verify its canonical heading remains available. The retired Lead detail route is intentionally absent. |
 | 3 | Legacy routes only redirect through the frozen allowlist | Open legacy files, API key, profile, integration, and P1 admin locations; verify each lands on its fixed canonical destination without accepting an arbitrary return URL. |
 | 4 | Admin authorization fails in both navigation and routing | Sign in as a non-admin, verify no management entry is rendered, open an admin deep link, and verify the server redirects to the workbench. |
 | 5 | Shell remains keyboard and 200-percent-zoom reachable | At the 640px effective viewport, verify no horizontal overflow, focus the skip link first, activate it, and confirm focus returns to the product content region. |
@@ -307,7 +307,7 @@ and complete touch-target audits at the two target mobile viewports.
 | # | Test name | Flow |
 |---|---|---|
 | 1 | A clean first visit and authenticated workbench default completely to Chinese | Clear locale cookies, open the unprefixed login route, verify the Chinese locale and system copy, sign in, and verify the unprefixed workbench remains Chinese with only explicit product vocabulary and user data excluded from the Latin-copy scan. |
-| 2 | English core product surfaces expose no Chinese system copy | Open the English workbench, tasks, assets, content, leads, and store routes; remove only approved pass-through names and verify no Chinese system copy remains. |
+| 2 | English core product surfaces expose no Chinese system copy | Open the English workbench, assets, content, and store routes; remove only approved pass-through names and verify no Chinese system copy remains. The retired Lead ledger route is intentionally absent. |
 | 3 | Language switching preserves route, query, hash, session, and one-language copy in both directions | Switch an authenticated Asset URL from Chinese to English and back, reload between changes, verify the path, query, hash, and session remain intact, then scan the returned Chinese surface for stray English system copy with a small explicit vocabulary allowlist. |
 | 4 | Model cards retain public metadata while hiding internal identifiers | Visit the English model settings for copy, image, and video; verify each tab has selectable public cards and no recorded deployment, internal model, placeholder-version, or undefined identifier leaks. |
 | 5 | Reduced motion keeps the real pending-generation accent readable and static at the 18px desktop root | Verify desktop product typography, create one Work, discover and submit its real execution action, hold it pending, and prove the reduced-motion accent keeps readable static text without animation or gradient transparency. |
@@ -602,9 +602,9 @@ These flows should be added after their dependencies are made deterministic:
 | Transactional email | Requires a fake mail provider or captured verification links. |
 # P0 golden journey
 
-- `p0-golden-journey.spec.ts` verifies the authenticated, workspace-scoped merchant outcome: confirmed store facts, authorized real-asset metadata, three copy candidates, selected/versioned content, AIDA confirmation, durable video states and quota, an explicitly disabled creation-time AIGC label reflected consistently in the artifact and handoff, a real Product publish snapshot flowing through Douyin contract authorization and independent Owner capability activation, rejected-before-accept fallback to `manual_required`, L3 handoff, manual publication, platform variant, finite weekly set, refresh persistence, and a manually linked lead without causal-attribution language.
+- `p0-golden-journey.spec.ts` verifies the authenticated, workspace-scoped merchant outcome: confirmed store facts, authorized real-asset metadata, three copy candidates, selected/versioned content, AIDA confirmation, durable video states and quota, an explicitly disabled creation-time AIGC label reflected consistently in the artifact and handoff, a real Product publish snapshot flowing through Douyin contract authorization and independent Owner capability activation, rejected-before-accept fallback to `manual_required`, L3 handoff, manual publication, platform variant, finite weekly set, and refresh persistence. The retired Lead-ledger tail is intentionally absent.
 - `product-asset-upload.spec.ts` verifies that a real image crosses the authenticated workspace upload adapter into R2, receives Core rights metadata, keeps public authorization disabled until consent evidence is recorded, becomes publicly usable only after explicit consent, and remains downloadable through the authorized same-origin storage proxy.
-- `mobile-product-shell.spec.ts` verifies the five-slot mobile shell exposes only the four merchant destinations (creation, content, assets, and store) around the central create action, keeps the lead ledger reachable from the store context, preserves the camera capture contract, and prevents horizontal overflow at the representative 390×844 viewport.
+- `mobile-product-shell.spec.ts` verifies the five-slot mobile shell exposes only the four merchant destinations (creation, content, assets, and store) around the central create action, preserves the camera capture contract, and prevents horizontal overflow at the representative 390×844 viewport. It does not replace the retired Lead assertion with an unrelated store-to-workspace journey.
 ## UI journey three-modal Day-0
 
 `specs/ui-journey-three-modal.spec.ts` is the Z1 / #105 browser hard gate. It
@@ -736,6 +736,16 @@ copy/image/note/video); this spec proves the shape a live run produces.
   components; the ratios are printed as `[contrast] …` lines so a run reports
   numbers rather than a pass/fail bit.
 
+## T33 / T46 门店橱窗与氛围空态回归
+
+**Files:** `specs/t33-asset-surfaces-reshell.spec.ts`,
+`specs/t46-ambient-copy-contrast.spec.ts` | **Priority:** P1
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | Three retained asset surfaces share the reshelled storefront | Open Store, Identity, and Workspace in both themes and at the phone viewport; require one shared Glass shell, no page-body shadcn residue, and no horizontal overflow. The retired Lead ledger is intentionally absent. |
+| 2 | Retained ambient empty states remain readable | Measure the rendered empty-state and ambient-header copy on Works, Store, and Identity across both themes and desktop/mobile viewports; require every sampled ratio to be at least 4.5:1. The retired Lead list and detail empty states are intentionally absent. |
+
 ## S7 商家壳 Muted 文案对比度
 
 **File:** `specs/s7-shell-muted-contrast.spec.ts` | **Priority:** P1
@@ -745,7 +755,7 @@ shell fallbacks and the works glass-piece override are both held to WCAG AA.
 
 | # | Test name | Flow |
 |---|---|---|
-| 1 | Segment 未选中项与 text-muted 文案在 light 主题下实测 ≥4.5:1 | Sign in under the light theme; measure the unselected creation-mode Segment, the unselected works-shape Segment, workspace muted copy, and lead-ledger muted copy; require every rendered ratio to be at least 4.5:1. |
+| 1 | Segment 未选中项与 text-muted 文案在 light 主题下实测 ≥4.5:1 | Sign in under the light theme; measure the unselected creation-mode Segment, the unselected works-shape Segment, and workspace muted copy; require every rendered ratio to be at least 4.5:1. The retired Lead surface is intentionally absent. |
 | 2 | Segment 未选中项与 text-muted 文案在 dark 主题下实测 ≥4.5:1 | Repeat the same rendered-backdrop measurements under the dark theme and require every ratio to be at least 4.5:1. |
 
 ## S3 钱的旅程（#237 / W05+W06）

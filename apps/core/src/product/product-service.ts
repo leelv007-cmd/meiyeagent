@@ -143,7 +143,6 @@ function initialState(
     agentRuns: [],
     toolCalls: [],
     handoffPackages: [],
-    insights: [],
     preflightEvents: [],
     responsibilityConfirmations: [],
     operationalEvidence: {
@@ -191,8 +190,15 @@ function normalizeState(
   planConfig: ProductPlanConfig
 ): ProductState {
   const defaults = initialState(state.workspaceId, planConfig);
-  const { exampleStore: _legacyExampleStore, ...stored } = state as ProductState & {
+  const {
+    exampleStore: _legacyExampleStore,
+    ['insights']: _legacyInsights,
+    ['leads']: _legacyLedger,
+    ...stored
+  } = state as ProductState & {
     exampleStore?: unknown;
+    insights?: unknown;
+    leads?: unknown;
   };
   return {
     ...defaults,
@@ -3614,26 +3620,6 @@ export class ProductService implements ProductApplicationService {
           }
         );
         return { packageId: handoff.id, contentId: handoff.contentId };
-      }
-      case 'record_insight': {
-        if (command.contentId) findContent(state, command.contentId);
-        const insight = {
-          id: randomUUID(),
-          contentId: command.contentId,
-          kind: command.kind,
-          note: command.note,
-          createdAt: now(),
-        };
-        state.insights.push(insight);
-        audit(
-          state,
-          context,
-          'insight.recorded',
-          'manual_insight',
-          insight.id,
-          { causal: false }
-        );
-        return {};
       }
       case 'apply_plan': {
         const duplicate = state.entitlement.sourceEventId === command.eventId;

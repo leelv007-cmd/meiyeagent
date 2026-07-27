@@ -25,7 +25,6 @@ interface ProjectionEntityOrder {
   agentRuns: string[];
   toolCalls: string[];
   handoffPackages: string[];
-  insights: string[];
   preflightEvents: string[];
   responsibilityConfirmations: string[];
   usageEvents: string[];
@@ -196,9 +195,6 @@ function projectionEntityOrder(state: ProductState): ProjectionEntityOrder {
     handoffPackages: state.handoffPackages.map((item) =>
       logicalId('publish_package', item.id)
     ),
-    insights: state.insights.map((item) =>
-      logicalId('audit', `insight:${item.id}`)
-    ),
     preflightEvents: state.preflightEvents.map((item) =>
       logicalId('audit', `preflight:${item.id}`)
     ),
@@ -237,6 +233,13 @@ function parseEntityRevision(
   fact: Pick<RelationFact, 'data'>
 ): ProductEntityRevisionData | null {
   const data = fact.data;
+  if (
+    data.recordType === 'product_entity_revision' &&
+    data.factKind === 'lead'
+  ) {
+    // Fail closed: historical CRM projection rows stay unreadable after D-144.
+    return null;
+  }
   if (
     data.recordType !== 'product_entity_revision' ||
     typeof data.factKind !== 'string' ||
@@ -462,7 +465,6 @@ export function rebuildProductStateFromRelationFacts(
     handoffPackages: readMany<ProductState['handoffPackages'][number]>(
       order.handoffPackages
     ),
-    insights: readMany<ProductState['insights'][number]>(order.insights),
     preflightEvents: readMany<ProductState['preflightEvents'][number]>(
       order.preflightEvents
     ),

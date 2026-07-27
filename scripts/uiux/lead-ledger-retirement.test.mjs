@@ -14,7 +14,11 @@ import test from 'node:test';
 const PRODUCTION_PREFIXES = [
   'apps/core/src/',
   'mkfast-template-main/src/',
-  'packages/contracts/src/',
+  'packages/contracts/',
+];
+
+const EXTRA_SCANNED_FILES = [
+  '.scratch/uiux-upgrade-b/i18n-dashboard-keys.json',
 ];
 
 const FORBIDDEN_PRODUCTION_PATTERNS = [
@@ -23,8 +27,13 @@ const FORBIDDEN_PRODUCTION_PATTERNS = [
   ['retired lead create command', /\bcreate_lead\b/u],
   ['retired lead update command', /\bupdate_lead\b/u],
   ['retired lead entity type', /\binterface Lead\b/u],
+  ['retired lead type alias', /\btype\s+Lead\b/u],
   ['retired lead status type', /\bLeadStatus\b/u],
+  ['retired lead collection', /\bleads\s*:/u],
+  ['retired lead identifier', /\bleadId\b/u],
   ['retired lead capability', /\blead\.manage\b/u],
+  ['retired weekly lead fact', /\bhuman_lead\b/u],
+  ['retired insight command', /\brecord_insight\b/u],
   ['retired lead ledger copy', /\bdashboard_lead_/u],
   ['retired lead ledger empty-state copy', /\blead_ledger_/u],
   ['retired lead ledger failure copy', /\bleads_operation_failed/u],
@@ -53,10 +62,12 @@ function trackedFiles() {
 
 function productionSources() {
   return trackedFiles()
-    .filter((path) =>
-      PRODUCTION_PREFIXES.some((prefix) => path.startsWith(prefix))
+    .filter(
+      (path) =>
+        EXTRA_SCANNED_FILES.includes(path) ||
+        (PRODUCTION_PREFIXES.some((prefix) => path.startsWith(prefix)) &&
+          /\.(?:ts|tsx)$/u.test(path))
     )
-    .filter((path) => /\.(?:ts|tsx)$/u.test(path))
     .filter((path) => !/\.test\.(?:ts|tsx)$/u.test(path))
     .filter((path) => existsSync(path));
 }
@@ -67,7 +78,16 @@ function lineOf(source, index) {
 
 function retiredLeadFindings() {
   return productionSources().flatMap((path) => {
-    const source = readFileSync(path, 'utf8');
+    let source = readFileSync(path, 'utf8');
+    if (path === 'apps/core/src/product/relational-product-state.ts') {
+      const failClosedParser = "data.factKind === 'lead'";
+      assert.equal(
+        source.split(failClosedParser).length - 1,
+        1,
+        'the retired relation kind must appear only in its fail-closed parser'
+      );
+      source = source.replace(failClosedParser, '');
+    }
     return FORBIDDEN_PRODUCTION_PATTERNS.flatMap(([reason, pattern]) => {
       const match = pattern.exec(source);
       return match ? [{ line: lineOf(source, match.index), path, reason }] : [];

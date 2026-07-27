@@ -308,12 +308,6 @@ export const productCommandSchema = z.discriminatedUnion('type', [
     platformUrl: z.url().optional(),
   }),
   z.object({
-    type: z.literal('record_insight'),
-    contentId: id.optional(),
-    kind: id,
-    note: id,
-  }),
-  z.object({
     type: z.literal('apply_plan'),
     plan: z.enum(['trial', 'starter', 'growth', 'pro']),
     eventId: id,

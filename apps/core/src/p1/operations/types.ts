@@ -282,8 +282,7 @@ export type WeeklyFactKind =
   | 'drafted'
   | 'confirmed'
   | 'published_mark'
-  | 'asset_gap'
-  | 'human_lead';
+  | 'asset_gap';
 
 export interface WeeklyFact {
   id: string;
@@ -318,7 +317,6 @@ export interface WeeklyReview {
     confirmed: KnownMetric;
     published: KnownMetric;
     assetGaps: KnownMetric;
-    humanLeads: KnownMetric;
   };
   nextWeekCandidates: WeeklyCandidate[];
   createdAt: string;

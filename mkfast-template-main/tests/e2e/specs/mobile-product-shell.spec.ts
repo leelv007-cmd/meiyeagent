@@ -85,12 +85,6 @@ test('keeps identity, assets, and camera authorization reachable on mobile', asy
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth)
     ).toBeLessThanOrEqual(390);
-
-    await page.goto('/dashboard/store');
-    const workspaceLink = page.getByRole('link', { name: '内容工作区' });
-    await expect(workspaceLink).toBeVisible();
-    await workspaceLink.click();
-    await expect(page).toHaveURL(/\/dashboard\/workspace$/);
   } finally {
     await cleanupE2EUsers(request);
   }

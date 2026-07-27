@@ -785,6 +785,23 @@ function metric(facts: WeeklyFact[], kind: WeeklyFactKind) {
     : ({ status: 'unknown' } as const);
 }
 
+const WEEKLY_FACT_KINDS = new Set<WeeklyFactKind>([
+  'planned',
+  'drafted',
+  'confirmed',
+  'published_mark',
+  'asset_gap',
+]);
+
+function omitUnknownWeeklyFacts(state: OperationsWorkspaceState) {
+  // Fail closed at the read boundary: retired or future persisted kinds do not
+  // regain a write or review surface merely because an old JSONB row remains.
+  state.weeklyFacts = state.weeklyFacts.filter((fact) =>
+    WEEKLY_FACT_KINDS.has(fact.kind)
+  );
+  return state;
+}
+
 function triggerTask(kind: BuiltInTriggerKind, dueAt: string): CreateTaskInput {
   switch (kind) {
     case 'weekly_batch_ready':
@@ -1232,10 +1249,10 @@ export class OperationsApplicationService {
 
   private async read(context: OperationContext) {
     await this.authorize(context);
-    return (
+    const state =
       (await this.repository.loadWorkspace(context.workspaceId)) ??
-      initialWorkspace(context.workspaceId)
-    );
+      initialWorkspace(context.workspaceId);
+    return omitUnknownWeeklyFacts(state);
   }
 
   private async assertBriefCurrentForWrite(
@@ -1278,9 +1295,10 @@ export class OperationsApplicationService {
     return this.repository.withWorkspaceLock(
       context.workspaceId,
       async (repository) => {
-        const state =
+        const loaded =
           (await repository.loadWorkspace(context.workspaceId)) ??
           initialWorkspace(context.workspaceId);
+        const state = omitUnknownWeeklyFacts(loaded);
         const command = this.moduleCommand.getStore();
         const receipt =
           command && !command.consumed
@@ -2318,7 +2336,6 @@ export class OperationsApplicationService {
           assetGaps: metric(facts, 'asset_gap'),
           confirmed: metric(facts, 'confirmed'),
           drafted: metric(facts, 'drafted'),
-          humanLeads: metric(facts, 'human_lead'),
           planned: metric(facts, 'planned'),
           published: metric(facts, 'published_mark'),
         },

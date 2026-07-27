@@ -17,7 +17,7 @@ import {
 import { ModelSupplyProductCopyProvider } from './model-supply-copy-provider.js';
 import type { ProductQualityEvent } from './quality-sink.js';
 import type { LegacyInFlightDecision } from './legacy-inflight-decision.js';
-import type { HandoffPackage } from '@meiye/contracts';
+import type { HandoffPackage, ProductState } from '@meiye/contracts';
 
 const merchant = {
   actor: 'user' as const,
@@ -32,6 +32,33 @@ const worker = {
 };
 
 describe('product golden journey', () => {
+  it('strips retired ledger keys from historical ProductState JSON', async () => {
+    const repository = new MemoryProductRepository();
+    repository.grantMembership(merchant.userId, merchant.workspaceId);
+    const service = new ProductService(repository);
+    const historicalState = await service.bootstrap(merchant);
+    Object.assign(
+      historicalState as ProductState & Record<string, unknown>,
+      {
+        insights: [
+          {
+            createdAt: '2026-07-01T00:00:00.000Z',
+            id: 'historical-insight',
+            kind: 'manual_note',
+            note: 'retired',
+          },
+        ],
+        leads: [{ id: 'historical-lead' }],
+      }
+    );
+    await repository.save(historicalState);
+
+    const normalized = await service.bootstrap(merchant);
+
+    assert.equal(Object.hasOwn(normalized, 'insights'), false);
+    assert.equal(Object.hasOwn(normalized, 'leads'), false);
+  });
+
   it('persists complete restricted-asset authorization and rejects incomplete or expired grants', async () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership(merchant.userId, merchant.workspaceId);
