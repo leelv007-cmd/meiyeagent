@@ -201,19 +201,22 @@ test.describe('S3 钱的旅程', () => {
     test.setTimeout(300_000);
     const code = `S3GATE-${Date.now().toString(36).toUpperCase()}`;
 
-    // The workspace's trial grant is what the merchant starts with, so this is
-    // where a copy-empty / image-rich merchant is made — no ledger surgery.
-    await applyAdminConfig(
-      page,
-      request,
-      TRIAL_ALLOWANCE_KEY,
-      {
-        ...TRIAL_SEED,
-        allowance: { audio: 0, copy: 0, image: 20, video: 1 },
-      },
-      'copy-empty-trial'
-    );
+    // Inside the try: `applyAdminConfig` writes and then polls for the value to
+    // land, so it can fail *after* the write succeeded. Seeding outside the try
+    // meant that window left copy=0 on a key every other lane shares.
     try {
+      // The workspace's trial grant is what the merchant starts with, so this is
+      // where a copy-empty / image-rich merchant is made — no ledger surgery.
+      await applyAdminConfig(
+        page,
+        request,
+        TRIAL_ALLOWANCE_KEY,
+        {
+          ...TRIAL_SEED,
+          allowance: { audio: 0, copy: 0, image: 20, video: 1 },
+        },
+        'copy-empty-trial'
+      );
       await recordRedemptionCode(page, request, code);
 
       const merchant = await registerE2EUser(request);
@@ -301,18 +304,20 @@ test.describe('S3 钱的旅程', () => {
     await expect(starterQuota).toBeVisible();
     await expect(starterQuota).not.toContainText(`${nextCopyAllowance} 条`);
 
-    await applyAdminConfig(
-      page,
-      request,
-      STARTER_ALLOWANCE_KEY,
-      {
-        ...STARTER_SEED,
-        allowance: { ...STARTER_SEED.allowance, copy: nextCopyAllowance },
-      },
-      'starter-copy-allowance'
-    );
-
+    // Inside the try for the same reason as the journey above: the write can
+    // land and the poll still fail, and starter is a shared seed.
     try {
+      await applyAdminConfig(
+        page,
+        request,
+        STARTER_ALLOWANCE_KEY,
+        {
+          ...STARTER_SEED,
+          allowance: { ...STARTER_SEED.allowance, copy: nextCopyAllowance },
+        },
+        'starter-copy-allowance'
+      );
+
       // No deploy, no second number to edit: the public page reads the same
       // revision the grant reads (D-143 单一商品目录).
       await page.goto('/pricing');
