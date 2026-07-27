@@ -65,15 +65,6 @@ test("Copy revision writes are idempotent and retain existing owned receipts", a
 		kind: "image_text" as const,
 		marketing: {
 			scene: "daily_service_exposure" as const,
-			capabilities: {
-				mainRecommendation: true as const,
-				platformDeliverables: true as const,
-				factsAndRights: true as const,
-				quickEdit: true as const,
-				publishExport: true as const,
-				asyncRecovery: true as const,
-				remix: true as const,
-			},
 			contextBundle: {
 				bundleId: "bundle-1",
 				revision: 1,

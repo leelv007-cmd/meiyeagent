@@ -13,6 +13,44 @@ import { HarnessTaskAdmissionService } from './task-admission.js';
 const connectionString = process.env.TEST_DATABASE_URL;
 
 test(
+  'Postgres harness schema backfills legacy failed dead letters',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresHarnessStore(pool);
+    const auditId = `legacy-dead-letter-${randomUUID()}`;
+    try {
+      await store.applySchema();
+      await pool.query(
+        `insert into harness_runtime.audit_events
+           (id, workflow_id, stage, event_type, payload)
+         values ($1, 'legacy-workflow', 'execution_selection', 'legacy', '{}'::jsonb)`,
+        [auditId],
+      );
+      await pool.query(
+        `insert into harness_runtime.langfuse_outbox
+           (audit_id, status, dead_lettered_at)
+         values ($1, 'failed', now())`,
+        [auditId],
+      );
+
+      await store.applySchema();
+      const migrated = await pool.query<{ status: string }>(
+        `select status from harness_runtime.langfuse_outbox where audit_id=$1`,
+        [auditId],
+      );
+      assert.equal(migrated.rows[0]?.status, 'dead_letter');
+    } finally {
+      await pool.query(
+        'delete from harness_runtime.audit_events where id=$1',
+        [auditId],
+      );
+      await pool.end();
+    }
+  },
+);
+
+test(
   'Postgres harness store atomically owns requests, decisions, traces and outbox',
   { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
   async () => {

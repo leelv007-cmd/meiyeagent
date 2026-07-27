@@ -98,10 +98,10 @@ test('replays a delivered image or video when media selection has no scores', ()
   }
 });
 
-test('does not treat a previous UTC calendar-day delivery as today', () => {
+test('does not treat a delivery before the 08:00 Shanghai business boundary as today', () => {
   const justBeforeMidnight = {
     ...record(1),
-    deliveredAt: '2026-07-18T23:59:59.999Z',
+    deliveredAt: '2026-07-18T07:59:00+08:00',
   };
 
   assert.deepEqual(
@@ -109,7 +109,7 @@ test('does not treat a previous UTC calendar-day delivery as today', () => {
       'workspace-1',
       1,
       justBeforeMidnight,
-      '2026-07-19T00:00:00.000Z',
+      '2026-07-18T08:01:00+08:00',
     ),
     {
       workspaceId: 'workspace-1',
@@ -120,21 +120,56 @@ test('does not treat a previous UTC calendar-day delivery as today', () => {
   );
 });
 
-test('treats a delivery at UTC midnight as the new day recommendation', () => {
+test('treats a delivery after the 08:00 Shanghai business boundary as today', () => {
   const atMidnight = {
     ...record(1),
-    deliveredAt: '2026-07-19T00:00:00.000Z',
+    deliveredAt: '2026-07-18T00:01:00.000Z',
   };
 
   const state = projectTodayRecommendation(
     'workspace-1',
     1,
     atMidnight,
-    '2026-07-19T00:00:00.000Z',
+    '2026-07-18T08:01:00+08:00',
   );
 
   assert.equal(state.recommendation?.createdAt, atMidnight.deliveredAt);
   assert.equal(state.stale, false);
+});
+
+test('whyNow weekday follows the same Shanghai 08:00 business boundary', () => {
+  const rules = {
+    weekdayWhyNow: { '5': '周五规则', '6': '周六规则' },
+    industryWhyNow: {},
+    platformWhyNow: {},
+  };
+
+  assert.equal(
+    projectTodayRecommendation(
+      'workspace-1',
+      1,
+      {
+        ...record(1),
+        deliveredAt: '2026-07-17T23:59:00.000Z',
+        recommendationRules: rules,
+      },
+      '2026-07-18T07:59:00+08:00',
+    ).recommendation?.whyNow,
+    '周五规则',
+  );
+  assert.equal(
+    projectTodayRecommendation(
+      'workspace-1',
+      1,
+      {
+        ...record(1),
+        deliveredAt: '2026-07-18T00:01:00.000Z',
+        recommendationRules: rules,
+      },
+      '2026-07-18T08:01:00+08:00',
+    ).recommendation?.whyNow,
+    '周六规则',
+  );
 });
 
 test('withholds the previous recommendation after the fact revision changes', () => {
@@ -244,15 +279,6 @@ function record(
         ? {
             marketing: {
               scene: 'traffic_opportunity',
-              capabilities: {
-                mainRecommendation: true,
-                platformDeliverables: true,
-                factsAndRights: true,
-                quickEdit: true,
-                publishExport: true,
-                asyncRecovery: true,
-                remix: true,
-              },
               contextBundle: {
                 bundleId: 'context-bundle-1',
                 revision: 1,

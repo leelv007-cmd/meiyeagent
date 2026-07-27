@@ -6,7 +6,6 @@ import {
   type StoreFactKind,
 } from '@meiye/contracts';
 
-import { deriveMarketingPackageCapabilities } from './marketing-capabilities.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 import type { IntentDeclaration } from './structured-nodes.js';
 import type { HarnessContextSnapshot } from './workflow-core.js';
@@ -43,7 +42,6 @@ export function projectCopyMarketingPackageEvidence(input: {
   );
   const common = {
     scene,
-    capabilities: deriveMarketingPackageCapabilities(),
     contextBundle: {
       bundleId: input.context.bundle.bundleId,
       revision: input.context.bundle.revision,

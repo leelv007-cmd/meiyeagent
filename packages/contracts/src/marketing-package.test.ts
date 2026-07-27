@@ -15,16 +15,6 @@ import {
   setDefaultMarketingIdentityCommandSchema,
 } from './index.js';
 
-const capabilities = {
-  mainRecommendation: true,
-  platformDeliverables: true,
-  factsAndRights: true,
-  quickEdit: true,
-  publishExport: true,
-  asyncRecovery: true,
-  remix: true,
-} as const;
-
 test('an unpriced promotion cannot carry concrete discount copy', () => {
   const parsed = promotionOfferCardSchema.safeParse({
     status: 'unpriced',
@@ -76,7 +66,6 @@ test('a traffic package requires the complete sourced opportunity card', () => {
   });
   const result = marketingPackageEvidenceSchema.parse({
     scene: 'traffic_opportunity',
-    capabilities,
     contextBundle: {
       bundleId: 'bundle-1',
       revision: 1,

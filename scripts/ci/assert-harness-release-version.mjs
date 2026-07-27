@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const repositoryRoot = resolve(import.meta.dirname, '../..');
 const applicationVersionVariable = 'HARNESS_DBOS_APPLICATION_VERSION';
@@ -91,7 +92,10 @@ export async function assertHarnessReleaseVersionContract(root = repositoryRoot)
   return { errors };
 }
 
-if (import.meta.main) {
+if (
+  process.argv[1] &&
+  fileURLToPath(import.meta.url) === resolve(process.argv[1])
+) {
   const { errors } = await assertHarnessReleaseVersionContract();
   if (errors.length > 0) {
     console.error('Harness release-version contract failed (fail closed):');

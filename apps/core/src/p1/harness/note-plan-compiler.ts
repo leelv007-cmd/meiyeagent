@@ -12,6 +12,7 @@ import {
   type NotePlanConsistencyEvaluation,
   type NoteStyleConfig,
 } from '@meiye/contracts';
+import { StructuredNodeRunError } from '../model-supply/structured-node-runner.js';
 
 // 这份默认集合已搬进契约（后台风格编辑器也要用同一份），此处保留导出口不动。
 export { DEFAULT_NOTE_STYLES };
@@ -333,7 +334,8 @@ export class NotePlanCompiler {
             attempt: 'after_regeneration',
           }),
         );
-      } catch {
+      } catch (error) {
+        if (!(error instanceof StructuredNodeRunError)) throw error;
         secondEvaluationFailed = true;
       }
       auditSignals.push({
