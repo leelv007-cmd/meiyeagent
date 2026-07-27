@@ -356,7 +356,7 @@ test(
       });
       assert.equal(first.launch?.recipes.length, 8);
       assert.equal(first.launch?.surface.status, 'published');
-      assert.equal(first.launch?.surface.revision, 3);
+      assert.equal(first.launch?.surface.revision, 24);
 
       const studioDraft = await first.catalog.draftRecipe({
         actorId: 'ops-recipe-studio',
@@ -446,12 +446,12 @@ test(
             first.launch!.surface.surfaceId,
           )
         ).length,
-        6,
+        27,
       );
       for (const recipe of first.launch!.recipes) {
         assert.equal(
           (await restarted.catalog.listRecipeHistory(recipe.recipeId)).length,
-          3,
+          6,
         );
       }
     } finally {

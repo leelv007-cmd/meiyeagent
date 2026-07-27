@@ -413,6 +413,15 @@ test('view composes stream phase for running copy', () => {
   assert.equal(awaiting.kind, 'ready');
   if (awaiting.kind !== 'ready') return;
   assert.equal(awaiting.sub.streamPhase, 'awaiting_confirmation');
+
+  // A finished run is neither drafting nor waiting — the Result Center must
+  // not present delivered copy as still streaming.
+  const finished = projectResultShellView(
+    baseFacts({ progressState: 'success', hasFirstToken: true })
+  );
+  assert.equal(finished.kind, 'ready');
+  if (finished.kind !== 'ready') return;
+  assert.equal(finished.sub.streamPhase, 'completed');
 });
 
 test('view composes delivery capability sub-projection', () => {

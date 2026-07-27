@@ -423,11 +423,6 @@ test(
           },
           {
             runner: retryRunner,
-            scorer: {
-              async score() {
-                throw new Error('Single-primary retry must not invoke scoring.');
-              },
-            },
             validator: new RetryOnceValidator(),
           },
         );

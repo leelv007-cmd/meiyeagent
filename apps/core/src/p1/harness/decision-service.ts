@@ -30,8 +30,16 @@ export interface HarnessDecisionTrace {
   outcome: StructuredDecisionInput['decision']['state'];
 }
 
+export interface HarnessPendingDecisionProjection {
+  timeoutSeconds: number | null;
+}
+
 export interface HarnessDecisionStore {
-  registerPending(workspaceId: string, question: QuestionCard): Promise<void>;
+  registerPending(
+    workspaceId: string,
+    question: QuestionCard,
+    projection?: HarnessPendingDecisionProjection,
+  ): Promise<void | HarnessPendingDecisionProjection>;
   readPending(
     workspaceId: string,
     taskId: string,
@@ -50,6 +58,7 @@ export interface HarnessDecisionStore {
       | 'late_answer'
       | null;
     status: 'pending' | 'resolved';
+    timeoutSeconds?: number | null;
   } | null>;
   submit(input: {
     workspaceId: string;
@@ -156,6 +165,10 @@ export class HarnessDecisionService {
 
   readPending(workspaceId: string, taskId: string) {
     return this.store.readPending(workspaceId, taskId);
+  }
+
+  readDecisionTarget(workspaceId: string, taskId: string) {
+    return this.readTarget(workspaceId, taskId);
   }
 
   async submit(
@@ -376,6 +389,7 @@ export class HarnessDecisionService {
           request: undefined,
           resolutionSource: null,
           status: pending ? ('pending' as const) : ('resolved' as const),
+          timeoutSeconds: undefined,
         }
       : null;
   }

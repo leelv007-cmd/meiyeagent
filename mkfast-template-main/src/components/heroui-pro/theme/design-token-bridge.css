@@ -59,8 +59,44 @@ html:has(.meiye-heroui-glass) {
   --meiye-shadow-ambient: 0 2px 20px oklch(0 0 0 / 0.03);
   --meiye-shadow-overlay: 0 4px 20px oklch(0 0 0 / 0.12);
   --meiye-shadow-rose-glow: 0 6px 16px oklch(0.63 0.13 18 / 0.24);
-  /* DESIGN.md §4 — 件级玻璃 blur(24px); §7 keeps the same radius in dark */
+  /* DESIGN.md §4「玻璃的三档 blur」— 壳级侧栏 / 件级胶囊 chips / 痕级悬浮标记。
+     §7 keeps the same radii in dark; only the alpha behind them changes. */
+  --meiye-blur-shell: 64px;
   --meiye-blur-piece: 24px;
+  --meiye-blur-trace: 20px;
+
+  /* ── 门店橱窗 metrics — DESIGN.md frontmatter `rounded` / `spacing` ──
+     圆角谱与间距阶以前只活在 DESIGN.md 与散落的字面量里，桥上没有词，于是组件
+     库带着自己的 calc(--radius * n) 谱进来，两套谱互相看不见。列在这里之后
+     design-token-bridge.test.ts 会逐条比对 DESIGN.md，跑偏就红。 */
+  --meiye-radius-sm: 8px;
+  --meiye-radius-md: 12px;
+  --meiye-radius-lg: 16px;
+  --meiye-radius-xl: 20px;
+  --meiye-radius-2xl: 24px;
+  --meiye-radius-3xl: 32px;
+  --meiye-radius-pill: 999px;
+  --meiye-space-xs: 4px;
+  --meiye-space-sm: 8px;
+  --meiye-space-md: 12px;
+  --meiye-space-lg: 16px;
+  --meiye-space-xl: 24px;
+  --meiye-space-2xl: 32px;
+  --meiye-space-3xl: 48px;
+
+  /* DESIGN.md §3 Hierarchy 的四个工作档（Display 只给问候语，见 .meiye-greeting）。 */
+  --meiye-text-headline-size: 1.5rem;
+  --meiye-text-headline-weight: 600;
+  --meiye-text-headline-leading: 1.25;
+  --meiye-text-title-size: 1rem;
+  --meiye-text-title-weight: 500;
+  --meiye-text-title-leading: 1.4;
+  --meiye-text-body-size: 0.875rem;
+  --meiye-text-body-weight: 400;
+  --meiye-text-body-leading: 1.55;
+  --meiye-text-label-size: 0.75rem;
+  --meiye-text-label-weight: 500;
+  --meiye-text-label-leading: 1.4;
 
   /* ── HeroUI v3 base tokens ── */
   /* Primitives */
@@ -68,21 +104,31 @@ html:has(.meiye-heroui-glass) {
   --eclipse: var(--meiye-ink);
 
   /* Radius — DESIGN.md `rounded.md` 12px. HeroUI derives the widget radius as
-     calc(--radius * 2) = 24px, which lands on `rounded.2xl`. */
-  --radius: 12px;
-  --field-radius: 12px;
+     calc(--radius * 2) = 24px, which lands on `rounded.2xl`. 药丸半径与控件高度
+     (999px / 44 / 38 / 36px) 在 DESIGN.md 是**按变体**给的，HeroUI 没有对应的单一
+     token，所以词汇在上面备好、由放置控件的换壳票逐处取用，桥不在这里一刀切。 */
+  --radius: var(--meiye-radius-md);
+  --field-radius: var(--meiye-radius-md);
 
-  /* Base surfaces — 实体内容区一律白瓷, canvas 只在无氛围层时做页面底 */
+  /* Base surfaces — DESIGN.md §4 的玻璃三档就是这三级 surface 的底。
+     以前这三个全指向不透明的白瓷/画布，于是 Glass 主题挂在 ~60 个选择器上的
+     backdrop-filter 糊的是一层不透明底：GPU 照付，画面照旧。半透明是 blur 的
+     前提，不是它的装饰。实体内容区（表格/表单/正文面板）不靠这三个 token 变白瓷，
+     靠显式的 .meiye-porcelain —— DESIGN.md「玻璃有边法则」把这件事交给使用处，
+     而不是交给默认值。 */
   --background: var(--meiye-canvas);
   --foreground: var(--meiye-ink-90);
   --muted: var(--meiye-ink-60);
-  --surface: var(--meiye-paper);
+  --surface: var(--meiye-glass-80);
   --surface-foreground: var(--meiye-ink-90);
-  --surface-secondary: var(--meiye-canvas);
+  --surface-secondary: var(--meiye-glass-50);
   --surface-secondary-foreground: var(--meiye-ink-90);
-  --surface-tertiary: oklch(0.985 0 0);
+  --surface-tertiary: var(--meiye-glass-35);
   --surface-tertiary-foreground: var(--meiye-ink-90);
   --surface-shadow: var(--meiye-shadow-ambient);
+  /* 真悬浮层（popover / dropdown / dialog）反而不是玻璃：DESIGN.md §4 只给它们
+     「悬浮影 overlay」这一条影，玻璃是留给浮在氛围层上的壳与件的。它们压在任意内容
+     之上，半透明会直接撞上「遮罩托字法则」的 ≥4.5:1 硬门，所以留白瓷。 */
   --overlay: var(--meiye-paper);
   --overlay-foreground: var(--meiye-ink-90);
   --overlay-shadow: var(--meiye-shadow-overlay);
@@ -125,11 +171,24 @@ html:has(.meiye-heroui-glass) {
   --danger-foreground: var(--meiye-paper);
 
   /* Glass material — 玻璃三档 + 白描边; DESIGN.md forbids coloured control
-     backgrounds, so the Glass theme's blue background gradient is dropped. */
+     backgrounds, so the Glass theme's blue background gradient is dropped.
+     --glass-blur 是 Glass 主题的单一模糊半径，落在件级；侧栏在 heroui-glass.css
+     里抬到壳级。data-grid 的钉住列反过来必须不透明——钉住的意义就是遮住滚过去的
+     内容，所以那两个 token 留白瓷/画布。 */
   --glass-blur: var(--meiye-blur-piece);
   --glass-pinned-surface: var(--meiye-paper);
   --glass-pinned-surface-secondary: var(--meiye-canvas);
   --background-gradient: none;
+
+  /* 玫瑰金火花 — DESIGN.md §2「一点胭脂法则」允许的落点。HeroUI 没有 spark 语义，
+     而 .meiye-product-shell 已经在用 --spark/-wash/-deep（text-spark、bg-spark-wash、
+     .meiye-rose-glow 都读它们），所以桥把同一组名字抬到 <html>：portal 出去的浮层
+     和 product shell 之外的 HeroUI 页因此也拿得到火花，而不是掉回中性灰。
+     这三个名字只服务 AI 时刻，绝不喂给 --accent / --link / --foreground。 */
+  --spark: var(--meiye-rose-gold);
+  --spark-wash: var(--meiye-rose-wash);
+  --spark-deep: var(--meiye-rose-deep);
+  --shadow-rose-glow: var(--meiye-shadow-rose-glow);
 
   /* Charts — DESIGN.md supplies no chart palette and forbids colour on chrome
      (颜色由内容供给), so series run down the neutral ink ramp. */
@@ -168,8 +227,9 @@ html.dark:has(.meiye-heroui-glass) {
   --meiye-hairline: oklch(1 0 0 / 0.1);
   --meiye-ink-hover: oklch(1 0 0);
 
-  /* ── HeroUI v3 base tokens that differ in dark ── */
-  --surface-tertiary: oklch(0.25 0 0);
+  /* ── HeroUI v3 base tokens that differ in dark ──
+     surface 三级不在这里重述：它们指向 --meiye-glass-80/50/35，这一段已经把那三个
+     换成 DESIGN.md §7 的暗色档，映射自己就跟着走了。 */
   --accent-foreground: var(--meiye-canvas);
   --focus: var(--meiye-focus);
   --field-border-focus: var(--meiye-focus);

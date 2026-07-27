@@ -13,7 +13,7 @@ import { resolveFfprobePath } from './media-tool-paths.js';
 export function modelAssetStorageFromEnv(env: NodeJS.ProcessEnv) {
   if (env.P1_ASSET_STORAGE_MODE === 's3') {
     const endpoint = required(env, 'P1_ASSET_S3_ENDPOINT');
-    const bucket = required(env, 'P1_ASSET_S3_BUCKET');
+    const { bucket } = validateCloudflareR2AssetStorageContract(env);
     const accessKeyId = required(env, 'P1_ASSET_S3_ACCESS_KEY_ID');
     const secretAccessKey = required(env, 'P1_ASSET_S3_SECRET_ACCESS_KEY');
     return new S3CompatibleAssetStorage({
@@ -55,6 +55,33 @@ export function modelAssetStorageFromEnv(env: NodeJS.ProcessEnv) {
   throw new Error(
     'Shared object storage is required unless APP_ENV explicitly selects development, test, or e2e.',
   );
+}
+
+export function validateCloudflareR2AssetStorageContract(
+  env: NodeJS.ProcessEnv,
+) {
+  const bucket = required(env, 'P1_ASSET_S3_BUCKET').trim();
+  const provisioningBucket = env.CLOUDFLARE_R2_BUCKET_NAME?.trim();
+  const appEnv = env.APP_ENV ?? env.NODE_ENV ?? '';
+
+  if (
+    !provisioningBucket &&
+    (appEnv === 'production' || appEnv === 'staging')
+  ) {
+    throw new Error(
+      'CLOUDFLARE_R2_BUCKET_NAME is required for shared asset storage in production and staging.',
+    );
+  }
+  if (provisioningBucket && provisioningBucket !== bucket) {
+    throw new Error(
+      'P1_ASSET_S3_BUCKET must match CLOUDFLARE_R2_BUCKET_NAME so Core and the Cloudflare provisioning inventory address the same bucket.',
+    );
+  }
+
+  return {
+    bucket,
+    provisioningBucket,
+  };
 }
 
 function assetPublicBaseUrl(env: NodeJS.ProcessEnv) {

@@ -4,6 +4,7 @@ import {
   workflowStateFrameSchema,
   workflowTokenFrameSchema,
   type ContentPackageRevisionDelivery,
+  type MerchantReport,
   type WorkflowProgressEnvelope,
   type WorkflowProgressFrame,
   type WorkflowStateEnvelope,
@@ -140,6 +141,28 @@ export function harnessDeliveryFromState(
   return parsed.success ? parsed.data : undefined;
 }
 
+export type HarnessCancellationOutcome = {
+  merchantMessage: string;
+  outcome: 'cancelled';
+  resolutionSource: 'core_hold_expired';
+};
+
+export function harnessCancellationFromState(
+  state: WorkflowStateEnvelope
+): HarnessCancellationOutcome | undefined {
+  if (state.status !== 'success') return undefined;
+  const { merchantMessage, outcome, resolutionSource } = state.snapshot;
+  if (
+    outcome !== 'cancelled' ||
+    resolutionSource !== 'core_hold_expired' ||
+    typeof merchantMessage !== 'string' ||
+    !merchantMessage.trim()
+  ) {
+    return undefined;
+  }
+  return { merchantMessage, outcome, resolutionSource };
+}
+
 export type WorkflowEventTransportStatus =
   | 'idle'
   | 'connecting'
@@ -169,8 +192,15 @@ export function useWorkflowEventStream(input: {
   const [harnessDelivery, setHarnessDelivery] = useState<
     ContentPackageRevisionDelivery | undefined
   >();
+  const [harnessCancellation, setHarnessCancellation] = useState<
+    HarnessCancellationOutcome | undefined
+  >();
+  const [merchantReport, setMerchantReport] = useState<
+    MerchantReport | undefined
+  >();
   const [transportStatus, setTransportStatus] =
     useState<WorkflowEventTransportStatus>('idle');
+  const [activeWorkflowId, setActiveWorkflowId] = useState('');
 
   useEffect(() => {
     cursor.current = undefined;
@@ -178,10 +208,14 @@ export function useWorkflowEventStream(input: {
     setCopyCandidates([]);
     setWorkflowState(undefined);
     setHarnessDelivery(undefined);
+    setHarnessCancellation(undefined);
+    setMerchantReport(undefined);
     if (!input.enabled || !input.workflowId) {
+      setActiveWorkflowId('');
       setTransportStatus('idle');
       return;
     }
+    setActiveWorkflowId(input.workflowId);
     if (typeof EventSource === 'undefined') {
       setTransportStatus('degraded');
       return;
@@ -215,8 +249,15 @@ export function useWorkflowEventStream(input: {
           return;
         }
         setWorkflowState(frame.data.status);
+        // 失败/partial 申报 rides the same terminal frame as the status, so the
+        // conversation can state what happened without a second fetch (P0-2).
+        if (frame.data.merchantReport) {
+          setMerchantReport(frame.data.merchantReport);
+        }
         const delivery = harnessDeliveryFromState(frame.data);
         if (delivery) setHarnessDelivery(delivery);
+        const cancellation = harnessCancellationFromState(frame.data);
+        if (cancellation) setHarnessCancellation(cancellation);
         const envelope = videoWorkflowEnvelopeFromState(frame.data);
         if (envelope) {
           queryClient.setQueryData(input.workflowQueryKey, envelope);
@@ -264,11 +305,21 @@ export function useWorkflowEventStream(input: {
     workflowQueryKeyHash,
   ]);
 
+  const matchesInput =
+    input.enabled &&
+    Boolean(input.workflowId) &&
+    activeWorkflowId === input.workflowId;
   return {
-    copyCandidates,
-    harnessDelivery,
-    latestProgress,
-    transportStatus,
-    workflowState,
+    activeWorkflowId: matchesInput ? activeWorkflowId : '',
+    copyCandidates: matchesInput ? copyCandidates : [],
+    harnessCancellation: matchesInput ? harnessCancellation : undefined,
+    harnessDelivery: matchesInput ? harnessDelivery : undefined,
+    latestProgress: matchesInput ? latestProgress : undefined,
+    // Gated like every other field: a 申报 belongs to the run it came from, and
+    // handing it to a surface now watching a different workflow would state one
+    // run's failure over another's (H01).
+    merchantReport: matchesInput ? merchantReport : undefined,
+    transportStatus: matchesInput ? transportStatus : 'idle',
+    workflowState: matchesInput ? workflowState : undefined,
   };
 }

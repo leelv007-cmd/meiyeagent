@@ -16,8 +16,7 @@ import type {
  * invalidation covers both, which is what a stale default badge on a withdrawn
  * identity was missing.
  *
- * Composer keeps its own ['marketing-identity-projection'] key for now; folding
- * that surface in is registered as OI-55.
+ * Composer and the identity workspace consume this shared projection key.
  */
 export const marketingIdentitiesQuery = {
   queryKey: p1QueryKeys.request('marketing-identity', 'marketing_identities', {

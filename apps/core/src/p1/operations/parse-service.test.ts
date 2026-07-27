@@ -285,6 +285,7 @@ test('batch parse is queued, exposes durable progress and recovers on refresh', 
   const completed = await service.runBatchTask(
     context.workspaceId,
     queued.taskId,
+    queued.carrierAttempt,
   );
   assert.equal(completed.status, 'completed');
   assert.deepEqual(completed.progress, {
@@ -294,8 +295,113 @@ test('batch parse is queued, exposes durable progress and recovers on refresh', 
   });
   assert.deepEqual(await service.task(context.workspaceId, queued.taskId), completed);
   assert.deepEqual(
-    await service.runBatchTask(context.workspaceId, queued.taskId),
+    await service.runBatchTask(
+      context.workspaceId,
+      queued.taskId,
+      queued.carrierAttempt,
+    ),
     completed,
+  );
+});
+
+test('a queued batch reserves a new carrier attempt on resubmission and fences the stale carrier', async () => {
+  const submissions: Array<{
+    payload?: { carrierAttempt?: number };
+  }> = [];
+  let submitCalls = 0;
+  const repository = new MemoryParseRepository();
+  const service = fixtureService(
+    repository,
+    new FixtureDocumentParseProvider(),
+    {
+      async submit(input) {
+        submissions.push(
+          structuredClone(
+            input as { payload?: { carrierAttempt?: number } },
+          ),
+        );
+        submitCalls += 1;
+        if (submitCalls === 1) {
+          throw new Error('carrier unavailable before acceptance');
+        }
+        return {} as never;
+      },
+    },
+  );
+  const command = {
+    taskId: 'recoverable-batch',
+    sources: [source('recoverable-a'), source('recoverable-b')],
+  };
+
+  await assert.rejects(
+    service.startBatch(context, command),
+    /carrier unavailable/u,
+  );
+  const stranded = await service.task(context.workspaceId, command.taskId);
+  assert.equal(stranded.status, 'queued');
+  assert.equal(stranded.carrierAttempt, 1);
+
+  const resubmitted = await service.startBatch(context, command);
+  assert.equal(resubmitted.carrierAttempt, 2);
+  assert.deepEqual(
+    submissions.map(({ payload }) => payload?.carrierAttempt),
+    [1, 2],
+  );
+
+  const stale = await service.runBatchTask(
+    context.workspaceId,
+    command.taskId,
+    1,
+  );
+  assert.equal(stale.status, 'queued');
+  assert.equal(stale.progress.completed, 0);
+  const legacyStale = await service.runBatchTask(
+    context.workspaceId,
+    command.taskId,
+  );
+  assert.equal(legacyStale.status, 'queued');
+  assert.equal(legacyStale.progress.completed, 0);
+
+  const completed = await service.runBatchTask(
+    context.workspaceId,
+    command.taskId,
+    2,
+  );
+  assert.equal(completed.status, 'completed');
+  assert.equal(completed.progress.completed, 2);
+});
+
+test('parse task projection refuses stale status and progress regression', async () => {
+  const repository = new MemoryParseRepository();
+  const service = fixtureService(
+    repository,
+    new FixtureDocumentParseProvider(),
+    { async submit() { return {} as never; } },
+  );
+  const queued = await service.startBatch(context, {
+    taskId: 'monotonic-batch',
+    sources: [source('monotonic-a'), source('monotonic-b')],
+  });
+  const running = await repository.updateTask({
+    ...queued,
+    status: 'running',
+    progress: {
+      completed: 1,
+      total: 2,
+      message: '正在整理你上传的资料，已完成 1/2 份；离开后也会继续处理。',
+    },
+    updatedAt: '2026-07-26T02:00:01.000Z',
+  });
+
+  const stale = await repository.updateTask({
+    ...queued,
+    updatedAt: '2026-07-26T02:00:02.000Z',
+  });
+
+  assert.deepEqual(stale, running);
+  assert.deepEqual(
+    await repository.getTask(context.workspaceId, queued.taskId),
+    running,
   );
 });
 
@@ -315,7 +421,7 @@ test('a dead batch carrier marks its durable projection failed with a merchant n
     new FixtureDocumentParseProvider(),
     { async submit() { return {} as never; } },
   );
-  await service.startBatch(context, {
+  const queued = await service.startBatch(context, {
     taskId: 'dead-batch',
     sources: [source('dead-a'), source('dead-b')],
   });
@@ -327,7 +433,10 @@ test('a dead batch carrier marks its durable projection failed with a merchant n
       workspaceId: context.workspaceId,
       jobId: 'dead-batch',
       kind: 'asset.parse-batch',
-      payload: { taskId: 'dead-batch' },
+      payload: {
+        taskId: 'dead-batch',
+        carrierAttempt: queued.carrierAttempt!,
+      },
       idempotencyKey: 'dead-batch',
       effectIdempotencyKey: 'dead-batch:effect',
     }),

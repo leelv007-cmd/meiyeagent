@@ -373,3 +373,60 @@ describe('browser contract for Brief surface', () => {
     assert.doesNotMatch(json, /credential/i);
   });
 });
+
+/**
+ * #240 P1. `canConfirm` used to be unconditionally true for an open Brief, so a
+ * merchant who kept typing after the card appeared could still confirm it — and
+ * the card kept showing the price of the quote it was built against. Both doors
+ * now answer to the same identity check the Composer's four gates use.
+ */
+describe('Brief confirmability follows the current quote identity', () => {
+  it('stays confirmable and silent while the quote is still the current one', () => {
+    const { state } = openWith(['quote_policy_threshold']);
+    const view = projectBriefSurfaceView(state, {
+      lensId: 'copy',
+      quoteStale: false,
+    });
+
+    assert.equal(view.visible, true);
+    assert.equal(view.canConfirm, true);
+    assert.equal(view.staleNotice, null);
+  });
+
+  it('cannot be confirmed once the current quote no longer matches', () => {
+    const { state } = openWith(['quote_policy_threshold']);
+    const view = projectBriefSurfaceView(state, {
+      lensId: 'copy',
+      // What the host passes when `currentComposerQuoteView` came back empty.
+      quote: null,
+      quoteStale: true,
+    });
+
+    assert.equal(view.visible, true);
+    assert.equal(view.canConfirm, false);
+    assert.equal(
+      view.staleNotice,
+      '你刚改过要写的内容，这份确认对不上了。点“返回修改”再提交一次就好。'
+    );
+    // The card is not snatched away mid-read — cancel is still the way out.
+    assert.equal(view.cancelLabel, '返回修改');
+  });
+
+  it('omitting the flag keeps the previous behaviour for every other caller', () => {
+    const { state } = openWith(['any_video']);
+    const view = projectBriefSurfaceView(state, { lensId: 'video' });
+
+    assert.equal(view.canConfirm, true);
+    assert.equal(view.staleNotice, null);
+  });
+
+  it('a closed Brief carries no notice', () => {
+    const { state } = openWith(['quote_policy_threshold']);
+    const { state: cancelled } = cancelBriefSurface(state);
+    const view = projectBriefSurfaceView(cancelled, { quoteStale: true });
+
+    assert.equal(view.visible, false);
+    assert.equal(view.canConfirm, false);
+    assert.equal(view.staleNotice, null);
+  });
+});

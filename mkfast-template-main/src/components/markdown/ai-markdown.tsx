@@ -1,42 +1,36 @@
-import parse, { type HTMLReactParserOptions } from 'html-react-parser';
-import { useEffect, useState } from 'react';
+/**
+ * Model output, rendered as rich text.
+ *
+ * U03: both renderers are now the HeroUI Pro V3 `markdown` unit (itself a
+ * Streamdown / react-markdown wrapper plus the `code-block` unit, so fenced
+ * code arrives highlighted and copyable). The local prompt-kit `ResponseStream`
+ * adaptation this replaced was the same wrapper written a second time, minus
+ * the code block.
+ *
+ * 「无假流式」survives the swap, and is why `isStreaming` is wired to the
+ * caller's real stream phase rather than to «is there content»: the renderer
+ * only ever shows text Core has already sent, and a completed response is
+ * never replayed character by character. `animated` is the reveal of blocks
+ * that just arrived — switched off entirely for a merchant who asked for
+ * reduced motion, since that reveal runs from JS and a stylesheet cannot
+ * flatten it.
+ *
+ * Raw HTML in model output stays inert: neither renderer enables `rehype-raw`,
+ * so tags arrive as text, and react-markdown's default URL transform drops
+ * `javascript:` links. `ai-markdown.test.tsx` holds both to that.
+ */
 
-import { renderAiMarkdown, type MarkdownResult } from '@/lib/markdown';
-import { ResponseStream } from './response-stream';
+import { Markdown, StreamMarkdown } from '@/components/heroui-pro';
+import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 
 type AiMarkdownProps = {
   content: string;
   className?: string;
 };
 
-/** Safe completed-state renderer for persisted model output. */
+/** Completed-state renderer for persisted model output. */
 export function AiMarkdown({ content, className }: AiMarkdownProps) {
-  const [result, setResult] = useState<MarkdownResult | null>(null);
-
-  useEffect(() => {
-    let current = true;
-    setResult(null);
-    void renderAiMarkdown(content).then((next) => {
-      if (current) setResult(next);
-    });
-    return () => {
-      current = false;
-    };
-  }, [content]);
-
-  if (!result) {
-    return <div className={className} aria-busy="true" />;
-  }
-
-  const options: HTMLReactParserOptions = {
-    replace: (node) => {
-      if (node.type !== 'tag' || node.name !== 'a') return;
-      node.attribs.target = '_blank';
-      node.attribs.rel = 'noreferrer noopener';
-    },
-  };
-
-  return <div className={className}>{parse(result.markup, options)}</div>;
+  return <Markdown className={className}>{content}</Markdown>;
 }
 
 type StreamingAiMarkdownProps = AiMarkdownProps & {
@@ -49,9 +43,15 @@ export function StreamingAiMarkdown({
   className,
   streaming,
 }: StreamingAiMarkdownProps) {
+  const prefersReducedMotion = usePrefersReducedMotion();
+
   return (
-    <ResponseStream className={className} streaming={streaming}>
+    <StreamMarkdown
+      animated={prefersReducedMotion ? false : undefined}
+      className={className}
+      isStreaming={streaming}
+    >
       {content}
-    </ResponseStream>
+    </StreamMarkdown>
   );
 }

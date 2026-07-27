@@ -1,11 +1,29 @@
 {
-  "$comment": "Applied verbatim by scripts/sync-heroui-pro.ts after the copy. Each patch must match exactly once or the sync fails loudly — on a version bump that failure is the signal to re-check whether upstream fixed it. Patches exist only to satisfy this app's compiler policy; none of them change component behaviour.",
+  "$comment": "Applied verbatim by scripts/sync-heroui-pro.ts after the copy. Each patch must match exactly once or the sync fails loudly — on a version bump that failure is the signal to re-check whether upstream fixed it. Patches satisfy this app's compiler policy and its bundle policy; none of them change what a component renders.",
   "patches": [
     {
       "file": "components/segment/segment.tsx",
       "reason": "TS6133 under noUnusedLocals: upstream imports ReactNode but never uses it.",
       "find": "  type ReactNode,\n",
       "replace": ""
+    },
+    {
+      "file": "components/chat-conversation/chat-conversation.tsx",
+      "reason": "TS6133 under noUnusedLocals: upstream imports RefObject but never uses it.",
+      "find": "  type RefObject,\n",
+      "replace": ""
+    },
+    {
+      "file": "components/code-block/code-block.tsx",
+      "reason": "Bundle policy (U03): upstream imports Shiki's full entry at module scope, which pulls ~11MB of grammars and 217 chunks into every route that touches Markdown. Highlighting already runs inside an async effect behind a plain <pre> fallback, so moving the import into that same effect changes when Shiki loads, not what the block renders.",
+      "find": "import { codeToHtml } from 'shiki';\n",
+      "replace": ""
+    },
+    {
+      "file": "components/code-block/code-block.tsx",
+      "reason": "Bundle policy (U03): second half of the Shiki deferral above — the highlighter is resolved on demand inside the existing try, so an import failure lands in the existing catch and falls back to the unhighlighted block.",
+      "find": "      try {\n        const html = resolvedDarkTheme",
+      "replace": "      try {\n        const { codeToHtml } = await import('shiki');\n        const html = resolvedDarkTheme"
     },
     {
       "file": "components/sheet/sheet.tsx",

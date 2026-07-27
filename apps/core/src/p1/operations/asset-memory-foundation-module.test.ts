@@ -21,6 +21,9 @@ import {
   ParseService,
 } from './parse-service.js';
 
+// These tests invoke the trusted kernel module directly; browser callers must
+// use the mapped finalize_store_intake command instead of direct StoreFact
+// intake/confirmation commands.
 const now = '2026-07-18T06:00:00.000Z';
 const context: P1Context = {
   actor: 'owner',
@@ -93,6 +96,37 @@ test('asset-memory module exposes fact intake with server-owned workspace and ap
     ['corrected', 'confirmed'],
   );
   assert.equal(view.capability.status, 'assisted');
+});
+
+test('direct batch recording cannot forge a parsed screenshot receipt', async () => {
+  const module = moduleFixture();
+  const manual = intakeBatch();
+  const payload = {
+    ...manual,
+    source: { ...manual.source, kind: 'price_list' as const },
+    candidates: manual.candidates.map((candidate) => ({
+      ...candidate,
+      fact: {
+        ...candidate.fact,
+        source: {
+          ...candidate.fact.source,
+          kind: 'screenshot_extraction' as const,
+        },
+      },
+    })),
+  };
+
+  await assert.rejects(
+    module.execute({
+      context,
+      idempotencyKey: 'forged-parsed-batch',
+      input: {
+        action: 'record_asset_intake_batch',
+        payload,
+      },
+    }),
+    /only accepts manual user confirmations/u,
+  );
 });
 
 test('all assisted inputs prepare a preview and confirm an exact fact revision', async () => {
@@ -286,10 +320,14 @@ test('asset-memory exposes queued and refreshed batch progress for the presentat
         })),
       },
     },
-  })) as { status: string };
+  })) as { status: string; carrierAttempt?: number };
   assert.equal(queued.status, 'queued');
   assert.equal(submitted.length, 1);
-  await parsing.runBatchTask(context.workspaceId, 'parse-batch');
+  await parsing.runBatchTask(
+    context.workspaceId,
+    'parse-batch',
+    queued.carrierAttempt,
+  );
   const refreshed = (await module.query({
     context,
     input: {
@@ -454,7 +492,7 @@ function intakeBatch() {
     taskId: 'task-a',
     source: {
       sourceId: 'source-a',
-      kind: 'price_list' as const,
+      kind: 'manual' as const,
       referenceId: 'upload-a',
       capabilityStatus: 'assisted' as const,
       sourceWorkspaceId: 'workspace-a',
@@ -473,7 +511,7 @@ function intakeBatch() {
           value: { amount: 239, currency: 'CNY' },
           scope: { storeId: 'store-a' },
           source: {
-            kind: 'screenshot_extraction' as const,
+            kind: 'user_confirmation' as const,
             referenceId: 'upload-a',
             capturedAt: now,
           },

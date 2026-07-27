@@ -4,6 +4,7 @@ export class ContentPackageSemanticMutationError extends Error {
   constructor(
     readonly code:
       | 'CONTENT_PACKAGE_REVISION_CONFLICT'
+      | 'CONTENT_PACKAGE_RIGHTS_STATE_CONFLICT'
       | 'DELIVERY_VARIANT_REQUIRED'
       | 'HARNESS_ADOPTION_EVIDENCE_REQUIRED',
     message: string,
@@ -46,6 +47,15 @@ export function validateContentPackageSemanticWrite(input: {
     throw new ContentPackageSemanticMutationError(
       'HARNESS_ADOPTION_EVIDENCE_REQUIRED',
       'An accepted Harness package must record its adopted candidate.',
+    );
+  }
+  if (
+    next.rights.state === 'revoked' &&
+    (next.status === 'accepted' || next.status === 'export_failed')
+  ) {
+    throw new ContentPackageSemanticMutationError(
+      'CONTENT_PACKAGE_RIGHTS_STATE_CONFLICT',
+      'Revoked ContentPackage rights cannot remain in a deliverable state.',
     );
   }
   if ((next.deliveryEvents?.length ?? 0) > 0 && next.variants.length === 0) {

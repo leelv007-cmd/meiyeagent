@@ -2,7 +2,7 @@ import {
 	composerContentPackagePlatformSchema,
 	composerDistributionTargetSchema,
 	composerSubmissionDeliverableSchema,
-	composerSubmissionSignedFieldsSchema,
+	composerSubmissionSignedFieldsBaseSchema,
 	creationModeSchema,
 	creativeOperationSchema,
 	creativeContentModuleIds,
@@ -111,6 +111,11 @@ const contentModulesSchema = z
 	.array(z.enum(creativeContentModuleIds))
 	.min(1)
 	.max(creativeContentModuleIds.length);
+const persistedSignedSubmissionSchema =
+	composerSubmissionSignedFieldsBaseSchema.partial({
+		creationMode: true,
+		intent: true,
+	});
 
 export const CREATION_EXECUTION_SNAPSHOT_SCHEMA_VERSION =
 	"creation-execution-snapshot/v1" as const;
@@ -136,7 +141,7 @@ const creationSubmissionCommandBaseSchema = z
 		lens: creationLensSchema,
 		operation: creativeOperationSchema.optional(),
 		platform: z.object({ id: platformSchema }).strict(),
-		signedSubmission: composerSubmissionSignedFieldsSchema.optional(),
+		signedSubmission: persistedSignedSubmissionSchema.optional(),
 		deliverables: z.array(deliverableSchema).min(1).max(20),
 		sources: sourceReferencesSchema,
 		rights: rightsSummarySchema,
@@ -152,7 +157,11 @@ const creationSubmissionCommandBaseSchema = z
 	})
 	// Legacy internal commands may omit signed fields. Composer requests make
 	// the same extensible shape required below and freeze it as one object.
-	.extend(composerSubmissionSignedFieldsSchema.partial().shape)
+	.extend(
+		composerSubmissionSignedFieldsBaseSchema
+			.omit({ creationMode: true, intent: true })
+			.partial().shape,
+	)
 	.extend({
 		catalogModel: revisionReferenceSchema,
 		recipe: revisionReferenceSchema,
@@ -179,7 +188,7 @@ const composerSubmissionRequestBaseSchema = creationSubmissionCommandBaseSchema
 		route: true,
 	})
 	.omit({ operation: true, platform: true, signedSubmission: true })
-	.extend(composerSubmissionSignedFieldsSchema.shape);
+	.extend(composerSubmissionSignedFieldsBaseSchema.shape);
 
 export const composerSubmissionRequestSchema =
 	composerSubmissionRequestBaseSchema.superRefine(validateSubmission);
@@ -224,7 +233,7 @@ export const creationExecutionSnapshotSchema = z
 		contentPackagePlatform: composerContentPackagePlatformSchema,
 		distributionTarget: composerDistributionTargetSchema,
 		deliverable: composerSubmissionDeliverableSchema,
-		signedSubmission: composerSubmissionSignedFieldsSchema.optional(),
+		signedSubmission: persistedSignedSubmissionSchema.optional(),
 		deliverables: z.array(deliverableSchema).min(1).max(20),
 		sources: sourceReferencesSchema,
 		rights: rightsSummarySchema,
@@ -325,8 +334,10 @@ function operationForLens(lens: z.infer<typeof creationLensSchema>) {
 
 function validateSubmission(
 	command: {
+		creationMode?: "customized" | "free";
 		contentModules?: string[];
 		deliverable?: {
+			kind?: string;
 			aspectRatio?: string;
 			durationSeconds?: number;
 			quantity: number;
@@ -339,10 +350,31 @@ function validateSubmission(
 			order: number;
 			quantity: number;
 		}>;
+		imageOperation?: string;
 		lens?: "copy" | "image" | "image_text_note" | "video";
 	},
 	context: z.RefinementCtx,
 ) {
+	if (command.imageOperation !== undefined) {
+		if (command.creationMode !== "free") {
+			context.addIssue({
+				code: "custom",
+				message:
+					"Only free image creation may declare an explicit image operation.",
+				path: ["imageOperation"],
+			});
+		}
+		if (
+			command.deliverable?.kind !== "image_set" &&
+			command.deliverable?.kind !== "poster"
+		) {
+			context.addIssue({
+				code: "custom",
+				message: "An explicit image operation requires an image deliverable.",
+				path: ["imageOperation"],
+			});
+		}
+	}
 	if (!command.contentModules || !command.deliverables || !command.lens) return;
 	const orders = command.deliverables.map((deliverable) => deliverable.order);
 	if (new Set(orders).size !== orders.length) {

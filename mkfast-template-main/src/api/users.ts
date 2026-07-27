@@ -1,5 +1,9 @@
 import { createServerFn } from '@tanstack/react-start';
 import type { User } from '@/db/types';
+import {
+  publicAdminProvisioningAttribution,
+  type PublicAdminProvisioningAttribution,
+} from '@/auth/admin-provisioning-attribution';
 import { adminApiMiddleware } from '@/middlewares/admin-middleware';
 import { getDb } from '@/db';
 import { user } from '@/db/auth.schema';
@@ -9,11 +13,16 @@ import {
   count as countFn,
   desc,
   eq,
+  inArray,
   isNull,
   or,
   sql,
 } from 'drizzle-orm';
 import { z } from 'zod';
+
+export type AdminUserListItem = Omit<User, 'provisionedByUserId'> & {
+  provisioningAttribution: PublicAdminProvisioningAttribution;
+};
 
 const SORT_FIELD_MAP: Record<
   string,
@@ -86,22 +95,37 @@ export const listUsers = createServerFn({ method: 'GET' })
     const countQuery = db.select({ count: countFn() }).from(user).where(where);
 
     const [items, [{ count }]] = await Promise.all([selectQuery, countQuery]);
+    const provisionerIds = [
+      ...new Set(
+        items.flatMap((row) =>
+          row.provisionedByUserId ? [row.provisionedByUserId] : []
+        )
+      ),
+    ];
+    const provisioners =
+      provisionerIds.length === 0
+        ? []
+        : await db
+            .select({ id: user.id, name: user.name })
+            .from(user)
+            .where(inArray(user.id, provisionerIds));
+    const provisionerNames = new Map(
+      provisioners.map((row) => [row.id, row.name])
+    );
 
     return {
-      items: items.map((row) => ({
-        id: row.id,
-        name: row.name,
-        email: row.email,
-        emailVerified: row.emailVerified,
-        image: row.image,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-        role: row.role,
-        banned: row.banned,
-        banReason: row.banReason,
-        banExpires: row.banExpires,
-        provisionedByUserId: row.provisionedByUserId,
-      })) as User[],
+      items: items.map((row): AdminUserListItem => {
+        const { provisionedByUserId, ...safeUser } = row;
+        return {
+          ...safeUser,
+          provisioningAttribution: publicAdminProvisioningAttribution({
+            provisionedByUserId,
+            provisionerName: provisionedByUserId
+              ? (provisionerNames.get(provisionedByUserId) ?? null)
+              : null,
+          }),
+        };
+      }),
       total: Number(count),
     };
   });

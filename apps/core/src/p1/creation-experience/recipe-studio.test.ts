@@ -376,6 +376,8 @@ describe('Recipe Studio controlled compiler', () => {
     assert.ok(projected);
     assert.equal('studioRelease' in projected, false);
     const admission = validateRecipeForComposer(production.recipe, {
+      creationMode: 'customized',
+      intent: '生成一篇护发误区科普笔记',
       catalogModel: {
         id: 'catalog.deepseek-v4-pro',
         revision: 'catalog.deepseek-v4-pro@1',

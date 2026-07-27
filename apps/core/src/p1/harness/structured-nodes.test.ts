@@ -5,6 +5,7 @@ import {
   compileExecutionBrief,
   intentNamingOutputSchema,
   nameHarnessIntent,
+  type BriefContextBundle,
   type StructuredNodeRunner,
   type StructuredNodeRunnerRequest,
 } from './structured-nodes.js';
@@ -262,6 +263,155 @@ test('brief compilation produces complete copy, image and video unit briefs', as
       total: expectedTotal,
     });
   }
+});
+
+/**
+ * D-122 ③段兜底. A brief that will not compile must not end the run — but the
+ * conservative brief it degrades to may not claim anything either, or the
+ * fallback would smuggle in exactly the ungrounded content the gates exist to
+ * stop.
+ */
+test('a copy brief that will not compile degrades instead of ending the run', async () => {
+  const declaration = {
+    normalizedIntent: '介绍夏日头皮护理服务',
+    taskType: 'daily_service_exposure' as const,
+    deliveryLayer: 'copy' as const,
+    relevantAssetCategories: ['industry_category' as const],
+    usedAssetCategories: ['industry_category' as const],
+    route: 'customized' as const,
+    routingSource: 'model' as const,
+    implicitConstraints: ['只使用已确认信息'],
+  };
+  const failingRunner: StructuredNodeRunner = {
+    async run() {
+      throw new StructuredNodeRunError('failed', 'rejected_before_accept');
+    },
+  };
+  let degraded = 0;
+
+  const brief = await compileExecutionBrief(
+    {
+      workflowId: 'workflow-brief-fallback',
+      unitId: 'copy-primary',
+      unitKind: 'copy',
+      declaration,
+      bundle: contextBundleFixture(),
+    },
+    failingRunner,
+    undefined,
+    () => {
+      degraded += 1;
+    },
+  );
+
+  assert.equal(degraded, 1);
+  assert.equal(brief.kind, 'copy');
+  if (brief.kind !== 'copy') return;
+  assert.deepEqual(brief.factRefs, []);
+  assert.deepEqual(brief.assetRefs, []);
+  assert.deepEqual(brief.identityRefs, []);
+  assert.match(brief.instructions, /介绍夏日头皮护理服务/u);
+  assert.ok(
+    brief.constraints.some((constraint) => constraint.includes('不得编造')),
+  );
+
+  // Without the fallback hook the failure still surfaces — the resilience is
+  // opt-in per call site, never a silent swallow.
+  await assert.rejects(
+    compileExecutionBrief(
+      {
+        workflowId: 'workflow-brief-fallback',
+        unitId: 'copy-primary',
+        unitKind: 'copy',
+        declaration,
+        bundle: contextBundleFixture(),
+      },
+      failingRunner,
+    ),
+    /Structured node execution failed/u,
+  );
+
+  // And a hard gate stays hard: a source-fence or authorization failure is not
+  // a model failure, so it reaches the caller even with the hook armed.
+  let degradedOnFence = 0;
+  await assert.rejects(
+    compileExecutionBrief(
+      {
+        workflowId: 'workflow-brief-fallback',
+        unitId: 'copy-primary',
+        unitKind: 'copy',
+        declaration,
+        bundle: contextBundleFixture(),
+      },
+      {
+        async run() {
+          throw new Error('SOURCE_REFERENCE_UNVERIFIED');
+        },
+      },
+      undefined,
+      () => {
+        degradedOnFence += 1;
+      },
+    ),
+    /SOURCE_REFERENCE_UNVERIFIED/u,
+  );
+  assert.equal(degradedOnFence, 0);
+});
+
+test('brief compilation exposes only fact refs authorized by satisfaction', async () => {
+  const bundle = contextBundleFixture();
+  bundle.referencedFactRevisions = [
+    { factId: 'service-1', revision: 1 },
+    { factId: 'price-1', revision: 1 },
+  ];
+  bundle.dimensions.store_facts_assets = {
+    service: factContribution('service-1', 'service', '头皮清洁护理'),
+    price: factContribution('price-1', 'price', 398),
+  };
+  const runner = new FixtureStructuredNodeRunner({
+    kind: 'copy',
+    instructions:
+      '介绍已经确认的头皮清洁护理服务，不引用任何未经本次事实满足度判断授权的价格信息，并以私信咨询作为低压力行动建议。'.repeat(
+        2,
+      ),
+    platform: 'xiaohongshu',
+    cta: '私信咨询',
+    factRefs: ['store_fact:service-1:1'],
+    assetRefs: [],
+    identityRefs: [],
+    constraints: ['不得引用未授权价格'],
+  });
+
+  await compileExecutionBrief(
+    {
+      workflowId: 'workflow-authorized-facts',
+      unitId: 'copy-primary',
+      unitKind: 'copy',
+      declaration: {
+        normalizedIntent: '介绍护理服务',
+        taskType: 'daily_service_exposure',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['product_service'],
+        usedAssetCategories: ['product_service'],
+        route: 'customized',
+        routingSource: 'model',
+        implicitConstraints: [],
+      },
+      bundle,
+      allowedFactRefs: ['store_fact:service-1:1'],
+    },
+    runner,
+  );
+
+  const prompt = JSON.parse(runner.requests[0]?.prompt ?? '{}');
+  assert.deepEqual(
+    Object.keys(prompt.bundle.dimensions.store_facts_assets),
+    ['service'],
+  );
+  assert.deepEqual(prompt.bundle.referencedFactRevisions, [
+    { factId: 'service-1', revision: 1 },
+  ]);
+  assert.doesNotMatch(JSON.stringify(prompt), /price-1|398/u);
 });
 
 test('brief compilation receives the frozen structured Composer contract before model output', async () => {
@@ -714,7 +864,7 @@ class FixtureStructuredNodeRunner implements StructuredNodeRunner {
   }
 }
 
-function contextBundleFixture() {
+function contextBundleFixture(): BriefContextBundle {
   return {
     bundleId: 'bundle-1',
     revision: 1,
@@ -743,6 +893,31 @@ function contextBundleFixture() {
       platform_mechanism: {},
       store_facts_assets: {},
       conversion_action: {},
+    },
+  };
+}
+
+function factContribution(
+  factId: string,
+  kind: 'service' | 'price',
+  value: string | number,
+) {
+  return {
+    value,
+    layer: 'current_fact' as const,
+    pool: 'store_personal' as const,
+    sourceRef: `store_fact:${factId}:1`,
+    factSnapshot: {
+      factId,
+      kind,
+      revision: 1,
+      source: {
+        kind: 'user_confirmation' as const,
+        referenceId: `confirmation-${factId}`,
+        capturedAt: '2026-07-18T00:00:00.000Z',
+      },
+      effectiveFrom: '2026-07-18T00:00:00.000Z',
+      expiresAt: null,
     },
   };
 }

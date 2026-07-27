@@ -32,6 +32,87 @@ const worker = {
 };
 
 describe('product golden journey', () => {
+  it('creates and updates a lead from a published canonical ContentPackage without legacy contents', async () => {
+    const repository = new MemoryProductRepository();
+    repository.grantMembership(merchant.userId, merchant.workspaceId);
+    let publicationStatus = 'unknown';
+    const service = new ProductService(
+      repository,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'legacy',
+      {
+        canonicalLeadContentPackages: {
+          async get({ packageId, workspaceId }) {
+            assert.equal(packageId, 'package-canonical-lead');
+            assert.equal(workspaceId, merchant.workspaceId);
+            return {
+              currentVersionId: 'package-canonical-lead-v3',
+              deliveryEvents: [
+                {
+                  type: 'manual_publish_result' as const,
+                  status: publicationStatus,
+                },
+              ],
+              id: packageId,
+              revision: 3,
+              source: { workId: 'work-canonical-lead' },
+              status: 'accepted',
+            };
+          },
+        },
+      }
+    );
+
+    await assert.rejects(
+      service.execute(
+        merchant,
+        {
+          type: 'create_lead',
+          packageId: 'package-canonical-lead',
+          lead: { source: 'direct_message' },
+        },
+        'canonical-lead-unpublished'
+      ),
+      (error) =>
+        error instanceof DomainError &&
+        error.code === 'LEAD_REQUIRES_PUBLISHED_CONTENT'
+    );
+    publicationStatus = 'published';
+    const created = await service.execute(
+      merchant,
+      {
+        type: 'create_lead',
+        packageId: 'package-canonical-lead',
+        lead: {
+          amountCents: 29900,
+          note: '顾客私信询问同款',
+          source: 'direct_message',
+        },
+      },
+      'canonical-lead-create'
+    );
+    const leadId = created.output.leadId;
+    assert.ok(leadId);
+    assert.equal(created.state.contents.length, 0);
+    assert.deepEqual(created.state.leads[0]?.canonicalContentPackage, {
+      packageId: 'package-canonical-lead',
+      revision: 3,
+      versionId: 'package-canonical-lead-v3',
+    });
+    assert.equal(created.state.leads[0]?.projectId, 'work-canonical-lead');
+
+    const updated = await service.execute(
+      merchant,
+      { type: 'update_lead', leadId, status: 'contacted' },
+      'canonical-lead-contacted'
+    );
+    assert.equal(updated.state.leads[0]?.status, 'contacted');
+  });
+
   it('persists complete restricted-asset authorization and rejects incomplete or expired grants', async () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership(merchant.userId, merchant.workspaceId);
@@ -662,8 +743,8 @@ describe('product golden journey', () => {
     assert.equal(initial.exampleStores.length, 3);
     assert.ok(initial.exampleStores.every((example) => example.readOnly));
     assert.ok(initial.exampleStores.every((example) => example.hidden));
-    assert.equal(initial.entitlement.content.remaining, 30);
-    assert.equal(initial.entitlement.image.remaining, 10);
+    assert.equal(initial.entitlement.content.remaining, 100);
+    assert.equal(initial.entitlement.image.remaining, 40);
     assert.equal(initial.entitlement.concurrencyLimit, 1);
 
     await service.execute(
@@ -744,7 +825,7 @@ describe('product golden journey', () => {
     );
 
     assert.equal(generated.output.candidateIds?.length, 3);
-    assert.equal(generated.state.entitlement.content.remaining, 29);
+    assert.equal(generated.state.entitlement.content.remaining, 99);
     assert.equal(generated.state.agentRuns.at(-1)?.status, 'completed');
     assert.equal(generated.state.toolCalls.at(-1)?.status, 'completed');
     assert.equal(
@@ -771,7 +852,7 @@ describe('product golden journey', () => {
       'copy-before-consent'
     );
     assert.deepEqual(duplicate.output, generated.output);
-    assert.equal(duplicate.state.entitlement.content.remaining, 29);
+    assert.equal(duplicate.state.entitlement.content.remaining, 99);
 
     const contentId = generated.output.candidateIds?.[0];
     assert.ok(contentId);
@@ -803,7 +884,7 @@ describe('product golden journey', () => {
     );
     const storyboardId = storyboardResult.output.storyboardId;
     assert.ok(storyboardId);
-    assert.equal(storyboardResult.state.entitlement.video.remaining, 5);
+    assert.equal(storyboardResult.state.entitlement.video.remaining, 3);
     await service.execute(
       merchant,
       { type: 'confirm_storyboard', storyboardId },
@@ -817,7 +898,7 @@ describe('product golden journey', () => {
     );
     const jobId = started.output.jobId;
     assert.ok(jobId);
-    assert.equal(started.state.entitlement.video.remaining, 4);
+    assert.equal(started.state.entitlement.video.remaining, 2);
     assert.equal(started.state.agentRuns.at(-1)?.workflow, 'video.generate');
     assert.equal(started.state.videoArtifactShells.at(-1)?.jobId, jobId);
     const duplicateStart = await service.execute(
@@ -826,7 +907,7 @@ describe('product golden journey', () => {
       'video-start-business-duplicate'
     );
     assert.equal(duplicateStart.output.jobId, jobId);
-    assert.equal(duplicateStart.state.entitlement.video.remaining, 4);
+    assert.equal(duplicateStart.state.entitlement.video.remaining, 2);
     await service.execute(
       worker,
       { type: 'claim_video', jobId, workerId: 'worker-a', leaseSeconds: 30 },
@@ -1019,9 +1100,9 @@ describe('product golden journey', () => {
       { type: 'retry_video', jobId: retryTwo.output.jobId! },
       'video-quality-retry-3'
     );
-    assert.equal(retryOne.state.entitlement.video.remaining, 4);
-    assert.equal(retryTwo.state.entitlement.video.remaining, 4);
-    assert.equal(retryThree.state.entitlement.video.remaining, 3);
+    assert.equal(retryOne.state.entitlement.video.remaining, 2);
+    assert.equal(retryTwo.state.entitlement.video.remaining, 2);
+    assert.equal(retryThree.state.entitlement.video.remaining, 1);
 
     const packaged = await service.execute(
       merchant,
@@ -1898,7 +1979,7 @@ describe('product golden journey', () => {
         error instanceof DomainError && error.code === 'COPY_PROVIDER_FAILED'
     );
     const state = await service.bootstrap(merchant);
-    assert.equal(state.entitlement.content.remaining, 30);
+    assert.equal(state.entitlement.content.remaining, 100);
     assert.deepEqual(
       state.usageEvents.map((event) => event.status),
       ['reserved', 'refunded']
@@ -2100,7 +2181,7 @@ describe('product golden journey', () => {
       recovered.state.usageEvents.map((event) => event.status),
       ['reserved', 'committed']
     );
-    assert.equal(recovered.state.entitlement.content.remaining, 29);
+    assert.equal(recovered.state.entitlement.content.remaining, 99);
   });
 
   it('persists requested and actual model evidence from the model supply copy bridge', async () => {
@@ -2157,7 +2238,7 @@ describe('product golden journey', () => {
       (item) => item.id === variant.currentVersionId
     );
     assert.equal(version?.generationEvidence?.requestedModel, 'auto');
-    assert.equal(version?.generationEvidence?.actualModel, 'llm-openai');
+    assert.equal(version?.generationEvidence?.actualModel, 'llm-anthropic');
     assert.equal(
       version?.generationEvidence?.promptRevision,
       'beauty-copy-prompt-v1'
@@ -2183,7 +2264,7 @@ describe('product golden journey', () => {
         brief: {
           ...copyCommand('显式选择模型').brief,
           requestedSelection: {
-            catalogModelId: 'llm-anthropic',
+            catalogModelId: 'llm-openai',
             mode: 'fixed',
           },
         },
@@ -2195,11 +2276,11 @@ describe('product golden journey', () => {
     )?.variants[0]?.versions[0];
     assert.equal(
       fixedVersion?.generationEvidence?.requestedModel,
-      'llm-anthropic'
+      'llm-openai'
     );
     assert.equal(
       fixedVersion?.generationEvidence?.actualModel,
-      'llm-anthropic'
+      'llm-openai'
     );
 
     await service.execute(

@@ -122,6 +122,212 @@ test('selected style requests every page and records a bounded conflict regenera
   );
 });
 
+/**
+ * D-122 回炉: a text-side objection is fixed by rewriting the text. Sending the
+ * same page back to the image model cannot resolve repetition or theme drift,
+ * which is why that 回炉 never converged.
+ */
+test('a text-side consistency failure rewrites the text instead of the image', async () => {
+  const calls: string[] = [];
+  const rewriteReasons: string[] = [];
+  const compiler = new NotePlanCompiler(
+    {
+      async plan() {
+        return basePlan();
+      },
+      async draftPage({ page, style, consistencyFailure }) {
+        calls.push(`text:${style.id}:${page.id}`);
+        if (consistencyFailure) rewriteReasons.push(consistencyFailure);
+        return {
+          title: consistencyFailure ? '改写后的标题' : `${style.name}标题`,
+          body: consistencyFailure ? '改写后的正文' : `${page.pageRole}正文`,
+          exactText: page.textBlock.exactText,
+        };
+      },
+      async evaluate({ attempt }) {
+        calls.push(`evaluate:${attempt}`);
+        const base = passingNoteEvaluation('2026-07-26T00:00:00.000Z');
+        if (attempt !== 'initial') return base;
+        return {
+          ...base,
+          dimensions: base.dimensions.map((dimension) =>
+            dimension.dimension === 'non_repetition'
+              ? {
+                  ...dimension,
+                  passed: false,
+                  reason: '第二页和第一页说的是同一件事。',
+                  pageIds: ['page-2'],
+                }
+              : dimension,
+          ),
+          regenerationPageIds: ['page-2'],
+        };
+      },
+    },
+    imagePort(calls),
+  );
+  const drafts = await compiler.compileDrafts({
+    intent: '介绍护理项目',
+    factRefs: [],
+    rightsRefs: [],
+    notePageBound: 3,
+  });
+  calls.length = 0;
+
+  const result = await compiler.selectAndGenerate({
+    candidates: drafts,
+    selectedStyleId: 'story_recommendation',
+    notePageBound: 3,
+  });
+
+  assert.deepEqual(calls, [
+    'image:initial:page-1',
+    'image:initial:page-2',
+    'evaluate:initial',
+    'text:story_recommendation:page-2',
+    'evaluate:after_regeneration',
+  ]);
+  assert.deepEqual(rewriteReasons, ['第二页和第一页说的是同一件事。']);
+  assert.equal(result.version.plan.pages[1]?.textBlock.body, '改写后的正文');
+  // The picture that already passed keeps its asset and its exact text.
+  assert.equal(result.version.plan.pages[1]?.imageAssetId, 'page-2-initial');
+  assert.deepEqual(result.version.regenerationReceipts, []);
+  assert.equal(result.partial, undefined);
+});
+
+test('a page that fails on both sides is fixed on both, not re-imaged over a wording problem', async () => {
+  const calls: string[] = [];
+  const rewriteReasons: string[] = [];
+  const imageReasons: string[] = [];
+  const compiler = new NotePlanCompiler(
+    {
+      async plan() {
+        return basePlan();
+      },
+      async draftPage({ page, style, consistencyFailure }) {
+        calls.push(`text:${style.id}:${page.id}`);
+        if (consistencyFailure) rewriteReasons.push(consistencyFailure);
+        return {
+          title: consistencyFailure ? '改写后的标题' : `${style.name}标题`,
+          body: consistencyFailure ? '改写后的正文' : `${page.pageRole}正文`,
+          exactText: page.textBlock.exactText,
+        };
+      },
+      async evaluate({ attempt }) {
+        calls.push(`evaluate:${attempt}`);
+        const base = passingNoteEvaluation('2026-07-26T00:00:00.000Z');
+        if (attempt !== 'initial') return base;
+        return {
+          ...base,
+          dimensions: base.dimensions.map((dimension) => {
+            if (dimension.dimension === 'non_repetition') {
+              return {
+                ...dimension,
+                passed: false,
+                reason: '第二页和第一页说的是同一件事。',
+                pageIds: ['page-2'],
+              };
+            }
+            if (dimension.dimension === 'visual_consistency') {
+              return {
+                ...dimension,
+                passed: false,
+                reason: '第二页的画面风格和第一页对不上。',
+                pageIds: ['page-2'],
+              };
+            }
+            return dimension;
+          }),
+          regenerationPageIds: ['page-2'],
+        };
+      },
+    },
+    {
+      async generate({ page, reason, evaluationReason }) {
+        calls.push(`image:${reason}:${page.id}`);
+        if (evaluationReason) imageReasons.push(evaluationReason);
+        return generation(`${page.id}-${reason}`);
+      },
+    },
+  );
+  const drafts = await compiler.compileDrafts({
+    intent: '介绍护理项目',
+    factRefs: [],
+    rightsRefs: [],
+    notePageBound: 3,
+  });
+  calls.length = 0;
+  rewriteReasons.length = 0;
+
+  const result = await compiler.selectAndGenerate({
+    candidates: drafts,
+    selectedStyleId: 'story_recommendation',
+    notePageBound: 3,
+  });
+
+  assert.deepEqual(calls, [
+    'image:initial:page-1',
+    'image:initial:page-2',
+    'evaluate:initial',
+    'text:story_recommendation:page-2',
+    'image:consistency_conflict:page-2',
+    'evaluate:after_regeneration',
+  ]);
+  // Each side is told what it is responsible for; sending the wording complaint
+  // to the image generator is the 回炉 that cannot converge.
+  assert.deepEqual(rewriteReasons, ['第二页和第一页说的是同一件事。']);
+  assert.deepEqual(imageReasons, ['第二页的画面风格和第一页对不上。']);
+  assert.equal(result.version.plan.pages[1]?.textBlock.body, '改写后的正文');
+  assert.equal(
+    result.version.plan.pages[1]?.imageAssetId,
+    'page-2-consistency_conflict',
+  );
+});
+
+/**
+ * D-122 诚实交付: after the one bounded retry the run delivers what it has and
+ * declares what it could not fix, instead of throwing the whole task away.
+ */
+test('an unresolved page after the bounded retry becomes a partial delivery', async () => {
+  const compiler = new NotePlanCompiler(
+    {
+      async plan() {
+        return basePlan();
+      },
+      async draftPage({ page, style }) {
+        return {
+          title: `${style.name}标题`,
+          body: `${page.pageRole}正文`,
+          exactText: page.textBlock.exactText,
+        };
+      },
+      async evaluate() {
+        return {
+          ...passingNoteEvaluation('2026-07-26T00:00:00.000Z'),
+          regenerationPageIds: ['page-2'],
+        };
+      },
+    },
+    imagePort([]),
+  );
+  const drafts = await compiler.compileDrafts({
+    intent: '介绍护理项目',
+    factRefs: [],
+    rightsRefs: [],
+    notePageBound: 3,
+  });
+
+  const result = await compiler.selectAndGenerate({
+    candidates: drafts,
+    selectedStyleId: 'story_recommendation',
+    notePageBound: 3,
+  });
+
+  assert.deepEqual(result.partial, { unresolvedPageIds: ['page-2'] });
+  assert.equal(result.version.plan.pages.length, 2);
+  assert.ok(result.ownedAssets.length > 0, 'the pages that worked are kept');
+});
+
 test('single-page regeneration changes only the target page and charges one image point', () => {
   const version = {
     schema: 'image-text-note-version/v1' as const,

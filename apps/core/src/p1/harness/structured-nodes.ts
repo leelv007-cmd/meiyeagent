@@ -350,6 +350,49 @@ export async function nameHarnessIntent(
   };
 }
 
+const CONSERVATIVE_COPY_PLATFORMS = new Set([
+  'xiaohongshu',
+  'douyin',
+  'video_account',
+  'wechat_moments',
+  'offline',
+]);
+
+/**
+ * ③段的确定性保守兜底 (D-122). When brief compilation cannot produce a brief,
+ * the merchant should still get something usable rather than an error — so the
+ * run continues on a brief that claims nothing: no fact references, no assets,
+ * no identity, and constraints that forbid inventing any of them.
+ *
+ * Copy only, on purpose. An image or video brief carries an execution contract
+ * (exact text, storyboard, reference assets) that cannot be invented safely;
+ * a fabricated one would be a worse lie than an honest failure, and since W03
+ * that failure now reaches the merchant as a 申报卡 with a way forward.
+ */
+export function conservativeCopyBrief(input: {
+  declaration: IntentDeclaration;
+  executionSnapshot?: CreationExecutionSnapshot;
+}): Extract<ExecutionBrief, { kind: 'copy' }> {
+  const platform = input.executionSnapshot?.platform.id;
+  return copyBriefSchema.parse({
+    kind: 'copy',
+    instructions:
+      `围绕「${input.declaration.normalizedIntent}」写一条可以直接审核的门店内容。` +
+      '先说清这次服务对顾客的价值和适用场景，再给出到店或咨询的方式；' +
+      '只写输入里可以核对的内容，不写价格、效果、资质或顾客案例，' +
+      '也不要引用没有授权的素材。',
+    platform:
+      platform && CONSERVATIVE_COPY_PLATFORMS.has(platform)
+        ? platform
+        : 'xiaohongshu',
+    cta: '私信了解详情并预约',
+    factRefs: [],
+    assetRefs: [],
+    identityRefs: [],
+    constraints: ['不得编造价格、效果、资质或顾客案例', '只使用已确认的本店事实'],
+  });
+}
+
 export async function compileExecutionBrief(
   input: {
     workflowId: string;
@@ -357,6 +400,40 @@ export async function compileExecutionBrief(
     unitKind: ExecutionUnitKind;
     declaration: IntentDeclaration;
     bundle: z.infer<typeof briefContextBundleSchema>;
+    allowedFactRefs?: readonly string[];
+    executionSnapshot?: CreationExecutionSnapshot;
+    prompt?: HarnessFrozenPrompt;
+    skillInstructions?: readonly ResolvedSkillInstruction[];
+  },
+  runner: StructuredNodeRunner,
+  metrics?: StructuredNodeMetrics,
+  /** Called instead of throwing when a copy brief falls back (D-122). */
+  onConservativeFallback?: () => void
+): Promise<ExecutionBrief> {
+  if (input.unitKind === 'copy' && onConservativeFallback) {
+    try {
+      return await runExecutionBriefCompilation(input, runner, metrics);
+    } catch (error) {
+      // Same rule as ①段 (isIntentModelFailure): only a model failure degrades.
+      // Authorization, source-fence and revocation errors must reach the caller
+      // — continuing past those on a conservative brief would be the hard gate
+      // quietly turning into a soft one.
+      if (!isIntentModelFailure(error)) throw error;
+      onConservativeFallback();
+      return conservativeCopyBrief(input);
+    }
+  }
+  return runExecutionBriefCompilation(input, runner, metrics);
+}
+
+async function runExecutionBriefCompilation(
+  input: {
+    workflowId: string;
+    unitId: string;
+    unitKind: ExecutionUnitKind;
+    declaration: IntentDeclaration;
+    bundle: z.infer<typeof briefContextBundleSchema>;
+    allowedFactRefs?: readonly string[];
     executionSnapshot?: CreationExecutionSnapshot;
     prompt?: HarnessFrozenPrompt;
     skillInstructions?: readonly ResolvedSkillInstruction[];
@@ -364,7 +441,10 @@ export async function compileExecutionBrief(
   runner: StructuredNodeRunner,
   metrics?: StructuredNodeMetrics
 ): Promise<ExecutionBrief> {
-  const bundle = briefContextBundleSchema.parse(input.bundle);
+  const bundle = briefBundleWithAuthorizedFacts(
+    briefContextBundleSchema.parse(input.bundle),
+    input.allowedFactRefs,
+  );
   const result = await runMeasured<ExecutionBrief>(
     {
       effectIdempotencyKey: `wf:${input.workflowId}:s3:${input.unitId}:0`,
@@ -393,9 +473,51 @@ export async function compileExecutionBrief(
     metrics,
     briefCompletenessShapes[input.unitKind]
   );
-  return briefSchemaByKind[input.unitKind].parse(
+  const brief = briefSchemaByKind[input.unitKind].parse(
     result.output
   ) as ExecutionBrief;
+  if (
+    brief.kind === 'copy' &&
+    input.allowedFactRefs &&
+    brief.factRefs.some(
+      (reference) => !input.allowedFactRefs?.includes(reference),
+    )
+  ) {
+    throw new Error(
+      'The copy brief referenced a fact outside the authorized satisfaction result.',
+    );
+  }
+  return brief;
+}
+
+function briefBundleWithAuthorizedFacts(
+  bundle: BriefContextBundle,
+  allowedFactRefs: readonly string[] | undefined,
+): BriefContextBundle {
+  if (!allowedFactRefs) return bundle;
+  const allowed = new Set(allowedFactRefs);
+  const storeFactsAssets = Object.fromEntries(
+    Object.entries(bundle.dimensions.store_facts_assets).filter(
+      ([, contribution]) =>
+        contribution.factSnapshot === undefined ||
+        allowed.has(contribution.sourceRef),
+    ),
+  );
+  const retainedFactIds = new Set(
+    Object.values(storeFactsAssets)
+      .map((contribution) => contribution.factSnapshot?.factId)
+      .filter((factId): factId is string => factId !== undefined),
+  );
+  return {
+    ...bundle,
+    referencedFactRevisions: bundle.referencedFactRevisions.filter(
+      ({ factId }) => retainedFactIds.has(factId),
+    ),
+    dimensions: {
+      ...bundle.dimensions,
+      store_facts_assets: storeFactsAssets,
+    },
+  };
 }
 
 function briefExecutionContract(snapshot: CreationExecutionSnapshot) {

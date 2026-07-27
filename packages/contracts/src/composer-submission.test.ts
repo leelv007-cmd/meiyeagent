@@ -8,6 +8,8 @@ import {
 } from './composer-submission.js';
 
 const signedFields = {
+  creationMode: 'customized' as const,
+  intent: '为夏日护理项目写一条预约文案',
   catalogModel: { id: 'model-copy', revision: 'catalog-r1' },
   recipe: { id: 'recipe-copy', revision: 'recipe-copy@1' },
   contentPackagePlatform: 'wechat_moments' as const,
@@ -22,6 +24,51 @@ test('freezes the exact extensible signed-field schema without server fields', (
   });
   assert.deepEqual(picked, signedFields);
   assert.deepEqual(composerSubmissionSignedFieldsSchema.parse(picked), picked);
+});
+
+test('intent and creation mode are required quote-signed fields', () => {
+  const { intent: _intent, ...withoutIntent } = signedFields;
+  const { creationMode: _creationMode, ...withoutCreationMode } = signedFields;
+
+  assert.equal(
+    composerSubmissionSignedFieldsSchema.safeParse(withoutIntent).success,
+    false,
+  );
+  assert.equal(
+    composerSubmissionSignedFieldsSchema.safeParse(withoutCreationMode).success,
+    false,
+  );
+});
+
+test('free image operation is signed while customized and non-image submissions reject it', () => {
+  const freeImage = {
+    ...signedFields,
+    creationMode: 'free' as const,
+    imageOperation: 'image.edit' as const,
+    deliverable: {
+      kind: 'image_set' as const,
+      quantity: 1,
+      aspectRatio: '3:4' as const,
+    },
+  };
+  assert.equal(
+    composerSubmissionSignedFieldsSchema.safeParse(freeImage).success,
+    true,
+  );
+  assert.equal(
+    composerSubmissionSignedFieldsSchema.safeParse({
+      ...freeImage,
+      creationMode: 'customized',
+    }).success,
+    false,
+  );
+  assert.equal(
+    composerSubmissionSignedFieldsSchema.safeParse({
+      ...freeImage,
+      deliverable: { kind: 'copy_document', quantity: 1 },
+    }).success,
+    false,
+  );
 });
 
 test('wechat_moments is a delivery target but not a variant platform', () => {

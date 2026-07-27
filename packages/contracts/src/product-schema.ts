@@ -3,6 +3,7 @@ import {
   AIGC_VISIBLE_LABEL,
   productAssetMediaTypes,
   type ProductCommand,
+  type StoreProfilePatch,
 } from './product.js';
 
 const id = z.string().min(1);
@@ -46,6 +47,34 @@ const storeSchema = z.object({
   ),
   regulated: z.boolean(),
 });
+
+export const storeProfilePatchSchema = z
+  .object({
+    expectedRevision: z.number().int().nonnegative(),
+    name: id.optional(),
+    city: id.optional(),
+    district: id.optional(),
+    address: id.optional(),
+    booking: id.optional(),
+    brandVoice: id.optional(),
+    prohibitions: z.array(id).optional(),
+    regulated: z.boolean().optional(),
+    accounts: z
+      .object({
+        upsert: storeSchema.shape.accounts.optional(),
+        clear: z.array(platform).optional(),
+      })
+      .strict()
+      .optional(),
+    projects: z
+      .object({
+        upsert: storeSchema.shape.projects.optional(),
+        clear: z.array(id).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict() satisfies z.ZodType<StoreProfilePatch>;
 
 const qualificationSchema = z.object({
   admitted: z.boolean(),
@@ -278,24 +307,43 @@ export const productCommandSchema = z.discriminatedUnion('type', [
     packageId: id,
     platformUrl: z.url().optional(),
   }),
-  z.object({
-    type: z.literal('create_lead'),
-    contentId: id,
-    lead: z.object({
-      source: z.enum([
-        'direct_message',
-        'comment',
-        'wechat',
-        'booking',
-        'coupon',
-        'redemption',
-        'visit',
-      ]),
-      projectId: id,
-      amountCents: z.number().int().nonnegative().optional(),
-      note: z.string().optional(),
+  z
+    .object({
+      type: z.literal('create_lead'),
+      contentId: id.optional(),
+      packageId: id.optional(),
+      lead: z.object({
+        source: z.enum([
+          'direct_message',
+          'comment',
+          'wechat',
+          'booking',
+          'coupon',
+          'redemption',
+          'visit',
+        ]),
+        projectId: id.optional(),
+        amountCents: z.number().int().nonnegative().optional(),
+        note: z.string().optional(),
+      }),
+    })
+    .superRefine((command, context) => {
+      if (Boolean(command.contentId) === Boolean(command.packageId)) {
+        context.addIssue({
+          code: 'custom',
+          message:
+            'Exactly one canonical packageId or legacy contentId is required.',
+          path: ['packageId'],
+        });
+      }
+      if (command.contentId && !command.lead.projectId) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Legacy content leads require projectId.',
+          path: ['lead', 'projectId'],
+        });
+      }
     }),
-  }),
   z.object({
     type: z.literal('update_lead'),
     leadId: id,

@@ -19,7 +19,7 @@ import {
 	decideChannelAdmission,
 	type CapabilityHotAssemblyPort,
 } from "../supply-registry/hot-assembly.js";
-import { selectImageIntentOperation } from "../harness/image-intent-compiler.js";
+import { resolveImageIntentOperation } from "../harness/image-intent-compiler.js";
 import type { NotePlanSettingsSource } from "../harness/note-plan-compiler.js";
 
 import type {
@@ -252,6 +252,8 @@ export class ComposerSubmissionAdmissionGate
 		const operation = operationForRequest(
 			recipeBinding.lens,
 			input.sources.assets.length,
+			input.creationMode,
+			input.imageOperation,
 		);
 		if (
 			quote.lifecycleStatus !== "quoted" &&
@@ -539,9 +541,9 @@ export class ComposerSubmissionAdmissionGate
 				"Image-text note page-bound usage is unavailable for reservation.",
 			);
 		}
-		const settings = await this.dependencies.noteSettings.read();
+		await this.dependencies.noteSettings.read();
 		return [
-			{ resource: "copy" as const, quantity: settings.styles.styles.length },
+			{ resource: "copy" as const, quantity: 1 },
 			{ resource: "image" as const, quantity: notePageBound as number },
 		];
 	}
@@ -569,10 +571,21 @@ function composerLensForRecipe(
 function operationForRequest(
 	lens: CreationExecutionSnapshot["lens"],
 	referenceCount: number,
+	creationMode: ComposerSubmissionRequest["creationMode"],
+	imageOperation: ComposerSubmissionRequest["imageOperation"],
 ): CreativeOperation {
 	if (lens === "copy") return "copy.generate";
-	if (lens === "image" || lens === "image_text_note") {
-		return selectImageIntentOperation({ referenceCount });
+	if (lens === "image_text_note") {
+		// Note sources ground the multi-page plan; they are not a blanket request
+		// to edit the same source into every generated page.
+		return "image.generate";
+	}
+	if (lens === "image") {
+		return resolveImageIntentOperation({
+			creationMode,
+			imageOperation,
+			referenceCount,
+		});
 	}
 	return "video.generate";
 }

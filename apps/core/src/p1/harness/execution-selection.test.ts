@@ -6,7 +6,6 @@ import {
   executeCopySelection,
   HarnessSelectionError,
   type CandidatePolicyValidator,
-  type CandidateScorer,
 } from './execution-selection.js';
 import type {
   StructuredNodeRunner,
@@ -15,11 +14,19 @@ import type {
 
 test('copy compiler makes one model call and returns one primary candidate', async () => {
   const runner = new QueueRunner([candidate('主推荐', '正文 A', [])]);
-  const scorer = new FixedScorer({});
-
   const result = await executeCopySelection(
-    selectionInput(),
-    { runner, scorer, validator: new PassValidator() },
+    {
+      ...selectionInput(),
+      skillInstructions: [
+        {
+          contentHash: 'hash-execution-skill',
+          executionMode: 'prompt_materialized',
+          instruction: 'Prefer a calm, evidence-first primary result.',
+          skillRevisionRef: 'skill.execution-selection@2',
+        },
+      ],
+    },
+    { runner, validator: new PassValidator() },
   );
 
   assert.equal(result.winner.candidateId, 'c01');
@@ -34,8 +41,11 @@ test('copy compiler makes one model call and returns one primary candidate', asy
     runner.requests.map((request) => request.effectIdempotencyKey),
     ['wf:workflow-34:s4:copy-primary:c01'],
   );
-  assert.deepEqual(scorer.effectKeys, []);
   assert.match(runner.requests[0]!.instructions, /single primary/iu);
+  assert.match(
+    runner.requests[0]!.instructions,
+    /\[skill\.execution-selection@2\] Prefer a calm, evidence-first primary result\./u,
+  );
   assert.match(runner.requests[0]!.prompt, /identity-owner-1/u);
   assert.match(runner.requests[0]!.prompt, /xiaohongshu/u);
 });
@@ -45,11 +55,8 @@ test('one policy failure retries once with feedback and delivers the safe result
     candidate('主推荐', '正文 A', ['asset-withdrawn']),
     candidate('安全重试', '正文 B', []),
   ]);
-  const scorer = new FixedScorer({});
-
   const result = await executeCopySelection(selectionInput(), {
     runner,
-    scorer,
     validator: new WithdrawnAssetValidator(),
   });
 
@@ -81,7 +88,6 @@ test('one policy failure retries once with feedback and delivers the safe result
       reason: '素材授权已撤回',
     },
   ]);
-  assert.deepEqual(scorer.effectKeys, []);
 });
 
 test('two policy failures stop after one retry with every gate id', async () => {
@@ -89,12 +95,9 @@ test('two policy failures stop after one retry with every gate id', async () => 
     candidate('主推荐', '正文 A', ['asset-withdrawn']),
     candidate('重试仍不安全', '正文 B', ['asset-medical']),
   ]);
-  const scorer = new FixedScorer({});
-
   await assert.rejects(
     executeCopySelection(selectionInput(), {
       runner,
-      scorer,
       validator: new WithdrawnAssetValidator(),
     }),
     (error: unknown) => {
@@ -108,7 +111,6 @@ test('two policy failures stop after one retry with every gate id', async () => 
     },
   );
   assert.equal(runner.requests.length, 2);
-  assert.deepEqual(scorer.effectKeys, []);
 });
 
 test('copy generation publishes append-only semantic deltas for the primary candidate', async () => {
@@ -130,7 +132,6 @@ test('copy generation publishes append-only semantic deltas for the primary cand
     },
     {
       runner,
-      scorer: new FixedScorer({}),
       validator: new PassValidator(),
     },
   );
@@ -216,21 +217,6 @@ class StreamingQueueRunner implements StructuredNodeRunner {
       providerTaskRef: 'provider-streaming',
       replayed: false,
       usage: { inputTokens: 5, outputTokens: 8 },
-    };
-  }
-}
-
-class FixedScorer implements CandidateScorer {
-  readonly effectKeys: string[] = [];
-
-  constructor(private readonly values: Record<string, number>) {}
-
-  async score(input: Parameters<CandidateScorer['score']>[0]) {
-    this.effectKeys.push(input.effectIdempotencyKey);
-    return {
-      score: this.values[input.candidate.candidateId] ?? 0,
-      dimensions: { grounding: 1, usefulness: 1, platformFit: 1 },
-      reason: '固定测试评分',
     };
   }
 }

@@ -213,3 +213,48 @@ describe('video confirm zone embedded in Brief', () => {
     expect(screen.getByTestId('brief-phase')).toHaveTextContent('confirmed');
   });
 });
+
+/**
+ * #240 P1: the Brief was a second door onto a stale quote. Editing the intent
+ * while it was open left the card confirmable and still showing the old price.
+ */
+describe('Brief against a superseded quote', () => {
+  function renderWithStaleness(quoteStale: boolean) {
+    const state = openBriefSurface(createBriefSurfaceState(), {
+      projection: fixtureBriefProjection({
+        requiresBrief: true,
+        triggerCodes: ['quote_policy_threshold'],
+        lensId: 'copy',
+      }),
+      composerSnapshot: { ...SNAPSHOT, lensId: 'copy' },
+    });
+    render(
+      <BriefSurface
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+        view={projectBriefSurfaceView(state, { lensId: 'copy', quoteStale })}
+      />
+    );
+  }
+
+  it('disables confirmation and says why, in the merchant’s words', () => {
+    renderWithStaleness(true);
+
+    expect(screen.getByTestId('composer-brief-confirm')).toBeDisabled();
+    const notice = screen.getByTestId('composer-brief-stale');
+    expect(notice).toHaveTextContent(
+      '你刚改过要写的内容，这份确认对不上了。点“返回修改”再提交一次就好。'
+    );
+    // No engineering vocabulary in front of a merchant (D-116).
+    expect(notice).not.toHaveTextContent(/quote|revision|hash|payload/iu);
+    // And the way out stays enabled — the card is not a dead end.
+    expect(screen.getByTestId('composer-brief-cancel')).not.toBeDisabled();
+  });
+
+  it('shows no notice and stays confirmable while the quote still matches', () => {
+    renderWithStaleness(false);
+
+    expect(screen.getByTestId('composer-brief-confirm')).not.toBeDisabled();
+    expect(screen.queryByTestId('composer-brief-stale')).toBeNull();
+  });
+});

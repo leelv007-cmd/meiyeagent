@@ -5,13 +5,7 @@
  * waited out; the real 30s baseline is exercised end-to-end in the journey spec.
  */
 import type { QuestionCard } from '@meiye/contracts';
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -40,7 +34,12 @@ const QUESTION: QuestionCard = {
     field: 'industry_category',
     reason: '让这次内容更贴合你的实际情况',
   },
+  unattended: 'continue',
   scope: 'current_task',
+};
+const NORMAL_RECEIPT = {
+  eventId: 'event-1',
+  replayed: false,
 };
 
 /** Advance the countdown by `seconds`, one 1s timer per tick. */
@@ -54,7 +53,13 @@ async function tick(seconds: number) {
 
 describe('the card states its default and releases itself', () => {
   it('shows the default value 「继续」 and a timeout will both apply', () => {
-    render(<ComposerQuestionCard onDecide={() => {}} question={QUESTION} />);
+    render(
+      <ComposerQuestionCard
+        onDecide={() => NORMAL_RECEIPT}
+        question={QUESTION}
+        timeoutSeconds={30}
+      />
+    );
     expect(screen.getByTestId('composer-question-default')).toHaveTextContent(
       '按通用模式生成'
     );
@@ -82,7 +87,12 @@ describe('the card states its default and releases itself', () => {
   });
 
   it('is one control, not two synonyms for the same decision', () => {
-    render(<ComposerQuestionCard onDecide={() => {}} question={QUESTION} />);
+    render(
+      <ComposerQuestionCard
+        onDecide={() => NORMAL_RECEIPT}
+        question={QUESTION}
+      />
+    );
     // 「继续」 and 「这次先跳过」 posted the identical ignored decision under
     // different words — a choice the merchant did not actually have.
     expect(
@@ -91,31 +101,18 @@ describe('the card states its default and releases itself', () => {
     expect(screen.queryByTestId('composer-question-skip')).toBeNull();
   });
 
-  it('records a countdown release without quoting the merchant', () => {
-    // The value lands in the ledger *and* in the workflow's intent context as
-    // `Merchant decision (<field>): <value>`, so a timeout must not be written
-    // down as 「这次先跳过」 — nobody said that.
-    const skipped = composerQuestionDecision({
-      question: QUESTION,
-      idempotencyKey: 'k',
-      settlement: 'skipped',
-      value: '',
-    });
-    const timedOut = composerQuestionDecision({
-      question: QUESTION,
-      idempotencyKey: 'k',
-      settlement: 'timed_out',
-      value: '',
-    });
-    expect(skipped.decision.state).toBe('ignored');
-    expect(timedOut.decision.state).toBe('ignored');
-    // Same route, distinguishable record.
-    expect(timedOut.decision.value).not.toBe(skipped.decision.value);
-    expect(timedOut.decision.value).toBe('未作答');
-    expect(timedOut.patch.value).toBe('未作答');
+  it('refuses to invent a browser timeout decision', () => {
+    expect(() =>
+      composerQuestionDecision({
+        question: QUESTION,
+        idempotencyKey: 'k',
+        settlement: 'continued_elsewhere',
+        value: '',
+      })
+    ).toThrow(/merchant act/u);
   });
 
-  it('releases itself when the countdown runs out — 引导不变成阻断', async () => {
+  it('shows Core time reaching zero without posting a second timeout truth', async () => {
     vi.useFakeTimers();
     const onDecide = vi.fn();
     render(
@@ -130,39 +127,25 @@ describe('the card states its default and releases itself', () => {
     expect(onDecide).not.toHaveBeenCalled();
 
     await tick(1);
-    expect(onDecide).toHaveBeenCalledTimes(1);
-    expect(onDecide).toHaveBeenCalledWith({
-      settlement: 'timed_out',
-      value: '',
-    });
-    expect(screen.getByTestId('composer-question-settled')).toHaveTextContent(
-      '按通用模式继续'
+    expect(onDecide).not.toHaveBeenCalled();
+    expect(screen.getByTestId('composer-question-countdown')).toHaveTextContent(
+      '0 秒'
     );
   });
 });
 
 describe('D-116 safety edges', () => {
-  it('① editing pauses the countdown instead of continuing past the merchant', async () => {
+  it('hold never starts a local countdown or auto-submits', async () => {
     vi.useFakeTimers();
     const onDecide = vi.fn();
     render(
       <ComposerQuestionCard
         onDecide={onDecide}
-        question={QUESTION}
-        timeoutSeconds={3}
+        question={{ ...QUESTION, unattended: 'hold' }}
+        timeoutSeconds={null}
       />
     );
-
-    // fireEvent, not userEvent: userEvent's own async scheduling deadlocks
-    // against fake timers, and what is under test is the pause, not typing.
-    await act(async () => {
-      fireEvent.change(screen.getByTestId('composer-question-answer'), {
-        target: { value: '皮肤' },
-      });
-    });
     await tick(10);
-
-    // 防「调整未完成被自动继续」: nothing is posted while they are still typing.
     expect(onDecide).not.toHaveBeenCalled();
     expect(screen.getByTestId('composer-question-card')).toHaveAttribute(
       'data-auto-continue',
@@ -195,7 +178,7 @@ describe('D-116 safety edges', () => {
 
 describe('the answer wins the race with the countdown', () => {
   /** A submit that never settles — the card stays mid-flight for the test. */
-  const inFlight = () => vi.fn(() => new Promise<void>(() => {}));
+  const inFlight = () => vi.fn(() => new Promise<undefined>(() => {}));
 
   it('an answer at the last second settles the card; the timeout is a no-op', async () => {
     vi.useFakeTimers();
@@ -234,11 +217,7 @@ describe('the answer wins the race with the countdown', () => {
     );
   });
 
-  it('a tap while the release is still in flight posts nothing extra', async () => {
-    // The true interleave: the countdown has already fired and its decision is
-    // mid-POST when the merchant taps. Nothing has resolved, so only the
-    // synchronous claim can order these two — delete `settledRef` and this goes
-    // red with two posts for one question.
+  it('an answer remains available after the displayed Core deadline', async () => {
     vi.useFakeTimers();
     const onDecide = inFlight();
     render(
@@ -250,22 +229,22 @@ describe('the answer wins the race with the countdown', () => {
     );
 
     await tick(1);
-    expect(onDecide).toHaveBeenCalledTimes(1);
-    expect(onDecide).toHaveBeenCalledWith({
-      settlement: 'timed_out',
-      value: '',
-    });
+    expect(onDecide).not.toHaveBeenCalled();
 
     await act(async () => {
       screen.getByTestId('composer-question-option-option-1').click();
     });
     expect(onDecide).toHaveBeenCalledTimes(1);
+    expect(onDecide).toHaveBeenCalledWith({
+      settlement: 'answered',
+      value: '美发',
+    });
   });
 
   it('two decisions inside one tick post exactly once', async () => {
     // No render happens between these two handlers, so `settlement` state is
     // still null for both — the ref is the only thing that can stop the second.
-    const onDecide = vi.fn(() => new Promise<void>(() => {}));
+    const onDecide = vi.fn(() => new Promise<undefined>(() => {}));
     render(<ComposerQuestionCard onDecide={onDecide} question={QUESTION} />);
 
     await act(async () => {
@@ -307,43 +286,90 @@ describe('a decision that never reached the ledger rolls back', () => {
     expect(onDecide).toHaveBeenCalledTimes(2);
   });
 
-  it('the timeout path: rolls back and re-arms, so guidance still never blocks', async () => {
-    vi.useFakeTimers();
-    const onDecide = vi
-      .fn<(input: { settlement: string; value: string }) => Promise<void>>()
-      .mockRejectedValueOnce(new Error('network down'))
-      .mockResolvedValue(undefined);
+  it('shows Core timeout and hold-expiry outcomes without hiding late answer', () => {
+    render(
+      <ComposerQuestionCard
+        onDecide={() => NORMAL_RECEIPT}
+        question={QUESTION}
+        resolutionSource="core_timeout"
+        timeoutSeconds={30}
+      />
+    );
+    expect(screen.getByTestId('composer-question-settled')).toHaveTextContent(
+      '仍可回答'
+    );
+    cleanup();
+    render(
+      <ComposerQuestionCard
+        onDecide={() => NORMAL_RECEIPT}
+        question={{ ...QUESTION, unattended: 'hold' }}
+        resolutionSource="core_hold_expired"
+        timeoutSeconds={null}
+      />
+    );
+    expect(screen.getByTestId('composer-question-settled')).toHaveTextContent(
+      '已取消，额度已退回'
+    );
+    expect(screen.getByTestId('composer-question-submit')).toBeDisabled();
+    expect(screen.getByTestId('composer-question-answer')).toBeEnabled();
+  });
+});
+
+describe('Core decision receipts stay visible', () => {
+  it('shows the successor created by a late answer', async () => {
+    const onDecide = vi.fn(async () => ({
+      eventId: 'event-late',
+      replayed: false,
+      successor: {
+        snapshotId: 'snapshot-late',
+        workflowId: 'workflow-late',
+      },
+    }));
     render(
       <ComposerQuestionCard
         onDecide={onDecide}
         question={QUESTION}
-        timeoutSeconds={2}
+        resolutionSource="core_timeout"
+        timeoutSeconds={30}
       />
     );
-
-    await tick(2);
-    expect(onDecide).toHaveBeenCalledTimes(1);
-    // The failed release is not reported as a release.
-    expect(screen.queryByTestId('composer-question-settled')).toBeNull();
-    expect(screen.getByTestId('composer-question-failed')).toBeInTheDocument();
-    expect(screen.getByTestId('composer-question-card')).toHaveAttribute(
-      'data-auto-continue',
-      'true'
-    );
-
-    // Re-armed: the countdown runs again and the second attempt lands, so a
-    // failed auto-release still ends up continuing (D-116 引导不变成阻断).
-    await tick(2);
-    expect(onDecide).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      screen.getByTestId('composer-question-option-option-1').click();
+    });
     expect(screen.getByTestId('composer-question-settled')).toHaveTextContent(
-      '按通用模式继续'
+      '精修版本'
+    );
+  });
+
+  it('does not silently claim a browser timeout that lost the Core race', async () => {
+    const onDecide = vi.fn(async () => ({
+      consumedByOther: true as const,
+      eventId: null,
+    }));
+    render(
+      <ComposerQuestionCard
+        onDecide={onDecide}
+        question={QUESTION}
+        timeoutSeconds={30}
+      />
+    );
+    await act(async () => {
+      screen.getByTestId('composer-question-continue').click();
+    });
+    expect(screen.getByTestId('composer-question-settled')).toHaveTextContent(
+      '同步最新状态'
     );
   });
 });
 
 describe('the card speaks merchant language', () => {
   it('every visible sentence passes the D-116 gate', () => {
-    render(<ComposerQuestionCard onDecide={() => {}} question={QUESTION} />);
+    render(
+      <ComposerQuestionCard
+        onDecide={() => NORMAL_RECEIPT}
+        question={QUESTION}
+      />
+    );
     const card = screen.getByTestId('composer-question-card');
     expect(
       // The question text is core's; the ids are the run's own.

@@ -231,6 +231,7 @@ const assetMemoryCreateActions = new Set([
   'confirm_asset_intake_fact',
   'correct_asset_intake_fact',
   'create_reuse_task',
+  'finalize_store_intake',
   'parse_asset_batch',
   'parse_single_asset',
   'prepare_assisted_price_intake',
@@ -441,6 +442,10 @@ export function requiredP1Capability(
     if (kind === 'query') {
       return assetMemoryQueryActions.has(action) ? 'workspace.read' : null;
     }
+    // D-151: direct StoreFact confirmation is a kernel/server seam. The
+    // worker authorizer bypass below preserves the trusted internal channel;
+    // browser roles must use finalize_store_intake instead.
+    if (action === 'confirm_asset_intake_fact') return null;
     if (action === 'confirm_preference' || action === 'revoke_preference') {
       return 'personal.preferences.manage';
     }
@@ -453,6 +458,9 @@ export function requiredP1Capability(
 
   if (module === 'context') {
     if (kind === 'query') return 'workspace.read';
+    // D-151: only the kernel/server may append canonical StoreFacts. Browser
+    // callers must use the mapped finalize_store_intake command.
+    if (action === 'store_fact_append') return null;
     return 'content.create';
   }
 

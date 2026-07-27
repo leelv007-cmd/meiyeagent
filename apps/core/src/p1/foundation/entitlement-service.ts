@@ -321,7 +321,12 @@ export class ProductEntitlementApplicationService
               'Payment event is already bound to another entitlement.'
             );
           }
-          return projectionFromStore(store, context.workspaceId);
+          return projectionFromStore(
+            store,
+            context.workspaceId,
+            currentMonth(this.clock),
+            this.nowMs(),
+          );
         }
         const event: ProductEntitlementEvent = {
           ...structuredClone(input),
@@ -340,7 +345,12 @@ export class ProductEntitlementApplicationService
           input.quantity,
           `add_on:${input.purchaseId}:payment:${input.paymentEventId}`
         );
-        return projectionFromStore(store, context.workspaceId);
+        return projectionFromStore(
+          store,
+          context.workspaceId,
+          currentMonth(this.clock),
+          this.nowMs(),
+        );
       }
     );
     return result.value;
@@ -368,7 +378,12 @@ export class ProductEntitlementApplicationService
           configuration: structuredClone(configuration),
         };
         await store.appendProductEntitlementEvent(event);
-        return projectionFromStore(store, context.workspaceId);
+        return projectionFromStore(
+          store,
+          context.workspaceId,
+          currentMonth(this.clock),
+          this.nowMs(),
+        );
       }
     );
     return result.value;
@@ -409,7 +424,8 @@ export class ProductEntitlementApplicationService
         const projection = await projectionFromStore(
           store,
           context.workspaceId,
-          month
+          month,
+          this.nowMs(),
         );
         if (
           projection.usage[input.resource].available >= input.requiredAvailable
@@ -535,10 +551,20 @@ export class ProductEntitlementApplicationService
               'Payment event is already bound to another entitlement.'
             );
           }
-          return projectionFromStore(store, context.workspaceId, input.month);
+          return projectionFromStore(
+            store,
+            context.workspaceId,
+            input.month,
+            this.nowMs(),
+          );
         }
         await appendAutoTopUpPurchase(store, context, input, events);
-        return projectionFromStore(store, context.workspaceId, input.month);
+        return projectionFromStore(
+          store,
+          context.workspaceId,
+          input.month,
+          this.nowMs(),
+        );
       }
     );
     return result.value;

@@ -8,6 +8,7 @@ import {
 import { measureContrast } from '../fixtures/contrast';
 import { seedConfirmedStore } from '../fixtures/product';
 import { setTheme } from '../fixtures/page-health';
+import { installWorksBrowserFixtures } from '../fixtures/works';
 
 /**
  * T32 / #226 — 作品与对象页换壳.
@@ -18,9 +19,9 @@ import { setTheme } from '../fixtures/page-health';
  * reads of the same canonical projection, and 「一致」 is only an assertion if
  * both are read for real.
  *
- * 四类输出 rendering has a deterministic twin in
- * src/product/works/works-list.interaction.test.tsx (fixture 产物 for all four
- * shapes); this file proves the shape the live run actually produces.
+ * Four-output rendering has both a deterministic component test and a runnable
+ * browser fixture below. The live journey separately proves the shape produced
+ * by the real creation and delivery chain.
  */
 
 type SubmissionResult = { taskId: string; workId: string };
@@ -315,6 +316,84 @@ test.describe('T32 作品面换壳', () => {
       });
     }).toPass({ timeout: 120_000 });
     await expect(page.getByTestId('works-action-error')).toHaveCount(0);
+  });
+
+  test('浏览器逐一呈现文案、图片、图文和视频四类 canonical fixture', async ({
+    page,
+    request,
+  }) => {
+    const user = await registerE2EUser(request);
+    await installWorksBrowserFixtures(page);
+    await loginByForm(page, user);
+
+    await page.goto('/dashboard/works');
+    await expect(page.getByTestId('works-list')).toBeVisible({
+      timeout: 60_000,
+    });
+    await expect(page.getByTestId('works-card')).toHaveCount(4);
+    await expect
+      .poll(() =>
+        page
+          .getByTestId('works-card')
+          .evaluateAll((cards) =>
+            cards.map((card) => card.getAttribute('data-output-shape'))
+          )
+      )
+      .toEqual(['copy', 'image', 'note', 'video']);
+
+    const shapes = [
+      {
+        id: 'fixture-copy',
+        label: '文案',
+        mediaKind: null,
+        title: '护理预约文案',
+      },
+      {
+        id: 'fixture-image',
+        label: '图片',
+        mediaKind: 'image',
+        title: '门店护理主图',
+      },
+      {
+        id: 'fixture-note',
+        label: '图文',
+        mediaKind: 'image',
+        title: '夏日护理图文笔记',
+      },
+      {
+        id: 'fixture-video',
+        label: '视频',
+        mediaKind: 'video',
+        title: '到店护理成片',
+      },
+    ] as const;
+
+    for (const shape of shapes) {
+      await test.step(shape.label, async () => {
+        await page.goto(`/dashboard/works/${shape.id}`);
+        await expect(page.getByTestId('works-detail-shape')).toHaveText(
+          shape.label
+        );
+        await expect(
+          page.getByRole('heading', { name: shape.title })
+        ).toBeVisible();
+        await expect(page.getByTestId('works-detail-revision')).toHaveAttribute(
+          'data-revision',
+          '7'
+        );
+        await expect(page.getByTestId('works-detail-guidance')).toBeVisible();
+        await expect(page.getByTestId('works-action-copy')).toBeVisible();
+        if (shape.mediaKind) {
+          await expect(
+            page.locator(
+              `[data-testid="works-media-gallery"] [data-media-kind="${shape.mediaKind}"]`
+            )
+          ).toBeVisible();
+        } else {
+          await expect(page.getByTestId('works-media-gallery')).toHaveCount(0);
+        }
+      });
+    }
   });
 
   test('轻编辑入口可达且能力核照常挂载', async ({ page, request }) => {

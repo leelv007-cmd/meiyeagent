@@ -55,8 +55,8 @@ const CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY =
 
 /**
  * Keep answer journeys outside the core timeout race through the same governed
- * CAS + audit path an operator uses. The browser card still owns its shipped
- * 30-second countdown; this only controls how long core waits independently.
+ * CAS + audit path an operator uses. Core owns the durable timeout; the browser
+ * only displays the same projected value.
  */
 async function applyConfirmationCardTimeout(
   page: Page,
@@ -88,34 +88,60 @@ async function applyConfirmationCardTimeout(
       ).data ?? []
     );
   };
+  const latestRevision = (history: Awaited<ReturnType<typeof queryHistory>>) =>
+    history.reduce<(typeof history)[number] | undefined>(
+      (latest, candidate) =>
+        (candidate.revision ?? 0) > (latest?.revision ?? 0)
+          ? candidate
+          : latest,
+      undefined
+    );
 
   const before = await queryHistory();
-  const expectedRevision = before.at(-1)?.revision ?? null;
+  const current = latestRevision(before);
+  let expectedRevision = current?.revision ?? null;
   const reason = `T45 e2e ${journey} ${Date.now()}: set confirmation timeout to ${seconds}s`;
-  const applied = await page.request.post('/api/core/p1/commands', {
-    data: {
-      action: 'config_apply',
-      module: 'admin-config',
-      payload: {
-        expectedRevision,
-        key: CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
-        reason,
-        value: seconds,
+  const apply = async (value: number, applyReason: string) => {
+    const response = await page.request.post('/api/core/p1/commands', {
+      data: {
+        action: 'config_apply',
+        module: 'admin-config',
+        payload: {
+          expectedRevision,
+          key: CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
+          reason: applyReason,
+          value,
+        },
       },
-    },
-    headers: {
-      'idempotency-key': `t45-e2e-${journey}-${crypto.randomUUID()}`,
-    },
-  });
-  expect(applied.ok(), await applied.text()).toBeTruthy();
+      headers: {
+        'idempotency-key': `t45-e2e-${journey}-${crypto.randomUUID()}`,
+      },
+    });
+    expect(response.ok(), await response.text()).toBeTruthy();
+    expectedRevision = (expectedRevision ?? 0) + 1;
+  };
 
-  const revision = expectedRevision === null ? 1 : expectedRevision + 1;
-  const audit = (await queryHistory()).at(-1);
-  expect(audit).toMatchObject({
-    reason,
-    revision,
-    storedValue: seconds,
-  });
+  // Config application is intentionally idempotent for an unchanged value.
+  // Move through a valid neighbouring value so a repeated local run still
+  // records this journey's own governed audit entry.
+  if (current?.storedValue === seconds) {
+    await apply(
+      seconds === 3_600 ? seconds - 1 : seconds + 1,
+      `${reason} (repeat-run bridge)`
+    );
+  }
+  await apply(seconds, reason);
+
+  const revision = expectedRevision;
+  await expect
+    .poll(async () => latestRevision(await queryHistory()), {
+      timeout: 30_000,
+    })
+    .toMatchObject({
+      reason,
+      revision,
+      storedValue: seconds,
+    });
 
   const signedOut = await page.evaluate(async () => {
     const response = await fetch('/api/auth/sign-out', {
@@ -371,13 +397,11 @@ test.describe('T31 三类卡与确认卡', () => {
       run.workId,
     ]);
 
-    // Typing is what pauses the countdown (D-116 safety edge ①) — the merchant
-    // is mid-sentence, so the card must not release itself out from under them.
+    // `continue` is a Core-owned deadline. Typing remains available and a late
+    // answer can derive a successor; the browser never claims it paused Core.
     await page.getByTestId('composer-question-answer').fill('皮肤管理');
-    await expect(questionCard).toHaveAttribute('data-auto-continue', 'false');
-    await expect(page.getByTestId('composer-question-countdown')).toHaveCount(
-      0
-    );
+    await expect(questionCard).toHaveAttribute('data-auto-continue', 'true');
+    await expect(page.getByTestId('composer-question-countdown')).toBeVisible();
 
     const decisionPost = page.waitForRequest(
       (request) =>
@@ -435,38 +459,22 @@ test.describe('T31 三类卡与确认卡', () => {
     await expect(questionCard).toBeVisible({ timeout: 240_000 });
     await expect(questionCard).toHaveAttribute('data-auto-continue', 'true');
 
-    // Nobody touches it. The real D-116 countdown runs out on its own — no fake
-    // timer, no shortened parameter — and the release is a *posted decision*,
-    // which is what separates 自动继续 from a card that merely disappeared.
+    // Nobody touches it. Core's durable recv expires and persists the ignored
+    // decision; the browser must not post a competing timeout truth.
+    let browserDecisionPosts = 0;
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && request.url().endsWith('/decision')) {
+        browserDecisionPosts += 1;
+      }
+    });
     const openedAt = Date.now();
-    const released = await page.waitForRequest(
-      (request) =>
-        request.method() === 'POST' && request.url().endsWith('/decision'),
-      { timeout: 120_000 }
-    );
-    const waited = (Date.now() - openedAt) / 1_000;
-    const posted = released.postDataJSON() as {
-      idempotencyKey?: string;
-      decision?: { state?: string; value?: string };
-      patch?: { value?: string };
-    };
-    // 默认值路径: the ignored route is the harness's own「不补充也继续」.
-    expect(posted.decision?.state).toBe('ignored');
-    // Nobody said anything, so nothing may be recorded as if they had. This
-    // value is not only ledger provenance — core writes it into the workflow's
-    // own intent context as `Merchant decision (<field>): <value>`.
-    expect(posted.decision?.value).toBe('未作答');
-    expect(posted.patch?.value).toBe('未作答');
-    // A countdown release stays separable from an explicit 「继续」.
-    expect(posted.idempotencyKey).toContain('timed_out');
-    // It waited out the countdown rather than firing on mount.
-    expect(waited, `released after ${waited}s`).toBeGreaterThan(15);
-    expect(waited, `released after ${waited}s`).toBeLessThan(90);
-
-    // 自动继续 means the run really continued: it delivers.
     await expect(page.getByTestId('composer-delivery-turn')).toBeVisible({
       timeout: 300_000,
     });
+    const waited = (Date.now() - openedAt) / 1_000;
+    expect(waited, `released after ${waited}s`).toBeGreaterThan(15);
+    expect(waited, `released after ${waited}s`).toBeLessThan(120);
+    expect(browserDecisionPosts).toBe(0);
     await expect(page.getByTestId('composer-delivery-turn')).toHaveAttribute(
       'data-package-id',
       /.+/u
@@ -477,13 +485,23 @@ test.describe('T31 三类卡与确认卡', () => {
         { credentials: 'same-origin' }
       );
       if (response.status === 404) return null;
-      const body = (await response.json()) as { data?: { question?: unknown } };
-      return body.data?.question ?? null;
+      const body = (await response.json()) as {
+        data?: {
+          question?: unknown;
+          resolutionSource?: string | null;
+          status?: string;
+        };
+      };
+      return body.data ?? null;
     }, run.taskId);
-    expect(
-      pending,
-      'the timeout must post a real decision, not just hide the card'
-    ).toBeNull();
+    expect(pending).toMatchObject({
+      question: expect.any(Object),
+      resolutionSource: 'core_timeout',
+      status: 'resolved',
+    });
+    await expect(page.getByTestId('composer-question-settled')).toContainText(
+      '仍可回答'
+    );
   });
 
   test('quota is passive on the main path — no pre-run 额度确认', async ({

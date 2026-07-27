@@ -43,9 +43,9 @@ const profile = {
   id: 'seedream-quality',
   revision: 'seedream-quality-r1',
   operationMappings: {
-    'image.generate': 'image.generate',
-    'image.edit': 'image.edit',
-    'image.reference_transform': 'image.edit',
+    'image.generate': 'image.generate' as const,
+    'image.edit': 'image.edit' as const,
+    'image.reference_transform': 'image.edit' as const,
   },
   slotRules: IMAGE_INTENT_SLOT_KINDS.map((slot) => ({
     slot,

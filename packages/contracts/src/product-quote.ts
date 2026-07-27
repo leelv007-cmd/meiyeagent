@@ -75,6 +75,14 @@ export interface ProductQuoteSnapshot {
   /** Server-resolved extra-confirm threshold frozen from quotePolicyRevision. */
   extraConfirmThreshold?: number;
   billingMode: ProductBillingMode;
+  /**
+   * Server-frozen merchant entitlement debit preview.
+   *
+   * This vector is the product contract (copy/image/video buckets). Supplier
+   * metering such as video seconds remains in ProviderCostSnapshot and must
+   * never replace these units during settlement.
+   */
+  debitUnits?: ProductUsageUnit[];
   /** Server-priced deliverable count frozen into this quote revision. */
   outputCount?: number;
   /** Server-owned merchant-facing deliverable label bound to outputCount. */
@@ -185,7 +193,7 @@ export interface ProviderCostSnapshot {
 /**
  * ProductUsage ledger entry — one task, one idempotent reserve/settle.
  * Quantities are integer merchant entitlement units: copy items, image points,
- * or video seconds. Monetary quote amounts remain on ProductQuoteSnapshot.
+ * or video tickets. Supplier seconds remain on ProviderCostSnapshot.
  */
 export interface ProductUsageRecord {
   id: string;
@@ -228,6 +236,8 @@ export interface BuildProductQuoteInput {
   quotePolicyRevision: string;
   submissionContractHash?: string;
   billingMode: ProductBillingMode;
+  /** Server-authoritative per-bucket entitlement units frozen at quote time. */
+  debitUnits?: ProductUsageUnit[];
   outputCount?: number;
   outputLabel?: string;
   unitRate: number;

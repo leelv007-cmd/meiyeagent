@@ -157,6 +157,11 @@ export async function submitComposerJourney(
      * a caller measuring a C6 click budget stops its counter here.
      */
     onDeliveryCardVisible?: () => void | Promise<void>;
+    /** Called after the 202 response has passed all required-id checks. */
+    onSubmissionAccepted?: (submission: {
+      taskId: string;
+      workId: string;
+    }) => void | Promise<void>;
     /**
      * Called once the submission is accepted and the merchant is still in the
      * conversation, before the 成品预览卡 is awaited. This is where an
@@ -263,6 +268,10 @@ export async function submitComposerJourney(
     ).toBeTruthy();
   }
   const submittedWorkId = submission.data!.work!.id!;
+  await options.onSubmissionAccepted?.({
+    taskId: submission.data!.task!.id!,
+    workId: submittedWorkId,
+  });
 
   // ADR-0014「提交后不跳转」. Submitting keeps the merchant in the conversation;
   // the run finishes as a 成品预览卡 and clicking that card is what opens the

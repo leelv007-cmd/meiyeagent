@@ -3,11 +3,17 @@
  *
  * One blocking fact at a time from Recipe/snapshot readiness gaps.
  * Non-critical facts may be skipped with an explicit safe fallback and
- * impact note. Confirms through the same confirm_store contract — no
- * onboarding-only creation path.
+ * impact note. Confirmation is one finalize_store_intake batch so the server
+ * can project the same event into StoreFact and StoreProfile.
  */
 
-import type { ProductCommand, StoreProfile } from '@meiye/contracts';
+import type {
+  FinalizeStoreIntakeCommand,
+  StoreFact,
+  StoreFactCandidateDraft,
+  StoreProfile,
+  StoreProfilePatch,
+} from '@meiye/contracts';
 
 export type ProgressiveFactId =
   | 'name'
@@ -28,8 +34,14 @@ export type ProgressiveFactDraft = {
   address: string;
   booking: string;
   brandVoice: string;
+  projectId: string;
+  projectDurationMinutes: number;
   projectName: string;
   projectPrice: string;
+  /** Facts explicitly answered during this confirmation session. */
+  answered: ProgressiveFactId[];
+  /** Prefilled values that still require explicit merchant confirmation. */
+  unconfirmed: ProgressiveFactId[];
   /** Facts the merchant chose to skip (only skippable ids). */
   skipped: ProgressiveFactId[];
 };
@@ -53,6 +65,29 @@ export type ProgressiveFactView = {
   readyToConfirm: boolean;
   /** Human-readable impact of all current skips. */
   skipImpacts: string[];
+};
+
+export type FinalizeStoreIntakeRequest = {
+  action: 'finalize_store_intake';
+  payload: FinalizeStoreIntakeCommand;
+};
+
+export type FinalizeStoreIntakeOptions = {
+  batchId: string;
+  capturedAt: string;
+  expectedRevision: number;
+  factRevisions?: Record<string, number>;
+  referenceId: string;
+  /**
+   * Platform default for `regulated` (`compliance.regulated_mode.default`),
+   * only read when this patch creates the profile (revision 0). `regulated` is
+   * a platform/category admission call, never a merchant answer, so the web
+   * side seeds the admin default instead of inventing one; when the default is
+   * unknown the revision-0 command is withheld rather than guessed.
+   */
+  regulatedDefault?: boolean;
+  taskId: string;
+  workspaceId: string;
 };
 
 const FACT_ORDER: ProgressiveFactId[] = [
@@ -106,17 +141,52 @@ const IMPACT: Record<ProgressiveFactId, string> = {
 };
 
 export function createProgressiveFactDraft(
-  partial?: Partial<ProgressiveFactDraft>
+  input?: Partial<ProgressiveFactDraft> | StoreProfile,
+  activeFacts?: Array<Pick<StoreFact, 'factId' | 'revision'>>
 ): ProgressiveFactDraft {
+  const profile: StoreProfile | undefined =
+    input && 'projects' in input ? input : undefined;
+  const partial: Partial<ProgressiveFactDraft> | undefined = profile
+    ? undefined
+    : (input as Partial<ProgressiveFactDraft> | undefined);
+  const project = profile?.projects[0];
+  const activeFactIds = new Set(activeFacts?.map((fact) => fact.factId));
+  const projectUnconfirmed: ProgressiveFactId[] =
+    profile && project
+      ? !project.confirmed
+        ? ['projectName', 'projectPrice']
+        : activeFacts === undefined
+          ? []
+          : [
+              ...(activeFactIds.has(`store-project:${project.id}:service`)
+                ? []
+                : (['projectName'] as const)),
+              ...(activeFactIds.has(`store-project:${project.id}:price`)
+                ? []
+                : (['projectPrice'] as const)),
+            ]
+      : [];
   return {
-    name: partial?.name ?? '',
-    city: partial?.city ?? '',
-    district: partial?.district ?? '',
-    address: partial?.address ?? '',
-    booking: partial?.booking ?? '',
-    brandVoice: partial?.brandVoice ?? '',
-    projectName: partial?.projectName ?? '',
-    projectPrice: partial?.projectPrice ?? '',
+    name: profile?.name ?? partial?.name ?? '',
+    city: profile?.city ?? partial?.city ?? '',
+    district: profile?.district ?? partial?.district ?? '',
+    address: profile?.address ?? partial?.address ?? '',
+    booking: profile?.booking ?? partial?.booking ?? '',
+    brandVoice: profile?.brandVoice ?? partial?.brandVoice ?? '',
+    projectId: project?.id ?? partial?.projectId ?? 'progressive-project-1',
+    projectDurationMinutes:
+      project?.durationMinutes ?? partial?.projectDurationMinutes ?? 60,
+    projectName: project?.name ?? partial?.projectName ?? '',
+    projectPrice:
+      project === undefined
+        ? (partial?.projectPrice ?? '')
+        : String(project.price),
+    answered: partial?.answered ? [...partial.answered] : [],
+    unconfirmed: profile
+      ? projectUnconfirmed
+      : partial?.unconfirmed
+        ? [...partial.unconfirmed]
+        : [],
     skipped: partial?.skipped ? [...partial.skipped] : [],
   };
 }
@@ -127,6 +197,9 @@ function fieldValue(draft: ProgressiveFactDraft, id: ProgressiveFactId) {
 
 function isAnswered(draft: ProgressiveFactDraft, id: ProgressiveFactId) {
   if (draft.skipped.includes(id)) return true;
+  if (draft.unconfirmed.includes(id) && !draft.answered.includes(id)) {
+    return false;
+  }
   if (id === 'projectPrice') {
     const price = Number(draft.projectPrice);
     return (
@@ -182,6 +255,10 @@ export function answerProgressiveFact(
 ): ProgressiveFactDraft {
   const next: ProgressiveFactDraft = {
     ...draft,
+    answered: draft.answered.includes(id)
+      ? draft.answered
+      : [...draft.answered, id],
+    unconfirmed: draft.unconfirmed.filter((item) => item !== id),
     skipped: draft.skipped.filter((item) => item !== id),
     [id]: value,
   };
@@ -205,37 +282,237 @@ export function skipProgressiveFact(
   };
 }
 
-export function buildConfirmStoreCommand(
-  draft: ProgressiveFactDraft
-): ProductCommand | null {
+export function buildFinalizeStoreIntakeCommand(
+  draft: ProgressiveFactDraft,
+  options: FinalizeStoreIntakeOptions
+): FinalizeStoreIntakeRequest | null {
   const view = projectProgressiveFactView(draft);
   if (!view.readyToConfirm) return null;
 
   const price = Number(draft.projectPrice);
   if (!Number.isFinite(price) || price < 0) return null;
 
-  const store: Omit<StoreProfile, 'confirmedAt'> = {
-    name: draft.name.trim(),
-    city: draft.city.trim(),
-    district: (draft.district.trim() || FALLBACKS.district).trim(),
-    address: (draft.address.trim() || FALLBACKS.address).trim(),
-    booking: (draft.booking.trim() || FALLBACKS.booking).trim(),
-    brandVoice: (draft.brandVoice.trim() || FALLBACKS.brandVoice).trim(),
-    prohibitions: ['不虚构价格'],
-    accounts: [],
-    projects: [
+  const candidates = draft.answered.flatMap((id) => {
+    const projection = storeFactProjection(draft, id, options);
+    if (!projection) return [];
+    return [
       {
-        id: 'progressive-project-1',
-        name: draft.projectName.trim(),
-        price,
-        durationMinutes: 60,
-        confirmed: true,
+        candidateId: `${projection.factId}:candidate`,
+        status: 'pending' as const,
+        objectKind: 'store_fact' as const,
+        fact: projection.fact,
       },
-    ],
-    regulated: false,
-  };
+    ];
+  });
+  if (candidates.length === 0) return null;
 
-  return { type: 'confirm_store', store };
+  const changed = new Set([...draft.answered, ...draft.skipped]);
+  const initializingProfile = options.expectedRevision === 0;
+  const profilePatch: StoreProfilePatch = {
+    expectedRevision: options.expectedRevision,
+  };
+  if (initializingProfile || changed.has('name')) {
+    profilePatch.name = draft.name.trim();
+  }
+  if (initializingProfile || changed.has('city')) {
+    profilePatch.city = draft.city.trim();
+  }
+  if (initializingProfile || changed.has('district')) {
+    profilePatch.district = (
+      draft.district.trim() || FALLBACKS.district
+    ).trim();
+  }
+  if (initializingProfile || changed.has('address')) {
+    profilePatch.address = (draft.address.trim() || FALLBACKS.address).trim();
+  }
+  if (initializingProfile || changed.has('booking')) {
+    profilePatch.booking = (draft.booking.trim() || FALLBACKS.booking).trim();
+  }
+  if (initializingProfile || changed.has('brandVoice')) {
+    profilePatch.brandVoice = (
+      draft.brandVoice.trim() || FALLBACKS.brandVoice
+    ).trim();
+  }
+  if (initializingProfile) {
+    // Core requires `regulated` on the first patch (STORE_PROFILE_INCOMPLETE),
+    // so the platform default has to be loaded before Day-0 can be confirmed.
+    if (options.regulatedDefault === undefined) return null;
+    profilePatch.regulated = options.regulatedDefault;
+  }
+  if (
+    initializingProfile ||
+    changed.has('projectName') ||
+    changed.has('projectPrice')
+  ) {
+    profilePatch.projects = {
+      upsert: [
+        {
+          id: draft.projectId,
+          name: draft.projectName.trim(),
+          price,
+          durationMinutes: draft.projectDurationMinutes,
+          confirmed: true,
+        },
+      ],
+    };
+  }
+
+  return {
+    action: 'finalize_store_intake',
+    payload: {
+      batch: {
+        batchId: options.batchId,
+        taskId: options.taskId,
+        source: {
+          sourceId: options.referenceId,
+          kind: 'manual',
+          referenceId: options.referenceId,
+          capabilityStatus: 'assisted',
+          sourceWorkspaceId: options.workspaceId,
+          capturedAt: options.capturedAt,
+          example: false,
+        },
+        summary: 'Merchant confirmed progressive store facts.',
+        candidates,
+      },
+      confirmations: candidates.map((candidate) => ({
+        candidateId: candidate.candidateId,
+        factId: candidate.candidateId.slice(0, -':candidate'.length),
+        expectedFactRevision:
+          options.factRevisions?.[
+            candidate.candidateId.slice(0, -':candidate'.length)
+          ] ?? 0,
+      })),
+      profilePatch,
+    },
+  };
+}
+
+function storeFactProjection(
+  draft: ProgressiveFactDraft,
+  id: ProgressiveFactId,
+  options: FinalizeStoreIntakeOptions
+): { factId: string; fact: StoreFactCandidateDraft } | null {
+  const base = {
+    scope: { storeId: options.workspaceId },
+    source: {
+      kind: 'user_confirmation' as const,
+      referenceId: options.referenceId,
+      capturedAt: options.capturedAt,
+    },
+    effectiveFrom: options.capturedAt,
+    expiresAt: null,
+  };
+  switch (id) {
+    case 'name':
+      return {
+        factId: 'store-profile:name:other',
+        fact: {
+          ...base,
+          kind: 'other',
+          key: 'store.profile.name',
+          value: { name: draft.name.trim() },
+        },
+      };
+    case 'city':
+      return {
+        factId: 'store-profile:city:other',
+        fact: {
+          ...base,
+          kind: 'other',
+          key: 'store.profile.city',
+          value: { city: draft.city.trim() },
+        },
+      };
+    case 'district':
+      return {
+        factId: 'store-profile:district:other',
+        fact: {
+          ...base,
+          kind: 'other',
+          key: 'store.profile.district',
+          value: { district: draft.district.trim() },
+        },
+      };
+    case 'address':
+      return {
+        factId: 'store-profile:address:fulfillment',
+        fact: {
+          ...base,
+          kind: 'fulfillment',
+          key: 'store.fulfillment.address',
+          value: { address: draft.address.trim() },
+        },
+      };
+    case 'booking':
+      return {
+        factId: 'store-profile:booking:fulfillment',
+        fact: {
+          ...base,
+          kind: 'fulfillment',
+          key: 'store.fulfillment.booking',
+          value: { booking: draft.booking.trim() },
+        },
+      };
+    case 'projectName':
+      return {
+        factId: `store-project:${draft.projectId}:service`,
+        fact: {
+          ...base,
+          kind: 'service',
+          key: `service.${draft.projectId}.name`,
+          value: { name: draft.projectName.trim() },
+        },
+      };
+    case 'projectPrice':
+      return {
+        factId: `store-project:${draft.projectId}:price`,
+        fact: {
+          ...base,
+          kind: 'price',
+          key: `service.${draft.projectId}.price`,
+          value: { amount: Number(draft.projectPrice), currency: 'CNY' },
+        },
+      };
+    case 'brandVoice':
+      return null;
+  }
+}
+
+export function progressiveFactRevisionMap(
+  facts: Array<Pick<StoreFact, 'factId' | 'revision'>>
+) {
+  return facts.reduce<Record<string, number>>((revisions, fact) => {
+    revisions[fact.factId] = Math.max(
+      revisions[fact.factId] ?? 0,
+      fact.revision
+    );
+    return revisions;
+  }, {});
+}
+
+export function hasMissingProgressiveStoreFacts(
+  store: StoreProfile | undefined,
+  facts: Array<Pick<StoreFact, 'factId' | 'revision'>>
+) {
+  if (!store?.projects[0]) return false;
+  return createProgressiveFactDraft(store, facts).unconfirmed.some(
+    (id) => id === 'projectName' || id === 'projectPrice'
+  );
+}
+
+export function shouldShowProgressiveFactCard(input: {
+  groundingRequested: boolean;
+  hasProductState: boolean;
+  hasStore: boolean;
+  ledgerReady: boolean;
+  missingStoreFacts: boolean;
+  productLoading: boolean;
+}) {
+  if (!input.hasProductState || input.productLoading) return false;
+  if (!input.hasStore) return true;
+  if (!input.ledgerReady) return false;
+  return input.groundingRequested || input.missingStoreFacts;
 }
 
 /** Next single missing grounding fact from product readiness. */

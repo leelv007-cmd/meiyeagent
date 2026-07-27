@@ -227,9 +227,12 @@ export const imageModelRecipeProfileSchema = z
     revision: z.string().trim().min(1),
     operationMappings: z
       .object({
-        'image.generate': z.string().trim().min(1),
-        'image.edit': z.string().trim().min(1),
-        'image.reference_transform': z.string().trim().min(1),
+        'image.generate': z.enum(['image.generate', 'image.edit']),
+        'image.edit': z.enum(['image.generate', 'image.edit']),
+        'image.reference_transform': z.enum([
+          'image.generate',
+          'image.edit',
+        ]),
       })
       .strict(),
     slotRules: z.array(imageSlotRecipeRuleSchema).length(

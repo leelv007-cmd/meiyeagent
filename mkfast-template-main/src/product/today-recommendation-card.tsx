@@ -32,7 +32,7 @@ import {
 import { operationsQuery, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import { todayRecommendationIntent } from '@/product/creation-entry-model';
-import { readTodayRecommendation } from '@/product/harness-client';
+import { readDashboardHomeRecommendation } from '@/product/dashboard-home-recommendation';
 import { HotTopicOpportunityCardView } from './hot-topic-opportunity-card';
 
 /** Fact references are minted as `store_fact:<factId>:<revision>` (core production-context-port.ts:664). */
@@ -134,7 +134,7 @@ export function TodayRecommendationCard({
 }) {
   const recommendation = useQuery({
     queryKey: ['harness', 'today-recommendation'],
-    queryFn: ({ signal }) => readTodayRecommendation(signal),
+    queryFn: ({ signal }) => readDashboardHomeRecommendation(signal),
     retry: false,
   });
   const workbench = useQuery({

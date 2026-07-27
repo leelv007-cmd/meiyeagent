@@ -547,11 +547,19 @@ test('HTTP failure remains retryable through the existing outbox worker', async 
     { now: () => new Date('2026-07-18T00:00:00.000Z'), retryDelayMs: 1_000 },
   );
 
-  assert.deepEqual(await worker.runOnce(), { sent: 0, failed: 1 });
+  assert.deepEqual(await worker.runOnce(), {
+    sent: 0,
+    failed: 1,
+    deadLettered: 0,
+  });
   assert.equal(store.status, 'failed');
   available = true;
   store.status = 'queued';
-  assert.deepEqual(await worker.runOnce(), { sent: 1, failed: 0 });
+  assert.deepEqual(await worker.runOnce(), {
+    sent: 1,
+    failed: 0,
+    deadLettered: 0,
+  });
   assert.equal(store.status, 'sent');
 });
 
@@ -623,7 +631,7 @@ function assemblyItem(): HarnessLangfuseOutboxItem {
 }
 
 class RetryStore implements HarnessLangfuseOutboxStore {
-  status: 'queued' | 'sending' | 'failed' | 'sent' = 'queued';
+  status: 'queued' | 'sending' | 'failed' | 'sent' | 'dead_letter' = 'queued';
 
   constructor(private readonly item: HarnessLangfuseOutboxItem) {}
 
@@ -639,6 +647,10 @@ class RetryStore implements HarnessLangfuseOutboxStore {
 
   async markLangfuseFailed() {
     this.status = 'failed';
+  }
+
+  async markLangfuseDeadLetter() {
+    this.status = 'dead_letter';
   }
 }
 

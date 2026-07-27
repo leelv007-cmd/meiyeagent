@@ -181,12 +181,14 @@ export {
   type RecipeApplyTipProps,
 } from './recipe-apply-tip';
 
-export {
-  ComposerBriefChips,
-  projectComposerBriefChips,
-  type ComposerBriefChip,
-  type ComposerBriefChipsProps,
-} from './brief-chips';
+/*
+ * `ComposerBriefChips` is gone (U04 裁决). It was hung on this panel with no
+ * producer behind it — the production mount never passed a `brief`, so it
+ * rendered null on every run since the day it landed — and the question it
+ * answered（「本次将使用」）is answered on the same surface by the conditional
+ * Brief surface (D-094), which composer-home actually drives. Two answers to
+ * one question, one of them永远沉默, is the case D-150 calls 未完成.
+ */
 
 export {
   RecipeCardsPanel,
@@ -232,24 +234,30 @@ export {
 export {
   QUOTA_BLOCK_CODE_LABEL,
   QUOTA_BLOCK_CODE_PLACEHOLDER,
+  QUOTA_BLOCK_CONTACT_LABEL,
   QUOTA_BLOCK_DESCRIPTION,
   QUOTA_BLOCK_FAILED_LABEL,
-  QUOTA_BLOCK_OPEN_PLANS_LABEL,
   QUOTA_BLOCK_SUBMIT_LABEL,
   QUOTA_BLOCK_SUCCESS_LABEL,
   QUOTA_BLOCK_TITLE,
   beginQuotaRedeem,
   buildQuotaRedeemCommand,
   completeQuotaRedeem,
+  composerQuotaRequirements,
   createQuotaBlockingState,
   dismissQuotaUnlock,
   isQuotaRedeemCodeValid,
   projectQuotaBlockingView,
+  projectQuotaPassiveView,
+  quotaShortNotice,
   setQuotaRedeemCode,
   showQuotaBlocking,
+  type ComposerQuotaResource,
   type QuotaBlockingState,
   type QuotaBlockingView,
+  type QuotaPassiveView,
   type QuotaRedeemStatus,
+  type QuotaRequirement,
 } from './quota-blocking';
 
 export {

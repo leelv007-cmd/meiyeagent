@@ -70,6 +70,20 @@ test('Composer and Result Center keep the product shell contract', () => {
   );
 });
 
+test('HeroUI empty-state foreground mapping is owned by the shared product layer', () => {
+  const glass = readSource('src/components/heroui-pro/heroui-glass.css');
+  const works = readSource('src/product/works/works-list-page.tsx');
+
+  assert.match(
+    glass,
+    /\.meiye-product-shell \[data-slot="empty-state"\]\s*\{[\s\S]*?--muted:\s*var\(--ink-60\)/u
+  );
+  assert.doesNotMatch(
+    works,
+    /style=\{\{\s*'--muted':\s*'var\(--ink-60\)'\s*\}\s*as CSSProperties\}/u
+  );
+});
+
 test('merchant header exposes a localized non-subscriber pricing entry', () => {
   const header = readSource('src/components/layout/dashboard-header.tsx');
   const styles = readSource('src/styles.css');

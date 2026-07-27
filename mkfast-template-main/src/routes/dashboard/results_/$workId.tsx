@@ -17,11 +17,6 @@ import {
 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import {
-  buildCopyStreamRequestFromJob,
-  submitCopyCandidateStream,
-  useCopyCandidateStream,
-} from '@/product/copy-stream';
-import {
   creativeJobObservation,
   useCreativeJobObserver,
 } from '@/product/creative-job-observer';
@@ -36,12 +31,11 @@ import {
   platformPreviewsFromContentPackage,
   projectResultCenterLiveProjection,
   resultContentPackageMutationFacts,
+  resultHarnessStreamLifecycle,
+  resultWorkflowIdForWork,
   runDetailFactsFromLiveSelection,
 } from '@/product/results/result-live-projection';
-import {
-  calibrateTerminalRevision,
-  pickExclusiveTokenCandidates,
-} from '@/product/results/result-token-stream';
+import { calibrateTerminalRevision } from '@/product/results/result-token-stream';
 import { projectResultShellPhase } from '@/product/results/result-shell-model';
 import { ResultCenterPage } from '@/product/results/result-center-page';
 import { ImageAdjustConfirmation } from '@/product/results/image-adjust-confirmation';
@@ -131,17 +125,6 @@ function ResultCenterRoutePage() {
     'operations',
     'content_packages'
   );
-  const harnessStream = useWorkflowEventStream({
-    enabled: Boolean(search.taskId),
-    latestQueryKey: workbenchQueryKey,
-    workflowId: search.taskId ?? '',
-    workflowQueryKey: contentPackagesQueryKey,
-  });
-  // ADR-0007 token stream — live partials for copy / image_text running phase.
-  const copyCandidateStream = useCopyCandidateStream({ id: workId });
-  /** One submit per job+submissionKey; avoids replaying stream on re-render. */
-  const streamSubmitKeyRef = useRef<string | null>(null);
-
   const targetResolverQuery = useQuery({
     queryKey: p1QueryKeys.request('result-delivery', 'result_target_resolve', {
       target,
@@ -166,41 +149,6 @@ function ResultCenterRoutePage() {
     retry: false,
   });
 
-  // ADR-0007: actually start the copy token stream while Job is running/waiting.
-  // Hook wiring alone is not enough — useObject only streams after submit().
-  useEffect(() => {
-    if (!workbenchQuery.data) return;
-    const live = projectResultCenterLiveProjection(workbenchQuery.data, workId);
-    const selected = live.selected;
-    if (!selected?.job) return;
-    const streamActive =
-      (selected.workspaceKind === 'copy' ||
-        selected.workspaceKind === 'image') &&
-      (selected.progressState === 'running' ||
-        selected.progressState === 'waiting');
-    if (!streamActive) return;
-    const request = buildCopyStreamRequestFromJob(selected.job);
-    if (!request) return;
-    const submitKey = `${selected.job.id}:${selected.job.submissionKey}`;
-    if (streamSubmitKeyRef.current === submitKey) return;
-    if (copyCandidateStream.isLoading) return;
-    if (
-      copyCandidateStream.object?.candidates &&
-      copyCandidateStream.object.candidates.length > 0
-    ) {
-      streamSubmitKeyRef.current = submitKey;
-      return;
-    }
-    streamSubmitKeyRef.current = submitKey;
-    submitCopyCandidateStream(copyCandidateStream.submit, request);
-  }, [
-    workbenchQuery.data,
-    workId,
-    copyCandidateStream.isLoading,
-    copyCandidateStream.object,
-    copyCandidateStream.submit,
-  ]);
-
   const contentPackagesQuery = useQuery({
     queryKey: contentPackagesQueryKey,
     queryFn: ({ signal }) =>
@@ -208,6 +156,23 @@ function ResultCenterRoutePage() {
     retry: false,
     refetchInterval:
       videoRegenerationPackageBaseline === undefined ? false : 1_000,
+  });
+  // `content_packages` is ordered by updatedAt DESC. Its source binds Work and
+  // Harness Task atomically, so canonical workId-only reopens reconnect without
+  // trusting an optional URL taskId from another route or a stale browser link.
+  const contentPackage = latestContentPackageForWork(
+    contentPackagesQuery.data,
+    workId
+  );
+  const resultWorkflowId = resultWorkflowIdForWork(
+    contentPackagesQuery.data,
+    workId
+  );
+  const harnessStream = useWorkflowEventStream({
+    enabled: Boolean(resultWorkflowId),
+    latestQueryKey: workbenchQueryKey,
+    workflowId: resultWorkflowId,
+    workflowQueryKey: contentPackagesQueryKey,
   });
   const assistedReceiptsQuery = useQuery({
     queryKey: p1QueryKeys.request('result-delivery', 'assisted_list'),
@@ -256,14 +221,6 @@ function ResultCenterRoutePage() {
     },
     retry: false,
   });
-  // `content_packages` is ordered by updatedAt DESC. A full-compose rerun
-  // creates a derived workflow/package while the selected CreativeJob still
-  // points at the original provider workflow, so the newest Work package is
-  // the canonical result surface.
-  const contentPackage = latestContentPackageForWork(
-    contentPackagesQuery.data,
-    workId
-  );
   const contentPackageToken = contentPackageRefreshToken(contentPackage);
   useEffect(() => {
     if (
@@ -360,50 +317,35 @@ function ResultCenterRoutePage() {
   // Video worksurface simply omits workflow-derived panels instead of hard-failing.
 
   const workspaceKind = selected?.workspaceKind ?? 'copy';
-  const harnessState =
-    harnessStream.workflowState ?? harnessStream.latestProgress?.state;
-  const resultProgressState = currentPackageVersion
-    ? ('success' as const)
-    : harnessState === 'failed'
-      ? ('failed' as const)
-      : harnessState === 'success'
-        ? ('success' as const)
-        : selected?.progressState;
-  // ADR-0007 / P1-B2: user-visible copy increments are exclusive.
-  // Prefer structured stream partials as the sole source while running;
-  // never merge poll/workbench candidate snapshots into the stream face.
-  // image.generate / video never feed copy-stream slots — do not mark them
+  const harnessStreamMatchesResult =
+    Boolean(resultWorkflowId) &&
+    harnessStream.activeWorkflowId === resultWorkflowId;
+  const harnessWorkflowState = harnessStreamMatchesResult
+    ? harnessStream.workflowState
+    : undefined;
+  const harnessProgressState = harnessStreamMatchesResult
+    ? harnessStream.latestProgress?.state
+    : undefined;
+  const harnessStreamLifecycle = resultHarnessStreamLifecycle({
+    hasCanonicalVersion: Boolean(currentPackageVersion),
+    latestProgressState: harnessProgressState,
+    projectedProgressState: selected?.progressState,
+    workflowState: harnessWorkflowState,
+  });
+  const resultProgressState = harnessStreamLifecycle.progressState;
+  // D-118: lightweight copy stays inside the shared Harness workflow. Its
+  // workflow.token projection is the only user-visible incremental source.
+  // image.generate / video never feed incremental copy slots — do not mark them
   // streamActive or e2e will wait forever for tokens that cannot arrive.
   const streamActive =
     workspaceKind === 'copy' &&
-    (resultProgressState === 'running' ||
-      resultProgressState === 'waiting' ||
-      harnessState === 'running' ||
-      harnessState === 'waiting') &&
+    harnessStreamLifecycle.streamActive &&
     (!selected?.job || selected.job.contract.operation === 'copy.generate');
-  const structuredStreamCandidates = streamActive
-    ? copyCandidateStream.object?.candidates?.filter(
-        (candidate): candidate is NonNullable<typeof candidate> =>
-          candidate !== undefined
-      )
-    : undefined;
-  // Poll/workbench harness candidates are intentionally not passed as a
-  // second source — pickExclusiveTokenCandidates discards poll when empty.
-  const exclusiveTokens = pickExclusiveTokenCandidates({
-    workflowTokenCandidates: harnessStream.copyCandidates,
-    structuredStreamCandidates: structuredStreamCandidates ?? null,
-    pollCandidates: null,
-  });
-  const partialCandidates = streamActive
-    ? exclusiveTokens.candidates
-    : undefined;
-  const streamLoading = streamActive
-    ? Boolean(copyCandidateStream.isLoading) ||
-      selected?.progressState === 'running' ||
-      selected?.progressState === 'waiting' ||
-      harnessState === 'running' ||
-      harnessState === 'waiting'
-    : false;
+  const partialCandidates =
+    streamActive && harnessStreamMatchesResult
+      ? harnessStream.copyCandidates
+      : undefined;
+  const streamLoading = streamActive && harnessStreamMatchesResult;
   const deliveryTarget = deliveryTargetForIntent(
     workspaceKind,
     selected?.work.intent ?? ''
@@ -453,7 +395,7 @@ function ResultCenterRoutePage() {
     currentPackageVersion &&
     (workspaceKind === 'copy' || workspaceKind === 'image')
       ? calibrateTerminalRevision({
-          streamed: exclusiveTokens.candidates[0],
+          streamed: partialCandidates?.[0],
           terminal: {
             title: currentPackageVersion.title,
             body: currentPackageVersion.body,
@@ -750,6 +692,13 @@ function ResultCenterRoutePage() {
       !canExportFullPackage
     ) {
       throw new Error('Canonical delivery package is unavailable.');
+    }
+    if (exactExportReceipt && exactExportDownloadUrl) {
+      return {
+        contentPackage,
+        downloadUrl: exactExportDownloadUrl,
+        receiptId: exactExportReceipt.id,
+      };
     }
     return executeIntent<{
       contentPackage: PublicContentPackage;
@@ -1097,7 +1046,7 @@ function ResultCenterRoutePage() {
         progressState: resultProgressState,
         hasUsableCandidate,
         ...packageMutationFacts,
-        taskId: search.taskId,
+        taskId: resultWorkflowId || undefined,
         jobId: selected?.job?.id,
       }}
       partialCandidates={partialCandidates}

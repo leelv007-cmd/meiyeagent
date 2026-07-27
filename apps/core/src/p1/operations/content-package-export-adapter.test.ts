@@ -152,6 +152,42 @@ it('builds one durable zip with copy and ordered owned images', async () => {
   assert.ok(storage.read(`workspace-export/generated/${artifact.artifactAssetId.replace('asset-', '')}.zip`) || artifact.sha256);
 });
 
+it('exports a copy-only Composer revision without inventing an image', async () => {
+  const storage = new MemoryModelAssetStorage();
+  const adapter = new ContentPackageZipExportAdapter(storage, {
+    async readOwnedAsset() {
+      throw new Error('Copy-only export must not read an image asset.');
+    },
+  });
+
+  const artifact = await adapter.export({
+    compliance: { aigcLabelEnabled: false, watermarkEnabled: false },
+    contentPackageRevision: 2,
+    kind: 'image_text',
+    packageId: 'package-copy-only',
+    platform: 'xiaohongshu',
+    version: {
+      body: '到店活动正文',
+      createdAt: '2026-07-27T09:00:00.000Z',
+      id: 'version-copy-only',
+      orderedAssetIds: [],
+      title: '到店活动',
+      topics: ['美业'],
+    },
+    workspaceId: 'workspace-copy-only',
+  });
+
+  const bytes = storage.read(artifact.artifactObjectKey);
+  assert.ok(bytes);
+  const archive = unzipSync(bytes);
+  assert.ok(archive['caption.txt']);
+  assert.ok(archive['platform-checklist.md']);
+  assert.ok(archive['evidence/rights-and-facts.json']);
+  assert.ok(archive['manifest.json']);
+  assert.equal(archive['cover.png'], undefined);
+  assert.equal(archive['images/01.png'], undefined);
+});
+
 it('retries the same export with identical archive bytes and object key', async () => {
   const storage = new MemoryModelAssetStorage();
   const image = await storage.persistGeneratedAsset({

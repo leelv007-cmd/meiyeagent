@@ -138,6 +138,51 @@ export const workflowTokenFrameSchema = z
   })
   .strict();
 
+/**
+ * 商家申报 — what a merchant is told when a run does not end the way it was
+ * meant to (D-096/D-116/D-122). Kept as a first-class envelope field rather
+ * than as free text inside the snapshot: the browser must be able to render a
+ * 申报卡 without reading Core's internal failure shape, and a category plus a
+ * closed set of recovery actions is what lets it offer a way forward instead of
+ * a dead end.
+ *
+ * `partial` is the 诚实交付 track: part of the deliverable landed, the rest did
+ * not, and the run still ends in `success` because the merchant has something
+ * usable in hand.
+ */
+export const merchantReportKindSchema = z.enum(['failure', 'partial']);
+
+export const merchantReportCategorySchema = z.enum([
+  'media_generation',
+  'exact_text',
+  'content_source',
+  'consistency',
+  'timeout',
+  'unknown',
+]);
+
+/** What the merchant can do next. The browser maps each to one entry. */
+export const merchantRecoveryActionSchema = z.enum([
+  'retry',
+  'adjust_intent',
+  'switch_form',
+  'review_partial',
+]);
+
+export const merchantReportSchema = z
+  .object({
+    kind: merchantReportKindSchema,
+    category: merchantReportCategorySchema,
+    /** 白话原因 — never an error code, never an internal identifier. */
+    message: z.string().trim().min(1).max(2_000),
+    /** 下一步动作, stated as a sentence the merchant can act on. */
+    nextStep: z.string().trim().min(1).max(2_000),
+    actions: z.array(merchantRecoveryActionSchema).min(1).max(4),
+    /** True when the reserved 额度 went back — stated, never implied. */
+    quotaRefunded: z.boolean(),
+  })
+  .strict();
+
 export const workflowStateEnvelopeSchema = z
   .object({
     workflowId: harnessIdSchema,
@@ -145,6 +190,7 @@ export const workflowStateEnvelopeSchema = z
     status: workflowStateSchema,
     occurredAt: harnessTimestampSchema,
     snapshot: z.record(z.string(), z.unknown()),
+    merchantReport: merchantReportSchema.optional(),
   })
   .strict();
 
@@ -205,6 +251,148 @@ export const questionCardSchema = z
       });
     }
   });
+
+export const questionCardUnattendedSchema = z.enum(['continue', 'hold']);
+
+/**
+ * Missing is the backwards-compatible fail-closed value. Producers should
+ * write the field explicitly; consumers must never interpret absence as
+ * permission to continue.
+ */
+export function questionCardUnattended<T extends object>(
+  question: T & { unattended?: QuestionCardUnattended }
+) {
+  return question.unattended ?? 'hold';
+}
+
+export const confirmationCardTimeoutSecondsSchema = z
+  .number()
+  .int()
+  .min(1)
+  .max(3_600);
+
+export const harnessDecisionResolutionSourceSchema = z.enum([
+  'decision',
+  'core_timeout',
+  'core_hold_expired',
+  'late_answer',
+]);
+
+/**
+ * Read model for the decision endpoint. The timeout is a Core projection of
+ * the same admin-config value used by the durable recv. A null timeout means
+ * Core did not arm automatic continuation; `hold` never carries a countdown.
+ */
+export const harnessDecisionSnapshotSchema = z
+  .object({
+    question: questionCardSchema.nullable(),
+    resolutionSource: harnessDecisionResolutionSourceSchema.nullable(),
+    status: z.enum(['absent', 'pending', 'resolved']),
+    timeoutSeconds: confirmationCardTimeoutSecondsSchema.nullable(),
+  })
+  .strict()
+  .superRefine((snapshot, context) => {
+    if (snapshot.status === 'absent') {
+      if (
+        snapshot.question !== null ||
+        snapshot.resolutionSource !== null ||
+        snapshot.timeoutSeconds !== null
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message: 'An absent decision snapshot cannot carry decision data.',
+        });
+      }
+      return;
+    }
+
+    if (snapshot.status === 'pending' && snapshot.resolutionSource !== null) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A pending decision cannot have a resolution source.',
+        path: ['resolutionSource'],
+      });
+    }
+    if (snapshot.status === 'resolved' && snapshot.resolutionSource === null) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A resolved decision requires a resolution source.',
+        path: ['resolutionSource'],
+      });
+    }
+
+    if (!snapshot.question) {
+      if (snapshot.status === 'pending') {
+        context.addIssue({
+          code: 'custom',
+          message: 'A pending decision requires its question.',
+          path: ['question'],
+        });
+      }
+      if (snapshot.timeoutSeconds !== null) {
+        context.addIssue({
+          code: 'custom',
+          message: 'A snapshot without a question cannot carry a timeout.',
+          path: ['timeoutSeconds'],
+        });
+      }
+      return;
+    }
+
+    const unattended = questionCardUnattended(snapshot.question);
+    if (unattended === 'hold' && snapshot.timeoutSeconds !== null) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A held question cannot carry a browser countdown.',
+        path: ['timeoutSeconds'],
+      });
+    }
+  });
+
+export const harnessDecisionSubmitResultSchema = z.union([
+  z
+    .object({
+      consumedByOther: z.literal(true),
+      eventId: z.null(),
+    })
+    .strict(),
+  z
+    .object({
+      eventId: harnessIdSchema,
+      replayed: z.boolean(),
+      successor: z
+        .object({
+          snapshotId: harnessIdSchema,
+          workflowId: harnessIdSchema,
+        })
+        .strict()
+        .optional(),
+    })
+    .strict(),
+]);
+
+/**
+ * 时间桥把手 (D-145). A run that is still on the server after the browser went
+ * away. The server is the only truth: the browser re-subscribes to the event
+ * log and rebuilds the transcript from the replay, so this list carries only
+ * what is needed to *re-open* the conversation — never a second copy of it.
+ */
+export const harnessActiveTaskSchema = z
+  .object({
+    taskId: harnessIdSchema,
+    workId: harnessIdSchema,
+    packageId: harnessIdSchema,
+    /** What the merchant typed to start the run — rebuilds the first turn. */
+    merchantText: z.string().trim().min(1).max(4_000),
+    submittedAt: harnessTimestampSchema,
+  })
+  .strict();
+
+export const harnessActiveTaskListSchema = z
+  .object({
+    tasks: z.array(harnessActiveTaskSchema).max(20),
+  })
+  .strict();
 
 export const contentPackageRevisionDeliverySchema = z
   .object({
@@ -294,9 +482,31 @@ export type WorkflowTokenEnvelope = z.infer<
   typeof workflowTokenEnvelopeSchema
 >;
 export type WorkflowTokenFrame = z.infer<typeof workflowTokenFrameSchema>;
+export type MerchantReportKind = z.infer<typeof merchantReportKindSchema>;
+export type MerchantReportCategory = z.infer<
+  typeof merchantReportCategorySchema
+>;
+export type MerchantRecoveryAction = z.infer<
+  typeof merchantRecoveryActionSchema
+>;
+export type MerchantReport = z.infer<typeof merchantReportSchema>;
+export type HarnessActiveTask = z.infer<typeof harnessActiveTaskSchema>;
+export type HarnessActiveTaskList = z.infer<typeof harnessActiveTaskListSchema>;
 export type WorkflowStateEnvelope = z.infer<typeof workflowStateEnvelopeSchema>;
 export type WorkflowStateFrame = z.infer<typeof workflowStateFrameSchema>;
 export type QuestionCard = z.infer<typeof questionCardSchema>;
+export type QuestionCardUnattended = z.infer<
+  typeof questionCardUnattendedSchema
+>;
+export type HarnessDecisionResolutionSource = z.infer<
+  typeof harnessDecisionResolutionSourceSchema
+>;
+export type HarnessDecisionSnapshot = z.infer<
+  typeof harnessDecisionSnapshotSchema
+>;
+export type HarnessDecisionSubmitResult = z.infer<
+  typeof harnessDecisionSubmitResultSchema
+>;
 export type ContentPackageRevisionDelivery = z.infer<
   typeof contentPackageRevisionDeliverySchema
 >;

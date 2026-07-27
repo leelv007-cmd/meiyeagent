@@ -62,19 +62,23 @@ test(
         true,
       );
 
-      await store.registerPending(workspaceId, {
-        questionId,
-        workflowId: taskId,
-        workflowRevision: 4,
-        question: '当前团购价是多少？',
-        options: [],
-        freeText: { enabled: true },
-        response: {
-          field: 'offer_price',
-          reason: '补充当前任务所需的权威事实',
+      await store.registerPending(
+        workspaceId,
+        {
+          questionId,
+          workflowId: taskId,
+          workflowRevision: 4,
+          question: '当前团购价是多少？',
+          options: [],
+          freeText: { enabled: true },
+          response: {
+            field: 'offer_price',
+            reason: '补充当前任务所需的权威事实',
+          },
+          scope: 'current_task',
         },
-        scope: 'current_task',
-      });
+        { timeoutSeconds: 17 },
+      );
       await store.registerPending(otherWorkspaceId, {
         questionId,
         workflowId: taskId,
@@ -91,6 +95,11 @@ test(
       assert.equal(
         (await store.readPending(workspaceId, taskId))?.questionId,
         questionId,
+      );
+      assert.equal(
+        (await store.readDecisionTarget(workspaceId, taskId))
+          ?.timeoutSeconds,
+        17,
       );
 
       const resumed: string[] = [];
@@ -218,8 +227,10 @@ test(
       );
       const failedItem = claimedByAuditId.get(ownAuditIds[0]!);
       const sentItem = claimedByAuditId.get(ownAuditIds[1]!);
+      const deadLetterItem = claimedByAuditId.get(ownAuditIds[2]!);
       assert.ok(failedItem);
       assert.ok(sentItem);
+      assert.ok(deadLetterItem);
       await store.markLangfuseSent(sentItem.auditId);
       await store.markLangfuseFailed(
         failedItem.auditId,
@@ -238,6 +249,30 @@ test(
         [retriedItem.auditId]
       );
       assert.equal(outbox.rows[0]?.status, 'sent');
+      await store.markLangfuseDeadLetter(
+        deadLetterItem.auditId,
+        'attempt limit reached',
+      );
+      const deadLetter = await pool.query<{
+        status: string;
+        dead_lettered_at: Date | null;
+      }>(
+        `select status, dead_lettered_at
+         from harness_runtime.langfuse_outbox
+         where audit_id=$1`,
+        [deadLetterItem.auditId],
+      );
+      assert.equal(deadLetter.rows[0]?.status, 'failed');
+      assert.ok(deadLetter.rows[0]?.dead_lettered_at);
+      const afterDeadLetter = await store.claimLangfuseBatch(
+        ownAuditIds.length,
+      );
+      assert.equal(
+        afterDeadLetter.some(
+          (item) => item.auditId === deadLetterItem.auditId,
+        ),
+        false,
+      );
       await store.recordTerminalFailure({
         workspaceId,
         workflowId: taskId,
@@ -659,6 +694,125 @@ test(
       await pool.end();
     }
   }
+);
+
+test(
+  'active tasks are the ones still worth returning to, not everything from the last day',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresHarnessStore(pool);
+    await store.applySchema();
+    const suffix = randomUUID();
+    const workspaceId = `active-tasks-${suffix}`;
+    const runningTaskId = `running-${suffix}`;
+    const deliveredTaskId = `delivered-${suffix}`;
+    const cancelledTaskId = `cancelled-${suffix}`;
+    const runtimeIdFor = (taskId: string) =>
+      harnessRuntimeId(workspaceId, taskId);
+    const decisions = new HarnessDecisionService(store, {
+      async resume() {},
+      async startSuccessor() {},
+    });
+    const seed = async (taskId: string, rawInput: string) => {
+      await pool.query(
+        `insert into harness_runtime.task_requests
+           (task_id, workflow_id, runtime_id, fingerprint, request)
+         values ($1,$2,$1,$3,$4::jsonb)`,
+        [
+          runtimeIdFor(taskId),
+          taskId,
+          `fingerprint-${taskId}`,
+          JSON.stringify({
+            workspaceId,
+            actorId: 'owner-1',
+            packageId: `package-${taskId}`,
+            rawInput,
+            executionSnapshot: { work: { id: `work-${taskId}` } },
+          }),
+        ],
+      );
+    };
+
+    try {
+      await seed(runningTaskId, '还在跑的这条');
+      await seed(deliveredTaskId, '已经交付的这条');
+      await seed(cancelledTaskId, '确认卡超时被取消的这条');
+
+      await pool.query(
+        `insert into harness_runtime.audit_events
+           (id, workflow_id, stage, event_type, payload)
+         values ($1,$2,'assembly_delivery','package_delivered','{}'::jsonb)`,
+        [`audit-delivered-${suffix}`, runtimeIdFor(deliveredTaskId)],
+      );
+
+      // The cancellation is written through the production seam, so the query
+      // is matched against what really lands rather than a shape invented here.
+      const questionId = `${cancelledTaskId}:offer-price`;
+      await store.registerPending(workspaceId, {
+        questionId,
+        workflowId: cancelledTaskId,
+        workflowRevision: 4,
+        question: '当前团购价是多少？',
+        options: [],
+        freeText: { enabled: true },
+        response: {
+          field: 'offer_price',
+          reason: '补充当前任务所需的权威事实',
+        },
+        unattended: 'hold',
+        scope: 'current_task',
+      });
+      await decisions.submitCoreHoldExpired(
+        workspaceId,
+        cancelledTaskId,
+        ignoredDecision(
+          questionId,
+          `${questionId}:r4:core_hold_expired`,
+          '超时未选择，本次任务已取消，额度已退回',
+        ),
+      );
+
+      // A cancelled run settles as a refund and returns normally, so it writes
+      // no failure event — without its own exclusion it would be dragged back
+      // into the composer on every mount for 24 hours.
+      assert.deepEqual(
+        (await store.listActiveTasks(workspaceId)).map(
+          ({ taskId, merchantText }) => ({ taskId, merchantText }),
+        ),
+        [{ taskId: runningTaskId, merchantText: '还在跑的这条' }],
+      );
+    } finally {
+      const runtimeIds = [
+        runtimeIdFor(runningTaskId),
+        runtimeIdFor(deliveredTaskId),
+        runtimeIdFor(cancelledTaskId),
+      ];
+      await pool.query(
+        `delete from harness_runtime.langfuse_outbox
+          where audit_id in (
+            select id from harness_runtime.audit_events
+             where workflow_id=any($1::text[]))`,
+        [runtimeIds],
+      );
+      await pool.query(
+        `delete from harness_runtime.audit_events where workflow_id=any($1::text[])`,
+        [runtimeIds],
+      );
+      for (const table of [
+        'decision_events',
+        'decision_traces',
+        'pending_questions',
+        'task_requests',
+      ]) {
+        await pool.query(
+          `delete from harness_runtime.${table} where task_id=any($1::text[])`,
+          [runtimeIds],
+        );
+      }
+      await pool.end();
+    }
+  },
 );
 
 function taskRequest(taskId: string) {

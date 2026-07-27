@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  HarnessMediaScopeError,
   HarnessSnapshotDecisionError,
   runHarnessWorkflow,
   type HarnessMediaSelectionResult,
@@ -11,6 +12,7 @@ import {
   type HarnessStagePorts,
   type HarnessWorkflowRuntime,
 } from './workflow-core.js';
+import { normalizeHarnessTerminalFailure } from './terminal-failure.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import { buildSemanticDecisionResumption } from './semantic-decision-resumption.js';
@@ -113,7 +115,7 @@ test('five semantic stages run in order with stable effect keys and a delivery f
   );
 });
 
-test('selected Skill refs extend only the stage-one effect unit and enter trace lineage without instruction text', async () => {
+test('selected Skill refs freeze and enter all five stage effects and traces without instruction text', async () => {
   const calls: string[] = [];
   const traces: Array<{ stage: string; payload: unknown }> = [];
   const runtime: HarnessWorkflowRuntime = {
@@ -131,13 +133,13 @@ test('selected Skill refs extend only the stage-one effect unit and enter trace 
     },
   };
   const stages = fixtureStages();
-  stages.resolveStageSkills = async () => ({
+  stages.resolveStageSkills = async (input) => ({
     instructions: [
       {
-        contentHash: 'hash-skill-one',
+        contentHash: `hash-${input.stage}`,
         executionMode: 'prompt_materialized',
         instruction: 'private instruction must not enter trace',
-        skillRevisionRef: 'skill.intent-one@2',
+        skillRevisionRef: `skill.${input.stage}@2`,
       },
     ],
     receipts: [
@@ -145,9 +147,9 @@ test('selected Skill refs extend only the stage-one effect unit and enter trace 
         childEffectIds: [],
         createdAt: '2026-07-26T00:00:00.000Z',
         inputFingerprint: 'fingerprint',
-        invocationId: 'skill-materialized:task-35:intent_naming:skill.intent-one%402',
+        invocationId: `skill-materialized:task-35:${input.stage}:skill.${input.stage}%402`,
         productUsageTaskId: 'task-35',
-        skillRevisionRef: 'skill.intent-one@2',
+        skillRevisionRef: `skill.${input.stage}@2`,
         status: 'settled',
         taskId: 'task-35',
         totalCostCents: 0,
@@ -166,37 +168,37 @@ test('selected Skill refs extend only the stage-one effect unit and enter trace 
   );
   assert.equal(
     calls[1],
-    'wf:task-35:s1:intent:skills=skill.intent-one%402:0',
-  );
-  assert.equal(calls[2], 'wf:task-35:s2:context:0');
-  const intentTrace = traces.find(
-    (trace) => trace.stage === 'intent_naming',
-  )?.payload;
-  assert.deepEqual(
-    intentTrace &&
-      {
-        skillRevisionRefs: (
-          intentTrace as { skillRevisionRefs?: string[] }
-        ).skillRevisionRefs,
-        skillContentHashes: (
-          intentTrace as { skillContentHashes?: string[] }
-        ).skillContentHashes,
-        skillReceiptIds: (
-          intentTrace as { skillReceiptIds?: string[] }
-        ).skillReceiptIds,
-      },
-    {
-      skillRevisionRefs: ['skill.intent-one@2'],
-      skillContentHashes: ['hash-skill-one'],
-      skillReceiptIds: [
-        'skill-materialized:task-35:intent_naming:skill.intent-one%402',
-      ],
-    },
+    'wf:task-35:s1:intent:skills=skill.intent_naming%402:0',
   );
   assert.equal(
-    JSON.stringify(intentTrace).includes('private instruction'),
-    false,
+    calls[2],
+    'wf:task-35:s2:context:skills=skill.context_injection%402:0',
   );
+  assert.equal(
+    calls[3],
+    'wf:task-35:s3:copy:skills=skill.brief_compilation%402:0',
+  );
+  assert.equal(
+    calls[4],
+    'wf:task-35:s4:copy:skills=skill.execution_selection%402:selection',
+  );
+  assert.equal(
+    calls[6],
+    'wf:task-35:s5:package:skills=skill.assembly_delivery%402:0',
+  );
+  for (const trace of traces) {
+    const payload = trace.payload as {
+      skillRevisionRefs?: string[];
+      skillContentHashes?: string[];
+      skillReceiptIds?: string[];
+    };
+    assert.deepEqual(payload.skillRevisionRefs, [`skill.${trace.stage}@2`]);
+    assert.deepEqual(payload.skillContentHashes, [`hash-${trace.stage}`]);
+    assert.deepEqual(payload.skillReceiptIds, [
+      `skill-materialized:task-35:${trace.stage}:skill.${trace.stage}%402`,
+    ]);
+    assert.equal(JSON.stringify(trace.payload).includes('private instruction'), false);
+  }
 });
 
 test('durable Skill resolution replays frozen refs after the active binding changes', async () => {
@@ -274,16 +276,29 @@ test('durable Skill resolution replays frozen refs after the active binding chan
   activeSkillRevision = 1;
   await runHarnessWorkflow('task-35', taskInput(), stages, runtime);
 
-  assert.equal(activeResolutionCalls, 1);
-  assert.equal(frozenMaterializationCalls, 2);
+  assert.equal(activeResolutionCalls, 5);
+  assert.equal(frozenMaterializationCalls, 10);
   assert.equal(providerEffects, 1);
-  assert.deepEqual(outputs.get('skill:resolve:intent'), {
-    skillRevisionRefs: ['skill.intent-one@2'],
-    skillContentHashes: ['hash-skill-2'],
-    skillReceiptIds: [
-      'skill-materialized:task-35:intent_naming:skill.intent-one@2',
+  const frozen = outputs.get('skill:resolve:intent') as {
+    skillRevisionRefs: string[];
+    stageSkillResolutions: Record<
+      string,
+      { skillRevisionRefs: string[] }
+    >;
+  };
+  assert.deepEqual(frozen.skillRevisionRefs, ['skill.intent-one@2']);
+  assert.deepEqual(
+    Object.values(frozen.stageSkillResolutions).map(
+      ({ skillRevisionRefs }) => skillRevisionRefs,
+    ),
+    [
+      ['skill.intent-one@2'],
+      ['skill.intent-one@2'],
+      ['skill.intent-one@2'],
+      ['skill.intent-one@2'],
+      ['skill.intent-one@2'],
     ],
-  });
+  );
   assert.equal(
     JSON.stringify(outputs.get('skill:resolve:intent')).includes(
       'private instruction',
@@ -543,7 +558,21 @@ test('image-text note refuses to replace a selected style after context recompil
         async recordTrace() {},
       },
     ),
-    /你刚选的图文方向已不在当前配置中，请重新选择后再继续/u,
+    // The merchant sentence has to be on `merchantMessage`, not in the Error
+    // message: `normalizeHarnessTerminalFailure` forwards only the former, so
+    // copy written into the message never reaches the 申报卡 (P0-2).
+    (error: unknown) => {
+      assert.ok(error instanceof HarnessMediaScopeError);
+      assert.match(
+        error.merchantMessage ?? '',
+        /你刚选的图文方向已不在当前配置中，请重新选择后再继续/u,
+      );
+      assert.match(
+        normalizeHarnessTerminalFailure(error).merchantMessage as string,
+        /你刚选的图文方向已不在当前配置中，请重新选择后再继续/u,
+      );
+      return true;
+    },
   );
 });
 
@@ -695,6 +724,14 @@ test('an unanswered industry gap without confirmed materials uses a neutral fall
     },
   });
   const messages: string[] = [];
+  let injectedDeclaration:
+    | Awaited<ReturnType<HarnessStagePorts['nameIntent']>>['declaration']
+    | undefined;
+  const injectContext = stages.injectContext;
+  stages.injectContext = async (input) => {
+    injectedDeclaration = input.declaration;
+    return injectContext(input);
+  };
 
   await runHarnessWorkflow('task-copy', snapshotTaskInput(), stages, {
     async runStep(_key, operation) {
@@ -717,6 +754,148 @@ test('an unanswered industry gap without confirmed materials uses a neutral fall
     messages[0],
     '这次先按通用方式继续生成，不需要补充行业信息。',
   );
+  assert.deepEqual(
+    {
+      route: injectedDeclaration?.route,
+      routingSource: injectedDeclaration?.routingSource,
+      usedAssetCategories: injectedDeclaration?.usedAssetCategories,
+    },
+    {
+      route: 'free',
+      routingSource: 'policy',
+      usedAssetCategories: [],
+    },
+  );
+});
+
+test('a Day-0 generic route does not reopen a blocking Recipe fact question', async () => {
+  const stages = fixtureIndustryGapStages();
+  const nameIntent = stages.nameIntent;
+  stages.nameIntent = async (input) => ({
+    ...(await nameIntent(input)),
+    gapGrounding: {
+      activeConfirmedFactCount: 0,
+      answerableConfirmedFactCount: 0,
+    },
+  });
+  let factAssessments = 0;
+  stages.assessFacts = async () => {
+    factAssessments += 1;
+    return {
+      status: 'partial',
+      action: 'ask_user',
+      factRefs: [],
+      missingFactTypes: ['other'],
+      question: {
+        questionId: 'task-copy:s2:missing-facts',
+        workflowId: 'task-copy',
+        workflowRevision: 1,
+        question: '请确认本次创作要用的门店名称。',
+        options: [],
+        freeText: { enabled: true },
+        response: {
+          field: 'store_facts',
+          reason: '补充当前任务所需的权威事实',
+        },
+        unattended: 'continue',
+        scope: 'current_task',
+      },
+      ledgerIntake: {
+        factTypes: ['other'],
+        writePath: 'asset_intake.confirm_fact',
+      },
+    };
+  };
+  let allowedFactRefs: readonly string[] | undefined;
+  const compileBrief = stages.compileBrief;
+  stages.compileBrief = async (input) => {
+    allowedFactRefs = input.allowedFactRefs;
+    return compileBrief(input);
+  };
+
+  await runHarnessWorkflow('task-copy', snapshotTaskInput(), stages, {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async hasRegisteredPendingQuestion() {
+      return false;
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision() {
+      throw new Error('Day-0 generic creation must not wait for store facts.');
+    },
+    async recordTrace() {},
+  });
+
+  assert.equal(factAssessments, 0);
+  assert.deepEqual(allowedFactRefs, []);
+});
+
+test('a skippable critical fact question continues with only authorized matched facts', async () => {
+  const stages = fixtureStages();
+  let allowedFactRefs: readonly string[] | undefined;
+  stages.assessFacts = async () => ({
+    status: 'partial',
+    action: 'ask_user',
+    factRefs: ['store_fact:service-1:1'],
+    missingFactTypes: ['price'],
+    question: {
+      questionId: 'task-copy:s2:missing-facts',
+      workflowId: 'task-copy',
+      workflowRevision: 1,
+      question: '请确认本次创作要用的价格。',
+      options: [],
+      freeText: { enabled: true },
+      response: {
+        field: 'store_facts',
+        reason: '补充当前任务所需的权威事实',
+      },
+      unattended: 'continue',
+      scope: 'current_task',
+    },
+    ledgerIntake: {
+      factTypes: ['price'],
+      writePath: 'asset_intake.confirm_fact',
+    },
+  });
+  const compileBrief = stages.compileBrief;
+  stages.compileBrief = async (input) => {
+    allowedFactRefs = input.allowedFactRefs;
+    return compileBrief(input);
+  };
+  const messages: string[] = [];
+
+  await runHarnessWorkflow('task-copy', snapshotTaskInput(), stages, {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async progress(event) {
+      messages.push(event.message);
+    },
+    async token() {},
+    async awaitDecision(question) {
+      assert.equal(question.unattended, 'continue');
+      return {
+        idempotencyKey: 'skip-missing-price',
+        questionId: question.questionId,
+        workflowRevision: question.workflowRevision,
+        patch: {
+          field: question.response.field,
+          value: '本次先不补充',
+          reason: question.response.reason,
+        },
+        decision: {
+          state: 'ignored',
+          value: '本次先不补充',
+        },
+      };
+    },
+    async recordTrace() {},
+  });
+
+  assert.deepEqual(allowedFactRefs, ['store_fact:service-1:1']);
+  assert.ok(messages.includes('请确认本次创作要用的价格。'));
 });
 
 test('an existing pending industry question replays the original decision sequence', async () => {

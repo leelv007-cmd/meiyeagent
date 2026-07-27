@@ -13,6 +13,7 @@ import {
   readRequestText,
   workspaceCoreFetchInit,
   workspaceCoreUpstreamPath,
+  type WorkspaceComposerDestinationResource,
   type WorkspaceComposerSubmissionResource,
   type WorkspaceHarnessTaskCollectionResource,
   type WorkspaceHarnessDecisionResource,
@@ -115,8 +116,8 @@ export async function forwardWorkspaceCoreRequest(
     | 'p1/commands'
     | 'p1/query'
     | 'p1/assistant/stream'
-    | 'p1/copy/stream'
     | 'p1/harness/recommendation'
+    | WorkspaceComposerDestinationResource
     | WorkspaceComposerSubmissionResource
     | WorkspacePendingActionsResource
     | WorkspaceHarnessTaskCollectionResource
@@ -197,9 +198,7 @@ export async function forwardWorkspaceCoreRequest(
       workspaceCoreFetchInit(request, headers, body),
       {
         stream:
-          resource === 'p1/assistant/stream' ||
-          resource === 'p1/copy/stream' ||
-          resource.endsWith('/events'),
+          resource === 'p1/assistant/stream' || resource.endsWith('/events'),
       }
     );
   } catch {

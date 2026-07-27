@@ -44,6 +44,10 @@ import {
   type ProductCommand,
   type ProductContext,
   type ProductState,
+  type StoreAccount,
+  type StoreProfile,
+  type StoreProfilePatch,
+  type StoreProject,
   type Storyboard,
   type ToolCall,
   type UsageEvent,
@@ -85,10 +89,21 @@ function canonicalValue(value: unknown): unknown {
   return value;
 }
 
-function commandPayloadHash(command: ProductCommand) {
+function payloadHash(value: unknown) {
   return createHash('sha256')
-    .update(JSON.stringify(canonicalValue(command)))
+    .update(JSON.stringify(canonicalValue(value)))
     .digest('hex');
+}
+
+function commandPayloadHash(command: ProductCommand) {
+  return payloadHash(command);
+}
+
+function storeProfilePatchPayloadHash(patch: StoreProfilePatch) {
+  return payloadHash({
+    action: 'merge_store_profile',
+    patch,
+  });
 }
 
 function normalizedEditDistance(left: string, right: string) {
@@ -185,6 +200,14 @@ function normalizeState(
   return {
     ...defaults,
     ...stored,
+    ...(state.store
+      ? {
+          store: {
+            ...state.store,
+            revision: state.store.revision ?? 1,
+          },
+        }
+      : {}),
     exampleStores: hydrateExampleStores(state),
     enforcement: { ...defaults.enforcement, ...state.enforcement },
     operationalEvidence: {
@@ -219,6 +242,111 @@ function normalizeState(
         ...state.entitlement?.storageMb,
       },
     },
+  };
+}
+
+function storeProfileScalars(patch: StoreProfilePatch) {
+  const scalars: Partial<
+    Pick<
+      StoreProfile,
+      | 'name'
+      | 'city'
+      | 'district'
+      | 'address'
+      | 'booking'
+      | 'brandVoice'
+      | 'prohibitions'
+      | 'regulated'
+    >
+  > = {};
+  for (const key of [
+    'name',
+    'city',
+    'district',
+    'address',
+    'booking',
+    'brandVoice',
+    'prohibitions',
+    'regulated',
+  ] as const) {
+    const value = patch[key];
+    if (value !== undefined) {
+      (scalars as Record<string, unknown>)[key] = structuredClone(value);
+    }
+  }
+  return scalars;
+}
+
+function mergeStoreAccounts(
+  current: readonly StoreAccount[],
+  patch: StoreProfilePatch
+) {
+  const accounts = new Map(
+    current.map((account) => [
+      account.platform,
+      structuredClone(account),
+    ])
+  );
+  for (const platform of patch.accounts?.clear ?? []) {
+    accounts.delete(platform);
+  }
+  for (const account of patch.accounts?.upsert ?? []) {
+    accounts.set(account.platform, structuredClone(account));
+  }
+  return [...accounts.values()];
+}
+
+function mergeStoreProjects(
+  current: readonly StoreProject[],
+  patch: StoreProfilePatch
+) {
+  const projects = new Map(
+    current.map((project) => [
+      project.id,
+      structuredClone(project),
+    ])
+  );
+  for (const projectId of patch.projects?.clear ?? []) {
+    projects.delete(projectId);
+  }
+  for (const project of patch.projects?.upsert ?? []) {
+    projects.set(project.id, structuredClone(project));
+  }
+  return [...projects.values()];
+}
+
+function createStoreProfileFromPatch(patch: StoreProfilePatch): StoreProfile {
+  const required = [
+    'name',
+    'city',
+    'district',
+    'address',
+    'booking',
+    'brandVoice',
+    'regulated',
+  ] as const;
+  const missing = required.filter((key) => patch[key] === undefined);
+  if (missing.length > 0) {
+    throw new DomainError(
+      'STORE_PROFILE_INCOMPLETE',
+      `A first store profile patch is missing: ${missing.join(', ')}.`,
+      409,
+      { missing }
+    );
+  }
+  return {
+    name: patch.name!,
+    city: patch.city!,
+    district: patch.district!,
+    address: patch.address!,
+    booking: patch.booking!,
+    brandVoice: patch.brandVoice!,
+    prohibitions: structuredClone(patch.prohibitions ?? []),
+    accounts: mergeStoreAccounts([], patch),
+    projects: mergeStoreProjects([], patch),
+    regulated: patch.regulated!,
+    confirmedAt: now(),
+    revision: 1,
   };
 }
 
@@ -651,7 +779,27 @@ export interface ProductPackageRightsPropagationPort {
   ): Promise<{ revokedPackageIds: string[] }>;
 }
 
+export interface CanonicalLeadContentPackagePort {
+  get(input: {
+    packageId: string;
+    workspaceId: string;
+  }): Promise<{
+    currentVersionId?: string;
+    deliveryEvents?: Array<
+      | { type: 'automatic_publish_result'; status: string }
+      | { type: 'legacy_handoff_event'; operation: string }
+      | { type: 'manual_publish_result'; status: string }
+      | { type: 'assisted_handoff_prepared' }
+    >;
+    id: string;
+    revision: number;
+    source: { workId?: string };
+    status: string;
+  } | null>;
+}
+
 export interface ProductServiceOptions {
+  canonicalLeadContentPackages?: CanonicalLeadContentPackagePort;
   copyExecutionClock?: () => Date;
   copyExecutionLeaseMs?: number;
   copyUsageAuthority?: 'legacy_state' | 'foundation_ledger';
@@ -695,6 +843,16 @@ export interface PreparedProductVideoRender {
 
 export interface ProductApplicationService {
   bootstrap(context: ProductContext): Promise<ProductState>;
+  completedStoreProfileMergeRevision(
+    context: ProductContext,
+    patch: StoreProfilePatch,
+    idempotencyKey: string
+  ): Promise<number | null>;
+  mergeStoreProfile(
+    context: ProductContext,
+    patch: StoreProfilePatch,
+    idempotencyKey: string
+  ): Promise<StoreProfile>;
   execute(
     context: ProductContext,
     command: ProductCommand,
@@ -728,6 +886,172 @@ export class ProductService implements ProductApplicationService {
     );
     await this.options.searchProjection?.sync(state);
     return state;
+  }
+
+  async completedStoreProfileMergeRevision(
+    context: ProductContext,
+    patch: StoreProfilePatch,
+    idempotencyKey: string
+  ) {
+    await this.authorize(context);
+    const existing = await this.repository.loadIdempotent(
+      context.workspaceId,
+      idempotencyKey,
+      storeProfilePatchPayloadHash(patch)
+    );
+    if (!existing) return null;
+    if (!existing.matches) {
+      throw new DomainError(
+        'IDEMPOTENCY_CONFLICT',
+        'Idempotency key was reused with another store profile patch.',
+        409
+      );
+    }
+    return existing.outcome.kind === 'success'
+      ? (existing.outcome.result.output.storeRevision ?? null)
+      : null;
+  }
+
+  async mergeStoreProfile(
+    context: ProductContext,
+    patch: StoreProfilePatch,
+    idempotencyKey: string
+  ) {
+    await this.authorize(context);
+    if (!idempotencyKey) {
+      throw new DomainError(
+        'IDEMPOTENCY_KEY_REQUIRED',
+        'Idempotency key is required.'
+      );
+    }
+    const fingerprint = storeProfilePatchPayloadHash(patch);
+    const result = await this.repository.withWorkspaceLock(
+      context.workspaceId,
+      async (repository) => {
+        const existing = await repository.loadIdempotent(
+          context.workspaceId,
+          idempotencyKey,
+          fingerprint
+        );
+        if (existing && !existing.matches) {
+          throw new DomainError(
+            'IDEMPOTENCY_CONFLICT',
+            'Idempotency key was reused with another store profile patch.',
+            409
+          );
+        }
+        if (existing) {
+          if (existing.outcome.kind === 'error') {
+            throw new DomainError(
+              existing.outcome.error.code,
+              existing.outcome.error.message,
+              existing.outcome.error.status,
+              existing.outcome.error.details
+            );
+          }
+          if (existing.outcome.kind !== 'success') {
+            throw new DomainError(
+              'COMMAND_IN_PROGRESS',
+              'The store profile patch is still running.',
+              409
+            );
+          }
+          const replay = await repository.load(context.workspaceId);
+          if (!replay?.store) {
+            throw new DomainError(
+              'STORE_PROFILE_MISSING',
+              'The completed store profile projection is missing.',
+              500
+            );
+          }
+          return {
+            ...normalizeState(replay, this.planConfig).store!,
+            revision:
+              existing.outcome.result.output.storeRevision ??
+              normalizeState(replay, this.planConfig).store!.revision,
+          };
+        }
+
+        const futureWriteOwner = await repository.getFutureWriteOwner(
+          context.workspaceId
+        );
+        if (futureWriteOwner !== this.acceptedWriteOwner) {
+          throw new DomainError(
+            this.acceptedWriteOwner === 'legacy'
+              ? 'LEGACY_WRITE_DISABLED'
+              : 'P1_WRITE_DISABLED',
+            'Store profile writes moved to another product owner.',
+            409
+          );
+        }
+        const stored = await repository.load(context.workspaceId);
+        const state = stored
+          ? normalizeState(stored, this.planConfig)
+          : initialState(context.workspaceId, this.planConfig);
+        const currentRevision = state.store?.revision ?? 0;
+        if (currentRevision !== patch.expectedRevision) {
+          throw new DomainError(
+            'STORE_PROFILE_REVISION_CONFLICT',
+            `Store profile expected revision ${patch.expectedRevision}, current revision is ${currentRevision}.`,
+            409,
+            {
+              currentRevision,
+              expectedRevision: patch.expectedRevision,
+            }
+          );
+        }
+        if (
+          patch.projects?.upsert?.some((project) => !project.confirmed)
+        ) {
+          throw new DomainError(
+            'UNCONFIRMED_FACT',
+            'Prices and projects must be confirmed before use.'
+          );
+        }
+        state.store = state.store
+          ? {
+              ...state.store,
+              ...storeProfileScalars(patch),
+              accounts: mergeStoreAccounts(state.store.accounts, patch),
+              projects: mergeStoreProjects(state.store.projects, patch),
+              confirmedAt: now(),
+              revision: currentRevision + 1,
+            }
+          : createStoreProfileFromPatch(patch);
+        audit(
+          state,
+          context,
+          'store.profile_merged',
+          'store',
+          context.workspaceId,
+          {
+            fromRevision: currentRevision,
+            toRevision: state.store.revision,
+          }
+        );
+        state.updatedAt = nextUpdatedAt(state.updatedAt);
+        const commandResult: CommandResult = {
+          state: withoutPlatformSamples(state),
+          output: { storeRevision: state.store.revision },
+        };
+        await repository.save(state, context);
+        await repository.saveIdempotent(
+          context.workspaceId,
+          idempotencyKey,
+          fingerprint,
+          { kind: 'success', result: commandResult }
+        );
+        return state.store;
+      }
+    );
+    await this.options.searchProjection?.sync(
+      normalizeState(
+        (await this.repository.load(context.workspaceId)) ??
+          initialState(context.workspaceId, this.planConfig),
+        this.planConfig
+      )
+    );
+    return structuredClone(result);
   }
 
   async prepareVideoRender(context: ProductContext, jobId: string) {
@@ -1950,7 +2274,11 @@ export class ProductService implements ProductApplicationService {
             'Prices and projects must be confirmed before use.'
           );
         }
-        state.store = { ...command.store, confirmedAt: now() };
+        state.store = {
+          ...command.store,
+          confirmedAt: now(),
+          revision: (state.store?.revision ?? 0) + 1,
+        };
         audit(state, context, 'store.confirmed', 'store', context.workspaceId);
         return {};
       }
@@ -3317,6 +3645,83 @@ export class ProductService implements ProductApplicationService {
         return { packageId: handoff.id, contentId: handoff.contentId };
       }
       case 'create_lead': {
+        if (command.packageId) {
+          const reader = this.options.canonicalLeadContentPackages;
+          if (!reader) {
+            throw new DomainError(
+              'CANONICAL_LEAD_SOURCE_UNAVAILABLE',
+              'The canonical content package source is unavailable.',
+              503
+            );
+          }
+          const contentPackage = await reader.get({
+            packageId: command.packageId,
+            workspaceId: context.workspaceId,
+          });
+          if (!contentPackage) {
+            throw new DomainError(
+              'NOT_FOUND',
+              'The ContentPackage was not found.',
+              404
+            );
+          }
+          const published = contentPackage.deliveryEvents?.some(
+            (event) =>
+              (event.type === 'automatic_publish_result' &&
+                event.status === 'published') ||
+              (event.type === 'manual_publish_result' &&
+                event.status === 'published') ||
+              (event.type === 'legacy_handoff_event' &&
+                event.operation === 'published')
+          );
+          if (
+            contentPackage.status !== 'accepted' ||
+            !contentPackage.currentVersionId ||
+            !published
+          ) {
+            throw new DomainError(
+              'LEAD_REQUIRES_PUBLISHED_CONTENT',
+              'A lead can be associated only with a published ContentPackage revision.',
+              409
+            );
+          }
+          const timestamp = now();
+          const lead = {
+            ...command.lead,
+            canonicalContentPackage: {
+              packageId: contentPackage.id,
+              revision: contentPackage.revision,
+              versionId: contentPackage.currentVersionId,
+            },
+            contentId: contentPackage.id,
+            contentVersionId: contentPackage.currentVersionId,
+            id: randomUUID(),
+            projectId:
+              command.lead.projectId ??
+              contentPackage.source.workId ??
+              contentPackage.id,
+            status: 'new' as const,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            retentionExpiresAt: new Date(
+              Date.now() + 90 * 24 * 60 * 60_000
+            ).toISOString(),
+          };
+          state.leads.push(lead);
+          state.operationalEvidence.leadAssociationCount += 1;
+          audit(state, context, 'lead.created', 'lead', lead.id, {
+            association: 'manual_non_causal',
+            contentPackageId: contentPackage.id,
+            contentPackageRevision: contentPackage.revision,
+          });
+          return { leadId: lead.id };
+        }
+        if (!command.contentId || !command.lead.projectId) {
+          throw new DomainError(
+            'INVALID_COMMAND',
+            'Legacy contentId and projectId are required together.'
+          );
+        }
         const content = findContent(state, command.contentId);
         const publishedHandoff = state.handoffPackages
           .filter(
@@ -3337,6 +3742,7 @@ export class ProductService implements ProductApplicationService {
           id: randomUUID(),
           contentId: command.contentId,
           contentVersionId: publishedHandoff.contentVersionId,
+          projectId: command.lead.projectId,
           status: 'new' as const,
           createdAt: timestamp,
           updatedAt: timestamp,

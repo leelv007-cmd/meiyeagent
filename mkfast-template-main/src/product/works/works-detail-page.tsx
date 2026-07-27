@@ -24,20 +24,22 @@ import { IconExternalLink } from '@tabler/icons-react';
 import type { PublicContentPackage } from '@meiye/contracts';
 
 import { DashboardHeader } from '@/components/layout/dashboard-header';
+import { getLocale } from '@/lib/locale';
 import { getPathWithLocale } from '@/lib/urls';
 import { commandP1, p1ErrorCode } from '@/p1/client';
 import { ContentPackageExportCarrier } from '@/p1/content-package-export-carrier';
 
 import { WorksLightEditPage } from './works-light-edit-page';
 import { WorksMediaGallery } from './works-media-gallery';
-import { useWorksProjection, WORKS_TITLE } from './works-queries';
+import { translateWorksSystemText, worksCopy } from './works-copy';
+import { useWorksProjection } from './works-queries';
 import {
-  WORK_OUTPUT_SHAPE_LABELS,
   workAdoptHref,
   workCopyText,
   workDetail,
   workExportIdempotencyKey,
   workHandoffHref,
+  workTextExport,
   type WorkPackageDetail,
 } from './works-projection';
 
@@ -54,7 +56,7 @@ function WorksFrame({
     <>
       <DashboardHeader
         breadcrumbs={[
-          { label: WORKS_TITLE, href: '/dashboard/works' },
+          { label: worksCopy(getLocale()).title, href: '/dashboard/works' },
           { label: title, isCurrentPage: true },
         ]}
       />
@@ -101,11 +103,14 @@ function WorkPackageBody({
   contentPackage: PublicContentPackage;
   detail: WorkPackageDetail;
 }) {
+  const locale = getLocale();
+  const copyText = worksCopy(locale);
   const [copied, setCopied] = useState(false);
   const [failure, setFailure] = useState<string>();
   const [exported, setExported] = useState<ExportOutcome>();
   const adoptHref = workAdoptHref(detail);
   const handoffHref = workHandoffHref(detail);
+  const textExport = workTextExport(detail);
   const lightComposerDelivery = useMemo(() => {
     const version = contentPackage.versions.find(
       (candidate) => candidate.id === contentPackage.currentVersionId
@@ -141,8 +146,8 @@ function WorkPackageBody({
     onError: (error) =>
       setFailure(
         p1ErrorCode(error) === 'TASK_BLOCKING_NODE_CONFLICT'
-          ? '有一笔待处理的确认，处理完成后再导出。'
-          : '这次导出没成功，稍后再试一次。'
+          ? copyText.detail.pendingConfirmation
+          : copyText.detail.exportFailed
       ),
     onSuccess: (result) => {
       setFailure(undefined);
@@ -156,8 +161,24 @@ function WorkPackageBody({
       setCopied(true);
       setFailure(undefined);
     } catch {
-      setFailure('这台设备不让直接复制，长按选中文字也可以。');
+      setFailure(
+        locale === 'en'
+          ? 'Copy is unavailable on this device. Select the text manually.'
+          : '这台设备不让直接复制，长按选中文字也可以。'
+      );
     }
+  };
+
+  const downloadText = () => {
+    if (!textExport) return;
+    const url = URL.createObjectURL(
+      new Blob([textExport.text], { type: textExport.contentType })
+    );
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = textExport.fileName;
+    anchor.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -168,7 +189,7 @@ function WorkPackageBody({
             className="meiye-glass-piece rounded-full px-2.5 py-0.5 text-xs"
             data-testid="works-detail-shape"
           >
-            {WORK_OUTPUT_SHAPE_LABELS[detail.outputShape]}
+            {copyText.shapes[detail.outputShape]}
           </span>
           {/*
             These two float on the ambient band, so they take the shell's
@@ -178,7 +199,7 @@ function WorkPackageBody({
             not that.
           */}
           <span className="meiye-type-aux" data-testid="works-detail-status">
-            {detail.statusLabel}
+            {translateWorksSystemText(locale, detail.statusLabel)}
           </span>
           {detail.confirmedRevision ? (
             <span
@@ -188,11 +209,16 @@ function WorkPackageBody({
               data-testid="works-detail-revision"
               data-version-id={detail.confirmedRevision.versionId}
             >
-              第 {detail.confirmedRevision.revision} 版
+              {copyText.revision(detail.confirmedRevision.revision)}
             </span>
           ) : null}
         </div>
-        <h1 className="meiye-type-title mt-2">{detail.title}</h1>
+        <h1
+          className="meiye-type-title mt-2"
+          data-i18n-pass-through="content-title"
+        >
+          {detail.title}
+        </h1>
       </div>
 
       {detail.media.length > 0 ? (
@@ -203,12 +229,16 @@ function WorkPackageBody({
         <section className="meiye-porcelain rounded-2xl p-4">
           <p
             className="meiye-type-body whitespace-pre-wrap"
+            data-i18n-pass-through="content-body"
             data-testid="works-detail-body"
           >
             {detail.body}
           </p>
           {detail.topics.length > 0 ? (
-            <p className="text-muted-foreground mt-3 text-xs">
+            <p
+              className="text-muted-foreground mt-3 text-xs"
+              data-i18n-pass-through="content-topics"
+            >
               {detail.topics.map((topic) => `#${topic}`).join(' ')}
             </p>
           ) : null}
@@ -219,17 +249,19 @@ function WorkPackageBody({
         className="meiye-porcelain rounded-2xl p-4"
         data-testid="works-detail-guidance"
       >
-        <h2 className="meiye-type-body font-semibold">怎么用这份内容</h2>
+        <h2 className="meiye-type-body font-semibold">{copyText.detail.use}</h2>
         <ul className="mt-2 flex flex-col gap-1">
           {detail.guidance.map((line) => (
             <li className="text-muted-foreground text-sm" key={line}>
-              {line}
+              {translateWorksSystemText(locale, line)}
             </li>
           ))}
         </ul>
         {detail.evidence.length > 0 ? (
           <>
-            <h2 className="meiye-type-body mt-4 font-semibold">生成依据</h2>
+            <h2 className="meiye-type-body mt-4 font-semibold">
+              {copyText.detail.evidence}
+            </h2>
             <ul
               className="mt-2 flex flex-wrap gap-2"
               data-testid="works-detail-evidence"
@@ -239,7 +271,7 @@ function WorkPackageBody({
                   className="meiye-glass-piece rounded-full px-3 py-1 text-xs"
                   key={chip.id}
                 >
-                  {chip.label}
+                  {translateWorksSystemText(locale, chip.label)}
                 </li>
               ))}
             </ul>
@@ -258,7 +290,9 @@ function WorkPackageBody({
               onClick={() => exportPackage.mutate()}
               testId="works-action-export"
             >
-              {exportPackage.isPending ? '正在导出…' : '导出使用'}
+              {exportPackage.isPending
+                ? copyText.detail.exporting
+                : copyText.detail.export}
             </ActionButton>
           ) : detail.exportability === 'needs_adoption' && adoptHref ? (
             // 导出 on an un-adopted 成品 is a server error, not a file. Point at
@@ -270,12 +304,20 @@ function WorkPackageBody({
               data-testid="works-action-adopt"
               href={getPathWithLocale(adoptHref)}
             >
-              先采用这一版
+              {copyText.detail.adopt}
               <IconExternalLink aria-hidden="true" className="size-3.5" />
             </a>
           ) : null}
+          {detail.exportability === 'text_only' && textExport ? (
+            <ActionButton
+              onClick={downloadText}
+              testId="works-action-download-text"
+            >
+              {copyText.detail.download}
+            </ActionButton>
+          ) : null}
           <ActionButton onClick={copy} testId="works-action-copy">
-            {copied ? '已复制' : '复制文字'}
+            {copied ? copyText.detail.copied : copyText.detail.copy}
           </ActionButton>
           {handoffHref ? (
             <a
@@ -283,7 +325,7 @@ function WorkPackageBody({
               data-testid="works-action-handoff"
               href={getPathWithLocale(handoffHref)}
             >
-              协办交接
+              {copyText.detail.handoff}
               <IconExternalLink aria-hidden="true" className="size-3.5" />
             </a>
           ) : null}
@@ -300,7 +342,7 @@ function WorkPackageBody({
             data-testid="works-export-download"
             href={exported.downloadUrl}
           >
-            下载这一版的交付包
+            {copyText.detail.downloadPackage}
           </a>
         ) : null}
         {failure ? (
@@ -322,8 +364,9 @@ function WorksDetailNotice({
   testId: string;
   title: string;
 }) {
+  const copy = worksCopy(getLocale());
   return (
-    <WorksFrame title={WORKS_TITLE}>
+    <WorksFrame title={copy.title}>
       <div
         className="meiye-porcelain rounded-2xl p-6"
         data-testid={testId}
@@ -335,7 +378,7 @@ function WorksDetailNotice({
           className="mt-4 inline-block text-sm underline underline-offset-4"
           to="/dashboard/works"
         >
-          回到内容列表
+          {copy.detail.back}
         </Link>
       </div>
     </WorksFrame>
@@ -343,6 +386,7 @@ function WorksDetailNotice({
 }
 
 export function WorksDetailPage({ workId }: { workId: string }) {
+  const copy = worksCopy(getLocale());
   const { failed, loading, source } = useWorksProjection();
   const detail = useMemo(
     () => workDetail({ ...source, id: workId }),
@@ -355,12 +399,12 @@ export function WorksDetailPage({ workId }: { workId: string }) {
 
   if (loading) {
     return (
-      <WorksFrame title={WORKS_TITLE}>
+      <WorksFrame title={copy.title}>
         <p
           className="text-muted-foreground text-sm"
           data-testid="works-detail-loading"
         >
-          正在打开这份内容…
+          {copy.detail.loading}
         </p>
       </WorksFrame>
     );
@@ -371,9 +415,9 @@ export function WorksDetailPage({ workId }: { workId: string }) {
     // would tell a merchant their 作品 is gone when the read simply failed.
     return (
       <WorksDetailNotice
-        description="刷新一下再打开。"
+        description={copy.detail.unavailableDescription}
         testId="works-detail-unavailable"
-        title="这份内容暂时没能取回来"
+        title={copy.detail.unavailableTitle}
       />
     );
   }
@@ -385,9 +429,9 @@ export function WorksDetailPage({ workId }: { workId: string }) {
   if (detail.kind !== 'package' || !contentPackage) {
     return (
       <WorksDetailNotice
-        description="它可能还没生成完，或者已经被换成了新的一版。"
+        description={copy.detail.missingDescription}
         testId="works-detail-missing"
-        title="没找到这份内容"
+        title={copy.detail.missingTitle}
       />
     );
   }

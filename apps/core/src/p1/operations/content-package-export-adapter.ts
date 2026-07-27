@@ -12,6 +12,7 @@ import {
 } from '../model-supply/owned-asset-registration-lifecycle.js';
 import type { ReferenceAssetResolverPort } from '../model-supply/reference-asset-resolver.js';
 import {
+  buildCopyDeliveryPackage,
   buildImageTextDeliveryPackage,
   buildVideoFullDeliveryPackage,
 } from '../result-delivery/delivery-package.js';
@@ -271,7 +272,7 @@ export class ContentPackageZipExportAdapter
       });
     }
 
-    const built = buildImageTextDeliveryPackage({
+    const packageInput = {
       caption: {
         body: input.version.body,
         ...(input.version.conversionHook
@@ -290,7 +291,11 @@ export class ContentPackageZipExportAdapter
       rightsState: this.options.rightsState,
       storeName: this.options.storeName ?? '门店',
       variantVersionId: input.version.id,
-    });
+    };
+    const built =
+      images.length === 0
+        ? buildCopyDeliveryPackage(packageInput)
+        : buildImageTextDeliveryPackage({ ...packageInput, images });
 
     const artifact = await this.storage.persistGeneratedAsset({
       bytes: built.zipBytes,

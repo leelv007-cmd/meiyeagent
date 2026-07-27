@@ -1,9 +1,11 @@
 /*
  * HeroUI Pro V3 (Glass) stylesheet.
  *
- * Loaded as a route-level <link> by the dev-only spike routes, never from
- * __root.tsx: the app's own pages keep shipping src/styles.css untouched, and
- * the initial CSS bundle the bundle-budget gate measures does not move.
+ * Loaded as a route-level <link>, never from __root.tsx: pages that render
+ * HeroUI Pro opt in one route at a time (today /admin plus the nine
+ * /dashboard/* routes, and the dev-only /heroui-spike/* scaffolding), the rest
+ * of the app keeps shipping src/styles.css untouched, and the initial CSS
+ * bundle the bundle-budget gate measures does not move.
  *
  * Import order matters — @heroui/styles brings the v3 base + default theme,
  * the vendored Glass sheet re-materialises it as 磨砂玻璃 (D-130 拍板 Glass;
@@ -37,38 +39,108 @@
 
 @import "./vendor/css/index.css";
 @import "./theme/design-token-bridge.css";
+/*
+ * DESIGN.md §4「玻璃有边法则」的三档玻璃与白瓷 — 声明在 src/meiye-materials.css，
+ * 全站唯一一份，src/styles.css 把同一个文件挂进 layer(components) 供非 HeroUI 页用。
+ * 这里必须**无 layer**：vendored 组件表（上面那行）也是无 layer 的，`.widget` /
+ * `.item-card--default` 会把自己的 --surface 底盖到带 .meiye-porcelain 的件上，只有
+ * 同样无 layer 才压得回去。收敛前这份拷贝漏了白瓷描边，十条生产路由上的边就这么没的。
+ */
+@import "../../meiye-materials.css";
 
 @reference "tailwindcss";
 @reference "tw-animate-css";
 
 /*
- * DESIGN.md §4「玻璃有边法则」— 白 alpha 底 + blur + 1px 白描边, three tiers.
- * Anything floating over the ambient layer uses these; 实体内容区 uses 白瓷.
+ * DESIGN.md §4 三档模糊：壳级 64px / 件级 24px / 痕级 20px。桥把 --glass-blur 定在件级
+ * （Glass 主题拿它糊 chips、badge、segment 一类件），侧栏是壳，得自己抬到壳级——
+ * 换壳前它跟着件级走 24px，比 DESIGN.md §5「侧栏壳」矮了两档。
  */
-.meiye-glass-shell {
-  background: var(--meiye-glass-80);
-  -webkit-backdrop-filter: blur(64px);
-  backdrop-filter: blur(64px);
-  border: 1px solid var(--meiye-glass-edge);
+.sidebar--floating,
+.sidebar__provider:has(.sidebar--inset) .sidebar__main {
+  --glass-blur: var(--meiye-blur-shell);
 }
 
-.meiye-glass-piece {
-  background: var(--meiye-glass-50);
-  -webkit-backdrop-filter: blur(24px);
-  backdrop-filter: blur(24px);
-  border: 1px solid var(--meiye-glass-edge);
+/*
+ * HeroUI EmptyState uses --muted as a foreground token. The product shell uses
+ * that same name for a muted background, so adapt it once at the shared
+ * component boundary instead of relying on per-page inline overrides.
+ */
+.meiye-product-shell [data-slot="empty-state"] {
+  --muted: var(--ink-60);
 }
 
-.meiye-glass-trace {
-  background: var(--meiye-glass-35);
-  -webkit-backdrop-filter: blur(20px);
-  backdrop-filter: blur(20px);
-  border: 1px solid var(--meiye-glass-edge);
+/*
+ * `item-card` upstream is a dense list row: a centred flex row whose title and
+ * description each end in an ellipsis. The composer's card family is the other
+ * shape — a standing card whose merchant sentence must wrap, because D-084
+ * forbids truncation on the narrow / 200%-zoom path. Adapt the unit here rather
+ * than at the call sites: the vendored component sheet is imported without a
+ * layer, so Tailwind utilities (which are layered) cannot reach it.
+ */
+.meiye-item-card-stack {
+  flex-direction: column;
+  align-items: flex-start;
 }
 
-.meiye-porcelain {
-  background: var(--meiye-paper);
-  box-shadow: var(--meiye-shadow-ambient);
+.meiye-item-card-stack [data-slot="item-card-title"],
+.meiye-item-card-stack [data-slot="item-card-description"] {
+  width: auto;
+  max-width: 100%;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.meiye-item-card-stack > [data-slot="item-card-action"] {
+  margin-top: calc(var(--spacing, 0.25rem) * 1);
+  margin-left: 0;
+  padding-left: 0;
+}
+
+/*
+ * `chat-conversation` fades its own top and bottom 32px — a soft edge that
+ * reads well when the pane carries chat bubbles you skim. The composer's
+ * transcript carries cards the merchant has to read: the 进度宣告卡, the
+ * 引导补问卡, the 成品交付卡. Whichever card happens to sit at the pane edge
+ * would fade to nothing, which the browser gate caught on both viewports.
+ * The pane keeps its scroll and its follow-the-newest-turn behaviour; only the
+ * decoration that hides content goes.
+ */
+.meiye-conversation-pane {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+/*
+ * `chain-of-thought` is upstream's reasoning trace: a thing you glance at and
+ * fold away, so its step labels are `--muted`. The 白话进度 rail reuses the
+ * component but not that premise — D-116 makes those announcements a delivery
+ * statement the merchant is meant to read, and a stage that has already
+ * happened is still worth reading. Adapt it here for the same reason as
+ * `.meiye-item-card-stack`: the vendored sheet is unlayered, so Tailwind
+ * utilities on the call site cannot reach it.
+ */
+.meiye-progress-rail .chain-of-thought__step-label,
+.meiye-progress-rail .chain-of-thought__trigger {
+  color: var(--foreground);
+}
+
+.meiye-progress-rail
+  .chain-of-thought__step:not(:last-child)
+  .chain-of-thought__step-label {
+  opacity: 0.75;
+}
+
+/*
+ * The trigger shimmers while the run moves. Under prefers-reduced-motion the
+ * upstream fallback drops the whole line to 60% opacity, which is a legibility
+ * cost paid by the merchant who asked for *less motion*, not less contrast.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .meiye-progress-rail .text-shimmer {
+    opacity: 1;
+  }
 }
 
 /* DESIGN.md §3 — single family, weight contrast carries the personality. */

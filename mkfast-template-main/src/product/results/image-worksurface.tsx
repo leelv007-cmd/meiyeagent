@@ -50,6 +50,8 @@ export type ImageWorksurfaceProps = {
   ) => void;
   onCreateFromThis?: () => void;
   onModeChange?: (mode: 'single' | 'set') => void;
+  /** Injectable for tests; the wall clock is used by default. */
+  now?: () => string;
 };
 
 type LocalState = {
@@ -116,11 +118,13 @@ function localReducer(state: LocalState, action: LocalAction): LocalState {
 }
 
 export function ImageWorksurface(props: ImageWorksurfaceProps) {
+  const now = () => props.now?.() ?? new Date().toISOString();
+
   const emptySelection = () =>
     createEmptyWorkingSelection({
       workId: props.facts.workId,
       baseRevisionId: props.facts.baseRevisionId,
-      now: new Date().toISOString(),
+      now: now(),
     });
 
   const [local, dispatch] = useReducer(
@@ -135,7 +139,7 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
         const stored = parseWorkingSelection(
           window.localStorage.getItem(key) ?? ''
         );
-        const nowIso = new Date().toISOString();
+        const nowIso = now();
         if (stored && stored.workId === props.facts.workId) {
           // Hydrate via reducer so baseRevision drift surfaces as three-way UI
           // instead of silently dropping the same-device draft.
@@ -185,8 +189,6 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
   const view = projectImageWorksurface(facts, {
     lastFeedback: local.feedback,
   });
-
-  const now = () => new Date().toISOString();
 
   return (
     <div className="space-y-4" data-testid="image-worksurface">

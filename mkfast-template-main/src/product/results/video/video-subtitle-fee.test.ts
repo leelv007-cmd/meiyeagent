@@ -1,6 +1,6 @@
 /**
- * #104 acceptance: independent subtitle asset edit incurs no gen fee;
- * burned-in subtitle change requires full recompose quote.
+ * #104/T23 acceptance: independent subtitle asset edit incurs no generation
+ * fee; burned-in changes remain unavailable after recomposition retirement.
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
@@ -10,7 +10,6 @@ import {
   classifySupplierTaskOps,
   editSubtitleText,
   merchantShotLabel,
-  requestFullRecompose,
   toggleSubtitleEnabled,
   videoWorksurfaceFixture,
   videoWorksurfaceFreeActions,
@@ -88,53 +87,47 @@ describe('subtitle fee boundary', () => {
     assert.equal(toggled.pendingQuote, null);
   });
 
-  it('burned-in subtitle text change requires full_compose quote', () => {
+  it('burned-in subtitle text change is unavailable and creates no usage', () => {
     const decision = classifySubtitleEdit({
       mode: 'burned_in',
       change: 'text',
     });
-    assert.equal(decision.fee, 'billable');
-    assert.equal(decision.scope, 'full_compose');
-    assert.equal(decision.createsProductUsage, true);
-    assert.equal(decision.requiresFullRecomposeQuote, true);
-    assert.equal(decision.actionLabel, '重新合成整段');
-    assert.match(decision.reason, /烧录字幕/);
+    assert.equal(decision.fee, 'unavailable');
+    assert.equal(decision.createsProductUsage, false);
+    assert.equal(decision.requiresFullRecomposeQuote, false);
+    assert.match(decision.reason, /已下线/);
 
     const state = videoWorksurfaceFixture({
       subtitleMode: 'burned_in',
       subtitleText: '已烧录字幕',
     });
     const attempt = editSubtitleText(state, '改烧录字幕');
-    assert.equal(attempt.fee.createsProductUsage, true);
-    assert.equal(attempt.fee.requiresFullRecomposeQuote, true);
-    assert.equal(attempt.pendingQuote?.scope, 'full_compose');
-    assert.equal(attempt.pendingQuote?.actionLabel, '重新合成整段');
-    assert.equal(attempt.pendingQuote?.createsNewTaskAndIndependentQuote, true);
-    // Must not silently mutate burned-in text without recompose.
+    assert.equal(attempt.fee.fee, 'unavailable');
+    assert.equal(attempt.fee.createsProductUsage, false);
+    assert.equal(attempt.fee.requiresFullRecomposeQuote, false);
+    assert.equal(attempt.pendingQuote, null);
+    // The retired path must not silently mutate burned-in media.
     assert.equal(attempt.state.subtitle.text, '已烧录字幕');
   });
 
-  it('burned-in toggle/style also force full recompose quote', () => {
+  it('burned-in toggle/style are unavailable without opening a quote', () => {
     for (const change of ['toggle', 'style', 'replace_asset'] as const) {
       const decision = classifySubtitleEdit({
         mode: 'burned_in',
         change,
       });
-      assert.equal(decision.scope, 'full_compose', change);
-      assert.equal(decision.requiresFullRecomposeQuote, true, change);
+      assert.equal(decision.fee, 'unavailable', change);
+      assert.equal(decision.createsProductUsage, false, change);
+      assert.equal(decision.requiresFullRecomposeQuote, false, change);
     }
   });
 
-  it('explicit full recompose path matches burned-in quote scope', () => {
+  it('burned-in edits leave no pending billable intent', () => {
     const state = videoWorksurfaceFixture({ subtitleMode: 'burned_in' });
-    const recompose = requestFullRecompose(state);
     const burnedEdit = editSubtitleText(state, 'x');
 
-    assert.equal(
-      recompose.fee.scope,
-      burnedEdit.fee.fee === 'billable' ? burnedEdit.fee.scope : null
-    );
-    assert.equal(recompose.state.pendingQuote?.scope, 'full_compose');
-    assert.equal(burnedEdit.pendingQuote?.scope, 'full_compose');
+    assert.equal(burnedEdit.fee.fee, 'unavailable');
+    assert.equal(burnedEdit.fee.createsProductUsage, false);
+    assert.equal(burnedEdit.pendingQuote, null);
   });
 });

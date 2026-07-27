@@ -115,6 +115,9 @@ export function composerSignedPreviewMatchesFrozen(
   frozen: ComposerSubmissionSignedFields
 ): boolean {
   return (
+    shown.creationMode === frozen.creationMode &&
+    shown.intent === frozen.intent &&
+    (shown.imageOperation ?? null) === (frozen.imageOperation ?? null) &&
     shown.contentPackagePlatform === frozen.contentPackagePlatform &&
     shown.distributionTarget === frozen.distributionTarget &&
     shown.catalogModel.id === frozen.catalogModel.id &&

@@ -20,6 +20,14 @@ export interface StoreProject {
   confirmed: boolean;
 }
 
+export interface StoreAccount {
+  platform: Platform;
+  nickname: string;
+  homepageUrl?: string;
+  verificationStatus?: 'unverified' | 'verified' | 'restricted';
+  notes?: string;
+}
+
 export interface StoreProfile {
   name: string;
   city: string;
@@ -28,16 +36,31 @@ export interface StoreProfile {
   booking: string;
   brandVoice: string;
   prohibitions: string[];
-  accounts: Array<{
-    platform: Platform;
-    nickname: string;
-    homepageUrl?: string;
-    verificationStatus?: 'unverified' | 'verified' | 'restricted';
-    notes?: string;
-  }>;
+  accounts: StoreAccount[];
   projects: StoreProject[];
   regulated: boolean;
+  revision?: number;
   confirmedAt?: string;
+}
+
+export interface StoreProfilePatch {
+  expectedRevision: number;
+  name?: string;
+  city?: string;
+  district?: string;
+  address?: string;
+  booking?: string;
+  brandVoice?: string;
+  prohibitions?: string[];
+  regulated?: boolean;
+  accounts?: {
+    upsert?: StoreAccount[];
+    clear?: Platform[];
+  };
+  projects?: {
+    upsert?: StoreProject[];
+    clear?: string[];
+  };
 }
 
 export interface StoreDraft {
@@ -372,6 +395,11 @@ export interface Lead {
   id: string;
   contentId: string;
   contentVersionId: string;
+  canonicalContentPackage?: {
+    packageId: string;
+    revision: number;
+    versionId: string;
+  };
   source: 'direct_message' | 'comment' | 'wechat' | 'booking' | 'coupon' | 'redemption' | 'visit';
   projectId: string;
   amountCents?: number;
@@ -555,6 +583,7 @@ export interface CommandResult {
     leadId?: string;
     packageId?: string;
     renderEvidenceId?: string;
+    storeRevision?: number;
     storyboardId?: string;
   };
 }
@@ -566,7 +595,10 @@ export type ProductCommand =
       sourceText: string;
       extracted: StoreDraft['extracted'];
     }
-  | { type: 'confirm_store'; store: Omit<StoreProfile, 'confirmedAt'> }
+  | {
+      type: 'confirm_store';
+      store: Omit<StoreProfile, 'confirmedAt' | 'revision'>;
+    }
   | { type: 'confirm_qualification'; qualification: Omit<QualificationProfile, 'confirmed'> }
   | {
       type: 'add_asset';
@@ -689,17 +721,20 @@ export type ProductCommand =
   | { type: 'mark_published'; packageId: string; platformUrl?: string }
   | {
       type: 'create_lead';
-      contentId: string;
+      contentId?: string;
+      packageId?: string;
       lead: Omit<
         Lead,
         | 'id'
         | 'contentId'
         | 'contentVersionId'
+        | 'canonicalContentPackage'
+        | 'projectId'
         | 'status'
         | 'createdAt'
         | 'updatedAt'
         | 'retentionExpiresAt'
-      >;
+      > & { projectId?: string };
     }
   | { type: 'update_lead'; leadId: string; status: LeadStatus }
   | { type: 'record_insight'; contentId?: string; kind: string; note: string }

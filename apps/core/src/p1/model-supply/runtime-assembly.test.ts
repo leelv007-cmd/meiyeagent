@@ -487,8 +487,8 @@ test('task-audit explanation records the observed safe fallback branch', async (
     APP_ENV: 'e2e',
     MODEL_EXECUTION_MODE: 'fixture',
   });
-  const primaryId = 'openai-direct-recorded';
-  const fallbackId = 'anthropic-direct-recorded';
+  const primaryId = 'deepseek-v4-pro-direct';
+  const fallbackId = 'deepseek-v4-flash-direct';
   const planningControlPlane: ModelSupplyPlanningControlPlanePort = {
     async readPlanningState() {
       return {

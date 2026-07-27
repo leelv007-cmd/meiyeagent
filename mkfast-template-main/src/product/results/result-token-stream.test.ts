@@ -9,7 +9,6 @@ import test from 'node:test';
 import {
   acceptWorkflowTokenDelta,
   calibrateTerminalRevision,
-  pickExclusiveTokenCandidates,
   projectResultTokenStream,
   projectTokenStreamA11y,
   projectTokenStreamReconnect,
@@ -132,6 +131,42 @@ test('completed stream hides the intermediate panel', () => {
   assert.equal(projection.hasFirstToken, true);
 });
 
+test('a terminal run reports a terminal phase, so its body stops streaming', () => {
+  // The delivered body survives in the projection (the candidate turn keeps
+  // showing it) — what must not survive is the claim that it is still
+  // arriving. Both routes into terminal are covered: the workflow reaching
+  // success/failed, and the session knowing it is delivered first.
+  for (const progressState of ['success', 'failed'] as const) {
+    const terminal = projectResultTokenStream({
+      workspaceKind: 'copy',
+      progressState,
+      partialCandidates: [{ title: '完成', body: '到店立减，先到先得。' }],
+      loading: false,
+    });
+    assert.equal(terminal.streamPhase, 'completed');
+    assert.equal(terminal.primary?.body, '到店立减，先到先得。');
+  }
+
+  const deliveredBeforePoll = projectResultTokenStream({
+    workspaceKind: 'copy',
+    // Last snapshot still says running — the session already knows better.
+    progressState: 'running',
+    partialCandidates: [{ title: '完成', body: '到店立减' }],
+    completed: true,
+    loading: true,
+  });
+  assert.equal(deliveredBeforePoll.streamPhase, 'completed');
+
+  // The live phase is unchanged — this fix must not flatten drafting.
+  const drafting = projectResultTokenStream({
+    workspaceKind: 'copy',
+    progressState: 'running',
+    partialCandidates: [{ title: '写作中', body: '到店' }],
+    loading: true,
+  });
+  assert.equal(drafting.streamPhase, 'drafting');
+});
+
 test('error before first chunk still shows stream panel', () => {
   const projection = projectResultTokenStream({
     workspaceKind: 'copy',
@@ -240,28 +275,6 @@ test('exclusive workflow.token reduce never invents poll duplicates', () => {
   assert.equal(candidates.length, 2);
   assert.equal(candidates[0]?.title, '夏日');
   assert.equal(candidates[0]?.body, '到店');
-
-  const exclusive = pickExclusiveTokenCandidates({
-    workflowTokenCandidates: candidates,
-    pollCandidates: [
-      { title: '轮询重复主推荐', body: '不应显示' },
-      { title: '轮询重复备选' },
-    ],
-    structuredStreamCandidates: [{ title: '结构化流也让位' }],
-  });
-  assert.equal(exclusive.source, 'workflow.token');
-  assert.equal(exclusive.candidates[0]?.title, '夏日');
-  assert.equal(exclusive.candidates.length, 2);
-});
-
-test('pickExclusiveTokenCandidates ignores poll when no tokens yet', () => {
-  const exclusive = pickExclusiveTokenCandidates({
-    workflowTokenCandidates: [],
-    pollCandidates: [{ title: '仅轮询' }],
-    structuredStreamCandidates: [],
-  });
-  assert.equal(exclusive.source, 'none');
-  assert.equal(exclusive.candidates.length, 0);
 });
 
 test('reconnect projection never clears arrived text', () => {

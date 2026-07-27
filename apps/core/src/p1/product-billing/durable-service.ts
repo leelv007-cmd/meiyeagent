@@ -5,10 +5,11 @@ import type {
   ProviderCostSnapshot,
 } from '@meiye/contracts';
 import { P1DomainError } from '../foundation/domain.js';
-import type {
-  BillingAttemptCost,
-  BillingLifecyclePort,
-  BillingResource,
+import {
+  providerBillingMode,
+  type BillingAttemptCost,
+  type BillingLifecyclePort,
+  type BillingResource,
 } from './lifecycle-port.js';
 import type {
   ProductBillingRepository,
@@ -285,10 +286,7 @@ export class DurableProductBillingService
           );
           const result = service.reserve({
             quoteId: quote.quoteId,
-            units: productUsageUnitsForQuote(quote).map((unit) => ({
-              ...unit,
-              resource: input.resource,
-            })),
+            units: productUsageUnitsForQuote(quote, input.resource),
           });
           await this.saveLocal(transaction, input.workspaceId, service, result.quote);
         },
@@ -306,7 +304,7 @@ export class DurableProductBillingService
     await this.mutateTask(input.workspaceId, input.taskId, (service, quote) => {
       const providerCost = {
         ...input.providerCost,
-        billingMode: quote.billingMode,
+        billingMode: providerBillingMode(input.providerCost, quote.billingMode),
       };
       const costs = service.listProviderCosts(input.taskId);
       return costs.some((cost) => cost.attemptId === input.attemptId) ||
@@ -342,7 +340,10 @@ export class DurableProductBillingService
       if (input.providerCost) {
         const providerCost = {
           ...input.providerCost,
-          billingMode: quote.billingMode,
+          billingMode: providerBillingMode(
+            input.providerCost,
+            quote.billingMode,
+          ),
         };
         const costs = service.listProviderCosts(input.taskId);
         if (costs.some((cost) => cost.attemptId === input.attemptId)) {

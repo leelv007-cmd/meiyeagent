@@ -2,16 +2,17 @@
  * Video Result Worksurface pure model (WT-E / #104 / D-085 §7 / D-088).
  *
  * Player / cover / subtitles / storyboard candidates / per-shot adjust /
- * single-shot regen / full recompose / "使用此成片" adopt / mobile P0 /
- * Pro Studio refine handoff.
+ * single-shot regen / "使用此成片" adopt / mobile P0 / Pro Studio refine
+ * handoff.
  *
  * Contracts-only boundary: imports `@meiye/contracts` result-center +
  * video-workflow public projection. Does NOT import Result Shell internals
  * (`result-shell-model`, command adapter, page, token stream, etc.).
  *
  * Projection only — no Result table / second history / product ledger.
- * Billable regen scopes reuse E2 video-regeneration confirm contract
- * (shot | full_compose); free subtitle asset edits never open usage.
+ * Billable regen scopes reuse the retained E2 single-shot confirmation
+ * contract. Whole-film recomposition is unavailable by D-105/D-133 and must
+ * never become a quote intent in this model.
  */
 
 import type {
@@ -48,7 +49,7 @@ export const videoWorksurfaceFreeActions = [
 export type VideoWorksurfaceFreeAction =
   (typeof videoWorksurfaceFreeActions)[number];
 
-export const videoBillableScopes = ['shot', 'full_compose'] as const;
+export const videoBillableScopes = ['shot'] as const;
 export type VideoBillableScope = (typeof videoBillableScopes)[number];
 
 /** Independent asset vs burned into the composed media. */
@@ -202,9 +203,18 @@ export type VideoBillableEditFeeDecision = {
   reason: string;
 };
 
+export type VideoUnavailableEditFeeDecision = {
+  fee: 'unavailable';
+  freeAction: null;
+  createsProductUsage: false;
+  requiresFullRecomposeQuote: false;
+  reason: string;
+};
+
 export type VideoEditFeeDecision =
   | VideoFreeEditFeeDecision
-  | VideoBillableEditFeeDecision;
+  | VideoBillableEditFeeDecision
+  | VideoUnavailableEditFeeDecision;
 
 export function classifyCoverSelect(): VideoEditFeeDecision {
   return {
@@ -293,7 +303,8 @@ export function merchantShotLabel(input: {
 
 /**
  * Independent subtitle asset text / toggle / style-on-asset: free.
- * Burned-in subtitle change requires full recompose + independent quote.
+ * Burned-in subtitle changes are unavailable because whole-film
+ * recomposition is retired; they never create a quote or product usage.
  */
 export function classifySubtitleEdit(input: {
   mode: 'independent_asset';
@@ -302,7 +313,7 @@ export function classifySubtitleEdit(input: {
 export function classifySubtitleEdit(input: {
   mode: 'burned_in';
   change: 'text' | 'toggle' | 'style' | 'replace_asset';
-}): VideoBillableEditFeeDecision;
+}): VideoUnavailableEditFeeDecision;
 export function classifySubtitleEdit(input: {
   mode: VideoSubtitleMode;
   change: 'text' | 'toggle' | 'style' | 'replace_asset';
@@ -322,15 +333,13 @@ export function classifySubtitleEdit(input: {
     };
   }
 
-  // Burned-in: any text/style change needs media re-render → full_compose quote.
+  // Burned-in media cannot be changed without the retired recomposition path.
   return {
-    fee: 'billable',
-    scope: 'full_compose',
+    fee: 'unavailable',
     freeAction: null,
-    createsProductUsage: true,
-    requiresFullRecomposeQuote: true,
-    actionLabel: '重新合成整段',
-    reason: '烧录字幕改动需要媒体重渲染，须走整段重新合成并独立报价',
+    createsProductUsage: false,
+    requiresFullRecomposeQuote: false,
+    reason: '整段视频重新合成已下线，本次未产生扣费。',
   };
 }
 
@@ -348,18 +357,6 @@ export function classifyShotRegen(
     requiresFullRecomposeQuote: false,
     actionLabel: '重新生成此镜头',
     reason: '单镜重生成是新的独立计费生成任务',
-  };
-}
-
-export function classifyFullRecompose(): VideoBillableEditFeeDecision {
-  return {
-    fee: 'billable',
-    scope: 'full_compose',
-    freeAction: null,
-    createsProductUsage: true,
-    requiresFullRecomposeQuote: true,
-    actionLabel: '重新合成整段',
-    reason: '整段重新合成是新的独立计费生成任务',
   };
 }
 
@@ -689,7 +686,7 @@ export function setCoverFromAuthorizedImage(
 
 /**
  * Independent subtitle asset text proof — free, no re-encode.
- * Burned-in mode refuses free path and returns a full_compose quote intent.
+ * Burned-in mode stays unchanged and returns an unavailable decision.
  */
 export function editSubtitleText(
   state: VideoWorksurfaceState,
@@ -704,20 +701,14 @@ export function editSubtitleText(
     change: 'text',
   });
 
-  if (fee.fee === 'billable') {
-    const pendingQuote: VideoPendingQuote = {
-      scope: 'full_compose',
-      actionLabel: fee.actionLabel,
-      requiresConfirm: true,
-      createsNewTaskAndIndependentQuote: true,
-    };
+  if (fee.fee === 'unavailable') {
     return {
       fee,
-      pendingQuote,
+      pendingQuote: null,
       state: {
         ...state,
-        pendingQuote,
-        // Do not apply burned-in text without recompose.
+        pendingQuote: null,
+        // Do not apply burned-in text without the retired media path.
       },
     };
   }
@@ -751,17 +742,11 @@ export function toggleSubtitleEnabled(state: VideoWorksurfaceState): {
     change: 'toggle',
   });
 
-  if (fee.fee === 'billable') {
-    const pendingQuote: VideoPendingQuote = {
-      scope: 'full_compose',
-      actionLabel: fee.actionLabel,
-      requiresConfirm: true,
-      createsNewTaskAndIndependentQuote: true,
-    };
+  if (fee.fee === 'unavailable') {
     return {
       fee,
-      pendingQuote,
-      state: { ...state, pendingQuote },
+      pendingQuote: null,
+      state: { ...state, pendingQuote: null },
     };
   }
 
@@ -870,24 +855,6 @@ export function requestShotRegen(
       pendingQuote,
       selectedObjectId: shotId,
     },
-  };
-}
-
-/** Request full recompose — opens billable full_compose quote (E2 confirm). */
-export function requestFullRecompose(state: VideoWorksurfaceState): {
-  state: VideoWorksurfaceState;
-  fee: VideoBillableEditFeeDecision;
-} {
-  const fee = classifyFullRecompose();
-  const pendingQuote: VideoPendingQuote = {
-    scope: 'full_compose',
-    actionLabel: fee.actionLabel,
-    requiresConfirm: true,
-    createsNewTaskAndIndependentQuote: true,
-  };
-  return {
-    fee,
-    state: { ...state, pendingQuote },
   };
 }
 

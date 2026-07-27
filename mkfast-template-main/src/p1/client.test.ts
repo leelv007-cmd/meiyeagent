@@ -2,10 +2,50 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  commandP1,
   createOperationsCommandIntentRegistry,
+  P1_COMMAND_TIMEOUT_CODE,
   P1RequestError,
   p1ErrorCode,
 } from './client';
+
+/** A server that accepts the request and then never answers. */
+function stubNeverAnsweringFetch() {
+  const original = globalThis.fetch;
+  globalThis.fetch = ((_input: unknown, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      if (!signal) return;
+      signal.addEventListener('abort', () => reject(signal.reason));
+    })) as typeof fetch;
+  return () => {
+    globalThis.fetch = original;
+  };
+}
+
+/**
+ * A server that answers with headers and then stalls its body — the shape a
+ * round-trip-only deadline misses. Mirrors real fetch, whose body read rejects
+ * with the abort reason once the request signal fires.
+ */
+function stubHeadersThenStalledBody() {
+  const original = globalThis.fetch;
+  globalThis.fetch = ((_input: unknown, init?: RequestInit) => {
+    const signal = init?.signal;
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      json: () =>
+        new Promise((_resolve, reject) => {
+          if (!signal) return;
+          signal.addEventListener('abort', () => reject(signal.reason));
+        }),
+    } as unknown as Response);
+  }) as typeof fetch;
+  return () => {
+    globalThis.fetch = original;
+  };
+}
 
 test('keeps a stable P1 error code without exposing the server message', () => {
   const error = new P1RequestError(
@@ -18,6 +58,172 @@ test('keeps a stable P1 error code without exposing the server message', () => {
     p1ErrorCode(new Error('Reference assets need attention')),
     undefined
   );
+});
+
+test('a command that never answers fails on its own deadline (#240)', async () => {
+  const restore = stubNeverAnsweringFetch();
+  try {
+    const startedAt = Date.now();
+    await assert.rejects(
+      commandP1(
+        'product-billing',
+        { action: 'quote', payload: {} },
+        'composer-quote:stuck',
+        { timeoutMs: 40 }
+      ),
+      (error: unknown) => {
+        assert.equal(error instanceof P1RequestError, true);
+        assert.equal(p1ErrorCode(error), P1_COMMAND_TIMEOUT_CODE);
+        assert.deepEqual((error as P1RequestError).details, { timeoutMs: 40 });
+        return true;
+      }
+    );
+    // The point of the bound: it settles on the deadline, not on the fetch.
+    assert.equal(Date.now() - startedAt < 5_000, true);
+  } finally {
+    restore();
+  }
+});
+
+test('the deadline covers a stalled body, not just the response headers', async () => {
+  // Negative control for the round-trip-only deadline: with the timer cleared
+  // when `telemetryFetch` resolves, this call would hang on `response.json()`
+  // forever and the Composer would sit in `requesting` with no way out.
+  const restore = stubHeadersThenStalledBody();
+  try {
+    const startedAt = Date.now();
+    await assert.rejects(
+      commandP1(
+        'product-billing',
+        { action: 'quote', payload: {} },
+        'composer-quote:stalled-body',
+        { timeoutMs: 40 }
+      ),
+      (error: unknown) => {
+        assert.equal(p1ErrorCode(error), P1_COMMAND_TIMEOUT_CODE);
+        assert.deepEqual((error as P1RequestError).details, { timeoutMs: 40 });
+        return true;
+      }
+    );
+    assert.equal(Date.now() - startedAt < 5_000, true);
+  } finally {
+    restore();
+  }
+});
+
+test('the deadline never reaches for AbortSignal.any / .timeout', async () => {
+  // Merchants open this from in-app WebViews whose engines predate both
+  // statics; reaching for them would throw on every command instead of
+  // bounding it, which is strictly worse than the hang this ticket removes.
+  const restoreFetch = stubNeverAnsweringFetch();
+  const staticAny = AbortSignal.any;
+  const staticTimeout = AbortSignal.timeout;
+  Reflect.deleteProperty(AbortSignal, 'any');
+  Reflect.deleteProperty(AbortSignal, 'timeout');
+  try {
+    assert.equal('any' in AbortSignal, false);
+    assert.equal('timeout' in AbortSignal, false);
+    await assert.rejects(
+      commandP1(
+        'product-billing',
+        { action: 'quote', payload: {} },
+        'composer-quote:old-webview',
+        { signal: new AbortController().signal, timeoutMs: 40 }
+      ),
+      (error: unknown) => {
+        assert.equal(p1ErrorCode(error), P1_COMMAND_TIMEOUT_CODE);
+        return true;
+      }
+    );
+  } finally {
+    Object.defineProperty(AbortSignal, 'any', {
+      configurable: true,
+      value: staticAny,
+      writable: true,
+    });
+    Object.defineProperty(AbortSignal, 'timeout', {
+      configurable: true,
+      value: staticTimeout,
+      writable: true,
+    });
+    restoreFetch();
+  }
+});
+
+test('a caller that cancels with its own TimeoutError is not relabelled ours', async () => {
+  // Negative control for name-based attribution: a caller watchdog aborting
+  // with `DOMException('…','TimeoutError')` is indistinguishable from our
+  // deadline by exception name. Ownership has to come from our own timer, or
+  // the merchant gets told the server was slow and offered a pointless retry.
+  const restore = stubNeverAnsweringFetch();
+  const controller = new AbortController();
+  try {
+    const pending = commandP1(
+      'product-billing',
+      { action: 'quote', payload: {} },
+      'composer-quote:caller-timeout',
+      { signal: controller.signal, timeoutMs: 10_000 }
+    );
+    controller.abort(
+      new DOMException('Caller gave up on its own.', 'TimeoutError')
+    );
+    await assert.rejects(pending, (error: unknown) => {
+      assert.notEqual(p1ErrorCode(error), P1_COMMAND_TIMEOUT_CODE);
+      assert.equal(p1ErrorCode(error), undefined);
+      assert.equal(error instanceof P1RequestError, false);
+      assert.equal((error as DOMException).name, 'TimeoutError');
+      assert.equal(
+        (error as DOMException).message,
+        'Caller gave up on its own.'
+      );
+      return true;
+    });
+  } finally {
+    restore();
+  }
+});
+
+test('caller cancellation stays a cancellation, not a command failure', async () => {
+  const restore = stubNeverAnsweringFetch();
+  const controller = new AbortController();
+  try {
+    const pending = commandP1(
+      'product-billing',
+      { action: 'quote', payload: {} },
+      'composer-quote:cancelled',
+      { signal: controller.signal, timeoutMs: 10_000 }
+    );
+    controller.abort();
+    await assert.rejects(pending, (error: unknown) => {
+      // TanStack Query cancels a superseded quote key; that must not surface as
+      // a timed-out command the merchant is asked to retry.
+      assert.equal(p1ErrorCode(error), undefined);
+      assert.equal((error as DOMException).name, 'AbortError');
+      return true;
+    });
+  } finally {
+    restore();
+  }
+});
+
+test('a command without a deadline keeps its unbounded legacy behaviour', async () => {
+  const seen: Array<AbortSignal | null | undefined> = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = ((_input: unknown, init?: RequestInit) => {
+    seen.push(init?.signal);
+    return Promise.resolve(
+      new Response(JSON.stringify({ data: { ok: true } }), { status: 200 })
+    );
+  }) as typeof fetch;
+  try {
+    assert.deepEqual(
+      await commandP1('product-billing', { action: 'quote', payload: {} }),
+      { ok: true }
+    );
+    assert.deepEqual(seen, [undefined]);
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('retries one export or reuse intent with its original idempotency key', async () => {

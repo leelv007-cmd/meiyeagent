@@ -5,6 +5,7 @@ import {
   asyncTaskElapsedLabel,
   asyncTaskStorageKey,
   composedVideoAsyncTaskSummaries,
+  harnessAsyncTaskSummaries,
   markAsyncTasksRead,
   reconcileAsyncTaskReadState,
   type AsyncTaskSummary,
@@ -187,4 +188,48 @@ test('active observers remain planned while the task panel is closed', () => {
     open.panelTasks.map((item) => item.id),
     ['active', 'done']
   );
+});
+
+/**
+ * D-145 时间桥. The creation conversation was the one task the centre could not
+ * show, which made a closed tab feel like a lost run.
+ */
+test('in-flight creation runs appear as tasks that deep link back to the conversation', () => {
+  const summaries = harnessAsyncTaskSummaries([
+    {
+      taskId: 'task-older',
+      workId: 'work-older',
+      packageId: 'package-older',
+      merchantText: '写一条周末到店文案',
+      submittedAt: '2026-07-27T07:00:00.000Z',
+    },
+    {
+      taskId: 'task-newer',
+      workId: 'work-newer',
+      packageId: 'package-newer',
+      merchantText: '写一条新客体验文案',
+      submittedAt: '2026-07-27T08:00:00.000Z',
+    },
+  ]);
+
+  assert.deepEqual(
+    summaries.map(({ id }) => id),
+    ['harness-task:task-newer', 'harness-task:task-older']
+  );
+  assert.equal(summaries[0]?.status, 'running');
+  assert.equal(summaries[0]?.kind, 'creation');
+  assert.equal(summaries[0]?.href, '/dashboard?taskId=task-newer');
+  // The merchant reads their own sentence, not an internal identifier.
+  assert.equal(summaries[0]?.label, '写一条新客体验文案');
+
+  // A run still going is an active task, so the trigger shows it.
+  const plan = asyncTaskCenterPlan({
+    panelOpen: true,
+    recentKeys: [],
+    tasks: summaries,
+  });
+  assert.equal(plan.activeTasks.length, 2);
+  assert.equal(plan.panelTasks.length, 2);
+  // No polling observer: the composer already streams the same run over SSE.
+  assert.equal(plan.observerTasks.length, 2);
 });

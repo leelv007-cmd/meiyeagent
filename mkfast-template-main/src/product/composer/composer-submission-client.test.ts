@@ -46,6 +46,30 @@ test('browser submission carries signed public fields without server truth', () 
   assert.equal(parsed.distributionTarget, 'export');
 });
 
+test('browser submission preserves only a valid free-image operation', () => {
+  const freeImage = {
+    ...submissionBody(),
+    creationMode: 'free' as const,
+    imageOperation: 'image.edit' as const,
+    deliverable: {
+      kind: 'image_set' as const,
+      quantity: 1,
+      aspectRatio: '3:4' as const,
+    },
+  };
+  assert.equal(
+    composerSubmissionBodySchema.parse(freeImage).imageOperation,
+    'image.edit'
+  );
+  assert.equal(
+    composerSubmissionBodySchema.safeParse({
+      ...freeImage,
+      creationMode: 'customized',
+    }).success,
+    false
+  );
+});
+
 test('submits the exact Composer body and returns the durable handles', async () => {
   const previousFetch = globalThis.fetch;
   let request: Request | undefined;

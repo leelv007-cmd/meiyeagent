@@ -211,6 +211,56 @@ describe('ProductEntitlementFoundationModule', () => {
     assert.equal(projection.plan.concurrencyLimit, 5);
   });
 
+  it('exposes a strict three-bucket balance sourced from configured entitlements', async () => {
+    const { service } = setupHotCatalog();
+    await applyConfig(
+      service,
+      'plan.allowances.growth',
+      {
+        allowance: { audio: 0, copy: 12, image: 7, video: 2 },
+        concurrencyLimit: 2,
+        queuePriority: 3,
+        supportLabel: 'priority',
+      },
+      null,
+    );
+    await service.executeModule(
+      owner,
+      'entitlements',
+      { action: 'checkout_plan', payload: { tier: 'growth' } },
+      'checkout-balance-growth',
+    );
+
+    const balance = await service.queryModule(owner, 'entitlements', {
+      action: 'balance',
+      payload: {},
+    });
+
+    assert.deepEqual(balance, {
+      copy: {
+        allowance: 12,
+        available: 12,
+        committed: 0,
+        released: 0,
+        reserved: 0,
+      },
+      image: {
+        allowance: 7,
+        available: 7,
+        committed: 0,
+        released: 0,
+        reserved: 0,
+      },
+      video: {
+        allowance: 2,
+        available: 2,
+        committed: 0,
+        released: 0,
+        reserved: 0,
+      },
+    });
+  });
+
   it('hot-reads add-on price for checkout and automatic top-up configuration', async () => {
     const { service } = setupHotCatalog();
     await applyConfig(
@@ -325,7 +375,8 @@ describe('ProductEntitlementFoundationModule', () => {
     });
 
     assert.equal(projection.plan.tier, 'pro');
-    assert.equal(projection.usage.image.allowance, 130);
+    // pro 图 180 (D-123 高级 seed) + 10 from the add-on grant.
+    assert.equal(projection.usage.image.allowance, 190);
     assert.equal(projection.addOns.image, 10);
     assert.equal(projection.autoTopUp.enabled, true);
     assert.equal(projection.autoTopUp.monthlyCapMicros, 3_000_000);
@@ -628,7 +679,7 @@ describe('ProductEntitlementFoundationModule', () => {
     assert.equal(activated.plan.periodStrategy, 'provider_period');
     assert.equal(activated.plan.periodStartsAt, '2026-07-15T00:00:00.000Z');
     assert.equal(activated.plan.periodEndsAt, '2026-08-15T00:00:00.000Z');
-    assert.equal(activated.usage.copy.allowance, 100);
+    assert.equal(activated.usage.copy.allowance, 300);
 
     const replay = await service.executeModule(
       payment,
@@ -836,9 +887,10 @@ describe('ProductEntitlementFoundationModule', () => {
 
     assert.equal(expired.plan?.tier, 'starter');
     assert.ok(Date.parse(expired.plan?.periodEndsAt ?? '') > now.getTime());
+    // starter 文案 100 (D-123 初级 seed) + 5 surviving add-on units.
     assert.deepEqual(expired.usage.copy, {
-      allowance: 35,
-      available: 35,
+      allowance: 105,
+      available: 105,
       committed: 0,
       released: 0,
       reserved: 0,
@@ -848,7 +900,7 @@ describe('ProductEntitlementFoundationModule', () => {
         .listLots(owner.workspaceId, 'copy')
         .filter((lot) => lot.transactionType === 'SUBSCRIPTION_RENEWAL')
         .reduce((total, lot) => total + lot.remainingAmount, 0),
-      30,
+      100,
     );
     assert.equal(
       grantLots
@@ -866,13 +918,13 @@ describe('ProductEntitlementFoundationModule', () => {
             transaction.transactionType === 'EXPIRE',
         )
         .reduce((total, transaction) => total + transaction.amount, 0),
-      90,
+      290,
     );
 
     now = new Date('2027-12-01T00:00:00.000Z');
     const later = await entitlements.getProjection(owner);
     assert.equal(later.plan?.tier, 'starter');
-    assert.equal(later.usage.copy.available, 35);
+    assert.equal(later.usage.copy.available, 105);
   });
 
   it('hot-reads plan.payment-mapping for every paid settlement', async () => {

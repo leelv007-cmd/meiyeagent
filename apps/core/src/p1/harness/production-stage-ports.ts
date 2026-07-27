@@ -6,6 +6,7 @@ import type {
   CreativeRecommendationDecisionTrace,
   MarketingPackageEvidence,
   ReuseTaskSeed,
+  StoreFactKind,
 } from '@meiye/contracts';
 
 import type {
@@ -23,7 +24,6 @@ import { isOfficialNeutralIdentity } from '../execution-spine/creation-execution
 import {
   executeCopySelection,
   HarnessSelectionError,
-  StructuredCandidateScorer,
 } from './execution-selection.js';
 import {
   createHarnessCandidateValidator,
@@ -53,7 +53,12 @@ import { containsConcreteOfferText } from './visible-claim-patterns.js';
 import type {
   ResolvedSkillInstruction,
   SkillInvocationReceipt,
+  SkillStage,
 } from '../skills/types.js';
+import {
+  assessRecipeFactSatisfaction,
+  type FactRightsAuthorizationPort,
+} from './fact-satisfaction.js';
 
 export interface ProductionHarnessContextPort {
   compileAndFreeze(input: {
@@ -115,12 +120,22 @@ export interface HarnessSkillInstructionResolverPort {
     workflowRevision: number;
     recipeId?: string;
     recipeRevisionId?: string;
-    stage: 'intent_naming';
+    stage: SkillStage;
+    plannerSelectedSkillRefs?: readonly string[];
+    userSelectedSkillRefs?: readonly string[];
     skillRevisionRefs?: readonly string[];
   }): Promise<{
     instructions: ResolvedSkillInstruction[];
     receipts: SkillInvocationReceipt[];
   }>;
+}
+
+export interface HarnessRecipeFactRequirementPort {
+  getRecipeByRevisionId(revisionId: string): Promise<{
+    recipeId: string;
+    revisionId: string;
+    factTypes: StoreFactKind[];
+  } | null>;
 }
 
 export class HarnessCopyScopeError extends Error {
@@ -199,6 +214,8 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     private readonly executionDelivery?: ContentPackageRevisionWritePort,
     private readonly sourceContentPackages?: ExecutionSourceContentPackageResolverPort,
     private readonly skillInstructions?: HarnessSkillInstructionResolverPort,
+    private readonly recipeFacts?: HarnessRecipeFactRequirementPort,
+    private readonly factRights?: FactRightsAuthorizationPort,
   ) {}
 
   async resolveStageSkills(
@@ -221,6 +238,12 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
           }
         : {}),
       stage: input.stage,
+      ...(input.plannerSelectedSkillRefs
+        ? { plannerSelectedSkillRefs: input.plannerSelectedSkillRefs }
+        : {}),
+      ...(input.userSelectedSkillRefs
+        ? { userSelectedSkillRefs: input.userSelectedSkillRefs }
+        : {}),
       ...(input.skillRevisionRefs
         ? { skillRevisionRefs: input.skillRevisionRefs }
         : {}),
@@ -321,6 +344,37 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     return this.context.fence(input);
   }
 
+  async assessFacts(input: Parameters<
+    NonNullable<HarnessStagePorts['assessFacts']>
+  >[0]) {
+    const recipeRef = input.request.executionSnapshot?.recipe;
+    if (!recipeRef || !this.recipeFacts || !this.factRights) return null;
+    const recipe = await this.recipeFacts.getRecipeByRevisionId(
+      recipeRef.revision,
+    );
+    if (
+      !recipe ||
+      recipe.recipeId !== recipeRef.id ||
+      recipe.revisionId !== recipeRef.revision
+    ) {
+      throw new Error(
+        'The frozen Recipe fact requirements are missing or at a different revision.',
+      );
+    }
+    return assessRecipeFactSatisfaction(
+      {
+        workflowId: input.workflowId,
+        workflowRevision: input.request.workflowRevision,
+        intent: input.declaration.normalizedIntent,
+        factTypes: recipe.factTypes,
+        bundle: input.context.bundle,
+        at: this.now(),
+      },
+      this.runnerWithSourceFence(input.request),
+      this.factRights,
+    );
+  }
+
   async compileBrief(input: Parameters<HarnessStagePorts['compileBrief']>[0]) {
     const snapshot = input.request.executionSnapshot;
     if (snapshot && snapshot.lens !== 'copy') {
@@ -331,6 +385,10 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     );
     const runner = this.runnerWithSourceFence(input.request);
     const metrics = new InMemoryStructuredNodeMetrics();
+    // D-122 ③段兜底: a brief that will not compile degrades to a conservative
+    // one and the run keeps going. The merchant is told it degraded — silently
+    // downgrading is the dishonesty this fallback is not allowed to become.
+    let degraded = false;
     const brief = await compileExecutionBrief(
       {
         workflowId: input.workflowId,
@@ -338,13 +396,22 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         unitKind: 'copy',
         declaration: input.declaration,
         bundle: input.context.bundle,
+        ...(input.allowedFactRefs
+          ? { allowedFactRefs: input.allowedFactRefs }
+          : {}),
         ...(snapshot
           ? { executionSnapshot: snapshot }
           : {}),
         prompt: input.request.prompts?.briefCompilation,
+        ...(input.skillInstructions?.length
+          ? { skillInstructions: input.skillInstructions }
+          : {}),
       },
       runner,
       metrics,
+      () => {
+        degraded = true;
+      },
     );
     if (brief.kind !== 'copy') {
       throw new Error('The first production tracer accepts only copy briefs.');
@@ -355,6 +422,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     return {
       brief: boundBrief,
       metrics: metrics.snapshot(),
+      ...(degraded ? { degraded: true } : {}),
     };
   }
 
@@ -441,11 +509,13 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         workspaceId: input.request.workspaceId,
         intendedUse: 'public_content',
         generationContext: { bundle: input.context.bundle, marketing },
+        ...(input.skillInstructions?.length
+          ? { skillInstructions: input.skillInstructions }
+          : {}),
         onToken: input.onToken,
       },
       {
         runner,
-        scorer: new StructuredCandidateScorer(runner),
         validator,
       },
     );
@@ -597,12 +667,14 @@ export function validateHarnessVisibleDelivery(input: {
   brief: Record<string, unknown>;
   candidateId: string;
   context: HarnessContextSnapshot;
+  evaluatedAt?: string;
   expressionIdentityRef?: string;
   visibleText: Array<{ field: string; text: string }>;
   workspaceId: string;
 }) {
   return validateHarnessPolicy({
     phase: 'delivery',
+    ...(input.evaluatedAt ? { evaluatedAt: input.evaluatedAt } : {}),
     bundle: {
       workspaceId: input.workspaceId,
       revision: input.context.bundle.revision,

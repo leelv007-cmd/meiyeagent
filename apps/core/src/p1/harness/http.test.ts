@@ -15,6 +15,7 @@ import { TaskBlockingNodeConflictError } from '../operations/repository.js';
 import { HarnessApplicationService } from './application-service.js';
 import {
   HarnessDecisionService,
+  type HarnessPendingDecisionProjection,
   type HarnessDecisionStore,
 } from './decision-service.js';
 import {
@@ -56,6 +57,7 @@ test('memory harness registry rejects a question while the task has a pending ap
 
 test('harness HTTP boundary admits, reads and answers one authoritative question', async (t) => {
   const registry = new MemoryHarnessStore();
+  let currentTimeoutSeconds = 29;
   const resumed: string[] = [];
   const successors: Array<{
     command: StructuredDecisionInput;
@@ -82,6 +84,11 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
     registry,
     registry,
     registry,
+    {
+      async readTimeoutSeconds() {
+        return currentTimeoutSeconds;
+      },
+    },
   );
   const server = createCoreServer({
     diagnosticRepository: diagnostics,
@@ -244,10 +251,34 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
     'INVALID_HARNESS_PRODUCT_METRIC',
   );
 
-  await registry.registerPending('workspace-1', question());
+  await registry.registerPending('workspace-1', question(), {
+    timeoutSeconds: 17,
+  });
+  currentTimeoutSeconds = 29;
   const pending = await fetch(`${base}/task-http-1/decision`, { headers });
   assert.equal(pending.status, 200);
-  assert.equal((await pending.json()).data.question.questionId, 'question-1');
+  assert.deepEqual((await pending.json()).data, {
+    question: question(),
+    resolutionSource: null,
+    status: 'pending',
+    timeoutSeconds: 17,
+  });
+
+  await harnessService.submit({
+    ...taskRequest('task-http-legacy'),
+    actorId: 'owner-1',
+    workspaceId: 'workspace-1',
+  });
+  await registry.registerPending(
+    'workspace-1',
+    question('task-http-legacy'),
+  );
+  const legacyPending = await fetch(
+    `${base}/task-http-legacy/decision`,
+    { headers },
+  );
+  assert.equal(legacyPending.status, 200);
+  assert.equal((await legacyPending.json()).data.timeoutSeconds, 29);
 
   const unavailable = await fetch(`${base}/task-http-1/decision`, {
     method: 'POST',
@@ -282,6 +313,17 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
     'task-http-late',
     coreTimeoutDecision(),
   );
+  const timedOutSnapshot = await fetch(
+    `${base}/task-http-late/decision`,
+    { headers },
+  );
+  assert.equal(timedOutSnapshot.status, 200);
+  assert.deepEqual((await timedOutSnapshot.json()).data, {
+    question: question('task-http-late'),
+    resolutionSource: 'core_timeout',
+    status: 'resolved',
+    timeoutSeconds: null,
+  });
 
   const consumedSentinel = await fetch(
     `${base}/task-http-late/decision`,
@@ -428,6 +470,96 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
   assert.equal(foreignMetric.status, 404);
 });
 
+/**
+ * 时间桥 (D-145 / W10). The browser asks this on composer mount, so a closed tab
+ * stops being a way to lose a run. It has to be a workspace-scoped read that
+ * carries exactly what reopening the conversation needs — and nothing that would
+ * let the browser hold a second copy of the transcript.
+ */
+test('harness HTTP boundary lists the runs still in flight for one workspace', async (t) => {
+  const activeTask = {
+    taskId: 'task-http-live',
+    workId: 'work-live',
+    packageId: 'package-live',
+    merchantText: '写一条周末到店的团购活动文案',
+    submittedAt: '2026-07-18T08:00:00.000Z',
+  };
+  const registry = new MemoryHarnessStore();
+  const harnessService = new HarnessApplicationService(
+    new HarnessTaskAdmissionService(registry, {
+      async start({ workflowId }) {
+        return { workflowId };
+      },
+    }),
+    new HarnessDecisionService(registry, {
+      async resume() {},
+      async startSuccessor() {},
+    }),
+    {
+      taskBelongsToWorkspace: (taskId, workspaceId) =>
+        registry.taskBelongsToWorkspace(taskId, workspaceId),
+      async listActiveTasks(workspaceId) {
+        return workspaceId === 'workspace-1' ? [activeTask] : [];
+      },
+    },
+  );
+  const server = createCoreServer({
+    diagnosticRepository: diagnostics,
+    harnessService,
+    serviceToken: 'harness-http-token',
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => server.close());
+  const { port } = server.address() as AddressInfo;
+  const headers = {
+    'content-type': 'application/json',
+    'x-service-token': 'harness-http-token',
+    'x-user-id': 'owner-1',
+    'x-workspace-id': 'workspace-1',
+    'x-workspace-role': 'owner',
+  };
+
+  const listed = await fetch(
+    `http://127.0.0.1:${port}/v1/workspaces/workspace-1/p1/harness/tasks`,
+    { headers },
+  );
+  assert.equal(listed.status, 200);
+  assert.deepEqual((await listed.json()).data, { tasks: [activeTask] });
+
+  // Another workspace's runs are not this workspace's business.
+  const foreign = await fetch(
+    `http://127.0.0.1:${port}/v1/workspaces/workspace-2/p1/harness/tasks`,
+    { headers: { ...headers, 'x-workspace-id': 'workspace-2' } },
+  );
+  assert.equal(foreign.status, 200);
+  assert.deepEqual((await foreign.json()).data, { tasks: [] });
+});
+
+/**
+ * A missing bridge must never be the reason a composer will not mount: the
+ * conversation still works, it just cannot offer a way back into an older run.
+ */
+test('a store that cannot answer the time bridge yields an empty list, not a failure', async () => {
+  const registry = new MemoryHarnessStore();
+  const harnessService = new HarnessApplicationService(
+    new HarnessTaskAdmissionService(registry, {
+      async start({ workflowId }) {
+        return { workflowId };
+      },
+    }),
+    new HarnessDecisionService(registry, {
+      async resume() {},
+      async startSuccessor() {},
+    }),
+    registry,
+  );
+
+  assert.deepEqual(await harnessService.listActiveTasks('workspace-1'), {
+    tasks: [],
+  });
+});
+
 class MemoryHarnessStore
   implements HarnessTaskRequestRegistry, HarnessDecisionStore
 {
@@ -449,6 +581,10 @@ class MemoryHarnessStore
   private readonly resumedEvents = new Set<string>();
   private readonly resumeClaims = new Set<string>();
   private readonly pending = new Map<string, QuestionCard>();
+  private readonly pendingProjections = new Map<
+    string,
+    HarnessPendingDecisionProjection
+  >();
   private readonly resolvedByCoreTimeout = new Map<string, QuestionCard>();
   private readonly audits = new Map<
     string,
@@ -494,6 +630,7 @@ class MemoryHarnessStore
     );
   }
 
+
   async readTodayRecommendation(workspaceId: string) {
     return {
       workspaceId,
@@ -503,7 +640,11 @@ class MemoryHarnessStore
     } as const;
   }
 
-  async registerPending(workspaceId: string, question: QuestionCard) {
+  async registerPending(
+    workspaceId: string,
+    question: QuestionCard,
+    projection?: HarnessPendingDecisionProjection,
+  ) {
     if (
       await this.approvals.hasPendingApproval(
         workspaceId,
@@ -512,10 +653,12 @@ class MemoryHarnessStore
     ) {
       throw new TaskBlockingNodeConflictError(question.workflowId);
     }
-    this.pending.set(
-      JSON.stringify([workspaceId, question.workflowId]),
-      structuredClone(question),
-    );
+    const identity = JSON.stringify([workspaceId, question.workflowId]);
+    this.pending.set(identity, structuredClone(question));
+    if (projection) {
+      this.pendingProjections.set(identity, structuredClone(projection));
+    }
+    return projection ? structuredClone(projection) : undefined;
   }
 
   async readPending(workspaceId: string, taskId: string) {
@@ -529,6 +672,7 @@ class MemoryHarnessStore
       this.pending.get(identity) ?? this.resolvedByCoreTimeout.get(identity);
     const request = this.tasks.get(identity)?.request;
     if (!question || !request) return null;
+    const projection = this.pendingProjections.get(identity);
     return {
       question: structuredClone(question),
       request: structuredClone(request),
@@ -538,6 +682,9 @@ class MemoryHarnessStore
       status: this.pending.has(identity)
         ? ('pending' as const)
         : ('resolved' as const),
+      ...(projection
+        ? { timeoutSeconds: projection.timeoutSeconds }
+        : {}),
     };
   }
 
@@ -689,6 +836,7 @@ function question(workflowId = 'task-http-1'): QuestionCard {
       field: 'offer_price',
       reason: '补充当前任务所需的权威事实',
     },
+    unattended: 'continue',
     scope: 'current_task',
   };
 }

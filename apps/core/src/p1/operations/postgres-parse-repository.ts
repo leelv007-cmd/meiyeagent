@@ -13,6 +13,7 @@ import type { Pool, PoolClient } from 'pg';
 
 import {
   ParseServiceError,
+  selectMonotonicParseTaskUpdate,
   type ParseRepository,
 } from './parse-service.js';
 
@@ -298,34 +299,44 @@ export class PostgresParseRepository implements ParseRepository {
 
   async updateTask(value: ParseTask) {
     const task = parseTaskSchema.parse(value);
-    const result = await this.pool.query<PayloadRow>(
-      `UPDATE p1_parse_tasks
-          SET payload = $3::jsonb, updated_at = $4
-        WHERE workspace_id = $1
-          AND task_id = $2
-          AND mode = $5
-          AND source_asset_ids = $6::jsonb
-          AND created_at = $7
-        RETURNING payload`,
-      [
-        task.workspaceId,
-        task.taskId,
-        task,
-        task.updatedAt,
-        task.mode,
-        JSON.stringify(task.sourceAssetIds),
-        task.createdAt,
-      ],
-    );
-    const updated = result.rows[0]?.payload;
-    if (updated) return parseTaskSchema.parse(updated);
-    const current = await this.getTask(task.workspaceId, task.taskId);
-    throw new ParseServiceError(
-      current ? 'TASK_CONFLICT' : 'TASK_NOT_FOUND',
-      current
-        ? `Parse task ${task.taskId} identity fields cannot change.`
-        : `Parse task ${task.taskId} was not found.`,
-    );
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const locked = await client.query<PayloadRow>(
+        `SELECT payload
+           FROM p1_parse_tasks
+          WHERE workspace_id = $1 AND task_id = $2
+          FOR UPDATE`,
+        [task.workspaceId, task.taskId],
+      );
+      const payload = locked.rows[0]?.payload;
+      if (!payload) {
+        throw new ParseServiceError(
+          'TASK_NOT_FOUND',
+          `Parse task ${task.taskId} was not found.`,
+        );
+      }
+      const current = parseTaskSchema.parse(payload);
+      const selected = selectMonotonicParseTaskUpdate(current, task);
+      if (selected === current) {
+        await client.query('COMMIT');
+        return current;
+      }
+      const result = await client.query<PayloadRow>(
+        `UPDATE p1_parse_tasks
+            SET payload = $3::jsonb, updated_at = $4
+          WHERE workspace_id = $1 AND task_id = $2
+          RETURNING payload`,
+        [task.workspaceId, task.taskId, selected, selected.updatedAt],
+      );
+      await client.query('COMMIT');
+      return parseTaskSchema.parse(result.rows[0]!.payload);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async getTask(workspaceId: string, taskId: string) {

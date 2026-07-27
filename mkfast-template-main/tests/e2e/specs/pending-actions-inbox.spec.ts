@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import type {
+  ApprovalReceipt,
   ContentPackage,
   PendingAction,
   QuestionCard,
@@ -73,7 +74,7 @@ async function pendingActions(page: Page) {
       credentials: 'same-origin',
     });
     const envelope = (await response.json()) as {
-      data?: PendingAction[];
+      data?: (PendingAction | { pendingAction?: PendingAction })[];
       error?: { message: string };
     };
     if (!response.ok || !envelope.data) {
@@ -81,54 +82,79 @@ async function pendingActions(page: Page) {
         envelope.error?.message ?? 'Pending actions query failed'
       );
     }
-    return envelope.data;
+    return envelope.data.flatMap((item) =>
+      'kind' in item ? [item] : item.pendingAction ? [item.pendingAction] : []
+    );
   });
 }
 
-async function createHarnessPackage(page: Page) {
-  return operationsCommand<ContentPackage>(page, 'create_content_package', {
-    kind: 'image_text',
-    source: { assetIds: [] },
-  });
-}
+type ComposerTask = {
+  packageId: string;
+  taskId: string;
+  workId: string;
+};
 
-async function submitHarnessTask(
-  page: Page,
-  input: { packageId: string; taskId: string }
-) {
-  await page.evaluate(async ({ packageId, taskId }) => {
-    const rawInput = '把新团购做成一条可以发的小红书文案';
-    const response = await fetch('/api/core/p1/harness/tasks', {
-      body: JSON.stringify({
-        taskId,
-        packageId,
-        expectedRevision: 0,
-        workflowRevision: 1,
-        creationMode: 'customized',
-        rawInput,
-        intent: {
-          context: {
-            workId: `work-${taskId}`,
-            intent: rawInput,
-            sourceSummaries: [],
-          },
-          assetReferences: [],
-        },
-      }),
-      credentials: 'same-origin',
-      headers: {
-        'content-type': 'application/json',
-        'idempotency-key': taskId,
-      },
-      method: 'POST',
-    });
-    if (!response.ok) {
-      const envelope = (await response.json()) as {
-        error?: { message: string };
-      };
-      throw new Error(envelope.error?.message ?? 'Harness submission failed');
-    }
-  }, input);
+async function submitComposerTask(page: Page): Promise<ComposerTask> {
+  await page.evaluate(() => {
+    window.sessionStorage.removeItem('composer-session::composer-session/v1');
+  });
+  await page.goto('/dashboard');
+  await page.getByTestId('composer-lens-option-copy').click();
+  await page
+    .getByTestId('composer-intent-input')
+    .fill('写一条周末到店的团购活动文案');
+  const destination = page.getByTestId(
+    'composer-destination-option-xiaohongshu'
+  );
+  await expect(destination).toBeVisible({ timeout: 30_000 });
+  if ((await destination.getAttribute('aria-pressed')) !== 'true') {
+    await destination.click();
+  }
+  await expect(destination).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+    timeout: 60_000,
+  });
+
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      response.url().includes('/api/core/p1/composer/submissions'),
+    { timeout: 120_000 }
+  );
+  const submit = page.getByTestId('composer-submit');
+  await expect(submit).toBeEnabled({ timeout: 60_000 });
+  await submit.click();
+
+  const brief = page.getByTestId('composer-brief-surface');
+  const next = await Promise.race([
+    responsePromise.then(() => 'submission' as const),
+    brief
+      .waitFor({ state: 'visible', timeout: 60_000 })
+      .then(() => 'brief' as const),
+  ]);
+  if (next === 'brief') {
+    await page.getByTestId('composer-brief-confirm').click();
+  }
+
+  const response = await responsePromise;
+  const body = (await response.json()) as {
+    data?: {
+      contentPackage?: { id?: string };
+      task?: { id?: string };
+      work?: { id?: string };
+    };
+    error?: { message?: string };
+  };
+  expect(response.status(), body.error?.message).toBe(202);
+  const result = {
+    packageId: body.data?.contentPackage?.id ?? '',
+    taskId: body.data?.task?.id ?? '',
+    workId: body.data?.work?.id ?? '',
+  };
+  expect(result.packageId).toBeTruthy();
+  expect(result.taskId).toBeTruthy();
+  expect(result.workId).toBeTruthy();
+  return result;
 }
 
 async function pendingQuestion(page: Page, taskId: string) {
@@ -207,25 +233,32 @@ test.describe('pending action inbox', () => {
     await cleanupE2EUsers(request);
   });
 
-  test('three parallel tasks keep one stable current action and each resumes after its authoritative card', async ({
+  test('parallel tasks resume and the approved task completes canonical one-shot handoff', async ({
     page,
     request,
   }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(360_000);
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'canShare', {
+        configurable: true,
+        value: (payload: ShareData) => !payload.files?.length,
+      });
+      Object.defineProperty(navigator, 'share', {
+        configurable: true,
+        value: async (payload: ShareData) => {
+          if (payload.url) {
+            window.sessionStorage.setItem(
+              'e2e-canonical-handoff-url',
+              payload.url
+            );
+          }
+        },
+      });
+    });
 
-    const packages = await Promise.all([
-      createHarnessPackage(page),
-      createHarnessPackage(page),
-      createHarnessPackage(page),
-    ]);
-    const tasks = packages.map((contentPackage, index) => ({
-      packageId: contentPackage.id,
-      taskId: `pending-actions-task-${index + 1}-${crypto.randomUUID()}`,
-    }));
-
-    await submitHarnessTask(page, tasks[0]!);
+    const tasks: ComposerTask[] = [await submitComposerTask(page)];
     await waitForTaskQuestion(page, tasks[0]!.taskId);
     await answerHarnessQuestion(page, tasks[0]!.taskId);
     await expect
@@ -239,13 +272,12 @@ test.describe('pending action inbox', () => {
       .toBe('review_ready');
 
     await page.goto(
-      `/dashboard/works/${encodeURIComponent(tasks[0]!.packageId)}`
+      `/dashboard/results/${encodeURIComponent(tasks[0]!.workId)}`
     );
-    const generateVariants = page.getByRole('button', {
-      name: /^生成三平台版本/,
-    });
-    await expect(generateVariants).toBeEnabled({ timeout: 30_000 });
-    await generateVariants.click();
+    const adopt = page.getByTestId('result-primary-action');
+    await expect(adopt).toHaveText('采用此版本', { timeout: 60_000 });
+    await expect(adopt).toBeEnabled();
+    await adopt.click();
     await expect
       .poll(
         async () =>
@@ -276,10 +308,8 @@ test.describe('pending action inbox', () => {
       )
       .toBe(true);
 
-    await Promise.all([
-      submitHarnessTask(page, tasks[1]!),
-      submitHarnessTask(page, tasks[2]!),
-    ]);
+    tasks.push(await submitComposerTask(page));
+    tasks.push(await submitComposerTask(page));
     await expect
       .poll(async () => (await pendingActions(page)).length, {
         timeout: 60_000,
@@ -314,14 +344,33 @@ test.describe('pending action inbox', () => {
       reloadedInbox.locator('[data-current="true"]')
     ).toHaveAttribute('data-pending-action-ref', stableCurrentRef!);
 
-    const approvalItem = reloadedInbox.locator('[data-current="true"]');
-    await approvalItem.getByLabel('发布账号').fill('e2e-xiaohongshu-account');
     const scheduledAt = new Date(Date.now() + 60 * 60 * 1_000)
       .toISOString()
       .slice(0, 16);
-    await approvalItem.getByLabel('计划发布时间').fill(scheduledAt);
-    await approvalItem.getByLabel('本次费用（CNY）').fill('0');
-    await approvalItem.getByRole('button', { name: '确认并发布' }).click();
+    const approvalAction = initial.find((action) => action.kind === 'approval');
+    if (!approvalAction) throw new Error('Pending approval action was absent');
+    const currentPackage = (await contentPackages(page)).find(
+      ({ id }) => id === approvalAction.approvalRequest.packageId
+    );
+    if (!currentPackage) throw new Error('Approval package was absent');
+    const approvalReceipt = await operationsCommand<ApprovalReceipt>(
+      page,
+      'approve_content_package_action',
+      {
+        accountId: 'e2e-xiaohongshu-account',
+        actionKind: approvalAction.approvalRequest.actionKind,
+        actionScheduledAt: new Date(scheduledAt).toISOString(),
+        approvalKey: `pending-actions-e2e:${approvalAction.questionOrApprovalRef}`,
+        cost: { amount: 0, currency: 'CNY' },
+        expectedRevision: currentPackage.revision,
+        packageId: approvalAction.approvalRequest.packageId,
+        platform: approvalAction.approvalRequest.platform,
+        purpose: approvalAction.approvalRequest.purpose,
+        requestId: approvalAction.approvalRequest.id,
+        variantVersionId: approvalAction.approvalRequest.variantVersionId,
+      }
+    );
+    expect(approvalReceipt.status).toBe('approved');
     await expect
       .poll(async () => (await pendingActions(page)).length, {
         timeout: 30_000,
@@ -333,16 +382,20 @@ test.describe('pending action inbox', () => {
           (candidate) => candidate.id === tasks[0]!.packageId
         );
         return {
-          delivery: contentPackage?.deliveryEvents?.at(-1)?.type,
+          approval: contentPackage?.approvalReceipts?.at(-1)?.status,
           request: contentPackage?.approvalRequests?.[0]?.status,
         };
       })
-      .toEqual({ delivery: 'assisted_handoff_prepared', request: 'consumed' });
+      .toEqual({ approval: 'approved', request: 'consumed' });
+
+    await page.reload();
+    await page.getByRole('button', { exact: true, name: '2 项' }).click();
+    const questionInbox = page.getByTestId('pending-actions');
 
     for (let remaining = 2; remaining > 0; remaining -= 1) {
       const currentAction = (await pendingActions(page))[0];
       expect(currentAction).toMatchObject({ kind: 'question' });
-      const currentItem = reloadedInbox.locator('[data-current="true"]');
+      const currentItem = questionInbox.locator('[data-current="true"]');
       await currentItem
         .locator('input[placeholder="输入这次任务的答案"]')
         .fill('299 元');
@@ -372,7 +425,93 @@ test.describe('pending action inbox', () => {
     }
 
     await expect.poll(async () => (await pendingActions(page)).length).toBe(0);
-    await expect(reloadedInbox).toBeHidden();
+    await expect(questionInbox).toBeHidden();
     await expect(page.getByTestId('pending-actions-badge')).toBeHidden();
+
+    const approvedTask = tasks[0]!;
+    await page.goto(
+      `/dashboard/works/${encodeURIComponent(approvedTask.packageId)}`
+    );
+    const handoffDoorway = page.getByTestId('works-action-handoff');
+    await expect(handoffDoorway).toBeVisible({ timeout: 60_000 });
+    await expect(handoffDoorway).toHaveAttribute(
+      'href',
+      new RegExp(
+        `/dashboard/results/${encodeURIComponent(approvedTask.workId)}\\?[^#]*panel=delivery`,
+        'u'
+      )
+    );
+    await handoffDoorway.click();
+    await expect(page.getByTestId('delivery-panel')).toBeVisible({
+      timeout: 60_000,
+    });
+
+    const assistedAction = page.getByTestId('delivery-action-assisted');
+    await expect(assistedAction).toBeEnabled();
+    await expect(assistedAction).toHaveAttribute('data-enabled', 'true');
+    await assistedAction.click();
+    await expect(page.getByTestId('delivery-outcome-handed-over')).toBeVisible({
+      timeout: 60_000,
+    });
+    await expect(page.getByTestId('delivery-assisted-panel')).toHaveAttribute(
+      'data-handed-over',
+      'true'
+    );
+    await expect(page.getByTestId('delivery-share-strategy')).toHaveAttribute(
+      'data-strategy',
+      'one_shot_link'
+    );
+
+    await page.getByTestId('delivery-action-system_share').click();
+    await expect(page.getByTestId('delivery-outcome-share-done')).toBeVisible();
+    const canonicalHandoffUrl = await page.evaluate(() =>
+      window.sessionStorage.getItem('e2e-canonical-handoff-url')
+    );
+    expect(canonicalHandoffUrl).toMatch(/\/dashboard\/handoff\/[^/?#]{16,}$/u);
+    if (!canonicalHandoffUrl) {
+      throw new Error('System share produced no canonical handoff URL');
+    }
+
+    await page.goto(canonicalHandoffUrl);
+    await expect(
+      page.getByRole('heading', { name: '小红书交接包' })
+    ).toBeVisible({ timeout: 60_000 });
+    for (const section of ['share', 'download', 'copy', 'report']) {
+      await expect(
+        page.getByTestId(`handoff-section-${section}`)
+      ).toBeVisible();
+    }
+    await page
+      .getByLabel('平台链接')
+      .fill('https://example.test/posts/canonical-handoff');
+    await page.getByLabel('备注').fill('canonical assisted handoff e2e');
+    await page.getByTestId('handoff-report-published').click();
+    await expect(page.getByTestId('handoff-section-report')).toHaveAttribute(
+      'data-published',
+      'true'
+    );
+    await expect(page.getByTestId('handoff-report-status')).toHaveText(
+      '已发布'
+    );
+    await expect
+      .poll(async () => {
+        const contentPackage = (await contentPackages(page)).find(
+          ({ id }) => id === approvedTask.packageId
+        );
+        const delivery = contentPackage?.deliveryEvents?.at(-1);
+        return {
+          approval: contentPackage?.approvalReceipts?.at(-1)?.status,
+          deliveryStatus:
+            delivery?.type === 'manual_publish_result'
+              ? delivery.status
+              : undefined,
+          deliveryType: delivery?.type,
+        };
+      })
+      .toEqual({
+        approval: 'consumed',
+        deliveryStatus: 'published',
+        deliveryType: 'manual_publish_result',
+      });
   });
 });

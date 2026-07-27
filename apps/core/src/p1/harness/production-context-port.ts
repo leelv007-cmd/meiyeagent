@@ -17,6 +17,7 @@ import {
 } from '../operations/context-compiler.js';
 import type { ContextSourceRevisionRepository } from '../operations/context-source-revisions.js';
 import {
+  isStoreFactActive,
   storeFactContextRevision,
   type StoreFactLedger,
 } from '../operations/store-fact-ledger.js';
@@ -28,6 +29,48 @@ import {
 import type { ProductionHarnessContextPort } from './production-stage-ports.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 import type { HarnessContextSnapshot } from './workflow-core.js';
+import type { FactRightsAuthorizationPort } from './fact-satisfaction.js';
+
+export class LedgerBackedFactRightsAuthorizationPort
+  implements FactRightsAuthorizationPort
+{
+  constructor(
+    private readonly facts: StoreFactLedger,
+    private readonly sourceRevisions: Pick<
+      ContextSourceRevisionRepository,
+      'current'
+    >,
+    private readonly now: () => string,
+  ) {}
+
+  async isAuthorized(
+    input: Parameters<FactRightsAuthorizationPort['isAuthorized']>[0],
+  ) {
+    const at = this.now();
+    const currentRevisions = await this.sourceRevisions.current(
+      input.workspaceId,
+    );
+    if (currentRevisions.rights !== input.rightsRevision) return false;
+    const history = await this.facts.history(
+      input.workspaceId,
+      input.fact.factId,
+    );
+    const current = history
+      .filter((fact) => Date.parse(fact.effectiveFrom) <= Date.parse(at))
+      .sort((left, right) => right.revision - left.revision)[0];
+    return Boolean(
+      current &&
+        current.workspaceId === input.workspaceId &&
+        current.revision === input.fact.revision &&
+        current.kind === input.fact.kind &&
+        current.effectiveFrom === input.fact.effectiveFrom &&
+        current.expiresAt === input.fact.expiresAt &&
+        current.revisionKind === input.fact.revisionKind &&
+        JSON.stringify(current.source) === JSON.stringify(input.fact.source) &&
+        isStoreFactActive(current, at),
+    );
+  }
+}
 
 export class HarnessSnapshotIdentityError extends Error {
   readonly code = 'HARNESS_IDENTITY_SNAPSHOT_INVALID';
@@ -338,6 +381,21 @@ export class LedgerBackedHarnessContextPort
     const activeIdentities =
       resolvedActiveIdentities ??
       (await this.activeIdentitiesForRouting(input, this.now()));
+    const statusAt = this.now();
+    const activeFactSourceRefs = new Set(
+      activeFacts.map((fact) => factReference(fact.factId, fact.revision)),
+    );
+    const factSnapshots = new Map(
+      Object.values(bundle.dimensions.store_facts_assets)
+        .filter((entry) => entry.factSnapshot !== undefined)
+        .map((entry) => [
+          factReference(
+            entry.factSnapshot!.factId,
+            entry.factSnapshot!.revision,
+          ),
+          entry.factSnapshot!,
+        ]),
+    );
     this.assertSnapshotIdentityBundle(input, bundle);
     const rightsRefs = assetIds.map((assetId) => {
       const authorized =
@@ -373,12 +431,24 @@ export class LedgerBackedHarnessContextPort
       })),
       policyReferences: {
         sourceRefs: bundle.referencedFactRevisions
-          .map((reference) => ({
-            id: factReference(reference.factId, reference.revision),
-            workspaceId: bundle.workspaceId,
-            revision: reference.revision,
-            status: 'current' as const,
-          }))
+          .map((reference) => {
+            const id = factReference(reference.factId, reference.revision);
+            const snapshot = factSnapshots.get(id);
+            return {
+              id,
+              workspaceId: bundle.workspaceId,
+              revision: reference.revision,
+              status: activeFactSourceRefs.has(id)
+                ? ('current' as const)
+                : snapshot?.expiresAt &&
+                    Date.parse(snapshot.expiresAt) <= Date.parse(statusAt)
+                  ? ('expired' as const)
+                  : ('withdrawn' as const),
+              ...(snapshot?.expiresAt
+                ? { expiresAt: snapshot.expiresAt }
+                : {}),
+            };
+          })
           .concat(
             (input.request.decisionReferences ?? []).map((reference) => ({
               id: reference.id,

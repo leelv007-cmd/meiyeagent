@@ -23,6 +23,7 @@ import {
 } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { verifyHeroUiMirrorGitHead } from './heroui-mirror-git-head.js';
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = resolve(appRoot, '..');
@@ -73,6 +74,23 @@ if (mirrorPkg.name !== pin.package || mirrorPkg.version !== pin.version) {
     `mirror is ${mirrorPkg.name}@${mirrorPkg.version} but components.json pins ` +
       `${pin.package}@${pin.version}. Check out the pinned ref before syncing.`
   );
+}
+
+let mirrorHead: string;
+try {
+  mirrorHead = verifyHeroUiMirrorGitHead({
+    mirror,
+    pinnedCommit: pin.mirrorCommit,
+  });
+} catch (error) {
+  fail(error instanceof Error ? error.message : String(error));
+}
+
+if (process.argv.includes('--verify-pin')) {
+  process.stdout.write(
+    `sync-heroui-pro: verified ${pin.package}@${pin.version} at ${mirrorHead}\n`
+  );
+  process.exit(0);
 }
 
 /** Every relative import a copied file reaches outside its own directory. */

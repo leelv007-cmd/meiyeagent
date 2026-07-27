@@ -64,6 +64,8 @@ export function validateRecipeForComposer(
   }
 
   const candidate = signedFields ?? {
+    creationMode: 'customized',
+    intent: 'recipe validation',
     catalogModel: { id: 'catalog-validation', revision: 'catalog-validation' },
     recipe: { id: 'recipe-validation', revision: 'recipe-validation' },
     contentPackagePlatform: recipe.delivery.contentPackagePlatform,

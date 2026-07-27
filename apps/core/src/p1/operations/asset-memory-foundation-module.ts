@@ -9,6 +9,7 @@ import {
   correctAssetIntakeFactCommandSchema,
   createReuseTaskCommandSchema,
   deactivateSeriesCommandSchema,
+  finalizeStoreIntakeCommandSchema,
   parseAssetBatchCommandSchema,
   parseSingleAssetCommandSchema,
   parseTaskViewQuerySchema,
@@ -31,10 +32,12 @@ import { z } from 'zod';
 
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
 import type { P1OperationModule } from '../foundation/ports.js';
+import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import type { AssetIntakeService } from './asset-intake-service.js';
 import type { ContextBundleRepository } from './context-bundle-repository.js';
 import type { ReuseMemoryService } from './reuse-memory-service.js';
 import type { ParseService } from './parse-service.js';
+import type { StoreIntakeFinalizer } from './store-intake-finalizer.js';
 
 export interface ReuseTaskSubmissionPort {
   submit(input: {
@@ -98,6 +101,7 @@ export class AssetMemoryFoundationModule implements P1OperationModule {
     private readonly reuseTasks?: ReuseTaskSubmissionPort,
     private readonly now: () => string = () => new Date().toISOString(),
     private readonly parsing?: ParseService,
+    private readonly storeIntake?: StoreIntakeFinalizer,
   ) {}
 
   async execute(args: {
@@ -136,33 +140,42 @@ export class AssetMemoryFoundationModule implements P1OperationModule {
             'This draft has no facts to confirm.',
           );
         }
-        return this.intake.recordBatch({
-          batchId: input.batchId,
-          workspaceId: args.context.workspaceId,
-          taskId: draft.taskId,
-          source: {
-            sourceId: draft.sourceAssetId,
-            kind:
-              draft.target === 'group_buy'
-                ? 'group_buy_screenshot'
-                : draft.target === 'price_list'
-                  ? 'price_list'
-                  : 'gallery',
-            referenceId: draft.sourceAssetId,
-            capabilityStatus: 'assisted',
-            sourceWorkspaceId: args.context.workspaceId,
-            capturedAt: draft.createdAt,
-            example: false,
+        return this.intake.recordBatch(
+          {
+            batchId: input.batchId,
+            workspaceId: args.context.workspaceId,
+            taskId: draft.taskId,
+            source: {
+              sourceId: draft.sourceAssetId,
+              kind:
+                draft.target === 'group_buy'
+                  ? 'group_buy_screenshot'
+                  : draft.target === 'price_list'
+                    ? 'price_list'
+                    : 'gallery',
+              referenceId: draft.sourceAssetId,
+              capabilityStatus: 'assisted',
+              sourceWorkspaceId: args.context.workspaceId,
+              capturedAt: draft.createdAt,
+              example: false,
+            },
+            summary: `已整理出 ${draft.factCandidates.length} 项待确认资料。`,
+            candidates: draft.factCandidates.map((fact, index) => ({
+              candidateId: `${draft.draftId}:fact:${index + 1}`,
+              status: 'pending' as const,
+              objectKind: 'store_fact' as const,
+              fact,
+            })),
+            createdAt: this.now(),
           },
-          summary: `已整理出 ${draft.factCandidates.length} 项待确认资料。`,
-          candidates: draft.factCandidates.map((fact, index) => ({
-            candidateId: `${draft.draftId}:fact:${index + 1}`,
-            status: 'pending' as const,
-            objectKind: 'store_fact' as const,
-            fact,
-          })),
-          createdAt: this.now(),
-        });
+          fingerprintValue({
+            action: 'promote_asset_draft',
+            workspaceId: args.context.workspaceId,
+            input,
+            draftId: draft.draftId,
+            draftRevision: draft.revision,
+          }),
+        );
       }
       case 'record_asset_intake_batch': {
         const input = parse(recordAssetIntakeBatchCommandSchema, value);
@@ -173,6 +186,20 @@ export class AssetMemoryFoundationModule implements P1OperationModule {
           throw new P1DomainError(
             'FORBIDDEN',
             'Asset intake sources cannot cross workspaces.',
+          );
+        }
+        if (
+          !input.source.example &&
+          (input.source.kind !== 'manual' ||
+            input.candidates.some(
+              (candidate) =>
+                candidate.objectKind === 'store_fact' &&
+                candidate.fact.source.kind !== 'user_confirmation',
+            ))
+        ) {
+          throw new P1DomainError(
+            'FORBIDDEN',
+            'Direct intake recording only accepts manual user confirmations.',
           );
         }
         return this.intake.recordBatch({
@@ -198,6 +225,19 @@ export class AssetMemoryFoundationModule implements P1OperationModule {
           ...input,
           idempotencyKey: args.idempotencyKey,
         });
+      }
+      case 'finalize_store_intake': {
+        if (!this.storeIntake) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'Store intake finalization is unavailable.',
+          );
+        }
+        return this.storeIntake.finalize(
+          args.context,
+          parse(finalizeStoreIntakeCommandSchema, value),
+          args.idempotencyKey,
+        );
       }
       case 'reject_asset_intake_candidate': {
         const input = parse(rejectAssetIntakeCandidateCommandSchema, value);

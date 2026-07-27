@@ -1,11 +1,12 @@
 /**
- * Inline Day-0 progressive store fact card (#148).
- * One question at a time; skippable facts explain safe fallback + impact.
+ * Inline Day-0 progressive store fact card (#148 / W01).
+ * One question at a time; one confirmation emits one finalize intake batch.
  */
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
+  account_usage_retry,
   progressive_fact_address_label,
   progressive_fact_booking_label,
   progressive_fact_brand_voice_label,
@@ -21,16 +22,19 @@ import {
   progressive_fact_skip,
   progressive_fact_title,
   progressive_fact_why_label,
+  workbench_operation_failed,
 } from '@/locale/paraglide/messages';
-import type { ProductCommand } from '@meiye/contracts';
-import { useMemo, useState } from 'react';
+import type { StoreFact, StoreProfile } from '@meiye/contracts';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   answerProgressiveFact,
-  buildConfirmStoreCommand,
+  buildFinalizeStoreIntakeCommand,
   createProgressiveFactDraft,
+  progressiveFactRevisionMap,
   projectProgressiveFactView,
   skipProgressiveFact,
+  type FinalizeStoreIntakeRequest,
   type ProgressiveFactDraft,
   type ProgressiveFactId,
 } from './progressive-fact';
@@ -47,21 +51,61 @@ const LABELS: Record<ProgressiveFactId, () => string> = {
 };
 
 export type ProgressiveFactCardProps = {
-  onConfirm: (command: ProductCommand) => Promise<void> | void;
+  activeFacts: Array<Pick<StoreFact, 'factId' | 'revision'>>;
+  createConfirmationId?: () => string;
+  factHeads: Array<Pick<StoreFact, 'factId' | 'revision'>>;
+  now?: () => string;
+  onConfirm: (
+    request: FinalizeStoreIntakeRequest,
+    idempotencyKey: string
+  ) => Promise<void> | void;
   pending?: boolean;
+  /**
+   * Platform default for `regulated`, read from `admin-config`
+   * `config_defaults`. Undefined while it is still loading — Day-0 confirm
+   * stays disabled until it resolves, because the first patch has to carry the
+   * platform's call rather than a web-side guess.
+   */
+  regulatedDefault?: boolean;
+  store?: StoreProfile;
+  workspaceId: string;
 };
 
 export function ProgressiveFactCard({
+  activeFacts,
+  createConfirmationId = () =>
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `progressive-${Date.now()}`,
+  factHeads,
+  now = () => new Date().toISOString(),
   onConfirm,
   pending = false,
+  regulatedDefault,
+  store,
+  workspaceId,
 }: ProgressiveFactCardProps) {
   const [draft, setDraft] = useState<ProgressiveFactDraft>(() =>
-    createProgressiveFactDraft()
+    createProgressiveFactDraft(store, activeFacts)
   );
   const [value, setValue] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState(false);
+  const requestRef = useRef<{
+    idempotencyKey: string;
+    request: FinalizeStoreIntakeRequest;
+  } | null>(null);
   const view = useMemo(() => projectProgressiveFactView(draft), [draft]);
   const current = view.current;
+  // Day-0 creates the profile, and creation carries `regulated`. Until the
+  // platform default arrives the command cannot be built, so confirm would be
+  // a silent no-op — keep it disabled instead.
+  const awaitingRegulatedDefault =
+    (store?.revision ?? 0) === 0 && regulatedDefault === undefined;
+
+  useEffect(() => {
+    setValue(current ? draft[current.id] : '');
+  }, [current?.id, draft]);
 
   const applyAnswer = (nextDraft: ProgressiveFactDraft) => {
     setDraft(nextDraft);
@@ -82,11 +126,32 @@ export function ProgressiveFactCard({
   };
 
   const handleConfirm = async () => {
-    const command = buildConfirmStoreCommand(draft);
-    if (!command) return;
+    let submission = requestRef.current;
+    if (!submission) {
+      const id = createConfirmationId();
+      const request = buildFinalizeStoreIntakeCommand(draft, {
+        batchId: `progressive-batch:${id}`,
+        capturedAt: now(),
+        expectedRevision: store?.revision ?? 0,
+        factRevisions: progressiveFactRevisionMap(factHeads),
+        referenceId: `progressive-card:${id}`,
+        regulatedDefault,
+        taskId: `progressive-task:${id}`,
+        workspaceId,
+      });
+      if (!request) return;
+      submission = {
+        idempotencyKey: `progressive-finalize:${id}`,
+        request,
+      };
+      requestRef.current = submission;
+    }
+    setSubmissionError(false);
     setSubmitting(true);
     try {
-      await onConfirm(command);
+      await onConfirm(submission.request, submission.idempotencyKey);
+    } catch {
+      setSubmissionError(true);
     } finally {
       setSubmitting(false);
     }
@@ -166,7 +231,7 @@ export function ProgressiveFactCard({
         </div>
       ) : null}
 
-      {view.readyToConfirm ? (
+      {view.readyToConfirm && draft.answered.length > 0 ? (
         <div className="mt-4 space-y-2 border-t border-border pt-3">
           {view.skipImpacts.length > 0 ? (
             <ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground">
@@ -175,14 +240,35 @@ export function ProgressiveFactCard({
               ))}
             </ul>
           ) : null}
-          <Button
-            data-testid="progressive-fact-confirm"
-            disabled={pending || submitting}
-            onClick={() => void handleConfirm()}
-            type="button"
-          >
-            {progressive_fact_confirm()}
-          </Button>
+          {submissionError ? (
+            <div
+              className="space-y-2"
+              data-testid="progressive-fact-submit-error"
+              role="alert"
+            >
+              <p className="text-sm text-destructive">
+                {workbench_operation_failed()}
+              </p>
+              <Button
+                data-testid="progressive-fact-retry"
+                disabled={pending || submitting}
+                onClick={() => void handleConfirm()}
+                type="button"
+                variant="outline"
+              >
+                {account_usage_retry()}
+              </Button>
+            </div>
+          ) : (
+            <Button
+              data-testid="progressive-fact-confirm"
+              disabled={pending || submitting || awaitingRegulatedDefault}
+              onClick={() => void handleConfirm()}
+              type="button"
+            >
+              {progressive_fact_confirm()}
+            </Button>
+          )}
         </div>
       ) : null}
     </section>

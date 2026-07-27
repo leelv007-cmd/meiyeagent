@@ -1,4 +1,5 @@
 import {
+  confirmationCardTimeoutSecondsSchema,
   contentPackageSchema,
   questionCardSchema,
   structuredDecisionInputSchema,
@@ -24,6 +25,7 @@ import type { VisibleClaimExtraction } from './policy-gates.js';
 
 import type {
   HarnessDecisionStore,
+  HarnessPendingDecisionProjection,
   HarnessDecisionTrace,
 } from './decision-service.js';
 import type {
@@ -94,6 +96,7 @@ export class PostgresHarnessStore
         question_id text not null,
         workflow_revision bigint not null,
         payload jsonb not null,
+        pending_projection jsonb not null default '{}'::jsonb,
         status text not null check (status in ('pending', 'resolved')),
         updated_at timestamptz not null default now()
       );
@@ -137,6 +140,7 @@ export class PostgresHarnessStore
         attempts integer not null default 0,
         next_attempt_at timestamptz not null default now(),
         last_error text,
+        dead_lettered_at timestamptz,
         updated_at timestamptz not null default now()
       );
 
@@ -145,6 +149,11 @@ export class PostgresHarnessStore
 
       alter table harness_runtime.decision_events
         add column if not exists resume_status text not null default 'pending';
+      alter table harness_runtime.pending_questions
+        add column if not exists pending_projection jsonb not null
+          default '{}'::jsonb;
+      alter table harness_runtime.langfuse_outbox
+        add column if not exists dead_lettered_at timestamptz;
       alter table harness_runtime.decision_events
         add column if not exists resolution_source text;
       update harness_runtime.decision_events
@@ -262,6 +271,66 @@ export class PostgresHarnessStore
     return result.rows[0]?.runtime_id ?? null;
   }
 
+  /**
+   * 时间桥把手 (D-145). Runs that are still on the server for this workspace:
+   * admitted, not yet delivered, not yet failed, not cancelled. The browser asks
+   * this on mount so closing the tab stops being a way to lose the run — the
+   * handle comes back from the server and the transcript comes back from the
+   * event replay.
+   *
+   * Cancellation needs its own exclusion: a 确认卡 whose hold expired settles as
+   * a refund and returns normally, so it writes no `workflow_failed` audit event
+   * and would otherwise be dragged back into the composer on every mount for a
+   * whole day.
+   *
+   * Bounded to the same 24 hours the browser handle used to live for: a run
+   * older than that is not something a merchant is still waiting on.
+   */
+  async listActiveTasks(workspaceId: string) {
+    const result = await this.pool.query<{
+      task_id: string;
+      request: HarnessWorkflowInput;
+      created_at: Date | string;
+    }>(
+      `select requests.workflow_id as task_id,
+              requests.request,
+              requests.created_at
+       from harness_runtime.task_requests requests
+       where requests.request->>'workspaceId'=$1
+         and requests.created_at > now() - interval '24 hours'
+         and not exists (
+           select 1 from harness_runtime.audit_events events
+           where events.workflow_id=requests.task_id
+             and events.event_type in (
+               'package_delivered', 'workflow_failed', 'revision_conflict'
+             )
+         )
+         and not exists (
+           select 1 from harness_runtime.decision_events decisions
+           where decisions.task_id=requests.task_id
+             and decisions.resolution_source='core_hold_expired'
+         )
+       order by requests.created_at desc
+       limit 20`,
+      [workspaceId],
+    );
+    return result.rows.flatMap((row) => {
+      const workId = row.request?.executionSnapshot?.work.id;
+      const merchantText = row.request?.rawInput?.trim();
+      // A run with no Composer snapshot has no conversation to return to.
+      if (!workId || !merchantText) return [];
+      return [
+        {
+          taskId: row.task_id,
+          workId,
+          packageId: row.request.packageId,
+          merchantText,
+          submittedAt: new Date(row.created_at).toISOString(),
+        },
+      ];
+    });
+  }
+
   async readTerminalFailure(workspaceId: string, workflowId: string) {
     const runtimeWorkflowId = await this.workflowRuntimeId(
       workspaceId,
@@ -345,6 +414,12 @@ export class PostgresHarnessStore
     );
     const traces = new Map<string, unknown>();
     for (const row of traceResult.rows) {
+      if (
+        row.stage === 'context_injection' &&
+        !record(row.payload)?.sourceRevisions
+      ) {
+        continue;
+      }
       if (!traces.has(row.stage)) traces.set(row.stage, row.payload);
     }
     const request = record(delivery.request);
@@ -369,8 +444,20 @@ export class PostgresHarnessStore
     );
   }
 
-  async registerPending(workspaceId: string, question: QuestionCard) {
+  async registerPending(
+    workspaceId: string,
+    question: QuestionCard,
+    projection?: HarnessPendingDecisionProjection,
+  ) {
     const parsed = questionCardSchema.parse(question);
+    const proposedTimeoutSeconds =
+      projection === undefined
+        ? undefined
+        : projection.timeoutSeconds === null
+          ? null
+          : confirmationCardTimeoutSecondsSchema.parse(
+              projection.timeoutSeconds,
+            );
     const runtimeTaskId = await this.requireWorkflowRuntimeId(
       workspaceId,
       parsed.workflowId,
@@ -382,15 +469,21 @@ export class PostgresHarnessStore
         `${workspaceId}:${parsed.workflowId}`,
       ]);
       const existing = await client.query<{
+        pending_projection: unknown;
         question_id: string;
         workflow_revision: string;
       }>(
-        `select question_id, workflow_revision::text as workflow_revision
+        `select question_id,
+                workflow_revision::text as workflow_revision,
+                pending_projection
            from harness_runtime.pending_questions
           where task_id=$1 and status='pending'`,
         [runtimeTaskId],
       );
       const pending = existing.rows[0];
+      let frozenTimeoutSeconds = pending
+        ? pendingDecisionTimeoutSeconds(pending.pending_projection)
+        : proposedTimeoutSeconds;
       if (
         pending &&
         (pending.question_id !== parsed.questionId ||
@@ -413,15 +506,34 @@ export class PostgresHarnessStore
       if (approval.rowCount === 1) {
         throw new TaskBlockingNodeConflictError(parsed.workflowId);
       }
+      if (
+        pending &&
+        frozenTimeoutSeconds === undefined &&
+        proposedTimeoutSeconds !== undefined
+      ) {
+        await client.query(
+          `update harness_runtime.pending_questions
+              set pending_projection=$2::jsonb,
+                  updated_at=now()
+            where task_id=$1 and status='pending'`,
+          [
+            runtimeTaskId,
+            JSON.stringify({ timeoutSeconds: proposedTimeoutSeconds }),
+          ],
+        );
+        frozenTimeoutSeconds = proposedTimeoutSeconds;
+      }
       if (!pending) {
         await client.query(
           `insert into harness_runtime.pending_questions
-             (task_id, question_id, workflow_revision, payload, status)
-           values ($1,$2,$3,$4,'pending')
+             (task_id, question_id, workflow_revision, payload,
+              pending_projection, status)
+           values ($1,$2,$3,$4,$5,'pending')
            on conflict (task_id) do update set
              question_id=excluded.question_id,
              workflow_revision=excluded.workflow_revision,
              payload=excluded.payload,
+             pending_projection=excluded.pending_projection,
              status='pending',
              updated_at=now()`,
           [
@@ -429,10 +541,18 @@ export class PostgresHarnessStore
             parsed.questionId,
             parsed.workflowRevision,
             JSON.stringify(parsed),
+            JSON.stringify(
+              proposedTimeoutSeconds === undefined
+                ? {}
+                : { timeoutSeconds: proposedTimeoutSeconds },
+            ),
           ],
         );
       }
       await client.query('commit');
+      return frozenTimeoutSeconds === undefined
+        ? undefined
+        : { timeoutSeconds: frozenTimeoutSeconds };
     } catch (error) {
       await client.query('rollback');
       throw error;
@@ -462,6 +582,7 @@ export class PostgresHarnessStore
     const runtimeTaskId = await this.workflowRuntimeId(workspaceId, taskId);
     if (!runtimeTaskId) return null;
     const result = await this.pool.query<{
+      pending_projection: unknown;
       payload: unknown;
       request: HarnessWorkflowInput;
       resolution_source:
@@ -473,6 +594,7 @@ export class PostgresHarnessStore
       status: 'pending' | 'resolved';
     }>(
       `select questions.payload,
+              questions.pending_projection,
               questions.status,
               requests.request,
               (
@@ -491,12 +613,16 @@ export class PostgresHarnessStore
       [runtimeTaskId],
     );
     const row = result.rows[0];
+    const timeoutSeconds = row
+      ? pendingDecisionTimeoutSeconds(row.pending_projection)
+      : undefined;
     return row
       ? {
           question: questionCardSchema.parse(row.payload),
           request: row.request,
           resolutionSource: row.resolution_source,
           status: row.status,
+          ...(timeoutSeconds === undefined ? {} : { timeoutSeconds }),
         }
       : null;
   }
@@ -1133,6 +1259,7 @@ export class PostgresHarnessStore
          select audit_id
          from harness_runtime.langfuse_outbox
          where status in ('queued','failed','sending')
+           and dead_lettered_at is null
            and next_attempt_at <= now()
          order by next_attempt_at, audit_id
          for update skip locked
@@ -1213,6 +1340,16 @@ export class PostgresHarnessStore
        set status='failed', last_error=$2, next_attempt_at=$3, updated_at=now()
        where audit_id=$1 and status='sending'`,
       [auditId, error.slice(0, 2_000), retryAt.toISOString()],
+    );
+  }
+
+  async markLangfuseDeadLetter(auditId: string, error: string) {
+    await this.pool.query(
+      `update harness_runtime.langfuse_outbox
+       set status='failed', last_error=$2, dead_lettered_at=now(),
+           updated_at=now()
+       where audit_id=$1 and status='sending'`,
+      [auditId, error.slice(0, 2_000)],
     );
   }
 
@@ -1393,6 +1530,21 @@ function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+function pendingDecisionTimeoutSeconds(value: unknown) {
+  const projection = record(value);
+  if (
+    !projection ||
+    !Object.prototype.hasOwnProperty.call(projection, 'timeoutSeconds')
+  ) {
+    return undefined;
+  }
+  return projection.timeoutSeconds === null
+    ? null
+    : confirmationCardTimeoutSecondsSchema.parse(
+        projection.timeoutSeconds,
+      );
 }
 
 function commandFromDecisionEvent(value: unknown) {

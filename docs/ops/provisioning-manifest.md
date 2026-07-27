@@ -23,7 +23,7 @@
 | 键 | 用途（消费方） | 需你提供 | 缺省 fixture 档 | 状态 |
 |---|---|---|---|---|
 | **B-1** `RESEND_API_KEY` ＋发信域名 | 注册邮件与通知（装配门、注册承接票） | Resend API key＋一个能改 DNS 的发信域名（域名验证步骤我可以给） | 邮件落日志不真发（既有） | ☑ `live_verified` 2026-07-25T18:44:36.721Z（`tqai.uk` SPF/DKIM Verified；注册邮件真发至 Resend `delivered` 测试地址并获脱敏回执；DMARC 未配置，不设门；证据：`.scratch/provisioning-live-2026-07-25/resend-live-receipt.json`） |
-| **B-2** `CLOUDFLARE_ACCOUNT_ID`/`CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_R2_BUCKET_NAME` | R2 对象存储（媒体产物持久化，D-038 大产物对象存储） | CF 账号已有：需建一个 R2 bucket＋签发 token（步骤我可以给） | 本地文件存储档（既有） | ☑ `live_verified` 2026-07-25T17:52:27Z（token 查询唯一 ACCOUNT_ID；目标 bucket 已存在；远端上传/下载哈希一致并删除后不可读；本地两处 env 已回填；证据：`.scratch/provisioning-live-2026-07-25/r2-live-receipt.json`） |
+| **B-2** `CLOUDFLARE_ACCOUNT_ID`/`CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_R2_BUCKET_NAME` | R2 对象存储（媒体产物持久化，D-038 大产物对象存储）；生产/预发的 `P1_ASSET_S3_BUCKET` 必须与 `CLOUDFLARE_R2_BUCKET_NAME` 完全一致 | CF 账号已有：需建一个 R2 bucket＋签发 token（步骤我可以给） | 本地文件存储档（既有） | ☑ `live_verified` 2026-07-25T17:52:27Z（token 查询唯一 ACCOUNT_ID；目标 bucket 已存在；远端上传/下载哈希一致并删除后不可读；本地两处 env 已回填；证据：`.scratch/provisioning-live-2026-07-25/r2-live-receipt.json`） |
 | **B-3** `LANGFUSE_*` | 提示词版本化/评测（Skills、评估门） | **无需动作**——本地钉扎 compose 自生成 key；生产部署挂 E 门 | 本地 compose（既有） | ☑ 无需 live 核销（本地 compose 自供给；生产挂 E 门） |
 | **B-4** `BETTER_AUTH_SECRET`/`DATABASE_URL`/`HARNESS_DBOS_*` | 认证/持久层/编排 | **无需动作**——本地生成、本地真机 PG（CI 真机 job 既有） | 本地真机 PG | ☑ 无需 live 核销（本地生成＋本车道真机 PG） |
 
@@ -31,8 +31,9 @@
 
 | 项 | 用途（消费方） | 需你提供 | 开发期种子值 | 状态 |
 |---|---|---|---|---|
-| **C-1** 套餐三桶数字（文案/图/视频点 × 1/2/3 档） | 计费三桶票、运营手填后台 | **可后补**——上线前在后台填真值即可 | 既有 STARTER/GROWTH/PRO allowance 种子 | ☐ 可后补 |
-| **C-2** 三类加油包定价 | 同上 | **可后补**同上 | 样例值 | ☐ 可后补 |
+| **C-1** 套餐三桶数字（文案/图/视频点 × 初级/中级/高级 三档） | 计费三桶票、运营手填后台；消费方＝`plan.allowances.{starter,growth,pro}` admin-config 键 → 授权发放 + 公开定价页 | **可后补**——上线前在后台填真值即可 | **D-143 种子＝D-123 原文**：初级 文案100/图40/视频3、中级 文案300/图100/视频6、高级 文案600/图180/视频9（视频 3/6/9＝用户拍板数，文案/图为 D-123 参考表）；档位命名＝初级/中级/高级 | ☐ 可后补（种子已落地 `entitlement-module.ts` DEFAULT_PLAN_OFFERS + `product/plans.ts`） |
+| **C-2** 三类加油包定价 | 同上 | **可后补**同上 | 样例值（现行 copy-20/image-10/video-5；D-123 参考＝文案包100次/¥29、图片包50张/¥89、视频包3条/¥149，未落地待运营核算） | ☐ 可后补 |
+| **C-1b** 档位月价（初级/中级/高级） | 公开定价页与 Landing（两页同源读 `VITE_GROWTH_*_AMOUNT_CENTS` 支付配置） | **可后补**——试点期线上支付未开放（D-124），价格为意向价 | D-123 中级 ¥399/月（`VITE_GROWTH_MONTHLY_AMOUNT_CENTS=39900`）；初级 D-123 参考 ¥199、高级 ¥699 当前按「按需开通」呈现 | ☐ 可后补 |
 | **C-3** 试用额度默认值与开关初值 | 装配门 trial 档、示例任务真实扣点 | 一组你认可的试用额度（例：文案 X 条/图 Y 张/视频 Z 条） | 样例值 | ☑ 已定：文案 5／图 5／视频 1 |
 | **C-4** 兑换码规则（位数/批次/有效期） | 试点注册承接票（D-045/D-124 R门①） | 一句话规则即可 | 样例规则 | ☑ 已定：手动申请（运营人工发码，无自动生成规则） |
 | **C-5** 三行业示例店（行业选定＋示例素材/事实） | D-126 冷态首页票（platform_sample） | 三个行业名（建议：美发/美甲美睫/皮肤管理），有真实素材更好、没有则 AI 样例 | AI 生成样例素材 | ☑ 已定：护发／皮肤管理／生发 |

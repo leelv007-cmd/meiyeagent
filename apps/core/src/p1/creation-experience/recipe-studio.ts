@@ -8,7 +8,9 @@ import {
   type ComposerContentPackagePlatform,
   type ComposerDistributionTarget,
   type EvalRun,
+  type RecipeDeliveryDefaults,
   type RecipeModelPolicy,
+  type RecipeSourceRequirement,
   type StoreFactKind,
 } from '@meiye/contracts';
 
@@ -60,7 +62,10 @@ export type RecipeStudioBlock =
       id: string;
       stage: 'context_injection';
       type: 'fact_slots';
-      config: { factTypes: StoreFactKind[] };
+      config: {
+        factTypes: StoreFactKind[];
+        sourceRequirements?: RecipeSourceRequirement[];
+      };
     }
   | {
       id: string;
@@ -74,6 +79,7 @@ export type RecipeStudioBlock =
       type: 'output_contract';
       config: {
         outputKind: RecipeStudioOutputKind;
+        deliverableKind?: RecipeDeliveryDefaults['deliverableKind'];
         quantity: number;
         aspectRatio?: string;
         durationSeconds?: number;
@@ -103,7 +109,11 @@ export interface RecipeStudioCompileInput extends CatalogAuditMeta {
   presentation: {
     title: string;
     summary: string;
+    actionLabel?: string;
   };
+  familyId?: string;
+  contextPatches?: Record<string, unknown>;
+  settingsPatches?: Record<string, unknown>;
   dependencies: {
     promptRevisionRef: string;
     skillRevisionRefs: string[];
@@ -135,7 +145,12 @@ export interface RecipeStudioInternalTestInput
 export interface RecipeStudioProductionInput
   extends RecipeStudioTransitionInput {
   surfaceId: string;
-  expectedSurfaceRevision: number;
+  expectedSurfaceRevision: number | null;
+  surfaceRef?: Pick<
+    import('@meiye/contracts').SurfaceRecipeRef,
+    'featured' | 'order' | 'visible'
+  >;
+  surfaceToolRefs?: import('@meiye/contracts').SurfaceToolRef[];
 }
 
 export interface RecipeStudioRollbackInput
@@ -217,6 +232,15 @@ function uniqueNonEmpty(values: string[], label: string) {
   }
 }
 
+function uniqueOptional(values: string[], label: string) {
+  if (
+    values.some((value) => typeof value !== 'string' || !value.trim()) ||
+    new Set(values).size !== values.length
+  ) {
+    fail(`${label}必须是不重复的受控值列表。`);
+  }
+}
+
 function compileBody(
   input: RecipeStudioCompileInput,
   now: string,
@@ -258,7 +282,7 @@ function compileBody(
   if (intent.config.intentTypes.some((value) => !INTENT_TYPES.has(value))) {
     fail('意图类型必须来自平台受控目录。');
   }
-  uniqueNonEmpty(facts.config.factTypes, '事实槽');
+  uniqueOptional(facts.config.factTypes, '事实槽');
   const invalidFact = facts.config.factTypes.find(
     (value) => !FACT_TYPES.has(value),
   );
@@ -308,7 +332,7 @@ function compileBody(
     input.dependencies.promptRevisionRef,
     'Prompt',
   );
-  uniqueNonEmpty(input.dependencies.skillRevisionRefs, 'Skill 依赖');
+  uniqueOptional(input.dependencies.skillRevisionRefs, 'Skill 依赖');
   const skillRevisionRefs = input.dependencies.skillRevisionRefs.map((ref) =>
     exactRevision(ref, 'Skill'),
   );
@@ -345,20 +369,23 @@ function compileBody(
 
   return {
     lensId: mapped.lensId,
+    ...(input.familyId?.trim() ? { familyId: input.familyId.trim() } : {}),
     presentation: {
       title: input.presentation.title.trim(),
       summary: input.presentation.summary.trim(),
       actionLabel:
-        mapped.lensId === 'copy'
+        input.presentation.actionLabel?.trim() ||
+        (mapped.lensId === 'copy'
           ? '选择文案并套用'
           : mapped.lensId === 'video'
             ? '选择视频并套用'
-            : '选择图文并套用',
+            : '选择图文并套用'),
     },
     delivery: {
       contentPackagePlatform: platform.config.contentPackagePlatform,
       distributionTarget: platform.config.distributionTarget,
-      deliverableKind: mapped.deliverableKind,
+      deliverableKind:
+        output.config.deliverableKind ?? mapped.deliverableKind,
       quantity: output.config.quantity,
       ...(output.config.aspectRatio
         ? { aspectRatio: output.config.aspectRatio }
@@ -371,6 +398,7 @@ function compileBody(
         : {}),
     },
     contextPatches: {
+      ...(input.contextPatches ?? {}),
       recipeStudioPlan: {
         industryKey: input.industryKey.trim(),
         intentTypes: [...intent.config.intentTypes],
@@ -378,9 +406,12 @@ function compileBody(
       },
     },
     factTypes: [...facts.config.factTypes],
-    sourceRequirements: [],
+    sourceRequirements: (facts.config.sourceRequirements ?? []).map(
+      (requirement) => ({ ...requirement }),
+    ),
     modelPolicy: structuredClone(input.modelPolicy),
     settingsPatches: {
+      ...(input.settingsPatches ?? {}),
       candidateStrategy: candidate.config.strategy,
       outputKind: output.config.outputKind,
     },
@@ -598,20 +629,28 @@ export class RecipeStudioService {
       input.surfaceId,
       input.expectedSurfaceRevision,
     );
-    const preview = await this.catalog.previewRecipe({
-      recipeId: input.recipeId,
-      expectedRevision: head.revision,
-      actorId: input.actorId,
-      reason: input.reason,
-      correlationId: input.correlationId,
-    });
-    const recipe = await this.catalog.publishRecipe({
-      recipeId: input.recipeId,
-      expectedRevision: preview.revision,
-      actorId: input.actorId,
-      reason: input.reason,
-      correlationId: input.correlationId,
-    });
+    const preview =
+      head.status === 'draft'
+        ? await this.catalog.previewRecipe({
+            recipeId: input.recipeId,
+            expectedRevision: head.revision,
+            actorId: input.actorId,
+            reason: input.reason,
+            correlationId: input.correlationId,
+          })
+        : head;
+    const recipe =
+      preview.status === 'preview'
+        ? await this.catalog.publishRecipe({
+            recipeId: input.recipeId,
+            expectedRevision: preview.revision,
+            actorId: input.actorId,
+            reason: input.reason,
+            correlationId: input.correlationId,
+          })
+        : preview.status === 'published'
+          ? preview
+          : fail('Recipe 生产切换只能从已完成四门链的版本恢复。');
     const surface = await this.publishSurfaceReference({
       ...input,
       recipe,
@@ -652,7 +691,7 @@ export class RecipeStudioService {
     );
     const recipeRefs = [];
     let replaced = false;
-    for (const ref of head.recipeRefs) {
+    for (const ref of head?.recipeRefs ?? []) {
       const referenced = await this.catalog.getRecipeByRevisionId(
         ref.recipeRevisionId,
       );
@@ -671,20 +710,24 @@ export class RecipeStudioService {
       recipeRefs.push({
         recipeRevisionId: input.recipe.revisionId,
         lensId: input.recipe.lensId,
-        order: Math.max(-1, ...recipeRefs.map((ref) => ref.order)) + 1,
-        featured: false,
-        visible: true,
+        order:
+          input.surfaceRef?.order ??
+          Math.max(-1, ...recipeRefs.map((ref) => ref.order)) + 1,
+        featured: input.surfaceRef?.featured ?? false,
+        visible: input.surfaceRef?.visible ?? true,
       });
     }
     const draft = await this.catalog.draftSurface({
       surfaceId: input.surfaceId,
-      expectedRevision: head.revision,
+      expectedRevision: head?.revision ?? null,
       actorId: input.actorId,
       reason: input.reason,
       correlationId: input.correlationId,
       body: {
         recipeRefs,
-        toolEntryRefs: head.toolEntryRefs.map((ref) => ({ ...ref })),
+        toolEntryRefs: (head?.toolEntryRefs ?? input.surfaceToolRefs ?? []).map(
+          (ref) => ({ ...ref }),
+        ),
       },
     });
     const preview = await this.catalog.previewSurface({
@@ -705,9 +748,12 @@ export class RecipeStudioService {
 
   private async requireProductionSurface(
     surfaceId: string,
-    expectedRevision: number,
-  ): Promise<ServerSurfaceRecord> {
+    expectedRevision: number | null,
+  ): Promise<ServerSurfaceRecord | null> {
     const head = await this.catalog.getSurfaceHead(surfaceId);
+    if (!head && expectedRevision === null) {
+      return null;
+    }
     if (!head || head.status !== 'published') {
       fail('生产 Composer Surface 不存在或尚未发布。');
     }

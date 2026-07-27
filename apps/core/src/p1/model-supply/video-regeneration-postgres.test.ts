@@ -93,5 +93,32 @@ describe(
       );
       assert.equal(count.rows[0]?.count, '1');
     });
+
+    it('rejects retired whole-film scope at the persistence boundary', async () => {
+      await repository.migrate();
+      await assert.rejects(
+        pool.query(
+          `INSERT INTO model_video_regeneration_quotes
+             (workspace_id, quote_id, source_run_id, scope, payload, created_at)
+           VALUES ($1, $2, $3, $4, $5::jsonb, now())`,
+          [
+            workspaceId,
+            'quote-retired-scope',
+            'source-retired-scope',
+            'full_compose',
+            JSON.stringify({
+              actorId: 'owner-1',
+              createdAt: '2026-07-20T12:00:00.000Z',
+              quoteId: 'quote-retired-scope',
+              scope: 'full_compose',
+              sourceRunId: 'source-retired-scope',
+              targetSeconds: 12,
+              workspaceId,
+            }),
+          ],
+        ),
+        /model_video_regeneration_quotes_shot_only_check|check constraint/,
+      );
+    });
   },
 );

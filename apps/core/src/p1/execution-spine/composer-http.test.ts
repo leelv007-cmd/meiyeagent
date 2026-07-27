@@ -413,6 +413,20 @@ test("authenticated Composer HTTP carries all four output kinds through one snap
 		);
 		assert.ok(started);
 		assert.equal(started?.snapshot.lens, kind);
+		if (kind === "image") {
+			assert.equal(started?.snapshot.operation, "image.edit");
+			assert.equal(
+				started?.snapshot.signedSubmission?.imageOperation,
+				"image.edit",
+			);
+		}
+		if (kind === "image_text_note") {
+			assert.equal(
+				started?.snapshot.operation,
+				"image.generate",
+				"note sources ground the plan instead of changing every page into an edit",
+			);
+		}
 		assert.deepEqual(started?.snapshot.deliverables, [
 			{
 				id: `recipe-deliverable-${kind}`,
@@ -1274,6 +1288,9 @@ function modalityAdmission(): CreationSubmissionAdmissionPort {
 					summary: "Server verified source assets.",
 				},
 				taskId: `task-${kind}`,
+				...(input.imageOperation
+					? { operation: input.imageOperation }
+					: {}),
 				...(kind === "image_text_note"
 					? {
 							usageUnits: [
@@ -1341,6 +1358,12 @@ function modalitySubmissionPayload(
 ): ComposerSubmissionBody {
 	return {
 		...submissionPayload(),
+		...(kind === "image"
+			? {
+					creationMode: "free" as const,
+					imageOperation: "image.edit" as const,
+				}
+			: {}),
 		catalogModel: { id: `catalog-${kind}-1`, revision: `catalog-${kind}-r1` },
 		contentPackagePlatform:
 			kind === "copy"

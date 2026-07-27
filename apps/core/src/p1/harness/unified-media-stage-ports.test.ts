@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import { IMAGE_INTENT_SLOT_KINDS } from "@meiye/contracts";
+
 import {
 	createCreationExecutionSnapshot,
 	creationExecutionSnapshotSchema,
@@ -64,8 +66,15 @@ test("image and video use the existing Model Supply path with stable submission 
 				input:
 					kind === "image"
 						? {
+								inputAssets: [
+									{
+										assetId: "asset-1",
+										imageSlot: "work_case",
+										nativeField: "image",
+										role: "reference_image",
+									},
+								],
 								ratio: "9:16",
-								referenceAssetIds: ["asset-1"],
 								resolution: "1080p",
 							}
 						: {
@@ -79,6 +88,10 @@ test("image and video use the existing Model Supply path with stable submission 
 					kind === "image"
 						? `${mediaBrief(kind).prompt}\n${JSON.stringify({
 								imageIntent: mediaBrief(kind).intent,
+								imageModelRecipeProfile: {
+									id: "seedream-image-v1",
+									revision: "seedream-image-v1-r1",
+								},
 							})}`
 						: `${mediaBrief(kind).firstFramePrompt}\n1. ${mediaBrief(kind).storyboard[0]?.description}`,
 				selection: { catalogModelId: `model-${kind}-1`, mode: "fixed" },
@@ -124,10 +137,116 @@ test("three canonical image operations map to the two existing provider operatio
 
 		assert.equal(submissions[0]?.operation, nativeOperation);
 		assert.equal(
-			submissions[0]?.input?.referenceAssetIds?.length,
+			submissions[0]?.input?.inputAssets?.length,
 			referenceCount,
 		);
 	}
+});
+
+test("image execution validates the selected recipe profile and preserves slot-native bindings", async () => {
+	const submissions: ModelSupplySubmission[] = [];
+	const profile = {
+		id: "seedream-profile",
+		revision: "seedream-profile-r1",
+		operationMappings: {
+			"image.generate": "image.generate",
+			"image.edit": "image.edit",
+			"image.reference_transform": "image.edit",
+		},
+		slotRules: IMAGE_INTENT_SLOT_KINDS.map((slot) => ({
+			slot,
+			minItems: 0,
+			maxItems: slot === "style_ref" ? 1 : 2,
+			allowedMimeTypes: ["image/png"],
+			maxBytesPerItem: 2_048,
+			incompatibleWith: [],
+			nativeField: "image",
+		})),
+	} as const;
+	const adapter = new ModelSupplyHarnessMediaExecutionPort(
+		{
+			async submit(input) {
+				submissions.push(structuredClone(input));
+				return completedResult("image");
+			},
+		},
+		undefined,
+		undefined,
+		profile,
+	);
+
+	await adapter.execute({
+		brief: imageBriefFor("image.reference_transform", 2),
+		context: contextSnapshot(),
+		request: harnessInput(
+			"image",
+			"package-reference-transform",
+			"image.reference_transform",
+			2,
+		),
+		workflowId: "task-reference-transform",
+	});
+
+	assert.deepEqual(submissions[0]?.input?.inputAssets, [
+		{
+			assetId: "asset-1",
+			imageSlot: "style_ref",
+			nativeField: "image",
+			role: "reference_image",
+		},
+		{
+			assetId: "asset-2",
+			imageSlot: "composition_ref",
+			nativeField: "image",
+			role: "reference_image",
+		},
+	]);
+	assert.equal(
+		Object.hasOwn(submissions[0]?.input ?? {}, "referenceAssetIds"),
+		false,
+	);
+
+	const invalidBrief = imageBriefFor("image.reference_transform", 2);
+	invalidBrief.intent.references[1] = {
+		...invalidBrief.intent.references[1]!,
+		slot: "style_ref",
+	};
+	await assert.rejects(
+		adapter.execute({
+			brief: invalidBrief,
+			context: contextSnapshot(),
+			request: harnessInput(
+				"image",
+				"package-profile-invalid",
+				"image.reference_transform",
+				2,
+			),
+			workflowId: "task-profile-invalid",
+		}),
+		/style_ref requires 0-1 references/u,
+	);
+	assert.equal(submissions.length, 1);
+
+	const unfrozenReference = imageBriefFor("image.edit", 1);
+	unfrozenReference.intent.references[0] = {
+		...unfrozenReference.intent.references[0]!,
+		assetId: "asset-outside-snapshot",
+	};
+	await assert.rejects(
+		adapter.execute({
+			brief: unfrozenReference,
+			context: contextSnapshot(),
+			request: harnessInput(
+				"image",
+				"package-unfrozen-reference",
+				"image.edit",
+				1,
+			),
+			workflowId: "task-unfrozen-reference",
+		}),
+		/image intent references do not match the frozen media brief/iu,
+	);
+	assert.equal(submissions.length, 1);
 });
 
 test("image-text note page generation uses the existing image executor without changing pure image semantics", async () => {
@@ -465,6 +584,79 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 	);
 	assert.ok(contentPackage?.marketing?.contextBundle.bundleId);
 	assert.ok(contentPackage?.marketing?.rightsRefs.length);
+	assert.ok(
+		selectedVersion?.body && !selectedVersion.body.includes("还没对上"),
+		"a fully consistent note carries no partial marker",
+	);
+
+	// D-122 诚实交付: the same delivery, one page short. Naming the count on the
+	// 申报卡 is not enough — the merchant has to be able to tell which page to
+	// hold back in the copy they will actually paste.
+	const partialPackageId = "package-image-text-note-partial";
+	const partialSnapshot = creationExecutionSnapshotSchema.parse({
+		...snapshot,
+		id: "snapshot-note-partial",
+		contentPackage: { ...snapshot.contentPackage, id: partialPackageId },
+	});
+	const partialRequest = {
+		...harnessInput("image_text_note", partialPackageId),
+		executionSnapshot: partialSnapshot,
+	};
+	writer.seed(
+		buildContentPackage({
+			id: partialPackageId,
+			kind: "image_text",
+			source: {
+				assetIds: [],
+				creationExecutionSnapshot: {
+					id: sourceSnapshot.id,
+					revision: sourceSnapshot.revision,
+					schemaVersion: sourceSnapshot.schemaVersion,
+				},
+				targetPlatform: "douyin",
+				workId: partialSnapshot.work.id,
+				workflowId: partialSnapshot.task.id,
+				workflowRevision: partialSnapshot.revision,
+			},
+			timestamp: "2026-07-22T09:00:00.000Z",
+			workspaceId: "workspace-1",
+		}),
+	);
+	const partialBrief = await ports.compileNoteBrief({
+		workflowId: partialSnapshot.task.id,
+		request: partialRequest,
+		declaration,
+		context,
+	});
+	const baseSelection = await ports.executeNoteAndSelect({
+		workflowId: partialSnapshot.task.id,
+		request: partialRequest,
+		brief: partialBrief,
+		context,
+		selectedStyleId: "story",
+	});
+	const unresolvedPageId = baseSelection.version.plan.pages[1]!.id;
+	await ports.assembleNoteAndDeliver({
+		workflowId: partialSnapshot.task.id,
+		request: partialRequest,
+		declaration,
+		context,
+		brief: partialBrief,
+		selection: {
+			...baseSelection,
+			partial: { unresolvedPageIds: [unresolvedPageId] },
+		},
+	});
+	const partialVersion = writer
+		.get("workspace-1", partialPackageId)
+		?.versions.find(({ harnessCandidateId }) => harnessCandidateId === "story");
+	const partialPages = partialVersion?.body.split("\n\n") ?? [];
+	assert.equal(partialPages.length, 2);
+	assert.ok(
+		!partialPages[0]?.includes("还没对上"),
+		"the page that came out right is left alone",
+	);
+	assert.match(partialPages[1] ?? "", /还没对上/u);
 });
 
 test("media delivery blocks malicious visible copy before the canonical writer", async () => {
@@ -524,6 +716,159 @@ test("media delivery blocks malicious visible copy before the canonical writer",
 			error.gateIds.includes("critical_fact_source") &&
 			error.merchantMessage ===
 				"成品文案含有未被门店已确认资料支持的资质、价格或优惠、权益承诺，暂不能交付。",
+	);
+	assert.equal(writes, 0);
+});
+
+test("media closeout enforces authoritative source rights and expression identity", async () => {
+	const request = harnessInput("image", "package-image-authority");
+	const brief = imageBriefFor("image.edit", 1);
+	const media = new ModelSupplyHarnessMediaExecutionPort({
+		async submit() {
+			return completedResult("image");
+		},
+	});
+	const context = contextSnapshot();
+	context.policyReferences.rightsRefs = [
+		{
+			assetId: "asset-1",
+			workspaceId: "workspace-1",
+			status: "withdrawn",
+			allowedUses: [],
+		},
+	];
+	context.policyReferences.identityRefs = [
+		{
+			id: "marketing_identity:identity-1:identity-r1",
+			workspaceId: "workspace-1",
+			status: "withdrawn",
+		},
+	];
+	let writes = 0;
+	const ports = new UnifiedHarnessStagePorts(
+		unsupportedCopyPorts(),
+		{
+			create() {
+				throw new Error("Media delivery does not compile a copy brief.");
+			},
+		},
+		media,
+		{
+			async write() {
+				writes += 1;
+				throw new Error("The authority gate must run before this writer.");
+			},
+		},
+		() => "2026-07-22T09:00:01.000Z",
+	);
+	const selection = await media.execute({
+		brief,
+		context,
+		request,
+		workflowId: request.executionSnapshot!.task.id,
+	});
+
+	await assert.rejects(
+		ports.assembleMediaAndDeliver({
+			workflowId: request.executionSnapshot!.task.id,
+			request,
+			declaration: {
+				normalizedIntent: "制作护理海报",
+				taskType: "promotion_groupbuy_conversion",
+				deliveryLayer: "finished_media",
+				relevantAssetCategories: ["promotion_activity"],
+				usedAssetCategories: ["promotion_activity"],
+				route: "customized",
+				routingSource: "model",
+				implicitConstraints: [],
+			},
+			context,
+			brief,
+			selection,
+		}),
+		(error: unknown) =>
+			error instanceof HarnessSelectionError &&
+			error.gateIds.includes("subject_asset_rights") &&
+			error.gateIds.includes("expression_identity"),
+	);
+	assert.equal(writes, 0);
+});
+
+test("media closeout evaluates frozen price sources against delivery-time freshness", async () => {
+	const request = harnessInput("image", "package-image-freshness");
+	const brief = imageBriefFor("image.edit", 1);
+	brief.intent.purpose = "头皮护理团购价398元";
+	const media = new ModelSupplyHarnessMediaExecutionPort({
+		async submit() {
+			return completedResult("image");
+		},
+	});
+	const context = contextSnapshot();
+	context.activeFacts = [
+		{
+			key: "group_buy_price",
+			value: { amount: 398, currency: "CNY" },
+			sourceRef: "store_fact:price-1:1",
+			effectiveFrom: "2026-07-21T00:00:00.000Z",
+			expiresAt: "2026-07-22T09:00:00.500Z",
+		},
+	];
+	context.policyReferences.sourceRefs = [
+		{
+			id: "store_fact:price-1:1",
+			workspaceId: "workspace-1",
+			revision: 1,
+			status: "current",
+		},
+	];
+	Object.assign(context.policyReferences.sourceRefs[0]!, {
+		expiresAt: "2026-07-22T09:00:00.500Z",
+	});
+	let writes = 0;
+	const ports = new UnifiedHarnessStagePorts(
+		unsupportedCopyPorts(),
+		{
+			create() {
+				throw new Error("Media delivery does not compile a copy brief.");
+			},
+		},
+		media,
+		{
+			async write() {
+				writes += 1;
+				throw new Error("The freshness gate must run before this writer.");
+			},
+		},
+		() => "2026-07-22T09:00:01.000Z",
+	);
+	const selection = await media.execute({
+		brief,
+		context,
+		request,
+		workflowId: request.executionSnapshot!.task.id,
+	});
+
+	await assert.rejects(
+		ports.assembleMediaAndDeliver({
+			workflowId: request.executionSnapshot!.task.id,
+			request,
+			declaration: {
+				normalizedIntent: "制作团购海报",
+				taskType: "promotion_groupbuy_conversion",
+				deliveryLayer: "finished_media",
+				relevantAssetCategories: ["promotion_activity"],
+				usedAssetCategories: ["promotion_activity"],
+				route: "customized",
+				routingSource: "model",
+				implicitConstraints: [],
+			},
+			context,
+			brief,
+			selection,
+		}),
+		(error: unknown) =>
+			error instanceof HarnessSelectionError &&
+			error.gateIds.includes("price_benefit_freshness"),
 	);
 	assert.equal(writes, 0);
 });
@@ -887,7 +1232,10 @@ test("the production exact-text verifier reuses multimodal text.respond without 
 				...completedResult("image"),
 				asset: undefined,
 				operation: "text.respond",
-				text: JSON.stringify({ observedText: ["价格 398"] }),
+				text: JSON.stringify({
+					observedText: ["价格 398"],
+					conflictingText: [],
+				}),
 			};
 		},
 	});
@@ -908,6 +1256,32 @@ test("the production exact-text verifier reuses multimodal text.respond without 
 		Object.hasOwn(submissions[0] ?? {}, "productUsageQuantity"),
 		false,
 	);
+});
+
+test("the production exact-text verifier rejects a conflicting value even when the expected value is also visible", async () => {
+	const verifier = new ModelSupplyImageExactTextVerifier({
+		async submit() {
+			return {
+				...completedResult("image"),
+				asset: undefined,
+				operation: "text.respond",
+				text: JSON.stringify({
+					observedText: ["价格 398", "价格 389"],
+					conflictingText: ["价格 389"],
+				}),
+			};
+		},
+	});
+	const assessment = await verifier.verify({
+		assetId: "image-asset-1",
+		expected: ["价格 398"],
+		request: harnessInput("image", "package-image"),
+		workflowId: "task-image-conflict",
+	});
+
+	assert.equal(assessment.passed, false);
+	assert.deepEqual(assessment.observed, ["价格 398", "价格 389"]);
+	assert.match(assessment.reason, /conflicting/u);
 });
 
 function harnessInput(
@@ -1357,8 +1731,21 @@ function contextSnapshot(): HarnessContextSnapshot {
 		activeFacts: [],
 		policyReferences: {
 			sourceRefs: [],
-			rightsRefs: [],
-			identityRefs: [],
+			rightsRefs: [
+				{
+					assetId: "asset-1",
+					workspaceId: "workspace-1",
+					status: "authorized",
+					allowedUses: ["public_content"],
+				},
+			],
+			identityRefs: [
+				{
+					id: "marketing_identity:identity-1:identity-r1",
+					workspaceId: "workspace-1",
+					status: "registered",
+				},
+			],
 		},
 	};
 }

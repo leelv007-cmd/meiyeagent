@@ -3,6 +3,13 @@ import type {
   FirstUsableDraftMetric,
   StructuredDecisionInput,
 } from '@meiye/contracts';
+import {
+  confirmationCardTimeoutSecondsSchema,
+  harnessDecisionSnapshotSchema,
+  questionCardUnattended,
+} from '@meiye/contracts';
+
+import { harnessActiveTaskListSchema } from '@meiye/contracts';
 
 import type { HarnessDecisionService } from './decision-service.js';
 import type { TodayRecommendationState } from '@meiye/contracts';
@@ -13,6 +20,16 @@ import type {
 
 export interface HarnessTaskAccess {
   taskBelongsToWorkspace(taskId: string, workspaceId: string): Promise<boolean>;
+  /** 时间桥 (D-145): runs still on the server, newest first. */
+  listActiveTasks?(workspaceId: string): Promise<
+    Array<{
+      taskId: string;
+      workId: string;
+      packageId: string;
+      merchantText: string;
+      submittedAt: string;
+    }>
+  >;
 }
 
 export interface HarnessRecommendationReader {
@@ -28,6 +45,10 @@ export interface HarnessProductMetricRecorder {
     eventType: string;
     payload: unknown;
   }): Promise<void>;
+}
+
+export interface HarnessConfirmationTimeoutReader {
+  readTimeoutSeconds(): Promise<unknown>;
 }
 
 export class HarnessAccessError extends Error {
@@ -47,6 +68,7 @@ export class HarnessApplicationService {
     private readonly access: HarnessTaskAccess,
     private readonly recommendations?: HarnessRecommendationReader,
     private readonly productMetrics?: HarnessProductMetricRecorder,
+    private readonly confirmationTimeout?: HarnessConfirmationTimeoutReader,
   ) {}
 
   submit(input: HarnessTaskRequest) {
@@ -55,7 +77,59 @@ export class HarnessApplicationService {
 
   async readPendingDecision(workspaceId: string, taskId: string) {
     await this.requireTask(workspaceId, taskId);
-    return this.decisions.readPending(workspaceId, taskId);
+    const target = await this.decisions.readDecisionTarget(
+      workspaceId,
+      taskId,
+    );
+    if (!target) {
+      return harnessDecisionSnapshotSchema.parse({
+        question: null,
+        resolutionSource: null,
+        status: 'absent',
+        timeoutSeconds: null,
+      });
+    }
+
+    const keepResolvedQuestion =
+      target.status === 'resolved' &&
+      (target.resolutionSource === 'core_timeout' ||
+        target.resolutionSource === 'core_hold_expired');
+    const question =
+      target.status === 'pending' || keepResolvedQuestion
+        ? target.question
+        : null;
+    const timeoutSeconds =
+      question &&
+      target.status === 'pending' &&
+      questionCardUnattended(question) === 'continue'
+        ? target.timeoutSeconds === undefined
+          ? confirmationCardTimeoutSecondsSchema.parse(
+              await this.confirmationTimeout?.readTimeoutSeconds(),
+            )
+          : target.timeoutSeconds === null
+            ? null
+            : confirmationCardTimeoutSecondsSchema.parse(
+                target.timeoutSeconds,
+              )
+        : null;
+
+    return harnessDecisionSnapshotSchema.parse({
+      question,
+      resolutionSource:
+        target.status === 'resolved' ? target.resolutionSource : null,
+      status: target.status,
+      timeoutSeconds,
+    });
+  }
+
+  /**
+   * The server side of 时间桥拉回 (D-145). Returns an empty list rather than
+   * failing when the store cannot answer: a missing bridge must never be the
+   * reason a composer will not mount.
+   */
+  async listActiveTasks(workspaceId: string) {
+    const tasks = (await this.access.listActiveTasks?.(workspaceId)) ?? [];
+    return harnessActiveTaskListSchema.parse({ tasks });
   }
 
   async submitDecision(

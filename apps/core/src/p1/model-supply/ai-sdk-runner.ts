@@ -5,21 +5,18 @@ import {
   assistantFieldPatchSchema,
   copyCandidatesSchemaFor,
   DEFAULT_COPY_CANDIDATE_COUNT,
-  generatedCopyCandidatesSchema,
   generatedPlatformVariantsSchema,
   type AssistantStreamRequest,
   type GeneratedCopyCandidates,
   type GeneratedPlatformVariants,
 } from '@meiye/contracts';
 import {
-  createTextStreamResponse,
   createUIMessageStream,
   createUIMessageStreamResponse,
   generateText,
   isStepCount,
   Output,
   streamText,
-  toTextStream,
   toUIMessageStream,
   tool,
 } from 'ai';
@@ -27,9 +24,23 @@ import { z, type ZodType } from 'zod';
 import type { StructuredObjectExecutor } from './index.js';
 import type { ResolvedReferenceAsset } from './reference-asset-resolver.js';
 
-const FIXTURE_COPY_CHUNK_INTERVAL_MS = 200;
+const FIXTURE_STREAM_CHUNK_INTERVAL_MS = 200;
 const FIXTURE_ASSISTANT_CHUNK_INTERVAL_MS = 120;
 const FIXTURE_STRUCTURED_CHUNK_INTERVAL_MS = 40;
+
+export function fixtureStructuredFirstChunkHoldMs(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+) {
+  if (env.APP_ENV !== 'e2e') return FIXTURE_STRUCTURED_CHUNK_INTERVAL_MS;
+  const raw = env.E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS?.trim();
+  if (!raw || !/^\d+$/u.test(raw)) {
+    return FIXTURE_STRUCTURED_CHUNK_INTERVAL_MS;
+  }
+  const interval = Number(raw);
+  return interval >= 1 && interval <= 10_000
+    ? interval
+    : FIXTURE_STRUCTURED_CHUNK_INTERVAL_MS;
+}
 
 export type LlmApiFamily = 'openai' | 'anthropic' | 'gemini' | 'custom';
 
@@ -98,10 +109,6 @@ export interface AiStreamingRunner {
     request: AssistantStreamRequest,
     abortSignal?: AbortSignal
   ): Response;
-  startCopyStream(
-    request: { catalogModelId: string; prompt: string },
-    abortSignal?: AbortSignal
-  ): { response: Response; result: Promise<GeneratedCopyResult> };
   startCanvasTextStream?(
     request: {
       catalogModelId: string;
@@ -328,47 +335,6 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     });
   }
 
-  startCopyStream(
-    request: { catalogModelId: string; prompt: string },
-    abortSignal?: AbortSignal
-  ) {
-    this.assertFixedModel(request.catalogModelId);
-    const result = streamText({
-      abortSignal,
-      ...languageModelCallSettings(this.options),
-      instructions:
-        `Return exactly ${DEFAULT_COPY_CANDIDATE_COUNT} primary beauty-business copy candidate. The candidate must include a non-empty title, body, and conversionHook.`,
-      maxRetries: 0,
-      model: this.model,
-      output: Output.object({
-        name: 'beauty_copy_candidates',
-        schema: generatedCopyCandidatesSchema,
-      }),
-      prompt: request.prompt,
-    });
-    const response = createTextStreamResponse({
-      headers: streamHeaders('ai-sdk-object-json-v1', this.catalogModelId),
-      stream: toTextStream({ stream: result.fullStream }),
-    });
-    const completion = Promise.all([
-      Promise.resolve(result.output),
-      Promise.resolve(result.usage),
-      Promise.resolve(result.finalStep),
-    ]).then(([output, usage, metadata]) => {
-      const parsed = generatedCopyCandidatesSchema.parse(output);
-      assertDistinctBodies(parsed);
-      return {
-        ...parsed,
-        providerTaskRef: metadata.response.id,
-        usage: {
-          inputTokens: usage.inputTokens ?? 0,
-          outputTokens: usage.outputTokens ?? 0,
-        },
-      };
-    });
-    return { response, result: completion };
-  }
-
   startCanvasTextStream(
     request: {
       catalogModelId: string;
@@ -537,31 +503,6 @@ export class FixtureAiStreamingRunner implements AiStreamingRunner {
     });
   }
 
-  startCopyStream(
-    request: { catalogModelId: string; prompt: string },
-    abortSignal?: AbortSignal
-  ) {
-    const result = fixtureCopyResult(request.prompt);
-    const chunks = [
-      '{"candidates":[{"title":"透亮猫眼｜真实到店记录",',
-      '"body":"从门店真实项目出发，先写清效果与到店前需要确认的信息。",',
-      '"conversionHook":"先沟通需求"}]}',
-    ];
-    return {
-      response: pacedResponse(
-        chunks,
-        'text/plain; charset=utf-8',
-        streamHeaders('ai-sdk-object-json-v1', request.catalogModelId),
-        abortSignal
-      ),
-      result: delayedResult(
-        result,
-        chunks.length * FIXTURE_COPY_CHUNK_INTERVAL_MS,
-        abortSignal
-      ),
-    };
-  }
-
   startCanvasTextStream(
     request: {
       catalogModelId: string;
@@ -585,7 +526,7 @@ export class FixtureAiStreamingRunner implements AiStreamingRunner {
           text,
           usage: { inputTokens: 0, outputTokens: 0 },
         },
-        Math.max(0, deltas.length - 1) * FIXTURE_COPY_CHUNK_INTERVAL_MS,
+        Math.max(0, deltas.length - 1) * FIXTURE_STREAM_CHUNK_INTERVAL_MS,
         abortSignal,
       ),
     };
@@ -614,10 +555,12 @@ export class FixtureAiStructuredObjectExecutor
       input.schemaName === 'harness_copy_candidate_v1' &&
       input.onPartialOutput
     ) {
+      let partialIndex = 0;
       for (const partial of fixtureCopyCandidatePartials(output)) {
         if (input.abortSignal?.aborted) throw createAbortError();
         await input.onPartialOutput(partial);
-        await fixtureStructuredStreamPause();
+        await fixtureStructuredStreamPause(partialIndex === 0);
+        partialIndex += 1;
       }
     }
     return {
@@ -803,9 +746,72 @@ function fixtureCopyResult(prompt: string): GeneratedCopyResult {
   };
 }
 
+/**
+ * 失败档 (W03 / P0-2). Fixture mode has always been able to produce a delivery;
+ * it could not produce a *failure*, so the whole 申报 chain — Core's Chinese
+ * failure copy, the refund, the conversation card — had no journey to prove it
+ * on. A merchant intent carrying this word arms one: the fixture emits a price
+ * claim with no traceable source, which the real canonical gate then blocks.
+ *
+ * Fixture mode is `APP_ENV=e2e` only (model-supply/runtime-config.ts), so this
+ * cannot arm anything in production.
+ */
+const FIXTURE_FAILURE_DRILL_MARKER = '失败档';
+const FIXTURE_FAILURE_DRILL_CONSTRAINT = 'fixture-failure-drill';
+
+function isFixtureFailureDrill(intent: string) {
+  return intent.includes(FIXTURE_FAILURE_DRILL_MARKER);
+}
+
 function fixtureStructuredOutput(schemaName: string, prompt: string) {
   const payload = parseFixtureRecord(prompt);
   switch (schemaName) {
+    case 'composer_destination_mapping_v1': {
+      const destination =
+        typeof payload.destination === 'string' ? payload.destination : '';
+      const mentionedPlatforms = [
+        /小红书|xiaohongshu/iu.test(destination) && 'xiaohongshu',
+        /抖音|douyin/iu.test(destination) && 'douyin',
+        /视频号|video.?account/iu.test(destination) && 'video_account',
+        /朋友圈|moments/iu.test(destination) && 'wechat_moments',
+        /线下|店内|立牌|海报|offline/iu.test(destination) &&
+          'offline_material',
+      ].filter(Boolean);
+      if (mentionedPlatforms.length !== 1) {
+        return {
+          options: [
+            {
+              contentPackagePlatform: 'xiaohongshu',
+              distributionTarget: 'manual_copy',
+              label: '小红书，生成后手动复制',
+            },
+            {
+              contentPackagePlatform: 'douyin',
+              distributionTarget: 'manual_copy',
+              label: '抖音，生成后手动复制',
+            },
+          ],
+          question: '这份内容具体准备发到哪里？',
+          status: 'needs_clarification',
+        };
+      }
+      const contentPackagePlatform = mentionedPlatforms[0];
+      const distributionTarget = /协助|同事|代发|handoff/iu.test(destination)
+        ? 'assisted_handoff'
+        : /导出|下载|文件|export/iu.test(destination)
+          ? 'export'
+          : /直接发布|自动发布|publish/iu.test(destination) &&
+              (contentPackagePlatform === 'xiaohongshu' ||
+                contentPackagePlatform === 'douyin' ||
+                contentPackagePlatform === 'video_account')
+            ? `publish:${contentPackagePlatform}`
+            : 'manual_copy';
+      return {
+        contentPackagePlatform,
+        distributionTarget,
+        status: 'mapped',
+      };
+    }
     case 'harness_intent_naming_v1': {
       const context = fixtureRecord(payload.context);
       const intent = typeof context.intent === 'string' ? context.intent : '';
@@ -864,18 +870,27 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
             : null,
       };
     }
-    case 'harness_copy_brief_v1':
+    case 'harness_copy_brief_v1': {
+      const declaration = fixtureRecord(payload.declaration);
+      const normalizedIntent =
+        typeof declaration.normalizedIntent === 'string'
+          ? declaration.normalizedIntent
+          : '介绍本店护理项目';
       return {
         kind: 'copy',
         instructions:
-          '请基于当前任务和已确认资料生成一条可直接审核的小红书文案。正文需说明服务价值、适用场景与预约方式，只使用输入中可核对的事实，不编造价格、效果、资格或顾客案例，也不引用未授权素材。',
+          '请基于当前任务和已确认资料生成一条可直接审核的小红书文案。正文需说明服务价值、适用场景与预约方式，只使用输入中可核对的事实，不编造价格、效果、资格或顾客案例，也不引用未授权素材。' +
+          `本次需求：${normalizedIntent}`,
         platform: 'xiaohongshu',
         cta: '私信了解当前项目并预约',
         factRefs: fixturePromptFactRefs(payload),
         assetRefs: [],
         identityRefs: [],
-        constraints: ['不得编造价格、效果或顾客案例'],
+        constraints: isFixtureFailureDrill(normalizedIntent)
+          ? ['不得编造价格、效果或顾客案例', FIXTURE_FAILURE_DRILL_CONSTRAINT]
+          : ['不得编造价格、效果或顾客案例'],
       };
+    }
     case 'harness_image_brief_v1': {
       const executionContract = fixtureRecord(payload.executionContract);
       const declaration = fixtureRecord(payload.declaration);
@@ -1142,6 +1157,11 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
       const candidateId =
         typeof payload.candidateId === 'string' ? payload.candidateId : 'c01';
       const index = Math.max(0, Number(candidateId.slice(1)) - 1);
+      const brief = fixtureRecord(payload.brief);
+      const frozenIntent =
+        typeof brief.instructions === 'string'
+          ? brief.instructions.split('本次需求：').at(-1)?.trim()
+          : undefined;
       const candidates = [
         {
           title: '新项目到店前先看这几点',
@@ -1161,21 +1181,21 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
       ] as const;
       return {
         ...(candidates[index] ?? candidates[0]),
-        factClaims: [],
+        ...(frozenIntent
+          ? {
+              title: `${frozenIntent.slice(0, 120)}｜${(candidates[index] ?? candidates[0]).title}`,
+            }
+          : {}),
+        // 失败档: an ungrounded price claim. Nothing about the failure is faked
+        // downstream — the real canonical `critical_fact_source` gate blocks
+        // this candidate and its retry, the real workflow fails, the real
+        // reservation is refunded, and the real terminal frame carries the
+        // merchant 申报. Only the model output is deterministic, which is the
+        // same boundary every other fixture journey runs on.
+        factClaims: prompt.includes(FIXTURE_FAILURE_DRILL_CONSTRAINT)
+          ? [{ kind: 'price', value: '演练价 888 元' }]
+          : [],
         assetRefs: [],
-      };
-    }
-    case 'harness_copy_score_v1': {
-      const candidate = fixtureRecord(payload.candidate);
-      const candidateId =
-        typeof candidate.candidateId === 'string'
-          ? candidate.candidateId
-          : 'c01';
-      const scoreById: Record<string, number> = { c01: 92, c02: 88, c03: 84 };
-      return {
-        score: scoreById[candidateId] ?? 80,
-        dimensions: { grounding: 1, usefulness: 0.9, platformFit: 0.9 },
-        reason: '候选仅使用已确认上下文，内容完整且适合目标平台。',
       };
     }
     case 'harness_fact_satisfaction_v1': {
@@ -1269,78 +1289,6 @@ function fixturePromptFactRefs(payload: Record<string, unknown>) {
   ].sort((left, right) => left.localeCompare(right));
 }
 
-function pacedResponse(
-  chunks: string[],
-  contentType: string,
-  headers: Record<string, string>,
-  abortSignal?: AbortSignal
-) {
-  const encoder = new TextEncoder();
-  const timers: Array<ReturnType<typeof setTimeout>> = [];
-  let stopped = false;
-  let abortHandler: (() => void) | undefined;
-  const cleanup = () => {
-    for (const timer of timers) clearTimeout(timer);
-    if (abortHandler) abortSignal?.removeEventListener('abort', abortHandler);
-  };
-  const body = new ReadableStream<Uint8Array>({
-    start(controller) {
-      abortHandler = () => {
-        if (stopped) return;
-        stopped = true;
-        cleanup();
-        controller.error(createAbortError());
-      };
-      if (abortSignal?.aborted) {
-        abortHandler();
-        return;
-      }
-      abortSignal?.addEventListener('abort', abortHandler, { once: true });
-      chunks.forEach((chunk, index) => {
-        const timer = setTimeout(() => {
-          if (stopped) return;
-          controller.enqueue(encoder.encode(chunk));
-          if (index === chunks.length - 1) {
-            stopped = true;
-            cleanup();
-            controller.close();
-          }
-        }, index * FIXTURE_COPY_CHUNK_INTERVAL_MS);
-        timers.push(timer);
-      });
-    },
-    cancel() {
-      stopped = true;
-      cleanup();
-    },
-  });
-  return new Response(body, {
-    headers: { ...headers, 'content-type': contentType },
-  });
-}
-
-function delayedResult(
-  result: GeneratedCopyResult,
-  delayMs: number,
-  abortSignal?: AbortSignal
-) {
-  return new Promise<GeneratedCopyResult>((resolve, reject) => {
-    if (abortSignal?.aborted) {
-      reject(createAbortError());
-      return;
-    }
-    const abortHandler = () => {
-      clearTimeout(timer);
-      reject(createAbortError());
-    };
-    abortSignal?.addEventListener('abort', abortHandler, { once: true });
-    const timer = setTimeout(() => {
-      abortSignal?.removeEventListener('abort', abortHandler);
-      resolve(result);
-    }, delayMs);
-  });
-}
-
 function delayedCanvasTextResult(
   result: CanvasTextStreamResult,
   delayMs: number,
@@ -1398,8 +1346,13 @@ function fixtureStreamPause() {
   );
 }
 
-function fixtureStructuredStreamPause() {
+function fixtureStructuredStreamPause(firstChunk: boolean) {
   return new Promise<void>((resolve) =>
-    setTimeout(resolve, FIXTURE_STRUCTURED_CHUNK_INTERVAL_MS)
+    setTimeout(
+      resolve,
+      firstChunk
+        ? fixtureStructuredFirstChunkHoldMs()
+        : FIXTURE_STRUCTURED_CHUNK_INTERVAL_MS,
+    )
   );
 }

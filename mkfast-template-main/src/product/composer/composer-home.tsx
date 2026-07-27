@@ -19,14 +19,18 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
+import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useProStudioEntitlement } from '@/hooks/use-pro-studio-entitlement';
 import { emitTelemetry } from '@/lib/product-telemetry';
 import {
+  account_usage_retry,
   creation_entry_intent_aria,
   creation_entry_intent_placeholder,
   creation_entry_submit,
   workbench_grounding_go_to_store,
+  workbench_grounding_qualification_action,
+  workbench_grounding_qualification_required,
   workbench_grounding_source_required,
   workbench_grounding_store_required,
   workbench_operation_failed,
@@ -40,6 +44,7 @@ import {
   normalizePreferences,
 } from '@/p1/settings-view-model';
 import { resolveCreationModelSelection } from '@/p1/model-current-selection';
+import { useComplianceDefaults } from '@/p1/use-compliance-defaults';
 import type {
   BriefBoundRevisions,
   BriefSourceSignal,
@@ -48,10 +53,10 @@ import type {
   BrowserRecipeProjection,
   CreationLensId,
   MarketingIdentityAsset,
-  MarketingIdentityProjection,
   ProductQuoteSnapshot,
   QuestionCard,
   ResultPanel,
+  StoreFact,
 } from '@meiye/contracts';
 import { composerSubmissionSignedFieldsSchema } from '@meiye/contracts';
 import type { AccountUsageProjection } from '@/product/account-usage';
@@ -69,6 +74,7 @@ import {
   type CreativeGroundingRequirement,
 } from '@/product/creative-brief-editor';
 import {
+  readActiveHarnessTasks,
   readPendingHarnessDecision,
   submitHarnessDecision,
 } from '@/product/harness-client';
@@ -76,11 +82,20 @@ import { LandingHandoffRestore } from '@/product/landing-handoff-restore';
 import { navigateAfterSubmitSuccess } from '@/product/results/result-center-navigation';
 import { projectResultTokenStream } from '@/product/results/result-token-stream';
 import { useWorkflowEventStream } from '@/product/use-workflow-event-stream';
+import {
+  invalidateMarketingIdentity,
+  marketingIdentityProjectionQuery,
+} from '@/product/marketing-identity-queries';
 
 import { BriefSurface } from './brief-surface-panel';
 import { applyCatalogRecipeSelection } from './catalog-selection';
 import { ProgressiveFactCard } from './progressive-fact-card';
 import {
+  hasMissingProgressiveStoreFacts,
+  shouldShowProgressiveFactCard,
+} from './progressive-fact';
+import {
+  BRIEF_STALE_QUOTE_NOTICE,
   cancelBriefSurface,
   confirmBriefSurface,
   createBriefSurfaceState,
@@ -94,6 +109,7 @@ import {
   bindQuoteView,
   canSubmit,
   createComposerLensState,
+  reopenComposer,
   selectLens,
   submitComposer,
   updateSettings,
@@ -111,14 +127,33 @@ import {
   composerDestinationCapability,
   composerDestinationContract,
 } from './destination-contract';
+import { mapComposerDestination } from './composer-destination-client';
+import {
+  groundingBlockerFromMissing,
+  type ComposerGroundingBlocker,
+} from './composer-grounding-blocker';
+import {
+  decideComposerDestinationPreflight,
+  type ComposerDestinationPreflightState,
+} from './composer-destination-preflight';
 import { projectComposerQuoteView } from './quote-wiring';
+import {
+  composerQueryPhase,
+  currentComposerQuoteView,
+  resolveComposerQuoteReadiness,
+  type ComposerQuoteRetryTarget,
+} from './quote-readiness';
+import { ComposerQuoteStatusLine } from './quote-status-line';
 import {
   listColdCardsFromSeeds,
   listColdCardsFromSurface,
 } from './recipe-cards';
 import { RecipeCardsPanel } from './recipe-cards-panel';
 import { QuotaBlockingCard } from './quota-blocking-card';
-import { projectQuotaPassiveView } from './quota-blocking';
+import {
+  composerQuotaRequirements,
+  projectQuotaPassiveView,
+} from './quota-blocking';
 import {
   buildLiveBriefInput,
   buildLiveQuoteInput,
@@ -153,18 +188,28 @@ import {
 import type { ComposerDeliveryOpenInput } from './composer-delivery-card';
 import { projectComposerSignedPreview } from './composer-signed-preview';
 import {
+  ComposerImageOperationPicker,
+  imageOperationAttachmentHint,
+  imageOperationCardinality,
+  type ComposerImageOperation,
+} from './image-operation-picker';
+import {
   applyComposerProgress,
   applyComposerQuestion,
   applyComposerWorkflowState,
   bindComposerTask,
   COMPOSER_SESSION_STORAGE_KEY,
+  composerSessionMerchantText,
   createComposerSession,
   failComposerSession,
   openComposerTurn,
+  rebindComposerSession,
   restoreComposerSession,
+  restoreComposerSessionFromActiveTask,
   serializeComposerSession,
   type ComposerSession,
 } from './composer-session';
+import type { ComposerRecoveryInput } from './composer-report-card';
 
 /** Which Result Center panel each 成品交付卡 action opens (T31 / #225). */
 const DELIVERY_ACTION_PANELS: Record<
@@ -227,8 +272,6 @@ function briefSourcesFromDraft(sources: unknown[]): BriefSourceSignal[] {
   });
 }
 
-type ComposerGroundingBlocker = 'source' | 'store';
-
 function sourceReferencesFromDraft(sources: unknown[]) {
   return sources.flatMap((source) => {
     if (!source || typeof source !== 'object' || Array.isArray(source)) {
@@ -239,10 +282,12 @@ function sourceReferencesFromDraft(sources: unknown[]) {
   });
 }
 
-function groundingBlockerFromMissing(
-  missing: readonly CreativeGroundingRequirement[]
-): ComposerGroundingBlocker | null {
-  return missing.includes('real_authorized_asset') ? 'source' : null;
+function groundingBlockerMessage(blocker: ComposerGroundingBlocker) {
+  if (blocker === 'store') return workbench_grounding_store_required();
+  if (blocker === 'qualification') {
+    return workbench_grounding_qualification_required();
+  }
+  return workbench_grounding_source_required();
 }
 
 function groundingBlockerFromError(error: unknown) {
@@ -275,6 +320,18 @@ function sameBriefRevisions(
   );
 }
 
+/**
+ * One id per run. It keys the 报价 and the Brief context, both of which are
+ * idempotent server-side — so a second attempt that reuses it is refused as a
+ * key reused with a different payload, and the composer sits there re-quoting
+ * into 409s. Every fresh attempt therefore gets a fresh id.
+ */
+function newComposerSessionId() {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `composer-${Date.now()}`;
+}
+
 export type ComposerHomeProps = {
   /** Optional viewport override for tests. */
   viewportWidth?: number;
@@ -284,6 +341,8 @@ export type ComposerHomeProps = {
   initialSurfaceRevisionId?: string;
   /** T33: identity handed over by the identity page for this session only. */
   initialSessionIdentityId?: string;
+  /** D-145 时间桥深链: reopen this in-flight run rather than the newest one. */
+  initialTaskId?: string;
   /** Injectable for tests; browser sessionStorage is used by default. */
   sessionStore?: Storage;
 };
@@ -294,21 +353,94 @@ export function ComposerHome({
   initialRecipeRevisionId,
   initialSessionIdentityId,
   initialSurfaceRevisionId,
+  initialTaskId,
   sessionStore,
 }: ComposerHomeProps = {}) {
   const isMobile = useIsMobile();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const product = useProductState();
+  const storeFacts = useQuery({
+    enabled: Boolean(product.state?.workspaceId),
+    queryKey: p1QueryKeys.request('context', 'store_facts_active', {
+      scope: { storeId: product.state?.workspaceId ?? '' },
+    }),
+    queryFn: ({ signal }) =>
+      queryP1<StoreFact[]>(
+        'context',
+        {
+          action: 'store_facts_active',
+          payload: {
+            scope: { storeId: product.state?.workspaceId ?? '' },
+            at: new Date().toISOString(),
+          },
+        },
+        signal
+      ),
+  });
+  // `regulated` is a platform/category admission call, not a merchant answer:
+  // the Day-0 profile has to be seeded with the admin default rather than a
+  // hardcoded `false` (W01 / D-151④).
+  const complianceDefaults = useComplianceDefaults();
+  const primaryProjectId = product.state?.store?.projects[0]?.id;
+  const primaryServiceFactId = primaryProjectId
+    ? `store-project:${primaryProjectId}:service`
+    : undefined;
+  const primaryPriceFactId = primaryProjectId
+    ? `store-project:${primaryProjectId}:price`
+    : undefined;
+  const activeStoreFactIds = new Set(
+    (storeFacts.data ?? []).map((fact) => fact.factId)
+  );
+  const needsServiceHistory =
+    storeFacts.isSuccess &&
+    Boolean(
+      primaryServiceFactId && !activeStoreFactIds.has(primaryServiceFactId)
+    );
+  const needsPriceHistory =
+    storeFacts.isSuccess &&
+    Boolean(primaryPriceFactId && !activeStoreFactIds.has(primaryPriceFactId));
+  const serviceFactHistory = useQuery({
+    enabled: needsServiceHistory,
+    queryKey: p1QueryKeys.request('context', 'store_fact_history', {
+      factId: primaryServiceFactId ?? '',
+    }),
+    queryFn: ({ signal }) =>
+      queryP1<StoreFact[]>(
+        'context',
+        {
+          action: 'store_fact_history',
+          payload: { factId: primaryServiceFactId ?? '' },
+        },
+        signal
+      ),
+  });
+  const priceFactHistory = useQuery({
+    enabled: needsPriceHistory,
+    queryKey: p1QueryKeys.request('context', 'store_fact_history', {
+      factId: primaryPriceFactId ?? '',
+    }),
+    queryFn: ({ signal }) =>
+      queryP1<StoreFact[]>(
+        'context',
+        {
+          action: 'store_fact_history',
+          payload: { factId: primaryPriceFactId ?? '' },
+        },
+        signal
+      ),
+  });
   const sourcePickerRef = useRef<HTMLElement | null>(null);
   const sourceFactsRef = useRef(new Map<string, ConfirmedAssetFacts>());
   const sourceRevisionRef = useRef(new Map<string, string>());
   const catalogSelectionAppliedRef = useRef(false);
-  const sessionIdRef = useRef(
-    typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID()
-      : `composer-${Date.now()}`
-  );
+  const sessionIdRef = useRef(newComposerSessionId());
+  /**
+   * Bumped whenever `sessionIdRef` is replaced. A ref is not reactive, so
+   * without this the 报价 memo below would keep quoting under the id of the run
+   * that already failed.
+   */
+  const [sessionEpoch, setSessionEpoch] = useState(0);
   const briefContextRevisionRef = useRef<number | null>(null);
   const briefInputRef = useRef<BriefTriggerInput | null>(null);
   const [lensState, setLensState] = useState<ComposerLensState>(() =>
@@ -326,10 +458,20 @@ export function ComposerHome({
   // D-111 双入口: the entry declares itself, the server decides the route.
   const [creationMode, setCreationMode] =
     useState<ComposerCreationMode>('customized');
+  const [imageOperation, setImageOperation] =
+    useState<ComposerImageOperation>('image.generate');
   const [session, setSession] = useState<ComposerSession>(() =>
     createComposerSession(sessionIdRef.current)
   );
   const [questionPending, setQuestionPending] = useState(false);
+  const [destinationMapPending, setDestinationMapPending] = useState(false);
+  const destinationMapPendingRef = useRef(false);
+  const destinationAutoSubmitIntentRef = useRef<string | null>(null);
+  // 「再生成一次」thaws the lens first, so the actual submit has to wait for the
+  // reopened state to land (attemptSubmit reads lensState from the closure).
+  const [retryAfterReport, setRetryAfterReport] = useState(false);
+  const [destinationPreflight, setDestinationPreflight] =
+    useState<ComposerDestinationPreflightState | null>(null);
   const [sessionIdentityId, setSessionIdentityId] = useState<
     string | null | undefined
   >(undefined);
@@ -359,18 +501,7 @@ export function ComposerHome({
   });
   // R-08 / #211: the Pro Studio entry states what the gate will decide.
   const proStudioEntitlement = useProStudioEntitlement();
-  const identitiesQuery = useQuery({
-    queryKey: ['marketing-identity-projection'],
-    queryFn: ({ signal }) =>
-      queryP1<MarketingIdentityProjection>(
-        'marketing-identity',
-        {
-          action: 'marketing_identity_projection',
-          payload: {},
-        },
-        signal
-      ),
-  });
+  const identitiesQuery = useQuery(marketingIdentityProjectionQuery);
   const identitySelection = useMemo(
     () =>
       projectIdentitySelection({
@@ -421,6 +552,9 @@ export function ComposerHome({
         `identity-session:${sessionIdRef.current}:${identity?.id ?? 'official-neutral'}`
       );
     },
+    onSuccess: async () => {
+      await invalidateMarketingIdentity(queryClient);
+    },
     onError: () => toast.error('本次身份选择未能记入决策记录，请重试。'),
   });
   const defaultIdentityDecision = useMutation({
@@ -447,9 +581,7 @@ export function ComposerHome({
       );
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: ['marketing-identity-projection'],
-      });
+      await invalidateMarketingIdentity(queryClient);
     },
     onError: () => toast.error('默认身份未能保存，请重试。'),
   });
@@ -575,7 +707,8 @@ export function ComposerHome({
     undefined;
   const destination = composerDestinationContract(
     lensState.draft.delivery.platform ??
-      submissionRecipe?.delivery.contentPackagePlatform
+      submissionRecipe?.delivery.contentPackagePlatform,
+    lensState.draft.delivery.distributionTarget
   );
   const submissionDelivery = {
     deliverableKind:
@@ -593,9 +726,24 @@ export function ComposerHome({
     durationSeconds: submissionDurationSeconds ?? null,
     quantity: submissionQuantity,
   };
+  const explicitImageOperation =
+    creationMode === 'free' &&
+    lensId === 'image_text' &&
+    (submissionDelivery.deliverableKind === 'image_set' ||
+      submissionDelivery.deliverableKind === 'poster')
+      ? imageOperation
+      : undefined;
+  const imageCardinality = explicitImageOperation
+    ? imageOperationCardinality(explicitImageOperation, sourceReferences.length)
+    : { message: null, valid: true };
   const signedSubmissionParse =
     selectedModel && submissionRecipe && destination
       ? composerSubmissionSignedFieldsSchema.safeParse({
+          creationMode,
+          intent: userText,
+          ...(explicitImageOperation
+            ? { imageOperation: explicitImageOperation }
+            : {}),
           catalogModel: {
             id: selectedModel.id,
             revision: catalogRevision,
@@ -627,8 +775,10 @@ export function ComposerHome({
     return buildLiveQuoteInput({
       sessionId: sessionIdRef.current,
       lensId,
-      catalogRevision,
       model: selectedModel,
+      // `signedSubmission` already carries the catalog revision, and quote
+      // identity is derived from this payload — so the revision moves the key
+      // through the submission rather than through a parallel argument.
       submission: signedSubmission,
       quantity: submissionQuantity,
       durationSeconds: submissionDurationSeconds,
@@ -640,23 +790,106 @@ export function ComposerHome({
           : undefined,
     });
   }, [
-    catalogRevision,
     lensId,
     selectedModel,
+    sessionEpoch,
     signedSubmission,
     submissionAspectRatio,
     submissionDurationSeconds,
     submissionQuantity,
   ]);
+  /**
+   * Quote identity is a digest of the whole billable payload, so every distinct
+   * payload is its own quote — and quoting on each keystroke would leave a
+   * trail of priced-but-never-submitted quotes behind the merchant's typing.
+   * The window holds the request until the sentence stops moving, and asks once
+   * for the version they actually stopped on.
+   *
+   * Held is not in flight: while this is open the composer says so in its own
+   * words (`settling`), and the merchant can end it by pressing send.
+   */
+  const quoteId = quoteInput?.quoteId ?? null;
+  const [settledQuoteId, setSettledQuoteId] = useState<string | null>(null);
+  const quoteSettling = quoteId !== null && settledQuoteId !== quoteId;
+  /**
+   * The sentence the merchant pressed send on. Pressing inside the window ends
+   * it *and* stands as the submit they asked for, so the run starts on the
+   * price that sentence produces — otherwise the first press would only change
+   * a status line and they would have to press again to be heard.
+   */
+  const armedQuoteIdRef = useRef<string | null>(null);
+  const flushQuoteSettle = () => {
+    if (quoteId !== null && settledQuoteId !== quoteId) {
+      setSettledQuoteId(quoteId);
+    }
+  };
+  useEffect(() => {
+    if (quoteId === null) return;
+    const timer = setTimeout(() => setSettledQuoteId(quoteId), 350);
+    return () => clearTimeout(timer);
+  }, [quoteId]);
   const quoteQuery = useQuery({
-    enabled: quoteInput != null,
+    enabled: quoteInput != null && settledQuoteId === quoteId,
     queryKey: p1QueryKeys.request('product-billing', 'quote', quoteInput ?? {}),
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       if (!quoteInput) throw new Error('Composer quote input is required.');
-      return requestComposerQuote(quoteInput);
+      // The signal cancels a quote whose input the merchant already changed;
+      // the command's own deadline bounds one that the server never answers.
+      return requestComposerQuote(quoteInput, commandP1, { signal });
     },
+    // One retry, not the default three: past that the merchant is waiting on
+    // backoff with nothing on screen, which is the defect this ticket removes.
+    retry: 1,
     staleTime: Number.POSITIVE_INFINITY,
   });
+  /**
+   * The bound view survives edits — it lives in the draft, and nothing clears
+   * it when the merchant keeps typing. Held against the identity that produced
+   * it, that is a stale price: the intent has moved on, the new quote is still
+   * in flight (or conflicted, or timed out), and the old number would sit there
+   * looking settled. Since quote identity is now a digest of the whole billable
+   * payload, "still the current quote" is exactly "same quoteId", and anything
+   * else falls back to the live state (#240 P1).
+   */
+  const currentQuoteView = currentComposerQuoteView(
+    quoteView,
+    quoteInput?.quoteId
+  );
+  /**
+   * #240: "a query is in flight" and "a precondition never came together" used
+   * to render the same 正在读取模型与报价… line, so a missing recipe, an absent
+   * or unpriced default model, a missing destination and a failed preferences
+   * read all looked like loading that would never end. Recomputed every render
+   * rather than memoised — it is nine booleans and a lookup table.
+   */
+  const quoteReadiness = resolveComposerQuoteReadiness({
+    lensSelected: lensId != null,
+    surface: composerQueryPhase(surfaceQuery),
+    catalog: composerQueryPhase(catalogQuery),
+    preferences: composerQueryPhase(preferencesQuery),
+    quote: quoteInput == null ? 'disabled' : composerQueryPhase(quoteQuery),
+    settling: quoteSettling,
+    hasRecipe: submissionRecipe != null,
+    hasModel: selectedModel != null,
+    hasDestination: destination != null,
+    hasSignedSubmission: signedSubmission != null,
+    hasQuoteView: currentQuoteView != null,
+  });
+  const retryQuoteReadiness = (
+    target: Exclude<ComposerQuoteRetryTarget, null>
+  ) => {
+    if (target === 'surface') {
+      void surfaceQuery.refetch();
+      return;
+    }
+    if (target === 'catalog') {
+      // Both feed `selectedModel`; retrying one alone leaves the other stale.
+      void catalogQuery.refetch();
+      void preferencesQuery.refetch();
+      return;
+    }
+    void quoteQuery.refetch();
+  };
   const coldCards = useMemo(
     () =>
       surfaceQuery.data
@@ -677,19 +910,61 @@ export function ComposerHome({
         : null,
     [selectedModel?.displayName, signedSubmission]
   );
-  const usageResource =
-    lensId === 'image_text' ? 'image' : lensId === 'video' ? 'video' : 'copy';
-  const usageCost = lensState.draft.settings.quantity ?? 1;
-  const quotaInsufficient = Boolean(
-    lensId &&
-      usageQuery.data &&
-      usageQuery.data.usage[usageResource].available < usageCost
+  // 图文 debits two buckets server-side (copy 1 + image·pages). Pre-checking
+  // only the image bucket let an image-rich / copy-empty merchant submit a run
+  // the server was always going to reject (P0-5 / W05 ①).
+  //
+  // Count from `submissionQuantity` — the same value that becomes
+  // `deliverable.quantity` in the signed submission below, and therefore the
+  // one the server bills off (`server-quote-authority.ts` reads
+  // `submission.deliverable.quantity`). The draft setting is not that number:
+  // until the merchant dirties the field it is the recipe that decides, so an
+  // image_set recipe of 4 against an untouched draft of 1 would pre-check a
+  // quarter of what the run actually debits — the same class of defect this
+  // pre-check exists to kill, in a new shape.
+  const quotaRequirements = useMemo(
+    () =>
+      composerQuotaRequirements({
+        lensId,
+        deliverableKind: submissionDelivery.deliverableKind,
+        quantity: submissionQuantity,
+        notePageBound: submissionRecipe?.delivery.notePageBound ?? null,
+      }),
+    [
+      lensId,
+      submissionQuantity,
+      submissionDelivery.deliverableKind,
+      submissionRecipe?.delivery.notePageBound,
+    ]
   );
-  const quotaBlocked = quotaInsufficient || submissionQuotaBlocked;
+  const quotaPassive = useMemo(
+    () =>
+      projectQuotaPassiveView({
+        requirements: quotaRequirements,
+        available: {
+          copy: usageQuery.data?.usage.copy.available ?? null,
+          image: usageQuery.data?.usage.image.available ?? null,
+          video: usageQuery.data?.usage.video.available ?? null,
+        },
+      }),
+    [quotaRequirements, usageQuery.data]
+  );
+  const quotaBlocked = quotaPassive.short || submissionQuotaBlocked;
 
   useEffect(() => {
     emitTelemetry('identity_state', { state: identitySelection.state });
   }, [identitySelection.state]);
+
+  // `quote_state` was reserved in the telemetry allowlist with nothing emitting
+  // it; with the states enumerated there is finally something to report, and a
+  // precondition that silently blocks quoting is now visible off-box (#240).
+  useEffect(() => {
+    if (!lensId) return;
+    emitTelemetry('quote_state', {
+      operation: COMPOSER_OPERATION_BY_LENS[lensId],
+      state: quoteReadiness.state,
+    });
+  }, [lensId, quoteReadiness.state]);
 
   useEffect(() => {
     if (
@@ -739,7 +1014,18 @@ export function ComposerHome({
       quoteQuery.data,
       lensState.draft.settings.quantity ?? 1
     );
-    if (lensState.draft.quoteRevisionId === nextView.revision) return;
+    // Revision alone is not identity. The server fingerprints a revision by the
+    // priced facts, so 再生成一次 — same sentence, same model, new session —
+    // comes back on the revision already bound while the quote *id* has moved.
+    // The gate compares ids (`currentComposerQuoteView`), so a bind that only
+    // watches revisions would leave the failed run's id bound forever and the
+    // send button disabled with nothing on screen to explain it (#236 W03).
+    if (
+      lensState.draft.quoteRevisionId === nextView.revision &&
+      lensState.draft.quoteView?.quoteId === nextView.quoteId
+    ) {
+      return;
+    }
     setLensState((current) => bindQuoteView(current, nextView));
   }, [quoteQuery.data, lensState]);
 
@@ -763,6 +1049,12 @@ export function ComposerHome({
       }
       return;
     }
+    // A deep link names the run the merchant asked for. The tab's own handle is
+    // just whatever it held last, so it must not open ahead of that ask — the
+    // server restore below binds the named run instead.
+    if (initialTaskId && restored.session.task?.taskId !== initialTaskId) {
+      return;
+    }
     sessionIdRef.current = restored.session.sessionId;
     setSession(restored.session);
     setLensState((current) =>
@@ -781,9 +1073,64 @@ export function ComposerHome({
       session,
       new Date().toISOString()
     );
-    if (!persisted) return;
+    if (!persisted) {
+      // Nothing to persist means the tab holds no run — after 改一下要求, say.
+      // Leaving the old handle in storage would let the next reload restore the
+      // run the merchant just walked away from, remount its stream and poll,
+      // and put its 申报 back on screen (#236 轮 5 P1-①). The handle is the
+      // tab's memory of a run it holds; when it holds none, it remembers none.
+      store.removeItem(COMPOSER_SESSION_STORAGE_KEY);
+      return;
+    }
     store.setItem(COMPOSER_SESSION_STORAGE_KEY, JSON.stringify(persisted));
   }, [session, store]);
+
+  /**
+   * 时间桥拉回 (D-145). The browser handle lives in sessionStorage, so closing
+   * the tab used to be a permanent way out of a run that was still going. The
+   * server keeps the only truth, so the composer asks it on mount: if something
+   * is still in flight the handle comes back, and the event log replay rebuilds
+   * the transcript exactly as it stood.
+   *
+   * Deliberately never overrides a live session — only a composer with nothing
+   * bound adopts a server-side run.
+   */
+  const activeTasksQuery = useQuery({
+    queryKey: ['harness', 'active-tasks'],
+    queryFn: ({ signal }) => readActiveHarnessTasks(signal),
+    // One shot per mount; the run itself streams over SSE from there on.
+    refetchOnWindowFocus: false,
+    retry: false,
+    staleTime: 30_000,
+  });
+  const restoredFromServerRef = useRef(false);
+
+  useEffect(() => {
+    if (restoredFromServerRef.current) return;
+    // Nothing to adopt when the composer already holds the run being asked for
+    // (or holds one and nothing else was asked for). Only an explicit deep link
+    // may displace a bound session, and only in favour of the run it names.
+    if (
+      session.task &&
+      (!initialTaskId || session.task.taskId === initialTaskId)
+    ) {
+      return;
+    }
+    const tasks = activeTasksQuery.data?.tasks ?? [];
+    // A deep link from the task centre names the run it wants reopened; without
+    // one the newest in-flight run is the conversation to come back to.
+    const task = initialTaskId
+      ? tasks.find((candidate) => candidate.taskId === initialTaskId)
+      : tasks[0];
+    if (!task) return;
+    restoredFromServerRef.current = true;
+    const restored = restoreComposerSessionFromActiveTask({
+      sessionId: sessionIdRef.current,
+      task,
+    });
+    setSession(restored);
+    setLensState((current) => updateUserText(current, task.merchantText));
+  }, [activeTasksQuery.data, initialTaskId, session.task]);
 
   const taskId = session.task?.taskId ?? '';
   // Harness tasks are not a P1 query module — the existing harness surfaces key
@@ -812,15 +1159,33 @@ export function ComposerHome({
   useEffect(() => {
     if (!workflowStream.workflowState) return;
     // 成品版本 rides the same terminal frame as the status, so the delivery card
-    // binds its actions to the revision the server actually delivered.
+    // binds its actions to the revision the server actually delivered — and so
+    // does the 失败/partial 申报 (W03), which is why neither needs a second read.
     setSession((current) =>
       applyComposerWorkflowState(
         current,
         workflowStream.workflowState!,
-        workflowStream.harnessDelivery
+        workflowStream.harnessDelivery,
+        workflowStream.harnessCancellation,
+        workflowStream.merchantReport
       )
     );
-  }, [workflowStream.workflowState, workflowStream.harnessDelivery]);
+  }, [
+    workflowStream.workflowState,
+    workflowStream.harnessDelivery,
+    workflowStream.harnessCancellation,
+    workflowStream.merchantReport,
+  ]);
+
+  useEffect(() => {
+    // 额度退还可见: a failed run gives the reservation back, so the passive quota
+    // line must stop showing the number from before the run.
+    if (workflowStream.workflowState !== 'failed') return;
+    void queryClient.invalidateQueries({
+      queryKey: ['harness', 'active-tasks'],
+    });
+    void usageQuery.refetch();
+  }, [workflowStream.workflowState]);
 
   // 需要用户的一个问题 — the third inbound seam message. Polled while the run is
   // live so a suspended workflow surfaces its card without a page action.
@@ -832,12 +1197,22 @@ export function ComposerHome({
   });
   const pendingQuestion: QuestionCard | null =
     decisionQuery.data?.question ?? null;
+  const questionResolutionSource =
+    decisionQuery.data?.resolutionSource === 'core_timeout' ||
+    decisionQuery.data?.resolutionSource === 'core_hold_expired'
+      ? decisionQuery.data.resolutionSource
+      : null;
+  const questionTimeoutSeconds = decisionQuery.data?.timeoutSeconds ?? null;
 
   useEffect(() => {
     setSession((current) =>
       applyComposerQuestion(current, pendingQuestion?.questionId ?? null)
     );
-  }, [pendingQuestion?.questionId]);
+  }, [
+    pendingQuestion?.questionId,
+    questionResolutionSource,
+    workflowStream.workflowState,
+  ]);
 
   const tokenStream = useMemo(
     () =>
@@ -866,7 +1241,7 @@ export function ComposerHome({
       if (!pendingQuestion || !taskId) return;
       setQuestionPending(true);
       try {
-        await submitHarnessDecision(
+        const result = await submitHarnessDecision(
           taskId,
           composerQuestionDecision({
             question: pendingQuestion,
@@ -878,7 +1253,13 @@ export function ComposerHome({
             value: input.value,
           })
         );
+        if ('consumedByOther' in result) {
+          toast.info('系统已先一步处理，正在同步最新状态。');
+        } else if (result.successor) {
+          toast.success('已收到补充，正在生成精修版本。');
+        }
         await decisionQuery.refetch();
+        return result;
       } catch (error) {
         toast.error(workbench_operation_failed());
         // Rethrow: the card claimed a settlement synchronously so the countdown
@@ -1172,11 +1553,7 @@ export function ComposerHome({
           groundingBlockerFromMissing(missingGrounding);
         if (blocker) {
           setSubmissionGroundingBlocked(blocker);
-          toast.error(
-            blocker === 'store'
-              ? workbench_grounding_store_required()
-              : workbench_grounding_source_required()
-          );
+          toast.error(groundingBlockerMessage(blocker));
           return;
         }
       }
@@ -1203,10 +1580,14 @@ export function ComposerHome({
     );
     const briefInput = briefInputRef.current;
     const briefContextRevision = briefContextRevisionRef.current;
+    // `quote` joins the guard rather than staying a `!` assertion: every caller
+    // already checks it, and a run must carry the price it was admitted on.
+    const quote = quoteQuery.data;
     if (
       !submissionRecipe ||
       !briefInput?.briefContextId ||
-      briefContextRevision === null
+      briefContextRevision === null ||
+      !quote
     ) {
       toast.error(workbench_operation_failed());
       return;
@@ -1229,7 +1610,7 @@ export function ComposerHome({
         : {}),
       lensId: selectedLens,
       intent,
-      quote: quoteQuery.data!,
+      quote,
       recipe: submissionRecipe,
       videoConfirmAccepted,
       ...(briefConfirmationId
@@ -1243,12 +1624,27 @@ export function ComposerHome({
   const handleLensChange = (next: CreationLensId) => {
     setShowRequiredHint(false);
     setSubmissionGroundingBlocked(null);
+    // A press was for one form of content at one price. Choosing another form
+    // is a different ask, so the held press does not travel with it.
+    armedQuoteIdRef.current = null;
     setLensState(selectLens(lensState, next));
   };
 
   const handleIntentChange = (value: string) => {
     setSubmissionGroundingBlocked(null);
-    setLensState(updateUserText(lensState, value));
+    destinationAutoSubmitIntentRef.current = null;
+    setDestinationPreflight(null);
+    setLensState((current) => {
+      const withoutSystemDestination =
+        current.draft.fieldMeta.deliveryPlatform?.ownership === 'system'
+          ? updateDeliverySuggestion(
+              current,
+              { distributionTarget: null, platform: null },
+              'system'
+            )
+          : current;
+      return updateUserText(withoutSystemDestination, value);
+    });
   };
 
   /**
@@ -1268,7 +1664,10 @@ export function ComposerHome({
       params: { workId: input.workId },
       search: {
         ...location.search,
-        taskId: input.taskId,
+        // No taskId: the result route reconnects canonically from the Work
+        // (content_packages binds Work and Task atomically, H01), so a task id
+        // in the URL is a second truth with no reader — and a stale link would
+        // be the one thing able to disagree with the server.
         ...(input.revision
           ? {
               contentId: input.revision.packageId,
@@ -1280,7 +1679,89 @@ export function ComposerHome({
     });
   };
 
+  /**
+   * 可恢复入口 (W03). A 申报卡 without a way back in is just a nicer dead end, so
+   * every entry lands the merchant somewhere they can act: back in the composer
+   * with their own sentence, on a different form, or on the part that did land.
+   */
+  const recoverFromReport = (input: ComposerRecoveryInput) => {
+    const merchantText = composerSessionMerchantText(session);
+    // A failed run leaves the lens frozen, which disables the composer and
+    // makes canSubmit refuse — so every entry has to thaw before it can act,
+    // or the button is decoration.
+    if (input.action !== 'review_partial') {
+      setLensState((current) => {
+        const reopened = reopenComposer(current);
+        // Put their sentence back only when the composer lost it — once they
+        // start editing after 改一下要求, the field is theirs.
+        return merchantText && !reopened.draft.userText.trim()
+          ? updateUserText(reopened, merchantText)
+          : reopened;
+      });
+      // Coming back in starts a new attempt, and the session id is what names
+      // an attempt: 报价 and Brief context are both idempotent on it, so the
+      // server refuses the next quote under the id that already ran. Reusing it
+      // would leave the composer editable but unable to submit — the same dead
+      // end through a different door.
+      sessionIdRef.current = newComposerSessionId();
+      setSessionEpoch((current) => current + 1);
+      briefContextRevisionRef.current = null;
+      briefInputRef.current = null;
+      // Rebinding unbinds the finished run, which would otherwise look to the
+      // mount-time restore like a composer with nothing in it and invite some
+      // other in-flight run into the tab mid-edit. The merchant has taken this
+      // conversation over; the restore decision is behind us.
+      restoredFromServerRef.current = true;
+      setSession((current) =>
+        rebindComposerSession(current, sessionIdRef.current)
+      );
+    }
+    switch (input.action) {
+      case 'retry':
+        // The rebind above already handed this conversation to the new attempt.
+        // Replacing it with a fresh session would also throw away the 交付卡 a
+        // partial delivery left standing — the one part that did land, which
+        // 再生成一次 is offered *from* (#236 轮 5 P1-③).
+        //
+        // Deferred: attemptSubmit reads the closure's lensState, which is still
+        // frozen on this tick. The effect below fires it once the thaw lands.
+        setRetryAfterReport(true);
+        return;
+      case 'adjust_intent':
+        focusComposerIntentInput();
+        return;
+      case 'switch_form':
+        // The lens radiogroup is the one place a form is chosen; sending the
+        // merchant there beats inventing a second switch inside the card.
+        document
+          .querySelector<HTMLElement>(
+            '[data-testid="composer-lens-radiogroup"]'
+          )
+          ?.scrollIntoView?.({ block: 'nearest' });
+        focusComposerIntentInput();
+        return;
+      case 'review_partial': {
+        const task = session.task;
+        if (!task) return;
+        openDelivery({
+          action: 'open',
+          revision: null,
+          taskId: task.taskId,
+          workId: task.workId,
+        });
+      }
+    }
+  };
+
   const attemptSubmit = async () => {
+    if (!imageCardinality.valid) {
+      document
+        .querySelector<HTMLElement>(
+          '[data-testid="composer-image-operation-picker"]'
+        )
+        ?.focus();
+      return;
+    }
     const gate = canSubmit(lensState);
     if (!gate.allowed && gate.reason !== 'video_confirm_required') {
       setShowRequiredHint(true);
@@ -1295,11 +1776,74 @@ export function ComposerHome({
     }
 
     if (lensState.phase !== 'selected') return;
+    const destinationDecision = decideComposerDestinationPreflight({
+      hasExplicitDestination:
+        lensState.draft.fieldMeta.deliveryPlatform?.ownership === 'user' &&
+        lensState.draft.fieldMeta.deliveryPlatform.dirty,
+      intent: lensState.draft.userText,
+      state: destinationPreflight,
+    });
+    if (destinationDecision.kind === 'map') {
+      if (destinationMapPendingRef.current) return;
+      destinationMapPendingRef.current = true;
+      setDestinationMapPending(true);
+      try {
+        const result = await mapComposerDestination(
+          destinationDecision.destination
+        );
+        setDestinationPreflight({
+          intent: destinationDecision.destination,
+          result,
+        });
+        if (result.status === 'mapped') {
+          destinationAutoSubmitIntentRef.current =
+            destinationDecision.destination;
+          setLensState((current) =>
+            current.draft.userText.trim() === destinationDecision.destination
+              ? updateDeliverySuggestion(
+                  current,
+                  {
+                    distributionTarget: result.distributionTarget,
+                    platform: result.contentPackagePlatform,
+                  },
+                  'system'
+                )
+              : current
+          );
+        }
+      } catch {
+        toast.error('暂时无法确认发布去向，请重试或直接选择平台。');
+      } finally {
+        destinationMapPendingRef.current = false;
+        setDestinationMapPending(false);
+      }
+      return;
+    }
+    if (destinationDecision.kind === 'block') {
+      document
+        .querySelector<HTMLElement>(
+          '[data-testid="composer-destination-clarification"]'
+        )
+        ?.focus();
+      return;
+    }
     if (quotaBlocked) {
       setSubmissionQuotaBlocked(true);
       return;
     }
-    if (!quoteQuery.data || !quoteView || !submissionRecipe) {
+    // `currentQuoteView`, not `quoteView`: a run must never be admitted against
+    // a price the merchant's current input no longer produces (#240 P1).
+    if (!quoteQuery.data || !currentQuoteView || !submissionRecipe) {
+      if (quoteSettling) {
+        // Pressing send *is* the merchant saying the sentence is final. End the
+        // window, ask for the price now, and remember that they asked: the run
+        // starts as soon as that price lands. Flushing without arming would
+        // make the first press change a status line and nothing else — a dead
+        // press, which is the defect this ticket exists to remove.
+        armedQuoteIdRef.current = quoteId;
+        flushQuoteSettle();
+        return;
+      }
       setShowRequiredHint(true);
       return;
     }
@@ -1326,6 +1870,7 @@ export function ComposerHome({
         briefContextId,
         draft: {
           delivery: submissionDelivery,
+          imageOperation: explicitImageOperation ?? null,
           settings: submissionSettings,
           sources: briefSourcesFromDraft(lensState.draft.sources),
           userText: lensState.draft.userText,
@@ -1410,8 +1955,114 @@ export function ComposerHome({
     runCreate(lensState.lensId);
   };
 
+  useEffect(() => {
+    const pendingIntent = destinationAutoSubmitIntentRef.current;
+    const mapped =
+      destinationPreflight?.result.status === 'mapped'
+        ? destinationPreflight.result
+        : null;
+    if (
+      !pendingIntent ||
+      destinationPreflight?.intent !== pendingIntent ||
+      userText.trim() !== pendingIntent ||
+      !mapped ||
+      lensState.draft.delivery.platform !== mapped.contentPackagePlatform ||
+      lensState.draft.delivery.distributionTarget !==
+        mapped.distributionTarget ||
+      destinationMapPending ||
+      !quoteQuery.data ||
+      !currentQuoteView ||
+      !submissionRecipe
+    ) {
+      return;
+    }
+    destinationAutoSubmitIntentRef.current = null;
+    void attemptSubmit();
+  }, [
+    currentQuoteView,
+    destinationMapPending,
+    destinationPreflight,
+    lensState.draft.delivery.distributionTarget,
+    lensState.draft.delivery.platform,
+    quoteQuery.data,
+    submissionRecipe,
+    userText,
+  ]);
+
+  /**
+   * 「再生成一次」second half: once the thaw has landed *and* the run is
+   * submittable again, the same path a merchant would drive by hand runs. The
+   * readiness check is not optional — a reopened lens re-quotes, and firing
+   * before the price is back would be blocked by the submit gate and look
+   * exactly like a button that does nothing.
+   *
+   * `currentQuoteView`, like every other gate (#240 P1): the recovery mints a
+   * new session and therefore a new quote identity, so the bound view is the
+   * *failed* run's price until the re-quote lands. Firing against it would hit
+   * the submit gate, clear the retry flag and leave the merchant with a button
+   * that did nothing.
+   */
+  useEffect(() => {
+    if (!retryAfterReport) return;
+    if (lensState.phase !== 'selected') return;
+    if (!quoteQuery.data || !currentQuoteView || !submissionRecipe) return;
+    setRetryAfterReport(false);
+    void attemptSubmit();
+  }, [
+    currentQuoteView,
+    lensState,
+    quoteQuery.data,
+    retryAfterReport,
+    submissionRecipe,
+  ]);
+
+  /**
+   * The armed press, second half: the merchant pressed send while the quote was
+   * still held, and this is where that press finally reaches Core — against the
+   * price of the exact sentence they pressed on, never a later one.
+   */
+  useEffect(() => {
+    const armed = armedQuoteIdRef.current;
+    if (armed === null) return;
+    if (quoteId !== armed) {
+      // They kept writing, or the quote context went away entirely (a lens
+      // switch, a submission that stopped signing). Either way the sentence
+      // they pressed on is gone, and the press goes with it — held across a
+      // gap it would fire later on a quote id that came back around, which is
+      // a submission the merchant never asked for (#236 轮 5 P1-②).
+      armedQuoteIdRef.current = null;
+      return;
+    }
+    if (quoteQuery.isError) {
+      // The price never came back. The failure line owns the recovery from
+      // here; a press held across it would submit long after they gave up.
+      armedQuoteIdRef.current = null;
+      return;
+    }
+    if (!quoteQuery.data || !currentQuoteView || !submissionRecipe) return;
+    armedQuoteIdRef.current = null;
+    void attemptSubmit();
+  }, [
+    currentQuoteView,
+    quoteId,
+    quoteQuery.data,
+    quoteQuery.isError,
+    submissionRecipe,
+  ]);
+
   const handleBriefConfirm = async () => {
     if (lensState.phase !== 'selected' || !submissionRecipe) return;
+    // The card is already un-confirmable when the identities diverge; this is
+    // the same rule on the handler, so a stale confirm cannot arrive by any
+    // other route (a queued click, a restored card). Narrowing here also
+    // retires the non-null assertions this path used to carry: after an edit
+    // the new query key has no data yet, and reading a field off it would
+    // throw (#240 P1).
+    const confirmedQuote = quoteQuery.data;
+    if (!currentQuoteView || !confirmedQuote) {
+      toast.error(BRIEF_STALE_QUOTE_NOTICE);
+      return;
+    }
     const result = confirmBriefSurface(briefState);
     if (!result.ok) {
       setBriefState(result.state);
@@ -1426,13 +2077,14 @@ export function ComposerHome({
       briefContextId: briefInput.briefContextId,
       draft: {
         delivery: submissionDelivery,
+        imageOperation: explicitImageOperation ?? null,
         settings: submissionSettings,
         sources: briefSourcesFromDraft(lensState.draft.sources),
         userText: lensState.draft.userText,
       },
       expectedRevision: briefContextRevisionRef.current,
       lensId: lensState.lensId,
-      quoteId: quoteQuery.data!.quoteId,
+      quoteId: confirmedQuote.quoteId,
       recipeRevisionId: submissionRecipe.revisionId,
       sourceIds: sourceReferences.map((source) => source.id),
       surfaceRevisionId:
@@ -1453,7 +2105,7 @@ export function ComposerHome({
       const refreshedInput = buildLiveBriefInput({
         briefContextId: briefInput.briefContextId,
         lensId: lensState.lensId,
-        quote: quoteQuery.data!,
+        quote: confirmedQuote,
         currentRevisions: refreshedContext.currentRevisions,
         delivery: submissionDelivery,
         imageCount: lensState.lensId === 'image_text' ? submissionQuantity : 0,
@@ -1516,16 +2168,47 @@ export function ComposerHome({
     briefState.phase === 'open'
       ? projectBriefSurfaceView(briefState, {
           lensId,
-          quote: quoteView,
+          // Same judgement as the four Composer gates. Editing the intent while
+          // the Brief is open used to leave it showing the old price with an
+          // enabled confirm button — a second door onto a stale quote (#240 P1).
+          quote: currentQuoteView,
+          quoteStale: currentQuoteView == null,
         })
       : null;
 
-  const showProgressiveFact =
-    Boolean(product.state) &&
-    !product.loading &&
-    (submissionGroundingBlocked === 'store' ||
-      missingGrounding.includes('confirmed_store') ||
-      missingGrounding.includes('confirmed_project'));
+  const missingStoreFacts =
+    storeFacts.isSuccess &&
+    hasMissingProgressiveStoreFacts(product.state?.store, storeFacts.data);
+  const storeFactHeads = [
+    ...(storeFacts.data ?? []),
+    ...(serviceFactHistory.data ?? []),
+    ...(priceFactHistory.data ?? []),
+  ];
+  const storeFactHeadRevisionKey = storeFactHeads
+    .map((fact) => `${fact.factId}:${fact.revision}`)
+    .sort()
+    .join('|');
+  const groundingRequested =
+    submissionGroundingBlocked === 'store' ||
+    missingGrounding.includes('confirmed_store') ||
+    missingGrounding.includes('confirmed_project');
+  const storeFactLedgerReady =
+    storeFacts.isSuccess &&
+    (!needsServiceHistory || serviceFactHistory.isSuccess) &&
+    (!needsPriceHistory || priceFactHistory.isSuccess);
+  const storeFactLedgerFailed =
+    Boolean(product.state?.store) &&
+    (storeFacts.isError ||
+      (needsServiceHistory && serviceFactHistory.isError) ||
+      (needsPriceHistory && priceFactHistory.isError));
+  const showProgressiveFact = shouldShowProgressiveFactCard({
+    groundingRequested,
+    hasProductState: Boolean(product.state),
+    hasStore: Boolean(product.state?.store),
+    ledgerReady: storeFactLedgerReady,
+    missingStoreFacts,
+    productLoading: product.loading,
+  });
 
   return (
     <div
@@ -1571,17 +2254,47 @@ export function ComposerHome({
         state={product.state}
       />
 
+      {storeFactLedgerFailed ? (
+        <div
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3"
+          data-testid="progressive-fact-ledger-error"
+          role="alert"
+        >
+          <p className="text-sm text-destructive">
+            {workbench_operation_failed()}
+          </p>
+          <Button
+            data-testid="progressive-fact-ledger-retry"
+            onClick={() => {
+              void storeFacts.refetch();
+              if (needsServiceHistory) void serviceFactHistory.refetch();
+              if (needsPriceHistory) void priceFactHistory.refetch();
+            }}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {account_usage_retry()}
+          </Button>
+        </div>
+      ) : null}
+
       {showProgressiveFact ? (
         <ProgressiveFactCard
-          onConfirm={async (command) => {
-            await executeProductCommand(
-              command,
-              `progressive-fact:${sessionIdRef.current}:${Date.now()}`
-            );
+          activeFacts={product.state?.store ? (storeFacts.data ?? []) : []}
+          factHeads={product.state?.store ? storeFactHeads : []}
+          key={`progressive-fact:${product.state?.workspaceId}:${product.state?.store?.revision ?? 0}:${storeFactHeadRevisionKey}`}
+          onConfirm={async (request, idempotencyKey) => {
+            await commandP1('asset-memory', request, idempotencyKey);
             setSubmissionGroundingBlocked(null);
-            await product.refresh();
+            await Promise.all([product.refresh(), storeFacts.refetch()]);
           }}
           pending={product.pending}
+          regulatedDefault={
+            complianceDefaults.data?.['compliance.regulated_mode.default']
+          }
+          store={product.state?.store}
+          workspaceId={product.state?.workspaceId ?? ''}
         />
       ) : null}
 
@@ -1603,6 +2316,7 @@ export function ComposerHome({
           />
         }
         onOpenDelivery={openDelivery}
+        onRecover={recoverFromReport}
         questionSlot={
           pendingQuestion ? (
             <ComposerQuestionCard
@@ -1622,6 +2336,8 @@ export function ComposerHome({
               onDecide={answerQuestion}
               pending={questionPending}
               question={pendingQuestion}
+              resolutionSource={questionResolutionSource}
+              timeoutSeconds={questionTimeoutSeconds}
             />
           ) : null
         }
@@ -1652,6 +2368,13 @@ export function ComposerHome({
         className="meiye-composer meiye-entry-card rounded-3xl p-4 sm:p-5"
         attachmentSlot={
           <div data-testid="composer-source-picker">
+            {explicitImageOperation ? (
+              <ComposerImageOperationPicker
+                disabled={createWork.isPending || lensState.phase === 'frozen'}
+                onChange={setImageOperation}
+                value={explicitImageOperation}
+              />
+            ) : null}
             <ComposerImageInput
               focusRef={sourcePickerRef}
               onAssetAdded={addSource}
@@ -1665,9 +2388,20 @@ export function ComposerHome({
               onUpload={uploadComposerImage}
             >
               <p className="text-muted text-xs">
-                可选：上传门店图片、顾客案例或价目素材
+                {explicitImageOperation
+                  ? imageOperationAttachmentHint(explicitImageOperation)
+                  : '可选：上传门店图片、顾客案例或价目素材'}
               </p>
             </ComposerImageInput>
+            {imageCardinality.message ? (
+              <p
+                className="mt-2 text-destructive text-xs"
+                data-testid="composer-image-cardinality"
+                role="alert"
+              >
+                {imageCardinality.message}
+              </p>
+            ) : null}
           </div>
         }
         creationMode={creationMode}
@@ -1681,10 +2415,16 @@ export function ComposerHome({
         submitDisabled={
           createWork.isPending ||
           briefPending ||
+          destinationMapPending ||
           !uploadsReady ||
+          !imageCardinality.valid ||
           lensState.phase === 'frozen' ||
           quotaBlocked ||
-          (lensId != null && !quoteView)
+          // Every state without a current price disables the button, except the
+          // one that means 「we have not asked yet」: pressing send there ends
+          // the settle window and asks now. Disabling it would make the click
+          // that resolves the wait the one click the merchant cannot make.
+          (lensId != null && !currentQuoteView && !quoteSettling)
         }
         lensSlot={
           <>
@@ -1698,12 +2438,20 @@ export function ComposerHome({
           </>
         }
         onCreationModeChange={setCreationMode}
-        onDestinationChange={(platform) =>
+        onDestinationChange={(platform) => {
+          const next = composerDestinationContract(platform);
+          setDestinationPreflight(null);
+          if (!next) return;
           setLensState((current) =>
-            updateDeliverySuggestion(current, { platform })
-          )
-        }
+            updateDeliverySuggestion(current, {
+              distributionTarget: next.distributionTarget,
+              platform: next.contentPackagePlatform,
+            })
+          );
+        }}
         onReuseChip={(chip) => {
+          const next = composerDestinationContract(chip.id);
+          setDestinationPreflight(null);
           // 旧内容换平台 becomes one sentence in the merchant's own draft.
           setLensState((current) =>
             updateDeliverySuggestion(
@@ -1713,7 +2461,10 @@ export function ComposerHome({
                   ? `${current.draft.userText.trim()}\n${chip.intent}`
                   : chip.intent
               ),
-              { platform: chip.id }
+              {
+                distributionTarget: next?.distributionTarget ?? null,
+                platform: next?.contentPackagePlatform ?? chip.id,
+              }
             )
           );
           focusComposerIntentInput();
@@ -1729,7 +2480,39 @@ export function ComposerHome({
         value={userText}
       />
 
-      {quoteView ? (
+      {destinationPreflight?.intent === userText.trim() &&
+      destinationPreflight.result.status === 'needs_clarification' ? (
+        <div
+          className="rounded-2xl border border-default-200 bg-content1/80 p-3"
+          data-testid="composer-destination-clarification"
+          role="alert"
+          tabIndex={-1}
+        >
+          <p className="text-sm">{destinationPreflight.result.question}</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {destinationPreflight.result.options.map((option) => (
+              <button
+                className="rounded-full border border-default-300 px-3 py-1.5 text-sm"
+                key={`${option.contentPackagePlatform}:${option.distributionTarget}`}
+                onClick={() => {
+                  setDestinationPreflight(null);
+                  setLensState((current) =>
+                    updateDeliverySuggestion(current, {
+                      distributionTarget: option.distributionTarget,
+                      platform: option.contentPackagePlatform,
+                    })
+                  );
+                }}
+                type="button"
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {currentQuoteView ? (
         <p
           className="text-muted text-xs"
           data-quote-revision={quoteQuery.data?.revision}
@@ -1738,15 +2521,15 @@ export function ComposerHome({
           }
           data-testid="composer-quote-line"
         >
-          {quoteView.billingNote ?? `预计消耗 ${quoteView.amount}`}
+          {currentQuoteView.billingNote ??
+            `预计消耗 ${currentQuoteView.amount}`}
         </p>
-      ) : lensId ? (
-        <output className="text-muted text-xs">
-          {catalogQuery.isError || quoteQuery.isError
-            ? '当前模型或报价暂不可用'
-            : '正在读取模型与报价…'}
-        </output>
-      ) : null}
+      ) : (
+        <ComposerQuoteStatusLine
+          onRetry={retryQuoteReadiness}
+          readiness={quoteReadiness}
+        />
+      )}
 
       {submissionGroundingBlocked === 'store' ? (
         <p
@@ -1760,6 +2543,21 @@ export function ComposerHome({
             to="/dashboard/store"
           >
             {workbench_grounding_go_to_store()}
+          </Link>
+        </p>
+      ) : submissionGroundingBlocked === 'qualification' ? (
+        <p
+          className="text-destructive text-sm"
+          data-testid="composer-grounding-blocker"
+          role="alert"
+        >
+          {workbench_grounding_qualification_required()}{' '}
+          <Link
+            className="font-medium underline underline-offset-4"
+            hash="store-qualification"
+            to="/dashboard/store"
+          >
+            {workbench_grounding_qualification_action()}
           </Link>
         </p>
       ) : submissionGroundingBlocked === 'source' ? (
@@ -1781,17 +2579,22 @@ export function ComposerHome({
           blocking card. */}
       <QuotaBlockingCard
         blocked={quotaBlocked}
-        passive={projectQuotaPassiveView({
-          available: usageQuery.data?.usage[usageResource].available ?? null,
-          cost: usageCost,
-          resource: usageResource,
-        })}
+        passive={quotaPassive}
         onRedeem={async ({ command, idempotencyKey }) => {
           try {
             await commandP1('redemptions', command, idempotencyKey);
-            await queryClient.invalidateQueries({
-              queryKey: p1QueryKeys.request('entitlements', 'projection'),
-            });
+            // Both entitlement reads on this page: the projection behind the
+            // pre-check and the three-bucket balance card above it. Refreshing
+            // one and not the other leaves 创作余额 quoting the old numbers
+            // next to a card that just said it unlocked.
+            await Promise.all([
+              queryClient.invalidateQueries({
+                queryKey: p1QueryKeys.request('entitlements', 'projection'),
+              }),
+              queryClient.invalidateQueries({
+                queryKey: p1QueryKeys.request('entitlements', 'balance'),
+              }),
+            ]);
             return { ok: true };
           } catch (error) {
             return {

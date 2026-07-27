@@ -251,27 +251,25 @@ palette without introducing hidden business writes.
 
 **File:** `specs/uiux-upgrade-b-results.spec.ts` | **Priority:** P0
 
-Locks the missing result-stage contracts for real copy streaming, candidate
-batch boundaries, canonical media presentation, and English route consistency.
-The streaming checks observe the paced fixture response through the real BFF;
-they do not synthesize a completed response or business state.
+Locks the remaining result-stage contracts for Harness workflow-token results,
+candidate batch boundaries, canonical media presentation, and English route
+consistency. D-118 retires the standalone copy-stream transport and its
+start/stop probes; incremental copy candidates now arrive only through the
+shared Harness workflow event stream.
 
 | # | Test name | Flow |
 |---|---|---|
-| 1 | One real submission exposes streaming start, progress, and exactly three completed candidates | Submit one real copy-stream request, verify the paced response exposes three safe in-progress slots and a stop action before completion, then verify one completed Job persists exactly three ordered candidate Assets without duplicate Work or Job creation. |
-| 2 | Production candidate preserves paced chunks through Worker and BFF | Run only with `PLAYWRIGHT_PRODUCTION_CANDIDATE=true`; build the Worker candidate, pass the paced Core fixture through Wrangler and the authenticated BFF, attach the browser transport probe, and require multiple chunks separated by more than 100ms. This is transport proof, not live-provider proof. |
-| 3 | Stopping a partial copy stream preserves arrived content and requires explicit resubmission | Stop after the first visible partial candidate, verify arrived copy remains readable and no automatic retry occurs, explicitly resubmit, and verify the second request completes one three-candidate batch. |
-| 4 | The completed copy batch remains a single-choice flow on mobile | Complete one copy batch on desktop, switch to the mobile Progress stage, verify exactly three radios and one checked choice, keep the sticky adoption action enabled, and prove the page does not overflow. |
-| 5 | Creation assistant streams rich text and exposes local-only patch controls | Send one assistant request, verify partial text and rich Markdown arrive before completion, inspect the current Work context, edit and locally accept one structured field patch, and prove the Work intent is not silently overwritten. |
-| 6 | Single selection, paid reroll, and two free quality retries keep separate usage boundaries | Generate the first three-candidate batch, switch between A and C while keeping exactly one selection, explicitly confirm a paid reroll and verify one-unit usage, then use both zero-unit quality retries, verify the `0/2 -> 1/2 -> 2/2` boundary, and prove a third free retry is disabled without changing the fixed model. |
-| 7 | Successful image media opens the lightbox and the same canonical Asset detail | Complete one real fixture-backed image Job, reload its persisted result, open the rendered media in the lightbox, prove previewing creates no Content or duplicate objects, then follow the detail link and verify the same canonical media source appears on its detail route, Asset library, and the formal Recent/history owning surface. |
-| 8 | English locale retains route context and keeps empty product chrome free of Chinese leakage | Switch an empty Asset page to English while preserving path, query, hash, and login state; verify English chrome contains no Chinese beyond the allowed product brand or internal model/template residue, reload without losing locale, and navigate to the English Content page without dropping the `/en` prefix. |
-| 9 | Completed result becomes the stage and keeps its visible intent legible on mobile | Complete one copy Work, verify the result hero is visually ahead of professional settings and reuse, require the submit composer and Operations rail to leave the completed stage, then switch to mobile Progress and verify the visible intent and candidate result remain visible. |
-| 10 | Image-text export receipts download the generated ZIP | Export an accepted image-text ContentPackage, open its successful receipt, and verify the authenticated BFF returns the exact workspace-scoped generated ZIP without accepting a composed ZIP or a disguised extension. |
-| 11 | Lost export and reuse responses retry the same intent once | Drop the first export and reuse responses after submission, retry each unchanged action, and verify each retry reuses its original idempotency key while the two different intents never share a key. |
-| 12 | Slow platform generation cannot overwrite a newer package version | Hold the three-platform provider response, save a new current ContentPackage version, release the stale provider result, and verify the command reports a version conflict without attaching any stale platform variant. |
-| 13 | Primary image-text creation adopts authorized store photos into one package | Start from the two product choices “Create image post” and “Create video,” create an image-text Work with an authorized real store photo, select one copy candidate, keep the referenced photo in the ordered visual list, adopt once, and verify the ContentPackage is immediately visible without any CreativeContent write. |
-| 14 | **MISSING SPEC:** Trace-backed recommendation defaults to one result with optional alternatives | After the production harness persists `recommendedAssetId` and its complete DecisionTrace, open the completed result and verify only that candidate is selected and visible as the primary recommendation; verify all seven explanation fields, expand no more than two distinct alternatives on demand, adopt the default without a mandatory selection step, and retain the existing paid reroll and two zero-unit quality retries. A legacy Job without both recommendation facts must keep the existing candidate regression UI and must never label A or the first item as primary. |
+| 1 | The completed copy batch remains a single-choice flow on mobile | Complete one copy batch on desktop, switch to the mobile Progress stage, verify exactly three radios and one checked choice, keep the sticky adoption action enabled, and prove the page does not overflow. |
+| 2 | Creation assistant streams rich text and exposes local-only patch controls | Send one assistant request, verify partial text and rich Markdown arrive before completion, inspect the current Work context, edit and locally accept one structured field patch, and prove the Work intent is not silently overwritten. |
+| 3 | Single selection, paid reroll, and two free quality retries keep separate usage boundaries | Generate the first three-candidate batch, switch between A and C while keeping exactly one selection, explicitly confirm a paid reroll and verify one-unit usage, then use both zero-unit quality retries, verify the `0/2 -> 1/2 -> 2/2` boundary, and prove a third free retry is disabled without changing the fixed model. |
+| 4 | Successful image media opens the lightbox and the same canonical Asset detail | Complete one real fixture-backed image Job, reload its persisted result, open the rendered media in the lightbox, prove previewing creates no Content or duplicate objects, then follow the detail link and verify the same canonical media source appears on its detail route, Asset library, and the formal Recent/history owning surface. |
+| 5 | English locale retains route context and keeps empty product chrome free of Chinese leakage | Switch an empty Asset page to English while preserving path, query, hash, and login state; verify English chrome contains no Chinese beyond the allowed product brand or internal model/template residue, reload without losing locale, and navigate to the English Content page without dropping the `/en` prefix. |
+| 6 | Completed result becomes the stage and keeps its visible intent legible on mobile | Complete one copy Work, verify the result hero is visually ahead of professional settings and reuse, require the submit composer and Operations rail to leave the completed stage, then switch to mobile Progress and verify the visible intent and candidate result remain visible. |
+| 7 | Image-text export receipts download the generated ZIP | Export an accepted image-text ContentPackage, open its successful receipt, and verify the authenticated BFF returns the exact workspace-scoped generated ZIP without accepting a composed ZIP or a disguised extension. |
+| 8 | Lost export and reuse responses retry the same intent once | Drop the first export and reuse responses after submission, retry each unchanged action, and verify each retry reuses its original idempotency key while the two different intents never share a key. |
+| 9 | Slow platform generation cannot overwrite a newer package version | Hold the three-platform provider response, save a new current ContentPackage version, release the stale provider result, and verify the command reports a version conflict without attaching any stale platform variant. |
+| 10 | Primary image-text creation adopts authorized store photos into one package | Start from the two product choices “Create image post” and “Create video,” create an image-text Work with an authorized real store photo, select one copy candidate, keep the referenced photo in the ordered visual list, adopt once, and verify the ContentPackage is immediately visible without any CreativeContent write. |
+| 11 | **MISSING SPEC:** Trace-backed recommendation defaults to one result with optional alternatives | After the production harness persists `recommendedAssetId` and its complete DecisionTrace, open the completed result and verify only that candidate is selected and visible as the primary recommendation; verify all seven explanation fields, expand no more than two distinct alternatives on demand, adopt the default without a mandatory selection step, and retain the existing paid reroll and two zero-unit quality retries. A legacy Job without both recommendation facts must keep the existing candidate regression UI and must never label A or the first item as primary. |
 
 ## 18. UI/UX Upgrade B Asynchronous Job Contracts
 
@@ -364,6 +362,14 @@ evidence.
 |---|---|---|
 | 1 | Only complete marketing entries switch the canonical Composer context | Seed one D-023-complete entry and one entry missing any single MarketingPackage capability; open the canonical dashboard, verify only the complete entry is visible, click it, and verify the editable intent plus recommended tools change in place without navigation or a field form. Legacy scene chips appear only as secondary choices under the released parent. |
 | 2 | One server-owned question persists and resumes the harness | Start a Harness task with one missing authoritative fact, follow its stable SSE progress into `suspended`, render exactly one inline QuestionCard, answer it, and require the structured decision to bind the server-declared field, task, question, workflow revision, scope, and idempotency key. Reload to prove the question is no longer pending and follow the same SSE stream through resumed progress to the delivered ContentPackage revision. Replaying the same answer is idempotent; a stale revision and a changed target both return 409. |
+
+## 24b. W01 Store Intake Fact Wiring
+
+**File:** `specs/w01-storefact-wiring.spec.ts` | **Priority:** P0
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | One inline confirmation reaches the customized delivery context without erasing the store profile | Create one legacy StoreProfile with two accounts and two confirmed projects, prove its public active-fact ledger is empty, then use the visible ProgressiveFactCard to explicitly reconfirm the first project name and change its price. Require exactly one `asset-memory.finalize_store_intake` request, two revision-1 merchant-confirmed facts, and preservation of the second project, accounts, compliance flag, prohibitions, and all untouched profile fields. Submit a customized copy journey, read the resulting ContentPackage and its exact public ContextBundle revision, and prove the service and price revisions are frozen as `current_fact` / `store_personal` with matching source, expiry, references, and package fact evidence. |
 
 ## 25. Day-0 Recommendation And Example Store
 
@@ -459,6 +465,18 @@ none of these can pass on fixture data (ADR-0019 / D-131).
 | 1 | Every admin page renders the template-dashboard shell in both themes | Sign in as an administrator and walk `/admin`, `/admin/models`, `/admin/templates`, `/admin/integrations`, `/admin/plans`, `/admin/users` and `/admin/audit`; require the Glass token-bridge host class and a HeroUI sidebar item on each, require the merchant shell no longer wraps 后台, and require a resolved background in both light and dark. |
 | 2 | A hand-entered three-bucket number reaches the merchant through governed config | Hand-enter the trial copy bucket on `/admin/plans`, pass impact review with an audit reason, require the editor's CAS revision line to advance, then register a store and require its `/settings/account` to read that number with nothing redeployed. The governed key feeds the catalog and provisioning materialises it at activation, so the number reaches stores provisioned after the change — an already-provisioned workspace is not rewritten, by design. |
 | 3 | Model assembly separates the catalog layer from the channel layer | On `/admin/models`, require the CatalogModel and ExecutionChannel layers to render as separate panels and require each to carry only its own governed keys. |
+
+## 31c. Note Style Set Governance (U05 硬门 / D-107)
+
+**File:** `specs/admin-note-style-governance.spec.ts` | **Priority:** P0 | **Tickets:** U05 / #241
+
+图文笔记的风格集合以前只在契约里，后台没有入口，换一种风格得改代码。这条门
+锁住它现在的走法：结构化表单改值 → 影响面确认 → 写入原因 → CAS 版本推进，
+全程一次 JSON 手改都不许有。
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | An operator reshapes the note style set without ever touching JSON | Sign in as an administrator, open `/admin/templates`, require the editor region to contain zero `textarea.font-mono` and zero rich-text hosts, require the form to open on the style set that is actually live, then rename a style, rewrite its guide and switch a platform off using only labelled form controls; pass impact review with an audit reason and require the new name to survive a reload. Then require the CAS revision to advance, require a re-submit carrying the stale `expectedRevision` to be rejected with `IDEMPOTENCY_CONFLICT` and to leave the revision untouched, and require the reason plus a non-empty actor to land in `config_history` under the new revision. Restores the shared value through the same governed path in `finally`. |
 
 ## 32. LIKEPAGE Marketing Landing Page
 
@@ -613,6 +631,59 @@ outbound seam messages against real core SSE. The container journey itself
   numbers — those belong to the entitlements projection.
 - Both themes × mobile/desktop render the family and write walkthrough shots.
 
+## S2 失败申报与时间桥（#236）
+
+`specs/composer-failure-recovery.spec.ts` covers the two journeys W03 and W10
+exist to make true, both against the real Web → Core → Harness/DBOS chain.
+
+- **失败申报 (P0-2)**: a run whose candidate is blocked by the canonical
+  `critical_fact_source` gate reaches the conversation as a 申报卡 carrying a
+  Chinese 白话原因, a 下一步动作, at least one recovery entry, and the 额度
+  outcome — asserted both on the card and as an observed return of the passive
+  quota number, not only as a sentence the card makes about itself. The blocked
+  draft is gone from the transcript: a refused candidate must not be left on
+  screen as if it were usable. Every visible sentence passes the D-116 language
+  gate.
+  - **可恢复入口是按下去有用的**: the entries are clicked, not counted, and each
+    one is proved on its own path — 再生成一次 rebuilds the session from scratch,
+    which would hide every defect 改一下要求 leaves standing.
+    - 再生成一次 straight from the failure reaches Core with a run of its own,
+      while the composer is still frozen. An entry that only calls `focus()` is
+      a dead button, and this is what tells the two apart (D-150).
+    - 改一下要求 turns the composer from disabled back to editable, accepts a
+      rewritten sentence, and the merchant's **own** send button then delivers:
+      the second run's progress lines are visible (a progress cursor left at the
+      first run's high-water mark would swallow them) and the previous 申报 is
+      gone from the transcript rather than describing work this run never did.
+      This is the path that needed quotefix: the quote id now covers the signed
+      payload the server fingerprints it by, so a rewritten sentence re-quotes
+      under its own key instead of returning IDEMPOTENCY_CONFLICT and leaving
+      the composer priceless.
+  - **失败档 (fixture failure profile)**: the only deterministic boundary is the
+    model provider, the same as every other fixture journey. A merchant intent
+    containing 「失败档」 makes the fixture structured runner
+    (`apps/core/src/p1/model-supply/ai-sdk-runner.ts`) emit a price claim with no
+    traceable source. Everything downstream is production code — the real gate
+    blocks it, the real workflow fails, the real reservation is refunded, the
+    real audit fact is written and the real terminal frame carries the 申报.
+    Fixture mode is `APP_ENV=e2e` only, so the drill cannot arm in production.
+- **时间桥 (D-145)**: a run held on a question survives closing the tab. The
+  spec closes the page and opens a new one in the same browser context — login
+  kept, per-tab `sessionStorage` gone — and asserts `sessionStorage.length === 0`
+  so the restore cannot be the browser handle. The conversation comes back with
+  the merchant sentence, the 进度宣告卡 with at least as many stage lines as
+  before, and the pending question still in place, all rebuilt from the server
+  event replay. The async task centre then shows the same run and the `?taskId=`
+  deep link is followed, not merely counted: it lands back on the same
+  conversation, and a tab whose `sessionStorage` was planted with a different
+  session still opens the run the link names (server truth beats the local
+  handle).
+  - **超时终态是真发生的**: the confirmation hold is set to 120s through the
+    governed admin-config path, so it expires while the merchant is away. The
+    card settles to Core's 「系统已按通用模式继续」 and that line is still there
+    after reopening the page — it comes back from the event replay, so a browser
+    that invented it would not survive the reload.
+
 ## T32 作品与对象页换壳（#226）
 
 `specs/works-reshell.spec.ts` covers the reshelled 作品 surface against real
@@ -649,6 +720,27 @@ copy/image/note/video); this spec proves the shape a live run produces.
   components; the ratios are printed as `[contrast] …` lines so a run reports
   numbers rather than a pass/fail bit.
 
+## S3 钱的旅程（#237 / W05+W06）
+
+`specs/s3-money-journey.spec.ts` covers the two legs the money story has to
+walk end to end. Both drive real backends — the allowance moves through the
+governed admin-config CAS path an operator uses, the shortfall is a real
+ledger state, and the redemption is a real code an admin recorded.
+
+- 缺哪桶说哪桶：an 图文 run debits copy AND image server-side
+  (`server-quote-authority.ts` `debitUnitsFor` /
+  `composer-submission-gate.ts` `noteUsageUnits`). A merchant whose grant has
+  图片 to spare and 文案 at zero is stopped in front of 生成 and told which
+  bucket, not handed an `INSUFFICIENT_ENTITLEMENT` after the fact (P0-5).
+- 原地解锁：the exits on that card are the inline redemption code and the
+  contact form — the old 「查看套餐」 link redirected to the same read-only
+  usage page the merchant was already looking at (D-141). Redeeming keeps the
+  same URL and the same draft, and 生成 comes back.
+- 一个数字一个来源：changing the 初级 文案额度 in the operations console
+  changes what `/pricing` quotes on the next load. No deploy, no second number
+  to edit — the public page reads the same `plan.allowances.*` revision the
+  grant reads (D-143 单一商品目录).
+
 ## M-04 required browser hard gate（T37 / #231）
 
 `specs/m04-browser-hard-gate.spec.ts` is the browser journey the ordinary pull
@@ -680,6 +772,16 @@ Per modality, one test walks:
   with the merchant turn and the replayed progress, and exactly one submission
   has been posted for the whole journey (a second POST would be the second
   submit truth ADR-0014 forbids).
+- **workId-only Result 重连** — a second tab opens the running copy Result from
+  `/dashboard/results/:workId` with no task query and must render the unique
+  token emitted by that Work's canonical Harness workflow. Playwright holds the
+  first structured fixture copy chunk for 10,000 ms instead of the 40 ms
+  default, an E2E-only cost of +9,960 ms per copy run; non-E2E and invalid
+  overrides remain at 40 ms.
+- **stale taskId 负控** — one user creates two real copy workflows carrying
+  distinct fixture lineage tokens, then opens Work A with workflow B's stale
+  URL `taskId`. A document-lifetime observer proves B's token was never
+  projected, including before the authoritative ContentPackage query settles.
 - **采用 → 交付** — the canonical adopt mutation, then the delivery panel and a
   real non-empty package whose manifest platform is this contract's.
 - **刷新恢复 ②** — `assertJourneyRestored`: the result surface, the delivery

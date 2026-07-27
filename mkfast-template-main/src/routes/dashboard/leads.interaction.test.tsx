@@ -17,6 +17,9 @@ const productClient = vi.hoisted(() => ({
   refresh: vi.fn(),
   state: undefined as ProductState | undefined,
 }));
+const operationsClient = vi.hoisted(() => ({
+  query: vi.fn(),
+}));
 
 vi.mock('@/product/client', () => ({
   useProductState: () => ({
@@ -27,6 +30,9 @@ vi.mock('@/product/client', () => ({
     refresh: productClient.refresh,
     state: productClient.state,
   }),
+}));
+vi.mock('@/p1/client', () => ({
+  operationsQuery: operationsClient.query,
 }));
 // The dashboard chrome needs sidebar and plan context that has nothing to do
 // with the ledger's own behaviour.
@@ -39,6 +45,42 @@ const { Route: leadsFileRoute } = await import('./leads');
 afterEach(() => {
   vi.resetAllMocks();
 });
+
+async function renderLedger(contentPackages: unknown[] = []) {
+  operationsClient.query.mockResolvedValue(contentPackages);
+  const queryClient = new QueryClient({
+    defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+  });
+  const rootRoute = createRootRoute({ component: Outlet });
+  const leadsRoute = createRoute({
+    component: leadsFileRoute.options.component,
+    getParentRoute: () => rootRoute,
+    path: '/dashboard/leads',
+  });
+  const router = createRouter({
+    history: createMemoryHistory({ initialEntries: ['/dashboard/leads'] }),
+    routeTree: rootRoute.addChildren([
+      leadsRoute,
+      createRoute({
+        component: Outlet,
+        getParentRoute: () => rootRoute,
+        path: '/dashboard',
+      }),
+      createRoute({
+        component: Outlet,
+        getParentRoute: () => rootRoute,
+        path: '/dashboard/leads/$leadId',
+      }),
+    ]),
+  });
+  await router.load();
+
+  render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  );
+}
 
 /**
  * T33 / #227: reshelling the ledger swapped the native <select> for a HeroUI
@@ -76,38 +118,7 @@ it('a status pick on the reshelled ledger issues update_lead', async () => {
   } as unknown as ProductState;
 
   const user = userEvent.setup();
-  const queryClient = new QueryClient({
-    defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
-  });
-  const rootRoute = createRootRoute({ component: Outlet });
-  const leadsRoute = createRoute({
-    component: leadsFileRoute.options.component,
-    getParentRoute: () => rootRoute,
-    path: '/dashboard/leads',
-  });
-  const router = createRouter({
-    history: createMemoryHistory({ initialEntries: ['/dashboard/leads'] }),
-    routeTree: rootRoute.addChildren([
-      leadsRoute,
-      createRoute({
-        component: Outlet,
-        getParentRoute: () => rootRoute,
-        path: '/dashboard',
-      }),
-      createRoute({
-        component: Outlet,
-        getParentRoute: () => rootRoute,
-        path: '/dashboard/leads/$leadId',
-      }),
-    ]),
-  });
-  await router.load();
-
-  render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
-  );
+  await renderLedger();
 
   await user.click(screen.getByRole('button', { name: /更新线索状态/u }));
   // The whole ledger vocabulary stays reachable — the reshell swapped the
@@ -122,5 +133,41 @@ it('a status pick on the reshelled ledger issues update_lead', async () => {
     leadId: 'lead-1',
     status: 'contacted',
     type: 'update_lead',
+  });
+});
+
+it('records a lead against a published canonical ContentPackage without legacy contents', async () => {
+  productClient.state = {
+    assets: [],
+    contents: [],
+    insights: [],
+    leads: [],
+  } as unknown as ProductState;
+  productClient.execute.mockResolvedValue({});
+  const user = userEvent.setup();
+
+  await renderLedger([
+    {
+      currentVersionId: 'package-1-v2',
+      deliveryEvents: [{ status: 'published', type: 'manual_publish_result' }],
+      id: 'package-1',
+      revision: 2,
+      status: 'accepted',
+      versions: [{ id: 'package-1-v2', title: 'Canonical lead source' }],
+    },
+  ]);
+
+  await screen.findByText('Canonical lead source');
+  const record = screen.getByRole('button', { name: '记录私信线索' });
+  await user.click(record);
+
+  expect(productClient.execute).toHaveBeenCalledWith({
+    lead: {
+      amountCents: undefined,
+      note: undefined,
+      source: 'direct_message',
+    },
+    packageId: 'package-1',
+    type: 'create_lead',
   });
 });

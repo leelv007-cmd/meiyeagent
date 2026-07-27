@@ -95,6 +95,92 @@ type SubmissionBody = {
   intent?: string;
 };
 
+async function installLineageObservation(page: Page) {
+  await page.evaluate(() => {
+    const seen = new Set<string>();
+    Object.defineProperty(window, '__m04LineageSeen', {
+      configurable: true,
+      value: seen,
+    });
+    const record = () => {
+      for (const marker of document.body?.innerText.matchAll(
+        /\bM04LINEAGE_[AB]_[A-Za-z0-9-]+\b/gu
+      ) ?? []) {
+        seen.add(marker[0]);
+      }
+    };
+    new MutationObserver(record).observe(document, {
+      characterData: true,
+      childList: true,
+      subtree: true,
+    });
+    window.addEventListener('DOMContentLoaded', record);
+  });
+}
+
+async function markDocumentIdentity(page: Page) {
+  return page.evaluate(() => {
+    const identity = crypto.randomUUID();
+    Object.defineProperty(window, '__m04DocumentIdentity', {
+      configurable: true,
+      value: identity,
+    });
+    return identity;
+  });
+}
+
+async function navigateInCurrentDocument(
+  page: Page,
+  href: string,
+  expectedDocumentIdentity: string
+) {
+  const expectedUrl = new URL(href, page.url()).href;
+  await page.evaluate((nextHref) => {
+    window.history.pushState({}, '', nextHref);
+    window.dispatchEvent(
+      new PopStateEvent('popstate', { state: window.history.state })
+    );
+  }, href);
+  await expect(page).toHaveURL(expectedUrl, { timeout: 60_000 });
+  await expect(page.getByTestId('result-center-shell')).toBeVisible({
+    timeout: 120_000,
+  });
+  expect(
+    await page.evaluate(
+      () =>
+        (
+          window as Window & {
+            __m04DocumentIdentity?: string;
+          }
+        ).__m04DocumentIdentity
+    )
+  ).toBe(expectedDocumentIdentity);
+}
+
+async function observedLineageMarkers(page: Page) {
+  return page.evaluate(() =>
+    Array.from(
+      (
+        window as Window & {
+          __m04LineageSeen?: Set<string>;
+        }
+      ).__m04LineageSeen ?? []
+    )
+  );
+}
+
+async function assertRunningLineageToken(page: Page, marker: string) {
+  const primary = page.locator(
+    '[data-testid="copy-stream-slot"][data-role="primary"][data-has-token="true"]',
+    { hasText: marker }
+  );
+  const runningStream = page.locator(
+    '[data-testid="result-token-stream"][data-streaming="true"][data-has-first-token="true"]',
+    { has: primary }
+  );
+  await expect(runningStream).toBeVisible({ timeout: 120_000 });
+}
+
 /**
  * Collect every body posted to the new seam. The count matters as much as the
  * content: refresh-restore re-subscribes, so a second POST would mean the
@@ -347,4 +433,132 @@ test.describe('M-04 required browser hard gate', () => {
       await assertJourneyRestored(page, contract, workId);
     });
   }
+
+  test('workId-only Result route reopens a running copy and reconnects its canonical workflow', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(420_000);
+    const user = await registerE2EUser(request);
+    await loginByForm(page, user);
+    await seedConfirmedStore(page);
+    await page.goto('/dashboard');
+    await assertThreeModalDiscovery(page);
+
+    const marker = `M04LINEAGE_A_${crypto.randomUUID()}`;
+    const resultPage = await page.context().newPage();
+    await resultPage.goto('/dashboard');
+    await submitComposerJourney(
+      page,
+      HARD_GATE_CONTRACTS.find(({ modality }) => modality === 'copy')!,
+      `皮肤护理 朋友圈项目介绍 ${marker}`,
+      {
+        async onSubmissionAccepted({ workId }) {
+          await resultPage.goto(`/dashboard/results/${workId}`);
+        },
+        async onRunStreaming() {
+          await assertRunningLineageToken(resultPage, marker);
+          await expect(resultPage).not.toHaveURL(/taskId=/u);
+          await resultPage.close();
+        },
+      }
+    );
+  });
+
+  test('a stale URL taskId never projects another workflow token into the authoritative Work Result', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(600_000);
+    const user = await registerE2EUser(request);
+    await loginByForm(page, user);
+    await seedConfirmedStore(page);
+    await page.goto('/dashboard');
+    await assertThreeModalDiscovery(page);
+    const copyContract = HARD_GATE_CONTRACTS.find(
+      ({ modality }) => modality === 'copy'
+    )!;
+
+    const wrongMarker = `M04LINEAGE_B_${crypto.randomUUID()}`;
+    let wrong: { taskId: string; workId: string } | undefined;
+    await submitComposerJourney(
+      page,
+      copyContract,
+      `皮肤护理 朋友圈错误来源 ${wrongMarker}`,
+      {
+        onSubmissionAccepted(submission) {
+          wrong = submission;
+        },
+      }
+    );
+    expect(wrong).toBeTruthy();
+
+    const resultPage = await page.context().newPage();
+    await resultPage.goto('/dashboard/works');
+    await expect(resultPage.getByTestId('works-list')).toBeVisible({
+      timeout: 60_000,
+    });
+    await expect(
+      resultPage.getByText(wrongMarker, { exact: false }).first()
+    ).toBeVisible({ timeout: 60_000 });
+    const documentIdentity = await markDocumentIdentity(resultPage);
+
+    const composerPage = await page.context().newPage();
+    await composerPage.goto('/dashboard');
+    await assertThreeModalDiscovery(composerPage);
+    const authoritativeMarker = `M04LINEAGE_A_${crypto.randomUUID()}`;
+    await expect(
+      resultPage.getByText(authoritativeMarker, { exact: false })
+    ).toHaveCount(0);
+    await installLineageObservation(resultPage);
+    const eventRequests: string[] = [];
+    const captureEventRequest = (request: Request) => {
+      if (request.url().includes('/events')) {
+        eventRequests.push(request.url());
+      }
+    };
+    resultPage.on('request', captureEventRequest);
+    let authoritativeTaskId = '';
+    await submitComposerJourney(
+      composerPage,
+      copyContract,
+      `皮肤护理 朋友圈权威来源 ${authoritativeMarker}`,
+      {
+        async onSubmissionAccepted(authoritative) {
+          authoritativeTaskId = authoritative.taskId;
+          await navigateInCurrentDocument(
+            resultPage,
+            `/dashboard/results/${authoritative.workId}?taskId=${wrong!.taskId}`,
+            documentIdentity
+          );
+        },
+        async onRunStreaming() {
+          await assertRunningLineageToken(resultPage, authoritativeMarker);
+          resultPage.off('request', captureEventRequest);
+          expect(
+            eventRequests.some((url) =>
+              url.includes(
+                `/workflows/${encodeURIComponent(authoritativeTaskId)}/events`
+              )
+            )
+          ).toBe(true);
+          expect(
+            eventRequests.some((url) =>
+              url.includes(
+                `/workflows/${encodeURIComponent(wrong!.taskId)}/events`
+              )
+            )
+          ).toBe(false);
+          expect(await observedLineageMarkers(resultPage)).not.toContain(
+            wrongMarker
+          );
+          await expect(
+            resultPage.getByText(wrongMarker, { exact: false })
+          ).toHaveCount(0);
+          await resultPage.close();
+        },
+      }
+    );
+    await composerPage.close();
+  });
 });

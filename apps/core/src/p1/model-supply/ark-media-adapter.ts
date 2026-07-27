@@ -708,6 +708,24 @@ export class ArkMediaExecutionPort<
         'Ark image editing requires at least one provider-readable reference asset URL.',
       );
     }
+    const nativeFields = [
+      ...new Set(
+        declaredInputs.map((input) =>
+          'nativeField' in input ? input.nativeField ?? 'image' : 'image',
+        ),
+      ),
+    ];
+    if (
+      nativeFields.length > 1 ||
+      (nativeFields[0] !== undefined && nativeFields[0] !== 'image')
+    ) {
+      throw new ArkAdapterError(
+        'unsupported_reference_field',
+        false,
+        'Ark Seedream references must map to the official image field.',
+      );
+    }
+    const nativeReferenceField = nativeFields[0] ?? 'image';
     const width = request.submission.input?.width;
     const height = request.submission.input?.height;
     const body = await this.requestJson(
@@ -719,7 +737,7 @@ export class ArkMediaExecutionPort<
           prompt: request.submission.prompt,
           ...(resolvedReferences.length
             ? {
-                image: resolvedReferences.map(
+                [nativeReferenceField]: resolvedReferences.map(
                   (asset) => asset.providerReadableUrl,
                 ),
               }

@@ -6,6 +6,7 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
+import { seedConfirmedStore } from '../fixtures/product';
 
 test.describe('marketing Composer and Harness question', () => {
   test.beforeAll(async ({ request }) => {
@@ -21,9 +22,11 @@ test.describe('marketing Composer and Harness question', () => {
     request,
   }) => {
     let submitted: StructuredDecisionInput | undefined;
-    let submittedTask: Record<string, unknown> | undefined;
-    let taskSubmissionCount = 0;
+    let submittedComposer: Record<string, unknown> | undefined;
+    let composerSubmissionCount = 0;
+    let directHarnessAdmissionCount = 0;
     let resolved = false;
+    const taskId = 'e2e-composer-question-task';
 
     await page.route('**/api/core/p1/harness/recommendation', (route) =>
       route.fulfill({
@@ -38,36 +41,53 @@ test.describe('marketing Composer and Harness question', () => {
         status: 200,
       })
     );
-    await page.route('**/api/core/p1/harness/tasks', async (route) => {
-      taskSubmissionCount += 1;
-      submittedTask = route.request().postDataJSON() as Record<string, unknown>;
-      if (taskSubmissionCount === 1) {
-        await route.fulfill({
-          json: {
-            error: {
-              code: 'HARNESS_TEMPORARILY_UNAVAILABLE',
-              message: 'Harness is temporarily unavailable.',
-            },
-          },
-          status: 503,
-        });
-        return;
-      }
+    await page.route('**/api/core/p1/composer/submissions', async (route) => {
+      composerSubmissionCount += 1;
+      submittedComposer = route.request().postDataJSON() as Record<
+        string,
+        unknown
+      >;
       await route.fulfill({
         json: {
           data: {
-            workflowId: String(submittedTask.taskId),
+            contentPackage: {
+              expectedRevision: 0,
+              id: 'e2e-composer-question-package',
+            },
             replayed: false,
+            snapshot: {
+              id: 'e2e-composer-question-snapshot',
+              schemaVersion: 'creation-execution-snapshot/v1',
+            },
+            task: { id: taskId },
+            usageReservation: { id: 'e2e-composer-question-reservation' },
+            work: { id: 'e2e-composer-question-work' },
           },
         },
         status: 202,
       });
     });
+    await page.route('**/api/core/p1/harness/tasks', async (route) => {
+      if (route.request().method() === 'POST') {
+        directHarnessAdmissionCount += 1;
+        await route.fulfill({
+          json: {
+            error: {
+              code: 'DIRECT_HARNESS_ADMISSION_RETIRED',
+              message: 'Composer owns task admission.',
+            },
+          },
+          status: 410,
+        });
+        return;
+      }
+      await route.continue();
+    });
 
     await page.route(
       '**/api/core/p1/harness/tasks/*/decision',
       async (route) => {
-        const taskId = decodeURIComponent(
+        const requestedTaskId = decodeURIComponent(
           new URL(route.request().url()).pathname.split('/').at(-2) ?? ''
         );
         if (route.request().method() === 'POST') {
@@ -75,21 +95,12 @@ test.describe('marketing Composer and Harness question', () => {
           resolved = true;
           await route.fulfill({
             json: {
-              data: { eventId: `${taskId}:decision:1`, replayed: false },
-            },
-            status: 200,
-          });
-          return;
-        }
-        if (taskSubmissionCount < 2) {
-          await route.fulfill({
-            json: {
-              error: {
-                code: 'TASK_NOT_FOUND',
-                message: 'The Harness task was not found.',
+              data: {
+                eventId: `${requestedTaskId}:decision:1`,
+                replayed: false,
               },
             },
-            status: 404,
+            status: 200,
           });
           return;
         }
@@ -99,8 +110,8 @@ test.describe('marketing Composer and Harness question', () => {
               question: resolved
                 ? null
                 : {
-                    questionId: `${taskId}:s1:offer_price`,
-                    workflowId: taskId,
+                    questionId: `${requestedTaskId}:s1:offer_price`,
+                    workflowId: requestedTaskId,
                     workflowRevision: 3,
                     question: '这次团购价按哪个金额写？',
                     options: [
@@ -114,6 +125,9 @@ test.describe('marketing Composer and Harness question', () => {
                     },
                     scope: 'current_task',
                   },
+              resolutionSource: resolved ? 'decision' : null,
+              status: resolved ? 'resolved' : 'pending',
+              timeoutSeconds: null,
             },
           },
           status: 200,
@@ -145,43 +159,63 @@ test.describe('marketing Composer and Harness question', () => {
 
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
-    const composer = page.getByLabel('描述这次想创作的内容');
-    await composer.fill('把新团购做一套能发的');
-    await page.getByRole('button', { name: '建立创作记录' }).click();
-
-    const work = page.getByRole('article', { name: '创作助理整理的记录' });
-    await expect(work).toBeVisible();
-    const workUrl = page.url();
-    await expect(page.getByText('快速开始')).toBeHidden();
-    await page.getByRole('button', { name: '重试自动更新' }).click();
-    await expect.poll(() => taskSubmissionCount).toBe(2);
-    expect(submittedTask).toMatchObject({
-      taskId: expect.any(String),
-      packageId: expect.any(String),
-      expectedRevision: 0,
-      workflowRevision: 1,
-      rawInput: '把新团购做一套能发的',
-      intent: {
-        context: {
-          workId: expect.any(String),
-          intent: '把新团购做一套能发的',
-          sourceSummaries: expect.any(Array),
-        },
-      },
+    await seedConfirmedStore(page);
+    await page.goto('/dashboard');
+    await page.getByTestId('composer-lens-option-copy').click();
+    await page
+      .getByTestId('composer-intent-input')
+      .fill('把新团购做一套能发的');
+    await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+      timeout: 30_000,
     });
-    await expect(page.getByText('只需确认一件事')).toBeVisible();
-    await expect(
-      page.getByRole('heading', { name: '这次团购价按哪个金额写？' })
-    ).toBeVisible();
-    await expect(page.getByText('仅本次任务')).toBeVisible();
+
+    const workUrl = page.url();
+    await expect(page.getByTestId('composer-submit')).toBeEnabled({
+      timeout: 30_000,
+    });
+    await page.getByTestId('composer-submit').click();
+
+    const briefSurface = page.getByTestId('composer-brief-surface');
+    const admission = await Promise.race([
+      briefSurface
+        .waitFor({ state: 'visible', timeout: 30_000 })
+        .then(() => 'brief' as const)
+        .catch(() => 'submission' as const),
+      expect
+        .poll(() => composerSubmissionCount, { timeout: 30_000 })
+        .toBe(1)
+        .then(() => 'submission' as const),
+    ]);
+    if (admission === 'brief') {
+      await page.getByTestId('composer-brief-confirm').click();
+    }
+
+    await expect.poll(() => composerSubmissionCount).toBe(1);
+    expect(directHarnessAdmissionCount).toBe(0);
+    expect(submittedComposer).toMatchObject({
+      creationMode: 'customized',
+      deliverable: { kind: 'copy_document' },
+      idempotencyKey: expect.any(String),
+      intent: '把新团购做一套能发的',
+      quote: { id: expect.any(String), revision: expect.any(String) },
+      recipe: { id: expect.any(String), revision: expect.any(String) },
+    });
+    const work = page.getByTestId('composer-conversation');
+    await expect(work).toBeVisible();
+    await expect(page.getByTestId('composer-turn-merchant')).toContainText(
+      '把新团购做一套能发的'
+    );
+    await expect(page.getByTestId('composer-question-card')).toBeVisible();
+    await expect(page.getByText('这次团购价按哪个金额写？')).toBeVisible();
+    await expect(page.getByText('补充当前任务所需的权威事实')).toBeVisible();
     await expect(page.getByText('等你确认当前团购价')).toBeVisible();
 
     await page.getByRole('button', { name: '¥398' }).click();
-    await page.getByRole('button', { name: '确认并继续' }).click();
-    await expect(
-      page.getByRole('heading', { name: '这次团购价按哪个金额写？' })
-    ).toBeHidden();
+    await expect(page.getByTestId('composer-question-card')).toBeHidden();
     await expect(work).toBeVisible();
+    await expect(page.getByTestId('composer-turn-merchant')).toContainText(
+      '把新团购做一套能发的'
+    );
     await expect(page).toHaveURL(workUrl);
 
     expect(submitted).toMatchObject({

@@ -83,6 +83,76 @@ test('active fact queries honor workspace, applicability, effective time and exp
   );
 });
 
+test('store-only queries aggregate project facts without crossing other scope boundaries', async () => {
+  const ledger = new MemoryStoreFactLedger();
+  const scopedFacts = [
+    {
+      factId: 'store-wide',
+      scope: { storeId: 'store-a' },
+      workspaceId: 'workspace-a',
+    },
+    {
+      factId: 'service-a',
+      scope: { storeId: 'store-a', serviceId: 'service-a' },
+      workspaceId: 'workspace-a',
+    },
+    {
+      factId: 'service-b',
+      scope: { storeId: 'store-a', serviceId: 'service-b' },
+      workspaceId: 'workspace-a',
+    },
+    {
+      factId: 'persona-a',
+      scope: { storeId: 'store-a', personaId: 'persona-a' },
+      workspaceId: 'workspace-a',
+    },
+    {
+      factId: 'platform-a',
+      scope: { storeId: 'store-a', platform: 'xiaohongshu' },
+      workspaceId: 'workspace-a',
+    },
+    {
+      factId: 'other-store',
+      scope: { storeId: 'store-b', serviceId: 'service-a' },
+      workspaceId: 'workspace-a',
+    },
+    {
+      factId: 'other-workspace',
+      scope: { storeId: 'store-a', serviceId: 'service-a' },
+      workspaceId: 'workspace-b',
+    },
+  ] as const;
+  for (const fact of scopedFacts) {
+    await ledger.append({
+      ...baseInput,
+      ...fact,
+      expiresAt: null,
+      expectedRevision: 0,
+    });
+  }
+
+  assert.deepEqual(
+    (
+      await ledger.listActive({
+        workspaceId: 'workspace-a',
+        scope: { storeId: 'store-a' },
+        at: '2026-07-19T00:00:00.000Z',
+      })
+    ).map((fact) => fact.factId),
+    ['service-a', 'service-b', 'store-wide'],
+  );
+  assert.deepEqual(
+    (
+      await ledger.listActive({
+        workspaceId: 'workspace-a',
+        scope: { storeId: 'store-a', serviceId: 'service-a' },
+        at: '2026-07-19T00:00:00.000Z',
+      })
+    ).map((fact) => fact.factId),
+    ['service-a', 'store-wide'],
+  );
+});
+
 test('an expired newer revision does not resurrect an older fact revision', async () => {
   const ledger = new MemoryStoreFactLedger();
   await ledger.append({ ...baseInput, expiresAt: null, expectedRevision: 0 });

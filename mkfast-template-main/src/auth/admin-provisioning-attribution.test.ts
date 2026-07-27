@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import {
   ADMIN_ASSISTED_ACCOUNT_POLICY,
   applyAdminAssistedAccountPolicy,
+  publicAdminProvisioningAttribution,
   stripAdminProvisioningAttribution,
 } from './admin-provisioning-attribution';
 
@@ -41,6 +42,26 @@ describe('admin provisioning attribution', () => {
         provisionedByUserId: 'forged-user',
       }),
       { name: 'Merchant' }
+    );
+  });
+
+  it('projects assisted attribution without exposing the internal actor id', () => {
+    const attribution = publicAdminProvisioningAttribution({
+      provisionedByUserId: 'internal-admin-user-id',
+      provisionerName: '运营同事',
+    });
+
+    assert.deepEqual(attribution, {
+      kind: 'admin_assisted',
+      operatorDisplayName: '运营同事',
+    });
+    assert.doesNotMatch(JSON.stringify(attribution), /internal-admin-user-id/u);
+    assert.deepEqual(
+      publicAdminProvisioningAttribution({
+        provisionedByUserId: null,
+        provisionerName: null,
+      }),
+      { kind: 'self_registered' }
     );
   });
 });
