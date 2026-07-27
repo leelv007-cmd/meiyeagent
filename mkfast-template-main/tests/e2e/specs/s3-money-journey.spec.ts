@@ -77,6 +77,11 @@ async function applyAdminConfig(
   value: unknown,
   journey: string
 ) {
+  // Drop whoever is signed in first. `/auth/login` bounces an authenticated
+  // visitor to the dashboard, so arriving here mid-journey as the merchant
+  // means the login form never renders and the operator step times out —
+  // which is how a restore step lost its seed once.
+  await signOut(page);
   const admin = await registerE2EUser(request, { role: 'admin' });
   await loginByForm(page, admin);
 
@@ -111,17 +116,24 @@ async function applyAdminConfig(
   await signOut(page);
 }
 
+/**
+ * Best-effort sign-out. Needs a same-origin document to post from, and there
+ * may be no session to drop — neither is a reason to fail a journey.
+ */
 async function signOut(page: Page) {
-  const signedOut = await page.evaluate(async () => {
-    const response = await fetch('/api/auth/sign-out', {
-      body: '{}',
-      credentials: 'same-origin',
-      headers: { 'content-type': 'application/json' },
-      method: 'POST',
-    });
-    return { body: await response.text(), ok: response.ok };
+  if (!new URL(page.url()).protocol.startsWith('http')) return;
+  await page.evaluate(async () => {
+    try {
+      await fetch('/api/auth/sign-out', {
+        body: '{}',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      });
+    } catch {
+      // Already signed out, or the page is mid-navigation.
+    }
   });
-  expect(signedOut.ok, signedOut.body).toBeTruthy();
 }
 
 /** Record a redemption code as an admin, then hand the composer back. */
@@ -130,6 +142,7 @@ async function recordRedemptionCode(
   request: APIRequestContext,
   code: string
 ) {
+  await signOut(page);
   const admin = await registerE2EUser(request, { role: 'admin' });
   await loginByForm(page, admin);
   await page.goto('/admin/redemptions');
