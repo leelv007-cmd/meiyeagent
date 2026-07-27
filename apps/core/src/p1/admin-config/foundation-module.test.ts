@@ -349,10 +349,16 @@ describe('Admin config application seam', () => {
     );
   });
 
-  it('accepts the 48-hour hold timeout as a separately governed global value', async () => {
+  it('keeps the retired hold timeout writable but unwired for backward compatibility', async () => {
     const repository = new MemoryAdminConfigRepository();
     const service = new P1ApplicationService(new MemoryFoundationRepository(), {
-      operations: [new AdminConfigFoundationModule(repository)],
+      operations: [
+        new AdminConfigFoundationModule(repository, {
+          runtime: {
+            [HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY]: 172_800,
+          },
+        }),
+      ],
     });
 
     await service.executeModule(
@@ -362,13 +368,31 @@ describe('Admin config application seam', () => {
         action: 'config_apply',
         payload: {
           key: HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
-          value: 172_800,
+          value: 86_400,
           expectedRevision: null,
-          reason: 'Set the confirmation hold timeout.',
+          reason: 'Keep a legacy value for compatibility.',
         },
       },
       'confirmation-hold-timeout-1',
     );
+    const projected = (await service.queryModule(
+      context,
+      'admin-config',
+      {
+        action: 'config_get',
+        payload: {
+          key: HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
+        },
+      },
+    )) as {
+      effectiveValue: unknown;
+      storedValue: unknown;
+      wired: boolean;
+    };
+
+    assert.equal(projected.storedValue, 86_400);
+    assert.equal(projected.effectiveValue, 172_800);
+    assert.equal(projected.wired, false);
     await assert.rejects(
       service.executeModule(
         context,
