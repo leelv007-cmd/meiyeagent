@@ -2030,9 +2030,18 @@ export function ComposerHome({
         onRedeem={async ({ command, idempotencyKey }) => {
           try {
             await commandP1('redemptions', command, idempotencyKey);
-            await queryClient.invalidateQueries({
-              queryKey: p1QueryKeys.request('entitlements', 'projection'),
-            });
+            // Both entitlement reads on this page: the projection behind the
+            // pre-check and the three-bucket balance card above it. Refreshing
+            // one and not the other leaves 创作余额 quoting the old numbers
+            // next to a card that just said it unlocked.
+            await Promise.all([
+              queryClient.invalidateQueries({
+                queryKey: p1QueryKeys.request('entitlements', 'projection'),
+              }),
+              queryClient.invalidateQueries({
+                queryKey: p1QueryKeys.request('entitlements', 'balance'),
+              }),
+            ]);
             return { ok: true };
           } catch (error) {
             return {
