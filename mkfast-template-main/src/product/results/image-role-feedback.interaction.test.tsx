@@ -335,6 +335,9 @@ describe('image role feedback (exact D-087 copy)', () => {
           outputType: 'ordered_image_set',
           slot: 'gallery',
         })}
+        // Pin the clock to the fixture instant so the 7-day working-selection
+        // TTL is evaluated deterministically instead of against the wall clock.
+        now={() => NOW}
       />
     );
 
