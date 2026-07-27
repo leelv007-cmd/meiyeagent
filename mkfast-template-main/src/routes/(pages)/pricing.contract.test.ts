@@ -2,6 +2,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
+import {
+  findSubscriptionPrice,
+  formatYuan,
+  GROWTH_CONFIG_PLAN_ID,
+  growthMonthlyPriceLabel,
+  PUBLIC_PLAN_CONFIG_IDS,
+} from '@/lib/price-plan';
+import { PlanIntervals } from '@/payment/types';
 
 const read = (file: string) =>
   readFileSync(resolve(process.cwd(), file), 'utf8');
@@ -106,6 +114,48 @@ test('one price, one source: the landing and /pricing cannot disagree', () => {
   assert.match(pricePlan, /export function growthMonthlyPriceLabel/u);
   assert.match(pricePlan, /export function findSubscriptionPrice/u);
   assert.match(pricePlan, /getPricePlans\(\)\[configPlanId\]/u);
+});
+
+test('one product key, one source: repointing a tier moves both pages at once', () => {
+  // Calling the same helper is not the same as quoting the same product.
+  // /pricing used to carry its own `configPlanId: 'pro'` literal for the paid
+  // card while the landing priced off GROWTH_CONFIG_PLAN_ID — two independent
+  // copies of the plan key, so repointing that one row at another product made
+  // the pages disagree again while every "same helper" assertion stayed green.
+  const pricing = read(PRICING);
+  const pricePlan = read(PRICE_PLAN);
+
+  // The mapping exists in exactly one place …
+  assert.match(pricePlan, /export const PUBLIC_PLAN_CONFIG_IDS = \{/u);
+  assert.match(
+    pricePlan,
+    /export const GROWTH_CONFIG_PLAN_ID = PUBLIC_PLAN_CONFIG_IDS\.growth;/u,
+    'the landing price must resolve through the shared mapping, not a twin literal'
+  );
+
+  // … and /pricing reads it rather than keeping its own copy.
+  assert.match(pricing, /configPlanId: PUBLIC_PLAN_CONFIG_IDS\.starter,/u);
+  assert.match(pricing, /configPlanId: PUBLIC_PLAN_CONFIG_IDS\.growth,/u);
+  assert.doesNotMatch(
+    pricing,
+    /configPlanId: ['"`]/u,
+    'a literal plan key here is a second source that can drift from the landing'
+  );
+});
+
+test('the landing and /pricing resolve the paid tier to the same price', () => {
+  // The structural guard above says the key cannot fork. This one evaluates
+  // both paths and compares the number a merchant actually reads.
+  const growthLabel = growthMonthlyPriceLabel();
+  const fromPricingPageMapping = findSubscriptionPrice(
+    PUBLIC_PLAN_CONFIG_IDS.growth,
+    PlanIntervals.MONTH
+  );
+  assert.equal(
+    growthLabel,
+    fromPricingPageMapping ? formatYuan(fromPricingPageMapping.amount) : null
+  );
+  assert.equal(GROWTH_CONFIG_PLAN_ID, PUBLIC_PLAN_CONFIG_IDS.growth);
 });
 
 test('plan quotas come from the entitlement catalogue, not from this file', () => {

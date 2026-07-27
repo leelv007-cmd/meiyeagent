@@ -35,7 +35,11 @@ import { CheckoutButton } from '@/components/pricing/create-checkout-button';
 import { PricingShell } from '@/components/pricing/pricing-shell';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { websiteConfig } from '@/config/website';
-import { findSubscriptionPrice, formatYuan } from '@/lib/price-plan';
+import {
+  findSubscriptionPrice,
+  formatYuan,
+  PUBLIC_PLAN_CONFIG_IDS,
+} from '@/lib/price-plan';
 import { Routes } from '@/lib/routes';
 import { seo } from '@/lib/seo';
 import { cn } from '@/lib/utils';
@@ -73,13 +77,14 @@ const DISPLAY_PLANS: DisplayPlan[] = [
   {
     key: 'starter',
     tier: 'free',
-    configPlanId: 'free',
+    configPlanId: PUBLIC_PLAN_CONFIG_IDS.starter,
     name: pricing_output_plan_starter,
   },
   {
     key: 'growth',
     tier: 'paid',
-    configPlanId: 'pro',
+    // Same mapping the landing prices off, so the two pages cannot diverge.
+    configPlanId: PUBLIC_PLAN_CONFIG_IDS.growth,
     name: pricing_output_plan_growth,
     recommended: true,
   },

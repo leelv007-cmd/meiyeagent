@@ -2,8 +2,23 @@ import { websiteConfig } from '@/config/website';
 import { PaymentTypes, PlanIntervals } from '@/payment/types';
 import type { Price, PricePlan } from '@/payment/types';
 
+/**
+ * Which payment-config plan backs each public plan offer (D-143).
+ *
+ * This mapping is the seam where the two public surfaces could disagree: the
+ * landing quotes the paid tier through `growthMonthlyPriceLabel()` while
+ * /pricing prices its own cards. When /pricing kept its own `configPlanId:
+ * 'pro'` literal, repointing that one row at a different product silently made
+ * the two pages quote different prices for the same plan. One mapping, read by
+ * both, means repointing a tier moves both pages together or not at all.
+ */
+export const PUBLIC_PLAN_CONFIG_IDS = {
+  starter: 'free',
+  growth: 'pro',
+} as const;
+
 /** The self-serve paid tier both public surfaces quote (D-143). */
-export const GROWTH_CONFIG_PLAN_ID = 'pro';
+export const GROWTH_CONFIG_PLAN_ID = PUBLIC_PLAN_CONFIG_IDS.growth;
 
 export function findSubscriptionPrice(
   configPlanId: string | undefined,
