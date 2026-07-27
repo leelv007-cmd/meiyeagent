@@ -140,81 +140,76 @@ async function seedConfirmedAssetFact(page: Page) {
   const referenceId = `dashboard-home-reference-${suffix}`;
   const result = await p1Command<{
     facts: Array<{ factId: string; revision: number }>;
-  }>(
-    page,
-    'asset-memory',
-    'finalize_store_intake',
-    {
-      batch: {
-        batchId,
-        candidates: [
-          {
-            candidateId: serviceCandidateId,
-            fact: {
-              effectiveFrom: capturedAt,
-              expiresAt: null,
-              key: 'service.project-grounded-creation.name',
-              kind: 'service',
-              scope: { storeId: workspaceId },
-              source: {
-                capturedAt,
-                kind: 'user_confirmation',
-                referenceId,
-              },
-              value: { name: project.name },
-            },
-            objectKind: 'store_fact',
-            status: 'pending',
-          },
-          {
-            candidateId: priceCandidateId,
-            fact: {
-              effectiveFrom: capturedAt,
-              expiresAt: null,
-              key: 'service.project-grounded-creation.price',
-              kind: 'price',
-              scope: { storeId: workspaceId },
-              source: {
-                capturedAt,
-                kind: 'user_confirmation',
-                referenceId,
-              },
-              value: { amount: project.price, currency: 'CNY' },
-            },
-            objectKind: 'store_fact',
-            status: 'pending',
-          },
-        ],
-        source: {
-          capabilityStatus: 'assisted',
-          capturedAt,
-          example: false,
-          kind: 'manual',
-          referenceId,
-          sourceId: `dashboard-home-source-${suffix}`,
-          sourceWorkspaceId: workspaceId,
-        },
-        summary: '已整理出 1 项待确认服务资料和价格。',
-        taskId: `dashboard-home-intake-${suffix}`,
-      },
-      confirmations: [
+  }>(page, 'asset-memory', 'finalize_store_intake', {
+    batch: {
+      batchId,
+      candidates: [
         {
           candidateId: serviceCandidateId,
-          expectedFactRevision: 0,
-          factId: 'store-project:project-grounded-creation:service',
+          fact: {
+            effectiveFrom: capturedAt,
+            expiresAt: null,
+            key: 'service.project-grounded-creation.name',
+            kind: 'service',
+            scope: { storeId: workspaceId },
+            source: {
+              capturedAt,
+              kind: 'user_confirmation',
+              referenceId,
+            },
+            value: { name: project.name },
+          },
+          objectKind: 'store_fact',
+          status: 'pending',
         },
         {
           candidateId: priceCandidateId,
-          expectedFactRevision: 0,
-          factId: 'store-project:project-grounded-creation:price',
+          fact: {
+            effectiveFrom: capturedAt,
+            expiresAt: null,
+            key: 'service.project-grounded-creation.price',
+            kind: 'price',
+            scope: { storeId: workspaceId },
+            source: {
+              capturedAt,
+              kind: 'user_confirmation',
+              referenceId,
+            },
+            value: { amount: project.price, currency: 'CNY' },
+          },
+          objectKind: 'store_fact',
+          status: 'pending',
         },
       ],
-      profilePatch: {
-        expectedRevision: store.revision,
-        projects: { upsert: [project] },
+      source: {
+        capabilityStatus: 'assisted',
+        capturedAt,
+        example: false,
+        kind: 'manual',
+        referenceId,
+        sourceId: `dashboard-home-source-${suffix}`,
+        sourceWorkspaceId: workspaceId,
       },
-    }
-  );
+      summary: '已整理出 1 项待确认服务资料和价格。',
+      taskId: `dashboard-home-intake-${suffix}`,
+    },
+    confirmations: [
+      {
+        candidateId: serviceCandidateId,
+        expectedFactRevision: 0,
+        factId: 'store-project:project-grounded-creation:service',
+      },
+      {
+        candidateId: priceCandidateId,
+        expectedFactRevision: 0,
+        factId: 'store-project:project-grounded-creation:price',
+      },
+    ],
+    profilePatch: {
+      expectedRevision: store.revision,
+      projects: { upsert: [project] },
+    },
+  });
   expect(result.facts).toHaveLength(2);
   expect(result.facts).toEqual(
     expect.arrayContaining([
