@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
-import { publicBillingBalanceSchema } from '@meiye/contracts';
+import {
+  PUBLIC_PLAN_ALLOWANCE_SEED,
+  publicBillingBalanceSchema,
+} from '@meiye/contracts';
 import {
   P1DomainError,
   USAGE_RESOURCES,
@@ -49,14 +52,36 @@ export const WORKSPACE_PROVISION_MODEL_DEFAULT_KEY =
 export const DEFAULT_TRIAL_EXPIRE_DAYS = 7;
 const PERSISTENT_STARTER_PERIOD_END = '9999-12-31T23:59:59.999Z';
 
+/** Everything about a sold tier that is not its D-123 allowance seed. */
+const SOLD_PLAN_TERMS: Record<
+  'starter' | 'growth' | 'pro',
+  Pick<PlanOffer, 'queuePriority' | 'supportLabel' | 'periodStrategy'>
+> = {
+  starter: {
+    queuePriority: 1,
+    supportLabel: 'standard',
+    periodStrategy: 'calendar_month',
+  },
+  growth: {
+    queuePriority: 5,
+    supportLabel: 'priority',
+    periodStrategy: 'calendar_month',
+  },
+  pro: {
+    queuePriority: 10,
+    supportLabel: 'priority',
+    periodStrategy: 'calendar_month',
+  },
+};
+
 /**
  * Seed values only — the running numbers are the `plan.allowances.*`
  * admin-config keys operations fills in (D-123 数字＝运营参数, D-132 §C-1).
  *
- * The seeds themselves are D-123 原文: 视频 3/6/9 条/月 is a user ruling, the
- * copy/image figures are that decision's own reference table (初级 文案100/图40,
- * 中级 文案300/图100, 高级 文案600/图180). Trial stays at 文案5/图5/视频1 — the
- * manifest records that one as 已定 (C-3), so it is not a seed to re-derive.
+ * The sold tiers take their allowances from `PUBLIC_PLAN_ALLOWANCE_SEED` in
+ * the shared contract, which is the same literal the pricing page falls back
+ * to — one seed, not two that drift. Trial stays here at 文案5/图5/视频1: the
+ * manifest records it as 已定 (C-3) and it is never quoted publicly.
  */
 export const DEFAULT_PLAN_OFFERS: PlanOffer[] = [
   {
@@ -68,30 +93,12 @@ export const DEFAULT_PLAN_OFFERS: PlanOffer[] = [
     expireDays: DEFAULT_TRIAL_EXPIRE_DAYS,
     periodStrategy: 'fixed_days',
   },
-  {
-    id: 'starter',
-    allowance: { audio: 0, copy: 100, image: 40, video: 3 },
-    concurrencyLimit: 1,
-    queuePriority: 1,
-    supportLabel: 'standard',
-    periodStrategy: 'calendar_month',
-  },
-  {
-    id: 'growth',
-    allowance: { audio: 0, copy: 300, image: 100, video: 6 },
-    concurrencyLimit: 4,
-    queuePriority: 5,
-    supportLabel: 'priority',
-    periodStrategy: 'calendar_month',
-  },
-  {
-    id: 'pro',
-    allowance: { audio: 0, copy: 600, image: 180, video: 9 },
-    concurrencyLimit: 8,
-    queuePriority: 10,
-    supportLabel: 'priority',
-    periodStrategy: 'calendar_month',
-  },
+  ...PUBLIC_PLAN_ALLOWANCE_SEED.map((seed) => ({
+    id: seed.id,
+    allowance: { audio: 0, ...seed.allowance },
+    concurrencyLimit: seed.concurrencyLimit,
+    ...SOLD_PLAN_TERMS[seed.id],
+  })),
 ];
 
 export const DEFAULT_ADD_ON_OFFERS: AddOnOffer[] = [

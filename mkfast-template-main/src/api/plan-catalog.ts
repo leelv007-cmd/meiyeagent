@@ -7,35 +7,21 @@
  * discipline someone has to remember. Prices stay where they already live
  * (payment configuration): this endpoint carries entitlement counts only.
  *
- * Seeds (D-123 原文) answer when core is unreachable — a pricing page that
- * renders nothing is worse than one stating the launch baseline, and the
- * seeds are what an unconfigured deployment grants anyway.
+ * The D-123 seed answers when core is unreachable — a pricing page that
+ * renders nothing is worse than one stating the launch baseline, and the seed
+ * is literally what an unconfigured deployment grants: it is the same shared
+ * constant core builds its own default plan offers from.
  */
 import { serverEnv } from '@/env/server';
 import {
+  PUBLIC_PLAN_ALLOWANCE_SEED,
   publicPlanCatalogSchema,
   type PublicPlanCatalog,
 } from '@meiye/contracts';
 import { createServerFn } from '@tanstack/react-start';
 
 export const PLAN_CATALOG_SEED: PublicPlanCatalog = {
-  plans: [
-    {
-      id: 'starter',
-      allowance: { copy: 100, image: 40, video: 3 },
-      concurrencyLimit: 1,
-    },
-    {
-      id: 'growth',
-      allowance: { copy: 300, image: 100, video: 6 },
-      concurrencyLimit: 4,
-    },
-    {
-      id: 'pro',
-      allowance: { copy: 600, image: 180, video: 9 },
-      concurrencyLimit: 8,
-    },
-  ],
+  plans: [...PUBLIC_PLAN_ALLOWANCE_SEED],
 };
 
 export const getPublicPlanCatalog = createServerFn({ method: 'GET' }).handler(
