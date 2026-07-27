@@ -598,6 +598,7 @@ test.describe('D-126 dashboard home mount', () => {
       'data-recommendation-state',
       /^(?:pending|current)$/u
     );
+    await expect(
       card.getByRole('heading', { level: 3, name: /\S/u })
     ).toBeVisible();
     await expect(
