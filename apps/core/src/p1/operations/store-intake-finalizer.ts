@@ -18,7 +18,10 @@ import {
   AssetIntakeError,
   type AssetIntakeService,
 } from './asset-intake-service.js';
-import { StoreFactRevisionConflictError } from './store-fact-ledger.js';
+import {
+  isStoreFactExpired,
+  StoreFactRevisionConflictError,
+} from './store-fact-ledger.js';
 
 export type StoreIntakeFinalizationIntakePort = Pick<
   AssetIntakeService,
@@ -324,6 +327,7 @@ export class StoreIntakeFinalizer {
     private readonly intake: StoreIntakeFinalizationIntakePort,
     private readonly finalizations: StoreIntakeFinalizationRepository,
     private readonly profiles: StoreProfileMergePort,
+    private readonly now: () => string = () => new Date().toISOString(),
   ) {}
 
   async finalize(
@@ -368,13 +372,15 @@ export class StoreIntakeFinalizer {
           );
           throw failure;
         }
+        let omittedBackers: readonly OmittedConfirmationBacker[] = [];
         try {
-          await assertStoreFactMappings(
+          omittedBackers = await assertStoreFactMappings(
             context.workspaceId,
             resolved.batch,
             input.confirmations,
             input.profilePatch,
             (factId) => this.intake.currentFact(context.workspaceId, factId),
+            this.now(),
           );
           await this.preflight(
             context,
@@ -438,6 +444,17 @@ export class StoreIntakeFinalizer {
               }),
             );
           }
+          // An omitted confirmation rests on a fact nobody re-checked between
+          // the mapping pass and here, and `confirm_asset_intake_fact` is open
+          // to any other writer. Re-read the head one last time so a revocation
+          // landing inside that window cannot push its now-orphaned value into
+          // the profile — the same standard the explicit confirmations get from
+          // their expected-revision append.
+          await assertOmittedBackersUnchanged(
+            omittedBackers,
+            (factId) => this.intake.currentFact(context.workspaceId, factId),
+            this.now(),
+          );
           const profile = await this.profiles.merge(
             context,
             input.profilePatch,
@@ -707,13 +724,62 @@ const PROJECT_FACT_KINDS = new Set([
   'fulfillment',
 ]);
 
+/**
+ * A project stream the command left unconfirmed because a fact already standing
+ * in the ledger carries exactly this value. Recorded at mapping time so the
+ * write path can prove the head is still the same one it validated.
+ */
+interface OmittedConfirmationBacker {
+  expectedValue: unknown;
+  factId: string;
+  projectId: string;
+  revision: number;
+}
+
+/** Whether a standing fact may stand in for a missing confirmation. */
+function backsOmittedConfirmation(
+  fact: StoreFact | null,
+  expectedValue: unknown,
+  at: string,
+): fact is StoreFact {
+  return (
+    fact !== null &&
+    fact.revisionKind !== 'revocation' &&
+    // A fact that expires stops backing the profile the moment it does, so an
+    // already-expired one may not stand in for a confirmation. One that expires
+    // later is still standing and still speaks for the merchant.
+    !isStoreFactExpired(fact, at) &&
+    isDeepStrictEqual(fact.value, expectedValue)
+  );
+}
+
+async function assertOmittedBackersUnchanged(
+  backers: readonly OmittedConfirmationBacker[],
+  currentFact: (factId: string) => Promise<StoreFact | null>,
+  at: string,
+) {
+  for (const backer of backers) {
+    const current = await currentFact(backer.factId);
+    if (
+      !backsOmittedConfirmation(current, backer.expectedValue, at) ||
+      current.revision !== backer.revision
+    ) {
+      throw new StoreIntakeFinalizationError(
+        'STORE_FACT_MAPPING_INVALID',
+        `Store project patch ${backer.projectId} requires confirmation ${backer.factId}.`,
+      );
+    }
+  }
+}
+
 async function assertStoreFactMappings(
   workspaceId: string,
   batch: AssetIntakeBatch,
   confirmations: FinalizeStoreIntakeCommand['confirmations'],
   profilePatch: StoreProfilePatch,
   currentFact: (factId: string) => Promise<StoreFact | null>,
-) {
+  at: string,
+): Promise<OmittedConfirmationBacker[]> {
   for (const confirmation of confirmations) {
     const candidate = batch.candidates.find(
       (item) =>
@@ -868,6 +934,7 @@ async function assertStoreFactMappings(
     }
   }
 
+  const omittedBackers: OmittedConfirmationBacker[] = [];
   for (const project of profilePatch.projects?.upsert ?? []) {
     for (const kind of ['service', 'price'] as const) {
       const factId = `store-project:${project.id}:${kind}`;
@@ -880,27 +947,26 @@ async function assertStoreFactMappings(
       // value carries its own earlier confirmation, and demanding a second one
       // would make the *other*, still-missing stream unconfirmable forever
       // (D-151③ partial import).
+      const expectedValue =
+        kind === 'service'
+          ? { name: project.name }
+          : { amount: project.price, currency: 'CNY' };
       const current = await currentFact(factId);
-      const backed =
-        current !== null &&
-        current.revisionKind !== 'revocation' &&
-        // A fact that expires stops backing the profile the moment it does, so
-        // only an open-ended one may stand in for a confirmation.
-        current.expiresAt === null &&
-        isDeepStrictEqual(
-          current.value,
-          kind === 'service'
-            ? { name: project.name }
-            : { amount: project.price, currency: 'CNY' },
-        );
-      if (!backed) {
+      if (!backsOmittedConfirmation(current, expectedValue, at)) {
         throw new StoreIntakeFinalizationError(
           'STORE_FACT_MAPPING_INVALID',
           `Store project patch ${project.id} requires confirmation ${factId}.`,
         );
       }
+      omittedBackers.push({
+        expectedValue,
+        factId,
+        projectId: project.id,
+        revision: current.revision,
+      });
     }
   }
+  return omittedBackers;
 }
 
 function finalizationFailure(error: unknown) {

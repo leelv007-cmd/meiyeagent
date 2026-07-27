@@ -1801,6 +1801,206 @@ test(
   },
 );
 
+test(
+  'a backing fact revoked after the mapping pass stops the profile write instead of re-asserting the old value',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    let releaseWrite: () => void = () => {};
+    let reportWriteReached: () => void = () => {};
+    const writeReleased = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    const writeReached = new Promise<void>((resolve) => {
+      reportWriteReached = resolve;
+    });
+    const environment = await createEnvironment(
+      undefined,
+      undefined,
+      () => now,
+      (intake) => ({
+        async confirmFact(context, input) {
+          if (input.candidateId === 'toctou-barrier') {
+            reportWriteReached();
+            await writeReleased;
+          }
+          return intake.confirmFact(context, input);
+        },
+        confirmedFactRevision: (...args) =>
+          intake.confirmedFactRevision(...args),
+        currentFact: (...args) => intake.currentFact(...args),
+        currentFactRevision: (...args) => intake.currentFactRevision(...args),
+        persistedBatch: (...args) => intake.persistedBatch(...args),
+        recordBatch: (...args) => intake.recordBatch(...args),
+      }),
+    );
+    const workspaceId = environment.context.workspaceId;
+    try {
+      await seedStore(environment);
+      // Both project-a streams now stand in the ledger, so a later command may
+      // omit either one of them.
+      await environment.finalizer.finalize(
+        environment.context,
+        finalizeInput(workspaceId, {
+          profilePatch: {
+            expectedRevision: 1,
+            projects: {
+              upsert: [project('project-a', '透亮猫眼', 299)],
+            },
+          },
+        }),
+        'toctou-seed',
+      );
+
+      // Only the service stream is confirmed here — the price rides on the
+      // fact already standing behind it.
+      const omitting: FinalizeStoreIntakeCommand = {
+        batch: {
+          batchId: 'toctou-batch',
+          taskId: 'toctou-task',
+          source: {
+            sourceId: 'progressive-card',
+            kind: 'manual',
+            referenceId: 'progressive-card',
+            capabilityStatus: 'verified',
+            sourceWorkspaceId: workspaceId,
+            capturedAt: now,
+            example: false,
+          },
+          summary: '商家又确认了一次项目名称。',
+          candidates: [
+            {
+              candidateId: 'toctou-barrier',
+              status: 'pending',
+              objectKind: 'store_fact',
+              fact: {
+                kind: 'service',
+                key: 'service.project-a.name',
+                value: { name: '透亮猫眼' },
+                scope: { storeId: workspaceId, serviceId: 'project-a' },
+                source: {
+                  kind: 'user_confirmation',
+                  referenceId: 'progressive-card',
+                  capturedAt: now,
+                },
+                effectiveFrom: now,
+                expiresAt: null,
+              },
+            },
+          ],
+        },
+        confirmations: [
+          {
+            candidateId: 'toctou-barrier',
+            factId: 'store-project:project-a:service',
+            expectedFactRevision: 1,
+          },
+        ],
+        profilePatch: {
+          expectedRevision: 2,
+          projects: {
+            upsert: [project('project-a', '透亮猫眼', 299)],
+          },
+        },
+      };
+
+      const finalizing = environment.finalizer.finalize(
+        environment.context,
+        omitting,
+        'toctou-finalize',
+      );
+      await writeReached;
+
+      // The mapping pass has already read the price head and waved the omitted
+      // stream through. An external writer now takes that head away.
+      await environment.intake.recordBatch({
+        batchId: 'toctou-revocation-batch',
+        workspaceId,
+        taskId: 'toctou-revocation-task',
+        source: {
+          sourceId: 'external-user-confirmation',
+          kind: 'manual',
+          referenceId: 'external-user-confirmation',
+          capabilityStatus: 'assisted',
+          sourceWorkspaceId: workspaceId,
+          capturedAt: now,
+          example: false,
+        },
+        summary: '商家撤回了这条价格。',
+        candidates: [
+          {
+            candidateId: 'toctou-revocation',
+            status: 'pending',
+            objectKind: 'store_fact',
+            fact: {
+              kind: 'price',
+              key: 'service.project-a.price',
+              value: null,
+              revisionKind: 'revocation',
+              scope: { storeId: workspaceId, serviceId: 'project-a' },
+              source: {
+                kind: 'user_confirmation',
+                referenceId: 'external-user-confirmation',
+                capturedAt: now,
+              },
+              effectiveFrom: now,
+              expiresAt: null,
+            },
+          },
+        ],
+        createdAt: now,
+      });
+      await environment.intake.confirmFact(environment.context, {
+        batchId: 'toctou-revocation-batch',
+        candidateId: 'toctou-revocation',
+        factId: 'store-project:project-a:price',
+        expectedFactRevision: 1,
+        idempotencyKey: 'toctou-revocation',
+      });
+      releaseWrite();
+
+      await assert.rejects(
+        finalizing,
+        (error) =>
+          error instanceof StoreIntakeFinalizationError &&
+          error.code === 'STORE_FACT_MAPPING_INVALID' &&
+          /requires confirmation store-project:project-a:price/u.test(
+            error.message,
+          ),
+      );
+      // The revoked value never reached the profile: the store still stands at
+      // the revision the seeding finalize left behind.
+      assert.equal(
+        (
+          await environment.product.bootstrap({
+            ...environment.context,
+            actor: 'user',
+          })
+        ).store?.revision,
+        2,
+      );
+      const outbox = await environment.pool.query<{ status: string }>(
+        `SELECT status
+           FROM p1_store_intake_finalization_outbox
+          WHERE workspace_id = $1 AND idempotency_key = $2`,
+        [workspaceId, 'toctou-finalize'],
+      );
+      assert.equal(outbox.rows[0]?.status, 'needs_reconciliation');
+      assert.equal(
+        (
+          await environment.facts.history(
+            workspaceId,
+            'store-project:project-a:price',
+          )
+        ).length,
+        2,
+      );
+    } finally {
+      releaseWrite();
+      await environment.cleanup();
+    }
+  },
+);
+
 interface Environment {
   cleanup(): Promise<void>;
   context: P1Context;
@@ -1878,6 +2078,7 @@ async function createEnvironment(
       finalizerIntakeFactory?.(intake) ?? intake,
       finalizationRepository,
       profiles,
+      clock,
     ),
     intake,
     pool,

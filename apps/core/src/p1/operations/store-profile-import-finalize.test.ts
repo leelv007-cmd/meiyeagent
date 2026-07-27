@@ -187,7 +187,10 @@ test('finalize refuses an imported candidate whose profile patch was rewritten',
 });
 
 /** The service fact a wizard confirmation would have left behind. */
-async function seedServiceFact(facts: MemoryStoreFactLedger) {
+async function seedServiceFact(
+  facts: MemoryStoreFactLedger,
+  expiresAt: string | null = null
+) {
   await facts.append({
     factId: 'store-project:legacy-primary:service',
     workspaceId: 'workspace-a',
@@ -201,7 +204,7 @@ async function seedServiceFact(facts: MemoryStoreFactLedger) {
       capturedAt: confirmedAt,
     },
     effectiveFrom: confirmedAt,
-    expiresAt: null,
+    expiresAt,
     recordedAt: confirmedAt,
     recordedBy: 'owner-a',
     expectedRevision: 0,
@@ -318,5 +321,86 @@ test('the unconfirmed half of an upsert still has to match the fact behind it', 
       'import-finalize-partial-rename',
     ),
     /requires confirmation store-project:legacy-primary:service/,
+  );
+});
+
+const at = '2026-07-27T00:00:00.000Z';
+
+/** The partial import of §"already a fact", run against a given ledger clock. */
+async function finalizePartialImport(
+  facts: MemoryStoreFactLedger,
+  idempotencyKey: string
+) {
+  const intake = new AssetIntakeService(
+    new MemoryAssetIntakeRepository(),
+    facts,
+    () => at
+  );
+  const { batch } = await new StoreProfileImportPreparer(
+    { read: async () => store },
+    intake,
+    () => at
+  ).prepare(context);
+  const finalizer = new StoreIntakeFinalizer(
+    intake,
+    finalizations,
+    {
+      completedRevision: async () => null,
+      currentRevision: async () => 2,
+      merge: async () => ({ ...store, revision: 3 }),
+    },
+    () => at
+  );
+  return finalizer.finalize(
+    context,
+    {
+      batch: { batchId: batch!.batchId },
+      confirmations: [
+        {
+          candidateId: 'store-project:legacy-primary:price:import',
+          factId: 'store-project:legacy-primary:price',
+          expectedFactRevision: 0,
+        },
+      ],
+      profilePatch: {
+        expectedRevision: 2,
+        projects: {
+          upsert: [
+            {
+              id: 'legacy-primary',
+              name: '透亮猫眼护理',
+              price: 299,
+              durationMinutes: 75,
+              confirmed: true,
+            },
+          ],
+        },
+      },
+    },
+    idempotencyKey
+  );
+}
+
+test('a fact dated to lapse later still backs the half nobody re-confirmed', async () => {
+  const facts = new MemoryStoreFactLedger();
+  // A seasonal statement is still standing until its date passes; refusing it
+  // would strand the other stream of the project until then.
+  await seedServiceFact(facts, '2026-12-31T00:00:00.000Z');
+
+  const result = await finalizePartialImport(facts, 'import-finalize-dated');
+
+  assert.deepEqual(
+    result.facts.map((fact) => fact.factId),
+    ['store-project:legacy-primary:price']
+  );
+});
+
+test('a fact that already lapsed backs nothing', async () => {
+  const facts = new MemoryStoreFactLedger();
+  await seedServiceFact(facts, '2026-06-01T00:00:00.000Z');
+
+  await assert.rejects(
+    finalizePartialImport(facts, 'import-finalize-lapsed'),
+    /requires confirmation store-project:legacy-primary:service/
   );
 });
