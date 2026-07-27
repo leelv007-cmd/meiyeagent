@@ -116,6 +116,29 @@ test('corrected intake fact is the only price in the next frozen Task, output an
     delivery,
     () => now,
   );
+  ports.assessFacts = async (input) =>
+    assessRecipeFactSatisfaction(
+      {
+        workflowId: input.workflowId,
+        workflowRevision: input.request.workflowRevision,
+        intent: input.declaration.normalizedIntent,
+        factTypes: ['price'],
+        bundle: input.context.bundle,
+        at: now,
+      },
+      new QueueRunner([
+        {
+          status: 'satisfied',
+          matchedFactRefs: [factRef],
+          missingFactTypes: [],
+        },
+      ]),
+      {
+        async isAuthorized() {
+          return true;
+        },
+      },
+    );
   const traces: unknown[] = [];
   const result = await runHarnessWorkflow(
     'task-after-correction',
