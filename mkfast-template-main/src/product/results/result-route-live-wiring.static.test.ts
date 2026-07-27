@@ -107,6 +107,8 @@ test('result route consumes Harness workflow tokens as the only live incremental
   assert.doesNotMatch(route, /resultWorkflowIdForWork\([^;]*search\.taskId/u);
   assert.match(route, /enabled: Boolean\(resultWorkflowId\)/u);
   assert.match(route, /workflowId: resultWorkflowId/u);
+  assert.match(route, /taskId: resultWorkflowId \|\| undefined/u);
+  assert.doesNotMatch(route, /taskId: search\.taskId/u);
   assert.match(route, /harnessStream\.copyCandidates/);
   assert.match(route, /harnessStream\.activeWorkflowId === resultWorkflowId/u);
   assert.match(

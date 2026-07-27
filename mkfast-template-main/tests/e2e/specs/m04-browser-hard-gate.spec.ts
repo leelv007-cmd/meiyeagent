@@ -454,11 +454,19 @@ test.describe('M-04 required browser hard gate', () => {
     );
     expect(wrong).toBeTruthy();
 
+    const resultPage = await page.context().newPage();
+    await resultPage.goto('/dashboard/works');
+    await expect(resultPage.getByTestId('works-list')).toBeVisible({
+      timeout: 60_000,
+    });
+    await expect(
+      resultPage.getByText(wrongMarker, { exact: false }).first()
+    ).toBeVisible({ timeout: 60_000 });
+
     const composerPage = await page.context().newPage();
     await composerPage.goto('/dashboard');
     await assertThreeModalDiscovery(composerPage);
     const authoritativeMarker = `M04LINEAGE_A_${crypto.randomUUID()}`;
-    const resultPage = await page.context().newPage();
     await installLineageObservation(resultPage);
     const eventRequests: string[] = [];
     const captureEventRequest = (request: Request) => {
@@ -467,7 +475,6 @@ test.describe('M-04 required browser hard gate', () => {
       }
     };
     resultPage.on('request', captureEventRequest);
-    await resultPage.goto('/dashboard');
     let authoritativeTaskId = '';
     await submitComposerJourney(
       composerPage,

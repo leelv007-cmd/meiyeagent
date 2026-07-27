@@ -1046,7 +1046,7 @@ function ResultCenterRoutePage() {
         progressState: resultProgressState,
         hasUsableCandidate,
         ...packageMutationFacts,
-        taskId: search.taskId,
+        taskId: resultWorkflowId || undefined,
         jobId: selected?.job?.id,
       }}
       partialCandidates={partialCandidates}

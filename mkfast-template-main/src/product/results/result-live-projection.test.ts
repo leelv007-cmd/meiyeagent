@@ -110,6 +110,38 @@ test('terminal Harness workflow state overrides stale running progress', () => {
   );
 });
 
+test('terminal canonical projection overrides stale running progress', () => {
+  for (const projectedProgressState of ['success', 'failed'] as const) {
+    assert.deepEqual(
+      resultHarnessStreamLifecycle({
+        hasCanonicalVersion: false,
+        latestProgressState: 'running',
+        projectedProgressState,
+        workflowState: undefined,
+      }),
+      {
+        progressState: projectedProgressState,
+        streamActive: false,
+      }
+    );
+  }
+});
+
+test('non-terminal canonical projection stays active after a completed stage', () => {
+  assert.deepEqual(
+    resultHarnessStreamLifecycle({
+      hasCanonicalVersion: false,
+      latestProgressState: 'success',
+      projectedProgressState: 'running',
+      workflowState: undefined,
+    }),
+    {
+      progressState: 'running',
+      streamActive: true,
+    }
+  );
+});
+
 test('changes the package refresh token when an asynchronous video rerun arrives', () => {
   const baseline = contentPackageRefreshToken({
     id: 'package-original',

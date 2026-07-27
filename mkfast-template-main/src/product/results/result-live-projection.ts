@@ -83,7 +83,9 @@ export function resultHarnessStreamLifecycle(input: {
   const streamTerminal =
     input.hasCanonicalVersion ||
     input.workflowState === 'failed' ||
-    input.workflowState === 'success';
+    input.workflowState === 'success' ||
+    input.projectedProgressState === 'failed' ||
+    input.projectedProgressState === 'success';
   const progressState = input.hasCanonicalVersion
     ? ('success' as const)
     : input.workflowState === 'failed'
