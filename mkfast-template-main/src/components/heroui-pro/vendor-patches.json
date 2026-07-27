@@ -8,6 +8,18 @@
       "replace": ""
     },
     {
+      "file": "components/chat-conversation/chat-conversation.tsx",
+      "reason": "TS6133 under noUnusedLocals: upstream imports RefObject but never uses it.",
+      "find": "  type RefObject,\n",
+      "replace": ""
+    },
+    {
+      "file": "components/rich-text-editor/rich-text-editor.tsx",
+      "reason": "TS6133 under noUnusedParameters: the suggestion menu row destructures `item` but renders from `suggestionItem`.",
+      "find": "({ index, item, key, suggestionItem, textValue })",
+      "replace": "({ index, key, suggestionItem, textValue })"
+    },
+    {
       "file": "components/sheet/sheet.tsx",
       "reason": "TS6133 under noUnusedLocals: dead refs — dragStartPointRef is never touched, and draggingRef is only read by the equally dead lastDragPoint local removed below.",
       "find": "  const dragStartPointRef = useRef<{ x: number; y: number } | null>(null);\n  const draggingRef = useRef<HTMLDivElement | null>(null);\n",
