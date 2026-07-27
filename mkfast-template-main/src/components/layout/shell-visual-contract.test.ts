@@ -6,8 +6,15 @@ import test from 'node:test';
 const readSource = (file: string) =>
   readFileSync(resolve(process.cwd(), file), 'utf8');
 
+/**
+ * S7 / U07 换壳后的槽位口径：HeroUI Pro Sidebar 把 shadcn 的
+ * wrapper→gap→container→inner 四层塌成 provider→aside 两层，inset 改叫 main。
+ * 氛围层仍在 styles.css（它压的是自家内容，不与 vendored 表撞名），侧栏本体搬到
+ * heroui-glass.css（无 layer，才压得过 `.sidebar` / `.sidebar--floating`）。
+ */
 test('product chrome consumes the floating glass and ambient shell tokens', () => {
   const styles = readSource('src/styles.css');
+  const glass = readSource('src/components/heroui-pro/heroui-glass.css');
 
   assert.match(
     styles,
@@ -15,23 +22,24 @@ test('product chrome consumes the floating glass and ambient shell tokens', () =
   );
   assert.match(
     styles,
-    /\.meiye-product-shell\[data-shell-mode="product"\]\[data-slot="sidebar-wrapper"\]::before\s*\{[\s\S]*?height:\s*max\(100svh, 720px\)/u
+    /\.meiye-product-shell\[data-shell-mode="product"\]\[data-slot="sidebar-provider"\]::before\s*\{[\s\S]*?height:\s*max\(100svh, 720px\)/u
+  );
+  assert.match(
+    glass,
+    /\.meiye-product-shell \[data-slot="sidebar"\]\s*\{[\s\S]*?backdrop-filter:\s*blur\(var\(--meiye-blur-shell\)\)[\s\S]*?border-radius:\s*24px[\s\S]*?margin:\s*12px/u
+  );
+  assert.match(
+    glass,
+    /\.meiye-product-shell \[data-slot="sidebar"\]\s*\{[\s\S]*?--sidebar-width-collapsed:\s*74px/u
+  );
+  // 药丸导航行是本产品自己的 <Link>，不是 Pro 的 role="row" 菜单行。
+  assert.match(
+    styles,
+    /\.meiye-product-shell \.meiye-sidebar-nav-item\s*\{[\s\S]*?border-radius:\s*999px/u
   );
   assert.match(
     styles,
-    /\[data-slot="sidebar-container"\]\s*\{[\s\S]*?padding:\s*12px/u
-  );
-  assert.match(
-    styles,
-    /\[data-slot="sidebar-inner"\]\s*\{[\s\S]*?backdrop-filter:\s*blur\(64px\)[\s\S]*?border-radius:\s*24px/u
-  );
-  assert.match(
-    styles,
-    /\.meiye-product-shell \[data-slot="sidebar-container"\][\s\S]*?pointer-events:\s*none/u
-  );
-  assert.match(
-    styles,
-    /\.meiye-product-shell \[data-slot="sidebar-inner"\],[\s\S]*?pointer-events:\s*auto/u
+    /\.meiye-product-shell \[data-slot="sidebar"\]\s*\{\s*z-index:\s*var\(--layer-sidebar\)/u
   );
 });
 

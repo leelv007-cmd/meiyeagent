@@ -1,4 +1,3 @@
-import heroUiGlassCss from '@/components/heroui-pro/heroui-glass.css?url';
 import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { EmptyState, Widget } from '@/components/heroui-pro';
 import {
@@ -93,7 +92,6 @@ import { useState, type CSSProperties } from 'react';
 type StoreTab = 'profile' | 'assets' | 'qualification';
 
 export const Route = createFileRoute('/dashboard/store')({
-  head: () => ({ links: [{ rel: 'stylesheet', href: heroUiGlassCss }] }),
   validateSearch: (
     search: Record<string, unknown>
   ): { assetId?: string; tab?: StoreTab } => {

@@ -1,28 +1,17 @@
 import { ProductIcon } from '@/components/uiux/product-icon';
 import {
-  ADMIN_SIDEBAR_ITEMS,
   BUSINESS_SIDEBAR_ITEMS,
   SETTINGS_SIDEBAR_ITEMS,
   type ShellMode,
   type ShellNavigationItem,
 } from '@/config/sidebar-config';
-import {
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from '@/components/ui/sidebar';
+import { Sidebar, useSidebar } from '@/components/heroui-pro';
 import { Link, useRouterState } from '@tanstack/react-router';
 import {
-  shell_admin_navigation_aria,
   shell_business_navigation_aria,
   shell_settings,
   shell_settings_navigation_aria,
 } from '@/locale/paraglide/messages';
-import { cn } from '@/lib/utils';
 
 interface SidebarMainProps {
   mode: ShellMode;
@@ -32,69 +21,62 @@ function canonicalPath(value: string) {
   return value.replace(/\/$/, '') || '/';
 }
 
+/**
+ * 商家壳的导航列表（S7 / U07 换壳后）。
+ *
+ * 分组与分组标题走 HeroUI Pro 的 `Sidebar.Group` / `Sidebar.GroupLabel`，行不走
+ * `Sidebar.MenuItem`：Pro 的行是 React Aria Tree 的 `role="row"`，会吃掉链接语义。
+ * 词表仍然只有 `config/sidebar-config` 一个来源，`<nav aria-label>` 地标也照旧，
+ * 换壳前后 `getByRole('navigation') → getByRole('link')` 读到的是同一组四项。
+ */
 export function SidebarMain({ mode }: SidebarMainProps) {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
-  const { isMobile, setOpenMobile } = useSidebar();
+  const { isMobile, setMobileOpen } = useSidebar();
 
   const closeMobileSidebar = () => {
-    if (isMobile) setOpenMobile(false);
+    if (isMobile) setMobileOpen(false);
   };
-
-  const isAdmin = mode === 'admin';
 
   const renderNavigation = (
     items: readonly ShellNavigationItem[],
     label: string,
     groupLabel?: string
   ) => (
-    <SidebarGroup className={cn(isAdmin && 'py-1')}>
+    <Sidebar.Group key={label}>
       {groupLabel ? (
-        <SidebarGroupLabel className={cn(isAdmin && 'h-7 text-xs')}>
-          {groupLabel}
-        </SidebarGroupLabel>
+        <Sidebar.GroupLabel>{groupLabel}</Sidebar.GroupLabel>
       ) : null}
-      <SidebarGroupContent>
-        <nav aria-label={label}>
-          <SidebarMenu className={cn(isAdmin ? 'gap-0.5' : 'gap-1')}>
-            {items.map((item) => {
-              const current = canonicalPath(pathname);
-              const target = canonicalPath(item.href);
-              const isActive =
-                current === target ||
-                (target !== '/dashboard' && current.startsWith(`${target}/`));
-              return (
-                <SidebarMenuItem key={item.id}>
-                  <SidebarMenuButton
-                    isActive={isActive}
-                    size={isAdmin ? 'sm' : 'default'}
-                    render={
-                      <Link to={item.href} onClick={closeMobileSidebar}>
-                        <ProductIcon icon={item.icon} />
-                        <span
-                          className={cn(
-                            'truncate font-medium',
-                            isAdmin ? 'text-xs' : 'text-sm'
-                          )}
-                        >
-                          {item.label}
-                        </span>
-                      </Link>
-                    }
-                  />
-                </SidebarMenuItem>
-              );
-            })}
-          </SidebarMenu>
-        </nav>
-      </SidebarGroupContent>
-    </SidebarGroup>
+      <nav aria-label={label}>
+        <ul className="meiye-sidebar-nav">
+          {items.map((item) => {
+            const current = canonicalPath(pathname);
+            const target = canonicalPath(item.href);
+            const isActive =
+              current === target ||
+              (target !== '/dashboard' && current.startsWith(`${target}/`));
+            return (
+              <li key={item.id}>
+                <Link
+                  aria-current={isActive ? 'page' : undefined}
+                  className="meiye-sidebar-nav-item"
+                  data-active={isActive ? 'true' : undefined}
+                  onClick={closeMobileSidebar}
+                  to={item.href}
+                >
+                  <ProductIcon icon={item.icon} />
+                  <span className="truncate font-medium" data-sidebar="label">
+                    {item.label}
+                  </span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+    </Sidebar.Group>
   );
-
-  if (mode === 'admin') {
-    return renderNavigation(ADMIN_SIDEBAR_ITEMS, shell_admin_navigation_aria());
-  }
 
   return (
     <>

@@ -154,7 +154,7 @@ export function HarnessQuestionCard({
       {question ? (
         <section
           aria-labelledby={`question-${question.questionId}`}
-          className="meiye-porcelain space-y-4 rounded-2xl border border-primary/15 p-5"
+          className="meiye-porcelain meiye-porcelain-edge-accent space-y-4 rounded-2xl border border-primary/15 p-5"
           data-question-id={question.questionId}
         >
           <div>

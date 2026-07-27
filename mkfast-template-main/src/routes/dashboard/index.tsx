@@ -1,4 +1,3 @@
-import heroUiGlassCss from '@/components/heroui-pro/heroui-glass.css?url';
 import { ComposerHome } from '@/product/composer/composer-home';
 import { CanonicalHistoryPage } from '@/product/canonical-history-page';
 import { desktopRelayLanding } from '@/product/device-relay';
@@ -34,7 +33,6 @@ interface DashboardSearch {
 }
 
 export const Route = createFileRoute('/dashboard/')({
-  head: () => ({ links: [{ rel: 'stylesheet', href: heroUiGlassCss }] }),
   validateSearch: (search: Record<string, unknown>): DashboardSearch => ({
     ...(typeof search.catalogRecipeRevisionId === 'string' &&
     search.catalogRecipeRevisionId.length > 0

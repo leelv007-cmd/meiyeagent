@@ -22,12 +22,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from '@/components/ui/sidebar';
+import { useSidebar } from '@/components/heroui-pro';
 import { websiteConfig } from '@/config/website';
 import type { SessionUser } from '@/auth/types';
 import { localeConfig, locales, type Locale } from '@/lib/locale';
@@ -83,31 +78,37 @@ export function SidebarUser({ user }: SidebarUserProps) {
     });
   };
   return (
-    <SidebarMenu className="border-t pt-4">
-      <SidebarMenuItem>
+    <div className="meiye-sidebar-identity">
+      <div>
         <DropdownMenu open={open} onOpenChange={setOpen}>
           <DropdownMenuTrigger
             render={
-              <SidebarMenuButton
+              <button
                 aria-label={sidebar_user_menu_aria({
                   identity: user.name ?? user.email,
                 })}
-                size="lg"
-                className="bg-sidebar-accent/60 text-sidebar-accent-foreground hover:bg-sidebar-accent data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+                className="meiye-sidebar-nav-item meiye-sidebar-nav-item--identity"
+                type="button"
               >
                 <UserAvatar
                   name={user.name ?? null}
                   image={user.image ?? null}
-                  className="size-8 border"
+                  className="size-8 shrink-0 border"
                 />
-                <div className="grid flex-1 text-left text-sm leading-tight">
+                <div
+                  className="grid min-w-0 flex-1 text-left text-sm leading-tight"
+                  data-sidebar="label"
+                >
                   <span className="truncate font-semibold">{user.name}</span>
                   <span className="truncate text-xs text-muted-foreground">
                     {user.email}
                   </span>
                 </div>
-                <IconSelector className="ml-auto size-4" />
-              </SidebarMenuButton>
+                <IconSelector
+                  className="ml-auto size-4 shrink-0"
+                  data-sidebar="label"
+                />
+              </button>
             }
           />
           <DropdownMenuContent
@@ -223,7 +224,7 @@ export function SidebarUser({ user }: SidebarUserProps) {
             </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
-      </SidebarMenuItem>
-    </SidebarMenu>
+      </div>
+    </div>
   );
 }

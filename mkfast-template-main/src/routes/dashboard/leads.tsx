@@ -1,4 +1,3 @@
-import heroUiGlassCss from '@/components/heroui-pro/heroui-glass.css?url';
 import { useQuery } from '@tanstack/react-query';
 import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { EmptyState, Widget } from '@/components/heroui-pro';
@@ -80,7 +79,6 @@ import { useEffect, useState, type CSSProperties } from 'react';
  * the Glass sheet, which rides a route-level <link> the way /dashboard does.
  */
 export const Route = createFileRoute('/dashboard/leads')({
-  head: () => ({ links: [{ rel: 'stylesheet', href: heroUiGlassCss }] }),
   component: LeadLedgerPage,
 });
 

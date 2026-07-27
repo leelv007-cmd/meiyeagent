@@ -1,4 +1,3 @@
-import heroUiGlassCss from '@/components/heroui-pro/heroui-glass.css?url';
 import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { buttonVariants } from '@heroui/react';
 import { Routes } from '@/lib/routes';
@@ -13,7 +12,6 @@ import { createFileRoute, Link } from '@tanstack/react-router';
  * Content workspace page — T33 / #227. Thin wrapper; surface lives in product/.
  */
 export const Route = createFileRoute('/dashboard/workspace')({
-  head: () => ({ links: [{ rel: 'stylesheet', href: heroUiGlassCss }] }),
   component: ContentWorkspaceRoute,
 });
 
