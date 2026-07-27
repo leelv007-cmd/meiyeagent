@@ -97,11 +97,16 @@ async function applyAdminConfig(
   });
   expect(response.ok(), await response.text()).toBeTruthy();
 
+  // Assert the stored value, not the audit reason: config_apply is idempotent
+  // for an unchanged value, so a re-run that finds the key already at this
+  // value writes no new revision and a reason poll would hang for nothing.
   await expect
-    .poll(async () => latestRevision(await readConfigHistory(page, key)), {
-      timeout: 30_000,
-    })
-    .toMatchObject({ reason });
+    .poll(
+      async () =>
+        latestRevision(await readConfigHistory(page, key))?.storedValue,
+      { timeout: 30_000 }
+    )
+    .toEqual(value);
 
   await signOut(page);
 }
