@@ -21,6 +21,7 @@ import {
   createStoreIntakeWizardState,
   currentStep,
   draftPrefillEntries,
+  editSentence,
   goToStep,
   importCandidateGroups,
   orderedIntakeFields,
@@ -144,7 +145,7 @@ test('a scaffold the merchant typed into is theirs, an empty one is never sent',
   assert.equal(statedSentence(ticked.sentence), '');
   assert.equal(canArrange(ticked), false);
 
-  const filled = { ...ticked, sentence: '项目名称：头皮护理\n日常价：239' };
+  const filled = editSentence(ticked, '项目名称：头皮护理\n日常价：239');
   assert.equal(statedSentence(filled.sentence), filled.sentence);
   // Ticking another box must not overwrite what was typed into the scaffold.
   const alsoR2 = toggleRecommendation(experience, filled, 'r2');
@@ -164,6 +165,43 @@ test('a scaffold the merchant typed into is theirs, an empty one is never sent',
       (field) => field.key === 'store.profile.summary'
     ),
     false
+  );
+});
+
+test('an emptied box stays empty — clearing it is an edit, not an untouched box', () => {
+  const ticked = toggleRecommendation(experience, wizard(), 'r1');
+  const cleared = editSentence(ticked, '');
+  assert.equal(cleared.sentence, '');
+
+  // Whitespace is the same act — the merchant decided the box says nothing.
+  const alsoR2 = toggleRecommendation(experience, cleared, 'r2');
+  assert.equal(alsoR2.sentence, '');
+  assert.equal(
+    toggleRecommendation(experience, editSentence(ticked, '   '), 'r2')
+      .sentence,
+    '   '
+  );
+});
+
+test('a half-filled scaffold sends only the lines the merchant answered', () => {
+  const ticked = toggleRecommendation(experience, wizard(), 'r1');
+  const half = editSentence(ticked, '项目名称：头疗护理\n日常价：');
+  assert.equal(statedSentence(half.sentence), '项目名称：头疗护理');
+
+  const request = prepareManualDraftRequest({
+    assetId: 'intake-asset:1',
+    draft: createProgressiveFactDraft(),
+    rightsConfirmed: false,
+    sentence: half.sentence,
+    target: 'price_list',
+    taskId: 'task-1',
+    upload,
+  });
+  assert.deepEqual(
+    request.payload.fields.filter(
+      (field) => field.key === 'store.profile.summary'
+    ),
+    [{ key: 'store.profile.summary', value: '项目名称：头疗护理' }]
   );
 });
 

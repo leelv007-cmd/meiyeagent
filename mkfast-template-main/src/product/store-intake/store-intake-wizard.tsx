@@ -122,6 +122,7 @@ import {
   canArrange,
   createStoreIntakeWizardState,
   currentStep,
+  editSentence,
   goToStep,
   importCandidateGroups,
   orderedIntakeFields,
@@ -535,10 +536,9 @@ export function StoreIntakeWizard({
                     data-testid="store-intake-sentence"
                     id="store-intake-sentence"
                     onChange={(event) =>
-                      setState((current) => ({
-                        ...current,
-                        sentence: event.target.value,
-                      }))
+                      setState((current) =>
+                        editSentence(current, event.target.value)
+                      )
                     }
                     placeholder={store_intake_sentence_placeholder()}
                     value={state.sentence}

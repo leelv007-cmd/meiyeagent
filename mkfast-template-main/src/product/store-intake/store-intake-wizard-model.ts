@@ -95,6 +95,13 @@ export interface StoreIntakeWizardState {
   rightsConfirmed: boolean;
   selectedRecommendations: string[];
   sentence: string;
+  /**
+   * The merchant has typed in the sentence box at least once. Tracked as an
+   * event rather than inferred from the value: clearing the box is an edit too,
+   * and "it looks like an untouched scaffold" would let the next tick refill a
+   * box the merchant deliberately emptied.
+   */
+  sentenceEdited: boolean;
   stepIndex: number;
   target: StoreIntakeTarget;
   upload: WorkspaceAssetUpload | null;
@@ -112,6 +119,7 @@ export function createStoreIntakeWizardState(
     rightsConfirmed: false,
     selectedRecommendations: [],
     sentence: '',
+    sentenceEdited: false,
     stepIndex: 0,
     target: 'price_list',
     upload: null,
@@ -255,34 +263,38 @@ export function toggleRecommendation(
   )
     ? state.selectedRecommendations.filter((id) => id !== recommendationId)
     : [...state.selectedRecommendations, recommendationId];
-  // Only an untouched box is re-scaffolded: whatever the merchant typed is
-  // theirs, and a checkbox must not delete it.
-  const previous = recommendationScaffold(
-    experience,
-    state.selectedRecommendations
-  );
-  const untouched =
-    state.sentence.trim().length === 0 || state.sentence === previous;
+  // Only a box the merchant never touched is re-scaffolded: whatever they typed
+  // — including an emptied box — is theirs, and a checkbox must not rewrite it.
   return {
     ...state,
     selectedRecommendations,
-    sentence: untouched
-      ? recommendationScaffold(experience, selectedRecommendations)
-      : state.sentence,
+    sentence: state.sentenceEdited
+      ? state.sentence
+      : recommendationScaffold(experience, selectedRecommendations),
   };
+}
+
+/** The merchant writing in the sentence box — the only writer that marks it theirs. */
+export function editSentence(
+  state: StoreIntakeWizardState,
+  sentence: string
+): StoreIntakeWizardState {
+  return { ...state, sentence, sentenceEdited: true };
 }
 
 /**
  * An unfilled scaffold is a form, not a statement — sending it would record
- * "项目名称：" as something the merchant said about their store.
+ * "项目名称：" as something the merchant said about their store. Filtered line by
+ * line, because a half-filled scaffold is the normal case: the merchant answers
+ * the prompts they know and leaves the rest, and only the answered ones are
+ * something they said.
  */
 export function statedSentence(sentence: string) {
-  const trimmed = sentence.trim();
-  if (trimmed.length === 0) return '';
-  const unfilled = trimmed
+  return sentence
     .split('\n')
-    .every((line) => /^[^：]*：\s*$/u.test(line.trim()));
-  return unfilled ? '' : trimmed;
+    .filter((line) => !/^[^：]*：\s*$/u.test(line))
+    .join('\n')
+    .trim();
 }
 
 /** Step 4 can only run once the merchant gave it something to work from. */

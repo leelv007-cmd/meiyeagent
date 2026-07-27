@@ -33,7 +33,10 @@ const EXPERIENCE: AssetIntakeExperience = {
     },
   ],
   industry: 'hair_care',
-  recommendations: [{ recommendationId: 'r1', label: '项目名称、日常价' }],
+  recommendations: [
+    { recommendationId: 'r1', label: '项目名称、日常价' },
+    { recommendationId: 'r2', label: '团购价' },
+  ],
   steps: [
     { id: 'see_examples', optional: true },
     { id: 'choose_recommendations', optional: true },
@@ -232,6 +235,37 @@ describe('StoreIntakeWizard', () => {
       screen.getByTestId('store-intake-recommended-projectPrice')
     ).toBeTruthy();
     expect(screen.queryByTestId('store-intake-recommended-booking')).toBe(null);
+  });
+
+  it('never refills a sentence box the merchant emptied', async () => {
+    renderWizard();
+    await screen.findByTestId('store-intake-steps');
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+    fireEvent.click(
+      await screen.findByTestId('store-intake-recommendation-r1')
+    );
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+    const sentence = (await screen.findByTestId(
+      'store-intake-sentence'
+    )) as HTMLTextAreaElement;
+    expect(sentence.value).toBe('项目名称：\n日常价：');
+
+    // 我不想在这儿打字 — the merchant clears the box and goes back to tick more.
+    fireEvent.change(sentence, { target: { value: '' } });
+    expect(sentence.value).toBe('');
+    fireEvent.click(screen.getByTestId('store-intake-back'));
+    fireEvent.click(
+      await screen.findByTestId('store-intake-recommendation-r2')
+    );
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+
+    expect(
+      (
+        (await screen.findByTestId(
+          'store-intake-sentence'
+        )) as HTMLTextAreaElement
+      ).value
+    ).toBe('');
   });
 
   it('never writes through a retired direct StoreFact command', async () => {
