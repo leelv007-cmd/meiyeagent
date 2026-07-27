@@ -68,7 +68,7 @@ test('rejects provider or non-launch buckets at the public adapter boundary', ()
       ...balance,
       copy: {
         ...balance.copy,
-        providerCostMicros: 99,
+        providerCostMicros: null,
       },
     })
   );
