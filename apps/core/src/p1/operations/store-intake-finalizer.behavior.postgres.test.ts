@@ -2168,7 +2168,10 @@ test(
           revoked = true;
         });
 
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      // Wait for the revocation to actually reach the head row and block on
+      // it — a fixed sleep would call the race won before it started under a
+      // slow connection, and pass for the wrong reason.
+      await waitForHeadLockWaiter(environment.pool);
       // The pin is a lock, not another optimistic re-read: the revocation is
       // still waiting on the price head, so the ledger has nothing new.
       assert.equal(revoked, false);
@@ -2220,6 +2223,45 @@ test(
     }
   },
 );
+
+/**
+ * Blocks until some other backend is parked on a lock over the fact-head table
+ * — the observable form of "the revocation has reached the head row and is now
+ * waiting behind the pin". Only then does `revoked === false` mean the pin held
+ * the line, rather than the revocation simply not having arrived yet.
+ */
+async function waitForHeadLockWaiter(pool: Pool, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const waiting = await pool.query<{ query: string }>(
+      `SELECT query
+         FROM pg_stat_activity
+        WHERE datname = current_database()
+          AND pid <> pg_backend_pid()
+          AND state = 'active'
+          AND wait_event_type = 'Lock'
+          AND query LIKE '%p1_store_fact_heads%FOR UPDATE%'`,
+    );
+    if (waiting.rowCount) return;
+    if (Date.now() >= deadline) {
+      const activity = await pool.query<{
+        state: string | null;
+        wait_event_type: string | null;
+        query: string;
+      }>(
+        `SELECT state, wait_event_type, query
+           FROM pg_stat_activity
+          WHERE datname = current_database() AND pid <> pg_backend_pid()`,
+      );
+      throw new Error(
+        `No backend blocked on p1_store_fact_heads within ${timeoutMs}ms: ${JSON.stringify(
+          activity.rows,
+        )}`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
 
 interface Environment {
   cleanup(): Promise<void>;
