@@ -12,6 +12,90 @@ import {
 } from '@/lib/price-plan';
 import type { PricePlan } from '@/payment/types';
 import { PaymentTypes, PlanIntervals } from '@/payment/types';
+import ts from 'typescript';
+
+type PriceLookupSurvey = {
+  /** What `findSubscriptionPrice` is called locally, honouring `as` aliases. */
+  binding: string;
+  /** First argument of each direct call, in source order. */
+  callArguments: ts.Node[];
+  /** Any use that is not a direct call — an alias, a re-export, a hand-off. */
+  otherUses: string[];
+};
+
+/**
+ * Survey every use of `findSubscriptionPrice` in a file, through the AST.
+ *
+ * Text matching kept losing this argument: an `as` alias renames the callee, a
+ * wrapper hides the argument behind another function, and a comment mentioning
+ * the name inflates any count you take. The compiler sees none of that — it
+ * resolves the import to a local binding and comments do not exist in the
+ * tree — so ask it instead of guessing at the source text.
+ */
+function surveyPriceLookups(
+  sourceText: string,
+  fileName: string
+): PriceLookupSurvey {
+  const source = ts.createSourceFile(
+    fileName,
+    sourceText,
+    ts.ScriptTarget.Latest,
+    /* setParentNodes */ true,
+    ts.ScriptKind.TSX
+  );
+
+  let binding: string | undefined;
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement)) continue;
+    const named = statement.importClause?.namedBindings;
+    if (!named || !ts.isNamedImports(named)) continue;
+    for (const element of named.elements) {
+      // `propertyName` is set only for `imported as local`.
+      const imported = (element.propertyName ?? element.name).text;
+      if (imported === 'findSubscriptionPrice') binding = element.name.text;
+    }
+  }
+  assert.ok(
+    binding,
+    'the page must import findSubscriptionPrice to price anything'
+  );
+
+  const callArguments: ts.Node[] = [];
+  const otherUses: string[] = [];
+  const describe = (node: ts.Node) => {
+    const { line } = source.getLineAndCharacterOfPosition(
+      node.getStart(source)
+    );
+    return `line ${line + 1}: ${ts.SyntaxKind[node.parent.kind]}`;
+  };
+  const visit = (node: ts.Node) => {
+    // The import itself is a declaration, not a use.
+    if (ts.isImportDeclaration(node)) return;
+    if (ts.isIdentifier(node) && node.text === binding) {
+      const parent = node.parent;
+      if (parent && ts.isCallExpression(parent) && parent.expression === node) {
+        callArguments.push(parent.arguments[0]);
+      } else {
+        otherUses.push(describe(node));
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(source, visit);
+
+  return { binding, callArguments, otherUses };
+}
+
+/** True for the expression `plan.configPlanId`, as a tree rather than a string. */
+function isDisplayPlanKey(node: ts.Node | undefined) {
+  return (
+    !!node &&
+    ts.isPropertyAccessExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === 'plan' &&
+    node.name.text === 'configPlanId'
+  );
+}
 
 /** The real monthly amount for the paid tier, read straight from config. */
 function realGrowthMonthlyAmount() {
@@ -194,35 +278,32 @@ test('one product key, one source: repointing a tier moves both pages at once', 
   // different key anyway. Every price lookup on this page must go through the
   // display plan's own configPlanId — a literal argument here reintroduces the
   // fork one level down, where the DISPLAY_PLANS assertions above cannot see it.
-  const body = pricing.replace(/^import[\s\S]*?from\s+'[^']+';$/gmu, '');
+  const survey = surveyPriceLookups(pricing, PRICING);
 
-  // Tolerate whatever sits between the name and its parenthesis; a guard that
-  // only recognises one spelling is a guard you can format your way around.
-  const directCallArguments = [
-    ...body.matchAll(/\bfindSubscriptionPrice\s*\(\s*([^,]+),/gu),
-  ].map((match) => match[1]?.trim());
+  // 中级 monthly + 中级 yearly + the CTA's monthly. Three cards, but only the
+  // paid one is priced, and it is priced twice: once to show and once to decide
+  // whether checkout is reachable.
+  const EXPECTED_PRICE_LOOKUPS = 3;
 
-  // Every mention of the name, calls and non-calls alike. Routing a lookup
-  // through an alias or a wrapper keeps the mention but loses the direct call,
-  // so the two counts part company — which is the whole point of counting both.
-  const mentions = [...body.matchAll(/\bfindSubscriptionPrice\b/gu)].length;
-
-  const EXPECTED_PRICE_LOOKUPS = 3; // 中级 monthly + 中级 yearly + the CTA's monthly
-  assert.equal(
-    mentions,
-    EXPECTED_PRICE_LOOKUPS,
-    'the page names findSubscriptionPrice somewhere new — is it still a direct call?'
-  );
-  assert.equal(
-    directCallArguments.length,
-    EXPECTED_PRICE_LOOKUPS,
-    'every mention must be a direct call: an alias or wrapper hides the key from this guard'
-  );
+  // Every use must be a call. Handing the function to a variable, a wrapper or
+  // a re-export moves the argument somewhere this guard cannot read it, so the
+  // hand-off is the failure — there is no legitimate reason for one here.
   assert.deepEqual(
-    [...new Set(directCallArguments)],
-    ['plan.configPlanId'],
-    'price every card by its display plan key, never by a literal'
+    survey.otherUses,
+    [],
+    `${survey.binding} must only ever be called directly on this page`
   );
+  assert.equal(
+    survey.callArguments.length,
+    EXPECTED_PRICE_LOOKUPS,
+    'a price lookup was added or removed — is the new one keyed by the display plan?'
+  );
+  for (const argument of survey.callArguments) {
+    assert.ok(
+      isDisplayPlanKey(argument),
+      `price every card by plan.configPlanId, never by ${argument?.getText() ?? 'nothing'}`
+    );
+  }
 });
 
 test('the mapping states exactly which product backs each public tier', () => {
