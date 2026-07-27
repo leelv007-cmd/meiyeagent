@@ -96,7 +96,7 @@ type SubmissionBody = {
 };
 
 async function installLineageObservation(page: Page) {
-  await page.addInitScript(() => {
+  await page.evaluate(() => {
     const seen = new Set<string>();
     Object.defineProperty(window, '__m04LineageSeen', {
       configurable: true,
@@ -116,6 +116,45 @@ async function installLineageObservation(page: Page) {
     });
     window.addEventListener('DOMContentLoaded', record);
   });
+}
+
+async function markDocumentIdentity(page: Page) {
+  return page.evaluate(() => {
+    const identity = crypto.randomUUID();
+    Object.defineProperty(window, '__m04DocumentIdentity', {
+      configurable: true,
+      value: identity,
+    });
+    return identity;
+  });
+}
+
+async function navigateInCurrentDocument(
+  page: Page,
+  href: string,
+  expectedDocumentIdentity: string
+) {
+  const expectedUrl = new URL(href, page.url()).href;
+  await page.evaluate((nextHref) => {
+    window.history.pushState({}, '', nextHref);
+    window.dispatchEvent(
+      new PopStateEvent('popstate', { state: window.history.state })
+    );
+  }, href);
+  await expect(page).toHaveURL(expectedUrl, { timeout: 60_000 });
+  await expect(page.getByTestId('result-center-shell')).toBeVisible({
+    timeout: 120_000,
+  });
+  expect(
+    await page.evaluate(
+      () =>
+        (
+          window as Window & {
+            __m04DocumentIdentity?: string;
+          }
+        ).__m04DocumentIdentity
+    )
+  ).toBe(expectedDocumentIdentity);
 }
 
 async function observedLineageMarkers(page: Page) {
@@ -462,11 +501,15 @@ test.describe('M-04 required browser hard gate', () => {
     await expect(
       resultPage.getByText(wrongMarker, { exact: false }).first()
     ).toBeVisible({ timeout: 60_000 });
+    const documentIdentity = await markDocumentIdentity(resultPage);
 
     const composerPage = await page.context().newPage();
     await composerPage.goto('/dashboard');
     await assertThreeModalDiscovery(composerPage);
     const authoritativeMarker = `M04LINEAGE_A_${crypto.randomUUID()}`;
+    await expect(
+      resultPage.getByText(authoritativeMarker, { exact: false })
+    ).toHaveCount(0);
     await installLineageObservation(resultPage);
     const eventRequests: string[] = [];
     const captureEventRequest = (request: Request) => {
@@ -483,8 +526,10 @@ test.describe('M-04 required browser hard gate', () => {
       {
         async onSubmissionAccepted(authoritative) {
           authoritativeTaskId = authoritative.taskId;
-          await resultPage.goto(
-            `/dashboard/results/${authoritative.workId}?taskId=${wrong!.taskId}`
+          await navigateInCurrentDocument(
+            resultPage,
+            `/dashboard/results/${authoritative.workId}?taskId=${wrong!.taskId}`,
+            documentIdentity
           );
         },
         async onRunStreaming() {
