@@ -196,8 +196,9 @@ test('settling never outranks a state that will not resolve by waiting', () => {
     'invalid_submission'
   );
   assert.equal(
-    resolveComposerQuoteReadiness(settled({ settling: true, hasQuoteView: true }))
-      .state,
+    resolveComposerQuoteReadiness(
+      settled({ settling: true, hasQuoteView: true })
+    ).state,
     'ready'
   );
 });

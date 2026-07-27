@@ -1953,17 +1953,23 @@ export function ComposerHome({
    * readiness check is not optional — a reopened lens re-quotes, and firing
    * before the price is back would be blocked by the submit gate and look
    * exactly like a button that does nothing.
+   *
+   * `currentQuoteView`, like every other gate (#240 P1): the recovery mints a
+   * new session and therefore a new quote identity, so the bound view is the
+   * *failed* run's price until the re-quote lands. Firing against it would hit
+   * the submit gate, clear the retry flag and leave the merchant with a button
+   * that did nothing.
    */
   useEffect(() => {
     if (!retryAfterReport) return;
     if (lensState.phase !== 'selected') return;
-    if (!quoteQuery.data || !quoteView || !submissionRecipe) return;
+    if (!quoteQuery.data || !currentQuoteView || !submissionRecipe) return;
     setRetryAfterReport(false);
     void attemptSubmit();
   }, [
+    currentQuoteView,
     lensState,
     quoteQuery.data,
-    quoteView,
     retryAfterReport,
     submissionRecipe,
   ]);
