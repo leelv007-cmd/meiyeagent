@@ -103,6 +103,7 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
     after: string;
     fieldAfter: string;
     instruction: string;
+    scope: 'selection' | 'whole_document';
   } | null>(null);
   const [quickEditBusy, setQuickEditBusy] = useState<string | null>(null);
   const [quickEditError, setQuickEditError] = useState<string | undefined>();
@@ -131,6 +132,28 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
       )
   );
   const alternatives = view.documentFace?.alternatives ?? [];
+
+  /**
+   * What the next rewrite will actually touch. A stale selection (the body was
+   * replaced under it) is no selection: the rewrite would run over the whole
+   * 正文, and the panel must say the same thing the code does.
+   */
+  const selectedLength =
+    bodySelection &&
+    bodySelection.end > bodySelection.start &&
+    bodySelection.end <= draft.body.length
+      ? bodySelection.end - bodySelection.start
+      : 0;
+  const rewriteScope =
+    selectedLength > 0
+      ? {
+          kind: 'selection' as const,
+          hint: `已选中 ${selectedLength} 个字，只改写选中部分。改写绑定当前版本与稳定锚点。`,
+        }
+      : {
+          kind: 'whole_document' as const,
+          hint: '还没选中文字，将改写整篇文案；只想改一句的话，先在正文里选中它。',
+        };
 
   const runSelectionRewrite = (action: SelectionRewriteAction) => {
     const start = bodySelection?.start ?? 0;
@@ -169,6 +192,7 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
         after: resolved.preview.after,
         fieldAfter: resolved.preview.fieldAfter,
         instruction: resolved.command.instruction,
+        scope: rewriteScope.kind,
       });
     }
     props.onSelectionRewrite?.(action, anchor);
@@ -329,10 +353,20 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
         <section
           className="space-y-2 rounded-lg border p-4"
           data-testid="copy-selection-rewrite"
+          data-rewrite-scope={rewriteScope.kind}
         >
           <h3 className="text-sm font-medium">选区改写</h3>
-          <p className="text-xs text-muted-foreground">
-            先在正文中选中一段文字，再选择改写方式。改写绑定当前版本与稳定锚点。
+          {/*
+            Without a selection the rewrite still runs — over the whole 正文.
+            That is the useful default (「整篇再顺一遍」), and it is also the one
+            the merchant can be surprised by, so the panel says which one it is
+            before the click rather than after it (D-116).
+          */}
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="copy-selection-rewrite-scope"
+          >
+            {rewriteScope.hint}
           </p>
           <div className="flex flex-wrap gap-2">
             {view.selectionRewriteActions.map((item) => (
@@ -353,6 +387,7 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
               className="space-y-2 rounded-md border p-3"
               data-testid="copy-selection-rewrite-preview"
               data-rewrite-action={rewritePreview.action}
+              data-rewrite-scope={rewritePreview.scope}
             >
               <p className="text-sm font-medium">
                 {quickEditCopy.previewHeading}
