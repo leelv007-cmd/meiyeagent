@@ -198,7 +198,7 @@
   "admin_ops_tasks_timeline_unknown": "任务执行记录未知：供给快照没拿到。",
   "admin_ops_tasks_title": "任务执行",
   "admin_ops_tenants_allocations": "生效中的账户分配",
-  "admin_ops_tenants_description": "已发布权益策略与账户分配的试用／生效状态，读自模型供给快照。",
+  "admin_ops_tenants_description": "已发布的权益策略、管理员开的账户例外分配与供应池，读自模型供给快照；新店试用那一行另读套餐目录。",
   "admin_ops_tenants_policies": "已发布的权益策略",
   "admin_ops_tenants_pools": "供应池",
   "admin_ops_tenants_recent": "最近的权益变更",

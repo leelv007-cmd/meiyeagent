@@ -198,7 +198,7 @@
   "admin_ops_tasks_timeline_unknown": "Task runs unknown: the supply snapshot did not arrive.",
   "admin_ops_tasks_title": "Task execution",
   "admin_ops_tenants_allocations": "Active allocations",
-  "admin_ops_tenants_description": "Published entitlement policies and per-account trial / active allocations, read from the model supply snapshot.",
+  "admin_ops_tenants_description": "Published entitlement policies, admin-issued account exceptions, and supply pools, read from the model supply snapshot; the trial line reads the plan catalog instead.",
   "admin_ops_tenants_policies": "Published policies",
   "admin_ops_tenants_pools": "Supply pools",
   "admin_ops_tenants_recent": "Latest entitlement changes",
