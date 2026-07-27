@@ -30,7 +30,10 @@ import type {
   RevisionTimelineVersionFact,
 } from './result-revision-timeline-model';
 import type { ResultRunDetailFacts } from './result-run-detail-model';
-import type { ResultShellProgressState } from './result-shell-model';
+import type {
+  ResultShellDeliveryAttemptState,
+  ResultShellProgressState,
+} from './result-shell-model';
 import type { ClientResolverWorkRecord } from './result-target-wiring';
 import {
   buildVideoWorksurfaceState,
@@ -134,6 +137,62 @@ export function resultContentPackageMutationFacts(
     hasDeliverableVariant:
       hasCanonicalAdoption && Boolean(contentPackage?.variants.length),
   };
+}
+
+/**
+ * Which delivery attempt state this package is in (W09).
+ *
+ * `ResultShellFacts.deliveryAttempt` has driven the shell's partial / failed /
+ * awaiting-approval branches since WT-D, and the page never supplied it — so
+ * those branches were unreachable and a half-delivered package looked finished.
+ * Derived only from canonical package facts; it is not a second Result status.
+ */
+export function resultDeliveryAttemptState(
+  contentPackage:
+    | Pick<
+        PublicContentPackage,
+        'approvalRequests' | 'deliveryEvents' | 'exportReceipts' | 'status'
+      >
+    | undefined
+): ResultShellDeliveryAttemptState {
+  if (!contentPackage) return 'none';
+  const events = contentPackage.deliveryEvents ?? [];
+  const published = events.some(
+    (event) =>
+      (event.type === 'manual_publish_result' ||
+        event.type === 'automatic_publish_result') &&
+      event.status === 'published'
+  );
+  if (published) return 'delivered';
+
+  const publishFailed = events.some(
+    (event) =>
+      (event.type === 'manual_publish_result' ||
+        event.type === 'automatic_publish_result') &&
+      event.status === 'failed'
+  );
+  const exportFailed =
+    contentPackage.status === 'export_failed' ||
+    contentPackage.exportReceipts.some(
+      (receipt) => receipt.status === 'failed'
+    );
+  if (publishFailed || exportFailed) return 'failed';
+
+  if (
+    (contentPackage.approvalRequests ?? []).some(
+      (request) => request.status === 'pending'
+    )
+  ) {
+    return 'awaiting_approval';
+  }
+
+  // Materials went out and nothing came back: honest 未完成, not 已交付.
+  const handedOff = events.some(
+    (event) =>
+      event.type === 'assisted_handoff_prepared' ||
+      event.type === 'legacy_handoff_event'
+  );
+  return handedOff ? 'partial' : 'none';
 }
 
 /**

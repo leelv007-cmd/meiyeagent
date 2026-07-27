@@ -31,10 +31,25 @@ import {
   platformPreviewsFromContentPackage,
   projectResultCenterLiveProjection,
   resultContentPackageMutationFacts,
+  resultDeliveryAttemptState,
   resultHarnessStreamLifecycle,
   resultWorkflowIdForWork,
   runDetailFactsFromLiveSelection,
 } from '@/product/results/result-live-projection';
+import {
+  buildResultFullPackagePlan,
+  probeCanShareFiles,
+  sharePayloadFilesFromPlan,
+} from '@/product/results/delivery-full-package-live';
+import {
+  buildQuickEditIntent,
+  type QuickEditRequest,
+} from '@/product/results/quick-edit-model';
+import type { OutcomeObservationDetail } from '@/product/results/outcome-chips-panel';
+import {
+  result_adjust_unavailable,
+  result_lineage_based_on,
+} from '@/locale/paraglide/messages';
 import { calibrateTerminalRevision } from '@/product/results/result-token-stream';
 import { projectResultShellPhase } from '@/product/results/result-shell-model';
 import { ResultCenterPage } from '@/product/results/result-center-page';
@@ -44,6 +59,7 @@ import type { AssistedReceipt } from '@/product/results/delivery-b3-types';
 import { buildCaptionText } from '@/product/results/delivery-full-package';
 import { shareCanonicalHandoff } from '@/product/results/delivery-handoff-live';
 import { projectResultCloseLoopFacts } from '@/product/results/result-close-loop-live';
+import { weeklyReviewDerivePayload } from '@/product/results/weekly-review-model';
 import {
   deliveryTargetForIntent,
   useDeliveryViewport,
@@ -66,6 +82,7 @@ import { parseResultCenterSearch } from '@/product/results/result-target-wiring'
 import { useResultReturnRestoreSession } from '@/product/results/use-result-return-restore-session';
 import { useWorkflowEventStream } from '@/product/use-workflow-event-stream';
 import type {
+  ContentPackageResultSignal,
   CreativeWorkbenchProjection,
   ProductQuoteSnapshot,
   PublicContentPackage,
@@ -78,6 +95,13 @@ import { resultCenterPath } from '@meiye/contracts';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
+
+/** Merchant-facing platform names for the weekly 「换平台」 prefill. */
+const WEEKLY_PLATFORM_LABELS: Record<string, string> = {
+  douyin: '抖音',
+  video_account: '视频号',
+  xiaohongshu: '小红书',
+};
 
 type PendingImageAdjust = {
   baseJobId: string;
@@ -173,6 +197,24 @@ function ResultCenterRoutePage() {
     latestQueryKey: workbenchQueryKey,
     workflowId: resultWorkflowId,
     workflowQueryKey: contentPackagesQueryKey,
+  });
+  // W09: the three-tier ledger as core computes it. `inferred_temporal` is
+  // derived per request and never stored on the package, so a page that reads
+  // only `resultSignals` renders the third tier as an always-empty decoration.
+  const resultsQuery = useQuery({
+    enabled: Boolean(contentPackage?.id),
+    queryKey: p1QueryKeys.request('operations', 'content_package_results', {
+      packageId: contentPackage?.id,
+    }),
+    queryFn: ({ signal }) =>
+      operationsQuery<{
+        signals: {
+          inferred: ContentPackageResultSignal[];
+          merchant: ContentPackageResultSignal[];
+          verified: ContentPackageResultSignal[];
+        };
+      }>('content_package_results', { packageId: contentPackage?.id }, signal),
+    retry: false,
   });
   const assistedReceiptsQuery = useQuery({
     queryKey: p1QueryKeys.request('result-delivery', 'assisted_list'),
@@ -497,6 +539,13 @@ function ResultCenterRoutePage() {
       queryClient.invalidateQueries({
         queryKey: p1QueryKeys.request('operations', 'content_packages'),
       }),
+      // The three-tier ledger is computed per request, so a newly recorded
+      // signal only reaches the inferred tier when this is refetched too.
+      queryClient.invalidateQueries({
+        queryKey: p1QueryKeys.request('operations', 'content_package_results', {
+          packageId: contentPackage?.id,
+        }),
+      }),
       queryClient.invalidateQueries({
         queryKey: p1QueryKeys.request('result-delivery', 'assisted_list'),
       }),
@@ -658,18 +707,37 @@ function ResultCenterRoutePage() {
   const existingOneShotUrl = assistedStored?.receipt.handoffLink?.token
     ? `/dashboard/handoff/${encodeURIComponent(assistedStored.receipt.handoffLink.token)}`
     : undefined;
+  // W09: the plan the delivery panel states before the download, and the file
+  // list the share capability is probed against.
+  const fullPackagePlan = contentPackage
+    ? buildResultFullPackagePlan({
+        contentPackage,
+        nowIso: new Date().toISOString(),
+        // The ZIP core actually emits names itself; the page has no store name
+        // to offer here, so it states a neutral one rather than guessing from
+        // the content title and printing a file name that is not the file name.
+        storeName: '门店',
+        target: deliveryTarget,
+        ...(deliveryVariant?.currentVersionId
+          ? { variantVersionId: deliveryVariant.currentVersionId }
+          : {}),
+      })
+    : undefined;
+  const sharePayloadFiles = sharePayloadFilesFromPlan(fullPackagePlan);
+  const canShareFiles = probeCanShareFiles(sharePayloadFiles);
   const closeLoopFacts = contentPackage
     ? projectResultCloseLoopFacts({
         contentPackage,
         contentPackages: contentPackagesQuery.data ?? [],
         assistedReceipts:
           assistedReceiptsQuery.data?.map(({ receipt }) => receipt) ?? [],
-        canShareFiles: typeof navigator.canShare === 'function',
+        canShareFiles,
         hasDownload: Boolean(
           singleDownloadUrl ||
             canExportFullPackage ||
             (deliveryTarget === 'wechat_moments' && copyAsset)
         ),
+        inferredSignals: resultsQuery.data?.signals.inferred ?? [],
         nowIso: new Date().toISOString(),
         preferredPlatform: deliveryTarget,
       })
@@ -839,7 +907,15 @@ function ResultCenterRoutePage() {
           autoConfirmBrief: false,
           intent: selected.work.intent,
           sessionId: selected.work.sessionId,
-          sourceReferences: [{ id: selected.work.id, kind: 'work' }],
+          // W08: carry the ContentPackage forward, not only the Work. Without
+          // it the derived creation had no record of what it was based on and
+          // 「基于 X 生成」 had nothing to read.
+          sourceReferences: [
+            { id: selected.work.id, kind: 'work' },
+            ...(contentPackage
+              ? [{ id: contentPackage.id, kind: 'content' as const }]
+              : []),
+          ],
           sourceWorkId: selected.work.id,
         },
       },
@@ -996,13 +1072,34 @@ function ResultCenterRoutePage() {
   // definition — the branch that reads this already requires nothing adopted.
   const hasUsableCandidate =
     selected?.hasUsableCandidate || Boolean(currentPackageVersion);
+  const deliveryAttempt = resultDeliveryAttemptState(contentPackage);
   const shellPhase = projectResultShellPhase({
     target,
     workspaceKind,
     progressState: resultProgressState,
     hasUsableCandidate,
+    deliveryAttempt,
     ...packageMutationFacts,
   });
+  /**
+   * W08: 「基于 X 生成」. The lineage has been stored on
+   * `source.sourceContentPackage` since the revision port shipped and was never
+   * shown, so a re-creation looked exactly like a first draft.
+   */
+  const lineageSource = contentPackage?.source.sourceContentPackage;
+  const lineagePackage = lineageSource
+    ? contentPackagesQuery.data?.find(
+        (candidate) => candidate.id === lineageSource.id
+      )
+    : undefined;
+  const basedOnLabel = lineageSource
+    ? result_lineage_based_on({
+        title:
+          lineagePackage?.versions.find(
+            (version) => version.id === lineagePackage.currentVersionId
+          )?.title ?? '上一条内容',
+      })
+    : undefined;
   const revisionTimelineFacts =
     revisionTimelineFactsFromContentPackage(contentPackage);
   const runDetailFacts = runDetailFactsFromLiveSelection({
@@ -1045,10 +1142,15 @@ function ResultCenterRoutePage() {
         requestedPanel: search.panel,
         progressState: resultProgressState,
         hasUsableCandidate,
+        deliveryAttempt,
         ...packageMutationFacts,
         taskId: resultWorkflowId || undefined,
         jobId: selected?.job?.id,
       }}
+      {...(basedOnLabel ? { basedOnLabel } : {})}
+      {...(currentPackageVersion?.exportUseDelivery
+        ? { exportUseDelivery: currentPackageVersion.exportUseDelivery }
+        : {})}
       partialCandidates={partialCandidates}
       streamLoading={streamLoading}
       copyWorksurface={copyWorksurface}
@@ -1142,6 +1244,49 @@ function ResultCenterRoutePage() {
             }
           : undefined
       }
+      onCopySelectionRewrite={() => {
+        // The chips only capture an anchor and preview a diff; the write is
+        // 就用这版 → onCopyQuickEdit. Clearing the shell error here keeps a
+        // stale failure from sitting above a fresh preview.
+        setShellActionError(undefined);
+      }}
+      onCopyQuickEdit={
+        contentPackage && currentPackageVersion
+          ? async (request: QuickEditRequest) => {
+              const fingerprint = `quick-edit:${contentPackage.id}:${contentPackage.revision}:${request.action}:${request.instruction}`;
+              const key =
+                intentKeys.current.get(fingerprint) ?? crypto.randomUUID();
+              intentKeys.current.set(fingerprint, key);
+              await operationsCommand<PublicContentPackage>(
+                'edit_content_package_version',
+                {
+                  baseVersionId: currentPackageVersion.id,
+                  changes: {
+                    body: request.changes.body,
+                    conversionHook: request.changes.conversionHook,
+                    orderedAssetIds: [...currentPackageVersion.orderedAssetIds],
+                    title: request.changes.title,
+                    topics: [...currentPackageVersion.topics],
+                  },
+                  expectedRevision: contentPackage.revision,
+                  intent: buildQuickEditIntent({
+                    action: request.action,
+                    baseVersionId: currentPackageVersion.id,
+                    contentPackage,
+                    instruction: request.instruction,
+                  }),
+                  packageId: contentPackage.id,
+                },
+                key
+              );
+              intentKeys.current.delete(fingerprint);
+              await refreshCanonicalResult();
+            }
+          : undefined
+      }
+      {...(selected?.job
+        ? {}
+        : { adjustUnavailableReason: result_adjust_unavailable() })}
       onImageAdopt={async (_actionKind, orderedAssetIds) => {
         await adopt({ kind: 'image', orderedAssetIds });
       }}
@@ -1333,7 +1478,10 @@ function ResultCenterRoutePage() {
           setCloseLoopPending(false);
         }
       }}
-      onRecordOutcomeObservation={async (kind) => {
+      onRecordOutcomeObservation={async (
+        kind,
+        detail?: OutcomeObservationDetail
+      ) => {
         if (!contentPackage) return;
         setCloseLoopPending(true);
         setShellActionError(undefined);
@@ -1343,7 +1491,12 @@ function ResultCenterRoutePage() {
             {
               expectedRevision: contentPackage.revision,
               kind,
+              ...(detail?.note ? { note: detail.note } : {}),
+              ...(detail?.occurredAt ? { occurredAt: detail.occurredAt } : {}),
               packageId: contentPackage.id,
+              ...(detail?.quantity !== undefined
+                ? { quantity: detail.quantity }
+                : {}),
             },
             crypto.randomUUID()
           );
@@ -1392,13 +1545,25 @@ function ResultCenterRoutePage() {
             'operations',
             {
               action: 'derive_creative_work',
-              payload: {
-                autoConfirmBrief: false,
-                intent: currentVersion?.title ?? '基于已有成品继续创作',
-                sessionId: `weekly:${sourceWorkId}`,
-                sourceReferences: [{ id: sourceWorkId, kind: 'work' }],
+              payload: weeklyReviewDerivePayload({
+                action,
+                sourcePackageId: sourcePackage.id,
                 sourceWorkId,
-              },
+                ...(currentVersion?.title
+                  ? { title: currentVersion.title }
+                  : {}),
+                ...(currentVersion?.conversionHook
+                  ? { ctaLabel: currentVersion.conversionHook }
+                  : {}),
+                ...(sourcePackage.variants[0]?.platform
+                  ? {
+                      platformLabel:
+                        WEEKLY_PLATFORM_LABELS[
+                          sourcePackage.variants[0].platform
+                        ] ?? sourcePackage.variants[0].platform,
+                    }
+                  : {}),
+              }),
             },
             crypto.randomUUID()
           );
@@ -1426,15 +1591,19 @@ function ResultCenterRoutePage() {
         ),
         shareDevice: {
           hasNavigatorShare: typeof navigator.share === 'function',
-          canShareFiles: typeof navigator.canShare === 'function',
+          // D-086: the capability is the probe result against the actual
+          // files, not the presence of the API.
+          canShareFiles,
           canShareText: typeof navigator.share === 'function',
         },
         sharePayload: {
-          kind: copyAsset ? 'text' : 'files',
+          kind: copyAsset ? (sharePayloadFiles ? 'mixed' : 'text') : 'files',
           ...(copyAsset?.body ? { text: copyAsset.body } : {}),
+          ...(sharePayloadFiles ? { files: sharePayloadFiles } : {}),
           ...(existingOneShotUrl ? { oneShotLinkUrl: existingOneShotUrl } : {}),
           ...(singleDownloadUrl ? { downloadHref: singleDownloadUrl } : {}),
         },
+        ...(fullPackagePlan ? { fullPackagePlan } : {}),
         ...(assistedStored ? { assistedReceipt: assistedStored.receipt } : {}),
         nowIso: new Date().toISOString(),
         viewport: deliveryViewport,

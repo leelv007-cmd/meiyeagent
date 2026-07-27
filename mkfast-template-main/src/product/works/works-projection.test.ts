@@ -375,6 +375,23 @@ test('生成依据 states canonical provenance and no internal identifiers', () 
   assert.deepEqual(workEvidence(copyPackage), []);
 });
 
+test('a re-creation says what it was based on, without naming the package', () => {
+  const derived = {
+    ...notePackage,
+    source: {
+      ...notePackage.source,
+      sourceContentPackage: { id: 'package-source-1', revision: '4' },
+    },
+  };
+  const chip = workEvidence(derived).find((item) => item.id === 'lineage');
+  assert.ok(chip, '再创作 must state its lineage');
+  assert.doesNotMatch(chip.label, /package-source-1|revision/iu);
+  assert.equal(
+    workEvidence(notePackage).some((item) => item.id === 'lineage'),
+    false
+  );
+});
+
 test('an unselected identity is stated as the neutral store voice, not seeded', () => {
   const fallback = packageFixture({
     id: 'package-fallback',

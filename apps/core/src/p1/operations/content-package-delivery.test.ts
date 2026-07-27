@@ -757,6 +757,64 @@ test('merchant chips update the result ladder while verified and inferred source
   );
 });
 
+test('a backdated chip moves the signal clock without ageing the package', async () => {
+  const setup = await createSetup('assisted');
+  await setup.service.recordManualResult(context, {
+    expectedRevision: 1,
+    packageId: 'package-a',
+    platform: 'douyin',
+    status: 'published',
+    variantVersionId: 'douyin-v1',
+  });
+  const before = (await setup.repository.loadWorkspace(
+    'workspace-a'
+  ))!.contentPackages.find((candidate) => candidate.id === 'package-a')!;
+
+  // One day behind the frozen test clock (2026-07-18T07:00Z).
+  const yesterday = '2026-07-17T09:30:00.000Z';
+  const updated = await setup.service.recordResultSignal(context, {
+    expectedRevision: 2,
+    kind: 'store_visit',
+    note: '带朋友一起来的',
+    occurredAt: yesterday,
+    packageId: 'package-a',
+    quantity: 3,
+  });
+
+  const signal = updated.resultSignals?.at(-1);
+  assert.equal(signal?.occurredAt, yesterday);
+  assert.equal(signal?.quantity, 3);
+  assert.equal(signal?.note, '带朋友一起来的');
+  // The row is still written now: updatedAt must not travel backwards.
+  assert.ok(
+    updated.updatedAt >= before.updatedAt,
+    `${updated.updatedAt} < ${before.updatedAt}`
+  );
+  assert.ok(updated.updatedAt > yesterday);
+
+  // The inferred tier mirrors the merchant clock, still without causal words.
+  const results = await setup.service.results(context, 'package-a');
+  assert.equal(results.signals.inferred.at(-1)?.occurredAt, yesterday);
+  assert.match(results.signals.inferred.at(-1)?.note ?? '', /不代表.*导致/u);
+});
+
+test('an omitted occurredAt still stamps the signal now', async () => {
+  const setup = await createSetup('assisted');
+  await setup.service.recordManualResult(context, {
+    expectedRevision: 1,
+    packageId: 'package-a',
+    platform: 'douyin',
+    status: 'published',
+    variantVersionId: 'douyin-v1',
+  });
+  const updated = await setup.service.recordResultSignal(context, {
+    expectedRevision: 2,
+    kind: 'attention',
+    packageId: 'package-a',
+  });
+  assert.equal(updated.resultSignals?.at(-1)?.occurredAt, updated.updatedAt);
+});
+
 async function createSetup(
   mode: 'assisted' | 'automatic_verified',
   legacy = false,

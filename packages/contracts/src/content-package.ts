@@ -1045,6 +1045,12 @@ export const recordContentPackageResultSignalCommandSchema = z.object({
   expectedRevision: contentPackageExpectedRevisionSchema,
   kind: contentPackageResultSignalSchema.shape.kind,
   note: z.string().trim().min(1).optional(),
+  /**
+   * When the merchant says it happened — 「这是昨天的」. Absent means now.
+   * Backdating moves the signal's own clock only; the package's updatedAt and
+   * its audit row still carry the moment the row was written.
+   */
+  occurredAt: contentPackageTimestampSchema.optional(),
   packageId: contentPackageIdSchema,
   quantity: z.number().int().positive().optional(),
 });

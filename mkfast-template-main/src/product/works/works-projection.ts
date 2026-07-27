@@ -230,6 +230,11 @@ export function workEvidence(
   if (version?.source === 'merchant_edited') {
     chips.push({ id: 'edited', label: '这一版含你自己的修改' });
   }
+  // W08: a re-creation used to look exactly like a first draft. The lineage was
+  // stored on the package all along; this is the first place it is said.
+  if (contentPackage.source.sourceContentPackage) {
+    chips.push({ id: 'lineage', label: '基于你之前的一条内容再创作' });
+  }
   if (contentPackage.source.aigcLabelEnabled) {
     chips.push({ id: 'aigc', label: '已带 AI 生成标识' });
   }

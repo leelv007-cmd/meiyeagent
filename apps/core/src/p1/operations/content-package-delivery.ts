@@ -386,6 +386,7 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
       expectedRevision: number;
       kind: ContentPackageResultSignal['kind'];
       note?: string;
+      occurredAt?: string;
       packageId: string;
       quantity?: number;
     }
@@ -401,12 +402,16 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
         'Result signals can only be recorded after a published delivery event.'
       );
     }
+    // 「这是昨天的」 backdates the signal's own clock. The row is still written
+    // now, so the package's updatedAt and its audit event keep the write time —
+    // a backdated signal must never make the package look older than it is.
+    const recordedAt = this.now();
     const signal: ContentPackageResultSignal = {
       actorId: context.userId,
       id: this.id(),
       kind: input.kind,
       ...(input.note ? { note: input.note } : {}),
-      occurredAt: this.now(),
+      occurredAt: input.occurredAt ?? recordedAt,
       ...(input.quantity ? { quantity: input.quantity } : {}),
       source: 'merchant_recorded',
     };
@@ -422,14 +427,14 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
           ...current,
           resultSignals: [...(current.resultSignals ?? []), signal],
           revision: current.revision + 1,
-          updatedAt: signal.occurredAt,
+          updatedAt: recordedAt,
         };
         state.contentPackages[index] = updated;
         state.auditEvents.push(
           auditEvent(
             this.id,
             context,
-            signal.occurredAt,
+            recordedAt,
             'content_package.result_signal_recorded',
             current.id
           )
