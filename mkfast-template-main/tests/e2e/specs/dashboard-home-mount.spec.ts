@@ -123,59 +123,111 @@ async function productState(page: Page) {
 }
 
 async function seedConfirmedAssetFact(page: Page) {
-  const { workspaceId } = await productState(page);
+  const state = await productState(page);
+  const workspaceId = state.workspaceId;
+  const store = state.store;
+  const project = store?.projects.find(
+    ({ id }) => id === 'project-grounded-creation'
+  );
+  if (store?.revision === undefined || !project) {
+    throw new Error('A confirmed store project is required for fact seeding');
+  }
   const suffix = crypto.randomUUID();
   const batchId = `dashboard-home-batch-${suffix}`;
-  const candidateId = `dashboard-home-candidate-${suffix}`;
-  const factId = `dashboard-home-service-${suffix}`;
+  const serviceCandidateId = `dashboard-home-service-candidate-${suffix}`;
+  const priceCandidateId = `dashboard-home-price-candidate-${suffix}`;
   const capturedAt = new Date(Date.now() - 1_000).toISOString();
   const referenceId = `dashboard-home-reference-${suffix}`;
-  await p1Command(page, 'asset-memory', 'record_asset_intake_batch', {
-    batchId,
-    candidates: [
-      {
-        candidateId,
-        fact: {
-          effectiveFrom: capturedAt,
-          expiresAt: null,
-          key: 'service.project-grounded-creation',
-          kind: 'service',
-          scope: { storeId: workspaceId },
-          source: {
-            capturedAt,
-            kind: 'user_confirmation',
-            referenceId,
-          },
-          value: { name: '透亮猫眼' },
-        },
-        objectKind: 'store_fact',
-        status: 'pending',
-      },
-    ],
-    source: {
-      capabilityStatus: 'assisted',
-      capturedAt,
-      example: false,
-      kind: 'pasted_text',
-      referenceId,
-      sourceId: `dashboard-home-source-${suffix}`,
-      sourceWorkspaceId: workspaceId,
-    },
-    summary: '已整理出 1 项待确认服务资料。',
-    taskId: `dashboard-home-intake-${suffix}`,
-  });
-  const fact = await p1Command<{ factId: string; revision: number }>(
+  const result = await p1Command<{
+    facts: Array<{ factId: string; revision: number }>;
+  }>(
     page,
     'asset-memory',
-    'confirm_asset_intake_fact',
+    'finalize_store_intake',
     {
-      batchId,
-      candidateId,
-      expectedFactRevision: 0,
-      factId,
+      batch: {
+        batchId,
+        candidates: [
+          {
+            candidateId: serviceCandidateId,
+            fact: {
+              effectiveFrom: capturedAt,
+              expiresAt: null,
+              key: 'service.project-grounded-creation.name',
+              kind: 'service',
+              scope: { storeId: workspaceId },
+              source: {
+                capturedAt,
+                kind: 'user_confirmation',
+                referenceId,
+              },
+              value: { name: project.name },
+            },
+            objectKind: 'store_fact',
+            status: 'pending',
+          },
+          {
+            candidateId: priceCandidateId,
+            fact: {
+              effectiveFrom: capturedAt,
+              expiresAt: null,
+              key: 'service.project-grounded-creation.price',
+              kind: 'price',
+              scope: { storeId: workspaceId },
+              source: {
+                capturedAt,
+                kind: 'user_confirmation',
+                referenceId,
+              },
+              value: { amount: project.price, currency: 'CNY' },
+            },
+            objectKind: 'store_fact',
+            status: 'pending',
+          },
+        ],
+        source: {
+          capabilityStatus: 'assisted',
+          capturedAt,
+          example: false,
+          kind: 'manual',
+          referenceId,
+          sourceId: `dashboard-home-source-${suffix}`,
+          sourceWorkspaceId: workspaceId,
+        },
+        summary: '已整理出 1 项待确认服务资料和价格。',
+        taskId: `dashboard-home-intake-${suffix}`,
+      },
+      confirmations: [
+        {
+          candidateId: serviceCandidateId,
+          expectedFactRevision: 0,
+          factId: 'store-project:project-grounded-creation:service',
+        },
+        {
+          candidateId: priceCandidateId,
+          expectedFactRevision: 0,
+          factId: 'store-project:project-grounded-creation:price',
+        },
+      ],
+      profilePatch: {
+        expectedRevision: store.revision,
+        projects: { upsert: [project] },
+      },
     }
   );
-  expect(fact).toMatchObject({ factId, revision: 1 });
+  expect(result.facts).toHaveLength(2);
+  expect(result.facts).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        factId: 'store-project:project-grounded-creation:service',
+        revision: 1,
+      }),
+      expect.objectContaining({
+        factId: 'store-project:project-grounded-creation:price',
+        revision: 1,
+      }),
+    ])
+  );
 }
 
 async function creativeWorkbench(page: Page) {

@@ -281,6 +281,119 @@ test(
 );
 
 test(
+  'a mapped profile patch cannot change a project price without its StoreFact confirmation',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const environment = await createEnvironment();
+    try {
+      await seedStore(environment);
+      const input = finalizeInput(environment.context.workspaceId, {
+        profilePatch: {
+          expectedRevision: 1,
+          projects: {
+            upsert: [project('project-a', '透亮猫眼', 999)],
+          },
+        },
+      });
+      if (!('candidates' in input.batch)) throw new Error('inline batch expected');
+      const batch = input.batch;
+      input.confirmations = input.confirmations.filter(
+        (confirmation) => confirmation.factId !== 'store-project:project-a:price',
+      );
+      batch.candidates = batch.candidates.filter(
+        (candidate) =>
+          candidate.candidateId !==
+          `${batch.batchId}-store-project-project-a-price`,
+      );
+
+      await assert.rejects(
+        environment.finalizer.finalize(
+          environment.context,
+          input,
+          'project-price-profile-bypass',
+        ),
+        (error) =>
+          error instanceof StoreIntakeFinalizationError &&
+          error.code === 'STORE_FACT_MAPPING_INVALID',
+      );
+      assert.deepEqual(
+        await environment.facts.history(
+          environment.context.workspaceId,
+          'store-project:project-a:service',
+        ),
+        [],
+      );
+      assert.deepEqual(
+        await environment.facts.history(
+          environment.context.workspaceId,
+          'store-project:project-a:price',
+        ),
+        [],
+      );
+      const state = await environment.product.bootstrap({
+        ...environment.context,
+        actor: 'user',
+      });
+      assert.equal(state.store?.projects[0]?.price, 299);
+    } finally {
+      await environment.cleanup();
+    }
+  },
+);
+
+test(
+  'a mapped scalar profile patch requires its StoreFact confirmation',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const environment = await createEnvironment();
+    try {
+      await seedStore(environment);
+      const input = finalizeInput(environment.context.workspaceId, {
+        profilePatch: {
+          expectedRevision: 1,
+          name: '伪造门店名称',
+        },
+      });
+      if (!('candidates' in input.batch)) throw new Error('inline batch expected');
+      const batch = input.batch;
+      input.confirmations = input.confirmations.filter(
+        (confirmation) => confirmation.factId !== 'store-profile:name:other',
+      );
+      batch.candidates = batch.candidates.filter(
+        (candidate) =>
+          candidate.candidateId !==
+          `${batch.batchId}-store-profile-name-other`,
+      );
+
+      await assert.rejects(
+        environment.finalizer.finalize(
+          environment.context,
+          input,
+          'profile-name-bypass',
+        ),
+        (error) =>
+          error instanceof StoreIntakeFinalizationError &&
+          error.code === 'STORE_FACT_MAPPING_INVALID',
+      );
+      assert.deepEqual(
+        await environment.facts.history(
+          environment.context.workspaceId,
+          'store-project:project-a:service',
+        ),
+        [],
+      );
+      const state = await environment.product.bootstrap({
+        ...environment.context,
+        actor: 'user',
+      });
+      assert.equal(state.store?.name, '青禾美甲');
+    } finally {
+      await environment.cleanup();
+    }
+  },
+);
+
+test(
   'a confirmed service fact must equal the project name patch before either projection writes',
   { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
   async () => {
@@ -568,6 +681,22 @@ test(
         ],
         factCandidates: [
           {
+            kind: 'service',
+            key: 'service.project-a.name',
+            value: { name: '透亮猫眼' },
+            scope: {
+              storeId: environment.context.workspaceId,
+              serviceId: 'project-a',
+            },
+            source: {
+              kind: 'user_confirmation',
+              referenceId: 'client-placeholder',
+              capturedAt: now,
+            },
+            effectiveFrom: now,
+            expiresAt: null,
+          },
+          {
             kind: 'price',
             key: 'service.project-a.price',
             value: { amount: 329, currency: 'CNY' },
@@ -608,6 +737,11 @@ test(
             confirmations: [
               {
                 candidateId: promoted.candidates[0]?.candidateId,
+                factId: 'store-project:project-a:service',
+                expectedFactRevision: 0,
+              },
+              {
+                candidateId: promoted.candidates[1]?.candidateId,
                 factId: 'store-project:project-a:price',
                 expectedFactRevision: 0,
               },
@@ -1315,6 +1449,27 @@ test(
         },
       } as const;
       const existingFactId = 'store-project:project-existing:service';
+      const existingPriceCandidate = {
+        candidateId: 'existing-project-price',
+        status: 'pending',
+        objectKind: 'store_fact',
+        fact: {
+          kind: 'price',
+          key: 'service.project-existing.price',
+          value: { amount: 199, currency: 'CNY' },
+          scope: {
+            storeId: environment.context.workspaceId,
+            serviceId: 'project-existing',
+          },
+          source: {
+            kind: 'user_confirmation',
+            referenceId: 'progressive-card',
+            capturedAt: now,
+          },
+          effectiveFrom: now,
+          expiresAt: null,
+        },
+      } as const;
       await environment.finalizer.finalize(
         environment.context,
         finalizeInput(environment.context.workspaceId, {
@@ -1356,6 +1511,27 @@ test(
         },
       } as const;
       const freshFactId = 'store-project:project-fresh:service';
+      const freshPriceCandidate = {
+        candidateId: 'fresh-project-price',
+        status: 'pending',
+        objectKind: 'store_fact',
+        fact: {
+          kind: 'price',
+          key: 'service.project-fresh.price',
+          value: { amount: 299, currency: 'CNY' },
+          scope: {
+            storeId: environment.context.workspaceId,
+            serviceId: 'project-fresh',
+          },
+          source: {
+            kind: 'user_confirmation',
+            referenceId: 'progressive-card',
+            capturedAt: now,
+          },
+          effectiveFrom: now,
+          expiresAt: null,
+        },
+      } as const;
       const multi: FinalizeStoreIntakeCommand = {
         batch: {
           batchId: 'multi-preflight',
@@ -1370,7 +1546,12 @@ test(
             example: false,
           },
           summary: '两条事实一起确认。',
-          candidates: [freshCandidate, existingCandidate],
+          candidates: [
+            freshCandidate,
+            freshPriceCandidate,
+            existingCandidate,
+            existingPriceCandidate,
+          ],
         },
         confirmations: [
           {
@@ -1381,6 +1562,16 @@ test(
           {
             candidateId: existingCandidate.candidateId,
             factId: existingFactId,
+            expectedFactRevision: 0,
+          },
+          {
+            candidateId: freshPriceCandidate.candidateId,
+            factId: 'store-project:project-fresh:price',
+            expectedFactRevision: 0,
+          },
+          {
+            candidateId: existingPriceCandidate.candidateId,
+            factId: 'store-project:project-existing:price',
             expectedFactRevision: 0,
           },
         ],
@@ -1788,7 +1979,7 @@ function finalizeInput(
         expiresAt: null,
       },
     } as const);
-  return {
+  const input: FinalizeStoreIntakeCommand = {
     batch: {
       batchId: `batch-${candidate.candidateId}`,
       taskId: `task-${candidate.candidateId}`,
@@ -1815,6 +2006,119 @@ function finalizeInput(
       expectedRevision: 0,
     },
   };
+  appendMappedPatchConfirmations(input, workspaceId);
+  return input;
+}
+
+function appendMappedPatchConfirmations(
+  input: FinalizeStoreIntakeCommand,
+  workspaceId: string,
+) {
+  if (!('candidates' in input.batch)) return;
+  const batch = input.batch;
+  type JsonValue =
+    | string
+    | number
+    | boolean
+    | null
+    | JsonValue[]
+    | { [key: string]: JsonValue };
+  const add = (entry: {
+    factId: string;
+    kind: 'other' | 'fulfillment' | 'service' | 'price';
+    key: string;
+    value: JsonValue;
+    serviceId?: string;
+  }) => {
+    if (input.confirmations.some((confirmation) => confirmation.factId === entry.factId)) {
+      return;
+    }
+    const candidateId = `${batch.batchId}-${entry.factId.replaceAll(':', '-')}`;
+    batch.candidates.push({
+      candidateId,
+      status: 'pending',
+      objectKind: 'store_fact',
+      fact: {
+        kind: entry.kind,
+        key: entry.key,
+        value: entry.value,
+        scope: {
+          storeId: workspaceId,
+          ...(entry.serviceId ? { serviceId: entry.serviceId } : {}),
+        },
+        source: {
+          kind: 'user_confirmation',
+          referenceId: batch.source.referenceId,
+          capturedAt: batch.source.capturedAt,
+        },
+        effectiveFrom: batch.source.capturedAt,
+        expiresAt: null,
+      },
+    });
+    input.confirmations.push({
+      candidateId,
+      factId: entry.factId,
+      expectedFactRevision: 0,
+    });
+  };
+
+  const patch = input.profilePatch;
+  if (patch.name !== undefined) {
+    add({
+      factId: 'store-profile:name:other',
+      kind: 'other',
+      key: 'store.profile.name',
+      value: { name: patch.name },
+    });
+  }
+  if (patch.city !== undefined) {
+    add({
+      factId: 'store-profile:city:other',
+      kind: 'other',
+      key: 'store.profile.city',
+      value: { city: patch.city },
+    });
+  }
+  if (patch.district !== undefined) {
+    add({
+      factId: 'store-profile:district:other',
+      kind: 'other',
+      key: 'store.profile.district',
+      value: { district: patch.district },
+    });
+  }
+  if (patch.address !== undefined) {
+    add({
+      factId: 'store-profile:address:fulfillment',
+      kind: 'fulfillment',
+      key: 'store.fulfillment.address',
+      value: { address: patch.address },
+    });
+  }
+  if (patch.booking !== undefined) {
+    add({
+      factId: 'store-profile:booking:fulfillment',
+      kind: 'fulfillment',
+      key: 'store.fulfillment.booking',
+      value: { booking: patch.booking },
+    });
+  }
+  for (const project of patch.projects?.upsert ?? []) {
+    add({
+      factId: `store-project:${project.id}:service`,
+      kind: 'service',
+      key: `service.${project.id}.name`,
+      value: { name: project.name },
+      serviceId: project.id,
+    });
+    add({
+      factId: `store-project:${project.id}:price`,
+      kind: 'price',
+      key: `service.${project.id}.price`,
+      value: { amount: project.price, currency: 'CNY' },
+      serviceId: project.id,
+    });
+  }
 }
 
 function inlineBatch(

@@ -21,6 +21,9 @@ import {
   ParseService,
 } from './parse-service.js';
 
+// These tests invoke the trusted kernel module directly; browser callers must
+// use the mapped finalize_store_intake command instead of direct StoreFact
+// intake/confirmation commands.
 const now = '2026-07-18T06:00:00.000Z';
 const context: P1Context = {
   actor: 'owner',

@@ -6,6 +6,8 @@ import { ContextFoundationModule } from './context-foundation-module.js';
 import { MemoryStoreFactLedger } from './store-fact-ledger.js';
 import { MemoryContextSourceRevisionRepository } from './context-source-revisions.js';
 
+// These tests invoke the trusted kernel module directly; browser callers must
+// use the mapped finalize_store_intake command instead.
 const context = {
   actor: 'owner' as const,
   correlationId: 'corr-context',

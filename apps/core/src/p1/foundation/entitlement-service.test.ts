@@ -650,6 +650,99 @@ describe('ProductEntitlementApplicationService', () => {
     );
   });
 
+  it('uses the injected clock for every projection path at the plan end boundary', async () => {
+    let now = new Date('2026-07-27T00:00:00.000Z');
+    const { entitlements, payments } = services(() => now);
+    await entitlements.activatePlan(
+      owner,
+      { paymentEventId: 'boundary-plan', policy: growth },
+      'boundary-plan',
+    );
+
+    now = new Date('2026-08-01T00:00:00.000Z');
+    const addOn = {
+      amountMicros: 2_000_000,
+      currency: 'CNY',
+      paymentEventId: 'boundary-add-on',
+      purchaseId: 'boundary-add-on-purchase',
+      quantity: 1,
+      resource: 'image' as const,
+    };
+    assert.equal(
+      (await entitlements.recordAddOnPurchase(owner, addOn, 'boundary-add-on')).plan,
+      null,
+    );
+    assert.equal(
+      (
+        await entitlements.recordAddOnPurchase(
+          owner,
+          addOn,
+          'boundary-add-on-replay',
+        )
+      ).plan,
+      null,
+    );
+
+    assert.equal(
+      (
+        await entitlements.configureAutoTopUp(
+          owner,
+          {
+            enabled: true,
+            monthlyCapMicros: 10_000_000,
+            packages: {
+              copy: { quantity: 5, amountMicros: 2_000_000, currency: 'CNY' },
+            },
+          },
+          'boundary-auto-config',
+        )
+      ).plan,
+      null,
+    );
+
+    assert.equal(
+      (
+        await entitlements.autoTopUp(
+          owner,
+          { resource: 'copy', requiredAvailable: 1, month: '2026-07' },
+          'boundary-auto-top-up',
+        )
+      ).plan,
+      null,
+    );
+
+    const directPurchase = {
+      amountMicros: 2_000_000,
+      currency: 'CNY',
+      month: '2026-07',
+      paymentEventId: 'boundary-direct-auto-payment',
+      purchaseId: 'boundary-direct-auto-purchase',
+      quantity: 5,
+      resource: 'copy' as const,
+    };
+    assert.equal(
+      (
+        await entitlements.recordAutoTopUpPurchase(
+          owner,
+          directPurchase,
+          'boundary-direct-auto',
+        )
+      ).plan,
+      null,
+    );
+    assert.equal(
+      (
+        await entitlements.recordAutoTopUpPurchase(
+          owner,
+          directPurchase,
+          'boundary-direct-auto-replay',
+        )
+      ).plan,
+      null,
+    );
+    assert.equal(payments.charges().length, 1);
+  });
+
   it('does not resurrect an older plan after the latest fixed_days plan expires', async () => {
     let now = new Date('2026-07-01T00:00:00.000Z');
     const { entitlements } = services(() => now);
