@@ -12,6 +12,7 @@ import {
   structuredDecisionInputSchema,
   hasProductCapability,
   productCommandSchema,
+  publicPlanCatalogSchema,
   requiredP1Capability,
   requiredProductCommandCapability,
   type ApiEnvelope,
@@ -106,6 +107,21 @@ interface CoreServerDependencies {
   };
   harnessService?: HarnessApplicationService;
   pendingActions?: Pick<PendingActionsService, 'list'>;
+  /**
+   * Read side of the entitlement catalogue for the public pricing page (D-143).
+   * Same `plan.allowances.*` admin-config source the workspace-scoped
+   * entitlements module reads, so what a visitor is quoted and what a merchant
+   * is granted cannot drift apart.
+   */
+  planCatalog?: {
+    get(): Promise<{
+      plans: Array<{
+        id: string;
+        allowance: { copy: number; image: number; video: number };
+        concurrencyLimit: number;
+      }>;
+    }>;
+  };
   /**
    * Optional runtime-truth port for /health/ready and /capabilities.
    * Live endpoints never consult this port.
@@ -925,6 +941,7 @@ export function createCoreServer({
   contentPackageReader,
   harnessService,
   pendingActions,
+  planCatalog,
   runtimeTruth,
   serviceToken,
   workflowEvents,
@@ -1148,6 +1165,52 @@ export function createCoreServer({
         { code: 'UNAUTHORIZED_SERVICE', message: 'Invalid service identity.' },
         requestCorrelationId
       );
+      return;
+    }
+
+    // D-143 单一商品目录：the public pricing page reads the same
+    // `plan.allowances.*` admin-config revision the entitlement grant reads.
+    // Service-token gated because the browser never talks to core directly —
+    // the Web BFF fetches this for its /pricing loader.
+    if (
+      request.method === 'GET' &&
+      url.pathname === '/public/plan-catalog' &&
+      planCatalog
+    ) {
+      try {
+        const catalog = await planCatalog.get();
+        sendJson(
+          response,
+          200,
+          publicPlanCatalogSchema.parse({
+            plans: catalog.plans
+              .filter((plan) => plan.id !== 'trial')
+              .map((plan) => ({
+                id: plan.id,
+                allowance: {
+                  copy: plan.allowance.copy,
+                  image: plan.allowance.image,
+                  video: plan.allowance.video,
+                },
+                concurrencyLimit: plan.concurrencyLimit,
+              })),
+          }),
+          requestCorrelationId
+        );
+      } catch (error) {
+        sendError(
+          response,
+          500,
+          {
+            code: 'PLAN_CATALOG_UNAVAILABLE',
+            message:
+              error instanceof Error
+                ? error.message
+                : 'Plan catalogue projection failed.',
+          },
+          requestCorrelationId
+        );
+      }
       return;
     }
 

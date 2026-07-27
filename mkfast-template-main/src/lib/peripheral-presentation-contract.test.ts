@@ -81,22 +81,42 @@ test('pricing stays readable without checkout and every public pricing CTA reach
     { Pricing: LandingPricing },
     { Footer: LandingFooter },
     { Route: pricingRoute },
+    { PLAN_CATALOG_SEED },
   ] = await Promise.all([
     import('../components/landing/pricing'),
     import('../components/landing/footer'),
     import('../routes/(pages)/pricing'),
+    import('../api/plan-catalog'),
   ]);
 
   const PricingPage = pricingRoute.options.component;
   assert.ok(PricingPage);
-  const pricingHtml = renderToStaticMarkup(createElement(PricingPage));
+  // The page reads its quotas from the entitlement catalogue (D-143), so it
+  // renders through a router that serves the seed rather than standalone.
+  const pricingRootRoute = createRootRoute({ component: Outlet });
+  const pricingPageRoute = createRoute({
+    component: PricingPage,
+    getParentRoute: () => pricingRootRoute,
+    loader: () => PLAN_CATALOG_SEED,
+    path: '/pricing',
+  });
+  const pricingRouter = createRouter({
+    history: createMemoryHistory({ initialEntries: ['/pricing'] }),
+    routeTree: pricingRootRoute.addChildren([pricingPageRoute]),
+  });
+  await pricingRouter.load();
+  const pricingHtml = renderToStaticMarkup(
+    createElement(RouterProvider, { router: pricingRouter })
+  );
   assert.match(pricingHtml, /id="output-plan-heading"/u);
-  assert.match(pricingHtml, />Starter</u);
-  assert.match(pricingHtml, />Growth</u);
-  assert.match(pricingHtml, />Pro</u);
-  assert.match(pricingHtml, />30 条</u);
+  // D-123 档位命名: 初级 / 中级 / 高级.
+  assert.match(pricingHtml, />初级</u);
+  assert.match(pricingHtml, />中级</u);
+  assert.match(pricingHtml, />高级</u);
+  // D-123 文案 seed per tier, straight off the catalogue projection.
   assert.match(pricingHtml, />100 条</u);
   assert.match(pricingHtml, />300 条</u);
+  assert.match(pricingHtml, />600 条</u);
 
   const rootRoute = createRootRoute({ component: Outlet });
   const publicPageRoute = createRoute({
@@ -128,11 +148,11 @@ test('pricing stays readable without checkout and every public pricing CTA reach
   assert.doesNotMatch(ctaHtml, /<a[^>]*>[^<]*敬请期待/u);
 
   // The user's own pricing wording renders: the launch-special badge and an
-  // 升级 Growth CTA that reaches registration.
+  // upgrade CTA that reaches registration.
   assert.match(ctaHtml, />上线特惠</u);
   assert.match(
     ctaHtml,
-    /<a[^>]*href="\/auth\/register"[^>]*>升级 Growth<\/a>/u
+    /<a[^>]*href="\/auth\/register"[^>]*>升级中级套餐<\/a>/u
   );
 
   // T36 / D-124: the badge stands on the footnote's disclosure, so the rendered

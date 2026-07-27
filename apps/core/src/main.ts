@@ -1952,6 +1952,7 @@ const server = createCoreServer({
   harnessService,
   pendingActions,
   operationsService,
+  planCatalog: new AdminConfigEntitlementCatalogSource(adminConfigRepository),
   productService,
   p1ApplicationService,
   runtimeTruth,

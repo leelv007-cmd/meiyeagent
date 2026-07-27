@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import {
+  landing_ai_disclosure,
   landing_showcase_1_desc,
   landing_showcase_1_title,
   landing_showcase_2_desc,
@@ -482,6 +483,13 @@ export function ShowcaseCards(): ReactNode {
             />
           ))}
         </div>
+
+        {/* D-125 ④ / D-117: one honest AI-generation note where the samples
+            are, not a legal banner — say what made these and what to check
+            before posting. */}
+        <p className="mt-8 max-w-2xl text-sm text-muted-foreground">
+          {landing_ai_disclosure()}
+        </p>
 
         <div className="mt-12 flex justify-center sm:justify-end">
           <Link

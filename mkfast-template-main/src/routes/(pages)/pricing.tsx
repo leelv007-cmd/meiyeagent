@@ -28,18 +28,19 @@ import {
   pricing_plan_yearly_hint,
   pricing_title,
 } from '@/locale/paraglide/messages';
+import { getPublicPlanCatalog } from '@/api/plan-catalog';
 import { authClient } from '@/auth/client';
 import Container from '@/components/layout/container';
 import { CheckoutButton } from '@/components/pricing/create-checkout-button';
 import { PricingShell } from '@/components/pricing/pricing-shell';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { websiteConfig } from '@/config/website';
-import { getPricePlans } from '@/lib/price-plan';
+import { findSubscriptionPrice, formatYuan } from '@/lib/price-plan';
 import { Routes } from '@/lib/routes';
 import { seo } from '@/lib/seo';
 import { cn } from '@/lib/utils';
-import { PaymentTypes, PlanIntervals } from '@/payment/types';
-import type { Price } from '@/payment/types';
+import { PlanIntervals } from '@/payment/types';
+import type { PublicPlanOffer } from '@meiye/contracts';
 import { IconSparkles } from '@tabler/icons-react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
@@ -50,19 +51,22 @@ export const Route = createFileRoute('/(pages)/pricing')({
       title: `${pricing_title()} | ${websiteConfig.metadata?.name}`,
       description: pricing_description(),
     }),
+  // D-143: the quota numbers are read from the entitlement catalogue, not
+  // written here. Editing a plan allowance in the operations console changes
+  // what this page says, because it is the same admin-config revision.
+  loader: () => getPublicPlanCatalog(),
   component: PricingPage,
 });
 
 type PlanTier = 'free' | 'paid' | 'contact';
 
 interface DisplayPlan {
-  key: string;
+  key: PublicPlanOffer['id'];
   tier: PlanTier;
   /** config plan id backing this tier's price & checkout, when self-serve */
   configPlanId?: string;
   name: () => string;
   recommended?: boolean;
-  quota: { copy: number; image: number; video: number; concurrency: number };
 }
 
 const DISPLAY_PLANS: DisplayPlan[] = [
@@ -71,7 +75,6 @@ const DISPLAY_PLANS: DisplayPlan[] = [
     tier: 'free',
     configPlanId: 'free',
     name: pricing_output_plan_starter,
-    quota: { copy: 30, image: 10, video: 5, concurrency: 1 },
   },
   {
     key: 'growth',
@@ -79,32 +82,18 @@ const DISPLAY_PLANS: DisplayPlan[] = [
     configPlanId: 'pro',
     name: pricing_output_plan_growth,
     recommended: true,
-    quota: { copy: 100, image: 40, video: 20, concurrency: 4 },
   },
   {
     key: 'pro',
     tier: 'contact',
     name: pricing_output_plan_pro,
-    quota: { copy: 300, image: 120, video: 60, concurrency: 8 },
   },
 ];
 
-function findSubscriptionPrice(
-  configPlanId: string | undefined,
-  interval: (typeof PlanIntervals)[keyof typeof PlanIntervals]
-): Price | undefined {
-  if (!configPlanId) return undefined;
-  const plan = getPricePlans()[configPlanId];
-  return plan?.prices?.find(
-    (p) => p.type === PaymentTypes.SUBSCRIPTION && p.interval === interval
-  );
-}
-
-function toYuan(amountInCents: number): string {
-  return `¥${Math.round(amountInCents / 100)}`;
-}
-
 function PricingPage() {
+  const catalog = Route.useLoaderData();
+  const quotaFor = (key: DisplayPlan['key']) =>
+    catalog.plans.find((plan) => plan.id === key) ?? null;
   return (
     <PricingShell>
       <Container className="px-4 py-16">
@@ -124,7 +113,11 @@ function PricingPage() {
             </h2>
             <div className="grid gap-6 md:grid-cols-3">
               {DISPLAY_PLANS.map((plan) => (
-                <PlanCard key={plan.key} plan={plan} />
+                <PlanCard
+                  key={plan.key}
+                  plan={plan}
+                  quota={quotaFor(plan.key)}
+                />
               ))}
             </div>
           </section>
@@ -138,7 +131,13 @@ function PricingPage() {
   );
 }
 
-function PlanCard({ plan }: { plan: DisplayPlan }) {
+function PlanCard({
+  plan,
+  quota,
+}: {
+  plan: DisplayPlan;
+  quota: PublicPlanOffer | null;
+}) {
   return (
     <section
       aria-label={plan.name()}
@@ -166,7 +165,7 @@ function PlanCard({ plan }: { plan: DisplayPlan }) {
         <PlanPrice plan={plan} />
       </div>
 
-      <PlanQuota quota={plan.quota} />
+      {quota ? <PlanQuota quota={quota} /> : null}
 
       <div className="mt-auto space-y-2">
         <PlanCta plan={plan} />
@@ -192,7 +191,7 @@ function PlanPrice({ plan }: { plan: DisplayPlan }) {
     <div className="space-y-1">
       <p className="flex items-baseline gap-1">
         <span className="text-3xl font-semibold">
-          {monthly ? toYuan(monthly.amount) : pricing_plan_price_custom()}
+          {monthly ? formatYuan(monthly.amount) : pricing_plan_price_custom()}
         </span>
         {monthly ? (
           <span className="text-base text-muted-foreground">
@@ -211,27 +210,30 @@ function PlanPrice({ plan }: { plan: DisplayPlan }) {
   );
 }
 
-function PlanQuota({ quota }: { quota: DisplayPlan['quota'] }) {
+function PlanQuota({ quota }: { quota: PublicPlanOffer }) {
   const rows: Array<{ label: string; value: string }> = [
     {
       label: pricing_output_copy_label(),
-      value: pricing_output_copy_count({ count: quota.copy }),
+      value: pricing_output_copy_count({ count: quota.allowance.copy }),
     },
     {
       label: pricing_output_image_label(),
-      value: pricing_output_image_count({ count: quota.image }),
+      value: pricing_output_image_count({ count: quota.allowance.image }),
     },
     {
       label: pricing_output_video_label(),
-      value: pricing_output_video_count({ count: quota.video }),
+      value: pricing_output_video_count({ count: quota.allowance.video }),
     },
     {
       label: pricing_plan_concurrency_label(),
-      value: String(quota.concurrency),
+      value: String(quota.concurrencyLimit),
     },
   ];
   return (
-    <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+    <dl
+      className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm"
+      data-testid={`pricing-plan-quota-${quota.id}`}
+    >
       {rows.map((row) => (
         <div key={row.label} className="space-y-0.5">
           <dt className="text-muted-foreground">{row.label}</dt>
