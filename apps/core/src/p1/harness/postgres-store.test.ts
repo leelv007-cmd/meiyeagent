@@ -182,6 +182,10 @@ test('Langfuse dead letters use an additive terminal marker', async () => {
       'add column if not exists dead_lettered_at timestamptz',
     ),
   );
+  assert.match(
+    queries[0]?.statement ?? '',
+    /set status='dead_letter'[\s\S]*where status='failed' and dead_lettered_at is not null/u,
+  );
   assert.match(queries[1]!.statement, /dead_lettered_at=now\(\)/u);
   assert.deepEqual(queries[1]!.values, [
     'audit-1',

@@ -131,15 +131,6 @@ describe('ContentPackage lifecycle module', () => {
       ...acceptedPackage(),
       marketing: {
         scene: 'promotion_groupbuy_conversion',
-        capabilities: {
-          mainRecommendation: true,
-          platformDeliverables: true,
-          factsAndRights: true,
-          quickEdit: true,
-          publishExport: true,
-          asyncRecovery: true,
-          remix: true,
-        },
         contextBundle: {
           bundleId: 'bundle-1',
           revision: 1,
@@ -234,15 +225,6 @@ describe('ContentPackage lifecycle module', () => {
       ...acceptedPackage(),
       marketing: {
         scene: 'daily_service_exposure',
-        capabilities: {
-          mainRecommendation: true,
-          platformDeliverables: true,
-          factsAndRights: true,
-          quickEdit: true,
-          publishExport: true,
-          asyncRecovery: true,
-          remix: true,
-        },
         contextBundle: {
           bundleId: 'bundle-fixture-brief',
           revision: 1,

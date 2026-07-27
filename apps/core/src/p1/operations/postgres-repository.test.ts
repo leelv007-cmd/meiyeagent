@@ -602,6 +602,49 @@ describe(
 			);
 		});
 
+		it("removes legacy marketing evidence capabilities before strict ContentPackage reads", async () => {
+			const contentPackage = await service.createContentPackage(context, {
+				kind: "image_text",
+				source: { assetIds: [`legacy-capabilities-${workspaceId}`] },
+			});
+			const legacyPayload = {
+				...contentPackage,
+				marketing: {
+					contextBundle: {
+						bundleId: "bundle-legacy-capabilities",
+						hash: "a".repeat(64),
+						revision: 1,
+					},
+					capabilities: ["image.generate"],
+					factRefs: [],
+					identityFallback: "none" as const,
+					identityRefs: [],
+					rightsRefs: [],
+					scene: "daily_service_exposure" as const,
+				},
+			};
+			await pool.query(
+				`UPDATE p1_content_packages
+				    SET payload = $3::jsonb
+				  WHERE workspace_id = $1 AND id = $2`,
+				[workspaceId, contentPackage.id, JSON.stringify(legacyPayload)],
+			);
+
+			assert.throws(() => contentPackageSchema.parse(legacyPayload), /capabilities/u);
+			await repository.migrate();
+			const loaded = await repository.loadWorkspace(workspaceId);
+			const parsed = contentPackageSchema.parse(
+				loaded?.contentPackages.find(({ id }) => id === contentPackage.id),
+			);
+			assert.ok(parsed.marketing);
+			assert.equal(
+				(loaded?.contentPackages.find(({ id }) => id === contentPackage.id) as
+					| { marketing?: { capabilities?: unknown } }
+					| undefined)?.marketing?.capabilities,
+				undefined,
+			);
+		});
+
 		it("serializes external transaction clients with the workspace advisory lock", async () => {
 			const client = await pool.connect();
 			await client.query("BEGIN");

@@ -46,6 +46,7 @@ const SKIPPED_DIRECTORIES = new Set([
   'references',
   'output',
   '.git',
+  '.claude',
   '.scratch',
 ]);
 

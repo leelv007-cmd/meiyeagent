@@ -24,7 +24,8 @@
 |---|---|---|---|---|
 | **B-1** `RESEND_API_KEY` ＋发信域名 | 注册邮件与通知（装配门、注册承接票） | Resend API key＋一个能改 DNS 的发信域名（域名验证步骤我可以给） | 邮件落日志不真发（既有） | ☑ `live_verified` 2026-07-25T18:44:36.721Z（`tqai.uk` SPF/DKIM Verified；注册邮件真发至 Resend `delivered` 测试地址并获脱敏回执；DMARC 未配置，不设门；证据：`.scratch/provisioning-live-2026-07-25/resend-live-receipt.json`） |
 | **B-2** `CLOUDFLARE_ACCOUNT_ID`/`CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_R2_BUCKET_NAME` | R2 对象存储（媒体产物持久化，D-038 大产物对象存储）；生产/预发的 `P1_ASSET_S3_BUCKET` 必须与 `CLOUDFLARE_R2_BUCKET_NAME` 完全一致 | CF 账号已有：需建一个 R2 bucket＋签发 token（步骤我可以给） | 本地文件存储档（既有） | ☑ `live_verified` 2026-07-25T17:52:27Z（token 查询唯一 ACCOUNT_ID；目标 bucket 已存在；远端上传/下载哈希一致并删除后不可读；本地两处 env 已回填；证据：`.scratch/provisioning-live-2026-07-25/r2-live-receipt.json`） |
-| **B-3** `LANGFUSE_*` | 提示词版本化/评测（Skills、评估门） | **无需动作**——本地钉扎 compose 自生成 key；生产部署挂 E 门 | 本地 compose（既有） | ☑ 无需 live 核销（本地 compose 自供给；生产挂 E 门） |
+| **B-3** `LANGFUSE_BASE_URL`/`LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`/`LANGFUSE_PROMPT_LABEL`/`LANGFUSE_PROMPT_VERSIONS`/`LANGFUSE_REQUEST_TIMEOUT_MS` | 提示词版本化/评测（Skills、评估门） | **无需动作**——本地钉扎 compose 自生成 key；生产部署挂 E 门 | 本地 compose（既有） | ☑ 无需 live 核销（本地 compose 自供给；生产挂 E 门） |
+| **B-3a** `LANGFUSE_OUTBOX_MAX_ATTEMPTS`/`LANGFUSE_OUTBOX_RETRY_DELAY_MS`/`HARNESS_COMPENSATION_POLL_MS`/`P1_OUTBOX_CRITICAL_MAX_BACKLOG` | Langfuse outbox 重试、dead-letter 与 readiness 阈值 | **无需动作**——使用 `.env.example` 默认值；生产按告警容量调整 | 本地业务 PostgreSQL | ☑ 配置键与 `.env.example` 对齐；毒消息不自动无限重试 |
 | **B-4** `BETTER_AUTH_SECRET`/`DATABASE_URL`/`HARNESS_DBOS_*` | 认证/持久层/编排 | **无需动作**——本地生成、本地真机 PG（CI 真机 job 既有） | 本地真机 PG | ☑ 无需 live 核销（本地生成＋本车道真机 PG） |
 
 ## C. 运营供给项（数字＝运营参数，开发用种子样例值验收；D-123/D-128 口径）
@@ -37,7 +38,7 @@
 | **C-3** 试用额度默认值与开关初值 | 装配门 trial 档、示例任务真实扣点 | 一组你认可的试用额度（例：文案 X 条/图 Y 张/视频 Z 条） | 样例值 | ☑ 已定：文案 5／图 5／视频 1 |
 | **C-4** 兑换码规则（位数/批次/有效期） | 试点注册承接票（D-045/D-124 R门①） | 一句话规则即可 | 样例规则 | ☑ 已定：手动申请（运营人工发码，无自动生成规则） |
 | **C-5** 三行业示例店（行业选定＋示例素材/事实） | D-126 冷态首页票（platform_sample） | 三个行业名（建议：美发/美甲美睫/皮肤管理），有真实素材更好、没有则 AI 样例 | AI 生成样例素材 | ☑ 已定：护发／皮肤管理／生发 |
-| **C-6** 行业先验配置（今日推荐 v1） | D-126 热态推荐票（确定性规则＋行业先验受控配置） | **可后补**——先验我按行业整理初版、你审定 | 规则＋样例先验 | ☐ 可后补 |
+| **C-6** 行业先验配置（今日推荐 v1） | D-126 热态推荐票（确定性规则＋行业先验受控配置） | 已提供开发默认配置（美发/美甲/皮肤管理及三平台规则）；运营终审可继续调整 | `harness.today_recommendation` admin-config fixture | ☑ 开发默认已供给；运营终审待定 |
 | **C-7** 产品对外名称 | R 门前专项（Landing 文案/发信名/命名） | R 门收口前定稿即可，不阻塞拆票 | 占位名（现状） | ☐ 可后补 |
 
 ## D. E 门/能力门触发时另批（现在不动）

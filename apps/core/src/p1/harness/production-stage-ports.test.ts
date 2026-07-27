@@ -1610,13 +1610,13 @@ test('production ports compose #31, canonical gates, a single primary result and
   assert.equal(delivery.inputs[0]?.marketing.promotionOffer?.status, 'unpriced');
   assert.deepEqual(traces.get('intent_naming')?.metrics, {
     initial: { calls: 1, schemaValid: 1, schemaInvalid: 0 },
-    repair: { status: 'unsupported' },
+    repair: { status: 'observed', count: 0, reasons: [] },
     retry: { triggered: 0 },
     nestedCompleteness: { complete: 7, total: 7 },
   });
   assert.deepEqual(traces.get('brief_compilation')?.metrics, {
     initial: { calls: 1, schemaValid: 1, schemaInvalid: 0 },
-    repair: { status: 'unsupported' },
+    repair: { status: 'observed', count: 0, reasons: [] },
     retry: { triggered: 0 },
     nestedCompleteness: { complete: 5, total: 8 },
   });

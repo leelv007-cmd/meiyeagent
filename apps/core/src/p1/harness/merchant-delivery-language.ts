@@ -35,6 +35,10 @@ export function merchantProgressMessage(stage: HarnessStage) {
   return PROGRESS_MESSAGES[stage];
 }
 
+export function merchantSelectionWhyNow() {
+  return '这版先按你这次的要求整理，已经准备好直接使用。';
+}
+
 export function merchantIdentityVoiceNotice() {
   return '这次先用门店官方口吻生成；以后想换成你的个人口吻，直接在对话里告诉我就好。';
 }
@@ -132,6 +136,10 @@ export function merchantExactTextMismatch(input: {
   const observed =
     input.observed.length > 0 ? input.observed.join('、') : '未识别到对应文字';
   return `图片中的文字没有通过逐字核对：需要“${expected}”，实际为“${observed}”。这张图没有交付，请调整为不带价格文字，或稍后重新生成。`;
+}
+
+export function merchantExactTextVerificationUnavailable() {
+  return '这张图的文字暂时没法完成逐字核对，为了不写错没有交付。可以改成不带价格文字的图片，或稍后重新生成。';
 }
 
 export function merchantVideoGenerationFailure(

@@ -32,15 +32,6 @@ export function projectMarketingPackageEvidence(input: {
     .map((reference) => reference.id);
   const common = {
     scene,
-    capabilities: {
-      mainRecommendation: true,
-      platformDeliverables: true,
-      factsAndRights: true,
-      quickEdit: true,
-      publishExport: true,
-      asyncRecovery: true,
-      remix: true,
-    } as const,
     contextBundle: {
       bundleId: input.context.bundle.bundleId,
       revision: input.context.bundle.revision,

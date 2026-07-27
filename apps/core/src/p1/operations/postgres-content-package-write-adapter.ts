@@ -74,6 +74,12 @@ export async function installContentPackageWriteBoundary(
 ) {
   await client.query(`
     UPDATE p1_content_packages
+       SET payload = payload #- '{marketing,evidence,capabilities}'
+     WHERE payload #> '{marketing,evidence,capabilities}' IS NOT NULL;
+    UPDATE p1_content_packages
+       SET payload = payload #- '{marketing,capabilities}'
+     WHERE payload #> '{marketing,capabilities}' IS NOT NULL;
+    UPDATE p1_content_packages
        SET payload = jsonb_set(payload, '{revision}', '0'::jsonb, true)
      WHERE payload->'revision' IS NULL;
     UPDATE p1_content_packages

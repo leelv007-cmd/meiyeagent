@@ -11,7 +11,9 @@ import type { PermissionAuthorizerPort } from '../capability-permission/port.js'
 import { createDefaultDeployments } from '../model-supply/catalog.js';
 import {
   AdminConfigFoundationModule,
+  HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
   HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
+  HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
   HARNESS_WOZ_RECIPE_CONFIG_KEY,
   MemoryAdminConfigRepository,
 } from './foundation-module.js';
@@ -125,8 +127,11 @@ describe('Admin config application seam', () => {
         'compliance.regulated_mode.default',
         'compliance.watermark.default',
         'douyin.adapter.assembly',
+        HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
         HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
         NOTE_STYLE_CONFIG_KEY,
+        'harness.outbox.langfuse',
+        HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
         HARNESS_WOZ_RECIPE_CONFIG_KEY,
         ...createDefaultDeployments()
           .map(
@@ -341,6 +346,70 @@ describe('Admin config application seam', () => {
         { actorId: 'platform-admin', revision: 1, value: 30 },
         { actorId: 'platform-admin', revision: 2, value: 45 },
       ],
+    );
+  });
+
+  it('keeps the retired hold timeout writable but unwired for backward compatibility', async () => {
+    const repository = new MemoryAdminConfigRepository();
+    const service = new P1ApplicationService(new MemoryFoundationRepository(), {
+      operations: [
+        new AdminConfigFoundationModule(repository, {
+          runtime: {
+            [HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY]: 172_800,
+          },
+        }),
+      ],
+    });
+
+    await service.executeModule(
+      context,
+      'admin-config',
+      {
+        action: 'config_apply',
+        payload: {
+          key: HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
+          value: 86_400,
+          expectedRevision: null,
+          reason: 'Keep a legacy value for compatibility.',
+        },
+      },
+      'confirmation-hold-timeout-1',
+    );
+    const projected = (await service.queryModule(
+      context,
+      'admin-config',
+      {
+        action: 'config_get',
+        payload: {
+          key: HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
+        },
+      },
+    )) as {
+      effectiveValue: unknown;
+      storedValue: unknown;
+      wired: boolean;
+    };
+
+    assert.equal(projected.storedValue, 86_400);
+    assert.equal(projected.effectiveValue, 172_800);
+    assert.equal(projected.wired, false);
+    await assert.rejects(
+      service.executeModule(
+        context,
+        'admin-config',
+        {
+          action: 'config_apply',
+          payload: {
+            key: HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
+            value: 172_801,
+            expectedRevision: 1,
+            reason: 'Set an invalid confirmation hold timeout.',
+          },
+        },
+        'confirmation-hold-timeout-2',
+      ),
+      (error: unknown) =>
+        error instanceof Error && 'code' in error && error.code === 'INVALID_STATE',
     );
   });
 

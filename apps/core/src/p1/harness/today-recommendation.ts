@@ -4,6 +4,17 @@ import {
   type ContentPackage,
   type TodayRecommendationState,
 } from '@meiye/contracts';
+import type { HarnessTodayRecommendationConfig } from '../admin-config/foundation-module.js';
+
+// Today recommendation currently has no per-workspace timezone field. Keep the
+// existing merchant product convention explicit: Asia/Shanghai, with the
+// business day starting at 08:00 local time.
+// Intentional equivalence: MERCHANT_TIMEZONE_OFFSET_MS - MERCHANT_DAY_START_MS
+// === 0 because the Asia/Shanghai 08:00 business-day boundary is mathematically
+// equal to the UTC calendar-day boundary. Read this before changing either
+// constant.
+const MERCHANT_TIMEZONE_OFFSET_MS = 8 * 60 * 60 * 1000;
+const MERCHANT_DAY_START_MS = 8 * 60 * 60 * 1000;
 
 export interface TodayRecommendationRecord {
   taskId: string;
@@ -11,6 +22,8 @@ export interface TodayRecommendationRecord {
   deliveredAt: string;
   delivery: unknown;
   contentPackage: unknown;
+  intent?: unknown;
+  recommendationRules?: HarnessTodayRecommendationConfig;
   contextTrace: unknown;
   briefTrace: unknown;
   selectionTrace: unknown;
@@ -41,6 +54,7 @@ export function projectTodayRecommendation(
   ) {
     return cold(true);
   }
+  if (!isSameMerchantBusinessDay(record.deliveredAt, at)) return cold(false);
 
   const delivery = asRecord(record.delivery);
   const packageId = stringValue(delivery?.packageId);
@@ -53,7 +67,10 @@ export function projectTodayRecommendation(
   const brief = asRecord(record.briefTrace);
   const factReferences = stringArray(brief?.factRefs);
   const selection = asRecord(record.selectionTrace);
-  const whyNow = winningReason(selection);
+  const whyNow =
+    configuredWhyNow(record, at) ??
+    winningReason(selection) ??
+    mediaReplayReason(selection, contentPackage.data.kind);
   const opportunity = currentOpportunity(
     contentPackage.data.marketing?.opportunity,
     at,
@@ -91,6 +108,27 @@ export function projectTodayRecommendation(
   });
 }
 
+function configuredWhyNow(record: TodayRecommendationRecord, at: string) {
+  const rules = record.recommendationRules;
+  if (!rules) return undefined;
+
+  const intent = asRecord(record.intent);
+  const intentContext = asRecord(intent?.context) ?? intent;
+  const industry =
+    stringValue(intentContext?.industry_category) ??
+    stringValue(intentContext?.industry) ??
+    stringValue(intentContext?.scene);
+  const brief = asRecord(record.briefTrace);
+  const platform = stringArray(brief?.platforms)[0];
+  const weekday = merchantBusinessWeekday(at);
+
+  return (
+    (industry ? stringValue(rules.industryWhyNow[industry]) : undefined) ??
+    (platform ? stringValue(rules.platformWhyNow[platform]) : undefined) ??
+    (weekday ? stringValue(rules.weekdayWhyNow[weekday]) : undefined)
+  );
+}
+
 function currentOpportunity(
   opportunity:
     | NonNullable<ContentPackage['marketing']>['opportunity']
@@ -114,6 +152,47 @@ function winningReason(selection: Record<string, unknown> | undefined) {
     .map(asRecord)
     .find((candidate) => candidate?.candidateId === winner);
   return stringValue(score?.reason);
+}
+
+function mediaReplayReason(
+  selection: Record<string, unknown> | undefined,
+  kind: ContentPackage['kind'],
+) {
+  const winner = stringValue(selection?.winnerCandidateId);
+  const candidateScores = selection?.candidateScores;
+  if (!winner || !Array.isArray(candidateScores) || candidateScores.length > 0) {
+    return undefined;
+  }
+  return kind === 'video'
+    ? '这份视频成品今天已经完成，可以从这份成品继续编辑。'
+    : '这份图文成品今天已经完成，可以从这份成品继续编辑。';
+}
+
+function isSameMerchantBusinessDay(deliveredAt: string, at: string) {
+  const deliveredDate = merchantBusinessCalendarDate(deliveredAt);
+  const currentDate = merchantBusinessCalendarDate(at);
+  return deliveredDate !== undefined && deliveredDate === currentDate;
+}
+
+function merchantBusinessCalendarDate(value: string) {
+  const timestamp = merchantBusinessTimestamp(value);
+  return timestamp === undefined
+    ? undefined
+    : new Date(timestamp).toISOString().slice(0, 10);
+}
+
+function merchantBusinessWeekday(value: string) {
+  const timestamp = merchantBusinessTimestamp(value);
+  return timestamp === undefined
+    ? undefined
+    : String(new Date(timestamp).getUTCDay() || 7);
+}
+
+function merchantBusinessTimestamp(value: string) {
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp)
+    ? timestamp + MERCHANT_TIMEZONE_OFFSET_MS - MERCHANT_DAY_START_MS
+    : undefined;
 }
 
 function stringArray(value: unknown) {

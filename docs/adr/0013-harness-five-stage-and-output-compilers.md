@@ -10,7 +10,11 @@ Status: accepted (2026-07-24)
 
 ## Decision
 
-**五段状态机（D-033，DBOS 承载 D-041）**：①意图正名（LLM：模糊一句话→结构化任务声明）→②上下文注入（确定性：六维编译→不可变 ContextBundle）→③Brief 编译（LLM：每执行单元完整 brief）→④执行与择优→⑤回装与交付（组装回 ContentPackage revision）。DBOS Transact 为唯一 durable 载体，workflowID=TaskID；不叠第二运行时。
+**五段状态机（D-033，DBOS 承载 D-041）**：①意图正名（LLM：模糊一句话→结构化任务声明）→②上下文注入（确定性：六维编译→不可变 ContextBundle）→③Brief 编译（LLM：每执行单元完整 brief）→④执行与择优→⑤回装与交付（组装回 ContentPackage revision）。DBOS Transact 是五段编排控制流的权威 durable 载体，workflowID=TaskID；它不取代执行队列、业务状态表或交付 outbox。
+
+**分层载体边界（H03）**：DBOS 负责五段控制流、超时、恢复和 `send/recv` 等编排语义；pg-boss 只负责媒体等执行子任务的排队、租约、重试与 DLQ；模型供应业务表保存 job/attempt/asset/退款所需事实；outbox 只负责向外部通知、投影和交付。pg-boss 终态通过幂等 `DBOS.send` 回到原 workflow，workflow 在编排层 `DBOS.recv` 后再读取同一 job，不重新提交 provider 效果。
+
+**④段等待实现（H03）**：媒体 job 提交/读取同一幂等 job 后，pg-boss 终态通过定向 `DBOS.send` 发送到 `harness-media-job:<jobId>`，④段在 workflow 层 `DBOS.recv` 后再 reconcile，不在 step 内轮询 provider。图文笔记页的 admission 竞争则由单个带稳定效果键的 `DBOS.runStep` 承载有界 claim 轮询，最长 300 秒（1200×250ms）；该 step 内不挂起等待，抢不到即返回 reconciliation-pending。非 DBOS 调用方没有 durable step 能力时只做一次即时 claim，忙时快速返回 202。终态定向 send、step 内有界轮询与 generation fencing 共同覆盖恢复和旧写拒绝。
 
 **确定性骨架＋段内智能（D-112）**：五段是 DBOS 确定性状态机；段内为受限 agent loop（控制 LLM 理解/规划/allowlist 内调工具/自检）。阶段分支由 LLM 输出**结构化判断信号**，Workflow 按预置条件边执行转移——LLM 出判断、状态机执行，LLM 永不直接驱动转移。硬编码兜底只保四类底线：忠实性（按 ADR-0018 收窄口径）、权利授权、产品额度、外部发布确认。platform 拆双字段 `contentPackagePlatform × distributionTarget`，用户确认的选择进提交 Body→服务端签名→admission 冻结。v1 `contentPackagePlatform` 集合＝小红书/抖音/视频号三平台；朋友圈（wechat_moments）＝仅 `distributionTarget`（导出＋assisted 交付，不做平台化变体主体）——D-128。
 
@@ -32,6 +36,11 @@ Status: accepted (2026-07-24)
 ## 实施红线
 
 - 禁止为任何轻链路另立旁路系统或第二套提交/结果真相。
+- `DBOS.runStep` 只能包围可重放且带效果键的外部效果；禁止在 step 内调用 `DBOS.recv`，也禁止在 step 内对 provider job 或 outbox 自旋轮询。唯一例外是图文笔记 admission 的 300 秒有界 claim 轮询，它只重试业务状态 claim，不等待 provider 终态；provider 终态等待仍由 workflow 编排层 `DBOS.recv`（必要时带明确 deadline）承载，终态通知必须幂等。
 - step 纯函数内核、at-least-once 幂等、大产物走对象存储、⑤段 OCC fencing（D-038）；测试永不 import durable 载体。
 - LLM 判断信号必须是结构化输出；场景规则退位给 LLM 判断＋确定性兜底，不新增硬编码业务分支。
 - 编译器内部封装段位重量差异，骨架与三进三出合同（D-032）对外统一。
+
+## Graphile Worker 去留
+
+Graphile Worker 不是生产运行时：`main.ts` 与 `job-worker.ts` 只构造 pg-boss。当前仍保留 `graphile-worker@0.17.3`、比较适配器及其 focused/integration tests，理由是它们是可执行的运行时选型证据，记录 pg-boss 的 lease、cron、DLQ、取消和观测性差异；这不是双活队列。若未来不再需要该证据，必须同时删除适配器、测试、比较记录和依赖，不能把它留成未声明的死依赖。

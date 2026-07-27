@@ -32,15 +32,6 @@ function historicalPackage(
     kind: 'image_text',
     lineage: {},
     marketing: {
-      capabilities: {
-        asyncRecovery: true,
-        factsAndRights: true,
-        mainRecommendation: true,
-        platformDeliverables: true,
-        publishExport: true,
-        quickEdit: true,
-        remix: true,
-      },
       contextBundle: {
         bundleId: 'bundle-1',
         hash: 'a'.repeat(64),

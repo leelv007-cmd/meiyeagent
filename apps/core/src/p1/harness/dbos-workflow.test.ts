@@ -6,9 +6,11 @@ import {
   confirmationCardDecision,
   failHarnessWorkflowPreservingExecutionError,
   harnessBillingSettlementInput,
+  readConfirmationCardTimeoutSeconds,
   settleHarnessCancellation,
   type HarnessBillingSettlementPort,
 } from './dbos-workflow.js';
+import type { AdminConfigRepository } from '../admin-config/foundation-module.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 import { HarnessWorkflowCancellation } from './workflow-core.js';
 
@@ -18,6 +20,32 @@ const settlement = {
   quoteId: 'quote-billing-failure',
   quoteRevision: 'quote-revision-1',
 };
+
+test('confirmation-card continuation waits read the admin-config timeout', async () => {
+  const values = new Map([['harness.confirmation_card.timeout_seconds', 45]]);
+  const config: Pick<AdminConfigRepository, 'get'> = {
+    async get(_scope: 'global', _workspaceId: string, key: string) {
+      const value = values.get(key);
+      return value === undefined
+        ? null
+        : {
+            key,
+            scope: 'global' as const,
+            workspaceId: '__global__',
+            value,
+            revision: 1,
+            status: 'applied' as const,
+            rolledBackToRevision: null,
+            actorId: 'test',
+            reason: 'test',
+            correlationId: `test:${key}`,
+            createdAt: '2026-07-18T00:00:00.000Z',
+          };
+    },
+  };
+
+  assert.equal(await readConfirmationCardTimeoutSeconds(config), 45);
+});
 
 test('confirmation timeout becomes a legal ignored decision', () => {
   assert.deepEqual(

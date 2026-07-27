@@ -330,7 +330,7 @@ test('prompt fallback fact reaches the Langfuse span without prompt content', as
 test('local structured-node sample exports identical four metrics and prompt-version dataset item', async (t) => {
   const localSnapshot = {
     initial: { calls: 4, schemaValid: 3, schemaInvalid: 1 },
-    repair: { status: 'unsupported' as const },
+    repair: { status: 'observed' as const, count: 1, reasons: ['schema_validation'] },
     retry: { triggered: 2 },
     nestedCompleteness: { complete: 18, total: 24 },
   };
@@ -396,11 +396,13 @@ test('local structured-node sample exports identical four metrics and prompt-ver
       },
       {
         name: 'harness.repair.call_rate',
-        value: 'unsupported',
+        value: 0.25,
         metadata: {
           promptName: 'harness/intent-naming',
           promptVersion: '7',
-          status: 'unsupported',
+          numerator: 1,
+          denominator: 4,
+          reasons: ['schema_validation'],
         },
       },
       {

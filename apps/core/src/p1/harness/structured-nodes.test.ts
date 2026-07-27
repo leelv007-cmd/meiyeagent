@@ -65,12 +65,139 @@ test('intent naming covers five task types across both delivery layers', async (
       );
       assert.deepEqual(metrics.snapshot(), {
         initial: { calls: 1, schemaValid: 1, schemaInvalid: 0 },
-        repair: { status: 'unsupported' },
+        repair: { status: 'observed', count: 0, reasons: [] },
         retry: { triggered: 0 },
         nestedCompleteness: { complete: 7, total: 7 },
       });
     }
   }
+});
+
+test('repair metrics observe a runner callback without counting attempts as repair', async () => {
+  const metrics = new InMemoryStructuredNodeMetrics();
+  await nameHarnessIntent(
+    {
+      workflowId: 'workflow-repair-callback',
+      workflowRevision: 1,
+      intent: {
+        context: {
+          workId: 'work-repair-callback',
+          intent: '介绍日常护理',
+          sourceSummaries: [],
+        },
+        assetReferences: [],
+      },
+    },
+    new FixtureStructuredNodeRunner(
+      {
+        normalizedIntent: '介绍日常护理',
+        taskType: 'daily_service_exposure',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['industry_category'],
+        usedAssetCategories: ['industry_category'],
+        route: 'customized',
+        implicitConstraints: [],
+        blockingGap: null,
+      },
+      { attempts: 3, repairReasons: ['schema_validation'] },
+    ),
+    metrics,
+  );
+
+  assert.deepEqual(metrics.snapshot().repair, {
+    status: 'observed',
+    count: 1,
+    reasons: ['schema_validation'],
+  });
+  assert.deepEqual(metrics.snapshot().retry, { triggered: 2 });
+});
+
+test('repair metrics preserve multiple runner-result reasons independently from retry', async () => {
+  const metrics = new InMemoryStructuredNodeMetrics();
+  await nameHarnessIntent(
+    {
+      workflowId: 'workflow-repair-result',
+      workflowRevision: 1,
+      intent: {
+        context: {
+          workId: 'work-repair-result',
+          intent: '介绍日常护理',
+          sourceSummaries: [],
+        },
+        assetReferences: [],
+      },
+    },
+    new FixtureStructuredNodeRunner(
+      {
+        normalizedIntent: '介绍日常护理',
+        taskType: 'daily_service_exposure',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['industry_category'],
+        usedAssetCategories: ['industry_category'],
+        route: 'customized',
+        implicitConstraints: [],
+        blockingGap: null,
+      },
+      {
+        attempts: 2,
+        resultRepair: {
+          count: 2,
+          reasons: ['malformed_json', 'schema_validation'],
+        },
+      },
+    ),
+    metrics,
+  );
+
+  assert.deepEqual(metrics.snapshot().repair, {
+    status: 'observed',
+    count: 2,
+    reasons: ['malformed_json', 'schema_validation'],
+  });
+  assert.deepEqual(metrics.snapshot().retry, { triggered: 1 });
+});
+
+test('invalid repair callback events fail closed instead of entering model fallback', async () => {
+  const metrics = new InMemoryStructuredNodeMetrics();
+  const runner = new FixtureStructuredNodeRunner(
+    {
+      normalizedIntent: '介绍日常护理',
+      taskType: 'daily_service_exposure',
+      deliveryLayer: 'copy',
+      relevantAssetCategories: ['industry_category'],
+      usedAssetCategories: ['industry_category'],
+      route: 'customized',
+      implicitConstraints: [],
+      blockingGap: null,
+    },
+    { repairReasons: [''] },
+  );
+
+  await assert.rejects(
+    nameHarnessIntent(
+      {
+        workflowId: 'workflow-repair-invalid-callback',
+        workflowRevision: 1,
+        intent: {
+          context: {
+            workId: 'work-repair-invalid-callback',
+            intent: '介绍日常护理',
+            sourceSummaries: [],
+          },
+          assetReferences: [],
+        },
+      },
+      runner,
+      metrics,
+    ),
+    /repair event reason/u,
+  );
+  assert.equal(metrics.snapshot().initial.calls, 0);
+  assert.deepEqual(metrics.snapshot().repair, {
+    status: 'observed',
+    count: 0,
+    reasons: [],
+  });
 });
 
 test('intent naming turns one blocking gap into one QuestionCard', async () => {
@@ -412,6 +539,104 @@ test('brief compilation exposes only fact refs authorized by satisfaction', asyn
     { factId: 'service-1', revision: 1 },
   ]);
   assert.doesNotMatch(JSON.stringify(prompt), /price-1|398/u);
+});
+
+test('brief compilation keeps current facts separate from instruction contributions', async () => {
+  const bundle = contextBundleFixture();
+  bundle.referencedFactRevisions = [
+    { factId: 'service-1', revision: 1 },
+    { factId: 'price-1', revision: 1 },
+  ];
+  const price = {
+    ...factContribution('price-1', 'price', 398),
+    layer: 'current_instruction' as const,
+  };
+  bundle.dimensions.store_facts_assets = {
+    service: factContribution('service-1', 'service', '头皮清洁护理'),
+    price,
+  };
+  const runner = new FixtureStructuredNodeRunner({
+    kind: 'copy',
+    instructions:
+        '只使用当前已确认的服务事实完成介绍，不将用户上传中的价格当作已确认事实。'.repeat(
+        4,
+      ),
+    platform: 'xiaohongshu',
+    cta: '私信咨询',
+    factRefs: ['store_fact:service-1:1'],
+    assetRefs: [],
+    identityRefs: [],
+    constraints: ['不得引用未确认价格'],
+  });
+
+  await compileExecutionBrief(
+    {
+      workflowId: 'workflow-layered-facts',
+      unitId: 'copy-primary',
+      unitKind: 'copy',
+      declaration: {
+        normalizedIntent: '介绍护理服务',
+        taskType: 'daily_service_exposure',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['product_service'],
+        usedAssetCategories: ['product_service'],
+        route: 'customized',
+        routingSource: 'model',
+        implicitConstraints: [],
+      },
+      bundle,
+    },
+    runner,
+  );
+
+  const prompt = JSON.parse(runner.requests[0]?.prompt ?? '{}');
+  assert.deepEqual(
+    Object.keys(prompt.bundle.dimensions.store_facts_assets),
+    ['service'],
+  );
+  assert.deepEqual(prompt.bundle.referencedFactRevisions, [
+    { factId: 'service-1', revision: 1 },
+  ]);
+  assert.doesNotMatch(JSON.stringify(prompt), /price-1|398/u);
+});
+
+test('copy brief model failure uses a conservative brief and reports degradation', async () => {
+  let fallbackReason: string | undefined;
+  const runner: StructuredNodeRunner = {
+    async run() {
+      throw new StructuredNodeRunError('failed', {} as never);
+    },
+  };
+  const brief = await compileExecutionBrief(
+    {
+      workflowId: 'workflow-brief-fallback',
+      unitId: 'copy-primary',
+      unitKind: 'copy',
+      declaration: {
+        normalizedIntent: '介绍护理服务并邀请预约',
+        taskType: 'daily_service_exposure',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['product_service'],
+        usedAssetCategories: ['product_service'],
+        route: 'customized',
+        routingSource: 'model',
+        implicitConstraints: [],
+      },
+      bundle: contextBundleFixture(),
+    },
+    runner,
+    undefined,
+    (input) => {
+      fallbackReason = input.reason;
+    },
+  );
+
+  assert.equal(brief.kind, 'copy');
+  assert.deepEqual(brief.factRefs, []);
+  assert.deepEqual(brief.assetRefs, []);
+  assert.deepEqual(brief.identityRefs, []);
+    assert.match(brief.instructions, /只写输入里可以核对的内容/u);
+  assert.equal(fallbackReason, 'structured_brief_unavailable');
 });
 
 test('brief compilation receives the frozen structured Composer contract before model output', async () => {
@@ -841,7 +1066,7 @@ test('invalid model output falls back to conservative guidance', async () => {
   assert.equal(named.fallbackUsed, true);
   assert.deepEqual(metrics.snapshot(), {
     initial: { calls: 1, schemaValid: 0, schemaInvalid: 1 },
-    repair: { status: 'unsupported' },
+    repair: { status: 'observed', count: 0, reasons: [] },
     retry: { triggered: 0 },
     nestedCompleteness: { complete: 0, total: 7 },
   });
@@ -850,16 +1075,29 @@ test('invalid model output falls back to conservative guidance', async () => {
 class FixtureStructuredNodeRunner implements StructuredNodeRunner {
   readonly requests: StructuredNodeRunnerRequest<unknown>[] = [];
 
-  constructor(private readonly output: unknown) {}
+  constructor(
+    private readonly output: unknown,
+    private readonly options: {
+      attempts?: number;
+      repairReasons?: string[];
+      resultRepair?: { count: number; reasons: string[] };
+    } = {},
+  ) {}
 
   async run<Output>(request: StructuredNodeRunnerRequest<Output>) {
     this.requests.push(request as StructuredNodeRunnerRequest<unknown>);
+    for (const reason of this.options.repairReasons ?? []) {
+      request.onRepair?.({ reason });
+    }
     return {
       output: request.schema.parse(this.output),
-      attempts: 1,
+      attempts: this.options.attempts ?? 1,
       providerTaskRef: 'fixture-structured-task',
       replayed: false,
       usage: { inputTokens: 10, outputTokens: 20 },
+      ...(this.options.resultRepair
+        ? { repair: this.options.resultRepair }
+        : {}),
     };
   }
 }

@@ -644,19 +644,29 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 		brief: partialBrief,
 		selection: {
 			...baseSelection,
-			partial: { unresolvedPageIds: [unresolvedPageId] },
+			version: {
+				...baseSelection.version,
+				evaluation: {
+					...baseSelection.version.evaluation!,
+					regenerationPageIds: [unresolvedPageId],
+				},
+			},
+			partial: {
+				unresolvedPageIds: [unresolvedPageId],
+				reason: "consistency_remained_incomplete",
+			},
 		},
 	});
 	const partialVersion = writer
 		.get("workspace-1", partialPackageId)
 		?.versions.find(({ harnessCandidateId }) => harnessCandidateId === "story");
 	const partialPages = partialVersion?.body.split("\n\n") ?? [];
-	assert.equal(partialPages.length, 2);
+	assert.ok(partialPages.length >= baseSelection.version.plan.pages.length);
 	assert.ok(
 		!partialPages[0]?.includes("还没对上"),
 		"the page that came out right is left alone",
 	);
-	assert.match(partialPages[1] ?? "", /还没对上/u);
+	assert.match(partialPages.at(-1) ?? "", /还没对上/u);
 });
 
 test("media delivery blocks malicious visible copy before the canonical writer", async () => {
@@ -1054,7 +1064,6 @@ test("note pages keep durable admission single-flight while compiler branches re
 	const first = completedResult("image", "1");
 	const second = completedResult("image", "2");
 	let submissions = 0;
-	let firstReads = 0;
 	const adapter = new ModelSupplyHarnessMediaExecutionPort(
 		{
 			async submit() {
@@ -1067,13 +1076,6 @@ test("note pages keep durable admission single-flight while compiler branches re
 			},
 			async getDurableMediaJob(_workspaceId, jobId) {
 				assert.equal(jobId, first.jobId);
-				firstReads += 1;
-				if (firstReads === 1) {
-					events.push("get:1:running");
-					return {
-						result: { ...first, status: "unknown", asset: undefined },
-					};
-				}
 				events.push("get:1:completed");
 				return { result: first };
 			},
@@ -1089,12 +1091,19 @@ test("note pages keep durable admission single-flight while compiler branches re
 			context: contextSnapshot(),
 			request,
 			workflowId: "workflow-note:page-1",
+			awaitSignal: async () => {},
 		}),
 		adapter.execute({
 			brief: imageBriefFor("image.generate", 0),
 			context: contextSnapshot(),
 			request,
 			workflowId: "workflow-note:page-2",
+			awaitSignal: async () => {
+				while (!events.includes("completed:g1")) {
+					await new Promise<void>((resolve) => setImmediate(resolve));
+				}
+			},
+			runStep: async (_effectKey, operation) => operation(),
 		}),
 	]);
 
@@ -1105,8 +1114,6 @@ test("note pages keep durable admission single-flight while compiler branches re
 		"blocked:workflow-note:page-2",
 		"submit:1",
 		"running:g1",
-		"get:1:running",
-		"blocked:workflow-note:page-2",
 		"get:1:completed",
 		"completed:g1",
 		"claim:workflow-note:page-2:g2",
@@ -1114,6 +1121,104 @@ test("note pages keep durable admission single-flight while compiler branches re
 		"running:g2",
 		"completed:g2",
 	]);
+});
+
+test("a competing note workflow polls inside one durable admission effect", async () => {
+	const events: string[] = [];
+	const first = completedResult("image", "1");
+	const second = completedResult("image", "2");
+	let submissions = 0;
+	const effectKeys: string[] = [];
+	const adapter = new ModelSupplyHarnessMediaExecutionPort(
+		{
+			async submit() {
+				submissions += 1;
+				if (submissions === 1) {
+					return { ...first, status: "unknown", asset: undefined };
+				}
+				return second;
+			},
+			async getDurableMediaJob(_workspaceId, jobId) {
+				assert.equal(jobId, first.jobId);
+				return { result: first };
+			},
+		},
+		undefined,
+		memoryNoteAdmission(events),
+	);
+	const request = harnessInput("image_text_note", "package-note-durable");
+
+	const [firstSelection, secondSelection] = await Promise.all([
+		adapter.execute({
+			brief: imageBriefFor("image.generate", 0),
+			context: contextSnapshot(),
+			request,
+			workflowId: "workflow-note:page-1",
+		}),
+		adapter.execute({
+			brief: imageBriefFor("image.generate", 0),
+			context: contextSnapshot(),
+			request,
+			workflowId: "workflow-note:page-2",
+			runStep: async (effectKey, operation) => {
+				effectKeys.push(effectKey);
+				return operation();
+			},
+		}),
+	]);
+
+	assert.equal(firstSelection.asset.id, "image-asset-1");
+	assert.equal(secondSelection.asset.id, "image-asset-2");
+	assert.deepEqual(
+		effectKeys.map((key) => key.split(":", 1)[0]),
+		["admission-claim", "submit", "admission-running", "admission-terminal"],
+	);
+	assert.deepEqual(events.slice(0, 2), [
+		"claim:workflow-note:page-1:g1",
+		"blocked:workflow-note:page-2",
+	]);
+});
+
+test("a busy note admission without a durable step returns 202 immediately", async () => {
+	let claimCalls = 0;
+	let submissions = 0;
+	const blockedAdmission: NoteMediaAdmissionPort = {
+		async claim() {
+			claimCalls += 1;
+			return null;
+		},
+		async markRunning() {
+			throw new Error("markRunning must not run without a claim");
+		},
+		async markTerminal() {
+			throw new Error("markTerminal must not run without a claim");
+		},
+	};
+	const adapter = new ModelSupplyHarnessMediaExecutionPort(
+		{
+			async submit() {
+				submissions += 1;
+				return completedResult("image");
+			},
+		},
+		undefined,
+		blockedAdmission,
+	);
+
+	await assert.rejects(
+		adapter.execute({
+			brief: imageBriefFor("image.generate", 0),
+			context: contextSnapshot(),
+			request: harnessInput("image_text_note", "package-note-fast-202"),
+			workflowId: "workflow-note:busy-fast-202",
+		}),
+		(error: unknown) =>
+			error instanceof HarnessMediaExecutionError &&
+				error.code === "MEDIA_RECONCILIATION_PENDING" &&
+				error.status === 202,
+	);
+	assert.equal(claimCalls, 1);
+	assert.equal(submissions, 0);
 });
 
 test("exact text blocks the first image, retries once, and keeps both provider costs without job-side debit flags", async () => {

@@ -14,18 +14,6 @@ export const MARKETING_SCENES = [
 
 export const marketingSceneSchema = z.enum(MARKETING_SCENES);
 
-export const marketingPackageCapabilitiesSchema = z
-  .object({
-    mainRecommendation: z.literal(true),
-    platformDeliverables: z.literal(true),
-    factsAndRights: z.literal(true),
-    quickEdit: z.literal(true),
-    publishExport: z.literal(true),
-    asyncRecovery: z.literal(true),
-    remix: z.literal(true),
-  })
-  .strict();
-
 export const promotionCallToActionSchema = z
   .object({
     kind: z.enum(['appointment', 'voucher', 'store_visit', 'contact', 'none']),
@@ -550,7 +538,6 @@ export const quickEditExportUseDeliverySchema = z.discriminatedUnion('kind', [
 export const marketingPackageEvidenceSchema = z
   .object({
     scene: marketingSceneSchema,
-    capabilities: marketingPackageCapabilitiesSchema,
     contextBundle: z
       .object({
         bundleId: idSchema,

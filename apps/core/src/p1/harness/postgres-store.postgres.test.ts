@@ -13,6 +13,44 @@ import { HarnessTaskAdmissionService } from './task-admission.js';
 const connectionString = process.env.TEST_DATABASE_URL;
 
 test(
+  'Postgres harness schema backfills legacy failed dead letters',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresHarnessStore(pool);
+    const auditId = `legacy-dead-letter-${randomUUID()}`;
+    try {
+      await store.applySchema();
+      await pool.query(
+        `insert into harness_runtime.audit_events
+           (id, workflow_id, stage, event_type, payload)
+         values ($1, 'legacy-workflow', 'execution_selection', 'legacy', '{}'::jsonb)`,
+        [auditId],
+      );
+      await pool.query(
+        `insert into harness_runtime.langfuse_outbox
+           (audit_id, status, dead_lettered_at)
+         values ($1, 'failed', now())`,
+        [auditId],
+      );
+
+      await store.applySchema();
+      const migrated = await pool.query<{ status: string }>(
+        `select status from harness_runtime.langfuse_outbox where audit_id=$1`,
+        [auditId],
+      );
+      assert.equal(migrated.rows[0]?.status, 'dead_letter');
+    } finally {
+      await pool.query(
+        'delete from harness_runtime.audit_events where id=$1',
+        [auditId],
+      );
+      await pool.end();
+    }
+  },
+);
+
+test(
   'Postgres harness store atomically owns requests, decisions, traces and outbox',
   { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
   async () => {
@@ -249,8 +287,53 @@ test(
         [retriedItem.auditId]
       );
       assert.equal(outbox.rows[0]?.status, 'sent');
-      await store.markLangfuseDeadLetter(
+      await store.markLangfuseFailed(
         deadLetterItem.auditId,
+        'temporary failure',
+        new Date(0),
+      );
+      for (let expectedAttempts = 2; expectedAttempts < 8; expectedAttempts += 1) {
+        const retry = await store.claimLangfuseBatch(1, 300, 8);
+        const retryItem: (typeof retry)[number] | undefined = retry.find(
+          (item) => item.auditId === deadLetterItem.auditId,
+        );
+        assert.ok(retryItem);
+        assert.equal(retryItem.attempts, expectedAttempts);
+        await store.markLangfuseFailed(
+          retryItem.auditId,
+          'temporary failure',
+          new Date(0),
+        );
+        const beforeLimit: {
+          rows: Array<{
+            status: string;
+            attempts: number;
+            dead_lettered_at: Date | null;
+          }>;
+        } = await pool.query<{
+          status: string;
+          attempts: number;
+          dead_lettered_at: Date | null;
+        }>(
+          `select status, attempts, dead_lettered_at
+           from harness_runtime.langfuse_outbox
+           where audit_id=$1`,
+          [deadLetterItem.auditId],
+        );
+        assert.deepEqual(beforeLimit.rows[0], {
+          status: 'failed',
+          attempts: expectedAttempts,
+          dead_lettered_at: null,
+        });
+      }
+      const finalAttempt = await store.claimLangfuseBatch(1, 300, 8);
+      const finalAttemptItem = finalAttempt.find(
+        (item) => item.auditId === deadLetterItem.auditId,
+      );
+      assert.ok(finalAttemptItem);
+      assert.equal(finalAttemptItem.attempts, 8);
+      await store.markLangfuseDeadLetter(
+        finalAttemptItem.auditId,
         'attempt limit reached',
       );
       const deadLetter = await pool.query<{
@@ -262,7 +345,7 @@ test(
          where audit_id=$1`,
         [deadLetterItem.auditId],
       );
-      assert.equal(deadLetter.rows[0]?.status, 'failed');
+      assert.equal(deadLetter.rows[0]?.status, 'dead_letter');
       assert.ok(deadLetter.rows[0]?.dead_lettered_at);
       const afterDeadLetter = await store.claimLangfuseBatch(
         ownAuditIds.length,

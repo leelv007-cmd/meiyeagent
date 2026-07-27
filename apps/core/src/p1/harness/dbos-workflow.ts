@@ -11,6 +11,7 @@ import {
 import {
   HarnessWorkflowCancellation,
   runHarnessWorkflow,
+  harnessMediaJobTopic,
   type HarnessStagePorts,
   type HarnessWorkflowRuntime,
 } from './workflow-core.js';
@@ -72,10 +73,10 @@ export interface HarnessBillingSettlementPort
 }
 
 const PROGRESS_STREAM = 'progress';
-const DECISION_TIMEOUT_SECONDS = 48 * 60 * 60;
+export const DEFAULT_CONFIRMATION_CARD_HOLD_TIMEOUT_SECONDS = 48 * 60 * 60;
 export const DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS = 30;
 
-async function readConfirmationCardTimeoutSeconds(
+export async function readConfirmationCardTimeoutSeconds(
   config?: Pick<AdminConfigRepository, 'get'>,
 ) {
   const configured = (
@@ -108,8 +109,7 @@ export function registerHarnessDbosWorkflow(
   semanticResumptions?: HarnessSemanticDecisionResumptionStore,
   billing?: HarnessBillingSettlementPort,
   config?: Pick<AdminConfigRepository, 'get'>,
-  decisions?: Pick<HarnessDecisionService, 'submitCoreTimeout'> &
-    Partial<Pick<HarnessDecisionService, 'submitCoreHoldExpired'>>,
+  decisions?: Pick<HarnessDecisionService, 'submitCoreTimeout'>,
 ) {
   const workflow = async (input: HarnessDbosWorkflowInput) => {
     const runtimeWorkflowId = DBOS.workflowID;
@@ -125,6 +125,14 @@ export function registerHarnessDbosWorkflow(
         return DBOS.runStep(operation, {
           name: effectIdempotencyKey.replaceAll(':', '-'),
         });
+      },
+      awaitSignal<T>(
+        topic: string,
+        options: { timeoutSeconds: number },
+      ) {
+        // DBOS.recv is an orchestration operation. It must stay outside every
+        // DBOS.runStep so a pending provider job suspends the workflow.
+        return DBOS.recv<T>(topic, options);
       },
       async progress(event) {
         const occurredAt = new Date(await DBOS.now()).toISOString();
@@ -175,7 +183,9 @@ export function registerHarnessDbosWorkflow(
               question,
               { timeoutSeconds },
             );
-            return registered ?? { timeoutSeconds };
+            return {
+              ...(registered ?? { timeoutSeconds }),
+            };
           },
           { name: `persist-pending-${question.questionId}` },
         );
@@ -187,47 +197,16 @@ export function registerHarnessDbosWorkflow(
           };
         }
         if (question.unattended !== 'continue') {
-          const decision = await waitForHeldDecision(question);
-          if (decision) {
-            return {
-              command: decision,
-              resolutionSource: 'decision' as const,
-            };
-          }
-          const submitCoreHoldExpired =
-            decisions?.submitCoreHoldExpired?.bind(decisions);
-          if (!submitCoreHoldExpired) {
-            throw new Error('Held decision expiry persistence is unavailable.');
-          }
-          const command = confirmationCardHoldExpired(question);
-          const persisted = await DBOS.runStep(
-            () =>
-              submitCoreHoldExpired(
-                request.workspaceId,
-                workflowId,
-                command,
-              ),
-            {
-              name: `persist-core-hold-expired-${question.questionId}`,
-            },
-          );
-          if ('consumedByOther' in persisted && persisted.consumedByOther) {
-            return {
-              command: await waitForDecisionWithoutTimeout(question),
-              resolutionSource: 'decision' as const,
-            };
-          }
           return {
-            cancelled: true as const,
-            merchantMessage: '超时未选择，本次任务已取消，额度已退回',
-            resolutionSource: 'core_hold_expired' as const,
+            command: await waitForDecisionWithoutTimeout(question),
+            resolutionSource: 'decision' as const,
           };
         }
         // Pre-projection workflow records return no value from function ID 4.
-        // Only those legacy records retain the previous live-config fallback.
+        // They use the deterministic default instead of a live config read.
         const timeoutSeconds =
           pendingProjection?.timeoutSeconds ??
-          (await readConfirmationCardTimeoutSeconds(config));
+          DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS;
         const decision = await DBOS.recv<StructuredDecisionInput>(
           decisionTopic(question.questionId),
           { timeoutSeconds },
@@ -611,6 +590,50 @@ export async function resumeHarnessDbosWorkflow(
   );
 }
 
+export type HarnessMediaJobTerminalNotification = {
+  workspaceId: string;
+  jobId: string;
+  kind: string;
+  payload: Record<string, unknown>;
+  status: 'completed' | 'failed';
+  output?: Record<string, unknown>;
+};
+
+/**
+ * pg-boss remains the execution transport. This is its production binding
+ * back into the DBOS workflow message channel after a terminal job outcome.
+ */
+export async function sendHarnessMediaJobTerminal(
+  input: HarnessMediaJobTerminalNotification,
+) {
+  if (input.kind !== 'model.media-generation') return false;
+  const payload = input.payload.submission;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return false;
+  }
+  const orchestrationWorkflowId = (payload as { correlationId?: unknown })
+    .correlationId;
+  if (typeof orchestrationWorkflowId !== 'string' || !orchestrationWorkflowId) {
+    return false;
+  }
+  const destination = harnessRuntimeId(
+    input.workspaceId,
+    orchestrationWorkflowId,
+  );
+  const message = {
+    jobId: input.jobId,
+    status: input.status,
+    ...(input.output ? { output: input.output } : {}),
+  };
+  await DBOS.send(
+    destination,
+    message,
+    harnessMediaJobTopic(input.jobId),
+    `harness-media-terminal:${input.workspaceId}:${input.jobId}:${input.status}`,
+  );
+  return true;
+}
+
 export function normalizeHarnessDbosWorkflowInput(
   input: HarnessDbosWorkflowInput,
   runtimeWorkflowId: string,
@@ -648,31 +671,6 @@ export function confirmationCardDecision(
     throw new Error('Structured decision targets a stale workflow revision.');
   }
   return parsed;
-}
-
-export function confirmationCardHoldExpired(question: QuestionCard) {
-  return structuredDecisionInputSchema.parse({
-    idempotencyKey: `${question.questionId}:r${question.workflowRevision}:core_hold_expired`,
-    questionId: question.questionId,
-    workflowRevision: question.workflowRevision,
-    patch: {
-      field: question.response.field,
-      value: '超时未选择，本次任务已取消，额度已退回',
-      reason: question.response.reason,
-    },
-    decision: {
-      state: 'ignored',
-      value: '超时未选择，本次任务已取消，额度已退回',
-    },
-  });
-}
-
-async function waitForHeldDecision(question: QuestionCard) {
-  const decision = await DBOS.recv<StructuredDecisionInput>(
-    decisionTopic(question.questionId),
-    { timeoutSeconds: DECISION_TIMEOUT_SECONDS },
-  );
-  return decision ? confirmationCardDecision(question, decision) : null;
 }
 
 async function waitForDecisionWithoutTimeout(question: QuestionCard) {

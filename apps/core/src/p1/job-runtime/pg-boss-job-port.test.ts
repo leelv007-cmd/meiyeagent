@@ -276,6 +276,50 @@ describe('PgBossJobPort', () => {
     });
   });
 
+  it('notifies the orchestration binding only after a terminal execution result', async () => {
+    const client = new RecordedPgBossClient();
+    const notifications: Array<{ status: string; jobId: string }> = [];
+    const port = new PgBossJobPort(client, {
+      queuePrefix: 'p1',
+      terminalNotifier: async ({ envelope, status }) => {
+        notifications.push({ jobId: envelope.jobId, status });
+      },
+    });
+    await port.enqueue({
+      jobId: 'job-eventized',
+      workspaceId: 'ws-1',
+      kind: 'model.media-generation',
+      payload: { submission: { correlationId: 'workflow-1' } },
+    });
+    const job = [...client.jobs.values()][0]!;
+
+    await port.startWorker(async () => ({
+      status: 'deferred',
+      deferForSeconds: 5,
+    }));
+    assert.equal((await client.workerHandler!([job]))[0]?.status, 'completed');
+    assert.deepEqual(notifications, []);
+
+    await port.startWorker(async () => ({
+      status: 'completed',
+      output: { accepted: true },
+    }));
+    assert.equal((await client.workerHandler!([job]))[0]?.status, 'completed');
+    assert.deepEqual(notifications, [
+      { jobId: 'job-eventized', status: 'completed' },
+    ]);
+
+    await port.startWorker(async () => ({
+      status: 'dead_letter',
+      output: { error: 'provider failed' },
+    }));
+    assert.equal((await client.workerHandler!([job]))[0]?.status, 'deadletter');
+    assert.deepEqual(notifications, [
+      { jobId: 'job-eventized', status: 'completed' },
+      { jobId: 'job-eventized', status: 'failed' },
+    ]);
+  });
+
   it('claims with attempt metadata, renews leases, maps retry/dead-letter, redrives, and exposes metrics', async () => {
     const now = new Date('2026-07-11T01:01:00.000Z');
     const client = new RecordedPgBossClient();

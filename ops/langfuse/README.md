@@ -51,11 +51,29 @@ curl -fsS http://localhost:3000/api/public/health
 curl -fsS http://localhost:3000/api/public/ready
 ```
 
-Create the prompt entries `harness/intent-naming` and `harness/brief-copy`, and
-assign the label configured by `LANGFUSE_PROMPT_LABEL` (default `production`).
-If prompt resolution is unavailable, the core service deliberately uses its
-built-in prompt and records the fallback, version, and content hash in the
-business audit trace.
+Publish the versioned Harness prompt catalog after the stack is healthy. The
+command creates a new Langfuse version for each real registered consumer and
+assigns `LANGFUSE_PROMPT_LABEL` (default `production`):
+
+```sh
+LANGFUSE_BASE_URL=http://localhost:3000 \
+LANGFUSE_PUBLIC_KEY=... LANGFUSE_SECRET_KEY=... \
+pnpm --filter @meiye/core langfuse:prompts:push
+```
+
+Use `--dry-run` to inspect the catalog without sending credentials. For stable
+replays, set `LANGFUSE_PROMPT_VERSIONS` in the core environment to a JSON map
+of prompt keys to version numbers. Admission then fetches those versions and
+persists each returned version, label, source, and content hash in the durable
+task request. If Langfuse is unavailable, fixture runs remain green but emit an
+explicit downgrade warning and record the builtin version in the audit trace.
+
+The prompt catalog contains the 14 registered real consumers: intent naming,
+copy/image/video brief compilation, fact satisfaction/criticality, copy
+candidate generation, the three NotePlan nodes, destination mapping, copy
+generation, platform adaptation, and text response. `execution-selection.ts`
+remains outside this lane; its existing consumer is listed for follow-up rather
+than being replaced with a fake call.
 
 The metrics exporter upserts deterministic items into the dataset named
 `harness-structured-node-metrics`. Create that dataset once in Langfuse before

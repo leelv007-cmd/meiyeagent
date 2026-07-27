@@ -271,9 +271,13 @@ export function assertImageTextNoteRevisionAssemblyComplete(input: {
     rightsRefs?: string[];
   };
   variants?: ContentPackage['variants'];
+  partial?: {
+    unresolvedPageIds: string[];
+    reason: 'consistency_remained_incomplete' | 'second_evaluation_failed';
+  };
   version: Pick<
     ContentPackageVersion,
-    'body' | 'conversionHook' | 'note' | 'orderedAssetIds' | 'title'
+    'body' | 'conversionHook' | 'id' | 'note' | 'orderedAssetIds' | 'title'
   >;
 }) {
   if (
@@ -305,15 +309,31 @@ export function assertImageTextNoteRevisionAssemblyComplete(input: {
       'Image-text note revision assembly requires one image for every page.',
     );
   }
+  const evaluation = note.evaluation;
+  const partialPageIds = new Set(input.partial?.unresolvedPageIds ?? []);
+  const partialCurrentVersion =
+    input.partial !== undefined &&
+    partialPageIds.size > 0 &&
+    input.version.id.length > 0 &&
+    [...partialPageIds].every((pageId) =>
+      note.plan.pages.some(({ id }) => id === pageId),
+    );
   if (
-    !note.evaluation ||
-    note.evaluation.dimensions.length !==
+    !evaluation ||
+    evaluation.dimensions.length !==
       NOTE_PLAN_CONSISTENCY_DIMENSIONS.length ||
-    note.evaluation.dimensions.some(({ passed }) => !passed) ||
-    note.evaluation.regenerationPageIds.length > 0
+    (!partialCurrentVersion &&
+      (evaluation.dimensions.some(({ passed }) => !passed) ||
+        evaluation.regenerationPageIds.length > 0)) ||
+    (partialCurrentVersion &&
+      ![...partialPageIds].every((pageId) =>
+        evaluation.regenerationPageIds.includes(pageId),
+      ))
   ) {
     throw new Error(
-      'Image-text note revision assembly requires a passing five-dimension evaluation.',
+      partialCurrentVersion
+        ? 'Image-text note partial assembly requires unresolved pages to remain explicitly reported.'
+        : 'Image-text note revision assembly requires a passing five-dimension evaluation.',
     );
   }
   const pageAssetIds = note.plan.pages.map(({ imageAssetId }) => imageAssetId!);
@@ -348,14 +368,22 @@ export function assertImageTextNoteRevisionAssemblyComplete(input: {
       const current = variant.versions.find(
         ({ id }) => id === variant.currentVersionId,
       );
+      const isPartialCurrent =
+        current?.id === input.version.id ||
+        current?.id.startsWith(`${input.version.id}-`) === true;
       return (
         !current?.title.trim() ||
         !current.body.trim() ||
         !current.conversionHook?.trim() ||
         !current.note ||
         !current.note.evaluation ||
-        current.note.evaluation.dimensions.some(({ passed }) => !passed) ||
-        current.note.evaluation.regenerationPageIds.length > 0 ||
+        (!isPartialCurrent &&
+          (current.note.evaluation.dimensions.some(({ passed }) => !passed) ||
+            current.note.evaluation.regenerationPageIds.length > 0)) ||
+        (isPartialCurrent &&
+          input.partial === undefined &&
+          (current.note.evaluation.dimensions.some(({ passed }) => !passed) ||
+            current.note.evaluation.regenerationPageIds.length > 0)) ||
         current.note.plan.pages.some(({ imageAssetId }) => !imageAssetId)
       );
     })
