@@ -67,6 +67,16 @@ export function latestContentPackageForWork<
   return packages?.find((candidate) => candidate.source.workId === workId);
 }
 
+export function resultWorkflowIdForWork<
+  TPackage extends { source: { workId?: string; workflowId?: string } },
+>(packages: TPackage[] | undefined, workId: string, routeTaskId?: string) {
+  return (
+    latestContentPackageForWork(packages, workId)?.source.workflowId ??
+    routeTaskId ??
+    ''
+  );
+}
+
 /** Stable client-side marker for detecting an asynchronously refreshed package. */
 export function contentPackageRefreshToken(
   contentPackage:

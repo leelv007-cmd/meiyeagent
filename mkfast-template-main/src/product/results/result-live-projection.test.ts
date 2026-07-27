@@ -14,6 +14,7 @@ import {
   imageWorksurfaceFromContentPackage,
   latestContentPackageForWork,
   projectResultCenterLiveProjection,
+  resultWorkflowIdForWork,
   resultContentPackageMutationFacts,
   revisionTimelineFactsFromContentPackage,
   runDetailFactsFromLiveSelection,
@@ -40,6 +41,36 @@ test('uses the newest same-Work ContentPackage instead of locking the original w
   assert.equal(
     latestContentPackageForWork(packages, 'work-video-target')?.id,
     'package-derived'
+  );
+});
+
+test('resolves a workId-only Result reopen to the authoritative Harness workflow', () => {
+  const packages = [
+    {
+      source: {
+        workId: 'work-copy-target',
+        workflowId: 'task-authoritative',
+      },
+    },
+    {
+      source: {
+        workId: 'work-other',
+        workflowId: 'task-other',
+      },
+    },
+  ];
+
+  assert.equal(
+    resultWorkflowIdForWork(packages, 'work-copy-target'),
+    'task-authoritative'
+  );
+  assert.equal(
+    resultWorkflowIdForWork(packages, 'work-copy-target', 'task-stale-url'),
+    'task-authoritative'
+  );
+  assert.equal(
+    resultWorkflowIdForWork(undefined, 'work-copy-target', 'task-url-fallback'),
+    'task-url-fallback'
   );
 });
 

@@ -31,6 +31,7 @@ import {
   platformPreviewsFromContentPackage,
   projectResultCenterLiveProjection,
   resultContentPackageMutationFacts,
+  resultWorkflowIdForWork,
   runDetailFactsFromLiveSelection,
 } from '@/product/results/result-live-projection';
 import { calibrateTerminalRevision } from '@/product/results/result-token-stream';
@@ -123,12 +124,6 @@ function ResultCenterRoutePage() {
     'operations',
     'content_packages'
   );
-  const harnessStream = useWorkflowEventStream({
-    enabled: Boolean(search.taskId),
-    latestQueryKey: workbenchQueryKey,
-    workflowId: search.taskId ?? '',
-    workflowQueryKey: contentPackagesQueryKey,
-  });
   const targetResolverQuery = useQuery({
     queryKey: p1QueryKeys.request('result-delivery', 'result_target_resolve', {
       target,
@@ -160,6 +155,24 @@ function ResultCenterRoutePage() {
     retry: false,
     refetchInterval:
       videoRegenerationPackageBaseline === undefined ? false : 1_000,
+  });
+  // `content_packages` is ordered by updatedAt DESC. Its source binds Work and
+  // Harness Task atomically, so canonical workId-only reopens reconnect without
+  // relying on an optional URL taskId. The URL remains a first-load fallback.
+  const contentPackage = latestContentPackageForWork(
+    contentPackagesQuery.data,
+    workId
+  );
+  const resultWorkflowId = resultWorkflowIdForWork(
+    contentPackagesQuery.data,
+    workId,
+    search.taskId
+  );
+  const harnessStream = useWorkflowEventStream({
+    enabled: Boolean(resultWorkflowId),
+    latestQueryKey: workbenchQueryKey,
+    workflowId: resultWorkflowId,
+    workflowQueryKey: contentPackagesQueryKey,
   });
   const assistedReceiptsQuery = useQuery({
     queryKey: p1QueryKeys.request('result-delivery', 'assisted_list'),
@@ -208,14 +221,6 @@ function ResultCenterRoutePage() {
     },
     retry: false,
   });
-  // `content_packages` is ordered by updatedAt DESC. A full-compose rerun
-  // creates a derived workflow/package while the selected CreativeJob still
-  // points at the original provider workflow, so the newest Work package is
-  // the canonical result surface.
-  const contentPackage = latestContentPackageForWork(
-    contentPackagesQuery.data,
-    workId
-  );
   const contentPackageToken = contentPackageRefreshToken(contentPackage);
   useEffect(() => {
     if (

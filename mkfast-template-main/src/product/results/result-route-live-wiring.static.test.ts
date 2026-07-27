@@ -10,6 +10,14 @@ const route = readFileSync(
   'utf8'
 );
 
+function assertHarnessCopyTokenPairedSeam(source: string) {
+  assert.match(
+    source,
+    /const partialCandidates = streamActive\s*\?\s*harnessStream\.copyCandidates\s*:\s*undefined;/u
+  );
+  assert.match(source, /partialCandidates=\{partialCandidates\}/u);
+}
+
 test('result route resolves exact lineage on the server before rendering canonical projections', () => {
   assert.match(route, /['"]result-delivery['"]/);
   assert.match(route, /['"]result_target_resolve['"]/);
@@ -92,8 +100,14 @@ test('result route does not ship hard-coded empty works or copy workspace', () =
 
 test('result route consumes Harness workflow tokens as the only live incremental copy source', () => {
   assert.match(route, /useWorkflowEventStream/);
+  assert.match(
+    route,
+    /const resultWorkflowId = resultWorkflowIdForWork\(\s*contentPackagesQuery\.data,\s*workId,\s*search\.taskId\s*\);/u
+  );
+  assert.match(route, /enabled: Boolean\(resultWorkflowId\)/u);
+  assert.match(route, /workflowId: resultWorkflowId/u);
   assert.match(route, /harnessStream\.copyCandidates/);
-  assert.match(route, /partialCandidates=/);
+  assertHarnessCopyTokenPairedSeam(route);
   assert.match(route, /streamLoading=/);
   assert.match(
     route,
@@ -103,6 +117,15 @@ test('result route consumes Harness workflow tokens as the only live incremental
   assert.doesNotMatch(route, /submitCopyCandidateStream/);
   assert.doesNotMatch(route, /buildCopyStreamRequestFromJob/);
   assert.doesNotMatch(route, /structuredStreamCandidates/);
+});
+
+test('result route paired seam rejects dropping Harness candidates before the Result shell', () => {
+  const mutated = route.replace(
+    /const partialCandidates = streamActive\s*\?\s*harnessStream\.copyCandidates\s*:\s*undefined;/u,
+    'const partialCandidates = [];'
+  );
+  assert.notEqual(mutated, route);
+  assert.throws(() => assertHarnessCopyTokenPairedSeam(mutated));
 });
 
 test('wechat moments full-package action downloads canonical caption segments', () => {
