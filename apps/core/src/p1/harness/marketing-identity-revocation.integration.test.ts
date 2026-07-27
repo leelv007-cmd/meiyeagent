@@ -210,13 +210,10 @@ test('identity revocation rejects the stale persona, falls back safely, and inva
   });
 
   const generationPrompt = JSON.parse(runner.requests[0]!.prompt) as {
-    context: { marketing: { identityFallback: string } };
+    context: Record<string, unknown>;
   };
-  assert.equal(
-    generationPrompt.context.marketing.identityFallback,
-    'brand_official',
-  );
-  assert.equal(delivery.inputs[0]?.marketing.identityFallback, 'brand_official');
+  assert.equal('marketing' in generationPrompt.context, false);
+  assert.deepEqual(delivery.inputs[0]?.marketing.identityRefs, []);
   assert.equal(selection.winner.title, '品牌官方候选 A');
 });
 

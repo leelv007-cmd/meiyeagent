@@ -399,7 +399,7 @@ test("media delivery writes the shared ContentPackage once with asset, usage, co
 		assert.equal(contentPackage?.generated.childRuns[0]?.providerAttempts?.length, 1);
 		assert.equal(contentPackage?.generated.childRuns[0]?.providerCosts?.length, 1);
 		assert.equal(contentPackage?.marketing?.contextBundle.bundleId, "bundle-1");
-		assert.ok(contentPackage?.marketing?.rightsRefs.length);
+		assert.deepEqual(contentPackage?.marketing?.rightsRefs, ["asset-1"]);
 		assert.equal(contentPackage?.variants?.length, 3);
 		assert.ok(contentPackage?.versions[0]?.body.trim());
 		assert.ok(contentPackage?.versions[0]?.conversionHook?.trim());
@@ -834,6 +834,24 @@ test("media closeout evaluates frozen price sources against delivery-time freshn
 	Object.assign(context.policyReferences.sourceRefs[0]!, {
 		expiresAt: "2026-07-22T09:00:00.500Z",
 	});
+	context.bundle.dimensions.store_facts_assets.group_buy_price = {
+		value: { amount: 398, currency: "CNY" },
+		layer: "current_fact",
+		pool: "store_personal",
+		sourceRef: "store_fact:price-1:1",
+		factSnapshot: {
+			factId: "price-1",
+			kind: "price",
+			revision: 1,
+			source: {
+				kind: "user_confirmation",
+				referenceId: "confirmation-price-1",
+				capturedAt: "2026-07-21T00:00:00.000Z",
+			},
+			effectiveFrom: "2026-07-21T00:00:00.000Z",
+			expiresAt: "2026-07-22T09:00:00.500Z",
+		},
+	};
 	let writes = 0;
 	const ports = new UnifiedHarnessStagePorts(
 		unsupportedCopyPorts(),
@@ -875,12 +893,105 @@ test("media closeout evaluates frozen price sources against delivery-time freshn
 			context,
 			brief,
 			selection,
+			allowedFactRefs: ["store_fact:price-1:1"],
 		}),
 		(error: unknown) =>
 			error instanceof HarnessSelectionError &&
 			error.gateIds.includes("price_benefit_freshness"),
 	);
 	assert.equal(writes, 0);
+});
+
+test("video delivery rejects a price from the context when this run did not authorize its fact reference", async () => {
+	const request = harnessInput("video", "package-video-unauthorized-price");
+	const brief = mediaBrief("video");
+	brief.storyboard[0]!.description = "头皮护理团购价398元，门店护理场景与主视觉展示。";
+	const context = contextSnapshot();
+	context.activeFacts = [
+		{
+			key: "group_buy_price",
+			value: { amount: 398, currency: "CNY" },
+			sourceRef: "store_fact:price-1:1",
+			effectiveFrom: "2026-07-21T00:00:00.000Z",
+			expiresAt: null,
+		},
+	];
+	context.policyReferences.sourceRefs = [
+		{
+			id: "store_fact:price-1:1",
+			workspaceId: "workspace-1",
+			revision: 1,
+			status: "current",
+		},
+	];
+	context.bundle.dimensions.store_facts_assets.group_buy_price = {
+		value: { amount: 398, currency: "CNY" },
+		layer: "current_fact",
+		pool: "store_personal",
+		sourceRef: "store_fact:price-1:1",
+		factSnapshot: {
+			factId: "price-1",
+			kind: "price",
+			revision: 1,
+			source: {
+				kind: "user_confirmation",
+				referenceId: "confirmation-price-1",
+				capturedAt: "2026-07-21T00:00:00.000Z",
+			},
+			effectiveFrom: "2026-07-21T00:00:00.000Z",
+			expiresAt: null,
+		},
+	};
+	const media = new ModelSupplyHarnessMediaExecutionPort({
+		async submit() {
+			return completedResult("video");
+		},
+	});
+	const ports = new UnifiedHarnessStagePorts(
+		unsupportedCopyPorts(),
+		{
+			create() {
+				throw new Error("Media delivery does not compile a copy brief.");
+			},
+		},
+		media,
+		{
+			async write() {
+				throw new Error("The unauthorized price must not reach the writer.");
+			},
+		},
+		() => "2026-07-22T09:00:01.000Z",
+	);
+	const selection = await media.execute({
+		brief,
+		context,
+		request,
+		workflowId: request.executionSnapshot!.task.id,
+	});
+
+	await assert.rejects(
+		ports.assembleMediaAndDeliver({
+			workflowId: request.executionSnapshot!.task.id,
+			request,
+			declaration: {
+				normalizedIntent: "制作团购视频",
+				taskType: "promotion_groupbuy_conversion",
+				deliveryLayer: "finished_media",
+				relevantAssetCategories: ["promotion_activity"],
+				usedAssetCategories: ["promotion_activity"],
+				route: "customized",
+				routingSource: "model",
+				implicitConstraints: [],
+			},
+			context,
+			brief,
+			selection,
+			allowedFactRefs: [],
+		}),
+		(error: unknown) =>
+			error instanceof HarnessSelectionError &&
+			error.gateIds.includes("critical_fact_source"),
+	);
 });
 
 test("image exact text is included in the visible-copy delivery gate", async () => {

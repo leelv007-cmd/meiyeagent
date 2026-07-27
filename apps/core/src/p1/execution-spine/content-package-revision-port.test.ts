@@ -64,7 +64,16 @@ test("Copy revision writes are idempotent and retain existing owned receipts", a
 		idempotencyKey: "harness-copy:task-1",
 		kind: "image_text" as const,
 		marketing: {
-			scene: "daily_service_exposure" as const,
+			declaration: {
+				normalizedIntent: "介绍本店已确认服务",
+				taskType: "daily_service_exposure" as const,
+				deliveryLayer: "copy" as const,
+				relevantAssetCategories: ["product_service"],
+				usedAssetCategories: ["product_service"],
+				route: "customized" as const,
+				routingSource: "model" as const,
+				implicitConstraints: [],
+			},
 			contextBundle: {
 				bundleId: "bundle-1",
 				revision: 1,
@@ -73,7 +82,6 @@ test("Copy revision writes are idempotent and retain existing owned receipts", a
 			factRefs: ["store_fact:service-1:1"],
 			rightsRefs: ["selected-asset-1"],
 			identityRefs: [],
-			identityFallback: "none" as const,
 		},
 		occurredAt: "2026-07-22T09:00:00.000Z",
 		packageId: "package-1",

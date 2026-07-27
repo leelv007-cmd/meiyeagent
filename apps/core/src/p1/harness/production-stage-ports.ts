@@ -45,6 +45,7 @@ import type {
   HarnessStagePorts,
 } from './workflow-core.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
+import { createMarketingPackageEvidence } from './marketing-package-evidence.js';
 import {
   assertCopyRevisionAssemblyComplete,
   buildCopyPlatformVariants,
@@ -59,7 +60,6 @@ import {
   assessRecipeFactSatisfaction,
   type FactRightsAuthorizationPort,
 } from './fact-satisfaction.js';
-import { projectCopyMarketingPackageEvidence } from './copy-marketing-evidence.js';
 
 export interface ProductionHarnessContextPort {
   compileAndFreeze(input: {
@@ -466,14 +466,10 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         sourceContentPackage?.assets,
       );
     }
-    const marketing = projectCopyMarketingPackageEvidence({
-      declaration: inferDeclarationFromBundle(input.context),
-      request: input.request,
-      context: input.context,
-      at: this.now(),
-      factRefs: input.brief.factRefs,
-      identityRefs: input.brief.identityRefs,
-    });
+    const hasAuthorizedOffer = hasAuthorizedOfferEvidence(
+      input.context,
+      input.brief.factRefs,
+    );
     const runner = this.runnerWithSourceFence(input.request);
     const canonicalValidator = createHarnessCandidateValidator({
       phase: 'execution',
@@ -488,7 +484,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       validate(candidate: Parameters<typeof canonicalValidator.validate>[0]) {
         const canonical = canonicalValidator.validate(candidate);
         if (
-          marketing.promotionOffer?.status === 'unpriced' &&
+          !hasAuthorizedOffer &&
           containsConcreteOfferCopy(candidate)
         ) {
           canonical.failures.push({
@@ -508,7 +504,9 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         brief: input.brief,
         workspaceId: input.request.workspaceId,
         intendedUse: 'public_content',
-        generationContext: { bundle: input.context.bundle, marketing },
+        generationContext: {
+          bundle: input.context.bundle,
+        },
         ...(input.skillInstructions?.length
           ? { skillInstructions: input.skillInstructions }
           : {}),
@@ -550,7 +548,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         sourceContentPackage?.assets,
       );
       const claimExtraction =
-        assertDeliverableCandidatesPassVisibleRedlines(input);
+        assertDeliverableCandidatesPassVisibleRedlines(input, occurredAt);
       return this.executionDelivery.write(
         copyContentPackageRevisionWriteInput(
           input,
@@ -560,17 +558,15 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         ),
       );
     }
-    const marketing = projectCopyMarketingPackageEvidence({
+    const marketing = createMarketingPackageEvidence({
       declaration: input.declaration,
-      request: input.request,
       context: input.context,
+      authorizedFactRefs: input.allowedFactRefs ?? [],
       at: occurredAt,
-      factRefs: input.brief.factRefs,
-      identityRefs: input.brief.identityRefs,
     });
     const platform = publicationPlatform(input.brief.platform);
     const claimExtraction =
-      assertDeliverableCandidatesPassVisibleRedlines(input);
+      assertDeliverableCandidatesPassVisibleRedlines(input, occurredAt);
     return this.delivery.deliverCopyRevision({
       workflowId: input.workflowId,
       workspaceId: input.request.workspaceId,
@@ -640,12 +636,15 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
 
 function assertDeliverableCandidatesPassVisibleRedlines(
   input: Parameters<HarnessStagePorts['assembleAndDeliver']>[0],
+  evaluatedAt: string,
 ) {
   const result = validateHarnessVisibleDelivery({
     assetRefs: input.brief.assetRefs,
     brief: input.brief,
     candidateId: input.selection.winner.candidateId,
     context: input.context,
+    allowedFactRefs: input.allowedFactRefs ?? [],
+    evaluatedAt,
     expressionIdentityRef: input.brief.identityRefs[0],
     visibleText: input.selection.candidates.flatMap((candidate) => [
       { field: `${candidate.candidateId}.title`, text: candidate.title },
@@ -669,11 +668,17 @@ export function validateHarnessVisibleDelivery(input: {
   brief: Record<string, unknown>;
   candidateId: string;
   context: HarnessContextSnapshot;
+  allowedFactRefs?: readonly string[];
   evaluatedAt?: string;
   expressionIdentityRef?: string;
   visibleText: Array<{ field: string; text: string }>;
   workspaceId: string;
 }) {
+  const authorizedFactRefs = new Set(input.allowedFactRefs ?? []);
+  const auditableFactRefs = currentFactReferences(input.context);
+  const allowedFactRefs = new Set(
+    [...authorizedFactRefs].filter((reference) => auditableFactRefs.has(reference)),
+  );
   return validateHarnessPolicy({
     phase: 'delivery',
     ...(input.evaluatedAt ? { evaluatedAt: input.evaluatedAt } : {}),
@@ -693,13 +698,17 @@ export function validateHarnessVisibleDelivery(input: {
       visibleText: structuredClone(input.visibleText),
       workspaceId: input.workspaceId,
     },
-    trustedFactClaims: trustedClaimsFromContext(input.context),
+    trustedFactClaims: trustedClaimsFromContext(input.context, allowedFactRefs),
     ...input.context.policyReferences,
+    sourceRefs: input.context.policyReferences.sourceRefs.filter((reference) =>
+      allowedFactRefs.has(reference.id),
+    ),
   });
 }
 
 function trustedClaimsFromContext(
   context: HarnessContextSnapshot,
+  allowedFactRefs: ReadonlySet<string>,
 ): HarnessFactClaim[] {
   const facts =
     context.activeFacts ??
@@ -711,11 +720,25 @@ function trustedClaimsFromContext(
       }),
     );
   return facts.flatMap(({ key, value, sourceRef }) => {
+    if (!allowedFactRefs.has(sourceRef)) return [];
     const kind = policyFactKind(key);
     return kind
       ? [{ kind, sourceRef, value: JSON.stringify(value) }]
       : [];
   });
+}
+
+function currentFactReferences(context: HarnessContextSnapshot) {
+  return new Set(
+    Object.values(context.bundle.dimensions.store_facts_assets)
+      .filter(
+        (contribution) =>
+          contribution.layer === 'current_fact' &&
+          contribution.pool === 'store_personal' &&
+          contribution.factSnapshot !== undefined,
+      )
+      .map((contribution) => contribution.sourceRef),
+  );
 }
 
 function policyFactKind(key: string): HarnessFactClaim['kind'] | null {
@@ -750,13 +773,11 @@ export function copyContentPackageRevisionWriteInput(
     throw new Error('Composer delivery requires an execution snapshot.');
   }
   assertComposerSnapshotAssetBinding(snapshot, input.brief.assetRefs, sourceAssets);
-  const marketing = projectCopyMarketingPackageEvidence({
+  const marketing = createMarketingPackageEvidence({
     declaration: input.declaration,
-    request: input.request,
     context: input.context,
+    authorizedFactRefs: input.allowedFactRefs ?? [],
     at: occurredAt,
-    factRefs: input.brief.factRefs,
-    identityRefs: input.brief.identityRefs,
   });
   const versions = input.selection.candidates.map((candidate) => ({
     id: copyRevisionVersionId(input.workflowId, input.request.packageId, candidate),
@@ -964,29 +985,21 @@ function snapshotIdentityReference(
   return `marketing_identity:${snapshot.identity.id}:${snapshot.identity.revision}`;
 }
 
-function inferDeclarationFromBundle(
+function hasAuthorizedOfferEvidence(
   context: HarnessContextSnapshot,
-): IntentDeclaration {
-  const taskType = context.bundle.dimensions.promotion_task.task_type?.value;
-  if (
-    taskType !== 'daily_service_exposure' &&
-    taskType !== 'traffic_opportunity' &&
-    taskType !== 'brand_personal_ip' &&
-    taskType !== 'promotion_groupbuy_conversion' &&
-    taskType !== 'routine_marketing_materials'
-  ) {
-    throw new Error('Frozen context is missing a supported marketing scene.');
-  }
-  return {
-    normalizedIntent: '按已确认资料完成本次创作',
-    taskType,
-    deliveryLayer: 'copy',
-    relevantAssetCategories: ['store'],
-    usedAssetCategories: ['store'],
-    route: 'customized',
-    routingSource: 'model',
-    implicitConstraints: [],
-  };
+  authorizedFactRefs: readonly string[],
+) {
+  const authorized = new Set(authorizedFactRefs);
+  return Object.values(context.bundle.dimensions.store_facts_assets).some(
+    (contribution) =>
+      contribution.layer === 'current_fact' &&
+      contribution.pool === 'store_personal' &&
+      contribution.factSnapshot !== undefined &&
+      authorized.has(contribution.sourceRef) &&
+      (contribution.factSnapshot.kind === 'price' ||
+        contribution.factSnapshot.kind === 'group_buy' ||
+        contribution.factSnapshot.kind === 'discount'),
+  );
 }
 
 function containsConcreteOfferCopy(candidate: unknown) {

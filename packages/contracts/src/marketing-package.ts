@@ -535,7 +535,36 @@ export const quickEditExportUseDeliverySchema = z.discriminatedUnion('kind', [
     }),
 ]);
 
-export const marketingPackageEvidenceSchema = z
+export const marketingPackageDeclarationSchema = z
+  .object({
+    normalizedIntent: z.string().trim().min(1).max(4_000),
+    taskType: marketingSceneSchema,
+    deliveryLayer: z.enum(['copy', 'finished_media']),
+    relevantAssetCategories: z.array(z.string().trim().min(1)).max(20),
+    usedAssetCategories: z.array(z.string().trim().min(1)).max(20),
+    route: z.enum(['customized', 'guidance', 'free']),
+    routingSource: z.enum(['entry', 'model', 'fallback', 'decision', 'policy']),
+    implicitConstraints: z.array(z.string().trim().min(1)).max(30),
+  })
+  .strict();
+
+const marketingPackageEvidenceCurrentSchema = z
+  .object({
+    declaration: marketingPackageDeclarationSchema,
+    contextBundle: z
+      .object({
+        bundleId: idSchema,
+        revision: z.number().int().positive(),
+        hash: sha256Schema,
+      })
+      .strict(),
+    factRefs: z.array(idSchema),
+    rightsRefs: z.array(idSchema),
+    identityRefs: z.array(idSchema),
+  })
+  .strict();
+
+const legacyMarketingPackageEvidenceSchema = z
   .object({
     scene: marketingSceneSchema,
     contextBundle: z
@@ -582,6 +611,37 @@ export const marketingPackageEvidenceSchema = z
         path: ['materialSpecs'],
       });
     }
+  });
+
+/**
+ * Historical package JSON remains readable, but all new writes are normalized
+ * to the fact-and-rights evidence shape. The legacy scene projection carried
+ * heuristic opportunities and capability claims, neither of which is a
+ * durable source of truth.
+ */
+export const marketingPackageEvidenceSchema = z
+  .union([
+    marketingPackageEvidenceCurrentSchema,
+    legacyMarketingPackageEvidenceSchema,
+  ])
+  .transform((evidence) => {
+    if ('declaration' in evidence) return evidence;
+    return {
+      declaration: {
+        normalizedIntent: `Legacy ${evidence.scene} package`,
+        taskType: evidence.scene,
+        deliveryLayer: 'copy' as const,
+        relevantAssetCategories: [],
+        usedAssetCategories: [],
+        route: 'customized' as const,
+        routingSource: 'policy' as const,
+        implicitConstraints: [],
+      },
+      contextBundle: evidence.contextBundle,
+      factRefs: evidence.factRefs,
+      rightsRefs: evidence.rightsRefs,
+      identityRefs: evidence.identityRefs,
+    };
   });
 
 export type MarketingScene = z.infer<typeof marketingSceneSchema>;

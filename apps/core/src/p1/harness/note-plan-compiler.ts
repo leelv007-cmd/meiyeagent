@@ -149,6 +149,7 @@ export class NotePlanCompiler {
         rightsRefs: input.rightsRefs,
       }),
     );
+    assertNotePlanFactReferences(basePlan, input.factRefs);
     assertNotePlanWithinBound(basePlan, input.notePageBound);
     const candidates = [];
     for (const style of styles.styles) {
@@ -390,6 +391,21 @@ function assertNotePlanWithinBound(plan: NotePlan, notePageBound: number) {
   if (plan.pages.length > notePageBound) {
     throw new Error(
       `本次图文笔记计划为 ${plan.pages.length} 页，超过配方声明的 ${notePageBound} 页上界，请调整需求后重试。`,
+    );
+  }
+}
+
+function assertNotePlanFactReferences(
+  plan: NotePlan,
+  allowedFactRefs: readonly string[],
+) {
+  const allowed = new Set(allowedFactRefs);
+  const unexpected = plan.pages
+    .flatMap(({ imageIntent }) => imageIntent.factRefs)
+    .filter((reference) => !allowed.has(reference));
+  if (unexpected.length > 0) {
+    throw new Error(
+      'The NotePlan referenced a fact outside the authorized satisfaction result.',
     );
   }
 }

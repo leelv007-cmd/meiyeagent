@@ -71,10 +71,6 @@ export function projectTodayRecommendation(
     configuredWhyNow(record, at) ??
     winningReason(selection) ??
     mediaReplayReason(selection, contentPackage.data.kind);
-  const opportunity = currentOpportunity(
-    contentPackage.data.marketing?.opportunity,
-    at,
-  );
   if (
     contentPackage.data.workspaceId !== workspaceId ||
     contentPackage.data.id !== packageId ||
@@ -103,7 +99,6 @@ export function projectTodayRecommendation(
       customerAction: version.conversionHook,
       sourceLabel: record.rawInput,
       createdAt: record.deliveredAt,
-      ...(opportunity ? { opportunity } : {}),
     },
   });
 }
@@ -127,20 +122,6 @@ function configuredWhyNow(record: TodayRecommendationRecord, at: string) {
     (platform ? stringValue(rules.platformWhyNow[platform]) : undefined) ??
     (weekday ? stringValue(rules.weekdayWhyNow[weekday]) : undefined)
   );
-}
-
-function currentOpportunity(
-  opportunity:
-    | NonNullable<ContentPackage['marketing']>['opportunity']
-    | undefined,
-  at: string,
-) {
-  return opportunity?.status === 'active' &&
-    opportunity.sourceType !== 'evergreen_fallback' &&
-    opportunity.matchedStoreReferences.length > 0 &&
-    Date.parse(opportunity.expiresAt) > Date.parse(at)
-    ? opportunity
-    : undefined;
 }
 
 function winningReason(selection: Record<string, unknown> | undefined) {

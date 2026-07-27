@@ -482,9 +482,10 @@ async function runExecutionBriefCompilation(
   runner: StructuredNodeRunner,
   metrics?: StructuredNodeMetrics
 ): Promise<ExecutionBrief> {
+  const authorizedFactRefs = new Set(input.allowedFactRefs ?? []);
   const bundle = briefBundleWithAuthorizedFacts(
     briefContextBundleSchema.parse(input.bundle),
-    input.allowedFactRefs,
+    authorizedFactRefs,
   );
   const result = await runMeasured<ExecutionBrief>(
     {
@@ -500,6 +501,12 @@ async function runExecutionBriefCompilation(
         unitKind: input.unitKind,
         declaration: input.declaration,
         bundle,
+        factReferencePolicy: {
+          eligibleLayer: 'current_fact',
+          eligiblePool: 'store_personal',
+          authorizedFactRefs: [...authorizedFactRefs],
+          nonEligibleFacts: 'context_only',
+        },
         ...(input.executionSnapshot
           ? {
               executionContract: briefExecutionContract(
@@ -518,14 +525,12 @@ async function runExecutionBriefCompilation(
     result.output,
   ) as ExecutionBrief;
   if (
-    brief.kind === 'copy' &&
-    input.allowedFactRefs &&
-    brief.factRefs.some(
-      (reference) => !input.allowedFactRefs?.includes(reference),
+    briefFactReferences(brief).some(
+      (reference) => !authorizedFactRefs.has(reference),
     )
   ) {
     throw new Error(
-      'The copy brief referenced a fact outside the authorized satisfaction result.',
+      'The brief referenced a fact outside the authorized satisfaction result.',
     );
   }
   return brief;
@@ -533,17 +538,23 @@ async function runExecutionBriefCompilation(
 
 function briefBundleWithAuthorizedFacts(
   bundle: BriefContextBundle,
-  allowedFactRefs: readonly string[] | undefined,
+  authorizedFactRefs: ReadonlySet<string>,
 ): BriefContextBundle {
-  const allowed = allowedFactRefs ? new Set(allowedFactRefs) : undefined;
   const storeFactsAssets = Object.fromEntries(
-    Object.entries(bundle.dimensions.store_facts_assets).filter(
-      ([, contribution]) =>
-        contribution.factSnapshot === undefined ||
-        (contribution.layer === 'current_fact' &&
-          (allowed === undefined || allowed.has(contribution.sourceRef))),
+    Object.entries(bundle.dimensions.store_facts_assets).map(
+      ([key, contribution]) => {
+        const referenceEligible =
+          isReferenceEligibleFactSnapshot(contribution) &&
+          authorizedFactRefs.has(contribution.sourceRef);
+        if (!contribution.factSnapshot || referenceEligible) {
+          return [key, contribution];
+        }
+        const { factSnapshot: _factSnapshot, ...contextOnlyContribution } =
+          contribution;
+        return [key, contextOnlyContribution];
+      },
     ),
-  );
+  ) as BriefContextBundle['dimensions']['store_facts_assets'];
   const retainedFactIds = new Set(
     Object.values(storeFactsAssets)
       .map((contribution) => contribution.factSnapshot?.factId)
@@ -559,6 +570,22 @@ function briefBundleWithAuthorizedFacts(
       store_facts_assets: storeFactsAssets,
     },
   };
+}
+
+export function isReferenceEligibleFactSnapshot(
+  contribution: BriefContextBundle['dimensions']['store_facts_assets'][string],
+) {
+  return (
+    contribution.factSnapshot !== undefined &&
+    contribution.layer === 'current_fact' &&
+    contribution.pool === 'store_personal'
+  );
+}
+
+function briefFactReferences(brief: ExecutionBrief) {
+  if (brief.kind === 'copy') return brief.factRefs;
+  if (brief.kind === 'image') return brief.intent.factRefs;
+  return [];
 }
 
 function briefExecutionContract(snapshot: CreationExecutionSnapshot) {

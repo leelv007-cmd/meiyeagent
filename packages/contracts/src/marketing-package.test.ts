@@ -46,7 +46,7 @@ test('a promotional material receipt extension preserves honest fallback provena
   });
 });
 
-test('a traffic package requires the complete sourced opportunity card', () => {
+test('a historical traffic package parses but transforms to current evidence', () => {
   const opportunity = hotTopicOpportunityCardSchema.parse({
     opportunityId: 'opportunity-1',
     status: 'active',
@@ -77,7 +77,9 @@ test('a traffic package requires the complete sourced opportunity card', () => {
     opportunity,
   });
 
-  assert.equal(result.opportunity?.protectedExpressionCopied, false);
+  assert.equal(result.declaration.taskType, 'traffic_opportunity');
+  assert.equal('capabilities' in result, false);
+  assert.equal('opportunity' in result, false);
 });
 
 test('a quick edit stays on the current task and exact base version', () => {

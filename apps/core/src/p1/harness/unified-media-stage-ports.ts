@@ -45,7 +45,7 @@ import {
 	compileImageIntentForProfile,
 	IMAGE_MODEL_RECIPE_PROFILE,
 } from "./image-intent-compiler.js";
-import { projectMarketingPackageEvidence } from "./marketing-scene-policy.js";
+import { createMarketingPackageEvidence } from "./marketing-package-evidence.js";
 import {
 	merchantExactTextMismatch,
 	merchantExactTextVerificationUnavailable,
@@ -177,6 +177,9 @@ export class UnifiedHarnessStagePorts
 				unitKind: kind,
 				declaration: input.declaration,
 				bundle: input.context.bundle,
+				...(input.allowedFactRefs
+					? { allowedFactRefs: input.allowedFactRefs }
+					: {}),
 				executionSnapshot: requireSnapshot(input.request),
 				prompt: input.request.prompts?.briefCompilation,
 				...(input.skillInstructions?.length
@@ -217,23 +220,15 @@ export class UnifiedHarnessStagePorts
 		const now = this.now();
 		const snapshot = requireSnapshot(input.request);
 		if (input.brief.kind === "image") {
-			const projected = projectMarketingPackageEvidence({
+			const marketing = createMarketingPackageEvidence({
 				declaration: input.declaration,
-				request: input.request,
 				context: input.context,
+				authorizedFactRefs: input.allowedFactRefs ?? [],
 				at: now,
 			});
-			const marketing = {
-				...projected,
-				rightsRefs: [
-					...new Set([...projected.rightsRefs, snapshot.rights.revision]),
-				],
-			};
 			const version = {
 				body: `${input.brief.intent.subject}；${input.brief.intent.scene}。`,
-				conversionHook:
-					marketing.promotionOffer?.callToAction.label ??
-					"私信了解详情并预约",
+				conversionHook: "私信了解详情并预约",
 				createdAt: now,
 				harnessCandidateId: input.selection.asset.id,
 				harnessScore: 0,
@@ -285,25 +280,17 @@ export class UnifiedHarnessStagePorts
 			assertImageRevisionAssemblyComplete(revision);
 			return this.contentPackages.write(revision);
 		}
-		const projected = projectMarketingPackageEvidence({
+		const marketing = createMarketingPackageEvidence({
 			declaration: input.declaration,
-			request: input.request,
 			context: input.context,
+			authorizedFactRefs: input.allowedFactRefs ?? [],
 			at: now,
 		});
-		const marketing = {
-			...projected,
-			rightsRefs: [
-				...new Set([...projected.rightsRefs, snapshot.rights.revision]),
-			],
-		};
 		const version = {
 			body: input.brief.storyboard
 				.map(({ description }) => description)
 				.join("；"),
-			conversionHook:
-				marketing.promotionOffer?.callToAction.label ??
-				"私信了解详情并预约",
+			conversionHook: "私信了解详情并预约",
 			createdAt: now,
 			harnessCandidateId: input.selection.asset.id,
 			harnessScore: 0,
@@ -373,10 +360,7 @@ export class UnifiedHarnessStagePorts
 			kind: "image_text_note",
 			candidates: await compiler.compileDrafts({
 				intent: input.declaration.normalizedIntent,
-				factRefs:
-					input.context.activeFactReferences?.map(
-						({ sourceRef }) => sourceRef,
-					) ?? [],
+				factRefs: [...(input.allowedFactRefs ?? [])],
 				rightsRefs: input.context.policyReferences.rightsRefs.map(
 					({ assetId }) => assetId,
 				),
@@ -427,18 +411,12 @@ export class UnifiedHarnessStagePorts
 	): Promise<ContentPackageRevisionDelivery> {
 		const now = this.now();
 		const snapshot = requireSnapshot(input.request);
-		const projected = projectMarketingPackageEvidence({
+		const marketing = createMarketingPackageEvidence({
 			declaration: input.declaration,
-			request: input.request,
 			context: input.context,
+			authorizedFactRefs: input.allowedFactRefs ?? [],
 			at: now,
 		});
-		const marketing = {
-			...projected,
-			rightsRefs: [
-				...new Set([...projected.rightsRefs, snapshot.rights.revision]),
-			],
-		};
 		const versionFor = (
 			candidate: HarnessNoteBrief["candidates"]["candidates"][number],
 			selected: boolean,
@@ -464,9 +442,7 @@ export class UnifiedHarnessStagePorts
 							: textBlock.body,
 					)
 					.join("\n\n"),
-				conversionHook:
-					marketing.promotionOffer?.callToAction.label ??
-					"私信了解详情并预约",
+				conversionHook: "私信了解详情并预约",
 				createdAt: now,
 				harnessCandidateId: candidate.styleId,
 				harnessScore: selected ? 100 : 0,
@@ -495,8 +471,10 @@ export class UnifiedHarnessStagePorts
 		if (!winner) {
 			throw new Error("The selected NotePlan style must be delivered.");
 		}
+		const claimExtraction = assertNoteVisibleDelivery(input, winner, now);
 		const revision = {
 			additionalVersions: versions.filter(({ id }) => id !== winner.id),
+			claimExtraction,
 			expectedRevision: input.request.expectedRevision,
 			generated: {
 				assetIds: input.selection.ownedAssets.map(({ id }) => id),
@@ -653,9 +631,10 @@ function assertMediaVisibleDelivery(
 		: `marketing_identity:${snapshot.identity.id}:${snapshot.identity.revision}`;
 	const result = validateHarnessVisibleDelivery({
 		assetRefs: [...input.brief.referenceAssetIds],
-		brief: input.brief,
+		brief: input.brief as unknown as Record<string, unknown>,
 		candidateId: version.id,
 		context: input.context,
+		allowedFactRefs: input.allowedFactRefs ?? [],
 		evaluatedAt,
 		...(expressionIdentityRef ? { expressionIdentityRef } : {}),
 		visibleText: [
@@ -670,6 +649,45 @@ function assertMediaVisibleDelivery(
 							text,
 						}))
 				: []),
+		],
+		workspaceId: input.request.workspaceId,
+	});
+	if (!result.passed) {
+		throw new HarnessSelectionError(
+			[...new Set(result.failures.map(({ gateId }) => gateId))],
+			result.failures[0]?.reason,
+			result.failures.flatMap(({ triggeredClaims }) => triggeredClaims ?? []),
+		);
+	}
+	return result.claimExtraction!;
+}
+
+function assertNoteVisibleDelivery(
+	input: Parameters<HarnessNoteStagePorts["assembleNoteAndDeliver"]>[0],
+	version: {
+		body: string;
+		conversionHook: string;
+		id: string;
+		title: string;
+	},
+	evaluatedAt: string,
+) {
+	const snapshot = requireSnapshot(input.request);
+	const expressionIdentityRef = isOfficialNeutralIdentity(snapshot.identity)
+		? undefined
+		: `marketing_identity:${snapshot.identity.id}:${snapshot.identity.revision}`;
+	const result = validateHarnessVisibleDelivery({
+		assetRefs: [],
+		brief: input.brief as unknown as Record<string, unknown>,
+		candidateId: version.id,
+		context: input.context,
+		allowedFactRefs: input.allowedFactRefs ?? [],
+		evaluatedAt,
+		...(expressionIdentityRef ? { expressionIdentityRef } : {}),
+		visibleText: [
+			{ field: "title", text: version.title },
+			{ field: "body", text: version.body },
+			{ field: "cta", text: version.conversionHook },
 		],
 		workspaceId: input.request.workspaceId,
 	});

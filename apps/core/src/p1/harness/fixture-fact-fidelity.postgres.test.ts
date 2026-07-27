@@ -18,7 +18,7 @@ import { MemoryContextSourceRevisionRepository } from '../operations/context-sou
 import { PostgresAssetIntakeRepository } from '../operations/postgres-asset-intake-repository.js';
 import { PostgresContextBundleRepository } from '../operations/postgres-context-bundle-repository.js';
 import { PostgresStoreFactLedger } from '../operations/postgres-store-fact-ledger.js';
-import { projectMarketingPackageEvidence } from './marketing-scene-policy.js';
+import { createMarketingPackageEvidence } from './marketing-package-evidence.js';
 import { LedgerBackedHarnessContextPort } from './production-context-port.js';
 import { projectTodayRecommendation } from './today-recommendation.js';
 import {
@@ -31,7 +31,7 @@ const connectionString = process.env.TEST_DATABASE_URL;
 const now = '2026-07-25T12:00:00.000Z';
 
 test(
-  'asset intake fact reaches the frozen bundle, fixture brief and opportunity policy',
+  'asset intake fact reaches the frozen bundle, fixture brief and delivery evidence',
   { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
   async (t) => {
     const pool = new Pool({ connectionString });
@@ -147,6 +147,7 @@ test(
           unitKind: 'copy',
           declaration,
           bundle: context.bundle,
+          allowedFactRefs: [`store_fact:${fact.factId}:${fact.revision}`],
         },
         runner,
       );
@@ -172,14 +173,13 @@ test(
         })}`,
       );
 
-      const evidence = projectMarketingPackageEvidence({
+      const evidence = createMarketingPackageEvidence({
         declaration,
-        request,
         context,
+        authorizedFactRefs: brief.factRefs,
         at: now,
       });
-      assert.equal(evidence.opportunity?.status, 'active');
-      assert.deepEqual(evidence.opportunity?.matchedStoreReferences, brief.factRefs);
+      assert.deepEqual(evidence.factRefs, brief.factRefs);
 
       const versionId = 't43-version-1';
       const title = '本周头疗团购推荐';
@@ -250,7 +250,6 @@ test(
             candidateScores: [{ candidateId: 'c01', reason: whyNow }],
           },
         },
-        now,
       );
       assert.ok(recommendation.recommendation);
       assert.equal(recommendation.recommendation.title, title);

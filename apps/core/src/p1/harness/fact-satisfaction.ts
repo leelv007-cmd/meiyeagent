@@ -7,6 +7,7 @@ import {
 } from '@meiye/contracts';
 import { z } from 'zod';
 import type { StructuredNodeRunner } from '../model-supply/structured-node-runner.js';
+import { isReferenceEligibleFactSnapshot } from './structured-nodes.js';
 
 export const factSatisfactionOutputSchema = z
   .object({
@@ -193,7 +194,7 @@ async function eligibleFacts(
       (
         item,
       ): item is typeof item & { factSnapshot: NonNullable<FrozenFact> } =>
-        item.layer === 'current_fact' && item.factSnapshot !== undefined,
+        isReferenceEligibleFactSnapshot(item),
     )
     .filter(
       ({ factSnapshot }) =>

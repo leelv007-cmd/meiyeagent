@@ -290,9 +290,12 @@ test('production Recipe fact satisfaction gates the facts visible to the Copy Br
   const prompt = JSON.parse(runner.requests[1]?.prompt ?? '{}');
   assert.deepEqual(
     Object.keys(prompt.bundle.dimensions.store_facts_assets),
-    ['service'],
+    ['price', 'service'],
   );
-  assert.doesNotMatch(JSON.stringify(prompt), /price-1|398/u);
+  assert.equal(
+    prompt.bundle.dimensions.store_facts_assets.price.factSnapshot,
+    undefined,
+  );
 });
 
 test('an unanswered industry gap reports the confirmed grounding surface to the workflow', async () => {
@@ -728,6 +731,21 @@ test('a frozen Composer Copy snapshot uses the single revision writer', async ()
   );
   const snapshot = composerSnapshot();
   const context = contextSnapshot();
+  context.bundle.referencedFactRevisions = [
+    { factId: 'service-1', revision: 1 },
+  ];
+  context.bundle.dimensions.store_facts_assets = {
+    service: factContribution('service-1', 'service', '日常护理'),
+  };
+  context.activeFacts = [
+    {
+      key: 'service',
+      value: '日常护理',
+      sourceRef: 'store_fact:service-1:1',
+      effectiveFrom: '2026-07-22T00:00:00.000Z',
+      expiresAt: null,
+    },
+  ];
   context.policyReferences.sourceRefs = [
     {
       id: 'store_fact:service-1:1',
@@ -765,6 +783,7 @@ test('a frozen Composer Copy snapshot uses the single revision writer', async ()
       implicitConstraints: [],
     },
     context,
+    allowedFactRefs: ['store_fact:service-1:1'],
     brief: {
       kind: 'copy',
       instructions: 'x'.repeat(80),
@@ -1021,6 +1040,10 @@ test('assembly delivers legitimate promotion copy backed by confirmed facts', as
       workspaceId: 'workspace-1',
     }),
   );
+  context.bundle.dimensions.store_facts_assets = {
+    price: factContribution('offer-price', 'price', 398),
+    discount: factContribution('offer-discount', 'price', 50),
+  };
 
   await ports.assembleAndDeliver({
     workflowId: snapshot.task.id,
@@ -1036,6 +1059,7 @@ test('assembly delivers legitimate promotion copy backed by confirmed facts', as
       implicitConstraints: [],
     },
     context,
+    allowedFactRefs: activeFacts.map(({ sourceRef }) => sourceRef),
     brief: {
       kind: 'copy',
       instructions: 'x'.repeat(80),
@@ -1607,7 +1631,7 @@ test('production ports compose #31, canonical gates, a single primary result and
     })),
     [{ candidateId: 'c01', score: 0 }],
   );
-  assert.equal(delivery.inputs[0]?.marketing.promotionOffer?.status, 'unpriced');
+  assert.equal('promotionOffer' in (delivery.inputs[0]?.marketing ?? {}), false);
   assert.deepEqual(traces.get('intent_naming')?.metrics, {
     initial: { calls: 1, schemaValid: 1, schemaInvalid: 0 },
     repair: { status: 'observed', count: 0, reasons: [] },

@@ -293,7 +293,7 @@ test('brief compilation produces complete copy, image and video unit briefs', as
         '写一条可信、克制的本地门店项目曝光文案。先说明顾客常见困扰，再引用已确认的项目与环境事实解释服务价值；不编造价格、疗效或资质，结尾使用低压力的私信预约行动，并保持主理人本人分享的口吻。',
       platform: 'xiaohongshu',
       cta: '私信预约到店咨询',
-      factRefs: ['fact-service-1'],
+      factRefs: [],
       assetRefs: ['asset-room-1'],
       identityRefs: ['identity-owner-1'],
       constraints: ['不得编造价格'],
@@ -365,7 +365,7 @@ test('brief compilation produces complete copy, image and video unit briefs', as
       case 'copy':
         assert.equal(brief.platform, 'xiaohongshu');
         assert.equal(brief.cta, '私信预约到店咨询');
-        assert.deepEqual(brief.factRefs, ['fact-service-1']);
+        assert.deepEqual(brief.factRefs, []);
         break;
       case 'image':
         assert.equal(brief.parameters.ratio, '3:4');
@@ -383,7 +383,7 @@ test('brief compilation produces complete copy, image and video unit briefs', as
       runner.requests[0]?.effectIdempotencyKey,
       `wf:workflow-brief:s3:${kind}-primary:0`
     );
-    const expectedComplete = { copy: 8, image: 14, video: 12 }[kind];
+    const expectedComplete = { copy: 7, image: 14, video: 12 }[kind];
     const expectedTotal = { copy: 8, image: 20, video: 12 }[kind];
     assert.deepEqual(metrics.snapshot().nestedCompleteness, {
       complete: expectedComplete,
@@ -533,12 +533,21 @@ test('brief compilation exposes only fact refs authorized by satisfaction', asyn
   const prompt = JSON.parse(runner.requests[0]?.prompt ?? '{}');
   assert.deepEqual(
     Object.keys(prompt.bundle.dimensions.store_facts_assets),
-    ['service'],
+    ['price', 'service'],
   );
   assert.deepEqual(prompt.bundle.referencedFactRevisions, [
     { factId: 'service-1', revision: 1 },
   ]);
-  assert.doesNotMatch(JSON.stringify(prompt), /price-1|398/u);
+  assert.equal(
+    prompt.bundle.dimensions.store_facts_assets.price.factSnapshot,
+    undefined,
+  );
+  assert.deepEqual(prompt.factReferencePolicy, {
+    eligibleLayer: 'current_fact',
+    eligiblePool: 'store_personal',
+    authorizedFactRefs: ['store_fact:service-1:1'],
+    nonEligibleFacts: 'context_only',
+  });
 });
 
 test('brief compilation keeps current facts separate from instruction contributions', async () => {
@@ -585,6 +594,7 @@ test('brief compilation keeps current facts separate from instruction contributi
         implicitConstraints: [],
       },
       bundle,
+      allowedFactRefs: ['store_fact:service-1:1'],
     },
     runner,
   );
@@ -592,12 +602,15 @@ test('brief compilation keeps current facts separate from instruction contributi
   const prompt = JSON.parse(runner.requests[0]?.prompt ?? '{}');
   assert.deepEqual(
     Object.keys(prompt.bundle.dimensions.store_facts_assets),
-    ['service'],
+    ['price', 'service'],
   );
   assert.deepEqual(prompt.bundle.referencedFactRevisions, [
     { factId: 'service-1', revision: 1 },
   ]);
-  assert.doesNotMatch(JSON.stringify(prompt), /price-1|398/u);
+  assert.equal(
+    prompt.bundle.dimensions.store_facts_assets.price.factSnapshot,
+    undefined,
+  );
 });
 
 test('copy brief model failure uses a conservative brief and reports degradation', async () => {
@@ -687,7 +700,7 @@ test('brief compilation receives the frozen structured Composer contract before 
       '写一条可信、克制的本地门店项目曝光文案。先说明顾客常见困扰，再引用已确认的项目与环境事实解释服务价值；不编造价格、疗效或资质，结尾使用低压力的私信预约行动，并保持主理人本人分享的口吻。',
     platform: 'xiaohongshu',
     cta: '私信预约到店咨询',
-    factRefs: ['fact-service-1'],
+    factRefs: [],
     assetRefs: ['asset-room-1'],
     identityRefs: ['identity-owner-1'],
     constraints: ['不得编造价格'],

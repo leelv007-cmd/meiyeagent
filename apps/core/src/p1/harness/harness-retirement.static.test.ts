@@ -45,7 +45,7 @@ test('core production source cannot resurrect the retired copy bypass or scorer'
   assert.deepEqual(violations, []);
 });
 
-test('copy production no longer calls scene-policy projection or emits retired capability claims', () => {
+test('copy production uses only the narrow marketing evidence projection', () => {
   const productionStage = readFileSync(
     resolve(repositoryRoot, 'apps/core/src/p1/harness/production-stage-ports.ts'),
     'utf8',
@@ -54,8 +54,7 @@ test('copy production no longer calls scene-policy projection or emits retired c
   assert.doesNotMatch(productionStage, /projectMarketingPackageEvidence/u);
 
   const policySources = [
-    'apps/core/src/p1/harness/marketing-scene-policy.ts',
-    'apps/core/src/p1/harness/copy-marketing-evidence.ts',
+    'apps/core/src/p1/harness/marketing-package-evidence.ts',
   ].map((file) => readFileSync(resolve(repositoryRoot, file), 'utf8'));
   for (const policySource of policySources) {
     assert.doesNotMatch(policySource, /deriveMarketingPackageCapabilities/u);
@@ -73,8 +72,5 @@ test('copy production no longer calls scene-policy projection or emits retired c
       ),
     )
     .sort();
-  assert.deepEqual(legacyCallers, [
-    'apps/core/src/p1/harness/marketing-scene-policy.ts',
-    'apps/core/src/p1/harness/unified-media-stage-ports.ts',
-  ]);
+  assert.deepEqual(legacyCallers, []);
 });

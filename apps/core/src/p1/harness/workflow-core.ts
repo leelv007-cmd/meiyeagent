@@ -194,6 +194,7 @@ export interface HarnessStagePorts {
     request: HarnessWorkflowInput;
     declaration: IntentDeclaration;
     context: HarnessContextSnapshot;
+    allowedFactRefs?: readonly string[];
     brief: CopyBrief;
     selection: HarnessSelectionResult;
     skillInstructions?: readonly ResolvedSkillInstruction[];
@@ -206,6 +207,7 @@ export interface HarnessMediaStagePorts extends HarnessStagePorts {
     request: HarnessWorkflowInput;
     declaration: IntentDeclaration;
     context: HarnessContextSnapshot;
+    allowedFactRefs?: readonly string[];
     skillInstructions?: readonly ResolvedSkillInstruction[];
   }): Promise<MediaBrief | MeasuredMediaBrief>;
   executeMediaAndSelect(input: {
@@ -222,6 +224,7 @@ export interface HarnessMediaStagePorts extends HarnessStagePorts {
     request: HarnessWorkflowInput;
     declaration: IntentDeclaration;
     context: HarnessContextSnapshot;
+    allowedFactRefs?: readonly string[];
     brief: MediaBrief;
     selection: HarnessMediaSelectionResult;
     skillInstructions?: readonly ResolvedSkillInstruction[];
@@ -234,6 +237,7 @@ export interface HarnessNoteStagePorts extends HarnessStagePorts {
     request: HarnessWorkflowInput;
     declaration: IntentDeclaration;
     context: HarnessContextSnapshot;
+    allowedFactRefs?: readonly string[];
     skillInstructions?: readonly ResolvedSkillInstruction[];
   }): Promise<HarnessNoteBrief>;
   executeNoteAndSelect(input: {
@@ -251,6 +255,7 @@ export interface HarnessNoteStagePorts extends HarnessStagePorts {
     request: HarnessWorkflowInput;
     declaration: IntentDeclaration;
     context: HarnessContextSnapshot;
+    allowedFactRefs?: readonly string[];
     brief: HarnessNoteBrief;
     selection: HarnessNoteSelectionResult;
     skillInstructions?: readonly ResolvedSkillInstruction[];
@@ -927,6 +932,7 @@ export async function runHarnessWorkflow(
         request: activeRequest,
         declaration: routed.declaration,
         context: bundle,
+        allowedFactRefs: factGate.allowedFactRefs ?? [],
         brief,
         selection,
         ...(assemblySkills.instructions.length > 0
@@ -1057,6 +1063,18 @@ async function runNoteHarnessWorkflow(
     message: merchantContextMessage(activeRequest),
   });
 
+  let factGate = await resolveFactSatisfaction({
+    workflowId,
+    request: activeRequest,
+    declaration: routed.declaration,
+    context,
+    ports,
+    runtime,
+    reportProgress,
+  });
+  activeRequest = factGate.request;
+  context = factGate.context;
+
   const briefSkills = stageSkills.brief_compilation;
   let brief = await runtime.runStep(
     harnessEffectKey(
@@ -1071,6 +1089,9 @@ async function runNoteHarnessWorkflow(
         request: activeRequest,
         declaration: routed.declaration,
         context,
+        ...(factGate.allowedFactRefs
+          ? { allowedFactRefs: factGate.allowedFactRefs }
+          : {}),
         ...(briefSkills.instructions.length > 0
           ? { skillInstructions: briefSkills.instructions }
           : {}),
@@ -1118,6 +1139,17 @@ async function runNoteHarnessWorkflow(
   );
   if (fenced.bundle.hash !== context.bundle.hash) {
     context = fenced;
+    factGate = await resolveFactSatisfaction({
+      workflowId,
+      request: activeRequest,
+      declaration: routed.declaration,
+      context,
+      ports,
+      runtime,
+      reportProgress,
+    });
+    activeRequest = factGate.request;
+    context = factGate.context;
     brief = await runtime.runStep(
       harnessEffectKey(
         workflowId,
@@ -1134,6 +1166,9 @@ async function runNoteHarnessWorkflow(
           request: activeRequest,
           declaration: routed.declaration,
           context,
+          ...(factGate.allowedFactRefs
+            ? { allowedFactRefs: factGate.allowedFactRefs }
+            : {}),
           ...(briefSkills.instructions.length > 0
             ? { skillInstructions: briefSkills.instructions }
             : {}),
@@ -1218,6 +1253,7 @@ async function runNoteHarnessWorkflow(
         request: activeRequest,
         declaration: routed.declaration,
         context,
+        allowedFactRefs: factGate.allowedFactRefs ?? [],
         brief,
         selection,
         ...(assemblySkills.instructions.length > 0
@@ -1398,6 +1434,18 @@ async function runMediaHarnessWorkflow(
     message: merchantContextMessage(activeRequest),
   });
 
+  let factGate = await resolveFactSatisfaction({
+    workflowId,
+    request: activeRequest,
+    declaration: routed.declaration,
+    context: bundle,
+    ports,
+    runtime,
+    reportProgress,
+  });
+  activeRequest = factGate.request;
+  bundle = factGate.context;
+
   const briefSkills = stageSkills.brief_compilation;
   let compiledBrief = await runtime.runStep(
     harnessEffectKey(
@@ -1412,6 +1460,9 @@ async function runMediaHarnessWorkflow(
         request: activeRequest,
         declaration: routed.declaration,
         context: bundle,
+        ...(factGate.allowedFactRefs
+          ? { allowedFactRefs: factGate.allowedFactRefs }
+          : {}),
         ...(briefSkills.instructions.length > 0
           ? { skillInstructions: briefSkills.instructions }
           : {}),
@@ -1485,6 +1536,17 @@ async function runMediaHarnessWorkflow(
   );
   if (fenced.bundle.hash !== bundle.bundle.hash) {
     bundle = fenced;
+    factGate = await resolveFactSatisfaction({
+      workflowId,
+      request: activeRequest,
+      declaration: routed.declaration,
+      context: bundle,
+      ports,
+      runtime,
+      reportProgress,
+    });
+    activeRequest = factGate.request;
+    bundle = factGate.context;
     await trace(runtime, workflowId, 'context_injection', {
       executionRoot: mediaExecutionRoot(request),
       bundleId: bundle.bundle.bundleId,
@@ -1515,6 +1577,9 @@ async function runMediaHarnessWorkflow(
           request: activeRequest,
           declaration: routed.declaration,
           context: bundle,
+          ...(factGate.allowedFactRefs
+            ? { allowedFactRefs: factGate.allowedFactRefs }
+            : {}),
           ...(briefSkills.instructions.length > 0
             ? { skillInstructions: briefSkills.instructions }
             : {}),
@@ -1585,6 +1650,7 @@ async function runMediaHarnessWorkflow(
         request: activeRequest,
         declaration: routed.declaration,
         context: bundle,
+        allowedFactRefs: factGate.allowedFactRefs ?? [],
         brief,
         selection,
         ...(assemblySkills.instructions.length > 0
