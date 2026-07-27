@@ -2,6 +2,7 @@ import { DBOS } from '@dbos-inc/dbos-sdk';
 import {
   ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
   confirmationCardTimeoutSecondsSchema,
+  NOTE_STYLE_CONFIG_KEY,
 } from '@meiye/contracts';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
@@ -1344,6 +1345,9 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
         HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
         HARNESS_WOZ_RECIPE_CONFIG_KEY,
+        // 笔记风格集合每次编译都现读（AdminConfigNotePlanSettingsSource.read），
+        // 不登记的话后台会告诉运营「重启后生效」——与事实相反（D-116）。
+        NOTE_STYLE_CONFIG_KEY,
         'plan.addons',
         'plan.trial.enabled',
         'plan.allowances.trial',
@@ -1362,6 +1366,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
         HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
         HARNESS_WOZ_RECIPE_CONFIG_KEY,
+        NOTE_STYLE_CONFIG_KEY,
         'byok.adapter.assembly',
         'douyin.adapter.assembly',
         'model.execution.mode',

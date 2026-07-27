@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { NOTE_STYLE_CONFIG_KEY } from '@meiye/contracts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { p1QueryKeys } from './query-keys';
@@ -7,6 +8,98 @@ import {
   adminConfigApplyRequest,
   AdminRuntimeConfigControl,
 } from './admin-runtime-config-control';
+import { defaultAdminConfigValue } from './admin-config-field-model';
+import { ADMIN_CONFIG_KEYS } from './admin-config-view-model';
+
+/**
+ * U05 的硬门在这里有一条全量镜像断言，**穿过生产控制器**跑：
+ * 控制器自己决定一个键走常驻单选还是走下拉挑选，所以只有从这里进去，
+ * 才能证明「19 个键全都落在新渲染层上」——直接喂表单组件会绕过这道分流。
+ */
+function renderControlForKey(key: string) {
+  const queryClient = new QueryClient();
+  queryClient.setQueryData(p1QueryKeys.request('admin-config', 'config_list'), [
+    {
+      activationEvidenceStatus: 'recorded_only',
+      actorId: 'platform-admin',
+      correlationId: `all-keys-${key}`,
+      createdAt: '2026-07-27T00:00:00.000Z',
+      effectiveValue: defaultAdminConfigValue(key),
+      key,
+      reason: 'coverage',
+      revision: 1,
+      rolledBackToRevision: null,
+      scope: 'global',
+      status: 'applied',
+      storedValue: defaultAdminConfigValue(key),
+      wired: true,
+    },
+  ]);
+  queryClient.setQueryData(
+    p1QueryKeys.request('admin-config', 'config_history', { key }),
+    []
+  );
+  return renderToStaticMarkup(
+    <QueryClientProvider client={queryClient}>
+      <AdminRuntimeConfigControl keys={[key]} />
+    </QueryClientProvider>
+  );
+}
+
+/**
+ * 热加载这句提醒得说到点子上：讲套餐的那句「只影响新结账、新门店登记」，
+ * 配在笔记风格上答非所问——风格改完影响的是下一篇笔记怎么写，不是谁下次付钱。
+ */
+test('the note style key explains itself in note terms, not in checkout terms', () => {
+  const html = renderControlForKey(NOTE_STYLE_CONFIG_KEY);
+  assert.match(html, /之后新写的笔记会按新风格来/);
+  assert.doesNotMatch(html, /新结账/);
+});
+
+test('every admin config key reaches the schema renderer through the production control', () => {
+  assert.equal(ADMIN_CONFIG_KEYS.length, 19);
+  for (const key of ADMIN_CONFIG_KEYS) {
+    const html = renderControlForKey(key);
+    assert.match(
+      html,
+      new RegExp(`admin-config-form-${key.replaceAll('.', '\\.')}`),
+      `${key} did not reach the schema renderer`
+    );
+    // 后台任何一个配置项都不该再出现「自己拼一段 JSON」的输入框。
+    assert.doesNotMatch(
+      html,
+      /<textarea[^>]*font-mono/,
+      `${key} kept a code editor`
+    );
+    assert.doesNotMatch(
+      html,
+      /admin_runtime_config_value.*<textarea/,
+      `${key} kept a raw value editor`
+    );
+  }
+});
+
+/** 四个执行模式/装配键必须常驻展开，而不是被塞进「先选一项」的下拉里。 */
+test('mode and assembly keys stay expanded instead of hiding behind the key picker', () => {
+  for (const key of [
+    'model.execution.mode',
+    'model.media.execution.mode',
+    'byok.adapter.assembly',
+    'douyin.adapter.assembly',
+  ]) {
+    const html = renderControlForKey(key);
+    assert.match(
+      html,
+      new RegExp(`admin-runtime-config-inline-${key.replaceAll('.', '\\.')}`),
+      `${key} lost its expanded card`
+    );
+    assert.doesNotMatch(
+      html,
+      /id="admin-runtime-config-key"/,
+      `${key} was pushed behind the key picker`
+    );
+  }
+});
 
 test('shows HTTP and worker effective runtime states independently', () => {
   const queryClient = new QueryClient();
@@ -263,4 +356,8 @@ test('labels commerce config as hot-read while disclosing the legacy Product fal
   assert.match(html, /旧 Product 兜底仍由部署配置治理/);
   assert.match(html, /admin-runtime-config-value/);
   assert.match(html, /审阅并记录/);
+  // U05：受控配置一律走结构化表单，后台不再留手敲 JSON 的口子（D-107）。
+  assert.match(html, /admin-config-form-plan\.allowances\.growth/);
+  assert.doesNotMatch(html, /<textarea/);
+  assert.match(html, /data-slot="number-stepper"/);
 });
