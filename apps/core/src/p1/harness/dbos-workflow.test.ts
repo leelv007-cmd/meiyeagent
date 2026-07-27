@@ -107,8 +107,8 @@ test('refund failure still records terminal state and preserves the execution er
         events.push(`step:${name}`);
         return operation();
       },
-      async recordTerminalFailure() {
-        events.push('terminal');
+      async recordTerminalFailure(quotaRefunded) {
+        events.push(`terminal:refunded=${quotaRefunded}`);
       },
     }),
     (error) => error === executionError,
@@ -119,8 +119,60 @@ test('refund failure still records terminal state and preserves the execution er
     'step:schedule-product-usage-refund',
     'scheduled:refund',
     'step:persist-terminal-failure',
-    'terminal',
+    // The 申报卡 quotes this. A scheduled compensation has given nothing back
+    // yet, so claiming 「已退回」 here would be the card's one possible lie.
+    'terminal:refunded=false',
   ]);
+});
+
+test('a refund that lands is the only thing that lets the card say 额度已退回', async () => {
+  const executionError = new Error('generation failed');
+  const recorded: boolean[] = [];
+  await assert.rejects(
+    failHarnessWorkflowPreservingExecutionError({
+      billing: {
+        async commit() {},
+        async refund() {},
+        async scheduleCompensation() {
+          throw new Error('compensation must not be needed');
+        },
+      },
+      input: settlement,
+      error: executionError,
+      runStep: async (_name, operation) => operation(),
+      async recordTerminalFailure(quotaRefunded) {
+        recorded.push(quotaRefunded);
+      },
+    }),
+    (error) => error === executionError,
+  );
+  assert.deepEqual(recorded, [true]);
+});
+
+test('a refund that reaches neither the ledger nor the compensation store claims nothing', async () => {
+  const executionError = new Error('generation failed');
+  const recorded: boolean[] = [];
+  await assert.rejects(
+    failHarnessWorkflowPreservingExecutionError({
+      billing: {
+        async commit() {},
+        async refund() {
+          throw new Error('billing unavailable');
+        },
+        async scheduleCompensation() {
+          throw new Error('compensation store unavailable');
+        },
+      },
+      input: settlement,
+      error: executionError,
+      runStep: async (_name, operation) => operation(),
+      async recordTerminalFailure(quotaRefunded) {
+        recorded.push(quotaRefunded);
+      },
+    }),
+    (error) => error === executionError,
+  );
+  assert.deepEqual(recorded, [false]);
 });
 
 test('hold expiry refunds the reservation and returns a successful non-delivery result', async () => {

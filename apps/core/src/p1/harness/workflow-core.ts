@@ -1116,7 +1116,10 @@ async function runNoteHarnessWorkflow(
         ({ styleId }) => styleId === selectedStyleId,
       )
     ) {
-      throw new HarnessMediaScopeError(merchantNoteStyleUnavailable());
+      throw new HarnessMediaScopeError(
+        'Selected note style is absent from the recompiled brief.',
+        merchantNoteStyleUnavailable(),
+      );
     }
     await trace(runtime, workflowId, 'context_injection', {
       executionRoot: mediaExecutionRoot(activeRequest),
@@ -1583,7 +1586,16 @@ export class HarnessMediaScopeError extends Error {
   readonly code = 'HARNESS_MEDIA_SCOPE_INVALID';
   readonly status = 409;
 
-  constructor(message: string) {
+  /**
+   * Merchant-facing copy travels in its own field, never in `message`:
+   * `normalizeHarnessTerminalFailure` only forwards `merchantMessage`, so
+   * anything written into the Error message is engineering-only and the
+   * 申报卡 would fall back to the generic 兜底 line.
+   */
+  constructor(
+    message: string,
+    readonly merchantMessage?: string,
+  ) {
     super(message);
     this.name = 'HarnessMediaScopeError';
   }

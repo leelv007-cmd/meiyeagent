@@ -5,6 +5,8 @@ import {
   type Page,
 } from '@playwright/test';
 
+import { COMPOSER_SESSION_STORAGE_KEY } from '@/product/composer/composer-session';
+
 import {
   cleanupE2EUsers,
   loginByForm,
@@ -147,22 +149,24 @@ async function applyConfirmationCardTimeout(
   expect(signedOut.ok, signedOut.body).toBeTruthy();
 }
 
-async function startRun(page: Page, intent: string) {
-  await page.goto('/dashboard');
-  await page.getByTestId('composer-lens-option-copy').click();
-  await page.getByTestId('composer-intent-input').fill(intent);
-  await expect(page.getByTestId('composer-quote-line')).toBeVisible({
-    timeout: 30_000,
-  });
-
-  const responsePromise = page.waitForResponse(
+function submissionResponse(page: Page) {
+  return page.waitForResponse(
     (response) =>
       response.request().method() === 'POST' &&
       response.url().includes('/api/core/p1/composer/submissions'),
     { timeout: 120_000 }
   );
-  await page.getByTestId('composer-submit').click();
+}
 
+/**
+ * A submission may pause on the Brief surface before it reaches Core. Both
+ * shapes end at the same POST, which is the only thing that proves a submit
+ * actually happened rather than a button merely being clickable.
+ */
+async function settleSubmission(
+  page: Page,
+  responsePromise: ReturnType<typeof submissionResponse>
+) {
   const briefSurface = page.getByTestId('composer-brief-surface');
   const next = await Promise.race([
     briefSurface
@@ -184,6 +188,19 @@ async function startRun(page: Page, intent: string) {
     taskId: envelope.data?.task?.id ?? '',
     workId: envelope.data?.work?.id ?? '',
   };
+}
+
+async function startRun(page: Page, intent: string) {
+  await page.goto('/dashboard');
+  await page.getByTestId('composer-lens-option-copy').click();
+  await page.getByTestId('composer-intent-input').fill(intent);
+  await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+    timeout: 30_000,
+  });
+
+  const responsePromise = submissionResponse(page);
+  await page.getByTestId('composer-submit').click();
+  return settleSubmission(page, responsePromise);
 }
 
 /** 还剩 N 条 — the passive quota line the refund has to move back. */
@@ -232,7 +249,9 @@ test.describe('S2 失败与恢复', () => {
     expect(nextStep).toMatch(/[一-龥]/u);
     assertMerchantLanguage(await card.innerText(), [run.taskId, run.workId]);
 
-    // 可恢复入口 — a failure that offers nothing is a dead end (D-116).
+    // 可恢复入口 — a failure that offers nothing is a dead end (D-116), and an
+    // entry that renders but cannot act is the same dead end with a button on
+    // it. So each one is clicked and its effect asserted, never counted.
     const actions = page.getByTestId('composer-report-actions');
     expect(await actions.locator('button').count()).toBeGreaterThan(0);
 
@@ -254,6 +273,30 @@ test.describe('S2 失败与恢复', () => {
 
     // A blocked draft must not be left on screen as if it were usable.
     await expect(page.getByTestId('composer-delivery-turn')).toHaveCount(0);
+
+    // 改一下要求 must hand the composer back. A failed run leaves the lens
+    // frozen, so this is the assertion that separates a working entry from a
+    // focus() call on a disabled input.
+    const intentInput = page.getByTestId('composer-intent-input');
+    await expect(intentInput).toBeDisabled();
+    await page.getByTestId('composer-report-action-adjust_intent').click();
+    await expect(intentInput).toBeEnabled();
+    const adjusted = `${FAILURE_DRILL_INTENT}｜再来一次`;
+    await intentInput.fill(adjusted);
+    await expect(intentInput).toHaveValue(adjusted);
+
+    // 再生成一次 must reach Core again — and with the merchant's edit intact,
+    // not the sentence that already failed.
+    const retried = submissionResponse(page);
+    await page.getByTestId('composer-report-action-retry').click();
+    const second = await settleSubmission(page, retried);
+    expect(second.taskId).not.toBe(run.taskId);
+    // The retry is a new run in the same conversation: the old 申报 is gone and
+    // the transcript is live again.
+    await expect(page.getByTestId('composer-turn-merchant')).toContainText(
+      adjusted,
+      { timeout: 60_000 }
+    );
   });
 
   test('W10: closing the tab no longer loses the run — the server brings it back', async ({
@@ -261,10 +304,18 @@ test.describe('S2 失败与恢复', () => {
     page,
     request,
   }) => {
-    test.setTimeout(600_000);
-    // Hold the question long enough that the run is still in flight when the
-    // tab closes; the release deadline stays Core's, set through admin config.
-    await applyConfirmationCardTimeout(page, request, 600, 'time-bridge');
+    test.setTimeout(900_000);
+    // Long enough that the run is still held when the tab closes, short enough
+    // that the timeout genuinely fires while the merchant is away — a hold that
+    // never expires would let a 「超时终态」 assertion pass without any timeout
+    // having happened. The deadline stays Core's, set through admin config.
+    const holdSeconds = 120;
+    await applyConfirmationCardTimeout(
+      page,
+      request,
+      holdSeconds,
+      'time-bridge'
+    );
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
     await seedConfirmedStore(page);
@@ -309,13 +360,16 @@ test.describe('S2 失败与恢复', () => {
         timeout: 120_000,
       })
       .toBeGreaterThanOrEqual(stagesBefore);
-    // 超时终态提示持久化 / 未决问题回到原位 — the question the run is held on is
-    // still there after leaving, because Core kept it.
+    // 未决问题回到原位 — the question the run is held on is still there after
+    // leaving, because Core kept it.
     await expect(reopened.getByTestId('composer-question-card')).toBeVisible({
       timeout: 120_000,
     });
 
-    // 任务中心接入 harness 任务 + 深链回活对话.
+    // 任务中心接入 harness 任务 + 深链回活对话. The tab holds this run's handle in
+    // sessionStorage; planting a different one first is what makes the deep
+    // link's precedence observable rather than assumed — otherwise both paths
+    // would open the same conversation and the click would prove nothing.
     const asyncTaskTrigger = reopened
       .getByRole('button', { name: /进行中|任务/u })
       .first();
@@ -328,6 +382,64 @@ test.describe('S2 失败与恢复', () => {
       `a[href*="taskId=${encodeURIComponent(run.taskId)}"]`
     );
     await expect(deepLink).toHaveCount(1);
+
+    await deepLink.click();
+    await expect(reopened).toHaveURL(
+      new RegExp(`taskId=${encodeURIComponent(run.taskId)}`)
+    );
+    await expect(reopened.getByTestId('composer-turn-merchant')).toContainText(
+      intent,
+      { timeout: 120_000 }
+    );
+
+    // 深链优先于本地把手. A tab that already holds some other conversation must
+    // still open the run the link names — the tab's handle is only what it saw
+    // last, and the server is the truth. Planted before the page's own scripts
+    // run, so the stale session is genuinely there when the composer mounts.
+    const stale = '上一条已经不在进行中的旧对话';
+    const deepLinkPage = await context.newPage();
+    await deepLinkPage.addInitScript(
+      ([key, text]) => {
+        window.sessionStorage.setItem(
+          key,
+          JSON.stringify({
+            schema: 'composer-session/v1',
+            sessionId: 'stale-session',
+            updatedAt: new Date().toISOString(),
+            merchantText: text,
+            task: {
+              taskId: 'stale-task',
+              workId: 'stale-work',
+              packageId: 'stale-package',
+            },
+          })
+        );
+      },
+      [COMPOSER_SESSION_STORAGE_KEY, stale] as const
+    );
+    await deepLinkPage.goto(
+      `/dashboard?taskId=${encodeURIComponent(run.taskId)}`
+    );
+    await expect(
+      deepLinkPage.getByTestId('composer-turn-merchant')
+    ).toContainText(intent, { timeout: 120_000 });
+    await expect(
+      deepLinkPage.getByTestId('composer-turn-merchant')
+    ).not.toContainText(stale);
+    await deepLinkPage.close();
+
+    // 超时终态持久化. The hold is Core's, and it expires while the merchant is
+    // away: the card settles to 「系统已按通用模式继续」 and that terminal line
+    // has to survive a reopen, because it comes back from the event replay
+    // rather than from anything this browser remembered.
+    const settled = reopened.getByTestId('composer-question-settled');
+    await expect(settled).toContainText('已按通用模式继续', {
+      timeout: holdSeconds * 1_000 + 180_000,
+    });
+    await reopened.reload();
+    await expect(
+      reopened.getByTestId('composer-question-settled')
+    ).toContainText('已按通用模式继续', { timeout: 180_000 });
 
     await reopened.close();
   });

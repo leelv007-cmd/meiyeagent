@@ -47,6 +47,7 @@ import {
 	merchantExactTextMismatch,
 	merchantImageGenerationFailure,
 	merchantNoteConfirmationCard,
+	merchantNotePartialPageMarker,
 	merchantNoteSelectionReason,
 	merchantVideoGenerationFailure,
 } from "./merchant-delivery-language.js";
@@ -423,6 +424,13 @@ export class UnifiedHarnessStagePorts
 				...new Set([...projected.rightsRefs, snapshot.rights.revision]),
 			],
 		};
+		// D-122 诚实交付: pages that still disagree after the bounded retry ride
+		// along, but they must not read as delivered work. Marking them in the
+		// assembled body is what lets the merchant tell the good pages from the
+		// ones to hold back — the 申报卡 only says how many there are.
+		const unresolvedPageIds = new Set(
+			input.selection.partial?.unresolvedPageIds ?? [],
+		);
 		const versionFor = (
 			candidate: HarnessNoteBrief["candidates"]["candidates"][number],
 			selected: boolean,
@@ -439,7 +447,11 @@ export class UnifiedHarnessStagePorts
 				: [];
 			return {
 				body: note.plan.pages
-					.map(({ textBlock }) => textBlock.body)
+					.map(({ id, textBlock }) =>
+						selected && unresolvedPageIds.has(id)
+							? `${merchantNotePartialPageMarker()}\n${textBlock.body}`
+							: textBlock.body,
+					)
 					.join("\n\n"),
 				conversionHook:
 					marketing.promotionOffer?.callToAction.label ??

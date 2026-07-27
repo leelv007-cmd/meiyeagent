@@ -98,6 +98,7 @@ import {
   bindQuoteView,
   canSubmit,
   createComposerLensState,
+  reopenComposer,
   selectLens,
   submitComposer,
   updateSettings,
@@ -177,6 +178,7 @@ import {
   createComposerSession,
   failComposerSession,
   openComposerTurn,
+  rebindComposerSession,
   restoreComposerSession,
   restoreComposerSessionFromActiveTask,
   serializeComposerSession,
@@ -293,6 +295,18 @@ function sameBriefRevisions(
   );
 }
 
+/**
+ * One id per run. It keys the 报价 and the Brief context, both of which are
+ * idempotent server-side — so a second attempt that reuses it is refused as a
+ * key reused with a different payload, and the composer sits there re-quoting
+ * into 409s. Every fresh attempt therefore gets a fresh id.
+ */
+function newComposerSessionId() {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `composer-${Date.now()}`;
+}
+
 export type ComposerHomeProps = {
   /** Optional viewport override for tests. */
   viewportWidth?: number;
@@ -325,11 +339,13 @@ export function ComposerHome({
   const sourceFactsRef = useRef(new Map<string, ConfirmedAssetFacts>());
   const sourceRevisionRef = useRef(new Map<string, string>());
   const catalogSelectionAppliedRef = useRef(false);
-  const sessionIdRef = useRef(
-    typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID()
-      : `composer-${Date.now()}`
-  );
+  const sessionIdRef = useRef(newComposerSessionId());
+  /**
+   * Bumped whenever `sessionIdRef` is replaced. A ref is not reactive, so
+   * without this the 报价 memo below would keep quoting under the id of the run
+   * that already failed.
+   */
+  const [sessionEpoch, setSessionEpoch] = useState(0);
   const briefContextRevisionRef = useRef<number | null>(null);
   const briefInputRef = useRef<BriefTriggerInput | null>(null);
   const [lensState, setLensState] = useState<ComposerLensState>(() =>
@@ -356,6 +372,9 @@ export function ComposerHome({
   const [destinationMapPending, setDestinationMapPending] = useState(false);
   const destinationMapPendingRef = useRef(false);
   const destinationAutoSubmitIntentRef = useRef<string | null>(null);
+  // 「再生成一次」thaws the lens first, so the actual submit has to wait for the
+  // reopened state to land (attemptSubmit reads lensState from the closure).
+  const [retryAfterReport, setRetryAfterReport] = useState(false);
   const [destinationPreflight, setDestinationPreflight] =
     useState<ComposerDestinationPreflightState | null>(null);
   const [sessionIdentityId, setSessionIdentityId] = useState<
@@ -677,6 +696,7 @@ export function ComposerHome({
     catalogRevision,
     lensId,
     selectedModel,
+    sessionEpoch,
     signedSubmission,
     submissionAspectRatio,
     submissionDurationSeconds,
@@ -797,6 +817,12 @@ export function ComposerHome({
       }
       return;
     }
+    // A deep link names the run the merchant asked for. The tab's own handle is
+    // just whatever it held last, so it must not open ahead of that ask — the
+    // server restore below binds the named run instead.
+    if (initialTaskId && restored.session.task?.taskId !== initialTaskId) {
+      return;
+    }
     sessionIdRef.current = restored.session.sessionId;
     setSession(restored.session);
     setLensState((current) =>
@@ -840,7 +866,16 @@ export function ComposerHome({
   const restoredFromServerRef = useRef(false);
 
   useEffect(() => {
-    if (restoredFromServerRef.current || session.task) return;
+    if (restoredFromServerRef.current) return;
+    // Nothing to adopt when the composer already holds the run being asked for
+    // (or holds one and nothing else was asked for). Only an explicit deep link
+    // may displace a bound session, and only in favour of the run it names.
+    if (
+      session.task &&
+      (!initialTaskId || session.task.taskId === initialTaskId)
+    ) {
+      return;
+    }
     const tasks = activeTasksQuery.data?.tasks ?? [];
     // A deep link from the task centre names the run it wants reopened; without
     // one the newest in-flight run is the conversation to come back to.
@@ -1405,13 +1440,37 @@ export function ComposerHome({
    */
   const recoverFromReport = (input: ComposerRecoveryInput) => {
     const merchantText = composerSessionMerchantText(session);
-    if (merchantText) {
-      setLensState((current) => updateUserText(current, merchantText));
+    // A failed run leaves the lens frozen, which disables the composer and
+    // makes canSubmit refuse — so every entry has to thaw before it can act,
+    // or the button is decoration.
+    if (input.action !== 'review_partial') {
+      setLensState((current) => {
+        const reopened = reopenComposer(current);
+        // Put their sentence back only when the composer lost it — once they
+        // start editing after 改一下要求, the field is theirs.
+        return merchantText && !reopened.draft.userText.trim()
+          ? updateUserText(reopened, merchantText)
+          : reopened;
+      });
+      // Coming back in starts a new attempt, and the session id is what names
+      // an attempt: 报价 and Brief context are both idempotent on it, so the
+      // server refuses the next quote under the id that already ran. Reusing it
+      // would leave the composer editable but unable to submit — the same dead
+      // end through a different door.
+      sessionIdRef.current = newComposerSessionId();
+      setSessionEpoch((current) => current + 1);
+      briefContextRevisionRef.current = null;
+      briefInputRef.current = null;
+      setSession((current) =>
+        rebindComposerSession(current, sessionIdRef.current)
+      );
     }
     switch (input.action) {
       case 'retry':
-        setSession((current) => createComposerSession(current.sessionId));
-        void attemptSubmit();
+        setSession(createComposerSession(sessionIdRef.current));
+        // Deferred: attemptSubmit reads the closure's lensState, which is still
+        // frozen on this tick. The effect below fires it once the thaw lands.
+        setRetryAfterReport(true);
         return;
       case 'adjust_intent':
         focusComposerIntentInput();
@@ -1661,6 +1720,27 @@ export function ComposerHome({
     quoteView,
     submissionRecipe,
     userText,
+  ]);
+
+  /**
+   * 「再生成一次」second half: once the thaw has landed *and* the run is
+   * submittable again, the same path a merchant would drive by hand runs. The
+   * readiness check is not optional — a reopened lens re-quotes, and firing
+   * before the price is back would be blocked by the submit gate and look
+   * exactly like a button that does nothing.
+   */
+  useEffect(() => {
+    if (!retryAfterReport) return;
+    if (lensState.phase !== 'selected') return;
+    if (!quoteQuery.data || !quoteView || !submissionRecipe) return;
+    setRetryAfterReport(false);
+    void attemptSubmit();
+  }, [
+    lensState,
+    quoteQuery.data,
+    quoteView,
+    retryAfterReport,
+    submissionRecipe,
   ]);
 
   const handleBriefConfirm = async () => {

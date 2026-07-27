@@ -162,6 +162,17 @@ export function merchantBriefFallbackNotice() {
   return '这次整理创作要求时不太顺利，已经按稳妥的通用写法继续，不影响你拿到成品。';
 }
 
+/**
+ * 诚实交付要能落到页上 (D-122). The 申报卡 says how many pages did not come out
+ * right; without a marker on the delivered copy itself the merchant still has no
+ * way to tell which ones, and 「诚实」 stops at the summary. This rides in front
+ * of the page body in the assembled version, so the distinction survives into
+ * whatever they copy out.
+ */
+export function merchantNotePartialPageMarker() {
+  return '【这一页的画面和文字还没对上，建议先别发这页】';
+}
+
 export function merchantNotePartialConsistency(unresolvedPages: number) {
   return merchantPartialFailure({
     completed: '整套图文已经生成好了',
@@ -240,6 +251,14 @@ export function merchantFailureReport(
       message: written ?? merchantImageGenerationFailure('failed'),
       nextStep: '可以直接重新生成，或者先改用文字方案发布。',
       actions: ['retry', 'switch_form'],
+    });
+  }
+  if (code === 'HARNESS_MEDIA_SCOPE_INVALID') {
+    return report({
+      category: 'consistency',
+      message: written ?? merchantNoteStyleUnavailable(),
+      nextStep: '重新挑一个图文方向再来一次就好。',
+      actions: ['adjust_intent', 'retry'],
     });
   }
   if (code === 'CONTENT_PACKAGE_REVISION_CONFLICT') {

@@ -273,9 +273,15 @@ export class PostgresHarnessStore
 
   /**
    * 时间桥把手 (D-145). Runs that are still on the server for this workspace:
-   * admitted, not yet delivered, not yet failed. The browser asks this on mount
-   * so closing the tab stops being a way to lose the run — the handle comes back
-   * from the server and the transcript comes back from the event replay.
+   * admitted, not yet delivered, not yet failed, not cancelled. The browser asks
+   * this on mount so closing the tab stops being a way to lose the run — the
+   * handle comes back from the server and the transcript comes back from the
+   * event replay.
+   *
+   * Cancellation needs its own exclusion: a 确认卡 whose hold expired settles as
+   * a refund and returns normally, so it writes no `workflow_failed` audit event
+   * and would otherwise be dragged back into the composer on every mount for a
+   * whole day.
    *
    * Bounded to the same 24 hours the browser handle used to live for: a run
    * older than that is not something a merchant is still waiting on.
@@ -298,6 +304,11 @@ export class PostgresHarnessStore
              and events.event_type in (
                'package_delivered', 'workflow_failed', 'revision_conflict'
              )
+         )
+         and not exists (
+           select 1 from harness_runtime.decision_events decisions
+           where decisions.task_id=requests.task_id
+             and decisions.resolution_source='core_hold_expired'
          )
        order by requests.created_at desc
        limit 20`,

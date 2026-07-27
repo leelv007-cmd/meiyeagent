@@ -13,12 +13,14 @@ import {
   merchantGenericModeNotice,
   merchantImageGenerationFailure,
   merchantNotePartialConsistency,
+  merchantNotePartialPageMarker,
   merchantPartialDeliveryReport,
   merchantIdentityVoiceNotice,
   merchantNeutralIndustryContinuationNotice,
   merchantNoteProgressMessage,
   merchantNoteSelectionReason,
   merchantNoteStyleQuestion,
+  merchantNoteStyleUnavailable,
   merchantParseDisclosure,
   merchantParseFallback,
   merchantParseProgress,
@@ -155,6 +157,25 @@ test('a partial delivery keeps the run honest instead of throwing it away', () =
   assert.equal(report.quotaRefunded, false);
   assert.ok(report.actions.includes('review_partial'));
   assert.deepEqual(merchantVisibleLanguageIssues(report.message), []);
+  assert.deepEqual(merchantVisibleLanguageIssues(report.nextStep), []);
+
+  // The count alone leaves the merchant unable to tell which page to hold
+  // back, so the marker rides on the delivered copy too — and it is merchant
+  // language like everything else they read.
+  const marker = merchantNotePartialPageMarker();
+  assert.match(marker, /还没对上/u);
+  assert.deepEqual(merchantVisibleLanguageIssues(marker), []);
+});
+
+test('an unavailable note style speaks to the merchant instead of dying in an error message', () => {
+  const report = merchantFailureReport({
+    code: 'HARNESS_MEDIA_SCOPE_INVALID',
+    merchantMessage: merchantNoteStyleUnavailable(),
+  });
+
+  assert.equal(report.message, merchantNoteStyleUnavailable());
+  assert.notEqual(report.category, 'unknown');
+  assert.ok(report.actions.length > 0);
   assert.deepEqual(merchantVisibleLanguageIssues(report.nextStep), []);
 });
 

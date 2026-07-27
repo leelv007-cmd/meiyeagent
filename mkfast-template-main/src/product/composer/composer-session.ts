@@ -163,6 +163,20 @@ export function createComposerSession(sessionId: string): ComposerSession {
   };
 }
 
+/**
+ * Move the container onto a new attempt id while keeping what was said.
+ *
+ * 报价 and Brief context are idempotent on the session id, so a second attempt
+ * needs a new one. The transcript is not part of that identity — the merchant is
+ * still reading the 申报 that told them to try again, so it stays on screen.
+ */
+export function rebindComposerSession(
+  session: ComposerSession,
+  sessionId: string
+): ComposerSession {
+  return session.sessionId === sessionId ? session : { ...session, sessionId };
+}
+
 /** The merchant's sentence opens the run; the send button is the only click. */
 export function openComposerTurn(
   session: ComposerSession,

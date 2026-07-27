@@ -626,6 +626,11 @@ exist to make true, both against the real Web → Core → Harness/DBOS chain.
   draft is gone from the transcript: a refused candidate must not be left on
   screen as if it were usable. Every visible sentence passes the D-116 language
   gate.
+  - **可恢复入口是按下去有用的**: the entries are clicked, not counted. 改一下要求
+    turns the composer from disabled back to editable and accepts a new
+    sentence; 再生成一次 produces a second submission POST to Core carrying that
+    edit. A failed run leaves the lens frozen, so an entry that only calls
+    `focus()` is a dead button and this is what tells the two apart (D-150).
   - **失败档 (fixture failure profile)**: the only deterministic boundary is the
     model provider, the same as every other fixture journey. A merchant intent
     containing 「失败档」 makes the fixture structured runner
@@ -640,8 +645,16 @@ exist to make true, both against the real Web → Core → Harness/DBOS chain.
   so the restore cannot be the browser handle. The conversation comes back with
   the merchant sentence, the 进度宣告卡 with at least as many stage lines as
   before, and the pending question still in place, all rebuilt from the server
-  event replay. The async task centre then shows the same run and offers the
-  `?taskId=` deep link back into it.
+  event replay. The async task centre then shows the same run and the `?taskId=`
+  deep link is followed, not merely counted: it lands back on the same
+  conversation, and a tab whose `sessionStorage` was planted with a different
+  session still opens the run the link names (server truth beats the local
+  handle).
+  - **超时终态是真发生的**: the confirmation hold is set to 120s through the
+    governed admin-config path, so it expires while the merchant is away. The
+    card settles to Core's 「系统已按通用模式继续」 and that line is still there
+    after reopening the page — it comes back from the event replay, so a browser
+    that invented it would not survive the reload.
 
 ## T32 作品与对象页换壳（#226）
 

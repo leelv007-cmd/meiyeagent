@@ -584,6 +584,79 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 	);
 	assert.ok(contentPackage?.marketing?.contextBundle.bundleId);
 	assert.ok(contentPackage?.marketing?.rightsRefs.length);
+	assert.ok(
+		selectedVersion?.body && !selectedVersion.body.includes("还没对上"),
+		"a fully consistent note carries no partial marker",
+	);
+
+	// D-122 诚实交付: the same delivery, one page short. Naming the count on the
+	// 申报卡 is not enough — the merchant has to be able to tell which page to
+	// hold back in the copy they will actually paste.
+	const partialPackageId = "package-image-text-note-partial";
+	const partialSnapshot = creationExecutionSnapshotSchema.parse({
+		...snapshot,
+		id: "snapshot-note-partial",
+		contentPackage: { ...snapshot.contentPackage, id: partialPackageId },
+	});
+	const partialRequest = {
+		...harnessInput("image_text_note", partialPackageId),
+		executionSnapshot: partialSnapshot,
+	};
+	writer.seed(
+		buildContentPackage({
+			id: partialPackageId,
+			kind: "image_text",
+			source: {
+				assetIds: [],
+				creationExecutionSnapshot: {
+					id: sourceSnapshot.id,
+					revision: sourceSnapshot.revision,
+					schemaVersion: sourceSnapshot.schemaVersion,
+				},
+				targetPlatform: "douyin",
+				workId: partialSnapshot.work.id,
+				workflowId: partialSnapshot.task.id,
+				workflowRevision: partialSnapshot.revision,
+			},
+			timestamp: "2026-07-22T09:00:00.000Z",
+			workspaceId: "workspace-1",
+		}),
+	);
+	const partialBrief = await ports.compileNoteBrief({
+		workflowId: partialSnapshot.task.id,
+		request: partialRequest,
+		declaration,
+		context,
+	});
+	const baseSelection = await ports.executeNoteAndSelect({
+		workflowId: partialSnapshot.task.id,
+		request: partialRequest,
+		brief: partialBrief,
+		context,
+		selectedStyleId: "story",
+	});
+	const unresolvedPageId = baseSelection.version.plan.pages[1]!.id;
+	await ports.assembleNoteAndDeliver({
+		workflowId: partialSnapshot.task.id,
+		request: partialRequest,
+		declaration,
+		context,
+		brief: partialBrief,
+		selection: {
+			...baseSelection,
+			partial: { unresolvedPageIds: [unresolvedPageId] },
+		},
+	});
+	const partialVersion = writer
+		.get("workspace-1", partialPackageId)
+		?.versions.find(({ harnessCandidateId }) => harnessCandidateId === "story");
+	const partialPages = partialVersion?.body.split("\n\n") ?? [];
+	assert.equal(partialPages.length, 2);
+	assert.ok(
+		!partialPages[0]?.includes("还没对上"),
+		"the page that came out right is left alone",
+	);
+	assert.match(partialPages[1] ?? "", /还没对上/u);
 });
 
 test("media delivery blocks malicious visible copy before the canonical writer", async () => {

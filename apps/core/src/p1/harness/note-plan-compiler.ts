@@ -90,19 +90,45 @@ const TEXT_SIDE_CONSISTENCY_DIMENSIONS = new Set([
 export function notePageRegenerationPlan(
   evaluation: NotePlanConsistencyEvaluation,
   pageId: string,
-): { reason: string; side: 'text' | 'image' } {
+): {
+  reason: string;
+  side: 'text' | 'image' | 'both';
+  textReason?: string;
+  imageReason?: string;
+} {
   const failing = evaluation.dimensions.filter(
     (dimension) => !dimension.passed && dimension.pageIds.includes(pageId),
   );
   const reason =
     failing.map(({ reason: text }) => text).join('；') ||
     '整篇一致性仍需调整。';
-  const textOnly =
-    failing.length > 0 &&
-    failing.every(({ dimension }) =>
-      TEXT_SIDE_CONSISTENCY_DIMENSIONS.has(dimension),
-    );
-  return { reason, side: textOnly ? 'text' : 'image' };
+  const textFailures = failing.filter(({ dimension }) =>
+    TEXT_SIDE_CONSISTENCY_DIMENSIONS.has(dimension),
+  );
+  const imageFailures = failing.filter(
+    ({ dimension }) => !TEXT_SIDE_CONSISTENCY_DIMENSIONS.has(dimension),
+  );
+  // A page can fail on both sides at once. Sending that to the image branch
+  // alone reruns the picture over a wording problem it cannot fix, so each side
+  // is told only what it is responsible for.
+  const side =
+    textFailures.length > 0 && imageFailures.length === 0
+      ? 'text'
+      : textFailures.length > 0
+        ? 'both'
+        : 'image';
+  const joined = (
+    dimensions: NotePlanConsistencyEvaluation['dimensions'],
+  ): string | undefined =>
+    dimensions.length > 0
+      ? dimensions.map(({ reason: text }) => text).join('；')
+      : undefined;
+  return {
+    reason,
+    side,
+    ...(joined(textFailures) ? { textReason: joined(textFailures) } : {}),
+    ...(joined(imageFailures) ? { imageReason: joined(imageFailures) } : {}),
+  };
 }
 
 export interface NotePlanCompilerAuditSignal {
@@ -246,7 +272,7 @@ export class NotePlanCompiler {
         throw new Error('Consistency evaluation referenced an unknown page.');
       }
       const regeneration = notePageRegenerationPlan(initialEvaluation, pageId);
-      if (regeneration.side === 'text') {
+      if (regeneration.side !== 'image') {
         const index = plan.pages.findIndex(({ id }) => id === pageId);
         const previousTextBlock = plan.pages[index - 1]?.textBlock;
         const rewritten = await this.structured.draftPage({
@@ -254,7 +280,7 @@ export class NotePlanCompiler {
           ...(previousTextBlock ? { previousTextBlock } : {}),
           style: rewriteStyle,
           themeAnchor: plan.themeAnchor,
-          consistencyFailure: regeneration.reason,
+          consistencyFailure: regeneration.textReason ?? regeneration.reason,
         });
         plan = notePlanSchema.parse({
           ...plan,
@@ -284,19 +310,22 @@ export class NotePlanCompiler {
             side: 'text',
           },
         });
-        continue;
+        if (regeneration.side === 'text') continue;
       }
+      // Re-read: a 'both' page has just been rewritten, and the picture has to
+      // be regenerated against the wording it will actually ship with.
+      const target = plan.pages.find(({ id }) => id === pageId) ?? page;
       const generation = await this.images.generate({
-        page,
+        page: target,
         reason: 'consistency_conflict',
-        evaluationReason: regeneration.reason,
+        evaluationReason: regeneration.imageReason ?? regeneration.reason,
       });
       regenerated.push(generation);
-      const auditRef = `note-page-regeneration:${page.id}:r${page.revision + 1}`;
+      const auditRef = `note-page-regeneration:${target.id}:r${target.revision + 1}`;
       regenerationReceipts.push({
-        pageId: page.id,
-        fromRevision: page.revision,
-        toRevision: page.revision + 1,
+        pageId: target.id,
+        fromRevision: target.revision,
+        toRevision: target.revision + 1,
         imagePoints: 1,
         reason: 'consistency_conflict',
         auditRef,
@@ -304,7 +333,7 @@ export class NotePlanCompiler {
       plan = notePlanSchema.parse({
         ...plan,
         pages: plan.pages.map((candidate) =>
-          candidate.id === page.id
+          candidate.id === target.id
             ? {
                 ...candidate,
                 revision: candidate.revision + 1,
@@ -316,7 +345,7 @@ export class NotePlanCompiler {
       assertNotePlanWithinBound(plan, input.notePageBound);
       auditSignals.push({
         eventType: 'note_page_regenerated',
-        payload: { auditRef, imagePoints: 1, pageId: page.id },
+        payload: { auditRef, imagePoints: 1, pageId: target.id },
       });
     }
     const regeneratedAnything =
