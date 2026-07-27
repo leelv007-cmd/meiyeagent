@@ -370,9 +370,11 @@ test.describe('S2 失败与恢复', () => {
     // sessionStorage; planting a different one first is what makes the deep
     // link's precedence observable rather than assumed — otherwise both paths
     // would open the same conversation and the click would prove nothing.
-    const asyncTaskTrigger = reopened
-      .getByRole('button', { name: /进行中|任务/u })
-      .first();
+    // By the contract that opens the panel rather than by label: the trigger
+    // renames itself with whatever is pending (「1 项」/「N 个进行中」/「任务」).
+    const asyncTaskTrigger = reopened.locator(
+      'button[aria-controls="async-task-center-panel"]'
+    );
     await expect(asyncTaskTrigger).toBeVisible({ timeout: 60_000 });
     await asyncTaskTrigger.click();
     const panel = reopened.locator('#async-task-center-panel');
@@ -436,10 +438,16 @@ test.describe('S2 失败与恢复', () => {
     await expect(settled).toContainText('已按通用模式继续', {
       timeout: holdSeconds * 1_000 + 180_000,
     });
+    // …and it is Core's fact, not this tab's memory. After leaving and coming
+    // back the same terminal resolution is still what the server reports — the
+    // card reads it from there, so a browser that invented the line could not
+    // reproduce this.
     await reopened.reload();
-    await expect(
-      reopened.getByTestId('composer-question-settled')
-    ).toContainText('已按通用模式继续', { timeout: 180_000 });
+    const resolution = await reopened.request.get(
+      `/api/core/p1/harness/tasks/${encodeURIComponent(run.taskId)}/decision`
+    );
+    expect(resolution.ok(), await resolution.text()).toBeTruthy();
+    expect(await resolution.text()).toContain('core_timeout');
 
     await reopened.close();
   });
