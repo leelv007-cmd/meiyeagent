@@ -256,6 +256,60 @@ describe('the transcript is a card flow', () => {
     expect(conversation.getAttribute('aria-live')).toBe('off');
   });
 
+  it('answers prefers-reduced-motion in both directions (U07)', () => {
+    const setReducedMotion = (reduce: boolean) => {
+      window.matchMedia = ((query: string) => ({
+        addEventListener: () => {},
+        addListener: () => {},
+        dispatchEvent: () => false,
+        matches: query.includes('prefers-reduced-motion') ? reduce : false,
+        media: query,
+        onchange: null,
+        removeEventListener: () => {},
+        removeListener: () => {},
+      })) as typeof window.matchMedia;
+    };
+
+    setReducedMotion(false);
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={running()}
+        stream={emptyStream}
+      />
+    );
+    const animated = screen.getByTestId('composer-conversation');
+    expect(animated.dataset.motion).toBe('on');
+    // Non-vacuous: without this the "no transform" leg below would pass even if
+    // the arrival motion had never been wired at all.
+    expect(
+      [
+        ...animated.querySelectorAll<HTMLElement>(
+          '[data-slot="chat-conversation-content"] > div'
+        ),
+      ].some((turn) => turn.style.transform.includes('translateY'))
+    ).toBe(true);
+
+    cleanup();
+    setReducedMotion(true);
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={running()}
+        stream={emptyStream}
+      />
+    );
+    const reduced = screen.getByTestId('composer-conversation');
+    expect(reduced.dataset.motion).toBe('off');
+    // A merchant who asked for no motion gets none — not a faster one. The
+    // arrival transform must not be written onto the turn wrappers at all.
+    for (const turn of reduced.querySelectorAll<HTMLElement>(
+      '[data-slot="chat-conversation-content"] > div'
+    )) {
+      expect(turn.style.transform).toBe('');
+    }
+  });
+
   it('streams one primary candidate and folds alternatives away', () => {
     const stream = projectResultTokenStream({
       workspaceKind: 'copy',

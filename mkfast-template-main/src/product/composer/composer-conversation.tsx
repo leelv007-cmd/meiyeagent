@@ -13,6 +13,9 @@
  * authority.
  */
 
+import { domAnimation, LazyMotion } from 'motion/react';
+import * as m from 'motion/react-m';
+
 import {
   ChatConversation,
   ChatLoader,
@@ -199,6 +202,41 @@ export type ComposerConversationProps = {
   onRecover?: (input: ComposerRecoveryInput) => void;
 };
 
+/**
+ * A turn's arrival, made visible (U07 Motion 进产品面).
+ *
+ * The transcript is the one place in the product where something appears
+ * without the merchant having done anything — a stage announcement, a question,
+ * the deliverable. A card that materialises with no transition reads as a
+ * repaint; a short rise reads as「刚刚到的」. `initial` only runs on mount and
+ * turns keep stable keys, so existing cards never replay: the motion marks
+ * arrival and nothing else.
+ *
+ * The reduced-motion alternative is not a shorter animation, it is none: the
+ * card is simply there, in its final position, on the first frame.
+ *
+ * Transform only, never opacity: an animation that fails to run must leave the
+ * card eight pixels low, not invisible. The merchant's whole run lives in this
+ * list, and no decoration gets to hide it.
+ */
+function TurnArrival({
+  animate,
+  children,
+}: {
+  animate: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <m.div
+      animate={animate ? { y: 0 } : undefined}
+      initial={animate ? { y: 8 } : false}
+      transition={{ duration: 0.16, ease: 'easeOut' }}
+    >
+      {children}
+    </m.div>
+  );
+}
+
 export function ComposerConversation({
   session,
   stream,
@@ -208,10 +246,11 @@ export function ComposerConversation({
   onRecover,
 }: ComposerConversationProps) {
   const turnCount = session.turns.length;
+  const prefersReducedMotion = usePrefersReducedMotion();
   // `scrollTo({ behavior: 'smooth' })` ignores the `scroll-behavior: auto`
   // that styles.css forces under prefers-reduced-motion, so the transcript
   // has to answer the preference itself.
-  const scrollBehavior = usePrefersReducedMotion() ? 'instant' : 'smooth';
+  const scrollBehavior = prefersReducedMotion ? 'instant' : 'smooth';
 
   if (turnCount === 0 && !identitySlot) return null;
 
@@ -303,6 +342,7 @@ export function ComposerConversation({
     <ChatConversation
       aria-live="off"
       className="max-h-[min(70svh,44rem)]"
+      data-motion={prefersReducedMotion ? 'off' : 'on'}
       data-phase={session.phase}
       data-testid="composer-conversation"
       initial={scrollBehavior}
@@ -313,7 +353,24 @@ export function ComposerConversation({
             follows it. Both, in this order — the identity choice is offered
             before there is any transcript to fold. */}
         {identitySlot}
-        {foldTurns(session.turns).map(renderTurn)}
+        {/*
+          `domAnimation` only — the product面 pays for the animation features it
+          actually uses, and this transcript uses opacity and transform.
+        */}
+        <LazyMotion features={domAnimation} strict>
+          {foldTurns(session.turns).map((turn) => {
+            const rendered = renderTurn(turn);
+            if (!rendered) return null;
+            return (
+              <TurnArrival
+                animate={!prefersReducedMotion}
+                key={rendered.key ?? undefined}
+              >
+                {rendered}
+              </TurnArrival>
+            );
+          })}
+        </LazyMotion>
         <ChatConversation.ScrollAnchor />
       </ChatConversation.Content>
       <ChatConversation.ScrollButton
