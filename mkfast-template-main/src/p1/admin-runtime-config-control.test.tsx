@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { NOTE_STYLE_CONFIG_KEY } from '@meiye/contracts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { p1QueryKeys } from './query-keys';
@@ -44,6 +45,16 @@ function renderControlForKey(key: string) {
     </QueryClientProvider>
   );
 }
+
+/**
+ * 热加载这句提醒得说到点子上：讲套餐的那句「只影响新结账、新门店登记」，
+ * 配在笔记风格上答非所问——风格改完影响的是下一篇笔记怎么写，不是谁下次付钱。
+ */
+test('the note style key explains itself in note terms, not in checkout terms', () => {
+  const html = renderControlForKey(NOTE_STYLE_CONFIG_KEY);
+  assert.match(html, /之后新写的笔记会按新风格来/);
+  assert.doesNotMatch(html, /新结账/);
+});
 
 test('every admin config key reaches the schema renderer through the production control', () => {
   assert.equal(ADMIN_CONFIG_KEYS.length, 19);

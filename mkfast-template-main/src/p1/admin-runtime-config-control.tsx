@@ -54,6 +54,7 @@ import {
   admin_runtime_config_legacy_fallback_notice,
   admin_runtime_config_load_error,
   admin_runtime_config_not_set,
+  admin_runtime_config_note_style_hot_read_description,
   admin_runtime_config_notice_description,
   admin_runtime_config_notice_title,
   admin_runtime_config_process_http,
@@ -203,6 +204,17 @@ function statusLabel(status: AdminConfigItem['status']) {
   return admin_runtime_config_not_set();
 }
 
+/**
+ * 热加载这句话对每个键说的是同一件事，落到运营眼里却不是。
+ * 讲套餐的那句「只影响新结账、新门店登记」，配在笔记风格上就答非所问——
+ * 风格改完影响的是下一篇笔记怎么写，不是谁下一次付钱（D-116）。
+ */
+function hotReadDescription(key: string) {
+  return key === NOTE_STYLE_CONFIG_KEY
+    ? admin_runtime_config_note_style_hot_read_description()
+    : admin_runtime_config_hot_read_description();
+}
+
 function wiringLabel(item: AdminConfigItem) {
   if (!item.wired) return admin_runtime_config_unwired();
   if (
@@ -341,7 +353,7 @@ export function AdminRuntimeConfigControl({
       return defaultAdminConfigValue(activeGenericKey);
     }
   }, [activeGenericKey, draft]);
-  const hasHotReadConfig = items.some((item) => HOT_READ_KEYS.has(item.key));
+  const hotReadItem = items.find((item) => HOT_READ_KEYS.has(item.key));
   const hasCommerceConfig = items.some((item) => isCommerceKey(item.key));
   const selectedItem = useMemo(
     () => items.find((item) => item.key === selectedKey),
@@ -399,7 +411,7 @@ export function AdminRuntimeConfigControl({
       setImpactReview({
         title: admin_runtime_config_apply_title(),
         description: HOT_READ_KEYS.has(activeItem.key)
-          ? admin_runtime_config_hot_read_description()
+          ? hotReadDescription(activeItem.key)
           : admin_runtime_config_apply_description(),
         scope: admin_runtime_config_apply_scope({ key: activeItem.key }),
         changes: [
@@ -466,9 +478,7 @@ export function AdminRuntimeConfigControl({
         <AlertDescription>
           <div className="space-y-2">
             <p>{admin_runtime_config_notice_description()}</p>
-            {hasHotReadConfig ? (
-              <p>{admin_runtime_config_hot_read_description()}</p>
-            ) : null}
+            {hotReadItem ? <p>{hotReadDescription(hotReadItem.key)}</p> : null}
             {hasCommerceConfig ? (
               <p>{admin_runtime_config_legacy_fallback_notice()}</p>
             ) : null}

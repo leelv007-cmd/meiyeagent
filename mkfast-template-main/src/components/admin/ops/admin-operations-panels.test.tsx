@@ -32,6 +32,17 @@ function renderPanels(overrides: {
   );
 }
 
+/**
+ * 三面共用一份 HTML，所以「页面上不该出现未知」这类断言必须先切到那一面——
+ * 否则隔壁面板的一句「未知」就能把它判红或判绿，两种都不是在测这一面。
+ */
+function panelOf(html: string, testId: string) {
+  const start = html.indexOf(`data-testid="${testId}"`);
+  assert.notEqual(start, -1, `${testId} did not render`);
+  const end = html.indexOf('data-slot="widget"', start + 1);
+  return end === -1 ? html.slice(start) : html.slice(start, end);
+}
+
 const known = (value: unknown) => ({ status: 'known', value });
 
 const METRICS_WITH_OUTCOMES = {
@@ -75,8 +86,8 @@ test('the tasks panel lifts queue numbers into KPI tiles and draws the outcome s
   assert.match(html, /data-slot="kpi"/);
   assert.match(html, /data-testid="admin-ops-tasks-row"/);
   assert.match(html, /data-slot="pie-chart"/);
-  // 每一条都拿到了数据，页面上就不该出现「未知」。
-  assert.doesNotMatch(html, /未知/);
+  // 每一条都拿到了数据，这一面上就不该出现「未知」。
+  assert.doesNotMatch(panelOf(html, 'admin-ops-tasks'), /未知/);
 });
 
 /** 未知不是零：拿不到执行结果时不画饼，也不在数字块里写 0。 */
@@ -91,7 +102,7 @@ test('an unwired runner window says unknown instead of drawing a zeroed chart', 
   });
   assert.match(html, /data-testid="admin-ops-tasks-outcomes"/);
   assert.doesNotMatch(html, /data-slot="pie-chart"/);
-  assert.match(html, /未知/);
+  assert.match(panelOf(html, 'admin-ops-tasks'), /未知/);
 });
 
 /** 面板叫「三桶用量」，就得先回答用量；额度不是用量。 */
@@ -135,6 +146,26 @@ test('the tasks panel lists recent runs, and says unknown when the snapshot neve
 
 /** 「租户与试用」的试用那一半以前根本没有。 */
 test('the tenant panel states whether new stores still get a trial', () => {
+  const granting = renderPanels({
+    catalog: { plans: [], trialEnabled: true },
+    snapshot: { accountAllocations: [], entitlementPolicies: [] },
+  });
+  assert.match(granting, /data-testid="admin-ops-tenants-trial"/);
+  assert.match(granting, /发放中/);
+
+  const stopped = renderPanels({
+    catalog: { plans: [], trialEnabled: false },
+    snapshot: { accountAllocations: [], entitlementPolicies: [] },
+  });
+  assert.match(stopped, /已停发/);
+});
+
+/**
+ * 管理员开的例外单不是试用。真试用走 `provisionTrial → activatePlan`，落在门店
+ * 自己的权益投影上；快照里这张单子是企业合同给的额外供应池权限，把它数成
+ * 「试用发放 1 笔」，看板上就会凭空多出一家根本没在试用的店。
+ */
+test('an enterprise contract grant is not counted as a trial', () => {
   const html = renderPanels({
     catalog: { plans: [], trialEnabled: true },
     snapshot: {
@@ -144,20 +175,37 @@ test('the tenant panel states whether new stores still get a trial', () => {
           endsAt: null,
           id: 'alloc-1',
           kind: 'grant',
-          reason: '试用赠送',
-          source: 'register_gift',
+          reason: '企业合同约定的专属池权限',
+          source: 'enterprise_contract',
           startsAt: '2026-07-20T00:00:00.000Z',
           status: 'active',
-          targetLabel: '试用额度',
+          targetLabel: '供应池 · 专属池',
           workspaceId: 'ws-1',
         },
       ],
       entitlementPolicies: [],
     },
   });
-  assert.match(html, /data-testid="admin-ops-tenants-trial"/);
   assert.match(html, /发放中/);
-  assert.match(html, /试用发放 1 笔生效中/);
+  assert.doesNotMatch(html, /试用发放/);
+  assert.match(html, /还在试用期的门店有多少家/);
+});
+
+/**
+ * 什么都还没到的时候，「新店试用」这一行也得在——它以前被通用空态整段吞掉，
+ * 于是本该显示的「未知」连位置都没有。
+ */
+test('the trial line still shows up when the panel is otherwise empty', () => {
+  const html = renderPanels({
+    snapshot: {
+      accountAllocations: [],
+      entitlementPolicies: [],
+      pools: [],
+    },
+  });
+  assert.match(html, /data-testid="admin-ops-tenants-empty"/);
+  assert.match(html, /data-testid="admin-ops-tenants-trial"/);
+  assert.match(html, /新店试用/);
 });
 
 /** 池子列在面上却报「暂无记录」，是空态判定漏算了它。 */
@@ -191,11 +239,11 @@ test('the tenant panel counts what it knows and lays the rest on a timeline', ()
           endsAt: null,
           id: 'alloc-1',
           kind: 'grant',
-          reason: '试用赠送',
-          source: 'register_gift',
+          reason: '春季活动加赠额度',
+          source: 'campaign',
           startsAt: '2026-07-20T00:00:00.000Z',
           status: 'active',
-          targetLabel: '试用额度',
+          targetLabel: '额度 · 文案',
           workspaceId: 'ws-1',
         },
       ],
@@ -219,5 +267,5 @@ test('the tenant panel counts what it knows and lays the rest on a timeline', ()
   assert.match(html, /data-slot="timeline"/);
   assert.match(html, /data-testid="admin-ops-tenants-policy"/);
   assert.match(html, /data-testid="admin-ops-tenants-allocation"/);
-  assert.match(html, /试用额度/);
+  assert.match(html, /额度 · 文案/);
 });

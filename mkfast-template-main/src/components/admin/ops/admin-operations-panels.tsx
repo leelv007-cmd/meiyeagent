@@ -64,7 +64,7 @@ import {
   admin_ops_tenants_pools,
   admin_ops_tenants_recent,
   admin_ops_tenants_title,
-  admin_ops_tenants_trial_grants,
+  admin_ops_tenants_trial_census_unwired,
   admin_ops_tenants_trial_label,
   admin_ops_tenants_trial_off,
   admin_ops_tenants_trial_on,
@@ -103,6 +103,7 @@ import {
   buildTrialStatus,
   buildUsageBars,
   PLATFORM_USAGE_CONSUMPTION,
+  TRIAL_GRANT_CENSUS,
 } from '@/p1/admin-operations-chart-model';
 import {
   normalizeOperationalMetrics,
@@ -292,7 +293,8 @@ function AdminUsagePanel() {
               name={admin_plan_video()}
             />
           </BarChart.Root>
-          <ListView aria-label={admin_ops_usage_title()}>
+          {/* 读屏听到的名字要和眼睛看到的小标题一致：这一列是额度，不是用量。 */}
+          <ListView aria-label={admin_ops_usage_allowance_title()}>
             {plans.map((plan) => (
               <ListView.Item
                 data-testid="admin-ops-usage-row"
@@ -533,7 +535,8 @@ function AdminTenantsPanel() {
           entitlementPolicyStageLabel(stage as EntitlementPolicyStage),
       })
     : [];
-  // 试用开关在套餐目录里，试用发放在供给快照里——两处各缺各的，缺就是「未知」。
+  // 试用开关在套餐目录里——`provisionTrial` 读的也是这一份，所以问的和做的
+  // 是同一件事。目录没到就是「未知」，不折算成「已停发」。
   const catalogQuery = useQuery({
     queryKey: p1QueryKeys.request('entitlements', 'catalog'),
     queryFn: ({ signal }) =>
@@ -544,7 +547,6 @@ function AdminTenantsPanel() {
       ),
   });
   const trial = buildTrialStatus({
-    allocations: snapshotQuery.data?.accountAllocations,
     trialEnabled: catalogQuery.data?.trialEnabled,
   });
   const counts = view
@@ -575,7 +577,34 @@ function AdminTenantsPanel() {
           {admin_ops_tenants_description()}
         </AdminPanelDescription>
       </AdminPanelHeader>
-      <AdminPanelContent>
+      <AdminPanelContent className="space-y-4">
+        {/*
+          「租户与试用」的试用那一半：新店现在到底发不发试用。
+          这段不进 PanelBody——供给快照空不空，都不改变「目录里那个开关是开是
+          关」这个事实；塞进去就会被通用空态整段吞掉，本该显示的「未知」也没了。
+        */}
+        <div
+          className="flex flex-wrap items-center gap-2"
+          data-testid="admin-ops-tenants-trial"
+        >
+          <span className="font-medium text-sm">
+            {admin_ops_tenants_trial_label()}
+          </span>
+          <AdminStatusChip
+            variant={trial.enabled === true ? 'default' : 'outline'}
+          >
+            {trial.enabled === null
+              ? admin_ops_tenants_trial_unknown()
+              : trial.enabled
+                ? admin_ops_tenants_trial_on()
+                : admin_ops_tenants_trial_off()}
+          </AdminStatusChip>
+          <span className="text-muted text-xs">
+            {TRIAL_GRANT_CENSUS.status === 'unknown'
+              ? admin_ops_tenants_trial_census_unwired()
+              : null}
+          </span>
+        </div>
         {/*
           空态要把这一面真正展示的东西都算上：供应池也在面上，
           漏掉它就会出现「明明列着池子，却说暂无记录」。
@@ -584,39 +613,13 @@ function AdminTenantsPanel() {
           isEmpty={
             policies.length === 0 &&
             allocations.length === 0 &&
-            (view?.pools.length ?? 0) === 0 &&
-            trial.enabled === null
+            (view?.pools.length ?? 0) === 0
           }
           isError={Boolean(snapshotQuery.error)}
           isLoading={snapshotQuery.isPending}
           testId="admin-ops-tenants"
         >
           <div className="space-y-4">
-            {/* 「租户与试用」的试用那一半：新店现在到底发不发试用。 */}
-            <div
-              className="flex flex-wrap items-center gap-2"
-              data-testid="admin-ops-tenants-trial"
-            >
-              <span className="font-medium text-sm">
-                {admin_ops_tenants_trial_label()}
-              </span>
-              <AdminStatusChip
-                variant={trial.enabled === true ? 'default' : 'outline'}
-              >
-                {trial.enabled === null
-                  ? admin_ops_tenants_trial_unknown()
-                  : trial.enabled
-                    ? admin_ops_tenants_trial_on()
-                    : admin_ops_tenants_trial_off()}
-              </AdminStatusChip>
-              <span className="text-muted text-xs">
-                {trial.activeGrants === null
-                  ? admin_ops_unknown()
-                  : admin_ops_tenants_trial_grants({
-                      count: trial.activeGrants,
-                    })}
-              </span>
-            </div>
             <KPIGroup.Root>
               {counts.map((count) => (
                 <MetricTile

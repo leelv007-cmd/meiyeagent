@@ -9,6 +9,7 @@ import {
   buildTrialStatus,
   buildUsageBars,
   PLATFORM_USAGE_CONSUMPTION,
+  TRIAL_GRANT_CENSUS,
 } from '@/p1/admin-operations-chart-model';
 
 const OUTCOME_LABELS = {
@@ -140,21 +141,24 @@ test('a missing snapshot yields no timeline, an empty one yields an empty timeli
   );
 });
 
-test('trial status keeps each half unknown on its own', () => {
-  assert.deepEqual(buildTrialStatus({}), {
-    activeGrants: null,
-    enabled: null,
+/** 目录没到就是「未知」，不折算成「已停发」。 */
+test('trial status stays unknown until the plan catalog answers', () => {
+  assert.deepEqual(buildTrialStatus({}), { enabled: null });
+  assert.deepEqual(buildTrialStatus({ trialEnabled: false }), {
+    enabled: false,
   });
-  assert.deepEqual(
-    buildTrialStatus({
-      allocations: [
-        { kind: 'grant', status: 'active' },
-        { kind: 'grant', status: 'expired' },
-        { kind: 'restrict', status: 'active' },
-      ],
-      trialEnabled: false,
-    }),
-    { activeGrants: 1, enabled: false }
+  assert.deepEqual(buildTrialStatus({ trialEnabled: true }), { enabled: true });
+});
+
+/**
+ * 「还在试用期的门店有多少家」平台级没有这本账：快照里的账户分配是管理员开的
+ * 例外单，七种 source 里没有一种是试用。想在这里报一个数，得先改这个常量。
+ */
+test('the trial census is declared unwired, not counted off admin exceptions', () => {
+  assert.equal(TRIAL_GRANT_CENSUS.status, 'unknown');
+  assert.equal(
+    TRIAL_GRANT_CENSUS.reason,
+    'trial_grant_census_projection_not_wired'
   );
 });
 
@@ -182,11 +186,11 @@ test('the tenant timeline merges both record kinds newest first', () => {
           endsAt: null,
           id: 'alloc-1',
           kind: 'grant',
-          reason: '试用赠送',
-          source: 'register_gift',
+          reason: '春季活动加赠额度',
+          source: 'campaign',
           startsAt: '2026-07-20T00:00:00.000Z',
           status: 'active',
-          targetLabel: '试用额度',
+          targetLabel: '额度 · 文案',
           workspaceId: 'ws-1',
         },
       ],
@@ -212,7 +216,7 @@ test('the tenant timeline merges both record kinds newest first', () => {
     timeline.map((entry) => [entry.kind, entry.title]),
     [
       ['policy', 'trial · r4'],
-      ['allocation', '试用额度'],
+      ['allocation', '额度 · 文案'],
     ]
   );
 });

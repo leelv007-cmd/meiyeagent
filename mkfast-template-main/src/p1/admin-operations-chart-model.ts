@@ -118,27 +118,36 @@ export function buildTaskTimeline(
     }));
 }
 
+/**
+ * 「现在有多少家店还在试用期」平台级也没有这本账。
+ *
+ * 真试用走的是 `provisionTrial → activatePlan`（注册即赠，落在该店自己的权益
+ * 投影上），而管理台快照里的 `accountAllocations` 是另一回事——那是管理员开的
+ * 例外单，`source` 只有 campaign / support_compensation / enterprise_contract /
+ * canary / risk_control / temporary_ban / account_override 七种，里面没有一种
+ * 是试用。把「生效中的 grant」数出来当试用家数，企业合同和活动补偿都会被算进
+ * 去，这个数越大越像好消息，其实越错。所以这里也是一个显式的「未接线」。
+ * 试用台账建好那天，改这一个常量即可（U06 记账项）。
+ */
+export const TRIAL_GRANT_CENSUS = {
+  reason: 'trial_grant_census_projection_not_wired',
+  status: 'unknown',
+} as const;
+
 export interface TrialStatusView {
-  /** 生效中的试用发放笔数；快照没到就是 null。 */
-  activeGrants: null | number;
+  /** 新店注册现在还发不发试用；套餐目录没到就是 null。 */
   enabled: boolean | null;
 }
 
 /**
- * 新店试用现在是发还是不发，以及有多少笔试用发放还生效。
- * 两个来源各自可能缺席，缺席就是 `null`——不折算成「关闭」或「零」。
+ * 新店试用现在是发还是不发。来源是套餐目录里的 `trialEnabled`——
+ * `provisionTrial` 读的也是这一份，所以问的和做的是同一件事。
+ * 目录没到就是 `null`，不折算成「关闭」。
  */
 export function buildTrialStatus(input: {
-  allocations?: readonly { kind: string; status: string }[];
   trialEnabled?: boolean;
 }): TrialStatusView {
   return {
-    activeGrants: input.allocations
-      ? input.allocations.filter(
-          (allocation) =>
-            allocation.kind === 'grant' && allocation.status === 'active'
-        ).length
-      : null,
     enabled:
       typeof input.trialEnabled === 'boolean' ? input.trialEnabled : null,
   };
