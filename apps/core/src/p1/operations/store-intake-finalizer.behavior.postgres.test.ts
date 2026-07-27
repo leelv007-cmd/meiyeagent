@@ -62,9 +62,23 @@ test(
         input,
         'day-0-finalize',
       );
+      const expectedFactIds = [
+        'store-profile:address:fulfillment',
+        'store-profile:booking:fulfillment',
+        'store-profile:city:other',
+        'store-profile:district:other',
+        'store-profile:name:other',
+        'store-project:project-a:price',
+        'store-project:project-a:service',
+      ] as const;
       const history = await environment.facts.history(
         environment.context.workspaceId,
         input.confirmations[0]!.factId,
+      );
+      const histories = await Promise.all(
+        expectedFactIds.map((factId) =>
+          environment.facts.history(environment.context.workspaceId, factId),
+        ),
       );
       const storeFacts = await environment.facts.listActive({
         workspaceId: environment.context.workspaceId,
@@ -98,7 +112,11 @@ test(
       });
       assert.deepEqual(
         storeFacts.map((fact) => fact.factId),
-        ['store-project:project-a:service'],
+        expectedFactIds,
+      );
+      assert.deepEqual(
+        histories.map((entries) => entries.length),
+        expectedFactIds.map(() => 1),
       );
       assert.equal(state.store?.revision, 1);
       assert.equal(persistedBatch.batch.source.capabilityStatus, 'assisted');
@@ -1165,34 +1183,7 @@ test(
           },
         },
       });
-      const firstBatch = inlineBatch(first);
       const priceFactId = 'store-project:project-a:price';
-      firstBatch.candidates.push({
-        candidateId: 'project-a-price',
-        status: 'pending',
-        objectKind: 'store_fact',
-        fact: {
-          kind: 'price',
-          key: 'service.project-a.price',
-          value: { amount: 299, currency: 'CNY' },
-          scope: {
-            storeId: environment.context.workspaceId,
-            serviceId: 'project-a',
-          },
-          source: {
-            kind: 'user_confirmation',
-            referenceId: firstBatch.source.referenceId,
-            capturedAt: firstBatch.source.capturedAt,
-          },
-          effectiveFrom: now,
-          expiresAt: null,
-        },
-      });
-      first.confirmations.push({
-        candidateId: 'project-a-price',
-        factId: priceFactId,
-        expectedFactRevision: 0,
-      });
       await environment.finalizer.finalize(
         environment.context,
         first,
@@ -1660,32 +1651,21 @@ test(
         },
       });
       const batch = inlineBatch(input);
-      batch.candidates.push({
-        candidateId: 'barrier-second-price',
-        status: 'pending',
-        objectKind: 'store_fact',
-        fact: {
-          kind: 'price',
-          key: 'service.project-a.price',
-          value: { amount: 329, currency: 'CNY' },
-          scope: {
-            storeId: environment.context.workspaceId,
-            serviceId: 'project-a',
-          },
-          source: {
-            kind: 'user_confirmation',
-            referenceId: batch.source.referenceId,
-            capturedAt: batch.source.capturedAt,
-          },
-          effectiveFrom: now,
-          expiresAt: null,
-        },
-      });
-      input.confirmations.push({
-        candidateId: 'barrier-second-price',
-        factId: 'store-project:project-a:price',
-        expectedFactRevision: 0,
-      });
+      const priceConfirmation = input.confirmations.find(
+        (confirmation) =>
+          confirmation.factId === 'store-project:project-a:price',
+      );
+      if (!priceConfirmation) {
+        throw new Error('Expected the mapped project price confirmation.');
+      }
+      const priceCandidate = batch.candidates.find(
+        (candidate) => candidate.candidateId === priceConfirmation.candidateId,
+      );
+      if (!priceCandidate || priceCandidate.objectKind !== 'store_fact') {
+        throw new Error('Expected the mapped project price candidate.');
+      }
+      priceCandidate.candidateId = 'barrier-second-price';
+      priceConfirmation.candidateId = 'barrier-second-price';
 
       const finalizing = environment.finalizer.finalize(
         environment.context,
