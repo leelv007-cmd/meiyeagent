@@ -107,7 +107,6 @@ import { Route as AdminSupplyViewsViewIdRouteImport } from './routes/admin/suppl
 import { Route as AdminSupplyTasksTaskIdRouteImport } from './routes/admin/supply.tasks.$taskId'
 import { Route as ApiCoreP1HarnessTasksRouteImport } from './routes/api/core/p1/harness/tasks'
 import { Route as ApiCoreP1HarnessRecommendationRouteImport } from './routes/api/core/p1/harness/recommendation'
-import { Route as ApiCoreP1CopyStreamRouteImport } from './routes/api/core/p1/copy/stream'
 import { Route as ApiCoreP1ComposerSubmissionsRouteImport } from './routes/api/core/p1/composer/submissions'
 import { Route as ApiCoreP1ComposerDestinationMapRouteImport } from './routes/api/core/p1/composer/destination-map'
 import { Route as ApiCoreP1AssistantStreamRouteImport } from './routes/api/core/p1/assistant/stream'
@@ -611,11 +610,6 @@ const ApiCoreP1HarnessRecommendationRoute =
     path: '/api/core/p1/harness/recommendation',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiCoreP1CopyStreamRoute = ApiCoreP1CopyStreamRouteImport.update({
-  id: '/api/core/p1/copy/stream',
-  path: '/api/core/p1/copy/stream',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiCoreP1ComposerSubmissionsRoute =
   ApiCoreP1ComposerSubmissionsRouteImport.update({
     id: '/api/core/p1/composer/submissions',
@@ -767,7 +761,6 @@ export interface FileRoutesByFullPath {
   '/api/core/p1/assistant/stream': typeof ApiCoreP1AssistantStreamRoute
   '/api/core/p1/composer/destination-map': typeof ApiCoreP1ComposerDestinationMapRoute
   '/api/core/p1/composer/submissions': typeof ApiCoreP1ComposerSubmissionsRoute
-  '/api/core/p1/copy/stream': typeof ApiCoreP1CopyStreamRoute
   '/api/core/p1/harness/recommendation': typeof ApiCoreP1HarnessRecommendationRoute
   '/api/core/p1/harness/tasks': typeof ApiCoreP1HarnessTasksRouteWithChildren
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
@@ -872,7 +865,6 @@ export interface FileRoutesByTo {
   '/api/core/p1/assistant/stream': typeof ApiCoreP1AssistantStreamRoute
   '/api/core/p1/composer/destination-map': typeof ApiCoreP1ComposerDestinationMapRoute
   '/api/core/p1/composer/submissions': typeof ApiCoreP1ComposerSubmissionsRoute
-  '/api/core/p1/copy/stream': typeof ApiCoreP1CopyStreamRoute
   '/api/core/p1/harness/recommendation': typeof ApiCoreP1HarnessRecommendationRoute
   '/api/core/p1/harness/tasks': typeof ApiCoreP1HarnessTasksRouteWithChildren
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
@@ -982,7 +974,6 @@ export interface FileRoutesById {
   '/api/core/p1/assistant/stream': typeof ApiCoreP1AssistantStreamRoute
   '/api/core/p1/composer/destination-map': typeof ApiCoreP1ComposerDestinationMapRoute
   '/api/core/p1/composer/submissions': typeof ApiCoreP1ComposerSubmissionsRoute
-  '/api/core/p1/copy/stream': typeof ApiCoreP1CopyStreamRoute
   '/api/core/p1/harness/recommendation': typeof ApiCoreP1HarnessRecommendationRoute
   '/api/core/p1/harness/tasks': typeof ApiCoreP1HarnessTasksRouteWithChildren
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
@@ -1093,7 +1084,6 @@ export interface FileRouteTypes {
     | '/api/core/p1/assistant/stream'
     | '/api/core/p1/composer/destination-map'
     | '/api/core/p1/composer/submissions'
-    | '/api/core/p1/copy/stream'
     | '/api/core/p1/harness/recommendation'
     | '/api/core/p1/harness/tasks'
     | '/api/core/p1/workflows/$workflowId/events'
@@ -1198,7 +1188,6 @@ export interface FileRouteTypes {
     | '/api/core/p1/assistant/stream'
     | '/api/core/p1/composer/destination-map'
     | '/api/core/p1/composer/submissions'
-    | '/api/core/p1/copy/stream'
     | '/api/core/p1/harness/recommendation'
     | '/api/core/p1/harness/tasks'
     | '/api/core/p1/workflows/$workflowId/events'
@@ -1307,7 +1296,6 @@ export interface FileRouteTypes {
     | '/api/core/p1/assistant/stream'
     | '/api/core/p1/composer/destination-map'
     | '/api/core/p1/composer/submissions'
-    | '/api/core/p1/copy/stream'
     | '/api/core/p1/harness/recommendation'
     | '/api/core/p1/harness/tasks'
     | '/api/core/p1/workflows/$workflowId/events'
@@ -1354,7 +1342,6 @@ export interface RootRouteChildren {
   ApiCoreP1AssistantStreamRoute: typeof ApiCoreP1AssistantStreamRoute
   ApiCoreP1ComposerDestinationMapRoute: typeof ApiCoreP1ComposerDestinationMapRoute
   ApiCoreP1ComposerSubmissionsRoute: typeof ApiCoreP1ComposerSubmissionsRoute
-  ApiCoreP1CopyStreamRoute: typeof ApiCoreP1CopyStreamRoute
   ApiCoreP1HarnessRecommendationRoute: typeof ApiCoreP1HarnessRecommendationRoute
   ApiCoreP1HarnessTasksRoute: typeof ApiCoreP1HarnessTasksRouteWithChildren
   ApiCoreP1WorkflowsWorkflowIdEventsRoute: typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
@@ -2048,13 +2035,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCoreP1HarnessRecommendationRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/core/p1/copy/stream': {
-      id: '/api/core/p1/copy/stream'
-      path: '/api/core/p1/copy/stream'
-      fullPath: '/api/core/p1/copy/stream'
-      preLoaderRoute: typeof ApiCoreP1CopyStreamRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/core/p1/composer/submissions': {
       id: '/api/core/p1/composer/submissions'
       path: '/api/core/p1/composer/submissions'
@@ -2361,7 +2341,6 @@ const rootRouteChildren: RootRouteChildren = {
   ApiCoreP1AssistantStreamRoute: ApiCoreP1AssistantStreamRoute,
   ApiCoreP1ComposerDestinationMapRoute: ApiCoreP1ComposerDestinationMapRoute,
   ApiCoreP1ComposerSubmissionsRoute: ApiCoreP1ComposerSubmissionsRoute,
-  ApiCoreP1CopyStreamRoute: ApiCoreP1CopyStreamRoute,
   ApiCoreP1HarnessRecommendationRoute: ApiCoreP1HarnessRecommendationRoute,
   ApiCoreP1HarnessTasksRoute: ApiCoreP1HarnessTasksRouteWithChildren,
   ApiCoreP1WorkflowsWorkflowIdEventsRoute:

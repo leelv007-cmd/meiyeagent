@@ -5,21 +5,18 @@ import {
   assistantFieldPatchSchema,
   copyCandidatesSchemaFor,
   DEFAULT_COPY_CANDIDATE_COUNT,
-  generatedCopyCandidatesSchema,
   generatedPlatformVariantsSchema,
   type AssistantStreamRequest,
   type GeneratedCopyCandidates,
   type GeneratedPlatformVariants,
 } from '@meiye/contracts';
 import {
-  createTextStreamResponse,
   createUIMessageStream,
   createUIMessageStreamResponse,
   generateText,
   isStepCount,
   Output,
   streamText,
-  toTextStream,
   toUIMessageStream,
   tool,
 } from 'ai';
@@ -27,7 +24,7 @@ import { z, type ZodType } from 'zod';
 import type { StructuredObjectExecutor } from './index.js';
 import type { ResolvedReferenceAsset } from './reference-asset-resolver.js';
 
-const FIXTURE_COPY_CHUNK_INTERVAL_MS = 200;
+const FIXTURE_STREAM_CHUNK_INTERVAL_MS = 200;
 const FIXTURE_ASSISTANT_CHUNK_INTERVAL_MS = 120;
 const FIXTURE_STRUCTURED_CHUNK_INTERVAL_MS = 40;
 
@@ -98,10 +95,6 @@ export interface AiStreamingRunner {
     request: AssistantStreamRequest,
     abortSignal?: AbortSignal
   ): Response;
-  startCopyStream(
-    request: { catalogModelId: string; prompt: string },
-    abortSignal?: AbortSignal
-  ): { response: Response; result: Promise<GeneratedCopyResult> };
   startCanvasTextStream?(
     request: {
       catalogModelId: string;
@@ -328,47 +321,6 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     });
   }
 
-  startCopyStream(
-    request: { catalogModelId: string; prompt: string },
-    abortSignal?: AbortSignal
-  ) {
-    this.assertFixedModel(request.catalogModelId);
-    const result = streamText({
-      abortSignal,
-      ...languageModelCallSettings(this.options),
-      instructions:
-        `Return exactly ${DEFAULT_COPY_CANDIDATE_COUNT} primary beauty-business copy candidate. The candidate must include a non-empty title, body, and conversionHook.`,
-      maxRetries: 0,
-      model: this.model,
-      output: Output.object({
-        name: 'beauty_copy_candidates',
-        schema: generatedCopyCandidatesSchema,
-      }),
-      prompt: request.prompt,
-    });
-    const response = createTextStreamResponse({
-      headers: streamHeaders('ai-sdk-object-json-v1', this.catalogModelId),
-      stream: toTextStream({ stream: result.fullStream }),
-    });
-    const completion = Promise.all([
-      Promise.resolve(result.output),
-      Promise.resolve(result.usage),
-      Promise.resolve(result.finalStep),
-    ]).then(([output, usage, metadata]) => {
-      const parsed = generatedCopyCandidatesSchema.parse(output);
-      assertDistinctBodies(parsed);
-      return {
-        ...parsed,
-        providerTaskRef: metadata.response.id,
-        usage: {
-          inputTokens: usage.inputTokens ?? 0,
-          outputTokens: usage.outputTokens ?? 0,
-        },
-      };
-    });
-    return { response, result: completion };
-  }
-
   startCanvasTextStream(
     request: {
       catalogModelId: string;
@@ -537,31 +489,6 @@ export class FixtureAiStreamingRunner implements AiStreamingRunner {
     });
   }
 
-  startCopyStream(
-    request: { catalogModelId: string; prompt: string },
-    abortSignal?: AbortSignal
-  ) {
-    const result = fixtureCopyResult(request.prompt);
-    const chunks = [
-      '{"candidates":[{"title":"透亮猫眼｜真实到店记录",',
-      '"body":"从门店真实项目出发，先写清效果与到店前需要确认的信息。",',
-      '"conversionHook":"先沟通需求"}]}',
-    ];
-    return {
-      response: pacedResponse(
-        chunks,
-        'text/plain; charset=utf-8',
-        streamHeaders('ai-sdk-object-json-v1', request.catalogModelId),
-        abortSignal
-      ),
-      result: delayedResult(
-        result,
-        chunks.length * FIXTURE_COPY_CHUNK_INTERVAL_MS,
-        abortSignal
-      ),
-    };
-  }
-
   startCanvasTextStream(
     request: {
       catalogModelId: string;
@@ -585,7 +512,7 @@ export class FixtureAiStreamingRunner implements AiStreamingRunner {
           text,
           usage: { inputTokens: 0, outputTokens: 0 },
         },
-        Math.max(0, deltas.length - 1) * FIXTURE_COPY_CHUNK_INTERVAL_MS,
+        Math.max(0, deltas.length - 1) * FIXTURE_STREAM_CHUNK_INTERVAL_MS,
         abortSignal,
       ),
     };
@@ -1211,19 +1138,6 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
         assetRefs: [],
       };
     }
-    case 'harness_copy_score_v1': {
-      const candidate = fixtureRecord(payload.candidate);
-      const candidateId =
-        typeof candidate.candidateId === 'string'
-          ? candidate.candidateId
-          : 'c01';
-      const scoreById: Record<string, number> = { c01: 92, c02: 88, c03: 84 };
-      return {
-        score: scoreById[candidateId] ?? 80,
-        dimensions: { grounding: 1, usefulness: 0.9, platformFit: 0.9 },
-        reason: '候选仅使用已确认上下文，内容完整且适合目标平台。',
-      };
-    }
     case 'harness_fact_satisfaction_v1': {
       const requested = Array.isArray(payload.factTypes)
         ? payload.factTypes.filter((item): item is string => typeof item === 'string')
@@ -1313,78 +1227,6 @@ function fixturePromptFactRefs(payload: Record<string, unknown>) {
         ),
     ),
   ].sort((left, right) => left.localeCompare(right));
-}
-
-function pacedResponse(
-  chunks: string[],
-  contentType: string,
-  headers: Record<string, string>,
-  abortSignal?: AbortSignal
-) {
-  const encoder = new TextEncoder();
-  const timers: Array<ReturnType<typeof setTimeout>> = [];
-  let stopped = false;
-  let abortHandler: (() => void) | undefined;
-  const cleanup = () => {
-    for (const timer of timers) clearTimeout(timer);
-    if (abortHandler) abortSignal?.removeEventListener('abort', abortHandler);
-  };
-  const body = new ReadableStream<Uint8Array>({
-    start(controller) {
-      abortHandler = () => {
-        if (stopped) return;
-        stopped = true;
-        cleanup();
-        controller.error(createAbortError());
-      };
-      if (abortSignal?.aborted) {
-        abortHandler();
-        return;
-      }
-      abortSignal?.addEventListener('abort', abortHandler, { once: true });
-      chunks.forEach((chunk, index) => {
-        const timer = setTimeout(() => {
-          if (stopped) return;
-          controller.enqueue(encoder.encode(chunk));
-          if (index === chunks.length - 1) {
-            stopped = true;
-            cleanup();
-            controller.close();
-          }
-        }, index * FIXTURE_COPY_CHUNK_INTERVAL_MS);
-        timers.push(timer);
-      });
-    },
-    cancel() {
-      stopped = true;
-      cleanup();
-    },
-  });
-  return new Response(body, {
-    headers: { ...headers, 'content-type': contentType },
-  });
-}
-
-function delayedResult(
-  result: GeneratedCopyResult,
-  delayMs: number,
-  abortSignal?: AbortSignal
-) {
-  return new Promise<GeneratedCopyResult>((resolve, reject) => {
-    if (abortSignal?.aborted) {
-      reject(createAbortError());
-      return;
-    }
-    const abortHandler = () => {
-      clearTimeout(timer);
-      reject(createAbortError());
-    };
-    abortSignal?.addEventListener('abort', abortHandler, { once: true });
-    const timer = setTimeout(() => {
-      abortSignal?.removeEventListener('abort', abortHandler);
-      resolve(result);
-    }, delayMs);
-  });
 }
 
 function delayedCanvasTextResult(

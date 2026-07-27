@@ -29,29 +29,6 @@ const generatedCandidateSchema = z
   })
   .strict();
 
-const scoreOutputSchema = z
-  .object({
-    score: z.number().min(0).max(100),
-    dimensions: z
-      .object({
-        grounding: z.number().min(0).max(1),
-        usefulness: z.number().min(0).max(1),
-        platformFit: z.number().min(0).max(1),
-      })
-      .strict(),
-    reason: z.string().trim().min(1),
-  })
-  .strict();
-
-export const COPY_SCORING_RUBRIC = {
-  version: 'copy-quality-v1',
-  dimensions: {
-    grounding: 'All critical claims cite supplied current sources.',
-    usefulness: 'The copy gives the merchant a complete usable message and CTA.',
-    platformFit: 'The structure and expression fit the requested platform.',
-  },
-} as const;
-
 const COPY_SINGLE_PRIMARY_RUBRIC = {
   version: 'copy-single-primary-v1',
   rule: 'One policy-valid primary result is delivered without comparative scoring.',
@@ -74,22 +51,17 @@ export interface CandidatePolicyValidator {
   };
 }
 
-export interface CandidateScorer {
-  score(input: {
-    effectIdempotencyKey: string;
-    candidate: GeneratedCandidate;
-    brief: ExecutionBrief;
-    rubric: typeof COPY_SCORING_RUBRIC;
-  }): Promise<z.infer<typeof scoreOutputSchema>>;
-}
-
 export interface DecisionTraceFragment {
   stage: 'execution_selection';
   winnerCandidateId: string;
   candidateScores: Array<{
     candidateId: string;
     score: number;
-    dimensions: z.infer<typeof scoreOutputSchema>['dimensions'];
+    dimensions: {
+      grounding: number;
+      usefulness: number;
+      platformFit: number;
+    };
     reason: string;
   }>;
   blockedCandidates: Array<{
@@ -176,7 +148,6 @@ export async function executeCopySelection(
   },
   ports: {
     runner: StructuredNodeRunner;
-    scorer: CandidateScorer;
     validator: CandidatePolicyValidator;
   },
 ) {
@@ -341,23 +312,6 @@ function copyCandidateTokenEmitter(
       await emit({ candidateId, channel: channels[field], delta });
     }
   };
-}
-
-export class StructuredCandidateScorer implements CandidateScorer {
-  constructor(private readonly runner: StructuredNodeRunner) {}
-
-  async score(input: Parameters<CandidateScorer['score']>[0]) {
-    const result = await this.runner.run({
-      effectIdempotencyKey: input.effectIdempotencyKey,
-      schemaName: 'harness_copy_score_v1',
-      schemaRevision: input.rubric.version,
-      instructions:
-        'Score the candidate strictly against the supplied rubric. Return one 0-100 total, normalized dimension scores, and a concise evidence-based reason.',
-      prompt: JSON.stringify(input),
-      schema: scoreOutputSchema,
-    });
-    return result.output;
-  }
 }
 
 export function candidateBillingDisposition(input: {

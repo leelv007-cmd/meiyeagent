@@ -8,8 +8,8 @@
  * Stage announcements live only in the a11y aggregate layer — they must not
  * replace token-stream intermediate state assertions.
  *
- * Pure helpers are inlined (not imported from copy-stream.tsx) so node:test
- * fixtures do not pull React / locale modules.
+ * Pure helpers stay independent of React and locale modules so node:test
+ * fixtures can execute them directly.
  */
 
 import { harnessCopyStreamPhase } from '@/product/workbench-state-model';
@@ -191,33 +191,6 @@ export function reduceExclusiveWorkflowTokens(
     );
   }
   return [...current, updated];
-}
-
-/**
- * Exclusive source pick: when workflow tokens have arrived, ignore poll
- * snapshots so the UI never renders duplicate candidate sets.
- */
-export function pickExclusiveTokenCandidates(input: {
-  workflowTokenCandidates?: PartialCopyCandidate[] | null;
-  pollCandidates?: PartialCopyCandidate[] | null;
-  structuredStreamCandidates?: PartialCopyCandidate[] | null;
-}): {
-  source: 'workflow.token' | 'structured_stream' | 'none';
-  candidates: PartialCopyCandidate[];
-} {
-  const workflow = input.workflowTokenCandidates ?? [];
-  if (workflow.some((c) => candidateHasToken(c))) {
-    return { source: 'workflow.token', candidates: workflow };
-  }
-  // Structured stream (AI SDK useObject) is allowed only when no workflow
-  // tokens have arrived yet — still exclusive, never merged with poll.
-  const structured = input.structuredStreamCandidates ?? [];
-  if (structured.some((c) => candidateHasToken(c)) || structured.length > 0) {
-    return { source: 'structured_stream', candidates: structured };
-  }
-  // Poll is intentionally discarded for user-visible copy increments.
-  void input.pollCandidates;
-  return { source: 'none', candidates: [] };
 }
 
 /**

@@ -487,7 +487,6 @@ test('passes frozen Brief and confirmed Product grounding to copy, image and vid
         throw expectedError;
       },
     } as unknown as ModelSupplyControlPlaneService,
-    undefined,
     {
       async inspect(_workspaceId, assetIds) {
         return assetIds.map((assetId) => ({
@@ -551,62 +550,6 @@ test('passes frozen Brief and confirmed Product grounding to copy, image and vid
     assert.match(request.prompt, /不得编造价格、折扣或授权/);
   }
 
-  let streamRequest: (typeof requests)[number] | undefined;
-  const streamingCreation = new ModelSupplyCreationExecutor(
-    {
-      async startCopyStream(
-        _context: unknown,
-        request: (typeof requests)[number]
-      ) {
-        streamRequest = structuredClone(request);
-        return {
-          completion: Promise.resolve({
-            attempt: { acceptance: 'accepted' as const },
-            copyCandidates: [
-              { body: 'A', title: 'A' },
-              { body: 'B', title: 'B' },
-              { body: 'C', title: 'C' },
-            ],
-            jobId: 'stream-grounding-job',
-            providerCost: {
-              amount: 0.002,
-              currency: 'USD' as const,
-              id: 'provider-cost-stream-grounding',
-              status: 'observed' as const,
-              usage: { outputTokens: 300 },
-            },
-            snapshot: { id: 'stream-grounding-route' },
-            status: 'completed' as const,
-            usage: {
-              id: 'usage-stream-grounding',
-              quantity: 1,
-              status: 'committed' as const,
-            },
-          }),
-          response: new Response('stream'),
-        };
-      },
-    } as unknown as ModelSupplyControlPlaneService,
-    {} as ConstructorParameters<typeof ModelSupplyCreationExecutor>[1]
-  );
-  streamingCreation.inspect = async () => {};
-  const streamed = await streamingCreation.startCopyStream?.({
-    briefSnapshot,
-    context: {
-      actor: 'owner',
-      correlationId: 'corr-stream-grounding',
-      userId: 'owner-a',
-      workspaceId: 'workspace-a',
-    },
-    contract,
-    groundingSnapshot,
-    idempotencyKey: 'stream-grounding',
-    intent: '原始意图',
-    productUsageQuantity: 1,
-  });
-  await streamed?.completion;
-  assert.deepEqual(streamRequest?.input?.referenceAssetIds, ['asset-real-a']);
-  assert.match(streamRequest?.prompt ?? '', /春日美甲/);
 });
 
 test('preserves every copy candidate conversion hook from Model Supply', async () => {
@@ -689,7 +632,6 @@ test('rejects unresolved media references before creating a generation job', asy
         throw new Error('must not submit');
       },
     } as unknown as ModelSupplyControlPlaneService,
-    undefined,
     {
       async inspect() {
         return [

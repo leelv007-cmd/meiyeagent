@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import type { P1Context } from '../foundation/domain.js';
 import type { ModelSupplyControlPlaneService } from '../model-supply/foundation-module.js';
 import type {
-  AiStreamingRunner,
   DurableMediaGenerationJobView,
   ModelSupplyResult,
   ReferenceAssetResolverPort,
@@ -222,7 +221,6 @@ function structuredCreativeIntent(
 export class ModelSupplyCreationExecutor implements CreationExecutorPort {
   constructor(
     private readonly controlPlane: ModelSupplyControlPlaneService,
-    private readonly streamingRunner?: AiStreamingRunner,
     private readonly referenceAssets?: ReferenceAssetResolverPort
   ) {}
 
@@ -421,77 +419,6 @@ export class ModelSupplyCreationExecutor implements CreationExecutorPort {
       return this.executionResult(job.result, job.status);
     }
     return this.executionResult(result);
-  }
-
-  async startCopyStream(
-    input: Parameters<NonNullable<CreationExecutorPort['startCopyStream']>>[0]
-  ) {
-    if (!this.streamingRunner) {
-      throw new OperationsError(
-        'COPY_STREAM_UNAVAILABLE',
-        'Streaming copy generation is not configured.',
-        503
-      );
-    }
-    if (input.contract.operation !== 'copy.generate') {
-      throw new OperationsError(
-        'COPY_STREAM_OPERATION_REQUIRED',
-        'The copy stream accepts copy generation only.',
-        409
-      );
-    }
-    await this.inspect(input.context.workspaceId, input.contract);
-    const context: P1Context = {
-      actor: input.context.actor,
-      correlationId: input.context.correlationId,
-      userId: input.context.userId,
-      workspaceId: input.context.workspaceId,
-    };
-    const started = await this.controlPlane.startCopyStream(
-      context,
-      {
-        ...(input.billingTaskId && input.billingQuoteRevision
-          ? {
-              billingQuoteRevision: input.billingQuoteRevision,
-              billingTaskId: input.billingTaskId,
-            }
-          : {}),
-        dataClass: input.contract.dataClass,
-        input: {
-          ...(input.groundingSnapshot?.assets.length
-            ? {
-                referenceAssetIds: input.groundingSnapshot.assets.map(
-                  (asset) => asset.id
-                ),
-              }
-            : {}),
-        },
-        operation: 'copy.generate',
-        prompt: structuredCreativeIntent(
-          input.intent,
-          input.contract,
-          input.inheritanceContext,
-          input.briefSnapshot,
-          input.groundingSnapshot
-        ),
-        promptRevision: CREATIVE_PROMPT_REVISION,
-        exampleSetRevision: CREATIVE_EXAMPLE_SET_REVISION,
-        productUsageQuantity: input.productUsageQuantity,
-        selection: {
-          catalogModelId: input.contract.catalogModelId,
-          mode: 'fixed',
-        },
-      },
-      input.idempotencyKey,
-      this.streamingRunner,
-      input.abortSignal
-    );
-    return {
-      response: started.response,
-      completion: started.completion.then((result) =>
-        this.executionResult(result)
-      ),
-    };
   }
 
   async verify(input: Parameters<CreationExecutorPort['verify']>[0]) {

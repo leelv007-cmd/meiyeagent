@@ -90,17 +90,19 @@ test('result route does not ship hard-coded empty works or copy workspace', () =
   assert.doesNotMatch(route, /provisional shell/);
 });
 
-test('result route wires live copy token stream (ADR-0007) for running phase', () => {
-  assert.match(route, /useCopyCandidateStream/);
+test('result route consumes Harness workflow tokens as the only live incremental copy source', () => {
+  assert.match(route, /useWorkflowEventStream/);
+  assert.match(route, /harnessStream\.copyCandidates/);
   assert.match(route, /partialCandidates=/);
   assert.match(route, /streamLoading=/);
   assert.match(
     route,
     /progressState === ['"]running['"][\s\S]*progressState === ['"]waiting['"]|progressState === ['"]waiting['"][\s\S]*progressState === ['"]running['"]/
   );
-  // Must actually submit — hook wiring alone never starts the stream.
-  assert.match(route, /submitCopyCandidateStream/);
-  assert.match(route, /buildCopyStreamRequestFromJob/);
+  assert.doesNotMatch(route, /useCopyCandidateStream/);
+  assert.doesNotMatch(route, /submitCopyCandidateStream/);
+  assert.doesNotMatch(route, /buildCopyStreamRequestFromJob/);
+  assert.doesNotMatch(route, /structuredStreamCandidates/);
 });
 
 test('wechat moments full-package action downloads canonical caption segments', () => {
