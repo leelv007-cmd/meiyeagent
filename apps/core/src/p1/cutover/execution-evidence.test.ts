@@ -76,7 +76,6 @@ function evidenceState() {
     ],
     videoArtifacts: [],
     handoffPackages: [],
-    leads: [],
     usageEvents: [
       {
         id: 'usage-one',

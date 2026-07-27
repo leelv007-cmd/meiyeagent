@@ -20,7 +20,7 @@ test.describe('canonical product golden journey', () => {
     await cleanupE2EUsers(request);
   });
 
-  test('hands off accepted content, records exports separately, and links a lead', async ({
+  test('hands off accepted content and records exports separately', async ({
     context,
     page,
     request,
@@ -142,25 +142,5 @@ test.describe('canonical product golden journey', () => {
     expect(
       state.contents.find((content) => content.id === contentId)?.status
     ).toBe('published');
-
-    await page.goto('/dashboard/leads');
-    // Labels below are the shipped Paraglide values; the two this spec used to
-    // name ('意向金额（可选）' / '最小备注') were renamed before T33 and never
-    // re-synced here, so this step could not pass on the baseline either.
-    await page.getByLabel('预计成交金额（可选）').fill('299');
-    await page
-      .getByLabel('客户备注')
-      .fill('顾客从私信询问同款，人工关联用于复盘');
-    await page.getByRole('button', { name: '记录私信线索' }).click();
-    await expect(page.getByText('顾客从私信询问同款')).toBeVisible();
-    // T33 / #227: the ledger reshelled onto HeroUI Pro V3, so the follow-up
-    // control is a listbox rather than a native <select>. Same capability.
-    // Behaviour lives in leads.interaction.test.tsx — this journey cannot reach
-    // the ledger while its content seed is closed.
-    const statusPicker = page.getByRole('button', { name: /更新线索状态/u });
-    await statusPicker.click();
-    await page.getByRole('option', { name: '已联系' }).click();
-    await expect(statusPicker).toHaveText('已联系');
-    await expect(page.getByText(/不表示自动或因果归因/)).toBeVisible();
   });
 });

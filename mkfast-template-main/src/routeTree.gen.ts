@@ -44,7 +44,6 @@ import { Route as DashboardStoreRouteImport } from './routes/dashboard/store'
 import { Route as DashboardSessionsRouteImport } from './routes/dashboard/sessions'
 import { Route as DashboardSearchRouteImport } from './routes/dashboard/search'
 import { Route as DashboardRecentRouteImport } from './routes/dashboard/recent'
-import { Route as DashboardLeadsRouteImport } from './routes/dashboard/leads'
 import { Route as DashboardJobsRouteImport } from './routes/dashboard/jobs'
 import { Route as DashboardIdentityRouteImport } from './routes/dashboard/identity'
 import { Route as DashboardContentRouteImport } from './routes/dashboard/content'
@@ -81,7 +80,6 @@ import { Route as DashboardToolsToolEntryIdRouteImport } from './routes/dashboar
 import { Route as DashboardTasksTaskIdRouteImport } from './routes/dashboard/tasks_/$taskId'
 import { Route as DashboardSessionsSessionIdRouteImport } from './routes/dashboard/sessions_/$sessionId'
 import { Route as DashboardResultsWorkIdRouteImport } from './routes/dashboard/results_/$workId'
-import { Route as DashboardLeadsLeadIdRouteImport } from './routes/dashboard/leads_/$leadId'
 import { Route as DashboardJobsJobIdRouteImport } from './routes/dashboard/jobs_/$jobId'
 import { Route as DashboardHandoffTokenRouteImport } from './routes/dashboard/handoff/$token'
 import { Route as DashboardContentContentIdRouteImport } from './routes/dashboard/content_/$contentId'
@@ -291,11 +289,6 @@ const DashboardRecentRoute = DashboardRecentRouteImport.update({
   path: '/recent',
   getParentRoute: () => DashboardRoute,
 } as any)
-const DashboardLeadsRoute = DashboardLeadsRouteImport.update({
-  id: '/leads',
-  path: '/leads',
-  getParentRoute: () => DashboardRoute,
-} as any)
 const DashboardJobsRoute = DashboardJobsRouteImport.update({
   id: '/jobs',
   path: '/jobs',
@@ -476,11 +469,6 @@ const DashboardSessionsSessionIdRoute =
 const DashboardResultsWorkIdRoute = DashboardResultsWorkIdRouteImport.update({
   id: '/results_/$workId',
   path: '/results/$workId',
-  getParentRoute: () => DashboardRoute,
-} as any)
-const DashboardLeadsLeadIdRoute = DashboardLeadsLeadIdRouteImport.update({
-  id: '/leads_/$leadId',
-  path: '/leads/$leadId',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardJobsJobIdRoute = DashboardJobsJobIdRouteImport.update({
@@ -701,7 +689,6 @@ export interface FileRoutesByFullPath {
   '/dashboard/content': typeof DashboardContentRoute
   '/dashboard/identity': typeof DashboardIdentityRoute
   '/dashboard/jobs': typeof DashboardJobsRoute
-  '/dashboard/leads': typeof DashboardLeadsRoute
   '/dashboard/recent': typeof DashboardRecentRoute
   '/dashboard/search': typeof DashboardSearchRoute
   '/dashboard/sessions': typeof DashboardSessionsRoute
@@ -742,7 +729,6 @@ export interface FileRoutesByFullPath {
   '/dashboard/content/$contentId': typeof DashboardContentContentIdRoute
   '/dashboard/handoff/$token': typeof DashboardHandoffTokenRoute
   '/dashboard/jobs/$jobId': typeof DashboardJobsJobIdRoute
-  '/dashboard/leads/$leadId': typeof DashboardLeadsLeadIdRoute
   '/dashboard/results/$workId': typeof DashboardResultsWorkIdRoute
   '/dashboard/sessions/$sessionId': typeof DashboardSessionsSessionIdRoute
   '/dashboard/tasks/$taskId': typeof DashboardTasksTaskIdRoute
@@ -805,7 +791,6 @@ export interface FileRoutesByTo {
   '/dashboard/content': typeof DashboardContentRoute
   '/dashboard/identity': typeof DashboardIdentityRoute
   '/dashboard/jobs': typeof DashboardJobsRoute
-  '/dashboard/leads': typeof DashboardLeadsRoute
   '/dashboard/recent': typeof DashboardRecentRoute
   '/dashboard/search': typeof DashboardSearchRoute
   '/dashboard/sessions': typeof DashboardSessionsRoute
@@ -846,7 +831,6 @@ export interface FileRoutesByTo {
   '/dashboard/content/$contentId': typeof DashboardContentContentIdRoute
   '/dashboard/handoff/$token': typeof DashboardHandoffTokenRoute
   '/dashboard/jobs/$jobId': typeof DashboardJobsJobIdRoute
-  '/dashboard/leads/$leadId': typeof DashboardLeadsLeadIdRoute
   '/dashboard/results/$workId': typeof DashboardResultsWorkIdRoute
   '/dashboard/sessions/$sessionId': typeof DashboardSessionsSessionIdRoute
   '/dashboard/tasks/$taskId': typeof DashboardTasksTaskIdRoute
@@ -914,7 +898,6 @@ export interface FileRoutesById {
   '/dashboard/content': typeof DashboardContentRoute
   '/dashboard/identity': typeof DashboardIdentityRoute
   '/dashboard/jobs': typeof DashboardJobsRoute
-  '/dashboard/leads': typeof DashboardLeadsRoute
   '/dashboard/recent': typeof DashboardRecentRoute
   '/dashboard/search': typeof DashboardSearchRoute
   '/dashboard/sessions': typeof DashboardSessionsRoute
@@ -955,7 +938,6 @@ export interface FileRoutesById {
   '/dashboard/content_/$contentId': typeof DashboardContentContentIdRoute
   '/dashboard/handoff/$token': typeof DashboardHandoffTokenRoute
   '/dashboard/jobs_/$jobId': typeof DashboardJobsJobIdRoute
-  '/dashboard/leads_/$leadId': typeof DashboardLeadsLeadIdRoute
   '/dashboard/results_/$workId': typeof DashboardResultsWorkIdRoute
   '/dashboard/sessions_/$sessionId': typeof DashboardSessionsSessionIdRoute
   '/dashboard/tasks_/$taskId': typeof DashboardTasksTaskIdRoute
@@ -1024,7 +1006,6 @@ export interface FileRouteTypes {
     | '/dashboard/content'
     | '/dashboard/identity'
     | '/dashboard/jobs'
-    | '/dashboard/leads'
     | '/dashboard/recent'
     | '/dashboard/search'
     | '/dashboard/sessions'
@@ -1065,7 +1046,6 @@ export interface FileRouteTypes {
     | '/dashboard/content/$contentId'
     | '/dashboard/handoff/$token'
     | '/dashboard/jobs/$jobId'
-    | '/dashboard/leads/$leadId'
     | '/dashboard/results/$workId'
     | '/dashboard/sessions/$sessionId'
     | '/dashboard/tasks/$taskId'
@@ -1128,7 +1108,6 @@ export interface FileRouteTypes {
     | '/dashboard/content'
     | '/dashboard/identity'
     | '/dashboard/jobs'
-    | '/dashboard/leads'
     | '/dashboard/recent'
     | '/dashboard/search'
     | '/dashboard/sessions'
@@ -1169,7 +1148,6 @@ export interface FileRouteTypes {
     | '/dashboard/content/$contentId'
     | '/dashboard/handoff/$token'
     | '/dashboard/jobs/$jobId'
-    | '/dashboard/leads/$leadId'
     | '/dashboard/results/$workId'
     | '/dashboard/sessions/$sessionId'
     | '/dashboard/tasks/$taskId'
@@ -1236,7 +1214,6 @@ export interface FileRouteTypes {
     | '/dashboard/content'
     | '/dashboard/identity'
     | '/dashboard/jobs'
-    | '/dashboard/leads'
     | '/dashboard/recent'
     | '/dashboard/search'
     | '/dashboard/sessions'
@@ -1277,7 +1254,6 @@ export interface FileRouteTypes {
     | '/dashboard/content_/$contentId'
     | '/dashboard/handoff/$token'
     | '/dashboard/jobs_/$jobId'
-    | '/dashboard/leads_/$leadId'
     | '/dashboard/results_/$workId'
     | '/dashboard/sessions_/$sessionId'
     | '/dashboard/tasks_/$taskId'
@@ -1594,13 +1570,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardRecentRouteImport
       parentRoute: typeof DashboardRoute
     }
-    '/dashboard/leads': {
-      id: '/dashboard/leads'
-      path: '/leads'
-      fullPath: '/dashboard/leads'
-      preLoaderRoute: typeof DashboardLeadsRouteImport
-      parentRoute: typeof DashboardRoute
-    }
     '/dashboard/jobs': {
       id: '/dashboard/jobs'
       path: '/jobs'
@@ -1851,13 +1820,6 @@ declare module '@tanstack/react-router' {
       path: '/results/$workId'
       fullPath: '/dashboard/results/$workId'
       preLoaderRoute: typeof DashboardResultsWorkIdRouteImport
-      parentRoute: typeof DashboardRoute
-    }
-    '/dashboard/leads_/$leadId': {
-      id: '/dashboard/leads_/$leadId'
-      path: '/leads/$leadId'
-      fullPath: '/dashboard/leads/$leadId'
-      preLoaderRoute: typeof DashboardLeadsLeadIdRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/jobs_/$jobId': {
@@ -2168,7 +2130,6 @@ interface DashboardRouteChildren {
   DashboardContentRoute: typeof DashboardContentRoute
   DashboardIdentityRoute: typeof DashboardIdentityRoute
   DashboardJobsRoute: typeof DashboardJobsRoute
-  DashboardLeadsRoute: typeof DashboardLeadsRoute
   DashboardRecentRoute: typeof DashboardRecentRoute
   DashboardSearchRoute: typeof DashboardSearchRoute
   DashboardSessionsRoute: typeof DashboardSessionsRoute
@@ -2181,7 +2142,6 @@ interface DashboardRouteChildren {
   DashboardContentContentIdRoute: typeof DashboardContentContentIdRoute
   DashboardHandoffTokenRoute: typeof DashboardHandoffTokenRoute
   DashboardJobsJobIdRoute: typeof DashboardJobsJobIdRoute
-  DashboardLeadsLeadIdRoute: typeof DashboardLeadsLeadIdRoute
   DashboardResultsWorkIdRoute: typeof DashboardResultsWorkIdRoute
   DashboardSessionsSessionIdRoute: typeof DashboardSessionsSessionIdRoute
   DashboardTasksTaskIdRoute: typeof DashboardTasksTaskIdRoute
@@ -2195,7 +2155,6 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardContentRoute: DashboardContentRoute,
   DashboardIdentityRoute: DashboardIdentityRoute,
   DashboardJobsRoute: DashboardJobsRoute,
-  DashboardLeadsRoute: DashboardLeadsRoute,
   DashboardRecentRoute: DashboardRecentRoute,
   DashboardSearchRoute: DashboardSearchRoute,
   DashboardSessionsRoute: DashboardSessionsRoute,
@@ -2208,7 +2167,6 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardContentContentIdRoute: DashboardContentContentIdRoute,
   DashboardHandoffTokenRoute: DashboardHandoffTokenRoute,
   DashboardJobsJobIdRoute: DashboardJobsJobIdRoute,
-  DashboardLeadsLeadIdRoute: DashboardLeadsLeadIdRoute,
   DashboardResultsWorkIdRoute: DashboardResultsWorkIdRoute,
   DashboardSessionsSessionIdRoute: DashboardSessionsSessionIdRoute,
   DashboardTasksTaskIdRoute: DashboardTasksTaskIdRoute,

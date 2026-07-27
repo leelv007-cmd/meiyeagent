@@ -23,7 +23,6 @@ export const productCapabilities = [
   'content.create',
   'content.review',
   'credential.govern',
-  'lead.manage',
   'models.select',
   'personal.preferences.manage',
   'platform.manage',
@@ -55,7 +54,6 @@ const operatorCapabilities: ProductCapability[] = [
   ...sharedWorkspaceCapabilities,
   'content.create',
   'content.review',
-  'lead.manage',
   'models.select',
   'personal.preferences.manage',
   'publication.handoff',
@@ -630,11 +628,6 @@ const publicationCommands = new Set<ProductCommand['type']>([
   'record_handoff_export',
   'report_handoff_result',
 ]);
-const leadCommands = new Set<ProductCommand['type']>([
-  'create_lead',
-  'record_insight',
-  'update_lead',
-]);
 
 export function requiredProductCommandCapability(
   type: ProductCommand['type']
@@ -643,6 +636,5 @@ export function requiredProductCommandCapability(
   if (workspaceProfileCommands.has(type)) return 'workspace.profile.manage';
   if (contentReviewCommands.has(type)) return 'content.review';
   if (publicationCommands.has(type)) return 'publication.handoff';
-  if (leadCommands.has(type)) return 'lead.manage';
   return 'content.create';
 }

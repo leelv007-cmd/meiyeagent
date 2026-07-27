@@ -61,7 +61,6 @@ function legacyState(workspaceId: string, marker: string) {
     videoRenderEvidence: [],
     videoArtifacts: [],
     handoffPackages: [],
-    leads: [],
     entitlement: {
       plan: 'starter',
       content: { allowance: 10, remaining: 9 },

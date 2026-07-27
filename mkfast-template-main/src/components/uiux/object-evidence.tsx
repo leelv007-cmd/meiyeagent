@@ -3,7 +3,6 @@ import {
   object_evidence_kind_asset,
   object_evidence_kind_content,
   object_evidence_kind_job,
-  object_evidence_kind_lead,
   object_evidence_kind_session,
   object_evidence_kind_task,
   object_evidence_kind_work,
@@ -19,8 +18,7 @@ type ObjectEvidenceKind =
   | 'Job'
   | 'Asset'
   | 'Content'
-  | 'Session'
-  | 'Lead';
+  | 'Session';
 
 interface ObjectEvidenceProps {
   id: string;
@@ -32,7 +30,6 @@ const KIND_LABEL: Record<ObjectEvidenceKind, () => string> = {
   Asset: object_evidence_kind_asset,
   Content: object_evidence_kind_content,
   Job: object_evidence_kind_job,
-  Lead: object_evidence_kind_lead,
   Session: object_evidence_kind_session,
   Task: object_evidence_kind_task,
   Work: object_evidence_kind_work,

@@ -217,22 +217,6 @@ describe(
         { packageId, type: 'mark_published' },
         'p1-mark-published'
       );
-      const lead = await service.execute(
-        context,
-        {
-          contentId,
-          lead: {
-            amountCents: 29900,
-            note: '顾客主动咨询，不代表内容因果归因',
-            projectId: 'project-relational',
-            source: 'direct_message',
-          },
-          type: 'create_lead',
-        },
-        'p1-create-lead'
-      );
-
-      assert.ok(lead.output.leadId);
       assert.equal(await legacyStateHash(), legacyHashBefore);
       const stateBlobs = await pool.query(
         `SELECT id FROM p1_relation_facts
@@ -248,7 +232,7 @@ describe(
         service.execute(
           context,
           { contentId, type: 'select_content' },
-          'p1-create-lead'
+          'p1-mark-published'
         ),
         (error: unknown) =>
           error instanceof Error &&
@@ -272,7 +256,6 @@ describe(
         'platform_variant',
         'publish_package',
         'publish_record',
-        'lead',
         'usage_event',
         'audit',
       ]) {

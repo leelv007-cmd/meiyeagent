@@ -32,87 +32,6 @@ const worker = {
 };
 
 describe('product golden journey', () => {
-  it('creates and updates a lead from a published canonical ContentPackage without legacy contents', async () => {
-    const repository = new MemoryProductRepository();
-    repository.grantMembership(merchant.userId, merchant.workspaceId);
-    let publicationStatus = 'unknown';
-    const service = new ProductService(
-      repository,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      'legacy',
-      {
-        canonicalLeadContentPackages: {
-          async get({ packageId, workspaceId }) {
-            assert.equal(packageId, 'package-canonical-lead');
-            assert.equal(workspaceId, merchant.workspaceId);
-            return {
-              currentVersionId: 'package-canonical-lead-v3',
-              deliveryEvents: [
-                {
-                  type: 'manual_publish_result' as const,
-                  status: publicationStatus,
-                },
-              ],
-              id: packageId,
-              revision: 3,
-              source: { workId: 'work-canonical-lead' },
-              status: 'accepted',
-            };
-          },
-        },
-      }
-    );
-
-    await assert.rejects(
-      service.execute(
-        merchant,
-        {
-          type: 'create_lead',
-          packageId: 'package-canonical-lead',
-          lead: { source: 'direct_message' },
-        },
-        'canonical-lead-unpublished'
-      ),
-      (error) =>
-        error instanceof DomainError &&
-        error.code === 'LEAD_REQUIRES_PUBLISHED_CONTENT'
-    );
-    publicationStatus = 'published';
-    const created = await service.execute(
-      merchant,
-      {
-        type: 'create_lead',
-        packageId: 'package-canonical-lead',
-        lead: {
-          amountCents: 29900,
-          note: '顾客私信询问同款',
-          source: 'direct_message',
-        },
-      },
-      'canonical-lead-create'
-    );
-    const leadId = created.output.leadId;
-    assert.ok(leadId);
-    assert.equal(created.state.contents.length, 0);
-    assert.deepEqual(created.state.leads[0]?.canonicalContentPackage, {
-      packageId: 'package-canonical-lead',
-      revision: 3,
-      versionId: 'package-canonical-lead-v3',
-    });
-    assert.equal(created.state.leads[0]?.projectId, 'work-canonical-lead');
-
-    const updated = await service.execute(
-      merchant,
-      { type: 'update_lead', leadId, status: 'contacted' },
-      'canonical-lead-contacted'
-    );
-    assert.equal(updated.state.leads[0]?.status, 'contacted');
-  });
-
   it('persists complete restricted-asset authorization and rejects incomplete or expired grants', async () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership(merchant.userId, merchant.workspaceId);
@@ -566,56 +485,6 @@ describe('product golden journey', () => {
     );
   });
 
-  it('keeps redeemed, lost, and invalid leads terminal without duplicate status facts', async () => {
-    const repository = new MemoryProductRepository();
-    repository.grantMembership(merchant.userId, merchant.workspaceId);
-    const service = new ProductService(repository);
-    const state = await service.bootstrap(merchant);
-    const terminalStatuses = ['redeemed', 'lost', 'invalid'] as const;
-    for (const status of terminalStatuses) {
-      state.leads.push({
-        contentId: `content-${status}`,
-        contentVersionId: `version-${status}`,
-        createdAt: '2026-07-11T00:00:00.000Z',
-        id: `lead-${status}`,
-        projectId: 'project-terminal-lead',
-        retentionExpiresAt: '2026-10-09T00:00:00.000Z',
-        source: 'booking',
-        status,
-        updatedAt: '2026-07-11T00:00:00.000Z',
-      });
-    }
-    await repository.save(state);
-
-    for (const status of terminalStatuses) {
-      const before = (await service.bootstrap(merchant)).auditEvents.length;
-      const replayed = await service.execute(
-        merchant,
-        { leadId: `lead-${status}`, status, type: 'update_lead' },
-        `lead-${status}-same-terminal`
-      );
-      assert.equal(replayed.state.auditEvents.length, before);
-      await assert.rejects(
-        service.execute(
-          merchant,
-          {
-            leadId: `lead-${status}`,
-            status: 'contacted',
-            type: 'update_lead',
-          },
-          `lead-${status}-regression`
-        ),
-        (error) =>
-          error instanceof DomainError && error.code === 'LEAD_ALREADY_TERMINAL'
-      );
-    }
-
-    assert.deepEqual(
-      (await service.bootstrap(merchant)).leads.map((lead) => lead.status),
-      terminalStatuses
-    );
-  });
-
   it('updates the rebuildable search projection only after a committed command', async () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership(merchant.userId, merchant.workspaceId);
@@ -728,7 +597,7 @@ describe('product golden journey', () => {
     assert.equal(await repository.load(merchant.workspaceId), null);
   });
 
-  it('persists one workspace-scoped path from confirmed facts to a linked lead', async () => {
+  it('persists one workspace-scoped path from confirmed facts to a published handoff', async () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership('user-a', 'workspace-a');
     repository.grantMembership('user-b', 'workspace-b');
@@ -1136,7 +1005,7 @@ describe('product golden journey', () => {
     );
     assert.equal(duplicatePackage.output.packageId, packageId);
     assert.equal(duplicatePackage.state.entitlement.package.remaining, 19);
-    await service.execute(
+    const final = await service.execute(
       merchant,
       {
         type: 'mark_published',
@@ -1145,35 +1014,10 @@ describe('product golden journey', () => {
       },
       'publish-mark'
     );
-    const leadResult = await service.execute(
-      merchant,
-      {
-        type: 'create_lead',
-        contentId,
-        lead: {
-          source: 'direct_message',
-          projectId: 'project-cat-eye',
-          amountCents: 29900,
-          note: '顾客主动咨询同款，不代表内容因果归因',
-        },
-      },
-      'lead-create'
-    );
-    const leadId = leadResult.output.leadId;
-    assert.ok(leadId);
-    const final = await service.execute(
-      merchant,
-      { type: 'update_lead', leadId, status: 'booked' },
-      'lead-booked'
-    );
 
     assert.equal(
       final.state.contents.find((item) => item.id === contentId)?.status,
       'published'
-    );
-    assert.equal(
-      final.state.leads.find((lead) => lead.id === leadId)?.status,
-      'booked'
     );
     assert.ok(final.state.auditEvents.length >= 24);
     assert.ok(

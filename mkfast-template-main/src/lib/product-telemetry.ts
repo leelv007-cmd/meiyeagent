@@ -54,7 +54,7 @@ export function normalizeTelemetryPath(value: string) {
   const pathname = value.split(/[?#]/, 1)[0] || '/';
   return pathname
     .replace(
-      /^\/dashboard\/(tasks|assets|content|sessions|works|jobs|leads)\/[^/]+/,
+      /^\/dashboard\/(tasks|assets|content|sessions|works|jobs)\/[^/]+/,
       '/dashboard/$1/:id'
     )
     .replace(/^\/dashboard\/handoff\/[^/]+/, '/dashboard/handoff/:token');

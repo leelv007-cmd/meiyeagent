@@ -32,10 +32,13 @@ test('the retired task inbox has no route constant left to point at', () => {
   assert.equal('TaskInbox' in Routes, false);
 });
 
-test('leads keeps a stable secondary route after leaving navigation', () => {
-  assert.equal(Routes.LeadLedger, '/dashboard/leads');
-  const firstLevelHrefs = BUSINESS_NAVIGATION.map(({ href }) => String(href));
-  assert.equal(firstLevelHrefs.includes(Routes.LeadLedger), false);
+test('the retired lead ledger has no route constant left to point at', () => {
+  assert.equal('LeadLedger' in Routes, false);
+  const hrefs = BUSINESS_NAVIGATION.map(({ href }) => String(href));
+  assert.equal(
+    hrefs.some((href) => href.startsWith('/dashboard/leads')),
+    false
+  );
 });
 
 test('shared navigation labels resolve in the active locale at access time', () => {

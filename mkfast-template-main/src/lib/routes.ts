@@ -33,7 +33,6 @@ export const Routes = {
    * redirect shell for old links. There is no second content surface.
    */
   ContentLibrary: '/dashboard/works',
-  LeadLedger: '/dashboard/leads',
   StoreProfile: '/dashboard/store',
   ContentWorkspace: '/dashboard/workspace',
   MarketingIdentity: '/dashboard/identity',

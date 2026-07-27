@@ -21,7 +21,6 @@ const REQUIRED_PRODUCT_KEYS = [
   'product_navigation_admin',
   'product_navigation_assets',
   'product_navigation_content',
-  'product_navigation_leads',
   'product_navigation_settings',
   'product_navigation_store',
   'product_navigation_workbench',
@@ -42,6 +41,8 @@ const RETIRED_NAVIGATION_KEYS = [
   'dashboard_sidebar_profile',
   'dashboard_sidebar_security',
   'dashboard_sidebar_settings',
+  /** D-144: 线索台账整体退役真删，导航文案不得复活。 */
+  'product_navigation_leads',
   'product_navigation_tasks',
 ] as const;
 

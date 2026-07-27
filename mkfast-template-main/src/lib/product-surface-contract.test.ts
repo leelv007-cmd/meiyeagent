@@ -184,12 +184,10 @@ test('product controls consume the fixed touch target and readable type tokens',
 
 const localizedDashboardRoutes = [
   'src/routes/dashboard/store.tsx',
-  'src/routes/dashboard/leads.tsx',
   'src/routes/dashboard/handoff/$token.tsx',
-  'src/routes/dashboard/leads_/$leadId.tsx',
 ];
 
-test('dashboard store, lead, and handoff routes use Paraglide at the render boundary', () => {
+test('dashboard store and handoff routes use Paraglide at the render boundary', () => {
   for (const file of localizedDashboardRoutes) {
     const source = readFileSync(resolve(process.cwd(), file), 'utf8');
     const presentationSource = source
@@ -220,7 +218,7 @@ test('dashboard message handoff records every new localized key in both language
     sources.flatMap((source) =>
       Array.from(
         source.matchAll(
-          /(?:\bm\.)?\b(dashboard_(?:content|store|lead|handoff)_[a-z0-9_]*)\b/g
+          /(?:\bm\.)?\b(dashboard_(?:content|store|handoff)_[a-z0-9_]*)\b/g
         ),
         (match) => match[1]
       )
@@ -232,19 +230,4 @@ test('dashboard message handoff records every new localized key in both language
     assert.ok(manifest.messages[key]?.zh.trim(), `${key}: zh`);
     assert.ok(manifest.messages[key]?.en.trim(), `${key}: en`);
   }
-});
-
-test('lead detail renders readable localized facts without exposing internal content ids', () => {
-  const source = readFileSync(
-    resolve(process.cwd(), 'src/routes/dashboard/leads_/$leadId.tsx'),
-    'utf8'
-  );
-
-  assert.doesNotMatch(
-    source,
-    /\{lead\.(?:status|source|contentId|contentVersionId)\}/
-  );
-  assert.match(source, /leadStatusLabel\(lead\.status\)/);
-  assert.match(source, /leadSourceLabel\(lead\.source\)/);
-  assert.match(source, /dashboard_lead_detail_linked_content/);
 });

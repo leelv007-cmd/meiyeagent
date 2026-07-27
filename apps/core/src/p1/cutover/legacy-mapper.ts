@@ -362,13 +362,6 @@ export function mapLegacyProductState(
       });
     }
   }
-  for (const [sequence, lead] of state.leads.entries()) {
-    add('lead', lead.id, lead, {
-      createdAt: lead.createdAt,
-      parentId: factId('content', lead.contentId),
-      sequence,
-    });
-  }
   for (const [sequence, event] of state.usageEvents.entries()) {
     add('usage_event', event.id, event, {
       createdAt: event.createdAt,

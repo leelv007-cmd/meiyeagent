@@ -48,7 +48,6 @@ export type RelationFactKind =
   | 'owned_asset'
   | 'publish_package'
   | 'publish_record'
-  | 'lead'
   | 'usage_event'
   | 'audit';
 

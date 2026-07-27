@@ -87,10 +87,10 @@ test('keeps identity, assets, and camera authorization reachable on mobile', asy
     ).toBeLessThanOrEqual(390);
 
     await page.goto('/dashboard/store');
-    const leadLedgerLink = page.getByRole('link', { name: '线索台账' });
-    await expect(leadLedgerLink).toBeVisible();
-    await leadLedgerLink.click();
-    await expect(page).toHaveURL(/\/dashboard\/leads$/);
+    const workspaceLink = page.getByRole('link', { name: '内容工作区' });
+    await expect(workspaceLink).toBeVisible();
+    await workspaceLink.click();
+    await expect(page).toHaveURL(/\/dashboard\/workspace$/);
   } finally {
     await cleanupE2EUsers(request);
   }

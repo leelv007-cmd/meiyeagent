@@ -25,7 +25,6 @@ interface ProjectionEntityOrder {
   agentRuns: string[];
   toolCalls: string[];
   handoffPackages: string[];
-  leads: string[];
   insights: string[];
   preflightEvents: string[];
   responsibilityConfirmations: string[];
@@ -138,7 +137,6 @@ function stateEntityValues(state: ProductState) {
       set('publish_record', handoff.id, handoff);
     }
   }
-  for (const lead of state.leads) set('lead', lead.id, lead);
   for (const event of state.usageEvents) set('usage_event', event.id, event);
   return values;
 }
@@ -198,7 +196,6 @@ function projectionEntityOrder(state: ProductState): ProjectionEntityOrder {
     handoffPackages: state.handoffPackages.map((item) =>
       logicalId('publish_package', item.id)
     ),
-    leads: state.leads.map((item) => logicalId('lead', item.id)),
     insights: state.insights.map((item) =>
       logicalId('audit', `insight:${item.id}`)
     ),
@@ -370,7 +367,6 @@ export function rebuildProductStateFromRelationFacts(
         assets: legacyBaseline.assets ?? [],
         contents: legacyBaseline.contents ?? [],
         handoffPackages: legacyBaseline.handoffPackages ?? [],
-        leads: legacyBaseline.leads ?? [],
         storyboards: legacyBaseline.storyboards ?? [],
         usageEvents: legacyBaseline.usageEvents ?? [],
         videoArtifactShells: legacyBaseline.videoArtifactShells ?? [],
@@ -466,7 +462,6 @@ export function rebuildProductStateFromRelationFacts(
     handoffPackages: readMany<ProductState['handoffPackages'][number]>(
       order.handoffPackages
     ),
-    leads: readMany<ProductState['leads'][number]>(order.leads),
     insights: readMany<ProductState['insights'][number]>(order.insights),
     preflightEvents: readMany<ProductState['preflightEvents'][number]>(
       order.preflightEvents

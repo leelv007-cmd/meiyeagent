@@ -53,7 +53,6 @@ import {
   dashboard_store_regulated_on,
   dashboard_store_treatment_scope_label,
   dashboard_store_valid_until_label,
-  product_navigation_leads,
   product_navigation_store,
   product_navigation_workspace,
 } from '@/locale/paraglide/messages';
@@ -68,7 +67,6 @@ import type { ProductCommand, StoreFact } from '@meiye/contracts';
 import { useQuery } from '@tanstack/react-query';
 import {
   IconAlertTriangle,
-  IconArchive,
   IconCheck,
   IconFolderOff,
   IconRefresh,
@@ -232,13 +230,6 @@ function StoreProfilePage() {
               to={Routes.ContentWorkspace}
             >
               {product_navigation_workspace()}
-            </Link>
-            <Link
-              className={buttonVariants({ size: 'sm', variant: 'outline' })}
-              to={Routes.LeadLedger}
-            >
-              <IconArchive className="size-4" />
-              {product_navigation_leads()}
             </Link>
           </div>
         }

@@ -47,18 +47,6 @@ const SURFACES = [
   },
   {
     copy: [
-      ['leads-ambient-title', '氛围页头'],
-      ['leads-ambient-aux', '氛围页头副行'],
-      ['leads-empty-title', '标题'],
-      ['leads-empty-description', '描述'],
-    ],
-    label: '获客台账空态',
-    path: '/dashboard/leads',
-    ready: 'leads-empty-description',
-    slug: 'leads-empty',
-  },
-  {
-    copy: [
       ['store-ambient-title', '氛围页头'],
       ['store-ambient-aux', '氛围页头副行'],
       ['store-profile-empty-description', '描述'],
@@ -77,16 +65,6 @@ const SURFACES = [
     path: '/dashboard/identity',
     ready: 'identity-empty-description',
     slug: 'identity-empty',
-  },
-  {
-    copy: [
-      ['lead-detail-missing-title', '标题'],
-      ['lead-detail-missing-description', '描述'],
-    ],
-    label: '获客详情缺件态',
-    path: '/dashboard/leads/t46-no-such-lead',
-    ready: 'lead-detail-missing-description',
-    slug: 'lead-detail-missing',
   },
 ] as const;
 

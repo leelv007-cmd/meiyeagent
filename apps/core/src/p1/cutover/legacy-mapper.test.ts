@@ -58,7 +58,6 @@ test('legacy mapper preserves platform, versions, rights and unknown evidence wi
         createdAt: '2026-07-05T00:00:00.000Z',
       },
     ],
-    leads: [],
     usageEvents: [
       {
         id: 'usage-a',
@@ -158,7 +157,6 @@ test('legacy mapper produces an idempotent manifest and preserves explicit versi
     videoRenderEvidence: [],
     videoArtifacts: [],
     handoffPackages: [],
-    leads: [],
     usageEvents: [],
     auditEvents: [],
     complianceResults: [],

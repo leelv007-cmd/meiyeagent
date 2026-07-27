@@ -9,7 +9,7 @@ import {
 /**
  * T33 / #227 — the four asset surfaces after the reshell.
  *
- * Journey acceptance: store, identity, workspace and leads all render in the
+ * Journey acceptance: store, identity and workspace all render in the
  * one 门店橱窗 language (HeroUI Pro V3 on the Glass sheet), in both themes and
  * at a phone viewport, with no shadcn-era markup left in the page body.
  */
@@ -17,7 +17,6 @@ const SURFACES = [
   '/dashboard/store',
   '/dashboard/identity',
   '/dashboard/workspace',
-  '/dashboard/leads',
 ] as const;
 
 /**

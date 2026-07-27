@@ -97,11 +97,6 @@ async function renderStore() {
         getParentRoute: () => rootRoute,
         path: '/dashboard/workspace',
       }),
-      createRoute({
-        component: Outlet,
-        getParentRoute: () => rootRoute,
-        path: '/dashboard/leads',
-      }),
     ]),
   });
   await router.load();

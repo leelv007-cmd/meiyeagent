@@ -389,27 +389,6 @@ export interface ToolCall {
   createdAt: string;
 }
 
-export type LeadStatus = 'new' | 'contacted' | 'booked' | 'redeemed' | 'lost' | 'invalid';
-
-export interface Lead {
-  id: string;
-  contentId: string;
-  contentVersionId: string;
-  canonicalContentPackage?: {
-    packageId: string;
-    revision: number;
-    versionId: string;
-  };
-  source: 'direct_message' | 'comment' | 'wechat' | 'booking' | 'coupon' | 'redemption' | 'visit';
-  projectId: string;
-  amountCents?: number;
-  note?: string;
-  status: LeadStatus;
-  createdAt: string;
-  updatedAt: string;
-  retentionExpiresAt: string;
-}
-
 export interface QuotaBucket {
   allowance: number;
   remaining: number;
@@ -522,7 +501,6 @@ export interface ProductState {
   agentRuns: AgentRun[];
   toolCalls: ToolCall[];
   handoffPackages: HandoffPackage[];
-  leads: Lead[];
   insights: Array<{ id: string; contentId?: string; kind: string; note: string; createdAt: string }>;
   preflightEvents: Array<{
     id: string;
@@ -548,7 +526,6 @@ export interface ProductState {
     adoptedContentCount: number;
     weeklyCardCount: number;
     handoffCount: number;
-    leadAssociationCount: number;
     videoOutputCount: number;
     videoProviderCostCents: number;
     labeledVideoCount: number;
@@ -580,7 +557,6 @@ export interface CommandResult {
     contentId?: string;
     handoffToken?: string;
     jobId?: string;
-    leadId?: string;
     packageId?: string;
     renderEvidenceId?: string;
     storeRevision?: number;
@@ -719,24 +695,6 @@ export type ProductCommand =
       platformUrl?: string;
     }
   | { type: 'mark_published'; packageId: string; platformUrl?: string }
-  | {
-      type: 'create_lead';
-      contentId?: string;
-      packageId?: string;
-      lead: Omit<
-        Lead,
-        | 'id'
-        | 'contentId'
-        | 'contentVersionId'
-        | 'canonicalContentPackage'
-        | 'projectId'
-        | 'status'
-        | 'createdAt'
-        | 'updatedAt'
-        | 'retentionExpiresAt'
-      > & { projectId?: string };
-    }
-  | { type: 'update_lead'; leadId: string; status: LeadStatus }
   | { type: 'record_insight'; contentId?: string; kind: string; note: string }
   | {
       type: 'apply_plan';

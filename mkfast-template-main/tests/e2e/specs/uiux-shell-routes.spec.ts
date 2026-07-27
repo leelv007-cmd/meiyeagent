@@ -120,7 +120,6 @@ test('canonical shell routes survive direct navigation and reload', async ({
     ['/dashboard/assets', '资产库'],
     ['/dashboard?view=recent', '最近活动'],
     ['/dashboard?view=works', '作品历史'],
-    ['/dashboard/leads/lead-proof', '线索详情'],
     ['/dashboard/sessions/session-proof', '创作记录'],
     ['/dashboard/works/work-proof', '作品详情'],
     ['/dashboard/jobs/job-proof', '执行详情'],

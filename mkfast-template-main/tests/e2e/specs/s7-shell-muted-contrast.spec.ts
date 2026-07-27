@@ -62,12 +62,6 @@ const SURFACES = [
     path: '/dashboard/workspace',
     ready: 'workspace-assets-description',
   },
-  {
-    copy: [['lead-ledger-attribution-notice', '归因说明文案']],
-    label: '获客台账',
-    path: '/dashboard/leads',
-    ready: 'lead-ledger-attribution-notice',
-  },
 ] as const;
 
 /** 失败时说清是哪个 token 没给对，而不只是数字太小。 */

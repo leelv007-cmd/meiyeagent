@@ -303,7 +303,7 @@ async function verifyLibraryAndNavigation(packageId) {
     await item.waitFor({ state: 'visible', timeout: 10_000 });
     normalizedNavigation.push(label);
   }
-  for (const pathname of ['/dashboard/tasks', '/dashboard/leads']) {
+  for (const pathname of ['/dashboard/tasks']) {
     await page.goto(`${baseUrl}${pathname}`, { waitUntil: 'networkidle' });
     assert(
       page.url().includes(pathname),

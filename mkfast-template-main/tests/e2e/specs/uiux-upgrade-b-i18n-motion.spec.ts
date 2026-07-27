@@ -45,7 +45,6 @@ const CORE_ENGLISH_ROUTES = [
   ['/en/dashboard', 'Turn one idea into a creation you can keep completing'],
   ['/en/dashboard/assets', 'Asset library'],
   ['/en/dashboard/works', 'Content'],
-  ['/en/dashboard/leads', 'Lead ledger'],
   ['/en/dashboard/store', 'Store profile'],
 ] as const;
 

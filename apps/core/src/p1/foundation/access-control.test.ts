@@ -49,8 +49,8 @@ test('legacy Product commands resolve to the fixed four-role capability matrix',
     'publication.handoff'
   );
   assert.equal(
-    requiredProductCommandCapability('create_lead'),
-    'lead.manage'
+    requiredProductCommandCapability('record_insight'),
+    'content.create'
   );
   assert.equal(requiredProductCommandCapability('claim_video'), undefined);
   assert.equal(requiredProductCommandCapability('apply_plan'), undefined);

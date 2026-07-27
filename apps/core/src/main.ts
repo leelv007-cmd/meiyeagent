@@ -1053,23 +1053,6 @@ const relationalProductService = new ProductService(
   legacyInFlightDecisions,
   'p1',
   {
-    canonicalLeadContentPackages: {
-      async get({ packageId, workspaceId }) {
-        const contentPackage = (
-          await operationsRepository.loadWorkspace(workspaceId)
-        )?.contentPackages.find((candidate) => candidate.id === packageId);
-        return contentPackage
-          ? {
-              currentVersionId: contentPackage.currentVersionId,
-              deliveryEvents: contentPackage.deliveryEvents,
-              id: contentPackage.id,
-              revision: contentPackage.revision,
-              source: { workId: contentPackage.source.workId },
-              status: contentPackage.status,
-            }
-          : null;
-      },
-    },
     contentWriteOwnership: contentPackageWriteOwnership,
     copyUsageAuthority: 'foundation_ledger',
     legacyVideoPath: 'disabled',
