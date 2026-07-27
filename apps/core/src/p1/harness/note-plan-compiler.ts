@@ -1,4 +1,5 @@
 import {
+  DEFAULT_NOTE_STYLES,
   NOTE_PLAN_CONSISTENCY_DIMENSIONS,
   imageTextNoteVersionSchema,
   notePlanConsistencyEvaluationSchema,
@@ -12,24 +13,8 @@ import {
   type NoteStyleConfig,
 } from '@meiye/contracts';
 
-export const DEFAULT_NOTE_STYLES: NoteStyleConfig = {
-  styles: [
-    {
-      id: 'practical_guide',
-      name: '干货科普版',
-      writingGuide: '用清楚、可信、便于收藏的方式解释项目与选择依据。',
-      structureTemplate: '结论先行，再解释场景、方案、事实与行动建议。',
-      platforms: ['xiaohongshu', 'douyin', 'video_account'],
-    },
-    {
-      id: 'story_recommendation',
-      name: '种草叙事版',
-      writingGuide: '从顾客场景切入，以真实体验路径承接预约行动。',
-      structureTemplate: '场景共鸣、需求展开、方案呈现、行动建议。',
-      platforms: ['xiaohongshu', 'douyin', 'video_account'],
-    },
-  ],
-};
+// 这份默认集合已搬进契约（后台风格编辑器也要用同一份），此处保留导出口不动。
+export { DEFAULT_NOTE_STYLES };
 
 export interface NotePlanStructuredPort {
   plan(input: {

@@ -458,6 +458,18 @@ none of these can pass on fixture data (ADR-0019 / D-131).
 | 2 | A hand-entered three-bucket number reaches the merchant through governed config | Hand-enter the trial copy bucket on `/admin/plans`, pass impact review with an audit reason, require the editor's CAS revision line to advance, then register a store and require its `/settings/account` to read that number with nothing redeployed. The governed key feeds the catalog and provisioning materialises it at activation, so the number reaches stores provisioned after the change — an already-provisioned workspace is not rewritten, by design. |
 | 3 | Model assembly separates the catalog layer from the channel layer | On `/admin/models`, require the CatalogModel and ExecutionChannel layers to render as separate panels and require each to carry only its own governed keys. |
 
+## 31c. Note Style Set Governance (U05 硬门 / D-107)
+
+**File:** `specs/admin-note-style-governance.spec.ts` | **Priority:** P0 | **Tickets:** U05 / #241
+
+图文笔记的风格集合以前只在契约里，后台没有入口，换一种风格得改代码。这条门
+锁住它现在的走法：结构化表单改值 → 影响面确认 → 写入原因 → CAS 版本推进，
+全程一次 JSON 手改都不许有。
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | An operator reshapes the note style set without ever touching JSON | Sign in as an administrator, open `/admin/templates`, require the editor region to contain zero `textarea.font-mono` and zero rich-text hosts, require the form to open on the style set that is actually live, then rename a style, rewrite its guide and switch a platform off using only labelled form controls; pass impact review with an audit reason and require the new name to survive a reload. Then require the CAS revision to advance, require a re-submit carrying the stale `expectedRevision` to be rejected with `IDEMPOTENCY_CONFLICT` and to leave the revision untouched, and require the reason plus a non-empty actor to land in `config_history` under the new revision. Restores the shared value through the same governed path in `finally`. |
+
 ## 32. LIKEPAGE Marketing Landing Page
 
 **File:** `specs/landing-page.spec.ts` | **Priority:** P0
