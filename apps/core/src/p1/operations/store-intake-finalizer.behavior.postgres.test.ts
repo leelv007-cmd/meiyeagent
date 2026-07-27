@@ -1635,9 +1635,11 @@ test(
         },
         confirmedFactRevision: (...args) =>
           intake.confirmedFactRevision(...args),
+        currentFact: (...args) => intake.currentFact(...args),
         currentFactRevision: (...args) => intake.currentFactRevision(...args),
         persistedBatch: (...args) => intake.persistedBatch(...args),
         recordBatch: (...args) => intake.recordBatch(...args),
+        withPinnedFactHeads: (...args) => intake.withPinnedFactHeads(...args),
       }),
     );
     try {
@@ -1800,6 +1802,467 @@ test(
   },
 );
 
+test(
+  'a backing fact revoked after the mapping pass stops the profile write instead of re-asserting the old value',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    let releaseWrite: () => void = () => {};
+    let reportWriteReached: () => void = () => {};
+    const writeReleased = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    const writeReached = new Promise<void>((resolve) => {
+      reportWriteReached = resolve;
+    });
+    const environment = await createEnvironment(
+      undefined,
+      undefined,
+      () => now,
+      (intake) => ({
+        async confirmFact(context, input) {
+          if (input.candidateId === 'toctou-barrier') {
+            reportWriteReached();
+            await writeReleased;
+          }
+          return intake.confirmFact(context, input);
+        },
+        confirmedFactRevision: (...args) =>
+          intake.confirmedFactRevision(...args),
+        currentFact: (...args) => intake.currentFact(...args),
+        currentFactRevision: (...args) => intake.currentFactRevision(...args),
+        persistedBatch: (...args) => intake.persistedBatch(...args),
+        recordBatch: (...args) => intake.recordBatch(...args),
+        withPinnedFactHeads: (...args) => intake.withPinnedFactHeads(...args),
+      }),
+    );
+    const workspaceId = environment.context.workspaceId;
+    try {
+      await seedStore(environment);
+      // Both project-a streams now stand in the ledger, so a later command may
+      // omit either one of them.
+      await environment.finalizer.finalize(
+        environment.context,
+        finalizeInput(workspaceId, {
+          profilePatch: {
+            expectedRevision: 1,
+            projects: {
+              upsert: [project('project-a', '透亮猫眼', 299)],
+            },
+          },
+        }),
+        'toctou-seed',
+      );
+
+      // Only the service stream is confirmed here — the price rides on the
+      // fact already standing behind it.
+      const omitting: FinalizeStoreIntakeCommand = {
+        batch: {
+          batchId: 'toctou-batch',
+          taskId: 'toctou-task',
+          source: {
+            sourceId: 'progressive-card',
+            kind: 'manual',
+            referenceId: 'progressive-card',
+            capabilityStatus: 'verified',
+            sourceWorkspaceId: workspaceId,
+            capturedAt: now,
+            example: false,
+          },
+          summary: '商家又确认了一次项目名称。',
+          candidates: [
+            {
+              candidateId: 'toctou-barrier',
+              status: 'pending',
+              objectKind: 'store_fact',
+              fact: {
+                kind: 'service',
+                key: 'service.project-a.name',
+                value: { name: '透亮猫眼' },
+                scope: { storeId: workspaceId, serviceId: 'project-a' },
+                source: {
+                  kind: 'user_confirmation',
+                  referenceId: 'progressive-card',
+                  capturedAt: now,
+                },
+                effectiveFrom: now,
+                expiresAt: null,
+              },
+            },
+          ],
+        },
+        confirmations: [
+          {
+            candidateId: 'toctou-barrier',
+            factId: 'store-project:project-a:service',
+            expectedFactRevision: 1,
+          },
+        ],
+        profilePatch: {
+          expectedRevision: 2,
+          projects: {
+            upsert: [project('project-a', '透亮猫眼', 299)],
+          },
+        },
+      };
+
+      const finalizing = environment.finalizer.finalize(
+        environment.context,
+        omitting,
+        'toctou-finalize',
+      );
+      await writeReached;
+
+      // The mapping pass has already read the price head and waved the omitted
+      // stream through. An external writer now takes that head away.
+      await environment.intake.recordBatch({
+        batchId: 'toctou-revocation-batch',
+        workspaceId,
+        taskId: 'toctou-revocation-task',
+        source: {
+          sourceId: 'external-user-confirmation',
+          kind: 'manual',
+          referenceId: 'external-user-confirmation',
+          capabilityStatus: 'assisted',
+          sourceWorkspaceId: workspaceId,
+          capturedAt: now,
+          example: false,
+        },
+        summary: '商家撤回了这条价格。',
+        candidates: [
+          {
+            candidateId: 'toctou-revocation',
+            status: 'pending',
+            objectKind: 'store_fact',
+            fact: {
+              kind: 'price',
+              key: 'service.project-a.price',
+              value: null,
+              revisionKind: 'revocation',
+              scope: { storeId: workspaceId, serviceId: 'project-a' },
+              source: {
+                kind: 'user_confirmation',
+                referenceId: 'external-user-confirmation',
+                capturedAt: now,
+              },
+              effectiveFrom: now,
+              expiresAt: null,
+            },
+          },
+        ],
+        createdAt: now,
+      });
+      await environment.intake.confirmFact(environment.context, {
+        batchId: 'toctou-revocation-batch',
+        candidateId: 'toctou-revocation',
+        factId: 'store-project:project-a:price',
+        expectedFactRevision: 1,
+        idempotencyKey: 'toctou-revocation',
+      });
+      releaseWrite();
+
+      await assert.rejects(
+        finalizing,
+        (error) =>
+          error instanceof StoreIntakeFinalizationError &&
+          error.code === 'STORE_FACT_MAPPING_INVALID' &&
+          /requires confirmation store-project:project-a:price/u.test(
+            error.message,
+          ),
+      );
+      // The revoked value never reached the profile: the store still stands at
+      // the revision the seeding finalize left behind.
+      assert.equal(
+        (
+          await environment.product.bootstrap({
+            ...environment.context,
+            actor: 'user',
+          })
+        ).store?.revision,
+        2,
+      );
+      const outbox = await environment.pool.query<{ status: string }>(
+        `SELECT status
+           FROM p1_store_intake_finalization_outbox
+          WHERE workspace_id = $1 AND idempotency_key = $2`,
+        [workspaceId, 'toctou-finalize'],
+      );
+      assert.equal(outbox.rows[0]?.status, 'needs_reconciliation');
+      assert.equal(
+        (
+          await environment.facts.history(
+            workspaceId,
+            'store-project:project-a:price',
+          )
+        ).length,
+        2,
+      );
+    } finally {
+      releaseWrite();
+      await environment.cleanup();
+    }
+  },
+);
+
+test(
+  'a revocation racing the profile merge waits behind the pinned backing head instead of orphaning the merged value',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    let releaseMerge: () => void = () => {};
+    let reportMergeReached: () => void = () => {};
+    const mergeReleased = new Promise<void>((resolve) => {
+      releaseMerge = resolve;
+    });
+    const mergeReached = new Promise<void>((resolve) => {
+      reportMergeReached = resolve;
+    });
+    // The barrier sits between the omitted-backer re-check and the profile
+    // write — the window the re-check alone cannot cover.
+    const environment = await createEnvironment((product) => ({
+      completedRevision: (context, patch, idempotencyKey) =>
+        product.completedStoreProfileMergeRevision(
+          { ...context, actor: 'user' },
+          patch,
+          idempotencyKey,
+        ),
+      currentRevision: async (context) =>
+        (await product.bootstrap({ ...context, actor: 'user' })).store
+          ?.revision ?? 0,
+      merge: async (context, patch, idempotencyKey) => {
+        if (idempotencyKey === 'pin-finalize:profile') {
+          reportMergeReached();
+          await mergeReleased;
+        }
+        return product.mergeStoreProfile(
+          { ...context, actor: 'user' },
+          patch,
+          idempotencyKey,
+        );
+      },
+    }));
+    const workspaceId = environment.context.workspaceId;
+    let finalizing: Promise<unknown> = Promise.resolve();
+    let revoking: Promise<unknown> = Promise.resolve();
+    try {
+      await seedStore(environment);
+      // Both project-a streams now stand in the ledger, so the next command may
+      // omit the price and ride on the standing fact.
+      await environment.finalizer.finalize(
+        environment.context,
+        finalizeInput(workspaceId, {
+          profilePatch: {
+            expectedRevision: 1,
+            projects: {
+              upsert: [project('project-a', '透亮猫眼', 299)],
+            },
+          },
+        }),
+        'pin-seed',
+      );
+
+      const omitting: FinalizeStoreIntakeCommand = {
+        batch: {
+          batchId: 'pin-batch',
+          taskId: 'pin-task',
+          source: {
+            sourceId: 'progressive-card',
+            kind: 'manual',
+            referenceId: 'progressive-card',
+            capabilityStatus: 'verified',
+            sourceWorkspaceId: workspaceId,
+            capturedAt: now,
+            example: false,
+          },
+          summary: '商家又确认了一次项目名称。',
+          candidates: [
+            {
+              candidateId: 'pin-barrier',
+              status: 'pending',
+              objectKind: 'store_fact',
+              fact: {
+                kind: 'service',
+                key: 'service.project-a.name',
+                value: { name: '透亮猫眼' },
+                scope: { storeId: workspaceId, serviceId: 'project-a' },
+                source: {
+                  kind: 'user_confirmation',
+                  referenceId: 'progressive-card',
+                  capturedAt: now,
+                },
+                effectiveFrom: now,
+                expiresAt: null,
+              },
+            },
+          ],
+        },
+        confirmations: [
+          {
+            candidateId: 'pin-barrier',
+            factId: 'store-project:project-a:service',
+            expectedFactRevision: 1,
+          },
+        ],
+        profilePatch: {
+          expectedRevision: 2,
+          projects: {
+            upsert: [project('project-a', '透亮猫眼', 299)],
+          },
+        },
+      };
+
+      finalizing = environment.finalizer.finalize(
+        environment.context,
+        omitting,
+        'pin-finalize',
+      );
+      await mergeReached;
+
+      // The re-check has already passed. An external writer now tries to take
+      // the backing price away while the profile write is still in flight.
+      await environment.intake.recordBatch({
+        batchId: 'pin-revocation-batch',
+        workspaceId,
+        taskId: 'pin-revocation-task',
+        source: {
+          sourceId: 'external-user-confirmation',
+          kind: 'manual',
+          referenceId: 'external-user-confirmation',
+          capabilityStatus: 'assisted',
+          sourceWorkspaceId: workspaceId,
+          capturedAt: now,
+          example: false,
+        },
+        summary: '商家撤回了这条价格。',
+        candidates: [
+          {
+            candidateId: 'pin-revocation',
+            status: 'pending',
+            objectKind: 'store_fact',
+            fact: {
+              kind: 'price',
+              key: 'service.project-a.price',
+              value: null,
+              revisionKind: 'revocation',
+              scope: { storeId: workspaceId, serviceId: 'project-a' },
+              source: {
+                kind: 'user_confirmation',
+                referenceId: 'external-user-confirmation',
+                capturedAt: now,
+              },
+              effectiveFrom: now,
+              expiresAt: null,
+            },
+          },
+        ],
+        createdAt: now,
+      });
+      let revoked = false;
+      revoking = environment.intake
+        .confirmFact(environment.context, {
+          batchId: 'pin-revocation-batch',
+          candidateId: 'pin-revocation',
+          factId: 'store-project:project-a:price',
+          expectedFactRevision: 1,
+          idempotencyKey: 'pin-revocation',
+        })
+        .then(() => {
+          revoked = true;
+        });
+
+      // Wait for the revocation to actually reach the head row and block on
+      // it — a fixed sleep would call the race won before it started under a
+      // slow connection, and pass for the wrong reason.
+      await waitForHeadLockWaiter(environment.pool);
+      // The pin is a lock, not another optimistic re-read: the revocation is
+      // still waiting on the price head, so the ledger has nothing new.
+      assert.equal(revoked, false);
+      assert.equal(
+        (await environment.facts.history(
+          workspaceId,
+          'store-project:project-a:price',
+        )).length,
+        1,
+      );
+
+      releaseMerge();
+      const result = (await finalizing) as { profileRevision: number };
+      assert.equal(result.profileRevision, 3);
+      await revoking;
+
+      // The merged price was still confirmed at the moment it was written, and
+      // the revocation lands right after it — never inside it.
+      assert.equal(revoked, true);
+      assert.equal(
+        (await environment.facts.history(
+          workspaceId,
+          'store-project:project-a:price',
+        )).length,
+        2,
+      );
+      const store = (
+        await environment.product.bootstrap({
+          ...environment.context,
+          actor: 'user',
+        })
+      ).store;
+      assert.equal(store?.revision, 3);
+      assert.equal(
+        store?.projects.find((entry) => entry.id === 'project-a')?.price,
+        299,
+      );
+      const outbox = await environment.pool.query<{ status: string }>(
+        `SELECT status
+           FROM p1_store_intake_finalization_outbox
+          WHERE workspace_id = $1 AND idempotency_key = $2`,
+        [workspaceId, 'pin-finalize'],
+      );
+      assert.equal(outbox.rows[0]?.status, 'completed');
+    } finally {
+      releaseMerge();
+      await Promise.allSettled([finalizing, revoking]);
+      await environment.cleanup();
+    }
+  },
+);
+
+/**
+ * Blocks until some other backend is parked on a lock over the fact-head table
+ * — the observable form of "the revocation has reached the head row and is now
+ * waiting behind the pin". Only then does `revoked === false` mean the pin held
+ * the line, rather than the revocation simply not having arrived yet.
+ */
+async function waitForHeadLockWaiter(pool: Pool, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const waiting = await pool.query<{ query: string }>(
+      `SELECT query
+         FROM pg_stat_activity
+        WHERE datname = current_database()
+          AND pid <> pg_backend_pid()
+          AND state = 'active'
+          AND wait_event_type = 'Lock'
+          AND query LIKE '%p1_store_fact_heads%FOR UPDATE%'`,
+    );
+    if (waiting.rowCount) return;
+    if (Date.now() >= deadline) {
+      const activity = await pool.query<{
+        state: string | null;
+        wait_event_type: string | null;
+        query: string;
+      }>(
+        `SELECT state, wait_event_type, query
+           FROM pg_stat_activity
+          WHERE datname = current_database() AND pid <> pg_backend_pid()`,
+      );
+      throw new Error(
+        `No backend blocked on p1_store_fact_heads within ${timeoutMs}ms: ${JSON.stringify(
+          activity.rows,
+        )}`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
 interface Environment {
   cleanup(): Promise<void>;
   context: P1Context;
@@ -1877,6 +2340,7 @@ async function createEnvironment(
       finalizerIntakeFactory?.(intake) ?? intake,
       finalizationRepository,
       profiles,
+      clock,
     ),
     intake,
     pool,

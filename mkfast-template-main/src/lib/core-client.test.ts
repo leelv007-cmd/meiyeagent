@@ -7,6 +7,7 @@ import {
   coreFetch,
   forwardedCorrelationId,
   forwardedIdempotencyKey,
+  readRequestBytes,
   readRequestText,
   workspaceCoreFetchInit,
   workspaceCoreUpstreamPath,
@@ -93,6 +94,66 @@ test('rejects oversized chunked Core proxy bodies before buffering them all', as
       error instanceof CoreRequestBoundaryError &&
       error.code === 'REQUEST_BODY_TOO_LARGE' &&
       error.status === 413
+  );
+});
+
+test('stops reading an oversized chunked asset upload instead of buffering it', async () => {
+  const maxBytes = 1_000_000;
+  let enqueued = 0;
+  const request = new Request('http://localhost/api/core/p1/assets', {
+    // No content-length: a chunked upload only reveals its size while it is
+    // being read, which is exactly the shape `arrayBuffer()` could not defend.
+    body: new ReadableStream({
+      pull(controller) {
+        enqueued += 1;
+        controller.enqueue(new Uint8Array(400_000));
+      },
+    }),
+    duplex: 'half',
+    method: 'PUT',
+  } as RequestInit & { duplex: 'half' });
+
+  await assert.rejects(
+    readRequestBytes(request, maxBytes),
+    (error: unknown) =>
+      error instanceof CoreRequestBoundaryError &&
+      error.code === 'REQUEST_BODY_TOO_LARGE' &&
+      error.status === 413
+  );
+  // The stream was cancelled the moment the ceiling broke, not drained.
+  assert.ok(enqueued <= 3, `read ${enqueued} chunks before giving up`);
+});
+
+test('rejects a declared oversized asset upload before reading any of it', async () => {
+  const request = new Request('http://localhost/api/core/p1/assets', {
+    body: new Uint8Array(16),
+    headers: { 'content-length': String(30 * 1024 * 1024) },
+    method: 'PUT',
+  });
+
+  await assert.rejects(
+    readRequestBytes(request, 25 * 1024 * 1024),
+    (error: unknown) =>
+      error instanceof CoreRequestBoundaryError && error.status === 413
+  );
+});
+
+test('returns the exact bytes when the upload stays under the ceiling', async () => {
+  const request = new Request('http://localhost/api/core/p1/assets', {
+    body: new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2, 3]));
+        controller.enqueue(new Uint8Array([4, 5]));
+        controller.close();
+      },
+    }),
+    duplex: 'half',
+    method: 'PUT',
+  } as RequestInit & { duplex: 'half' });
+
+  assert.deepEqual(
+    [...(await readRequestBytes(request, 1024))],
+    [1, 2, 3, 4, 5]
   );
 });
 

@@ -229,6 +229,56 @@ export class PostgresStoreFactLedger
     }
   }
 
+  async withPinnedHeads<T>(
+    workspaceId: string,
+    factIds: readonly string[],
+    action: (heads: ReadonlyMap<string, StoreFact | null>) => Promise<T>,
+  ) {
+    const pinned = [...new Set(factIds)].sort();
+    if (pinned.length === 0) return action(new Map());
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      // `append` locks the same head rows `FOR UPDATE` before it decides the
+      // next revision, so no revision — a revocation above all — can commit
+      // between this read and the end of `action`. Sorting the ids keeps two
+      // pins in one lock order.
+      const heads = await client.query<{
+        fact_id: string;
+        payload: unknown;
+      }>(
+        `SELECT head.fact_id, revision.payload
+           FROM p1_store_fact_heads head
+           LEFT JOIN p1_store_fact_revisions revision
+             ON revision.workspace_id = head.workspace_id
+            AND revision.fact_id = head.fact_id
+            AND revision.revision = head.revision
+          WHERE head.workspace_id = $1
+            AND head.fact_id = ANY($2::text[])
+          ORDER BY head.fact_id
+            FOR UPDATE OF head`,
+        [workspaceId, pinned],
+      );
+      const pinnedHeads = new Map<string, StoreFact | null>(
+        pinned.map((factId) => [factId, null]),
+      );
+      for (const row of heads.rows) {
+        pinnedHeads.set(
+          row.fact_id,
+          row.payload === null ? null : storeFactSchema.parse(row.payload),
+        );
+      }
+      const result = await action(pinnedHeads);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async history(workspaceId: string, factId: string) {
     const result = await this.pool.query<StoreFactRow>(
       `SELECT payload

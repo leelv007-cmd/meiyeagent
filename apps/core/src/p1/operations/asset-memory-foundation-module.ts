@@ -38,6 +38,7 @@ import type { ContextBundleRepository } from './context-bundle-repository.js';
 import type { ReuseMemoryService } from './reuse-memory-service.js';
 import type { ParseService } from './parse-service.js';
 import type { StoreIntakeFinalizer } from './store-intake-finalizer.js';
+import type { StoreProfileImportPreparer } from './store-profile-import.js';
 
 export interface ReuseTaskSubmissionPort {
   submit(input: {
@@ -102,6 +103,7 @@ export class AssetMemoryFoundationModule implements P1OperationModule {
     private readonly now: () => string = () => new Date().toISOString(),
     private readonly parsing?: ParseService,
     private readonly storeIntake?: StoreIntakeFinalizer,
+    private readonly storeProfileImport?: StoreProfileImportPreparer,
   ) {}
 
   async execute(args: {
@@ -238,6 +240,18 @@ export class AssetMemoryFoundationModule implements P1OperationModule {
           parse(finalizeStoreIntakeCommandSchema, value),
           args.idempotencyKey,
         );
+      }
+      case 'prepare_store_profile_import': {
+        if (!this.storeProfileImport) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'Store profile import is unavailable.',
+          );
+        }
+        // Every identity in the staged batch is derived server-side from the
+        // stored profile, so the command carries no payload the browser could
+        // use to forge a candidate.
+        return this.storeProfileImport.prepare(args.context);
       }
       case 'reject_asset_intake_candidate': {
         const input = parse(rejectAssetIntakeCandidateCommandSchema, value);

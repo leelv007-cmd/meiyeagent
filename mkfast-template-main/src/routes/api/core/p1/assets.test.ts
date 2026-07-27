@@ -20,3 +20,14 @@ test('registers GET and HEAD for the workspace asset BFF', () => {
   assert.equal(typeof workspaceAssetHandlers.GET, 'function');
   assert.equal(typeof workspaceAssetHandlers.HEAD, 'function');
 });
+
+test('exposes the write verb the five-step intake needs (W02 ①)', () => {
+  assert.equal(typeof workspaceAssetHandlers.PUT, 'function');
+  // Reads and deletes are not symmetric here: nothing in the product deletes a
+  // workspace asset through this BFF, so the verb stays unregistered.
+  assert.equal(
+    'DELETE' in workspaceAssetHandlers,
+    false,
+    'DELETE must not be reachable from the browser'
+  );
+});

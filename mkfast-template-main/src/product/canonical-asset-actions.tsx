@@ -32,6 +32,7 @@ import {
   asset_governance_minor_blocked,
   asset_governance_retry_withdrawal,
   asset_governance_rights_evidence,
+  asset_governance_rights_incomplete,
   asset_governance_rights_owner,
   asset_governance_save,
   asset_governance_status_authorized,
@@ -526,6 +527,20 @@ export function CanonicalAssetGovernance({
           </Button>
         ) : null}
       </div>
+      {/* W02 ③: the authorize button used to sit disabled with no explanation
+          whenever a restricted asset lacked a rights scope — a silent dead end.
+          The gate itself stays: `hasCurrentRestrictedAssetAuthorization` is
+          enforced server-side, so dropping it here would only trade a disabled
+          button for a rejected command. What was missing was the sentence
+          telling the merchant what to do about it. */}
+      {authorization.action !== 'none' && !restrictedRightsComplete ? (
+        <p
+          className="text-sm text-muted-foreground"
+          data-testid="asset-governance-rights-incomplete"
+        >
+          {asset_governance_rights_incomplete()}
+        </p>
+      ) : null}
       {asset.authorizationStatus === 'blocked' ? (
         <p className="text-sm text-destructive">
           {asset_governance_minor_blocked()}

@@ -47,6 +47,43 @@ test('runtime config preserves explicit pool and sticky application version', ()
   );
 });
 
+test('a business pool below the finalize peak is raised to three, with the reason on the console', () => {
+  const warnings: string[] = [];
+  const warn = console.warn;
+  console.warn = (message: string) => {
+    warnings.push(message);
+  };
+  try {
+    for (const configured of ['1', '2']) {
+      assert.equal(
+        readHarnessRuntimeConfig({
+          DATABASE_URL: 'postgres://localhost/meiye',
+          HARNESS_DBOS_SYSTEM_DATABASE_URL:
+            'postgres://localhost/meiye_dbos_sys',
+          HARNESS_DB_POOL_MAX: configured,
+        }).businessPoolMax,
+        3,
+      );
+    }
+    // Three is already enough, so it passes through untouched and unremarked.
+    assert.equal(
+      readHarnessRuntimeConfig({
+        DATABASE_URL: 'postgres://localhost/meiye',
+        HARNESS_DBOS_SYSTEM_DATABASE_URL: 'postgres://localhost/meiye_dbos_sys',
+        HARNESS_DB_POOL_MAX: '3',
+      }).businessPoolMax,
+      3,
+    );
+  } finally {
+    console.warn = warn;
+  }
+  assert.equal(warnings.length, 2);
+  for (const warning of warnings) {
+    assert.match(warning, /HARNESS_DB_POOL_MAX/u);
+    assert.match(warning, /advisory lock.*pinned fact heads.*profile merge/u);
+  }
+});
+
 test('pending-action question and approval stores must share one Postgres database', () => {
   assert.doesNotThrow(() =>
     assertPendingActionsShareDatabase({

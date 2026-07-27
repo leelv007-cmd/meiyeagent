@@ -46,6 +46,11 @@ export const assetIntakeSourceSchema = z
       'gallery',
       'pasted_text',
       'manual',
+      // D-151③: a batch staged from the merchant's own historical profile.
+      // Never inline-finalizable — the finalize command rejects any inline
+      // batch that is not `manual`, so an import batch has to be persisted
+      // server-side (and therefore carry a persistence receipt) first.
+      'import',
     ]),
     referenceId: idSchema,
     capabilityStatus: capabilityEvidenceStatusSchema,
