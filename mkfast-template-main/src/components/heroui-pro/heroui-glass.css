@@ -62,12 +62,96 @@
 }
 
 /*
+ * ── 商家壳的侧栏（S7 / U07 换壳）──────────────────────────────────────────
+ *
+ * DESIGN.md §5「侧栏壳」= 距屏缘 12px 的浮空玻璃：壳级 64px 模糊、glass-80 底、
+ * 白描边、24px 圆角、无投影。这些值以前写在 src/styles.css 的 @layer components
+ * 里，压的是 shadcn 的 `sidebar-inner`；换成 HeroUI Pro 之后压的是 vendored 的
+ * `.sidebar` / `.sidebar--floating` 与 theme-glass —— 那三张表都是**无 layer** 的，
+ * 层内规则一律输，所以整段搬到这里（同 .meiye-item-card-stack 的先例）。
+ *
+ * 侧栏只在载这张表的路由上存在（/dashboard/**、/settings/**、/admin/**、
+ * /heroui-spike/**），所以这里也是它唯一该待的地方。
+ */
+.meiye-product-shell [data-slot="sidebar"] {
+  --sidebar-width: 288px;
+  --sidebar-width-collapsed: 74px;
+  -webkit-backdrop-filter: blur(var(--meiye-blur-shell));
+  backdrop-filter: blur(var(--meiye-blur-shell));
+  background: var(--glass-80);
+  border: 1px solid var(--glass-edge);
+  border-radius: 24px;
+  box-shadow: none;
+  height: calc(100svh - 24px);
+  margin: 12px;
+  overflow: hidden;
+}
+
+/* Settings：白瓷中密度，比工作台矮一档模糊、小一档圆角。 */
+.meiye-product-shell[data-shell-mode="settings"] [data-slot="sidebar"] {
+  -webkit-backdrop-filter: blur(40px);
+  backdrop-filter: blur(40px);
+  border-radius: 20px;
+}
+
+/*
+ * 分组标题（「设置」）在 vendored 表里是 `color: var(--muted)`。--muted 在 HeroUI
+ * 是前景色，在 .meiye-product-shell 里是 4% 的底色 tint-hover——照抄就等于把标题
+ * 涂成隐形，和 T46 拿下的 EmptyState 是同一个破口，同样在共享边界上收一次。
+ */
+.meiye-product-shell [data-slot="sidebar-group-label"] {
+  color: var(--ink-60);
+}
+
+/*
  * HeroUI EmptyState uses --muted as a foreground token. The product shell uses
  * that same name for a muted background, so adapt it once at the shared
  * component boundary instead of relying on per-page inline overrides.
  */
 .meiye-product-shell [data-slot="empty-state"] {
   --muted: var(--ink-60);
+}
+
+/*
+ * 同一个破口的第三面：vendored Segment 的未选中项也是 `color: var(--muted)`
+ * (vendor/css/segment.css)，在商家壳里就是 4%/6% 的 tint-hover 底色。/dashboard
+ * 的「定制创作 / 自由创作」双入口是 D-111 要店主一眼分得清的两条线，未选中那格
+ * 却与轨道近乎同色。选中项走的是 --segment-foreground，不能一并盖掉，所以只指
+ * 未选中项——`:not([data-selected="true"])` 把权重抬到 0,3,0，稳过 vendored 的
+ * `.segment__item[data-selected="true"]`（同为 0,2,0，只靠源序决胜）。局部玻璃底
+ * 可用 --meiye-segment-unselected 提高一档，不必重新争 specificity。
+ */
+.meiye-product-shell .segment__item:not([data-selected="true"]) {
+  color: var(--meiye-segment-unselected, var(--ink-60));
+}
+
+/*
+ * 第四面在工具类上：`text-muted` 解析成 --color-muted → --muted，同样是壳里的
+ * 底色，于是「素材」「获客台账」两面的说明文案被涂成近乎不可见的字。
+ *
+ * 不逐个调用处改写（壳内 75 处，改两处只会让不可读的分布更难查），也不整体改
+ * --color-muted（`bg-muted` 正当消费同一个变量，那是 shadcn 底色语义本身）。收的
+ * 只是「拿 --muted 当文字色」这一种消费，映到壳自己的 muted 前景 --ink-60
+ * （＝ --muted-foreground），和上面三段一样在共享边界上收一次。工具类落在
+ * @layer utilities，这张表无 layer，恒赢。
+ */
+.meiye-product-shell .text-muted {
+  color: var(--ink-60);
+}
+
+/*
+ * 白瓷描边压语义边色。`.meiye-porcelain` 在这张无 layer 的表里给了一条 90% 白的
+ * 材质描边，而 `border-destructive/20` / `border-primary/15` 是 Tailwind 工具类、
+ * 落在 @layer utilities —— 无 layer 恒赢，于是额度阻断卡与追问卡的语义边在十条
+ * 生产路由上一律被涂白。边色是件的状态表达，不是材质，得压得回去：按面开一个
+ * 适配类（同 .meiye-progress-rail 的做法），而不是在调用处堆 !important。
+ */
+.meiye-porcelain.meiye-porcelain-edge-danger {
+  border-color: color-mix(in oklab, var(--destructive) 20%, transparent);
+}
+
+.meiye-porcelain.meiye-porcelain-edge-accent {
+  border-color: color-mix(in oklab, var(--primary) 15%, transparent);
 }
 
 /*

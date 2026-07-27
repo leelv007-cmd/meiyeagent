@@ -2,21 +2,10 @@ import { Logo } from '@/components/shared/logo';
 import { SidebarMain } from '@/components/layout/sidebar-main';
 import { SidebarUser } from '@/components/layout/sidebar-user';
 import { ProductIcon } from '@/components/uiux/product-icon';
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from '@/components/ui/sidebar';
+import { Sidebar, useSidebar } from '@/components/heroui-pro';
 import { SETTINGS_UTILITY_ITEM, type ShellMode } from '@/config/sidebar-config';
 import {
-  shell_admin_brand,
   shell_product_brand,
-  shell_return_workbench,
   shell_settings,
 } from '@/locale/paraglide/messages';
 import { Link } from '@tanstack/react-router';
@@ -24,96 +13,88 @@ import { Routes } from '@/lib/routes';
 import type { SessionUser } from '@/auth/types';
 import { AsyncTaskCenter } from '@/product/async-task-center';
 import type * as React from 'react';
-import { cn } from '@/lib/utils';
 
-type DashboardSidebarProps = React.ComponentProps<typeof Sidebar> & {
+type DashboardSidebarProps = Omit<
+  React.ComponentProps<typeof Sidebar>,
+  'children'
+> & {
   mode: ShellMode;
   user: SessionUser;
 };
 
 /**
- * Dashboard sidebar
+ * Dashboard sidebar — HeroUI Pro V3 Sidebar（S7 / U07 换壳）。
+ *
+ * 壳（Provider / aside / Header / Content / Footer / Rail / Trigger）整套换成 Pro
+ * 的件；**行**没有换。Pro 的 `Sidebar.MenuItem` 底下是 React Aria `Tree`，一行渲染成
+ * `role="row"`，链接语义会一起没有——cmd-click 新开、读屏播报「链接」、
+ * `getByRole('link')` 三样同时消失。商家一级导航是这个产品的主路，所以这四项与
+ * 「设置」仍然是真的 `<Link>`（见 sidebar-main.tsx 与本文件页脚），药丸外观由
+ * `.meiye-sidebar-nav-item` 供给。后台壳（admin-dashboard-shell）用的是 Pro 的行，
+ * 那面是运营内部面，没有这条约束。
+ *
+ * `group` 这个 class 是给 `async-task-center.tsx` 的 `group-data-[collapsible=icon]:`
+ * 一族工具类用的：shadcn 的侧栏容器自带 group，Pro 的不带，收起态的尺寸收缩靠它。
+ *
+ * admin 分支已撤：/admin 自 D-130 起走 admin-dashboard-shell，这层壳只服务
+ * /dashboard 与 /settings。
  */
 export function DashboardSidebar({
   mode,
   user,
   ...props
 }: DashboardSidebarProps) {
-  const { isMobile, setOpenMobile } = useSidebar();
+  const { isMobile, setMobileOpen } = useSidebar();
 
   const closeMobileSidebar = () => {
-    if (isMobile) setOpenMobile(false);
+    if (isMobile) setMobileOpen(false);
   };
 
-  const isAdmin = mode === 'admin';
-
   return (
-    <Sidebar collapsible="icon" {...props}>
-      <SidebarHeader className={cn(isAdmin ? 'gap-0 px-2 py-2' : 'px-2 py-3')}>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              size={isAdmin ? 'sm' : 'lg'}
-              render={
-                <Link
-                  to={isAdmin ? Routes.AdminModels : Routes.Dashboard}
-                  onClick={closeMobileSidebar}
-                >
-                  <Logo className={isAdmin ? 'size-4' : 'size-5'} />
-                  <span
-                    className={cn(
-                      'truncate font-semibold',
-                      isAdmin ? 'text-sm' : 'text-base'
-                    )}
-                  >
-                    {isAdmin ? shell_admin_brand() : shell_product_brand()}
-                  </span>
-                </Link>
-              }
-              className={cn(
-                isAdmin
-                  ? 'data-[slot=sidebar-menu-button]:!p-1.5'
-                  : 'data-[slot=sidebar-menu-button]:!px-2.5 data-[slot=sidebar-menu-button]:!py-2'
-              )}
-            />
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarHeader>
+    <Sidebar className="group" {...props}>
+      <Sidebar.Header>
+        <Link
+          className="meiye-sidebar-brand"
+          onClick={closeMobileSidebar}
+          to={Routes.Dashboard}
+        >
+          <Logo className="size-5 shrink-0" />
+          <span
+            className="truncate text-base font-semibold"
+            data-sidebar="label"
+          >
+            {shell_product_brand()}
+          </span>
+        </Link>
+      </Sidebar.Header>
 
-      <SidebarContent className={cn(isAdmin && 'gap-1')}>
+      <Sidebar.Content>
         <SidebarMain mode={mode} />
-      </SidebarContent>
+      </Sidebar.Content>
 
-      <SidebarFooter
-        className={cn('flex flex-col', isAdmin ? 'gap-1.5' : 'gap-2')}
-      >
+      <Sidebar.Footer>
         {mode === 'product' && !isMobile ? (
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <AsyncTaskCenter isMobile={false} userId={user.id} />
-            </SidebarMenuItem>
-          </SidebarMenu>
+          <AsyncTaskCenter isMobile={false} userId={user.id} />
         ) : null}
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              size={isAdmin ? 'sm' : 'default'}
-              render={
-                <Link
-                  to={isAdmin ? Routes.Dashboard : SETTINGS_UTILITY_ITEM.href}
-                  onClick={closeMobileSidebar}
-                >
-                  <ProductIcon icon={SETTINGS_UTILITY_ITEM.icon} />
-                  <span className={cn(isAdmin && 'text-xs')}>
-                    {isAdmin ? shell_return_workbench() : shell_settings()}
-                  </span>
-                </Link>
-              }
-            />
-          </SidebarMenuItem>
-        </SidebarMenu>
+        {/*
+          与 sidebar-main.tsx 同因：收起态下标签 visibility:hidden、图标
+          aria-hidden，可访问名会整个消失，所以名字恒挂在 aria-label 上。
+          用的是可见文案那一支 `shell_settings()`，展开态下逐字相同。
+        */}
+        <Link
+          aria-label={shell_settings()}
+          className="meiye-sidebar-nav-item"
+          onClick={closeMobileSidebar}
+          to={SETTINGS_UTILITY_ITEM.href}
+        >
+          <ProductIcon icon={SETTINGS_UTILITY_ITEM.icon} />
+          <span className="truncate" data-sidebar="label">
+            {shell_settings()}
+          </span>
+        </Link>
         <SidebarUser user={user} />
-      </SidebarFooter>
+      </Sidebar.Footer>
+      <Sidebar.Rail />
     </Sidebar>
   );
 }

@@ -1,4 +1,3 @@
-import heroUiGlassCss from '@/components/heroui-pro/heroui-glass.css?url';
 import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { EmptyState, Widget } from '@/components/heroui-pro';
 import {
@@ -94,7 +93,6 @@ import { useState, type CSSProperties } from 'react';
 type StoreTab = 'profile' | 'assets' | 'qualification';
 
 export const Route = createFileRoute('/dashboard/store')({
-  head: () => ({ links: [{ rel: 'stylesheet', href: heroUiGlassCss }] }),
   validateSearch: (
     search: Record<string, unknown>
   ): { assetId?: string; tab?: StoreTab } => {
@@ -206,7 +204,7 @@ function StoreProfilePage() {
   // mid-acknowledgement and lost the merchant's "saved" confirmation.
   if (!state) {
     return (
-      <div className="meiye-heroui-glass space-y-4 p-4 lg:p-6">
+      <div className="space-y-4 p-4 lg:p-6">
         <Skeleton className="h-12 rounded-xl" />
         <Skeleton className="h-96 rounded-2xl" />
       </div>
@@ -245,7 +243,7 @@ function StoreProfilePage() {
           </div>
         }
       />
-      <main className="meiye-heroui-glass mx-auto w-full max-w-6xl flex-1 p-4 lg:p-6">
+      <main className="mx-auto w-full max-w-6xl flex-1 p-4 lg:p-6">
         <div className="meiye-ambient-copy mb-6">
           <h1 className="meiye-type-title" data-testid="store-ambient-title">
             {product_navigation_store()}

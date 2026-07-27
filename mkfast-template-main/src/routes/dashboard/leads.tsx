@@ -1,4 +1,3 @@
-import heroUiGlassCss from '@/components/heroui-pro/heroui-glass.css?url';
 import { useQuery } from '@tanstack/react-query';
 import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { EmptyState, Widget } from '@/components/heroui-pro';
@@ -80,7 +79,6 @@ import { useEffect, useState, type CSSProperties } from 'react';
  * the Glass sheet, which rides a route-level <link> the way /dashboard does.
  */
 export const Route = createFileRoute('/dashboard/leads')({
-  head: () => ({ links: [{ rel: 'stylesheet', href: heroUiGlassCss }] }),
   component: LeadLedgerPage,
 });
 
@@ -181,7 +179,7 @@ function LeadLedgerPage() {
 
   if (loading || !state) {
     return (
-      <div className="meiye-heroui-glass space-y-4 p-4 lg:p-6">
+      <div className="space-y-4 p-4 lg:p-6">
         <Skeleton className="h-12 rounded-xl" />
         <Skeleton className="h-96 rounded-2xl" />
       </div>
@@ -204,7 +202,7 @@ function LeadLedgerPage() {
           </span>
         }
       />
-      <main className="meiye-heroui-glass mx-auto w-full max-w-7xl flex-1 p-4 lg:p-6">
+      <main className="mx-auto w-full max-w-7xl flex-1 p-4 lg:p-6">
         <div className="meiye-ambient-copy mb-6">
           <h1 className="meiye-type-title" data-testid="leads-ambient-title">
             {product_navigation_leads()}
@@ -411,7 +409,10 @@ function LeadLedgerPage() {
                     </ListBox>
                   </Select.Popover>
                 </Select>
-                <p className="text-muted text-xs leading-5">
+                <p
+                  className="text-muted text-xs leading-5"
+                  data-testid="lead-ledger-attribution-notice"
+                >
                   {lead_ledger_attribution_notice()}
                 </p>
                 <TextField onChange={setAmount} value={amount}>

@@ -321,8 +321,13 @@ test.describe('D-114 Composer conversation container', () => {
       await expect(home).toBeVisible();
       await expect(home).toHaveAttribute('data-viewport', 'mobile');
       // The HeroUI token bridge keys on this shell class; without it every
-      // vendored component falls back to HeroUI's own Glass defaults.
-      await expect(home).toHaveClass(/meiye-heroui-glass/u);
+      // vendored component falls back to HeroUI's own Glass defaults. S7 / U07
+      // moved it off this page onto the shell root: the shell itself is a
+      // HeroUI Pro Sidebar now, so every /dashboard and /settings route needs
+      // the bridge, not only the pages that happen to render Pro components.
+      await expect(
+        page.locator('[data-slot="sidebar-provider"].meiye-heroui-glass')
+      ).toHaveCount(1);
       await expect(page.getByTestId('composer-prompt-bar')).toBeVisible();
       await expect(page.getByTestId('composer-intent-input')).toBeVisible();
       await expect(page.getByTestId('composer-submit')).toBeVisible();

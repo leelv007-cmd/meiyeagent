@@ -1,3 +1,4 @@
+import heroUiGlassCss from '@/components/heroui-pro/heroui-glass.css?url';
 import { ProductShellPage } from '@/components/layout/sidebar-layout';
 import {
   dashboard_pending_description,
@@ -11,6 +12,11 @@ import { createFileRoute } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/dashboard')({
   ssr: false,
+  // S7 / U07：商家壳自己就是 HeroUI Pro Sidebar，Glass 表因此从八个叶子路由收到
+  // 这层布局路由上——凡是挂得出侧栏的 /dashboard/* 都得有它，否则出裸侧栏。
+  head: () => ({
+    links: [{ rel: 'stylesheet', href: heroUiGlassCss }],
+  }),
   component: ProductShellPage,
   pendingComponent: DashboardPending,
   server: {

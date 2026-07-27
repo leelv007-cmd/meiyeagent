@@ -1,4 +1,3 @@
-import heroUiGlassCss from '@/components/heroui-pro/heroui-glass.css?url';
 import { WorksListPage } from '@/product/works';
 import { createFileRoute } from '@tanstack/react-router';
 
@@ -14,6 +13,5 @@ import { createFileRoute } from '@tanstack/react-router';
  * --radius collide with the shadcn tokens the rest of the app still uses.
  */
 export const Route = createFileRoute('/dashboard/works')({
-  head: () => ({ links: [{ rel: 'stylesheet', href: heroUiGlassCss }] }),
   component: WorksListPage,
 });

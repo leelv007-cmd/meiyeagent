@@ -2212,10 +2212,15 @@ export function ComposerHome({
 
   return (
     <div
-      // `meiye-heroui-glass` is the shell class the DESIGN.md → HeroUI token
-      // bridge keys on. The bridge's selector subject stays `html`, so portalled
-      // overlays inherit the same tokens (C-02 regression guard).
-      className="meiye-heroui-glass mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6 sm:px-6"
+      // `meiye-heroui-glass` — the class the DESIGN.md → HeroUI token bridge
+      // keys on — used to sit here. S7 / U07 moved it to the shell root
+      // (`components/layout/sidebar-layout`), because the shell itself is now a
+      // HeroUI Pro Sidebar and every /dashboard route needs the bridge, not just
+      // the handful of pages that happened to render Pro components. The bridge's
+      // selector subject stays `html`, so portalled overlays still inherit the
+      // same tokens (C-02 regression guard), and T33's「一个 Glass 壳根」contract
+      // now has exactly one element to count.
+      className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6 sm:px-6"
       data-testid="composer-home"
       data-viewport={viewportKind}
     >

@@ -245,13 +245,13 @@
   }
 
   /* 首屏氛围属于壳层，工作台内容与白瓷件浮在其上 */
-  .meiye-product-shell[data-shell-mode="product"][data-slot="sidebar-wrapper"] {
+  .meiye-product-shell[data-shell-mode="product"][data-slot="sidebar-provider"] {
     position: relative;
     isolation: isolate;
     padding: 0;
     background: var(--canvas) !important;
   }
-  .meiye-product-shell[data-shell-mode="product"][data-slot="sidebar-wrapper"]::before {
+  .meiye-product-shell[data-shell-mode="product"][data-slot="sidebar-provider"]::before {
     position: absolute;
     inset: 0 0 auto;
     height: max(100svh, 720px);
@@ -269,13 +269,13 @@
   }
 
   /* 工作台旧的短氛围带退为壳层的对比遮罩，不再另起一张背景。 */
-  .meiye-product-shell[data-shell-mode="product"] [data-slot="sidebar-inset"]
+  .meiye-product-shell[data-shell-mode="product"] [data-slot="sidebar-main"]
     > section:first-child
     > div[aria-hidden="true"]:first-child {
     background: transparent !important;
   }
   .meiye-product-shell[data-shell-mode="product"]
-    [data-slot="sidebar-inset"]
+    [data-slot="sidebar-main"]
     > section:first-child
     > div[aria-hidden="true"]:nth-child(2) {
     background: linear-gradient(
@@ -284,91 +284,76 @@
       transparent 70%
     ) !important;
   }
-
-  /* 玻璃侧栏：距屏缘 12px，inner 是浮空壳级玻璃 */
-  .meiye-product-shell [data-slot="sidebar"] {
-    background: transparent;
-  }
-  .meiye-product-shell[data-shell-mode="product"]
-    [data-slot="sidebar-container"] {
-    padding: 12px !important;
-  }
-  .meiye-product-shell[data-shell-mode="product"]
-    [data-slot="sidebar"][data-collapsible="icon"]
-    [data-slot="sidebar-gap"],
-  .meiye-product-shell[data-shell-mode="product"]
-    [data-slot="sidebar"][data-collapsible="icon"]
-    [data-slot="sidebar-container"] {
-    width: 74px !important;
-  }
-  .meiye-product-shell [data-slot="sidebar-inner"] {
-    -webkit-backdrop-filter: blur(64px);
-    backdrop-filter: blur(64px);
-    background: var(--glass-80);
-    border: 1px solid var(--glass-edge);
-    border-radius: 24px;
-    box-shadow: none;
-    overflow: hidden;
-  }
-  .meiye-product-shell[data-shell-mode="product"] [data-slot="sidebar-inset"] {
+  .meiye-product-shell[data-shell-mode="product"] [data-slot="sidebar-main"] {
     background: transparent !important;
   }
 
-  /* 药丸导航（创作/内容/素材/门店） */
-  .meiye-product-shell[data-shell-mode="product"]
-  [data-slot="sidebar-menu-button"] {
-    min-height: 44px;
-    border-radius: 999px !important;
-    font-weight: 500;
+  /*
+   * 浮空玻璃侧栏本体（12px 离缘、24px 圆角、壳级 64px 模糊）不在这里，在
+   * `components/heroui-pro/heroui-glass.css`。HeroUI Pro 的 vendored 组件表是
+   * **无 layer** 的，这份 styles.css 的壳段在 @layer components 里，同名属性一律
+   * 压不过 `.sidebar` / `.sidebar--floating` / theme-glass 的那三条。侧栏只在载
+   * Glass 表的路由上存在，所以那边是它唯一该待的地方（S7 / U07 换壳）。
+   */
+
+  /* 药丸导航（创作/内容/素材/门店）+ 页脚设置项 + 身份触发器。
+     行不是 Pro 的 `Sidebar.MenuItem`（那是 role="row"，会吃掉链接语义），
+     是本产品自己的 `<Link>`；药丸外观因此挂在这个类上，见 dashboard-sidebar.tsx。 */
+  .meiye-sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
   }
-  .meiye-product-shell[data-shell-mode="product"]
-    [data-slot="sidebar-menu-button"][data-active="true"] {
-    background: var(--tint-active);
+  .meiye-product-shell .meiye-sidebar-nav-item {
+    display: flex;
+    min-height: 44px;
+    width: 100%;
+    align-items: center;
+    gap: 12px;
+    overflow: hidden;
+    border-radius: 999px;
+    padding: 6px 12px;
     color: var(--ink-90);
     font-weight: 500;
+    transition: background-color 180ms var(--ease-out-expo);
   }
-  .meiye-product-shell[data-shell-mode="product"]
-    [data-slot="sidebar-menu-button"]:hover {
+  .meiye-product-shell .meiye-sidebar-nav-item:hover {
     background: var(--tint-hover);
   }
-  .meiye-product-shell[data-shell-mode="product"]
-    [data-slot="sidebar-menu-button"]:focus-visible {
+  .meiye-product-shell .meiye-sidebar-nav-item[data-active="true"] {
+    background: var(--tint-active);
+    color: var(--ink-90);
+  }
+  .meiye-product-shell .meiye-sidebar-nav-item:focus-visible {
     outline: 2px solid var(--ink) !important;
     outline-offset: 2px;
   }
-
-  /* Admin：同源高密度，无氛围玻璃抢戏 */
-  .meiye-product-shell[data-shell-mode="admin"] {
-    --surface-0: oklch(0.97 0 0);
-    --background: oklch(0.97 0 0);
-    --sidebar: oklch(1 0 0);
+  .meiye-product-shell .meiye-sidebar-nav-item--identity {
+    min-height: 52px;
+    background: var(--tint-active);
+    text-align: left;
   }
-  .meiye-product-shell[data-shell-mode="admin"] [data-slot="sidebar-wrapper"] {
-    padding: 0;
+  .meiye-product-shell .meiye-sidebar-identity {
+    margin-top: 8px;
+    border-top: 1px solid var(--hairline);
+    padding-top: 12px;
   }
-  .meiye-product-shell[data-shell-mode="admin"] [data-slot="sidebar-inner"] {
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-    background: var(--paper);
-    border: none;
-    border-right: 1px solid var(--hairline);
-    border-radius: 0;
+  .meiye-product-shell .meiye-sidebar-brand {
+    display: flex;
+    min-height: 44px;
+    align-items: center;
+    gap: 10px;
+    overflow: hidden;
+    border-radius: 999px;
+    padding: 6px 10px;
+    color: var(--ink-90);
   }
-  .meiye-product-shell[data-shell-mode="admin"]
-    [data-slot="sidebar-menu-button"] {
-    min-height: 36px;
-    border-radius: 12px;
-    font-size: 0.75rem;
-  }
-  .meiye-product-shell[data-shell-mode="admin"] [data-slot="sidebar-inset"] {
-    background: var(--surface-0);
-  }
-
-  /* Settings：白瓷中密度 */
-  .meiye-product-shell[data-shell-mode="settings"] [data-slot="sidebar-inner"] {
-    -webkit-backdrop-filter: blur(40px);
-    backdrop-filter: blur(40px);
-    border-radius: 20px;
+  .meiye-product-shell .meiye-sidebar-brand:focus-visible {
+    outline: 2px solid var(--ink) !important;
+    outline-offset: 2px;
   }
 
   .meiye-product-shell .meiye-type-display {
@@ -681,14 +666,14 @@
   z-index: var(--layer-overlay);
 }
 
-.meiye-product-shell [data-slot="sidebar-container"] {
+/*
+ * 侧栏坐在共享层级刻度的 sidebar 档上。换壳前 shadcn 的 `sidebar-container` 是一张
+ * 铺满视口高的 fixed 覆盖层，得靠 pointer-events: none / auto 一对规则把点击还给
+ * 被它盖住的东西；HeroUI Pro 的 `[data-slot="sidebar"]` 是正常流里的 sticky aside，
+ * 盖不住任何东西，那对规则随槽位一起退场（S7 / U07）。
+ */
+.meiye-product-shell [data-slot="sidebar"] {
   z-index: var(--layer-sidebar);
-  pointer-events: none;
-}
-
-.meiye-product-shell [data-slot="sidebar-inner"],
-.meiye-product-shell [data-slot="sidebar-rail"] {
-  pointer-events: auto;
 }
 
 [data-sonner-toaster] {

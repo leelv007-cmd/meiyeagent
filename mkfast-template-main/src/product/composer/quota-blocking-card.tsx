@@ -128,7 +128,7 @@ export function QuotaBlockingCard({
   return (
     <div
       className={cn(
-        'meiye-porcelain space-y-3 rounded-2xl border border-destructive/20 p-4',
+        'meiye-porcelain meiye-porcelain-edge-danger space-y-3 rounded-2xl border border-destructive/20 p-4',
         className
       )}
       data-testid="composer-quota-blocking-card"

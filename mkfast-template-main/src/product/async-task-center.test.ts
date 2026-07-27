@@ -159,9 +159,13 @@ test('renders the task center panel through the tokenized body top layer', () =>
   assert.match(styles, /--layer-sidebar:\s*20/u);
   assert.match(styles, /--layer-popover:\s*40/u);
   assert.match(styles, /--layer-toast:\s*60/u);
+  // S7 / U07 换壳：shadcn 的 `sidebar-container` 是一张铺满视口的 fixed 覆盖层，
+  // 得靠 pointer-events: none 把点击让回给这块 portal 出去的面板；HeroUI Pro 的
+  // `[data-slot="sidebar"]` 是正常流里的 sticky aside，盖不住 body 顶层，剩下要
+  // 钉住的只有它坐在共享层级刻度的哪一档。
   assert.match(
     styles,
-    /\[data-slot="sidebar-container"\][\s\S]*pointer-events:\s*none/u
+    /\.meiye-product-shell \[data-slot="sidebar"\]\s*\{\s*z-index:\s*var\(--layer-sidebar\)/u
   );
 });
 

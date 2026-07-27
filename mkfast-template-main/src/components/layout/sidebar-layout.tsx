@@ -1,6 +1,6 @@
 import { DashboardSidebar } from '@/components/layout/dashboard-sidebar';
 import { ProductMobileNav } from '@/components/product/mobile-nav';
-import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
+import { Sidebar } from '@/components/heroui-pro';
 import { Spinner } from '@/components/ui/spinner';
 import { authClient } from '@/auth/client';
 import { Routes } from '@/lib/routes';
@@ -17,9 +17,24 @@ import {
 } from '@/locale/paraglide/messages';
 
 /**
- * Shared layout for /dashboard /settings and /admin routes
+ * Shared layout for /dashboard and /settings routes
  * sidebar + auth guard (redirect to login if no session)
  * use with Outlet as children
+ *
+ * S7 / U07 换壳：这层壳是 HeroUI Pro V3 Sidebar（`components/heroui-pro`），
+ * 不再是 shadcn `components/ui/sidebar`。三件事随之改口径：
+ *
+ *  1. 槽位少了一层。shadcn 的 wrapper→gap→container→inner 四层在 Pro 里塌成
+ *     provider→aside 两层，商家壳的门店橱窗 CSS 因此重锚（见 src/styles.css
+ *     与 heroui-pro/heroui-glass.css 的侧栏段）。
+ *  2. 壳根挂 `meiye-heroui-glass`。token 桥的选择器是
+ *     `html:has(.meiye-heroui-glass)`，没有它 Pro 侧栏读的是 HeroUI 自带的
+ *     默认主题，而不是 DESIGN.md 的门店橱窗值（heroui-pro/README.md）。
+ *  3. `meiye-product-shell` 三种 mode 都往 body 上挂。桥声明在 <html>，
+ *     React Aria 的浮层 portal 到 document.body：body 上没有这层商家 token
+ *     的话，/settings 的下拉与弹窗会掉到桥的 HeroUI 语义上（--muted 在桥里是
+ *     前景色，在 shadcn 里是底色）。换壳前 /settings 不载 Glass 表所以碰不到，
+ *     现在载了，就得由这层挡住。
  */
 export function SidebarLayout({
   children,
@@ -40,10 +55,9 @@ export function SidebarLayout({
   }, [session, isPending, navigate]);
 
   useEffect(() => {
-    if (mode !== 'product') return;
     document.body.classList.add('meiye-product-shell');
     return () => document.body.classList.remove('meiye-product-shell');
-  }, [mode]);
+  }, []);
 
   if (isPending) {
     return (
@@ -63,18 +77,16 @@ export function SidebarLayout({
   }
 
   const shell = (
-    <SidebarProvider
-      className="meiye-product-shell flex min-h-svh"
+    <Sidebar.Provider
+      className="meiye-heroui-glass meiye-product-shell"
+      collapsible="icon"
       data-shell-mode={mode}
       style={
         {
-          '--sidebar-width':
-            mode === 'admin'
-              ? 'calc(var(--spacing) * 60)'
-              : 'calc(var(--spacing) * 72)',
           '--header-height': 'calc(var(--spacing) * 12)',
         } as React.CSSProperties
       }
+      variant="floating"
     >
       <a
         href="#main-content"
@@ -89,25 +101,23 @@ export function SidebarLayout({
       >
         {sidebar_skip_to_content()}
       </a>
-      {!isMobile ? (
-        <DashboardSidebar mode={mode} user={session.user} variant="inset" />
-      ) : null}
-      <SidebarInset
+      {!isMobile ? <DashboardSidebar mode={mode} user={session.user} /> : null}
+      <Sidebar.Main
         id="main-content"
         tabIndex={-1}
         className={
           isMobile
-            ? 'min-w-0 bg-surface-0 pb-[calc(5.25rem+env(safe-area-inset-bottom))] outline-none md:peer-data-[variant=inset]:rounded-none md:peer-data-[variant=inset]:shadow-none'
-            : 'min-w-0 bg-surface-0 outline-none md:peer-data-[variant=inset]:rounded-none md:peer-data-[variant=inset]:shadow-none'
+            ? 'min-w-0 bg-surface-0 pb-[calc(5.25rem+env(safe-area-inset-bottom))] outline-none'
+            : 'min-w-0 bg-surface-0 outline-none'
         }
       >
         {children}
-      </SidebarInset>
+      </Sidebar.Main>
       {mode === 'product' && isMobile ? (
         <AsyncTaskCenter isMobile={isMobile} userId={session.user.id} />
       ) : null}
       {mode === 'product' && isMobile ? <ProductMobileNav /> : null}
-    </SidebarProvider>
+    </Sidebar.Provider>
   );
   return mode === 'product' ? (
     <GlobalCommandProvider>{shell}</GlobalCommandProvider>
@@ -128,18 +138,9 @@ export function ProductShellPage() {
   );
 }
 
-export function SettingsShellPage() {
-  return (
-    <SidebarLayout mode="settings">
-      <Outlet />
-    </SidebarLayout>
-  );
-}
-
-export function AdminShellPage() {
-  return (
-    <SidebarLayout mode="admin">
-      <Outlet />
-    </SidebarLayout>
-  );
-}
+/*
+ * `SettingsShellPage` / `AdminShellPage` 曾是这里的另外两个导出，没有任何路由
+ * 引用它们：/settings 直接组合 `SidebarLayout`（它要在 Outlet 外面再包一层
+ * 密度调整），/admin 自 D-130 起走 `components/admin/shell/admin-dashboard-shell`。
+ * S7 换壳一并撤掉，壳的入口只留 ProductShellPage 一个。
+ */

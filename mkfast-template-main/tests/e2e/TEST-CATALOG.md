@@ -170,6 +170,7 @@ object graph.
 | 3 | Legacy routes only redirect through the frozen allowlist | Open legacy files, API key, profile, integration, and P1 admin locations; verify each lands on its fixed canonical destination without accepting an arbitrary return URL. |
 | 4 | Admin authorization fails in both navigation and routing | Sign in as a non-admin, verify no management entry is rendered, open an admin deep link, and verify the server redirects to the workbench. |
 | 5 | Shell remains keyboard and 200-percent-zoom reachable | At the 640px effective viewport, verify no horizontal overflow, focus the skip link first, activate it, and confirm focus returns to the product content region. |
+| 6 | Collapsed sidebar links keep their accessible names | Collapse the desktop sidebar, wait for the first business-navigation label to finish its delayed `visibility:hidden` transition, then verify the four business links and settings link still expose their exact visible names. |
 
 ## 12. S2 Cold Start And Unified Creation Loop
 
@@ -734,6 +735,18 @@ copy/image/note/video); this spec proves the shape a live run produces.
   the bar for ambient headers and DESIGN.md:259 extends it to vendored
   components; the ratios are printed as `[contrast] …` lines so a run reports
   numbers rather than a pass/fail bit.
+
+## S7 商家壳 Muted 文案对比度
+
+**File:** `specs/s7-shell-muted-contrast.spec.ts` | **Priority:** P1
+
+Measures the rendered text against its actual composited backdrop so shared
+shell fallbacks and the works glass-piece override are both held to WCAG AA.
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | Segment 未选中项与 text-muted 文案在 light 主题下实测 ≥4.5:1 | Sign in under the light theme; measure the unselected creation-mode Segment, the unselected works-shape Segment, workspace muted copy, and lead-ledger muted copy; require every rendered ratio to be at least 4.5:1. |
+| 2 | Segment 未选中项与 text-muted 文案在 dark 主题下实测 ≥4.5:1 | Repeat the same rendered-backdrop measurements under the dark theme and require every ratio to be at least 4.5:1. |
 
 ## S3 钱的旅程（#237 / W05+W06）
 
