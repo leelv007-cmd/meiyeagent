@@ -78,6 +78,14 @@ export type FinalizeStoreIntakeOptions = {
   expectedRevision: number;
   factRevisions?: Record<string, number>;
   referenceId: string;
+  /**
+   * Platform default for `regulated` (`compliance.regulated_mode.default`),
+   * only read when this patch creates the profile (revision 0). `regulated` is
+   * a platform/category admission call, never a merchant answer, so the web
+   * side seeds the admin default instead of inventing one; when the default is
+   * unknown the revision-0 command is withheld rather than guessed.
+   */
+  regulatedDefault?: boolean;
   taskId: string;
   workspaceId: string;
 };
@@ -325,7 +333,12 @@ export function buildFinalizeStoreIntakeCommand(
       draft.brandVoice.trim() || FALLBACKS.brandVoice
     ).trim();
   }
-  if (initializingProfile) profilePatch.regulated = false;
+  if (initializingProfile) {
+    // Core requires `regulated` on the first patch (STORE_PROFILE_INCOMPLETE),
+    // so the platform default has to be loaded before Day-0 can be confirmed.
+    if (options.regulatedDefault === undefined) return null;
+    profilePatch.regulated = options.regulatedDefault;
+  }
   if (
     initializingProfile ||
     changed.has('projectName') ||

@@ -29,6 +29,8 @@ import {
   creation_entry_intent_placeholder,
   creation_entry_submit,
   workbench_grounding_go_to_store,
+  workbench_grounding_qualification_action,
+  workbench_grounding_qualification_required,
   workbench_grounding_source_required,
   workbench_grounding_store_required,
   workbench_operation_failed,
@@ -42,6 +44,7 @@ import {
   normalizePreferences,
 } from '@/p1/settings-view-model';
 import { resolveCreationModelSelection } from '@/p1/model-current-selection';
+import { useComplianceDefaults } from '@/p1/use-compliance-defaults';
 import type {
   BriefBoundRevisions,
   BriefSourceSignal,
@@ -125,6 +128,10 @@ import {
   composerDestinationContract,
 } from './destination-contract';
 import { mapComposerDestination } from './composer-destination-client';
+import {
+  groundingBlockerFromMissing,
+  type ComposerGroundingBlocker,
+} from './composer-grounding-blocker';
 import {
   decideComposerDestinationPreflight,
   type ComposerDestinationPreflightState,
@@ -265,8 +272,6 @@ function briefSourcesFromDraft(sources: unknown[]): BriefSourceSignal[] {
   });
 }
 
-type ComposerGroundingBlocker = 'source' | 'store';
-
 function sourceReferencesFromDraft(sources: unknown[]) {
   return sources.flatMap((source) => {
     if (!source || typeof source !== 'object' || Array.isArray(source)) {
@@ -277,10 +282,12 @@ function sourceReferencesFromDraft(sources: unknown[]) {
   });
 }
 
-function groundingBlockerFromMissing(
-  missing: readonly CreativeGroundingRequirement[]
-): ComposerGroundingBlocker | null {
-  return missing.includes('real_authorized_asset') ? 'source' : null;
+function groundingBlockerMessage(blocker: ComposerGroundingBlocker) {
+  if (blocker === 'store') return workbench_grounding_store_required();
+  if (blocker === 'qualification') {
+    return workbench_grounding_qualification_required();
+  }
+  return workbench_grounding_source_required();
 }
 
 function groundingBlockerFromError(error: unknown) {
@@ -371,6 +378,10 @@ export function ComposerHome({
         signal
       ),
   });
+  // `regulated` is a platform/category admission call, not a merchant answer:
+  // the Day-0 profile has to be seeded with the admin default rather than a
+  // hardcoded `false` (W01 / D-151④).
+  const complianceDefaults = useComplianceDefaults();
   const primaryProjectId = product.state?.store?.projects[0]?.id;
   const primaryServiceFactId = primaryProjectId
     ? `store-project:${primaryProjectId}:service`
@@ -1534,11 +1545,7 @@ export function ComposerHome({
           groundingBlockerFromMissing(missingGrounding);
         if (blocker) {
           setSubmissionGroundingBlocked(blocker);
-          toast.error(
-            blocker === 'store'
-              ? workbench_grounding_store_required()
-              : workbench_grounding_source_required()
-          );
+          toast.error(groundingBlockerMessage(blocker));
           return;
         }
       }
@@ -2266,6 +2273,9 @@ export function ComposerHome({
             await Promise.all([product.refresh(), storeFacts.refetch()]);
           }}
           pending={product.pending}
+          regulatedDefault={
+            complianceDefaults.data?.['compliance.regulated_mode.default']
+          }
           store={product.state?.store}
           workspaceId={product.state?.workspaceId ?? ''}
         />
@@ -2516,6 +2526,21 @@ export function ComposerHome({
             to="/dashboard/store"
           >
             {workbench_grounding_go_to_store()}
+          </Link>
+        </p>
+      ) : submissionGroundingBlocked === 'qualification' ? (
+        <p
+          className="text-destructive text-sm"
+          data-testid="composer-grounding-blocker"
+          role="alert"
+        >
+          {workbench_grounding_qualification_required()}{' '}
+          <Link
+            className="font-medium underline underline-offset-4"
+            hash="store-qualification"
+            to="/dashboard/store"
+          >
+            {workbench_grounding_qualification_action()}
           </Link>
         </p>
       ) : submissionGroundingBlocked === 'source' ? (

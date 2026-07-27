@@ -1,13 +1,23 @@
 import heroUiGlassCss from '@/components/heroui-pro/heroui-glass.css?url';
 import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { EmptyState, Widget } from '@/components/heroui-pro';
-import { Alert, Button, buttonVariants, Skeleton } from '@heroui/react';
+import {
+  Alert,
+  Button,
+  buttonVariants,
+  Input,
+  Label,
+  Skeleton,
+  TextField,
+} from '@heroui/react';
 import {
   account_usage_retry,
   dashboard_store_accounts_empty,
   dashboard_store_address_label,
+  dashboard_store_advertising_certificate_label,
   dashboard_store_booking_label,
   dashboard_store_city_label,
+  dashboard_store_confirm_qualification,
   dashboard_store_confirmed,
   dashboard_store_description,
   dashboard_store_fact_kind_customer_case,
@@ -29,13 +39,21 @@ import {
   dashboard_store_group_account,
   dashboard_store_group_projects,
   dashboard_store_group_voice,
+  dashboard_store_institution_license_label,
+  dashboard_store_intake_at_label,
   dashboard_store_name_label,
+  dashboard_store_platform_certification_label,
   dashboard_store_profile_empty,
   dashboard_store_profile_title,
   dashboard_store_projects_empty,
+  dashboard_store_qualification_required,
+  dashboard_store_qualification_tab,
+  dashboard_store_regulated_description,
   dashboard_store_regulated_label,
   dashboard_store_regulated_off,
   dashboard_store_regulated_on,
+  dashboard_store_treatment_scope_label,
+  dashboard_store_valid_until_label,
   product_navigation_leads,
   product_navigation_store,
   product_navigation_workspace,
@@ -46,7 +64,7 @@ import { queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import { optionalSourceId } from '@/p1/source-object-navigation';
 import { useProductState } from '@/product/client';
-import type { StoreFact } from '@meiye/contracts';
+import type { ProductCommand, StoreFact } from '@meiye/contracts';
 import { useQuery } from '@tanstack/react-query';
 import {
   IconAlertTriangle,
@@ -54,6 +72,7 @@ import {
   IconCheck,
   IconFolderOff,
   IconRefresh,
+  IconShieldCheck,
 } from '@tabler/icons-react';
 import { createFileRoute, Link, redirect } from '@tanstack/react-router';
 import { useState, type CSSProperties } from 'react';
@@ -65,6 +84,11 @@ import { useState, type CSSProperties } from 'react';
  * profile plus the StoreFact ledger projection (context module
  * `store_facts_active`), with the five-step intake living where T24 owns it —
  * the conversation.
+ *
+ * The qualification admission block stays on this page: D-151④ retired the
+ * manual *store profile* form, not the regulated-category admission gate. It is
+ * the only web entry for `confirm_qualification`, and without it a store with
+ * `regulated: true` can never clear `confirmed_qualification` grounding.
  */
 type StoreTab = 'profile' | 'assets' | 'qualification';
 
@@ -143,7 +167,8 @@ function factValueText(value: StoreFact['value']) {
 }
 
 function StoreProfilePage() {
-  const { state, error, loading, refresh } = useProductState();
+  const { state, error, loading, pending, execute, refresh } =
+    useProductState();
   // The ledger is queried "as of now"; pinning it at mount keeps the query key
   // — and therefore the cache — stable while the page is open.
   const [factsAsOf] = useState(() => new Date().toISOString());
@@ -166,6 +191,14 @@ function StoreProfilePage() {
         signal
       ),
   });
+
+  async function run(command: ProductCommand) {
+    try {
+      await execute(command);
+    } catch {
+      // Shared error surface handles the domain response.
+    }
+  }
 
   if (loading || !state) {
     return (
@@ -381,6 +414,32 @@ function StoreProfilePage() {
               )}
             </Widget.Content>
           </Widget>
+
+          <Widget className="meiye-porcelain" id="store-qualification">
+            <Widget.Header>
+              <Widget.Title>{dashboard_store_qualification_tab()}</Widget.Title>
+              <Widget.Description>
+                {dashboard_store_regulated_description()}
+              </Widget.Description>
+            </Widget.Header>
+            <Widget.Content>
+              {store?.regulated && !state.qualification?.confirmed ? (
+                <output
+                  className="text-foreground mb-4 block text-sm"
+                  data-testid="store-qualification-required"
+                >
+                  {dashboard_store_qualification_required()}
+                </output>
+              ) : null}
+              <QualificationForm
+                existing={state.qualification}
+                onConfirm={(qualification) =>
+                  void run({ type: 'confirm_qualification', qualification })
+                }
+                pending={pending}
+              />
+            </Widget.Content>
+          </Widget>
         </div>
       </main>
     </>
@@ -400,6 +459,92 @@ function ProfileFact({
     <div className={className}>
       <dt className="text-muted text-xs">{label}</dt>
       <dd className="text-foreground mt-1 text-sm">{value}</dd>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  onChange,
+  value,
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  return (
+    <TextField onChange={onChange} value={value}>
+      <Label>{label}</Label>
+      <Input />
+    </TextField>
+  );
+}
+
+function QualificationForm({
+  existing,
+  onConfirm,
+  pending,
+}: {
+  existing?: {
+    institutionLicense?: string;
+    treatmentScope?: string;
+    platformCertification?: string;
+    advertisingCertificate?: string;
+    validUntil?: string;
+    intakeAt?: string;
+  };
+  onConfirm: (qualification: {
+    admitted: boolean;
+    institutionLicense: string;
+    treatmentScope: string;
+    platformCertification: string;
+    advertisingCertificate: string;
+    validUntil: string;
+    intakeAt: string;
+  }) => void;
+  pending: boolean;
+}) {
+  const [qualification, setQualification] = useState({
+    institutionLicense: existing?.institutionLicense ?? '',
+    treatmentScope: existing?.treatmentScope ?? '',
+    platformCertification: existing?.platformCertification ?? '',
+    advertisingCertificate: existing?.advertisingCertificate ?? '',
+    validUntil: existing?.validUntil ?? '',
+    intakeAt: existing?.intakeAt ?? new Date().toISOString().slice(0, 10),
+  });
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      {Object.entries({
+        institutionLicense: dashboard_store_institution_license_label(),
+        treatmentScope: dashboard_store_treatment_scope_label(),
+        platformCertification: dashboard_store_platform_certification_label(),
+        advertisingCertificate: dashboard_store_advertising_certificate_label(),
+        validUntil: dashboard_store_valid_until_label(),
+        intakeAt: dashboard_store_intake_at_label(),
+      }).map(([key, label]) => (
+        <Field
+          key={key}
+          label={label}
+          onChange={(value) =>
+            setQualification({ ...qualification, [key]: value })
+          }
+          value={qualification[key as keyof typeof qualification]}
+        />
+      ))}
+      <div className="border-divider flex justify-end border-t pt-4 md:col-span-2">
+        <Button
+          data-testid="store-confirm-qualification"
+          isDisabled={
+            pending ||
+            !qualification.institutionLicense ||
+            !qualification.treatmentScope
+          }
+          onPress={() => onConfirm({ ...qualification, admitted: true })}
+        >
+          <IconShieldCheck className="size-4" />
+          {dashboard_store_confirm_qualification()}
+        </Button>
+      </div>
     </div>
   );
 }
