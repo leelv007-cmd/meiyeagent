@@ -46,7 +46,13 @@ export function ComposerProgressCard({
       // aria-live so a merchant using a screen reader hears the run move on;
       // polite because announcements must never interrupt what they are typing.
       aria-live="polite"
-      className={cn('meiye-porcelain rounded-2xl p-4', className)}
+      // `.meiye-progress-rail` is the app-side adaptation of the unit (see
+      // heroui-glass.css): upstream styles these labels as a foldable reasoning
+      // trace, D-116 makes them a delivery statement.
+      className={cn(
+        'meiye-porcelain meiye-progress-rail rounded-2xl p-4',
+        className
+      )}
       data-running={running ? 'true' : 'false'}
       data-testid="composer-progress-card"
       defaultExpanded
@@ -67,11 +73,11 @@ export function ComposerProgressCard({
                     // 白话进度 is an output surface D-116 expects the merchant
                     // to read, so past stages stay legible rather than dropping
                     // to footnote grey; only the emphasis differs from the live
-                    // one.
-                    className={cn(
-                      'text-xs',
-                      live ? 'text-foreground' : 'text-foreground/70'
-                    )}
+                    // one. The colour itself comes from `.meiye-progress-rail`,
+                    // because the unit's own label colour is unlayered and a
+                    // utility class here would lose to it.
+                    className="text-xs"
+                    data-live={live ? 'true' : 'false'}
                     data-stage={stage.stage}
                     // Kept from the pre-card stage line: the D-114 container
                     // spec and its journey assertions address announcements by

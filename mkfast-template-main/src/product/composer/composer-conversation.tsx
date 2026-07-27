@@ -587,7 +587,6 @@ export function ComposerPromptBar({
             <PromptSuggestion.Items>
               {reuseChips.map((chip) => (
                 <PromptSuggestion.Item
-                  className="meiye-glass-piece"
                   data-testid={`composer-reuse-chip-${chip.id}`}
                   key={chip.id}
                   onPress={() => onReuseChip(chip)}

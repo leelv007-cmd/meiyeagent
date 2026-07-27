@@ -38,6 +38,29 @@ test('merchant sentences on the cards still wrap after the item-card swap (D-084
   );
 });
 
+/**
+ * Same failure mode as the ellipsis above, on the other unit: upstream styles
+ * `chain-of-thought` step labels as a foldable reasoning trace (`--muted`), and
+ * because the vendored sheet is unlayered, a Tailwind colour on the call site
+ * loses to it silently. D-116 makes those lines something the merchant reads.
+ */
+test('白话进度 announcements keep delivery-statement contrast (D-116)', () => {
+  const card = read('./composer-progress-card.tsx');
+  const glass = read('../../components/heroui-pro/heroui-glass.css');
+
+  assert.match(card, /meiye-progress-rail/u);
+  assert.match(
+    glass,
+    /\.meiye-progress-rail \.chain-of-thought__step-label\s*\{[\s\S]*?color:\s*var\(--foreground\)/u
+  );
+  // The reduced-motion fallback for the shimmering trigger drops it to 60%
+  // opacity upstream; less motion must not mean less contrast.
+  assert.match(
+    glass,
+    /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.meiye-progress-rail \.text-shimmer\s*\{[\s\S]*?opacity:\s*1/u
+  );
+});
+
 test('trend-chip left the supply barrel with a written reason (U04 关票)', () => {
   const barrel = read('../../components/heroui-pro/index.ts');
   const manifest = read('../../components/heroui-pro/components.json');
