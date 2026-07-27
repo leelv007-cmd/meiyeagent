@@ -254,6 +254,10 @@ describe('the transcript is a card flow', () => {
     // The whole transcript must not become one live region: the announcements
     // belong to the progress card and the candidate area.
     expect(conversation.getAttribute('aria-live')).toBe('off');
+    // The app-side adaptation hook has to survive the unit's class merge, or
+    // the unit's edge fade quietly comes back and eats whichever card sits at
+    // the top of the pane.
+    expect(conversation.className).toMatch(/meiye-conversation-pane/);
   });
 
   it('answers prefers-reduced-motion in both directions (U07)', () => {
