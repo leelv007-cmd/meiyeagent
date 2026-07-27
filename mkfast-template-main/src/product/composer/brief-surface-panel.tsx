@@ -176,6 +176,16 @@ export function BriefSurface({
         </fieldset>
       ) : null}
 
+      {view.staleNotice ? (
+        <p
+          className="rounded-2xl border border-default-200 bg-content1/80 px-3 py-2 text-sm"
+          data-testid="composer-brief-stale"
+          role="alert"
+        >
+          {view.staleNotice}
+        </p>
+      ) : null}
+
       <footer className="flex flex-wrap items-center justify-end gap-2 pt-1">
         <button
           type="button"

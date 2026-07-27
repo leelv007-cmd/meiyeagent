@@ -14,7 +14,8 @@ import type {
   RecipePatchPreview,
 } from '@meiye/contracts';
 
-import { commandP1, queryP1 } from '@/p1/client';
+import { stableJsonHash } from '@/p1/canonical-json';
+import { commandP1, type P1CommandWait, queryP1 } from '@/p1/client';
 import type { CatalogModelView } from '@/p1/settings-view-model';
 
 export type RawComposerCatalog = {
@@ -32,7 +33,8 @@ export type ComposerQueryTransport = (
 type CommandTransport = (
   module: Parameters<typeof commandP1>[0],
   call: Parameters<typeof commandP1>[1],
-  idempotencyKey?: string
+  idempotencyKey?: string,
+  wait?: P1CommandWait
 ) => Promise<unknown>;
 
 export const COMPOSER_LAUNCH_SURFACE_ID = 'surface.home.launch';
@@ -114,7 +116,9 @@ export async function fetchComposerPreferences(
 export function buildLiveQuoteInput(input: {
   sessionId: string;
   lensId: CreationLensId;
-  catalogRevision: string;
+  // The catalog revision is not a separate parameter: it reaches the server
+  // inside `submission.catalogModel.revision`, and quote identity now derives
+  // from the payload rather than from a parallel list of fields.
   model: CatalogModelView;
   quantity?: number;
   durationSeconds?: number;
@@ -124,21 +128,8 @@ export function buildLiveQuoteInput(input: {
   const quantity = Math.max(1, input.quantity ?? 1);
   const operation = COMPOSER_OPERATION_BY_LENS[input.lensId];
 
-  return {
-    quoteId: [
-      'composer',
-      input.sessionId,
-      input.lensId,
-      input.model.id,
-      input.catalogRevision,
-      String(quantity),
-      String(input.durationSeconds ?? (input.lensId === 'video' ? 15 : 0)),
-      ...(input.aspectRatio ? [input.aspectRatio] : []),
-      input.submission.contentPackagePlatform,
-      input.submission.distributionTarget,
-      input.submission.deliverable.kind,
-      input.submission.imageOperation ?? 'auto',
-    ].join(':'),
+  // Everything the server bills off, quote identity excluded — see below.
+  const billablePayload = {
     catalogModelId: input.model.id,
     operation,
     quantity,
@@ -150,16 +141,53 @@ export function buildLiveQuoteInput(input: {
         }
       : {}),
   } as const;
+
+  return {
+    // Quote identity is a digest of the *whole* billable payload, not a
+    // hand-picked subset of it (#240 P0). The old id listed model, revision,
+    // quantity, duration, ratio, platform, target, deliverable kind and image
+    // operation — but not `submission.intent`, `submission.creationMode` or
+    // `submission.recipe`, all of which travel in the payload. Editing the
+    // intent therefore re-sent a different body under the same
+    // `composer-quote:<id>` idempotency key, and the server — which conflicts
+    // on key + payload hash — answered IDEMPOTENCY_CONFLICT. Deriving the id
+    // from the payload makes that unrepresentable: a changed payload is a
+    // changed key, so re-quoting after an edit is a new request and retrying
+    // an unchanged one is genuinely idempotent.
+    //
+    // The session and lens stay readable in front of the digest so a key is
+    // still recognisable in a log; nothing time-varying is folded in, or the
+    // key would drift on its own and defeat retry.
+    quoteId: [
+      'composer',
+      input.sessionId,
+      input.lensId,
+      stableJsonHash(billablePayload),
+    ].join(':'),
+    ...billablePayload,
+  } as const;
 }
+
+/**
+ * Upper bound on one quote round trip (#240). Long enough that a warm core
+ * answers well inside it, short enough that a stuck one becomes a retryable
+ * failure the merchant can see rather than an endless 正在读取.
+ */
+export const COMPOSER_QUOTE_TIMEOUT_MS = 12_000;
 
 export async function requestComposerQuote(
   input: ReturnType<typeof buildLiveQuoteInput>,
-  command: CommandTransport = commandP1
+  command: CommandTransport = commandP1,
+  wait: P1CommandWait = {}
 ) {
   return (await command(
     'product-billing',
     { action: 'quote', payload: input },
-    `composer-quote:${input.quoteId}`
+    `composer-quote:${input.quoteId}`,
+    {
+      signal: wait.signal,
+      timeoutMs: wait.timeoutMs ?? COMPOSER_QUOTE_TIMEOUT_MS,
+    }
   )) as ProductQuoteSnapshot;
 }
 

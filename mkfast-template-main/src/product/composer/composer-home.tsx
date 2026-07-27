@@ -91,6 +91,7 @@ import {
   shouldShowProgressiveFactCard,
 } from './progressive-fact';
 import {
+  BRIEF_STALE_QUOTE_NOTICE,
   cancelBriefSurface,
   confirmBriefSurface,
   createBriefSurfaceState,
@@ -127,6 +128,13 @@ import {
   type ComposerDestinationPreflightState,
 } from './composer-destination-preflight';
 import { projectComposerQuoteView } from './quote-wiring';
+import {
+  composerQueryPhase,
+  currentComposerQuoteView,
+  resolveComposerQuoteReadiness,
+  type ComposerQuoteRetryTarget,
+} from './quote-readiness';
+import { ComposerQuoteStatusLine } from './quote-status-line';
 import {
   listColdCardsFromSeeds,
   listColdCardsFromSurface,
@@ -730,8 +738,10 @@ export function ComposerHome({
     return buildLiveQuoteInput({
       sessionId: sessionIdRef.current,
       lensId,
-      catalogRevision,
       model: selectedModel,
+      // `signedSubmission` already carries the catalog revision, and quote
+      // identity is derived from this payload — so the revision moves the key
+      // through the submission rather than through a parallel argument.
       submission: signedSubmission,
       quantity: submissionQuantity,
       durationSeconds: submissionDurationSeconds,
@@ -743,7 +753,6 @@ export function ComposerHome({
           : undefined,
     });
   }, [
-    catalogRevision,
     lensId,
     selectedModel,
     signedSubmission,
@@ -754,12 +763,64 @@ export function ComposerHome({
   const quoteQuery = useQuery({
     enabled: quoteInput != null,
     queryKey: p1QueryKeys.request('product-billing', 'quote', quoteInput ?? {}),
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       if (!quoteInput) throw new Error('Composer quote input is required.');
-      return requestComposerQuote(quoteInput);
+      // The signal cancels a quote whose input the merchant already changed;
+      // the command's own deadline bounds one that the server never answers.
+      return requestComposerQuote(quoteInput, commandP1, { signal });
     },
+    // One retry, not the default three: past that the merchant is waiting on
+    // backoff with nothing on screen, which is the defect this ticket removes.
+    retry: 1,
     staleTime: Number.POSITIVE_INFINITY,
   });
+  /**
+   * The bound view survives edits — it lives in the draft, and nothing clears
+   * it when the merchant keeps typing. Held against the identity that produced
+   * it, that is a stale price: the intent has moved on, the new quote is still
+   * in flight (or conflicted, or timed out), and the old number would sit there
+   * looking settled. Since quote identity is now a digest of the whole billable
+   * payload, "still the current quote" is exactly "same quoteId", and anything
+   * else falls back to the live state (#240 P1).
+   */
+  const currentQuoteView = currentComposerQuoteView(
+    quoteView,
+    quoteInput?.quoteId
+  );
+  /**
+   * #240: "a query is in flight" and "a precondition never came together" used
+   * to render the same 正在读取模型与报价… line, so a missing recipe, an absent
+   * or unpriced default model, a missing destination and a failed preferences
+   * read all looked like loading that would never end. Recomputed every render
+   * rather than memoised — it is nine booleans and a lookup table.
+   */
+  const quoteReadiness = resolveComposerQuoteReadiness({
+    lensSelected: lensId != null,
+    surface: composerQueryPhase(surfaceQuery),
+    catalog: composerQueryPhase(catalogQuery),
+    preferences: composerQueryPhase(preferencesQuery),
+    quote: quoteInput == null ? 'disabled' : composerQueryPhase(quoteQuery),
+    hasRecipe: submissionRecipe != null,
+    hasModel: selectedModel != null,
+    hasDestination: destination != null,
+    hasSignedSubmission: signedSubmission != null,
+    hasQuoteView: currentQuoteView != null,
+  });
+  const retryQuoteReadiness = (
+    target: Exclude<ComposerQuoteRetryTarget, null>
+  ) => {
+    if (target === 'surface') {
+      void surfaceQuery.refetch();
+      return;
+    }
+    if (target === 'catalog') {
+      // Both feed `selectedModel`; retrying one alone leaves the other stale.
+      void catalogQuery.refetch();
+      void preferencesQuery.refetch();
+      return;
+    }
+    void quoteQuery.refetch();
+  };
   const coldCards = useMemo(
     () =>
       surfaceQuery.data
@@ -824,6 +885,17 @@ export function ComposerHome({
   useEffect(() => {
     emitTelemetry('identity_state', { state: identitySelection.state });
   }, [identitySelection.state]);
+
+  // `quote_state` was reserved in the telemetry allowlist with nothing emitting
+  // it; with the states enumerated there is finally something to report, and a
+  // precondition that silently blocks quoting is now visible off-box (#240).
+  useEffect(() => {
+    if (!lensId) return;
+    emitTelemetry('quote_state', {
+      operation: COMPOSER_OPERATION_BY_LENS[lensId],
+      state: quoteReadiness.state,
+    });
+  }, [lensId, quoteReadiness.state]);
 
   useEffect(() => {
     if (
@@ -1358,10 +1430,14 @@ export function ComposerHome({
     );
     const briefInput = briefInputRef.current;
     const briefContextRevision = briefContextRevisionRef.current;
+    // `quote` joins the guard rather than staying a `!` assertion: every caller
+    // already checks it, and a run must carry the price it was admitted on.
+    const quote = quoteQuery.data;
     if (
       !submissionRecipe ||
       !briefInput?.briefContextId ||
-      briefContextRevision === null
+      briefContextRevision === null ||
+      !quote
     ) {
       toast.error(workbench_operation_failed());
       return;
@@ -1384,7 +1460,7 @@ export function ComposerHome({
         : {}),
       lensId: selectedLens,
       intent,
-      quote: quoteQuery.data!,
+      quote,
       recipe: submissionRecipe,
       videoConfirmAccepted,
       ...(briefConfirmationId
@@ -1525,7 +1601,9 @@ export function ComposerHome({
       setSubmissionQuotaBlocked(true);
       return;
     }
-    if (!quoteQuery.data || !quoteView || !submissionRecipe) {
+    // `currentQuoteView`, not `quoteView`: a run must never be admitted against
+    // a price the merchant's current input no longer produces (#240 P1).
+    if (!quoteQuery.data || !currentQuoteView || !submissionRecipe) {
       setShowRequiredHint(true);
       return;
     }
@@ -1653,7 +1731,7 @@ export function ComposerHome({
         mapped.distributionTarget ||
       destinationMapPending ||
       !quoteQuery.data ||
-      !quoteView ||
+      !currentQuoteView ||
       !submissionRecipe
     ) {
       return;
@@ -1661,18 +1739,29 @@ export function ComposerHome({
     destinationAutoSubmitIntentRef.current = null;
     void attemptSubmit();
   }, [
+    currentQuoteView,
     destinationMapPending,
     destinationPreflight,
     lensState.draft.delivery.distributionTarget,
     lensState.draft.delivery.platform,
     quoteQuery.data,
-    quoteView,
     submissionRecipe,
     userText,
   ]);
 
   const handleBriefConfirm = async () => {
     if (lensState.phase !== 'selected' || !submissionRecipe) return;
+    // The card is already un-confirmable when the identities diverge; this is
+    // the same rule on the handler, so a stale confirm cannot arrive by any
+    // other route (a queued click, a restored card). Narrowing here also
+    // retires the non-null assertions this path used to carry: after an edit
+    // the new query key has no data yet, and reading a field off it would
+    // throw (#240 P1).
+    const confirmedQuote = quoteQuery.data;
+    if (!currentQuoteView || !confirmedQuote) {
+      toast.error(BRIEF_STALE_QUOTE_NOTICE);
+      return;
+    }
     const result = confirmBriefSurface(briefState);
     if (!result.ok) {
       setBriefState(result.state);
@@ -1694,7 +1783,7 @@ export function ComposerHome({
       },
       expectedRevision: briefContextRevisionRef.current,
       lensId: lensState.lensId,
-      quoteId: quoteQuery.data!.quoteId,
+      quoteId: confirmedQuote.quoteId,
       recipeRevisionId: submissionRecipe.revisionId,
       sourceIds: sourceReferences.map((source) => source.id),
       surfaceRevisionId:
@@ -1715,7 +1804,7 @@ export function ComposerHome({
       const refreshedInput = buildLiveBriefInput({
         briefContextId: briefInput.briefContextId,
         lensId: lensState.lensId,
-        quote: quoteQuery.data!,
+        quote: confirmedQuote,
         currentRevisions: refreshedContext.currentRevisions,
         delivery: submissionDelivery,
         imageCount: lensState.lensId === 'image_text' ? submissionQuantity : 0,
@@ -1778,7 +1867,11 @@ export function ComposerHome({
     briefState.phase === 'open'
       ? projectBriefSurfaceView(briefState, {
           lensId,
-          quote: quoteView,
+          // Same judgement as the four Composer gates. Editing the intent while
+          // the Brief is open used to leave it showing the old price with an
+          // enabled confirm button — a second door onto a stale quote (#240 P1).
+          quote: currentQuoteView,
+          quoteStale: currentQuoteView == null,
         })
       : null;
 
@@ -2022,7 +2115,7 @@ export function ComposerHome({
           !imageCardinality.valid ||
           lensState.phase === 'frozen' ||
           quotaBlocked ||
-          (lensId != null && !quoteView)
+          (lensId != null && !currentQuoteView)
         }
         lensSlot={
           <>
@@ -2110,7 +2203,7 @@ export function ComposerHome({
         </div>
       ) : null}
 
-      {quoteView ? (
+      {currentQuoteView ? (
         <p
           className="text-muted text-xs"
           data-quote-revision={quoteQuery.data?.revision}
@@ -2119,15 +2212,15 @@ export function ComposerHome({
           }
           data-testid="composer-quote-line"
         >
-          {quoteView.billingNote ?? `预计消耗 ${quoteView.amount}`}
+          {currentQuoteView.billingNote ??
+            `预计消耗 ${currentQuoteView.amount}`}
         </p>
-      ) : lensId ? (
-        <output className="text-muted text-xs">
-          {catalogQuery.isError || quoteQuery.isError
-            ? '当前模型或报价暂不可用'
-            : '正在读取模型与报价…'}
-        </output>
-      ) : null}
+      ) : (
+        <ComposerQuoteStatusLine
+          onRetry={retryQuoteReadiness}
+          readiness={quoteReadiness}
+        />
+      )}
 
       {submissionGroundingBlocked === 'store' ? (
         <p
