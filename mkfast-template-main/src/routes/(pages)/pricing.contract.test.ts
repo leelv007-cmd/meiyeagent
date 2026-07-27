@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
+import { websiteConfig } from '@/config/website';
 import {
   findSubscriptionPrice,
   formatYuan,
@@ -9,7 +10,54 @@ import {
   growthMonthlyPriceLabel,
   PUBLIC_PLAN_CONFIG_IDS,
 } from '@/lib/price-plan';
-import { PlanIntervals } from '@/payment/types';
+import type { PricePlan } from '@/payment/types';
+import { PaymentTypes, PlanIntervals } from '@/payment/types';
+
+/** The real monthly amount for the paid tier, read straight from config. */
+function realGrowthMonthlyAmount() {
+  return findSubscriptionPrice('pro', PlanIntervals.MONTH)?.amount ?? 0;
+}
+
+/**
+ * Run `body` against a catalogue where each product carries its own price.
+ *
+ * Distinct prices are the point: they turn "which product did this surface
+ * read?" into an observable number, so a surface that resolves the wrong key
+ * fails with a wrong price rather than passing on a shared one.
+ */
+function withStubbedCatalog(amounts: Record<string, number>, body: () => void) {
+  const plans = websiteConfig.payment?.price?.plans as Record<
+    string,
+    PricePlan
+  >;
+  assert.ok(plans, 'payment plans must exist to stub');
+  const original = { ...plans };
+  for (const key of Object.keys(plans)) delete plans[key];
+  for (const [id, amount] of Object.entries(amounts)) {
+    plans[id] = {
+      id,
+      name: id,
+      description: id,
+      isFree: amount === 0,
+      isLifetime: false,
+      prices: [
+        {
+          type: PaymentTypes.SUBSCRIPTION,
+          priceId: `price-${id}`,
+          amount,
+          currency: 'CNY',
+          interval: PlanIntervals.MONTH,
+        },
+      ],
+    } as PricePlan;
+  }
+  try {
+    body();
+  } finally {
+    for (const key of Object.keys(plans)) delete plans[key];
+    Object.assign(plans, original);
+  }
+}
 
 const read = (file: string) =>
   readFileSync(resolve(process.cwd(), file), 'utf8');
@@ -141,21 +189,60 @@ test('one product key, one source: repointing a tier moves both pages at once', 
     /configPlanId: ['"`]/u,
     'a literal plan key here is a second source that can drift from the landing'
   );
+
+  // Storing the key in the mapping is worth nothing if the page then prices a
+  // different key anyway. Every price lookup on this page must go through the
+  // display plan's own configPlanId — a literal argument here reintroduces the
+  // fork one level down, where the DISPLAY_PLANS assertions above cannot see it.
+  const priceLookupArguments = [
+    ...pricing.matchAll(/findSubscriptionPrice\(\s*([^,]+),/gu),
+  ].map((match) => match[1]?.trim());
+  assert.ok(
+    priceLookupArguments.length >= 2,
+    'expected the page to still price its cards through findSubscriptionPrice'
+  );
+  assert.deepEqual(
+    [...new Set(priceLookupArguments)],
+    ['plan.configPlanId'],
+    'price every card by its display plan key, never by a literal'
+  );
 });
 
-test('the landing and /pricing resolve the paid tier to the same price', () => {
-  // The structural guard above says the key cannot fork. This one evaluates
-  // both paths and compares the number a merchant actually reads.
-  const growthLabel = growthMonthlyPriceLabel();
-  const fromPricingPageMapping = findSubscriptionPrice(
-    PUBLIC_PLAN_CONFIG_IDS.growth,
-    PlanIntervals.MONTH
+test('the mapping states exactly which product backs each public tier', () => {
+  // Pin the values themselves. Everything else in this file proves the two
+  // surfaces agree with *each other*; without this they could agree on the
+  // wrong product — 中级 silently priced as 终身版 reads as consistent.
+  assert.deepEqual(
+    { ...PUBLIC_PLAN_CONFIG_IDS },
+    { starter: 'free', growth: 'pro' }
   );
+  assert.equal(GROWTH_CONFIG_PLAN_ID, 'pro');
+});
+
+test('the landing prices the paid tier off the pro product, not merely off a helper', () => {
+  // Against a catalogue where every product carries a different price, the
+  // number the landing prints identifies which product it read. Comparing it
+  // to PUBLIC_PLAN_CONFIG_IDS.growth would prove nothing — that is the same
+  // expression the helper itself uses — so compare it to the price filed under
+  // the literal key this tier is pinned to above.
+  withStubbedCatalog({ free: 0, pro: 39_900, lifetime: 99_900 }, () => {
+    assert.equal(growthMonthlyPriceLabel(), '¥399');
+    // The catalogue really does discriminate: reading another product here
+    // would have produced a visibly different number, so the assertion above
+    // is load-bearing rather than accidentally true.
+    assert.equal(
+      formatYuan(
+        findSubscriptionPrice('lifetime', PlanIntervals.MONTH)?.amount ?? 0
+      ),
+      '¥999'
+    );
+    assert.notEqual(growthMonthlyPriceLabel(), '¥999');
+  });
+  // And the stub is fully undone, so the rest of the suite sees real config.
   assert.equal(
-    growthLabel,
-    fromPricingPageMapping ? formatYuan(fromPricingPageMapping.amount) : null
+    growthMonthlyPriceLabel(),
+    formatYuan(realGrowthMonthlyAmount())
   );
-  assert.equal(GROWTH_CONFIG_PLAN_ID, PUBLIC_PLAN_CONFIG_IDS.growth);
 });
 
 test('plan quotas come from the entitlement catalogue, not from this file', () => {

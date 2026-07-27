@@ -36,19 +36,22 @@ test('the code seed states the D-123 numbers for every published plan', () => {
   }
 });
 
-test('the shared .env.example carries no plan quota to outrank it', () => {
+test('the shared .env.example carries no plan setting to outrank it', () => {
   const overrides = envExample
     .split('\n')
     .filter((line) => !line.trimStart().startsWith('#'))
     .filter((line) =>
-      /^(TRIAL|STARTER|GROWTH|PRO)_(CONTENT|IMAGE|VIDEO|PACKAGE)_ALLOWANCE\s*=/u.test(
+      // Every key planFromEnv reads, not just the four *_ALLOWANCE ones:
+      // storage, concurrency and queue priority are parsed the same way and
+      // would fork the same way.
+      /^(TRIAL|STARTER|GROWTH|PRO)_((CONTENT|IMAGE|VIDEO|PACKAGE)_ALLOWANCE|STORAGE_MB|CONCURRENCY_LIMIT|QUEUE_PRIORITY)\s*=/u.test(
         line.trim(),
       ),
     );
   assert.deepEqual(
     overrides,
     [],
-    'a quota here becomes the dev default and forks from the manifest (D-132)',
+    'a plan setting here becomes the dev default and forks from the manifest (D-132)',
   );
 });
 
