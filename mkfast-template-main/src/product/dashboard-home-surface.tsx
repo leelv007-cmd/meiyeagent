@@ -107,7 +107,11 @@ export function DashboardHomeSurface({
   return (
     <div className="space-y-6" data-testid="dashboard-home-surface">
       <DashboardBalanceCard />
-      <TodayRecommendationCard onStart={onStart} onUse={prefill} />
+      <TodayRecommendationCard
+        onStart={onStart}
+        onUse={prefill}
+        workspaceId={state?.workspaceId}
+      />
 
       {visibility === 'visible' && stores.length > 0 ? (
         <ExampleStoreShowcase

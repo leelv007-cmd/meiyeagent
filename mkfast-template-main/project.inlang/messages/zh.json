@@ -3608,6 +3608,8 @@
   "today_recommendation_customer_action": "希望顾客做什么",
   "today_recommendation_facts": "用了本店什么",
   "today_recommendation_facts_count": "本店 {count} 条已确认事实",
+  "today_recommendation_pending_description": "你之前做的内容都还在，只是今天这条没算出来。想发就直接开始下一条，之前的成品也都还在。",
+  "today_recommendation_pending_title": "今天的主推荐还没排出来",
   "today_recommendation_source": "来自任务",
   "today_recommendation_stale_description": "本店事实已更新，上一条推荐不再称为“适合现在”。完成下一次任务后会产生新推荐。",
   "today_recommendation_stale_title": "正在等待新资料的推荐",
