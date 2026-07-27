@@ -99,6 +99,8 @@ test('replays a delivered image or video when media selection has no scores', ()
 });
 
 test('does not treat a delivery before the 08:00 Shanghai business boundary as today', () => {
+  // Intentional equivalence: this Shanghai 08:00 boundary is the UTC calendar
+  // boundary after the fixed offset and day-start constants are applied.
   const justBeforeMidnight = {
     ...record(1),
     deliveredAt: '2026-07-18T07:59:00+08:00',
@@ -121,6 +123,8 @@ test('does not treat a delivery before the 08:00 Shanghai business boundary as t
 });
 
 test('treats a delivery after the 08:00 Shanghai business boundary as today', () => {
+  // Keep this UTC-looking timestamp: Asia/Shanghai 08:00 is intentionally equal
+  // to the UTC calendar-day boundary in the current fixed-offset model.
   const atMidnight = {
     ...record(1),
     deliveredAt: '2026-07-18T00:01:00.000Z',

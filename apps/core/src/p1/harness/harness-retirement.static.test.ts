@@ -53,16 +53,18 @@ test('copy production no longer calls scene-policy projection or emits retired c
   assert.doesNotMatch(productionStage, /marketing-scene-policy/u);
   assert.doesNotMatch(productionStage, /projectMarketingPackageEvidence/u);
 
-  const policySource = readFileSync(
-    resolve(repositoryRoot, 'apps/core/src/p1/harness/marketing-scene-policy.ts'),
-    'utf8',
-  );
-  assert.doesNotMatch(policySource, /deriveMarketingPackageCapabilities/u);
-  assert.doesNotMatch(policySource, /capabilities\s*:/u);
-  assert.doesNotMatch(policySource, /quickEdit\s*:\s*true/u);
-  assert.doesNotMatch(policySource, /publishExport\s*:\s*true/u);
-  assert.doesNotMatch(policySource, /asyncRecovery\s*:\s*true/u);
-  assert.doesNotMatch(policySource, /remix\s*:\s*true/u);
+  const policySources = [
+    'apps/core/src/p1/harness/marketing-scene-policy.ts',
+    'apps/core/src/p1/harness/copy-marketing-evidence.ts',
+  ].map((file) => readFileSync(resolve(repositoryRoot, file), 'utf8'));
+  for (const policySource of policySources) {
+    assert.doesNotMatch(policySource, /deriveMarketingPackageCapabilities/u);
+    assert.doesNotMatch(policySource, /capabilities\s*:/u);
+    assert.doesNotMatch(policySource, /quickEdit\s*:\s*true/u);
+    assert.doesNotMatch(policySource, /publishExport\s*:\s*true/u);
+    assert.doesNotMatch(policySource, /asyncRecovery\s*:\s*true/u);
+    assert.doesNotMatch(policySource, /remix\s*:\s*true/u);
+  }
   const legacyCallers = repositoryFiles('apps/core/src/p1/harness')
     .filter((file) => file && !file.endsWith('.test.ts'))
     .filter((file) =>

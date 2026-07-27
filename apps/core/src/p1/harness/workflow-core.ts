@@ -107,8 +107,6 @@ export type HarnessEffectRunner = <Output>(
   operation: () => Promise<Output>,
 ) => Promise<Output>;
 
-export type HarnessWorkflowSleep = (durationMs: number) => Promise<void>;
-
 export interface HarnessContextSnapshot {
   bundle: BriefContextBundle;
   factsRevision?: number;
@@ -217,7 +215,6 @@ export interface HarnessMediaStagePorts extends HarnessStagePorts {
     context: HarnessContextSnapshot;
     skillInstructions?: readonly ResolvedSkillInstruction[];
     awaitSignal?: HarnessSignalReceiver;
-    sleep?: HarnessWorkflowSleep;
     runStep?: HarnessEffectRunner;
   }): Promise<HarnessMediaSelectionResult>;
   assembleMediaAndDeliver(input: {
@@ -247,7 +244,6 @@ export interface HarnessNoteStagePorts extends HarnessStagePorts {
     selectedStyleId: string;
     skillInstructions?: readonly ResolvedSkillInstruction[];
     awaitSignal?: HarnessSignalReceiver;
-    sleep?: HarnessWorkflowSleep;
     runStep?: HarnessEffectRunner;
   }): Promise<HarnessNoteSelectionResult>;
   assembleNoteAndDeliver(input: {
@@ -266,9 +262,6 @@ export type HarnessSignalReceiver = (
   options: { timeoutSeconds: number },
 ) => Promise<unknown | null>;
 
-/** Shared DBOS topics for pg-boss terminal notifications. */
-export const HARNESS_MEDIA_TERMINAL_TOPIC = 'harness-media-terminal';
-
 export function harnessMediaJobTopic(jobId: string) {
   return `harness-media-job:${jobId}`;
 }
@@ -283,7 +276,6 @@ export interface HarnessWorkflowRuntime {
    * Non-DBOS runtimes omit this hook and retain the synchronous test path.
    */
   awaitSignal?: HarnessSignalReceiver;
-  sleep?: HarnessWorkflowSleep;
   progress(event: {
     sequence: number;
     stage:
@@ -1175,7 +1167,6 @@ async function runNoteHarnessWorkflow(
       ? { skillInstructions: executionSkills.instructions }
       : {}),
     ...(runtime.awaitSignal ? { awaitSignal: runtime.awaitSignal } : {}),
-    ...(runtime.sleep ? { sleep: runtime.sleep } : {}),
     ...(runtime.awaitSignal
       ? {
           runStep: durableSelectionEffectRunner(
@@ -1452,7 +1443,6 @@ async function runMediaHarnessWorkflow(
       ? { skillInstructions: executionSkills.instructions }
       : {}),
     ...(runtime.awaitSignal ? { awaitSignal: runtime.awaitSignal } : {}),
-    ...(runtime.sleep ? { sleep: runtime.sleep } : {}),
     ...(runtime.awaitSignal
       ? {
           runStep: durableSelectionEffectRunner(
@@ -1550,7 +1540,6 @@ async function runMediaHarnessWorkflow(
         ? { skillInstructions: executionSkills.instructions }
         : {}),
       ...(runtime.awaitSignal ? { awaitSignal: runtime.awaitSignal } : {}),
-      ...(runtime.sleep ? { sleep: runtime.sleep } : {}),
       ...(runtime.awaitSignal
         ? {
             runStep: durableSelectionEffectRunner(

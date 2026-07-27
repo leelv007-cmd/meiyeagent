@@ -12,6 +12,7 @@ import {
   type NotePlanConsistencyEvaluation,
   type NoteStyleConfig,
 } from '@meiye/contracts';
+import { ZodError } from 'zod';
 import { StructuredNodeRunError } from '../model-supply/structured-node-runner.js';
 
 // 这份默认集合已搬进契约（后台风格编辑器也要用同一份），此处保留导出口不动。
@@ -335,7 +336,12 @@ export class NotePlanCompiler {
           }),
         );
       } catch (error) {
-        if (!(error instanceof StructuredNodeRunError)) throw error;
+        if (
+          !(error instanceof StructuredNodeRunError) &&
+          !(error instanceof ZodError)
+        ) {
+          throw error;
+        }
         secondEvaluationFailed = true;
       }
       auditSignals.push({

@@ -25,7 +25,6 @@ import {
 	validateHarnessVisibleDelivery,
 } from "./production-stage-ports.js";
 import {
-  HARNESS_MEDIA_TERMINAL_TOPIC,
   harnessMediaJobTopic,
   type HarnessContextSnapshot,
   type HarnessEffectRunner,
@@ -36,7 +35,6 @@ import {
   type HarnessNoteStagePorts,
   type HarnessSignalReceiver,
   type HarnessStagePorts,
-  type HarnessWorkflowSleep,
 } from "./workflow-core.js";
 import type { HarnessWorkflowInput } from "./task-admission.js";
 import {
@@ -90,7 +88,6 @@ export interface HarnessMediaExecutionPort {
 		/** DBOS workflow that owns the wait, distinct from page-level job keys. */
 		orchestrationWorkflowId?: string;
 		awaitSignal?: HarnessSignalReceiver;
-		sleep?: HarnessWorkflowSleep;
 		runStep?: HarnessEffectRunner;
 	}): Promise<HarnessMediaSelectionResult>;
 }
@@ -565,7 +562,6 @@ export class UnifiedHarnessStagePorts
 		request: HarnessWorkflowInput;
 		context: HarnessContextSnapshot;
 		awaitSignal?: HarnessSignalReceiver;
-		sleep?: HarnessWorkflowSleep;
 		runStep?: HarnessEffectRunner;
 	}) {
 		const snapshot = requireSnapshot(input.request);
@@ -594,7 +590,6 @@ export class UnifiedHarnessStagePorts
 						...(input.awaitSignal
 							? { awaitSignal: input.awaitSignal }
 							: {}),
-						...(input.sleep ? { sleep: input.sleep } : {}),
 						...(input.runStep ? { runStep: input.runStep } : {}),
 					});
 					return {
@@ -841,7 +836,6 @@ export class ModelSupplyHarnessMediaExecutionPort
 		workflowId: string;
 		orchestrationWorkflowId?: string;
 		awaitSignal?: HarnessSignalReceiver;
-		sleep?: HarnessWorkflowSleep;
 		runStep?: HarnessEffectRunner;
 	}): Promise<HarnessMediaSelectionResult> {
 		const snapshot = requireSnapshot(input.request);
@@ -885,7 +879,6 @@ export class ModelSupplyHarnessMediaExecutionPort
 						),
 						noteAdmissionInput,
 						input.awaitSignal,
-						input.sleep,
 						input.runStep,
 					),
 				verify: async (result) => {
@@ -932,7 +925,6 @@ export class ModelSupplyHarnessMediaExecutionPort
 			),
 			noteAdmissionInput,
 			input.awaitSignal,
-			input.sleep,
 			input.runStep,
 		);
 		const completed = requireCompletedMediaResult(result, input.brief.kind);
@@ -947,11 +939,14 @@ export class ModelSupplyHarnessMediaExecutionPort
 			workspaceId: string;
 		},
 		awaitSignal?: HarnessSignalReceiver,
-		sleep?: HarnessWorkflowSleep,
 		runStep?: HarnessEffectRunner,
 	) {
 		const admissionToken = noteAdmissionInput
-			? await this.acquireNoteAdmission(noteAdmissionInput, awaitSignal, sleep)
+			? await this.runEffect(
+					`admission-claim:${submission.idempotencyKey}`,
+					() => this.acquireNoteAdmission(noteAdmissionInput),
+					runStep,
+				)
 			: undefined;
 		const admittedJobId = admissionToken?.jobId;
 		let result =
@@ -974,9 +969,10 @@ export class ModelSupplyHarnessMediaExecutionPort
 						runStep,
 					);
 		if (admissionToken) {
-			const running = await this.noteAdmission!.markRunning(
-				admissionToken,
-				result.jobId,
+			const running = await this.runEffect(
+				`admission-running:${submission.idempotencyKey}`,
+				() => this.noteAdmission!.markRunning(admissionToken, result.jobId),
+				runStep,
 			);
 			if (!running) {
 				throw staleNoteAdmission();
@@ -1006,9 +1002,11 @@ export class ModelSupplyHarnessMediaExecutionPort
 			admissionToken &&
 			(result.status === "completed" || result.status === "failed")
 		) {
-			const terminal = await this.noteAdmission!.markTerminal(
-				admissionToken,
-				result.status,
+			const terminalStatus = result.status;
+			const terminal = await this.runEffect(
+				`admission-terminal:${submission.idempotencyKey}:${terminalStatus}`,
+				() => this.noteAdmission!.markTerminal(admissionToken, terminalStatus),
+				runStep,
 			);
 			if (!terminal) {
 				throw staleNoteAdmission();
@@ -1033,8 +1031,6 @@ export class ModelSupplyHarnessMediaExecutionPort
 		workflowId: string;
 		workspaceId: string;
 		},
-		awaitSignal?: HarnessSignalReceiver,
-		sleep?: HarnessWorkflowSleep,
 	): Promise<NoteMediaAdmissionToken> {
 		if (!this.noteAdmission) {
 			throw new HarnessMediaExecutionError(
@@ -1045,20 +1041,14 @@ export class ModelSupplyHarnessMediaExecutionPort
 		}
 		const claim = await this.noteAdmission.claim(input);
 		if (claim) return claim;
-		if (sleep) {
-			const attempts = Math.ceil(
-				(NOTE_ADMISSION_WAIT_TIMEOUT_SECONDS * 1000) /
-					NOTE_ADMISSION_POLL_INTERVAL_MS,
+		const attempts = Math.ceil(
+			(NOTE_ADMISSION_WAIT_TIMEOUT_SECONDS * 1000) /
+				NOTE_ADMISSION_POLL_INTERVAL_MS,
+		);
+		for (let attempt = 0; attempt < attempts; attempt += 1) {
+			await new Promise<void>((resolve) =>
+				setTimeout(resolve, NOTE_ADMISSION_POLL_INTERVAL_MS),
 			);
-			for (let attempt = 0; attempt < attempts; attempt += 1) {
-				await sleep(NOTE_ADMISSION_POLL_INTERVAL_MS);
-				const retried = await this.noteAdmission.claim(input);
-				if (retried) return retried;
-			}
-		} else if (awaitSignal) {
-			await awaitSignal(HARNESS_MEDIA_TERMINAL_TOPIC, {
-				timeoutSeconds: NOTE_ADMISSION_WAIT_TIMEOUT_SECONDS,
-			});
 			const retried = await this.noteAdmission.claim(input);
 			if (retried) return retried;
 		}

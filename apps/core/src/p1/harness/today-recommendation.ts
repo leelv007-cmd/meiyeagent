@@ -9,6 +9,10 @@ import type { HarnessTodayRecommendationConfig } from '../admin-config/foundatio
 // Today recommendation currently has no per-workspace timezone field. Keep the
 // existing merchant product convention explicit: Asia/Shanghai, with the
 // business day starting at 08:00 local time.
+// Intentional equivalence: MERCHANT_TIMEZONE_OFFSET_MS - MERCHANT_DAY_START_MS
+// === 0 because the Asia/Shanghai 08:00 business-day boundary is mathematically
+// equal to the UTC calendar-day boundary. Read this before changing either
+// constant.
 const MERCHANT_TIMEZONE_OFFSET_MS = 8 * 60 * 60 * 1000;
 const MERCHANT_DAY_START_MS = 8 * 60 * 60 * 1000;
 

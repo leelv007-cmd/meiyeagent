@@ -163,9 +163,6 @@ export function registerHarnessDbosWorkflow(
         // DBOS.runStep so a pending provider job suspends the workflow.
         return DBOS.recv<T>(topic, options);
       },
-      sleep(durationMs) {
-        return DBOS.sleep(durationMs);
-      },
       async progress(event) {
         const occurredAt = new Date(await DBOS.now()).toISOString();
         const envelope = workflowProgressEnvelopeSchema.parse({

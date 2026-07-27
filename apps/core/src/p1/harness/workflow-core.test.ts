@@ -543,13 +543,12 @@ test('image-text note partial selection keeps merchantReport in the workflow res
   assert.ok(merchantReport?.actions.includes('review_partial'));
 });
 
-test('DBOS note selection keeps waiting outside steps and LLM effects under stable keys', async () => {
+test('DBOS note selection keeps durable effects under stable keys', async () => {
   const effectKeys: string[] = [];
   await runHarnessWorkflow(
     'task-image-text-note-durable',
     mediaTaskInput('image_text_note'),
     noteStages(false, async (input) => {
-      assert.equal(typeof input.sleep, 'function');
       assert.equal(typeof input.runStep, 'function');
       await input.runStep?.('note-plan', async () => undefined);
     }),
@@ -561,7 +560,6 @@ test('DBOS note selection keeps waiting outside steps and LLM effects under stab
       async awaitSignal() {
         return null;
       },
-      async sleep() {},
       async progress() {},
       async token() {},
       async awaitDecision(question) {

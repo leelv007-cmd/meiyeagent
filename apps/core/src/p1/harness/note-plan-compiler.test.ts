@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { ZodError } from 'zod';
 
 import {
   DEFAULT_NOTE_STYLES,
@@ -326,6 +327,42 @@ test('second consistency evaluation failure returns partial instead of throwing'
     result.version.plan.pages[1]?.imageAssetId,
     'page-2-consistency_conflict',
   );
+});
+
+test('second consistency schema failure returns partial instead of throwing', async () => {
+  const initialEvaluation = passingNoteEvaluation('2026-07-26T00:00:00.000Z');
+  const compiler = new NotePlanCompiler(
+    {
+      async plan() {
+        return structuredClone(basePlan());
+      },
+      async draftPage({ page }) {
+        return page.textBlock;
+      },
+      async evaluate({ attempt }) {
+        if (attempt === 'after_regeneration') throw new ZodError([]);
+        return { ...initialEvaluation, regenerationPageIds: ['page-2'] };
+      },
+    },
+    imagePort([]),
+  );
+  const drafts = await compiler.compileDrafts({
+    intent: '介绍护理项目',
+    factRefs: [],
+    rightsRefs: [],
+    notePageBound: 3,
+  });
+
+  const result = await compiler.selectAndGenerate({
+    candidates: drafts,
+    selectedStyleId: 'story_recommendation',
+    notePageBound: 3,
+  });
+
+  assert.deepEqual(result.partial, {
+    unresolvedPageIds: ['page-2'],
+    reason: 'second_evaluation_failed',
+  });
 });
 
 test('system errors in the second consistency evaluation are not downgraded to partial', async () => {

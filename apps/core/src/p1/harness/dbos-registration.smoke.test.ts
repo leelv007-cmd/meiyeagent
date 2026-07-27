@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import type { QuestionCard } from '@meiye/contracts';
+import { Pool } from 'pg';
 
 import { HarnessWorkflowEventSource } from '../workflow-events.js';
 import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
@@ -14,14 +15,23 @@ import { SkillService } from '../skills/service.js';
 import type { SkillRevision } from '../skills/types.js';
 import { HarnessDbosWorkflowEventReader } from './dbos-workflow-events.js';
 import {
+  createMediaAdmissionWorkflow,
+  type MediaAdmissionCrashMode,
+} from './dbos-media-admission-fixture.js';
+import {
   normalizeHarnessDbosWorkflowInput,
   registerHarnessDbosWorkflow,
   resumeHarnessDbosWorkflow,
 } from './dbos-workflow.js';
 import { harnessRuntimeId } from './workspace-scope.js';
-import type { HarnessStagePorts } from './workflow-core.js';
+import { PostgresNoteMediaAdmissionCoordinator } from './note-media-admission.js';
+import type {
+  HarnessMediaSelectionResult,
+  HarnessStagePorts,
+} from './workflow-core.js';
 
 const systemDatabaseUrl = process.env.TEST_DBOS_SYSTEM_DATABASE_URL;
+const databaseUrl = process.env.TEST_DATABASE_URL;
 
 test('registered workflow accepts both legacy and scoped invocation payloads', () => {
   const request = {
@@ -910,6 +920,138 @@ test(
   },
 );
 
+test(
+  'note media admission recovery keeps the wait inside one stable DBOS effect',
+  { skip: !systemDatabaseUrl || !databaseUrl },
+  async () => {
+    const workflowId = `harness-media-admission-${randomUUID()}`;
+    const workspaceId = `workspace-media-admission-${workflowId}`;
+    const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
+    const applicationVersion = `harness-media-admission-${workflowId}`;
+    const pool = new Pool({ connectionString: databaseUrl! });
+    const noteAdmission = new PostgresNoteMediaAdmissionCoordinator(pool);
+    await noteAdmission.migrate();
+    const blocker = await noteAdmission.claim({
+      taskId: workflowId,
+      workflowId: `blocker-${workflowId}`,
+      workspaceId,
+    });
+    assert.ok(blocker);
+
+    try {
+      await createMediaAdmissionCrashFixture(
+        workflowId,
+        workspaceId,
+        applicationVersion,
+        'wait',
+      );
+      DBOS.setConfig({
+        name: 'beauty-marketing-harness-media-admission',
+        systemDatabaseUrl: systemDatabaseUrl!,
+        applicationVersion,
+      });
+      createMediaAdmissionWorkflow(noteAdmission);
+      await DBOS.launch();
+      await DBOS.cancelWorkflow(runtimeWorkflowId);
+
+      assert.equal(
+        await noteAdmission.markTerminal(blocker, 'completed'),
+        true,
+      );
+      const recovered = await DBOS.resumeWorkflow<HarnessMediaSelectionResult>(
+        runtimeWorkflowId,
+      );
+      const result = await recovered.getResult();
+      assert.equal(result.asset?.id, 'image-s6-admission');
+
+      const steps = await DBOS.listWorkflowSteps(runtimeWorkflowId);
+      assert.ok(steps);
+      assertAdmissionEffectLayout(steps, workflowId);
+      const claimRow = await pool.query<{
+        generation: string;
+        job_id: string | null;
+        status: string;
+      }>(
+        `SELECT generation::text, job_id, status
+           FROM harness_runtime.note_media_admission_claims
+          WHERE workspace_id = $1 AND task_id = $2`,
+        [workspaceId, workflowId],
+      );
+      assert.deepEqual(claimRow.rows, [
+        { generation: '2', job_id: 'job-s6-admission', status: 'completed' },
+      ]);
+    } finally {
+      await pool.query(
+        `DELETE FROM harness_runtime.note_media_admission_claims
+          WHERE workspace_id = $1 AND task_id = $2`,
+        [workspaceId, workflowId],
+      );
+      await DBOS.shutdown({ deregister: true });
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'same note media claim resumes idempotently after a crash',
+  { skip: !systemDatabaseUrl || !databaseUrl },
+  async () => {
+    const workflowId = `harness-media-admission-idempotent-${randomUUID()}`;
+    const workspaceId = `workspace-media-admission-${workflowId}`;
+    const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
+    const applicationVersion = `harness-media-admission-${workflowId}`;
+    const pool = new Pool({ connectionString: databaseUrl! });
+    const noteAdmission = new PostgresNoteMediaAdmissionCoordinator(pool);
+    await noteAdmission.migrate();
+
+    try {
+      await createMediaAdmissionCrashFixture(
+        workflowId,
+        workspaceId,
+        applicationVersion,
+        'after-claim',
+      );
+      DBOS.setConfig({
+        name: 'beauty-marketing-harness-media-admission',
+        systemDatabaseUrl: systemDatabaseUrl!,
+        applicationVersion,
+      });
+      createMediaAdmissionWorkflow(noteAdmission);
+      await DBOS.launch();
+      const recovered = DBOS.retrieveWorkflow<HarnessMediaSelectionResult>(
+        runtimeWorkflowId,
+      );
+      const result = await recovered.getResult();
+      assert.equal(result.asset?.id, 'image-s6-admission');
+
+      const steps = await DBOS.listWorkflowSteps(runtimeWorkflowId);
+      assert.ok(steps);
+      assertAdmissionEffectLayout(steps, workflowId);
+      const claimRow = await pool.query<{
+        generation: string;
+        job_id: string | null;
+        status: string;
+      }>(
+        `SELECT generation::text, job_id, status
+           FROM harness_runtime.note_media_admission_claims
+          WHERE workspace_id = $1 AND task_id = $2`,
+        [workspaceId, workflowId],
+      );
+      assert.deepEqual(claimRow.rows, [
+        { generation: '1', job_id: 'job-s6-admission', status: 'completed' },
+      ]);
+    } finally {
+      await pool.query(
+        `DELETE FROM harness_runtime.note_media_admission_claims
+          WHERE workspace_id = $1 AND task_id = $2`,
+        [workspaceId, workflowId],
+      );
+      await DBOS.shutdown({ deregister: true });
+      await pool.end();
+    }
+  },
+);
+
 function legacyTimeoutRequest(workflowId: string, workspaceId: string) {
   return {
     actorId: 'owner-replay',
@@ -1016,6 +1158,92 @@ function createPendingLayoutFixture(
       );
     });
   });
+}
+
+function createMediaAdmissionCrashFixture(
+  workflowId: string,
+  workspaceId: string,
+  applicationVersion: string,
+  crashMode: MediaAdmissionCrashMode,
+) {
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        fileURLToPath(
+          new URL('./dbos-media-admission.fixture.ts', import.meta.url),
+        ),
+      ],
+      {
+        env: {
+          ...process.env,
+          S6_MEDIA_ADMISSION_APP_VERSION: applicationVersion,
+          S6_MEDIA_ADMISSION_CRASH_MODE: crashMode,
+          S6_MEDIA_ADMISSION_WORKFLOW_ID: workflowId,
+          S6_MEDIA_ADMISSION_WORKSPACE_ID: workspaceId,
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    let stdout = '';
+    let stderr = '';
+    const timeout = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error('Media admission fixture did not reach its crash point.'));
+    }, 15_000);
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk;
+    });
+    child.once('error', (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.once('exit', (_code, signal) => {
+      clearTimeout(timeout);
+      const marker =
+        crashMode === 'wait' ? 'ADMISSION_WAITING' : 'ADMISSION_CLAIMED';
+      if (stdout.includes(marker) && signal === 'SIGKILL') {
+        resolve();
+        return;
+      }
+      reject(
+        new Error(
+          `Media admission fixture failed (${String(signal)}): ${stderr || stdout}`,
+        ),
+      );
+    });
+  });
+}
+
+function assertAdmissionEffectLayout(
+  steps: Awaited<ReturnType<typeof DBOS.listWorkflowSteps>>,
+  workflowId: string,
+) {
+  assert.ok(steps);
+  assert.equal(
+    steps.some(({ name }) => name === 'DBOS.sleep'),
+    false,
+  );
+  assert.deepEqual(
+    steps
+      .filter(({ name }) =>
+        name.startsWith('admission-') || name.startsWith('submit-'),
+      )
+      .map(({ functionID, name }) => [functionID, name]),
+    [
+      [0, `admission-claim-harness-media-${workflowId}-image`],
+      [1, `submit-harness-media-${workflowId}-image`],
+      [2, `admission-running-harness-media-${workflowId}-image`],
+      [3, `admission-terminal-harness-media-${workflowId}-image-completed`],
+    ],
+  );
 }
 
 async function waitForWorkflowStatus(

@@ -1122,12 +1122,12 @@ test("note pages keep durable admission single-flight while compiler branches re
 	]);
 });
 
-test("a competing note workflow retries the shared claim with durable sleep", async () => {
+test("a competing note workflow polls inside one durable admission effect", async () => {
 	const events: string[] = [];
 	const first = completedResult("image", "1");
 	const second = completedResult("image", "2");
 	let submissions = 0;
-	let sleeps = 0;
+	const effectKeys: string[] = [];
 	const adapter = new ModelSupplyHarnessMediaExecutionPort(
 		{
 			async submit() {
@@ -1159,19 +1159,19 @@ test("a competing note workflow retries the shared claim with durable sleep", as
 			context: contextSnapshot(),
 			request,
 			workflowId: "workflow-note:page-2",
-			sleep: async () => {
-				sleeps += 1;
-				await new Promise<void>((resolve) => setImmediate(resolve));
-			},
-			awaitSignal: async () => {
-				throw new Error("competing admission must not wait on a shared topic");
+			runStep: async (effectKey, operation) => {
+				effectKeys.push(effectKey);
+				return operation();
 			},
 		}),
 	]);
 
 	assert.equal(firstSelection.asset.id, "image-asset-1");
 	assert.equal(secondSelection.asset.id, "image-asset-2");
-	assert.ok(sleeps >= 1);
+	assert.deepEqual(
+		effectKeys.map((key) => key.split(":", 1)[0]),
+		["admission-claim", "submit", "admission-running", "admission-terminal"],
+	);
 	assert.deepEqual(events.slice(0, 2), [
 		"claim:workflow-note:page-1:g1",
 		"blocked:workflow-note:page-2",
