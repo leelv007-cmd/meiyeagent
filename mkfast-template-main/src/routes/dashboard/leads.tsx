@@ -179,7 +179,7 @@ function LeadLedgerPage() {
 
   if (loading || !state) {
     return (
-      <div className="meiye-heroui-glass space-y-4 p-4 lg:p-6">
+      <div className="space-y-4 p-4 lg:p-6">
         <Skeleton className="h-12 rounded-xl" />
         <Skeleton className="h-96 rounded-2xl" />
       </div>
@@ -202,7 +202,7 @@ function LeadLedgerPage() {
           </span>
         }
       />
-      <main className="meiye-heroui-glass mx-auto w-full max-w-7xl flex-1 p-4 lg:p-6">
+      <main className="mx-auto w-full max-w-7xl flex-1 p-4 lg:p-6">
         <div className="meiye-ambient-copy mb-6">
           <h1 className="meiye-type-title" data-testid="leads-ambient-title">
             {product_navigation_leads()}

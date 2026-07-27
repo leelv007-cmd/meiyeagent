@@ -117,7 +117,7 @@ function LeadDetailRoute() {
       description={dashboard_lead_detail_description()}
       title={dashboard_lead_detail_title()}
     >
-      <div className="meiye-heroui-glass">
+      <div>
         {product.loading ? (
           <section
             aria-busy="true"

@@ -36,7 +36,13 @@ const SHADCN_RESIDUE = [
 
 async function readSurface(page: Page, path: string) {
   await page.goto(path);
+  // 「一个 Glass 壳根」照旧，只是那个根从每页各自的 <main> 挪到了共享壳上
+  // （S7 / U07 换壳：壳本体就是 HeroUI Pro Sidebar，token 桥得覆盖整个
+  // /dashboard 与 /settings，不再只覆盖恰好渲染 Pro 件的那几页）。
   await expect(page.locator('.meiye-heroui-glass')).toHaveCount(1);
+  await expect(
+    page.locator('[data-slot="sidebar-provider"].meiye-heroui-glass')
+  ).toHaveCount(1);
   return page.evaluate((residue: readonly string[]) => {
     const main = document.querySelector('main');
     return {
@@ -202,8 +208,12 @@ test('the workspace surface keeps platform sample material out', async ({
       page.getByRole('heading', { level: 1, name: '内容工作区' })
     ).toBeVisible();
 
-    // The dashboard shell owns an outer <main>; the page body is the glass one.
-    const body = await page.locator('main.meiye-heroui-glass').innerText();
+    // 壳的 <main> 是 Pro Sidebar 的 sidebar-main 槽，页面正文就装在里面
+    // （S7 / U07 前这里认的是页面自己那个 .meiye-heroui-glass <main>，
+    // Glass 壳根上移后不再有第二个 main）。
+    const body = await page
+      .locator('main[data-slot="sidebar-main"]')
+      .innerText();
     expect(body).not.toMatch(/platform[_-]?sample/iu);
     // D-126 sample stores are named on the cold-start home, never here.
     expect(body).not.toMatch(/示例店/u);

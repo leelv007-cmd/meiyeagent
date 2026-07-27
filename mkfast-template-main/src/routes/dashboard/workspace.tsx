@@ -31,7 +31,7 @@ function ContentWorkspaceRoute() {
           { label: product_navigation_workspace(), isCurrentPage: true },
         ]}
       />
-      <main className="meiye-heroui-glass mx-auto w-full max-w-5xl flex-1 p-4 lg:p-6">
+      <main className="mx-auto w-full max-w-5xl flex-1 p-4 lg:p-6">
         <div className="meiye-ambient-copy mb-6">
           <h1 className="meiye-type-title">{product_navigation_workspace()}</h1>
         </div>
