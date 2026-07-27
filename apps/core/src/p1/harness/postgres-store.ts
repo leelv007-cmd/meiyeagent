@@ -162,15 +162,15 @@ export class PostgresHarnessStore
           default '{}'::jsonb;
       alter table harness_runtime.langfuse_outbox
         add column if not exists dead_lettered_at timestamptz;
-      update harness_runtime.langfuse_outbox
-        set status='dead_letter'
-        where status='failed' and dead_lettered_at is not null;
       alter table harness_runtime.langfuse_outbox
         drop constraint if exists langfuse_outbox_status_check;
       alter table harness_runtime.langfuse_outbox
         add constraint langfuse_outbox_status_check
         check (status in
           ('queued', 'sending', 'failed', 'sent', 'dead_letter', 'discarded'));
+      update harness_runtime.langfuse_outbox
+        set status='dead_letter'
+        where status='failed' and dead_lettered_at is not null;
       alter table harness_runtime.decision_events
         add column if not exists resolution_source text;
       update harness_runtime.decision_events
