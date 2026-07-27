@@ -3,6 +3,7 @@ import {
   AIGC_VISIBLE_LABEL,
   productAssetMediaTypes,
   type ProductCommand,
+  type StoreProfilePatch,
 } from './product.js';
 
 const id = z.string().min(1);
@@ -46,6 +47,34 @@ const storeSchema = z.object({
   ),
   regulated: z.boolean(),
 });
+
+export const storeProfilePatchSchema = z
+  .object({
+    expectedRevision: z.number().int().nonnegative(),
+    name: id.optional(),
+    city: id.optional(),
+    district: id.optional(),
+    address: id.optional(),
+    booking: id.optional(),
+    brandVoice: id.optional(),
+    prohibitions: z.array(id).optional(),
+    regulated: z.boolean().optional(),
+    accounts: z
+      .object({
+        upsert: storeSchema.shape.accounts.optional(),
+        clear: z.array(platform).optional(),
+      })
+      .strict()
+      .optional(),
+    projects: z
+      .object({
+        upsert: storeSchema.shape.projects.optional(),
+        clear: z.array(id).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict() satisfies z.ZodType<StoreProfilePatch>;
 
 const qualificationSchema = z.object({
   admitted: z.boolean(),

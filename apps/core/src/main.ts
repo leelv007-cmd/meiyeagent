@@ -278,6 +278,10 @@ import {
 } from './p1/operations/index.js';
 import { LOCAL_FIXTURE_PROVIDER_REFERENCE_POLICY } from './pro-studio-runtime/provider-reference-policy.js';
 import {
+  PostgresStoreIntakeFinalizationRepository,
+  StoreIntakeFinalizer,
+} from './p1/operations/store-intake-finalizer.js';
+import {
   migrateProStudioSchema,
   PostgresAdvancedCanvasProjectRepository,
   PostgresCanvasAssetRepository,
@@ -381,6 +385,8 @@ const contextBundleRepository = new PostgresContextBundleRepository(pool);
 const contextSourceRevisions = new PostgresContextSourceRevisionRepository(pool);
 const marketingIdentities = new PostgresMarketingIdentityRepository(pool);
 const assetIntakeRepository = new PostgresAssetIntakeRepository(pool);
+const storeIntakeFinalizations =
+  new PostgresStoreIntakeFinalizationRepository(pool);
 const parseRepository = new PostgresParseRepository(pool);
 const reuseMemoryRepository = new PostgresReuseMemoryRepository(pool);
 const contentPackageWriteOwnership = new PostgresContentPackageWriteOwnership(
@@ -788,6 +794,7 @@ await migratePostgresSchema(pool, [
   contextSourceRevisions,
   marketingIdentities,
   assetIntakeRepository,
+  storeIntakeFinalizations,
   parseRepository,
   reuseMemoryRepository,
   contentPackageWriteOwnership,
@@ -1197,6 +1204,31 @@ const assetIntakeService = new AssetIntakeService(
     },
   }
 );
+const storeIntakeFinalizer = new StoreIntakeFinalizer(
+  assetIntakeService,
+  storeIntakeFinalizations,
+  {
+    completedRevision: (context, patch, idempotencyKey) =>
+      productService.completedStoreProfileMergeRevision(
+        { ...context, actor: 'user' },
+        patch,
+        idempotencyKey,
+      ),
+    currentRevision: async (context) =>
+      (
+        await productService.bootstrap({
+          ...context,
+          actor: 'user',
+        })
+      ).store?.revision ?? 0,
+    merge: (context, patch, idempotencyKey) =>
+      productService.mergeStoreProfile(
+        { ...context, actor: 'user' },
+        patch,
+        idempotencyKey,
+      ),
+  },
+);
 const reuseMemoryService = new ReuseMemoryService(
   reuseMemoryRepository,
   new OperationsReusableAssetSourceVerifier(
@@ -1523,7 +1555,8 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       reuseMemoryService,
       reuseTaskHarnessAdapter,
       undefined,
-      parseService
+      parseService,
+      storeIntakeFinalizer
     ),
     new OperationsFoundationModule(operationsService, {
       adminActorIds: modelAdminActorIds,

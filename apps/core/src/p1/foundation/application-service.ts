@@ -54,6 +54,7 @@ const NEW_P1_SIDE_EFFECTS = new Set([
   'asset-memory:correct_asset_intake_fact',
   'asset-memory:create_reuse_task',
   'asset-memory:deactivate_series',
+  'asset-memory:finalize_store_intake',
   'asset-memory:parse_asset_batch',
   'asset-memory:parse_single_asset',
   'asset-memory:propose_preference',
