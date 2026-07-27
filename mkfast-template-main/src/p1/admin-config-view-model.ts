@@ -1,3 +1,4 @@
+import { NOTE_STYLE_CONFIG_KEY, noteStyleConfigSchema } from '@meiye/contracts';
 import { z } from 'zod';
 
 export const MAX_PLAN_RESOURCE_ALLOWANCE = 1_000_000;
@@ -29,6 +30,9 @@ const configSchemas = {
   'compliance.regulated_mode.default': z.boolean(),
   'compliance.watermark.default': z.boolean(),
   'douyin.adapter.assembly': z.literal('recorded'),
+  // 图文笔记的风格集合：编译器按这份有序集合出候选，运营在后台直接改
+  // （U05 / D-107；契约与 Core 同一份，来自 @meiye/contracts）。
+  [NOTE_STYLE_CONFIG_KEY]: noteStyleConfigSchema,
   'model.execution.mode': z.enum([
     'recorded',
     'fixture',
@@ -98,6 +102,24 @@ const configSchemas = {
 } satisfies Record<string, z.ZodType>;
 
 export type AdminConfigKey = keyof typeof configSchemas;
+
+/** 表单映射层的唯一入口：契约只有这一份，字段树从它读出来（U05）。 */
+export function adminConfigSchemaFor(key: string): undefined | z.ZodType {
+  return configSchemas[key as AdminConfigKey];
+}
+
+export const ADMIN_CONFIG_KEYS = Object.keys(configSchemas) as AdminConfigKey[];
+
+/** 结构化表单直接给值，不再经过手敲 JSON 这一步。 */
+export function parseAdminConfigValue(key: string, value: unknown) {
+  const schema = configSchemas[key as AdminConfigKey];
+  if (!schema) throw new Error('Unknown selected config key.');
+  const parsed = schema.safeParse(value);
+  if (!parsed.success) {
+    throw new Error('Value does not match the selected config key.');
+  }
+  return parsed.data;
+}
 
 export function parseAdminConfigDraft(key: string, draft: string) {
   const schema = configSchemas[key as AdminConfigKey];
