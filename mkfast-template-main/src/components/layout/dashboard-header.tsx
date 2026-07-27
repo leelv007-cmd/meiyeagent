@@ -7,7 +7,7 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
 import { Separator } from '@/components/ui/separator';
-import { SidebarTrigger } from '@/components/ui/sidebar';
+import { Sidebar } from '@/components/heroui-pro';
 import { LocaleSwitcher } from '@/components/layout/locale-switcher';
 import { ModeSwitcher } from '@/components/theme/mode-switcher';
 import { websiteConfig } from '@/config/website';
@@ -51,11 +51,11 @@ export function DashboardHeader({
     !currentPlan.data?.subscription;
 
   return (
-    <header className="meiye-topbar flex h-(--header-height) shrink-0 items-center border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
+    <header className="meiye-topbar flex h-(--header-height) shrink-0 items-center border-b transition-[width,height] ease-linear">
       <div className="flex w-full min-w-0 items-center gap-2 px-4 lg:px-6">
         {!isMobile ? (
           <>
-            <SidebarTrigger className="-ml-1 shrink-0" />
+            <Sidebar.Trigger className="-ml-1 shrink-0" />
             <Separator
               orientation="vertical"
               className="mx-2 h-4 data-vertical:self-auto"

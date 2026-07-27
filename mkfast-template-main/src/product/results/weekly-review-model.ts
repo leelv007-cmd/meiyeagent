@@ -402,3 +402,99 @@ export function confirmWeeklyRecommendation(input: {
     decision,
   };
 }
+
+/**
+ * W08: the three next-round actions must produce three different creations.
+ *
+ * They compiled to a byte-identical `derive_creative_work` payload — the action
+ * was recorded and then dropped on the floor, so 「换 CTA」 and 「续做」 handed the
+ * merchant the same draft. What differs is the sentence the next round is
+ * prefilled with, and which parts of the source it carries forward.
+ *
+ * Pure: the page owns the write.
+ */
+export type WeeklyDeriveInheritanceField =
+  | 'content_structure'
+  | 'copy_skeleton'
+  | 'layout_slots'
+  | 'visual_style';
+
+export type WeeklyDerivePayload = {
+  /**
+   * D-046: a derived Work confirms its Brief from the sentence below rather
+   * than minting a new creation-experience context. With the server Brief gate
+   * on, `false` here is not 「先不确认」 — it is BRIEF_CONTEXT_REQUIRED, and the
+   * next round never gets created at all.
+   */
+  autoConfirmBrief: true;
+  intent: string;
+  sessionId: string;
+  sourceReferences: Array<{
+    id: string;
+    kind: 'work' | 'content';
+    inheritanceFields?: WeeklyDeriveInheritanceField[];
+  }>;
+  sourceWorkId: string;
+};
+
+export function weeklyReviewDerivePayload(input: {
+  action: Exclude<WeeklyNextAction, 'stop_series'>;
+  sourcePackageId: string;
+  sourceWorkId: string;
+  title?: string;
+  ctaLabel?: string;
+  platformLabel?: string;
+}): WeeklyDerivePayload {
+  const title = input.title?.trim() || '上一条内容';
+  const shared = {
+    autoConfirmBrief: true as const,
+    sessionId: `weekly:${input.action}:${input.sourceWorkId}`,
+    sourceWorkId: input.sourceWorkId,
+  };
+  const lineage = { id: input.sourcePackageId, kind: 'content' as const };
+  switch (input.action) {
+    case 'continue_series':
+      return {
+        ...shared,
+        intent: `接着「${title}」再做一条，说法和结构都照上一条来。`,
+        sourceReferences: [
+          {
+            id: input.sourceWorkId,
+            kind: 'work',
+            inheritanceFields: ['content_structure', 'copy_skeleton'],
+          },
+          lineage,
+        ],
+      };
+    case 'change_cta':
+      return {
+        ...shared,
+        intent: input.ctaLabel?.trim()
+          ? `还是「${title}」这条，把结尾那句「${input.ctaLabel.trim()}」换个说法请顾客行动。`
+          : `还是「${title}」这条，换一句请顾客行动的话。`,
+        sourceReferences: [
+          {
+            id: input.sourceWorkId,
+            kind: 'work',
+            inheritanceFields: ['content_structure'],
+          },
+          lineage,
+        ],
+      };
+    case 'change_platform':
+      return {
+        ...shared,
+        intent: input.platformLabel?.trim()
+          ? `把「${title}」这条改成不发${input.platformLabel.trim()}、换个平台也读得顺的版本。`
+          : `把「${title}」这条改成换个平台也读得顺的版本。`,
+        sourceReferences: [
+          {
+            id: input.sourceWorkId,
+            kind: 'work',
+            inheritanceFields: ['copy_skeleton'],
+          },
+          lineage,
+        ],
+      };
+  }
+}

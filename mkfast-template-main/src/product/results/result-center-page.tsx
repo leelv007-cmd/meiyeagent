@@ -11,8 +11,10 @@ import { StatePanel } from '@/components/uiux/state-panel';
 import { ProductStatus } from '@/components/uiux/product-status';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ContentPackageExportCarrier } from '@/p1/content-package-export-carrier';
 import type {
   ContentPackagePlatform,
+  QuickEditExportUseDelivery,
   ResultAction,
   ResultAdjustCommand,
   ResultRevisionDriftChoice,
@@ -153,6 +155,19 @@ export type ResultCenterPageProps = {
   onCopyAdopt?: () => void | Promise<void>;
   onCopyGeneratePlatformVariants?: CopyImageTextWorksurfaceProps['onGeneratePlatformVariants'];
   onCopyHandEdit?: CopyImageTextWorksurfaceProps['onHandEdit'];
+  /** W07: selection rewrite chips become live once the page supplies this. */
+  onCopySelectionRewrite?: CopyImageTextWorksurfaceProps['onSelectionRewrite'];
+  /** W07: the single QuickEditIntent write seam for this surface. */
+  onCopyQuickEdit?: CopyImageTextWorksurfaceProps['onQuickEdit'];
+  /** W07: honest sentence when 「还想怎么改？」 cannot run on this result. */
+  adjustUnavailableReason?: string;
+  /** W08: 「基于「X」再创作」 — stored lineage, finally on screen. */
+  basedOnLabel?: string;
+  /**
+   * W07: the export-use carrier the current version carries, if any.
+   * Produced by a quick edit; rendering it is what makes 做成海报 reachable.
+   */
+  exportUseDelivery?: QuickEditExportUseDelivery;
   onImageAdopt?: (
     actionKind: string,
     orderedAssetIds: string[]
@@ -311,6 +326,10 @@ function WorkspaceBody(props: {
   onCopyAdopt?: ResultCenterPageProps['onCopyAdopt'];
   onCopyGeneratePlatformVariants?: ResultCenterPageProps['onCopyGeneratePlatformVariants'];
   onCopyHandEdit?: ResultCenterPageProps['onCopyHandEdit'];
+  onCopySelectionRewrite?: ResultCenterPageProps['onCopySelectionRewrite'];
+  onCopyQuickEdit?: ResultCenterPageProps['onCopyQuickEdit'];
+  adjustUnavailableReason?: ResultCenterPageProps['adjustUnavailableReason'];
+  currentRevisionId?: ResultCenterPageProps['currentRevisionId'];
   onImageAdopt?: ResultCenterPageProps['onImageAdopt'];
   onImageSaveLibrary?: ResultCenterPageProps['onImageSaveLibrary'];
   onImageSaveDraft?: ResultCenterPageProps['onImageSaveDraft'];
@@ -373,9 +392,17 @@ function WorkspaceBody(props: {
       <CopyImageTextWorksurface
         facts={{ ...copyFacts, viewport: props.viewport }}
         onAdjust={props.onAdjust}
+        {...(props.adjustUnavailableReason
+          ? { adjustUnavailableReason: props.adjustUnavailableReason }
+          : {})}
         onAdopt={props.onCopyAdopt}
         onGeneratePlatformVariants={props.onCopyGeneratePlatformVariants}
         onHandEdit={props.onCopyHandEdit}
+        onSelectionRewrite={props.onCopySelectionRewrite}
+        onQuickEdit={props.onCopyQuickEdit}
+        {...(props.currentRevisionId
+          ? { currentRevisionId: props.currentRevisionId }
+          : {})}
       />
     );
   }
@@ -385,7 +412,13 @@ function WorkspaceBody(props: {
       data-testid="result-copy-workspace-empty"
     >
       <p className="text-sm text-muted-foreground">等待文案候选…</p>
-      <AdjustPrompt onSubmit={props.onAdjust} />
+      <AdjustPrompt
+        onSubmit={props.onAdjust}
+        disabled={Boolean(props.adjustUnavailableReason)}
+        {...(props.adjustUnavailableReason
+          ? { unavailableReason: props.adjustUnavailableReason }
+          : {})}
+      />
     </div>
   );
 }
@@ -756,6 +789,14 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
               props.onCopyGeneratePlatformVariants
             }
             onCopyHandEdit={props.onCopyHandEdit}
+            onCopySelectionRewrite={props.onCopySelectionRewrite}
+            onCopyQuickEdit={props.onCopyQuickEdit}
+            {...(props.adjustUnavailableReason
+              ? { adjustUnavailableReason: props.adjustUnavailableReason }
+              : {})}
+            {...(props.currentRevisionId
+              ? { currentRevisionId: props.currentRevisionId }
+              : {})}
             onImageAdopt={props.onImageAdopt}
             onImageSaveLibrary={props.onImageSaveLibrary}
             onImageSaveDraft={props.onImageSaveDraft}
@@ -763,6 +804,31 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
             onAdjust={props.onAdjust}
           />
         )}
+
+        {props.basedOnLabel ? (
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="result-lineage-based-on"
+          >
+            {props.basedOnLabel}
+          </p>
+        ) : null}
+
+        {/*
+          W07: the carrier for the export use a quick edit just produced.
+          Before this mount the renderer was unreachable code — the intent that
+          fills `exportUseDelivery` had no browser producer, so nothing ever
+          arrived here.
+        */}
+        {props.exportUseDelivery ? (
+          <section
+            className="space-y-2 rounded-lg border p-4"
+            data-testid="result-export-use-carrier"
+            data-export-use={props.exportUseDelivery.exportUse}
+          >
+            <ContentPackageExportCarrier delivery={props.exportUseDelivery} />
+          </section>
+        ) : null}
 
         {sub.candidates ? (
           <div data-testid="result-harness-candidates" className="text-sm">

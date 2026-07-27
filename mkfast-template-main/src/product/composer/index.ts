@@ -181,12 +181,14 @@ export {
   type RecipeApplyTipProps,
 } from './recipe-apply-tip';
 
-export {
-  ComposerBriefChips,
-  projectComposerBriefChips,
-  type ComposerBriefChip,
-  type ComposerBriefChipsProps,
-} from './brief-chips';
+/*
+ * `ComposerBriefChips` is gone (U04 裁决). It was hung on this panel with no
+ * producer behind it — the production mount never passed a `brief`, so it
+ * rendered null on every run since the day it landed — and the question it
+ * answered（「本次将使用」）is answered on the same surface by the conditional
+ * Brief surface (D-094), which composer-home actually drives. Two answers to
+ * one question, one of them永远沉默, is the case D-150 calls 未完成.
+ */
 
 export {
   RecipeCardsPanel,

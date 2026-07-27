@@ -565,7 +565,7 @@ test.describe('D-126 dashboard home mount', () => {
     await expect(page.getByTestId('example-store-showcase')).toBeHidden();
   });
 
-  test('a workspace with real work keeps an honest recommendation card', async ({
+  test('a workspace with real work is never told it produced nothing', async ({
     page,
     request,
   }) => {
@@ -577,7 +577,9 @@ test.describe('D-126 dashboard home mount', () => {
     await page.goto('/dashboard');
 
     // Real history through the Composer execution spine — direct Harness task
-    // admission is retired, and no route is stubbed anywhere in this journey.
+    // admission is retired, and no route is stubbed while that history is
+    // produced (the degraded-projection tail below stubs the recommendation
+    // read only, after the real work already exists).
     await page
       .getByTestId('composer-intent-input')
       .fill('把本周护理项目做成一条可以发的小红书文案');
@@ -588,16 +590,35 @@ test.describe('D-126 dashboard home mount', () => {
     // Harness recommendation is preferred; when an older real delivery lacks
     // that audit shape, the latest canonical ContentPackage is the stable
     // fallback. Real history must not remain in the cold state forever.
+    // W04 旅程硬门：这个账号已经真的产出过东西，首页就不许再说「还没生成过」。
+    // 若两条来源都排不出主推荐，诚实的说法是「今天这条没排出来」——降级态不许
+    // 伪装成冷启动，且无论哪种态，下一步入口都必须留在卡里。
     await page.goto('/dashboard');
     const card = page.getByTestId('today-recommendation');
     await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute(
+      'data-recommendation-state',
+      /^(?:pending|current)$/u
+    );
     await expect(
       card.getByRole('heading', { level: 3, name: /\S/u })
     ).toBeVisible();
+    await expect(
+      card.getByRole('heading', {
+        level: 3,
+        name: '还没有基于本店事实的推荐',
+      })
+    ).toHaveCount(0);
     await expect(card.getByText('为什么适合现在')).toBeVisible();
     await expect(card.getByText('用了本店什么')).toBeVisible();
     await expect(card.getByText('希望顾客做什么')).toBeVisible();
     await expect(card.getByTestId('today-recommendation-use')).toBeVisible();
+    // 不是空壳：无论哪种态，下一步入口都在卡里。
+    await expect(
+      card.getByRole('button', {
+        name: /开始下一次任务|用这条推荐开始创作/u,
+      })
+    ).toHaveCount(1);
     expect((await card.innerText()).trim().length).toBeGreaterThan(0);
     await expect(
       card.getByText(/store_fact:|platform-sample|null|undefined/u)
@@ -607,6 +628,55 @@ test.describe('D-126 dashboard home mount', () => {
     const intentInput = page.getByTestId('composer-intent-input');
     await expect(intentInput).toBeFocused();
     await expect(intentInput).not.toHaveValue('');
+
+    // 降级投影腿：真实成品原封不动留在工作台，只把推荐这一路的两个来源
+    // （Harness 投影 + ContentPackage 兜底）排空。此时唯一诚实的说法是
+    // 「今天的主推荐还没排出来」——不许退回冷启动，也不许是空壳。
+    await page.route('**/api/core/p1/harness/recommendation', async (route) => {
+      await route.fulfill({
+        json: {
+          data: {
+            workspaceId: 'workspace-e2e',
+            currentFactsRevision: 1,
+            recommendation: null,
+            stale: false,
+          },
+        },
+        status: 200,
+      });
+    });
+    await page.route('**/api/core/p1/query', async (route) => {
+      const body = route.request().postDataJSON() as { action?: string };
+      if (body?.action !== 'content_packages') {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({ json: { data: [] }, status: 200 });
+    });
+    await page.goto('/dashboard');
+    const degraded = page.getByTestId('today-recommendation');
+    await expect(degraded).toHaveAttribute(
+      'data-recommendation-state',
+      'pending'
+    );
+    await expect(
+      degraded.getByRole('heading', {
+        level: 3,
+        name: '今天的主推荐还没排出来',
+      })
+    ).toBeVisible();
+    await expect(
+      degraded.getByRole('heading', {
+        level: 3,
+        name: '还没有基于本店事实的推荐',
+      })
+    ).toHaveCount(0);
+    await expect(
+      degraded.getByRole('button', { name: '开始下一次任务' })
+    ).toBeVisible();
+    await expect(
+      degraded.getByText(/store_fact:|platform-sample|null|undefined/u)
+    ).toHaveCount(0);
   });
 
   for (const theme of [

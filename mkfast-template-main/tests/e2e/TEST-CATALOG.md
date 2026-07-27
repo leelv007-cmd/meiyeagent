@@ -170,6 +170,7 @@ object graph.
 | 3 | Legacy routes only redirect through the frozen allowlist | Open legacy files, API key, profile, integration, and P1 admin locations; verify each lands on its fixed canonical destination without accepting an arbitrary return URL. |
 | 4 | Admin authorization fails in both navigation and routing | Sign in as a non-admin, verify no management entry is rendered, open an admin deep link, and verify the server redirects to the workbench. |
 | 5 | Shell remains keyboard and 200-percent-zoom reachable | At the 640px effective viewport, verify no horizontal overflow, focus the skip link first, activate it, and confirm focus returns to the product content region. |
+| 6 | Collapsed sidebar links keep their accessible names | Collapse the desktop sidebar, wait for the first business-navigation label to finish its delayed `visibility:hidden` transition, then verify the four business links and settings link still expose their exact visible names. |
 
 ## 12. S2 Cold Start And Unified Creation Loop
 
@@ -371,6 +372,21 @@ evidence.
 |---|---|---|
 | 1 | One inline confirmation reaches the customized delivery context without erasing the store profile | Create one legacy StoreProfile with two accounts and two confirmed projects, prove its public active-fact ledger is empty, then use the visible ProgressiveFactCard to explicitly reconfirm the first project name and change its price. Require exactly one `asset-memory.finalize_store_intake` request, two revision-1 merchant-confirmed facts, and preservation of the second project, accounts, compliance flag, prohibitions, and all untouched profile fields. Submit a customized copy journey, read the resulting ContentPackage and its exact public ContextBundle revision, and prove the service and price revisions are frozen as `current_fact` / `store_personal` with matching source, expiry, references, and package fact evidence. |
 
+## 24c. W02 Five-Step Store Intake
+
+**File:** `specs/w02-five-step-intake.spec.ts` | **Priority:** P0
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | A price-list photo becomes a confirmed store fact, and its origin is never hidden | Seed a legacy StoreProfile with an empty fact ledger, open the store page wizard, rotate the platform sample, upload a price-list photo through the newly exposed workspace asset `PUT` (objectKey + sha256 + sizeBytes), run `parse_single_asset`, and require the server draft to come back `parsed` with a `photo_extract` field. Prove the extracted price is prefilled, badged "照片识别", and still marked unconfirmed until each field is explicitly confirmed; then require exactly one `asset-memory.finalize_store_intake`, a revision-1 price fact of 239 CNY in the public ledger, a store-name fact, and preservation of the untouched profile fields. |
+| 2 | A failed read hands the merchant the same schema to type in | Inject a single `parse_single_asset` failure, prove the wizard surfaces an honest failure with a one-click switch, then require the real `prepare_manual_asset_draft` round trip to return a `manual` draft whose fields carry the same `store.profile.*` / `service.*` keys the parse lane maps from, every one `user`-provenance and `unconfirmed`. |
+| 3 | A work photo is classified into one of the four contract slots, with a rights reminder that does not block | Switch the intake target to the visual-asset lane, upload a photo without answering the rights prompt, and require `parse_single_asset` to return a `visualClassification` whose slot is a member of `VISUAL_ASSET_SLOTS` and whose `rightsPrompt.blocking` is `false`. Prove the slot badge and the rights reminder are rendered, and that a classification writes nothing to the fact ledger. |
+| 4 | Details entered before the ledger existed are staged for confirmation, never promoted | Seed a two-project legacy profile, open the store page, and require the D-151③ import panel to stage the second project as well as the first while the active-fact ledger stays empty. Confirm the staged candidates and require revision-1 facts whose `source.kind` is `import`, including the fulfillment booking value the progressive card could never reach. |
+| 5 | The upload channel only accepts an object that names its own bytes | Log in, open the store page, and drive the workspace asset `PUT` directly from the authenticated page. Require the honest `intake-<sha256>.png` write to succeed, a free-form `canvas/assets/cover.png` write to be refused (403) even though the same key is readable, another workspace's prefix to be refused (403), and an `intake-<sha256>` key whose digest does not match the bytes to be refused (400). The 25 MiB ceiling is covered at unit level (`src/lib/core-client.test.ts`) because a browser cannot forge `Content-Length` and streaming 25 MiB per run is not worth the wall clock. |
+| 6 | `MISSING SPEC` — the assets page entry runs the same five-step wizard | The wizard is mounted on `/dashboard/assets` (`routes/dashboard/assets.tsx`) and covered only by its mount code plus interaction tests; no Playwright journey walks intake from that entry yet. |
+| 7 | `MISSING SPEC` — a W02-confirmed fact reaches the delivery ContextBundle as `current_fact` | W01 spec 1 proves this seam for the progressive card; the equivalent downstream assertion for a wizard-confirmed fact has not been written. |
+| 8 | `MISSING SPEC` — importing only the stream a project is missing | Covered end to end at core level (`store-profile-import-finalize.test.ts`: staging skips per `factId`, and finalize accepts the upsert on the strength of the fact already in the ledger). No browser journey exists because no product surface can *create* the precondition: the wizard always confirms a project's name and price together, so a half-ledgered project cannot be reached through the UI. |
+
 ## 25. Day-0 Recommendation And Example Store
 
 **File:** `specs/uiux-creation-loop.spec.ts` | **Priority:** P0
@@ -388,7 +404,7 @@ evidence.
 |---|---|---|
 | 1 | Cold tenant sees three sample stores and runs a sample task on the real chain | Register a cold tenant, verify the Day-0 recommendation invitation and the opt-in sample entry, reveal all three C-5 industries, and read the sample store's profile, confirmed facts, material, and works. Assert the trial tier allowance is 5/5/1, remix a sample task so the Composer draft is prefilled, submit it through the real submission chain, wait for the Result Center, and prove the trial copy remainder dropped and the artifact downloads through the same export path a paying merchant uses. |
 | 2 | platform_sample material never reaches the merchant workspace | Collect every platform-sample id from the revealed showcase, seed the merchant's own confirmed store, and assert the merchant's own facts are present (positive control) while no sample id appears in product state assets/contents/handoffs or in the creative workbench assets/contents/works/jobs projection. A workspace with real facts stops offering samples entirely. |
-| 3 | Hot tenant gets one recommendation whose CTA prefills the Composer | Seed confirmed store facts, drive the real five-stage Harness to a delivered package (no route stubbing), poll the real recommendation API until it is grounded, and verify the card shows all three explanation elements plus a merchant-language fact count. Click the CTA and prove the Composer draft is prefilled and focused on the same page — no navigation, no auto-submit. |
+| 3 | Hot tenant gets one recommendation whose CTA prefills the Composer | Seed confirmed store facts, drive the real five-stage Harness to a delivered package (no route stubbing), poll the real recommendation API until it is grounded, and verify the card shows all three explanation elements plus a merchant-language fact count. Click the CTA and prove the Composer draft is prefilled and focused on the same page — no navigation, no auto-submit. Then, with the real produced work left in place, empty both recommendation sources (Harness projection + ContentPackage fallback) and require the degraded card to read `pending` (今天的主推荐还没排出来) with the next-step entry still present — never the cold-start copy. |
 | 4–5 | Cold home renders on mobile in the light/dark theme | Load the cold home at 375×812 in each theme, reveal all three industries, verify the recommendation card is present, assert no horizontal overflow, and capture a full-page screenshot as walkthrough evidence. |
 
 ## 26. Pending Action Inbox And Per-Task Blocking
@@ -411,7 +427,7 @@ evidence.
 
 **File:** `specs/uiux-day0-contract.spec.ts` | **Priority:** P0
 
-Implements D-043 Day-0 contract + V1 复审修订七条计数口径. Metric name: **用户激活次数**. Capture layer: `fixtures/user-activation.ts` (`page.addInitScript` + `page.exposeBinding`, only top-level `event.isTrusted` primary-button clicks; Cmd/Ctrl+Enter counts as 1 keyboard activation). First-token endpoint: `[data-has-token="true"]` on harness primary/alternative candidates and copy-stream slots. Seed boundary: register/login/`seedConfirmedStore`/`seedComposerInlineAuthorize` are measurement prep (composer path — **not** `seedAuthorizedGrounding` library path); counter is zeroed after prep. The spec uses the real Web → Core → Harness/DBOS HTTP+SSE chain with an isolated DBOS database; only the model provider boundary is deterministic fixture mode. Product HTTP/SSE calls are never mocked. Screenshots do not replace these assertions. Tour script: `scripts/uiux/day0-tour-screenshots.mjs` → `docs/evidence/ux-fold-supply-day0/`.
+Implements D-043 Day-0 contract + V1 复审修订七条计数口径. Metric name: **用户激活次数**. Capture layer: `fixtures/user-activation.ts` (`page.addInitScript` + `page.exposeBinding`, only top-level `event.isTrusted` primary-button clicks; Cmd/Ctrl+Enter counts as 1 keyboard activation). First-token endpoint: `[data-has-token="true"]` on harness primary/alternative candidates and copy-stream slots. Seed boundary: register/login/`seedConfirmedStore`/`seedComposerInlineAuthorize` are measurement prep (this spec seeds them itself and never calls `seedAuthorizedGrounding`, which additionally confirms a store and would move the counter); counter is zeroed after prep. The spec uses the real Web → Core → Harness/DBOS HTTP+SSE chain with an isolated DBOS database; only the model provider boundary is deterministic fixture mode. Product HTTP/SSE calls are never mocked. Screenshots do not replace these assertions. Tour script: `scripts/uiux/day0-tour-screenshots.mjs` → `docs/evidence/ux-fold-supply-day0/`.
 
 | # | Test name | Flow |
 |---|---|---|
@@ -720,6 +736,18 @@ copy/image/note/video); this spec proves the shape a live run produces.
   components; the ratios are printed as `[contrast] …` lines so a run reports
   numbers rather than a pass/fail bit.
 
+## S7 商家壳 Muted 文案对比度
+
+**File:** `specs/s7-shell-muted-contrast.spec.ts` | **Priority:** P1
+
+Measures the rendered text against its actual composited backdrop so shared
+shell fallbacks and the works glass-piece override are both held to WCAG AA.
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | Segment 未选中项与 text-muted 文案在 light 主题下实测 ≥4.5:1 | Sign in under the light theme; measure the unselected creation-mode Segment, the unselected works-shape Segment, workspace muted copy, and lead-ledger muted copy; require every rendered ratio to be at least 4.5:1. |
+| 2 | Segment 未选中项与 text-muted 文案在 dark 主题下实测 ≥4.5:1 | Repeat the same rendered-backdrop measurements under the dark theme and require every ratio to be at least 4.5:1. |
+
 ## S3 钱的旅程（#237 / W05+W06）
 
 `specs/s3-money-journey.spec.ts` covers the two legs the money story has to
@@ -740,6 +768,36 @@ ledger state, and the redemption is a real code an admin recorded.
   changes what `/pricing` quotes on the next load. No deploy, no second number
   to edit — the public page reads the same `plan.allowances.*` revision the
   grant reads (D-143 单一商品目录).
+
+## S5 成品动作面（#239 / W07+W08+W09）
+
+`specs/s5-work-page.spec.ts` walks the two things a merchant could not do on a
+finished 成品 before this slice, against a real backend.
+
+- 改一句就用：selecting 弱促销 on the copy worksurface shows the diff first —
+  原来的 / 改写后 — and writes nothing until 就用这版. That button is the only
+  producer of a `QuickEditIntent`; the spec asserts the outgoing
+  `edit_content_package_version` carries `intent.action = promotion_weaker`,
+  because the 13-action contract had been fully implemented server-side with no
+  browser that could reach it.
+- 做成海报 → 海报入口：the export-use intent lands, core attaches
+  `exportUseDelivery` to the new version, and the carrier renders on the same
+  page. Before, the renderer was unreachable code waiting for a field the
+  front end never produced.
+- 昨天的到店：the result chip now carries 数量 and 「这是昨天的」. The spec
+  asserts the command leaves with `quantity` and a backdated `occurredAt`, and
+  that the row reads as yesterday's date — 「not today」 alone is passed by any
+  wrong clock, and a backdated signal that stamps `now` is a false record.
+- 三级分层不再是装饰：the inferred tier is computed per request by
+  `content_package_results`, never stored on the package. The spec requires a
+  real row under 推断相关性 plus its non-causal sentence, which is what tells a
+  wired third tier apart from an empty heading.
+- 基于此再创作 → 基于「X」再创作：the derive is walked end to end, because both
+  of its failures were invisible without one — core refused it for the Work's
+  Composer session id and again for the missing Brief context, so the lineage
+  the surfaces read had never been written at all. The spec asserts the derive
+  is accepted, that it carries a `kind: 'content'` source reference, and that
+  the page it lands on names the 作品 it came from.
 
 ## M-04 required browser hard gate（T37 / #231）
 

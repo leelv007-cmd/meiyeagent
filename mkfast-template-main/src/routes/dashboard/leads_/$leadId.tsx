@@ -1,4 +1,3 @@
-import heroUiGlassCss from '@/components/heroui-pro/heroui-glass.css?url';
 import { useQuery } from '@tanstack/react-query';
 import { ObjectEvidence } from '@/components/uiux/object-evidence';
 import { EmptyState, Widget } from '@/components/heroui-pro';
@@ -50,7 +49,6 @@ import { createFileRoute } from '@tanstack/react-router';
  * note); only the shell moves to HeroUI Pro V3 on the Glass sheet.
  */
 export const Route = createFileRoute('/dashboard/leads_/$leadId')({
-  head: () => ({ links: [{ rel: 'stylesheet', href: heroUiGlassCss }] }),
   component: LeadDetailRoute,
 });
 
@@ -119,7 +117,7 @@ function LeadDetailRoute() {
       description={dashboard_lead_detail_description()}
       title={dashboard_lead_detail_title()}
     >
-      <div className="meiye-heroui-glass">
+      <div>
         {product.loading ? (
           <section
             aria-busy="true"

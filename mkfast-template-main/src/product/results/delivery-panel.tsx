@@ -11,6 +11,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
+  result_full_package_heading,
+  result_full_package_hint,
+} from '@/locale/paraglide/messages';
+import {
   IconCheck,
   IconCopy,
   IconDownload,
@@ -121,6 +125,59 @@ export function DeliveryPanel({
           <IconCheck className="mr-1 inline size-4 text-emerald-700" />
           {outcome.announcement}
         </output>
+      ) : null}
+
+      {/*
+        W09: the full package plan, on screen. `fullPackage` had no producer,
+        so the merchant downloaded a ZIP whose contents were invisible until it
+        was open on their desktop. The manifest already describes the layout —
+        this states it before the download.
+      */}
+      {view.fullPackage ? (
+        <section
+          className="space-y-2 rounded-md border p-3"
+          data-testid="delivery-full-package-plan"
+          data-modality={view.fullPackage.modality}
+          data-schema={view.fullPackage.schema}
+          data-file-count={String(view.fullPackage.files.length)}
+        >
+          <h3 className="text-sm font-medium">
+            {result_full_package_heading()}
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            {result_full_package_hint()}
+          </p>
+          {/*
+            No file name here on purpose: the download is named by core's
+            export receipt, and printing a second, locally derived name would
+            be a promise the download does not keep.
+          */}
+          <ol className="space-y-1">
+            {view.fullPackage.files.map((file) => (
+              <li
+                key={file.path}
+                className="text-xs text-muted-foreground"
+                data-testid="delivery-full-package-file"
+                data-role={file.role}
+              >
+                {file.path}
+              </li>
+            ))}
+          </ol>
+          {view.fullPackage.segments ? (
+            <ol className="space-y-1" data-testid="delivery-moments-segments">
+              {view.fullPackage.segments.map((segment) => (
+                <li
+                  key={segment.id}
+                  className="text-xs text-muted-foreground"
+                  data-segment={segment.id}
+                >
+                  {segment.label}
+                </li>
+              ))}
+            </ol>
+          ) : null}
+        </section>
       ) : null}
 
       {view.visibleGroups.map((group) => (

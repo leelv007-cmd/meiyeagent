@@ -3,13 +3,17 @@ import { getDb } from '@/db';
 import { resolveActiveWorkspace } from '@/db/workspaces';
 import { serverEnv } from '@/env/server';
 import { coreProxyResponse } from '@/lib/core-stream';
-import { isAllowedWorkspaceAssetObjectKey } from '@/lib/core-asset-path';
+import {
+  isAllowedWorkspaceAssetObjectKey,
+  workspaceIntakeUploadDigest,
+} from '@/lib/core-asset-path';
 import { ensureVerifiedWorkspaceProvisioned } from '@/lib/auth/workspace-provisioning';
 import {
   CoreRequestBoundaryError,
   coreFetch,
   forwardedCorrelationId,
   forwardedIdempotencyKey,
+  readRequestBytes,
   readRequestText,
   workspaceCoreFetchInit,
   workspaceCoreUpstreamPath,
@@ -22,6 +26,7 @@ import {
   type WorkspaceWorkflowEventResource,
 } from '@/lib/core-request';
 import { normalizeProductRole } from '@meiye/contracts';
+import { sha256Hex } from '@/p1/workspace-asset-upload';
 import { authorizeWorkspaceCoreRequest } from '@/lib/workspace-core-authorization';
 
 export async function forwardAuthenticatedCoreRequest(
@@ -207,8 +212,12 @@ export async function forwardWorkspaceCoreRequest(
   return coreProxyResponse(upstream);
 }
 
+/** Bytes a merchant may push into their own workspace asset space (W02 ①). */
+const WORKSPACE_ASSET_UPLOAD_MAX_BYTES = 25 * 1024 * 1024;
+
 export async function forwardWorkspaceAssetRequest(request: Request) {
   const headOnly = request.method === 'HEAD';
+  const writing = request.method === 'PUT';
   const serviceWorkspaceId = request.headers.get('x-workspace-id');
   const serviceAuthorized =
     request.headers.get('x-service-token') === serverEnv.CORE_SERVICE_TOKEN &&
@@ -260,6 +269,60 @@ export async function forwardWorkspaceAssetRequest(request: Request) {
   headers.set('x-workspace-role', workspaceRole);
   headers.set('x-correlation-id', `asset-${crypto.randomUUID()}`);
   const path = objectKey.split('/').map(encodeURIComponent).join('/');
+
+  if (writing) {
+    // Writing is narrower than reading twice over. The key has to be an intake
+    // object whose name *is* the digest of its bytes, so a merchant cannot
+    // aim the write at an unrelated canvas asset or store content that does not
+    // match what the key claims. And the body is read bounded rather than
+    // buffered whole: a chunked upload declares no `Content-Length`, so
+    // `arrayBuffer()` first would let an authenticated member decide how much
+    // Worker memory this proxy spends before the 413 is reached.
+    const digest = workspaceIntakeUploadDigest(objectKey);
+    if (!digest) {
+      return Response.json(
+        { error: { code: 'ASSET_WRITE_FORBIDDEN' } },
+        { status: 403 }
+      );
+    }
+    let bytes: Uint8Array<ArrayBuffer>;
+    try {
+      bytes = await readRequestBytes(request, WORKSPACE_ASSET_UPLOAD_MAX_BYTES);
+    } catch (error) {
+      if (!(error instanceof CoreRequestBoundaryError)) throw error;
+      return Response.json(
+        { error: { code: 'ASSET_PAYLOAD_INVALID' } },
+        { status: 413 }
+      );
+    }
+    if (bytes.byteLength === 0) {
+      return Response.json(
+        { error: { code: 'ASSET_PAYLOAD_INVALID' } },
+        { status: 413 }
+      );
+    }
+    if ((await sha256Hex(bytes)) !== digest) {
+      return Response.json(
+        { error: { code: 'ASSET_DIGEST_MISMATCH' } },
+        { status: 400 }
+      );
+    }
+    const contentType = request.headers.get('content-type');
+    if (contentType) headers.set('content-type', contentType);
+    headers.set('content-length', String(bytes.byteLength));
+    let written: Response;
+    try {
+      written = await coreFetch(
+        fetch,
+        `${serverEnv.CORE_SERVICE_URL}/v1/assets/${path}`,
+        { body: bytes, headers, method: 'PUT', signal: request.signal }
+      );
+    } catch {
+      return coreUnavailableResponse();
+    }
+    return coreProxyResponse(written);
+  }
+
   let upstream: Response;
   try {
     upstream = await coreFetch(

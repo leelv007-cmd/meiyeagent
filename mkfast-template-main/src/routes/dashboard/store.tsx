@@ -1,4 +1,3 @@
-import heroUiGlassCss from '@/components/heroui-pro/heroui-glass.css?url';
 import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { EmptyState, Widget } from '@/components/heroui-pro';
 import {
@@ -64,6 +63,7 @@ import { queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import { optionalSourceId } from '@/p1/source-object-navigation';
 import { useProductState } from '@/product/client';
+import { StoreIntakeWizard } from '@/product/store-intake/store-intake-wizard';
 import type { ProductCommand, StoreFact } from '@meiye/contracts';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -93,7 +93,6 @@ import { useState, type CSSProperties } from 'react';
 type StoreTab = 'profile' | 'assets' | 'qualification';
 
 export const Route = createFileRoute('/dashboard/store')({
-  head: () => ({ links: [{ rel: 'stylesheet', href: heroUiGlassCss }] }),
   validateSearch: (
     search: Record<string, unknown>
   ): { assetId?: string; tab?: StoreTab } => {
@@ -167,8 +166,7 @@ function factValueText(value: StoreFact['value']) {
 }
 
 function StoreProfilePage() {
-  const { state, error, loading, pending, execute, refresh } =
-    useProductState();
+  const { state, error, pending, execute, refresh } = useProductState();
   // The ledger is queried "as of now"; pinning it at mount keeps the query key
   // — and therefore the cache — stable while the page is open.
   const [factsAsOf] = useState(() => new Date().toISOString());
@@ -200,9 +198,13 @@ function StoreProfilePage() {
     }
   }
 
-  if (loading || !state) {
+  // Only the *first* load blanks the page. Gating on `loading` too would tear
+  // the whole surface down on every background refresh — including the one the
+  // intake wizard fires after a successful save, which unmounted the wizard
+  // mid-acknowledgement and lost the merchant's "saved" confirmation.
+  if (!state) {
     return (
-      <div className="meiye-heroui-glass space-y-4 p-4 lg:p-6">
+      <div className="space-y-4 p-4 lg:p-6">
         <Skeleton className="h-12 rounded-xl" />
         <Skeleton className="h-96 rounded-2xl" />
       </div>
@@ -241,7 +243,7 @@ function StoreProfilePage() {
           </div>
         }
       />
-      <main className="meiye-heroui-glass mx-auto w-full max-w-6xl flex-1 p-4 lg:p-6">
+      <main className="mx-auto w-full max-w-6xl flex-1 p-4 lg:p-6">
         <div className="meiye-ambient-copy mb-6">
           <h1 className="meiye-type-title" data-testid="store-ambient-title">
             {product_navigation_store()}
@@ -414,6 +416,12 @@ function StoreProfilePage() {
               )}
             </Widget.Content>
           </Widget>
+
+          {/* D-151④ retired the manual profile form and promised the five-step
+              wizard would take its place here once W02 landed. This is that
+              entry: the same wizard the asset library mounts, writing through
+              the one finalize channel. */}
+          <StoreIntakeWizard product={{ refresh, state }} surface="store" />
 
           <Widget className="meiye-porcelain" id="store-qualification">
             <Widget.Header>

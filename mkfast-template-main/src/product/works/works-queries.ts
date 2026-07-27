@@ -34,6 +34,9 @@ export function useWorksProjection() {
     source: {
       canvasWorks: history.data?.canvasWorks ?? [],
       contentPackages: contentPackages.data ?? [],
+      // W08 血缘: the 再创作 path parks the source package on the Work, not on
+      // the package. Same canonical read, no second query.
+      creativeWorks: history.data?.creativeWorks ?? [],
     },
   };
 }

@@ -42,6 +42,17 @@ export interface StoreFactLedger {
   contextRevision(input: ActiveStoreFactQuery): Promise<string>;
   history(workspaceId: string, factId: string): Promise<StoreFact[]>;
   listActive(input: ActiveStoreFactQuery): Promise<StoreFact[]>;
+  /**
+   * Reads the named heads and runs `action` with them while no append to those
+   * facts may commit. A caller that has to act on a head it just read — write
+   * the value somewhere else, say — gets to do so without another writer
+   * slipping a revocation in between the read and the write.
+   */
+  withPinnedHeads<T>(
+    workspaceId: string,
+    factIds: readonly string[],
+    action: (heads: ReadonlyMap<string, StoreFact | null>) => Promise<T>,
+  ): Promise<T>;
 }
 
 export class StoreFactRevisionConflictError extends Error {
@@ -157,6 +168,26 @@ export class MemoryStoreFactLedger implements StoreFactLedger {
     return structuredClone(
       this.revisions.get(JSON.stringify([workspaceId, factId])) ?? [],
     );
+  }
+
+  async withPinnedHeads<T>(
+    workspaceId: string,
+    factIds: readonly string[],
+    action: (heads: ReadonlyMap<string, StoreFact | null>) => Promise<T>,
+  ) {
+    // The in-process ledger serves single-threaded tests, so the pin is just
+    // the batched head read: `append` runs to completion inside one tick and
+    // there is no second connection to fence out. The Postgres ledger is where
+    // the pin has to hold real writers off.
+    const heads = new Map<string, StoreFact | null>();
+    for (const factId of factIds) {
+      heads.set(
+        factId,
+        this.revisions.get(JSON.stringify([workspaceId, factId]))?.at(-1) ??
+          null,
+      );
+    }
+    return action(heads);
   }
 
   async listActive(input: ActiveStoreFactQuery) {

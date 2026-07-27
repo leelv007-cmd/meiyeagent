@@ -130,6 +130,25 @@ describe('entry and destination are conversation affordances, not a form', () =>
     expect(onDestinationChange).toHaveBeenCalledWith('douyin');
   });
 
+  it('offers 旧内容换平台 as supply-layer suggestions, and one tap seeds the draft (U04)', async () => {
+    const user = userEvent.setup();
+    const onReuseChip = vi.fn();
+    const chip = {
+      id: 'xiaohongshu',
+      intent: '把我之前发过的一条内容改成适合小红书的版本',
+      label: '发小红书',
+    };
+    render(promptBar({ onReuseChip, reuseChips: [chip] }));
+
+    const suggestions = screen.getByTestId('composer-reuse-chips');
+    // Written by the vendored unit — red if the hand-rolled pill row returns.
+    expect(suggestions.dataset.slot).toBe('prompt-suggestion');
+    expect(suggestions).toHaveTextContent('想把旧内容换个平台再发？');
+
+    await user.click(screen.getByTestId('composer-reuse-chip-xiaohongshu'));
+    expect(onReuseChip).toHaveBeenCalledWith(chip);
+  });
+
   it('shows the signed fields read-only, with no editable control', () => {
     render(
       promptBar({
@@ -161,6 +180,21 @@ describe('entry and destination are conversation affordances, not a form', () =>
     expect(preview.querySelector('input, select')).toBeNull();
   });
 });
+
+/**
+ * What the supply-layer markdown unit puts in the DOM while it believes the
+ * body is still arriving: a caret custom property on its container, and a
+ * per-block reveal marker.
+ */
+function candidateBodyIsStreaming() {
+  const primary = screen.getByTestId('composer-candidate-primary');
+  const container = primary.querySelector<HTMLElement>('[data-slot="markdown"]')
+    ?.firstElementChild as HTMLElement | null;
+  return (
+    Boolean(container?.style.getPropertyValue('--streamdown-caret')) ||
+    primary.querySelector('[data-sd-animate="true"]') !== null
+  );
+}
 
 describe('the transcript is a card flow', () => {
   const emptyStream = projectResultTokenStream({ workspaceKind: 'copy' });
@@ -211,6 +245,90 @@ describe('the transcript is a card flow', () => {
     expect(conversation.querySelector('form')).toBeNull();
   });
 
+  it('is the supply-layer transcript container, not a hand-rolled scroller (U03)', () => {
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={running()}
+        stream={emptyStream}
+      />
+    );
+
+    // `data-slot` is written by the vendored unit itself, so this goes red the
+    // moment the container is swapped back for a <section> + endRef pair.
+    const conversation = screen.getByTestId('composer-conversation');
+    expect(conversation.dataset.slot).toBe('chat-conversation');
+    expect(
+      conversation.querySelector('[data-slot="chat-conversation-content"]')
+    ).not.toBeNull();
+    expect(
+      conversation.querySelector(
+        '[data-slot="chat-conversation-scroll-anchor"]'
+      )
+    ).not.toBeNull();
+    // The whole transcript must not become one live region: the announcements
+    // belong to the progress card and the candidate area.
+    expect(conversation.getAttribute('aria-live')).toBe('off');
+    // The app-side adaptation hook has to survive the unit's class merge, or
+    // the unit's edge fade quietly comes back and eats whichever card sits at
+    // the top of the pane.
+    expect(conversation.className).toMatch(/meiye-conversation-pane/);
+  });
+
+  it('answers prefers-reduced-motion in both directions (U07)', () => {
+    const setReducedMotion = (reduce: boolean) => {
+      window.matchMedia = ((query: string) => ({
+        addEventListener: () => {},
+        addListener: () => {},
+        dispatchEvent: () => false,
+        matches: query.includes('prefers-reduced-motion') ? reduce : false,
+        media: query,
+        onchange: null,
+        removeEventListener: () => {},
+        removeListener: () => {},
+      })) as typeof window.matchMedia;
+    };
+
+    setReducedMotion(false);
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={running()}
+        stream={emptyStream}
+      />
+    );
+    const animated = screen.getByTestId('composer-conversation');
+    expect(animated.dataset.motion).toBe('on');
+    // Non-vacuous: without this the "no transform" leg below would pass even if
+    // the arrival motion had never been wired at all.
+    expect(
+      [
+        ...animated.querySelectorAll<HTMLElement>(
+          '[data-slot="chat-conversation-content"] > div'
+        ),
+      ].some((turn) => turn.style.transform.includes('translateY'))
+    ).toBe(true);
+
+    cleanup();
+    setReducedMotion(true);
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={running()}
+        stream={emptyStream}
+      />
+    );
+    const reduced = screen.getByTestId('composer-conversation');
+    expect(reduced.dataset.motion).toBe('off');
+    // A merchant who asked for no motion gets none — not a faster one. The
+    // arrival transform must not be written onto the turn wrappers at all.
+    for (const turn of reduced.querySelectorAll<HTMLElement>(
+      '[data-slot="chat-conversation-content"] > div'
+    )) {
+      expect(turn.style.transform).toBe('');
+    }
+  });
+
   it('streams one primary candidate and folds alternatives away', () => {
     const stream = projectResultTokenStream({
       workspaceKind: 'copy',
@@ -230,14 +348,65 @@ describe('the transcript is a card flow', () => {
 
     const area = screen.getByTestId('composer-candidate-stream');
     expect(area).toHaveAttribute('data-has-token', 'true');
-    expect(screen.getByTestId('composer-candidate-primary')).toHaveTextContent(
-      '周末预约'
-    );
+    const primary = screen.getByTestId('composer-candidate-primary');
+    expect(primary).toHaveTextContent('周末预约');
+    // U03: the body is rendered by the supply-layer markdown unit — red if the
+    // prompt-kit response-stream copy comes back or the body drops to plain text.
+    expect(primary.querySelector('[data-slot="markdown"]')).not.toBeNull();
     // D-113 / story 15: alternatives are an opt-in disclosure, never a grid.
     const alternates = screen.getByTestId('composer-candidate-alternates');
     expect(alternates.tagName).toBe('DETAILS');
     expect(alternates).not.toHaveAttribute('open');
     expect(alternates).toHaveTextContent('另有 1 个备选');
+  });
+
+  it('stops streaming the candidate body once the run is terminal', () => {
+    // 「无假流式」at the render seam: the same text must read as arriving while
+    // the workflow runs, and as delivered once it does not.
+    const partialCandidates = [
+      { candidateId: 'c1', title: '周末预约', body: '到店立减，先到先得。' },
+    ];
+    const { rerender } = render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={running()}
+        stream={projectResultTokenStream({
+          workspaceKind: 'copy',
+          progressState: 'running',
+          partialCandidates,
+        })}
+      />
+    );
+    expect(candidateBodyIsStreaming()).toBe(true);
+
+    const terminal = projectResultTokenStream({
+      workspaceKind: 'copy',
+      progressState: 'success',
+      partialCandidates,
+    });
+    rerender(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={running()}
+        stream={terminal}
+      />
+    );
+    expect(candidateBodyIsStreaming()).toBe(false);
+    expect(screen.getByTestId('composer-candidate-primary')).toHaveTextContent(
+      '到店立减，先到先得。'
+    );
+
+    // And on a reload of that finished run there is no live → terminal edge to
+    // ride: the fresh mount must be settled from the first frame.
+    cleanup();
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={running()}
+        stream={terminal}
+      />
+    );
+    expect(candidateBodyIsStreaming()).toBe(false);
   });
 
   it('renders the D-111 route notice from the intent_naming frame', () => {
@@ -369,6 +538,26 @@ describe('进度宣告卡', () => {
       'data-running',
       'false'
     );
+  });
+
+  it('is the supply-layer step rail, and it opens read (U03)', () => {
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={withStages('已听懂这次想表达的重点')}
+        stream={emptyStream}
+      />
+    );
+
+    const card = screen.getByTestId('composer-progress-card');
+    // Written by the vendored unit — goes red if the hand-rolled <ol> returns.
+    expect(card.dataset.slot).toBe('chain-of-thought');
+    expect(
+      card.querySelector('[data-slot="chain-of-thought-step"]')
+    ).not.toBeNull();
+    // D-116: the 白话进度 is a delivery statement the merchant is meant to
+    // read, so a disclosure may offer to fold it but must never open folded.
+    expect(within(card).getByTestId('composer-stage-line')).toBeVisible();
   });
 });
 

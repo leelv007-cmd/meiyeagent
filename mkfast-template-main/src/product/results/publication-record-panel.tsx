@@ -9,6 +9,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  result_publication_status_failed,
+  result_publication_status_heading,
+  result_publication_status_published,
+  result_publication_status_unknown,
+  result_publication_submit,
+} from '@/locale/paraglide/messages';
 import { useMemo, useState } from 'react';
 import type { ContentPackagePlatform } from '@meiye/contracts';
 
@@ -46,6 +53,8 @@ export function PublicationRecordPanel(props: PublicationRecordPanelProps) {
   const [publishedAt, setPublishedAt] = useState('');
   const [platformUrl, setPlatformUrl] = useState('');
   const [note, setNote] = useState('');
+  const [status, setStatus] =
+    useState<ManualPublicationFormInput['status']>('published');
   const [formError, setFormError] = useState<string | null>(null);
 
   const canSubmit = useMemo(() => {
@@ -155,7 +164,7 @@ export function PublicationRecordPanel(props: PublicationRecordPanelProps) {
                   : '',
                 platformUrl: platformUrl || undefined,
                 note: note || undefined,
-                status: 'published',
+                status,
               },
               {
                 contentPackageId: props.contentPackageId,
@@ -189,6 +198,35 @@ export function PublicationRecordPanel(props: PublicationRecordPanelProps) {
               </Button>
             ))}
           </div>
+          <fieldset
+            className="m-0 space-y-2 border-0 p-0"
+            data-testid="publication-status-options"
+          >
+            <legend className="text-sm">
+              {result_publication_status_heading()}
+            </legend>
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  ['published', result_publication_status_published()],
+                  ['failed', result_publication_status_failed()],
+                  ['unknown', result_publication_status_unknown()],
+                ] as const
+              ).map(([id, label]) => (
+                <Button
+                  key={id}
+                  type="button"
+                  size="sm"
+                  variant={status === id ? 'default' : 'outline'}
+                  data-testid={`publication-status-${id}`}
+                  data-active={status === id ? 'true' : 'false'}
+                  onClick={() => setStatus(id)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+          </fieldset>
           <div className="space-y-1">
             <Label htmlFor="publication-account">账号显示标识</Label>
             <Input
@@ -242,7 +280,7 @@ export function PublicationRecordPanel(props: PublicationRecordPanelProps) {
             disabled={props.pending}
             data-testid="publication-record-submit"
           >
-            记录已发布
+            {result_publication_submit()}
           </Button>
         </form>
       ) : null}

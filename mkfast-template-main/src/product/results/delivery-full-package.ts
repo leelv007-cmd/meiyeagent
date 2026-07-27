@@ -19,6 +19,12 @@ import {
   type DeliveryZipPlatform,
 } from './delivery-b3-types';
 
+/**
+ * The ZIP *layout*, named after the platform it was designed for — not the
+ * platform this particular package goes to. 视频号 ships the same video layout
+ * as 抖音; which platform it is for is `target` / `manifest.platform`, and that
+ * is what the file name and the manifest state.
+ */
 export type DeliveryPackageModality =
   | 'xiaohongshu_image_text'
   | 'douyin_video'
@@ -178,6 +184,8 @@ export type ImageTextPackageInput = {
   /** Ordered images with paths like images/01.jpg */
   images: readonly { mimeType: string; path: string; sizeBytes?: number }[];
   packageId: string;
+  /** ZIP platform this package is for. Defaults to the modality's home 平台. */
+  platform?: DeliveryZipPlatform;
   storeName: string;
   variantVersionId: string;
   factSummary?: string;
@@ -190,6 +198,8 @@ export type VideoPackageInput = {
   contentPackageRevision: number;
   generatedAt: string;
   packageId: string;
+  /** ZIP platform this package is for. Defaults to the modality's home 平台. */
+  platform?: DeliveryZipPlatform;
   storeName: string;
   variantVersionId: string;
   hasCover?: boolean;
@@ -234,6 +244,7 @@ export function buildXiaohongshuImageTextPackage(
       'An image_text delivery package requires at least one image.'
     );
   }
+  const platform = input.platform ?? 'xiaohongshu';
   const first = input.images[0]!;
   const coverExt =
     first.mimeType === 'image/jpeg'
@@ -279,7 +290,7 @@ export function buildXiaohongshuImageTextPackage(
     generatedAt: input.generatedAt,
     kind: 'image_text',
     packageId: input.packageId,
-    platform: 'xiaohongshu',
+    platform,
     rightsSummary: {
       aigcLabelEnabled: input.compliance.aigcLabelEnabled,
       ...(input.factSummary ? { factSummary: input.factSummary } : {}),
@@ -293,7 +304,7 @@ export function buildXiaohongshuImageTextPackage(
   return {
     modality: 'xiaohongshu_image_text',
     kind: 'image_text',
-    target: 'xiaohongshu',
+    target: platform,
     packageId: input.packageId,
     contentPackageRevision: input.contentPackageRevision,
     variantVersionId: input.variantVersionId,
@@ -306,7 +317,7 @@ export function buildXiaohongshuImageTextPackage(
       contentPackageRevision: input.contentPackageRevision,
       generatedAt: input.generatedAt,
       kind: 'image_text',
-      platform: 'xiaohongshu',
+      platform,
       storeName: input.storeName,
     }),
     schema: BEAUTY_DELIVERY_MANIFEST_SCHEMA,
@@ -319,6 +330,7 @@ export function buildXiaohongshuImageTextPackage(
 export function buildDouyinVideoPackage(
   input: VideoPackageInput
 ): FullPackagePlan {
+  const platform = input.platform ?? 'douyin';
   const files: DeliveryPackageMediaFile[] = [
     {
       mimeType: 'video/mp4',
@@ -371,7 +383,7 @@ export function buildDouyinVideoPackage(
     generatedAt: input.generatedAt,
     kind: 'video',
     packageId: input.packageId,
-    platform: 'douyin',
+    platform,
     rightsSummary: {
       aigcLabelEnabled: input.compliance.aigcLabelEnabled,
       ...(input.factSummary ? { factSummary: input.factSummary } : {}),
@@ -385,7 +397,7 @@ export function buildDouyinVideoPackage(
   return {
     modality: 'douyin_video',
     kind: 'video',
-    target: 'douyin',
+    target: platform,
     packageId: input.packageId,
     contentPackageRevision: input.contentPackageRevision,
     variantVersionId: input.variantVersionId,
@@ -398,7 +410,7 @@ export function buildDouyinVideoPackage(
       contentPackageRevision: input.contentPackageRevision,
       generatedAt: input.generatedAt,
       kind: 'video',
-      platform: 'douyin',
+      platform,
       storeName: input.storeName,
     }),
     schema: BEAUTY_DELIVERY_MANIFEST_SCHEMA,

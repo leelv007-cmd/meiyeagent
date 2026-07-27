@@ -11,6 +11,13 @@ import { useEffect, useState } from 'react';
 
 import { AdjustPrompt } from './adjust-prompt';
 import {
+  QUICK_EDIT_EXPORT_USE_ACTIONS,
+  quickEditActionForSelectionRewrite,
+  quickEditExportUseLabel,
+  quickEditText,
+  type QuickEditRequest,
+} from './quick-edit-model';
+import {
   COPY_PREVIEW_CARRIER_LABELS,
   COPY_PREVIEW_EXPORT_CARRIERS,
   COPY_PREVIEW_PLATFORM_CARRIERS,
@@ -41,12 +48,23 @@ export type CopyImageTextWorksurfaceProps = {
   onCarrierChange?: (carrier: CopyPreviewCarrier) => void;
   onGeneratePlatformVariants?: () => Promise<void>;
   onAdjust?: (instruction: string) => void;
+  /**
+   * Why 「还想怎么改？」 is unavailable on this result, in merchant words.
+   * Present means the box is disabled with the sentence shown — the old
+   * behaviour was an enabled box whose submit returned silently.
+   */
+  adjustUnavailableReason?: string;
   onAdopt?: () => void | Promise<void>;
   onHandEdit?: (changes: {
     body: string;
     conversionHook: string;
     title: string;
   }) => void | Promise<void>;
+  /**
+   * Send one QuickEditIntent (W07). Present only when the page has a live
+   * ContentPackage version to bind the intent to.
+   */
+  onQuickEdit?: (request: QuickEditRequest) => void | Promise<void>;
 };
 
 export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
@@ -79,6 +97,17 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
     start: number;
     end: number;
   } | null>(null);
+  const [rewritePreview, setRewritePreview] = useState<{
+    action: SelectionRewriteAction;
+    before: string;
+    after: string;
+    fieldAfter: string;
+    instruction: string;
+    scope: 'selection' | 'whole_document';
+  } | null>(null);
+  const [quickEditBusy, setQuickEditBusy] = useState<string | null>(null);
+  const [quickEditError, setQuickEditError] = useState<string | undefined>();
+  const quickEditCopy = quickEditText();
   useEffect(() => {
     setDraft({
       body: view.document.body,
@@ -104,12 +133,35 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
   );
   const alternatives = view.documentFace?.alternatives ?? [];
 
+  /**
+   * What the next rewrite will actually touch. A stale selection (the body was
+   * replaced under it) is no selection: the rewrite would run over the whole
+   * 正文, and the panel must say the same thing the code does.
+   */
+  const selectedLength =
+    bodySelection &&
+    bodySelection.end > bodySelection.start &&
+    bodySelection.end <= draft.body.length
+      ? bodySelection.end - bodySelection.start
+      : 0;
+  const rewriteScope =
+    selectedLength > 0
+      ? {
+          kind: 'selection' as const,
+          hint: `已选中 ${selectedLength} 个字，只改写选中部分。改写绑定当前版本与稳定锚点。`,
+        }
+      : {
+          kind: 'whole_document' as const,
+          hint: '还没选中文字，将改写整篇文案；只想改一句的话，先在正文里选中它。',
+        };
+
   const runSelectionRewrite = (action: SelectionRewriteAction) => {
     const start = bodySelection?.start ?? 0;
     const end = bodySelection?.end ?? draft.body.length;
     const anchor = captureStableSelectionAnchor(draft.body, 'body', start, end);
     if ('kind' in anchor) {
       setSelectionConflict(null);
+      setRewritePreview(null);
       props.onSelectionRewrite?.(action);
       return;
     }
@@ -126,10 +178,44 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
     props.onSelectionRewriteResolved?.(resolved);
     if (resolved.kind === 'conflict') {
       setSelectionConflict(resolved);
+      setRewritePreview(null);
       return;
     }
     setSelectionConflict(null);
+    if (resolved.kind === 'ok') {
+      // The diff the merchant decides on. Nothing is written until 就用这版 —
+      // that button is what turns this into a QuickEditIntent.
+      setQuickEditError(undefined);
+      setRewritePreview({
+        action,
+        before: resolved.preview.before,
+        after: resolved.preview.after,
+        fieldAfter: resolved.preview.fieldAfter,
+        instruction: resolved.command.instruction,
+        scope: rewriteScope.kind,
+      });
+    }
     props.onSelectionRewrite?.(action, anchor);
+  };
+
+  const sendQuickEdit = async (
+    busyKey: string,
+    request: QuickEditRequest,
+    onDone?: () => void
+  ) => {
+    if (!props.onQuickEdit || quickEditBusy) return;
+    setQuickEditBusy(busyKey);
+    setQuickEditError(undefined);
+    try {
+      await props.onQuickEdit(request);
+      onDone?.();
+    } catch (error) {
+      setQuickEditError(
+        error instanceof Error ? error.message : quickEditCopy.failed
+      );
+    } finally {
+      setQuickEditBusy(null);
+    }
   };
 
   return (
@@ -267,10 +353,20 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
         <section
           className="space-y-2 rounded-lg border p-4"
           data-testid="copy-selection-rewrite"
+          data-rewrite-scope={rewriteScope.kind}
         >
           <h3 className="text-sm font-medium">选区改写</h3>
-          <p className="text-xs text-muted-foreground">
-            先在正文中选中一段文字，再选择改写方式。改写绑定当前版本与稳定锚点。
+          {/*
+            Without a selection the rewrite still runs — over the whole 正文.
+            That is the useful default (「整篇再顺一遍」), and it is also the one
+            the merchant can be surprised by, so the panel says which one it is
+            before the click rather than after it (D-116).
+          */}
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="copy-selection-rewrite-scope"
+          >
+            {rewriteScope.hint}
           </p>
           <div className="flex flex-wrap gap-2">
             {view.selectionRewriteActions.map((item) => (
@@ -286,6 +382,65 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
               </Button>
             ))}
           </div>
+          {rewritePreview ? (
+            <div
+              className="space-y-2 rounded-md border p-3"
+              data-testid="copy-selection-rewrite-preview"
+              data-rewrite-action={rewritePreview.action}
+              data-rewrite-scope={rewritePreview.scope}
+            >
+              <p className="text-sm font-medium">
+                {quickEditCopy.previewHeading}
+              </p>
+              <p
+                className="text-sm text-muted-foreground line-through"
+                data-testid="copy-selection-rewrite-before"
+              >
+                {quickEditCopy.previewBefore}：{rewritePreview.before}
+              </p>
+              <p className="text-sm" data-testid="copy-selection-rewrite-after">
+                {quickEditCopy.previewAfter}：{rewritePreview.after}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  data-testid="copy-selection-rewrite-adopt"
+                  disabled={!props.onQuickEdit || quickEditBusy !== null}
+                  onClick={() =>
+                    void sendQuickEdit(
+                      'selection',
+                      {
+                        action: quickEditActionForSelectionRewrite(
+                          rewritePreview.action
+                        ),
+                        instruction: rewritePreview.instruction,
+                        changes: {
+                          body: rewritePreview.fieldAfter,
+                          conversionHook: draft.conversionHook,
+                          title: draft.title,
+                        },
+                      },
+                      () => setRewritePreview(null)
+                    )
+                  }
+                >
+                  {quickEditBusy === 'selection'
+                    ? quickEditCopy.pending
+                    : quickEditCopy.adopt}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  data-testid="copy-selection-rewrite-cancel"
+                  onClick={() => setRewritePreview(null)}
+                >
+                  {quickEditCopy.discard}
+                </Button>
+              </div>
+            </div>
+          ) : null}
           {selectionConflict ? (
             <div
               className="space-y-2 rounded-md border border-destructive/40 p-3"
@@ -464,7 +619,68 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
         ) : null}
       </section>
 
-      <AdjustPrompt onSubmit={props.onAdjust} />
+      {/*
+        One place for a failed quick edit, whichever gesture started it — the
+        export row is reachable without the selection-rewrite section, and an
+        error rendered inside that section would have nowhere to appear.
+      */}
+      {quickEditError ? (
+        <p
+          className="text-sm text-destructive"
+          data-testid="copy-quick-edit-error"
+          role="alert"
+        >
+          {quickEditError}
+        </p>
+      ) : null}
+
+      {props.onQuickEdit ? (
+        <section
+          className="space-y-2 rounded-lg border p-4"
+          data-testid="copy-export-use-actions"
+        >
+          <h3 className="text-sm font-medium">{quickEditCopy.exportHeading}</h3>
+          <p className="text-xs text-muted-foreground">
+            {quickEditCopy.exportHint}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {QUICK_EDIT_EXPORT_USE_ACTIONS.map((action) => {
+              const label = quickEditExportUseLabel(action);
+              return (
+                <Button
+                  key={action}
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  data-testid={`copy-export-use-${action}`}
+                  disabled={quickEditBusy !== null}
+                  onClick={() =>
+                    void sendQuickEdit(action, {
+                      action,
+                      instruction: label,
+                      changes: {
+                        body: draft.body,
+                        conversionHook: draft.conversionHook,
+                        title: draft.title,
+                      },
+                    })
+                  }
+                >
+                  {quickEditBusy === action ? quickEditCopy.pending : label}
+                </Button>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+
+      <AdjustPrompt
+        onSubmit={props.onAdjust}
+        disabled={Boolean(props.adjustUnavailableReason)}
+        {...(props.adjustUnavailableReason
+          ? { unavailableReason: props.adjustUnavailableReason }
+          : {})}
+      />
 
       {props.facts.lifecycle === 'candidate' ? (
         <div className="space-y-2">

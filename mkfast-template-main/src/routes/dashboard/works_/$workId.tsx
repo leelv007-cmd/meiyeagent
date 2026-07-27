@@ -1,4 +1,3 @@
-import heroUiGlassCss from '@/components/heroui-pro/heroui-glass.css?url';
 import { parseLightComposerCarrier } from '@/p1/content-package-export-carrier';
 import { WorksDetailPage, WorksLightEditPage } from '@/product/works';
 import { createFileRoute } from '@tanstack/react-router';
@@ -15,7 +14,6 @@ import { createFileRoute } from '@tanstack/react-router';
  * to the light-edit shell without a projection round trip.
  */
 export const Route = createFileRoute('/dashboard/works_/$workId')({
-  head: () => ({ links: [{ rel: 'stylesheet', href: heroUiGlassCss }] }),
   component: WorkPage,
 });
 

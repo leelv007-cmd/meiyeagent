@@ -132,6 +132,42 @@ describe('copy / image_text worksurface', () => {
     expect(onSelectionRewrite.mock.calls[0]?.[0]).toBe('rewrite');
   });
 
+  it('says which text a rewrite will touch before the click', async () => {
+    const user = userEvent.setup();
+    render(
+      <CopyImageTextWorksurface
+        facts={facts}
+        onSelectionRewrite={vi.fn()}
+        onSelectionRewriteResolved={vi.fn()}
+      />
+    );
+
+    // No selection: the rewrite runs over the whole 正文 and says so.
+    const panel = screen.getByTestId('copy-selection-rewrite');
+    expect(panel).toHaveAttribute('data-rewrite-scope', 'whole_document');
+    expect(
+      screen.getByTestId('copy-selection-rewrite-scope')
+    ).toHaveTextContent('将改写整篇文案');
+
+    const body = screen.getByTestId('copy-field-body') as HTMLTextAreaElement;
+    body.focus();
+    body.setSelectionRange(0, 4);
+    await user.click(body);
+    body.setSelectionRange(0, 4);
+    body.dispatchEvent(new Event('select', { bubbles: true }));
+
+    expect(panel).toHaveAttribute('data-rewrite-scope', 'selection');
+    const scope = screen.getByTestId('copy-selection-rewrite-scope');
+    expect(scope).toHaveTextContent('只改写选中部分');
+    expect(scope).toHaveTextContent('已选中 4 个字');
+
+    // Both paths stay available — the panel states the scope, it never blocks.
+    await user.click(screen.getByTestId('copy-rewrite-rewrite'));
+    expect(
+      screen.getByTestId('copy-selection-rewrite-preview')
+    ).toHaveAttribute('data-rewrite-scope', 'selection');
+  });
+
   it('keeps alternatives collapsed by default and expands on demand', async () => {
     const user = userEvent.setup();
     render(

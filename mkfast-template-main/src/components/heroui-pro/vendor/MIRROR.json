@@ -31,7 +31,6 @@
     "segment",
     "sidebar",
     "timeline",
-    "trend-chip",
     "widget"
   ],
   "units": [
@@ -82,6 +81,14 @@
       "reason": "TS6133 under noUnusedLocals: upstream imports RefObject but never uses it."
     },
     {
+      "file": "components/code-block/code-block.tsx",
+      "reason": "Bundle policy (U03): upstream imports Shiki's full entry at module scope, which pulls ~11MB of grammars and 217 chunks into every route that touches Markdown. Highlighting already runs inside an async effect behind a plain <pre> fallback, so moving the import into that same effect changes when Shiki loads, not what the block renders."
+    },
+    {
+      "file": "components/code-block/code-block.tsx",
+      "reason": "Bundle policy (U03): second half of the Shiki deferral above — the highlighter is resolved on demand inside the existing try, so an import failure lands in the existing catch and falls back to the unhighlighted block."
+    },
+    {
       "file": "components/sheet/sheet.tsx",
       "reason": "TS6133 under noUnusedLocals: dead refs — dragStartPointRef is never touched, and draggingRef is only read by the equally dead lastDragPoint local removed below."
     },
@@ -128,7 +135,7 @@
     "components/chat-message/chat-message.tsx": "fbf3d0b209405c588018ee110bf3c215a9efe814d215ae2012acbb845ece9560",
     "components/chat-message/index.ts": "b63aabb1ab8a887cb0b4e609b90fb54ea91da43367d31e78755dfff0c2dcfdbd",
     "components/code-block/code-block.styles.ts": "83f681cda210244dba62fc20ea569db7eac25d25b9313de2abb4d368a8513c93",
-    "components/code-block/code-block.tsx": "47a061d3277969df47c394047d6ed0f2c122628d0e42e03eb34859198e5c7feb",
+    "components/code-block/code-block.tsx": "22af40a20de5c4d171f08e42e196866f7a12eba0849ed29ecc941c01b1d50ef1",
     "components/code-block/index.ts": "fead866e0a644bd1fe3807d4c42272ecee4648231e10dba30ae92a86e454ef4b",
     "components/data-grid/data-grid.styles.ts": "9d6cf114ba261f335fbe8f2b8e2ed8e391ee16b3f064577b1d7622642fc00a82",
     "components/data-grid/data-grid.tsx": "9439bd46629581d290a6d7945a6e7a94f1f476e6ac667da69f574e629b19efe0",

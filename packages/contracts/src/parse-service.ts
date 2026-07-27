@@ -358,3 +358,8 @@ export type PrepareManualAssetDraftCommand = z.infer<
 export type AssetIntakeGuidanceConfig = z.infer<
   typeof assetIntakeGuidanceConfigSchema
 >;
+export type AssetIntakeExperience = z.infer<
+  typeof assetIntakeExperienceSchema
+>;
+export type AssetDraftTarget = (typeof ASSET_DRAFT_TARGETS)[number];
+export type VisualAssetSlot = (typeof VISUAL_ASSET_SLOTS)[number];

@@ -118,7 +118,7 @@ export function WorksListPage() {
         ]}
       />
       <div
-        className="meiye-heroui-glass @container/main flex flex-1 flex-col gap-2"
+        className="@container/main flex flex-1 flex-col gap-2"
         data-testid="works-surface"
       >
         <div className="flex flex-col gap-4 px-4 py-4 lg:gap-6 lg:px-6 lg:py-6">
@@ -149,7 +149,11 @@ export function WorksListPage() {
             */}
             <div
               className="meiye-glass-piece inline-flex rounded-full p-0.5"
-              style={{ '--muted': 'var(--ink-90)' } as CSSProperties}
+              style={
+                {
+                  '--meiye-segment-unselected': 'var(--ink-90)',
+                } as CSSProperties
+              }
             >
               <Segment
                 aria-label={copy.shapeFilter}

@@ -18,6 +18,7 @@ import {
   workHandoffHref,
   workOutputShape,
   workTextExport,
+  workLineageSourcePackageId,
   workUsageGuidance,
   worksListItems,
   worksShapeCounts,
@@ -373,6 +374,99 @@ test('生成依据 states canonical provenance and no internal identifiers', () 
     );
   }
   assert.deepEqual(workEvidence(copyPackage), []);
+});
+
+test('a re-creation says what it was based on, without naming the package', () => {
+  const derived = {
+    ...notePackage,
+    source: {
+      ...notePackage.source,
+      sourceContentPackage: { id: 'package-source-1', revision: '4' },
+    },
+  };
+  const chip = workEvidence(derived).find((item) => item.id === 'lineage');
+  assert.ok(chip, '再创作 must state its lineage');
+  assert.doesNotMatch(chip.label, /package-source-1|revision/iu);
+  assert.equal(
+    workEvidence(notePackage).some((item) => item.id === 'lineage'),
+    false
+  );
+});
+
+test('the 再创作 path states its lineage even though it never writes the canonical field', () => {
+  // What `derive_creative_work` actually produces: a Work carrying the source
+  // package on sourceReferences, and a package whose source.sourceContentPackage
+  // is empty because no creation execution snapshot was ever frozen for it.
+  const derivedWork = {
+    id: 'work-derived-1',
+    sourceReferences: [
+      { id: 'work-source-1', kind: 'work' },
+      { id: 'package-source-1', kind: 'content' },
+    ],
+  };
+  const derivedPackage = packageFixture({
+    id: 'package-derived-1',
+    kind: 'image_text',
+    source: { ...notePackage.source, workId: 'work-derived-1' },
+    status: 'accepted',
+  });
+
+  assert.equal(
+    workLineageSourcePackageId({ contentPackage: derivedPackage }),
+    undefined,
+    'the canonical field alone is exactly what was silent'
+  );
+  assert.equal(
+    workLineageSourcePackageId({
+      contentPackage: derivedPackage,
+      work: derivedWork,
+    }),
+    'package-source-1'
+  );
+  // The canonical field still wins when the Composer path did write one.
+  assert.equal(
+    workLineageSourcePackageId({
+      contentPackage: {
+        source: {
+          ...derivedPackage.source,
+          sourceContentPackage: { id: 'package-canonical-1', revision: '2' },
+        },
+      },
+      work: derivedWork,
+    }),
+    'package-canonical-1'
+  );
+
+  assert.ok(
+    workEvidence(derivedPackage, derivedWork).some(
+      (chip) => chip.id === 'lineage'
+    ),
+    '作品面 must say 基于 X on the derived path'
+  );
+  assert.equal(
+    workEvidence(derivedPackage).some((chip) => chip.id === 'lineage'),
+    false
+  );
+
+  const detail = workDetail({
+    contentPackages: [derivedPackage],
+    creativeWorks: [derivedWork],
+    id: 'package-derived-1',
+  });
+  assert.equal(detail.kind, 'package');
+  assert.ok(
+    detail.kind === 'package' &&
+      detail.evidence.some((chip) => chip.id === 'lineage')
+  );
+
+  // A Work with no content reference is still a first draft.
+  assert.equal(
+    workLineageSourcePackageId({
+      contentPackage: derivedPackage,
+      work: { id: 'work-derived-1', sourceReferences: [] },
+    }),
+    undefined
+  );
 });
 
 test('an unselected identity is stated as the neutral store voice, not seeded', () => {

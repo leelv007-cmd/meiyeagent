@@ -79,9 +79,22 @@ export function WorkspaceAssetsPage() {
 
   return (
     <div className="space-y-6">
-      <p className="text-muted max-w-prose text-sm">
-        {workspace_assets_description()}
-      </p>
+      {/*
+        这一行与页脚那一行不在白瓷件里，直接压在 product 壳的门店橱窗氛围底图上。
+        `text-muted` 在这里是双重的错：--muted 在商家壳是 4% 的底色（heroui-glass.css
+        已在共享边界上把它映回壳的 muted 前景），但即便映成 --ink-60，深灰压在照片上
+        实测也只有 1.6:1——这是「层」的问题，不是 token 的问题，token 侧收不动。
+        压在氛围层上的字走 DESIGN.md 的 .meiye-ambient-copy：白字 + 投影，和 works /
+        leads / store 的页头副行同一套（T46 已按这套量过）。
+      */}
+      <div className="meiye-ambient-copy">
+        <p
+          className="meiye-type-aux max-w-prose"
+          data-testid="workspace-assets-description"
+        >
+          {workspace_assets_description()}
+        </p>
+      </div>
 
       <Widget className="meiye-porcelain">
         <Widget.Header>
@@ -91,7 +104,10 @@ export function WorkspaceAssetsPage() {
           </Widget.Description>
         </Widget.Header>
         <Widget.Content className="flex flex-wrap items-center justify-between gap-4">
-          <p className="text-muted text-sm">
+          <p
+            className="text-muted text-sm"
+            data-testid="workspace-materials-summary"
+          >
             {materials.length > 0
               ? workspace_material_count({ count: materials.length })
               : workspace_empty_materials()}
@@ -169,7 +185,17 @@ export function WorkspaceAssetsPage() {
         </Widget.Content>
       </Widget>
 
-      <p className="text-muted text-xs">
+      {/*
+        页脚指路也压在氛围层上，但它落在页尾——压暗遮罩到那里已经散完（实测底色
+        170,151,139，是照片的亮部），白字只有 2.71:1，页头那套在这里反而不成立。
+        氛围层上的字要么有遮罩，要么自带面：这一行给它一枚白瓷小丸，落回和同页
+        三张 Widget 一样的实体底，两个主题下都是 text-muted → --ink-60 压白瓷的
+        5.74:1，不再随照片明暗漂。
+      */}
+      <p
+        className="meiye-porcelain text-muted inline-flex rounded-full px-3 py-1 text-xs"
+        data-testid="workspace-assets-footnote"
+      >
         {product_navigation_store()} · {product_navigation_identity()}
       </p>
     </div>

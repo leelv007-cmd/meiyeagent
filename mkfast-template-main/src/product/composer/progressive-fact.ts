@@ -27,6 +27,18 @@ export type ProgressiveFactId =
 
 export type ProgressiveFactCriticality = 'blocking' | 'skippable';
 
+/**
+ * Where a draft value came from. Mirrors the parse contract's
+ * `ASSET_FIELD_PROVENANCE` plus `import` for D-151③ historical staging, so the
+ * five-step wizard can render an honest badge next to every prefilled field
+ * instead of presenting machine guesses as merchant answers.
+ */
+export type ProgressiveFactProvenance =
+  | 'user'
+  | 'photo_extract'
+  | 'ai_suggestion'
+  | 'import';
+
 export type ProgressiveFactDraft = {
   name: string;
   city: string;
@@ -44,6 +56,8 @@ export type ProgressiveFactDraft = {
   unconfirmed: ProgressiveFactId[];
   /** Facts the merchant chose to skip (only skippable ids). */
   skipped: ProgressiveFactId[];
+  /** Origin of each prefilled value; absent means the merchant typed it. */
+  provenance: Partial<Record<ProgressiveFactId, ProgressiveFactProvenance>>;
 };
 
 export type ProgressiveFactQuestion = {
@@ -188,7 +202,42 @@ export function createProgressiveFactDraft(
         ? [...partial.unconfirmed]
         : [],
     skipped: partial?.skipped ? [...partial.skipped] : [],
+    provenance: partial?.provenance ? { ...partial.provenance } : {},
   };
+}
+
+/**
+ * Fold server-extracted values into a draft (W02 step 4 → step 5).
+ *
+ * Everything folded in lands as *unconfirmed*: an extraction is a proposal, and
+ * `isAnswered` keeps returning false until the merchant explicitly confirms the
+ * field, which is what stops a photo reading from being finalized behind their
+ * back.
+ */
+export function applyExtractedFacts(
+  draft: ProgressiveFactDraft,
+  entries: Array<{
+    id: ProgressiveFactId;
+    provenance: ProgressiveFactProvenance;
+    value: string;
+  }>
+): ProgressiveFactDraft {
+  const next: ProgressiveFactDraft = {
+    ...draft,
+    answered: [...draft.answered],
+    skipped: [...draft.skipped],
+    unconfirmed: [...draft.unconfirmed],
+    provenance: { ...draft.provenance },
+  };
+  for (const entry of entries) {
+    if (entry.value.trim().length === 0) continue;
+    next[entry.id] = entry.value;
+    next.answered = next.answered.filter((item) => item !== entry.id);
+    next.skipped = next.skipped.filter((item) => item !== entry.id);
+    if (!next.unconfirmed.includes(entry.id)) next.unconfirmed.push(entry.id);
+    next.provenance[entry.id] = entry.provenance;
+  }
+  return next;
 }
 
 function fieldValue(draft: ProgressiveFactDraft, id: ProgressiveFactId) {
@@ -260,6 +309,12 @@ export function answerProgressiveFact(
       : [...draft.answered, id],
     unconfirmed: draft.unconfirmed.filter((item) => item !== id),
     skipped: draft.skipped.filter((item) => item !== id),
+    // Confirming a prefill unchanged keeps its origin — only an edit makes the
+    // merchant the author of the value.
+    provenance:
+      value === draft[id]
+        ? draft.provenance
+        : { ...draft.provenance, [id]: 'user' },
     [id]: value,
   };
   return next;

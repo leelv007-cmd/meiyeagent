@@ -150,19 +150,19 @@ export async function seedComposerInlineAuthorize(
 }
 
 /**
- * Library-path authorized grounding (asset detail form).
- * MUST NOT be used as Day-0 inline proof — use seedComposerInlineAuthorize.
+ * Grounded creation seed: a confirmed store with one confirmed project, plus a
+ * real, publicly authorized image already attached to this run as its source.
+ *
+ * This used to walk the library path — upload on `/dashboard/assets`, authorize
+ * on the detail form, then pick the asset back up on the creation entry behind
+ * its 「更多」→「素材来源」 strip. That strip left with the retired creation
+ * entry when the Composer became the primary surface (`f9c2e5a4`), so the
+ * helper had been waiting 30s for a button no build renders since. The
+ * Composer's own gallery input is now the only way an asset becomes a run
+ * source, and it writes the same authorized library asset; the detail-form
+ * authorization keeps its own coverage in `product-asset-upload.spec.ts`.
  */
-export async function seedAuthorizedGrounding(
-  page: Page,
-  options: {
-    fileExtension?: 'jpg' | 'png';
-    mimeType?: 'image/jpeg' | 'image/png';
-  } = {}
-) {
-  const fileExtension = options.fileExtension ?? 'png';
-  const mimeType = options.mimeType ?? 'image/png';
-  const assetLabel = `e2e-grounding-${crypto.randomUUID()}.${fileExtension}`;
+export async function seedAuthorizedGrounding(page: Page) {
   await productCommand(page, {
     type: 'confirm_store',
     store: {
@@ -187,60 +187,14 @@ export async function seedAuthorizedGrounding(
     },
   });
 
-  const existingAssetIds = new Set(
-    (await productState(page)).assets.map((asset) => asset.id)
-  );
-  await page.goto('/dashboard/assets');
-  const uploadInput = page.locator('#canonical-asset-upload');
-  await expect(uploadInput).toBeEnabled({ timeout: 30_000 });
-  await uploadInput.setInputFiles({
-    buffer: PNG_FIXTURES[0]!,
-    mimeType,
-    name: assetLabel,
-  });
-  let assetId: string | undefined;
-  await expect
-    .poll(
-      async () => {
-        assetId = (await productState(page)).assets.find(
-          (asset) => !existingAssetIds.has(asset.id)
-        )?.id;
-        return assetId;
-      },
-      { timeout: 30_000 }
-    )
-    .toBeTruthy();
-  if (!assetId) throw new Error('Uploaded Product asset has no detail URL');
-  await page.goto(`/dashboard/assets/${assetId}`);
-  await productCommand(page, {
-    type: 'update_asset_metadata',
-    assetId,
-    category: 'other',
-    containsPerson: false,
-    containsSensitiveData: false,
-    minorStatus: 'none',
-    rightsOwner: 'E2E 美业门店',
-    tags: [assetLabel],
-  });
-  await page.getByLabel('授权凭证编号或存档位置').fill('e2e-owner-confirmed');
-  await page.getByRole('button', { name: /确认公开营销授权/ }).click();
-  await page.getByText('公开营销可用', { exact: true }).first().waitFor();
-
+  // The library path reloaded the Composer on its way back from the asset
+  // detail page; keep that, so the surface mounts against the store this seed
+  // just confirmed instead of the cold state it was rendered with.
   await page.goto('/dashboard');
-  const moreSources = page.getByRole('button', {
-    exact: true,
-    name: '更多',
+  const authorized = await seedComposerInlineAuthorize(page, {
+    fileName: `e2e-grounding-${crypto.randomUUID()}.png`,
   });
-  await moreSources.waitFor({ state: 'visible', timeout: 30_000 });
-  if ((await moreSources.getAttribute('aria-expanded')) !== 'true') {
-    await moreSources.click();
-  }
-  const sourceButton = page.getByRole('button', { name: assetLabel });
-  await sourceButton.waitFor({ state: 'visible' });
-  if ((await sourceButton.getAttribute('aria-pressed')) !== 'true') {
-    await sourceButton.click();
-  }
-  return assetId;
+  return authorized.id;
 }
 
 export async function seedAcceptedProductContent(page: Page, prefix: string) {
