@@ -757,13 +757,19 @@ finished 成品 before this slice, against a real backend.
   page. Before, the renderer was unreachable code waiting for a field the
   front end never produced.
 - 昨天的到店：the result chip now carries 数量 and 「这是昨天的」. The spec
-  asserts the command leaves with `quantity` and a backdated `occurredAt`, that
-  the ladder lights 核销/到店, and that the row does not read as today — a
-  backdated signal that stamps `now` is a false record, not a rounding error.
+  asserts the command leaves with `quantity` and a backdated `occurredAt`, and
+  that the row reads as yesterday's date — 「not today」 alone is passed by any
+  wrong clock, and a backdated signal that stamps `now` is a false record.
 - 三级分层不再是装饰：the inferred tier is computed per request by
   `content_package_results`, never stored on the package. The spec requires a
   real row under 推断相关性 plus its non-causal sentence, which is what tells a
   wired third tier apart from an empty heading.
+- 基于此再创作 → 基于「X」再创作：the derive is walked end to end, because both
+  of its failures were invisible without one — core refused it for the Work's
+  Composer session id and again for the missing Brief context, so the lineage
+  the surfaces read had never been written at all. The spec asserts the derive
+  is accepted, that it carries a `kind: 'content'` source reference, and that
+  the page it lands on names the 作品 it came from.
 
 ## M-04 required browser hard gate（T37 / #231）
 
