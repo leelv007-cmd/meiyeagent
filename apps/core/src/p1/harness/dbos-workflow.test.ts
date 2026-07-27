@@ -6,9 +6,12 @@ import {
   confirmationCardDecision,
   failHarnessWorkflowPreservingExecutionError,
   harnessBillingSettlementInput,
+  readConfirmationCardHoldTimeoutSeconds,
+  readConfirmationCardTimeoutSeconds,
   settleHarnessCancellation,
   type HarnessBillingSettlementPort,
 } from './dbos-workflow.js';
+import type { AdminConfigRepository } from '../admin-config/foundation-module.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 import { HarnessWorkflowCancellation } from './workflow-core.js';
 
@@ -18,6 +21,37 @@ const settlement = {
   quoteId: 'quote-billing-failure',
   quoteRevision: 'quote-revision-1',
 };
+
+test('confirmation-card hold and continuation waits share admin-config reads', async () => {
+  const values = new Map([
+    ['harness.confirmation_card.timeout_seconds', 45],
+    ['harness.confirmation_card.hold_timeout_seconds', 172_800],
+  ]);
+  const config: Pick<AdminConfigRepository, 'get'> = {
+    async get(_scope: 'global', _workspaceId: string, key: string) {
+      const value = values.get(key);
+      return value === undefined
+        ? null
+        : {
+            key,
+            scope: 'global' as const,
+            workspaceId: '__global__',
+            value,
+            revision: 1,
+            status: 'applied' as const,
+            rolledBackToRevision: null,
+            actorId: 'test',
+            reason: 'test',
+            correlationId: `test:${key}`,
+            createdAt: '2026-07-18T00:00:00.000Z',
+          };
+    },
+  };
+
+  assert.equal(await readConfirmationCardTimeoutSeconds(config), 45);
+  assert.equal(await readConfirmationCardHoldTimeoutSeconds(config), 172_800);
+  assert.equal(await readConfirmationCardHoldTimeoutSeconds(), 172_800);
+});
 
 test('confirmation timeout becomes a legal ignored decision', () => {
   assert.deepEqual(

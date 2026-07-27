@@ -24,14 +24,17 @@ import {
 	type HarnessStructuredNodeRunnerFactory,
 	validateHarnessVisibleDelivery,
 } from "./production-stage-ports.js";
-import type {
-	HarnessContextSnapshot,
-	HarnessMediaSelectionResult,
-	HarnessMediaStagePorts,
-	HarnessNoteBrief,
-	HarnessNoteSelectionResult,
-	HarnessNoteStagePorts,
-	HarnessStagePorts,
+import {
+  HARNESS_MEDIA_TERMINAL_TOPIC,
+  harnessMediaJobTopic,
+  type HarnessContextSnapshot,
+  type HarnessMediaSelectionResult,
+  type HarnessMediaStagePorts,
+  type HarnessNoteBrief,
+  type HarnessNoteSelectionResult,
+  type HarnessNoteStagePorts,
+  type HarnessSignalReceiver,
+  type HarnessStagePorts,
 } from "./workflow-core.js";
 import type { HarnessWorkflowInput } from "./task-admission.js";
 import {
@@ -45,9 +48,9 @@ import {
 import { projectMarketingPackageEvidence } from "./marketing-scene-policy.js";
 import {
 	merchantExactTextMismatch,
+	merchantExactTextVerificationUnavailable,
 	merchantImageGenerationFailure,
 	merchantNoteConfirmationCard,
-	merchantNotePartialPageMarker,
 	merchantNoteSelectionReason,
 	merchantVideoGenerationFailure,
 } from "./merchant-delivery-language.js";
@@ -71,12 +74,18 @@ import { ModelSupplyNotePlanStructuredPort } from "./note-plan-structured-port.j
 
 type MediaBrief = Exclude<ExecutionBrief, { kind: "copy" }>;
 
+const MEDIA_JOB_WAIT_TIMEOUT_SECONDS = 150;
+const NOTE_ADMISSION_WAIT_TIMEOUT_SECONDS = 300;
+
 export interface HarnessMediaExecutionPort {
 	execute(input: {
 		brief: MediaBrief;
 		context: HarnessContextSnapshot;
 		request: HarnessWorkflowInput;
 		workflowId: string;
+		/** DBOS workflow that owns the wait, distinct from page-level job keys. */
+		orchestrationWorkflowId?: string;
+		awaitSignal?: HarnessSignalReceiver;
 	}): Promise<HarnessMediaSelectionResult>;
 }
 
@@ -193,7 +202,10 @@ export class UnifiedHarnessStagePorts
 	executeMediaAndSelect(
 		input: Parameters<HarnessMediaStagePorts["executeMediaAndSelect"]>[0],
 	) {
-		return this.media.execute(input);
+		return this.media.execute({
+			...input,
+			orchestrationWorkflowId: input.workflowId,
+		});
 	}
 
 	async assembleMediaAndDeliver(
@@ -424,13 +436,6 @@ export class UnifiedHarnessStagePorts
 				...new Set([...projected.rightsRefs, snapshot.rights.revision]),
 			],
 		};
-		// D-122 诚实交付: pages that still disagree after the bounded retry ride
-		// along, but they must not read as delivered work. Marking them in the
-		// assembled body is what lets the merchant tell the good pages from the
-		// ones to hold back — the 申报卡 only says how many there are.
-		const unresolvedPageIds = new Set(
-			input.selection.partial?.unresolvedPageIds ?? [],
-		);
 		const versionFor = (
 			candidate: HarnessNoteBrief["candidates"]["candidates"][number],
 			selected: boolean,
@@ -445,11 +450,14 @@ export class UnifiedHarnessStagePorts
 			const orderedAssetIds = selected
 				? note.plan.pages.map(({ imageAssetId }) => imageAssetId!)
 				: [];
+			const unresolvedPageIds = new Set(
+				selected ? (input.selection.partial?.unresolvedPageIds ?? []) : [],
+			);
 			return {
 				body: note.plan.pages
 					.map(({ id, textBlock }) =>
-						selected && unresolvedPageIds.has(id)
-							? `${merchantNotePartialPageMarker()}\n${textBlock.body}`
+						unresolvedPageIds.has(id)
+							? `${textBlock.body}\n\n【待复核】这一页的一致性评估仍未通过，已保留当前版本；可单独重新生成本页。`
 							: textBlock.body,
 					)
 					.join("\n\n"),
@@ -497,6 +505,7 @@ export class UnifiedHarnessStagePorts
 			},
 			idempotencyKey: `harness-note:${input.workflowId}`,
 			kind: "image_text" as const,
+			...(input.selection.partial ? { status: "partial" as const } : {}),
 			marketing,
 			occurredAt: now,
 			packageId: input.request.packageId,
@@ -529,7 +538,12 @@ export class UnifiedHarnessStagePorts
 			workflowRevision: input.request.workflowRevision,
 			workspaceId: input.request.workspaceId,
 		};
-		assertImageTextNoteRevisionAssemblyComplete(revision);
+		assertImageTextNoteRevisionAssemblyComplete({
+			...revision,
+			...(input.selection.partial
+				? { partial: input.selection.partial }
+				: {}),
+		});
 		return this.contentPackages.write(revision);
 	}
 
@@ -544,6 +558,7 @@ export class UnifiedHarnessStagePorts
 		workflowId: string;
 		request: HarnessWorkflowInput;
 		context: HarnessContextSnapshot;
+		awaitSignal?: HarnessSignalReceiver;
 	}) {
 		const snapshot = requireSnapshot(input.request);
 		const runner = this.runners.create({
@@ -566,6 +581,10 @@ export class UnifiedHarnessStagePorts
 						request: input.request,
 						workflowId:
 							`${input.workflowId}:note:${page.id}:${reason}:r${page.revision}`,
+						orchestrationWorkflowId: input.workflowId,
+						...(input.awaitSignal
+							? { awaitSignal: input.awaitSignal }
+							: {}),
 					});
 					return {
 						asset: result.asset,
@@ -580,8 +599,6 @@ export class UnifiedHarnessStagePorts
 function notePageImageBrief(
 	page: NotePlan["pages"][number],
 	snapshot: NonNullable<HarnessWorkflowInput["executionSnapshot"]>,
-	// D-122 回炉: a retry that does not carry what the evaluator objected to is
-	// the same prompt run twice.
 	evaluationReason?: string,
 ): Extract<ExecutionBrief, { kind: "image" }> {
 	const aspectRatio = snapshot.deliverable.aspectRatio ?? "3:4";
@@ -591,9 +608,7 @@ function notePageImageBrief(
 		prompt:
 			`为图文笔记第 ${page.order} 页生成配图：${page.imageIntent.purpose}。` +
 			`图文必须围绕“${page.textBlock.title}”一致表达。` +
-			(evaluationReason
-				? `上一版没有通过一致性核对：${evaluationReason}请针对该问题重新出图。`
-				: ""),
+			(evaluationReason ? `本次回炉需要修正：${evaluationReason}` : ""),
 		referenceAssetIds: page.imageIntent.references.map(
 			({ assetId }) => assetId,
 		),
@@ -751,6 +766,7 @@ export class ModelSupplyImageExactTextVerifier
 				502,
 				result.jobId,
 				result.attempt.acceptance,
+				merchantExactTextVerificationUnavailable(),
 			);
 		}
 		const observation = exactTextObservationSchema.parse(
@@ -803,7 +819,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 		>,
 		private readonly exactText?: ImageExactTextVerifier,
 		private readonly noteAdmission?: NoteMediaAdmissionPort,
-		private readonly imageProfile: ImageModelRecipeProfile =
+	private readonly imageProfile: ImageModelRecipeProfile =
 			IMAGE_MODEL_RECIPE_PROFILE,
 	) {}
 
@@ -812,6 +828,8 @@ export class ModelSupplyHarnessMediaExecutionPort
 		context: HarnessContextSnapshot;
 		request: HarnessWorkflowInput;
 		workflowId: string;
+		orchestrationWorkflowId?: string;
+		awaitSignal?: HarnessSignalReceiver;
 	}): Promise<HarnessMediaSelectionResult> {
 		const snapshot = requireSnapshot(input.request);
 		assertBriefMatchesSnapshot(input.brief, snapshot);
@@ -832,6 +850,9 @@ export class ModelSupplyHarnessMediaExecutionPort
 					"MEDIA_EXACT_TEXT_VERIFIER_UNAVAILABLE",
 					"Image text verification is unavailable.",
 					502,
+					undefined,
+					undefined,
+					merchantExactTextVerificationUnavailable(),
 				);
 			}
 			const selected = await executeImageSelection<ModelSupplyResult>({
@@ -847,8 +868,10 @@ export class ModelSupplyHarnessMediaExecutionPort
 							attempt,
 							exactTextFailure?.reason,
 							this.imageProfile,
+							input.orchestrationWorkflowId,
 						),
 						noteAdmissionInput,
+						input.awaitSignal,
 					),
 				verify: async (result) => {
 					const completed = requireCompletedMediaResult(result, "image");
@@ -878,8 +901,17 @@ export class ModelSupplyHarnessMediaExecutionPort
 			);
 		}
 		const result = await this.submitAndAwait(
-			mediaSubmission(input.workflowId, input.request, input.brief),
+			mediaSubmission(
+				input.workflowId,
+				input.request,
+				input.brief,
+				"primary",
+				undefined,
+				this.imageProfile,
+				input.orchestrationWorkflowId,
+			),
 			noteAdmissionInput,
+			input.awaitSignal,
 		);
 		const completed = requireCompletedMediaResult(result, input.brief.kind);
 		return mediaSelection(completed, input.brief.kind, [completed], []);
@@ -892,9 +924,10 @@ export class ModelSupplyHarnessMediaExecutionPort
 			workflowId: string;
 			workspaceId: string;
 		},
+		awaitSignal?: HarnessSignalReceiver,
 	) {
 		const admissionToken = noteAdmissionInput
-			? await this.acquireNoteAdmission(noteAdmissionInput)
+			? await this.acquireNoteAdmission(noteAdmissionInput, awaitSignal)
 			: undefined;
 		let result =
 			admissionToken?.jobId && this.models.getDurableMediaJob
@@ -915,17 +948,17 @@ export class ModelSupplyHarnessMediaExecutionPort
 			}
 		}
 		if (result.status === "unknown" && this.models.getDurableMediaJob) {
-			for (let attempt = 0; attempt < 600; attempt += 1) {
-				const current = await this.models.getDurableMediaJob(
+			if (awaitSignal) {
+				await awaitSignal(harnessMediaJobTopic(result.jobId), {
+					timeoutSeconds: MEDIA_JOB_WAIT_TIMEOUT_SECONDS,
+				});
+			}
+			result = (
+				await this.models.getDurableMediaJob(
 					submission.workspaceId,
 					result.jobId,
-				);
-				result = current.result;
-				if (result.status === "completed" || result.status === "failed") {
-					break;
-				}
-				await new Promise((resolve) => setTimeout(resolve, 250));
-			}
+				)
+			).result;
 		}
 		if (
 			admissionToken &&
@@ -942,11 +975,14 @@ export class ModelSupplyHarnessMediaExecutionPort
 		return result;
 	}
 
-	private async acquireNoteAdmission(input: {
+	private async acquireNoteAdmission(
+		input: {
 		taskId: string;
 		workflowId: string;
 		workspaceId: string;
-	}): Promise<NoteMediaAdmissionToken> {
+		},
+		awaitSignal?: HarnessSignalReceiver,
+	): Promise<NoteMediaAdmissionToken> {
 		if (!this.noteAdmission) {
 			throw new HarnessMediaExecutionError(
 				"MEDIA_RECONCILIATION_PENDING",
@@ -954,10 +990,14 @@ export class ModelSupplyHarnessMediaExecutionPort
 				202,
 			);
 		}
-		for (let attempt = 0; attempt < 1_200; attempt += 1) {
-			const claim = await this.noteAdmission.claim(input);
-			if (claim) return claim;
-			await new Promise((resolve) => setTimeout(resolve, 250));
+		const claim = await this.noteAdmission.claim(input);
+		if (claim) return claim;
+		if (awaitSignal) {
+			await awaitSignal(HARNESS_MEDIA_TERMINAL_TOPIC, {
+				timeoutSeconds: NOTE_ADMISSION_WAIT_TIMEOUT_SECONDS,
+			});
+			const retried = await this.noteAdmission.claim(input);
+			if (retried) return retried;
 		}
 		throw new HarnessMediaExecutionError(
 			"MEDIA_RECONCILIATION_PENDING",
@@ -990,9 +1030,6 @@ function requireCompletedMediaResult(
 			502,
 			result.jobId,
 			result.attempt.acceptance,
-			// Every media kind gets a sentence a merchant can read. Leaving image
-			// undefined is what left the browser with the English engineering line
-			// the P0-2 audit found on screen.
 			kind === "video"
 				? merchantVideoGenerationFailure(timedOut ? "timed_out" : "failed")
 				: merchantImageGenerationFailure(timedOut ? "timed_out" : "failed"),
@@ -1078,6 +1115,7 @@ function mediaSubmission(
 	attempt: "primary" | "retry" = "primary",
 	exactTextFailure?: string,
 	imageProfile: ImageModelRecipeProfile = IMAGE_MODEL_RECIPE_PROFILE,
+	orchestrationWorkflowId?: string,
 ): ModelSupplySubmission {
 	const snapshot = requireSnapshot(request);
 	if (snapshot.modelPolicy.mode !== "fixed") {
@@ -1097,7 +1135,7 @@ function mediaSubmission(
 			? {}
 			: { billingTaskId: snapshot.task.id }),
 		billingQuoteRevision: snapshot.quote.revision,
-		correlationId: workflowId,
+		correlationId: orchestrationWorkflowId ?? workflowId,
 		dataClass: [],
 		idempotencyKey:
 			attempt === "primary"

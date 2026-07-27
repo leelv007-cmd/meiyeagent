@@ -291,9 +291,14 @@ function metricScores(
     },
     {
       name: 'harness.repair.call_rate',
-      value: metrics.repair.status,
-      comment: 'AI SDK Output.object repair is unsupported.',
-      metadata: { ...common, status: metrics.repair.status },
+      value: rate(metrics.repair.count, metrics.initial.calls),
+      comment: `${metrics.repair.count}/${metrics.initial.calls} repair events observed`,
+      metadata: {
+        ...common,
+        numerator: metrics.repair.count,
+        denominator: metrics.initial.calls,
+        reasons: metrics.repair.reasons,
+      },
     },
     {
       name: 'harness.retry.trigger_rate',
@@ -428,11 +433,15 @@ function projectMetrics(input: unknown) {
   const triggered = nonnegativeInteger(retry?.triggered);
   const complete = nonnegativeInteger(nestedCompleteness?.complete);
   const total = nonnegativeInteger(nestedCompleteness?.total);
+  const repairCount = nonnegativeInteger(repair?.count);
+  const repairReasons = stringArray(repair?.reasons);
   if (
     calls === undefined ||
     schemaValid === undefined ||
     schemaInvalid === undefined ||
-    repair?.status !== 'unsupported' ||
+    repair?.status !== 'observed' ||
+    repairCount === undefined ||
+    repairReasons === undefined ||
     triggered === undefined ||
     complete === undefined ||
     total === undefined
@@ -441,7 +450,7 @@ function projectMetrics(input: unknown) {
   }
   return {
     initial: { calls, schemaValid, schemaInvalid },
-    repair: { status: 'unsupported' as const },
+    repair: { status: 'observed' as const, count: repairCount, reasons: repairReasons },
     retry: { triggered },
     nestedCompleteness: { complete, total },
   };

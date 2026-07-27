@@ -38,13 +38,13 @@ import {
   type StructuredNodeRunner,
   type StructuredNodeRunnerRequest,
   type StructuredNodeRunnerResult,
+  type IntentDeclaration,
 } from './structured-nodes.js';
 import type {
   HarnessContextSnapshot,
   HarnessStagePorts,
 } from './workflow-core.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
-import { projectMarketingPackageEvidence } from './marketing-scene-policy.js';
 import {
   assertCopyRevisionAssemblyComplete,
   buildCopyPlatformVariants,
@@ -59,6 +59,7 @@ import {
   assessRecipeFactSatisfaction,
   type FactRightsAuthorizationPort,
 } from './fact-satisfaction.js';
+import { projectCopyMarketingPackageEvidence } from './copy-marketing-evidence.js';
 
 export interface ProductionHarnessContextPort {
   compileAndFreeze(input: {
@@ -385,9 +386,6 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     );
     const runner = this.runnerWithSourceFence(input.request);
     const metrics = new InMemoryStructuredNodeMetrics();
-    // D-122 ③段兜底: a brief that will not compile degrades to a conservative
-    // one and the run keeps going. The merchant is told it degraded — silently
-    // downgrading is the dishonesty this fallback is not allowed to become.
     let degraded = false;
     const brief = await compileExecutionBrief(
       {
@@ -468,11 +466,13 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         sourceContentPackage?.assets,
       );
     }
-    const marketing = projectMarketingPackageEvidence({
+    const marketing = projectCopyMarketingPackageEvidence({
       declaration: inferDeclarationFromBundle(input.context),
       request: input.request,
       context: input.context,
       at: this.now(),
+      factRefs: input.brief.factRefs,
+      identityRefs: input.brief.identityRefs,
     });
     const runner = this.runnerWithSourceFence(input.request);
     const canonicalValidator = createHarnessCandidateValidator({
@@ -560,11 +560,13 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         ),
       );
     }
-    const marketing = projectMarketingPackageEvidence({
+    const marketing = projectCopyMarketingPackageEvidence({
       declaration: input.declaration,
       request: input.request,
       context: input.context,
       at: occurredAt,
+      factRefs: input.brief.factRefs,
+      identityRefs: input.brief.identityRefs,
     });
     const platform = publicationPlatform(input.brief.platform);
     const claimExtraction =
@@ -748,11 +750,13 @@ export function copyContentPackageRevisionWriteInput(
     throw new Error('Composer delivery requires an execution snapshot.');
   }
   assertComposerSnapshotAssetBinding(snapshot, input.brief.assetRefs, sourceAssets);
-  const marketing = projectMarketingPackageEvidence({
+  const marketing = projectCopyMarketingPackageEvidence({
     declaration: input.declaration,
     request: input.request,
     context: input.context,
     at: occurredAt,
+    factRefs: input.brief.factRefs,
+    identityRefs: input.brief.identityRefs,
   });
   const versions = input.selection.candidates.map((candidate) => ({
     id: copyRevisionVersionId(input.workflowId, input.request.packageId, candidate),
@@ -962,7 +966,7 @@ function snapshotIdentityReference(
 
 function inferDeclarationFromBundle(
   context: HarnessContextSnapshot,
-): Parameters<typeof projectMarketingPackageEvidence>[0]['declaration'] {
+): IntentDeclaration {
   const taskType = context.bundle.dimensions.promotion_task.task_type?.value;
   if (
     taskType !== 'daily_service_exposure' &&

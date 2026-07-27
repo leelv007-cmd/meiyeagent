@@ -4,6 +4,7 @@ import {
   type ContentPackage,
   type TodayRecommendationState,
 } from '@meiye/contracts';
+import type { HarnessTodayRecommendationConfig } from '../admin-config/foundation-module.js';
 
 export interface TodayRecommendationRecord {
   taskId: string;
@@ -11,6 +12,8 @@ export interface TodayRecommendationRecord {
   deliveredAt: string;
   delivery: unknown;
   contentPackage: unknown;
+  intent?: unknown;
+  recommendationRules?: HarnessTodayRecommendationConfig;
   contextTrace: unknown;
   briefTrace: unknown;
   selectionTrace: unknown;
@@ -41,6 +44,7 @@ export function projectTodayRecommendation(
   ) {
     return cold(true);
   }
+  if (!isSameUtcCalendarDay(record.deliveredAt, at)) return cold(false);
 
   const delivery = asRecord(record.delivery);
   const packageId = stringValue(delivery?.packageId);
@@ -53,7 +57,10 @@ export function projectTodayRecommendation(
   const brief = asRecord(record.briefTrace);
   const factReferences = stringArray(brief?.factRefs);
   const selection = asRecord(record.selectionTrace);
-  const whyNow = winningReason(selection);
+  const whyNow =
+    configuredWhyNow(record, at) ??
+    winningReason(selection) ??
+    mediaReplayReason(selection, contentPackage.data.kind);
   const opportunity = currentOpportunity(
     contentPackage.data.marketing?.opportunity,
     at,
@@ -91,6 +98,27 @@ export function projectTodayRecommendation(
   });
 }
 
+function configuredWhyNow(record: TodayRecommendationRecord, at: string) {
+  const rules = record.recommendationRules;
+  if (!rules) return undefined;
+
+  const intent = asRecord(record.intent);
+  const intentContext = asRecord(intent?.context) ?? intent;
+  const industry =
+    stringValue(intentContext?.industry_category) ??
+    stringValue(intentContext?.industry) ??
+    stringValue(intentContext?.scene);
+  const brief = asRecord(record.briefTrace);
+  const platform = stringArray(brief?.platforms)[0];
+  const weekday = String(new Date(at).getUTCDay() || 7);
+
+  return (
+    (industry ? stringValue(rules.industryWhyNow[industry]) : undefined) ??
+    (platform ? stringValue(rules.platformWhyNow[platform]) : undefined) ??
+    stringValue(rules.weekdayWhyNow[weekday])
+  );
+}
+
 function currentOpportunity(
   opportunity:
     | NonNullable<ContentPackage['marketing']>['opportunity']
@@ -114,6 +142,33 @@ function winningReason(selection: Record<string, unknown> | undefined) {
     .map(asRecord)
     .find((candidate) => candidate?.candidateId === winner);
   return stringValue(score?.reason);
+}
+
+function mediaReplayReason(
+  selection: Record<string, unknown> | undefined,
+  kind: ContentPackage['kind'],
+) {
+  const winner = stringValue(selection?.winnerCandidateId);
+  const candidateScores = selection?.candidateScores;
+  if (!winner || !Array.isArray(candidateScores) || candidateScores.length > 0) {
+    return undefined;
+  }
+  return kind === 'video'
+    ? '这份视频成品今天已经完成，可以从这份成品继续编辑。'
+    : '这份图文成品今天已经完成，可以从这份成品继续编辑。';
+}
+
+function isSameUtcCalendarDay(deliveredAt: string, at: string) {
+  const deliveredDate = utcCalendarDate(deliveredAt);
+  const currentDate = utcCalendarDate(at);
+  return deliveredDate !== undefined && deliveredDate === currentDate;
+}
+
+function utcCalendarDate(value: string) {
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp)
+    ? new Date(timestamp).toISOString().slice(0, 10)
+    : undefined;
 }
 
 function stringArray(value: unknown) {

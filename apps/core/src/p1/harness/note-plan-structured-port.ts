@@ -32,19 +32,16 @@ export class ModelSupplyNotePlanStructuredPort
   async draftPage(
     input: Parameters<NotePlanStructuredPort['draftPage']>[0],
   ) {
-    // A rewrite is a different effect from the first draft — sharing the key
-    // would replay the very text the evaluator rejected.
-    const rewriteSuffix = input.consistencyFailure
-      ? `:rewrite:r${input.page.revision}`
-      : '';
-    const result = await this.runner.run({
-      effectIdempotencyKey:
-        `wf:${this.workflowId}:note:text:${input.style.id}:${input.page.id}${rewriteSuffix}`,
+		const result = await this.runner.run({
+			effectIdempotencyKey:
+				`wf:${this.workflowId}:note:text:${input.style.id}:${input.page.id}` +
+				(input.consistencyFailure
+					? `:rewrite:r${input.page.revision}`
+					: ""),
       schemaName: 'harness_note_text_block_v1',
       schemaRevision: 'note-text-block-v1',
-      instructions: input.consistencyFailure
-        ? 'Rewrite this page text so the stated consistency problem is resolved. Keep the theme, the page role and the prior-page dependency, and keep every exact text value unchanged. Return title, body and exactText only.'
-        : 'Finalize this page text in the configured style. Preserve the theme and prior-page dependency. Return title, body and exactText only.',
+		instructions:
+			'Finalize this page text in the configured style. Preserve the theme and prior-page dependency. If consistencyFailure is present, rewrite only the text-side issue described there. Return title, body and exactText only.',
       prompt: JSON.stringify(input),
       schema: notePlanTextBlockSchema,
     });

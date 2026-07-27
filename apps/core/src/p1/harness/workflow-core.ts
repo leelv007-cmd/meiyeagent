@@ -23,16 +23,15 @@ import type {
 import { promptTraceReference } from './langfuse-prompts.js';
 import type { HarnessPolicyInput } from './policy-gates.js';
 import {
-  merchantBriefFallbackNotice,
   merchantConfirmedMaterialsContinuationNotice,
   merchantGenericModeNotice,
   merchantIdentityVoiceNotice,
   merchantNeutralIndustryContinuationNotice,
   merchantNoteProgressMessage,
-  merchantNotePartialConsistency,
   merchantNoteStyleUnavailable,
   merchantNoteStyleQuestion,
-  merchantPartialDeliveryReport,
+  merchantBriefFallbackNotice,
+  merchantPartialFailure,
   merchantProgressMessage,
   merchantTaskSummary,
 } from './merchant-delivery-language.js';
@@ -44,7 +43,6 @@ type MediaBrief = Exclude<ExecutionBrief, { kind: 'copy' }>;
 interface MeasuredCopyBrief {
   brief: CopyBrief;
   metrics: StructuredNodeMetricsSnapshot;
-  /** ③段 fell back to the conservative brief (D-122) — the merchant is told. */
   degraded?: boolean;
 }
 
@@ -93,9 +91,11 @@ export interface HarnessNoteSelectionResult {
   }>;
   childRuns: ContentPackage['generated']['childRuns'];
   ownedAssets: NonNullable<ContentPackage['generated']['ownedAssets']>;
+  partial?: {
+    unresolvedPageIds: string[];
+    reason: 'consistency_remained_incomplete' | 'second_evaluation_failed';
+  };
   selectedStyleId: string;
-  /** Pages whose image and text still disagree after the bounded retry (D-122). */
-  partial?: { unresolvedPageIds: string[] };
   trace: DecisionTraceFragment;
   version: NonNullable<ContentPackage['versions'][number]['note']>;
 }
@@ -207,6 +207,7 @@ export interface HarnessMediaStagePorts extends HarnessStagePorts {
     brief: MediaBrief;
     context: HarnessContextSnapshot;
     skillInstructions?: readonly ResolvedSkillInstruction[];
+    awaitSignal?: HarnessSignalReceiver;
   }): Promise<HarnessMediaSelectionResult>;
   assembleMediaAndDeliver(input: {
     workflowId: string;
@@ -234,6 +235,7 @@ export interface HarnessNoteStagePorts extends HarnessStagePorts {
     context: HarnessContextSnapshot;
     selectedStyleId: string;
     skillInstructions?: readonly ResolvedSkillInstruction[];
+    awaitSignal?: HarnessSignalReceiver;
   }): Promise<HarnessNoteSelectionResult>;
   assembleNoteAndDeliver(input: {
     workflowId: string;
@@ -246,11 +248,28 @@ export interface HarnessNoteStagePorts extends HarnessStagePorts {
   }): Promise<ContentPackageRevisionDelivery>;
 }
 
+export type HarnessSignalReceiver = (
+  topic: string,
+  options: { timeoutSeconds: number },
+) => Promise<unknown | null>;
+
+/** Shared DBOS topics for pg-boss terminal notifications. */
+export const HARNESS_MEDIA_TERMINAL_TOPIC = 'harness-media-terminal';
+
+export function harnessMediaJobTopic(jobId: string) {
+  return `harness-media-job:${jobId}`;
+}
+
 export interface HarnessWorkflowRuntime {
   runStep<Output>(
     effectIdempotencyKey: string,
     operation: () => Promise<Output>,
   ): Promise<Output>;
+  /**
+   * Receive a cross-carrier signal in the DBOS workflow, never in a step.
+   * Non-DBOS runtimes omit this hook and retain the synchronous test path.
+   */
+  awaitSignal?: HarnessSignalReceiver;
   progress(event: {
     sequence: number;
     stage:
@@ -731,13 +750,12 @@ export async function runHarnessWorkflow(
       ? { prompt: promptTraceReference(request.prompts.briefCompilation) }
       : {}),
     ...(briefMetrics ? { metrics: briefMetrics } : {}),
+    ...(briefDegraded ? { degraded: true } : {}),
     ...skillTraceLineage(briefSkills),
   }, `r${bundle.bundle.revision}`);
   await reportProgress({
     stage: 'brief_compilation',
     state: 'success',
-    // 声明降级、不阻塞 (D-122): the merchant reads that this run took the safe
-    // route, in the same rail the other four stages announce themselves in.
     message: briefDegraded
       ? merchantBriefFallbackNotice()
       : merchantProgressMessage('brief_compilation'),
@@ -839,7 +857,8 @@ export async function runHarnessWorkflow(
             : {}),
         }),
     );
-    ({ brief, metrics: briefMetrics } = unpackBrief(compiledBrief));
+    ({ brief, metrics: briefMetrics, degraded: briefDegraded } =
+      unpackBrief(compiledBrief));
     await trace(runtime, workflowId, 'brief_compilation', {
       kind: brief.kind,
       platform: brief.platform,
@@ -851,6 +870,7 @@ export async function runHarnessWorkflow(
         ? { prompt: promptTraceReference(request.prompts.briefCompilation) }
         : {}),
       ...(briefMetrics ? { metrics: briefMetrics } : {}),
+      ...(briefDegraded ? { degraded: true } : {}),
       ...skillTraceLineage(briefSkills),
     }, `r${bundle.bundle.revision}`);
     selection = await executeSelection(
@@ -1118,10 +1138,7 @@ async function runNoteHarnessWorkflow(
         ({ styleId }) => styleId === selectedStyleId,
       )
     ) {
-      throw new HarnessMediaScopeError(
-        'Selected note style is absent from the recompiled brief.',
-        merchantNoteStyleUnavailable(),
-      );
+      throw new HarnessMediaScopeError(merchantNoteStyleUnavailable());
     }
     await trace(runtime, workflowId, 'context_injection', {
       executionRoot: mediaExecutionRoot(activeRequest),
@@ -1134,25 +1151,28 @@ async function runNoteHarnessWorkflow(
   }
 
   const executionSkills = stageSkills.execution_selection;
-  const selection = await runtime.runStep(
-    harnessEffectKey(
-      workflowId,
-      4,
-      skillEffectUnit('image_text_note', executionSkills.instructions),
-      'selection',
-    ),
-    () =>
-      ports.executeNoteAndSelect({
-        workflowId,
-        request: activeRequest,
-        brief,
-        context,
-        selectedStyleId,
-        ...(executionSkills.instructions.length > 0
-          ? { skillInstructions: executionSkills.instructions }
-          : {}),
-      }),
-  );
+  const noteSelectionInput = {
+    workflowId,
+    request: activeRequest,
+    brief,
+    context,
+    selectedStyleId,
+    ...(executionSkills.instructions.length > 0
+      ? { skillInstructions: executionSkills.instructions }
+      : {}),
+    ...(runtime.awaitSignal ? { awaitSignal: runtime.awaitSignal } : {}),
+  };
+  const selection = runtime.awaitSignal
+    ? await ports.executeNoteAndSelect(noteSelectionInput)
+    : await runtime.runStep(
+        harnessEffectKey(
+          workflowId,
+          4,
+          skillEffectUnit('image_text_note', executionSkills.instructions),
+          'selection',
+        ),
+        () => ports.executeNoteAndSelect(noteSelectionInput),
+      );
   await trace(runtime, workflowId, 'execution_selection', {
     executionRoot: mediaExecutionRoot(activeRequest),
     ...selection.trace,
@@ -1162,7 +1182,13 @@ async function runNoteHarnessWorkflow(
   await reportProgress({
     stage: 'execution_selection',
     state: 'success',
-    message: merchantNoteProgressMessage('consistency_checked'),
+    message: selection.partial
+      ? merchantPartialFailure({
+          completed: '可用页面已经生成',
+          failed: `第 ${selection.partial.unresolvedPageIds.join('、')} 页的一致性复核仍未通过`,
+          nextStep: '先查看已生成页面，再单独重新生成标记页面',
+        })
+      : merchantNoteProgressMessage('consistency_checked'),
   });
 
   const assemblySkills = stageSkills.assembly_delivery;
@@ -1211,17 +1237,7 @@ async function runNoteHarnessWorkflow(
       useSuggestion: '建议逐页核对画面、文字和预约引导，确认后再发布',
     }),
   });
-  const partialReport = selection.partial
-    ? merchantPartialDeliveryReport({
-        message: merchantNotePartialConsistency(
-          selection.partial.unresolvedPageIds.length,
-        ),
-        nextStep:
-          '可以先用已经对好的页面发布，或者让我把没对上的那几页重做一次。',
-      })
-    : undefined;
   return {
-    ...(partialReport ? { merchantReport: partialReport } : {}),
     billingReceipt: {
       trustedUsage: {
         kind: 'product_units' as const,
@@ -1242,6 +1258,7 @@ async function runNoteHarnessWorkflow(
     },
     delivery,
     deliveryLayer: routed.declaration.deliveryLayer,
+    ...(selection.partial ? { partial: selection.partial } : {}),
     recommendation,
     trace: selection.trace,
   };
@@ -1395,24 +1412,27 @@ async function runMediaHarnessWorkflow(
   });
 
   const executionSkills = stageSkills.execution_selection;
-  let selection = await runtime.runStep(
-    harnessEffectKey(
-      workflowId,
-      4,
-      skillEffectUnit(kind, executionSkills.instructions),
-      'selection',
-    ),
-    () =>
-      ports.executeMediaAndSelect({
-        workflowId,
-        request: activeRequest,
-        brief,
-        context: bundle,
-        ...(executionSkills.instructions.length > 0
-          ? { skillInstructions: executionSkills.instructions }
-          : {}),
-      }),
-  );
+  const mediaSelectionInput = {
+    workflowId,
+    request: activeRequest,
+    brief,
+    context: bundle,
+    ...(executionSkills.instructions.length > 0
+      ? { skillInstructions: executionSkills.instructions }
+      : {}),
+    ...(runtime.awaitSignal ? { awaitSignal: runtime.awaitSignal } : {}),
+  };
+  let selection = runtime.awaitSignal
+    ? await ports.executeMediaAndSelect(mediaSelectionInput)
+    : await runtime.runStep(
+        harnessEffectKey(
+          workflowId,
+          4,
+          skillEffectUnit(kind, executionSkills.instructions),
+          'selection',
+        ),
+        () => ports.executeMediaAndSelect(mediaSelectionInput),
+      );
   await trace(runtime, workflowId, 'execution_selection', {
     executionRoot: mediaExecutionRoot(request),
     ...selection.trace,
@@ -1482,27 +1502,30 @@ async function runMediaHarnessWorkflow(
       ...(briefMetrics ? { metrics: briefMetrics } : {}),
       ...skillTraceLineage(briefSkills),
     }, `r${bundle.bundle.revision}`);
-    selection = await runtime.runStep(
-      harnessEffectKey(
-        workflowId,
-        4,
-        skillEffectUnit(
-          `${kind}-r${bundle.bundle.revision}`,
-          executionSkills.instructions,
-        ),
-        'selection',
-      ),
-      () =>
-        ports.executeMediaAndSelect({
-          workflowId,
-          request: activeRequest,
-          brief,
-          context: bundle,
-          ...(executionSkills.instructions.length > 0
-            ? { skillInstructions: executionSkills.instructions }
-            : {}),
-        }),
-    );
+    const recompiledMediaSelectionInput = {
+      workflowId,
+      request: activeRequest,
+      brief,
+      context: bundle,
+      ...(executionSkills.instructions.length > 0
+        ? { skillInstructions: executionSkills.instructions }
+        : {}),
+      ...(runtime.awaitSignal ? { awaitSignal: runtime.awaitSignal } : {}),
+    };
+    selection = runtime.awaitSignal
+      ? await ports.executeMediaAndSelect(recompiledMediaSelectionInput)
+      : await runtime.runStep(
+          harnessEffectKey(
+            workflowId,
+            4,
+            skillEffectUnit(
+              `${kind}-r${bundle.bundle.revision}`,
+              executionSkills.instructions,
+            ),
+            'selection',
+          ),
+          () => ports.executeMediaAndSelect(recompiledMediaSelectionInput),
+        );
     await trace(runtime, workflowId, 'execution_selection', {
       executionRoot: mediaExecutionRoot(request),
       ...selection.trace,
@@ -1588,16 +1611,8 @@ export class HarnessMediaScopeError extends Error {
   readonly code = 'HARNESS_MEDIA_SCOPE_INVALID';
   readonly status = 409;
 
-  /**
-   * Merchant-facing copy travels in its own field, never in `message`:
-   * `normalizeHarnessTerminalFailure` only forwards `merchantMessage`, so
-   * anything written into the Error message is engineering-only and the
-   * 申报卡 would fall back to the generic 兜底 line.
-   */
-  constructor(
-    message: string,
-    readonly merchantMessage?: string,
-  ) {
+  constructor(readonly merchantMessage: string) {
+    const message = merchantMessage;
     super(message);
     this.name = 'HarnessMediaScopeError';
   }
@@ -1773,10 +1788,14 @@ function mediaExecutionRoot(request: HarnessWorkflowInput) {
     : null;
 }
 
-function unpackBrief(input: CopyBrief | MeasuredCopyBrief) {
+function unpackBrief(input: CopyBrief | MeasuredCopyBrief): {
+  brief: CopyBrief;
+  metrics?: StructuredNodeMetricsSnapshot;
+  degraded?: boolean;
+} {
   return 'brief' in input
     ? input
-    : { brief: input, metrics: undefined, degraded: undefined };
+    : { brief: input };
 }
 
 async function applyCurrentTaskDecision(

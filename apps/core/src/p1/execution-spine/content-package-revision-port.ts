@@ -31,6 +31,7 @@ export interface ContentPackageRevisionWriteInput {
 	harnessSelection?: ContentPackage["harnessSelection"];
 	idempotencyKey: string;
 	kind: ContentPackageKind;
+	status?: 'partial' | 'review_ready';
 	marketing?: ContentPackage["marketing"];
 	occurredAt: string;
 	packageId: string;
@@ -123,12 +124,20 @@ export class PostgresContentPackageRevisionWritePort
 			CREATE TABLE IF NOT EXISTS harness_runtime.langfuse_outbox (
 				audit_id text PRIMARY KEY REFERENCES harness_runtime.audit_events(id)
 					ON DELETE CASCADE,
-				status text NOT NULL CHECK (status IN ('queued', 'sending', 'failed', 'sent')),
+				status text NOT NULL CHECK (status IN ('queued', 'sending', 'failed', 'sent', 'dead_letter', 'discarded')),
 				attempts integer NOT NULL DEFAULT 0,
 				next_attempt_at timestamptz NOT NULL DEFAULT now(),
 				last_error text,
+				dead_lettered_at timestamptz,
 				updated_at timestamptz NOT NULL DEFAULT now()
 			);
+			ALTER TABLE harness_runtime.langfuse_outbox
+				ADD COLUMN IF NOT EXISTS dead_lettered_at timestamptz;
+			ALTER TABLE harness_runtime.langfuse_outbox
+				DROP CONSTRAINT IF EXISTS langfuse_outbox_status_check;
+			ALTER TABLE harness_runtime.langfuse_outbox
+				ADD CONSTRAINT langfuse_outbox_status_check
+				CHECK (status IN ('queued', 'sending', 'failed', 'sent', 'dead_letter', 'discarded'));
 		`);
 	}
 
@@ -274,7 +283,7 @@ export class PostgresContentPackageRevisionWritePort
 					workflowRevision: input.workflowRevision,
 					workId: input.workId,
 				},
-				status: "review_ready",
+				status: input.status ?? "review_ready",
 				updatedAt: input.occurredAt,
 				variants: input.variants ?? contentPackage.variants,
 				versions: [...contentPackage.versions, ...versions],
@@ -456,7 +465,7 @@ export class MemoryContentPackageRevisionWritePort
 				workflowRevision: input.workflowRevision,
 				workId: input.workId,
 			},
-			status: "review_ready",
+			status: input.status ?? "review_ready",
 			updatedAt: input.occurredAt,
 			variants: input.variants ?? contentPackage.variants,
 			versions: [...contentPackage.versions, ...versions],

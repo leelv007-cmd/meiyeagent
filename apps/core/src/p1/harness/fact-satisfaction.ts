@@ -193,7 +193,7 @@ async function eligibleFacts(
       (
         item,
       ): item is typeof item & { factSnapshot: NonNullable<FrozenFact> } =>
-        item.factSnapshot !== undefined,
+        item.layer === 'current_fact' && item.factSnapshot !== undefined,
     )
     .filter(
       ({ factSnapshot }) =>

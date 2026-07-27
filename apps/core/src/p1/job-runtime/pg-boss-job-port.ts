@@ -68,6 +68,16 @@ export interface PgBossJobPortOptions {
   /** Product plan concurrency values available to pg-boss group tiers. */
   workspaceConcurrencyLimits?: readonly number[];
   clock?: () => Date;
+  /** Terminal execution result sink; production binds this to DBOS.send. */
+  terminalNotifier?: (
+    input: PgBossTerminalNotifierInput,
+  ) => Promise<void>;
+}
+
+export interface PgBossTerminalNotifierInput {
+  envelope: DurableJobEnvelope;
+  status: 'completed' | 'failed';
+  output?: Record<string, unknown>;
 }
 
 export interface PgBossConnectionOptions extends PgBossJobPortOptions {
@@ -104,6 +114,7 @@ export class PgBossJobPort implements JobPort {
   private readonly localConcurrency: number;
   private readonly workspaceGroupConcurrency: GroupConcurrencyConfig;
   private readonly clock: () => Date;
+  private readonly terminalNotifier?: PgBossJobPortOptions['terminalNotifier'];
   private startPromise?: Promise<void>;
 
   constructor(
@@ -143,6 +154,7 @@ export class PgBossJobPort implements JobPort {
       options.workspaceConcurrencyLimits ?? [1]
     );
     this.clock = options.clock ?? (() => new Date());
+    this.terminalNotifier = options.terminalNotifier;
   }
 
   static connect(options: PgBossConnectionOptions) {
@@ -306,12 +318,26 @@ export class PgBossJobPort implements JobPort {
             if (result.status === 'deferred') {
               await this.enqueueContinuation(job.data, result.deferForSeconds);
             }
+            if (result.status === 'completed' || result.status === 'dead_letter') {
+              await this.terminalNotifier?.({
+                envelope: job.data,
+                output: result.output,
+                status: result.status === 'completed' ? 'completed' : 'failed',
+              });
+            }
             results.push({
               id: job.id,
               status: result.status === 'retry' ? 'failed' : result.status === 'dead_letter' ? 'deadletter' : 'completed',
               output: result.output,
             });
           } catch (error) {
+            if (job.retryCount >= this.retryLimit) {
+              await this.terminalNotifier?.({
+                envelope: job.data,
+                output: serializeError(error),
+                status: 'failed',
+              });
+            }
             results.push({ id: job.id, status: 'failed', output: serializeError(error) });
           }
         }

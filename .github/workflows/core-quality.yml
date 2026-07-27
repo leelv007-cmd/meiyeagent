@@ -7,6 +7,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# D-038⑤: every quality job uses one immutable application-version identity for
+# this workflow run. Production Core deployment is tracked separately below in
+# the Harness release SOP; this variable does not claim that deployment exists.
+env:
+  HARNESS_DBOS_APPLICATION_VERSION: quality-${{ github.sha }}
+
 jobs:
   redline-evals:
     runs-on: ubuntu-latest
@@ -166,6 +172,8 @@ jobs:
           cache: pnpm
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-wqy-zenhei
       - run: pnpm install --frozen-lockfile
+      - name: Verify Harness release-version contract
+        run: node scripts/ci/assert-harness-release-version.mjs
       - name: Verify the quality-gate command contract
         run: node --test scripts/ci/*.test.mjs
       - name: Run root required quality gates

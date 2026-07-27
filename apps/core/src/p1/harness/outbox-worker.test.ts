@@ -5,6 +5,7 @@ import {
   HarnessLangfuseOutboxWorker,
   type HarnessLangfuseOutboxStore,
 } from './outbox-worker.js';
+import type { AdminConfigRepository } from '../admin-config/foundation-module.js';
 
 test('Langfuse failure leaves the audit queued for compensation', async () => {
   const store = new MemoryOutboxStore();
@@ -93,6 +94,71 @@ test('Langfuse failure dead-letters at the attempt limit and is not redelivered'
     deadLettered: 0,
   });
   assert.equal(sendAttempts, 2);
+});
+
+test('Langfuse outbox retry and lease settings can be read from admin-config', async () => {
+  let claimed: [number, number] | undefined;
+  let retryAt: Date | undefined;
+  const config: Pick<AdminConfigRepository, 'get'> = {
+    async get(_scope, _workspaceId, key) {
+      return {
+        key,
+        scope: 'global' as const,
+        workspaceId: '__global__',
+        value: {
+          batchSize: 3,
+          maxAttempts: 4,
+          retryDelaySeconds: 9,
+          leaseSeconds: 7,
+        },
+        revision: 1,
+        status: 'applied' as const,
+        rolledBackToRevision: null,
+        actorId: 'test',
+        reason: 'test',
+        correlationId: `test:${key}`,
+        createdAt: '2026-07-18T00:00:00.000Z',
+      };
+    },
+  };
+  const store: HarnessLangfuseOutboxStore = {
+    async claimLangfuseBatch(limit, leaseSeconds) {
+      claimed = [limit, leaseSeconds ?? -1];
+      return [
+        {
+          auditId: 'audit-config',
+          workflowId: 'workflow-config',
+          stage: 'brief_compilation',
+          eventType: 'brief_compiled',
+          occurredAt: '2026-07-18T00:00:00.000Z',
+          payload: {},
+          attempts: 1,
+        },
+      ];
+    },
+    async markLangfuseSent() {},
+    async markLangfuseFailed(_auditId, _error, at) {
+      retryAt = at;
+    },
+    async markLangfuseDeadLetter() {},
+  };
+
+  const worker = new HarnessLangfuseOutboxWorker(
+    store,
+    { async send() { throw new Error('unavailable'); } },
+    {
+      config,
+      now: () => new Date('2026-07-18T00:00:00.000Z'),
+    },
+  );
+
+  assert.deepEqual(await worker.runOnce(), {
+    sent: 0,
+    failed: 1,
+    deadLettered: 0,
+  });
+  assert.deepEqual(claimed, [3, 7]);
+  assert.equal(retryAt?.toISOString(), '2026-07-18T00:00:09.000Z');
 });
 
 class MemoryOutboxStore implements HarnessLangfuseOutboxStore {

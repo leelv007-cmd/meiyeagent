@@ -11,6 +11,8 @@ import {
 import {
   HarnessWorkflowCancellation,
   runHarnessWorkflow,
+  HARNESS_MEDIA_TERMINAL_TOPIC,
+  harnessMediaJobTopic,
   type HarnessStagePorts,
   type HarnessWorkflowRuntime,
 } from './workflow-core.js';
@@ -34,6 +36,7 @@ import type {
   HarnessBillingSettlementInput,
 } from './billing-compensation.js';
 import {
+  HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
   HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
   type AdminConfigRepository,
 } from '../admin-config/foundation-module.js';
@@ -72,10 +75,10 @@ export interface HarnessBillingSettlementPort
 }
 
 const PROGRESS_STREAM = 'progress';
-const DECISION_TIMEOUT_SECONDS = 48 * 60 * 60;
+export const DEFAULT_CONFIRMATION_CARD_HOLD_TIMEOUT_SECONDS = 48 * 60 * 60;
 export const DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS = 30;
 
-async function readConfirmationCardTimeoutSeconds(
+export async function readConfirmationCardTimeoutSeconds(
   config?: Pick<AdminConfigRepository, 'get'>,
 ) {
   const configured = (
@@ -97,6 +100,33 @@ async function readConfirmationCardTimeoutSeconds(
   ) {
     throw new Error(
       'Confirmation-card timeout config must be an integer from 1 to 3600.',
+    );
+  }
+  return timeoutSeconds;
+}
+
+export async function readConfirmationCardHoldTimeoutSeconds(
+  config?: Pick<AdminConfigRepository, 'get'>,
+) {
+  const configured = (
+    await config?.get(
+      'global',
+      '__global__',
+      HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
+    )
+  )?.value;
+  const timeoutSeconds =
+    configured === undefined
+      ? DEFAULT_CONFIRMATION_CARD_HOLD_TIMEOUT_SECONDS
+      : configured;
+  if (
+    typeof timeoutSeconds !== 'number' ||
+    !Number.isSafeInteger(timeoutSeconds) ||
+    timeoutSeconds < 1 ||
+    timeoutSeconds > DEFAULT_CONFIRMATION_CARD_HOLD_TIMEOUT_SECONDS
+  ) {
+    throw new Error(
+      'Confirmation-card hold timeout config must be an integer from 1 to 172800.',
     );
   }
   return timeoutSeconds;
@@ -125,6 +155,14 @@ export function registerHarnessDbosWorkflow(
         return DBOS.runStep(operation, {
           name: effectIdempotencyKey.replaceAll(':', '-'),
         });
+      },
+      awaitSignal<T>(
+        topic: string,
+        options: { timeoutSeconds: number },
+      ) {
+        // DBOS.recv is an orchestration operation. It must stay outside every
+        // DBOS.runStep so a pending provider job suspends the workflow.
+        return DBOS.recv<T>(topic, options);
       },
       async progress(event) {
         const occurredAt = new Date(await DBOS.now()).toISOString();
@@ -170,12 +208,19 @@ export function registerHarnessDbosWorkflow(
               question.unattended === 'continue'
                 ? await readConfirmationCardTimeoutSeconds(config)
                 : null;
+            const holdTimeoutSeconds =
+              request.usageReservation && question.unattended !== 'continue'
+                ? await readConfirmationCardHoldTimeoutSeconds(config)
+                : null;
             const registered = await persistence.registerPending(
               request.workspaceId,
               question,
               { timeoutSeconds },
             );
-            return registered ?? { timeoutSeconds };
+            return {
+              ...(registered ?? { timeoutSeconds }),
+              holdTimeoutSeconds,
+            };
           },
           { name: `persist-pending-${question.questionId}` },
         );
@@ -187,7 +232,11 @@ export function registerHarnessDbosWorkflow(
           };
         }
         if (question.unattended !== 'continue') {
-          const decision = await waitForHeldDecision(question);
+          const decision = await waitForHeldDecision(
+            question,
+            pendingProjection.holdTimeoutSeconds ??
+              DEFAULT_CONFIRMATION_CARD_HOLD_TIMEOUT_SECONDS,
+          );
           if (decision) {
             return {
               command: decision,
@@ -611,6 +660,56 @@ export async function resumeHarnessDbosWorkflow(
   );
 }
 
+export type HarnessMediaJobTerminalNotification = {
+  workspaceId: string;
+  jobId: string;
+  kind: string;
+  payload: Record<string, unknown>;
+  status: 'completed' | 'failed';
+  output?: Record<string, unknown>;
+};
+
+/**
+ * pg-boss remains the execution transport. This is its production binding
+ * back into the DBOS workflow message channel after a terminal job outcome.
+ */
+export async function sendHarnessMediaJobTerminal(
+  input: HarnessMediaJobTerminalNotification,
+) {
+  if (input.kind !== 'model.media-generation') return false;
+  const payload = input.payload.submission;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return false;
+  }
+  const orchestrationWorkflowId = (payload as { correlationId?: unknown })
+    .correlationId;
+  if (typeof orchestrationWorkflowId !== 'string' || !orchestrationWorkflowId) {
+    return false;
+  }
+  const destination = harnessRuntimeId(
+    input.workspaceId,
+    orchestrationWorkflowId,
+  );
+  const message = {
+    jobId: input.jobId,
+    status: input.status,
+    ...(input.output ? { output: input.output } : {}),
+  };
+  await DBOS.send(
+    destination,
+    message,
+    harnessMediaJobTopic(input.jobId),
+    `harness-media-terminal:${input.workspaceId}:${input.jobId}:${input.status}`,
+  );
+  await DBOS.send(
+    destination,
+    message,
+    HARNESS_MEDIA_TERMINAL_TOPIC,
+    `harness-media-admission:${input.workspaceId}:${input.jobId}:${input.status}`,
+  );
+  return true;
+}
+
 export function normalizeHarnessDbosWorkflowInput(
   input: HarnessDbosWorkflowInput,
   runtimeWorkflowId: string,
@@ -667,10 +766,13 @@ export function confirmationCardHoldExpired(question: QuestionCard) {
   });
 }
 
-async function waitForHeldDecision(question: QuestionCard) {
+async function waitForHeldDecision(
+  question: QuestionCard,
+  timeoutSeconds: number,
+) {
   const decision = await DBOS.recv<StructuredDecisionInput>(
     decisionTopic(question.questionId),
-    { timeoutSeconds: DECISION_TIMEOUT_SECONDS },
+    { timeoutSeconds },
   );
   return decision ? confirmationCardDecision(question, decision) : null;
 }

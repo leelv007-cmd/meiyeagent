@@ -51,7 +51,12 @@ import {
   AdminConfigFoundationModule,
   AdminConfigEntitlementCatalogSource,
   AdminConfigNotePlanSettingsSource,
+  DEFAULT_HARNESS_LANGFUSE_OUTBOX_CONFIG,
+  DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
+  HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
   HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
+  HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY,
+  HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
   HARNESS_WOZ_RECIPE_CONFIG_KEY,
   ModeGateExecutionPort,
   ModeGateMediaLifecyclePort,
@@ -184,6 +189,7 @@ import { HarnessProductBillingSettlementExecutor } from './p1/harness/product-bi
 import { PostgresNoteMediaAdmissionCoordinator } from './p1/harness/note-media-admission.js';
 import { HarnessResumeReconciler } from './p1/harness/resume-reconciler.js';
 import {
+  DEFAULT_CONFIRMATION_CARD_HOLD_TIMEOUT_SECONDS,
   DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS,
   DbosHarnessWorkflowStarter,
   registerHarnessDbosWorkflow,
@@ -585,6 +591,12 @@ const adminConfigRuntime = {
   'model.media.execution.mode': mediaExecutionMode,
   [HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY]:
     DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS,
+  [HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY]:
+    DEFAULT_CONFIRMATION_CARD_HOLD_TIMEOUT_SECONDS,
+  [HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY]:
+    DEFAULT_HARNESS_LANGFUSE_OUTBOX_CONFIG,
+  [HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY]:
+    DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
   ...Object.fromEntries(
     Object.entries(e2ePlatformModelDefaults).map(([operation, modelId]) => [
       `platform.defaultModel.${operation}`,
@@ -1242,7 +1254,11 @@ let composerDestinationMapper: ComposerDestinationMappingPort | undefined;
 let composerSubmissionCoordinator: CreationSubmissionCoordinator | undefined;
 // Pending-actions is an unconditional platform service (Z2-WIRING / #94 handoff).
 // Harness questions need the harness_runtime schema; approvals come from operations.
-const pendingActionsQuestionStore = new PostgresHarnessStore(pool);
+const pendingActionsQuestionStore = new PostgresHarnessStore(
+  pool,
+  undefined,
+  adminConfigRepository,
+);
 await pendingActionsQuestionStore.applySchema();
 if (harnessRuntimeConfig) {
   assertPendingActionsShareDatabase({
@@ -1375,7 +1391,10 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       ),
       hotReadKeys: [
         ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
+        HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
         HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
+        HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY,
+        HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
         HARNESS_WOZ_RECIPE_CONFIG_KEY,
         // 笔记风格集合每次编译都现读（AdminConfigNotePlanSettingsSource.read），
         // 不登记的话后台会告诉运营「重启后生效」——与事实相反（D-116）。
@@ -1396,7 +1415,10 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       ],
       wiredKeys: [
         ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
+        HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
         HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
+        HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY,
+        HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
         HARNESS_WOZ_RECIPE_CONFIG_KEY,
         NOTE_STYLE_CONFIG_KEY,
         'byok.adapter.assembly',
@@ -1814,6 +1836,7 @@ if (harnessRuntimeConfig) {
   const outboxWorker = new HarnessLangfuseOutboxWorker(
     harnessStore,
     langfuseSenderFromEnv(process.env),
+    { config: adminConfigRepository },
   );
   const resumeReconciler = new HarnessResumeReconciler(
     new PostgresHarnessResumeReconcilerStore(pool),
@@ -1921,6 +1944,7 @@ const readinessProbes = {
         `select count(*)::text as backlog
            from harness_runtime.langfuse_outbox
           where status in ('queued', 'failed', 'sending')
+            and dead_lettered_at is null
             and next_attempt_at <= now()`,
       );
       return Number(result.rows[0]?.backlog ?? 0);

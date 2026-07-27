@@ -644,19 +644,29 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 		brief: partialBrief,
 		selection: {
 			...baseSelection,
-			partial: { unresolvedPageIds: [unresolvedPageId] },
+			version: {
+				...baseSelection.version,
+				evaluation: {
+					...baseSelection.version.evaluation!,
+					regenerationPageIds: [unresolvedPageId],
+				},
+			},
+			partial: {
+				unresolvedPageIds: [unresolvedPageId],
+				reason: "consistency_remained_incomplete",
+			},
 		},
 	});
 	const partialVersion = writer
 		.get("workspace-1", partialPackageId)
 		?.versions.find(({ harnessCandidateId }) => harnessCandidateId === "story");
 	const partialPages = partialVersion?.body.split("\n\n") ?? [];
-	assert.equal(partialPages.length, 2);
+	assert.ok(partialPages.length >= baseSelection.version.plan.pages.length);
 	assert.ok(
 		!partialPages[0]?.includes("还没对上"),
 		"the page that came out right is left alone",
 	);
-	assert.match(partialPages[1] ?? "", /还没对上/u);
+	assert.match(partialPages.at(-1) ?? "", /待复核/u);
 });
 
 test("media delivery blocks malicious visible copy before the canonical writer", async () => {
@@ -1054,7 +1064,6 @@ test("note pages keep durable admission single-flight while compiler branches re
 	const first = completedResult("image", "1");
 	const second = completedResult("image", "2");
 	let submissions = 0;
-	let firstReads = 0;
 	const adapter = new ModelSupplyHarnessMediaExecutionPort(
 		{
 			async submit() {
@@ -1067,13 +1076,6 @@ test("note pages keep durable admission single-flight while compiler branches re
 			},
 			async getDurableMediaJob(_workspaceId, jobId) {
 				assert.equal(jobId, first.jobId);
-				firstReads += 1;
-				if (firstReads === 1) {
-					events.push("get:1:running");
-					return {
-						result: { ...first, status: "unknown", asset: undefined },
-					};
-				}
 				events.push("get:1:completed");
 				return { result: first };
 			},
@@ -1089,12 +1091,18 @@ test("note pages keep durable admission single-flight while compiler branches re
 			context: contextSnapshot(),
 			request,
 			workflowId: "workflow-note:page-1",
+			awaitSignal: async () => {},
 		}),
 		adapter.execute({
 			brief: imageBriefFor("image.generate", 0),
 			context: contextSnapshot(),
 			request,
 			workflowId: "workflow-note:page-2",
+			awaitSignal: async () => {
+				while (!events.includes("completed:g1")) {
+					await new Promise<void>((resolve) => setImmediate(resolve));
+				}
+			},
 		}),
 	]);
 
@@ -1105,8 +1113,6 @@ test("note pages keep durable admission single-flight while compiler branches re
 		"blocked:workflow-note:page-2",
 		"submit:1",
 		"running:g1",
-		"get:1:running",
-		"blocked:workflow-note:page-2",
 		"get:1:completed",
 		"completed:g1",
 		"claim:workflow-note:page-2:g2",
