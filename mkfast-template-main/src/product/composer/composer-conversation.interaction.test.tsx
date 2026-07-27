@@ -211,6 +211,32 @@ describe('the transcript is a card flow', () => {
     expect(conversation.querySelector('form')).toBeNull();
   });
 
+  it('is the supply-layer transcript container, not a hand-rolled scroller (U03)', () => {
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={running()}
+        stream={emptyStream}
+      />
+    );
+
+    // `data-slot` is written by the vendored unit itself, so this goes red the
+    // moment the container is swapped back for a <section> + endRef pair.
+    const conversation = screen.getByTestId('composer-conversation');
+    expect(conversation.dataset.slot).toBe('chat-conversation');
+    expect(
+      conversation.querySelector('[data-slot="chat-conversation-content"]')
+    ).not.toBeNull();
+    expect(
+      conversation.querySelector(
+        '[data-slot="chat-conversation-scroll-anchor"]'
+      )
+    ).not.toBeNull();
+    // The whole transcript must not become one live region: the announcements
+    // belong to the progress card and the candidate area.
+    expect(conversation.getAttribute('aria-live')).toBe('off');
+  });
+
   it('streams one primary candidate and folds alternatives away', () => {
     const stream = projectResultTokenStream({
       workspaceKind: 'copy',
@@ -230,9 +256,11 @@ describe('the transcript is a card flow', () => {
 
     const area = screen.getByTestId('composer-candidate-stream');
     expect(area).toHaveAttribute('data-has-token', 'true');
-    expect(screen.getByTestId('composer-candidate-primary')).toHaveTextContent(
-      '周末预约'
-    );
+    const primary = screen.getByTestId('composer-candidate-primary');
+    expect(primary).toHaveTextContent('周末预约');
+    // U03: the body is rendered by the supply-layer markdown unit — red if the
+    // prompt-kit response-stream copy comes back or the body drops to plain text.
+    expect(primary.querySelector('[data-slot="markdown"]')).not.toBeNull();
     // D-113 / story 15: alternatives are an opt-in disclosure, never a grid.
     const alternates = screen.getByTestId('composer-candidate-alternates');
     expect(alternates.tagName).toBe('DETAILS');
@@ -369,6 +397,26 @@ describe('进度宣告卡', () => {
       'data-running',
       'false'
     );
+  });
+
+  it('is the supply-layer step rail, and it opens read (U03)', () => {
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={withStages('已听懂这次想表达的重点')}
+        stream={emptyStream}
+      />
+    );
+
+    const card = screen.getByTestId('composer-progress-card');
+    // Written by the vendored unit — goes red if the hand-rolled <ol> returns.
+    expect(card.dataset.slot).toBe('chain-of-thought');
+    expect(
+      card.querySelector('[data-slot="chain-of-thought-step"]')
+    ).not.toBeNull();
+    // D-116: the 白话进度 is a delivery statement the merchant is meant to
+    // read, so a disclosure may offer to fold it but must never open folded.
+    expect(within(card).getByTestId('composer-stage-line')).toBeVisible();
   });
 });
 

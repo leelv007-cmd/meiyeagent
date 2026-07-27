@@ -8,13 +8,7 @@ import {
   ArrowRight,
   ArrowDown,
 } from 'lucide-react';
-import {
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type ReactNode,
-} from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import {
   landing_a11y_add_material,
@@ -35,19 +29,8 @@ import {
 import { Routes } from '@/lib/routes';
 import { useTheme } from '@/components/theme/theme-provider';
 import { captureLandingIntent } from '@/product/landing-handoff';
+import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { FluidCursor } from './fluid-cursor';
-
-function usePrefersReducedMotion(): boolean {
-  return useSyncExternalStore(
-    (callback) => {
-      const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-      mediaQuery.addEventListener('change', callback);
-      return () => mediaQuery.removeEventListener('change', callback);
-    },
-    () => window.matchMedia('(prefers-reduced-motion: reduce)').matches,
-    () => false
-  );
-}
 
 export function Hero(): ReactNode {
   const sectionRef = useRef<HTMLElement>(null);

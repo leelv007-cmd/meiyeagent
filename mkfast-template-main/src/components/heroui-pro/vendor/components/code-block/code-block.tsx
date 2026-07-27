@@ -16,7 +16,6 @@ import {
   useReducedMotion,
 } from 'motion/react';
 import * as m from 'motion/react-m';
-import { codeToHtml } from 'shiki';
 import { Button } from '@heroui/react';
 import { composeSlotClassName } from '../../utils/compose';
 import { Check, Copy } from '../icons';
@@ -125,6 +124,7 @@ export const CodeBlockCode = ({
       }
 
       try {
+        const { codeToHtml } = await import('shiki');
         const html = resolvedDarkTheme
           ? await codeToHtml(code, {
               defaultColor: false,

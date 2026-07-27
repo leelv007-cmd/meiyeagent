@@ -10,9 +10,16 @@
  * consumed by product/use-workflow-event-stream) — this card never opens a
  * second stream, and it never rewrites what core said: core owns the wording
  * (harness/merchant-delivery-language.ts) and this is its projection.
+ *
+ * The rail itself is HeroUI Pro `ChainOfThought` (U03): the hand-rolled
+ * `<ol>` + dot markers were that component's step list with different class
+ * names. It stays **expanded by default** — a disclosure that hides the
+ * delivery statement would contradict D-116 — but a merchant who has read it
+ * may now fold it away, which the hand-rolled list could not offer.
  */
 
-import { ChatLoader } from '@/components/heroui-pro';
+import { ChainOfThought, ChatLoader } from '@/components/heroui-pro';
+import { composer_progress_card_title } from '@/locale/paraglide/messages';
 import { cn } from '@/lib/utils';
 
 import type { ComposerStageTurn } from './composer-session';
@@ -34,49 +41,60 @@ export function ComposerProgressCard({
   const lastIndex = stages.length - 1;
 
   return (
-    <section
-      aria-label="创作进度"
+    <ChainOfThought
+      aria-label={composer_progress_card_title()}
       // aria-live so a merchant using a screen reader hears the run move on;
       // polite because announcements must never interrupt what they are typing.
       aria-live="polite"
       className={cn('meiye-porcelain rounded-2xl p-4', className)}
       data-running={running ? 'true' : 'false'}
       data-testid="composer-progress-card"
+      defaultExpanded
+      isStreaming={running}
     >
-      <ol className="flex flex-col gap-2">
-        {stages.map((stage, index) => {
-          const live = running && index === lastIndex;
-          return (
-            <li className="flex items-start gap-2" key={stage.id}>
-              <span
-                aria-hidden="true"
-                className="mt-1.5 flex h-3 w-3 shrink-0 items-center justify-center"
+      <ChainOfThought.Trigger>
+        {composer_progress_card_title()}
+      </ChainOfThought.Trigger>
+      <ChainOfThought.Content>
+        <ChainOfThought.Steps>
+          {stages.map((stage, index) => {
+            const live = running && index === lastIndex;
+            return (
+              <ChainOfThought.Step
+                key={stage.id}
+                label={
+                  <span
+                    // 白话进度 is an output surface D-116 expects the merchant
+                    // to read, so past stages stay legible rather than dropping
+                    // to footnote grey; only the emphasis differs from the live
+                    // one.
+                    className={cn(
+                      'text-xs',
+                      live ? 'text-foreground' : 'text-foreground/70'
+                    )}
+                    data-stage={stage.stage}
+                    // Kept from the pre-card stage line: the D-114 container
+                    // spec and its journey assertions address announcements by
+                    // this id.
+                    data-testid="composer-stage-line"
+                  >
+                    {stage.message}
+                  </span>
+                }
               >
                 {live ? (
-                  <ChatLoader.Dots />
-                ) : (
-                  <span className="bg-foreground/25 h-1.5 w-1.5 rounded-full" />
-                )}
-              </span>
-              <p
-                // 白话进度 is an output surface D-116 expects the merchant to
-                // read, so past stages stay legible rather than dropping to
-                // footnote grey; only the emphasis differs from the live one.
-                className={cn(
-                  'text-xs',
-                  live ? 'text-foreground' : 'text-foreground/70'
-                )}
-                data-stage={stage.stage}
-                // Kept from the pre-card stage line: the D-114 container spec
-                // and its journey assertions address announcements by this id.
-                data-testid="composer-stage-line"
-              >
-                {stage.message}
-              </p>
-            </li>
-          );
-        })}
-      </ol>
-    </section>
+                  <span
+                    aria-hidden="true"
+                    className="flex h-3 w-3 items-center justify-center"
+                  >
+                    <ChatLoader.Dots />
+                  </span>
+                ) : null}
+              </ChainOfThought.Step>
+            );
+          })}
+        </ChainOfThought.Steps>
+      </ChainOfThought.Content>
+    </ChainOfThought>
   );
 }

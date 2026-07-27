@@ -13,19 +13,20 @@
  * authority.
  */
 
-import { useEffect, useRef } from 'react';
-
 import {
+  ChatConversation,
   ChatLoader,
   ChatMessage,
   PromptInput,
   Segment,
 } from '@/components/heroui-pro';
 import {
+  composer_conversation_scroll_to_latest,
   model_card_channel_multi,
   model_card_channel_single,
 } from '@/locale/paraglide/messages';
 import { StreamingAiMarkdown } from '@/components/markdown/ai-markdown';
+import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { cn } from '@/lib/utils';
 import type { ResultTokenStreamProjection } from '@/product/results/result-token-stream';
 
@@ -204,17 +205,11 @@ export function ComposerConversation({
   onOpenDelivery,
   onRecover,
 }: ComposerConversationProps) {
-  const endRef = useRef<HTMLDivElement | null>(null);
   const turnCount = session.turns.length;
-
-  useEffect(() => {
-    // Structured card flow, not a chat log — follow the newest turn without
-    // hijacking the page scroll on first paint.
-    if (turnCount === 0) return;
-    // Optional-call: following the newest turn is a nicety, and jsdom has no
-    // scrollIntoView.
-    endRef.current?.scrollIntoView?.({ block: 'nearest' });
-  }, [turnCount]);
+  // `scrollTo({ behavior: 'smooth' })` ignores the `scroll-behavior: auto`
+  // that styles.css forces under prefers-reduced-motion, so the transcript
+  // has to answer the preference itself.
+  const scrollBehavior = usePrefersReducedMotion() ? 'instant' : 'smooth';
 
   if (turnCount === 0 && !identitySlot) return null;
 
@@ -290,18 +285,40 @@ export function ComposerConversation({
   };
 
   return (
-    <section
-      className="flex flex-col gap-3"
+    /*
+      ChatConversation owns「跟住最新一条」— the behaviour the retired
+      `endRef` + `scrollIntoView` pair hand-rolled. It only works inside a
+      bounded pane (the component scrolls itself and fades its own edges), so
+      the transcript gets a height cap here rather than growing the page
+      forever; the prompt bar below therefore stays reachable without scrolling
+      past the whole run.
+
+      `aria-live="off"` on purpose: the component's `role="log"` would make the
+      entire transcript one live region and re-announce whole cards. The
+      announcements are already owned where they are written — 进度宣告卡 and
+      the candidate stream each carry their own polite region.
+    */
+    <ChatConversation
+      aria-live="off"
+      className="max-h-[min(70svh,44rem)]"
       data-phase={session.phase}
       data-testid="composer-conversation"
+      initial={scrollBehavior}
+      resize={scrollBehavior}
     >
-      {/* T10's Day-0 identity card leads the flow; the folded turn list
-          follows it. Both, in this order — the identity choice is offered
-          before there is any transcript to fold. */}
-      {identitySlot}
-      {foldTurns(session.turns).map(renderTurn)}
-      <div ref={endRef} />
-    </section>
+      <ChatConversation.Content className="flex flex-col gap-3">
+        {/* T10's Day-0 identity card leads the flow; the folded turn list
+            follows it. Both, in this order — the identity choice is offered
+            before there is any transcript to fold. */}
+        {identitySlot}
+        {foldTurns(session.turns).map(renderTurn)}
+        <ChatConversation.ScrollAnchor />
+      </ChatConversation.Content>
+      <ChatConversation.ScrollButton
+        aria-label={composer_conversation_scroll_to_latest()}
+        data-testid="composer-conversation-scroll-to-latest"
+      />
+    </ChatConversation>
   );
 }
 
