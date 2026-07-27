@@ -169,7 +169,10 @@ test('builds one finalize batch with only the explicitly edited profile field', 
       expectedFactRevision: 0,
     },
   ]);
-  const candidate = command?.payload.batch.candidates[0];
+  const batch = command?.payload.batch;
+  assert.ok(batch && 'candidates' in batch);
+  if (!batch || !('candidates' in batch)) return;
+  const candidate = batch.candidates[0];
   assert.ok(candidate && 'fact' in candidate);
   if (!candidate || !('fact' in candidate)) return;
   assert.equal(candidate.fact.kind, 'price');
@@ -179,7 +182,7 @@ test('builds one finalize batch with only the explicitly edited profile field', 
   assert.equal(candidate.fact.source.kind, 'user_confirmation');
   assert.equal(candidate.fact.source.referenceId, 'progressive-card-a');
   assert.equal(candidate.fact.expiresAt, null);
-  assert.equal(command?.payload.batch.source.capabilityStatus, 'assisted');
+  assert.equal(batch.source.capabilityStatus, 'assisted');
 });
 
 test('skipped fallbacks may patch the profile but never become StoreFacts', () => {
@@ -200,8 +203,11 @@ test('skipped fallbacks may patch the profile but never become StoreFacts', () =
   });
 
   assert.equal(command?.payload.profilePatch.district, '本区');
+  const batch = command?.payload.batch;
+  assert.ok(batch && 'candidates' in batch);
+  if (!batch || !('candidates' in batch)) return;
   assert.equal(
-    command?.payload.batch.candidates.some(
+    batch.candidates.some(
       (candidate) =>
         'fact' in candidate && candidate.fact.key === 'store.profile.district'
     ),
@@ -246,10 +252,12 @@ test('revision zero creates a complete profile patch without promoting fallbacks
       ],
     },
   });
-  const factKeys =
-    command?.payload.batch.candidates.flatMap((candidate) =>
-      'fact' in candidate ? [candidate.fact.key] : []
-    ) ?? [];
+  const batch = command?.payload.batch;
+  assert.ok(batch && 'candidates' in batch);
+  if (!batch || !('candidates' in batch)) return;
+  const factKeys = batch.candidates.flatMap((candidate) =>
+    'fact' in candidate ? [candidate.fact.key] : []
+  );
   assert.equal(factKeys.includes('store.profile.district'), false);
   assert.equal(factKeys.includes('store.fulfillment.address'), false);
   assert.equal(factKeys.includes('store.fulfillment.booking'), false);
