@@ -14,6 +14,12 @@ export type AdjustPromptProps = {
   placeholder?: string;
   submitLabel?: string;
   disabled?: boolean;
+  /**
+   * Why this box cannot be used, in merchant words. A result the page cannot
+   * adjust used to render an enabled box whose submit handler returned without
+   * saying anything; saying it is the fix.
+   */
+  unavailableReason?: string;
   onSubmit?: (instruction: string) => void;
   /** Optional scope chips (image: 调整这张 / 调整整组). */
   scopeActions?: { id: string; label: string }[];
@@ -34,6 +40,14 @@ export function AdjustPrompt(props: AdjustPromptProps) {
       <label className="text-sm font-medium" htmlFor="result-adjust-input">
         {placeholder}
       </label>
+      {props.unavailableReason ? (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="result-adjust-unavailable"
+        >
+          {props.unavailableReason}
+        </p>
+      ) : null}
       {props.scopeActions && props.scopeActions.length > 0 ? (
         <div className="flex flex-wrap gap-2" data-testid="result-adjust-scope">
           {props.scopeActions.map((action) => (

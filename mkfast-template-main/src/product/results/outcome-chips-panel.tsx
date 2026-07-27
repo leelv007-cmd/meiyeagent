@@ -7,20 +7,88 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  result_outcome_detail_heading,
+  result_outcome_detail_note,
+  result_outcome_detail_occurred_at,
+  result_outcome_detail_quantity,
+  result_outcome_detail_yesterday,
+} from '@/locale/paraglide/messages';
+import { useState } from 'react';
 
-import type {
-  OutcomeObservationKind,
-  OutcomeObservationPanelView,
+import {
+  isUnsafeOutcomeNote,
+  type OutcomeObservationKind,
+  type OutcomeObservationPanelView,
 } from './outcome-observation-model';
+
+/**
+ * The three optional fields the contract and core have always carried and the
+ * chips never sent. `occurredAt` is the 「这是昨天的」 one: without it every
+ * backfilled signal claimed to have happened at the moment it was typed.
+ */
+export type OutcomeObservationDetail = {
+  note?: string;
+  occurredAt?: string;
+  quantity?: number;
+};
 
 export type OutcomeChipsPanelProps = {
   view: OutcomeObservationPanelView;
   pending?: boolean;
-  onRecord?: (kind: OutcomeObservationKind) => void | Promise<void>;
+  onRecord?: (
+    kind: OutcomeObservationKind,
+    detail?: OutcomeObservationDetail
+  ) => void | Promise<void>;
 };
+
+function yesterdayLocalInputValue(now = new Date()): string {
+  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return (
+    `${yesterday.getFullYear()}-${pad(yesterday.getMonth() + 1)}-` +
+    `${pad(yesterday.getDate())}T${pad(yesterday.getHours())}:` +
+    `${pad(yesterday.getMinutes())}`
+  );
+}
 
 export function OutcomeChipsPanel(props: OutcomeChipsPanelProps) {
   const { view } = props;
+  const [quantity, setQuantity] = useState('');
+  const [occurredAt, setOccurredAt] = useState('');
+  const [note, setNote] = useState('');
+  const [detailError, setDetailError] = useState<string | null>(null);
+
+  const buildDetail = (): OutcomeObservationDetail | null => {
+    const parsedQuantity = quantity.trim()
+      ? Number(quantity.trim())
+      : undefined;
+    if (
+      parsedQuantity !== undefined &&
+      (!Number.isInteger(parsedQuantity) || parsedQuantity <= 0)
+    ) {
+      setDetailError('数量填个大于 0 的整数就行。');
+      return null;
+    }
+    const trimmedNote = note.trim() || undefined;
+    if (isUnsafeOutcomeNote(trimmedNote)) {
+      setDetailError('备注只留一句话，别写进客人的联系方式。');
+      return null;
+    }
+    const occurred = occurredAt ? new Date(occurredAt) : undefined;
+    if (occurred && Number.isNaN(occurred.getTime())) {
+      setDetailError('时间没认出来，重选一次。');
+      return null;
+    }
+    setDetailError(null);
+    return {
+      ...(trimmedNote ? { note: trimmedNote } : {}),
+      ...(occurred ? { occurredAt: occurred.toISOString() } : {}),
+      ...(parsedQuantity !== undefined ? { quantity: parsedQuantity } : {}),
+    };
+  };
 
   return (
     <section
@@ -65,13 +133,84 @@ export function OutcomeChipsPanel(props: OutcomeChipsPanelProps) {
             }}
             onClick={() => {
               if (!chip.enabled || !props.onRecord) return;
-              void props.onRecord(chip.kind);
+              const detail = buildDetail();
+              if (!detail) return;
+              void props.onRecord(
+                chip.kind,
+                Object.keys(detail).length > 0 ? detail : undefined
+              );
+              setQuantity('');
+              setOccurredAt('');
+              setNote('');
             }}
           >
             {chip.label}
           </Button>
         ))}
       </fieldset>
+
+      {view.kind === 'ready' ? (
+        <div className="space-y-2" data-testid="outcome-observation-detail">
+          <p className="text-xs text-muted-foreground">
+            {result_outcome_detail_heading()}
+          </p>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <div className="space-y-1">
+              <Label htmlFor="outcome-detail-quantity">
+                {result_outcome_detail_quantity()}
+              </Label>
+              <Input
+                id="outcome-detail-quantity"
+                data-testid="outcome-detail-quantity"
+                inputMode="numeric"
+                value={quantity}
+                onChange={(event) => setQuantity(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="outcome-detail-occurred-at">
+                {result_outcome_detail_occurred_at()}
+              </Label>
+              <Input
+                id="outcome-detail-occurred-at"
+                data-testid="outcome-detail-occurred-at"
+                type="datetime-local"
+                value={occurredAt}
+                onChange={(event) => setOccurredAt(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="outcome-detail-note">
+                {result_outcome_detail_note()}
+              </Label>
+              <Input
+                id="outcome-detail-note"
+                data-testid="outcome-detail-note"
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+              />
+            </div>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            data-testid="outcome-detail-yesterday"
+            onClick={() => setOccurredAt(yesterdayLocalInputValue())}
+          >
+            {result_outcome_detail_yesterday()}
+          </Button>
+          {detailError ? (
+            <p
+              className="text-xs text-destructive"
+              data-testid="outcome-detail-error"
+              role="alert"
+            >
+              {detailError}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {view.kind === 'ready' ? (
         <>

@@ -769,6 +769,36 @@ ledger state, and the redemption is a real code an admin recorded.
   to edit — the public page reads the same `plan.allowances.*` revision the
   grant reads (D-143 单一商品目录).
 
+## S5 成品动作面（#239 / W07+W08+W09）
+
+`specs/s5-work-page.spec.ts` walks the two things a merchant could not do on a
+finished 成品 before this slice, against a real backend.
+
+- 改一句就用：selecting 弱促销 on the copy worksurface shows the diff first —
+  原来的 / 改写后 — and writes nothing until 就用这版. That button is the only
+  producer of a `QuickEditIntent`; the spec asserts the outgoing
+  `edit_content_package_version` carries `intent.action = promotion_weaker`,
+  because the 13-action contract had been fully implemented server-side with no
+  browser that could reach it.
+- 做成海报 → 海报入口：the export-use intent lands, core attaches
+  `exportUseDelivery` to the new version, and the carrier renders on the same
+  page. Before, the renderer was unreachable code waiting for a field the
+  front end never produced.
+- 昨天的到店：the result chip now carries 数量 and 「这是昨天的」. The spec
+  asserts the command leaves with `quantity` and a backdated `occurredAt`, and
+  that the row reads as yesterday's date — 「not today」 alone is passed by any
+  wrong clock, and a backdated signal that stamps `now` is a false record.
+- 三级分层不再是装饰：the inferred tier is computed per request by
+  `content_package_results`, never stored on the package. The spec requires a
+  real row under 推断相关性 plus its non-causal sentence, which is what tells a
+  wired third tier apart from an empty heading.
+- 基于此再创作 → 基于「X」再创作：the derive is walked end to end, because both
+  of its failures were invisible without one — core refused it for the Work's
+  Composer session id and again for the missing Brief context, so the lineage
+  the surfaces read had never been written at all. The spec asserts the derive
+  is accepted, that it carries a `kind: 'content'` source reference, and that
+  the page it lands on names the 作品 it came from.
+
 ## M-04 required browser hard gate（T37 / #231）
 
 `specs/m04-browser-hard-gate.spec.ts` is the browser journey the ordinary pull

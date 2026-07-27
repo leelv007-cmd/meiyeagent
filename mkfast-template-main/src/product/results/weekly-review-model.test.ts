@@ -6,6 +6,7 @@ import type { PublicationRecordFact } from './publication-record-model';
 import {
   confirmWeeklyRecommendation,
   projectWeeklyReviewPanel,
+  weeklyReviewDerivePayload,
   type WeeklyReviewFacts,
 } from './weekly-review-model';
 
@@ -150,5 +151,56 @@ describe('weekly-review-model', () => {
     assert.equal(view.kind, 'ready');
     if (view.kind !== 'ready') return;
     assert.equal(view.recommendations.length, 0);
+  });
+
+  it('the three next-round actions no longer compile to one payload', () => {
+    const shared = {
+      sourcePackageId: 'pkg-a',
+      sourceWorkId: 'work-a',
+      title: '夏日美甲',
+      ctaLabel: '私信领优惠',
+      platformLabel: '小红书',
+    };
+    const payloads = (
+      ['continue_series', 'change_cta', 'change_platform'] as const
+    ).map((action) => weeklyReviewDerivePayload({ ...shared, action }));
+    const serialised = payloads.map((payload) => JSON.stringify(payload));
+    assert.equal(new Set(serialised).size, 3);
+    assert.equal(new Set(payloads.map((p) => p.intent)).size, 3);
+    assert.equal(new Set(payloads.map((p) => p.sessionId)).size, 3);
+    // Every action carries the source ContentPackage forward for lineage.
+    for (const payload of payloads) {
+      assert.ok(
+        payload.sourceReferences.some(
+          (reference) =>
+            reference.kind === 'content' && reference.id === 'pkg-a'
+        )
+      );
+    }
+  });
+
+  it('prefills 换 CTA with the CTA it is replacing', () => {
+    const payload = weeklyReviewDerivePayload({
+      action: 'change_cta',
+      sourcePackageId: 'pkg-a',
+      sourceWorkId: 'work-a',
+      title: '夏日美甲',
+      ctaLabel: '私信领优惠',
+    });
+    assert.match(payload.intent, /私信领优惠/u);
+    assert.deepEqual(payload.sourceReferences[0]?.inheritanceFields, [
+      'content_structure',
+    ]);
+  });
+
+  it('falls back to a neutral sentence when the source has no CTA', () => {
+    const payload = weeklyReviewDerivePayload({
+      action: 'change_cta',
+      sourcePackageId: 'pkg-a',
+      sourceWorkId: 'work-a',
+      title: '夏日美甲',
+    });
+    assert.doesNotMatch(payload.intent, /「」/u);
+    assert.match(payload.intent, /夏日美甲/u);
   });
 });

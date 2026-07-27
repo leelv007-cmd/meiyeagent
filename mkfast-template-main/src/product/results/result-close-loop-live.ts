@@ -205,6 +205,20 @@ export function projectResultCloseLoopFacts(input: {
   assistedReceipts: readonly AssistedReceipt[];
   canShareFiles: boolean;
   hasDownload: boolean;
+  /**
+   * The `inferred_temporal` tier as core computes it (`content_package_results`).
+   * It is never stored on the package, so a page that reads only
+   * `resultSignals` shows two of the three tiers and decorates the third.
+   */
+  inferredSignals?: readonly {
+    id: string;
+    kind: string;
+    source: string;
+    actorId: string;
+    occurredAt: string;
+    quantity?: number;
+    note?: string;
+  }[];
   nowIso: string;
   preferredPlatform?: DeliveryPanelTarget;
 }): ResultCloseLoopFacts {
@@ -241,7 +255,10 @@ export function projectResultCloseLoopFacts(input: {
       publicationRecordId: publications.find(
         (publication) => publication.status === 'published'
       )?.id,
-      signals: input.contentPackage.resultSignals ?? [],
+      signals: [
+        ...(input.contentPackage.resultSignals ?? []),
+        ...(input.inferredSignals ?? []),
+      ],
     }),
     weeklyReview: weeklyFactsFromPackages({
       contentPackages: input.contentPackages,
