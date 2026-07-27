@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert';
 import test from 'node:test';
 
 import {
+  adminConfigFieldId,
   buildAdminConfigFields,
   defaultAdminConfigValue,
   flattenFields,
@@ -152,6 +153,28 @@ test('note styles render as cards with a platform toggle set', () => {
   );
   assert.equal(guide?.kind, 'text');
   assert.equal(guide?.kind === 'text' && guide.multiline, true);
+
+  // 名称和写作要点都没有长度上限，但一个是一行、一个是一段。
+  const name = styles.itemFields.find((field) => field.path.at(-1) === 'name');
+  assert.equal(name?.kind === 'text' && name.multiline, false);
+});
+
+/** 行内字段的 id 必须按行号解析，否则第二行会顶着第一行的 id。 */
+test('list rows address their fields by row, not by the template index', () => {
+  const [styles] = buildAdminConfigFields('harness.note.styles');
+  assert.equal(styles.kind, 'list');
+  const first = adminConfigFieldId('harness.note.styles', [
+    'styles',
+    0,
+    'name',
+  ]);
+  const second = adminConfigFieldId('harness.note.styles', [
+    'styles',
+    1,
+    'name',
+  ]);
+  assert.equal(first, 'admin-config-harness-note-styles-styles-0-name');
+  assert.notEqual(first, second);
 });
 
 test('a never-written key still opens on a usable starting value', () => {

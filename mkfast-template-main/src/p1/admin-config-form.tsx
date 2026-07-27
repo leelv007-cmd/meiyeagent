@@ -8,10 +8,11 @@
  *
  * 表单只负责改值；保存仍走原来的影响面确认 + 写入原因 + CAS，一步没少。
  */
-import { IconPlus, IconTrash } from '@tabler/icons-react';
 import { ListBox } from '@heroui/react';
+import { IconPlus, IconTrash } from '@tabler/icons-react';
 import { useMemo } from 'react';
 
+import type { DataGridColumn } from '@/components/heroui-pro';
 import {
   CellSelect,
   CellSlider,
@@ -20,10 +21,9 @@ import {
   NativeSelect,
   NumberStepper,
 } from '@/components/heroui-pro';
-import type { DataGridColumn } from '@/components/heroui-pro';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
   admin_config_list_add,
@@ -37,6 +37,7 @@ import {
 } from '@/locale/paraglide/messages';
 import {
   type AdminConfigField,
+  adminConfigFieldId,
   type AdminConfigFieldPath,
   buildAdminConfigFields,
   listItemTemplate,
@@ -45,12 +46,23 @@ import {
 } from '@/p1/admin-config-field-model';
 
 interface FieldViewProps {
+  configKey: string;
+  /** 行内格子用更紧的控件，成表单的字段用常规控件。 */
+  dense?: boolean;
   disabled?: boolean;
   field: AdminConfigField;
   onChange: (next: unknown) => void;
-  /** 行内字段的真实路径（列表把模板里的 0 换成行号）。 */
+  /** 解析后的真实路径（列表把模板里的下标换成行号）。 */
   path: AdminConfigFieldPath;
   root: unknown;
+}
+
+/**
+ * 控件的 DOM id 一律按解析后的路径算，不用 `field.id`——后者来自列表的模板
+ * 路径（下标恒为 0），直接用会让每一行顶着同一个 id，`<label for>` 也指错。
+ */
+function domId(props: Pick<FieldViewProps, 'configKey' | 'path'>) {
+  return adminConfigFieldId(props.configKey, props.path);
 }
 
 /** 列表模板里的下标占位换成真实行号。 */
@@ -62,21 +74,20 @@ function rowPath(
   return [...listPath, index, ...templatePath.slice(listPath.length + 1)];
 }
 
-function rowId(field: AdminConfigField, index: number) {
-  return `${field.id}-${index}`;
+function rowId(
+  configKey: string,
+  listPath: AdminConfigFieldPath,
+  index: number
+) {
+  return `${adminConfigFieldId(configKey, listPath)}-${index}`;
 }
 
-function BooleanField({
-  disabled,
-  field,
-  onChange,
-  path,
-  root,
-}: FieldViewProps) {
+function BooleanField(props: FieldViewProps) {
+  const { disabled, field, onChange, path, root } = props;
   const checked = readFieldValue(root, path) === true;
   return (
     <CellSwitch.Root
-      data-testid={field.id}
+      data-testid={domId(props)}
       isDisabled={disabled}
       isSelected={checked}
       onChange={(next) => onChange(writeFieldValue(root, path, next))}
@@ -89,14 +100,8 @@ function BooleanField({
   );
 }
 
-function EnumField({
-  dense,
-  disabled,
-  field,
-  onChange,
-  path,
-  root,
-}: FieldViewProps & { dense?: boolean }) {
+function EnumField(props: FieldViewProps) {
+  const { dense, disabled, field, onChange, path, root } = props;
   if (field.kind !== 'enum') return null;
   const current = String(readFieldValue(root, path) ?? '');
 
@@ -110,7 +115,7 @@ function EnumField({
         }
         selectedKey={current}
       >
-        <CellSelect.Trigger data-testid={field.id}>
+        <CellSelect.Trigger data-testid={domId(props)}>
           <CellSelect.Value />
           <CellSelect.Indicator />
         </CellSelect.Trigger>
@@ -134,12 +139,12 @@ function EnumField({
 
   return (
     <div className="space-y-2">
-      <Label htmlFor={field.id}>{field.label}</Label>
+      <Label htmlFor={domId(props)}>{field.label}</Label>
       <NativeSelect.Root fullWidth>
         <NativeSelect.Trigger
-          data-testid={field.id}
+          data-testid={domId(props)}
           disabled={disabled}
-          id={field.id}
+          id={domId(props)}
           onChange={(event) =>
             onChange(writeFieldValue(root, path, event.target.value))
           }
@@ -156,13 +161,8 @@ function EnumField({
   );
 }
 
-function NumberField({
-  disabled,
-  field,
-  onChange,
-  path,
-  root,
-}: FieldViewProps) {
+function NumberField(props: FieldViewProps) {
+  const { disabled, field, onChange, path, root } = props;
   if (field.kind !== 'number') return null;
   const raw = readFieldValue(root, path);
   const current = typeof raw === 'number' ? raw : (field.min ?? 0);
@@ -170,7 +170,7 @@ function NumberField({
 
   if (field.control === 'slider') {
     return (
-      <div className="space-y-2" data-testid={field.id}>
+      <div className="space-y-2" data-testid={domId(props)}>
         <CellSlider.Root
           aria-label={field.label}
           isDisabled={disabled}
@@ -192,7 +192,7 @@ function NumberField({
   }
 
   return (
-    <div className="space-y-2" data-testid={field.id}>
+    <div className="space-y-2" data-testid={domId(props)}>
       <Label>{field.label}</Label>
       <NumberStepper.Root
         aria-label={field.label}
@@ -216,29 +216,30 @@ function NumberField({
   );
 }
 
-function TextField({ disabled, field, onChange, path, root }: FieldViewProps) {
+function TextField(props: FieldViewProps) {
+  const { disabled, field, onChange, path, root } = props;
   if (field.kind !== 'text') return null;
   const current = String(readFieldValue(root, path) ?? '');
   const commit = (next: string) => onChange(writeFieldValue(root, path, next));
 
   return (
     <div className="space-y-2">
-      <Label htmlFor={field.id}>{field.label}</Label>
+      <Label htmlFor={domId(props)}>{field.label}</Label>
       {field.multiline ? (
         <Textarea
           className="min-h-24"
-          data-testid={field.id}
+          data-testid={domId(props)}
           disabled={disabled}
-          id={field.id}
+          id={domId(props)}
           maxLength={field.maxLength}
           onChange={(event) => commit(event.target.value)}
           value={current}
         />
       ) : (
         <Input
-          data-testid={field.id}
+          data-testid={domId(props)}
           disabled={disabled}
-          id={field.id}
+          id={domId(props)}
           maxLength={field.maxLength}
           onChange={(event) => commit(event.target.value)}
           value={current}
@@ -248,13 +249,8 @@ function TextField({ disabled, field, onChange, path, root }: FieldViewProps) {
   );
 }
 
-function ToggleSetField({
-  disabled,
-  field,
-  onChange,
-  path,
-  root,
-}: FieldViewProps) {
+function ToggleSetField(props: FieldViewProps) {
+  const { disabled, field, onChange, path, root } = props;
   if (field.kind !== 'toggle-set') return null;
   const raw = readFieldValue(root, path);
   const selected = new Set(Array.isArray(raw) ? raw.map(String) : []);
@@ -266,12 +262,12 @@ function ToggleSetField({
   };
 
   return (
-    <fieldset className="space-y-2" data-testid={field.id}>
+    <fieldset className="space-y-2" data-testid={domId(props)}>
       <legend className="font-medium text-sm">{field.label}</legend>
       <div className="flex flex-wrap gap-3">
         {field.options.map((option) => (
           <CellSwitch.Root
-            data-testid={`${field.id}-${option.value}`}
+            data-testid={`${domId(props)}-${option.value}`}
             isDisabled={disabled}
             isSelected={selected.has(option.value)}
             key={option.value}
@@ -297,7 +293,8 @@ interface GridRow {
   __index: number;
 }
 
-function ListField({ disabled, field, onChange, path, root }: FieldViewProps) {
+function ListField(props: FieldViewProps) {
+  const { configKey, disabled, field, onChange, path, root } = props;
   if (field.kind !== 'list') return null;
   const raw = readFieldValue(root, path);
   const items = Array.isArray(raw) ? raw : [];
@@ -330,7 +327,7 @@ function ListField({ disabled, field, onChange, path, root }: FieldViewProps) {
         </p>
       </div>
       <Button
-        data-testid={`${field.id}-add`}
+        data-testid={`${domId(props)}-add`}
         disabled={disabled || atMax}
         onClick={addRow}
         size="sm"
@@ -345,7 +342,7 @@ function ListField({ disabled, field, onChange, path, root }: FieldViewProps) {
 
   if (items.length === 0) {
     return (
-      <div className="space-y-3" data-testid={field.id}>
+      <div className="space-y-3" data-testid={domId(props)}>
         {header}
         <p className="text-muted-foreground text-sm">
           {admin_config_list_empty()}
@@ -360,6 +357,7 @@ function ListField({ disabled, field, onChange, path, root }: FieldViewProps) {
       ...field.itemFields.map((itemField, position) => ({
         cell: (row: GridRow) => (
           <FieldView
+            configKey={configKey}
             dense
             disabled={disabled}
             field={itemField}
@@ -376,7 +374,7 @@ function ListField({ disabled, field, onChange, path, root }: FieldViewProps) {
         align: 'end' as const,
         cell: (row: GridRow) => (
           <Button
-            data-testid={`${rowId(field, row.__index)}-remove`}
+            data-testid={`${rowId(configKey, path, row.__index)}-remove`}
             disabled={disabled || atMin}
             onClick={() => removeRow(row.__index)}
             size="sm"
@@ -388,12 +386,12 @@ function ListField({ disabled, field, onChange, path, root }: FieldViewProps) {
           </Button>
         ),
         header: '',
-        id: `${field.id}-actions`,
+        id: `${domId(props)}-actions`,
       },
     ];
 
     return (
-      <div className="space-y-3" data-testid={field.id}>
+      <div className="space-y-3" data-testid={domId(props)}>
         {header}
         <DataGrid
           aria-label={field.label}
@@ -407,20 +405,21 @@ function ListField({ disabled, field, onChange, path, root }: FieldViewProps) {
   }
 
   return (
-    <div className="space-y-3" data-testid={field.id}>
+    <div className="space-y-3" data-testid={domId(props)}>
       {header}
       <div className="space-y-4">
         {items.map((_, index) => (
           <fieldset
             className="space-y-3 rounded-lg border p-4"
-            data-testid={rowId(field, index)}
-            key={rowId(field, index)}
+            data-testid={rowId(configKey, path, index)}
+            key={rowId(configKey, path, index)}
           >
             <legend className="px-1 font-medium text-sm">
               {admin_config_list_row({ index: index + 1 })}
             </legend>
             {field.itemFields.map((itemField) => (
               <FieldView
+                configKey={configKey}
                 disabled={disabled}
                 field={itemField}
                 key={itemField.id}
@@ -430,7 +429,7 @@ function ListField({ disabled, field, onChange, path, root }: FieldViewProps) {
               />
             ))}
             <Button
-              data-testid={`${rowId(field, index)}-remove`}
+              data-testid={`${rowId(configKey, path, index)}-remove`}
               disabled={disabled || atMin}
               onClick={() => removeRow(index)}
               size="sm"
@@ -447,7 +446,7 @@ function ListField({ disabled, field, onChange, path, root }: FieldViewProps) {
   );
 }
 
-function FieldView(props: FieldViewProps & { dense?: boolean }) {
+function FieldView(props: FieldViewProps) {
   const { field } = props;
   switch (field.kind) {
     case 'boolean':
@@ -468,6 +467,7 @@ function FieldView(props: FieldViewProps & { dense?: boolean }) {
           <legend className="px-1 font-medium text-sm">{field.label}</legend>
           {field.fields.map((child) => (
             <FieldView
+              configKey={props.configKey}
               disabled={props.disabled}
               field={child}
               key={child.id}
@@ -480,7 +480,7 @@ function FieldView(props: FieldViewProps & { dense?: boolean }) {
       );
     default:
       return (
-        <p className="text-muted-foreground text-sm" data-testid={field.id}>
+        <p className="text-muted-foreground text-sm" data-testid={domId(props)}>
           {field.kind === 'unsupported' ? field.reason : null}
         </p>
       );
@@ -516,6 +516,7 @@ export function AdminConfigForm({
           key={field.id}
         >
           <FieldView
+            configKey={configKey}
             disabled={disabled}
             field={field}
             onChange={onChange}

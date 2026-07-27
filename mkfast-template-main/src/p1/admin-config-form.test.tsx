@@ -92,6 +92,37 @@ test('note styles render one card per style with platform toggles', () => {
   assert.match(html, /data-slot="cell-switch"/);
 });
 
+/** 两行以上时，每一行的控件必须各有各的 id——否则页面上会出现同名控件。 */
+test('每行的字段 id 互不相同', () => {
+  const html = render('harness.note.styles', {
+    styles: [
+      {
+        id: 'a',
+        name: '甲',
+        platforms: ['xiaohongshu'],
+        structureTemplate: '一',
+        writingGuide: '一',
+      },
+      {
+        id: 'b',
+        name: '乙',
+        platforms: ['douyin'],
+        structureTemplate: '二',
+        writingGuide: '二',
+      },
+    ],
+  });
+  // `\s` 是必要的：`data-testid="…"` 里也含 `id="…"`。
+  const first = html.match(
+    /\sid="admin-config-harness-note-styles-styles-0-name"/g
+  );
+  const second = html.match(
+    /\sid="admin-config-harness-note-styles-styles-1-name"/g
+  );
+  assert.equal(first?.length, 1);
+  assert.equal(second?.length, 1);
+});
+
 test('an empty list explains itself instead of showing an empty editor', () => {
   const html = render('plan.addons', []);
   assert.match(html, /还没有内容/);

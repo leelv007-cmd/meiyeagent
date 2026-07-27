@@ -256,6 +256,12 @@ const SEGMENT_LABELS: Record<string, () => string> = {
 /** `allowance` 这一层没有自己的说法，直接把四个桶摊平展示。 */
 const TRANSPARENT_GROUPS = new Set(['allowance']);
 
+/**
+ * 契约对这几个字段没给长度上限，但它们按语义就是一行的东西。
+ * 少了这条，风格「名称」会被当成长文渲染成一个多行框，看着像要写一段话。
+ */
+const SHORT_TEXT_SEGMENTS = new Set(['id', 'name']);
+
 const KEY_LABELS: Record<string, () => string> = {
   'compliance.aigc_label.default': admin_config_key_aigc_label_default,
   'compliance.regulated_mode.default': admin_config_key_regulated_mode_default,
@@ -312,7 +318,12 @@ function optionLabel(value: string) {
   return OPTION_LABELS[value]?.() ?? value;
 }
 
-function pathId(key: string, path: AdminConfigFieldPath) {
+/**
+ * 字段的 DOM id。列表里的字段树带的是模板路径（下标恒为 0），所以渲染时
+ * 必须拿**解析后的**路径再算一次——否则第二行的输入框会顶着第一行的 id，
+ * 页面上出现两个同名控件，`<label for>` 也会指错。
+ */
+export function adminConfigFieldId(key: string, path: AdminConfigFieldPath) {
   const suffix = path.length === 0 ? 'value' : path.join('-');
   return `admin-config-${key.replaceAll('.', '-')}-${String(suffix).replaceAll('.', '-')}`;
 }
@@ -355,7 +366,7 @@ function buildField(
   path: AdminConfigFieldPath,
   label: string
 ): AdminConfigField {
-  const base = { id: pathId(key, path), label, path };
+  const base = { id: adminConfigFieldId(key, path), label, path };
   const inner = unwrap(schema);
   const def = schemaDef(inner);
 
@@ -398,9 +409,11 @@ function buildField(
 
   if (def.type === 'string') {
     const maxLength = inner.maxLength ?? undefined;
+    const segment = path.at(-1);
     // 有格式约束的（币种这类）一定是短值；只有既不封顶又无格式的才当长文。
     const multiline =
       !hasFormatCheck(inner) &&
+      !(typeof segment === 'string' && SHORT_TEXT_SEGMENTS.has(segment)) &&
       (maxLength === undefined || maxLength > SINGLE_LINE_MAX_LENGTH);
     return {
       ...base,
