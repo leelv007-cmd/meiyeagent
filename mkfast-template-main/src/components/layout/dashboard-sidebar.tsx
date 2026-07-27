@@ -76,7 +76,13 @@ export function DashboardSidebar({
         {mode === 'product' && !isMobile ? (
           <AsyncTaskCenter isMobile={false} userId={user.id} />
         ) : null}
+        {/*
+          与 sidebar-main.tsx 同因：收起态下标签 visibility:hidden、图标
+          aria-hidden，可访问名会整个消失，所以名字恒挂在 aria-label 上。
+          用的是可见文案那一支 `shell_settings()`，展开态下逐字相同。
+        */}
         <Link
+          aria-label={shell_settings()}
           className="meiye-sidebar-nav-item"
           onClick={closeMobileSidebar}
           to={SETTINGS_UTILITY_ITEM.href}

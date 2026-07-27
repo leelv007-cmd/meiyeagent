@@ -409,7 +409,10 @@ function LeadLedgerPage() {
                     </ListBox>
                   </Select.Popover>
                 </Select>
-                <p className="text-muted text-xs leading-5">
+                <p
+                  className="text-muted text-xs leading-5"
+                  data-testid="lead-ledger-attribution-notice"
+                >
                   {lead_ledger_attribution_notice()}
                 </p>
                 <TextField onChange={setAmount} value={amount}>

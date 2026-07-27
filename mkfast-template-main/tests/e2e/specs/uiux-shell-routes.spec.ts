@@ -209,3 +209,40 @@ test('shell keeps skip navigation and 200-percent zoom reachability', async ({
   await page.keyboard.press('Enter');
   await expect(page.locator('#main-content')).toBeFocused();
 });
+
+/**
+ * S7 / U07 轮 2 — 收起态下这五条链接仍然报得出名字。
+ *
+ * `collapsible="icon"` 把 `[data-sidebar="label"]` 收成 visibility:hidden
+ * (heroui-pro/vendor/css/sidebar.css)，图标又是 aria-hidden 的装饰件，于是链接的
+ * 可访问名会整个消失——读屏只播报「链接」。上面那条用例只走展开态，量不到这半边，
+ * 所以缺口在这里补：名字恒挂在 aria-label 上（sidebar-main.tsx / dashboard-sidebar.tsx），
+ * 词表仍是 config/sidebar-config 那一份。
+ */
+test('sidebar links keep their accessible names when the shell is collapsed', async ({
+  page,
+  request,
+}) => {
+  const user = await registerE2EUser(request);
+  await loginByForm(page, user);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/dashboard');
+
+  const sidebar = page.locator('[data-slot="sidebar"]');
+  await expect(sidebar).toHaveAttribute('data-state', 'expanded');
+
+  // Provider 的 toggleShortcut 默认 mod+b；/dashboard 是 Composer 首页，
+  // 不挂 DashboardHeader，所以这里没有 Sidebar.Trigger 可点。
+  await page.keyboard.press('ControlOrMeta+b');
+  await expect(sidebar).toHaveAttribute('data-state', 'collapsed');
+  // 标签的 visibility 过渡带 delay：不等它真收完就断言，名字还来自可见文案，
+  // 这条用例会在修复前也变绿。
+  await expect(sidebar.locator('[data-sidebar="label"]').first()).toBeHidden();
+
+  // exact: name 默认是子串匹配，品牌链接「美业内容簿标志」会连「内容」一起吃掉。
+  for (const label of [...businessNavigation, '设置']) {
+    await expect(
+      sidebar.getByRole('link', { exact: true, name: label })
+    ).toBeVisible();
+  }
+});

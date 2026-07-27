@@ -58,8 +58,19 @@ export function SidebarMain({ mode }: SidebarMainProps) {
               (target !== '/dashboard' && current.startsWith(`${target}/`));
             return (
               <li key={item.id}>
+                {/*
+                  收起态（`collapsible="icon"`）里这一行只剩图标：vendored 表把
+                  `[data-sidebar="label"]` 收成 visibility:hidden，图标又是
+                  aria-hidden 的装饰件，于是链接的可访问名整个没有——读屏播报
+                  「链接」，`getByRole('link', { name })` 也命不中。Pro 自带的
+                  收起态 tooltip 只服务它自己的 Tree 行（Sidebar.MenuItem），
+                  盖不到这里的真 `<Link>`。名字因此恒挂在 aria-label 上，取的
+                  仍是 `config/sidebar-config` 那一份词表：展开态下它与可见文案
+                  逐字相同，可访问名不因换态而变。
+                */}
                 <Link
                   aria-current={isActive ? 'page' : undefined}
+                  aria-label={item.label}
                   className="meiye-sidebar-nav-item"
                   data-active={isActive ? 'true' : undefined}
                   onClick={closeMobileSidebar}

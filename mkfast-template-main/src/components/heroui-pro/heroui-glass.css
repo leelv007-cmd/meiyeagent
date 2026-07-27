@@ -113,6 +113,32 @@
 }
 
 /*
+ * 同一个破口的第三面：vendored Segment 的未选中项也是 `color: var(--muted)`
+ * (vendor/css/segment.css)，在商家壳里就是 4%/6% 的 tint-hover 底色。/dashboard
+ * 的「定制创作 / 自由创作」双入口是 D-111 要店主一眼分得清的两条线，未选中那格
+ * 却与轨道近乎同色。选中项走的是 --segment-foreground，不能一并盖掉，所以只指
+ * 未选中项——`:not([data-selected="true"])` 把权重抬到 0,3,0，稳过 vendored 的
+ * `.segment__item[data-selected="true"]`（同为 0,2,0，只靠源序决胜）。
+ */
+.meiye-product-shell .segment__item:not([data-selected="true"]) {
+  color: var(--ink-60);
+}
+
+/*
+ * 第四面在工具类上：`text-muted` 解析成 --color-muted → --muted，同样是壳里的
+ * 底色，于是「素材」「获客台账」两面的说明文案被涂成近乎不可见的字。
+ *
+ * 不逐个调用处改写（壳内 75 处，改两处只会让不可读的分布更难查），也不整体改
+ * --color-muted（`bg-muted` 正当消费同一个变量，那是 shadcn 底色语义本身）。收的
+ * 只是「拿 --muted 当文字色」这一种消费，映到壳自己的 muted 前景 --ink-60
+ * （＝ --muted-foreground），和上面三段一样在共享边界上收一次。工具类落在
+ * @layer utilities，这张表无 layer，恒赢。
+ */
+.meiye-product-shell .text-muted {
+  color: var(--ink-60);
+}
+
+/*
  * 白瓷描边压语义边色。`.meiye-porcelain` 在这张无 layer 的表里给了一条 90% 白的
  * 材质描边，而 `border-destructive/20` / `border-primary/15` 是 Tailwind 工具类、
  * 落在 @layer utilities —— 无 layer 恒赢，于是额度阻断卡与追问卡的语义边在十条
