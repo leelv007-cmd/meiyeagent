@@ -1,0 +1,61 @@
+/*
+ * DESIGN.md 材质词汇（玻璃三档 + 白瓷 + 火花徽标）——全站唯一定义处。
+ *
+ * 这四个类名以前在两处各写一遍：`src/styles.css` 的 `@layer components` 里一份，
+ * `src/components/heroui-pro/heroui-glass.css` 里无 layer 又一份。挂 Glass 表的十条
+ * 生产路由两份同时到场，无 layer 的那份恒胜，而它恰好漏了白瓷描边——DESIGN.md §4
+ * 「玻璃有边法则」在那十条路由上被静默取消。同名类不该有第二个答案，所以声明收到
+ * 这里，两个入口只决定它落在层叠的哪一格：
+ *
+ *   src/styles.css                    → layer(components)  全站，Tailwind 工具类仍压得住它
+ *   src/components/…/heroui-glass.css → 无 layer            压得住 vendored 组件表的 .widget 等
+ *
+ * token 双写名同样只是历史：`--meiye-*` 是 HeroUI token 桥的命名，`--*` 是
+ * `.meiye-product-shell` 的命名，两套的值都逐字抄自 DESIGN.md（明暗都是），所以
+ * `var(--meiye-x, var(--x))` 在两个上下文里取到的是同一个值，先取谁不影响结果。
+ */
+
+.meiye-glass-shell {
+  background: var(--meiye-glass-80, var(--glass-80));
+  -webkit-backdrop-filter: blur(var(--meiye-blur-shell, 64px));
+  backdrop-filter: blur(var(--meiye-blur-shell, 64px));
+  border: 1px solid var(--meiye-glass-edge, var(--glass-edge));
+}
+
+.meiye-glass-piece {
+  background: var(--meiye-glass-50, var(--glass-50));
+  -webkit-backdrop-filter: blur(var(--meiye-blur-piece, 24px));
+  backdrop-filter: blur(var(--meiye-blur-piece, 24px));
+  border: 1px solid var(--meiye-glass-edge, var(--glass-edge));
+}
+
+.meiye-glass-trace {
+  background: var(--meiye-glass-35, var(--glass-35));
+  -webkit-backdrop-filter: blur(var(--meiye-blur-trace, 20px));
+  backdrop-filter: blur(var(--meiye-blur-trace, 20px));
+  border: 1px solid var(--meiye-glass-edge, var(--glass-edge));
+}
+
+/* 白瓷是实体层，不是玻璃：不带 blur，但同样勾一道近白描边。 */
+.meiye-porcelain {
+  background: var(--meiye-paper, var(--paper));
+  border: 1px solid oklch(1 0 0 / 0.9);
+  box-shadow: var(--meiye-shadow-ambient, var(--shadow-ambient));
+}
+
+/*
+ * DESIGN.md §5 badge-spark — 一点胭脂法则允许玫瑰金落地的点睛位（AI 徽标、「新」
+ * 标记、订阅火花）。数值逐字取自 frontmatter 的 components.badge-spark 与 Label 字阶。
+ */
+.meiye-badge-spark {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: var(--meiye-radius-sm, 8px);
+  background: var(--spark-wash);
+  padding: 2px 8px;
+  color: var(--spark-deep);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
