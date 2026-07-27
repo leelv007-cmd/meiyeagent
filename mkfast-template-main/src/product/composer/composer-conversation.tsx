@@ -15,6 +15,7 @@
 
 import { domAnimation, LazyMotion } from 'motion/react';
 import * as m from 'motion/react-m';
+import type { CSSProperties } from 'react';
 
 import {
   ChatConversation,
@@ -453,6 +454,14 @@ export function ComposerPromptBar({
     <div
       className={cn('flex flex-col gap-3', className)}
       data-testid="composer-prompt-bar"
+      style={
+        {
+          /* The prompt bar sits on the ambient backdrop, where --ink-60 paints
+           * to ~3:1 in the light theme; raise the unselected segment label the
+           * same way the works filter does. */
+          '--meiye-segment-unselected': 'var(--ink-90)',
+        } as CSSProperties
+      }
     >
       {/* D-111 双入口自报: 定制 and 自由 are two entries, never one blended control. */}
       <Segment
