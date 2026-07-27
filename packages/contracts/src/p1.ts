@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { creativeExecutionContractSchema } from './uiux.js';
 
 export const DEFAULT_CANVAS_WORK_NAME = 'canvas-work:untitled';
 export const DEFAULT_CANVAS_TEMPLATE_NAME = 'canvas-template:untitled';
@@ -119,13 +118,6 @@ export const assistantStreamRequestSchema = z.object({
     .max(20),
 });
 
-export const copyStreamRequestSchema = z.object({
-  catalogModelId: z.string().trim().min(1),
-  workId: z.string().trim().min(1),
-  submissionKey: z.string().trim().min(1).max(200),
-  contract: creativeExecutionContractSchema,
-});
-
 export const assistantDataPartSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('context'), data: assistantContextSchema }),
   z.object({ type: z.literal('field_patch'), data: assistantFieldPatchSchema }),
@@ -152,6 +144,5 @@ export const durationEstimateSchema = z.discriminatedUnion('status', [
 export type AssistantStreamRequest = z.infer<
   typeof assistantStreamRequestSchema
 >;
-export type CopyStreamRequest = z.infer<typeof copyStreamRequestSchema>;
 export type AssistantFieldPatch = z.infer<typeof assistantFieldPatchSchema>;
 export type DurationEstimate = z.infer<typeof durationEstimateSchema>;

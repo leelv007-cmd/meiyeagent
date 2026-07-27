@@ -196,6 +196,7 @@ export function useWorkflowEventStream(input: {
   >();
   const [transportStatus, setTransportStatus] =
     useState<WorkflowEventTransportStatus>('idle');
+  const [activeWorkflowId, setActiveWorkflowId] = useState('');
 
   useEffect(() => {
     cursor.current = undefined;
@@ -205,9 +206,11 @@ export function useWorkflowEventStream(input: {
     setHarnessDelivery(undefined);
     setHarnessCancellation(undefined);
     if (!input.enabled || !input.workflowId) {
+      setActiveWorkflowId('');
       setTransportStatus('idle');
       return;
     }
+    setActiveWorkflowId(input.workflowId);
     if (typeof EventSource === 'undefined') {
       setTransportStatus('degraded');
       return;
@@ -292,12 +295,17 @@ export function useWorkflowEventStream(input: {
     workflowQueryKeyHash,
   ]);
 
+  const matchesInput =
+    input.enabled &&
+    Boolean(input.workflowId) &&
+    activeWorkflowId === input.workflowId;
   return {
-    copyCandidates,
-    harnessCancellation,
-    harnessDelivery,
-    latestProgress,
-    transportStatus,
-    workflowState,
+    activeWorkflowId: matchesInput ? activeWorkflowId : '',
+    copyCandidates: matchesInput ? copyCandidates : [],
+    harnessCancellation: matchesInput ? harnessCancellation : undefined,
+    harnessDelivery: matchesInput ? harnessDelivery : undefined,
+    latestProgress: matchesInput ? latestProgress : undefined,
+    transportStatus: matchesInput ? transportStatus : 'idle',
+    workflowState: matchesInput ? workflowState : undefined,
   };
 }

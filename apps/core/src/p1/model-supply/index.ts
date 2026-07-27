@@ -1427,126 +1427,6 @@ export class ModelSupplyApplicationService {
     });
   }
 
-  async startCopyStream(
-    submission: ModelSupplySubmission,
-    runner: AiStreamingRunner,
-    abortSignal?: AbortSignal
-  ) {
-    if (
-      submission.operation !== 'copy.generate' ||
-      submission.selection.mode !== 'fixed' ||
-      !submission.selection.catalogModelId
-    ) {
-      throw new Error('Streaming copy requires one fixed copy model.');
-    }
-    let resolveResponse!: (response: Response) => void;
-    let rejectResponse!: (error: unknown) => void;
-    let streamStarted = false;
-    const response = new Promise<Response>((resolve, reject) => {
-      resolveResponse = resolve;
-      rejectResponse = reject;
-    });
-    const completion = this.executeSubmission(submission, {
-      execute: async (request) => {
-        if (this.submissionGate && (await this.submissionGate.blocksNewSubmission())) {
-          return {
-            kind: 'failure',
-            acceptance: 'rejected_before_accept',
-            message: '模型执行已停用。',
-            providerCost: {
-              amount: 0,
-              currency:
-                request.deployment.region === 'domestic' ? 'CNY' : 'USD',
-              usage: {},
-            },
-          };
-        }
-        if (!runner.supportsCatalogModel(request.model.id)) {
-          return {
-            kind: 'failure',
-            acceptance: 'rejected_before_accept',
-            message: `Streaming runner is not bound to ${request.model.id}.`,
-            providerCost: {
-              amount: 0,
-              currency:
-                request.deployment.region === 'domestic' ? 'CNY' : 'USD',
-              usage: {},
-            },
-          };
-        }
-        const started = runner.startCopyStream(
-          {
-            catalogModelId: request.model.id,
-            prompt: request.submission.prompt,
-          },
-          abortSignal
-        );
-        let providerOutputStarted = false;
-        streamStarted = true;
-        resolveResponse(
-          observeResponseChunks(started.response, () => {
-            providerOutputStarted = true;
-          })
-        );
-        let generated;
-        try {
-          generated = await started.result;
-        } catch (error) {
-          const statusCode =
-            error &&
-            typeof error === 'object' &&
-            'statusCode' in error &&
-            typeof error.statusCode === 'number'
-              ? error.statusCode
-              : undefined;
-          return {
-            kind: 'failure',
-            acceptance:
-              !providerOutputStarted &&
-              statusCode !== undefined &&
-              statusCode < 500
-                ? 'rejected_before_accept'
-                : 'acceptance_unknown',
-            message: `AI SDK stream failed: ${
-              error instanceof Error ? error.name : 'unknown'
-            }`,
-            providerCost: {
-              amount: 0,
-              currency:
-                request.deployment.region === 'domestic' ? 'CNY' : 'USD',
-              usage: {},
-            },
-          };
-        }
-        return {
-          kind: 'completed',
-          providerTaskRef: generated.providerTaskRef,
-          copyCandidates: generated.candidates,
-          providerCost: runner.providerCost(generated.usage),
-        };
-      },
-    });
-    completion.then(() => {
-      if (!streamStarted) {
-        resolveResponse(
-          new Response(
-            JSON.stringify({
-              error: {
-                code: 'COPY_STREAM_NOT_STARTED',
-                message: 'The provider did not start a copy stream.',
-              },
-            }),
-            {
-              status: 502,
-              headers: { 'content-type': 'application/json' },
-            }
-          )
-        );
-      }
-    }, rejectResponse);
-    return { response: await response, completion };
-  }
-
   /**
    * Executes an admin quality probe through the same catalog, route snapshot
    * and provider port as Product copy generation. It deliberately does not
@@ -2770,9 +2650,9 @@ export class ModelSupplyApplicationService {
             ? 'committed'
             : response.errorCode === 'EMPTY_TEXT_DELIVERABLE'
               ? 'refunded'
-              // Td-2: copy stream partial interrupt (acceptance_unknown after
-              // partial output) refunds the reservation; other modalities keep
-              // reserved until provider terminal reconciliation.
+              // Td-2: a partial copy-provider interrupt (acceptance_unknown
+              // after partial output) refunds the reservation; other modalities
+              // stay reserved until provider terminal reconciliation.
             : response.acceptance === 'acceptance_unknown' && isCopyOperation
               ? 'refunded'
             : response.acceptance === 'acceptance_unknown' ||
@@ -3767,34 +3647,6 @@ function structuredExecutionAcceptance(error: unknown): Acceptance {
   return statusCode !== undefined && statusCode < 500
     ? 'rejected_before_accept'
     : 'acceptance_unknown';
-}
-
-function observeResponseChunks(response: Response, onChunk: () => void) {
-  if (!response.body) return response;
-  const reader = response.body.getReader();
-  const body = new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      try {
-        const chunk = await reader.read();
-        if (chunk.done) {
-          controller.close();
-          return;
-        }
-        onChunk();
-        controller.enqueue(chunk.value);
-      } catch (error) {
-        controller.error(error);
-      }
-    },
-    cancel(reason) {
-      return reader.cancel(reason);
-    },
-  });
-  return new Response(body, {
-    headers: response.headers,
-    status: response.status,
-    statusText: response.statusText,
-  });
 }
 
 export interface QualityEvent {

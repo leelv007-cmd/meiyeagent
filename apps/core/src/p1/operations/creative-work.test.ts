@@ -85,14 +85,10 @@ function threeCandidates(title = '真实到店记录', body = '按已确认事�
 
 class RecordedCreationExecutor implements CreationExecutorPort {
   calls: string[] = [];
-  streamCalls: string[] = [];
   contracts: CreativeExecutionContract[] = [];
   briefSnapshots: Array<CreativeBrief | undefined> = [];
   groundingSnapshots: Array<CreativeGroundingSnapshot | undefined> = [];
   inheritanceContexts: Array<CreativeInheritanceContext | undefined> = [];
-  streamBriefSnapshots: Array<CreativeBrief | undefined> = [];
-  streamGroundingSnapshots: Array<CreativeGroundingSnapshot | undefined> = [];
-  streamInheritanceContexts: Array<CreativeInheritanceContext | undefined> = [];
   verifyCalls: string[] = [];
   productUsageQuantities: Array<0 | 1 | undefined> = [];
   billingTasks: Array<{ taskId?: string; quoteRevision?: string }> = [];
@@ -144,31 +140,6 @@ class RecordedCreationExecutor implements CreationExecutorPort {
         status: 'completed',
       }
     );
-  }
-
-  async startCopyStream(
-    input: Parameters<NonNullable<CreationExecutorPort['startCopyStream']>>[0]
-  ) {
-    this.streamCalls.push(input.idempotencyKey);
-    this.streamBriefSnapshots.push(structuredClone(input.briefSnapshot));
-    this.streamGroundingSnapshots.push(
-      structuredClone(input.groundingSnapshot)
-    );
-    this.streamInheritanceContexts.push(
-      structuredClone(input.inheritanceContext)
-    );
-    this.productUsageQuantities.push(input.productUsageQuantity);
-    return {
-      response: new Response('one\ntwo\n', {
-        headers: { 'content-type': 'text/plain; charset=utf-8' },
-      }),
-      completion: Promise.resolve({
-        copyCandidates: threeCandidates(),
-        providerJobId: 'provider-stream-a',
-        routeSnapshotId: 'route-stream-a',
-        status: 'completed' as const,
-      }),
-    };
   }
 
   async verify(input: { providerJobId: string; routeSnapshotId: string }) {
@@ -1000,53 +971,6 @@ describe('creative work lifecycle', () => {
     assert.deepEqual(executor.groundingSnapshots, [firstGrounding, firstGrounding]);
   });
 
-  it('settles one copy stream into the same Work and rejects a repeated submission key', async () => {
-    const { executor, service } = setup();
-    const work = await service.createCreativeWork(owner, {
-      intent: '写一条真实的门店项目介绍',
-      mode: 'agent',
-      sessionId: 'session-copy-stream',
-      sourceReferences: [],
-    });
-
-    const started = await service.startCreativeCopyStream(
-      owner,
-      work.id,
-      contract,
-      'stable-copy-stream-key'
-    );
-    assert.equal(await started.response.text(), 'one\ntwo\n');
-    const settled = await started.completion;
-
-    assert.equal(settled.work.id, work.id);
-    assert.equal(settled.work.status, 'completed');
-    assert.equal(settled.job.submissionKey, 'stable-copy-stream-key');
-    assert.equal(settled.assets.length, 3);
-    assert.deepEqual(
-      settled.assets.map((asset) => asset.conversionHook),
-      ['先沟通需求', '收藏后再预约', '到店前留言']
-    );
-    assert.deepEqual(executor.streamCalls, ['stable-copy-stream-key']);
-
-    await assert.rejects(
-      service.startCreativeCopyStream(
-        owner,
-        work.id,
-        contract,
-        'stable-copy-stream-key'
-      ),
-      (error: unknown) =>
-        error instanceof OperationsError &&
-        error.code === 'COPY_STREAM_ALREADY_STARTED' &&
-        error.status === 409
-    );
-    assert.deepEqual(executor.streamCalls, ['stable-copy-stream-key']);
-    assert.equal(
-      (await service.getCreativeWorkbench(owner)).assets.length,
-      3
-    );
-  });
-
   it('keeps E0 empty, records skip separately, and creates no object from intent alone', async () => {
     const { service } = setup();
     const empty = await service.getCreativeWorkbench(owner);
@@ -1207,7 +1131,7 @@ describe('creative work lifecycle', () => {
     );
   });
 
-  it('snapshots only selected structural facts for submit and copy stream execution', async () => {
+  it('snapshots only selected structural facts for creative submit execution', async () => {
     const { executor, service } = setup();
     const canvasWork = await service.createBlankWork(owner, {
       height: 1350,
@@ -1312,22 +1236,6 @@ describe('creative work lifecycle', () => {
     };
     assert.deepEqual(executor.inheritanceContexts[0], expectedContext);
     assert.deepEqual(submitted.job.inheritanceContext, expectedContext);
-
-    const streamedWork = await service.createCreativeWork(owner, {
-      intent: 'Reuse the same selected safe structure',
-      mode: 'agent',
-      sessionId: 'session-safe-inheritance-stream',
-      sourceReferences,
-    });
-    const streamed = await service.startCreativeCopyStream(
-      owner,
-      streamedWork.id,
-      contract,
-      'safe-inheritance-stream'
-    );
-    const completedStream = await streamed.completion;
-    assert.deepEqual(executor.streamInheritanceContexts[0], expectedContext);
-    assert.deepEqual(completedStream.job.inheritanceContext, expectedContext);
 
     const serialized = JSON.stringify(expectedContext);
     assert.doesNotMatch(serialized, /Private Store|18888888888|price 99/);

@@ -1153,7 +1153,6 @@ operationsService = new OperationsApplicationService(operationsRepository, {
   canvasExporter: new PersistentCanvasExportAdapter(assetStorage),
   creationExecutor: new ModelSupplyCreationExecutor(
     modelControlPlane,
-    aiStreamingRunner,
     referenceAssets
   ),
   groundingResolver: new ProductCreativeGroundingResolver(

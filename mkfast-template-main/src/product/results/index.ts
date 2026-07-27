@@ -128,7 +128,6 @@ export {
   calibrateTerminalRevision,
   candidateHasToken,
   copyCandidateSlots,
-  pickExclusiveTokenCandidates,
   projectResultTokenStream,
   projectTokenStreamA11y,
   projectTokenStreamReconnect,

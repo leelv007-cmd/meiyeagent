@@ -14,6 +14,8 @@ import {
   imageWorksurfaceFromContentPackage,
   latestContentPackageForWork,
   projectResultCenterLiveProjection,
+  resultHarnessStreamLifecycle,
+  resultWorkflowIdForWork,
   resultContentPackageMutationFacts,
   revisionTimelineFactsFromContentPackage,
   runDetailFactsFromLiveSelection,
@@ -40,6 +42,103 @@ test('uses the newest same-Work ContentPackage instead of locking the original w
   assert.equal(
     latestContentPackageForWork(packages, 'work-video-target')?.id,
     'package-derived'
+  );
+});
+
+test('resolves a workId-only Result reopen to the authoritative Harness workflow', () => {
+  const packages = [
+    {
+      source: {
+        workId: 'work-copy-target',
+        workflowId: 'task-authoritative',
+      },
+    },
+    {
+      source: {
+        workId: 'work-other',
+        workflowId: 'task-other',
+      },
+    },
+  ];
+
+  assert.equal(
+    resultWorkflowIdForWork(packages, 'work-copy-target'),
+    'task-authoritative'
+  );
+  assert.equal(resultWorkflowIdForWork(undefined, 'work-copy-target'), '');
+  assert.equal(resultWorkflowIdForWork([], 'work-copy-target'), '');
+  assert.equal(
+    resultWorkflowIdForWork(
+      [
+        {
+          source: {
+            workId: 'work-cached-route',
+            workflowId: 'task-stale-cached-route',
+          },
+        },
+      ],
+      'work-copy-target'
+    ),
+    ''
+  );
+});
+
+test('terminal Harness workflow state overrides stale running progress', () => {
+  assert.deepEqual(
+    resultHarnessStreamLifecycle({
+      hasCanonicalVersion: false,
+      latestProgressState: 'running',
+      projectedProgressState: 'running',
+      workflowState: 'success',
+    }),
+    {
+      progressState: 'success',
+      streamActive: false,
+    }
+  );
+  assert.deepEqual(
+    resultHarnessStreamLifecycle({
+      hasCanonicalVersion: false,
+      latestProgressState: 'running',
+      projectedProgressState: 'running',
+      workflowState: 'failed',
+    }),
+    {
+      progressState: 'failed',
+      streamActive: false,
+    }
+  );
+});
+
+test('terminal canonical projection overrides stale running progress', () => {
+  for (const projectedProgressState of ['success', 'failed'] as const) {
+    assert.deepEqual(
+      resultHarnessStreamLifecycle({
+        hasCanonicalVersion: false,
+        latestProgressState: 'running',
+        projectedProgressState,
+        workflowState: undefined,
+      }),
+      {
+        progressState: projectedProgressState,
+        streamActive: false,
+      }
+    );
+  }
+});
+
+test('non-terminal canonical projection stays active after a completed stage', () => {
+  assert.deepEqual(
+    resultHarnessStreamLifecycle({
+      hasCanonicalVersion: false,
+      latestProgressState: 'success',
+      projectedProgressState: 'running',
+      workflowState: undefined,
+    }),
+    {
+      progressState: 'running',
+      streamActive: true,
+    }
   );
 });
 
