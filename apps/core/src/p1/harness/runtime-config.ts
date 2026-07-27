@@ -6,6 +6,15 @@ export interface HarnessRuntimeConfig {
   dbos: DBOSConfig;
 }
 
+/**
+ * One store-intake finalize holds three business connections at its peak: the
+ * finalization advisory-lock client, the pinned fact-head client, and the
+ * profile merge that runs inside that pin. A smaller pool cannot make the last
+ * hop, and the two it already holds are never released while it waits — the
+ * finalize hangs forever instead of failing. Hence the floor.
+ */
+const MINIMUM_BUSINESS_POOL_MAX = 3;
+
 export function assertPendingActionsShareDatabase(input: {
   approvalRequestsDatabaseUrl: string;
   pendingQuestionsDatabaseUrl: string;
@@ -35,7 +44,9 @@ export function readHarnessRuntimeConfig(
     env.HARNESS_DBOS_APPLICATION_VERSION ?? env.DBOS__APPVERSION;
   return {
     businessDatabaseUrl,
-    businessPoolMax: positiveInteger(env.HARNESS_DB_POOL_MAX, 8),
+    businessPoolMax: atLeastFinalizePeak(
+      positiveInteger(env.HARNESS_DB_POOL_MAX, 8),
+    ),
     dbos: {
       name: 'beauty-marketing-harness',
       systemDatabaseUrl,
@@ -60,6 +71,14 @@ function positiveInteger(value: string | undefined, fallback: number) {
     throw new Error('Harness pool sizes must be positive integers.');
   }
   return parsed;
+}
+
+function atLeastFinalizePeak(value: number) {
+  if (value >= MINIMUM_BUSINESS_POOL_MAX) return value;
+  console.warn(
+    `HARNESS_DB_POOL_MAX=${value} is below the ${MINIMUM_BUSINESS_POOL_MAX} connections one store-intake finalize holds at once (finalization advisory lock + pinned fact heads + profile merge); raising it to ${MINIMUM_BUSINESS_POOL_MAX}.`,
+  );
+  return MINIMUM_BUSINESS_POOL_MAX;
 }
 
 function normalizeDatabaseUrl(value: string) {
