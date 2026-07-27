@@ -44,6 +44,7 @@ import {
   normalizePreferences,
 } from '@/p1/settings-view-model';
 import { resolveCreationModelSelection } from '@/p1/model-current-selection';
+import { useComplianceDefaults } from '@/p1/use-compliance-defaults';
 import type {
   BriefBoundRevisions,
   BriefSourceSignal,
@@ -356,6 +357,10 @@ export function ComposerHome({
         signal
       ),
   });
+  // `regulated` is a platform/category admission call, not a merchant answer:
+  // the Day-0 profile has to be seeded with the admin default rather than a
+  // hardcoded `false` (W01 / D-151④).
+  const complianceDefaults = useComplianceDefaults();
   const primaryProjectId = product.state?.store?.projects[0]?.id;
   const primaryServiceFactId = primaryProjectId
     ? `store-project:${primaryProjectId}:service`
@@ -1991,6 +1996,9 @@ export function ComposerHome({
             await Promise.all([product.refresh(), storeFacts.refetch()]);
           }}
           pending={product.pending}
+          regulatedDefault={
+            complianceDefaults.data?.['compliance.regulated_mode.default']
+          }
           store={product.state?.store}
           workspaceId={product.state?.workspaceId ?? ''}
         />
