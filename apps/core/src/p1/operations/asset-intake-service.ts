@@ -405,6 +405,18 @@ export class AssetIntakeService {
     return (await this.facts.history(workspaceId, factId)).at(-1) ?? null;
   }
 
+  /**
+   * Reads the named heads in one round trip and runs `action` while no append
+   * to them may commit, so a caller may act on what it read.
+   */
+  async withPinnedFactHeads<T>(
+    workspaceId: string,
+    factIds: readonly string[],
+    action: (heads: ReadonlyMap<string, StoreFact | null>) => Promise<T>,
+  ) {
+    return this.facts.withPinnedHeads(workspaceId, factIds, action);
+  }
+
   async persistedBatch(workspaceId: string, batchId: string) {
     const receipt = await this.repository.getBatchReceipt(workspaceId, batchId);
     if (!receipt) {

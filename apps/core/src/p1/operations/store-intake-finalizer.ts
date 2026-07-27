@@ -31,6 +31,7 @@ export type StoreIntakeFinalizationIntakePort = Pick<
   | 'currentFactRevision'
   | 'persistedBatch'
   | 'recordBatch'
+  | 'withPinnedFactHeads'
 >;
 
 export interface StoreProfileMergePort {
@@ -444,21 +445,24 @@ export class StoreIntakeFinalizer {
               }),
             );
           }
-          // An omitted confirmation rests on a fact nobody re-checked between
-          // the mapping pass and here, and `confirm_asset_intake_fact` is open
-          // to any other writer. Re-read the head one last time so a revocation
-          // landing inside that window cannot push its now-orphaned value into
-          // the profile — the same standard the explicit confirmations get from
-          // their expected-revision append.
-          await assertOmittedBackersUnchanged(
-            omittedBackers,
-            (factId) => this.intake.currentFact(context.workspaceId, factId),
-            this.now(),
-          );
-          const profile = await this.profiles.merge(
-            context,
-            input.profilePatch,
-            `${idempotencyKey}:profile`,
+          // An omitted confirmation rests on a fact nobody re-checked since the
+          // mapping pass, and `confirm_asset_intake_fact` is open to any other
+          // writer. Pin those heads, re-read them under the pin, and merge
+          // while it holds: a revocation racing this write either lands before
+          // the pin — and is seen — or waits behind it, so no orphaned value
+          // can reach the profile. Same standard the explicit confirmations get
+          // from their expected-revision append.
+          const profile = await this.intake.withPinnedFactHeads(
+            context.workspaceId,
+            omittedBackers.map((backer) => backer.factId),
+            async (heads) => {
+              assertOmittedBackersUnchanged(omittedBackers, heads, this.now());
+              return this.profiles.merge(
+                context,
+                input.profilePatch,
+                `${idempotencyKey}:profile`,
+              );
+            },
           );
           return this.finalizations.complete(
             context.workspaceId,
@@ -753,13 +757,13 @@ function backsOmittedConfirmation(
   );
 }
 
-async function assertOmittedBackersUnchanged(
+function assertOmittedBackersUnchanged(
   backers: readonly OmittedConfirmationBacker[],
-  currentFact: (factId: string) => Promise<StoreFact | null>,
+  heads: ReadonlyMap<string, StoreFact | null>,
   at: string,
 ) {
   for (const backer of backers) {
-    const current = await currentFact(backer.factId);
+    const current = heads.get(backer.factId) ?? null;
     if (
       !backsOmittedConfirmation(current, backer.expectedValue, at) ||
       current.revision !== backer.revision
