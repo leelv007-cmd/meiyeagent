@@ -221,19 +221,87 @@ test.describe('S5 成品动作面 (#239)', () => {
       '不代表由该内容导致'
     );
 
-    // The backdated signal keeps the merchant clock, not the typing clock.
+    // The backdated signal keeps the merchant clock, not the typing clock —
+    // and the clock it keeps is yesterday's, not merely 「some other day」.
     const rowText = await inferred
       .getByTestId('outcome-observation-row')
       .first()
       .innerText();
-    const today = new Intl.DateTimeFormat('zh-CN', {
-      month: '2-digit',
-      day: '2-digit',
-    }).format(new Date());
+    const monthDay = (date: Date) =>
+      new Intl.DateTimeFormat('zh-CN', {
+        month: '2-digit',
+        day: '2-digit',
+      }).format(date);
+    const now = new Date();
+    const today = monthDay(now);
+    const yesterday = monthDay(new Date(now.getTime() - 24 * 60 * 60 * 1000));
+    expect(
+      rowText,
+      `backdated row must read as yesterday (${yesterday}), got: ${rowText}`
+    ).toContain(yesterday);
     expect(
       rowText,
       `backdated row must not read as today (${today})`
     ).not.toContain(today);
     expect(rowText).toContain('数量 3');
+
+    // ---- W08 hard gate: 基于此再创作 → 「基于「X」再创作」 ------------------
+    // The lineage the derive writes must be readable on the page it lands on.
+    // The canonical `source.sourceContentPackage` is only written by the
+    // Composer submission path, so before this the derived draft said nothing.
+    const sourceTitle = (
+      await page.getByTestId('copy-field-title').inputValue()
+    ).trim();
+    expect(
+      sourceTitle.length,
+      'the source 作品 must have a title'
+    ).toBeGreaterThan(0);
+
+    const deriveResponse = page.waitForResponse(
+      (response) => {
+        if (
+          response.request().method() !== 'POST' ||
+          !response.url().includes('/api/core/p1/commands')
+        ) {
+          return false;
+        }
+        try {
+          const body = response.request().postDataJSON() as {
+            action?: unknown;
+            payload?: { sourceReferences?: Array<{ kind?: unknown }> };
+          };
+          return (
+            body.action === 'derive_creative_work' &&
+            (body.payload?.sourceReferences ?? []).some(
+              (reference) => reference.kind === 'content'
+            )
+          );
+        } catch {
+          return false;
+        }
+      },
+      { timeout: 60_000 }
+    );
+    await page.getByRole('button', { name: '基于此再创作' }).first().click();
+    const derived = await deriveResponse;
+    // The page navigates on success, so the body is gone by the time we could
+    // read it — the status is the assertion.
+    expect(
+      derived.ok(),
+      `derive_creative_work must be accepted, got ${derived.status()}`
+    ).toBeTruthy();
+
+    await page.waitForURL(
+      (url) =>
+        url.pathname.startsWith('/dashboard/results/') &&
+        !url.pathname.endsWith(`/${workId}`),
+      { timeout: 60_000 }
+    );
+    const lineage = page.getByTestId('result-lineage-based-on');
+    await expect(
+      lineage,
+      'a re-creation must say what it was based on'
+    ).toBeVisible({ timeout: 60_000 });
+    await expect(lineage).toContainText(sourceTitle);
   });
 });
