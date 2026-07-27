@@ -29,6 +29,14 @@ function service(name: string, calls: string[]): ProductApplicationService {
       calls.push(`${name}:execute`);
       return { output: {}, state: { workspaceId: name } } as CommandResult;
     },
+    async completedStoreProfileMergeRevision() {
+      calls.push(`${name}:completedStoreProfileMergeRevision`);
+      return null;
+    },
+    async mergeStoreProfile() {
+      calls.push(`${name}:mergeStoreProfile`);
+      return { revision: 1 } as never;
+    },
     async prepareVideoRender() {
       calls.push(`${name}:prepareVideoRender`);
       return {} as PreparedProductVideoRender;

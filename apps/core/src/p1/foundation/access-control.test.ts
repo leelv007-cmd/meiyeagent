@@ -196,6 +196,14 @@ test('P1 module actions resolve to the same role capabilities used by the UI', (
     ),
     'content.create'
   );
+  assert.equal(
+    requiredP1Capability(
+      'command',
+      'asset-memory',
+      'finalize_store_intake'
+    ),
+    'content.create'
+  );
   for (const action of [
     'parse_single_asset',
     'parse_asset_batch',

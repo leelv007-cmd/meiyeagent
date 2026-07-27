@@ -48,6 +48,11 @@ export interface AssetIntakeDecisionReceipt {
   event: AssetIntakeDecisionEvent;
 }
 
+export interface AssetIntakeBatchReceipt {
+  batch: AssetIntakeBatch;
+  commandFingerprint: string | null;
+}
+
 export interface AssistedScreenshotAssetAuthorizer {
   isAuthorized(workspaceId: string, assetId: string): Promise<boolean>;
 }
@@ -75,6 +80,10 @@ export interface AssetIntakeRepository {
     workspaceId: string,
     batchId: string,
   ): Promise<AssetIntakeBatch | null>;
+  getBatchReceipt(
+    workspaceId: string,
+    batchId: string,
+  ): Promise<AssetIntakeBatchReceipt | null>;
   appendDecision(
     receipt: AssetIntakeDecisionReceipt,
   ): Promise<AssetIntakeDecisionEvent>;
@@ -138,6 +147,18 @@ export class MemoryAssetIntakeRepository implements AssetIntakeRepository {
   async getBatch(workspaceId: string, batchId: string) {
     const batch = this.batches.get(identity(workspaceId, batchId));
     return batch ? structuredClone(batch) : null;
+  }
+
+  async getBatchReceipt(workspaceId: string, batchId: string) {
+    const batch = await this.getBatch(workspaceId, batchId);
+    return batch
+      ? {
+          batch,
+          commandFingerprint:
+            this.batchCommandFingerprints.get(identity(workspaceId, batchId)) ??
+            null,
+        }
+      : null;
   }
 
   async appendDecision(input: AssetIntakeDecisionReceipt) {
@@ -331,7 +352,8 @@ function factDraftMatches(
     isDeepStrictEqual(fact.scope, draft.scope) &&
     isDeepStrictEqual(fact.source, draft.source) &&
     fact.effectiveFrom === draft.effectiveFrom &&
-    fact.expiresAt === draft.expiresAt
+    fact.expiresAt === draft.expiresAt &&
+    fact.revisionKind === draft.revisionKind
   );
 }
 
@@ -372,6 +394,45 @@ export class AssetIntakeService {
       );
     }
     return this.repository.recordBatch(batch, commandFingerprint);
+  }
+
+  async currentFactRevision(workspaceId: string, factId: string) {
+    return (await this.facts.history(workspaceId, factId)).at(-1)?.revision ?? 0;
+  }
+
+  async persistedBatch(workspaceId: string, batchId: string) {
+    const receipt = await this.repository.getBatchReceipt(workspaceId, batchId);
+    if (!receipt) {
+      throw new AssetIntakeError(
+        'BATCH_NOT_FOUND',
+        `Asset intake batch ${batchId} was not found.`,
+      );
+    }
+    return receipt;
+  }
+
+  async confirmedFactRevision(
+    workspaceId: string,
+    idempotencyKey: string,
+    confirmation: {
+      batchId: string;
+      candidateId: string;
+      factId: string;
+      expectedFactRevision: number;
+    },
+  ) {
+    const receipt = await this.repository.decisionReceipt(
+      workspaceId,
+      idempotencyKey,
+    );
+    const event = receipt?.event;
+    return event?.action === 'confirmed' &&
+      event.batchId === confirmation.batchId &&
+      event.candidateId === confirmation.candidateId &&
+      event.factId === confirmation.factId &&
+      event.factRevision === confirmation.expectedFactRevision + 1
+      ? event.factRevision
+      : null;
   }
 
   async prepareAssistedPriceIntake(

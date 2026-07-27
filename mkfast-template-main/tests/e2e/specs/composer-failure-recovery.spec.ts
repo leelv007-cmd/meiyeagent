@@ -295,13 +295,7 @@ test.describe('S2 失败与恢复', () => {
    * progress cursor and the previous 申报 all have to be scoped to the attempt
    * rather than to the tab.
    */
-  // BLOCKED ON quotefix: the quote id does not cover the signed payload it is
-  // fingerprinted by, so re-quoting a rewritten sentence inside one session
-  // comes back IDEMPOTENCY_CONFLICT and the composer never gets a price to
-  // submit with. The key is quotefix's single point to fix (main controller's
-  // ruling); this path is written against the behaviour that lands with it and
-  // is enabled the moment it does — nothing here needs to change.
-  test.fixme(
+  test(
     'W03: 改一下要求 hands the composer back and the next submit is the merchant own',
     async ({ page, request }) => {
       test.setTimeout(420_000);

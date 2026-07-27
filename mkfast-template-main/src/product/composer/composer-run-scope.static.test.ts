@@ -32,6 +32,29 @@ test('the composer only listens to the run its session currently holds', () => {
 });
 
 /**
+ * The settle window is the one waiting state the merchant can end themselves,
+ * so it is the one state without a price where the send button stays live:
+ * pressing it flushes the window and asks for the price now. Disabling it there
+ * would make the click that resolves the wait the one click they cannot make.
+ */
+test('send stays pressable while the quote is only being held back', () => {
+  assert.match(
+    home,
+    /lensId != null && !currentQuoteView && !quoteSettling/u,
+    'the submit gate must exempt the settle window'
+  );
+  const submit = home.slice(
+    home.indexOf('const attemptSubmit'),
+    home.indexOf('const groundingBlocker')
+  );
+  assert.ok(submit.length > 0, 'submit handler must exist');
+  // …and pressing it there ends the window rather than raising a hint about
+  // something the merchant did not get wrong.
+  assert.match(submit, /if \(quoteSettling\) \{\s*\/\//u);
+  assert.match(submit, /flushQuoteSettle\(\);/u);
+});
+
+/**
  * Adopting a server-side run is a mount-time decision. Once the merchant takes
  * the conversation over from a 申报, an unbound session must not read as an
  * empty tab inviting some other in-flight run in mid-edit.

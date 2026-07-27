@@ -117,8 +117,18 @@ export type BriefSurfaceView = {
   requiresVideoConfirm: boolean;
   videoConfirmAccepted: boolean;
   canConfirm: boolean;
+  /**
+   * Set when the quote this Brief was built against is no longer the one the
+   * merchant's current input produces. The card stays on screen — it is not
+   * snatched away mid-read — but it stops being confirmable and says why.
+   */
+  staleNotice: string | null;
   phase: BriefSurfacePhase;
 };
+
+/** D-116 merchant language: what changed, and the way forward, in one line. */
+export const BRIEF_STALE_QUOTE_NOTICE =
+  '你刚改过要写的内容，这份确认对不上了。点“返回修改”再提交一次就好。';
 
 export type SubmitPathDecision =
   | {
@@ -429,6 +439,13 @@ export function projectBriefSurfaceView(
     lensId?: CreationLensId | null;
     quote?: ComposerQuoteView | null;
     amountFormatter?: (amount: number) => string;
+    /**
+     * The host's `currentComposerQuoteView` came back empty while this Brief is
+     * open — the merchant edited the intent (or the re-quote failed) after the
+     * card was projected, so what it summarises no longer describes the run
+     * they would get (#240 P1).
+     */
+    quoteStale?: boolean;
   }
 ): BriefSurfaceView {
   if (state.phase !== 'open' || !state.projection) {
@@ -446,6 +463,7 @@ export function projectBriefSurfaceView(
       requiresVideoConfirm: false,
       videoConfirmAccepted: state.videoConfirmAccepted,
       canConfirm: false,
+      staleNotice: null,
       phase: state.phase,
     };
   }
@@ -495,7 +513,10 @@ export function projectBriefSurfaceView(
     bindRevisions: { ...projection.bindRevisions },
     requiresVideoConfirm,
     videoConfirmAccepted: state.videoConfirmAccepted,
-    canConfirm: true,
+    // Was unconditionally true, which let a Brief built against a superseded
+    // quote stay confirmable while the merchant kept typing (#240 P1).
+    canConfirm: !options?.quoteStale,
+    staleNotice: options?.quoteStale ? BRIEF_STALE_QUOTE_NOTICE : null,
     phase: state.phase,
   };
 }

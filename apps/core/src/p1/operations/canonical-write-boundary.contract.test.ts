@@ -73,6 +73,28 @@ test('StoreFact SQL and semantic appends have one controlled path', () => {
   );
 });
 
+test('W01 browser proof cannot pre-seed the StoreFact projection under test', () => {
+  const source = readFileSync(
+    join(
+      repositoryRoot,
+      'mkfast-template-main/tests/e2e/specs/w01-storefact-wiring.spec.ts',
+    ),
+    'utf8',
+  );
+  for (const forbidden of [
+    'seedConfirmedStore',
+    'store_fact_append',
+    'record_asset_intake_batch',
+    'confirm_asset_intake_fact',
+  ]) {
+    assert.equal(source.includes(forbidden), false, forbidden);
+  }
+  assert.doesNotMatch(
+    source,
+    /fetch\(\s*['"]\/api\/core\/p1\/commands['"]/u,
+  );
+});
+
 test('Harness Result adoption emits the canonical command and does not infer adoption from currentVersionId', () => {
   const route = readFileSync(
     join(

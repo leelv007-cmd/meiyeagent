@@ -2,12 +2,12 @@ import {
   assetIntakeBatchSchema,
   assetIntakeDecisionEventSchema,
   type AssetIntakeBatch,
-  type AssetIntakeDecisionEvent,
 } from '@meiye/contracts';
 import { isDeepStrictEqual } from 'node:util';
 import type { Pool, PoolClient } from 'pg';
 import {
   AssetIntakeError,
+  type AssetIntakeBatchReceipt,
   type AssetIntakeDecisionReceipt,
   type AssetIntakeRepository,
   type FactConfirmationReservation,
@@ -176,14 +176,25 @@ export class PostgresAssetIntakeRepository
   }
 
   async getBatch(workspaceId: string, batchId: string) {
-    const result = await this.pool.query<PayloadRow>(
-      `SELECT payload
+    return (await this.getBatchReceipt(workspaceId, batchId))?.batch ?? null;
+  }
+
+  async getBatchReceipt(
+    workspaceId: string,
+    batchId: string,
+  ): Promise<AssetIntakeBatchReceipt | null> {
+    const result = await this.pool.query<BatchRow>(
+      `SELECT payload, command_fingerprint
          FROM p1_asset_intake_batches
         WHERE workspace_id = $1 AND batch_id = $2`,
       [workspaceId, batchId],
     );
-    return result.rows[0]?.payload
-      ? assetIntakeBatchSchema.parse(result.rows[0].payload)
+    const row = result.rows[0];
+    return row?.payload
+      ? {
+          batch: assetIntakeBatchSchema.parse(row.payload),
+          commandFingerprint: row.command_fingerprint,
+        }
       : null;
   }
 

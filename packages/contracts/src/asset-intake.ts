@@ -5,6 +5,7 @@ import {
   storeFactScopeSchema,
   storeFactSourceSchema,
 } from './context-bundle.js';
+import { storeProfilePatchSchema } from './product-schema.js';
 
 const idSchema = z.string().trim().min(1);
 const timestampSchema = z.iso.datetime();
@@ -63,9 +64,17 @@ export const storeFactCandidateDraftSchema = z
     source: storeFactSourceSchema,
     effectiveFrom: timestampSchema,
     expiresAt: timestampSchema.nullable(),
+    revisionKind: z.literal('revocation').optional(),
   })
   .strict()
   .superRefine((fact, context) => {
+    if (fact.revisionKind === 'revocation' && fact.value !== null) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A revocation revision must carry a null value.',
+        path: ['value'],
+      });
+    }
     if (
       fact.expiresAt !== null &&
       Date.parse(fact.expiresAt) <= Date.parse(fact.effectiveFrom)
@@ -225,6 +234,90 @@ export const confirmAssetIntakeFactCommandSchema = z
   })
   .strict();
 
+export const persistedAssetIntakeBatchReferenceSchema = z
+  .object({ batchId: idSchema })
+  .strict();
+
+export const finalizeStoreIntakeCommandSchema = z
+  .object({
+    batch: z.union([
+      recordAssetIntakeBatchCommandSchema,
+      persistedAssetIntakeBatchReferenceSchema,
+    ]),
+    confirmations: z
+      .array(
+        z
+          .object({
+            candidateId: idSchema,
+            factId: idSchema,
+            expectedFactRevision: z.number().int().nonnegative(),
+          })
+          .strict(),
+      )
+      .min(1),
+    profilePatch: storeProfilePatchSchema,
+  })
+  .strict()
+  .superRefine((input, context) => {
+    const inlineBatch =
+      'candidates' in input.batch ? input.batch : undefined;
+    if (inlineBatch && inlineBatch.source.kind !== 'manual') {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'Only a manual user-confirmation batch can be finalized inline.',
+        path: ['batch', 'source', 'kind'],
+      });
+    }
+    for (const [index, candidate] of (
+      inlineBatch?.candidates ?? []
+    ).entries()) {
+      if (
+        candidate.objectKind === 'store_fact' &&
+        candidate.fact.source.kind !== 'user_confirmation'
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message:
+            'An inline StoreFact candidate must be a user confirmation.',
+          path: ['batch', 'candidates', index, 'fact', 'source', 'kind'],
+        });
+      }
+    }
+    const candidateIds = new Set(
+      (inlineBatch?.candidates ?? [])
+        .filter((candidate) => candidate.objectKind === 'store_fact')
+        .map((candidate) => candidate.candidateId),
+    );
+    const seen = new Set<string>();
+    const seenFactIds = new Set<string>();
+    for (const [index, confirmation] of input.confirmations.entries()) {
+      if (inlineBatch && !candidateIds.has(confirmation.candidateId)) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Every confirmation must reference a StoreFact candidate.',
+          path: ['confirmations', index, 'candidateId'],
+        });
+      }
+      if (seen.has(confirmation.candidateId)) {
+        context.addIssue({
+          code: 'custom',
+          message: 'A StoreFact candidate can be confirmed only once.',
+          path: ['confirmations', index, 'candidateId'],
+        });
+      }
+      seen.add(confirmation.candidateId);
+      if (seenFactIds.has(confirmation.factId)) {
+        context.addIssue({
+          code: 'custom',
+          message: 'A StoreFact stream can be confirmed only once per batch.',
+          path: ['confirmations', index, 'factId'],
+        });
+      }
+      seenFactIds.add(confirmation.factId);
+    }
+  });
+
 export const rejectAssetIntakeCandidateCommandSchema = z
   .object({
     batchId: idSchema,
@@ -261,6 +354,9 @@ export type AssetIntakeDecisionEvent = z.infer<
 >;
 export type ConfirmedFactReference = z.infer<
   typeof confirmedFactReferenceSchema
+>;
+export type FinalizeStoreIntakeCommand = z.infer<
+  typeof finalizeStoreIntakeCommandSchema
 >;
 export type RecordAssetIntakeBatchCommand = z.infer<
   typeof recordAssetIntakeBatchCommandSchema

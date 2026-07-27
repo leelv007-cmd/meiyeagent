@@ -65,7 +65,14 @@ export function storeFactAppliesTo(
   requestedScope: StoreFactApplicability,
 ) {
   if (factScope.storeId !== requestedScope.storeId) return false;
-  for (const key of ['serviceId', 'personaId', 'platform'] as const) {
+  if (
+    requestedScope.serviceId !== undefined &&
+    factScope.serviceId !== undefined &&
+    factScope.serviceId !== requestedScope.serviceId
+  ) {
+    return false;
+  }
+  for (const key of ['personaId', 'platform'] as const) {
     if (factScope[key] !== undefined && factScope[key] !== requestedScope[key]) {
       return false;
     }
