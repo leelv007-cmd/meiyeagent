@@ -3,6 +3,10 @@
 @import "shadcn/tailwind.css";
 @import "./custom.css";
 @import "./components/landing/landing.css";
+/* 玻璃三档 + 白瓷 + 火花徽标：声明在 meiye-materials.css，全站唯一一份。
+   落在 components 层，所以 Tailwind 工具类照旧压得住它（HeroUI 页的第二个挂载点
+   在 heroui-pro/heroui-glass.css，无 layer，见那边的说明）。 */
+@import "./meiye-materials.css" layer(components);
 @plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
@@ -238,31 +242,6 @@
     font-family:
       Inter, "HarmonyOS Sans", MiSans, "PingFang SC", "Microsoft YaHei",
       ui-sans-serif, system-ui, sans-serif;
-  }
-
-  /* 玻璃三档 + 白瓷 */
-  .meiye-glass-shell {
-    background: var(--glass-80);
-    -webkit-backdrop-filter: blur(64px);
-    backdrop-filter: blur(64px);
-    border: 1px solid var(--glass-edge);
-  }
-  .meiye-glass-piece {
-    background: var(--glass-50);
-    -webkit-backdrop-filter: blur(24px);
-    backdrop-filter: blur(24px);
-    border: 1px solid var(--glass-edge);
-  }
-  .meiye-glass-trace {
-    background: var(--glass-35);
-    -webkit-backdrop-filter: blur(20px);
-    backdrop-filter: blur(20px);
-    border: 1px solid var(--glass-edge);
-  }
-  .meiye-porcelain {
-    background: var(--paper);
-    border: 1px solid oklch(1 0 0 / 0.9);
-    box-shadow: var(--shadow-ambient);
   }
 
   /* 首屏氛围属于壳层，工作台内容与白瓷件浮在其上 */

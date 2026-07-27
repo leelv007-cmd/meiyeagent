@@ -1,9 +1,11 @@
 /*
  * HeroUI Pro V3 (Glass) stylesheet.
  *
- * Loaded as a route-level <link> by the dev-only spike routes, never from
- * __root.tsx: the app's own pages keep shipping src/styles.css untouched, and
- * the initial CSS bundle the bundle-budget gate measures does not move.
+ * Loaded as a route-level <link>, never from __root.tsx: pages that render
+ * HeroUI Pro opt in one route at a time (today /admin plus the nine
+ * /dashboard/* routes, and the dev-only /heroui-spike/* scaffolding), the rest
+ * of the app keeps shipping src/styles.css untouched, and the initial CSS
+ * bundle the bundle-budget gate measures does not move.
  *
  * Import order matters — @heroui/styles brings the v3 base + default theme,
  * the vendored Glass sheet re-materialises it as 磨砂玻璃 (D-130 拍板 Glass;
@@ -37,38 +39,26 @@
 
 @import "./vendor/css/index.css";
 @import "./theme/design-token-bridge.css";
+/*
+ * DESIGN.md §4「玻璃有边法则」的三档玻璃与白瓷 — 声明在 src/meiye-materials.css，
+ * 全站唯一一份，src/styles.css 把同一个文件挂进 layer(components) 供非 HeroUI 页用。
+ * 这里必须**无 layer**：vendored 组件表（上面那行）也是无 layer 的，`.widget` /
+ * `.item-card--default` 会把自己的 --surface 底盖到带 .meiye-porcelain 的件上，只有
+ * 同样无 layer 才压得回去。收敛前这份拷贝漏了白瓷描边，十条生产路由上的边就这么没的。
+ */
+@import "../../meiye-materials.css";
 
 @reference "tailwindcss";
 @reference "tw-animate-css";
 
 /*
- * DESIGN.md §4「玻璃有边法则」— 白 alpha 底 + blur + 1px 白描边, three tiers.
- * Anything floating over the ambient layer uses these; 实体内容区 uses 白瓷.
+ * DESIGN.md §4 三档模糊：壳级 64px / 件级 24px / 痕级 20px。桥把 --glass-blur 定在件级
+ * （Glass 主题拿它糊 chips、badge、segment 一类件），侧栏是壳，得自己抬到壳级——
+ * 换壳前它跟着件级走 24px，比 DESIGN.md §5「侧栏壳」矮了两档。
  */
-.meiye-glass-shell {
-  background: var(--meiye-glass-80);
-  -webkit-backdrop-filter: blur(64px);
-  backdrop-filter: blur(64px);
-  border: 1px solid var(--meiye-glass-edge);
-}
-
-.meiye-glass-piece {
-  background: var(--meiye-glass-50);
-  -webkit-backdrop-filter: blur(24px);
-  backdrop-filter: blur(24px);
-  border: 1px solid var(--meiye-glass-edge);
-}
-
-.meiye-glass-trace {
-  background: var(--meiye-glass-35);
-  -webkit-backdrop-filter: blur(20px);
-  backdrop-filter: blur(20px);
-  border: 1px solid var(--meiye-glass-edge);
-}
-
-.meiye-porcelain {
-  background: var(--meiye-paper);
-  box-shadow: var(--meiye-shadow-ambient);
+.sidebar--floating,
+.sidebar__provider:has(.sidebar--inset) .sidebar__main {
+  --glass-blur: var(--meiye-blur-shell);
 }
 
 /*

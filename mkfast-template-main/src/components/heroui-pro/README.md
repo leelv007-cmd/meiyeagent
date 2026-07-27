@@ -17,7 +17,8 @@
 | `components.json` | 手写 | 版本钉扎 + 需要哪些组件。改这里再跑 sync。 |
 | `vendor-patches.json` | 手写 | 对拷入源码的全部改写声明（见下）。 |
 | `theme/design-token-bridge.css` | 手写 | DESIGN.md 门店橱窗 → HeroUI v3 token 适配层。 |
-| `heroui-glass.css` | 手写 | 页面级样式入口（HeroUI 基座 + Glass + 桥）。 |
+| `heroui-glass.css` | 手写 | 页面级样式入口（HeroUI 基座 + Glass + 桥 + 材质表）。 |
+| `../../meiye-materials.css` | 手写 | 玻璃三档 / 白瓷 / 火花徽标的**唯一**定义处，本表与 `src/styles.css` 各挂一次（层叠位不同，见文件头）。 |
 | `vendor/` | **生成物** | 由 sync 整棵重写，不要手改。 |
 | `vendor/MIRROR.json` | 生成物 | 版本、镜像 commit、单元清单、逐文件 sha256。 |
 
@@ -92,13 +93,26 @@ function Page() {
   现存的 shadcn 同名 token 冲突，全局引入会掀翻所有既有页面；
 - 初始 CSS 包（`scripts/uiux/bundle-budget.mjs` 量的 `styles-*.css`）不受影响。
 
-留给换壳票的两件事（本 spike 不做）：
+这张表**已经在生产上线**：`/admin` 与九条 `/dashboard/*` 路由各自 `<link>` 它。
+换壳票（C-02）当时留下的两件事都已收口，别再照着旧说明动手：
 
-1. 这张样式表现在带了**第二份 Tailwind**（`@heroui/styles/css` 自己 `@import
-   "tailwindcss"`），产物 ~733KB 未压缩。全站铺开时要合进主 Tailwind root，或
-   只引用到的组件 CSS。
-2. token 桥用 `:has()` 收在壳子树内，**portal 出去的浮层**（modal/popover/
-   tooltip 挂在 `document.body`）拿不到。全站铺开时把 class 提到 `<html>`。
+1. 第二份 Tailwind 已经拆掉——本表把 `@heroui/styles/dist/index.css` 的 import 逐条
+   手抄，只去掉它自己的 `@import "tailwindcss"` / `"tw-animate-css"`；抄漏或上游加
+   import 会被 `design-token-bridge.test.ts` 逮住。
+2. token 桥的**主语已经是 `html`**（`:has()` 只做条件），portal 到 `document.body`
+   的浮层因此拿得到；同一个测试对这条选择器有回归断言，别改回子树写法。
+
+### 玻璃三档 / 白瓷 / 火花徽标
+
+`.meiye-glass-shell` `.meiye-glass-piece` `.meiye-glass-trace` `.meiye-porcelain`
+`.meiye-badge-spark` 只在 `src/meiye-materials.css` 定义一次。它挂两次：
+
+- `src/styles.css` → `layer(components)`，全站可用，Tailwind 工具类仍压得住；
+- 本表 → **无 layer**，才压得住同样无 layer 的 vendored 组件表（`.widget` /
+  `.item-card--default` 会拿 `--surface` 盖掉白瓷）。
+
+别在任一入口里再写一份——上一次这么做的结果是无 layer 的那份恒胜、且漏了白瓷描边，
+十条生产路由的边就此消失。
 
 ## 脚手架
 
