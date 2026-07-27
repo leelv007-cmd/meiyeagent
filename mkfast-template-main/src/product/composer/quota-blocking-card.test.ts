@@ -169,6 +169,36 @@ describe('W05 图文双桶预检 (P0-5)', () => {
     assert.equal(view.shortNotice, '文案额度不够这次生成了，可以补充后再来');
   });
 
+  it('counts an image_set by the recipe, so 4 pages is not pre-checked as 1', () => {
+    // The fork the signed quantity resolves (S3 P0-1): recipe declares 4, the
+    // untouched draft still says 1. Billing follows the recipe, so the merchant
+    // with 3 images left must be stopped here rather than by the server.
+    const requirements = composerQuotaRequirements({
+      lensId: 'image_text',
+      deliverableKind: 'image_set',
+      quantity: 4,
+    });
+    assert.deepEqual(requirements, [{ resource: 'image', cost: 4 }]);
+    const view = projectQuotaPassiveView({
+      requirements,
+      available: { copy: 5, image: 3, video: 1 },
+    });
+    assert.equal(view.short, true);
+    assert.deepEqual(view.shortResources, ['image']);
+    // Counting the draft's 1 instead would leave 3 images looking like plenty.
+    assert.equal(
+      projectQuotaPassiveView({
+        requirements: composerQuotaRequirements({
+          lensId: 'image_text',
+          deliverableKind: 'image_set',
+          quantity: 1,
+        }),
+        available: { copy: 5, image: 3, video: 1 },
+      }).short,
+      false
+    );
+  });
+
   it('names both buckets when both fall short', () => {
     const view = projectQuotaPassiveView({
       requirements: composerQuotaRequirements({

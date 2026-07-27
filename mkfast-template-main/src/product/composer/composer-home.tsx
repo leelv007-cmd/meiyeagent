@@ -710,17 +710,26 @@ export function ComposerHome({
   // 图文 debits two buckets server-side (copy 1 + image·pages). Pre-checking
   // only the image bucket let an image-rich / copy-empty merchant submit a run
   // the server was always going to reject (P0-5 / W05 ①).
+  //
+  // Count from `submissionQuantity` — the same value that becomes
+  // `deliverable.quantity` in the signed submission below, and therefore the
+  // one the server bills off (`server-quote-authority.ts` reads
+  // `submission.deliverable.quantity`). The draft setting is not that number:
+  // until the merchant dirties the field it is the recipe that decides, so an
+  // image_set recipe of 4 against an untouched draft of 1 would pre-check a
+  // quarter of what the run actually debits — the same class of defect this
+  // pre-check exists to kill, in a new shape.
   const quotaRequirements = useMemo(
     () =>
       composerQuotaRequirements({
         lensId,
         deliverableKind: submissionDelivery.deliverableKind,
-        quantity: lensState.draft.settings.quantity ?? 1,
+        quantity: submissionQuantity,
         notePageBound: submissionRecipe?.delivery.notePageBound ?? null,
       }),
     [
       lensId,
-      lensState.draft.settings.quantity,
+      submissionQuantity,
       submissionDelivery.deliverableKind,
       submissionRecipe?.delivery.notePageBound,
     ]
