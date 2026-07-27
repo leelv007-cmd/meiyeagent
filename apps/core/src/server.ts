@@ -7,7 +7,6 @@ import {
 import {
   p1ModuleRequestSchema,
   assistantStreamRequestSchema,
-  copyStreamRequestSchema,
   firstUsableDraftMetricSchema,
   structuredDecisionInputSchema,
   hasProductCapability,
@@ -95,7 +94,7 @@ interface CoreServerDependencies {
   executionModeGate?: { blocksNewSubmission(): Promise<boolean> };
   operationsService?: Pick<
     OperationsApplicationService,
-    'getCreativeWorkbench' | 'startCreativeCopyStream'
+    'getCreativeWorkbench'
   >;
   composerDestinationMapper?: ComposerDestinationMappingPort;
   composerSubmission?: {
@@ -1859,91 +1858,6 @@ export function createCoreServer({
               : new DomainError(
                   'ASSISTANT_STREAM_FAILED',
                   'The assistant stream could not be started.',
-                  502
-                );
-        sendError(
-          response,
-          domainError.status,
-          { code: domainError.code, message: domainError.message },
-          requestCorrelationId
-        );
-      }
-      return;
-    }
-
-    const copyStreamWorkspaceId = workspaceRoute(
-      url.pathname,
-      'p1/copy/stream'
-    );
-    if (request.method === 'POST' && copyStreamWorkspaceId) {
-      try {
-        if (!operationsService || !aiStreamingRunner) {
-          throw new DomainError(
-            'COPY_STREAM_UNAVAILABLE',
-            'Streaming copy generation is unavailable in the current execution mode.',
-            503
-          );
-        }
-        const context = p1Identity(
-          request,
-          copyStreamWorkspaceId,
-          requestCorrelationId
-        );
-        authorizeContentCreation(context);
-        const parsed = copyStreamRequestSchema.safeParse(await readJson(request));
-        if (
-          !parsed.success ||
-          parsed.data.catalogModelId !== parsed.data.contract.catalogModelId ||
-          parsed.data.contract.operation !== 'copy.generate'
-        ) {
-          throw new DomainError(
-            'INVALID_COPY_STREAM_REQUEST',
-            'A fixed-model copy stream request is required.'
-          );
-        }
-        const abortController = new AbortController();
-        response.once('close', () => {
-          if (!response.writableEnded) {
-            abortController.abort(new Error('Client disconnected.'));
-          }
-        });
-        const started = await operationsService.startCreativeCopyStream(
-          context,
-          parsed.data.workId,
-          parsed.data.contract,
-          parsed.data.submissionKey,
-          abortController.signal
-        );
-        const settlement = started.completion.catch((error) => {
-          console.error('[copy-stream] terminal settlement failed', {
-            correlationId: requestCorrelationId,
-            error: error instanceof Error ? error.name : 'unknown',
-            workspaceId: context.workspaceId,
-          });
-          throw error;
-        });
-        await pipeWebResponse(
-          started.response,
-          response,
-          requestCorrelationId,
-          () => settlement.then(() => undefined)
-        );
-      } catch (error) {
-        if (response.headersSent) return;
-        const domainError =
-          error instanceof DomainError
-            ? error
-            : error instanceof P1DomainError
-              ? new DomainError(
-                  error.code,
-                  error.message,
-                  error.code === 'INSUFFICIENT_ENTITLEMENT' ? 409 : 403
-                )
-              : error instanceof OperationsError
-                ? new DomainError(error.code, error.message, error.status)
-              : new DomainError(
-                  'COPY_STREAM_FAILED',
-                  'The copy stream could not be started.',
                   502
                 );
         sendError(

@@ -1,78 +1,9 @@
 import {
-  HARNESS_STAGES,
   NOTE_PLAN_CONSISTENCY_DIMENSIONS,
   contentPackageVariantSchema,
   type ContentPackage,
   type ContentPackageVersion,
 } from '@meiye/contracts';
-
-export const OUTPUT_COMPILER_KINDS = [
-  'copy',
-  'image',
-  'image_text_note',
-  'video',
-] as const;
-
-export type OutputCompilerKind = (typeof OUTPUT_COMPILER_KINDS)[number];
-
-const ASSEMBLY_REQUIREMENTS = [
-  'evidence',
-  'cta',
-  'platform_variants',
-  'rights_references',
-] as const;
-
-export interface OutputCompilerContract {
-  assemblyRequires: typeof ASSEMBLY_REQUIREMENTS;
-  candidateStrategy: 'single_primary' | 'dual_style';
-  implementation: 'available' | 'reserved';
-  deliveryPackage: {
-    kind: 'image_text' | 'video';
-    manifestBuilderOwner: 'result-delivery/export';
-    manifestSchema: 'beauty-delivery-manifest/v1';
-  };
-  orchestration:
-    | 'degraded_five_stage'
-    | 'multi_stage'
-    | 'native_single_call';
-  owner: 'T18' | 'T19' | 'T20' | 'T21';
-  stages: typeof HARNESS_STAGES;
-}
-
-export const OUTPUT_COMPILER_CONTRACTS = {
-  copy: contract({
-    candidateStrategy: 'single_primary',
-    deliveryPackageKind: 'image_text',
-    implementation: 'available',
-    orchestration: 'degraded_five_stage',
-    owner: 'T18',
-  }),
-  image: contract({
-    candidateStrategy: 'single_primary',
-    deliveryPackageKind: 'image_text',
-    implementation: 'available',
-    orchestration: 'degraded_five_stage',
-    owner: 'T19',
-  }),
-  image_text_note: contract({
-    candidateStrategy: 'dual_style',
-    deliveryPackageKind: 'image_text',
-    implementation: 'available',
-    orchestration: 'multi_stage',
-    owner: 'T20',
-  }),
-  video: contract({
-    candidateStrategy: 'single_primary',
-    deliveryPackageKind: 'video',
-    implementation: 'available',
-    orchestration: 'native_single_call',
-    owner: 'T21',
-  }),
-} as const satisfies Record<OutputCompilerKind, OutputCompilerContract>;
-
-export function outputCompilerContract(kind: OutputCompilerKind) {
-  return OUTPUT_COMPILER_CONTRACTS[kind];
-}
 
 export function compileCopyGenerationRequest(input: {
   brief: {
@@ -494,25 +425,4 @@ export function assertVideoRevisionAssemblyComplete(input: {
       'Video revision assembly requires one complete current variant per platform.',
     );
   }
-}
-
-function contract(
-  input: Omit<
-    OutputCompilerContract,
-    'assemblyRequires' | 'deliveryPackage' | 'stages'
-  > & {
-    deliveryPackageKind: OutputCompilerContract['deliveryPackage']['kind'];
-  },
-): OutputCompilerContract {
-  const { deliveryPackageKind, ...compiler } = input;
-  return {
-    assemblyRequires: ASSEMBLY_REQUIREMENTS,
-    deliveryPackage: {
-      kind: deliveryPackageKind,
-      manifestBuilderOwner: 'result-delivery/export',
-      manifestSchema: 'beauty-delivery-manifest/v1',
-    },
-    stages: HARNESS_STAGES,
-    ...compiler,
-  };
 }

@@ -3537,29 +3537,6 @@ export class ModelSupplyControlPlaneService {
     });
   }
 
-  async startCopyStream(
-    context: P1Context,
-    input: Omit<
-      Parameters<ModelSupplyApplicationService['submit']>[0],
-      'workspaceId' | 'actorId' | 'idempotencyKey'
-    >,
-    idempotencyKey: string,
-    runner: AiStreamingRunner,
-    abortSignal?: AbortSignal
-  ) {
-    await this.initialize(context.workspaceId);
-    return this.application.startCopyStream(
-      {
-        ...structuredClone(input),
-        actorId: context.userId,
-        idempotencyKey,
-        workspaceId: context.workspaceId,
-      },
-      runner,
-      abortSignal
-    );
-  }
-
   async setUserDefault(
     context: P1Context,
     operation: ModelOperation,

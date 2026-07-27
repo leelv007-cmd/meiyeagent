@@ -9,7 +9,6 @@ import test from 'node:test';
 import {
   acceptWorkflowTokenDelta,
   calibrateTerminalRevision,
-  pickExclusiveTokenCandidates,
   projectResultTokenStream,
   projectTokenStreamA11y,
   projectTokenStreamReconnect,
@@ -240,28 +239,6 @@ test('exclusive workflow.token reduce never invents poll duplicates', () => {
   assert.equal(candidates.length, 2);
   assert.equal(candidates[0]?.title, '夏日');
   assert.equal(candidates[0]?.body, '到店');
-
-  const exclusive = pickExclusiveTokenCandidates({
-    workflowTokenCandidates: candidates,
-    pollCandidates: [
-      { title: '轮询重复主推荐', body: '不应显示' },
-      { title: '轮询重复备选' },
-    ],
-    structuredStreamCandidates: [{ title: '结构化流也让位' }],
-  });
-  assert.equal(exclusive.source, 'workflow.token');
-  assert.equal(exclusive.candidates[0]?.title, '夏日');
-  assert.equal(exclusive.candidates.length, 2);
-});
-
-test('pickExclusiveTokenCandidates ignores poll when no tokens yet', () => {
-  const exclusive = pickExclusiveTokenCandidates({
-    workflowTokenCandidates: [],
-    pollCandidates: [{ title: '仅轮询' }],
-    structuredStreamCandidates: [],
-  });
-  assert.equal(exclusive.source, 'none');
-  assert.equal(exclusive.candidates.length, 0);
 });
 
 test('reconnect projection never clears arrived text', () => {

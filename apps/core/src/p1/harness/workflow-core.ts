@@ -535,6 +535,8 @@ export async function runHarnessWorkflow(
   ports: HarnessStagePorts,
   runtime: HarnessWorkflowRuntime,
 ) {
+  // D-118: every output lens dispatches inside the shared five-stage Harness;
+  // lightweight copy/image execution may degrade stages but never bypass them.
   if (request.executionSnapshot?.lens === 'image_text_note') {
     return runNoteHarnessWorkflow(
       workflowId,

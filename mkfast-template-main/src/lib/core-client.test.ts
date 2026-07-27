@@ -156,7 +156,7 @@ test('uses a connect deadline rather than a short total deadline for streams', a
 
 test('the workspace stream proxy forwards the browser Request signal upstream', async () => {
   const controller = new AbortController();
-  const request = new Request('http://localhost/api/core/p1/copy/stream', {
+  const request = new Request('http://localhost/api/core/p1/assistant/stream', {
     body: '{}',
     method: 'POST',
     signal: controller.signal,

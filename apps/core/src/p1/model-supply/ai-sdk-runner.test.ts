@@ -3,16 +3,44 @@ import test from 'node:test';
 import { readUIMessageStream, type UIMessage, type UIMessageChunk } from 'ai';
 import { z } from 'zod';
 import {
-  ModelSupplyApplicationService,
-  RecordedProviderExecutionPort,
-} from './index.js';
-import {
   FixtureAiStreamingRunner,
   FixtureAiStructuredObjectExecutor,
   OpenAiCompatibleAiSdkRunner,
+  fixtureStructuredFirstChunkHoldMs,
 } from './ai-sdk-runner.js';
 import { executionBriefSchema } from '../harness/structured-nodes.js';
 import { notePlanSchema } from '@meiye/contracts';
+
+test('fixture structured chunk pacing accepts bounded E2E-only overrides', () => {
+  assert.equal(
+    fixtureStructuredFirstChunkHoldMs({
+      APP_ENV: 'e2e',
+      E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS: '10000',
+    }),
+    10_000,
+  );
+  assert.equal(
+    fixtureStructuredFirstChunkHoldMs({
+      APP_ENV: 'production',
+      E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS: '10000',
+    }),
+    40,
+  );
+  assert.equal(
+    fixtureStructuredFirstChunkHoldMs({
+      APP_ENV: 'e2e',
+      E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS: 'not-a-number',
+    }),
+    40,
+  );
+  assert.equal(
+    fixtureStructuredFirstChunkHoldMs({
+      APP_ENV: 'e2e',
+      E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS: '10001',
+    }),
+    40,
+  );
+});
 
 test('fixture structured execution compiles the frozen video delivery into one storyboard', async () => {
   const executor = new FixtureAiStructuredObjectExecutor();
@@ -276,80 +304,12 @@ test('formal platform adaptation returns all three distinct variants in one requ
   assert.equal(result.providerTaskRef, 'chatcmpl-platform-variants');
 });
 
-test('fixture copy generation streams paced JSON before returning the same result', async () => {
-  const runner = new FixtureAiStreamingRunner();
-  const started = runner.startCopyStream({
-    catalogModelId: 'llm-openai',
-    prompt: 'Write grounded appointment copy.',
-  });
-
-  const chunks = await readChunks(started.response);
-  const result = await started.result;
-  const streamed = JSON.parse(chunks.join('')) as typeof result;
-
-  assert.ok(chunks.length >= 2);
-  assert.equal(
-    started.response.headers.get('x-meiye-stream-protocol'),
-    'ai-sdk-object-json-v1'
-  );
-  assert.equal(streamed.candidates.length, 1);
-  assert.deepEqual(streamed.candidates, result.candidates);
-});
-
-test('fixture copy generation leaves an observable partial-object interval', async () => {
-  const runner = new FixtureAiStreamingRunner();
-  const started = runner.startCopyStream({
-    catalogModelId: 'llm-openai',
-    prompt: 'Show an observable partial object.',
-  });
-  assert.ok(started.response.body);
-  const reader = started.response.body.getReader();
-  const decoder = new TextDecoder();
-
-  const first = await reader.read();
-  assert.equal(first.done, false);
-  assert.match(decoder.decode(first.value), /真实到店记录/u);
-
-  const secondRead = reader.read();
-  const earlyState = await Promise.race([
-    secondRead.then(() => 'chunk' as const),
-    new Promise<'waiting'>((resolve) => {
-      setTimeout(() => resolve('waiting'), 40);
-    }),
-  ]);
-  assert.equal(earlyState, 'waiting');
-
-  await secondRead;
-  for (;;) {
-    const { done } = await reader.read();
-    if (done) break;
-  }
-  await started.result;
-});
-
-test('fixture copy generation stops pending chunks and completion when aborted', async () => {
-  const runner = new FixtureAiStreamingRunner();
-  const abortController = new AbortController();
-  const started = runner.startCopyStream(
-    {
-      catalogModelId: 'llm-openai',
-      prompt: 'Stop after the first partial chunk.',
-    },
-    abortController.signal
-  );
-  assert.ok(started.response.body);
-  const reader = started.response.body.getReader();
-  const first = await reader.read();
-  assert.equal(first.done, false);
-
-  abortController.abort();
-  await assert.rejects(reader.read(), { name: 'AbortError' });
-  await assert.rejects(started.result, { name: 'AbortError' });
-});
-
 test('fixture copy brief derives exactly the fact references present in its prompt', async () => {
   const executor = new FixtureAiStructuredObjectExecutor();
-  const generate = (storeFacts: Record<string, unknown>) =>
+  const generate = (
+    storeFacts: Record<string, unknown>,
+    normalizedIntent = '介绍本店护理项目',
+  ) =>
     executor.generate({
       instructions: 'Compile one grounded copy brief.',
       prompt: JSON.stringify({
@@ -358,6 +318,7 @@ test('fixture copy brief derives exactly the fact references present in its prom
             store_facts_assets: storeFacts,
           },
         },
+        declaration: { normalizedIntent },
       }),
       schema: executionBriefSchema,
       schemaName: 'harness_copy_brief_v1',
@@ -389,6 +350,46 @@ test('fixture copy brief derives exactly the fact references present in its prom
     new Set(['store_fact:price-1:2', 'store_fact:service-1:4']),
   );
   assert.equal(grounded.output.factRefs.length, 2);
+
+  const lineageMarker = 'M04LINEAGE_A_12345678';
+  const marked = await generate({}, `介绍护理项目 ${lineageMarker}`);
+  if (marked.output.kind !== 'copy') throw new Error('Expected a copy brief.');
+  assert.match(marked.output.instructions, new RegExp(lineageMarker, 'u'));
+});
+
+test('fixture copy candidate streams a trace of the frozen merchant intent', async () => {
+  const executor = new FixtureAiStructuredObjectExecutor();
+  const partials: unknown[] = [];
+  const lineageMarker = 'M04LINEAGE_B_12345678';
+  const generated = await executor.generate({
+    instructions: 'Generate one grounded copy candidate.',
+    onPartialOutput: (partial) => {
+      partials.push(structuredClone(partial));
+    },
+    prompt: JSON.stringify({
+      brief: {
+        instructions: `介绍护理项目 ${lineageMarker}`,
+      },
+      candidateId: 'c01',
+    }),
+    schema: z
+      .object({
+        assetRefs: z.array(z.string()),
+        body: z.string(),
+        conversionHook: z.string(),
+        factClaims: z.array(z.unknown()),
+        title: z.string(),
+      })
+      .strict(),
+    schemaName: 'harness_copy_candidate_v1',
+  });
+
+  assert.match(generated.output.title, new RegExp(lineageMarker, 'u'));
+  assert.ok(
+    partials.some((partial) =>
+      JSON.stringify(partial).includes(lineageMarker),
+    ),
+  );
 });
 
 test('fixture image edit brief derives work-case fact references from its prompt', async () => {
@@ -610,191 +611,6 @@ test('formal assistant continues after reading current context', async () => {
         message.content?.includes('work-context-loop')
     )
   );
-});
-
-test('formal model supply stream performs one provider effect and persists only the final object', async () => {
-  class CountingRunner extends FixtureAiStreamingRunner {
-    calls = 0;
-    failure?: { afterChunk: boolean; statusCode: number };
-
-    override startCopyStream(request: {
-      catalogModelId: string;
-      prompt: string;
-    }) {
-      this.calls += 1;
-      if (this.failure) {
-        const failure = this.failure;
-        return {
-          response: new Response(failure.afterChunk ? 'partial' : null),
-          result: new Promise<never>((_resolve, reject) => {
-            setTimeout(() => {
-              reject(
-                Object.assign(new Error('provider stream failed'), {
-                  statusCode: failure.statusCode,
-                })
-              );
-            }, 20);
-          }),
-        };
-      }
-      return super.startCopyStream(request);
-    }
-  }
-  const runner = new CountingRunner();
-  const saved: unknown[] = [];
-  const service = new ModelSupplyApplicationService({
-    models: [
-      {
-        id: 'llm-openai',
-        modality: 'llm',
-        operations: ['copy.generate'],
-        displayName: 'OpenAI copy',
-        qualityRank: 100,
-      },
-    ],
-    deployments: [
-      {
-        id: 'openai-live',
-        catalogModelId: 'llm-openai',
-        apiFamily: 'openai',
-        channel: 'direct',
-        region: 'overseas',
-        status: 'active',
-        activationEvidence: { status: 'live_verified' },
-      },
-    ],
-    execution: new RecordedProviderExecutionPort(),
-    resultSink: {
-      async saveResult(_workspaceId, result) {
-        saved.push(structuredClone(result));
-      },
-    },
-  });
-  const submission = (idempotencyKey: string) => ({
-    workspaceId: 'workspace-a',
-    actorId: 'owner-a',
-    correlationId: 'corr-copy-stream',
-    idempotencyKey,
-    operation: 'copy.generate' as const,
-    selection: {
-      mode: 'fixed' as const,
-      catalogModelId: 'llm-openai',
-    },
-    dataClass: [],
-    prompt: 'Write grounded appointment copy.',
-  });
-
-  const started = await service.startCopyStream(
-    submission('formal-copy-stream-key'),
-    runner
-  );
-  const chunks = await readChunks(started.response);
-  const completed = await started.completion;
-
-  assert.ok(chunks.length >= 2);
-  assert.equal(runner.calls, 1);
-  assert.equal(completed.status, 'completed');
-  assert.equal(completed.copyCandidates?.length, 1);
-  assert.equal(saved.length, 1);
-
-  runner.failure = { afterChunk: false, statusCode: 429 };
-  const rejected = await service.startCopyStream(
-    submission('formal-copy-stream-rejected'),
-    runner
-  );
-  assert.equal(await rejected.response.text(), '');
-  const rejectedResult = await rejected.completion;
-  assert.equal(rejectedResult.status, 'failed');
-  assert.equal(rejectedResult.attempt.acceptance, 'rejected_before_accept');
-
-  runner.failure = { afterChunk: true, statusCode: 429 };
-  const interrupted = await service.startCopyStream(
-    submission('formal-copy-stream-interrupted'),
-    runner
-  );
-  assert.equal(await interrupted.response.text(), 'partial');
-  const interruptedResult = await interrupted.completion;
-  assert.equal(interruptedResult.status, 'unknown');
-  assert.equal(interruptedResult.attempt.acceptance, 'acceptance_unknown');
-  // Td-2: copy stream partial interrupt refunds the product usage reservation.
-  assert.equal(interruptedResult.usage.status, 'refunded');
-  assert.equal(runner.calls, 3);
-});
-
-test('formal model supply stream rejects before the runner when the mode gate disables execution', async () => {
-  class CountingRunner extends FixtureAiStreamingRunner {
-    calls = 0;
-
-    override startCopyStream(request: {
-      catalogModelId: string;
-      prompt: string;
-    }) {
-      this.calls += 1;
-      return super.startCopyStream(request);
-    }
-  }
-  const runner = new CountingRunner();
-  let disabled = true;
-  const service = new ModelSupplyApplicationService({
-    models: [
-      {
-        id: 'llm-openai',
-        modality: 'llm',
-        operations: ['copy.generate'],
-        displayName: 'OpenAI copy',
-        qualityRank: 100,
-      },
-    ],
-    deployments: [
-      {
-        id: 'openai-live',
-        catalogModelId: 'llm-openai',
-        apiFamily: 'openai',
-        channel: 'direct',
-        region: 'overseas',
-        status: 'active',
-        activationEvidence: { status: 'live_verified' },
-      },
-    ],
-    execution: new RecordedProviderExecutionPort(),
-    submissionGate: {
-      async blocksNewSubmission() {
-        return disabled;
-      },
-    },
-  });
-  const submission = (idempotencyKey: string) => ({
-    workspaceId: 'workspace-a',
-    actorId: 'owner-a',
-    correlationId: 'corr-copy-stream-gate',
-    idempotencyKey,
-    operation: 'copy.generate' as const,
-    selection: {
-      mode: 'fixed' as const,
-      catalogModelId: 'llm-openai',
-    },
-    dataClass: [],
-    prompt: 'Write grounded appointment copy.',
-  });
-
-  const blocked = await service.startCopyStream(
-    submission('gated-copy-stream-key'),
-    runner
-  );
-  const blockedResult = await blocked.completion;
-  assert.equal(runner.calls, 0);
-  assert.equal(blockedResult.status, 'failed');
-  assert.equal(blockedResult.attempt.acceptance, 'rejected_before_accept');
-  assert.equal(blockedResult.providerCost.amount, 0);
-
-  disabled = false;
-  const allowed = await service.startCopyStream(
-    submission('ungated-copy-stream-key'),
-    runner
-  );
-  const allowedResult = await allowed.completion;
-  assert.equal(runner.calls, 1);
-  assert.equal(allowedResult.status, 'completed');
 });
 
 async function readChunks(response: Response) {
