@@ -10,7 +10,10 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
-import { seedConfirmedStore } from '../fixtures/product';
+import {
+  seedComposerInlineAuthorize,
+  seedConfirmedStore,
+} from '../fixtures/product';
 
 /**
  * S3 钱的旅程 — the two legs the money story has to walk end to end.
@@ -180,7 +183,21 @@ test.describe('S3 钱的旅程', () => {
     await page.goto('/dashboard');
     await seedConfirmedStore(page);
 
+    // The two-bucket shape is the 图文笔记 recipe's: it binds a page count, so
+    // the run debits copy 1 + image·pages. Reaching it needs an authorized
+    // source the same way the note compiler journey does.
     await page.getByTestId('composer-lens-option-image_text').click();
+    await seedComposerInlineAuthorize(page, { fileName: 'note-case.png' });
+    await page.reload();
+    await page.getByTestId('composer-lens-option-image_text').click();
+    await page
+      .getByTestId('composer-recipe-card-recipe.case_to_xhs_note')
+      .click();
+    const applyRecipe = page.getByRole('button', { name: '套用并更新设置' });
+    const recipeApplied = page.getByTestId('composer-recipe-apply-undo');
+    await expect(recipeApplied.or(applyRecipe)).toBeVisible();
+    if (await applyRecipe.isVisible()) await applyRecipe.click();
+    await expect(recipeApplied).toBeVisible();
     await page
       .getByTestId('composer-intent-input')
       .fill('把这周的护发案例做成一条小红书图文笔记');
