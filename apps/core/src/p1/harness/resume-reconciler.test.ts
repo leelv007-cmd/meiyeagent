@@ -13,7 +13,13 @@ test('pending resume is replayed with its persisted idempotency key', async () =
   const resumed: HarnessPendingResume[] = [];
   const reconciler = new HarnessResumeReconciler(store, {
     async resume(workspaceId, taskId, command) {
-      resumed.push({ eventId: pending.eventId, workspaceId, taskId, command });
+      resumed.push({
+        eventId: pending.eventId,
+        workspaceId,
+        taskId,
+        command,
+        resolutionSource: 'decision',
+      });
     },
   });
 
@@ -32,6 +38,46 @@ test('failed resume remains pending for the next reconciliation pass', async () 
 
   assert.deepEqual(await reconciler.runOnce(), { resumed: 0, failed: 1 });
   assert.deepEqual(store.marked, []);
+});
+
+test('late answer reconciliation creates the C1 successor instead of messaging the expired workflow', async () => {
+  const pending = {
+    ...pendingResume(),
+    request: {
+      actorId: 'merchant-a',
+      workspaceId: 'workspace-a',
+      packageId: 'package-1',
+      expectedRevision: 0,
+      workflowRevision: 1,
+      creationMode: 'customized' as const,
+      rawInput: '补充团购价',
+      intent: {
+        assetReferences: [],
+        context: {
+          workId: 'work-1',
+          intent: '补充团购价',
+          sourceSummaries: [],
+        },
+      },
+    },
+    resolutionSource: 'late_answer' as const,
+  };
+  const store = new MemoryResumeStore([pending]);
+  const actions: string[] = [];
+  const reconciler = new HarnessResumeReconciler(store, {
+    async resume() {
+      actions.push('unsafe-old-workflow-message');
+    },
+    async startSuccessor(input) {
+      actions.push(`successor:${input.sourceTaskId}:${input.workflowId}`);
+    },
+  });
+
+  assert.deepEqual(await reconciler.runOnce(), { resumed: 1, failed: 0 });
+  assert.deepEqual(actions, [
+    'successor:task-35:composer-task:late-answer-d3724871c13976fac6cae12b',
+  ]);
+  assert.deepEqual(store.marked, ['decision-event-1']);
 });
 
 class MemoryResumeStore implements HarnessResumeReconcilerStore {
@@ -53,6 +99,7 @@ function pendingResume(): HarnessPendingResume {
     eventId: 'decision-event-1',
     workspaceId: 'workspace-a',
     taskId: 'task-35',
+    resolutionSource: 'decision',
     command: {
       idempotencyKey: 'decision-retry-1',
       questionId: 'question-1',

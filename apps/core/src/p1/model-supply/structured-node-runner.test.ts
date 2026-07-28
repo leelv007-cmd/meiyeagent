@@ -15,6 +15,10 @@ import {
   StructuredNodeRunError,
   type StructuredObjectExecutor,
 } from './structured-node-runner.js';
+import {
+  InMemoryStructuredNodeMetrics,
+  nameHarnessIntent,
+} from '../harness/structured-nodes.js';
 
 test('AI SDK structured executor uses Output.object and final-step metadata', async () => {
   const requests: Array<Record<string, unknown>> = [];
@@ -75,6 +79,170 @@ test('AI SDK structured executor uses Output.object and final-step metadata', as
     responseFormat.json_schema?.name,
     'harness_intent_naming_v1',
   );
+});
+
+test('D-035 measures one real schema repair as first-pass miss, repair, and retry', async () => {
+  const responses = [
+    {
+      id: 'chatcmpl-invalid-structured',
+      output: { normalizedIntent: '介绍日常护理' },
+    },
+    {
+      id: 'chatcmpl-repaired-structured',
+      output: {
+        normalizedIntent: '介绍日常护理',
+        taskType: 'daily_service_exposure',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['industry_category'],
+        usedAssetCategories: ['industry_category'],
+        route: 'customized',
+        implicitConstraints: [],
+        blockingGap: null,
+      },
+    },
+  ];
+  let providerCalls = 0;
+  const executor = new AiSdkStructuredObjectExecutor({
+    apiKey: 'test-key',
+    baseUrl: 'https://provider.example/v1',
+    catalogModelId: 'llm-harness',
+    fetch: (async () => {
+      const response = responses[providerCalls++];
+      assert.ok(response);
+      return openAiStructuredResponse(response.id, response.output);
+    }) as typeof fetch,
+    inputCostPerMillion: 1,
+    model: 'provider-model',
+    outputCostPerMillion: 2,
+  });
+  const runner = createRunner(new CountingLedger(), executor);
+  const metrics = new InMemoryStructuredNodeMetrics();
+  let providerFences = 0;
+
+  const named = await nameHarnessIntent(
+    {
+      workflowId: 'workflow-real-repair',
+      workflowRevision: 1,
+      intent: {
+        context: {
+          workId: 'work-real-repair',
+          intent: '介绍日常护理',
+          sourceSummaries: [],
+        },
+        assetReferences: [],
+      },
+    },
+    {
+      run(request) {
+        return runner.run({
+          ...request,
+          beforeProviderAttempt: async () => {
+            providerFences += 1;
+          },
+        });
+      },
+    },
+    metrics,
+  );
+
+  assert.equal(named.declaration.normalizedIntent, '介绍日常护理');
+  assert.equal(providerCalls, 2);
+  assert.equal(providerFences, 2);
+  assert.deepEqual(metrics.snapshot(), {
+    initial: { calls: 1, schemaValid: 0, schemaInvalid: 1 },
+    repair: {
+      status: 'observed',
+      count: 1,
+      reasons: ['schema_validation'],
+    },
+    retry: { triggered: 1 },
+    nestedCompleteness: { complete: 6, total: 7 },
+  });
+});
+
+test('D-035 counts a call when both the first pass and bounded repair fail', async () => {
+  let providerCalls = 0;
+  const executor = new AiSdkStructuredObjectExecutor({
+    apiKey: 'test-key',
+    baseUrl: 'https://provider.example/v1',
+    catalogModelId: 'llm-harness',
+    fetch: (async () => {
+      providerCalls += 1;
+      return openAiStructuredResponse(
+        `chatcmpl-double-failure-${providerCalls}`,
+        { normalizedIntent: 'still missing required fields' },
+      );
+    }) as typeof fetch,
+    inputCostPerMillion: 1,
+    model: 'provider-model',
+    outputCostPerMillion: 2,
+  });
+  const metrics = new InMemoryStructuredNodeMetrics();
+
+  const named = await nameHarnessIntent(
+    {
+      workflowId: 'workflow-double-schema-failure',
+      workflowRevision: 1,
+      intent: {
+        context: {
+          workId: 'work-double-schema-failure',
+          intent: '介绍日常护理',
+          sourceSummaries: [],
+        },
+        assetReferences: [],
+      },
+    },
+    createRunner(new CountingLedger(), executor),
+    metrics,
+  );
+
+  assert.equal(named.declaration.route, 'guidance');
+  assert.equal(providerCalls, 2);
+  assert.deepEqual(metrics.snapshot(), {
+    initial: { calls: 1, schemaValid: 0, schemaInvalid: 1 },
+    repair: {
+      status: 'observed',
+      count: 1,
+      reasons: ['schema_validation'],
+    },
+    retry: { triggered: 1 },
+    nestedCompleteness: { complete: 0, total: 7 },
+  });
+});
+
+test('durable model-supply replay preserves the original repair measurement', async () => {
+  const application = createStructuredApplication(new CountingLedger());
+  const firstExecutor = new MeasuredStructuredExecutor();
+  const request = {
+    effectIdempotencyKey: 'wf:workflow-durable-replay:s1:intent:0',
+    schemaName: 'intent_naming_v1',
+    schemaRevision: 'intent-naming-v1',
+    instructions: 'Return the normalized intent.',
+    prompt: '{"intent":"介绍日常护理"}',
+    schema: z.object({ normalized: z.string() }).strict(),
+  };
+
+  const first = await createRunnerWithApplication(
+    application,
+    firstExecutor,
+  ).run(request);
+  const replayExecutor = new CountingStructuredExecutor({
+    normalized: 'must not execute',
+  });
+  const replay = await createRunnerWithApplication(
+    application,
+    replayExecutor,
+  ).run(request);
+
+  assert.equal(first.firstPassSchemaValid, false);
+  assert.deepEqual(first.repair, {
+    count: 1,
+    reasons: ['schema_validation'],
+  });
+  assert.equal(replay.replayed, false);
+  assert.equal(replay.firstPassSchemaValid, false);
+  assert.deepEqual(replay.repair, first.repair);
+  assert.equal(replayExecutor.calls, 0);
 });
 
 test('AI SDK structured executor exposes partial structured output before completion', async () => {
@@ -262,7 +430,15 @@ function createRunner(
   executor: StructuredObjectExecutor,
   withProductBilling = true,
 ) {
-  const application = new ModelSupplyApplicationService({
+  return createRunnerWithApplication(
+    createStructuredApplication(ledger),
+    executor,
+    withProductBilling,
+  );
+}
+
+function createStructuredApplication(ledger: ModelSupplyLedgerPort) {
+  return new ModelSupplyApplicationService({
     models: [
       {
         id: 'llm-harness',
@@ -285,6 +461,13 @@ function createRunner(
     execution: new RecordedProviderExecutionPort(),
     ledger,
   });
+}
+
+function createRunnerWithApplication(
+  application: ModelSupplyApplicationService,
+  executor: StructuredObjectExecutor,
+  withProductBilling = true,
+) {
   return new ModelSupplyStructuredNodeRunner({
     application,
     executor,
@@ -298,6 +481,30 @@ function createRunner(
         }
       : {}),
   });
+}
+
+class MeasuredStructuredExecutor implements StructuredObjectExecutor {
+  supportsCatalogModel() {
+    return true;
+  }
+
+  async generate<Output>(input: { schema: z.ZodType<Output> }) {
+    return {
+      output: input.schema.parse({ normalized: '介绍日常护理' }),
+      providerTaskRef: 'provider-measured-1',
+      usage: { inputTokens: 16, outputTokens: 26 },
+      measurement: {
+        firstPassSchemaValid: false,
+        repairCount: 1,
+        repairReasons: ['schema_validation'],
+        providerAttempts: 2,
+      },
+    };
+  }
+
+  providerCost(usage: { inputTokens: number; outputTokens: number }) {
+    return { amount: 0.000068, currency: 'CNY' as const, usage };
+  }
 }
 
 function createAutoRunner(
@@ -403,6 +610,33 @@ class FallbackStructuredExecutor implements StructuredObjectExecutor {
   providerCost(usage: { inputTokens: number; outputTokens: number }) {
     return { amount: 0.000034, currency: 'CNY' as const, usage };
   }
+}
+
+function openAiStructuredResponse(id: string, output: unknown) {
+  return new Response(
+    JSON.stringify({
+      choices: [
+        {
+          finish_reason: 'stop',
+          index: 0,
+          message: {
+            content: JSON.stringify(output),
+            role: 'assistant',
+          },
+        },
+      ],
+      created: 1,
+      id,
+      model: 'provider-model',
+      object: 'chat.completion',
+      usage: {
+        completion_tokens: 13,
+        prompt_tokens: 8,
+        total_tokens: 21,
+      },
+    }),
+    { headers: { 'content-type': 'application/json' } },
+  );
 }
 
 function rejectedBeforeAcceptance(message: string) {

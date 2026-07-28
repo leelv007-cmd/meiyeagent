@@ -7,6 +7,7 @@ import {
   type RequestedSelection,
   type StructuredObjectExecutor,
 } from './index.js';
+import type { StructuredObjectMeasurement } from './provider-lifecycle.js';
 import {
   OpenAiCompatibleAiSdkRunner,
   type OpenAiCompatibleAiSdkOptions,
@@ -32,6 +33,11 @@ export interface StructuredNodeRunnerResult<Output> {
   providerTaskRef: string;
   replayed: boolean;
   usage: { inputTokens: number; outputTokens: number };
+  firstPassSchemaValid?: boolean;
+  repair?: {
+    count: number;
+    reasons: string[];
+  };
 }
 
 export interface StructuredNodeRunner {
@@ -44,6 +50,8 @@ export class StructuredNodeRunError extends Error {
   constructor(
     readonly status: 'failed' | 'unknown',
     readonly acceptance: Acceptance,
+    readonly measurement?: StructuredObjectMeasurement,
+    readonly attempts = 1,
   ) {
     super(
       status === 'unknown'
@@ -115,6 +123,7 @@ export class ModelSupplyStructuredNodeRunner implements StructuredNodeRunner {
         'Structured model billing task and quote revision must be supplied together.',
       );
     }
+    let measurement: StructuredObjectMeasurement | undefined;
     const result = await this.options.application.executeStructuredObject(
       {
         workspaceId: this.options.workspaceId,
@@ -143,28 +152,71 @@ export class ModelSupplyStructuredNodeRunner implements StructuredNodeRunner {
         schema: request.schema,
         schemaName: request.schemaName,
       },
-      providerAttemptFencedExecutor(
-        this.options.executor,
-        request.beforeProviderAttempt,
+      measuredStructuredExecutor(
+        providerAttemptFencedExecutor(
+          this.options.executor,
+          request.beforeProviderAttempt,
+        ),
+        (observed) => {
+          measurement = observed;
+        },
       ),
     );
+    measurement = result.structuredMeasurement ?? measurement;
     if (result.status !== 'completed' || result.structuredOutput === undefined) {
       throw new StructuredNodeRunError(
         result.status === 'unknown' ? 'unknown' : 'failed',
         result.attempt.acceptance,
+        measurement,
+        result.attempts.length +
+          Math.max(0, (measurement?.providerAttempts ?? 1) - 1),
       );
     }
     const output = request.schema.parse(result.structuredOutput);
     return {
       output,
-      attempts: result.attempts.length,
+      attempts:
+        result.attempts.length +
+        Math.max(0, (measurement?.providerAttempts ?? 1) - 1),
       providerTaskRef: result.attempt.providerTaskRef ?? result.attempt.id,
       usage: {
         inputTokens: result.providerCost.usage.inputTokens ?? 0,
         outputTokens: result.providerCost.usage.outputTokens ?? 0,
       },
+      ...(measurement
+        ? {
+            firstPassSchemaValid: measurement.firstPassSchemaValid,
+            repair: {
+              count: measurement.repairCount,
+              reasons: measurement.repairReasons,
+            },
+          }
+        : {}),
     };
   }
+}
+
+function measuredStructuredExecutor(
+  executor: StructuredObjectExecutor,
+  observe: (
+    measurement: NonNullable<
+      Awaited<ReturnType<StructuredObjectExecutor['generate']>>['measurement']
+    >,
+  ) => void,
+): StructuredObjectExecutor {
+  return {
+    supportsCatalogModel(catalogModelId) {
+      return executor.supportsCatalogModel(catalogModelId);
+    },
+    async generate(input) {
+      const result = await executor.generate(input);
+      if (result.measurement) observe(result.measurement);
+      return result;
+    },
+    providerCost(usage) {
+      return executor.providerCost(usage);
+    },
+  };
 }
 
 function providerAttemptFencedExecutor(
@@ -178,6 +230,7 @@ function providerAttemptFencedExecutor(
     },
     async generate<Output>(input: {
       abortSignal?: AbortSignal;
+      beforeProviderAttempt?: () => Promise<void>;
       instructions: string;
       onPartialOutput?: (partial: unknown) => Promise<void> | void;
       prompt: string;
@@ -185,7 +238,7 @@ function providerAttemptFencedExecutor(
       schemaName: string;
     }) {
       await beforeProviderAttempt();
-      return executor.generate(input);
+      return executor.generate({ ...input, beforeProviderAttempt });
     },
     providerCost(usage) {
       return executor.providerCost(usage);
@@ -208,6 +261,7 @@ export class AiSdkStructuredObjectExecutor
 
   generate<Output>(input: {
     abortSignal?: AbortSignal;
+    beforeProviderAttempt?: () => Promise<void>;
     instructions: string;
     onPartialOutput?: (partial: unknown) => Promise<void> | void;
     prompt: string;
