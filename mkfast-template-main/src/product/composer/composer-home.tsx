@@ -97,7 +97,7 @@ import {
   shouldShowProgressiveFactCard,
 } from './progressive-fact';
 import {
-  BRIEF_STALE_QUOTE_NOTICE,
+  briefStaleQuoteNotice,
   cancelBriefSurface,
   confirmBriefSurface,
   createBriefSurfaceState,
@@ -2122,7 +2122,7 @@ export function ComposerHome({
     // throw (#240 P1).
     const confirmedQuote = quoteQuery.data;
     if (!currentQuoteView || !confirmedQuote) {
-      toast.error(BRIEF_STALE_QUOTE_NOTICE);
+      toast.error(briefStaleQuoteNotice());
       return;
     }
     const result = confirmBriefSurface(briefState);

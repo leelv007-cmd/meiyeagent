@@ -197,20 +197,13 @@ export {
 
 // —— #98 conditional Brief + GL-23 ——
 export {
-  BRIEF_CONFIRM_LABEL,
-  BRIEF_CANCEL_LABEL,
-  BRIEF_EVIDENCE_TITLE,
-  BRIEF_SUMMARY_FIELD_LABELS,
-  BRIEF_SUMMARY_TITLE,
-  BRIEF_SURFACE_TITLE,
   BRIEF_TRIGGER_CODES,
-  BRIEF_TRIGGERS_TITLE,
+  briefStaleQuoteNotice,
   buildBriefSummaryRows,
   cancelBriefSurface,
   confirmBriefSurface,
   createBriefSurfaceState,
   decideSubmitPath,
-  fixtureBriefProjection,
   openBriefSurface,
   projectBriefSurfaceView,
   projectEvidenceForBrowser,

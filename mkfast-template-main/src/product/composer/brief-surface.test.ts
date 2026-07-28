@@ -7,13 +7,14 @@ import { describe, it } from 'node:test';
 
 import type { BriefTriggerConditionCode } from '@meiye/contracts';
 
+import { overwriteGetLocale } from '@/locale/paraglide/runtime';
+
 import {
   BRIEF_TRIGGER_CODES,
   cancelBriefSurface,
   confirmBriefSurface,
   createBriefSurfaceState,
   decideSubmitPath,
-  fixtureBriefProjection,
   openBriefSurface,
   projectBriefSurfaceView,
   projectEvidenceForBrowser,
@@ -21,6 +22,7 @@ import {
   shouldShowEvidenceDrawer,
   type ComposerInputSnapshot,
 } from './brief-surface';
+import { fixtureBriefProjection } from './brief-surface.fixture';
 import { findForbiddenBrowserComposerKey } from './browser-contract';
 import type { ComposerQuoteView } from './quote-wiring';
 
@@ -410,6 +412,30 @@ describe('Brief confirmability follows the current quote identity', () => {
     );
     // The card is not snatched away mid-read — cancel is still the way out.
     assert.equal(view.cancelLabel, '返回修改');
+  });
+
+  it('renders the stale quote decision in the active locale', () => {
+    const { state } = openWith(['quote_policy_threshold']);
+
+    overwriteGetLocale(() => 'en');
+    const english = projectBriefSurfaceView(state, {
+      lensId: 'copy',
+      quoteStale: true,
+    });
+    assert.equal(
+      english.staleNotice,
+      'Your brief no longer matches what you just changed. Go back, then submit it again.'
+    );
+
+    overwriteGetLocale(() => 'zh');
+    const chinese = projectBriefSurfaceView(state, {
+      lensId: 'copy',
+      quoteStale: true,
+    });
+    assert.equal(
+      chinese.staleNotice,
+      '你刚改过要写的内容，这份确认对不上了。点“返回修改”再提交一次就好。'
+    );
   });
 
   it('omitting the flag keeps the previous behaviour for every other caller', () => {

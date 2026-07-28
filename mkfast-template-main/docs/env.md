@@ -55,8 +55,6 @@ Read at **Worker request time**. Used for secrets, API keys, and server-only con
 
 | Variable | Purpose | Required | Used by |
 |----------|---------|----------|---------|
-| **Base** | | | |
-| `VITE_BASE_URL` | URL (schema validation at runtime) | No | Default: `http://localhost:3000`; same value as build |
 | **Auth** | | | |
 | `BETTER_AUTH_SECRET` | Better Auth session signing | Yes (prod) | Auth; default only for CLI; [Mail](./mail.md) for verification/reset |
 | `GOOGLE_CLIENT_ID` | Google OAuth | No | Auth when Google login enabled |

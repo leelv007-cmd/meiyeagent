@@ -22,6 +22,8 @@ import type {
 } from '@meiye/contracts';
 import { briefTriggerConditionCodes } from '@meiye/contracts';
 
+import * as m from '@/locale/paraglide/messages';
+
 import {
   findForbiddenBrowserComposerKey,
   projectBrowserComposerPayload,
@@ -33,29 +35,44 @@ import {
 } from './video-confirm-zone';
 
 // ---------------------------------------------------------------------------
-// Labels / copy (merchant-facing; no provider / prompt / route internals)
+// Copy (merchant-facing; no provider / prompt / route internals)
 // ---------------------------------------------------------------------------
 
-export const BRIEF_SURFACE_TITLE = '确认本次创作';
-export const BRIEF_CONFIRM_LABEL = '确认并开始';
-export const BRIEF_CANCEL_LABEL = '返回修改';
-export const BRIEF_EVIDENCE_TITLE = '依据与来源';
-export const BRIEF_TRIGGERS_TITLE = '需要确认的原因';
-export const BRIEF_SUMMARY_TITLE = '本次摘要';
+function briefSummaryFieldLabels() {
+  return {
+    targetDeliverable: m.composer_brief_summary_target(),
+    platforms: m.composer_brief_summary_platforms(),
+    sourceRightsSummary: m.composer_brief_summary_source_rights(),
+    keyFacts: m.composer_brief_summary_key_facts(),
+    modelAndSettings: m.composer_brief_summary_model_settings(),
+    impactScope: m.composer_brief_summary_impact_scope(),
+    estimatedCost: m.composer_brief_summary_estimated_cost(),
+    estimatedDuration: m.composer_brief_summary_estimated_duration(),
+    pendingItems: m.composer_brief_summary_pending_items(),
+  };
+}
 
-export const BRIEF_SUMMARY_FIELD_LABELS = {
-  targetDeliverable: '目标成品',
-  platforms: '平台',
-  sourceRightsSummary: '来源与权利',
-  keyFacts: '关键事实',
-  modelAndSettings: '模型与设置',
-  impactScope: '影响范围',
-  estimatedCost: '预计费用',
-  estimatedDuration: '预计时长',
-  pendingItems: '待确认项',
-} as const;
+function briefTriggerReason(code: BriefTriggerConditionCode): string {
+  const reasons: Record<BriefTriggerConditionCode, () => string> = {
+    any_video: m.composer_brief_trigger_any_video,
+    multi_deliverable_or_cross_platform:
+      m.composer_brief_trigger_multi_deliverable,
+    images_over_four: m.composer_brief_trigger_images_over_four,
+    restricted_assets: m.composer_brief_trigger_restricted_assets,
+    high_risk_fact_missing_or_conflict: m.composer_brief_trigger_high_risk_fact,
+    quote_policy_threshold: m.composer_brief_trigger_quote_threshold,
+    confirmation_invalid: m.composer_brief_trigger_confirmation_invalid,
+  };
+  return reasons[code]();
+}
 
-export type BriefSummaryFieldKey = keyof typeof BRIEF_SUMMARY_FIELD_LABELS;
+export function briefStaleQuoteNotice(): string {
+  return m.composer_brief_stale_quote_notice();
+}
+
+export type BriefSummaryFieldKey = keyof ReturnType<
+  typeof briefSummaryFieldLabels
+>;
 
 /** Stable ordered list of the seven D-094 safety codes (for tests / UI). */
 export const BRIEF_TRIGGER_CODES: readonly BriefTriggerConditionCode[] =
@@ -126,10 +143,6 @@ export type BriefSurfaceView = {
   phase: BriefSurfacePhase;
 };
 
-/** D-116 merchant language: what changed, and the way forward, in one line. */
-export const BRIEF_STALE_QUOTE_NOTICE =
-  '你刚改过要写的内容，这份确认对不上了。点“返回修改”再提交一次就好。';
-
 export type SubmitPathDecision =
   | {
       path: 'direct_submit';
@@ -170,31 +183,38 @@ export function buildBriefSummaryRows(
 ): BriefSummaryRow[] {
   if (!summary) return [];
   const rows: BriefSummaryRow[] = [];
+  const labels = briefSummaryFieldLabels();
 
   const push = (key: BriefSummaryFieldKey, raw: string | null | undefined) => {
     const value = (raw ?? '').trim();
     if (!value) return;
     rows.push({
       key,
-      label: BRIEF_SUMMARY_FIELD_LABELS[key],
+      label: labels[key],
       value,
     });
   };
 
   push('targetDeliverable', summary.targetDeliverable ?? null);
   if (summary.platforms && summary.platforms.length > 0) {
-    push('platforms', summary.platforms.join('、'));
+    push(
+      'platforms',
+      summary.platforms.join(m.composer_brief_list_separator())
+    );
   }
   push('sourceRightsSummary', summary.sourceRightsSummary ?? null);
   if (summary.keyFacts && summary.keyFacts.length > 0) {
-    push('keyFacts', summary.keyFacts.join('；'));
+    push('keyFacts', summary.keyFacts.join(m.composer_brief_item_separator()));
   }
   push('modelAndSettings', summary.modelAndSettings ?? null);
   push('impactScope', summary.impactScope ?? null);
   push('estimatedCost', summary.estimatedCost ?? null);
   push('estimatedDuration', summary.estimatedDuration ?? null);
   if (summary.pendingItems && summary.pendingItems.length > 0) {
-    push('pendingItems', summary.pendingItems.join('；'));
+    push(
+      'pendingItems',
+      summary.pendingItems.join(m.composer_brief_item_separator())
+    );
   }
 
   return rows;
@@ -451,14 +471,14 @@ export function projectBriefSurfaceView(
   if (state.phase !== 'open' || !state.projection) {
     return {
       visible: false,
-      title: BRIEF_SURFACE_TITLE,
+      title: m.composer_brief_title(),
       triggers: [],
       summaryRows: [],
       evidenceEntries: [],
       showEvidenceDrawer: false,
       videoConfirm: null,
-      confirmLabel: BRIEF_CONFIRM_LABEL,
-      cancelLabel: BRIEF_CANCEL_LABEL,
+      confirmLabel: m.composer_brief_confirm(),
+      cancelLabel: m.composer_brief_cancel(),
       bindRevisions: null,
       requiresVideoConfirm: false,
       videoConfirmAccepted: state.videoConfirmAccepted,
@@ -492,7 +512,7 @@ export function projectBriefSurfaceView(
       : {
           ...videoConfirm,
           visible: true,
-          title: videoConfirm.title || '确认视频生成',
+          title: m.composer_brief_video_title(),
           requiresExplicitConfirm: true,
         }
     : null;
@@ -502,80 +522,25 @@ export function projectBriefSurfaceView(
 
   return {
     visible: true,
-    title: BRIEF_SURFACE_TITLE,
-    triggers: [...projection.triggers],
+    title: m.composer_brief_title(),
+    triggers: projection.triggers.map((trigger) => ({
+      ...trigger,
+      reason: briefTriggerReason(trigger.code),
+    })),
     summaryRows: buildBriefSummaryRows(projection.summary),
     evidenceEntries,
     showEvidenceDrawer: shouldShowEvidenceDrawer(evidenceEntries),
     videoConfirm: embeddedVideo,
-    confirmLabel: BRIEF_CONFIRM_LABEL,
-    cancelLabel: BRIEF_CANCEL_LABEL,
+    confirmLabel: m.composer_brief_confirm(),
+    cancelLabel: m.composer_brief_cancel(),
     bindRevisions: { ...projection.bindRevisions },
     requiresVideoConfirm,
     videoConfirmAccepted: state.videoConfirmAccepted,
     // Was unconditionally true, which let a Brief built against a superseded
     // quote stay confirmable while the merchant kept typing (#240 P1).
     canConfirm: !options?.quoteStale,
-    staleNotice: options?.quoteStale ? BRIEF_STALE_QUOTE_NOTICE : null,
+    staleNotice: options?.quoteStale ? briefStaleQuoteNotice() : null,
     phase: state.phase,
-  };
-}
-
-/**
- * Fixture helper for unit tests: build a minimal projection that fires
- * exactly the given trigger codes (or none).
- */
-export function fixtureBriefProjection(input: {
-  requiresBrief: boolean;
-  triggerCodes?: BriefTriggerConditionCode[];
-  evidenceDrawer?: BriefEvidenceEntry[];
-  summary?: BriefSummaryFields;
-  bindRevisions?: Partial<BriefBoundRevisions>;
-  confirmationInvalid?: boolean;
-  confirmationValid?: boolean;
-  lensId?: CreationLensId | null;
-}): BriefTriggerProjection {
-  const codes = input.triggerCodes ?? [];
-  const reasons: Record<BriefTriggerConditionCode, string> = {
-    any_video: '本次包含视频生成，需确认成品、时长与费用',
-    multi_deliverable_or_cross_platform: '多交付物或跨平台组合，需确认范围',
-    images_over_four: '图片数量超过 4 张，需确认套图与费用',
-    restricted_assets: '使用了顾客案例、前后对比或评价等受限素材，需确认权利',
-    high_risk_fact_missing_or_conflict:
-      '价格、期限、效果或资质等关键事实缺失或冲突',
-    quote_policy_threshold: '预计费用达到额外确认门槛',
-    confirmation_invalid: '草稿、模板、模型、报价或来源已变化，需重新确认',
-  };
-
-  const draftRevisionId =
-    input.bindRevisions?.draftRevisionId ?? 'draft-rev-fixture';
-
-  return {
-    requiresBrief: input.requiresBrief,
-    triggers: codes.map((code) => ({ code, reason: reasons[code] })),
-    bindRevisions: {
-      draftRevisionId,
-      recipeRevisionId: input.bindRevisions?.recipeRevisionId ?? null,
-      modelRevisionId: input.bindRevisions?.modelRevisionId ?? null,
-      quoteRevisionId: input.bindRevisions?.quoteRevisionId ?? null,
-      sourceRevisionId: input.bindRevisions?.sourceRevisionId ?? null,
-      surfaceRevisionId: input.bindRevisions?.surfaceRevisionId ?? null,
-      lensId: input.bindRevisions?.lensId ?? input.lensId ?? null,
-    },
-    confirmationInvalid: input.confirmationInvalid ?? false,
-    confirmationValid: input.confirmationValid ?? false,
-    evidenceDrawer: input.evidenceDrawer ?? [],
-    summary: input.summary ?? {
-      targetDeliverable: input.requiresBrief ? '测试成品' : null,
-      platforms: input.requiresBrief ? ['小红书'] : undefined,
-      sourceRightsSummary: input.requiresBrief ? '本店素材·已授权' : null,
-      keyFacts: input.requiresBrief ? ['活动价 99'] : undefined,
-      modelAndSettings: input.requiresBrief ? '默认模型' : null,
-      impactScope: input.requiresBrief ? '仅本次' : null,
-      estimatedCost: input.requiresBrief ? '3 条' : null,
-      estimatedDuration: input.requiresBrief ? '约 30 秒' : null,
-      pendingItems: input.requiresBrief ? ['确认费用'] : undefined,
-    },
   };
 }
 
