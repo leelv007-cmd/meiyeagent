@@ -18,12 +18,12 @@ import {
   confirmBriefSurface,
   createBriefSurfaceState,
   decideSubmitPath,
-  fixtureBriefProjection,
   openBriefSurface,
   projectBriefSurfaceView,
   type BriefSurfaceState,
   type ComposerInputSnapshot,
 } from './brief-surface';
+import { fixtureBriefProjection } from './brief-surface.fixture';
 import { BriefSurface } from './brief-surface-panel';
 
 afterEach(() => {

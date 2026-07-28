@@ -840,6 +840,11 @@ Per modality, one test walks:
   with the merchant turn and the replayed progress, and exactly one submission
   has been posted for the whole journey (a second POST would be the second
   submit truth ADR-0014 forbids).
+- **英文过期 Brief 支线** — open the real high-risk Brief on `/en/dashboard`,
+  edit the intent after the quote-bound card appears, and require the visible
+  stale-decision notice to be English with the confirm action disabled. This
+  keeps the locale regression on the required browser spec rather than only in
+  a model test.
 - **workId-only Result 重连** — a second tab opens the running copy Result from
   `/dashboard/results/:workId` with no task query and must render the unique
   token emitted by that Work's canonical Harness workflow. Playwright holds the

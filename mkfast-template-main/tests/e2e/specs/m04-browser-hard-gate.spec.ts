@@ -6,6 +6,7 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import {
+  productState,
   seedComposerInlineAuthorize,
   seedConfirmedStore,
 } from '../fixtures/product';
@@ -433,6 +434,72 @@ test.describe('M-04 required browser hard gate', () => {
       await assertJourneyRestored(page, contract, workId);
     });
   }
+
+  test('English stale Brief explains the invalidated decision and blocks confirmation', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(180_000);
+    const user = await registerE2EUser(request);
+    await loginByForm(page, user);
+    await seedConfirmedStore(page);
+    await page.goto('/en/dashboard');
+
+    const factCard = page.getByTestId('progressive-fact-card');
+    await expect(factCard).toBeVisible({ timeout: 60_000 });
+    const factInput = factCard.getByTestId('progressive-fact-input');
+    await factCard.getByTestId('progressive-fact-continue').click();
+    await expect(factInput).toHaveValue('299');
+    await factCard.getByTestId('progressive-fact-continue').click();
+    await factCard.getByTestId('progressive-fact-confirm').click();
+    await expect(factCard).toBeHidden({ timeout: 60_000 });
+    const state = await productState(page);
+    const activeFacts = await p1Query<Array<{ kind?: string }>>(
+      page,
+      'context',
+      'store_facts_active',
+      {
+        at: new Date().toISOString(),
+        scope: { storeId: state.workspaceId },
+      }
+    );
+    expect(
+      new Set(activeFacts.map((fact) => fact.kind)),
+      'the journey may proceed only after the service and price facts are active'
+    ).toEqual(new Set(['service', 'price']));
+
+    const copyCatalog = await p1Query<{
+      models: Array<{ available?: boolean; id?: string; unitPrice?: unknown }>;
+    }>(page, 'model-supply', 'catalog', { operation: 'copy.generate' });
+    expect(
+      copyCatalog.models.find((model) => model.id === 'deepseek-v4-pro'),
+      'the credential-free fixture catalog must produce the copy model this browser journey quotes'
+    ).toMatchObject({
+      available: true,
+      unitPrice: expect.anything(),
+    });
+
+    const copyLens = page.getByTestId('composer-lens-option-copy');
+    await copyLens.click();
+    await expect(copyLens).toBeChecked();
+    const intent = page.getByTestId('composer-intent-input');
+    await intent.fill(`皮肤护理 朋友圈团购项目介绍 ${crypto.randomUUID()}`);
+    await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+      timeout: 30_000,
+    });
+    await page.getByTestId('composer-submit').click();
+
+    const brief = page.getByTestId('composer-brief-surface');
+    await expect(brief).toBeVisible({ timeout: 60_000 });
+    await intent.fill('把新团购改成只发朋友圈的短文案');
+
+    const notice = brief.getByTestId('composer-brief-stale');
+    await expect(notice).toHaveText(
+      'Your brief no longer matches what you just changed. Go back, then submit it again.'
+    );
+    await expect(notice).not.toContainText(/[\u3400-\u9fff]/u);
+    await expect(brief.getByTestId('composer-brief-confirm')).toBeDisabled();
+  });
 
   test('workId-only Result route reopens a running copy and reconnects its canonical workflow', async ({
     page,

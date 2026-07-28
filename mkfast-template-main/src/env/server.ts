@@ -31,12 +31,6 @@ function serviceSecretSchema(name: string, devDefault: string) {
  */
 export const serverEnv = createEnv({
   server: {
-    // Defaults so CLI (e.g. auth:schema:generate via pnpm dlx) can run without loading .env.local
-    VITE_BASE_URL: z.url().default('http://localhost:3000'),
-
-    // Database (PostgreSQL)
-    DATABASE_URL: z.string().min(1).optional(),
-
     // Auth (Better Auth) — weak default allowed outside production/staging
     BETTER_AUTH_SECRET: serviceSecretSchema(
       'BETTER_AUTH_SECRET',
@@ -88,9 +82,6 @@ export const serverEnv = createEnv({
     CREEM_DEBUG: z.string().optional(),
     CREEM_API_KEY: z.string().optional(),
     CREEM_WEBHOOK_SECRET: z.string().optional(),
-
-    // AI image generation (fal.ai)
-    FAL_KEY: z.string().optional(),
   },
   runtimeEnv: process.env,
 });

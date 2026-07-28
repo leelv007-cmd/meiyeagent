@@ -7,13 +7,9 @@
  */
 
 import { cn } from '@/lib/utils';
+import * as m from '@/locale/paraglide/messages';
 
 import type { BriefSurfaceView } from './brief-surface';
-import {
-  BRIEF_EVIDENCE_TITLE,
-  BRIEF_SUMMARY_TITLE,
-  BRIEF_TRIGGERS_TITLE,
-} from './brief-surface';
 
 export type BriefSurfaceProps = {
   view: BriefSurfaceView;
@@ -46,7 +42,7 @@ export function BriefSurface({
           {view.title}
         </h2>
         <p className="text-sm text-muted-foreground">
-          请核对摘要后确认；取消将返回编辑且不丢失已填内容。
+          {m.composer_brief_intro()}
         </p>
       </header>
 
@@ -56,7 +52,7 @@ export function BriefSurface({
           className="flex flex-col gap-2"
         >
           <h3 className="text-sm font-medium text-foreground">
-            {BRIEF_TRIGGERS_TITLE}
+            {m.composer_brief_triggers_title()}
           </h3>
           <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
             {view.triggers.map((trigger) => (
@@ -78,7 +74,7 @@ export function BriefSurface({
           className="flex flex-col gap-2"
         >
           <h3 className="text-sm font-medium text-foreground">
-            {BRIEF_SUMMARY_TITLE}
+            {m.composer_brief_summary_title()}
           </h3>
           <dl className="grid gap-2 sm:grid-cols-2">
             {view.summaryRows.map((row) => (
@@ -99,10 +95,10 @@ export function BriefSurface({
         <aside
           data-testid="composer-brief-evidence-drawer"
           className="flex flex-col gap-2 rounded-xl border border-primary/15 bg-primary/5 p-3"
-          aria-label={BRIEF_EVIDENCE_TITLE}
+          aria-label={m.composer_brief_evidence_title()}
         >
           <h3 className="text-sm font-medium text-foreground">
-            {BRIEF_EVIDENCE_TITLE}
+            {m.composer_brief_evidence_title()}
           </h3>
           <ul className="flex flex-col gap-2">
             {view.evidenceEntries.map((entry, index) => (
@@ -120,20 +116,32 @@ export function BriefSurface({
                 <div className="mt-1 text-muted-foreground">
                   {entry.factSummary ?? entry.factKind}
                   {entry.appliedLocation
-                    ? ` · 用于：${entry.appliedLocation}`
+                    ? ` · ${m.composer_brief_evidence_applied_location({
+                        location: entry.appliedLocation,
+                      })}`
                     : null}
                 </div>
                 <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
                   {entry.freshness ? (
-                    <span>新鲜度：{entry.freshness}</span>
+                    <span>
+                      {m.composer_brief_evidence_freshness({
+                        freshness: entry.freshness,
+                      })}
+                    </span>
                   ) : null}
                   {entry.rightsStatus ? (
-                    <span>权利：{entry.rightsStatus}</span>
+                    <span>
+                      {m.composer_brief_evidence_rights({
+                        status: entry.rightsStatus,
+                      })}
+                    </span>
                   ) : null}
                   {entry.uncertaintyOrConflict ? (
                     <span className="text-destructive">
                       {entry.uncertaintyOrConflict}
-                      {entry.pendingConfirmation ? '（待确认）' : ''}
+                      {entry.pendingConfirmation
+                        ? m.composer_brief_evidence_pending()
+                        : ''}
                     </span>
                   ) : null}
                 </div>
@@ -161,17 +169,20 @@ export function BriefSurface({
           ) : null}
           {view.videoConfirm.amountLabel ? (
             <p className="text-sm text-muted-foreground">
-              预计额度：{view.videoConfirm.amountLabel}
+              {m.composer_brief_video_quota({
+                amount: view.videoConfirm.amountLabel,
+              })}
             </p>
           ) : null}
           {view.videoConfirm.quotedSeconds != null ? (
             <p className="text-xs text-muted-foreground">
-              成片时长上限 {view.videoConfirm.quotedSeconds}{' '}
-              秒（按生成成片秒数计费）
+              {m.composer_brief_video_duration({
+                seconds: view.videoConfirm.quotedSeconds,
+              })}
             </p>
           ) : null}
           <p className="text-sm text-foreground">
-            点击“{view.confirmLabel}”即确认本次视频生成费用与时长。
+            {m.composer_brief_video_consent({ label: view.confirmLabel })}
           </p>
         </fieldset>
       ) : null}
