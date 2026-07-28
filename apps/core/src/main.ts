@@ -126,6 +126,7 @@ import {
   DurableMediaGenerationApplicationService,
   modelAssetStorageFromEnv,
   FixtureAiStreamingRunner,
+  FixtureAiStructuredObjectExecutor,
   FoundationModelSupplyLedger,
   MediaActivationProbeExecutor,
   ModelSupplyFoundationModule,
@@ -171,6 +172,7 @@ import {
   PostgresSupplyPlanningMigration,
 } from './p1/supply-registry/index.js';
 import {
+  AiSdkStructuredObjectExecutor,
   ModelSupplyStructuredNodeRunner,
 } from './p1/model-supply/structured-node-runner.js';
 import { HarnessApplicationService } from './p1/harness/application-service.js';
@@ -244,6 +246,7 @@ import {
   ModelSupplyImageGenerationAdapter,
   MediaCustodyStorageAdapter,
   MarketingIdentityFoundationModule,
+  StructuredMarketingIdentityDrafter,
   AdminConfigAssetIntakeGuidanceSource,
   documentParseProviderFromEnv,
   FixtureAssetDraftCompiler,
@@ -616,6 +619,22 @@ const aiStreamingRunner =
     ? new FixtureAiStreamingRunner()
     : modelRuntime.activation === 'live_verified' && modelRuntime.direct
       ? new OpenAiCompatibleAiSdkRunner(modelRuntime.direct)
+      : undefined;
+/**
+ * W12②: the identity draft assistant. Same availability rule as the streaming
+ * runner above — fixture in e2e, the live direct model once it is verified,
+ * nothing otherwise. When it is nothing the draft action answers with an empty
+ * proposal and the wizard keeps asking its questions (D-132).
+ */
+const marketingIdentityDrafter =
+  modelRuntime.mode === 'fixture'
+    ? new StructuredMarketingIdentityDrafter(
+        new FixtureAiStructuredObjectExecutor()
+      )
+    : modelRuntime.activation === 'live_verified' && modelRuntime.direct
+      ? new StructuredMarketingIdentityDrafter(
+          new AiSdkStructuredObjectExecutor(modelRuntime.direct)
+        )
       : undefined;
 const foundationLedgerService = new P1ApplicationService(foundationRepository);
 const productEntitlementPolicy = new ProductStateEntitlementPolicy(
@@ -1559,7 +1578,11 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       videoWorkflow: canonicalVideoWorkflow,
     }),
     new VideoRegenerationFoundationModule(videoRegeneration),
-    new MarketingIdentityFoundationModule(marketingIdentities),
+    new MarketingIdentityFoundationModule(
+      marketingIdentities,
+      undefined,
+      marketingIdentityDrafter
+    ),
     new AssetMemoryFoundationModule(
       assetIntakeService,
       contextBundleRepository,

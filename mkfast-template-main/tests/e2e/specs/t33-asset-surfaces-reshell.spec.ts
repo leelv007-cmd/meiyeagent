@@ -126,6 +126,16 @@ async function registerIdentity(manager: Locator, displayName: string) {
       .getByRole('button', { name: '暂时跳过' })
       .click();
   }
+  // D-142: the authorized reach is asked for, not written for the merchant, so
+  // registration cannot be reached until both scopes name something.
+  for (const [question, option] of [
+    ['这个人设可以用在哪些平台？', '小红书'],
+    ['这个人设可以用在哪些场景？', '品牌人设'],
+  ] as const) {
+    const region = manager.getByRole('region', { name: question });
+    await region.getByRole('button', { name: option }).click();
+    await region.getByRole('button', { name: '继续' }).click();
+  }
   await manager.getByRole('button', { name: '登记身份' }).click();
   const card = manager.locator('article').filter({ hasText: displayName });
   await expect(card).toHaveCount(1);
@@ -142,7 +152,9 @@ test('the identity page keeps D-117 three actions apart', async ({
     await loginByForm(page, user);
     await page.goto('/dashboard/identity');
 
-    const manager = page.getByRole('region', { name: '表达身份' });
+    // The surface was renamed to 口吻; exact keeps this off the save panel and
+    // the composer card, which are both named「…口吻」as well.
+    const manager = page.getByRole('region', { name: '口吻', exact: true });
     // Creating is the only action available before an identity exists — saving
     // can never be the thing that silently sets a default.
     await expect(manager.getByRole('button', { name: '设为默认' })).toHaveCount(

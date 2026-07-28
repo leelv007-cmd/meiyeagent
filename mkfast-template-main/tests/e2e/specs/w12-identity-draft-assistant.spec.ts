@@ -1,0 +1,262 @@
+import { readFile } from 'node:fs/promises';
+
+import { expect, test, type Locator, type Page } from '@playwright/test';
+
+import {
+  cleanupE2EUsers,
+  loginByForm,
+  registerE2EUser,
+} from '../fixtures/auth';
+import { productCommand } from '../fixtures/product';
+
+/**
+ * W12② / D-142 — 一句话建人设 → 草案带 unconfirmed 徽标 → 逐项校对保存 →
+ * Composer 可选绑 revision.
+ *
+ * The whole point of the assistant is that it speeds the merchant up without
+ * ever answering for them, so this walk asserts the seam twice over: every
+ * proposed field wears its origin and a「还没确认」badge, and the wizard refuses
+ * to reach the save panel until each of them has been walked past by hand.
+ */
+
+const REFERENCE_IMAGE = await readFile(
+  new URL(
+    '../../../public/model-previews/image-beauty-preview.png',
+    import.meta.url
+  )
+);
+
+/** The fixture parser reads this out of any non-price reference document. */
+const REFERENCE_TEXT = '暖棕色门店，主营头皮护理';
+
+const BACKGROUND = '青禾美业，做头皮护理十年，说话稳、不夸大';
+const DISPLAY_NAME = '青禾美业';
+
+const QUESTION = {
+  displayName: '希望在内容里怎么称呼这个身份？',
+  owner: '这个身份归属于谁？',
+  claim: '这个品牌最核心的主张是什么？',
+  boundaries: '哪些话或做法绝对不能碰？',
+  samples: '给一两句最能代表这个身份的表达样例。',
+  sourceRef: '授权证明或内部备注是什么？（可填编号）',
+  forbiddenClaims: '有哪些话这个品牌坚决不说？',
+  visualPrinciples: '画面希望长期保持什么感觉？',
+  seriesAnchors: '有哪些栏目值得长期连续做？',
+  platforms: '这个人设可以用在哪些平台？',
+  scenes: '这个人设可以用在哪些场景？',
+} as const;
+
+function questionRegion(manager: Locator, question: string) {
+  return manager.getByRole('region', { name: question });
+}
+
+/** Read a proposal, keep the wording, move on. */
+async function reviewProposal(
+  manager: Locator,
+  question: string,
+  expectedOrigin: string
+) {
+  const region = questionRegion(manager, question);
+  await expect(region).toBeVisible();
+  await expect(region.getByText(expectedOrigin, { exact: true })).toBeVisible();
+  await expect(region.getByText('还没确认', { exact: true })).toBeVisible();
+  await expect(region.getByRole('textbox', { name: question })).not.toHaveValue(
+    ''
+  );
+  await region.getByRole('button', { name: '继续' }).click();
+}
+
+async function seedStore(page: Page) {
+  await productCommand(page, {
+    type: 'confirm_store',
+    store: {
+      accounts: [],
+      address: '湖墅南路 88 号',
+      booking: '提前一天私信预约',
+      brandVoice: '真实、克制',
+      city: '杭州',
+      district: '拱墅区',
+      name: 'W12 口吻门店',
+      prohibitions: ['不虚构价格'],
+      projects: [
+        {
+          confirmed: true,
+          durationMinutes: 60,
+          id: 'w12-project',
+          name: '头皮护理',
+          price: 199,
+        },
+      ],
+      regulated: false,
+    },
+  });
+}
+
+test('one line and a reference become a draft the merchant still has to校对', async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(360_000);
+  const user = await registerE2EUser(request);
+  try {
+    await loginByForm(page, user);
+    // The reference file rides the same upload channel every merchant asset
+    // uses, which needs a workspace to land in.
+    await seedStore(page);
+    await page.goto('/dashboard/identity');
+
+    // Exact: the save panel and the composer card are both named「…口吻」too,
+    // and only the page's own section is called exactly that.
+    const manager = page.getByRole('region', { name: '口吻', exact: true });
+    await expect(manager).toBeVisible({ timeout: 60_000 });
+
+    // Before a kind is chosen there is nothing for an assistant to draft into.
+    await expect(manager.getByTestId('marketing-identity-assist')).toHaveCount(
+      0
+    );
+    await manager.getByRole('button', { name: '品牌', exact: true }).click();
+
+    const assist = manager.getByTestId('marketing-identity-assist');
+    await expect(assist).toBeVisible();
+    const run = assist.getByRole('button', { name: '让我先起个草稿' });
+    // One line is the whole入口 — with nothing said there is nothing to draft.
+    await expect(run).toBeDisabled();
+
+    await assist.getByRole('textbox', { name: '一句话背景' }).fill(BACKGROUND);
+    await expect(run).toBeEnabled();
+
+    await assist
+      .getByTestId('marketing-identity-assist-reference')
+      .setInputFiles({
+        buffer: REFERENCE_IMAGE,
+        mimeType: 'image/png',
+        name: 'w12-brand-reference.png',
+      });
+    await expect(
+      assist.getByTestId('marketing-identity-assist-reference-state')
+    ).toHaveText('资料已经读过了', { timeout: 90_000 });
+
+    await run.click();
+    // The draft is announced as not counting for anything yet.
+    await expect(
+      assist.getByTestId('marketing-identity-assist-applied')
+    ).toContainText('都还没算数', { timeout: 90_000 });
+
+    // Eight proposals are in the draft and not one of them is an answer, so the
+    // save panel is still out of reach.
+    await expect(
+      manager.getByRole('region', { name: '确认后保存为一个口吻' })
+    ).toHaveCount(0);
+
+    // Each field says where it came from before the merchant passes it.
+    const displayName = questionRegion(manager, QUESTION.displayName);
+    await expect(
+      displayName.getByTestId('identity-provenance-displayName')
+    ).toHaveText('我猜的');
+    await expect(
+      displayName.getByTestId('identity-unconfirmed-displayName')
+    ).toHaveText('还没确认');
+    await expect(
+      displayName.getByRole('textbox', { name: QUESTION.displayName })
+    ).toHaveValue(DISPLAY_NAME);
+    await displayName.getByRole('button', { name: '继续' }).click();
+
+    await reviewProposal(manager, QUESTION.owner, '我猜的');
+
+    // The claim was read out of the file the merchant handed over, and says so
+    // rather than passing itself off as a guess or as their own words.
+    const claim = questionRegion(manager, QUESTION.claim);
+    await expect(
+      claim.getByTestId('identity-provenance-primaryClaimOrRole')
+    ).toHaveText('从你传的资料里读到的');
+    await expect(
+      claim.getByRole('textbox', { name: QUESTION.claim })
+    ).toHaveValue(REFERENCE_TEXT);
+    await claim.getByRole('button', { name: '继续' }).click();
+
+    // Rewriting a proposal makes it the merchant's line — the badge goes with
+    // the wording, not with the field.
+    const boundaries = questionRegion(manager, QUESTION.boundaries);
+    await expect(
+      boundaries.getByTestId('identity-provenance-professionalBoundaries')
+    ).toHaveText('我猜的');
+    await boundaries
+      .getByRole('textbox', { name: QUESTION.boundaries })
+      .fill('不做医疗诊断，也不承诺见效时间');
+    await expect(
+      boundaries.getByTestId('identity-unconfirmed-professionalBoundaries')
+    ).toHaveCount(0);
+    await boundaries.getByRole('button', { name: '继续' }).click();
+
+    await reviewProposal(manager, QUESTION.samples, '我猜的');
+
+    // The authorization note is not something the assistant may fill in — it
+    // arrives empty, and nothing moves until the merchant writes it.
+    const sourceRef = questionRegion(manager, QUESTION.sourceRef);
+    await expect(
+      sourceRef.getByTestId('identity-provenance-sourceRef')
+    ).toHaveCount(0);
+    await expect(
+      sourceRef.getByRole('textbox', { name: QUESTION.sourceRef })
+    ).toHaveValue('');
+    await expect(
+      sourceRef.getByRole('button', { name: '继续' })
+    ).toBeDisabled();
+    await sourceRef
+      .getByRole('textbox', { name: QUESTION.sourceRef })
+      .fill('w12-brand-authorization');
+    await sourceRef.getByRole('button', { name: '继续' }).click();
+
+    for (const question of [
+      QUESTION.forbiddenClaims,
+      QUESTION.visualPrinciples,
+      QUESTION.seriesAnchors,
+    ]) {
+      await reviewProposal(manager, question, '我猜的');
+    }
+
+    // W12①: the authorized reach is still asked for. The assistant never
+    // reached it, so both scopes arrive untouched.
+    const platforms = questionRegion(manager, QUESTION.platforms);
+    await expect(
+      platforms.getByRole('button', { name: '继续' })
+    ).toBeDisabled();
+    await platforms.getByRole('button', { name: '小红书' }).click();
+    await platforms.getByRole('button', { name: '继续' }).click();
+
+    const scenes = questionRegion(manager, QUESTION.scenes);
+    await expect(scenes.getByRole('button', { name: '继续' })).toBeDisabled();
+    await scenes.getByRole('button', { name: '品牌人设' }).click();
+    await scenes.getByRole('button', { name: '继续' }).click();
+
+    const preview = manager.getByRole('region', {
+      name: '确认后保存为一个口吻',
+    });
+    await expect(preview).toBeVisible();
+    await expect(preview).toContainText(DISPLAY_NAME);
+    await expect(preview).toContainText('不做医疗诊断');
+    // Nothing unconfirmed can survive to the save panel.
+    await expect(preview.getByText('还没确认')).toHaveCount(0);
+    await preview.getByRole('button', { name: '登记身份' }).click();
+
+    const saved = manager.locator('article').filter({ hasText: DISPLAY_NAME });
+    await expect(saved).toHaveCount(1);
+    await expect(saved.getByText('生效中', { exact: true })).toBeVisible();
+
+    // D-117 stays intact: creating saved a voice and nothing else, and binding
+    // it to a session is its own trip into the conversation.
+    await expect(saved.getByText('默认身份')).toHaveCount(0);
+    await saved.getByRole('link', { name: '用这个身份创作（本次）' }).click();
+    const identityCard = page.getByTestId('composer-identity-selection');
+    await expect(identityCard).toHaveAttribute(
+      'data-identity-state',
+      'selected',
+      { timeout: 120_000 }
+    );
+    await expect(identityCard).toContainText(
+      '这次用你选的口吻，不会改掉你平时的默认。'
+    );
+  } finally {
+    await cleanupE2EUsers(request);
+  }
+});

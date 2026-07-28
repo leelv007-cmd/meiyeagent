@@ -1,5 +1,7 @@
 import {
+  EMPTY_MARKETING_IDENTITY_SUGGESTION,
   marketingIdentityAssetSchema,
+  marketingIdentityDraftRequestSchema,
   marketingIdentityProjectionSchema,
   marketingIdentityQuerySchema,
   registerMarketingIdentityCommandSchema,
@@ -22,6 +24,7 @@ import { z } from 'zod';
 
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
 import type { P1OperationModule } from '../foundation/ports.js';
+import type { MarketingIdentityDraftPort } from './marketing-identity-draft.js';
 
 export interface MarketingIdentityRepository {
   register(input: {
@@ -1078,7 +1081,13 @@ export class MarketingIdentityFoundationModule implements P1OperationModule {
 
   constructor(
     private readonly identities: MarketingIdentityRepository,
-    private readonly now: () => string = () => new Date().toISOString()
+    private readonly now: () => string = () => new Date().toISOString(),
+    /**
+     * W12②: absent when no structured model is available. The draft action then
+     * answers with an empty proposal instead of failing, so the wizard falls
+     * back to the questions it has always asked (D-132 fixture恒绿).
+     */
+    private readonly drafter?: MarketingIdentityDraftPort
   ) {}
 
   execute(args: {
@@ -1087,6 +1096,16 @@ export class MarketingIdentityFoundationModule implements P1OperationModule {
     idempotencyKey: string;
   }) {
     const name = action(args.input);
+    if (name === 'draft_marketing_identity') {
+      const request = parse(
+        marketingIdentityDraftRequestSchema,
+        payload(args.input)
+      );
+      return (
+        this.drafter?.suggest({ request }) ??
+        Promise.resolve(EMPTY_MARKETING_IDENTITY_SUGGESTION)
+      );
+    }
     if (name === 'register_marketing_identity') {
       return this.identities.register({
         workspaceId: args.context.workspaceId,

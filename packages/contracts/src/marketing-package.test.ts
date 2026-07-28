@@ -5,12 +5,14 @@ import {
   PROMOTIONAL_MATERIAL_SPECS,
   editContentPackageVersionCommandSchema,
   hotTopicOpportunityCardSchema,
+  marketingIdentityAssetSchema,
   marketingIdentityProjectionSchema,
   marketingPackageEvidenceSchema,
   promotionalMaterialReceiptExtensionSchema,
   promotionOfferCardSchema,
   quickEditExportUseDeliverySchema,
   quickEditIntentSchema,
+  registerMarketingIdentityCommandSchema,
   selectMarketingIdentityForSessionCommandSchema,
   setDefaultMarketingIdentityCommandSchema,
 } from './index.js';
@@ -203,4 +205,88 @@ test('canonical identity projection carries the remembered default revision', ()
     identityId: 'identity-brand',
     version: 3,
   });
+});
+
+// W12② / D-142 — provenance is field-level, and the consent record is off
+// limits to anything but the merchant.
+const BRAND_REGISTRATION = {
+  identityId: 'identity-brand-provenance',
+  expectedVersion: 0,
+  kind: 'brand',
+  displayName: '青禾美业',
+  owner: '青禾品牌中心',
+  professionalBoundaries: ['不提供医疗诊断'],
+  allowedPlatforms: ['xiaohongshu'],
+  allowedScenes: ['brand_personal_ip'],
+  expressionSamples: ['先看你的情况再说'],
+  effectiveFrom: '2026-07-28T00:00:00.000Z',
+  expiresAt: null,
+  departureHandling: '撤回后停止生成新内容。',
+  sourceRef: 'brand-guideline-2026',
+  brandClaims: ['让专业护理更安心'],
+  forbiddenClaims: [],
+  visualPrinciples: [],
+  seriesAnchors: [],
+} as const;
+
+test('a registered identity can say which of its lines the merchant wrote', () => {
+  const command = registerMarketingIdentityCommandSchema.parse({
+    ...BRAND_REGISTRATION,
+    fieldProvenance: {
+      displayName: 'ai_suggestion',
+      brandClaims: 'document',
+      owner: 'user',
+      sourceRef: 'user',
+      allowedPlatforms: 'user',
+      allowedScenes: 'user',
+    },
+  });
+
+  assert.equal(command.fieldProvenance?.displayName, 'ai_suggestion');
+  assert.equal(command.fieldProvenance?.brandClaims, 'document');
+});
+
+test('an identity registered before provenance existed stays parseable', () => {
+  const command = registerMarketingIdentityCommandSchema.parse(
+    BRAND_REGISTRATION
+  );
+
+  // Absent means unknown. Writing `user` over that would be the same silent
+  // answering on the merchant's behalf that D-142 removed.
+  assert.equal(command.fieldProvenance, undefined);
+});
+
+test('the authorized reach can never be recorded as something a model proposed', () => {
+  for (const field of [
+    'sourceRef',
+    'allowedPlatforms',
+    'allowedScenes',
+  ] as const) {
+    for (const provenance of ['ai_suggestion', 'document'] as const) {
+      const parsed = registerMarketingIdentityCommandSchema.safeParse({
+        ...BRAND_REGISTRATION,
+        fieldProvenance: { [field]: provenance },
+      });
+      assert.equal(
+        parsed.success,
+        false,
+        `${field} must not accept ${provenance}`
+      );
+    }
+  }
+});
+
+test('a stored identity carries the same provenance rule as the command', () => {
+  const parsed = marketingIdentityAssetSchema.safeParse({
+    ...BRAND_REGISTRATION,
+    expectedVersion: undefined,
+    workspaceId: 'workspace-1',
+    version: 1,
+    status: 'active',
+    createdAt: '2026-07-28T00:00:00.000Z',
+    createdBy: 'user-1',
+    fieldProvenance: { portraitAuthorization: 'ai_suggestion' },
+  });
+
+  assert.equal(parsed.success, false);
 });

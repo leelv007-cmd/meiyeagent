@@ -812,6 +812,68 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
         status: 'mapped',
       };
     }
+    /**
+     * W12② 身份草稿档. Deterministic on purpose: the e2e gate walks a merchant
+     * from one background line to a draft they校对 field by field, so it has to
+     * be able to name what it expects to read back. Everything here is derived
+     * from what the merchant actually said — the fixture never volunteers a
+     * fact the input did not carry, mirroring the live instructions.
+     */
+    case 'marketing_identity_draft_v1': {
+      const background =
+        typeof payload.background === 'string' ? payload.background.trim() : '';
+      const referenceText =
+        typeof payload.referenceText === 'string'
+          ? payload.referenceText.trim()
+          : '';
+      if (!background) {
+        return {
+          displayName: null,
+          owner: null,
+          primaryClaimOrRole: null,
+          professionalBoundaries: null,
+          expressionSamples: null,
+          forbiddenClaims: null,
+          visualPrinciples: null,
+          seriesAnchors: null,
+        };
+      }
+      const person = payload.kind === 'person';
+      // The first clause of the background line is the name the merchant led
+      // with; the rest is what they said about it.
+      const [lead = background, ...rest] = background
+        .split(/[，,。；;]/u)
+        .map((part) => part.trim())
+        .filter(Boolean);
+      const detail = rest.join('，') || background;
+      const grounded = referenceText.length > 0;
+      const fromDocument = (value: string) => ({
+        value,
+        provenance: 'document' as const,
+      });
+      const fromModel = (value: string) => ({
+        value,
+        provenance: 'ai_suggestion' as const,
+      });
+      return {
+        displayName: fromModel(lead),
+        owner: fromModel(person ? `${lead}本人` : `${lead}品牌中心`),
+        primaryClaimOrRole: grounded
+          ? fromDocument(referenceText.slice(0, 60))
+          : fromModel(detail),
+        professionalBoundaries: fromModel(
+          ['不做医疗承诺', '不承诺具体见效时间'].join('\n'),
+        ),
+        expressionSamples: fromModel(
+          [`先看你的情况，再说${lead}能怎么帮上忙`, '价格和项目都按门店确认过的说'].join(
+            '\n',
+          ),
+        ),
+        forbiddenClaims: person ? null : fromModel('不承诺永久效果'),
+        visualPrinciples: person ? null : fromModel('自然肤色，干净留白'),
+        seriesAnchors: person ? null : fromModel('每周护理答疑'),
+      };
+    }
     case 'harness_intent_naming_v1': {
       const context = fixtureRecord(payload.context);
       const intent = typeof context.intent === 'string' ? context.intent : '';

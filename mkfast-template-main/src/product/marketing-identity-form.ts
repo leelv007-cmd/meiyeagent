@@ -2,7 +2,10 @@ import {
   MARKETING_IDENTITY_PLATFORMS,
   MARKETING_SCENES,
   registerMarketingIdentityCommandSchema,
+  type MarketingIdentityFieldProvenance,
+  type MarketingIdentityFieldProvenanceMap,
   type MarketingIdentityPlatform,
+  type MarketingIdentitySuggestion,
   type MarketingScene,
   type RegisterMarketingIdentityCommand,
 } from '@meiye/contracts';
@@ -38,6 +41,89 @@ export interface MarketingIdentityDraft {
   sourceRef?: string;
   visualPrinciples?: string;
   voiceAuthorized?: boolean;
+  /**
+   * Where each filled value came from. Absent means the merchant typed it —
+   * the same shape `ProgressiveFactDraft.provenance` uses in the five-step
+   * intake, so both wizards render the same badge from the same idea.
+   */
+  provenance?: Partial<
+    Record<MarketingIdentityQuestionId, MarketingIdentityFieldProvenance>
+  >;
+  /**
+   * Prefills the merchant has not read yet. `hasAnswer` returns false for
+   * every id in here, which is what stops an assistant's proposal from being
+   * registered behind their back: the wizard keeps walking back to it until
+   * they confirm or edit it.
+   */
+  unconfirmed?: MarketingIdentityQuestionId[];
+}
+
+/** Question ids a draft assistant may fill. Consent answers are not here. */
+const SUGGESTIBLE_QUESTIONS = [
+  'displayName',
+  'owner',
+  'primaryClaimOrRole',
+  'professionalBoundaries',
+  'expressionSamples',
+  'forbiddenClaims',
+  'visualPrinciples',
+  'seriesAnchors',
+] as const satisfies readonly MarketingIdentityQuestionId[];
+
+/**
+ * Wizard question → the field name the registered identity records provenance
+ * under. `primaryClaimOrRole` splits by kind, and `kind` itself has no field of
+ * its own because it is the discriminant rather than a value.
+ */
+function provenanceFieldFor(
+  questionId: MarketingIdentityQuestionId,
+  kind: 'brand' | 'person'
+): keyof MarketingIdentityFieldProvenanceMap | null {
+  if (questionId === 'kind') return null;
+  if (questionId === 'primaryClaimOrRole') {
+    return kind === 'brand' ? 'brandClaims' : 'realWorldRole';
+  }
+  if (questionId === 'portraitAuthorized') return 'portraitAuthorization';
+  if (questionId === 'voiceAuthorized') return 'voiceAuthorization';
+  return questionId;
+}
+
+/**
+ * Fold an assistant's proposal into the draft (W12②).
+ *
+ * Everything folded in lands *unconfirmed* and carries the origin the
+ * assistant reported, so the wizard walks the merchant through each proposed
+ * field before any of it can be registered. The consent answers — the
+ * authorization note, the two scopes, the portrait and voice permissions — are
+ * never touched here, and the suggestion contract has no slot for them either.
+ */
+export function applyMarketingIdentitySuggestion(
+  draft: MarketingIdentityDraft,
+  suggestion: MarketingIdentitySuggestion
+): MarketingIdentityDraft {
+  const provenance = { ...draft.provenance };
+  const unconfirmed = [...(draft.unconfirmed ?? [])];
+  const next: MarketingIdentityDraft = { ...draft, provenance, unconfirmed };
+  for (const questionId of SUGGESTIBLE_QUESTIONS) {
+    const field = suggestion[questionId];
+    if (!field) continue;
+    const value = field.value.trim();
+    if (!value) continue;
+    next[questionId] = value;
+    if (!unconfirmed.includes(questionId)) unconfirmed.push(questionId);
+    provenance[questionId] = field.provenance;
+  }
+  return next;
+}
+
+/** Fields the merchant still has to read before anything can be registered. */
+export function marketingIdentityUnconfirmedQuestions(
+  draft: MarketingIdentityDraft
+): MarketingIdentityQuestionId[] {
+  const questions = marketingIdentityQuestions(draft);
+  return questions.filter((questionId) =>
+    draft.unconfirmed?.includes(questionId)
+  );
 }
 
 const COMMON_QUESTIONS: MarketingIdentityQuestionId[] = [
@@ -111,7 +197,20 @@ export function answerMarketingIdentityQuestion(
   if (typeof value !== 'string') {
     throw new Error('Identity text answers must be strings.');
   }
-  return { ...draft, [questionId]: value };
+  // Answering is what lifts「还没确认」: the merchant is looking at the field,
+  // the badge, and the value when they do it. Keeping a proposal's wording
+  // keeps its origin — only an edit makes the merchant the author, the same
+  // rule answerProgressiveFact runs in the五步录入 wizard, so a badge means the
+  // same thing on both surfaces.
+  const edited = value !== draft[questionId];
+  return {
+    ...draft,
+    [questionId]: value,
+    provenance: edited
+      ? { ...draft.provenance, [questionId]: 'user' }
+      : draft.provenance,
+    unconfirmed: draft.unconfirmed?.filter((entry) => entry !== questionId),
+  };
 }
 
 function parseScopeAnswer<Allowed extends string>(
@@ -137,6 +236,10 @@ function hasAnswer(
   draft: MarketingIdentityDraft,
   questionId: MarketingIdentityQuestionId
 ) {
+  // W12②: a proposal is not an answer. Until the merchant confirms it the
+  // wizard keeps returning here, which is what keeps an assistant's guess from
+  // being silently promoted into a registered identity.
+  if (draft.unconfirmed?.includes(questionId)) return false;
   if (!Object.hasOwn(draft, questionId)) return false;
   const value = draft[questionId];
   // A scope answered with nothing ticked is not an answer — the merchant has
@@ -187,7 +290,31 @@ export function marketingIdentityRegistrationFromDraft(
     seriesAnchors: draft.seriesAnchors,
     portraitAuthorized: draft.portraitAuthorized,
     voiceAuthorized: draft.voiceAuthorized,
+    fieldProvenance: marketingIdentityFieldProvenance(draft),
   });
+}
+
+/**
+ * The provenance the registered identity records, field by field.
+ *
+ * Every answered question is written down explicitly rather than left to a
+ * default: an identity that says nothing about where its words came from is
+ * indistinguishable from one registered before W12②, and the whole point is
+ * that a merchant reading their own identity later can tell which lines they
+ * wrote and which ones a model proposed and they kept.
+ */
+export function marketingIdentityFieldProvenance(
+  draft: MarketingIdentityDraft
+): MarketingIdentityFieldProvenanceMap {
+  if (!draft.kind) return {};
+  const map: MarketingIdentityFieldProvenanceMap = {};
+  for (const questionId of marketingIdentityQuestions(draft)) {
+    const field = provenanceFieldFor(questionId, draft.kind);
+    if (!field) continue;
+    if (!hasAnswer(draft, questionId)) continue;
+    map[field] = draft.provenance?.[questionId] ?? 'user';
+  }
+  return map;
 }
 
 /**
@@ -219,6 +346,7 @@ export function marketingIdentityRegistrationPayload(input: {
   seriesAnchors?: string;
   portraitAuthorized?: boolean;
   voiceAuthorized?: boolean;
+  fieldProvenance?: MarketingIdentityFieldProvenanceMap;
 }): RegisterMarketingIdentityCommand {
   const common = {
     identityId: `marketing-${crypto.randomUUID()}`,
@@ -233,6 +361,7 @@ export function marketingIdentityRegistrationPayload(input: {
     expiresAt: null,
     departureHandling: MARKETING_IDENTITY_DEPARTURE_HANDLING,
     sourceRef: input.sourceRef,
+    fieldProvenance: input.fieldProvenance ?? {},
   };
   return registerMarketingIdentityCommandSchema.parse(
     input.kind === 'brand'

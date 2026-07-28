@@ -150,6 +150,97 @@ export const hotTopicOpportunityCardSchema = z
     }
   });
 
+/**
+ * D-142 (W12②): where each identity field came from.
+ *
+ * `document` is a reference file the merchant handed over and the parse chain
+ * read back; `ai_suggestion` is the model's inference from the merchant's
+ * one-line background; `user` is the merchant's own words. Mirrors
+ * `ASSET_FIELD_PROVENANCE` in parse-service.ts — the same three-way honesty the
+ * five-step intake already renders as a badge — with `photo_extract` widened to
+ * `document` because an identity reference may be a page, not a photo.
+ */
+export const MARKETING_IDENTITY_FIELD_PROVENANCE = [
+  'user',
+  'document',
+  'ai_suggestion',
+] as const;
+
+export const marketingIdentityFieldProvenanceSchema = z.enum(
+  MARKETING_IDENTITY_FIELD_PROVENANCE,
+);
+
+export type MarketingIdentityFieldProvenance = z.infer<
+  typeof marketingIdentityFieldProvenanceSchema
+>;
+
+/**
+ * Fields a draft assistant is allowed to propose. All of them are expressive:
+ * how the identity speaks, what it stands for, what it refuses to say. The
+ * merchant reads each one before it is registered.
+ */
+export const MARKETING_IDENTITY_ASSISTED_FIELDS = [
+  'displayName',
+  'owner',
+  'professionalBoundaries',
+  'expressionSamples',
+  'brandClaims',
+  'forbiddenClaims',
+  'visualPrinciples',
+  'seriesAnchors',
+  'realWorldRole',
+] as const;
+
+/**
+ * Fields no model may ever answer for the merchant. These are the consent
+ * record itself — the authorization proof, the reach that was authorized, and
+ * the portrait/voice permissions — which is exactly what D-142 was opened
+ * about. The schema below refuses to register them as anything but `user`, so
+ * a future assistant cannot quietly widen its own reach.
+ */
+export const MARKETING_IDENTITY_MERCHANT_ONLY_FIELDS = [
+  'sourceRef',
+  'allowedPlatforms',
+  'allowedScenes',
+  'portraitAuthorization',
+  'voiceAuthorization',
+] as const;
+
+export const MARKETING_IDENTITY_PROVENANCE_FIELDS = [
+  ...MARKETING_IDENTITY_ASSISTED_FIELDS,
+  ...MARKETING_IDENTITY_MERCHANT_ONLY_FIELDS,
+] as const;
+
+export const marketingIdentityFieldProvenanceMapSchema = z.partialRecord(
+  z.enum(MARKETING_IDENTITY_PROVENANCE_FIELDS),
+  marketingIdentityFieldProvenanceSchema,
+);
+
+export type MarketingIdentityFieldProvenanceMap = z.infer<
+  typeof marketingIdentityFieldProvenanceMapSchema
+>;
+
+const MERCHANT_ONLY_FIELD_SET: ReadonlySet<string> = new Set(
+  MARKETING_IDENTITY_MERCHANT_ONLY_FIELDS,
+);
+
+function checkMerchantOnlyProvenance(
+  identity: { fieldProvenance?: MarketingIdentityFieldProvenanceMap },
+  context: z.RefinementCtx,
+) {
+  for (const [field, provenance] of Object.entries(
+    identity.fieldProvenance ?? {},
+  )) {
+    if (!MERCHANT_ONLY_FIELD_SET.has(field)) continue;
+    if (provenance === 'user') continue;
+    context.addIssue({
+      code: 'custom',
+      message: `Identity field ${field} is a merchant answer and cannot carry ${provenance} provenance.`,
+      path: ['fieldProvenance', field],
+    });
+  }
+}
+
 const identityBaseSchema = z.object({
   identityId: idSchema,
   workspaceId: idSchema,
@@ -165,6 +256,13 @@ const identityBaseSchema = z.object({
   expiresAt: timestampSchema.nullable(),
   departureHandling: z.string().trim().min(1),
   sourceRef: idSchema,
+  /**
+   * Field-level origin. Optional rather than defaulted: an identity registered
+   * before W12② genuinely has no record of where its words came from, and
+   * writing `user` over that absence would be the same silent answering D-142
+   * exists to stop. Absent means unknown, not "the merchant wrote it".
+   */
+  fieldProvenance: marketingIdentityFieldProvenanceMapSchema.optional(),
   createdAt: timestampSchema,
   createdBy: idSchema,
 });
@@ -201,6 +299,7 @@ export const marketingIdentityAssetSchema = z
         path: ['expiresAt'],
       });
     }
+    checkMerchantOnlyProvenance(identity, context);
   });
 
 const identityRegistrationBaseSchema = identityBaseSchema
@@ -235,7 +334,73 @@ export const registerMarketingIdentityCommandSchema = z.discriminatedUnion(
       ]),
     }),
   ],
-);
+).superRefine(checkMerchantOnlyProvenance);
+
+/**
+ * What the merchant hands the draft assistant: one line of background and,
+ * optionally, the text the parse chain read out of a reference file they
+ * uploaded. The reference text arrives already parsed — this command never
+ * takes a file, so there is one upload path (`parse_single_asset`) rather than
+ * a second one hiding behind the assistant.
+ */
+export const marketingIdentityDraftRequestSchema = z
+  .object({
+    kind: z.enum(['brand', 'person']),
+    background: z.string().trim().min(1).max(2_000),
+    referenceText: z.string().trim().max(20_000).optional(),
+  })
+  .strict();
+
+export type MarketingIdentityDraftRequest = z.infer<
+  typeof marketingIdentityDraftRequestSchema
+>;
+
+const marketingIdentitySuggestedFieldSchema = z
+  .object({
+    value: z.string().trim().min(1).max(2_000),
+    /**
+     * `user` is deliberately absent: nothing the assistant returns is the
+     * merchant's answer. It becomes `user` only where they edit it.
+     */
+    provenance: z.enum(['document', 'ai_suggestion']),
+  })
+  .strict();
+
+/**
+ * The assistant's proposal. Every key is nullable rather than optional so the
+ * model has to say "I have nothing for this" out loud, and the key set is
+ * exactly the expressive fields — the authorization proof, the authorized
+ * reach, and the portrait/voice permissions have no slot here at all, so the
+ * assistant structurally cannot answer them.
+ */
+export const marketingIdentitySuggestionSchema = z
+  .object({
+    displayName: marketingIdentitySuggestedFieldSchema.nullable(),
+    owner: marketingIdentitySuggestedFieldSchema.nullable(),
+    primaryClaimOrRole: marketingIdentitySuggestedFieldSchema.nullable(),
+    professionalBoundaries: marketingIdentitySuggestedFieldSchema.nullable(),
+    expressionSamples: marketingIdentitySuggestedFieldSchema.nullable(),
+    forbiddenClaims: marketingIdentitySuggestedFieldSchema.nullable(),
+    visualPrinciples: marketingIdentitySuggestedFieldSchema.nullable(),
+    seriesAnchors: marketingIdentitySuggestedFieldSchema.nullable(),
+  })
+  .strict();
+
+export type MarketingIdentitySuggestion = z.infer<
+  typeof marketingIdentitySuggestionSchema
+>;
+
+export const EMPTY_MARKETING_IDENTITY_SUGGESTION: MarketingIdentitySuggestion =
+  {
+    displayName: null,
+    owner: null,
+    primaryClaimOrRole: null,
+    professionalBoundaries: null,
+    expressionSamples: null,
+    forbiddenClaims: null,
+    visualPrinciples: null,
+    seriesAnchors: null,
+  };
 
 export const transitionMarketingIdentityCommandSchema = z
   .object({
