@@ -23,8 +23,10 @@ import {
   progressive_fact_city_label,
   progressive_fact_district_label,
   progressive_fact_name_label,
+  progressive_fact_price_validity_unanswered,
   progressive_fact_project_name_label,
   progressive_fact_project_price_label,
+  progressive_fact_project_price_validity_label,
   store_intake_arrange,
   store_intake_arrange_empty,
   store_intake_arrange_failed,
@@ -59,6 +61,7 @@ import {
   store_intake_photo_ready,
   store_intake_photo_unsupported,
   store_intake_photo_uploading,
+  store_intake_price_validity_hint,
   store_intake_recommendation_hint,
   store_intake_recommended,
   store_intake_rights_optional,
@@ -99,9 +102,11 @@ import {
   buildFinalizeStoreIntakeCommand,
   createProgressiveFactDraft,
   progressiveFactRevisionMap,
+  projectProgressiveFactView,
   type ProgressiveFactId,
   type ProgressiveFactProvenance,
 } from '@/product/composer/progressive-fact';
+import { PriceValidityAnswer } from '@/product/composer/price-validity-answer';
 import type { useProductState } from '@/product/client';
 import type {
   AssetDraftView,
@@ -165,6 +170,7 @@ const FIELD_LABELS: Record<ProgressiveFactId, () => string> = {
   name: progressive_fact_name_label,
   projectName: progressive_fact_project_name_label,
   projectPrice: progressive_fact_project_price_label,
+  projectPriceValidity: progressive_fact_project_price_validity_label,
 };
 
 /** The parse contract's four visual slots — no local re-categorisation. */
@@ -238,6 +244,51 @@ export function StoreIntakeWizard({
       ),
   });
 
+  /**
+   * A price whose window has closed is no longer *active*, but its stream is
+   * still there and its head still has a revision. Confirming a fresh price on
+   * top of it therefore has to expect that head — reading the revision off the
+   * active list alone would say 0 and collide (#244). Only fetched when the
+   * stream is missing from the active list, so the ordinary case costs nothing.
+   */
+  const project = store?.projects[0];
+  const projectFactIds = project
+    ? {
+        price: `store-project:${project.id}:price`,
+        service: `store-project:${project.id}:service`,
+      }
+    : null;
+  const activeFactIds = new Set(
+    (storeFacts.data ?? []).map((fact) => fact.factId)
+  );
+  const lapsedFactIds = projectFactIds
+    ? [projectFactIds.service, projectFactIds.price].filter(
+        (factId) => !activeFactIds.has(factId)
+      )
+    : [];
+  const lapsedFactHistory = useQuery({
+    enabled: storeFacts.isSuccess && lapsedFactIds.length > 0,
+    queryKey: p1QueryKeys.request('context', 'store_fact_history', {
+      factIds: lapsedFactIds,
+    }),
+    queryFn: async ({ signal }) => {
+      const histories = await Promise.all(
+        lapsedFactIds.map((factId) =>
+          queryP1<StoreFact[]>(
+            'context',
+            { action: 'store_fact_history', payload: { factId } },
+            signal
+          )
+        )
+      );
+      return histories.flat();
+    },
+  });
+  const factHeads = [
+    ...(storeFacts.data ?? []),
+    ...(lapsedFactHistory.data ?? []),
+  ];
+
   const [seededRevision, setSeededRevision] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string>();
@@ -283,7 +334,7 @@ export function StoreIntakeWizard({
         batchId: `intake-batch:${id}`,
         capturedAt: new Date().toISOString(),
         expectedRevision: store?.revision ?? 0,
-        factRevisions: progressiveFactRevisionMap(storeFacts.data ?? []),
+        factRevisions: progressiveFactRevisionMap(factHeads),
         referenceId: `store-intake-wizard:${id}`,
         regulatedDefault:
           complianceDefaults.data?.['compliance.regulated_mode.default'],
@@ -331,6 +382,7 @@ export function StoreIntakeWizard({
     ? recommendedFactIds(experience.data, state)
     : [];
   const fieldOrder = orderedIntakeFields(recommended);
+  const { readyToConfirm } = projectProgressiveFactView(state.draft);
   // The first patch has to carry the platform's `regulated` call, so Day-0
   // confirmation waits for the admin default rather than guessing it.
   const awaitingRegulatedDefault =
@@ -744,24 +796,55 @@ export function StoreIntakeWizard({
                             />
                           ) : null}
                         </div>
+                        {id === 'projectPriceValidity' ? (
+                          <p className="text-xs text-muted-foreground">
+                            {store_intake_price_validity_hint()}
+                            {state.draft.projectPriceValidity === '' ? (
+                              <span
+                                className="ml-1 text-destructive"
+                                data-testid="store-intake-price-validity-unanswered"
+                              >
+                                {progressive_fact_price_validity_unanswered()}
+                              </span>
+                            ) : null}
+                          </p>
+                        ) : null}
                         <div className="flex gap-2">
-                          <Input
-                            data-testid={`store-intake-field-${id}`}
-                            id={`store-intake-field-${id}`}
-                            inputMode={
-                              id === 'projectPrice' ? 'decimal' : 'text'
-                            }
-                            onChange={(event) =>
-                              setState((current) => ({
-                                ...current,
-                                draft: {
-                                  ...current.draft,
-                                  [id]: event.target.value,
-                                },
-                              }))
-                            }
-                            value={state.draft[id]}
-                          />
+                          {id === 'projectPriceValidity' ? (
+                            <div className="flex-1">
+                              <PriceValidityAnswer
+                                onChange={(value) =>
+                                  setState((current) => ({
+                                    ...current,
+                                    draft: {
+                                      ...current.draft,
+                                      projectPriceValidity: value,
+                                    },
+                                  }))
+                                }
+                                testId="store-intake-field-projectPriceValidity"
+                                value={state.draft.projectPriceValidity}
+                              />
+                            </div>
+                          ) : (
+                            <Input
+                              data-testid={`store-intake-field-${id}`}
+                              id={`store-intake-field-${id}`}
+                              inputMode={
+                                id === 'projectPrice' ? 'decimal' : 'text'
+                              }
+                              onChange={(event) =>
+                                setState((current) => ({
+                                  ...current,
+                                  draft: {
+                                    ...current.draft,
+                                    [id]: event.target.value,
+                                  },
+                                }))
+                              }
+                              value={state.draft[id]}
+                            />
+                          )}
                           <Button
                             data-testid={`store-intake-confirm-${id}`}
                             disabled={state.draft[id].trim().length === 0}
@@ -805,7 +888,10 @@ export function StoreIntakeWizard({
                   disabled={
                     confirmAll.isPending ||
                     awaitingRegulatedDefault ||
-                    state.draft.answered.length === 0
+                    state.draft.answered.length === 0 ||
+                    // A save the finalize builder would refuse to assemble is a
+                    // dead click; show it as blocked instead of swallowing it.
+                    !readyToConfirm
                   }
                   onClick={() => confirmAll.mutate()}
                   type="button"

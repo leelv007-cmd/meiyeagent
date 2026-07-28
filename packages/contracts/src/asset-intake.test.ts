@@ -3,7 +3,6 @@ import test from 'node:test';
 import {
   assetIntakeBatchSchema,
   assetIntakeCapabilitySchema,
-  prepareAssistedPriceIntakeCommandSchema,
   assetIntakeDecisionEventSchema,
   confirmedFactReferenceSchema,
   finalizeStoreIntakeCommandSchema,
@@ -84,53 +83,6 @@ test('assisted intake advertises concrete fallback inputs without claiming verif
       status: 'assisted',
       fallbackInputs: [],
       reason: 'The source requires login.',
-    }),
-  );
-});
-
-test('each assisted input carries executable source data and fact metadata', () => {
-  const metadata = {
-    batchId: 'batch-assisted',
-    taskId: 'task-assisted',
-    candidateId: 'candidate-price',
-    key: 'service.scalp-clean.price',
-    scope: { storeId: 'store-a', serviceId: 'scalp-clean' },
-    effectiveFrom: '2026-07-18T02:00:00.000Z',
-    expiresAt: null,
-  };
-  const commands = [
-    {
-      ...metadata,
-      inputMode: 'screenshot' as const,
-      screenshotAssetId: 'asset-screenshot',
-      recognizedText: '头疗团购价 239 元',
-    },
-    {
-      ...metadata,
-      inputMode: 'paste_text' as const,
-      pastedText: '头疗团购价 239 元',
-    },
-    {
-      ...metadata,
-      inputMode: 'manual_select' as const,
-      amount: 239,
-    },
-  ];
-  for (const command of commands) {
-    const parsed = prepareAssistedPriceIntakeCommandSchema.parse(command);
-    assert.equal(parsed.inputMode, command.inputMode);
-  }
-  assert.throws(() =>
-    prepareAssistedPriceIntakeCommandSchema.parse({
-      ...metadata,
-      inputMode: 'screenshot',
-      recognizedText: '239 元',
-    }),
-  );
-  assert.throws(() =>
-    prepareAssistedPriceIntakeCommandSchema.parse({
-      ...metadata,
-      inputMode: 'paste_text',
     }),
   );
 });
@@ -223,6 +175,107 @@ test('asset intake commands cannot forge server-owned workspace or creation time
     recordAssetIntakeBatchCommandSchema.parse({
       ...command,
       createdAt: source.capturedAt,
+    }),
+  );
+});
+
+test('a limited-time price travels with the window the merchant stated', () => {
+  // #244 — the window is not decoration: the candidate carries it, the profile
+  // side repeats it, and a window that ends before it starts is refused rather
+  // than quietly flattened to "never expires".
+  const validUntil = '2026-08-31T15:59:59.999Z';
+  const priceCandidate = {
+    candidateId: 'candidate-price',
+    objectKind: 'store_fact' as const,
+    status: 'pending' as const,
+    fact: {
+      kind: 'price' as const,
+      key: 'service.scalp-clean.price',
+      value: { amount: 239, currency: 'CNY' },
+      scope: { storeId: 'workspace-a', serviceId: 'scalp-clean' },
+      source: {
+        kind: 'user_confirmation' as const,
+        referenceId: source.referenceId,
+        capturedAt: source.capturedAt,
+      },
+      effectiveFrom: source.capturedAt,
+      expiresAt: validUntil,
+    },
+  };
+  const command = {
+    batch: {
+      batchId: 'batch-finalize-price-window',
+      taskId: 'task-finalize-price-window',
+      source: { ...source, kind: 'manual' as const },
+      summary: '确认一个限时活动价。',
+      candidates: [priceCandidate],
+    },
+    confirmations: [
+      {
+        candidateId: priceCandidate.candidateId,
+        factId: 'store-project:scalp-clean:price',
+        expectedFactRevision: 0,
+      },
+    ],
+    profilePatch: {
+      expectedRevision: 1,
+      projects: {
+        upsert: [
+          {
+            id: 'scalp-clean',
+            name: '头皮清洁',
+            price: 239,
+            durationMinutes: 60,
+            confirmed: true,
+            priceValidUntil: validUntil,
+          },
+        ],
+      },
+    },
+  };
+  const parsed = finalizeStoreIntakeCommandSchema.parse(command);
+  const parsedBatch = parsed.batch;
+  assert.ok('candidates' in parsedBatch);
+  const parsedCandidate = parsedBatch.candidates[0];
+  assert.ok(parsedCandidate && 'fact' in parsedCandidate);
+  assert.equal(parsedCandidate.fact.expiresAt, validUntil);
+  assert.equal(
+    parsed.profilePatch.projects?.upsert?.[0]?.priceValidUntil,
+    validUntil,
+  );
+
+  // A standing price is a stated answer too, and it says so with `null`.
+  const standing = finalizeStoreIntakeCommandSchema.parse({
+    ...command,
+    batch: {
+      ...command.batch,
+      candidates: [
+        { ...priceCandidate, fact: { ...priceCandidate.fact, expiresAt: null } },
+      ],
+    },
+    profilePatch: {
+      ...command.profilePatch,
+      projects: {
+        upsert: [
+          { ...command.profilePatch.projects.upsert[0]!, priceValidUntil: null },
+        ],
+      },
+    },
+  });
+  assert.equal(standing.profilePatch.projects?.upsert?.[0]?.priceValidUntil, null);
+
+  assert.throws(() =>
+    finalizeStoreIntakeCommandSchema.parse({
+      ...command,
+      batch: {
+        ...command.batch,
+        candidates: [
+          {
+            ...priceCandidate,
+            fact: { ...priceCandidate.fact, expiresAt: source.capturedAt },
+          },
+        ],
+      },
     }),
   );
 });

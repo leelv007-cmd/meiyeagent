@@ -232,7 +232,6 @@ const assetMemoryCreateActions = new Set([
   'finalize_store_intake',
   'parse_asset_batch',
   'parse_single_asset',
-  'prepare_assisted_price_intake',
   'prepare_manual_asset_draft',
   'prepare_store_profile_import',
   'promote_asset_draft',

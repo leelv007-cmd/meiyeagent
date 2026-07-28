@@ -146,6 +146,20 @@ test('a staged import batch is confirmable through finalize_store_intake', async
     assert.equal(fact.source.kind, 'import');
     assert.equal(fact.source.capturedAt, confirmedAt);
   }
+  // #244 — nobody ever asked how long the historical price was good for, so the
+  // import states nothing about it: the fact carries no window and the profile
+  // side stays silent, which is what keeps the wizard asking.
+  assert.equal(
+    result.facts.find(
+      (fact) => fact.factId === 'store-project:legacy-primary:price',
+    )?.expiresAt,
+    null,
+  );
+  assert.equal(
+    (mergedPatch as { projects?: { upsert?: Array<{ priceValidUntil?: unknown }> } })
+      .projects?.upsert?.[0]?.priceValidUntil,
+    undefined,
+  );
   assert.ok(mergedPatch);
 });
 

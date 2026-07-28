@@ -43,6 +43,10 @@ const storeSchema = z.object({
       price: z.number().nonnegative(),
       durationMinutes: z.number().int().positive(),
       confirmed: z.boolean(),
+      // Optional so historical rows keep parsing, and nullable so "this price
+      // stands until I say otherwise" is a value the merchant can state rather
+      // than a default the product picks for them (#244).
+      priceValidUntil: z.iso.datetime().nullable().optional(),
     })
   ),
   regulated: z.boolean(),

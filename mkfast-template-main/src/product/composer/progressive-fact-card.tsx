@@ -19,6 +19,7 @@ import {
   progressive_fact_name_label,
   progressive_fact_project_name_label,
   progressive_fact_project_price_label,
+  progressive_fact_project_price_validity_label,
   progressive_fact_skip,
   progressive_fact_title,
   progressive_fact_why_label,
@@ -38,12 +39,14 @@ import {
   type ProgressiveFactDraft,
   type ProgressiveFactId,
 } from './progressive-fact';
+import { PriceValidityAnswer } from './price-validity-answer';
 
 const LABELS: Record<ProgressiveFactId, () => string> = {
   name: progressive_fact_name_label,
   city: progressive_fact_city_label,
   projectName: progressive_fact_project_name_label,
   projectPrice: progressive_fact_project_price_label,
+  projectPriceValidity: progressive_fact_project_price_validity_label,
   district: progressive_fact_district_label,
   address: progressive_fact_address_label,
   booking: progressive_fact_booking_label,
@@ -194,21 +197,31 @@ export function ProgressiveFactCard({
               {current.safeFallback}
             </p>
           ) : null}
-          <Input
-            aria-label={LABELS[current.id]()}
-            data-testid="progressive-fact-input"
-            disabled={pending || submitting}
-            inputMode={current.inputKind === 'number' ? 'decimal' : 'text'}
-            onChange={(event) => setValue(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                handleContinue();
-              }
-            }}
-            type={current.inputKind === 'number' ? 'number' : 'text'}
-            value={value}
-          />
+          {current.inputKind === 'price_validity' ? (
+            <PriceValidityAnswer
+              disabled={pending || submitting}
+              now={() => new Date(now())}
+              onChange={setValue}
+              testId="progressive-fact-price-validity"
+              value={value}
+            />
+          ) : (
+            <Input
+              aria-label={LABELS[current.id]()}
+              data-testid="progressive-fact-input"
+              disabled={pending || submitting}
+              inputMode={current.inputKind === 'number' ? 'decimal' : 'text'}
+              onChange={(event) => setValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  handleContinue();
+                }
+              }}
+              type={current.inputKind === 'number' ? 'number' : 'text'}
+              value={value}
+            />
+          )}
           <div className="flex flex-wrap gap-2">
             <Button
               data-testid="progressive-fact-continue"

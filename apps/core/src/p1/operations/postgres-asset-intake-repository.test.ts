@@ -25,39 +25,55 @@ test(
         ledger,
         () => '2026-07-18T02:00:00.000Z',
       );
-      const assistedInput = {
+      const assistedBatch = {
         batchId: 'batch-assisted-recovery',
+        workspaceId,
         taskId: 'task-assisted-recovery',
-        candidateId: 'candidate-assisted-recovery',
-        key: 'service.scalp-clean.price',
-        scope: { storeId: 'store-a', serviceId: 'scalp-clean' },
-        effectiveFrom: '2026-07-18T01:00:00.000Z',
-        expiresAt: null,
-        inputMode: 'paste_text' as const,
-        pastedText: '头疗团购价 239 元',
+        source: {
+          sourceId: 'assisted-source:batch-assisted-recovery',
+          kind: 'pasted_text' as const,
+          referenceId: 'assisted-paste_text:batch-assisted-recovery',
+          capabilityStatus: 'assisted' as const,
+          sourceWorkspaceId: workspaceId,
+          capturedAt: '2026-07-18T02:00:00.000Z',
+          example: false,
+        },
+        summary: 'Current price candidate: CNY 239',
+        candidates: [
+          {
+            candidateId: 'candidate-assisted-recovery',
+            objectKind: 'store_fact' as const,
+            status: 'pending' as const,
+            fact: {
+              kind: 'price' as const,
+              key: 'service.scalp-clean.price',
+              value: { amount: 239, currency: 'CNY' },
+              scope: { storeId: 'store-a', serviceId: 'scalp-clean' },
+              source: {
+                kind: 'user_confirmation' as const,
+                referenceId: 'assisted-paste_text:batch-assisted-recovery',
+                capturedAt: '2026-07-18T02:00:00.000Z',
+              },
+              effectiveFrom: '2026-07-18T01:00:00.000Z',
+              expiresAt: null,
+            },
+          },
+        ],
+        createdAt: '2026-07-18T02:00:00.000Z',
       };
-      const assisted = await service.prepareAssistedPriceIntake(
-        { workspaceId },
-        assistedInput,
-      );
+      const assisted = await service.recordBatch(assistedBatch, 'fingerprint-a');
       const assistedReplay = await new AssetIntakeService(
         new PostgresAssetIntakeRepository(pool),
         new PostgresStoreFactLedger(pool),
         () => '2026-07-18T03:00:00.000Z',
-      ).prepareAssistedPriceIntake({ workspaceId }, assistedInput);
+      ).recordBatch(assistedBatch, 'fingerprint-a');
       assert.deepEqual(assistedReplay, assisted);
       await assert.rejects(
         new AssetIntakeService(
           new PostgresAssetIntakeRepository(pool),
           new PostgresStoreFactLedger(pool),
           () => '2026-07-18T04:00:00.000Z',
-        ).prepareAssistedPriceIntake(
-          { workspaceId },
-          {
-            ...assistedInput,
-            pastedText: '新客头疗团购价 239 元',
-          },
-        ),
+        ).recordBatch(assistedBatch, 'fingerprint-b'),
         (error: unknown) =>
           error instanceof AssetIntakeError && error.code === 'BATCH_CONFLICT',
       );

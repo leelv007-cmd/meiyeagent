@@ -59,7 +59,6 @@ const NEW_P1_SIDE_EFFECTS = new Set([
   'asset-memory:parse_single_asset',
   'asset-memory:propose_preference',
   'asset-memory:propose_reusable_asset',
-  'asset-memory:prepare_assisted_price_intake',
   'asset-memory:prepare_manual_asset_draft',
   'asset-memory:prepare_store_profile_import',
   'asset-memory:promote_asset_draft',

@@ -129,104 +129,6 @@ test('direct batch recording cannot forge a parsed screenshot receipt', async ()
   );
 });
 
-test('all assisted inputs prepare a preview and confirm an exact fact revision', async () => {
-  const module = moduleFixture();
-  const modes = [
-    {
-      inputMode: 'screenshot' as const,
-      screenshotAssetId: 'asset-price-list',
-      recognizedText: '头疗团购价 239 元',
-    },
-    {
-      inputMode: 'paste_text' as const,
-      pastedText: '头疗团购价 ￥239',
-    },
-    {
-      inputMode: 'manual_select' as const,
-      amount: 239,
-    },
-  ];
-  for (const [index, assisted] of modes.entries()) {
-    const suffix = String(index + 1);
-    const batchId = `batch-assisted-${suffix}`;
-    const candidateId = `candidate-assisted-${suffix}`;
-    const prepared = (await module.execute({
-      context,
-      idempotencyKey: `prepare-assisted-${suffix}`,
-      input: {
-        action: 'prepare_assisted_price_intake',
-        payload: {
-          batchId,
-          taskId: `task-assisted-${suffix}`,
-          candidateId,
-          key: 'service.scalp-clean.price',
-          scope: { storeId: 'store-a', serviceId: 'scalp-clean' },
-          effectiveFrom: now,
-          expiresAt: null,
-          ...assisted,
-        },
-      },
-    })) as {
-      candidates: Array<{
-        fact: { value: unknown; source: { referenceId: string } };
-      }>;
-      source: { kind: string };
-    };
-    assert.deepEqual(prepared.candidates[0]?.fact.value, {
-      amount: 239,
-      currency: 'CNY',
-    });
-    assert.ok(prepared.candidates[0]?.fact.source.referenceId);
-
-    const fact = (await module.execute({
-      context,
-      idempotencyKey: `confirm-assisted-${suffix}`,
-      input: {
-        action: 'confirm_asset_intake_fact',
-        payload: {
-          batchId,
-          candidateId,
-          factId: `fact-assisted-${suffix}`,
-          expectedFactRevision: 0,
-        },
-      },
-    })) as { revision: number; value: unknown };
-    assert.equal(fact.revision, 1);
-    assert.deepEqual(fact.value, { amount: 239, currency: 'CNY' });
-  }
-});
-
-test('assisted screenshot direct commands reject missing and cross-workspace assets', async () => {
-  const module = moduleFixture();
-  for (const [suffix, screenshotAssetId] of [
-    ['missing', 'asset-missing'],
-    ['cross-workspace', 'asset-owned-by-workspace-b'],
-  ]) {
-    await assert.rejects(
-      module.execute({
-        context,
-        idempotencyKey: `prepare-assisted-${suffix}`,
-        input: {
-          action: 'prepare_assisted_price_intake',
-          payload: {
-            batchId: `batch-assisted-${suffix}`,
-            taskId: `task-assisted-${suffix}`,
-            candidateId: `candidate-assisted-${suffix}`,
-            key: 'service.scalp-clean.price',
-            scope: { storeId: 'store-a', serviceId: 'scalp-clean' },
-            effectiveFrom: now,
-            expiresAt: null,
-            inputMode: 'screenshot',
-            screenshotAssetId,
-            recognizedText: '头疗团购价 239 元',
-          },
-        },
-      }),
-      /authorized asset in this workspace/u,
-    );
-  }
-});
-
 test('batch creation replays after the server clock advances', async () => {
   let tick = 0;
   const clock = () =>
@@ -244,27 +146,23 @@ test('batch creation replays after the server clock advances', async () => {
   const replayedRecorded = await module.execute(record);
   assert.deepEqual(replayedRecorded, firstRecorded);
 
-  const assisted = {
-    context,
-    idempotencyKey: 'prepare-assisted-recovery',
-    input: {
-      action: 'prepare_assisted_price_intake',
-      payload: {
-        batchId: 'batch-assisted-recovery',
-        taskId: 'task-assisted-recovery',
-        candidateId: 'candidate-assisted-recovery',
-        key: 'service.scalp-clean.price',
-        scope: { storeId: 'store-a', serviceId: 'scalp-clean' },
-        effectiveFrom: now,
-        expiresAt: null,
-        inputMode: 'paste_text',
-        pastedText: '头疗团购价 239 元',
+});
+
+test('the retired assisted price command is no longer an asset-memory action', async () => {
+  // D-244 retired `prepare_assisted_price_intake`. It was the only command that
+  // ever carried a price validity window and no merchant surface ever called
+  // it; the wizard now asks the question and writes through the one channel.
+  await assert.rejects(
+    moduleFixture().execute({
+      context,
+      idempotencyKey: 'retired-assisted-price',
+      input: {
+        action: 'prepare_assisted_price_intake',
+        payload: { batchId: 'batch-retired' },
       },
-    },
-  };
-  const firstAssisted = await module.execute(assisted);
-  const replayedAssisted = await module.execute(assisted);
-  assert.deepEqual(replayedAssisted, firstAssisted);
+    }),
+    /Unknown asset-memory command prepare_assisted_price_intake/u,
+  );
 });
 
 test('asset-memory exposes queued and refreshed batch progress for the presentation lane', async () => {
@@ -466,14 +364,6 @@ function moduleFixture(
       new MemoryAssetIntakeRepository(),
       new MemoryStoreFactLedger(),
       clock,
-      {
-        async isAuthorized(workspaceId, assetId) {
-          return new Set([
-            'workspace-a:asset-price-list',
-            'workspace-b:asset-owned-by-workspace-b',
-          ]).has(`${workspaceId}:${assetId}`);
-        },
-      },
     ),
     new MemoryContextBundleRepository(),
     new ReuseMemoryService(

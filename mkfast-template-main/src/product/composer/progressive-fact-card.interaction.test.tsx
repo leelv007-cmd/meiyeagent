@@ -60,6 +60,12 @@ describe('ProgressiveFactCard finalizer retry', () => {
 
     fireEvent.click(screen.getByTestId('progressive-fact-continue'));
     fireEvent.click(screen.getByTestId('progressive-fact-continue'));
+    // #244 — the price question is followed by how long the price runs, and the
+    // merchant here says it is a standing one.
+    fireEvent.click(
+      screen.getByTestId('progressive-fact-price-validity-long-term')
+    );
+    fireEvent.click(screen.getByTestId('progressive-fact-continue'));
 
     now = '2026-07-27T11:30:00.000Z';
     fireEvent.click(screen.getByTestId('progressive-fact-confirm'));
@@ -97,6 +103,10 @@ describe('ProgressiveFactCard Day-0 regulated default', () => {
       fireEvent.change(input, { target: { value } });
       fireEvent.click(screen.getByTestId('progressive-fact-continue'));
     }
+    fireEvent.click(
+      screen.getByTestId('progressive-fact-price-validity-long-term')
+    );
+    fireEvent.click(screen.getByTestId('progressive-fact-continue'));
   };
 
   it('withholds confirm until the platform default resolves, then seeds it', async () => {
@@ -114,6 +124,10 @@ describe('ProgressiveFactCard Day-0 regulated default', () => {
 
     answerDayZero();
     expect(screen.getByTestId('progressive-fact-confirm')).toBeDisabled();
+    expect(
+      onConfirm.mock.calls[0]?.[0].payload.profilePatch.projects?.upsert?.[0]
+        ?.priceValidUntil
+    ).toBeUndefined();
 
     rerender(
       <ProgressiveFactCard
@@ -132,5 +146,11 @@ describe('ProgressiveFactCard Day-0 regulated default', () => {
     expect(onConfirm.mock.calls[0]?.[0].payload.profilePatch.regulated).toBe(
       true
     );
+    // The merchant said "it stands" — that is a stated answer, written as null,
+    // and never a default the card filled in for them (#244).
+    expect(
+      onConfirm.mock.calls[0]?.[0].payload.profilePatch.projects?.upsert?.[0]
+        ?.priceValidUntil
+    ).toBe(null);
   });
 });
