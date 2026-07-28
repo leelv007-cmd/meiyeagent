@@ -130,6 +130,7 @@ const HOT_READ_KEYS = new Set([
   // 笔记风格集合每次编译都现读，保存即生效——这里不登记，界面就会告诉运营
   // 「重启后生效」，与实际行为相反（D-116）。与 core 的 hotReadKeys 对齐。
   NOTE_STYLE_CONFIG_KEY,
+  'harness.confirmation_card.hold_timeout_seconds',
   'plan.addons',
   'plan.allowances.trial',
   'plan.allowances.starter',

@@ -413,7 +413,7 @@ export class ProductEntitlementApplicationService
         'No automatic top-up payment adapter is configured.'
       );
     }
-    const month = input.month ?? currentMonth();
+    const month = input.month ?? currentMonth(this.clock);
     validateMonth(month);
     const execution = await this.repository.executeIdempotent(
       context,

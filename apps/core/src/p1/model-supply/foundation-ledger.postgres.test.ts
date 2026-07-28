@@ -21,6 +21,7 @@ import {
 } from './index.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
+const fixtureClock = () => new Date('2026-07-19T00:00:00.000Z');
 
 test(
   'Postgres commits the dispatch checkpoint before the provider and settles one authoritative ledger',
@@ -208,7 +209,9 @@ test(
         return new RecordedProviderExecutionPort().execute(request);
       },
     };
-    const foundation = new P1ApplicationService(repository);
+    const foundation = new P1ApplicationService(repository, {
+      clock: fixtureClock,
+    });
     const entitlementContext = {
       workspaceId,
       userId,
@@ -218,7 +221,7 @@ test(
       repository,
       grantLots,
       undefined,
-      () => new Date('2026-07-19T00:00:00.000Z'),
+      fixtureClock,
     );
     const trialPolicy = {
       revision: 'trial-pg-v1',
@@ -274,6 +277,7 @@ test(
       foundation,
       entitlements,
       grantLots,
+      { clock: fixtureClock },
     );
     const application = new ModelSupplyApplicationService({
       models: [model],
@@ -449,7 +453,12 @@ test(
       models: [model],
       deployments: [deployment],
       execution: new RecordedProviderExecutionPort(),
-      ledger: new FoundationModelSupplyLedger(foundation, legacyEntitlements),
+      ledger: new FoundationModelSupplyLedger(
+        foundation,
+        legacyEntitlements,
+        undefined,
+        { clock: fixtureClock },
+      ),
     });
     const redemptionSubmission = {
       ...submission,
@@ -505,6 +514,7 @@ test(
         foundation,
         redemptionGrantEntitlements,
         grantLots,
+        { clock: fixtureClock },
       ),
     });
     const redeemed = await grantApplication.submit({
@@ -614,6 +624,7 @@ test(
         foundation,
         packageEntitlements,
         grantLots,
+        { clock: fixtureClock },
       ),
     });
     const packageSubmission = {
@@ -744,6 +755,7 @@ test(
         foundation,
         legacyOnlyEntitlements,
         grantLots,
+        { clock: fixtureClock },
       ),
     });
     const legacyOnlySubmission = {

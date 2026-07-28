@@ -52,6 +52,11 @@ test('confirmation-card hold and continuation waits read admin-config', async ()
   assert.equal(await readConfirmationCardTimeoutSeconds(config), 45);
   assert.equal(await readConfirmationCardHoldTimeoutSeconds(config), 86_400);
   assert.equal(await readConfirmationCardHoldTimeoutSeconds(), 172_800);
+  values.set('harness.confirmation_card.hold_timeout_seconds', 3_599);
+  await assert.rejects(
+    readConfirmationCardHoldTimeoutSeconds(config),
+    /integer from 3600 to 172800/u,
+  );
 });
 
 test('hold config is frozen inside the pending step and exposed as hot-read wiring', () => {

@@ -108,6 +108,7 @@
   "admin_config_field_tier": "Plan tier",
   "admin_config_field_writing_guide": "Writing guide",
   "admin_config_key_aigc_label_default": "Label new content as AI generated",
+  "admin_config_key_confirmation_hold_timeout": "Merchant decision hold (seconds)",
   "admin_config_key_default_model_audio": "Default audio model for new stores",
   "admin_config_key_default_model_copy": "Default copy model for new stores",
   "admin_config_key_default_model_image": "Default image model for new stores",

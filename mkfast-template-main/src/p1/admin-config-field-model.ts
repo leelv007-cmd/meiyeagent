@@ -34,6 +34,7 @@ import {
   admin_config_field_tier,
   admin_config_field_writing_guide,
   admin_config_key_aigc_label_default,
+  admin_config_key_confirmation_hold_timeout,
   admin_config_key_default_model_audio,
   admin_config_key_default_model_copy,
   admin_config_key_default_model_image,
@@ -330,6 +331,8 @@ const KEY_LABELS: Record<string, () => string> = {
   'compliance.aigc_label.default': admin_config_key_aigc_label_default,
   'compliance.regulated_mode.default': admin_config_key_regulated_mode_default,
   'compliance.watermark.default': admin_config_key_watermark_default,
+  'harness.confirmation_card.hold_timeout_seconds':
+    admin_config_key_confirmation_hold_timeout,
   'harness.note.styles': admin_config_key_note_styles,
   'plan.addons': admin_config_key_plan_addons,
   'plan.allowances.growth': admin_config_key_plan_allowances,

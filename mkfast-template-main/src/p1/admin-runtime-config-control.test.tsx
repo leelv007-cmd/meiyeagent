@@ -57,7 +57,7 @@ test('the note style key explains itself in note terms, not in checkout terms', 
 });
 
 test('every admin config key reaches the schema renderer through the production control', () => {
-  assert.equal(ADMIN_CONFIG_KEYS.length, 19);
+  assert.equal(ADMIN_CONFIG_KEYS.length, 20);
   for (const key of ADMIN_CONFIG_KEYS) {
     const html = renderControlForKey(key);
     assert.match(
@@ -77,6 +77,15 @@ test('every admin config key reaches the schema renderer through the production 
       `${key} kept a raw value editor`
     );
   }
+});
+
+test('the merchant hold control is editable and described as hot-read', () => {
+  const html = renderControlForKey(
+    'harness.confirmation_card.hold_timeout_seconds'
+  );
+  assert.match(html, /商家决策保留期（秒）/);
+  assert.match(html, /data-slot="number-stepper"/);
+  assert.match(html, /热加载已生效/);
 });
 
 /** 四个执行模式/装配键必须常驻展开，而不是被塞进「先选一项」的下拉里。 */

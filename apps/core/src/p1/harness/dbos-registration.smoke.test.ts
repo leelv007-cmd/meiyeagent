@@ -533,11 +533,137 @@ test(
 );
 
 test(
-  'a reserved hold reads its own config and expires through the durable decision path',
+  'a reserved hold with a pre-floor frozen value expires through the durable decision path',
   { skip: !systemDatabaseUrl },
   async () => {
     const workflowId = `harness-unattended-hold-${randomUUID()}`;
-    const workspaceId = 'workspace-unattended-hold';
+    const workspaceId = 'workspace-hold-replay';
+    const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
+    const questionId = `${workflowId}:offer-price`;
+    const applicationVersion = `harness-expiring-hold-${workflowId}`;
+    await createHoldLayoutFixture(
+      workflowId,
+      applicationVersion,
+      'expiring',
+    );
+    const skills = await createSmokeSkills(workflowId);
+    const ports = smokePorts(workflowId, skills.service, []);
+    ports.nameIntent = async () => ({
+      declaration: {
+        normalizedIntent: '推广本店团购',
+        taskType: 'promotion_groupbuy_conversion',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['promotion_activity'],
+        usedAssetCategories: [],
+        route: 'guidance',
+        routingSource: 'model',
+        implicitConstraints: [],
+      },
+      blockingQuestion: {
+        questionId,
+        workflowId,
+        workflowRevision: 1,
+        question: '当前团购价是多少？',
+        options: [],
+        freeText: { enabled: true },
+        response: {
+          field: 'offer_price',
+          reason: '补充当前任务所需的权威事实',
+        },
+        scope: 'current_task',
+      },
+    });
+    let coreTimeouts = 0;
+    let coreHoldExpiries = 0;
+    let refunds = 0;
+    DBOS.setConfig({
+      name: 'beauty-marketing-harness-unattended-hold',
+      systemDatabaseUrl: systemDatabaseUrl!,
+      applicationVersion,
+    });
+    registerHarnessDbosWorkflow(
+      ports,
+      {
+        async registerPending() {},
+        async readPending() {
+          return null;
+        },
+        async recordStageTrace() {},
+        async recordTerminalFailure() {},
+      },
+      undefined,
+      {
+        async commit() {
+          throw new Error('A cancelled hold must not commit usage.');
+        },
+        async refund() {
+          refunds += 1;
+        },
+        async scheduleCompensation() {
+          throw new Error('The refund succeeds in this fixture.');
+        },
+      },
+      {
+        async get() {
+          throw new Error('A recovered hold must use its frozen value.');
+        },
+      },
+      {
+        async submitCoreTimeout() {
+          coreTimeouts += 1;
+          return { eventId: 'unexpected', replayed: false };
+        },
+        async submitCoreHoldExpired() {
+          coreHoldExpiries += 1;
+          return { eventId: 'hold-expired', replayed: false };
+        },
+      },
+    );
+
+    try {
+      await DBOS.launch();
+      const handle = DBOS.retrieveWorkflow<{
+        delivery: null;
+        merchantMessage: string;
+        outcome: 'cancelled';
+        resolutionSource: 'core_hold_expired';
+      }>(runtimeWorkflowId);
+      const result = await handle.getResult();
+      assert.deepEqual(result, {
+        delivery: null,
+        merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+        outcome: 'cancelled',
+        resolutionSource: 'core_hold_expired',
+      });
+      assert.equal(await waitForWorkflowStatus(handle, 'SUCCESS'), 'SUCCESS');
+      assert.equal(coreTimeouts, 0);
+      assert.equal(coreHoldExpiries, 1);
+      assert.equal(refunds, 1);
+      assert.deepEqual(
+        (await DBOS.listWorkflowSteps(runtimeWorkflowId))
+          ?.filter((step) => step.functionID >= 4 && step.functionID <= 9)
+          .map((step) => [step.functionID, step.name]),
+        [
+          [4, `persist-pending-${questionId}`],
+          [5, 'DBOS.setEvent'],
+          [6, 'DBOS.recv'],
+          [7, 'DBOS.sleep'],
+          [8, `persist-core-hold-expired-${questionId}`],
+          [9, 'refund-product-usage'],
+        ],
+      );
+    } finally {
+      await DBOS.shutdown({ deregister: true });
+    }
+  },
+);
+
+test(
+  'a reserved hold delivers when the merchant answers inside the hold window',
+  { skip: !systemDatabaseUrl },
+  async () => {
+    const workflowId = `harness-held-answer-${randomUUID()}`;
+    const workspaceId = 'workspace-held-answer';
     const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
     const questionId = `${workflowId}:note-style`;
     const skills = await createSmokeSkills(workflowId);
@@ -570,14 +696,13 @@ test(
         scope: 'current_task',
       },
     });
+    let commits = 0;
     let configReads = 0;
-    let coreTimeouts = 0;
-    let coreHoldExpiries = 0;
-    let refunds = 0;
+    let expiries = 0;
     DBOS.setConfig({
-      name: 'beauty-marketing-harness-unattended-hold',
+      name: 'beauty-marketing-harness-held-answer',
       systemDatabaseUrl: systemDatabaseUrl!,
-      applicationVersion: 'harness-unattended-hold-v1',
+      applicationVersion: 'harness-held-answer-v1',
     });
     const workflow = registerHarnessDbosWorkflow(
       ports,
@@ -592,13 +717,13 @@ test(
       undefined,
       {
         async commit() {
-          throw new Error('A cancelled hold must not commit usage.');
+          commits += 1;
         },
         async refund() {
-          refunds += 1;
+          throw new Error('A delivered hold must not refund usage.');
         },
         async scheduleCompensation() {
-          throw new Error('The refund succeeds in this fixture.');
+          throw new Error('The commit succeeds in this fixture.');
         },
       },
       {
@@ -606,27 +731,26 @@ test(
           configReads += 1;
           return {
             actorId: 'platform-admin',
-            correlationId: 'unattended-hold-config',
+            correlationId: 'held-answer-config',
             createdAt: '2026-07-26T09:00:00.000Z',
             key,
-            reason: 'Exercise the configured hold period',
+            reason: 'Keep the hold open for a merchant answer',
             revision: 1,
             rolledBackToRevision: null,
             scope: 'global',
             status: 'applied',
-            value: 1,
+            value: 3_600,
             workspaceId: '__global__',
           };
         },
       },
       {
         async submitCoreTimeout() {
-          coreTimeouts += 1;
-          return { eventId: 'unexpected', replayed: false };
+          throw new Error('A hold must not use continuation timeout.');
         },
         async submitCoreHoldExpired() {
-          coreHoldExpiries += 1;
-          return { eventId: 'hold-expired', replayed: false };
+          expiries += 1;
+          return { eventId: 'unexpected', replayed: false };
         },
       },
     );
@@ -648,31 +772,24 @@ test(
       await DBOS.getEvent(runtimeWorkflowId, 'pending-structured-decision', {
         timeoutSeconds: 5,
       });
-      const result = await handle.getResult();
-      assert.deepEqual(result, {
-        delivery: null,
-        merchantMessage: '超时未选择，本次任务已取消，额度已退回',
-        outcome: 'cancelled',
-        resolutionSource: 'core_hold_expired',
+      await resumeHarnessDbosWorkflow(workspaceId, workflowId, {
+        idempotencyKey: `${questionId}:merchant-answer`,
+        questionId,
+        workflowRevision: 1,
+        patch: {
+          field: 'note_style',
+          value: 'style-a',
+          reason: '选择本次图文笔记的表达风格',
+        },
+        decision: { state: 'ignored', value: 'style-a' },
       });
+      const result = await handle.getResult();
+      assert.ok(result.delivery);
+      assert.equal(result.delivery.revision, 1);
       assert.equal(await waitForWorkflowStatus(handle, 'SUCCESS'), 'SUCCESS');
+      assert.equal(commits, 1);
       assert.equal(configReads, 1);
-      assert.equal(coreTimeouts, 0);
-      assert.equal(coreHoldExpiries, 1);
-      assert.equal(refunds, 1);
-      assert.deepEqual(
-        (await DBOS.listWorkflowSteps(runtimeWorkflowId))
-          ?.filter((step) => step.functionID >= 4 && step.functionID <= 9)
-          .map((step) => [step.functionID, step.name]),
-        [
-          [4, `persist-pending-${questionId}`],
-          [5, 'DBOS.setEvent'],
-          [6, 'DBOS.recv'],
-          [7, 'DBOS.sleep'],
-          [8, `persist-core-hold-expired-${questionId}`],
-          [9, 'refund-product-usage'],
-        ],
-      );
+      assert.equal(expiries, 0);
     } finally {
       await DBOS.shutdown({ deregister: true });
     }
@@ -792,6 +909,112 @@ test(
           [6, 'DBOS.recv'],
           [7, 'DBOS.sleep'],
         ],
+      );
+    } finally {
+      await DBOS.shutdown({ deregister: true });
+    }
+  },
+);
+
+test(
+  'a pre-C1 held function-ID layout replays without branching or failure',
+  { skip: !systemDatabaseUrl },
+  async () => {
+    const workflowId = `harness-hold-replay-${randomUUID()}`;
+    const workspaceId = 'workspace-hold-replay';
+    const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
+    const questionId = `${workflowId}:offer-price`;
+    const applicationVersion = `harness-hold-replay-layout-${workflowId}`;
+    await createHoldLayoutFixture(workflowId, applicationVersion, 'legacy');
+    const skills = await createSmokeSkills(workflowId);
+    const ports = smokePorts(workflowId, skills.service, []);
+    ports.nameIntent = async () => ({
+      declaration: {
+        normalizedIntent: '推广本店团购',
+        taskType: 'promotion_groupbuy_conversion',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['promotion_activity'],
+        usedAssetCategories: [],
+        route: 'guidance',
+        routingSource: 'model',
+        implicitConstraints: [],
+      },
+      blockingQuestion: {
+        questionId,
+        workflowId,
+        workflowRevision: 1,
+        question: '当前团购价是多少？',
+        options: [],
+        freeText: { enabled: true },
+        response: {
+          field: 'offer_price',
+          reason: '补充当前任务所需的权威事实',
+        },
+        scope: 'current_task',
+      },
+    });
+    DBOS.setConfig({
+      name: 'beauty-marketing-harness-hold-replay',
+      systemDatabaseUrl: systemDatabaseUrl!,
+      applicationVersion,
+    });
+    registerHarnessDbosWorkflow(
+      ports,
+      {
+        async registerPending() {},
+        async readPending() {
+          return null;
+        },
+        async recordStageTrace() {},
+        async recordTerminalFailure() {},
+      },
+      undefined,
+      {
+        async commit() {},
+        async refund() {
+          throw new Error('A recovered hold must not be refunded.');
+        },
+        async scheduleCompensation() {},
+      },
+      {
+        async get() {
+          throw new Error('A replayed hold must not read live config.');
+        },
+      },
+      {
+        async submitCoreTimeout() {
+          throw new Error('A hold must not use continuation timeout.');
+        },
+        async submitCoreHoldExpired() {
+          throw new Error('A legacy hold must retain its original wait.');
+        },
+      },
+    );
+    try {
+      await DBOS.launch();
+      await resumeHarnessDbosWorkflow(workspaceId, workflowId, {
+        idempotencyKey: `${questionId}:merchant-answer`,
+        questionId,
+        workflowRevision: 1,
+        patch: {
+          field: 'offer_price',
+          value: '这次先跳过',
+          reason: '补充当前任务所需的权威事实',
+        },
+        decision: { state: 'ignored', value: '这次先跳过' },
+      });
+      const recovered = DBOS.retrieveWorkflow<{
+        delivery: { revision: number };
+      }>(runtimeWorkflowId);
+      assert.equal((await recovered.getResult()).delivery.revision, 1);
+      assert.equal(await waitForWorkflowStatus(recovered, 'SUCCESS'), 'SUCCESS');
+      assert.equal(
+        (await DBOS.listWorkflowSteps(runtimeWorkflowId))?.some(
+          (step) =>
+            step.functionID === 8 &&
+            step.name.startsWith('persist-core-hold-expired-'),
+        ),
+        false,
       );
     } finally {
       await DBOS.shutdown({ deregister: true });
@@ -1224,6 +1447,56 @@ function createPendingLayoutFixture(
       reject(
         new Error(
           `Pending-layout fixture failed (${String(code)}): ${stderr || stdout}`,
+        ),
+      );
+    });
+  });
+}
+
+function createHoldLayoutFixture(
+  workflowId: string,
+  applicationVersion: string,
+  replayMode: 'expiring' | 'legacy',
+) {
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        fileURLToPath(
+          new URL('./dbos-hold-layout.fixture.ts', import.meta.url),
+        ),
+      ],
+      {
+        env: {
+          ...process.env,
+          C1_HOLD_REPLAY_APP_VERSION: applicationVersion,
+          C1_HOLD_REPLAY_MODE: replayMode,
+          C1_HOLD_REPLAY_WORKFLOW_ID: workflowId,
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk;
+    });
+    child.once('error', reject);
+    child.once('exit', (code) => {
+      if (code === 0 && stdout.includes('HOLD_PENDING_READY')) {
+        resolve();
+        return;
+      }
+      reject(
+        new Error(
+          `Hold-layout fixture failed (${String(code)}): ${stderr || stdout}`,
         ),
       );
     });

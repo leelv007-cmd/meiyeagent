@@ -16,7 +16,7 @@ import {
 
 /** 后台能改的每个配置项都必须有表单件，一个都不许退回手敲文本。 */
 test('every admin config key maps onto typed form fields', () => {
-  assert.equal(ADMIN_CONFIG_KEYS.length, 19);
+  assert.equal(ADMIN_CONFIG_KEYS.length, 20);
   for (const key of ADMIN_CONFIG_KEYS) {
     const fields = buildAdminConfigFields(key);
     assert.ok(fields.length > 0, `${key} produced no fields`);
@@ -28,6 +28,29 @@ test('every admin config key maps onto typed form fields', () => {
       );
     }
   }
+});
+
+test('confirmation hold timeout is editable only inside the safe operating range', () => {
+  const [field] = buildAdminConfigFields(
+    'harness.confirmation_card.hold_timeout_seconds'
+  );
+  assert.equal(field.kind, 'number');
+  assert.equal(field.kind === 'number' && field.control, 'stepper');
+  assert.equal(field.kind === 'number' && field.min, 3_600);
+  assert.equal(field.kind === 'number' && field.max, 172_800);
+  assert.equal(
+    parseAdminConfigValue(
+      'harness.confirmation_card.hold_timeout_seconds',
+      3_600
+    ),
+    3_600
+  );
+  assert.throws(() =>
+    parseAdminConfigValue(
+      'harness.confirmation_card.hold_timeout_seconds',
+      3_599
+    )
+  );
 });
 
 /** 标签必须是运营看得懂的说法，不是把契约里的字段名原样搬上来（D-116）。 */

@@ -403,6 +403,24 @@ describe('Admin config application seam', () => {
           action: 'config_apply',
           payload: {
             key: HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
+            value: 3_599,
+            expectedRevision: 1,
+            reason: 'Reject an unsafe confirmation hold timeout.',
+          },
+        },
+        'confirmation-hold-timeout-floor',
+      ),
+      (error: unknown) =>
+        error instanceof Error && 'code' in error && error.code === 'INVALID_STATE',
+    );
+    await assert.rejects(
+      service.executeModule(
+        context,
+        'admin-config',
+        {
+          action: 'config_apply',
+          payload: {
+            key: HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
             value: 172_801,
             expectedRevision: 1,
             reason: 'Set an invalid confirmation hold timeout.',

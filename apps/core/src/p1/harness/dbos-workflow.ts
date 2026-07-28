@@ -121,11 +121,11 @@ export async function readConfirmationCardHoldTimeoutSeconds(
   if (
     typeof timeoutSeconds !== 'number' ||
     !Number.isSafeInteger(timeoutSeconds) ||
-    timeoutSeconds < 1 ||
+    timeoutSeconds < 3_600 ||
     timeoutSeconds > DEFAULT_CONFIRMATION_CARD_HOLD_TIMEOUT_SECONDS
   ) {
     throw new Error(
-      'Confirmation-card hold timeout config must be an integer from 1 to 172800.',
+      'Confirmation-card hold timeout config must be an integer from 3600 to 172800.',
     );
   }
   return timeoutSeconds;
@@ -231,10 +231,19 @@ export function registerHarnessDbosWorkflow(
           };
         }
         if (question.unattended !== 'continue') {
+          const holdTimeoutSeconds = pendingProjection?.holdTimeoutSeconds;
+          if (holdTimeoutSeconds == null) {
+            // Workflows suspended before C1 retain their original unbounded hold
+            // layout. Branching into the new bounded layout would reuse a
+            // historical recv function ID for a differently named runStep.
+            return {
+              command: await waitForDecisionWithoutTimeout(question),
+              resolutionSource: 'decision' as const,
+            };
+          }
           const decision = await waitForHeldDecision(
             question,
-            pendingProjection?.holdTimeoutSeconds ??
-              DEFAULT_CONFIRMATION_CARD_HOLD_TIMEOUT_SECONDS,
+            holdTimeoutSeconds,
           );
           if (decision) {
             return {

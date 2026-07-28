@@ -379,7 +379,14 @@ test(
     const pool = new Pool({ connectionString });
     const operations = new PostgresOperationsRepository(pool);
     const facts = new PostgresStoreFactLedger(pool);
-    const store = new PostgresHarnessStore(pool);
+    const databaseClock = await pool.query<{ now: Date }>('select now()');
+    const now = databaseClock.rows[0]!.now;
+    const store = new PostgresHarnessStore(
+      pool,
+      facts,
+      undefined,
+      () => now,
+    );
     await operations.migrate();
     await facts.migrate();
     await store.applySchema();

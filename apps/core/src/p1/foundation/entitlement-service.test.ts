@@ -384,6 +384,81 @@ describe('ProductEntitlementApplicationService', () => {
     );
   });
 
+  it('uses the injected clock month for automatic top-up when month is omitted', async () => {
+    const { entitlements, foundation, repository } = services(
+      () => new Date('2031-02-11T00:00:00.000Z'),
+    );
+    await entitlements.activatePlan(
+      owner,
+      {
+        paymentEventId: 'payment-clocked-plan',
+        policy: {
+          ...growth,
+          revision: 'growth-2031-02',
+          periodId: '2031-02',
+          periodStartsAt: '2031-02-01T00:00:00.000Z',
+          periodEndsAt: '2031-03-01T00:00:00.000Z',
+          allowance: { audio: 0, copy: 1, image: 1, video: 1 },
+        },
+      },
+      'activate-clocked-plan',
+    );
+    await foundation.appendUsageEvent(
+      owner,
+      {
+        id: 'clocked-copy-reserve',
+        resource: 'copy',
+        action: 'reserve',
+        amount: 1,
+        reservationId: 'clocked-copy-reservation',
+        reason: 'test output',
+      },
+      'clocked-copy-reserve',
+    );
+    await foundation.appendUsageEvent(
+      owner,
+      {
+        id: 'clocked-copy-commit',
+        resource: 'copy',
+        action: 'commit',
+        amount: 1,
+        reservationId: 'clocked-copy-reservation',
+        reason: 'test output delivered',
+      },
+      'clocked-copy-commit',
+    );
+    await entitlements.configureAutoTopUp(
+      owner,
+      {
+        enabled: true,
+        monthlyCapMicros: 5_000_000,
+        packages: {
+          copy: { quantity: 5, amountMicros: 2_000_000, currency: 'CNY' },
+        },
+      },
+      'configure-clocked-auto-top-up',
+    );
+
+    await entitlements.autoTopUp(
+      owner,
+      { resource: 'copy', requiredAvailable: 1 },
+      'clocked-auto-top-up',
+    );
+    const events = await repository.listProductEntitlementEvents(
+      owner.workspaceId,
+    );
+    assert.deepEqual(
+      events
+        .filter(
+          (event) =>
+            event.kind === 'auto_top_up_pending' ||
+            event.kind === 'auto_top_up_purchased',
+        )
+        .map((event) => event.month),
+      ['2031-02', '2031-02'],
+    );
+  });
+
   it('serializes concurrent automatic top-ups before accepting payment or exceeding the monthly cap', async () => {
     const { entitlements, foundation, payments, repository } = services();
     await entitlements.activatePlan(

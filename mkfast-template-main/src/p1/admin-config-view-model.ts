@@ -41,6 +41,11 @@ const configSchemas = {
     'disabled',
   ]),
   'model.media.execution.mode': z.enum(['disabled', 'ark', 'tuzi', 'ark,tuzi']),
+  'harness.confirmation_card.hold_timeout_seconds': z
+    .number()
+    .int()
+    .min(3_600)
+    .max(172_800),
   'plan.addons': z
     .array(
       z
