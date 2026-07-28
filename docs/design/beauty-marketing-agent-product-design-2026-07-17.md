@@ -2228,6 +2228,34 @@ Recommendation: 选择 Approach B，同时用 Approach A 的任务货架做可�
 - 原因：T23 退役 FFmpeg 链一并扫掉了在线 D-105 原生视频读/编辑/重生成面（归桶矩阵 §1C 无一行授权），须在「补建」与「显式接受暗面」间拍板。
 - Supersedes：无（D-105/D-127 的执行细化）。
 
+### D-133 修订（2026-07-28）：收紧为「平台零视频编辑」，四条残留一并真退役
+
+- 日期：2026-07-28
+- 状态：`accepted`（用户拍板）
+- **原则（本条为总纲，优先于下方逐项）**：**平台不提供任何视频编辑功能。所有编辑处理由上游 API 渠道供应商完成，我方只作为输入与输出的接收方。**
+- 起因：07-28 主控核查发现 D-133 原措辞（「新原生视频作品无编辑/重生成面，只保下载/交付」）与实际代码不符。`mkfast-template-main/src/product/results/video/video-worksurface.tsx`（21KB）挂载于 `routes/dashboard/results_/$workId.tsx:73`，且 07-27 的后续票把镜头级能力建了回来而 D-133 措辞从未更新。实测四态：`full_compose` 整片重合成真退役（静态门四处禁复活＋DB `CHECK (scope = 'shot')`）；**`shot` 单镜重生成保留且计费**（`videoRegenScopes = ['shot']`／`videoBillableScopes = ['shot']`）；**独立字幕资产文字编辑保留且免费**（`subtitle_text_edit` 在 `videoWorksurfaceFreeActions`）；烧录字幕改动不可用。危害＝文档说「没有」而实际「有且扣商家额度」，读此条规划新功能者会做错决定。
+- 决定：**上述四态全部收敛为真退役**。逐项处置按下表，判据＝「是否改变媒体字节或隐含我方持有拼接权」：
+
+| 动作 | 性质 | 处置 |
+|---|---|---|
+| `poll`／`recover`／`download_supplier_task` | 查上游任务状态、重连、取产物 | **保留**——接收方行为 |
+| `play_control` | 播放/暂停/拖动 | **保留**——观看，不改字节 |
+| `adopt_candidate`／`select_shot_candidate`／`deterministic_sort` | 在已收到的产物中挑选 | **保留**——选择非编辑 |
+| `subtitle_text_edit` | 改字幕文字 | **退役** |
+| `cover_select` | 选封面，含 `frameTimeSeconds` 抽帧 | **退役**——抽帧＝视频处理 |
+| **shot regen**（唯一计费动作） | 单镜重生成 | **退役** |
+| `subtitle_toggle` | 字幕显示开关 | **边界待定**——取决于是否仍交付字幕旁挂文件（见待验证） |
+
+- 原因（shot regen 单列）：单镜重生成虽由上游算力完成，但「重生成这一个镜头」这一产品概念**隐含成片由镜头拼接而成、且拼接权在我方**——正是 FFmpeg 链的思路残留。`full_compose` 已退而 `shot` 保留在逻辑上不自洽：**无拼接能力即不应有局部替换入口**。要改则整条重新生成，我方不管局部。
+- 影响（连带，须随退役票一并处理）：
+  1. `videoBillableScopes` 退空——视频工作面将无任何计费动作，视频桶消耗点只剩初次生成，D-123 三桶口径需复核是否受影响。
+  2. `apps/core/src/p1/model-supply/video-regeneration.ts` 与 `video-regeneration-postgres.ts` 整块退役候选；DB 约束 `CHECK (scope = 'shot')` 随表处置。
+  3. 静态门 `video-full-compose-retirement.static.test.ts` 现断言 `videoRegenScopes = ['shot']` **必须存在**，退役后该门须**反转**（先红后绿），否则它会替旧形态背书。
+  4. `VideoCoverSource` 的 `'frame'` 分支随 `cover_select` 退役；`'authorized_image'`（用已授权图片当封面）属素材选择非视频处理，去留随边界裁定。
+  5. **与 D-138 合流**：抽帧退役后封面只能来自上游产出或已授权图片，因此交付 checklist 必须改口为「封面可在抖音发布页自选或自动生成」——即 D-138 原定却未落地的那句指引。两条决策在此处并为同一张票。
+- 证据边界：以上均为 07-28 主控只读实测（源码 + 静态门断言），未改产品代码；`buildVideoFullDeliveryPackage`（`apps/core/src/p1/result-delivery/delivery-package.ts:475`）中 cover 与 subtitles 均为可选入参且生产调用点带收据校验，说明二者「有时有」，其产出条件未追到底。
+- 待验证：①`subtitle_toggle` 的去留——先确认退役后是否仍向商家交付 `subtitles.srt/vtt` 旁挂文件；若仍交付则开关属展示控制可留，若不再交付则一并退。②原生视频生成在何种条件下产出封面与字幕（决定 D-138 改口文案的准确措辞）。③三桶计费口径是否因视频计费动作归零而需要调整。
+
 ## D-134 流程裁决：T39/T40 退出 Orca 车道（补录）
 
 - 日期：2026-07-26／2026-07-27 补录
