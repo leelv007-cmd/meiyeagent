@@ -94,15 +94,35 @@ async function readMessages(locale: 'en' | 'zh') {
   return JSON.parse(raw) as Record<string, string>;
 }
 
-function sourceWithoutComments(source: string) {
-  return ts.transpileModule(source, {
-    compilerOptions: {
-      jsx: ts.JsxEmit.Preserve,
-      module: ts.ModuleKind.ESNext,
-      removeComments: true,
-      target: ts.ScriptTarget.ESNext,
-    },
-  }).outputText;
+export function sourceHasCjkOutsideComments(source: string, fileName: string) {
+  const sourceFile = ts.createSourceFile(
+    fileName,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    fileName.endsWith('x') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+  );
+  let found = false;
+
+  function visit(node: ts.Node) {
+    if (found) return;
+    let childCount = 0;
+    ts.forEachChild(node, (child) => {
+      childCount += 1;
+      visit(child);
+    });
+    if (
+      childCount === 0 &&
+      node !== sourceFile &&
+      !(ts.isJsxExpression(node) && !node.expression) &&
+      /[\u3400-\u9fff]/u.test(node.getText(sourceFile))
+    ) {
+      found = true;
+    }
+  }
+
+  visit(sourceFile);
+  return found;
 }
 
 const en = await readMessages('en');
@@ -140,7 +160,7 @@ const mixedTrackFiles = (
   )
 ).flatMap(({ file, source }) =>
   source.includes('@/locale/paraglide/messages') &&
-  !/[\u3400-\u9fff]/.test(sourceWithoutComments(source))
+  !sourceHasCjkOutsideComments(source, file)
     ? []
     : [file]
 );

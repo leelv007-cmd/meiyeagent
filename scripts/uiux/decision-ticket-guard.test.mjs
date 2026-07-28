@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -9,9 +9,9 @@ import { validateDecisionTicketMap } from "./decision-ticket-guard.mjs";
 
 const clone = (value) => structuredClone(value);
 
-test("reports missing local ledgers as explicitly not checked", async () => {
+test("fails closed when tracked decision ledgers are missing", async () => {
   const rootDir = await mkdtemp(path.join(tmpdir(), "decision-ticket-guard-"));
-  const output = execFileSync(
+  const result = spawnSync(
     process.execPath,
     ["scripts/uiux/decision-ticket-guard.mjs", "--root", rootDir],
     {
@@ -20,14 +20,34 @@ test("reports missing local ledgers as explicitly not checked", async () => {
     },
   );
 
+  assert.notEqual(result.status, 0);
   assert.match(
-    output,
-    /SKIP \(\.scratch\/uiux-upgrade-b\/decision-ticket-map\.json\): input missing; this ledger was not checked\./,
+    result.stderr,
+    /docs\/ledgers\/uiux-upgrade-b\/decision-ticket-map\.json/,
+  );
+  assert.doesNotMatch(`${result.stdout}${result.stderr}`, /SKIP/u);
+});
+
+test("strictly validates both tracked decision ledgers", () => {
+  const result = spawnSync(
+    process.execPath,
+    ["scripts/uiux/decision-ticket-guard.mjs"],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    },
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(
+    result.stdout,
+    /passed \(docs\/ledgers\/uiux-upgrade-b\/decision-ticket-map\.json\)/,
   );
   assert.match(
-    output,
-    /SKIP \(\.scratch\/contentpackage-productization\/decision-ticket-map\.json\): input missing; this ledger was not checked\./,
+    result.stdout,
+    /passed \(docs\/ledgers\/contentpackage-productization\/decision-ticket-map\.json\)/,
   );
+  assert.doesNotMatch(result.stdout, /SKIP/u);
 });
 
 async function createFixtureRoot() {

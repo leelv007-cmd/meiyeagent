@@ -1,0 +1,180 @@
+{
+  "version": 1,
+  "authorityOrder": [
+    "docs/adr/0010-uiux-upgrade-path-b-and-streaming-verdict.md",
+    "docs/adr/0006-p0-runtime-topology.md",
+    "docs/adr/0007-agent-runtime-ai-sdk-first.md",
+    "docs/adr/0008-video-in-p0-and-layered-buy-build.md"
+  ],
+  "requiredGapIds": [
+    "P0-1", "P0-2", "P0-3", "P0-4", "P0-5", "P0-6", "P0-7",
+    "P1-1", "P1-2", "P1-3", "P1-4", "P1-5", "P1-6", "P1-7", "P1-8", "P1-9", "P1-10", "P1-11", "P1-12",
+    "P2-1", "P2-2", "P2-3", "P2-4", "P2-5"
+  ],
+  "invariants": {
+    "streaming": { "mode": "token", "ticketIds": ["06", "07", "08"] },
+    "d3": { "shell": "conversational", "core": "structured", "separateChatClone": false },
+    "d4": { "selection": "single", "candidateCount": 3, "maxFreeRetries": 2, "ticketIds": ["18"] },
+    "l1LinkCapture": { "status": "de_scoped" },
+    "mediaModelSelection": { "explicit": true, "crossBrandAuto": false }
+  },
+  "decisions": [
+    {
+      "id": "DEC-PATH-B",
+      "source": { "path": "docs/adr/0010-uiux-upgrade-path-b-and-streaming-verdict.md", "contains": "升级改造走路径 B" },
+      "status": "active",
+      "userVisibleContract": "Path B closes only on observable behavior and same-build benchmark evidence.",
+      "gapIds": [],
+      "ticketIds": ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25"],
+      "evidencePair": "same-build current product vs benchmark screenshots"
+    },
+    {
+      "id": "DEC-RUNTIME-TOPOLOGY",
+      "source": { "path": "docs/adr/0006-p0-runtime-topology.md", "contains": "Workers shell" },
+      "status": "active",
+      "userVisibleContract": "The UIUX upgrade preserves the thin shell and canonical product-fact boundary.",
+      "gapIds": [],
+      "ticketIds": ["01"],
+      "evidencePair": "runtime boundary checks before and after UIUX cutover"
+    },
+    {
+      "id": "DEC-AI-SDK-FIRST",
+      "source": { "path": "docs/adr/0007-agent-runtime-ai-sdk-first.md", "contains": "streamText" },
+      "status": "active",
+      "userVisibleContract": "Copilot text streams and structured copy candidates form progressively.",
+      "gapIds": ["P0-1", "P1-1"],
+      "ticketIds": ["06", "07", "08"],
+      "evidencePair": "current whole-response vs benchmark progressive response"
+    },
+    {
+      "id": "DEC-TOKEN-STREAMING",
+      "source": { "path": "docs/adr/0010-uiux-upgrade-path-b-and-streaming-verdict.md", "contains": "恢复 ADR-0007 的 token 级流式钦定" },
+      "status": "active",
+      "userVisibleContract": "Text appears token by token; long media Jobs use truthful stages instead of fake percentages.",
+      "gapIds": ["P0-1", "P0-6", "P1-1"],
+      "ticketIds": ["06", "07", "08", "09"],
+      "evidencePair": "start-progress-complete frames from the same submission"
+    },
+    {
+      "id": "DEC-D3-WORKBENCH",
+      "source": { "path": "docs/adr/0008-video-in-p0-and-layered-buy-build.md", "contains": "conversational shell, structured core" },
+      "status": "active",
+      "userVisibleContract": "One conversational workbench exposes structured Work, Job, Asset, and Content facts without a chat clone.",
+      "gapIds": ["P0-3", "P0-4", "P1-2", "P1-5", "P1-6", "P1-7", "P1-8", "P1-9", "P2-1", "P2-3"],
+      "ticketIds": ["12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22"],
+      "evidencePair": "single-workbench current vs benchmark journey"
+    },
+    {
+      "id": "DEC-D4-SINGLE-SELECTION",
+      "source": { "path": "docs/adr/0010-uiux-upgrade-path-b-and-streaming-verdict.md", "contains": "3 选 1 单选采用" },
+      "status": "active",
+      "userVisibleContract": "Copy presents exactly three candidates and permits adopting one, rerolling, and at most two free retries.",
+      "gapIds": [],
+      "ticketIds": ["18"],
+      "evidencePair": "candidate selection current vs benchmark"
+    },
+    {
+      "id": "DEC-MEDIA-MODEL-EXPLICIT",
+      "source": { "path": "docs/adr/0008-video-in-p0-and-layered-buy-build.md", "contains": "silently switch video families" },
+      "status": "active",
+      "userVisibleContract": "Image and video models remain visible and explicitly selected, with no cross-brand automatic fallback.",
+      "gapIds": ["P1-2", "P1-9"],
+      "ticketIds": ["15", "16"],
+      "evidencePair": "model-card current vs benchmark"
+    },
+    {
+      "id": "DEC-L1-LINK-CAPTURE",
+      "source": { "path": "docs/adr/0008-video-in-p0-and-layered-buy-build.md", "contains": "product-URL scraping" },
+      "status": "de_scoped",
+      "userVisibleContract": "The composer does not promise URL scraping and retains text, upload, drag-drop, and paste inputs.",
+      "gapIds": ["P2-1"],
+      "ticketIds": [],
+      "evidencePair": "composer input inventory"
+    },
+    {
+      "id": "DEC-JOB-PROGRESSBAR",
+      "source": { "path": "docs/adr/0010-uiux-upgrade-path-b-and-streaming-verdict.md", "contains": "Job 级 progressbar、无 token 流式承诺" },
+      "status": "superseded",
+      "userVisibleContract": "A numeric Job progress bar cannot substitute for token streaming or truthful long-job stage narration.",
+      "gapIds": ["P0-1", "P0-6", "P1-3"],
+      "ticketIds": [],
+      "evidencePair": "old progressbar vs truthful feedback"
+    },
+    {
+      "id": "DEC-MASTRA",
+      "source": { "path": "docs/adr/0007-agent-runtime-ai-sdk-first.md", "contains": "Mastra is deferred, not rejected" },
+      "status": "deferred",
+      "userVisibleContract": "Path B does not introduce a second agent framework before the documented complexity trigger.",
+      "gapIds": [],
+      "ticketIds": [],
+      "evidencePair": "dependency and runtime-port audit"
+    }
+  ],
+  "gaps": [
+    { "id": "P0-1", "ticketIds": ["06", "07"] },
+    { "id": "P0-2", "ticketIds": ["04"] },
+    { "id": "P0-3", "ticketIds": ["03", "17"] },
+    { "id": "P0-4", "ticketIds": ["12"] },
+    { "id": "P0-5", "ticketIds": ["08"] },
+    { "id": "P0-6", "ticketIds": ["03", "09"] },
+    { "id": "P0-7", "ticketIds": ["05"] },
+    { "id": "P1-1", "ticketIds": ["06"] },
+    { "id": "P1-2", "ticketIds": ["03", "16"] },
+    { "id": "P1-3", "ticketIds": ["11"] },
+    { "id": "P1-4", "ticketIds": ["10"] },
+    { "id": "P1-5", "ticketIds": ["19"] },
+    { "id": "P1-6", "ticketIds": ["20"] },
+    { "id": "P1-7", "ticketIds": ["14"] },
+    { "id": "P1-8", "ticketIds": ["03", "13"] },
+    { "id": "P1-9", "ticketIds": ["03", "15"] },
+    { "id": "P1-10", "ticketIds": ["04"] },
+    { "id": "P1-11", "ticketIds": ["23"] },
+    { "id": "P1-12", "ticketIds": ["25"] },
+    { "id": "P2-1", "ticketIds": ["22"] },
+    { "id": "P2-2", "ticketIds": ["24"] },
+    { "id": "P2-3", "ticketIds": ["03", "21"] },
+    { "id": "P2-4", "ticketIds": ["24"] },
+    { "id": "P2-5", "ticketIds": ["25"] }
+  ],
+  "contracts": [
+    { "id": "I01", "level": "required", "gapIds": [], "ticketIds": ["02", "03", "13", "15", "16", "21"] },
+    { "id": "I02", "level": "required", "gapIds": ["P1-5"], "ticketIds": ["02", "19"] },
+    { "id": "I03", "level": "required", "gapIds": ["P0-1", "P1-1"], "ticketIds": ["02", "06", "07", "08"] },
+    { "id": "I04", "level": "required", "gapIds": ["P0-6", "P1-3", "P1-4"], "ticketIds": ["02", "09", "10", "11"] },
+    { "id": "I05", "level": "required", "gapIds": ["P1-5"], "ticketIds": ["02", "19"] },
+    { "id": "I06", "level": "required", "gapIds": ["P0-4", "P1-8", "P1-9"], "ticketIds": ["02", "12", "13", "15"] },
+    { "id": "I07", "level": "required", "gapIds": ["P1-7"], "ticketIds": ["02", "14"] },
+    { "id": "I08", "level": "required", "gapIds": [], "ticketIds": ["02", "18"] },
+    { "id": "I09", "level": "required", "gapIds": ["P0-3", "P0-5"], "ticketIds": ["02", "08", "17"] },
+    { "id": "I10", "level": "required", "gapIds": ["P1-4", "P1-6"], "ticketIds": ["02", "10", "20"] },
+    { "id": "I11", "level": "required", "gapIds": ["P2-1"], "ticketIds": ["02", "22"] },
+    { "id": "I12", "level": "required", "gapIds": ["P0-2", "P1-11", "P1-12", "P2-2", "P2-4", "P2-5"], "ticketIds": ["02", "04", "23", "24", "25"] }
+  ],
+  "tickets": [
+    { "id": "01", "file": ".scratch/uiux-upgrade-b/tickets/01-decision-to-ticket-mapping.md", "decisionIds": ["DEC-PATH-B", "DEC-RUNTIME-TOPOLOGY"], "guardrailDecisionIds": [], "gapIds": [], "contractIds": [], "blockedBy": [], "closureEvidence": ["scripts/uiux/decision-ticket-guard.test.mjs", ".scratch/uiux-upgrade-b/decision-ticket-map.json"], "status": "closed" },
+    { "id": "02", "file": ".scratch/uiux-upgrade-b/tickets/02-acceptance-matrix-v2-experience-contract.md", "decisionIds": ["DEC-PATH-B"], "guardrailDecisionIds": [], "gapIds": [], "contractIds": ["I01", "I02", "I03", "I04", "I05", "I06", "I07", "I08", "I09", "I10", "I11", "I12"], "blockedBy": [], "closureEvidence": [".scratch/creatok-uiux-wayfinding/assets/13-uiux-acceptance-matrix.md", ".scratch/creatok-uiux-wayfinding/assets/current-product-screenshots/01-dashboard-desktop-live.jpg", ".scratch/creatok-uiux-wayfinding/assets/screenshots/02-agent-desktop-live.jpg"], "status": "closed" },
+    { "id": "03", "file": ".scratch/uiux-upgrade-b/tickets/03-built-unwired-adjudication.md", "decisionIds": ["DEC-PATH-B"], "guardrailDecisionIds": [], "gapIds": ["P0-3", "P0-6", "P1-2", "P1-8", "P1-9", "P2-3"], "contractIds": ["I01"], "blockedBy": [], "closureEvidence": [".scratch/uiux-upgrade-b/tickets/03-built-unwired-adjudication.md", ".scratch/creatok-uiux-wayfinding/assets/current-product-screenshots/08-content-library-desktop-live.jpg", ".scratch/creatok-uiux-wayfinding/assets/screenshots/09-gallery-desktop-live.jpg"], "status": "closed" },
+    { "id": "04", "file": ".scratch/uiux-upgrade-b/tickets/04-brand-residue-sweep-ai-bypass-removal.md", "decisionIds": ["DEC-PATH-B"], "guardrailDecisionIds": [], "gapIds": ["P0-2", "P1-10"], "contractIds": ["I12"], "blockedBy": [], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" },
+    { "id": "05", "file": ".scratch/uiux-upgrade-b/tickets/05-fixture-loop-and-error-fallback.md", "decisionIds": ["DEC-PATH-B"], "guardrailDecisionIds": [], "gapIds": ["P0-7"], "contractIds": [], "blockedBy": [], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" },
+    { "id": "06", "file": ".scratch/uiux-upgrade-b/tickets/06-backend-ai-sdk-streamtext-generateobject.md", "decisionIds": ["DEC-PATH-B", "DEC-AI-SDK-FIRST", "DEC-TOKEN-STREAMING"], "guardrailDecisionIds": ["DEC-MASTRA"], "gapIds": ["P0-1", "P1-1"], "contractIds": ["I03"], "blockedBy": [], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" },
+    { "id": "07", "file": ".scratch/uiux-upgrade-b/tickets/07-frontend-streaming-consumption.md", "decisionIds": ["DEC-PATH-B", "DEC-AI-SDK-FIRST", "DEC-TOKEN-STREAMING"], "guardrailDecisionIds": [], "gapIds": ["P0-1"], "contractIds": ["I03"], "blockedBy": ["06"], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" },
+    { "id": "08", "file": ".scratch/uiux-upgrade-b/tickets/08-ai-result-rich-rendering.md", "decisionIds": ["DEC-PATH-B", "DEC-AI-SDK-FIRST", "DEC-TOKEN-STREAMING"], "guardrailDecisionIds": [], "gapIds": ["P0-5"], "contractIds": ["I03", "I09"], "blockedBy": ["07"], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" },
+    { "id": "09", "file": ".scratch/uiux-upgrade-b/tickets/09-job-feedback-polling-narration.md", "decisionIds": ["DEC-PATH-B", "DEC-TOKEN-STREAMING"], "guardrailDecisionIds": ["DEC-JOB-PROGRESSBAR"], "gapIds": ["P0-6"], "contractIds": ["I04"], "blockedBy": [], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" },
+    { "id": "10", "file": ".scratch/uiux-upgrade-b/tickets/10-global-async-task-float.md", "decisionIds": ["DEC-PATH-B"], "guardrailDecisionIds": [], "gapIds": ["P1-4"], "contractIds": ["I04", "I10"], "blockedBy": ["09"], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" },
+    { "id": "11", "file": ".scratch/uiux-upgrade-b/tickets/11-real-duration-estimates.md", "decisionIds": ["DEC-PATH-B"], "guardrailDecisionIds": ["DEC-JOB-PROGRESSBAR"], "gapIds": ["P1-3"], "contractIds": ["I04"], "blockedBy": [], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" },
+    { "id": "12", "file": ".scratch/uiux-upgrade-b/tickets/12-l0-scene-shelf-progressive-disclosure.md", "decisionIds": ["DEC-PATH-B", "DEC-D3-WORKBENCH"], "guardrailDecisionIds": [], "gapIds": ["P0-4"], "contractIds": ["I06"], "blockedBy": [], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" },
+    { "id": "13", "file": ".scratch/uiux-upgrade-b/tickets/13-preset-hides-prompt-box.md", "decisionIds": ["DEC-PATH-B", "DEC-D3-WORKBENCH"], "guardrailDecisionIds": [], "gapIds": ["P1-8"], "contractIds": ["I01", "I06"], "blockedBy": ["03", "12"], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" },
+    { "id": "14", "file": ".scratch/uiux-upgrade-b/tickets/14-module-multiselect-builder.md", "decisionIds": ["DEC-PATH-B", "DEC-D3-WORKBENCH"], "guardrailDecisionIds": [], "gapIds": ["P1-7"], "contractIds": ["I07"], "blockedBy": ["13"], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" },
+    { "id": "15", "file": ".scratch/uiux-upgrade-b/tickets/15-visual-model-template-cards.md", "decisionIds": ["DEC-PATH-B", "DEC-D3-WORKBENCH", "DEC-MEDIA-MODEL-EXPLICIT"], "guardrailDecisionIds": [], "gapIds": ["P1-9"], "contractIds": ["I01", "I06"], "blockedBy": ["03"], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" },
+    { "id": "16", "file": ".scratch/uiux-upgrade-b/tickets/16-video-workflow-frontend-wiring.md", "decisionIds": ["DEC-PATH-B", "DEC-D3-WORKBENCH", "DEC-MEDIA-MODEL-EXPLICIT"], "guardrailDecisionIds": [], "gapIds": ["P1-2"], "contractIds": ["I01"], "blockedBy": ["03"], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" },
+    { "id": "17", "file": ".scratch/uiux-upgrade-b/tickets/17-result-thumbnails-gallery.md", "decisionIds": ["DEC-PATH-B", "DEC-D3-WORKBENCH"], "guardrailDecisionIds": [], "gapIds": ["P0-3"], "contractIds": ["I09"], "blockedBy": [], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" },
+    { "id": "18", "file": ".scratch/uiux-upgrade-b/tickets/18-candidate-selection-ui.md", "decisionIds": ["DEC-PATH-B", "DEC-D3-WORKBENCH", "DEC-D4-SINGLE-SELECTION"], "guardrailDecisionIds": [], "gapIds": [], "contractIds": ["I08"], "blockedBy": [], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" },
+    { "id": "19", "file": ".scratch/uiux-upgrade-b/tickets/19-agent-opening-guidance-chips.md", "decisionIds": ["DEC-PATH-B", "DEC-D3-WORKBENCH"], "guardrailDecisionIds": [], "gapIds": ["P1-5"], "contractIds": ["I02", "I05"], "blockedBy": [], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" },
+    { "id": "20", "file": ".scratch/uiux-upgrade-b/tickets/20-global-cmdk-navigation.md", "decisionIds": ["DEC-PATH-B", "DEC-D3-WORKBENCH"], "guardrailDecisionIds": [], "gapIds": ["P1-6"], "contractIds": ["I10"], "blockedBy": [], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" },
+    { "id": "21", "file": ".scratch/uiux-upgrade-b/tickets/21-example-store-empty-state.md", "decisionIds": ["DEC-PATH-B", "DEC-D3-WORKBENCH"], "guardrailDecisionIds": [], "gapIds": ["P2-3"], "contractIds": ["I01"], "blockedBy": ["03"], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" },
+    { "id": "22", "file": ".scratch/uiux-upgrade-b/tickets/22-unified-composer-three-inputs.md", "decisionIds": ["DEC-PATH-B", "DEC-D3-WORKBENCH"], "guardrailDecisionIds": ["DEC-L1-LINK-CAPTURE"], "gapIds": ["P2-1"], "contractIds": ["I11"], "blockedBy": [], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" },
+    { "id": "23", "file": ".scratch/uiux-upgrade-b/tickets/23-i18n-convergence.md", "decisionIds": ["DEC-PATH-B"], "guardrailDecisionIds": [], "gapIds": ["P1-11"], "contractIds": ["I12"], "blockedBy": [], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" },
+    { "id": "24", "file": ".scratch/uiux-upgrade-b/tickets/24-accent-motion-and-model-card-sanitize.md", "decisionIds": ["DEC-PATH-B"], "guardrailDecisionIds": [], "gapIds": ["P2-2", "P2-4"], "contractIds": ["I12"], "blockedBy": [], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" },
+    { "id": "25", "file": ".scratch/uiux-upgrade-b/tickets/25-touch-target-font-scaling.md", "decisionIds": ["DEC-PATH-B"], "guardrailDecisionIds": [], "gapIds": ["P1-12", "P2-5"], "contractIds": ["I12"], "blockedBy": [], "closureEvidence": ["docs/reviews/uiux-upgrade-b-ticket-closure-2026-07-14.md"], "resolution": "superseded", "status": "closed" }
+  ]
+}

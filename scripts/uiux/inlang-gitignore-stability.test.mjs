@@ -21,11 +21,30 @@ const gitignorePath = path.join(
   rootDir,
   'mkfast-template-main/project.inlang/.gitignore'
 );
+const gitignoreRepoPath =
+  'mkfast-template-main/project.inlang/.gitignore';
 const inlangProjectDir = path.dirname(gitignorePath);
 const generatedProjectPaths = ['.meta.json', 'README.md', 'cache'];
 
-test('locale compilation preserves the tracked Inlang gitignore', async () => {
-  const before = await readFile(gitignorePath);
+function git(args) {
+  return execFileSync('git', args, {
+    cwd: rootDir,
+    encoding: 'utf8',
+  });
+}
+
+test('web build leaves no tracked Inlang project changes', async () => {
+  const before = await readFile(gitignorePath).catch((error) => {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  });
+  const statusBefore = git([
+    'status',
+    '--porcelain',
+    '--untracked-files=no',
+    '--',
+    'mkfast-template-main/project.inlang/',
+  ]);
   const backupDir = await mkdtemp(path.join(tmpdir(), 'inlang-project-'));
   const backedUpPaths = [];
 
@@ -43,12 +62,26 @@ test('locale compilation preserves the tracked Inlang gitignore', async () => {
   try {
     execFileSync(
       'pnpm',
-      ['--filter', '@meiye/web', 'locale:compile'],
+      ['--filter', '@meiye/web', 'build'],
       { cwd: rootDir, stdio: 'pipe' }
     );
-    assert.deepEqual(await readFile(gitignorePath), before);
+    assert.equal(git(['ls-files', '--', gitignoreRepoPath]), '');
+    assert.equal(
+      git([
+        'status',
+        '--porcelain',
+        '--untracked-files=no',
+        '--',
+        'mkfast-template-main/project.inlang/',
+      ]),
+      statusBefore
+    );
   } finally {
-    await writeFile(gitignorePath, before);
+    if (before) {
+      await writeFile(gitignorePath, before);
+    } else {
+      await rm(gitignorePath, { force: true });
+    }
     for (const relativePath of generatedProjectPaths) {
       await rm(path.join(inlangProjectDir, relativePath), {
         force: true,

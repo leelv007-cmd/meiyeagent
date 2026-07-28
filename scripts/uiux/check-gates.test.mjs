@@ -52,3 +52,36 @@ test('a failing gate does not skip the following gate and fails the aggregate', 
     await rm(rootDir, { recursive: true, force: true });
   }
 });
+
+test('a skipped gate is reported without being presented as a pass', () => {
+  const output = [];
+  const run = () => ({ status: 78 });
+
+  const status = runGates(
+    [{ name: 'optional evidence', command: 'ignored', args: [] }],
+    { run, writeLine: (line) => output.push(line) }
+  );
+
+  assert.equal(status, 0);
+  assert.ok(output.includes('[check] SKIP optional evidence'));
+  assert.ok(output.includes('[check] Overall: PASS (1 skipped)'));
+  assert.ok(!output.includes('[check] PASS optional evidence'));
+});
+
+test('the fail-on-skip switch makes skipped gates fail the aggregate', () => {
+  const output = [];
+  const run = () => ({ status: 78 });
+
+  const status = runGates(
+    [{ name: 'required evidence', command: 'ignored', args: [] }],
+    {
+      failOnSkip: true,
+      run,
+      writeLine: (line) => output.push(line),
+    }
+  );
+
+  assert.equal(status, 1);
+  assert.ok(output.includes('[check] SKIP required evidence'));
+  assert.ok(output.includes('[check] Overall: FAIL (1 skipped)'));
+});
