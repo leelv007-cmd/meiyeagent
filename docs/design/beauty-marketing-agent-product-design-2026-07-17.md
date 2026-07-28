@@ -2254,7 +2254,15 @@ Recommendation: 选择 Approach B，同时用 Approach A 的任务货架做可�
   4. `VideoCoverSource` 的 `'frame'` 分支随 `cover_select` 退役；`'authorized_image'`（用已授权图片当封面）属素材选择非视频处理，去留随边界裁定。
   5. **与 D-138 合流**：抽帧退役后封面只能来自上游产出或已授权图片，因此交付 checklist 必须改口为「封面可在抖音发布页自选或自动生成」——即 D-138 原定却未落地的那句指引。两条决策在此处并为同一张票。
 - 证据边界：以上均为 07-28 主控只读实测（源码 + 静态门断言），未改产品代码；`buildVideoFullDeliveryPackage`（`apps/core/src/p1/result-delivery/delivery-package.ts:475`）中 cover 与 subtitles 均为可选入参且生产调用点带收据校验，说明二者「有时有」，其产出条件未追到底。
-- 待验证：①（已结）`subtitle_toggle` 用户补充拍板＝退役，无条件。②原生视频生成在何种条件下产出封面与字幕（决定 D-138 改口文案的准确措辞）。③三桶计费口径是否因视频计费动作归零而需要调整。
+- 待验证：①（已结）`subtitle_toggle` 用户补充拍板＝退役，无条件。②（已结）见下方「封面来源裁定」。③三桶计费口径是否因视频计费动作归零而需要调整。
+
+#### 封面来源裁定（2026-07-28，用户拍板，结 ②）
+
+- **事实（用户提供）**：上游 API 渠道供应商**没有单独导出封面的配置能力**。要拿到封面，必须由我方对成片做抽帧或截图处理。
+- **裁定**：封面因此**归类为视频编辑**，同时也属发布相关内容，**一并冻结/退役**——`cover_select`、`VideoCoverSource` 的 `'frame'` 分支、`frameTimeSeconds` 全部退役。**产品明确不提供封面。**
+- **实测补充（主控 07-28，本条是本轮最值得记的发现）**：抽帧代码**从来就不存在**。`selectCoverFrame`（`mkfast-template-main/src/product/results/video/video-worksurface-model.ts:637-644`）只把 `frameTimeSeconds` 写进状态，`posterUrl` 仍取 `composedCandidate.posterUrl`（上游产物或种子 fixture `/seed/video/video-poster-vertical.webp`）；全仓无 canvas／`toBlob`／任何图像产出路径；`frameTimeSeconds` 在 `apps/core` 与 `packages/contracts` **零命中**，即商家的封面选择从未离开浏览器。
+- **形态定性**：这不是「做了但实现不了」，而是**「做了、看着能用、实际是空操作」**——商家点「选这一帧当封面」，UI 收下操作、给出反馈，却无任何产出、也不向后端传递。比前者更隐蔽，因为它连报错都不会有。此形态应作为**假绿清单的新类目**：不是测试为未完成功能背书，而是**UI 为不存在的能力背书**。
+- **连带（交付面，不受 D-155 冻结约束——属诚实性修正）**：既然产品不提供封面，交付 checklist 的抖音段 `- [ ] 上传 video.mp4 与封面`（`apps/core/src/p1/result-delivery/delivery-package.ts:178`）在指使商家去找一个我方从不产出的东西，**必须改口**为「封面可在抖音发布页自选或自动生成」——即 D-138 原定却未落地的那句指引。同批修正 `delivery-package.ts:194` 的 `- [ ] 确认成片、封面、字幕属于同一 revision`：`revision` 是工程词汇且该文件在交付 ZIP 内商家可见，违反 D-116。`buildVideoFullDeliveryPackage` 的可选 `cover` 入参与其收据校验随之复核（既然无产出路径，该分支应确认为死码后处置）。
 
 ## D-155 发布相关功能开发整体停止，延后专题讨论
 
