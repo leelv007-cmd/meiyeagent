@@ -110,11 +110,16 @@ test('today recommendation selects the frozen revision trace when context inject
       };
     },
   } as unknown as Pool;
-  const store = new PostgresHarnessStore(pool, {
-    async currentRevision() {
-      return 1;
+  const store = new PostgresHarnessStore(
+    pool,
+    {
+      async currentRevision() {
+        return 1;
+      },
     },
-  });
+    undefined,
+    () => new Date(timestamp),
+  );
 
   const recommendation =
     await store.readTodayRecommendation('workspace-1');

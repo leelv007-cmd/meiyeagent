@@ -317,9 +317,8 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
   {
     key: HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
     scope: 'global',
-    description:
-      'Confirmation hold cards currently do not expire; this key has no consumer and is retained for backward compatibility.',
-    valueSchema: z.number().int().positive().max(172_800),
+    description: 'Decision hold wait before the reserved task expires.',
+    valueSchema: z.number().int().min(3_600).max(172_800),
   },
   {
     key: HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY,

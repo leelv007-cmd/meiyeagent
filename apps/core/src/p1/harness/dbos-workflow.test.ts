@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
@@ -6,6 +7,7 @@ import {
   confirmationCardDecision,
   failHarnessWorkflowPreservingExecutionError,
   harnessBillingSettlementInput,
+  readConfirmationCardHoldTimeoutSeconds,
   readConfirmationCardTimeoutSeconds,
   settleHarnessCancellation,
   type HarnessBillingSettlementPort,
@@ -21,8 +23,11 @@ const settlement = {
   quoteRevision: 'quote-revision-1',
 };
 
-test('confirmation-card continuation waits read the admin-config timeout', async () => {
-  const values = new Map([['harness.confirmation_card.timeout_seconds', 45]]);
+test('confirmation-card hold and continuation waits read admin-config', async () => {
+  const values = new Map([
+    ['harness.confirmation_card.timeout_seconds', 45],
+    ['harness.confirmation_card.hold_timeout_seconds', 86_400],
+  ]);
   const config: Pick<AdminConfigRepository, 'get'> = {
     async get(_scope: 'global', _workspaceId: string, key: string) {
       const value = values.get(key);
@@ -45,6 +50,53 @@ test('confirmation-card continuation waits read the admin-config timeout', async
   };
 
   assert.equal(await readConfirmationCardTimeoutSeconds(config), 45);
+  assert.equal(await readConfirmationCardHoldTimeoutSeconds(config), 86_400);
+  assert.equal(await readConfirmationCardHoldTimeoutSeconds(), 172_800);
+  values.set('harness.confirmation_card.hold_timeout_seconds', 3_599);
+  await assert.rejects(
+    readConfirmationCardHoldTimeoutSeconds(config),
+    /integer from 3600 to 172800/u,
+  );
+});
+
+test('hold config is frozen inside the pending step and exposed as hot-read wiring', () => {
+  const workflowSource = readFileSync(
+    new URL('./dbos-workflow.ts', import.meta.url),
+    'utf8',
+  );
+  const pendingStepStart = workflowSource.indexOf(
+    'const pendingProjection = await DBOS.runStep(',
+  );
+  const pendingStepEnd = workflowSource.indexOf(
+    "await DBOS.setEvent('pending-structured-decision'",
+    pendingStepStart,
+  );
+  assert.ok(pendingStepStart >= 0);
+  assert.ok(pendingStepEnd > pendingStepStart);
+  const pendingStep = workflowSource.slice(pendingStepStart, pendingStepEnd);
+  assert.match(
+    pendingStep,
+    /await readConfirmationCardHoldTimeoutSeconds\(config\)/u,
+  );
+
+  const mainSource = readFileSync(
+    new URL('../../main.ts', import.meta.url),
+    'utf8',
+  );
+  const hotReadKeys = mainSource.match(
+    /hotReadKeys:\s*\[([\s\S]*?)\],\s*wiredKeys:/u,
+  )?.[1];
+  const wiredKeys = mainSource.match(
+    /wiredKeys:\s*\[([\s\S]*?)\],\s*\}\),/u,
+  )?.[1];
+  assert.match(
+    hotReadKeys ?? '',
+    /HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY/u,
+  );
+  assert.match(
+    wiredKeys ?? '',
+    /HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY/u,
+  );
 });
 
 test('confirmation timeout becomes a legal ignored decision', () => {

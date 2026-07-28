@@ -47,6 +47,7 @@ import type {
 export interface FoundationModelSupplyLedgerBilateral {
   productUsage?: SupplySideProductUsageLookup;
   billingLifecycle?: BillingLifecyclePort;
+  clock?: () => Date;
   /** Default shared pool id when freeze is synthesized from route snapshot. */
   defaultSupplyPoolId?: string;
   /** Durable H2 store shared by HTTP and Worker processes. */
@@ -63,6 +64,7 @@ export interface FoundationModelSupplyLedgerBilateral {
 export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
   private readonly productUsageBridge?: SupplySideProductUsageBridge;
   private readonly billingLifecycle?: BillingLifecyclePort;
+  private readonly clock: () => Date;
   private readonly defaultSupplyPoolId: string;
   private readonly supplyFreezes?: FoundationModelSupplyLedgerBilateral['supplyFreezes'];
 
@@ -91,6 +93,7 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
     bilateral: FoundationModelSupplyLedgerBilateral = {},
   ) {
     this.billingLifecycle = bilateral.billingLifecycle;
+    this.clock = bilateral.clock ?? (() => new Date());
     this.productUsageBridge = bilateral.productUsage
       ? new SupplySideProductUsageBridge(bilateral.productUsage)
       : undefined;
@@ -170,7 +173,7 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
             actorId: input.submission.actorId,
             correlationId:
               input.submission.correlationId ?? `model:${input.jobId}`,
-            createdAt: new Date().toISOString(),
+            createdAt: this.clock().toISOString(),
           });
         }
         const checkpoint = await this.foundation.checkpointGenerationAttempt(
@@ -339,7 +342,7 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
             amountMicros,
             actorId: input.submission.actorId,
             correlationId: context.correlationId,
-            createdAt: new Date().toISOString(),
+            createdAt: this.clock().toISOString(),
             payer,
           });
           return {
@@ -776,7 +779,7 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
       refundOperationId: input.refundOperationId,
       actorId: input.actorId,
       correlationId: input.correlationId,
-      createdAt: new Date().toISOString(),
+      createdAt: this.clock().toISOString(),
     });
   }
 }

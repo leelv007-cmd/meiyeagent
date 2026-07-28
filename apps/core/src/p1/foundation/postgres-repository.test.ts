@@ -56,7 +56,8 @@ test('Postgres foundation adapter preserves the P1ApplicationService contract', 
     await pool.end();
   });
 
-  const service = new P1ApplicationService(repository);
+  const clock = () => new Date('2026-07-19T00:00:00.000Z');
+  const service = new P1ApplicationService(repository, { clock });
   const context = { workspaceId, userId, correlationId: 'corr-postgres' };
   const created = await service.recordRelationFact(context, {
     id: 'store-1', kind: 'store', data: { name: 'Postgres 门店' },
@@ -249,7 +250,11 @@ test('Postgres foundation adapter preserves the P1ApplicationService contract', 
   );
   assert.equal(recoverAttempts, 2);
 
-  const entitlements = new ProductEntitlementApplicationService(repository);
+  const entitlements = new ProductEntitlementApplicationService(
+    repository,
+    undefined,
+    clock
+  );
   await entitlements.activatePlan(
     context,
     {

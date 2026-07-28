@@ -250,6 +250,7 @@ test(
             candidateScores: [{ candidateId: 'c01', reason: whyNow }],
           },
         },
+        now,
       );
       assert.ok(recommendation.recommendation);
       assert.equal(recommendation.recommendation.title, title);

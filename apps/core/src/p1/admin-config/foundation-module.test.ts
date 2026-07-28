@@ -349,14 +349,16 @@ describe('Admin config application seam', () => {
     );
   });
 
-  it('keeps the retired hold timeout writable but unwired for backward compatibility', async () => {
+  it('applies the confirmation hold timeout through the wired hot-read control', async () => {
     const repository = new MemoryAdminConfigRepository();
     const service = new P1ApplicationService(new MemoryFoundationRepository(), {
       operations: [
         new AdminConfigFoundationModule(repository, {
+          hotReadKeys: [HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY],
           runtime: {
             [HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY]: 172_800,
           },
+          wiredKeys: [HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY],
         }),
       ],
     });
@@ -370,7 +372,7 @@ describe('Admin config application seam', () => {
           key: HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
           value: 86_400,
           expectedRevision: null,
-          reason: 'Keep a legacy value for compatibility.',
+          reason: 'Set the confirmation hold timeout.',
         },
       },
       'confirmation-hold-timeout-1',
@@ -391,8 +393,26 @@ describe('Admin config application seam', () => {
     };
 
     assert.equal(projected.storedValue, 86_400);
-    assert.equal(projected.effectiveValue, 172_800);
-    assert.equal(projected.wired, false);
+    assert.equal(projected.effectiveValue, 86_400);
+    assert.equal(projected.wired, true);
+    await assert.rejects(
+      service.executeModule(
+        context,
+        'admin-config',
+        {
+          action: 'config_apply',
+          payload: {
+            key: HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
+            value: 3_599,
+            expectedRevision: 1,
+            reason: 'Reject an unsafe confirmation hold timeout.',
+          },
+        },
+        'confirmation-hold-timeout-floor',
+      ),
+      (error: unknown) =>
+        error instanceof Error && 'code' in error && error.code === 'INVALID_STATE',
+    );
     await assert.rejects(
       service.executeModule(
         context,

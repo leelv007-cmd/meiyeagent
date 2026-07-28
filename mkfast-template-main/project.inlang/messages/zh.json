@@ -108,6 +108,7 @@
   "admin_config_field_tier": "对应套餐",
   "admin_config_field_writing_guide": "写作要点",
   "admin_config_key_aigc_label_default": "新内容默认标注 AI 生成",
+  "admin_config_key_confirmation_hold_timeout": "商家决策保留期（秒）",
   "admin_config_key_default_model_audio": "新店默认音频模型",
   "admin_config_key_default_model_copy": "新店默认文案模型",
   "admin_config_key_default_model_image": "新店默认图片模型",

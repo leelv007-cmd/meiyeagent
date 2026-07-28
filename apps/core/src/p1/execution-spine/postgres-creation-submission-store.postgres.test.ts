@@ -248,6 +248,7 @@ test(
     const operations = new PostgresOperationsRepository(pool);
     const billingRepository = new PostgresProductBillingRepository(pool);
     const grantLots = new PostgresGrantLotLedger(pool);
+    const clock = () => new Date("2026-07-22T09:01:00.000Z");
     const store = new PostgresCreationSubmissionStore(
       pool,
       new PostgresCreationSubmissionPersistence(
@@ -347,7 +348,10 @@ test(
         projection.find((item) => item.resource === "image")?.remainingAmount,
         0,
       );
-      const billing = new DurableProductBillingService(billingRepository);
+      const billing = new DurableProductBillingService(
+        billingRepository,
+        clock,
+      );
       await billing.settleTask({
         workspaceId,
         taskId: submission.task.id,

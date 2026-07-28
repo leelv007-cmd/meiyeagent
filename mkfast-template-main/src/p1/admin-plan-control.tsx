@@ -122,6 +122,7 @@ interface AdminConfigItem {
 }
 
 const CONFIG_KEYS = [
+  'harness.confirmation_card.hold_timeout_seconds',
   'plan.trial.enabled',
   'plan.allowances.trial',
   'plan.allowances.starter',

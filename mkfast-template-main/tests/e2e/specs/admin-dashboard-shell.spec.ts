@@ -1,7 +1,7 @@
 /**
  * T35 acceptance: 运营后台 on the D-130 template-dashboard shell.
  *
- * Three journeys, all against the live stack — the admin surfaces read the real
+ * Four journeys, all against the live stack — the admin surfaces read the real
  * admin-config / model-supply / job-runtime projections, so none of this can go
  * green on fixture data (ADR-0019 / D-131).
  *
@@ -13,6 +13,8 @@
  *      nothing redeployed;
  *   3. the model assembly page presents CatalogModel and ExecutionChannel as two
  *      layers, each separately operable.
+ *   4. the wired merchant decision hold opens a bounded control and persists
+ *      through the same reviewed, audited admin-config path.
  */
 import { expect, test, type Page } from '@playwright/test';
 
@@ -256,6 +258,70 @@ test('a hand-entered three-bucket number reaches the merchant through governed c
         `${reason} (restore to ${restoreTo})`,
         () => restoreTo
       ).catch(() => undefined);
+    }
+    await cleanupE2EUsers(request);
+  }
+});
+
+test('the wired merchant decision hold is editable through governed config', async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(120_000);
+  const admin = await registerE2EUser(request, { role: 'admin' });
+  const key = 'harness.confirmation_card.hold_timeout_seconds';
+  const reason = `C1 acceptance ${Date.now()}: change merchant decision hold`;
+  let original: number | undefined;
+
+  const applyHold = async (value: number, auditReason: string) => {
+    const advanced = page.locator('details', {
+      hasText: '高级配置与版本历史',
+    });
+    if ((await advanced.getAttribute('open')) === null) {
+      await advanced.getByText('高级配置与版本历史').click();
+    }
+    await advanced.locator('#admin-runtime-config-key').selectOption(key);
+    const form = advanced.getByTestId(`admin-config-form-${key}`);
+    await expect(form).toBeVisible({ timeout: 30_000 });
+    const input = form.getByRole('textbox', {
+      name: '商家决策保留期（秒）',
+    });
+    await expect(input).toBeVisible();
+    await input.fill(String(value));
+    await advanced.getByRole('button', { name: '审阅并记录' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await dialog.getByLabel('执行原因（写入审计）').fill(auditReason);
+    await dialog.getByRole('button', { name: '确认记录配置' }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText(auditReason, { exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
+  };
+
+  try {
+    await loginByForm(page, admin);
+    await page.goto('/admin/plans');
+    const advanced = page.locator('details', {
+      hasText: '高级配置与版本历史',
+    });
+    await advanced.getByText('高级配置与版本历史').click();
+    await advanced.locator('#admin-runtime-config-key').selectOption(key);
+    const form = advanced.getByTestId(`admin-config-form-${key}`);
+    await expect(form).toBeVisible({ timeout: 30_000 });
+    const input = form.getByRole('textbox', {
+      name: '商家决策保留期（秒）',
+    });
+    original = Number((await input.inputValue()).replaceAll(',', ''));
+    expect(original).toBeGreaterThanOrEqual(3_600);
+    expect(original).toBeLessThanOrEqual(172_800);
+    const target = original === 3_600 ? 3_601 : 3_600;
+    await applyHold(target, reason);
+  } finally {
+    if (original !== undefined) {
+      await applyHold(original, `${reason} (restore to ${original})`).catch(
+        () => undefined
+      );
     }
     await cleanupE2EUsers(request);
   }

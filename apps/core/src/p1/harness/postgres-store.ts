@@ -83,6 +83,7 @@ export class PostgresHarnessStore
       'currentRevision'
     > = new PostgresStoreFactLedger(pool),
     private readonly adminConfig?: Pick<AdminConfigRepository, 'get'>,
+    private readonly clock: () => Date = () => new Date(),
   ) {}
 
   async applySchema() {
@@ -387,6 +388,7 @@ export class PostgresHarnessStore
   }
 
   async readTodayRecommendation(workspaceId: string) {
+    const at = this.clock().toISOString();
     const currentFactsRevision = await this.factRevisions.currentRevision(
       workspaceId,
     );
@@ -416,7 +418,12 @@ export class PostgresHarnessStore
     );
     const delivery = deliveryResult.rows[0];
     if (!delivery) {
-      return projectTodayRecommendation(workspaceId, currentFactsRevision, null);
+      return projectTodayRecommendation(
+        workspaceId,
+        currentFactsRevision,
+        null,
+        at,
+      );
     }
     const traceResult = await this.pool.query<{
       stage: string;
@@ -471,6 +478,7 @@ export class PostgresHarnessStore
       workspaceId,
       currentFactsRevision,
       recommendationRecord,
+      at,
     );
   }
 
