@@ -8,6 +8,7 @@ import {
   formatYuan,
   GROWTH_CONFIG_PLAN_ID,
   growthMonthlyPriceLabel,
+  PUBLIC_PAID_MONTHLY_PRICE_TESTID,
   PUBLIC_PLAN_CONFIG_IDS,
 } from '@/lib/price-plan';
 import type { PricePlan } from '@/payment/types';
@@ -221,6 +222,15 @@ test('one price, one source: the landing and /pricing cannot disagree', () => {
   // configuration — two public pages quoting different prices for the same
   // plan. The fix is structural: neither page owns a price literal, both call
   // the same helper, so there is no second number left to drift.
+  //
+  // FAST FEEDBACK LAYER, NOT THE GROUND TRUTH (#242). Everything below reads
+  // source text and the module the pages import. Against someone working
+  // around it — a namespace import, a computed property access, a wrapper —
+  // this has no fixed point, and five rounds of tightening it returned less
+  // each time. What a visitor actually reads is settled in a browser, by
+  // tests/e2e/specs/public-plan-price-source.spec.ts: it takes the price text
+  // off both rendered pages, and moves the governed price to check both pages
+  // move with it. Trust that one; keep this one because it fails in a second.
   const home = read(HOME_PRICING);
   const pricing = read(PRICING);
   const pricePlan = read(PRICE_PLAN);
@@ -319,6 +329,20 @@ test('the mapping states exactly which product backs each public tier', () => {
     { starter: 'free', growth: 'pro' }
   );
   assert.equal(GROWTH_CONFIG_PLAN_ID, 'pro');
+});
+
+test('both public surfaces keep the handle the browser reads the price by', () => {
+  // The browser gate (tests/e2e/specs/public-plan-price-source.spec.ts) can
+  // only compare the two pages if it can find the price on each. Losing the
+  // testid on one of them turns that gate into "element not found", which is a
+  // red run whose message points at the test rather than at the reshell that
+  // dropped the attribute. Say it here, where the reason is written down.
+  const home = read(HOME_PRICING);
+  const pricing = read(PRICING);
+  assert.equal(PUBLIC_PAID_MONTHLY_PRICE_TESTID, 'public-paid-monthly-price');
+  assert.match(home, /PUBLIC_PAID_MONTHLY_PRICE_TESTID/u);
+  assert.match(home, /data-testid=\{plan\.priceTestId\}/u);
+  assert.match(pricing, /data-testid=\{PUBLIC_PAID_MONTHLY_PRICE_TESTID\}/u);
 });
 
 test('the landing reads the pro product out of the catalogue every time it is asked', () => {

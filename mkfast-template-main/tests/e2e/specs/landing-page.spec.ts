@@ -104,7 +104,14 @@ test.describe('LIKEPAGE marketing landing page', () => {
     await expect(pricing).toContainText('中级');
     await expect(pricing).not.toContainText('Starter');
     await expect(pricing).not.toContainText('Growth');
-    await expect(pricing).toContainText('¥399');
+    // The paid tier quotes a price, but not one written here: this file used to
+    // assert ¥399 and went on asserting it after the configured price moved to
+    // ¥1999, so the landing was quoting a number no test had ever agreed to.
+    // Which number it is, and whether /pricing agrees, belongs to
+    // public-plan-price-source.spec.ts.
+    await expect(pricing.getByTestId('public-paid-monthly-price')).toHaveText(
+      /^¥\d+$/u
+    );
     await expect(pricing).toContainText('上线特惠');
     await expect(pricing).toContainText('敬请期待');
 
@@ -260,7 +267,11 @@ test.describe('LIKEPAGE marketing landing page', () => {
     }
     const pricing = page.locator('#pricing');
     await pricing.scrollIntoViewIfNeeded();
-    await expect(pricing).toContainText('¥399');
+    // A price still renders without motion; which price is not this test's
+    // question. See the note on the pricing-tiers test above.
+    await expect(pricing.getByTestId('public-paid-monthly-price')).toHaveText(
+      /^¥\d+$/u
+    );
     await expect(pricing).toContainText('线上支付未开放');
     monitor.expectNoErrors('reduced motion');
   });

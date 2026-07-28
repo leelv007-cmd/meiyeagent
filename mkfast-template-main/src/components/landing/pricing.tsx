@@ -34,7 +34,10 @@ import {
   landing_pricing_subtitle,
   landing_pricing_title,
 } from '@/locale/paraglide/messages';
-import { growthMonthlyPriceLabel } from '@/lib/price-plan';
+import {
+  growthMonthlyPriceLabel,
+  PUBLIC_PAID_MONTHLY_PRICE_TESTID,
+} from '@/lib/price-plan';
 import { Routes } from '@/lib/routes';
 
 interface PricingPlan {
@@ -45,6 +48,8 @@ interface PricingPlan {
    */
   price: string;
   priceClassName: string;
+  /** Set on the paid tier only, so a browser can read the quoted month price. */
+  priceTestId?: string;
   period?: string;
   /** Sits under the price — how the tier is actually opened during the pilot. */
   note?: string;
@@ -101,6 +106,7 @@ function PricingCard({
         <div className="mt-4">
           <div className="flex items-end gap-3">
             <span
+              data-testid={plan.priceTestId}
               className={`font-bold tracking-tight text-foreground ${plan.priceClassName}`}
             >
               {plan.price}
@@ -180,6 +186,7 @@ export function Pricing(): ReactNode {
       // can never drift apart on what the paid tier costs.
       price: growthMonthlyPriceLabel() ?? landing_pricing_coming_soon(),
       priceClassName: 'text-5xl',
+      priceTestId: PUBLIC_PAID_MONTHLY_PRICE_TESTID,
       period: landing_pricing_growth_period(),
       note: landing_pricing_growth_note(),
       description: landing_pricing_growth_desc(),

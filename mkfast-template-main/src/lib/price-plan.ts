@@ -20,6 +20,18 @@ export const PUBLIC_PLAN_CONFIG_IDS = {
 /** The self-serve paid tier both public surfaces quote (D-143). */
 export const GROWTH_CONFIG_PLAN_ID = PUBLIC_PLAN_CONFIG_IDS.growth;
 
+/**
+ * The handle a browser uses to read the paid tier's monthly price (#242).
+ *
+ * The landing and /pricing lay the same number out completely differently, so
+ * "did a visitor see the same price on both" had no way to be asked of the
+ * rendered page — only of the source, and a source guard has no fixed point
+ * against namespace imports or computed access. One testid, exported from the
+ * module that owns the price, gives both surfaces the same handle and lets the
+ * browser answer it directly.
+ */
+export const PUBLIC_PAID_MONTHLY_PRICE_TESTID = 'public-paid-monthly-price';
+
 export function findSubscriptionPrice(
   configPlanId: string | undefined,
   interval: (typeof PlanIntervals)[keyof typeof PlanIntervals]
