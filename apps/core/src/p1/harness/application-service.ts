@@ -118,6 +118,7 @@ export class HarnessApplicationService {
     if (!target) {
       return harnessDecisionSnapshotSchema.parse({
         question: null,
+        reservationReleased: false,
         resolutionSource: null,
         status: 'absent',
         timeoutSeconds: null,
@@ -127,7 +128,8 @@ export class HarnessApplicationService {
     const keepResolvedQuestion =
       target.status === 'resolved' &&
       (target.resolutionSource === 'core_timeout' ||
-        target.resolutionSource === 'core_hold_expired');
+        target.resolutionSource === 'core_hold_expired' ||
+        target.resolutionSource === 'late_answer');
     const question =
       target.status === 'pending' || keepResolvedQuestion
         ? target.question
@@ -149,6 +151,7 @@ export class HarnessApplicationService {
 
     return harnessDecisionSnapshotSchema.parse({
       question,
+      reservationReleased: target.reservationReleased === true,
       resolutionSource:
         target.status === 'resolved' ? target.resolutionSource : null,
       status: target.status,

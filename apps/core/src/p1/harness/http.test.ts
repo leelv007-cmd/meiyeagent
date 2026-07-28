@@ -344,6 +344,7 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
   assert.equal(pending.status, 200);
   assert.deepEqual((await pending.json()).data, {
     question: question(),
+    reservationReleased: false,
     resolutionSource: null,
     status: 'pending',
     timeoutSeconds: 17,
@@ -582,6 +583,7 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
   assert.equal(timedOutSnapshot.status, 200);
   assert.deepEqual((await timedOutSnapshot.json()).data, {
     question: question('task-http-late'),
+    reservationReleased: false,
     resolutionSource: 'core_timeout',
     status: 'resolved',
     timeoutSeconds: null,

@@ -653,6 +653,9 @@ outbound seam messages against real core SSE. The container journey itself
   with.
 - Every visible sentence on all three cards passes the D-116 language gate
   (mirrors `src/product/composer/card-language.ts`).
+- A released hold keeps the question actionable but changes its promise before
+  the merchant answers: the card says the old quota is back and a new answer
+  will re-enter the queue and reserve quota again.
 - Quota is a passive line with no controls and no blocking card on the main
   path (D-043 无冲突路径 0 张阻塞卡). Only behaviour is asserted, never the
   numbers — those belong to the entitlements projection.

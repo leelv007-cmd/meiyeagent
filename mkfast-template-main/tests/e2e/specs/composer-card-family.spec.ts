@@ -207,6 +207,19 @@ async function startRun(page: Page, intent: string): Promise<SubmissionResult> {
   };
 }
 
+async function confirmSeededStoreFacts(page: Page): Promise<void> {
+  await page.goto('/dashboard');
+  const card = page.getByTestId('progressive-fact-card');
+  await expect(card).toBeVisible({ timeout: 60_000 });
+  const input = card.getByTestId('progressive-fact-input');
+  await expect(input).toHaveValue('透亮猫眼');
+  await card.getByTestId('progressive-fact-continue').click();
+  await expect(input).toHaveValue('299');
+  await card.getByTestId('progressive-fact-continue').click();
+  await card.getByTestId('progressive-fact-confirm').click();
+  await expect(card).toBeHidden({ timeout: 60_000 });
+}
+
 /**
  * The delivered revision, straight from the seam the card does *not* use — the
  * card reads the terminal SSE snapshot, this reads the HTTP projection. Two
@@ -484,6 +497,58 @@ test.describe('T31 三类卡与确认卡', () => {
     await expect(page.getByTestId('composer-question-settled')).toContainText(
       '系统已按通用模式继续，你仍可回答并生成精修版本。'
     );
+  });
+
+  test('a released hold changes the quota promise before the merchant answers', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(420_000);
+    await page.route(
+      /\/api\/core\/p1\/harness\/tasks\/[^/]+\/decision$/u,
+      async (route) => {
+        if (route.request().method() !== 'GET') {
+          await route.continue();
+          return;
+        }
+        const response = await route.fetch();
+        const envelope = (await response.json()) as {
+          data?: {
+            question?: Record<string, unknown> | null;
+            reservationReleased?: boolean;
+            timeoutSeconds?: number | null;
+          };
+        };
+        if (envelope.data?.question) {
+          envelope.data.question.unattended = 'hold';
+          envelope.data.reservationReleased = true;
+          envelope.data.timeoutSeconds = null;
+        }
+        await route.fulfill({ response, json: envelope });
+      }
+    );
+    const user = await registerE2EUser(request);
+    await loginByForm(page, user);
+    await seedConfirmedStore(page);
+    await confirmSeededStoreFacts(page);
+
+    const run = await startRun(page, '写一条周末到店的团购活动文案');
+    const questionCard = page.getByTestId('composer-question-card');
+    await expect(questionCard).toBeVisible({ timeout: 240_000 });
+    await expect(page.getByTestId('composer-question-hold')).toContainText(
+      '额度已经放回'
+    );
+    await expect(page.getByTestId('composer-question-hold')).toContainText(
+      '重新排队占用'
+    );
+    await expect(page.getByTestId('composer-question-answer')).toBeEnabled();
+    await expect(page.getByTestId('composer-question-countdown')).toHaveCount(
+      0
+    );
+    assertMerchantLanguage(await questionCard.innerText(), [
+      run.taskId,
+      run.workId,
+    ]);
   });
 
   test('quota is passive on the main path — no pre-run 额度确认', async ({

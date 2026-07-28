@@ -26,6 +26,7 @@ test('treats an unknown task as absent without inventing a local question', asyn
   assert.deepEqual(snapshot, {
     exists: false,
     question: null,
+    reservationReleased: false,
     resolutionSource: null,
     status: 'absent',
     timeoutSeconds: null,
@@ -284,6 +285,7 @@ test('parses the server-owned question target and persisted submit receipt', asy
   assert.deepEqual(snapshot, {
     exists: true,
     question,
+    reservationReleased: false,
     resolutionSource: null,
     status: 'pending',
     timeoutSeconds: 19,

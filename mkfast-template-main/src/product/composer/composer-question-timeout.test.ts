@@ -27,6 +27,7 @@ test('hold never displays or enables a local countdown', () => {
   const view = projectComposerQuestionCard({
     hold: null,
     remainingSeconds: 30,
+    reservationReleased: false,
     resolutionSource: null,
     settlement: null,
     timeoutSeconds: null,
@@ -35,6 +36,33 @@ test('hold never displays or enables a local countdown', () => {
   assert.equal(view.autoContinueEnabled, false);
   assert.equal(view.countdownNotice, null);
   assert.match(view.holdNotice ?? '', /不会自动放行/u);
+});
+
+test('released reservation changes the pending hold promise before an answer', () => {
+  const view = projectComposerQuestionCard({
+    hold: 'quota',
+    remainingSeconds: 0,
+    reservationReleased: true,
+    resolutionSource: null,
+    settlement: null,
+    timeoutSeconds: null,
+    unattended: 'hold',
+  });
+
+  assert.match(view.holdNotice ?? '', /额度已经放回/u);
+  assert.match(view.holdNotice ?? '', /重新排队占用/u);
+
+  const failedSuccessor = projectComposerQuestionCard({
+    hold: 'quota',
+    remainingSeconds: 0,
+    reservationReleased: true,
+    resolutionSource: 'late_answer',
+    settlement: null,
+    timeoutSeconds: null,
+    unattended: 'hold',
+  });
+  assert.match(failedSuccessor.settledNotice ?? '', /额度已经放回/u);
+  assert.match(failedSuccessor.settledNotice ?? '', /再次提交/u);
 });
 
 test('quota and external effects withhold the displayed release', () => {

@@ -63,6 +63,7 @@ const STAGE_NAMES: Record<string, string> = {
   brief_compilation: '03-brief-compilation',
   execution_selection: '04-execution-selection',
   assembly_delivery: '05-assembly-delivery',
+  product_billing: 'product-billing',
 };
 
 const LANGFUSE_SCORE_REASON_CODE = 'model_score_reason_redacted';
@@ -804,6 +805,18 @@ function projectStageOutput(stage: string, traceInput: unknown, auditInput: unkn
         factReferenceCount: arrayLength(trace?.factRefs),
         assetReferenceCount: arrayLength(trace?.assetRefs),
         identityReferenceCount: arrayLength(trace?.identityRefs),
+      });
+    case 'product_billing':
+      return compact({
+        attempts: numberValue(audit?.attempts),
+        holdStillPending:
+          typeof audit?.holdStillPending === 'boolean'
+            ? audit.holdStillPending
+            : undefined,
+        questionId: stringValue(audit?.questionId),
+        quoteId: stringValue(audit?.quoteId),
+        reason: stringValue(audit?.reason),
+        usageReservationId: stringValue(audit?.usageReservationId),
       });
     default:
       return compact({

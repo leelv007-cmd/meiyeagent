@@ -87,6 +87,7 @@ export function ComposerQuestionCard({
   onDecide,
   pending = false,
   question,
+  reservationReleased = false,
   resolutionSource = null,
   timeoutSeconds = null,
 }: {
@@ -105,6 +106,7 @@ export function ComposerQuestionCard({
     | Promise<ComposerQuestionDecisionResult>;
   pending?: boolean;
   question: QuestionCard;
+  reservationReleased?: boolean;
   resolutionSource?: ComposerQuestionResolutionSource;
   /** Core projection of the durable admin-config value. */
   timeoutSeconds?: number | null;
@@ -155,6 +157,7 @@ export function ComposerQuestionCard({
     failed,
     hold,
     remainingSeconds: remaining,
+    reservationReleased,
     resolutionSource,
     settlement,
     timeoutSeconds,

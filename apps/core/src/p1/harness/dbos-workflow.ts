@@ -464,14 +464,18 @@ export function registerHarnessDbosWorkflow(
             // Workflows suspended before C1 retain their original unbounded hold
             // layout. Branching into the new bounded layout would reuse a
             // historical recv function ID for a differently named runStep.
-            return {
-              command: await waitForDecisionWithoutTimeout(
+            {
+              const resolved = await waitForDecisionWithoutTimeout(
                 question,
                 persistence,
                 request.workspaceId,
-              ),
-              resolutionSource: 'decision' as const,
-            };
+              );
+              if ('cancelled' in resolved) return resolved;
+              return {
+                command: resolved,
+                resolutionSource: 'decision' as const,
+              };
+            }
           }
           const decision = await waitForHeldDecision(
             question,
@@ -480,6 +484,7 @@ export function registerHarnessDbosWorkflow(
             request.workspaceId,
           );
           if (decision) {
+            if ('cancelled' in decision) return decision;
             return {
               command: decision,
               resolutionSource: 'decision' as const,
@@ -503,14 +508,18 @@ export function registerHarnessDbosWorkflow(
             },
           );
           if ('consumedByOther' in persisted && persisted.consumedByOther) {
-            return {
-              command: await waitForDecisionWithoutTimeout(
+            {
+              const resolved = await waitForDecisionWithoutTimeout(
                 question,
                 persistence,
                 request.workspaceId,
-              ),
-              resolutionSource: 'decision' as const,
-            };
+              );
+              if ('cancelled' in resolved) return resolved;
+              return {
+                command: resolved,
+                resolutionSource: 'decision' as const,
+              };
+            }
           }
           return {
             cancelled: true as const,
@@ -522,14 +531,18 @@ export function registerHarnessDbosWorkflow(
           pendingProjection?.timeoutSeconds === null ||
           (!pendingProjection && !request.usageReservation)
         ) {
-          return {
-            command: await waitForDecisionWithoutTimeout(
+          {
+            const resolved = await waitForDecisionWithoutTimeout(
               question,
               persistence,
               request.workspaceId,
-            ),
-            resolutionSource: 'decision' as const,
-          };
+            );
+            if ('cancelled' in resolved) return resolved;
+            return {
+              command: resolved,
+              resolutionSource: 'decision' as const,
+            };
+          }
         }
         // Pre-projection workflow records return no value from function ID 4.
         // They use the deterministic default instead of a live config read.
@@ -540,6 +553,9 @@ export function registerHarnessDbosWorkflow(
           decisionTopic(question.questionId),
           { timeoutSeconds },
         );
+        if (isReleasedReservationCancellation(decision)) {
+          return decision;
+        }
         const command = confirmationCardDecision(
           question,
           decision,
@@ -638,14 +654,18 @@ export function registerHarnessDbosWorkflow(
             },
           );
           if ('consumedByOther' in persisted && persisted.consumedByOther) {
-            return {
-              command: await waitForDecisionWithoutTimeout(
+            {
+              const resolved = await waitForDecisionWithoutTimeout(
                 question,
                 persistence,
                 request.workspaceId,
-              ),
-              resolutionSource: 'decision' as const,
-            };
+              );
+              if ('cancelled' in resolved) return resolved;
+              return {
+                command: resolved,
+                resolutionSource: 'decision' as const,
+              };
+            }
           }
           return {
             command,
@@ -1420,6 +1440,7 @@ async function waitForHeldDecision(
     decisionTopic(question.questionId),
     { timeoutSeconds },
   );
+  if (isReleasedReservationCancellation(decision)) return decision;
   return decision
     ? confirmationCardDecision(
         question,
@@ -1434,6 +1455,27 @@ async function waitForHeldDecision(
     : null;
 }
 
+
+function isReleasedReservationCancellation(
+  value: unknown,
+): value is {
+  cancelled: true;
+  merchantMessage: string;
+  resolutionSource: 'reservation_released';
+} {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const candidate = value as {
+    cancelled?: unknown;
+    merchantMessage?: unknown;
+    resolutionSource?: unknown;
+  };
+  return (
+    candidate.cancelled === true &&
+    typeof candidate.merchantMessage === 'string' &&
+    candidate.resolutionSource === 'reservation_released'
+  );
+}
+
 async function waitForDecisionWithoutTimeout(
   question: QuestionCard,
   persistence: HarnessWorkflowPersistence,
@@ -1443,18 +1485,18 @@ async function waitForDecisionWithoutTimeout(
     const decision = await DBOS.recv<unknown>(
       decisionTopic(question.questionId),
     );
-    if (decision) {
-      return confirmationCardDecision(
+    if (!decision) continue;
+    if (isReleasedReservationCancellation(decision)) return decision;
+    return confirmationCardDecision(
+      question,
+      decision,
+      await currentDurableInteractionRevision(
         question,
         decision,
-        await currentDurableInteractionRevision(
-          question,
-          decision,
-          persistence,
-          workspaceId,
-        ),
-      );
-    }
+        persistence,
+        workspaceId,
+      ),
+    );
   }
 }
 

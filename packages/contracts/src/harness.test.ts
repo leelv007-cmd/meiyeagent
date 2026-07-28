@@ -388,6 +388,7 @@ test('decision snapshot binds unattended policy to the core-owned timeout', () =
   assert.equal(
     harnessDecisionSnapshotSchema.safeParse({
       question,
+      reservationReleased: false,
       resolutionSource: null,
       status: 'pending',
       timeoutSeconds: 18,
@@ -397,6 +398,7 @@ test('decision snapshot binds unattended policy to the core-owned timeout', () =
   assert.equal(
     harnessDecisionSnapshotSchema.safeParse({
       question,
+      reservationReleased: true,
       resolutionSource: null,
       status: 'pending',
       timeoutSeconds: null,
@@ -406,12 +408,40 @@ test('decision snapshot binds unattended policy to the core-owned timeout', () =
   assert.equal(
     harnessDecisionSnapshotSchema.safeParse({
       question: { ...question, unattended: 'hold' },
+      reservationReleased: false,
       resolutionSource: null,
       status: 'pending',
       timeoutSeconds: 18,
     }).success,
     false
   );
+});
+
+test('reservation release is orthogonal to a pending decision resolution', () => {
+  const snapshot = harnessDecisionSnapshotSchema.parse({
+    question: questionCardSchema.parse({
+      questionId: 'question-released',
+      workflowId: 'workflow-released',
+      workflowRevision: 1,
+      question: '这次活动价是多少？',
+      options: [],
+      freeText: { enabled: true },
+      response: {
+        field: 'offer_price',
+        reason: '补充本次任务所需信息',
+      },
+      unattended: 'hold',
+      scope: 'current_task',
+    }),
+    reservationReleased: true,
+    resolutionSource: null,
+    status: 'pending',
+    timeoutSeconds: null,
+  });
+
+  assert.equal(snapshot.status, 'pending');
+  assert.equal(snapshot.reservationReleased, true);
+  assert.equal(snapshot.resolutionSource, null);
 });
 
 test('decision receipts preserve timeout races and late-answer successors', () => {

@@ -22,6 +22,7 @@ export type HarnessPendingResume =
       kind: 'structured_decision';
       command: StructuredDecisionInput;
       request?: HarnessWorkflowInput;
+      reservationReleased: boolean;
       resolutionSource: 'decision' | 'late_answer';
     })
   | (HarnessPendingResumeBase & {
@@ -134,6 +135,18 @@ export class HarnessResumeReconciler {
         ),
         workspaceId: item.workspaceId,
       });
+      if (item.reservationReleased) {
+        if (!this.workflow.abandonReleasedReservation) {
+          throw new Error(
+            'Released-reservation workflow cancellation is unavailable.',
+          );
+        }
+        await this.workflow.abandonReleasedReservation({
+          questionId: item.command.questionId,
+          taskId: item.taskId,
+          workspaceId: item.workspaceId,
+        });
+      }
     } else {
       await this.workflow.resume(
         item.workspaceId,

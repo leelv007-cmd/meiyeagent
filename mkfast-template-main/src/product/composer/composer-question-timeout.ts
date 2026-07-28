@@ -46,6 +46,10 @@ const HOLD_NOTICES: Record<ComposerQuestionHold, string> = {
   external_effect: '这次会对外发布，需要你确认一下再往下走。',
 };
 const UNATTENDED_HOLD_NOTICE = '需要你选择后继续，这张卡不会自动放行。';
+const RELEASED_RESERVATION_NOTICE =
+  '之前占用的额度已经放回，现在回答会重新排队占用额度。';
+const RELEASED_LATE_ANSWER_NOTICE =
+  '之前占用的额度已经放回。你的回答已保存，但新版本还没开始；请再次提交，系统会重新排队占用额度。';
 
 const SETTLEMENT_NOTICES: Record<ComposerQuestionSettlement, string> = {
   answered: '已按你的回答继续',
@@ -57,6 +61,7 @@ const SETTLEMENT_NOTICES: Record<ComposerQuestionSettlement, string> = {
 export type ComposerQuestionResolutionSource =
   | 'core_timeout'
   | 'core_hold_expired'
+  | 'late_answer'
   | null;
 
 const RESOLUTION_NOTICES: Record<
@@ -65,6 +70,7 @@ const RESOLUTION_NOTICES: Record<
 > = {
   core_timeout: '系统已按通用模式继续，你仍可回答并生成精修版本。',
   core_hold_expired: '本次任务已取消，额度已退回。你仍可回答并生成新版本。',
+  late_answer: '你的回答已保存；如果新版本还没开始，可以再次提交重试。',
 };
 
 /**
@@ -94,6 +100,7 @@ export function projectComposerQuestionCard(input: {
   hold: ComposerQuestionHold | null;
   unattended: 'continue' | 'hold';
   timeoutSeconds: number | null;
+  reservationReleased?: boolean;
   resolutionSource: ComposerQuestionResolutionSource;
   settlement: ComposerQuestionSettlement | null;
   /** The last submit attempt was rejected and rolled back. */
@@ -110,16 +117,21 @@ export function projectComposerQuestionCard(input: {
     countdownNotice: autoContinueEnabled
       ? `${Math.max(0, input.remainingSeconds)} 秒后按默认继续，不用管也不会卡住`
       : null,
-    holdNotice: input.hold
-      ? HOLD_NOTICES[input.hold]
-      : input.unattended === 'hold' && !input.resolutionSource
-        ? UNATTENDED_HOLD_NOTICE
-        : null,
+    holdNotice:
+      input.reservationReleased && !input.resolutionSource
+        ? RELEASED_RESERVATION_NOTICE
+        : input.hold
+          ? HOLD_NOTICES[input.hold]
+          : input.unattended === 'hold' && !input.resolutionSource
+            ? UNATTENDED_HOLD_NOTICE
+            : null,
     settledNotice: input.settlement
       ? SETTLEMENT_NOTICES[input.settlement]
-      : input.resolutionSource
-        ? RESOLUTION_NOTICES[input.resolutionSource]
-        : null,
+      : input.resolutionSource === 'late_answer' && input.reservationReleased
+        ? RELEASED_LATE_ANSWER_NOTICE
+        : input.resolutionSource
+          ? RESOLUTION_NOTICES[input.resolutionSource]
+          : null,
     failureNotice: input.failed ? COMPOSER_QUESTION_FAILURE_NOTICE : null,
     defaultLabel: COMPOSER_QUESTION_DEFAULT_LABEL,
   };

@@ -440,6 +440,7 @@ export const harnessDecisionResolutionSourceSchema = z.enum([
 export const harnessDecisionSnapshotSchema = z
   .object({
     question: questionCardSchema.nullable(),
+    reservationReleased: z.boolean().default(false),
     resolutionSource: harnessDecisionResolutionSourceSchema.nullable(),
     status: z.enum(['absent', 'pending', 'resolved']),
     timeoutSeconds: confirmationCardTimeoutSecondsSchema.nullable(),
@@ -449,6 +450,7 @@ export const harnessDecisionSnapshotSchema = z
     if (snapshot.status === 'absent') {
       if (
         snapshot.question !== null ||
+        snapshot.reservationReleased ||
         snapshot.resolutionSource !== null ||
         snapshot.timeoutSeconds !== null
       ) {

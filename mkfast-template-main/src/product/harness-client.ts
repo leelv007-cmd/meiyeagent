@@ -50,6 +50,7 @@ export async function readHarnessDecisionSnapshot(
     return {
       exists: false,
       question: null,
+      reservationReleased: false,
       resolutionSource: null,
       status: 'absent',
       timeoutSeconds: null,

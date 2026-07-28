@@ -33,6 +33,7 @@ export class PostgresHarnessResumeReconcilerStore
       payload: unknown;
       question_id: string;
       request: HarnessWorkflowInput | null;
+      reservation_released: boolean;
       resolution_source: 'decision' | 'late_answer' | 'system_default';
       runtime_task_id: string;
       task_id: string | null;
@@ -77,6 +78,22 @@ export class PostgresHarnessResumeReconcilerStore
               events.payload,
               events.question_id,
               requests.request,
+              (
+                exists (
+                  select 1
+                    from harness_runtime.reservation_sweeps sweeps
+                   where sweeps.workspace_id=requests.request->>'workspaceId'
+                     and sweeps.task_id=requests.workflow_id
+                     and sweeps.status='completed'
+                )
+                or exists (
+                  select 1
+                    from p1_product_billing_usage usage
+                   where usage.workspace_id=requests.request->>'workspaceId'
+                     and usage.task_id=requests.workflow_id
+                     and usage.status<>'reserved'
+                )
+              ) as reservation_released,
               events.resolution_source,
               events.task_id as runtime_task_id,
               requests.workflow_id as task_id,
@@ -131,6 +148,7 @@ export class PostgresHarnessResumeReconcilerStore
           workspaceId: row.workspace_id,
           taskId: row.task_id,
           request: row.request,
+          reservationReleased: row.reservation_released === true,
           resolutionSource: row.resolution_source,
           command: structuredDecisionInputSchema.parse({
             idempotencyKey: row.idempotency_key,

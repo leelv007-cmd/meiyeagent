@@ -313,6 +313,23 @@ describe('a decision that never reached the ledger rolls back', () => {
     expect(screen.getByTestId('composer-question-submit')).toBeDisabled();
     expect(screen.getByTestId('composer-question-answer')).toBeEnabled();
   });
+
+  it('tells the merchant before answering when a pending hold no longer reserves quota', () => {
+    render(
+      <ComposerQuestionCard
+        onDecide={() => NORMAL_RECEIPT}
+        question={{ ...QUESTION, unattended: 'hold' }}
+        reservationReleased
+      />
+    );
+    expect(screen.getByTestId('composer-question-hold')).toHaveTextContent(
+      '额度已经放回'
+    );
+    expect(screen.getByTestId('composer-question-hold')).toHaveTextContent(
+      '重新排队占用'
+    );
+    expect(screen.getByTestId('composer-question-answer')).toBeEnabled();
+  });
 });
 
 describe('Core decision receipts stay visible', () => {
