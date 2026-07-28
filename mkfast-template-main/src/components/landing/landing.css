@@ -51,6 +51,15 @@
   color: white;
 }
 
+.meiye-landing-script {
+  font-family:
+    "Snell Roundhand", "Segoe Script", "Apple Chancery", "URW Chancery L",
+    cursive;
+  font-style: normal;
+  font-weight: 400;
+  letter-spacing: -0.04em;
+}
+
 /* --- fixed page frame + corner notches (template layout.tsx) --- */
 
 .meiye-landing .site-frame {

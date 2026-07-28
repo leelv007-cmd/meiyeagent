@@ -12,6 +12,7 @@ import {
   landing_cta_terms_suffix,
   landing_cta_terms_tos,
   landing_cta_title,
+  landing_footer_brand_line,
   landing_footer_col_company,
   landing_footer_col_product,
   landing_footer_copyright,
@@ -149,18 +150,23 @@ export function Footer(): ReactNode {
       <div className="bg-accent rounded-tr-[3rem] rounded-tl-[3rem] pt-96 pb-16 max-[850px]:pt-72">
         <div className="max-w-5xl mx-auto px-6">
           <div className="flex items-start justify-between gap-12 max-[850px]:flex-col max-[850px]:gap-10">
-            <Link to={Routes.Root} className="flex items-center gap-2">
-              <img
-                src="/landing/logo.svg"
-                alt=""
-                width={32}
-                height={32}
-                className="h-8 w-8"
-              />
-              <span className="text-xl font-semibold text-neutral-900 leading-0">
-                {landing_nav_brand()}
-              </span>
-            </Link>
+            <div className="flex flex-col gap-3">
+              <Link to={Routes.Root} className="flex items-center gap-2">
+                <img
+                  src="/landing/logo.svg"
+                  alt=""
+                  width={32}
+                  height={32}
+                  className="h-8 w-8"
+                />
+                <span className="text-xl font-semibold text-neutral-900 leading-0">
+                  {landing_nav_brand()}
+                </span>
+              </Link>
+              <p className="max-w-xs text-sm text-neutral-900/60">
+                {landing_footer_brand_line()}
+              </p>
+            </div>
 
             <nav
               className="flex gap-16 max-[850px]:gap-10 max-[850px]:flex-wrap"

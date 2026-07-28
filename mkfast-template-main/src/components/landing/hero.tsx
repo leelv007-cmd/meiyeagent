@@ -132,7 +132,7 @@ export function Hero(): ReactNode {
               transition={{ duration: 0.8, ease }}
             >
               {landing_hero_h1_line2_lead()}{' '}
-              <span className="italic font-serif text-accent">
+              <span className="meiye-landing-script text-accent">
                 {landing_hero_h1_line2_em()}
               </span>
             </motion.span>

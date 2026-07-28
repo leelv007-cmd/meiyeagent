@@ -31,9 +31,10 @@ test.describe('LIKEPAGE marketing landing page', () => {
     const monitor = installPageHealthMonitor(page);
     await expectHealthyPage(page, monitor, '/', { theme: 'light' });
 
+    // Two lines, with the Latin wordmark set in script as the accent.
     const h1 = page.getByRole('heading', { level: 1 });
-    await expect(h1).toContainText('说一句话');
-    await expect(h1).toContainText('能发的');
+    await expect(h1).toContainText('美页出发');
+    await expect(h1).toContainText('Like Page');
 
     const anchorOffsets: number[] = [];
     for (const anchor of SECTION_ANCHORS) {

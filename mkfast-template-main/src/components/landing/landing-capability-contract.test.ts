@@ -120,11 +120,7 @@ test('landing states delivery as the current situation, never as an absolute', (
   assert.doesNotMatch(landingEn, /never publish|will never post/iu);
 
   // The delivery sentences are time-scoped instead.
-  const deliveryKeys = [
-    'landing_hero_subhead',
-    'landing_steps_4_desc',
-    'landing_faq_a2',
-  ];
+  const deliveryKeys = ['landing_steps_4_desc', 'landing_faq_a2'];
   for (const key of deliveryKeys) {
     assert.match(zh[key], /当前|目前/u, `zh ${key}`);
     assert.match(en[key], /today|for now/iu, `en ${key}`);

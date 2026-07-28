@@ -7,9 +7,8 @@ import {
   landing_a11y_menu_open,
   landing_a11y_nav_mobile,
   landing_a11y_nav_primary,
-  landing_nav_brand,
+  landing_nav_header_brand,
   landing_nav_login,
-  landing_nav_logo_alt,
   landing_nav_menu_product,
   landing_nav_menu_resources,
   landing_nav_pricing,
@@ -289,7 +288,7 @@ export function Header(): ReactNode {
         <Link
           to={Routes.Root}
           className="flex items-center gap-2 ml-4 max-[850px]:ml-0"
-          aria-label={landing_nav_logo_alt()}
+          aria-label={landing_nav_header_brand()}
         >
           <img
             src="/landing/logo.svg"
@@ -299,7 +298,7 @@ export function Header(): ReactNode {
             className="h-6 w-6"
           />
           <span className="text-lg font-semibold text-foreground leading-0 max-[1200px]:hidden max-[850px]:inline">
-            {landing_nav_brand()}
+            {landing_nav_header_brand()}
           </span>
         </Link>
 

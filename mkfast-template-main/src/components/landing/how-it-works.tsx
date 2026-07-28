@@ -98,7 +98,7 @@ export function HowItWorks(): ReactNode {
           <p className="text-sm font-medium text-muted-foreground">
             {landing_steps_eyebrow()}
           </p>
-          <h2 className="mt-4 text-4xl font-semibold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
+          <h2 className="mt-4 whitespace-pre-line text-4xl font-semibold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
             {landing_steps_title()}
           </h2>
           <motion.div
