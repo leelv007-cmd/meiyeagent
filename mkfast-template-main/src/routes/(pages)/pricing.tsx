@@ -38,6 +38,7 @@ import { websiteConfig } from '@/config/website';
 import {
   findSubscriptionPrice,
   formatYuan,
+  PUBLIC_PAID_MONTHLY_PRICE_TESTID,
   PUBLIC_PLAN_CONFIG_IDS,
 } from '@/lib/price-plan';
 import { Routes } from '@/lib/routes';
@@ -195,7 +196,10 @@ function PlanPrice({ plan }: { plan: DisplayPlan }) {
   return (
     <div className="space-y-1">
       <p className="flex items-baseline gap-1">
-        <span className="text-3xl font-semibold">
+        <span
+          data-testid={PUBLIC_PAID_MONTHLY_PRICE_TESTID}
+          className="text-3xl font-semibold"
+        >
           {monthly ? formatYuan(monthly.amount) : pricing_plan_price_custom()}
         </span>
         {monthly ? (

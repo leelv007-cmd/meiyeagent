@@ -531,7 +531,7 @@ frozen until the D-125 stage-two window.
 |---|---|---|
 | 1 | Landing sections render in order | Open `/`, verify hero slogan 美页出发/丽客进门, then the section anchors `#features`, `#showcase`, `#pricing`, `#faq` all exist in DOM order with their headings visible on scroll. |
 | 2 | Nav anchors scroll to their sections | Click 功能/作品/定价/常见问题 in the header and verify the target section becomes visible (viewport intersects the anchor element). |
-| 3 | Pricing tiers render the approved wording with the pilot disclosure | In `#pricing`, verify Starter 免费, Growth ¥399 under the 上线特惠 badge with a CTA whose text is exactly 升级 Growth pointing at `/auth/register`, and 终身版 disabled at 敬请期待 with no link. The wording is the user's own call; what keeps it honest is the footnote, so also assert 线上支付未开放 and 兑换码 are on the page and that no 立即购买/订阅/升级 imperative appears. |
+| 3 | Pricing tiers render the approved wording with the pilot disclosure | In `#pricing`, verify 初级 免费 and 中级 quoting some `¥<number>` under the 上线特惠 badge with a CTA whose text is exactly 升级中级套餐 pointing at `/auth/register`, and 终身版 disabled at 敬请期待 with no link. Which number, and whether `/pricing` agrees with it, belongs to `specs/public-plan-price-source.spec.ts` — this row asserted ¥399 for weeks after the configured price moved to ¥1999. The wording is the user's own call; what keeps it honest is the footnote, so also assert 线上支付未开放 and 兑换码 are on the page and that no 立即购买/订阅/升级 imperative appears. |
 | 4 | Rendered copy claims only capability the delivery gate grants | Read the page text and assert no 一键发布/自动发布/直接发布/替你发布 claim survives, that all four output kinds and the three locked platforms are named, and that 辅助交接 and 兑换码 appear as the real delivery and activation routes. |
 | 5 | Every live CTA stays inside the allowed destinations | Collect all `<a href>` values on `/`; assert each is in the allowlist, that no bare `#` placeholder exists, that every in-page anchor matches exactly one element, and that every internal route answers with a non-error status. |
 | 6 | Mobile viewport keeps every section and avoids sideways scroll | Load `/` at 390×844, verify all four section anchors still render and the document has no horizontal overflow. |
@@ -799,6 +799,27 @@ ledger state, and the redemption is a real code an admin recorded.
   changes what `/pricing` quotes on the next load. No deploy, no second number
   to edit — the public page reads the same `plan.allowances.*` revision the
   grant reads (D-143 单一商品目录).
+
+## 两页套餐价同源（#242，S3 转入）
+
+**File:** `specs/public-plan-price-source.spec.ts` | **Priority:** P0 | **Tickets:** #242 / D-143
+
+我们卖给商家的套餐月价（不是商家自己的服务价）。The landing once said ¥399
+while `/pricing` said ¥499. S3 routed both pages through one helper and guarded
+it by reading source text; 终审 ruled that a source-level guard has no fixed
+point against a namespace import or a computed access, so it stays as the fast
+feedback layer (`src/routes/(pages)/pricing.contract.test.ts`) and this file
+becomes the ground truth — what a browser renders on the two pages a visitor
+can reach.
+
+Both pages carry `data-testid="public-paid-monthly-price"` on the paid tier's
+month price, exported as `PUBLIC_PAID_MONTHLY_PRICE_TESTID` from the module
+that owns the price.
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | The landing and /pricing quote the same 中级 month price | Open `/` and `/pricing`, take the price text off the testid on each (requiring exactly one per page), require each to read as `¥<number>` — so "both say 敬请期待" cannot pass as agreement — and require the two strings to be identical. |
+| 2 | Moving the governed price moves both pages together | Read both pages' price off the suite's own stack, then start a second copy of the web app from a different `VITE_GROWTH_MONTHLY_AMOUNT_CENTS` (payment configuration, C-1b in `docs/ops/provisioning-manifest.md` — the key operations sets, not a code constant), and require both pages on it to quote the moved value and neither to quote the old one. Agreement at a single value is equally consistent with both pages hard-coding the same literal; only the move tells them apart. |
 
 ## S5 成品动作面（#239 / W07+W08+W09）
 
