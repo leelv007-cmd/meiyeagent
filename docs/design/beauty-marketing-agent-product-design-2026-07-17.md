@@ -2421,6 +2421,19 @@ Recommendation: 选择 Approach B，同时用 Approach A 的任务货架做可�
 - 证据边界：一页纸的能力口径按仓内运行时真实文案取值，非按 Landing 早期定稿——「发布尚未完成真实验证，请导出后在手机端发布，再在此记录结果」与「当前以导出、复制和辅助交接交付」均实证自 `mkfast-template-main/project.inlang/messages/zh.json`；不承诺播放量/涨粉/到店量沿 Confirmed Premises 第 8 条；试点期兑换码口径沿 D-128。
 - 待验证：改名票的替换范围（`built_with_brand` 之外的产品内露出、邮件模板、导出物料水印、后台标题）需一次性扫描盘点，未盘点前不宣称改名完成。
 
+## D-153 hold 卡到期＝取消任务并退款（推翻 S6「hold 无界」，reservation sweeper 随之退役）
+
+- 日期：2026-07-28
+- 状态：accepted（用户拍板）
+- 决定：**等商家确认的 hold 卡到期后取消任务本身**——48 小时（`harness.confirmation_card.hold_timeout_seconds`，后台可调，下限 1h／上限 30 天）无回应即走 durable `submitCoreHoldExpired` 落库 → 退回额度 → 白话告知「超时未选择，本次任务已取消，额度已退回」。**推翻 S6 轮 4「hold 卡诚实等商家、hold 无界」的裁决**，该旋钮从「S6 摘除的失效旋钮」恢复为真接通旋钮（含 `/admin/plans` 高级配置入口与生产控制器断言）。
+- 原因：两条 lane 并行实施时暴露出票面自身矛盾——`#240` H05 写「48h 决策持有期入 admin-config」（前提是 hold 有界），同票 sweeper 项写「**无界** hold 的预留额度回收器」（前提是 hold 无界），两者记账于不同时间点。主控倾向保留 S6 的无界语义（把「等待商家」与「占用额度」解耦），**用户拍板取相反一侧**：任务不应永久悬挂，账面与运营看板的干净优先。
+- 影响：
+  - **reservation sweeper 整块退役**——它的存在前提（无界 hold 的额度被永久占用）随本决策消失，C1 的超时链路自带退款。`#240` 名下「reservation sweeper」项据此关闭，不再是欠账。
+  - `codex/c2-sweeper-repair` 分支（已过一轮 Opus review 并修净全部 P0/P1）**不整体合入**，只提取其中与 hold 语义无关的 **D-035 repair 指标真实测量**（见 `codex/c2-repair-only`）。
+  - 已知代价并接受：商家周五挂起、周日晚即到期，周一回店时任务已取消需重新发起。审查者曾据美业作息建议把释放期限放到 7 天（sweeper 语义下），本决策不采纳该时长，48h 默认按票面原文保留、由后台调节承接。
+- 证据边界：C1 的超时链路已合入 main（`1a2c8ec6`），带真实业务库+DBOS 库的 persistence +180d 门 2356 pass／0 fail，独立 DBOS smoke 11/11；「旋钮真生效」由 config 桩给 1 秒的构造性用例证明（未生效则落回 48h 默认而挂死）。
+- 待验证：sweeper 退役后，是否仍存在**非 hold 路径**的孤儿预留（如 successor 创建失败、取消链路中断）。`codex/c2-repair-only` 的属主需就「resume reconciler fence 在 C1 语义下是否仍有独立价值」给出判断与证据，未判定前不宣称额度账面已无悬挂。
+
 ### 待验证状态汇总（2026-07-19）
 
 本表只是对上面 20 个原问题的状态投影，**不改写、不合并、不重编号原问题**；逐条问题文本仍是语义权威。规范化状态含义：`open_operational`＝需要真实运营样本才能回答；`rewritten_deferred`＝原问题已改写并主动延期；`completed`＝已有可复核证据闭合；`deferred_operational`＝问题仍成立，但触发点明确在运营期；`partial_open`＝一部分已闭合、剩余部分继续开放；`trigger_deferred`＝当前不立项，仅在显式触发条件成立时恢复。
