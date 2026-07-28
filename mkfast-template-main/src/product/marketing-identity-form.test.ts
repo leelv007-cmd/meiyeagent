@@ -13,9 +13,24 @@ import {
 function answer(
   draft: MarketingIdentityDraft,
   questionId: MarketingIdentityQuestionId,
-  value: boolean | string
+  value: boolean | string | readonly string[]
 ) {
   return answerMarketingIdentityQuestion(draft, questionId, value);
+}
+
+// D-142: every identity now names the reach it was authorized for, so the
+// shared journeys below answer the two scope questions the same way.
+const SCOPE = {
+  platforms: ['xiaohongshu', 'douyin'],
+  scenes: ['daily_service_exposure'],
+} as const;
+
+function answerScope(draft: MarketingIdentityDraft) {
+  return answer(
+    answer(draft, 'allowedPlatforms', SCOPE.platforms),
+    'allowedScenes',
+    SCOPE.scenes
+  );
 }
 
 test('brand identity registration asks one question at a time and keeps answered chips editable', () => {
@@ -37,6 +52,14 @@ test('brand identity registration asks one question at a time and keeps answered
   draft = answer(draft, 'visualPrinciples', '自然肤色');
   draft = answer(draft, 'seriesAnchors', '每周护肤答疑');
 
+  // The scope questions come last, and until both are ticked the wizard has
+  // somewhere left to go.
+  assert.equal(
+    marketingIdentityFlowState(draft).currentQuestionId,
+    'allowedPlatforms'
+  );
+  draft = answerScope(draft);
+
   const ready = marketingIdentityFlowState(draft);
   assert.equal(ready.currentQuestionId, null);
   assert.equal(ready.readyForPreview, true);
@@ -51,6 +74,8 @@ test('brand identity registration asks one question at a time and keeps answered
     'forbiddenClaims',
     'visualPrinciples',
     'seriesAnchors',
+    'allowedPlatforms',
+    'allowedScenes',
   ]);
 
   draft = answer(draft, 'displayName', '青禾护理');
@@ -86,6 +111,7 @@ test('personal identity registration records explicit authorization answers befo
   });
 
   draft = answer(draft, 'voiceAuthorized', false);
+  draft = answerScope(draft);
   const payload = marketingIdentityRegistrationFromDraft(draft);
   assert.equal(marketingIdentityFlowState(draft).readyForPreview, true);
   assert.equal(payload.kind, 'person');
@@ -124,6 +150,8 @@ test('brand identity registration includes optional brand guidance in the comman
     professionalBoundaries: '不提供医疗诊断',
     expressionSamples: '先了解你的需求，再推荐护理方案',
     sourceRef: 'brand-guideline-2026',
+    allowedPlatforms: SCOPE.platforms,
+    allowedScenes: SCOPE.scenes,
     forbiddenClaims: '绝不代言速效美白\n不承诺永久效果',
     visualPrinciples: '自然肤色\n留白干净',
     seriesAnchors: '每周护肤答疑\n到店护理日记',
@@ -148,6 +176,8 @@ test('brand identity registration allows optional brand guidance to be left blan
     professionalBoundaries: '不提供医疗诊断',
     expressionSamples: '先了解你的需求，再推荐护理方案',
     sourceRef: 'brand-guideline-2026',
+    allowedPlatforms: SCOPE.platforms,
+    allowedScenes: SCOPE.scenes,
     forbiddenClaims: '',
     visualPrinciples: '',
     seriesAnchors: '',
@@ -169,6 +199,8 @@ test('identity registration creates an explicit personal authorization contract'
     professionalBoundaries: '只分享染发与护发经验',
     expressionSamples: '先看发质，再选发色',
     sourceRef: 'authorization-form-1',
+    allowedPlatforms: SCOPE.platforms,
+    allowedScenes: SCOPE.scenes,
     portraitAuthorized: true,
     voiceAuthorized: false,
   });
@@ -177,11 +209,71 @@ test('identity registration creates an explicit personal authorization contract'
   if (payload.kind !== 'person') assert.fail('Expected person identity.');
   assert.equal(payload.portraitAuthorization, 'authorized');
   assert.equal(payload.voiceAuthorization, 'not_authorized');
-  assert.deepEqual(payload.allowedScenes, [
-    'daily_service_exposure',
-    'traffic_opportunity',
-    'brand_personal_ip',
-    'promotion_groupbuy_conversion',
-    'routine_marketing_materials',
+});
+
+test('registered reach is exactly what the merchant ticked, never the full catalog', () => {
+  // This assertion used to read the other way round: it pinned allowedScenes to
+  // all five scenes, endorsing a client that answered on the merchant's behalf.
+  const payload = marketingIdentityRegistrationPayload({
+    kind: 'person',
+    displayName: '小美老师',
+    owner: '张小美',
+    primaryClaimOrRole: '染发师',
+    professionalBoundaries: '只分享染发与护发经验',
+    expressionSamples: '先看发质，再选发色',
+    sourceRef: 'authorization-form-1',
+    allowedPlatforms: ['xiaohongshu'],
+    allowedScenes: ['brand_personal_ip'],
+    portraitAuthorized: true,
+    voiceAuthorized: true,
+  });
+
+  assert.deepEqual(payload.allowedPlatforms, ['xiaohongshu']);
+  assert.deepEqual(payload.allowedScenes, ['brand_personal_ip']);
+});
+
+test('a scope left untouched is not an answer and blocks registration', () => {
+  let draft: MarketingIdentityDraft = {};
+  draft = answer(draft, 'kind', 'person');
+  draft = answer(draft, 'displayName', '小美老师');
+  draft = answer(draft, 'owner', '张小美');
+  draft = answer(draft, 'primaryClaimOrRole', '染发师');
+  draft = answer(draft, 'professionalBoundaries', '只分享染发与护发经验');
+  draft = answer(draft, 'expressionSamples', '先看发质，再选发色');
+  draft = answer(draft, 'sourceRef', 'authorization-form-1');
+  draft = answer(draft, 'portraitAuthorized', true);
+  draft = answer(draft, 'voiceAuthorized', true);
+
+  // Ticking a platform and then unticking it leaves an empty list, which is a
+  // question still open — not a merchant who authorized nothing.
+  draft = answer(draft, 'allowedPlatforms', ['douyin']);
+  draft = answer(draft, 'allowedPlatforms', []);
+  const flow = marketingIdentityFlowState(draft);
+  assert.equal(flow.currentQuestionId, 'allowedPlatforms');
+  assert.equal(flow.readyForPreview, false);
+  assert.throws(() => marketingIdentityRegistrationFromDraft(draft), {
+    message: 'Identity registration is incomplete.',
+  });
+
+  draft = answer(draft, 'allowedPlatforms', ['douyin']);
+  draft = answer(draft, 'allowedScenes', ['traffic_opportunity']);
+  assert.equal(marketingIdentityFlowState(draft).readyForPreview, true);
+});
+
+test('scope answers are deduplicated, catalog-ordered, and reject unknown values', () => {
+  let draft: MarketingIdentityDraft = {};
+  draft = answer(draft, 'allowedPlatforms', [
+    'offline',
+    'xiaohongshu',
+    'offline',
   ]);
+  assert.deepEqual(draft.allowedPlatforms, ['xiaohongshu', 'offline']);
+
+  assert.throws(
+    () => answer(draft, 'allowedScenes', ['daily_service_exposure', 'wechat']),
+    { message: 'Unknown identity scope value: wechat' }
+  );
+  assert.throws(() => answer(draft, 'allowedPlatforms', 'xiaohongshu'), {
+    message: 'Identity scope answers must be arrays.',
+  });
 });

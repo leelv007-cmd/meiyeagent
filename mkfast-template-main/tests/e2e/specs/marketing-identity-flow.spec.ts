@@ -40,7 +40,9 @@ test('identity registration stays single-question, editable, and accessible', as
     // keeps a summary and the way in.
     await page.goto('/dashboard/identity');
 
-    const manager = page.getByRole('region', { name: '表达身份' });
+    // '表达身份' was this page's pre-rename heading and had gone stale here
+    // long before D-142 touched the flow; the surface is called 口吻 now.
+    const manager = page.getByRole('region', { name: '口吻' });
     await expect(manager.locator('form')).toHaveCount(0);
     await expect(
       manager.getByRole('heading', {
@@ -96,14 +98,50 @@ test('identity registration stays single-question, editable, and accessible', as
       await region.getByRole('button', { name: '暂时跳过' }).click();
     }
 
+    // D-142: the authorized reach is asked for, not written on the merchant's
+    // behalf. Nothing can be registered until both scopes name something.
+    const platformsQuestion = '这个人设可以用在哪些平台？';
+    const { region: platformsRegion } = await currentQuestion(
+      manager,
+      platformsQuestion
+    );
+    const platformsNext = platformsRegion.getByRole('button', { name: '继续' });
+    await expect(platformsNext).toBeDisabled();
+    await platformsRegion.getByRole('button', { name: '小红书' }).click();
+    await platformsRegion.getByRole('button', { name: '线下物料' }).click();
+    // Unticking the last one puts the question back out of reach.
+    await platformsRegion.getByRole('button', { name: '线下物料' }).click();
+    await expect(platformsNext).toBeEnabled();
+    await platformsNext.click();
+
+    const scenesQuestion = '这个人设可以用在哪些场景？';
+    const { region: scenesRegion } = await currentQuestion(
+      manager,
+      scenesQuestion
+    );
+    await scenesRegion.getByRole('button', { name: '品牌人设' }).click();
+    await scenesRegion.getByRole('button', { name: '继续' }).click();
+
     const preview = manager.getByRole('region', {
-      name: '确认后保存为表达身份',
+      name: '确认后保存为一个口吻',
     });
     await expect(preview).toBeFocused();
     await expect(manager.locator('[aria-live="polite"]')).toHaveText(
-      '确认后保存为表达身份'
+      '确认后保存为一个口吻'
     );
     await expect(preview).not.toContainText('身份资产');
+
+    // The scope reads back as what was ticked — never the full catalog.
+    await expect(preview).toContainText('小红书');
+    await expect(preview).not.toContainText('抖音');
+    await expect(preview).not.toContainText('线下物料');
+    await expect(preview).toContainText('品牌人设');
+
+    // The four terms that ride along are on the table before confirming.
+    const terms = preview.getByTestId('marketing-identity-terms');
+    await expect(terms).toContainText('即刻生效');
+    await expect(terms).toContainText('不设到期');
+    await expect(terms).toContainText('停止生成新内容');
 
     await manager
       .getByRole('button', {

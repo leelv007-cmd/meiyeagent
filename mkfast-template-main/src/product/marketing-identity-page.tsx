@@ -7,9 +7,13 @@ import { getLocale } from '@/lib/locale';
 import { Routes } from '@/lib/routes';
 import { getPathWithLocale } from '@/lib/urls';
 import { commandP1 } from '@/p1/client';
-import type {
-  MarketingIdentityAsset,
-  MarketingIdentityProjection,
+import {
+  MARKETING_IDENTITY_PLATFORMS,
+  MARKETING_SCENES,
+  type MarketingIdentityAsset,
+  type MarketingIdentityPlatform,
+  type MarketingIdentityProjection,
+  type MarketingScene,
 } from '@meiye/contracts';
 import { IconUserPlus } from '@tabler/icons-react';
 
@@ -20,6 +24,7 @@ import {
 } from './marketing-identity-queries';
 import {
   answerMarketingIdentityQuestion,
+  MARKETING_IDENTITY_DEPARTURE_HANDLING,
   marketingIdentityFlowState,
   marketingIdentityQuestions,
   marketingIdentityRegistrationFromDraft,
@@ -76,6 +81,28 @@ const COPY = {
     questionSeriesAnchors: '有哪些栏目值得长期连续做？',
     questionPortrait: '是否已经获得这个人的肖像使用授权？',
     questionVoice: '是否已经获得这个人的声音使用授权？',
+    questionAllowedPlatforms: '这个人设可以用在哪些平台？',
+    questionAllowedScenes: '这个人设可以用在哪些场景？',
+    scopeHint: '至少选一项。没选中的地方，以后生成内容时不会用上这个人设。',
+    listSeparator: '、',
+    platformXiaohongshu: '小红书',
+    platformDouyin: '抖音',
+    platformVideoAccount: '视频号',
+    platformOffline: '线下物料',
+    sceneDailyServiceExposure: '日常服务曝光',
+    sceneTrafficOpportunity: '流量机会',
+    sceneBrandPersonalIp: '品牌人设',
+    scenePromotionGroupbuyConversion: '促销团购转化',
+    sceneRoutineMarketingMaterials: '常规营销物料',
+    termsTitle: '一并登记的条款',
+    termsDescription: '这几项不用你填，但会跟着这个人设一起存下来。',
+    termsEffectiveFrom: '生效时间',
+    termsEffectiveFromValue: '即刻生效',
+    termsExpiresAt: '有效期',
+    termsExpiresAtValue: '不设到期，撤回时才失效',
+    termsDeparture: '离职或换运营后',
+    termsHistorical: '已发布的历史内容',
+    termsHistoricalValue: '需要逐条复核后才能继续用',
     register: '登记身份',
     registering: '登记中…',
     empty: '尚未登记身份。没有活动身份时，任务只能回退为门店官方中性表达。',
@@ -141,6 +168,30 @@ const COPY = {
     questionSeriesAnchors: 'Which recurring series should continue?',
     questionPortrait: 'Is this person’s portrait authorized for use?',
     questionVoice: 'Is this person’s voice authorized for use?',
+    questionAllowedPlatforms: 'Which platforms may this identity appear on?',
+    questionAllowedScenes: 'Which situations may this identity be used for?',
+    scopeHint:
+      'Pick at least one. Anything left unticked will not draw on this identity later.',
+    listSeparator: ', ',
+    platformXiaohongshu: 'Xiaohongshu',
+    platformDouyin: 'Douyin',
+    platformVideoAccount: 'Video Account',
+    platformOffline: 'In-store materials',
+    sceneDailyServiceExposure: 'Everyday service posts',
+    sceneTrafficOpportunity: 'Trending moments',
+    sceneBrandPersonalIp: 'Brand and personal IP',
+    scenePromotionGroupbuyConversion: 'Promotions and group buys',
+    sceneRoutineMarketingMaterials: 'Routine marketing materials',
+    termsTitle: 'Registered alongside',
+    termsDescription:
+      'You do not fill these in, but they are saved with the identity.',
+    termsEffectiveFrom: 'Effective from',
+    termsEffectiveFromValue: 'Immediately',
+    termsExpiresAt: 'Expiry',
+    termsExpiresAtValue: 'No expiry — ends only when withdrawn',
+    termsDeparture: 'After departure or an operator change',
+    termsHistorical: 'Already published content',
+    termsHistoricalValue: 'Each piece needs review before further use',
     register: 'Register identity',
     registering: 'Registering…',
     empty:
@@ -268,7 +319,7 @@ export function MarketingIdentityPage() {
 
   function answerQuestion(
     questionId: MarketingIdentityQuestionId,
-    value: boolean | string,
+    value: boolean | string | readonly string[],
     advance: boolean
   ) {
     try {
@@ -509,6 +560,7 @@ export function MarketingIdentityPage() {
                   </div>
                 ))}
               </dl>
+              <IdentityRegisteredTerms copy={copy} kind={draft.kind} />
               <Button isDisabled={command.isPending} onPress={register}>
                 {command.isPending ? copy.registering : copy.register}
               </Button>
@@ -523,6 +575,117 @@ export function MarketingIdentityPage() {
   );
 }
 
+/**
+ * D-142: four terms ride along without a question of their own. They used to
+ * be written silently from the client, so the merchant now reads them here
+ * before confirming. The values must stay in step with the ones
+ * marketing-identity-form.ts actually registers.
+ */
+function IdentityRegisteredTerms({
+  copy,
+  kind,
+}: {
+  copy: IdentityCopy;
+  kind: MarketingIdentityDraft['kind'];
+}) {
+  return (
+    <section
+      aria-labelledby="marketing-identity-terms-title"
+      className="border-default-200 space-y-2 rounded-xl border border-dashed p-3"
+      data-testid="marketing-identity-terms"
+    >
+      <div>
+        <h5 className="text-sm font-medium" id="marketing-identity-terms-title">
+          {copy.termsTitle}
+        </h5>
+        <p className="text-muted text-xs">{copy.termsDescription}</p>
+      </div>
+      <dl className="grid gap-2 text-sm sm:grid-cols-2">
+        <div className="space-y-1">
+          <dt className="text-muted">{copy.termsEffectiveFrom}</dt>
+          <dd>{copy.termsEffectiveFromValue}</dd>
+        </div>
+        <div className="space-y-1">
+          <dt className="text-muted">{copy.termsExpiresAt}</dt>
+          <dd>{copy.termsExpiresAtValue}</dd>
+        </div>
+        <div className="space-y-1">
+          <dt className="text-muted">{copy.termsDeparture}</dt>
+          {/* The registered string itself, not a retelling of it. */}
+          <dd>{MARKETING_IDENTITY_DEPARTURE_HANDLING}</dd>
+        </div>
+        {kind === 'person' ? (
+          <div className="space-y-1">
+            <dt className="text-muted">{copy.termsHistorical}</dt>
+            <dd>{copy.termsHistoricalValue}</dd>
+          </div>
+        ) : null}
+      </dl>
+    </section>
+  );
+}
+
+function IdentityScopeQuestion({
+  copy,
+  headingId,
+  onAnswer,
+  options,
+  question,
+  regionId,
+  selected,
+}: {
+  copy: IdentityCopy;
+  headingId: string;
+  onAnswer: (value: readonly string[], advance?: boolean) => void;
+  options: readonly { label: string; value: string }[];
+  question: string;
+  regionId: string;
+  selected: readonly string[];
+}) {
+  function toggle(value: string) {
+    onAnswer(
+      selected.includes(value)
+        ? selected.filter((entry) => entry !== value)
+        : [...selected, value]
+    );
+  }
+  return (
+    <section
+      aria-labelledby={headingId}
+      className="meiye-glass-trace space-y-3 rounded-2xl p-4"
+      id={regionId}
+      tabIndex={-1}
+    >
+      <div>
+        <h4 className="font-medium" id={headingId}>
+          {question}
+        </h4>
+        <p className="text-muted text-sm">{copy.scopeHint}</p>
+      </div>
+      <fieldset className="flex flex-wrap gap-2 border-0 p-0">
+        <legend className="sr-only">{question}</legend>
+        {options.map((option) => (
+          <Button
+            aria-pressed={selected.includes(option.value)}
+            key={option.value}
+            onPress={() => toggle(option.value)}
+            size="sm"
+            variant={selected.includes(option.value) ? 'secondary' : 'outline'}
+          >
+            {option.label}
+          </Button>
+        ))}
+      </fieldset>
+      <Button
+        isDisabled={selected.length === 0}
+        onPress={() => onAnswer(selected, true)}
+      >
+        {copy.next}
+      </Button>
+    </section>
+  );
+}
+
 function IdentityQuestionCard({
   copy,
   draft,
@@ -531,7 +694,10 @@ function IdentityQuestionCard({
 }: {
   copy: IdentityCopy;
   draft: MarketingIdentityDraft;
-  onAnswer: (value: boolean | string, advance?: boolean) => void;
+  onAnswer: (
+    value: boolean | string | readonly string[],
+    advance?: boolean
+  ) => void;
   questionId: MarketingIdentityQuestionId;
 }) {
   const question = questionLabel(questionId, draft, copy);
@@ -600,6 +766,23 @@ function IdentityQuestionCard({
       </section>
     );
   }
+  if (questionId === 'allowedPlatforms' || questionId === 'allowedScenes') {
+    return (
+      <IdentityScopeQuestion
+        copy={copy}
+        headingId={headingId}
+        onAnswer={onAnswer}
+        options={
+          questionId === 'allowedPlatforms'
+            ? platformOptions(copy)
+            : sceneOptions(copy)
+        }
+        question={question}
+        regionId={regionId}
+        selected={Array.isArray(value) ? value : []}
+      />
+    );
+  }
   const optional = isOptionalQuestion(questionId);
   const inputId = `marketing-identity-question-${questionId}`;
   const textValue = typeof value === 'string' ? value : '';
@@ -663,8 +846,36 @@ function questionLabel(
     seriesAnchors: copy.questionSeriesAnchors,
     portraitAuthorized: copy.questionPortrait,
     voiceAuthorized: copy.questionVoice,
+    allowedPlatforms: copy.questionAllowedPlatforms,
+    allowedScenes: copy.questionAllowedScenes,
   };
   return labels[questionId];
+}
+
+// Ordered by the contract catalogs so the wizard, the chips, and the preview
+// all read the scope back the same way.
+function platformOptions(copy: IdentityCopy) {
+  const labels: Record<MarketingIdentityPlatform, string> = {
+    xiaohongshu: copy.platformXiaohongshu,
+    douyin: copy.platformDouyin,
+    video_account: copy.platformVideoAccount,
+    offline: copy.platformOffline,
+  };
+  return MARKETING_IDENTITY_PLATFORMS.map((value) => ({
+    label: labels[value],
+    value,
+  }));
+}
+
+function sceneOptions(copy: IdentityCopy) {
+  const labels: Record<MarketingScene, string> = {
+    daily_service_exposure: copy.sceneDailyServiceExposure,
+    traffic_opportunity: copy.sceneTrafficOpportunity,
+    brand_personal_ip: copy.sceneBrandPersonalIp,
+    promotion_groupbuy_conversion: copy.scenePromotionGroupbuyConversion,
+    routine_marketing_materials: copy.sceneRoutineMarketingMaterials,
+  };
+  return MARKETING_SCENES.map((value) => ({ label: labels[value], value }));
 }
 
 function identityQuestionHeadingId(questionId: MarketingIdentityQuestionId) {
@@ -701,6 +912,18 @@ function answerSummary(
   const value = draft[questionId];
   if (questionId === 'kind') {
     return draft.kind === 'person' ? copy.person : copy.brand;
+  }
+  if (Array.isArray(value)) {
+    const picked: readonly string[] = value;
+    if (picked.length === 0) return copy.answeredSkipped;
+    const options =
+      questionId === 'allowedPlatforms'
+        ? platformOptions(copy)
+        : sceneOptions(copy);
+    return options
+      .filter((option) => picked.includes(option.value))
+      .map((option) => option.label)
+      .join(copy.listSeparator);
   }
   if (typeof value === 'boolean') return value ? copy.yes : copy.no;
   if (typeof value !== 'string' || value.trim().length === 0) {
