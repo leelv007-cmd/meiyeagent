@@ -1,5 +1,8 @@
 import {
+  type MARKETING_IDENTITY_ASSISTED_FIELDS,
   marketingIdentityAssetSchema,
+  marketingIdentityDraftRequestSchema,
+  marketingIdentityDraftResultSchema,
   marketingIdentityProjectionSchema,
   marketingIdentityQuerySchema,
   registerMarketingIdentityCommandSchema,
@@ -8,6 +11,8 @@ import {
   setDefaultMarketingIdentityCommandSchema,
   transitionMarketingIdentityCommandSchema,
   type MarketingIdentityAsset,
+  type MarketingIdentityDraftResult,
+  type MarketingIdentityFieldProvenance,
   type MarketingIdentityProjection,
   type MarketingIdentityQuery,
   type MarketingIdentityReference,
@@ -22,8 +27,55 @@ import { z } from 'zod';
 
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
 import type { P1OperationModule } from '../foundation/ports.js';
+import type {
+  MarketingIdentityDraftPort,
+  ResolvedMarketingIdentityDraftRequest,
+} from './marketing-identity-draft.js';
+
+export interface StoredMarketingIdentityDraft
+  extends MarketingIdentityDraftResult {
+  workspaceId: string;
+  actorId: string;
+  kind: 'brand' | 'person';
+  createdAt: string;
+}
+
+function parseStoredMarketingIdentityDraft(
+  value: unknown
+): StoredMarketingIdentityDraft {
+  const metadata = z
+    .object({
+      workspaceId: z.string().trim().min(1),
+      actorId: z.string().trim().min(1),
+      kind: z.enum(['brand', 'person']),
+      createdAt: z.iso.datetime(),
+    })
+    .passthrough()
+    .parse(value);
+  const result = marketingIdentityDraftResultSchema.parse({
+    draftId: metadata.draftId,
+    revision: metadata.revision,
+    status: metadata.status,
+    suggestion: metadata.suggestion,
+    reference: metadata.reference,
+    errorCode: metadata.errorCode,
+  });
+  return {
+    ...result,
+    workspaceId: metadata.workspaceId,
+    actorId: metadata.actorId,
+    kind: metadata.kind,
+    createdAt: metadata.createdAt,
+  };
+}
 
 export interface MarketingIdentityRepository {
+  recordDraft(draft: StoredMarketingIdentityDraft): Promise<void>;
+  getDraft(
+    workspaceId: string,
+    draftId: string,
+    revision: number
+  ): Promise<StoredMarketingIdentityDraft | null>;
   register(input: {
     workspaceId: string;
     actorId: string;
@@ -135,9 +187,29 @@ export class MemoryMarketingIdentityRepository
     string,
     MarketingIdentityDecisionEvent[]
   >();
+  private readonly drafts = new Map<string, StoredMarketingIdentityDraft>();
 
   private key(workspaceId: string, identityId: string) {
     return `${workspaceId}\u0000${identityId}`;
+  }
+
+  async recordDraft(draft: StoredMarketingIdentityDraft) {
+    const key = `${draft.workspaceId}\u0000${draft.draftId}\u0000${draft.revision}`;
+    const current = this.drafts.get(key);
+    if (current && JSON.stringify(current) !== JSON.stringify(draft)) {
+      throw new P1DomainError(
+        'IDEMPOTENCY_CONFLICT',
+        'Marketing identity draft id was reused with different content.'
+      );
+    }
+    this.drafts.set(key, structuredClone(draft));
+  }
+
+  async getDraft(workspaceId: string, draftId: string, revision: number) {
+    const draft = this.drafts.get(
+      `${workspaceId}\u0000${draftId}\u0000${revision}`
+    );
+    return draft ? structuredClone(draft) : null;
   }
 
   async register(input: {
@@ -155,7 +227,11 @@ export class MemoryMarketingIdentityRepository
         current.length
       );
     }
-    const { expectedVersion: _expectedVersion, ...attributes } = input.command;
+    const {
+      expectedVersion: _expectedVersion,
+      assistantDraft: _assistantDraft,
+      ...attributes
+    } = input.command;
     const identity = marketingIdentityAssetSchema.parse({
       ...attributes,
       workspaceId: input.workspaceId,
@@ -431,6 +507,17 @@ export class PostgresMarketingIdentityRepository
       CREATE INDEX IF NOT EXISTS p1_marketing_identity_latest_idx
         ON p1_marketing_identity_versions (workspace_id, identity_id, version DESC);
 
+      CREATE TABLE IF NOT EXISTS p1_marketing_identity_assistant_drafts (
+        workspace_id text NOT NULL,
+        draft_id text NOT NULL,
+        revision bigint NOT NULL CHECK (revision > 0),
+        actor_id text NOT NULL,
+        kind text NOT NULL CHECK (kind IN ('brand', 'person')),
+        payload jsonb NOT NULL,
+        created_at timestamptz NOT NULL,
+        PRIMARY KEY (workspace_id, draft_id, revision)
+      );
+
       CREATE TABLE IF NOT EXISTS p1_marketing_identity_decisions (
         workspace_id text NOT NULL,
         actor_id text NOT NULL,
@@ -501,6 +588,49 @@ export class PostgresMarketingIdentityRepository
     `);
   }
 
+  async recordDraft(draft: StoredMarketingIdentityDraft) {
+    const result = await this.pool.query<{ payload: unknown }>(
+      `INSERT INTO p1_marketing_identity_assistant_drafts (
+         workspace_id, draft_id, revision, actor_id, kind, payload, created_at
+       ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+       ON CONFLICT (workspace_id, draft_id, revision) DO NOTHING
+       RETURNING payload`,
+      [
+        draft.workspaceId,
+        draft.draftId,
+        draft.revision,
+        draft.actorId,
+        draft.kind,
+        JSON.stringify(draft),
+        draft.createdAt,
+      ]
+    );
+    if (result.rowCount === 1) return;
+    const current = await this.getDraft(
+      draft.workspaceId,
+      draft.draftId,
+      draft.revision
+    );
+    if (!current || JSON.stringify(current) !== JSON.stringify(draft)) {
+      throw new P1DomainError(
+        'IDEMPOTENCY_CONFLICT',
+        'Marketing identity draft id was reused with different content.'
+      );
+    }
+  }
+
+  async getDraft(workspaceId: string, draftId: string, revision: number) {
+    const result = await this.pool.query<{ payload: unknown }>(
+      `SELECT payload
+         FROM p1_marketing_identity_assistant_drafts
+        WHERE workspace_id = $1 AND draft_id = $2 AND revision = $3`,
+      [workspaceId, draftId, revision]
+    );
+    return result.rows[0]
+      ? parseStoredMarketingIdentityDraft(result.rows[0].payload)
+      : null;
+  }
+
   async register(input: {
     workspaceId: string;
     actorId: string;
@@ -519,8 +649,11 @@ export class PostgresMarketingIdentityRepository
             currentVersion
           );
         }
-        const { expectedVersion: _expectedVersion, ...attributes } =
-          input.command;
+        const {
+          expectedVersion: _expectedVersion,
+          assistantDraft: _assistantDraft,
+          ...attributes
+        } = input.command;
         return marketingIdentityAssetSchema.parse({
           ...attributes,
           workspaceId: input.workspaceId,
@@ -1073,29 +1206,204 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   return parsed.data;
 }
 
+export interface MarketingIdentityReferenceDraftResolver {
+  resolve(input: {
+    workspaceId: string;
+    draftId: string;
+    revision: number;
+  }): Promise<ResolvedMarketingIdentityDraftRequest['reference']>;
+}
+
+function draftLines(value: string) {
+  return value
+    .split(/[,\n，]/u)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function registeredAssistedValue(
+  command: RegisterMarketingIdentityCommand,
+  field: (typeof MARKETING_IDENTITY_ASSISTED_FIELDS)[number]
+) {
+  if (field === 'displayName' || field === 'owner') return command[field];
+  if (field === 'professionalBoundaries' || field === 'expressionSamples') {
+    return command[field];
+  }
+  if (field === 'brandClaims') {
+    return command.kind === 'brand' ? command.brandClaims : undefined;
+  }
+  if (field === 'realWorldRole') {
+    return command.kind === 'person' ? command.realWorldRole : undefined;
+  }
+  if (
+    field === 'forbiddenClaims' ||
+    field === 'visualPrinciples' ||
+    field === 'seriesAnchors'
+  ) {
+    return command.kind === 'brand' ? command[field] : undefined;
+  }
+  return undefined;
+}
+
+function suggestedAssistedValue(
+  draft: StoredMarketingIdentityDraft,
+  field: (typeof MARKETING_IDENTITY_ASSISTED_FIELDS)[number]
+): {
+  value: string | string[];
+  provenance: MarketingIdentityFieldProvenance;
+} | null {
+  const suggested =
+    field === 'brandClaims' || field === 'realWorldRole'
+      ? draft.suggestion.primaryClaimOrRole
+      : draft.suggestion[field];
+  if (!suggested) return null;
+  return {
+    value:
+      field === 'displayName' || field === 'owner' || field === 'realWorldRole'
+        ? suggested.value.trim()
+        : draftLines(suggested.value),
+    provenance: suggested.provenance,
+  };
+}
+
+async function assertRevisionBoundDraft(
+  identities: MarketingIdentityRepository,
+  workspaceId: string,
+  actorId: string,
+  command: RegisterMarketingIdentityCommand
+) {
+  const reference = command.assistantDraft;
+  if (!reference) return;
+  const draft = await identities.getDraft(
+    workspaceId,
+    reference.draftId,
+    reference.revision
+  );
+  if (
+    !draft ||
+    draft.actorId !== actorId ||
+    draft.kind !== command.kind ||
+    draft.status !== 'suggested'
+  ) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'The confirmed assistant draft is missing or no longer matches this identity.'
+    );
+  }
+  for (const field of reference.confirmedFields) {
+    const provenance = command.fieldProvenance?.[field];
+    const suggested = suggestedAssistedValue(draft, field);
+    const registered = registeredAssistedValue(command, field);
+    if (
+      provenance === 'user' ||
+      !suggested ||
+      suggested.provenance !== provenance ||
+      JSON.stringify(suggested.value) !== JSON.stringify(registered)
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `Confirmed assistant field ${field} does not match draft revision ${draft.revision}.`
+      );
+    }
+  }
+}
+
 export class MarketingIdentityFoundationModule implements P1OperationModule {
   readonly name = 'marketing-identity';
 
   constructor(
     private readonly identities: MarketingIdentityRepository,
-    private readonly now: () => string = () => new Date().toISOString()
+    private readonly now: () => string = () => new Date().toISOString(),
+    private readonly drafter?: MarketingIdentityDraftPort,
+    private readonly referenceDrafts?: MarketingIdentityReferenceDraftResolver
   ) {}
 
-  execute(args: {
+  async execute(args: {
     context: P1Context;
     input: Record<string, unknown>;
     idempotencyKey: string;
   }) {
     const name = action(args.input);
+    if (name === 'draft_marketing_identity') {
+      const request = parse(
+        marketingIdentityDraftRequestSchema,
+        payload(args.input)
+      );
+      const reference = request.referenceDraft
+        ? ((await this.referenceDrafts?.resolve({
+            workspaceId: args.context.workspaceId,
+            draftId: request.referenceDraft.draftId,
+            revision: request.referenceDraft.revision,
+          })) ?? null)
+        : null;
+      if (request.referenceDraft && !reference) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'The referenced parsed draft is unavailable.'
+        );
+      }
+      const outcome = this.drafter
+        ? await this.drafter.suggest({
+            workspaceId: args.context.workspaceId,
+            actorId: args.context.userId,
+            effectIdempotencyKey: args.idempotencyKey,
+            request: {
+              background: request.background,
+              kind: request.kind,
+              reference,
+            },
+          })
+        : {
+            status: 'unavailable' as const,
+            suggestion: {
+              displayName: null,
+              owner: null,
+              primaryClaimOrRole: null,
+              professionalBoundaries: null,
+              expressionSamples: null,
+              forbiddenClaims: null,
+              visualPrinciples: null,
+              seriesAnchors: null,
+            },
+            errorCode: 'model_unavailable' as const,
+          };
+      const result = marketingIdentityDraftResultSchema.parse({
+        draftId: `marketing-identity-draft:${args.idempotencyKey}`,
+        revision: 1,
+        ...outcome,
+        reference: reference
+          ? {
+              draftId: reference.draftId,
+              draftRevision: reference.draftRevision,
+              parsedDocumentId: reference.parsedDocumentId,
+            }
+          : null,
+      });
+      await this.identities.recordDraft({
+        ...result,
+        workspaceId: args.context.workspaceId,
+        actorId: args.context.userId,
+        kind: request.kind,
+        createdAt: this.now(),
+      });
+      return result;
+    }
     if (name === 'register_marketing_identity') {
+      const command = parse(
+        registerMarketingIdentityCommandSchema,
+        payload(args.input)
+      );
+      await assertRevisionBoundDraft(
+        this.identities,
+        args.context.workspaceId,
+        args.context.userId,
+        command
+      );
       return this.identities.register({
         workspaceId: args.context.workspaceId,
         actorId: args.context.userId,
         occurredAt: this.now(),
-        command: parse(
-          registerMarketingIdentityCommandSchema,
-          payload(args.input)
-        ),
+        command,
       });
     }
     if (name === 'transition_marketing_identity') {

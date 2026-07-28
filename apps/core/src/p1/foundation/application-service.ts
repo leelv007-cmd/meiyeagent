@@ -84,6 +84,7 @@ const NEW_P1_SIDE_EFFECTS = new Set([
   'integrations:verify_feishu_connection',
   'job-runtime:schedule_recurring',
   'job-runtime:submit',
+  'marketing-identity:draft_marketing_identity',
   'marketing-identity:register_marketing_identity',
   'marketing-identity:rollback_default_marketing_identity',
   'marketing-identity:select_marketing_identity_for_session',

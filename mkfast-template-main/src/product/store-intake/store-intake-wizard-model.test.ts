@@ -72,6 +72,8 @@ const upload = {
   objectKey: 'workspace-a/canvas/assets/intake-' + 'a'.repeat(64) + '.png',
   sha256: 'a'.repeat(64),
   sizeBytes: 1024,
+  sourceUrl:
+    'http://localhost:3000/api/core/p1/assets?objectKey=intake&providerExpires=1&providerSignature=test',
 };
 
 function wizard() {
@@ -229,7 +231,7 @@ test('the parse command carries the exact bytes identity Core re-verifies', () =
     rightsStatus: 'unconfirmed',
     sha256: upload.sha256,
     sizeBytes: 1024,
-    sourceUrl: null,
+    sourceUrl: upload.sourceUrl,
     target: 'price_list',
   });
 });

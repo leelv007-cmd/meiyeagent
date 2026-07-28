@@ -156,6 +156,27 @@ test('structured runner replays one effect without a second model call or billin
   );
 });
 
+test('zero-product assistant work still records provider attempt and cost without a product billing task', async () => {
+  const ledger = new CountingLedger();
+  const executor = new CountingStructuredExecutor({ normalized: '身份建议' });
+  const runner = createRunner(ledger, executor, false);
+
+  await runner.run({
+    effectIdempotencyKey: 'identity-draft-1',
+    schemaName: 'marketing_identity_draft_v1',
+    schemaRevision: 'marketing-identity-draft-v2',
+    instructions: 'Draft an identity.',
+    prompt: '{"background":"头皮护理门店"}',
+    schema: z.object({ normalized: z.string() }).strict(),
+  });
+
+  assert.equal(ledger.checkpoints, 1);
+  assert.equal(ledger.settlements, 1);
+  assert.equal(ledger.submissions[0]?.productUsageQuantity, 0);
+  assert.equal(ledger.submissions[0]?.billingTaskId, undefined);
+  assert.equal(ledger.submissions[0]?.billingQuoteRevision, undefined);
+});
+
 test('structured runner rejects one effect key reused with another payload', async () => {
   const ledger = new CountingLedger();
   const executor = new CountingStructuredExecutor({ normalized: '第一版' });
@@ -239,6 +260,7 @@ test('structured runner fences every auto provider attempt before fallback', asy
 function createRunner(
   ledger: ModelSupplyLedgerPort,
   executor: StructuredObjectExecutor,
+  withProductBilling = true,
 ) {
   const application = new ModelSupplyApplicationService({
     models: [
@@ -269,8 +291,12 @@ function createRunner(
     workspaceId: 'workspace-1',
     actorId: 'user-1',
     selection: { mode: 'fixed', catalogModelId: 'llm-harness' },
-    billingTaskId: 'task-1',
-    billingQuoteRevision: 'quote-r1',
+    ...(withProductBilling
+      ? {
+          billingTaskId: 'task-1',
+          billingQuoteRevision: 'quote-r1',
+        }
+      : {}),
   });
 }
 

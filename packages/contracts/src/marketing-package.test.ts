@@ -5,12 +5,14 @@ import {
   PROMOTIONAL_MATERIAL_SPECS,
   editContentPackageVersionCommandSchema,
   hotTopicOpportunityCardSchema,
+  marketingIdentityAssetSchema,
   marketingIdentityProjectionSchema,
   marketingPackageEvidenceSchema,
   promotionalMaterialReceiptExtensionSchema,
   promotionOfferCardSchema,
   quickEditExportUseDeliverySchema,
   quickEditIntentSchema,
+  registerMarketingIdentityCommandSchema,
   selectMarketingIdentityForSessionCommandSchema,
   setDefaultMarketingIdentityCommandSchema,
 } from './index.js';
@@ -203,4 +205,170 @@ test('canonical identity projection carries the remembered default revision', ()
     identityId: 'identity-brand',
     version: 3,
   });
+});
+
+// W12② / D-142 — provenance is field-level, and the consent record is off
+// limits to anything but the merchant.
+const BRAND_REGISTRATION = {
+  identityId: 'identity-brand-provenance',
+  expectedVersion: 0,
+  kind: 'brand',
+  displayName: '青禾美业',
+  owner: '青禾品牌中心',
+  professionalBoundaries: ['不提供医疗诊断'],
+  allowedPlatforms: ['xiaohongshu'],
+  allowedScenes: ['brand_personal_ip'],
+  expressionSamples: ['先看你的情况再说'],
+  effectiveFrom: '2026-07-28T00:00:00.000Z',
+  expiresAt: null,
+  departureHandling: '撤回后停止生成新内容。',
+  sourceRef: 'brand-guideline-2026',
+  brandClaims: ['让专业护理更安心'],
+  forbiddenClaims: [],
+  visualPrinciples: [],
+  seriesAnchors: [],
+} as const;
+
+test('a registered identity can say which of its lines the merchant wrote', () => {
+  const command = registerMarketingIdentityCommandSchema.parse({
+    ...BRAND_REGISTRATION,
+    fieldProvenance: {
+      displayName: 'ai_suggestion',
+      brandClaims: 'document',
+      owner: 'user',
+      sourceRef: 'user',
+      allowedPlatforms: 'user',
+      allowedScenes: 'user',
+      portraitAuthorization: 'user',
+      voiceAuthorization: 'user',
+    },
+    assistantDraft: {
+      draftId: 'identity-draft-1',
+      revision: 1,
+      confirmedFields: ['displayName', 'brandClaims'],
+    },
+  });
+
+  assert.equal(command.fieldProvenance?.displayName, 'ai_suggestion');
+  assert.equal(command.fieldProvenance?.brandClaims, 'document');
+});
+
+test('assistant-authored fields cannot register without their exact server draft confirmation', () => {
+  const fieldProvenance = {
+    displayName: 'ai_suggestion',
+    sourceRef: 'user',
+    allowedPlatforms: 'user',
+    allowedScenes: 'user',
+    portraitAuthorization: 'user',
+    voiceAuthorization: 'user',
+  } as const;
+  assert.equal(
+    registerMarketingIdentityCommandSchema.safeParse({
+      ...BRAND_REGISTRATION,
+      fieldProvenance,
+    }).success,
+    false
+  );
+  assert.equal(
+    registerMarketingIdentityCommandSchema.safeParse({
+      ...BRAND_REGISTRATION,
+      fieldProvenance,
+      assistantDraft: {
+        draftId: 'identity-draft-1',
+        revision: 1,
+        confirmedFields: [],
+      },
+    }).success,
+    false
+  );
+});
+
+test('a new registration cannot omit merchant-only provenance', () => {
+  assert.equal(
+    registerMarketingIdentityCommandSchema.safeParse(BRAND_REGISTRATION)
+      .success,
+    false
+  );
+});
+
+test('a new registration requires every merchant-only field to be explicitly user-authored', () => {
+  const merchantOnly = [
+    'sourceRef',
+    'allowedPlatforms',
+    'allowedScenes',
+    'portraitAuthorization',
+    'voiceAuthorization',
+  ] as const;
+  for (const omitted of merchantOnly) {
+    const fieldProvenance = Object.fromEntries(
+      merchantOnly
+        .filter((field) => field !== omitted)
+        .map((field) => [field, 'user'] as const)
+    );
+    const parsed = registerMarketingIdentityCommandSchema.safeParse({
+      ...BRAND_REGISTRATION,
+      fieldProvenance,
+    });
+    assert.equal(
+      parsed.success,
+      false,
+      `${omitted} must be present even when the identity kind does not store that field`
+    );
+  }
+});
+
+test('a stored identity from before provenance existed stays parseable', () => {
+  const identity = marketingIdentityAssetSchema.parse({
+    ...BRAND_REGISTRATION,
+    expectedVersion: undefined,
+    workspaceId: 'workspace-1',
+    version: 1,
+    status: 'active',
+    createdAt: '2026-07-28T00:00:00.000Z',
+    createdBy: 'user-1',
+  });
+
+  assert.equal(identity.fieldProvenance, undefined);
+});
+
+test('the authorized reach can never be recorded as something a model proposed', () => {
+  for (const field of [
+    'sourceRef',
+    'allowedPlatforms',
+    'allowedScenes',
+  ] as const) {
+    for (const provenance of ['ai_suggestion', 'document'] as const) {
+      const parsed = registerMarketingIdentityCommandSchema.safeParse({
+        ...BRAND_REGISTRATION,
+        fieldProvenance: {
+          sourceRef: 'user',
+          allowedPlatforms: 'user',
+          allowedScenes: 'user',
+          portraitAuthorization: 'user',
+          voiceAuthorization: 'user',
+          [field]: provenance,
+        },
+      });
+      assert.equal(
+        parsed.success,
+        false,
+        `${field} must not accept ${provenance}`
+      );
+    }
+  }
+});
+
+test('a stored identity carries the same provenance rule as the command', () => {
+  const parsed = marketingIdentityAssetSchema.safeParse({
+    ...BRAND_REGISTRATION,
+    expectedVersion: undefined,
+    workspaceId: 'workspace-1',
+    version: 1,
+    status: 'active',
+    createdAt: '2026-07-28T00:00:00.000Z',
+    createdBy: 'user-1',
+    fieldProvenance: { portraitAuthorization: 'ai_suggestion' },
+  });
+
+  assert.equal(parsed.success, false);
 });

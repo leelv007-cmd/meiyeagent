@@ -423,6 +423,12 @@ evidence.
 |---|---|---|
 | 1 | Identity registration stays single-question, editable, and accessible | Open the authenticated Asset page, verify identity registration starts with one generated question and no field form, then complete a brand identity one answer at a time. Require every question change to move focus to and announce the new question region, preserve typed spaces and multiline samples, allow a confirmed answer to be edited from its chip, preview only merchant-language identity information, submit the exact brand payload, and render a localized active status without a raw status code or primary version. |
 
+**File:** `specs/w12-identity-draft-assistant.spec.ts` | **Priority:** P0 · required PR gate
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | One line and a reference image become a revision-bound draft the merchant must confirm | Upload a visibly matching PNG through the production asset URL, parse it as `brand_reference`, and ask the governed assistant for supported fields only. Require every proposal to remain unconfirmed, manually fill unsupported fields, preserve merchant-only scope and authorization answers, register against the exact server draft revision, read the saved provenance audit, record the exact session identity decision, and submit one real Composer creation whose `CreationExecutionSnapshot` echoes the same identity and decision revisions. PDF and Office reference documents are explicitly deferred to downstream ticket W12③; this surface and test promise reference images only. |
+
 ## 28. V1 Day-0 Experience Contract Hard Gate
 
 **File:** `specs/uiux-day0-contract.spec.ts` | **Priority:** P0

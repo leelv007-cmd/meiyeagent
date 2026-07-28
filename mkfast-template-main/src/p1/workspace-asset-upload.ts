@@ -18,6 +18,7 @@ export interface WorkspaceAssetUpload {
   objectKey: string;
   sha256: string;
   sizeBytes: number;
+  sourceUrl: string;
 }
 
 export class WorkspaceAssetUploadError extends Error {
@@ -75,10 +76,15 @@ export async function uploadWorkspaceIntakeAsset(input: {
     }
   );
   if (!response.ok) throw new WorkspaceAssetUploadError('upload_failed');
+  const result = (await response.json()) as { sourceUrl?: unknown };
+  if (typeof result.sourceUrl !== 'string' || !result.sourceUrl) {
+    throw new WorkspaceAssetUploadError('upload_failed');
+  }
   return {
     contentType,
     objectKey,
     sha256,
     sizeBytes: bytes.byteLength,
+    sourceUrl: result.sourceUrl,
   };
 }

@@ -319,7 +319,7 @@ export function parseSourceInput(input: {
     rightsStatus: input.rightsConfirmed ? 'confirmed' : 'unconfirmed',
     sha256: input.upload.sha256,
     sizeBytes: input.upload.sizeBytes,
-    sourceUrl: null,
+    sourceUrl: input.upload.sourceUrl,
     target: input.target,
   };
 }

@@ -698,6 +698,7 @@ function identityContribution(
       allowedPlatforms: identity.allowedPlatforms,
       allowedScenes: identity.allowedScenes,
       expressionSamples: identity.expressionSamples,
+      fieldProvenance: identity.fieldProvenance ?? null,
       ...(identity.kind === 'brand'
         ? {
             brandClaims: identity.brandClaims,

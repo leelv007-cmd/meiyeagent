@@ -812,6 +812,66 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
         status: 'mapped',
       };
     }
+    /**
+     * W12② 身份草稿档. Deterministic on purpose: the e2e gate walks a merchant
+     * from one background line to a draft they校对 field by field, so it has to
+     * be able to name what it expects to read back. Everything here is derived
+     * from what the merchant actually said — the fixture never volunteers a
+     * fact the input did not carry, mirroring the live instructions.
+     */
+    case 'marketing_identity_draft_v1': {
+      const background =
+        typeof payload.background === 'string' ? payload.background.trim() : '';
+      const referenceText =
+        typeof payload.referenceText === 'string'
+          ? payload.referenceText.trim()
+          : '';
+      if (!background) {
+        return {
+          displayName: null,
+          owner: null,
+          primaryClaimOrRole: null,
+          professionalBoundaries: null,
+          expressionSamples: null,
+          forbiddenClaims: null,
+          visualPrinciples: null,
+          seriesAnchors: null,
+        };
+      }
+      const person = payload.kind === 'person';
+      // The first clause of the background line is the name the merchant led
+      // with; the rest is what they said about it.
+      const [lead = background, ...rest] = background
+        .split(/[，,。；;]/u)
+        .map((part) => part.trim())
+        .filter(Boolean);
+      const grounded = referenceText.length > 0;
+      const fromDocument = (value: string) => ({
+        value,
+        provenance: 'document' as const,
+        citation: { exactQuote: value },
+      });
+      const fromModel = (value: string) => ({
+        value,
+        provenance: 'ai_suggestion' as const,
+      });
+      const rejectsExaggeration = /不夸大/u.test(background);
+      return {
+        displayName: fromModel(lead),
+        owner: null,
+        primaryClaimOrRole: grounded
+          ? fromDocument(referenceText.slice(0, 60))
+          : null,
+        professionalBoundaries: rejectsExaggeration
+          ? fromModel('不夸大效果')
+          : null,
+        expressionSamples: null,
+        forbiddenClaims:
+          person || !rejectsExaggeration ? null : fromModel('不夸大效果'),
+        visualPrinciples: null,
+        seriesAnchors: null,
+      };
+    }
     case 'harness_intent_naming_v1': {
       const context = fixtureRecord(payload.context);
       const intent = typeof context.intent === 'string' ? context.intent : '';

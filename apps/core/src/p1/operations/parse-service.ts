@@ -370,16 +370,34 @@ export class FixtureDocumentParseProvider implements DocumentParseProvider {
     source: ParseOwnedAsset;
     effectIdempotencyKey: string;
   }) {
+    let fixtureMarkdown: string | null = null;
+    if (
+      input.source.sourceUrl?.includes('providerSignature=') &&
+      input.source.target === 'brand_reference'
+    ) {
+      const response = await fetch(input.source.sourceUrl);
+      if (!response.ok) {
+        throw new Error('Fixture reference image could not be read.');
+      }
+      const bytes = Buffer.from(await response.arrayBuffer());
+      const marker = bytes
+        .toString('latin1')
+        .match(/MEIYE_FIXTURE_TEXT_BASE64=([A-Za-z0-9+/=]+)/u)?.[1];
+      if (marker) {
+        fixtureMarkdown = Buffer.from(marker, 'base64').toString('utf8').trim();
+      }
+    }
     return {
       parserKind: 'fixture' as const,
       parserVersion: 'fixture-v1',
       providerTaskRef: `fixture:${input.effectIdempotencyKey}`,
       markdown:
-        input.source.target === 'group_buy'
+        fixtureMarkdown ??
+        (input.source.target === 'group_buy'
           ? '头皮护理团购套餐，现价 239 元'
           : input.source.target === 'price_list'
             ? '头皮护理 239 元'
-            : '暖棕色门店，主营头皮护理',
+            : '暖棕色门店，主营头皮护理'),
       structured: {
         fixture: true,
         target: input.source.target,

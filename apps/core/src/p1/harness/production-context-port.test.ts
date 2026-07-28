@@ -490,6 +490,14 @@ test('production context hydrates complete active brand and person identities fo
       expiresAt: null,
       departureHandling: '品牌停用后停止生成新内容。',
       sourceRef: 'brand-policy-1',
+      fieldProvenance: {
+        displayName: 'ai_suggestion',
+        sourceRef: 'user',
+        allowedPlatforms: 'user',
+        allowedScenes: 'user',
+        portraitAuthorization: 'user',
+        voiceAuthorization: 'user',
+      },
       brandClaims: ['专注染发与护发'],
       forbiddenClaims: ['疗效保证'],
       visualPrinciples: ['真实发丝细节'],
@@ -563,6 +571,14 @@ test('production context hydrates complete active brand and person identities fo
       forbiddenClaims: ['疗效保证'],
       visualPrinciples: ['真实发丝细节'],
       seriesAnchors: ['发色选择指南'],
+      fieldProvenance: {
+        displayName: 'ai_suggestion',
+        sourceRef: 'user',
+        allowedPlatforms: 'user',
+        allowedScenes: 'user',
+        portraitAuthorization: 'user',
+        voiceAuthorization: 'user',
+      },
     },
   );
   assert.deepEqual(
@@ -577,6 +593,7 @@ test('production context hydrates complete active brand and person identities fo
       allowedPlatforms: ['xiaohongshu'],
       allowedScenes: ['brand_personal_ip'],
       expressionSamples: ['先判断发质，再讨论适合的发色。'],
+      fieldProvenance: null,
       realWorldRole: '染发师',
       portraitAuthorization: 'authorized',
       voiceAuthorization: 'not_authorized',

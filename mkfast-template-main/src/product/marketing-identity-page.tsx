@@ -11,12 +11,19 @@ import {
   MARKETING_IDENTITY_PLATFORMS,
   MARKETING_SCENES,
   type MarketingIdentityAsset,
+  type MarketingIdentityFieldProvenance,
   type MarketingIdentityPlatform,
   type MarketingIdentityProjection,
   type MarketingScene,
 } from '@meiye/contracts';
 import { IconUserPlus } from '@tabler/icons-react';
 
+import { useProductState } from './client';
+import {
+  draftMarketingIdentity,
+  MarketingIdentityReferenceReadError,
+  readMarketingIdentityReference,
+} from './marketing-identity-draft-client';
 import {
   invalidateMarketingIdentity,
   marketingIdentitiesQuery,
@@ -24,10 +31,13 @@ import {
 } from './marketing-identity-queries';
 import {
   answerMarketingIdentityQuestion,
+  applyMarketingIdentitySuggestion,
   MARKETING_IDENTITY_DEPARTURE_HANDLING,
+  isCurrentMarketingIdentityAssistantResponse,
   marketingIdentityFlowState,
   marketingIdentityQuestions,
   marketingIdentityRegistrationFromDraft,
+  marketingIdentityUnconfirmedQuestions,
   type MarketingIdentityDraft,
   type MarketingIdentityQuestionId,
 } from './marketing-identity-form';
@@ -125,6 +135,31 @@ const COPY = {
     loading: '正在读取身份…',
     queryFailed: '身份列表暂时读不到，稍后再看一次。',
     retry: '重试',
+    assistTitle: '先说一句话，我来起个草稿',
+    assistDescription:
+      '一句话说清这是谁、做什么的就够。我会先写一版，你再一项一项看过、改成你自己的说法。',
+    assistBackground: '一句话背景',
+    assistBackgroundPlaceholder:
+      '例如：青禾美业，做头皮护理十年，说话稳、不夸大',
+    assistReference: '有参考图片就传一张（可选）',
+    assistReferenceHint:
+      '门店海报、宣传页、名片都行。我会先读一遍，读到什么就写什么。',
+    assistReferenceReading: '正在读你传的图片…',
+    assistReferenceRead: '参考图片已经读过了',
+    assistReferenceFailed: '这张读不出来，先不用它也能起草。',
+    assistRun: '让我先起个草稿',
+    assistRunning: '正在起草…',
+    assistFailed: '起草服务暂时不可用。你可以先手动填写，不影响登记。',
+    assistEmpty: '没有找到能安全补写的内容，你可以直接一项一项填写。',
+    assistApplied: (count: number) =>
+      `我先写了 ${count} 项，都还没算数。一项一项看过，改成你的说法再存。`,
+    assistPendingTitle: '还没确认的草稿',
+    unconfirmedBadge: '还没确认',
+    originAi: '我猜的',
+    originDocument: '从你传的资料里读到的',
+    originUser: '你写的',
+    provenanceAudit: '字段来源记录',
+    provenanceUnknown: '旧记录，来源未知',
   },
   en: {
     title: 'Voices',
@@ -217,6 +252,34 @@ const COPY = {
     queryFailed:
       'Identities are unavailable right now — check back in a moment.',
     retry: 'Retry',
+    assistTitle: 'Say one line and I will rough it out',
+    assistDescription:
+      'One line about who this is and what they do is enough. I will write a first pass, then you read every item and put it in your own words.',
+    assistBackground: 'One line of background',
+    assistBackgroundPlaceholder:
+      'Example: Qing He, ten years of scalp care, steady tone, never overstates',
+    assistReference: 'Add a reference image (optional)',
+    assistReferenceHint:
+      'A poster, a leaflet, a business card. I will read it first and only write what it says.',
+    assistReferenceReading: 'Reading what you sent…',
+    assistReferenceRead: 'I have read it',
+    assistReferenceFailed:
+      'I could not read that one — the draft works without it.',
+    assistRun: 'Rough it out for me',
+    assistRunning: 'Writing…',
+    assistFailed:
+      'Drafting is temporarily unavailable. You can continue manually.',
+    assistEmpty:
+      'No content was safe to prefill. You can continue item by item.',
+    assistApplied: (count: number) =>
+      `I wrote ${count} items. None of them count yet — read each one, put it your way, then save.`,
+    assistPendingTitle: 'Still waiting on you',
+    unconfirmedBadge: 'Not confirmed',
+    originAi: 'My guess',
+    originDocument: 'Read from what you sent',
+    originUser: 'Your words',
+    provenanceAudit: 'Field origin record',
+    provenanceUnknown: 'Legacy record; origin unknown',
   },
 } as const;
 
@@ -242,7 +305,28 @@ export function MarketingIdentityPage() {
   const [activeQuestionId, setActiveQuestionId] =
     useState<MarketingIdentityQuestionId | null>('kind');
   const [error, setError] = useState(false);
+  const [background, setBackground] = useState('');
+  const [referenceDraft, setReferenceDraft] = useState<{
+    draftId: string;
+    revision: number;
+  } | null>(null);
+  const [referenceState, setReferenceState] = useState<
+    'idle' | 'reading' | 'read' | 'failed'
+  >('idle');
+  const [referenceErrorStage, setReferenceErrorStage] = useState<
+    'upload' | 'parse' | 'empty' | 'unknown' | null
+  >(null);
+  const [assistState, setAssistState] = useState<
+    | { kind: 'idle' }
+    | { kind: 'applied'; count: number }
+    | { kind: 'empty' }
+    | { kind: 'unavailable' }
+  >({ kind: 'idle' });
+  const { state: productState } = useProductState();
   const initialPanelRef = useRef(true);
+  const latestDraftRef = useRef(draft);
+  const assistRequestRef = useRef(0);
+  latestDraftRef.current = draft;
   const identities = useQuery<MarketingIdentityAsset[]>(
     marketingIdentitiesQuery
   );
@@ -262,8 +346,69 @@ export function MarketingIdentityPage() {
       await invalidateMarketingIdentity(queryClient);
       setDraft({});
       setActiveQuestionId('kind');
+      setBackground('');
+      setReferenceDraft(null);
+      setReferenceState('idle');
+      setReferenceErrorStage(null);
+      setAssistState({ kind: 'idle' });
     },
     onError: () => setError(true),
+  });
+  const assist = useMutation({
+    mutationFn: (input: {
+      background: string;
+      kind: 'brand' | 'person';
+      referenceDraft: { draftId: string; revision: number } | null;
+      requestId: number;
+    }) =>
+      draftMarketingIdentity({
+        background: input.background,
+        kind: input.kind,
+        ...(input.referenceDraft
+          ? { referenceDraft: input.referenceDraft }
+          : {}),
+      }),
+    onSuccess: (result, input) => {
+      if (
+        !isCurrentMarketingIdentityAssistantResponse({
+          currentKind: latestDraftRef.current.kind,
+          currentRequestId: assistRequestRef.current,
+          responseKind: input.kind,
+          responseRequestId: input.requestId,
+        })
+      ) {
+        return;
+      }
+      setError(false);
+      if (result.status === 'unavailable') {
+        setAssistState({ kind: 'unavailable' });
+        return;
+      }
+      if (result.status === 'empty') {
+        setAssistState({ kind: 'empty' });
+        return;
+      }
+      const next = applyMarketingIdentitySuggestion(
+        latestDraftRef.current,
+        result.suggestion,
+        { draftId: result.draftId, revision: result.revision }
+      );
+      const proposed = marketingIdentityUnconfirmedQuestions(next).length;
+      latestDraftRef.current = next;
+      setDraft(next);
+      setAssistState(
+        proposed === 0
+          ? { kind: 'empty' }
+          : { kind: 'applied', count: proposed }
+      );
+      setActiveQuestionId(marketingIdentityFlowState(next).currentQuestionId);
+    },
+    onError: (_error, input) => {
+      if (input.requestId === assistRequestRef.current) {
+        setError(false);
+        setAssistState({ kind: 'unavailable' });
+      }
+    },
   });
   const setDefault = useMutation({
     mutationFn: (identity: MarketingIdentityAsset) =>
@@ -323,12 +468,21 @@ export function MarketingIdentityPage() {
     advance: boolean
   ) {
     try {
+      if (
+        questionId === 'kind' &&
+        typeof value === 'string' &&
+        draft.kind !== value
+      ) {
+        assistRequestRef.current += 1;
+        setAssistState({ kind: 'idle' });
+      }
       const nextDraft = answerMarketingIdentityQuestion(
         draft,
         questionId,
         value
       );
       setDraft(nextDraft);
+      latestDraftRef.current = nextDraft;
       setError(false);
       if (advance) {
         setActiveQuestionId(
@@ -338,6 +492,43 @@ export function MarketingIdentityPage() {
     } catch {
       setError(true);
     }
+  }
+
+  async function readReference(file: File) {
+    const workspaceId = productState?.workspaceId;
+    if (!workspaceId) {
+      setReferenceState('failed');
+      return;
+    }
+    setReferenceState('reading');
+    setReferenceErrorStage(null);
+    try {
+      const parsedDraft = await readMarketingIdentityReference({
+        file,
+        workspaceId,
+      });
+      setReferenceDraft(parsedDraft);
+      setReferenceState('read');
+    } catch (error) {
+      setReferenceDraft(null);
+      setReferenceErrorStage(
+        error instanceof MarketingIdentityReferenceReadError
+          ? error.stage
+          : 'unknown'
+      );
+      setReferenceState('failed');
+    }
+  }
+
+  function runAssistant(kind: 'brand' | 'person') {
+    const requestId = assistRequestRef.current + 1;
+    assistRequestRef.current = requestId;
+    assist.mutate({
+      background: background.trim(),
+      kind,
+      referenceDraft,
+      requestId,
+    });
   }
 
   function register() {
@@ -427,6 +618,32 @@ export function MarketingIdentityPage() {
                   </span>
                 ) : null}
               </div>
+              <details
+                className="mt-2 text-xs"
+                data-testid={`identity-provenance-audit-${identity.identityId}`}
+              >
+                <summary className="cursor-pointer">
+                  {copy.provenanceAudit}
+                </summary>
+                {identity.fieldProvenance ? (
+                  <ul className="text-muted mt-1 space-y-1">
+                    {Object.entries(identity.fieldProvenance).map(
+                      ([field, provenance]) => (
+                        <li key={field}>
+                          {field}:{' '}
+                          {provenance === 'document'
+                            ? copy.originDocument
+                            : provenance === 'ai_suggestion'
+                              ? copy.originAi
+                              : copy.originUser}
+                        </li>
+                      )
+                    )}
+                  </ul>
+                ) : (
+                  <p className="text-muted mt-1">{copy.provenanceUnknown}</p>
+                )}
+              </details>
               {identity.status === 'active' ? (
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button
@@ -502,6 +719,21 @@ export function MarketingIdentityPage() {
             {liveMessage}
           </p>
 
+          {draft.kind ? (
+            <IdentityDraftAssistant
+              background={background}
+              copy={copy}
+              onBackgroundChange={setBackground}
+              onReference={(file) => void readReference(file)}
+              onRun={() => runAssistant(draft.kind ?? 'brand')}
+              pending={assist.isPending}
+              referenceErrorStage={referenceErrorStage}
+              referenceReady={Boolean(productState?.workspaceId)}
+              referenceState={referenceState}
+              state={assistState}
+            />
+          ) : null}
+
           {flow.answeredQuestionIds.length > 0 ? (
             <div className="space-y-2">
               <p className="text-sm font-medium">{copy.answeredTitle}</p>
@@ -571,6 +803,128 @@ export function MarketingIdentityPage() {
           ) : null}
         </Widget.Content>
       </Widget>
+    </section>
+  );
+}
+
+/**
+ * W12② — one line in, a draft out, nothing decided.
+ *
+ * The card sits above the question chain rather than replacing it: the wizard
+ * still asks every question, the assistant just fills some of them in ahead of
+ * time and marks them as its own. Skipping this card entirely leaves the
+ * original journey untouched.
+ */
+function IdentityDraftAssistant({
+  background,
+  copy,
+  onBackgroundChange,
+  onReference,
+  onRun,
+  pending,
+  referenceErrorStage,
+  referenceReady,
+  referenceState,
+  state,
+}: {
+  background: string;
+  copy: IdentityCopy;
+  onBackgroundChange: (value: string) => void;
+  onReference: (file: File) => void;
+  onRun: () => void;
+  pending: boolean;
+  referenceErrorStage: 'upload' | 'parse' | 'empty' | 'unknown' | null;
+  referenceReady: boolean;
+  referenceState: 'idle' | 'reading' | 'read' | 'failed';
+  state:
+    | { kind: 'idle' }
+    | { kind: 'applied'; count: number }
+    | { kind: 'empty' }
+    | { kind: 'unavailable' };
+}) {
+  const backgroundId = 'marketing-identity-assist-background';
+  return (
+    <section
+      aria-labelledby="marketing-identity-assist-title"
+      className="meiye-glass-trace space-y-3 rounded-2xl p-4"
+      data-testid="marketing-identity-assist"
+    >
+      <div>
+        <h4 className="font-medium" id="marketing-identity-assist-title">
+          {copy.assistTitle}
+        </h4>
+        <p className="text-muted text-sm">{copy.assistDescription}</p>
+      </div>
+      <TextArea
+        aria-label={copy.assistBackground}
+        id={backgroundId}
+        onChange={(event) => onBackgroundChange(event.currentTarget.value)}
+        placeholder={copy.assistBackgroundPlaceholder}
+        value={background}
+      />
+      <div className="space-y-1">
+        <label
+          className="text-sm font-medium"
+          htmlFor="marketing-identity-assist-reference"
+        >
+          {copy.assistReference}
+        </label>
+        <p className="text-muted text-xs">{copy.assistReferenceHint}</p>
+        <input
+          accept="image/jpeg,image/png,image/webp"
+          className="max-w-full text-sm"
+          data-testid="marketing-identity-assist-reference"
+          disabled={!referenceReady}
+          id="marketing-identity-assist-reference"
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            if (file) onReference(file);
+          }}
+          type="file"
+        />
+        {referenceState !== 'idle' ? (
+          <p
+            className="text-muted text-xs"
+            data-error-stage={referenceErrorStage ?? undefined}
+            data-testid="marketing-identity-assist-reference-state"
+          >
+            {referenceState === 'reading'
+              ? copy.assistReferenceReading
+              : referenceState === 'read'
+                ? copy.assistReferenceRead
+                : copy.assistReferenceFailed}
+          </p>
+        ) : null}
+      </div>
+      <Button
+        isDisabled={
+          pending ||
+          referenceState === 'reading' ||
+          background.trim().length === 0
+        }
+        onPress={onRun}
+      >
+        {pending ? copy.assistRunning : copy.assistRun}
+      </Button>
+      {state.kind === 'unavailable' ? (
+        <p
+          className="text-muted text-sm"
+          data-testid="marketing-identity-assist-failed"
+        >
+          {copy.assistFailed}
+        </p>
+      ) : state.kind === 'empty' ? (
+        <p
+          className="text-muted text-sm"
+          data-testid="marketing-identity-assist-empty"
+        >
+          {copy.assistEmpty}
+        </p>
+      ) : state.kind === 'applied' ? (
+        <p className="text-sm" data-testid="marketing-identity-assist-applied">
+          {copy.assistApplied(state.count)}
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -686,6 +1040,44 @@ function IdentityScopeQuestion({
   );
 }
 
+/**
+ * W12②: an honest label on a prefilled field. Same three-way reading the
+ * five-step intake shows next to a photo extraction — where it came from, and
+ * that it does not count yet.
+ */
+function IdentityFieldOrigin({
+  copy,
+  provenance,
+  questionId,
+}: {
+  copy: IdentityCopy;
+  provenance: MarketingIdentityFieldProvenance | undefined;
+  questionId: MarketingIdentityQuestionId;
+}) {
+  const label =
+    provenance === 'document'
+      ? copy.originDocument
+      : provenance === 'user'
+        ? copy.originUser
+        : copy.originAi;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span
+        className="meiye-glass-trace text-muted rounded-full px-2 py-0.5 text-xs"
+        data-testid={`identity-provenance-${questionId}`}
+      >
+        {label}
+      </span>
+      <span
+        className="meiye-glass-piece rounded-full px-2 py-0.5 text-xs"
+        data-testid={`identity-unconfirmed-${questionId}`}
+      >
+        {copy.unconfirmedBadge}
+      </span>
+    </div>
+  );
+}
+
 function IdentityQuestionCard({
   copy,
   draft,
@@ -788,6 +1180,7 @@ function IdentityQuestionCard({
   const textValue = typeof value === 'string' ? value : '';
   const multiline = isMultilineQuestion(questionId);
   const placeholder = questionPlaceholder(questionId, copy);
+  const unconfirmed = draft.unconfirmed?.includes(questionId) ?? false;
   return (
     <section
       aria-labelledby={headingId}
@@ -798,6 +1191,13 @@ function IdentityQuestionCard({
       <h4 className="font-medium" id={headingId}>
         {question}
       </h4>
+      {unconfirmed ? (
+        <IdentityFieldOrigin
+          copy={copy}
+          provenance={draft.provenance?.[questionId]}
+          questionId={questionId}
+        />
+      ) : null}
       {multiline ? (
         <TextArea
           aria-labelledby={headingId}

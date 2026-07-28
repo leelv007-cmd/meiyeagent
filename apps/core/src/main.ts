@@ -132,6 +132,7 @@ import {
   DurableMediaGenerationApplicationService,
   modelAssetStorageFromEnv,
   FixtureAiStreamingRunner,
+  FixtureAiStructuredObjectExecutor,
   FoundationModelSupplyLedger,
   MediaActivationProbeExecutor,
   ModelSupplyFoundationModule,
@@ -177,6 +178,7 @@ import {
   PostgresSupplyPlanningMigration,
 } from './p1/supply-registry/index.js';
 import {
+  AiSdkStructuredObjectExecutor,
   ModelSupplyStructuredNodeRunner,
 } from './p1/model-supply/structured-node-runner.js';
 import { HarnessApplicationService } from './p1/harness/application-service.js';
@@ -250,6 +252,7 @@ import {
   ModelSupplyImageGenerationAdapter,
   MediaCustodyStorageAdapter,
   MarketingIdentityFoundationModule,
+  StructuredMarketingIdentityDrafter,
   AdminConfigAssetIntakeGuidanceSource,
   documentParseProviderFromEnv,
   FixtureAssetDraftCompiler,
@@ -737,6 +740,25 @@ const p1ModelSupplyRuntime = createModelSupplyRuntime({
   },
 });
 const p1ModelSupplyService = p1ModelSupplyRuntime.application;
+const marketingIdentityStructuredExecutor =
+  modelRuntime.mode === 'fixture'
+    ? new FixtureAiStructuredObjectExecutor()
+    : modelRuntime.activation === 'live_verified' && modelRuntime.direct
+      ? new AiSdkStructuredObjectExecutor(modelRuntime.direct)
+      : undefined;
+const marketingIdentityDrafter = marketingIdentityStructuredExecutor
+  ? new StructuredMarketingIdentityDrafter({
+      create({ workspaceId, actorId }) {
+        return new ModelSupplyStructuredNodeRunner({
+          application: p1ModelSupplyService,
+          executor: marketingIdentityStructuredExecutor,
+          workspaceId,
+          actorId,
+          selection: { mode: 'auto', profile: 'quality' },
+        });
+      },
+    })
+  : undefined;
 const modelControlPlane = p1ModelSupplyRuntime.controlPlane;
 const productQuoteAuthority = new CatalogProductQuoteAuthority(modelControlPlane);
 const providerConnectivity = providerConnectivityProbeFromEnv(
@@ -1588,7 +1610,41 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       videoWorkflow: canonicalVideoWorkflow,
     }),
     new VideoRegenerationFoundationModule(videoRegeneration),
-    new MarketingIdentityFoundationModule(marketingIdentities),
+    new MarketingIdentityFoundationModule(
+      marketingIdentities,
+      undefined,
+      marketingIdentityDrafter,
+      {
+        async resolve({ workspaceId, draftId, revision }) {
+          const draft = await parseService.draftView(
+            workspaceId,
+            draftId,
+            revision
+          );
+          const summary = draft.fields.find(
+            (field) => field.key === 'brand_reference.summary'
+          );
+          if (
+            draft.target !== 'brand_reference' ||
+            draft.origin !== 'parsed' ||
+            !draft.parsedDocumentId ||
+            typeof summary?.value !== 'string' ||
+            !summary.value.trim()
+          ) {
+            throw new P1DomainError(
+              'INVALID_STATE',
+              'The identity reference must be an exact parsed brand reference revision.'
+            );
+          }
+          return {
+            draftId: draft.draftId,
+            draftRevision: draft.revision,
+            parsedDocumentId: draft.parsedDocumentId,
+            text: summary.value.trim(),
+          };
+        },
+      }
+    ),
     new AssetMemoryFoundationModule(
       assetIntakeService,
       contextBundleRepository,

@@ -9,6 +9,56 @@ import { PostgresMarketingIdentityRepository } from "./marketing-identity.js";
 const connectionString = process.env.TEST_DATABASE_URL;
 
 test(
+	"Postgres reads a revision-bound assistant draft with its storage metadata",
+	{ skip: !connectionString },
+	async () => {
+		const pool = new Pool({ connectionString, max: 2 });
+		const workspaceId = `identity-draft-workspace-${randomUUID()}`;
+		const actorId = `identity-draft-actor-${randomUUID()}`;
+		const repository = new PostgresMarketingIdentityRepository(pool);
+		const draft = {
+			workspaceId,
+			actorId,
+			kind: "brand" as const,
+			createdAt: "2026-07-18T01:00:00.000Z",
+			draftId: "identity-draft-1",
+			revision: 1,
+			status: "suggested" as const,
+			suggestion: {
+				displayName: {
+					value: "青禾美业",
+					provenance: "ai_suggestion" as const,
+				},
+				owner: null,
+				primaryClaimOrRole: null,
+				professionalBoundaries: null,
+				expressionSamples: null,
+				forbiddenClaims: null,
+				visualPrinciples: null,
+				seriesAnchors: null,
+			},
+			reference: null,
+			errorCode: null,
+		};
+		try {
+			await repository.migrate();
+			await repository.recordDraft(draft);
+
+			assert.deepEqual(
+				await repository.getDraft(workspaceId, draft.draftId, draft.revision),
+				draft,
+			);
+		} finally {
+			await pool.query(
+				"DELETE FROM p1_marketing_identity_assistant_drafts WHERE workspace_id = $1",
+				[workspaceId],
+			);
+			await pool.end();
+		}
+	},
+);
+
+test(
 	"Postgres keeps default and session identity decisions separate without seeding neutral entities",
 	{ skip: !connectionString },
 	async () => {
