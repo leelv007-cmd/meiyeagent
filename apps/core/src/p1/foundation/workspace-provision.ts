@@ -20,7 +20,26 @@ export type PlatformDefaultModelOperation =
   | 'video.generate'
   | 'audio.speech';
 
-const PREFERENCE_OPERATION_BY_CONFIG_KEY: Record<
+/**
+ * Canonical platform-default-model vocabulary (#240①).
+ *
+ * Which model a workspace starts on is an operations decision (D-044: catalog
+ * 运营参数后台可换), so the *value* lives in admin config under
+ * `platform.defaultModel.<configKey>` and nowhere else. What lives here is the
+ * vocabulary around that value — the four config keys, the operation each one
+ * answers for, and the admin-config key spelling — so that provisioning, the
+ * supply registry, boot wiring and the preferences projection all read the same
+ * table instead of each keeping a private copy. A second copy is how a default
+ * silently diverges from the one operations actually edited.
+ */
+export const PLATFORM_DEFAULT_MODEL_CONFIG_KEYS = [
+  'copy',
+  'image',
+  'video',
+  'audio',
+] as const satisfies readonly PlatformDefaultModelConfigKey[];
+
+export const PLATFORM_DEFAULT_MODEL_OPERATION_BY_CONFIG_KEY: Record<
   PlatformDefaultModelConfigKey,
   PlatformDefaultModelOperation
 > = {
@@ -29,6 +48,47 @@ const PREFERENCE_OPERATION_BY_CONFIG_KEY: Record<
   image: 'image.generate',
   video: 'video.generate',
 };
+
+export const PLATFORM_DEFAULT_MODEL_CONFIG_KEY_BY_OPERATION: Record<
+  PlatformDefaultModelOperation,
+  PlatformDefaultModelConfigKey
+> = {
+  'audio.speech': 'audio',
+  'copy.generate': 'copy',
+  'image.generate': 'image',
+  'video.generate': 'video',
+};
+
+/** The single admin-config key spelling for a platform default model. */
+export function platformDefaultModelConfigName(
+  configKey: PlatformDefaultModelConfigKey,
+): string {
+  return `platform.defaultModel.${configKey}`;
+}
+
+/**
+ * Narrow an arbitrary model operation to the config key that owns its platform
+ * default, or `undefined` when no platform default is defined for it. Callers
+ * must not invent one — an operation without a configured default has no
+ * default, which is the whole point of #240①.
+ */
+export function platformDefaultModelConfigKeyForOperation(
+  operation: string,
+): PlatformDefaultModelConfigKey | undefined {
+  return PLATFORM_DEFAULT_MODEL_CONFIG_KEY_BY_OPERATION[
+    operation as PlatformDefaultModelOperation
+  ];
+}
+
+/** Source of the platform-configured default model ids (admin config in prod). */
+export interface PlatformDefaultModelSourcePort {
+  getDefaults(): Promise<
+    Partial<Record<PlatformDefaultModelConfigKey, string>>
+  >;
+}
+
+const PREFERENCE_OPERATION_BY_CONFIG_KEY =
+  PLATFORM_DEFAULT_MODEL_OPERATION_BY_CONFIG_KEY;
 
 export interface PlatformDefaultModelPort {
   /**
@@ -131,7 +191,7 @@ export class WorkspaceProvisionService {
     const defaults = await this.options.modelDefaults.getDefaults();
     const configured: Partial<Record<PlatformDefaultModelConfigKey, string>> =
       {};
-    const configKeys = ['copy', 'image', 'video', 'audio'] as const;
+    const configKeys = PLATFORM_DEFAULT_MODEL_CONFIG_KEYS;
     for (const configKey of configKeys) {
       const modelId = defaults[configKey]?.trim();
       if (modelId) {

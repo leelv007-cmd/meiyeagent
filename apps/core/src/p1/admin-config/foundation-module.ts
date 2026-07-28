@@ -11,6 +11,11 @@ import {
 
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
 import type { P1OperationModule } from '../foundation/ports.js';
+import {
+  PLATFORM_DEFAULT_MODEL_CONFIG_KEYS,
+  platformDefaultModelConfigName,
+  type PlatformDefaultModelConfigKey,
+} from '../foundation/workspace-provision.js';
 import { createDefaultDeployments } from '../model-supply/catalog.js';
 import type {
   CloudflareInventorySnapshot,
@@ -283,6 +288,24 @@ const activationEvidenceConfigSchema = z
   })
   .strict();
 
+const PLATFORM_DEFAULT_MODEL_LABELS: Record<
+  PlatformDefaultModelConfigKey,
+  string
+> = {
+  audio: 'audio generation',
+  copy: 'copy generation',
+  image: 'image generation',
+  video: 'video generation',
+};
+
+const PLATFORM_DEFAULT_MODEL_DEFINITIONS: readonly AdminConfigDefinition[] =
+  PLATFORM_DEFAULT_MODEL_CONFIG_KEYS.map((configKey) => ({
+    key: platformDefaultModelConfigName(configKey),
+    scope: 'global' as const,
+    description: `Platform default catalog model id for ${PLATFORM_DEFAULT_MODEL_LABELS[configKey]} on new workspaces.`,
+    valueSchema: z.string().min(1).max(200),
+  }));
+
 const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
   ...createDefaultDeployments().map((deployment) => ({
     key: `model.activation.evidence.${deployment.id}`,
@@ -426,34 +449,11 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
     description: 'Trial grants for newly registered workspaces.',
     valueSchema: z.boolean(),
   },
-  {
-    key: 'platform.defaultModel.copy',
-    scope: 'global',
-    description:
-      'Platform default catalog model id for copy generation on new workspaces.',
-    valueSchema: z.string().min(1).max(200),
-  },
-  {
-    key: 'platform.defaultModel.image',
-    scope: 'global',
-    description:
-      'Platform default catalog model id for image generation on new workspaces.',
-    valueSchema: z.string().min(1).max(200),
-  },
-  {
-    key: 'platform.defaultModel.video',
-    scope: 'global',
-    description:
-      'Platform default catalog model id for video generation on new workspaces.',
-    valueSchema: z.string().min(1).max(200),
-  },
-  {
-    key: 'platform.defaultModel.audio',
-    scope: 'global',
-    description:
-      'Platform default catalog model id for audio generation on new workspaces.',
-    valueSchema: z.string().min(1).max(200),
-  },
+  // #240①: the four platform default model keys are generated from the one
+  // canonical config-key table so admin config, provisioning, the supply
+  // registry and the preferences projection cannot disagree about which
+  // operations even have a platform default.
+  ...PLATFORM_DEFAULT_MODEL_DEFINITIONS,
   {
     // Tc-3: payment product → foundation plan mapping (single truth = Foundation commerce).
     // Paid grants only enter through entitlements.payment_grant; legacy

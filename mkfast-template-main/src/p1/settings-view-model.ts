@@ -66,6 +66,11 @@ export function selectAvailableCatalogModel(catalog: CatalogView) {
 export interface ModelPreferencesView {
   workspaceDefault?: string;
   userDefault?: string;
+  /**
+   * Platform default for this operation, supplied by the server (#240①).
+   * Absent means the platform configured none — never a licence to substitute.
+   */
+  platformDefault?: string;
   favorites: string[];
   recent: string[];
 }
@@ -493,9 +498,11 @@ export function normalizePreferences(value: unknown): ModelPreferencesView {
   const payload = record(value);
   const workspaceDefault = string(payload.workspaceDefault);
   const userDefault = string(payload.userDefault);
+  const platformDefault = string(payload.platformDefault);
   return {
     ...(workspaceDefault ? { workspaceDefault } : {}),
     ...(userDefault ? { userDefault } : {}),
+    ...(platformDefault ? { platformDefault } : {}),
     favorites: stringArray(payload.favorites),
     recent: stringArray(payload.recent),
   };

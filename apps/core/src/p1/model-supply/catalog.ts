@@ -1396,6 +1396,15 @@ export function isLiveVerifiedActivationEvidence(
 export interface PreferenceView {
   workspaceDefault?: string;
   userDefault?: string;
+  /**
+   * The platform-configured default catalog model for this operation (#240①).
+   *
+   * Absent means the platform has no default for this operation — callers must
+   * read that as "no default", never as licence to substitute one of their own.
+   * The repository never fills this in: it is projected by the control plane
+   * from the one admin-config source (`platform.defaultModel.<configKey>`).
+   */
+  platformDefault?: string;
   favorites: string[];
   recent: string[];
 }

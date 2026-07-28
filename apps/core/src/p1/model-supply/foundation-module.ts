@@ -3,6 +3,10 @@ import { type DurationEstimate } from '@meiye/contracts';
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
 import type { P1OperationModule } from '../foundation/ports.js';
 import {
+  platformDefaultModelConfigKeyForOperation,
+  type PlatformDefaultModelSourcePort,
+} from '../foundation/workspace-provision.js';
+import {
   CatalogRevisionRegistry,
   ModelPreferenceRegistry,
   createDefaultCatalogModels,
@@ -1908,6 +1912,7 @@ export class ModelSupplyControlPlaneService {
   private readonly canvasProjects?: CanvasGenerationProjectAuthority;
   private readonly planningControlPlane?: ModelSupplyPlanningControlPlanePort;
   private readonly supplyRegistry?: ModelSupplyRegistryPersistencePort;
+  private readonly platformDefaultModels?: PlatformDefaultModelSourcePort;
   private readonly canvasTextProducers = new Map<string, CanvasTextStreamProducer>();
 
   constructor(options: {
@@ -1923,6 +1928,12 @@ export class ModelSupplyControlPlaneService {
     canvasProjects?: CanvasGenerationProjectAuthority;
     planningControlPlane?: ModelSupplyPlanningControlPlanePort;
     supplyRegistry?: ModelSupplyRegistryPersistencePort;
+    /**
+     * The one platform-default-model source (#240①). Wired from admin config in
+     * boot; when it is absent the preferences projection reports no platform
+     * default at all rather than substituting a built-in guess.
+     */
+    platformDefaultModels?: PlatformDefaultModelSourcePort;
     clock?: () => Date;
   }) {
     this.application = options.application;
@@ -1941,6 +1952,7 @@ export class ModelSupplyControlPlaneService {
     this.canvasProjects = options.canvasProjects;
     this.planningControlPlane = options.planningControlPlane;
     this.supplyRegistry = options.supplyRegistry;
+    this.platformDefaultModels = options.platformDefaultModels;
     this.clock = options.clock ?? (() => new Date());
   }
 
@@ -3302,12 +3314,32 @@ export class ModelSupplyControlPlaneService {
     };
   }
 
+  /**
+   * Preference projection for one operation, including the platform default
+   * (#240①).
+   *
+   * The platform default used to have no wire at all, so the browser kept a
+   * hardcoded lens→model table of its own — a second production opinion that
+   * no operator could edit and no activation evidence ever validated. It is
+   * projected here instead, from the same admin-config source provisioning
+   * reads, and it is simply absent when the platform has not configured one.
+   */
   async getPreferences(
     workspaceId: string,
     userId: string,
     operation: ModelOperation,
   ) {
-    return this.repository.getPreferences(workspaceId, userId, operation);
+    const view = await this.repository.getPreferences(
+      workspaceId,
+      userId,
+      operation,
+    );
+    const configKey = platformDefaultModelConfigKeyForOperation(operation);
+    if (!this.platformDefaultModels || !configKey) return view;
+    const platformDefault = (
+      await this.platformDefaultModels.getDefaults()
+    )[configKey]?.trim();
+    return platformDefault ? { ...view, platformDefault } : view;
   }
 
   async simulateRoute(

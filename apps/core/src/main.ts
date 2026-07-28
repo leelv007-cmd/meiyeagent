@@ -83,6 +83,12 @@ import {
 } from './p1/foundation/index.js';
 import { e2ePlatformModelDefaultsFromEnv } from './p1/foundation/e2e-platform-model-defaults.js';
 import {
+  PLATFORM_DEFAULT_MODEL_CONFIG_KEYS,
+  platformDefaultModelConfigName,
+  type PlatformDefaultModelConfigKey,
+  type PlatformDefaultModelSourcePort,
+} from './p1/foundation/workspace-provision.js';
+import {
   CloudflareInventoryAdapter,
   runCloudflareSelfProbes,
 } from './p1/cloudflare-read/index.js';
@@ -582,6 +588,35 @@ const planConfigDefaults = Object.fromEntries(
   DEFAULT_PLAN_OFFERS.map(({ id, ...value }) => [id, value]),
 );
 const e2ePlatformModelDefaults = e2ePlatformModelDefaultsFromEnv(process.env);
+/**
+ * The one runtime source of platform default catalog models (#240①).
+ *
+ * Day-0 provisioning and the composer's preference projection both read this,
+ * so the model a new workspace is provisioned onto and the model the composer
+ * falls back to are the same fact, edited in one place by operations.
+ */
+const platformDefaultModelSource: PlatformDefaultModelSourcePort = {
+  async getDefaults() {
+    const entries = await Promise.all(
+      PLATFORM_DEFAULT_MODEL_CONFIG_KEYS.map(async (configKey) => {
+        const row = await adminConfigRepository.get(
+          'global',
+          '__global__',
+          platformDefaultModelConfigName(configKey),
+        );
+        const value = typeof row?.value === 'string' ? row.value.trim() : '';
+        const resolvedValue = value || e2ePlatformModelDefaults[configKey];
+        return resolvedValue ? ([configKey, resolvedValue] as const) : null;
+      }),
+    );
+    return Object.fromEntries(
+      entries.filter(
+        (entry): entry is readonly [PlatformDefaultModelConfigKey, string] =>
+          entry !== null,
+      ),
+    );
+  },
+};
 const adminConfigRuntime = {
   'byok.adapter.assembly': byokRuntime.mode,
   'compliance.aigc_label.default': true,
@@ -599,8 +634,8 @@ const adminConfigRuntime = {
   [HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY]:
     DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
   ...Object.fromEntries(
-    Object.entries(e2ePlatformModelDefaults).map(([operation, modelId]) => [
-      `platform.defaultModel.${operation}`,
+    Object.entries(e2ePlatformModelDefaults).map(([configKey, modelId]) => [
+      platformDefaultModelConfigName(configKey as PlatformDefaultModelConfigKey),
       modelId,
     ])
   ),
@@ -680,6 +715,7 @@ const p1ModelSupplyRuntime = createModelSupplyRuntime({
     canvasProjects,
     durationSamples: foundationRepository,
     planningControlPlane: supplyPlanningControlPlane,
+    platformDefaultModels: platformDefaultModelSource,
     repository: modelSupplyRepository,
     supplyRegistry: supplyControlRepository,
   },
@@ -1395,10 +1431,9 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         'plan.allowances.starter',
         'plan.allowances.growth',
         'plan.allowances.pro',
-        'platform.defaultModel.copy',
-        'platform.defaultModel.image',
-        'platform.defaultModel.video',
-        'platform.defaultModel.audio',
+        ...PLATFORM_DEFAULT_MODEL_CONFIG_KEYS.map(
+          platformDefaultModelConfigName,
+        ),
         'compliance.aigc_label.default',
         'compliance.regulated_mode.default',
         'compliance.watermark.default',
@@ -1420,10 +1455,9 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         'plan.allowances.starter',
         'plan.allowances.growth',
         'plan.allowances.pro',
-        'platform.defaultModel.copy',
-        'platform.defaultModel.image',
-        'platform.defaultModel.video',
-        'platform.defaultModel.audio',
+        ...PLATFORM_DEFAULT_MODEL_CONFIG_KEYS.map(
+          platformDefaultModelConfigName,
+        ),
         'compliance.aigc_label.default',
         'compliance.regulated_mode.default',
         'compliance.watermark.default',
@@ -1450,33 +1484,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       ),
       monthlyOutput: productQuoteService,
       modelDefaults: {
-        async getDefaults() {
-          const keys = [
-            'copy',
-            'image',
-            'video',
-            'audio',
-          ] as const;
-          const entries = await Promise.all(
-            keys.map(async (operation) => {
-              const row = await adminConfigRepository.get(
-                'global',
-                '__global__',
-                `platform.defaultModel.${operation}`,
-              );
-              const value =
-                typeof row?.value === 'string' ? row.value.trim() : '';
-              const resolvedValue =
-                value || e2ePlatformModelDefaults[operation];
-              return resolvedValue
-                ? ([operation, resolvedValue] as const)
-                : null;
-            }),
-          );
-          return Object.fromEntries(
-            entries.filter((entry): entry is readonly [typeof keys[number], string] => entry !== null),
-          );
-        },
+        getDefaults: () => platformDefaultModelSource.getDefaults(),
         async validateDefault(operation, modelId) {
           const model = models.find(
             (candidate) =>

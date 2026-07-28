@@ -71,6 +71,13 @@ export type ComposerSettings = {
   /** Merchant-facing CatalogModel display name (T2 — visible on settings row). */
   catalogModelName: string | null;
   catalogModelRevision: string | null;
+  /**
+   * How the model above was arrived at (#240①) — the merchant's own pick, a
+   * saved default, or the platform fallback nobody in this shop chose. Kept
+   * next to the id so the decision snapshot the server persists shows which,
+   * rather than presenting every run as a deliberate selection.
+   */
+  catalogModelSource: string | null;
   aspectRatio: string | null;
   quantity: number | null;
   durationSeconds: number | null;
@@ -183,6 +190,7 @@ export function emptyComposerSettings(): ComposerSettings {
     catalogModelId: null,
     catalogModelName: null,
     catalogModelRevision: null,
+    catalogModelSource: null,
     aspectRatio: null,
     quantity: null,
     durationSeconds: null,
@@ -456,6 +464,7 @@ function resetLensScopedSettings(draft: ComposerDraft): ComposerDraft {
       catalogModelId: null,
       catalogModelName: null,
       catalogModelRevision: null,
+      catalogModelSource: null,
       aspectRatio: null,
       quantity: null,
       durationSeconds: null,
@@ -789,6 +798,7 @@ export type SettingsPatch = Partial<{
   catalogModelId: string | null;
   catalogModelName: string | null;
   catalogModelRevision: string | null;
+  catalogModelSource: string | null;
   aspectRatio: string | null;
   quantity: number | null;
   durationSeconds: number | null;
@@ -853,6 +863,12 @@ export function updateSettings(
     touch('catalogModelRevision', patch.catalogModelRevision)
   ) {
     settings.catalogModelRevision = patch.catalogModelRevision;
+  }
+  if (
+    patch.catalogModelSource !== undefined &&
+    touch('catalogModelSource', patch.catalogModelSource)
+  ) {
+    settings.catalogModelSource = patch.catalogModelSource;
   }
   if (
     patch.aspectRatio !== undefined &&
