@@ -162,16 +162,16 @@ test.describe('required assembly gate', () => {
     const defaults = await Promise.all(
       [
         ['copy.generate', 'deepseek-v4-pro'],
-        ['image.generate', 'seedream-5-pro'],
+        ['image.generate', 'nano-banana-2'],
         ['video.generate', 'seedance-2'],
       ].map(async ([operation, expectedModel]) => {
-        const preference = await p1Query<{ workspaceDefault?: string }>(
+        const preference = await p1Query<{ platformDefault?: string }>(
           page,
           'model-supply',
           'preferences',
           { operation }
         );
-        return [operation, preference.workspaceDefault, expectedModel];
+        return [operation, preference.platformDefault, expectedModel];
       })
     );
     for (const [operation, actualModel, expectedModel] of defaults) {

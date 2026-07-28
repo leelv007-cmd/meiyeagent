@@ -7,10 +7,12 @@
  * This port is domain-only (Z2-WIRING owns process wiring).
  */
 import type { ActivationEvidenceStatus } from '@meiye/contracts';
-import type {
-  PlatformDefaultModelConfigKey,
-  PlatformDefaultModelOperation,
-  PlatformDefaultModelPort,
+import {
+  PLATFORM_DEFAULT_MODEL_CONFIG_KEY_BY_OPERATION,
+  PLATFORM_DEFAULT_MODEL_OPERATION_BY_CONFIG_KEY,
+  type PlatformDefaultModelConfigKey,
+  type PlatformDefaultModelOperation,
+  type PlatformDefaultModelPort,
 } from '../foundation/workspace-provision.js';
 import type { ExpandedSupplyRegistrySnapshot } from './expand.js';
 
@@ -36,25 +38,10 @@ export interface ByokOverride {
   credentialAccountId: string;
 }
 
-const OPERATION_BY_CONFIG_KEY: Record<
-  PlatformDefaultModelConfigKey,
-  PlatformDefaultModelOperation
-> = {
-  audio: 'audio.speech',
-  copy: 'copy.generate',
-  image: 'image.generate',
-  video: 'video.generate',
-};
-
-const CONFIG_KEY_BY_OPERATION: Record<
-  PlatformDefaultModelOperation,
-  PlatformDefaultModelConfigKey
-> = {
-  'audio.speech': 'audio',
-  'copy.generate': 'copy',
-  'image.generate': 'image',
-  'video.generate': 'video',
-};
+// The config-key ↔ operation table is canonical in foundation/workspace-provision
+// (#240①). Re-declaring it here is how the two halves drift apart.
+const OPERATION_BY_CONFIG_KEY = PLATFORM_DEFAULT_MODEL_OPERATION_BY_CONFIG_KEY;
+const CONFIG_KEY_BY_OPERATION = PLATFORM_DEFAULT_MODEL_CONFIG_KEY_BY_OPERATION;
 
 /**
  * Resolve platform default bindings from the expanded registry. Only
@@ -164,8 +151,16 @@ export function createRegistryPlatformDefaultModelPort(input: {
   const requireLive = input.requireLiveVerified ?? true;
 
   const port = {
-    async getDefaults() {
-      return { ...input.defaults };
+    async getSnapshot() {
+      return Object.fromEntries(
+        Object.entries(input.defaults).map(([configKey, catalogModelId]) => [
+          configKey,
+          {
+            catalogModelId,
+            configRevision: `supply-registry:${catalogModelId}`,
+          },
+        ]),
+      );
     },
     async validateDefault(
       operation: PlatformDefaultModelOperation,

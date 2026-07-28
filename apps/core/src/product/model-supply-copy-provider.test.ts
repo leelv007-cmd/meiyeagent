@@ -17,21 +17,20 @@ import {
 import { modelSupplyCheckpointToFoundationRoute } from '../p1/route-snapshot-normalize.js';
 import type { CopyProviderRequest } from './copy-provider.js';
 import {
-  DOMESTIC_COPY_CATALOG_MODEL_ID,
   ModelSupplyProductCopyProvider,
+  resolveCanonicalCopySelection,
 } from './model-supply-copy-provider.js';
 
 test('domestic copy slot resolves to a domestic deployment with CNY route evidence', () => {
+  const domesticCopyCatalogModelId = 'deepseek-v4-pro';
   const model = createDefaultCatalogModels().find(
-    (candidate) => candidate.id === DOMESTIC_COPY_CATALOG_MODEL_ID,
+    (candidate) => candidate.id === domesticCopyCatalogModelId,
   );
   const deployment = createDefaultDeployments().find(
-    (candidate) =>
-      candidate.catalogModelId === DOMESTIC_COPY_CATALOG_MODEL_ID,
+    (candidate) => candidate.catalogModelId === domesticCopyCatalogModelId,
   );
   const price = createDefaultPriceRevisions().find(
-    (candidate) =>
-      candidate.catalogModelId === DOMESTIC_COPY_CATALOG_MODEL_ID,
+    (candidate) => candidate.catalogModelId === domesticCopyCatalogModelId,
   );
   assert.ok(model);
   assert.ok(deployment);
@@ -44,10 +43,10 @@ test('domestic copy slot resolves to a domestic deployment with CNY route eviden
       catalogRevisionId: 'catalog-default',
       requestedSelection: {
         mode: 'fixed',
-        catalogModelId: DOMESTIC_COPY_CATALOG_MODEL_ID,
+        catalogModelId: domesticCopyCatalogModelId,
       },
-      candidateCatalogModelIds: [DOMESTIC_COPY_CATALOG_MODEL_ID],
-      actualCatalogModelId: DOMESTIC_COPY_CATALOG_MODEL_ID,
+      candidateCatalogModelIds: [domesticCopyCatalogModelId],
+      actualCatalogModelId: domesticCopyCatalogModelId,
       deploymentId: deployment.id,
       reason: 'fixed_selection',
       dataClass: ['pii'],
@@ -58,7 +57,7 @@ test('domestic copy slot resolves to a domestic deployment with CNY route eviden
     submission: {
       selection: {
         mode: 'fixed',
-        catalogModelId: DOMESTIC_COPY_CATALOG_MODEL_ID,
+        catalogModelId: domesticCopyCatalogModelId,
       },
       dataClass: ['pii'],
     },
@@ -67,6 +66,28 @@ test('domestic copy slot resolves to a domestic deployment with CNY route eviden
   });
   assert.equal(checkpoint.allowedCandidates[0]?.region, 'cn');
   assert.equal(checkpoint.allowedCandidates[0]?.currency, 'CNY');
+});
+
+test('copy uses the canonical platform default when the merchant chose none', () => {
+  assert.deepEqual(
+    resolveCanonicalCopySelection({
+      favorites: [],
+      platformDefault: 'llm-domestic',
+      recent: [],
+    }),
+    { catalogModelId: 'llm-domestic', mode: 'fixed' },
+  );
+});
+
+test('copy fails closed when no canonical default is configured', () => {
+  assert.throws(
+    () =>
+      resolveCanonicalCopySelection({
+        favorites: [],
+        recent: [],
+      }),
+    /No canonical copy model is configured/u,
+  );
 });
 
 test('prompt-head rollback changes only future copy generation evidence', async () => {

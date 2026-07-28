@@ -93,6 +93,43 @@ const modelPolicySchema = z
 	})
 	.strict();
 
+export const modelSelectionSourceSchema = z.enum([
+	"current_selection",
+	"user_default",
+	"workspace_default",
+	"platform_default",
+]);
+
+export const frozenModelSelectionSchema = z
+	.object({
+		source: modelSelectionSourceSchema,
+		catalogModelId: identifierSchema,
+		platformConfigRevision: revisionSchema.nullable(),
+	})
+	.strict()
+	.superRefine((selection, context) => {
+		if (
+			selection.source === "platform_default" &&
+			selection.platformConfigRevision === null
+		) {
+			context.addIssue({
+				code: "custom",
+				message:
+					"A platform-default selection requires its platform config revision.",
+			});
+		}
+		if (
+			selection.source !== "platform_default" &&
+			selection.platformConfigRevision !== null
+		) {
+			context.addIssue({
+				code: "custom",
+				message:
+					"Only a platform-default selection may carry a platform config revision.",
+			});
+		}
+	});
+
 const rightsSummarySchema = z
 	.object({
 		revision: revisionSchema,
@@ -149,6 +186,7 @@ const creationSubmissionCommandBaseSchema = z
 		identityDecision: identityDecisionReferenceSchema.optional(),
 		modelPolicy: modelPolicySchema,
 		catalogModel: revisionReferenceSchema,
+		modelSelection: frozenModelSelectionSchema.optional(),
 		quote: revisionReferenceSchema,
 		route: revisionReferenceSchema,
 		briefContext: briefContextSchema,
@@ -187,7 +225,12 @@ const composerSubmissionRequestBaseSchema = creationSubmissionCommandBaseSchema
 		rights: true,
 		route: true,
 	})
-	.omit({ operation: true, platform: true, signedSubmission: true })
+	.omit({
+		modelSelection: true,
+		operation: true,
+		platform: true,
+		signedSubmission: true,
+	})
 	.extend(composerSubmissionSignedFieldsBaseSchema.shape);
 
 export const composerSubmissionRequestSchema =
@@ -241,6 +284,11 @@ export const creationExecutionSnapshotSchema = z
 		identityDecision: identityDecisionReferenceSchema.optional(),
 		modelPolicy: modelPolicySchema,
 		catalogModel: revisionReferenceSchema,
+		/**
+		 * Optional only so historical v1 snapshots remain readable. Every new
+		 * snapshot created below receives this server-owned fact.
+		 */
+		modelSelection: frozenModelSelectionSchema.optional(),
 		quote: revisionReferenceSchema,
 		route: revisionReferenceSchema,
 		briefContext: briefContextSchema,
@@ -315,6 +363,12 @@ export function createCreationExecutionSnapshot(
 			identityDecision: command.identityDecision,
 			modelPolicy: command.modelPolicy,
 			catalogModel: command.catalogModel,
+			modelSelection:
+				command.modelSelection ?? {
+					source: "current_selection",
+					catalogModelId: command.catalogModel.id,
+					platformConfigRevision: null,
+				},
 			quote: command.quote,
 			route: command.route,
 			briefContext: command.briefContext,
@@ -334,6 +388,7 @@ function operationForLens(lens: z.infer<typeof creationLensSchema>) {
 
 function validateSubmission(
 	command: {
+		catalogModel?: { id: string };
 		creationMode?: "customized" | "free";
 		contentModules?: string[];
 		deliverable?: {
@@ -352,9 +407,28 @@ function validateSubmission(
 		}>;
 		imageOperation?: string;
 		lens?: "copy" | "image" | "image_text_note" | "video";
+		modelSelection?: {
+			source:
+				| "current_selection"
+				| "user_default"
+				| "workspace_default"
+				| "platform_default";
+			catalogModelId: string;
+			platformConfigRevision: string | null;
+		};
 	},
 	context: z.RefinementCtx,
 ) {
+	if (
+		command.modelSelection &&
+		command.catalogModel &&
+		command.modelSelection.catalogModelId !== command.catalogModel.id
+	) {
+		context.addIssue({
+			code: "custom",
+			message: "Frozen model selection must match the selected catalog model.",
+		});
+	}
 	if (command.imageOperation !== undefined) {
 		if (command.creationMode !== "free") {
 			context.addIssue({

@@ -439,6 +439,16 @@ describe('Recipe Studio controlled compiler', () => {
       capabilities: { async assertReady() {} },
       catalog: repository,
       identities: { async listActive() { return []; } },
+      modelPreferences: {
+        async getPreferences() {
+          return {
+            favorites: [],
+            platformDefault: 'catalog.deepseek-v4-pro',
+            platformDefaultRevision: 'admin-config:1',
+            recent: [],
+          };
+        },
+      },
       noteSettings: {
         async read() {
           return {

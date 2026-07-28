@@ -165,6 +165,46 @@ describe('Creation Experience FoundationModule seam', () => {
     assert.deepEqual(projection.triggers, []);
   });
 
+  it('does not make untrusted client model provenance part of Brief freshness', async () => {
+    const { service } = createService({ quoteAmount: 0 });
+    const sync = (source: string, expectedRevision: number | null) =>
+      service.executeModule(
+        context,
+        'creation-experience',
+        {
+          action: 'brief_context_sync',
+          payload: {
+            briefContextId: 'brief-context-model-provenance',
+            draft: {
+              delivery: {
+                deliverableKind: 'copy',
+                platform: 'xiaohongshu',
+              },
+              settings: {
+                catalogModelId: 'llm-domestic',
+                catalogModelSource: source,
+                quantity: 1,
+              },
+              sources: [],
+              userText: '夏日美甲项目介绍',
+            },
+            expectedRevision,
+            lensId: 'copy',
+            quoteId: null,
+            recipeRevisionId: null,
+            sourceIds: [],
+            surfaceRevisionId: null,
+          },
+        },
+        `idem-brief-context-model-provenance:${source}`,
+      ) as Promise<{ draftRevisionId: string; revision: number }>;
+
+    const first = await sync('platform_default', null);
+    const replay = await sync('workspace_default', first.revision);
+    assert.equal(replay.revision, first.revision);
+    assert.equal(replay.draftRevisionId, first.draftRevisionId);
+  });
+
   it('does not force restricted_assets merely because sourceIds are attached', async () => {
     const { service } = createService({ quoteAmount: 0 });
     await service.executeModule(

@@ -109,6 +109,7 @@ export interface CreationSubmissionAdmissionPort {
 		identity: { id: string; revision: string };
 		identityDecision?: { id: string; revision: number };
 		modelPolicy: { id: string; mode: "auto" | "fixed"; revision: string };
+		modelSelection: NonNullable<CreationExecutionSnapshot["modelSelection"]>;
 		recipeBinding: Pick<
 			CreationExecutionSnapshot,
 			"contentModules" | "deliverables" | "lens"
@@ -170,6 +171,7 @@ export class CreationSubmissionCoordinator {
 			identityDecision: admitted.identityDecision,
 			lens: admitted.recipeBinding.lens,
 			modelPolicy: admitted.modelPolicy,
+			modelSelection: admitted.modelSelection,
 			operation:
 				admitted.operation ??
 				operationForRequest(

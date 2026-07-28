@@ -160,7 +160,6 @@ import {
   buildLiveBriefInput,
   buildLiveQuoteInput,
   COMPOSER_OPERATION_BY_LENS,
-  COMPOSER_PLATFORM_DEFAULT_MODEL_BY_LENS,
   fetchComposerCatalog,
   fetchComposerPreferences,
   fetchComposerSurface,
@@ -724,7 +723,18 @@ export function ComposerHome({
         visibleRevisions.has(recipe.revisionId)
     );
   }, [lensId, lensState.draft.recipeRevisionId, surfaceQuery.data]);
-  const selectedModel = useMemo(() => {
+  /**
+   * Which model runs, and *why* that one (#240①).
+   *
+   * The platform default arrives with the preferences — the browser keeps no
+   * table of its own, so a model the platform never configured can never be
+   * substituted here. The resolution also answers where the choice came from,
+   * and that answer is kept rather than dropped: falling all the way through to
+   * `platform_default` means nobody in this shop ever picked this model, and a
+   * run that reuses the platform fallback has to be readable as such afterwards
+   * instead of looking like the merchant's own selection.
+   */
+  const modelSelection = useMemo(() => {
     if (!lensId || !preferencesQuery.isSuccess) return undefined;
     const explicitId = lensState.draft.fieldMeta.catalogModelId?.dirty
       ? (lensState.draft.settings.catalogModelId ?? undefined)
@@ -735,10 +745,10 @@ export function ComposerHome({
     return resolveCreationModelSelection({
       catalog: catalog.models,
       currentSelection: explicitId,
-      platformDefault: COMPOSER_PLATFORM_DEFAULT_MODEL_BY_LENS[lensId],
+      platformDefault: preferences.platformDefault,
       userDefault: preferences.userDefault,
       workspaceDefault: preferences.workspaceDefault,
-    })?.model;
+    });
   }, [
     catalog,
     lensId,
@@ -748,6 +758,7 @@ export function ComposerHome({
     preferencesQuery.isSuccess,
     submissionRecipe?.modelPolicy,
   ]);
+  const selectedModel = modelSelection?.model;
   const catalogRevision = catalogQuery.data?.revisionId ?? 'catalog-current';
   const submissionQuantity =
     (lensState.draft.fieldMeta.quantity?.dirty
@@ -1043,9 +1054,10 @@ export function ComposerHome({
   }, [initialRecipeRevisionId, initialSurfaceRevisionId, surfaceQuery.data]);
 
   useEffect(() => {
-    if (!selectedModel || lensState.phase === 'frozen') return;
+    if (!modelSelection || lensState.phase === 'frozen') return;
+    const { model } = modelSelection;
     if (
-      lensState.draft.settings.catalogModelId === selectedModel.id &&
+      lensState.draft.settings.catalogModelId === model.id &&
       lensState.draft.settings.catalogModelRevision === catalogRevision
     ) {
       return;
@@ -1054,14 +1066,14 @@ export function ComposerHome({
       updateSettings(
         current,
         {
-          catalogModelId: selectedModel.id,
-          catalogModelName: selectedModel.displayName,
+          catalogModelId: model.id,
+          catalogModelName: model.displayName,
           catalogModelRevision: catalogRevision,
         },
         'system'
       )
     );
-  }, [catalogRevision, lensState, selectedModel]);
+  }, [catalogRevision, lensState, modelSelection]);
 
   useEffect(() => {
     if (!quoteQuery.data || lensState.phase === 'frozen') return;

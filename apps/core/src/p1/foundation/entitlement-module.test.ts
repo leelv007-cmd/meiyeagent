@@ -573,12 +573,24 @@ describe('ProductEntitlementFoundationModule', () => {
       operations: [
         new ProductEntitlementFoundationModule(entitlements, clock, {
           modelDefaults: {
-            async getDefaults() {
+            async getSnapshot() {
               return {
-                audio: 'audio-platform-default',
-                copy: 'copy-platform-default',
-                image: 'image-platform-default',
-                video: 'video-platform-default',
+                audio: {
+                  catalogModelId: 'audio-platform-default',
+                  configRevision: 'admin-config:14',
+                },
+                copy: {
+                  catalogModelId: 'copy-platform-default',
+                  configRevision: 'admin-config:11',
+                },
+                image: {
+                  catalogModelId: 'image-platform-default',
+                  configRevision: 'admin-config:12',
+                },
+                video: {
+                  catalogModelId: 'video-platform-default',
+                  configRevision: 'admin-config:13',
+                },
               };
             },
             async validateDefault() {},

@@ -124,6 +124,16 @@ test("Composer admission gate binds server facts before a submission can reserve
 				} as never;
 			},
 		},
+		modelPreferences: {
+			async getPreferences() {
+				return {
+					favorites: [],
+					platformDefault: "catalog-copy-1",
+					platformDefaultRevision: "admin-config:41",
+					recent: [],
+				};
+			},
+		},
 		quotes: {
 			async getQuote() {
 				return {
@@ -184,6 +194,11 @@ test("Composer admission gate binds server facts before a submission can reserve
 		id: "recipe-model-policy:recipe-service-promotion",
 		mode: "fixed",
 		revision: "recipe-service-promotion@7",
+	});
+	assert.deepEqual(admitted.modelSelection, {
+		source: "platform_default",
+		catalogModelId: "catalog-copy-1",
+		platformConfigRevision: "admin-config:41",
 	});
 	assert.deepEqual(admitted.route, {
 		id: "route-1",
@@ -288,6 +303,11 @@ test("Composer admission gate fails closed for stale quote, rights, and source f
 		identities: {
 			async listActive() {
 				return [];
+			},
+		},
+		modelPreferences: {
+			async getPreferences() {
+				return { favorites: [], recent: [] };
 			},
 		},
 		quotes: {
@@ -424,6 +444,16 @@ test("Composer admission keeps pure image distinct from the first-class image-te
 			identities: {
 				async listActive() {
 					return [{ identityId: "identity-brand", version: 3 }] as never;
+				},
+			},
+			modelPreferences: {
+				async getPreferences() {
+					return {
+						favorites: [],
+						platformDefault: `catalog-${kind}-1`,
+						platformDefaultRevision: `admin-config:${kind}`,
+						recent: [],
+					};
 				},
 			},
 			noteSettings: {

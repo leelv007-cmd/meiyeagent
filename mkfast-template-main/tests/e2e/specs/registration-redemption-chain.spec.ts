@@ -80,13 +80,13 @@ async function provisioningShape(page: Page): Promise<ProvisioningShape> {
     await Promise.all(
       ['copy.generate', 'image.generate', 'video.generate'].map(
         async (operation) => {
-          const preference = await p1Query<{ workspaceDefault?: string }>(
+          const preference = await p1Query<{ platformDefault?: string }>(
             page,
             'model-supply',
             'preferences',
             { operation }
           );
-          return [operation, preference.workspaceDefault ?? null] as const;
+          return [operation, preference.platformDefault ?? null] as const;
         }
       )
     )
@@ -203,7 +203,7 @@ test.describe('registration and redemption chain (#219)', () => {
     expect(assistedShape).toEqual({
       defaults: {
         'copy.generate': 'deepseek-v4-pro',
-        'image.generate': 'seedream-5-pro',
+        'image.generate': 'nano-banana-2',
         'video.generate': 'seedance-2',
       },
       planTier: 'trial',

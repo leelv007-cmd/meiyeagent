@@ -305,7 +305,21 @@ export const contentPackageSourceSchema = z.object({
       id: contentPackageIdSchema,
       revision: z.number().int().positive(),
       schemaVersion: z.literal('creation-execution-snapshot/v1'),
+      modelSelection: z
+        .object({
+          source: z.enum([
+            'current_selection',
+            'user_default',
+            'workspace_default',
+            'platform_default',
+          ]),
+          catalogModelId: contentPackageIdSchema,
+          platformConfigRevision: contentPackageIdSchema.nullable(),
+        })
+        .strict()
+        .optional(),
     })
+    .strict()
     .optional(),
   sourceContentPackage: z
     .object({

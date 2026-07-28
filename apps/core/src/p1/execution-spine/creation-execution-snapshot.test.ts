@@ -91,6 +91,11 @@ test("image-text note freezes its signed Recipe page bound inside the deliverabl
 		identity: { id: "identity-1", revision: "identity-r1" },
 		modelPolicy: { id: "policy-1", revision: "policy-r1", mode: "fixed" as const },
 		catalogModel: { id: "model-1", revision: "model-r1" },
+		modelSelection: {
+			source: "platform_default" as const,
+			catalogModelId: "model-1",
+			platformConfigRevision: "admin-config:12",
+		},
 		quote: { id: "quote-1", revision: "quote-r1" },
 		route: { id: "route-1", revision: "route-r1" },
 		briefContext: { id: "context-1", revision: 1 },
@@ -103,6 +108,23 @@ test("image-text note freezes its signed Recipe page bound inside the deliverabl
 	);
 	assert.equal(snapshot.deliverable.notePageBound, 3);
 	assert.equal(snapshot.deliverables[0]?.notePageBound, 3);
+	assert.deepEqual(snapshot.modelSelection, {
+		source: "platform_default",
+		catalogModelId: "model-1",
+		platformConfigRevision: "admin-config:12",
+	});
+	assert.throws(
+		() =>
+			creationExecutionSnapshotSchema.parse({
+				...snapshot,
+				modelSelection: {
+					source: "platform_default",
+					catalogModelId: "model-1",
+					platformConfigRevision: null,
+				},
+			}),
+		/requires its platform config revision/u,
+	);
 	assert.throws(
 		() =>
 			createCreationExecutionSnapshot(

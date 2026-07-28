@@ -3,12 +3,26 @@ import type {
   CopyProviderRequest,
   CopyProviderResult,
 } from './copy-provider.js';
-import type { RequestedSelection } from '../p1/model-supply/index.js';
+import type {
+  PreferenceView,
+  RequestedSelection,
+} from '../p1/model-supply/index.js';
 import type { BeautyCopyPromptRevision } from '../p1/model-supply/quality-evaluation.js';
 import { ProductCopyProviderBridge } from '../p1/model-supply/index.js';
 import { BEAUTY_COPY_PROMPT } from './copy-prompt-library.js';
 
-export const DOMESTIC_COPY_CATALOG_MODEL_ID = 'deepseek-v4-pro';
+export function resolveCanonicalCopySelection(
+  preferences: PreferenceView,
+): RequestedSelection {
+  const catalogModelId =
+    preferences.userDefault ??
+    preferences.workspaceDefault ??
+    preferences.platformDefault;
+  if (!catalogModelId) {
+    throw new Error('No canonical copy model is configured.');
+  }
+  return { catalogModelId, mode: 'fixed' };
+}
 
 export class ModelSupplyProductCopyProvider implements CopyProvider {
   readonly name = 'model-supply';
@@ -16,7 +30,7 @@ export class ModelSupplyProductCopyProvider implements CopyProvider {
 
   constructor(
     private readonly bridge: ProductCopyProviderBridge,
-    private readonly selection: RequestedSelection,
+    private readonly selection: RequestedSelection | undefined,
     readonly region: CopyProvider['region'],
     private readonly resolveSelection?: (
       request: CopyProviderRequest
@@ -26,7 +40,7 @@ export class ModelSupplyProductCopyProvider implements CopyProvider {
     ) => Promise<BeautyCopyPromptRevision>
   ) {
     this.model =
-      selection.mode === 'fixed'
+      selection?.mode === 'fixed'
         ? (selection.catalogModelId ?? 'fixed-model')
         : 'llm-auto-quality';
   }
@@ -38,6 +52,9 @@ export class ModelSupplyProductCopyProvider implements CopyProvider {
       (request.brief.requestedSelection as RequestedSelection | undefined) ??
       (await this.resolveSelection?.(request)) ??
       this.selection;
+    if (!selection) {
+      throw new Error('No canonical copy model is configured.');
+    }
     const result = await this.bridge.generate({
       actorId: request.userId,
       correlationId: request.correlationId,

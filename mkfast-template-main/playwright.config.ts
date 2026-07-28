@@ -96,7 +96,10 @@ export default defineConfig({
         // default, adding 9,960 ms to each structured copy run.
         'E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS=10000',
         'E2E_PLATFORM_DEFAULT_MODEL_COPY=deepseek-v4-pro',
-        'E2E_PLATFORM_DEFAULT_MODEL_IMAGE=seedream-5-pro',
+        // Deliberately differs from the retired browser constant
+        // (`seedream-5-pro`). The canonical-default journey must fail if that
+        // client-side table ever returns.
+        'E2E_PLATFORM_DEFAULT_MODEL_IMAGE=nano-banana-2',
         'E2E_PLATFORM_DEFAULT_MODEL_VIDEO=seedance-2',
         'E2E_PLATFORM_DEFAULT_MODEL_AUDIO=audio-speech-fixture',
         `CORE_PORT=${corePort}`,

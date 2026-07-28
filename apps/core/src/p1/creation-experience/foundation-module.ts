@@ -166,6 +166,15 @@ function recordValue(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+function draftWithoutClientModelProvenance(
+  draft: Record<string, unknown>,
+): Record<string, unknown> {
+  const settings = recordValue(draft.settings);
+  if (!settings || !('catalogModelSource' in settings)) return draft;
+  const { catalogModelSource: _untrustedSource, ...trustedSettings } = settings;
+  return { ...draft, settings: trustedSettings };
+}
+
 function nonNegativeInteger(value: unknown, fallback: number) {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0
     ? value
@@ -656,18 +665,19 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
         }
         const normalizedSourceIds = sourceIds.map((sourceId) => sourceId.trim());
         const draftRecord = draft as Record<string, unknown>;
+        const revisionDraft = draftWithoutClientModelProvenance(draftRecord);
         const context = await this.briefRevisionContexts.syncBriefRevisionContext(
           args.context.workspaceId,
           {
             briefContextId: stringField(value, 'briefContextId'),
-            draftRevisionId: revisionHash('draft', draft),
+            draftRevisionId: revisionHash('draft', revisionDraft),
             intentRevisionId: briefIntentRevisionId(
               typeof draftRecord.userText === 'string'
                 ? draftRecord.userText
                 : '',
             ),
             lensId,
-            projectionFacts: projectionFactsFromDraft(draftRecord, lensId),
+            projectionFacts: projectionFactsFromDraft(revisionDraft, lensId),
             quoteId: nullableId('quoteId'),
             recipeRevisionId: nullableId('recipeRevisionId'),
             sourceRevisionId: briefSourceRevisionId(normalizedSourceIds),

@@ -45,11 +45,18 @@ export const COMPOSER_OPERATION_BY_LENS = {
   video: 'video.generate',
 } as const satisfies Record<CreationLensId, string>;
 
-export const COMPOSER_PLATFORM_DEFAULT_MODEL_BY_LENS = {
-  copy: 'deepseek-v4-pro',
-  image_text: 'seedream-5-pro',
-  video: 'seedance-2',
-} as const satisfies Record<CreationLensId, string>;
+/**
+ * There is deliberately no lens→model table here (#240①).
+ *
+ * The browser used to carry a hardcoded production opinion about which model
+ * each lens falls back to. It was a second source: operations edit
+ * `platform.defaultModel.<configKey>` in the backend (D-044), that value is
+ * what Day-0 provisioning writes and what activation evidence validates, and
+ * none of that could reach a constant baked into the bundle. The platform
+ * default now arrives with the rest of the preferences
+ * (`fetchComposerPreferences` → `platformDefault`), and when the platform has
+ * not configured one the composer has none — it does not invent one.
+ */
 
 export async function fetchComposerSurface(
   signal?: AbortSignal,

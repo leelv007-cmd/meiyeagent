@@ -20,8 +20,8 @@ import { CutoverProductService } from './product/cutover-product-service.js';
 import type { ProductQualitySink } from './product/quality-sink.js';
 import { productPlanConfigFromEnv } from './product/plans.js';
 import {
-  DOMESTIC_COPY_CATALOG_MODEL_ID,
   ModelSupplyProductCopyProvider,
+  resolveCanonicalCopySelection,
 } from './product/model-supply-copy-provider.js';
 import { ProductPublishContentSnapshotPort } from './product/publish-content-snapshot.js';
 import {
@@ -82,6 +82,12 @@ import {
   RedemptionFoundationModule,
 } from './p1/foundation/index.js';
 import { e2ePlatformModelDefaultsFromEnv } from './p1/foundation/e2e-platform-model-defaults.js';
+import {
+  PLATFORM_DEFAULT_MODEL_CONFIG_KEYS,
+  platformDefaultModelConfigName,
+  type PlatformDefaultModelConfigKey,
+  type PlatformDefaultModelSourcePort,
+} from './p1/foundation/workspace-provision.js';
 import {
   CloudflareInventoryAdapter,
   runCloudflareSelfProbes,
@@ -582,6 +588,51 @@ const planConfigDefaults = Object.fromEntries(
   DEFAULT_PLAN_OFFERS.map(({ id, ...value }) => [id, value]),
 );
 const e2ePlatformModelDefaults = e2ePlatformModelDefaultsFromEnv(process.env);
+/**
+ * The one runtime source of platform default catalog models (#240①).
+ *
+ * Day-0 provisioning and the composer's preference projection both read this,
+ * so the model a new workspace is provisioned onto and the model the composer
+ * falls back to are the same fact, edited in one place by operations.
+ */
+const platformDefaultModelSource: PlatformDefaultModelSourcePort = {
+  async getSnapshot() {
+    const entries = await Promise.all(
+      PLATFORM_DEFAULT_MODEL_CONFIG_KEYS.map(async (configKey) => {
+        const configName = platformDefaultModelConfigName(configKey);
+        const row = await adminConfigRepository.get(
+          'global',
+          '__global__',
+          configName,
+        );
+        const value = typeof row?.value === 'string' ? row.value.trim() : '';
+        const resolvedValue = value || e2ePlatformModelDefaults[configKey];
+        return resolvedValue
+          ? ([
+              configKey,
+              {
+                catalogModelId: resolvedValue,
+                configRevision: row && value
+                  ? `admin-config:${row.revision}`
+                  : `runtime-default:${configName}:${resolvedValue}`,
+              },
+            ] as const)
+          : null;
+      }),
+    );
+    return Object.fromEntries(
+      entries.filter(
+        (
+          entry,
+        ): entry is readonly [
+          PlatformDefaultModelConfigKey,
+          { catalogModelId: string; configRevision: string },
+        ] =>
+          entry !== null,
+      ),
+    );
+  },
+};
 const adminConfigRuntime = {
   'byok.adapter.assembly': byokRuntime.mode,
   'compliance.aigc_label.default': true,
@@ -599,8 +650,8 @@ const adminConfigRuntime = {
   [HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY]:
     DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
   ...Object.fromEntries(
-    Object.entries(e2ePlatformModelDefaults).map(([operation, modelId]) => [
-      `platform.defaultModel.${operation}`,
+    Object.entries(e2ePlatformModelDefaults).map(([configKey, modelId]) => [
+      platformDefaultModelConfigName(configKey as PlatformDefaultModelConfigKey),
       modelId,
     ])
   ),
@@ -680,6 +731,7 @@ const p1ModelSupplyRuntime = createModelSupplyRuntime({
     canvasProjects,
     durationSamples: foundationRepository,
     planningControlPlane: supplyPlanningControlPlane,
+    platformDefaultModels: platformDefaultModelSource,
     repository: modelSupplyRepository,
     supplyRegistry: supplyControlRepository,
   },
@@ -748,10 +800,7 @@ const resolveCopySelection = async (request: {
     request.userId,
     'copy.generate'
   );
-  const modelId = preferences.userDefault ?? preferences.workspaceDefault;
-  return modelId
-    ? ({ catalogModelId: modelId, mode: 'fixed' } as const)
-    : undefined;
+  return resolveCanonicalCopySelection(preferences);
 };
 const resolveCopyPrompt = (request: { workspaceId: string }) =>
   modelControlPlane.getPromptRevision(request.workspaceId);
@@ -1013,14 +1062,14 @@ await registerDouyinPublishPollingSchedule(jobRuntime, {
 const createCopyProviders = (bridge: ProductCopyProviderBridge) => ({
   domestic: new ModelSupplyProductCopyProvider(
     bridge,
-    { catalogModelId: DOMESTIC_COPY_CATALOG_MODEL_ID, mode: 'fixed' },
+    undefined,
     'domestic',
     resolveCopySelection,
     resolveCopyPrompt
   ),
   standard: new ModelSupplyProductCopyProvider(
     bridge,
-    { mode: 'auto', profile: 'quality' },
+    undefined,
     'overseas',
     resolveCopySelection,
     resolveCopyPrompt
@@ -1396,10 +1445,9 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         'plan.allowances.starter',
         'plan.allowances.growth',
         'plan.allowances.pro',
-        'platform.defaultModel.copy',
-        'platform.defaultModel.image',
-        'platform.defaultModel.video',
-        'platform.defaultModel.audio',
+        ...PLATFORM_DEFAULT_MODEL_CONFIG_KEYS.map(
+          platformDefaultModelConfigName,
+        ),
         'compliance.aigc_label.default',
         'compliance.regulated_mode.default',
         'compliance.watermark.default',
@@ -1422,10 +1470,9 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         'plan.allowances.starter',
         'plan.allowances.growth',
         'plan.allowances.pro',
-        'platform.defaultModel.copy',
-        'platform.defaultModel.image',
-        'platform.defaultModel.video',
-        'platform.defaultModel.audio',
+        ...PLATFORM_DEFAULT_MODEL_CONFIG_KEYS.map(
+          platformDefaultModelConfigName,
+        ),
         'compliance.aigc_label.default',
         'compliance.regulated_mode.default',
         'compliance.watermark.default',
@@ -1452,33 +1499,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       ),
       monthlyOutput: productQuoteService,
       modelDefaults: {
-        async getDefaults() {
-          const keys = [
-            'copy',
-            'image',
-            'video',
-            'audio',
-          ] as const;
-          const entries = await Promise.all(
-            keys.map(async (operation) => {
-              const row = await adminConfigRepository.get(
-                'global',
-                '__global__',
-                `platform.defaultModel.${operation}`,
-              );
-              const value =
-                typeof row?.value === 'string' ? row.value.trim() : '';
-              const resolvedValue =
-                value || e2ePlatformModelDefaults[operation];
-              return resolvedValue
-                ? ([operation, resolvedValue] as const)
-                : null;
-            }),
-          );
-          return Object.fromEntries(
-            entries.filter((entry): entry is readonly [typeof keys[number], string] => entry !== null),
-          );
-        },
+        getSnapshot: () => platformDefaultModelSource.getSnapshot(),
         async validateDefault(operation, modelId) {
           const model = models.find(
             (candidate) =>
@@ -1528,12 +1549,18 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
             `Platform default model ${modelId} is not live verified for ${operation}.`,
           );
         },
-        async setWorkspaceDefault(workspaceId, operation, modelId) {
+        async setWorkspaceDefault(
+          workspaceId,
+          operation,
+          modelId,
+          metadata,
+        ) {
           // Preference only — does not copy platform probe evidence into tenant catalog (GL-16).
           await modelSupplyRepository.setWorkspaceDefault(
             workspaceId,
             operation,
             modelId,
+            metadata,
           );
         },
       },
@@ -1810,6 +1837,7 @@ if (harnessRuntimeConfig) {
       ),
       catalog: creationExperienceRuntime.repository,
       identities: marketingIdentities,
+      modelPreferences: modelControlPlane,
       noteSettings: notePlanSettings,
       quotes: productQuoteService,
       rights: contentPackageRightsResolver,

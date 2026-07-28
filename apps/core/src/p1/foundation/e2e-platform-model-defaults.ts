@@ -1,4 +1,7 @@
-import type { PlatformDefaultModelConfigKey } from './workspace-provision.js';
+import {
+  PLATFORM_DEFAULT_MODEL_CONFIG_KEYS,
+  type PlatformDefaultModelConfigKey,
+} from './workspace-provision.js';
 
 const ENV_KEY_BY_OPERATION = {
   audio: 'E2E_PLATFORM_DEFAULT_MODEL_AUDIO',
@@ -20,7 +23,10 @@ export function e2ePlatformModelDefaultsFromEnv(
     const modelId = env[envKey]?.trim();
     return modelId ? [[operation, modelId] as const] : [];
   });
-  if (configured.length !== 0 && configured.length !== 4) {
+  if (
+    configured.length !== 0 &&
+    configured.length !== PLATFORM_DEFAULT_MODEL_CONFIG_KEYS.length
+  ) {
     throw new Error(
       'E2E platform default models must configure copy, image, video, and audio together.'
     );

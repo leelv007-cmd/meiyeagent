@@ -20,24 +20,88 @@ export type PlatformDefaultModelOperation =
   | 'video.generate'
   | 'audio.speech';
 
-const PREFERENCE_OPERATION_BY_CONFIG_KEY: Record<
-  PlatformDefaultModelConfigKey,
-  PlatformDefaultModelOperation
-> = {
-  audio: 'audio.speech',
-  copy: 'copy.generate',
-  image: 'image.generate',
-  video: 'video.generate',
-};
+/**
+ * Canonical platform-default-model vocabulary (#240①).
+ *
+ * Which model a workspace starts on is an operations decision (D-044: catalog
+ * 运营参数后台可换), so the *value* lives in admin config under
+ * `platform.defaultModel.<configKey>` and nowhere else. What lives here is the
+ * vocabulary around that value — the four config keys, the operation each one
+ * answers for, and the admin-config key spelling — so that provisioning, the
+ * supply registry, boot wiring and the preferences projection all read the same
+ * table instead of each keeping a private copy. A second copy is how a default
+ * silently diverges from the one operations actually edited.
+ */
+const PLATFORM_DEFAULT_MODEL_DEFINITIONS = [
+  ['copy', 'copy.generate'],
+  ['image', 'image.generate'],
+  ['video', 'video.generate'],
+  ['audio', 'audio.speech'],
+] as const satisfies readonly (
+  readonly [PlatformDefaultModelConfigKey, PlatformDefaultModelOperation]
+)[];
+
+export const PLATFORM_DEFAULT_MODEL_CONFIG_KEYS =
+  PLATFORM_DEFAULT_MODEL_DEFINITIONS.map(([configKey]) => configKey);
+
+export const PLATFORM_DEFAULT_MODEL_OPERATION_BY_CONFIG_KEY =
+  Object.fromEntries(PLATFORM_DEFAULT_MODEL_DEFINITIONS) as Record<
+    PlatformDefaultModelConfigKey,
+    PlatformDefaultModelOperation
+  >;
+
+export const PLATFORM_DEFAULT_MODEL_CONFIG_KEY_BY_OPERATION =
+  Object.fromEntries(
+    PLATFORM_DEFAULT_MODEL_DEFINITIONS.map(([configKey, operation]) => [
+      operation,
+      configKey,
+    ]),
+  ) as Record<PlatformDefaultModelOperation, PlatformDefaultModelConfigKey>;
+
+/** The single admin-config key spelling for a platform default model. */
+export function platformDefaultModelConfigName(
+  configKey: PlatformDefaultModelConfigKey,
+): string {
+  return `platform.defaultModel.${configKey}`;
+}
+
+/**
+ * Narrow an arbitrary model operation to the config key that owns its platform
+ * default, or `undefined` when no platform default is defined for it. Callers
+ * must not invent one — an operation without a configured default has no
+ * default, which is the whole point of #240①.
+ */
+export function platformDefaultModelConfigKeyForOperation(
+  operation: string,
+): PlatformDefaultModelConfigKey | undefined {
+  return PLATFORM_DEFAULT_MODEL_CONFIG_KEY_BY_OPERATION[
+    operation as PlatformDefaultModelOperation
+  ];
+}
+
+/** Source of the platform-configured default model ids (admin config in prod). */
+export interface PlatformDefaultModelBinding {
+  catalogModelId: string;
+  configRevision: string;
+}
+
+export type PlatformDefaultModelSnapshot = Partial<
+  Record<PlatformDefaultModelConfigKey, PlatformDefaultModelBinding>
+>;
+
+export interface PlatformDefaultModelSourcePort {
+  getSnapshot(): Promise<PlatformDefaultModelSnapshot>;
+}
+
+const PREFERENCE_OPERATION_BY_CONFIG_KEY =
+  PLATFORM_DEFAULT_MODEL_OPERATION_BY_CONFIG_KEY;
 
 export interface PlatformDefaultModelPort {
   /**
    * Resolve platform-configured default catalog model ids.
    * Must NOT copy tenant probe evidence or BYOK credentials (GL-16).
    */
-  getDefaults(): Promise<
-    Partial<Record<PlatformDefaultModelConfigKey, string>>
-  >;
+  getSnapshot(): Promise<PlatformDefaultModelSnapshot>;
   validateDefault(
     operation: PlatformDefaultModelOperation,
     modelId: string
@@ -45,7 +109,11 @@ export interface PlatformDefaultModelPort {
   setWorkspaceDefault(
     workspaceId: string,
     operation: PlatformDefaultModelOperation,
-    modelId: string
+    modelId: string,
+    metadata: {
+      origin: 'platform_default';
+      platformConfigRevision: string;
+    },
   ): Promise<void>;
 }
 
@@ -128,13 +196,15 @@ export class WorkspaceProvisionService {
         'Trial plan offer is not configured.',
       );
     }
-    const defaults = await this.options.modelDefaults.getDefaults();
+    const snapshot = await this.options.modelDefaults.getSnapshot();
     const configured: Partial<Record<PlatformDefaultModelConfigKey, string>> =
       {};
-    const configKeys = ['copy', 'image', 'video', 'audio'] as const;
+    const configKeys = PLATFORM_DEFAULT_MODEL_CONFIG_KEYS;
     for (const configKey of configKeys) {
-      const modelId = defaults[configKey]?.trim();
-      if (modelId) {
+      const binding = snapshot[configKey];
+      const modelId = binding?.catalogModelId.trim();
+      const configRevision = binding?.configRevision.trim();
+      if (modelId && configRevision) {
         configured[configKey] = modelId;
         continue;
       }
@@ -161,6 +231,10 @@ export class WorkspaceProvisionService {
         context.workspaceId,
         PREFERENCE_OPERATION_BY_CONFIG_KEY[configKey],
         configured[configKey]!,
+        {
+          origin: 'platform_default',
+          platformConfigRevision: snapshot[configKey]!.configRevision,
+        },
       );
     }
     return { defaults: configured, applied: true };

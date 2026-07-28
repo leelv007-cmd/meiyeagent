@@ -437,6 +437,20 @@ Implements D-043 Day-0 contract + V1 复审修订七条计数口径. Metric name
 | 4 | T5 independent: upload → inline one-question → evidence → continue | On `/dashboard`, set composer gallery file, assert one inline authorization question (no library evidence form), confirm public marketing, require URL stays on dashboard (no `/dashboard/assets/:id` hop), and observe the actual `add_asset` metadata plus `authorize_asset` command with `rightsEvidence=system:inline-auth:…`. Then submit from the same composer and require a real first token. |
 | 5 | Capture layer survives navigation and ignores child frames | Begin measurement on authenticated dashboard, click a trusted control inside a child frame and require count 0, then use two real top-level links that perform full document navigations. Require `page.exposeBinding` to preserve exactly two captured activations across both documents. |
 
+## 28b. Canonical Platform Default Provenance (#240① / D-150)
+
+**File:** `specs/image-text-note-compiler.spec.ts` | **Priority:** P0
+
+The image-text-note branch deliberately configures `nano-banana-2`, a real
+fixture-executable catalog model that differs from the retired browser constant
+`seedream-5-pro`. Its complete journey reads preferences, submits through
+Composer, completes Harness, and reads the immutable selection evidence back
+through the ContentPackage projection.
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | Composer confirmation → dual styles → selected pages → full revision and manifest | Register a Day-0 workspace; require its stored preference to retain `platform_default` origin and config revision without appearing as a merchant workspace default; require the current canonical preference and Composer submission to select `nano-banana-2`; complete the note confirmation/style/SSE journey; then read the ContentPackage and require its execution-snapshot projection to freeze `platform_default`, the same model id, and the exact platform config revision. |
+
 ## 29. Live Creation Catalog Capability Gate
 
 **File:** `specs/catalog-live-navigation.spec.ts` | **Priority:** P0
