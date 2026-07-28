@@ -1,45 +1,37 @@
-import { landing_statement } from '@/locale/paraglide/messages';
-import { BottomCTA } from '@/components/landing/bottom-cta';
+import { BlurInHeadline } from '@/components/landing/blur-in-headline';
 import { FAQ } from '@/components/landing/faq';
+import { FeaturesBento } from '@/components/landing/features-bento';
 import { Footer } from '@/components/landing/footer';
 import { Header } from '@/components/landing/header';
 import { Hero } from '@/components/landing/hero';
-import { ImageReveal } from '@/components/landing/image-reveal';
+import { HowItWorks } from '@/components/landing/how-it-works';
 import { Pricing } from '@/components/landing/pricing';
-import { ShowcaseCards } from '@/components/landing/showcase-cards';
+import { SiteFrame } from '@/components/landing/site-frame';
 import { SkipToContent } from '@/components/landing/skip-to-content';
 import { SmoothScroll } from '@/components/landing/smooth-scroll';
-import { Stats } from '@/components/landing/stats';
 import { Testimonials } from '@/components/landing/testimonials';
-import { TextReveal } from '@/components/landing/text-reveal';
 import { ThemeSwitch } from '@/components/landing/theme-switch';
-import { ToolsCarousel } from '@/components/landing/tools-carousel';
 
+/**
+ * Section order follows the SaaS template baseline
+ * (references/repos/saas首页模板/app/page.tsx) one for one.
+ */
 export function LandingPage() {
   return (
     <SmoothScroll>
       <div className="meiye-landing flex min-h-screen flex-col">
         <SkipToContent />
+        <SiteFrame />
         <Header />
         <ThemeSwitch />
         <main id="main-content" className="flex-1">
           <Hero />
-          <section className="relative py-32 md:py-48">
-            <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
-              <TextReveal
-                text={landing_statement()}
-                className="text-4xl font-medium tracking-tight text-foreground sm:text-5xl md:text-6xl lg:text-7xl"
-              />
-            </div>
-          </section>
-          <ImageReveal />
-          <ToolsCarousel />
-          <ShowcaseCards />
-          <Stats />
+          <BlurInHeadline />
+          <FeaturesBento />
           <Testimonials />
+          <HowItWorks />
           <Pricing />
           <FAQ />
-          <BottomCTA />
         </main>
         <Footer />
       </div>

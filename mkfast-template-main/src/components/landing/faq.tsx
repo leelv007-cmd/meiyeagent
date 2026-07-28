@@ -1,6 +1,7 @@
 import { type ReactNode, useState } from 'react';
+import { Link } from '@tanstack/react-router';
+import { ChevronDown } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Plus } from 'lucide-react';
 import {
   landing_faq_a1,
   landing_faq_a2,
@@ -8,62 +9,84 @@ import {
   landing_faq_a4,
   landing_faq_a5,
   landing_faq_a6,
+  landing_faq_eyebrow,
+  landing_faq_heading,
   landing_faq_q1,
   landing_faq_q2,
   landing_faq_q3,
   landing_faq_q4,
   landing_faq_q5,
   landing_faq_q6,
-  landing_faq_title,
+  landing_faq_subtitle,
+  landing_footer_link_contact,
+  landing_nav_register,
 } from '@/locale/paraglide/messages';
+import { Routes } from '@/lib/routes';
 
-interface FAQItem {
+interface FAQEntry {
   question: string;
   answer: string;
 }
 
-function FAQItemComponent({
-  item,
+const ease = [0.23, 1, 0.32, 1] as const;
+
+function FAQItem({
+  faq,
+  index,
   isOpen,
   onToggle,
 }: {
-  item: FAQItem;
+  faq: FAQEntry;
+  index: number;
   isOpen: boolean;
   onToggle: () => void;
-}) {
+}): ReactNode {
+  const triggerId = `faq-trigger-${index}`;
+  const panelId = `faq-panel-${index}`;
+
   return (
     <motion.div
-      layout
-      className="rounded-2xl bg-muted/50"
-      transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: '-50px' }}
+      transition={{ duration: 0.5, ease, delay: index * 0.05 }}
+      className="rounded-2xl bg-frame p-5 shadow-sm sm:p-6"
     >
       <button
         type="button"
+        id={triggerId}
         onClick={onToggle}
-        className="flex w-full cursor-pointer items-center justify-between gap-4 px-6 py-5 text-left"
+        aria-expanded={isOpen}
+        aria-controls={panelId}
+        className="flex w-full cursor-pointer items-center justify-between gap-4 text-left"
       >
-        <span className="text-base font-medium text-foreground">
-          {item.question}
+        <span className="text-base font-medium text-foreground sm:text-lg">
+          {faq.question}
         </span>
         <motion.div
-          animate={{ rotate: isOpen ? 45 : 0 }}
-          transition={{ duration: 0.2, ease: 'easeOut' }}
+          animate={{ rotate: isOpen ? 180 : 0 }}
+          transition={{ duration: 0.3, ease }}
           className="shrink-0"
+          aria-hidden="true"
         >
-          <Plus className="h-5 w-5 text-foreground" />
+          <ChevronDown className="h-5 w-5 text-muted-foreground" />
         </motion.div>
       </button>
-
       <AnimatePresence initial={false}>
         {isOpen && (
           <motion.div
+            id={panelId}
+            role="region"
+            aria-labelledby={triggerId}
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
+            transition={{ duration: 0.3, ease }}
             className="overflow-hidden"
           >
-            <p className="px-6 pb-5 text-muted-foreground">{item.answer}</p>
+            <p className="pt-4 text-sm leading-relaxed text-muted-foreground sm:text-base">
+              {faq.answer}
+            </p>
           </motion.div>
         )}
       </AnimatePresence>
@@ -72,7 +95,7 @@ function FAQItemComponent({
 }
 
 export function FAQ(): ReactNode {
-  const faqs: FAQItem[] = [
+  const faqs: FAQEntry[] = [
     { question: landing_faq_q1(), answer: landing_faq_a1() },
     { question: landing_faq_q2(), answer: landing_faq_a2() },
     { question: landing_faq_q3(), answer: landing_faq_a3() },
@@ -88,30 +111,51 @@ export function FAQ(): ReactNode {
   };
 
   return (
-    <section
-      id="faq"
-      className="px-4 py-20 sm:px-6 md:py-28 lg:px-8 border-t border-foreground/10"
-    >
-      <div className="mx-auto max-w-7xl">
-        <div className="grid items-start gap-12 lg:grid-cols-12 lg:gap-16">
-          <div className="lg:col-span-6">
-            <p className="text-4xl font-medium tracking-tight text-foreground">
-              {landing_faq_title()}
-            </p>
-          </div>
+    <section id="faq" className="w-full px-6 py-20 sm:py-28 scroll-mt-24">
+      <div className="mx-auto max-w-3xl">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.6, ease }}
+          className="mb-12 text-center sm:mb-16"
+        >
+          <span className="text-sm font-medium text-muted-foreground">
+            {landing_faq_eyebrow()}
+          </span>
+          <h2 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl lg:text-5xl">
+            {landing_faq_heading()}
+          </h2>
+          <p className="mx-auto mt-4 max-w-xl text-base text-muted-foreground sm:text-lg">
+            {landing_faq_subtitle()}
+          </p>
 
-          <div className="lg:col-span-6">
-            <div className="flex flex-col gap-3">
-              {faqs.map((faq, index) => (
-                <FAQItemComponent
-                  key={faq.question}
-                  item={faq}
-                  isOpen={openIndex === index}
-                  onToggle={() => handleToggle(index)}
-                />
-              ))}
-            </div>
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+            <Link
+              to={Routes.Register}
+              className="inline-flex items-center rounded-xl bg-foreground px-6 py-2.5 text-sm font-semibold text-background transition-colors hover:bg-foreground/90"
+            >
+              {landing_nav_register()}
+            </Link>
+            <Link
+              to={Routes.Contact}
+              className="inline-flex items-center rounded-xl border border-border bg-frame px-6 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
+            >
+              {landing_footer_link_contact()}
+            </Link>
           </div>
+        </motion.div>
+
+        <div className="flex flex-col gap-3">
+          {faqs.map((faq, index) => (
+            <FAQItem
+              key={faq.question}
+              faq={faq}
+              index={index}
+              isOpen={openIndex === index}
+              onToggle={() => handleToggle(index)}
+            />
+          ))}
         </div>
       </div>
     </section>

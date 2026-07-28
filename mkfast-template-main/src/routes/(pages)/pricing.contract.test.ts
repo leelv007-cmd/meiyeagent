@@ -172,9 +172,10 @@ test('pricing page is reskinned to brand tokens, not the template skin', () => {
 });
 
 test('landing pricing speaks the launch contract in the landing scope', () => {
-  // The LIKEPAGE landing is exempt from PricingShell (own design system,
-  // docs/design/landing-design-2026-07-21.md); it must speak the launch
-  // pricing contract instead: 初级 free / 中级 paid / lifetime disabled.
+  // The LIKEPAGE landing is exempt from PricingShell — it runs the SaaS
+  // template's own visual system, scoped under `.meiye-landing`. What it is not
+  // exempt from is the launch pricing contract: 初级 free / 中级 paid /
+  // lifetime disabled.
   const home = read(HOME_PRICING);
   const zh = JSON.parse(read('project.inlang/messages/zh.json'));
   const en = JSON.parse(read('project.inlang/messages/en.json'));
@@ -196,12 +197,15 @@ test('landing pricing speaks the launch contract in the landing scope', () => {
     home,
     /name: landing_pricing_growth_name\(\)[\s\S]*?href: Routes\.Register/u
   );
-  assert.match(home, /icon: Building2,\s*\n\s*disabled: true,/u);
+  // The lifetime tier carries no href at all, and the card renders a really
+  // disabled button for any tier without one. Asserting the absence of a link
+  // rather than a particular field name keeps this honest across reshells.
   assert.doesNotMatch(
     home,
-    /icon: Building2,[\s\S]*?href:/u,
+    /name: landing_pricing_lifetime_name\(\)[\s\S]*?href:/u,
     'the lifetime tier must not gain a link'
   );
+  assert.match(home, /disabled\s*\n\s*aria-disabled="true"/u);
   for (const key of [
     'landing_pricing_growth_badge',
     'landing_pricing_coming_soon',

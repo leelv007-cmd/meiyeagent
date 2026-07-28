@@ -1,243 +1,201 @@
-import { useScroll, useTransform, useSpring, motion } from 'motion/react';
+import { ArrowDownRight } from 'lucide-react';
+import { motion, useMotionValue, useSpring } from 'motion/react';
+import { useRef, type MouseEvent, type ReactNode } from 'react';
+import { Link } from '@tanstack/react-router';
 import {
-  Paperclip,
-  Lightbulb,
-  PenTool,
-  Layout,
-  Mic,
-  ArrowRight,
-  ArrowDown,
-} from 'lucide-react';
-import { useMemo, useRef, useState, type ReactNode } from 'react';
-import { useNavigate } from '@tanstack/react-router';
-import {
-  landing_a11y_add_material,
-  landing_a11y_voice_input,
-  landing_hero_free_note,
-  landing_hero_h1_line1_em,
-  landing_hero_h1_line1_lead,
+  landing_hero_badge,
+  landing_hero_h1_line1,
   landing_hero_h1_line2_em,
   landing_hero_h1_line2_lead,
-  landing_hero_h1_sep,
-  landing_hero_input_placeholder,
-  landing_hero_mode_daily,
-  landing_hero_mode_promo,
-  landing_hero_mode_trend,
-  landing_hero_send_aria,
+  landing_hero_loop_1,
+  landing_hero_loop_2,
+  landing_hero_loop_3,
+  landing_hero_loop_4,
+  landing_hero_loop_5,
+  landing_hero_loop_6,
+  landing_hero_loop_7,
+  landing_hero_loop_8,
+  landing_hero_mock_alt,
   landing_hero_subhead,
+  landing_nav_register,
 } from '@/locale/paraglide/messages';
 import { Routes } from '@/lib/routes';
-import { useTheme } from '@/components/theme/theme-provider';
-import { captureLandingIntent } from '@/product/landing-handoff';
-import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
-import { FluidCursor } from './fluid-cursor';
+import { LogoLoop, type LoopItem } from './logo-loop';
+
+const ease = [0.23, 1, 0.32, 1] as const;
+
+const fadeInUp = {
+  hidden: { opacity: 0, y: 20, filter: 'blur(8px)' },
+  visible: { opacity: 1, y: 0, filter: 'blur(0px)' },
+};
+
+const fadeInScale = {
+  hidden: { opacity: 0, scale: 0.95, filter: 'blur(8px)' },
+  visible: { opacity: 1, scale: 1, filter: 'blur(0px)' },
+};
+
+const PARALLAX_INTENSITY = 20;
 
 export function Hero(): ReactNode {
   const sectionRef = useRef<HTMLElement>(null);
-  const navigate = useNavigate();
-  const { resolvedTheme } = useTheme();
-  const prefersReducedMotion = usePrefersReducedMotion();
-  const [intent, setIntent] = useState('');
 
-  const goToRegisterWithIntent = () => {
-    // Whitelist-only handoff: intent + createdAt. No assets/rights/quotes.
-    captureLandingIntent({ intent });
-    void navigate({ to: Routes.Register });
+  const mouseX = useMotionValue(0);
+  const mouseY = useMotionValue(0);
+
+  const springConfig = { damping: 25, stiffness: 150 };
+  const x = useSpring(mouseX, springConfig);
+  const y = useSpring(mouseY, springConfig);
+
+  const handleMouseMove = (e: MouseEvent<HTMLElement>) => {
+    if (!sectionRef.current) return;
+
+    if (window.innerWidth < 850) return;
+
+    const rect = sectionRef.current.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    const offsetX = (e.clientX - centerX) / (rect.width / 2);
+    const offsetY = (e.clientY - centerY) / (rect.height / 2);
+
+    mouseX.set(offsetX * PARALLAX_INTENSITY);
+    mouseY.set(offsetY * PARALLAX_INTENSITY);
   };
 
-  const cursorColor = useMemo(
-    () =>
-      resolvedTheme === 'dark'
-        ? { r: 0.86, g: 0.7, b: 0.46 }
-        : { r: 0.84, g: 0.7, b: 0.48 },
-    [resolvedTheme]
-  );
+  const handleMouseLeave = () => {
+    mouseX.set(0);
+    mouseY.set(0);
+  };
 
-  const { scrollY, scrollYProgress } = useScroll({
-    target: sectionRef,
-    offset: ['start start', 'end start'],
-  });
-
-  const scaleYRaw = useTransform(scrollYProgress, [0.0, 0.5], [1, 0]);
-  const scaleY = useSpring(scaleYRaw, { stiffness: 100, damping: 30 });
-
-  const y = useTransform(scrollY, (value) => value * 0.7);
+  const loopItems: LoopItem[] = [
+    landing_hero_loop_1(),
+    landing_hero_loop_2(),
+    landing_hero_loop_3(),
+    landing_hero_loop_4(),
+    landing_hero_loop_5(),
+    landing_hero_loop_6(),
+    landing_hero_loop_7(),
+    landing_hero_loop_8(),
+  ].map((label) => ({
+    node: (
+      <span className="inline-flex items-center rounded-full border border-black/10 bg-white/70 px-5 py-2 text-sm font-medium text-black whitespace-nowrap">
+        {label}
+      </span>
+    ),
+  }));
 
   return (
-    <section ref={sectionRef} className="relative min-h-dvh w-full">
-      {!prefersReducedMotion && (
-        <FluidCursor color={cursorColor} className="absolute inset-0 -z-5" />
-      )}
-
+    <section
+      ref={sectionRef}
+      className="flex flex-col relative"
+      style={{ colorScheme: 'light' }}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+    >
       <motion.div
-        className="pointer-events-none absolute inset-0 -z-10 origin-top scale-125 will-change-transform"
-        style={{ scaleY, y }}
+        className="absolute inset-0 min-[850px]:inset-2.5 bg-cover bg-bottom bg-no-repeat -z-10 rounded-br-4xl rounded-bl-4xl min-[850px]:scale-105"
+        style={{
+          backgroundImage: 'url(/landing/hero-bg.jpg)',
+          x,
+          y,
+        }}
         aria-hidden="true"
-      >
-        <img
-          src="/landing/gradient-fade.svg"
-          alt=""
-          className="absolute inset-0 h-full w-full object-cover object-top dark:hidden"
-        />
-        <img
-          src="/landing/gradient-fade-dark.svg"
-          alt=""
-          className="absolute inset-0 hidden h-full w-full -scale-y-100 object-cover object-top dark:block"
-        />
-        <div className="from-background absolute inset-x-0 bottom-0 h-1/3 bg-linear-to-t to-transparent" />
-      </motion.div>
+      />
 
-      <div className="mx-auto flex min-h-dvh max-w-4xl flex-col items-start justify-center gap-6 px-4 py-20 sm:justify-start sm:gap-0 sm:py-0 sm:pt-40 lg:px-8 lg:pt-68">
-        <motion.p
-          className="landing-display text-foreground/70 dark:text-background/70 mb-3 text-xs tracking-[0.3em] uppercase sm:mb-5"
-          initial={{ opacity: 0, y: 20, filter: 'blur(8px)' }}
-          animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-          transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
-        >
-          BEAUTY · TRAFFIC · CLIENTS
-        </motion.p>
-
-        <motion.h1
-          className="text-foreground dark:text-background text-4xl font-medium tracking-tight sm:text-5xl md:text-6xl lg:text-7xl"
-          initial={{ opacity: 0, y: 20, filter: 'blur(8px)' }}
-          animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-          transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
-        >
-          <span className="block">
-            {landing_hero_h1_line1_lead()}
-            <em className="text-foreground/80 dark:text-background/80 italic">
-              {landing_hero_h1_line1_em()}
-            </em>
-            {landing_hero_h1_sep()}
-          </span>
-          <span className="block">
-            {landing_hero_h1_line2_lead()}
-            <em className="text-foreground/80 dark:text-background/80 italic">
-              {landing_hero_h1_line2_em()}
-            </em>
-          </span>
-        </motion.h1>
-
+      <div className="flex items-start justify-center px-6 pt-64 max-[850px]:pt-32">
         <motion.div
-          className="w-full sm:mt-12 lg:mt-16"
-          initial={{ opacity: 0, y: 30, filter: 'blur(8px)' }}
-          animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-          transition={{
-            duration: 0.6,
-            delay: 0.15,
-            ease: [0.25, 0.46, 0.45, 0.94],
-          }}
+          className="flex flex-col items-center max-[850px]:items-start text-center max-[850px]:text-left max-w-4xl max-[850px]:w-full"
+          initial="hidden"
+          animate="visible"
+          transition={{ staggerChildren: 0.15, delayChildren: 0.2 }}
         >
-          <div
-            className="relative rounded-4xl rounded-b-[2.3rem] border border-border bg-[var(--l-card)] p-3"
-            style={{
-              boxShadow:
-                '0 8px 32px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(192, 150, 73, 0.1)',
-            }}
+          <motion.div
+            className="inline-flex items-center gap-1.5 pl-4 pr-3 py-1.5 rounded-xl border border-black/10 bg-white text-black text-sm font-medium mb-6"
+            variants={fadeInUp}
+            transition={{ duration: 0.8, ease }}
           >
-            <div className="flex items-start gap-3">
-              <textarea
-                aria-label={landing_hero_input_placeholder()}
-                className="no-focus-ring mx-4 my-2 min-h-15 w-full resize-none bg-transparent text-foreground placeholder:text-muted-foreground"
-                data-testid="landing-intent-input"
-                onChange={(event) => setIntent(event.target.value)}
-                onKeyDown={(event) => {
-                  if (
-                    (event.metaKey || event.ctrlKey) &&
-                    event.key === 'Enter'
-                  ) {
-                    event.preventDefault();
-                    goToRegisterWithIntent();
-                  }
-                }}
-                placeholder={landing_hero_input_placeholder()}
-                rows={2}
-                value={intent}
-              />
-            </div>
+            {landing_hero_badge()}
+            <span className="text-accent">✦</span>
+          </motion.div>
 
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  className="focus-ring isolate flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center rounded-full bg-muted text-muted-foreground transition-colors hover:border-border hover:text-foreground"
-                  aria-label={landing_a11y_add_material()}
-                >
-                  <Paperclip className="h-4 w-4" />
-                </button>
+          <h1 className="text-8xl max-[850px]:text-5xl font-medium tracking-tight leading-[1.1] mb-6 text-black">
+            <motion.span
+              className="block"
+              variants={fadeInUp}
+              transition={{ duration: 0.8, ease }}
+            >
+              {landing_hero_h1_line1()}
+            </motion.span>
+            <motion.span
+              className="block"
+              variants={fadeInUp}
+              transition={{ duration: 0.8, ease }}
+            >
+              {landing_hero_h1_line2_lead()}{' '}
+              <span className="italic font-serif text-accent">
+                {landing_hero_h1_line2_em()}
+              </span>
+            </motion.span>
+          </h1>
 
-                <button
-                  type="button"
-                  className="focus-ring isolate flex h-12 shrink-0 cursor-pointer items-center gap-2 rounded-full bg-muted px-5 text-sm text-muted-foreground transition-colors hover:border-border hover:text-foreground"
-                >
-                  <Lightbulb className="h-4 w-4 shrink-0" />
-                  <span className="hidden sm:inline">
-                    {landing_hero_mode_daily()}
-                  </span>
-                </button>
+          <motion.p
+            className="text-lg text-neutral-600 mb-8"
+            variants={fadeInUp}
+            transition={{ duration: 0.8, ease }}
+          >
+            {landing_hero_subhead()}
+          </motion.p>
 
-                <button
-                  type="button"
-                  className="focus-ring isolate hidden h-12 shrink-0 cursor-pointer items-center gap-2 rounded-full bg-muted px-5 text-sm text-muted-foreground transition-colors hover:border-border hover:text-foreground sm:flex"
-                >
-                  <PenTool className="h-4 w-4 shrink-0" />
-                  <span>{landing_hero_mode_trend()}</span>
-                </button>
-
-                <button
-                  type="button"
-                  className="focus-ring isolate hidden h-12 shrink-0 cursor-pointer items-center gap-2 rounded-full bg-muted px-5 text-sm text-muted-foreground transition-colors hover:border-border hover:text-foreground md:flex"
-                >
-                  <Layout className="h-4 w-4 shrink-0" />
-                  <span>{landing_hero_mode_promo()}</span>
-                </button>
-              </div>
-
-              <div className="flex shrink-0 items-center gap-2">
-                <button
-                  type="button"
-                  className="focus-ring isolate hidden h-12 w-12 cursor-pointer items-center justify-center rounded-full bg-muted text-muted-foreground transition-colors hover:bg-border hover:text-foreground sm:flex"
-                  aria-label={landing_a11y_voice_input()}
-                >
-                  <Mic className="h-4 w-4" />
-                </button>
-                <button
-                  aria-label={landing_hero_send_aria()}
-                  className="focus-ring bg-foreground dark:bg-background hover:bg-foreground/90 dark:hover:bg-background/90 isolate flex h-12 w-12 cursor-pointer items-center justify-center rounded-full text-white transition-colors"
-                  data-testid="landing-intent-send"
-                  onClick={goToRegisterWithIntent}
-                  type="button"
-                >
-                  <ArrowRight className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <p className="text-foreground/85 dark:text-background/85 mt-6 text-center text-xs">
-            {landing_hero_free_note()}
-          </p>
+          <motion.div
+            className="max-[850px]:w-full"
+            variants={fadeInScale}
+            transition={{ duration: 0.8, ease }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <Link
+              to={Routes.Register}
+              className="group relative cursor-pointer inline-flex items-center max-[850px]:w-full"
+            >
+              <span className="absolute right-0 inset-y-0 w-[calc(100%-2rem)] max-[850px]:w-full rounded-xl bg-accent" />
+              <span className="relative z-10 px-6 py-3 rounded-xl bg-black text-white font-medium max-[850px]:flex-1">
+                {landing_nav_register()}
+              </span>
+              <span className="relative -left-px z-10 w-11 h-11 rounded-xl flex items-center justify-center text-black">
+                <ArrowDownRight className="w-5 h-5 transition-transform duration-300 group-hover:-rotate-45" />
+              </span>
+            </Link>
+          </motion.div>
         </motion.div>
       </div>
 
       <motion.div
-        className="relative mx-auto mt-10 flex max-w-4xl items-center justify-between px-4 pb-16 sm:absolute sm:inset-x-0 sm:bottom-24 sm:mt-0 sm:px-6 sm:pb-0 lg:px-8"
-        initial={{ opacity: 0, y: 20 }}
+        className="relative px-6 mt-24 max-[850px]:mt-10"
+        initial={{ opacity: 0, y: 40 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{
-          duration: 0.5,
-          delay: 0.4,
-          ease: [0.25, 0.46, 0.45, 0.94],
-        }}
+        transition={{ duration: 1, delay: 0.6, ease }}
       >
-        <p className="text-foreground/60 dark:text-foreground/50 max-w-sm text-sm">
-          {landing_hero_subhead()}
-        </p>
+        <div className="relative max-w-5xl mx-auto">
+          <div className="relative rounded-2xl overflow-hidden border border-neutral-200 shadow-2xl/5 mask-[linear-gradient(to_bottom,black_50%,transparent_100%)] [-webkit-mask-image:linear-gradient(to_bottom,black_50%,transparent_100%)]">
+            <img
+              src="/landing/product-shot.webp"
+              alt={landing_hero_mock_alt()}
+              width={1440}
+              height={900}
+              className="w-full h-auto"
+              fetchPriority="high"
+            />
+          </div>
+        </div>
+      </motion.div>
 
-        <ArrowDown
-          className="text-foreground/60 dark:text-foreground/50 h-12 w-12"
-          strokeWidth={1}
-        />
+      <motion.div
+        className="pt-24 pb-12"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.8, delay: 1, ease }}
+      >
+        <LogoLoop items={loopItems} speed={60} itemHeight={42} gap={124} />
       </motion.div>
     </section>
   );

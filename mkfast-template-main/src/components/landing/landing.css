@@ -1,81 +1,140 @@
 /*
- * Landing design system — 丽客美页 LIKEPAGE (docs/design/landing-design-2026-07-21.md)
+ * Landing design system — 丽客美页 LIKEPAGE
  * Scoped under .meiye-landing so product-shell pages are untouched.
- * Palette: 暖香槟金·琥珀丝绒 (from references/风格参考图 commonalities).
+ * Palette and page frame follow the SaaS template baseline verbatim
+ * (references/repos/saas首页模板/app/globals.css).
  */
 
-@font-face {
-  font-family: "Likepage Didone";
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url("/fonts/didone-display-latin.woff2") format("woff2");
-  unicode-range: U+0000-00FF, U+2000-206F;
-}
-
 .meiye-landing {
-  /* high-key pearl-champagne (ref: 风格参考图/huaban-5406234642.jpg) */
-  --background: #faf5ec;
-  --foreground: #4a3826;
-  --muted: #f3ecdd;
-  --muted-foreground: #8a7862;
-  --border: #eaddc6;
-  --ring: #c09649;
-  --accent: #c09649;
-  --accent-light: #efdcb2;
-  --accent-foreground: #3f2f1b;
-  --l-gradient-from: #c39a5e;
-  --l-gradient-to: #ead3a2;
-  --l-glow: #f4ce96;
-  --l-rose: #e96b5f;
-  --l-card: #fdfbf5;
+  --background: #f5f5f5;
+  --foreground: #0a0a0a;
+  --muted: #f5f5f5;
+  --muted-foreground: #737373;
+  --border: #e5e5e5;
+  --ring: #0066ff;
+  --frame: #ffffff;
+  --accent: #a8d946;
+  --card-primary: #a8d946;
+  --card-secondary: #e8f5c8;
+  --card-foreground: #171717;
+  --card-foreground-muted: #525252;
+  --phone-screen: #f5f5f5;
 
+  isolation: isolate;
+  overflow-x: clip;
+  overscroll-behavior-x: none;
   background-color: var(--background);
   color: var(--foreground);
-  font-family: var(--font-brand);
-  /* own stacking context so -z-10 hero backdrop paints above this background */
-  isolation: isolate;
-  /* film-grain film: SVG feTurbulence noise layered under content, zero stacking risk */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
-  overflow-x: clip;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .dark .meiye-landing {
-  --background: #2a1b10;
-  --foreground: #f3e9dc;
-  --muted: #3e2a18;
-  --muted-foreground: #c4b39e;
-  --border: #5c3a1e;
-  --ring: #d4a155;
-  --accent: #d4a155;
-  --accent-light: #e8c98f;
-  --accent-foreground: #2a1b10;
-  --l-glow: #f0a868;
-  --l-rose: #e77f87;
+  --background: #141414;
+  --foreground: #fafafa;
+  --muted: #171717;
+  --muted-foreground: #a3a3a3;
+  --border: #262626;
+  --ring: #3b82f6;
+  --frame: #000000;
+  --accent: #a8d946;
+  --card-primary: #a8d946;
+  --card-secondary: #2a3a1a;
+  --card-foreground: #fafafa;
+  --card-foreground-muted: #d4d4d4;
+  --phone-screen: #f5f5f5;
 }
 
 .meiye-landing ::selection {
   background-color: var(--accent);
-  color: #3f2f1b;
+  color: white;
 }
 
-.meiye-landing .landing-display {
-  font-family:
-    "Likepage Didone", Didot, "Bodoni MT", "Songti SC", "Noto Serif SC", serif;
+/* --- fixed page frame + corner notches (template layout.tsx) --- */
+
+.meiye-landing .site-frame {
+  position: fixed;
+  z-index: 9999;
+  display: block;
+  background-color: var(--frame);
+  pointer-events: none;
 }
+
+.meiye-landing .site-frame--top {
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 10px;
+}
+
+.meiye-landing .site-frame--bottom {
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 10px;
+}
+
+.meiye-landing .site-frame--left {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 10px;
+}
+
+.meiye-landing .site-frame--right {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 10px;
+}
+
+.meiye-landing .site-corner {
+  position: fixed;
+  z-index: 9998;
+  display: block;
+  color: var(--frame);
+  pointer-events: none;
+}
+
+.meiye-landing .site-corner--top-left {
+  top: 10px;
+  left: 10px;
+  transform: rotate(90deg);
+}
+
+.meiye-landing .site-corner--top-right {
+  top: 10px;
+  right: 10px;
+  transform: rotate(180deg);
+}
+
+.meiye-landing .site-corner--bottom-left {
+  bottom: 10px;
+  left: 10px;
+  transform: rotate(0deg);
+}
+
+.meiye-landing .site-corner--bottom-right {
+  right: 10px;
+  bottom: 10px;
+  transform: rotate(270deg);
+}
+
+/* --- accessibility --- */
 
 .meiye-landing .skip-to-content {
   position: absolute;
-  left: -9999px;
   top: 1rem;
+  left: -9999px;
   z-index: 9999;
   padding: 0.75rem 1rem;
-  background: var(--background);
   border: 2px solid var(--ring);
   border-radius: 0.375rem;
+  background: var(--background);
+  color: var(--foreground);
   font-weight: 600;
   text-decoration: none;
-  color: var(--foreground);
 }
 
 .meiye-landing .skip-to-content:focus {
@@ -102,18 +161,16 @@
   outline: none;
 }
 
-.meiye-landing .scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-.meiye-landing .scrollbar-hide::-webkit-scrollbar {
-  display: none;
-}
-
 /* Lenis owns scrolling while landing is mounted; neutralize global smooth */
 html.lenis {
   scroll-behavior: auto;
+}
+
+@media (max-width: 850px) {
+  .meiye-landing .site-frame,
+  .meiye-landing .site-corner {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

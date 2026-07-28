@@ -1,284 +1,439 @@
-import {
-  motion,
-  AnimatePresence,
-  useScroll,
-  useMotionValueEvent,
-} from 'motion/react';
-import { Link } from '@tanstack/react-router';
+import { ArrowDownRight, ChevronDown } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useState, type ReactNode } from 'react';
+import { Link } from '@tanstack/react-router';
 import {
-  landing_a11y_logo_home,
   landing_a11y_menu_close,
   landing_a11y_menu_open,
   landing_a11y_nav_mobile,
   landing_a11y_nav_primary,
   landing_nav_brand,
-  landing_nav_faq,
-  landing_nav_features,
   landing_nav_login,
   landing_nav_logo_alt,
+  landing_nav_menu_product,
+  landing_nav_menu_resources,
   landing_nav_pricing,
+  landing_nav_product_1_desc,
+  landing_nav_product_1_label,
+  landing_nav_product_2_desc,
+  landing_nav_product_2_label,
+  landing_nav_product_3_desc,
+  landing_nav_product_3_label,
+  landing_nav_product_4_desc,
+  landing_nav_product_4_label,
   landing_nav_register,
-  landing_nav_showcase,
+  landing_nav_resources_1_desc,
+  landing_nav_resources_1_label,
+  landing_nav_resources_2_desc,
+  landing_nav_resources_2_label,
+  landing_nav_resources_3_desc,
+  landing_nav_resources_3_label,
+  landing_nav_resources_4_desc,
+  landing_nav_resources_4_label,
 } from '@/locale/paraglide/messages';
 import { Routes } from '@/lib/routes';
 
-export function Header(): ReactNode {
-  const navLinks = [
-    { href: '#features', label: landing_nav_features() },
-    { href: '#showcase', label: landing_nav_showcase() },
-    { href: '#pricing', label: landing_nav_pricing() },
-    { href: '#faq', label: landing_nav_faq() },
-  ];
+interface MenuItem {
+  label: string;
+  description: string;
+  href: string;
+}
 
-  const authLinks = [
-    { to: Routes.Login, label: landing_nav_login() },
-    { to: Routes.Register, label: landing_nav_register() },
-  ];
+const ease = [0.23, 1, 0.32, 1] as const;
 
-  const [isOpen, setIsOpen] = useState(false);
-  const [isHidden, setIsHidden] = useState(false);
-  const [isScrolled, setIsScrolled] = useState(false);
-  const { scrollY } = useScroll();
-
-  useMotionValueEvent(scrollY, 'change', (latest) => {
-    const previous = scrollY.getPrevious() ?? 0;
-
-    if (latest > previous && latest > 50) {
-      setIsHidden(true);
-    } else {
-      setIsHidden(false);
-    }
-    setIsScrolled(latest > 50);
-  });
-
-  const toggleMenu = () => setIsOpen(!isOpen);
-  const closeMenu = () => setIsOpen(false);
-
-  // mix-blend-difference turns blue over the amber backdrop, so the header
-  // adapts by scroll state instead: hero-top rides the same tones as the H1
-  // (foreground on the high-key light hero, background-dark on the flipped
-  // dark hero), scrolled gets a glass bar with text-foreground, open menu is
-  // always dark bronze so text goes white.
-  const overHero = !isScrolled && !isOpen;
-  const textTone = isOpen
-    ? 'text-white'
-    : overHero
-      ? 'text-foreground dark:text-background'
-      : 'text-foreground';
-  const hoverTone = isOpen
-    ? 'hover:bg-white/10'
-    : overHero
-      ? 'hover:bg-foreground/10 dark:hover:bg-background/10'
-      : 'hover:bg-foreground/10';
-  const logoFilter = isOpen ? '' : overHero ? 'invert' : 'invert dark:invert-0';
-  const barTone =
-    isScrolled && !isOpen
-      ? 'border-b border-border/50 bg-background/70 backdrop-blur-md'
-      : '';
+/**
+ * Menu targets mix in-page anchors with real routes, so links are dispatched
+ * on the href shape: `#` goes to a plain anchor, everything else to the
+ * router. Handing an anchor to `<Link to>` would not typecheck.
+ */
+function MenuLink({
+  href,
+  className,
+  onClick,
+  children,
+}: {
+  href: string;
+  className: string;
+  onClick?: () => void;
+  children: ReactNode;
+}): ReactNode {
+  if (href.startsWith('#')) {
+    return (
+      <a href={href} className={className} onClick={onClick}>
+        {children}
+      </a>
+    );
+  }
 
   return (
-    <>
-      <div
-        className="pointer-events-none fixed top-0 left-0 z-40 h-32 w-full"
-        style={{
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-          maskImage:
-            'linear-gradient(to bottom, black 0%, black 20%, rgba(0,0,0,0.8) 40%, rgba(0,0,0,0.4) 60%, rgba(0,0,0,0.1) 80%, transparent 100%)',
-          WebkitMaskImage:
-            'linear-gradient(to bottom, black 0%, black 20%, rgba(0,0,0,0.8) 40%, rgba(0,0,0,0.4) 60%, rgba(0,0,0,0.1) 80%, transparent 100%)',
-        }}
-        aria-hidden="true"
+    <Link to={href} className={className} onClick={onClick}>
+      {children}
+    </Link>
+  );
+}
+
+function HamburgerIcon({ isOpen }: { isOpen: boolean }): ReactNode {
+  return (
+    <div className="w-8 h-4 relative flex flex-col justify-between cursor-pointer">
+      <motion.span
+        className="block h-0.5 w-full bg-foreground origin-center rounded-full"
+        animate={isOpen ? { rotate: 45, y: 4.5 } : { rotate: 0, y: 0 }}
+        transition={{ duration: 0.25, ease }}
       />
+      <motion.span
+        className="block h-0.5 w-full bg-foreground origin-center rounded-full"
+        animate={isOpen ? { rotate: -45, y: -9.5 } : { rotate: 0, y: 0 }}
+        transition={{ duration: 0.25, ease }}
+      />
+    </div>
+  );
+}
 
-      <motion.header
-        className={`fixed top-0 z-50 w-full transition-colors duration-300 ${barTone}`}
-        initial={{ y: -20, opacity: 0, filter: 'blur(10px)' }}
-        animate={{
-          y: isHidden && !isOpen ? '-100%' : 0,
-          opacity: 1,
-          filter: isHidden && !isOpen ? 'blur(8px)' : 'blur(0px)',
-        }}
-        transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
+function DesktopDropdown({
+  label,
+  items,
+  isOpen,
+  onOpen,
+  onClose,
+}: {
+  label: string;
+  items: MenuItem[];
+  isOpen: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+}): ReactNode {
+  return (
+    <div className="relative" onMouseEnter={onOpen} onMouseLeave={onClose}>
+      <button
+        type="button"
+        className="flex items-center gap-1 px-4 py-2 max-[1200px]:px-3 text-sm font-medium text-foreground/80 hover:text-foreground transition-colors rounded-full hover:bg-foreground/5"
+        aria-expanded={isOpen}
+        aria-haspopup="true"
       >
-        <div className="mx-auto flex h-24 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{
-              duration: 0.5,
-              delay: 0.1,
-              ease: [0.25, 0.46, 0.45, 0.94],
-            }}
-          >
-            <Link
-              to={Routes.Root}
-              className="focus-ring flex items-center gap-2"
-              aria-label={landing_a11y_logo_home()}
-            >
-              <img
-                src="/landing/logo.svg"
-                alt={landing_nav_logo_alt()}
-                width={36}
-                height={36}
-                className={`h-8 w-auto ${logoFilter}`}
-              />
-              <span
-                className={`text-lg font-semibold tracking-tight ${textTone}`}
-              >
-                {landing_nav_brand()}
-              </span>
-            </Link>
-          </motion.div>
-
-          <nav
-            className="hidden items-center gap-3 lg:flex"
-            aria-label={landing_a11y_nav_primary()}
-          >
-            {navLinks.map((link, index) => (
-              <motion.div
-                key={link.href}
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{
-                  duration: 0.4,
-                  delay: 0.15 + index * 0.05,
-                  ease: [0.25, 0.46, 0.45, 0.94],
-                }}
-              >
-                <a
-                  href={link.href}
-                  className={`focus-ring rounded-md px-2.5 py-1 font-medium transition-colors ${textTone} ${hoverTone}`}
-                >
-                  {link.label}
-                </a>
-              </motion.div>
-            ))}
-
-            <motion.div
-              className={`mx-4 h-px w-5 bg-current opacity-30 ${textTone}`}
-              role="separator"
-              aria-orientation="vertical"
-              initial={{ opacity: 0, scaleX: 0 }}
-              animate={{ opacity: 1, scaleX: 1 }}
-              transition={{ duration: 0.4, delay: 0.4, ease: 'easeOut' }}
-            />
-
-            {authLinks.map((link, index) => (
-              <motion.div
-                key={link.label}
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{
-                  duration: 0.4,
-                  delay: 0.45 + index * 0.05,
-                  ease: [0.25, 0.46, 0.45, 0.94],
-                }}
-              >
-                <Link
-                  to={link.to}
-                  className={`focus-ring rounded-md px-2.5 py-1 font-medium transition-colors ${textTone} ${hoverTone}`}
-                >
-                  {link.label}
-                </Link>
-              </motion.div>
-            ))}
-          </nav>
-
-          <button
-            type="button"
-            onClick={toggleMenu}
-            className={`focus-ring relative flex h-10 w-10 items-center justify-center lg:hidden ${textTone}`}
-            aria-label={
-              isOpen ? landing_a11y_menu_close() : landing_a11y_menu_open()
-            }
-            aria-expanded={isOpen}
-          >
-            <span className="sr-only">
-              {isOpen ? landing_a11y_menu_close() : landing_a11y_menu_open()}
-            </span>
-            <span
-              className={`absolute h-0.5 w-5 bg-current transition-transform duration-300 ${
-                isOpen ? 'rotate-45' : 'rotate-0'
-              }`}
-            />
-            <span
-              className={`absolute h-5 w-0.5 bg-current transition-transform duration-300 ${
-                isOpen ? 'rotate-45' : 'rotate-0'
-              }`}
-            />
-          </button>
-        </div>
-      </motion.header>
-
-      <AnimatePresence mode="sync">
+        {label}
+        <ChevronDown className="w-4 h-4" aria-hidden="true" />
+      </button>
+      <AnimatePresence>
         {isOpen && (
           <motion.div
-            key="mobile-menu"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-40 bg-[#2A1B10]/95 backdrop-blur-xl lg:hidden"
+            initial={{ opacity: 0, y: 8, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.96 }}
+            transition={{ duration: 0.2, ease }}
+            className="absolute top-full left-0 pt-2 w-72"
           >
-            <nav
-              className="mx-auto flex h-full max-w-7xl flex-col items-start gap-4 px-4 pt-32 sm:px-6"
-              aria-label={landing_a11y_nav_mobile()}
-            >
-              {navLinks.map((link, index) => (
-                <motion.div
-                  key={link.href}
-                  initial={{ opacity: 0, x: -40, filter: 'blur(10px)' }}
-                  animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
-                  transition={{
-                    duration: 0.4,
-                    delay: 0.05 + index * 0.08,
-                    ease: [0.25, 0.46, 0.45, 0.94],
-                  }}
+            <div className="bg-frame border border-border rounded-2xl shadow-lg overflow-hidden p-2">
+              {items.map((item) => (
+                <MenuLink
+                  key={item.label}
+                  href={item.href}
+                  className="block px-4 py-3 rounded-xl hover:bg-muted transition-colors"
                 >
-                  <a
-                    href={link.href}
-                    onClick={closeMenu}
-                    className="focus-ring block text-6xl text-white transition-colors hover:text-white sm:text-6xl"
-                  >
-                    {link.label}
-                  </a>
-                </motion.div>
+                  <div className="text-sm font-medium text-foreground">
+                    {item.label}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    {item.description}
+                  </div>
+                </MenuLink>
               ))}
-
-              <motion.div
-                initial={{ opacity: 0, scaleX: 0 }}
-                animate={{ opacity: 1, scaleX: 1 }}
-                transition={{ duration: 0.5, delay: 0.4, ease: 'easeOut' }}
-                className="my-4 h-px w-20 origin-left bg-white/30"
-                role="separator"
-              />
-
-              {authLinks.map((link, index) => (
-                <motion.div
-                  key={link.label}
-                  initial={{ opacity: 0, x: -40, filter: 'blur(10px)' }}
-                  animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
-                  transition={{
-                    duration: 0.4,
-                    delay: 0.45 + index * 0.08,
-                    ease: [0.25, 0.46, 0.45, 0.94],
-                  }}
-                >
-                  <Link
-                    to={link.to}
-                    onClick={closeMenu}
-                    className="focus-ring block text-6xl text-white transition-colors hover:text-white sm:text-6xl"
-                  >
-                    {link.label}
-                  </Link>
-                </motion.div>
-              ))}
-            </nav>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
-    </>
+    </div>
+  );
+}
+
+function MobileExpandable({
+  label,
+  items,
+  isExpanded,
+  onToggle,
+  onClose,
+}: {
+  label: string;
+  items: MenuItem[];
+  isExpanded: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+}): ReactNode {
+  return (
+    <div className="border-b border-foreground/10">
+      <button
+        type="button"
+        className="flex items-center justify-between py-4 w-full text-base font-medium text-foreground"
+        onClick={onToggle}
+        aria-expanded={isExpanded}
+      >
+        {label}
+        <motion.div
+          animate={{ rotate: isExpanded ? 180 : 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <ChevronDown
+            className="w-5 h-5 text-muted-foreground"
+            aria-hidden="true"
+          />
+        </motion.div>
+      </button>
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="pb-2 space-y-1">
+              {items.map((item) => (
+                <MenuLink
+                  key={item.label}
+                  href={item.href}
+                  className="block py-2 text-sm text-foreground/80 hover:text-foreground"
+                  onClick={onClose}
+                >
+                  {item.label}
+                </MenuLink>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function CornerSVG({ className }: { className: string }): ReactNode {
+  return (
+    <svg
+      className={className}
+      width="50"
+      height="50"
+      viewBox="0 0 50 50"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M5.50871e-06 0C-0.00788227 37.3001 8.99616 50.0116 50 50H5.50871e-06V0Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+export function Header(): ReactNode {
+  const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileExpanded, setMobileExpanded] = useState<string | null>(null);
+
+  const productItems: MenuItem[] = [
+    {
+      label: landing_nav_product_1_label(),
+      description: landing_nav_product_1_desc(),
+      href: '#features',
+    },
+    {
+      label: landing_nav_product_2_label(),
+      description: landing_nav_product_2_desc(),
+      href: '#features',
+    },
+    {
+      label: landing_nav_product_3_label(),
+      description: landing_nav_product_3_desc(),
+      href: '#how',
+    },
+    {
+      label: landing_nav_product_4_label(),
+      description: landing_nav_product_4_desc(),
+      href: '#how',
+    },
+  ];
+
+  const resourceItems: MenuItem[] = [
+    {
+      label: landing_nav_resources_1_label(),
+      description: landing_nav_resources_1_desc(),
+      href: '#faq',
+    },
+    {
+      label: landing_nav_resources_2_label(),
+      description: landing_nav_resources_2_desc(),
+      href: Routes.Pricing,
+    },
+    {
+      label: landing_nav_resources_3_label(),
+      description: landing_nav_resources_3_desc(),
+      href: Routes.Contact,
+    },
+    {
+      label: landing_nav_resources_4_label(),
+      description: landing_nav_resources_4_desc(),
+      href: Routes.TermsOfService,
+    },
+  ];
+
+  const closeMobile = () => setMobileMenuOpen(false);
+  const toggleExpanded = (key: string) =>
+    setMobileExpanded(mobileExpanded === key ? null : key);
+
+  return (
+    <motion.header
+      initial={{ y: -100 }}
+      animate={{ y: 0 }}
+      transition={{ duration: 0.5, ease }}
+      className="fixed shadow-2xl/20 rounded-b-4xl top-2.5 left-1/2 -translate-x-1/2 w-full max-w-5xl max-[1200px]:max-w-2xl bg-frame z-9998 max-[850px]:top-0 max-[850px]:left-0 max-[850px]:right-0 max-[850px]:translate-x-0 max-[850px]:w-full max-[850px]:max-w-none max-[850px]:rounded-none max-[850px]:rounded-b-4xl max-[850px]:overflow-hidden"
+    >
+      <div className="h-20 max-[850px]:h-18 flex items-center justify-between px-4 max-[850px]:px-6">
+        <Link
+          to={Routes.Root}
+          className="flex items-center gap-2 ml-4 max-[850px]:ml-0"
+          aria-label={landing_nav_logo_alt()}
+        >
+          <img
+            src="/landing/logo.svg"
+            alt=""
+            width={24}
+            height={24}
+            className="h-6 w-6"
+          />
+          <span className="text-lg font-semibold text-foreground leading-0 max-[1200px]:hidden max-[850px]:inline">
+            {landing_nav_brand()}
+          </span>
+        </Link>
+
+        <nav
+          className="flex items-center gap-1 max-[1200px]:gap-0 max-[850px]:hidden"
+          aria-label={landing_a11y_nav_primary()}
+        >
+          <DesktopDropdown
+            label={landing_nav_menu_product()}
+            items={productItems}
+            isOpen={activeMenu === 'products'}
+            onOpen={() => setActiveMenu('products')}
+            onClose={() => setActiveMenu(null)}
+          />
+          <DesktopDropdown
+            label={landing_nav_menu_resources()}
+            items={resourceItems}
+            isOpen={activeMenu === 'resources'}
+            onOpen={() => setActiveMenu('resources')}
+            onClose={() => setActiveMenu(null)}
+          />
+          <a
+            href="#pricing"
+            className="px-4 py-2 max-[1200px]:px-3 text-sm font-medium text-foreground/80 hover:text-foreground transition-colors rounded-full hover:bg-foreground/5"
+          >
+            {landing_nav_pricing()}
+          </a>
+        </nav>
+
+        <div className="flex items-center gap-4 max-[850px]:hidden">
+          <Link
+            to={Routes.Login}
+            className="text-sm font-medium text-foreground/80 hover:text-foreground transition-colors"
+          >
+            {landing_nav_login()}
+          </Link>
+          <Link
+            to={Routes.Register}
+            className="group relative inline-flex items-center"
+          >
+            <span className="absolute right-0 inset-y-0 w-[calc(100%-1.5rem)] rounded-xl bg-accent" />
+            <span className="relative z-10 px-5 py-3 rounded-xl bg-foreground text-background text-sm font-medium">
+              {landing_nav_register()}
+            </span>
+            <span className="relative -left-px z-10 w-10 h-10 rounded-xl flex items-center justify-center text-black">
+              <ArrowDownRight
+                className="w-4 h-4 transition-transform duration-300 group-hover:-rotate-45"
+                aria-hidden="true"
+              />
+            </span>
+          </Link>
+        </div>
+
+        <button
+          type="button"
+          className="hidden max-[850px]:flex items-center justify-center w-10 h-10"
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          aria-label={
+            mobileMenuOpen
+              ? landing_a11y_menu_close()
+              : landing_a11y_menu_open()
+          }
+          aria-expanded={mobileMenuOpen}
+        >
+          <HamburgerIcon isOpen={mobileMenuOpen} />
+        </button>
+      </div>
+
+      <AnimatePresence>
+        {mobileMenuOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease }}
+            className="hidden max-[850px]:block overflow-hidden"
+          >
+            <div className="px-6 pb-4">
+              <nav className="space-y-0" aria-label={landing_a11y_nav_mobile()}>
+                <MobileExpandable
+                  label={landing_nav_menu_product()}
+                  items={productItems}
+                  isExpanded={mobileExpanded === 'products'}
+                  onToggle={() => toggleExpanded('products')}
+                  onClose={closeMobile}
+                />
+                <MobileExpandable
+                  label={landing_nav_menu_resources()}
+                  items={resourceItems}
+                  isExpanded={mobileExpanded === 'resources'}
+                  onToggle={() => toggleExpanded('resources')}
+                  onClose={closeMobile}
+                />
+                <a
+                  href="#pricing"
+                  className="flex items-center justify-between py-4 text-base font-medium text-foreground"
+                  onClick={closeMobile}
+                >
+                  {landing_nav_pricing()}
+                </a>
+              </nav>
+
+              <div className="flex items-center justify-between pt-8 pb-2">
+                <Link
+                  to={Routes.Login}
+                  className="text-base font-medium text-foreground"
+                  onClick={closeMobile}
+                >
+                  {landing_nav_login()}
+                </Link>
+                <Link
+                  to={Routes.Register}
+                  className="group relative inline-flex items-center"
+                  onClick={closeMobile}
+                >
+                  <span className="absolute right-0 inset-y-0 w-[calc(100%-1.5rem)] rounded-2xl bg-accent" />
+                  <span className="relative z-10 px-5 py-3 rounded-2xl bg-foreground text-background text-sm font-medium">
+                    {landing_nav_register()}
+                  </span>
+                  <span className="relative -left-px z-10 w-10 h-10 rounded-2xl flex items-center justify-center text-foreground">
+                    <ArrowDownRight
+                      className="w-4 h-4 transition-transform duration-300 group-hover:-rotate-45"
+                      aria-hidden="true"
+                    />
+                  </span>
+                </Link>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <CornerSVG className="absolute top-0 -left-12.25 rotate-180 text-frame pointer-events-none max-[850px]:hidden" />
+      <CornerSVG className="absolute top-0 -right-12.25 rotate-90 text-frame pointer-events-none max-[850px]:hidden" />
+    </motion.header>
   );
 }

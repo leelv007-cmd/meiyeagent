@@ -5,7 +5,12 @@ import {
   setTheme,
 } from '../fixtures/page-health';
 
-const SECTION_ANCHORS = ['#features', '#showcase', '#pricing', '#faq'] as const;
+/**
+ * Section order follows the template shell: capability bento → the four-step
+ * walkthrough → pricing → FAQ. `#showcase` retired with the standalone
+ * showcase block; `#how` is the walkthrough that replaced it.
+ */
+const SECTION_ANCHORS = ['#features', '#how', '#pricing', '#faq'] as const;
 
 const ALLOWED_HREF = new RegExp(
   [
@@ -26,8 +31,9 @@ test.describe('LIKEPAGE marketing landing page', () => {
     const monitor = installPageHealthMonitor(page);
     await expectHealthyPage(page, monitor, '/', { theme: 'light' });
 
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('美页');
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('丽客');
+    const h1 = page.getByRole('heading', { level: 1 });
+    await expect(h1).toContainText('说一句话');
+    await expect(h1).toContainText('能发的');
 
     const anchorOffsets: number[] = [];
     for (const anchor of SECTION_ANCHORS) {
@@ -48,29 +54,36 @@ test.describe('LIKEPAGE marketing landing page', () => {
     await expectHealthyPage(page, monitor, '/', { theme: 'light' });
     await page.waitForLoadState('networkidle');
 
-    const navLabels: Array<{ label: string; anchor: string }> = [
-      { label: '功能', anchor: '#features' },
-      { label: '作品', anchor: '#showcase' },
-      { label: '定价', anchor: '#pricing' },
-      { label: '常见问题', anchor: '#faq' },
-    ];
+    const nav = page.getByRole('navigation', { name: '主导航' });
 
-    for (const { label, anchor } of navLabels) {
-      await page.evaluate(() => window.scrollTo(0, 0));
-      await page.waitForTimeout(400);
-      await page
-        .getByRole('navigation', { name: '主导航' })
-        .getByRole('link', { name: label })
-        .click();
-      await page.waitForTimeout(1500);
-      const inView = await page.locator(anchor).evaluate((el) => {
+    const isInView = (anchor: string) =>
+      page.locator(anchor).evaluate((el) => {
         const rect = el.getBoundingClientRect();
         return rect.top < window.innerHeight && rect.bottom > 0;
       });
-      expect(
-        inView,
-        `${anchor} should be in view after clicking ${label}`
-      ).toBe(true);
+
+    // Pricing sits directly in the bar; the rest live behind hover dropdowns.
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(400);
+    await nav.getByRole('link', { name: '定价' }).click();
+    await page.waitForTimeout(1500);
+    expect(await isInView('#pricing'), '#pricing after 定价').toBe(true);
+
+    const menuLinks: Array<{ menu: string; label: string; anchor: string }> = [
+      { menu: '产品', label: '一句话出成品', anchor: '#features' },
+      { menu: '产品', label: '一句话就地改', anchor: '#how' },
+      { menu: '资源', label: '常见问题', anchor: '#faq' },
+    ];
+
+    for (const { menu, label, anchor } of menuLinks) {
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.waitForTimeout(400);
+      await nav.getByRole('button', { name: menu }).hover();
+      const link = nav.getByRole('link', { name: label });
+      await expect(link).toBeVisible();
+      await link.click();
+      await page.waitForTimeout(1500);
+      expect(await isInView(anchor), `${anchor} after ${label}`).toBe(true);
     }
     monitor.expectNoErrors('nav anchors');
   });

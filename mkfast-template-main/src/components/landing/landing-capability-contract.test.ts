@@ -227,19 +227,17 @@ function existingRoutePaths(): Set<string> {
 }
 
 test('every landing link resolves to a live section or a live route', async () => {
-  const [
-    { Header },
-    { Footer },
-    { Pricing },
-    { ShowcaseCards },
-    { BottomCTA },
-  ] = await Promise.all([
-    import('./header'),
-    import('./footer'),
-    import('./pricing'),
-    import('./showcase-cards'),
-    import('./bottom-cta'),
-  ]);
+  // The mounted set is every landing component that renders an anchor. Keep it
+  // in step with landing-page.tsx: a component that grows a link but is absent
+  // here would ship an unchecked — possibly dead — href.
+  const [{ Header }, { Footer }, { Pricing }, { FAQ }, { HowItWorks }] =
+    await Promise.all([
+      import('./header'),
+      import('./footer'),
+      import('./pricing'),
+      import('./faq'),
+      import('./how-it-works'),
+    ]);
 
   const rootRoute = createRootRoute({ component: Outlet });
   const landingRoute = createRoute({
@@ -248,9 +246,9 @@ test('every landing link resolves to a live section or a live route', async () =
         Fragment,
         null,
         createElement(Header),
-        createElement(ShowcaseCards),
+        createElement(HowItWorks),
         createElement(Pricing),
-        createElement(BottomCTA),
+        createElement(FAQ),
         createElement(Footer)
       ),
     getParentRoute: () => rootRoute,

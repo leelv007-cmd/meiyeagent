@@ -78,7 +78,6 @@ import {
   readPendingHarnessDecision,
   submitHarnessDecision,
 } from '@/product/harness-client';
-import { LandingHandoffRestore } from '@/product/landing-handoff-restore';
 import { navigateAfterSubmitSuccess } from '@/product/results/result-center-navigation';
 import { projectResultTokenStream } from '@/product/results/result-token-stream';
 import { useWorkflowEventStream } from '@/product/use-workflow-event-stream';
@@ -2224,20 +2223,6 @@ export function ComposerHome({
       data-testid="composer-home"
       data-viewport={viewportKind}
     >
-      <LandingHandoffRestore
-        onConfirm={({ intent, lens }) => {
-          // Restore into the same Composer draft — never auto-submit.
-          if (lens) {
-            setLensState((current) =>
-              updateUserText(selectLens(current, lens), intent)
-            );
-          } else {
-            setLensState((current) => updateUserText(current, intent));
-          }
-          focusComposerIntentInput();
-        }}
-      />
-
       {/* D-126 hot/cold home. Both CTAs prefill this same draft — never submit. */}
       <DashboardHomeSurface
         loading={product.loading}

@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react';
-import type { LucideIcon } from 'lucide-react';
-import { motion } from 'motion/react';
-import { Building2, Check, Rocket, Zap } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
+import { Check } from 'lucide-react';
+import { motion } from 'motion/react';
 import {
   landing_pricing_coming_soon,
+  landing_pricing_eyebrow,
   landing_pricing_footnote_link,
   landing_pricing_footnote_prefix,
   landing_pricing_footnote_suffix,
@@ -31,6 +31,7 @@ import {
   landing_pricing_starter_feature_4,
   landing_pricing_starter_name,
   landing_pricing_starter_price,
+  landing_pricing_subtitle,
   landing_pricing_title,
 } from '@/locale/paraglide/messages';
 import { growthMonthlyPriceLabel } from '@/lib/price-plan';
@@ -38,145 +39,131 @@ import { Routes } from '@/lib/routes';
 
 interface PricingPlan {
   name: string;
-  description: string;
+  /**
+   * Pilot pricing is expressed as a phrase, not a number, so each plan carries
+   * its own type scale to keep the three cards visually balanced.
+   */
   price: string;
-  period: string;
+  priceClassName: string;
+  period?: string;
+  /** Sits under the price — how the tier is actually opened during the pilot. */
   note?: string;
-  badge?: string;
+  description: string;
   features: string[];
   cta: string;
-  href?: string;
-  popular?: boolean;
-  disabled?: boolean;
-  icon: LucideIcon;
+  /** Absent for plans that are not open yet — those render a disabled button. */
+  href?: typeof Routes.Register | typeof Routes.Pricing;
+  badge?: string;
+  popular: boolean;
 }
 
-function PricingCard({ plan }: { plan: PricingPlan }) {
-  const Icon = plan.icon;
+const ease = [0.23, 1, 0.32, 1] as const;
 
-  const cardContent = (
-    <div
-      className={`relative flex h-full flex-col rounded-3xl bg-background p-3 ${
-        plan.popular ? '' : 'border border-foreground/10'
-      }`}
+function PricingCard({
+  plan,
+  index,
+}: {
+  plan: PricingPlan;
+  index: number;
+}): ReactNode {
+  const isPopular = plan.popular;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 40 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: '-50px' }}
+      transition={{ duration: 0.6, ease, delay: index * 0.1 }}
+      className="relative"
     >
-      <div className="mb-6 flex items-start justify-between">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted">
-          <Icon className="h-5 w-5 text-foreground" />
-        </div>
-        {plan.badge && (
-          <span className="rounded-full border border-accent/50 bg-accent/20 px-4 py-1.5 text-sm font-medium text-accent">
-            {plan.badge}
-          </span>
-        )}
-        {plan.disabled && !plan.badge && (
-          <span className="rounded-full border border-foreground/10 bg-muted px-4 py-1.5 text-sm font-medium text-muted-foreground">
-            {landing_pricing_coming_soon()}
-          </span>
-        )}
-      </div>
+      {isPopular && (
+        <div
+          className="absolute -inset-1 rounded-[1.2em] bg-accent"
+          aria-hidden="true"
+        />
+      )}
 
-      <h3 className="text-xl font-semibold text-foreground">{plan.name}</h3>
-      <p className="mt-1 text-sm text-muted-foreground">{plan.description}</p>
-
-      <div className="mt-6 flex items-baseline gap-1">
-        <span className="text-5xl font-semibold tracking-tight text-foreground">
-          {plan.price}
-        </span>
-        {plan.period && (
-          <span className="text-lg text-muted-foreground">{plan.period}</span>
-        )}
-        {plan.note && (
-          <span className="ml-auto text-right text-sm text-muted-foreground">
-            {plan.note}
-          </span>
-        )}
-      </div>
-
-      <div className="mt-8 flex-1">
-        <div className="flex h-full flex-col rounded-xl bg-muted/50 p-6">
-          <ul className="flex-1 space-y-4">
-            {plan.features.map((feature) => (
-              <li key={feature} className="flex items-start gap-3">
-                <Check className="mt-0.5 h-5 w-5 shrink-0 text-accent" />
-                <span className="text-sm text-foreground">{feature}</span>
-              </li>
-            ))}
-          </ul>
-
-          {plan.disabled || !plan.href ? (
-            <span
-              aria-disabled="true"
-              className="mt-6 flex w-full cursor-not-allowed items-center justify-center rounded-full bg-muted py-4 text-base font-semibold text-muted-foreground"
-            >
-              {plan.cta}
+      <div
+        className={`relative flex h-full flex-col rounded-2xl bg-frame p-6 sm:p-8 ${
+          isPopular ? '' : 'border border-border'
+        }`}
+      >
+        {isPopular && plan.badge && (
+          <div className="absolute -top-4 left-1/2 -translate-x-1/2">
+            <span className="inline-block rounded-full bg-accent px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-black/50">
+              {plan.badge}
             </span>
-          ) : (
-            <Link
-              to={plan.href}
-              className={`mt-6 block w-full cursor-pointer rounded-full py-4 text-center text-base font-semibold transition-all ${
-                plan.popular
-                  ? 'bg-accent text-accent-foreground hover:opacity-90'
-                  : 'bg-foreground text-background hover:bg-foreground/70'
-              }`}
+          </div>
+        )}
+
+        <h3 className="text-xl font-semibold text-foreground">{plan.name}</h3>
+
+        <div className="mt-4">
+          <div className="flex items-end gap-3">
+            <span
+              className={`font-bold tracking-tight text-foreground ${plan.priceClassName}`}
             >
-              {plan.cta}
-            </Link>
+              {plan.price}
+            </span>
+            {plan.period && (
+              <span className="mb-1 text-sm text-muted-foreground">
+                {plan.period}
+              </span>
+            )}
+          </div>
+          {plan.note && (
+            <p className="mt-2 text-sm text-muted-foreground">{plan.note}</p>
           )}
+          <p className="mt-2 text-sm text-muted-foreground">
+            {plan.description}
+          </p>
         </div>
+
+        {plan.href ? (
+          <Link
+            to={plan.href}
+            className={`mt-6 w-full rounded-xl py-3 text-center text-sm font-semibold transition-colors ${
+              isPopular
+                ? 'bg-foreground text-background hover:bg-foreground/90'
+                : 'bg-muted text-foreground hover:bg-muted/80'
+            }`}
+          >
+            {plan.cta}
+          </Link>
+        ) : (
+          <button
+            type="button"
+            disabled
+            aria-disabled="true"
+            className="mt-6 w-full cursor-not-allowed rounded-xl bg-muted py-3 text-sm font-semibold text-muted-foreground"
+          >
+            {plan.cta}
+          </button>
+        )}
+
+        <ul className="mt-8 space-y-3">
+          {plan.features.map((feature) => (
+            <li key={feature} className="flex items-center gap-3">
+              <Check
+                className="h-4 w-4 shrink-0 text-foreground"
+                strokeWidth={2.5}
+              />
+              <span className="text-sm text-foreground">{feature}</span>
+            </li>
+          ))}
+        </ul>
       </div>
-    </div>
+    </motion.div>
   );
-
-  if (plan.popular) {
-    return (
-      <div className="relative">
-        <motion.div
-          className="pointer-events-none absolute left-1/2 top-1/2 h-[70%] w-[70%] rounded-full bg-accent-light opacity-50 blur-3xl"
-          animate={{
-            x: ['-50%', '-30%', '-70%', '-40%', '-60%', '-50%'],
-            y: ['-50%', '-70%', '-30%', '-60%', '-40%', '-50%'],
-            scale: [1, 1.2, 0.9, 1.1, 0.95, 1],
-          }}
-          transition={{
-            duration: 12,
-            repeat: Number.POSITIVE_INFINITY,
-            ease: 'easeInOut',
-            times: [0, 0.2, 0.4, 0.6, 0.8, 1],
-          }}
-        />
-        <motion.div
-          className="pointer-events-none absolute left-1/2 top-1/2 h-[50%] w-[50%] rounded-full bg-accent opacity-40 blur-3xl"
-          animate={{
-            x: ['-50%', '-70%', '-30%', '-60%', '-40%', '-50%'],
-            y: ['-50%', '-30%', '-70%', '-40%', '-60%', '-50%'],
-            scale: [1, 0.9, 1.15, 0.95, 1.1, 1],
-          }}
-          transition={{
-            duration: 10,
-            repeat: Number.POSITIVE_INFINITY,
-            ease: 'easeInOut',
-            times: [0, 0.2, 0.4, 0.6, 0.8, 1],
-          }}
-        />
-        <div className="absolute -inset-px rounded-[1.52rem] bg-linear-to-br from-accent to-accent-light opacity-25" />
-        <div className="relative">{cardContent}</div>
-      </div>
-    );
-  }
-
-  return cardContent;
 }
 
 export function Pricing(): ReactNode {
   const plans: PricingPlan[] = [
     {
       name: landing_pricing_starter_name(),
-      description: landing_pricing_starter_desc(),
       price: landing_pricing_starter_price(),
-      period: '',
-      icon: Rocket,
-      href: Routes.Register,
+      priceClassName: 'text-4xl',
+      description: landing_pricing_starter_desc(),
       features: [
         landing_pricing_starter_feature_1(),
         landing_pricing_starter_feature_2(),
@@ -184,19 +171,18 @@ export function Pricing(): ReactNode {
         landing_pricing_starter_feature_4(),
       ],
       cta: landing_pricing_starter_cta(),
+      href: Routes.Register,
+      popular: false,
     },
     {
       name: landing_pricing_growth_name(),
-      description: landing_pricing_growth_desc(),
-      // D-143: read from the same payment configuration /pricing quotes.
-      // This page used to carry its own price message while /pricing computed
-      // a different one, so the two public pages disagreed about one plan.
+      // D-143: one mapping feeds both public surfaces, so landing and /pricing
+      // can never drift apart on what the paid tier costs.
       price: growthMonthlyPriceLabel() ?? landing_pricing_coming_soon(),
+      priceClassName: 'text-5xl',
       period: landing_pricing_growth_period(),
       note: landing_pricing_growth_note(),
-      badge: landing_pricing_growth_badge(),
-      icon: Zap,
-      href: Routes.Register,
+      description: landing_pricing_growth_desc(),
       features: [
         landing_pricing_growth_feature_1(),
         landing_pricing_growth_feature_2(),
@@ -204,40 +190,56 @@ export function Pricing(): ReactNode {
         landing_pricing_growth_feature_4(),
       ],
       cta: landing_pricing_growth_cta(),
+      href: Routes.Register,
+      badge: landing_pricing_growth_badge(),
       popular: true,
     },
     {
       name: landing_pricing_lifetime_name(),
-      description: landing_pricing_lifetime_desc(),
       price: landing_pricing_coming_soon(),
-      period: '',
-      icon: Building2,
-      disabled: true,
+      priceClassName: 'text-3xl',
+      description: landing_pricing_lifetime_desc(),
       features: [
         landing_pricing_lifetime_feature_1(),
         landing_pricing_lifetime_feature_2(),
         landing_pricing_lifetime_feature_3(),
       ],
       cta: landing_pricing_coming_soon(),
+      popular: false,
     },
   ];
 
   return (
-    <section id="pricing" className="px-4 py-20 sm:px-6 md:py-28 lg:px-8">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-16">
-          <p className="text-4xl font-medium tracking-tight text-foreground">
+    <section
+      id="pricing"
+      className="w-full bg-background px-6 py-20 sm:py-28 scroll-mt-24"
+    >
+      <div className="mx-auto max-w-5xl">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.6, ease }}
+          className="mb-12 text-center sm:mb-16"
+        >
+          <span className="text-sm font-medium text-muted-foreground">
+            {landing_pricing_eyebrow()}
+          </span>
+          <h2 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl lg:text-5xl">
             {landing_pricing_title()}
+          </h2>
+          <p className="mx-auto mt-4 max-w-2xl text-base text-muted-foreground sm:text-lg">
+            {landing_pricing_subtitle()}
           </p>
-        </div>
+        </motion.div>
 
-        <div className="grid gap-8 lg:grid-cols-3">
-          {plans.map((plan) => (
-            <PricingCard key={plan.name} plan={plan} />
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 lg:gap-8">
+          {plans.map((plan, index) => (
+            <PricingCard key={plan.name} plan={plan} index={index} />
           ))}
         </div>
 
-        <p className="mx-auto mt-12 max-w-2xl text-center text-lg text-muted-foreground">
+        <p className="mx-auto mt-10 max-w-2xl text-center text-xs text-muted-foreground">
           {landing_pricing_footnote_prefix()}
           <Link to={Routes.Pricing} className="underline hover:text-foreground">
             {landing_pricing_footnote_link()}
