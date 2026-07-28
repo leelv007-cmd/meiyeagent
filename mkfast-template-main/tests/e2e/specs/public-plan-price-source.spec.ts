@@ -28,13 +28,11 @@ import {
  * Two things have to hold, and only the second one is about 同源:
  *
  * 1. The two pages print the same price right now.
- * 2. Moving the governed price moves both of them. Agreement at one value is
- *    equally consistent with both pages hard-coding the same literal; only a
- *    move tells the two apart. The governed entry is
- *    `VITE_GROWTH_MONTHLY_AMOUNT_CENTS` — the payment configuration key
- *    registered as C-1b in `docs/ops/provisioning-manifest.md`, which is where
- *    operations sets the 中级 month price. Not a code constant, and nothing in
- *    this file edits product source.
+ * 2. Moving the source moves both of them. Agreement at one value is equally
+ *    consistent with both pages hard-coding the same literal; only a move tells
+ *    the two apart. The source is `src/lib/public-display-price.ts` (D-156),
+ *    and `VITE_PUBLIC_QUOTED_MONTHLY_CENTS` is the override that module reads
+ *    so this suite can move it. Nothing in this file edits product source.
  */
 
 /** Exported from `src/lib/price-plan.ts` as PUBLIC_PAID_MONTHLY_PRICE_TESTID. */

@@ -5,15 +5,18 @@ import { setTimeout as delay } from 'node:timers/promises';
 /**
  * Boot a second copy of the web app at a chosen 套餐月价 (#242).
  *
- * The price a visitor is quoted is build-time client configuration
- * (`VITE_GROWTH_MONTHLY_AMOUNT_CENTS`, registered as C-1b in
- * `docs/ops/provisioning-manifest.md`), so a running server cannot be asked to
- * change its mind about it. Observing that a price change actually reaches both
- * public pages therefore needs a server started from a different value — this
- * is that server. It is the whole point of the exercise: two pages agreeing
- * once proves nothing about where the number came from, and a source-level
- * guard cannot prove it either. Moving the governed value and watching both
- * pages move is what does.
+ * The number a visitor is quoted is copy, owned by
+ * `src/lib/public-display-price.ts` and baked in at build time (D-156), so a
+ * running server cannot be asked to change its mind about it. Observing that a
+ * change actually reaches both public pages therefore needs a server started
+ * from a different value — this is that server, and
+ * `VITE_PUBLIC_QUOTED_MONTHLY_CENTS` is the override that module reads for
+ * exactly this purpose. Nothing outside this harness sets it: it is not a
+ * provisioning item, not a billing knob, and no operator console reaches it.
+ *
+ * It is the whole point of the exercise: two pages agreeing once proves nothing
+ * about where the number came from, and a source-level guard cannot prove it
+ * either. Moving the source and watching both pages move is what does.
  *
  * Nothing here touches the suite's own stack. The extra server runs on its own
  * free port, and its price is deliberately unlike any number written anywhere
@@ -79,7 +82,7 @@ async function waitForServer(
 }
 
 /**
- * Start the web app with `VITE_GROWTH_MONTHLY_AMOUNT_CENTS` set to `cents`.
+ * Start the web app with `VITE_PUBLIC_QUOTED_MONTHLY_CENTS` set to `cents`.
  *
  * `PARAGLIDE_PRECOMPILED=true` on purpose: the suite's own stack already
  * compiled the locale output, and recompiling it here would rewrite files the
@@ -120,7 +123,7 @@ export async function startRepricedWebApp(
         DATABASE_URL: databaseURL,
         PARAGLIDE_PRECOMPILED: 'true',
         VITE_BASE_URL: baseURL,
-        VITE_GROWTH_MONTHLY_AMOUNT_CENTS: String(cents),
+        VITE_PUBLIC_QUOTED_MONTHLY_CENTS: String(cents),
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     }

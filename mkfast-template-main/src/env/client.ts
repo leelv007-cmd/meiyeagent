@@ -15,24 +15,11 @@ export const clientEnv = createEnv({
       .enum(['true', 'false'])
       .default('false')
       .transform((value) => value === 'true'),
-    // D-123 中级 ¥1999/月. The landing page and /pricing both read this one
-    // number — the former ¥399-vs-¥499 contradiction came from the landing
-    // hard-coding its own copy of the price (D-143).
-    VITE_GROWTH_MONTHLY_AMOUNT_CENTS: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(199900),
-    VITE_GROWTH_YEARLY_AMOUNT_CENTS: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(399000),
-    VITE_LIFETIME_AMOUNT_CENTS: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(699000),
+    // The amounts the public pages quote are copy, not configuration, and
+    // live in `@/lib/public-display-price` (D-156). They were declared here
+    // until 2026-07-28, but the deploy workflow never injected them — the
+    // default was the production number, so this was an env var in appearance
+    // only, and the appearance is what invited a copy edit to move a price.
 
     // Payment (Stripe)
     VITE_STRIPE_PRICE_PRO_MONTHLY: z.string().optional(),

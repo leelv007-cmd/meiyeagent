@@ -15,6 +15,7 @@ import {
   DEFAULT_USER_FILES_FOLDER,
 } from '@/storage/constants';
 import { clientEnv } from '@/env/client';
+import { PUBLIC_DISPLAY_PRICE_CENTS } from '@/lib/public-display-price';
 import type { WebsiteConfig } from '../types';
 import { resolvePaymentRuntimePolicy } from './payment-runtime-policy';
 
@@ -101,14 +102,14 @@ export const websiteConfig: WebsiteConfig = {
             {
               type: 'subscription',
               priceId: paymentRuntimePolicy.priceIds.proMonthly,
-              amount: clientEnv.VITE_GROWTH_MONTHLY_AMOUNT_CENTS,
+              amount: PUBLIC_DISPLAY_PRICE_CENTS.growthMonthly,
               currency: 'CNY',
               interval: 'month',
             },
             {
               type: 'subscription',
               priceId: paymentRuntimePolicy.priceIds.proYearly,
-              amount: clientEnv.VITE_GROWTH_YEARLY_AMOUNT_CENTS,
+              amount: PUBLIC_DISPLAY_PRICE_CENTS.growthYearly,
               currency: 'CNY',
               interval: 'year',
             },
@@ -130,7 +131,7 @@ export const websiteConfig: WebsiteConfig = {
             {
               type: 'one_time',
               priceId: paymentRuntimePolicy.priceIds.lifetime,
-              amount: clientEnv.VITE_LIFETIME_AMOUNT_CENTS,
+              amount: PUBLIC_DISPLAY_PRICE_CENTS.lifetime,
               currency: 'CNY',
               allowPromotionCode: true,
             },

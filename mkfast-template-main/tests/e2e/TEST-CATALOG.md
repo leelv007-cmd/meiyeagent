@@ -827,7 +827,7 @@ that owns the price.
 | # | Test name | Flow |
 |---|---|---|
 | 1 | The landing and /pricing quote the same 中级 month price | Open `/` and `/pricing`, take the price text off the testid on each (requiring exactly one per page), require each to read as `¥<number>` — so "both say 敬请期待" cannot pass as agreement — and require the two strings to be identical. |
-| 2 | Moving the governed price moves both pages together | Read both pages' price off the suite's own stack, then start a second copy of the web app from a different `VITE_GROWTH_MONTHLY_AMOUNT_CENTS` (payment configuration, C-1b in `docs/ops/provisioning-manifest.md` — the key operations sets, not a code constant), and require both pages on it to quote the moved value and neither to quote the old one. Agreement at a single value is equally consistent with both pages hard-coding the same literal; only the move tells them apart. |
+| 2 | Moving the source moves both pages together | Read both pages' price off the suite's own stack, then start a second copy of the web app from a different `VITE_PUBLIC_QUOTED_MONTHLY_CENTS` (the override `src/lib/public-display-price.ts` reads so this suite can move the quoted copy — D-156; not a provisioning item and not a billing knob), and require both pages on it to quote the moved value and neither to quote the old one. Agreement at a single value is equally consistent with both pages hard-coding the same literal; only the move tells them apart. |
 
 ## S5 成品动作面（#239 / W07+W08+W09）
 

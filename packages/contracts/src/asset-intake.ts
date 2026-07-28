@@ -197,7 +197,7 @@ export const recordAssetIntakeBatchCommandSchema = assetIntakeBatchSchema
  * second write channel for the same fact is what let the price validity question
  * go unasked for so long. The validity question now lives in the wizard and
  * travels on the price candidate's own `effectiveFrom` / `expiresAt`.
- * See docs/decisions/2026-07-28-price-validity-intake.md.
+ * See docs/evidence/price-validity-intake-2026-07-28.md.
  */
 
 export const correctAssetIntakeFactCommandSchema = z
