@@ -131,7 +131,9 @@ test('.env.example asks operators for exactly the keys the schema declares', () 
   ].map(([, name]) => name);
 
   // Wrangler's own convention, consumed by the dev server rather than by us.
-  const wranglerOwned = ['CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE'];
+  const wranglerOwned = [
+    'CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE',
+  ];
   const client = [
     ...readFileSync(join(here, 'client.ts'), 'utf8').matchAll(
       /^ {4}(VITE_[A-Z0-9_]+):/gm

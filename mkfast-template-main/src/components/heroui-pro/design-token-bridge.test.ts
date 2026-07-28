@@ -283,7 +283,11 @@ test('dark re-points the HeroUI base tokens DESIGN.md §7 moves', () => {
   // 序列色是同一条中性墨梯度，两个主题各从自己那头起步：亮底上 --chart-1 最深，
   // 暗底上它必须最浅。照抄亮色那份，第一条序列就直接沉进画布。
   const lightness = (name: string, body: Map<string, string>) =>
-    Number(resolve(name, body)?.match(/^oklch\(\s*([\d.]+)/u)?.at(1));
+    Number(
+      resolve(name, body)
+        ?.match(/^oklch\(\s*([\d.]+)/u)
+        ?.at(1)
+    );
   const ramp = (body: Map<string, string>) =>
     [1, 2, 3, 4, 5].map((index) => lightness(`--chart-${index}`, body));
   const lightRamp = ramp(light);
