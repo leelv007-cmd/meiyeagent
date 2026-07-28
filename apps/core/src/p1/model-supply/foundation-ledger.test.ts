@@ -886,7 +886,11 @@ test('lets a newly provisioned trial workspace generate through the production c
 test('lets a trusted payment grant generate when recorded owner checkout is disabled', async () => {
   const repository = new MemoryFoundationRepository();
   repository.grantOwner(context.workspaceId, context.userId);
-  const entitlements = new ProductEntitlementApplicationService(repository);
+  const entitlements = new ProductEntitlementApplicationService(
+    repository,
+    undefined,
+    () => new Date('2026-07-28T00:00:00.000Z'),
+  );
   const foundation = new P1ApplicationService(repository, {
     operations: [
       new ProductEntitlementFoundationModule(entitlements, undefined, {

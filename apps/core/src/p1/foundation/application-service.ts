@@ -141,12 +141,14 @@ export class P1ApplicationService {
   private readonly operations: Map<string, P1OperationModule>;
   private readonly moduleCommandHeartbeatMs: number;
   private readonly authorizer: PermissionAuthorizerPort;
+  private readonly clock: () => Date;
 
   constructor(
     private readonly repository: FoundationRepository,
     options: {
       operations?: P1OperationModule[];
       moduleCommandHeartbeatMs?: number;
+      clock?: () => Date;
       /**
        * K1 PermissionAuthorizerPort (Z2-WIRING). Defaults to
        * createPermissionAuthorizer() — never silently bypass.
@@ -161,6 +163,7 @@ export class P1ApplicationService {
     this.operations = new Map();
     this.moduleCommandHeartbeatMs = options.moduleCommandHeartbeatMs ?? 60_000;
     this.authorizer = options.authorizer ?? createPermissionAuthorizer();
+    this.clock = options.clock ?? (() => new Date());
     this.writeOwnershipReader = options.writeOwnershipReader;
     for (const operation of options.operations ?? []) {
       if (this.operations.has(operation.name)) {
@@ -263,7 +266,7 @@ export class P1ApplicationService {
           workspaceId: context.workspaceId,
           actorId: context.userId,
           correlationId: context.correlationId,
-          createdAt: new Date().toISOString(),
+          createdAt: this.clock().toISOString(),
         };
         await store.insertRelationFact(fact);
         return fact;
@@ -346,7 +349,7 @@ export class P1ApplicationService {
           workspaceId: context.workspaceId,
           actorId: context.userId,
           correlationId: context.correlationId,
-          createdAt: new Date().toISOString(),
+          createdAt: this.clock().toISOString(),
         };
         await store.appendUsageEvent(event);
         return event;
@@ -514,7 +517,7 @@ export class P1ApplicationService {
         if (!reservation || terminal) {
           throw new P1DomainError('INVALID_STATE', 'An active usage reservation is required.');
         }
-        const now = new Date().toISOString();
+        const now = this.clock().toISOString();
         const snapshot: RouteSnapshot = {
           ...input.routeSnapshot,
           workspaceId: context.workspaceId,
@@ -621,7 +624,7 @@ export class P1ApplicationService {
             reason: input.openingEntitlement.reason,
             actorId: context.userId,
             correlationId: context.correlationId,
-            createdAt: new Date().toISOString(),
+            createdAt: this.clock().toISOString(),
           });
           usage.push(
             ...(await store.listUsageEvents(context.workspaceId, input.operation)),
@@ -669,7 +672,7 @@ export class P1ApplicationService {
             reason: 'generation_dispatch_checkpoint',
             actorId: context.userId,
             correlationId: context.correlationId,
-            createdAt: new Date().toISOString(),
+            createdAt: this.clock().toISOString(),
           });
         }
 
@@ -682,7 +685,7 @@ export class P1ApplicationService {
             'Deployment is outside the frozen route.',
           );
         }
-        const timestamp = new Date().toISOString();
+        const timestamp = this.clock().toISOString();
         const proposedSnapshot: RouteSnapshot = {
           ...input.routeSnapshot,
           workspaceId: context.workspaceId,
@@ -774,7 +777,7 @@ export class P1ApplicationService {
         if (previous && !snapshot.fallbackConsent) {
           throw new P1DomainError('INVALID_STATE', 'The frozen route does not authorize fallback.');
         }
-        const now = new Date().toISOString();
+        const now = this.clock().toISOString();
         const attempt: ProviderAttempt = {
           id: input.id,
           workspaceId: context.workspaceId,
@@ -820,7 +823,7 @@ export class P1ApplicationService {
           acceptance: input.acceptance,
           providerTaskRef: input.providerTaskRef,
           status: input.acceptance === 'rejected_before_accept' ? 'failed' : 'submitted',
-          updatedAt: new Date().toISOString(),
+          updatedAt: this.clock().toISOString(),
         };
         await store.updateProviderAttempt(updated);
         return updated;
@@ -849,7 +852,7 @@ export class P1ApplicationService {
           workspaceId: context.workspaceId,
           actorId: context.userId,
           correlationId: context.correlationId,
-          createdAt: new Date().toISOString(),
+          createdAt: this.clock().toISOString(),
         };
         await store.appendProviderCost(event);
         return event;
@@ -930,7 +933,7 @@ export class P1ApplicationService {
           );
         }
 
-        const timestamp = new Date().toISOString();
+        const timestamp = this.clock().toISOString();
         await store.appendProviderCost({
           ...input.providerCost,
           workspaceId: context.workspaceId,
@@ -1043,7 +1046,7 @@ export class P1ApplicationService {
         if (!input.objectKey.startsWith(`${context.workspaceId}/`) || !/^[a-f0-9]{64}$/i.test(input.sha256) || input.sizeBytes <= 0) {
           throw new P1DomainError('INVALID_STATE', 'A verified workspace-owned asset receipt is required.');
         }
-        const now = new Date().toISOString();
+        const now = this.clock().toISOString();
         const asset: OwnedAsset = { ...input, workspaceId: context.workspaceId, createdAt: now };
         await store.insertOwnedAsset(asset);
         await store.updateProviderAttempt({ ...attempt, status: 'completed', updatedAt: now });
@@ -1124,7 +1127,7 @@ export class P1ApplicationService {
         if (terminal && terminal.action !== 'refund') {
           throw new P1DomainError('INVALID_STATE', 'Usage reservation already has another terminal result.');
         }
-        const now = new Date().toISOString();
+        const now = this.clock().toISOString();
         if (!terminal) {
           if (reservation) {
             await store.appendUsageEvent({
@@ -1185,7 +1188,7 @@ export class P1ApplicationService {
               event.action === 'refund' ||
               event.action === 'expire')
         );
-        const now = new Date().toISOString();
+        const now = this.clock().toISOString();
         if (!terminal) {
           // Still reserved: normal refund path.
           await store.appendUsageEvent({
@@ -1247,7 +1250,7 @@ export class P1ApplicationService {
       if (input.dryRunDifferenceCount !== 0) {
         throw new P1DomainError('INVALID_STATE', 'Cutover dry run still has differences.');
       }
-      const now = new Date().toISOString();
+      const now = this.clock().toISOString();
       const record = {
         ...input, workspaceId: context.workspaceId, status: 'active' as const,
         futureWriteOwner: 'p1' as const, actorId: context.userId,
@@ -1270,7 +1273,7 @@ export class P1ApplicationService {
       if (!record) throw new P1DomainError('NOT_FOUND', 'Cutover record was not found.');
       const rolledBack = {
         ...record, status: 'rolled_back' as const, futureWriteOwner: 'legacy' as const,
-        rollbackReason: input.reason, updatedAt: new Date().toISOString(),
+        rollbackReason: input.reason, updatedAt: this.clock().toISOString(),
       };
       await store.updateCutover(rolledBack);
       return rolledBack;

@@ -533,7 +533,7 @@ test(
 );
 
 test(
-  'a question without unattended continuation stays pending past the core timeout',
+  'a reserved hold reads its own config and expires through the durable decision path',
   { skip: !systemDatabaseUrl },
   async () => {
     const workflowId = `harness-unattended-hold-${randomUUID()}`;
@@ -572,6 +572,8 @@ test(
     });
     let configReads = 0;
     let coreTimeouts = 0;
+    let coreHoldExpiries = 0;
+    let refunds = 0;
     DBOS.setConfig({
       name: 'beauty-marketing-harness-unattended-hold',
       systemDatabaseUrl: systemDatabaseUrl!,
@@ -588,16 +590,26 @@ test(
         async recordTerminalFailure() {},
       },
       undefined,
-      undefined,
       {
-        async get() {
+        async commit() {
+          throw new Error('A cancelled hold must not commit usage.');
+        },
+        async refund() {
+          refunds += 1;
+        },
+        async scheduleCompensation() {
+          throw new Error('The refund succeeds in this fixture.');
+        },
+      },
+      {
+        async get(_scope, _workspaceId, key) {
           configReads += 1;
           return {
             actorId: 'platform-admin',
             correlationId: 'unattended-hold-config',
             createdAt: '2026-07-26T09:00:00.000Z',
-            key: 'harness.confirmation_card.timeout_seconds',
-            reason: 'Must not release a hold-by-default card',
+            key,
+            reason: 'Exercise the configured hold period',
             revision: 1,
             rolledBackToRevision: null,
             scope: 'global',
@@ -611,6 +623,10 @@ test(
         async submitCoreTimeout() {
           coreTimeouts += 1;
           return { eventId: 'unexpected', replayed: false };
+        },
+        async submitCoreHoldExpired() {
+          coreHoldExpiries += 1;
+          return { eventId: 'hold-expired', replayed: false };
         },
       },
     );
@@ -632,36 +648,29 @@ test(
       await DBOS.getEvent(runtimeWorkflowId, 'pending-structured-decision', {
         timeoutSeconds: 5,
       });
-      await new Promise((resolve) => setTimeout(resolve, 1_500));
-      assert.equal((await handle.getStatus())?.status, 'PENDING');
-      assert.equal(configReads, 0);
-      assert.equal(coreTimeouts, 0);
-
-      await resumeHarnessDbosWorkflow(workspaceId, workflowId, {
-        idempotencyKey: `${questionId}:merchant-answer`,
-        questionId,
-        workflowRevision: 1,
-        patch: {
-          field: 'note_style',
-          value: 'style-a',
-          reason: '选择本次图文笔记的表达风格',
-        },
-        decision: { state: 'ignored', value: 'style-a' },
-      });
       const result = await handle.getResult();
-      assert.ok(result.delivery);
-      assert.equal(result.delivery.revision, 1);
+      assert.deepEqual(result, {
+        delivery: null,
+        merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+        outcome: 'cancelled',
+        resolutionSource: 'core_hold_expired',
+      });
       assert.equal(await waitForWorkflowStatus(handle, 'SUCCESS'), 'SUCCESS');
+      assert.equal(configReads, 1);
       assert.equal(coreTimeouts, 0);
+      assert.equal(coreHoldExpiries, 1);
+      assert.equal(refunds, 1);
       assert.deepEqual(
         (await DBOS.listWorkflowSteps(runtimeWorkflowId))
-          ?.filter((step) => step.functionID >= 4 && step.functionID <= 7)
+          ?.filter((step) => step.functionID >= 4 && step.functionID <= 9)
           .map((step) => [step.functionID, step.name]),
         [
           [4, `persist-pending-${questionId}`],
           [5, 'DBOS.setEvent'],
           [6, 'DBOS.recv'],
           [7, 'DBOS.sleep'],
+          [8, `persist-core-hold-expired-${questionId}`],
+          [9, 'refund-product-usage'],
         ],
       );
     } finally {

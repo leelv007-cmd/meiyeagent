@@ -39,7 +39,7 @@ const pro = {
 function services(clock: () => Date = () => new Date('2026-07-11T00:00:00.000Z')) {
   const repository = new MemoryFoundationRepository();
   repository.grantOwner(owner.workspaceId, owner.userId);
-  const foundation = new P1ApplicationService(repository);
+  const foundation = new P1ApplicationService(repository, { clock });
   const payments = new RecordedAutoTopUpPaymentPort();
   const entitlements = new ProductEntitlementApplicationService(
     repository,
@@ -486,7 +486,7 @@ describe('ProductEntitlementApplicationService', () => {
   });
 
   it('keeps a durable pending payment without granting usage when settlement fails, then recovers exactly once', async () => {
-    const { entitlements, foundation, payments, repository } = services();
+    const { clock, entitlements, foundation, payments, repository } = services();
     await entitlements.activatePlan(
       owner,
       {
@@ -561,6 +561,7 @@ describe('ProductEntitlementApplicationService', () => {
     const restartedEntitlements = new ProductEntitlementApplicationService(
       repository,
       restartedPayments,
+      clock,
     );
     const recovered = await restartedEntitlements.autoTopUp(
       owner,
