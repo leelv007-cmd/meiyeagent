@@ -18,7 +18,8 @@ const PRODUCTION_PREFIXES = [
 ];
 
 const EXTRA_SCANNED_FILES = [
-  '.scratch/uiux-upgrade-b/i18n-dashboard-keys.json',
+  'mkfast-template-main/project.inlang/messages/en.json',
+  'mkfast-template-main/project.inlang/messages/zh.json',
 ];
 
 const FORBIDDEN_PRODUCTION_PATTERNS = [

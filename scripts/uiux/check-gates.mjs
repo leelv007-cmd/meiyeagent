@@ -8,6 +8,11 @@ export const CHECK_GATES = [
     args: ['-r', '--if-present', 'check'],
   },
   {
+    name: 'locale keys',
+    command: 'pnpm',
+    args: ['--filter', '@meiye/web', 'locale:check'],
+  },
+  {
     name: 'secret scan',
     command: 'node',
     args: ['scripts/uiux/secret-scan.mjs'],

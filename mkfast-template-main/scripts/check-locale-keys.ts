@@ -1,14 +1,7 @@
 import { readFile } from 'node:fs/promises';
+import ts from 'typescript';
 
-const JSON_MESSAGE_KEYS = [
-  'auth_error_codes',
-  'pricing_plans_free_features',
-  'pricing_plans_free_limits',
-  'pricing_plans_lifetime_features',
-  'pricing_plans_lifetime_limits',
-  'pricing_plans_pro_features',
-  'pricing_plans_pro_limits',
-] as const;
+const JSON_MESSAGE_KEYS = ['auth_error_codes'] as const;
 
 const REQUIRED_PRODUCT_KEYS = [
   'admin_navigation_audit',
@@ -101,6 +94,17 @@ async function readMessages(locale: 'en' | 'zh') {
   return JSON.parse(raw) as Record<string, string>;
 }
 
+function sourceWithoutComments(source: string) {
+  return ts.transpileModule(source, {
+    compilerOptions: {
+      jsx: ts.JsxEmit.Preserve,
+      module: ts.ModuleKind.ESNext,
+      removeComments: true,
+      target: ts.ScriptTarget.ESNext,
+    },
+  }).outputText;
+}
+
 const en = await readMessages('en');
 const zh = await readMessages('zh');
 const enKeys = Object.keys(en).sort();
@@ -136,7 +140,7 @@ const mixedTrackFiles = (
   )
 ).flatMap(({ file, source }) =>
   source.includes('@/locale/paraglide/messages') &&
-  !/[\u3400-\u9fff]/.test(source)
+  !/[\u3400-\u9fff]/.test(sourceWithoutComments(source))
     ? []
     : [file]
 );

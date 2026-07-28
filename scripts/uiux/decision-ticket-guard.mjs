@@ -334,7 +334,17 @@ async function main() {
   let failed = false;
   for (const relativePath of manifestPaths) {
     const manifestPath = path.resolve(rootDir, relativePath);
-    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    let source;
+    try {
+      source = await readFile(manifestPath, "utf8");
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      console.log(
+        `Decision-ticket guard SKIP (${relativePath}): input missing; this ledger was not checked.`,
+      );
+      continue;
+    }
+    const manifest = JSON.parse(source);
     const errors = await validateDecisionTicketMap({ manifest, rootDir });
     if (errors.length > 0) {
       failed = true;

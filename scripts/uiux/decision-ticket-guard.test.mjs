@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -7,6 +8,27 @@ import test from "node:test";
 import { validateDecisionTicketMap } from "./decision-ticket-guard.mjs";
 
 const clone = (value) => structuredClone(value);
+
+test("reports missing local ledgers as explicitly not checked", async () => {
+  const rootDir = await mkdtemp(path.join(tmpdir(), "decision-ticket-guard-"));
+  const output = execFileSync(
+    process.execPath,
+    ["scripts/uiux/decision-ticket-guard.mjs", "--root", rootDir],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    },
+  );
+
+  assert.match(
+    output,
+    /SKIP \(\.scratch\/uiux-upgrade-b\/decision-ticket-map\.json\): input missing; this ledger was not checked\./,
+  );
+  assert.match(
+    output,
+    /SKIP \(\.scratch\/contentpackage-productization\/decision-ticket-map\.json\): input missing; this ledger was not checked\./,
+  );
+});
 
 async function createFixtureRoot() {
   const rootDir = await mkdtemp(path.join(tmpdir(), "decision-ticket-guard-"));

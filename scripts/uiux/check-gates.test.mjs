@@ -11,6 +11,7 @@ test('root check defines all required gates in order', () => {
     CHECK_GATES.map(({ name }) => name),
     [
       'workspace checks',
+      'locale keys',
       'secret scan',
       'D-123 cost boundary',
       'decision ticket guard',
