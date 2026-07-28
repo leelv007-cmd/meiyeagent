@@ -203,6 +203,23 @@ test.describe('W02 five-step store intake', () => {
       wizard.getByTestId('store-intake-confirmed-projectPrice')
     ).toBeVisible();
 
+    // #244 — the photo read a number; it cannot read how long the merchant
+    // means it to hold. Until that is answered the save button stays shut.
+    await expect(
+      wizard.getByTestId('store-intake-price-validity-unanswered')
+    ).toBeVisible();
+    await expect(wizard.getByTestId('store-intake-save')).toBeDisabled();
+    await wizard
+      .getByTestId('store-intake-field-projectPriceValidity-long-term')
+      .click();
+    await wizard
+      .getByTestId('store-intake-confirm-projectPriceValidity')
+      .click();
+    await expect(
+      wizard.getByTestId('store-intake-price-validity-unanswered')
+    ).toBeHidden();
+    await expect(wizard.getByTestId('store-intake-save')).toBeEnabled();
+
     const finalizeResponse = page.waitForResponse(
       (response) => isAction(response.request(), 'finalize_store_intake'),
       { timeout: 90_000 }
@@ -220,7 +237,12 @@ test.describe('W02 five-step store intake', () => {
 
     const after = await productState(page);
     expect(after.store?.projects).toEqual([
-      { ...LEGACY_PROJECT, price: Number(PHOTO_PRICE) },
+      {
+        ...LEGACY_PROJECT,
+        price: Number(PHOTO_PRICE),
+        // The merchant said "it stands" — stated, not defaulted.
+        priceValidUntil: null,
+      },
     ]);
     expect(after.store?.address).toBe(before.store?.address);
     expect(after.store?.booking).toBe(before.store?.booking);
@@ -230,6 +252,7 @@ test.describe('W02 five-step store intake', () => {
       (fact) => fact.factId === `store-project:${LEGACY_PROJECT.id}:price`
     );
     expect(priceFact).toMatchObject({
+      expiresAt: null,
       key: `service.${LEGACY_PROJECT.id}.price`,
       kind: 'price',
       revision: 1,

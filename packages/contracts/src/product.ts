@@ -18,6 +18,22 @@ export interface StoreProject {
   price: number;
   durationMinutes: number;
   confirmed: boolean;
+  /**
+   * How long the merchant said this price is good for (#244).
+   *
+   * Three states on purpose, because "the merchant never told us" and "the
+   * merchant said it never expires" are different facts and the product used to
+   * conflate them:
+   *   - absent    — nobody ever asked. Historical rows land here, and the
+   *                 wizard shows the price as still waiting on the merchant.
+   *   - `null`    — the merchant said the price is a standing one.
+   *   - ISO time  — the merchant said the price runs out then.
+   *
+   * When set it must equal the price StoreFact's `expiresAt`; the finalizer
+   * refuses a merchant-confirmed price whose two sides disagree, so the profile
+   * can never claim a validity the ledger does not carry.
+   */
+  priceValidUntil?: string | null;
 }
 
 export interface StoreAccount {

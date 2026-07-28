@@ -158,6 +158,15 @@ describe('StoreIntakeWizard', () => {
     for (const field of ['name', 'city', 'projectName', 'projectPrice']) {
       fireEvent.click(screen.getByTestId(`store-intake-confirm-${field}`));
     }
+    // #244 — a price with no stated window cannot be saved at all.
+    expect(screen.getByTestId('store-intake-save')).toBeDisabled();
+    fireEvent.click(
+      screen.getByTestId('store-intake-field-projectPriceValidity-long-term')
+    );
+    fireEvent.click(
+      screen.getByTestId('store-intake-confirm-projectPriceValidity')
+    );
+    expect(screen.getByTestId('store-intake-save')).toBeEnabled();
     commandP1.mockImplementation(
       async (_module: string, call: { action: string }) => {
         if (call.action === 'prepare_store_profile_import')
@@ -180,6 +189,19 @@ describe('StoreIntakeWizard', () => {
       (finalizations[0]![1] as { payload: { confirmations: unknown[] } })
         .payload.confirmations
     ).toHaveLength(4);
+    expect(
+      (
+        finalizations[0]![1] as {
+          payload: {
+            profilePatch: {
+              projects?: {
+                upsert?: Array<{ priceValidUntil?: string | null }>;
+              };
+            };
+          };
+        }
+      ).payload.profilePatch.projects?.upsert?.[0]?.priceValidUntil
+    ).toBe(null);
   });
 
   it('leaves the wizard asking about every field when nothing is ticked', async () => {
@@ -198,6 +220,7 @@ describe('StoreIntakeWizard', () => {
       'city',
       'projectName',
       'projectPrice',
+      'projectPriceValidity',
       'district',
       'address',
       'booking',
@@ -229,8 +252,12 @@ describe('StoreIntakeWizard', () => {
     const fields = [...confirm.querySelectorAll('li[data-field]')].map((item) =>
       item.getAttribute('data-field')
     );
-    expect(fields.slice(0, 2)).toEqual(['projectName', 'projectPrice']);
-    expect(fields).toHaveLength(7);
+    expect(fields.slice(0, 3)).toEqual([
+      'projectName',
+      'projectPrice',
+      'projectPriceValidity',
+    ]);
+    expect(fields).toHaveLength(8);
     expect(
       screen.getByTestId('store-intake-recommended-projectPrice')
     ).toBeTruthy();

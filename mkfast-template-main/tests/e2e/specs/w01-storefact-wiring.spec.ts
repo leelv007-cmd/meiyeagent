@@ -191,6 +191,15 @@ test.describe('W01 store intake fact wiring', () => {
     await input.fill(String(EXPECTED_PRICE));
     await card.getByTestId('progressive-fact-continue').click();
 
+    // #244 — the card asks how long the price runs before it will confirm
+    // anything. The merchant here says it is a standing price.
+    await expect(
+      card.getByTestId('progressive-fact-price-validity')
+    ).toBeVisible();
+    await expect(card.getByTestId('progressive-fact-confirm')).toBeHidden();
+    await card.getByTestId('progressive-fact-price-validity-long-term').click();
+    await card.getByTestId('progressive-fact-continue').click();
+
     const finalizationResponse = page.waitForResponse(
       (response) => isStoreIntakeFinalization(response.request()),
       { timeout: 60_000 }
@@ -243,7 +252,7 @@ test.describe('W01 store intake fact wiring', () => {
       regulated: before.store?.regulated,
     });
     expect(after.store?.projects).toEqual([
-      { ...PRIMARY_PROJECT, price: EXPECTED_PRICE },
+      { ...PRIMARY_PROJECT, price: EXPECTED_PRICE, priceValidUntil: null },
       SECONDARY_PROJECT,
     ]);
 

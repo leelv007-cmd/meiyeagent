@@ -14,7 +14,6 @@ import {
   parseSingleAssetCommandSchema,
   parseTaskViewQuerySchema,
   preferenceViewQuerySchema,
-  prepareAssistedPriceIntakeCommandSchema,
   prepareManualAssetDraftCommandSchema,
   promoteAssetDraftCommandSchema,
   proposePreferenceCommandSchema,
@@ -209,10 +208,6 @@ export class AssetMemoryFoundationModule implements P1OperationModule {
           workspaceId: args.context.workspaceId,
           createdAt: this.now(),
         });
-      }
-      case 'prepare_assisted_price_intake': {
-        const input = parse(prepareAssistedPriceIntakeCommandSchema, value);
-        return this.intake.prepareAssistedPriceIntake(args.context, input);
       }
       case 'correct_asset_intake_fact': {
         const input = parse(correctAssetIntakeFactCommandSchema, value);

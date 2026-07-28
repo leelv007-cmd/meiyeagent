@@ -1260,16 +1260,7 @@ operationsService = new OperationsApplicationService(operationsRepository, {
 });
 const assetIntakeService = new AssetIntakeService(
   assetIntakeRepository,
-  storeFactLedger,
-  undefined,
-  {
-    async isAuthorized(workspaceId, assetId) {
-      const [inspection] = await referenceAssets.inspect(workspaceId, [
-        assetId,
-      ]);
-      return inspection?.kind === 'resolved';
-    },
-  }
+  storeFactLedger
 );
 const storeIntakeFinalizer = new StoreIntakeFinalizer(
   assetIntakeService,

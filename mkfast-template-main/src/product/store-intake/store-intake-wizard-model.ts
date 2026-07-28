@@ -37,6 +37,7 @@ export const STORE_INTAKE_FIELDS: ProgressiveFactId[] = [
   'city',
   'projectName',
   'projectPrice',
+  'projectPriceValidity',
   'district',
   'address',
   'booking',
@@ -70,6 +71,9 @@ export const MANUAL_FIELD_KEYS: Record<ProgressiveFactId, string | undefined> =
     name: 'store.profile.name',
     projectName: 'service.name',
     projectPrice: 'service.price',
+    // No manual-draft key: the validity answer is the price fact's own expiry,
+    // not a field of its own (#244).
+    projectPriceValidity: undefined,
   };
 
 /**
@@ -192,6 +196,7 @@ const RECOMMENDATION_FIELD_HINTS: ReadonlyArray<
 > = [
   [/项目名|服务名|品项/u, 'projectName'],
   [/价/u, 'projectPrice'],
+  [/价/u, 'projectPriceValidity'],
   [/地址|位置/u, 'address'],
   [/预约|到店|联系|微信|电话/u, 'booking'],
   [/城市/u, 'city'],

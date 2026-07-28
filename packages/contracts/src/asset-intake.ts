@@ -190,37 +190,15 @@ export const recordAssetIntakeBatchCommandSchema = assetIntakeBatchSchema
   .omit({ workspaceId: true, createdAt: true })
   .strict();
 
-const assistedPriceMetadataSchema = z
-  .object({
-    batchId: idSchema,
-    taskId: idSchema,
-    candidateId: idSchema,
-    key: idSchema,
-    scope: storeFactScopeSchema,
-    effectiveFrom: timestampSchema,
-    expiresAt: timestampSchema.nullable(),
-  })
-  .strict();
-
-export const prepareAssistedPriceIntakeCommandSchema = z.discriminatedUnion(
-  'inputMode',
-  [
-    assistedPriceMetadataSchema.extend({
-      inputMode: z.literal('screenshot'),
-      screenshotAssetId: idSchema,
-      recognizedText: z.string().trim().min(1).max(20_000),
-    }),
-    assistedPriceMetadataSchema.extend({
-      inputMode: z.literal('paste_text'),
-      pastedText: z.string().trim().min(1).max(20_000),
-    }),
-    assistedPriceMetadataSchema.extend({
-      inputMode: z.literal('manual_select'),
-      amount: z.number().finite().nonnegative(),
-      currency: z.literal('CNY').default('CNY'),
-    }),
-  ],
-);
+/*
+ * `prepare_assisted_price_intake` was retired by D-244. It was the only command
+ * that ever asked how long a price is good for, and no merchant surface ever
+ * called it — the wizard writes through `finalize_store_intake` (D-151①), and a
+ * second write channel for the same fact is what let the price validity question
+ * go unasked for so long. The validity question now lives in the wizard and
+ * travels on the price candidate's own `effectiveFrom` / `expiresAt`.
+ * See docs/decisions/2026-07-28-price-validity-intake.md.
+ */
 
 export const correctAssetIntakeFactCommandSchema = z
   .object({
@@ -365,7 +343,4 @@ export type FinalizeStoreIntakeCommand = z.infer<
 >;
 export type RecordAssetIntakeBatchCommand = z.infer<
   typeof recordAssetIntakeBatchCommandSchema
->;
-export type PrepareAssistedPriceIntakeCommand = z.infer<
-  typeof prepareAssistedPriceIntakeCommandSchema
 >;

@@ -1,16 +1,25 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import type { StoreProfile } from '@meiye/contracts';
+
 import {
   answerProgressiveFact,
   buildFinalizeStoreIntakeCommand,
   createProgressiveFactDraft,
+  hasMissingProgressiveStoreFacts,
   nextGroundingFactFocus,
+  PRICE_VALIDITY_LONG_TERM,
+  priceValidityExpiresAt,
+  priceValidityFromStored,
   progressiveFactRevisionMap,
   projectProgressiveFactView,
   shouldShowProgressiveFactCard,
   skipProgressiveFact,
 } from './progressive-fact';
+
+/** The end of 2026-08-31 in the machine's own zone, the way the UI writes it. */
+const AUGUST_31 = priceValidityExpiresAt('2026-08-31')!;
 
 test('asks one blocking store fact at a time before skippable fields', () => {
   let draft = createProgressiveFactDraft();
@@ -26,6 +35,18 @@ test('asks one blocking store fact at a time before skippable fields', () => {
   assert.equal(view.current?.id, 'projectPrice');
 
   draft = answerProgressiveFact(draft, 'projectPrice', '299');
+  view = projectProgressiveFactView(draft);
+  // #244 — a price is not a finished answer until the merchant says how long it
+  // runs, so confirmation stays blocked and the next question is the window.
+  assert.equal(view.readyToConfirm, false);
+  assert.equal(view.current?.id, 'projectPriceValidity');
+  assert.equal(view.current?.criticality, 'blocking');
+
+  draft = answerProgressiveFact(
+    draft,
+    'projectPriceValidity',
+    PRICE_VALIDITY_LONG_TERM
+  );
   view = projectProgressiveFactView(draft);
   assert.equal(view.readyToConfirm, true);
   assert.equal(view.current?.id, 'district');
@@ -49,6 +70,7 @@ test('prefills the progressive draft from the current store profile', () => {
         price: 299,
         durationMinutes: 90,
         confirmed: true,
+        priceValidUntil: null,
       },
       {
         id: 'project-hand-care',
@@ -56,6 +78,7 @@ test('prefills the progressive draft from the current store profile', () => {
         price: 159,
         durationMinutes: 45,
         confirmed: true,
+        priceValidUntil: null,
       },
     ],
     regulated: true,
@@ -66,12 +89,14 @@ test('prefills the progressive draft from the current store profile', () => {
   assert.equal(draft.city, '杭州');
   assert.equal(draft.projectName, '透亮猫眼');
   assert.equal(draft.projectPrice, '299');
+  assert.equal(draft.projectPriceValidity, PRICE_VALIDITY_LONG_TERM);
   assert.deepEqual(draft.answered, []);
   assert.deepEqual(projectProgressiveFactView(draft).answeredIds, [
     'name',
     'city',
     'projectName',
     'projectPrice',
+    'projectPriceValidity',
     'district',
     'address',
     'booking',
@@ -119,6 +144,7 @@ test('builds one finalize batch with only the explicitly edited profile field', 
         price: 299,
         durationMinutes: 90,
         confirmed: true,
+        priceValidUntil: null,
       },
       {
         id: 'project-hand-care',
@@ -126,12 +152,14 @@ test('builds one finalize batch with only the explicitly edited profile field', 
         price: 159,
         durationMinutes: 45,
         confirmed: true,
+        priceValidUntil: null,
       },
     ],
     regulated: true,
     confirmedAt: '2026-07-26T10:00:00.000Z',
   });
   draft = answerProgressiveFact(draft, 'projectPrice', '329');
+  draft = answerProgressiveFact(draft, 'projectPriceValidity', '2026-08-31');
 
   const command = buildFinalizeStoreIntakeCommand(draft, {
     batchId: 'progressive-batch-a',
@@ -154,6 +182,7 @@ test('builds one finalize batch with only the explicitly edited profile field', 
           price: 329,
           durationMinutes: 90,
           confirmed: true,
+          priceValidUntil: AUGUST_31,
         },
       ],
     },
@@ -181,7 +210,9 @@ test('builds one finalize batch with only the explicitly edited profile field', 
   assert.deepEqual(candidate.fact.scope, { storeId: 'workspace-a' });
   assert.equal(candidate.fact.source.kind, 'user_confirmation');
   assert.equal(candidate.fact.source.referenceId, 'progressive-card-a');
-  assert.equal(candidate.fact.expiresAt, null);
+  // The stated window is on the fact itself — this is the value the generation
+  // side reads when it decides whether the price is still current.
+  assert.equal(candidate.fact.expiresAt, AUGUST_31);
   assert.equal(batch.source.capabilityStatus, 'assisted');
 });
 
@@ -191,6 +222,11 @@ test('skipped fallbacks may patch the profile but never become StoreFacts', () =
   draft = answerProgressiveFact(draft, 'city', '杭州');
   draft = answerProgressiveFact(draft, 'projectName', '透亮猫眼');
   draft = answerProgressiveFact(draft, 'projectPrice', '299');
+  draft = answerProgressiveFact(
+    draft,
+    'projectPriceValidity',
+    PRICE_VALIDITY_LONG_TERM
+  );
   draft = skipProgressiveFact(draft, 'district')!;
 
   const command = buildFinalizeStoreIntakeCommand(draft, {
@@ -221,6 +257,11 @@ test('revision zero creates a complete profile patch without promoting fallbacks
   draft = answerProgressiveFact(draft, 'city', '杭州');
   draft = answerProgressiveFact(draft, 'projectName', '透亮猫眼');
   draft = answerProgressiveFact(draft, 'projectPrice', '299');
+  draft = answerProgressiveFact(
+    draft,
+    'projectPriceValidity',
+    PRICE_VALIDITY_LONG_TERM
+  );
 
   const command = buildFinalizeStoreIntakeCommand(draft, {
     batchId: 'progressive-batch-day-zero',
@@ -249,6 +290,7 @@ test('revision zero creates a complete profile patch without promoting fallbacks
           price: 299,
           durationMinutes: 60,
           confirmed: true,
+          priceValidUntil: null,
         },
       ],
     },
@@ -270,6 +312,11 @@ test('revision zero seeds the platform regulated default instead of false', () =
   draft = answerProgressiveFact(draft, 'city', '杭州');
   draft = answerProgressiveFact(draft, 'projectName', '光子嫩肤');
   draft = answerProgressiveFact(draft, 'projectPrice', '1299');
+  draft = answerProgressiveFact(
+    draft,
+    'projectPriceValidity',
+    PRICE_VALIDITY_LONG_TERM
+  );
 
   const command = buildFinalizeStoreIntakeCommand(draft, {
     batchId: 'progressive-batch-regulated',
@@ -290,6 +337,11 @@ test('revision zero is withheld until the platform regulated default is known', 
   draft = answerProgressiveFact(draft, 'city', '杭州');
   draft = answerProgressiveFact(draft, 'projectName', '透亮猫眼');
   draft = answerProgressiveFact(draft, 'projectPrice', '299');
+  draft = answerProgressiveFact(
+    draft,
+    'projectPriceValidity',
+    PRICE_VALIDITY_LONG_TERM
+  );
 
   assert.equal(
     buildFinalizeStoreIntakeCommand(draft, {
@@ -321,6 +373,7 @@ test('a fully prefilled profile cannot create an empty finalize batch', () => {
         price: 299,
         durationMinutes: 90,
         confirmed: true,
+        priceValidUntil: null,
       },
     ],
     regulated: false,
@@ -371,8 +424,23 @@ test('an unconfirmed prefilled project still requires explicit answers', () => {
   assert.equal(draft.projectPrice, '299');
 
   draft = answerProgressiveFact(draft, 'projectPrice', draft.projectPrice);
+  assert.equal(projectProgressiveFactView(draft).readyToConfirm, false);
+  assert.equal(
+    projectProgressiveFactView(draft).current?.id,
+    'projectPriceValidity'
+  );
+
+  draft = answerProgressiveFact(
+    draft,
+    'projectPriceValidity',
+    PRICE_VALIDITY_LONG_TERM
+  );
   assert.equal(projectProgressiveFactView(draft).readyToConfirm, true);
-  assert.deepEqual(draft.answered, ['projectName', 'projectPrice']);
+  assert.deepEqual(draft.answered, [
+    'projectName',
+    'projectPrice',
+    'projectPriceValidity',
+  ]);
 });
 
 test('a legacy confirmed project without ledger facts requires explicit confirmation', () => {
@@ -421,12 +489,18 @@ test('an existing fact revision is carried into a correction confirmation', () =
         price: 299,
         durationMinutes: 90,
         confirmed: true,
+        priceValidUntil: null,
       },
     ],
     regulated: false,
     revision: 3,
   });
   draft = answerProgressiveFact(draft, 'projectPrice', '329');
+  draft = answerProgressiveFact(
+    draft,
+    'projectPriceValidity',
+    PRICE_VALIDITY_LONG_TERM
+  );
 
   const command = buildFinalizeStoreIntakeCommand(draft, {
     batchId: 'progressive-batch-correction',
@@ -505,6 +579,7 @@ test('a profile backed by active service and price facts has no fake confirm ste
           price: 299,
           durationMinutes: 90,
           confirmed: true,
+          priceValidUntil: null,
         },
       ],
       regulated: false,
@@ -533,4 +608,163 @@ test('next grounding focus prefers store then project', () => {
     nextGroundingFactFocus({ storeConfirmed: true, projectConfirmed: true }),
     null
   );
+});
+
+/* ------------------------------------------------------------------ *
+ * #244 — how long is this price good for?
+ * ------------------------------------------------------------------ */
+
+const legacyStore = (priceValidUntil?: string | null): StoreProfile => ({
+  name: '青禾美甲',
+  city: '杭州',
+  district: '拱墅区',
+  address: '湖墅南路 88 号',
+  booking: '提前一天预约',
+  brandVoice: '真实、克制',
+  prohibitions: [],
+  accounts: [],
+  projects: [
+    {
+      id: 'project-cat-eye',
+      name: '透亮猫眼',
+      price: 299,
+      durationMinutes: 90,
+      confirmed: true,
+      ...(priceValidUntil === undefined ? {} : { priceValidUntil }),
+    },
+  ],
+  regulated: false,
+  revision: 3,
+});
+
+const ledgerHeads = [
+  { factId: 'store-project:project-cat-eye:service', revision: 4 },
+  { factId: 'store-project:project-cat-eye:price', revision: 7 },
+];
+
+test('a price stored before anyone asked about validity comes back as unconfirmed', () => {
+  // The historical migration, and it is a derivation rather than a backfill:
+  // a project that carries no stated window at all was never asked, so the
+  // wizard shows the question instead of pretending the price is permanent.
+  const draft = createProgressiveFactDraft(legacyStore(), ledgerHeads);
+
+  assert.deepEqual(draft.unconfirmed, ['projectPriceValidity']);
+  assert.equal(draft.projectPriceValidity, '');
+  assert.equal(
+    projectProgressiveFactView(draft).current?.id,
+    'projectPriceValidity'
+  );
+  assert.equal(projectProgressiveFactView(draft).readyToConfirm, false);
+  assert.equal(
+    hasMissingProgressiveStoreFacts(legacyStore(), ledgerHeads),
+    true
+  );
+
+  // Replaying the same read is the same read — nothing is consumed or stamped.
+  assert.deepEqual(
+    createProgressiveFactDraft(legacyStore(), ledgerHeads).unconfirmed,
+    ['projectPriceValidity']
+  );
+
+  // And once the merchant answers, the nag stops.
+  const answered = legacyStore(null);
+  assert.deepEqual(
+    createProgressiveFactDraft(answered, ledgerHeads).unconfirmed,
+    []
+  );
+  assert.equal(hasMissingProgressiveStoreFacts(answered, ledgerHeads), false);
+});
+
+test('a blank validity answer is never read as "it never expires"', () => {
+  let draft = createProgressiveFactDraft();
+  draft = answerProgressiveFact(draft, 'name', '青禾美甲');
+  draft = answerProgressiveFact(draft, 'city', '杭州');
+  draft = answerProgressiveFact(draft, 'projectName', '透亮猫眼');
+  draft = answerProgressiveFact(draft, 'projectPrice', '299');
+
+  // Explicitly "answered" with nothing — the id is in `answered`, and it still
+  // does not count, because an empty answer is not a standing price.
+  draft = answerProgressiveFact(draft, 'projectPriceValidity', '   ');
+  assert.equal(projectProgressiveFactView(draft).readyToConfirm, false);
+  assert.equal(
+    buildFinalizeStoreIntakeCommand(draft, {
+      batchId: 'progressive-batch-blank-validity',
+      capturedAt: '2026-07-27T10:00:00.000Z',
+      expectedRevision: 0,
+      referenceId: 'progressive-card-blank-validity',
+      regulatedDefault: false,
+      taskId: 'progressive-task-blank-validity',
+      workspaceId: 'workspace-a',
+    }),
+    null
+  );
+});
+
+test('a window that has already run out cannot be recorded as a current price', () => {
+  let draft = createProgressiveFactDraft();
+  draft = answerProgressiveFact(draft, 'name', '青禾美甲');
+  draft = answerProgressiveFact(draft, 'city', '杭州');
+  draft = answerProgressiveFact(draft, 'projectName', '透亮猫眼');
+  draft = answerProgressiveFact(draft, 'projectPrice', '299');
+  draft = answerProgressiveFact(draft, 'projectPriceValidity', '2026-07-01');
+
+  assert.equal(
+    buildFinalizeStoreIntakeCommand(draft, {
+      batchId: 'progressive-batch-lapsed',
+      capturedAt: '2026-07-27T10:00:00.000Z',
+      expectedRevision: 0,
+      referenceId: 'progressive-card-lapsed',
+      regulatedDefault: false,
+      taskId: 'progressive-task-lapsed',
+      workspaceId: 'workspace-a',
+    }),
+    null
+  );
+});
+
+test('restating only the window still rewrites the price stream it belongs to', () => {
+  // The window has no fact of its own, so a validity-only change has to carry
+  // the price candidate — otherwise the ledger would keep the old window while
+  // the profile advertised the new one.
+  let draft = createProgressiveFactDraft(legacyStore(), ledgerHeads);
+  draft = answerProgressiveFact(draft, 'projectPriceValidity', '2026-08-31');
+
+  const command = buildFinalizeStoreIntakeCommand(draft, {
+    batchId: 'progressive-batch-window-only',
+    capturedAt: '2026-07-27T10:00:00.000Z',
+    expectedRevision: 3,
+    factRevisions: { 'store-project:project-cat-eye:price': 7 },
+    referenceId: 'progressive-card-window-only',
+    taskId: 'progressive-task-window-only',
+    workspaceId: 'workspace-a',
+  });
+
+  assert.deepEqual(command?.payload.confirmations, [
+    {
+      candidateId: 'store-project:project-cat-eye:price:candidate',
+      factId: 'store-project:project-cat-eye:price',
+      expectedFactRevision: 7,
+    },
+  ]);
+  const batch = command?.payload.batch;
+  assert.ok(batch && 'candidates' in batch);
+  if (!batch || !('candidates' in batch)) return;
+  const candidate = batch.candidates[0];
+  assert.ok(candidate && 'fact' in candidate);
+  if (!candidate || !('fact' in candidate)) return;
+  assert.equal(candidate.fact.expiresAt, AUGUST_31);
+  assert.deepEqual(candidate.fact.value, { amount: 299, currency: 'CNY' });
+  assert.equal(
+    command?.payload.profilePatch.projects?.upsert?.[0]?.priceValidUntil,
+    AUGUST_31
+  );
+});
+
+test('a stated window survives the round trip through the stored profile', () => {
+  assert.equal(priceValidityFromStored(undefined), '');
+  assert.equal(priceValidityFromStored(null), PRICE_VALIDITY_LONG_TERM);
+  assert.equal(priceValidityFromStored(AUGUST_31), '2026-08-31');
+  assert.equal(priceValidityExpiresAt(PRICE_VALIDITY_LONG_TERM), null);
+  assert.equal(priceValidityExpiresAt(''), undefined);
+  assert.equal(priceValidityExpiresAt('八月底'), undefined);
 });

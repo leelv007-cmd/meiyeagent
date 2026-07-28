@@ -12,6 +12,7 @@ import {
   answerProgressiveFact,
   buildFinalizeStoreIntakeCommand,
   createProgressiveFactDraft,
+  PRICE_VALIDITY_LONG_TERM,
 } from '@/product/composer/progressive-fact';
 import {
   applyArrangedDraft,
@@ -119,15 +120,19 @@ test('ticking a recommendation changes what the wizard asks and offers', () => {
   assert.deepEqual(orderedIntakeFields([]), STORE_INTAKE_FIELDS);
 
   const ticked = toggleRecommendation(experience, none, 'r1');
+  // 「价」 pulls the price *and* how long it runs — a promotion price the
+  // merchant is asked about but never dated is the bug #244 closed.
   assert.deepEqual(recommendedFactIds(experience, ticked), [
     'projectName',
     'projectPrice',
+    'projectPriceValidity',
   ]);
   assert.deepEqual(
     orderedIntakeFields(recommendedFactIds(experience, ticked)),
     [
       'projectName',
       'projectPrice',
+      'projectPriceValidity',
       'name',
       'city',
       'district',
@@ -388,15 +393,28 @@ test('an extracted value only reaches finalize after the merchant confirms it', 
 
   assert.equal(buildFinalizeStoreIntakeCommand(extracted, options), null);
 
-  const confirmed = (
+  const reread = (
     ['name', 'city', 'projectName', 'projectPrice'] as const
   ).reduce(
     (draft, id) => answerProgressiveFact(draft, id, draft[id]),
     extracted
   );
+  // A photo can report a number; it cannot report how long the merchant means
+  // it to hold. Confirming every extracted field still leaves that unanswered.
+  assert.equal(buildFinalizeStoreIntakeCommand(reread, options), null);
+
+  const confirmed = answerProgressiveFact(
+    reread,
+    'projectPriceValidity',
+    PRICE_VALIDITY_LONG_TERM
+  );
   const request = buildFinalizeStoreIntakeCommand(confirmed, options);
   assert.equal(request?.action, 'finalize_store_intake');
   assert.equal(request?.payload.confirmations.length, 4);
+  assert.equal(
+    request?.payload.profilePatch.projects?.upsert?.[0]?.priceValidUntil,
+    null
+  );
 });
 
 /* ---------------------------- import candidates --------------------------- */

@@ -514,60 +514,6 @@ test('memory intake identities cannot collide across colon-delimited workspaces'
   assert.deepEqual(await repository.getBatch('a:b', 'c'), second);
 });
 
-test('persisted screenshot intake replays after its live asset authorization is withdrawn', async () => {
-  const repository = new MemoryAssetIntakeRepository();
-  let authorized = true;
-  const service = new AssetIntakeService(
-    repository,
-    new MemoryStoreFactLedger(),
-    () => '2026-07-18T02:00:00.000Z',
-    {
-      async isAuthorized(workspaceId, assetId) {
-        return (
-          authorized &&
-          workspaceId === context.workspaceId &&
-          assetId === 'asset-price-list'
-        );
-      },
-    },
-  );
-  const input = {
-    batchId: 'batch-screenshot-replay',
-    taskId: 'task-screenshot-replay',
-    candidateId: 'candidate-screenshot-replay',
-    key: 'service.scalp-clean.price',
-    scope: { storeId: 'store-a', serviceId: 'scalp-clean' },
-    effectiveFrom: '2026-07-18T01:00:00.000Z',
-    expiresAt: null,
-    inputMode: 'screenshot' as const,
-    screenshotAssetId: 'asset-price-list',
-    recognizedText: '头疗团购价 239 元',
-  };
-
-  const first = await service.prepareAssistedPriceIntake(context, input);
-  authorized = false;
-  assert.deepEqual(
-    await service.prepareAssistedPriceIntake(context, input),
-    first,
-  );
-  await assert.rejects(
-    service.prepareAssistedPriceIntake(context, {
-      ...input,
-      recognizedText: '新客头疗团购价 239 元',
-    }),
-    (error: unknown) =>
-      error instanceof AssetIntakeError && error.code === 'BATCH_CONFLICT',
-  );
-  await assert.rejects(
-    service.prepareAssistedPriceIntake(context, {
-      ...input,
-      recognizedText: '头疗团购价 299 元',
-    }),
-    (error: unknown) =>
-      error instanceof AssetIntakeError && error.code === 'BATCH_CONFLICT',
-  );
-});
-
 test('non-fact candidates cannot be routed into StoreFact', async () => {
   const service = new AssetIntakeService(
     new MemoryAssetIntakeRepository(),

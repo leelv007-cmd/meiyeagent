@@ -3,12 +3,10 @@ import {
   assetIntakeCapabilitySchema,
   assetIntakeDecisionEventSchema,
   confirmedFactReferenceSchema,
-  prepareAssistedPriceIntakeCommandSchema,
   storeFactCandidateDraftSchema,
   type AssetIntakeBatch,
   type AssetIntakeDecisionEvent,
   type ContextBundle,
-  type PrepareAssistedPriceIntakeCommand,
   type StoreFact,
   type StoreFactCandidateDraft,
 } from '@meiye/contracts';
@@ -21,7 +19,6 @@ import {
 import { StoreFactSemanticMutationPolicy } from './store-fact-semantic-mutation-policy.js';
 
 export type AssetIntakeErrorCode =
-  | 'ASSISTED_INPUT_INVALID'
   | 'BATCH_CONFLICT'
   | 'BATCH_NOT_FOUND'
   | 'CANDIDATE_NOT_FOUND'
@@ -51,10 +48,6 @@ export interface AssetIntakeDecisionReceipt {
 export interface AssetIntakeBatchReceipt {
   batch: AssetIntakeBatch;
   commandFingerprint: string | null;
-}
-
-export interface AssistedScreenshotAssetAuthorizer {
-  isAuthorized(workspaceId: string, assetId: string): Promise<boolean>;
 }
 
 export interface FactConfirmationReservation {
@@ -364,7 +357,6 @@ export class AssetIntakeService {
     private readonly repository: AssetIntakeRepository,
     private readonly facts: StoreFactLedger,
     private readonly now: () => string = () => new Date().toISOString(),
-    private readonly screenshotAssets?: AssistedScreenshotAssetAuthorizer,
   ) {
     this.factMutations = new StoreFactSemanticMutationPolicy(facts);
   }
@@ -450,97 +442,6 @@ export class AssetIntakeService {
       event.factRevision === confirmation.expectedFactRevision + 1
       ? event.factRevision
       : null;
-  }
-
-  async prepareAssistedPriceIntake(
-    context: { workspaceId: string },
-    value: PrepareAssistedPriceIntakeCommand,
-  ) {
-    const input = prepareAssistedPriceIntakeCommandSchema.parse(value);
-    const commandFingerprint = fingerprintValue({
-      workspaceId: context.workspaceId,
-      command: input,
-    });
-    const existing = await this.repository.getBatch(
-      context.workspaceId,
-      input.batchId,
-    );
-    if (
-      !existing &&
-      input.inputMode === 'screenshot' &&
-      !(await this.screenshotAssets?.isAuthorized(
-        context.workspaceId,
-        input.screenshotAssetId,
-      ))
-    ) {
-      throw new AssetIntakeError(
-        'ASSISTED_INPUT_INVALID',
-        'The screenshot must be an authorized asset in this workspace.',
-      );
-    }
-    const amount =
-      input.inputMode === 'manual_select'
-        ? input.amount
-        : assistedPriceAmount(
-            input.inputMode === 'screenshot'
-              ? input.recognizedText
-              : input.pastedText,
-          );
-    const referenceId =
-      input.inputMode === 'screenshot'
-        ? input.screenshotAssetId
-        : `assisted-${input.inputMode}:${input.batchId}`;
-    const capturedAt = existing?.createdAt ?? this.now();
-    return this.recordBatch({
-      batchId: input.batchId,
-      workspaceId: context.workspaceId,
-      taskId: input.taskId,
-      source: {
-        sourceId: `assisted-source:${input.batchId}`,
-        kind:
-          input.inputMode === 'screenshot'
-            ? 'group_buy_screenshot'
-            : input.inputMode === 'paste_text'
-              ? 'pasted_text'
-              : 'manual',
-        referenceId,
-        capabilityStatus: 'assisted',
-        sourceWorkspaceId: context.workspaceId,
-        capturedAt,
-        example: false,
-      },
-      summary: `Current price candidate: CNY ${amount}`,
-      candidates: [
-        {
-          candidateId: input.candidateId,
-          objectKind: 'store_fact',
-          status: 'pending',
-          fact: {
-            kind: 'price',
-            key: input.key,
-            value: {
-              amount,
-              currency:
-                input.inputMode === 'manual_select'
-                  ? input.currency
-                  : 'CNY',
-            },
-            scope: input.scope,
-            source: {
-              kind:
-                input.inputMode === 'screenshot'
-                  ? 'screenshot_extraction'
-                  : 'user_confirmation',
-              referenceId,
-              capturedAt,
-            },
-            effectiveFrom: input.effectiveFrom,
-            expiresAt: input.expiresAt,
-          },
-        },
-      ],
-      createdAt: capturedAt,
-    }, commandFingerprint);
   }
 
   async view(workspaceId: string, batchId: string) {
@@ -891,23 +792,6 @@ export class AssetIntakeService {
       .filter((key) => !activeKeys.has(key))
       .sort((left, right) => left.localeCompare(right));
   }
-}
-
-function assistedPriceAmount(text: string) {
-  const values = new Set<number>();
-  const pattern =
-    /(?:[¥￥]\s*(\d+(?:\.\d{1,2})?)|(\d+(?:\.\d{1,2})?)\s*(?:元|CNY|RMB))/giu;
-  for (const match of text.matchAll(pattern)) {
-    const amount = Number(match[1] ?? match[2]);
-    if (Number.isFinite(amount) && amount >= 0) values.add(amount);
-  }
-  if (values.size !== 1) {
-    throw new AssetIntakeError(
-      'ASSISTED_INPUT_INVALID',
-      'Assisted price intake requires exactly one recognizable CNY amount.',
-    );
-  }
-  return [...values][0]!;
 }
 
 export function confirmedFactReferenceFromBundle(

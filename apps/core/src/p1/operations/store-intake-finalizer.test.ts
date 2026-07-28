@@ -246,6 +246,7 @@ test('marks staged facts for reconciliation instead of leaving a pending outbox'
           price: 299,
           durationMinutes: 90,
           confirmed: true,
+          priceValidUntil: null,
         },
       ],
     },
@@ -284,4 +285,153 @@ test('marks staged facts for reconciliation instead of leaving a pending outbox'
     'needs_reconciliation',
   );
   assert.equal(mergeCalls, 2);
+});
+
+
+/* ------------------------------------------------------------------ *
+ * #244 — a price the merchant confirms has to say how long it runs.
+ * ------------------------------------------------------------------ */
+
+function priceValidityFinalizer(facts: MemoryStoreFactLedger) {
+  const intake = new AssetIntakeService(
+    new MemoryAssetIntakeRepository(),
+    facts,
+    () => now,
+  );
+  const merged: StoreProfile[] = [];
+  const finalizer = new StoreIntakeFinalizer(
+    intake,
+    new MemoryFinalizationRepository(),
+    profilePort(async (_context, patch) => {
+      const project = patch.projects!.upsert![0]!;
+      const profile: StoreProfile = {
+        name: '青禾',
+        city: '杭州',
+        district: '拱墅区',
+        address: '湖墅南路 88 号',
+        booking: '提前一天私信预约',
+        brandVoice: '克制',
+        prohibitions: [],
+        accounts: [],
+        projects: [project],
+        regulated: false,
+        revision: 2,
+      };
+      merged.push(profile);
+      return profile;
+    }),
+  );
+  return { finalizer, merged };
+}
+
+/** The inline arm of the finalize batch union — the one these tests build. */
+type InlineIntakeBatch = Extract<
+  FinalizeStoreIntakeCommand['batch'],
+  { candidates: unknown }
+>;
+
+function inlineProjectBatch() {
+  return projectBatch() as InlineIntakeBatch;
+}
+
+function datedPriceBatch(expiresAt: string): InlineIntakeBatch {
+  const batch = inlineProjectBatch();
+  return {
+    ...batch,
+    candidates: batch.candidates.map((candidate) =>
+      candidate.objectKind === 'store_fact' &&
+      candidate.candidateId === 'project-price'
+        ? { ...candidate, fact: { ...candidate.fact, expiresAt } }
+        : candidate,
+    ),
+  };
+}
+
+test('a merchant-confirmed price without a stated validity is refused, not stored as permanent', async () => {
+  const facts = new MemoryStoreFactLedger();
+  const { finalizer, merged } = priceValidityFinalizer(facts);
+  const input = projectInput(projectBatch(), {
+    expectedRevision: 1,
+    projects: {
+      upsert: [
+        {
+          id: 'project-a',
+          name: '透亮猫眼',
+          price: 299,
+          durationMinutes: 90,
+          confirmed: true,
+        },
+      ],
+    },
+  });
+
+  await assert.rejects(
+    finalizer.finalize(context, input, 'price-validity-missing'),
+    (error) =>
+      error instanceof StoreIntakeFinalizationError &&
+      error.code === 'STORE_FACT_MAPPING_INVALID' &&
+      /stated validity/u.test(error.message),
+  );
+  assert.deepEqual(merged, []);
+  assert.deepEqual(
+    await facts.history(context.workspaceId, 'store-project:project-a:price'),
+    [],
+  );
+});
+
+test('a stated price window reaches both the ledger fact and the stored project', async () => {
+  const facts = new MemoryStoreFactLedger();
+  const { finalizer, merged } = priceValidityFinalizer(facts);
+  const validUntil = '2026-08-31T15:59:59.999Z';
+  const input = projectInput(datedPriceBatch(validUntil), {
+    expectedRevision: 1,
+    projects: {
+      upsert: [
+        {
+          id: 'project-a',
+          name: '透亮猫眼',
+          price: 299,
+          durationMinutes: 90,
+          confirmed: true,
+          priceValidUntil: validUntil,
+        },
+      ],
+    },
+  });
+
+  const result = await finalizer.finalize(context, input, 'price-validity-set');
+  const priceFact = result.facts.find(
+    (fact) => fact.factId === 'store-project:project-a:price',
+  );
+  assert.equal(priceFact?.expiresAt, validUntil);
+  assert.equal(merged[0]?.projects[0]?.priceValidUntil, validUntil);
+});
+
+test('a price window the profile disagrees with is refused', async () => {
+  const facts = new MemoryStoreFactLedger();
+  const { finalizer } = priceValidityFinalizer(facts);
+  const input = projectInput(datedPriceBatch('2026-08-31T15:59:59.999Z'), {
+    expectedRevision: 1,
+    projects: {
+      upsert: [
+        {
+          id: 'project-a',
+          name: '透亮猫眼',
+          price: 299,
+          durationMinutes: 90,
+          confirmed: true,
+          // The merchant said "it stands" while the fact says it runs out.
+          priceValidUntil: null,
+        },
+      ],
+    },
+  });
+
+  await assert.rejects(
+    finalizer.finalize(context, input, 'price-validity-mismatch'),
+    (error) =>
+      error instanceof StoreIntakeFinalizationError &&
+      error.code === 'STORE_FACT_MAPPING_INVALID' &&
+      /stated validity/u.test(error.message),
+  );
 });

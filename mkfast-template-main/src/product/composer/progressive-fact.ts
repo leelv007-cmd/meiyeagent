@@ -20,10 +20,56 @@ export type ProgressiveFactId =
   | 'city'
   | 'projectName'
   | 'projectPrice'
+  | 'projectPriceValidity'
   | 'district'
   | 'address'
   | 'booking'
   | 'brandVoice';
+
+/**
+ * The merchant's answer to "how long is this price good for" (#244).
+ *
+ * Three states, and the empty one is not a default — it is "unanswered", and it
+ * blocks confirmation. The product used to store a limited-time promotion as a
+ * standing price nobody asked about, which then kept turning up in content long
+ * after the promotion ended.
+ *
+ *   ''            — unanswered.
+ *   'long_term'   — the merchant said it is a standing price.
+ *   'YYYY-MM-DD'  — the merchant said it runs to the end of that day.
+ */
+export const PRICE_VALIDITY_LONG_TERM = 'long_term';
+
+const PRICE_VALIDITY_DATE = /^\d{4}-\d{2}-\d{2}$/u;
+
+/**
+ * The chosen answer as the instant the price stops counting: `null` for a
+ * standing price, an ISO timestamp for a dated one, `undefined` when the
+ * merchant has not answered and nothing may be written.
+ */
+export function priceValidityExpiresAt(
+  validity: string
+): string | null | undefined {
+  const answer = validity.trim();
+  if (answer === PRICE_VALIDITY_LONG_TERM) return null;
+  if (!PRICE_VALIDITY_DATE.test(answer)) return undefined;
+  const [year, month, day] = answer.split('-').map(Number);
+  const endOfDay = new Date(year!, month! - 1, day!, 23, 59, 59, 999);
+  return Number.isNaN(endOfDay.getTime()) ? undefined : endOfDay.toISOString();
+}
+
+/** Stored validity → the answer the wizard shows back, round-tripped. */
+export function priceValidityFromStored(
+  priceValidUntil: string | null | undefined
+): string {
+  if (priceValidUntil === undefined) return '';
+  if (priceValidUntil === null) return PRICE_VALIDITY_LONG_TERM;
+  const stored = new Date(priceValidUntil);
+  if (Number.isNaN(stored.getTime())) return '';
+  const month = `${stored.getMonth() + 1}`.padStart(2, '0');
+  const day = `${stored.getDate()}`.padStart(2, '0');
+  return `${stored.getFullYear()}-${month}-${day}`;
+}
 
 export type ProgressiveFactCriticality = 'blocking' | 'skippable';
 
@@ -50,6 +96,8 @@ export type ProgressiveFactDraft = {
   projectDurationMinutes: number;
   projectName: string;
   projectPrice: string;
+  /** See `PRICE_VALIDITY_LONG_TERM` — '' means the merchant has not answered. */
+  projectPriceValidity: string;
   /** Facts explicitly answered during this confirmation session. */
   answered: ProgressiveFactId[];
   /** Prefilled values that still require explicit merchant confirmation. */
@@ -69,7 +117,7 @@ export type ProgressiveFactQuestion = {
   impact: string;
   /** Safe fallback applied when skippable and skipped. */
   safeFallback?: string;
-  inputKind: 'text' | 'number';
+  inputKind: 'text' | 'number' | 'price_validity';
 };
 
 export type ProgressiveFactView = {
@@ -109,6 +157,7 @@ const FACT_ORDER: ProgressiveFactId[] = [
   'city',
   'projectName',
   'projectPrice',
+  'projectPriceValidity',
   'district',
   'address',
   'booking',
@@ -120,6 +169,7 @@ const BLOCKING = new Set<ProgressiveFactId>([
   'city',
   'projectName',
   'projectPrice',
+  'projectPriceValidity',
 ]);
 
 const FALLBACKS: Record<
@@ -137,6 +187,8 @@ const WHY: Record<ProgressiveFactId, string> = {
   city: '同城曝光与平台投放表述依赖城市，缺失时无法写出可信到店引导。',
   projectName: '文案里要提到你的招牌项目，得先有一个。',
   projectPrice: '价格你说了我才敢写，不会自己编。',
+  projectPriceValidity:
+    '活动价过了期还被写进文案，是要挨骂的。你说到哪天，我就写到哪天。',
   district: '区县帮助同城检索，但不阻塞基础文案生成。',
   address: '详细地址用于到店指引，可先跳过并用安全占位。',
   booking: '预约方式决定文案结尾怎么请顾客来。',
@@ -148,6 +200,7 @@ const IMPACT: Record<ProgressiveFactId, string> = {
   city: '回答后，同城与到店表述会绑定此城市。',
   projectName: '回答后，主推项目会写入已确认项目列表。',
   projectPrice: '回答后，报价与促销表述可引用此价格。',
+  projectPriceValidity: '说了用到哪天，过了这天我就自动不再提这个价。',
   district: '跳过将使用“本区”占位，同城精度下降。',
   address: '跳过将使用“门店地址待补充”，成品不写具体导航。',
   booking: '跳过将使用“到店咨询预约”，不写具体预约渠道。',
@@ -165,12 +218,24 @@ export function createProgressiveFactDraft(
     : (input as Partial<ProgressiveFactDraft> | undefined);
   const project = profile?.projects[0];
   const activeFactIds = new Set(activeFacts?.map((fact) => fact.factId));
+  /**
+   * #244 historical prices. A stored project that carries no `priceValidUntil`
+   * at all was never asked how long its price runs — it predates the question.
+   * Nothing about it is discarded; it is simply shown as still waiting on the
+   * merchant, exactly like a photo reading nobody has confirmed yet. Derived
+   * from what is stored rather than stamped by a migration, so it survives any
+   * number of replays and needs no backfill.
+   */
+  const priceValidityNeverStated =
+    project !== undefined && project.priceValidUntil === undefined;
   const projectUnconfirmed: ProgressiveFactId[] =
     profile && project
       ? !project.confirmed
-        ? ['projectName', 'projectPrice']
+        ? ['projectName', 'projectPrice', 'projectPriceValidity']
         : activeFacts === undefined
-          ? []
+          ? priceValidityNeverStated
+            ? ['projectPriceValidity']
+            : []
           : [
               ...(activeFactIds.has(`store-project:${project.id}:service`)
                 ? []
@@ -178,6 +243,9 @@ export function createProgressiveFactDraft(
               ...(activeFactIds.has(`store-project:${project.id}:price`)
                 ? []
                 : (['projectPrice'] as const)),
+              ...(priceValidityNeverStated
+                ? (['projectPriceValidity'] as const)
+                : []),
             ]
       : [];
   return {
@@ -195,6 +263,10 @@ export function createProgressiveFactDraft(
       project === undefined
         ? (partial?.projectPrice ?? '')
         : String(project.price),
+    projectPriceValidity:
+      project === undefined
+        ? (partial?.projectPriceValidity ?? '')
+        : priceValidityFromStored(project.priceValidUntil),
     answered: partial?.answered ? [...partial.answered] : [],
     unconfirmed: profile
       ? projectUnconfirmed
@@ -257,6 +329,11 @@ function isAnswered(draft: ProgressiveFactDraft, id: ProgressiveFactId) {
       price >= 0
     );
   }
+  if (id === 'projectPriceValidity') {
+    // No implicit "they left it blank, call it permanent": an unreadable or
+    // absent answer is unanswered, and unanswered blocks the confirmation.
+    return priceValidityExpiresAt(draft.projectPriceValidity) !== undefined;
+  }
   return fieldValue(draft, id).length > 0;
 }
 
@@ -277,7 +354,12 @@ export function progressiveFactQuestion(
             FALLBACKS[id as 'district' | 'address' | 'booking' | 'brandVoice'],
         }
       : {}),
-    inputKind: id === 'projectPrice' ? 'number' : 'text',
+    inputKind:
+      id === 'projectPrice'
+        ? 'number'
+        : id === 'projectPriceValidity'
+          ? 'price_validity'
+          : 'text',
   };
 }
 
@@ -347,18 +429,34 @@ export function buildFinalizeStoreIntakeCommand(
   const price = Number(draft.projectPrice);
   if (!Number.isFinite(price) || price < 0) return null;
 
-  const candidates = draft.answered.flatMap((id) => {
-    const projection = storeFactProjection(draft, id, options);
-    if (!projection) return [];
-    return [
-      {
-        candidateId: `${projection.factId}:candidate`,
-        status: 'pending' as const,
-        objectKind: 'store_fact' as const,
-        fact: projection.fact,
-      },
-    ];
-  });
+  // The validity answer has no fact of its own — it *is* the price fact's
+  // expiry. Restating it therefore has to rewrite the price stream, or the
+  // ledger would keep the old window while the profile claims the new one.
+  const priceExpiresAt = priceValidityExpiresAt(draft.projectPriceValidity);
+  if (priceExpiresAt === undefined) return null;
+  if (
+    priceExpiresAt !== null &&
+    Date.parse(priceExpiresAt) <= Date.parse(options.capturedAt)
+  ) {
+    return null;
+  }
+  const answered = new Set(draft.answered);
+  if (answered.has('projectPriceValidity')) answered.add('projectPrice');
+
+  const candidates = FACT_ORDER.filter((id) => answered.has(id)).flatMap(
+    (id) => {
+      const projection = storeFactProjection(draft, id, options);
+      if (!projection) return [];
+      return [
+        {
+          candidateId: `${projection.factId}:candidate`,
+          status: 'pending' as const,
+          objectKind: 'store_fact' as const,
+          fact: projection.fact,
+        },
+      ];
+    }
+  );
   if (candidates.length === 0) return null;
 
   const changed = new Set([...draft.answered, ...draft.skipped]);
@@ -397,7 +495,8 @@ export function buildFinalizeStoreIntakeCommand(
   if (
     initializingProfile ||
     changed.has('projectName') ||
-    changed.has('projectPrice')
+    changed.has('projectPrice') ||
+    changed.has('projectPriceValidity')
   ) {
     profilePatch.projects = {
       upsert: [
@@ -407,6 +506,9 @@ export function buildFinalizeStoreIntakeCommand(
           price,
           durationMinutes: draft.projectDurationMinutes,
           confirmed: true,
+          // Always carried, never inferred: Core rejects a merchant-confirmed
+          // price whose profile side stays silent about how long it runs.
+          priceValidUntil: priceExpiresAt,
         },
       ],
     };
@@ -519,7 +621,9 @@ function storeFactProjection(
           value: { name: draft.projectName.trim() },
         },
       };
-    case 'projectPrice':
+    case 'projectPrice': {
+      const expiresAt = priceValidityExpiresAt(draft.projectPriceValidity);
+      if (expiresAt === undefined) return null;
       return {
         factId: `store-project:${draft.projectId}:price`,
         fact: {
@@ -527,8 +631,13 @@ function storeFactProjection(
           kind: 'price',
           key: `service.${draft.projectId}.price`,
           value: { amount: Number(draft.projectPrice), currency: 'CNY' },
+          expiresAt,
         },
       };
+    }
+    // The validity answer rides on the price fact above rather than opening a
+    // stream of its own — one price, one window, one thing to keep in step.
+    case 'projectPriceValidity':
     case 'brandVoice':
       return null;
   }
@@ -552,7 +661,10 @@ export function hasMissingProgressiveStoreFacts(
 ) {
   if (!store?.projects[0]) return false;
   return createProgressiveFactDraft(store, facts).unconfirmed.some(
-    (id) => id === 'projectName' || id === 'projectPrice'
+    (id) =>
+      id === 'projectName' ||
+      id === 'projectPrice' ||
+      id === 'projectPriceValidity'
   );
 }
 

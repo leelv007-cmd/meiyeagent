@@ -899,6 +899,34 @@ async function assertStoreFactMappings(
           `Store project price fact ${confirmation.factId} does not match its profile patch.`,
         );
       }
+      // #244 — a price the merchant is confirming right now has to say how long
+      // it is good for. The wizard asks; this refuses the command if the answer
+      // never arrived, so "no answer" can never be stored as "never expires".
+      // A staged historical value (`source.kind: 'import'`) is exempt on
+      // purpose: nobody ever asked about it, and the wizard keeps showing it as
+      // waiting on the merchant until they say.
+      if (fact.source.kind === 'user_confirmation') {
+        if (projectedProject.priceValidUntil === undefined) {
+          throw new StoreIntakeFinalizationError(
+            'STORE_FACT_MAPPING_INVALID',
+            `Store project price fact ${confirmation.factId} requires the merchant's stated validity.`,
+          );
+        }
+        if (projectedProject.priceValidUntil !== fact.expiresAt) {
+          throw new StoreIntakeFinalizationError(
+            'STORE_FACT_MAPPING_INVALID',
+            `Store project price fact ${confirmation.factId} does not match its stated validity.`,
+          );
+        }
+      } else if (
+        projectedProject.priceValidUntil !== undefined &&
+        projectedProject.priceValidUntil !== fact.expiresAt
+      ) {
+        throw new StoreIntakeFinalizationError(
+          'STORE_FACT_MAPPING_INVALID',
+          `Store project price fact ${confirmation.factId} does not match its stated validity.`,
+        );
+      }
     }
     if (kind === 'service') {
       if (fact.revisionKind === 'revocation') {
@@ -960,6 +988,18 @@ async function assertStoreFactMappings(
         throw new StoreIntakeFinalizationError(
           'STORE_FACT_MAPPING_INVALID',
           `Store project patch ${project.id} requires confirmation ${factId}.`,
+        );
+      }
+      // #244 — the standing fact is what speaks for this price, so a patch that
+      // restates the validity has to restate the one the ledger actually holds.
+      if (
+        kind === 'price' &&
+        project.priceValidUntil !== undefined &&
+        project.priceValidUntil !== current.expiresAt
+      ) {
+        throw new StoreIntakeFinalizationError(
+          'STORE_FACT_MAPPING_INVALID',
+          `Store project patch ${project.id} does not match the stated validity of ${factId}.`,
         );
       }
       omittedBackers.push({

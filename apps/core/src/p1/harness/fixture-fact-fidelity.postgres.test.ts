@@ -49,20 +49,42 @@ test(
         facts,
         () => now,
       );
-      const prepared = await intake.prepareAssistedPriceIntake(
-        { workspaceId },
-        {
-          batchId: 't43-price-batch',
-          taskId: 't43-intake-task',
-          candidateId: 't43-price-candidate',
-          key: 'offer.price',
-          scope: { storeId: workspaceId },
-          effectiveFrom: now,
-          expiresAt: null,
-          inputMode: 'paste_text',
-          pastedText: '头疗团购价 299 元',
+      const prepared = await intake.recordBatch({
+        batchId: 't43-price-batch',
+        workspaceId,
+        taskId: 't43-intake-task',
+        source: {
+          sourceId: 't43-price-source',
+          kind: 'pasted_text',
+          referenceId: 't43-price-reference',
+          capabilityStatus: 'assisted',
+          sourceWorkspaceId: workspaceId,
+          capturedAt: now,
+          example: false,
         },
-      );
+        summary: 'Current price candidate: CNY 299',
+        candidates: [
+          {
+            candidateId: 't43-price-candidate',
+            objectKind: 'store_fact',
+            status: 'pending',
+            fact: {
+              kind: 'price',
+              key: 'offer.price',
+              value: { amount: 299, currency: 'CNY' },
+              scope: { storeId: workspaceId },
+              source: {
+                kind: 'user_confirmation',
+                referenceId: 't43-price-reference',
+                capturedAt: now,
+              },
+              effectiveFrom: now,
+              expiresAt: null,
+            },
+          },
+        ],
+        createdAt: now,
+      });
       const fact = await intake.confirmFact(
         { workspaceId, userId: 'owner-t43' },
         {
