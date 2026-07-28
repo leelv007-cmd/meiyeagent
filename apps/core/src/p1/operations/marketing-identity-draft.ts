@@ -2,7 +2,7 @@
  * W12② / D-142 — the identity draft assistant.
  *
  * The merchant says one line about who this voice is, optionally hands over a
- * reference file (read by the existing parse chain before it gets here), and
+ * reference image (read by the existing parse chain before it gets here), and
  * the model proposes the expressive fields. Three things this deliberately does
  * not do:
  *
@@ -14,34 +14,61 @@
  *    `ai_suggestion` provenance and the wizard holds it unconfirmed until the
  *    merchant reads it, which is the same static-upgrade defence the five-step
  *    intake already runs on.
- * 3. It never blocks. A provider that fails returns an empty proposal, and the
- *    merchant answers the questions themselves — the wizard worked before this
- *    assistant existed and still does.
+ * 3. It never blocks registration by hand. An unavailable provider is reported
+ *    as unavailable rather than being passed off as an empty merchant input.
  */
 
 import {
   EMPTY_MARKETING_IDENTITY_SUGGESTION,
   marketingIdentitySuggestionSchema,
-  type MarketingIdentityDraftRequest,
   type MarketingIdentitySuggestion,
 } from '@meiye/contracts';
 
-import type { StructuredObjectExecutor } from '../model-supply/index.js';
+import type {
+  StructuredNodeRunner,
+} from '../model-supply/structured-node-runner.js';
 
 export const MARKETING_IDENTITY_DRAFT_SCHEMA_NAME =
   'marketing_identity_draft_v1';
 
+export interface ResolvedMarketingIdentityDraftRequest {
+  kind: 'brand' | 'person';
+  background: string;
+  reference: {
+    draftId: string;
+    draftRevision: number;
+    parsedDocumentId: string;
+    text: string;
+  } | null;
+}
+
+export interface MarketingIdentityDraftOutcome {
+  status: 'suggested' | 'empty' | 'unavailable';
+  suggestion: MarketingIdentitySuggestion;
+  errorCode: 'model_execution_failed' | null;
+}
+
+export interface MarketingIdentityDraftRunnerFactory {
+  create(input: {
+    workspaceId: string;
+    actorId: string;
+  }): StructuredNodeRunner;
+}
+
 export interface MarketingIdentityDraftPort {
   suggest(input: {
     abortSignal?: AbortSignal;
-    request: MarketingIdentityDraftRequest;
-  }): Promise<MarketingIdentitySuggestion>;
+    workspaceId: string;
+    actorId: string;
+    effectIdempotencyKey: string;
+    request: ResolvedMarketingIdentityDraftRequest;
+  }): Promise<MarketingIdentityDraftOutcome>;
 }
 
 const INSTRUCTIONS = [
   'Draft one beauty-industry marketing identity from a merchant background line and optional reference text.',
   'Return null for any field the input does not support. Never invent an owner, a claim, or a boundary that the merchant did not imply.',
-  'Set provenance to document only when the value comes from the supplied reference text; otherwise set ai_suggestion.',
+  'Set provenance to document only when the value comes from the supplied reference text; include an exactQuote citation copied from that text. Otherwise set ai_suggestion and omit citation.',
   'forbiddenClaims, visualPrinciples and seriesAnchors apply to a brand identity; return null for all three when kind is person.',
   'professionalBoundaries, expressionSamples, forbiddenClaims, visualPrinciples and seriesAnchors may hold several entries separated by newlines.',
   'Write every value in the merchant-facing language of the background line, in plain merchant wording.',
@@ -51,31 +78,47 @@ const INSTRUCTIONS = [
 export class StructuredMarketingIdentityDrafter
   implements MarketingIdentityDraftPort
 {
-  constructor(private readonly executor: StructuredObjectExecutor) {}
+  constructor(private readonly runners: MarketingIdentityDraftRunnerFactory) {}
 
   async suggest(input: {
     abortSignal?: AbortSignal;
-    request: MarketingIdentityDraftRequest;
-  }): Promise<MarketingIdentitySuggestion> {
+    workspaceId: string;
+    actorId: string;
+    effectIdempotencyKey: string;
+    request: ResolvedMarketingIdentityDraftRequest;
+  }): Promise<MarketingIdentityDraftOutcome> {
     const background = input.request.background.trim();
-    if (!background) return EMPTY_MARKETING_IDENTITY_SUGGESTION;
-    const referenceText = input.request.referenceText?.trim();
+    if (!background) {
+      return {
+        status: 'empty',
+        suggestion: EMPTY_MARKETING_IDENTITY_SUGGESTION,
+        errorCode: null,
+      };
+    }
+    const referenceText = input.request.reference?.text.trim();
     try {
-      const result = await this.executor.generate({
-        abortSignal: input.abortSignal,
-        instructions: INSTRUCTIONS,
-        prompt: JSON.stringify({
-          background,
-          kind: input.request.kind,
-          ...(referenceText ? { referenceText } : {}),
-        }),
-        schema: marketingIdentitySuggestionSchema,
-        schemaName: MARKETING_IDENTITY_DRAFT_SCHEMA_NAME,
-      });
-      const suggestion = marketingIdentitySuggestionSchema.parse(result.output);
-      return input.request.kind === 'person'
+      const result = await this.runners
+        .create({
+          workspaceId: input.workspaceId,
+          actorId: input.actorId,
+        })
+        .run({
+          abortSignal: input.abortSignal,
+          effectIdempotencyKey: input.effectIdempotencyKey,
+          instructions: INSTRUCTIONS,
+          prompt: JSON.stringify({
+            background,
+            kind: input.request.kind,
+            ...(referenceText ? { referenceText } : {}),
+          }),
+          schema: marketingIdentitySuggestionSchema,
+          schemaName: MARKETING_IDENTITY_DRAFT_SCHEMA_NAME,
+          schemaRevision: 'marketing-identity-draft-v2',
+        });
+      const parsed = marketingIdentitySuggestionSchema.parse(result.output);
+      const kindSafe = input.request.kind === 'person'
         ? {
-            ...suggestion,
+            ...parsed,
             // A person has no brand guidance to answer, so a model that filled
             // those three anyway would hand the merchant questions their own
             // wizard never asks.
@@ -83,9 +126,42 @@ export class StructuredMarketingIdentityDrafter
             visualPrinciples: null,
             seriesAnchors: null,
           }
-        : suggestion;
+        : parsed;
+      const suggestion = verifyDocumentCitations(kindSafe, referenceText);
+      return {
+        status: Object.values(suggestion).some(Boolean) ? 'suggested' : 'empty',
+        suggestion,
+        errorCode: null,
+      };
     } catch {
-      return EMPTY_MARKETING_IDENTITY_SUGGESTION;
+      return {
+        status: 'unavailable',
+        suggestion: EMPTY_MARKETING_IDENTITY_SUGGESTION,
+        errorCode: 'model_execution_failed',
+      };
     }
   }
+}
+
+function verifyDocumentCitations(
+  suggestion: MarketingIdentitySuggestion,
+  referenceText: string | undefined,
+): MarketingIdentitySuggestion {
+  return Object.fromEntries(
+    Object.entries(suggestion).map(([field, proposed]) => {
+      if (!proposed || proposed.provenance !== 'document') {
+        return [field, proposed];
+      }
+      if (
+        referenceText &&
+        referenceText.includes(proposed.citation.exactQuote)
+      ) {
+        return [field, proposed];
+      }
+      return [
+        field,
+        { value: proposed.value, provenance: 'ai_suggestion' as const },
+      ];
+    }),
+  ) as MarketingIdentitySuggestion;
 }

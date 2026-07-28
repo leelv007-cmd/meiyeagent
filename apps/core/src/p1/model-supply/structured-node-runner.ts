@@ -71,8 +71,8 @@ export class ModelSupplyStructuredNodeRunner implements StructuredNodeRunner {
       actorId: string;
       selection: RequestedSelection;
       dataClass?: DataClass[];
-      billingTaskId: string;
-      billingQuoteRevision: string;
+      billingTaskId?: string;
+      billingQuoteRevision?: string;
     },
   ) {}
 
@@ -107,6 +107,14 @@ export class ModelSupplyStructuredNodeRunner implements StructuredNodeRunner {
   }
 
   private async execute<Output>(request: StructuredNodeRunnerRequest<Output>) {
+    if (
+      Boolean(this.options.billingTaskId) !==
+      Boolean(this.options.billingQuoteRevision)
+    ) {
+      throw new Error(
+        'Structured model billing task and quote revision must be supplied together.',
+      );
+    }
     const result = await this.options.application.executeStructuredObject(
       {
         workspaceId: this.options.workspaceId,
@@ -116,8 +124,12 @@ export class ModelSupplyStructuredNodeRunner implements StructuredNodeRunner {
         operation: 'text.respond',
         selection: structuredClone(this.options.selection),
         dataClass: structuredClone(this.options.dataClass ?? []),
-        billingTaskId: this.options.billingTaskId,
-        billingQuoteRevision: this.options.billingQuoteRevision,
+        ...(this.options.billingTaskId && this.options.billingQuoteRevision
+          ? {
+              billingTaskId: this.options.billingTaskId,
+              billingQuoteRevision: this.options.billingQuoteRevision,
+            }
+          : {}),
         prompt: request.prompt,
         promptRevision: request.schemaRevision,
         exampleSetRevision: request.schemaName,

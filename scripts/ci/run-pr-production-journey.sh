@@ -23,4 +23,5 @@ pnpm --filter @meiye/web exec playwright test \
   "${required_e2e_spec}" \
   "${required_hard_gate_spec}" \
   tests/e2e/specs/marketing-identity-flow.spec.ts \
+  tests/e2e/specs/w12-identity-draft-assistant.spec.ts \
   2>&1 | tee "${evidence_dir}/playwright-production-journey.log"

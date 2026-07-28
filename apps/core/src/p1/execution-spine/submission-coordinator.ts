@@ -454,6 +454,8 @@ function submissionResponse(
 		replayed,
 		snapshot: {
 			id: submission.snapshot.id,
+			identity: submission.snapshot.identity,
+			identityDecision: submission.snapshot.identityDecision,
 			schemaVersion: submission.snapshot.schemaVersion,
 		},
 		task: submission.task,

@@ -533,6 +533,10 @@ export function ComposerHome({
   const [sessionIdentityId, setSessionIdentityId] = useState<
     string | null | undefined
   >(undefined);
+  const [
+    sessionIdentityDecisionReference,
+    setSessionIdentityDecisionReference,
+  ] = useState<{ id: string; revision: number } | null>(null);
 
   const width =
     viewportWidth ?? (typeof window !== 'undefined' ? window.innerWidth : 1280);
@@ -593,7 +597,10 @@ export function ComposerHome({
       const identity = identitySelection.identities.find(
         (candidate) => candidate.id === identityId
       );
-      return commandP1(
+      return commandP1<{
+        decisionId: string;
+        decisionRevision: number;
+      }>(
         'marketing-identity',
         {
           action: 'select_marketing_identity_for_session',
@@ -610,7 +617,12 @@ export function ComposerHome({
         `identity-session:${sessionIdRef.current}:${identity?.id ?? 'official-neutral'}`
       );
     },
-    onSuccess: async () => {
+    onSuccess: async (decision, identityId) => {
+      setSessionIdentityId(identityId);
+      setSessionIdentityDecisionReference({
+        id: decision.decisionId,
+        revision: decision.decisionRevision,
+      });
       await invalidateMarketingIdentity(queryClient);
     },
     onError: () => toast.error('本次身份选择未能记入决策记录，请重试。'),
@@ -654,7 +666,6 @@ export function ComposerHome({
     );
     if (!known) return;
     handedOverIdentityRef.current = true;
-    setSessionIdentityId(initialSessionIdentityId);
     sessionIdentityDecision.mutate(initialSessionIdentityId);
   }, [
     identitySelection.identities,
@@ -1654,15 +1665,17 @@ export function ComposerHome({
       briefContextRevision,
       briefInput,
       identity,
-      ...(identitySelection.source === 'default' &&
-      identitiesQuery.data?.defaultDecision
-        ? {
-            identityDecision: {
-              id: identitiesQuery.data.defaultDecision.decisionId,
-              revision: identitiesQuery.data.defaultDecision.decisionRevision,
-            },
-          }
-        : {}),
+      ...(sessionIdentityDecisionReference
+        ? { identityDecision: sessionIdentityDecisionReference }
+        : identitySelection.source === 'default' &&
+            identitiesQuery.data?.defaultDecision
+          ? {
+              identityDecision: {
+                id: identitiesQuery.data.defaultDecision.decisionId,
+                revision: identitiesQuery.data.defaultDecision.decisionRevision,
+              },
+            }
+          : {}),
       lensId: selectedLens,
       intent,
       quote,
@@ -2358,10 +2371,10 @@ export function ComposerHome({
               defaultIdentityDecision.mutate(identityId)
             }
             onRetry={() => void identitiesQuery.refetch()}
-            onSelect={(identityId) => {
-              setSessionIdentityId(identityId);
-              sessionIdentityDecision.mutate(identityId);
-            }}
+            onSelect={(identityId) =>
+              sessionIdentityDecision.mutate(identityId)
+            }
+            selectionPending={sessionIdentityDecision.isPending}
             selection={identitySelection}
           />
         }

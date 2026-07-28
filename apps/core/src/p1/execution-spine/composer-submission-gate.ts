@@ -58,7 +58,7 @@ export interface ComposerSubmissionAdmissionDependencies {
 		"getRecipeByRevisionId" | "getSurfaceByRevisionId"
 	>;
 	identities: Pick<MarketingIdentityRepository, "listActive"> &
-		Partial<Pick<MarketingIdentityRepository, "project">>;
+		Partial<Pick<MarketingIdentityRepository, "listDecisions" | "project">>;
 	quotes: Pick<ProductBillingApplicationPort, "getQuote"> &
 		Partial<Pick<ProductBillingApplicationPort, "confirm">>;
 	rights: ContentPackageRightsResolverPort;
@@ -342,23 +342,52 @@ export class ComposerSubmissionAdmissionGate
 			}
 		}
 		if (input.identityDecision) {
-			const projection = await this.dependencies.identities.project?.(
+			const decisions = await this.dependencies.identities.listDecisions?.(
 				input.workspaceId,
 				input.actorId,
-				this.now(),
+			);
+			const decision = decisions?.find(
+				(candidate) =>
+					candidate.decisionId === input.identityDecision?.id &&
+					candidate.decisionRevision === input.identityDecision?.revision,
 			);
 			if (
-				!projection?.defaultDecision ||
-				projection.defaultDecision.decisionId !== input.identityDecision.id ||
-				projection.defaultDecision.decisionRevision !==
-					input.identityDecision.revision ||
-				projection.defaultDecision.identity.identityId !== identity.id ||
-				String(projection.defaultDecision.identity.version) !==
-					identity.revision
+				!decision?.identity ||
+				decision.identity.identityId !== identity.id ||
+				String(decision.identity.version) !== identity.revision
 			) {
 				throw invalid(
-					"Marketing identity default decision is missing, stale, or does not match this submission.",
+					"Marketing identity decision is missing, stale, or does not match this submission.",
 				);
+			}
+			if (decision.action === "select_marketing_identity_for_session") {
+				if (
+					!decision.sessionId ||
+					input.briefContext.id !== `composer:${decision.sessionId}`
+				) {
+					throw invalid(
+						"Marketing identity decision is missing, stale, or does not match this submission.",
+					);
+				}
+			} else {
+				const projection = await this.dependencies.identities.project?.(
+					input.workspaceId,
+					input.actorId,
+					this.now(),
+				);
+				if (
+					!projection?.defaultDecision ||
+					projection.defaultDecision.decisionId !== decision.decisionId ||
+					projection.defaultDecision.decisionRevision !==
+						decision.decisionRevision ||
+					projection.defaultDecision.identity.identityId !== identity.id ||
+					String(projection.defaultDecision.identity.version) !==
+						identity.revision
+				) {
+					throw invalid(
+						"Marketing identity decision is missing, stale, or does not match this submission.",
+					);
+				}
 			}
 			identityDecision = input.identityDecision;
 		}

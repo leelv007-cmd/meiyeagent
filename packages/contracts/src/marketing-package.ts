@@ -153,7 +153,7 @@ export const hotTopicOpportunityCardSchema = z
 /**
  * D-142 (W12②): where each identity field came from.
  *
- * `document` is a reference file the merchant handed over and the parse chain
+ * `document` is a reference image the merchant handed over and the parse chain
  * read back; `ai_suggestion` is the model's inference from the merchant's
  * one-line background; `user` is the merchant's own words. Mirrors
  * `ASSET_FIELD_PROVENANCE` in parse-service.ts — the same three-way honesty the
@@ -241,6 +241,20 @@ function checkMerchantOnlyProvenance(
   }
 }
 
+function requireMerchantOnlyProvenance(
+  identity: { fieldProvenance?: MarketingIdentityFieldProvenanceMap },
+  context: z.RefinementCtx,
+) {
+  for (const field of MARKETING_IDENTITY_MERCHANT_ONLY_FIELDS) {
+    if (identity.fieldProvenance?.[field] === 'user') continue;
+    context.addIssue({
+      code: 'custom',
+      message: `Identity field ${field} must be explicitly confirmed by the merchant.`,
+      path: ['fieldProvenance', field],
+    });
+  }
+}
+
 const identityBaseSchema = z.object({
   identityId: idSchema,
   workspaceId: idSchema,
@@ -310,7 +324,19 @@ const identityRegistrationBaseSchema = identityBaseSchema
     createdAt: true,
     createdBy: true,
   })
-  .extend({ expectedVersion: z.literal(0) });
+  .extend({
+    expectedVersion: z.literal(0),
+    assistantDraft: z
+      .object({
+        draftId: idSchema,
+        revision: z.number().int().positive(),
+        confirmedFields: z
+          .array(z.enum(MARKETING_IDENTITY_ASSISTED_FIELDS))
+          .max(MARKETING_IDENTITY_ASSISTED_FIELDS.length),
+      })
+      .strict()
+      .optional(),
+  });
 
 export const registerMarketingIdentityCommandSchema = z.discriminatedUnion(
   'kind',
@@ -334,20 +360,56 @@ export const registerMarketingIdentityCommandSchema = z.discriminatedUnion(
       ]),
     }),
   ],
-).superRefine(checkMerchantOnlyProvenance);
+).superRefine((identity, context) => {
+  checkMerchantOnlyProvenance(identity, context);
+  requireMerchantOnlyProvenance(identity, context);
+  const assistedFields = Object.entries(identity.fieldProvenance ?? {})
+    .filter(
+      ([field, provenance]) =>
+        !MERCHANT_ONLY_FIELD_SET.has(field) && provenance !== 'user',
+    )
+    .map(([field]) => field);
+  if (assistedFields.length === 0) return;
+  if (!identity.assistantDraft) {
+    context.addIssue({
+      code: 'custom',
+      message:
+        'Assistant-authored fields require a revision-bound server draft confirmation.',
+      path: ['assistantDraft'],
+    });
+    return;
+  }
+  const confirmed = new Set(identity.assistantDraft.confirmedFields);
+  for (const field of assistedFields) {
+    if (confirmed.has(field as (typeof MARKETING_IDENTITY_ASSISTED_FIELDS)[number])) {
+      continue;
+    }
+    context.addIssue({
+      code: 'custom',
+      message: `Assistant-authored field ${field} was not explicitly confirmed.`,
+      path: ['assistantDraft', 'confirmedFields'],
+    });
+  }
+});
 
 /**
  * What the merchant hands the draft assistant: one line of background and,
- * optionally, the text the parse chain read out of a reference file they
- * uploaded. The reference text arrives already parsed — this command never
- * takes a file, so there is one upload path (`parse_single_asset`) rather than
- * a second one hiding behind the assistant.
+ * optionally, the exact parse draft for a reference image they
+ * uploaded. Core resolves that revision to text — this command never takes
+ * browser-supplied extracted text, so there is one authoritative parse path
+ * (`parse_single_asset`) rather than a second one hiding behind the assistant.
  */
 export const marketingIdentityDraftRequestSchema = z
   .object({
     kind: z.enum(['brand', 'person']),
     background: z.string().trim().min(1).max(2_000),
-    referenceText: z.string().trim().max(20_000).optional(),
+    referenceDraft: z
+      .object({
+        draftId: idSchema,
+        revision: z.number().int().positive(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -355,16 +417,28 @@ export type MarketingIdentityDraftRequest = z.infer<
   typeof marketingIdentityDraftRequestSchema
 >;
 
-const marketingIdentitySuggestedFieldSchema = z
-  .object({
-    value: z.string().trim().min(1).max(2_000),
-    /**
-     * `user` is deliberately absent: nothing the assistant returns is the
-     * merchant's answer. It becomes `user` only where they edit it.
-     */
-    provenance: z.enum(['document', 'ai_suggestion']),
-  })
-  .strict();
+const marketingIdentitySuggestedFieldSchema = z.discriminatedUnion(
+  'provenance',
+  [
+    z
+      .object({
+        value: z.string().trim().min(1).max(2_000),
+        provenance: z.literal('ai_suggestion'),
+      })
+      .strict(),
+    z
+      .object({
+        value: z.string().trim().min(1).max(2_000),
+        provenance: z.literal('document'),
+        citation: z
+          .object({
+            exactQuote: z.string().trim().min(1).max(2_000),
+          })
+          .strict(),
+      })
+      .strict(),
+  ],
+);
 
 /**
  * The assistant's proposal. Every key is nullable rather than optional so the
@@ -401,6 +475,47 @@ export const EMPTY_MARKETING_IDENTITY_SUGGESTION: MarketingIdentitySuggestion =
     visualPrinciples: null,
     seriesAnchors: null,
   };
+
+export const marketingIdentityDraftResultSchema = z
+  .object({
+    draftId: idSchema,
+    revision: z.number().int().positive(),
+    status: z.enum(['suggested', 'empty', 'unavailable']),
+    suggestion: marketingIdentitySuggestionSchema,
+    reference: z
+      .object({
+        draftId: idSchema,
+        draftRevision: z.number().int().positive(),
+        parsedDocumentId: idSchema,
+      })
+      .strict()
+      .nullable(),
+    errorCode: z
+      .enum(['model_unavailable', 'model_execution_failed'])
+      .nullable(),
+  })
+  .strict()
+  .superRefine((result, context) => {
+    const hasSuggestion = Object.values(result.suggestion).some(Boolean);
+    if ((result.status === 'suggested') !== hasSuggestion) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Draft status must agree with whether suggestions exist.',
+        path: ['status'],
+      });
+    }
+    if ((result.status === 'unavailable') !== (result.errorCode !== null)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Only unavailable drafts carry an observable error code.',
+        path: ['errorCode'],
+      });
+    }
+  });
+
+export type MarketingIdentityDraftResult = z.infer<
+  typeof marketingIdentityDraftResultSchema
+>;
 
 export const transitionMarketingIdentityCommandSchema = z
   .object({

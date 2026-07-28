@@ -127,6 +127,7 @@ test("Core Composer HTTP freezes explicit selections, resumes SSE, and exposes o
 		replayed: false,
 		snapshot: {
 			id: "snapshot-task-1",
+			identity: { id: "identity-brand", revision: "identity-r3" },
 			schemaVersion: "creation-execution-snapshot/v1",
 		},
 		task: { id: "task-1" },

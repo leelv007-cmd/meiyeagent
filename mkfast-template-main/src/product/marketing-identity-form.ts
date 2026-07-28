@@ -1,4 +1,5 @@
 import {
+  MARKETING_IDENTITY_ASSISTED_FIELDS,
   MARKETING_IDENTITY_PLATFORMS,
   MARKETING_SCENES,
   registerMarketingIdentityCommandSchema,
@@ -27,6 +28,10 @@ export type MarketingIdentityQuestionId =
   | 'allowedScenes';
 
 export interface MarketingIdentityDraft {
+  assistantDraft?: {
+    draftId: string;
+    revision: number;
+  };
   allowedPlatforms?: MarketingIdentityPlatform[];
   allowedScenes?: MarketingScene[];
   displayName?: string;
@@ -70,6 +75,18 @@ const SUGGESTIBLE_QUESTIONS = [
   'seriesAnchors',
 ] as const satisfies readonly MarketingIdentityQuestionId[];
 
+export function isCurrentMarketingIdentityAssistantResponse(input: {
+  currentKind: MarketingIdentityDraft['kind'];
+  currentRequestId: number;
+  responseKind: 'brand' | 'person';
+  responseRequestId: number;
+}) {
+  return (
+    input.currentKind === input.responseKind &&
+    input.currentRequestId === input.responseRequestId
+  );
+}
+
 /**
  * Wizard question → the field name the registered identity records provenance
  * under. `primaryClaimOrRole` splits by kind, and `kind` itself has no field of
@@ -99,16 +116,26 @@ function provenanceFieldFor(
  */
 export function applyMarketingIdentitySuggestion(
   draft: MarketingIdentityDraft,
-  suggestion: MarketingIdentitySuggestion
+  suggestion: MarketingIdentitySuggestion,
+  assistantDraft?: { draftId: string; revision: number }
 ): MarketingIdentityDraft {
   const provenance = { ...draft.provenance };
   const unconfirmed = [...(draft.unconfirmed ?? [])];
-  const next: MarketingIdentityDraft = { ...draft, provenance, unconfirmed };
+  const next: MarketingIdentityDraft = {
+    ...draft,
+    ...(assistantDraft ? { assistantDraft } : {}),
+    provenance,
+    unconfirmed,
+  };
   for (const questionId of SUGGESTIBLE_QUESTIONS) {
     const field = suggestion[questionId];
     if (!field) continue;
     const value = field.value.trim();
     if (!value) continue;
+    const currentValue = draft[questionId];
+    if (typeof currentValue === 'string' && currentValue.trim().length > 0) {
+      continue;
+    }
     next[questionId] = value;
     if (!unconfirmed.includes(questionId)) unconfirmed.push(questionId);
     provenance[questionId] = field.provenance;
@@ -275,6 +302,12 @@ export function marketingIdentityRegistrationFromDraft(
   if (!marketingIdentityFlowState(draft).readyForPreview || !draft.kind) {
     throw new Error('Identity registration is incomplete.');
   }
+  const fieldProvenance = marketingIdentityFieldProvenance(draft);
+  const confirmedFields = MARKETING_IDENTITY_ASSISTED_FIELDS.filter(
+    (field) =>
+      fieldProvenance[field] === 'document' ||
+      fieldProvenance[field] === 'ai_suggestion'
+  );
   return marketingIdentityRegistrationPayload({
     kind: draft.kind,
     displayName: draft.displayName ?? '',
@@ -290,7 +323,15 @@ export function marketingIdentityRegistrationFromDraft(
     seriesAnchors: draft.seriesAnchors,
     portraitAuthorized: draft.portraitAuthorized,
     voiceAuthorized: draft.voiceAuthorized,
-    fieldProvenance: marketingIdentityFieldProvenance(draft),
+    fieldProvenance,
+    ...(draft.assistantDraft && confirmedFields.length > 0
+      ? {
+          assistantDraft: {
+            ...draft.assistantDraft,
+            confirmedFields,
+          },
+        }
+      : {}),
   });
 }
 
@@ -347,6 +388,11 @@ export function marketingIdentityRegistrationPayload(input: {
   portraitAuthorized?: boolean;
   voiceAuthorized?: boolean;
   fieldProvenance?: MarketingIdentityFieldProvenanceMap;
+  assistantDraft?: {
+    draftId: string;
+    revision: number;
+    confirmedFields: (typeof MARKETING_IDENTITY_ASSISTED_FIELDS)[number][];
+  };
 }): RegisterMarketingIdentityCommand {
   const common = {
     identityId: `marketing-${crypto.randomUUID()}`,
@@ -361,7 +407,15 @@ export function marketingIdentityRegistrationPayload(input: {
     expiresAt: null,
     departureHandling: MARKETING_IDENTITY_DEPARTURE_HANDLING,
     sourceRef: input.sourceRef,
-    fieldProvenance: input.fieldProvenance ?? {},
+    fieldProvenance: {
+      ...input.fieldProvenance,
+      sourceRef: 'user',
+      allowedPlatforms: 'user',
+      allowedScenes: 'user',
+      portraitAuthorization: 'user',
+      voiceAuthorization: 'user',
+    },
+    ...(input.assistantDraft ? { assistantDraft: input.assistantDraft } : {}),
   };
   return registerMarketingIdentityCommandSchema.parse(
     input.kind === 'brand'

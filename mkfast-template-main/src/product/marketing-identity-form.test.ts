@@ -6,6 +6,7 @@ import type { MarketingIdentitySuggestion } from '@meiye/contracts';
 import {
   answerMarketingIdentityQuestion,
   applyMarketingIdentitySuggestion,
+  isCurrentMarketingIdentityAssistantResponse,
   marketingIdentityFieldProvenance,
   marketingIdentityFlowState,
   marketingIdentityRegistrationFromDraft,
@@ -290,6 +291,7 @@ const SUGGESTION: MarketingIdentitySuggestion = {
   primaryClaimOrRole: {
     value: '暖棕色门店，主营头皮护理',
     provenance: 'document',
+    citation: { exactQuote: '暖棕色门店，主营头皮护理' },
   },
   professionalBoundaries: {
     value: '不做医疗承诺',
@@ -329,6 +331,59 @@ test('an assisted draft fills fields but answers none of them', () => {
   });
 });
 
+test('an assistant response only fills blank fields and never replaces the merchant latest words', () => {
+  const draft: MarketingIdentityDraft = {
+    kind: 'brand',
+    displayName: '商家刚刚改好的名字',
+    professionalBoundaries: '不做医疗诊断',
+    provenance: {
+      displayName: 'user',
+      professionalBoundaries: 'user',
+    },
+  };
+
+  const next = applyMarketingIdentitySuggestion(draft, SUGGESTION);
+
+  assert.equal(next.displayName, '商家刚刚改好的名字');
+  assert.equal(next.provenance?.displayName, 'user');
+  assert.equal(next.unconfirmed?.includes('displayName'), false);
+  assert.equal(next.professionalBoundaries, '不做医疗诊断');
+  assert.equal(next.provenance?.professionalBoundaries, 'user');
+  assert.equal(next.unconfirmed?.includes('professionalBoundaries'), false);
+  assert.equal(next.owner, '青禾品牌中心');
+  assert.equal(next.unconfirmed?.includes('owner'), true);
+});
+
+test('a late assistant response cannot cross a newer request or identity kind', () => {
+  assert.equal(
+    isCurrentMarketingIdentityAssistantResponse({
+      currentKind: 'brand',
+      currentRequestId: 3,
+      responseKind: 'brand',
+      responseRequestId: 2,
+    }),
+    false
+  );
+  assert.equal(
+    isCurrentMarketingIdentityAssistantResponse({
+      currentKind: 'person',
+      currentRequestId: 3,
+      responseKind: 'brand',
+      responseRequestId: 3,
+    }),
+    false
+  );
+  assert.equal(
+    isCurrentMarketingIdentityAssistantResponse({
+      currentKind: 'brand',
+      currentRequestId: 3,
+      responseKind: 'brand',
+      responseRequestId: 3,
+    }),
+    true
+  );
+});
+
 test('a proposal kept verbatim stays the assistant’s, an edited one becomes the merchant’s', () => {
   let draft: MarketingIdentityDraft = answer({}, 'kind', 'brand');
   draft = applyMarketingIdentitySuggestion(draft, SUGGESTION);
@@ -346,7 +401,10 @@ test('a proposal kept verbatim stays the assistant’s, an edited one becomes th
 
 test('a registered identity records where every field came from', () => {
   let draft: MarketingIdentityDraft = answer({}, 'kind', 'brand');
-  draft = applyMarketingIdentitySuggestion(draft, SUGGESTION);
+  draft = applyMarketingIdentitySuggestion(draft, SUGGESTION, {
+    draftId: 'marketing-identity-draft-1',
+    revision: 2,
+  });
   draft = answer(draft, 'displayName', '青禾美业');
   draft = answer(draft, 'owner', '青禾品牌中心');
   draft = answer(draft, 'primaryClaimOrRole', '暖棕色门店，主营头皮护理');
@@ -361,7 +419,7 @@ test('a registered identity records where every field came from', () => {
   assert.deepEqual(marketingIdentityFieldProvenance(draft), {
     displayName: 'ai_suggestion',
     owner: 'ai_suggestion',
-    // The claim came out of the reference file the merchant handed over.
+    // The claim came out of the reference image the merchant handed over.
     brandClaims: 'document',
     // Rewritten during校对, so it is the merchant's line now.
     professionalBoundaries: 'user',
@@ -380,6 +438,21 @@ test('a registered identity records where every field came from', () => {
   assert.equal(payload.fieldProvenance?.sourceRef, 'user');
   assert.equal(payload.fieldProvenance?.allowedPlatforms, 'user');
   assert.equal(payload.fieldProvenance?.allowedScenes, 'user');
+  assert.equal(payload.fieldProvenance?.portraitAuthorization, 'user');
+  assert.equal(payload.fieldProvenance?.voiceAuthorization, 'user');
+  assert.deepEqual(payload.assistantDraft, {
+    draftId: 'marketing-identity-draft-1',
+    revision: 2,
+    confirmedFields: [
+      'displayName',
+      'owner',
+      'expressionSamples',
+      'brandClaims',
+      'forbiddenClaims',
+      'visualPrinciples',
+      'seriesAnchors',
+    ],
+  });
 });
 
 test('the assistant has no reach over the consent answers', () => {

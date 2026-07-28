@@ -845,33 +845,31 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
         .split(/[，,。；;]/u)
         .map((part) => part.trim())
         .filter(Boolean);
-      const detail = rest.join('，') || background;
       const grounded = referenceText.length > 0;
       const fromDocument = (value: string) => ({
         value,
         provenance: 'document' as const,
+        citation: { exactQuote: value },
       });
       const fromModel = (value: string) => ({
         value,
         provenance: 'ai_suggestion' as const,
       });
+      const rejectsExaggeration = /不夸大/u.test(background);
       return {
         displayName: fromModel(lead),
-        owner: fromModel(person ? `${lead}本人` : `${lead}品牌中心`),
+        owner: null,
         primaryClaimOrRole: grounded
           ? fromDocument(referenceText.slice(0, 60))
-          : fromModel(detail),
-        professionalBoundaries: fromModel(
-          ['不做医疗承诺', '不承诺具体见效时间'].join('\n'),
-        ),
-        expressionSamples: fromModel(
-          [`先看你的情况，再说${lead}能怎么帮上忙`, '价格和项目都按门店确认过的说'].join(
-            '\n',
-          ),
-        ),
-        forbiddenClaims: person ? null : fromModel('不承诺永久效果'),
-        visualPrinciples: person ? null : fromModel('自然肤色，干净留白'),
-        seriesAnchors: person ? null : fromModel('每周护理答疑'),
+          : null,
+        professionalBoundaries: rejectsExaggeration
+          ? fromModel('不夸大效果')
+          : null,
+        expressionSamples: null,
+        forbiddenClaims:
+          person || !rejectsExaggeration ? null : fromModel('不夸大效果'),
+        visualPrinciples: null,
+        seriesAnchors: null,
       };
     }
     case 'harness_intent_naming_v1': {

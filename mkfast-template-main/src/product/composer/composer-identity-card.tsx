@@ -7,12 +7,14 @@ export function ComposerIdentityCard({
   onRemember,
   onRetry,
   onSelect,
+  selectionPending,
   selection,
 }: {
   defaultPending: boolean;
   onRemember: (identityId: string) => void;
   onRetry: () => void;
   onSelect: (identityId: string | null) => void;
+  selectionPending: boolean;
   selection: IdentitySelectionProjection;
 }) {
   return (
@@ -29,6 +31,7 @@ export function ComposerIdentityCard({
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button
+              disabled={selectionPending}
               onClick={() => onSelect(null)}
               size="sm"
               type="button"
@@ -38,6 +41,7 @@ export function ComposerIdentityCard({
             </Button>
             {selection.identities.map((identity) => (
               <Button
+                disabled={selectionPending}
                 key={identity.id}
                 onClick={() => onSelect(identity.id)}
                 size="sm"

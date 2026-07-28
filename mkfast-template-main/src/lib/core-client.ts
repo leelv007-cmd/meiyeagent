@@ -214,10 +214,63 @@ export async function forwardWorkspaceCoreRequest(
 
 /** Bytes a merchant may push into their own workspace asset space (W02 ①). */
 const WORKSPACE_ASSET_UPLOAD_MAX_BYTES = 25 * 1024 * 1024;
+const WORKSPACE_ASSET_PROVIDER_URL_TTL_SECONDS = 10 * 60;
+
+async function workspaceAssetProviderSignature(
+  objectKey: string,
+  expires: string
+) {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(serverEnv.CORE_SERVICE_TOKEN),
+    { hash: 'SHA-256', name: 'HMAC' },
+    false,
+    ['sign']
+  );
+  const signature = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    new TextEncoder().encode(`${objectKey}\n${expires}`)
+  );
+  return Array.from(new Uint8Array(signature))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function hasValidWorkspaceAssetProviderSignature(
+  url: URL,
+  objectKey: string
+) {
+  const expires = url.searchParams.get('providerExpires');
+  const supplied = url.searchParams.get('providerSignature');
+  if (
+    !expires ||
+    !supplied ||
+    !/^\d+$/u.test(expires) ||
+    !/^[a-f0-9]{64}$/u.test(supplied) ||
+    Number(expires) < Math.floor(Date.now() / 1000)
+  ) {
+    return false;
+  }
+  const expected = await workspaceAssetProviderSignature(objectKey, expires);
+  let different = 0;
+  for (let index = 0; index < expected.length; index += 1) {
+    different |= expected.charCodeAt(index) ^ supplied.charCodeAt(index);
+  }
+  return different === 0;
+}
 
 export async function forwardWorkspaceAssetRequest(request: Request) {
   const headOnly = request.method === 'HEAD';
   const writing = request.method === 'PUT';
+  const requestUrl = new URL(request.url);
+  const objectKey = requestUrl.searchParams.get('objectKey');
+  if (!objectKey || !isAllowedWorkspaceAssetObjectKey(objectKey)) {
+    return Response.json({ error: 'Asset not found' }, { status: 404 });
+  }
+  const providerAuthorized =
+    !writing &&
+    (await hasValidWorkspaceAssetProviderSignature(requestUrl, objectKey));
   const serviceWorkspaceId = request.headers.get('x-workspace-id');
   const serviceAuthorized =
     request.headers.get('x-service-token') === serverEnv.CORE_SERVICE_TOKEN &&
@@ -226,7 +279,11 @@ export async function forwardWorkspaceAssetRequest(request: Request) {
   let productRole: Exclude<ReturnType<typeof normalizeProductRole>, null>;
   let userId: string | undefined;
   let workspaceRole: string;
-  if (serviceAuthorized) {
+  if (providerAuthorized) {
+    workspaceId = objectKey.split('/')[0]!;
+    productRole = 'owner';
+    workspaceRole = 'owner';
+  } else if (serviceAuthorized) {
     workspaceId = serviceWorkspaceId!;
     productRole = 'owner';
     workspaceRole = 'owner';
@@ -252,10 +309,6 @@ export async function forwardWorkspaceAssetRequest(request: Request) {
     userId = session.user.id;
     workspaceId = workspace.id;
     workspaceRole = productRole === 'admin' ? workspace.role : productRole;
-  }
-  const objectKey = new URL(request.url).searchParams.get('objectKey');
-  if (!objectKey || !isAllowedWorkspaceAssetObjectKey(objectKey)) {
-    return Response.json({ error: 'Asset not found' }, { status: 404 });
   }
   if (objectKey.split('/')[0] !== workspaceId) {
     return Response.json({ error: 'Forbidden' }, { status: 403 });
@@ -320,7 +373,19 @@ export async function forwardWorkspaceAssetRequest(request: Request) {
     } catch {
       return coreUnavailableResponse();
     }
-    return coreProxyResponse(written);
+    if (!written.ok) return coreProxyResponse(written);
+    const providerExpires = String(
+      Math.floor(Date.now() / 1000) + WORKSPACE_ASSET_PROVIDER_URL_TTL_SECONDS
+    );
+    const providerSignature = await workspaceAssetProviderSignature(
+      objectKey,
+      providerExpires
+    );
+    const sourceUrl = new URL('/api/core/p1/assets', requestUrl.origin);
+    sourceUrl.searchParams.set('objectKey', objectKey);
+    sourceUrl.searchParams.set('providerExpires', providerExpires);
+    sourceUrl.searchParams.set('providerSignature', providerSignature);
+    return Response.json({ sourceUrl: sourceUrl.toString() });
   }
 
   let upstream: Response;

@@ -35,6 +35,18 @@ function registration(identityId = 'identity-1') {
       expiresAt: null,
       departureHandling: '离职后停止生成新内容。',
       sourceRef: 'authorization-1',
+      fieldProvenance: {
+        displayName: 'user',
+        owner: 'user',
+        professionalBoundaries: 'user',
+        expressionSamples: 'user',
+        realWorldRole: 'user',
+        sourceRef: 'user',
+        allowedPlatforms: 'user',
+        allowedScenes: 'user',
+        portraitAuthorization: 'user',
+        voiceAuthorization: 'user',
+      },
       realWorldRole: '染发师',
       portraitAuthorization: 'authorized',
       voiceAuthorization: 'not_authorized',
@@ -111,6 +123,85 @@ test('identity commands reject stale expected versions', async () => {
       },
     }),
     MarketingIdentityVersionConflictError
+  );
+});
+
+test('assistant registration consumes an exact server draft revision', async () => {
+  const repository = new MemoryMarketingIdentityRepository();
+  const module = new MarketingIdentityFoundationModule(
+    repository,
+    () => '2026-07-18T01:00:00.000Z',
+    {
+      async suggest() {
+        return {
+          status: 'suggested',
+          suggestion: {
+            displayName: {
+              value: '小美染发师',
+              provenance: 'ai_suggestion',
+            },
+            owner: null,
+            primaryClaimOrRole: null,
+            professionalBoundaries: null,
+            expressionSamples: null,
+            forbiddenClaims: null,
+            visualPrinciples: null,
+            seriesAnchors: null,
+          },
+          errorCode: null,
+        };
+      },
+    }
+  );
+  const draft = (await module.execute({
+    context,
+    input: {
+      action: 'draft_marketing_identity',
+      payload: {
+        kind: 'person',
+        background: '小美是店里的染发师',
+      },
+    },
+    idempotencyKey: 'draft-1',
+  })) as {
+    draftId: string;
+    revision: number;
+  };
+  const exact = registration('identity-assisted');
+  exact.payload.displayName = '小美染发师';
+  exact.payload.fieldProvenance.displayName = 'ai_suggestion';
+  Object.assign(exact.payload, {
+    assistantDraft: {
+      draftId: draft.draftId,
+      revision: draft.revision,
+      confirmedFields: ['displayName'],
+    },
+  });
+
+  const created = (await module.execute({
+    context,
+    input: exact,
+    idempotencyKey: 'register-assisted',
+  })) as MarketingIdentityAsset;
+  assert.equal(created.displayName, '小美染发师');
+
+  const tampered = registration('identity-tampered');
+  tampered.payload.displayName = '系统替商家改的名字';
+  tampered.payload.fieldProvenance.displayName = 'ai_suggestion';
+  Object.assign(tampered.payload, {
+    assistantDraft: {
+      draftId: draft.draftId,
+      revision: draft.revision,
+      confirmedFields: ['displayName'],
+    },
+  });
+  await assert.rejects(
+    module.execute({
+      context,
+      input: tampered,
+      idempotencyKey: 'register-tampered',
+    }),
+    /does not match draft revision/
   );
 });
 

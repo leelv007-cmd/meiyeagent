@@ -239,6 +239,13 @@ test('a registered identity can say which of its lines the merchant wrote', () =
       sourceRef: 'user',
       allowedPlatforms: 'user',
       allowedScenes: 'user',
+      portraitAuthorization: 'user',
+      voiceAuthorization: 'user',
+    },
+    assistantDraft: {
+      draftId: 'identity-draft-1',
+      revision: 1,
+      confirmedFields: ['displayName', 'brandClaims'],
     },
   });
 
@@ -246,14 +253,82 @@ test('a registered identity can say which of its lines the merchant wrote', () =
   assert.equal(command.fieldProvenance?.brandClaims, 'document');
 });
 
-test('an identity registered before provenance existed stays parseable', () => {
-  const command = registerMarketingIdentityCommandSchema.parse(
-    BRAND_REGISTRATION
+test('assistant-authored fields cannot register without their exact server draft confirmation', () => {
+  const fieldProvenance = {
+    displayName: 'ai_suggestion',
+    sourceRef: 'user',
+    allowedPlatforms: 'user',
+    allowedScenes: 'user',
+    portraitAuthorization: 'user',
+    voiceAuthorization: 'user',
+  } as const;
+  assert.equal(
+    registerMarketingIdentityCommandSchema.safeParse({
+      ...BRAND_REGISTRATION,
+      fieldProvenance,
+    }).success,
+    false
   );
+  assert.equal(
+    registerMarketingIdentityCommandSchema.safeParse({
+      ...BRAND_REGISTRATION,
+      fieldProvenance,
+      assistantDraft: {
+        draftId: 'identity-draft-1',
+        revision: 1,
+        confirmedFields: [],
+      },
+    }).success,
+    false
+  );
+});
 
-  // Absent means unknown. Writing `user` over that would be the same silent
-  // answering on the merchant's behalf that D-142 removed.
-  assert.equal(command.fieldProvenance, undefined);
+test('a new registration cannot omit merchant-only provenance', () => {
+  assert.equal(
+    registerMarketingIdentityCommandSchema.safeParse(BRAND_REGISTRATION)
+      .success,
+    false
+  );
+});
+
+test('a new registration requires every merchant-only field to be explicitly user-authored', () => {
+  const merchantOnly = [
+    'sourceRef',
+    'allowedPlatforms',
+    'allowedScenes',
+    'portraitAuthorization',
+    'voiceAuthorization',
+  ] as const;
+  for (const omitted of merchantOnly) {
+    const fieldProvenance = Object.fromEntries(
+      merchantOnly
+        .filter((field) => field !== omitted)
+        .map((field) => [field, 'user'] as const)
+    );
+    const parsed = registerMarketingIdentityCommandSchema.safeParse({
+      ...BRAND_REGISTRATION,
+      fieldProvenance,
+    });
+    assert.equal(
+      parsed.success,
+      false,
+      `${omitted} must be present even when the identity kind does not store that field`
+    );
+  }
+});
+
+test('a stored identity from before provenance existed stays parseable', () => {
+  const identity = marketingIdentityAssetSchema.parse({
+    ...BRAND_REGISTRATION,
+    expectedVersion: undefined,
+    workspaceId: 'workspace-1',
+    version: 1,
+    status: 'active',
+    createdAt: '2026-07-28T00:00:00.000Z',
+    createdBy: 'user-1',
+  });
+
+  assert.equal(identity.fieldProvenance, undefined);
 });
 
 test('the authorized reach can never be recorded as something a model proposed', () => {
@@ -265,7 +340,14 @@ test('the authorized reach can never be recorded as something a model proposed',
     for (const provenance of ['ai_suggestion', 'document'] as const) {
       const parsed = registerMarketingIdentityCommandSchema.safeParse({
         ...BRAND_REGISTRATION,
-        fieldProvenance: { [field]: provenance },
+        fieldProvenance: {
+          sourceRef: 'user',
+          allowedPlatforms: 'user',
+          allowedScenes: 'user',
+          portraitAuthorization: 'user',
+          voiceAuthorization: 'user',
+          [field]: provenance,
+        },
       });
       assert.equal(
         parsed.success,

@@ -18,6 +18,8 @@ test("Composer admission gate binds server facts before a submission can reserve
 	const routedDataClasses: string[][] = [];
 	let sourcePackageRights: "authorized" | "revoked" = "authorized";
 	let defaultProjectionEnabled = true;
+	let sessionDecisionIdentityVersion = 3;
+	let sessionDecisionSessionId: string | null = "composer-session-1";
 	const gate = new ComposerSubmissionAdmissionGate({
 		assets: {
 			async inspect() {
@@ -106,6 +108,39 @@ test("Composer admission gate binds server facts before a submission can reserve
 		identities: {
 			async listActive() {
 				return [{ identityId: "identity-brand", version: 3 }] as never;
+			},
+			async listDecisions() {
+				return [
+					{
+						action: "set_default_marketing_identity",
+						actorId: "owner-1",
+						decisionId: "default-decision-1",
+						decisionRevision: 7,
+						identity: { identityId: "identity-brand", version: 3 },
+						occurredAt: "2026-07-22T09:00:00.000Z",
+						previousIdentity: null,
+						reason: "Use brand identity by default.",
+						rolledBackToDecisionRevision: null,
+						sessionId: null,
+						workspaceId: "workspace-1",
+					},
+					{
+						action: "select_marketing_identity_for_session",
+						actorId: "owner-1",
+						decisionId: "session-decision-1",
+						decisionRevision: 8,
+						identity: {
+							identityId: "identity-brand",
+							version: sessionDecisionIdentityVersion,
+						},
+						occurredAt: "2026-07-22T09:01:00.000Z",
+						previousIdentity: null,
+						reason: "Use brand identity for this Composer session.",
+						rolledBackToDecisionRevision: null,
+						sessionId: sessionDecisionSessionId,
+						workspaceId: "workspace-1",
+					},
+				] as never;
 			},
 			async project() {
 				return {
@@ -214,7 +249,7 @@ test("Composer admission gate binds server facts before a submission can reserve
 	assert.deepEqual(briefChecks, [
 		{
 			briefConfirmationId: "brief-confirmation-1",
-			briefContextId: "brief-context-1",
+			briefContextId: "composer:composer-session-1",
 			catalogModelId: "catalog-copy-1",
 			catalogRevision: "catalog-r4",
 			expectedContextRevision: 4,
@@ -230,7 +265,7 @@ test("Composer admission gate binds server facts before a submission can reserve
 	defaultProjectionEnabled = false;
 	await assert.rejects(
 		gate.admit(defaultSubmission()),
-		/default decision is missing, stale, or does not match/u,
+		/decision is missing, stale, or does not match/u,
 	);
 	defaultProjectionEnabled = true;
 
@@ -250,6 +285,41 @@ test("Composer admission gate binds server facts before a submission can reserve
 	);
 	assert.equal(capabilityChecks, 1);
 	assert.equal(briefChecks.length, 1);
+
+	sourcePackageRights = "authorized";
+	const admittedSessionDecision = await gate.admit({
+		...submission(),
+		identityDecision: { id: "session-decision-1", revision: 8 },
+	});
+	assert.deepEqual(admittedSessionDecision.identityDecision, {
+		id: "session-decision-1",
+		revision: 8,
+	});
+	sessionDecisionIdentityVersion = 4;
+	await assert.rejects(
+		gate.admit({
+			...submission(),
+			identityDecision: { id: "session-decision-1", revision: 8 },
+		}),
+		/decision is missing, stale, or does not match/u,
+	);
+	sessionDecisionIdentityVersion = 3;
+	sessionDecisionSessionId = "another-session";
+	await assert.rejects(
+		gate.admit({
+			...submission(),
+			identityDecision: { id: "session-decision-1", revision: 8 },
+		}),
+		/decision is missing, stale, or does not match/u,
+	);
+	sessionDecisionSessionId = null;
+	await assert.rejects(
+		gate.admit({
+			...submission(),
+			identityDecision: { id: "session-decision-1", revision: 8 },
+		}),
+		/decision is missing, stale, or does not match/u,
+	);
 });
 
 test("Composer admission gate fails closed for stale quote, rights, and source facts", async () => {
@@ -540,7 +610,7 @@ test("Composer admission keeps pure image distinct from the first-class image-te
 		assert.deepEqual(briefChecks, [
 			{
 				briefConfirmationId: "brief-confirmation-1",
-				briefContextId: "brief-context-1",
+				briefContextId: "composer:composer-session-1",
 				catalogModelId: `catalog-${kind}-1`,
 				catalogRevision: `catalog-${kind}-r1`,
 				expectedContextRevision: 4,
@@ -639,7 +709,7 @@ function submission(): ComposerSubmissionRequest {
 	return {
 		actorId: "owner-1",
 		briefConfirmation: { id: "brief-confirmation-1", revision: "brief-r2" },
-		briefContext: { id: "brief-context-1", revision: 4 },
+		briefContext: { id: "composer:composer-session-1", revision: 4 },
 		catalogModel: { id: "catalog-copy-1", revision: "catalog-r4" },
 		contentPackagePlatform: "douyin",
 		distributionTarget: "export",

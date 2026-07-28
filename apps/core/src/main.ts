@@ -620,22 +620,6 @@ const aiStreamingRunner =
     : modelRuntime.activation === 'live_verified' && modelRuntime.direct
       ? new OpenAiCompatibleAiSdkRunner(modelRuntime.direct)
       : undefined;
-/**
- * W12②: the identity draft assistant. Same availability rule as the streaming
- * runner above — fixture in e2e, the live direct model once it is verified,
- * nothing otherwise. When it is nothing the draft action answers with an empty
- * proposal and the wizard keeps asking its questions (D-132).
- */
-const marketingIdentityDrafter =
-  modelRuntime.mode === 'fixture'
-    ? new StructuredMarketingIdentityDrafter(
-        new FixtureAiStructuredObjectExecutor()
-      )
-    : modelRuntime.activation === 'live_verified' && modelRuntime.direct
-      ? new StructuredMarketingIdentityDrafter(
-          new AiSdkStructuredObjectExecutor(modelRuntime.direct)
-        )
-      : undefined;
 const foundationLedgerService = new P1ApplicationService(foundationRepository);
 const productEntitlementPolicy = new ProductStateEntitlementPolicy(
   relationalProductRepository,
@@ -704,6 +688,25 @@ const p1ModelSupplyRuntime = createModelSupplyRuntime({
   },
 });
 const p1ModelSupplyService = p1ModelSupplyRuntime.application;
+const marketingIdentityStructuredExecutor =
+  modelRuntime.mode === 'fixture'
+    ? new FixtureAiStructuredObjectExecutor()
+    : modelRuntime.activation === 'live_verified' && modelRuntime.direct
+      ? new AiSdkStructuredObjectExecutor(modelRuntime.direct)
+      : undefined;
+const marketingIdentityDrafter = marketingIdentityStructuredExecutor
+  ? new StructuredMarketingIdentityDrafter({
+      create({ workspaceId, actorId }) {
+        return new ModelSupplyStructuredNodeRunner({
+          application: p1ModelSupplyService,
+          executor: marketingIdentityStructuredExecutor,
+          workspaceId,
+          actorId,
+          selection: { mode: 'auto', profile: 'quality' },
+        });
+      },
+    })
+  : undefined;
 const modelControlPlane = p1ModelSupplyRuntime.controlPlane;
 const productQuoteAuthority = new CatalogProductQuoteAuthority(modelControlPlane);
 const providerConnectivity = providerConnectivityProbeFromEnv(
@@ -1581,7 +1584,37 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
     new MarketingIdentityFoundationModule(
       marketingIdentities,
       undefined,
-      marketingIdentityDrafter
+      marketingIdentityDrafter,
+      {
+        async resolve({ workspaceId, draftId, revision }) {
+          const draft = await parseService.draftView(
+            workspaceId,
+            draftId,
+            revision
+          );
+          const summary = draft.fields.find(
+            (field) => field.key === 'brand_reference.summary'
+          );
+          if (
+            draft.target !== 'brand_reference' ||
+            draft.origin !== 'parsed' ||
+            !draft.parsedDocumentId ||
+            typeof summary?.value !== 'string' ||
+            !summary.value.trim()
+          ) {
+            throw new P1DomainError(
+              'INVALID_STATE',
+              'The identity reference must be an exact parsed brand reference revision.'
+            );
+          }
+          return {
+            draftId: draft.draftId,
+            draftRevision: draft.revision,
+            parsedDocumentId: draft.parsedDocumentId,
+            text: summary.value.trim(),
+          };
+        },
+      }
     ),
     new AssetMemoryFoundationModule(
       assetIntakeService,

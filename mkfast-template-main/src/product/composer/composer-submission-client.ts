@@ -65,6 +65,14 @@ const composerSubmissionResultSchema = z
     snapshot: z
       .object({
         id: identifierSchema,
+        identity: revisionReferenceSchema,
+        identityDecision: z
+          .object({
+            id: identifierSchema,
+            revision: z.number().int().positive(),
+          })
+          .strict()
+          .optional(),
         schemaVersion: identifierSchema,
       })
       .strict(),

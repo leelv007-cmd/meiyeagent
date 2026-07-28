@@ -81,6 +81,7 @@ test('submits the exact Composer body and returns the durable handles', async ()
         replayed: false,
         snapshot: {
           id: 'snapshot-task-1',
+          identity: { id: 'identity-brand', revision: '2' },
           schemaVersion: 'creation-execution-snapshot/v1',
         },
         task: { id: 'task-1' },
