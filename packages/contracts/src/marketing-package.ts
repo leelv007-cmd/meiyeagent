@@ -14,6 +14,21 @@ export const MARKETING_SCENES = [
 
 export const marketingSceneSchema = z.enum(MARKETING_SCENES);
 
+export const MARKETING_IDENTITY_PLATFORMS = [
+  'xiaohongshu',
+  'douyin',
+  'video_account',
+  'offline',
+] as const;
+
+export const marketingIdentityPlatformSchema = z.enum(
+  MARKETING_IDENTITY_PLATFORMS,
+);
+
+export type MarketingIdentityPlatform = z.infer<
+  typeof marketingIdentityPlatformSchema
+>;
+
 export const promotionCallToActionSchema = z
   .object({
     kind: z.enum(['appointment', 'voucher', 'store_visit', 'contact', 'none']),
@@ -143,9 +158,7 @@ const identityBaseSchema = z.object({
   displayName: z.string().trim().min(1),
   owner: z.string().trim().min(1),
   professionalBoundaries: z.array(z.string().trim().min(1)),
-  allowedPlatforms: z.array(
-    z.enum(['xiaohongshu', 'douyin', 'video_account', 'offline']),
-  ),
+  allowedPlatforms: z.array(marketingIdentityPlatformSchema),
   allowedScenes: z.array(marketingSceneSchema),
   expressionSamples: z.array(z.string().trim().min(1).max(2_000)).max(20),
   effectiveFrom: timestampSchema,

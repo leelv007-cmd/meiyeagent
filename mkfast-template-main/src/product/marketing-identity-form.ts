@@ -1,5 +1,9 @@
 import {
+  MARKETING_IDENTITY_PLATFORMS,
+  MARKETING_SCENES,
   registerMarketingIdentityCommandSchema,
+  type MarketingIdentityPlatform,
+  type MarketingScene,
   type RegisterMarketingIdentityCommand,
 } from '@meiye/contracts';
 
@@ -15,9 +19,13 @@ export type MarketingIdentityQuestionId =
   | 'visualPrinciples'
   | 'seriesAnchors'
   | 'portraitAuthorized'
-  | 'voiceAuthorized';
+  | 'voiceAuthorized'
+  | 'allowedPlatforms'
+  | 'allowedScenes';
 
 export interface MarketingIdentityDraft {
+  allowedPlatforms?: MarketingIdentityPlatform[];
+  allowedScenes?: MarketingScene[];
   displayName?: string;
   expressionSamples?: string;
   forbiddenClaims?: string;
@@ -53,6 +61,19 @@ const PERSON_QUESTIONS: MarketingIdentityQuestionId[] = [
   'voiceAuthorized',
 ];
 
+/**
+ * D-142: the authorized reach used to be written for the merchant — every
+ * platform and every scene, silently, from the client. Nothing gates on these
+ * two lists (their only reader is the context bundle at
+ * apps/core/src/p1/harness/production-context-port.ts:696-697), which is
+ * exactly why the silence mattered: the generation chain was told the merchant
+ * had authorized reach they were never asked about. They are questions now.
+ */
+const SCOPE_QUESTIONS: MarketingIdentityQuestionId[] = [
+  'allowedPlatforms',
+  'allowedScenes',
+];
+
 export function marketingIdentityQuestions(
   draft: MarketingIdentityDraft
 ): MarketingIdentityQuestionId[] {
@@ -60,13 +81,14 @@ export function marketingIdentityQuestions(
   return [
     ...COMMON_QUESTIONS,
     ...(draft.kind === 'brand' ? BRAND_QUESTIONS : PERSON_QUESTIONS),
+    ...SCOPE_QUESTIONS,
   ];
 }
 
 export function answerMarketingIdentityQuestion(
   draft: MarketingIdentityDraft,
   questionId: MarketingIdentityQuestionId,
-  value: boolean | string
+  value: boolean | string | readonly string[]
 ): MarketingIdentityDraft {
   if (questionId === 'kind') {
     if (value !== 'brand' && value !== 'person') {
@@ -80,10 +102,35 @@ export function answerMarketingIdentityQuestion(
     }
     return { ...draft, [questionId]: value };
   }
+  if (questionId === 'allowedPlatforms') {
+    return { ...draft, allowedPlatforms: parseScopeAnswer(value, PLATFORMS) };
+  }
+  if (questionId === 'allowedScenes') {
+    return { ...draft, allowedScenes: parseScopeAnswer(value, SCENES) };
+  }
   if (typeof value !== 'string') {
     throw new Error('Identity text answers must be strings.');
   }
   return { ...draft, [questionId]: value };
+}
+
+function parseScopeAnswer<Allowed extends string>(
+  value: boolean | string | readonly string[],
+  allowed: readonly Allowed[]
+): Allowed[] {
+  if (!Array.isArray(value)) {
+    throw new Error('Identity scope answers must be arrays.');
+  }
+  // Deduplicated and ordered by the catalog, so a re-tick can never grow the
+  // list and the merchant reads it back in the order they were shown.
+  const picked = new Set(value);
+  const unknown = [...picked].find(
+    (entry) => !allowed.includes(entry as Allowed)
+  );
+  if (unknown !== undefined) {
+    throw new Error(`Unknown identity scope value: ${unknown}`);
+  }
+  return allowed.filter((entry) => picked.has(entry));
 }
 
 function hasAnswer(
@@ -92,6 +139,9 @@ function hasAnswer(
 ) {
   if (!Object.hasOwn(draft, questionId)) return false;
   const value = draft[questionId];
+  // A scope answered with nothing ticked is not an answer — the merchant has
+  // to name at least one platform and one scene before this can be registered.
+  if (Array.isArray(value)) return value.length > 0;
   if (typeof value === 'string') {
     return value.trim().length > 0 || BRAND_QUESTIONS.includes(questionId);
   }
@@ -130,6 +180,8 @@ export function marketingIdentityRegistrationFromDraft(
     professionalBoundaries: draft.professionalBoundaries ?? '',
     expressionSamples: draft.expressionSamples ?? '',
     sourceRef: draft.sourceRef ?? '',
+    allowedPlatforms: draft.allowedPlatforms ?? [],
+    allowedScenes: draft.allowedScenes ?? [],
     forbiddenClaims: draft.forbiddenClaims,
     visualPrinciples: draft.visualPrinciples,
     seriesAnchors: draft.seriesAnchors,
@@ -137,6 +189,20 @@ export function marketingIdentityRegistrationFromDraft(
     voiceAuthorized: draft.voiceAuthorized,
   });
 }
+
+/**
+ * The four terms below are registered without a question of their own, so the
+ * wizard shows them on the preview panel before the merchant confirms (D-142):
+ * effectiveFrom is the moment of registration, expiresAt carries no expiry,
+ * departureHandling is the standing promise, and historicalContentPermission
+ * stays at the middle 'review_required' rather than retaining published work.
+ * Whatever changes here has to change on that panel too.
+ */
+export const MARKETING_IDENTITY_DEPARTURE_HANDLING =
+  '撤回、离职或换运营后停止生成新内容，已发内容按授权政策处理。';
+
+export const MARKETING_IDENTITY_HISTORICAL_CONTENT_PERMISSION =
+  'review_required' as const;
 
 export function marketingIdentityRegistrationPayload(input: {
   kind: 'brand' | 'person';
@@ -146,6 +212,8 @@ export function marketingIdentityRegistrationPayload(input: {
   professionalBoundaries: string;
   expressionSamples: string;
   sourceRef: string;
+  allowedPlatforms: readonly MarketingIdentityPlatform[];
+  allowedScenes: readonly MarketingScene[];
   forbiddenClaims?: string;
   visualPrinciples?: string;
   seriesAnchors?: string;
@@ -158,24 +226,12 @@ export function marketingIdentityRegistrationPayload(input: {
     displayName: input.displayName,
     owner: input.owner,
     professionalBoundaries: lines(input.professionalBoundaries),
-    allowedPlatforms: [
-      'xiaohongshu' as const,
-      'douyin' as const,
-      'video_account' as const,
-      'offline' as const,
-    ],
-    allowedScenes: [
-      'daily_service_exposure' as const,
-      'traffic_opportunity' as const,
-      'brand_personal_ip' as const,
-      'promotion_groupbuy_conversion' as const,
-      'routine_marketing_materials' as const,
-    ],
+    allowedPlatforms: [...input.allowedPlatforms],
+    allowedScenes: [...input.allowedScenes],
     expressionSamples: lines(input.expressionSamples),
     effectiveFrom: new Date().toISOString(),
     expiresAt: null,
-    departureHandling:
-      '撤回、离职或换运营后停止生成新内容，已发内容按授权政策处理。',
+    departureHandling: MARKETING_IDENTITY_DEPARTURE_HANDLING,
     sourceRef: input.sourceRef,
   };
   return registerMarketingIdentityCommandSchema.parse(
@@ -198,10 +254,15 @@ export function marketingIdentityRegistrationPayload(input: {
           voiceAuthorization: input.voiceAuthorized
             ? 'authorized'
             : 'not_authorized',
-          historicalContentPermission: 'review_required',
+          historicalContentPermission:
+            MARKETING_IDENTITY_HISTORICAL_CONTENT_PERMISSION,
         }
   );
 }
+
+const PLATFORMS: readonly MarketingIdentityPlatform[] =
+  MARKETING_IDENTITY_PLATFORMS;
+const SCENES: readonly MarketingScene[] = MARKETING_SCENES;
 
 function lines(value: string) {
   return value
