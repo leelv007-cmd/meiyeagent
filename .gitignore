@@ -1,4 +1,14 @@
 .DS_Store
+
+# Hidden working directories stay local at every depth.
+# Keep root repository automation tracked.
+**/.*/
+!/.github/
+!/.github/**
+
+# Local research sources and cloned repositories stay local.
+/references/
+
 node_modules/
 dist/
 dist-ssr/

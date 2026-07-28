@@ -1,9 +1,0 @@
-{
-  "recommendations": [
-    "biomejs.biome",
-    "bradlc.vscode-tailwindcss",
-    "unifiedjs.vscode-mdx",
-    "eamodio.gitlens",
-    "editorconfig.editorconfig"
-  ]
-}
