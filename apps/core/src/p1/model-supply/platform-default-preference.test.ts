@@ -43,12 +43,24 @@ function controlPlane(platformDefaultModels?: PlatformDefaultModelSourcePort) {
 }
 
 const configuredSource: PlatformDefaultModelSourcePort = {
-  async getDefaults() {
+  async getSnapshot() {
     return {
-      audio: 'audio-from-admin-config',
-      copy: 'copy-from-admin-config',
-      image: 'image-from-admin-config',
-      video: 'video-from-admin-config',
+      audio: {
+        catalogModelId: 'audio-speech-fixture',
+        configRevision: 'admin-config:14',
+      },
+      copy: {
+        catalogModelId: 'llm-domestic',
+        configRevision: 'admin-config:11',
+      },
+      image: {
+        catalogModelId: 'nano-banana-2',
+        configRevision: 'admin-config:12',
+      },
+      video: {
+        catalogModelId: 'seedance-2',
+        configRevision: 'admin-config:13',
+      },
     };
   },
 };
@@ -58,23 +70,23 @@ test('the preference projection carries the operation platform default', async (
   assert.equal(
     (await service.getPreferences('workspace-a', 'owner-a', 'image.generate'))
       .platformDefault,
-    'image-from-admin-config',
+    'nano-banana-2',
     'a client asking about image generation must be told the image default'
   );
   assert.equal(
     (await service.getPreferences('workspace-a', 'owner-a', 'copy.generate'))
       .platformDefault,
-    'copy-from-admin-config'
+    'llm-domestic'
   );
   assert.equal(
     (await service.getPreferences('workspace-a', 'owner-a', 'video.generate'))
       .platformDefault,
-    'video-from-admin-config'
+    'seedance-2'
   );
   assert.equal(
     (await service.getPreferences('workspace-a', 'owner-a', 'audio.speech'))
       .platformDefault,
-    'audio-from-admin-config'
+    'audio-speech-fixture'
   );
 });
 
@@ -83,8 +95,13 @@ test('the platform default is whatever the source says, never a built-in', async
   // survived anywhere on this path, an operator moving the admin-config value
   // would be silently ignored — which is the whole defect.
   const { service } = controlPlane({
-    async getDefaults() {
-      return { image: 'operator-moved-me-here' };
+    async getSnapshot() {
+      return {
+        image: {
+          catalogModelId: 'gpt-image-2',
+          configRevision: 'admin-config:21',
+        },
+      };
     },
   });
   const view = await service.getPreferences(
@@ -92,7 +109,8 @@ test('the platform default is whatever the source says, never a built-in', async
     'owner-a',
     'image.generate'
   );
-  assert.equal(view.platformDefault, 'operator-moved-me-here');
+  assert.equal(view.platformDefault, 'gpt-image-2');
+  assert.equal(view.platformDefaultRevision, 'admin-config:21');
   assert.equal(
     (await service.getPreferences('workspace-a', 'owner-a', 'copy.generate'))
       .platformDefault,
@@ -128,13 +146,13 @@ test('the platform default never overwrites what the workspace or user chose', a
   await repository.setWorkspaceDefault(
     'workspace-a',
     'image.generate',
-    'workspace-picked'
+    'gpt-image-2'
   );
   await repository.setUserDefault(
     'workspace-a',
     'owner-a',
     'image.generate',
-    'owner-picked'
+    'nano-banana-pro'
   );
   const view = await service.getPreferences(
     'workspace-a',
@@ -148,10 +166,36 @@ test('the platform default never overwrites what the workspace or user chose', a
       workspaceDefault: view.workspaceDefault,
     },
     {
-      platformDefault: 'image-from-admin-config',
-      userDefault: 'owner-picked',
-      workspaceDefault: 'workspace-picked',
+      platformDefault: 'nano-banana-2',
+      userDefault: 'nano-banana-pro',
+      workspaceDefault: 'gpt-image-2',
     },
     'the three defaults are three distinct facts — the client ranks them'
   );
+});
+
+test('a Day-0 platform write keeps its origin and never impersonates a merchant default', async () => {
+  const { repository, service } = controlPlane(configuredSource);
+  await repository.setWorkspaceDefault(
+    'workspace-a',
+    'image.generate',
+    'seedream-4-5',
+    {
+      origin: 'platform_default',
+      platformConfigRevision: 'admin-config:7',
+    },
+  );
+
+  const view = await service.getPreferences(
+    'workspace-a',
+    'owner-a',
+    'image.generate',
+  );
+  assert.equal(view.workspaceDefault, undefined);
+  assert.deepEqual(view.provisionedPlatformDefault, {
+    catalogModelId: 'seedream-4-5',
+    configRevision: 'admin-config:7',
+  });
+  assert.equal(view.platformDefault, 'nano-banana-2');
+  assert.equal(view.platformDefaultRevision, 'admin-config:12');
 });

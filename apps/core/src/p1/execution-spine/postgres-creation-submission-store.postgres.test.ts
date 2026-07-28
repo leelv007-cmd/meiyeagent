@@ -626,6 +626,11 @@ test(
         content_package_id: submission.contentPackage.id,
         execution_snapshot: {
           id: submission.snapshot.id,
+          modelSelection: {
+            source: "current_selection",
+            catalogModelId: "copy-model-1",
+            platformConfigRevision: null,
+          },
           revision: 1,
           schemaVersion: "creation-execution-snapshot/v1",
         },
@@ -805,6 +810,11 @@ test(
                 id: "policy-1",
                 mode: "fixed",
                 revision: "policy-r1",
+              },
+              modelSelection: {
+                source: "platform_default",
+                catalogModelId: "copy-model-1",
+                platformConfigRevision: "admin-config:41",
               },
               recipeBinding: {
                 contentModules: ["social_cover"],
@@ -1073,6 +1083,11 @@ test(
                 mode: "fixed",
                 revision: "policy-r1",
               },
+              modelSelection: {
+                source: "platform_default",
+                catalogModelId: "copy-model-1",
+                platformConfigRevision: "admin-config:41",
+              },
               recipeBinding: {
                 contentModules: ["social_cover"],
                 deliverables: [
@@ -1238,6 +1253,11 @@ test(
             package_kind: lens === "image" ? "image_text" : "video",
             package_snapshot: {
               id: submission.snapshot.id,
+              modelSelection: {
+                source: "current_selection",
+                catalogModelId: "copy-model-1",
+                platformConfigRevision: null,
+              },
               revision: 1,
               schemaVersion: "creation-execution-snapshot/v1",
             },

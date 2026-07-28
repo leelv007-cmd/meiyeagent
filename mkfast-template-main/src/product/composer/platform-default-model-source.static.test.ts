@@ -14,8 +14,8 @@
  * activation evidence at all, which core would refuse as a default.
  *
  * A behavioural test cannot prove the *absence* of a second table, so this is a
- * static assertion 門 (testing decision 9): the value crosses one seam, and the
- * provenance of a fallback survives the resolution instead of being dropped.
+ * static assertion 門 (testing decision 9): the value crosses every production
+ * selection seam, while behavioural and PostgreSQL tests prove the values.
  */
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -56,6 +56,22 @@ const corePreferenceView = read(
 );
 const coreControlPlane = read(
   '../../../../apps/core/src/p1/model-supply/foundation-module.ts'
+);
+const coreMain = read('../../../../apps/core/src/main.ts');
+const coreCopyProvider = read(
+  '../../../../apps/core/src/product/model-supply-copy-provider.ts'
+);
+const coreWorkspaceProvision = read(
+  '../../../../apps/core/src/p1/foundation/workspace-provision.ts'
+);
+const coreExecutionSnapshot = read(
+  '../../../../apps/core/src/p1/execution-spine/creation-execution-snapshot.ts'
+);
+const coreAdmission = read(
+  '../../../../apps/core/src/p1/execution-spine/composer-submission-gate.ts'
+);
+const coreSubmissionStore = read(
+  '../../../../apps/core/src/p1/execution-spine/postgres-creation-submission-store.ts'
 );
 
 test('the retired browser-side lens→model table stays retired', () => {
@@ -118,7 +134,7 @@ test('composer-live keeps no platform default of its own', () => {
 test('the other end of the seam: core projects the platform default', () => {
   assert.match(
     corePreferenceView,
-    /export interface PreferenceView \{[\s\S]*?platformDefault\?: string;/u,
+    /export interface PreferenceView \{[\s\S]*?platformDefaultRevision\?: string;/u,
     'if this field moves, the browser read above must move with it'
   );
   assert.match(
@@ -145,26 +161,48 @@ test('the resolution still refuses to guess when nothing is configured', () => {
   );
 });
 
-test('a fallback to the platform default leaves a trace', () => {
-  // `resolveCreationModelSelection` answers *which* model and *why*. Dropping
-  // the why (`?.model`) is what made reuse silent: every run then looked like
-  // the merchant had picked the model themselves.
+test('all production copy selection points consume canonical preferences', () => {
+  assert.doesNotMatch(
+    code(coreMain),
+    /DOMESTIC_COPY_CATALOG_MODEL_ID|deepseek-v4-pro/u,
+    'the composition root must not carry a fixed copy fallback'
+  );
+  assert.match(
+    coreMain,
+    /return resolveCanonicalCopySelection\(preferences\);/u
+  );
+  assert.doesNotMatch(code(coreCopyProvider), /deepseek-v4-pro/u);
+  assert.match(
+    coreCopyProvider,
+    /preferences\.platformDefault;[\s\S]*?No canonical copy model is configured\./u,
+    'copy must consume the platform preference and fail closed when absent'
+  );
+});
+
+test('server-owned provenance is frozen and projected from persistence', () => {
   assert.doesNotMatch(
     composerHome,
-    /resolveCreationModelSelection\([\s\S]{0,400}?\}\)\?\.model;/u,
-    'the resolution source must survive, not be discarded at the call site'
+    /catalogModelSource/u,
+    'the browser must not claim an audit source in its draft'
   );
-  assert.match(composerHome, /const \{ model, source \} = modelSelection;/u);
   assert.match(
-    composerHome,
-    /catalogModelSource: source,/u,
-    'the provenance is written next to the id it explains'
+    coreWorkspaceProvision,
+    /origin: 'platform_default',[\s\S]*?platformConfigRevision:/u,
+    'Day-0 writes retain platform origin and config revision'
   );
-  // And it travels: submissionSettings spreads the draft settings into the
-  // brief context the server persists.
   assert.match(
-    composerHome,
-    /const submissionSettings = \{\s*\.\.\.lensState\.draft\.settings,/u
+    coreAdmission,
+    /deriveModelSelection\([\s\S]*?modelSelection,/u,
+    'admission derives selection provenance before the coordinator freezes it'
   );
-  assert.match(composerHome, /settings: submissionSettings,/u);
+  assert.match(
+    coreExecutionSnapshot,
+    /modelSelection: frozenModelSelectionSchema\.optional\(\)/u,
+    'the immutable snapshot owns the strict provenance tuple'
+  );
+  assert.match(
+    coreSubmissionStore,
+    /creationExecutionSnapshot: \{[\s\S]*?modelSelection: snapshot\.modelSelection/u,
+    'the persisted ContentPackage read projection exposes the frozen tuple'
+  );
 });

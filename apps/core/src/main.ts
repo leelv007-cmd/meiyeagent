@@ -20,8 +20,8 @@ import { CutoverProductService } from './product/cutover-product-service.js';
 import type { ProductQualitySink } from './product/quality-sink.js';
 import { productPlanConfigFromEnv } from './product/plans.js';
 import {
-  DOMESTIC_COPY_CATALOG_MODEL_ID,
   ModelSupplyProductCopyProvider,
+  resolveCanonicalCopySelection,
 } from './product/model-supply-copy-provider.js';
 import { ProductPublishContentSnapshotPort } from './product/publish-content-snapshot.js';
 import {
@@ -596,22 +596,38 @@ const e2ePlatformModelDefaults = e2ePlatformModelDefaultsFromEnv(process.env);
  * falls back to are the same fact, edited in one place by operations.
  */
 const platformDefaultModelSource: PlatformDefaultModelSourcePort = {
-  async getDefaults() {
+  async getSnapshot() {
     const entries = await Promise.all(
       PLATFORM_DEFAULT_MODEL_CONFIG_KEYS.map(async (configKey) => {
+        const configName = platformDefaultModelConfigName(configKey);
         const row = await adminConfigRepository.get(
           'global',
           '__global__',
-          platformDefaultModelConfigName(configKey),
+          configName,
         );
         const value = typeof row?.value === 'string' ? row.value.trim() : '';
         const resolvedValue = value || e2ePlatformModelDefaults[configKey];
-        return resolvedValue ? ([configKey, resolvedValue] as const) : null;
+        return resolvedValue
+          ? ([
+              configKey,
+              {
+                catalogModelId: resolvedValue,
+                configRevision: row && value
+                  ? `admin-config:${row.revision}`
+                  : `runtime-default:${configName}:${resolvedValue}`,
+              },
+            ] as const)
+          : null;
       }),
     );
     return Object.fromEntries(
       entries.filter(
-        (entry): entry is readonly [PlatformDefaultModelConfigKey, string] =>
+        (
+          entry,
+        ): entry is readonly [
+          PlatformDefaultModelConfigKey,
+          { catalogModelId: string; configRevision: string },
+        ] =>
           entry !== null,
       ),
     );
@@ -784,10 +800,7 @@ const resolveCopySelection = async (request: {
     request.userId,
     'copy.generate'
   );
-  const modelId = preferences.userDefault ?? preferences.workspaceDefault;
-  return modelId
-    ? ({ catalogModelId: modelId, mode: 'fixed' } as const)
-    : undefined;
+  return resolveCanonicalCopySelection(preferences);
 };
 const resolveCopyPrompt = (request: { workspaceId: string }) =>
   modelControlPlane.getPromptRevision(request.workspaceId);
@@ -1049,14 +1062,14 @@ await registerDouyinPublishPollingSchedule(jobRuntime, {
 const createCopyProviders = (bridge: ProductCopyProviderBridge) => ({
   domestic: new ModelSupplyProductCopyProvider(
     bridge,
-    { catalogModelId: DOMESTIC_COPY_CATALOG_MODEL_ID, mode: 'fixed' },
+    undefined,
     'domestic',
     resolveCopySelection,
     resolveCopyPrompt
   ),
   standard: new ModelSupplyProductCopyProvider(
     bridge,
-    { mode: 'auto', profile: 'quality' },
+    undefined,
     'overseas',
     resolveCopySelection,
     resolveCopyPrompt
@@ -1484,7 +1497,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       ),
       monthlyOutput: productQuoteService,
       modelDefaults: {
-        getDefaults: () => platformDefaultModelSource.getDefaults(),
+        getSnapshot: () => platformDefaultModelSource.getSnapshot(),
         async validateDefault(operation, modelId) {
           const model = models.find(
             (candidate) =>
@@ -1534,12 +1547,18 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
             `Platform default model ${modelId} is not live verified for ${operation}.`,
           );
         },
-        async setWorkspaceDefault(workspaceId, operation, modelId) {
+        async setWorkspaceDefault(
+          workspaceId,
+          operation,
+          modelId,
+          metadata,
+        ) {
           // Preference only — does not copy platform probe evidence into tenant catalog (GL-16).
           await modelSupplyRepository.setWorkspaceDefault(
             workspaceId,
             operation,
             modelId,
+            metadata,
           );
         },
       },
@@ -1816,6 +1835,7 @@ if (harnessRuntimeConfig) {
       ),
       catalog: creationExperienceRuntime.repository,
       identities: marketingIdentities,
+      modelPreferences: modelControlPlane,
       noteSettings: notePlanSettings,
       quotes: productQuoteService,
       rights: contentPackageRightsResolver,

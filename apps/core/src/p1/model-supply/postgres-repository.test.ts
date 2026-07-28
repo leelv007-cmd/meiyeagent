@@ -615,6 +615,35 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
     );
   });
 
+  it('persists Day-0 platform origin without projecting it as a merchant default', async () => {
+    await repository.setWorkspaceDefault(
+      workspaceId,
+      'copy.generate',
+      'llm-domestic',
+      {
+        origin: 'platform_default',
+        platformConfigRevision: 'admin-config:31',
+      },
+    );
+
+    const restarted = new PostgresModelSupplyRepository(pool);
+    assert.deepEqual(
+      await restarted.getPreferences(
+        workspaceId,
+        'owner-platform-origin',
+        'copy.generate',
+      ),
+      {
+        provisionedPlatformDefault: {
+          catalogModelId: 'llm-domestic',
+          configRevision: 'admin-config:31',
+        },
+        favorites: [],
+        recent: [],
+      },
+    );
+  });
+
   it('persists quality events and restores composed video workflow across runner instances', async () => {
     await repository.saveQualityEvent(workspaceId, {
       outcome: 'adopted_directly',

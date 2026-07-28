@@ -1,7 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { P1DomainError } from '../foundation/domain.js';
-import type { CatalogRevision, PreferenceView } from './catalog.js';
+import type {
+  CatalogRevision,
+  PreferenceView,
+  WorkspaceDefaultOrigin,
+} from './catalog.js';
 import {
   ContentWorkflowRunner,
   InMemoryDurableVideoWorkflowStore,
@@ -148,9 +152,21 @@ export class PostgresModelSupplyRepository {
         workspace_id text NOT NULL,
         operation text NOT NULL,
         default_model_id text NOT NULL,
+        default_origin text NOT NULL DEFAULT 'workspace_default'
+          CHECK (default_origin IN ('platform_default', 'workspace_default')),
+        platform_config_revision text,
         updated_at timestamptz NOT NULL DEFAULT now(),
         PRIMARY KEY (workspace_id, operation)
       );
+      ALTER TABLE model_workspace_preferences
+        ADD COLUMN IF NOT EXISTS default_origin text NOT NULL DEFAULT 'workspace_default';
+      ALTER TABLE model_workspace_preferences
+        ADD COLUMN IF NOT EXISTS platform_config_revision text;
+      ALTER TABLE model_workspace_preferences
+        DROP CONSTRAINT IF EXISTS model_workspace_preferences_default_origin_check;
+      ALTER TABLE model_workspace_preferences
+        ADD CONSTRAINT model_workspace_preferences_default_origin_check
+        CHECK (default_origin IN ('platform_default', 'workspace_default'));
       CREATE TABLE IF NOT EXISTS model_user_preferences (
         workspace_id text NOT NULL,
         user_id text NOT NULL,
@@ -556,15 +572,31 @@ export class PostgresModelSupplyRepository {
   async setWorkspaceDefault(
     workspaceId: string,
     operation: string,
-    modelId: string
+    modelId: string,
+    metadata: {
+      origin: WorkspaceDefaultOrigin;
+      platformConfigRevision?: string | null;
+    } = { origin: 'workspace_default' },
   ) {
     await this.pool.query(
       `INSERT INTO model_workspace_preferences
-         (workspace_id, operation, default_model_id, updated_at)
-       VALUES ($1, $2, $3, now())
+         (workspace_id, operation, default_model_id, default_origin,
+          platform_config_revision, updated_at)
+       VALUES ($1, $2, $3, $4, $5, now())
        ON CONFLICT (workspace_id, operation)
-       DO UPDATE SET default_model_id = EXCLUDED.default_model_id, updated_at = now()`,
-      [workspaceId, operation, modelId]
+       DO UPDATE SET default_model_id = EXCLUDED.default_model_id,
+                     default_origin = EXCLUDED.default_origin,
+                     platform_config_revision = EXCLUDED.platform_config_revision,
+                     updated_at = now()`,
+      [
+        workspaceId,
+        operation,
+        modelId,
+        metadata.origin,
+        metadata.origin === 'platform_default'
+          ? (metadata.platformConfigRevision ?? null)
+          : null,
+      ],
     );
   }
 
@@ -634,8 +666,13 @@ export class PostgresModelSupplyRepository {
     operation: string
   ): Promise<PreferenceView> {
     const [workspace, user] = await Promise.all([
-      this.pool.query<{ default_model_id: string }>(
-        `SELECT default_model_id FROM model_workspace_preferences
+      this.pool.query<{
+        default_model_id: string;
+        default_origin: WorkspaceDefaultOrigin;
+        platform_config_revision: string | null;
+      }>(
+        `SELECT default_model_id, default_origin, platform_config_revision
+           FROM model_workspace_preferences
           WHERE workspace_id = $1 AND operation = $2`,
         [workspaceId, operation]
       ),
@@ -649,10 +686,21 @@ export class PostgresModelSupplyRepository {
         [workspaceId, userId, operation]
       ),
     ]);
-    const workspaceDefault = workspace.rows[0]?.default_model_id;
+    const workspacePreference = workspace.rows[0];
     const userPreference = user.rows[0];
     return {
-      ...(workspaceDefault ? { workspaceDefault } : {}),
+      ...(workspacePreference?.default_origin === 'workspace_default'
+        ? { workspaceDefault: workspacePreference.default_model_id }
+        : {}),
+      ...(workspacePreference?.default_origin === 'platform_default' &&
+      workspacePreference.platform_config_revision
+        ? {
+            provisionedPlatformDefault: {
+              catalogModelId: workspacePreference.default_model_id,
+              configRevision: workspacePreference.platform_config_revision,
+            },
+          }
+        : {}),
       ...(userPreference?.default_model_id
         ? { userDefault: userPreference.default_model_id }
         : {}),

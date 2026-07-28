@@ -22,6 +22,7 @@ import {
   type CatalogRevisionPayload,
   type PreferenceView,
   type PublishedDeployment,
+  type WorkspaceDefaultOrigin,
 } from './catalog.js';
 import {
   CANVAS_GENERATION_INPUT_ASSET_ROLES,
@@ -383,6 +384,10 @@ export interface ModelSupplyControlPlaneRepository {
     workspaceId: string,
     operation: ModelOperation,
     modelId: string,
+    metadata?: {
+      origin: WorkspaceDefaultOrigin;
+      platformConfigRevision?: string | null;
+    },
   ): Promise<void>;
   setUserDefault(
     workspaceId: string,
@@ -855,8 +860,17 @@ export class MemoryModelSupplyControlPlaneRepository
     workspaceId: string,
     operation: ModelOperation,
     modelId: string,
+    metadata: {
+      origin: WorkspaceDefaultOrigin;
+      platformConfigRevision?: string | null;
+    } = { origin: 'workspace_default' },
   ) {
-    this.preferences.setWorkspaceDefault(workspaceId, operation, modelId);
+    this.preferences.setWorkspaceDefault(
+      workspaceId,
+      operation,
+      modelId,
+      metadata,
+    );
   }
 
   async setUserDefault(
@@ -3336,10 +3350,14 @@ export class ModelSupplyControlPlaneService {
     );
     const configKey = platformDefaultModelConfigKeyForOperation(operation);
     if (!this.platformDefaultModels || !configKey) return view;
-    const platformDefault = (
-      await this.platformDefaultModels.getDefaults()
-    )[configKey]?.trim();
-    return platformDefault ? { ...view, platformDefault } : view;
+    const binding = (
+      await this.platformDefaultModels.getSnapshot()
+    )[configKey];
+    const platformDefault = binding?.catalogModelId.trim();
+    const platformDefaultRevision = binding?.configRevision.trim();
+    return platformDefault && platformDefaultRevision
+      ? { ...view, platformDefault, platformDefaultRevision }
+      : view;
   }
 
   async simulateRoute(

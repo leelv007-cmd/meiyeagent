@@ -36,7 +36,7 @@ test('today recommendation reads the fact revision through the ledger API', asyn
 });
 
 test('today recommendation selects the frozen revision trace when context injection has multiple traces', async () => {
-  const timestamp = '2026-07-27T03:00:00.000Z';
+  const timestamp = new Date().toISOString();
   const versionId = 'version-1';
   const contentPackage = {
     ...buildContentPackage({

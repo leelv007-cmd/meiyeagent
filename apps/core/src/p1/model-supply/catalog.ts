@@ -1396,6 +1396,10 @@ export function isLiveVerifiedActivationEvidence(
 export interface PreferenceView {
   workspaceDefault?: string;
   userDefault?: string;
+  provisionedPlatformDefault?: {
+    catalogModelId: string;
+    configRevision: string;
+  };
   /**
    * The platform-configured default catalog model for this operation (#240①).
    *
@@ -1405,8 +1409,19 @@ export interface PreferenceView {
    * from the one admin-config source (`platform.defaultModel.<configKey>`).
    */
   platformDefault?: string;
+  platformDefaultRevision?: string;
   favorites: string[];
   recent: string[];
+}
+
+export type WorkspaceDefaultOrigin =
+  | 'platform_default'
+  | 'workspace_default';
+
+export interface WorkspaceDefaultBinding {
+  catalogModelId: string;
+  origin: WorkspaceDefaultOrigin;
+  platformConfigRevision: string | null;
 }
 
 function preferenceKey(
@@ -1418,7 +1433,10 @@ function preferenceKey(
 }
 
 export class ModelPreferenceRegistry {
-  private readonly workspaceDefaults = new Map<string, string>();
+  private readonly workspaceDefaults = new Map<
+    string,
+    WorkspaceDefaultBinding
+  >();
   private readonly userDefaults = new Map<string, string>();
   private readonly favoriteModels = new Map<string, Set<string>>();
   private readonly recentModels = new Map<string, string[]>();
@@ -1426,9 +1444,17 @@ export class ModelPreferenceRegistry {
   setWorkspaceDefault(
     workspaceId: string,
     operation: ModelOperation,
-    modelId: string
+    modelId: string,
+    metadata: {
+      origin: WorkspaceDefaultOrigin;
+      platformConfigRevision?: string | null;
+    } = { origin: 'workspace_default' },
   ) {
-    this.workspaceDefaults.set(`${workspaceId}:${operation}`, modelId);
+    this.workspaceDefaults.set(`${workspaceId}:${operation}`, {
+      catalogModelId: modelId,
+      origin: metadata.origin,
+      platformConfigRevision: metadata.platformConfigRevision ?? null,
+    });
   }
 
   setUserDefault(
@@ -1479,6 +1505,7 @@ export class ModelPreferenceRegistry {
       currentOverride ??
       this.userDefaults.get(preferenceKey(workspaceId, userId, operation)) ??
       this.workspaceDefaults.get(`${workspaceId}:${operation}`)
+        ?.catalogModelId
     );
   }
 
@@ -1488,12 +1515,23 @@ export class ModelPreferenceRegistry {
     operation: ModelOperation
   ): PreferenceView {
     const key = preferenceKey(workspaceId, userId, operation);
-    const workspaceDefault = this.workspaceDefaults.get(
+    const workspaceBinding = this.workspaceDefaults.get(
       `${workspaceId}:${operation}`
     );
     const userDefault = this.userDefaults.get(key);
     return {
-      ...(workspaceDefault ? { workspaceDefault } : {}),
+      ...(workspaceBinding?.origin === 'workspace_default'
+        ? { workspaceDefault: workspaceBinding.catalogModelId }
+        : {}),
+      ...(workspaceBinding?.origin === 'platform_default' &&
+      workspaceBinding.platformConfigRevision
+        ? {
+            provisionedPlatformDefault: {
+              catalogModelId: workspaceBinding.catalogModelId,
+              configRevision: workspaceBinding.platformConfigRevision,
+            },
+          }
+        : {}),
       ...(userDefault ? { userDefault } : {}),
       favorites: [...(this.favoriteModels.get(key) ?? [])],
       recent: [...(this.recentModels.get(key) ?? [])],

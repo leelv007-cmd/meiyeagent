@@ -216,6 +216,9 @@ export class PostgresCreationSubmissionPersistence implements CreationSubmission
           id: snapshot.id,
           revision: snapshot.revision,
           schemaVersion: snapshot.schemaVersion,
+          ...(snapshot.modelSelection
+            ? { modelSelection: snapshot.modelSelection }
+            : {}),
         },
         ...(snapshot.sources.contentPackage
           ? { sourceContentPackage: snapshot.sources.contentPackage }

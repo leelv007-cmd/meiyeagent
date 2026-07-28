@@ -937,6 +937,9 @@ test("an exact replay returns its receipt before mutable admission runs again", 
 	const starter = new RecordingHarnessStarter();
 	let admissionCalls = 0;
 	let quoteLifecycle: "confirmed" | "settled" = "confirmed";
+	let selectionSource:
+		| "platform_default"
+		| "workspace_default" = "platform_default";
 	const coordinator = new CreationSubmissionCoordinator(
 		submissions,
 		starter,
@@ -947,7 +950,18 @@ test("an exact replay returns its receipt before mutable admission runs again", 
 				if (quoteLifecycle !== "confirmed") {
 					throw new Error(`Quote is ${quoteLifecycle}`);
 				}
-				return fixedAdmission().admit(input);
+				const admitted = await fixedAdmission().admit(input);
+				return {
+					...admitted,
+					modelSelection: {
+						source: selectionSource,
+						catalogModelId: input.catalogModel.id,
+						platformConfigRevision:
+							selectionSource === "platform_default"
+								? "admin-config:41"
+								: null,
+					},
+				};
 			},
 		},
 	);
@@ -960,6 +974,7 @@ test("an exact replay returns its receipt before mutable admission runs again", 
 	const created = await coordinator.submit(command);
 	assert.equal(created.replayed, false);
 	quoteLifecycle = "settled";
+	selectionSource = "workspace_default";
 	const replays = await Promise.all(
 		Array.from({ length: 12 }, () => coordinator.submit(command)),
 	);
@@ -968,6 +983,11 @@ test("an exact replay returns its receipt before mutable admission runs again", 
 	assert.equal(admissionCalls, 1);
 	assert.equal(submissions.count(), 1);
 	assert.equal(starter.starts.length, 1);
+	assert.deepEqual(starter.starts[0]?.snapshot.modelSelection, {
+		source: "platform_default",
+		catalogModelId: "catalog-copy-1",
+		platformConfigRevision: "admin-config:41",
+	});
 });
 
 test("durable recovery reclaims a committed submission whose first Harness start failed", async () => {
@@ -1220,6 +1240,11 @@ function fixedAdmission(): CreationSubmissionAdmissionPort {
 					mode: "fixed",
 					revision: "server-policy-r1",
 				},
+				modelSelection: {
+					source: "platform_default",
+					catalogModelId: input.catalogModel.id,
+					platformConfigRevision: "admin-config:41",
+				},
 				recipeBinding: {
 					contentModules: ["social_cover"],
 					deliverables: [
@@ -1255,6 +1280,11 @@ function modalityAdmission(): CreationSubmissionAdmissionPort {
 					id: `server-policy-${kind}`,
 					mode: "fixed",
 					revision: `server-policy-${kind}-r1`,
+				},
+				modelSelection: {
+					source: "platform_default",
+					catalogModelId: input.catalogModel.id,
+					platformConfigRevision: `admin-config:${kind}`,
 				},
 				recipeBinding: {
 					contentModules: ["social_cover"],

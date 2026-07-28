@@ -1055,11 +1055,10 @@ export function ComposerHome({
 
   useEffect(() => {
     if (!modelSelection || lensState.phase === 'frozen') return;
-    const { model, source } = modelSelection;
+    const { model } = modelSelection;
     if (
       lensState.draft.settings.catalogModelId === model.id &&
-      lensState.draft.settings.catalogModelRevision === catalogRevision &&
-      lensState.draft.settings.catalogModelSource === source
+      lensState.draft.settings.catalogModelRevision === catalogRevision
     ) {
       return;
     }
@@ -1070,12 +1069,6 @@ export function ComposerHome({
           catalogModelId: model.id,
           catalogModelName: model.displayName,
           catalogModelRevision: catalogRevision,
-          // #240①: the provenance travels with the id. `submissionSettings`
-          // carries it into the brief context the server persists, so a run
-          // that reused the platform default is legible from the snapshot —
-          // no merchant-facing chrome (模型路由 stays 二级详情), but no silent
-          // reuse either.
-          catalogModelSource: source,
         },
         'system'
       )

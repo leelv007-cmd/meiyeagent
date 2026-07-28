@@ -40,7 +40,7 @@ export function createDevelopmentRuntimeProfile(input) {
     E2E_PLATFORM_DEFAULT_MODEL_COPY:
       input.E2E_PLATFORM_DEFAULT_MODEL_COPY || 'deepseek-v4-pro',
     E2E_PLATFORM_DEFAULT_MODEL_IMAGE:
-      input.E2E_PLATFORM_DEFAULT_MODEL_IMAGE || 'seedream-5-pro',
+      input.E2E_PLATFORM_DEFAULT_MODEL_IMAGE || 'nano-banana-2',
     E2E_PLATFORM_DEFAULT_MODEL_VIDEO:
       input.E2E_PLATFORM_DEFAULT_MODEL_VIDEO || 'seedance-2',
     FEISHU_MCP_MODE: 'recorded',

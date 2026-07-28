@@ -10,7 +10,11 @@ import type { CreationExperienceCatalogRepository } from "../creation-experience
 import { validateRecipeForComposer } from "../creation-experience/recipe-validator.js";
 import { P1DomainError, type RouteSnapshot } from "../foundation/domain.js";
 import type { ReferenceAssetResolverPort } from "../model-supply/reference-asset-resolver.js";
-import type { DataClass } from "../model-supply/supply-contracts.js";
+import type { PreferenceView } from "../model-supply/catalog.js";
+import type {
+	DataClass,
+	ModelOperation,
+} from "../model-supply/supply-contracts.js";
 import type { ContentPackageRightsResolverPort } from "../operations/types.js";
 import type { MarketingIdentityRepository } from "../operations/marketing-identity.js";
 import type { ProductBillingApplicationPort } from "../product-billing/durable-service.js";
@@ -59,6 +63,13 @@ export interface ComposerSubmissionAdmissionDependencies {
 	>;
 	identities: Pick<MarketingIdentityRepository, "listActive"> &
 		Partial<Pick<MarketingIdentityRepository, "project">>;
+	modelPreferences: {
+		getPreferences(
+			workspaceId: string,
+			userId: string,
+			operation: ModelOperation,
+		): Promise<PreferenceView>;
+	};
 	quotes: Pick<ProductBillingApplicationPort, "getQuote"> &
 		Partial<Pick<ProductBillingApplicationPort, "confirm">>;
 	rights: ContentPackageRightsResolverPort;
@@ -254,6 +265,16 @@ export class ComposerSubmissionAdmissionGate
 			input.sources.assets.length,
 			input.creationMode,
 			input.imageOperation,
+		);
+		const modelPreferences =
+			await this.dependencies.modelPreferences.getPreferences(
+				input.workspaceId,
+				input.actorId,
+				preferenceOperationForLens(recipeBinding.lens),
+			);
+		const modelSelection = deriveModelSelection(
+			input.catalogModel.id,
+			modelPreferences,
 		);
 		if (
 			quote.lifecycleStatus !== "quoted" &&
@@ -498,6 +519,7 @@ export class ComposerSubmissionAdmissionGate
 				mode: "fixed" as const,
 				revision: recipe.revisionId,
 			},
+			modelSelection,
 			operation,
 			recipeBinding,
 			route: {
@@ -549,6 +571,43 @@ export class ComposerSubmissionAdmissionGate
 	}
 }
 
+function deriveModelSelection(
+	catalogModelId: string,
+	preferences: PreferenceView,
+): NonNullable<CreationExecutionSnapshot["modelSelection"]> {
+	if (preferences.userDefault === catalogModelId) {
+		return {
+			source: "user_default",
+			catalogModelId,
+			platformConfigRevision: null,
+		};
+	}
+	if (preferences.workspaceDefault === catalogModelId) {
+		return {
+			source: "workspace_default",
+			catalogModelId,
+			platformConfigRevision: null,
+		};
+	}
+	if (preferences.platformDefault === catalogModelId) {
+		if (!preferences.platformDefaultRevision?.trim()) {
+			throw invalid(
+				"Platform default model selection is missing its config revision.",
+			);
+		}
+		return {
+			source: "platform_default",
+			catalogModelId,
+			platformConfigRevision: preferences.platformDefaultRevision,
+		};
+	}
+	return {
+		source: "current_selection",
+		catalogModelId,
+		platformConfigRevision: null,
+	};
+}
+
 function normalizeRouteDataClass(values: string[] | undefined) {
 	return [...new Set(values ?? ["public"])].sort();
 }
@@ -588,6 +647,14 @@ function operationForRequest(
 		});
 	}
 	return "video.generate";
+}
+
+function preferenceOperationForLens(
+	lens: CreationExecutionSnapshot["lens"],
+): ModelOperation {
+	if (lens === "copy") return "copy.generate";
+	if (lens === "video") return "video.generate";
+	return "image.generate";
 }
 
 function assertSourceRequirements(input: {

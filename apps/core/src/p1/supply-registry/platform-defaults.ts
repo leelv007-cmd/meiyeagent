@@ -151,8 +151,16 @@ export function createRegistryPlatformDefaultModelPort(input: {
   const requireLive = input.requireLiveVerified ?? true;
 
   const port = {
-    async getDefaults() {
-      return { ...input.defaults };
+    async getSnapshot() {
+      return Object.fromEntries(
+        Object.entries(input.defaults).map(([configKey, catalogModelId]) => [
+          configKey,
+          {
+            catalogModelId,
+            configRevision: `supply-registry:${catalogModelId}`,
+          },
+        ]),
+      );
     },
     async validateDefault(
       operation: PlatformDefaultModelOperation,

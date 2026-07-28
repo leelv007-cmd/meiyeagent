@@ -131,22 +131,38 @@ describe('WorkspaceProvisionService', () => {
       workspaceId: string;
       operation: string;
       modelId: string;
+      metadata: {
+        origin: 'platform_default';
+        platformConfigRevision: string;
+      };
     }> = [];
     const validated: Array<{ operation: string; modelId: string }> = [];
     const modelDefaults: PlatformDefaultModelPort = {
-      async getDefaults() {
+      async getSnapshot() {
         return {
-          audio: 'platform-audio-model',
-          copy: 'platform-copy-model',
-          image: 'platform-image-model',
-          video: 'platform-video-model',
+          audio: {
+            catalogModelId: 'platform-audio-model',
+            configRevision: 'admin-config:14',
+          },
+          copy: {
+            catalogModelId: 'platform-copy-model',
+            configRevision: 'admin-config:11',
+          },
+          image: {
+            catalogModelId: 'platform-image-model',
+            configRevision: 'admin-config:12',
+          },
+          video: {
+            catalogModelId: 'platform-video-model',
+            configRevision: 'admin-config:13',
+          },
         };
       },
       async validateDefault(operation, modelId) {
         validated.push({ modelId, operation });
       },
-      async setWorkspaceDefault(workspaceId, operation, modelId) {
-        written.push({ workspaceId, operation, modelId });
+      async setWorkspaceDefault(workspaceId, operation, modelId, metadata) {
+        written.push({ workspaceId, operation, modelId, metadata });
       },
     };
     const { provisioner } = setup(modelDefaults);
@@ -169,21 +185,37 @@ describe('WorkspaceProvisionService', () => {
         workspaceId: owner.workspaceId,
         operation: 'copy.generate',
         modelId: 'platform-copy-model',
+        metadata: {
+          origin: 'platform_default',
+          platformConfigRevision: 'admin-config:11',
+        },
       },
       {
         workspaceId: owner.workspaceId,
         operation: 'image.generate',
         modelId: 'platform-image-model',
+        metadata: {
+          origin: 'platform_default',
+          platformConfigRevision: 'admin-config:12',
+        },
       },
       {
         workspaceId: owner.workspaceId,
         operation: 'video.generate',
         modelId: 'platform-video-model',
+        metadata: {
+          origin: 'platform_default',
+          platformConfigRevision: 'admin-config:13',
+        },
       },
       {
         workspaceId: owner.workspaceId,
         operation: 'audio.speech',
         modelId: 'platform-audio-model',
+        metadata: {
+          origin: 'platform_default',
+          platformConfigRevision: 'admin-config:14',
+        },
       },
     ]);
   });
@@ -191,12 +223,24 @@ describe('WorkspaceProvisionService', () => {
   it('validates all platform defaults before writing any preference', async () => {
     let writes = 0;
     const modelDefaults: PlatformDefaultModelPort = {
-      async getDefaults() {
+      async getSnapshot() {
         return {
-          audio: 'platform-audio-model',
-          copy: 'platform-copy-model',
-          image: 'inactive-image-model',
-          video: 'platform-video-model',
+          audio: {
+            catalogModelId: 'platform-audio-model',
+            configRevision: 'admin-config:14',
+          },
+          copy: {
+            catalogModelId: 'platform-copy-model',
+            configRevision: 'admin-config:11',
+          },
+          image: {
+            catalogModelId: 'inactive-image-model',
+            configRevision: 'admin-config:12',
+          },
+          video: {
+            catalogModelId: 'platform-video-model',
+            configRevision: 'admin-config:13',
+          },
         };
       },
       async validateDefault(_operation, modelId) {
@@ -223,11 +267,20 @@ describe('WorkspaceProvisionService', () => {
   it('skips zero-allowance modalities without a platform default (audio)', async () => {
     const written: Array<{ operation: string; modelId: string }> = [];
     const modelDefaults: PlatformDefaultModelPort = {
-      async getDefaults() {
+      async getSnapshot() {
         return {
-          copy: 'platform-copy-model',
-          image: 'platform-image-model',
-          video: 'platform-video-model',
+          copy: {
+            catalogModelId: 'platform-copy-model',
+            configRevision: 'admin-config:11',
+          },
+          image: {
+            catalogModelId: 'platform-image-model',
+            configRevision: 'admin-config:12',
+          },
+          video: {
+            catalogModelId: 'platform-video-model',
+            configRevision: 'admin-config:13',
+          },
         };
       },
       async validateDefault(operation, modelId) {
@@ -256,11 +309,20 @@ describe('WorkspaceProvisionService', () => {
 
   it('still fails when a modality with trial allowance has no default', async () => {
     const modelDefaults: PlatformDefaultModelPort = {
-      async getDefaults() {
+      async getSnapshot() {
         return {
-          audio: 'platform-audio-model',
-          copy: 'platform-copy-model',
-          image: 'platform-image-model',
+          audio: {
+            catalogModelId: 'platform-audio-model',
+            configRevision: 'admin-config:14',
+          },
+          copy: {
+            catalogModelId: 'platform-copy-model',
+            configRevision: 'admin-config:11',
+          },
+          image: {
+            catalogModelId: 'platform-image-model',
+            configRevision: 'admin-config:12',
+          },
         };
       },
       async validateDefault() {},
@@ -277,7 +339,7 @@ describe('WorkspaceProvisionService', () => {
 
   it('still provisions trial when platform default models are unset', async () => {
     const modelDefaults: PlatformDefaultModelPort = {
-      async getDefaults() {
+      async getSnapshot() {
         return {};
       },
       async validateDefault() {

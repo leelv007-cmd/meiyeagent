@@ -54,6 +54,22 @@ type ContentPackageProjection = {
     rightsRefs?: string[];
   };
   revision: number;
+  source: {
+    creationExecutionSnapshot?: {
+      id: string;
+      revision: number;
+      schemaVersion: 'creation-execution-snapshot/v1';
+      modelSelection?: {
+        source:
+          | 'current_selection'
+          | 'user_default'
+          | 'workspace_default'
+          | 'platform_default';
+        catalogModelId: string;
+        platformConfigRevision: string | null;
+      };
+    };
+  };
   status: string;
   variants: Array<{
     currentVersionId?: string;
@@ -90,6 +106,39 @@ async function registerTrialNoteUser(
   return merchant;
 }
 
+async function queryImageModelPreferences(page: Page) {
+  return page.evaluate(async () => {
+    const response = await fetch('/api/core/p1/query', {
+      body: JSON.stringify({
+        action: 'preferences',
+        module: 'model-supply',
+        payload: { operation: 'image.generate' },
+      }),
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    });
+    const envelope = (await response.json()) as {
+      data?: {
+        platformDefault?: string;
+        platformDefaultRevision?: string;
+        provisionedPlatformDefault?: {
+          catalogModelId: string;
+          configRevision: string;
+        };
+        workspaceDefault?: string;
+      };
+      error?: { message?: string };
+    };
+    if (!response.ok || !envelope.data) {
+      throw new Error(
+        envelope.error?.message ?? 'Model preferences read failed'
+      );
+    }
+    return envelope.data;
+  });
+}
+
 async function submitNoteJourney(
   page: Page,
   expected: 'accepted' | 'insufficient' = 'accepted',
@@ -98,6 +147,16 @@ async function submitNoteJourney(
   await page.goto('/dashboard');
   await seedConfirmedStore(page);
   await page.getByTestId('composer-lens-option-image_text').click();
+  const preferences = await queryImageModelPreferences(page);
+  expect(preferences.workspaceDefault).toBeUndefined();
+  expect(preferences.provisionedPlatformDefault).toEqual({
+    catalogModelId: 'nano-banana-2',
+    configRevision: 'runtime-default:platform.defaultModel.image:nano-banana-2',
+  });
+  expect(preferences.platformDefault).toBe('nano-banana-2');
+  expect(preferences.platformDefaultRevision).toBe(
+    'runtime-default:platform.defaultModel.image:nano-banana-2'
+  );
   const authorized = await seedComposerInlineAuthorize(page, {
     ...(authorizedAssetId ? { expectedAssetId: authorizedAssetId } : {}),
     fileName: 'note-case.png',
@@ -138,6 +197,7 @@ async function submitNoteJourney(
       errorCode: undefined,
       errorMessage: undefined,
       packageId: '',
+      platformDefaultRevision: preferences.platformDefaultRevision ?? '',
       taskId: '',
     };
   }
@@ -162,7 +222,7 @@ async function submitNoteJourney(
     };
     error?: { code?: string; message?: string };
   };
-  expect(submissionBody.catalogModel?.id).toBe('seedream-5-pro');
+  expect(submissionBody.catalogModel?.id).toBe('nano-banana-2');
   expect(response.ok(), envelope.error?.message).toBeTruthy();
   expect(envelope.data?.contentPackage?.id).toBeTruthy();
   expect(envelope.data?.replayed).toBe(false);
@@ -173,6 +233,7 @@ async function submitNoteJourney(
     errorCode: envelope.error?.code,
     errorMessage: envelope.error?.message,
     packageId: envelope.data?.contentPackage?.id ?? '',
+    platformDefaultRevision: preferences.platformDefaultRevision ?? '',
     taskId: envelope.data?.task?.id ?? '',
   };
 }
@@ -214,7 +275,10 @@ async function collectWorkflowSse(page: Page, taskId: string) {
         const timeout = window.setTimeout(() => {
           stream.close();
           reject(new Error('Image-text note workflow did not finish.'));
-        }, 240_000);
+          // The fixture deliberately holds every structured copy chunk for ten
+          // seconds. A complete three-page dual-style note can exceed six
+          // minutes before the terminal event without being stalled.
+        }, 540_000);
         stream.addEventListener('workflow.progress', (event) => {
           progress.push(
             JSON.parse((event as MessageEvent<string>).data) as {
@@ -388,7 +452,7 @@ test.describe
       page,
       request,
     }) => {
-      test.setTimeout(480_000);
+      test.setTimeout(660_000);
       await registerTrialNoteUser(page, request);
 
       const submission = await submitNoteJourney(page);
@@ -451,6 +515,13 @@ test.describe
         page,
         submission.packageId
       );
+      expect(
+        contentPackage.source.creationExecutionSnapshot?.modelSelection
+      ).toEqual({
+        source: 'platform_default',
+        catalogModelId: 'nano-banana-2',
+        platformConfigRevision: submission.platformDefaultRevision,
+      });
       expect(contentPackage.kind).toBe('image_text');
       expect(contentPackage.versions).toHaveLength(2);
       expect(
@@ -504,11 +575,11 @@ test.describe
       const usage = await queryProductUsage(page, submission.taskId);
       expect(usage).toMatchObject({
         reservedUnits: [
-          { resource: 'copy', quantity: 2 },
+          { resource: 'copy', quantity: 1 },
           { resource: 'image', quantity: 3 },
         ],
         settledUnits: [
-          { resource: 'copy', quantity: 2 },
+          { resource: 'copy', quantity: 1 },
           {
             resource: 'image',
             quantity: selected?.note?.plan.pages.length,
