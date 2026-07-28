@@ -17,9 +17,8 @@ const PRODUCTION_PREFIXES = [
   'packages/contracts/',
 ];
 
-const EXTRA_SCANNED_FILES = [
-  '.scratch/uiux-upgrade-b/i18n-dashboard-keys.json',
-];
+const LOCALE_MESSAGE_FILE_PATTERN =
+  /^mkfast-template-main\/project\.inlang\/messages\/[a-z-]+\.json$/u;
 
 const FORBIDDEN_PRODUCTION_PATTERNS = [
   ['retired lead ledger route', /routes\/dashboard\/leads/u],
@@ -64,9 +63,8 @@ function productionSources() {
   return trackedFiles()
     .filter(
       (path) =>
-        EXTRA_SCANNED_FILES.includes(path) ||
-        (PRODUCTION_PREFIXES.some((prefix) => path.startsWith(prefix)) &&
-          /\.(?:ts|tsx)$/u.test(path))
+        PRODUCTION_PREFIXES.some((prefix) => path.startsWith(prefix)) &&
+        /\.(?:ts|tsx)$/u.test(path)
     )
     .filter((path) => !/\.test\.(?:ts|tsx)$/u.test(path))
     .filter((path) => existsSync(path));
@@ -108,9 +106,7 @@ test('D-144 leaves no lead ledger route file behind', () => {
 
 test('D-144 leaves no lead ledger copy behind', () => {
   const locales = trackedFiles().filter((path) =>
-    /^mkfast-template-main\/project\.inlang\/messages\/[a-z-]+\.json$/u.test(
-      path
-    )
+    LOCALE_MESSAGE_FILE_PATTERN.test(path)
   );
   assert.ok(locales.length > 0, 'locale message catalogues must be findable');
   const survivors = locales.flatMap((path) =>
@@ -120,5 +116,16 @@ test('D-144 leaves no lead ledger copy behind', () => {
       )
       .map((key) => `${path}:${key}`)
   );
+  assert.deepEqual(survivors, []);
+});
+
+test('D-144 locale copy scan does not treat prose as TypeScript', () => {
+  const messages = {
+    harmless_summary: 'Qualified leads: follow up tomorrow.',
+  };
+  const survivors = Object.keys(messages).filter((key) =>
+    FORBIDDEN_MESSAGE_KEY_PATTERNS.some((pattern) => pattern.test(key))
+  );
+
   assert.deepEqual(survivors, []);
 });

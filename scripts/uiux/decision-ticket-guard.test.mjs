@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -7,6 +8,47 @@ import test from "node:test";
 import { validateDecisionTicketMap } from "./decision-ticket-guard.mjs";
 
 const clone = (value) => structuredClone(value);
+
+test("fails closed when tracked decision ledgers are missing", async () => {
+  const rootDir = await mkdtemp(path.join(tmpdir(), "decision-ticket-guard-"));
+  const result = spawnSync(
+    process.execPath,
+    ["scripts/uiux/decision-ticket-guard.mjs", "--root", rootDir],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    },
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /docs\/ledgers\/uiux-upgrade-b\/decision-ticket-map\.json/,
+  );
+  assert.doesNotMatch(`${result.stdout}${result.stderr}`, /SKIP/u);
+});
+
+test("strictly validates both tracked decision ledgers", () => {
+  const result = spawnSync(
+    process.execPath,
+    ["scripts/uiux/decision-ticket-guard.mjs"],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    },
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(
+    result.stdout,
+    /passed \(docs\/ledgers\/uiux-upgrade-b\/decision-ticket-map\.json\)/,
+  );
+  assert.match(
+    result.stdout,
+    /passed \(docs\/ledgers\/contentpackage-productization\/decision-ticket-map\.json\)/,
+  );
+  assert.doesNotMatch(result.stdout, /SKIP/u);
+});
 
 async function createFixtureRoot() {
   const rootDir = await mkdtemp(path.join(tmpdir(), "decision-ticket-guard-"));

@@ -205,15 +205,18 @@ test('dashboard message handoff records every new localized key in both language
   const sources = localizedDashboardRoutes.map((file) =>
     readFileSync(resolve(process.cwd(), file), 'utf8')
   );
-  const manifest = JSON.parse(
+  const enMessages = JSON.parse(
     readFileSync(
-      resolve(
-        process.cwd(),
-        '../.scratch/uiux-upgrade-b/i18n-dashboard-keys.json'
-      ),
+      resolve(process.cwd(), 'project.inlang/messages/en.json'),
       'utf8'
     )
-  ) as { messages: Record<string, { en: string; zh: string }> };
+  ) as Record<string, string>;
+  const zhMessages = JSON.parse(
+    readFileSync(
+      resolve(process.cwd(), 'project.inlang/messages/zh.json'),
+      'utf8'
+    )
+  ) as Record<string, string>;
   const referencedKeys = new Set(
     sources.flatMap((source) =>
       Array.from(
@@ -227,7 +230,7 @@ test('dashboard message handoff records every new localized key in both language
 
   assert.ok(referencedKeys.size > 0);
   for (const key of referencedKeys) {
-    assert.ok(manifest.messages[key]?.zh.trim(), `${key}: zh`);
-    assert.ok(manifest.messages[key]?.en.trim(), `${key}: en`);
+    assert.ok(zhMessages[key]?.trim(), `${key}: zh`);
+    assert.ok(enMessages[key]?.trim(), `${key}: en`);
   }
 });

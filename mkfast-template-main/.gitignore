@@ -18,7 +18,9 @@ __unconfig*
 todos.json
 
 # locale
-project.inlang/cache
+project.inlang/*
+!project.inlang/settings.json
+!project.inlang/messages/
 src/locale/paraglide
 
 # claude code

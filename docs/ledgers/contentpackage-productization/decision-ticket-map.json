@@ -1,0 +1,852 @@
+{
+  "version": 1,
+  "gateTicketId": "01",
+  "authorityOrder": [
+    "docs/adr/0011-contentpackage-sole-content-aggregate.md",
+    "docs/adr/0009-single-release-gate.md",
+    "docs/adr/0006-runtime-topology.md",
+    "docs/adr/0007-ai-sdk-first.md",
+    "docs/adr/0008-scope-lock.md",
+    "docs/reviews/stage-diagnosis-2026-07-14/07-decision-log.md"
+  ],
+  "requiredGapIds": [
+    "G-SPLIT-FACTS",
+    "G-SINGLE-ASSET",
+    "G-VIDEO-ORPHAN",
+    "G-ASSET-NOT-INPUT"
+  ],
+  "invariants": {
+    "streaming": {
+      "mode": "token",
+      "ticketIds": [
+        "06"
+      ]
+    },
+    "d4": {
+      "selection": "single",
+      "candidateCount": 3,
+      "maxFreeRetries": 2,
+      "ticketIds": [
+        "06"
+      ]
+    },
+    "l1LinkCapture": {
+      "status": "de_scoped"
+    },
+    "mediaModelSelection": {
+      "explicit": true,
+      "crossBrandAuto": false
+    }
+  },
+  "decisions": [
+    {
+      "id": "DEC-CONTENTPACKAGE-SOLE",
+      "source": {
+        "path": "docs/adr/0011-contentpackage-sole-content-aggregate.md",
+        "contains": "ContentPackage 成为唯一用户可见成品与输出事实源"
+      },
+      "status": "active",
+      "userVisibleContract": "采用后成品立刻出现在内容库；内容库、编辑、版本、导出、复用只读写同一个 ContentPackage。",
+      "evidencePair": "current-adopt-shows-0 vs after-adopt-visible",
+      "gapIds": [
+        "G-SPLIT-FACTS",
+        "G-SINGLE-ASSET",
+        "G-VIDEO-ORPHAN"
+      ],
+      "ticketIds": [
+        "01",
+        "06",
+        "07",
+        "08"
+      ]
+    },
+    {
+      "id": "DEC-LEGACY-READ-ONLY",
+      "source": {
+        "path": "docs/adr/0011-contentpackage-sole-content-aggregate.md",
+        "contains": "旧三套只迁移只读、不再双写"
+      },
+      "status": "active",
+      "userVisibleContract": "旧三套降为只读历史；新采用不再双写旧对象。",
+      "evidencePair": "current-dual-write vs after-single-write",
+      "gapIds": [
+        "G-SPLIT-FACTS"
+      ],
+      "ticketIds": [
+        "17"
+      ]
+    },
+    {
+      "id": "DEC-NAV-COLLAPSE",
+      "source": {
+        "path": "docs/adr/0011-contentpackage-sole-content-aggregate.md",
+        "contains": "退出商家一级导航"
+      },
+      "status": "active",
+      "userVisibleContract": "商户一级导航只留创作/内容/素材/门店；Work/Job/Asset 降二级。",
+      "evidencePair": "current-object-nav vs after-collapsed-nav",
+      "gapIds": [],
+      "ticketIds": [
+        "07"
+      ]
+    },
+    {
+      "id": "DEC-REAL-ASSETS-MEDIA",
+      "source": {
+        "path": "docs/reviews/stage-diagnosis-2026-07-14/07-decision-log.md",
+        "contains": "真实素材进媒体"
+      },
+      "status": "active",
+      "userVisibleContract": "商户真实门店照片作为参考图进入图片生成，不再被拒或丢弃。",
+      "evidencePair": "current-edit-rejects vs after-reference-accepted",
+      "gapIds": [
+        "G-ASSET-NOT-INPUT"
+      ],
+      "ticketIds": [
+        "09",
+        "10"
+      ]
+    },
+    {
+      "id": "DEC-THREE-VARIANTS",
+      "source": {
+        "path": "docs/adr/0011-contentpackage-sole-content-aggregate.md",
+        "contains": "三平台 variants"
+      },
+      "status": "active",
+      "userVisibleContract": "一个成品自动出小红书/抖音/视频号三平台版本，可编辑、回滚、导出、复用。",
+      "evidencePair": "current-single-content vs after-three-variants",
+      "gapIds": [],
+      "ticketIds": [
+        "11",
+        "12",
+        "13",
+        "14"
+      ]
+    },
+    {
+      "id": "DEC-DESKTOP-MOBILE",
+      "source": {
+        "path": "docs/reviews/stage-diagnosis-2026-07-14/07-decision-log.md",
+        "contains": "桌面/手机同一 ContentPackage"
+      },
+      "status": "active",
+      "userVisibleContract": "桌面与手机围绕同一 ContentPackage + 同一状态机，设备只改布局。",
+      "evidencePair": "current-two-products vs after-same-object",
+      "gapIds": [
+        "G-TWO-PRODUCTS"
+      ],
+      "ticketIds": [
+        "16"
+      ]
+    },
+    {
+      "id": "DEC-COMPLIANCE-OUTPUT",
+      "source": {
+        "path": "docs/reviews/stage-diagnosis-2026-07-14/07-decision-log.md",
+        "contains": "合规开关"
+      },
+      "status": "active",
+      "userVisibleContract": "水印/AIGC 标识真正烧录进导出文件；撤权阻止成品继续导出。",
+      "evidencePair": "current-switch-only vs after-burned-in",
+      "gapIds": [],
+      "ticketIds": [
+        "15"
+      ]
+    },
+    {
+      "id": "DEC-NATIVE-TEMPLATES",
+      "source": {
+        "path": "docs/reviews/stage-diagnosis-2026-07-14/07-decision-log.md",
+        "contains": "三原生 LLM 模板"
+      },
+      "status": "active",
+      "userVisibleContract": "OpenAI/Anthropic/Gemini 原生格式固定模板 + 自定义第四模式。",
+      "evidencePair": "current-openai-only vs after-three-native-plus-custom",
+      "gapIds": [],
+      "ticketIds": [
+        "02"
+      ]
+    },
+    {
+      "id": "DEC-BYOK-REAL",
+      "source": {
+        "path": "docs/reviews/stage-diagnosis-2026-07-14/07-decision-log.md",
+        "contains": "BYOK 现在接真实"
+      },
+      "status": "active",
+      "userVisibleContract": "商户自带 key 现在就能真实调用，不等平台审核。",
+      "evidencePair": "current-recorded-stub vs after-real-call",
+      "gapIds": [
+        "G-HARDCODED-ADAPTER"
+      ],
+      "ticketIds": [
+        "03"
+      ]
+    },
+    {
+      "id": "DEC-DOUYIN-HONEST",
+      "source": {
+        "path": "docs/reviews/stage-diagnosis-2026-07-14/07-decision-log.md",
+        "contains": "抖音只诚实标注"
+      },
+      "status": "active",
+      "userVisibleContract": "抖音标注未接入（硬编码 recorded），不以只差 Key 表述冒充可用。",
+      "evidencePair": "current-just-need-key vs after-honest-not-integrated",
+      "gapIds": [
+        "G-HARDCODED-ADAPTER"
+      ],
+      "ticketIds": [
+        "04"
+      ]
+    },
+    {
+      "id": "DEC-ADMIN-CONTROL-PLANE",
+      "source": {
+        "path": "docs/reviews/stage-diagnosis-2026-07-14/07-decision-log.md",
+        "contains": "管理员可视化配置中心"
+      },
+      "status": "active",
+      "userVisibleContract": "执行模式/凭据/装配/激活/套餐/合规开关在后台可视化点选，配置入持久层、重启不丢。",
+      "evidencePair": "current-edit-code-env vs after-visual-config",
+      "gapIds": [
+        "G-NO-CONFIG-PERSIST",
+        "G-HASH-ACTIVATION"
+      ],
+      "ticketIds": [
+        "05",
+        "18",
+        "19",
+        "20",
+        "21"
+      ]
+    },
+    {
+      "id": "DEC-NORTH-STAR",
+      "source": {
+        "path": "docs/reviews/stage-diagnosis-2026-07-14/07-decision-log.md",
+        "contains": "北极星换"
+      },
+      "status": "active",
+      "userVisibleContract": "北极星=真实跑通链路数（当前=1，证据 docs/evidence/contentpackage/real-run-0002/journey/）；至少一条真实 provider 端到端跑通留证才算 D01 测量完成；≠ P1 功能完成 / 可面世。",
+      "evidencePair": "count-1-real-run-0002 vs next-run-or-release-gate",
+      "gapIds": [],
+      "ticketIds": [
+        "22"
+      ]
+    },
+    {
+      "id": "DEC-D01-REAL-DONE",
+      "source": {
+        "path": "CONTEXT.md",
+        "contains": "at least one must-have merchant journey"
+      },
+      "status": "superseded",
+      "userVisibleContract": "recorded/fixture 全绿不算完成；须真实端到端留证。",
+      "evidencePair": "n/a-guardrail",
+      "gapIds": [],
+      "ticketIds": []
+    }
+  ],
+  "gaps": [
+    {
+      "id": "G-SPLIT-FACTS",
+      "ticketIds": [
+        "01",
+        "06",
+        "07",
+        "17"
+      ]
+    },
+    {
+      "id": "G-SINGLE-ASSET",
+      "ticketIds": [
+        "06"
+      ]
+    },
+    {
+      "id": "G-VIDEO-ORPHAN",
+      "ticketIds": [
+        "08"
+      ]
+    },
+    {
+      "id": "G-ASSET-NOT-INPUT",
+      "ticketIds": [
+        "09",
+        "10"
+      ]
+    },
+    {
+      "id": "G-TWO-PRODUCTS",
+      "ticketIds": [
+        "16"
+      ]
+    },
+    {
+      "id": "G-HARDCODED-ADAPTER",
+      "ticketIds": [
+        "03",
+        "04",
+        "20"
+      ]
+    },
+    {
+      "id": "G-NO-CONFIG-PERSIST",
+      "ticketIds": [
+        "05",
+        "18",
+        "19",
+        "21"
+      ]
+    },
+    {
+      "id": "G-HASH-ACTIVATION",
+      "ticketIds": [
+        "20"
+      ]
+    }
+  ],
+  "contracts": [
+    {
+      "id": "X-ADOPT-VISIBLE",
+      "level": "required",
+      "gapIds": [
+        "G-SPLIT-FACTS",
+        "G-SINGLE-ASSET"
+      ],
+      "ticketIds": [
+        "06",
+        "07"
+      ]
+    },
+    {
+      "id": "X-REAL-ASSET-IN-MEDIA",
+      "level": "required",
+      "gapIds": [
+        "G-ASSET-NOT-INPUT"
+      ],
+      "ticketIds": [
+        "09",
+        "10"
+      ]
+    },
+    {
+      "id": "X-THREE-VARIANTS-EDITABLE",
+      "level": "required",
+      "gapIds": [],
+      "ticketIds": [
+        "11",
+        "12",
+        "13",
+        "14"
+      ]
+    },
+    {
+      "id": "X-SAME-OBJECT-CROSS-DEVICE",
+      "level": "required",
+      "gapIds": [
+        "G-TWO-PRODUCTS"
+      ],
+      "ticketIds": [
+        "16"
+      ]
+    },
+    {
+      "id": "X-VISUAL-CONFIG",
+      "level": "required",
+      "gapIds": [
+        "G-NO-CONFIG-PERSIST",
+        "G-HASH-ACTIVATION"
+      ],
+      "ticketIds": [
+        "18",
+        "19",
+        "20",
+        "21"
+      ]
+    },
+    {
+      "id": "X-REAL-RUN-EVIDENCE",
+      "level": "required",
+      "gapIds": [],
+      "ticketIds": [
+        "22"
+      ]
+    }
+  ],
+  "tickets": [
+    {
+      "id": "10",
+      "file": ".scratch/contentpackage-productization/tickets/10-tuzi-media-adapter.md",
+      "decisionIds": [
+        "DEC-REAL-ASSETS-MEDIA"
+      ],
+      "guardrailDecisionIds": [],
+      "gapIds": [
+        "G-ASSET-NOT-INPUT"
+      ],
+      "contractIds": [
+        "X-REAL-ASSET-IN-MEDIA"
+      ],
+      "blockedBy": [
+        "09"
+      ],
+      "closureEvidence": [],
+      "resolution": null,
+      "status": "open"
+    },
+    {
+      "id": "11",
+      "file": ".scratch/contentpackage-productization/tickets/11-three-platform-variants.md",
+      "decisionIds": [
+        "DEC-THREE-VARIANTS"
+      ],
+      "guardrailDecisionIds": [],
+      "gapIds": [],
+      "contractIds": [
+        "X-THREE-VARIANTS-EDITABLE"
+      ],
+      "blockedBy": [
+        "06"
+      ],
+      "closureEvidence": [],
+      "resolution": null,
+      "status": "open"
+    },
+    {
+      "id": "12",
+      "file": ".scratch/contentpackage-productization/tickets/12-variant-edit-version-rollback.md",
+      "decisionIds": [
+        "DEC-THREE-VARIANTS"
+      ],
+      "guardrailDecisionIds": [],
+      "gapIds": [],
+      "contractIds": [
+        "X-THREE-VARIANTS-EDITABLE"
+      ],
+      "blockedBy": [
+        "11"
+      ],
+      "closureEvidence": [],
+      "resolution": null,
+      "status": "open"
+    },
+    {
+      "id": "13",
+      "file": ".scratch/contentpackage-productization/tickets/13-export-with-receipt.md",
+      "decisionIds": [
+        "DEC-THREE-VARIANTS"
+      ],
+      "guardrailDecisionIds": [],
+      "gapIds": [],
+      "contractIds": [
+        "X-THREE-VARIANTS-EDITABLE"
+      ],
+      "blockedBy": [
+        "11"
+      ],
+      "closureEvidence": [],
+      "resolution": null,
+      "status": "open"
+    },
+    {
+      "id": "14",
+      "file": ".scratch/contentpackage-productization/tickets/14-reuse-with-lineage.md",
+      "decisionIds": [
+        "DEC-THREE-VARIANTS"
+      ],
+      "guardrailDecisionIds": [],
+      "gapIds": [],
+      "contractIds": [
+        "X-THREE-VARIANTS-EDITABLE"
+      ],
+      "blockedBy": [
+        "11"
+      ],
+      "closureEvidence": [],
+      "resolution": null,
+      "status": "open"
+    },
+    {
+      "id": "15",
+      "file": ".scratch/contentpackage-productization/tickets/15-watermark-aigc-burn-in-and-revocation.md",
+      "decisionIds": [
+        "DEC-COMPLIANCE-OUTPUT"
+      ],
+      "guardrailDecisionIds": [],
+      "gapIds": [],
+      "contractIds": [],
+      "blockedBy": [
+        "13"
+      ],
+      "closureEvidence": [],
+      "resolution": null,
+      "status": "open"
+    },
+    {
+      "id": "16",
+      "file": ".scratch/contentpackage-productization/tickets/16-desktop-mobile-same-contentpackage.md",
+      "decisionIds": [
+        "DEC-DESKTOP-MOBILE"
+      ],
+      "guardrailDecisionIds": [],
+      "gapIds": [
+        "G-TWO-PRODUCTS"
+      ],
+      "contractIds": [
+        "X-SAME-OBJECT-CROSS-DEVICE"
+      ],
+      "blockedBy": [
+        "06"
+      ],
+      "closureEvidence": [],
+      "resolution": null,
+      "status": "open"
+    },
+    {
+      "id": "17",
+      "file": ".scratch/contentpackage-productization/tickets/17-legacy-three-stores-read-only-migration.md",
+      "decisionIds": [
+        "DEC-LEGACY-READ-ONLY"
+      ],
+      "guardrailDecisionIds": [],
+      "gapIds": [
+        "G-SPLIT-FACTS"
+      ],
+      "contractIds": [],
+      "blockedBy": [
+        "07",
+        "08"
+      ],
+      "closureEvidence": [],
+      "resolution": null,
+      "status": "open"
+    },
+    {
+      "id": "18",
+      "file": ".scratch/contentpackage-productization/tickets/18-execution-mode-visual-toggle.md",
+      "decisionIds": [
+        "DEC-ADMIN-CONTROL-PLANE"
+      ],
+      "guardrailDecisionIds": [],
+      "gapIds": [
+        "G-NO-CONFIG-PERSIST"
+      ],
+      "contractIds": [
+        "X-VISUAL-CONFIG"
+      ],
+      "blockedBy": [
+        "05"
+      ],
+      "closureEvidence": [],
+      "resolution": null,
+      "status": "open"
+    },
+    {
+      "id": "19",
+      "file": ".scratch/contentpackage-productization/tickets/19-provider-credential-vault-ui.md",
+      "decisionIds": [
+        "DEC-ADMIN-CONTROL-PLANE"
+      ],
+      "guardrailDecisionIds": [],
+      "gapIds": [
+        "G-NO-CONFIG-PERSIST"
+      ],
+      "contractIds": [
+        "X-VISUAL-CONFIG"
+      ],
+      "blockedBy": [
+        "05"
+      ],
+      "closureEvidence": [],
+      "resolution": null,
+      "status": "open"
+    },
+    {
+      "id": "20",
+      "file": ".scratch/contentpackage-productization/tickets/20-adapter-assembly-and-activation-probe.md",
+      "decisionIds": [
+        "DEC-ADMIN-CONTROL-PLANE"
+      ],
+      "guardrailDecisionIds": [],
+      "gapIds": [
+        "G-HARDCODED-ADAPTER",
+        "G-HASH-ACTIVATION"
+      ],
+      "contractIds": [
+        "X-VISUAL-CONFIG"
+      ],
+      "blockedBy": [
+        "05",
+        "19"
+      ],
+      "closureEvidence": [
+        "docs/evidence/contentpackage/real-run-0003/activation/activation-evidence.json",
+        "docs/evidence/contentpackage/real-run-0003/activation/catalog-publication/evidence.json",
+        "docs/evidence/contentpackage/real-run-0003/activation/catalog-publication/admin-publication.webm",
+        "docs/evidence/contentpackage/real-run-0003/activation/catalog-publication/published-catalog.png"
+      ],
+      "resolution": null,
+      "status": "open"
+    },
+    {
+      "id": "21",
+      "file": ".scratch/contentpackage-productization/tickets/21-plan-pricing-quota-and-compliance-switches.md",
+      "decisionIds": [
+        "DEC-ADMIN-CONTROL-PLANE"
+      ],
+      "guardrailDecisionIds": [],
+      "gapIds": [
+        "G-NO-CONFIG-PERSIST"
+      ],
+      "contractIds": [
+        "X-VISUAL-CONFIG"
+      ],
+      "blockedBy": [
+        "05"
+      ],
+      "closureEvidence": [],
+      "resolution": null,
+      "status": "open"
+    },
+    {
+      "id": "22",
+      "file": ".scratch/contentpackage-productization/tickets/22-real-end-to-end-run-with-evidence.md",
+      "decisionIds": [
+        "DEC-NORTH-STAR"
+      ],
+      "guardrailDecisionIds": [
+        "DEC-D01-REAL-DONE"
+      ],
+      "gapIds": [],
+      "contractIds": [
+        "X-REAL-RUN-EVIDENCE"
+      ],
+      "blockedBy": [
+        "06",
+        "09",
+        "11"
+      ],
+      "closureEvidence": [
+        "docs/evidence/contentpackage/README.md",
+        "docs/evidence/contentpackage/real-run-0002/README.md",
+        "docs/evidence/contentpackage/real-run-0002/journey/run-manifest.json",
+        "docs/evidence/contentpackage/real-run-0002/journey/package-evidence.json",
+        "docs/evidence/contentpackage/real-run-0002/journey/ledger-evidence.json",
+        "docs/evidence/contentpackage/real-run-0002/journey/continuous-journey.webm",
+        "docs/evidence/contentpackage/real-run-0003/README.md",
+        "docs/evidence/contentpackage/real-run-0003/journey/run-manifest.json",
+        "docs/evidence/contentpackage/real-run-0003/journey/package-evidence.json",
+        "docs/evidence/contentpackage/real-run-0003/journey/ledger-evidence.json",
+        "docs/evidence/contentpackage/real-run-0003/journey/continuous-journey.webm",
+        "docs/evidence/contentpackage/real-run-0003/journey/before-after-comparison.md",
+        "docs/evidence/contentpackage/real-run-0003/journey/keyframes/kf9-result-card-model-usage.png",
+        "docs/evidence/contentpackage/real-run-0003/activation/catalog-publication/evidence.json"
+      ],
+      "resolution": null,
+      "status": "open"
+    },
+    {
+      "id": "01",
+      "file": ".scratch/contentpackage-productization/tickets/01-freeze-contentpackage-aggregate-contract.md",
+      "decisionIds": [
+        "DEC-CONTENTPACKAGE-SOLE"
+      ],
+      "guardrailDecisionIds": [
+        "DEC-D01-REAL-DONE"
+      ],
+      "gapIds": [
+        "G-SPLIT-FACTS"
+      ],
+      "contractIds": [],
+      "blockedBy": [],
+      "closureEvidence": [
+        "docs/evidence/contentpackage/ticket-01/README.md",
+        "docs/evidence/contentpackage/ticket-01/seam-evidence.json",
+        "docs/evidence/contentpackage/ticket-01/continuous-seam-journey.webm",
+        "docs/evidence/contentpackage/ticket-01/02-content-library-after.png",
+        "docs/evidence/contentpackage/real-run-0003/journey/before-after-comparison.md",
+        "docs/evidence/contentpackage/real-run-0003/journey/run-manifest.json"
+      ],
+      "resolution": "completed",
+      "status": "closed"
+    },
+    {
+      "id": "02",
+      "file": ".scratch/contentpackage-productization/tickets/02-custom-llm-fourth-mode.md",
+      "decisionIds": [
+        "DEC-NATIVE-TEMPLATES"
+      ],
+      "guardrailDecisionIds": [],
+      "gapIds": [],
+      "contractIds": [],
+      "blockedBy": [],
+      "closureEvidence": [
+        "docs/evidence/contentpackage/ticket-02/README.md",
+        "docs/evidence/contentpackage/ticket-02/evidence.json",
+        "docs/evidence/contentpackage/ticket-02/continuous-custom-provider-journey.webm",
+        "docs/evidence/contentpackage/ticket-02/01-custom-live-verified-admin.png",
+        "docs/evidence/contentpackage/ticket-02/02-custom-catalog-published.png",
+        "docs/evidence/contentpackage/ticket-02/03-custom-fixed-before-submit.png",
+        "docs/evidence/contentpackage/ticket-02/04-custom-real-three-candidates.png",
+        "docs/evidence/contentpackage/ticket-02/manifest.json"
+      ],
+      "resolution": "completed",
+      "status": "closed"
+    },
+    {
+      "id": "03",
+      "file": ".scratch/contentpackage-productization/tickets/03-byok-real-execution.md",
+      "decisionIds": [
+        "DEC-BYOK-REAL"
+      ],
+      "guardrailDecisionIds": [],
+      "gapIds": [
+        "G-HARDCODED-ADAPTER"
+      ],
+      "contractIds": [],
+      "blockedBy": [],
+      "closureEvidence": [
+        "docs/evidence/contentpackage/ticket-03/README.md",
+        "docs/evidence/contentpackage/ticket-03/evidence.json",
+        "docs/evidence/contentpackage/ticket-03/continuous-byok-live-journey.webm",
+        "docs/evidence/contentpackage/ticket-03/01-admin-byok-live-restart-pending.png",
+        "docs/evidence/contentpackage/ticket-03/02-admin-byok-live-effective.png",
+        "docs/evidence/contentpackage/ticket-03/03-merchant-write-only-live-connection.png",
+        "docs/evidence/contentpackage/ticket-03/05-merchant-real-chinese-output.png",
+        "docs/evidence/contentpackage/ticket-03/06-invalid-key-refunded-needs-attention.png",
+        "docs/evidence/contentpackage/ticket-03/manifest.json"
+      ],
+      "resolution": "completed",
+      "status": "closed"
+    },
+    {
+      "id": "04",
+      "file": ".scratch/contentpackage-productization/tickets/04-douyin-honest-labeling.md",
+      "decisionIds": [
+        "DEC-DOUYIN-HONEST"
+      ],
+      "guardrailDecisionIds": [],
+      "gapIds": [
+        "G-HARDCODED-ADAPTER"
+      ],
+      "contractIds": [],
+      "blockedBy": [],
+      "closureEvidence": [
+        "docs/evidence/contentpackage/ticket-04/README.md",
+        "docs/evidence/contentpackage/ticket-04/status-evidence.json",
+        "docs/evidence/contentpackage/ticket-04/continuous-douyin-honest-labeling.webm",
+        "docs/evidence/contentpackage/ticket-04/01-admin-recorded-not-integrated.png",
+        "docs/evidence/contentpackage/ticket-04/02-desktop-settings-not-integrated.png",
+        "docs/evidence/contentpackage/ticket-04/03-mobile-settings-not-integrated.png",
+        "docs/evidence/uiux-cutover/s4-mobile-publishing-settings-governance.md"
+      ],
+      "resolution": "completed",
+      "status": "closed"
+    },
+    {
+      "id": "05",
+      "file": ".scratch/contentpackage-productization/tickets/05-config-persistence-layer.md",
+      "decisionIds": [
+        "DEC-ADMIN-CONTROL-PLANE"
+      ],
+      "guardrailDecisionIds": [],
+      "gapIds": [
+        "G-NO-CONFIG-PERSIST"
+      ],
+      "contractIds": [],
+      "blockedBy": [],
+      "closureEvidence": [
+        "docs/evidence/contentpackage/ticket-05/README.md",
+        "docs/evidence/contentpackage/ticket-05/manifest.json",
+        "docs/evidence/contentpackage/ticket-05/continuous-config-restart-rollback.webm",
+        "docs/evidence/contentpackage/ticket-05/03-recorded-both-processes.png",
+        "docs/evidence/contentpackage/ticket-05/05-rollback-direct-both-processes.png",
+        "docs/evidence/contentpackage/ticket-05/config-version-chain.sql.txt"
+      ],
+      "resolution": "completed",
+      "status": "closed"
+    },
+    {
+      "id": "06",
+      "file": ".scratch/contentpackage-productization/tickets/06-adoption-writes-contentpackage-multiimage.md",
+      "decisionIds": [
+        "DEC-CONTENTPACKAGE-SOLE"
+      ],
+      "guardrailDecisionIds": [],
+      "gapIds": [
+        "G-SPLIT-FACTS",
+        "G-SINGLE-ASSET"
+      ],
+      "contractIds": [
+        "X-ADOPT-VISIBLE"
+      ],
+      "blockedBy": [
+        "01"
+      ],
+      "closureEvidence": [],
+      "resolution": null,
+      "status": "open"
+    },
+    {
+      "id": "07",
+      "file": ".scratch/contentpackage-productization/tickets/07-content-library-reads-contentpackage.md",
+      "decisionIds": [
+        "DEC-CONTENTPACKAGE-SOLE",
+        "DEC-NAV-COLLAPSE"
+      ],
+      "guardrailDecisionIds": [],
+      "gapIds": [
+        "G-SPLIT-FACTS"
+      ],
+      "contractIds": [
+        "X-ADOPT-VISIBLE"
+      ],
+      "blockedBy": [
+        "06"
+      ],
+      "closureEvidence": [],
+      "resolution": null,
+      "status": "open"
+    },
+    {
+      "id": "08",
+      "file": ".scratch/contentpackage-productization/tickets/08-video-into-same-contentpackage.md",
+      "decisionIds": [
+        "DEC-CONTENTPACKAGE-SOLE"
+      ],
+      "guardrailDecisionIds": [],
+      "gapIds": [
+        "G-VIDEO-ORPHAN"
+      ],
+      "contractIds": [],
+      "blockedBy": [
+        "06"
+      ],
+      "closureEvidence": [],
+      "resolution": null,
+      "status": "open"
+    },
+    {
+      "id": "09",
+      "file": ".scratch/contentpackage-productization/tickets/09-real-assets-into-media-generation.md",
+      "decisionIds": [
+        "DEC-REAL-ASSETS-MEDIA"
+      ],
+      "guardrailDecisionIds": [],
+      "gapIds": [
+        "G-ASSET-NOT-INPUT"
+      ],
+      "contractIds": [
+        "X-REAL-ASSET-IN-MEDIA"
+      ],
+      "blockedBy": [
+        "01"
+      ],
+      "closureEvidence": [],
+      "resolution": null,
+      "status": "open"
+    }
+  ]
+}

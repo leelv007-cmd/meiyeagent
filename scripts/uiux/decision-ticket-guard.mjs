@@ -12,6 +12,17 @@ const ALLOWED_TICKET_STATUSES = new Set(["open", "closed"]);
 const ALLOWED_TICKET_RESOLUTIONS = new Set(["completed", "superseded"]);
 const TICKET_METADATA_PATTERN =
   /<!-- decision-ticket-map:start -->\s*```json\s*([\s\S]*?)\s*```\s*<!-- decision-ticket-map:end -->/g;
+const TRACKED_LEDGER_PATH_ALIASES = [
+  [
+    ".scratch/creatok-uiux-wayfinding/assets/",
+    "docs/ledgers/uiux-upgrade-b/evidence/",
+  ],
+  [".scratch/uiux-upgrade-b/", "docs/ledgers/uiux-upgrade-b/"],
+  [
+    ".scratch/contentpackage-productization/",
+    "docs/ledgers/contentpackage-productization/",
+  ],
+];
 
 function array(value) {
   return Array.isArray(value) ? value : [];
@@ -35,8 +46,16 @@ function duplicateIds(items) {
   return [...duplicates];
 }
 
-async function readTicketMetadata(rootDir, ticket) {
-  const ticketPath = path.resolve(rootDir, ticket.file);
+function resolveRepoPath(rootDir, relativePath, pathAliases) {
+  const alias = pathAliases.find(([source]) => relativePath.startsWith(source));
+  const resolvedPath = alias
+    ? `${alias[1]}${relativePath.slice(alias[0].length)}`
+    : relativePath;
+  return path.resolve(rootDir, resolvedPath);
+}
+
+async function readTicketMetadata(rootDir, ticket, pathAliases) {
+  const ticketPath = resolveRepoPath(rootDir, ticket.file, pathAliases);
   const contents = await readFile(ticketPath, "utf8");
   const matches = [...contents.matchAll(TICKET_METADATA_PATTERN)];
   if (matches.length !== 1) {
@@ -81,7 +100,11 @@ function findDependencyCycle(tickets) {
   return null;
 }
 
-export async function validateDecisionTicketMap({ manifest, rootDir }) {
+export async function validateDecisionTicketMap({
+  manifest,
+  pathAliases = [],
+  rootDir,
+}) {
   const errors = [];
   const decisions = array(manifest?.decisions);
   const gaps = array(manifest?.gaps);
@@ -145,7 +168,10 @@ export async function validateDecisionTicketMap({ manifest, rootDir }) {
       errors.push(`decision ${decision.id} lacks a source path`);
     } else {
       try {
-        const source = await readFile(path.resolve(rootDir, sourcePath), "utf8");
+        const source = await readFile(
+          resolveRepoPath(rootDir, sourcePath, pathAliases),
+          "utf8",
+        );
         if (!decision.source.contains || !source.includes(decision.source.contains)) {
           errors.push(
             `decision ${decision.id} source anchor is missing from ${sourcePath}`,
@@ -254,15 +280,15 @@ export async function validateDecisionTicketMap({ manifest, rootDir }) {
       }
       for (const evidencePath of array(ticket.closureEvidence)) {
         try {
-          await access(path.resolve(rootDir, evidencePath));
+          await access(resolveRepoPath(rootDir, evidencePath, pathAliases));
         } catch {
           errors.push(`closed ticket ${ticket.id} has missing evidence ${evidencePath}`);
         }
       }
     }
     try {
-      await access(path.resolve(rootDir, ticket.file));
-      const metadata = await readTicketMetadata(rootDir, ticket);
+      await access(resolveRepoPath(rootDir, ticket.file, pathAliases));
+      const metadata = await readTicketMetadata(rootDir, ticket, pathAliases);
       const expectedMetadata = {
         ticketId: ticket.id,
         decisionIds: array(ticket.decisionIds),
@@ -328,14 +354,19 @@ async function main() {
   const rootDir =
     rootFlag === -1 ? process.cwd() : path.resolve(process.cwd(), argv[rootFlag + 1]);
   const manifestPaths = [
-    ".scratch/uiux-upgrade-b/decision-ticket-map.json",
-    ".scratch/contentpackage-productization/decision-ticket-map.json",
+    "docs/ledgers/uiux-upgrade-b/decision-ticket-map.json",
+    "docs/ledgers/contentpackage-productization/decision-ticket-map.json",
   ];
   let failed = false;
   for (const relativePath of manifestPaths) {
     const manifestPath = path.resolve(rootDir, relativePath);
-    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-    const errors = await validateDecisionTicketMap({ manifest, rootDir });
+    const source = await readFile(manifestPath, "utf8");
+    const manifest = JSON.parse(source);
+    const errors = await validateDecisionTicketMap({
+      manifest,
+      pathAliases: TRACKED_LEDGER_PATH_ALIASES,
+      rootDir,
+    });
     if (errors.length > 0) {
       failed = true;
       for (const error of errors) console.error(`- [${relativePath}] ${error}`);

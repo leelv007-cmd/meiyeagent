@@ -1,14 +1,7 @@
 import { readFile } from 'node:fs/promises';
+import ts from 'typescript';
 
-const JSON_MESSAGE_KEYS = [
-  'auth_error_codes',
-  'pricing_plans_free_features',
-  'pricing_plans_free_limits',
-  'pricing_plans_lifetime_features',
-  'pricing_plans_lifetime_limits',
-  'pricing_plans_pro_features',
-  'pricing_plans_pro_limits',
-] as const;
+const JSON_MESSAGE_KEYS = ['auth_error_codes'] as const;
 
 const REQUIRED_PRODUCT_KEYS = [
   'admin_navigation_audit',
@@ -101,6 +94,37 @@ async function readMessages(locale: 'en' | 'zh') {
   return JSON.parse(raw) as Record<string, string>;
 }
 
+export function sourceHasCjkOutsideComments(source: string, fileName: string) {
+  const sourceFile = ts.createSourceFile(
+    fileName,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    fileName.endsWith('x') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+  );
+  let found = false;
+
+  function visit(node: ts.Node) {
+    if (found) return;
+    let childCount = 0;
+    ts.forEachChild(node, (child) => {
+      childCount += 1;
+      visit(child);
+    });
+    if (
+      childCount === 0 &&
+      node !== sourceFile &&
+      !(ts.isJsxExpression(node) && !node.expression) &&
+      /[\u3400-\u9fff]/u.test(node.getText(sourceFile))
+    ) {
+      found = true;
+    }
+  }
+
+  visit(sourceFile);
+  return found;
+}
+
 const en = await readMessages('en');
 const zh = await readMessages('zh');
 const enKeys = Object.keys(en).sort();
@@ -136,7 +160,7 @@ const mixedTrackFiles = (
   )
 ).flatMap(({ file, source }) =>
   source.includes('@/locale/paraglide/messages') &&
-  !/[\u3400-\u9fff]/.test(source)
+  !sourceHasCjkOutsideComments(source, file)
     ? []
     : [file]
 );

@@ -171,9 +171,12 @@ test('peripheral Paraglide handoff records every new key in both languages', () 
     'src/components/ui/sidebar.tsx',
     'src/routes/(pages)/pricing.tsx',
   ];
-  const manifest = JSON.parse(
-    readSource('../.scratch/uiux-upgrade-b/i18n-peripheral-keys.json')
-  ) as { messages: Record<string, { en: string; zh: string }> };
+  const enMessages = JSON.parse(
+    readSource('project.inlang/messages/en.json')
+  ) as Record<string, string>;
+  const zhMessages = JSON.parse(
+    readSource('project.inlang/messages/zh.json')
+  ) as Record<string, string>;
   const referencedKeys = new Set(
     sourceFiles.flatMap((file) =>
       Array.from(
@@ -187,7 +190,7 @@ test('peripheral Paraglide handoff records every new key in both languages', () 
 
   assert.ok(referencedKeys.size > 0);
   for (const key of referencedKeys) {
-    assert.ok(manifest.messages[key]?.zh.trim(), `${key}: zh`);
-    assert.ok(manifest.messages[key]?.en.trim(), `${key}: en`);
+    assert.ok(zhMessages[key]?.trim(), `${key}: zh`);
+    assert.ok(enMessages[key]?.trim(), `${key}: en`);
   }
 });

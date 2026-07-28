@@ -1,11 +1,18 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+export const SKIP_EXIT_CODE = 78;
+
 export const CHECK_GATES = [
   {
     name: 'workspace checks',
     command: 'pnpm',
     args: ['-r', '--if-present', 'check'],
+  },
+  {
+    name: 'locale keys',
+    command: 'pnpm',
+    args: ['--filter', '@meiye/web', 'locale:check'],
   },
   {
     name: 'secret scan',
@@ -43,6 +50,7 @@ export function runGates(
   gates,
   {
     cwd = process.cwd(),
+    failOnSkip = process.env.CHECK_GATES_FAIL_ON_SKIP === 'true',
     run = spawnSync,
     writeLine = (line) => process.stdout.write(`${line}\n`),
   } = {}
@@ -56,23 +64,27 @@ export function runGates(
       stdio: 'inherit',
     });
     const status = result.status ?? 1;
-    results.push({ name: gate.name, status });
+    const outcome =
+      status === 0 ? 'PASS' : status === SKIP_EXIT_CODE ? 'SKIP' : 'FAIL';
+    results.push({ name: gate.name, outcome, status });
     writeLine(
-      status === 0
-        ? `[check] PASS ${gate.name}`
-        : `[check] FAIL ${gate.name} (exit ${status})`
+      outcome === 'FAIL'
+        ? `[check] FAIL ${gate.name} (exit ${status})`
+        : `[check] ${outcome} ${gate.name}`
     );
   }
 
   writeLine('[check] Summary');
   for (const result of results) {
-    writeLine(
-      `[check] ${result.status === 0 ? 'PASS' : 'FAIL'} ${result.name}`
-    );
+    writeLine(`[check] ${result.outcome} ${result.name}`);
   }
 
-  const failed = results.some(({ status }) => status !== 0);
-  writeLine(`[check] Overall: ${failed ? 'FAIL' : 'PASS'}`);
+  const skipped = results.filter(({ outcome }) => outcome === 'SKIP').length;
+  const failed =
+    results.some(({ outcome }) => outcome === 'FAIL') ||
+    (failOnSkip && skipped > 0);
+  const skipSuffix = skipped > 0 ? ` (${skipped} skipped)` : '';
+  writeLine(`[check] Overall: ${failed ? 'FAIL' : 'PASS'}${skipSuffix}`);
   return failed ? 1 : 0;
 }
 
