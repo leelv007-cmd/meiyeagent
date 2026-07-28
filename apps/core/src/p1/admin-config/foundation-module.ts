@@ -220,6 +220,8 @@ export const HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY =
   'harness.confirmation_card.timeout_seconds';
 export const HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY =
   'harness.confirmation_card.hold_timeout_seconds';
+export const HARNESS_RESERVATION_SWEEP_TTL_CONFIG_KEY =
+  'harness.reservation_sweep.ttl_seconds';
 export const HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY =
   'harness.outbox.langfuse';
 export const HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY =
@@ -356,6 +358,13 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
     scope: 'global',
     description: 'Decision hold wait before the reserved task expires.',
     valueSchema: z.number().int().min(3_600).max(172_800),
+  },
+  {
+    key: HARNESS_RESERVATION_SWEEP_TTL_CONFIG_KEY,
+    scope: 'global',
+    description:
+      'How long a held confirmation may keep product usage reserved. Releasing usage does not resolve the held question.',
+    valueSchema: z.number().int().positive().max(2_592_000),
   },
   {
     key: HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY,

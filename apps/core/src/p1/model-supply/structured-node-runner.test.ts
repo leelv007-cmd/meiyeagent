@@ -1313,6 +1313,85 @@ test('durable model-supply replay preserves the original repair measurement', as
   assert.equal(replayExecutor.calls, 0);
 });
 
+test('D-035 measures one real schema repair as first-pass miss, repair, and retry', async () => {
+  const responses = [
+    {
+      id: 'chatcmpl-invalid-structured',
+      output: { normalizedIntent: '介绍日常护理' },
+    },
+    {
+      id: 'chatcmpl-repaired-structured',
+      output: {
+        normalizedIntent: '介绍日常护理',
+        taskType: 'daily_service_exposure',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['industry_category'],
+        usedAssetCategories: ['industry_category'],
+        route: 'customized',
+        implicitConstraints: [],
+        blockingGap: null,
+      },
+    },
+  ];
+  let providerCalls = 0;
+  const executor = new AiSdkStructuredObjectExecutor({
+    apiKey: 'test-key',
+    baseUrl: 'https://provider.example/v1',
+    catalogModelId: 'llm-harness',
+    fetch: (async () => {
+      const response = responses[providerCalls++];
+      assert.ok(response);
+      return openAiStructuredResponse(response.id, response.output);
+    }) as typeof fetch,
+    inputCostPerMillion: 1,
+    model: 'provider-model',
+    outputCostPerMillion: 2,
+  });
+  const runner = createRunner(new CountingLedger(), executor);
+  const metrics = new InMemoryStructuredNodeMetrics();
+  let providerFences = 0;
+
+  const named = await nameHarnessIntent(
+    {
+      workflowId: 'workflow-real-repair',
+      workflowRevision: 1,
+      intent: {
+        context: {
+          workId: 'work-real-repair',
+          intent: '介绍日常护理',
+          sourceSummaries: [],
+        },
+        assetReferences: [],
+      },
+    },
+    {
+      run(request) {
+        return runner.run({
+          ...request,
+          beforeProviderAttempt: async () => {
+            providerFences += 1;
+          },
+        });
+      },
+    },
+    metrics,
+  );
+
+  assert.equal(named.declaration.normalizedIntent, '介绍日常护理');
+  assert.equal(providerCalls, 2);
+  assert.equal(providerFences, 2);
+  assert.deepEqual(metrics.snapshot(), {
+    initial: { calls: 1, schemaValid: 0, schemaInvalid: 1 },
+    repair: {
+      status: 'observed',
+      count: 1,
+      reasons: ['schema_validation'],
+    },
+    retry: { triggered: 1 },
+    nestedCompleteness: { complete: 6, total: 7 },
+  });
+});
+
 test('AI SDK structured executor exposes partial structured output before completion', async () => {
   const partials: unknown[] = [];
   const executor = new AiSdkStructuredObjectExecutor({
@@ -1973,6 +2052,33 @@ function structuredRouteSnapshot(): RouteSnapshot {
     ],
     createdAt: '2026-07-29T09:00:00.000Z',
   };
+}
+
+function openAiStructuredResponse(id: string, output: unknown) {
+  return new Response(
+    JSON.stringify({
+      choices: [
+        {
+          finish_reason: 'stop',
+          index: 0,
+          message: {
+            content: JSON.stringify(output),
+            role: 'assistant',
+          },
+        },
+      ],
+      created: 1,
+      id,
+      model: 'provider-model',
+      object: 'chat.completion',
+      usage: {
+        completion_tokens: 13,
+        prompt_tokens: 8,
+        total_tokens: 21,
+      },
+    }),
+    { headers: { 'content-type': 'application/json' } },
+  );
 }
 
 function openAiStructuredResponse(id: string, output: unknown) {

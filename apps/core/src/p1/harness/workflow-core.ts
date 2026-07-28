@@ -405,7 +405,7 @@ export interface HarnessWorkflowRuntime {
     | {
         cancelled: true;
         merchantMessage: string;
-        resolutionSource: 'core_hold_expired';
+        resolutionSource: 'core_hold_expired' | 'reservation_released';
       }
   >;
   /**
@@ -897,12 +897,15 @@ export class HarnessWorkflowCancellation extends Error {
     delivery: null;
     merchantMessage: string;
     outcome: 'cancelled';
-    resolutionSource: 'decision' | 'core_hold_expired';
+    resolutionSource: 'decision' | 'core_hold_expired' | 'reservation_released';
   };
 
   constructor(
     merchantMessage: string,
-    resolutionSource: 'decision' | 'core_hold_expired' = 'core_hold_expired',
+    resolutionSource:
+      | 'decision'
+      | 'core_hold_expired'
+      | 'reservation_released' = 'core_hold_expired',
   ) {
     super(merchantMessage);
     this.name = 'HarnessWorkflowCancellation';
@@ -3154,7 +3157,10 @@ async function resolveFactSatisfaction(input: {
     'context_injection',
   );
   if ('cancelled' in resolved) {
-    throw new HarnessWorkflowCancellation(resolved.merchantMessage);
+    throw new HarnessWorkflowCancellation(
+      resolved.merchantMessage,
+      resolved.resolutionSource,
+    );
   }
   const command = 'command' in resolved ? resolved.command : resolved;
   const request = await applyCurrentTaskDecision(
@@ -3255,7 +3261,10 @@ async function resolveIntentRoute(input: {
     'intent_naming',
   );
   if ('cancelled' in resolved) {
-    throw new HarnessWorkflowCancellation(resolved.merchantMessage);
+    throw new HarnessWorkflowCancellation(
+      resolved.merchantMessage,
+      resolved.resolutionSource,
+    );
   }
   const decision = 'command' in resolved ? resolved.command : resolved;
   const resolutionSource =
@@ -3329,7 +3338,10 @@ async function awaitResolvedDecision(
 ) {
   const resolved = await runtime.awaitDecision(question, stage);
   if ('cancelled' in resolved) {
-    throw new HarnessWorkflowCancellation(resolved.merchantMessage);
+    throw new HarnessWorkflowCancellation(
+      resolved.merchantMessage,
+      resolved.resolutionSource,
+    );
   }
   return 'command' in resolved ? resolved.command : resolved;
 }

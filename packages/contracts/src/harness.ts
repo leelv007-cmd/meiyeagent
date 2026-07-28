@@ -429,6 +429,7 @@ export const harnessDecisionResolutionSourceSchema = z.enum([
   'core_hold_expired',
   'system_default',
   'late_answer',
+  'reservation_released',
 ]);
 
 /**

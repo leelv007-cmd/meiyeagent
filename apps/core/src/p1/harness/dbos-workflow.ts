@@ -118,6 +118,10 @@ export interface HarnessRuntimeIdResolver {
     workspaceId: string,
     workflowId: string,
   ): Promise<string | null>;
+  reservationReleased?(
+    workspaceId: string,
+    workflowId: string,
+  ): Promise<boolean>;
 }
 
 type HarnessBoundedExecutionContinuationInput = Parameters<
@@ -1135,6 +1139,11 @@ export async function resumeHarnessDbosWorkflow(
   command: unknown,
   resolver?: HarnessRuntimeIdResolver,
 ) {
+  if (await resolver?.reservationReleased?.(workspaceId, workflowId)) {
+    throw new Error(
+      'Harness workflow cannot resume after its reservation was released.',
+    );
+  }
   const parsedCommand = structuredDecisionInputSchema.parse(command);
   const runtimeWorkflowId =
     (await resolver?.workflowRuntimeId(workspaceId, workflowId)) ??
@@ -1153,6 +1162,11 @@ export async function resumeHarnessDbosInteractionWorkflow(
   signal: unknown,
   resolver?: HarnessRuntimeIdResolver,
 ) {
+  if (await resolver?.reservationReleased?.(workspaceId, workflowId)) {
+    throw new Error(
+      'Harness workflow cannot resume after its reservation was released.',
+    );
+  }
   const parsedSignal = harnessInteractionResumeSignalSchema.parse(signal);
   if (parsedSignal.runId !== workflowId) {
     throw new Error(
@@ -1167,6 +1181,28 @@ export async function resumeHarnessDbosInteractionWorkflow(
     parsedSignal,
     decisionTopic(parsedSignal.requestId),
     `harness-interaction:${workspaceId}:${runtimeWorkflowId}:${parsedSignal.idempotencyKey}`,
+  );
+}
+
+export async function abandonReleasedHarnessReservation(
+  workspaceId: string,
+  workflowId: string,
+  questionId: string,
+  resolver?: HarnessRuntimeIdResolver,
+) {
+  const runtimeWorkflowId =
+    (await resolver?.workflowRuntimeId(workspaceId, workflowId)) ??
+    harnessRuntimeId(workspaceId, workflowId);
+  await DBOS.send(
+    runtimeWorkflowId,
+    {
+      cancelled: true as const,
+      merchantMessage:
+        '之前占用的额度已经放回。已按你刚才的回答重新排队，不会重复占用。',
+      resolutionSource: 'reservation_released' as const,
+    },
+    decisionTopic(questionId),
+    `reservation-released:${workspaceId}:${workflowId}:${questionId}`,
   );
 }
 

@@ -54,6 +54,10 @@ import type {
   HarnessWorkflowInput,
 } from './task-admission.js';
 import type { HarnessLangfuseOutboxItem } from './outbox-worker.js';
+import type {
+  HarnessReservationSweep,
+  HarnessReservationSweepStore,
+} from './reservation-sweeper.js';
 import {
   DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
   HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
@@ -191,6 +195,37 @@ export class PostgresHarnessStore
         payload jsonb not null,
         created_at timestamptz not null default now()
       );
+
+      create table if not exists harness_runtime.reservation_sweeps (
+        workspace_id text not null,
+        task_id text not null,
+        runtime_id text not null,
+        question_id text not null,
+        quote_id text not null,
+        quote_revision text not null,
+        usage_reservation_id text not null,
+        reserved_units jsonb not null,
+        held_since timestamptz not null,
+        reason text not null
+          check (reason in ('hold_reservation_ttl_elapsed')),
+        status text not null
+          check (status in ('processing', 'failed', 'completed')),
+        attempts integer not null default 1,
+        last_error text,
+        completed_at timestamptz,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now(),
+        primary key (workspace_id, task_id)
+      );
+
+      create index if not exists harness_reservation_sweeps_status_idx
+        on harness_runtime.reservation_sweeps
+          (status, updated_at, held_since);
+      alter table harness_runtime.reservation_sweeps
+        drop constraint if exists reservation_sweeps_status_check;
+      alter table harness_runtime.reservation_sweeps
+        add constraint reservation_sweeps_status_check
+        check (status in ('processing', 'failed', 'completed'));
 
       create table if not exists harness_runtime.langfuse_outbox (
         audit_id text primary key references harness_runtime.audit_events(id)
@@ -1880,6 +1915,7 @@ export class PostgresHarnessStore
       pending_projection: unknown;
       payload: unknown;
       request: HarnessWorkflowInput;
+      reservation_released: boolean;
       resolution_source:
         | 'decision'
         | 'core_timeout'
@@ -1892,6 +1928,13 @@ export class PostgresHarnessStore
               questions.pending_projection,
               questions.status,
               requests.request,
+              exists (
+                select 1
+                  from harness_runtime.reservation_sweeps sweeps
+                 where sweeps.workspace_id=$2
+                   and sweeps.task_id=requests.workflow_id
+                   and sweeps.status='completed'
+              ) as reservation_released,
               (
                 select events.resolution_source
                   from harness_runtime.decision_events events
@@ -1905,7 +1948,7 @@ export class PostgresHarnessStore
          join harness_runtime.task_requests requests
            on requests.task_id=questions.task_id
         where questions.task_id=$1`,
-      [runtimeTaskId],
+      [runtimeTaskId, workspaceId],
     );
     const row = result.rows[0];
     if (
@@ -1924,6 +1967,7 @@ export class PostgresHarnessStore
           question: questionCardSchema.parse(row.payload),
           request: row.request,
           resolutionSource: row.resolution_source,
+          reservationReleased: row.reservation_released,
           status: row.status,
           ...(timeoutSeconds === undefined ? {} : { timeoutSeconds }),
         }
@@ -1961,6 +2005,208 @@ export class PostgresHarnessStore
       question: questionCardSchema.parse(row.payload),
       taskId: row.task_id,
     }));
+  }
+
+  async claimBatch(input: {
+    expiresBefore: string;
+    limit: number;
+  }): Promise<HarnessReservationSweep[]> {
+    if (
+      !Number.isSafeInteger(input.limit) ||
+      input.limit < 1 ||
+      !Number.isFinite(Date.parse(input.expiresBefore))
+    ) {
+      throw new Error('Reservation sweep claim requires a valid limit and timestamp.');
+    }
+    const result = await this.pool.query<{
+      attempts: number;
+      held_since: Date | string;
+      question_id: string;
+      quote_id: string;
+      quote_revision: string;
+      reserved_units: unknown;
+      task_id: string;
+      usage_reservation_id: string;
+      workspace_id: string;
+    }>(
+      `with new_ready as (
+         select requests.request->>'workspaceId' as workspace_id,
+                requests.workflow_id as task_id,
+                requests.runtime_id,
+                questions.question_id,
+                questions.updated_at as held_since,
+                quotes.quote_id,
+                quotes.payload->>'revision' as quote_revision,
+                usage.usage_id as usage_reservation_id,
+                coalesce(
+                  usage.payload->'reservedUnits',
+                  jsonb_build_array(jsonb_build_object(
+                    'resource', usage.payload->>'resource',
+                    'quantity', (usage.payload->>'reservedQuantity')::integer
+                  ))
+                ) as reserved_units
+           from harness_runtime.pending_questions questions
+           join harness_runtime.task_requests requests
+             on requests.runtime_id=questions.task_id
+           join p1_product_billing_usage usage
+             on usage.workspace_id=requests.request->>'workspaceId'
+            and usage.task_id=requests.workflow_id
+           join p1_product_billing_quotes quotes
+             on quotes.workspace_id=usage.workspace_id
+            and quotes.quote_id=usage.quote_id
+           left join harness_runtime.reservation_sweeps sweeps
+             on sweeps.workspace_id=usage.workspace_id
+            and sweeps.task_id=usage.task_id
+          where questions.status='pending'
+            and coalesce(questions.payload->>'unattended', 'hold')='hold'
+            and questions.updated_at <= $1::timestamptz
+            and requests.request ? 'usageReservation'
+            and usage.status='reserved'
+            and quotes.lifecycle_status='reserved'
+            and (
+              sweeps.task_id is null
+              or (
+                sweeps.status='failed'
+                and sweeps.updated_at < now() - interval '1 minute'
+              )
+            )
+          order by questions.updated_at, requests.workflow_id
+          limit $2
+          for update of questions skip locked
+       ), stale_ready as (
+         select workspace_id, task_id, runtime_id, question_id, held_since,
+                quote_id, quote_revision, usage_reservation_id, reserved_units
+           from harness_runtime.reservation_sweeps
+          where status='processing'
+            and updated_at < now() - interval '1 minute'
+          order by updated_at, task_id
+          limit $2
+          for update skip locked
+       ), ready as (
+         select * from new_ready
+         union all
+         select * from stale_ready
+         order by held_since, task_id
+         limit $2
+       ), claimed as (
+         insert into harness_runtime.reservation_sweeps
+           (workspace_id, task_id, runtime_id, question_id, quote_id,
+            quote_revision, usage_reservation_id, reserved_units, held_since,
+            reason, status)
+         select workspace_id, task_id, runtime_id, question_id, quote_id,
+                quote_revision, usage_reservation_id, reserved_units, held_since,
+                'hold_reservation_ttl_elapsed', 'processing'
+           from ready
+         on conflict (workspace_id, task_id) do update
+           set status='processing',
+               attempts=harness_runtime.reservation_sweeps.attempts+1,
+               last_error=null,
+               updated_at=now()
+         where harness_runtime.reservation_sweeps.status in ('processing','failed')
+           and harness_runtime.reservation_sweeps.updated_at
+             < now() - interval '1 minute'
+         returning workspace_id, task_id, question_id, quote_id,
+                   quote_revision, usage_reservation_id, reserved_units,
+                   held_since, attempts
+       )
+       select * from claimed order by held_since, task_id`,
+      [input.expiresBefore, input.limit],
+    );
+    return result.rows.map((row) => ({
+      workspaceId: row.workspace_id,
+      taskId: row.task_id,
+      quoteId: row.quote_id,
+      quoteRevision: row.quote_revision,
+      questionId: row.question_id,
+      usageReservationId: row.usage_reservation_id,
+      reservedUnits: reservationUnits(row.reserved_units),
+      heldSince:
+        row.held_since instanceof Date
+          ? row.held_since.toISOString()
+          : new Date(row.held_since).toISOString(),
+      reason: 'hold_reservation_ttl_elapsed',
+      attempts: row.attempts,
+    }));
+  }
+
+  async markCompleted(input: HarnessReservationSweep) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      const updated = await client.query(
+        `update harness_runtime.reservation_sweeps
+            set status='completed',
+                completed_at=coalesce(completed_at, now()),
+                last_error=null,
+                updated_at=now()
+          where workspace_id=$1 and task_id=$2
+            and status in ('processing', 'completed')
+          returning runtime_id`,
+        [input.workspaceId, input.taskId],
+      );
+      const runtimeId = (updated.rows[0] as { runtime_id?: string } | undefined)
+        ?.runtime_id;
+      if (!runtimeId) {
+        throw new Error('Reservation sweep claim was not found.');
+      }
+      await this.writeAuditAndOutbox(
+        client,
+        {
+          workspaceId: input.workspaceId,
+          id: `audit-${input.taskId}-reservation-released`,
+          workflowId: input.taskId,
+          stage: 'product_billing',
+          eventType: 'product_usage_reservation_released',
+          payload: {
+            attempts: input.attempts,
+            heldSince: input.heldSince,
+            holdStillPending: true,
+            questionId: input.questionId,
+            quoteId: input.quoteId,
+            reason: input.reason,
+            reservedUnits: input.reservedUnits,
+            usageReservationId: input.usageReservationId,
+          },
+        },
+        runtimeId,
+      );
+      await client.query('commit');
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async markFailed(
+    input: HarnessReservationSweep,
+    error: string,
+    phase: 'completion' | 'refund',
+  ) {
+    await this.pool.query(
+      `update harness_runtime.reservation_sweeps
+          set status=case
+                when $4='refund'
+                 and exists (
+                   select 1
+                     from p1_product_billing_usage usage
+                     join p1_product_billing_quotes quotes
+                       on quotes.workspace_id=usage.workspace_id
+                      and quotes.quote_id=usage.quote_id
+                    where usage.workspace_id=$1
+                      and usage.task_id=$2
+                      and usage.status='reserved'
+                      and quotes.lifecycle_status='reserved'
+                 )
+                then 'failed'
+                else 'processing'
+              end,
+              last_error=$3,
+              updated_at=now()
+        where workspace_id=$1 and task_id=$2 and status='processing'`,
+      [input.workspaceId, input.taskId, error.slice(0, 2_000), phase],
+    );
   }
 
   async submit(
@@ -2037,13 +2283,24 @@ export class PostgresHarnessStore
                   and question_id=$2
                   and resolution_source in ('core_timeout','core_hold_expired')
                   and payload->'decision'->>'state'='ignored'
+                union all
+               select 1
+                 from harness_runtime.reservation_sweeps
+                where workspace_id=$3
+                  and task_id=$4
+                  and question_id=$2
+                  and status='completed'
                 limit 1`,
-              [runtimeTaskId, input.command.questionId],
+              [
+                runtimeTaskId,
+                input.command.questionId,
+                input.workspaceId,
+                input.taskId,
+              ],
             )
           : null;
       const acceptsLateAnswer =
         input.mode === 'late_answer' &&
-        node?.status === 'resolved' &&
         lateAnswerSource?.rowCount === 1;
       if (
         !node ||
@@ -2100,7 +2357,7 @@ export class PostgresHarnessStore
         },
       };
       await this.writeAuditAndOutbox(client, audit, runtimeTaskId);
-      if (!acceptsLateAnswer) {
+      if (node.status === 'pending') {
         await client.query(
           `update harness_runtime.pending_questions
            set status='resolved', updated_at=now()
@@ -3510,6 +3767,33 @@ function pendingQuestionCard(value: unknown): QuestionCard {
     },
     unattended: 'hold',
     scope: 'current_task',
+  });
+}
+
+function reservationUnits(input: unknown): ProductUsageUnit[] {
+  if (!Array.isArray(input)) {
+    throw new Error('Reservation sweep is missing reserved units.');
+  }
+  return input.map((candidate) => {
+    if (
+      !candidate ||
+      typeof candidate !== 'object' ||
+      !('resource' in candidate) ||
+      (candidate.resource !== 'copy' &&
+        candidate.resource !== 'image' &&
+        candidate.resource !== 'video' &&
+        candidate.resource !== 'audio') ||
+      !('quantity' in candidate) ||
+      typeof candidate.quantity !== 'number' ||
+      !Number.isSafeInteger(candidate.quantity) ||
+      candidate.quantity < 1
+    ) {
+      throw new Error('Reservation sweep contains invalid reserved units.');
+    }
+    return {
+      resource: candidate.resource,
+      quantity: candidate.quantity,
+    };
   });
 }
 

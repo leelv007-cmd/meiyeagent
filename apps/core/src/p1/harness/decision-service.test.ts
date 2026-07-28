@@ -253,6 +253,39 @@ test('an active late-answer lease does not claim that its successor exists', asy
   assert.deepEqual(successorStarts, []);
 });
 
+test('an answer after reservation release starts a fresh quote successor and closes the old wait', async () => {
+  const order: string[] = [];
+  const store = new MemoryDecisionStore(order);
+  store.pending = question();
+  store.reservationReleased = true;
+  const service = new HarnessDecisionService(store, {
+    async resume() {
+      order.push('unexpected-old-resume');
+    },
+    async startSuccessor({ command, workflowId }) {
+      order.push(`successor:${workflowId}:${command.idempotencyKey}`);
+    },
+    async abandonReleasedReservation({ questionId }) {
+      order.push(`abandon:${questionId}`);
+    },
+  });
+
+  const result = await service.submit(
+    'workspace-1',
+    'task-35',
+    decisionInput(),
+  );
+
+  assert.equal(result.replayed, false);
+  assert.match(result.successor?.workflowId ?? '', /^composer-task:late-answer-/u);
+  assert.deepEqual(order, [
+    'persist:event-task-35-question-1-question-1:late_answer',
+    `successor:${result.successor?.workflowId}:question-1:late_answer`,
+    'abandon:question-1',
+    'resumed:event-task-35-question-1-question-1:late_answer',
+  ]);
+});
+
 class MemoryDecisionStore implements HarnessDecisionStore {
   readonly events: Array<{ id: string }> = [];
   readonly traces: Array<{ id: string }> = [];
@@ -270,6 +303,7 @@ class MemoryDecisionStore implements HarnessDecisionStore {
     | 'core_hold_expired'
     | 'late_answer'
     | null = null;
+  reservationReleased = false;
   targetStatus: 'pending' | 'resolved' = 'pending';
   resumeClaimAvailable = true;
 
@@ -335,6 +369,7 @@ class MemoryDecisionStore implements HarnessDecisionStore {
       ? {
           question: this.pending,
           request: {} as HarnessWorkflowInput,
+          reservationReleased: this.reservationReleased,
           resolutionSource: this.resolutionSource,
           status: this.targetStatus,
         }

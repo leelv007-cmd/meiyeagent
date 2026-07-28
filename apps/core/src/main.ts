@@ -63,6 +63,7 @@ import {
   HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
   HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
   HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY,
+  HARNESS_RESERVATION_SWEEP_TTL_CONFIG_KEY,
   HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
   HARNESS_WOZ_RECIPE_CONFIG_KEY,
   ModeGateExecutionPort,
@@ -208,6 +209,10 @@ import {
 import { PostgresHarnessResumeReconcilerStore } from './p1/harness/postgres-resume-reconciler-store.js';
 import { PostgresHarnessBillingCompensationStore } from './p1/harness/postgres-billing-compensation-store.js';
 import { HarnessProductBillingSettlementExecutor } from './p1/harness/product-billing-settlement.js';
+import {
+  DEFAULT_HOLD_RESERVATION_TTL_SECONDS,
+  HarnessReservationSweeper,
+} from './p1/harness/reservation-sweeper.js';
 import { PostgresNoteMediaAdmissionCoordinator } from './p1/harness/note-media-admission.js';
 import { unconfiguredNotePlanEnhancementJudgeResolver } from './p1/harness/note-plan-structured-port.js';
 import {
@@ -222,6 +227,7 @@ import {
   DEFAULT_CONFIRMATION_CARD_HOLD_TIMEOUT_SECONDS,
   DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS,
   DbosHarnessWorkflowStarter,
+  abandonReleasedHarnessReservation,
   registerHarnessDbosWorkflow,
   resumeHarnessDbosInteractionWorkflow,
   resumeHarnessDbosWorkflow,
@@ -712,6 +718,8 @@ const adminConfigRuntime = {
     DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS,
   [HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY]:
     DEFAULT_CONFIRMATION_CARD_HOLD_TIMEOUT_SECONDS,
+  [HARNESS_RESERVATION_SWEEP_TTL_CONFIG_KEY]:
+    DEFAULT_HOLD_RESERVATION_TTL_SECONDS,
   [HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY]:
     DEFAULT_HARNESS_LANGFUSE_OUTBOX_CONFIG,
   [HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY]:
@@ -1599,6 +1607,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
         HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
         HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY,
+        HARNESS_RESERVATION_SWEEP_TTL_CONFIG_KEY,
         HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
         HARNESS_WOZ_RECIPE_CONFIG_KEY,
         BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,
@@ -1625,6 +1634,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
         HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
         HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY,
+        HARNESS_RESERVATION_SWEEP_TTL_CONFIG_KEY,
         HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
         HARNESS_WOZ_RECIPE_CONFIG_KEY,
         BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,
@@ -2128,6 +2138,13 @@ if (harnessRuntimeConfig) {
       }
       await composerSubmissionCoordinator.submitSemanticSuccessor(input);
     },
+    abandonReleasedReservation: (input) =>
+      abandonReleasedHarnessReservation(
+        input.workspaceId,
+        input.taskId,
+        input.questionId,
+        harnessStore,
+      ),
   };
   const harnessDecisions = new HarnessDecisionService(
     harnessStore,
@@ -2377,6 +2394,22 @@ if (harnessRuntimeConfig) {
     billingCompensations,
     harnessBilling,
   );
+  const reservationSweeper = new HarnessReservationSweeper(
+    harnessStore,
+    harnessBilling,
+    {
+      async reservationTtlSeconds() {
+        const revision = await adminConfigRepository.get(
+          'global',
+          '__global__',
+          HARNESS_RESERVATION_SWEEP_TTL_CONFIG_KEY,
+        );
+        return Number(
+          revision?.value ?? DEFAULT_HOLD_RESERVATION_TTL_SECONDS,
+        );
+      },
+    },
+  );
   let compensationRunning = false;
   const runCompensation = async () => {
     if (compensationRunning) return;
@@ -2386,6 +2419,7 @@ if (harnessRuntimeConfig) {
         resumeReconciler.runOnce(),
         harnessSystemDefaults.runOnce(),
         billingCompensationWorker.runOnce(),
+        reservationSweeper.runOnce(),
       ]);
       for (const result of results) {
         if (result.status === 'rejected') {

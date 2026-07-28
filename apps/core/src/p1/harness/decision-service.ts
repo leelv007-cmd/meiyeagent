@@ -61,6 +61,7 @@ export interface HarnessDecisionStore {
       | 'core_hold_expired'
       | 'late_answer'
       | null;
+    reservationReleased?: boolean;
     status: 'pending' | 'resolved';
     timeoutSeconds?: number | null;
   } | null>;
@@ -116,6 +117,11 @@ export interface HarnessWorkflowResumer {
     request: HarnessWorkflowInput;
     sourceTaskId: string;
     workflowId: string;
+    workspaceId: string;
+  }): Promise<void>;
+  abandonReleasedReservation?(input: {
+    questionId: string;
+    taskId: string;
     workspaceId: string;
   }): Promise<void>;
 }
@@ -186,9 +192,10 @@ export class HarnessDecisionService {
     const submitted = structuredDecisionInputSchema.parse(input);
     const target = await this.readTarget(workspaceId, taskId);
     const lateAnswer =
-      target?.status === 'resolved' &&
-      (target.resolutionSource === 'core_timeout' ||
-        target.resolutionSource === 'core_hold_expired');
+      target?.reservationReleased === true ||
+      (target?.status === 'resolved' &&
+        (target.resolutionSource === 'core_timeout' ||
+          target.resolutionSource === 'core_hold_expired'));
     if (lateAnswer && !isMerchantAnswer(submitted)) {
       return {
         consumedByOther: true as const,
@@ -354,6 +361,18 @@ export class HarnessDecisionService {
             ),
             workspaceId,
           });
+          if (target.reservationReleased) {
+            if (!this.workflow.abandonReleasedReservation) {
+              throw new Error(
+                'Released-reservation workflow cancellation is unavailable.',
+              );
+            }
+            await this.workflow.abandonReleasedReservation({
+              questionId: persistedCommand.questionId,
+              taskId,
+              workspaceId,
+            });
+          }
         } else if (mode === 'decision') {
           await this.workflow.resume(workspaceId, taskId, persistedCommand);
         }
@@ -412,6 +431,7 @@ export class HarnessDecisionService {
       ? {
           question,
           request: undefined,
+          reservationReleased: false,
           resolutionSource: null,
           status: pending ? ('pending' as const) : ('resolved' as const),
           timeoutSeconds: undefined,
