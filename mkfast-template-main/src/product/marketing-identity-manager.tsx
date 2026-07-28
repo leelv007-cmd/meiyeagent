@@ -22,20 +22,20 @@ import { marketingIdentitiesQuery } from './marketing-identity-queries';
  */
 const COPY = {
   zh: {
-    title: '表达身份',
+    title: '口吻',
     description: '记下品牌或个人 IP 怎么说话、什么不能说。',
     active: '{count} 个生效中',
-    empty: '尚未登记身份。没有活动身份时，任务会回退为门店官方中性表达。',
-    manage: '管理表达身份',
+    empty: '还没有登记别的口吻。没有的时候，创作会用门店官方口吻。',
+    manage: '管理口吻',
   },
   en: {
-    title: 'Expression identity',
+    title: 'Voices',
     description:
       'Note how the brand or personal IP speaks and what it must never say.',
     active: '{count} active',
     empty:
-      'No identities yet. Tasks fall back to the store’s neutral official voice.',
-    manage: 'Manage expression identities',
+      'No other voice registered yet. Creation uses the store’s official voice.',
+    manage: 'Manage voices',
   },
 } as const;
 

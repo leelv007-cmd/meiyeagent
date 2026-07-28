@@ -46,6 +46,17 @@ export function formatLocaleDateTime(
   return new Date(value).toLocaleString(localeConfig[locale].hreflang);
 }
 
+/**
+ * Date without a clock. A billing period ends on a day, not at 07:32:20 — the
+ * seconds read as machine output and give the merchant nothing to act on.
+ */
+export function formatLocaleDate(
+  value: string | number | Date,
+  locale: Locale = getLocale()
+) {
+  return new Date(value).toLocaleDateString(localeConfig[locale].hreflang);
+}
+
 export function parseMessageJson<T>(value: string, fallback: T): T {
   try {
     return JSON.parse(value) as T;

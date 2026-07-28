@@ -64,8 +64,12 @@ test('keeps identity, assets, and camera authorization reachable on mobile', asy
     await expect(
       page.getByRole('radiogroup', { name: '创作类型' })
     ).toBeVisible();
+    // The send control names which of its two jobs the next press does, so on
+    // a workspace whose store facts are still open it reads 先补门店信息.
     await expect(
-      page.getByRole('button', { name: '开始创作', exact: true })
+      page.getByRole('button', {
+        name: /开始创作|先补门店信息|先补资质信息|先确认素材来源/,
+      })
     ).toBeVisible();
     await expect(
       page.getByRole('button', { name: '拍照', exact: true })

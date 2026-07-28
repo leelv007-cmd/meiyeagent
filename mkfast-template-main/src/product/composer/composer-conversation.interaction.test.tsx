@@ -162,7 +162,6 @@ describe('entry and destination are conversation affordances, not a form', () =>
             distributionTarget: 'export',
             deliverable: { kind: 'copy_document', quantity: 1 },
           },
-          modelName: '深度文案模型',
         }),
         modelChannelReadiness: 'multi_channel_ready',
       })

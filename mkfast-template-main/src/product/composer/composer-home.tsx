@@ -67,7 +67,10 @@ import {
   type ComposerImageIdentity,
 } from '@/product/composer-image-input';
 import { executeProductCommand, useProductState } from '@/product/client';
-import { DashboardHomeSurface } from '@/product/dashboard-home-surface';
+import {
+  DashboardHomeGreeting,
+  DashboardHomeSurface,
+} from '@/product/dashboard-home-surface';
 import type { ConfirmedAssetFacts } from '@/product/creation-entry-model';
 import {
   missingCreativeGrounding,
@@ -281,6 +284,50 @@ function sourceReferencesFromDraft(sources: unknown[]) {
   });
 }
 
+/**
+ * What a blocked send press says, when the gate it hit has nothing of its own.
+ *
+ * Both name the problem *and* the way out; 「操作未完成，请检查当前状态后重试」
+ * is what this replaces.
+ */
+const COMPOSER_LENS_REQUIRED_MESSAGE =
+  '还没定下要做哪种内容。先在上面选文案、图文或视频，再点发送。';
+const COMPOSER_QUOTE_PENDING_MESSAGE =
+  '这次的用量还没算好，所以没能开始。稍等一下，等发送键下方出现用量说明再点；一直没出来的话，改一句描述会重新算。';
+
+/**
+ * What the send button will actually do on the next press.
+ *
+ * The control carries two meanings — 「开始创作」 and 「先把还缺的信息补上」 —
+ * and it used to look identical in both, so a merchant pressed what they read
+ * as 开始创作 and got a question instead. This says which one is armed before
+ * the press, and the same sentence becomes the button's accessible name.
+ */
+function composerSubmitIntent(input: {
+  groundingBlocker: ComposerGroundingBlocker | null;
+  storeFactsPending: boolean;
+}): { label: string; hint: string | null } {
+  if (input.groundingBlocker === 'source') {
+    return {
+      label: '先确认素材来源',
+      hint: '这次用到的素材还没确认来源和授权，点发送会先带你确认，不会开始生成。',
+    };
+  }
+  if (input.groundingBlocker === 'qualification') {
+    return {
+      label: '先补资质信息',
+      hint: '这家门店标记了受监管经营，点发送会先带你补资质，不会开始生成。',
+    };
+  }
+  if (input.storeFactsPending) {
+    return {
+      label: '先补门店信息',
+      hint: '门店信息还没补齐，点发送会先问你几个问题，补完才开始生成。',
+    };
+  }
+  return { label: creation_entry_submit(), hint: null };
+}
+
 function groundingBlockerMessage(blocker: ComposerGroundingBlocker) {
   if (blocker === 'store') return workbench_grounding_store_required();
   if (blocker === 'qualification') {
@@ -446,6 +493,18 @@ export function ComposerHome({
     createComposerLensState()
   );
   const [showRequiredHint, setShowRequiredHint] = useState(false);
+  /**
+   * Why the last send press did not start a run (WCAG 3.3.1).
+   *
+   * A blocked press used to paint a red edge and say nothing: `aria-invalid`
+   * and `aria-describedby` were absent on the intent box and every `role=alert`
+   * region on the page was empty, so a screen-reader user got no signal at all
+   * and a sighted merchant got a red box with no reason. This string is the
+   * reason, and it is wired to the textarea rather than floating next to it.
+   */
+  const [submitBlockedMessage, setSubmitBlockedMessage] = useState<
+    string | null
+  >(null);
   const [briefState, setBriefState] = useState<BriefSurfaceState>(() =>
     createBriefSurfaceState()
   );
@@ -902,12 +961,9 @@ export function ComposerHome({
   const signedPreview = useMemo(
     () =>
       signedSubmission
-        ? projectComposerSignedPreview({
-            signed: signedSubmission,
-            modelName: selectedModel?.displayName,
-          })
+        ? projectComposerSignedPreview({ signed: signedSubmission })
         : null,
-    [selectedModel?.displayName, signedSubmission]
+    [signedSubmission]
   );
   // 图文 debits two buckets server-side (copy 1 + image·pages). Pre-checking
   // only the image bucket let an image-rich / copy-empty merchant submit a run
@@ -1631,6 +1687,7 @@ export function ComposerHome({
 
   const handleIntentChange = (value: string) => {
     setSubmissionGroundingBlocked(null);
+    setSubmitBlockedMessage(null);
     destinationAutoSubmitIntentRef.current = null;
     setDestinationPreflight(null);
     setLensState((current) => {
@@ -1753,6 +1810,7 @@ export function ComposerHome({
   };
 
   const attemptSubmit = async () => {
+    setSubmitBlockedMessage(null);
     if (!imageCardinality.valid) {
       document
         .querySelector<HTMLElement>(
@@ -1764,6 +1822,7 @@ export function ComposerHome({
     const gate = canSubmit(lensState);
     if (!gate.allowed && gate.reason !== 'video_confirm_required') {
       setShowRequiredHint(true);
+      setSubmitBlockedMessage(gate.message);
       if (gate.focusTarget === 'lens_group') {
         document
           .querySelector<HTMLElement>(
@@ -1774,7 +1833,10 @@ export function ComposerHome({
       return;
     }
 
-    if (lensState.phase !== 'selected') return;
+    if (lensState.phase !== 'selected') {
+      setSubmitBlockedMessage(COMPOSER_LENS_REQUIRED_MESSAGE);
+      return;
+    }
     const destinationDecision = decideComposerDestinationPreflight({
       hasExplicitDestination:
         lensState.draft.fieldMeta.deliveryPlatform?.ownership === 'user' &&
@@ -1844,6 +1906,7 @@ export function ComposerHome({
         return;
       }
       setShowRequiredHint(true);
+      setSubmitBlockedMessage(COMPOSER_QUOTE_PENDING_MESSAGE);
       return;
     }
     const groundingBlocker =
@@ -2208,6 +2271,16 @@ export function ComposerHome({
     missingStoreFacts,
     productLoading: product.loading,
   });
+  // Same两个 conditions `attemptSubmit` checks before it starts anything —
+  // read here so the button can say which of its two jobs is armed *before*
+  // the press rather than only after it (see `composerSubmitIntent`).
+  const submitIntent = composerSubmitIntent({
+    groundingBlocker:
+      product.state && !product.loading && !product.error
+        ? groundingBlockerFromMissing(missingGrounding)
+        : null,
+    storeFactsPending: showProgressiveFact,
+  });
 
   return (
     <div
@@ -2223,26 +2296,13 @@ export function ComposerHome({
       data-testid="composer-home"
       data-viewport={viewportKind}
     >
-      {/* D-126 hot/cold home. Both CTAs prefill this same draft — never submit. */}
-      <DashboardHomeSurface
-        loading={product.loading}
-        onPrefill={(intent) => {
-          // Same idiom as the landing handoff restore above: pick the lens the
-          // recommendation/sample is written for, then seed the draft. Leaving
-          // the lens unselected would make the merchant re-pick it before the
-          // draft can be submitted.
-          setLensState((current) =>
-            updateUserText(selectLens(current, 'copy'), intent)
-          );
-          // Not intentRef: PromptInput.TextArea spreads incoming props after
-          // its own ref, so handing it one silently replaces the ref its
-          // autosize depends on. Focus by testid instead.
-          focusComposerIntentInput();
-        }}
-        onRefresh={product.refresh}
-        onStart={() => focusComposerIntentInput()}
-        state={product.state}
-      />
+      {/*
+       * PRODUCT.md 原则 1「Composer 永远是唯一主轴，任何面板不与它竞争视觉重心」.
+       * The greeting is the one personified moment the design system reserves a
+       * whole type role for (DESIGN.md §3 问候语法则), so it opens the workbench;
+       * everything that used to sit above the Composer now sits below it.
+       */}
+      <DashboardHomeGreeting state={product.state} />
 
       {storeFactLedgerFailed ? (
         <div
@@ -2466,7 +2526,9 @@ export function ComposerHome({
         reuseChips={COMPOSER_REUSE_CHIPS}
         running={session.phase === 'running'}
         signedPreview={signedPreview}
-        submitLabel={creation_entry_submit()}
+        submitHint={submitIntent.hint}
+        submitLabel={submitIntent.label}
+        intentError={submitBlockedMessage}
         value={userText}
       />
 
@@ -2511,8 +2573,16 @@ export function ComposerHome({
           }
           data-testid="composer-quote-line"
         >
-          {currentQuoteView.billingNote ??
-            `预计消耗 ${currentQuoteView.amount}`}
+          {/*
+            `预计消耗 0.06` used to print here: a bare float in an invisible
+            unit, one line above 「本次用 1 条文案额度和 3 张图片额度 · 文案还剩
+            5 条」 — two pricing systems on one screen, and the merchant unit is
+            条数, never money (D-109 / D-123). The counted sentence next to the
+            send button owns the numbers; this line now only carries what that
+            sentence cannot say (video is billed by finished seconds) and
+            otherwise just states that the price is settled.
+          */}
+          {currentQuoteView.billingNote ?? '本次用量已确认'}
         </p>
       ) : (
         <ComposerQuoteStatusLine
@@ -2665,6 +2735,35 @@ export function ComposerHome({
           disabled={createWork.isPending}
         />
       ) : null}
+
+      {/*
+       * D-126 hot/cold home. Both CTAs prefill this same draft — never submit.
+       * This sits after the whole Composer cluster (prompt bar, preflight,
+       * quote, quota, tools, brief) rather than between the prompt bar and its
+       * own affordances: splitting the axis in half competes with it just as
+       * much as sitting above it did. On a cold workspace the recommendation
+       * reads「还没有基于本店事实的推荐」, and an empty panel above the axis was
+       * the worst of both readings.
+       */}
+      <DashboardHomeSurface
+        loading={product.loading}
+        onPrefill={(intent) => {
+          // Same idiom as the landing handoff restore above: pick the lens the
+          // recommendation/sample is written for, then seed the draft. Leaving
+          // the lens unselected would make the merchant re-pick it before the
+          // draft can be submitted.
+          setLensState((current) =>
+            updateUserText(selectLens(current, 'copy'), intent)
+          );
+          // Not intentRef: PromptInput.TextArea spreads incoming props after
+          // its own ref, so handing it one silently replaces the ref its
+          // autosize depends on. Focus by testid instead.
+          focusComposerIntentInput();
+        }}
+        onRefresh={product.refresh}
+        onStart={() => focusComposerIntentInput()}
+        state={product.state}
+      />
     </div>
   );
 }

@@ -1,0 +1,191 @@
+import assert from 'node:assert/strict';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import test from 'node:test';
+
+/**
+ * Static gate for the two first-screen rules the runtime kept losing.
+ *
+ * DESIGN.md §3 问候语法则 — the Display layer carries the greeting and nothing
+ * else, 一屏最多一处. PRODUCT.md Design Principle 1 — Composer 永远是唯一主轴,
+ * so no panel opens the page above it with a metric.
+ *
+ * Written as a source scan (same shape as `components/layout/
+ * shell-visual-contract.test.ts`) because the previous failure mode was exactly
+ * a green unit test over an uncalled helper: `.meiye-greeting` had CSS,
+ * `workbenchGreetingName()` had passing tests, and neither ever rendered.
+ */
+
+const readSource = (file: string) =>
+  readFileSync(resolve(process.cwd(), file), 'utf8');
+
+/** Every class that means "Display, 200 weight" in this codebase. */
+const DISPLAY_LAYER_CLASSES = ['meiye-greeting', 'meiye-type-display'];
+
+/**
+ * The product surface area: workbench pages plus the shell chrome around them.
+ * `routes/heroui-spike/` stays out — it is a vendor spike, not a product page.
+ */
+const PRODUCT_SOURCE_DIRS = ['src/product', 'src/components/layout'];
+
+function collectTsx(dir: string): string[] {
+  const absolute = resolve(process.cwd(), dir);
+  if (!existsSync(absolute)) return [];
+  return readdirSync(absolute, { withFileTypes: true }).flatMap((entry) => {
+    const child = join(dir, entry.name);
+    if (entry.isDirectory()) return collectTsx(child);
+    return entry.isFile() &&
+      entry.name.endsWith('.tsx') &&
+      !entry.name.endsWith('.test.tsx')
+      ? [child]
+      : [];
+  });
+}
+
+/**
+ * Class tokens actually handed to `className` — a docblock that names a class
+ * must not count as a use of it. Covers the two forms this repo writes:
+ * `className="a b"` and `className={cn('a', …)}`.
+ */
+function classTokens(source: string) {
+  const values = [
+    ...[...source.matchAll(/className="([^"]*)"/gu)].map((match) => match[1]),
+    ...[...source.matchAll(/className=\{cn\(([\s\S]*?)\)\}/gu)].flatMap(
+      (match) => [...match[1].matchAll(/'([^']*)'/gu)].map((cls) => cls[1])
+    ),
+  ];
+  return values.flatMap((value) => value.split(/\s+/u));
+}
+
+test('the workbench renders exactly one Display, and it is the greeting', () => {
+  const hits = PRODUCT_SOURCE_DIRS.flatMap(collectTsx).flatMap((file) => {
+    const tokens = classTokens(readSource(file));
+    return DISPLAY_LAYER_CLASSES.flatMap((className) =>
+      tokens
+        .filter((token) => token === className)
+        .map(() => `${file}:${className}`)
+    );
+  });
+
+  assert.deepEqual(
+    hits,
+    ['src/product/dashboard-home-surface.tsx:meiye-greeting'],
+    'DESIGN.md §3: Display 是工作台问候语专用，一屏最多一处'
+  );
+});
+
+test('the greeting is its own export and no panel rides along with it', () => {
+  const surface = readSource('src/product/dashboard-home-surface.tsx');
+
+  // 压在氛围层上的字必须在 `.meiye-ambient-copy` 里，才吃得到那一层的处理。
+  assert.match(
+    surface,
+    /export function DashboardHomeGreeting\(\{[\s\S]*?<div className="meiye-ambient-copy">\s*<h1 className="meiye-greeting" data-testid="dashboard-greeting">/u
+  );
+
+  // The greeting goes above the Composer and the rest of the page goes below,
+  // so the two must not share a component — otherwise they cannot be split.
+  const restOfPage = surface.slice(
+    surface.indexOf('export function DashboardHomeSurface')
+  );
+  assert.doesNotMatch(restOfPage, /meiye-greeting|dashboard-greeting/u);
+});
+
+test('the workbench opens 问候语 → Composer → 今天值得发什么', () => {
+  const home = readSource('src/product/composer/composer-home.tsx');
+
+  const greeting = home.indexOf('<DashboardHomeGreeting');
+  const composer = home.indexOf('<ComposerPromptBar');
+  const recommendations = home.indexOf('<DashboardHomeSurface');
+  assert.ok(greeting > -1, 'the workbench renders the greeting');
+  assert.ok(
+    greeting < composer,
+    'DESIGN.md §3: the greeting is the page opening'
+  );
+  assert.ok(
+    composer < recommendations,
+    'PRODUCT.md 原则 1: Composer 永远是唯一主轴，任何面板不与它竞争视觉重心'
+  );
+});
+
+test('the greeting is fed by workbenchGreetingName, not by a new data source', () => {
+  const surface = readSource('src/product/dashboard-home-surface.tsx');
+
+  assert.match(
+    surface,
+    /import \{ workbenchGreetingName \} from '\.\/workbench-state-model';/u
+  );
+  assert.match(
+    surface,
+    /workbenchGreetingName\(\s*state\?\.store\?\.name,\s*state\?\.storeDraft\?\.extracted\.name\s*\)/u
+  );
+  // Named form when a name exists, generic 称呼 when it does not — never a
+  // blank space where the shop name should be.
+  assert.match(surface, /workbench_greeting\(\{ name: greetingName \}\)/u);
+  assert.match(surface, /workbench_greeting_fallback\(\)/u);
+});
+
+test('both greeting locales keep 称呼 + 一句话行动邀请, and carry no metric', () => {
+  const locales = {
+    en: JSON.parse(readSource('project.inlang/messages/en.json')),
+    zh: JSON.parse(readSource('project.inlang/messages/zh.json')),
+  } as Record<string, Record<string, string>>;
+
+  for (const [locale, messages] of Object.entries(locales)) {
+    const named = messages.workbench_greeting;
+    const fallback = messages.workbench_greeting_fallback;
+    assert.match(named, /\{name\}/u, `${locale}: greeting addresses the store`);
+    assert.doesNotMatch(fallback, /\{/u, `${locale}: fallback takes no name`);
+    for (const [key, value] of [
+      ['workbench_greeting', named],
+      ['workbench_greeting_fallback', fallback],
+    ]) {
+      // 「禁止用 Display 层放指标数字」— a digit here means a metric crept in.
+      assert.doesNotMatch(value, /\d/u, `${locale}.${key} carries a number`);
+    }
+  }
+  assert.match(locales.zh.workbench_greeting_fallback, /店主/u);
+});
+
+test('the Display class is a real 200-weight Display in the stylesheet', () => {
+  const glass = readSource('src/components/heroui-pro/heroui-glass.css');
+
+  assert.match(
+    glass,
+    /\.meiye-greeting \{[^}]*font-size:\s*clamp\(1\.75rem[^}]*font-weight:\s*200[^}]*\}/u
+  );
+});
+
+test('no balance panel opens the first screen', () => {
+  const surface = readSource('src/product/dashboard-home-surface.tsx');
+
+  // PRODUCT.md 原则 1 — the opening line is an invitation, not「你还剩 1 条视频」.
+  // The per-run cost stays where it is spent: next to the Composer send button.
+  assert.doesNotMatch(surface, /DashboardBalanceCard|dashboard-balance/u);
+  assert.ok(
+    !existsSync(
+      resolve(process.cwd(), 'src/product/dashboard-balance-card.tsx')
+    ),
+    'the first-screen balance card is retired, not merely unmounted'
+  );
+});
+
+test('the merchant can reach「我还剩多少」from the topbar', () => {
+  const header = readSource('src/components/layout/dashboard-header.tsx');
+
+  assert.match(header, /data-testid="product-usage-entry"/u);
+  assert.match(header, /search=\{\{ section: 'usage' \}\}/u);
+  assert.match(header, /to="\/settings\/account"/u);
+  assert.match(header, /shell_product_usage_entry_aria\(\)/u);
+});
+
+test('no topbar entry degrades to a bare icon on a 390px screen', () => {
+  const header = readSource('src/components/layout/dashboard-header.tsx');
+
+  // Every `hidden sm:inline` label needs an `sm:hidden` short label beside it,
+  // or the pill reads as an unlabeled glyph on a phone.
+  const desktopOnly = header.match(/className="hidden sm:inline"/gu) ?? [];
+  const mobileOnly = header.match(/className="sm:hidden"/gu) ?? [];
+  assert.equal(desktopOnly.length, mobileOnly.length);
+  assert.match(header, /shell_product_subscription_upgrade_short\(\)/u);
+});

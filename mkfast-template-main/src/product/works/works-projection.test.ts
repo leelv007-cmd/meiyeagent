@@ -361,7 +361,7 @@ test('生成依据 states canonical provenance and no internal identifiers', () 
   const chips = workEvidence(notePackage);
   const labels = chips.map((chip) => chip.label);
   assert.deepEqual(labels, [
-    '用了本店已确认的门店事实',
+    '用了本店已确认的门店信息',
     '内容基于本次确认的创作依据',
     '用了你上传的真实素材',
     '按小红书的发布习惯适配',

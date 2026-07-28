@@ -133,22 +133,18 @@ export function WorksListPage() {
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             {/*
-              The vendored Segment paints its unselected labels with
-              `color: var(--muted)`. HeroUI means `--muted` as a foreground, but
-              inside .meiye-product-shell that token is the muted *background*
-              (--tint-hover, 4% ink) and the labels all but disappear — the same
-              trap that made this surface's own text unreadable, arriving this
-              time through a dropped-in component. D-130 is explicit that a
-              component library's output is held to the contrast rule too, so
-              the token is mapped back onto the ink gradient here, over a glass
-              base per 玻璃有边法则. It takes --ink-90, not the lowest body step:
-              the piece-tier glass is 8% white in dark, so the ambient photo
-              still carries the backdrop and --ink-60 measured 4.14:1 there.
-              Selection stays legible through the indicator pill. Per-site on
-              purpose: the shared-layer fix is OI-48.
+              这个 div 只是 CSS 变量的载体，不带材质：Segment 自己已经是一片件级
+              玻璃（vendored 底 --default ＝ 4%/6% 的 tint，theme-glass 给 blur(24px)，
+              描边由 heroui-glass.css 统一补），外面再套一层 .meiye-glass-piece 就是
+              两层玻璃两道边。
+
+              未选中标签的前景由共享层给到 --ink-60
+              （heroui-glass.css 的 `.segment__item:not([data-selected="true"])`）。
+              这半透明的底后面是氛围带，--ink-60 在那儿实测 4.14:1，所以这里抬一档
+              到 --ink-90；选中项走 --segment-foreground，不受影响。
             */}
             <div
-              className="meiye-glass-piece inline-flex rounded-full p-0.5"
+              className="inline-flex"
               style={
                 {
                   '--meiye-segment-unselected': 'var(--ink-90)',
@@ -177,8 +173,14 @@ export function WorksListPage() {
               </Segment>
             </div>
 
+            {/*
+              白瓷而非玻璃：DESIGN.md §4 只把玻璃留给浮在氛围层上的悬浮件，表单
+              输入控件属于实体内容区。搜索框玻璃底时，输入的字与占位符压的是底下
+              那张氛围图，可读性随图变化；白瓷给它一个恒定的实底。同排的筛选段
+              是 chips，仍走件级玻璃。
+            */}
             <label
-              className="meiye-glass-piece flex items-center gap-2 rounded-full px-3 py-2 sm:w-64"
+              className="meiye-porcelain flex items-center gap-2 rounded-full px-3 py-2 sm:w-64"
               htmlFor="works-search"
             >
               <IconSearch aria-hidden="true" className="size-4 shrink-0" />

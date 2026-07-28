@@ -123,7 +123,7 @@ const ENGLISH_WORKS_TEXT = new Map([
   ['需处理', 'Needs attention'],
   ['可继续编辑', 'Continue editing'],
   ['在轻编辑里做的图文内容', 'Image-text content made in light editor'],
-  ['用了本店已确认的门店事实', 'Uses confirmed store facts'],
+  ['用了本店已确认的门店信息', 'Uses confirmed shop details'],
   ['内容基于本次确认的创作依据', 'Based on the confirmed creation brief'],
   ['按已选营销身份的口吻表达', 'Uses the selected marketing identity'],
   ['按门店官方中性口吻表达', 'Uses the store’s neutral official voice'],

@@ -20,7 +20,7 @@ const activeClassName = 'font-medium text-foreground';
  * A route added to the shell now reaches the phone by itself instead of waiting
  * for someone to notice this file.
  *
- * One label is deliberately not shared. The 素材 page also holds 表达身份, and
+ * One label is deliberately not shared. The 素材 page also holds 口吻, and
  * on the phone that entry is the only way in — hence 「身份素材」. On the desktop
  * sidebar the same route sits under 素材, which the nav contract fixes and this
  * ticket does not touch. The override is written down here rather than being an

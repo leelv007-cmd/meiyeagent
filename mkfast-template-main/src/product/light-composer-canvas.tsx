@@ -596,7 +596,12 @@ export function LightComposerCanvas({
             </section>
           ))}
         </div>
-        <div className="rounded-xl bg-muted/30 p-3">
+        {/*
+          预览井和左列的模块卡是同一层实体内容区，左列已经是白瓷；这里原本的
+          `bg-muted/30` 解析成 1.2% 的痕，等于没有底，标题与预览一起压在页面底
+          图上。改白瓷与左列对齐。
+        */}
+        <div className="meiye-porcelain rounded-xl p-3">
           <p className="mb-2 text-sm font-medium">{light_composer_preview()}</p>
           <Preview assets={assets} document={outputDocument} />
         </div>

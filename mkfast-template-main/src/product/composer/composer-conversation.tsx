@@ -422,10 +422,22 @@ export type ComposerPromptBarProps = {
   modelChannelReadiness?: string | null;
   placeholder: string;
   ariaLabel: string;
+  /** Accessible name of the send control — states which of its two jobs is armed. */
   submitLabel: string;
+  /** Visible companion to `submitLabel`; null when the press starts a run. */
+  submitHint?: string | null;
+  /**
+   * Why the last send press did not start a run. Rendered as a real, visible
+   * `role=alert` and bound to the textarea through `aria-describedby`, so a red
+   * edge is never the only signal (WCAG 3.3.1).
+   */
+  intentError?: string | null;
   /** Host-owned page composition — DESIGN.md 白瓷 Composer 大卡 lands here. */
   className?: string;
 };
+
+const INTENT_ERROR_ID = 'composer-intent-error';
+const SUBMIT_HINT_ID = 'composer-submit-intent';
 
 export function ComposerPromptBar({
   value,
@@ -448,8 +460,14 @@ export function ComposerPromptBar({
   placeholder,
   ariaLabel,
   submitLabel,
+  submitHint = null,
+  intentError = null,
   className,
 }: ComposerPromptBarProps) {
+  const describedBy =
+    [intentError ? INTENT_ERROR_ID : null, submitHint ? SUBMIT_HINT_ID : null]
+      .filter(Boolean)
+      .join(' ') || undefined;
   return (
     <div
       className={cn('flex flex-col gap-3', className)}
@@ -528,6 +546,8 @@ export function ComposerPromptBar({
               focus it through COMPOSER_INTENT_INPUT_TESTID instead.
             */}
             <PromptInput.TextArea
+              aria-describedby={describedBy}
+              aria-invalid={intentError ? true : undefined}
               aria-label={ariaLabel}
               data-testid={COMPOSER_INTENT_INPUT_TESTID}
               placeholder={placeholder}
@@ -544,6 +564,32 @@ export function ComposerPromptBar({
           </PromptInput.Toolbar>
         </PromptInput.Shell>
       </PromptInput>
+
+      {/*
+        The reason a press did not start a run, and what the next press will do.
+        Both are real text, both are `aria-describedby` targets on the textarea:
+        a red edge on its own told screen-reader users nothing and told sighted
+        merchants a colour without a cause.
+      */}
+      {intentError ? (
+        <p
+          className="text-destructive text-sm"
+          data-testid={INTENT_ERROR_ID}
+          id={INTENT_ERROR_ID}
+          role="alert"
+        >
+          {intentError}
+        </p>
+      ) : null}
+      {submitHint ? (
+        <p
+          className="text-muted text-xs"
+          data-testid={SUBMIT_HINT_ID}
+          id={SUBMIT_HINT_ID}
+        >
+          {submitHint}
+        </p>
+      ) : null}
 
       {/*
         Outside the Shell on purpose. The upload surface carries the T5 授权

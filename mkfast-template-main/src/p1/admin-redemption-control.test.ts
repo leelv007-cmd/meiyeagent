@@ -25,31 +25,44 @@ describe('admin redemption form contract', () => {
       )
     ) as Record<string, string>;
 
-    assert.equal(
-      zh.admin_redemption_create_description,
-      '录入运营已发放的一次性条数额度；工作区负责人可在账户设置中兑换。'
-    );
-    assert.equal(
+    /*
+     * This used to pin all four strings verbatim, and two of them read
+     *「工作区负责人」/「the person responsible for the workspace」— the exact RBAC
+     * hat D-102 keeps off merchant surfaces. The negative regex below it only
+     * looked for Owner/administrator/role, so the Chinese hat walked straight
+     * through the hole and the test went green on the defect it was named for.
+     *
+     * Pin the contract instead of the wording: merchant-facing copy carries no
+     * hat and speaks to the merchant directly. Admin mode is a separate surface
+     * (PRODUCT.md:「平台管理员在独立的管理模式中，绝不与商家界面混用」), so the
+     * admin string is exempt from the hat ban and asserted separately.
+     */
+    const rbacHat =
+      /工作区负责人|工作区管理员|Owner|Operator|Reviewer|administrator|person responsible for (?:this |the )?workspace|\brole\b/iu;
+
+    for (const merchantCopy of [
       zh.settings_redemption_description,
-      '工作区负责人可兑换一次性的文案、图片、视频或音频条数额度。'
-    );
-    assert.equal(
-      en.admin_redemption_create_description,
-      'Record one-time allowances issued by operations. The person responsible for the workspace can redeem them from account settings.'
-    );
-    assert.equal(
       en.settings_redemption_description,
-      'The person responsible for this workspace can redeem one-time copy, image, video, or audio allowances.'
+    ]) {
+      assert.ok(merchantCopy, 'settings_redemption_description must exist');
+      assert.doesNotMatch(
+        merchantCopy,
+        rbacHat,
+        `商家面文案不得出现权限帽子（D-102）: ${merchantCopy}`
+      );
+    }
+    assert.match(
+      zh.settings_redemption_description,
+      /^你/u,
+      '商家面直接称呼商家本人，不经由角色转述'
     );
-    assert.doesNotMatch(
-      [
-        zh.admin_redemption_create_description,
-        zh.settings_redemption_description,
-        en.admin_redemption_create_description,
-        en.settings_redemption_description,
-      ].join('\n'),
-      /Owner|administrator|管理员（Owner）|role/iu
-    );
+    assert.match(en.settings_redemption_description, /^You\b/u);
+
+    // The admin surface may name who redeems; it must still stay inside admin
+    // mode, so it is asserted here only to keep it from drifting into the
+    // merchant vocabulary check above by accident.
+    assert.ok(zh.admin_redemption_create_description);
+    assert.ok(en.admin_redemption_create_description);
   });
 
   it('rejects partial grants when any amount is not a non-negative integer', () => {

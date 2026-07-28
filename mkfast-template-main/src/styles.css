@@ -210,7 +210,11 @@
        .dark 覆盖），--ambient-text 跟着 --ink 走，两个主题各自反转。 */
     --ambient-image: url("/seed/ambient-gradient.webp");
     --ambient-scrim-top: oklch(1 0 0 / 0.34);
-    --ambient-scrim-mid: oklch(1 0 0 / 0.14);
+    /* 46% 是整条氛围带的最坏点：第三档是不透明的 --canvas，从这里往下遮罩反而
+       越来越实、对比度回升。原值 0.14 在图像最暗像素处只把 --ink-60 托到 4.22:1。
+       0.30 → 4.53:1。逐像素解 ambient-gradient.webp 全部 2000×1125，在 gamma sRGB
+       空间合成（CSS 的 alpha 合成就在 gamma 空间），最暗像素 rgb(226,135,93)。 */
+    --ambient-scrim-mid: oklch(1 0 0 / 0.3);
     --ambient-text: var(--ink);
     --ambient-text-shadow: 0 1px 2px oklch(1 0 0 / 0.55);
     --surface-0: var(--canvas);
@@ -362,12 +366,12 @@
     outline-offset: 2px;
   }
 
-  .meiye-product-shell .meiye-type-display {
-    color: var(--paper);
-    font-size: clamp(1.75rem, 3.5vw, 2.75rem);
-    font-weight: 200;
-    line-height: 1.2;
-  }
+  /*
+   * `.meiye-type-display` 曾经在这里，硬编码 `color: var(--paper)`（白字），是给
+   * 「Display 白字压深色氛围层」那一版写的。氛围层换成白纱压浅色渐变之后，那行白字
+   * 就是新的白压白；它全仓零调用，Display 层由 `.meiye-greeting` 整条承担（它不声明
+   * color，跟着下面的 ambient 段走，明暗各自反转）。同一个字阶不留第二个答案，删。
+   */
 
   .meiye-product-shell .meiye-type-title {
     color: var(--ink-90);
@@ -390,12 +394,22 @@
     line-height: 1.45;
   }
 
+  /*
+   * 压在氛围带上的三档文字：问候语（Display）、页头标题、页头副标题。它们共用一档
+   * 压字色与一层托字投影，`--ambient-text` 跟 `--ink` 走、明暗各自反转（见上方
+   * `--ambient-image` 那段）。`.meiye-greeting` 自己只声明字阶不声明 color，压字色
+   * 由这里给 —— 它在氛围带上就归氛围段管，和 title / aux 是同一个答案。
+   *
+   * 实测（`ambient-gradient.webp` 2000×1125 逐像素 + 两档 scrim 合成）：明色带顶
+   * 9.22–14.52:1、带中 7.50–13.75:1；暗色带顶 8.53–9.47:1。**暗色带中（46% 那一档，
+   * 也是整条带对比度最低的一点）最亮图像区只有 3.68:1** —— 这是氛围层换血时没有验过
+   * 的数，已单独报给主控，不在这里私自调 scrim 参数。
+   */
+  .meiye-product-shell[data-shell-mode="product"] .meiye-ambient-copy
+    .meiye-greeting,
   .meiye-product-shell[data-shell-mode="product"]
     .meiye-ambient-copy
-    .meiye-type-title {
-    color: var(--ambient-text);
-    text-shadow: var(--ambient-text-shadow);
-  }
+    .meiye-type-title,
   .meiye-product-shell[data-shell-mode="product"]
     .meiye-ambient-copy
     .meiye-type-aux {
@@ -564,7 +578,10 @@
     --spark-deep: oklch(0.88 0.05 18);
     /* 同一张浅色渐变底图，暗色下压黑纱降到暗背景该有的亮度，字回到浅色 */
     --ambient-scrim-top: oklch(0 0 0 / 0.74);
-    --ambient-scrim-mid: oklch(0 0 0 / 0.52);
+    /* 同上 46% 最坏点。原值 0.52 在图像最亮像素 rgb(254,251,240) 处只把
+       --ambient-text（暗色 = --ink oklch(0.94 0 0)，Y = 0.94³ = 0.8306）托到
+       3.68:1 —— 低于 WCAG AA，且这是氛围层换血那次从未验过的数。0.60 → 4.94:1。 */
+    --ambient-scrim-mid: oklch(0 0 0 / 0.6);
     --ambient-text-shadow: 0 1px 2px oklch(0 0 0 / 0.45);
     --surface-0: var(--canvas);
     --surface-1: oklch(0.21 0 0);

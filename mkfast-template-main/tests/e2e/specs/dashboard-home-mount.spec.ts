@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import type { ProductState, PublicBillingBalance } from '@meiye/contracts';
+import type { ProductState } from '@meiye/contracts';
 import { readFile } from 'node:fs/promises';
 
 import {
@@ -365,20 +365,7 @@ test.describe('D-126 dashboard home mount', () => {
 
     // --- Cold home ------------------------------------------------------
     await expect(page.getByTestId('dashboard-home-surface')).toBeVisible();
-    const balance = await p1Query<PublicBillingBalance>(
-      page,
-      'entitlements',
-      'balance'
-    );
-    const balanceCard = page.getByTestId('dashboard-balance');
-    for (const bucket of ['copy', 'image', 'video'] as const) {
-      const row = balanceCard.locator(`[data-bucket="${bucket}"]`);
-      await expect(row).toContainText(String(balance[bucket].available));
-      await expect(row).toContainText(String(balance[bucket].allowance));
-    }
-    await expect(balanceCard).not.toContainText(
-      /provider|cost|micros|秒|音频/iu
-    );
+    await expect(page.getByTestId('dashboard-greeting')).toBeVisible();
     await expect(
       page.getByRole('heading', { name: '今天值得发什么' })
     ).toBeVisible();

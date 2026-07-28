@@ -158,9 +158,13 @@ export function ProgressiveFactCard({
   };
 
   return (
+    // 白瓷实底，不是 `bg-muted/NN`：`--muted` 在商家壳里是 --tint-hover（4%/6% 的
+    // 底色 token），再乘一次 alpha 就归零——这张卡当时解析成 1.2% 的白，backdrop
+    // 也没有，字压的是页面底下的任何东西，基线四点实测 2.41–4.40:1。补问门是店主必须逐字
+    // 读懂才能继续的地方，按 DESIGN.md §4「实体内容区一律白瓷」落在实底上。
     <section
       aria-labelledby="progressive-fact-title"
-      className="rounded-2xl border border-border bg-muted/30 p-4"
+      className="meiye-porcelain rounded-2xl p-4"
       data-testid="progressive-fact-card"
     >
       <h2 className="text-base font-medium" id="progressive-fact-title">

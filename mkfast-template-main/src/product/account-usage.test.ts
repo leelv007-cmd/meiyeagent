@@ -29,6 +29,41 @@ test('explains every way reserved usage can be released', () => {
   );
 });
 
+test('every usage bucket has its own name in both languages', () => {
+  // The panel used to label `audio` with 「视频条数」 because its label lookup
+  // was a ternary that fell through, so /settings/account showed 「视频条数」
+  // twice with two different balances — 可用 1/总量 1 next to 可用 0/总量 0 —
+  // and the shop owner could not tell which one was their real video quota.
+  const panel = readFileSync(
+    new URL('./account-usage-panel.tsx', import.meta.url),
+    'utf8'
+  );
+  for (const key of ['copy', 'image', 'video', 'audio']) {
+    assert.match(
+      panel,
+      new RegExp(`\\b${key}:\\s*account_usage_\\w+`, 'u'),
+      `${key} needs its own label`
+    );
+  }
+
+  for (const locale of ['en', 'zh']) {
+    const messages = JSON.parse(
+      readFileSync(
+        new URL(
+          `../../project.inlang/messages/${locale}.json`,
+          import.meta.url
+        ),
+        'utf8'
+      )
+    ) as Record<string, string>;
+    const labels = ['copy', 'image', 'video', 'audio'].map(
+      (resource) => messages[`account_usage_${resource}`]
+    );
+    assert.equal(labels.filter(Boolean).length, 4, locale);
+    assert.equal(new Set(labels).size, 4, `${locale}: duplicate bucket label`);
+  }
+});
+
 test('projects output usage without collapsing reserved, settled, released, or expiry', () => {
   const rows = projectAccountUsage({
     plan: {

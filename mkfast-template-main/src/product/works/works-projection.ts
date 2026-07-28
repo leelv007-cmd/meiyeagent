@@ -243,7 +243,7 @@ export function workEvidence(
     (marketing?.factRefs.length ?? 0) > 0 ||
     contentPackage.source.storeProfileId
   ) {
-    chips.push({ id: 'store', label: '用了本店已确认的门店事实' });
+    chips.push({ id: 'store', label: '用了本店已确认的门店信息' });
   }
   if (contentPackage.source.groundingId) {
     chips.push({ id: 'grounding', label: '内容基于本次确认的创作依据' });

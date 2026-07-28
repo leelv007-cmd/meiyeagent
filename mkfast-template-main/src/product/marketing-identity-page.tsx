@@ -38,7 +38,7 @@ import {
  */
 const COPY = {
   zh: {
-    title: '表达身份',
+    title: '口吻',
     description:
       '记下品牌或个人 IP 怎么说话、什么不能说。撤回、离职或换运营会生成新版本，避免误用。',
     brand: '品牌',
@@ -61,7 +61,7 @@ const COPY = {
     answeredTitle: '本次已确认',
     answeredSkipped: '暂未填写',
     editAnswer: '点击修改',
-    previewTitle: '确认后保存为表达身份',
+    previewTitle: '确认后保存为一个口吻',
     previewDescription: '保存后，之后生成的内容会按这里记下的说法和边界来用。',
     questionKind: '这次要登记品牌身份，还是个人 IP？',
     questionDisplayName: '希望在内容里怎么称呼这个身份？',
@@ -100,7 +100,7 @@ const COPY = {
     retry: '重试',
   },
   en: {
-    title: 'Expression identity',
+    title: 'Voices',
     description:
       'Note how the brand or personal IP speaks and what it must never say. Withdrawal, departure, or operator change creates a new version so old wording is not reused by mistake.',
     brand: 'Brand',
@@ -124,7 +124,7 @@ const COPY = {
     answeredTitle: 'Confirmed for this identity',
     answeredSkipped: 'Not provided yet',
     editAnswer: 'Select to edit',
-    previewTitle: 'Confirm and save this expression identity',
+    previewTitle: 'Confirm and save this voice',
     previewDescription:
       'After saving, new content will follow the voice and boundaries you noted here.',
     questionKind: 'Are you registering a brand or a personal identity?',

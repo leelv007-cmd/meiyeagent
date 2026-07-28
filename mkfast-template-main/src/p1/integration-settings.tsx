@@ -203,6 +203,7 @@ import {
   integration_reauthorize_title,
   integration_refresh,
   integration_request_capabilities,
+  integration_request_capabilities_hint,
   integration_request_capability_aria,
   integration_rotate_cancel,
   integration_rotate_confirm,
@@ -210,8 +211,6 @@ import {
   integration_rotate_new_credential,
   integration_rotate_placeholder,
   integration_rotate_success,
-  integration_scopes,
-  integration_scopes_placeholder,
   integration_secret_write_only,
   integration_source_external,
   integration_source_product,
@@ -1675,13 +1674,14 @@ export function IntegrationSettings({
   } = useIntegrationSettings();
   const createForm = useForm<CreateIntegrationConnectionInput>({
     defaultValues: {
-      capabilities: initialDefinition.capabilities.map(
-        (capability) => capability.id
-      ),
+      // Every capability starts off. Granting 发布 to a public platform is a
+      // consequential act, and a pre-checked switch makes it something the
+      // merchant did without deciding to; turning one on is now the explicit
+      // action. The scope list the server receives is derived from these
+      // switches, so it can never be wider than what was switched on.
+      capabilities: [],
       provider: initialDefinition.provider,
-      scopes: initialDefinition.capabilities
-        .map((capability) => capability.id)
-        .join(', '),
+      scopes: '',
       secret: '',
       subject: '',
     },
@@ -1739,24 +1739,32 @@ export function IntegrationSettings({
   };
 
   const changeProvider = (nextProvider: IntegrationProvider) => {
-    const next = providerDefinition(nextProvider);
     createForm.reset({
-      capabilities: next.capabilities.map((capability) => capability.id),
+      capabilities: [],
       provider: nextProvider,
-      scopes: next.capabilities.map((capability) => capability.id).join(', '),
+      scopes: '',
       secret: '',
       subject: '',
     });
   };
 
   const toggleCreateCapability = (capability: string, checked: boolean) => {
-    createForm.setValue(
-      'capabilities',
-      checked
-        ? [...new Set([...capabilities, capability])]
-        : capabilities.filter((candidate) => candidate !== capability),
-      { shouldDirty: true, shouldValidate: true }
-    );
+    const next = checked
+      ? [...new Set([...capabilities, capability])]
+      : capabilities.filter((candidate) => candidate !== capability);
+    createForm.setValue('capabilities', next, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    // The raw scope string (`publish, observe, publish.poi,
+    // publish.mini_program`) used to be a merchant-editable text field. It is
+    // the platform's vocabulary, not the shop owner's, so the switches above —
+    // which carry Chinese capability names — are now the only control and the
+    // scope list is compiled from them.
+    createForm.setValue('scopes', next.join(', '), {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
   };
 
   const createConnection = createForm.handleSubmit(async (values) => {
@@ -2137,9 +2145,17 @@ export function IntegrationSettings({
                 ) : null}
                 {visibleProviders.map((item) => (
                   <TabsContent key={item.provider} value={item.provider}>
-                    <p className="mb-4 text-sm text-muted-foreground">
-                      {item.description()}
-                    </p>
+                    {/*
+                      When the 未接入 alert above is showing it already says
+                      everything this line said — printing both put the same
+                      disclaimer on screen twice in a row.
+                    */}
+                    {item.provider === 'douyin' &&
+                    douyinIntegrationStatus?.integrated === false ? null : (
+                      <p className="mb-4 text-sm text-muted-foreground">
+                        {item.description()}
+                      </p>
+                    )}
                   </TabsContent>
                 ))}
                 <div className="grid gap-4 md:grid-cols-2">
@@ -2180,24 +2196,17 @@ export function IntegrationSettings({
                       </p>
                     ) : null}
                   </div>
-                  <div className="space-y-2 md:col-span-2">
-                    <Label htmlFor="integration-scopes">
-                      {integration_scopes()}
-                    </Label>
-                    <Input
-                      id="integration-scopes"
-                      placeholder={integration_scopes_placeholder()}
-                      {...createForm.register('scopes')}
-                    />
-                    {createForm.formState.errors.scopes ? (
-                      <p className="text-xs text-destructive">
-                        {createForm.formState.errors.scopes.message}
-                      </p>
-                    ) : null}
-                  </div>
                 </div>
                 <div className="mt-4 space-y-3">
                   <Label>{integration_request_capabilities()}</Label>
+                  <p className="text-xs text-muted-foreground">
+                    {integration_request_capabilities_hint()}
+                  </p>
+                  {createForm.formState.errors.scopes ? (
+                    <p className="text-xs text-destructive">
+                      {createForm.formState.errors.scopes.message}
+                    </p>
+                  ) : null}
                   <div className="grid gap-3 sm:grid-cols-2">
                     {definition.capabilities.map((capability) => (
                       <div

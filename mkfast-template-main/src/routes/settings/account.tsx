@@ -5,10 +5,11 @@ import { PasswordCardWrapper } from '@/components/settings/security/password-car
 import { BillingCard } from '@/components/settings/billing/billing-card';
 import { AccountUsagePanel } from '@/product/account-usage-panel';
 import { RedemptionCard } from '@/p1/redemption-card';
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, Link } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import {
   settings_account_description,
+  settings_account_jump_label,
   settings_account_profile_heading,
   settings_account_security_heading,
   settings_account_usage_heading,
@@ -46,6 +47,39 @@ function AccountPage() {
       title={settings_navigation_account()}
       description={settings_account_description()}
     >
+      {/*
+        The three sections were reachable only by typing a `?section=` URL — the
+        legacy aliases (/settings/profile · /settings/security · /settings/billing
+        · /settings/credits · /settings/payment) all land here, and the sidebar
+        settings group carries only 账户/模型/连接. These in-page jumps make every
+        one of those destinations reachable without adding sidebar entries.
+      */}
+      <nav
+        aria-label={settings_account_jump_label()}
+        className="flex flex-wrap items-center gap-2"
+        data-testid="settings-account-section-nav"
+      >
+        <span className="text-sm text-muted-foreground">
+          {settings_account_jump_label()}
+        </span>
+        {(
+          [
+            ['profile', settings_account_profile_heading()],
+            ['security', settings_account_security_heading()],
+            ['usage', settings_account_usage_heading()],
+          ] as const
+        ).map(([id, label]) => (
+          <Link
+            className="inline-flex min-h-touch-target items-center rounded-full bg-surface-1 px-4 text-sm"
+            key={id}
+            search={{ section: id }}
+            to="/settings/account"
+          >
+            {label}
+          </Link>
+        ))}
+      </nav>
+
       <section className="scroll-mt-16 space-y-4" id="profile">
         <h2 className="text-lg font-semibold">
           {settings_account_profile_heading()}

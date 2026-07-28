@@ -135,11 +135,11 @@ const FALLBACKS: Record<
 const WHY: Record<ProgressiveFactId, string> = {
   name: '成品文案需要可引用的门店名称，避免示例店名混入商家内容。',
   city: '同城曝光与平台投放表述依赖城市，缺失时无法写出可信到店引导。',
-  projectName: '本次交付需要至少一个已确认项目，作为主推与价格锚点。',
-  projectPrice: '价格进入事实账本后才能引用；未确认价格不会被编造。',
+  projectName: '文案里要提到你的招牌项目，得先有一个。',
+  projectPrice: '价格你说了我才敢写，不会自己编。',
   district: '区县帮助同城检索，但不阻塞基础文案生成。',
   address: '详细地址用于到店指引，可先跳过并用安全占位。',
-  booking: '预约方式影响 CTA，可先用通用到店咨询回退。',
+  booking: '预约方式决定文案结尾怎么请顾客来。',
   brandVoice: '语气偏好可稍后完善；跳过时使用克制默认语气。',
 };
 

@@ -1,12 +1,17 @@
 import { getAuthErrorMessages } from '@/lib/locale';
 import {
-  auth_error_back_to_login,
+  auth_error_back_home,
+  auth_error_retry_action,
+  auth_error_status_label,
   auth_error_title,
-  auth_error_try_again,
+  auth_error_unknown_description,
 } from '@/locale/paraglide/messages';
 import { AuthCard } from '@/components/auth/auth-card';
+import { buttonVariants } from '@/components/ui/button';
 import { Routes } from '@/lib/routes';
-import { IconAlertTriangle } from '@tabler/icons-react';
+import { cn } from '@/lib/utils';
+import { Link } from '@tanstack/react-router';
+
 function getDisplayMessage(
   errorCode: string | undefined,
   errorDescription: string | undefined
@@ -21,8 +26,17 @@ function getDisplayMessage(
   if (errorCode) {
     return errorCode;
   }
-  return auth_error_try_again();
+  return auth_error_unknown_description();
 }
+
+/**
+ * The auth shell's failure state, written to the same shape as the in-app 404:
+ * what happened → why → one real action. It used to be a 14px 「哎呀！出错了！」
+ * over a red `<p>` with no next step, and its red was the shadcn default rather
+ * than DESIGN.md §7's `status-danger` (`oklch(0.55 0.2 27)`), which the tone
+ * classes below carry — the same values `components/uiux/product-status.tsx`
+ * uses, so the 规范化状态标签 vocabulary is identical inside and outside the app.
+ */
 export function ErrorCard({
   errorCode,
   errorDescription,
@@ -33,18 +47,33 @@ export function ErrorCard({
   const displayMessage = getDisplayMessage(errorCode, errorDescription);
   return (
     <AuthCard
-      headerLabel={auth_error_title()}
-      bottomButtonHref={Routes.Login}
-      bottomButtonLabel={auth_error_back_to_login()}
+      headerLabel={auth_error_status_label()}
+      bottomButtonHref={Routes.Root}
+      bottomButtonLabel={auth_error_back_home()}
       className="border-none"
     >
-      <div className="w-full flex flex-col justify-center items-center py-4 gap-2">
-        <div className="flex items-center gap-2">
-          <IconAlertTriangle className="text-destructive size-4 shrink-0" />
-          <p className="font-medium text-destructive text-center">
-            {displayMessage}
-          </p>
-        </div>
+      <div className="flex w-full flex-col items-center gap-3 py-2 text-center">
+        <span
+          className="inline-flex items-center gap-x-1.5 rounded-md bg-[oklch(0.55_0.2_27/0.1)] px-2 py-1 font-medium text-[oklch(0.45_0.16_27)] text-xs dark:bg-[oklch(0.55_0.2_27/0.18)] dark:text-[oklch(0.84_0.1_27)]"
+          data-testid="auth-error-status"
+        >
+          <span
+            aria-hidden="true"
+            className="size-1.5 shrink-0 rounded-full bg-[oklch(0.55_0.2_27)]"
+          />
+          {auth_error_status_label()}
+        </span>
+        <h1 className="font-semibold text-lg">{auth_error_title()}</h1>
+        <p className="text-muted-foreground text-sm leading-6">
+          {displayMessage}
+        </p>
+        <Link
+          className={cn(buttonVariants({ size: 'default' }), 'w-full')}
+          data-testid="auth-error-retry"
+          to={Routes.Login}
+        >
+          {auth_error_retry_action()}
+        </Link>
       </div>
     </AuthCard>
   );

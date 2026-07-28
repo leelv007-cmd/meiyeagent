@@ -240,3 +240,132 @@
   font-weight: 200;
   line-height: 1.2;
 }
+
+/*
+ * ── OI-48：底色 token 被当成前景色用，这是最后一面 ──────────────────────────
+ *
+ * 上面四段（sidebar-group-label / empty-state / segment__item / .text-muted）是同一个
+ * 破口被逐面发现时逐面收的。破口本身是：`--muted` 在上游 HeroUI 是**前景**语义（token
+ * 桥也是这么接的，`html:has(.meiye-heroui-glass) { --muted: var(--meiye-ink-60) }`），
+ * 而 `.meiye-product-shell` 里同名的 `--muted` 是 4%/6% 的底色 tint-hover —— 那是
+ * shadcn 的底色语义，壳内 36 处 `bg-muted/NN` 正当消费它，不能翻。于是壳内每一条
+ * vendored 的 `color: var(--muted)` 都被涂成隐形：`.widget__description` 实测明
+ * 1.06:1、暗 1.17:1。
+ *
+ * 这一段把剩下的 34 + 7 条一次收干净，全部映到壳自己的 muted 前景 `--muted-foreground`
+ * （在壳内＝ `--ink-60`；白瓷/画布/surface 上实测明 5.57–5.74:1、暗 7.69–8.57:1）。
+ * `background-color: var(--muted)` 的 8 条一条不碰 —— 那是底色语义，在壳里本来就对。
+ *
+ * 为什么不直接改 vendored 表：`scripts/sync-heroui-pro.ts` 把 `vendor/` 整棵删掉重建，
+ * `vendor/MIRROR.json` 逐文件记 sha256，README 写明「本地手改会被无声冲掉」。所以和上面
+ * 四段一样在共享边界上收；这张表无 layer，压得过同样无 layer 的 vendored 组件表。
+ *
+ * 两档权重都是刻意的，为的是**不碰状态色**：
+ *   `.meiye-product-shell :where(…)` = (0,1,0)，与 vendored 的单类选择器同权重、本表更
+ *   晚，靠源序取胜；vendored 自己的 `[data-selected]` / `:hover` / `[data-current]` /
+ *   `[data-variant="icon"]` 覆写权重更高，一条不受影响。
+ *   `:where(.meiye-product-shell) <原选择器>` 用于后代/伪元素型的那 7 条，等权重同理。
+ */
+.meiye-product-shell
+:where(
+  .chain-of-thought__step-label,
+  .chain-of-thought__trigger,
+  .chart-tooltip__header,
+  .chart-tooltip__label,
+  .chat-message__action,
+  .code-block__copy-button,
+  .data-grid__drag-handle,
+  .data-grid__empty-state,
+  .data-grid__tree-toggle-icon,
+  .empty-state__description,
+  .empty-state__media,
+  .item-card-group__description,
+  .item-card__description,
+  .kpi__title,
+  .list-view__description,
+  .prompt-input__footer,
+  .prompt-input__queue-item-attachments-overflow,
+  .prompt-input__queue-item-content,
+  .prompt-input__queue-item-description,
+  .prompt-input__queue-item-handle,
+  .prompt-input__queue-item-icon,
+  .prompt-suggestion__description,
+  .prompt-suggestion__group-description,
+  .prompt-suggestion__item-end-icon,
+  .prompt-suggestion__item-meta,
+  .sheet__close-trigger,
+  .sidebar__group-label,
+  .sidebar__menu-chip,
+  .sidebar__menu-header,
+  .sidebar__menu-icon,
+  .sidebar__menu-indicator,
+  .trend-chip__suffix,
+  .widget__description,
+  .widget__legend-item-label
+) {
+  color: var(--muted-foreground);
+}
+
+/*
+ * 同一个破口的另一个 token，静态门禁扫出来的、critique 那份 42 条清单里没有的一条：
+ * `--accent` 在上游 HeroUI 是墨色实心（桥里 `--accent: var(--meiye-ink)`），在
+ * `.meiye-product-shell` 里却是 shadcn 的悬停痕 tint-hover（明 4% / 暗 6% 的底色）。
+ * timeline 的「当前」标记因此在壳内解成 alpha 0.04，和 --muted 那批一样是隐形的。
+ * 映到壳的实心墨色 `--foreground`（＝ `--ink`），正是桥给 --accent 的上游取值。
+ */
+:where(.meiye-product-shell) .timeline__marker[data-status="current"] {
+  color: var(--foreground);
+}
+
+:where(.meiye-product-shell) .markdown blockquote,
+:where(.meiye-product-shell) .markdown ul li::marker,
+:where(.meiye-product-shell) .list-view__item-content svg,
+:where(.meiye-product-shell) .cell-select .cell-select__value,
+:where(.meiye-product-shell) .cell-select .cell-select__indicator,
+:where(.meiye-product-shell) .cell-slider .cell-slider__output,
+:where(.meiye-product-shell)
+  :is(.number-stepper__decrement-button, .number-stepper__increment-button)
+  svg {
+  color: var(--muted-foreground);
+}
+
+/*
+ * DESIGN.md §4「玻璃有边法则」：没有 blur、没有描边的半透明白不是玻璃，是没上完色。
+ * theme-glass.css 给 `.widget__content` 与 `.segment` 上了件级 blur(24px)，两者的
+ * vendored 表都没给描边（实测明 `oklch(1 0 0 / 0.8)`、暗 `oklch(0.19 0 0 / 0.85)`，边＝无）。
+ * 补的就是 `--glass-edge` 本尊（明 0.55 / 暗 0.18），和 `.meiye-glass-piece` 同一个值。
+ * `.segment--ghost` 的底是 vendored 写死的透明（`background-color: #0000`），它不是玻璃，
+ * 不补边。
+ */
+.meiye-product-shell .widget__content,
+.meiye-product-shell .segment:not(.segment--ghost) {
+  border: 1px solid var(--meiye-glass-edge, var(--glass-edge));
+}
+
+/*
+ * DESIGN.md §5「Focus: 2px 墨色 outline + 2px offset」的系统级兜底。
+ *
+ * `src/custom.css` 有一条全局 `:focus-visible { outline: 2px solid var(--primary) }`，
+ * 但紧接着又把**任何 class 串里含 `focus-visible:ring` 的元素**的 outline 关掉、交给
+ * ring 接管 —— shadcn `Button` 的基础串恰好含这一段；vendored 的
+ * `.segment__item[data-focus-visible="true"]` 同样 `outline-style: none`，接管用的 ring
+ * 依赖 `--ring-offset-width`，而这个 token 在本 app 载入的任何一张表里都没有定义处。
+ * 实测结果是四个可聚焦元素（语言、切换主题、segment「全部」、五步向导「下一步」）
+ * outline 与 box-shadow 双双为空，焦点完全不可见。这里只把 outline 还回去，不碰
+ * box-shadow：真正拿到 ring 的元素两者并存，不冲突。
+ *
+ * 权重刻意压在 (0,2,0)：够压过 custom.css 的关闭规则与 vendored 的
+ * `[data-focus-visible="true"]`（同权重、本表更晚），但壳内任何 (0,3,0) 的显式焦点样式
+ * 照旧覆盖它 —— 例如 `.cell-slider__thumb[data-focus-visible="true"]` 自带的 :after 指示
+ * 器仍然是它自己那一套。不逐个选择器打补丁，因为漏网的下一个还会是漏网的。
+ *
+ * 颜色走 `--product-focus`：明 `oklch(0.22 0 0)`（canvas 上 15.64:1），暗 §7 的
+ * `oklch(0.85 0.08 18)`（canvas 上 12.09:1）。§5 括号里的「氛围层上改 2px 白 outline」
+ * 是按「氛围层是深色影像」写的；本实现的氛围层已换成浅色渐变 + 白纱（见 styles.css 里
+ * `--ambient-image` 那段，`--ambient-text` 同样因此跟着 `--ink` 走而不是 §7 的白），
+ * 白 outline 在浅色带上等于没有，所以这里同样跟 `--product-focus`。
+ */
+.meiye-product-shell :is(:focus-visible, [data-focus-visible="true"]) {
+  outline: 2px solid var(--product-focus, var(--ink));
+  outline-offset: 2px;
+}

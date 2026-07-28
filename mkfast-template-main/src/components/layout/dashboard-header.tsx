@@ -13,8 +13,13 @@ import { ModeSwitcher } from '@/components/theme/mode-switcher';
 import { websiteConfig } from '@/config/website';
 import { useCurrentPlan } from '@/hooks/use-payment';
 import { Routes } from '@/lib/routes';
-import { shell_product_subscription_upgrade } from '@/locale/paraglide/messages';
-import { IconSparkles } from '@tabler/icons-react';
+import {
+  shell_product_subscription_upgrade,
+  shell_product_subscription_upgrade_short,
+  shell_product_usage_entry,
+  shell_product_usage_entry_aria,
+} from '@/locale/paraglide/messages';
+import { IconGauge, IconSparkles } from '@tabler/icons-react';
 import { Link, useRouterState } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import React from 'react';
@@ -96,6 +101,27 @@ export function DashboardHeader({
 
         <div className="meiye-topbar-capsule ml-auto flex shrink-0 items-center gap-2">
           {actions}
+          {/*
+            「我还剩多少」was reachable only by typing the URL: the pricing CTA
+            answers「买什么」, not「剩多少」. The usage section is the one place
+            that answers it, so the capsule links straight at it. Literal `to`
+            instead of `Routes.SettingsAccount` — the typed router needs the
+            path literal to accept `search`.
+            `meiye-product-subscription-entry` is the shared topbar-pill shape,
+            not a subscription-only style; see the handover note on renaming it.
+          */}
+          {!isAdmin ? (
+            <Link
+              aria-label={shell_product_usage_entry_aria()}
+              className="meiye-product-subscription-entry"
+              data-testid="product-usage-entry"
+              search={{ section: 'usage' }}
+              to="/settings/account"
+            >
+              <IconGauge aria-hidden="true" className="size-4" />
+              <span>{shell_product_usage_entry()}</span>
+            </Link>
+          ) : null}
           {showSubscriptionEntry ? (
             <Link
               aria-label={shell_product_subscription_upgrade()}
@@ -104,6 +130,10 @@ export function DashboardHeader({
               to={Routes.Pricing}
             >
               <IconSparkles aria-hidden="true" className="size-4 text-spark" />
+              {/* 390px used to leave a bare spark with no words next to it. */}
+              <span className="sm:hidden">
+                {shell_product_subscription_upgrade_short()}
+              </span>
               <span className="hidden sm:inline">
                 {shell_product_subscription_upgrade()}
               </span>

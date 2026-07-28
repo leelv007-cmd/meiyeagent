@@ -66,9 +66,38 @@ test('Composer and Result Center keep the product shell contract', () => {
     dashboardLayout,
     /className="meiye-ambient-copy"[\s\S]*?meiye-type-title[\s\S]*?meiye-type-aux/u
   );
+  /*
+   * 压在氛围带上的文字共用一档压字色。这条断言原本只列 title / aux —— 而 Display
+   * 层（问候语）也压在同一条带上，它以前落在 `.meiye-type-display` 的硬编码白字上，
+   * 氛围层换成白纱压浅色渐变之后那就是白压白。所以三个类必须在同一条规则里，
+   * 一起跟 `--ambient-text` 走（它跟 `--ink` 走，明暗各自反转），并且一起拿到托字投影。
+   *
+   * 反向也要钉住：`.meiye-type-display` 那条硬编码白字已删，谁再写回来就红。
+   */
+  // 注释里会点名这些类（说明它们为什么这么写），扫的是规则本身，先把注释去掉。
+  const flatStyles = styles
+    .replace(/\/\*[\s\S]*?\*\//gu, '')
+    .replace(/\s+/gu, ' ');
+  const onAmbient = '.meiye-product-shell[data-shell-mode="product"]';
+  const ambientRule = [
+    `${onAmbient} .meiye-ambient-copy .meiye-greeting`,
+    `${onAmbient} .meiye-ambient-copy .meiye-type-title`,
+    `${onAmbient} .meiye-ambient-copy .meiye-type-aux`,
+  ].join(', ');
+  const at = flatStyles.indexOf(`${ambientRule} {`);
+  assert.notEqual(
+    at,
+    -1,
+    '氛围带上的 Display / 标题 / 副标题必须共用同一条压字规则'
+  );
   assert.match(
-    styles,
-    /\.meiye-ambient-copy[\s\S]*?\.meiye-type-title[\s\S]*?color:\s*var\(--ambient-text\)[\s\S]*?\.meiye-ambient-copy[\s\S]*?\.meiye-type-aux[\s\S]*?color:\s*var\(--ambient-text\)/u
+    flatStyles.slice(at + ambientRule.length, flatStyles.indexOf('}', at)),
+    /color: var\(--ambient-text\); text-shadow: var\(--ambient-text-shadow\);/u
+  );
+  assert.doesNotMatch(
+    flatStyles,
+    /\.meiye-type-display[^{}]*\{[^{}]*color:/u,
+    '.meiye-type-display 的硬编码白字已删；Display 层压字色由 ambient 段统一给'
   );
   assert.match(recommendation, /meiye-entry-card/u);
   assert.match(composer, /meiye-entry-card/u);

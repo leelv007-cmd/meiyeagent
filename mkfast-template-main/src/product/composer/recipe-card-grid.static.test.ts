@@ -72,6 +72,17 @@ test('白话进度 announcements keep delivery-statement contrast (D-116)', () =
   );
 });
 
+/**
+ * 「暂不可用」的原因是店主此刻唯一需要读的字，而 opacity 会连着它一起乘：整卡
+ * 0.6 时 ink-60 落到白瓷上只剩 2.5:1。压暗只允许落在缩略图上。
+ */
+test('an unavailable card dims its thumbnail, never its reason line', () => {
+  const grid = read('./recipe-card-grid.tsx');
+
+  assert.doesNotMatch(grid, /cursor-not-allowed opacity-\d/u);
+  assert.match(grid, /card\.available \? undefined : 'opacity-50'/u);
+});
+
 test('trend-chip left the supply barrel with a written reason (U04 关票)', () => {
   const barrel = read('../../components/heroui-pro/index.ts');
   const manifest = read('../../components/heroui-pro/components.json');

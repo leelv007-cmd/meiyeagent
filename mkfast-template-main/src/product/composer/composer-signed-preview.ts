@@ -50,7 +50,7 @@ const DISTRIBUTION_LABELS: Record<ComposerDistributionTarget, string> = {
 
 export type ComposerSignedPreviewRow = {
   /** Stable test/telemetry handle — never shown to the merchant. */
-  key: 'destination' | 'deliverable' | 'model';
+  key: 'destination' | 'deliverable';
   label: string;
   value: string;
 };
@@ -74,13 +74,18 @@ function deliverableValue(
 }
 
 /**
- * Project the signed fields for display. `modelName` is the catalog model's
- * merchant-facing display name — the signed `catalogModel.id`/`revision` are
- * identifiers and never rendered.
+ * Project the signed fields for display.
+ *
+ * There used to be a third row — 「生成方式：<model display name>」. Which model
+ * runs is model routing, and PRODUCT.md 反面参照 names 「模型路由细节」 among the
+ * things that stay in 二级详情 or 管理模式. A shop owner reading
+ * 「生成方式：Seedream 5.0 Pro」 learns nothing they can act on and is handed a
+ * vendor name to worry about, so the row is gone; the signed `catalogModel`
+ * still travels in the submission and is still compared at admission by
+ * {@link composerSignedPreviewMatchesFrozen}.
  */
 export function projectComposerSignedPreview(input: {
   signed: ComposerSubmissionSignedFields;
-  modelName?: string | null;
 }): ComposerSignedPreview {
   const rows: ComposerSignedPreviewRow[] = [
     {
@@ -94,10 +99,6 @@ export function projectComposerSignedPreview(input: {
       value: deliverableValue(input.signed.deliverable),
     },
   ];
-  const modelName = input.modelName?.trim();
-  if (modelName) {
-    rows.push({ key: 'model', label: '生成方式', value: modelName });
-  }
   return {
     rows,
     capability: DISTRIBUTION_LABELS[input.signed.distributionTarget],

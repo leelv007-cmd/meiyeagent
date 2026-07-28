@@ -314,14 +314,19 @@ function CurrentRecommendation({
           {recommendation.body}
         </p>
       </div>
+      {/*
+        三格分区痕落在外层白瓷卡里，实底由卡供给，所以这里只需要一层痕，不再套
+        白瓷（§5 禁止嵌套卡片）。底走完整的 --tint-hover，不写 `bg-muted/NN`：
+        --muted 本身就是 alpha token，再乘一次痕就消失了。
+      */}
       <dl className="grid gap-3 text-sm sm:grid-cols-3">
-        <div className="rounded-xl bg-muted/70 p-3">
+        <div className="rounded-xl bg-muted p-3">
           <dt className="font-medium">{today_recommendation_why()}</dt>
           <dd className="mt-1 text-muted-foreground">
             {recommendation.whyNow}
           </dd>
         </div>
-        <div className="rounded-xl bg-muted/70 p-3">
+        <div className="rounded-xl bg-muted p-3">
           <dt className="font-medium">{today_recommendation_facts()}</dt>
           {/* D-116: fact ids stay internal — the merchant reads the fact names
               their own ledger carries, and the count when a name is not there. */}
@@ -345,7 +350,7 @@ function CurrentRecommendation({
             </span>
           </dd>
         </div>
-        <div className="rounded-xl bg-muted/70 p-3">
+        <div className="rounded-xl bg-muted p-3">
           <dt className="font-medium">
             {today_recommendation_customer_action()}
           </dt>

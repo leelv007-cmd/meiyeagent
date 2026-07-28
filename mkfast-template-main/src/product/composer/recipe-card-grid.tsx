@@ -96,7 +96,10 @@ export function RecipeCardButton({
         // min 48×48 touch target; no hover-only action discovery
         'meiye-item-card-stack min-h-12 w-full gap-1 p-3 text-left transition-colors',
         'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
-        card.available ? 'hover:bg-accent/40' : 'cursor-not-allowed opacity-60'
+        // 不可用不整卡降透明度：opacity 会把说明行和「暂不可用」的原因一起乘
+        // 下去（ink-60 × 0.6 在白瓷上只剩 2.5:1），而原因恰恰是店主此刻唯一
+        // 需要读的字。卡片照旧不可点，压暗只落在缩略图上。
+        card.available ? 'hover:bg-accent/40' : 'cursor-not-allowed'
       )}
       data-available={card.available ? 'true' : 'false'}
       data-card-kind={card.kind}
@@ -109,6 +112,10 @@ export function RecipeCardButton({
       render={(props) => (
         <button
           {...props}
+          // 状态不只靠颜色：不可点这件事同时由原生 disabled、aria-disabled 与
+          // cursor-not-allowed 三路给出，读屏在浏览模式下能从 AX 树拿到禁用态，
+          // 连着 aria-label 里的「暂不可用」原因一起念。
+          aria-disabled={!card.available}
           aria-label={accessibleName}
           disabled={!card.available}
           onClick={() => {
@@ -122,7 +129,10 @@ export function RecipeCardButton({
         <img
           alt=""
           aria-hidden="true"
-          className="mb-1 h-16 w-full rounded-lg object-cover"
+          className={cn(
+            'mb-1 h-16 w-full rounded-lg object-cover',
+            card.available ? undefined : 'opacity-50'
+          )}
           src={card.previewAssetRef}
         />
       ) : null}

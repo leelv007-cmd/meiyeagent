@@ -29,15 +29,12 @@ function signed(
   });
 }
 
-test('the three confirmed things read back in merchant language', () => {
-  const preview = projectComposerSignedPreview({
-    signed: signed(),
-    modelName: '深度文案模型',
-  });
+test('the confirmed things read back in merchant language, without the model', () => {
+  const preview = projectComposerSignedPreview({ signed: signed() });
+  // No 「生成方式」 row: model routing is not merchant-facing (PRODUCT.md 反面参照).
   assert.deepEqual(preview.rows, [
     { key: 'destination', label: '发到哪', value: '小红书' },
     { key: 'deliverable', label: '交付物', value: '文案' },
-    { key: 'model', label: '生成方式', value: '深度文案模型' },
   ]);
   assert.equal(preview.capability, '生成后导出');
 });
@@ -75,12 +72,8 @@ test('朋友圈 is a delivery target, and its capability says so before submit',
   assert.equal(preview.capability, '生成后协办交接');
 });
 
-test('no internal identifier reaches the merchant surface', () => {
-  const preview = projectComposerSignedPreview({
-    signed: signed(),
-    modelName: '  ',
-  });
-  // A blank display name drops the row rather than printing the catalog id.
+test('no internal identifier or model name reaches the merchant surface', () => {
+  const preview = projectComposerSignedPreview({ signed: signed() });
   assert.deepEqual(
     preview.rows.map((row) => row.key),
     ['destination', 'deliverable']

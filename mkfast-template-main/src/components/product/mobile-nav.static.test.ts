@@ -44,7 +44,7 @@ test('the four business destinations are unchanged by the sync (nav 四项合同
 
 /**
  * One label is allowed to differ, and only because the phone entry is the only
- * way into a page that also holds 表达身份. An override nobody wrote down is how
+ * way into a page that also holds 口吻. An override nobody wrote down is how
  * the two lists drifted the first time.
  */
 test('the one label the phone overrides is declared, not accidental', () => {

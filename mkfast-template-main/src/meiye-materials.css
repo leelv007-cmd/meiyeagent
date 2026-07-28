@@ -36,10 +36,17 @@
   border: 1px solid var(--meiye-glass-edge, var(--glass-edge));
 }
 
-/* 白瓷是实体层，不是玻璃：不带 blur，但同样勾一道近白描边。 */
+/*
+ * 白瓷是实体层，不是玻璃：不带 blur，但同样勾一道材质描边。
+ *
+ * 这条边以前硬编码 `oklch(1 0 0 / 0.9)`。DESIGN.md §7 给暗色档的 glass-edge 是
+ * `oklch(1 0 0 / 0.18)`，硬编码等于亮 5 倍 —— 暗色下每张白瓷卡被近乎纯白的硬边框住，
+ * 读作线框稿，恰好把 §4「不用阴影表达层级、用玻璃层次表达」反过来做。改成和上面三档
+ * 玻璃同一个 token，明 0.55 / 暗 0.18 各自跟着主题走。
+ */
 .meiye-porcelain {
   background: var(--meiye-paper, var(--paper));
-  border: 1px solid oklch(1 0 0 / 0.9);
+  border: 1px solid var(--meiye-glass-edge, var(--glass-edge));
   box-shadow: var(--meiye-shadow-ambient, var(--shadow-ambient));
 }
 

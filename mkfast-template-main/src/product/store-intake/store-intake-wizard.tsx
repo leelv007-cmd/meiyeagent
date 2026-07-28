@@ -357,9 +357,12 @@ export function StoreIntakeWizard({
   }
 
   return (
+    // 与补问门同构：`bg-muted/NN` 是 alpha token 再乘一次 alpha，必然归零，向导
+    // 里的 <select> 与整排按钮就落在没有实底的面板上。表单是实体内容区，按
+    // DESIGN.md §4 走白瓷。
     <section
       aria-labelledby="store-intake-wizard-title"
-      className="rounded-2xl border border-border bg-muted/20 p-4"
+      className="meiye-porcelain rounded-2xl p-4"
       data-testid={`store-intake-wizard-${surface}`}
     >
       <h2 className="text-base font-medium" id="store-intake-wizard-title">
