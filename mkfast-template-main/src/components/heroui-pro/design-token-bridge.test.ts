@@ -254,6 +254,61 @@ test('HeroUI base tokens resolve to the 门店橱窗 values they are supposed to
   }
 });
 
+test('dark re-points the HeroUI base tokens DESIGN.md §7 moves', () => {
+  // 上一个断言只读 light 规则：整段 dark 的 HeroUI remap 删掉，十六个测试照样全绿。
+  // 暗色焦点环更是「只做反向断言」的活标本 —— 下面那条一点胭脂法则把 --focus /
+  // --field-border-focus 列进 allowed，于是「暗色焦点环接上了玫瑰金」和「它根本没接」
+  // 在测试里长得一模一样。这里正面要求它在。
+  const expected = new Map([
+    // DESIGN.md §7: 暗色焦点环带玫瑰微调，是一点胭脂法则的唯一例外落点。
+    ['--focus', 'var(--meiye-focus)'],
+    ['--field-border-focus', 'var(--meiye-focus)'],
+    // 暗色下 accent/status 的底翻成亮墨，字面必须跟着翻成画布色才读得出来。
+    ['--accent-foreground', 'var(--meiye-canvas)'],
+    ['--success-foreground', 'var(--meiye-canvas)'],
+    ['--warning-foreground', 'var(--meiye-canvas)'],
+    ['--danger-foreground', 'var(--meiye-canvas)'],
+  ]);
+  for (const [token, value] of expected) {
+    assert.equal(dark.get(token), value, `dark ${token} must map to ${value}`);
+  }
+
+  const focus = resolve('--focus', dark);
+  const chroma = Number(focus?.match(/^oklch\(\s*[\d.]+\s+([\d.]+)/u)?.at(1));
+  assert.ok(
+    chroma > 0,
+    `dark --focus resolved to ${focus}, a neutral — DESIGN.md §7 tints it 玫瑰金`
+  );
+
+  // 序列色是同一条中性墨梯度，两个主题各从自己那头起步：亮底上 --chart-1 最深，
+  // 暗底上它必须最浅。照抄亮色那份，第一条序列就直接沉进画布。
+  const lightness = (name: string, body: Map<string, string>) =>
+    Number(resolve(name, body)?.match(/^oklch\(\s*([\d.]+)/u)?.at(1));
+  const ramp = (body: Map<string, string>) =>
+    [1, 2, 3, 4, 5].map((index) => lightness(`--chart-${index}`, body));
+  const lightRamp = ramp(light);
+  const darkRamp = ramp(dark);
+  assert.ok(
+    lightRamp.every((value) => value > 0),
+    `failed to read the light chart ramp (${lightRamp.join(', ')})`
+  );
+  assert.deepEqual(
+    [...lightRamp].sort((a, b) => a - b),
+    lightRamp,
+    `the light chart ramp must run 深→浅 (${lightRamp.join(', ')})`
+  );
+  assert.deepEqual(
+    [...darkRamp].sort((a, b) => b - a),
+    darkRamp,
+    `the dark chart ramp must run 浅→深 (${darkRamp.join(', ')})`
+  );
+  assert.ok(
+    darkRamp[0] > lightRamp[4],
+    `dark --chart-1 (${darkRamp[0]}) is not the ramp's light end, so the ` +
+      'first series sinks into the 画布'
+  );
+});
+
 test('the surface family stays 真半透明 so backdrop-filter has something to blur', () => {
   // 破口 ①: 这三个曾经全指向不透明的白瓷/画布，Glass 主题 ~60 个选择器的
   // backdrop-filter 于是纯付 GPU、零画面。alpha 是 blur 的前提。
