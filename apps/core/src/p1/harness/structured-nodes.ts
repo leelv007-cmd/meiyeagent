@@ -726,19 +726,29 @@ async function runMeasured<Output>(
       completenessShape
     );
     metrics?.record({
-      schemaValid: true,
+      schemaValid: result.firstPassSchemaValid ?? true,
       attempts: result.attempts,
       repair,
       ...completeness,
     });
     return result;
   } catch (error) {
-    if (error instanceof z.ZodError) {
+    if (
+      error instanceof z.ZodError ||
+      (error instanceof StructuredNodeRunError && error.measurement)
+    ) {
       const { total } = measureCompleteness(undefined, completenessShape);
+      const failedRepair =
+        error instanceof StructuredNodeRunError && error.measurement
+          ? {
+              count: error.measurement.repairCount,
+              reasons: error.measurement.repairReasons,
+            }
+          : undefined;
       metrics?.record({
         schemaValid: false,
-        attempts: 1,
-        repair: observedRepair(undefined, callbackRepairs),
+        attempts: error instanceof StructuredNodeRunError ? error.attempts : 1,
+        repair: observedRepair(failedRepair, callbackRepairs),
         complete: 0,
         total,
       });

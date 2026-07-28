@@ -5,6 +5,7 @@ import type {
   HarnessPendingResume,
   HarnessResumeReconcilerStore,
 } from './resume-reconciler.js';
+import type { HarnessWorkflowInput } from './task-admission.js';
 
 export class PostgresHarnessResumeReconcilerStore
   implements HarnessResumeReconcilerStore
@@ -17,6 +18,8 @@ export class PostgresHarnessResumeReconcilerStore
       idempotency_key: string;
       payload: unknown;
       question_id: string;
+      request: HarnessWorkflowInput;
+      resolution_source: 'decision' | 'late_answer';
       task_id: string;
       workflow_revision: string;
       workspace_id: string;
@@ -25,6 +28,8 @@ export class PostgresHarnessResumeReconcilerStore
               events.idempotency_key,
               events.payload,
               events.question_id,
+              requests.request,
+              events.resolution_source,
               requests.workflow_id as task_id,
               events.workflow_revision::text as workflow_revision,
               requests.request->>'workspaceId' as workspace_id
@@ -32,6 +37,7 @@ export class PostgresHarnessResumeReconcilerStore
        join harness_runtime.task_requests requests
          on requests.runtime_id=events.task_id
        where events.resume_status='pending'
+         and events.resolution_source in ('decision','late_answer')
        order by events.created_at, events.id
        limit $1`,
       [limit]
@@ -42,6 +48,8 @@ export class PostgresHarnessResumeReconcilerStore
         eventId: row.event_id,
         workspaceId: row.workspace_id,
         taskId: row.task_id,
+        request: row.request,
+        resolutionSource: row.resolution_source,
         command: structuredDecisionInputSchema.parse({
           idempotencyKey: row.idempotency_key,
           questionId: row.question_id,

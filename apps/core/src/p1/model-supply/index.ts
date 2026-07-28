@@ -87,6 +87,8 @@ export {
   type MediaProviderHealthReport,
   type MediaProviderDrainMode,
   type MediaProviderReceiptStore,
+  StructuredObjectGenerationError,
+  type StructuredObjectMeasurement,
 } from './provider-lifecycle.js';
 export {
   deploymentAllowsDataClass,
@@ -127,12 +129,13 @@ import {
   type ProductUsage,
   type ProviderCost,
 } from './ledger-contracts.js';
-import type {
-  ProviderExecutionPort,
-  ProviderExecutionRequest,
-  ProviderExecutionResponse,
-  ProviderRuntimeBinding,
-  StructuredObjectExecutor,
+import {
+  type ProviderExecutionPort,
+  type ProviderExecutionRequest,
+  type ProviderExecutionResponse,
+  type ProviderRuntimeBinding,
+  type StructuredObjectExecutor,
+  StructuredObjectGenerationError,
 } from './provider-lifecycle.js';
 import {
   deploymentAllowsDataClass,
@@ -1406,9 +1409,23 @@ export class ModelSupplyApplicationService {
             kind: 'completed',
             providerTaskRef: generated.providerTaskRef,
             structuredOutput: generated.output,
+            ...(generated.measurement
+              ? { structuredMeasurement: generated.measurement }
+              : {}),
             providerCost: executor.providerCost(generated.usage),
           };
         } catch (error) {
+          if (error instanceof StructuredObjectGenerationError) {
+            return {
+              kind: 'failure',
+              acceptance: error.acceptance,
+              errorCode: 'STRUCTURED_SCHEMA_REPAIR_FAILED',
+              retryable: false,
+              message: error.message,
+              structuredMeasurement: error.measurement,
+              providerCost: executor.providerCost(error.usage),
+            };
+          }
           return {
             kind: 'failure',
             acceptance: structuredExecutionAcceptance(error),
@@ -2685,6 +2702,9 @@ export class ModelSupplyApplicationService {
             ? { origin: structuredClone(attemptSubmission.origin) }
             : {}),
           ...(response.errorCode ? { failureCode: response.errorCode } : {}),
+          ...(response.structuredMeasurement
+            ? { structuredMeasurement: response.structuredMeasurement }
+            : {}),
 			...(response.retryable === true ? { retryable: true } : {}),
           snapshot,
           attempt,
@@ -2753,6 +2773,9 @@ export class ModelSupplyApplicationService {
         ...(response.text ? { text: response.text } : {}),
         ...(response.structuredOutput !== undefined
           ? { structuredOutput: structuredClone(response.structuredOutput) }
+          : {}),
+        ...(response.structuredMeasurement
+          ? { structuredMeasurement: response.structuredMeasurement }
           : {}),
         usage,
         providerCost,

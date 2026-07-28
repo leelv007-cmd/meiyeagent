@@ -60,6 +60,29 @@ export interface ProviderRuntimeBinding {
   };
 }
 
+export interface StructuredObjectMeasurement {
+  firstPassSchemaValid: boolean;
+  repairCount: number;
+  repairReasons: string[];
+  providerAttempts: number;
+}
+
+export class StructuredObjectGenerationError extends Error {
+  readonly acceptance = 'accepted' as const;
+
+  constructor(
+    readonly usage: { inputTokens: number; outputTokens: number },
+    readonly measurement: StructuredObjectMeasurement,
+    options: { cause: unknown },
+  ) {
+    super(
+      'Structured output failed after its bounded repair attempt.',
+      options,
+    );
+    this.name = 'StructuredObjectGenerationError';
+  }
+}
+
 export interface ProviderExecutionRequest {
   jobId: string;
   model: CatalogModel;
@@ -89,6 +112,7 @@ export type ProviderExecutionResponse =
       platformVariants?: GeneratedPlatformVariants;
       text?: string;
       structuredOutput?: unknown;
+      structuredMeasurement?: StructuredObjectMeasurement;
       assetBytes?: Uint8Array;
       contentType?: OwnedAsset['contentType'];
       providerCost: Omit<ProviderCost, 'id' | 'status'>;
@@ -100,6 +124,7 @@ export type ProviderExecutionResponse =
       errorCode?: string;
       retryable?: boolean;
       message: string;
+      structuredMeasurement?: StructuredObjectMeasurement;
       providerCost: Omit<ProviderCost, 'id' | 'status'>;
     };
 
@@ -117,6 +142,7 @@ export interface StructuredObjectExecutor {
   supportsCatalogModel(catalogModelId: string): boolean;
   generate<Output>(input: {
     abortSignal?: AbortSignal;
+    beforeProviderAttempt?: () => Promise<void>;
     instructions: string;
     onPartialOutput?: (partial: unknown) => Promise<void> | void;
     prompt: string;
@@ -126,6 +152,7 @@ export interface StructuredObjectExecutor {
     output: Output;
     providerTaskRef: string;
     usage: { inputTokens: number; outputTokens: number };
+    measurement?: StructuredObjectMeasurement;
   }>;
   providerCost(usage: { inputTokens: number; outputTokens: number }): {
     amount: number;

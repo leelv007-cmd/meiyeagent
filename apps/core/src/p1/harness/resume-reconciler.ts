@@ -1,12 +1,18 @@
 import type { StructuredDecisionInput } from '@meiye/contracts';
 
-import type { HarnessWorkflowResumer } from './decision-service.js';
+import {
+  type HarnessWorkflowResumer,
+  lateAnswerSuccessorWorkflowId,
+} from './decision-service.js';
+import type { HarnessWorkflowInput } from './task-admission.js';
 
 export interface HarnessPendingResume {
   eventId: string;
   workspaceId: string;
   taskId: string;
   command: StructuredDecisionInput;
+  request?: HarnessWorkflowInput;
+  resolutionSource: 'decision' | 'late_answer';
 }
 
 export interface HarnessResumeReconcilerStore {
@@ -27,7 +33,27 @@ export class HarnessResumeReconciler {
     let failed = 0;
     for (const item of pending) {
       try {
-        await this.workflow.resume(item.workspaceId, item.taskId, item.command);
+        if (item.resolutionSource === 'late_answer') {
+          if (!item.request || !this.workflow.startSuccessor) {
+            throw new Error('Late-answer successor workflow is unavailable.');
+          }
+          await this.workflow.startSuccessor({
+            command: item.command,
+            request: item.request,
+            sourceTaskId: item.taskId,
+            workflowId: lateAnswerSuccessorWorkflowId(
+              item.taskId,
+              item.command.questionId,
+            ),
+            workspaceId: item.workspaceId,
+          });
+        } else {
+          await this.workflow.resume(
+            item.workspaceId,
+            item.taskId,
+            item.command,
+          );
+        }
         await this.store.markResumed(item.eventId);
         resumed += 1;
       } catch {

@@ -15,6 +15,7 @@ import {
   createUIMessageStreamResponse,
   generateText,
   isStepCount,
+  NoObjectGeneratedError,
   Output,
   streamText,
   toUIMessageStream,
@@ -22,6 +23,7 @@ import {
 } from 'ai';
 import { z, type ZodType } from 'zod';
 import type { StructuredObjectExecutor } from './index.js';
+import { StructuredObjectGenerationError } from './provider-lifecycle.js';
 import type { ResolvedReferenceAsset } from './reference-asset-resolver.js';
 
 const FIXTURE_STREAM_CHUNK_INTERVAL_MS = 200;
@@ -228,6 +230,7 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
 
   async generateStructured<StructuredOutput>(input: {
     abortSignal?: AbortSignal;
+    beforeProviderAttempt?: () => Promise<void>;
     instructions: string;
     onPartialOutput?: (partial: unknown) => Promise<void> | void;
     prompt: string;
@@ -235,36 +238,116 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     schemaName: string;
   }) {
     if (input.onPartialOutput) {
-      const result = streamText({
-        abortSignal: input.abortSignal,
-        ...languageModelCallSettings(this.options),
-        instructions: input.instructions,
-        maxRetries: 0,
-        model: this.model,
-        output: Output.object({
-          name: input.schemaName,
-          schema: input.schema,
-        }),
-        prompt: input.prompt,
-      });
-      for await (const partial of result.partialOutputStream) {
-        await input.onPartialOutput(partial);
+      try {
+        const result = streamText({
+          abortSignal: input.abortSignal,
+          ...languageModelCallSettings(this.options),
+          instructions: input.instructions,
+          maxRetries: 0,
+          model: this.model,
+          output: Output.object({
+            name: input.schemaName,
+            schema: input.schema,
+          }),
+          prompt: input.prompt,
+        });
+        for await (const partial of result.partialOutputStream) {
+          await input.onPartialOutput(partial);
+        }
+        const [output, usage, metadata] = await Promise.all([
+          Promise.resolve(result.output),
+          Promise.resolve(result.usage),
+          Promise.resolve(result.finalStep),
+        ]);
+        return {
+          output: input.schema.parse(output),
+          providerTaskRef: metadata.response.id,
+          usage: {
+            inputTokens: usage.inputTokens ?? 0,
+            outputTokens: usage.outputTokens ?? 0,
+          },
+        };
+      } catch (error) {
+        if (!NoObjectGeneratedError.isInstance(error)) throw error;
+        return this.repairStructured(input, error);
       }
-      const [output, usage, metadata] = await Promise.all([
-        Promise.resolve(result.output),
-        Promise.resolve(result.usage),
-        Promise.resolve(result.finalStep),
-      ]);
-      return {
-        output: input.schema.parse(output),
-        providerTaskRef: metadata.response.id,
-        usage: {
-          inputTokens: usage.inputTokens ?? 0,
-          outputTokens: usage.outputTokens ?? 0,
-        },
-      };
     }
-    const result = await generateText({
+    try {
+      const result = await this.generateStructuredAttempt(input);
+      return structuredAttemptResult(input.schema, result);
+    } catch (error) {
+      if (!NoObjectGeneratedError.isInstance(error)) throw error;
+      return this.repairStructured(input, error);
+    }
+  }
+
+  private async repairStructured<StructuredOutput>(
+    input: {
+      abortSignal?: AbortSignal;
+      beforeProviderAttempt?: () => Promise<void>;
+      instructions: string;
+      prompt: string;
+      schema: ZodType<StructuredOutput>;
+      schemaName: string;
+    },
+    error: NoObjectGeneratedError,
+  ) {
+    await input.beforeProviderAttempt?.();
+    let repaired: Awaited<ReturnType<typeof generateText>>;
+    try {
+      repaired = await this.generateStructuredAttempt({
+        ...input,
+        instructions:
+          `${input.instructions}\n\n` +
+          'The previous response failed schema validation. Return one corrected object that matches the schema exactly.',
+        prompt: structuredRepairPrompt(input.prompt, error.text ?? ''),
+      });
+    } catch (repairError) {
+      if (!NoObjectGeneratedError.isInstance(repairError)) throw repairError;
+      throw new StructuredObjectGenerationError(
+        {
+          inputTokens:
+            (error.usage?.inputTokens ?? 0) +
+            (repairError.usage?.inputTokens ?? 0),
+          outputTokens:
+            (error.usage?.outputTokens ?? 0) +
+            (repairError.usage?.outputTokens ?? 0),
+        },
+        {
+          firstPassSchemaValid: false,
+          repairCount: 1,
+          repairReasons: ['schema_validation'],
+          providerAttempts: 2,
+        },
+        { cause: repairError },
+      );
+    }
+    const result = structuredAttemptResult(input.schema, repaired);
+    return {
+      ...result,
+      usage: {
+        inputTokens:
+          (error.usage?.inputTokens ?? 0) + result.usage.inputTokens,
+        outputTokens:
+          (error.usage?.outputTokens ?? 0) + result.usage.outputTokens,
+      },
+      measurement: {
+        firstPassSchemaValid: false,
+        repairCount: 1,
+        repairReasons: ['schema_validation'],
+        providerAttempts: 2,
+      },
+    };
+  }
+
+  private generateStructuredAttempt<StructuredOutput>(input: {
+    abortSignal?: AbortSignal;
+    instructions: string;
+    prompt: string;
+    schema: ZodType<StructuredOutput>;
+    schemaName: string;
+  }) {
+    return generateText({
       abortSignal: input.abortSignal,
       ...languageModelCallSettings(this.options),
       instructions: input.instructions,
@@ -276,14 +359,6 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
       }),
       prompt: input.prompt,
     });
-    return {
-      output: input.schema.parse(result.output),
-      providerTaskRef: result.finalStep.response.id,
-      usage: {
-        inputTokens: result.usage.inputTokens ?? 0,
-        outputTokens: result.usage.outputTokens ?? 0,
-      },
-    };
   }
 
   supportsCatalogModel(catalogModelId: string) {
@@ -392,6 +467,29 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
       );
     }
   }
+}
+
+function structuredAttemptResult<StructuredOutput>(
+  schema: ZodType<StructuredOutput>,
+  result: Awaited<ReturnType<typeof generateText>>,
+) {
+  return {
+    output: schema.parse(result.output),
+    providerTaskRef: result.finalStep.response.id,
+    usage: {
+      inputTokens: result.usage.inputTokens ?? 0,
+      outputTokens: result.usage.outputTokens ?? 0,
+    },
+  };
+}
+
+function structuredRepairPrompt(prompt: string, invalidText: string) {
+  return JSON.stringify({
+    originalPrompt: prompt,
+    invalidResponse: invalidText.slice(0, 8_000),
+    repairInstruction:
+      'Correct only the structure needed to satisfy the requested schema. Preserve supported facts and do not invent missing merchant facts.',
+  });
 }
 
 export class FixtureAiStreamingRunner implements AiStreamingRunner {

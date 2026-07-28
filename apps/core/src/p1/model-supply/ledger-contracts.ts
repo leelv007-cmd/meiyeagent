@@ -6,6 +6,7 @@ import type {
   GeneratedCopyCandidateContent,
   GeneratedPlatformVariants,
 } from '@meiye/contracts';
+import type { StructuredObjectMeasurement } from './provider-lifecycle.js';
 import type {
 	AdvancedCanvasGenerationOrigin,
 	AdvancedCanvasGenerationOriginRef,
@@ -83,6 +84,7 @@ export interface ModelSupplyResult {
   platformVariants?: GeneratedPlatformVariants;
   text?: string;
   structuredOutput?: unknown;
+  structuredMeasurement?: StructuredObjectMeasurement;
   usage: ProductUsage;
   providerCost: ProviderCost;
   providerCosts: ProviderCost[];
