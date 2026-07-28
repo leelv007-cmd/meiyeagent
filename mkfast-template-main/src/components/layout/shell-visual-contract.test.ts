@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
@@ -16,9 +16,13 @@ test('product chrome consumes the floating glass and ambient shell tokens', () =
   const styles = readSource('src/styles.css');
   const glass = readSource('src/components/heroui-pro/heroui-glass.css');
 
-  assert.match(
-    styles,
-    /--ambient-image:\s*url\("\/seed\/store\/store-artist-working\.webp"\)/u
+  // 氛围层必须真挂着一张底图，且那张图真的在 public/ 里 —— 比钉死文件名更
+  // 有用：换图不算违约，引用一张不存在的图才算。
+  const ambient = styles.match(/--ambient-image:\s*url\("([^"]+)"\)/u);
+  assert.ok(ambient, 'the product shell must declare an ambient backdrop');
+  assert.ok(
+    existsSync(resolve(process.cwd(), 'public', ambient[1].replace(/^\//, ''))),
+    `ambient backdrop ${ambient[1]} is missing from public/`
   );
   assert.match(
     styles,

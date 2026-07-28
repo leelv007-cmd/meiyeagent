@@ -205,10 +205,14 @@
     --shadow-overlay: 0 4px 20px oklch(0 0 0 / 0.12);
     --shadow-rose-glow: 0 6px 16px oklch(0.63 0.13 18 / 0.24);
     --ease-out-expo: cubic-bezier(0.22, 1, 0.36, 1);
-    --ambient-image: url("/seed/store/store-artist-working.webp");
-    --ambient-scrim-top: oklch(0 0 0 / 0.62);
-    --ambient-scrim-mid: oklch(0 0 0 / 0.28);
-    --ambient-text: oklch(1 0 0 / 0.96);
+    /* 首屏氛围底图：磨砂玻璃质感的渐变光晕，不再用人物照片。
+       浅色下用白纱压一层保证压在上面的深色字可读；暗色下换成黑纱（见下方
+       .dark 覆盖），--ambient-text 跟着 --ink 走，两个主题各自反转。 */
+    --ambient-image: url("/seed/ambient-gradient.webp");
+    --ambient-scrim-top: oklch(1 0 0 / 0.34);
+    --ambient-scrim-mid: oklch(1 0 0 / 0.14);
+    --ambient-text: var(--ink);
+    --ambient-text-shadow: 0 1px 2px oklch(1 0 0 / 0.55);
     --surface-0: var(--canvas);
     --surface-1: oklch(0.985 0 0);
     --surface-2: var(--paper);
@@ -390,13 +394,13 @@
     .meiye-ambient-copy
     .meiye-type-title {
     color: var(--ambient-text);
-    text-shadow: 0 1px 2px oklch(0 0 0 / 0.35);
+    text-shadow: var(--ambient-text-shadow);
   }
   .meiye-product-shell[data-shell-mode="product"]
     .meiye-ambient-copy
     .meiye-type-aux {
     color: var(--ambient-text);
-    text-shadow: 0 1px 2px oklch(0 0 0 / 0.35);
+    text-shadow: var(--ambient-text-shadow);
   }
 
   .meiye-product-shell .meiye-type-label {
@@ -558,8 +562,10 @@
     --spark: oklch(0.72 0.11 18);
     --spark-wash: oklch(0.3 0.045 18);
     --spark-deep: oklch(0.88 0.05 18);
-    --ambient-scrim-top: oklch(0 0 0 / 0.72);
-    --ambient-scrim-mid: oklch(0 0 0 / 0.5);
+    /* 同一张浅色渐变底图，暗色下压黑纱降到暗背景该有的亮度，字回到浅色 */
+    --ambient-scrim-top: oklch(0 0 0 / 0.74);
+    --ambient-scrim-mid: oklch(0 0 0 / 0.52);
+    --ambient-text-shadow: 0 1px 2px oklch(0 0 0 / 0.45);
     --surface-0: var(--canvas);
     --surface-1: oklch(0.21 0 0);
     --surface-2: oklch(0.25 0 0);
