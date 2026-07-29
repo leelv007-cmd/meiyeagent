@@ -10,11 +10,13 @@ import {
 class ReceiptFence {
   generationSubmitCount = 0;
   providerHttpRequestCount = 0;
+  lastGenerationIdentity: unknown;
 
-  async claimGenerationPost() {
+  async claimGenerationPost(input: unknown) {
     if (this.generationSubmitCount !== 0) {
       throw new Error('generation POST already fenced');
     }
+    this.lastGenerationIdentity = input;
     this.generationSubmitCount += 1;
   }
 
@@ -26,6 +28,7 @@ class ReceiptFence {
 const identity = {
   runNonce: 'issue-255-adapter-fence',
   effectId: 'a'.repeat(64),
+  providerIdempotencyKey: 'a'.repeat(64),
   requestFingerprint: 'b'.repeat(64),
 } as const;
 
@@ -33,14 +36,23 @@ test('issue 255 direct copy adapter crosses the durable generation fence before 
   const receipts = new ReceiptFence();
   let providerCalls = 0;
   const port = createIssue255DirectCopyPort({
-    identity: { ...identity, modality: 'copy' },
+    identity: {
+      ...identity,
+      deploymentId: 'deepseek-v4-pro-direct',
+      modality: 'copy',
+    },
     options: {
       apiKey: 'test-key',
       baseUrl: 'https://copy.example.test/v1',
       catalogModelId: 'deepseek-v4-pro',
       currency: 'CNY',
-      fetch: async () => {
+      fetch: async (_request, init) => {
         providerCalls += 1;
+        assert.equal(init?.redirect, 'manual');
+        assert.equal(
+          new Headers(init?.headers).get('idempotency-key'),
+          identity.effectId,
+        );
         return Response.json({
           object: 'chat.completion',
           id: 'issue-255-copy-task',
@@ -79,16 +91,104 @@ test('issue 255 direct copy adapter crosses the durable generation fence before 
   assert.equal(receipts.generationSubmitCount, 1);
   assert.equal(receipts.providerHttpRequestCount, 1);
   assert.equal(providerCalls, 1);
+  assert.deepEqual(receipts.lastGenerationIdentity, {
+    adapter: 'direct-copy',
+    deploymentId: 'deepseek-v4-pro-direct',
+    effectId: identity.effectId,
+    modality: 'copy',
+    providerIdempotencyKey: identity.effectId,
+    requestFingerprint: identity.requestFingerprint,
+    runNonce: identity.runNonce,
+  });
 
   assert.equal((await port.execute(request)).kind, 'failure');
   assert.equal(providerCalls, 1);
+});
+
+for (const status of [307, 308]) {
+  test(`issue 255 direct copy adapter does not follow a ${status} generation redirect`, async () => {
+    const receipts = new ReceiptFence();
+    let providerCalls = 0;
+    const port = createIssue255DirectCopyPort({
+      identity: {
+        ...identity,
+        deploymentId: 'deepseek-v4-pro-direct',
+        modality: 'copy',
+      },
+      options: {
+        apiKey: 'test-key',
+        baseUrl: 'https://copy.example.test/v1',
+        catalogModelId: 'deepseek-v4-pro',
+        currency: 'CNY',
+        fetch: async (_request, init) => {
+          providerCalls += 1;
+          assert.equal(init?.redirect, 'manual');
+          return new Response(null, {
+            headers: {
+              location: 'https://redirect.example.test/v1/chat/completions',
+            },
+            status,
+          });
+        },
+        inputCostPerMillion: 1,
+        model: 'deepseek-v4-pro',
+        outputCostPerMillion: 2,
+      },
+      receipts,
+    });
+
+    assert.equal(
+      (await port.execute(recordedRequest('deepseek-v4-pro', 'copy.generate')))
+        .kind,
+      'failure',
+    );
+    assert.equal(providerCalls, 1);
+    assert.equal(receipts.generationSubmitCount, 1);
+  });
+}
+
+test('issue 255 direct copy adapter rejects a missing stable idempotency key before network', () => {
+  const receipts = new ReceiptFence();
+  let providerCalls = 0;
+
+  assert.throws(
+    () =>
+      createIssue255DirectCopyPort({
+        identity: {
+          ...identity,
+          deploymentId: 'deepseek-v4-pro-direct',
+          modality: 'copy',
+          providerIdempotencyKey: '',
+        },
+        options: {
+          apiKey: 'test-key',
+          baseUrl: 'https://copy.example.test/v1',
+          catalogModelId: 'deepseek-v4-pro',
+          currency: 'CNY',
+          fetch: async () => {
+            providerCalls += 1;
+            return Response.json({});
+          },
+          inputCostPerMillion: 1,
+          model: 'deepseek-v4-pro',
+          outputCostPerMillion: 2,
+        },
+        receipts,
+      }),
+    /stable provider idempotency key/u,
+  );
+  assert.equal(providerCalls, 0);
 });
 
 test('issue 255 Tuzi image adapter crosses the generation fence at the rewritten submit endpoint', async () => {
   const receipts = new ReceiptFence();
   let providerCalls = 0;
   const port = createIssue255TuziMediaPort({
-    identity: { ...identity, modality: 'image_text' },
+    identity: {
+      ...identity,
+      deploymentId: 'gpt-image-2-tuzi-relay',
+      modality: 'image_text',
+    },
     options: tuziOptions(async (input) => {
       providerCalls += 1;
       assert.equal(
@@ -124,7 +224,11 @@ test('issue 255 Tuzi video adapter counts poll HTTP separately without claiming 
   const receipts = new ReceiptFence();
   let providerCalls = 0;
   const port = createIssue255TuziMediaPort({
-    identity: { ...identity, modality: 'video' },
+    identity: {
+      ...identity,
+      deploymentId: 'seedance-1-5-pro-tuzi-relay',
+      modality: 'video',
+    },
     options: tuziOptions(async (input) => {
       providerCalls += 1;
       const target = String(input);
@@ -159,6 +263,29 @@ test('issue 255 Tuzi video adapter counts poll HTTP separately without claiming 
   assert.equal(receipts.generationSubmitCount, 1);
   assert.equal(receipts.providerHttpRequestCount, 2);
   assert.equal(providerCalls, 2);
+});
+
+test('issue 255 Tuzi adapter rejects an uncounted default asset downloader before network', () => {
+  const receipts = new ReceiptFence();
+  const options = tuziOptions(async () => {
+    throw new Error('network must not be reached');
+  });
+  const { assetFetch: _assetFetch, ...optionsWithoutAssetFetch } = options;
+
+  assert.throws(
+    () =>
+      createIssue255TuziMediaPort({
+        identity: {
+          ...identity,
+          deploymentId: 'gpt-image-2-tuzi-relay',
+          modality: 'image_text',
+        },
+        options: optionsWithoutAssetFetch,
+        receipts,
+      }),
+    /explicit counted assetFetch/u,
+  );
+  assert.equal(receipts.providerHttpRequestCount, 0);
 });
 
 function tuziOptions(fetch: typeof globalThis.fetch) {

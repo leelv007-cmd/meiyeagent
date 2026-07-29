@@ -17,6 +17,8 @@ describe(
     const first = new PostgresIssue255LiveReceiptRepository(firstPool);
     const second = new PostgresIssue255LiveReceiptRepository(secondPool);
     const suiteNonce = randomUUID();
+    const receiptWorkspaceId =
+      `issue-255-receipt-workspace-${suiteNonce}`;
 
     before(async () => {
       await first.migrate();
@@ -38,7 +40,85 @@ describe(
         'DELETE FROM issue255_live_generation_receipts WHERE run_nonce LIKE $1',
         [`issue-255-pg-${suiteNonce}-%`],
       );
+      await firstPool.query(
+        'DELETE FROM workspaces WHERE id LIKE $1',
+        [`issue-255-workspace-${suiteNonce}%`],
+      );
+      const residue = await firstPool.query<{ count: number }>(
+        `SELECT (
+           (SELECT COUNT(*)
+              FROM issue255_live_generation_receipts
+             WHERE run_nonce LIKE $1) +
+           (SELECT COUNT(*)
+              FROM workspaces
+             WHERE id LIKE $2) +
+           (SELECT COUNT(*)
+              FROM p1_generation_jobs
+             WHERE workspace_id LIKE $2) +
+           (SELECT COUNT(*)
+              FROM p1_provider_attempts
+             WHERE workspace_id LIKE $2) +
+           (SELECT COUNT(*)
+              FROM p1_provider_cost_events
+             WHERE workspace_id LIKE $2)
+         )::int AS count`,
+        [
+          `issue-255-pg-${suiteNonce}-%`,
+          `issue-255-workspace-${suiteNonce}%`,
+        ],
+      );
+      assert.equal(residue.rows[0]?.count, 0);
       await Promise.all([firstPool.end(), secondPool.end()]);
+    });
+
+    it('migrates frozen workspace and provider lineage columns as non-null unique facts', async () => {
+      const columns = await firstPool.query<{
+        column_name: string;
+        is_nullable: 'NO' | 'YES';
+      }>(
+        `SELECT column_name, is_nullable
+           FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'issue255_live_generation_receipts'
+            AND column_name IN (
+              'workspace_id',
+              'provider_job_id',
+              'provider_attempt_id',
+              'provider_cost_event_id'
+            )
+          ORDER BY column_name`,
+      );
+      assert.deepEqual(
+        columns.rows,
+        [
+          { column_name: 'provider_attempt_id', is_nullable: 'NO' },
+          { column_name: 'provider_cost_event_id', is_nullable: 'NO' },
+          { column_name: 'provider_job_id', is_nullable: 'NO' },
+          { column_name: 'workspace_id', is_nullable: 'NO' },
+        ],
+      );
+
+      const indexes = await firstPool.query<{ indexdef: string }>(
+        `SELECT indexdef
+           FROM pg_indexes
+          WHERE schemaname = 'public'
+            AND tablename = 'issue255_live_generation_receipts'`,
+      );
+      for (const column of [
+        'provider_job_id',
+        'provider_attempt_id',
+        'provider_cost_event_id',
+      ]) {
+        assert.equal(
+          indexes.rows.some(
+            ({ indexdef }) =>
+              indexdef.includes('UNIQUE') &&
+              indexdef.includes(`(${column})`),
+          ),
+          true,
+          `${column} must have a receipt-level unique index`,
+        );
+      }
     });
 
     it('allows only one cross-process claim for the same generation effect', async () => {
@@ -50,6 +130,7 @@ describe(
         .update('issue-255-copy-request-v1')
         .digest('hex');
       const input = {
+        workspaceId: receiptWorkspaceId,
         runNonce,
         modality: 'copy' as const,
         effectId,
@@ -78,6 +159,7 @@ describe(
         ).length,
         1,
       );
+      assert.equal((await first.listRun(runNonce))[0]?.workspaceId, receiptWorkspaceId);
       assert.equal(
         results.filter(
           (result) =>
@@ -101,6 +183,7 @@ describe(
           .update(`issue255/v1\0${runNonce}\0${modality}`)
           .digest('hex');
         return {
+          workspaceId: receiptWorkspaceId,
           runNonce,
           modality,
           effectId,
@@ -145,6 +228,7 @@ describe(
         .update(`issue255/v1\0${runNonce}\0copy`)
         .digest('hex');
       const input = {
+        workspaceId: receiptWorkspaceId,
         runNonce,
         modality: 'copy' as const,
         effectId,
@@ -177,6 +261,7 @@ describe(
         .update(`issue255/v1\0${runNonce}\0copy`)
         .digest('hex');
       const copy = {
+        workspaceId: receiptWorkspaceId,
         runNonce,
         modality: 'copy' as const,
         effectId: copyEffectId,
@@ -236,6 +321,7 @@ describe(
         .digest('hex');
       const requestFingerprint = '3'.repeat(64);
       await first.claim({
+        workspaceId: receiptWorkspaceId,
         runNonce,
         modality: 'copy',
         effectId,
@@ -254,9 +340,12 @@ describe(
       let providerFetchCount = 0;
       const post = async () => {
         await second.claimGenerationPost({
+          adapter: 'direct-copy',
+          deploymentId: 'deepseek-v4-pro-direct',
           runNonce,
           modality: 'copy' as const,
           effectId,
+          providerIdempotencyKey: effectId,
           requestFingerprint,
         });
         providerFetchCount += 1;
@@ -271,6 +360,55 @@ describe(
       );
     });
 
+    it('rejects caller adapter, deployment, and idempotency identity that differs from the receipt', async () => {
+      const runNonce = `issue-255-pg-${suiteNonce}-identity-conflict`;
+      const effectId = createHash('sha256')
+        .update(`issue255/v1\0${runNonce}\0copy`)
+        .digest('hex');
+      const requestFingerprint = '0'.repeat(64);
+      await first.claim({
+        workspaceId: receiptWorkspaceId,
+        runNonce,
+        modality: 'copy',
+        effectId,
+        requestFingerprint,
+        adapter: 'direct-copy',
+        deploymentId: 'deepseek-v4-pro-direct',
+        providerIdempotencyKey: effectId,
+        providerJobId: `${effectId}:job`,
+        providerAttemptId: `${effectId}:attempt`,
+        providerCostEventId: `${effectId}:cost`,
+        recordedMatrixDigest: '4'.repeat(64),
+        reservedAmountMicros: 100_000,
+        priceRevision: 'direct-copy-price-v1',
+        exchangeRevision: 'native-cny-v1',
+      });
+
+      for (const conflict of [
+        { adapter: 'tuzi-image' as const },
+        { deploymentId: 'forged-deployment' },
+        { providerIdempotencyKey: 'forged-idempotency-key' },
+      ]) {
+        await assert.rejects(
+          first.claimGenerationPost({
+            adapter: 'direct-copy',
+            deploymentId: 'deepseek-v4-pro-direct',
+            runNonce,
+            modality: 'copy',
+            effectId,
+            providerIdempotencyKey: effectId,
+            requestFingerprint,
+            ...conflict,
+          }),
+          /frozen provider identity/u,
+        );
+      }
+      assert.equal(
+        (await first.listRun(runNonce))[0]?.generationSubmitCount,
+        0,
+      );
+    });
+
     it('rejects a fourth billable generation POST globally before provider fetch', async () => {
       for (const index of [1, 2, 3]) {
         const runNonce = `issue-255-pg-${suiteNonce}-global-${index}`;
@@ -279,6 +417,7 @@ describe(
           .digest('hex');
         const requestFingerprint = String(index).repeat(64);
         await first.claim({
+          workspaceId: receiptWorkspaceId,
           runNonce,
           modality: 'copy',
           effectId,
@@ -295,9 +434,12 @@ describe(
           exchangeRevision: 'native-cny-v1',
         });
         await first.claimGenerationPost({
+          adapter: 'direct-copy',
+          deploymentId: 'deepseek-v4-pro-direct',
           runNonce,
           modality: 'copy',
           effectId,
+          providerIdempotencyKey: effectId,
           requestFingerprint,
         });
       }
@@ -306,6 +448,7 @@ describe(
         .update(`issue255/v1\0${fourthRunNonce}\0copy`)
         .digest('hex');
       await first.claim({
+        workspaceId: receiptWorkspaceId,
         runNonce: fourthRunNonce,
         modality: 'copy',
         effectId: fourthEffectId,
@@ -324,9 +467,12 @@ describe(
 
       await assert.rejects(
         first.claimGenerationPost({
+          adapter: 'direct-copy',
+          deploymentId: 'deepseek-v4-pro-direct',
           runNonce: fourthRunNonce,
           modality: 'copy',
           effectId: fourthEffectId,
+          providerIdempotencyKey: fourthEffectId,
           requestFingerprint: '9'.repeat(64),
         }),
         /exactly three billable generation POSTs/u,
@@ -334,6 +480,166 @@ describe(
       assert.equal(
         (await first.listRun(fourthRunNonce))[0]?.generationSubmitCount,
         0,
+      );
+    });
+
+    it('accepts only known integer-micro-CNY terminal cost truth', async () => {
+      const runNonce = `issue-255-pg-${suiteNonce}-known-cost`;
+      const effectId = createHash('sha256')
+        .update(`issue255/v1\0${runNonce}\0copy`)
+        .digest('hex');
+      const requestFingerprint = 'a'.repeat(64);
+      const workspaceId = `issue-255-workspace-${suiteNonce}-known-cost`;
+      const deploymentId = 'deepseek-v4-pro-direct';
+      const providerJobId = `${effectId}:job`;
+      const providerAttemptId = `${effectId}:attempt`;
+      const providerCostEventId = `${effectId}:cost`;
+      const providerTaskRef = `${effectId}:task`;
+      const priceRevision = 'direct-copy-price-v1';
+      let billingStatus:
+        | 'known'
+        | 'externally_billed' = 'externally_billed';
+      const providerLedger = {
+        async getGenerationJob() {
+          return {
+            id: providerJobId,
+            workspaceId,
+            operation: 'copy' as const,
+            routeSnapshotId: `${effectId}:route`,
+            usageReservationId: `${effectId}:usage`,
+            status: 'completed' as const,
+            createdBy: 'issue-255',
+            correlationId: effectId,
+            result: {
+              status: 'completed',
+              issue255: {
+                workspaceId,
+                effectId,
+                requestFingerprint,
+                adapter: 'direct-copy',
+                deploymentId,
+                providerIdempotencyKey: effectId,
+                providerJobId,
+                providerAttemptId,
+                providerCostEventId,
+              },
+              attempt: {
+                id: providerAttemptId,
+                deploymentId,
+                providerTaskRef,
+              },
+              providerCost: {
+                id: providerCostEventId,
+                status: 'observed',
+                amountMicros: 100_000,
+                currency: 'CNY',
+                usage: { inputTokens: 10, outputTokens: 20 },
+              },
+              snapshot: {
+                priceRevision,
+                allowedCandidates: [{ deploymentId, priceRevision }],
+              },
+            },
+            createdAt: '2026-07-29T00:00:00.000Z',
+            updatedAt: '2026-07-29T00:00:00.000Z',
+          };
+        },
+        async getProviderAttempt() {
+          return {
+            id: providerAttemptId,
+            workspaceId,
+            jobId: providerJobId,
+            ordinal: 1,
+            deploymentId,
+            acceptance: 'accepted' as const,
+            providerTaskRef,
+            status: 'completed' as const,
+            createdAt: '2026-07-29T00:00:00.000Z',
+            updatedAt: '2026-07-29T00:00:00.000Z',
+          };
+        },
+        async listProviderCosts() {
+          return [
+            {
+              id: providerCostEventId,
+              workspaceId,
+              attemptId: providerAttemptId,
+              stage: 'observed' as const,
+              amountMicros: 100_000,
+              currency: 'CNY',
+              unit: 'token',
+              evidence: 'provider-terminal',
+              payer: 'platform' as const,
+              billingStatus,
+              actorId: 'issue-255',
+              correlationId: effectId,
+              createdAt: '2026-07-29T00:00:00.000Z',
+            },
+          ];
+        },
+      };
+      await first.claim({
+        workspaceId,
+        runNonce,
+        modality: 'copy',
+        effectId,
+        requestFingerprint,
+        adapter: 'direct-copy',
+        deploymentId,
+        providerIdempotencyKey: effectId,
+        providerJobId,
+        providerAttemptId,
+        providerCostEventId,
+        recordedMatrixDigest: 'b'.repeat(64),
+        reservedAmountMicros: 100_000,
+        priceRevision,
+        exchangeRevision: 'native-cny-v1',
+      });
+      await first.claimGenerationPost({
+        adapter: 'direct-copy',
+        deploymentId,
+        runNonce,
+        modality: 'copy',
+        effectId,
+        providerIdempotencyKey: effectId,
+        requestFingerprint,
+      });
+      await first.recordProviderHttpRequest({
+        adapter: 'direct-copy',
+        deploymentId,
+        runNonce,
+        modality: 'copy',
+        effectId,
+        providerIdempotencyKey: effectId,
+        requestFingerprint,
+      });
+
+      await assert.rejects(
+        first.completeFromProviderLedger(
+          {
+            runNonce,
+            modality: 'copy',
+            effectId,
+            requestFingerprint,
+          },
+          providerLedger,
+        ),
+        /ProviderCost event is missing or inconsistent/u,
+      );
+      billingStatus = 'known';
+      assert.equal(
+        (
+          await first.completeFromProviderLedger(
+            {
+              runNonce,
+              modality: 'copy',
+              effectId,
+              requestFingerprint,
+            },
+            providerLedger,
+          )
+        ).actualAmountMicros,
+        100_000,
       );
     });
 
@@ -390,6 +696,17 @@ describe(
         correlationId: `correlation-${suiteNonce}`,
         result: {
           status: 'completed',
+          issue255: {
+            workspaceId,
+            effectId,
+            requestFingerprint,
+            adapter: 'direct-copy',
+            deploymentId,
+            providerIdempotencyKey: effectId,
+            providerJobId: jobId,
+            providerAttemptId: attemptId,
+            providerCostEventId: costEventId,
+          },
           attempt: {
             id: attemptId,
             deploymentId,
@@ -400,7 +717,7 @@ describe(
           providerCost: {
             id: costEventId,
             status: 'observed',
-            amount: 0.1,
+            amountMicros: 100_000,
             currency: 'CNY',
             usage: { inputTokens: 12, outputTokens: 34 },
           },
@@ -441,6 +758,7 @@ describe(
       });
 
       await first.claim({
+        workspaceId,
         runNonce,
         modality: 'copy',
         effectId,
@@ -457,15 +775,21 @@ describe(
         exchangeRevision: 'native-cny-v1',
       });
       await first.claimGenerationPost({
+        adapter: 'direct-copy',
+        deploymentId,
         runNonce,
         modality: 'copy',
         effectId,
+        providerIdempotencyKey: effectId,
         requestFingerprint,
       });
       await first.recordProviderHttpRequest({
+        adapter: 'direct-copy',
+        deploymentId,
         runNonce,
         modality: 'copy',
         effectId,
+        providerIdempotencyKey: effectId,
         requestFingerprint,
       });
 
@@ -475,7 +799,6 @@ describe(
           modality: 'copy',
           effectId,
           requestFingerprint,
-          workspaceId,
         },
         foundation,
       );
@@ -493,7 +816,105 @@ describe(
       const reconciliationEffectId = createHash('sha256')
         .update(`issue255/v1\0${reconciliationRunNonce}\0copy`)
         .digest('hex');
+      await assert.rejects(
+        first.claim({
+          workspaceId: `${workspaceId}-forged`,
+          runNonce: reconciliationRunNonce,
+          modality: 'copy',
+          effectId: reconciliationEffectId,
+          requestFingerprint,
+          adapter: 'direct-copy',
+          deploymentId,
+          providerIdempotencyKey: reconciliationEffectId,
+          providerJobId: jobId,
+          providerAttemptId: attemptId,
+          providerCostEventId: costEventId,
+          recordedMatrixDigest: '7'.repeat(64),
+          reservedAmountMicros: 100_000,
+          priceRevision,
+          exchangeRevision: 'native-cny-v1',
+        }),
+        /durable provider lineage.*already bound/u,
+      );
+
+      const reconciliationJobId = `issue-255-reconcile-job-${suiteNonce}`;
+      const reconciliationAttemptId =
+        `issue-255-reconcile-attempt-${suiteNonce}`;
+      const reconciliationCostEventId =
+        `issue-255-reconcile-cost-${suiteNonce}`;
+      await foundation.insertGenerationJob({
+        id: reconciliationJobId,
+        workspaceId,
+        operation: 'copy',
+        routeSnapshotId: `route-${suiteNonce}`,
+        usageReservationId: `reconcile-usage-${suiteNonce}`,
+        status: 'completed',
+        createdBy: 'issue-255',
+        correlationId: `reconcile-correlation-${suiteNonce}`,
+        result: {
+          status: 'completed',
+          issue255: {
+            workspaceId,
+            effectId: reconciliationEffectId,
+            requestFingerprint,
+            adapter: 'direct-copy',
+            deploymentId,
+            providerIdempotencyKey: reconciliationEffectId,
+            providerJobId: reconciliationJobId,
+            providerAttemptId: reconciliationAttemptId,
+            providerCostEventId: reconciliationCostEventId,
+          },
+          attempt: {
+            id: reconciliationAttemptId,
+            deploymentId,
+            acceptance: 'accepted',
+            providerTaskRef: `reconcile-provider-task-${suiteNonce}`,
+            status: 'completed',
+          },
+          providerCost: {
+            id: reconciliationCostEventId,
+            status: 'observed',
+            amountMicros: 100_000,
+            currency: 'CNY',
+            usage: { inputTokens: 21, outputTokens: 43 },
+          },
+          snapshot: {
+            priceRevision,
+            allowedCandidates: [{ deploymentId, priceRevision }],
+          },
+        },
+        createdAt: now,
+        updatedAt: now,
+      });
+      await foundation.insertProviderAttempt({
+        id: reconciliationAttemptId,
+        workspaceId,
+        jobId: reconciliationJobId,
+        ordinal: 1,
+        deploymentId,
+        acceptance: 'accepted',
+        providerTaskRef: `reconcile-provider-task-${suiteNonce}`,
+        status: 'completed',
+        createdAt: now,
+        updatedAt: now,
+      });
+      await foundation.appendProviderCost({
+        id: reconciliationCostEventId,
+        workspaceId,
+        attemptId: reconciliationAttemptId,
+        stage: 'observed',
+        amountMicros: 100_000,
+        currency: 'CNY',
+        unit: 'token',
+        evidence: 'provider-terminal',
+        payer: 'platform',
+        billingStatus: 'known',
+        actorId: 'issue-255',
+        correlationId: `reconcile-correlation-${suiteNonce}`,
+        createdAt: now,
+      });
       await first.claim({
+        workspaceId,
         runNonce: reconciliationRunNonce,
         modality: 'copy',
         effectId: reconciliationEffectId,
@@ -501,24 +922,30 @@ describe(
         adapter: 'direct-copy',
         deploymentId,
         providerIdempotencyKey: reconciliationEffectId,
-        providerJobId: jobId,
-        providerAttemptId: attemptId,
-        providerCostEventId: costEventId,
+        providerJobId: reconciliationJobId,
+        providerAttemptId: reconciliationAttemptId,
+        providerCostEventId: reconciliationCostEventId,
         recordedMatrixDigest: '7'.repeat(64),
         reservedAmountMicros: 100_000,
         priceRevision,
         exchangeRevision: 'native-cny-v1',
       });
       await first.claimGenerationPost({
+        adapter: 'direct-copy',
+        deploymentId,
         runNonce: reconciliationRunNonce,
         modality: 'copy',
         effectId: reconciliationEffectId,
+        providerIdempotencyKey: reconciliationEffectId,
         requestFingerprint,
       });
       await first.recordProviderHttpRequest({
+        adapter: 'direct-copy',
+        deploymentId,
         runNonce: reconciliationRunNonce,
         modality: 'copy',
         effectId: reconciliationEffectId,
+        providerIdempotencyKey: reconciliationEffectId,
         requestFingerprint,
       });
       await first.markUnknown({
@@ -535,7 +962,6 @@ describe(
           modality: 'copy',
           effectId: reconciliationEffectId,
           requestFingerprint,
-          workspaceId,
         },
         foundation,
       );

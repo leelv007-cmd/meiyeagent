@@ -91,6 +91,7 @@ interface ArkTaskReference {
     mediaUnits?: number;
     outputTokens?: number;
   };
+  usageEvidenceKind?: 'provider_reported' | 'estimated';
 }
 
 interface ClassifiedError {
@@ -513,6 +514,8 @@ export class ArkMediaExecutionPort<
         return {
           status: 'completed' as const,
           providerCost: this.imageCost(reference.usage),
+          usageEvidenceKind:
+            reference.usageEvidenceKind ?? ('estimated' as const),
           ...(reference.sourceExpiresAt
             ? { sourceExpiresAt: reference.sourceExpiresAt }
             : {}),
@@ -520,6 +523,11 @@ export class ArkMediaExecutionPort<
       }
       const task = await this.readVideoTask(reference, request);
       const providerCost = this.videoCost(task, request);
+      const usageEvidenceKind =
+        task.usage?.completion_tokens !== undefined ||
+        task.usage?.output_tokens !== undefined
+          ? ('provider_reported' as const)
+          : ('estimated' as const);
       if (task.status === 'succeeded') {
         if (!task.content?.video_url) {
           return {
@@ -533,6 +541,7 @@ export class ArkMediaExecutionPort<
         return {
           status: 'completed' as const,
           providerCost,
+          usageEvidenceKind,
           sourceExpiresAt: this.taskSourceExpiresAt(task),
         };
       }
@@ -549,7 +558,7 @@ export class ArkMediaExecutionPort<
           ),
         };
       }
-      return { status: task.status, providerCost };
+      return { status: task.status, providerCost, usageEvidenceKind };
     } catch (error) {
       return this.unknownPoll(request, error);
     }
@@ -759,6 +768,10 @@ export class ArkMediaExecutionPort<
           ? { outputTokens: parsed.usage.total_tokens }
           : {}),
     };
+    const usageEvidenceKind =
+      parsed.usage?.generated_images !== undefined
+        ? ('provider_reported' as const)
+        : ('estimated' as const);
     const sourceExpiresAt = this.sourceExpiresAt(parsed.created);
     return {
       acceptance: 'accepted',
@@ -769,9 +782,11 @@ export class ArkMediaExecutionPort<
         sourceUrl: parsed.data[0]!.url,
         sourceExpiresAt,
         usage,
+        usageEvidenceKind,
       }),
       sourceExpiresAt,
       providerCost: this.imageCost(usage),
+      usageEvidenceKind,
     };
   }
 

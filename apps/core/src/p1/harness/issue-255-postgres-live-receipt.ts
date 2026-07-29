@@ -14,6 +14,7 @@ const modalityCapMicros = {
 
 const claimInputSchema = z
   .object({
+    workspaceId: z.string().trim().min(1),
     runNonce: z.string().trim().min(1),
     modality: z.enum(modalities),
     effectId: z.string().regex(/^[a-f0-9]{64}$/u),
@@ -34,6 +35,7 @@ const claimInputSchema = z
 export type Issue255LiveReceiptClaimInput = z.infer<typeof claimInputSchema>;
 
 export interface Issue255LiveReceipt {
+  workspaceId: string;
   runNonce: string;
   modality: (typeof modalities)[number];
   effectId: string;
@@ -64,6 +66,7 @@ export type Issue255LiveReceiptClaim = {
 };
 
 interface ReceiptRow extends QueryResultRow {
+  workspace_id: string;
   run_nonce: string;
   modality: (typeof modalities)[number];
   effect_id: string;
@@ -90,8 +93,12 @@ interface ReceiptRow extends QueryResultRow {
 
 const durableTerminalLineageSchema = z
   .object({
+    workspaceId: z.string().trim().min(1),
     effectId: z.string().regex(/^[a-f0-9]{64}$/u),
     requestFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
+    adapter: z.enum(['direct-copy', 'tuzi-image', 'tuzi-video']),
+    deploymentId: z.string().trim().min(1),
+    providerIdempotencyKey: z.string().trim().min(1),
     attempt: z
       .object({
         id: z.string().trim().min(1),
@@ -141,6 +148,7 @@ export class PostgresIssue255LiveReceiptRepository {
   async migrate() {
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS issue255_live_generation_receipts (
+        workspace_id text NOT NULL,
         run_nonce text NOT NULL,
         modality text NOT NULL
           CHECK (modality IN ('copy', 'image_text', 'video')),
@@ -177,10 +185,50 @@ export class PostgresIssue255LiveReceiptRepository {
     `);
     await this.pool.query(`
       ALTER TABLE issue255_live_generation_receipts
+        ADD COLUMN IF NOT EXISTS workspace_id text,
         ADD COLUMN IF NOT EXISTS provider_job_id text,
         ADD COLUMN IF NOT EXISTS provider_attempt_id text,
         ADD COLUMN IF NOT EXISTS provider_cost_event_id text,
         ADD COLUMN IF NOT EXISTS provider_http_request_count integer NOT NULL DEFAULT 0
+    `);
+    await this.pool.query(`
+      DO $issue255$
+      BEGIN
+        IF EXISTS (
+          SELECT 1
+            FROM issue255_live_generation_receipts
+           WHERE workspace_id IS NULL
+              OR provider_job_id IS NULL
+              OR provider_attempt_id IS NULL
+              OR provider_cost_event_id IS NULL
+        ) THEN
+          RAISE EXCEPTION
+            'Issue 255 refuses legacy receipts without frozen lineage';
+        END IF;
+      END
+      $issue255$
+    `);
+    await this.pool.query(`
+      ALTER TABLE issue255_live_generation_receipts
+        ALTER COLUMN workspace_id SET NOT NULL,
+        ALTER COLUMN provider_job_id SET NOT NULL,
+        ALTER COLUMN provider_attempt_id SET NOT NULL,
+        ALTER COLUMN provider_cost_event_id SET NOT NULL
+    `);
+    await this.pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS
+        issue255_live_receipt_provider_job_unique
+        ON issue255_live_generation_receipts (provider_job_id)
+    `);
+    await this.pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS
+        issue255_live_receipt_provider_attempt_unique
+        ON issue255_live_generation_receipts (provider_attempt_id)
+    `);
+    await this.pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS
+        issue255_live_receipt_provider_cost_unique
+        ON issue255_live_generation_receipts (provider_cost_event_id)
     `);
   }
 
@@ -244,16 +292,22 @@ export class PostgresIssue255LiveReceiptRepository {
   }
 
   async claimGenerationPost(input: {
+    adapter: 'direct-copy' | 'tuzi-image' | 'tuzi-video';
+    deploymentId: string;
     runNonce: string;
     modality: (typeof modalities)[number];
     effectId: string;
+    providerIdempotencyKey: string;
     requestFingerprint: string;
   }) {
     const parsed = z
       .object({
+        adapter: z.enum(['direct-copy', 'tuzi-image', 'tuzi-video']),
+        deploymentId: z.string().trim().min(1),
         runNonce: z.string().trim().min(1),
         modality: z.enum(modalities),
         effectId: z.string().regex(/^[a-f0-9]{64}$/u),
+        providerIdempotencyKey: z.string().trim().min(1),
         requestFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
       })
       .strict()
@@ -289,6 +343,9 @@ export class PostgresIssue255LiveReceiptRepository {
             AND modality = $2
             AND effect_id = $3
             AND request_fingerprint = $4
+            AND adapter = $5
+            AND deployment_id = $6
+            AND provider_idempotency_key = $7
             AND status = 'claimed'
             AND generation_submit_count = 0
         RETURNING *`,
@@ -297,12 +354,15 @@ export class PostgresIssue255LiveReceiptRepository {
           parsed.modality,
           parsed.effectId,
           parsed.requestFingerprint,
+          parsed.adapter,
+          parsed.deploymentId,
+          parsed.providerIdempotencyKey,
         ],
       );
       const row = updated.rows[0];
       if (!row) {
         throw new Error(
-          'Issue 255 generation POST is already fenced or the receipt requires reconciliation.',
+          'Issue 255 generation POST is already fenced, differs from the frozen provider identity, or requires reconciliation.',
         );
       }
       return receiptFromRow(row);
@@ -310,16 +370,22 @@ export class PostgresIssue255LiveReceiptRepository {
   }
 
   async recordProviderHttpRequest(input: {
+    adapter: 'direct-copy' | 'tuzi-image' | 'tuzi-video';
+    deploymentId: string;
     runNonce: string;
     modality: (typeof modalities)[number];
     effectId: string;
+    providerIdempotencyKey: string;
     requestFingerprint: string;
   }) {
     const parsed = z
       .object({
+        adapter: z.enum(['direct-copy', 'tuzi-image', 'tuzi-video']),
+        deploymentId: z.string().trim().min(1),
         runNonce: z.string().trim().min(1),
         modality: z.enum(modalities),
         effectId: z.string().regex(/^[a-f0-9]{64}$/u),
+        providerIdempotencyKey: z.string().trim().min(1),
         requestFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
       })
       .strict()
@@ -333,6 +399,9 @@ export class PostgresIssue255LiveReceiptRepository {
             AND modality = $2
             AND effect_id = $3
             AND request_fingerprint = $4
+            AND adapter = $5
+            AND deployment_id = $6
+            AND provider_idempotency_key = $7
             AND status = 'claimed'
             AND generation_submit_count = 1
         RETURNING *`,
@@ -341,6 +410,9 @@ export class PostgresIssue255LiveReceiptRepository {
           parsed.modality,
           parsed.effectId,
           parsed.requestFingerprint,
+          parsed.adapter,
+          parsed.deploymentId,
+          parsed.providerIdempotencyKey,
         ],
       );
       const row = updated.rows[0];
@@ -359,7 +431,6 @@ export class PostgresIssue255LiveReceiptRepository {
       modality: (typeof modalities)[number];
       effectId: string;
       requestFingerprint: string;
-      workspaceId: string;
     },
     providerLedger: Issue255ProviderLedgerReader,
   ) {
@@ -372,7 +443,6 @@ export class PostgresIssue255LiveReceiptRepository {
       modality: (typeof modalities)[number];
       effectId: string;
       requestFingerprint: string;
-      workspaceId: string;
     },
     providerLedger: Issue255ProviderLedgerReader,
   ) {
@@ -431,6 +501,7 @@ export class PostgresIssue255LiveReceiptRepository {
       await this.assertBudget(client, claim);
       const inserted = await client.query<ReceiptRow>(
         `INSERT INTO issue255_live_generation_receipts (
+           workspace_id,
            run_nonce,
            modality,
            effect_id,
@@ -448,12 +519,13 @@ export class PostgresIssue255LiveReceiptRepository {
            status
          )
          VALUES (
-           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
            'claimed'
          )
          ON CONFLICT DO NOTHING
          RETURNING *`,
         [
+          claim.workspaceId,
           claim.runNonce,
           claim.modality,
           claim.effectId,
@@ -473,7 +545,7 @@ export class PostgresIssue255LiveReceiptRepository {
       const row = inserted.rows[0];
       if (!row) {
         throw new Error(
-          'Issue 255 generation effect conflicts with an existing receipt and requires reconciliation.',
+          'Issue 255 generation effect or durable provider lineage is already bound to another receipt and requires reconciliation.',
         );
       }
       return { kind: 'claimed', receipt: receiptFromRow(row) };
@@ -486,7 +558,6 @@ export class PostgresIssue255LiveReceiptRepository {
       modality: (typeof modalities)[number];
       effectId: string;
       requestFingerprint: string;
-      workspaceId: string;
     },
     providerLedger: Issue255ProviderLedgerReader,
     requireUnknown: boolean,
@@ -497,7 +568,6 @@ export class PostgresIssue255LiveReceiptRepository {
         modality: z.enum(modalities),
         effectId: z.string().regex(/^[a-f0-9]{64}$/u),
         requestFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
-        workspaceId: z.string().trim().min(1),
       })
       .strict()
       .parse(input);
@@ -536,7 +606,6 @@ export class PostgresIssue255LiveReceiptRepository {
         );
       }
       const terminal = await readDurableTerminalLineage(
-        parsed.workspaceId,
         row,
         providerLedger,
       );
@@ -650,7 +719,6 @@ export class PostgresIssue255LiveReceiptRepository {
 }
 
 async function readDurableTerminalLineage(
-  workspaceId: string,
   receipt: ReceiptRow,
   providerLedger: Issue255ProviderLedgerReader,
 ): Promise<Issue255DurableTerminalLineage> {
@@ -665,12 +733,15 @@ async function readDurableTerminalLineage(
   }
   const [attempt, job, costs] = await Promise.all([
     providerLedger.getProviderAttempt(
-      workspaceId,
+      receipt.workspace_id,
       receipt.provider_attempt_id,
     ),
-    providerLedger.getGenerationJob(workspaceId, receipt.provider_job_id),
+    providerLedger.getGenerationJob(
+      receipt.workspace_id,
+      receipt.provider_job_id,
+    ),
     providerLedger.listProviderCosts(
-      workspaceId,
+      receipt.workspace_id,
       receipt.provider_attempt_id,
     ),
   ]);
@@ -694,6 +765,19 @@ async function readDurableTerminalLineage(
   const result = z
     .object({
       status: z.literal('completed'),
+      issue255: z
+        .object({
+          workspaceId: z.string().trim().min(1),
+          effectId: z.string().regex(/^[a-f0-9]{64}$/u),
+          requestFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
+          adapter: z.enum(['direct-copy', 'tuzi-image', 'tuzi-video']),
+          deploymentId: z.string().trim().min(1),
+          providerIdempotencyKey: z.string().trim().min(1),
+          providerJobId: z.string().trim().min(1),
+          providerAttemptId: z.string().trim().min(1),
+          providerCostEventId: z.string().trim().min(1),
+        })
+        .strict(),
       attempt: z
         .object({
           id: z.string().trim().min(1),
@@ -705,7 +789,7 @@ async function readDurableTerminalLineage(
         .object({
           id: z.string().trim().min(1),
           status: z.literal('observed'),
-          amount: z.number().finite().positive(),
+          amountMicros: z.number().int().positive(),
           currency: z.literal('CNY'),
           usage: z
             .object({
@@ -736,6 +820,16 @@ async function readDurableTerminalLineage(
     .passthrough()
     .parse(job.result);
   if (
+    result.issue255.workspaceId !== receipt.workspace_id ||
+    result.issue255.effectId !== receipt.effect_id ||
+    result.issue255.requestFingerprint !== receipt.request_fingerprint ||
+    result.issue255.adapter !== receipt.adapter ||
+    result.issue255.deploymentId !== receipt.deployment_id ||
+    result.issue255.providerIdempotencyKey !==
+      receipt.provider_idempotency_key ||
+    result.issue255.providerJobId !== receipt.provider_job_id ||
+    result.issue255.providerAttemptId !== receipt.provider_attempt_id ||
+    result.issue255.providerCostEventId !== receipt.provider_cost_event_id ||
     result.attempt.id !== attempt.id ||
     result.attempt.deploymentId !== attempt.deploymentId ||
     result.attempt.providerTaskRef !== attempt.providerTaskRef ||
@@ -751,15 +845,13 @@ async function readDurableTerminalLineage(
       (candidate.stage === 'observed' ||
         candidate.stage === 'reconciled'),
   );
-  const actualAmountMicros = Math.round(
-    result.providerCost.amount * 1_000_000,
-  );
+  const actualAmountMicros = result.providerCost.amountMicros;
   if (
     !cost ||
     cost.attemptId !== attempt.id ||
     cost.currency !== 'CNY' ||
     cost.amountMicros !== actualAmountMicros ||
-    cost.billingStatus === 'unknown'
+    cost.billingStatus !== 'known'
   ) {
     throw new Error(
       'Issue 255 durable ProviderCost event is missing or inconsistent.',
@@ -778,8 +870,12 @@ async function readDurableTerminalLineage(
     );
   }
   return durableTerminalLineageSchema.parse({
+    workspaceId: receipt.workspace_id,
     effectId: receipt.effect_id,
     requestFingerprint: receipt.request_fingerprint,
+    adapter: receipt.adapter,
+    deploymentId: receipt.deployment_id,
+    providerIdempotencyKey: receipt.provider_idempotency_key,
     attempt: {
       id: attempt.id,
       jobId: attempt.jobId,
@@ -814,6 +910,7 @@ function assertStableEffectIdentity(input: Issue255LiveReceiptClaimInput) {
 
 function receiptFromRow(row: ReceiptRow): Issue255LiveReceipt {
   return {
+    workspaceId: row.workspace_id,
     runNonce: row.run_nonce,
     modality: row.modality,
     effectId: row.effect_id,

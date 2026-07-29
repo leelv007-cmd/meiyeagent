@@ -11,11 +11,21 @@ type FenceIdentity = {
   modality: 'copy' | 'image_text' | 'video';
   effectId: string;
   requestFingerprint: string;
+  deploymentId: string;
+  providerIdempotencyKey: string;
 };
 
 interface ReceiptFence {
-  claimGenerationPost(input: FenceIdentity): Promise<unknown>;
-  recordProviderHttpRequest(input: FenceIdentity): Promise<unknown>;
+  claimGenerationPost(
+    input: FenceIdentity & {
+      adapter: 'direct-copy' | 'tuzi-image' | 'tuzi-video';
+    },
+  ): Promise<unknown>;
+  recordProviderHttpRequest(
+    input: FenceIdentity & {
+      adapter: 'direct-copy' | 'tuzi-image' | 'tuzi-video';
+    },
+  ): Promise<unknown>;
 }
 
 export function createIssue255ProviderFetchFence(input: {
@@ -24,12 +34,29 @@ export function createIssue255ProviderFetchFence(input: {
   identity: FenceIdentity;
   receipts: ReceiptFence;
 }): typeof globalThis.fetch {
+  assertFrozenIdentity(input.adapter, input.identity);
   return async (request, init) => {
-    if (isGenerationPost(input.adapter, request, init)) {
-      await input.receipts.claimGenerationPost(input.identity);
+    const generationPost = isGenerationPost(input.adapter, request, init);
+    if (generationPost) {
+      await input.receipts.claimGenerationPost({
+        ...input.identity,
+        adapter: input.adapter,
+      });
     }
-    await input.receipts.recordProviderHttpRequest(input.identity);
-    return input.fetch(request, init);
+    await input.receipts.recordProviderHttpRequest({
+      ...input.identity,
+      adapter: input.adapter,
+    });
+    return input.fetch(
+      request,
+      generationPost
+        ? generationRequestInit(
+            input.adapter,
+            input.identity.providerIdempotencyKey,
+            init,
+          )
+        : init,
+    );
   };
 }
 
@@ -58,6 +85,11 @@ export function createIssue255TuziMediaPort(input: {
   receipts: ReceiptFence;
 }) {
   const assetFetch = input.options.assetFetch;
+  if (!assetFetch) {
+    throw new Error(
+      'Issue 255 Tuzi live calibration requires an explicit counted assetFetch.',
+    );
+  }
   const fetch = createIssue255ProviderFetchFence({
     adapter:
       input.identity.modality === 'image_text'
@@ -69,19 +101,21 @@ export function createIssue255TuziMediaPort(input: {
   });
   return new TuziMediaExecutionPort({
     ...input.options,
-    ...(assetFetch
-      ? {
-          assetFetch: {
-            async get(
-              target: Parameters<typeof assetFetch.get>[0],
-              constraints: Parameters<typeof assetFetch.get>[1],
-            ) {
-              await input.receipts.recordProviderHttpRequest(input.identity);
-              return assetFetch.get(target, constraints);
-            },
-          },
-        }
-      : {}),
+    assetFetch: {
+      async get(
+        target: Parameters<typeof assetFetch.get>[0],
+        constraints: Parameters<typeof assetFetch.get>[1],
+      ) {
+        await input.receipts.recordProviderHttpRequest({
+          ...input.identity,
+          adapter:
+            input.identity.modality === 'image_text'
+              ? 'tuzi-image'
+              : 'tuzi-video',
+        });
+        return assetFetch.get(target, constraints);
+      },
+    },
     fetch,
   });
 }
@@ -109,4 +143,45 @@ function isGenerationPost(
     );
   }
   return /\/videos\/?$/u.test(target.pathname);
+}
+
+function generationRequestInit(
+  adapter: 'direct-copy' | 'tuzi-image' | 'tuzi-video',
+  effectId: string,
+  init: RequestInit | undefined,
+): RequestInit {
+  const headers = new Headers(init?.headers);
+  if (adapter === 'direct-copy') {
+    headers.set('idempotency-key', effectId);
+  }
+  return {
+    ...init,
+    headers,
+    redirect: 'manual',
+  };
+}
+
+function assertFrozenIdentity(
+  adapter: 'direct-copy' | 'tuzi-image' | 'tuzi-video',
+  identity: FenceIdentity,
+) {
+  if (
+    !identity.deploymentId.trim() ||
+    identity.providerIdempotencyKey !== identity.effectId
+  ) {
+    throw new Error(
+      'Issue 255 provider fence requires the stable provider idempotency key and deployment identity.',
+    );
+  }
+  const expectedAdapter =
+    identity.modality === 'copy'
+      ? 'direct-copy'
+      : identity.modality === 'image_text'
+        ? 'tuzi-image'
+        : 'tuzi-video';
+  if (adapter !== expectedAdapter) {
+    throw new Error(
+      'Issue 255 provider fence adapter does not match the frozen modality.',
+    );
+  }
 }
