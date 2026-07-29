@@ -609,7 +609,8 @@ These flows should be added after their dependencies are made deterministic:
 boots the real four-service Playwright stack and covers copy, image-text, and
 video in desktop/light and mobile/dark profiles. Every path must discover the
 three modalities, submit with the exact C6 activation budget, visibly pass
-through the running/first-token state, use the modality-specific Result Center
+through the running/first-token state, explicitly authorize a visible upload
+before image and video submission, use the modality-specific Result Center
 workspace, send real adjust/adopt mutations for copy and image, use received
 candidate adoption without video editing for video, enter canonical delivery,
 download a real non-empty package for the expected platform (小红书 ZIP、抖音

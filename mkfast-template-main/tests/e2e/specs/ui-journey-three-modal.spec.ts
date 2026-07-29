@@ -75,9 +75,9 @@ test.describe('Z1 / #105 real Playwright three-modal Day-0 journeys', () => {
           new RegExp(`\\b${surface.theme}\\b`)
         );
         await assertThreeModalDiscovery(page);
-        if (contract.modality === 'video') {
+        if (contract.modality !== 'copy') {
           await seedComposerInlineAuthorize(page, {
-            fileName: `video-day0-${contract.deliveryTarget}-${surface.name}.png`,
+            fileName: `${contract.modality}-day0-${contract.deliveryTarget}-${surface.name}.png`,
           });
         }
 
