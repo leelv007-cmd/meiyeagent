@@ -1,5 +1,4 @@
 import { ComposerHome } from '@/product/composer/composer-home';
-import { CanonicalHistoryPage } from '@/product/canonical-history-page';
 import { desktopRelayLanding } from '@/product/device-relay';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { createFileRoute } from '@tanstack/react-router';
@@ -99,12 +98,25 @@ function DashboardHome() {
     });
   }, [navigate, relayContentId]);
 
+  // D-164①: one dashboard route. `?view=` used to render a whole history page
+  // in place of the workbench, which made `/dashboard` a second destination
+  // wearing the first one's URL — the merchant could be on "the dashboard" and
+  // see no way to create anything. Both views already have routes of their own,
+  // so the parameter survives as a redirect for old links and nothing else.
+  useEffect(() => {
+    if (!search.view) return;
+    void navigate({
+      to: search.view === 'recent' ? '/dashboard/recent' : '/dashboard/works',
+      replace: true,
+    });
+  }, [navigate, search.view]);
+
   if (search.workId) {
     return null;
   }
 
-  if (!isMobile && search.view) {
-    return <CanonicalHistoryPage mode={search.view} />;
+  if (search.view) {
+    return null;
   }
 
   if (relayContentId) {

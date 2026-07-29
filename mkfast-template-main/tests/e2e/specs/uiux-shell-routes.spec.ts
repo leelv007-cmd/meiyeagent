@@ -118,8 +118,12 @@ test('canonical shell routes survive direct navigation and reload', async ({
     // T34 / #228 — 一级导航「内容」lands here; the old task inbox is a redirect shell.
     ['/dashboard/works', '内容'],
     ['/dashboard/assets', '资产库'],
+    // D-164①: `/dashboard?view=` no longer renders a history page in place of
+    // the workbench; it redirects to the route that owns each view. Asserting
+    // the destination's heading is what proves the old link still lands
+    // somewhere real.
     ['/dashboard?view=recent', '最近活动'],
-    ['/dashboard?view=works', '作品历史'],
+    ['/dashboard?view=works', '内容'],
     ['/dashboard/sessions/session-proof', '创作记录'],
     ['/dashboard/works/work-proof', '作品详情'],
     ['/dashboard/jobs/job-proof', '执行详情'],
