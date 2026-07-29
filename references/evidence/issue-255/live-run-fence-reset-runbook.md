@@ -35,17 +35,36 @@ safe only when all of these are true:
 
 If any predicate is unknown, treat the reset as unsafe.
 
+The only approved entrypoint is the digest-pinned launcher at
+`/Users/bin/.codex/monitors/issue-255-safe-provision.mjs`. Its SHA-256 is
+`2a7aca6b60180074e6444cd69648885e47367f62a73cb9e074bcdffd0af7225d`;
+it refuses to load the versioned implementation unless that file has SHA-256
+`e2df475c13c0659d5fbb020933c92c8d383ab7b907eab77c217cdb65cbe801f9`.
+Inspect the five predicates without changing either database:
+
+```sh
+node /Users/bin/.codex/monitors/issue-255-safe-provision.mjs --inspect
+```
+
+The command emits only booleans and counts. Continue only when
+`inspectionComplete`, `collectorStopped`, `ownerOnlyDurableFact`, and
+`resetSafe` are all `true`; a missing table, unreachable database, or failed
+process inspection keeps `resetSafe` false.
+
 ## Reset and reprovision
 
 Do not delete receipt, authorization, or owner rows directly. Drop both
-isolated databases only through the dedicated provisioner:
+isolated databases only when the same launcher repeats the inspection and
+accepts the state:
 
 ```sh
-node /Users/bin/.codex/monitors/issue-255-safe-provision.mjs --cleanup
+node /Users/bin/.codex/monitors/issue-255-safe-provision.mjs --cleanup-if-safe
 ```
 
-The command must report cleanup residual count `0`. Recreate both fresh,
-separate databases only through the same provisioner:
+Any false or unknown predicate refuses cleanup before either database is
+dropped. An accepted cleanup must report residual count `0`, which verifies
+both isolated database names are absent. Recreate both fresh, separate
+databases only through the same provisioner:
 
 ```sh
 node /Users/bin/.codex/monitors/issue-255-safe-provision.mjs
