@@ -232,6 +232,36 @@ test('unsatisfied or invalid model output stays conservative', async () => {
   assert.equal(failed.action, 'conservative_guidance');
 });
 
+test('a ledger wider than the recipe factTypes keeps every matched fact authorized', async () => {
+  const result = await assessRecipeFactSatisfaction(
+    {
+      workflowId: 'workflow-1',
+      workflowRevision: 1,
+      intent: '介绍服务和价格',
+      factTypes: ['service'],
+      bundle: bundleWithFacts(['service', 'price', 'fulfillment', 'other']),
+      at: NOW,
+    },
+    new QueueRunner([
+      {
+        status: 'satisfied',
+        matchedFactRefs: [
+          'store_fact:fact-service:1',
+          'store_fact:fact-price:1',
+          'store_fact:fact-fulfillment:1',
+          'store_fact:fact-other:1',
+        ],
+        missingFactTypes: [],
+      },
+    ]),
+    authorizedRights,
+  );
+  assert.equal(result.status, 'satisfied');
+  assert.equal(result.action, 'execute');
+  assert.ok(result.factRefs.includes('store_fact:fact-price:1'));
+  assert.equal(result.factRefs.length, 4);
+});
+
 test('expired, revoked, and unauthorized facts are removed before the model', async () => {
   const bundle = bundleWithFacts(['price'], {
     expiresAt: '2026-07-25T01:00:00.000Z',

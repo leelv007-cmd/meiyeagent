@@ -117,10 +117,10 @@ export async function assessRecipeFactSatisfaction(
   const requiredKinds = new Set(input.factTypes);
   const missingKinds = new Set(assessment.missingFactTypes);
   if (
-    matchedKinds.size + missingKinds.size !== requiredKinds.size ||
-    [...matchedKinds].some(
-      (kind) => !requiredKinds.has(kind) || missingKinds.has(kind),
-    ) ||
+    // factTypes is the recipe's requirement floor, not an authorization
+    // ceiling: the store ledger legitimately holds more kinds than one
+    // recipe declares, so matched kinds outside factTypes stay authorized.
+    [...matchedKinds].some((kind) => missingKinds.has(kind)) ||
     assessment.missingFactTypes.some((kind) => !requiredKinds.has(kind)) ||
     input.factTypes.some(
       (kind) => !matchedKinds.has(kind) && !missingKinds.has(kind),
