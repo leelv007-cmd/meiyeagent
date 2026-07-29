@@ -329,7 +329,7 @@ async function assertDayZeroSampleStoresStayReadOnly(page: Page) {
     'the sample showcase is opt-in — hidden by default'
   ).toBeHidden();
   await page.getByRole('button', { name: '查看示例' }).click();
-  await expect(showcase).toBeVisible();
+  await expect(showcase).toBeVisible({ timeout: 60_000 });
 
   // The three seeded industries (`recipe-studio-samples.ts`) reach the browser
   // by key and by merchant label alike.

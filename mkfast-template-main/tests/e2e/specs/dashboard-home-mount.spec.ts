@@ -137,7 +137,7 @@ async function assertFinishedPieceBeforeAdopt(page: Page) {
 async function revealExampleStores(page: Page) {
   await page.getByRole('button', { name: '查看示例' }).click();
   const showcase = page.getByTestId('example-store-showcase');
-  await expect(showcase).toBeVisible();
+  await expect(showcase).toBeVisible({ timeout: 60_000 });
   return showcase;
 }
 

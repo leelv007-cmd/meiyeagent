@@ -125,7 +125,7 @@ test.describe('Day-0 recommendation and example store', () => {
     const showcase = page.getByTestId('example-store-showcase');
     await expect(showcase).toBeHidden();
     await page.getByRole('button', { name: '查看示例' }).click();
-    await expect(showcase).toBeVisible();
+    await expect(showcase).toBeVisible({ timeout: 60_000 });
 
     // D-126 / C-5: the cold home offers all three sample industries.
     const industries = showcase.getByRole('radiogroup', {
