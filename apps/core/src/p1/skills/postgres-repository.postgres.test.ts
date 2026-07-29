@@ -575,10 +575,12 @@ test(
     const adminPool = new Pool({ connectionString });
     const schema = `skill_migration_${randomUUID().replaceAll('-', '_')}`;
     await adminPool.query(`CREATE SCHEMA "${schema}"`);
-    const pool = new Pool({
+    const initialPool = new Pool({
       connectionString,
       options: `-c search_path=${schema}`,
     });
+    let initialPoolOpen = true;
+    let restartedPool: Pool | null = null;
     const skillId = `skill.authentic-v1.${randomUUID()}`;
     const skillRevisionRef = `${skillId}@1`;
     const bindingId = `binding.authentic-v1.${randomUUID()}`;
@@ -641,7 +643,7 @@ test(
     };
 
     try {
-      await pool.query(`
+      await initialPool.query(`
         CREATE TABLE p1_skill_revisions (
           skill_id text NOT NULL,
           revision bigint NOT NULL CHECK (revision > 0),
@@ -665,7 +667,7 @@ test(
           created_at timestamptz NOT NULL
         )
       `);
-      await pool.query(
+      await initialPool.query(
         `INSERT INTO p1_skill_revisions
            (skill_id, revision, skill_revision_ref, status, content_hash,
             payload, created_at)
@@ -678,7 +680,7 @@ test(
           legacyPayload.createdAt,
         ],
       );
-      await pool.query(
+      await initialPool.query(
         `INSERT INTO p1_skill_bindings
            (binding_id, workflow_revision_ref, stage, skill_id,
             skill_revision_ref, status, superseded_at, payload, created_at)
@@ -693,35 +695,10 @@ test(
           legacyBinding.createdAt,
         ],
       );
-      const repository = new PostgresSkillRepository(pool);
+      const repository = new PostgresSkillRepository(initialPool);
       await repository.migrate();
 
-      const restarted = new PostgresSkillRepository(pool);
-      const migrated = await restarted.getRevision(skillRevisionRef);
-      assert.equal(migrated?.formatVersion, 1);
-      assert.equal(migrated?.status, 'draft');
-      assert.deepEqual(migrated?.governance.workflowRevisionRefs, [
-        'workflow.authentic-v1@1',
-      ]);
-      assert.equal(migrated?.prompt.content, promptContent);
-      assert.deepEqual(await restarted.getBinding(bindingId), {
-        bindingId,
-        workflowRevisionRef,
-        skillId,
-        skillRevisionRef,
-        mode: legacyBinding.mode,
-        status: legacyBinding.status,
-        supersededAt: legacyBinding.supersededAt,
-        supersededByBindingId: legacyBinding.supersededByBindingId,
-        createdAt: legacyBinding.createdAt,
-        triggerCondition: {
-          harnessStage: legacyBinding.stage,
-          industryCategory: null,
-          tenantId: null,
-        },
-      });
-
-      const firstBackfill = await pool.query<{
+      const firstBackfill = await initialPool.query<{
         format_version: number;
         frontmatter: unknown;
         governance_sidecar: unknown;
@@ -749,8 +726,39 @@ test(
         },
       });
 
+      await initialPool.end();
+      initialPoolOpen = false;
+      restartedPool = new Pool({
+        connectionString,
+        options: `-c search_path=${schema}`,
+      });
+      const restarted = new PostgresSkillRepository(restartedPool);
       await restarted.migrate();
-      const secondBackfill = await pool.query(
+
+      const migrated = await restarted.getRevision(skillRevisionRef);
+      assert.equal(migrated?.formatVersion, 1);
+      assert.equal(migrated?.status, 'draft');
+      assert.deepEqual(migrated?.governance.workflowRevisionRefs, [
+        'workflow.authentic-v1@1',
+      ]);
+      assert.equal(migrated?.prompt.content, promptContent);
+      assert.deepEqual(await restarted.getBinding(bindingId), {
+        bindingId,
+        workflowRevisionRef,
+        skillId,
+        skillRevisionRef,
+        mode: legacyBinding.mode,
+        status: legacyBinding.status,
+        supersededAt: legacyBinding.supersededAt,
+        supersededByBindingId: legacyBinding.supersededByBindingId,
+        createdAt: legacyBinding.createdAt,
+        triggerCondition: {
+          harnessStage: legacyBinding.stage,
+          industryCategory: null,
+          tenantId: null,
+        },
+      });
+      const secondBackfill = await restartedPool.query(
         `SELECT revisions.format_version,
                 revisions.frontmatter,
                 revisions.governance_sidecar,
@@ -764,7 +772,8 @@ test(
       );
       assert.deepEqual(secondBackfill.rows, firstBackfill.rows);
     } finally {
-      await pool.end();
+      if (initialPoolOpen) await initialPool.end();
+      await restartedPool?.end();
       await adminPool.query(`DROP SCHEMA "${schema}" CASCADE`);
       await adminPool.end();
     }
