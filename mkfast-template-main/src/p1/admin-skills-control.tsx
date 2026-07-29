@@ -11,12 +11,44 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { commandP1 } from '@/p1/client';
+import {
+  assertReferenceOnlySkillPayload,
+  redactSkillCommandResult,
+} from '@/p1/admin-skills-contract';
 
 const ACTION_TEMPLATES = {
   skill_define: {
+    expectedRevision: null,
+    frontmatter: {
+      description: '为美业内容提供已受理的故事结构。',
+      name: 'beauty-story',
+    },
+    governance: {
+      allowedTools: [],
+      budget: {
+        maxChildEffects: 0,
+        maxCostCents: 0,
+        timeoutMs: 10000,
+      },
+      contextScopes: [],
+      executionMode: 'prompt_materialized',
+      fallback: 'fail_closed',
+      inputSchemaRef: 'skill-input.daily-industry@1',
+      outputSchemaRef: 'skill-output.intent-decision@1',
+      requiredModelCapabilities: ['structured_output'],
+      sideEffectClass: 'none',
+      workflowRevisionRefs: ['workflow.copy@1'],
+    },
+    instruction: '只使用已确认事实，并遵循当前工作流约束。',
+    packagePaths: ['SKILL.md'],
     skillId: 'skill.beauty-story',
     name: '美业故事结构',
     presentationPolicy: 'explainable',
+    promptReference: {
+      contentHash: '<sha256>',
+      name: 'harness/intent-naming',
+      version: '<pinned-version>',
+    },
   },
   skill_accept: {
     skillRevisionRef: 'skill.beauty-story@1',
@@ -25,7 +57,11 @@ const ACTION_TEMPLATES = {
   skill_bind: {
     bindingId: 'binding.beauty-story.intent',
     workflowRevisionRef: 'workflow.copy@1',
-    stage: 'intent_naming',
+    triggerCondition: {
+      harnessStage: 'intent_naming',
+      industryCategory: null,
+      tenantId: null,
+    },
     skillRevisionRef: 'skill.beauty-story@1',
     mode: 'required',
   },
@@ -59,11 +95,14 @@ export function AdminSkillsControl() {
     setError('');
     try {
       const parsed = JSON.parse(payload) as Record<string, unknown>;
+      assertReferenceOnlySkillPayload(parsed);
       setResult(
-        await commandP1(
-          'skills',
-          { action, payload: parsed },
-          `${action}:${crypto.randomUUID()}`
+        redactSkillCommandResult(
+          await commandP1(
+            'skills',
+            { action, payload: parsed },
+            `${action}:${crypto.randomUUID()}`
+          )
         )
       );
     } catch (cause) {

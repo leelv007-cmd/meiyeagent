@@ -500,7 +500,7 @@ operator path is complete.
 
 ## 31b. Admin Dashboard Shell (D-130 template-dashboard)
 
-**File:** `specs/admin-dashboard-shell.spec.ts` | **Priority:** P0 | **Tickets:** T35 / #229
+**File:** `specs/admin-dashboard-shell.spec.ts` | **Priority:** P0 | **Tickets:** T35 / #229 / #258
 
 Locks 运营后台 on the template-dashboard shell and the hand-entry seam behind the
 three-bucket numbers. Every assertion runs against the live stack: the admin
@@ -513,6 +513,7 @@ none of these can pass on fixture data (ADR-0019 / D-131).
 | 2 | A hand-entered three-bucket number reaches the merchant through governed config | Hand-enter the trial copy bucket on `/admin/plans`, pass impact review with an audit reason, require the editor's CAS revision line to advance, then register a store and require its `/settings/account` to read that number with nothing redeployed. The governed key feeds the catalog and provisioning materialises it at activation, so the number reaches stores provisioned after the change — an already-provisioned workspace is not rewritten, by design. |
 | 3 | Model assembly separates the catalog layer from the channel layer | On `/admin/models`, require the CatalogModel and ExecutionChannel layers to render as separate panels and require each to carry only its own governed keys. |
 | 4 | The wired merchant decision hold is editable through the governed control | On `/admin/plans`, open advanced configuration, select the merchant decision hold, require a bounded number stepper instead of an empty form, submit a changed value through impact review with an audit reason, require the reason in config history, then restore the original value through the same governed path. |
+| 5 | Admin Skill editing uses the v2 sidecar contract without prompt content | Sign in as an administrator, open `/admin/skills`, require the define template to expose standard frontmatter, governance sidecar, deterministic trigger fields, portable instructions, and only the pinned prompt reference. Inject an inline prompt body into the editor and require the client boundary to reject it before any command is sent. |
 
 ## 31c. Note Style Set Governance (U05 硬门 / D-107)
 

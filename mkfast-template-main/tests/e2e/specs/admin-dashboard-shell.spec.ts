@@ -104,6 +104,63 @@ test('every admin page renders the template-dashboard shell in both themes', asy
   }
 });
 
+test('admin Skill editor uses the reference-only v2 contract and rejects inline prompt content', async ({
+  page,
+  request,
+}) => {
+  const admin = await registerE2EUser(request, { role: 'admin' });
+  try {
+    await loginByForm(page, admin);
+    await page.goto('/admin/skills');
+    const payloadEditor = page.locator('#skills-payload');
+    await expect(payloadEditor).toBeVisible({ timeout: 30_000 });
+
+    const payload = JSON.parse(await payloadEditor.inputValue()) as {
+      frontmatter?: unknown;
+      governance?: unknown;
+      packagePaths?: unknown;
+      promptReference?: Record<string, unknown>;
+    };
+    expect(payload.frontmatter).toBeTruthy();
+    expect(payload.governance).toBeTruthy();
+    expect(payload.packagePaths).toEqual(['SKILL.md']);
+    expect(payload.promptReference).toMatchObject({
+      name: 'harness/intent-naming',
+    });
+    expect(payload.promptReference).not.toHaveProperty('content');
+
+    await page.locator('#skills-action').selectOption('skill_bind');
+    const bindingPayload = JSON.parse(await payloadEditor.inputValue()) as {
+      triggerCondition?: unknown;
+    };
+    expect(bindingPayload.triggerCondition).toEqual({
+      harnessStage: 'intent_naming',
+      industryCategory: null,
+      tenantId: null,
+    });
+    await page.locator('#skills-action').selectOption('skill_define');
+    const definePayload = JSON.parse(await payloadEditor.inputValue()) as {
+      promptReference?: Record<string, unknown>;
+    };
+    await payloadEditor.fill(
+      JSON.stringify({
+        ...definePayload,
+        promptReference: {
+          ...definePayload.promptReference,
+          content: 'caller-controlled prompt',
+        },
+      })
+    );
+    await page.getByRole('button', { name: '提交受控命令' }).click();
+
+    await expect(page.getByRole('alert')).toContainText(
+      'Skill 命令不能包含 content'
+    );
+  } finally {
+    await cleanupE2EUsers(request);
+  }
+});
+
 /**
  * Move the trial copy allowance through the governed path an operator uses, and
  * return once the CAS revision has advanced. Shared by the journey and by its
