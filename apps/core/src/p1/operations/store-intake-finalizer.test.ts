@@ -929,3 +929,125 @@ test('a correction after the mapping snapshot fails closed before the projection
     [],
   );
 });
+
+test('an explicit confirmation changed before profile merge fails closed', async () => {
+  const facts = new MemoryStoreFactLedger();
+  const intake = new AssetIntakeService(
+    new MemoryAssetIntakeRepository(),
+    facts,
+    () => now,
+  );
+  let injected = false;
+  const racingIntake = {
+    confirmFact: (...args) => intake.confirmFact(...args),
+    confirmedFactRevision: (...args) => intake.confirmedFactRevision(...args),
+    currentFact: (...args) => intake.currentFact(...args),
+    currentFactRevision: (...args) => intake.currentFactRevision(...args),
+    effectiveFactSnapshot: (...args) =>
+      intake.effectiveFactSnapshot(...args),
+    persistedBatch: (...args) => intake.persistedBatch(...args),
+    recordBatch: (...args) => intake.recordBatch(...args),
+    async withPinnedFactHeads(workspaceId, factIds, action) {
+      if (!injected) {
+        injected = true;
+        await intake.recordBatch({
+          batchId: 'explicit-head-race-batch',
+          workspaceId,
+          taskId: 'explicit-head-race-task',
+          source: {
+            sourceId: 'external-writer',
+            kind: 'manual',
+            referenceId: 'external-writer',
+            capabilityStatus: 'assisted',
+            sourceWorkspaceId: workspaceId,
+            capturedAt: now,
+            example: false,
+          },
+          summary: 'Merchant revoked the confirmed price.',
+          candidates: [
+            {
+              candidateId: 'explicit-head-race-price',
+              status: 'pending',
+              objectKind: 'store_fact',
+              fact: {
+                kind: 'price',
+                key: 'service.project-a.price',
+                value: null,
+                revisionKind: 'revocation',
+                scope: { storeId: workspaceId, serviceId: 'project-a' },
+                source: {
+                  kind: 'user_confirmation',
+                  referenceId: 'external-writer',
+                  capturedAt: now,
+                },
+                effectiveFrom: now,
+                expiresAt: null,
+              },
+            },
+          ],
+          createdAt: now,
+        });
+        await intake.confirmFact(context, {
+          batchId: 'explicit-head-race-batch',
+          candidateId: 'explicit-head-race-price',
+          factId: 'store-project:project-a:price',
+          expectedFactRevision: 1,
+          idempotencyKey: 'explicit-head-race-price',
+        });
+      }
+      return intake.withPinnedFactHeads(workspaceId, factIds, action);
+    },
+  } satisfies StoreIntakeFinalizationIntakePort;
+  let mergeCalls = 0;
+  const finalizations = new MemoryFinalizationRepository();
+  const finalizer = new StoreIntakeFinalizer(
+    racingIntake,
+    finalizations,
+    profilePort(async (_context, patch) => {
+      mergeCalls += 1;
+      return projectProfile(patch);
+    }),
+    () => now,
+  );
+  const batch = projectBatch();
+  const input = projectInput(batch, {
+    expectedRevision: 1,
+    projects: {
+      upsert: [
+        {
+          id: 'project-a',
+          name: '透亮猫眼',
+          price: 299,
+          durationMinutes: 90,
+          confirmed: true,
+          priceValidUntil: null,
+        },
+      ],
+    },
+  });
+
+  await assert.rejects(
+    finalizer.finalize(context, input, 'explicit-head-race-finalize'),
+    (error) =>
+      error instanceof StoreIntakeFinalizationError &&
+      error.code === 'STORE_FACT_REVISION_CONFLICT',
+  );
+
+  assert.equal(injected, true);
+  assert.equal(mergeCalls, 0);
+  assert.equal(
+    finalizations.statuses.get(
+      `${context.workspaceId}:explicit-head-race-finalize`,
+    ),
+    'needs_reconciliation',
+  );
+  assert.equal(
+    (
+      await facts.history(
+        context.workspaceId,
+        'store-project:project-a:price',
+      )
+    ).at(-1)?.revisionKind,
+    'revocation',
+  );
+});

@@ -457,18 +457,23 @@ export class StoreIntakeFinalizer {
               }),
             );
           }
-          // An omitted confirmation rests on a fact nobody re-checked since the
-          // mapping pass, and `confirm_asset_intake_fact` is open to any other
-          // writer. Pin those heads, re-read them under the pin, and merge
-          // while it holds: a revocation racing this write either lands before
-          // the pin — and is seen — or waits behind it, so no orphaned value
-          // can reach the profile. Same standard the explicit confirmations get
-          // from their expected-revision append.
+          // Both omitted backers and facts confirmed by this command remain
+          // open to other writers before the profile merge. Pin every head,
+          // re-read it under the pin, and merge while it holds: a racing
+          // correction/revocation either lands before the pin and is rejected,
+          // or waits behind it, so no orphaned value reaches the profile.
+          const pinnedFactIds = [
+            ...new Set([
+              ...omittedBackers.map((backer) => backer.factId),
+              ...facts.map((fact) => fact.factId),
+            ]),
+          ];
           const profile = await this.intake.withPinnedFactHeads(
             context.workspaceId,
-            omittedBackers.map((backer) => backer.factId),
+            pinnedFactIds,
             async (heads) => {
               assertOmittedBackersUnchanged(omittedBackers, heads, this.now());
+              assertConfirmedFactsUnchanged(facts, heads);
               return this.profiles.merge(
                 context,
                 input.profilePatch,
@@ -836,6 +841,25 @@ function assertOmittedBackersUnchanged(
       throw new StoreIntakeFinalizationError(
         'STORE_FACT_MAPPING_INVALID',
         `Store project patch ${backer.projectId} requires confirmation ${backer.factId}.`,
+      );
+    }
+  }
+}
+
+function assertConfirmedFactsUnchanged(
+  confirmedFacts: readonly StoreFact[],
+  heads: ReadonlyMap<string, StoreFact | null>,
+) {
+  for (const confirmed of confirmedFacts) {
+    const current = heads.get(confirmed.factId) ?? null;
+    if (
+      current === null ||
+      current.revision !== confirmed.revision ||
+      !isDeepStrictEqual(current, confirmed)
+    ) {
+      throw new StoreIntakeFinalizationError(
+        'STORE_FACT_REVISION_CONFLICT',
+        `Store fact ${confirmed.factId} changed before its profile projection.`,
       );
     }
   }

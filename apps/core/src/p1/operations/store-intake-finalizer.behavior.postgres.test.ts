@@ -835,28 +835,31 @@ test(
           },
         ],
       });
-      const promoted = await environment.intake.recordBatch({
-        batchId: 'w02-promoted-batch',
-        workspaceId: environment.context.workspaceId,
-        taskId: draft.taskId,
-        source: {
-          sourceId: draft.sourceAssetId,
-          kind: 'price_list',
-          referenceId: draft.sourceAssetId,
-          capabilityStatus: 'assisted',
-          sourceWorkspaceId: environment.context.workspaceId,
-          capturedAt: draft.createdAt,
-          example: false,
+      const promoted = await environment.intake.recordBatch(
+        {
+          batchId: 'w02-promoted-batch',
+          workspaceId: environment.context.workspaceId,
+          taskId: draft.taskId,
+          source: {
+            sourceId: draft.sourceAssetId,
+            kind: 'price_list',
+            referenceId: draft.sourceAssetId,
+            capabilityStatus: 'assisted',
+            sourceWorkspaceId: environment.context.workspaceId,
+            capturedAt: draft.createdAt,
+            example: false,
+          },
+          summary: `已整理出 ${draft.factCandidates.length} 项待确认资料。`,
+          candidates: draft.factCandidates.map((fact, index) => ({
+            candidateId: `${draft.draftId}:fact:${index + 1}`,
+            status: 'pending',
+            objectKind: 'store_fact',
+            fact,
+          })),
+          createdAt: now,
         },
-        summary: `已整理出 ${draft.factCandidates.length} 项待确认资料。`,
-        candidates: draft.factCandidates.map((fact, index) => ({
-          candidateId: `${draft.draftId}:fact:${index + 1}`,
-          status: 'pending',
-          objectKind: 'store_fact',
-          fact,
-        })),
-        createdAt: now,
-      });
+        'w02-promoted-batch-server-receipt',
+      );
 
       const finalized = (await module.execute({
         context: environment.context,
