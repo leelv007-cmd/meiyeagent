@@ -85,6 +85,30 @@ export const askMerchantQuestionSchema = z
   })
   .strict();
 
+export const interactionTimeoutPolicySchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('hold'),
+      reason: z
+        .enum(['quote_threshold', 'external_action', 'unknown'])
+        .optional(),
+      serverEvaluated: z.literal(true).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('semantic_default'),
+      timeoutSeconds: z.number().int().min(1).max(3_600),
+      eligibility: z
+        .object({
+          kind: z.literal('safe'),
+          serverEvaluated: z.literal(true),
+        })
+        .strict(),
+    })
+    .strict(),
+]);
+
 export const askMerchantQuestionRequestSchema = z
   .object({
     requestId: primitiveTextSchema,
@@ -94,6 +118,7 @@ export const askMerchantQuestionRequestSchema = z
     kind: z.literal('ask_merchant'),
     questions: z.array(askMerchantQuestionSchema).min(1).max(12),
     groupSkip: z.literal(true),
+    timeoutPolicy: interactionTimeoutPolicySchema.optional(),
     presentation: z
       .object({
         carriers: z
@@ -102,6 +127,7 @@ export const askMerchantQuestionRequestSchema = z
           .max(3),
         blocking: z.literal('none'),
         notification: z.literal('none'),
+        renderer: z.literal('ask_merchant_group').optional(),
       })
       .strict(),
   })

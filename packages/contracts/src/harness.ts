@@ -7,6 +7,7 @@ import {
 import {
   askMerchantAnswerSchema,
   askMerchantQuestionRequestSchema,
+  interactionTimeoutPolicySchema,
 } from './agent-primitives.js';
 import { hotTopicOpportunityCardSchema } from './marketing-package.js';
 import { actionUsageSchema } from './observability-event.js';
@@ -271,11 +272,8 @@ export function questionCardUnattended<T extends object>(
   return question.unattended ?? 'hold';
 }
 
-export const confirmationCardTimeoutSecondsSchema = z
-  .number()
-  .int()
-  .min(1)
-  .max(3_600);
+export const confirmationCardTimeoutSecondsSchema =
+  interactionTimeoutPolicySchema.options[1].shape.timeoutSeconds;
 
 const executionConfirmationParamSchema = z
   .object({
@@ -326,20 +324,13 @@ export const executionConfirmationRequestSchema = z
               'existing_gate',
               'quote_threshold',
               'external_action',
+              'unknown',
             ]),
             required: z.boolean(),
             serverEvaluated: z.literal(true),
           })
           .strict(),
-        timeoutPolicy: z.union([
-          z.object({ kind: z.literal('hold') }).strict(),
-          z
-            .object({
-              kind: z.literal('semantic_default'),
-              timeoutSeconds: confirmationCardTimeoutSecondsSchema,
-            })
-            .strict(),
-        ]),
+        timeoutPolicy: interactionTimeoutPolicySchema,
       })
       .strict(),
     presentation: z
@@ -353,7 +344,20 @@ export const executionConfirmationRequestSchema = z
       })
       .strict(),
   })
-  .strict();
+  .strict()
+  .superRefine((request, context) => {
+    if (
+      request.frozen.timeoutPolicy.kind === 'semantic_default' &&
+      request.frozen.condition.kind !== 'existing_gate'
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'Unsafe or unknown execution conditions cannot use a semantic default.',
+        path: ['frozen', 'timeoutPolicy'],
+      });
+    }
+  });
 
 export const executionConfirmationAnswerSchema = z
   .object({

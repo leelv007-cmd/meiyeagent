@@ -529,6 +529,79 @@ test('execution confirmation freezes server conditions and all three merchant ou
   );
 });
 
+test('execution semantic defaults reject unsafe or unknown server conditions', () => {
+  const base = {
+    requestId: 'execution-safe-default',
+    runId: 'run-safe-default',
+    step: 'execution_selection',
+    revision: 1,
+    kind: 'execution_confirmation',
+    frozen: {
+      executionSnapshotRef: { id: 'snapshot-safe', revision: 1 },
+      quoteRevision: 'quote-safe',
+      params: [],
+      debitPreview: [],
+      condition: {
+        kind: 'existing_gate',
+        required: true,
+        serverEvaluated: true,
+      },
+      timeoutPolicy: {
+        kind: 'semantic_default',
+        timeoutSeconds: 30,
+        eligibility: {
+          kind: 'safe',
+          serverEvaluated: true,
+        },
+      },
+    },
+    presentation: {
+      carriers: ['conversation'],
+      notification: 'none',
+      renderer: 'execution_confirmation',
+    },
+  } as const;
+
+  assert.equal(executionConfirmationRequestSchema.safeParse(base).success, true);
+  for (const kind of [
+    'quote_threshold',
+    'external_action',
+    'unknown',
+  ] as const) {
+    assert.equal(
+      executionConfirmationRequestSchema.safeParse({
+        ...base,
+        frozen: {
+          ...base.frozen,
+          condition: {
+            ...base.frozen.condition,
+            kind,
+          },
+        },
+      }).success,
+      false,
+    );
+  }
+  assert.equal(
+    executionConfirmationRequestSchema.safeParse({
+      ...base,
+      frozen: {
+        ...base.frozen,
+        condition: {
+          ...base.frozen.condition,
+          kind: 'unknown',
+        },
+        timeoutPolicy: {
+          kind: 'hold',
+          reason: 'unknown',
+          serverEvaluated: true,
+        },
+      },
+    }).success,
+    true,
+  );
+});
+
 test('delivery reference keeps aggregate revision separate from event sequence', () => {
   const delivery = {
     packageId: 'package-1',

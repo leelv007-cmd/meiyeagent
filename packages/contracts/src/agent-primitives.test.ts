@@ -297,6 +297,50 @@ test('merchant question requests group free-text items under one durable resume 
   );
 });
 
+test('merchant semantic defaults require explicit server-owned safe authority', () => {
+  const request = {
+    requestId: 'request-safe-default',
+    runId: 'run-safe-default',
+    step: 'context_injection',
+    revision: 1,
+    kind: 'ask_merchant',
+    questions: [
+      {
+        itemId: 'window',
+        question: '活动到哪天结束？',
+        fallback: { kind: 'deferred' },
+      },
+    ],
+    groupSkip: true,
+    timeoutPolicy: {
+      kind: 'semantic_default',
+      timeoutSeconds: 30,
+      eligibility: {
+        kind: 'safe',
+        serverEvaluated: true,
+      },
+    },
+    presentation: {
+      carriers: ['conversation'],
+      blocking: 'none',
+      notification: 'none',
+      renderer: 'ask_merchant_group',
+    },
+  } as const;
+
+  assert.deepEqual(askMerchantQuestionRequestSchema.parse(request), request);
+  assert.equal(
+    askMerchantQuestionRequestSchema.safeParse({
+      ...request,
+      timeoutPolicy: {
+        kind: 'semantic_default',
+        timeoutSeconds: 30,
+      },
+    }).success,
+    false,
+  );
+});
+
 test('merchant answers separate item results from one group-level skip', () => {
   const base = {
     requestId: 'request-1',
