@@ -16,10 +16,9 @@
  *     them is in the required set. 「删除、归档或显式标注降级」 is only honest
  *     if the marking is machine-checkable.
  *
- * The server still registers both operations and other callers still use them
- * (apps/core `p1/foundation/application-service.ts`,
- * `p1/operations/foundation-module.ts`); retiring those is not this gate's
- * business. This file is about the browser tests only.
+ * Issue #257 retired both public Operations actions. Internal application
+ * service methods may remain for governed server callers; this file checks only
+ * that browser tests do not resurrect the removed public command names.
  */
 
 import assert from 'node:assert/strict';
@@ -50,10 +49,6 @@ const RETIRED_ACTIONS = [
 const RETIRED_ACTION_JUSTIFICATION = 'M-04-RETIRED-ACTION-ALLOWED';
 const RETIRED_ACTION_ALLOWLIST = new Map([
   [
-    'specs/uiux-upgrade-b-video.spec.ts',
-    'negative assertion — the native video chain must never emit the retired pair',
-  ],
-  [
     'fixtures/ui-journey.ts',
     'retirement comment — records why the old two-command wait was deleted',
   ],
@@ -75,7 +70,6 @@ const SPECS_WITH_DEMOTED_CASES = [
   'specs/uiux-upgrade-b-composer.spec.ts',
   'specs/uiux-upgrade-b-i18n-motion.spec.ts',
   'specs/uiux-upgrade-b-results.spec.ts',
-  'specs/uiux-upgrade-b-video.spec.ts',
 ] as const;
 
 function e2eFiles(): string[] {

@@ -901,8 +901,6 @@ deleting them, and the contracts underneath still need relanding:
 - `specs/uiux-upgrade-b-async.spec.ts` — asynchronous Job contracts (whole file).
 - `specs/uiux-upgrade-b-i18n-motion.spec.ts` — the reduced-motion case only; the
   locale and mobile cases in that file still run.
-- `specs/uiux-upgrade-b-video.spec.ts` — the 成片 assertions of the retired
-  ContentPackageDetail, marked at the assertion with their T38 coordinate.
 
 `specs/uiux-creation-loop.spec.ts` no longer carries its six retired-workbench
 cases: #242 removed them after recording their current contract owners in §12.
