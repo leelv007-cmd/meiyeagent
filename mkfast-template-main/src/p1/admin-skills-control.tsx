@@ -293,6 +293,30 @@ const GOVERNANCE_RUN_ACTIONS = [
 
 type GovernanceRunAction = (typeof GOVERNANCE_RUN_ACTIONS)[number];
 
+export function createGovernanceActionIntentRegistry(
+  createIdempotencyKey: () => string = () => crypto.randomUUID()
+) {
+  const pendingKeys = new Map<string, string>();
+  return {
+    async execute<T>(
+      runAction: GovernanceRunAction,
+      runId: string,
+      submit: (idempotencyKey: string) => Promise<T>
+    ) {
+      const fingerprint = `${runAction}:${runId}`;
+      const idempotencyKey =
+        pendingKeys.get(fingerprint) ??
+        `${fingerprint}:${createIdempotencyKey()}`;
+      pendingKeys.set(fingerprint, idempotencyKey);
+      const result = await submit(idempotencyKey);
+      if (pendingKeys.get(fingerprint) === idempotencyKey) {
+        pendingKeys.delete(fingerprint);
+      }
+      return result;
+    },
+  };
+}
+
 const ADMIN_SKILL_GOVERNANCE = {
   budget: {
     maxChildEffects: 0,
@@ -547,6 +571,9 @@ export function AdminSkillsControl() {
   );
   const [governanceError, setGovernanceError] = useState('');
   const [governanceBusy, setGovernanceBusy] = useState(false);
+  const [governanceActionIntents] = useState(() =>
+    createGovernanceActionIntentRegistry()
+  );
   const [publishValues, setPublishValues] = useState<SkillPublishFormValues>({
     expectedPublicationGeneration: '',
     expectedPublishedRevisionRef: '',
@@ -722,13 +749,18 @@ export function AdminSkillsControl() {
     setGovernanceBusy(true);
     setGovernanceError('');
     try {
-      await commandP1(
-        'skills',
-        {
-          action: runAction,
-          payload: { runId: governanceRunId },
-        },
-        `${runAction}:${governanceRunId}`
+      await governanceActionIntents.execute(
+        runAction,
+        governanceRunId,
+        (idempotencyKey) =>
+          commandP1(
+            'skills',
+            {
+              action: runAction,
+              payload: { runId: governanceRunId },
+            },
+            idempotencyKey
+          )
       );
       await governanceRunQuery.refetch();
     } catch (cause) {

@@ -26,6 +26,7 @@ const {
   buildSkillCommandPayload,
   buildSkillGovernanceStartPayload,
   buildSkillPublishPayload,
+  createGovernanceActionIntentRegistry,
   governanceRunPollInterval,
 } = await import('@/p1/admin-skills-control');
 const { p1QueryKeys } = await import('@/p1/query-keys');
@@ -238,6 +239,37 @@ test('a governance run keeps polling until it reaches a terminal status', () => 
     }),
     false
   );
+});
+
+test('governance action intents rotate after success and survive an ambiguous failure', async () => {
+  let createdKeys = 0;
+  const registry = createGovernanceActionIntentRegistry(
+    () => `attempt-${++createdKeys}`
+  );
+  const submittedKeys: string[] = [];
+  const submit = async (idempotencyKey: string) => {
+    submittedKeys.push(idempotencyKey);
+  };
+
+  await registry.execute('skill_governance_cancel', 'run-cycle', submit);
+  await registry.execute('skill_governance_resume', 'run-cycle', submit);
+  await registry.execute('skill_governance_cancel', 'run-cycle', submit);
+  await registry.execute('skill_governance_resume', 'run-cycle', submit);
+
+  assert.equal(new Set(submittedKeys).size, 4);
+
+  await assert.rejects(
+    registry.execute(
+      'skill_governance_cancel',
+      'run-ambiguous',
+      async (idempotencyKey) => {
+        submittedKeys.push(idempotencyKey);
+        throw new Error('response lost');
+      }
+    )
+  );
+  await registry.execute('skill_governance_cancel', 'run-ambiguous', submit);
+  assert.equal(submittedKeys.at(-1), submittedKeys.at(-2));
 });
 
 test('structured Skill forms build the revision and acceptance contracts', () => {

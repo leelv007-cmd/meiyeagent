@@ -56,6 +56,7 @@ const ELIGIBLE_SKILL_PROMPT = {
 
 interface CapturedSkillRequest {
   action: string;
+  idempotencyKey?: string;
   payload: Record<string, unknown>;
 }
 
@@ -283,6 +284,7 @@ async function installSkillDispatchMocks(page: Page) {
     }
     commands.push({
       action: body.action,
+      idempotencyKey: request.headers()['idempotency-key'],
       payload: body.payload ?? {},
     });
     if (body.action === 'skill_governance_start') {
@@ -498,6 +500,14 @@ test('admin Skill catalog dispatches structured lifecycle and governance command
     await expect(page.getByTestId('skills-governance-run')).toContainText(
       'awaiting_approval'
     );
+    await page.getByRole('button', { name: '管理取消（可恢复）' }).click();
+    await expect(page.getByTestId('skills-governance-run')).toContainText(
+      '管理取消（可恢复）'
+    );
+    await page.getByRole('button', { name: '恢复管理取消' }).click();
+    await expect(page.getByTestId('skills-governance-run')).toContainText(
+      'awaiting_approval'
+    );
     await page.getByRole('button', { name: '批准并继续' }).click();
     await expect(page.getByTestId('skills-governance-run')).toContainText(
       'completed'
@@ -641,6 +651,16 @@ test('admin Skill catalog dispatches structured lifecycle and governance command
     ).toEqual({
       runId: `run-${suffix}`,
     });
+    const administrativeActionKeys = dispatch.commands
+      .filter(
+        (command) =>
+          command.action === 'skill_governance_cancel' ||
+          command.action === 'skill_governance_resume'
+      )
+      .map((command) => command.idempotencyKey);
+    expect(administrativeActionKeys).toHaveLength(4);
+    expect(administrativeActionKeys.every(Boolean)).toBe(true);
+    expect(new Set(administrativeActionKeys).size).toBe(4);
     expect(
       dispatch.commands.find(
         (command) => command.action === 'skill_governance_business_cancel'

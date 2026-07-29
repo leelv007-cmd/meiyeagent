@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 
+import { P1ApplicationService } from '../foundation/application-service.js';
+import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
 import type { HarnessFrozenPrompt } from '../harness/langfuse-prompts.js';
 import {
   createSkillGovernanceDbosRuntime,
@@ -456,6 +458,71 @@ test('Foundation routes governance lifecycle actions with trusted context', asyn
       },
     },
   ]);
+});
+
+test('Foundation executes every distinct administrative cancellation cycle', async () => {
+  const { service } = await seedSkill();
+  const calls: string[] = [];
+  const runtime: SkillGovernanceRuntimePort = {
+    async approve() {
+      return { ok: true };
+    },
+    async businessCancel() {
+      return { ok: true };
+    },
+    async cancel() {
+      calls.push('cancel');
+      return { ok: true };
+    },
+    async inspect(_workspaceId: string, runId: string) {
+      return { runId, workflowStatus: 'PENDING' };
+    },
+    async resume() {
+      calls.push('resume');
+      return { ok: true };
+    },
+    async start() {
+      return { runId: 'run-cycle', workflowId: 'workflow-cycle' };
+    },
+  };
+  const repository = new MemoryFoundationRepository();
+  const context = {
+    actor: 'admin' as const,
+    correlationId: 'corr-governance-cycle',
+    userId: 'operator-governance-cycle',
+    workspaceId: 'workspace-governance-cycle',
+  };
+  repository.grantOwner(context.workspaceId, context.userId);
+  const application = new P1ApplicationService(repository, {
+    operations: [new SkillFoundationModule(service, runtime)],
+  });
+  const actions = [
+    ['skill_governance_cancel', 'cancel-cycle-1'],
+    ['skill_governance_resume', 'resume-cycle-1'],
+    ['skill_governance_cancel', 'cancel-cycle-2'],
+    ['skill_governance_resume', 'resume-cycle-2'],
+  ] as const;
+
+  for (const [action, idempotencyKey] of actions) {
+    await application.executeModule(
+      context,
+      'skills',
+      { action, payload: { runId: 'run-cycle' } },
+      idempotencyKey,
+    );
+  }
+  const replay = await application.executeModuleWithReplay(
+    context,
+    'skills',
+    {
+      action: 'skill_governance_resume',
+      payload: { runId: 'run-cycle' },
+    },
+    'resume-cycle-2',
+  );
+
+  assert.deepEqual(calls, ['cancel', 'resume', 'cancel', 'resume']);
+  assert.equal(replay.replayed, true);
 });
 
 type RegisteredWorkflow<Input, Output> = (
