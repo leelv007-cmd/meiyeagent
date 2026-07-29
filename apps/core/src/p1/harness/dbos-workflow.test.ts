@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { DBOS } from '@dbos-inc/dbos-sdk';
+import type { StructuredDecisionInput } from '@meiye/contracts';
 
 import {
   commitHarnessBillingOrSchedule,
@@ -9,6 +11,7 @@ import {
   harnessBillingSettlementInput,
   readConfirmationCardHoldTimeoutSeconds,
   readConfirmationCardTimeoutSeconds,
+  resumeHarnessDbosWorkflow,
   settleHarnessCancellation,
   type HarnessBillingSettlementPort,
 } from './dbos-workflow.js';
@@ -22,6 +25,84 @@ const settlement = {
   quoteId: 'quote-billing-failure',
   quoteRevision: 'quote-revision-1',
 };
+
+test('resume rejects an invalid runtime command before resolving or sending', async (t) => {
+  let resolverCalls = 0;
+  let sendCalls = 0;
+  t.mock.method(DBOS, 'send', async () => {
+    sendCalls += 1;
+  });
+
+  await assert.rejects(
+    resumeHarnessDbosWorkflow(
+      'workspace-1',
+      'task-1',
+      { questionId: 'question-1' },
+      {
+        async workflowRuntimeId() {
+          resolverCalls += 1;
+          return 'runtime-1';
+        },
+      },
+    ),
+  );
+
+  assert.equal(resolverCalls, 0);
+  assert.equal(sendCalls, 0);
+});
+
+test('resume accepts a valid command after rejecting invalid runtime data', async (t) => {
+  const sent: unknown[][] = [];
+  let resolverCalls = 0;
+  t.mock.method(DBOS, 'send', async (...args: unknown[]) => {
+    sent.push(args);
+  });
+  const resolver = {
+    async workflowRuntimeId() {
+      resolverCalls += 1;
+      return 'runtime-1';
+    },
+  };
+
+  await assert.rejects(
+    resumeHarnessDbosWorkflow(
+      'workspace-1',
+      'task-1',
+      { questionId: 'question-1' },
+      resolver,
+    ),
+  );
+
+  const command: StructuredDecisionInput = {
+    idempotencyKey: 'decision-1',
+    questionId: 'question-1',
+    workflowRevision: 1,
+    patch: {
+      field: 'offer_price',
+      reason: '补充当前任务所需的权威事实',
+      value: '当前团购价 398 元',
+    },
+    decision: {
+      state: 'accepted',
+      value: '当前团购价 398 元',
+    },
+  };
+  await resumeHarnessDbosWorkflow(
+    'workspace-1',
+    'task-1',
+    command,
+    resolver,
+  );
+
+  assert.equal(resolverCalls, 1);
+  assert.deepEqual(sent, [
+    [
+      'runtime-1',
+      command,
+      'structured-decision:question-1',
+    ],
+  ]);
+});
 
 test('confirmation-card hold and continuation waits read admin-config', async () => {
   const values = new Map([

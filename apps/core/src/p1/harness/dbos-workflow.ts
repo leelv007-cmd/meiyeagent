@@ -655,16 +655,17 @@ export class DbosHarnessWorkflowStarter implements HarnessWorkflowStarter {
 export async function resumeHarnessDbosWorkflow(
   workspaceId: string,
   workflowId: string,
-  command: StructuredDecisionInput,
+  command: unknown,
   resolver?: HarnessRuntimeIdResolver,
 ) {
+  const parsedCommand = structuredDecisionInputSchema.parse(command);
   const runtimeWorkflowId =
     (await resolver?.workflowRuntimeId(workspaceId, workflowId)) ??
     harnessRuntimeId(workspaceId, workflowId);
   await DBOS.send(
     runtimeWorkflowId,
-    command,
-    decisionTopic(command.questionId),
+    parsedCommand,
+    decisionTopic(parsedCommand.questionId),
   );
 }
 
