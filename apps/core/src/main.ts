@@ -206,7 +206,10 @@ import { HarnessProductBillingSettlementExecutor } from './p1/harness/product-bi
 import { PostgresNoteMediaAdmissionCoordinator } from './p1/harness/note-media-admission.js';
 import { unconfiguredNotePlanEnhancementJudgeResolver } from './p1/harness/note-plan-structured-port.js';
 import { HarnessResumeReconciler } from './p1/harness/resume-reconciler.js';
-import { HarnessObservabilityReconciler } from './p1/harness/observability-reconciliation.js';
+import {
+  HarnessObservabilityReconciler,
+  shouldPublishObservabilityDeliverySnapshot,
+} from './p1/harness/observability-reconciliation.js';
 import {
   DEFAULT_CONFIRMATION_CARD_HOLD_TIMEOUT_SECONDS,
   DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS,
@@ -1714,10 +1717,7 @@ const observabilityReconciler = new HarnessObservabilityReconciler(
   promptAuditStore,
   {
     onDeliverySnapshot(snapshot) {
-      if (
-        snapshot.deliveryHealth.queueAgeMs === null &&
-        snapshot.dropSummary.length === 0
-      ) {
+      if (!shouldPublishObservabilityDeliverySnapshot(snapshot)) {
         return;
       }
       console.log('Harness observability delivery snapshot.', snapshot);

@@ -1704,6 +1704,7 @@ export class PostgresHarnessStore
            / ($1::double precision / 1000)
          )
          * ($1::double precision / 1000)
+         - ($1::double precision / 1000)
        ) as window_end`,
       [input.intervalMs],
     );
@@ -1916,7 +1917,7 @@ export class PostgresHarnessStore
            cutover.cutover_at
          from cutover
        ), persisted as (
-         insert into harness_runtime.observability_reconciliation_runs
+         insert into harness_runtime.observability_reconciliation_runs as run
            (contract_version, window_start, window_end, cutover_at,
             business_event_count, trace_count, matched_count,
             missing_trace_count, orphan_trace_count, rating_event_count,
@@ -1936,6 +1937,7 @@ export class PostgresHarnessStore
            rating_event_count=excluded.rating_event_count,
            action_usage_event_count=excluded.action_usage_event_count,
            undelivered_event_count=excluded.undelivered_event_count
+         where run.completed_at is null
          returning 1
        )
        select counts.business_event_count, counts.trace_count,
@@ -1953,7 +1955,7 @@ export class PostgresHarnessStore
     const row = result.rows[0];
     if (!row) {
       throw new Error(
-        `Observability reconciliation cutover is not active for ${contractVersion}.`,
+        `Observability reconciliation window is unavailable for ${contractVersion}.`,
       );
     }
     return {

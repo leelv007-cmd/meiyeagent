@@ -23,6 +23,25 @@ export interface HarnessObservabilityDetection {
   count: number;
 }
 
+export interface HarnessObservabilityDeliverySnapshot {
+  deliveryHealth: {
+    lastSuccessAt: Date | null;
+    oldestQueuedAt: Date | null;
+    queueAgeMs: number | null;
+  };
+  dropSummary: readonly ObservabilityDropEvent[];
+}
+
+export function shouldPublishObservabilityDeliverySnapshot(
+  snapshot: HarnessObservabilityDeliverySnapshot,
+) {
+  return (
+    snapshot.deliveryHealth.lastSuccessAt !== null ||
+    snapshot.deliveryHealth.queueAgeMs !== null ||
+    snapshot.dropSummary.length > 0
+  );
+}
+
 export interface HarnessObservabilityReconciliationStore {
   completeObservabilityReconciliationWindow(input: {
     windowStart: Date;
@@ -53,14 +72,9 @@ export class HarnessObservabilityReconciler {
     private readonly options: {
       intervalMs?: number;
       windowMs?: number;
-      onDeliverySnapshot?: (snapshot: {
-        deliveryHealth: {
-          lastSuccessAt: Date | null;
-          oldestQueuedAt: Date | null;
-          queueAgeMs: number | null;
-        };
-        dropSummary: readonly ObservabilityDropEvent[];
-      }) => void;
+      onDeliverySnapshot?: (
+        snapshot: HarnessObservabilityDeliverySnapshot,
+      ) => void | Promise<void>;
       onViolation?: (violation: HarnessObservabilityDetection) => void;
     } = {},
   ) {}
@@ -118,7 +132,7 @@ export class HarnessObservabilityReconciler {
       ],
       onViolation: (violation) => this.options.onViolation?.(violation),
     });
-    this.options.onDeliverySnapshot?.({ deliveryHealth, dropSummary });
+    await this.options.onDeliverySnapshot?.({ deliveryHealth, dropSummary });
     await this.store.completeObservabilityReconciliationWindow({
       windowStart,
       windowEnd,

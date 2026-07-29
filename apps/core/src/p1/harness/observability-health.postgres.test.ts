@@ -162,6 +162,9 @@ test(
     const taskId = `observability-task-${suffix}`;
     const runtimeTaskId = harnessRuntimeId(workspaceId, taskId);
     const cleanupPattern = `%${suffix}%`;
+    let reconciliationWindow:
+      | { start: Date; end: Date }
+      | undefined;
     try {
       await store.applySchema();
       const cutoverAt =
@@ -227,6 +230,7 @@ test(
 
       const start = new Date(cutoverAt.getTime() + 10_000);
       const end = new Date(cutoverAt.getTime() + 20_000);
+      reconciliationWindow = { start, end };
       const before = new Date(start.getTime() - 1_000);
       const inside = new Date(start.getTime() + 1_000);
       const after = new Date(end.getTime() + 1_000);
@@ -352,6 +356,13 @@ test(
         `trace-cross-event-${suffix}`,
         after,
       );
+      await pool.query(
+        `delete from harness_runtime.observability_reconciliation_runs
+         where contract_version='observability/v1'
+           and window_start=$1
+           and window_end=$2`,
+        [start, end],
+      );
 
       const result = await store.reconcileBusinessEventsToTraces({
         windowStart: start,
@@ -394,6 +405,13 @@ test(
         windowStart: start,
         windowEnd: end,
       });
+      await assert.rejects(
+        store.reconcileBusinessEventsToTraces({
+          windowStart: start,
+          windowEnd: end,
+        }),
+        /window is unavailable/u,
+      );
       assert.equal(
         (await store.readObservabilityReconciliationCursor())?.toISOString(),
         end.toISOString(),
@@ -401,6 +419,13 @@ test(
       const boundary = await store.readObservabilityReconciliationBoundary({
         intervalMs: 5 * 60_000,
       });
+      const databaseClock = await pool.query<{ current_time: Date }>(
+        'select clock_timestamp() as current_time',
+      );
+      const currentTime = databaseClock.rows[0]?.current_time;
+      assert.ok(currentTime);
+      assert.ok(currentTime.getTime() - boundary.getTime() >= 5 * 60_000);
+      assert.ok(currentTime.getTime() - boundary.getTime() < 10 * 60_000);
       assert.equal(boundary.getUTCMinutes() % 5, 0);
       assert.equal(boundary.getUTCSeconds(), 0);
       assert.equal(boundary.getUTCMilliseconds(), 0);
@@ -430,11 +455,15 @@ test(
       });
       assert.ok(healthAfter.lastSuccessAt);
     } finally {
-      await pool.query(
-        `delete from harness_runtime.observability_reconciliation_runs
-         where contract_version='observability/v1'
-           and (window_start > now() or window_end > now())`,
-      );
+      if (reconciliationWindow) {
+        await pool.query(
+          `delete from harness_runtime.observability_reconciliation_runs
+           where contract_version='observability/v1'
+             and window_start=$1
+             and window_end=$2`,
+          [reconciliationWindow.start, reconciliationWindow.end],
+        );
+      }
       await pool.query(
         `delete from harness_runtime.observability_drop_events
          where audit_id like $1`,

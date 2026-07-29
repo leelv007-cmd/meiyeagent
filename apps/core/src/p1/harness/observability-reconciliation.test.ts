@@ -5,8 +5,23 @@ import type { ObservabilityDropEvent } from '@meiye/contracts';
 
 import {
   HarnessObservabilityReconciler,
+  shouldPublishObservabilityDeliverySnapshot,
   type HarnessObservabilityReconciliationStore,
 } from './observability-reconciliation.js';
+
+test('delivery snapshots publish successful health without queue pressure', () => {
+  assert.equal(
+    shouldPublishObservabilityDeliverySnapshot({
+      deliveryHealth: {
+        lastSuccessAt: new Date('2026-07-29T10:04:30.000Z'),
+        oldestQueuedAt: null,
+        queueAgeMs: null,
+      },
+      dropSummary: [],
+    }),
+    true,
+  );
+});
 
 test('periodic reconciliation processes the latest closed window with a stable boundary', async () => {
   const calls: Array<
@@ -216,7 +231,8 @@ test('reconciliation advances its cursor only after delivery consumers succeed',
 
   await assert.rejects(
     new HarnessObservabilityReconciler(store, {
-      onDeliverySnapshot() {
+      async onDeliverySnapshot() {
+        await Promise.resolve();
         throw new Error('snapshot sink unavailable');
       },
     }).runOnce(),

@@ -226,6 +226,10 @@ test('reconciliation boundary and completion use PostgreSQL authority', async ()
   });
 
   assert.match(calls[0]?.statement ?? '', /clock_timestamp\(\)/u);
+  assert.match(
+    calls[0]?.statement ?? '',
+    /- \(\$1::double precision \/ 1000\)/u,
+  );
   assert.deepEqual(calls[0]?.values, [5 * 60_000]);
   assert.match(calls[1]?.statement ?? '', /completed_at=coalesce/u);
   assert.deepEqual(calls[1]?.values, [
@@ -233,6 +237,29 @@ test('reconciliation boundary and completion use PostgreSQL authority', async ()
     '2026-07-29T09:40:00.000Z',
     '2026-07-29T10:05:00.000Z',
   ]);
+});
+
+test('completed reconciliation windows cannot be recalculated', async () => {
+  const calls: string[] = [];
+  const pool = {
+    async query(statement: string) {
+      calls.push(statement);
+      return { rows: [] };
+    },
+  } as unknown as Pool;
+  const store = new PostgresHarnessStore(pool);
+
+  await assert.rejects(
+    store.reconcileBusinessEventsToTraces({
+      windowStart: new Date('2026-07-29T09:40:00.000Z'),
+      windowEnd: new Date('2026-07-29T10:05:00.000Z'),
+    }),
+    /window is unavailable/u,
+  );
+  assert.match(
+    calls[0] ?? '',
+    /where run\.completed_at is null/u,
+  );
 });
 
 test('reconciliation includes broken trace-backed events and derives delivery loss from drops', async () => {
