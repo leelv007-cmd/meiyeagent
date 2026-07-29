@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import {
   ContentWorkflowRunner,
@@ -206,6 +207,161 @@ test('Auto applies data-class hard filtering, saves actual model and creates one
   assert.equal(result.usage.status, 'committed');
   assert.equal(result.providerCost.status, 'observed');
 });
+
+test('direct language submissions freeze one resolved prompt binding before provider execution', async () => {
+  let executed: ProviderExecutionRequest | undefined;
+  let resolveCount = 0;
+  const app = new ModelSupplyApplicationService({
+    models,
+    deployments,
+    execution: {
+      async execute(request) {
+        executed = request;
+        return new RecordedProviderExecutionPort().execute(request);
+      },
+    },
+    promptResolver: {
+      async resolve({ operation }) {
+        resolveCount += 1;
+        return {
+          name: 'harness/copy-generation',
+          version: '23',
+          content: `frozen:${operation}`,
+          contentHash: contentHash(`frozen:${operation}`),
+          label: 'production',
+          source: 'langfuse',
+          isFallback: false,
+        };
+      },
+    },
+  });
+
+  const result = await app.submit({
+    workspaceId: 'workspace-prompt-binding',
+    actorId: 'owner-prompt-binding',
+    idempotencyKey: 'copy-prompt-binding-1',
+    operation: 'copy.generate',
+    selection: { mode: 'fixed', catalogModelId: 'copy-quality' },
+    dataClass: [],
+    prompt: 'Write one grounded option.',
+  });
+
+  assert.equal(resolveCount, 1);
+  assert.deepEqual(executed?.submission.promptBinding, {
+    name: 'harness/copy-generation',
+    version: '23',
+    content: 'frozen:copy.generate',
+    contentHash: contentHash('frozen:copy.generate'),
+    label: 'production',
+    source: 'langfuse',
+    isFallback: false,
+  });
+  assert.deepEqual(result.snapshot.promptReference, {
+    name: 'harness/copy-generation',
+    version: '23',
+    contentHash: contentHash('frozen:copy.generate'),
+    label: 'production',
+    source: 'langfuse',
+    isFallback: false,
+  });
+  assert.equal(
+    Object.hasOwn(result.snapshot.promptReference ?? {}, 'content'),
+    false,
+  );
+});
+
+test('explicit frozen prompt binding wins on replay and resolver failures stop before provider I/O', async () => {
+  let providerCalls = 0;
+  let resolverCalls = 0;
+  const explicit = {
+    name: 'harness/text-response',
+    version: '29',
+    content: 'frozen:text-response',
+    contentHash: contentHash('frozen:text-response'),
+    label: 'production',
+    source: 'langfuse' as const,
+    isFallback: false,
+  };
+  const textModel = {
+    ...models[0]!,
+    id: 'text-response-prompt-binding',
+    operations: ['text.respond' as const],
+  };
+  const textDeployment = {
+    ...deployments[0]!,
+    id: 'text-response-prompt-binding-direct',
+    catalogModelId: textModel.id,
+  };
+  const app = new ModelSupplyApplicationService({
+    models: [textModel],
+    deployments: [textDeployment],
+    execution: {
+      async execute(request) {
+        providerCalls += 1;
+        assert.deepEqual(request.submission.promptBinding, explicit);
+        return {
+          kind: 'completed' as const,
+          text: 'observed text',
+          providerCost: {
+            amount: 0,
+            currency: 'USD' as const,
+            usage: {},
+          },
+        };
+      },
+    },
+    promptResolver: {
+      async resolve() {
+        resolverCalls += 1;
+        throw new Error('prompt resolution unavailable');
+      },
+    },
+  });
+
+  await app.submit({
+    workspaceId: 'workspace-explicit-prompt',
+    actorId: 'owner-explicit-prompt',
+    idempotencyKey: 'text-explicit-prompt-1',
+    operation: 'text.respond',
+    selection: { mode: 'fixed', catalogModelId: textModel.id },
+    dataClass: [],
+    prompt: 'Read the visible text.',
+    promptBinding: explicit,
+  });
+  assert.equal(resolverCalls, 0);
+  assert.equal(providerCalls, 1);
+
+  await app.submit({
+    workspaceId: 'workspace-explicit-prompt',
+    actorId: 'owner-explicit-prompt',
+    idempotencyKey: 'text-explicit-prompt-1',
+    operation: 'text.respond',
+    selection: { mode: 'fixed', catalogModelId: textModel.id },
+    dataClass: [],
+    prompt: 'Read the visible text.',
+  });
+  assert.equal(resolverCalls, 0);
+  assert.equal(providerCalls, 1);
+
+  await assert.rejects(
+    app.submit({
+      workspaceId: 'workspace-explicit-prompt',
+      actorId: 'owner-explicit-prompt',
+      idempotencyKey: 'text-missing-prompt-1',
+      operation: 'text.respond',
+      selection: { mode: 'fixed', catalogModelId: textModel.id },
+      dataClass: [],
+      prompt: 'Read the visible text.',
+    }),
+    /prompt resolution unavailable/u,
+  );
+  assert.equal(resolverCalls, 1);
+  assert.equal(providerCalls, 1);
+});
+
+function contentHash(content: string) {
+  return createHash('sha256').update(content).digest('hex');
+}
 
 test('fixed selection never crosses CatalogModel and inactive deployments cannot submit', async () => {
   const inactive = deployments.map((deployment) =>
@@ -604,9 +760,35 @@ test('route simulator explains data-class exclusions and safe-only stop semantic
 });
 
 test('Auto records every pre-accept fallback attempt and provider cost under one generation job', async () => {
-  const execution = new RecordedProviderExecutionPort();
-  const app = new ModelSupplyApplicationService({ models, deployments, execution });
-  execution.failNext('copy-quality', 'rejected_before_accept');
+  const recorded = new RecordedProviderExecutionPort();
+  const requests: ProviderExecutionRequest[] = [];
+  let promptResolutions = 0;
+  const app = new ModelSupplyApplicationService({
+    models,
+    deployments,
+    execution: {
+      async execute(request) {
+        requests.push(structuredClone(request));
+        return recorded.execute(request);
+      },
+    },
+    promptResolver: {
+      async resolve() {
+        promptResolutions += 1;
+        const content = 'frozen:fallback-copy-generation';
+        return {
+          name: 'harness/copy-generation',
+          version: '43',
+          content,
+          contentHash: contentHash(content),
+          label: 'production',
+          source: 'langfuse',
+          isFallback: false,
+        };
+      },
+    },
+  });
+  recorded.failNext('copy-quality', 'rejected_before_accept');
   const result = await app.submit({
     workspaceId: 'workspace-a',
     actorId: 'owner-a',
@@ -621,6 +803,12 @@ test('Auto records every pre-accept fallback attempt and provider cost under one
   assert.equal(result.attempts.length, 2);
   assert.equal(new Set(result.attempts.map((attempt) => attempt.jobId)).size, 1);
   assert.equal(result.providerCosts.length, 2);
+  assert.equal(promptResolutions, 1);
+  assert.equal(requests.length, 2);
+  assert.deepEqual(
+    requests.map(({ submission }) => submission.promptBinding),
+    [requests[0]?.submission.promptBinding, requests[0]?.submission.promptBinding],
+  );
 });
 
 test('Auto keeps Product Core as the only retry owner and stops after two pre-accept attempts', async () => {

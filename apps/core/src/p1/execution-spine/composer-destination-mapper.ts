@@ -99,7 +99,12 @@ export interface ComposerDestinationMappingPort {
 export class StructuredComposerDestinationMapper
   implements ComposerDestinationMappingPort
 {
-  constructor(private readonly executor: StructuredObjectExecutor) {}
+  constructor(
+    private readonly executor: StructuredObjectExecutor,
+    private readonly prompt?: {
+      resolve(): Promise<{ content: string }>;
+    },
+  ) {}
 
   async map(input: {
     abortSignal?: AbortSignal;
@@ -107,19 +112,22 @@ export class StructuredComposerDestinationMapper
   }): Promise<ComposerDestinationMapping> {
     const destination = input.destination.trim();
     if (!destination) return DEFAULT_CLARIFICATION;
+    const instructions =
+      (await this.prompt?.resolve())?.content ??
+      [
+        'Map one merchant answer about where content will be used and how it will be delivered.',
+        'Return mapped only when both fields are unambiguous; otherwise return one focused clarification question with safe options.',
+        'Allowed contentPackagePlatform values: xiaohongshu, douyin, video_account, wechat_moments, offline_material, generic.',
+        'Allowed distributionTarget values: export, manual_copy, assisted_handoff, publish:xiaohongshu, publish:douyin, publish:video_account.',
+        'wechat_moments is a delivery destination, not a platform variant, and must never be represented as a publish target.',
+        'A publish target must exactly match xiaohongshu, douyin, or video_account.',
+        'Do not infer a platform from unrelated merchant facts.',
+      ].join(' ');
 
     try {
       const result = await this.executor.generate({
         abortSignal: input.abortSignal,
-        instructions: [
-          'Map one merchant answer about where content will be used and how it will be delivered.',
-          'Return mapped only when both fields are unambiguous; otherwise return one focused clarification question with safe options.',
-          'Allowed contentPackagePlatform values: xiaohongshu, douyin, video_account, wechat_moments, offline_material, generic.',
-          'Allowed distributionTarget values: export, manual_copy, assisted_handoff, publish:xiaohongshu, publish:douyin, publish:video_account.',
-          'wechat_moments is a delivery destination, not a platform variant, and must never be represented as a publish target.',
-          'A publish target must exactly match xiaohongshu, douyin, or video_account.',
-          'Do not infer a platform from unrelated merchant facts.',
-        ].join(' '),
+        instructions,
         prompt: JSON.stringify({ destination }),
         schema: composerDestinationMappingSchema,
         schemaName: 'composer_destination_mapping_v1',

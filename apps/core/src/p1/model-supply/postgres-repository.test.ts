@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { after, before, describe, it } from 'node:test';
 import { Pool } from 'pg';
 import { P1DomainError } from '../foundation/domain.js';
@@ -188,6 +188,17 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
         idempotencyKey: id,
         operation: 'copy.generate',
         prompt: 'Write one direction.',
+        promptBinding: {
+          name: 'harness/copy-generation',
+          version: '41',
+          content: 'frozen:postgres-copy-generation',
+          contentHash: createHash('sha256')
+            .update('frozen:postgres-copy-generation')
+            .digest('hex'),
+          label: 'production',
+          source: 'langfuse',
+          isFallback: false,
+        },
         selection: { catalogModelId: 'llm-domestic', mode: 'fixed' },
         workspaceId,
       },
@@ -224,6 +235,10 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
       now: '2026-07-16T10:02:00.000Z',
     });
     assert.equal(recoveredClaim?.id, id);
+    assert.equal(
+      recoveredClaim?.submission.promptBinding?.content,
+      'frozen:postgres-copy-generation',
+    );
     assert.deepEqual(
       await restarted.beginCanvasTextGenerationProviderEffect({
         claimToken: 'claim-after-restart',

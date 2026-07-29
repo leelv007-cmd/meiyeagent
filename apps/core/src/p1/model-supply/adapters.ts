@@ -404,7 +404,11 @@ export class OpenAiCompatibleLlmExecutionPort implements ProviderExecutionPort {
           : this.runner;
       const result =
         request.submission.operation === 'copy.adapt'
-          ? await runner.adaptPlatformVariants(request.submission.prompt)
+          ? await runner.adaptPlatformVariants(
+              request.submission.prompt,
+              undefined,
+              request.submission.promptBinding?.content,
+            )
           : request.submission.operation === 'text.respond'
             ? await runner.respondText(
                 request.submission.prompt,
@@ -412,11 +416,14 @@ export class OpenAiCompatibleLlmExecutionPort implements ProviderExecutionPort {
                   ?.filter((asset) => asset.role === 'reference_image') ??
                   request.resolvedReferenceAssets ??
                   [],
+                undefined,
+                request.submission.promptBinding?.content,
               )
             : await runner.generateCopy(
                 request.submission.prompt,
                 undefined,
                 request.submission.copyCandidateCount,
+                request.submission.promptBinding?.content,
               );
       const inputTokens = result.usage.inputTokens;
       const outputTokens = result.usage.outputTokens;

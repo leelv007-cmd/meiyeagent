@@ -9,6 +9,10 @@ import { HarnessDecisionService } from './decision-service.js';
 import { PostgresHarnessStore } from './postgres-store.js';
 import { harnessRuntimeId } from './workspace-scope.js';
 import { HarnessTaskAdmissionService } from './task-admission.js';
+import {
+  HARNESS_LANGFUSE_PROMPT_NAMES,
+  type HarnessFrozenPrompts,
+} from './langfuse-prompts.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
 
@@ -414,7 +418,22 @@ test(
       },
       {
         async resolve() {
+          const prompts = Object.fromEntries(
+            Object.entries(HARNESS_LANGFUSE_PROMPT_NAMES).map(([key, name]) => [
+              key,
+              {
+                name,
+                version: '7',
+                content: `private pinned prompt content for ${key}`,
+                contentHash: 'e'.repeat(64),
+                label: 'production',
+                source: 'langfuse',
+                isFallback: false,
+              },
+            ]),
+          ) as HarnessFrozenPrompts;
           return {
+            ...prompts,
             intentNaming: {
               name: 'harness/intent-naming',
               version: 'builtin-v1',

@@ -168,7 +168,12 @@ test('formal non-streaming copy generation uses one structured object request', 
     outputCostPerMillion: 2,
   });
 
-  const result = await runner.generateCopy('Write one honest primary option.');
+  const result = await runner.generateCopy(
+    'Write one honest primary option.',
+    undefined,
+    1,
+    'frozen:copy-generation',
+  );
 
   assert.equal(requests.length, 1);
   assert.deepEqual(result.candidates, generated.candidates);
@@ -182,6 +187,10 @@ test('formal non-streaming copy generation uses one structured object request', 
   assert.equal(responseFormat.json_schema?.name, 'beauty_copy_candidates');
   assert.equal(responseFormat.json_schema?.strict, true);
   assert.ok(responseFormat.json_schema?.schema);
+  assert.equal(
+    (requests[0]?.messages as Array<{ content?: string }>)[0]?.content,
+    'frozen:copy-generation',
+  );
 });
 
 test('DeepSeek V4 sends the mirrored thinking and long-output parameters', async () => {
@@ -241,6 +250,7 @@ test('DeepSeek V4 sends the mirrored thinking and long-output parameters', async
 
 test('formal platform adaptation returns all three distinct variants in one request', async () => {
   let requestCount = 0;
+  let requestBody: Record<string, unknown> = {};
   const platformVariants = {
     xiaohongshu: {
       body: '小红书种草正文',
@@ -265,8 +275,9 @@ test('formal platform adaptation returns all three distinct variants in one requ
     apiKey: 'test-key',
     baseUrl: 'https://provider.example/v1',
     catalogModelId: 'llm-fixed',
-    fetch: (async () => {
+    fetch: (async (_input, init) => {
       requestCount += 1;
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
       return new Response(
         JSON.stringify({
           choices: [
@@ -297,11 +308,68 @@ test('formal platform adaptation returns all three distinct variants in one requ
     outputCostPerMillion: 2,
   });
 
-  const result = await runner.adaptPlatformVariants('改写为三平台版本');
+  const result = await runner.adaptPlatformVariants(
+    '改写为三平台版本',
+    undefined,
+    'frozen:platform-adaptation',
+  );
 
   assert.equal(requestCount, 1);
   assert.deepEqual(result.platformVariants, platformVariants);
   assert.equal(result.providerTaskRef, 'chatcmpl-platform-variants');
+  assert.equal(
+    (requestBody.messages as Array<{ content?: string }>)[0]?.content,
+    'frozen:platform-adaptation',
+  );
+});
+
+test('formal text response consumes its frozen prompt instruction', async () => {
+  let requestBody: Record<string, unknown> = {};
+  const runner = new OpenAiCompatibleAiSdkRunner({
+    apiKey: 'test-key',
+    baseUrl: 'https://provider.example/v1',
+    catalogModelId: 'llm-fixed',
+    fetch: (async (_input, init) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              finish_reason: 'stop',
+              index: 0,
+              message: { content: 'visible text', role: 'assistant' },
+            },
+          ],
+          created: 1,
+          id: 'chatcmpl-text-response',
+          model: 'provider-model',
+          object: 'chat.completion',
+          usage: {
+            completion_tokens: 2,
+            prompt_tokens: 3,
+            total_tokens: 5,
+          },
+        }),
+        { headers: { 'content-type': 'application/json' } },
+      );
+    }) as typeof fetch,
+    inputCostPerMillion: 1,
+    model: 'provider-model',
+    outputCostPerMillion: 2,
+  });
+
+  const result = await runner.respondText(
+    'Read the image.',
+    [],
+    undefined,
+    'frozen:text-response',
+  );
+
+  assert.equal(result.text, 'visible text');
+  assert.equal(
+    (requestBody.messages as Array<{ content?: string }>)[0]?.content,
+    'frozen:text-response',
+  );
 });
 
 test('fixture copy brief derives exactly the fact references present in its prompt', async () => {

@@ -2659,7 +2659,8 @@ export class ModelSupplyControlPlaneService {
   ) {
     await this.initialize(context.workspaceId);
     if (submission.operation === 'text.respond') {
-      const queued = this.application.previewTextSubmission(submission);
+      const prepared = await this.application.prepareSubmission(submission);
+      const queued = this.application.previewTextSubmission(prepared);
       await this.repository.enqueueCanvasTextGeneration(
         context.workspaceId,
         queued,
@@ -2668,7 +2669,7 @@ export class ModelSupplyControlPlaneService {
           deliveryMode: 'canvas_sse',
           id: canvasTextOutboxId(context.workspaceId, queued.jobId),
           status: 'pending',
-          submission: structuredClone(submission),
+          submission: structuredClone(prepared),
           workspaceId: context.workspaceId,
         },
       );

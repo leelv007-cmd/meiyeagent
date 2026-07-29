@@ -1,4 +1,8 @@
 import { createHash } from 'node:crypto';
+import type {
+  LanguageModelOperation,
+  ModelSupplyPromptResolver,
+} from '../model-supply/index.js';
 
 export const HARNESS_LANGFUSE_PROMPT_NAMES = {
   intentNaming: 'harness/intent-naming',
@@ -62,11 +66,10 @@ export interface HarnessFrozenPrompt {
   fallbackReason?: string;
 }
 
-export interface HarnessFrozenPrompts {
-  intentNaming: HarnessFrozenPrompt;
-  briefCompilation: HarnessFrozenPrompt;
-  [key: string]: HarnessFrozenPrompt;
-}
+export type HarnessFrozenPrompts = Record<
+  HarnessPromptKey,
+  HarnessFrozenPrompt
+>;
 
 export type HarnessPromptRevisionReference = ReturnType<
   typeof promptTraceReference
@@ -74,6 +77,39 @@ export type HarnessPromptRevisionReference = ReturnType<
 
 export interface HarnessPromptResolver {
   resolve(): Promise<HarnessFrozenPrompts>;
+}
+
+export function requireHarnessFrozenPrompt(
+  prompts: HarnessFrozenPrompts,
+  key: HarnessPromptKey,
+) {
+  const prompt = prompts[key];
+  if (!prompt) {
+    throw new Error(`Resolved prompt bundle is missing ${key}.`);
+  }
+  return prompt;
+}
+
+const MODEL_SUPPLY_PROMPT_KEY_BY_OPERATION = {
+  'copy.generate': 'copyGeneration',
+  'copy.adapt': 'platformAdaptation',
+  'text.respond': 'textResponse',
+} as const satisfies Record<LanguageModelOperation, HarnessPromptKey>;
+
+export function modelSupplyPromptResolverFromHarness(
+  resolver: HarnessPromptResolver,
+): ModelSupplyPromptResolver {
+  return {
+    async resolve({ operation }) {
+      const prompts = await resolver.resolve();
+      return structuredClone(
+        requireHarnessFrozenPrompt(
+          prompts,
+          MODEL_SUPPLY_PROMPT_KEY_BY_OPERATION[operation],
+        ),
+      );
+    },
+  };
 }
 
 export interface LangfuseHarnessPromptResolverOptions {

@@ -106,6 +106,7 @@ export interface AiStreamingRunner {
     prompt: string,
     abortSignal?: AbortSignal,
     candidateCount?: 1 | 3,
+    instructions?: string,
   ): Promise<GeneratedCopyResult>;
   streamAssistant(
     request: AssistantStreamRequest,
@@ -116,6 +117,7 @@ export interface AiStreamingRunner {
       catalogModelId: string;
       prompt: string;
       referenceAssets?: ResolvedReferenceAsset[];
+      instructions?: string;
     },
     abortSignal?: AbortSignal,
   ): CanvasTextStream;
@@ -135,12 +137,14 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     prompt: string,
     abortSignal?: AbortSignal,
     candidateCount: 1 | 3 = DEFAULT_COPY_CANDIDATE_COUNT,
+    instructions?: string,
   ) {
     const schema = copyCandidatesSchemaFor(candidateCount);
     const result = await generateText({
       abortSignal,
       ...languageModelCallSettings(this.options),
       instructions:
+        instructions ??
         `Return exactly ${candidateCount} materially distinct beauty-business copy ${candidateCount === 1 ? 'candidate' : 'candidates'}. Every candidate must include a non-empty title, body, and conversionHook.`,
       maxRetries: 0,
       model: this.model,
@@ -166,11 +170,13 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     prompt: string,
     referenceAssets: ResolvedReferenceAsset[] = [],
     abortSignal?: AbortSignal,
+    instructions?: string,
   ) {
     const result = await generateText({
       abortSignal,
       ...languageModelCallSettings(this.options),
       instructions:
+        instructions ??
         'Return one plain-text response for the requested canvas task. Do not return candidate arrays or provider protocol fields.',
       maxRetries: 0,
       model: this.model,
@@ -200,11 +206,16 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     };
   }
 
-  async adaptPlatformVariants(prompt: string, abortSignal?: AbortSignal) {
+  async adaptPlatformVariants(
+    prompt: string,
+    abortSignal?: AbortSignal,
+    instructions?: string,
+  ) {
     const result = await generateText({
       abortSignal,
       ...languageModelCallSettings(this.options),
       instructions:
+        instructions ??
         'Adapt the supplied canonical beauty-business content into exactly three complete platform variants: xiaohongshu, douyin, and video_account. Preserve facts, make the three bodies materially different, and include a non-empty title, body, conversionHook, and topics for each platform.',
       maxRetries: 0,
       model: this.model,
@@ -415,6 +426,7 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
       catalogModelId: string;
       prompt: string;
       referenceAssets?: ResolvedReferenceAsset[];
+      instructions?: string;
     },
     abortSignal?: AbortSignal,
   ): CanvasTextStream {
@@ -424,6 +436,7 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
       abortSignal,
       ...languageModelCallSettings(this.options),
       instructions:
+        request.instructions ??
         'Return one plain-text response for the requested canvas task. Do not return candidate arrays or provider protocol fields.',
       maxRetries: 0,
       model: this.model,

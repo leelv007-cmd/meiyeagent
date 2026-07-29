@@ -160,9 +160,16 @@ import {
 import { migratePostgresSchema } from './postgres-schema-migration.js';
 import { readHarnessRuntimeConfig } from './p1/harness/runtime-config.js';
 import { sendHarnessMediaJobTerminal } from './p1/harness/dbos-workflow.js';
-import { assertLangfusePromptRuntimePolicy } from './p1/harness/langfuse-prompts.js';
+import {
+  assertLangfusePromptRuntimePolicy,
+  langfusePromptResolverFromEnv,
+  modelSupplyPromptResolverFromHarness,
+} from './p1/harness/langfuse-prompts.js';
 
 assertLangfusePromptRuntimePolicy(process.env);
+const harnessPromptResolver = langfusePromptResolverFromEnv(process.env);
+const modelSupplyPromptResolver =
+  modelSupplyPromptResolverFromHarness(harnessPromptResolver);
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required.');
@@ -446,6 +453,7 @@ const modelSupplyRuntime = createModelSupplyRuntime({
       },
     ),
     providerAdmission: modelSupplyProviderAdmission,
+    promptResolver: modelSupplyPromptResolver,
     referenceAssets,
     resultSink: modelRepository,
   },

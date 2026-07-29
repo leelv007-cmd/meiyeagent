@@ -35,6 +35,34 @@ test('maps explicit natural language into platform and delivery fields through t
   );
 });
 
+test('destination mapping consumes the request-pinned prompt and does not swallow resolver failure', async () => {
+  const executor = new RecordingExecutor({
+    contentPackagePlatform: 'douyin',
+    distributionTarget: 'manual_copy',
+    status: 'mapped',
+  });
+  const mapper = new StructuredComposerDestinationMapper(executor, {
+    async resolve() {
+      return frozenPrompt('frozen:destination-mapping');
+    },
+  });
+
+  await mapper.map({ destination: '发到抖音，生成后手动复制' });
+
+  assert.equal(executor.calls[0]?.instructions, 'frozen:destination-mapping');
+
+  const unavailable = new StructuredComposerDestinationMapper(executor, {
+    async resolve() {
+      throw new Error('pinned prompt unavailable');
+    },
+  });
+  await assert.rejects(
+    unavailable.map({ destination: '发到小红书' }),
+    /pinned prompt unavailable/u,
+  );
+  assert.equal(executor.calls.length, 1);
+});
+
 test('fixture Day-0 mappings cover Moments handoff and offline export without treating Moments as a variant', async () => {
   const mapper = new StructuredComposerDestinationMapper(
     new FixtureAiStructuredObjectExecutor(),
@@ -89,7 +117,11 @@ test('empty input and invalid model output fail closed to guidance rather than a
 });
 
 class RecordingExecutor implements StructuredObjectExecutor {
-  readonly calls: Array<{ prompt: string; schemaName: string }> = [];
+  readonly calls: Array<{
+    instructions: string;
+    prompt: string;
+    schemaName: string;
+  }> = [];
 
   constructor(private readonly output: unknown) {}
 
@@ -98,11 +130,16 @@ class RecordingExecutor implements StructuredObjectExecutor {
   }
 
   async generate<Output>(input: {
+    instructions: string;
     prompt: string;
     schema: ZodType<Output>;
     schemaName: string;
   }) {
-    this.calls.push({ prompt: input.prompt, schemaName: input.schemaName });
+    this.calls.push({
+      instructions: input.instructions,
+      prompt: input.prompt,
+      schemaName: input.schemaName,
+    });
     return {
       output: input.schema.parse(this.output),
       providerTaskRef: 'fixture-destination-map',
@@ -113,4 +150,16 @@ class RecordingExecutor implements StructuredObjectExecutor {
   providerCost(usage: { inputTokens: number; outputTokens: number }) {
     return { amount: 0, currency: 'USD' as const, usage };
   }
+}
+
+function frozenPrompt(content: string) {
+  return {
+    name: 'harness/destination-mapping',
+    version: '17',
+    content,
+    contentHash: '1'.repeat(64),
+    label: 'production',
+    source: 'langfuse' as const,
+    isFallback: false,
+  };
 }

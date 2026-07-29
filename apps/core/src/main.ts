@@ -193,6 +193,8 @@ import { langfuseSenderFromEnv } from './p1/harness/langfuse-sender.js';
 import {
   assertLangfusePromptRuntimePolicy,
   langfusePromptResolverFromEnv,
+  modelSupplyPromptResolverFromHarness,
+  requireHarnessFrozenPrompt,
 } from './p1/harness/langfuse-prompts.js';
 import { PostgresHarnessResumeReconcilerStore } from './p1/harness/postgres-resume-reconciler-store.js';
 import { PostgresHarnessBillingCompensationStore } from './p1/harness/postgres-billing-compensation-store.js';
@@ -339,6 +341,9 @@ import {
 } from './p1/result-delivery/operations-visual-adoption.js';
 
 assertLangfusePromptRuntimePolicy(process.env);
+const harnessPromptResolver = langfusePromptResolverFromEnv(process.env);
+const modelSupplyPromptResolver =
+  modelSupplyPromptResolverFromHarness(harnessPromptResolver);
 
 const databaseUrl = process.env.DATABASE_URL;
 const serviceToken = process.env.CORE_SERVICE_TOKEN;
@@ -720,6 +725,7 @@ const p1ModelSupplyRuntime = createModelSupplyRuntime({
       },
     ),
     providerAdmission: modelSupplyProviderAdmission,
+    promptResolver: modelSupplyPromptResolver,
     referenceAssets,
     resultSink: modelSupplyRepository,
     submissionGate: streamingModeGate,
@@ -805,6 +811,7 @@ const legacyModelSupplyRuntime = createModelSupplyRuntime({
   application: {
     assetStorage,
     execution: gatedModelExecution,
+    promptResolver: modelSupplyPromptResolver,
     resultSink: modelSupplyRepository,
   },
   catalog: runtimeAssembly.assembly,
@@ -1699,7 +1706,15 @@ void runExpirationInvalidation();
 if (harnessRuntimeConfig) {
   const structuredExecutor = createHarnessStructuredModelExecutor(modelRuntime);
   composerDestinationMapper = new StructuredComposerDestinationMapper(
-    structuredExecutor
+    structuredExecutor,
+    {
+      async resolve() {
+        return requireHarnessFrozenPrompt(
+          await harnessPromptResolver.resolve(),
+          'destinationMapping',
+        );
+      },
+    },
   );
   // Reuse the unconditionally applied pending-actions harness store for DBOS.
   const harnessStore = pendingActionsQuestionStore;
@@ -1850,7 +1865,7 @@ if (harnessRuntimeConfig) {
     new HarnessTaskAdmissionService(
       harnessStore,
       new DbosHarnessWorkflowStarter(harnessWorkflow),
-      langfusePromptResolverFromEnv(process.env),
+      harnessPromptResolver,
       harnessStore,
     ),
     harnessDecisions,

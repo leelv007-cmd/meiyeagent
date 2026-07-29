@@ -13,6 +13,7 @@ import type {
   HarnessFrozenPrompts,
   HarnessPromptResolver,
 } from './langfuse-prompts.js';
+import { HARNESS_LANGFUSE_PROMPT_NAMES } from './langfuse-prompts.js';
 
 test('same task and payload returns the original workflow handle', async () => {
   const registry = new MemoryRequestRegistry();
@@ -205,7 +206,9 @@ test('prompt fallback is persisted through the first-party audit port', async ()
     starter,
     {
       async resolve() {
+        const prompts = await new MutablePromptResolver().resolve();
         return {
+          ...prompts,
           intentNaming: fallback,
           briefCompilation: prompt(
             'harness/brief-copy',
@@ -290,10 +293,22 @@ class MutablePromptResolver implements HarnessPromptResolver {
   version = 7;
 
   async resolve(): Promise<HarnessFrozenPrompts> {
-    return {
-      intentNaming: prompt('harness/intent-naming', `intent-v${this.version}`, this.version),
-      briefCompilation: prompt('harness/brief-copy', `brief-v${this.version}`, this.version),
-    };
+    return Object.fromEntries(
+      Object.entries(HARNESS_LANGFUSE_PROMPT_NAMES).map(([key, name]) => [
+        key,
+        prompt(
+          name,
+          `${
+            key === 'intentNaming'
+              ? 'intent'
+              : key === 'briefCompilation'
+                ? 'brief'
+                : key
+          }-v${this.version}`,
+          this.version,
+        ),
+      ]),
+    ) as HarnessFrozenPrompts;
   }
 }
 

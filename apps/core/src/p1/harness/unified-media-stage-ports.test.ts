@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -37,6 +38,10 @@ import type {
 	NoteMediaAdmissionPort,
 	NoteMediaAdmissionToken,
 } from "./note-media-admission.js";
+import {
+	HARNESS_LANGFUSE_PROMPT_NAMES,
+	type HarnessFrozenPrompts,
+} from "./langfuse-prompts.js";
 
 test("image and video use the existing Model Supply path with stable submission facts", async () => {
 	for (const kind of ["image", "video"] as const) {
@@ -1364,7 +1369,10 @@ test("exact text blocks the first image, retries once, and keeps both provider c
 		},
 		verifier,
 	);
-	const request = harnessInput("image", "package-image");
+	const request = {
+		...harnessInput("image", "package-image"),
+		prompts: frozenPromptBundle(),
+	};
 	const brief = imageBriefWithExactText("价格 398");
 	const selection = await adapter.execute({
 		brief,
@@ -1455,7 +1463,10 @@ test("the production exact-text verifier reuses multimodal text.respond without 
 			};
 		},
 	});
-	const request = harnessInput("image", "package-image");
+	const request = {
+		...harnessInput("image", "package-image"),
+		prompts: frozenPromptBundle(),
+	};
 	const assessment = await verifier.verify({
 		assetId: "image-asset-1",
 		expected: ["价格 398"],
@@ -1468,6 +1479,10 @@ test("the production exact-text verifier reuses multimodal text.respond without 
 	assert.deepEqual(submissions[0]?.input?.inputAssets, [
 		{ assetId: "image-asset-1", role: "reference_image" },
 	]);
+	assert.equal(
+		submissions[0]?.promptBinding?.content,
+		"frozen:textResponse",
+	);
 	assert.equal(
 		Object.hasOwn(submissions[0] ?? {}, "productUsageQuantity"),
 		false,
@@ -1994,4 +2009,24 @@ function memoryNoteAdmission(events: string[] = []): NoteMediaAdmissionPort {
 			return true;
 		},
 	};
+}
+
+function frozenPromptBundle(): HarnessFrozenPrompts {
+	return Object.fromEntries(
+		Object.entries(HARNESS_LANGFUSE_PROMPT_NAMES).map(([key, name]) => {
+			const content = `frozen:${key}`;
+			return [
+				key,
+				{
+					name,
+					version: "31",
+					content,
+					contentHash: createHash("sha256").update(content).digest("hex"),
+					label: "production",
+					source: "langfuse",
+					isFallback: false,
+				},
+			];
+		}),
+	) as HarnessFrozenPrompts;
 }

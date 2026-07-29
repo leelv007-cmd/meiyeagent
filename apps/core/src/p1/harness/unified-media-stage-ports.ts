@@ -784,9 +784,12 @@ export class ModelSupplyImageExactTextVerifier
 			idempotencyKey: `harness-media:${input.workflowId}:image:exact-text:${input.assetId}`,
 			input: {
 				inputAssets: [{ assetId: input.assetId, role: "reference_image" }],
-			},
-			operation: "text.respond",
-			prompt: JSON.stringify({
+				},
+				operation: "text.respond",
+				...(input.request.prompts?.textResponse
+					? { promptBinding: input.request.prompts.textResponse }
+					: {}),
+				prompt: JSON.stringify({
 				task: "Read all visible text in the supplied image.",
 				expectedExactText: input.expected,
 				responseContract: {

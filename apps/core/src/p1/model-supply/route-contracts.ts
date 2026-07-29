@@ -23,6 +23,40 @@ export interface RequestedSelection {
   fallbackConsent?: boolean;
 }
 
+export type LanguageModelOperation =
+  | 'copy.generate'
+  | 'copy.adapt'
+  | 'text.respond';
+
+export const LANGUAGE_MODEL_PROMPT_NAME_BY_OPERATION = {
+  'copy.generate': 'harness/copy-generation',
+  'copy.adapt': 'harness/platform-adaptation',
+  'text.respond': 'harness/text-response',
+} as const satisfies Record<LanguageModelOperation, string>;
+
+export interface ModelSupplyPromptBinding {
+  name: string;
+  version: string;
+  content: string;
+  contentHash: string;
+  label: string;
+  source: 'langfuse' | 'builtin';
+  isFallback: boolean;
+  fallbackReason?: string;
+}
+
+export type ModelSupplyPromptReference = Omit<
+  ModelSupplyPromptBinding,
+  'content'
+>;
+
+export interface ModelSupplyPromptResolver {
+  resolve(input: {
+    operation: LanguageModelOperation;
+    workspaceId: string;
+  }): Promise<ModelSupplyPromptBinding>;
+}
+
 export interface ModelSupplySubmission {
   workspaceId: string;
   actorId: string;
@@ -51,6 +85,8 @@ export interface ModelSupplySubmission {
   /** Explicit bounded quality-probe breadth; ordinary copy generation omits this and defaults to one. */
   copyCandidateCount?: 1 | 3;
   promptRevision?: string;
+  /** Immutable system prompt selected before provider I/O. */
+  promptBinding?: ModelSupplyPromptBinding;
   exampleSetRevision?: string;
   input?: {
     width?: number;
@@ -252,6 +288,7 @@ export interface RouteSnapshot {
     | 'auto_fallback_before_accept';
   dataClass: DataClass[];
   promptRevision?: string;
+  promptReference?: ModelSupplyPromptReference;
   exampleSetRevision?: string;
   createdAt: string;
 }

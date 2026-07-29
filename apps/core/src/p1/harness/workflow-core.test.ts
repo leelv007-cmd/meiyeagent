@@ -16,6 +16,10 @@ import { normalizeHarnessTerminalFailure } from './terminal-failure.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import { buildSemanticDecisionResumption } from './semantic-decision-resumption.js';
+import {
+  HARNESS_LANGFUSE_PROMPT_NAMES,
+  type HarnessFrozenPrompts,
+} from './langfuse-prompts.js';
 
 test('five semantic stages run in order with stable effect keys and a delivery fence', async () => {
   const calls: string[] = [];
@@ -1579,10 +1583,7 @@ test('fallback prompt version and hash enter stage traces without prompt content
   const traces: Array<{ stage: string; payload: unknown }> = [];
   const request = {
     ...taskInput(),
-    prompts: {
-      intentNaming: fallbackPrompt('harness/intent-naming'),
-      briefCompilation: fallbackPrompt('harness/brief-copy'),
-    },
+    prompts: fallbackPromptBundle(),
   };
 
   await runHarnessWorkflow('task-prompt-fallback', request, fixtureStages(), {
@@ -2242,4 +2243,13 @@ function fallbackPrompt(name: string) {
     isFallback: true,
     fallbackReason: 'http_503',
   };
+}
+
+function fallbackPromptBundle(): HarnessFrozenPrompts {
+  return Object.fromEntries(
+    Object.entries(HARNESS_LANGFUSE_PROMPT_NAMES).map(([key, name]) => [
+      key,
+      fallbackPrompt(name),
+    ]),
+  ) as HarnessFrozenPrompts;
 }

@@ -48,7 +48,12 @@ export {
   type PersistedCustodyOwnedAsset,
 } from './supply-contracts.js';
 export {
+  LANGUAGE_MODEL_PROMPT_NAME_BY_OPERATION,
   type RequestedSelection,
+  type LanguageModelOperation,
+  type ModelSupplyPromptBinding,
+  type ModelSupplyPromptReference,
+  type ModelSupplyPromptResolver,
   type ModelSupplySubmission,
   type RouteSimulationFailureScenario,
   type RouteCandidateExclusionReason,
@@ -108,6 +113,8 @@ import {
   type RuntimeDeploymentCapability,
 } from './supply-contracts.js';
 import type {
+  LanguageModelOperation,
+  ModelSupplyPromptResolver,
   ModelSupplyRouteSimulation,
   ModelSupplyRouteSimulationInput,
   ModelSupplySubmission,
@@ -117,6 +124,7 @@ import type {
   RouteCandidateEvaluation,
   RouteSnapshot,
 } from './route-contracts.js';
+import { LANGUAGE_MODEL_PROMPT_NAME_BY_OPERATION } from './route-contracts.js';
 import {
   copyCandidateBodiesAreDistinct,
   type CancelledMediaProviderTerminalReconciliation,
@@ -431,6 +439,56 @@ export function modelSupplyJobId(submission: ModelSupplySubmission) {
     submission.workspaceId,
     submission.idempotencyKey
   );
+}
+
+function isLanguageModelOperation(
+  operation: ModelOperation,
+): operation is LanguageModelOperation {
+  return (
+    operation === 'copy.generate' ||
+    operation === 'copy.adapt' ||
+    operation === 'text.respond'
+  );
+}
+
+function assertPromptBinding(
+  operation: LanguageModelOperation,
+  binding: NonNullable<ModelSupplySubmission['promptBinding']>,
+) {
+  const expectedName = LANGUAGE_MODEL_PROMPT_NAME_BY_OPERATION[operation];
+  if (binding.name !== expectedName) {
+    throw new Error(
+      `Prompt ${binding.name} cannot bind ${operation}; expected ${expectedName}.`,
+    );
+  }
+  if (!binding.version.trim() || !binding.content.trim()) {
+    throw new Error('Prompt binding requires a version and content.');
+  }
+  if (hash(binding.content) !== binding.contentHash) {
+    throw new Error('Prompt binding content hash does not match its content.');
+  }
+}
+
+function canonicalPromptBinding(
+  binding: NonNullable<ModelSupplySubmission['promptBinding']>,
+) {
+  return JSON.stringify(binding);
+}
+
+function promptReferenceFromBinding(
+  binding: NonNullable<ModelSupplySubmission['promptBinding']>,
+) {
+  return {
+    name: binding.name,
+    version: binding.version,
+    contentHash: binding.contentHash,
+    label: binding.label,
+    source: binding.source,
+    isFallback: binding.isFallback,
+    ...(binding.fallbackReason
+      ? { fallbackReason: binding.fallbackReason }
+      : {}),
+  };
 }
 
 /** Preserve the shared planning explanation while replacing its branch with observed facts. */
@@ -797,6 +855,11 @@ export class ModelSupplyApplicationService {
     blocksNewSubmission(): Promise<boolean>;
   };
   private readonly providerAdmission?: ModelSupplyProviderAdmissionPort;
+  private readonly promptResolver?: ModelSupplyPromptResolver;
+  private readonly preparedPromptBindings = new Map<
+    string,
+    ModelSupplySubmission['promptBinding']
+  >();
 
   constructor(options: {
     models: CatalogModel[];
@@ -812,6 +875,7 @@ export class ModelSupplyApplicationService {
     referenceAssets?: ReferenceAssetResolverPort;
     submissionGate?: { blocksNewSubmission(): Promise<boolean> };
     providerAdmission?: ModelSupplyProviderAdmissionPort;
+    promptResolver?: ModelSupplyPromptResolver;
   }) {
     for (const model of options.models) this.modelById.set(model.id, model);
     this.runtimeCapabilities = options.runtimeCapabilities
@@ -833,6 +897,7 @@ export class ModelSupplyApplicationService {
     this.referenceAssets = options.referenceAssets;
     this.submissionGate = options.submissionGate;
     this.providerAdmission = options.providerAdmission;
+    this.promptResolver = options.promptResolver;
   }
 
   attempts() {
@@ -1211,10 +1276,13 @@ export class ModelSupplyApplicationService {
         ),
       );
     }
-    return this.executeSubmission(submission, this.execution);
+    return this.executeSubmission(
+      await this.prepareSubmission(submission),
+      this.execution,
+    );
   }
 
-  submitWithProviderEffectKey(
+  async submitWithProviderEffectKey(
     submission: ModelSupplySubmission,
     effectIdempotencyKey: string,
   ): Promise<ModelSupplyResult> {
@@ -1225,12 +1293,16 @@ export class ModelSupplyApplicationService {
     ) {
       throw new Error('Canvas text outbox accepts only language generation.');
     }
-    return this.executeSubmission(submission, this.execution, {
+    return this.executeSubmission(
+      await this.prepareSubmission(submission),
+      this.execution,
+      {
       effectIdempotencyKey,
-    });
+      },
+    );
   }
 
-  executeCanvasTextStream(
+  async executeCanvasTextStream(
     submission: ModelSupplySubmission,
     runner: AiStreamingRunner | undefined,
     input: {
@@ -1247,7 +1319,7 @@ export class ModelSupplyApplicationService {
       throw new Error('Canvas text streaming requires one fixed text model.');
     }
     return this.executeSubmission(
-      submission,
+      await this.prepareSubmission(submission),
       {
         execute: async (request): Promise<ProviderExecutionResponse> => {
           const unavailable = (message: string, errorCode: string) => ({
@@ -1292,6 +1364,7 @@ export class ModelSupplyApplicationService {
               {
                 catalogModelId: request.model.id,
                 prompt: request.submission.prompt,
+                instructions: request.submission.promptBinding?.content,
                 referenceAssets:
                   request.resolvedInputAssets
                     ?.filter((asset) => asset.role === 'reference_image') ??
@@ -1355,6 +1428,43 @@ export class ModelSupplyApplicationService {
         effectIdempotencyKey: input.effectIdempotencyKey,
       },
     );
+  }
+
+  async prepareSubmission(
+    submission: ModelSupplySubmission,
+  ): Promise<ModelSupplySubmission> {
+    if (
+      !isLanguageModelOperation(submission.operation)
+    ) {
+      return submission;
+    }
+    const key = `${submission.workspaceId}:${submission.idempotencyKey}`;
+    const prepared = this.preparedPromptBindings.get(key);
+    if (prepared) {
+      assertPromptBinding(submission.operation, prepared);
+      if (
+        submission.promptBinding &&
+        canonicalPromptBinding(submission.promptBinding) !==
+          canonicalPromptBinding(prepared)
+      ) {
+        throw new Error('Idempotency key conflicts with a different prompt binding.');
+      }
+      return { ...submission, promptBinding: structuredClone(prepared) };
+    }
+    const promptBinding =
+      submission.promptBinding ??
+      (await this.promptResolver?.resolve({
+        operation: submission.operation,
+        workspaceId: submission.workspaceId,
+      }));
+    if (!promptBinding) return submission;
+    assertPromptBinding(submission.operation, promptBinding);
+    const frozen = structuredClone(promptBinding);
+    this.preparedPromptBindings.set(key, frozen);
+    return {
+      ...submission,
+      promptBinding: structuredClone(frozen),
+    };
   }
 
   executeStructuredObject<Output>(
@@ -3395,6 +3505,9 @@ export class ModelSupplyApplicationService {
     fallback?: RouteSnapshot['reason'],
     planning?: SubmissionPlanningDecision,
   ): RouteSnapshot {
+    const promptReference = submission.promptBinding
+      ? promptReferenceFromBinding(submission.promptBinding)
+      : undefined;
     if (submission.frozenRouteSnapshot) {
       if (
         submission.frozenRouteSnapshot.actualCatalogModelId !==
@@ -3405,7 +3518,19 @@ export class ModelSupplyApplicationService {
           'Execution candidate conflicts with the frozen RouteSnapshot.'
         );
       }
-      return structuredClone(submission.frozenRouteSnapshot);
+      const frozen = structuredClone(submission.frozenRouteSnapshot);
+      if (
+        frozen.promptReference &&
+        (!promptReference ||
+          JSON.stringify(frozen.promptReference) !==
+            JSON.stringify(promptReference))
+      ) {
+        throw new Error(
+          'Execution prompt conflicts with the frozen RouteSnapshot.',
+        );
+      }
+      if (promptReference) frozen.promptReference = promptReference;
+      return frozen;
     }
     return {
       id: `model-route-${hash(
@@ -3541,6 +3666,7 @@ export class ModelSupplyApplicationService {
       ...(submission.promptRevision
         ? { promptRevision: submission.promptRevision }
         : {}),
+      ...(promptReference ? { promptReference } : {}),
       ...(submission.exampleSetRevision
         ? { exampleSetRevision: submission.exampleSetRevision }
         : {}),
