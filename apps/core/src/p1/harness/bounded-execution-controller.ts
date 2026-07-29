@@ -181,8 +181,12 @@ export function resumeWithRaisedServerLimit(
   }
   const previous = snapshot[raise.limit];
   const consumed = snapshot.consumption[CONSUMPTION_BY_LIMIT[raise.limit]];
+  if (previous === 'unset' || consumed < previous) {
+    throw new BoundedExecutionResumeError(
+      'A suspended execution must reach its triggered limit before it can resume.',
+    );
+  }
   if (
-    previous === 'unset' ||
     !Number.isSafeInteger(raise.value) ||
     raise.value <= previous ||
     raise.value <= consumed

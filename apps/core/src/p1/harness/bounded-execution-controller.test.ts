@@ -123,6 +123,29 @@ test('consumption cannot move backwards across durable replay', () => {
   );
 });
 
+test('resume rejects a predecessor that did not reach its triggered limit', () => {
+  const notReached = snapshot({
+    maxIterations: 2,
+    consumption: {
+      iterations: 1,
+      costCents: 0,
+      wallClockMs: 0,
+      delegations: 0,
+    },
+    stopReason: 'limit_reached',
+    triggeredLimit: 'maxIterations',
+  });
+
+  assert.throws(
+    () =>
+      resumeWithRaisedServerLimit(notReached, {
+        limit: 'maxIterations',
+        value: 3,
+      }),
+    BoundedExecutionResumeError,
+  );
+});
+
 function snapshot(
   overrides: Partial<BoundedExecutionSnapshot> = {},
 ): BoundedExecutionSnapshot {
