@@ -95,6 +95,32 @@ test('fixture structured execution compiles the frozen video delivery into one s
   });
 });
 
+test('fixture fact satisfaction excludes fact kinds the recipe did not request', async () => {
+  const executor = new FixtureAiStructuredObjectExecutor();
+  const result = await executor.generate({
+    instructions: 'Assess only the requested fact kinds.',
+    prompt: JSON.stringify({
+      factTypes: ['price', 'discount'],
+      facts: [
+        { kind: 'service', sourceRef: 'store_fact:service:1' },
+        { kind: 'price', sourceRef: 'store_fact:price:1' },
+      ],
+    }),
+    schema: z.object({
+      matchedFactRefs: z.array(z.string()),
+      missingFactTypes: z.array(z.string()),
+      status: z.enum(['satisfied', 'partial', 'unsatisfied']),
+    }),
+    schemaName: 'harness_fact_satisfaction_v1',
+  });
+
+  assert.deepEqual(result.output, {
+    matchedFactRefs: ['store_fact:price:1'],
+    missingFactTypes: ['discount'],
+    status: 'partial',
+  });
+});
+
 test('fixture NotePlan varies page composition with merchant semantics', async () => {
   const executor = new FixtureAiStructuredObjectExecutor();
   const generate = (intent: string) =>

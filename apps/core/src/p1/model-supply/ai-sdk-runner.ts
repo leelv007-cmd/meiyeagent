@@ -1607,6 +1607,7 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
           .filter((kind): kind is string => typeof kind === 'string'),
       );
       const missingFactTypes = requested.filter((kind) => !available.has(kind));
+      const requestedKinds = new Set(requested);
       return {
         status:
           missingFactTypes.length === 0
@@ -1615,6 +1616,11 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
               ? 'unsatisfied'
               : 'partial',
         matchedFactRefs: facts
+          .filter(
+            (fact) =>
+              typeof fact.kind === 'string' &&
+              requestedKinds.has(fact.kind),
+          )
           .map((fact) => fact.sourceRef)
           .filter((reference): reference is string => typeof reference === 'string'),
         missingFactTypes,

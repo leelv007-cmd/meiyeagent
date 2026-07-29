@@ -157,7 +157,7 @@ test.describe('D-111 intent routing over real HTTP and SSE', () => {
   test.beforeAll(async ({ request }) => cleanupE2EUsers(request));
   test.afterAll(async ({ request }) => cleanupE2EUsers(request));
 
-  test('Day-0 industry gap continues automatically with an explicit generic-mode notice', async ({
+  test('a confirmed-fact workspace continues automatically with an explicit grounded-mode notice', async ({
     page,
     request,
   }) => {
@@ -173,11 +173,11 @@ test.describe('D-111 intent routing over real HTTP and SSE', () => {
     });
     expect(
       activations,
-      `Day-0 generic mode must reach its first token in exactly two activations; events=${JSON.stringify(counter.events())}`
+      `confirmed-fact mode must reach its first token in exactly two activations; events=${JSON.stringify(counter.events())}`
     ).toBe(2);
     await expect(page.getByTestId('composer-question-turn')).toHaveCount(0);
     await expect(page.getByTestId('composer-route-notice')).toHaveText(
-      '这次先按通用方式继续生成，不需要补充行业信息。',
+      '这次会参考你已确认的资料，直接继续生成。',
       { timeout: 60_000 }
     );
     await expect(page.getByTestId('composer-delivery-card')).toBeVisible({

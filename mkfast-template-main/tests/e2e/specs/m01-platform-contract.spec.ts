@@ -60,6 +60,9 @@ test.describe('M-01 signed platform contract', () => {
     });
 
     await page.getByTestId('composer-lens-option-copy').click();
+    await page
+      .getByTestId('composer-intent-input')
+      .fill('写一条夏日护理预约文案');
     const quoteLine = page.getByTestId('composer-quote-line');
     await expect(quoteLine).toBeVisible({ timeout: 30_000 });
     const initialHash = await quoteLine.getAttribute(
@@ -118,10 +121,6 @@ test.describe('M-01 signed platform contract', () => {
     await expect
       .poll(() => quoteLine.getAttribute('data-submission-contract-hash'))
       .toBe(xhsHash);
-    await page
-      .getByTestId('composer-intent-input')
-      .fill('写一条夏日护理预约文案');
-
     const submissionRequestPromise = page.waitForRequest(
       (request) =>
         request.method() === 'POST' &&

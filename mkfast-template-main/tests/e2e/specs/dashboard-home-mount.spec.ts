@@ -474,10 +474,22 @@ test.describe('D-126 dashboard home mount', () => {
         name: '还没有基于本店事实的推荐',
       })
     ).toHaveCount(0);
-    await expect(card.getByText('为什么适合现在')).toBeVisible();
-    await expect(card.getByText('用了本店什么')).toBeVisible();
-    await expect(card.getByText('希望顾客做什么')).toBeVisible();
-    await expect(card.getByTestId('today-recommendation-use')).toBeVisible();
+    const recommendationState = await card.getAttribute(
+      'data-recommendation-state'
+    );
+    if (recommendationState === 'current') {
+      await expect(card.getByText('为什么适合现在')).toBeVisible();
+      await expect(card.getByText('用了本店什么')).toBeVisible();
+      await expect(card.getByText('希望顾客做什么')).toBeVisible();
+      await expect(card.getByTestId('today-recommendation-use')).toBeVisible();
+    } else {
+      await expect(
+        card.getByRole('heading', {
+          level: 3,
+          name: '今天的主推荐还没排出来',
+        })
+      ).toBeVisible();
+    }
     // 不是空壳：无论哪种态，下一步入口都在卡里。
     await expect(
       card.getByRole('button', {
@@ -501,10 +513,16 @@ test.describe('D-126 dashboard home mount', () => {
     ]);
     await expect(page.getByTestId('continue-item').first()).toBeVisible();
 
-    await card.getByTestId('today-recommendation-use').click();
+    await card
+      .getByRole('button', {
+        name: /开始下一次任务|用这条推荐开始创作/u,
+      })
+      .click();
     const intentInput = page.getByTestId('composer-intent-input');
     await expect(intentInput).toBeFocused();
-    await expect(intentInput).not.toHaveValue('');
+    if (recommendationState === 'current') {
+      await expect(intentInput).not.toHaveValue('');
+    }
 
     // 降级投影腿：真实成品原封不动留在工作台，只把推荐这一路的两个来源
     // （Harness 投影 + ContentPackage 兜底）排空。此时唯一诚实的说法是

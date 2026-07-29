@@ -145,7 +145,9 @@ async function submitNoteJourney(
   authorizedAssetId?: string
 ) {
   await page.goto('/dashboard');
-  await seedConfirmedStore(page);
+  if (!authorizedAssetId) {
+    await seedConfirmedStore(page);
+  }
   await page.getByTestId('composer-lens-option-image_text').click();
   const preferences = await queryImageModelPreferences(page);
   expect(preferences.workspaceDefault).toBeUndefined();

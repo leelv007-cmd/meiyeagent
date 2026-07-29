@@ -53,6 +53,9 @@ test.describe('marketing Composer and Harness question', () => {
         string,
         unknown
       >;
+      const identity = submittedComposer.identity as
+        | { id: string; revision: string }
+        | undefined;
       await route.fulfill({
         json: {
           data: {
@@ -63,8 +66,8 @@ test.describe('marketing Composer and Harness question', () => {
             replayed: false,
             snapshot: {
               id: 'e2e-composer-question-snapshot',
-              identity: {
-                id: 'e2e-composer-question-identity',
+              identity: identity ?? {
+                id: 'identity.store_official.default',
                 revision: '1',
               },
               schemaVersion: 'creation-execution-snapshot/v1',

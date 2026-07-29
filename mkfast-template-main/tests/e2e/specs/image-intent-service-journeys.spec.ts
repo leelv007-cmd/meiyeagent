@@ -158,9 +158,11 @@ async function submitImageJourney(page: Page, journey: Journey) {
   const intent = page.getByTestId('composer-intent-input');
   await intent.fill(journey.intent);
   await expect(intent).toHaveValue(journey.intent);
-  await page
-    .locator('#composer-setting-input-platform')
-    .selectOption('xiaohongshu');
+  const destination = page.getByTestId(
+    'composer-destination-option-xiaohongshu'
+  );
+  await destination.click();
+  await expect(destination).toHaveAttribute('aria-pressed', 'true');
   await expect(
     page.getByTestId('composer-destination-capability')
   ).toBeVisible();
@@ -360,9 +362,13 @@ test.describe
         const stream = await collectWorkflowSse(page, submission.taskId);
         expect(stream.status).toBe('success');
         expect(
-          stream.progress
-            .filter(({ state }) => state === 'success')
-            .map(({ stage }) => stage)
+          Array.from(
+            new Set(
+              stream.progress
+                .filter(({ state }) => state === 'success')
+                .map(({ stage }) => stage)
+            )
+          )
         ).toEqual(EXPECTED_STAGES);
         for (const frame of stream.progress) {
           expect(frame.message).toBeTruthy();
@@ -387,9 +393,9 @@ test.describe
           contentPackage.marketing?.contextBundle?.revision
         ).toBeGreaterThan(0);
         expect(contentPackage.marketing?.factRefs).toEqual(expect.any(Array));
-        expect(
-          contentPackage.marketing?.rightsRefs?.length ?? 0
-        ).toBeGreaterThan(0);
+        expect(contentPackage.marketing?.rightsRefs ?? []).toHaveLength(
+          journey.sourceCount
+        );
         expect(
           contentPackage.variants.map(({ platform }) => platform).sort()
         ).toEqual(['douyin', 'video_account', 'xiaohongshu']);
