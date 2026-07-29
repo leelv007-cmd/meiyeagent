@@ -5,6 +5,8 @@ import {
   CatalogRevisionRegistry,
   createDefaultCatalogModels,
   createDefaultDeployments,
+  createDefaultExecutionChannels,
+  createDefaultProviderProfiles,
   type PublishedDeployment,
 } from './catalog.js';
 import {
@@ -1697,6 +1699,60 @@ describe('ModelSupplyFoundationModule', () => {
     assert.equal(nonFixtureSpeech?.activation, 'inactive');
     assert.equal(nonFixtureSpeech?.usageAmount, 0);
     assert.equal(nonFixtureSpeech?.modelId, null);
+  });
+
+  it('seeds commercial-use permission only into the explicit local fixture supply contracts', async () => {
+    const repository = new MemoryModelSupplyControlPlaneRepository();
+    const fixture = modelRuntimeAssemblyFromEnv({
+      APP_ENV: 'e2e',
+      MODEL_EXECUTION_MODE: 'fixture',
+    });
+    const application = new ModelSupplyApplicationService({
+      deployments: fixture.deployments,
+      execution: fixture.runtime.execution,
+      models: fixture.models,
+      resultSink: repository,
+      runtimeCapabilities: fixture.runtimeCapabilities,
+    });
+    let fixtureContracts:
+      | Array<{ commercialUse?: 'allowed'; termsRevisionId: string }>
+      | undefined;
+    const controlPlane = new ModelSupplyControlPlaneService({
+      allowRecordedExecution: true,
+      application,
+      fallbackCatalog: {
+        payload: {
+          capabilities: [],
+          deployments: fixture.deployments,
+          executionChannels: createDefaultExecutionChannels(),
+          models: fixture.models,
+          prices: [],
+          providerProfiles: createDefaultProviderProfiles(),
+          routes: [],
+        },
+        revisionId: 'fixture-rights-contract-v1',
+      },
+      repository,
+      supplyRegistry: {
+        async getCurrentRegistryRevision() {
+          return null;
+        },
+        async setCurrentRegistryRevision(_workspaceId, snapshot) {
+          fixtureContracts = snapshot.contracts;
+        },
+      },
+    });
+
+    await controlPlane.initialize(owner.workspaceId);
+
+    assert.ok(fixtureContracts?.length);
+    assert.ok(
+      fixtureContracts?.every(
+        (contract) =>
+          contract.commercialUse === 'allowed' &&
+          contract.termsRevisionId.trim().length > 0,
+      ),
+    );
   });
 
   it('does not reactivate recorded deployments when the runtime fallback is disabled', async () => {

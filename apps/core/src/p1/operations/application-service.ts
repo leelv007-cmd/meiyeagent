@@ -72,6 +72,7 @@ import type {
   ContentTask,
   ContentTaskStatus,
   ContentPackageExportPort,
+  ContentPackageRightsBasisResolverPort,
   ContentPackageRightsResolverPort,
   CreateTaskInput,
   CreationActivationEventType,
@@ -296,6 +297,7 @@ interface OperationsDependencies {
   creationExecutor?: import('./types.js').CreationExecutorPort;
   contentPackageExporter?: ContentPackageExportPort;
   contentPackageApprovalPolicy?: ContentPackageApprovalPolicyPort;
+  contentPackageRightsBasisResolver?: ContentPackageRightsBasisResolverPort;
   contentPackageRightsResolver?: ContentPackageRightsResolverPort;
   groundingResolver?: CreativeGroundingResolverPort;
   imageGenerator: ImageGenerationPort;
@@ -9105,7 +9107,10 @@ export class OperationsApplicationService {
     }
     const liveRights =
       await this.dependencies.contentPackageRightsResolver?.resolve({
-        assetIds: contentPackageRightsAssetIds(contentPackage, version),
+        assetIds:
+          contentPackage.kind === 'video'
+            ? contentPackage.source.assetIds
+            : contentPackageRightsAssetIds(contentPackage, version),
         workspaceId: context.workspaceId,
       });
     if (liveRights && liveRights.unauthorizedAssetIds.length > 0) {
@@ -9123,6 +9128,36 @@ export class OperationsApplicationService {
         503
       );
     }
+    let rightsBasis;
+    if (
+      contentPackage.kind === 'video' &&
+      !this.dependencies.contentPackageRightsBasisResolver
+    ) {
+      throw new OperationsError(
+        'CONTENT_PACKAGE_EXPORT_CONFLICT',
+        'The ContentPackage rights basis consumer is unavailable.',
+        409,
+      );
+    }
+    if (
+      contentPackage.kind === 'video' &&
+      this.dependencies.contentPackageRightsBasisResolver
+    ) {
+      try {
+        rightsBasis =
+          await this.dependencies.contentPackageRightsBasisResolver.resolve({
+            contentPackage,
+            version,
+            workspaceId: context.workspaceId,
+          });
+      } catch {
+        throw new OperationsError(
+          'CONTENT_PACKAGE_EXPORT_CONFLICT',
+          'The ContentPackage rights basis is unavailable.',
+          409,
+        );
+      }
+    }
     const timestamp = this.timestamp();
     let artifact: Awaited<ReturnType<ContentPackageExportPort['export']>> | undefined;
     try {
@@ -9132,6 +9167,7 @@ export class OperationsApplicationService {
         kind: contentPackage.kind,
         packageId: contentPackage.id,
         platform: input.platform,
+        ...(rightsBasis ? { rightsBasis } : {}),
         version,
         ...(contentPackage.kind === 'video' && contentPackage.source.storyboardRevision
           ? { videoDeliveryRevision: contentPackage.source.storyboardRevision }

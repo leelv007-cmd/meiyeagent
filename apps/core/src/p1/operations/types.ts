@@ -3,6 +3,7 @@ import type {
   CreativeGenerationApprovalReceipt,
   PromotionalMaterialReceipt,
   PromotionalMaterialSpec,
+  RightsBasis,
   VideoCompositionEvidence,
 } from '@meiye/contracts';
 
@@ -892,6 +893,7 @@ export interface ContentPackageExportPort {
     kind: ContentPackage['kind'];
     packageId: string;
     platform: ContentPackage['variants'][number]['platform'];
+    rightsBasis?: RightsBasis;
     version: ContentPackage['versions'][number];
     videoDeliveryCompositionRevision?: string;
     videoDeliveryWorkflowId?: string;
@@ -899,6 +901,14 @@ export interface ContentPackageExportPort {
     videoDeliveryDurationSeconds?: number;
     workspaceId: string;
   }): Promise<ContentPackageExportArtifact>;
+}
+
+export interface ContentPackageRightsBasisResolverPort {
+  resolve(input: {
+    contentPackage: ContentPackage;
+    version: ContentPackage['versions'][number];
+    workspaceId: string;
+  }): Promise<RightsBasis>;
 }
 
 export interface ContentPackageRightsResolverPort {

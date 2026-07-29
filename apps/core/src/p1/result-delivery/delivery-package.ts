@@ -1,3 +1,4 @@
+import type { RightsBasis } from '@meiye/contracts';
 import { strToU8, zipSync } from 'fflate';
 
 import {
@@ -36,6 +37,7 @@ export type ImageTextDeliveryPackageInput = {
   images: readonly { bytes: Uint8Array; mimeType: string; path: string }[];
   packageId: string;
   platform: DeliveryPackagePlatform;
+  rightsBasis?: RightsBasis;
   rightsState?: string;
   factSummary?: string;
   storeName: string;
@@ -60,6 +62,7 @@ export type VideoFullDeliveryPackageInput = {
   generatedAt: string;
   packageId: string;
   platform: DeliveryPackagePlatform;
+  rightsBasis?: RightsBasis;
   rightsState?: string;
   factSummary?: string;
   storeName: string;
@@ -210,6 +213,7 @@ export function buildRightsAndFactsJson(input: {
   factSummary?: string;
   packageId: string;
   platform: DeliveryPackagePlatform;
+  rightsBasis?: RightsBasis;
   rightsState: string;
   variantVersionId: string;
 }): string {
@@ -220,6 +224,7 @@ export function buildRightsAndFactsJson(input: {
       factSummary: input.factSummary ?? '发布前请核对门店与价格事实。',
       packageId: input.packageId,
       platform: input.platform,
+      ...(input.rightsBasis ? { basis: input.rightsBasis.kind } : {}),
       rightsState: input.rightsState,
       variantVersionId: input.variantVersionId,
       watermarkEnabled: input.compliance.watermarkEnabled,
@@ -235,10 +240,12 @@ export function buildRightsAndFactsJson(input: {
 function rightsSummaryFrom(input: {
   compliance: ImageTextDeliveryPackageInput['compliance'];
   factSummary?: string;
+  rightsBasis?: RightsBasis;
   rightsState?: string;
 }): DeliveryManifestRightsSummary {
   return {
     aigcLabelEnabled: input.compliance.aigcLabelEnabled,
+    ...(input.rightsBasis ? { basis: input.rightsBasis.kind } : {}),
     ...(input.factSummary ? { factSummary: input.factSummary } : {}),
     state: input.rightsState ?? 'authorized',
     watermarkEnabled: input.compliance.watermarkEnabled,
@@ -327,6 +334,7 @@ export function buildImageTextDeliveryPackage(
     factSummary: input.factSummary,
     packageId: input.packageId,
     platform: input.platform,
+    rightsBasis: input.rightsBasis,
     rightsState: input.rightsState ?? 'authorized',
     variantVersionId: input.variantVersionId,
   });
@@ -427,6 +435,7 @@ export function buildCopyDeliveryPackage(
     factSummary: input.factSummary,
     packageId: input.packageId,
     platform: input.platform,
+    rightsBasis: input.rightsBasis,
     rightsState: input.rightsState ?? 'authorized',
     variantVersionId: input.variantVersionId,
   });
@@ -486,6 +495,7 @@ export function buildVideoFullDeliveryPackage(
     factSummary: input.factSummary,
     packageId: input.packageId,
     platform: input.platform,
+    rightsBasis: input.rightsBasis,
     rightsState: input.rightsState ?? 'authorized',
     variantVersionId: input.variantVersionId,
   });

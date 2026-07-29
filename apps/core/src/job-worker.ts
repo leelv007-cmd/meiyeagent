@@ -113,6 +113,7 @@ import {
   AdminConfigAssetIntakeGuidanceSource,
   ContentPackageArtifactReferenceVerifier,
   ContentPackageZipExportAdapter,
+  ContentPackageRightsBasisResolver,
   OperationsContentPackageExportAssetReader,
   OPERATIONS_TRIGGER_JOB_KIND,
   OperationsApplicationService,
@@ -634,6 +635,9 @@ const batchExecutor = new ProductOperationsBatchExecutionAdapter(
   productService,
   () => operations
 );
+const contentPackageRightsResolver = new ProductContentPackageRightsResolver(
+  relationalProductRepository,
+);
 operations = new OperationsApplicationService(operationsRepository, {
   billingLifecycle,
   contentPackageExporter: new ContentPackageZipExportAdapter(
@@ -648,9 +652,11 @@ operations = new OperationsApplicationService(operationsRepository, {
       appEnv: process.env.APP_ENV,
     },
   ),
-  contentPackageRightsResolver: new ProductContentPackageRightsResolver(
-    relationalProductRepository
+  contentPackageRightsBasisResolver: new ContentPackageRightsBasisResolver(
+    contentPackageRightsResolver,
+    supplyControlRepository,
   ),
+  contentPackageRightsResolver,
   contentWriteOwnership: contentPackageWriteOwnership,
   assetDataClassResolver: new ProductAssetDataClassResolver(
     relationalProductRepository

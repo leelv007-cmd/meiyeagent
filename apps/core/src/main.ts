@@ -282,6 +282,7 @@ import {
   StoredParseSourceAssetAuthorizer,
   OperationsProductSearchProjection,
   OperationsProductPackageRightsAdapter,
+  ContentPackageRightsBasisResolver,
   ProductContentPackageRightsResolver,
   OperationsReusableAssetSourceVerifier,
   ReuseMemoryService,
@@ -1209,6 +1210,11 @@ const batchExecutor = new ProductOperationsBatchExecutionAdapter(
 const contentPackageRightsResolver = new ProductContentPackageRightsResolver(
   relationalProductRepository
 );
+const contentPackageRightsBasisResolver =
+  new ContentPackageRightsBasisResolver(
+    contentPackageRightsResolver,
+    supplyControlRepository,
+  );
 const contentPackageExportAssets = new OperationsContentPackageExportAssetReader(
   operationsRepository,
   assetStorage,
@@ -1269,6 +1275,7 @@ operationsService = new OperationsApplicationService(operationsRepository, {
     },
   ),
   contentPackageApprovalPolicy,
+  contentPackageRightsBasisResolver,
   contentPackageRightsResolver,
   contentPackageMigration,
   contentWriteOwnership: contentPackageWriteOwnership,

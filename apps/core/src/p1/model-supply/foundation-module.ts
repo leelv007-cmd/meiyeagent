@@ -2255,12 +2255,19 @@ export class ModelSupplyControlPlaneService {
     const current =
       await this.supplyRegistry.getCurrentRegistryRevision(workspaceId);
     if (current?.catalogRevisionId === source.revisionId) return;
+    const snapshot = expandCatalogRevisionPayload(source.payload, {
+      catalogRevisionId: source.revisionId,
+      catalogRevisionNumber,
+    });
+    if (this.allowRecordedExecution) {
+      snapshot.contracts = snapshot.contracts.map((contract) => ({
+        ...contract,
+        commercialUse: 'allowed',
+      }));
+    }
     await this.supplyRegistry.setCurrentRegistryRevision(
       workspaceId,
-      expandCatalogRevisionPayload(source.payload, {
-        catalogRevisionId: source.revisionId,
-        catalogRevisionNumber,
-      }),
+      snapshot,
       current?.catalogRevisionId ?? null,
     );
   }

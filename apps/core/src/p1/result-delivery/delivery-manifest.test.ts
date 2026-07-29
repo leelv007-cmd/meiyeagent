@@ -223,6 +223,54 @@ test('video full package includes video/cover/caption/subtitles/checklist', () =
   assert.equal(built.manifest.kind, 'video');
 });
 
+test('delivery exposes only the safe AI-generation rights summary', () => {
+  const built = buildVideoFullDeliveryPackage({
+    caption: {
+      body: '视频正文',
+      title: '视频标题',
+      topics: [],
+    },
+    compliance: { aigcLabelEnabled: true, watermarkEnabled: false },
+    contentPackageRevision: 2,
+    generatedAt: '2026-07-30T08:00:00.000Z',
+    packageId: 'pkg-ai-rights',
+    platform: 'douyin',
+    rightsBasis: {
+      commercialUse: 'allowed',
+      generatedAssetId: 'generated-video-1',
+      kind: 'ai_generation_terms',
+      providerTaskRef: 'provider-task-secret',
+      runId: 'generation-run-secret',
+      termsRevisionId: 'terms-provider-1-r7',
+    },
+    storeName: '门店A',
+    variantVersionId: 'version-ai-rights',
+    video: {
+      bytes: Uint8Array.from([0, 0, 0, 24, 102, 116, 121, 112]),
+    },
+  });
+
+  assert.deepEqual(built.manifest.rightsSummary, {
+    aigcLabelEnabled: true,
+    basis: 'ai_generation_terms',
+    state: 'authorized',
+    watermarkEnabled: false,
+  });
+  const serialized = new TextDecoder().decode(built.files['manifest.json']);
+  assert.doesNotMatch(
+    serialized,
+    /provider-task-secret|generation-run-secret|terms-provider-1-r7/u,
+  );
+  const rightsEvidence = new TextDecoder().decode(
+    built.files['evidence/rights-and-facts.json'],
+  );
+  assert.match(rightsEvidence, /"basis": "ai_generation_terms"/u);
+  assert.doesNotMatch(
+    rightsEvidence,
+    /provider-task-secret|generation-run-secret|terms-provider-1-r7/u,
+  );
+});
+
 test('ZIP name sanitizes illegal characters and empty store names', () => {
   assert.equal(sanitizeDeliveryZipSegment('../evil\\name*', '门店'), 'evilname');
   assert.equal(sanitizeDeliveryZipSegment('   ', '门店'), '门店');

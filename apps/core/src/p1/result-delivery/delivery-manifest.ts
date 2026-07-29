@@ -42,6 +42,9 @@ export const deliveryManifestFileEntrySchema = z
 export const deliveryManifestRightsSummarySchema = z
   .object({
     aigcLabelEnabled: z.boolean(),
+    basis: z
+      .enum(['source_asset_authorizations', 'ai_generation_terms'])
+      .optional(),
     factSummary: z.string().trim().min(1).optional(),
     state: z.string().trim().min(1),
     watermarkEnabled: z.boolean(),

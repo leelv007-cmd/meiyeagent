@@ -29,6 +29,8 @@ import { ContentPackageDeliveryService } from './content-package-delivery.js';
 import {
   type CreationExecutorPort,
   type ContentPackageExportPort,
+  ContentPackageRightsBasisResolver,
+  type ContentPackageRightsBasisResolverPort,
   type ContentPackageRightsResolverPort,
   MemoryOperationsRepository,
   OperationsApplicationService,
@@ -44,6 +46,7 @@ const NOW = '2026-07-15T09:00:00.000Z';
 function setup(
   options: {
     contentPackageExporter?: ContentPackageExportPort;
+    contentPackageRightsBasisResolver?: ContentPackageRightsBasisResolverPort;
     contentPackageRightsResolver?: ContentPackageRightsResolverPort;
     contentWriteOwnership?: {
       get(
@@ -78,6 +81,12 @@ function setup(
       : {}),
     ...(options.contentPackageExporter
       ? { contentPackageExporter: options.contentPackageExporter }
+      : {}),
+    ...(options.contentPackageRightsBasisResolver
+      ? {
+          contentPackageRightsBasisResolver:
+            options.contentPackageRightsBasisResolver,
+        }
       : {}),
     ...(options.contentPackageRightsResolver
       ? { contentPackageRightsResolver: options.contentPackageRightsResolver }
@@ -157,6 +166,17 @@ function recordedPackageExporter() {
         contentType: 'application/zip' as const,
         sha256: 'f'.repeat(64),
         sizeBytes: 256,
+      };
+    },
+  };
+}
+
+function recordedSourceRightsBasisResolver(): ContentPackageRightsBasisResolverPort {
+  return {
+    async resolve({ contentPackage }) {
+      return {
+        kind: 'source_asset_authorizations',
+        rightsRefs: [...contentPackage.source.assetIds],
       };
     },
   };
@@ -943,6 +963,250 @@ describe('ContentPackage application service contract', () => {
     assert.equal(internalRun?.routeSnapshotId, 'internal-route');
   });
 
+  it('delivers the resolved source authorization basis to the export consumer', async () => {
+    let exportedRightsBasis: Parameters<
+      ContentPackageExportPort['export']
+    >[0]['rightsBasis'];
+    const { context, operations, operationsService } = setup({
+      contentPackageExporter: {
+        async export(input) {
+          exportedRightsBasis = input.rightsBasis;
+          return {
+            artifactAssetId: 'owned-rights-basis-export',
+            artifactObjectKey:
+              'workspace-content-package/exports/rights-basis.zip',
+            contentType: 'application/zip',
+            sha256: 'a'.repeat(64),
+            sizeBytes: 512,
+          };
+        },
+      },
+      contentPackageRightsBasisResolver:
+        new ContentPackageRightsBasisResolver(
+          {
+            async resolve() {
+              return {
+                knownAssetIds: ['source-video'],
+                unauthorizedAssetIds: [],
+              };
+            },
+          },
+          {
+            async getRegistryRevision() {
+              throw new Error(
+                'Source authorization must not read generation terms.',
+              );
+            },
+          },
+        ),
+    });
+    const contentPackage = await seedAcceptedPackage(
+      operations,
+      operationsService,
+      context,
+      'video',
+    );
+    const state = await operations.loadWorkspace(context.workspaceId);
+    assert.ok(state);
+    const stored = state.contentPackages.find(
+      (candidate) => candidate.id === contentPackage.id,
+    );
+    assert.ok(stored);
+    stored.marketing = {
+      contextBundle: {
+        bundleId: 'bundle-source-rights',
+        hash: 'b'.repeat(64),
+        revision: 1,
+      },
+      declaration: {
+        deliveryLayer: 'finished_media',
+        implicitConstraints: [],
+        normalizedIntent: '交付门店视频',
+        relevantAssetCategories: [],
+        route: 'customized',
+        routingSource: 'model',
+        taskType: 'daily_service_exposure',
+        usedAssetCategories: [],
+      },
+      factRefs: [],
+      identityRefs: [],
+      rightsRefs: ['source-video'],
+    };
+    stored.variants = (
+      ['xiaohongshu', 'douyin', 'video_account'] as const
+    ).map((platform) => ({
+        currentVersionId: stored.versions[0]!.id,
+        id: `${stored.id}-${platform}`,
+        platform,
+        versions: [stored.versions[0]!],
+      }));
+    await operations.saveWorkspace(state);
+
+    await operationsService.exportContentPackage(
+      { ...context, actor: 'owner' },
+      {
+        expectedRevision: stored.revision,
+        packageId: stored.id,
+        platform: 'douyin',
+      },
+    );
+
+    assert.deepEqual(exportedRightsBasis, {
+      kind: 'source_asset_authorizations',
+      rightsRefs: ['source-video'],
+    });
+  });
+
+  it('keeps source-free generated video out of merchant source-rights checks', async () => {
+    const resolvedAssetIds: string[][] = [];
+    let exportEffects = 0;
+    const { context, operations, operationsService } = setup({
+      contentPackageExporter: {
+        async export() {
+          exportEffects += 1;
+          return {
+            artifactAssetId: 'owned-generation-terms-export',
+            artifactObjectKey:
+              'workspace-content-package/exports/generation-terms.zip',
+            contentType: 'application/zip',
+            sha256: 'a'.repeat(64),
+            sizeBytes: 512,
+          };
+        },
+      },
+      contentPackageRightsBasisResolver: {
+        async resolve() {
+          return {
+            commercialUse: 'allowed',
+            generatedAssetId: 'owned-video-1',
+            kind: 'ai_generation_terms',
+            providerTaskRef: 'provider-task-video-1',
+            runId: 'generation-run-video-1',
+            termsRevisionId: 'terms-video-r1',
+          };
+        },
+      },
+      contentPackageRightsResolver: {
+        async resolve({ assetIds }) {
+          resolvedAssetIds.push(assetIds);
+          return {
+            knownAssetIds: assetIds,
+            unauthorizedAssetIds: assetIds,
+          };
+        },
+      },
+    });
+    const contentPackage = await seedAcceptedPackage(
+      operations,
+      operationsService,
+      context,
+      'video',
+    );
+    const state = await operations.loadWorkspace(context.workspaceId);
+    assert.ok(state);
+    const stored = state.contentPackages.find(
+      (candidate) => candidate.id === contentPackage.id,
+    );
+    assert.ok(stored);
+    stored.source.assetIds = [];
+    stored.marketing = {
+      contextBundle: {
+        bundleId: 'bundle-generation-terms',
+        hash: 'b'.repeat(64),
+        revision: 1,
+      },
+      declaration: {
+        deliveryLayer: 'finished_media',
+        implicitConstraints: [],
+        normalizedIntent: '交付 AI 生成视频',
+        relevantAssetCategories: [],
+        route: 'customized',
+        routingSource: 'model',
+        taskType: 'daily_service_exposure',
+        usedAssetCategories: [],
+      },
+      factRefs: [],
+      identityRefs: [],
+      rightsRefs: [],
+    };
+    stored.variants = (
+      ['xiaohongshu', 'douyin', 'video_account'] as const
+    ).map((platform) => ({
+      currentVersionId: stored.versions[0]!.id,
+      id: `${stored.id}-${platform}`,
+      platform,
+      versions: [stored.versions[0]!],
+    }));
+    await operations.saveWorkspace(state);
+
+    await operationsService.exportContentPackage(
+      { ...context, actor: 'owner' },
+      {
+        expectedRevision: stored.revision,
+        packageId: stored.id,
+        platform: 'douyin',
+      },
+    );
+
+    assert.deepEqual(resolvedAssetIds, [[]]);
+    assert.equal(exportEffects, 1);
+  });
+
+  it('fails closed before video export when the rights-basis consumer is unavailable', async () => {
+    let exportEffects = 0;
+    const { context, operations, operationsService } = setup({
+      contentPackageExporter: {
+        async export() {
+          exportEffects += 1;
+          return {
+            artifactAssetId: 'forbidden-rights-basis-export',
+            artifactObjectKey:
+              'workspace-content-package/exports/forbidden-rights-basis.zip',
+            contentType: 'application/zip',
+            sha256: 'a'.repeat(64),
+            sizeBytes: 512,
+          };
+        },
+      },
+    });
+    const contentPackage = await seedAcceptedPackage(
+      operations,
+      operationsService,
+      context,
+      'video',
+    );
+    const state = await operations.loadWorkspace(context.workspaceId);
+    assert.ok(state);
+    const stored = state.contentPackages.find(
+      (candidate) => candidate.id === contentPackage.id,
+    );
+    assert.ok(stored);
+    stored.variants = (
+      ['xiaohongshu', 'douyin', 'video_account'] as const
+    ).map((platform) => ({
+      currentVersionId: stored.versions[0]!.id,
+      id: `${stored.id}-${platform}`,
+      platform,
+      versions: [stored.versions[0]!],
+    }));
+    await operations.saveWorkspace(state);
+
+    await assert.rejects(
+      operationsService.exportContentPackage(
+        { ...context, actor: 'owner' },
+        {
+          expectedRevision: stored.revision,
+          packageId: stored.id,
+          platform: 'douyin',
+        },
+      ),
+      (error: unknown) =>
+        error instanceof OperationsError &&
+        error.code === 'CONTENT_PACKAGE_EXPORT_CONFLICT',
+    );
+    assert.equal(exportEffects, 0);
+  });
+
   it('records an orphan cleanup entry when ContentPackage receipt persistence fails', async () => {
     const failures: unknown[] = [];
     const exporter = {
@@ -1028,6 +1292,7 @@ describe('ContentPackage application service contract', () => {
           throw new UnverifiedVideoComplianceError();
         },
       },
+      contentPackageRightsBasisResolver: recordedSourceRightsBasisResolver(),
     });
     const accepted = await seedAcceptedPackage(
       operations,
@@ -1570,6 +1835,7 @@ describe('ContentPackage application service contract', () => {
           };
         },
       },
+      contentPackageRightsBasisResolver: recordedSourceRightsBasisResolver(),
     });
 
     for (const kind of ['image_text', 'video'] as const) {
