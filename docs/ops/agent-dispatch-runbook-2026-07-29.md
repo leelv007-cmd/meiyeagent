@@ -53,12 +53,18 @@ Backlog：#265（R 门前）
 # lane-driver.sh <票号> <worktree路径> [gate脚本]   # codex flags 按你自己的习惯补
 N=$1; W=$2; GATE=$3; REPO=/Users/bin/Desktop/开发/内容无人区/美业内容2
 ST="/tmp/lane-$N-driver-sig"
+LOCKDIR="/tmp/lane-$N-driver.lock"
+# 同一 lane 只许一个 driver：重复启动直接退出（防止两个 codex 写同一 worktree）。
+if ! mkdir "$LOCKDIR" 2>/dev/null; then
+  echo "lane $N already has a driver (rm -r $LOCKDIR if it is stale)"; exit 1
+fi
+trap 'rmdir "$LOCKDIR"' EXIT
 while true; do
   sig="$(git -C "$REPO" rev-parse main) $(gh issue view "$N" --json comments -q '.comments[-1].createdAt' 2>/dev/null)"
   if [ "$sig" != "$(cat "$ST" 2>/dev/null)" ]; then
     echo "$sig" > "$ST"
     if [ -z "$GATE" ] || (cd "$W" && "$GATE"); then
-      (cd "$W" && codex exec "你负责 #$N，单票。先 gh issue view $N --comments——带『主控裁决/依赖更新/主控合同增补』前缀的评论覆盖票面原文，以最新一条为准。若你上次的交底已被主控批复，按批复继续推进到下一个交验点或新的受阻点；新受阻则发交底评论后退出。遵守 docs/ops/agent-dispatch-runbook-2026-07-29.md 全部纪律；不 push、不关票。")
+      (cd "$W" && codex exec "你负责 #$N，单票。先 gh issue view $N --comments——带『主控裁决/依赖更新/主控合同增补』前缀的评论覆盖票面原文，以最新一条为准。开工判据：只做票面与主控评论**明确列出**的工作——主控的复核记录/通告/给其他 lane 的转发不是给你的开工令；若最新主控评论没有给你新任务且你已交验，直接退出等待。若你上次的交底已被主控批复，按批复推进到下一个交验点或新的受阻点；新受阻则发交底评论后退出。遵守 docs/ops/agent-dispatch-runbook-2026-07-29.md 全部纪律；不 push、不关票、不越票面边界扩前台。")
     fi
   fi
   sleep 180
