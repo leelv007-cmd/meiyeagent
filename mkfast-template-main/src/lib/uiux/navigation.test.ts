@@ -14,7 +14,7 @@ import {
 import { overwriteGetLocale } from '../../locale/paraglide/runtime';
 import { Routes } from '../routes';
 
-test('merchant navigation exposes only creation, content, assets, and store', () => {
+test('merchant navigation exposes creation, content, assets, store and memory', () => {
   assert.deepEqual(
     BUSINESS_NAVIGATION.map(({ href, label }) => ({ href, label })),
     [
@@ -24,6 +24,10 @@ test('merchant navigation exposes only creation, content, assets, and store', ()
       { href: '/dashboard/works', label: '内容' },
       { href: '/dashboard/assets', label: '素材' },
       { href: '/dashboard/store', label: '门店' },
+      // 记忆 joins as a first-class destination (D-164④, 2026-07-29). What the
+      // product has learned about the shop is its reason to keep her, and she
+      // cannot value what she cannot see.
+      { href: '/dashboard/memory', label: '记忆' },
     ]
   );
 });

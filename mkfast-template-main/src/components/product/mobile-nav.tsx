@@ -52,7 +52,7 @@ export function ProductMobileNav() {
   return (
     <nav
       aria-label={common_mobile_navigation()}
-      className="meiye-glass-piece fixed inset-x-3 bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-50 grid h-[4.25rem] grid-cols-4 rounded-[28px] px-1.5 shadow-[var(--shadow-ambient)]"
+      className="meiye-glass-piece fixed inset-x-3 bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-50 grid h-[4.25rem] grid-cols-5 rounded-[28px] px-1.5 shadow-[var(--shadow-ambient)]"
     >
       {BUSINESS_SIDEBAR_ITEMS.map((item) => {
         const label = (MOBILE_LABEL_OVERRIDES[item.id] ?? (() => item.label))();

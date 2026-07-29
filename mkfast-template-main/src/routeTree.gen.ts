@@ -44,6 +44,7 @@ import { Route as DashboardStoreRouteImport } from './routes/dashboard/store'
 import { Route as DashboardSessionsRouteImport } from './routes/dashboard/sessions'
 import { Route as DashboardSearchRouteImport } from './routes/dashboard/search'
 import { Route as DashboardRecentRouteImport } from './routes/dashboard/recent'
+import { Route as DashboardMemoryRouteImport } from './routes/dashboard/memory'
 import { Route as DashboardJobsRouteImport } from './routes/dashboard/jobs'
 import { Route as DashboardIdentityRouteImport } from './routes/dashboard/identity'
 import { Route as DashboardContentRouteImport } from './routes/dashboard/content'
@@ -287,6 +288,11 @@ const DashboardSearchRoute = DashboardSearchRouteImport.update({
 const DashboardRecentRoute = DashboardRecentRouteImport.update({
   id: '/recent',
   path: '/recent',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardMemoryRoute = DashboardMemoryRouteImport.update({
+  id: '/memory',
+  path: '/memory',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardJobsRoute = DashboardJobsRouteImport.update({
@@ -689,6 +695,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/content': typeof DashboardContentRoute
   '/dashboard/identity': typeof DashboardIdentityRoute
   '/dashboard/jobs': typeof DashboardJobsRoute
+  '/dashboard/memory': typeof DashboardMemoryRoute
   '/dashboard/recent': typeof DashboardRecentRoute
   '/dashboard/search': typeof DashboardSearchRoute
   '/dashboard/sessions': typeof DashboardSessionsRoute
@@ -791,6 +798,7 @@ export interface FileRoutesByTo {
   '/dashboard/content': typeof DashboardContentRoute
   '/dashboard/identity': typeof DashboardIdentityRoute
   '/dashboard/jobs': typeof DashboardJobsRoute
+  '/dashboard/memory': typeof DashboardMemoryRoute
   '/dashboard/recent': typeof DashboardRecentRoute
   '/dashboard/search': typeof DashboardSearchRoute
   '/dashboard/sessions': typeof DashboardSessionsRoute
@@ -898,6 +906,7 @@ export interface FileRoutesById {
   '/dashboard/content': typeof DashboardContentRoute
   '/dashboard/identity': typeof DashboardIdentityRoute
   '/dashboard/jobs': typeof DashboardJobsRoute
+  '/dashboard/memory': typeof DashboardMemoryRoute
   '/dashboard/recent': typeof DashboardRecentRoute
   '/dashboard/search': typeof DashboardSearchRoute
   '/dashboard/sessions': typeof DashboardSessionsRoute
@@ -1006,6 +1015,7 @@ export interface FileRouteTypes {
     | '/dashboard/content'
     | '/dashboard/identity'
     | '/dashboard/jobs'
+    | '/dashboard/memory'
     | '/dashboard/recent'
     | '/dashboard/search'
     | '/dashboard/sessions'
@@ -1108,6 +1118,7 @@ export interface FileRouteTypes {
     | '/dashboard/content'
     | '/dashboard/identity'
     | '/dashboard/jobs'
+    | '/dashboard/memory'
     | '/dashboard/recent'
     | '/dashboard/search'
     | '/dashboard/sessions'
@@ -1214,6 +1225,7 @@ export interface FileRouteTypes {
     | '/dashboard/content'
     | '/dashboard/identity'
     | '/dashboard/jobs'
+    | '/dashboard/memory'
     | '/dashboard/recent'
     | '/dashboard/search'
     | '/dashboard/sessions'
@@ -1568,6 +1580,13 @@ declare module '@tanstack/react-router' {
       path: '/recent'
       fullPath: '/dashboard/recent'
       preLoaderRoute: typeof DashboardRecentRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/memory': {
+      id: '/dashboard/memory'
+      path: '/memory'
+      fullPath: '/dashboard/memory'
+      preLoaderRoute: typeof DashboardMemoryRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/jobs': {
@@ -2130,6 +2149,7 @@ interface DashboardRouteChildren {
   DashboardContentRoute: typeof DashboardContentRoute
   DashboardIdentityRoute: typeof DashboardIdentityRoute
   DashboardJobsRoute: typeof DashboardJobsRoute
+  DashboardMemoryRoute: typeof DashboardMemoryRoute
   DashboardRecentRoute: typeof DashboardRecentRoute
   DashboardSearchRoute: typeof DashboardSearchRoute
   DashboardSessionsRoute: typeof DashboardSessionsRoute
@@ -2155,6 +2175,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardContentRoute: DashboardContentRoute,
   DashboardIdentityRoute: DashboardIdentityRoute,
   DashboardJobsRoute: DashboardJobsRoute,
+  DashboardMemoryRoute: DashboardMemoryRoute,
   DashboardRecentRoute: DashboardRecentRoute,
   DashboardSearchRoute: DashboardSearchRoute,
   DashboardSessionsRoute: DashboardSessionsRoute,

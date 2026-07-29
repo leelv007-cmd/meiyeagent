@@ -36,6 +36,12 @@ export const Routes = {
   StoreProfile: '/dashboard/store',
   ContentWorkspace: '/dashboard/workspace',
   MarketingIdentity: '/dashboard/identity',
+  /**
+   * 一级导航「记忆」(D-164④). What the product has learned about this shop is
+   * the reason it gets better with use, so it has to be somewhere she can
+   * look — a moat she cannot see gives her no reason to stay.
+   */
+  MemoryVault: '/dashboard/memory',
 
   // Settings routes
   Settings: '/settings',

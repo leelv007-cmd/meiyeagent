@@ -14,6 +14,8 @@ const REQUIRED_PRODUCT_KEYS = [
   'product_navigation_admin',
   'product_navigation_assets',
   'product_navigation_content',
+  /** D-164④: 记忆 is a first-class destination; its label must not vanish. */
+  'product_navigation_memory',
   'product_navigation_settings',
   'product_navigation_store',
   'product_navigation_workbench',

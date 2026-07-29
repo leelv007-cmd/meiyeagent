@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { RawCanonicalHistory } from './canonical-history-model';
 import type { CreationCatalogEntry } from './creation-catalog-model';
+import { BUSINESS_NAVIGATION } from '@/lib/uiux/navigation';
 import {
   createPendingCreationAction,
   isGlobalCommandShortcut,
@@ -112,17 +113,25 @@ describe('global command model', () => {
     const entries = projectGlobalNavigation(history);
 
     assert.deepEqual(
-      entries.slice(0, 4).map((entry) => entry.href),
+      entries.slice(0, BUSINESS_NAVIGATION.length).map((entry) => entry.href),
       [
         '/dashboard',
         // 内容 lands on the reshelled surface since T34 / #228.
         '/dashboard/works',
         '/dashboard/assets',
         '/dashboard/store',
+        // 记忆 (D-164④, 2026-07-29) — reachable from the palette for the same
+        // reason it is in the sidebar.
+        '/dashboard/memory',
       ]
     );
+    // Sliced by the navigation's own length rather than a literal, so the next
+    // destination to be added does not silently shift the deep links out of
+    // this assertion's view.
     assert.deepEqual(
-      entries.slice(4).map((entry) => `${entry.kind}:${entry.id}`),
+      entries
+        .slice(BUSINESS_NAVIGATION.length)
+        .map((entry) => `${entry.kind}:${entry.id}`),
       ['task:task-a', 'job:job-a', 'session:session-a']
     );
     assert.ok(entries.every((entry) => entry.actionLabel === '打开'));

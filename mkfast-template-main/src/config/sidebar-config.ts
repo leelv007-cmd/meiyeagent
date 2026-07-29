@@ -20,6 +20,7 @@ import {
 import { Routes } from '@/lib/routes';
 import { BUSINESS_NAVIGATION } from '@/lib/uiux/navigation';
 import {
+  IconBookmarks,
   IconBuildingStore,
   IconCloud,
   IconCpu,
@@ -55,6 +56,7 @@ const businessIcons: Record<
   content: IconFileText,
   assets: IconFolders,
   store: IconBuildingStore,
+  memory: IconBookmarks,
 };
 
 export const BUSINESS_SIDEBAR_ITEMS: readonly ShellNavigationItem[] =

@@ -1,6 +1,7 @@
 import {
   product_navigation_assets,
   product_navigation_content,
+  product_navigation_memory,
   product_navigation_store,
   product_navigation_workbench,
 } from '@/locale/paraglide/messages';
@@ -35,6 +36,23 @@ export const BUSINESS_NAVIGATION = [
       return product_navigation_store();
     },
     href: Routes.StoreProfile,
+  },
+  /**
+   * D-164 clause 4 (2026-07-29): memory becomes a first-class destination. It
+   * sits last because it is what the other four accumulate into, not a place
+   * work starts. This supersedes the four-item contract D-136 fixed on 07-27;
+   * the later, more specific decision wins, and the sync test says so where
+   * it asserts the list.
+   *
+   * No literal copy here on purpose — this file is one of the shells the
+   * product-surface contract keeps free of hardcoded strings.
+   */
+  {
+    id: 'memory',
+    get label() {
+      return product_navigation_memory();
+    },
+    href: Routes.MemoryVault,
   },
 ] as const;
 
