@@ -172,22 +172,25 @@ object graph.
 | 5 | Shell remains keyboard and 200-percent-zoom reachable | At the 640px effective viewport, verify no horizontal overflow, focus the skip link first, activate it, and confirm focus returns to the product content region. |
 | 6 | Collapsed sidebar links keep their accessible names | Collapse the desktop sidebar, wait for the first business-navigation label to finish its delayed `visibility:hidden` transition, then verify the four business links and settings link still expose their exact visible names. |
 
-## 12. S2 Cold Start And Unified Creation Loop
+## 12. Retired Unified Creation Loop Disposition
 
 **File:** `specs/uiux-creation-loop.spec.ts` | **Priority:** P0
 
-Locks the canonical `Work -> Job -> Assets -> ContentPackage` boundary and
-the six fixed expert-agent journeys. These are deterministic candidate-build
-checks; they are not evidence of testing with real target users.
+The old S2 workbench was removed by the Z1 cutover. Six cases that entered
+through `建立创作记录` / `创作助理整理的记录` or asserted the retired
+`ContentPackageDetail` were removed in #242 instead of being skipped or made to
+pass by restoring dead UI. Their live contracts remain on these shipped seams:
 
-| # | Test name | Flow |
-|---|---|---|
-| 1 | E0 example is opt-in and can be remixed without creating business objects | Sign in to an empty workspace, prove the personal workbench does not mix in example content, explicitly choose “View example,” browse the read-only example store, use “remix” to prefill an editable intent, and prove no Work, Job, Asset, or ContentPackage is created. Close the example, reload, and prove it remains opt-in. |
-| 2 | E1 reuses the existing Task without copying it | Create one real Operations Task, return to the cold start, select that source, explicitly create one Work, and assert the Task count is unchanged and the Work retains the canonical Task reference. |
-| 3 | Composer uploads, authorizes, drops, pastes, and removes real image references | Confirm material facts and public-use scope inside each upload card. For a restricted before/after portrait, persist an evidence reference, applicable platform, and explicit no-expiry grant before attaching it. Verify the separate camera and gallery contracts, remove one authorized image from this creation while preserving it in the asset library, then add authorized images through drag-and-drop and clipboard paste. Create one Work and verify only the two retained Product Asset IDs persist as visible source references. |
-| 4 | Explicit contract produces Assets before one accepted ContentPackage | Review operation, active model, specification, quote, watermark, and AIGC controls. Submit once, verify A/B/C are internal Assets while legacy Content remains empty, select candidate B with the authorized real store photo, and create exactly one ContentPackage. Generate an image in the same Session, explicitly attach it to that package, open the stable package route, prove the current version and all three platform variants inherit the generated owned Asset, reload to prove persistence, export the package ZIP, verify the honest assisted-delivery state, record the native published result, use one store-visit chip to advance the cumulative result ladder without causal claims, and continue from weekly review by creating a new source-linked Task without cloning the old ContentPackage. From the exact current package version, choose the poster export use, open Light Composer, and prove the server-created 1080×1080 Work contains the source title, body, CTA, and package/version lineage instead of a blank client-seeded document. |
-| 5 | Async recovery, reload, and derivation preserve the object graph | Submit an internal image tool Job through the deterministic worker, verify the running Job until its Asset is recovered and saved to Materials without a legacy Content write, then reload and derive a new draft Work without rewriting the completed source objects. |
-| 6 | Unverified models and recovery branches remain honest | Replace the catalog response with a recorded-only deployment and verify submission is disabled with an explicit reason. Core state-machine coverage proves recoverable resumes the same Job, running/unknown only verify the original Job, terminal failure creates `retryOf`, and changed execution input creates `derivedFrom`. |
+| Retired case | Current contract owner |
+|---|---|
+| Adding a source derives a new current Work | `apps/core/src/p1/operations/creative-work.test.ts` owns source inheritance and derivation; `specs/image-intent-service-journeys.spec.ts` proves submitted source counts on the current Composer HTTP/SSE seam. |
+| E1 reuses the existing Task without copying it | The retired workbench Task picker no longer exists. Task references remain an Operations contract in `apps/core/src/p1/operations/http.test.ts`; current Composer source lineage is covered by `specs/image-intent-service-journeys.spec.ts`. |
+| Composer uploads, drops, pastes, and removes image references | The retired upload-card IA is not restored. Current media journeys authorize their source slot before submission in `specs/m04-browser-hard-gate.spec.ts`, while source lineage and generated owned Assets are asserted in `specs/image-intent-service-journeys.spec.ts`. |
+| Explicit contract adopts copy, attaches generated media, and preserves one ContentPackage | `specs/m04-browser-hard-gate.spec.ts` owns Composer → Result Center adoption and delivery; `specs/image-intent-service-journeys.spec.ts` owns generated media and three variants; `specs/works-reshell.spec.ts` owns canonical Works detail and export; `specs/t39-r-gate-journey-matrix.spec.ts` owns delivery, publication feedback, and reload. |
+| Reload and derivation preserve the object graph | Current reload recovery is required by `specs/m04-browser-hard-gate.spec.ts` and `specs/t39-r-gate-journey-matrix.spec.ts`; derivation invariants stay at the Operations seam in `apps/core/src/p1/operations/creative-work.test.ts`. |
+| Recorded-only model stays unavailable and cannot submit | Recorded-only deployments are removed from the public catalog by `src/p1/settings-view-model.test.ts`; `src/product/composer/quote-readiness.test.ts` owns the current Composer unavailable state, and `specs/m04-browser-hard-gate.spec.ts` proves the positive executable-model path. |
+
+The two still-live Day-0 cases remain in this file and are catalogued in §25.
 
 ## 13. S3 Operations, Reuse, Asset, And History
 
@@ -934,9 +937,12 @@ deleting them, and the contracts underneath still need relanding:
 - `specs/uiux-upgrade-b-async.spec.ts` — asynchronous Job contracts (whole file).
 - `specs/uiux-upgrade-b-i18n-motion.spec.ts` — the reduced-motion case only; the
   locale and mobile cases in that file still run.
-- `specs/uiux-creation-loop.spec.ts` and `specs/uiux-upgrade-b-video.spec.ts` —
-  the 海报 / 三平台版本 / 成片 assertions of the retired ContentPackageDetail,
-  marked at the assertion with their T38 coordinate.
+- `specs/uiux-upgrade-b-video.spec.ts` — the 成片 assertions of the retired
+  ContentPackageDetail, marked at the assertion with their T38 coordinate.
+
+`specs/uiux-creation-loop.spec.ts` no longer carries its six retired-workbench
+cases: #242 removed them after recording their current contract owners in §12.
+Its two Day-0 recommendation/example-store cases remain active (§25).
 
 `specs/mobile-product-shell.spec.ts` lost its already-`fixme`d mobile Result
 journey outright: its only mechanism was holding a retired command, and its
