@@ -84,7 +84,7 @@ try {
 
 function inspectGate(gate) {
 	const issue = JSON.parse(
-		run("gh", [
+		runWithRetry("gh", [
 			"issue",
 			"view",
 			String(gate.issue),
@@ -160,6 +160,18 @@ function refContains(marker) {
 		{ acceptedExitCodes: [0, 1] },
 	);
 	return result.status === 0;
+}
+
+function runWithRetry(command, commandArgs, attempts = 3) {
+	let lastError;
+	for (let attempt = 1; attempt <= attempts; attempt += 1) {
+		try {
+			return run(command, commandArgs);
+		} catch (error) {
+			lastError = error;
+		}
+	}
+	throw lastError;
 }
 
 function printReport(report) {
