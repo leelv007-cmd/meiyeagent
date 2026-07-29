@@ -29,7 +29,7 @@ export type StoreIntakeFinalizationIntakePort = Pick<
   | 'confirmedFactRevision'
   | 'currentFact'
   | 'currentFactRevision'
-  | 'effectiveFactDraft'
+  | 'effectiveFactSnapshot'
   | 'persistedBatch'
   | 'recordBatch'
   | 'withPinnedFactHeads'
@@ -361,7 +361,11 @@ export class StoreIntakeFinalizer {
             receipt.error.message,
           );
         }
-        let resolved: { batch: AssetIntakeBatch; inline: boolean };
+        let resolved: {
+          batch: AssetIntakeBatch;
+          candidateRevisions: ReadonlyMap<string, number>;
+          inline: boolean;
+        };
         try {
           resolved = await this.resolveBatch(context.workspaceId, input);
         } catch (error) {
@@ -390,6 +394,9 @@ export class StoreIntakeFinalizer {
             resolved.batch,
             idempotencyKey,
           );
+          for (const confirmation of input.confirmations) {
+            this.requireCandidateRevision(resolved, confirmation.candidateId);
+          }
         } catch (error) {
           const failure = finalizationFailure(error);
           if (
@@ -442,6 +449,10 @@ export class StoreIntakeFinalizer {
               await this.intake.confirmFact(context, {
                 ...confirmation,
                 batchId: batch.batchId,
+                expectedCandidateRevision: this.requireCandidateRevision(
+                  resolved,
+                  confirmation.candidateId,
+                ),
                 idempotencyKey: `${idempotencyKey}:fact:${confirmation.candidateId}`,
               }),
             );
@@ -590,13 +601,23 @@ export class StoreIntakeFinalizer {
   private async resolveBatch(
     workspaceId: string,
     input: FinalizeStoreIntakeCommand,
-  ): Promise<{ batch: AssetIntakeBatch; inline: boolean }> {
+  ): Promise<{
+    batch: AssetIntakeBatch;
+    candidateRevisions: ReadonlyMap<string, number>;
+    inline: boolean;
+  }> {
     if ('candidates' in input.batch) {
+      const batch = normalizeInlineBatch(
+        workspaceId,
+        input.batch,
+        input.confirmations,
+      );
       return {
-        batch: normalizeInlineBatch(
-          workspaceId,
-          input.batch,
-          input.confirmations,
+        batch,
+        candidateRevisions: new Map(
+          batch.candidates
+            .filter((candidate) => candidate.objectKind === 'store_fact')
+            .map((candidate) => [candidate.candidateId, 0]),
         ),
         inline: true,
       };
@@ -614,26 +635,50 @@ export class StoreIntakeFinalizer {
         'A parsed or screenshot intake batch requires a server persistence receipt.',
       );
     }
+    const resolvedCandidates = await Promise.all(
+      receipt.batch.candidates.map(async (candidate) => {
+        if (candidate.objectKind !== 'store_fact') {
+          return { candidate, candidateRevision: null };
+        }
+        const snapshot = await this.intake.effectiveFactSnapshot(
+          workspaceId,
+          receipt.batch.batchId,
+          candidate.candidateId,
+        );
+        return {
+          candidate: { ...candidate, fact: snapshot.draft },
+          candidateRevision: snapshot.candidateRevision,
+        };
+      }),
+    );
     return {
       batch: assetIntakeBatchSchema.parse({
         ...receipt.batch,
-        candidates: await Promise.all(
-          receipt.batch.candidates.map(async (candidate) =>
-            candidate.objectKind === 'store_fact'
-              ? {
-                  ...candidate,
-                  fact: await this.intake.effectiveFactDraft(
-                    workspaceId,
-                    receipt.batch.batchId,
-                    candidate.candidateId,
-                  ),
-                }
-              : candidate,
-          ),
-        ),
+        candidates: resolvedCandidates.map(({ candidate }) => candidate),
       }),
+      candidateRevisions: new Map(
+        resolvedCandidates.flatMap(({ candidate, candidateRevision }) =>
+          candidateRevision === null
+            ? []
+            : [[candidate.candidateId, candidateRevision]],
+        ),
+      ),
       inline: false,
     };
+  }
+
+  private requireCandidateRevision(
+    resolved: { candidateRevisions: ReadonlyMap<string, number> },
+    candidateId: string,
+  ) {
+    const revision = resolved.candidateRevisions.get(candidateId);
+    if (revision === undefined) {
+      throw new StoreIntakeFinalizationError(
+        'STORE_FACT_MAPPING_INVALID',
+        `Store fact candidate ${candidateId} has no effective revision.`,
+      );
+    }
+    return revision;
   }
 
   private async hasStagedFactReceipt(

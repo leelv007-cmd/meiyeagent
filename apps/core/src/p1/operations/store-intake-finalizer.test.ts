@@ -17,6 +17,7 @@ import { MemoryStoreFactLedger } from './store-fact-ledger.js';
 import {
   StoreIntakeFinalizationError,
   StoreIntakeFinalizer,
+  type StoreIntakeFinalizationIntakePort,
   type StoreIntakeFinalizationRepository,
   type StoreProfileMergePort,
 } from './store-intake-finalizer.js';
@@ -841,4 +842,90 @@ test('a corrected revocation satisfies the project clear gate', async () => {
   assert.equal(result.facts[0]?.revisionKind, 'revocation');
   assert.equal(result.facts[0]?.value, null);
   assert.deepEqual(mergedPatches[0]?.projects?.clear, ['project-a']);
+});
+
+test('a correction after the mapping snapshot fails closed before the projections diverge', async () => {
+  const { batch, facts, intake } = await prepareCorrectedPrice(
+    'racing-corrected-price-batch',
+    299,
+  );
+  const originalPrice = priceCandidate(batch);
+  let injected = false;
+  const racingIntake = {
+    async confirmFact(confirmContext, confirmation) {
+      if (!injected && confirmation.candidateId === 'project-price') {
+        injected = true;
+        await intake.correctFact(confirmContext, {
+          batchId: batch.batchId,
+          candidateId: 'project-price',
+          correctedFact: {
+            ...originalPrice.fact,
+            value: { amount: 319, currency: 'CNY' },
+          },
+          idempotencyKey: 'racing-price-correction',
+        });
+      }
+      return intake.confirmFact(confirmContext, confirmation);
+    },
+    confirmedFactRevision: (...args) => intake.confirmedFactRevision(...args),
+    currentFact: (...args) => intake.currentFact(...args),
+    currentFactRevision: (...args) => intake.currentFactRevision(...args),
+    effectiveFactSnapshot: (...args) =>
+      intake.effectiveFactSnapshot(...args),
+    persistedBatch: (...args) => intake.persistedBatch(...args),
+    recordBatch: (...args) => intake.recordBatch(...args),
+    withPinnedFactHeads: (...args) => intake.withPinnedFactHeads(...args),
+  } satisfies StoreIntakeFinalizationIntakePort;
+  let mergeCalls = 0;
+  const finalizer = new StoreIntakeFinalizer(
+    racingIntake,
+    new MemoryFinalizationRepository(),
+    profilePort(async (_context, patch) => {
+      mergeCalls += 1;
+      return projectProfile(patch);
+    }),
+    () => now,
+  );
+  const input = projectInput(
+    { batchId: batch.batchId },
+    {
+      expectedRevision: 1,
+      projects: {
+        upsert: [
+          {
+            id: 'project-a',
+            name: '透亮猫眼',
+            price: 299,
+            durationMinutes: 90,
+            confirmed: true,
+            priceValidUntil: null,
+          },
+        ],
+      },
+    },
+  );
+  input.confirmations.sort((left) =>
+    left.candidateId === 'project-price' ? -1 : 1,
+  );
+
+  await assert.rejects(
+    finalizer.finalize(context, input, 'racing-corrected-price-finalize'),
+    (error) =>
+      error instanceof StoreIntakeFinalizationError &&
+      error.code === 'STORE_FACT_REVISION_CONFLICT',
+  );
+
+  assert.equal(injected, true);
+  assert.equal(mergeCalls, 0);
+  assert.deepEqual(
+    await facts.history(
+      context.workspaceId,
+      'store-project:project-a:service',
+    ),
+    [],
+  );
+  assert.deepEqual(
+    await facts.history(context.workspaceId, 'store-project:project-a:price'),
+    [],
+  );
 });

@@ -420,12 +420,17 @@ export class AssetIntakeService {
     return receipt;
   }
 
-  async effectiveFactDraft(
+  async effectiveFactSnapshot(
     workspaceId: string,
     batchId: string,
     candidateId: string,
   ) {
-    return (await this.factDraft(workspaceId, batchId, candidateId)).draft;
+    const { candidateRevision, draft } = await this.factDraft(
+      workspaceId,
+      batchId,
+      candidateId,
+    );
+    return { candidateRevision, draft };
   }
 
   async confirmedFactRevision(
@@ -660,6 +665,7 @@ export class AssetIntakeService {
       candidateId: string;
       factId: string;
       expectedFactRevision: number;
+      expectedCandidateRevision?: number;
       idempotencyKey: string;
     },
   ) {
@@ -704,6 +710,14 @@ export class AssetIntakeService {
         input.batchId,
         input.candidateId,
       );
+    const expectedCandidateRevision =
+      input.expectedCandidateRevision ?? candidateRevision;
+    if (candidateRevision !== expectedCandidateRevision) {
+      throw new AssetIntakeError(
+        'DECISION_CONFLICT',
+        'Asset intake candidate decision head changed.',
+      );
+    }
     if (
       batch.source.example ||
       batch.source.sourceWorkspaceId !== context.workspaceId
@@ -731,7 +745,7 @@ export class AssetIntakeService {
       candidateId: input.candidateId,
       factId: input.factId,
       expectedFactRevision: input.expectedFactRevision,
-      expectedCandidateRevision: candidateRevision,
+      expectedCandidateRevision,
       idempotencyKey: input.idempotencyKey,
       fingerprint: decisionFingerprint,
       draft,

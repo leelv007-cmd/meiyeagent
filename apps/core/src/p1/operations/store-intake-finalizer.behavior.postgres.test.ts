@@ -307,32 +307,39 @@ test(
         idempotencyKey: 'correct-project-a-price',
       });
 
+      const command = {
+        ...input,
+        batch: { batchId: persistedBatch.batchId },
+      } satisfies FinalizeStoreIntakeCommand;
       const result = await environment.finalizer.finalize(
         environment.context,
-        {
-          ...input,
-          batch: { batchId: persistedBatch.batchId },
-        },
+        command,
+        'finalize-corrected-project-a-price',
+      );
+      const replay = await environment.finalizer.finalize(
+        environment.context,
+        command,
         'finalize-corrected-project-a-price',
       );
       const priceFact = result.facts.find(
         (fact) => fact.factId === 'store-project:project-a:price',
+      );
+      const priceHistory = await environment.facts.history(
+        environment.context.workspaceId,
+        'store-project:project-a:price',
       );
       const state = await environment.product.bootstrap({
         ...environment.context,
         actor: 'user',
       });
 
+      assert.deepEqual(replay, result);
       assert.deepEqual(priceFact?.value, { amount: 299, currency: 'CNY' });
-      assert.deepEqual(
-        (
-          await environment.facts.history(
-            environment.context.workspaceId,
-            'store-project:project-a:price',
-          )
-        )[0]?.value,
-        { amount: 299, currency: 'CNY' },
-      );
+      assert.equal(priceHistory.length, 1);
+      assert.deepEqual(priceHistory[0]?.value, {
+        amount: 299,
+        currency: 'CNY',
+      });
       assert.equal(state.store?.revision, 2);
       assert.equal(
         state.store?.projects.find((item) => item.id === 'project-a')?.price,
@@ -1746,7 +1753,8 @@ test(
           intake.confirmedFactRevision(...args),
         currentFact: (...args) => intake.currentFact(...args),
         currentFactRevision: (...args) => intake.currentFactRevision(...args),
-        effectiveFactDraft: (...args) => intake.effectiveFactDraft(...args),
+        effectiveFactSnapshot: (...args) =>
+          intake.effectiveFactSnapshot(...args),
         persistedBatch: (...args) => intake.persistedBatch(...args),
         recordBatch: (...args) => intake.recordBatch(...args),
         withPinnedFactHeads: (...args) => intake.withPinnedFactHeads(...args),
@@ -1940,7 +1948,8 @@ test(
           intake.confirmedFactRevision(...args),
         currentFact: (...args) => intake.currentFact(...args),
         currentFactRevision: (...args) => intake.currentFactRevision(...args),
-        effectiveFactDraft: (...args) => intake.effectiveFactDraft(...args),
+        effectiveFactSnapshot: (...args) =>
+          intake.effectiveFactSnapshot(...args),
         persistedBatch: (...args) => intake.persistedBatch(...args),
         recordBatch: (...args) => intake.recordBatch(...args),
         withPinnedFactHeads: (...args) => intake.withPinnedFactHeads(...args),
