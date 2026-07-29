@@ -14,6 +14,7 @@
 | Step 2 | `fd43c3e5` | `?view=` 收敛为重定向，`/dashboard` 不再是第二落点 |
 | Step 3 | `622921bc` | 单路由三段 提议 → 创作 → 继续（段③ 新建） |
 | Step 4 | `212e1efd` | 第二层 Skill pill 行（五类宣发任务分组） |
+| L4 | `a36d4553` | 执行确认卡 ＋ 成本即时反馈 ＋ CNY 泄漏清账 |
 
 Step 6（评价条 ＋ 动作 chip）与 Step 7（评价事件适配层）由并行 agent 在**同一 worktree** 内产出，尚未提交——见 §四。
 
@@ -47,6 +48,24 @@ Biome 的 `a11y/useSemanticElements` 直接拒绝后者。原生一对同时给�
 
 pill 行不渲染 reuse collection 卡，该回调在本仓再无触发路径。复用入口活在 PromptBar 的复用 chips（`composer-conversation.tsx` ＋ `COMPOSER_REUSE_CHIPS`），既有交互测试与 e2e 均已覆盖，入口未丢。
 
+### J8 · 渲染件与纯投影**不同名**
+
+设计稿 `02 §1.2` 给的是 `execution-confirm-card.ts` ＋ `execution-confirm-card.tsx` 同名一对。同 basename 的 `.ts`/`.tsx` 解析有歧义，仓内既有先例是 `brief-surface.ts` ／ `brief-surface-panel.tsx`。故渲染件取 `execution-confirm-card-panel.tsx` 与 `execution-cost-feedback-line.tsx`，其余一字不改。
+
+### J9 · G3「已过」不等于成功分支能做
+
+门 G3 断的是 `settledUnits` **已在合同面**（`packages/contracts/src/product-quote.ts:211`）。实测：全仓除 `apps/core` 的账本写入端外**没有任何浏览器可读的投影**吐这个字段。因此 `02 §9.1` 的 **X1/X2 依旧成立**——成功路径「本次实际消耗」仍卡 #248。
+
+处置：`projectExecutionCostFeedback` 的 `'settled'` 分支**写完并纯测通过**，但取不到数时**返回 null（什么都不说）**，绝不用预占数冒充结算数。#248 到位后只需在调用点喂一个 `settledUnits`，投影与测试一行不动。
+
+### J10 · `ImageAdjustConfirmation` 的退役**本轮不做**，只清 CNY
+
+`02 §5.4` 要求把它吸收进 `ExecutionConfirmCard` 并 `git rm` 两个文件。改造点在 `src/routes/dashboard/results_/$workId.tsx`——**这正是 #264FE 正在退役视频编辑面的那个文件**（门 G4 至今未过）。在属主未落地时改同一个文件是 runbook 明禁的抢面。
+
+故本轮只做 D1 明写的「附带必修」：把 `${confirmedAmount} ${currency}` 换成桶单位句，并把其交互测试的 `'整组 2 张·4 CNY'` 断言改成 **正向断桶单位 ＋ 负向断全对话框无币种**（fixture 里 `confirmedAmount: 4` 与 `currency: 'CNY'` 两个字段**故意保留**，这样「不许泄漏」这条是真被守着，不是因为数据没了才过）。变异验证：把币种拼回去 → 该测试红。
+
+**退役动作整条留给 #264FE 合入之后**，连同 `result-route-live-wiring.static.test.ts:47` 的 `/ImageAdjustConfirmation/` → `/ExecutionConfirmCard/`。
+
 ### J7 · `dashboard-home-contract.test.ts` 的段序断言改写而非删除
 
 原断言 `Composer < DashboardHomeSurface`，理由挂 PRODUCT.md 原则 1。**D-164① 明写三段自上而下，正面推翻该序**。改写为断四段锚点顺序（问候 → 提议 → 创作 → 继续）并额外断「每段真的装着它冠名的面」，避免三个空 `<section>` 也能过。原则 1 的存续形态按 `01 §3` 的裁定＝**移动端压密度而非改顺序**，那半条在移动端 e2e 上守，不在源码序上守。
@@ -61,6 +80,8 @@ pill 行不渲染 reuse collection 卡，该回调在本仓再无触发路径。
 | **R2** | U04 二阶孤儿（`ItemCard` 单元 ＋ `.meiye-item-card-stack`） | 保留不删，写明理由 | 跨票资产，退役是 U04 的裁量 |
 | **R3** | 热点借势 / 品牌与个人 IP 两组零配方 | 不渲染空组 | 真实产品缺口，需要排配方而不是排 UI |
 | **R4** | 段③「继续上次工作」的数据面 | 复用 `creative_workbench` 投影同一 query key，零新增后端面 | 若主控希望它读别的投影，现在改成本最低 |
+| **R5** | 确认卡插在 **Brief 之后**（安全确认 → 花费确认，两卡先后出现） | 已按 `02 §7.2` 实施 | 商家在一次提交里会连看两张卡。点击数没增加（两处都是既有拦截位），但**观感上是两跳**；若主控认为该合并，那是改 D-164③「不新增卡类型」的边界，须先裁 |
+| **R6** | `ImageAdjustConfirmation` 退役排期 | 本轮只清 CNY，退役留给 #264FE 之后（J10） | 属主面重叠，需主控给排期 |
 
 ---
 
@@ -81,6 +102,7 @@ pill 行不渲染 reuse collection 卡，该回调在本仓再无触发路径。
 | `pnpm test:interaction` | 42 files / 252 tests 全绿 |
 | `pnpm test` | 1 红 ＝ §四.2 的落后基点，其余全绿 |
 | `pnpm locale:check` | rc=0（3995 键） |
+| `pnpm test:interaction`（L4 后） | 43 files / 260 tests 全绿 |
 | `pnpm e2e` | **未跑**。三段顺序、`?view=` 重定向、复用 chip 三处证据都落在 e2e 里，须在 rebase 后由主控或本 lane 补跑 |
 
 变异验证（每条新断言都实证过能红）：段序 testid 对调 → `dashboard-home-contract` 红；`isError` 分支短路 → 段③ 错误态测试红；未完成优先排序反转 → 段③ 排序测试红；空组不再剔除 → 分组测试 ＋ 交互测试各红；分组键改回 cardKey → 分组测试红；`aria-label` 去掉动作标签 → 两个交互测试红。
