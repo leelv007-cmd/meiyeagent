@@ -444,6 +444,23 @@ export class PostgresHarnessStore
 
   async readTodayRecommendation(workspaceId: string) {
     const at = this.clock().toISOString();
+    return this.readRecommendation(workspaceId, at);
+  }
+
+  async readDailyRecommendationCandidate(workspaceId: string, at: string) {
+    const timestamp = new Date(at);
+    if (Number.isNaN(timestamp.getTime())) {
+      throw new Error('Daily recommendation candidate time is invalid.');
+    }
+    const deliveredAt = timestamp.toISOString();
+    return this.readRecommendation(workspaceId, deliveredAt, deliveredAt);
+  }
+
+  private async readRecommendation(
+    workspaceId: string,
+    at: string,
+    deliveredAtOverride?: string,
+  ) {
     const currentFactsRevision = await this.factRevisions.currentRevision(
       workspaceId,
     );
@@ -518,9 +535,10 @@ export class PostgresHarnessStore
       rawInput:
         typeof request?.rawInput === 'string' ? request.rawInput : delivery.task_id,
       deliveredAt:
-        delivery.delivered_at instanceof Date
+        deliveredAtOverride ??
+        (delivery.delivered_at instanceof Date
           ? delivery.delivered_at.toISOString()
-          : new Date(delivery.delivered_at).toISOString(),
+          : new Date(delivery.delivered_at).toISOString()),
       delivery: delivery.delivery,
       contentPackage: delivery.content_package,
       intent: request?.intent,

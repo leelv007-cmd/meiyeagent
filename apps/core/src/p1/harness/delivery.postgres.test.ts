@@ -8,6 +8,11 @@ import { contentPackageSchema } from '@meiye/contracts';
 import { buildContentPackage } from '../operations/content-package.js';
 import { PostgresStoreFactLedger } from '../operations/postgres-store-fact-ledger.js';
 import { PostgresOperationsRepository } from '../operations/postgres-repository.js';
+import { DailyRecommendationDeliveryPort } from '../due-delivery/delivery-port.js';
+import { ProductionDueDeliveryEligibility } from '../due-delivery/eligibility.js';
+import { PostgresDueDeliveryRepository } from '../due-delivery/postgres-repository.js';
+import { DueAwareHarnessRecommendationReader } from '../due-delivery/recommendation-reader.js';
+import { DueDeliveryWorker } from '../due-delivery/worker.js';
 import {
   HarnessDeliveryError,
   PostgresHarnessStore,
@@ -394,9 +399,11 @@ test(
     const workspaceId = `harness-recommendation-workspace-${suffix}`;
     const packageId = `harness-recommendation-package-${suffix}`;
     const workflowId = `harness-recommendation-workflow-${suffix}`;
+    const dueRepository = new PostgresDueDeliveryRepository(pool);
     await seedPackage(pool, packageId, workspaceId);
 
     try {
+      await dueRepository.migrate();
       await facts.append({
         factId: 'offer-price',
         workspaceId,
@@ -470,6 +477,57 @@ test(
       assert.equal(current.recommendation?.factsRevision, 1);
       assert.equal(current.recommendation?.whyNow, '适合当前换季场景');
 
+      const previousDay = new Date(now.getTime() - 86_400_000);
+      await pool.query(
+        `UPDATE harness_runtime.audit_events
+            SET created_at = $2
+          WHERE id = $1`,
+        [
+          harnessRuntimeId(
+            workspaceId,
+            `audit-${workflowId}-package-delivered`,
+          ),
+          previousDay,
+        ],
+      );
+      const dashboard = new DueAwareHarnessRecommendationReader(
+        store,
+        dueRepository,
+        () => now,
+      );
+      assert.equal(
+        (await dashboard.readTodayRecommendation(workspaceId)).recommendation,
+        null,
+      );
+      const dueWorker = new DueDeliveryWorker(
+        dueRepository,
+        new ProductionDueDeliveryEligibility({
+          async hasOwnerMembership() {
+            return true;
+          },
+        }),
+        new DailyRecommendationDeliveryPort(store, () => now),
+        {
+          claimToken: () => `claim-${suffix}`,
+          clock: () => now,
+        },
+      );
+      assert.deepEqual(await dueWorker.runOnce(`worker-${suffix}`), {
+        claimed: 1,
+        deadLettered: 0,
+        delivered: 1,
+        lost: 0,
+        retried: 0,
+        suppressed: 0,
+      });
+      const durable = await dashboard.readTodayRecommendation(workspaceId);
+      assert.equal(
+        durable.recommendation?.taskId,
+        `daily-rec_${workspaceId}_${now.toISOString().slice(0, 10)}`,
+      );
+      assert.equal(durable.recommendation?.packageId, packageId);
+      assert.equal(durable.recommendation?.versionId, delivered.versionId);
+
       await facts.append({
         factId: 'offer-price',
         workspaceId,
@@ -495,6 +553,14 @@ test(
         stale: true,
       });
     } finally {
+      await pool.query(
+        'DELETE FROM p1_due_delivery_runs WHERE workspace_id = $1',
+        [workspaceId],
+      );
+      await pool.query(
+        'DELETE FROM p1_due_delivery_items WHERE workspace_id = $1',
+        [workspaceId],
+      );
       await cleanup(pool, workflowId, packageId, true, workspaceId);
       await facts.deleteWorkspaceForTest(workspaceId);
       await pool.end();

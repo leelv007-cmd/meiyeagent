@@ -11,6 +11,7 @@ import type { PermissionAuthorizerPort } from '../capability-permission/port.js'
 import { createDefaultDeployments } from '../model-supply/catalog.js';
 import {
   AdminConfigFoundationModule,
+  DUE_DELIVERY_RETENTION_DAYS_CONFIG_KEY,
   HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
   HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
   HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
@@ -127,6 +128,7 @@ describe('Admin config application seam', () => {
         'compliance.regulated_mode.default',
         'compliance.watermark.default',
         'douyin.adapter.assembly',
+        DUE_DELIVERY_RETENTION_DAYS_CONFIG_KEY,
         HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
         HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
         NOTE_STYLE_CONFIG_KEY,
@@ -347,6 +349,48 @@ describe('Admin config application seam', () => {
         { actorId: 'platform-admin', revision: 2, value: 45 },
       ],
     );
+  });
+
+  it('accepts only bounded positive integer due-delivery retention days', async () => {
+    const repository = new MemoryAdminConfigRepository();
+    const service = new P1ApplicationService(new MemoryFoundationRepository(), {
+      operations: [
+        new AdminConfigFoundationModule(repository, {
+          hotReadKeys: [DUE_DELIVERY_RETENTION_DAYS_CONFIG_KEY],
+          wiredKeys: [DUE_DELIVERY_RETENTION_DAYS_CONFIG_KEY],
+        }),
+      ],
+    });
+    const apply = (value: number, correlationId: string) =>
+      service.executeModule(
+        context,
+        'admin-config',
+        {
+          action: 'config_apply',
+          payload: {
+            key: DUE_DELIVERY_RETENTION_DAYS_CONFIG_KEY,
+            value,
+            expectedRevision: null,
+            reason: 'Set due-delivery terminal retention.',
+          },
+        },
+        correlationId,
+      );
+
+    await apply(7, 'due-retention-valid');
+    for (const [value, correlationId] of [
+      [0, 'due-retention-zero'],
+      [3_651, 'due-retention-over-max'],
+      [1.5, 'due-retention-fraction'],
+    ] as const) {
+      await assert.rejects(
+        apply(value, correlationId),
+        (error: unknown) =>
+          error instanceof Error &&
+          'code' in error &&
+          error.code === 'INVALID_STATE',
+      );
+    }
   });
 
   it('applies the confirmation hold timeout through the wired hot-read control', async () => {

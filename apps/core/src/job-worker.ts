@@ -166,6 +166,19 @@ import {
   langfusePromptResolverFromEnv,
   modelSupplyPromptResolverFromHarness,
 } from './p1/harness/langfuse-prompts.js';
+import { DailyRecommendationDeliveryPort } from './p1/due-delivery/delivery-port.js';
+import {
+  PostgresWorkspaceOwnerMembershipReader,
+  ProductionDueDeliveryEligibility,
+} from './p1/due-delivery/eligibility.js';
+import { PostgresDueDeliveryRepository } from './p1/due-delivery/postgres-repository.js';
+import {
+  DUE_DELIVERY_SCANNER_JOB_KIND,
+  DueDeliveryScannerRunner,
+  createDueDeliveryScannerJobHandler,
+  registerDueDeliveryScannerSchedule,
+} from './p1/due-delivery/scanner-job.js';
+import { DueDeliveryWorker } from './p1/due-delivery/worker.js';
 
 assertLangfusePromptRuntimePolicy(process.env);
 const harnessPromptResolver = langfusePromptResolverFromEnv(process.env);
@@ -286,6 +299,10 @@ const videoRegenerationRepository =
 const canonicalVideoWorkflowSchema =
   new PostgresCanonicalVideoWorkflowSchema(pool);
 const storeFactLedger = new PostgresStoreFactLedger(pool);
+const dueDeliveryRepository = new PostgresDueDeliveryRepository(
+  pool,
+  adminConfigRepository
+);
 const contextBundleRepository = new PostgresContextBundleRepository(pool);
 const contextSourceRevisions = new PostgresContextSourceRevisionRepository(pool);
 const assetIntakeRepository = new PostgresAssetIntakeRepository(pool);
@@ -348,6 +365,7 @@ await migratePostgresSchema(pool, [
   canonicalVideoWorkflowSchema,
   videoRegenerationRepository,
   storeFactLedger,
+  dueDeliveryRepository,
   contextBundleRepository,
   contextSourceRevisions,
   assetIntakeRepository,
@@ -368,6 +386,12 @@ await migratePostgresSchema(pool, [
   notifier,
 ]);
 await migrateProStudioSchema(pool);
+const dueRecommendationBase = new PostgresHarnessStore(
+  pool,
+  storeFactLedger,
+  adminConfigRepository,
+);
+await dueRecommendationBase.applySchema();
 const integrationSecrets = integrationSecretStoreFromEnv(process.env);
 await migrateProviderCredentialAccountsFromIntegrations(
   integrationRepository,
@@ -662,12 +686,31 @@ const workerId = resolveWorkerId(
   process.env.P1_JOB_WORKER_ID,
   `${hostname()}:${process.pid}`
 );
+const dueDeliveryScanner = new DueDeliveryScannerRunner(
+  new DueDeliveryWorker(
+    dueDeliveryRepository,
+    new ProductionDueDeliveryEligibility(
+      new PostgresWorkspaceOwnerMembershipReader(pool)
+    ),
+    new DailyRecommendationDeliveryPort(
+      dueRecommendationBase,
+      undefined,
+      notificationWebhook ? notifier : undefined
+    )
+  ),
+  dueDeliveryRepository
+);
+await registerDueDeliveryScannerSchedule(jobRuntime);
 if (assetRegistrationCleanup) {
   await registerS3AssetRegistrationCleanupSchedule(jobRuntime);
 }
 const worker = new P1JobWorkerEntrypoint(
   jobRuntime,
   {
+    [DUE_DELIVERY_SCANNER_JOB_KIND]: createDueDeliveryScannerJobHandler(
+      dueDeliveryScanner,
+      workerId
+    ),
     [DOUYIN_OAUTH_LIFECYCLE_JOB_KIND]:
       createDouyinOAuthLifecycleJobHandler(
         new DouyinOAuthLifecycleBatchRunner(

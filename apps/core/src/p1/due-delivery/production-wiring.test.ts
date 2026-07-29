@@ -1,0 +1,65 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import test from 'node:test';
+
+test('job worker migrates and runs the due-only system scanner', async () => {
+  const source = await readFile(
+    new URL('../../job-worker.ts', import.meta.url),
+    'utf8',
+  );
+  const mainSource = await readFile(
+    new URL('../../main.ts', import.meta.url),
+    'utf8',
+  );
+  const adminConfigDeclaration = mainSource.indexOf(
+    'const adminConfigRepository = new PostgresAdminConfigRepository(pool);',
+  );
+  const dueRepositoryDeclaration = mainSource.indexOf(
+    'const dueDeliveryRepository = new PostgresDueDeliveryRepository(',
+  );
+  const migrationAfterDueRepository = mainSource.indexOf(
+    'await migratePostgresSchema(pool, [',
+    dueRepositoryDeclaration,
+  );
+  const migrationEnd = mainSource.indexOf(
+    ']);',
+    migrationAfterDueRepository,
+  );
+
+  assert.match(
+    source,
+    /const dueDeliveryRepository = new PostgresDueDeliveryRepository\(\s*pool,\s*adminConfigRepository\s*\)/u,
+  );
+  assert.ok(adminConfigDeclaration >= 0);
+  assert.ok(dueRepositoryDeclaration > adminConfigDeclaration);
+  assert.ok(migrationAfterDueRepository > dueRepositoryDeclaration);
+  assert.match(
+    mainSource.slice(migrationAfterDueRepository, migrationEnd),
+    /dueDeliveryRepository/u,
+  );
+  assert.doesNotMatch(
+    mainSource,
+    /await dueDeliveryRepository\.migrate\(\)/u,
+  );
+  assert.match(
+    source,
+    /migratePostgresSchema\(pool, \[[\s\S]*?dueDeliveryRepository,/u,
+  );
+  assert.match(
+    source,
+    /new DailyRecommendationDeliveryPort\(\s*dueRecommendationBase,\s*undefined,\s*notificationWebhook\s*\?\s*notifier\s*:\s*undefined\s*\)\s*\)/u,
+  );
+  assert.match(
+    source,
+    /new ProductionDueDeliveryEligibility\(\s*new PostgresWorkspaceOwnerMembershipReader\(pool\)\s*\)/u,
+  );
+  assert.match(source, /new DueDeliveryWorker\(/u);
+  assert.match(
+    source,
+    /await registerDueDeliveryScannerSchedule\(jobRuntime\)/u,
+  );
+  assert.match(
+    source,
+    /\[DUE_DELIVERY_SCANNER_JOB_KIND\]:\s*createDueDeliveryScannerJobHandler\(/u,
+  );
+});

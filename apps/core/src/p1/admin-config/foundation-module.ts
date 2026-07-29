@@ -218,6 +218,14 @@ export const HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY =
   'harness.outbox.langfuse';
 export const HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY =
   'harness.today_recommendation';
+export const DUE_DELIVERY_RETENTION_DAYS_CONFIG_KEY =
+  'due_delivery.retention_days';
+export const DEFAULT_DUE_DELIVERY_RETENTION_DAYS = 90;
+export const dueDeliveryRetentionDaysConfigSchema = z
+  .number()
+  .int()
+  .positive()
+  .max(3_650);
 export const harnessLangfuseOutboxConfigSchema = z
   .object({
     batchSize: z.number().int().positive().max(100),
@@ -356,6 +364,12 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
     description:
       'Deterministic weekday, industry and platform basis for the today recommendation.',
     valueSchema: harnessTodayRecommendationConfigSchema,
+  },
+  {
+    key: DUE_DELIVERY_RETENTION_DAYS_CONFIG_KEY,
+    scope: 'global',
+    description: 'Terminal due-delivery item and run retention in days.',
+    valueSchema: dueDeliveryRetentionDaysConfigSchema,
   },
   {
     key: 'compliance.regulated_mode.default',
