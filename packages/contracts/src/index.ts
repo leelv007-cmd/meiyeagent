@@ -34,6 +34,7 @@ export * from './observability-event.js';
 export * from './note-page-regenerated.js';
 export * from './skill-schema-registry.js';
 export * from './bounded-execution.js';
+export * from './agent-primitives.js';
 
 export interface ApiMeta {
   correlationId: string;
