@@ -71,6 +71,10 @@ test('issue 255 collector derives integer micros upward from frozen price and pr
     configurationRevision: 'direct-config-v1',
     credentialRevision: 'direct-credential-v1',
     deploymentId: 'deepseek-v4-pro-direct',
+    frozenPrices: {
+      inputCostPerMillionCny: '0.0000001',
+      outputCostPerMillionCny: '0.0000001',
+    },
     options: {
       apiKey: 'test-key',
       baseUrl: 'https://copy.example.test/v1',
@@ -112,10 +116,10 @@ test('issue 255 collector derives integer micros upward from frozen price and pr
           ],
           usage: { prompt_tokens: 1, completion_tokens: 1 },
         }),
-      inputCostPerMillion: 0.0000001,
+      inputCostPerMillion: 1,
       maxOutputTokens: 1,
       model: 'deepseek-v4-pro',
-      outputCostPerMillion: 0.0000001,
+      outputCostPerMillion: 1,
     },
     priceRevision: 'direct-price-v1',
     receipts: {
@@ -145,6 +149,7 @@ test('issue 255 live quotes reject zero prices before provider network', () => {
         configurationRevision: 'tuzi-config-v1',
         credentialRevision: 'tuzi-credential-v1',
         deploymentId: 'gpt-image-2-tuzi-relay',
+        frozenPriceCny: '0',
         modality: 'image_text',
         options: {
           apiKey: 'test-key',

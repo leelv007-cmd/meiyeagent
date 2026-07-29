@@ -41,6 +41,7 @@ test('issue 255 direct copy adapter crosses the durable generation fence before 
       deploymentId: 'deepseek-v4-pro-direct',
       modality: 'copy',
     },
+    maxGenerationRequestBytes: 1_000_000,
     options: {
       apiKey: 'test-key',
       baseUrl: 'https://copy.example.test/v1',
@@ -105,6 +106,42 @@ test('issue 255 direct copy adapter crosses the durable generation fence before 
   assert.equal(providerCalls, 1);
 });
 
+test('issue 255 direct copy rejects an oversized complete provider request before its generation fence', async () => {
+  const receipts = new ReceiptFence();
+  let providerCalls = 0;
+  const port = createIssue255DirectCopyPort({
+    identity: {
+      ...identity,
+      deploymentId: 'deepseek-v4-pro-direct',
+      modality: 'copy',
+    },
+    maxGenerationRequestBytes: 1,
+    options: {
+      apiKey: 'test-key',
+      baseUrl: 'https://copy.example.test/v1',
+      catalogModelId: 'deepseek-v4-pro',
+      currency: 'CNY',
+      fetch: async () => {
+        providerCalls += 1;
+        return Response.json({});
+      },
+      inputCostPerMillion: 1,
+      model: 'deepseek-v4-pro',
+      outputCostPerMillion: 2,
+    },
+    receipts,
+  });
+
+  assert.equal(
+    (await port.execute(recordedRequest('deepseek-v4-pro', 'copy.generate')))
+      .kind,
+    'failure',
+  );
+  assert.equal(receipts.generationSubmitCount, 0);
+  assert.equal(receipts.providerHttpRequestCount, 0);
+  assert.equal(providerCalls, 0);
+});
+
 for (const status of [307, 308]) {
   test(`issue 255 direct copy adapter does not follow a ${status} generation redirect`, async () => {
     const receipts = new ReceiptFence();
@@ -115,6 +152,7 @@ for (const status of [307, 308]) {
         deploymentId: 'deepseek-v4-pro-direct',
         modality: 'copy',
       },
+      maxGenerationRequestBytes: 1_000_000,
       options: {
         apiKey: 'test-key',
         baseUrl: 'https://copy.example.test/v1',
@@ -160,6 +198,7 @@ test('issue 255 direct copy adapter rejects a missing stable idempotency key bef
           modality: 'copy',
           providerIdempotencyKey: '',
         },
+        maxGenerationRequestBytes: 1_000_000,
         options: {
           apiKey: 'test-key',
           baseUrl: 'https://copy.example.test/v1',
@@ -224,12 +263,13 @@ test('issue 255 Tuzi video adapter counts poll HTTP separately without claiming 
   const receipts = new ReceiptFence();
   let providerCalls = 0;
   const port = createIssue255TuziMediaPort({
+    generationDurationSeconds: 1,
     identity: {
       ...identity,
       deploymentId: 'seedance-1-5-pro-tuzi-relay',
       modality: 'video',
     },
-    options: tuziOptions(async (input) => {
+    options: tuziOptions(async (input, init) => {
       providerCalls += 1;
       const target = String(input);
       if (target.endsWith('/videos/issue-255-video-task')) {
@@ -241,6 +281,7 @@ test('issue 255 Tuzi video adapter counts poll HTTP separately without claiming 
         });
       }
       assert.equal(target, 'https://api.tu-zi.example/v1/videos');
+      assert.equal((init?.body as FormData).get('seconds'), '1');
       return Response.json({
         id: 'issue-255-video-task',
         object: 'video',

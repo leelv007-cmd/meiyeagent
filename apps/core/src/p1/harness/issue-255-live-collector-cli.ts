@@ -129,6 +129,16 @@ export async function runIssue255LiveCollectorCli(input: {
             'direct credential revision',
           ),
           deploymentId: directDeployment.id,
+          frozenPrices: {
+            inputCostPerMillionCny: requiredDeploymentText(
+              input.env.MODEL_DIRECT_INPUT_COST_PER_MILLION,
+              'direct input frozen price',
+            ),
+            outputCostPerMillionCny: requiredDeploymentText(
+              input.env.MODEL_DIRECT_OUTPUT_COST_PER_MILLION,
+              'direct output frozen price',
+            ),
+          },
           options: direct,
           priceRevision: requiredDeploymentText(
             directDeployment.priceRevision,
@@ -146,6 +156,10 @@ export async function runIssue255LiveCollectorCli(input: {
             'Tuzi image credential revision',
           ),
           deploymentId: imageDeployment.id,
+          frozenPriceCny: requiredDeploymentText(
+            input.env.TUZI_GPT_IMAGE_2_COST_PER_IMAGE_CNY,
+            'Tuzi image frozen price',
+          ),
           modality: 'image_text',
           options: countedTuzi,
           priceRevision: requiredDeploymentText(
@@ -164,6 +178,10 @@ export async function runIssue255LiveCollectorCli(input: {
             'Tuzi video credential revision',
           ),
           deploymentId: videoDeployment.id,
+          frozenPriceCny: requiredDeploymentText(
+            input.env.TUZI_SEEDANCE_COST_PER_MILLION_TOKENS_CNY,
+            'Tuzi video frozen price',
+          ),
           modality: 'video',
           options: countedTuzi,
           priceRevision: requiredDeploymentText(

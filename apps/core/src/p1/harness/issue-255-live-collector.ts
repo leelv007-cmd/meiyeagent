@@ -38,7 +38,7 @@ const approvedQuoteMicros = {
   image_text: 500_000,
   video: 3_000_000,
 } as const;
-const COPY_INPUT_TOKEN_UPPER_BOUND = 4_096;
+const COPY_GENERATION_REQUEST_BYTE_LIMIT = 4_096;
 const COPY_INSTRUCTIONS =
   'Return exactly 3 materially distinct beauty-business copy candidates. Every candidate must include a non-empty title, body, and conversionHook.';
 
@@ -519,6 +519,10 @@ export function issue255DirectCopyExecutor(input: {
   configurationRevision: string;
   credentialRevision: string;
   deploymentId: string;
+  frozenPrices: {
+    inputCostPerMillionCny: string;
+    outputCostPerMillionCny: string;
+  };
   options: OpenAiCompatibleLlmExecutionOptions;
   priceRevision: string;
   receipts: Issue255ReceiptFence;
@@ -526,11 +530,11 @@ export function issue255DirectCopyExecutor(input: {
   const prompt =
     '基于门店已确认事实写三条合规且彼此不同的小红书护理介绍，不添加疗效承诺或虚构优惠。';
   const inputPriceMicrosPerMillion = frozenPriceMicros(
-    input.options.inputCostPerMillion,
+    input.frozenPrices.inputCostPerMillionCny,
     'direct input price',
   );
   const outputPriceMicrosPerMillion = frozenPriceMicros(
-    input.options.outputCostPerMillion,
+    input.frozenPrices.outputCostPerMillionCny,
     'direct output price',
   );
   const configuredMaxOutputTokens = z
@@ -538,16 +542,8 @@ export function issue255DirectCopyExecutor(input: {
     .int()
     .positive()
     .parse(input.options.maxOutputTokens);
-  if (
-    new TextEncoder().encode(`${COPY_INSTRUCTIONS}\n${prompt}`).length >
-    COPY_INPUT_TOKEN_UPPER_BOUND
-  ) {
-    throw new Error(
-      'Issue 255 direct prompt exceeds its frozen input token upper bound.',
-    );
-  }
   const inputQuoteMicros = proratedPriceMicros(
-    [[inputPriceMicrosPerMillion, COPY_INPUT_TOKEN_UPPER_BOUND]],
+    [[inputPriceMicrosPerMillion, COPY_GENERATION_REQUEST_BYTE_LIMIT]],
     1_000_000,
   );
   const affordableOutputTokens = Number(
@@ -566,7 +562,7 @@ export function issue255DirectCopyExecutor(input: {
   }
   const quoteAmountMicros = proratedPriceMicros(
     [
-      [inputPriceMicrosPerMillion, COPY_INPUT_TOKEN_UPPER_BOUND],
+      [inputPriceMicrosPerMillion, COPY_GENERATION_REQUEST_BYTE_LIMIT],
       [outputPriceMicrosPerMillion, maxOutputTokens],
     ],
     1_000_000,
@@ -586,7 +582,7 @@ export function issue255DirectCopyExecutor(input: {
     promptHash: hash(`${COPY_INSTRUCTIONS}\0${prompt}`),
     quoteAmountMicros,
     quoteBasis: {
-      maxInputTokens: COPY_INPUT_TOKEN_UPPER_BOUND,
+      maxInputRequestBytes: COPY_GENERATION_REQUEST_BYTE_LIMIT,
       maxOutputTokens,
     },
     async execute(identity) {
@@ -597,6 +593,7 @@ export function issue255DirectCopyExecutor(input: {
           modality: 'copy',
           providerIdempotencyKey: identity.effectId,
         },
+        maxGenerationRequestBytes: COPY_GENERATION_REQUEST_BYTE_LIMIT,
         options: probeOptions,
         receipts: input.receipts,
       });
@@ -642,7 +639,7 @@ export function issue255DirectCopyExecutor(input: {
         'direct output tokens',
       );
       if (
-        inputTokens > COPY_INPUT_TOKEN_UPPER_BOUND ||
+        inputTokens > COPY_GENERATION_REQUEST_BYTE_LIMIT ||
         outputTokens > maxOutputTokens
       ) {
         throw new Error(
@@ -675,6 +672,7 @@ export function issue255TuziExecutor(input: {
   configurationRevision: string;
   credentialRevision: string;
   deploymentId: string;
+  frozenPriceCny: string;
   modality: 'image_text' | 'video';
   options: TuziMediaExecutionOptions;
   priceRevision: string;
@@ -689,9 +687,7 @@ export function issue255TuziExecutor(input: {
     ? input.options.image.catalogModelId
     : input.options.video.catalogModelId;
   const priceMicros = frozenPriceMicros(
-    isImage
-      ? input.options.image.costPerImage
-      : input.options.video.costPerMillionTokens,
+    input.frozenPriceCny,
     isImage ? 'Tuzi image price' : 'Tuzi video price',
   );
   const durationSeconds = 1;
@@ -737,6 +733,7 @@ export function issue255TuziExecutor(input: {
     quoteBasis,
     async execute(identity) {
       const port = createIssue255TuziMediaPort({
+        ...(isImage ? {} : { generationDurationSeconds: durationSeconds }),
         identity: {
           ...identity,
           deploymentId: input.deploymentId,
@@ -1105,17 +1102,23 @@ function defaultWait(milliseconds: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 }
 
-function frozenPriceMicros(amount: number, label: string) {
-  const micros = Math.ceil(amount * 1_000_000);
+function frozenPriceMicros(amount: string, label: string) {
+  const match = /^(0|[1-9]\d*)(?:\.(\d+))?$/u.exec(amount.trim());
+  if (!match) {
+    throw new Error(`Issue 255 ${label} is not a positive frozen price.`);
+  }
+  const fraction = match[2] ?? '';
+  const roundedMicros =
+    BigInt(match[1]!) * 1_000_000n +
+    BigInt(fraction.slice(0, 6).padEnd(6, '0')) +
+    (/[1-9]/u.test(fraction.slice(6)) ? 1n : 0n);
   if (
-    !Number.isFinite(amount) ||
-    amount <= 0 ||
-    micros <= 0 ||
-    !Number.isSafeInteger(micros)
+    roundedMicros <= 0n ||
+    roundedMicros > BigInt(Number.MAX_SAFE_INTEGER)
   ) {
     throw new Error(`Issue 255 ${label} is not a positive frozen price.`);
   }
-  return micros;
+  return Number(roundedMicros);
 }
 
 function requiredUsageQuantity(

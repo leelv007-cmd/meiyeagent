@@ -194,6 +194,10 @@ test(
             configurationRevision: 'direct-config-v1',
             credentialRevision: 'direct-credential-v1',
             deploymentId: 'deepseek-v4-pro-direct',
+            frozenPrices: {
+              inputCostPerMillionCny: '1',
+              outputCostPerMillionCny: '2',
+            },
             options: {
               apiKey: 'test-key',
               baseUrl: 'https://copy.example.test/v1',
@@ -250,6 +254,7 @@ test(
             configurationRevision: 'tuzi-image-config-v1',
             credentialRevision: 'tuzi-credential-v1',
             deploymentId: 'gpt-image-2-tuzi-relay',
+            frozenPriceCny: '0.5',
             modality: 'image_text',
             options: tuziOptions,
             priceRevision: 'tuzi-image-price-v1',
@@ -259,6 +264,7 @@ test(
             configurationRevision: 'tuzi-video-config-v1',
             credentialRevision: 'tuzi-credential-v1',
             deploymentId: 'seedance-1-5-pro-tuzi-relay',
+            frozenPriceCny: '3',
             modality: 'video',
             options: tuziOptions,
             priceRevision: 'tuzi-video-price-v1',
