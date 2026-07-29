@@ -42,9 +42,7 @@ export function normalizeProviderError(input: {
             : 'provider_failure');
   const retryable =
     input.retryable ??
-    (errorCode === 'rate_limited' ||
-      errorCode === 'upstream_5xx' ||
-      acceptance === 'acceptance_unknown');
+    (errorCode === 'rate_limited' || errorCode === 'upstream_5xx');
   return {
     acceptance,
     errorCode,

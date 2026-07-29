@@ -110,6 +110,31 @@ test('subject asset rights failure hard-blocks without self-correction', async (
   assert.equal(runner.requests.length, 1);
 });
 
+test('external action approval failure hard-blocks without self-correction', async () => {
+  const runner = new QueueRunner([
+    candidate('主推荐', '正文 A', []),
+    candidate('不应执行的修正', '正文 B', []),
+  ]);
+  await assert.rejects(
+    executeCopySelection(selectionInput(), {
+      runner,
+      validator: new ExternalActionApprovalValidator(),
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof HarnessSelectionError);
+      assert.equal(error.status, 409);
+      assert.deepEqual(error.gateIds, ['external_action_approval']);
+      assert.equal(error.merchantMessage, '外部动作尚未获得授权');
+      return true;
+    },
+  );
+  assert.deepEqual(
+    runner.requests.map((request) => request.effectIdempotencyKey),
+    ['wf:workflow-34:s4:copy-primary:c01'],
+  );
+  assert.equal(runner.requests.length, 1);
+});
+
 test('non-permission policy failures stop after exactly one self-correction', async () => {
   const runner = new QueueRunner([
     candidate('主推荐', '正文 A', ['asset-medical']),
@@ -453,6 +478,21 @@ class WithdrawnAssetValidator implements CandidatePolicyValidator {
           gateId: 'subject_asset_rights',
           reason: '素材授权已撤回',
           alternativePath: ['换安全素材', '匿名化', '请求授权', '放弃该表达'],
+        },
+      ],
+    };
+  }
+}
+
+class ExternalActionApprovalValidator implements CandidatePolicyValidator {
+  validate() {
+    return {
+      passed: false,
+      failures: [
+        {
+          gateId: 'external_action_approval',
+          reason: '外部动作尚未获得授权',
+          alternativePath: ['请求商家授权'],
         },
       ],
     };

@@ -42,6 +42,11 @@ test('normalizeProviderError maps status codes to acceptance + retryable', () =>
   assert.equal(five.acceptance, 'acceptance_unknown');
   assert.equal(five.errorCode, 'upstream_5xx');
   assert.equal(five.retryable, true);
+
+  const unknown = normalizeProviderError({});
+  assert.equal(unknown.acceptance, 'acceptance_unknown');
+  assert.equal(unknown.errorCode, 'provider_failure');
+  assert.equal(unknown.retryable, false);
 });
 
 test('gatewayFingerprint is consistent per channel kind', () => {

@@ -2128,6 +2128,142 @@ test('server-raised limit resumes bounded selection from its checkpoint and deli
   assert.equal(deliveries, 1);
 });
 
+const NON_ITERATION_BOUNDS = [
+  ['maxCostCents', 'costCents'],
+  ['maxWallClockMs', 'wallClockMs'],
+  ['maxDelegations', 'delegations'],
+] as const;
+
+for (const [limit, consumptionKey] of NON_ITERATION_BOUNDS) {
+  test(`${limit} enters bounded HITL, records its consumption, and resumes after a server raise`, async () => {
+    const boundedExecution = {
+      schemaVersion: 'bounded-execution-snapshot/v1' as const,
+      maxIterations: 'unset' as const,
+      maxCostCents: 'unset' as const,
+      maxWallClockMs: 'unset' as const,
+      maxDelegations: 'unset' as const,
+      [limit]: 1,
+      requiredLimits: [limit],
+      consumption: {
+        iterations: 0,
+        costCents: 0,
+        wallClockMs: 0,
+        delegations: 0,
+      },
+      stopReason: null,
+      triggeredLimit: null,
+    };
+    const request: HarnessWorkflowInput = {
+      ...taskInput(),
+      boundedExecution,
+    };
+    const stages = fixtureStages();
+    const completedSelection = stages.executeAndSelect.bind(stages);
+    const traces: unknown[] = [];
+    let boundedCalls = 0;
+    let resumptions = 0;
+    stages.executeAndSelectBounded = async (input) => {
+      boundedCalls += 1;
+      if (input.boundedResume) {
+        return completedSelection(input);
+      }
+      return {
+        state: 'suspended',
+        snapshot: {
+          ...boundedExecution,
+          consumption: {
+            ...boundedExecution.consumption,
+            [consumptionKey]: 1,
+          },
+          stopReason: 'limit_reached',
+          triggeredLimit: limit,
+        },
+        currentBest: {
+          candidate: { candidateId: 'c01', title: '当前最好版本' },
+          deliverable: false,
+        },
+        unmetExplanation: `${limit} 仍需抬限`,
+        resumable: true,
+      };
+    };
+
+    const result = await runHarnessWorkflow(
+      `task-${limit}`,
+      request,
+      stages,
+      {
+        async runStep(_key, operation) {
+          return operation();
+        },
+        async progress() {},
+        async token() {},
+        async awaitDecision(question) {
+          return {
+            idempotencyKey: `${limit}-continuation`,
+            questionId: question.questionId,
+            workflowRevision: question.workflowRevision,
+            patch: {
+              field: question.response.field,
+              value: question.options[0]!.label,
+              reason: question.response.reason,
+            },
+            decision: {
+              state: 'accepted',
+              value: question.options[0]!.label,
+            },
+          };
+        },
+        async resumeBoundedExecution(input) {
+          resumptions += 1;
+          return {
+            ...input.request,
+            boundedExecution: resumeWithRaisedServerLimit(
+              input.suspension.snapshot,
+              { limit, value: 2 },
+            ),
+          };
+        },
+        async recordTrace(input) {
+          traces.push(input.payload);
+        },
+      },
+    );
+
+    assert.ok(result.delivery);
+    assert.equal(boundedCalls, 2);
+    assert.equal(resumptions, 1);
+    assert.ok(
+      traces.some((payload) => {
+        if (
+          typeof payload !== 'object' ||
+          payload === null ||
+          !('boundedExecution' in payload)
+        ) {
+          return false;
+        }
+        const suspensionTrace = payload as {
+          boundedExecution: typeof boundedExecution;
+          currentBest: {
+            candidate: { candidateId: string };
+            deliverable: boolean;
+          };
+          unmetExplanation: string;
+          resumable: boolean;
+        };
+        const snapshot = suspensionTrace.boundedExecution;
+        return (
+          snapshot.triggeredLimit === limit &&
+          snapshot.consumption[consumptionKey] === 1 &&
+          suspensionTrace.currentBest.candidate.candidateId === 'c01' &&
+          suspensionTrace.currentBest.deliverable === false &&
+          suspensionTrace.unmetExplanation === `${limit} 仍需抬限` &&
+          suspensionTrace.resumable === true
+        );
+      }),
+    );
+  });
+}
+
 test('non-permission selection failure does not enter permission HITL', async () => {
   const stages = fixtureStages();
   const selectionError = new HarnessSelectionError(

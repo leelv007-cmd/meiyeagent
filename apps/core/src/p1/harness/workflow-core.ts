@@ -1,11 +1,12 @@
-import type {
-  BoundedExecutionSnapshot,
-  ContentPackage,
-  ContentPackageRevisionDelivery,
-  CreativeRecommendationDecisionTrace,
-  NoteStyleCandidates,
-  QuestionCard,
-  StructuredDecisionInput,
+import {
+  BOUNDED_EXECUTION_LIMITS,
+  type BoundedExecutionSnapshot,
+  type ContentPackage,
+  type ContentPackageRevisionDelivery,
+  type CreativeRecommendationDecisionTrace,
+  type NoteStyleCandidates,
+  type QuestionCard,
+  type StructuredDecisionInput,
 } from '@meiye/contracts';
 
 import {
@@ -743,7 +744,7 @@ export async function runHarnessWorkflow(
       async () => {
         let tokenCount = 0;
         const selection = await (
-          typeof input.request.boundedExecution?.maxIterations === 'number' &&
+          hasConfiguredBoundedExecution(input.request.boundedExecution) &&
           ports.executeAndSelectBounded
             ? ports.executeAndSelectBounded.bind(ports)
             : ports.executeAndSelect.bind(ports)
@@ -2062,6 +2063,17 @@ function boundedExecutionQuestion(
     unattended: 'hold',
     scope: 'current_task',
   };
+}
+
+function hasConfiguredBoundedExecution(
+  snapshot: BoundedExecutionSnapshot | undefined,
+) {
+  return (
+    snapshot !== undefined &&
+    BOUNDED_EXECUTION_LIMITS.some(
+      (limit) => typeof snapshot[limit] === 'number',
+    )
+  );
 }
 
 function noteStyleIdFromDecision(
