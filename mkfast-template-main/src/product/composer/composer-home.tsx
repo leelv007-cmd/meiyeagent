@@ -2554,6 +2554,34 @@ export function ComposerHome({
               />
             </>
           }
+          recipePillSlot={
+            surfaceQuery.data ? (
+              <RecipeCardsPanel
+                lensId={lensId}
+                lensState={lensState}
+                onLensStateChange={setLensState}
+                surface={surfaceQuery.data}
+                requestServerPreview={({ lensState: state, recipe }) =>
+                  requestRecipePatchPreview({
+                    recipeRevisionId: recipe.revisionId,
+                    currentLens: state.lensId,
+                    surfaceRevisionId: surfaceQuery.data.revisionId,
+                    draft: composerDraftToRecipeFields(state),
+                  })
+                }
+                useBottomSheet={viewportKind === 'mobile'}
+              />
+            ) : (
+              <output
+                className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground"
+                data-testid="composer-surface-status"
+              >
+                {surfaceQuery.isError
+                  ? '创作模板暂时不可用，请稍后重试'
+                  : '正在读取创作模板…'}
+              </output>
+            )
+          }
           onCreationModeChange={setCreationMode}
           onDestinationChange={(platform) => {
             const next = composerDestinationContract(platform);
@@ -2733,45 +2761,6 @@ export function ComposerHome({
           }}
           onUnlocked={() => setSubmissionQuotaBlocked(false)}
         />
-
-        {surfaceQuery.data ? (
-          <RecipeCardsPanel
-            lensId={lensId}
-            lensState={lensState}
-            onLensStateChange={setLensState}
-            surface={surfaceQuery.data}
-            requestServerPreview={({ lensState: state, recipe }) =>
-              requestRecipePatchPreview({
-                recipeRevisionId: recipe.revisionId,
-                currentLens: state.lensId,
-                surfaceRevisionId: surfaceQuery.data.revisionId,
-                draft: composerDraftToRecipeFields(state),
-              })
-            }
-            onReuseRequested={() => {
-              // 旧内容换平台 is answered in the conversation, not in a panel.
-              setLensState((current) =>
-                updateUserText(
-                  current,
-                  current.draft.userText.trim() ||
-                    COMPOSER_REUSE_CHIPS[0]!.intent
-                )
-              );
-              focusComposerIntentInput();
-            }}
-            singleColumn={singleColumn}
-            useBottomSheet={viewportKind === 'mobile'}
-          />
-        ) : (
-          <output
-            className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground"
-            data-testid="composer-surface-status"
-          >
-            {surfaceQuery.isError
-              ? '创作模板暂时不可用，请稍后重试'
-              : '正在读取创作模板…'}
-          </output>
-        )}
 
         <ComposerToolsStrip
           viewport={viewportKind}

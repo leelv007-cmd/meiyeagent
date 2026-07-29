@@ -93,12 +93,21 @@ test('reuse is answered in the conversation instead', () => {
   assert.match(conversation, /composer-reuse-chips/);
   assert.match(conversation, /composer-reuse-chip-\$\{chip\.id\}/);
   assert.match(home, /COMPOSER_REUSE_CHIPS/);
-  // Selecting the reuse card hands back to the container, never to a panel.
+
+  // D-164②: the recipe surface used to carry a 旧内容换平台 card that handed the
+  // intent back to the container. With the pill row, every pill applies a
+  // recipe and that card is not offered at all — so the panel must have no
+  // reuse escape hatch left, and the chips above are the only way in.
   const panel = readFileSync(
     fileURLToPath(new URL('./recipe-cards-panel.tsx', import.meta.url)),
     'utf8'
   );
-  assert.match(panel, /onReuseRequested\?\.\(\)/);
+  assert.doesNotMatch(panel, /onReuseRequested/);
+  const row = readFileSync(
+    fileURLToPath(new URL('./recipe-pill-row.tsx', import.meta.url)),
+    'utf8'
+  );
+  assert.doesNotMatch(row, /reuse/iu);
 });
 
 test('the retired settings grid did not come back either (D-031)', () => {

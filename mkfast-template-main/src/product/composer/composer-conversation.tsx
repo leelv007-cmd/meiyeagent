@@ -406,6 +406,12 @@ export type ComposerPromptBarProps = {
   onCreationModeChange: (mode: ComposerCreationMode) => void;
   /** D-081 lens radiogroup. See the render site for why it is on both lines. */
   lensSlot?: React.ReactNode;
+  /**
+   * D-164② 第二层：the recipe pills for the lens above. It sits inside the bar
+   * because the axis and its shortcuts are one control surface — outside it,
+   * with the quote line in between, they read as two unrelated panels.
+   */
+  recipePillSlot?: React.ReactNode;
   attachmentSlot?: React.ReactNode;
   destination: string | null;
   onDestinationChange: (platform: string | null) => void;
@@ -449,6 +455,7 @@ export function ComposerPromptBar({
   creationMode,
   onCreationModeChange,
   lensSlot,
+  recipePillSlot,
   attachmentSlot,
   destination,
   onDestinationChange,
@@ -512,6 +519,7 @@ export function ComposerPromptBar({
         counts as one of its two activations.
       */}
       {lensSlot}
+      {recipePillSlot}
 
       <PromptInput
         isDisabled={disabled}

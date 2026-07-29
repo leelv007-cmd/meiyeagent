@@ -1,7 +1,9 @@
 /**
  * Composer six-card panel host (C2 / #96 + C3 / #97).
  *
- * Wires card grid + apply session + patch preview + reuse panel + tip.
+ * Wires the pill row + apply session + patch preview + reuse panel + tip.
+ * The pills are the D-164② second level of the lens axis; the host is
+ * unchanged, only what it draws.
  * Mobile: conflict / reuse ride the single bottom-sheet mutex (D-084).
  * Pure UI host — zero business writes (Work/Task/Job/ContentPackage).
  */
@@ -31,7 +33,7 @@ import {
   type RecipeApplySession,
 } from './recipe-apply';
 import { RecipeApplyTip } from './recipe-apply-tip';
-import { RecipeCardGrid } from './recipe-card-grid';
+import { RecipePillRow } from './recipe-pill-row';
 import { listVisibleRecipeCards, type RecipeCardView } from './recipe-cards';
 import type { RecipeCardTarget } from './launch-card-seeds';
 import { RecipePatchPreviewSurface } from './recipe-patch-preview-surface';
@@ -46,13 +48,7 @@ export type RecipeCardsPanelProps = {
   onLensStateChange?: (state: ComposerLensState) => void;
   surface?: BrowserSurfaceProjection | null;
   recipes?: readonly BrowserRecipeProjection[] | null;
-  /**
-   * Called when the merchant picks the 旧内容换平台 card. The host answers it in
-   * the conversation; this panel no longer owns a reuse form.
-   */
-  onReuseRequested?: () => void;
   className?: string;
-  singleColumn?: boolean;
   /**
    * When true, conflict + reuse panels render inside the single bottom sheet
    * (mobile path). Desktop keeps inline panels.
@@ -74,9 +70,7 @@ export function RecipeCardsPanel({
   onLensStateChange,
   surface,
   recipes,
-  onReuseRequested,
   className,
-  singleColumn,
   useBottomSheet = false,
   sheetFocusKey = null,
   onSheetRestore,
@@ -119,14 +113,12 @@ export function RecipeCardsPanel({
     );
   }, [activeSession.phase, useBottomSheet, sheetFocusKey]);
 
+  // D-031 / 归桶矩阵 §6.10: the three-step source/form/carrier panel is gone,
+  // and since D-164② 「旧内容换平台」is not a pill either — it is a reuse action,
+  // not a marketing task, and it is answered in the conversation's reuse chips
+  // with one sentence. `RecipePillRow` drops that card, so nothing here can be
+  // asked to apply it.
   const handleSelectCard = async (card: RecipeCardView) => {
-    if (card.kind === 'reuse_collection') {
-      // D-031 / 归桶矩阵 §6.10: the three-step source/form/carrier panel is gone.
-      // 「旧内容换平台」is answered in the conversation with one sentence + chips,
-      // so this card only hands the intent back to the container.
-      onReuseRequested?.();
-      return;
-    }
     if (!card.recipe) return;
     setPreviewError(false);
     let serverPreview: RecipePatchPreview | undefined;
@@ -175,7 +167,7 @@ export function RecipeCardsPanel({
     activeSession.preview &&
     activeSession.pendingRecipe;
   const showInlineOverlay = !useBottomSheet && Boolean(confirming);
-  const showGrid = activeSession.phase !== 'confirming';
+  const showPills = activeSession.phase !== 'confirming';
 
   const overlayBody = confirming ? (
     <RecipePatchPreviewSurface
@@ -218,12 +210,8 @@ export function RecipeCardsPanel({
         </ComposerBottomSheet>
       ) : null}
 
-      {showGrid ? (
-        <RecipeCardGrid
-          cards={cards}
-          onSelectCard={handleSelectCard}
-          singleColumn={singleColumn}
-        />
+      {showPills ? (
+        <RecipePillRow cards={cards} onSelectCard={handleSelectCard} />
       ) : null}
     </div>
   );

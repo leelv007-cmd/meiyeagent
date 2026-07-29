@@ -164,12 +164,15 @@ export {
   type RequestApplyResult,
 } from './recipe-apply';
 
+export { RecipePillRow, type RecipePillRowProps } from './recipe-pill-row';
+
 export {
-  RecipeCardButton,
-  RecipeCardGrid,
-  type RecipeCardButtonProps,
-  type RecipeCardGridProps,
-} from './recipe-card-grid';
+  MARKETING_TASK_ORDER,
+  groupRecipeCardsByMarketingTask,
+  marketingTaskForCard,
+  type MarketingTaskGroup,
+  type MarketingTaskId,
+} from './recipe-marketing-groups';
 
 export {
   RecipePatchPreviewSurface,

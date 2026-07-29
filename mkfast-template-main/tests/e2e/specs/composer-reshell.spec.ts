@@ -272,14 +272,17 @@ test.describe('D-114 Composer conversation container', () => {
     await page.goto('/dashboard');
     await expect(page.getByTestId('composer-home')).toBeVisible();
 
-    const reuseCard = page.getByTestId('composer-recipe-card-reuse_content');
-    if ((await reuseCard.count()) > 0) {
-      await reuseCard.click();
-      // Reuse is answered in the flow: the draft gets a sentence, not a panel.
-      await expect(page.getByTestId('composer-intent-input')).not.toHaveValue(
-        ''
-      );
-    }
+    // D-164②: reuse is not a recipe pill. Every pill in that row applies a
+    // recipe; 旧内容换平台 hands a sentence back to the conversation instead, so
+    // it lives in the chips below and nowhere else. This used to be a `count()
+    // > 0` guard, which after the pill row would have skipped silently forever
+    // rather than testing anything.
+    await expect(
+      page.getByTestId('composer-recipe-card-reuse_content')
+    ).toHaveCount(0);
+    await page.getByTestId('composer-reuse-chip-xiaohongshu').click();
+    // Reuse is answered in the flow: the draft gets a sentence, not a panel.
+    await expect(page.getByTestId('composer-intent-input')).not.toHaveValue('');
 
     for (const testId of [
       'composer-reuse-content-panel',

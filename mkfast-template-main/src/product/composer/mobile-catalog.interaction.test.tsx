@@ -23,7 +23,7 @@ import {
 } from './fullscreen-catalog';
 import { FullscreenCatalogPanel } from './fullscreen-catalog-panel';
 import { resolveComposerCardGridLayout } from './mobile-layout';
-import { RecipeCardGrid } from './recipe-card-grid';
+import { RecipePillRow } from './recipe-pill-row';
 import { listColdCardsFromSeeds } from './recipe-cards';
 import { ComposerToolsStrip } from './composer-tools-strip';
 import { COMPOSER_TOOL_ENTRY_SEEDS } from './tool-entry-seeds';
@@ -57,58 +57,71 @@ function makeRecipe(
   };
 }
 
-describe('responsive card grid matrix', () => {
-  it('two-col at 320/390 and single-col at 200% with no truncate attrs', () => {
+describe('recipe pill row on the narrow path', () => {
+  it('keeps the D-084 no-truncate contract and drops the empty groups', () => {
     const cards = listColdCardsFromSeeds();
-    const twoCol = resolveComposerCardGridLayout(
-      { width: 320 },
-      { cardCount: 6 }
-    );
-    expect(twoCol.columns).toBe(2);
+    // The grid's two-column matrix still decides `viewportKind` upstream
+    // (composer-home reads it through isTwoColumnMobileViewport), so the pure
+    // layout call stays exercised even though pills wrap instead of gridding.
+    expect(
+      resolveComposerCardGridLayout({ width: 320 }, { cardCount: 6 }).columns
+    ).toBe(2);
+    expect(
+      resolveComposerCardGridLayout({ width: 160 }, { cardCount: 6 })
+        .singleColumn
+    ).toBe(true);
 
-    const { rerender } = render(
-      <RecipeCardGrid
-        cards={cards}
-        onSelectCard={() => undefined}
-        singleColumn={false}
-      />
-    );
-    const grid = screen.getByTestId('composer-recipe-card-grid');
-    expect(grid).toHaveAttribute('data-columns', '2');
-    expect(grid).toHaveAttribute('data-card-count', '6');
+    render(<RecipePillRow cards={cards} onSelectCard={() => undefined} />);
 
-    // U04: the grid and its cards are the supply-layer units. `data-slot` is
-    // written by the units themselves, so this goes red if the hand-rolled
-    // grid comes back — and the stack class is what keeps the unit's built-in
-    // ellipsis off the merchant's sentence (D-084).
-    expect(grid.dataset.slot).toBe('item-card-group');
-    const buttons = within(grid).getAllByRole('button');
-    expect(buttons).toHaveLength(6);
-    for (const button of buttons) {
-      expect(button.dataset.slot).toBe('item-card');
-      expect(button.className).toMatch(/meiye-item-card-stack/);
-      expect(button).toHaveAttribute('data-no-truncate', 'true');
-      expect(button.className).toMatch(/min-h-12/);
-      // No line-clamp classes.
-      expect(button.className).not.toMatch(/line-clamp|truncate/);
+    // Six cold cards, five pills: 旧内容换平台 is a reuse action, not a
+    // marketing task, and its click hands the intent back to the conversation
+    // instead of applying a recipe — a pill of it would not apply anything.
+    const row = screen.getByTestId('composer-recipe-pill-row');
+    const pills = within(row).getAllByRole('button');
+    expect(pills).toHaveLength(5);
+    expect(
+      screen.queryByTestId('composer-recipe-card-reuse_content')
+    ).not.toBeInTheDocument();
+
+    // 热点借势 / 品牌与个人 IP have no recipes today. They are absent rather
+    // than greyed out: a group that opens onto nothing is the imagined feature
+    // with no carrier behind it.
+    expect(row).toHaveAttribute('data-group-count', '3');
+    expect(
+      screen.queryByTestId('composer-recipe-pill-group-hot_topic')
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('composer-recipe-pill-group-brand_ip')
+    ).not.toBeInTheDocument();
+    expect(
+      within(
+        screen.getByTestId('composer-recipe-pill-group-project_exposure')
+      ).getAllByRole('button')
+    ).toHaveLength(3);
+
+    for (const pill of pills) {
+      expect(pill).toHaveAttribute('data-no-truncate', 'true');
+      expect(pill.className).toMatch(/min-h-12/);
+      // D-084 narrow path: the merchant's sentence wraps, never ellipses.
+      expect(pill.className).not.toMatch(/line-clamp|truncate/);
+      // D-083: one <button>, no nested interactive control inside it.
+      expect(pill.querySelector('button, a, input, select')).toBeNull();
     }
+  });
 
-    const single = resolveComposerCardGridLayout(
-      { width: 160 },
-      { cardCount: 6 }
+  it('carries the action label D-083 wants visible in the accessible name', () => {
+    const cards = listColdCardsFromSeeds();
+    render(<RecipePillRow cards={cards} onSelectCard={() => undefined} />);
+
+    const pill = screen.getByTestId(
+      'composer-recipe-card-recipe.project_intro'
     );
-    expect(single.singleColumn).toBe(true);
-    rerender(
-      <RecipeCardGrid
-        cards={cards}
-        onSelectCard={() => undefined}
-        singleColumn
-      />
-    );
-    expect(screen.getByTestId('composer-recipe-card-grid')).toHaveAttribute(
-      'data-columns',
-      '1'
-    );
+    const card = cards.find((item) => item.cardKey === 'recipe.project_intro')!;
+    expect(pill.textContent).toBe(card.title);
+    // The pill shows the title alone, so the action has to survive somewhere a
+    // screen reader reaches — this is the single place this row bends D-083.
+    expect(pill.getAttribute('aria-label')).toContain(card.actionLabel);
+    expect(pill).toHaveAttribute('title', card.summary);
   });
 });
 
