@@ -163,20 +163,45 @@ describe(
       );
       const firstBoot = {
         ...revision('boot-capability:catalog-r1:first', 1, 'deployment-a'),
+        bootCatalogEpoch: 1,
         reason: 'process_boot_from_runtime_capabilities',
       };
       await port.seedIfEmpty(firstBoot);
 
+      await port.seedIfEmpty({
+        ...firstBoot,
+        revisionId: 'boot-capability:catalog-r1:first-with-credentials',
+        entries: firstBoot.entries.map((entry) => ({
+          ...entry,
+          credentialAccountId: 'credential-account-a',
+          credentialVersion: '1',
+        })),
+      });
+      const reconciled = await port.getEffectiveRevision();
+      assert.equal(
+        reconciled?.reason,
+        'reconcile_postgres_credential_account_bindings',
+      );
+      assert.equal(reconciled?.bootCatalogEpoch, 1);
+
       const secondBoot = {
         ...revision('boot-capability:catalog-r1:second', 1, 'deployment-b'),
+        bootCatalogEpoch: 2,
         reason: 'process_boot_from_runtime_capabilities',
       };
       await port.seedIfEmpty(secondBoot);
       const refreshed = await port.getEffectiveRevision();
       assert.equal(refreshed?.revisionId, secondBoot.revisionId);
-      assert.equal(refreshed?.number, 2);
-      assert.equal(refreshed?.previousRevisionId, firstBoot.revisionId);
+      assert.equal(refreshed?.number, 3);
+      assert.equal(refreshed?.previousRevisionId, reconciled?.revisionId);
       assert.equal(refreshed?.entries[0]?.deploymentId, 'deployment-b');
+      assert.equal(refreshed?.bootCatalogEpoch, 2);
+
+      await port.seedIfEmpty(firstBoot);
+      assert.equal(
+        await port.getEffectiveRevisionId(),
+        secondBoot.revisionId,
+      );
 
       const operator = {
         ...revision('capability:operator-r3', 3, 'deployment-a'),

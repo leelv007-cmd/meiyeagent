@@ -141,9 +141,13 @@ export class PostgresCapabilityHotAssemblyPort
     if (!revision) return;
     const current = await this.getEffectiveRevision();
     if (current) {
+      const currentBootEpoch = bootCatalogEpoch(current);
+      const incomingBootEpoch = bootCatalogEpoch(revision);
       if (
-        current.reason === 'process_boot_from_runtime_capabilities' &&
         revision.reason === 'process_boot_from_runtime_capabilities' &&
+        currentBootEpoch !== null &&
+        incomingBootEpoch !== null &&
+        incomingBootEpoch > currentBootEpoch &&
         current.revisionId !== revision.revisionId
       ) {
         const refreshed = {
@@ -706,4 +710,18 @@ export class PostgresCapabilityHotAssemblyPort
       [this.workspaceId, channelId, JSON.stringify(next), nextRevision],
     );
   }
+}
+
+function bootCatalogEpoch(revision: RuntimeCapabilityRevision) {
+  if (revision.bootCatalogEpoch !== undefined) {
+    return revision.bootCatalogEpoch;
+  }
+  if (
+    revision.reason === 'process_boot_from_runtime_capabilities' ||
+    (revision.reason === 'reconcile_postgres_credential_account_bindings' &&
+      revision.revisionId.startsWith('boot-capability:'))
+  ) {
+    return 0;
+  }
+  return null;
 }

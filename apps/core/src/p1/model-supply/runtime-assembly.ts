@@ -63,6 +63,8 @@ export interface ProcessCapabilityHotAssembly {
   report(processKind: 'http' | 'job-worker'): EffectiveRevisionReport;
 }
 
+export const CAPABILITY_BOOT_CATALOG_EPOCH = 2;
+
 /**
  * Seed G3 capability hot assembly from a ModelRuntimeAssembly boot snapshot.
  * HTTP and Worker call this with the same catalog sources so boot revision
@@ -126,6 +128,7 @@ export function seedCapabilityHotAssemblyFromCatalog(
       number: 1,
       entries,
       publishedAt: options.publishedAt ?? new Date(0).toISOString(),
+      bootCatalogEpoch: CAPABILITY_BOOT_CATALOG_EPOCH,
       reason: 'process_boot_from_runtime_capabilities',
     });
     hotAssembly.applyCapabilityRevision(bootRevision);

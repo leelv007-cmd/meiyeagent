@@ -98,6 +98,8 @@ export interface RuntimeCapabilityRevision {
   entries: RuntimeCapabilityEntry[];
   publishedAt: string;
   previousRevisionId?: string;
+  /** Monotonic implementation epoch for process-boot catalog snapshots. */
+  bootCatalogEpoch?: number;
   /** Optional operator audit. */
   reason?: string;
   actorId?: string;
@@ -444,6 +446,7 @@ export function projectCapabilityRevision(input: {
   entries: RuntimeCapabilityEntry[];
   publishedAt?: string;
   previousRevisionId?: string;
+  bootCatalogEpoch?: number;
   reason?: string;
   actorId?: string;
   correlationId?: string;
@@ -477,6 +480,9 @@ export function projectCapabilityRevision(input: {
     publishedAt: input.publishedAt ?? new Date().toISOString(),
     ...(input.previousRevisionId
       ? { previousRevisionId: input.previousRevisionId }
+      : {}),
+    ...(input.bootCatalogEpoch !== undefined
+      ? { bootCatalogEpoch: input.bootCatalogEpoch }
       : {}),
     ...(input.reason ? { reason: input.reason } : {}),
     ...(input.actorId ? { actorId: input.actorId } : {}),

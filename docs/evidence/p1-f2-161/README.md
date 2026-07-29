@@ -44,7 +44,7 @@ pnpm e2e -- tests/e2e/specs/uiux-precutover-baseline.spec.ts
 | # | 规格旅程 | Harness 覆盖 | 说明 |
 |---|---|---|---|
 | 1 | Day-0 Landing→恢复→提交→首结果 | **部分** | Landing intent 捕获 → 登录后 `landing-handoff-restore` 确认、**不自动提交**；完整「最小事实单问→首 token」仍由 `uiux-day0-contract` 硬门 |
-| 2 | 文案 close-loop | **是** | copy Result → adjust → adopt → 完整发布包下载 → 人工发布记录 → 结果 chip → 周复盘下一轮 |
+| 2 | 文案 close-loop | **是** | copy Result → adopt → canonical ContentPackage 手工编辑 → 完整发布包下载 → 人工发布记录 → 结果 chip → 周复盘下一轮 |
 | 3 | 图文 | **是（到交付）** | image_text Result → adopt → 小红书 ZIP；套图 working selection 细项仍由 P1-B3 专项 |
 | 4 | 视频 | **是（到交付）** | video Result → adopt → 抖音 ZIP；单镜重生成细项仍由 three-modal / P1-B4 |
 | 5 | 历史 legacy 按需 anchor | **残余** | 无稳定 seed 的 legacy Content 浏览器路径；Content 列表 merchant-language + axe 已覆盖 |
