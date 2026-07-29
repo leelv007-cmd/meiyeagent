@@ -158,7 +158,7 @@ export class ContentPackageApprovalService implements ContextInvalidationSink {
       ...input.policy,
       actionContext: {
         kind: input.actionKind,
-        revision: input.contentRevision,
+        revision: receipt?.binding.contentRevision ?? input.contentRevision,
         target: input.accountId,
       },
       ...(receipt

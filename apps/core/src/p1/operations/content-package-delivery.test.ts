@@ -7,19 +7,25 @@ import {
   type ProductState,
 } from '@meiye/contracts';
 
+import {
+  RecordedCanvasExportAdapter,
+  RecordedImageGenerationAdapter,
+} from './adapters.js';
+import { OperationsApplicationService } from './application-service.js';
 import { MemoryContextBundleRepository } from './context-bundle-repository.js';
 import { compileContextBundle } from './context-compiler.js';
 import { createContextInvalidationRuntime } from './context-invalidation.js';
 import { ApprovalReceiptError } from './content-package-approval.js';
-import { MemoryOperationsRepository } from './repository.js';
-import type { OperationsRepository } from './repository.js';
 import {
   ContentPackageDeliveryError,
   ContentPackageDeliveryService,
   contentPackageDeliveryCapability,
   type ContentPackagePublishPort,
 } from './content-package-delivery.js';
+import { OperationsFoundationModule } from './foundation-module.js';
 import { ProductLegacyDeliveryProjection } from './legacy-content-package-delivery-projection.js';
+import { MemoryOperationsRepository } from './repository.js';
+import type { OperationsRepository } from './repository.js';
 import type { OperationContext, OperationsWorkspaceState } from './types.js';
 
 const context: OperationContext = {
@@ -273,6 +279,104 @@ test('automatic mode rejects an unapproved publish before the provider and lands
     )?.externalEffectId,
     `content-package-delivery:${approval.id}`
   );
+});
+
+test('public delivery rejects a receipt frozen to an old content revision before every external effect', async () => {
+  const setup = await createSetup('automatic_verified');
+  const seededState = (await setup.repository.loadWorkspace('workspace-a'))!;
+  const seededPackage = seededState.contentPackages[0]!;
+  seededPackage.variants = (
+    ['xiaohongshu', 'douyin', 'video_account'] as const
+  ).map((platform) => ({
+    currentVersionId: `${platform}-v1`,
+    id: `variant-${platform}-a`,
+    platform,
+    versions: [
+      {
+        body: '正文',
+        createdAt: '2026-07-18T06:00:00.000Z',
+        id: `${platform}-v1`,
+        orderedAssetIds: [],
+        title: '标题',
+        topics: [],
+      },
+    ],
+  }));
+  await setup.repository.saveWorkspace(seededState);
+  const approval = await setup.service.approve(context, {
+    ...actionBinding(),
+    expectedRevision: 1,
+    idempotencyKey: 'approve-before-variant-edit',
+  });
+  const operations = new OperationsApplicationService(setup.repository, {
+    canvasExporter: new RecordedCanvasExportAdapter(),
+    contentWriteOwnership: {
+      async get() {
+        return 'contentpackage';
+      },
+    },
+    imageGenerator: new RecordedImageGenerationAdapter(),
+    notifier: { async send() {} },
+  });
+  const module = new OperationsFoundationModule(operations, {
+    delivery: setup.service,
+  });
+  const edited = (await module.execute({
+    context,
+    input: {
+      action: 'edit_content_package_variant',
+      payload: {
+        baseVersionId: 'douyin-v1',
+        changes: {
+          body: '正文第二版',
+          orderedAssetIds: [],
+          title: '标题第二版',
+          topics: [],
+        },
+        expectedRevision: 2,
+        packageId: 'package-a',
+        platform: 'douyin',
+      },
+    },
+  })) as ContentPackage;
+  const currentVersionId = edited.variants.find(
+    (variant) => variant.platform === 'douyin',
+  )!.currentVersionId;
+  const beforeDelivery = (await setup.repository.loadWorkspace('workspace-a'))!;
+  const beforePackage = structuredClone(beforeDelivery.contentPackages[0]!);
+
+  await assert.rejects(
+    module.execute({
+      context,
+      input: {
+        action: 'deliver_content_package',
+        payload: {
+          ...actionBinding(),
+          expectedRevision: edited.revision,
+          receiptId: approval.id,
+          variantVersionId: currentVersionId,
+        },
+      },
+    }),
+    (error: unknown) =>
+      error instanceof ApprovalReceiptError &&
+      error.gateId === 'external_revision',
+  );
+
+  const afterDelivery = (await setup.repository.loadWorkspace('workspace-a'))!;
+  const afterPackage = afterDelivery.contentPackages[0]!;
+  assert.equal(setup.publishCalls.length, 0);
+  assert.deepEqual(afterPackage.deliveryEvents ?? [], []);
+  assert.deepEqual(
+    afterPackage.approvalReceipts,
+    beforePackage.approvalReceipts,
+  );
+  assert.equal(
+    afterPackage.approvalReceipts?.flatMap((receipt) => receipt.events)
+      .filter((event) => event.type === 'consumed').length ?? 0,
+    0,
+  );
+  assert.equal(afterPackage.revision, beforePackage.revision);
 });
 
 test('approval consumes the pending entry in an existing duplicate-id aggregate', async () => {
