@@ -57,7 +57,7 @@ pnpm e2e -- tests/e2e/specs/uiux-precutover-baseline.spec.ts
 |---|---|
 | axe serious/critical = 0 | Composer / Result / Content / Assets / Delivery / Tasks(Weekly shell)；light + dark（及 mobile dark Result） |
 | 320 / 375 / 768 / 1440 | Result 横向溢出 ≤1px；主 CTA 不整块掉出视口 |
-| 200% zoom | Result 在 720×450 + `zoom:2` 下无横向阻断 |
+| 200% zoom 重排等效 | Result 在 720×450 CSS viewport（1440 设备像素帧在 200% 下的布局等效）无横向阻断；未伪称设置了真实浏览器 zoom |
 | prefers-reduced-motion | Result + Delivery 可用；不依赖动效单独表达状态 |
 | Save-Data / 低功耗 | **残余**：产品面无 `data-save-data` / Save-Data 业务钩子 |
 | 键盘 Tab / focus trap | 沿用 `uiux-keyboard-governance` + 各 panel 既有合同；本 harness 不重复整套键盘矩阵 |
@@ -97,7 +97,7 @@ Result / Content / Assets 等本 harness 断言的表面拒绝：
 | commit | 见本工作区 `git rev-parse HEAD`（落地 PR 时绑定） |
 | 构建 | Vite e2e mode（`pnpm e2e`）；production-candidate 可选 |
 | 浏览器 | Playwright Chromium |
-| viewport / 主题 | 见各 test 名称（含 320/375/768/1440、200% zoom、light/dark） |
+| viewport / 主题 | 见各 test 名称（含 320/375/768/1440、200% zoom 的 720 CSS px 重排等效、light/dark） |
 | 种子 | `seedConfirmedStore` + E2E 用户 `e2e-*@example.test` |
 | 模型 | `MODEL_EXECUTION_MODE=fixture` + recorded integrations（公共 HTTP+SSE） |
 | 最近跑通 | **2026-07-23 · 8 passed (2.4m)** · 主会话接管 Agent B 后复跑全绿 · `pnpm exec playwright test p1-f2-acceptance.spec.ts` |
@@ -110,7 +110,7 @@ Result / Content / Assets 等本 harness 断言的表面拒绝：
 ✓ Image-text continuous: Result → adopt → delivery package
 ✓ Video continuous: Result → adopt → delivery package
 ✓ Content + Assets surfaces stay merchant-safe and axe-clean in light and dark
-✓ Responsive smoke: 320/375/768/1440 and 200% zoom on Result
+✓ Responsive smoke: 320/375/768/1440 and 720 CSS px reflow equivalent on Result
 ✓ prefers-reduced-motion keeps Result and Delivery usable
 ✓ Mobile dark Result stays free of horizontal overflow and dead primary CTA
 8 passed (2.5m)
