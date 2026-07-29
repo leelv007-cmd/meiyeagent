@@ -12,6 +12,7 @@ import type { Pool, PoolClient } from "pg";
 
 import { harnessRuntimeId } from "../harness/workspace-scope.js";
 import type { VisibleClaimExtraction } from "../harness/policy-gates.js";
+import type { TrustedUsageEvidence } from "../product-billing/quote-service.js";
 import {
 	HarnessCopyWorkAssetWriteError,
 	type HarnessCopyWorkAsset,
@@ -22,6 +23,7 @@ import type { ContentPackageRightsResolverPort } from "../operations/types.js";
 
 export interface ContentPackageRevisionWriteInput {
 	additionalVersions?: ContentPackageVersion[];
+	billingTrustedUsage?: TrustedUsageEvidence;
 	claimExtraction?: VisibleClaimExtraction;
 	expectedRevision: number;
 	generated: Pick<
@@ -494,6 +496,7 @@ export class MemoryContentPackageRevisionWritePort
 function writeFingerprint(input: ContentPackageRevisionWriteInput) {
 	const {
 		additionalVersions,
+		billingTrustedUsage: _billingTrustedUsage,
 		marketing: _marketing,
 		occurredAt: _occurredAt,
 		version,
@@ -725,6 +728,9 @@ async function writeHarnessDeliveryAuditAndOutbox(
 				requestFingerprint,
 				...(input.claimExtraction
 					? { claimExtraction: input.claimExtraction }
+					: {}),
+				...(input.billingTrustedUsage
+					? { billingTrustedUsage: input.billingTrustedUsage }
 					: {}),
 				...delivery,
 			}),

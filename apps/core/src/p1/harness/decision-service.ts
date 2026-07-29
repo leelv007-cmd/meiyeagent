@@ -3,7 +3,7 @@ import {
   type QuestionCard,
   type StructuredDecisionInput,
 } from '@meiye/contracts';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
@@ -87,17 +87,20 @@ export interface HarnessDecisionStore {
     workspaceId: string,
     taskId: string,
     eventId: string,
+    claimId: string,
   ): Promise<boolean>;
   releaseDecisionResume(
     workspaceId: string,
     taskId: string,
     eventId: string,
+    claimId: string,
   ): Promise<void>;
   markDecisionResumed(
     workspaceId: string,
     taskId: string,
     eventId: string,
-  ): Promise<void>;
+    claimId: string,
+  ): Promise<boolean>;
 }
 
 export interface HarnessWorkflowResumer {
@@ -322,12 +325,15 @@ export class HarnessDecisionService {
     if (result.outcome !== 'created' && result.outcome !== 'replayed') {
       throw decisionConflict(result.outcome);
     }
+    const resumeClaimId = randomUUID();
+    let resumeCompleted = !result.resumeRequired;
     if (
       result.resumeRequired &&
       (await this.store.claimDecisionResume(
         workspaceId,
         taskId,
         event.id,
+        resumeClaimId,
       ))
     ) {
       try {
@@ -349,12 +355,23 @@ export class HarnessDecisionService {
         } else if (mode === 'decision') {
           await this.workflow.resume(workspaceId, taskId, persistedCommand);
         }
-        await this.store.markDecisionResumed(workspaceId, taskId, event.id);
+        if (
+          !(await this.store.markDecisionResumed(
+            workspaceId,
+            taskId,
+            event.id,
+            resumeClaimId,
+          ))
+        ) {
+          throw new Error('The decision resume lease was lost.');
+        }
+        resumeCompleted = true;
       } catch (error) {
         await this.store.releaseDecisionResume(
           workspaceId,
           taskId,
           event.id,
+          resumeClaimId,
         );
         throw new HarnessDecisionResumeError({ cause: error });
       }
@@ -362,7 +379,7 @@ export class HarnessDecisionService {
     return {
       eventId: event.id,
       replayed: result.outcome === 'replayed',
-      ...(mode === 'late_answer'
+      ...(mode === 'late_answer' && resumeCompleted
         ? {
             successor: {
               snapshotId: `snapshot-${lateAnswerSuccessorWorkflowId(

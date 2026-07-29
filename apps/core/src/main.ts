@@ -1693,6 +1693,9 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
 });
 let harnessWorkflowEventSource: HarnessWorkflowEventSource | undefined;
 let harnessCompensationInterval: ReturnType<typeof setInterval> | undefined;
+let harnessPendingStartRecoveryInterval:
+  | ReturnType<typeof setInterval>
+  | undefined;
 let observabilityReconciliationInterval:
   | ReturnType<typeof setInterval>
   | undefined;
@@ -1926,6 +1929,9 @@ if (harnessRuntimeConfig) {
       async scheduleCompensation(input) {
         await billingCompensations.enqueue(input);
       },
+      async completeCompensation(input) {
+        await billingCompensations.markCompleted(input);
+      },
     },
     adminConfigRepository,
     harnessDecisions,
@@ -1995,6 +2001,27 @@ if (harnessRuntimeConfig) {
     productQuoteService,
   );
   await composerSubmissionCoordinator.recoverPendingStarts();
+  const pendingStartCoordinator = composerSubmissionCoordinator;
+  let pendingStartRecoveryRunning = false;
+  const runPendingStartRecovery = async () => {
+    if (pendingStartRecoveryRunning) return;
+    pendingStartRecoveryRunning = true;
+    try {
+      const result = await pendingStartCoordinator.recoverPendingStarts();
+      if (result.failed > 0) {
+        console.error('Harness pending-start recovery failed.', result);
+      }
+    } catch (error) {
+      console.error('Harness pending-start recovery iteration failed.', error);
+    } finally {
+      pendingStartRecoveryRunning = false;
+    }
+  };
+  harnessPendingStartRecoveryInterval = setInterval(
+    () => void runPendingStartRecovery(),
+    Number(process.env.HARNESS_COMPENSATION_POLL_MS ?? 1_000),
+  );
+  harnessPendingStartRecoveryInterval.unref();
   harnessWorkflowEventSource = new HarnessWorkflowEventSource(
     new HarnessDbosWorkflowEventReader(
       harnessStore,
@@ -2196,6 +2223,9 @@ const shutdown = () => {
     clearInterval(expirationInvalidationInterval);
   }
   if (harnessCompensationInterval) clearInterval(harnessCompensationInterval);
+  if (harnessPendingStartRecoveryInterval) {
+    clearInterval(harnessPendingStartRecoveryInterval);
+  }
   if (observabilityReconciliationInterval) {
     clearInterval(observabilityReconciliationInterval);
   }

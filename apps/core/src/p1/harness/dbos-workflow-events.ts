@@ -116,12 +116,21 @@ export class HarnessDbosWorkflowEventReader
         workflowId,
         snapshot.outcome === 'cancelled' ? 'rejected' : 'completed',
       );
+      const currentSnapshot =
+        snapshot.outcome === 'cancelled' &&
+        actionUsage &&
+        actionUsage.refundedUnits > 0
+          ? {
+              ...snapshot,
+              merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+            }
+          : snapshot;
       return workflowStateEnvelopeSchema.parse({
         workflowId,
-        sourceRevision: deliveryRevision(snapshot),
+        sourceRevision: deliveryRevision(currentSnapshot),
         status: 'success',
         occurredAt: this.now(),
-        snapshot,
+        snapshot: currentSnapshot,
         ...(partial.success ? { merchantReport: partial.data } : {}),
         ...(actionUsage ? { actionUsage } : {}),
       });
@@ -136,19 +145,23 @@ export class HarnessDbosWorkflowEventReader
         workflowId,
         'rejected',
       );
+      const currentFailure =
+        actionUsage && actionUsage.refundedUnits > 0
+          ? { ...failure, quotaRefunded: true }
+          : failure;
       return workflowStateEnvelopeSchema.parse({
         workflowId,
-        sourceRevision: failureRevision(failure),
+        sourceRevision: failureRevision(currentFailure),
         status: 'failed',
         occurredAt: this.now(),
         snapshot: {
           outcome: 'failed',
-          error: failure,
+          error: currentFailure,
         },
         // The 白话原因 + 下一步动作 the failure card renders. Deriving it here —
         // one deterministic mapping over the persisted failure — is what keeps
         // Core's failure copy from dying in the transport layer (P0-2).
-        merchantReport: merchantFailureReport(failure),
+        merchantReport: merchantFailureReport(currentFailure),
         ...(actionUsage ? { actionUsage } : {}),
       });
     }

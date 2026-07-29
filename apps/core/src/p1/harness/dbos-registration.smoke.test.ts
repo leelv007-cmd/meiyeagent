@@ -273,7 +273,10 @@ test(
         'execution_selection',
         'assembly_delivery',
       ]);
-      assert.deepEqual(billingReceipts, [`committed:${workflowId}`]);
+      assert.deepEqual(billingReceipts, [
+        `scheduled:commit:${workflowId}`,
+        `committed:${workflowId}`,
+      ]);
       assert.deepEqual(terminalOrder, [
         `committed:${workflowId}`,
         `recalled:${workflowId}`,

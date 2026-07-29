@@ -579,7 +579,7 @@ class MemoryHarnessStore
     }
   >();
   private readonly resumedEvents = new Set<string>();
-  private readonly resumeClaims = new Set<string>();
+  private readonly resumeClaims = new Map<string, string>();
   private readonly pending = new Map<string, QuestionCard>();
   private readonly pendingProjections = new Map<
     string,
@@ -761,16 +761,20 @@ class MemoryHarnessStore
     workspaceId: string,
     _taskId: string,
     eventId: string,
+    claimId: string,
   ) {
     const identity = JSON.stringify([workspaceId, eventId]);
+    if (this.resumeClaims.get(identity) !== claimId) return false;
     this.resumeClaims.delete(identity);
     this.resumedEvents.add(identity);
+    return true;
   }
 
   async claimDecisionResume(
     workspaceId: string,
     _taskId: string,
     eventId: string,
+    claimId: string,
   ) {
     const identity = JSON.stringify([workspaceId, eventId]);
     if (
@@ -779,7 +783,7 @@ class MemoryHarnessStore
     ) {
       return false;
     }
-    this.resumeClaims.add(identity);
+    this.resumeClaims.set(identity, claimId);
     return true;
   }
 
@@ -787,8 +791,12 @@ class MemoryHarnessStore
     workspaceId: string,
     _taskId: string,
     eventId: string,
+    claimId: string,
   ) {
-    this.resumeClaims.delete(JSON.stringify([workspaceId, eventId]));
+    const identity = JSON.stringify([workspaceId, eventId]);
+    if (this.resumeClaims.get(identity) === claimId) {
+      this.resumeClaims.delete(identity);
+    }
   }
 
   async appendAudit(event: {

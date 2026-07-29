@@ -115,6 +115,9 @@ export class PostgresProductBillingRepository
         ON p1_product_billing_quotes (workspace_id, lifecycle_status, updated_at DESC);
       CREATE INDEX IF NOT EXISTS p1_product_billing_usage_workspace_status_idx
         ON p1_product_billing_usage (workspace_id, status, updated_at DESC);
+      CREATE INDEX IF NOT EXISTS p1_product_billing_usage_reserved_recovery_idx
+        ON p1_product_billing_usage (updated_at, task_id)
+        WHERE status = 'reserved';
       CREATE INDEX IF NOT EXISTS p1_product_billing_provider_costs_task_idx
         ON p1_product_billing_provider_costs (workspace_id, task_id, updated_at);
     `);

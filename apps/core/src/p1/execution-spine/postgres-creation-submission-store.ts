@@ -20,9 +20,10 @@ import type {
   CreationSubmissionUsageUnit,
 } from "./submission-coordinator.js";
 
-type HarnessStartState = "reserved" | "starting" | "started";
+type HarnessStartState = "failed" | "reserved" | "starting" | "started";
 
 interface StoredSubmissionRow {
+  harness_start_attempts: number;
   harness_lease_expires_at: Date | string | null;
   harness_lease_id: string | null;
   harness_started_lease_id: string | null;
@@ -282,7 +283,7 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
         payload_hash text NOT NULL,
         submission jsonb NOT NULL,
         harness_state text NOT NULL
-          CHECK (harness_state IN ('reserved', 'starting', 'started')),
+          CHECK (harness_state IN ('failed', 'reserved', 'starting', 'started')),
         harness_lease_id text,
         harness_lease_expires_at timestamptz,
         harness_started_lease_id text,
@@ -320,12 +321,34 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
         ADD COLUMN IF NOT EXISTS route_snapshot_id text;
       ALTER TABLE execution_spine.creation_submissions
         ADD COLUMN IF NOT EXISTS snapshot_revision integer;
+      DO $migration$
+      BEGIN
+        IF EXISTS (
+          SELECT 1
+          FROM pg_constraint
+          WHERE conrelid='execution_spine.creation_submissions'::regclass
+            AND conname='creation_submissions_harness_state_check'
+            AND pg_get_constraintdef(oid) NOT LIKE '%failed%'
+        ) THEN
+          ALTER TABLE execution_spine.creation_submissions
+            DROP CONSTRAINT creation_submissions_harness_state_check;
+          ALTER TABLE execution_spine.creation_submissions
+            ADD CONSTRAINT creation_submissions_harness_state_check
+            CHECK (
+              harness_state IN ('failed', 'reserved', 'starting', 'started')
+            );
+        END IF;
+      END
+      $migration$;
       CREATE INDEX IF NOT EXISTS creation_submissions_workspace_created_idx
         ON execution_spine.creation_submissions (workspace_id, created_at, id);
       CREATE INDEX IF NOT EXISTS creation_submissions_workspace_task_idx
         ON execution_spine.creation_submissions (workspace_id, task_id);
       CREATE INDEX IF NOT EXISTS creation_submissions_workspace_package_idx
         ON execution_spine.creation_submissions (workspace_id, content_package_id);
+      CREATE INDEX IF NOT EXISTS creation_submissions_harness_recovery_idx
+        ON execution_spine.creation_submissions (updated_at, id)
+        WHERE harness_state IN ('reserved', 'starting');
     `);
   }
 
@@ -552,11 +575,16 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
         inTransaction = false;
         return { kind: "started" as const };
       }
+      if (row.harness_state === "failed") {
+        await client.query("COMMIT");
+        inTransaction = false;
+        return { kind: "failed" as const };
+      }
       const leaseId = randomUUID();
       const expiresAt = new Date(
         now.getTime() + this.harnessStartLeaseMs,
       ).toISOString();
-      await client.query(
+      const updated = await client.query<{ harness_start_attempts: number }>(
         `UPDATE execution_spine.creation_submissions
             SET harness_state = 'starting',
                 harness_lease_id = $3,
@@ -564,7 +592,8 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
                 harness_started_lease_id = NULL,
                 harness_start_attempts = harness_start_attempts + 1,
                 updated_at = $5::timestamptz
-          WHERE workspace_id = $1 AND id = $2`,
+          WHERE workspace_id = $1 AND id = $2
+        RETURNING harness_start_attempts`,
         [
           input.workspaceId,
           input.submissionId,
@@ -575,7 +604,11 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
       );
       await client.query("COMMIT");
       inTransaction = false;
-      return { kind: "start" as const, leaseId };
+      return {
+        kind: "start" as const,
+        attempts: updated.rows[0]!.harness_start_attempts,
+        leaseId,
+      };
     } catch (error) {
       if (inTransaction) await client.query("ROLLBACK");
       throw error;
@@ -661,6 +694,30 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     );
   }
 
+  async failHarnessStart(input: {
+    leaseId: string;
+    workspaceId: string;
+    submissionId: string;
+  }) {
+    const result = await this.pool.query(
+      `UPDATE execution_spine.creation_submissions
+          SET harness_state = 'failed',
+              harness_lease_id = NULL,
+              harness_lease_expires_at = NULL,
+              updated_at = clock_timestamp()
+        WHERE workspace_id = $1
+          AND id = $2
+          AND harness_state = 'starting'
+          AND harness_lease_id = $3`,
+      [
+        input.workspaceId,
+        input.submissionId,
+        input.leaseId,
+      ],
+    );
+    return result.rowCount === 1;
+  }
+
   async listRecoverableHarnessStarts(input: { limit: number }) {
     if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100) {
       throw new Error("Recoverable Harness start limit must be an integer from 1 through 100.");
@@ -668,7 +725,18 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     const result = await this.pool.query<{ submission: unknown }>(
       `SELECT submission
          FROM execution_spine.creation_submissions
-        WHERE harness_state = 'reserved'
+        WHERE (
+             harness_state = 'reserved'
+             AND updated_at <= clock_timestamp() - make_interval(
+               secs => LEAST(
+                 300::double precision,
+                 power(
+                   2,
+                   LEAST(GREATEST(harness_start_attempts - 1, 0), 8)
+                 )
+               )
+             )
+           )
            OR (
              harness_state = 'starting'
              AND (
@@ -689,7 +757,8 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
   ) {
     const result = await client.query<StoredSubmissionRow>(
       `SELECT payload_hash, submission, harness_state, harness_lease_id,
-              harness_lease_expires_at, harness_started_lease_id
+              harness_lease_expires_at, harness_started_lease_id,
+              harness_start_attempts
          FROM execution_spine.creation_submissions
         WHERE workspace_id = $1 AND id = $2
         FOR UPDATE`,

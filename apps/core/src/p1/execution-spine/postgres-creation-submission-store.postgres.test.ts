@@ -753,6 +753,78 @@ test(
 );
 
 test(
+  "Postgres Coordinator fences a permanently failed Harness start out of recovery",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresCreationSubmissionStore(pool, {
+      async reserve() {},
+    });
+    const suffix = randomUUID();
+    const workspaceId = `spine-start-failure-${suffix}`;
+    const submissionId = `submission-start-failure-${suffix}`;
+
+    try {
+      await store.applySchema();
+      await pool.query(
+        `INSERT INTO execution_spine.creation_submissions
+           (id, workspace_id, idempotency_key, payload_hash, submission,
+            harness_state, task_id, created_at)
+         VALUES ($1,$2,$3,$3,'{}'::jsonb,'reserved',$4,clock_timestamp())`,
+        [
+          submissionId,
+          workspaceId,
+          `idempotency-${suffix}`,
+          `task-start-failure-${suffix}`,
+        ],
+      );
+      for (let attempt = 1; attempt <= 5; attempt += 1) {
+        const claim = await store.claimHarnessStart({
+          submissionId,
+          workspaceId,
+        });
+        assert.equal(claim.kind, "start");
+        if (claim.kind !== "start") throw new Error("Expected a start lease.");
+        assert.equal(claim.attempts, attempt);
+        if (attempt < 5) {
+          await store.releaseHarnessStart({
+            leaseId: claim.leaseId,
+            submissionId,
+            workspaceId,
+          });
+        } else {
+          assert.equal(
+            await store.failHarnessStart({
+              leaseId: claim.leaseId,
+              submissionId,
+              workspaceId,
+            }),
+            true,
+          );
+        }
+      }
+      assert.deepEqual(
+        await store.claimHarnessStart({ submissionId, workspaceId }),
+        { kind: "failed" },
+      );
+      assert.equal(
+        (
+          await store.listRecoverableHarnessStarts({ limit: 100 })
+        ).some((candidate) => candidate.submission.snapshot.id === submissionId),
+        false,
+      );
+    } finally {
+      await pool.query(
+        `DELETE FROM execution_spine.creation_submissions
+         WHERE workspace_id=$1`,
+        [workspaceId],
+      ).catch(() => undefined);
+      await pool.end();
+    }
+  },
+);
+
+test(
   "Postgres terminal successor creates a fresh quote, reservation, snapshot and Harness run exactly once",
   { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
   async () => {

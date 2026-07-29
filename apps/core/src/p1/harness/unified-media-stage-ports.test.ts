@@ -544,6 +544,16 @@ test("media delivery writes the shared ContentPackage once with asset, usage, co
 		assert.equal(writtenRevision?.taskId, snapshot.task.id);
 		assert.equal(writtenRevision?.snapshotId, snapshot.id);
 		assert.equal(writtenRevision?.snapshot.revision, snapshot.revision);
+		assert.deepEqual(
+			writtenRevision?.billingTrustedUsage,
+			kind === "video"
+				? {
+						kind: "media_duration",
+						actualSeconds: 8,
+						evidenceRef: "owned-asset:video-asset-1",
+					}
+				: undefined,
+		);
 		assert.equal(
 			writtenRevision?.generated.childRuns[0]?.providerAttempts?.length,
 			1,
@@ -633,6 +643,9 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 		}),
 	);
 	let generated = 0;
+	let billingTrustedUsage:
+		| ContentPackageRevisionWriteInput["billingTrustedUsage"]
+		| undefined;
 	const ports = new UnifiedHarnessStagePorts(
 		noteCopyPorts(),
 		noteRunnerFactory(true),
@@ -667,7 +680,12 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 				};
 			},
 		},
-		writer,
+		{
+			async write(input) {
+				billingTrustedUsage = structuredClone(input.billingTrustedUsage);
+				return writer.write(input);
+			},
+		},
 		() => "2026-07-22T09:00:01.000Z",
 		{
 			async read() {
@@ -743,6 +761,14 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 
 	assert.equal(delivery.revision, 1);
 	assert.equal(generated, 3);
+	assert.deepEqual(billingTrustedUsage, {
+		kind: "product_units",
+		units: [
+			{ resource: "copy", quantity: 2 },
+			{ resource: "image", quantity: 2 },
+		],
+		evidenceRef: "note-plan-pages:page-1@1,page-2@3",
+	});
 	assert.deepEqual(
 		selection.auditSignals.map(({ eventType, payload }) => ({
 			eventType,
@@ -1802,8 +1828,8 @@ test("the production exact-text verifier reuses multimodal text.respond without 
 		"frozen:textResponse",
 	);
 	assert.equal(
-		Object.hasOwn(submissions[0] ?? {}, "productUsageQuantity"),
-		false,
+		submissions[0]?.productUsageQuantity,
+		0,
 	);
 });
 

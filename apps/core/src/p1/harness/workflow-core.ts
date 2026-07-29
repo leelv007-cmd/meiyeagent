@@ -2159,7 +2159,7 @@ function merchantContextMessage(request: HarnessWorkflowInput) {
     : progress;
 }
 
-function requireMeasuredVideoDuration(
+export function requireMeasuredVideoDuration(
   selection: HarnessMediaSelectionResult,
 ) {
   const duration = selection.measuredDurationSeconds;

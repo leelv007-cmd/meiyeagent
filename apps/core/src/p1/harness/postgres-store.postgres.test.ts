@@ -13,6 +13,7 @@ import {
   HarnessObservabilityEventAudit,
 } from '../creation-experience/index.js';
 import { HarnessDecisionService } from './decision-service.js';
+import { PostgresHarnessResumeReconcilerStore } from './postgres-resume-reconciler-store.js';
 import { PostgresHarnessStore } from './postgres-store.js';
 import { harnessRuntimeId } from './workspace-scope.js';
 import {
@@ -1113,6 +1114,156 @@ test(
             table === 'audit_events' ? 'workflow_id' : 'task_id'
           }=any($1::text[])`,
           [[browserRuntimeId, coreRuntimeId, holdRuntimeId]],
+        );
+      }
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'Postgres decision resume leases recover sending rows and fence stale owners',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresHarnessStore(pool);
+    const suffix = randomUUID();
+    const workspaceId = `resume-lease-${suffix}`;
+    const taskId = `task-${suffix}`;
+    const runtimeId = harnessRuntimeId(workspaceId, taskId);
+    const questionId = `question-${suffix}`;
+
+    try {
+      await store.applySchema();
+      await new HarnessTaskAdmissionService(store, {
+        async start({ workflowId }) {
+          return { workflowId };
+        },
+      }).submit({ ...taskRequest(taskId), workspaceId });
+      await store.registerPending(workspaceId, {
+        questionId,
+        workflowId: taskId,
+        workflowRevision: 4,
+        question: '当前团购价是多少？',
+        options: [],
+        freeText: { enabled: true },
+        response: {
+          field: 'offer_price',
+          reason: '补充当前任务所需的权威事实',
+        },
+        scope: 'current_task',
+      });
+      await assert.rejects(
+        new HarnessDecisionService(store, {
+          async resume() {
+            throw new Error('simulated process boundary');
+          },
+        }).submit(workspaceId, taskId, decisionInput(questionId)),
+      );
+      const event = await pool.query<{ id: string; logical_id: string }>(
+        `SELECT id, payload->>'id' AS logical_id
+         FROM harness_runtime.decision_events WHERE task_id=$1`,
+        [runtimeId],
+      );
+      const eventId = event.rows[0]?.id;
+      const logicalEventId = event.rows[0]?.logical_id;
+      assert.ok(eventId);
+      assert.ok(logicalEventId);
+
+      const concurrentClaims = await Promise.all([
+        new PostgresHarnessResumeReconcilerStore(pool).claimPending(1),
+        new PostgresHarnessResumeReconcilerStore(pool).claimPending(1),
+      ]);
+      const claimed = concurrentClaims.flat();
+      assert.equal(claimed.length, 1);
+      assert.equal(claimed[0]?.eventId, eventId);
+      const oldClaimId = claimed[0]?.claimId;
+      assert.ok(oldClaimId);
+      assert.equal(
+        await store.claimDecisionResume(
+          workspaceId,
+          taskId,
+          logicalEventId,
+          'claim-new',
+        ),
+        false,
+      );
+      await pool.query(
+        `UPDATE harness_runtime.decision_events
+         SET resume_lease_expires_at=clock_timestamp() - interval '1 second'
+         WHERE id=$1`,
+        [eventId],
+      );
+      assert.equal(
+        await store.claimDecisionResume(
+          workspaceId,
+          taskId,
+          logicalEventId,
+          'claim-new',
+        ),
+        true,
+      );
+      await store.releaseDecisionResume(
+        workspaceId,
+        taskId,
+        logicalEventId,
+        oldClaimId,
+      );
+      await store.markDecisionResumed(
+        workspaceId,
+        taskId,
+        logicalEventId,
+        oldClaimId,
+      );
+      const stillOwned = await pool.query<{
+        resume_claim_id: string;
+        resume_status: string;
+      }>(
+        `SELECT resume_claim_id, resume_status
+         FROM harness_runtime.decision_events WHERE id=$1`,
+        [eventId],
+      );
+      assert.deepEqual(stillOwned.rows[0], {
+        resume_claim_id: 'claim-new',
+        resume_status: 'sending',
+      });
+      await store.markDecisionResumed(
+        workspaceId,
+        taskId,
+        logicalEventId,
+        'claim-new',
+      );
+      assert.equal(
+        (
+          await pool.query<{ resume_status: string }>(
+            `SELECT resume_status
+             FROM harness_runtime.decision_events WHERE id=$1`,
+            [eventId],
+          )
+        ).rows[0]?.resume_status,
+        'sent',
+      );
+    } finally {
+      await pool.query(
+        `DELETE FROM harness_runtime.langfuse_outbox
+         WHERE audit_id IN (
+           SELECT id FROM harness_runtime.audit_events WHERE workflow_id=$1
+         )`,
+        [runtimeId],
+      );
+      await pool.query(
+        'DELETE FROM harness_runtime.audit_events WHERE workflow_id=$1',
+        [runtimeId],
+      );
+      for (const table of [
+        'decision_traces',
+        'decision_events',
+        'pending_questions',
+        'task_requests',
+      ]) {
+        await pool.query(
+          `DELETE FROM harness_runtime.${table} WHERE task_id=$1`,
+          [runtimeId],
         );
       }
       await pool.end();

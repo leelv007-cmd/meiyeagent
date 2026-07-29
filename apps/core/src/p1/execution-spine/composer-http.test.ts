@@ -670,7 +670,11 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 	private readonly claims = new Map<string, CreationSubmissionStoreClaim>();
 	private readonly harnessStarts = new Map<
 		string,
-		{ state: "reserved" | "starting" | "started"; leaseId?: string }
+		{
+			attempts: number;
+			state: "failed" | "reserved" | "starting" | "started";
+			leaseId?: string;
+		}
 	>();
 
 	/** What the coordinator actually reserved, for allowance-unit assertions. */
@@ -703,6 +707,7 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		if (!existing) {
 			this.claims.set(key, structuredClone(input));
 			this.harnessStarts.set(input.submission.snapshot.id, {
+				attempts: 0,
 				state: "reserved",
 			});
 			return { kind: "created" as const, submission: input.submission };
@@ -723,12 +728,15 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		const state = this.harnessStarts.get(input.submissionId);
 		if (state?.state === "reserved") {
 			const leaseId = `lease-${input.submissionId}`;
+			const attempts = state.attempts + 1;
 			this.harnessStarts.set(input.submissionId, {
+				attempts,
 				state: "starting",
 				leaseId,
 			});
-			return { kind: "start" as const, leaseId };
+			return { kind: "start" as const, attempts, leaseId };
 		}
+		if (state?.state === "failed") return { kind: "failed" as const };
 		if (state?.state === "starting" || state?.state === "started") {
 			return { kind: "started" as const };
 		}
@@ -751,7 +759,10 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		if (current.state !== "starting" || current.leaseId !== input.leaseId) {
 			throw new Error(`Stale harness lease ${input.leaseId}`);
 		}
-		this.harnessStarts.set(input.submissionId, { state: "started" });
+		this.harnessStarts.set(input.submissionId, {
+			attempts: current.attempts,
+			state: "started",
+		});
 	}
 
 	async releaseHarnessStart(input: {
@@ -761,8 +772,27 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 	}) {
 		const current = this.harnessStarts.get(input.submissionId);
 		if (current?.state === "starting" && current.leaseId === input.leaseId) {
-			this.harnessStarts.set(input.submissionId, { state: "reserved" });
+			this.harnessStarts.set(input.submissionId, {
+				attempts: current.attempts,
+				state: "reserved",
+			});
 		}
+	}
+
+	async failHarnessStart(input: {
+		leaseId: string;
+		workspaceId: string;
+		submissionId: string;
+	}) {
+		const current = this.harnessStarts.get(input.submissionId);
+		if (current?.state !== "starting" || current.leaseId !== input.leaseId) {
+			return false;
+		}
+		this.harnessStarts.set(input.submissionId, {
+			attempts: current.attempts,
+			state: "failed",
+		});
+		return true;
 	}
 
 	async listRecoverableHarnessStarts(input: { limit: number }) {
@@ -816,6 +846,80 @@ test("a failed Harness start releases the same submission for an idempotent retr
 	assert.equal(replayed.replayed, true);
 	assert.equal(starts, 2);
 	assert.equal(submissions.count(), 1);
+});
+
+test("a definitive pre-admission Harness rejection becomes terminal", async () => {
+	const submissions = new MemorySubmissionStore();
+	let starts = 0;
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		{
+			async start() {
+				starts += 1;
+				throw new Error("Harness rejected the immutable request");
+			},
+			async classifyStartFailure() {
+				return "terminal_rejection";
+			},
+		},
+		fixedIds(),
+		fixedAdmission(),
+	);
+	const command: Parameters<CreationSubmissionCoordinator["submit"]>[0] = {
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	};
+
+	await assert.rejects(coordinator.submit(command), /rejected/u);
+	assert.equal(starts, 1);
+	assert.deepEqual(await coordinator.recoverPendingStarts(), {
+		attempted: 0,
+		failed: 0,
+		started: 0,
+	});
+	await assert.rejects(coordinator.submit(command), /permanently failed/u);
+	assert.equal(starts, 1);
+});
+
+test("an ambiguous Harness acknowledgement failure remains recoverable", async () => {
+	const submissions = new MemorySubmissionStore();
+	let starts = 0;
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		{
+			async start() {
+				starts += 1;
+				throw new Error("Harness acknowledgement unavailable");
+			},
+			async classifyStartFailure() {
+				return "retry";
+			},
+		},
+		fixedIds(),
+		fixedAdmission(),
+	);
+	const command: Parameters<CreationSubmissionCoordinator["submit"]>[0] = {
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	};
+
+	await assert.rejects(coordinator.submit(command), /acknowledgement/u);
+	for (let attempt = 2; attempt <= 5; attempt += 1) {
+		assert.deepEqual(await coordinator.recoverPendingStarts(), {
+			attempted: 1,
+			failed: 1,
+			started: 0,
+		});
+	}
+	assert.equal(starts, 5);
+	assert.deepEqual(await coordinator.recoverPendingStarts(), {
+		attempted: 1,
+		failed: 1,
+		started: 0,
+	});
+	assert.equal(starts, 6);
 });
 
 test("a terminal late answer starts one fresh quoted successor from the source snapshot", async () => {

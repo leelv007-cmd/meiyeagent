@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { HarnessAdmissionError } from "../harness/task-admission.js";
 import { createCreationExecutionSnapshot } from "./creation-execution-snapshot.js";
 import { CreationStagePort } from "./creation-stage-port.js";
 
@@ -111,6 +112,59 @@ test("a terminal successor carries the late answer into Harness context and deci
 	assert.deepEqual(request.decisionReferences, [
 		snapshot.semanticDecision.reference,
 	]);
+});
+
+test("only an authoritative pre-admission rejection can terminate a start", async () => {
+	const snapshot = createCreationExecutionSnapshot(
+		command(),
+		"2026-07-22T09:00:00.000Z",
+	);
+	const submission = {
+		snapshot,
+		work: snapshot.work,
+		task: snapshot.task,
+		contentPackage: snapshot.contentPackage,
+		usageReservation: {
+			id: "usage-reservation-task-1",
+			units: [{ resource: "copy" as const, quantity: 1 }],
+		},
+	};
+	const rejection = new HarnessAdmissionError(
+		"EXECUTION_SNAPSHOT_MISMATCH",
+		"Immutable request rejected.",
+	);
+	const rejected = new CreationStagePort({
+		async submit(input) {
+			return { workflowId: input.taskId };
+		},
+		async taskBelongsToWorkspace() {
+			return false;
+		},
+	});
+	const admitted = new CreationStagePort({
+		async submit(input) {
+			return { workflowId: input.taskId };
+		},
+		async taskBelongsToWorkspace() {
+			return true;
+		},
+	});
+
+	assert.equal(
+		await rejected.classifyStartFailure(submission, rejection),
+		"terminal_rejection",
+	);
+	assert.equal(
+		await admitted.classifyStartFailure(submission, rejection),
+		"retry",
+	);
+	assert.equal(
+		await rejected.classifyStartFailure(
+			submission,
+			new Error("Acknowledgement unavailable"),
+		),
+		"retry",
+	);
 });
 
 function command() {

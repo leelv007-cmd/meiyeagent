@@ -1,6 +1,7 @@
-import type {
-	HarnessTaskRequest,
-	HarnessWorkflowInput,
+import {
+	HarnessAdmissionError,
+	type HarnessTaskRequest,
+	type HarnessWorkflowInput,
 } from "../harness/task-admission.js";
 
 import type { CreationExecutionSnapshot } from "./creation-execution-snapshot.js";
@@ -16,6 +17,10 @@ import type {
  */
 export interface HarnessCreationAdmissionPort {
 	submit(input: HarnessTaskRequest): Promise<{ workflowId: string }>;
+	taskBelongsToWorkspace?(
+		taskId: string,
+		workspaceId: string,
+	): Promise<boolean>;
 }
 
 export class CreationStagePort implements CreationSubmissionHarnessStarter {
@@ -31,6 +36,24 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 		});
 		if (started.workflowId !== submission.task.id) {
 			throw new Error("Harness admission must preserve the Coordinator task ID.");
+		}
+	}
+
+	async classifyStartFailure(
+		submission: CreationSubmissionRecord,
+		error: unknown,
+	) {
+		if (!this.admission.taskBelongsToWorkspace) return "retry" as const;
+		try {
+			const admitted = await this.admission.taskBelongsToWorkspace(
+				submission.task.id,
+				submission.snapshot.workspaceId,
+			);
+			return !admitted && error instanceof HarnessAdmissionError
+				? ("terminal_rejection" as const)
+				: ("retry" as const);
+		} catch {
+			return "retry" as const;
 		}
 	}
 }

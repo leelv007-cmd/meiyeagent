@@ -69,7 +69,11 @@ export interface CreationSubmissionStore {
 	claimHarnessStart(input: {
 		workspaceId: string;
 		submissionId: string;
-	}): Promise<{ kind: "start"; leaseId: string } | { kind: "started" }>;
+	}): Promise<
+		| { kind: "start"; attempts: number; leaseId: string }
+		| { kind: "failed" }
+		| { kind: "started" }
+	>;
 	completeHarnessStart(input: {
 		leaseId: string;
 		workspaceId: string;
@@ -80,6 +84,11 @@ export interface CreationSubmissionStore {
 		workspaceId: string;
 		submissionId: string;
 	}): Promise<void>;
+	failHarnessStart(input: {
+		leaseId: string;
+		workspaceId: string;
+		submissionId: string;
+	}): Promise<boolean>;
 	/**
 	 * Returns committed submissions that have never been dispatched or whose
 	 * dispatch lease expired. The caller must still claim a fresh lease before
@@ -93,6 +102,10 @@ export interface CreationSubmissionStore {
 /** StagePort boundary: the coordinator never imports DBOS or a durable carrier. */
 export interface CreationSubmissionHarnessStarter {
 	start(input: CreationSubmissionRecord): Promise<void>;
+	classifyStartFailure?(
+		input: CreationSubmissionRecord,
+		error: unknown,
+	): Promise<"retry" | "terminal_rejection">;
 }
 
 export interface CreationSubmissionIdFactory {
@@ -473,6 +486,9 @@ export class CreationSubmissionCoordinator {
 			submissionId: submission.snapshot.id,
 		};
 		const harnessClaim = await this.store.claimHarnessStart(startLease);
+		if (harnessClaim.kind === "failed") {
+			throw new Error("Harness start permanently failed.");
+		}
 		if (harnessClaim.kind === "started") return false;
 		const leasedStart = { ...startLease, leaseId: harnessClaim.leaseId };
 		let started = false;
@@ -484,9 +500,26 @@ export class CreationSubmissionCoordinator {
 		} catch (error) {
 			if (!started) {
 				try {
-					await this.store.releaseHarnessStart(leasedStart);
+					const disposition =
+						(await this.harness.classifyStartFailure?.(
+							submission,
+							error,
+						)) ?? "retry";
+					if (disposition === "terminal_rejection") {
+						const failed =
+							await this.store.failHarnessStart(leasedStart);
+						if (!failed) {
+							await this.store.releaseHarnessStart(leasedStart);
+						}
+					} else {
+						await this.store.releaseHarnessStart(leasedStart);
+					}
 				} catch {
-					// Keep the Harness failure as the user-visible cause.
+					try {
+						await this.store.releaseHarnessStart(leasedStart);
+					} catch {
+						// Keep the Harness failure as the user-visible cause.
+					}
 				}
 			}
 			throw error;

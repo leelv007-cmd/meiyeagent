@@ -14,6 +14,7 @@ test('pending resume is replayed with its persisted idempotency key', async () =
   const reconciler = new HarnessResumeReconciler(store, {
     async resume(workspaceId, taskId, command) {
       resumed.push({
+        claimId: pending.claimId,
         eventId: pending.eventId,
         workspaceId,
         taskId,
@@ -38,6 +39,7 @@ test('failed resume remains pending for the next reconciliation pass', async () 
 
   assert.deepEqual(await reconciler.runOnce(), { resumed: 0, failed: 1 });
   assert.deepEqual(store.marked, []);
+  assert.deepEqual(store.released, ['decision-event-1']);
 });
 
 test('late answer reconciliation creates the C1 successor instead of messaging the expired workflow', async () => {
@@ -82,20 +84,28 @@ test('late answer reconciliation creates the C1 successor instead of messaging t
 
 class MemoryResumeStore implements HarnessResumeReconcilerStore {
   readonly marked: string[] = [];
+  readonly released: string[] = [];
 
   constructor(private readonly pending: HarnessPendingResume[]) {}
 
-  async listPending() {
-    return structuredClone(this.pending);
+  async claimPending() {
+    const next = this.pending.shift();
+    return next ? [structuredClone(next)] : [];
   }
 
   async markResumed(eventId: string) {
     this.marked.push(eventId);
+    return true;
+  }
+
+  async release(eventId: string) {
+    this.released.push(eventId);
   }
 }
 
 function pendingResume(): HarnessPendingResume {
   return {
+    claimId: 'resume-claim-1',
     eventId: 'decision-event-1',
     workspaceId: 'workspace-a',
     taskId: 'task-35',

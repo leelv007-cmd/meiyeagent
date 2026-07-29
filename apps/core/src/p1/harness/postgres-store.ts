@@ -136,6 +136,9 @@ export class PostgresHarnessStore
         resolution_source text not null default 'decision',
         resume_status text not null default 'pending'
           check (resume_status in ('pending', 'sending', 'sent')),
+        resume_claim_id text,
+        resume_lease_expires_at timestamptz,
+        resume_attempts integer not null default 0,
         created_at timestamptz not null default now(),
         unique (task_id, idempotency_key)
       );
@@ -222,6 +225,15 @@ export class PostgresHarnessStore
 
       alter table harness_runtime.decision_events
         add column if not exists resume_status text not null default 'pending';
+      alter table harness_runtime.decision_events
+        add column if not exists resume_claim_id text;
+      alter table harness_runtime.decision_events
+        add column if not exists resume_lease_expires_at timestamptz;
+      alter table harness_runtime.decision_events
+        add column if not exists resume_attempts integer not null default 0;
+      update harness_runtime.decision_events
+        set resume_lease_expires_at=clock_timestamp()
+        where resume_status='sending' and resume_lease_expires_at is null;
       alter table harness_runtime.pending_questions
         add column if not exists pending_projection jsonb not null
           default '{}'::jsonb;
@@ -995,23 +1007,7 @@ export class PostgresHarnessStore
     workspaceId: string,
     taskId: string,
     eventId: string,
-  ) {
-    const runtimeTaskId = await this.requireWorkflowRuntimeId(
-      workspaceId,
-      taskId,
-    );
-    await this.pool.query(
-      `update harness_runtime.decision_events
-       set resume_status='sent'
-       where id=$1 and resume_status='sending'`,
-      [this.runtimeObjectId(workspaceId, taskId, runtimeTaskId, eventId)],
-    );
-  }
-
-  async claimDecisionResume(
-    workspaceId: string,
-    taskId: string,
-    eventId: string,
+    claimId: string,
   ) {
     const runtimeTaskId = await this.requireWorkflowRuntimeId(
       workspaceId,
@@ -1019,10 +1015,52 @@ export class PostgresHarnessStore
     );
     const result = await this.pool.query(
       `update harness_runtime.decision_events
-       set resume_status='sending'
-       where id=$1 and resume_status='pending'
+       set resume_status='sent',
+           resume_claim_id=null,
+           resume_lease_expires_at=null
+       where id=$1
+         and resume_status='sending'
+         and resume_claim_id=$2`,
+      [
+        this.runtimeObjectId(workspaceId, taskId, runtimeTaskId, eventId),
+        claimId,
+      ],
+    );
+    return result.rowCount === 1;
+  }
+
+  async claimDecisionResume(
+    workspaceId: string,
+    taskId: string,
+    eventId: string,
+    claimId: string,
+  ) {
+    const runtimeTaskId = await this.requireWorkflowRuntimeId(
+      workspaceId,
+      taskId,
+    );
+    const result = await this.pool.query(
+      `update harness_runtime.decision_events
+       set resume_status='sending',
+           resume_claim_id=$2,
+           resume_lease_expires_at=clock_timestamp() + interval '5 minutes',
+           resume_attempts=resume_attempts + 1
+       where id=$1
+         and (
+           resume_status='pending'
+           or (
+             resume_status='sending'
+             and (
+               resume_lease_expires_at is null
+               or resume_lease_expires_at <= clock_timestamp()
+             )
+           )
+         )
        returning id`,
-      [this.runtimeObjectId(workspaceId, taskId, runtimeTaskId, eventId)],
+      [
+        this.runtimeObjectId(workspaceId, taskId, runtimeTaskId, eventId),
+        claimId,
+      ],
     );
     return result.rowCount === 1;
   }
@@ -1031,6 +1069,7 @@ export class PostgresHarnessStore
     workspaceId: string,
     taskId: string,
     eventId: string,
+    claimId: string,
   ) {
     const runtimeTaskId = await this.requireWorkflowRuntimeId(
       workspaceId,
@@ -1038,9 +1077,16 @@ export class PostgresHarnessStore
     );
     await this.pool.query(
       `update harness_runtime.decision_events
-       set resume_status='pending'
-       where id=$1 and resume_status='sending'`,
-      [this.runtimeObjectId(workspaceId, taskId, runtimeTaskId, eventId)],
+       set resume_status='pending',
+           resume_claim_id=null,
+           resume_lease_expires_at=null
+       where id=$1
+         and resume_status='sending'
+         and resume_claim_id=$2`,
+      [
+        this.runtimeObjectId(workspaceId, taskId, runtimeTaskId, eventId),
+        claimId,
+      ],
     );
   }
 

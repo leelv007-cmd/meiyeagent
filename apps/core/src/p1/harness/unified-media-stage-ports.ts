@@ -29,6 +29,7 @@ import { authorizeHarnessAction } from "./action-registry.js";
 import { HARNESS_ACTION_CARRIERS } from "./action-carriers.js";
 import {
   harnessMediaJobTopic,
+  requireMeasuredVideoDuration,
   type HarnessContextSnapshot,
   type HarnessEffectRunner,
   type HarnessMediaSelectionResult,
@@ -342,6 +343,11 @@ export class UnifiedHarnessStagePorts
 		};
 		const claimExtraction = assertMediaVisibleDelivery(input, version, now);
 		const revision = {
+			billingTrustedUsage: {
+				kind: "media_duration" as const,
+				actualSeconds: requireMeasuredVideoDuration(input.selection),
+				evidenceRef: `owned-asset:${input.selection.asset.id}`,
+			},
 			claimExtraction,
 			expectedRevision: input.request.expectedRevision,
 			generated: {
@@ -546,6 +552,22 @@ export class UnifiedHarnessStagePorts
 		}
 		const revision = {
 			additionalVersions: versions.filter(({ id }) => id !== winner.id),
+			billingTrustedUsage: {
+				kind: "product_units" as const,
+				units: [
+					{
+						resource: "copy" as const,
+						quantity: input.brief.candidates.candidates.length,
+					},
+					{
+						resource: "image" as const,
+						quantity: input.selection.version.plan.pages.length,
+					},
+				],
+				evidenceRef: `note-plan-pages:${input.selection.version.plan.pages
+					.map(({ id, revision }) => `${id}@${revision}`)
+					.join(",")}`,
+			},
 			claimExtraction,
 			expectedRevision: input.request.expectedRevision,
 			generated: {
@@ -868,6 +890,7 @@ export class ModelSupplyImageExactTextVerifier
 				},
 			}),
 			selection: { mode: "auto", profile: "quality" },
+			productUsageQuantity: 0,
 			workspaceId: input.request.workspaceId,
 		});
 		if (result.status !== "completed" || !result.text?.trim()) {

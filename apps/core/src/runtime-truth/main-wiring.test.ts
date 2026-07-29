@@ -17,3 +17,16 @@ test('Core entrypoint rebuilds provider evidence for both runtime-truth surfaces
   );
   assert.match(main, /p1ApplicationService,\s*\n\s*runtimeTruth,/);
 });
+
+test('Core recurring recovery owns committed Harness starts after boot', async () => {
+  const main = await readFile(new URL('../main.ts', import.meta.url), 'utf8');
+
+  assert.match(
+    main,
+    /const runPendingStartRecovery = async \(\) =>[\s\S]*recoverPendingStarts\(\)/,
+  );
+  assert.match(
+    main,
+    /harnessPendingStartRecoveryInterval = setInterval\([\s\S]*runPendingStartRecovery\(\)/,
+  );
+});

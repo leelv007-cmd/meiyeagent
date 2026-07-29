@@ -75,6 +75,10 @@ export class HarnessApplicationService {
     return this.admission.submit(input);
   }
 
+  taskBelongsToWorkspace(taskId: string, workspaceId: string) {
+    return this.access.taskBelongsToWorkspace(taskId, workspaceId);
+  }
+
   async readPendingDecision(workspaceId: string, taskId: string) {
     await this.requireTask(workspaceId, taskId);
     const target = await this.decisions.readDecisionTarget(

@@ -200,6 +200,7 @@ test('DBOS event reader preserves revision conflict details in failed state', as
           packageId: 'package-1',
           expectedRevision: 0,
           currentRevision: 2,
+          quotaRefunded: true,
         },
       },
       // P0-2: the same frame that carries the failure carries what the merchant
@@ -210,7 +211,7 @@ test('DBOS event reader preserves revision conflict details in failed state', as
         message: '这个作品刚才被更新过，这次的结果就没有再保存下来。',
         nextStep: '按现在的内容再生成一次就好。',
         actions: ['retry'],
-        quotaRefunded: false,
+        quotaRefunded: true,
       },
       actionUsage: {
         actionId: 'usage-task-failed',

@@ -101,4 +101,9 @@ test('Harness media child jobs cannot consume ProductUsage or GrantLot twice', (
   );
   assert.match(source, /\bproductUsageQuantity:\s*0\b/u);
   assert.doesNotMatch(source, /\bproductUsageQuantity:\s*1\b/u);
+  const exactTextVerifier = source.slice(
+    source.indexOf('export class ModelSupplyImageExactTextVerifier'),
+    source.indexOf('function assessImageExactText'),
+  );
+  assert.match(exactTextVerifier, /\bproductUsageQuantity:\s*0\b/u);
 });

@@ -37,10 +37,11 @@ import {
   HarnessActionAuthorizationError,
 } from './action-registry.js';
 import { HARNESS_ACTION_CARRIERS } from './action-carriers.js';
-import type {
-  HarnessBillingCompensationTask,
-  HarnessBillingSettlementExecutor,
-  HarnessBillingSettlementInput,
+import {
+  isHarnessBillingCompensationConflictError,
+  type HarnessBillingCompensationTask,
+  type HarnessBillingSettlementExecutor,
+  type HarnessBillingSettlementInput,
 } from './billing-compensation.js';
 import {
   HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
@@ -112,6 +113,9 @@ export type HarnessDbosWorkflowInput =
 export interface HarnessBillingSettlementPort
   extends HarnessBillingSettlementExecutor {
   scheduleCompensation(input: HarnessBillingCompensationTask): Promise<void>;
+  completeCompensation?(
+    input: HarnessBillingCompensationTask,
+  ): Promise<void>;
 }
 
 export interface TaskRecallDuePort {
@@ -591,17 +595,42 @@ export async function commitHarnessBillingOrSchedule(input: {
   input: HarnessBillingSettlementInput;
   runStep: BillingRunStep;
 }) {
+  const task: HarnessBillingCompensationTask = {
+    action: 'commit',
+    attempts: 0,
+    ...input.input,
+  };
   try {
-    await input.runStep('commit-product-usage', () =>
-      input.billing.commit(input.input),
-    );
-  } catch {
+    await input.runStep('commit-product-usage', async () => {
+      let scheduled = false;
+      try {
+        await input.billing.scheduleCompensation(task);
+        scheduled = true;
+      } catch (error) {
+        if (isHarnessBillingCompensationConflictError(error)) {
+          throw error;
+        }
+        // Direct settlement can still close the reservation.
+      }
+      try {
+        await input.billing.commit(input.input);
+        if (scheduled) {
+          try {
+            await input.billing.completeCompensation?.(task);
+          } catch {
+            // The idempotent worker can observe the already-settled usage.
+          }
+        }
+      } catch (error) {
+        if (!scheduled) throw error;
+      }
+    });
+  } catch (error) {
+    if (isHarnessBillingCompensationConflictError(error)) {
+      throw error;
+    }
     await input.runStep('schedule-product-usage-commit', () =>
-      input.billing.scheduleCompensation({
-        action: 'commit',
-        attempts: 0,
-        ...input.input,
-      }),
+      input.billing.scheduleCompensation(task),
     );
   }
 }
@@ -617,22 +646,51 @@ export async function refundHarnessBillingPreservingFailure(input: {
   input: HarnessBillingSettlementInput;
   runStep: BillingRunStep;
 }): Promise<HarnessRefundOutcome> {
+  const task: HarnessBillingCompensationTask = {
+    action: 'refund',
+    attempts: 0,
+    ...input.input,
+  };
   try {
-    await input.runStep('refund-product-usage', () =>
-      input.billing.refund(input.input),
-    );
-    return 'refunded';
-  } catch {
+    return await input.runStep('refund-product-usage', async () => {
+      let scheduled = false;
+      try {
+        await input.billing.scheduleCompensation(task);
+        scheduled = true;
+      } catch (error) {
+        if (isHarnessBillingCompensationConflictError(error)) {
+          throw error;
+        }
+        // Direct settlement can still close the reservation.
+      }
+      try {
+        await input.billing.refund(input.input);
+        if (scheduled) {
+          try {
+            await input.billing.completeCompensation?.(task);
+          } catch {
+            // The idempotent worker can observe the already-refunded usage.
+          }
+        }
+        return 'refunded';
+      } catch (error) {
+        if (scheduled) return 'scheduled';
+        throw error;
+      }
+    });
+  } catch (error) {
+    if (isHarnessBillingCompensationConflictError(error)) {
+      throw error;
+    }
     try {
       await input.runStep('schedule-product-usage-refund', () =>
-        input.billing.scheduleCompensation({
-          action: 'refund',
-          attempts: 0,
-          ...input.input,
-        }),
+        input.billing.scheduleCompensation(task),
       );
       return 'scheduled';
-    } catch {
+    } catch (scheduleError) {
+      if (isHarnessBillingCompensationConflictError(scheduleError)) {
+        throw scheduleError;
+      }
       // Terminal failure persistence and the original execution error take
       // precedence when the compensation store is also unavailable.
       return 'unavailable';
@@ -657,11 +715,17 @@ export async function settleHarnessCancellation(input: {
     );
   }
   if (input.billing && settlement) {
-    await refundHarnessBillingPreservingFailure({
+    const outcome = await refundHarnessBillingPreservingFailure({
       billing: input.billing,
       input: settlement,
       runStep: input.runStep,
     });
+    if (outcome !== 'refunded') {
+      return {
+        ...input.cancellation.result,
+        merchantMessage: '超时未选择，本次任务已取消，额度退款处理中',
+      };
+    }
   }
   return input.cancellation.result;
 }
@@ -814,6 +878,7 @@ export async function resumeHarnessDbosWorkflow(
     runtimeWorkflowId,
     parsedCommand,
     decisionTopic(parsedCommand.questionId),
+    `harness-decision:${workspaceId}:${runtimeWorkflowId}:${parsedCommand.idempotencyKey}`,
   );
 }
 

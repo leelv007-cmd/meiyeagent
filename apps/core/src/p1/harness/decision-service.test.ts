@@ -234,6 +234,25 @@ test('a consumed timeout sentinel never starts or persists a late-answer success
   assert.deepEqual(order, []);
 });
 
+test('an active late-answer lease does not claim that its successor exists', async () => {
+  const store = new MemoryDecisionStore([]);
+  store.pending = question();
+  store.targetStatus = 'resolved';
+  store.resolutionSource = 'core_timeout';
+  store.resumeClaimAvailable = false;
+  const successorStarts: string[] = [];
+  const result = await new HarnessDecisionService(store, {
+    async resume() {},
+    async startSuccessor({ workflowId }) {
+      successorStarts.push(workflowId);
+    },
+  }).submit('workspace-1', 'task-35', decisionInput());
+
+  assert.equal(result.replayed, false);
+  assert.equal(result.successor, undefined);
+  assert.deepEqual(successorStarts, []);
+});
+
 class MemoryDecisionStore implements HarnessDecisionStore {
   readonly events: Array<{ id: string }> = [];
   readonly traces: Array<{ id: string }> = [];
@@ -252,6 +271,7 @@ class MemoryDecisionStore implements HarnessDecisionStore {
     | 'late_answer'
     | null = null;
   targetStatus: 'pending' | 'resolved' = 'pending';
+  resumeClaimAvailable = true;
 
   constructor(private readonly order: string[]) {}
 
@@ -278,18 +298,31 @@ class MemoryDecisionStore implements HarnessDecisionStore {
     _workspaceId: string,
     _taskId: string,
     eventId: string,
+    _claimId: string,
   ) {
     this.resumeRequired = false;
     this.order.push(`resumed:${eventId}`);
+    return true;
   }
 
-  async claimDecisionResume() {
+  async claimDecisionResume(
+    _workspaceId: string,
+    _taskId: string,
+    _eventId: string,
+    _claimId: string,
+  ) {
+    if (!this.resumeClaimAvailable) return false;
     if (!this.resumeRequired) return false;
     this.resumeRequired = false;
     return true;
   }
 
-  async releaseDecisionResume() {
+  async releaseDecisionResume(
+    _workspaceId: string,
+    _taskId: string,
+    _eventId: string,
+    _claimId: string,
+  ) {
     this.resumeRequired = true;
   }
 

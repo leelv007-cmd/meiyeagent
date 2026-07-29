@@ -7,6 +7,7 @@ import {
 import type { HarnessWorkflowInput } from './task-admission.js';
 
 export interface HarnessPendingResume {
+  claimId: string;
   eventId: string;
   workspaceId: string;
   taskId: string;
@@ -16,8 +17,9 @@ export interface HarnessPendingResume {
 }
 
 export interface HarnessResumeReconcilerStore {
-  listPending(limit: number): Promise<HarnessPendingResume[]>;
-  markResumed(eventId: string): Promise<void>;
+  claimPending(limit: number): Promise<HarnessPendingResume[]>;
+  markResumed(eventId: string, claimId: string): Promise<boolean>;
+  release(eventId: string, claimId: string): Promise<void>;
 }
 
 export class HarnessResumeReconciler {
@@ -28,10 +30,12 @@ export class HarnessResumeReconciler {
   ) {}
 
   async runOnce() {
-    const pending = await this.store.listPending(this.batchSize);
     let resumed = 0;
     let failed = 0;
-    for (const item of pending) {
+    const failedClaims: Array<{ eventId: string; claimId: string }> = [];
+    for (let index = 0; index < this.batchSize; index += 1) {
+      const [item] = await this.store.claimPending(1);
+      if (!item) break;
       try {
         if (item.resolutionSource === 'late_answer') {
           if (!item.request || !this.workflow.startSuccessor) {
@@ -54,12 +58,23 @@ export class HarnessResumeReconciler {
             item.command,
           );
         }
-        await this.store.markResumed(item.eventId);
+        if (!(await this.store.markResumed(item.eventId, item.claimId))) {
+          throw new Error('The decision resume lease was lost.');
+        }
         resumed += 1;
       } catch {
+        failedClaims.push({
+          eventId: item.eventId,
+          claimId: item.claimId,
+        });
         failed += 1;
       }
     }
+    await Promise.all(
+      failedClaims.map(({ eventId, claimId }) =>
+        this.store.release(eventId, claimId),
+      ),
+    );
     return { resumed, failed };
   }
 }
