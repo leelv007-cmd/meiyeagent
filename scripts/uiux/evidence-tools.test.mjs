@@ -112,9 +112,12 @@ test('the AWS documentation example is exempt but real key shapes are not', () =
     []
   );
 
+  // Built at runtime: a literal key shape here would make this file itself a
+  // scanner finding.
+  const awsKey = `AKIA${'A'.repeat(16)}`;
   assert.deepEqual(
     findSecretFindings([
-      { path: 'src/example.ts', text: "const key = 'AKIA1234567890ABCDEF';\n" },
+      { path: 'src/example.ts', text: `const key = '${awsKey}';\n` },
     ]),
     [{ path: 'src/example.ts', line: 1, rule: 'aws-access-key' }]
   );
