@@ -810,14 +810,23 @@ function executionAssemblySnapshot(input: {
 function normalizeRequest(
   input: HarnessTaskRequest,
 ): HarnessWorkflowInputBeforeBounds {
-  const { executionSnapshot, usageReservation, ...request } = input;
+  const {
+    decisionReferences,
+    executionSnapshot,
+    usageReservation,
+    ...request
+  } = input;
   const parsed = harnessTaskRequestSchema.parse(request);
   const snapshot = executionSnapshot
     ? creationExecutionSnapshotSchema.parse(executionSnapshot)
     : undefined;
   if (snapshot) {
     assertExecutionSnapshotMatchesRequest(snapshot, parsed);
-    return snapshotWorkflowInput(snapshot, usageReservation);
+    return snapshotWorkflowInput(
+      snapshot,
+      usageReservation,
+      decisionReferences,
+    );
   }
   return {
     actorId: parsed.actorId,
@@ -836,7 +845,20 @@ function normalizeRequest(
 function snapshotWorkflowInput(
   snapshot: CreationExecutionSnapshot,
   usageReservation?: CreationSubmissionRecord['usageReservation'],
+  decisionReferences?: HarnessWorkflowInput['decisionReferences'],
 ): HarnessWorkflowInputBeforeBounds {
+  const semanticDecision = snapshot.semanticDecision;
+  const frozenDecisionReferences = [
+    ...(decisionReferences ?? []),
+  ];
+  if (
+    semanticDecision &&
+    !frozenDecisionReferences.some(
+      ({ id }) => id === semanticDecision.reference.id,
+    )
+  ) {
+    frozenDecisionReferences.unshift(semanticDecision.reference);
+  }
   return {
     actorId: snapshot.actorId,
     workspaceId: snapshot.workspaceId,
@@ -849,12 +871,25 @@ function snapshotWorkflowInput(
       context: {
         workId: snapshot.work.id,
         intent: snapshot.intent.text,
-        sourceSummaries: [],
+        sourceSummaries: semanticDecision
+          ? [
+              `Merchant decision (${semanticDecision.reference.field}): ${semanticDecision.reference.value}`,
+            ]
+          : [],
+        ...(semanticDecision
+          ? {
+              [semanticDecision.reference.field]:
+                semanticDecision.reference.value,
+            }
+          : {}),
       },
       assetReferences: snapshot.sources.assets.map((asset) => asset.id),
     },
     factScope: { storeId: snapshot.workspaceId },
     executionSnapshot: snapshot,
+    ...(frozenDecisionReferences.length > 0
+      ? { decisionReferences: frozenDecisionReferences }
+      : {}),
     ...(usageReservation ? { usageReservation } : {}),
   };
 }
@@ -870,6 +905,16 @@ function assertExecutionSnapshotMatchesRequest(
       (assetId, index) => assetId === request.intent.assetReferences[index],
     );
   const context = request.intent.context;
+  const semanticDecision = snapshot.semanticDecision;
+  const expectedContext = {
+    workId: snapshot.work.id,
+    intent: snapshot.intent.text,
+    sourceSummaries: semanticDecision
+      ? [
+          `Merchant decision (${semanticDecision.reference.field}): ${semanticDecision.reference.value}`,
+        ]
+      : [],
+  };
   if (
     snapshot.actorId !== request.actorId ||
     snapshot.workspaceId !== request.workspaceId ||
@@ -880,11 +925,7 @@ function assertExecutionSnapshotMatchesRequest(
     snapshot.revision !== request.workflowRevision ||
     snapshot.creationMode !== request.creationMode ||
     snapshot.intent.text !== request.rawInput ||
-    snapshot.intent.text !== context.intent ||
-    !sameStringArray(context.sourceSummaries, []) ||
-    context.scene !== undefined ||
-    context.tone !== undefined ||
-    context.audience !== undefined ||
+    fingerprintValue(context) !== fingerprintValue(expectedContext) ||
     !isDefaultFactScope(request.factScope, snapshot.workspaceId) ||
     request.reuseSeed !== undefined ||
     !matchingAssets
@@ -894,13 +935,6 @@ function assertExecutionSnapshotMatchesRequest(
       'The execution snapshot does not match the Harness task request.',
     );
   }
-}
-
-function sameStringArray(left: string[], right: string[]) {
-  return (
-    left.length === right.length &&
-    left.every((value, index) => value === right[index])
-  );
 }
 
 function isDefaultFactScope(

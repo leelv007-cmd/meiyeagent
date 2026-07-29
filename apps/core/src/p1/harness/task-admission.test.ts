@@ -16,7 +16,10 @@ import {
   type HarnessTaskRequestRegistry,
   type HarnessWorkflowStarter,
 } from './task-admission.js';
-import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
+import {
+  createCreationExecutionSnapshot,
+  creationExecutionSnapshotSchema,
+} from '../execution-spine/creation-execution-snapshot.js';
 import type {
   HarnessFrozenPrompts,
   HarnessPromptResolver,
@@ -820,6 +823,90 @@ test('a required unset execution limit rejects admission before prompt resolutio
   assert.equal(prompts.calls, 0);
   assert.equal(registry.claims.length, 0);
   assert.equal(starter.starts, 0);
+});
+
+test('snapshot admission preserves server-frozen decision references', async () => {
+  const registry = new MemoryRequestRegistry();
+  const starter = new RecordingStarter();
+  const snapshot = composerSnapshot();
+  const service = new HarnessTaskAdmissionService(
+    registry,
+    starter,
+    new MutablePromptResolver(),
+    undefined,
+    undefined,
+    {
+      async resolve() {
+        return structuredClone(copyRoute(snapshot));
+      },
+    },
+  );
+  const decision = {
+    id: 'decision-note-style',
+    field: 'note_style',
+    value: 'practical_guide',
+    revision: 1,
+  };
+
+  await service.submit({
+    ...snapshotTaskRequest(snapshot),
+    decisionReferences: [decision],
+  });
+
+  assert.deepEqual(starter.requests[0]?.decisionReferences, [decision]);
+});
+
+test('snapshot admission normalizes its semantic decision context', async () => {
+  const registry = new MemoryRequestRegistry();
+  const starter = new RecordingStarter();
+  const source = composerSnapshot();
+  const reference = {
+    id: 'decision-late-answer',
+    field: 'offer_price',
+    value: '398 元',
+    revision: 1,
+  };
+  const snapshot = creationExecutionSnapshotSchema.parse({
+    ...source,
+    id: 'snapshot-decision-late-answer',
+    semanticDecision: {
+      sourceSnapshotId: source.id,
+      reference,
+    },
+  });
+  const service = new HarnessTaskAdmissionService(
+    registry,
+    starter,
+    new MutablePromptResolver(),
+    undefined,
+    undefined,
+    {
+      async resolve() {
+        return structuredClone(copyRoute(snapshot));
+      },
+    },
+  );
+
+  await service.submit({
+    ...snapshotTaskRequest(snapshot),
+    decisionReferences: [reference],
+    intent: {
+      context: {
+        workId: snapshot.work.id,
+        intent: snapshot.intent.text,
+        sourceSummaries: ['Merchant decision (offer_price): 398 元'],
+      },
+      assetReferences: [],
+    },
+  });
+
+  assert.deepEqual(starter.requests[0]?.decisionReferences, [reference]);
+  assert.equal(
+    (
+      starter.requests[0]?.intent.context as Record<string, unknown> | undefined
+    )?.offer_price,
+    '398 元',
+  );
 });
 
 test('admission freezes explicit default execution bounds without changing the request fingerprint', async () => {
