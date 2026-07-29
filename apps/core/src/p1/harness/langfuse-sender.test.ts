@@ -204,6 +204,60 @@ test('same outbox event replay sends identical idempotency and entity ids', asyn
   assert.deepEqual(bodies[1], bodies[0]);
 });
 
+test('canonical observability events expose four flat filter axes on trace and span metadata', async (t) => {
+  let body:
+    | { batch: Array<{ type: string; body: Record<string, unknown> }> }
+    | undefined;
+  const server = createServer(async (request, response) => {
+    body = await readJson(request);
+    sendJson(response, 200, { successes: [] });
+  });
+  const sender = new LangfuseHttpSender({
+    baseUrl: await listen(t, server),
+    publicKey: 'pk-test',
+    secretKey: 'sk-test',
+  });
+
+  await sender.send({
+    ...selectionItem(),
+    auditId: 'audit-observability-feedback-248',
+    stage: 'observability_event_ingest',
+    eventType: 'delivery_rating.recorded',
+    payload: {
+      eventType: 'delivery_rating.recorded',
+      taskId: 'task-48',
+      skillRevision: 'copywriter@rev-17',
+      promptVersion: 'marketing/copy@v4',
+      catalogRevision: 'catalog-2026-07-29',
+      scene: 'opening-campaign',
+      payload: {
+        packageId: 'package-248',
+        versionId: 'version-3',
+        revision: 3,
+        verdict: 'up',
+      },
+    },
+    decisionTrace: null,
+  });
+
+  const trace = body?.batch.find(({ type }) => type === 'trace-create')?.body;
+  const span = body?.batch.find(({ type }) => type === 'span-create')?.body;
+  for (const event of [trace, span]) {
+    const metadata = event?.metadata as Record<string, unknown>;
+    assert.equal(metadata.skillRevision, 'copywriter@rev-17');
+    assert.equal(metadata.promptVersion, 'marketing/copy@v4');
+    assert.equal(metadata.catalogRevision, 'catalog-2026-07-29');
+    assert.equal(metadata.scene, 'opening-campaign');
+    assert.equal('axes' in metadata, false);
+  }
+  assert.deepEqual(span?.output, {
+    packageId: 'package-248',
+    versionId: 'version-3',
+    revision: 3,
+    verdict: 'up',
+  });
+});
+
 test('same semantic stage keeps retries stable without collapsing distinct attempts', async (t) => {
   const bodies: Array<{
     batch: Array<{ type: string; body: Record<string, unknown> }>;

@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+import { observabilityEventSchema } from '@meiye/contracts';
+
 import { harnessLogicalId } from './workspace-scope.js';
 import type {
   HarnessLangfuseOutboxItem,
@@ -155,6 +157,25 @@ export function langfuseSenderFromEnv(
 
 function mapOutboxItem(item: HarnessLangfuseOutboxItem) {
   const taskId = harnessLogicalId(item.workflowId);
+  const parsedObservabilityEvent = observabilityEventSchema.safeParse(
+    item.payload,
+  );
+  const observabilityEvent = parsedObservabilityEvent.success
+    ? parsedObservabilityEvent.data
+    : undefined;
+  if (observabilityEvent && observabilityEvent.taskId !== taskId) {
+    throw new Error(
+      'Canonical observability event task does not match the outbox workflow.',
+    );
+  }
+  const observabilityAxes = observabilityEvent
+    ? {
+        skillRevision: observabilityEvent.skillRevision,
+        promptVersion: observabilityEvent.promptVersion,
+        catalogRevision: observabilityEvent.catalogRevision,
+        scene: observabilityEvent.scene,
+      }
+    : {};
   const traceId = stableUuid(`trace:${item.workflowId}`);
   const spanId = stableUuid(
     `span:${item.workflowId}:${item.stage}:${item.auditId}`,
@@ -180,7 +201,12 @@ function mapOutboxItem(item: HarnessLangfuseOutboxItem) {
     name: 'beauty-marketing-task',
     sessionId: item.workflowId,
     tags: ['harness', item.stage],
-    metadata: { taskId, workflowId: item.workflowId, ...skillLineage },
+    metadata: {
+      taskId,
+      workflowId: item.workflowId,
+      ...observabilityAxes,
+      ...skillLineage,
+    },
   });
   const spanMetadata: Record<string, unknown> = {
     auditId: item.auditId,
@@ -193,6 +219,7 @@ function mapOutboxItem(item: HarnessLangfuseOutboxItem) {
     ...(prompt ? { prompt } : {}),
     ...(metrics ? { metrics } : {}),
     ...(productMetrics ? { productMetrics } : {}),
+    ...observabilityAxes,
     ...skillLineage,
   };
   const spanBody = exactFields(LANGFUSE_SPAN_BODY_FIELDS, {
@@ -201,7 +228,9 @@ function mapOutboxItem(item: HarnessLangfuseOutboxItem) {
     name: STAGE_NAMES[item.stage] ?? `event-${safeLabel(item.stage)}`,
     startTime: item.occurredAt,
     input: { eventType: item.eventType },
-    output: projectStageOutput(item.stage, item.decisionTrace, item.payload),
+    output: observabilityEvent
+      ? observabilityEvent.payload
+      : projectStageOutput(item.stage, item.decisionTrace, item.payload),
     metadata: spanMetadata,
   });
   const events: IngestionEvent[] = [
