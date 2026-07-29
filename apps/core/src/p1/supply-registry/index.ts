@@ -81,6 +81,7 @@ export {
 } from './association-views.js';
 
 export {
+  platformDefaultsForOperation,
   resolvePlatformDefaultBindings,
   createRegistryPlatformDefaultModelPort,
   applyStrictByokOverride,

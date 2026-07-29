@@ -88,6 +88,7 @@ import {
 } from './p1/foundation/index.js';
 import { e2ePlatformModelDefaultsFromEnv } from './p1/foundation/e2e-platform-model-defaults.js';
 import {
+  PLATFORM_DEFAULT_MODEL_CONFIG_KEY_BY_OPERATION,
   PLATFORM_DEFAULT_MODEL_CONFIG_KEYS,
   platformDefaultModelConfigName,
   type PlatformDefaultModelConfigKey,
@@ -181,6 +182,7 @@ import {
   PostgresSupplyControlPlaneRepository,
   PostgresSupplyPlanningControlPlane,
   PostgresSupplyPlanningMigration,
+  platformDefaultsForOperation,
   resolvePlatformDefaultBindings,
 } from './p1/supply-registry/index.js';
 import {
@@ -2118,11 +2120,18 @@ if (harnessRuntimeConfig) {
                 'The platform supply registry has no published revision.',
               );
             }
-            const defaults = Object.fromEntries(
-              Object.entries(defaultsSnapshot).map(([key, value]) => [
-                key,
-                value.catalogModelId,
-              ]),
+            // Only the requested operation's default is resolved. Resolving
+            // every modality here meant an unusable image default rejected a
+            // copy request, and the copy default's own live-verified/active
+            // check below is unaffected by narrowing the scope.
+            const defaults = platformDefaultsForOperation(
+              Object.fromEntries(
+                Object.entries(defaultsSnapshot).map(([key, value]) => [
+                  key,
+                  value.catalogModelId,
+                ]),
+              ),
+              operation,
             );
             const { bindings, errors } = resolvePlatformDefaultBindings(
               registry,

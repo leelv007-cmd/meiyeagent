@@ -25,6 +25,7 @@ import {
   expandCatalogRevisionPayload,
   expandDefaultCatalog,
   migrateFixedCredentialSlots,
+  platformDefaultsForOperation,
   projectCredentialAccountMetadata,
   applyStrictByokOverride,
   resolvePlatformTaskCredentialScope,
@@ -628,4 +629,26 @@ test('expandDefaultCatalog dual-reads cleanly against its source payload', () =>
   );
   assert.equal(openai?.lifecycleStatus, 'active');
   assert.equal(openai?.activationEvidence?.status, 'live_verified');
+});
+
+test('resolving one operation ignores the other modalities\' defaults', () => {
+  const defaults = {
+    copy: 'copy-model',
+    image: 'broken-image-model',
+    video: 'video-model',
+  } as const;
+
+  // A copy request must not carry the image default into resolution: an image
+  // default without activation evidence would otherwise reject the request.
+  assert.deepEqual(platformDefaultsForOperation(defaults, 'copy.generate'), {
+    copy: 'copy-model',
+  });
+  assert.deepEqual(platformDefaultsForOperation(defaults, 'image.generate'), {
+    image: 'broken-image-model',
+  });
+
+  // Operations with no platform default resolve to no binding rather than
+  // dragging in every other modality.
+  assert.deepEqual(platformDefaultsForOperation(defaults, 'copy.adapt'), {});
+  assert.deepEqual(platformDefaultsForOperation({}, 'copy.generate'), {});
 });

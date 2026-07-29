@@ -44,6 +44,29 @@ const OPERATION_BY_CONFIG_KEY = PLATFORM_DEFAULT_MODEL_OPERATION_BY_CONFIG_KEY;
 const CONFIG_KEY_BY_OPERATION = PLATFORM_DEFAULT_MODEL_CONFIG_KEY_BY_OPERATION;
 
 /**
+ * Narrow a full defaults snapshot to the single operation being resolved.
+ *
+ * Callers that resolve one operation must not carry the other modalities'
+ * defaults into the resolution: `resolvePlatformDefaultBindings` reports an
+ * error per unusable default, so an image default without activation evidence
+ * would otherwise reject a copy request. Returns an empty map for operations
+ * that have no platform default at all, which resolves to no binding.
+ */
+export function platformDefaultsForOperation(
+  defaults: Partial<Record<PlatformDefaultModelConfigKey, string>>,
+  operation: PlatformDefaultModelOperation | string,
+): Partial<Record<PlatformDefaultModelConfigKey, string>> {
+  const configKey = (
+    CONFIG_KEY_BY_OPERATION as Partial<
+      Record<string, PlatformDefaultModelConfigKey>
+    >
+  )[operation];
+  if (!configKey) return {};
+  const catalogModelId = defaults[configKey];
+  return catalogModelId ? { [configKey]: catalogModelId } : {};
+}
+
+/**
  * Resolve platform default bindings from the expanded registry. Only
  * platform-owned deployments with activation evidence qualify.
  */
