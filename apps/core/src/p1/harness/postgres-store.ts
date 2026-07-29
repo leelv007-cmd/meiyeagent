@@ -1617,16 +1617,26 @@ export class PostgresHarnessStore
       }
 
       const pending = await client.query<{
+        pending_projection: unknown;
         question_id: string;
         workflow_revision: string;
         status: string;
       }>(
-        `select question_id, workflow_revision, status
+        `select pending_projection, question_id, workflow_revision, status
          from harness_runtime.pending_questions
          where task_id=$1 for update`,
         [runtimeTaskId],
       );
       const node = pending.rows[0];
+      if (
+        node &&
+        harnessInteractionPendingProjectionSchema.safeParse(
+          node.pending_projection,
+        ).success
+      ) {
+        await client.query('rollback');
+        return { outcome: 'stale_question', resumeRequired: false };
+      }
       const lateAnswerSource =
         input.mode === 'late_answer'
           ? await client.query(

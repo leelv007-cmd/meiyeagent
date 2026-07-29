@@ -16,6 +16,10 @@ import {
   HarnessInteractionService,
   HarnessSystemDefaultProducer,
 } from './interaction-service.js';
+import {
+  HarnessDecisionError,
+  HarnessDecisionService,
+} from './decision-service.js';
 import { PostgresHarnessResumeReconcilerStore } from './postgres-resume-reconciler-store.js';
 import { PostgresHarnessStore } from './postgres-store.js';
 import {
@@ -455,6 +459,29 @@ test(
         await restartedStore.readPendingInteraction(workspaceId, runId),
         null,
       );
+      const legacyResumes: unknown[] = [];
+      const legacyDecisions = new HarnessDecisionService(restartedStore, {
+        async resume(_workspaceId, _taskId, command) {
+          legacyResumes.push(command);
+        },
+      });
+      await assert.rejects(
+        legacyDecisions.submit(workspaceId, runId, {
+          idempotencyKey: `legacy-waiting-decision-${suffix}`,
+          questionId: executionRequest.requestId,
+          workflowRevision: executionRequest.revision,
+          patch: {
+            field: 'execution_confirmation',
+            value: '确认执行',
+            reason: '执行前需要商家确认',
+          },
+          decision: { state: 'accepted', value: '确认执行' },
+        }),
+        (error: unknown) =>
+          error instanceof HarnessDecisionError &&
+          error.code === 'STALE_QUESTION',
+      );
+      assert.deepEqual(legacyResumes, []);
       const messageInput = {
         idempotencyKey: `execution-message-${suffix}`,
         message: '请换成更稳妥的模型再继续',
