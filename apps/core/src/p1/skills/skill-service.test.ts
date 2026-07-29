@@ -241,6 +241,132 @@ test('invocation resolves a self-reported allowlisted tool before executor dispa
   assert.equal(executions, 0);
 });
 
+for (const identityField of [
+  'workspaceId',
+  'actorId',
+  'productUsageTaskId',
+  'quoteId',
+] as const) {
+  test(`primitive payload rejects caller-supplied ${identityField} before executor and persistence`, async () => {
+    const repository = new MemorySkillRepository();
+    const service = new SkillService(repository, () => NOW);
+    const revision = await createAcceptedEffectSkill(service);
+    const invocationId = `invocation-forged-${identityField}`;
+    let executions = 0;
+
+    await assert.rejects(
+      service.invoke(
+        {
+          calls: [
+            {
+              callId: 'read-facts',
+              contextRefs: ['facts:current-offer'],
+              declaredBudgetCapCents: 1,
+              payload: {
+                scope: 'facts',
+                [identityField]: `forged-${identityField}`,
+              },
+              toolId: 'read_context',
+            },
+          ],
+          input: dailyIndustrySkillInput(),
+          invocationId,
+          output: {
+            schemaRevision: 'skill-output.intent-decision@1',
+            target: 'workflow_artifact',
+          },
+          productUsageTaskId: 'task-one-product-usage',
+          skillRevisionRef: revision.skillRevisionRef,
+          taskId: 'task-forged-identity',
+          workspaceId: 'workspace-skill-invocation',
+        },
+        {
+          async execute() {
+            executions += 1;
+            return {
+              acceptanceStatus: 'accepted',
+              costCents: 0,
+              providerReceipt: {
+                accepted: true,
+                providerTaskRef: 'provider-must-not-run',
+              },
+              usage: { inputTokens: 0, outputTokens: 0 },
+            };
+          },
+          async generate() {
+            executions += 1;
+            return { value: intentDecisionOutput() };
+          },
+        },
+        discardResultPublisher,
+      ),
+      new P1DomainError(
+        'INVALID_STATE',
+        'Agent primitive payload is invalid: read_context.',
+      ),
+    );
+    assert.equal(executions, 0);
+    assert.equal(await repository.getInvocationReceipt(invocationId), null);
+    assert.equal(
+      await repository.getChildEffect(`${invocationId}:read-facts`),
+      null,
+    );
+  });
+}
+
+test('executor receives the canonical payload parsed by the primitive schema', async () => {
+  const repository = new MemorySkillRepository();
+  const service = new SkillService(repository, () => NOW);
+  const revision = await createAcceptedEffectSkill(service);
+  let executedPayload: unknown;
+
+  await service.invoke(
+    {
+      calls: [
+        {
+          callId: 'read-facts',
+          contextRefs: ['facts:current-offer'],
+          declaredBudgetCapCents: 1,
+          payload: { scope: '  workspace.current-facts  ' },
+          toolId: 'read_context',
+        },
+      ],
+      input: dailyIndustrySkillInput(),
+      invocationId: 'invocation-canonical-payload',
+      output: {
+        schemaRevision: 'skill-output.intent-decision@1',
+        target: 'workflow_artifact',
+      },
+      productUsageTaskId: 'task-one-product-usage',
+      skillRevisionRef: revision.skillRevisionRef,
+      taskId: 'task-canonical-payload',
+      workspaceId: 'workspace-skill-invocation',
+    },
+    {
+      async execute(input) {
+        executedPayload = input.payload;
+        return {
+          acceptanceStatus: 'accepted',
+          costCents: 0,
+          providerReceipt: {
+            accepted: true,
+            providerTaskRef: 'provider-canonical-payload',
+          },
+          usage: { inputTokens: 0, outputTokens: 0 },
+        };
+      },
+      async generate() {
+        return { value: intentDecisionOutput() };
+      },
+    },
+    discardResultPublisher,
+  );
+
+  assert.deepEqual(executedPayload, {
+    scope: 'workspace.current-facts',
+  });
+});
+
 test('only an evaluated and frozen Skill revision enters a stage allowlist', async () => {
   let promptCaptureCount = 0;
   const service = new SkillService(
@@ -583,14 +709,14 @@ test('one Skill invocation settles two child effects independently and replay do
         declaredBudgetCapCents: 2,
         callId: 'read-facts',
         contextRefs: ['facts:current-offer'],
-        payload: { factType: 'campaign_offer' },
+        payload: { scope: 'facts' },
         toolId: 'read_context',
       },
       {
         declaredBudgetCapCents: 2,
         callId: 'score-output',
         contextRefs: ['facts:current-offer'],
-        payload: { candidateRef: 'candidate-1' },
+        payload: { target_ref: 'candidate:candidate-1' },
         toolId: 'check',
       },
     ],
@@ -700,7 +826,7 @@ test('Skill output cannot write ContentPackage and never reaches a child effect'
             declaredBudgetCapCents: 1,
             callId: 'forbidden-write',
             contextRefs: ['facts:current-offer'],
-            payload: {},
+            payload: { scope: 'facts' },
             toolId: 'read_context',
           },
         ],
@@ -829,7 +955,7 @@ test('invalid Skill input fails before any child executor call', async () => {
             callId: 'read-facts',
             contextRefs: ['facts:current-offer'],
             declaredBudgetCapCents: 1,
-            payload: {},
+            payload: { scope: 'facts' },
             toolId: 'read_context',
           },
         ],
@@ -936,7 +1062,7 @@ test('registry-backed validation rejects the actual generated output before busi
             callId: 'read-facts',
             contextRefs: ['facts:current-offer'],
             declaredBudgetCapCents: 1,
-            payload: {},
+            payload: { scope: 'facts' },
             toolId: 'read_context',
           },
         ],
@@ -1044,7 +1170,7 @@ test('receipt persistence retry reuses child effects and publishes the business 
         callId: 'read-facts',
         contextRefs: ['facts:current-offer'],
         declaredBudgetCapCents: 1,
-        payload: {},
+        payload: { scope: 'facts' },
         toolId: 'read_context',
       },
     ],
@@ -1151,14 +1277,14 @@ test('replay fails closed before mutating any effect when one recorded effect is
         callId: 'read-facts',
         contextRefs: ['facts:current-offer'],
         declaredBudgetCapCents: 1,
-        payload: {},
+        payload: { scope: 'facts' },
         toolId: 'read_context',
       },
       {
         callId: 'score-output',
         contextRefs: ['facts:current-offer'],
         declaredBudgetCapCents: 1,
-        payload: {},
+        payload: { target_ref: 'candidate:candidate-1' },
         toolId: 'check',
       },
     ],
@@ -1215,7 +1341,7 @@ test('an observed over-budget child effect is persisted before invocation reject
             callId: 'read-facts',
             contextRefs: ['facts:current-offer'],
             declaredBudgetCapCents: 1,
-            payload: {},
+            payload: { scope: 'facts' },
             toolId: 'read_context',
           },
         ],
@@ -1276,14 +1402,14 @@ test('retry after a mid-invocation crash replays each settled effect and execute
         callId: 'read-facts',
         contextRefs: ['facts:current-offer'],
         declaredBudgetCapCents: 2,
-        payload: {},
+        payload: { scope: 'facts' },
         toolId: 'read_context',
       },
       {
         callId: 'score-output',
         contextRefs: ['facts:current-offer'],
         declaredBudgetCapCents: 2,
-        payload: {},
+        payload: { target_ref: 'candidate:candidate-1' },
         toolId: 'check',
       },
     ],

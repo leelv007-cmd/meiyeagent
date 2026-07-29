@@ -1180,7 +1180,7 @@ test(
             callId: 'read-facts',
             contextRefs: ['facts:current-offer'],
             declaredBudgetCapCents: 1,
-            payload: {},
+            payload: { scope: 'facts' },
             toolId: 'read_context',
           },
         ],

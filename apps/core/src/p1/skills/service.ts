@@ -885,9 +885,13 @@ export class SkillService {
         'Skill 输出未使用已冻结的输出 Schema 版本。',
       );
     }
-    for (const call of input.calls) {
-      resolvePrimitive(this.primitiveRegistry, call.toolId);
-    }
+    const parsedPayloads = input.calls.map((call) =>
+      parsePrimitivePayload(
+        this.primitiveRegistry,
+        call.toolId,
+        call.payload,
+      ),
+    );
     const fingerprint = sha256(canonicalJson(input));
     const existingReceipt =
       await this.repository.getInvocationReceipt(invocationId);
@@ -941,7 +945,7 @@ export class SkillService {
     }
 
     const effects: SkillChildEffect[] = [];
-    for (const call of input.calls) {
+    for (const [callIndex, call] of input.calls.entries()) {
       validateChildEffect(revision, call);
       this.toolExecutionAuthorizer.authorize({
         caller: revision.skillRevisionRef,
@@ -982,7 +986,7 @@ export class SkillService {
         idempotencyKey,
         toolId: call.toolId,
         contextRefs: structuredClone(call.contextRefs),
-        payload: structuredClone(call.payload),
+        payload: structuredClone(parsedPayloads[callIndex]),
       });
       const overBudget =
         !Number.isFinite(result.costCents) ||
@@ -1321,6 +1325,19 @@ function resolvePrimitive(
     return primitiveRegistry.resolve(toolId);
   } catch {
     fail(`Agent primitive is not registered: ${toolId}`);
+  }
+}
+
+function parsePrimitivePayload(
+  primitiveRegistry: AgentPrimitiveRegistry,
+  toolId: string,
+  payload: unknown,
+) {
+  const definition = resolvePrimitive(primitiveRegistry, toolId);
+  try {
+    return definition.inputSchema.parse(payload);
+  } catch {
+    fail(`Agent primitive payload is invalid: ${toolId}.`);
   }
 }
 
