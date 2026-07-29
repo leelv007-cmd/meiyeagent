@@ -192,18 +192,6 @@ pass by restoring dead UI. Their live contracts remain on these shipped seams:
 
 The two still-live Day-0 cases remain in this file and are catalogued in §25.
 
-## 13. S3 Operations, Reuse, Asset, And History
-
-**File:** `specs/uiux-operations-reuse.spec.ts` | **Priority:** P0
-
-Locks the shared reuse catalog, explicit tool Job boundary, canonical history,
-and Canvas owning-route boundary.
-
-| # | Test name | Flow |
-|---|---|---|
-| 1 | One catalog inserts tools and references without hidden execution | Create one Work, choose an image tool from the contextual shelf, assert no Job exists, open the same catalog with `Cmd+K`, verify an honest empty result, inspect reference decomposition with zero fields initially selected, persist one explicitly selected historical Work reference, then explicitly execute and assert one Job. Reload URL-backed Search and verify the same canonical Work remains. |
-| 2 | Daily light editor owns Canvas Work routes and compliance exports | Create a blank Canvas Work from the shared catalog, enter its exact `/dashboard/works/:id` route, edit copy, crop and reorder its modules, save the revision, then export all four watermark/AIGC switch combinations. Verify four distinct PNG binaries and matching receipts with image, font, CJK line-break, raster dimension, and SHA-256 evidence; return to the same route and capture the visible daily light editor without any Polotno request. |
-
 ## 14. Keyboard Governance
 
 **File:** `specs/uiux-keyboard-governance.spec.ts` | **Priority:** P0
