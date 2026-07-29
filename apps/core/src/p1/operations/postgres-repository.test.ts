@@ -718,7 +718,7 @@ describe(
 			assert.equal(conflictAudits?.length, 1);
 		});
 
-		it("persists Task-delivered reuse lineage while the retired direct-copy command stays blocked", async () => {
+		it("persists Task-delivered reuse lineage while internal direct copying stays blocked", async () => {
 			const source = await service.createContentPackage(context, {
 				kind: "image_text",
 				source: { assetIds: [`lineage-source-${workspaceId}`] },
