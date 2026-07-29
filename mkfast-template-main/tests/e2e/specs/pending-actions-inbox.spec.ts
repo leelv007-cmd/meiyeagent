@@ -12,23 +12,24 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 
-async function operationsCommand<T>(
+async function p1Command<T>(
   page: Page,
+  module: 'operations' | 'result-delivery',
   action: string,
   payload: Record<string, unknown>
 ) {
   return page.evaluate(
-    async ({ action: command, payload: input }) => {
+    async ({ action: command, module: commandModule, payload: input }) => {
       const response = await fetch('/api/core/p1/commands', {
         body: JSON.stringify({
           action: command,
-          module: 'operations',
+          module: commandModule,
           payload: input,
         }),
         credentials: 'same-origin',
         headers: {
           'content-type': 'application/json',
-          'idempotency-key': `pending-actions-e2e:${command}:${crypto.randomUUID()}`,
+          'idempotency-key': `pending-actions-e2e:${commandModule}:${command}:${crypto.randomUUID()}`,
         },
         method: 'POST',
       });
@@ -41,7 +42,7 @@ async function operationsCommand<T>(
       }
       return envelope.data;
     },
-    { action, payload }
+    { action, module, payload }
   );
 }
 
@@ -292,7 +293,7 @@ test.describe('pending action inbox', () => {
     );
     expect(publishable?.status).toBe('accepted');
     expect(publishable?.source.targetPlatform).toBeTruthy();
-    await operationsCommand<ContentPackage>(page, 'export_content_package', {
+    await p1Command<ContentPackage>(page, 'result-delivery', 'result_export', {
       expectedRevision: publishable!.revision,
       packageId: publishable!.id,
       platform: publishable!.source.targetPlatform,
@@ -353,8 +354,9 @@ test.describe('pending action inbox', () => {
       ({ id }) => id === approvalAction.approvalRequest.packageId
     );
     if (!currentPackage) throw new Error('Approval package was absent');
-    const approvalReceipt = await operationsCommand<ApprovalReceipt>(
+    const approvalReceipt = await p1Command<ApprovalReceipt>(
       page,
+      'operations',
       'approve_content_package_action',
       {
         accountId: 'e2e-xiaohongshu-account',
