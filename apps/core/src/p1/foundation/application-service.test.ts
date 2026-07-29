@@ -517,6 +517,53 @@ describe('P1ApplicationService foundation seam', () => {
     assert.equal(attempts, 2);
   });
 
+  it('releases a deterministic invalid-state claim for immediate same-key correction', async () => {
+    const repository = new MemoryFoundationRepository();
+    repository.grantOwner(owner.workspaceId, owner.userId);
+    let attempts = 0;
+    const service = new P1ApplicationService(repository, {
+      authorizer: allowAllAuthorizer,
+      operations: [
+        {
+          name: 'validation.probe',
+          async execute() {
+            attempts += 1;
+            if (attempts === 1) {
+              throw new P1DomainError(
+                'INVALID_STATE',
+                'The command payload is invalid.'
+              );
+            }
+            return { corrected: true };
+          },
+        },
+      ],
+    });
+
+    await assert.rejects(
+      service.executeModule(
+        owner,
+        'validation.probe',
+        { request: 'same' },
+        'invalid-state-command'
+      ),
+      (error: unknown) =>
+        error instanceof P1DomainError && error.code === 'INVALID_STATE'
+    );
+    assert.deepEqual(await service.listCommandAudits(owner), []);
+    assert.deepEqual(
+      await service.executeModule(
+        owner,
+        'validation.probe',
+        { request: 'same' },
+        'invalid-state-command'
+      ),
+      { corrected: true }
+    );
+    assert.equal(attempts, 2);
+    assert.equal((await service.listCommandAudits(owner)).length, 1);
+  });
+
   it('renews a long-running module command lease until its side effect settles', async () => {
     const repository = new MemoryFoundationRepository(() => new Date(), 30);
     repository.grantOwner(owner.workspaceId, owner.userId);

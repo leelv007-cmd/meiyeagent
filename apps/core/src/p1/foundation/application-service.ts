@@ -443,7 +443,8 @@ export class P1ApplicationService {
         code === 'NOT_FOUND' ||
         code === 'FORBIDDEN' ||
         code === 'INSUFFICIENT_ENTITLEMENT' ||
-        code === 'IDEMPOTENCY_CONFLICT';
+        code === 'IDEMPOTENCY_CONFLICT' ||
+        code === 'INVALID_STATE';
       if (safeToRelease) {
         await this.repository
           .abandonModuleCommand(
