@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import test from 'node:test';
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { contentPackageSchema } from '@meiye/contracts';
 import { Pool } from 'pg';
 
+import {
+  AgentPrimitiveObservabilityAdapter,
+  HarnessObservabilityEventAudit,
+} from '../creation-experience/index.js';
 import {
   createCreationExecutionSnapshot,
   OFFICIAL_NEUTRAL_IDENTITY,
@@ -22,16 +26,26 @@ import { buildContentPackage } from '../operations/content-package.js';
 import { MemoryContextBundleRepository } from '../operations/context-bundle-repository.js';
 import { PostgresOperationsRepository } from '../operations/postgres-repository.js';
 import { MemoryStoreFactLedger } from '../operations/store-fact-ledger.js';
+import { CapabilityHotAssemblyRegistry } from '../supply-registry/hot-assembly.js';
+import type { CredentialSecretBrokerPort } from '../supply-registry/secret-broker.js';
 import {
   DbosHarnessWorkflowStarter,
   registerHarnessDbosWorkflow,
 } from './dbos-workflow.js';
+import {
+  HARNESS_BUILTIN_PROMPTS,
+  HARNESS_LANGFUSE_PROMPT_NAMES,
+  type HarnessFrozenPrompts,
+} from './langfuse-prompts.js';
 import { PostgresNoteMediaAdmissionCoordinator } from './note-media-admission.js';
 import { unconfiguredNotePlanEnhancementJudgeResolver } from './note-plan-structured-port.js';
 import { LedgerBackedHarnessContextPort } from './production-context-port.js';
 import { ProductionHarnessFrozenRouteSnapshotResolver } from './production-frozen-route.js';
 import { createProductionHarnessMediaAssembly } from './production-media-assembly.js';
-import { ProductionHarnessStagePorts } from './production-stage-ports.js';
+import {
+  ProductionHarnessStagePorts,
+  type HarnessStructuredNodeRunnerFactory,
+} from './production-stage-ports.js';
 import { PostgresHarnessStore } from './postgres-store.js';
 import type {
   StructuredNodeRunner,
@@ -39,6 +53,8 @@ import type {
 } from './structured-nodes.js';
 import {
   HarnessTaskAdmissionService,
+  type HarnessSkillManifestSnapshot,
+  type HarnessSkillManifestResolver,
   type HarnessWorkflowInput,
 } from './task-admission.js';
 import { harnessRuntimeId } from './workspace-scope.js';
@@ -70,7 +86,8 @@ test(
     const workflowId = `production-media-assembly-${suffix}`;
     const workspaceId = `workspace-production-media-assembly-${suffix}`;
     const providerRequests: ProviderExecutionRequest[] = [];
-    const models = productionModelSupply(providerRequests);
+    const supply = productionModelSupply(providerRequests);
+    const models = supply.models;
     const frozenRoute = await models.freezeFixedRouteForExecution({
       catalogModelId: 'model-production-media',
       dataClass: ['contains_face'],
@@ -119,8 +136,106 @@ test(
       assert.equal(composerRoute?.id, snapshot.route.id);
       await seedContentPackage(pool, request);
 
-      const runners = {
-        create: () => new ExternalModelCompletionFixture(snapshot),
+      const structuredControllerBindings: Array<
+        Parameters<HarnessStructuredNodeRunnerFactory['create']>[0]
+      > = [];
+      const runners: HarnessStructuredNodeRunnerFactory = {
+        create(input) {
+          const binding = structuredClone(input);
+          structuredControllerBindings.push(binding);
+          return new BoundaryAwareControllerFixture(snapshot, binding);
+        },
+      };
+      const skillManifest: HarnessSkillManifestSnapshot = {
+        skillRevisionRef: 'skill.production-media-controller@1',
+        contentHash: createHash('sha256')
+          .update('Production media controller instruction v1')
+          .digest('hex'),
+        requiredModelCapabilities: [],
+        resolvedInstruction: {
+          skillRevisionRef: 'skill.production-media-controller@1',
+          instruction: 'Production media controller instruction v1',
+          contentHash: createHash('sha256')
+            .update('Production media controller instruction v1')
+            .digest('hex'),
+          requiredModelCapabilities: [],
+          executionMode: 'prompt_materialized',
+        },
+      };
+      let selectedSkillManifest: HarnessSkillManifestSnapshot =
+        structuredClone(skillManifest);
+      let providerStartedResolve!: () => void;
+      let releaseProviderResolve!: () => void;
+      const providerStarted = new Promise<void>((resolve) => {
+        providerStartedResolve = resolve;
+      });
+      const releaseProvider = new Promise<void>((resolve) => {
+        releaseProviderResolve = resolve;
+      });
+      let holdProvider = true;
+      const skillManifests: HarnessSkillManifestResolver = {
+        async select({ stage }) {
+          return stage === 'intent_naming'
+            ? [
+                {
+                  skillRevisionRef:
+                    selectedSkillManifest.skillRevisionRef,
+                  contentHash: selectedSkillManifest.contentHash,
+                  requiredModelCapabilities: [
+                    ...selectedSkillManifest.requiredModelCapabilities,
+                  ],
+                },
+              ]
+            : [];
+        },
+        async materialize({ manifests }) {
+          return manifests.map((manifest) => {
+            assert.equal(
+              manifest.skillRevisionRef,
+              selectedSkillManifest.skillRevisionRef,
+            );
+            return structuredClone(selectedSkillManifest);
+          });
+        },
+      };
+      const skillInstructions = {
+        async resolve(input: {
+          skillRevisionRefs?: readonly string[];
+          stage: string;
+        }) {
+          assert.equal(input.stage, 'intent_naming');
+          assert.deepEqual(input.skillRevisionRefs, [
+            skillManifest.skillRevisionRef,
+          ]);
+          return {
+            instructions: [
+              {
+                ...structuredClone(skillManifest),
+                instruction: 'Production media controller instruction v1',
+                executionMode: 'prompt_materialized' as const,
+              },
+            ],
+            receipts: [],
+          };
+        },
+      };
+      const executionChildObservability = {
+        create(observedRequest: HarnessWorkflowInput) {
+          const observedSnapshot =
+            requireExecutionSnapshot(observedRequest);
+          return new AgentPrimitiveObservabilityAdapter(
+            new HarnessObservabilityEventAudit(harnessStore),
+            {
+              resolve() {
+                return {
+                  kind: 'product_usage' as const,
+                  productUsageTaskId: observedSnapshot.task.id,
+                  quoteId: observedSnapshot.quote.id,
+                };
+              },
+            },
+          );
+        },
       };
       const copy = new ProductionHarnessStagePorts(
         runners,
@@ -146,12 +261,24 @@ test(
           },
         },
         () => now,
+        undefined,
+        undefined,
+        undefined,
+        skillInstructions,
+        undefined,
+        undefined,
+        executionChildObservability,
       );
       const stages = createProductionHarnessMediaAssembly({
         contentPackages,
         copy,
         models: {
           async submit(input) {
+            if (holdProvider) {
+              holdProvider = false;
+              providerStartedResolve();
+              await releaseProvider;
+            }
             const result = await models.submit(input);
             completedModelResults.push(structuredClone(result));
             return result;
@@ -166,6 +293,7 @@ test(
         },
         now: () => now,
         runners,
+        executionChildObservability,
       });
       const workflow = registerHarnessDbosWorkflow(stages, harnessStore);
       DBOS.setConfig({
@@ -176,11 +304,16 @@ test(
       await DBOS.launch();
       dbosLaunched = true;
 
+      let promptHead = productionPromptBundle('262-test-v1', true);
       const admission = new HarnessTaskAdmissionService(
         harnessStore,
         new DbosHarnessWorkflowStarter(workflow),
-        undefined,
-        undefined,
+        {
+          async resolve() {
+            return structuredClone(promptHead);
+          },
+        },
+        harnessStore,
         {
           async resolve() {
             return {
@@ -196,12 +329,35 @@ test(
           foundationRoutes,
           models,
         ),
+        skillManifests,
+        harnessStore,
       );
 
       assert.deepEqual(
         await admission.submit({ taskId: workflowId, ...request }),
         { workflowId, replayed: false },
       );
+      await providerStarted;
+      promptHead = productionPromptBundle('262-test-v2');
+      selectedSkillManifest = {
+        skillRevisionRef: 'skill.production-media-controller@2',
+        contentHash: createHash('sha256')
+          .update('Production media controller instruction v2')
+          .digest('hex'),
+        requiredModelCapabilities: ['structured_output'],
+        resolvedInstruction: {
+          skillRevisionRef: 'skill.production-media-controller@2',
+          instruction: 'Production media controller instruction v2',
+          contentHash: createHash('sha256')
+            .update('Production media controller instruction v2')
+            .digest('hex'),
+          requiredModelCapabilities: ['structured_output'],
+          executionMode: 'prompt_materialized',
+        },
+      };
+      supply.publishNextCapabilityHead();
+      supply.publishNextCredentialHead();
+      releaseProviderResolve();
       const firstResult = await DBOS.retrieveWorkflow<{
         delivery: {
           packageId: string;
@@ -225,6 +381,47 @@ test(
           WHERE runtime_id=$1`,
         [runtimeId],
       );
+      const durableRequest = frozen.rows[0]?.request;
+      const executionAssembly = durableRequest?.executionAssembly;
+      assert.ok(executionAssembly);
+      assert.equal(executionAssembly.workflowId, workflowId);
+      assert.match(
+        executionAssembly.frozenRouteSnapshotDigest,
+        /^[a-f0-9]{64}$/u,
+      );
+      assert.deepEqual(
+        executionAssembly.skillStages.intent_naming,
+        [skillManifest],
+      );
+      assert.equal(
+        executionAssembly.promptRevisionRefs.intentNaming?.version,
+        '262-test-v1',
+      );
+      assert.equal(
+        executionAssembly.promptRevisionRefs.intentNaming?.isFallback,
+        true,
+      );
+      assert.equal(
+        executionAssembly.promptRevisionRefs.intentNaming?.fallbackReason,
+        'langfuse_http_503',
+      );
+      assert.equal(
+        Object.keys(executionAssembly.promptRevisionRefs).length,
+        Object.keys(HARNESS_LANGFUSE_PROMPT_NAMES).length,
+      );
+      assert.deepEqual(executionAssembly.rootAxes, {
+        axisScope: 'task_root',
+        skillRevision: {
+          kind: 'bound',
+          value: skillManifest.skillRevisionRef,
+        },
+        promptVersion: { kind: 'absent' },
+        catalogRevision: {
+          kind: 'bound',
+          value: snapshot.catalogModel.revision,
+        },
+        scene: { kind: 'bound', value: 'recipe-production-media' },
+      });
       assert.deepEqual(frozen.rows[0]?.request.boundedExecution, {
         schemaVersion: 'bounded-execution-snapshot/v1',
         maxIterations: 4,
@@ -247,6 +444,212 @@ test(
       assert.equal(
         durableRoute.catalogRevisionId,
         snapshot.route.revision,
+      );
+      assert.equal(
+        durableRoute.capabilityRevisionId,
+        'capability-production-media-r1',
+      );
+      assert.equal(durableRoute.deploymentId, frozenRoute.deploymentId);
+      const assemblyAudits = await pool.query<{
+        outbox_status: string;
+        payload: {
+          eventType: string;
+          taskId: string;
+          workspaceId: string;
+          actorId: string;
+          actorKind: string;
+          idempotencyKey: string;
+          axisScope: string;
+          skillRevision: string | null;
+          promptVersion: string | null;
+          catalogRevision: string | null;
+          scene: string | null;
+          payload: { primitiveId: string; phase: string };
+        };
+      }>(
+        `SELECT audit.payload,
+                outbox.status AS outbox_status
+           FROM harness_runtime.audit_events audit
+           JOIN harness_runtime.langfuse_outbox outbox
+             ON outbox.audit_id=audit.id
+          WHERE audit.workflow_id=$1
+            AND audit.event_type='agent_primitive.lifecycle'
+            AND audit.payload->'payload'->>'primitiveId'
+                  LIKE 'harness-assembly:%'
+          ORDER BY audit.created_at, audit.id`,
+        [runtimeId],
+      );
+      assert.deepEqual(
+        assemblyAudits.rows.map(({ payload, outbox_status }) => ({
+          primitiveId: payload.payload.primitiveId,
+          phase: payload.payload.phase,
+          outboxStatus: outbox_status,
+        })),
+        [
+          'manifest_resolution',
+          'hot_assembly',
+          'prompt_resolution',
+          'task_pin',
+          'execution_check',
+          'event_persistence',
+        ].map((step) => ({
+          primitiveId: `harness-assembly:${step}`,
+          phase: 'succeeded',
+          outboxStatus: 'queued',
+        })),
+      );
+      const fallbackAudits = await pool.query<{
+        outbox_status: string;
+      }>(
+        `SELECT outbox.status AS outbox_status
+           FROM harness_runtime.audit_events audit
+           JOIN harness_runtime.langfuse_outbox outbox
+             ON outbox.audit_id=audit.id
+          WHERE audit.workflow_id=$1
+            AND audit.event_type='langfuse_prompt_fallback'`,
+        [runtimeId],
+      );
+      assert.equal(
+        fallbackAudits.rowCount,
+        Object.keys(HARNESS_LANGFUSE_PROMPT_NAMES).length,
+      );
+      assert.ok(
+        fallbackAudits.rows.every(
+          ({ outbox_status }) => outbox_status === 'queued',
+        ),
+      );
+      const rootAudit = assemblyAudits.rows.find(
+        ({ payload }) =>
+          payload.payload.primitiveId ===
+          'harness-assembly:event_persistence',
+      )?.payload;
+      assert.ok(rootAudit);
+      assert.match(rootAudit.actorId, /^ref:[a-f0-9]{64}$/u);
+      assert.match(rootAudit.idempotencyKey, /^agent-primitive-/u);
+      assert.deepEqual(
+        {
+          eventType: rootAudit.eventType,
+          taskId: rootAudit.taskId,
+          workspaceId: rootAudit.workspaceId,
+          actorKind: rootAudit.actorKind,
+          axisScope: rootAudit.axisScope,
+          skillRevision: rootAudit.skillRevision,
+          promptVersion: rootAudit.promptVersion,
+          catalogRevision: rootAudit.catalogRevision,
+          scene: rootAudit.scene,
+          payload: rootAudit.payload,
+        },
+        {
+          eventType: 'agent_primitive.lifecycle',
+          taskId: workflowId,
+          workspaceId,
+          actorKind: 'worker',
+          axisScope: 'task_root',
+          skillRevision: skillManifest.skillRevisionRef,
+          promptVersion: null,
+          catalogRevision: snapshot.catalogModel.revision,
+          scene: 'recipe-production-media',
+          payload: {
+            primitiveId: 'harness-assembly:event_persistence',
+            phase: 'succeeded',
+            billing: {
+              kind: 'product_usage',
+              productUsageTaskId: snapshot.task.id,
+              quoteId: snapshot.quote.id,
+            },
+          },
+        },
+      );
+      const childAudits = await pool.query<{
+        payload: {
+          taskId: string;
+          axisScope: string;
+          skillRevision: string | null;
+          promptVersion: string | null;
+          catalogRevision: string | null;
+          scene: string | null;
+          payload: { primitiveId: string; phase: string };
+        };
+      }>(
+        `SELECT payload
+           FROM harness_runtime.audit_events
+          WHERE workflow_id=$1
+            AND event_type='agent_primitive.lifecycle'
+            AND payload->'payload'->>'primitiveId'
+                  NOT LIKE 'harness-assembly:%'
+          ORDER BY payload->'payload'->>'phase'`,
+        [runtimeId],
+      );
+      assert.deepEqual(
+        childAudits.rows
+          .map(({ payload }) => ({
+            taskId: payload.taskId,
+            axisScope: payload.axisScope,
+            skillRevision: payload.skillRevision,
+            promptVersion: payload.promptVersion,
+            catalogRevision: payload.catalogRevision,
+            scene: payload.scene,
+            primitiveId: payload.payload.primitiveId,
+            phase: payload.payload.phase,
+          }))
+          .sort((left, right) =>
+            `${left.primitiveId}:${left.phase}`.localeCompare(
+              `${right.primitiveId}:${right.phase}`,
+            ),
+          ),
+        [
+          ...(['invoked', 'succeeded'] as const).map((phase) => ({
+            taskId: workflowId,
+            axisScope: 'execution_child',
+            skillRevision: null,
+            promptVersion: null,
+            catalogRevision: snapshot.catalogModel.revision,
+            scene: 'recipe-production-media',
+            primitiveId: 'harness-media:image',
+            phase,
+          })),
+          ...(['invoked', 'succeeded'] as const).map((phase) => ({
+            taskId: workflowId,
+            axisScope: 'execution_child',
+            skillRevision: null,
+            promptVersion: 'harness/brief-image@262-test-v1',
+            catalogRevision: null,
+            scene: 'recipe-production-media',
+            primitiveId: 'harness_image_brief_v1',
+            phase,
+          })),
+          {
+            taskId: workflowId,
+            axisScope: 'execution_child',
+            skillRevision: skillManifest.skillRevisionRef,
+            promptVersion: 'harness/intent-naming@262-test-v1',
+            catalogRevision: null,
+            scene: 'recipe-production-media',
+            primitiveId: 'harness_intent_naming_v1',
+            phase: 'invoked',
+          },
+          {
+            taskId: workflowId,
+            axisScope: 'execution_child',
+            skillRevision: skillManifest.skillRevisionRef,
+            promptVersion: 'harness/intent-naming@262-test-v1',
+            catalogRevision: null,
+            scene: 'recipe-production-media',
+            primitiveId: 'harness_intent_naming_v1',
+            phase: 'succeeded',
+          },
+        ].sort((left, right) =>
+          `${left.primitiveId}:${left.phase}`.localeCompare(
+            `${right.primitiveId}:${right.phase}`,
+          ),
+        ),
+      );
+      assert.equal(structuredControllerBindings.length, 2);
+      assert.deepEqual(
+        structuredControllerBindings.map(
+          ({ frozenRouteSnapshot }) => frozenRouteSnapshot,
+        ),
+        [undefined, undefined],
       );
       assert.equal(providerRequests.length, 1);
       const providerRequest = providerRequests[0];
@@ -272,6 +675,21 @@ test(
         providerRequest.deployment.id,
         frozenRoute.deploymentId,
       );
+      assert.equal(
+        providerRequest.runtimeBinding?.credential?.version,
+        'credential-r1',
+      );
+      assert.equal(
+        providerRequest.routeSnapshot?.credentialVersion,
+        'credential-r1',
+      );
+      assert.deepEqual(supply.credentialAssemblyRequests, [
+        {
+          credentialAccountId: 'credential-account-production-media',
+          frozenVersion: 'credential-r1',
+          requiredScope: 'platform',
+        },
+      ]);
       assert.equal(providerRequest.routeSnapshot?.id, snapshot.route.id);
       assert.equal(
         providerRequest.routeSnapshot?.catalogRevisionId,
@@ -307,6 +725,7 @@ test(
       const effectsBeforeReplay = await DBOS.listWorkflowSteps(runtimeId);
       assert.ok(effectsBeforeReplay);
 
+      const pinnedAssembly = structuredClone(executionAssembly);
       assert.deepEqual(
         await admission.submit({ taskId: workflowId, ...request }),
         { workflowId, replayed: true },
@@ -320,6 +739,33 @@ test(
       assert.deepEqual(
         effectsAfterReplay.map(({ name }) => name),
         effectsBeforeReplay.map(({ name }) => name),
+      );
+      const replayedRequest = await pool.query<{
+        request: HarnessWorkflowInput;
+      }>(
+        `SELECT request
+           FROM harness_runtime.task_requests
+          WHERE runtime_id=$1`,
+        [runtimeId],
+      );
+      assert.deepEqual(
+        replayedRequest.rows[0]?.request.executionAssembly,
+        pinnedAssembly,
+      );
+      assert.equal(
+        replayedRequest.rows[0]?.request.frozenRouteSnapshot
+          ?.capabilityRevisionId,
+        'capability-production-media-r1',
+      );
+      assert.equal(
+        replayedRequest.rows[0]?.request.executionAssembly
+          ?.promptRevisionRefs.intentNaming?.version,
+        '262-test-v1',
+      );
+      assert.deepEqual(
+        replayedRequest.rows[0]?.request.executionAssembly
+          ?.skillStages.intent_naming,
+        [skillManifest],
       );
       await assertPersistedJoin(pool, request, runtimeId, completed);
     } finally {
@@ -338,17 +784,23 @@ test(
   },
 );
 
-class ExternalModelCompletionFixture implements StructuredNodeRunner {
+class BoundaryAwareControllerFixture implements StructuredNodeRunner {
   constructor(
     private readonly snapshot: NonNullable<
       HarnessWorkflowInput['executionSnapshot']
     >,
+    private readonly binding: Parameters<
+      HarnessStructuredNodeRunnerFactory['create']
+    >[0],
   ) {}
 
   async run<Output>(request: StructuredNodeRunnerRequest<Output>) {
     await request.beforeProviderAttempt?.();
     let output: unknown;
     if (request.schemaName === 'harness_intent_naming_v1') {
+      // The media controller is intentionally not assigned the image-generation
+      // deployment. A second controller model pin is outside #262.
+      assert.equal(this.binding.frozenRouteSnapshot, undefined);
       output = {
         normalizedIntent: '制作夏日护理项目图片',
         taskType: 'daily_service_exposure',
@@ -360,6 +812,10 @@ class ExternalModelCompletionFixture implements StructuredNodeRunner {
         blockingGap: null,
       };
     } else if (request.schemaName === 'harness_image_brief_v1') {
+      // #262 intentionally keeps one generation deployment pin. The existing
+      // media-controller seam has no independent site-level or second-model pin,
+      // so this recorded controller fixture must make that boundary explicit.
+      assert.equal(this.binding.frozenRouteSnapshot, undefined);
       output = {
         kind: 'image',
         intent: {
@@ -478,8 +934,133 @@ function productionMediaRequest(
   };
 }
 
+function productionPromptBundle(
+  version: string,
+  fallback = false,
+): HarnessFrozenPrompts {
+  return Object.fromEntries(
+    Object.entries(HARNESS_LANGFUSE_PROMPT_NAMES).map(([key, name]) => {
+      const content =
+        HARNESS_BUILTIN_PROMPTS[key as keyof typeof HARNESS_BUILTIN_PROMPTS];
+      return [
+        key,
+        {
+          name,
+          version,
+          content,
+          contentHash: createHash('sha256').update(content).digest('hex'),
+          label: 'production',
+          source: fallback ? 'builtin' : 'langfuse',
+          isFallback: fallback,
+          ...(fallback
+            ? { fallbackReason: 'langfuse_http_503' }
+            : {}),
+        },
+      ];
+    }),
+  ) as HarnessFrozenPrompts;
+}
+
 function productionModelSupply(providerRequests: ProviderExecutionRequest[]) {
-  return new ModelSupplyApplicationService({
+  let credentialHead = 'credential-r1';
+  const credentialAssemblyRequests: Array<{
+    credentialAccountId: string;
+    frozenVersion?: string;
+    requiredScope: 'platform' | 'workspace_byok';
+  }> = [];
+  const secretBroker: CredentialSecretBrokerPort = {
+    async assembleForRequest(request) {
+      credentialAssemblyRequests.push(structuredClone(request));
+      const version = request.frozenVersion ?? credentialHead;
+      return {
+        credentialAccountId: request.credentialAccountId,
+        version,
+        secretReference: `fixture://${request.credentialAccountId}/${version}`,
+        secretVersion: version === 'credential-r1' ? 1 : 2,
+        scope: request.requiredScope,
+        secret: `fixture-secret-${version}`,
+      };
+    },
+    async projectPublic() {
+      throw new Error('Public credential projection is outside this test.');
+    },
+  };
+  const capabilityProfile = {
+    vocabularyVersion: 'model-capability-v1' as const,
+    protocolCapabilities: {},
+    modalities: [
+      {
+        mime: 'image/*',
+        supported: true,
+        basis: 'inferred' as const,
+        evidenceRef: 'fixture://production-media/image',
+      },
+    ],
+    businessTags: [],
+    modalityCapabilities: [],
+  };
+  const deployment = {
+    id: 'deployment-production-media',
+    catalogModelId: 'model-production-media',
+    providerProfileId: 'provider-profile-production-media',
+    executionChannelId: 'channel-production-media',
+    accountIdentity: 'account-production-media',
+    endpointFingerprint: 'endpoint-production-media',
+    providerModel: 'provider-model-production-media',
+    endpointRevision: 'endpoint-r1',
+    apiCounterparty: 'fixture-provider',
+    credentialOwner: 'platform' as const,
+    lifecycleRevision: 'deployment-r1',
+    apiFamily: 'image' as const,
+    channel: 'direct' as const,
+    region: 'domestic' as const,
+    status: 'active' as const,
+    allowedDataClasses: ['contains_face' as const],
+    policyRevision: 'policy-r1',
+    priceRevision: 'price-r1',
+    credentialMode: 'platform' as const,
+    credentialVersion: 'credential-r1',
+    unitPrice: {
+      amountMicros: 1_000_000,
+      currency: 'CNY' as const,
+      unit: 'image',
+    },
+    activationEvidence: {
+      status: 'recorded' as const,
+      verifiedAt: now,
+      evidenceRef: 'fixture-provider',
+      configurationRevision: 'configuration-r1',
+    },
+    capabilityProfile,
+  };
+  const capabilityEntries = [
+    {
+      deploymentId: deployment.id,
+      catalogModelId: deployment.catalogModelId,
+      apiFamily: deployment.apiFamily,
+      channel: deployment.channel,
+      region: deployment.region,
+      executionChannelId: deployment.executionChannelId,
+      providerModel: deployment.providerModel,
+      endpointRevision: deployment.endpointRevision,
+      lifecycleRevision: deployment.lifecycleRevision,
+      credentialAccountId: 'credential-account-production-media',
+      credentialVersion: deployment.credentialVersion,
+      adapterKey: 'recorded',
+      capabilityProfile,
+    },
+  ];
+  const capabilityHotAssembly = new CapabilityHotAssemblyRegistry(
+    undefined,
+    secretBroker,
+  );
+  capabilityHotAssembly.applyCapabilityRevision({
+    revisionId: 'capability-production-media-r1',
+    number: 1,
+    publishedAt: now,
+    entries: capabilityEntries,
+  });
+  const models = new ModelSupplyApplicationService({
     catalogRevisionId: 'model-r1',
     models: [
       {
@@ -494,41 +1075,8 @@ function productionModelSupply(providerRequests: ProviderExecutionRequest[]) {
         capabilities: ['image.generate'],
       },
     ],
-    deployments: [
-      {
-        id: 'deployment-production-media',
-        catalogModelId: 'model-production-media',
-        providerProfileId: 'provider-profile-production-media',
-        executionChannelId: 'channel-production-media',
-        accountIdentity: 'account-production-media',
-        endpointFingerprint: 'endpoint-production-media',
-        providerModel: 'provider-model-production-media',
-        endpointRevision: 'endpoint-r1',
-        apiCounterparty: 'fixture-provider',
-        credentialOwner: 'platform',
-        lifecycleRevision: 'deployment-r1',
-        apiFamily: 'image',
-        channel: 'direct',
-        region: 'domestic',
-        status: 'active',
-        allowedDataClasses: ['contains_face'],
-        policyRevision: 'policy-r1',
-        priceRevision: 'price-r1',
-        credentialMode: 'platform',
-        credentialVersion: 'credential-r1',
-        unitPrice: {
-          amountMicros: 1_000_000,
-          currency: 'CNY',
-          unit: 'image',
-        },
-        activationEvidence: {
-          status: 'recorded',
-          verifiedAt: now,
-          evidenceRef: 'fixture-provider',
-          configurationRevision: 'configuration-r1',
-        },
-      },
-    ],
+    deployments: [deployment],
+    capabilityHotAssembly,
     execution: {
       async execute(request) {
         providerRequests.push(structuredClone(request));
@@ -545,6 +1093,22 @@ function productionModelSupply(providerRequests: ProviderExecutionRequest[]) {
       },
     },
   });
+  return {
+    credentialAssemblyRequests,
+    models,
+    publishNextCapabilityHead() {
+      capabilityHotAssembly.applyCapabilityRevision({
+        revisionId: 'capability-production-media-r2',
+        number: 2,
+        previousRevisionId: 'capability-production-media-r1',
+        publishedAt: '2026-07-29T09:31:00.000Z',
+        entries: capabilityEntries,
+      });
+    },
+    publishNextCredentialHead() {
+      credentialHead = 'credential-r2';
+    },
+  };
 }
 
 async function seedContentPackage(

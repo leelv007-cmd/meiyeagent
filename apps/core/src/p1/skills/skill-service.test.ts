@@ -26,6 +26,7 @@ import {
   type SkillInvocationExecutor,
   type SkillInvocationResultPublisher,
 } from './index.js';
+import { DurableSkillInstructionResolver } from './runtime.js';
 
 const NOW = '2026-07-26T02:00:00.000Z';
 const PROMPT_CONTENT =
@@ -86,10 +87,16 @@ function createEffectTestService(repository: MemorySkillRepository) {
 }
 
 test('only an evaluated and frozen Skill revision enters a stage allowlist', async () => {
+  let promptCaptureCount = 0;
   const service = new SkillService(
     new MemorySkillRepository(),
     () => NOW,
-    testPromptSnapshots,
+    {
+      async capture(reference) {
+        promptCaptureCount += 1;
+        return testPromptSnapshots.capture(reference);
+      },
+    },
   );
   await service.defineCatalogEntry({
     actorId: 'operator-1',
@@ -160,6 +167,39 @@ test('only an evaluated and frozen Skill revision enters a stage allowlist', asy
     evalRunId: evalRun.runId,
     skillRevisionRef: draft.skillRevisionRef,
   });
+  const resolver = new DurableSkillInstructionResolver(
+    service,
+    {
+      async getRecipeByRevisionId() {
+        return {
+          workflowRevisionRef: 'workflow.daily-copy@1',
+        };
+      },
+    } as never,
+  );
+  const capturesBeforeSelection = promptCaptureCount;
+  const selectedManifests = await resolver.selectManifests({
+    recipeRevisionId: 'recipe.daily-copy@1',
+    stage: 'intent_naming',
+    workflowId: 'task-daily-copy',
+    workflowRevision: 1,
+    workspaceId: 'workspace-daily-copy',
+  });
+  assert.equal(promptCaptureCount, capturesBeforeSelection);
+  assert.deepEqual(selectedManifests, [
+    {
+      skillRevisionRef: draft.skillRevisionRef,
+      contentHash: frozen.contentHash,
+      requiredModelCapabilities: ['structured_output'],
+    },
+  ]);
+  const materializedManifests =
+    await resolver.materializeManifests(selectedManifests);
+  assert.equal(promptCaptureCount, capturesBeforeSelection + 1);
+  assert.equal(
+    materializedManifests[0]?.resolvedInstruction.skillRevisionRef,
+    draft.skillRevisionRef,
+  );
   const resolved = await service.resolveStage({
     stage: 'intent_naming',
     userSelectedSkillRefs: [],
@@ -170,6 +210,10 @@ test('only an evaluated and frozen Skill revision enters a stage allowlist', asy
   assert.deepEqual(
     resolved.allowlist.map((skill) => skill.skillRevisionRef),
     [draft.skillRevisionRef],
+  );
+  assert.deepEqual(
+    resolved.allowlist[0]?.requiredModelCapabilities,
+    ['structured_output'],
   );
 
   const receipts = await service.recordPromptMaterializationReceipts({
@@ -2535,6 +2579,9 @@ test('prompt materialization replays receipts written before prompt lineage ente
           contentHash: revision.contentHash,
           executionMode: 'prompt_materialized',
           instruction: revision.instruction,
+          requiredModelCapabilities: [
+            ...revision.governance.requiredModelCapabilities,
+          ],
           prompt: {
             contentHash: revision.prompt.contentHash,
             isFallback: false,

@@ -204,12 +204,12 @@ test('same outbox event replay sends identical idempotency and entity ids', asyn
   assert.deepEqual(bodies[1], bodies[0]);
 });
 
-test('canonical observability events expose four flat filter axes on trace and span metadata', async (t) => {
-  let body:
-    | { batch: Array<{ type: string; body: Record<string, unknown> }> }
-    | undefined;
+test('assembly writes root axes once while canonical events keep axes on child spans', async (t) => {
+  const bodies: Array<{
+    batch: Array<{ type: string; body: Record<string, unknown> }>;
+  }> = [];
   const server = createServer(async (request, response) => {
-    body = await readJson(request);
+    bodies.push(await readJson(request));
     sendJson(response, 200, { successes: [] });
   });
   const sender = new LangfuseHttpSender({
@@ -240,22 +240,81 @@ test('canonical observability events expose four flat filter axes on trace and s
     decisionTrace: null,
   });
 
-  const trace = body?.batch.find(({ type }) => type === 'trace-create')?.body;
-  const span = body?.batch.find(({ type }) => type === 'span-create')?.body;
-  for (const event of [trace, span]) {
-    const metadata = event?.metadata as Record<string, unknown>;
-    assert.equal(metadata.skillRevision, 'copywriter@rev-17');
-    assert.equal(metadata.promptVersion, 'marketing/copy@v4');
-    assert.equal(metadata.catalogRevision, 'catalog-2026-07-29');
-    assert.equal(metadata.scene, 'opening-campaign');
-    assert.equal('axes' in metadata, false);
+  const trace = bodies[0]?.batch.find(
+    ({ type }) => type === 'trace-create',
+  )?.body;
+  const span = bodies[0]?.batch.find(
+    ({ type }) => type === 'span-create',
+  )?.body;
+  const traceMetadata = trace?.metadata as Record<string, unknown>;
+  for (const axis of [
+    'skillRevision',
+    'promptVersion',
+    'catalogRevision',
+    'scene',
+  ]) {
+    assert.equal(axis in traceMetadata, false);
   }
+  const spanMetadata = span?.metadata as Record<string, unknown>;
+  assert.equal(spanMetadata.skillRevision, 'copywriter@rev-17');
+  assert.equal(spanMetadata.promptVersion, 'marketing/copy@v4');
+  assert.equal(spanMetadata.catalogRevision, 'catalog-2026-07-29');
+  assert.equal(spanMetadata.scene, 'opening-campaign');
+  assert.equal('axes' in spanMetadata, false);
   assert.deepEqual(span?.output, {
     packageId: 'package-248',
     versionId: 'version-3',
     revision: 3,
     verdict: 'up',
   });
+
+  await sender.send({
+    ...selectionItem(),
+    auditId: 'audit-execution-assembly-262',
+    stage: 'observability_event_ingest',
+    eventType: 'agent_primitive.lifecycle',
+    payload: {
+      eventType: 'agent_primitive.lifecycle',
+      taskId: 'task-48',
+      workspaceId: 'workspace-1',
+      actorId: `ref:${'a'.repeat(64)}`,
+      actorKind: 'worker',
+      idempotencyKey: 'harness-assembly-event-persistence',
+      axisScope: 'task_root',
+      skillRevision: null,
+      promptVersion: null,
+      catalogRevision: 'catalog-2026-07-29',
+      scene: 'recipe-card-group',
+      payload: {
+        primitiveId: 'harness-assembly:event_persistence',
+        phase: 'succeeded',
+        billing: { kind: 'not_billed' },
+      },
+    },
+    decisionTrace: null,
+  });
+
+  const assemblyTrace = bodies[1]?.batch.find(
+    ({ type }) => type === 'trace-create',
+  )?.body;
+  const assemblySpan = bodies[1]?.batch.find(
+    ({ type }) => type === 'span-create',
+  )?.body;
+  assert.deepEqual(assemblyTrace?.metadata, {
+    taskId: 'task-48',
+    workflowId: 'harness.v1:d29ya3NwYWNlLTE:dGFzay00OA',
+    catalogRevision: 'catalog-2026-07-29',
+    scene: 'recipe-card-group',
+  });
+  const assemblySpanMetadata =
+    assemblySpan?.metadata as Record<string, unknown>;
+  assert.equal(assemblySpanMetadata.skillRevision, null);
+  assert.equal(assemblySpanMetadata.promptVersion, null);
+  assert.equal(
+    assemblySpanMetadata.catalogRevision,
+    'catalog-2026-07-29',
+  );
+  assert.equal(assemblySpanMetadata.scene, 'recipe-card-group');
 });
 
 test('agent primitive lifecycle exports explicit absent axes and safe server identity', async (t) => {
@@ -368,15 +427,7 @@ test('agent primitive lifecycle exports explicit absent axes and safe server ide
   const childSpan = bodies[1]?.batch.find(
     ({ type }) => type === 'span-create',
   )?.body;
-  const childTraceMetadata = childTrace?.metadata as Record<string, unknown>;
-  for (const axis of [
-    'skillRevision',
-    'promptVersion',
-    'catalogRevision',
-    'scene',
-  ]) {
-    assert.equal(axis in childTraceMetadata, false);
-  }
+  assert.equal(childTrace, undefined);
   const childSpanMetadata = childSpan?.metadata as Record<string, unknown>;
   assert.equal(childSpanMetadata.skillRevision, 'copywriter@rev-17');
   assert.equal(childSpanMetadata.promptVersion, 'marketing/copy@v4');

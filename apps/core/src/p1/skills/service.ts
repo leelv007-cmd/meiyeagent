@@ -640,6 +640,37 @@ export class SkillService {
   }): Promise<{
     allowlist: ResolvedSkillInstruction[];
   }> {
+    const revisions = await this.selectStageRevisions(input);
+    const allowlist = await Promise.all(
+      revisions.map((revision) => this.resolveInstruction(revision)),
+    );
+    return { allowlist };
+  }
+
+  async selectStageManifests(input: {
+    workflowRevisionRef: string;
+    stage: HarnessStage;
+    industryCategory?: string;
+    tenantId?: string;
+    userSelectedSkillRefs: string[];
+  }) {
+    const revisions = await this.selectStageRevisions(input);
+    return revisions.map((revision) => ({
+      skillRevisionRef: revision.skillRevisionRef,
+      contentHash: revision.contentHash,
+      requiredModelCapabilities: [
+        ...revision.governance.requiredModelCapabilities,
+      ],
+    }));
+  }
+
+  private async selectStageRevisions(input: {
+    workflowRevisionRef: string;
+    stage: HarnessStage;
+    industryCategory?: string;
+    tenantId?: string;
+    userSelectedSkillRefs: string[];
+  }): Promise<SkillRevision[]> {
     const bindings = await this.repository.listBindings(
       input.workflowRevisionRef,
       {
@@ -660,7 +691,7 @@ export class SkillService {
       }
     }
     const user = new Set(input.userSelectedSkillRefs);
-    const allowlist: ResolvedSkillInstruction[] = [];
+    const revisions: SkillRevision[] = [];
     for (const binding of selectedBindings.values()) {
       if (binding.mode === 'disabled') continue;
       const revision = await this.repository.getRevision(
@@ -677,10 +708,9 @@ export class SkillService {
       if (binding.mode === 'user_selected' && !user.has(binding.skillRevisionRef)) {
         continue;
       }
-      const resolved = await this.resolveInstruction(revision);
-      allowlist.push(resolved);
+      revisions.push(revision);
     }
-    return { allowlist };
+    return revisions;
   }
 
   retireLegacyPlannerSelectedBindings() {
@@ -1189,6 +1219,9 @@ function resolvedInstruction(
     skillRevisionRef: revision.skillRevisionRef,
     instruction,
     contentHash: revision.contentHash,
+    requiredModelCapabilities: [
+      ...revision.governance.requiredModelCapabilities,
+    ],
     executionMode: revision.governance.executionMode,
     prompt: {
       contentHash: revision.prompt.contentHash,

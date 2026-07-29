@@ -3834,7 +3834,20 @@ describe('ModelSupplyFoundationModule', () => {
     assert.equal(completed.status, 'completed');
     assert.equal(completed.usage.status, 'committed');
     assert.equal(providerCalls, 2);
-    assert.deepEqual(frozenRequests[1], frozenRequests[0]);
+    const firstFrozenRequest = structuredClone(frozenRequests[0]);
+    const firstFrozenSnapshot = firstFrozenRequest?.snapshot as
+      | {
+          allowedCandidates?: Array<{
+            capabilityProfile?: unknown;
+          }>;
+        }
+      | undefined;
+    for (const candidate of firstFrozenSnapshot?.allowedCandidates ?? []) {
+      if (candidate.capabilityProfile === null) {
+        delete candidate.capabilityProfile;
+      }
+    }
+    assert.deepEqual(frozenRequests[1], firstFrozenRequest);
 
     await assert.rejects(
       command(module, retryContext, 'canvas_generation_retry', {

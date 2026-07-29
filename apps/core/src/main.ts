@@ -177,6 +177,7 @@ import {
   PostgresSupplyControlPlaneRepository,
   PostgresSupplyPlanningControlPlane,
   PostgresSupplyPlanningMigration,
+  resolvePlatformDefaultBindings,
 } from './p1/supply-registry/index.js';
 import {
   AiSdkStructuredObjectExecutor,
@@ -330,6 +331,7 @@ import {
   WorkflowEventApplicationService,
 } from './p1/workflow-events.js';
 import {
+  AgentPrimitiveObservabilityAdapter,
   createDurableCreationExperienceRuntime,
   HarnessObservabilityEventAudit,
 } from './p1/creation-experience/index.js';
@@ -1425,10 +1427,13 @@ const skillRuntime = await createDurableSkillRuntime({
   promptResolver: harnessPromptResolver,
   repository: skillRepository,
 });
+const harnessObservabilityEvents = new HarnessObservabilityEventAudit(
+  promptAuditStore,
+);
 const creationExperienceRuntime =
   await createDurableCreationExperienceRuntime({
     modelCatalog: modelSupplyRepository,
-    observabilityEvents: new HarnessObservabilityEventAudit(promptAuditStore),
+    observabilityEvents: harnessObservabilityEvents,
     pool,
     productQuotes: productBillingRepository,
     skillRevisionValidation: skillRuntime.revisionValidation,
@@ -1810,11 +1815,13 @@ if (harnessRuntimeConfig) {
       actorId,
       billingTaskId,
       billingQuoteRevision,
+      frozenRouteSnapshot,
     }: {
       workspaceId: string;
       actorId: string;
       billingTaskId?: string;
       billingQuoteRevision?: string;
+      frozenRouteSnapshot?: import('./p1/model-supply/index.js').RouteSnapshot;
     }) {
       if (!billingTaskId || !billingQuoteRevision) {
         throw new Error(
@@ -1826,10 +1833,31 @@ if (harnessRuntimeConfig) {
         executor: structuredExecutor,
         workspaceId,
         actorId,
-        selection: { mode: 'auto', profile: 'quality' },
+        ...(frozenRouteSnapshot
+          ? { frozenRouteSnapshot }
+          : { selection: { mode: 'auto' as const, profile: 'quality' as const } }),
         billingTaskId,
         billingQuoteRevision,
       });
+    },
+  };
+  const harnessExecutionChildObservability = {
+    create(request: import('./p1/harness/task-admission.js').HarnessWorkflowInput) {
+      return new AgentPrimitiveObservabilityAdapter(
+        harnessObservabilityEvents,
+        {
+          resolve() {
+            const snapshot = request.executionSnapshot;
+            return snapshot
+              ? {
+                  kind: 'product_usage' as const,
+                  productUsageTaskId: snapshot.task.id,
+                  quoteId: snapshot.quote.id,
+                }
+              : { kind: 'not_billed' as const };
+          },
+        },
+      );
     },
   };
   const copyHarnessStages = new ProductionHarnessStagePorts(
@@ -1863,7 +1891,8 @@ if (harnessRuntimeConfig) {
       storeFactLedger,
       contextSourceRevisions,
       () => new Date().toISOString()
-    )
+    ),
+    harnessExecutionChildObservability,
   );
   // Single wiring owner: wrap copy ports so image/video share the same
   // Coordinator → StagePort → Harness path (#139/#140).
@@ -1879,7 +1908,10 @@ if (harnessRuntimeConfig) {
     exactText:
       modelRuntime.mode === 'fixture'
         ? new FixtureImageExactTextVerifier()
-        : new ModelSupplyImageExactTextVerifier(p1ModelSupplyService),
+        : new ModelSupplyImageExactTextVerifier(
+            p1ModelSupplyService,
+            harnessExecutionChildObservability,
+          ),
     imageProfile: IMAGE_MODEL_RECIPE_PROFILE,
     models: p1ModelSupplyService,
     noteAdmission: noteMediaAdmission,
@@ -1887,6 +1919,7 @@ if (harnessRuntimeConfig) {
     noteSettings: notePlanSettings,
     now: () => new Date().toISOString(),
     runners: structuredNodeRunnerFactory,
+    executionChildObservability: harnessExecutionChildObservability,
   });
   DBOS.setConfig(harnessRuntimeConfig.dbos);
   const harnessBilling = new HarnessProductBillingSettlementExecutor(
@@ -1949,7 +1982,101 @@ if (harnessRuntimeConfig) {
       new ProductionHarnessFrozenRouteSnapshotResolver(
         foundationRepository,
         p1ModelSupplyService,
+        {
+          async resolve(operation) {
+            const [registry, defaultsSnapshot] = await Promise.all([
+              supplyControlRepository.getCurrentRegistryRevision(
+                PLATFORM_SUPPLY_SCOPE_ID,
+              ),
+              platformDefaultModelSource.getSnapshot(),
+            ]);
+            if (!registry) {
+              throw new Error(
+                'The platform supply registry has no published revision.',
+              );
+            }
+            const defaults = Object.fromEntries(
+              Object.entries(defaultsSnapshot).map(([key, value]) => [
+                key,
+                value.catalogModelId,
+              ]),
+            );
+            const { bindings, errors } = resolvePlatformDefaultBindings(
+              registry,
+              defaults,
+            );
+            if (errors.length > 0) {
+              throw new Error(errors.join(' '));
+            }
+            const binding = bindings.find(
+              (candidate) => candidate.operation === operation,
+            );
+            const deployment = binding
+              ? registry.deployments.find(
+                  (candidate) =>
+                    candidate.id === binding.deploymentId,
+                )
+              : undefined;
+            if (
+              !binding ||
+              binding.activationEvidenceStatus !== 'live_verified' ||
+              deployment?.lifecycleStatus !== 'active'
+            ) {
+              throw new Error(
+                `No active live-verified platform default is available for ${operation}.`,
+              );
+            }
+            return {
+              catalogModelId: binding.catalogModelId,
+              deploymentId: binding.deploymentId,
+              activationEvidenceStatus: 'live_verified' as const,
+              ...(binding.activationEvidenceRef
+                ? {
+                    activationEvidenceRef:
+                      binding.activationEvidenceRef,
+                  }
+                : {}),
+              ...(binding.configurationRevision
+                ? {
+                    configurationRevision:
+                      binding.configurationRevision,
+                  }
+                : {}),
+            };
+          },
+        },
       ),
+      {
+        async select({ request, stage }) {
+          const recipe = request.executionSnapshot?.recipe;
+          const industryCategory =
+            request.decisionReferences?.find(
+              (reference) =>
+                reference.field === 'industry_category',
+            )?.value;
+          return skillRuntime.instructionResolver.selectManifests({
+            workspaceId: request.workspaceId,
+            workflowId:
+              request.executionSnapshot?.task.id ??
+              request.packageId,
+            workflowRevision: request.workflowRevision,
+            ...(recipe
+              ? {
+                  recipeId: recipe.id,
+                  recipeRevisionId: recipe.revision,
+                }
+              : {}),
+            stage,
+            ...(industryCategory ? { industryCategory } : {}),
+          });
+        },
+        async materialize({ manifests }) {
+          return skillRuntime.instructionResolver.materializeManifests(
+            manifests,
+          );
+        },
+      },
+      harnessStore,
     ),
     harnessDecisions,
     harnessStore,

@@ -30,6 +30,7 @@ test('copy compiler makes one model call and returns one primary candidate', asy
           contentHash: 'hash-execution-skill',
           executionMode: 'prompt_materialized',
           instruction: 'Prefer a calm, evidence-first primary result.',
+          requiredModelCapabilities: [],
           skillRevisionRef: 'skill.execution-selection@2',
         },
       ],

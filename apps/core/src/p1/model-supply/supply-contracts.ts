@@ -5,6 +5,7 @@
 import type {
   AdvancedCanvasEditingContext,
   ImageIntent,
+  ModelCapabilityProfile,
   VideoCompositionEvidence,
 } from '@meiye/contracts';
 
@@ -157,6 +158,8 @@ export interface ModelDeployment {
     evidenceRef?: string;
     configurationRevision?: string;
   };
+  /** Versioned request-time capability claims for D-165 hot assembly. */
+  capabilityProfile?: ModelCapabilityProfile;
 }
 
 export type RuntimeDeploymentCapability = Pick<
@@ -172,6 +175,7 @@ export type RuntimeDeploymentCapability = Pick<
   | 'lifecycleRevision'
   | 'credentialAccountId'
   | 'credentialVersion'
+  | 'capabilityProfile'
 >;
 
 export const AUDIO_ASSET_FORMATS = [

@@ -5,10 +5,60 @@ import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 
 import {
+  HARNESS_PROMPT_SITES,
   HARNESS_LANGFUSE_PROMPT_NAMES,
   LangfuseHarnessPromptResolver,
   assertLangfusePromptRuntimePolicy,
+  harnessPromptCapabilityRequirement,
 } from './langfuse-prompts.js';
+
+test('the single 14-site registry owns prompt names and capability requirements', () => {
+  assert.deepEqual(
+    Object.keys(HARNESS_PROMPT_SITES).sort(),
+    Object.keys(HARNESS_LANGFUSE_PROMPT_NAMES).sort(),
+  );
+  assert.equal(Object.keys(HARNESS_PROMPT_SITES).length, 14);
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.entries(HARNESS_PROMPT_SITES).map(([key, site]) => [
+        key,
+        site.name,
+      ]),
+    ),
+    HARNESS_LANGFUSE_PROMPT_NAMES,
+  );
+
+  assert.deepEqual(
+    harnessPromptCapabilityRequirement('briefImage'),
+    {
+      axisId: 'briefImage',
+      vocabularyVersion: 'model-capability-v1',
+      requiredProtocolCapabilities: ['structured-output'],
+      requiredModalities: ['text/plain'],
+      requiredBusinessTags: [],
+      requiredModalityCapabilities: [],
+      unknownPolicy: 'conservative_always_available',
+    },
+  );
+  assert.deepEqual(
+    harnessPromptCapabilityRequirement('textResponse'),
+    {
+      axisId: 'textResponse',
+      vocabularyVersion: 'model-capability-v1',
+      requiredProtocolCapabilities: [],
+      requiredModalities: ['text/plain'],
+      requiredBusinessTags: [],
+      requiredModalityCapabilities: [],
+      unknownPolicy: 'conservative_always_available',
+    },
+  );
+  assert.deepEqual(
+    harnessPromptCapabilityRequirement('textResponse', {
+      referenceImage: true,
+    }).requiredModalities,
+    ['text/plain', 'image/*'],
+  );
+});
 
 test('strict prompt policy is the default and rejects missing runtime configuration', () => {
   assert.throws(

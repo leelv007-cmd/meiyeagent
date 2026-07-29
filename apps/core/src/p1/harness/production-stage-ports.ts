@@ -5,6 +5,7 @@ import type {
   ContentPackageRevisionDelivery,
   CreativeRecommendationDecisionTrace,
   MarketingPackageEvidence,
+  ObservabilityAxisBinding,
   ReuseTaskSeed,
   StoreFactKind,
   HarnessStage,
@@ -47,9 +48,16 @@ import type {
 } from './workflow-core.js';
 import {
   ExecutionAttemptBudget,
+  ExecutionAttemptBudgetExceeded,
   withExecutionAttemptBudget,
 } from '../model-supply/execution-attempt-budget.js';
-import type { HarnessWorkflowInput } from './task-admission.js';
+import { StructuredNodeRunError } from '../model-supply/structured-node-runner.js';
+import {
+  assertHarnessExecutionAssemblyPinned,
+  type HarnessExecutionAssemblyStep,
+  type HarnessSkillManifestSnapshot,
+  type HarnessWorkflowInput,
+} from './task-admission.js';
 import { createMarketingPackageEvidence } from './marketing-package-evidence.js';
 import {
   assertCopyRevisionAssemblyComplete,
@@ -63,17 +71,25 @@ import {
   assessRecipeFactSatisfaction,
   type FactRightsAuthorizationPort,
 } from './fact-satisfaction.js';
+import type {
+  AgentPrimitiveLifecycleInput,
+  AgentPrimitiveObservabilityAdapter,
+} from '../creation-experience/agent-primitive-observability.js';
 
 export interface ProductionHarnessContextPort {
   compileAndFreeze(input: {
     workflowId: string;
     request: HarnessWorkflowInput;
-    declaration: Parameters<HarnessStagePorts['injectContext']>[0]['declaration'];
+    declaration: Parameters<
+      HarnessStagePorts['injectContext']
+    >[0]['declaration'];
   }): Promise<HarnessContextSnapshot>;
   fence(input: {
     workflowId: string;
     request: HarnessWorkflowInput;
-    declaration: Parameters<HarnessStagePorts['fenceContext']>[0]['declaration'];
+    declaration: Parameters<
+      HarnessStagePorts['fenceContext']
+    >[0]['declaration'];
     context: HarnessContextSnapshot;
   }): Promise<HarnessContextSnapshot>;
 }
@@ -114,6 +130,9 @@ export interface HarnessStructuredNodeRunnerFactory {
     actorId: string;
     billingTaskId?: string;
     billingQuoteRevision?: string;
+    frozenRouteSnapshot?: NonNullable<
+      HarnessWorkflowInput['frozenRouteSnapshot']
+    >;
   }): StructuredNodeRunner;
 }
 
@@ -128,6 +147,7 @@ export interface HarnessSkillInstructionResolverPort {
     industryCategory?: string;
     userSelectedSkillRefs?: readonly string[];
     skillRevisionRefs?: readonly string[];
+    skillManifestSnapshots?: readonly HarnessSkillManifestSnapshot[];
   }): Promise<{
     instructions: ResolvedSkillInstruction[];
     receipts: SkillInvocationReceipt[];
@@ -140,6 +160,12 @@ export interface HarnessRecipeFactRequirementPort {
     revisionId: string;
     factTypes: StoreFactKind[];
   } | null>;
+}
+
+export interface HarnessExecutionChildObservabilityFactory {
+  create(
+    request: HarnessWorkflowInput,
+  ): Pick<AgentPrimitiveObservabilityAdapter, 'append'>;
 }
 
 export class HarnessCopyScopeError extends Error {
@@ -170,7 +196,9 @@ export class HarnessSnapshotIdentityBindingError extends Error {
     readonly expectedIdentityRef: string,
     readonly actualIdentityRefs: string[],
   ) {
-    super('The copy brief and frozen context must bind exactly to the execution snapshot identity.');
+    super(
+      'The copy brief and frozen context must bind exactly to the execution snapshot identity.',
+    );
     this.name = 'HarnessSnapshotIdentityBindingError';
   }
 }
@@ -180,7 +208,9 @@ export class HarnessSnapshotAssetReferenceError extends Error {
   readonly status = 409;
 
   constructor(readonly assetIds: string[]) {
-    super('The copy brief references assets outside the frozen execution snapshot.');
+    super(
+      'The copy brief references assets outside the frozen execution snapshot.',
+    );
     this.name = 'HarnessSnapshotAssetReferenceError';
   }
 }
@@ -203,6 +233,70 @@ class SourceContentPackageGuardedRunner implements StructuredNodeRunner {
   }
 }
 
+class ExecutionChildObservedRunner implements StructuredNodeRunner {
+  constructor(
+    private readonly runner: StructuredNodeRunner,
+    private readonly observer: Pick<
+      AgentPrimitiveObservabilityAdapter,
+      'append'
+    >,
+    private readonly request: HarnessWorkflowInput,
+    private readonly stage: HarnessStage,
+  ) {}
+
+  async run<Output>(
+    request: StructuredNodeRunnerRequest<Output>,
+  ): Promise<StructuredNodeRunnerResult<Output>> {
+    assertHarnessExecutionAssemblyPinned(this.request);
+    const beforeProviderAttempt = async () => {
+      assertHarnessExecutionAssemblyPinned(this.request);
+      await request.beforeProviderAttempt?.();
+    };
+    const lifecycle = executionChildLifecycleInput(
+      this.request,
+      this.stage,
+      request,
+    );
+    await this.observer.append({ ...lifecycle, phase: 'invoked' });
+    let result: StructuredNodeRunnerResult<Output>;
+    try {
+      result = await this.runner.run({
+        ...request,
+        beforeProviderAttempt,
+      });
+    } catch (error) {
+      await this.observer.append({
+        ...lifecycle,
+        phase: 'rejected',
+        rejectionClass:
+          error instanceof ExecutionAttemptBudgetExceeded
+            ? 'execution_budget_exceeded'
+            : error instanceof StructuredNodeRunError &&
+                error.status === 'unknown'
+              ? 'execution_uncertain'
+              : 'execution_failed',
+      });
+      throw error;
+    }
+    await this.observer.append({ ...lifecycle, phase: 'succeeded' });
+    return result;
+  }
+}
+
+export function observeHarnessStructuredNodeRunner(input: {
+  runner: StructuredNodeRunner;
+  observer: Pick<AgentPrimitiveObservabilityAdapter, 'append'>;
+  request: HarnessWorkflowInput;
+  stage: HarnessStage;
+}) {
+  return new ExecutionChildObservedRunner(
+    input.runner,
+    input.observer,
+    input.request,
+    input.stage,
+  );
+}
+
 export class ProductionHarnessStagePorts implements HarnessStagePorts {
   constructor(
     private readonly runners: HarnessStructuredNodeRunnerFactory,
@@ -220,12 +314,51 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     private readonly skillInstructions?: HarnessSkillInstructionResolverPort,
     private readonly recipeFacts?: HarnessRecipeFactRequirementPort,
     private readonly factRights?: FactRightsAuthorizationPort,
+    private readonly executionChildObservability?: HarnessExecutionChildObservabilityFactory,
   ) {}
 
+  async recordExecutionAssemblyStep(input: {
+    workflowId: string;
+    request: HarnessWorkflowInput;
+    step: Extract<
+      HarnessExecutionAssemblyStep,
+      'execution_check' | 'event_persistence'
+    >;
+  }) {
+    const assembly = input.request.executionAssembly;
+    if (!assembly) return;
+    assertHarnessExecutionAssemblyPinned(input.request);
+    if (!this.executionChildObservability) {
+      throw new Error(
+        'Execution assembly requires observability for workflow completion.',
+      );
+    }
+    const root = input.step === 'event_persistence';
+    await this.executionChildObservability.create(input.request).append({
+      context: {
+        actor: 'worker',
+        correlationId: `harness-assembly:${input.step}`,
+        userId: 'harness-workflow-worker',
+        workspaceId: input.request.workspaceId,
+      },
+      taskId: input.workflowId,
+      primitiveId: `harness-assembly:${input.step}`,
+      baseIdempotencyKey: `harness-assembly:${input.workflowId}:${input.step}`,
+      axes: root
+        ? assembly.rootAxes
+        : {
+            axisScope: 'execution_child',
+            skillRevision: { kind: 'absent' },
+            promptVersion: { kind: 'absent' },
+            catalogRevision: { kind: 'absent' },
+            scene: { kind: 'absent' },
+          },
+      phase: 'succeeded',
+    });
+  }
+
   async resolveStageSkills(
-    input: Parameters<
-      NonNullable<HarnessStagePorts['resolveStageSkills']>
-    >[0],
+    input: Parameters<NonNullable<HarnessStagePorts['resolveStageSkills']>>[0],
   ) {
     if (!this.skillInstructions) {
       return { instructions: [], receipts: [] };
@@ -252,6 +385,11 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       ...(input.skillRevisionRefs
         ? { skillRevisionRefs: input.skillRevisionRefs }
         : {}),
+      ...(input.skillManifestSnapshots
+        ? {
+            skillManifestSnapshots: input.skillManifestSnapshots,
+          }
+        : {}),
     });
   }
 
@@ -259,7 +397,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     input: Parameters<HarnessStagePorts['nameIntent']>[0],
   ): ReturnType<HarnessStagePorts['nameIntent']> {
     await this.resolveLiveSourceContentPackage(input.request);
-    const runner = this.runnerWithSourceFence(input.request);
+    const runner = this.runnerWithSourceFence(input.request, 'intent_naming');
     const metrics = new InMemoryStructuredNodeMetrics();
     const result = await nameHarnessIntent(
       {
@@ -307,13 +445,11 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         Object.entries(snapshot.bundle.dimensions.store_facts_assets).map(
           ([key, item]) => ({ key, sourceRef: item.sourceRef }),
         );
-      const activeConfirmedFacts = activeFactReferences.filter(({ sourceRef }) =>
-        sourceRef.startsWith('store_fact:'),
+      const activeConfirmedFacts = activeFactReferences.filter(
+        ({ sourceRef }) => sourceRef.startsWith('store_fact:'),
       );
       const matchingFacts = factKey
-        ? activeConfirmedFacts.filter(
-            ({ key }) => factKeysMatch(key, factKey),
-          )
+        ? activeConfirmedFacts.filter(({ key }) => factKeysMatch(key, factKey))
         : [];
       if (matchingFacts.length === 1) {
         return {
@@ -341,7 +477,9 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     return measured;
   }
 
-  async injectContext(input: Parameters<HarnessStagePorts['injectContext']>[0]) {
+  async injectContext(
+    input: Parameters<HarnessStagePorts['injectContext']>[0],
+  ) {
     return this.context.compileAndFreeze(input);
   }
 
@@ -349,9 +487,9 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     return this.context.fence(input);
   }
 
-  async assessFacts(input: Parameters<
-    NonNullable<HarnessStagePorts['assessFacts']>
-  >[0]) {
+  async assessFacts(
+    input: Parameters<NonNullable<HarnessStagePorts['assessFacts']>>[0],
+  ) {
     const recipeRef = input.request.executionSnapshot?.recipe;
     if (!recipeRef || !this.recipeFacts || !this.factRights) return null;
     const recipe = await this.recipeFacts.getRecipeByRevisionId(
@@ -379,7 +517,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
           factCriticality: input.request.prompts?.factCriticality,
         },
       },
-      this.runnerWithSourceFence(input.request),
+      this.runnerWithSourceFence(input.request, 'context_injection'),
       this.factRights,
     );
   }
@@ -392,7 +530,10 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     const sourceContentPackage = await this.resolveLiveSourceContentPackage(
       input.request,
     );
-    const runner = this.runnerWithSourceFence(input.request);
+    const runner = this.runnerWithSourceFence(
+      input.request,
+      'brief_compilation',
+    );
     const metrics = new InMemoryStructuredNodeMetrics();
     let degraded = false;
     const brief = await compileExecutionBrief(
@@ -405,9 +546,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         ...(input.allowedFactRefs
           ? { allowedFactRefs: input.allowedFactRefs }
           : {}),
-        ...(snapshot
-          ? { executionSnapshot: snapshot }
-          : {}),
+        ...(snapshot ? { executionSnapshot: snapshot } : {}),
         prompt: input.request.prompts?.briefCompilation,
         ...(input.skillInstructions?.length
           ? { skillInstructions: input.skillInstructions }
@@ -473,10 +612,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
   ) {
     this.assertExecutionSelectionInput(input);
     const boundedExecution = input.request.boundedExecution;
-    if (
-      !boundedExecution ||
-      boundedExecution.maxIterations === 'unset'
-    ) {
+    if (!boundedExecution || boundedExecution.maxIterations === 'unset') {
       throw new Error(
         'Bounded copy selection requires an explicit maxIterations pin.',
       );
@@ -508,7 +644,10 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       input.context,
       input.brief.factRefs,
     );
-    const unboundedRunner = this.runnerWithSourceFence(input.request);
+    const unboundedRunner = this.runnerWithSourceFence(
+      input.request,
+      'execution_selection',
+    );
     const runner =
       boundedExecution && boundedExecution.maxIterations !== 'unset'
         ? withExecutionAttemptBudget(
@@ -579,8 +718,10 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         input.brief.assetRefs,
         sourceContentPackage?.assets,
       );
-      const claimExtraction =
-        assertDeliverableCandidatesPassVisibleRedlines(input, occurredAt);
+      const claimExtraction = assertDeliverableCandidatesPassVisibleRedlines(
+        input,
+        occurredAt,
+      );
       return this.executionDelivery.write(
         copyContentPackageRevisionWriteInput(
           input,
@@ -597,8 +738,10 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       at: occurredAt,
     });
     const platform = publicationPlatform(input.brief.platform);
-    const claimExtraction =
-      assertDeliverableCandidatesPassVisibleRedlines(input, occurredAt);
+    const claimExtraction = assertDeliverableCandidatesPassVisibleRedlines(
+      input,
+      occurredAt,
+    );
     return this.delivery.deliverCopyRevision({
       workflowId: input.workflowId,
       workspaceId: input.request.workspaceId,
@@ -630,6 +773,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
 
   private runner(request: HarnessWorkflowInput) {
     const snapshot = request.executionSnapshot;
+    const frozenRouteSnapshot = structuredControllerFrozenRoute(request);
     return this.runners.create({
       workspaceId: request.workspaceId,
       actorId: request.actorId,
@@ -639,16 +783,38 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
             billingQuoteRevision: snapshot.quote.revision,
           }
         : {}),
+      ...(frozenRouteSnapshot
+        ? {
+            frozenRouteSnapshot: structuredClone(frozenRouteSnapshot),
+          }
+        : {}),
     });
   }
 
-  private runnerWithSourceFence(request: HarnessWorkflowInput) {
+  private runnerWithSourceFence(
+    request: HarnessWorkflowInput,
+    stage: HarnessStage,
+  ) {
+    assertHarnessExecutionAssemblyPinned(request);
     const runner = this.runner(request);
-    return request.executionSnapshot?.sources.contentPackage
-      ? new SourceContentPackageGuardedRunner(runner, async () => {
-          await this.resolveLiveSourceContentPackage(request);
-        })
-      : runner;
+    const guarded = new SourceContentPackageGuardedRunner(runner, async () => {
+      assertHarnessExecutionAssemblyPinned(request);
+      if (request.executionSnapshot?.sources.contentPackage) {
+        await this.resolveLiveSourceContentPackage(request);
+      }
+    });
+    if (!request.executionAssembly) return guarded;
+    if (!this.executionChildObservability) {
+      throw new Error(
+        'Execution assembly requires child observability before provider execution.',
+      );
+    }
+    return new ExecutionChildObservedRunner(
+      guarded,
+      this.executionChildObservability.create(request),
+      request,
+      stage,
+    );
   }
 
   private async resolveLiveSourceContentPackage(
@@ -664,6 +830,132 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       source,
     });
   }
+}
+
+const PROMPT_KEY_BY_SCHEMA_NAME = {
+  harness_intent_naming_v1: 'intentNaming',
+  harness_fact_satisfaction_v1: 'factSatisfaction',
+  harness_fact_criticality_v1: 'factCriticality',
+  harness_copy_brief_v1: 'briefCompilation',
+  harness_image_brief_v1: 'briefImage',
+  harness_video_brief_v1: 'briefVideo',
+  harness_copy_candidate_v1: 'copyCandidate',
+  harness_note_plan_v1: 'notePlan',
+  harness_note_text_block_v1: 'noteTextBlock',
+  harness_note_consistency_v1: 'noteConsistency',
+} as const;
+
+function executionChildLifecycleInput(
+  request: HarnessWorkflowInput,
+  stage: HarnessStage,
+  node: StructuredNodeRunnerRequest<unknown>,
+): Omit<AgentPrimitiveLifecycleInput, 'phase'> {
+  const promptKey =
+    PROMPT_KEY_BY_SCHEMA_NAME[
+      node.schemaName as keyof typeof PROMPT_KEY_BY_SCHEMA_NAME
+    ];
+  return harnessExecutionChildLifecycleInput({
+    request,
+    stage,
+    primitiveId: node.schemaName,
+    baseIdempotencyKey: node.effectIdempotencyKey,
+    ...(promptKey ? { promptKey } : {}),
+  });
+}
+
+export function harnessExecutionChildLifecycleInput(input: {
+  request: HarnessWorkflowInput;
+  stage: HarnessStage;
+  primitiveId: string;
+  baseIdempotencyKey: string;
+  promptKey?: keyof NonNullable<HarnessWorkflowInput['prompts']>;
+  catalogRoute?: NonNullable<HarnessWorkflowInput['frozenRouteSnapshot']>;
+}): Omit<AgentPrimitiveLifecycleInput, 'phase'> {
+  const { request, stage } = input;
+  const assembly = request.executionAssembly;
+  const route = input.catalogRoute ?? structuredControllerFrozenRoute(request);
+  if (!assembly) {
+    throw new Error(
+      'Execution child observability requires the frozen assembly.',
+    );
+  }
+  const skillPrompts = [
+    ...new Map(
+      assembly.skillStages[stage].flatMap((skill) => {
+        const prompt = skill.resolvedInstruction?.prompt;
+        return prompt
+          ? [[`${prompt.name}@${prompt.version}`, prompt] as const]
+          : [];
+      }),
+    ).values(),
+  ];
+  if (skillPrompts.length > 1) {
+    throw new Error(
+      `Execution child has multiple effective Skill prompts for ${input.primitiveId}.`,
+    );
+  }
+  const prompt =
+    skillPrompts[0] ??
+    (input.promptKey
+      ? assembly.promptRevisionRefs[input.promptKey]
+      : undefined);
+  if (input.promptKey && !prompt) {
+    throw new Error(
+      `Execution child prompt lineage is missing for ${input.primitiveId}.`,
+    );
+  }
+  const skillRefs = [
+    ...new Set(
+      assembly.skillStages[stage].map((skill) => skill.skillRevisionRef),
+    ),
+  ];
+  const binding = (
+    values: string[],
+  ): ObservabilityAxisBinding['skillRevision'] =>
+    values.length === 1
+      ? { kind: 'bound', value: values[0]! }
+      : { kind: 'absent' };
+  const scene = assembly.rootAxes.scene;
+  const axes: ObservabilityAxisBinding = {
+    axisScope: 'execution_child',
+    skillRevision: binding(skillRefs),
+    promptVersion: prompt
+      ? {
+          kind: 'bound',
+          value: `${prompt.name}@${prompt.version}`,
+        }
+      : { kind: 'absent' },
+    catalogRevision: route
+      ? {
+          kind: 'bound',
+          value: route.catalogRevisionId,
+        }
+      : { kind: 'absent' },
+    scene:
+      scene.kind === 'bound'
+        ? { kind: 'bound', value: scene.value }
+        : { kind: 'absent' },
+  };
+  return {
+    context: {
+      actor: 'worker',
+      correlationId: input.baseIdempotencyKey,
+      userId: 'harness-structured-worker',
+      workspaceId: request.workspaceId,
+    },
+    taskId: assembly.workflowId,
+    primitiveId: input.primitiveId,
+    baseIdempotencyKey: input.baseIdempotencyKey,
+    axes,
+  };
+}
+
+function structuredControllerFrozenRoute(
+  request: HarnessWorkflowInput,
+): HarnessWorkflowInput['frozenRouteSnapshot'] {
+  return request.executionSnapshot?.lens === 'copy'
+    ? request.frozenRouteSnapshot
+    : undefined;
 }
 
 function assertDeliverableCandidatesPassVisibleRedlines(
@@ -709,7 +1001,9 @@ export function validateHarnessVisibleDelivery(input: {
   const authorizedFactRefs = new Set(input.allowedFactRefs ?? []);
   const auditableFactRefs = currentFactReferences(input.context);
   const allowedFactRefs = new Set(
-    [...authorizedFactRefs].filter((reference) => auditableFactRefs.has(reference)),
+    [...authorizedFactRefs].filter((reference) =>
+      auditableFactRefs.has(reference),
+    ),
   );
   return validateHarnessPolicy({
     phase: 'delivery',
@@ -754,9 +1048,7 @@ function trustedClaimsFromContext(
   return facts.flatMap(({ key, value, sourceRef }) => {
     if (!allowedFactRefs.has(sourceRef)) return [];
     const kind = policyFactKind(key);
-    return kind
-      ? [{ kind, sourceRef, value: JSON.stringify(value) }]
-      : [];
+    return kind ? [{ kind, sourceRef, value: JSON.stringify(value) }] : [];
   });
 }
 
@@ -804,7 +1096,11 @@ export function copyContentPackageRevisionWriteInput(
   if (!snapshot) {
     throw new Error('Composer delivery requires an execution snapshot.');
   }
-  assertComposerSnapshotAssetBinding(snapshot, input.brief.assetRefs, sourceAssets);
+  assertComposerSnapshotAssetBinding(
+    snapshot,
+    input.brief.assetRefs,
+    sourceAssets,
+  );
   const marketing = createMarketingPackageEvidence({
     declaration: input.declaration,
     context: input.context,
@@ -812,7 +1108,11 @@ export function copyContentPackageRevisionWriteInput(
     at: occurredAt,
   });
   const versions = input.selection.candidates.map((candidate) => ({
-    id: copyRevisionVersionId(input.workflowId, input.request.packageId, candidate),
+    id: copyRevisionVersionId(
+      input.workflowId,
+      input.request.packageId,
+      candidate,
+    ),
     title: candidate.title,
     body: candidate.body,
     conversionHook: candidate.conversionHook,
@@ -825,7 +1125,8 @@ export function copyContentPackageRevisionWriteInput(
     source: 'ai_generated' as const,
   }));
   const winner = versions.find(
-    (candidate) => candidate.harnessCandidateId === input.selection.winner.candidateId,
+    (candidate) =>
+      candidate.harnessCandidateId === input.selection.winner.candidateId,
   );
   if (!winner) {
     throw new Error('The Harness winner must be a delivered candidate.');
@@ -836,7 +1137,9 @@ export function copyContentPackageRevisionWriteInput(
     workspaceId: input.request.workspaceId,
   });
   const revision: ContentPackageRevisionWriteInput = {
-    additionalVersions: versions.filter((candidate) => candidate.id !== winner.id),
+    additionalVersions: versions.filter(
+      (candidate) => candidate.id !== winner.id,
+    ),
     ...(claimExtraction ? { claimExtraction } : {}),
     expectedRevision: input.request.expectedRevision,
     generated: { assetIds: [workAssetId], childRuns: [] },
@@ -927,7 +1230,10 @@ function publicationPlatform(platform: string) {
 }
 
 function bindComposerSnapshotBrief(
-  brief: Extract<Awaited<ReturnType<typeof compileExecutionBrief>>, { kind: 'copy' }>,
+  brief: Extract<
+    Awaited<ReturnType<typeof compileExecutionBrief>>,
+    { kind: 'copy' }
+  >,
   snapshot: NonNullable<HarnessWorkflowInput['executionSnapshot']>,
   sourceAssets: ReadonlyArray<{ id: string; role: 'source' | 'selected' }> = [],
 ) {

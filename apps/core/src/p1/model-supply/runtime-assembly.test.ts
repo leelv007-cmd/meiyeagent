@@ -279,10 +279,27 @@ test('durable media effects receive the request-time capability binding', async 
     MODEL_EXECUTION_MODE: 'fixture',
   });
   const runtime = assemble(catalog);
+  const originalAssemble =
+    runtime.capabilityHotAssembly.assembleForRequest.bind(
+      runtime.capabilityHotAssembly,
+    );
+  let assembledRequest:
+    | Parameters<typeof originalAssemble>[0]
+    | undefined;
+  runtime.capabilityHotAssembly.assembleForRequest = async (input) => {
+    assembledRequest = input;
+    return originalAssemble(input);
+  };
   const model = catalog.models.find((candidate) =>
     candidate.operations.includes('image.generate'),
   );
   assert.ok(model);
+  const frozenRouteSnapshot = runtime.application.freezeFixedRoute({
+    workspaceId: 'workspace-media-request-binding',
+    operation: 'image.generate',
+    catalogModelId: model.id,
+    dataClass: [],
+  });
 
   const request = await runtime.application.mediaProviderRequestForExecution({
     workspaceId: 'workspace-media-request-binding',
@@ -292,12 +309,17 @@ test('durable media effects receive the request-time capability binding', async 
     selection: { mode: 'fixed', catalogModelId: model.id },
     dataClass: [],
     prompt: 'Generate an image',
+    frozenRouteSnapshot,
   });
 
   assert.equal(request.deployment.catalogModelId, model.id);
   assert.equal(
     request.runtimeBinding?.capabilityRevisionId,
     (await runtime.capabilityHotAssembly.getEffectiveRevisionId()) ?? undefined,
+  );
+  assert.equal(
+    assembledRequest?.frozenCredentialVersion,
+    frozenRouteSnapshot.credentialVersion,
   );
 });
 

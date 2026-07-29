@@ -7,6 +7,7 @@ import {
   requireHarnessFrozenPrompt,
   type HarnessPromptResolver,
 } from '../harness/langfuse-prompts.js';
+import type { HarnessSkillManifestSelection } from '../harness/task-admission.js';
 import type { HarnessSkillInstructionResolverPort } from '../harness/production-stage-ports.js';
 import { SkillFoundationModule } from './foundation-module.js';
 import { PostgresSkillRepository } from './postgres-repository.js';
@@ -35,22 +36,45 @@ export class DurableSkillInstructionResolver
     private readonly recipes: PostgresCreationExperienceCatalogRepository,
   ) {}
 
+  async selectManifests(input: DurableSkillInstructionResolutionInput) {
+    const workflowRevisionRef =
+      await this.workflowRevisionRef(input);
+    return this.service.selectStageManifests({
+      workflowRevisionRef,
+      stage: input.stage,
+      ...(input.industryCategory
+        ? { industryCategory: input.industryCategory }
+        : {}),
+      tenantId: input.workspaceId,
+      userSelectedSkillRefs: [...(input.userSelectedSkillRefs ?? [])],
+    });
+  }
+
+  async materializeManifests(
+    manifests: readonly HarnessSkillManifestSelection[],
+  ) {
+    const instructions = await this.service.resolveFrozenRevisions(
+      manifests.map((manifest) => manifest.skillRevisionRef),
+    );
+    return manifests.map((manifest, index) => ({
+      ...structuredClone(manifest),
+      resolvedInstruction: structuredClone(instructions[index]!),
+    }));
+  }
+
   async resolve(input: DurableSkillInstructionResolutionInput) {
-    let workflowRevisionRef = `workflow.copy@${input.workflowRevision}`;
-    if (input.recipeRevisionId) {
-      let recipe = await this.recipes.getRecipeByRevisionId(
-        input.recipeRevisionId,
-      );
-      if (!recipe && input.recipeId) {
-        recipe = await this.recipes.getRecipeByRevisionId(
-          `${input.recipeId}@${input.recipeRevisionId}`,
-        );
-      }
-      if (recipe?.workflowRevisionRef) {
-        workflowRevisionRef = recipe.workflowRevisionRef;
-      }
-    }
-    const instructions = input.skillRevisionRefs
+    const workflowRevisionRef =
+      await this.workflowRevisionRef(input);
+    const instructions = input.skillManifestSnapshots
+      ? input.skillManifestSnapshots.map((snapshot) => {
+          if (!snapshot.resolvedInstruction) {
+            throw new Error(
+              'Accepted Skill manifest is missing its frozen execution material.',
+            );
+          }
+          return structuredClone(snapshot.resolvedInstruction);
+        })
+      : input.skillRevisionRefs
       ? await this.service.resolveFrozenRevisions(input.skillRevisionRefs)
       : (
           await this.service.resolveStage({
@@ -71,6 +95,26 @@ export class DurableSkillInstructionResolver
       instructions,
     });
     return { instructions, receipts };
+  }
+
+  private async workflowRevisionRef(
+    input: DurableSkillInstructionResolutionInput,
+  ) {
+    let workflowRevisionRef = `workflow.copy@${input.workflowRevision}`;
+    if (input.recipeRevisionId) {
+      let recipe = await this.recipes.getRecipeByRevisionId(
+        input.recipeRevisionId,
+      );
+      if (!recipe && input.recipeId) {
+        recipe = await this.recipes.getRecipeByRevisionId(
+          `${input.recipeId}@${input.recipeRevisionId}`,
+        );
+      }
+      if (recipe?.workflowRevisionRef) {
+        workflowRevisionRef = recipe.workflowRevisionRef;
+      }
+    }
+    return workflowRevisionRef;
   }
 }
 

@@ -96,6 +96,10 @@ export function seedCapabilityHotAssemblyFromCatalog(
       lifecycleRevision: capability.lifecycleRevision,
       credentialAccountId: capability.credentialAccountId,
       credentialVersion: capability.credentialVersion,
+      capabilityProfile: capability.capabilityProfile,
+      adapterKey: capability.adapterKey,
+      adapterBindingRevision: capability.adapterBindingRevision,
+      adapterConfig: capability.adapterConfig,
     }),
   );
 
@@ -104,7 +108,14 @@ export function seedCapabilityHotAssemblyFromCatalog(
     const fingerprint = entries
       .map(
         (entry) =>
-          `${entry.deploymentId}:${entry.credentialVersion ?? ''}:${entry.adapterKey}`,
+          [
+            entry.deploymentId,
+            entry.credentialVersion ?? '',
+            entry.adapterKey,
+            entry.adapterBindingRevision ?? '',
+            simpleHash(JSON.stringify(entry.adapterConfig ?? null)),
+            simpleHash(JSON.stringify(entry.capabilityProfile ?? null)),
+          ].join(':'),
       )
       .sort()
       .join('|');

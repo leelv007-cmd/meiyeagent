@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { ModelCapabilityRequirementAxis } from '@meiye/contracts';
 import {
   createCredentialAccount,
   type CredentialAccount,
@@ -22,6 +23,7 @@ import {
   HotAssemblyError,
   initialChannelLifecycle,
   isCatalogOnlyHotSwitch,
+  matchRuntimeCapabilityRequirement,
   MemoryEffectiveCapabilityRevisionStore,
   projectCapabilityRevision,
   resolveFrozenCapabilityEntry,
@@ -33,6 +35,205 @@ import {
   type RuntimeCapabilityMatchInput,
   type RuntimeCapabilityRevision,
 } from './hot-assembly.js';
+
+test('capability matching honors explicit overrides and audits unknown fallback', () => {
+  const requirement: ModelCapabilityRequirementAxis = {
+    axisId: 'briefImage',
+    vocabularyVersion: 'model-capability-v1',
+    requiredProtocolCapabilities: ['structured-output'],
+    requiredModalities: ['text/plain'],
+    requiredBusinessTags: [],
+    requiredModalityCapabilities: [],
+    unknownPolicy: 'conservative_always_available',
+  };
+  const supported = deployment({
+    id: 'structured-direct',
+    capabilityProfile: {
+      vocabularyVersion: 'model-capability-v1',
+      protocolCapabilities: {
+        'structured-output': {
+          value: true,
+          basis: 'inferred',
+          evidenceRef: 'catalog://structured-output',
+        },
+      },
+      modalities: [
+        {
+          mime: 'text/plain',
+          supported: true,
+          basis: 'inferred',
+          evidenceRef: 'catalog://text',
+        },
+      ],
+      businessTags: [],
+      modalityCapabilities: [],
+    },
+  });
+
+  assert.deepEqual(
+    matchRuntimeCapabilityRequirement(supported, requirement),
+    {
+      axisId: 'briefImage',
+      deploymentId: 'structured-direct',
+      outcome: 'eligible',
+      reasons: [],
+      evidenceRefs: [
+        'catalog://structured-output',
+        'catalog://text',
+      ],
+    },
+  );
+
+  const denied = structuredClone(supported);
+  denied.capabilityProfile!.protocolCapabilities['structured-output'] = {
+    value: false,
+    basis: 'explicit_override',
+    evidenceRef: 'operator://deny-structured-output',
+  };
+  assert.deepEqual(
+    matchRuntimeCapabilityRequirement(denied, requirement),
+    {
+      axisId: 'briefImage',
+      deploymentId: 'structured-direct',
+      outcome: 'ineligible',
+      reasons: ['explicit_override_denied:protocol:structured-output'],
+      evidenceRefs: [
+        'operator://deny-structured-output',
+        'catalog://text',
+      ],
+    },
+  );
+
+  const unknown = deployment({ id: 'unknown-direct' });
+  assert.deepEqual(
+    matchRuntimeCapabilityRequirement(unknown, requirement),
+    {
+      axisId: 'briefImage',
+      deploymentId: 'unknown-direct',
+      outcome: 'conservative_fallback',
+      reasons: [
+        'capability_unknown:protocol:structured-output',
+        'capability_unknown:modality:text/plain',
+      ],
+      evidenceRefs: [],
+    },
+  );
+});
+
+test('business-tag requirements participate in matching and unknown audit evidence', () => {
+  const requirement: ModelCapabilityRequirementAxis = {
+    axisId: 'skill:beauty-brand-voice',
+    vocabularyVersion: 'model-capability-v1',
+    requiredProtocolCapabilities: [],
+    requiredModalities: [],
+    requiredBusinessTags: ['beauty-brand-voice'],
+    requiredModalityCapabilities: [],
+    unknownPolicy: 'conservative_always_available',
+  };
+  const supported = deployment({
+    id: 'beauty-brand-voice-direct',
+    capabilityProfile: {
+      vocabularyVersion: 'model-capability-v1',
+      protocolCapabilities: {},
+      modalities: [],
+      businessTags: [
+        {
+          tag: 'beauty-brand-voice',
+          supported: true,
+          basis: 'inferred',
+          evidenceRef: 'catalog://beauty-brand-voice',
+        },
+      ],
+      modalityCapabilities: [],
+    },
+  });
+
+  assert.deepEqual(
+    matchRuntimeCapabilityRequirement(supported, requirement),
+    {
+      axisId: 'skill:beauty-brand-voice',
+      deploymentId: 'beauty-brand-voice-direct',
+      outcome: 'eligible',
+      reasons: [],
+      evidenceRefs: ['catalog://beauty-brand-voice'],
+    },
+  );
+  assert.deepEqual(
+    matchRuntimeCapabilityRequirement(
+      deployment({ id: 'beauty-brand-voice-unknown' }),
+      requirement,
+    ),
+    {
+      axisId: 'skill:beauty-brand-voice',
+      deploymentId: 'beauty-brand-voice-unknown',
+      outcome: 'conservative_fallback',
+      reasons: ['capability_unknown:business-tag:beauty-brand-voice'],
+      evidenceRefs: [],
+    },
+  );
+});
+
+test('image cjk-text-render requirements participate in matching and unknown audit evidence', () => {
+  const requirement: ModelCapabilityRequirementAxis = {
+    axisId: 'skill:image-cjk-text',
+    vocabularyVersion: 'model-capability-v1',
+    requiredProtocolCapabilities: [],
+    requiredModalities: [],
+    requiredBusinessTags: [],
+    requiredModalityCapabilities: [
+      {
+        modality: 'image/*',
+        capability: 'cjk-text-render',
+      },
+    ],
+    unknownPolicy: 'conservative_always_available',
+  };
+  const supported = deployment({
+    id: 'image-cjk-text-direct',
+    capabilityProfile: {
+      vocabularyVersion: 'model-capability-v1',
+      protocolCapabilities: {},
+      modalities: [],
+      businessTags: [],
+      modalityCapabilities: [
+        {
+          modality: 'image/*',
+          capability: 'cjk-text-render',
+          supported: true,
+          channelBound: true,
+          basis: 'inferred',
+          evidenceRef: 'catalog://image-cjk-text-render',
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(
+    matchRuntimeCapabilityRequirement(supported, requirement),
+    {
+      axisId: 'skill:image-cjk-text',
+      deploymentId: 'image-cjk-text-direct',
+      outcome: 'eligible',
+      reasons: [],
+      evidenceRefs: ['catalog://image-cjk-text-render'],
+    },
+  );
+  assert.deepEqual(
+    matchRuntimeCapabilityRequirement(
+      deployment({ id: 'image-cjk-text-unknown' }),
+      requirement,
+    ),
+    {
+      axisId: 'skill:image-cjk-text',
+      deploymentId: 'image-cjk-text-unknown',
+      outcome: 'conservative_fallback',
+      reasons: [
+        'capability_unknown:modality-capability:image/*:cjk-text-render',
+      ],
+      evidenceRefs: [],
+    },
+  );
+});
 
 // ---------------------------------------------------------------------------
 // Fixtures

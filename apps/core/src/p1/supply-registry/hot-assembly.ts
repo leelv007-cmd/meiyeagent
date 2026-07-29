@@ -13,6 +13,10 @@
  * Ports + pure functions only — does not touch main/job-worker/runtime-assembly.
  */
 import type {
+  ModelCapabilityProfile,
+  ModelCapabilityRequirementAxis,
+} from '@meiye/contracts';
+import type {
   AssembledCredential,
   AssembleCredentialRequest,
   CredentialSecretBrokerPort,
@@ -54,6 +58,8 @@ export interface RuntimeCapabilityEntry {
   adapterBindingRevision?: string;
   /** Serializable, secret-free provider configuration frozen with this revision. */
   adapterConfig?: AdapterRuntimeConfig;
+  /** Frozen capability claims used by D-165 request-time matching. */
+  capabilityProfile?: ModelCapabilityProfile;
 }
 
 /** Match input accepted by supports/assert helpers (deployment-shaped). */
@@ -69,6 +75,21 @@ export interface RuntimeCapabilityMatchInput {
   endpointRevision?: string;
   lifecycleRevision?: string;
   credentialVersion?: string;
+  capabilityProfile?: ModelCapabilityProfile;
+}
+
+export type RuntimeCapabilityRequirementReason =
+  | `capability_unknown:${string}`
+  | `capability_unsupported:${string}`
+  | `explicit_override_denied:${string}`
+  | 'vocabulary_version_unknown';
+
+export interface RuntimeCapabilityRequirementDecision {
+  axisId: string;
+  deploymentId: string;
+  outcome: 'eligible' | 'ineligible' | 'conservative_fallback';
+  reasons: RuntimeCapabilityRequirementReason[];
+  evidenceRefs: string[];
 }
 
 export interface RuntimeCapabilityRevision {
@@ -376,6 +397,9 @@ export function toRuntimeCapabilityEntry(
     ...(deployment.credentialAccountId
       ? { credentialAccountId: deployment.credentialAccountId }
       : {}),
+    ...(deployment.capabilityProfile
+      ? { capabilityProfile: structuredClone(deployment.capabilityProfile) }
+      : {}),
     adapterKey: deployment.adapterKey ?? defaultAdapterKey(deployment),
     ...(deployment.adapterBindingRevision
       ? { adapterBindingRevision: deployment.adapterBindingRevision }
@@ -486,8 +510,133 @@ export function capabilityFingerprintsMatch(
     entry.providerModel === deployment.providerModel &&
     entry.endpointRevision === deployment.endpointRevision &&
     entry.lifecycleRevision === deployment.lifecycleRevision &&
-    entry.credentialVersion === deployment.credentialVersion
+    entry.credentialVersion === deployment.credentialVersion &&
+    canonicalCapabilityProfile(entry.capabilityProfile) ===
+      canonicalCapabilityProfile(deployment.capabilityProfile)
   );
+}
+
+/**
+ * Evaluate one deployment against one registered capability axis. Unknown is
+ * never treated as support; callers must route conservative_fallback through
+ * the platform-default resolver and retain these reasons in the Task snapshot.
+ */
+export function matchRuntimeCapabilityRequirement(
+  deployment: RuntimeCapabilityMatchInput,
+  requirement: ModelCapabilityRequirementAxis,
+): RuntimeCapabilityRequirementDecision {
+  const reasons: RuntimeCapabilityRequirementReason[] = [];
+  const evidenceRefs: string[] = [];
+  const profile = deployment.capabilityProfile;
+  if (
+    profile &&
+    profile.vocabularyVersion !== requirement.vocabularyVersion
+  ) {
+    return {
+      axisId: requirement.axisId,
+      deploymentId: deployment.id,
+      outcome: 'conservative_fallback',
+      reasons: ['vocabulary_version_unknown'],
+      evidenceRefs,
+    };
+  }
+
+  const observe = (
+    atom: string,
+    claims: Array<{
+      supported: boolean;
+      basis: 'inferred' | 'explicit_override';
+      evidenceRef: string;
+    }>,
+  ) => {
+    const claim =
+      claims.find((candidate) => candidate.basis === 'explicit_override') ??
+      claims[0];
+    if (!claim) {
+      reasons.push(`capability_unknown:${atom}`);
+      return;
+    }
+    if (!evidenceRefs.includes(claim.evidenceRef)) {
+      evidenceRefs.push(claim.evidenceRef);
+    }
+    if (claim.supported) return;
+    reasons.push(
+      claim.basis === 'explicit_override'
+        ? `explicit_override_denied:${atom}`
+        : `capability_unsupported:${atom}`,
+    );
+  };
+
+  for (const capability of requirement.requiredProtocolCapabilities) {
+    const claim = profile?.protocolCapabilities[capability];
+    observe(
+      `protocol:${capability}`,
+      claim
+        ? [{
+            supported: claim.value,
+            basis: claim.basis,
+            evidenceRef: claim.evidenceRef,
+          }]
+        : [],
+    );
+  }
+  for (const modality of requirement.requiredModalities) {
+    observe(
+      `modality:${modality}`,
+      (profile?.modalities ?? [])
+        .filter((claim) => claim.mime === modality)
+        .map((claim) => ({
+          supported: claim.supported,
+          basis: claim.basis,
+          evidenceRef: claim.evidenceRef,
+        })),
+    );
+  }
+  for (const tag of requirement.requiredBusinessTags) {
+    observe(
+      `business-tag:${tag}`,
+      (profile?.businessTags ?? [])
+        .filter((claim) => claim.tag === tag)
+        .map((claim) => ({
+          supported: claim.supported,
+          basis: claim.basis,
+          evidenceRef: claim.evidenceRef,
+        })),
+    );
+  }
+  for (const scoped of requirement.requiredModalityCapabilities) {
+    observe(
+      `modality-capability:${scoped.modality}:${scoped.capability}`,
+      (profile?.modalityCapabilities ?? [])
+        .filter(
+          (claim) =>
+            claim.modality === scoped.modality &&
+            claim.capability === scoped.capability,
+        )
+        .map((claim) => ({
+          supported: claim.supported,
+          basis: claim.basis,
+          evidenceRef: claim.evidenceRef,
+        })),
+    );
+  }
+
+  const ineligible = reasons.some(
+    (reason) =>
+      reason.startsWith('explicit_override_denied:') ||
+      reason.startsWith('capability_unsupported:'),
+  );
+  return {
+    axisId: requirement.axisId,
+    deploymentId: deployment.id,
+    outcome: ineligible
+      ? 'ineligible'
+      : reasons.length > 0
+        ? 'conservative_fallback'
+        : 'eligible',
+    reasons,
+    evidenceRefs,
+  };
 }
 
 /**
@@ -609,8 +758,14 @@ function capabilityEntriesEqual(
     left.credentialAccountId === right.credentialAccountId &&
     left.adapterKey === right.adapterKey &&
     left.adapterBindingRevision === right.adapterBindingRevision &&
-    JSON.stringify(left.adapterConfig) === JSON.stringify(right.adapterConfig)
+    JSON.stringify(left.adapterConfig) === JSON.stringify(right.adapterConfig) &&
+    canonicalCapabilityProfile(left.capabilityProfile) ===
+      canonicalCapabilityProfile(right.capabilityProfile)
   );
+}
+
+function canonicalCapabilityProfile(profile: ModelCapabilityProfile | undefined) {
+  return JSON.stringify(profile ?? null);
 }
 
 export function shouldInvalidateAssemblyCache(

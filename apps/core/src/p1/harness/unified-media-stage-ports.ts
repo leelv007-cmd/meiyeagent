@@ -21,26 +21,30 @@ import {
 	type ExecutionBrief,
 } from "./structured-nodes.js";
 import {
+	type HarnessExecutionChildObservabilityFactory,
 	type HarnessStructuredNodeRunnerFactory,
+	harnessExecutionChildLifecycleInput,
+	observeHarnessStructuredNodeRunner,
 	validateHarnessVisibleDelivery,
 } from "./production-stage-ports.js";
 import { validateHarnessPolicy } from "./policy-gates.js";
 import { authorizeHarnessAction } from "./action-registry.js";
 import { HARNESS_ACTION_CARRIERS } from "./action-carriers.js";
 import {
-  harnessMediaJobTopic,
-  requireMeasuredVideoDuration,
-  type HarnessContextSnapshot,
-  type HarnessEffectRunner,
-  type HarnessMediaSelectionResult,
-  type HarnessMediaStagePorts,
-  type HarnessNoteBrief,
-  type HarnessNoteSelectionResult,
-  type HarnessNoteStagePorts,
-  type HarnessSignalReceiver,
-  type HarnessStagePorts,
+	harnessMediaJobTopic,
+	requireMeasuredVideoDuration,
+	type HarnessContextSnapshot,
+	type HarnessEffectRunner,
+	type HarnessMediaSelectionResult,
+	type HarnessMediaStagePorts,
+	type HarnessNoteBrief,
+	type HarnessNoteSelectionResult,
+	type HarnessNoteStagePorts,
+	type HarnessSignalReceiver,
+	type HarnessStagePorts,
 } from "./workflow-core.js";
 import type { HarnessWorkflowInput } from "./task-admission.js";
+import { assertHarnessExecutionAssemblyPinned } from "./task-admission.js";
 import {
 	executeImageSelection,
 	HarnessSelectionError,
@@ -116,14 +120,25 @@ export class UnifiedHarnessStagePorts
 		private readonly contentPackages: ContentPackageRevisionWritePort,
 		private readonly now: () => string,
 		private readonly noteSettings?: NotePlanSettingsSource,
-		private readonly noteEnhancementJudge: NotePlanEnhancementJudgeResolver =
-			configuredNotePlanEnhancementJudgeResolver,
+		private readonly noteEnhancementJudge: NotePlanEnhancementJudgeResolver = configuredNotePlanEnhancementJudgeResolver,
+		private readonly executionChildObservability?: HarnessExecutionChildObservabilityFactory,
 	) {}
 
-	resolveStageSkills(
+	recordExecutionAssemblyStep(
 		input: Parameters<
-			NonNullable<HarnessStagePorts["resolveStageSkills"]>
+			NonNullable<HarnessStagePorts["recordExecutionAssemblyStep"]>
 		>[0],
+	) {
+		if (!this.copy.recordExecutionAssemblyStep) {
+			throw new Error(
+				"Unified Harness requires workflow assembly observability.",
+			);
+		}
+		return this.copy.recordExecutionAssemblyStep(input);
+	}
+
+	resolveStageSkills(
+		input: Parameters<NonNullable<HarnessStagePorts["resolveStageSkills"]>>[0],
 	) {
 		if (!this.copy.resolveStageSkills) {
 			throw new Error(
@@ -227,12 +242,7 @@ export class UnifiedHarnessStagePorts
 					? { skillInstructions: input.skillInstructions }
 					: {}),
 			},
-			this.runners.create({
-				actorId: input.request.actorId,
-				billingQuoteRevision: requireSnapshot(input.request).quote.revision,
-				billingTaskId: requireSnapshot(input.request).task.id,
-				workspaceId: input.request.workspaceId,
-			}),
+			this.structuredRunner(input.request, "brief_compilation"),
 			metrics,
 		);
 		if (brief.kind !== kind) {
@@ -246,13 +256,23 @@ export class UnifiedHarnessStagePorts
 		return { brief, metrics: metrics.snapshot() };
 	}
 
-	executeMediaAndSelect(
+	async executeMediaAndSelect(
 		input: Parameters<HarnessMediaStagePorts["executeMediaAndSelect"]>[0],
 	) {
-		return this.media.execute({
-			...input,
-			orchestrationWorkflowId: input.workflowId,
-		});
+		return this.observeModelExecution(
+			{
+				request: input.request,
+				stage: "execution_selection",
+				primitiveId: `harness-media:${input.brief.kind}`,
+				baseIdempotencyKey: `harness-media:${input.workflowId}:${input.brief.kind}`,
+				catalogRoute: input.request.frozenRouteSnapshot!,
+			},
+			() =>
+				this.media.execute({
+					...input,
+					orchestrationWorkflowId: input.workflowId,
+				}),
+		);
 	}
 
 	async assembleMediaAndDeliver(
@@ -616,9 +636,7 @@ export class UnifiedHarnessStagePorts
 		assertImageTextNoteRevisionAssemblyComplete({
 			...revision,
 			enhancementJudge,
-			...(input.selection.partial
-				? { partial: input.selection.partial }
-				: {}),
+			...(input.selection.partial ? { partial: input.selection.partial } : {}),
 		});
 		return this.contentPackages.write(revision);
 	}
@@ -641,12 +659,7 @@ export class UnifiedHarnessStagePorts
 		enhancementJudge?: NotePlanEnhancementJudgeState,
 	) {
 		const snapshot = requireSnapshot(input.request);
-		const runner = this.runners.create({
-			actorId: input.request.actorId,
-			billingQuoteRevision: snapshot.quote.revision,
-			billingTaskId: snapshot.task.id,
-			workspaceId: input.request.workspaceId,
-		});
+		const runner = this.structuredRunner(input.request, "execution_selection");
 		return new NotePlanCompiler(
 			new ModelSupplyNotePlanStructuredPort(
 				runner,
@@ -669,18 +682,28 @@ export class UnifiedHarnessStagePorts
 			),
 			{
 				generate: async ({ page, reason, evaluationReason }) => {
-					const result = await this.media.execute({
-						brief: notePageImageBrief(page, snapshot, evaluationReason),
-						context: input.context,
-						request: input.request,
-						workflowId:
-							`${input.workflowId}:note:${page.id}:${reason}:r${page.revision}`,
-						orchestrationWorkflowId: input.workflowId,
-						...(input.awaitSignal
-							? { awaitSignal: input.awaitSignal }
-							: {}),
-						...(input.runStep ? { runStep: input.runStep } : {}),
-					});
+					const pageWorkflowId = `${input.workflowId}:note:${page.id}:${reason}:r${page.revision}`;
+					const result = await this.observeModelExecution(
+						{
+							request: input.request,
+							stage: "execution_selection",
+							primitiveId: "harness-media:note-page-image",
+							baseIdempotencyKey: pageWorkflowId,
+							catalogRoute: input.request.frozenRouteSnapshot!,
+						},
+						() =>
+							this.media.execute({
+								brief: notePageImageBrief(page, snapshot, evaluationReason),
+								context: input.context,
+								request: input.request,
+								workflowId: pageWorkflowId,
+								orchestrationWorkflowId: input.workflowId,
+								...(input.awaitSignal
+									? { awaitSignal: input.awaitSignal }
+									: {}),
+								...(input.runStep ? { runStep: input.runStep } : {}),
+							}),
+					);
 					return {
 						asset: result.asset,
 						childRun: result.childRun,
@@ -689,6 +712,61 @@ export class UnifiedHarnessStagePorts
 			},
 			enhancementJudge,
 		);
+	}
+
+	private structuredRunner(
+		request: HarnessWorkflowInput,
+		stage: Parameters<typeof observeHarnessStructuredNodeRunner>[0]["stage"],
+	) {
+		assertHarnessExecutionAssemblyPinned(request);
+		const snapshot = requireSnapshot(request);
+		const runner = this.runners.create({
+			actorId: request.actorId,
+			billingQuoteRevision: snapshot.quote.revision,
+			billingTaskId: snapshot.task.id,
+			workspaceId: request.workspaceId,
+		});
+		if (!request.executionAssembly) return runner;
+		if (!this.executionChildObservability) {
+			throw new Error(
+				"Unified Harness requires child observability before structured execution.",
+			);
+		}
+		return observeHarnessStructuredNodeRunner({
+			runner,
+			observer: this.executionChildObservability.create(request),
+			request,
+			stage,
+		});
+	}
+
+	private async observeModelExecution<Output>(
+		input: Parameters<typeof harnessExecutionChildLifecycleInput>[0],
+		execute: () => Promise<Output>,
+	): Promise<Output> {
+		assertHarnessExecutionAssemblyPinned(input.request);
+		if (!input.request.executionAssembly) return execute();
+		if (!this.executionChildObservability) {
+			throw new Error(
+				"Unified Harness requires child observability before model execution.",
+			);
+		}
+		const observer = this.executionChildObservability.create(input.request);
+		const lifecycle = harnessExecutionChildLifecycleInput(input);
+		await observer.append({ ...lifecycle, phase: "invoked" });
+		let result: Output;
+		try {
+			result = await execute();
+		} catch (error) {
+			await observer.append({
+				...lifecycle,
+				phase: "rejected",
+				rejectionClass: "execution_failed",
+			});
+			throw error;
+		}
+		await observer.append({ ...lifecycle, phase: "succeeded" });
+		return result;
 	}
 }
 
@@ -716,11 +794,7 @@ function notePageImageBrief(
 	};
 }
 
-function noteVersionId(
-	workflowId: string,
-	packageId: string,
-	styleId: string,
-) {
+function noteVersionId(workflowId: string, packageId: string, styleId: string) {
 	return `${packageId}-note-${createHash("sha256")
 		.update(JSON.stringify({ workflowId, styleId }))
 		.digest("hex")
@@ -850,6 +924,7 @@ export class ModelSupplyImageExactTextVerifier
 			{ submit(input: ModelSupplySubmission): Promise<ModelSupplyResult> },
 			"submit"
 		>,
+		private readonly executionChildObservability?: HarnessExecutionChildObservabilityFactory,
 	) {}
 
 	async observe(input: {
@@ -865,59 +940,99 @@ export class ModelSupplyImageExactTextVerifier
 				conflictingText: [],
 			};
 		}
-		const result = await this.models.submit({
-			actorId: input.request.actorId,
-			billingTaskId: input.workflowId,
-			billingQuoteRevision: requireSnapshot(input.request).quote.revision,
-			correlationId: input.workflowId,
-			dataClass: [],
-			idempotencyKey: `harness-media:${input.workflowId}:image:exact-text:${input.assetId}`,
-			input: {
-				inputAssets: [{ assetId: input.assetId, role: "reference_image" }],
+		const idempotencyKey = `harness-media:${input.workflowId}:image:exact-text:${input.assetId}`;
+		const submit = () =>
+			this.models.submit({
+				actorId: input.request.actorId,
+				billingTaskId: input.workflowId,
+				billingQuoteRevision: requireSnapshot(input.request).quote.revision,
+				correlationId: input.workflowId,
+				dataClass: [],
+				idempotencyKey,
+				input: {
+					inputAssets: [{ assetId: input.assetId, role: "reference_image" }],
 				},
 				operation: "text.respond",
 				...(input.request.prompts?.textResponse
 					? { promptBinding: input.request.prompts.textResponse }
 					: {}),
 				prompt: JSON.stringify({
-				task: "Read all visible text in the supplied image.",
-				expectedExactText: input.expected,
-				responseContract: {
-					observedText: ["each visible text segment verbatim"],
-					conflictingText: [
-						"visible text that alters or contradicts an expected exact value",
-					],
+					task: "Read all visible text in the supplied image.",
+					expectedExactText: input.expected,
+					responseContract: {
+						observedText: ["each visible text segment verbatim"],
+						conflictingText: [
+							"visible text that alters or contradicts an expected exact value",
+						],
+					},
+				}),
+				selection: {
+					mode: "auto",
+					profile: "quality",
+					fallbackConsent: false,
 				},
-			}),
-			selection: { mode: "auto", profile: "quality" },
-			productUsageQuantity: 0,
-			workspaceId: input.request.workspaceId,
-		});
-		if (result.status !== "completed" || !result.text?.trim()) {
-			throw new HarnessMediaExecutionError(
-				"MEDIA_EXACT_TEXT_VERIFICATION_FAILED",
-				"Image text verification did not return an observation.",
-				502,
-				result.jobId,
-				result.attempt.acceptance,
-				merchantExactTextVerificationUnavailable(),
-			);
+				productUsageQuantity: 0,
+				workspaceId: input.request.workspaceId,
+			});
+		assertHarnessExecutionAssemblyPinned(input.request);
+		if (!input.request.executionAssembly) {
+			return exactTextObservationFromResult(await submit(), input.expected);
 		}
-		const observation = exactTextObservationSchema.parse(
-			JSON.parse(jsonObject(result.text)),
-		);
-		return {
-			expected: [...input.expected],
-			observed: observation.observedText,
-			conflictingText: observation.conflictingText,
-		};
+		if (!this.executionChildObservability) {
+			throw new Error("Exact-text verification requires child observability.");
+		}
+		const observer = this.executionChildObservability.create(input.request);
+		const lifecycle = harnessExecutionChildLifecycleInput({
+			request: input.request,
+			stage: "execution_selection",
+			primitiveId: "harness-text-response:exact-text",
+			baseIdempotencyKey: idempotencyKey,
+			promptKey: "textResponse",
+		});
+		await observer.append({ ...lifecycle, phase: "invoked" });
+		let result: ModelSupplyResult;
+		try {
+			result = await submit();
+		} catch (error) {
+			await observer.append({
+				...lifecycle,
+				phase: "rejected",
+				rejectionClass: "execution_failed",
+			});
+			throw error;
+		}
+		const observation = exactTextObservationFromResult(result, input.expected);
+		await observer.append({ ...lifecycle, phase: "succeeded" });
+		return observation;
 	}
 }
 
+function exactTextObservationFromResult(
+	result: ModelSupplyResult,
+	expected: readonly string[],
+): ImageExactTextObservation {
+	if (result.status !== "completed" || !result.text?.trim()) {
+		throw new HarnessMediaExecutionError(
+			"MEDIA_EXACT_TEXT_VERIFICATION_FAILED",
+			"Image text verification did not return an observation.",
+			502,
+			result.jobId,
+			result.attempt.acceptance,
+			merchantExactTextVerificationUnavailable(),
+		);
+	}
+	const observation = exactTextObservationSchema.parse(
+		JSON.parse(jsonObject(result.text)),
+	);
+	return {
+		expected: [...expected],
+		observed: observation.observedText,
+		conflictingText: observation.conflictingText,
+	};
+}
+
 export class FixtureImageExactTextVerifier implements ImageExactTextVerifier {
-	async observe(input: {
-		expected: string[];
-	}) {
+	async observe(input: { expected: string[] }) {
 		return {
 			expected: [...input.expected],
 			observed: [...input.expected],
@@ -943,8 +1058,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 		>,
 		private readonly exactText?: ImageExactTextVerifier,
 		private readonly noteAdmission?: NoteMediaAdmissionPort,
-	private readonly imageProfile: ImageModelRecipeProfile =
-			IMAGE_MODEL_RECIPE_PROFILE,
+		private readonly imageProfile: ImageModelRecipeProfile = IMAGE_MODEL_RECIPE_PROFILE,
 	) {}
 
 	async execute(input: {
@@ -956,45 +1070,48 @@ export class ModelSupplyHarnessMediaExecutionPort
 		awaitSignal?: HarnessSignalReceiver;
 		runStep?: HarnessEffectRunner;
 	}): Promise<HarnessMediaSelectionResult> {
-			authorizeHarnessAction({
-				actionId: HARNESS_ACTION_CARRIERS.mediaQueueSubmit,
-				caller: "server",
-			});
-			const snapshot = requireSnapshot(input.request);
-			assertBriefMatchesSnapshot(input.brief, snapshot);
-			const expressionIdentityRef = isOfficialNeutralIdentity(snapshot.identity)
-				? undefined
-				: `marketing_identity:${snapshot.identity.id}:${snapshot.identity.revision}`;
-			const preflight = validateHarnessPolicy({
-				phase: "execution",
-				bundle: {
-					workspaceId: input.context.bundle.workspaceId,
-					revision: input.context.bundle.revision,
-				},
-				brief: structuredClone(input.brief),
-				candidate: {
-					assetRefs: [...input.brief.referenceAssetIds],
-					candidateId: `${input.workflowId}:media-policy-preflight`,
-					factClaims: [],
-					intendedUse: "public_content",
-					...(expressionIdentityRef ? { expressionIdentityRef } : {}),
-					workspaceId: input.request.workspaceId,
-				},
-				...input.context.policyReferences,
-			});
-			if (!preflight.passed) {
-				throw new HarnessSelectionError(
-					[...new Set(preflight.failures.map(({ gateId }) => gateId))],
-					preflight.failures[0]?.reason,
-					[],
-					[...new Set(
+		authorizeHarnessAction({
+			actionId: HARNESS_ACTION_CARRIERS.mediaQueueSubmit,
+			caller: "server",
+		});
+		const executionAssemblyRequired = Boolean(input.request.executionAssembly);
+		const snapshot = requireSnapshot(input.request);
+		assertBriefMatchesSnapshot(input.brief, snapshot);
+		const expressionIdentityRef = isOfficialNeutralIdentity(snapshot.identity)
+			? undefined
+			: `marketing_identity:${snapshot.identity.id}:${snapshot.identity.revision}`;
+		const preflight = validateHarnessPolicy({
+			phase: "execution",
+			bundle: {
+				workspaceId: input.context.bundle.workspaceId,
+				revision: input.context.bundle.revision,
+			},
+			brief: structuredClone(input.brief),
+			candidate: {
+				assetRefs: [...input.brief.referenceAssetIds],
+				candidateId: `${input.workflowId}:media-policy-preflight`,
+				factClaims: [],
+				intendedUse: "public_content",
+				...(expressionIdentityRef ? { expressionIdentityRef } : {}),
+				workspaceId: input.request.workspaceId,
+			},
+			...input.context.policyReferences,
+		});
+		if (!preflight.passed) {
+			throw new HarnessSelectionError(
+				[...new Set(preflight.failures.map(({ gateId }) => gateId))],
+				preflight.failures[0]?.reason,
+				[],
+				[
+					...new Set(
 						preflight.failures.flatMap(
 							({ alternativePath }) => alternativePath,
 						),
-					)],
-				);
-			}
-			const noteAdmissionInput =
+					),
+				],
+			);
+		}
+		const noteAdmissionInput =
 			snapshot.lens === "image_text_note"
 				? {
 						taskId: snapshot.task.id,
@@ -1031,6 +1148,8 @@ export class ModelSupplyHarnessMediaExecutionPort
 							this.imageProfile,
 							input.orchestrationWorkflowId,
 						),
+						input.request,
+						executionAssemblyRequired,
 						noteAdmissionInput,
 						input.awaitSignal,
 						input.runStep,
@@ -1076,6 +1195,8 @@ export class ModelSupplyHarnessMediaExecutionPort
 				this.imageProfile,
 				input.orchestrationWorkflowId,
 			),
+			input.request,
+			executionAssemblyRequired,
 			noteAdmissionInput,
 			input.awaitSignal,
 			input.runStep,
@@ -1086,6 +1207,8 @@ export class ModelSupplyHarnessMediaExecutionPort
 
 	private async submitAndAwait(
 		submission: ModelSupplySubmission,
+		request: HarnessWorkflowInput,
+		executionAssemblyRequired: boolean,
 		noteAdmissionInput?: {
 			taskId: string;
 			workflowId: string;
@@ -1107,18 +1230,20 @@ export class ModelSupplyHarnessMediaExecutionPort
 				? await this.runEffect(
 						`admission-reconcile:${admittedJobId}`,
 						async () => {
-							const { result: durableResult } =
-								await this.models.getDurableMediaJob!(
-									submission.workspaceId,
-									admittedJobId,
-								);
+							const { result: durableResult } = await this.models
+								.getDurableMediaJob!(submission.workspaceId, admittedJobId);
 							return durableResult;
 						},
 						runStep,
 					)
 				: await this.runEffect(
 						`submit:${submission.idempotencyKey}`,
-						() => this.models.submit(submission),
+						() => {
+							if (executionAssemblyRequired) {
+								assertHarnessExecutionAssemblyPinned(request);
+							}
+							return this.models.submit(submission);
+						},
 						runStep,
 					);
 		if (admissionToken) {
@@ -1141,11 +1266,8 @@ export class ModelSupplyHarnessMediaExecutionPort
 			result = await this.runEffect(
 				`reconcile:${jobId}`,
 				async () => {
-					const { result: durableResult } =
-						await this.models.getDurableMediaJob!(
-							submission.workspaceId,
-							jobId,
-						);
+					const { result: durableResult } = await this.models
+						.getDurableMediaJob!(submission.workspaceId, jobId);
 					return durableResult;
 				},
 				runStep,
@@ -1173,9 +1295,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 		operation: () => Promise<Output>,
 		runStep?: HarnessEffectRunner,
 	) {
-		return runStep
-			? runStep(effectIdempotencyKey, operation)
-			: operation();
+		return runStep ? runStep(effectIdempotencyKey, operation) : operation();
 	}
 
 	private async acquireNoteAdmission(
@@ -1368,19 +1488,17 @@ function mediaSubmission(
 		input:
 			brief.kind === "image"
 				? {
-					inputAssets: compiledImage!.inputAssets,
-					ratio: brief.parameters.ratio,
-					resolution: brief.parameters.resolution,
-				}
+						inputAssets: compiledImage!.inputAssets,
+						ratio: brief.parameters.ratio,
+						resolution: brief.parameters.resolution,
+					}
 				: {
-					durationSeconds: brief.parameters.durationSeconds,
-					ratio: brief.parameters.ratio,
-					referenceAssetIds: [...brief.referenceAssetIds],
-				},
+						durationSeconds: brief.parameters.durationSeconds,
+						ratio: brief.parameters.ratio,
+						referenceAssetIds: [...brief.referenceAssetIds],
+					},
 		operation:
-			brief.kind === "image"
-				? compiledImage!.operation
-				: "video.generate",
+			brief.kind === "image" ? compiledImage!.operation : "video.generate",
 		productUsageQuantity: 0,
 		frozenRouteSnapshot: structuredClone(frozenRoute),
 		prompt:
@@ -1434,10 +1552,7 @@ function assertBriefMatchesSnapshot(
 			409,
 		);
 	}
-	if (
-		brief.kind === "image" &&
-		brief.intent.operation !== snapshot.operation
-	) {
+	if (brief.kind === "image" && brief.intent.operation !== snapshot.operation) {
 		throw new HarnessMediaExecutionError(
 			"MEDIA_SNAPSHOT_MISMATCH",
 			"The image intent operation no longer matches the frozen merchant request.",
@@ -1461,7 +1576,9 @@ function assertBriefMatchesSnapshot(
 			);
 		}
 	}
-	const sourceAssetIds = new Set(snapshot.sources.assets.map((asset) => asset.id));
+	const sourceAssetIds = new Set(
+		snapshot.sources.assets.map((asset) => asset.id),
+	);
 	if (brief.referenceAssetIds.some((assetId) => !sourceAssetIds.has(assetId))) {
 		throw new HarnessMediaExecutionError(
 			"MEDIA_SNAPSHOT_MISMATCH",
@@ -1487,7 +1604,9 @@ function mediaSelection(
 			result.attempt.acceptance,
 		);
 	}
-	const ownedAsset: NonNullable<ContentPackage["generated"]["ownedAssets"]>[number] = {
+	const ownedAsset: NonNullable<
+		ContentPackage["generated"]["ownedAssets"]
+	>[number] = {
 		contentType: asset.contentType,
 		id: asset.id,
 		objectKey: asset.objectKey,
@@ -1507,18 +1626,20 @@ function mediaSelection(
 				quantity: result.usage.quantity,
 				status: result.usage.status,
 			},
-			providerAttempts: uniqueExecutionsProviderAttempts(executions).map((attempt) => ({
-				acceptance: attempt.acceptance,
-				catalogModelId: attempt.catalogModelId,
-				createdAt: attempt.createdAt,
-				deploymentId: attempt.deploymentId,
-				id: attempt.id,
-				jobId: attempt.jobId,
-				...(attempt.providerTaskRef
-					? { providerTaskRef: attempt.providerTaskRef }
-					: {}),
-				status: attempt.status,
-			})),
+			providerAttempts: uniqueExecutionsProviderAttempts(executions).map(
+				(attempt) => ({
+					acceptance: attempt.acceptance,
+					catalogModelId: attempt.catalogModelId,
+					createdAt: attempt.createdAt,
+					deploymentId: attempt.deploymentId,
+					id: attempt.id,
+					jobId: attempt.jobId,
+					...(attempt.providerTaskRef
+						? { providerTaskRef: attempt.providerTaskRef }
+						: {}),
+					status: attempt.status,
+				}),
+			),
 			providerCost: {
 				amount: result.providerCost.amount,
 				currency: result.providerCost.currency,
@@ -1560,8 +1681,7 @@ function mediaSelection(
 		Number.isFinite(asset.technicalValidation.durationSeconds) &&
 		asset.technicalValidation.durationSeconds > 0
 			? {
-					measuredDurationSeconds:
-						asset.technicalValidation.durationSeconds,
+					measuredDurationSeconds: asset.technicalValidation.durationSeconds,
 				}
 			: {}),
 		trace: {
@@ -1598,7 +1718,10 @@ function assertAssetKind(kind: MediaBrief["kind"], contentType: string) {
 function uniqueProviderAttempts(result: ModelSupplyResult) {
 	return [
 		...new Map(
-			[result.attempt, ...result.attempts].map((attempt) => [attempt.id, attempt]),
+			[result.attempt, ...result.attempts].map((attempt) => [
+				attempt.id,
+				attempt,
+			]),
 		).values(),
 	];
 }
@@ -1606,7 +1729,10 @@ function uniqueProviderAttempts(result: ModelSupplyResult) {
 function uniqueProviderCosts(result: ModelSupplyResult) {
 	return [
 		...new Map(
-			[result.providerCost, ...result.providerCosts].map((cost) => [cost.id, cost]),
+			[result.providerCost, ...result.providerCosts].map((cost) => [
+				cost.id,
+				cost,
+			]),
 		).values(),
 	];
 }
@@ -1614,10 +1740,9 @@ function uniqueProviderCosts(result: ModelSupplyResult) {
 function uniqueExecutionsProviderAttempts(results: ModelSupplyResult[]) {
 	return [
 		...new Map(
-			results.flatMap(uniqueProviderAttempts).map((attempt) => [
-				attempt.id,
-				attempt,
-			]),
+			results
+				.flatMap(uniqueProviderAttempts)
+				.map((attempt) => [attempt.id, attempt]),
 		).values(),
 	];
 }

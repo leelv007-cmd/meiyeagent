@@ -186,6 +186,8 @@ export interface ResolvedSkillInstruction {
   skillRevisionRef: string;
   instruction: string;
   contentHash: string;
+  /** Frozen declarative requirements from the accepted Skill governance sidecar. */
+  requiredModelCapabilities: string[];
   executionMode: SkillExecutionMode;
   prompt?: SkillPromptReference & {
     isFallback: boolean;

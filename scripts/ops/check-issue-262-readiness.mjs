@@ -5,14 +5,10 @@ import { spawnSync } from "node:child_process";
 const args = new Set(process.argv.slice(2));
 const jsonOutput = args.has("--json");
 const fetchRemote = args.has("--fetch");
-const repository =
-	process.env.ISSUE_262_GITHUB_REPOSITORY ??
-	"leelv007-cmd/meiyeweb-agent";
-const controllerLogin =
-	process.env.ISSUE_262_CONTROLLER_LOGIN ?? repository.split("/")[0];
 const remote = process.env.ISSUE_262_REMOTE ?? "origin";
 const branch = process.env.ISSUE_262_MAIN_BRANCH ?? "main";
 const baseRef = process.env.ISSUE_262_BASE_REF ?? branch;
+const mergeLedgerPath = "docs/ops/merge-ledger.md";
 
 const gates = [
 	{
@@ -92,8 +88,8 @@ try {
 	}
 	run("git", ["rev-parse", "--verify", `${baseRef}^{commit}`]);
 	const baseSha = run("git", ["rev-parse", baseRef]).stdout.trim();
-	const targetIssue = readIssue(262);
-	const results = gates.map((gate) => inspectGate(gate, targetIssue.comments));
+	const mergeLedger = readMergeLedger();
+	const results = gates.map((gate) => inspectGate(gate, mergeLedger));
 	const implementationReady = results
 		.filter((result) => result.requiredFor === "implementation")
 		.every((result) => result.ready);
@@ -136,34 +132,19 @@ try {
 	process.exitCode = 2;
 }
 
-function readIssue(issueNumber) {
-	return JSON.parse(
-		runWithRetry("gh", [
-			"issue",
-			"view",
-			String(issueNumber),
-			"--repo",
-			repository,
-			"--json",
-			"state,comments,url",
-		]).stdout,
-	);
+function readMergeLedger() {
+	return run("git", ["show", `${baseRef}:${mergeLedgerPath}`]).stdout;
 }
 
-function inspectGate(gate, targetComments) {
-	const issue = readIssue(gate.issue);
-	const controllerMergeCommit = findControllerMergeCommit(
-		issue.comments,
-		targetComments,
-		gate.issue,
-	);
+function inspectGate(gate, mergeLedger) {
+	const mergeLedgerCommit = findMergeLedgerCommit(mergeLedger, gate.issue);
 	const missingSemanticEvidence = gate.semanticEvidence.filter(
 		(evidence) => !refContains(evidence),
 	);
 	const missing = [];
-	if (!controllerMergeCommit) {
+	if (!mergeLedgerCommit) {
 		missing.push(
-			`issue #${gate.issue} has no valid controller merge record on ${baseRef}`,
+			`issue #${gate.issue} has no valid ${mergeLedgerPath} entry on ${baseRef}`,
 		);
 	}
 	if (missingSemanticEvidence.length > 0) {
@@ -177,108 +158,50 @@ function inspectGate(gate, targetComments) {
 		issue: gate.issue,
 		name: gate.name,
 		requiredFor: gate.requiredFor,
-		state: issue.state,
-		url: issue.url,
-		controllerMergeCommit,
+		mergeLedgerCommit,
 		missing,
 		ready: missing.length === 0,
 	};
 }
 
-function findControllerMergeCommit(issueComments, targetComments, issueNumber) {
-	const records = [];
-	for (const [index, comment] of issueComments.entries()) {
-		const normalizedBody = normalizeControllerRecordBody(comment.body);
-		const candidate = normalizedBody.match(
-			/已合入\s+main@([0-9a-f]{7,40})\b/iu,
-		)?.[1];
-		if (
-			comment.author?.login === controllerLogin &&
-			comment.authorAssociation === "OWNER" &&
-			normalizedBody.startsWith("主控亲验记录") &&
-			(candidate || explicitlyNotMerged(normalizedBody))
-		) {
-			records.push({
-				candidate,
-				comment,
-				index,
-			});
-		}
+function findMergeLedgerCommit(mergeLedger, issueNumber) {
+	const row = mergeLedger
+		.split(/\r?\n/u)
+		.toReversed()
+		.find((line) => {
+			const cells = parseLedgerRow(line);
+			return cells?.[1] === `#${issueNumber}`;
+		});
+	if (!row) return null;
+	const cells = parseLedgerRow(row);
+	const candidates = cells?.[0].match(/[0-9a-f]{7,40}/giu) ?? [];
+	if (candidates.length === 0) return null;
+	const resolvedCandidates = [];
+	for (const candidate of candidates) {
+		const resolved = run(
+			"git",
+			["rev-parse", "--verify", `${candidate}^{commit}`],
+			{ acceptedExitCodes: [0, 128] },
+		);
+		if (resolved.status !== 0) return null;
+		const sha = resolved.stdout.trim();
+		const ancestor = run(
+			"git",
+			["merge-base", "--is-ancestor", sha, baseRef],
+			{ acceptedExitCodes: [0, 1] },
+		);
+		if (ancestor.status !== 0) return null;
+		resolvedCandidates.push(sha);
 	}
-	for (const [index, comment] of targetComments.entries()) {
-		const normalizedBody = normalizeControllerRecordBody(comment.body);
-		const issueSegment = ticketSegment(normalizedBody, issueNumber);
-		const candidate = issueSegment?.match(/\b([0-9a-f]{7,40})\b/iu)?.[1];
-		if (
-			comment.author?.login === controllerLogin &&
-			comment.authorAssociation === "OWNER" &&
-			isControllerDirective(normalizedBody) &&
-			issueSegment &&
-			(candidate || explicitlyNotMerged(issueSegment))
-		) {
-			records.push({
-				candidate,
-				comment,
-				index: issueComments.length + index,
-			});
-		}
-	}
-	const record = records.toSorted(compareControllerRecords).at(-1);
-	if (!record) return null;
-	const candidate = record.candidate;
-	if (!candidate) return null;
-	const resolved = run(
-		"git",
-		["rev-parse", "--verify", `${candidate}^{commit}`],
-		{ acceptedExitCodes: [0, 128] },
-	);
-	if (resolved.status !== 0) return null;
-	const sha = resolved.stdout.trim();
-	const ancestor = run(
-		"git",
-		["merge-base", "--is-ancestor", sha, baseRef],
-		{ acceptedExitCodes: [0, 1] },
-	);
-	return ancestor.status === 0 ? sha : null;
+	return resolvedCandidates.at(-1) ?? null;
 }
 
-function compareControllerRecords(left, right) {
-	const leftTime = Date.parse(left.comment.createdAt ?? "");
-	const rightTime = Date.parse(right.comment.createdAt ?? "");
-	if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) {
-		return leftTime - rightTime;
-	}
-	return left.index - right.index;
-}
-
-function ticketSegment(body, issueNumber) {
-	const match = body.match(
-		new RegExp(
-			`#${issueNumber}\\b((?:(?!#\\d+)[\\s\\S]){0,240})`,
-			"iu",
-		),
-	);
-	return match?.[1] ?? null;
-}
-
-function explicitlyNotMerged(body) {
-	return /(?:尚未合入|未合入|尚未进入|未进入|尚未落入|未落入|未入)\s*main/iu.test(
-		body,
-	);
-}
-
-function isControllerDirective(body) {
-	return [
-		"主控亲验记录",
-		"依赖更新（v4 编排）",
-		"主控合同增补",
-		"主控裁决",
-	].some((prefix) => body.startsWith(prefix));
-}
-
-function normalizeControllerRecordBody(body) {
-	const trimmed = body.trimStart();
-	return trimmed.startsWith("**主控亲验记录") ? trimmed.slice(2) : trimmed;
+function parseLedgerRow(line) {
+	if (!line.startsWith("|") || !line.endsWith("|")) return null;
+	return line
+		.slice(1, -1)
+		.split("|")
+		.map((cell) => cell.trim());
 }
 
 function refContains(evidence) {
@@ -296,18 +219,6 @@ function refContains(evidence) {
 		{ acceptedExitCodes: [0, 1] },
 	);
 	return result.status === 0;
-}
-
-function runWithRetry(command, commandArgs, attempts = 3) {
-	let lastError;
-	for (let attempt = 1; attempt <= attempts; attempt += 1) {
-		try {
-			return run(command, commandArgs);
-		} catch (error) {
-			lastError = error;
-		}
-	}
-	throw lastError;
 }
 
 function printReport(report) {

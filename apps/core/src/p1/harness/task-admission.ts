@@ -1,13 +1,23 @@
 import {
+  agentPrimitiveLifecycleEventSchema,
   boundedExecutionLimitsSchema,
   boundedExecutionSnapshotSchema,
+  HARNESS_STAGES,
   harnessTaskSubmissionSchema,
+  MODEL_CAPABILITY_VOCABULARY_VERSION,
+  modelCapabilityMimeSchema,
+  modelCapabilityRequirementAxisSchema,
   reuseTaskSeedSchema,
   storeFactScopeSchema,
   taskIntentInputSchema,
   type BoundedExecutionLimitName,
   type BoundedExecutionLimits,
   type BoundedExecutionSnapshot,
+  type HarnessStage,
+  type ModelCapabilityRequirementAxis,
+  type AgentPrimitiveLifecycleEvent,
+  observabilityAxisBindingSchema,
+  type ObservabilityAxisBinding,
   type ReuseTaskSeed,
   type StoreFact,
   type TaskIntentInput,
@@ -21,7 +31,11 @@ import {
 import type { CreationSubmissionRecord } from '../execution-spine/submission-coordinator.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import type { RouteSnapshot } from '../model-supply/index.js';
+import { serverAuditReference } from '../creation-experience/creation-experience-events.js';
+import type { ResolvedSkillInstruction } from '../skills/types.js';
 import {
+  HARNESS_PROMPT_SITES,
+  harnessPromptCapabilityRequirement,
   promptRevisionReferences,
   promptTraceReference,
 } from './langfuse-prompts.js';
@@ -54,28 +68,83 @@ export interface HarnessWorkflowInput {
   usageReservation?: CreationSubmissionRecord['usageReservation'];
   /** Missing only from durable requests admitted before bounded execution was introduced. */
   boundedExecution?: BoundedExecutionSnapshot;
-  /** Server-owned media route frozen at admission; callers cannot provide it. */
+  /** Server-owned execution route frozen at admission; callers cannot provide it. */
   frozenRouteSnapshot?: RouteSnapshot;
   prompts?: HarnessFrozenPrompts;
   /** Explicit prompt lineage copied into the durable task request snapshot. */
   promptRevisionRefs?: Record<string, HarnessPromptRevisionReference>;
+  /** Server-owned D-165 assembly snapshot bound to the DBOS workflow ID. */
+  executionAssembly?: HarnessExecutionAssemblySnapshot;
 }
 
-export interface HarnessTaskRequest
-  extends Omit<
-    HarnessWorkflowInput,
-    'boundedExecution' | 'frozenRouteSnapshot' | 'prompts' | 'promptRevisionRefs'
-  > {
+export interface HarnessSkillManifestSnapshot {
+  skillRevisionRef: string;
+  contentHash: string;
+  requiredModelCapabilities: string[];
+  /** Full server-resolved execution material frozen at admission for new tasks. */
+  resolvedInstruction?: ResolvedSkillInstruction;
+}
+
+export type HarnessSkillManifestSelection = Omit<
+  HarnessSkillManifestSnapshot,
+  'resolvedInstruction'
+>;
+
+export interface HarnessExecutionAssemblySnapshot {
+  schemaVersion: 'harness-execution-assembly/v1';
+  workflowId: string;
+  skillStages: Record<HarnessStage, HarnessSkillManifestSnapshot[]>;
+  /** Integrity reference to the #240-owned frozen RouteSnapshot carrier. */
+  frozenRouteSnapshotDigest: string;
+  promptRevisionRefs: Record<string, HarnessPromptRevisionReference>;
+  rootAxes: ObservabilityAxisBinding;
+}
+
+export type HarnessExecutionAssemblyStep =
+  | 'manifest_resolution'
+  | 'hot_assembly'
+  | 'prompt_resolution'
+  | 'task_pin'
+  | 'execution_check'
+  | 'event_persistence';
+
+export interface HarnessTaskRequest extends Omit<
+  HarnessWorkflowInput,
+  | 'boundedExecution'
+  | 'executionAssembly'
+  | 'frozenRouteSnapshot'
+  | 'prompts'
+  | 'promptRevisionRefs'
+> {
   taskId: string;
 }
 
-type HarnessWorkflowInputBeforeBounds = Omit<
+export type HarnessWorkflowInputBeforeBounds = Omit<
   HarnessWorkflowInput,
-  'boundedExecution' | 'frozenRouteSnapshot' | 'prompts' | 'promptRevisionRefs'
+  | 'boundedExecution'
+  | 'executionAssembly'
+  | 'frozenRouteSnapshot'
+  | 'prompts'
+  | 'promptRevisionRefs'
 >;
 
 export interface HarnessFrozenRouteSnapshotResolver {
-  resolve(snapshot: CreationExecutionSnapshot): Promise<RouteSnapshot>;
+  resolve(
+    snapshot: CreationExecutionSnapshot,
+    input?: { requirements: ModelCapabilityRequirementAxis[] },
+  ): Promise<RouteSnapshot>;
+}
+
+export interface HarnessSkillManifestResolver {
+  select(input: {
+    request: HarnessWorkflowInputBeforeBounds;
+    stage: HarnessStage;
+  }): Promise<HarnessSkillManifestSelection[]>;
+  materialize(input: {
+    request: HarnessWorkflowInputBeforeBounds;
+    stage: HarnessStage;
+    manifests: readonly HarnessSkillManifestSelection[];
+  }): Promise<HarnessSkillManifestSnapshot[]>;
 }
 
 export const harnessTaskRequestSchema = harnessTaskSubmissionSchema
@@ -150,6 +219,17 @@ export interface HarnessPromptFallbackAuditPort {
   }): Promise<void>;
 }
 
+export interface HarnessExecutionAssemblyAuditPort {
+  appendAuditIdempotently(event: {
+    workspaceId: string;
+    id: string;
+    workflowId: string;
+    stage: 'observability_event_ingest';
+    eventType: 'agent_primitive.lifecycle';
+    payload: AgentPrimitiveLifecycleEvent;
+  }): Promise<void>;
+}
+
 export interface HarnessExecutionBoundsResolver {
   resolve(
     input: HarnessWorkflowInputBeforeBounds,
@@ -200,9 +280,10 @@ export class HarnessTaskAdmissionService {
     private readonly starter: HarnessWorkflowStarter,
     private readonly prompts?: HarnessPromptResolver,
     private readonly promptFallbackAudits?: HarnessPromptFallbackAuditPort,
-    private readonly executionBounds: HarnessExecutionBoundsResolver =
-      DEFAULT_EXECUTION_BOUNDS_RESOLVER,
+    private readonly executionBounds: HarnessExecutionBoundsResolver = DEFAULT_EXECUTION_BOUNDS_RESOLVER,
     private readonly frozenRoutes?: HarnessFrozenRouteSnapshotResolver,
+    private readonly skillManifests?: HarnessSkillManifestResolver,
+    private readonly assemblyAudits?: HarnessExecutionAssemblyAuditPort,
   ) {}
 
   async submit(input: HarnessTaskRequest) {
@@ -240,20 +321,23 @@ export class HarnessTaskAdmissionService {
       ...normalized,
       boundedExecution,
     };
-    if (
-      normalized.executionSnapshot &&
-      normalized.executionSnapshot.lens !== 'copy'
-    ) {
+    const selectedSkillStages = await this.selectSkillManifests(normalized);
+    if (normalized.executionSnapshot) {
       if (!this.frozenRoutes) {
         throw new HarnessAdmissionError(
           'FROZEN_ROUTE_MISMATCH',
-          'Media admission requires the production frozen-route resolver.',
+          'Composer admission requires the production frozen-route resolver.',
         );
       }
       request = {
         ...request,
         frozenRouteSnapshot: await this.frozenRoutes.resolve(
           normalized.executionSnapshot,
+          {
+            requirements: primaryTaskCapabilityRequirements(
+              normalized.executionSnapshot,
+            ).concat(skillCapabilityRequirements(selectedSkillStages)),
+          },
         ),
       };
     }
@@ -265,6 +349,27 @@ export class HarnessTaskAdmissionService {
         promptRevisionRefs: promptRevisionReferences(prompts),
       };
     }
+    const skillStages = await this.materializeSkillManifests(
+      normalized,
+      selectedSkillStages,
+    );
+    if (
+      normalized.executionSnapshot &&
+      request.frozenRouteSnapshot &&
+      request.promptRevisionRefs
+    ) {
+      request = {
+        ...request,
+        executionAssembly: executionAssemblySnapshot({
+          workflowId: input.taskId,
+          request,
+          route: request.frozenRouteSnapshot,
+          promptRevisionRefs: request.promptRevisionRefs,
+          skillStages,
+        }),
+      };
+    }
+    assertHarnessExecutionAssemblyPinned(request);
     const claim = await this.registry.claim({
       taskId: input.taskId,
       fingerprint,
@@ -279,12 +384,91 @@ export class HarnessTaskAdmissionService {
     if (claim.kind === 'existing') {
       return this.resumeExisting(claim);
     }
+    await this.recordExecutionAssemblyAudit(request, [
+      'manifest_resolution',
+      'hot_assembly',
+      'prompt_resolution',
+      'task_pin',
+    ]);
     await this.recordPromptFallbackAudits(input.taskId, request);
     const handle = await this.starter.start({
       workflowId: input.taskId,
       request,
     });
     return { workflowId: handle.workflowId, replayed: false as const };
+  }
+
+  private async selectSkillManifests(
+    request: HarnessWorkflowInputBeforeBounds,
+  ): Promise<Record<HarnessStage, HarnessSkillManifestSelection[]>> {
+    const stages: Record<HarnessStage, HarnessSkillManifestSelection[]> = {
+      intent_naming: [],
+      context_injection: [],
+      brief_compilation: [],
+      execution_selection: [],
+      assembly_delivery: [],
+    };
+    if (!this.skillManifests) return stages;
+    for (const stage of HARNESS_STAGES) {
+      stages[stage] = structuredClone(
+        await this.skillManifests.select({
+          request,
+          stage,
+        }),
+      );
+    }
+    return stages;
+  }
+
+  private async materializeSkillManifests(
+    request: HarnessWorkflowInputBeforeBounds,
+    selectedStages: Record<HarnessStage, HarnessSkillManifestSelection[]>,
+  ): Promise<Record<HarnessStage, HarnessSkillManifestSnapshot[]>> {
+    const stages: Record<HarnessStage, HarnessSkillManifestSnapshot[]> = {
+      intent_naming: [],
+      context_injection: [],
+      brief_compilation: [],
+      execution_selection: [],
+      assembly_delivery: [],
+    };
+    if (!this.skillManifests) return stages;
+    for (const stage of HARNESS_STAGES) {
+      const selected = selectedStages[stage];
+      if (selected.length === 0) continue;
+      const manifests = await this.skillManifests.materialize({
+        request,
+        stage,
+        manifests: selected,
+      });
+      if (manifests.length !== selected.length) {
+        throw new HarnessAdmissionError(
+          'FROZEN_ROUTE_MISMATCH',
+          `Skill materialization for ${stage} changed the selected manifest set.`,
+        );
+      }
+      for (const [index, manifest] of manifests.entries()) {
+        const selection = selected[index]!;
+        const resolved = manifest.resolvedInstruction;
+        if (
+          manifest.skillRevisionRef !== selection.skillRevisionRef ||
+          manifest.contentHash !== selection.contentHash ||
+          JSON.stringify(manifest.requiredModelCapabilities) !==
+            JSON.stringify(selection.requiredModelCapabilities) ||
+          !resolved ||
+          resolved.skillRevisionRef !== manifest.skillRevisionRef ||
+          resolved.contentHash !== manifest.contentHash ||
+          JSON.stringify(resolved.requiredModelCapabilities) !==
+            JSON.stringify(manifest.requiredModelCapabilities)
+        ) {
+          throw new HarnessAdmissionError(
+            'FROZEN_ROUTE_MISMATCH',
+            `Skill ${manifest.skillRevisionRef} is missing its frozen execution material.`,
+          );
+        }
+      }
+      stages[stage] = structuredClone(manifests);
+    }
+    return stages;
   }
 
   private async resumeExisting(
@@ -310,6 +494,13 @@ export class HarnessTaskAdmissionService {
       );
     }
     const frozenRequest = claim.request;
+    assertHarnessExecutionAssemblyPinned(frozenRequest);
+    await this.recordExecutionAssemblyAudit(frozenRequest, [
+      'manifest_resolution',
+      'hot_assembly',
+      'prompt_resolution',
+      'task_pin',
+    ]);
     await this.recordPromptFallbackAudits(claim.workflowId, frozenRequest);
     const handle = await this.starter.start({
       workflowId: claim.workflowId,
@@ -319,14 +510,52 @@ export class HarnessTaskAdmissionService {
     return { workflowId: handle.workflowId, replayed: true as const };
   }
 
+  private async recordExecutionAssemblyAudit(
+    request: HarnessWorkflowInput,
+    steps: readonly HarnessExecutionAssemblyStep[],
+  ) {
+    if (!this.assemblyAudits || !request.executionAssembly) return;
+    const workflowId = request.executionAssembly.workflowId;
+    for (const step of steps) {
+      const idempotencyKey = `harness-assembly-${fingerprintValue([
+        workflowId,
+        step,
+      ])}`;
+      const payload = agentPrimitiveLifecycleEventSchema.parse({
+        eventType: 'agent_primitive.lifecycle',
+        taskId: workflowId,
+        workspaceId: request.workspaceId,
+        actorId: serverAuditReference(request.actorId),
+        actorKind: 'worker',
+        idempotencyKey,
+        axisScope: 'execution_child',
+        skillRevision: null,
+        promptVersion: null,
+        catalogRevision: null,
+        scene: null,
+        payload: {
+          primitiveId: `harness-assembly:${step}`,
+          phase: 'succeeded',
+          billing: { kind: 'not_billed' },
+        },
+      });
+      await this.assemblyAudits.appendAuditIdempotently({
+        workspaceId: request.workspaceId,
+        id: `observability-${idempotencyKey}`,
+        workflowId,
+        stage: 'observability_event_ingest',
+        eventType: 'agent_primitive.lifecycle',
+        payload,
+      });
+    }
+  }
+
   private async recordPromptFallbackAudits(
     workflowId: string,
     request: HarnessWorkflowInput,
   ) {
     if (!this.promptFallbackAudits) return;
-    for (const [promptKey, prompt] of Object.entries(
-      request.prompts ?? {},
-    )) {
+    for (const [promptKey, prompt] of Object.entries(request.prompts ?? {})) {
       if (!prompt.isFallback) continue;
       await this.promptFallbackAudits.appendAudit({
         workspaceId: request.workspaceId,
@@ -345,6 +574,224 @@ export class HarnessTaskAdmissionService {
       });
     }
   }
+}
+
+export function assertHarnessExecutionAssemblyPinned(
+  request: HarnessWorkflowInput,
+) {
+  const assembly = request.executionAssembly;
+  if (!assembly) {
+    if (!request.executionSnapshot || !request.frozenRouteSnapshot) return;
+    throw new Error(
+      'Execution assembly is required before provider execution.',
+    );
+  }
+  const route = request.frozenRouteSnapshot;
+  if (
+    !route ||
+    assembly.frozenRouteSnapshotDigest !== fingerprintValue(route)
+  ) {
+    throw new Error(
+      'Execution assembly binding does not match the frozen route.',
+    );
+  }
+  if (
+    JSON.stringify(assembly.promptRevisionRefs) !==
+    JSON.stringify(request.promptRevisionRefs)
+  ) {
+    throw new Error(
+      'Execution assembly prompt references do not match the durable request.',
+    );
+  }
+  if (
+    request.executionSnapshot &&
+    assembly.workflowId !== request.executionSnapshot.task.id
+  ) {
+    throw new Error(
+      'Execution assembly workflow does not match the durable task.',
+    );
+  }
+}
+
+function primaryTaskCapabilityRequirements(
+  snapshot: CreationExecutionSnapshot,
+): ModelCapabilityRequirementAxis[] {
+  if (snapshot.lens === 'copy') {
+    return (
+      Object.keys(HARNESS_PROMPT_SITES) as Array<
+        keyof typeof HARNESS_PROMPT_SITES
+      >
+    ).map((key) => harnessPromptCapabilityRequirement(key));
+  }
+  // D-165 deliberately defers per-site multi-model pins. A media task's sole
+  // durable RouteSnapshot therefore remains the generation route; controller
+  // prompt sites still use the same registry/matcher contract when a
+  // controller route is introduced, without masquerading as this media pin.
+  const operation = snapshot.operation;
+  const modality =
+    operation === 'image.generate' || operation === 'image.edit'
+      ? 'image/*'
+      : operation === 'video.generate'
+        ? 'video/*'
+        : operation === 'audio.speech' || operation === 'audio.sfx'
+          ? 'audio/*'
+          : 'text/plain';
+  return [
+    {
+      axisId: `provider:${operation}`,
+      vocabularyVersion: MODEL_CAPABILITY_VOCABULARY_VERSION,
+      requiredProtocolCapabilities: [],
+      requiredModalities: [modality],
+      requiredBusinessTags: [],
+      requiredModalityCapabilities: [],
+      unknownPolicy: 'conservative_always_available',
+    },
+  ];
+}
+
+function skillCapabilityRequirements(
+  stages: Record<
+    HarnessStage,
+    Array<HarnessSkillManifestSnapshot | HarnessSkillManifestSelection>
+  >,
+): ModelCapabilityRequirementAxis[] {
+  return Object.values(stages)
+    .flat()
+    .filter(
+      (skill, index, all) =>
+        all.findIndex(
+          (candidate) => candidate.skillRevisionRef === skill.skillRevisionRef,
+        ) === index,
+    )
+    .map((skill) =>
+      skillCapabilityRequirement(
+        skill.skillRevisionRef,
+        skill.requiredModelCapabilities,
+      ),
+    );
+}
+
+function skillCapabilityRequirement(
+  skillRevisionRef: string,
+  capabilities: string[],
+): ModelCapabilityRequirementAxis {
+  const requiredProtocolCapabilities: string[] = [];
+  const requiredModalities: string[] = [];
+  const requiredBusinessTags: string[] = [];
+  const requiredModalityCapabilities: Array<{
+    modality: string;
+    capability: string;
+  }> = [];
+  for (const rawCapability of capabilities) {
+    const capability = rawCapability.trim();
+    if (!capability) {
+      throw new HarnessAdmissionError(
+        'FROZEN_ROUTE_MISMATCH',
+        `Skill ${skillRevisionRef} declares an empty model capability.`,
+      );
+    }
+    if (
+      capability === 'structured_output' ||
+      capability === 'structured-output'
+    ) {
+      pushUnique(requiredProtocolCapabilities, 'structured-output');
+      continue;
+    }
+    if (capability === 'tool_calling' || capability === 'tool-calling') {
+      pushUnique(requiredProtocolCapabilities, 'tool-calling');
+      continue;
+    }
+    if (capability === 'cjk-text-render') {
+      if (
+        !requiredModalityCapabilities.some(
+          (entry) =>
+            entry.modality === 'image/*' &&
+            entry.capability === capability,
+        )
+      ) {
+        requiredModalityCapabilities.push({
+          modality: 'image/*',
+          capability,
+        });
+      }
+      continue;
+    }
+    if (modelCapabilityMimeSchema.safeParse(capability).success) {
+      pushUnique(requiredModalities, capability);
+      continue;
+    }
+    pushUnique(requiredBusinessTags, capability);
+  }
+  return modelCapabilityRequirementAxisSchema.parse({
+    axisId: `skill:${skillRevisionRef}`,
+    vocabularyVersion: MODEL_CAPABILITY_VOCABULARY_VERSION,
+    requiredProtocolCapabilities,
+    requiredModalities,
+    requiredBusinessTags,
+    requiredModalityCapabilities,
+    unknownPolicy: 'conservative_always_available',
+  });
+}
+
+function pushUnique(values: string[], value: string) {
+  if (!values.includes(value)) values.push(value);
+}
+
+function executionAssemblySnapshot(input: {
+  workflowId: string;
+  request: HarnessWorkflowInput;
+  route: RouteSnapshot;
+  promptRevisionRefs: Record<string, HarnessPromptRevisionReference>;
+  skillStages: Record<HarnessStage, HarnessSkillManifestSnapshot[]>;
+}): HarnessExecutionAssemblySnapshot {
+  const route = input.route;
+  if (!route.capabilityRevisionId) {
+    throw new HarnessAdmissionError(
+      'FROZEN_ROUTE_MISMATCH',
+      'Execution assembly requires a frozen capability revision.',
+    );
+  }
+  const skillRefs = [
+    ...new Set(
+      Object.values(input.skillStages)
+        .flat()
+        .map((skill) => skill.skillRevisionRef),
+    ),
+  ];
+  const promptRefs = [
+    ...new Set(
+      Object.values(input.promptRevisionRefs).flatMap((prompt) =>
+        prompt ? [`${prompt.name}@${prompt.version}`] : [],
+      ),
+    ),
+  ];
+  const binding = (
+    values: string[],
+  ): ObservabilityAxisBinding['skillRevision'] =>
+    values.length === 1
+      ? { kind: 'bound', value: values[0]! }
+      : { kind: 'absent' };
+  const scene =
+    input.request.intent.context.scene?.trim() ||
+    input.request.executionSnapshot?.recipe.id;
+  const rootAxes = observabilityAxisBindingSchema.parse({
+    axisScope: 'task_root',
+    skillRevision: binding(skillRefs),
+    promptVersion: binding(promptRefs),
+    catalogRevision: {
+      kind: 'bound',
+      value: input.request.executionSnapshot!.catalogModel.revision,
+    },
+    scene: scene ? { kind: 'bound', value: scene } : { kind: 'absent' },
+  });
+  return {
+    schemaVersion: 'harness-execution-assembly/v1',
+    workflowId: input.workflowId,
+    skillStages: structuredClone(input.skillStages),
+    frozenRouteSnapshotDigest: fingerprintValue(route),
+    promptRevisionRefs: structuredClone(input.promptRevisionRefs),
+    rootAxes,
+  };
 }
 
 function normalizeRequest(
@@ -437,7 +884,10 @@ function assertExecutionSnapshotMatchesRequest(
 }
 
 function sameStringArray(left: string[], right: string[]) {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
 }
 
 function isDefaultFactScope(

@@ -1,27 +1,129 @@
 import { createHash } from 'node:crypto';
+import {
+  MODEL_CAPABILITY_VOCABULARY_VERSION,
+  type ModelCapabilityRequirementAxis,
+} from '@meiye/contracts';
 import type {
   LanguageModelOperation,
   ModelSupplyPromptResolver,
 } from '../model-supply/index.js';
 
-export const HARNESS_LANGFUSE_PROMPT_NAMES = {
-  intentNaming: 'harness/intent-naming',
-  briefCompilation: 'harness/brief-copy',
-  briefImage: 'harness/brief-image',
-  briefVideo: 'harness/brief-video',
-  factSatisfaction: 'harness/fact-satisfaction',
-  factCriticality: 'harness/fact-criticality',
-  copyCandidate: 'harness/copy-candidate',
-  notePlan: 'harness/note-plan',
-  noteTextBlock: 'harness/note-text-block',
-  noteConsistency: 'harness/note-consistency',
-  destinationMapping: 'harness/destination-mapping',
-  copyGeneration: 'harness/copy-generation',
-  platformAdaptation: 'harness/platform-adaptation',
-  textResponse: 'harness/text-response',
+const STRUCTURED_TEXT_REQUIREMENT = {
+  requiredProtocolCapabilities: ['structured-output'],
+  requiredModalities: ['text/plain'],
 } as const;
 
-export type HarnessPromptKey = keyof typeof HARNESS_LANGFUSE_PROMPT_NAMES;
+const PLAIN_TEXT_REQUIREMENT = {
+  requiredProtocolCapabilities: [],
+  requiredModalities: ['text/plain'],
+} as const;
+
+/**
+ * The single registry for Harness prompt supply and request-time capability
+ * matching. Prompt names and requirement axes must be derived from this table.
+ */
+export const HARNESS_PROMPT_SITES = {
+  intentNaming: {
+    name: 'harness/intent-naming',
+    operation: 'text.respond',
+    requirement: STRUCTURED_TEXT_REQUIREMENT,
+  },
+  briefCompilation: {
+    name: 'harness/brief-copy',
+    operation: 'text.respond',
+    requirement: STRUCTURED_TEXT_REQUIREMENT,
+  },
+  briefImage: {
+    name: 'harness/brief-image',
+    operation: 'text.respond',
+    requirement: STRUCTURED_TEXT_REQUIREMENT,
+  },
+  briefVideo: {
+    name: 'harness/brief-video',
+    operation: 'text.respond',
+    requirement: STRUCTURED_TEXT_REQUIREMENT,
+  },
+  factSatisfaction: {
+    name: 'harness/fact-satisfaction',
+    operation: 'text.respond',
+    requirement: STRUCTURED_TEXT_REQUIREMENT,
+  },
+  factCriticality: {
+    name: 'harness/fact-criticality',
+    operation: 'text.respond',
+    requirement: STRUCTURED_TEXT_REQUIREMENT,
+  },
+  copyCandidate: {
+    name: 'harness/copy-candidate',
+    operation: 'text.respond',
+    requirement: STRUCTURED_TEXT_REQUIREMENT,
+  },
+  notePlan: {
+    name: 'harness/note-plan',
+    operation: 'text.respond',
+    requirement: STRUCTURED_TEXT_REQUIREMENT,
+  },
+  noteTextBlock: {
+    name: 'harness/note-text-block',
+    operation: 'text.respond',
+    requirement: STRUCTURED_TEXT_REQUIREMENT,
+  },
+  noteConsistency: {
+    name: 'harness/note-consistency',
+    operation: 'text.respond',
+    requirement: STRUCTURED_TEXT_REQUIREMENT,
+  },
+  destinationMapping: {
+    name: 'harness/destination-mapping',
+    operation: 'text.respond',
+    requirement: STRUCTURED_TEXT_REQUIREMENT,
+  },
+  copyGeneration: {
+    name: 'harness/copy-generation',
+    operation: 'copy.generate',
+    requirement: STRUCTURED_TEXT_REQUIREMENT,
+  },
+  platformAdaptation: {
+    name: 'harness/platform-adaptation',
+    operation: 'copy.adapt',
+    requirement: STRUCTURED_TEXT_REQUIREMENT,
+  },
+  textResponse: {
+    name: 'harness/text-response',
+    operation: 'text.respond',
+    requirement: PLAIN_TEXT_REQUIREMENT,
+  },
+} as const;
+
+export type HarnessPromptKey = keyof typeof HARNESS_PROMPT_SITES;
+
+export const HARNESS_LANGFUSE_PROMPT_NAMES = Object.fromEntries(
+  Object.entries(HARNESS_PROMPT_SITES).map(([key, site]) => [key, site.name]),
+) as {
+  [Key in HarnessPromptKey]: (typeof HARNESS_PROMPT_SITES)[Key]['name'];
+};
+
+export function harnessPromptCapabilityRequirement(
+  key: HarnessPromptKey,
+  dynamic: { referenceImage?: boolean } = {},
+): ModelCapabilityRequirementAxis {
+  const site = HARNESS_PROMPT_SITES[key];
+  return {
+    axisId: key,
+    vocabularyVersion: MODEL_CAPABILITY_VOCABULARY_VERSION,
+    requiredProtocolCapabilities: [
+      ...site.requirement.requiredProtocolCapabilities,
+    ],
+    requiredModalities: [
+      ...site.requirement.requiredModalities,
+      ...(dynamic.referenceImage ? (['image/*'] as const) : []),
+    ],
+    requiredBusinessTags: [],
+    requiredModalityCapabilities: [],
+    unknownPolicy: 'conservative_always_available',
+  };
+}
+
 export type LangfusePromptPolicy = 'pilot' | 'strict';
 
 export const HARNESS_BUILTIN_PROMPTS = {

@@ -27,7 +27,11 @@ import type {
   ExecutionBrief,
   StructuredNodeMetricsSnapshot,
 } from './structured-nodes.js';
-import type { HarnessWorkflowInput } from './task-admission.js';
+import type {
+  HarnessExecutionAssemblyStep,
+  HarnessSkillManifestSnapshot,
+  HarnessWorkflowInput,
+} from './task-admission.js';
 import type {
   ResolvedSkillInstruction,
   SkillInvocationReceipt,
@@ -144,12 +148,21 @@ export interface HarnessContextSnapshot {
 }
 
 export interface HarnessStagePorts {
+  recordExecutionAssemblyStep?(input: {
+    workflowId: string;
+    request: HarnessWorkflowInput;
+    step: Extract<
+      HarnessExecutionAssemblyStep,
+      'execution_check' | 'event_persistence'
+    >;
+  }): Promise<void>;
   resolveStageSkills?(input: {
     workflowId: string;
     request: HarnessWorkflowInput;
     stage: HarnessStage;
     userSelectedSkillRefs?: readonly string[];
     skillRevisionRefs?: readonly string[];
+    skillManifestSnapshots?: readonly HarnessSkillManifestSnapshot[];
   }): Promise<{
     instructions: ResolvedSkillInstruction[];
     receipts: SkillInvocationReceipt[];
@@ -391,6 +404,7 @@ const SKILL_RESOLUTION_STEP = 'skill:resolve:intent';
 interface FrozenSkillStageResolution {
   skillRevisionRefs: string[];
   skillContentHashes: string[];
+  skillCapabilityRequirements?: string[][];
   skillReceiptIds: string[];
 }
 
@@ -429,12 +443,27 @@ async function resolveWorkflowStageSkills(
     async () => {
       const stageSkillResolutions = emptyFrozenSkillStages();
       for (const stage of HARNESS_STAGES) {
+        const admitted =
+          request.executionAssembly?.skillStages[stage] ?? null;
         const resolved =
-          (await ports.resolveStageSkills?.({
-            workflowId,
-            request,
-            stage,
-          })) ?? { instructions: [], receipts: [] };
+          admitted && admitted.length === 0
+            ? { instructions: [], receipts: [] }
+            : (await ports.resolveStageSkills?.({
+                workflowId,
+                request,
+                stage,
+                ...(admitted
+                  ? {
+                      skillRevisionRefs: admitted.map(
+                        (skill) => skill.skillRevisionRef,
+                      ),
+                      skillManifestSnapshots: admitted,
+                    }
+                  : {}),
+              })) ?? { instructions: [], receipts: [] };
+        if (admitted) {
+          assertAdmittedSkillManifests(admitted, resolved.instructions);
+        }
         stageSkillResolutions[stage] = freezeSkillResolution(resolved);
       }
       return {
@@ -471,6 +500,12 @@ async function resolveWorkflowStageSkills(
       request,
       stage,
       skillRevisionRefs: stageFrozen.skillRevisionRefs,
+      ...(request.executionAssembly
+        ? {
+            skillManifestSnapshots:
+              request.executionAssembly.skillStages[stage],
+          }
+        : {}),
     });
     const current = freezeSkillResolution(resolved);
     if (
@@ -482,6 +517,11 @@ async function resolveWorkflowStageSkills(
         current.skillContentHashes,
         stageFrozen.skillContentHashes,
       ) ||
+      (stageFrozen.skillCapabilityRequirements !== undefined &&
+        !sameOrderedNestedValues(
+          current.skillCapabilityRequirements ?? [],
+          stageFrozen.skillCapabilityRequirements,
+        )) ||
       !sameOrderedValues(current.skillReceiptIds, stageFrozen.skillReceiptIds)
     ) {
       throw new Error('已冻结的 Skill 版本、内容哈希或回执不一致。');
@@ -502,6 +542,11 @@ function freezeSkillResolution(resolved: {
     skillContentHashes: resolved.instructions.map(
       ({ contentHash }) => contentHash,
     ),
+    skillCapabilityRequirements: resolved.instructions.map(
+      ({ requiredModelCapabilities }) => [
+        ...requiredModelCapabilities,
+      ],
+    ),
     skillReceiptIds: resolved.receipts.map(
       ({ invocationId }) => invocationId,
     ),
@@ -515,13 +560,13 @@ function normalizeFrozenSkillStages(input: unknown): FrozenSkillStageResolutions
     for (const stage of HARNESS_STAGES) {
       const resolution = input.stageSkillResolutions[stage];
       if (isFrozenSkillStageResolution(resolution)) {
-        stages[stage] = resolution;
+        stages[stage] = normalizeFrozenSkillStageResolution(resolution);
       }
     }
     return stages;
   }
   if (isFrozenSkillStageResolution(input)) {
-    stages.intent_naming = input;
+    stages.intent_naming = normalizeFrozenSkillStageResolution(input);
   }
   return stages;
 }
@@ -540,6 +585,7 @@ function emptyFrozenSkillStage(): FrozenSkillStageResolution {
   return {
     skillRevisionRefs: [],
     skillContentHashes: [],
+    skillCapabilityRequirements: [],
     skillReceiptIds: [],
   };
 }
@@ -560,13 +606,80 @@ function emptyResolvedSkillStage() {
 
 function isFrozenSkillStageResolution(
   input: unknown,
-): input is FrozenSkillStageResolution {
+): input is Omit<
+  FrozenSkillStageResolution,
+  'skillCapabilityRequirements'
+> & { skillCapabilityRequirements?: string[][] } {
   return (
     isRecord(input) &&
     isStringArray(input.skillRevisionRefs) &&
     isStringArray(input.skillContentHashes) &&
+    (input.skillCapabilityRequirements === undefined ||
+      isStringArrayArray(input.skillCapabilityRequirements)) &&
     isStringArray(input.skillReceiptIds)
   );
+}
+
+function normalizeFrozenSkillStageResolution(
+  input: FrozenSkillStageResolution,
+): FrozenSkillStageResolution {
+  return {
+    skillRevisionRefs: [...input.skillRevisionRefs],
+    skillContentHashes: [...input.skillContentHashes],
+    ...(input.skillCapabilityRequirements
+      ? {
+          skillCapabilityRequirements:
+            input.skillCapabilityRequirements.map((requirements) => [
+              ...requirements,
+            ]),
+        }
+      : {}),
+    skillReceiptIds: [...input.skillReceiptIds],
+  };
+}
+
+function assertAdmittedSkillManifests(
+  admitted: readonly {
+    skillRevisionRef: string;
+    contentHash: string;
+    requiredModelCapabilities: string[];
+  }[],
+  resolved: readonly ResolvedSkillInstruction[],
+) {
+  if (
+    !sameOrderedValues(
+      admitted.map((skill) => skill.skillRevisionRef),
+      resolved.map((skill) => skill.skillRevisionRef),
+    ) ||
+    !sameOrderedValues(
+      admitted.map((skill) => skill.contentHash),
+      resolved.map((skill) => skill.contentHash),
+    ) ||
+    !sameOrderedNestedValues(
+      admitted.map((skill) => skill.requiredModelCapabilities),
+      resolved.map((skill) => skill.requiredModelCapabilities),
+    )
+  ) {
+    throw new Error(
+      'Task admission Skill manifest does not match the executable Skill selection.',
+    );
+  }
+}
+
+function sameOrderedNestedValues(
+  left: readonly (readonly string[])[],
+  right: readonly (readonly string[])[],
+) {
+  return (
+    left.length === right.length &&
+    left.every((value, index) =>
+      sameOrderedValues(value, right[index] ?? []),
+    )
+  );
+}
+
+function isStringArrayArray(value: unknown): value is string[][] {
+  return Array.isArray(value) && value.every(isStringArray);
 }
 
 function isStringArray(input: unknown): input is string[] {
@@ -763,6 +876,11 @@ export async function runHarnessWorkflow(
             });
             tokenCount += 1;
           },
+        });
+        await ports.recordExecutionAssemblyStep?.({
+          workflowId,
+          request: input.request,
+          step: 'execution_check',
         });
         return { selection, tokenCount };
       },
@@ -1189,8 +1307,8 @@ export async function runHarnessWorkflow(
       skillEffectUnit('package', assemblySkills.instructions),
       '0',
     ),
-    () =>
-      ports.assembleAndDeliver({
+    async () => {
+      const delivered = await ports.assembleAndDeliver({
         workflowId,
         request: activeRequest,
         declaration: routed.declaration,
@@ -1201,7 +1319,14 @@ export async function runHarnessWorkflow(
         ...(assemblySkills.instructions.length > 0
           ? { skillInstructions: assemblySkills.instructions }
           : {}),
-      }),
+      });
+      await ports.recordExecutionAssemblyStep?.({
+        workflowId,
+        request: activeRequest,
+        step: 'event_persistence',
+      });
+      return delivered;
+    },
   );
   const recommendation = {
     recommendedCandidateId: selection.winner.candidateId,
@@ -1482,7 +1607,15 @@ async function runNoteHarnessWorkflow(
     'image_text_note',
     executionSkills.instructions,
     noteSelectionInput,
-    (input) => ports.executeNoteAndSelect(input),
+    async (input) => {
+      const selected = await ports.executeNoteAndSelect(input);
+      await ports.recordExecutionAssemblyStep?.({
+        workflowId,
+        request: input.request,
+        step: 'execution_check',
+      });
+      return selected;
+    },
   );
   await trace(runtime, workflowId, 'execution_selection', {
     executionRoot: mediaExecutionRoot(activeRequest),
@@ -1510,8 +1643,8 @@ async function runNoteHarnessWorkflow(
       skillEffectUnit('package', assemblySkills.instructions),
       '0',
     ),
-    () =>
-      ports.assembleNoteAndDeliver({
+    async () => {
+      const delivered = await ports.assembleNoteAndDeliver({
         workflowId,
         request: activeRequest,
         declaration: routed.declaration,
@@ -1522,7 +1655,14 @@ async function runNoteHarnessWorkflow(
         ...(assemblySkills.instructions.length > 0
           ? { skillInstructions: assemblySkills.instructions }
           : {}),
-      }),
+      });
+      await ports.recordExecutionAssemblyStep?.({
+        workflowId,
+        request: activeRequest,
+        step: 'event_persistence',
+      });
+      return delivered;
+    },
   );
   const recommendation = {
     recommendedCandidateId: selection.selectedStyleId,
@@ -1774,7 +1914,15 @@ async function runMediaHarnessWorkflow(
     kind,
     executionSkills.instructions,
     mediaSelectionInput,
-    (input) => ports.executeMediaAndSelect(input),
+    async (input) => {
+      const selected = await ports.executeMediaAndSelect(input);
+      await ports.recordExecutionAssemblyStep?.({
+        workflowId,
+        request: input.request,
+        step: 'execution_check',
+      });
+      return selected;
+    },
   );
   await trace(runtime, workflowId, 'execution_selection', {
     executionRoot: mediaExecutionRoot(request),
@@ -1885,7 +2033,15 @@ async function runMediaHarnessWorkflow(
       `${kind}-r${bundle.bundle.revision}`,
       executionSkills.instructions,
       recompiledMediaSelectionInput,
-      (input) => ports.executeMediaAndSelect(input),
+      async (input) => {
+        const selected = await ports.executeMediaAndSelect(input);
+        await ports.recordExecutionAssemblyStep?.({
+          workflowId,
+          request: input.request,
+          step: 'execution_check',
+        });
+        return selected;
+      },
     );
     await trace(runtime, workflowId, 'execution_selection', {
       executionRoot: mediaExecutionRoot(request),
@@ -1907,8 +2063,8 @@ async function runMediaHarnessWorkflow(
       skillEffectUnit('package', assemblySkills.instructions),
       '0',
     ),
-    () =>
-      ports.assembleMediaAndDeliver({
+    async () => {
+      const delivered = await ports.assembleMediaAndDeliver({
         workflowId,
         request: activeRequest,
         declaration: routed.declaration,
@@ -1919,7 +2075,14 @@ async function runMediaHarnessWorkflow(
         ...(assemblySkills.instructions.length > 0
           ? { skillInstructions: assemblySkills.instructions }
           : {}),
-      }),
+      });
+      await ports.recordExecutionAssemblyStep?.({
+        workflowId,
+        request: activeRequest,
+        step: 'event_persistence',
+      });
+      return delivered;
+    },
   );
   const recommendation = {
     recommendedCandidateId: selection.asset.id,

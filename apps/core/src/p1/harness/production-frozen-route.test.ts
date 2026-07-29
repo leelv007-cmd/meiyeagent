@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { ModelCapabilityRequirementAxis } from '@meiye/contracts';
 
 import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import type { RouteSnapshot as FoundationRouteSnapshot } from '../foundation/domain.js';
@@ -70,6 +71,10 @@ test('production route resolver rejects stale or incomplete route facts before a
       frozen: { ...frozen, catalogRevisionId: 'catalog-stale' },
     },
     {
+      name: 'missing frozen capability revision',
+      frozen: { ...frozen, capabilityRevisionId: undefined },
+    },
+    {
       name: 'frozen actual model',
       frozen: { ...frozen, actualCatalogModelId: 'model-stale' },
     },
@@ -138,6 +143,191 @@ test('production route resolver rejects stale or incomplete route facts before a
     );
   }
 });
+
+test('unknown capability uses the live platform default and freezes fallback facts', async () => {
+  const snapshot = mediaSnapshot();
+  const checkpoint = foundationRoute(snapshot);
+  const frozen = modelSupplyRoute(snapshot);
+  const defaultOperations: string[] = [];
+  const resolver = new ProductionHarnessFrozenRouteSnapshotResolver(
+    {
+      async getRouteSnapshot() {
+        return structuredClone(checkpoint);
+      },
+    },
+    {
+      async freezeFixedRouteForExecution() {
+        return structuredClone(frozen);
+      },
+    },
+    {
+      async resolve(operation) {
+        defaultOperations.push(operation);
+        return {
+          catalogModelId: frozen.actualCatalogModelId,
+          deploymentId: frozen.deploymentId,
+          activationEvidenceStatus: 'live_verified',
+          activationEvidenceRef: 'probe://deployment-route/live',
+          configurationRevision: 'config-route-r1',
+        };
+      },
+    },
+  );
+  const requirement: ModelCapabilityRequirementAxis = {
+    axisId: 'imagePrimary',
+    vocabularyVersion: 'model-capability-v1',
+    requiredProtocolCapabilities: [],
+    requiredModalities: ['image/*'],
+    requiredBusinessTags: [],
+    requiredModalityCapabilities: [],
+    unknownPolicy: 'conservative_always_available',
+  };
+
+  const result = await resolver.resolve(snapshot, {
+    requirements: [requirement],
+  });
+
+  assert.deepEqual(defaultOperations, ['image.generate']);
+  assert.deepEqual(result.capabilityRequirements, [requirement]);
+  assert.deepEqual(result.capabilityMatches, [
+    {
+      axisId: 'imagePrimary',
+      deploymentId: 'deployment-route',
+      outcome: 'conservative_fallback',
+      reasons: ['capability_unknown:modality:image/*'],
+      evidenceRefs: [],
+    },
+  ]);
+  assert.deepEqual(result.capabilityFallbackFacts, [
+    {
+      axisId: 'imagePrimary',
+      deploymentId: 'deployment-route',
+      reason: 'capability_unknown',
+      platformDefaultDeploymentId: 'deployment-route',
+      activationEvidenceRef: 'probe://deployment-route/live',
+      configurationRevision: 'config-route-r1',
+    },
+  ]);
+});
+
+test('unknown capability refreezes a different live platform default as the final durable route', async () => {
+  const snapshot = mediaSnapshot();
+  const original = modelSupplyRoute(snapshot);
+  const fallback = platformDefaultRoute(snapshot);
+  const freezeInputs: unknown[] = [];
+  const resolver = new ProductionHarnessFrozenRouteSnapshotResolver(
+    {
+      async getRouteSnapshot() {
+        return foundationRoute(snapshot);
+      },
+    },
+    {
+      async freezeFixedRouteForExecution(input) {
+        freezeInputs.push(structuredClone(input));
+        return structuredClone(
+          input.deploymentId === fallback.deploymentId ? fallback : original,
+        );
+      },
+    },
+    {
+      async resolve() {
+        return {
+          catalogModelId: fallback.actualCatalogModelId,
+          deploymentId: fallback.deploymentId,
+          activationEvidenceStatus: 'live_verified',
+          activationEvidenceRef: 'probe://deployment-default/live',
+          configurationRevision: 'config-default-r1',
+        };
+      },
+    },
+  );
+
+  const result = await resolver.resolve(snapshot, {
+    requirements: [
+      {
+        axisId: 'imagePrimary',
+        vocabularyVersion: 'model-capability-v1',
+        requiredProtocolCapabilities: [],
+        requiredModalities: ['image/*'],
+        requiredBusinessTags: [],
+        requiredModalityCapabilities: [],
+        unknownPolicy: 'conservative_always_available',
+      },
+    ],
+  });
+
+  assert.deepEqual(freezeInputs, [
+    {
+      catalogModelId: snapshot.catalogModel.id,
+      dataClass: ['contains_face'],
+      operation: 'image.generate',
+      workspaceId: snapshot.workspaceId,
+    },
+    {
+      catalogModelId: 'model-platform-default',
+      dataClass: ['contains_face'],
+      deploymentId: 'deployment-default',
+      operation: 'image.generate',
+      workspaceId: snapshot.workspaceId,
+    },
+  ]);
+  assert.equal(result.id, 'route-platform-default');
+  assert.equal(result.actualCatalogModelId, 'model-platform-default');
+  assert.equal(result.deploymentId, 'deployment-default');
+  assert.equal(
+    result.allowedCandidates?.[0]?.activationStatus,
+    'live_verified',
+  );
+  assert.deepEqual(result.capabilityMatches, [
+    {
+      axisId: 'imagePrimary',
+      deploymentId: 'deployment-route',
+      outcome: 'conservative_fallback',
+      reasons: ['capability_unknown:modality:image/*'],
+      evidenceRefs: [],
+    },
+  ]);
+  assert.deepEqual(result.capabilityFallbackFacts, [
+    {
+      axisId: 'imagePrimary',
+      deploymentId: 'deployment-route',
+      reason: 'capability_unknown',
+      platformDefaultDeploymentId: 'deployment-default',
+      activationEvidenceRef: 'probe://deployment-default/live',
+      configurationRevision: 'config-default-r1',
+    },
+  ]);
+});
+
+function platformDefaultRoute(
+  snapshot: ReturnType<typeof mediaSnapshot>,
+): RouteSnapshot {
+  const route = modelSupplyRoute(snapshot);
+  const candidate = route.allowedCandidates?.[0];
+  assert.ok(candidate);
+  return {
+    ...route,
+    id: 'route-platform-default',
+    capabilityRevisionId: 'capability-default-r1',
+    requestedSelection: {
+      mode: 'fixed',
+      catalogModelId: 'model-platform-default',
+    },
+    candidateCatalogModelIds: ['model-platform-default'],
+    actualCatalogModelId: 'model-platform-default',
+    deploymentId: 'deployment-default',
+    allowedCandidates: [
+      {
+        ...candidate,
+        catalogModelId: 'model-platform-default',
+        deploymentId: 'deployment-default',
+        modelDisplayName: 'Platform default fixture',
+        stableModelName: 'platform-default-fixture',
+        activationStatus: 'live_verified',
+      },
+    ],
+  };
+}
 
 function mediaSnapshot() {
   return createCreationExecutionSnapshot(
@@ -226,6 +416,7 @@ function modelSupplyRoute(
   return {
     id: snapshot.route.id,
     catalogRevisionId: snapshot.route.revision,
+    capabilityRevisionId: 'capability-r1',
     requestedSelection: {
       mode: 'fixed',
       catalogModelId: snapshot.catalogModel.id,

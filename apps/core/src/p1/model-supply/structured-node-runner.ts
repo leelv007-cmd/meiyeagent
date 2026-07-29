@@ -4,6 +4,7 @@ import {
   ModelSupplyApplicationService,
   type Acceptance,
   type DataClass,
+  type RouteSnapshot,
   type RequestedSelection,
   type StructuredObjectExecutor,
 } from './index.js';
@@ -12,6 +13,8 @@ import {
   OpenAiCompatibleAiSdkRunner,
   type OpenAiCompatibleAiSdkOptions,
 } from './ai-sdk-runner.js';
+import { openAiCompatibleRunnerForRequest } from './adapters.js';
+import type { ProviderExecutionRequest } from './provider-lifecycle.js';
 import type { StructuredExecutionContinuation } from './execution-attempt-budget.js';
 
 export type { StructuredObjectExecutor } from './index.js';
@@ -78,12 +81,20 @@ export class ModelSupplyStructuredNodeRunner implements StructuredNodeRunner {
       executor: StructuredObjectExecutor;
       workspaceId: string;
       actorId: string;
-      selection: RequestedSelection;
+      selection?: RequestedSelection;
+      /** Durable #240 carrier; when present it is the only route authority. */
+      frozenRouteSnapshot?: RouteSnapshot;
       dataClass?: DataClass[];
       billingTaskId?: string;
       billingQuoteRevision?: string;
     },
-  ) {}
+  ) {
+    if (!options.selection && !options.frozenRouteSnapshot) {
+      throw new Error(
+        'Structured node runner requires a selection or frozen route.',
+      );
+    }
+  }
 
   async run<Output>(request: StructuredNodeRunnerRequest<Output>) {
     const canonical = JSON.stringify({
@@ -91,6 +102,7 @@ export class ModelSupplyStructuredNodeRunner implements StructuredNodeRunner {
       prompt: request.prompt,
       schemaName: request.schemaName,
       schemaRevision: request.schemaRevision,
+      frozenRouteSnapshot: this.options.frozenRouteSnapshot,
     });
     const existing = this.effects.get(request.effectIdempotencyKey);
     if (existing) {
@@ -125,6 +137,13 @@ export class ModelSupplyStructuredNodeRunner implements StructuredNodeRunner {
       );
     }
     let measurement: StructuredObjectMeasurement | undefined;
+    const frozenRoute = this.options.frozenRouteSnapshot;
+    const selection: RequestedSelection = frozenRoute
+      ? {
+          mode: 'fixed',
+          catalogModelId: frozenRoute.actualCatalogModelId,
+        }
+      : structuredClone(this.options.selection!);
     const result = await this.options.application.executeStructuredObject(
       {
         workspaceId: this.options.workspaceId,
@@ -132,8 +151,10 @@ export class ModelSupplyStructuredNodeRunner implements StructuredNodeRunner {
         correlationId: request.effectIdempotencyKey,
         idempotencyKey: request.effectIdempotencyKey,
         operation: 'text.respond',
-        selection: structuredClone(this.options.selection),
-        dataClass: structuredClone(this.options.dataClass ?? []),
+        selection,
+        dataClass: structuredClone(
+          frozenRoute?.dataClass ?? this.options.dataClass ?? [],
+        ),
         ...(this.options.billingTaskId && this.options.billingQuoteRevision
           ? {
               billingTaskId: this.options.billingTaskId,
@@ -144,6 +165,9 @@ export class ModelSupplyStructuredNodeRunner implements StructuredNodeRunner {
         promptRevision: request.schemaRevision,
         exampleSetRevision: request.schemaName,
         productUsageQuantity: 0,
+        ...(frozenRoute
+          ? { frozenRouteSnapshot: structuredClone(frozenRoute) }
+          : {}),
       },
       {
         abortSignal: request.abortSignal,
@@ -208,16 +232,19 @@ function measuredStructuredExecutor(
   ) => void,
 ): StructuredObjectExecutor {
   return {
-    supportsCatalogModel(catalogModelId) {
-      return executor.supportsCatalogModel(catalogModelId);
+    supportsCatalogModel(catalogModelId, providerRequest) {
+      return executor.supportsCatalogModel(
+        catalogModelId,
+        providerRequest,
+      );
     },
     async generate(input) {
       const result = await executor.generate(input);
       if (result.measurement) observe(result.measurement);
       return result;
     },
-    providerCost(usage) {
-      return executor.providerCost(usage);
+    providerCost(usage, providerRequest) {
+      return executor.providerCost(usage, providerRequest);
     },
   };
 }
@@ -228,8 +255,11 @@ function providerAttemptFencedExecutor(
 ): StructuredObjectExecutor {
   if (!beforeProviderAttempt) return executor;
   return {
-    supportsCatalogModel(catalogModelId) {
-      return executor.supportsCatalogModel(catalogModelId);
+    supportsCatalogModel(catalogModelId, providerRequest) {
+      return executor.supportsCatalogModel(
+        catalogModelId,
+        providerRequest,
+      );
     },
     async generate<Output>(input: {
       abortSignal?: AbortSignal;
@@ -250,8 +280,8 @@ function providerAttemptFencedExecutor(
           : beforeProviderAttempt,
       });
     },
-    providerCost(usage) {
-      return executor.providerCost(usage);
+    providerCost(usage, providerRequest) {
+      return executor.providerCost(usage, providerRequest);
     },
   };
 }
@@ -261,27 +291,114 @@ export class AiSdkStructuredObjectExecutor
 {
   private readonly runner: OpenAiCompatibleAiSdkRunner;
 
-  constructor(options: OpenAiCompatibleAiSdkOptions) {
+  constructor(private readonly options: OpenAiCompatibleAiSdkOptions) {
     this.runner = new OpenAiCompatibleAiSdkRunner(options);
   }
 
-  supportsCatalogModel(catalogModelId: string) {
+  supportsCatalogModel(
+    catalogModelId: string,
+    providerRequest?: ProviderExecutionRequest,
+  ) {
+    if (providerRequest?.submission.frozenRouteSnapshot) {
+      return (
+        providerRequest.submission.frozenRouteSnapshot.actualCatalogModelId ===
+          catalogModelId &&
+        providerRequest.model.id === catalogModelId
+      );
+    }
     return this.runner.supportsCatalogModel(catalogModelId);
   }
 
-  generate<Output>(input: {
+  async generate<Output>(input: {
     abortSignal?: AbortSignal;
     beforeProviderAttempt?: () => Promise<void>;
     instructions: string;
     onPartialOutput?: (partial: unknown) => Promise<void> | void;
     prompt: string;
+    providerRequest?: ProviderExecutionRequest;
     schema: ZodType<Output>;
     schemaName: string;
   }) {
-    return this.runner.generateStructured(input);
+    const { providerRequest, ...structuredInput } = input;
+    const runner = providerRequest?.submission.frozenRouteSnapshot
+      ? this.pinnedRunner(providerRequest)
+      : this.runner;
+    const generated = await runner.generateStructured(structuredInput);
+    const providerUsage =
+      'providerUsage' in generated
+        ? generated.providerUsage
+        : undefined;
+    return {
+      ...generated,
+      providerCost: runner.providerCost(
+        providerUsage ?? generated.usage,
+      ),
+    };
   }
 
-  providerCost(usage: { inputTokens: number; outputTokens: number }) {
-    return this.runner.providerCost(usage);
+  providerCost(
+    usage: { inputTokens: number; outputTokens: number },
+    providerRequest?: ProviderExecutionRequest,
+  ) {
+    const runner = providerRequest?.submission.frozenRouteSnapshot
+      ? this.pinnedRunner(providerRequest)
+      : this.runner;
+    return runner.providerCost(usage);
+  }
+
+  private pinnedRunner(request: ProviderExecutionRequest) {
+    const route = request.submission.frozenRouteSnapshot;
+    const binding = request.runtimeBinding;
+    if (!route?.capabilityRevisionId) {
+      throw new Error(
+        'Pinned structured execution requires a capability revision.',
+      );
+    }
+    if (
+      request.deployment.id !== route.deploymentId ||
+      request.model.id !== route.actualCatalogModelId ||
+      request.routeSnapshot?.deploymentId !== route.deploymentId
+    ) {
+      throw new Error(
+        'Pinned structured provider request conflicts with its frozen route.',
+      );
+    }
+    if (
+      !binding ||
+      binding.deploymentId !== route.deploymentId ||
+      binding.capabilityRevisionId !== route.capabilityRevisionId
+    ) {
+      throw new Error(
+        'Pinned structured runtime binding conflicts with its frozen route.',
+      );
+    }
+    if (
+      binding.adapterKey !== 'direct-llm' ||
+      !binding.adapterBindingRevision ||
+      !binding.adapterConfig ||
+      !binding.credential?.secret.trim()
+    ) {
+      throw new Error(
+        'Pinned structured execution requires a published direct-llm adapter binding and credential.',
+      );
+    }
+    if (
+      binding.adapterConfig.providerModel !==
+        request.deployment.providerModel ||
+      binding.adapterConfig.endpointRevision !==
+        request.deployment.endpointRevision
+    ) {
+      throw new Error(
+        'Pinned structured adapter config conflicts with frozen deployment facts.',
+      );
+    }
+    return openAiCompatibleRunnerForRequest(
+      request,
+      {
+        ...this.options,
+        catalogModelId: request.model.id,
+      },
+      this.runner,
+    );
   }
 }

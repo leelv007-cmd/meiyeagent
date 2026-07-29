@@ -10,10 +10,18 @@ import {
 	creationExecutionSnapshotSchema,
 } from "../execution-spine/creation-execution-snapshot.js";
 import {
+	AgentPrimitiveObservabilityAdapter,
+	MemoryObservabilityEventAudit,
+} from "../creation-experience/index.js";
+import {
 	MemoryContentPackageRevisionWritePort,
 	type ContentPackageRevisionWriteInput,
 } from "../execution-spine/content-package-revision-port.js";
-import type { ModelSupplyResult, ModelSupplySubmission } from "../model-supply/index.js";
+import { fingerprintValue } from "../job-runtime/job-contracts.js";
+import type {
+	ModelSupplyResult,
+	ModelSupplySubmission,
+} from "../model-supply/index.js";
 import { buildContentPackage } from "../operations/content-package.js";
 import type { HarnessStructuredNodeRunnerFactory } from "./production-stage-ports.js";
 import type {
@@ -43,6 +51,7 @@ import type {
 } from "./note-media-admission.js";
 import {
 	HARNESS_LANGFUSE_PROMPT_NAMES,
+	promptRevisionReferences,
 	type HarnessFrozenPrompts,
 } from "./langfuse-prompts.js";
 import { unconfiguredNotePlanEnhancementJudgeResolver } from "./note-plan-structured-port.js";
@@ -51,20 +60,14 @@ test("unified stages forward bounded copy selection to the production copy port"
 	const copy = unsupportedCopyPorts();
 	const input = {
 		workflowId: "workflow-copy-bounded",
-	} as Parameters<
-		NonNullable<HarnessStagePorts["executeAndSelectBounded"]>
-	>[0];
+	} as Parameters<NonNullable<HarnessStagePorts["executeAndSelectBounded"]>>[0];
 	let forwarded:
-		| Parameters<
-				NonNullable<HarnessStagePorts["executeAndSelectBounded"]>
-		  >[0]
+		| Parameters<NonNullable<HarnessStagePorts["executeAndSelectBounded"]>>[0]
 		| undefined;
 	const skillInput = {
 		workflowId: "workflow-copy-bounded",
 		stage: "execution_selection",
-	} as Parameters<
-		NonNullable<HarnessStagePorts["resolveStageSkills"]>
-	>[0];
+	} as Parameters<NonNullable<HarnessStagePorts["resolveStageSkills"]>>[0];
 	let forwardedSkillInput:
 		| Parameters<NonNullable<HarnessStagePorts["resolveStageSkills"]>>[0]
 		| undefined;
@@ -185,6 +188,207 @@ test("image and video use the existing Model Supply path with stable submission 
 	}
 });
 
+test("a legacy media request without execution assembly cannot submit generation", async () => {
+	let submissions = 0;
+	const ports = new UnifiedHarnessStagePorts(
+		unsupportedCopyPorts(),
+		undefined as never,
+		new ModelSupplyHarnessMediaExecutionPort({
+			async submit() {
+				submissions += 1;
+				return completedResult("image");
+			},
+		}),
+		new MemoryContentPackageRevisionWritePort(),
+		() => "2026-07-29T00:00:00.000Z",
+	);
+
+	await assert.rejects(
+		() =>
+			ports.executeMediaAndSelect({
+				brief: mediaBrief("image"),
+				context: contextSnapshot(),
+				request: harnessInput("image", "package-legacy-media"),
+				workflowId: "task-legacy-media",
+			}),
+		/execution assembly is required before provider execution/i,
+	);
+	assert.equal(submissions, 0);
+});
+
+test("a succeeded audit failure does not rewrite successful media generation as rejected", async () => {
+	const phases: string[] = [];
+	const observer = new AgentPrimitiveObservabilityAdapter(
+		{
+			append(_workspaceId, event) {
+				assert.equal(event.eventType, "agent_primitive.lifecycle");
+				if (event.eventType !== "agent_primitive.lifecycle") {
+					throw new Error("Expected agent primitive lifecycle event.");
+				}
+				phases.push(event.payload.phase);
+				if (event.payload.phase === "succeeded") {
+					throw new Error("terminal media audit unavailable");
+				}
+				return event;
+			},
+		},
+		{ resolve: () => ({ kind: "not_billed" }) },
+	);
+	const ports = new UnifiedHarnessStagePorts(
+		unsupportedCopyPorts(),
+		undefined as never,
+		new ModelSupplyHarnessMediaExecutionPort({
+			async submit() {
+				return completedResult("image");
+			},
+		}),
+		new MemoryContentPackageRevisionWritePort(),
+		() => "2026-07-29T00:00:00.000Z",
+		undefined,
+		undefined,
+		{
+			create() {
+				return observer;
+			},
+		},
+	);
+
+	await assert.rejects(
+		() =>
+			ports.executeMediaAndSelect({
+				brief: imageBriefFor("image.generate", 0),
+				context: contextSnapshot(),
+				request: harnessInputWithExecutionAssembly(
+					"image",
+					"package-media-audit-failure",
+					"image.generate",
+					0,
+				),
+				workflowId: "task-image",
+			}),
+		/terminal media audit unavailable/u,
+	);
+	assert.deepEqual(phases, ["invoked", "succeeded"]);
+});
+
+test("a legacy media request without execution assembly cannot compile a structured brief", async () => {
+	let providerRuns = 0;
+	const ports = new UnifiedHarnessStagePorts(
+		unsupportedCopyPorts(),
+		{
+			create() {
+				return {
+					async run<Output>(request: StructuredNodeRunnerRequest<Output>) {
+						providerRuns += 1;
+						return {
+							output: request.schema.parse(mediaBrief("image")),
+							attempts: 1,
+							providerTaskRef: "legacy-brief-provider",
+							replayed: false,
+							usage: { inputTokens: 1, outputTokens: 1 },
+						};
+					},
+				};
+			},
+		},
+		undefined as never,
+		new MemoryContentPackageRevisionWritePort(),
+		() => "2026-07-29T00:00:00.000Z",
+	);
+
+	await assert.rejects(
+		() =>
+			ports.compileMediaBrief({
+				workflowId: "task-legacy-brief",
+				request: harnessInput("image", "package-legacy-brief"),
+				declaration: {
+					normalizedIntent: "制作护理项目配图",
+					taskType: "daily_service_exposure",
+					deliveryLayer: "finished_media",
+					relevantAssetCategories: ["product_service"],
+					usedAssetCategories: ["product_service"],
+					route: "customized",
+					routingSource: "model",
+					implicitConstraints: [],
+				},
+				context: contextSnapshot(),
+			}),
+		/execution assembly is required before provider execution/i,
+	);
+	assert.equal(providerRuns, 0);
+});
+
+test("unified structured generation revalidates execution assembly before every provider attempt", async () => {
+	const request = harnessInputWithExecutionAssembly(
+		"image",
+		"package-assembly-attempt-fence",
+		"image.generate",
+		0,
+	);
+	let providerAttempts = 0;
+	const observer = new AgentPrimitiveObservabilityAdapter(
+		new MemoryObservabilityEventAudit(),
+		{ resolve: () => ({ kind: "not_billed" }) },
+	);
+	const ports = new UnifiedHarnessStagePorts(
+		unsupportedCopyPorts(),
+		{
+			create() {
+				return {
+					async run<Output>(structured: StructuredNodeRunnerRequest<Output>) {
+						await structured.beforeProviderAttempt?.();
+						providerAttempts += 1;
+						request.frozenRouteSnapshot!.deploymentId =
+							"deployment-drifted-after-first-attempt";
+						await structured.beforeProviderAttempt?.();
+						providerAttempts += 1;
+						return {
+							output: structured.schema.parse(
+								imageBriefFor("image.generate", 0),
+							),
+							attempts: 2,
+							providerTaskRef: "structured-two-attempts",
+							replayed: false,
+							usage: { inputTokens: 2, outputTokens: 2 },
+						};
+					},
+				};
+			},
+		},
+		undefined as never,
+		new MemoryContentPackageRevisionWritePort(),
+		() => "2026-07-29T00:00:00.000Z",
+		undefined,
+		undefined,
+		{
+			create() {
+				return observer;
+			},
+		},
+	);
+
+	await assert.rejects(
+		() =>
+			ports.compileMediaBrief({
+				workflowId: "task-assembly-attempt-fence",
+				request,
+				declaration: {
+					normalizedIntent: "制作护理项目配图",
+					taskType: "daily_service_exposure",
+					deliveryLayer: "finished_media",
+					relevantAssetCategories: ["product_service"],
+					usedAssetCategories: ["product_service"],
+					route: "customized",
+					routingSource: "model",
+					implicitConstraints: [],
+				},
+				context: contextSnapshot(),
+			}),
+		/assembly binding does not match the frozen route/i,
+	);
+	assert.equal(providerAttempts, 1);
+});
+
 test("media queue submission stops before the provider when durable rights are withdrawn", async () => {
 	let submissions = 0;
 	const adapter = new ModelSupplyHarnessMediaExecutionPort({
@@ -255,7 +459,9 @@ test("media execution copies the frozen route data classes into the submission",
 test("media execution rejects a request without its frozen route", async () => {
 	const adapter = new ModelSupplyHarnessMediaExecutionPort({
 		async submit() {
-			throw new Error("A request without its route must not reach Model Supply.");
+			throw new Error(
+				"A request without its route must not reach Model Supply.",
+			);
 		},
 	});
 	const request = harnessInput(
@@ -311,10 +517,7 @@ test("three canonical image operations map to the two existing provider operatio
 		});
 
 		assert.equal(submissions[0]?.operation, nativeOperation);
-		assert.equal(
-			submissions[0]?.input?.inputAssets?.length,
-			referenceCount,
-		);
+		assert.equal(submissions[0]?.input?.inputAssets?.length, referenceCount);
 	}
 });
 
@@ -498,7 +701,11 @@ test("media delivery writes the shared ContentPackage once with asset, usage, co
 		});
 		const ports = new UnifiedHarnessStagePorts(
 			unsupportedCopyPorts(),
-			{ create() { throw new Error("Media delivery does not compile a copy brief."); } },
+			{
+				create() {
+					throw new Error("Media delivery does not compile a copy brief.");
+				},
+			},
 			media,
 			{
 				async write(input) {
@@ -571,7 +778,10 @@ test("media delivery writes the shared ContentPackage once with asset, usage, co
 			schemaVersion: "creation-execution-snapshot/v1",
 		});
 		assert.deepEqual(contentPackage?.generated.assetIds, [`${kind}-asset-1`]);
-		assert.equal(contentPackage?.generated.ownedAssets?.[0]?.id, `${kind}-asset-1`);
+		assert.equal(
+			contentPackage?.generated.ownedAssets?.[0]?.id,
+			`${kind}-asset-1`,
+		);
 		assert.equal(
 			contentPackage?.generated.ownedAssets?.[0]?.sourceTaskRef,
 			`provider-task-${kind}-1`,
@@ -580,9 +790,18 @@ test("media delivery writes the shared ContentPackage once with asset, usage, co
 			quantity: 0,
 			status: "committed",
 		});
-		assert.equal(contentPackage?.generated.childRuns[0]?.providerCost?.amount, 1.2);
-		assert.equal(contentPackage?.generated.childRuns[0]?.providerAttempts?.length, 1);
-		assert.equal(contentPackage?.generated.childRuns[0]?.providerCosts?.length, 1);
+		assert.equal(
+			contentPackage?.generated.childRuns[0]?.providerCost?.amount,
+			1.2,
+		);
+		assert.equal(
+			contentPackage?.generated.childRuns[0]?.providerAttempts?.length,
+			1,
+		);
+		assert.equal(
+			contentPackage?.generated.childRuns[0]?.providerCosts?.length,
+			1,
+		);
 		assert.equal(contentPackage?.marketing?.contextBundle.bundleId, "bundle-1");
 		assert.deepEqual(contentPackage?.marketing?.rightsRefs, ["asset-1"]);
 		assert.equal(contentPackage?.variants?.length, 3);
@@ -605,7 +824,10 @@ test("media delivery writes the shared ContentPackage once with asset, usage, co
 
 test("image-text note compiles dual styles, generates selected pages, and writes one complete revision", async () => {
 	const packageId = "package-image-text-note";
-	const originalRequest = harnessInput("image_text_note", packageId);
+	const originalRequest = harnessInputWithExecutionAssembly(
+		"image_text_note",
+		packageId,
+	);
 	const sourceSnapshot = originalRequest.executionSnapshot!;
 	const snapshot = creationExecutionSnapshotSchema.parse({
 		...sourceSnapshot,
@@ -711,6 +933,8 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 				};
 			},
 		},
+		undefined,
+		notBilledExecutionChildObservability(),
 	);
 	const context = contextSnapshot();
 	const declaration = {
@@ -818,9 +1042,7 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 	);
 	assert.equal(selectedVersion?.note?.plan.pages.length, 2);
 	assert.deepEqual(
-		selectedVersion?.note?.plan.pages.map(
-			({ imageAssetId }) => imageAssetId,
-		),
+		selectedVersion?.note?.plan.pages.map(({ imageAssetId }) => imageAssetId),
 		["image-asset-1", "image-asset-3"],
 	);
 	assert.ok(contentPackage?.marketing?.contextBundle.bundleId);
@@ -840,7 +1062,7 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 		contentPackage: { ...snapshot.contentPackage, id: partialPackageId },
 	});
 	const partialRequest = {
-		...harnessInput("image_text_note", partialPackageId),
+		...harnessInputWithExecutionAssembly("image_text_note", partialPackageId),
 		executionSnapshot: partialSnapshot,
 	};
 	writer.seed(
@@ -912,7 +1134,10 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 
 test("production note assembly can disable an unavailable enhancement judge without bypassing canonical gates", async () => {
 	const packageId = "package-note-without-enhancement-judge";
-	const request = harnessInput("image_text_note", packageId);
+	const request = harnessInputWithExecutionAssembly(
+		"image_text_note",
+		packageId,
+	);
 	let generated = 0;
 	let writes = 0;
 	const ports = new UnifiedHarnessStagePorts(
@@ -971,6 +1196,7 @@ test("production note assembly can disable an unavailable enhancement judge with
 			},
 		},
 		unconfiguredNotePlanEnhancementJudgeResolver,
+		notBilledExecutionChildObservability(),
 	);
 	const context = contextSnapshot();
 	const declaration = {
@@ -1254,7 +1480,8 @@ test("media closeout evaluates frozen price sources against delivery-time freshn
 test("video delivery rejects a price from the context when this run did not authorize its fact reference", async () => {
 	const request = harnessInput("video", "package-video-unauthorized-price");
 	const brief = mediaBrief("video");
-	brief.storyboard[0]!.description = "头皮护理团购价398元，门店护理场景与主视觉展示。";
+	brief.storyboard[0]!.description =
+		"头皮护理团购价398元，门店护理场景与主视觉展示。";
 	const context = contextSnapshot();
 	context.activeFacts = [
 		{
@@ -1435,7 +1662,11 @@ test("an unknown durable media outcome stays on its stable reconciliation key", 
 	const adapter = new ModelSupplyHarnessMediaExecutionPort({
 		async submit(input) {
 			submissions.push(structuredClone(input));
-			return { ...completedResult("video"), status: "unknown", asset: undefined };
+			return {
+				...completedResult("video"),
+				status: "unknown",
+				asset: undefined,
+			};
 		},
 	});
 	const request = harnessInput("video", "package-video");
@@ -1453,7 +1684,10 @@ test("an unknown durable media outcome stays on its stable reconciliation key", 
 			error.status === 202,
 	);
 	assert.equal(submissions.length, 1);
-	assert.equal(submissions[0]?.idempotencyKey, "harness-media:task-video:video");
+	assert.equal(
+		submissions[0]?.idempotencyKey,
+		"harness-media:task-video:video",
+	);
 });
 
 test("terminal video failure and timeout expose merchant-safe recovery choices", async () => {
@@ -1483,8 +1717,14 @@ test("terminal video failure and timeout expose merchant-safe recovery choices",
 				assert.ok(error instanceof HarnessMediaExecutionError);
 				assert.equal(error.code, "MEDIA_GENERATION_FAILED");
 				assert.match(error.merchantMessage ?? "", /重新生成/u);
-				assert.match(error.merchantMessage ?? "", new RegExp(expectedChoice, "u"));
-				assert.doesNotMatch(error.merchantMessage ?? "", new RegExp(failureCode, "u"));
+				assert.match(
+					error.merchantMessage ?? "",
+					new RegExp(expectedChoice, "u"),
+				);
+				assert.doesNotMatch(
+					error.merchantMessage ?? "",
+					new RegExp(failureCode, "u"),
+				);
 				assert.deepEqual(
 					merchantVisibleLanguageIssues(error.merchantMessage ?? ""),
 					[],
@@ -1673,8 +1913,8 @@ test("a busy note admission without a durable step returns 202 immediately", asy
 		}),
 		(error: unknown) =>
 			error instanceof HarnessMediaExecutionError &&
-				error.code === "MEDIA_RECONCILIATION_PENDING" &&
-				error.status === 202,
+			error.code === "MEDIA_RECONCILIATION_PENDING" &&
+			error.status === 202,
 	);
 	assert.equal(claimCalls, 1);
 	assert.equal(submissions, 0);
@@ -1748,6 +1988,45 @@ test("exact text blocks the first image, retries once, and keeps both provider c
 	);
 });
 
+test("exact-text image retries revalidate execution assembly before every provider submit", async () => {
+	const request = harnessInputWithExecutionAssembly(
+		"image",
+		"package-image-attempt-fence",
+	);
+	let submissions = 0;
+	const adapter = new ModelSupplyHarnessMediaExecutionPort(
+		{
+			async submit() {
+				submissions += 1;
+				return completedResult("image", String(submissions));
+			},
+		},
+		{
+			async observe(input) {
+				request.frozenRouteSnapshot!.deploymentId =
+					"deployment-drifted-before-retry";
+				return {
+					expected: input.expected,
+					observed: ["价格 389"],
+					conflictingText: [],
+				};
+			},
+		},
+	);
+
+	await assert.rejects(
+		() =>
+			adapter.execute({
+				brief: imageBriefWithExactText("价格 398"),
+				context: contextSnapshot(),
+				request,
+				workflowId: request.executionSnapshot!.task.id,
+			}),
+		/execution assembly binding does not match the frozen route/i,
+	);
+	assert.equal(submissions, 1);
+});
+
 test("a second exact-text mismatch hard-blocks delivery with merchant-safe wording", async () => {
 	let generation = 0;
 	const adapter = new ModelSupplyHarnessMediaExecutionPort(
@@ -1792,22 +2071,25 @@ test("a second exact-text mismatch hard-blocks delivery with merchant-safe wordi
 
 test("the production exact-text verifier reuses multimodal text.respond without extending supply operations", async () => {
 	const submissions: ModelSupplySubmission[] = [];
-	const verifier = new ModelSupplyImageExactTextVerifier({
-		async submit(input) {
-			submissions.push(structuredClone(input));
-			return {
-				...completedResult("image"),
-				asset: undefined,
-				operation: "text.respond",
-				text: JSON.stringify({
-					observedText: ["价格 398"],
-					conflictingText: [],
-				}),
-			};
+	const verifier = new ModelSupplyImageExactTextVerifier(
+		{
+			async submit(input) {
+				submissions.push(structuredClone(input));
+				return {
+					...completedResult("image"),
+					asset: undefined,
+					operation: "text.respond",
+					text: JSON.stringify({
+						observedText: ["价格 398"],
+						conflictingText: [],
+					}),
+				};
+			},
 		},
-	});
+		notBilledExecutionChildObservability(),
+	);
 	const request = {
-		...harnessInput("image", "package-image"),
+		...harnessInputWithExecutionAssembly("image", "package-image"),
 		prompts: frozenPromptBundle(),
 	};
 	const observation = await verifier.observe({
@@ -1820,37 +2102,194 @@ test("the production exact-text verifier reuses multimodal text.respond without 
 
 	assert.equal(assessment.passed, true);
 	assert.equal(submissions[0]?.operation, "text.respond");
+	assert.deepEqual(submissions[0]?.selection, {
+		mode: "auto",
+		profile: "quality",
+		fallbackConsent: false,
+	});
 	assert.deepEqual(submissions[0]?.input?.inputAssets, [
 		{ assetId: "image-asset-1", role: "reference_image" },
 	]);
-	assert.equal(
-		submissions[0]?.promptBinding?.content,
-		"frozen:textResponse",
-	);
+	assert.equal(submissions[0]?.promptBinding?.content, "frozen:textResponse");
 	assert.equal(
 		submissions[0]?.productUsageQuantity,
 		0,
 	);
 });
 
-test("the production exact-text verifier rejects a conflicting value even when the expected value is also visible", async () => {
+test("a legacy request without execution assembly cannot submit exact-text verification", async () => {
+	let submissions = 0;
 	const verifier = new ModelSupplyImageExactTextVerifier({
 		async submit() {
+			submissions += 1;
 			return {
 				...completedResult("image"),
 				asset: undefined,
 				operation: "text.respond",
 				text: JSON.stringify({
-					observedText: ["价格 398", "价格 389"],
-					conflictingText: ["价格 389"],
+					observedText: ["价格 398"],
+					conflictingText: [],
 				}),
 			};
 		},
 	});
+
+	await assert.rejects(
+		() =>
+			verifier.observe({
+				assetId: "image-asset-legacy",
+				expected: ["价格 398"],
+				request: harnessInput("image", "package-legacy-exact-text"),
+				workflowId: "task-legacy-exact-text",
+			}),
+		/execution assembly is required before provider execution/i,
+	);
+	assert.equal(submissions, 0);
+});
+
+test("a succeeded audit failure does not rewrite successful exact-text verification as rejected", async () => {
+	const phases: string[] = [];
+	const observer = new AgentPrimitiveObservabilityAdapter(
+		{
+			append(_workspaceId, event) {
+				assert.equal(event.eventType, "agent_primitive.lifecycle");
+				if (event.eventType !== "agent_primitive.lifecycle") {
+					throw new Error("Expected agent primitive lifecycle event.");
+				}
+				phases.push(event.payload.phase);
+				if (event.payload.phase === "succeeded") {
+					throw new Error("terminal exact-text audit unavailable");
+				}
+				return event;
+			},
+		},
+		{ resolve: () => ({ kind: "not_billed" }) },
+	);
+	const verifier = new ModelSupplyImageExactTextVerifier(
+		{
+			async submit() {
+				return {
+					...completedResult("image"),
+					asset: undefined,
+					operation: "text.respond",
+					text: JSON.stringify({
+						observedText: ["价格 398"],
+						conflictingText: [],
+					}),
+				};
+			},
+		},
+		{
+			create() {
+				return observer;
+			},
+		},
+	);
+
+	await assert.rejects(
+		() =>
+			verifier.observe({
+				assetId: "image-asset-audit-failure",
+				expected: ["价格 398"],
+				request: harnessInputWithExecutionAssembly(
+					"image",
+					"package-exact-text-audit-failure",
+				),
+				workflowId: "task-image",
+			}),
+		/terminal exact-text audit unavailable/u,
+	);
+	assert.deepEqual(phases, ["invoked", "succeeded"]);
+});
+
+test("a failed exact-text provider result does not write a successful or rejected lifecycle", async () => {
+	const phases: string[] = [];
+	const verifier = new ModelSupplyImageExactTextVerifier(
+		{
+			async submit() {
+				return {
+					...completedResult("image"),
+					asset: undefined,
+					operation: "text.respond",
+					status: "failed",
+				};
+			},
+		},
+		recordingExecutionChildObservability(phases),
+	);
+
+	await assert.rejects(
+		() =>
+			verifier.observe({
+				assetId: "image-asset-failed-observation",
+				expected: ["价格 398"],
+				request: harnessInputWithExecutionAssembly(
+					"image",
+					"package-exact-text-failed-observation",
+				),
+				workflowId: "task-image",
+			}),
+		(error: unknown) =>
+			error instanceof HarnessMediaExecutionError &&
+			error.code === "MEDIA_EXACT_TEXT_VERIFICATION_FAILED",
+	);
+	assert.deepEqual(phases, ["invoked"]);
+});
+
+test("an invalid exact-text observation does not write a successful or rejected lifecycle", async () => {
+	const phases: string[] = [];
+	const verifier = new ModelSupplyImageExactTextVerifier(
+		{
+			async submit() {
+				return {
+					...completedResult("image"),
+					asset: undefined,
+					operation: "text.respond",
+					text: JSON.stringify({
+						observedText: "价格 398",
+						conflictingText: [],
+					}),
+				};
+			},
+		},
+		recordingExecutionChildObservability(phases),
+	);
+
+	await assert.rejects(() =>
+		verifier.observe({
+			assetId: "image-asset-invalid-observation",
+			expected: ["价格 398"],
+			request: harnessInputWithExecutionAssembly(
+				"image",
+				"package-exact-text-invalid-observation",
+			),
+			workflowId: "task-image",
+		}),
+	);
+	assert.deepEqual(phases, ["invoked"]);
+});
+
+test("the production exact-text verifier rejects a conflicting value even when the expected value is also visible", async () => {
+	const verifier = new ModelSupplyImageExactTextVerifier(
+		{
+			async submit() {
+				return {
+					...completedResult("image"),
+					asset: undefined,
+					operation: "text.respond",
+					text: JSON.stringify({
+						observedText: ["价格 398", "价格 389"],
+						conflictingText: ["价格 389"],
+					}),
+				};
+			},
+		},
+		notBilledExecutionChildObservability(),
+	);
 	const observation = await verifier.observe({
 		assetId: "image-asset-1",
 		expected: ["价格 398"],
-		request: harnessInput("image", "package-image"),
+		request: harnessInputWithExecutionAssembly("image", "package-image"),
 		workflowId: "task-image-conflict",
 	});
 	const assessment = assessImageExactText(observation);
@@ -1966,6 +2405,89 @@ function harnessInput(
 	};
 }
 
+function harnessInputWithExecutionAssembly(
+	kind: "image" | "image_text_note" | "video",
+	packageId: string,
+	imageOperation:
+		| "image.generate"
+		| "image.edit"
+		| "image.reference_transform" = "image.edit",
+	imageReferenceCount = 1,
+): HarnessWorkflowInput {
+	const request = harnessInput(
+		kind,
+		packageId,
+		imageOperation,
+		imageReferenceCount,
+	);
+	const route = request.frozenRouteSnapshot!;
+	const prompts = frozenPromptBundle();
+	const promptRevisionRefs = promptRevisionReferences(prompts);
+	return {
+		...request,
+		prompts,
+		promptRevisionRefs,
+		executionAssembly: {
+			schemaVersion: "harness-execution-assembly/v1",
+			workflowId: request.executionSnapshot!.task.id,
+			skillStages: {
+				intent_naming: [],
+				context_injection: [],
+				brief_compilation: [],
+				execution_selection: [],
+				assembly_delivery: [],
+			},
+			frozenRouteSnapshotDigest: fingerprintValue(route),
+			promptRevisionRefs,
+			rootAxes: {
+				axisScope: "task_root",
+				skillRevision: { kind: "absent" },
+				promptVersion: { kind: "absent" },
+				catalogRevision: {
+					kind: "bound",
+					value: request.executionSnapshot!.catalogModel.revision,
+				},
+				scene: {
+					kind: "bound",
+					value: request.executionSnapshot!.recipe.id,
+				},
+			},
+		},
+	};
+}
+
+function notBilledExecutionChildObservability() {
+	const observer = new AgentPrimitiveObservabilityAdapter(
+		new MemoryObservabilityEventAudit(),
+		{ resolve: () => ({ kind: "not_billed" }) },
+	);
+	return {
+		create() {
+			return observer;
+		},
+	};
+}
+
+function recordingExecutionChildObservability(phases: string[]) {
+	const observer = new AgentPrimitiveObservabilityAdapter(
+		{
+			append(_workspaceId, event) {
+				assert.equal(event.eventType, "agent_primitive.lifecycle");
+				if (event.eventType === "agent_primitive.lifecycle") {
+					phases.push(event.payload.phase);
+				}
+				return event;
+			},
+		},
+		{ resolve: () => ({ kind: "not_billed" }) },
+	);
+	return {
+		create() {
+			return observer;
+		},
+	};
+}
+
 function frozenMediaRoute(
 	snapshot: NonNullable<HarnessWorkflowInput["executionSnapshot"]>,
 ): NonNullable<HarnessWorkflowInput["frozenRouteSnapshot"]> {
@@ -1990,13 +2512,16 @@ function mediaBrief(kind: "video"): Extract<ExecutionBrief, { kind: "video" }>;
 function mediaBrief(
 	kind: "image" | "video",
 ): Exclude<ExecutionBrief, { kind: "copy" }>;
-function mediaBrief(kind: "image" | "video"): Exclude<ExecutionBrief, { kind: "copy" }> {
+function mediaBrief(
+	kind: "image" | "video",
+): Exclude<ExecutionBrief, { kind: "copy" }> {
 	if (kind === "image") {
 		return imageBriefFor("image.edit", 1);
 	}
 	return {
 		kind,
-		firstFramePrompt: "夏日护理项目门店开场，展示明确的品牌主视觉和预约行动号召。",
+		firstFramePrompt:
+			"夏日护理项目门店开场，展示明确的品牌主视觉和预约行动号召。",
 		storyboard: [
 			{
 				index: 1,
@@ -2011,10 +2536,7 @@ function mediaBrief(kind: "image" | "video"): Exclude<ExecutionBrief, { kind: "c
 }
 
 function imageBriefFor(
-	operation:
-		| "image.generate"
-		| "image.edit"
-		| "image.reference_transform",
+	operation: "image.generate" | "image.edit" | "image.reference_transform",
 	referenceCount: number,
 ): Extract<ExecutionBrief, { kind: "image" }> {
 	const referenceAssetIds = Array.from(
@@ -2040,8 +2562,7 @@ function imageBriefFor(
 							: ("composition_ref" as const),
 				mimeType: "image/png",
 				sizeBytes: 1_024,
-				factRefs:
-					operation === "image.edit" ? ["fact:work-case:1"] : [],
+				factRefs: operation === "image.edit" ? ["fact:work-case:1"] : [],
 				rightsRefs: [],
 			})),
 			exactText: [],
@@ -2058,8 +2579,7 @@ function imageBriefFor(
 							},
 						]
 					: [],
-			factRefs:
-				operation === "image.edit" ? ["fact:work-case:1"] : [],
+			factRefs: operation === "image.edit" ? ["fact:work-case:1"] : [],
 			rightsRefs: [],
 			outputPlan: { kind: "single" },
 		},
@@ -2195,9 +2715,7 @@ function noteRunnerFactory(
 							body: `${style.name}说明${page.pageRole}`,
 							exactText: page.textBlock.exactText,
 						};
-					} else if (
-						request.schemaName === "harness_note_consistency_v1"
-					) {
+					} else if (request.schemaName === "harness_note_consistency_v1") {
 						const conflict =
 							conflictBeforeRegeneration && consistencyAttempts++ === 0;
 						output = {
@@ -2208,14 +2726,14 @@ function noteRunnerFactory(
 								"non_repetition",
 								"role_coverage",
 								"image_text_cross_reference",
-								].map((dimension) => ({
-									dimension,
-									passed: !conflict,
-									reason: `${dimension} passed`,
-									pageIds: conflict ? ["page-2"] : [],
-								})),
-								regenerationPageIds: conflict ? ["page-2"] : [],
-							};
+							].map((dimension) => ({
+								dimension,
+								passed: !conflict,
+								reason: `${dimension} passed`,
+								pageIds: conflict ? ["page-2"] : [],
+							})),
+							regenerationPageIds: conflict ? ["page-2"] : [],
+						};
 					} else {
 						throw new Error(`Unexpected schema ${request.schemaName}.`);
 					}
@@ -2264,9 +2782,7 @@ function notePlanOutput() {
 			exactText: [],
 		},
 		dependencies:
-			order === 1
-				? []
-				: [{ pageId: "page-1", kind: "text_sequence" }],
+			order === 1 ? [] : [{ pageId: "page-1", kind: "text_sequence" }],
 	});
 	return {
 		schema: "note-plan/v1",
@@ -2334,12 +2850,12 @@ function contextSnapshot(
 		activeFacts: [],
 		policyReferences: {
 			sourceRefs: [],
-				rightsRefs: authorizedAssetIds.map((assetId) => ({
-					assetId,
-					workspaceId: "workspace-1",
-					status: "authorized" as const,
-					allowedUses: ["public_content"] as const,
-				})),
+			rightsRefs: authorizedAssetIds.map((assetId) => ({
+				assetId,
+				workspaceId: "workspace-1",
+				status: "authorized" as const,
+				allowedUses: ["public_content"] as const,
+			})),
 			identityRefs: [
 				{
 					id: "marketing_identity:identity-1:identity-r1",

@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import type { BoundedExecutionLimits } from '@meiye/contracts';
 import type { RouteSnapshot } from '../model-supply/index.js';
+import { fingerprintValue } from '../job-runtime/job-contracts.js';
 
 import {
   HarnessAdmissionError,
@@ -11,6 +12,7 @@ import {
   harnessTaskRequestSchema,
   type HarnessExecutionBoundsResolver,
   type HarnessFrozenRouteSnapshotResolver,
+  type HarnessSkillManifestResolver,
   type HarnessTaskRequestRegistry,
   type HarnessWorkflowStarter,
 } from './task-admission.js';
@@ -77,7 +79,10 @@ test('workflow id is the task id and request fingerprint is canonical', async ()
   });
 
   assert.equal(starter.workflowIds[0], 'task-35');
-  assert.equal(registry.claims[0]?.fingerprint, registry.lookups[1]?.fingerprint);
+  assert.equal(
+    registry.claims[0]?.fingerprint,
+    registry.lookups[1]?.fingerprint,
+  );
 });
 
 test('Composer execution snapshots cannot be submitted under another task envelope', async () => {
@@ -85,18 +90,18 @@ test('Composer execution snapshots cannot be submitted under another task envelo
     new MemoryRequestRegistry(),
     new RecordingStarter(),
   );
-	const snapshot = composerSnapshot();
+  const snapshot = composerSnapshot();
 
-	await assert.rejects(
-		service.submit({
-			...snapshotTaskRequest(snapshot),
-			packageId: 'package-other',
-		}),
+  await assert.rejects(
+    service.submit({
+      ...snapshotTaskRequest(snapshot),
+      packageId: 'package-other',
+    }),
     (error: unknown) =>
       error instanceof HarnessAdmissionError &&
       error.code === 'EXECUTION_SNAPSHOT_MISMATCH' &&
       error.status === 409,
-	);
+  );
 });
 
 test('Composer execution snapshots reject forged ContextBundle inputs', async () => {
@@ -182,10 +187,15 @@ test('accepted task keeps its frozen prompt while only a new task observes a pub
     ['intent-v7', 'intent-v7', 'intent-v8', 'intent-v8', 'intent-v6'],
   );
   assert.deepEqual(
-    starter.requests.map((request) => request.promptRevisionRefs?.intentNaming?.version),
+    starter.requests.map(
+      (request) => request.promptRevisionRefs?.intentNaming?.version,
+    ),
     ['7', '7', '8', '8', '6'],
   );
-  assert.equal(registry.claims[0]?.fingerprint, registry.lookups[1]?.fingerprint);
+  assert.equal(
+    registry.claims[0]?.fingerprint,
+    registry.lookups[1]?.fingerprint,
+  );
 });
 
 test('accepted task replay reads the frozen request before prompt resolution', async () => {
@@ -220,7 +230,7 @@ test('media admission freezes one server route and replay reads the durable copy
   const service = new HarnessTaskAdmissionService(
     registry,
     starter,
-    undefined,
+    new MutablePromptResolver(),
     undefined,
     undefined,
     resolver,
@@ -232,6 +242,404 @@ test('media admission freezes one server route and replay reads the durable copy
   assert.equal(resolver.calls, 1);
   assert.deepEqual(starter.requests[0]?.frozenRouteSnapshot, frozenRoute);
   assert.deepEqual(starter.requests[1]?.frozenRouteSnapshot, frozenRoute);
+});
+
+test('copy admission freezes one server route and replay never reads current heads', async () => {
+  const registry = new MemoryRequestRegistry();
+  const starter = new RecordingStarter();
+  const snapshot = composerSnapshot();
+  const frozenRoute = copyRoute(snapshot);
+  const resolver: HarnessFrozenRouteSnapshotResolver & { calls: number } = {
+    calls: 0,
+    async resolve(input) {
+      this.calls += 1;
+      assert.deepEqual(input, snapshot);
+      return structuredClone(frozenRoute);
+    },
+  };
+  const service = new HarnessTaskAdmissionService(
+    registry,
+    starter,
+    new MutablePromptResolver(),
+    undefined,
+    undefined,
+    resolver,
+  );
+
+  await service.submit(snapshotTaskRequest(snapshot));
+  await service.submit(snapshotTaskRequest(snapshot));
+
+  assert.equal(resolver.calls, 1);
+  assert.deepEqual(starter.requests[0]?.frozenRouteSnapshot, frozenRoute);
+  assert.deepEqual(starter.requests[1]?.frozenRouteSnapshot, frozenRoute);
+});
+
+test('Composer admission assembles manifest, binding, prompts, pin, then starts', async () => {
+  const order: string[] = [];
+  const snapshot = composerSnapshot();
+  const route = copyRoute(snapshot);
+  const registry = new MemoryRequestRegistry();
+  const originalClaim = registry.claim.bind(registry);
+  registry.claim = async (input) => {
+    order.push('claim');
+    return originalClaim(input);
+  };
+  const starter = new RecordingStarter();
+  const originalStart = starter.start.bind(starter);
+  starter.start = async (input) => {
+    order.push('start');
+    return originalStart(input);
+  };
+  const manifests: HarnessSkillManifestResolver = {
+    async select({ stage }) {
+      order.push(`manifest:${stage}`);
+      return stage === 'intent_naming'
+        ? [
+            {
+              skillRevisionRef: 'skill.intent@3',
+              contentHash: 'hash-skill-intent-r3',
+              requiredModelCapabilities: ['structured_output'],
+            },
+          ]
+        : [];
+    },
+    async materialize({ stage, manifests: selected }) {
+      order.push(`skill-prompt-materialization:${stage}`);
+      return selected.map((manifest) => ({
+        ...structuredClone(manifest),
+        resolvedInstruction: {
+          skillRevisionRef: manifest.skillRevisionRef,
+          instruction: 'Use the accepted intent Skill.',
+          contentHash: manifest.contentHash,
+          requiredModelCapabilities: [
+            ...manifest.requiredModelCapabilities,
+          ],
+          executionMode: 'prompt_materialized',
+        },
+      }));
+    },
+  };
+  const resolver: HarnessFrozenRouteSnapshotResolver = {
+    async resolve(_input, assembly) {
+      order.push('hot-assembly');
+      assert.deepEqual(
+        assembly?.requirements.map((requirement) => requirement.axisId),
+        [
+          'intentNaming',
+          'briefCompilation',
+          'briefImage',
+          'briefVideo',
+          'factSatisfaction',
+          'factCriticality',
+          'copyCandidate',
+          'notePlan',
+          'noteTextBlock',
+          'noteConsistency',
+          'destinationMapping',
+          'copyGeneration',
+          'platformAdaptation',
+          'textResponse',
+          'skill:skill.intent@3',
+        ],
+      );
+      return {
+        ...structuredClone(route),
+        capabilityRequirements: structuredClone(assembly?.requirements ?? []),
+        capabilityMatches: (assembly?.requirements ?? []).map(
+          (requirement) => ({
+            axisId: requirement.axisId,
+            deploymentId: route.deploymentId,
+            outcome: 'eligible' as const,
+            reasons: [],
+            evidenceRefs: [`catalog://${requirement.axisId}`],
+          }),
+        ),
+      };
+    },
+  };
+  const prompts = new MutablePromptResolver();
+  const promptResolver: HarnessPromptResolver = {
+    async resolve() {
+      order.push('prompt-resolution');
+      return prompts.resolve();
+    },
+  };
+  const assemblyAudits: unknown[] = [];
+  const service = new HarnessTaskAdmissionService(
+    registry,
+    starter,
+    promptResolver,
+    undefined,
+    undefined,
+    resolver,
+    manifests,
+    {
+      async appendAuditIdempotently(event) {
+        order.push(event.payload.payload.primitiveId);
+        assemblyAudits.push(structuredClone(event));
+      },
+    },
+  );
+
+  await service.submit(snapshotTaskRequest(snapshot));
+
+  assert.deepEqual(order, [
+    'manifest:intent_naming',
+    'manifest:context_injection',
+    'manifest:brief_compilation',
+    'manifest:execution_selection',
+    'manifest:assembly_delivery',
+    'hot-assembly',
+    'prompt-resolution',
+    'skill-prompt-materialization:intent_naming',
+    'claim',
+    'harness-assembly:manifest_resolution',
+    'harness-assembly:hot_assembly',
+    'harness-assembly:prompt_resolution',
+    'harness-assembly:task_pin',
+    'start',
+  ]);
+  assert.deepEqual(starter.requests[0]?.executionAssembly?.rootAxes, {
+    axisScope: 'task_root',
+    skillRevision: {
+      kind: 'bound',
+      value: 'skill.intent@3',
+    },
+    promptVersion: { kind: 'absent' },
+    catalogRevision: {
+      kind: 'bound',
+      value: snapshot.catalogModel.revision,
+    },
+    scene: { kind: 'bound', value: snapshot.recipe.id },
+  });
+  assert.equal(
+    starter.requests[0]?.executionAssembly?.frozenRouteSnapshotDigest,
+    fingerprintValue(starter.requests[0]?.frozenRouteSnapshot),
+  );
+  assert.equal(assemblyAudits.length, 4);
+  assert.deepEqual(
+    assemblyAudits.map(
+      (audit) =>
+        (
+          audit as {
+            payload: {
+              axisScope: string;
+              payload: { primitiveId: string };
+            };
+          }
+        ).payload.payload.primitiveId,
+    ),
+    [
+      'harness-assembly:manifest_resolution',
+      'harness-assembly:hot_assembly',
+      'harness-assembly:prompt_resolution',
+      'harness-assembly:task_pin',
+    ],
+  );
+  const taskPinEvent = (
+    assemblyAudits.at(-1) as {
+      payload: {
+        eventType: string;
+        taskId: string;
+        workspaceId: string;
+        actorId: string;
+        actorKind: string;
+        idempotencyKey: string;
+        axisScope: string;
+        skillRevision: string | null;
+        promptVersion: string | null;
+        catalogRevision: string | null;
+        scene: string | null;
+        payload: unknown;
+      };
+    }
+  ).payload;
+  assert.deepEqual(taskPinEvent, {
+    eventType: 'agent_primitive.lifecycle',
+    taskId: snapshot.task.id,
+    workspaceId: snapshot.workspaceId,
+    actorId: taskPinEvent.actorId,
+    actorKind: 'worker',
+    idempotencyKey: taskPinEvent.idempotencyKey,
+    axisScope: 'execution_child',
+    skillRevision: null,
+    promptVersion: null,
+    catalogRevision: null,
+    scene: null,
+    payload: {
+      primitiveId: 'harness-assembly:task_pin',
+      phase: 'succeeded',
+      billing: { kind: 'not_billed' },
+    },
+  });
+});
+
+test('workflow start failure cannot prewrite execution or persistence success', async () => {
+  const snapshot = composerSnapshot();
+  const auditSteps: string[] = [];
+  const service = new HarnessTaskAdmissionService(
+    new MemoryRequestRegistry(),
+    {
+      async start() {
+        throw new Error('DBOS start failed');
+      },
+    },
+    new MutablePromptResolver(),
+    undefined,
+    undefined,
+    {
+      async resolve() {
+        return copyRoute(snapshot);
+      },
+    },
+    {
+      async select() {
+        return [];
+      },
+      async materialize() {
+        return [];
+      },
+    },
+    {
+      async appendAuditIdempotently(event) {
+        auditSteps.push(event.payload.payload.primitiveId);
+      },
+    },
+  );
+
+  await assert.rejects(
+    service.submit(snapshotTaskRequest(snapshot)),
+    /DBOS start failed/,
+  );
+  assert.deepEqual(auditSteps, [
+    'harness-assembly:manifest_resolution',
+    'harness-assembly:hot_assembly',
+    'harness-assembly:prompt_resolution',
+    'harness-assembly:task_pin',
+  ]);
+});
+
+test('Skill capability declarations must translate through the v1 vocabulary', async () => {
+  const registry = new MemoryRequestRegistry();
+  const snapshot = composerSnapshot();
+  const route = copyRoute(snapshot);
+  const service = new HarnessTaskAdmissionService(
+    registry,
+    new RecordingStarter(),
+    new MutablePromptResolver(),
+    undefined,
+    undefined,
+    {
+      async resolve(_snapshot, assembly) {
+        assert.deepEqual(assembly?.requirements.at(-1), {
+          axisId: 'skill:skill.capability-vocabulary@1',
+          vocabularyVersion: 'model-capability-v1',
+          requiredProtocolCapabilities: [
+            'structured-output',
+            'tool-calling',
+          ],
+          requiredModalities: ['image/*'],
+          requiredBusinessTags: ['beauty-brand-voice'],
+          requiredModalityCapabilities: [
+            {
+              modality: 'image/*',
+              capability: 'cjk-text-render',
+            },
+          ],
+          unknownPolicy: 'conservative_always_available',
+        });
+        return {
+          ...structuredClone(route),
+          capabilityRequirements: structuredClone(
+            assembly?.requirements ?? [],
+          ),
+          capabilityMatches: (assembly?.requirements ?? []).map(
+            (requirement) => ({
+              axisId: requirement.axisId,
+              deploymentId: route.deploymentId,
+              outcome: 'eligible' as const,
+              reasons: [],
+              evidenceRefs: [`catalog://${requirement.axisId}`],
+            }),
+          ),
+        };
+      },
+    },
+    {
+      async select({ stage }) {
+        if (stage !== 'intent_naming') return [];
+        return [
+          {
+            skillRevisionRef: 'skill.capability-vocabulary@1',
+            contentHash: 'hash-capability-vocabulary',
+            requiredModelCapabilities: [
+              'structured_output',
+              'tool_calling',
+              'image/*',
+              'beauty-brand-voice',
+              'cjk-text-render',
+            ],
+          },
+        ];
+      },
+      async materialize({ manifests }) {
+        return manifests.map((manifest) => ({
+          ...structuredClone(manifest),
+          resolvedInstruction: {
+            skillRevisionRef: manifest.skillRevisionRef,
+            instruction: 'Capability vocabulary fixture.',
+            contentHash: manifest.contentHash,
+            requiredModelCapabilities: [
+              ...manifest.requiredModelCapabilities,
+            ],
+            executionMode: 'prompt_materialized',
+          },
+        }));
+      },
+    },
+  );
+
+  await service.submit(snapshotTaskRequest(snapshot));
+  assert.equal(registry.claims.length, 1);
+});
+
+test('Skill capability declarations fail closed on blank values', async () => {
+  const registry = new MemoryRequestRegistry();
+  const snapshot = composerSnapshot();
+  const service = new HarnessTaskAdmissionService(
+    registry,
+    new RecordingStarter(),
+    new MutablePromptResolver(),
+    undefined,
+    undefined,
+    {
+      async resolve() {
+        throw new Error('route resolver must not run');
+      },
+    },
+    {
+      async select({ stage }) {
+        return stage === 'intent_naming'
+          ? [
+              {
+                skillRevisionRef: 'skill.blank-capability@1',
+                contentHash: 'hash-blank-capability',
+                requiredModelCapabilities: ['  '],
+              },
+            ]
+          : [];
+      },
+      async materialize() {
+        throw new Error('materialization must not run');
+      },
+    },
+  );
+
+  await assert.rejects(
+    service.submit(snapshotTaskRequest(snapshot)),
+    /declares an empty model capability/u,
+  );
+  assert.equal(registry.claims.length, 0);
 });
 
 test('media admission rejects a caller-provided frozen route', async () => {
@@ -306,11 +714,7 @@ test('prompt fallback is persisted through the first-party audit port', async ()
     payload: unknown;
   }> = [];
   const fallback = {
-    ...prompt(
-      'harness/intent-naming',
-      'builtin intent fallback',
-      1,
-    ),
+    ...prompt('harness/intent-naming', 'builtin intent fallback', 1),
     version: 'builtin-v1',
     source: 'builtin' as const,
     isFallback: true,
@@ -325,11 +729,7 @@ test('prompt fallback is persisted through the first-party audit port', async ()
         return {
           ...prompts,
           intentNaming: fallback,
-          briefCompilation: prompt(
-            'harness/brief-copy',
-            'brief-v7',
-            7,
-          ),
+          briefCompilation: prompt('harness/brief-copy', 'brief-v7', 7),
         };
       },
     },
@@ -424,7 +824,10 @@ test('admission freezes explicit default execution bounds without changing the r
     stopReason: null,
     triggeredLimit: null,
   });
-  assert.equal(registry.claims[0]?.fingerprint, registry.lookups[1]?.fingerprint);
+  assert.equal(
+    registry.claims[0]?.fingerprint,
+    registry.lookups[1]?.fingerprint,
+  );
 });
 
 test('changed server execution bounds do not change the client request fingerprint or a replayed pin', async () => {
@@ -444,11 +847,12 @@ test('changed server execution bounds do not change the client request fingerpri
   await service.submit(taskRequest());
 
   assert.equal(bounds.calls, 1);
-  assert.equal(registry.claims[0]?.fingerprint, registry.lookups[1]?.fingerprint);
+  assert.equal(
+    registry.claims[0]?.fingerprint,
+    registry.lookups[1]?.fingerprint,
+  );
   assert.deepEqual(
-    starter.requests.map(
-      (request) => request.boundedExecution?.maxIterations,
-    ),
+    starter.requests.map((request) => request.boundedExecution?.maxIterations),
     [50, 50],
   );
 });
@@ -457,9 +861,14 @@ class MemoryRequestRegistry implements HarnessTaskRequestRegistry {
   readonly claims: Array<{ taskId: string; fingerprint: string }> = [];
   readonly lookups: Array<{ taskId: string; fingerprint: string }> = [];
   private readonly fingerprints = new Map<string, string>();
-  private readonly requests = new Map<string, Parameters<HarnessTaskRequestRegistry['claim']>[0]['request']>();
+  private readonly requests = new Map<
+    string,
+    Parameters<HarnessTaskRequestRegistry['claim']>[0]['request']
+  >();
 
-  async lookup(input: Parameters<NonNullable<HarnessTaskRequestRegistry['lookup']>>[0]) {
+  async lookup(
+    input: Parameters<NonNullable<HarnessTaskRequestRegistry['lookup']>>[0],
+  ) {
     this.lookups.push(input);
     const existing = this.fingerprints.get(input.taskId);
     if (existing === undefined) return null;
@@ -496,7 +905,9 @@ class RecordingStarter implements HarnessWorkflowStarter {
   starts = 0;
   readonly workflowIds: string[] = [];
   readonly runtimeIds: Array<string | undefined> = [];
-  readonly requests: Array<Parameters<HarnessWorkflowStarter['start']>[0]['request']> = [];
+  readonly requests: Array<
+    Parameters<HarnessWorkflowStarter['start']>[0]['request']
+  > = [];
 
   async start(input: Parameters<HarnessWorkflowStarter['start']>[0]) {
     this.starts += 1;
@@ -620,7 +1031,11 @@ function composerSnapshot() {
       sources: { assets: [] },
       rights: { revision: 'rights-r1', summary: 'authorized' },
       identity: { id: 'identity-1', revision: 'identity-r1' },
-      modelPolicy: { id: 'policy-1', revision: 'policy-r1', mode: 'fixed' as const },
+      modelPolicy: {
+        id: 'policy-1',
+        revision: 'policy-r1',
+        mode: 'fixed' as const,
+      },
       catalogModel: { id: 'model-1', revision: 'model-r1' },
       quote: { id: 'quote-1', revision: 'quote-r1' },
       route: { id: 'route-1', revision: 'route-r1' },
@@ -687,6 +1102,7 @@ function mediaRoute(snapshot: ReturnType<typeof mediaComposerSnapshot>) {
   return {
     id: snapshot.route.id,
     catalogRevisionId: snapshot.route.revision,
+    capabilityRevisionId: 'capability-media-r1',
     requestedSelection: {
       mode: 'fixed',
       catalogModelId: snapshot.catalogModel.id,
@@ -694,6 +1110,29 @@ function mediaRoute(snapshot: ReturnType<typeof mediaComposerSnapshot>) {
     candidateCatalogModelIds: [snapshot.catalogModel.id],
     actualCatalogModelId: snapshot.catalogModel.id,
     deploymentId: 'deployment-media-1',
+    policyRevision: snapshot.modelPolicy.revision,
+    priceRevision: 'price-r1',
+    credentialMode: 'platform',
+    credentialVersion: 'credential-r1',
+    fallbackConsent: false,
+    reason: 'fixed_selection',
+    dataClass: [],
+    createdAt: '2026-07-29T09:00:00.000Z',
+  } satisfies RouteSnapshot;
+}
+
+function copyRoute(snapshot: ReturnType<typeof composerSnapshot>) {
+  return {
+    id: snapshot.route.id,
+    catalogRevisionId: snapshot.route.revision,
+    capabilityRevisionId: 'capability-copy-r1',
+    requestedSelection: {
+      mode: 'fixed',
+      catalogModelId: snapshot.catalogModel.id,
+    },
+    candidateCatalogModelIds: [snapshot.catalogModel.id],
+    actualCatalogModelId: snapshot.catalogModel.id,
+    deploymentId: 'deployment-copy-1',
     policyRevision: snapshot.modelPolicy.revision,
     priceRevision: 'price-r1',
     credentialMode: 'platform',

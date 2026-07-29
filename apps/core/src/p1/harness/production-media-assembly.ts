@@ -8,7 +8,10 @@ import type {
 import type { NoteMediaAdmissionPort } from './note-media-admission.js';
 import type { NotePlanSettingsSource } from './note-plan-compiler.js';
 import type { NotePlanEnhancementJudgeResolver } from './note-plan-structured-port.js';
-import type { HarnessStructuredNodeRunnerFactory } from './production-stage-ports.js';
+import type {
+  HarnessExecutionChildObservabilityFactory,
+  HarnessStructuredNodeRunnerFactory,
+} from './production-stage-ports.js';
 import {
   type ImageExactTextVerifier,
   ModelSupplyHarnessMediaExecutionPort,
@@ -33,6 +36,7 @@ export function createProductionHarnessMediaAssembly(input: {
   noteSettings: NotePlanSettingsSource;
   now: () => string;
   runners: HarnessStructuredNodeRunnerFactory;
+  executionChildObservability?: HarnessExecutionChildObservabilityFactory;
 }) {
   return new UnifiedHarnessStagePorts(
     input.copy,
@@ -47,5 +51,6 @@ export function createProductionHarnessMediaAssembly(input: {
     input.now,
     input.noteSettings,
     input.noteEnhancementJudge,
+    input.executionChildObservability,
   );
 }

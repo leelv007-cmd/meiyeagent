@@ -27,7 +27,16 @@ import type {
   StructuredNodeRunner,
   StructuredNodeRunnerRequest,
 } from '../model-supply/structured-node-runner.js';
-import type { HarnessFrozenPrompts } from './langfuse-prompts.js';
+import {
+  promptRevisionReferences,
+  type HarnessFrozenPrompts,
+} from './langfuse-prompts.js';
+import type { HarnessWorkflowInput } from './task-admission.js';
+import {
+  AgentPrimitiveObservabilityAdapter,
+  MemoryObservabilityEventAudit,
+} from '../creation-experience/index.js';
+import { fingerprintValue } from '../job-runtime/job-contracts.js';
 
 test('production tracer keeps its server-owned copy delivery layer', async () => {
   const runner = new QueueRunner([
@@ -61,10 +70,7 @@ test('production tracer keeps its server-owned copy delivery layer', async () =>
     workflowId: 'task-media',
     request: taskInput(),
   });
-  assert.equal(
-    named.declaration.deliveryLayer,
-    'copy',
-  );
+  assert.equal(named.declaration.deliveryLayer, 'copy');
   assert.equal(delivery.inputs.length, 0);
 });
 
@@ -106,6 +112,7 @@ test('production intent naming receives resolved Skill value objects through the
               contentHash: 'hash-intent-skill',
               executionMode: 'prompt_materialized',
               instruction: 'Prefer the accepted promotion context.',
+              requiredModelCapabilities: [],
               skillRevisionRef: 'skill.promotion-context@3',
             },
           ],
@@ -297,10 +304,10 @@ test('production Recipe fact satisfaction gates the facts visible to the Copy Br
     factRefs: ['store_fact:service-1:1'],
   });
   const prompt = JSON.parse(runner.requests[1]?.prompt ?? '{}');
-  assert.deepEqual(
-    Object.keys(prompt.bundle.dimensions.store_facts_assets),
-    ['price', 'service'],
-  );
+  assert.deepEqual(Object.keys(prompt.bundle.dimensions.store_facts_assets), [
+    'price',
+    'service',
+  ]);
   assert.equal(
     prompt.bundle.dimensions.store_facts_assets.price.factSnapshot,
     undefined,
@@ -477,7 +484,10 @@ test('ambiguous service price facts keep the blocking QuestionCard', async () =>
     workflowId: 'task-ambiguous-price',
     request: taskInput(),
   });
-  assert.equal(named.blockingQuestion?.questionId, 'task-ambiguous-price:s1:offer_price');
+  assert.equal(
+    named.blockingQuestion?.questionId,
+    'task-ambiguous-price:s1:offer_price',
+  );
   assert.equal(named.blockingQuestion?.unattended, 'continue');
 });
 
@@ -594,6 +604,7 @@ test('production Copy stage keeps the frozen structured platform over model outp
         contentHash: 'hash-brief-skill',
         executionMode: 'prompt_materialized',
         instruction: 'Keep the brief grounded and concise.',
+        requiredModelCapabilities: [],
         skillRevisionRef: 'skill.brief-compiler@4',
       },
     ],
@@ -883,7 +894,11 @@ test('a frozen Composer Copy snapshot uses the single revision writer', async ()
   assert.deepEqual(
     (
       executionDelivery.inputs[0] as unknown as {
-        claimExtraction?: { claims: unknown[]; inputHash: string; revision: string };
+        claimExtraction?: {
+          claims: unknown[];
+          inputHash: string;
+          revision: string;
+        };
       }
     )?.claimExtraction,
     {
@@ -893,11 +908,10 @@ test('a frozen Composer Copy snapshot uses the single revision writer', async ()
       revision: 'visible-claim-extractor-v2',
     },
   );
-  assert.equal(
-    executionDelivery.inputs[0]?.version.conversionHook,
-    '私信预约',
-  );
-  assert.deepEqual(executionDelivery.inputs[0]?.version.orderedAssetIds, ['asset-1']);
+  assert.equal(executionDelivery.inputs[0]?.version.conversionHook, '私信预约');
+  assert.deepEqual(executionDelivery.inputs[0]?.version.orderedAssetIds, [
+    'asset-1',
+  ]);
   assert.deepEqual(
     executionDelivery.inputs[0]?.additionalVersions?.map(
       (version) => version.harnessCandidateId,
@@ -1000,8 +1014,7 @@ test('assembly blocks unsupported visible claims before writing a deliverable re
         '成品文案含有未被门店已确认资料支持的资质、价格或优惠、权益承诺，暂不能交付。' &&
       error.triggeredClaims?.some(
         (claim) =>
-          claim.kind === 'qualification' &&
-          claim.value.includes('国家认证'),
+          claim.kind === 'qualification' && claim.value.includes('国家认证'),
       ) === true,
   );
   assert.equal(executionDelivery.inputs.length, 0);
@@ -1043,14 +1056,12 @@ test('assembly delivers legitimate promotion copy backed by confirmed facts', as
     },
   ];
   context.activeFacts = activeFacts;
-  context.policyReferences.sourceRefs = activeFacts.map(
-    ({ sourceRef }) => ({
-      id: sourceRef,
-      revision: 1,
-      status: 'current' as const,
-      workspaceId: 'workspace-1',
-    }),
-  );
+  context.policyReferences.sourceRefs = activeFacts.map(({ sourceRef }) => ({
+    id: sourceRef,
+    revision: 1,
+    status: 'current' as const,
+    workspaceId: 'workspace-1',
+  }));
   context.bundle.dimensions.store_facts_assets = {
     price: factContribution('offer-price', 'price', 398),
     discount: factContribution('offer-discount', 'price', 50),
@@ -1127,7 +1138,10 @@ test('a source ContentPackage enters the Copy Brief and fails closed after revoc
   const runner = new QueueRunner([
     {
       kind: 'copy',
-      instructions: '请基于已确认旧内容的结构和风格，写一条适合新平台的预约文案。'.repeat(3),
+      instructions:
+        '请基于已确认旧内容的结构和风格，写一条适合新平台的预约文案。'.repeat(
+          3,
+        ),
       platform: 'xiaohongshu',
       cta: '私信了解',
       factRefs: [],
@@ -1153,7 +1167,8 @@ test('a source ContentPackage enters the Copy Brief and fails closed after revoc
     executionDelivery,
     {
       async resolve(input) {
-        if (!available) throw new SourceContentPackageUnavailableError(input.source!);
+        if (!available)
+          throw new SourceContentPackageUnavailableError(input.source!);
         return sourceContentPackageProjection();
       },
     },
@@ -1185,7 +1200,8 @@ test('a source ContentPackage enters the Copy Brief and fails closed after revoc
   });
   const prompt = JSON.parse(runner.requests[0]?.prompt ?? '{}');
   assert.deepEqual(
-    prompt.bundle.dimensions.store_facts_assets.source_content_package_structure.value,
+    prompt.bundle.dimensions.store_facts_assets.source_content_package_structure
+      .value,
     {
       packageId: source.id,
       revision: source.revision,
@@ -1193,7 +1209,8 @@ test('a source ContentPackage enters the Copy Brief and fails closed after revoc
     },
   );
   assert.deepEqual(
-    prompt.bundle.dimensions.store_facts_assets.source_content_package_assets.value,
+    prompt.bundle.dimensions.store_facts_assets.source_content_package_assets
+      .value,
     {
       packageId: source.id,
       revision: source.revision,
@@ -1239,7 +1256,10 @@ test('only selected source-package assets can cross Brief, selection, and delive
   const runner = new QueueRunner([
     {
       kind: 'copy',
-      instructions: '请只使用已选择且仍有授权的来源素材，写一条可发布的预约文案。'.repeat(3),
+      instructions:
+        '请只使用已选择且仍有授权的来源素材，写一条可发布的预约文案。'.repeat(
+          3,
+        ),
       platform: 'douyin',
       cta: '私信预约',
       factRefs: [],
@@ -1465,7 +1485,8 @@ test('source revocation between auto fallback attempts stops the second provider
     new RecordingRevisionWriter(),
     {
       async resolve(input) {
-        if (!available) throw new SourceContentPackageUnavailableError(input.source!);
+        if (!available)
+          throw new SourceContentPackageUnavailableError(input.source!);
         return sourceContentPackageProjection();
       },
     },
@@ -1618,24 +1639,19 @@ test('production ports compose #31, canonical gates, a single primary result and
     ...taskInput(),
     prompts: harnessPromptBundle(),
   };
-  const result = await runHarnessWorkflow(
-    'task-production',
-    request,
-    ports,
-    {
-      async runStep(_key, operation) {
-        return operation();
-      },
-      async progress() {},
-      async token() {},
-      async awaitDecision() {
-        throw new Error('Unexpected decision wait.');
-      },
-      async recordTrace(input) {
-        traces.set(input.stage, input.payload as Record<string, unknown>);
-      },
+  const result = await runHarnessWorkflow('task-production', request, ports, {
+    async runStep(_key, operation) {
+      return operation();
     },
-  );
+    async progress() {},
+    async token() {},
+    async awaitDecision() {
+      throw new Error('Unexpected decision wait.');
+    },
+    async recordTrace(input) {
+      traces.set(input.stage, input.payload as Record<string, unknown>);
+    },
+  });
 
   assert.equal(result.trace.winnerCandidateId, 'c01');
   assert.equal(delivery.inputs[0]?.winner.candidateId, 'c01');
@@ -1646,7 +1662,10 @@ test('production ports compose #31, canonical gates, a single primary result and
     })),
     [{ candidateId: 'c01', score: 0 }],
   );
-  assert.equal('promotionOffer' in (delivery.inputs[0]?.marketing ?? {}), false);
+  assert.equal(
+    'promotionOffer' in (delivery.inputs[0]?.marketing ?? {}),
+    false,
+  );
   assert.deepEqual(traces.get('intent_naming')?.metrics, {
     initial: { calls: 1, schemaValid: 1, schemaInvalid: 0 },
     repair: { status: 'observed', count: 0, reasons: [] },
@@ -2069,6 +2088,434 @@ test('withdrawn identity references stop before any provider request', () => {
   assert.equal(runner.requests.length, 0);
 });
 
+test('execution assembly drift stops before the structured provider effect', async () => {
+  const runner = new QueueRunner([]);
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => runner },
+    {
+      async compileAndFreeze() {
+        return contextSnapshot();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-18T00:01:00.000Z',
+  );
+  const prompts = harnessPromptBundle();
+  const promptRevisionRefs = promptRevisionReferences(prompts);
+  const request: HarnessWorkflowInput = {
+    ...taskInput(),
+    prompts,
+    promptRevisionRefs,
+    frozenRouteSnapshot: {
+      id: 'route-pinned',
+      catalogRevisionId: 'catalog-pinned',
+      capabilityRevisionId: 'capability-pinned',
+      requestedSelection: {
+        mode: 'fixed',
+        catalogModelId: 'model-pinned',
+      },
+      candidateCatalogModelIds: ['model-pinned'],
+      actualCatalogModelId: 'model-pinned',
+      deploymentId: 'deployment-pinned',
+      reason: 'fixed_selection',
+      dataClass: [],
+      createdAt: '2026-07-18T00:00:00.000Z',
+    },
+    executionAssembly: {
+      schemaVersion: 'harness-execution-assembly/v1',
+      workflowId: 'task-assembly-drift',
+      skillStages: {
+        intent_naming: [],
+        context_injection: [],
+        brief_compilation: [],
+        execution_selection: [],
+        assembly_delivery: [],
+      },
+      frozenRouteSnapshotDigest: 'drifted-route-digest',
+      promptRevisionRefs,
+      rootAxes: {
+        axisScope: 'task_root',
+        skillRevision: { kind: 'absent' },
+        promptVersion: { kind: 'absent' },
+        catalogRevision: {
+          kind: 'bound',
+          value: 'catalog-pinned',
+        },
+        scene: { kind: 'bound', value: 'harness:copy' },
+      },
+    },
+  };
+
+  await assert.rejects(
+    () =>
+      ports.nameIntent({
+        workflowId: 'task-assembly-drift',
+        request,
+      }),
+    /assembly binding does not match the frozen route/i,
+  );
+  assert.equal(runner.requests.length, 0);
+});
+
+test('a legacy request without execution assembly cannot start structured generation', async () => {
+  const runner = new QueueRunner([
+    {
+      normalizedIntent: '制作团购文案',
+      taskType: 'promotion_groupbuy_conversion',
+      deliveryLayer: 'copy',
+      relevantAssetCategories: ['promotion_activity'],
+      usedAssetCategories: ['promotion_activity'],
+      route: 'customized',
+      implicitConstraints: [],
+      blockingGap: null,
+    },
+  ]);
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => runner },
+    {
+      async compileAndFreeze() {
+        return contextSnapshot();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-18T00:01:00.000Z',
+  );
+
+  await assert.rejects(
+    () =>
+      ports.nameIntent({
+        workflowId: 'task-legacy-generation',
+        request: taskInputWithFrozenRoute('task-legacy-generation', 'copy'),
+      }),
+    /execution assembly is required before provider execution/i,
+  );
+  assert.equal(runner.requests.length, 0);
+});
+
+test('structured provider child lifecycle uses frozen single-value axes', async () => {
+  const runner = new QueueRunner([
+    {
+      normalizedIntent: '制作团购文案',
+      taskType: 'promotion_groupbuy_conversion',
+      deliveryLayer: 'copy',
+      relevantAssetCategories: ['promotion_activity'],
+      usedAssetCategories: ['promotion_activity'],
+      route: 'customized',
+      implicitConstraints: [],
+      blockingGap: null,
+    },
+  ]);
+  const audit = new MemoryObservabilityEventAudit();
+  const observer = new AgentPrimitiveObservabilityAdapter(audit, {
+    resolve() {
+      return { kind: 'not_billed' };
+    },
+  });
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => runner },
+    {
+      async compileAndFreeze() {
+        return contextSnapshot();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-18T00:01:00.000Z',
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      create() {
+        return observer;
+      },
+    },
+  );
+
+  const request = taskInputWithExecutionAssembly('task-child-axes');
+  const effectiveSkill = {
+    skillRevisionRef: 'skill.intent@2',
+    instruction: 'Use the frozen Skill prompt.',
+    contentHash: 'hash-skill-intent',
+    requiredModelCapabilities: [],
+    executionMode: 'prompt_materialized' as const,
+    prompt: {
+      name: 'skill/intent-prompt',
+      version: '7',
+      contentHash: 'hash-skill-prompt',
+      isFallback: false,
+    },
+    promptContent: 'Frozen Skill intent prompt.',
+  };
+  request.executionAssembly!.skillStages.intent_naming[0] = {
+    ...request.executionAssembly!.skillStages.intent_naming[0]!,
+    resolvedInstruction: effectiveSkill,
+  };
+  request.executionAssembly!.frozenRouteSnapshotDigest = fingerprintValue(
+    request.frozenRouteSnapshot,
+  );
+  await ports.nameIntent({
+    workflowId: 'task-child-axes',
+    request,
+    skillInstructions: [effectiveSkill],
+  });
+
+  assert.equal(runner.requests.length, 1);
+  const events = audit.list('workspace-1');
+  assert.equal(events.length, 2);
+  assert.deepEqual(
+    events.map((event) => {
+      assert.equal(event.eventType, 'agent_primitive.lifecycle');
+      if (event.eventType !== 'agent_primitive.lifecycle') {
+        throw new Error('Expected agent primitive lifecycle event.');
+      }
+      return {
+        phase: event.payload.phase,
+        axisScope: event.axisScope,
+        skillRevision: event.skillRevision,
+        promptVersion: event.promptVersion,
+        catalogRevision: event.catalogRevision,
+        scene: event.scene,
+      };
+    }),
+    [
+      {
+        phase: 'invoked',
+        axisScope: 'execution_child',
+        skillRevision: 'skill.intent@2',
+        promptVersion: 'skill/intent-prompt@7',
+        catalogRevision: 'catalog-pinned',
+        scene: 'harness:copy',
+      },
+      {
+        phase: 'succeeded',
+        axisScope: 'execution_child',
+        skillRevision: 'skill.intent@2',
+        promptVersion: 'skill/intent-prompt@7',
+        catalogRevision: 'catalog-pinned',
+        scene: 'harness:copy',
+      },
+    ],
+  );
+});
+
+test('a succeeded audit failure does not rewrite a successful structured provider as rejected', async () => {
+  const phases: string[] = [];
+  const runner = new QueueRunner([
+    {
+      normalizedIntent: '制作团购文案',
+      taskType: 'promotion_groupbuy_conversion',
+      deliveryLayer: 'copy',
+      relevantAssetCategories: ['promotion_activity'],
+      usedAssetCategories: ['promotion_activity'],
+      route: 'customized',
+      implicitConstraints: [],
+      blockingGap: null,
+    },
+  ]);
+  const observer = new AgentPrimitiveObservabilityAdapter(
+    {
+      append(_workspaceId, event) {
+        assert.equal(event.eventType, 'agent_primitive.lifecycle');
+        if (event.eventType !== 'agent_primitive.lifecycle') {
+          throw new Error('Expected agent primitive lifecycle event.');
+        }
+        phases.push(event.payload.phase);
+        if (event.payload.phase === 'succeeded') {
+          throw new Error('terminal audit unavailable');
+        }
+        return event;
+      },
+    },
+    { resolve: () => ({ kind: 'not_billed' }) },
+  );
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => runner },
+    {
+      async compileAndFreeze() {
+        return contextSnapshot();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-18T00:01:00.000Z',
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      create() {
+        return observer;
+      },
+    },
+  );
+
+  await assert.rejects(
+    () =>
+      ports.nameIntent({
+        workflowId: 'task-structured-audit-failure',
+        request: taskInputWithExecutionAssembly(
+          'task-structured-audit-failure',
+        ),
+      }),
+    /terminal audit unavailable/u,
+  );
+  assert.deepEqual(phases, ['invoked', 'succeeded']);
+});
+
+test('structured controller receives the frozen route only for copy work', async () => {
+  const runner = new QueueRunner([
+    {
+      normalizedIntent: '制作团购文案',
+      taskType: 'promotion_groupbuy_conversion',
+      deliveryLayer: 'copy',
+      relevantAssetCategories: ['promotion_activity'],
+      usedAssetCategories: ['promotion_activity'],
+      route: 'customized',
+      implicitConstraints: [],
+      blockingGap: null,
+    },
+    {
+      normalizedIntent: '制作团购图片',
+      taskType: 'promotion_groupbuy_conversion',
+      deliveryLayer: 'finished_media',
+      relevantAssetCategories: ['promotion_activity'],
+      usedAssetCategories: ['promotion_activity'],
+      route: 'customized',
+      implicitConstraints: [],
+      blockingGap: null,
+    },
+    {
+      normalizedIntent: '制作团购视频',
+      taskType: 'promotion_groupbuy_conversion',
+      deliveryLayer: 'finished_media',
+      relevantAssetCategories: ['promotion_activity'],
+      usedAssetCategories: ['promotion_activity'],
+      route: 'customized',
+      implicitConstraints: [],
+      blockingGap: null,
+    },
+  ]);
+  const receivedRouteIds: Array<string | null> = [];
+  const observer = new AgentPrimitiveObservabilityAdapter(
+    new MemoryObservabilityEventAudit(),
+    { resolve: () => ({ kind: 'not_billed' }) },
+  );
+  const ports = new ProductionHarnessStagePorts(
+    {
+      create(input) {
+        receivedRouteIds.push(input.frozenRouteSnapshot?.id ?? null);
+        return runner;
+      },
+    },
+    {
+      async compileAndFreeze() {
+        return contextSnapshot();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-18T00:01:00.000Z',
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      create() {
+        return observer;
+      },
+    },
+  );
+
+  await ports.nameIntent({
+    workflowId: 'task-copy-controller',
+    request: taskInputWithExecutionAssembly('task-copy-controller', 'copy'),
+  });
+  await ports.nameIntent({
+    workflowId: 'task-image-controller',
+    request: taskInputWithExecutionAssembly('task-image-controller', 'image'),
+  });
+  await ports.nameIntent({
+    workflowId: 'task-video-controller',
+    request: taskInputWithExecutionAssembly('task-video-controller', 'video'),
+  });
+
+  assert.deepEqual(receivedRouteIds, ['route-pinned', null, null]);
+});
+
+test('media structured controller child lifecycle has no catalog axis', async () => {
+  const runner = new QueueRunner([
+    {
+      normalizedIntent: '制作团购图片',
+      taskType: 'promotion_groupbuy_conversion',
+      deliveryLayer: 'finished_media',
+      relevantAssetCategories: ['promotion_activity'],
+      usedAssetCategories: ['promotion_activity'],
+      route: 'customized',
+      implicitConstraints: [],
+      blockingGap: null,
+    },
+  ]);
+  const audit = new MemoryObservabilityEventAudit();
+  const observer = new AgentPrimitiveObservabilityAdapter(audit, {
+    resolve() {
+      return { kind: 'not_billed' };
+    },
+  });
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => runner },
+    {
+      async compileAndFreeze() {
+        return contextSnapshot();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-18T00:01:00.000Z',
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      create() {
+        return observer;
+      },
+    },
+  );
+
+  await ports.nameIntent({
+    workflowId: 'task-media-child-axes',
+    request: taskInputWithExecutionAssembly('task-media-child-axes', 'image'),
+  });
+
+  assert.deepEqual(
+    audit.list('workspace-1').map((event) => event.catalogRevision),
+    [null, null],
+  );
+});
+
 class QueueRunner implements StructuredNodeRunner {
   readonly requests: StructuredNodeRunnerRequest<unknown>[] = [];
 
@@ -2121,7 +2568,8 @@ class FallbackFenceRunner implements StructuredNodeRunner {
 
   async run<Output>(request: StructuredNodeRunnerRequest<Output>) {
     const fence = request.beforeProviderAttempt;
-    if (!fence) throw new Error('Expected source fence before provider attempt.');
+    if (!fence)
+      throw new Error('Expected source fence before provider attempt.');
     this.fenceCalls += 1;
     await fence();
     this.providerAttempts += 1;
@@ -2337,6 +2785,90 @@ function taskInput() {
   };
 }
 
+function taskInputWithExecutionAssembly(
+  workflowId: string,
+  lens: 'copy' | 'image' | 'video' = 'copy',
+): HarnessWorkflowInput {
+  const prompts = harnessPromptBundle();
+  const promptRevisionRefs = promptRevisionReferences(prompts);
+  const snapshot = composerSnapshot();
+  const frozenRouteSnapshot = {
+    id: 'route-pinned',
+    catalogRevisionId: 'catalog-pinned',
+    capabilityRevisionId: 'capability-pinned',
+    requestedSelection: {
+      mode: 'fixed' as const,
+      catalogModelId: 'model-pinned',
+    },
+    candidateCatalogModelIds: ['model-pinned'],
+    actualCatalogModelId: 'model-pinned',
+    deploymentId: 'deployment-pinned',
+    reason: 'fixed_selection' as const,
+    dataClass: [],
+    createdAt: '2026-07-18T00:00:00.000Z',
+  };
+  return {
+    ...taskInput(),
+    prompts,
+    promptRevisionRefs,
+    executionSnapshot: {
+      ...snapshot,
+      task: { id: workflowId },
+      lens,
+      operation:
+        lens === 'copy'
+          ? 'copy.generate'
+          : lens === 'image'
+            ? 'image.generate'
+            : 'video.generate',
+    },
+    frozenRouteSnapshot,
+    executionAssembly: {
+      schemaVersion: 'harness-execution-assembly/v1',
+      workflowId,
+      skillStages: {
+        intent_naming: [
+          {
+            skillRevisionRef: 'skill.intent@2',
+            contentHash: 'hash-skill-intent',
+            requiredModelCapabilities: [],
+          },
+        ],
+        context_injection: [],
+        brief_compilation: [],
+        execution_selection: [],
+        assembly_delivery: [],
+      },
+      frozenRouteSnapshotDigest: fingerprintValue(frozenRouteSnapshot),
+      promptRevisionRefs,
+      rootAxes: {
+        axisScope: 'task_root',
+        skillRevision: {
+          kind: 'bound',
+          value: 'skill.intent@2',
+        },
+        promptVersion: { kind: 'absent' },
+        catalogRevision: {
+          kind: 'bound',
+          value: 'catalog-pinned',
+        },
+        scene: { kind: 'bound', value: `harness:${lens}` },
+      },
+    },
+  };
+}
+
+function taskInputWithFrozenRoute(
+  workflowId: string,
+  lens: 'copy' | 'image' | 'video',
+): HarnessWorkflowInput {
+  const request = taskInputWithExecutionAssembly(workflowId, lens);
+  return {
+    ...request,
+    executionAssembly: undefined,
+  };
+}
+
 function harnessPromptBundle(): HarnessFrozenPrompts {
   const keys = [
     'intentNaming',
@@ -2374,16 +2906,17 @@ function contextWithSourcePackage(): HarnessContextSnapshot {
   const context = contextSnapshot();
   const source = sourceContentPackageProjection();
   const sourceRef = `content_package:${source.reference.id}:${source.reference.revision}`;
-  context.bundle.dimensions.store_facts_assets.source_content_package_structure = {
-    value: {
-      packageId: source.reference.id,
-      revision: source.reference.revision,
-      ...source.structure,
-    },
-    layer: 'current_instruction',
-    pool: 'current_signal',
-    sourceRef,
-  };
+  context.bundle.dimensions.store_facts_assets.source_content_package_structure =
+    {
+      value: {
+        packageId: source.reference.id,
+        revision: source.reference.revision,
+        ...source.structure,
+      },
+      layer: 'current_instruction',
+      pool: 'current_signal',
+      sourceRef,
+    };
   context.bundle.dimensions.store_facts_assets.source_content_package_assets = {
     value: {
       packageId: source.reference.id,
@@ -2462,9 +2995,10 @@ function selectionFixture() {
   };
 }
 
-function composerSnapshot(
-  sourceContentPackage?: { id: string; revision: string },
-) {
+function composerSnapshot(sourceContentPackage?: {
+  id: string;
+  revision: string;
+}) {
   return createCreationExecutionSnapshot(
     {
       actorId: 'owner-1',
@@ -2485,7 +3019,9 @@ function composerSnapshot(
       ],
       sources: {
         assets: [{ id: 'asset-1', revision: 'asset-r1', role: 'reference' }],
-        ...(sourceContentPackage ? { contentPackage: sourceContentPackage } : {}),
+        ...(sourceContentPackage
+          ? { contentPackage: sourceContentPackage }
+          : {}),
       },
       rights: { revision: 'rights-r1', summary: 'authorized source assets' },
       identity: { id: 'identity-1', revision: 'identity-r1' },

@@ -142,6 +142,9 @@ export function expandDeployment(
     ...(deployment.activationEvidence
       ? { activationEvidence: structuredClone(deployment.activationEvidence) }
       : {}),
+    ...(deployment.capabilityProfile
+      ? { capabilityProfile: structuredClone(deployment.capabilityProfile) }
+      : {}),
     revisionId:
       deployment.lifecycleRevision ?? `${deployment.id}:lifecycle-missing`,
   };

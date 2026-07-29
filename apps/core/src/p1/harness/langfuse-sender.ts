@@ -335,9 +335,14 @@ function mapOutboxItem(item: HarnessLangfuseOutboxItem) {
         }
       : {};
   const traceObservabilityAxes =
-    observabilityEvent?.eventType === 'agent_primitive.lifecycle'
-      ? {}
-      : observabilityAxes;
+    observabilityEvent?.eventType === 'agent_primitive.lifecycle' &&
+    observabilityEvent.axisScope === 'task_root'
+    ? Object.fromEntries(
+        Object.entries(observabilityAxes).filter(
+          ([, value]) => value !== null,
+        ),
+      )
+    : {};
   const traceId = langfuseTraceId(item.workflowId);
   const spanId = stableUuid(
     `span:${item.workflowId}:${item.stage}:${item.auditId}`,
@@ -396,8 +401,13 @@ function mapOutboxItem(item: HarnessLangfuseOutboxItem) {
       : projectStageOutput(item.stage, item.decisionTrace, item.payload),
     metadata: spanMetadata,
   });
+  const writesTaskRoot =
+    observabilityEvent?.eventType !== 'agent_primitive.lifecycle' ||
+    observabilityEvent.axisScope === 'task_root';
   const events: IngestionEvent[] = [
-    ingestionEvent(item, 'trace', 'trace-create', traceBody),
+    ...(writesTaskRoot
+      ? [ingestionEvent(item, 'trace', 'trace-create', traceBody)]
+      : []),
     ingestionEvent(item, 'span', 'span-create', spanBody),
   ];
   events.push(...selectionScores(item, traceId, spanId));

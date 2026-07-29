@@ -3,6 +3,10 @@
  */
 import { createHash } from 'node:crypto';
 import type {
+  ModelCapabilityProfile,
+  ModelCapabilityRequirementAxis,
+} from '@meiye/contracts';
+import type {
 	Acceptance,
 	AdvancedCanvasGenerationOrigin,
 	AdvancedCanvasGenerationOriginRef,
@@ -285,6 +289,22 @@ export interface RouteSnapshot {
   id: string;
   catalogRevisionId: string;
   capabilityRevisionId?: string;
+  capabilityRequirements?: ModelCapabilityRequirementAxis[];
+  capabilityMatches?: Array<{
+    axisId: string;
+    deploymentId: string;
+    outcome: 'eligible' | 'ineligible' | 'conservative_fallback';
+    reasons: string[];
+    evidenceRefs: string[];
+  }>;
+  capabilityFallbackFacts?: Array<{
+    axisId: string;
+    deploymentId: string;
+    reason: 'capability_unknown' | 'vocabulary_version_unknown';
+    platformDefaultDeploymentId: string;
+    activationEvidenceRef?: string;
+    configurationRevision?: string;
+  }>;
   routePolicyRevisionId?: string;
   dataPolicyRevisionId?: string;
   runtimeExclusionReasons?: string[];
@@ -349,6 +369,7 @@ export interface RouteSnapshot {
     activationStatus?: NonNullable<
       ModelDeployment['activationEvidence']
     >['status'];
+    capabilityProfile?: ModelCapabilityProfile | null;
   }>;
   reason:
     | 'fixed_selection'

@@ -15,6 +15,7 @@ import {
 } from './catalog.js';
 import type { CatalogModel, RuntimeDeploymentCapability } from './index.js';
 import type { CustomLlmProtocol } from './ai-sdk-runner.js';
+import type { AdapterRuntimeConfig } from './provider-lifecycle.js';
 import {
   VolcengineBidirectionalTtsAdapter,
   type VolcengineTtsAuth,
@@ -46,12 +47,18 @@ export interface ModelRuntimeAssemblyWarning {
   message: string;
 }
 
+export interface ModelRuntimeCapability extends RuntimeDeploymentCapability {
+  adapterKey?: string;
+  adapterBindingRevision?: string;
+  adapterConfig?: AdapterRuntimeConfig;
+}
+
 export interface ModelRuntimeAssembly {
   configurationRevisions: Readonly<Record<string, string>>;
   deployments: PublishedDeployment[];
   models: CatalogModel[];
   runtime: ModelExecutionRuntime;
-  runtimeCapabilities: RuntimeDeploymentCapability[];
+  runtimeCapabilities: ModelRuntimeCapability[];
   warnings: ModelRuntimeAssemblyWarning[];
 }
 
@@ -413,6 +420,27 @@ export function modelRuntimeAssemblyFromEnv(
       lifecycleRevision: deployment.lifecycleRevision,
       credentialAccountId: deployment.credentialAccountId,
       credentialVersion: deployment.credentialVersion,
+      capabilityProfile: deployment.capabilityProfile,
+      ...(direct &&
+        directConfigurationRevision &&
+        deployment.id === directDeploymentId
+        ? {
+            adapterKey: 'direct-llm',
+            adapterBindingRevision: directConfigurationRevision,
+            adapterConfig: {
+              baseUrl: direct.baseUrl,
+              providerModel: direct.model,
+              endpointRevision: direct.endpointRevision,
+              apiFamily: direct.apiFamily,
+              ...(direct.customProtocol
+                ? { customProtocol: direct.customProtocol }
+                : {}),
+              inputCostPerMillion: direct.inputCostPerMillion,
+              outputCostPerMillion: direct.outputCostPerMillion,
+              currency: direct.currency ?? 'USD',
+            } satisfies AdapterRuntimeConfig,
+          }
+        : {}),
     }));
   const configurationRevisions: Record<string, string> = {};
   if (directDeploymentId && directConfigurationRevision) {

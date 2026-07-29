@@ -91,6 +91,48 @@ test(
           },
         },
       );
+      const rootInput = {
+        context: {
+          workspaceId,
+          userId: 'worker-a',
+          correlationId: 'corr-assembly',
+          actor: 'worker' as const,
+        },
+        taskId,
+        primitiveId: 'harness-assembly:event_persistence',
+        baseIdempotencyKey: 'harness-assembly-event-persistence',
+        axes: {
+          axisScope: 'task_root',
+          skillRevision: { kind: 'absent' },
+          promptVersion: { kind: 'absent' },
+          catalogRevision: {
+            kind: 'bound',
+            value: 'catalog-r1',
+          },
+          scene: {
+            kind: 'bound',
+            value: 'recipe-card-group',
+          },
+        } as const,
+      };
+      await Promise.all([
+        adapter.append({ ...rootInput, phase: 'succeeded' }),
+        adapter.append({ ...rootInput, phase: 'succeeded' }),
+      ]);
+      await assert.rejects(
+        adapter.append({
+          ...rootInput,
+          axes: {
+            ...rootInput.axes,
+            catalogRevision: {
+              kind: 'bound',
+              value: 'catalog-conflict',
+            },
+          },
+          phase: 'succeeded',
+        }),
+        /idempotency conflict/i,
+      );
       const input = {
         context: {
           workspaceId,
@@ -102,7 +144,7 @@ test(
         primitiveId: 'generate',
         baseIdempotencyKey: 'primitive-call-terminal',
         axes: {
-          axisScope: 'task_root',
+          axisScope: 'execution_child',
           skillRevision: { kind: 'absent' },
           promptVersion: { kind: 'absent' },
           catalogRevision: { kind: 'absent' },
@@ -160,19 +202,52 @@ test(
            (select payload->'payload'->>'phase'
               from harness_runtime.audit_events
              where workflow_id=$1
-               and event_type='agent_primitive.lifecycle')
+               and event_type='agent_primitive.lifecycle'
+               and payload->'payload'->>'primitiveId'='generate')
              as phase`,
         [runtimeTaskId],
       );
       assert.deepEqual(persisted.rows[0], {
+        audits: 2,
+        outbox: 2,
+        phase: 'succeeded',
+      });
+      const root = await pool.query<{
+        audits: number;
+        outbox: number;
+        skill_revision: string | null;
+        prompt_version: string | null;
+        catalog_revision: string;
+        scene: string;
+      }>(
+        `select
+           count(*)::int as audits,
+           count(outbox.audit_id)::int as outbox,
+           min(audit.payload->>'skillRevision') as skill_revision,
+           min(audit.payload->>'promptVersion') as prompt_version,
+           min(audit.payload->>'catalogRevision') as catalog_revision,
+           min(audit.payload->>'scene') as scene
+         from harness_runtime.audit_events audit
+         left join harness_runtime.langfuse_outbox outbox
+           on outbox.audit_id=audit.id
+         where audit.workflow_id=$1
+           and audit.event_type='agent_primitive.lifecycle'
+           and audit.payload->>'axisScope'='task_root'`,
+        [runtimeTaskId],
+      );
+      assert.deepEqual(root.rows[0], {
         audits: 1,
         outbox: 1,
-        phase: 'succeeded',
+        skill_revision: null,
+        prompt_version: null,
+        catalog_revision: 'catalog-r1',
+        scene: 'recipe-card-group',
       });
     } finally {
       await pool.query(
         `delete from harness_runtime.audit_events
-          where workflow_id=$1 and event_type='agent_primitive.lifecycle'`,
+          where workflow_id=$1
+            and event_type='agent_primitive.lifecycle'`,
         [runtimeTaskId],
       );
       await pool.query(

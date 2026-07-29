@@ -369,39 +369,11 @@ export class OpenAiCompatibleLlmExecutionPort implements ProviderExecutionPort {
           'direct-llm endpoint revision',
         );
       }
-      const runner = runtimeConfig
-        ? new OpenAiCompatibleAiSdkRunner({
-            ...this.options,
-            apiKey: requiredRuntimeCredential(request, 'direct-llm').secret,
-            apiFamily: requiredRuntimeText(
-              runtimeConfig.apiFamily,
-              'direct-llm api family',
-            ) as NonNullable<OpenAiCompatibleAiSdkOptions['apiFamily']>,
-            baseUrl: requiredRuntimeText(
-              runtimeConfig.baseUrl,
-              'direct-llm base URL',
-            ),
-            currency: requiredRuntimeCurrency(runtimeConfig.currency),
-            customProtocol: runtimeConfig.customProtocol,
-            inputCostPerMillion: requiredRuntimeNumber(
-              runtimeConfig.inputCostPerMillion,
-              'direct-llm input price',
-            ),
-            model: requiredRuntimeText(
-              runtimeConfig.providerModel,
-              'direct-llm provider model',
-            ),
-            outputCostPerMillion: requiredRuntimeNumber(
-              runtimeConfig.outputCostPerMillion,
-              'direct-llm output price',
-            ),
-          })
-        : request.runtimeBinding?.credential
-          ? new OpenAiCompatibleAiSdkRunner({
-              ...this.options,
-              apiKey: request.runtimeBinding.credential.secret,
-            })
-          : this.runner;
+      const runner = openAiCompatibleRunnerForRequest(
+        request,
+        this.options,
+        this.runner,
+      );
       const result =
         request.submission.operation === 'copy.adapt'
           ? await runner.adaptPlatformVariants(
@@ -463,7 +435,49 @@ class PublishedAdapterBindingError extends Error {
   }
 }
 
-function publishedAdapterConfig(
+export function openAiCompatibleRunnerForRequest(
+  request: ProviderExecutionRequest,
+  options: OpenAiCompatibleAiSdkOptions,
+  fallback = new OpenAiCompatibleAiSdkRunner(options),
+) {
+  const runtimeConfig = publishedAdapterConfig(request, 'direct-llm');
+  if (runtimeConfig) {
+    return new OpenAiCompatibleAiSdkRunner({
+      ...options,
+      apiKey: requiredRuntimeCredential(request, 'direct-llm').secret,
+      apiFamily: requiredRuntimeText(
+        runtimeConfig.apiFamily,
+        'direct-llm api family',
+      ) as NonNullable<OpenAiCompatibleAiSdkOptions['apiFamily']>,
+      baseUrl: requiredRuntimeText(
+        runtimeConfig.baseUrl,
+        'direct-llm base URL',
+      ),
+      currency: requiredRuntimeCurrency(runtimeConfig.currency),
+      customProtocol: runtimeConfig.customProtocol,
+      inputCostPerMillion: requiredRuntimeNumber(
+        runtimeConfig.inputCostPerMillion,
+        'direct-llm input price',
+      ),
+      model: requiredRuntimeText(
+        runtimeConfig.providerModel,
+        'direct-llm provider model',
+      ),
+      outputCostPerMillion: requiredRuntimeNumber(
+        runtimeConfig.outputCostPerMillion,
+        'direct-llm output price',
+      ),
+    });
+  }
+  return request.runtimeBinding?.credential
+    ? new OpenAiCompatibleAiSdkRunner({
+        ...options,
+        apiKey: request.runtimeBinding.credential.secret,
+      })
+    : fallback;
+}
+
+export function publishedAdapterConfig(
   request: ProviderExecutionRequest,
   expectedAdapterKey: string,
 ): AdapterRuntimeConfig | undefined {
@@ -483,7 +497,7 @@ function publishedAdapterConfig(
   return binding.adapterConfig;
 }
 
-function requiredRuntimeCredential(
+export function requiredRuntimeCredential(
   request: ProviderExecutionRequest,
   adapterKey: string,
 ) {
@@ -496,7 +510,7 @@ function requiredRuntimeCredential(
   return credential;
 }
 
-function requiredRuntimeText(value: unknown, name: string) {
+export function requiredRuntimeText(value: unknown, name: string) {
   if (typeof value !== 'string' || !value.trim()) {
     throw new PublishedAdapterBindingError(
       `Published adapter binding requires ${name}.`,
@@ -505,7 +519,7 @@ function requiredRuntimeText(value: unknown, name: string) {
   return value.trim();
 }
 
-function requiredRuntimeNumber(value: unknown, name: string) {
+export function requiredRuntimeNumber(value: unknown, name: string) {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
     throw new PublishedAdapterBindingError(
       `Published adapter binding requires a non-negative finite ${name}.`,

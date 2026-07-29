@@ -157,7 +157,10 @@ export interface ProviderExecutionPort {
 }
 
 export interface StructuredObjectExecutor {
-  supportsCatalogModel(catalogModelId: string): boolean;
+  supportsCatalogModel(
+    catalogModelId: string,
+    providerRequest?: ProviderExecutionRequest,
+  ): boolean;
   generate<Output>(input: {
     abortSignal?: AbortSignal;
     beforeProviderAttempt?: () => Promise<void>;
@@ -166,6 +169,8 @@ export interface StructuredObjectExecutor {
     prompt: string;
     schema: ZodType<Output>;
     schemaName: string;
+    /** Runtime-only exact provider binding selected by Model Supply. */
+    providerRequest?: ProviderExecutionRequest;
     structuredContinuation?: StructuredExecutionContinuation;
     structuredRequestFingerprint?: string;
   }): Promise<{
@@ -173,9 +178,17 @@ export interface StructuredObjectExecutor {
     providerTaskRef: string;
     usage: { inputTokens: number; outputTokens: number };
     providerUsage?: { inputTokens: number; outputTokens: number };
+    providerCost?: {
+      amount: number;
+      currency: 'CNY' | 'USD';
+      usage: { inputTokens: number; outputTokens: number };
+    };
     measurement?: StructuredObjectMeasurement;
   }>;
-  providerCost(usage: { inputTokens: number; outputTokens: number }): {
+  providerCost(
+    usage: { inputTokens: number; outputTokens: number },
+    providerRequest?: ProviderExecutionRequest,
+  ): {
     amount: number;
     currency: 'CNY' | 'USD';
     usage: { inputTokens: number; outputTokens: number };

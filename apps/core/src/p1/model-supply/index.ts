@@ -173,7 +173,10 @@ import {
   isHealthOverlayBlocking,
   MemoryHealthOverlayPort,
 } from '../supply-registry/health-overlay.js';
-import type { CapabilityHotAssemblyPort } from '../supply-registry/hot-assembly.js';
+import {
+  constrainDeploymentsToCapability,
+  type CapabilityHotAssemblyPort,
+} from '../supply-registry/hot-assembly.js';
 import {
   collectHealthExcludedDeploymentIds,
   explainPlanDecision,
@@ -1118,11 +1121,23 @@ export class ModelSupplyApplicationService {
       modelById: this.modelById,
       deployments: this.deployments,
     };
+    const capabilityRevision =
+      await this.capabilityHotAssembly?.getEffectiveRevision();
+    if (this.capabilityHotAssembly && !capabilityRevision) {
+      throw new Error(
+        'No published capability revision can be frozen for this workflow.',
+      );
+    }
     const catalog = {
       ...storedCatalog,
-      deployments: await this.constrainRuntimeDeploymentsForRequest(
-        storedCatalog.deployments,
-      ),
+      deployments: capabilityRevision
+        ? constrainDeploymentsToCapability(
+            capabilityRevision.entries,
+            storedCatalog.deployments,
+          )
+        : await this.constrainRuntimeDeploymentsForRequest(
+            storedCatalog.deployments,
+          ),
     };
     const planning = await this.planSubmissionCandidates(submission, catalog);
     const selected = input.deploymentId
@@ -1135,7 +1150,7 @@ export class ModelSupplyApplicationService {
         'No compliant deployment can be frozen under the published route and data policy.',
       );
     }
-    return this.snapshotFor(
+    const snapshot = this.snapshotFor(
       submission,
       input.deploymentId ? [selected] : planning.candidates,
       selected,
@@ -1143,6 +1158,10 @@ export class ModelSupplyApplicationService {
       undefined,
       planning,
     );
+    if (capabilityRevision) {
+      snapshot.capabilityRevisionId = capabilityRevision.revisionId;
+    }
+    return snapshot;
   }
 
   simulateRoute(
@@ -1564,7 +1583,7 @@ export class ModelSupplyApplicationService {
             },
           };
         }
-        if (!executor.supportsCatalogModel(request.model.id)) {
+        if (!executor.supportsCatalogModel(request.model.id, request)) {
           return {
             kind: 'failure',
             acceptance: 'rejected_before_accept',
@@ -1580,6 +1599,7 @@ export class ModelSupplyApplicationService {
         try {
           const generated = await executor.generate({
             ...input,
+            providerRequest: request,
             structuredRequestFingerprint,
             ...(request.structuredContinuation
               ? {
@@ -1596,9 +1616,12 @@ export class ModelSupplyApplicationService {
               ? { structuredMeasurement: generated.measurement }
               : {}),
             structuredCumulativeUsage: generated.usage,
-            providerCost: executor.providerCost(
-              generated.providerUsage ?? generated.usage,
-            ),
+            providerCost:
+              generated.providerCost ??
+              executor.providerCost(
+                generated.providerUsage ?? generated.usage,
+                request,
+              ),
           };
         } catch (error) {
           if (error instanceof ExecutionAttemptBudgetExceeded) {
@@ -1608,7 +1631,10 @@ export class ModelSupplyApplicationService {
               error.completedAttemptsInRun,
               error.structuredContinuation,
               error.structuredContinuation
-                ? executor.providerCost(error.structuredContinuation.usage)
+                ? executor.providerCost(
+                    error.structuredContinuation.usage,
+                    request,
+                  )
                 : error.observedProviderCost,
             );
           }
@@ -1623,6 +1649,7 @@ export class ModelSupplyApplicationService {
               structuredCumulativeUsage: error.usage,
               providerCost: executor.providerCost(
                 error.providerUsage ?? error.usage,
+                request,
               ),
             };
           }
@@ -1844,17 +1871,31 @@ export class ModelSupplyApplicationService {
     ) {
       throw new Error('Durable media generation requires a fixed media model.');
     }
-    const storedCatalog = this.workspaceCatalogs.get(submission.workspaceId) ?? {
-      revisionId: this.catalogRevisionId,
-      modelById: this.modelById,
-      deployments: this.deployments,
+    let catalog: {
+      revisionId: string;
+      modelById: Map<string, CatalogModel>;
+      deployments: ModelDeployment[];
     };
-    const catalog = {
-      ...storedCatalog,
-      deployments: await this.constrainRuntimeDeploymentsForRequest(
-        storedCatalog.deployments,
-      ),
-    };
+    if (submission.frozenRouteSnapshot) {
+      catalog = {
+        revisionId: submission.frozenRouteSnapshot.catalogRevisionId,
+        modelById: new Map(),
+        deployments: [],
+      };
+    } else {
+      const storedCatalog =
+        this.workspaceCatalogs.get(submission.workspaceId) ?? {
+          revisionId: this.catalogRevisionId,
+          modelById: this.modelById,
+          deployments: this.deployments,
+        };
+      catalog = {
+        ...storedCatalog,
+        deployments: await this.constrainRuntimeDeploymentsForRequest(
+          storedCatalog.deployments,
+        ),
+      };
+    }
     const planning = await this.planSubmissionCandidates(submission, catalog);
     const fallbackConsented = submission.selection.fallbackConsent === true;
     const attemptLimit =
@@ -2051,8 +2092,7 @@ export class ModelSupplyApplicationService {
       snapshot,
       {
         useFrozenCredentialVersion: Boolean(
-          submission.frozenRouteSnapshot?.credentialAccountId &&
-            submission.frozenRouteSnapshot.credentialVersion,
+          submission.frozenRouteSnapshot,
         ),
       },
     );
@@ -2401,17 +2441,26 @@ export class ModelSupplyApplicationService {
       return existing.result;
     }
 
-    const storedCatalog = this.workspaceCatalogs.get(submission.workspaceId) ?? {
-      revisionId: this.catalogRevisionId,
-      modelById: this.modelById,
-      deployments: this.deployments,
-    };
-    const catalog = {
-      ...storedCatalog,
-      deployments: await this.constrainRuntimeDeploymentsForRequest(
-        storedCatalog.deployments,
-      ),
-    };
+    const catalog = submission.frozenRouteSnapshot
+      ? {
+          revisionId: submission.frozenRouteSnapshot.catalogRevisionId,
+          modelById: new Map<string, CatalogModel>(),
+          deployments: [],
+        }
+      : await (async () => {
+          const storedCatalog =
+            this.workspaceCatalogs.get(submission.workspaceId) ?? {
+              revisionId: this.catalogRevisionId,
+              modelById: this.modelById,
+              deployments: this.deployments,
+            };
+          return {
+            ...storedCatalog,
+            deployments: await this.constrainRuntimeDeploymentsForRequest(
+              storedCatalog.deployments,
+            ),
+          };
+        })();
     const planning =
       options.useFrozenMediaCandidateSequence &&
       submission.frozenRouteSnapshot
@@ -2454,6 +2503,15 @@ export class ModelSupplyApplicationService {
     const jobId = modelSupplyJobId(submission);
     const attemptChain: ProviderAttempt[] = [];
     const providerCostChain: ProviderCost[] = [];
+    if (
+      this.capabilityHotAssembly &&
+      submission.frozenRouteSnapshot &&
+      !submission.frozenRouteSnapshot.capabilityRevisionId
+    ) {
+      throw new Error(
+        'Frozen RouteSnapshot requires a capability revision; refusing current-head assembly.',
+      );
+    }
     const capabilityRevisionId = this.capabilityHotAssembly
       ? (submission.frozenRouteSnapshot?.capabilityRevisionId ??
         (await this.capabilityHotAssembly.getEffectiveRevisionId()) ??
@@ -2515,8 +2573,7 @@ export class ModelSupplyApplicationService {
         snapshot,
         {
           useFrozenCredentialVersion: Boolean(
-            attemptSubmission.frozenRouteSnapshot?.credentialAccountId &&
-              attemptSubmission.frozenRouteSnapshot.credentialVersion,
+            attemptSubmission.frozenRouteSnapshot,
           ),
         },
       );
@@ -3725,6 +3782,13 @@ export class ModelSupplyApplicationService {
         ...(frozenCandidate.allowedDataClasses
           ? { allowedDataClasses: [...frozenCandidate.allowedDataClasses] }
           : {}),
+        ...(frozenCandidate.capabilityProfile
+          ? {
+              capabilityProfile: structuredClone(
+                frozenCandidate.capabilityProfile,
+              ),
+            }
+          : {}),
         credentialMode: frozenCandidate.credentialMode,
         credentialVersion: frozenCandidate.credentialVersion,
         policyRevision: frozenCandidate.policyRevision,
@@ -3740,12 +3804,9 @@ export class ModelSupplyApplicationService {
           'Frozen RouteSnapshot is not executable for this operation.'
         );
       }
-      const currentDeployment = catalog.deployments.find(
-        (candidate) => candidate.id === frozen.deploymentId
-      );
       if (
         !deploymentAllowsDataClass(
-          currentDeployment ?? deployment,
+          deployment,
           submission.dataClass
         )
       ) {
@@ -3960,6 +4021,9 @@ export class ModelSupplyApplicationService {
         ...(deployment.activationEvidence
           ? { activationStatus: deployment.activationEvidence.status }
           : {}),
+        capabilityProfile: deployment.capabilityProfile
+          ? structuredClone(deployment.capabilityProfile)
+          : null,
       })),
       reason:
         fallback ??
@@ -4008,6 +4072,26 @@ export class ModelSupplyApplicationService {
       throw new Error(
         `Runtime binding deployment ${binding.deploymentId} does not match ${deployment.id}.`,
       );
+    }
+    if (options.useFrozenCredentialVersion) {
+      const resolvedCredentialVersion =
+        binding.credential?.version ?? binding.entry.credentialVersion;
+      if (
+        resolvedCredentialVersion !== snapshot.credentialVersion
+      ) {
+        throw new Error(
+          `Runtime credential version ${resolvedCredentialVersion ?? 'unbound'} does not match frozen ${snapshot.credentialVersion}.`,
+        );
+      }
+      if (
+        snapshot.credentialAccountId &&
+        binding.entry.credentialAccountId !== snapshot.credentialAccountId
+      ) {
+        throw new Error(
+          `Runtime credential account ${binding.entry.credentialAccountId ?? 'unbound'} does not match frozen ${snapshot.credentialAccountId}.`,
+        );
+      }
+      return binding;
     }
     if (binding.entry.credentialAccountId) {
       snapshot.credentialAccountId = binding.entry.credentialAccountId;

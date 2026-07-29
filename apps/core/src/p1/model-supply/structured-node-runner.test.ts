@@ -8,7 +8,14 @@ import {
   type ModelSupplyLedgerPort,
   type ModelSupplyLedgerCheckpointInput,
   type ModelSupplyResult,
+  type ProviderExecutionRequest,
+  type RouteSnapshot,
 } from './index.js';
+import {
+  CapabilityHotAssemblyRegistry,
+  projectCapabilityRevision,
+  toRuntimeCapabilityEntry,
+} from '../supply-registry/hot-assembly.js';
 import {
   AiSdkStructuredObjectExecutor,
   ModelSupplyStructuredNodeRunner,
@@ -25,9 +32,381 @@ import {
   ExecutionAttemptBudgetExceeded,
   withExecutionAttemptBudget,
 } from './execution-attempt-budget.js';
+import { StructuredObjectGenerationError } from './provider-lifecycle.js';
 import { P1ApplicationService } from '../foundation/application-service.js';
 import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
 import { FoundationModelSupplyLedger } from './foundation-ledger.js';
+
+test('frozen structured execution uses the historical deployment and capability binding', async () => {
+  const credentialVersions: Array<string | undefined> = [];
+  let assembledCredentialVersion: string | undefined;
+  const hotAssembly = new CapabilityHotAssemblyRegistry(undefined, {
+    async assembleForRequest(request) {
+      credentialVersions.push(request.frozenVersion);
+      const version =
+        assembledCredentialVersion ??
+        request.frozenVersion ??
+        'credential-a-r2';
+      return {
+        credentialAccountId: request.credentialAccountId,
+        version,
+        secretReference: `kms://${request.credentialAccountId}`,
+        secretVersion: version === 'credential-a-r1' ? 1 : 2,
+        scope: request.requiredScope,
+        secret: 'runtime-only-secret',
+      };
+    },
+    async projectPublic() {
+      throw new Error('Public credential projection is outside this test.');
+    },
+  });
+  hotAssembly.applyCapabilityRevision(
+    projectCapabilityRevision({
+      revisionId: 'capability-r1',
+      number: 1,
+      entries: [
+        toRuntimeCapabilityEntry({
+          id: 'deployment-a',
+          catalogModelId: 'llm-a',
+          apiFamily: 'openai',
+          channel: 'direct',
+          region: 'domestic',
+          executionChannelId: 'channel-a',
+          providerModel: 'provider-a',
+          endpointRevision: 'endpoint-a',
+          lifecycleRevision: 'lifecycle-a',
+          credentialAccountId: 'credential-a',
+          credentialVersion: 'credential-a-r1',
+          adapterKey: 'direct-llm',
+          adapterConfig: {
+            baseUrl: 'https://provider-a.example/v1',
+            providerModel: 'provider-a',
+            endpointRevision: 'endpoint-a',
+            apiFamily: 'openai',
+            inputCostPerMillion: 1,
+            outputCostPerMillion: 2,
+            currency: 'CNY',
+          },
+        }),
+      ],
+      publishedAt: '2026-07-29T09:00:00.000Z',
+    }),
+  );
+  const application = new ModelSupplyApplicationService({
+    models: [
+      {
+        id: 'llm-a',
+        modality: 'llm',
+        operations: ['text.respond'],
+        displayName: 'Pinned LLM A',
+        qualityRank: 100,
+      },
+      {
+        id: 'llm-b',
+        modality: 'llm',
+        operations: ['text.respond'],
+        displayName: 'Current LLM B',
+        qualityRank: 110,
+      },
+    ],
+    deployments: [
+      deploymentFixture('deployment-a', 'llm-a', 'provider-a'),
+      deploymentFixture('deployment-b', 'llm-b', 'provider-b'),
+    ],
+    execution: new RecordedProviderExecutionPort(),
+    capabilityHotAssembly: hotAssembly,
+  });
+  const frozenRoute = structuredRouteSnapshot();
+  application.applyCatalogRevision(
+    'workspace-1',
+    'catalog-r2',
+    [
+      {
+        id: 'llm-b',
+        modality: 'llm',
+        operations: ['text.respond'],
+        displayName: 'Current LLM B',
+        qualityRank: 110,
+      },
+    ],
+    [deploymentFixture('deployment-b', 'llm-b', 'provider-b')],
+  );
+  hotAssembly.applyCapabilityRevision(
+    projectCapabilityRevision({
+      revisionId: 'capability-r2',
+      number: 2,
+      entries: [
+        toRuntimeCapabilityEntry({
+          id: 'deployment-b',
+          catalogModelId: 'llm-b',
+          apiFamily: 'openai',
+          channel: 'direct',
+          region: 'domestic',
+          executionChannelId: 'channel-b',
+          providerModel: 'provider-b',
+          endpointRevision: 'endpoint-b',
+          lifecycleRevision: 'lifecycle-b',
+          adapterKey: 'direct-llm',
+        }),
+      ],
+      publishedAt: '2026-07-29T10:00:00.000Z',
+      previousRevisionId: 'capability-r1',
+    }),
+  );
+  hotAssembly.supportsDeployment = () => {
+    throw new Error('Frozen execution must not read the current capability head.');
+  };
+  const executor = new ProviderContextStructuredExecutor();
+  const runner = new ModelSupplyStructuredNodeRunner({
+    application,
+    executor,
+    workspaceId: 'workspace-1',
+    actorId: 'user-1',
+    frozenRouteSnapshot: frozenRoute,
+    billingTaskId: 'task-1',
+    billingQuoteRevision: 'quote-r1',
+  });
+
+  await runner.run({
+    effectIdempotencyKey: 'effect-pinned-a',
+    instructions: 'Return a structured answer.',
+    prompt: '{"value":"pinned"}',
+    schema: z.object({ normalized: z.string() }).strict(),
+    schemaName: 'pinned_schema',
+    schemaRevision: 'pinned-schema-r1',
+  });
+
+  assert.equal(executor.requests.length, 1);
+  assert.equal(executor.requests[0]?.model.id, 'llm-a');
+  assert.equal(executor.requests[0]?.deployment.id, 'deployment-a');
+  assert.equal(
+    executor.requests[0]?.runtimeBinding?.capabilityRevisionId,
+    'capability-r1',
+  );
+  assert.equal(
+    executor.requests[0]?.runtimeBinding?.adapterConfig?.providerModel,
+    'provider-a',
+  );
+  assert.deepEqual(credentialVersions, ['credential-a-r1']);
+  assert.equal(
+    executor.requests[0]?.runtimeBinding?.credential?.version,
+    'credential-a-r1',
+  );
+  assert.deepEqual(executor.requests[0]?.routeSnapshot, frozenRoute);
+
+  assembledCredentialVersion = 'credential-a-r2';
+  await assert.rejects(
+    runner.run({
+      effectIdempotencyKey: 'effect-pinned-credential-drift',
+      instructions: 'Return a structured answer.',
+      prompt: '{"value":"pinned"}',
+      schema: z.object({ normalized: z.string() }).strict(),
+      schemaName: 'pinned_schema',
+      schemaRevision: 'pinned-schema-r1',
+    }),
+    /credential version credential-a-r2 does not match frozen credential-a-r1/u,
+  );
+  assert.equal(executor.requests.length, 1);
+});
+
+test('AI SDK structured executor sends pinned adapter endpoint, model, and credential', async () => {
+  const observed: Array<{
+    url: string;
+    authorization?: string;
+    body: Record<string, unknown>;
+  }> = [];
+  const route = structuredRouteSnapshot();
+  const deployment = deploymentFixture(
+    'deployment-a',
+    'llm-a',
+    'provider-a',
+  );
+  const providerRequest: ProviderExecutionRequest = {
+    jobId: 'job-pinned-a',
+    model: {
+      id: 'llm-a',
+      modality: 'llm',
+      operations: ['text.respond'],
+      displayName: 'Pinned LLM A',
+      qualityRank: 100,
+    },
+    deployment,
+    submission: {
+      workspaceId: 'workspace-1',
+      actorId: 'user-1',
+      idempotencyKey: 'effect-pinned-a',
+      operation: 'text.respond',
+      selection: { mode: 'fixed', catalogModelId: 'llm-a' },
+      dataClass: [],
+      prompt: '{"value":"pinned"}',
+      frozenRouteSnapshot: route,
+    },
+    routeSnapshot: route,
+    runtimeBinding: {
+      capabilityRevisionId: 'capability-r1',
+      deploymentId: 'deployment-a',
+      adapterKey: 'direct-llm',
+      adapterBindingRevision: 'adapter-a-r1',
+      adapterConfig: {
+        baseUrl: 'https://provider-a.example/v1',
+        providerModel: 'provider-a',
+        endpointRevision: deployment.endpointRevision,
+        apiFamily: 'openai',
+        inputCostPerMillion: 1,
+        outputCostPerMillion: 2,
+        currency: 'CNY',
+      },
+      credential: {
+        credentialAccountId: 'credential-a',
+        version: 'credential-a-r1',
+        secretReference: 'kms://credential-a',
+        secretVersion: 1,
+        scope: 'platform',
+        secret: 'pinned-secret-a',
+      },
+    },
+  };
+  const executor = new AiSdkStructuredObjectExecutor({
+    apiKey: 'current-secret-b',
+    baseUrl: 'https://provider-b.example/v1',
+    catalogModelId: 'llm-b',
+    fetch: (async (input, init) => {
+      observed.push({
+        url: String(input),
+        authorization: new Headers(init?.headers).get('authorization') ?? undefined,
+        body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+      });
+      return openAiStructuredResponse('chatcmpl-pinned-a', {
+        normalized: 'pinned',
+      });
+    }) as typeof fetch,
+    inputCostPerMillion: 9,
+    model: 'provider-b',
+    outputCostPerMillion: 9,
+  });
+
+  const generated = await executor.generate({
+    instructions: 'Return a structured answer.',
+    prompt: '{"value":"pinned"}',
+    providerRequest,
+    schema: z.object({ normalized: z.string() }).strict(),
+    schemaName: 'pinned_schema',
+  });
+
+  assert.equal(observed.length, 1);
+  assert.match(observed[0]!.url, /^https:\/\/provider-a\.example\/v1\//u);
+  assert.equal(observed[0]!.authorization, 'Bearer pinned-secret-a');
+  assert.equal(observed[0]!.body.model, 'provider-a');
+  assert.deepEqual(generated.providerCost, {
+    amount: 0.000034,
+    currency: 'CNY',
+    usage: { inputTokens: 8, outputTokens: 13 },
+  });
+});
+
+test('frozen structured repair failure settles request-bound runner cost', async () => {
+  const hotAssembly = new CapabilityHotAssemblyRegistry();
+  hotAssembly.applyCapabilityRevision(
+    projectCapabilityRevision({
+      revisionId: 'capability-r1',
+      number: 1,
+      entries: [
+        toRuntimeCapabilityEntry({
+          id: 'deployment-a',
+          catalogModelId: 'llm-a',
+          apiFamily: 'openai',
+          channel: 'direct',
+          region: 'domestic',
+          executionChannelId: 'channel-a',
+          providerModel: 'provider-a',
+          endpointRevision: 'endpoint-a',
+          lifecycleRevision: 'lifecycle-a',
+          credentialVersion: 'credential-a-r1',
+          adapterKey: 'direct-llm',
+          adapterConfig: {
+            baseUrl: 'https://provider-a.example/v1',
+            providerModel: 'provider-a',
+            endpointRevision: 'endpoint-a',
+            apiFamily: 'openai',
+            inputCostPerMillion: 1,
+            outputCostPerMillion: 2,
+            currency: 'CNY',
+          },
+        }),
+      ],
+      publishedAt: '2026-07-29T09:00:00.000Z',
+    }),
+  );
+  let settled: ModelSupplyResult | undefined;
+  const application = new ModelSupplyApplicationService({
+    models: [{
+      id: 'llm-a',
+      modality: 'llm',
+      operations: ['text.respond'],
+      displayName: 'Pinned LLM A',
+      qualityRank: 100,
+    }],
+    deployments: [deploymentFixture('deployment-a', 'llm-a', 'provider-a')],
+    execution: new RecordedProviderExecutionPort(),
+    capabilityHotAssembly: hotAssembly,
+    ledger: {
+      async checkpointAttempt() {
+        return { replayed: false };
+      },
+      async settleAttempt(input) {
+        settled = structuredClone(input.result);
+      },
+    },
+  });
+  const executor: StructuredObjectExecutor = {
+    supportsCatalogModel() {
+      return true;
+    },
+    async generate() {
+      throw new StructuredObjectGenerationError(
+        { inputTokens: 1_000_000, outputTokens: 1_000_000 },
+        {
+          firstPassSchemaValid: false,
+          repairCount: 1,
+          repairReasons: ['schema_validation'],
+          providerAttempts: 2,
+        },
+        { cause: new Error('invalid structured output') },
+      );
+    },
+    providerCost(usage, providerRequest?: ProviderExecutionRequest) {
+      return {
+        amount: providerRequest ? 3 : 18,
+        currency: providerRequest ? 'CNY' : 'USD',
+        usage,
+      };
+    },
+  };
+  const runner = new ModelSupplyStructuredNodeRunner({
+    application,
+    executor,
+    workspaceId: 'workspace-1',
+    actorId: 'user-1',
+    frozenRouteSnapshot: structuredRouteSnapshot(),
+    billingTaskId: 'task-1',
+    billingQuoteRevision: 'quote-r1',
+  });
+
+  await assert.rejects(
+    runner.run({
+      effectIdempotencyKey: 'effect-pinned-repair-failure',
+      instructions: 'Return a structured answer.',
+      prompt: '{"value":"invalid"}',
+      schema: z.object({ normalized: z.string() }).strict(),
+      schemaName: 'pinned_schema',
+      schemaRevision: 'pinned-schema-r1',
+    }),
+    StructuredNodeRunError,
+  );
+
+  assert.equal(settled?.providerCost.amount, 3);
+  assert.equal(settled?.providerCost.currency, 'CNY');
+});
 
 test('AI SDK structured executor uses Output.object and final-step metadata', async () => {
   const requests: Array<Record<string, unknown>> = [];
@@ -78,6 +457,11 @@ test('AI SDK structured executor uses Output.object and final-step metadata', as
     output: { normalized: '团购转化文案' },
     providerTaskRef: 'chatcmpl-harness-structured',
     usage: { inputTokens: 8, outputTokens: 13 },
+    providerCost: {
+      amount: 0.000034,
+      currency: 'USD',
+      usage: { inputTokens: 8, outputTokens: 13 },
+    },
   });
   const responseFormat = requests[0]?.response_format as {
     json_schema?: { name?: string };
@@ -1468,6 +1852,104 @@ class IgnoringFenceStructuredExecutor implements StructuredObjectExecutor {
   providerCost(usage: { inputTokens: number; outputTokens: number }) {
     return { amount: 0.000034, currency: 'CNY' as const, usage };
   }
+}
+
+class ProviderContextStructuredExecutor implements StructuredObjectExecutor {
+  readonly requests: ProviderExecutionRequest[] = [];
+
+  supportsCatalogModel() {
+    return true;
+  }
+
+  async generate<Output>(input: {
+    providerRequest?: ProviderExecutionRequest;
+    schema: z.ZodType<Output>;
+  }) {
+    assert.ok(input.providerRequest);
+    this.requests.push(structuredClone(input.providerRequest));
+    return {
+      output: input.schema.parse({ normalized: 'pinned' }),
+      providerTaskRef: 'provider-pinned-a',
+      usage: { inputTokens: 8, outputTokens: 13 },
+    };
+  }
+
+  providerCost(usage: { inputTokens: number; outputTokens: number }) {
+    return { amount: 0.000034, currency: 'CNY' as const, usage };
+  }
+}
+
+function deploymentFixture(
+  id: string,
+  catalogModelId: string,
+  providerModel: string,
+) {
+  return {
+    id,
+    catalogModelId,
+    apiFamily: 'openai' as const,
+    channel: 'direct' as const,
+    region: 'domestic' as const,
+    status: 'active' as const,
+    executionChannelId: `channel-${id}`,
+    providerModel,
+    endpointRevision: `endpoint-${id}`,
+    lifecycleRevision: `lifecycle-${id}`,
+  };
+}
+
+function structuredRouteSnapshot(): RouteSnapshot {
+  return {
+    id: 'route-a',
+    catalogRevisionId: 'catalog-r1',
+    capabilityRevisionId: 'capability-r1',
+    requestedSelection: {
+      mode: 'fixed',
+      catalogModelId: 'llm-a',
+    },
+    candidateCatalogModelIds: ['llm-a'],
+    actualCatalogModelId: 'llm-a',
+    deploymentId: 'deployment-a',
+    policyRevision: 'policy-r1',
+    priceRevision: 'price-r1',
+    credentialMode: 'platform',
+    credentialVersion: 'credential-a-r1',
+    fallbackConsent: false,
+    reason: 'fixed_selection',
+    dataClass: [],
+    allowedCandidates: [
+      {
+        catalogModelId: 'llm-a',
+        deploymentId: 'deployment-a',
+        modelModality: 'llm',
+        modelOperations: ['text.respond'],
+        modelDisplayName: 'Pinned LLM A',
+        modelQualityRank: 100,
+        modelManufacturer: 'fixture',
+        modelCapabilities: ['text.respond'],
+        apiFamily: 'openai',
+        channel: 'direct',
+        region: 'domestic',
+        providerModel: 'provider-a',
+        endpointRevision: 'endpoint-a',
+        executionChannelId: 'channel-a',
+        deploymentLifecycleRevision: 'lifecycle-a',
+        deploymentStatus: 'active',
+        allowedDataClasses: ['public'],
+        stableModelName: 'provider-a',
+        modelVersion: 'endpoint-a',
+        credentialMode: 'platform',
+        credentialVersion: 'credential-a-r1',
+        policyRevision: 'policy-r1',
+        priceRevision: 'price-r1',
+        unitPriceMicros: 1,
+        currency: 'CNY',
+        unit: 'request',
+        fallbackRank: 1,
+      },
+    ],
+    createdAt: '2026-07-29T09:00:00.000Z',
+  };
 }
 
 function openAiStructuredResponse(id: string, output: unknown) {

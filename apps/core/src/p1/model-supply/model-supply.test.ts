@@ -1150,7 +1150,7 @@ test('deployment data-class policy honors regional defaults and explicit restric
   );
 });
 
-test('frozen routes cannot bypass an explicit deployment data-class restriction', async () => {
+test('accepted frozen routes do not reread a later deployment data-class policy', async () => {
   const app = service();
   const frozen = app.freezeFixedRoute({
     workspaceId: 'workspace-frozen-policy',
@@ -1172,19 +1172,18 @@ test('frozen routes cannot bypass an explicit deployment data-class restriction'
     )
   );
 
-  await assert.rejects(
-    app.submit({
-      workspaceId: 'workspace-frozen-policy',
-      actorId: 'owner-frozen-policy',
-      idempotencyKey: 'frozen-medical-policy',
-      operation: 'copy.generate',
-      selection: { mode: 'fixed', catalogModelId: 'copy-domestic' },
-      dataClass: ['medical'],
-      prompt: '冻结路由也必须校验部署分类策略',
-      frozenRouteSnapshot: frozen,
-    }),
-    /Frozen RouteSnapshot violates the deployment data-class policy/
-  );
+  const replayed = await app.submit({
+    workspaceId: 'workspace-frozen-policy',
+    actorId: 'owner-frozen-policy',
+    idempotencyKey: 'frozen-medical-policy',
+    operation: 'copy.generate',
+    selection: { mode: 'fixed', catalogModelId: 'copy-domestic' },
+    dataClass: ['medical'],
+    prompt: '已受理冻结路由不得重读后发部署策略',
+    frozenRouteSnapshot: frozen,
+  });
+  assert.equal(replayed.snapshot.id, frozen.id);
+  assert.deepEqual(replayed.snapshot.dataClass, ['medical']);
 });
 
 test('frozen routes execute the credential, policy, price, channel, and model version that were recorded', async () => {
