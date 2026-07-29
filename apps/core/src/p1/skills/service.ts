@@ -10,6 +10,7 @@ import {
 import { P1DomainError } from '../foundation/domain.js';
 import type { SkillRepository } from './repository.js';
 import {
+  validateSkillPermissionAuthority,
   validateSkillFrontmatter,
   validateSkillPackagePaths,
 } from './skill-format.js';
@@ -130,6 +131,7 @@ export class SkillService {
     let governance: SkillGovernanceSidecar;
     try {
       governance = parseSkillGovernance(input.governance);
+      validateSkillPermissionAuthority(manifest, governance.allowedTools);
     } catch (error) {
       fail(
         `Skill governance sidecar is invalid: ${
@@ -1005,7 +1007,14 @@ function validateChildEffect(
     contextRefs: string[];
   },
 ) {
-  if (!revision.governance.allowedTools.includes(call.toolId)) {
+  const allowedTools =
+    revision.formatVersion === 1
+      ? revision.governance.allowedTools
+      : validateSkillPermissionAuthority(
+          revision.manifest,
+          revision.governance.allowedTools,
+        );
+  if (!allowedTools.includes(call.toolId)) {
     fail(`Tool "${call.toolId}" is outside the Skill allowlist.`);
   }
   const allowedScopes = new Set(revision.governance.contextScopes);

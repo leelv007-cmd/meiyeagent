@@ -1521,7 +1521,10 @@ test('skill_define separates frontmatter, governance, and trusted prompt fallbac
           metadata: { author: 'meiye' },
           name: 'daily-beauty-context',
         },
-        governance: governance(),
+        governance: {
+          ...governance(),
+          allowedTools: ['read_context', 'check'],
+        },
         instruction: 'Use grounded daily context.',
         name: 'Daily beauty context',
         presentationPolicy: 'backend_only',
@@ -1550,8 +1553,63 @@ test('skill_define separates frontmatter, governance, and trusted prompt fallbac
     metadata: { author: 'meiye' },
     name: 'daily-beauty-context',
   });
-  assert.deepEqual(stored?.governance, governance());
+  assert.deepEqual(stored?.governance, {
+    ...governance(),
+    allowedTools: ['read_context', 'check'],
+  });
   assert.equal(stored?.prompt.fallbackContent, promptContent);
+});
+
+test('skill revision rejects divergent frontmatter and sidecar tool permissions', async () => {
+  const repository = new MemorySkillRepository();
+  const promptContent = 'Trusted prompt snapshot from Langfuse.';
+  const service = new SkillService(repository, () => NOW, {
+    async capture() {
+      return {
+        content: promptContent,
+        contentHash: sha256(promptContent),
+        isFallback: false,
+        label: 'production',
+        name: 'harness/intent-naming',
+        source: 'langfuse',
+        version: '42',
+      };
+    },
+  });
+  await service.defineCatalogEntry({
+    actorId: 'operator-permission-authority',
+    name: 'Permission authority',
+    presentationPolicy: 'backend_only',
+    skillId: 'skill.permission-authority',
+  });
+
+  await assert.rejects(
+    service.draftRevision({
+      actorId: 'operator-permission-authority',
+      expectedRevision: null,
+      governance: {
+        ...governance(),
+        allowedTools: ['check'],
+      },
+      instruction: 'Use only the official Skill tool permission.',
+      manifest: {
+        'allowed-tools': 'read_context',
+        description: 'Rejects conflicting tool permission declarations.',
+        name: 'permission-authority',
+      },
+      promptReference: {
+        contentHash: sha256(promptContent),
+        name: 'harness/intent-naming',
+        version: '42',
+      },
+      skillId: 'skill.permission-authority',
+    }),
+    /allowed-tools is the single permission authority/u,
+  );
+  assert.equal(
+    await repository.getRevisionHead('skill.permission-authority'),
+    null,
+  );
 });
 
 test('stage resolution uses the frozen prompt fallback with explicit lineage when prompt authority is unavailable', async () => {
@@ -2225,7 +2283,7 @@ test('rollback rejects the same revision and supersedes a binding on the same wo
 
 function governance() {
   return {
-    allowedTools: ['read_context', 'check'],
+    allowedTools: [],
     budget: {
       maxChildEffects: 2,
       maxCostCents: 5,
@@ -2438,6 +2496,7 @@ async function createAcceptedEffectSkill(
     instruction,
     packagePaths,
     manifest: {
+      'allowed-tools': 'tool.fact.read tool.quality.score',
       description: 'Exercises the bounded Skill effect contract.',
       name:
         executionMode === 'provider_native'

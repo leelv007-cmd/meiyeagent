@@ -187,6 +187,28 @@ export function validateSkillFrontmatter(value: unknown): SkillFrontmatter {
   };
 }
 
+export function validateSkillPermissionAuthority(
+  frontmatter: SkillFrontmatter,
+  sidecarAllowedTools: readonly string[],
+) {
+  const allowedTools = frontmatter['allowed-tools']
+    ?.split(/\s+/u)
+    .filter(Boolean) ?? [];
+  const normalizedSidecar = sidecarAllowedTools.map((tool) => tool.trim());
+  if (
+    normalizedSidecar.some((tool) => !tool) ||
+    new Set(allowedTools).size !== allowedTools.length ||
+    new Set(normalizedSidecar).size !== normalizedSidecar.length ||
+    [...allowedTools].sort().join('\0') !==
+      [...normalizedSidecar].sort().join('\0')
+  ) {
+    throw new Error(
+      'Skill frontmatter allowed-tools is the single permission authority.',
+    );
+  }
+  return allowedTools;
+}
+
 function requiredString(value: unknown, field: string) {
   if (typeof value !== 'string' || !value.trim()) {
     throw new Error(`Skill frontmatter ${field} is required.`);

@@ -5,7 +5,10 @@ import { z } from 'zod';
 
 import { P1DomainError } from '../foundation/domain.js';
 import type { SkillRepository } from './repository.js';
-import { validateSkillFrontmatter } from './skill-format.js';
+import {
+  validateSkillFrontmatter,
+  validateSkillPermissionAuthority,
+} from './skill-format.js';
 import { parseSkillGovernance } from './skill-governance.js';
 import type {
   AuditedSkillBinding,
@@ -793,27 +796,32 @@ function cloneRevisionRow(row: RevisionRow): SkillRevision {
         'Skill revision v2 sidecar columns are incomplete.',
       );
     }
-    return decodePersistedRevision(() => ({
-      ...revisionPayloadV2Schema.parse(structuredClone(row.payload)),
-      manifest: validateSkillFrontmatter(
+    return decodePersistedRevision(() => {
+      const manifest = validateSkillFrontmatter(
         structuredClone(row.frontmatter),
-      ),
-      governance: parseSkillGovernance(
+      );
+      const governance = parseSkillGovernance(
         structuredClone(row.governance_sidecar),
-      ),
-      prompt: persistedPromptSchema.parse({
-        contentHash: row.prompt_content_hash,
-        fallbackContent: row.prompt_fallback_content,
-        isFallback: row.prompt_is_fallback,
-        label: row.prompt_label,
-        name: row.prompt_name,
-        source: row.prompt_source,
-        version: row.prompt_version,
-        ...(row.prompt_fallback_reason
-          ? { fallbackReason: row.prompt_fallback_reason }
-          : {}),
-      }),
-    }));
+      );
+      validateSkillPermissionAuthority(manifest, governance.allowedTools);
+      return {
+        ...revisionPayloadV2Schema.parse(structuredClone(row.payload)),
+        manifest,
+        governance,
+        prompt: persistedPromptSchema.parse({
+          contentHash: row.prompt_content_hash,
+          fallbackContent: row.prompt_fallback_content,
+          isFallback: row.prompt_is_fallback,
+          label: row.prompt_label,
+          name: row.prompt_name,
+          source: row.prompt_source,
+          version: row.prompt_version,
+          ...(row.prompt_fallback_reason
+            ? { fallbackReason: row.prompt_fallback_reason }
+            : {}),
+        }),
+      };
+    });
   }
   return normalizeLegacyRevision(row.payload);
 }
