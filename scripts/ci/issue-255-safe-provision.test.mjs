@@ -1,18 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-const localProvisioner =
-  '/Users/bin/.codex/monitors/issue-255-safe-provision.mjs';
-const provisioner =
-  process.env.ISSUE_255_SAFE_PROVISIONER_PATH?.trim() ||
-  (existsSync(localProvisioner)
-    ? localProvisioner
-    : fileURLToPath(
-        new URL('./issue-255-safe-provision.mjs', import.meta.url),
-      ));
+const provisioner = fileURLToPath(
+  new URL('./issue-255-safe-provision.mjs', import.meta.url),
+);
 
 test('issue 255 provisioner rejects the legacy unconditional cleanup mode', () => {
   const hiddenPassword = 'issue-255-test-password';
