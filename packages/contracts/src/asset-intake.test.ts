@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   assetIntakeBatchSchema,
+  assetIntakeBatchInputSchema,
   assetIntakeCapabilitySchema,
   assetIntakeDecisionEventSchema,
   confirmedFactReferenceSchema,
   finalizeStoreIntakeCommandSchema,
-  recordAssetIntakeBatchCommandSchema,
 } from './asset-intake.js';
 
 const source = {
@@ -137,7 +137,7 @@ test('asset intake corrections and confirmations are append-only typed events', 
   });
 });
 
-test('asset intake commands cannot forge server-owned workspace or creation time', () => {
+test('asset intake batch inputs cannot forge server-owned workspace or creation time', () => {
   const command = {
     batchId: 'batch-command',
     taskId: 'task-command',
@@ -164,15 +164,15 @@ test('asset intake commands cannot forge server-owned workspace or creation time
       },
     ],
   };
-  assert.deepEqual(recordAssetIntakeBatchCommandSchema.parse(command), command);
+  assert.deepEqual(assetIntakeBatchInputSchema.parse(command), command);
   assert.throws(() =>
-    recordAssetIntakeBatchCommandSchema.parse({
+    assetIntakeBatchInputSchema.parse({
       ...command,
       workspaceId: 'forged-workspace',
     }),
   );
   assert.throws(() =>
-    recordAssetIntakeBatchCommandSchema.parse({
+    assetIntakeBatchInputSchema.parse({
       ...command,
       createdAt: source.capturedAt,
     }),

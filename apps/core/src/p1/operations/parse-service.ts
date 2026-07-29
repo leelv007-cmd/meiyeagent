@@ -11,7 +11,7 @@ import {
   prepareManualAssetDraftCommandSchema,
   type AssetDraft,
   type AssetIntakeGuidanceConfig,
-  type ParseAssetBatchCommand,
+  type ParseAssetBatchInput,
   type ParsedDocument,
   type ParseOwnedAsset,
   type ParseSingleAssetCommand,
@@ -609,7 +609,7 @@ export class ParseService {
 
   async startBatch(
     context: { workspaceId: string },
-    command: ParseAssetBatchCommand,
+    command: ParseAssetBatchInput,
   ) {
     if (!this.jobs) {
       throw new ParseServiceError(

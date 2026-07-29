@@ -5,7 +5,7 @@ import {
   finalizeStoreIntakeCommandSchema,
   type AssetIntakeBatch,
   type FinalizeStoreIntakeCommand,
-  type RecordAssetIntakeBatchCommand,
+  type AssetIntakeBatchInput,
   type StoreFact,
   type StoreProfile,
   type StoreProfilePatch,
@@ -704,7 +704,7 @@ export class StoreIntakeFinalizer {
 
 function normalizeInlineBatch(
   workspaceId: string,
-  batch: RecordAssetIntakeBatchCommand,
+  batch: AssetIntakeBatchInput,
   confirmations: FinalizeStoreIntakeCommand['confirmations'],
 ) {
   return assetIntakeBatchSchema.parse({

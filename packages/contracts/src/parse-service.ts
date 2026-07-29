@@ -228,7 +228,7 @@ export const parseSingleAssetCommandSchema = z
   })
   .strict();
 
-export const parseAssetBatchCommandSchema = z
+export const parseAssetBatchInputSchema = z
   .object({
     taskId: idSchema,
     sources: z.array(parseSourceAssetInputSchema).min(2).max(200),
@@ -251,25 +251,6 @@ export const prepareManualAssetDraftCommandSchema = z
     source: parseSourceAssetInputSchema,
     fields: z.array(z.object({ key: idSchema, value: z.json() }).strict()),
     factCandidates: z.array(storeFactCandidateDraftSchema),
-  })
-  .strict();
-
-export const promoteAssetDraftCommandSchema = z
-  .object({
-    draftId: idSchema,
-    draftRevision: z.number().int().positive(),
-    batchId: idSchema,
-  })
-  .strict();
-
-export const parseTaskViewQuerySchema = z
-  .object({ taskId: idSchema })
-  .strict();
-
-export const assetDraftViewQuerySchema = z
-  .object({
-    draftId: idSchema,
-    revision: z.number().int().positive().optional(),
   })
   .strict();
 
@@ -349,9 +330,7 @@ export type ParseTask = z.infer<typeof parseTaskSchema>;
 export type ParseSingleAssetCommand = z.infer<
   typeof parseSingleAssetCommandSchema
 >;
-export type ParseAssetBatchCommand = z.infer<
-  typeof parseAssetBatchCommandSchema
->;
+export type ParseAssetBatchInput = z.infer<typeof parseAssetBatchInputSchema>;
 export type PrepareManualAssetDraftCommand = z.infer<
   typeof prepareManualAssetDraftCommandSchema
 >;

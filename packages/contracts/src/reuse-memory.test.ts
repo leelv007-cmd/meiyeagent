@@ -2,35 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   assetRevisionSchema,
-  createReuseTaskCommandSchema,
   preferenceCandidateSchema,
   preferenceSignalSchema,
   preferenceSchema,
-  recordPreferenceSignalCommandSchema,
   reuseTaskSeedSchema,
 } from './reuse-memory.js';
-
-test('reuse Task command carries only explicitly selected current assets', () => {
-  assert.deepEqual(
-    createReuseTaskCommandSchema.parse({
-      taskId: 'task-reuse-a',
-      assetId: 'series-a',
-      assetRevision: 1,
-      assetIds: ['asset-current'],
-      factScope: { storeId: 'store-a', serviceId: 'scalp-clean' },
-      rawInput: 'Use current facts and assets.',
-    }),
-    {
-      taskId: 'task-reuse-a',
-      assetId: 'series-a',
-      assetRevision: 1,
-      assetIds: ['asset-current'],
-      factScope: { storeId: 'store-a', serviceId: 'scalp-clean' },
-      rawInput: 'Use current facts and assets.',
-      workflowRevision: 0,
-    },
-  );
-});
 
 test('reuse task seeds carry provenance and structure but reject copied deliverable content', () => {
   const seed = {
@@ -315,27 +291,23 @@ test('scope decisions reject silent widening and cross-store changes', () => {
   );
 });
 
-test('preference signals are task-bound records with server-owned workspace and time', () => {
-  const command = {
+test('preference signals remain task-bound domain records', () => {
+  const signal = {
     signalId: 'signal-a',
+    workspaceId: 'workspace-a',
     decisionId: 'decision-a',
     taskId: 'task-a',
     semanticKey: 'tone.less-promotional',
     value: true,
     defaultScope: { storeId: 'store-a' },
     kind: 'modified' as const,
-  };
-  assert.deepEqual(recordPreferenceSignalCommandSchema.parse(command), command);
-  const signal = {
-    ...command,
-    workspaceId: 'workspace-a',
     occurredAt: '2026-07-18T04:00:00.000Z',
   };
   assert.deepEqual(preferenceSignalSchema.parse(signal), signal);
   assert.throws(() =>
-    recordPreferenceSignalCommandSchema.parse({
-      ...command,
-      workspaceId: 'forged-workspace',
+    preferenceSignalSchema.parse({
+      ...signal,
+      taskId: '',
     }),
   );
 });

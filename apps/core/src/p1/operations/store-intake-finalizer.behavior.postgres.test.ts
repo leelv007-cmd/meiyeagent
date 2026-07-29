@@ -5,7 +5,7 @@ import test from 'node:test';
 import type {
   AssetIntakeBatch,
   FinalizeStoreIntakeCommand,
-  RecordAssetIntakeBatchCommand,
+  AssetIntakeBatchInput,
   StoreProfilePatch,
 } from '@meiye/contracts';
 import { Pool } from 'pg';
@@ -2512,7 +2512,7 @@ async function seedStore(environment: Environment) {
 function finalizeInput(
   workspaceId: string,
   overrides: {
-    candidate?: RecordAssetIntakeBatchCommand['candidates'][number];
+    candidate?: AssetIntakeBatchInput['candidates'][number];
     candidateStoreId?: string;
     confirmation?: FinalizeStoreIntakeCommand['confirmations'][number];
     profilePatch?: StoreProfilePatch;
@@ -2684,7 +2684,7 @@ function appendMappedPatchConfirmations(
 
 function inlineBatch(
   input: FinalizeStoreIntakeCommand,
-): RecordAssetIntakeBatchCommand {
+): AssetIntakeBatchInput {
   assert.ok('candidates' in input.batch);
   return input.batch;
 }

@@ -6,6 +6,7 @@ import {
   CONTENT_PACKAGE_QUERY_SCHEMAS,
   requiredP1Capability,
 } from '@meiye/contracts';
+import * as contracts from '@meiye/contracts';
 import type { P1Context } from '../foundation/domain.js';
 import type { OperationsApplicationService } from './application-service.js';
 import { AssetMemoryFoundationModule } from './asset-memory-foundation-module.js';
@@ -119,6 +120,30 @@ const retiredContextQueries = [
   'context_bundle_fence',
 ] as const;
 
+const retiredAssetMemoryContractExports = [
+  'parseAssetBatchCommandSchema',
+  'promoteAssetDraftCommandSchema',
+  'recordAssetIntakeBatchCommandSchema',
+  'correctAssetIntakeFactCommandSchema',
+  'rejectAssetIntakeCandidateCommandSchema',
+  'proposeReusableAssetCommandSchema',
+  'confirmReusableAssetCommandSchema',
+  'deactivateSeriesCommandSchema',
+  'createReuseTaskCommandSchema',
+  'recordPreferenceSignalCommandSchema',
+  'proposePreferenceCommandSchema',
+  'confirmPreferenceCommandSchema',
+  'revokePreferenceCommandSchema',
+  'parseTaskViewQuerySchema',
+  'assetDraftViewQuerySchema',
+  'assetIntakeViewQuerySchema',
+  'assetIntakeMissingFactKeysQuerySchema',
+  'reusableAssetViewQuerySchema',
+  'reuseTaskSeedQuerySchema',
+  'seriesSuggestionsQuerySchema',
+  'preferenceViewQuerySchema',
+] as const;
+
 test('Issue 257 removes retired E actions from public contracts', () => {
   for (const action of [
     'attach_content_package_generation',
@@ -138,6 +163,9 @@ test('Issue 257 removes retired E actions from public contracts', () => {
     'content_package_versions',
   ]) {
     assert.equal(Object.hasOwn(CONTENT_PACKAGE_QUERY_SCHEMAS, action), false);
+  }
+  for (const exportName of retiredAssetMemoryContractExports) {
+    assert.equal(Object.hasOwn(contracts, exportName), false);
   }
 });
 

@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { storeFactScopeSchema } from './context-bundle.js';
 
 const idSchema = z.string().trim().min(1);
 const timestampSchema = z.iso.datetime();
@@ -342,82 +341,12 @@ export const preferenceSchema = z
   .strict()
   .superRefine(validateScopeDecision);
 
-export const proposeReusableAssetCommandSchema = reusableAssetCandidateSchema
-  .omit({ workspaceId: true, status: true, createdAt: true, createdBy: true })
-  .strict();
-
-export const confirmReusableAssetCommandSchema = z
-  .object({
-    candidateId: idSchema,
-    expectedAssetRevision: z.number().int().nonnegative(),
-    revisionId: idSchema,
-    nextSuggestions: assetRevisionSchema.shape.nextSuggestions,
-    finalScope: reusableAssetScopeSchema.optional(),
-    scopeDecisionId: idSchema.optional(),
-  })
-  .strict();
-
-export const deactivateSeriesCommandSchema = z
-  .object({
-    assetId: idSchema,
-    revisionId: idSchema,
-    reason: z.string().trim().min(1),
-  })
-  .strict();
-
-export const createReuseTaskCommandSchema = z
-  .object({
-    taskId: idSchema,
-    assetId: idSchema,
-    assetRevision: z.number().int().positive(),
-    assetIds: z.array(idSchema).max(50).default([]),
-    suggestionId: idSchema.optional(),
-    rawInput: z.string().trim().min(1).max(10_000),
-    workflowRevision: z.number().int().nonnegative().default(0),
-    factScope: storeFactScopeSchema.optional(),
-  })
-  .strict();
-
-export const recordPreferenceSignalCommandSchema = preferenceSignalSchema
-  .omit({ workspaceId: true, occurredAt: true })
-  .strict();
-
-export const proposePreferenceCommandSchema = preferenceCandidateSchema
-  .omit({ workspaceId: true, status: true, proposedAt: true })
-  .strict();
-
-export const confirmPreferenceCommandSchema = z
-  .object({
-    candidateId: idSchema,
-    preferenceId: idSchema,
-    expectedRevision: z.number().int().nonnegative(),
-    positiveExamples: z.array(z.string().trim().min(1)),
-    negativeExamples: z.array(z.string().trim().min(1)),
-    finalScope: reusableAssetScopeSchema.optional(),
-    scopeDecisionId: idSchema.optional(),
-  })
-  .strict();
-
-export const revokePreferenceCommandSchema = z
-  .object({
-    preferenceId: idSchema,
-    expectedRevision: z.number().int().positive(),
-  })
-  .strict();
-
-export const reusableAssetViewQuerySchema = z
-  .object({ assetId: idSchema })
-  .strict();
-
 export const reusableAssetRevisionQuerySchema = z
   .object({
     assetId: idSchema,
     revision: z.number().int().positive(),
   })
   .strict();
-
-export const preferenceViewQuerySchema = z.object({}).strict();
-export const seriesSuggestionsQuerySchema = z.object({}).strict();
 
 export type ReusableAssetScope = z.infer<typeof reusableAssetScopeSchema>;
 export type ReusableScopeDecision = z.infer<

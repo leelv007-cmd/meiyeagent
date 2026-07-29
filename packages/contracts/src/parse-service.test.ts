@@ -4,7 +4,7 @@ import test from 'node:test';
 import {
   assetDraftSchema,
   assetDraftViewSchema,
-  parseAssetBatchCommandSchema,
+  parseAssetBatchInputSchema,
   parseTaskSchema,
 } from './parse-service.js';
 
@@ -110,7 +110,7 @@ test('single and batch task modes cannot silently swap cardinality', () => {
     }),
   );
   assert.throws(() =>
-    parseAssetBatchCommandSchema.parse({
+    parseAssetBatchInputSchema.parse({
       taskId: 'task-a',
       sources: [source('asset-a'), source('asset-a')],
     }),

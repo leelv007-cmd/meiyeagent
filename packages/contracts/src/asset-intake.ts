@@ -186,7 +186,7 @@ export const confirmedFactReferenceSchema = z
   })
   .strict();
 
-export const recordAssetIntakeBatchCommandSchema = assetIntakeBatchSchema
+export const assetIntakeBatchInputSchema = assetIntakeBatchSchema
   .omit({ workspaceId: true, createdAt: true })
   .strict();
 
@@ -199,14 +199,6 @@ export const recordAssetIntakeBatchCommandSchema = assetIntakeBatchSchema
  * travels on the price candidate's own `effectiveFrom` / `expiresAt`.
  * See docs/evidence/price-validity-intake-2026-07-28.md.
  */
-
-export const correctAssetIntakeFactCommandSchema = z
-  .object({
-    batchId: idSchema,
-    candidateId: idSchema,
-    correctedFact: storeFactCandidateDraftSchema,
-  })
-  .strict();
 
 export const confirmAssetIntakeFactCommandSchema = z
   .object({
@@ -224,7 +216,7 @@ export const persistedAssetIntakeBatchReferenceSchema = z
 export const finalizeStoreIntakeCommandSchema = z
   .object({
     batch: z.union([
-      recordAssetIntakeBatchCommandSchema,
+      assetIntakeBatchInputSchema,
       persistedAssetIntakeBatchReferenceSchema,
     ]),
     confirmations: z
@@ -301,26 +293,6 @@ export const finalizeStoreIntakeCommandSchema = z
     }
   });
 
-export const rejectAssetIntakeCandidateCommandSchema = z
-  .object({
-    batchId: idSchema,
-    candidateId: idSchema,
-    reason: z.string().trim().min(1),
-  })
-  .strict();
-
-export const assetIntakeViewQuerySchema = z
-  .object({ batchId: idSchema })
-  .strict();
-
-export const assetIntakeMissingFactKeysQuerySchema = z
-  .object({
-    bundleId: idSchema,
-    bundleRevision: z.number().int().positive().optional(),
-    requiredKeys: z.array(idSchema).max(100),
-  })
-  .strict();
-
 export type AssetIntakeCapability = z.infer<
   typeof assetIntakeCapabilitySchema
 >;
@@ -341,6 +313,6 @@ export type ConfirmedFactReference = z.infer<
 export type FinalizeStoreIntakeCommand = z.infer<
   typeof finalizeStoreIntakeCommandSchema
 >;
-export type RecordAssetIntakeBatchCommand = z.infer<
-  typeof recordAssetIntakeBatchCommandSchema
+export type AssetIntakeBatchInput = z.infer<
+  typeof assetIntakeBatchInputSchema
 >;
