@@ -9,6 +9,7 @@ import { cloudflare } from '@cloudflare/vite-plugin';
 import contentCollections from '@content-collections/vite';
 import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import { paraglideCompilerOptions } from './paraglide.config';
+import { paraglideDevHeartbeatPlugin } from './scripts/locale/dev-heartbeat-plugin';
 
 /**
  * Vite configuration
@@ -31,6 +32,11 @@ const config = defineConfig(({ command }) => ({
     }),
     tailwindcss(),
     contentCollections(),
+    // Heartbeat so `locale:compile` fails fast instead of rewriting
+    // src/locale/paraglide under a live dev server (#266). Registered even
+    // when PARAGLIDE_PRECOMPILED disables the compiler plugin — that dev
+    // server still reads the shared output directory.
+    paraglideDevHeartbeatPlugin(),
     process.env.PARAGLIDE_PRECOMPILED === 'true'
       ? null
       : paraglideVitePlugin(paraglideCompilerOptions),

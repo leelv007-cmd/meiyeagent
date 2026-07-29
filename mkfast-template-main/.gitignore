@@ -22,6 +22,9 @@ project.inlang/*
 !project.inlang/settings.json
 !project.inlang/messages/
 src/locale/paraglide
+# locale:compile mutex + dev-server heartbeat (#266), created at runtime
+src/locale/.paraglide.lock
+src/locale/.paraglide-dev.json
 
 # claude code
 .claude
