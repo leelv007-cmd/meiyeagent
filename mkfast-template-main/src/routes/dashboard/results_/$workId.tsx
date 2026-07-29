@@ -54,7 +54,19 @@ import {
 import { calibrateTerminalRevision } from '@/product/results/result-token-stream';
 import { projectResultShellPhase } from '@/product/results/result-shell-model';
 import { ResultCenterPage } from '@/product/results/result-center-page';
-import { ImageAdjustConfirmation } from '@/product/results/image-adjust-confirmation';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
+import {
+  projectExecutionConfirmCard,
+  projectExecutionCost,
+  projectExecutionParams,
+  createExecutionConfirmState,
+  openExecutionConfirm,
+} from '@/product/composer/execution-confirm-card';
+import { ExecutionConfirmCard } from '@/product/composer/execution-confirm-card-panel';
+import { projectExecutionCostFeedback } from '@/product/composer/execution-cost-feedback';
+import { ExecutionCostFeedbackLine } from '@/product/composer/execution-cost-feedback-line';
+import type { ExecutionCostFeedback } from '@/product/composer/execution-cost-feedback';
+import type { ComposerQuotaResource } from '@/product/composer/quota-blocking';
 import { createCanonicalAssistedHandoff } from '@/product/results/delivery-assisted-live';
 import type { AssistedReceipt } from '@/product/results/delivery-b3-types';
 import { buildCaptionText } from '@/product/results/delivery-full-package';
@@ -109,6 +121,9 @@ type PendingImageAdjust = {
   quote: ProductQuoteSnapshot;
   scope?: ResultAdjustCommand['scope'];
   source: ResultAdjustSource;
+  /** Carried so the confirm card can state the run in merchant language. */
+  aspectRatio?: string;
+  quantity?: number;
 };
 
 export type { ResultCenterSearch } from '@/product/results/result-center-search';
@@ -129,6 +144,10 @@ function ResultCenterRoutePage() {
   const [pendingImageAdjust, setPendingImageAdjust] =
     useState<PendingImageAdjust | null>(null);
   const [adjustBusy, setAdjustBusy] = useState(false);
+  // D-164⑥ 决定 B: backing out of a regeneration is an outcome too, and the
+  // merchant is owed a straight answer about what it cost.
+  const [adjustFeedback, setAdjustFeedback] =
+    useState<ExecutionCostFeedback | null>(null);
   const [adjustError, setAdjustError] = useState<string | undefined>();
   const [shellActionBusy, setShellActionBusy] = useState(false);
   const [shellActionError, setShellActionError] = useState<
@@ -1209,22 +1228,90 @@ function ResultCenterRoutePage() {
       supportedActionIds={supportedActionIds}
       adjustConfirmation={
         pendingImageAdjust ? (
-          <ImageAdjustConfirmation
-            busy={adjustBusy}
-            error={adjustError}
-            instruction={pendingImageAdjust.instruction}
-            onCancel={() => {
+          /*
+           * D-164⑥ 决定 A: a regeneration calls a model again, so it goes
+           * through the same card first-time generation goes through. Keeping
+           * a second confirmation component here would have meant two shapes
+           * for one decision — and the one it replaces put「4 CNY」in front of
+           * a shop owner, which D-109 puts out of merchant sight entirely.
+           */
+          <Dialog
+            onOpenChange={(nextOpen) => {
+              if (nextOpen) return;
               setPendingImageAdjust(null);
               setAdjustError(undefined);
+              setAdjustFeedback(
+                projectExecutionCostFeedback({ outcome: 'rejected' })
+              );
             }}
-            onConfirm={() => void confirmImageAdjust()}
-            quote={pendingImageAdjust.quote}
-            scope={pendingImageAdjust.scope}
-          />
+            open
+          >
+            {/*
+             * The dialog shell stays: this decision is modal today, and the
+             * merchant gets Escape and her focus back on the adjustment input
+             * afterwards. Only the body changed — one card shape for one
+             * decision (D-164⑥ 决定 A), not one shape per entry point.
+             */}
+            <DialogContent
+              aria-modal="true"
+              className="meiye-product-shell max-w-3xl"
+              data-product-modal="image-adjust-confirmation"
+              data-testid="image-adjust-confirmation"
+              finalFocus={() =>
+                document.getElementById('result-adjust-input') ?? false
+              }
+              showCloseButton={false}
+            >
+              <ExecutionConfirmCard
+                {...projectExecutionConfirmCard(
+                  openExecutionConfirm(createExecutionConfirmState(), {
+                    composerSnapshot: {
+                      draftRevisionId: pendingImageAdjust.derivedWorkId,
+                      lensId: 'image_text',
+                      sources: [],
+                      userText: pendingImageAdjust.instruction,
+                    },
+                    cost: projectExecutionCost({
+                      // The Result Center does not carry the entitlements
+                      // projection, so the card says what this run spends and
+                      // stays silent about the remaining balance.
+                      available: {},
+                      requirements: (
+                        pendingImageAdjust.quote.debitUnits ?? []
+                      ).map((unit) => ({
+                        cost: unit.quantity,
+                        resource: unit.resource as ComposerQuotaResource,
+                      })),
+                    }),
+                    params: projectExecutionParams({
+                      aspectRatio: pendingImageAdjust.aspectRatio ?? null,
+                      lensId: 'image_text',
+                      outputLabel: pendingImageAdjust.quote.outputLabel ?? null,
+                      quantity: pendingImageAdjust.quantity ?? null,
+                    }),
+                  }),
+                  {
+                    busy: adjustBusy,
+                    onConfirm: () => void confirmImageAdjust(),
+                    onReject: () => {
+                      setPendingImageAdjust(null);
+                      setAdjustError(undefined);
+                      setAdjustFeedback(
+                        projectExecutionCostFeedback({ outcome: 'rejected' })
+                      );
+                    },
+                    staleNotice: adjustError ?? null,
+                  }
+                )}
+              />
+            </DialogContent>
+          </Dialog>
         ) : adjustError ? (
           <p className="text-sm text-destructive" role="alert">
             {adjustError}
           </p>
+        ) : adjustFeedback ? (
+          <ExecutionCostFeedbackLine feedback={adjustFeedback} />
         ) : undefined
       }
       onAction={(action) => {
@@ -1386,10 +1473,15 @@ function ResultCenterRoutePage() {
             },
             quoteId
           );
+          setAdjustFeedback(null);
           setPendingImageAdjust({
+            ...(prepared.quoteIntent.aspectRatio
+              ? { aspectRatio: prepared.quoteIntent.aspectRatio }
+              : {}),
             derivedTaskId: prepared.task.id,
             derivedWorkId: prepared.work.id,
             instruction,
+            quantity: prepared.quoteIntent.quantity,
             quote,
             ...(scope ? { scope } : {}),
             source: adjustSource,

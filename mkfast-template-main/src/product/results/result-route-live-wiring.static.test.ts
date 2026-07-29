@@ -49,7 +49,9 @@ test('result route quotes and confirms adjustment before canonical submit', () =
   assert.match(route, /['"]result_adjust['"]/);
   assert.match(route, /['"]product-billing['"]/);
   assert.match(route, /['"]quote['"]/);
-  assert.match(route, /ImageAdjustConfirmation/);
+  // D-164⑥ 决定 A（#264FE 合入后解锁）: 就地纠偏与首次生成同一张卡，
+  // 不再有第二个确认组件。
+  assert.match(route, /ExecutionConfirmCard/);
   assert.match(route, /billingQuoteId/);
   assert.match(
     route,

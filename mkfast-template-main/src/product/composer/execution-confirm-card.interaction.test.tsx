@@ -120,6 +120,25 @@ describe('the card is a confirmation, not a settings form (D-159③)', () => {
   });
 });
 
+describe('a balance that has not loaded', () => {
+  it('still says what the run spends, and claims nothing about what is left', () => {
+    render(
+      <ExecutionConfirmCard
+        {...openCard(
+          {},
+          { available: {}, requirements: [{ cost: 2, resource: 'image' }] }
+        )}
+      />
+    );
+
+    const costLine = screen.getByTestId('execution-confirm-cost');
+    expect(costLine.textContent).toBe('本次用 2 张图片额度');
+    // Silence would be wrong here — this is the moment of committing — but so
+    // would a remaining figure nobody has read yet.
+    expect(costLine.textContent).not.toMatch(/还剩/u);
+  });
+});
+
 describe('a run the merchant cannot afford', () => {
   it('blocks 确认 but keeps 拒绝 and the reason on screen', () => {
     render(

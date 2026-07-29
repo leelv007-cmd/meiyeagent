@@ -25,6 +25,7 @@ import type { CreationLensId } from '@meiye/contracts';
 import type { ComposerInputSnapshot } from './brief-surface';
 import {
   projectQuotaPassiveView,
+  quotaSpendLabel,
   type ComposerQuotaResource,
   type QuotaRequirement,
 } from './quota-blocking';
@@ -294,10 +295,15 @@ export function projectExecutionCost(input: {
   });
   return {
     billingNote: input.billingNote ?? null,
-    // An unloaded balance makes the passive view go silent rather than print a
-    // half sentence. The card keeps that discipline instead of inventing a
-    // number to fill its own row.
-    notice: passive.visible ? passive.notice : '',
+    // The passive row stays silent until every balance has loaded, because a
+    // half sentence there reads as a whole one. The card cannot afford that
+    // silence — it is the moment of committing — so it falls back to the half
+    // it does know: what this run spends, with no claim about what is left.
+    notice: passive.visible
+      ? passive.notice
+      : input.requirements.length > 0
+        ? `本次用 ${quotaSpendLabel(input.requirements)}`
+        : '',
     short: passive.short,
     shortNotice: passive.shortNotice,
     units: input.requirements.map((requirement) => ({

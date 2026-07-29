@@ -198,9 +198,10 @@ test('mobile product portals inherit the product theme and clear the bottom navi
   const composerSheet = readSource(
     'src/product/composer/composer-bottom-sheet-ui.tsx'
   );
-  const imageAdjust = readSource(
-    'src/product/results/image-adjust-confirmation.tsx'
-  );
+  // The adjust confirmation is no longer a component of its own — D-164⑥ 决定 A
+  // put 就地纠偏 on the same card as first-time generation, so the dialog shell
+  // that carries these three guarantees now lives at the route that opens it.
+  const imageAdjust = readSource('src/routes/dashboard/results_/$workId.tsx');
   const dialog = readSource('src/components/ui/dialog.tsx');
   const select = readSource('src/components/ui/select.tsx');
   const toaster = readSource('src/components/shared/toaster.tsx');
