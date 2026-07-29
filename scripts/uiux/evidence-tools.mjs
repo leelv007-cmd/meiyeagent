@@ -46,7 +46,14 @@ const SECRET_RULES = [
     rule: 'private-key',
     pattern: /-----BEGIN (?:EC |OPENSSH |RSA )?PRIVATE KEY-----/,
   },
-  { rule: 'aws-access-key', pattern: /\bAKIA[0-9A-Z]{16}\b/ },
+  {
+    rule: 'aws-access-key',
+    pattern: /\bAKIA[0-9A-Z]{16}\b/,
+    // AWS publishes this value as its own non-functional documentation
+    // example. The harness diagnostics tests use it to prove a credential
+    // shaped like a real key still never reaches a log event.
+    ignoredLiterals: new Set(['AKIAIOSFODNN7EXAMPLE']),
+  },
   { rule: 'github-token', pattern: /\bgh[pousr]_[A-Za-z0-9]{20,}\b/ },
   { rule: 'slack-token', pattern: /\bxox[baprs]-[A-Za-z0-9-]{20,}\b/ },
   {

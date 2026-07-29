@@ -102,6 +102,24 @@ test('secret findings ignore an explicit all-x documentation placeholder', () =>
   );
 });
 
+test('the AWS documentation example is exempt but real key shapes are not', () => {
+  // The harness diagnostics tests deliberately carry a credential-shaped
+  // value to prove it never reaches a log event.
+  assert.deepEqual(
+    findSecretFindings([
+      { path: 'src/example.test.ts', text: "code: 'AKIAIOSFODNN7EXAMPLE',\n" },
+    ]),
+    []
+  );
+
+  assert.deepEqual(
+    findSecretFindings([
+      { path: 'src/example.ts', text: "const key = 'AKIA1234567890ABCDEF';\n" },
+    ]),
+    [{ path: 'src/example.ts', line: 1, rule: 'aws-access-key' }]
+  );
+});
+
 test('DeepSeek placeholder exemption still catches realistic keys', () => {
   const realisticKey = `sk-${'c'.repeat(32)}`;
   const findings = findSecretFindings([
