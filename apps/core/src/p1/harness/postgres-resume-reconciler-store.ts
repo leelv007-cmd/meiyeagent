@@ -32,11 +32,12 @@ export class PostgresHarnessResumeReconcilerStore
       idempotency_key: string;
       payload: unknown;
       question_id: string;
-      request: HarnessWorkflowInput;
+      request: HarnessWorkflowInput | null;
       resolution_source: 'decision' | 'late_answer' | 'system_default';
-      task_id: string;
+      runtime_task_id: string;
+      task_id: string | null;
       workflow_revision: string;
-      workspace_id: string;
+      workspace_id: string | null;
     }>(
       `with ready as (
          select events.id
@@ -77,17 +78,23 @@ export class PostgresHarnessResumeReconcilerStore
               events.question_id,
               requests.request,
               events.resolution_source,
+              events.task_id as runtime_task_id,
               requests.workflow_id as task_id,
               events.workflow_revision::text as workflow_revision,
               requests.request->>'workspaceId' as workspace_id
        from claimed events
-       join harness_runtime.task_requests requests
+       left join harness_runtime.task_requests requests
          on requests.runtime_id=events.task_id
        order by events.created_at, events.id`,
       [limit, claimId, eventId]
     );
     return result.rows.map((row) => {
       try {
+        if (!row.task_id || !row.workspace_id || !row.request) {
+          throw new Error(
+            'A Harness resume event requires an owning task request.',
+          );
+        }
         const payload = record(row.payload);
         if (payload?.kind === 'harness_interaction_resolution') {
           if (row.resolution_source === 'late_answer') {
@@ -138,8 +145,8 @@ export class PostgresHarnessResumeReconcilerStore
           kind: 'malformed' as const,
           claimId,
           eventId: row.event_id,
-          workspaceId: row.workspace_id,
-          taskId: row.task_id,
+          workspaceId: row.workspace_id ?? '',
+          taskId: row.task_id ?? row.runtime_task_id,
         };
       }
     });

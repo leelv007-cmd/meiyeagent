@@ -139,6 +139,7 @@ test(
     const workspaceId = `interaction-workspace-${suffix}`;
     const runId = `interaction-run-${suffix}`;
     const runtimeId = harnessRuntimeId(workspaceId, runId);
+    const orphanEventId = `orphan-interaction-event-${suffix}`;
     const request = askMerchantQuestionRequestSchema.parse({
       requestId: `interaction-request-${suffix}`,
       runId,
@@ -875,6 +876,26 @@ test(
           }),
         ],
       );
+      await pool.query(
+        `insert into harness_runtime.decision_events
+           (id, task_id, question_id, workflow_revision, idempotency_key,
+            payload_fingerprint, payload, resolution_source, resume_status,
+            created_at)
+         values ($1,$2,$3,$4,$5,$6,$7::jsonb,'decision','pending',
+                 now() - interval '2 minutes')`,
+        [
+          orphanEventId,
+          `orphan-runtime-${suffix}`,
+          `orphan-question-${suffix}`,
+          1,
+          `orphan-answer-${suffix}`,
+          fingerprintValue({ orphan: true }),
+          JSON.stringify({
+            kind: 'harness_interaction_resolution',
+            schemaVersion: 'v1',
+          }),
+        ],
+      );
 
       const reconciled: unknown[] = [];
       const reconciler = new HarnessResumeReconciler(
@@ -888,7 +909,7 @@ test(
           },
         },
       );
-      assert.deepEqual(await reconciler.runOnce(), { resumed: 1, failed: 1 });
+      assert.deepEqual(await reconciler.runOnce(), { resumed: 1, failed: 2 });
       assert.deepEqual(await reconciler.runOnce(), { resumed: 0, failed: 0 });
       assert.equal(reconciled.length, 1);
       assert.deepEqual(reconciled[0], {
@@ -927,7 +948,22 @@ test(
         ).rows[0]?.resume_status,
         'invalid',
       );
+      assert.equal(
+        (
+          await pool.query<{ resume_status: string }>(
+            `select resume_status
+               from harness_runtime.decision_events
+              where id=$1`,
+            [orphanEventId],
+          )
+        ).rows[0]?.resume_status,
+        'invalid',
+      );
     } finally {
+      await pool.query(
+        'delete from harness_runtime.decision_events where id=$1',
+        [orphanEventId],
+      );
       await pool.query(
         `delete from harness_runtime.langfuse_outbox
           where audit_id in (
