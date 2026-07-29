@@ -2633,7 +2633,14 @@ export function ComposerHome({
             );
           }}
           onRefresh={product.refresh}
-          onStart={() => focusComposerIntentInput()}
+          onStart={() => {
+            // A completed run can still be leaving its mutation state while the
+            // next-action card is already visible. Try now, then retry when that
+            // pending state clears so the merchant never lands on an enabled but
+            // unfocused prompt.
+            focusIntentAfterPrefillRef.current = true;
+            focusComposerIntentInput();
+          }}
           state={product.state}
         />
       </section>
