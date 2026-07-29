@@ -1,6 +1,6 @@
 # Issue 246 Six-Grid Evidence
 
-Status: working evidence for local committed `issue/246@74bf84a3`, rebased on
+Status: working evidence for local committed `issue/246@e2836679`, rebased on
 `main@c62fa6aa`. This document is deliberately not a closeout claim. A cell is
 `OPEN` when the current runtime evidence does not prove it.
 
@@ -14,7 +14,7 @@ Status: working evidence for local committed `issue/246@74bf84a3`, rebased on
 | Current prompt fallback/replay/production-loop focused behavior tests | 87 pass, 0 fail, 0 skip |
 | Skill schema registry focused tests | 4 pass, 0 fail, 0 skip |
 | Changed PostgreSQL Harness, Model Supply, and Skill suites | 27 pass, 0 fail, 0 skip |
-| Current isolated PostgreSQL Skill/fallback/frozen-restart gates | 8 pass, 0 fail, 0 skip |
+| Current isolated PostgreSQL Skill/fallback/frozen-restart/outbox-ops gates | 9 pass, 0 fail, 0 skip |
 | #266 upstream locale synchronization assertions after rebase | 10 pass, 0 fail, 0 skip |
 | DBOS five-stage frozen-lineage smoke after `8a512b4a` | 1 pass, 0 fail, 0 skip |
 | Core typecheck | exit 0 |
@@ -51,6 +51,7 @@ closeout blocker.
 | Strict/pilot prompt policy | `LANGFUSE_PROMPT_POLICY` accepts only `strict` or `pilot` | Default is strict; no `APP_ENV` expansion | API and worker startup call the same resolver | Both production entry points are covered | Missing strict configuration fails startup; explicit pilot falls back | Pilot fallback is an explicit frozen fact and warning | PASS |
 | Prompt replay freeze | Request snapshot stores prompt revision refs | All 14 refs are normalized and compared | workflow replay rejects version/hash drift | DBOS workflow reads frozen refs | Workflow and DBOS smoke execute replay | Decision trace and DBOS step output retain prompt lineage | PASS |
 | Langfuse fallback audit | `langfuse_prompt_fallback` reuses the existing Harness audit event shape | Admission/direct/Canvas/mapper share a content-free prompt-reference port | API, legacy runtime, worker, and mapper inject `PostgresHarnessStore`; API owns one unconditional non-overlapping outbox loop | Real admission, direct Model Supply, Canvas preparation, and destination mapping reach the port before provider work | Behavior tests execute each fallback path; a local HTTP 503 drives all 14 pilot fallbacks through the real resolver and admission path before workflow start | Isolated PostgreSQL proves 14 audit/outbox rows are committed before start and content-free; this is local outage evidence, not remote/live Langfuse proof | PASS for local fallback persistence; remote delivery and live tracing remain OPEN |
+| Langfuse outbox recovery operations | Existing replay/discard methods enforce `dead_letter` as the only source state | The production CLI dispatches only `replay` or `discard` to those methods | Runtime-scoped audit IDs preserve workspace isolation | `pnpm langfuse:outbox:ops` reaches the production store methods | Isolated PostgreSQL executes dead-letter replay, discard, invalid-state rejection, and logical-ID rejection | Replay resets attempts/error/timing to a claimable queued row; discard is terminal; a second workspace remains untouched | PASS |
 | Prompt-bound Model Supply execution | Prompt binding/reference contracts contain name, version, hash, label, source, and fallback fact | Fixed operation-to-prompt mapping rejects unknown/drifted bindings | `prepareSubmission()` freezes before provider work; Canvas prepares before enqueue | Foundation, direct Model Supply, Canvas, note exact-text, and mapper paths are production wired | Behavior tests execute each path; resolver failure stops provider I/O and provider retry reuses one binding | RouteSnapshot/Canvas outbox retain the prompt reference; mapper fallback is audited, but non-fallback mapper lineage and most stage call traces are not persisted | PARTIAL: frozen provider execution passes; complete per-invocation tracing remains OPEN |
 | Production-wiring negative library | Five named failure modes are a closed test inventory | Test suite snapshots the exact five names | Each negative uses the real registry/service/module seam | Foundation entry is used for the positive command behavior | All five negative behaviors execute | Persistence is asserted where the scenario owns persistence | PASS |
 | Failure-semantics inventory | Review document lists current and target semantics | Delivery artifact is committed under `docs/reviews` | N/A: inventory only | Review artifact is readable | Current code paths were inspected | N/A: remediation is explicitly outside #246 | PASS as inventory |
@@ -83,6 +84,9 @@ pnpm --filter @meiye/core exec tsx --test \
 pnpm --filter @meiye/core exec tsx --test --test-concurrency=1 \
   --test-name-pattern='prompt fallback audit reaches PostgreSQL|detached prompt audit reaches PostgreSQL|local Langfuse HTTP 503 persists pilot fallbacks before Harness workflow start' \
   src/p1/harness/postgres-store.postgres.test.ts
+
+pnpm --filter @meiye/core exec tsx --test --test-concurrency=1 \
+  src/p1/harness/langfuse-outbox-ops.postgres.test.ts
 ```
 
 Static compilation:
