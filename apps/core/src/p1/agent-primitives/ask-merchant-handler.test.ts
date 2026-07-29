@@ -22,10 +22,16 @@ const serverContext: AgentPrimitiveServerContext = {
 
 test('ask_merchant returns after the nonblocking request is registered without waiting for an answer', async () => {
   const unresolvedAnswer = new Promise<never>(() => {});
+  let releaseRegistration: () => void = () =>
+    assert.fail('registration release was not initialized');
+  const registration = new Promise<void>((resolve) => {
+    releaseRegistration = resolve;
+  });
   const requests: Parameters<MerchantQuestionRequestPort['request']>[0][] = [];
   const handler = new AskMerchantPrimitiveHandler({
     async request(input) {
       requests.push(input);
+      await registration;
       return {
         answer: unresolvedAnswer,
         requestRef: 'merchant-question:question-1',
@@ -33,18 +39,29 @@ test('ask_merchant returns after the nonblocking request is registered without w
     },
   });
 
-  const result = await handler.execute({
-    input: {
-      options: [
-        {
-          description: 'Feature the current introductory package.',
-          label: 'New customer offer',
-        },
-      ],
-      question: 'Which offer should this post feature?',
-    },
-    serverContext,
-  });
+  let settled = false;
+  const pending = handler
+    .execute({
+      input: {
+        options: [
+          {
+            description: 'Feature the current introductory package.',
+            label: 'New customer offer',
+          },
+        ],
+        question: 'Which offer should this post feature?',
+      },
+      serverContext,
+    })
+    .then((result) => {
+      settled = true;
+      return result;
+    });
+
+  await Promise.resolve();
+  assert.equal(settled, false);
+  releaseRegistration();
+  const result = await pending;
 
   assert.deepEqual(result, {
     requestRef: 'merchant-question:question-1',

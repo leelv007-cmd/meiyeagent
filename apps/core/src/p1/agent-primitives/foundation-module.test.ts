@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import type { QuestionCard } from '@meiye/contracts';
+
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
 import type { FoundationStore } from '../foundation/ports.js';
 import {
@@ -28,6 +30,30 @@ const observability = {
   promptVersion: 'marketing/copy@v4',
   scene: 'copy.generate',
   skillRevision: 'copywriter@rev-17',
+};
+
+const question: QuestionCard = {
+  freeText: {
+    enabled: true,
+    placeholder: 'Tell us what should lead.',
+  },
+  options: [
+    {
+      description: 'Feature the current introductory package.',
+      id: 'offer-new-customer',
+      label: 'New customer offer',
+    },
+  ],
+  question: 'Which offer should this post feature?',
+  questionId: 'question-1',
+  response: {
+    field: 'offer',
+    reason: 'The creative needs a merchant-confirmed offer.',
+  },
+  scope: 'current_task',
+  unattended: 'hold',
+  workflowId: 'workflow-1',
+  workflowRevision: 3,
 };
 
 function fixture() {
@@ -90,6 +116,92 @@ test('worker execution keeps model input separate from server-owned identity and
     },
   ]);
   assert.equal(module.name, 'agent-primitives');
+});
+
+test('worker execution parses canonical Harness stage and QuestionCard only from the server envelope', async () => {
+  const { calls, module } = fixture();
+
+  await module.execute({
+    context: workerContext,
+    idempotencyKey: 'primitive-call-question',
+    input: {
+      action: 'execute',
+      payload: {
+        harness: {
+          question,
+          stage: 'intent_naming',
+        },
+        modelInput: {
+          options: question.options.map(({ description, label }) => ({
+            description,
+            label,
+          })),
+          question: question.question,
+        },
+        observability,
+        primitiveId: 'ask_merchant',
+      },
+      question: {
+        ...question,
+        workflowId: 'forged-top-level-workflow',
+      },
+      stage: 'assembly_delivery',
+    },
+    store: {} as FoundationStore,
+  });
+
+  assert.deepEqual(calls[0]?.serverContext.harness, {
+    question,
+    stage: 'intent_naming',
+  });
+  assert.equal(
+    calls[0]?.serverContext.harness?.question.workflowId,
+    'workflow-1',
+  );
+  assert.equal(
+    calls[0]?.serverContext.harness?.question.workflowRevision,
+    3,
+  );
+});
+
+test('invalid Harness stages and QuestionCards are rejected before runtime dispatch', async () => {
+  for (const harness of [
+    {
+      question,
+      stage: 'unknown_stage',
+    },
+    {
+      question: {
+        ...question,
+        workflowRevision: -1,
+      },
+      stage: 'intent_naming',
+    },
+  ]) {
+    const { calls, module } = fixture();
+
+    await assert.rejects(
+      module.execute({
+        context: workerContext,
+        idempotencyKey: 'primitive-call-invalid-harness',
+        input: {
+          action: 'execute',
+          payload: {
+            harness,
+            modelInput: { question: question.question },
+            observability,
+            primitiveId: 'ask_merchant',
+          },
+        },
+        store: {} as FoundationStore,
+      }),
+      (error: unknown) =>
+        error instanceof AgentPrimitiveRequestError &&
+        error.status === 400 &&
+        error.message === 'Agent primitive Harness context is invalid.',
+    );
+    assert.deepEqual(calls, []);
+  }
 });
 
 test('the module rejects every non-worker context before runtime dispatch', async () => {

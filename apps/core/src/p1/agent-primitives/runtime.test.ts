@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import type { QuestionCard } from '@meiye/contracts';
+
 import {
   createCanonicalAgentPrimitiveRegistry,
 } from './registry.js';
@@ -51,6 +53,30 @@ const serverContext: AgentPrimitiveServerContext = {
     skillRevision: 'copywriter@rev-17',
   },
   workspaceId: 'workspace-1',
+};
+
+const question: QuestionCard = {
+  freeText: {
+    enabled: true,
+    placeholder: 'Tell us what should lead.',
+  },
+  options: [
+    {
+      description: 'Feature the current introductory package.',
+      id: 'offer-new-customer',
+      label: 'New customer offer',
+    },
+  ],
+  question: 'Which offer should this post feature?',
+  questionId: 'question-1',
+  response: {
+    field: 'offer',
+    reason: 'The creative needs a merchant-confirmed offer.',
+  },
+  scope: 'current_task',
+  unattended: 'hold',
+  workflowId: 'workflow-1',
+  workflowRevision: 3,
 };
 
 test('construction fails closed when any canonical primitive has no binding', () => {
@@ -161,6 +187,80 @@ test('server-owned identity is snapshotted and frozen before handler dispatch', 
   assert.equal(received?.observability.scene, 'copy.generate');
 });
 
+test('Harness question context is deep-frozen for handlers and projected without merchant content in traces', async () => {
+  const events: AgentPrimitiveTraceEvent[] = [];
+  const bindings = completeBindings();
+  bindings.ask_merchant = async ({ serverContext: context }) => {
+    assert.throws(() => {
+      context.harness!.stage = 'assembly_delivery';
+    }, TypeError);
+    assert.throws(() => {
+      context.harness!.question.question = 'Leaked mutation';
+    }, TypeError);
+    assert.throws(() => {
+      context.harness!.question.options[0]!.label = 'Leaked option';
+    }, TypeError);
+    assert.throws(() => {
+      context.harness!.question.freeText.enabled = false;
+    }, TypeError);
+    assert.throws(() => {
+      context.harness!.question.response.field = 'leaked_field';
+    }, TypeError);
+    return { requestRef: context.harness!.question.questionId };
+  };
+  const runtime = new AgentPrimitiveRuntime({
+    bindings,
+    registry: createCanonicalAgentPrimitiveRegistry(),
+    tracePort: {
+      async append(event) {
+        events.push(event);
+      },
+    },
+  });
+
+  await runtime.execute({
+    modelInput: {
+      options: question.options.map(({ description, label }) => ({
+        description,
+        label,
+      })),
+      question: question.question,
+    },
+    primitiveId: 'ask_merchant',
+    serverContext: {
+      ...serverContext,
+      harness: {
+        question,
+        stage: 'intent_naming',
+      },
+    },
+  });
+
+  assert.deepEqual(
+    events.map(({ serverContext: context }) => context.harness),
+    [
+      {
+        stage: 'intent_naming',
+        workflowId: 'workflow-1',
+        workflowRevision: 3,
+      },
+      {
+        stage: 'intent_naming',
+        workflowId: 'workflow-1',
+        workflowRevision: 3,
+      },
+    ],
+  );
+  assert.equal(
+    'question' in (events[0]?.serverContext.harness ?? {}),
+    false,
+  );
+  assert.equal(
+    events[0]?.serverContext,
+    events[1]?.serverContext,
+  );
+});
+
 test('billed primitives require server-owned billing context before tracing or handler execution', async () => {
   for (const primitiveId of ['generate', 'revise'] as const) {
     const events: AgentPrimitiveTraceEvent[] = [];
@@ -211,6 +311,10 @@ test('model payload cannot forge tenant, billing, idempotency, or observability 
     'quoteId',
     'idempotencyKey',
     'observability',
+    'harness',
+    'stage',
+    'workflowId',
+    'workflowRevision',
   ]) {
     const events: AgentPrimitiveTraceEvent[] = [];
     let executions = 0;

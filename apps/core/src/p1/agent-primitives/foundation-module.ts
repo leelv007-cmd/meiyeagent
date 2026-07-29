@@ -1,4 +1,8 @@
-import { observabilityAxesSchema } from '@meiye/contracts';
+import {
+  harnessStageSchema,
+  observabilityAxesSchema,
+  questionCardSchema,
+} from '@meiye/contracts';
 
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
 import type {
@@ -82,6 +86,21 @@ export class AgentPrimitiveFoundationModule implements P1OperationModule {
     if (!observability.success) {
       fail('Agent primitive observability context is invalid.');
     }
+    const harness =
+      payload.harness === undefined
+        ? undefined
+        : (() => {
+            const value = object(payload.harness, 'harness');
+            const stage = harnessStageSchema.safeParse(value.stage);
+            const question = questionCardSchema.safeParse(value.question);
+            if (!stage.success || !question.success) {
+              fail('Agent primitive Harness context is invalid.');
+            }
+            return {
+              question: question.data,
+              stage: stage.data,
+            };
+          })();
 
     try {
       return await this.runtime.execute({
@@ -91,6 +110,7 @@ export class AgentPrimitiveFoundationModule implements P1OperationModule {
           actorId: args.context.userId,
           billing,
           correlationId: args.context.correlationId,
+          ...(harness ? { harness } : {}),
           idempotencyKey: args.idempotencyKey,
           observability: observability.data,
           workspaceId: args.context.workspaceId,
