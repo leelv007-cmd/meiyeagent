@@ -144,18 +144,6 @@ without exposing credentials or silently falling back to another provider.
 |---|---|---|
 | 1 | Recorded integrations stay usable and honestly labeled | Create a write-only workspace BYOK connection, verify recorded mode is labeled as demo execution, execute a published model/profile, and verify Product Usage plus externally billed Provider Cost; open external connections and verify Douyin is labeled not integrated before any credential input; create and verify a Feishu UAT connection, consume the automatically published vendored tool revision, pin a shortcut, execute an explicit read intent, and recover both shortcut and activity after reload. |
 
-## 10. UI/UX Pre-Cutover Quality Baseline
-
-**File:** `specs/uiux-precutover-baseline.spec.ts` | **Priority:** P0
-
-Pins the last stable dashboard before the one-time UI/UX cutover. The test stores
-only aggregate accessibility rule counts, DOM/query counts, layout overflow, and
-focus evidence; it must not attach user copy, media, credentials, or tokens.
-
-| # | Test name | Flow |
-|---|---|---|
-| 1 | Dashboard stays within the recorded pre-cutover quality envelope | Sign in with an E2E admin, reload `/dashboard`, run WCAG 2.2 AA axe checks, count Product Core requests and DOM nodes, verify keyboard focus is visible, measure 1280px at 200% effective width, and attach a redacted aggregate report. New high-impact violations or regressions above the frozen envelope fail. |
-
 ## 11. S1 Product Shell And Canonical Routes
 
 **File:** `specs/uiux-shell-routes.spec.ts` | **Priority:** P0
