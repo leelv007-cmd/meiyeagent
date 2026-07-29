@@ -76,6 +76,9 @@ test('only an evaluated and frozen Skill revision enters a stage allowlist', asy
   await service.defineCatalogEntry({
     actorId: 'operator-1',
     name: 'Daily industry context',
+    description: 'Draft daily industry copy for a store.',
+    sourceKind: 'authored',
+    tier: 'platform',
     presentationPolicy: 'explainable',
     skillId: 'skill.daily-industry',
   });
@@ -525,6 +528,9 @@ test('manifest admission rejects unknown schema refs before persisting a revisio
   await service.defineCatalogEntry({
     actorId: 'operator-1',
     name: 'Invalid schema fixture',
+    description: 'Draft daily industry copy for a store.',
+    sourceKind: 'authored',
+    tier: 'platform',
     presentationPolicy: 'backend_only',
     skillId: 'skill.invalid-schema',
   });
@@ -1258,6 +1264,8 @@ test('Foundation commands reach define, accept, bind, rollback, and deployment o
     instruction,
     packagePaths: ['SKILL.md', 'assets/example.png', 'evals/evals.json'],
     name: 'Foundation chain',
+    sourceKind: 'authored',
+    tier: 'platform',
     presentationPolicy: 'explainable',
     promptReference: registerPrompt({
       content: instruction,
@@ -1412,6 +1420,8 @@ test('skill_define rejects inline prompt content before a revision write', async
       input: {
         action: 'skill_define',
         payload: {
+          sourceKind: 'authored',
+          tier: 'platform',
           ...basePayload,
           promptReference: {
             contentHash: '<sha256>',
@@ -1435,6 +1445,8 @@ test('skill_define rejects inline prompt content before a revision write', async
       input: {
         action: 'skill_define',
         payload: {
+          sourceKind: 'authored',
+          tier: 'platform',
           ...basePayload,
           promptReference: {
             ...basePayload.promptReference,
@@ -1457,6 +1469,8 @@ test('skill_define rejects inline prompt content before a revision write', async
       input: {
         action: 'skill_define',
         payload: {
+          sourceKind: 'authored',
+          tier: 'platform',
           ...basePayload,
           prompt: { content: 'Legacy caller-controlled prompt body.' },
         },
@@ -1476,6 +1490,8 @@ test('skill_define rejects inline prompt content before a revision write', async
       input: {
         action: 'skill_define',
         payload: {
+          sourceKind: 'authored',
+          tier: 'platform',
           ...basePayload,
           fallbackContent: 'Caller-controlled frozen fallback.',
         },
@@ -1495,6 +1511,8 @@ test('skill_define rejects inline prompt content before a revision write', async
       input: {
         action: 'skill_define',
         payload: {
+          sourceKind: 'authored',
+          tier: 'platform',
           ...basePayload,
           governance: {
             ...basePayload.governance,
@@ -1517,6 +1535,8 @@ test('skill_define rejects inline prompt content before a revision write', async
       input: {
         action: 'skill_define',
         payload: {
+          sourceKind: 'authored',
+          tier: 'platform',
           ...basePayload,
           instruction: '  ',
         },
@@ -1536,6 +1556,8 @@ test('skill_define rejects inline prompt content before a revision write', async
       input: {
         action: 'skill_define',
         payload: {
+          sourceKind: 'authored',
+          tier: 'platform',
           ...basePayload,
           expectedRevision: 'latest',
         },
@@ -1582,6 +1604,8 @@ test('skill_define resolves the prompt authority before creating its catalog', a
       input: {
         action: 'skill_define',
         payload: {
+          sourceKind: 'authored',
+          tier: 'platform',
           expectedRevision: null,
           frontmatter: {
             description: 'Rejects a prompt authority mismatch before writing.',
@@ -1629,6 +1653,9 @@ test('draftRevision normalizes instruction before persistence and content hashin
   await service.defineCatalogEntry({
     actorId: 'operator-instruction-normalization',
     name: 'Instruction normalization',
+    description: 'Draft daily industry copy for a store.',
+    sourceKind: 'authored',
+    tier: 'platform',
     presentationPolicy: 'backend_only',
     skillId: 'skill.instruction-normalization',
   });
@@ -1692,6 +1719,8 @@ test('skill_define separates frontmatter, governance, and trusted prompt fallbac
     input: {
       action: 'skill_define',
       payload: {
+        sourceKind: 'authored',
+        tier: 'platform',
         expectedRevision: null,
         frontmatter: {
           'allowed-tools': 'read_context check',
@@ -1760,6 +1789,9 @@ test('skill revision rejects any duplicate allowedTools permission authority in 
   await service.defineCatalogEntry({
     actorId: 'operator-permission-authority',
     name: 'Permission authority',
+    description: 'Draft daily industry copy for a store.',
+    sourceKind: 'authored',
+    tier: 'platform',
     presentationPolicy: 'backend_only',
     skillId: 'skill.permission-authority',
   });
@@ -1822,6 +1854,9 @@ test('stage resolution uses the frozen prompt fallback with explicit lineage whe
   await service.defineCatalogEntry({
     actorId: 'operator-fallback',
     name: 'Prompt fallback',
+    description: 'Draft daily industry copy for a store.',
+    sourceKind: 'authored',
+    tier: 'platform',
     presentationPolicy: 'backend_only',
     skillId: 'skill.prompt-fallback',
   });
@@ -2106,6 +2141,9 @@ test('skill_accept redacts legacy prompt content and instruction fields', async 
     actorId: 'operator-legacy-redaction',
     createdAt: NOW,
     name: 'Legacy redaction',
+    description: 'Draft daily industry copy for a store.',
+    sourceKind: 'authored',
+    tier: 'platform',
     presentationPolicy: 'backend_only',
     skillId: 'skill.legacy-redaction',
     updatedAt: NOW,
@@ -2307,6 +2345,9 @@ test('rolling a binding back to the previous frozen revision restores the fixtur
   await service.defineCatalogEntry({
     actorId: 'operator-1',
     name: 'Rollback Skill',
+    description: 'Draft daily industry copy for a store.',
+    sourceKind: 'authored',
+    tier: 'platform',
     presentationPolicy: 'explainable',
     skillId,
   });
@@ -2409,6 +2450,9 @@ test('rollback rejects the same revision and supersedes a binding on the same wo
   await service.defineCatalogEntry({
     actorId: 'operator-1',
     name: 'Same workflow rollback Skill',
+    description: 'Draft daily industry copy for a store.',
+    sourceKind: 'authored',
+    tier: 'platform',
     presentationPolicy: 'explainable',
     skillId,
   });
@@ -2590,6 +2634,9 @@ async function createAcceptedSkill(
   await service.defineCatalogEntry({
     actorId: 'operator-1',
     name: `${suffix} skill`,
+    description: 'Draft daily industry copy for a store.',
+    sourceKind: 'authored',
+    tier: 'platform',
     presentationPolicy:
       suffix === 'user_selected' ? 'user_selectable' : 'backend_only',
     skillId,
@@ -2649,6 +2696,9 @@ async function createAcceptedEffectSkill(
   await service.defineCatalogEntry({
     actorId: 'operator-1',
     name: 'Effect boundary',
+    description: 'Draft daily industry copy for a store.',
+    sourceKind: 'authored',
+    tier: 'platform',
     presentationPolicy: 'backend_only',
     skillId,
   });

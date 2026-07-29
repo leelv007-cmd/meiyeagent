@@ -59,6 +59,8 @@ test('the real Foundation entry admits a revision only through registered schema
     input: {
       action: 'skill_define',
       payload: {
+        sourceKind: 'authored',
+        tier: 'platform',
         expectedRevision: null,
         frontmatter: manifest('production-wiring'),
         governance: governance(),
@@ -640,6 +642,8 @@ function applicationSkillHarness(
     input: {
       action: 'skill_define',
       payload: {
+        sourceKind: 'authored',
+        tier: 'platform',
         expectedRevision: null,
         frontmatter: manifest(suffix),
         governance: governance(),
@@ -704,6 +708,9 @@ async function acceptedSkill(
   await service.defineCatalogEntry({
     actorId: 'operator-production-wiring',
     name: suffix,
+    description: 'Draft daily industry copy for a store.',
+    sourceKind: 'authored',
+    tier: 'platform',
     presentationPolicy: 'backend_only',
     skillId,
   });

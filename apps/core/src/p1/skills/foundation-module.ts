@@ -6,13 +6,20 @@ import {
   type P1Context,
 } from '../foundation/domain.js';
 import type { P1OperationModule } from '../foundation/ports.js';
-import { SKILL_BINDING_MODES } from './types.js';
+import {
+  SKILL_BINDING_MODES,
+  SKILL_SOURCE_KINDS,
+  SKILL_TIERS,
+} from './types.js';
 import type {
   SkillCatalog,
   SkillExecutionMode,
   SkillGovernanceSidecar,
   SkillRevision,
   SkillRevisionManifest,
+  SkillSourceKind,
+  SkillSourceRef,
+  SkillTier,
 } from './types.js';
 import { SkillService } from './service.js';
 
