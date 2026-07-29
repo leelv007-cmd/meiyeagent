@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { observabilityAxesSchema } from './observability.js';
 
 export const BOUNDED_EXECUTION_LIMITS = [
   'maxIterations',
@@ -89,6 +90,58 @@ export const boundedExecutionSnapshotSchema = z
 
 export type BoundedExecutionSnapshot = z.infer<
   typeof boundedExecutionSnapshotSchema
+>;
+
+const boundedExecutionSuspendedEventSchema = z
+  .object({
+    event: z.literal('bounded_execution.suspended'),
+    ...observabilityAxesSchema.shape,
+    snapshot: boundedExecutionSnapshotSchema,
+    currentBest: z.json(),
+    unmetExplanation: z.string().trim().min(1),
+    resumable: z.literal(true),
+  })
+  .strict()
+  .superRefine((event, context) => {
+    if (event.snapshot.stopReason !== 'limit_reached') {
+      context.addIssue({
+        code: 'custom',
+        message: 'A suspension event requires a triggered execution snapshot.',
+        path: ['snapshot', 'stopReason'],
+      });
+    }
+  });
+
+const boundedExecutionResumedEventSchema = z
+  .object({
+    event: z.literal('bounded_execution.resumed'),
+    ...observabilityAxesSchema.shape,
+    previousSnapshot: boundedExecutionSnapshotSchema,
+    snapshot: boundedExecutionSnapshotSchema,
+    decisionId: z.string().trim().min(1),
+  })
+  .strict()
+  .superRefine((event, context) => {
+    if (
+      event.previousSnapshot.stopReason !== 'limit_reached' ||
+      event.snapshot.stopReason !== null
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'A resume event requires a triggered predecessor and an active successor.',
+        path: ['snapshot', 'stopReason'],
+      });
+    }
+  });
+
+export const boundedExecutionEventSchema = z.discriminatedUnion('event', [
+  boundedExecutionSuspendedEventSchema,
+  boundedExecutionResumedEventSchema,
+]);
+
+export type BoundedExecutionEvent = z.infer<
+  typeof boundedExecutionEventSchema
 >;
 
 function assertCanonicalRequiredLimits(
