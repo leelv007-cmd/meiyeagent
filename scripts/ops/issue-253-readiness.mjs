@@ -2,284 +2,85 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 
-const DEPENDENCIES = [
-  {
-    id: '248',
+const dependencies = {
+  '248': {
     issue: 248,
-    label: '#248 event contract',
-    requiredPath: /^(apps\/core\/src\/|packages\/contracts\/src\/|mkfast-template-main\/src\/)/u,
+    scope: /^(apps\/core\/src\/|packages\/contracts\/src\/|mkfast-template-main\/src\/)/u,
   },
-  {
-    id: '261',
-    issue: 261,
-    label: '#261 Dashboard frontend',
-    requiredPath: /^mkfast-template-main\/src\//u,
-  },
-  {
-    id: '264FE',
-    issue: 264,
-    label: '#264 frontend retirement',
-    requiredPath: /^mkfast-template-main\/src\//u,
-  },
-];
+  '261': { issue: 261, scope: /^mkfast-template-main\/src\//u },
+  '264FE': { issue: 264, scope: /^mkfast-template-main\/src\//u },
+};
 
-function parseArguments(argv) {
-  const options = {
-    json: false,
-    main: 'main',
-    repo: process.cwd(),
-  };
+function args(argv) {
+  const options = { json: false };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (argument === '--json') {
-      options.json = true;
-      continue;
-    }
-    if (argument === '--help' || argument === '-h') {
-      options.help = true;
-      continue;
-    }
-    const key = {
-      '--issue-fixtures': 'issueFixtures',
-      '--main': 'main',
-      '--markers': 'markers',
-      '--repo': 'repo',
-    }[argument];
-    if (!key) throw new Error(`unknown argument: ${argument}`);
-    const value = argv[index + 1];
-    if (!value || value.startsWith('--')) {
-      throw new Error(`${argument} requires a value`);
-    }
-    options[key] = value;
-    index += 1;
-  }
-  options.repo = resolve(options.repo);
-  if (options.markers) options.markers = resolve(options.markers);
-  if (options.issueFixtures) {
-    options.issueFixtures = resolve(options.issueFixtures);
+    if (argument === '--json') options.json = true;
+    else if (argument === '--help') options.help = true;
+    else if (argument === '--markers' || argument === '--issue-fixtures') {
+      const value = argv[++index];
+      if (!value) throw new Error(`${argument} requires a path`);
+      options[argument === '--markers' ? 'markers' : 'fixtures'] = resolve(value);
+    } else throw new Error(`unknown argument: ${argument}`);
   }
   return options;
 }
 
-function run(command, args, cwd) {
-  return spawnSync(command, args, {
-    cwd,
-    encoding: 'utf8',
-  });
+function run(command, commandArgs) {
+  return spawnSync(command, commandArgs, { encoding: 'utf8' });
 }
 
-function runGit(repo, args) {
-  return run('git', args, repo);
+function git(...commandArgs) {
+  return run('git', commandArgs);
 }
 
-function readJson(path) {
+function json(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
-function resolveCommit(repo, revision) {
-  const result = runGit(repo, ['rev-parse', '--verify', `${revision}^{commit}`]);
-  if (result.status !== 0) return null;
-  return result.stdout.trim();
+function commit(revision) {
+  const result = git('rev-parse', '--verify', `${revision}^{commit}`);
+  return result.status === 0 ? result.stdout.trim() : null;
 }
 
-function changedPaths(repo, commit) {
-  const result = runGit(repo, [
+function pathsAtCommit(sha) {
+  return git(
     'diff-tree',
     '--root',
     '--no-commit-id',
     '--name-only',
     '-r',
-    commit,
-  ]);
-  if (result.status !== 0) return [];
-  return result.stdout
-    .split('\n')
-    .map((path) => path.trim())
+    sha
+  )
+    .stdout.split('\n')
     .filter(Boolean);
 }
 
-function commitSummary(repo, commit) {
-  const result = runGit(repo, ['show', '-s', '--format=%H %s', commit]);
-  return result.status === 0 ? result.stdout.trim() : commit;
-}
-
-function ownsChangedPath(changedPath, ownedPath) {
-  return changedPath === ownedPath || changedPath.startsWith(`${ownedPath}/`);
-}
-
-function inspectGitEvidence(repo, main, dependency, marker) {
-  const gaps = [];
-  if (!marker || typeof marker !== 'object') {
-    gaps.push(`missing explicit marker for ${dependency.label}`);
-    return {
-      acceptanceCommands: [],
-      changedPaths: [],
-      commit: null,
-      gaps,
-      ownedPaths: [],
-      status: 'invalid_marker',
-      summary: null,
-    };
-  }
-  if (typeof marker.commit !== 'string' || marker.commit.trim().length === 0) {
-    gaps.push(`${dependency.label} marker.commit is required`);
-  }
-  const acceptanceCommands = Array.isArray(marker.acceptanceCommands)
-    ? marker.acceptanceCommands.filter(
-        (command) => typeof command === 'string' && command.trim().length > 0
-      )
-    : [];
-  if (acceptanceCommands.length === 0) {
-    gaps.push(`${dependency.label} marker.acceptanceCommands must not be empty`);
-  }
-  const ownedPaths = Array.isArray(marker.ownedPaths)
-    ? marker.ownedPaths.filter(
-        (path) =>
-          typeof path === 'string' &&
-          path.trim().length > 0 &&
-          !path.startsWith('/') &&
-          !path.split('/').includes('..')
-      )
-    : [];
-  if (ownedPaths.length === 0) {
-    gaps.push(`${dependency.label} marker.ownedPaths must not be empty`);
-  } else if (ownedPaths.some((path) => !dependency.requiredPath.test(path))) {
-    gaps.push(`${dependency.label} marker.ownedPaths contains a path outside its scope`);
-  }
-  if (gaps.length > 0) {
-    return {
-      acceptanceCommands,
-      changedPaths: [],
-      commit: null,
-      gaps,
-      ownedPaths,
-      status: 'invalid_marker',
-      summary: null,
-    };
-  }
-
-  const commit = resolveCommit(repo, marker.commit.trim());
-  if (!commit) {
-    gaps.push(`${dependency.label} marker commit cannot be resolved locally`);
-    return {
-      acceptanceCommands,
-      changedPaths: [],
-      commit: marker.commit.trim(),
-      gaps,
-      ownedPaths,
-      status: 'unresolvable',
-      summary: null,
-    };
-  }
-
-  const ancestor = runGit(repo, [
-    'merge-base',
-    '--is-ancestor',
-    commit,
-    main,
-  ]);
-  const paths = changedPaths(repo, commit);
-  if (ancestor.status !== 0) {
-    gaps.push(`${dependency.label} marker ${commit} is not an ancestor of local ${main}`);
-    return {
-      acceptanceCommands,
-      changedPaths: paths,
-      commit,
-      gaps,
-      ownedPaths,
-      status: 'not_merged',
-      summary: commitSummary(repo, commit),
-    };
-  }
-  if (paths.length === 0 || !paths.some((path) => dependency.requiredPath.test(path))) {
-    gaps.push(
-      `${dependency.label} marker ${commit} does not change a required product path`
-    );
-    return {
-      acceptanceCommands,
-      changedPaths: paths,
-      commit,
-      gaps,
-      ownedPaths,
-      status: 'scope_mismatch',
-      summary: commitSummary(repo, commit),
-    };
-  }
-  const missingOwnedPaths = ownedPaths.filter(
-    (ownedPath) =>
-      !paths.some((changedPath) => ownsChangedPath(changedPath, ownedPath))
-  );
-  if (missingOwnedPaths.length > 0) {
-    gaps.push(
-      `${dependency.label} marker commit does not change ownedPaths: ${missingOwnedPaths.join(
-        ', '
-      )}`
-    );
-    return {
-      acceptanceCommands,
-      changedPaths: paths,
-      commit,
-      gaps,
-      ownedPaths,
-      status: 'scope_mismatch',
-      summary: commitSummary(repo, commit),
-    };
-  }
-  return {
-    acceptanceCommands,
-    changedPaths: paths,
-    commit,
-    gaps,
-    ownedPaths,
-    status: 'merged',
-    summary: commitSummary(repo, commit),
-  };
-}
-
-function latestComment(comments) {
-  if (!Array.isArray(comments) || comments.length === 0) return null;
-  return [...comments].sort((left, right) =>
-    String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? ''))
-  ).at(-1);
-}
-
-function readIssue(options, number) {
+function issue(options, number) {
   try {
-    let issue;
-    if (options.issueFixtures) {
-      issue = readJson(resolve(options.issueFixtures, `${number}.json`));
-    } else {
-      const result = run(
-        'gh',
-        [
-          'issue',
-          'view',
-          String(number),
-          '--json',
-          'number,title,state,closedAt,url,comments',
-        ],
-        options.repo
-      );
-      if (result.status !== 0) {
-        throw new Error(result.stderr.trim() || `gh exited ${result.status}`);
-      }
-      issue = JSON.parse(result.stdout);
-    }
+    const data = options.fixtures
+      ? json(resolve(options.fixtures, `${number}.json`))
+      : JSON.parse(
+          run('gh', [
+            'issue',
+            'view',
+            String(number),
+            '--json',
+            'number,title,state,url,comments',
+          ]).stdout
+        );
     return {
-      closedAt: issue.closedAt ?? null,
-      latestComment: latestComment(issue.comments),
-      number: issue.number,
-      state: issue.state,
+      latestComment: data.comments?.at(-1) ?? null,
+      number,
+      state: data.state,
       status: 'available',
-      title: issue.title,
-      url: issue.url,
+      title: data.title,
+      url: data.url,
     };
   } catch (error) {
     return {
       error: error instanceof Error ? error.message : String(error),
-      latestComment: null,
       number,
       state: 'UNKNOWN',
       status: 'unavailable',
@@ -287,183 +88,172 @@ function readIssue(options, number) {
   }
 }
 
-export function checkIssue253Readiness(options) {
-  const globalGaps = [];
-  const mainCommit = resolveCommit(options.repo, options.main);
-  if (!mainCommit) {
-    globalGaps.push(`local main ref ${options.main} cannot be resolved`);
+function checkCurrentTree(mainSha, check) {
+  const gaps = [];
+  const exists =
+    git('cat-file', '-e', `${mainSha}:${check.path}`).status === 0;
+  if (check.exists === false) {
+    if (exists) gaps.push(`${check.path} must be absent from current main`);
+    return gaps;
   }
-
-  let markers = {};
-  if (!options.markers) {
-    globalGaps.push('--markers is required for fail-closed merge evidence');
-  } else {
-    try {
-      markers = readJson(options.markers).dependencies ?? {};
-    } catch (error) {
-      globalGaps.push(
-        `cannot read marker file ${options.markers}: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
-    }
+  if (!exists) return [`${check.path} is missing from current main`];
+  const text = git('show', `${mainSha}:${check.path}`).stdout;
+  for (const value of check.contains ?? []) {
+    if (!text.includes(value)) gaps.push(`${check.path} must contain ${value}`);
   }
+  for (const value of check.notContains ?? []) {
+    if (text.includes(value)) gaps.push(`${check.path} must not contain ${value}`);
+  }
+  return gaps;
+}
 
-  const dependencies = DEPENDENCIES.map((dependency) => {
-    const issue = readIssue(options, dependency.issue);
-    const git = mainCommit
-      ? inspectGitEvidence(
-          options.repo,
-          options.main,
-          dependency,
-          markers[dependency.id]
+function inspect(mainSha, id, marker) {
+  const { scope } = dependencies[id];
+  const gaps = [];
+  if (!marker) {
+    return { commands: [], gaps: ['marker is required'], status: 'invalid_marker' };
+  }
+  const commands = marker?.acceptanceCommands ?? [];
+  const ownedPaths = marker?.ownedPaths ?? [];
+  const treeChecks = marker?.currentTreeChecks ?? [];
+  if (!marker?.commit) gaps.push('commit is required');
+  if (
+    !Array.isArray(commands) ||
+    commands.length === 0 ||
+    commands.some((command) => typeof command !== 'string')
+  ) {
+    gaps.push('acceptanceCommands must not be empty');
+  }
+  if (!Array.isArray(ownedPaths) || ownedPaths.length === 0) {
+    gaps.push('ownedPaths must not be empty');
+  }
+  if (!Array.isArray(treeChecks) || treeChecks.length === 0) {
+    gaps.push('currentTreeChecks must not be empty');
+  }
+  if (
+    [...ownedPaths, ...treeChecks.map((check) => check.path)].some(
+      (path) => typeof path !== 'string' || !scope.test(path)
+    )
+  ) {
+    gaps.push('marker path is outside the dependency scope');
+  }
+  const hasSemanticCheck =
+    id === '264FE'
+      ? treeChecks.some(
+          (check) => check.exists === false || check.notContains?.length > 0
         )
-      : {
-          acceptanceCommands: [],
-          changedPaths: [],
-          commit: null,
-          gaps: [`cannot inspect ${dependency.label} before local main resolves`],
-          status: 'unavailable',
-          summary: null,
-        };
-    const gaps = [...git.gaps];
-    if (issue.status !== 'available') {
-      gaps.push(
-        `${dependency.label} issue status/comments unavailable: ${issue.error}`
-      );
-    }
-    return {
-      gaps,
-      git,
-      id: dependency.id,
-      issue,
-      label: dependency.label,
-    };
-  });
+      : treeChecks.some((check) => check.contains?.length > 0);
+  if (!hasSemanticCheck) gaps.push('currentTreeChecks lacks a semantic predicate');
+  if (gaps.length > 0) return { commands, gaps, status: 'invalid_marker' };
 
-  const ready =
-    globalGaps.length === 0 &&
-    dependencies.every((dependency) => dependency.gaps.length === 0);
+  const sha = commit(marker.commit);
+  if (!sha) return { commands, gaps: ['commit cannot be resolved'], status: 'invalid_marker' };
+  if (git('merge-base', '--is-ancestor', sha, mainSha).status !== 0) {
+    return { commands, gaps: [`${sha} is not in local main`], sha, status: 'not_merged' };
+  }
+  const changedPaths = pathsAtCommit(sha);
+  if (
+    !ownedPaths.every((ownedPath) =>
+      changedPaths.some(
+        (path) => path === ownedPath || path.startsWith(`${ownedPath}/`)
+      )
+    )
+  ) {
+    gaps.push('marker commit does not change every ownedPath');
+  }
+  for (const check of treeChecks) {
+    gaps.push(...checkCurrentTree(mainSha, check));
+  }
   return {
-    dependencies,
-    gaps: [
-      ...globalGaps,
-      ...dependencies.flatMap((dependency) => dependency.gaps),
-    ],
-    main: {
-      commit: mainCommit,
-      ref: options.main,
-    },
-    ready,
-    schemaVersion: 1,
+    changedPaths,
+    commands,
+    gaps,
+    ownedPaths,
+    sha,
+    status: gaps.length === 0 ? 'merged' : 'current_tree_mismatch',
+  };
+}
+
+function report(options) {
+  const mainSha = commit('main');
+  const gaps = mainSha ? [] : ['local main cannot be resolved'];
+  let markers = {};
+  try {
+    markers = json(options.markers).dependencies;
+  } catch {
+    gaps.push('--markers must point to readable JSON');
+  }
+  const issues = Object.fromEntries(
+    [253, 248, 261, 264].map((number) => [number, issue(options, number)])
+  );
+  for (const value of Object.values(issues)) {
+    if (value.status !== 'available') gaps.push(`issue #${value.number} is unavailable`);
+  }
+  const results = Object.entries(dependencies).map(([id, dependency]) => {
+    const evidence = mainSha
+      ? inspect(mainSha, id, markers?.[id])
+      : { commands: [], gaps: ['local main unavailable'], status: 'unavailable' };
+    gaps.push(...evidence.gaps.map((gap) => `${id}: ${gap}`));
+    return { evidence, id, issue: issues[dependency.issue] };
+  });
+  return {
+    dependencies: results,
+    gaps,
+    issues,
+    main: mainSha,
+    ready: gaps.length === 0,
     semanticRebase: {
-      commands: dependencies.flatMap(
-        (dependency) => dependency.git.acceptanceCommands
-      ),
-      required: true,
-      verification: dependencies
-        .filter((dependency) => dependency.git.commit)
+      commands: results.flatMap((result) => result.evidence.commands),
+      verification: results
+        .filter((result) => result.evidence.sha)
         .map(
-          (dependency) =>
-            `git merge-base --is-ancestor ${dependency.git.commit} ${options.main}`
+          (result) =>
+            `git merge-base --is-ancestor ${result.evidence.sha} ${mainSha}`
         ),
     },
     target: '#253FE',
   };
 }
 
-function oneLine(value, maximum = 180) {
-  const normalized = String(value).replace(/\s+/gu, ' ').trim();
-  return normalized.length > maximum
-    ? `${normalized.slice(0, maximum - 1)}…`
-    : normalized;
-}
-
-function printHuman(report) {
-  console.log(`ISSUE_253_FE_READY=${report.ready}`);
-  console.log(`local_main=${report.main.ref}@${report.main.commit ?? 'unresolved'}`);
-  for (const dependency of report.dependencies) {
-    console.log(
-      `${dependency.id}: git=${dependency.git.status} issue=${dependency.issue.state}`
-    );
-    if (dependency.git.summary) {
-      console.log(`  evidence: ${dependency.git.summary}`);
-    }
-    if (dependency.issue.latestComment) {
+function printHuman(result) {
+  console.log(`ISSUE_253_FE_READY=${result.ready}`);
+  console.log(`local_main=${result.main ?? 'unresolved'}`);
+  for (const number of [253, 248, 261, 264]) {
+    const value = result.issues[number];
+    console.log(`#${number}: ${value.state}`);
+    if (value.latestComment) {
       console.log(
-        `  latest comment: ${oneLine(dependency.issue.latestComment.body)}`
+        `  latest: ${value.latestComment.body.replace(/\s+/gu, ' ').slice(0, 180)}`
       );
-    } else if (dependency.issue.status === 'available') {
-      console.log('  latest comment: none');
     }
   }
-  if (report.gaps.length > 0) {
-    console.log('gaps:');
-    for (const gap of report.gaps) console.log(`- ${gap}`);
+  for (const dependency of result.dependencies) {
+    console.log(`${dependency.id}: git=${dependency.evidence.status}`);
   }
-  console.log('first semantic rebase commands:');
-  if (report.semanticRebase.commands.length === 0) {
-    console.log('- none supplied; readiness remains blocked');
-  } else {
-    for (const command of report.semanticRebase.commands) {
-      console.log(`- ${command}`);
-    }
-  }
-  console.log('merge evidence verification:');
-  if (report.semanticRebase.verification.length === 0) {
-    console.log('- none');
-  } else {
-    for (const command of report.semanticRebase.verification) {
-      console.log(`- ${command}`);
-    }
+  for (const gap of result.gaps) console.log(`GAP: ${gap}`);
+  for (const command of result.semanticRebase.commands) {
+    console.log(`SEMANTIC_REBASE: ${command}`);
   }
 }
 
-function printHelp() {
-  console.log(`Usage:
-  node scripts/ops/issue-253-readiness.mjs --markers <path> [options]
+function help() {
+  console.log(`Usage: pnpm ops:issue-253-readiness --markers <file> [--json]
 
-Options:
-  --repo <path>             Repository to inspect (default: current directory)
-  --main <ref>              Local integration ref (default: main)
-  --markers <path>          Explicit merge evidence and semantic rebase commands
-  --issue-fixtures <path>   Read <issue>.json fixtures instead of calling gh
-  --json                    Emit machine-readable JSON
-
-Marker schema:
-  {
-    "dependencies": {
-      "248":   { "commit": "<sha>", "ownedPaths": ["<path>"], "acceptanceCommands": ["<command>"] },
-      "261":   { "commit": "<sha>", "ownedPaths": ["<path>"], "acceptanceCommands": ["<command>"] },
-      "264FE": { "commit": "<sha>", "ownedPaths": ["<path>"], "acceptanceCommands": ["<command>"] }
-    }
-  }
-
-The command is read-only. Issue state is diagnostic only; each commit must be
-reachable from local main and must change the dependency's product scope.`);
+Each dependency marker requires commit, ownedPaths, acceptanceCommands, and
+currentTreeChecks. A currentTreeCheck has path plus exists:false, contains, or
+notContains. The command only reads local main and GitHub issues #253/#248/#261/#264.`);
 }
 
-const isEntrypoint =
-  process.argv[1] &&
-  resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
-
-if (isEntrypoint) {
-  try {
-    const options = parseArguments(process.argv.slice(2));
-    if (options.help) {
-      printHelp();
-      process.exitCode = 0;
-    } else {
-      const report = checkIssue253Readiness(options);
-      if (options.json) {
-        console.log(JSON.stringify(report, null, 2));
-      } else {
-        printHuman(report);
-      }
-      process.exitCode = report.ready ? 0 : 1;
-    }
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exitCode = 2;
+try {
+  const options = args(process.argv.slice(2));
+  if (options.help) help();
+  else {
+    const result = report(options);
+    if (options.json) console.log(JSON.stringify(result, null, 2));
+    else printHuman(result);
+    process.exitCode = result.ready ? 0 : 1;
   }
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 2;
 }

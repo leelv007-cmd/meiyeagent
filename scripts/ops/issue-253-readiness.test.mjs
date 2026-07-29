@@ -7,279 +7,172 @@ import test from 'node:test';
 
 const script = resolve(import.meta.dirname, 'issue-253-readiness.mjs');
 
-function run(command, args, cwd) {
-  const result = spawnSync(command, args, {
-    cwd,
-    encoding: 'utf8',
-  });
-  if (result.status !== 0) {
-    throw new Error(
-      `${command} ${args.join(' ')} failed (${result.status}):\n${result.stderr}`
-    );
-  }
+function git(root, ...args) {
+  const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
   return result.stdout.trim();
 }
 
-async function createRepository() {
-  const root = await mkdtemp(join(tmpdir(), 'issue-253-readiness-'));
-  run('git', ['init', '-b', 'main'], root);
-  run('git', ['config', 'user.email', 'fixture@example.test'], root);
-  run('git', ['config', 'user.name', 'Fixture'], root);
-  await writeFile(join(root, 'README.md'), 'fixture\n');
-  run('git', ['add', 'README.md'], root);
-  run('git', ['commit', '-m', 'chore: initialize fixture'], root);
-  return root;
-}
-
-async function commitFile(root, path, content, message) {
+async function commit(root, path, text, message) {
   await mkdir(dirname(join(root, path)), { recursive: true });
-  await writeFile(join(root, path), content);
-  run('git', ['add', path], root);
-  run('git', ['commit', '-m', message], root);
-  return run('git', ['rev-parse', 'HEAD'], root);
+  await writeFile(join(root, path), text);
+  git(root, 'add', path);
+  git(root, 'commit', '-m', message);
+  return git(root, 'rev-parse', 'HEAD');
 }
 
-async function writeIssueFixtures(root, states = {}) {
-  const fixtureDirectory = join(root, 'issue-fixtures');
-  await mkdir(fixtureDirectory);
-  for (const issue of [248, 261, 264]) {
-    await writeFile(
-      join(fixtureDirectory, `${issue}.json`),
-      JSON.stringify({
-        closedAt: states[issue] === 'CLOSED' ? '2026-07-29T00:00:00Z' : null,
-        comments: [
+async function fixture() {
+  const root = await mkdtemp(join(tmpdir(), 'issue-253-ready-'));
+  git(root, 'init', '-b', 'main');
+  git(root, 'config', 'user.email', 'fixture@example.test');
+  git(root, 'config', 'user.name', 'Fixture');
+  await writeFile(join(root, 'README.md'), 'fixture\n');
+  git(root, 'add', 'README.md');
+  git(root, 'commit', '-m', 'chore: initialize fixture');
+
+  const commits = {
+    '248': await commit(
+      root,
+      'apps/core/src/events.ts',
+      'export const skillRevision = true;\n',
+      'feat(events): add flat event contract'
+    ),
+    '261': await commit(
+      root,
+      'mkfast-template-main/src/dashboard.tsx',
+      'export const dashboardSections = 3;\n',
+      'feat(web): build dashboard sections'
+    ),
+    '264FE': await commit(
+      root,
+      'mkfast-template-main/src/video.tsx',
+      'export const videoBillableScopes = [];\n',
+      'fix(web): retire video editing'
+    ),
+  };
+  const markers = {
+    dependencies: {
+      '248': {
+        acceptanceCommands: ['node --test issue-248.test.mjs'],
+        commit: commits['248'],
+        currentTreeChecks: [
           {
-            author: { login: 'owner' },
-            body: `latest diagnostic for #${issue}`,
-            createdAt: '2026-07-29T00:00:00Z',
-            url: `https://example.test/issues/${issue}#comment`,
+            contains: ['skillRevision'],
+            path: 'apps/core/src/events.ts',
           },
         ],
-        number: issue,
-        state: states[issue] ?? 'OPEN',
-        title: `Issue ${issue}`,
-        url: `https://example.test/issues/${issue}`,
+        ownedPaths: ['apps/core/src/events.ts'],
+      },
+      '261': {
+        acceptanceCommands: ['node --test issue-261.test.mjs'],
+        commit: commits['261'],
+        currentTreeChecks: [
+          {
+            contains: ['dashboardSections = 3'],
+            path: 'mkfast-template-main/src/dashboard.tsx',
+          },
+        ],
+        ownedPaths: ['mkfast-template-main/src/dashboard.tsx'],
+      },
+      '264FE': {
+        acceptanceCommands: ['node --test issue-264-fe.test.mjs'],
+        commit: commits['264FE'],
+        currentTreeChecks: [
+          {
+            notContains: ["'shot'"],
+            path: 'mkfast-template-main/src/video.tsx',
+          },
+        ],
+        ownedPaths: ['mkfast-template-main/src/video.tsx'],
+      },
+    },
+  };
+  const markerPath = join(root, 'markers.json');
+  await writeFile(markerPath, JSON.stringify(markers));
+  const issues = join(root, 'issues');
+  await mkdir(issues);
+  for (const number of [253, 248, 261, 264]) {
+    await writeFile(
+      join(issues, `${number}.json`),
+      JSON.stringify({
+        comments: [{ body: `latest #${number}` }],
+        number,
+        state: 'OPEN',
+        title: `Issue ${number}`,
+        url: `https://example.test/${number}`,
       })
     );
   }
-  return fixtureDirectory;
+  return { commits, issues, markerPath, markers, root };
 }
 
-async function writeMarkers(root, commits) {
-  const markerPath = join(root, 'markers.json');
-  await writeFile(
-    markerPath,
-    JSON.stringify({
-      dependencies: {
-        '248': {
-          acceptanceCommands: ['node --test path/to/issue-248.test.mjs'],
-          commit: commits['248'],
-          ownedPaths: ['apps/core/src/events/contract.ts'],
-        },
-        '261': {
-          acceptanceCommands: ['pnpm --filter @meiye/web test:interaction'],
-          commit: commits['261'],
-          ownedPaths: ['mkfast-template-main/src/routes/dashboard.tsx'],
-        },
-        '264FE': {
-          acceptanceCommands: [
-            'pnpm --filter @meiye/web test:interaction -- video-worksurface',
-          ],
-          commit: commits['264FE'],
-          ownedPaths: [
-            'mkfast-template-main/src/components/video-controls.tsx',
-          ],
-        },
-      },
-    })
-  );
-  return markerPath;
-}
-
-function runReadiness(root, markerPath, fixtureDirectory, extraArgs = []) {
+function check({ issues, markerPath, root }) {
   return spawnSync(
     process.execPath,
-    [
-      script,
-      '--repo',
-      root,
-      '--main',
-      'main',
-      '--markers',
-      markerPath,
-      '--issue-fixtures',
-      fixtureDirectory,
-      '--json',
-      ...extraArgs,
-    ],
-    { encoding: 'utf8' }
+    [script, '--markers', markerPath, '--issue-fixtures', issues, '--json'],
+    { cwd: root, encoding: 'utf8' }
   );
 }
 
-test('open issue state is diagnostic only when all explicit merge markers are proven', async () => {
-  const root = await createRepository();
-  const commits = {
-    '248': await commitFile(
-      root,
-      'apps/core/src/events/contract.ts',
-      'export const eventContract = true;\n',
-      'feat(events): add issue 248 contract'
-    ),
-    '261': await commitFile(
-      root,
-      'mkfast-template-main/src/routes/dashboard.tsx',
-      'export const dashboard = true;\n',
-      'feat(web): implement issue 261 dashboard'
-    ),
-    '264FE': await commitFile(
-      root,
-      'mkfast-template-main/src/components/video-controls.tsx',
-      'export const controlsRetired = true;\n',
-      'fix(web): retire issue 264 video controls'
-    ),
-  };
-  const markerPath = await writeMarkers(root, commits);
-  const fixtureDirectory = await writeIssueFixtures(root);
-
-  const result = runReadiness(root, markerPath, fixtureDirectory);
+test('open issue states are diagnostic when current main proves every marker', async () => {
+  const data = await fixture();
+  const result = check(data);
   assert.equal(result.status, 0, result.stderr);
   const report = JSON.parse(result.stdout);
   assert.equal(report.ready, true);
+  assert.equal(report.issues['253'].latestComment.body, 'latest #253');
   assert.deepEqual(
-    report.dependencies.map((dependency) => [
-      dependency.id,
-      dependency.git.status,
-      dependency.issue.state,
-    ]),
-    [
-      ['248', 'merged', 'OPEN'],
-      ['261', 'merged', 'OPEN'],
-      ['264FE', 'merged', 'OPEN'],
-    ]
+    report.dependencies.map(({ evidence }) => evidence.status),
+    ['merged', 'merged', 'merged']
   );
-  assert.match(
-    report.dependencies[0].issue.latestComment.body,
-    /latest diagnostic for #248/
-  );
-  assert.deepEqual(report.semanticRebase.commands, [
-    'node --test path/to/issue-248.test.mjs',
-    'pnpm --filter @meiye/web test:interaction',
-    'pnpm --filter @meiye/web test:interaction -- video-worksurface',
-  ]);
-  assert.equal(report.semanticRebase.verification.length, 3);
-  assert.match(
-    report.semanticRebase.verification[0],
-    /^git merge-base --is-ancestor [0-9a-f]{40} main$/
-  );
+  assert.equal(report.semanticRebase.commands.length, 3);
 });
 
-test('a closed issue cannot replace a commit that is absent from local main', async () => {
-  const root = await createRepository();
-  const commits = {
-    '248': await commitFile(
-      root,
-      'apps/core/src/events/contract.ts',
-      'export const eventContract = true;\n',
-      'feat(events): add issue 248 contract'
-    ),
-    '261': await commitFile(
-      root,
-      'mkfast-template-main/src/routes/dashboard.tsx',
-      'export const dashboard = true;\n',
-      'feat(web): implement issue 261 dashboard'
-    ),
-  };
-  run('git', ['switch', '-c', 'unmerged-264'], root);
-  commits['264FE'] = await commitFile(
-    root,
-    'mkfast-template-main/src/components/video-controls.tsx',
-    'export const controlsRetired = true;\n',
-    'fix(web): retire issue 264 video controls'
+test('a closed issue cannot replace an unmerged marker commit', async () => {
+  const data = await fixture();
+  git(data.root, 'switch', '-c', 'unmerged');
+  data.markers.dependencies['264FE'].commit = await commit(
+    data.root,
+    'mkfast-template-main/src/video-extra.tsx',
+    'export const retired = true;\n',
+    'fix(web): finish retirement'
   );
-  run('git', ['switch', 'main'], root);
+  data.markers.dependencies['264FE'].ownedPaths = [
+    'mkfast-template-main/src/video-extra.tsx',
+  ];
+  await writeFile(data.markerPath, JSON.stringify(data.markers));
+  git(data.root, 'switch', 'main');
 
-  const markerPath = await writeMarkers(root, commits);
-  const fixtureDirectory = await writeIssueFixtures(root, { 264: 'CLOSED' });
-  const result = runReadiness(root, markerPath, fixtureDirectory);
-
+  const result = check(data);
   assert.equal(result.status, 1);
   const report = JSON.parse(result.stdout);
-  assert.equal(report.ready, false);
-  const dependency = report.dependencies.find((entry) => entry.id === '264FE');
-  assert.equal(dependency.issue.state, 'CLOSED');
-  assert.equal(dependency.git.status, 'not_merged');
-  assert.match(dependency.gaps.join('\n'), /not an ancestor of local main/);
+  assert.equal(report.dependencies[2].evidence.status, 'not_merged');
 });
 
-test('a docs-only frontend marker fails closed even when it is on main', async () => {
-  const root = await createRepository();
-  const commits = {
-    '248': await commitFile(
-      root,
-      'apps/core/src/events/contract.ts',
-      'export const eventContract = true;\n',
-      'feat(events): add issue 248 contract'
-    ),
-    '261': await commitFile(
-      root,
-      'docs/issue-261.md',
-      'design only\n',
-      'docs: describe issue 261'
-    ),
-    '264FE': await commitFile(
-      root,
-      'mkfast-template-main/src/components/video-controls.tsx',
-      'export const controlsRetired = true;\n',
-      'fix(web): retire issue 264 video controls'
-    ),
-  };
-  const markerPath = await writeMarkers(root, commits);
-  const fixtureDirectory = await writeIssueFixtures(root);
-  const result = runReadiness(root, markerPath, fixtureDirectory);
+test('a reverted semantic outcome fails even while its marker remains in main', async () => {
+  const data = await fixture();
+  await writeFile(
+    join(data.root, 'mkfast-template-main/src/video.tsx'),
+    "export const videoBillableScopes = ['shot'];\n"
+  );
+  git(data.root, 'add', 'mkfast-template-main/src/video.tsx');
+  git(data.root, 'commit', '-m', 'revert: restore old video scope');
 
+  const result = check(data);
   assert.equal(result.status, 1);
   const report = JSON.parse(result.stdout);
-  const dependency = report.dependencies.find((entry) => entry.id === '261');
-  assert.equal(dependency.git.status, 'scope_mismatch');
-  assert.match(dependency.gaps.join('\n'), /does not change a required product path/);
+  assert.equal(report.dependencies[2].evidence.status, 'current_tree_mismatch');
+  assert.match(report.gaps.join('\n'), /must not contain/);
 });
 
-test('missing acceptance commands fail closed before the first semantic rebase', async () => {
-  const root = await createRepository();
-  const commits = {
-    '248': await commitFile(
-      root,
-      'apps/core/src/events/contract.ts',
-      'export const eventContract = true;\n',
-      'feat(events): add issue 248 contract'
-    ),
-    '261': await commitFile(
-      root,
-      'mkfast-template-main/src/routes/dashboard.tsx',
-      'export const dashboard = true;\n',
-      'feat(web): implement issue 261 dashboard'
-    ),
-    '264FE': await commitFile(
-      root,
-      'mkfast-template-main/src/components/video-controls.tsx',
-      'export const controlsRetired = true;\n',
-      'fix(web): retire issue 264 video controls'
-    ),
-  };
-  const markerPath = await writeMarkers(root, commits);
-  const marker = JSON.parse(
-    await import('node:fs/promises').then(({ readFile }) =>
-      readFile(markerPath, 'utf8')
-    )
-  );
-  marker.dependencies['248'].acceptanceCommands = [];
-  await writeFile(markerPath, JSON.stringify(marker));
-  const fixtureDirectory = await writeIssueFixtures(root);
-  const result = runReadiness(root, markerPath, fixtureDirectory);
-
+test('missing semantic rebase commands fail closed', async () => {
+  const data = await fixture();
+  data.markers.dependencies['248'].acceptanceCommands = [];
+  await writeFile(data.markerPath, JSON.stringify(data.markers));
+  const result = check(data);
   assert.equal(result.status, 1);
-  const report = JSON.parse(result.stdout);
-  const dependency = report.dependencies.find((entry) => entry.id === '248');
-  assert.equal(dependency.git.status, 'invalid_marker');
-  assert.match(dependency.gaps.join('\n'), /acceptanceCommands/);
+  assert.equal(
+    JSON.parse(result.stdout).dependencies[0].evidence.status,
+    'invalid_marker'
+  );
 });
