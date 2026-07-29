@@ -4,6 +4,7 @@
 
 | main sha | 票 | 内容 | 亲验 | 备注 |
 |---|---|---|---|---|
+| 04dda7e1+a9a7f5cd+28e3ae73 | #266 | INFRA：locale:compile 并发机制（write-if-changed 同步/互斥锁+dev 心跳快速失败/staged compile 只写变更文件/vite dev 去 pid 残留） | 合入当时全量绿＋#266 已关票；**补录行（2026-07-29）**：合入早于本台账建制，应 #260 fail-closed 门要求补权威回执 | 台账制度前的历史合入，追溯登记 |
 | 5239be83 | #252 | M1 capability vocabulary 契约切片 | typecheck+test 97/97 | 契约先行 |
 | 194a742a | #248 | M1 observability 四轴+drop 契约切片 | typecheck+test | 契约先行 |
 | 4e650184 | #244 | 接缝 B＋legacy 两分（2 commits ff） | tsc 0＋24/0＋22/0＋7/0＋e2e 1/0（合入态） | |
