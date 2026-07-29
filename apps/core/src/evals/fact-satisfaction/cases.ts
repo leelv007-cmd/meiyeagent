@@ -356,6 +356,34 @@ export const FACT_SATISFACTION_CASES: FactSatisfactionPromptfooCase[] = [
       ],
     },
   ),
+  evaluationCase(
+    'incomplete-partial-rejected',
+    'A partial claim that omits a requested kind fails closed',
+    {
+      factTypes: ['service', 'price', 'staff_experience'],
+      bundleFactTypes: ['service'],
+      authorizedFactRefs: [serviceFact.sourceRef],
+      modelOutputs: [
+        {
+          status: 'partial',
+          matchedFactRefs: [serviceFact.sourceRef],
+          missingFactTypes: ['staff_experience'],
+        },
+      ],
+      expectedResult: conservativeResult([
+        'service',
+        'price',
+        'staff_experience',
+      ]),
+      expectedCalls: [
+        satisfactionRequest(
+          'incomplete-partial-rejected',
+          ['service', 'price', 'staff_experience'],
+          [serviceFact],
+        ),
+      ],
+    },
+  ),
 ];
 
 export default FACT_SATISFACTION_CASES;

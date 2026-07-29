@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const binary = resolve('node_modules/.bin/promptfoo');
@@ -29,4 +29,28 @@ const result = spawnSync(command, args, {
   stdio: 'inherit',
 });
 if (result.error) throw result.error;
-process.exitCode = result.status ?? 1;
+if (control) {
+  if (result.status !== 100) {
+    console.error(
+      `Fact-satisfaction control expected Promptfoo exit 100, received ${result.status ?? 'null'}.`,
+    );
+    process.exitCode = 1;
+  } else {
+    const report = JSON.parse(readFileSync(output, 'utf8'));
+    const stats = report?.results?.stats;
+    if (
+      stats?.successes !== 0 ||
+      stats?.failures !== 1 ||
+      stats?.errors !== 0
+    ) {
+      console.error(
+        'Fact-satisfaction control expected 0 pass / 1 fail / 0 errors.',
+      );
+      process.exitCode = 1;
+    } else {
+      process.exitCode = 100;
+    }
+  }
+} else {
+  process.exitCode = result.status ?? 1;
+}

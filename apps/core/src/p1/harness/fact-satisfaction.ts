@@ -68,8 +68,8 @@ export async function assessRecipeFactSatisfaction(
     bundle: ContextBundle;
     at: string;
     prompts?: {
-      factSatisfaction?: HarnessFrozenPrompt;
-      factCriticality?: HarnessFrozenPrompt;
+      factSatisfaction?: Pick<HarnessFrozenPrompt, 'content'>;
+      factCriticality?: Pick<HarnessFrozenPrompt, 'content'>;
     };
   },
   runner: StructuredNodeRunner,
@@ -115,8 +115,16 @@ export async function assessRecipeFactSatisfaction(
       .map((fact) => fact.kind),
   );
   const requiredKinds = new Set(input.factTypes);
+  const missingKinds = new Set(assessment.missingFactTypes);
   if (
+    matchedKinds.size + missingKinds.size !== requiredKinds.size ||
+    [...matchedKinds].some(
+      (kind) => !requiredKinds.has(kind) || missingKinds.has(kind),
+    ) ||
     assessment.missingFactTypes.some((kind) => !requiredKinds.has(kind)) ||
+    input.factTypes.some(
+      (kind) => !matchedKinds.has(kind) && !missingKinds.has(kind),
+    ) ||
     (assessment.status === 'satisfied' &&
       input.factTypes.some((kind) => !matchedKinds.has(kind)))
   ) {

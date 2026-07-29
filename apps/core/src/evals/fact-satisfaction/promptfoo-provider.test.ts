@@ -6,8 +6,8 @@ import { FACT_SATISFACTION_CASES } from './cases.js';
 import FactSatisfactionPromptfooProvider from './promptfoo-provider.js';
 import { scoreFactSatisfactionOutput } from './promptfoo-scorer.js';
 
-test('recorded fact-satisfaction semantics cover ten frozen production prompts', async () => {
-  assert.equal(FACT_SATISFACTION_CASES.length, 10);
+test('recorded fact-satisfaction semantics cover eleven frozen production prompts', async () => {
+  assert.equal(FACT_SATISFACTION_CASES.length, 11);
   const provider = new FactSatisfactionPromptfooProvider();
 
   for (const evaluationCase of FACT_SATISFACTION_CASES) {

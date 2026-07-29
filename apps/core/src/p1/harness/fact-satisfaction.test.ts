@@ -211,6 +211,19 @@ test('unsatisfied or invalid model output stays conservative', async () => {
   );
   assert.equal(forgedSatisfied.action, 'conservative_guidance');
 
+  const incompletePartial = await assessRecipeFactSatisfaction(
+    request(['service', 'price', 'staff_experience']),
+    new QueueRunner([
+      {
+        status: 'partial',
+        matchedFactRefs: ['store_fact:fact-service:1'],
+        missingFactTypes: ['staff_experience'],
+      },
+    ]),
+    authorizedRights,
+  );
+  assert.equal(incompletePartial.action, 'conservative_guidance');
+
   const failed = await assessRecipeFactSatisfaction(
     request(['service']),
     new QueueRunner([new Error('fixture timeout')]),

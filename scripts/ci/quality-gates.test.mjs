@@ -278,6 +278,14 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
   assert.match(coreQuality, /needs\.core-persistence\.result/);
   assert.match(coreQuality, /needs\.production-main-journey\.result/);
   assert.match(coreQuality, /needs\.production-dependency-audit\.result/);
+  assert.match(
+    coreQuality,
+    /Fact-satisfaction assertion control expected exit 100/,
+  );
+  assert.match(
+    coreQuality,
+    /if \[ "\$control_exit" -ne 100 \]; then/,
+  );
   assert.match(coreQuality, /node scripts\/ci\/assert-required-jobs\.mjs/);
   for (const artifactName of [
     'root-required-quality-evidence',

@@ -38,8 +38,12 @@ jobs:
         env:
           PROMPTFOO_DISABLE_REMOTE_GENERATION: true
         run: |
-          if pnpm eval:fact-satisfaction:promptfoo:control; then
-            echo "Fact-satisfaction assertion control unexpectedly passed." >&2
+          set +e
+          pnpm eval:fact-satisfaction:promptfoo:control
+          control_exit=$?
+          set -e
+          if [ "$control_exit" -ne 100 ]; then
+            echo "Fact-satisfaction assertion control expected exit 100, received $control_exit." >&2
             exit 1
           fi
       - name: Run pinned merchant-language promptfoo gate
