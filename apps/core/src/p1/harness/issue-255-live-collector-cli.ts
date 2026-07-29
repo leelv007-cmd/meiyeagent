@@ -1,3 +1,5 @@
+import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
@@ -30,6 +32,7 @@ export function assertIssue255LiveModesMutuallyExclusive(
 
 export function assertIssue255LiveCollectorLaunch(
   env: NodeJS.ProcessEnv,
+  sharedLockHeld = isIssue255SharedE2eLockHeld,
 ) {
   assertIssue255LiveModesMutuallyExclusive(env);
   if (env.RUN_LIVE_ISSUE_255 !== '1') {
@@ -58,7 +61,53 @@ export function assertIssue255LiveCollectorLaunch(
       'Issue 255 live collector requires the existing provider cap at or below CNY 5.',
     );
   }
+  if (!sharedLockHeld()) {
+    throw new Error(
+      'Issue 255 live collector requires the shared e2e lock.',
+    );
+  }
   return { providerCapMicros };
+}
+
+export function isIssue255SharedE2eLockHeld() {
+  let owner: string;
+  try {
+    owner = readFileSync('/tmp/meiye-e2e.lock', 'utf8');
+  } catch {
+    return false;
+  }
+  const match = /^pid ([1-9]\d*) in /u.exec(owner.trim());
+  if (!match) {
+    return false;
+  }
+  const ownerPid = Number(match[1]);
+  let candidatePid = process.pid;
+  for (let depth = 0; depth < 32; depth += 1) {
+    if (candidatePid === ownerPid) {
+      return true;
+    }
+    const result = spawnSync(
+      'ps',
+      ['-o', 'ppid=', '-p', String(candidatePid)],
+      {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    if (result.error || result.status !== 0) {
+      return false;
+    }
+    const parentPid = Number(result.stdout.trim());
+    if (
+      !Number.isSafeInteger(parentPid) ||
+      parentPid <= 0 ||
+      parentPid === candidatePid
+    ) {
+      return false;
+    }
+    candidatePid = parentPid;
+  }
+  return false;
 }
 
 export async function runIssue255LiveCollectorCli(input: {

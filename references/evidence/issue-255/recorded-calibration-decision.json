@@ -1,0 +1,175 @@
+{
+  "schemaVersion": "issue-255-calibration-decision/v1",
+  "measurementSourceHead": "79fe611c5822f6c982bb65e59c1eb8d87ddd9be0",
+  "recordedMatrixDigest": "f5ed8952d0bae2b43206fc476d7399ed7bd608ca5ba6d3662539b9c984219522",
+  "evidence": {
+    "fixture": {
+      "sampleCount": 0,
+      "usedForNumericDecision": false
+    },
+    "recorded": {
+      "sampleCount": 27,
+      "distribution": {
+        "modalities": {
+          "copy": 9,
+          "image_text": 9,
+          "video": 9
+        },
+        "scenarioBands": {
+          "low": 9,
+          "typical": 9,
+          "boundary": 9
+        },
+        "seeds": {
+          "1": 9,
+          "2": 9,
+          "3": 9
+        }
+      },
+      "usedForNumericDecision": true
+    },
+    "live": {
+      "sampleCount": 0,
+      "usedForNumericDecision": false,
+      "reason": "No controller live GO was issued for this final run."
+    }
+  },
+  "quantileMethod": "nearest_rank",
+  "observedDistributions": {
+    "overall": {
+      "iterations": {
+        "count": 27,
+        "min": 1,
+        "p50": 1,
+        "p90": 2,
+        "p95": 2,
+        "max": 2
+      },
+      "costCents": {
+        "count": 27,
+        "min": 0,
+        "p50": 0,
+        "p90": 4,
+        "p95": 4,
+        "max": 4
+      },
+      "activeWallClockMs": {
+        "count": 27,
+        "min": 1,
+        "p50": 1,
+        "p90": 1,
+        "p95": 3,
+        "max": 224
+      },
+      "suspendedWallClockMs": {
+        "count": 27,
+        "min": 0,
+        "p50": 0,
+        "p90": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "delegations": {
+        "count": 27,
+        "min": 0,
+        "p50": 0,
+        "p90": 0,
+        "p95": 0,
+        "max": 0
+      }
+    },
+    "byModality": {
+      "copy": {
+        "sampleCount": 9,
+        "iterations": {
+          "min": 1,
+          "p50": 1,
+          "p90": 2,
+          "p95": 2,
+          "max": 2
+        },
+        "costCents": {
+          "min": 2,
+          "p50": 2,
+          "p90": 4,
+          "p95": 4,
+          "max": 4
+        },
+        "loopEvidence": "full_limit_loop for typical and boundary; bounded_single_pass for low"
+      },
+      "image_text": {
+        "sampleCount": 9,
+        "iterations": {
+          "min": 1,
+          "p50": 1,
+          "p90": 1,
+          "p95": 1,
+          "max": 1
+        },
+        "costCents": {
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "loopEvidence": "non_limit_loop"
+      },
+      "video": {
+        "sampleCount": 9,
+        "iterations": {
+          "min": 1,
+          "p50": 1,
+          "p90": 1,
+          "p95": 1,
+          "max": 1
+        },
+        "costCents": {
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "loopEvidence": "non_limit_loop"
+      }
+    }
+  },
+  "decisions": {
+    "maxIterations": {
+      "default": 2,
+      "hardCap": 4,
+      "sampleCount": 9,
+      "selectionLogic": "Default is the copy full-loop nearest-rank P90 and observed maximum. Hard cap is two times that value so one explicit operator continuation can run without an unbounded retry loop."
+    },
+    "maxCostCents": {
+      "default": "unset",
+      "hardCap": "unset",
+      "sampleCount": 27,
+      "selectionLogic": "Recorded media reports zero synthetic cost and there is no live price or provider-usage anchor. Required-path admission therefore remains fail-closed."
+    },
+    "maxWallClockMs": {
+      "default": "unset",
+      "hardCap": "unset",
+      "sampleCount": 27,
+      "selectionLogic": "Recorded local timing does not establish provider wall-clock behavior and contains no durable suspension sample. Required-path admission therefore remains fail-closed."
+    },
+    "maxDelegations": {
+      "default": "unset",
+      "hardCap": "unset",
+      "sampleCount": 0,
+      "selectionLogic": "No production delegation scenario exists; recorded zero values are absence of coverage, not evidence for a numeric zero."
+    }
+  },
+  "wallClockPolicy": {
+    "consumption": "active_execution_only",
+    "durableSuspensionIncluded": false,
+    "reason": "The production controller measures active continuation time. Recorded samples retain total and suspended dimensions separately; no suspended recorded sample was used to invent a duration."
+  },
+  "adminConfig": {
+    "key": "harness.bounded_execution.limits",
+    "scope": "global",
+    "workspaceId": "__global__",
+    "application": "The exact decision table is exported as ISSUE_255_RECORDED_CALIBRATION_LIMITS and is applied only through the existing CAS and audit command. Missing config stays unset."
+  }
+}

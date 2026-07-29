@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const lanePath = '/Users/bin/Desktop/开发/内容无人区/lane-255';
+const sharedE2eLockPath = '/tmp/meiye-e2e.lock';
 const allowedModes = [
   'provision',
   '--inspect',
@@ -13,6 +15,7 @@ const allowedModes = [
 export function runIssue255SafeProvision({
   argv = process.argv.slice(2),
   environment = process.env,
+  repositoryRoot,
 } = {}) {
   const businessUrl = requiredUrl(environment, 'TEST_DATABASE_URL');
   const dbosUrl = requiredUrl(
@@ -48,6 +51,14 @@ export function runIssue255SafeProvision({
     dbosUrl,
     inheritedEnvironment,
   };
+  if (
+    mode !== '--inspect' &&
+    !isIssue255SharedE2eLockHeld({ environment: inheritedEnvironment })
+  ) {
+    fail(
+      'Issue 255 database mutation requires the shared e2e lock.',
+    );
+  }
 
   if (mode === '--inspect' || mode === '--cleanup-if-safe') {
     const inspection = inspectResetSafety(context);
@@ -71,6 +82,10 @@ export function runIssue255SafeProvision({
 
   ensureDatabase(context, businessUrl);
   ensureDatabase(context, dbosUrl);
+  const repoPath = resolveIssue255RepositoryRoot({
+    moduleUrl: import.meta.url,
+    repositoryRoot,
+  });
 
   process.stdout.write(
     'Applying App Shell migrations to the isolated issue 255 business database.\n',
@@ -81,7 +96,7 @@ export function runIssue255SafeProvision({
     'pnpm',
     ['db:migrate:local'],
     {
-      cwd: `${lanePath}/mkfast-template-main`,
+      cwd: `${repoPath}/mkfast-template-main`,
       env: {
         ...inheritedEnvironment,
         DATABASE_URL: businessUrl.toString(),
@@ -113,10 +128,10 @@ export function runIssue255SafeProvision({
       '@meiye/core',
       'exec',
       'tsx',
-      `${lanePath}/scripts/ci/apply-pro-studio-schema.mts`,
+      `${repoPath}/scripts/ci/apply-pro-studio-schema.mts`,
     ],
     {
-      cwd: lanePath,
+      cwd: repoPath,
       env: {
         ...inheritedEnvironment,
         DATABASE_URL: businessUrl.toString(),
@@ -140,6 +155,74 @@ export function runIssue255SafeProvision({
   process.stdout.write(
     'Issue 255 isolated PostgreSQL databases are ready.\n',
   );
+}
+
+export function resolveIssue255RepositoryRoot({
+  moduleUrl = import.meta.url,
+  repositoryRoot,
+} = {}) {
+  if (repositoryRoot?.trim()) {
+    return resolve(repositoryRoot);
+  }
+  if (!moduleUrl.startsWith('file:')) {
+    throw new Error(
+      'Issue 255 repository root is required for a verified in-memory module.',
+    );
+  }
+  return resolve(fileURLToPath(new URL('../..', moduleUrl)));
+}
+
+export function isIssue255SharedE2eLockHeld({
+  currentPid = process.pid,
+  environment = process.env,
+  lockContents,
+  parentPidFor = (pid) => {
+    const result = spawnSync(
+      'ps',
+      ['-o', 'ppid=', '-p', String(pid)],
+      {
+        env: environment,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    if (result.error || result.status !== 0) {
+      return null;
+    }
+    const parentPid = Number(result.stdout.trim());
+    return Number.isSafeInteger(parentPid) && parentPid > 0
+      ? parentPid
+      : null;
+  },
+} = {}) {
+  let owner;
+  try {
+    owner =
+      lockContents ??
+      readFileSync(sharedE2eLockPath, 'utf8');
+  } catch {
+    return false;
+  }
+  const match = /^pid ([1-9]\d*) in /u.exec(owner.trim());
+  if (!match) {
+    return false;
+  }
+  const ownerPid = Number(match[1]);
+  let candidatePid = currentPid;
+  for (let depth = 0; depth < 32; depth += 1) {
+    if (candidatePid === ownerPid) {
+      return true;
+    }
+    const parentPid = parentPidFor(candidatePid);
+    if (
+      parentPid === null ||
+      parentPid === candidatePid
+    ) {
+      return false;
+    }
+    candidatePid = parentPid;
+  }
+  return false;
 }
 
 function inspectResetSafety(context) {

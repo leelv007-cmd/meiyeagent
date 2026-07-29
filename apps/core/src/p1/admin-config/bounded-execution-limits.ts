@@ -62,6 +62,14 @@ export type BoundedExecutionLimitsConfig = z.infer<
   typeof boundedExecutionLimitsConfigSchema
 >;
 
+export const ISSUE_255_RECORDED_CALIBRATION_LIMITS =
+  boundedExecutionLimitsConfigSchema.parse({
+    maxIterations: { default: 2, hardCap: 4 },
+    maxCostCents: { default: 'unset', hardCap: 'unset' },
+    maxWallClockMs: { default: 'unset', hardCap: 'unset' },
+    maxDelegations: { default: 'unset', hardCap: 'unset' },
+  });
+
 export class AdminConfigBoundedExecutionLimitsSource {
   constructor(
     private readonly repository: Pick<AdminConfigRepository, 'get'>,

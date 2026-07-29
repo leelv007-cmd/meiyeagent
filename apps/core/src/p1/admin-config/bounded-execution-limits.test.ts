@@ -8,6 +8,7 @@ import {
   AdminConfigBoundedExecutionLimitsResolver,
   AdminConfigBoundedExecutionLimitsSource,
   BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
+  ISSUE_255_RECORDED_CALIBRATION_LIMITS,
   boundedExecutionLimitsConfigSchema,
 } from './bounded-execution-limits.js';
 import {
@@ -15,12 +16,7 @@ import {
   MemoryAdminConfigRepository,
 } from './foundation-module.js';
 
-const configuredLimits = boundedExecutionLimitsConfigSchema.parse({
-  maxIterations: { default: 5, hardCap: 10 },
-  maxCostCents: { default: 120, hardCap: 360 },
-  maxWallClockMs: { default: 60_000, hardCap: 180_000 },
-  maxDelegations: { default: 'unset', hardCap: 'unset' },
-});
+const configuredLimits = ISSUE_255_RECORDED_CALIBRATION_LIMITS;
 
 test('bounded-execution limits resolve calibrated defaults from the current admin-config revision', async () => {
   const repository = new MemoryAdminConfigRepository();
@@ -57,9 +53,9 @@ test('bounded-execution limits resolve calibrated defaults from the current admi
     config: configuredLimits,
   });
   assert.deepEqual(await resolver.resolve(), {
-    maxIterations: 5,
-    maxCostCents: 120,
-    maxWallClockMs: 60_000,
+    maxIterations: 2,
+    maxCostCents: 'unset',
+    maxWallClockMs: 'unset',
     maxDelegations: 'unset',
     requiredLimits: [
       'maxIterations',
@@ -73,7 +69,7 @@ test('bounded-execution config rejects defaults above hard caps and half-unset a
   assert.equal(
     boundedExecutionLimitsConfigSchema.safeParse({
       ...configuredLimits,
-      maxCostCents: { default: 361, hardCap: 360 },
+      maxIterations: { default: 5, hardCap: 4 },
     }).success,
     false,
   );
@@ -145,9 +141,9 @@ test('DBOS bounded continuation raises only the triggered axis by one calibrated
   );
   const suspended = boundedExecutionSnapshotSchema.parse({
     schemaVersion: 'bounded-execution-snapshot/v1',
-    maxIterations: 5,
-    maxCostCents: 120,
-    maxWallClockMs: 60_000,
+    maxIterations: 2,
+    maxCostCents: 'unset',
+    maxWallClockMs: 'unset',
     maxDelegations: 'unset',
     requiredLimits: [
       'maxIterations',
@@ -155,8 +151,8 @@ test('DBOS bounded continuation raises only the triggered axis by one calibrated
       'maxWallClockMs',
     ],
     consumption: {
-      iterations: 5,
-      costCents: 40,
+      iterations: 2,
+      costCents: 0,
       wallClockMs: 10_000,
       delegations: 0,
     },
@@ -176,7 +172,7 @@ test('DBOS bounded continuation raises only the triggered axis by one calibrated
         idempotencyKey: 'continue-1',
       },
     } as never),
-    { limit: 'maxIterations', value: 10 },
+    { limit: 'maxIterations', value: 4 },
   );
 
   await assert.rejects(
@@ -189,8 +185,8 @@ test('DBOS bounded continuation raises only the triggered axis by one calibrated
       suspension: {
         snapshot: {
           ...suspended,
-          maxIterations: 10,
-          consumption: { ...suspended.consumption, iterations: 10 },
+          maxIterations: 4,
+          consumption: { ...suspended.consumption, iterations: 4 },
         },
       },
       command: {

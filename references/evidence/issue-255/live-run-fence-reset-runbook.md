@@ -37,11 +37,15 @@ If any predicate is unknown, treat the reset as unsafe.
 
 The only approved entrypoint is the digest-pinned launcher at
 `/Users/bin/.codex/monitors/issue-255-safe-provision.mjs`. Its SHA-256 is
-`32aea0c1f4e540b310b83d4a1a961f870da56c15197b68b7596eed2396933dff`;
+`3d3fcedc4b435106189b0d1b2809c6e98311f9aead1fb93fb63e89299badf5c3`;
 it refuses to load the versioned implementation unless that file has SHA-256
-`be63e72204812a5d5569d2b6adb5b90eb6ac71db5c8d1fccc19402903ffb3dc0`.
+`44faea68c9bfdfb6d367b048880c4411ee1d4d4337bd82812d9b0eb1fcacb4df`.
 The launcher executes the already-verified bytes directly; it does not reopen
 the owner-writable implementation path after digest verification.
+The collector and every database-mutating launcher mode also verify that the
+current process descends from the repository-wide `e2e-lock.sh` owner. Direct
+mutation without that shared lock is rejected, preventing a collector from
+starting between the reset inspection and database deletion.
 Before inspection or cleanup, the implementation validates both fixed database
 names and their separation in one preflight; any invalid target refuses the
 operation before either database can be dropped.
@@ -63,7 +67,8 @@ isolated databases only when the same launcher repeats the inspection and
 accepts the state:
 
 ```sh
-node /Users/bin/.codex/monitors/issue-255-safe-provision.mjs --cleanup-if-safe
+/Users/bin/Desktop/开发/内容无人区/美业内容2/.scratch/orca-run-2026-07-25/e2e-lock.sh \
+  node /Users/bin/.codex/monitors/issue-255-safe-provision.mjs --cleanup-if-safe
 ```
 
 Any false or unknown predicate refuses cleanup before either database is
@@ -73,7 +78,8 @@ absent. Recreate both fresh, separate databases only through the same
 provisioner:
 
 ```sh
-node /Users/bin/.codex/monitors/issue-255-safe-provision.mjs
+/Users/bin/Desktop/开发/内容无人区/美业内容2/.scratch/orca-run-2026-07-25/e2e-lock.sh \
+  node /Users/bin/.codex/monitors/issue-255-safe-provision.mjs
 ```
 
 Before reprovision, remove only the zero-byte `.pending` manifest reserved by

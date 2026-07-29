@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
+import {
+  ISSUE_255_RECORDED_CALIBRATION_LIMITS,
+} from '../admin-config/bounded-execution-limits.js';
+import { summarizeBoundedExecutionCalibration } from './bounded-execution-calibration.js';
 import {
   runIssue255RecordedCalibration,
 } from './issue-255-recorded-calibration.js';
@@ -83,6 +88,39 @@ test('issue 255 recorded runner executes the strict 27-sample matrix with networ
         ),
       true,
       'recorded media samples must be labeled as non-limit-loop zero-cost observations',
+    );
+
+    const summary = summarizeBoundedExecutionCalibration(samples);
+    const evidence = JSON.parse(
+      await readFile(
+        new URL(
+          '../../../../../references/evidence/issue-255/recorded-calibration-decision.json',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    );
+    assert.equal(evidence.evidence.recorded.sampleCount, 27);
+    assert.deepEqual(evidence.evidence.recorded.distribution.modalities, {
+      copy: 9,
+      image_text: 9,
+      video: 9,
+    });
+    assert.deepEqual(
+      evidence.observedDistributions.overall.iterations,
+      summary.overall.maxIterations,
+    );
+    assert.deepEqual(
+      Object.fromEntries(
+        Object.entries(evidence.decisions).map(([axis, decision]) => [
+          axis,
+          {
+            default: (decision as { default: number | 'unset' }).default,
+            hardCap: (decision as { hardCap: number | 'unset' }).hardCap,
+          },
+        ]),
+      ),
+      ISSUE_255_RECORDED_CALIBRATION_LIMITS,
     );
   } finally {
     globalThis.fetch = originalFetch;

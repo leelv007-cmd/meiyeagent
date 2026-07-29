@@ -40,13 +40,29 @@ test('issue 255 live collector CLI stays fail-closed without explicit live GO', 
     /cancellation.*mutually exclusive/u,
   );
   assert.deepEqual(
-    assertIssue255LiveCollectorLaunch({
-      RUN_LIVE_ISSUE_255: '1',
-      MODEL_EXECUTION_MODE: 'direct',
-      MODEL_MEDIA_EXECUTION_MODE: 'tuzi',
-      PROVIDER_LIVE_COST_CAP_CNY: '0.1',
-    }),
+    assertIssue255LiveCollectorLaunch(
+      {
+        RUN_LIVE_ISSUE_255: '1',
+        MODEL_EXECUTION_MODE: 'direct',
+        MODEL_MEDIA_EXECUTION_MODE: 'tuzi',
+        PROVIDER_LIVE_COST_CAP_CNY: '0.1',
+      },
+      () => true,
+    ),
     { providerCapMicros: 100_000 },
+  );
+  assert.throws(
+    () =>
+      assertIssue255LiveCollectorLaunch(
+        {
+          RUN_LIVE_ISSUE_255: '1',
+          MODEL_EXECUTION_MODE: 'direct',
+          MODEL_MEDIA_EXECUTION_MODE: 'tuzi',
+          PROVIDER_LIVE_COST_CAP_CNY: '0.1',
+        },
+        () => false,
+      ),
+    /requires the shared e2e lock/u,
   );
 });
 
