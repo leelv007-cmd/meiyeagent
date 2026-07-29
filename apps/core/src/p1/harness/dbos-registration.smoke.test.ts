@@ -300,6 +300,7 @@ test(
       assert.deepEqual(afterResolutionSteps[0]?.output, {
         skillRevisionRefs: ['skill.intent-one@2'],
         skillContentHashes: ['hash-skill-2'],
+        skillCapabilityRequirements: [['structured_output']],
         skillReceiptIds: [
           `skill-materialized:${workflowId}:intent_naming:skill.intent-one%402`,
         ],
@@ -308,6 +309,7 @@ test(
           intent_naming: {
             skillRevisionRefs: ['skill.intent-one@2'],
             skillContentHashes: ['hash-skill-2'],
+            skillCapabilityRequirements: [['structured_output']],
             skillReceiptIds: [
               `skill-materialized:${workflowId}:intent_naming:skill.intent-one%402`,
             ],
@@ -315,21 +317,25 @@ test(
           context_injection: {
             skillRevisionRefs: [],
             skillContentHashes: [],
+            skillCapabilityRequirements: [],
             skillReceiptIds: [],
           },
           brief_compilation: {
             skillRevisionRefs: [],
             skillContentHashes: [],
+            skillCapabilityRequirements: [],
             skillReceiptIds: [],
           },
           execution_selection: {
             skillRevisionRefs: [],
             skillContentHashes: [],
+            skillCapabilityRequirements: [],
             skillReceiptIds: [],
           },
           assembly_delivery: {
             skillRevisionRefs: [],
             skillContentHashes: [],
+            skillCapabilityRequirements: [],
             skillReceiptIds: [],
           },
         },
