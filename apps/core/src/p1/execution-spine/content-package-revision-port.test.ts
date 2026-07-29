@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { buildContentPackage } from "../operations/content-package.js";
+import { ContentPackageRightsBasisResolver } from "../operations/content-package-rights-basis.js";
 
 import {
 	ContentPackageRevisionWriteError,
@@ -257,6 +258,10 @@ test("Copy revision writes are idempotent and retain existing owned receipts", a
 		{ id: "source-package-1", revision: "3" },
 	);
 	assert.deepEqual(
+		writer.get("workspace-1", "package-1")?.source.assetIds,
+		["selected-asset-1"],
+	);
+	assert.deepEqual(
 		writer.get("workspace-1", "package-1")?.variants,
 		inputWithVariants.variants,
 	);
@@ -299,6 +304,158 @@ test("Copy revision writes are idempotent and retain existing owned receipts", a
 			error instanceof ContentPackageRevisionWriteError &&
 			error.code === "CONTENT_PACKAGE_SOURCE_UNAVAILABLE",
 	);
+});
+
+test("video delivery resolves source rights from a frozen source ContentPackage", async () => {
+	const rightsRequests: Array<{
+		assetIds: string[];
+		platform?: string;
+		workspaceId: string;
+	}> = [];
+	const assetRights = {
+		async resolve(input: {
+			assetIds: string[];
+			platform?: string;
+			workspaceId: string;
+		}) {
+			rightsRequests.push(input);
+			return {
+				knownAssetIds: input.assetIds,
+				unauthorizedAssetIds: [],
+			};
+		},
+	};
+	const writer = new MemoryContentPackageRevisionWritePort(assetRights);
+	writer.seed(sourceContentPackage());
+	writer.seed(
+		buildContentPackage({
+			id: "package-video-1",
+			kind: "video",
+			source: {
+				assetIds: [],
+				creationExecutionSnapshot: {
+					id: "snapshot-video-1",
+					revision: 1,
+					schemaVersion: "creation-execution-snapshot/v1",
+				},
+				sourceContentPackage: {
+					id: "source-package-1",
+					revision: "3",
+				},
+				targetPlatform: "douyin",
+				workflowId: "task-video-1",
+				workflowRevision: 1,
+				workId: "work-video-1",
+			},
+			timestamp: "2026-07-22T09:00:00.000Z",
+			workspaceId: "workspace-1",
+		}),
+	);
+	const version = {
+		body: "视频正文",
+		createdAt: "2026-07-22T09:00:00.000Z",
+		id: "version-video-1",
+		orderedAssetIds: ["generated-video-1"],
+		source: "ai_generated" as const,
+		title: "夏日护理视频",
+		topics: [],
+	};
+	const variants = (["xiaohongshu", "douyin", "video_account"] as const).map(
+		(platform) => ({
+			currentVersionId: `${version.id}-${platform}`,
+			id: `package-video-1-${platform}`,
+			platform,
+			versions: [{ ...version, id: `${version.id}-${platform}` }],
+		}),
+	);
+
+	await writer.write({
+		expectedRevision: 0,
+		generated: {
+			assetIds: ["generated-video-1"],
+			childRuns: [],
+			ownedAssets: [
+				{
+					contentType: "video/mp4",
+					id: "generated-video-1",
+					objectKey: "packages/package-video-1/generated-video-1.mp4",
+					sha256: "c".repeat(64),
+				},
+			],
+		},
+		idempotencyKey: "harness-video:task-video-1",
+		kind: "video",
+		marketing: {
+			contextBundle: {
+				bundleId: "bundle-video-1",
+				hash: "d".repeat(64),
+				revision: 1,
+			},
+			declaration: {
+				deliveryLayer: "finished_media",
+				implicitConstraints: [],
+				normalizedIntent: "生成门店宣传视频",
+				relevantAssetCategories: ["product_service"],
+				route: "customized",
+				routingSource: "model",
+				taskType: "daily_service_exposure",
+				usedAssetCategories: ["product_service"],
+			},
+			factRefs: [],
+			identityRefs: [],
+			rightsRefs: ["selected-asset-1"],
+		},
+		occurredAt: "2026-07-22T09:00:00.000Z",
+		packageId: "package-video-1",
+		platform: "douyin",
+		snapshot: {
+			id: "snapshot-video-1",
+			revision: 1,
+			schemaVersion: "creation-execution-snapshot/v1",
+		},
+		snapshotId: "snapshot-video-1",
+		sourceContentPackage: { id: "source-package-1", revision: "3" },
+		taskId: "task-video-1",
+		variants,
+		version,
+		workId: "work-video-1",
+		workflowId: "task-video-1",
+		workflowRevision: 1,
+		workspaceId: "workspace-1",
+	});
+
+	const persisted = writer.get("workspace-1", "package-video-1");
+	assert.ok(persisted);
+	const douyinVariant = persisted.variants.find(
+		(variant) => variant.platform === "douyin",
+	);
+	const douyinVersion = douyinVariant?.versions.find(
+		(candidate) => candidate.id === douyinVariant.currentVersionId,
+	);
+	assert.ok(douyinVersion);
+	const resolver = new ContentPackageRightsBasisResolver(assetRights, {
+		async getRegistryRevision() {
+			throw new Error("Source authorization must not consult generation terms.");
+		},
+	});
+
+	assert.deepEqual(
+		await resolver.resolve({
+			contentPackage: persisted,
+			platform: "douyin",
+			version: douyinVersion,
+			workspaceId: "workspace-1",
+		}),
+		{
+			kind: "source_asset_authorizations",
+			rightsRefs: ["selected-asset-1"],
+		},
+	);
+	assert.deepEqual(rightsRequests.at(-1), {
+		assetIds: ["selected-asset-1"],
+		platform: "douyin",
+		workspaceId: "workspace-1",
+	});
 });
 
 function sourceContentPackage() {

@@ -280,6 +280,10 @@ export class PostgresContentPackageRevisionWritePort
 				revision,
 				source: {
 					...contentPackage.source,
+					assetIds: canonicalSourceAssetIds(
+						contentPackage,
+						sourceContentPackage,
+					),
 					...(input.platform ? { targetPlatform: input.platform } : {}),
 					workflowId: input.taskId,
 					workflowRevision: input.workflowRevision,
@@ -462,6 +466,10 @@ export class MemoryContentPackageRevisionWritePort
 			revision,
 			source: {
 				...contentPackage.source,
+				assetIds: canonicalSourceAssetIds(
+					contentPackage,
+					sourceContentPackage,
+				),
 				...(input.platform ? { targetPlatform: input.platform } : {}),
 				workflowId: input.taskId,
 				workflowRevision: input.workflowRevision,
@@ -619,6 +627,19 @@ function assertSourceContentPackageAvailable(
 		);
 	}
 	return contentPackage;
+}
+
+function canonicalSourceAssetIds(
+	contentPackage: ContentPackage,
+	sourceContentPackage: ContentPackage | undefined,
+) {
+	const sourceCurrentVersion = sourceContentPackage?.versions.find(
+		(version) => version.id === sourceContentPackage.currentVersionId,
+	);
+	return unique([
+		...contentPackage.source.assetIds,
+		...(sourceCurrentVersion?.orderedAssetIds ?? []),
+	]);
 }
 
 function assertDeliveredAssetBinding(
