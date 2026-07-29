@@ -320,6 +320,68 @@ test('durable Skill resolution replays frozen refs after the active binding chan
   ]);
 });
 
+test('durable replay rejects prompt version or content-hash drift', async () => {
+  const outputs = new Map<string, unknown>();
+  const runtime: HarnessWorkflowRuntime = {
+    async runStep<Output>(
+      effectIdempotencyKey: string,
+      operation: () => Promise<Output>,
+    ) {
+      if (outputs.has(effectIdempotencyKey)) {
+        return outputs.get(effectIdempotencyKey) as Output;
+      }
+      const output = await operation();
+      outputs.set(effectIdempotencyKey, output);
+      return output;
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision() {
+      throw new Error('Unexpected decision wait.');
+    },
+    async recordTrace() {},
+  };
+  const initial = {
+    ...taskInput(),
+    promptRevisionRefs: {
+      intentNaming: {
+        name: 'harness/intent-naming',
+        version: '7',
+        contentHash: 'a'.repeat(64),
+        label: 'production',
+        source: 'langfuse' as const,
+        isFallback: false,
+      },
+    },
+  };
+
+  await runHarnessWorkflow(
+    'task-prompt-drift',
+    initial,
+    fixtureStages(),
+    runtime,
+  );
+
+  await assert.rejects(
+    runHarnessWorkflow(
+      'task-prompt-drift',
+      {
+        ...initial,
+        promptRevisionRefs: {
+          intentNaming: {
+            ...initial.promptRevisionRefs.intentNaming,
+            version: '8',
+            contentHash: 'b'.repeat(64),
+          },
+        },
+      },
+      fixtureStages(),
+      runtime,
+    ),
+    /已冻结的 Prompt 版本或内容哈希不一致/u,
+  );
+});
+
 test('official-neutral execution reports a conversational identity reminder without blocking delivery', async () => {
   const request = snapshotTaskInput();
   request.executionSnapshot = {

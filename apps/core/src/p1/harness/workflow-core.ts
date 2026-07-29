@@ -367,6 +367,17 @@ type FrozenSkillStageResolutions = Record<
   FrozenSkillStageResolution
 >;
 
+interface FrozenPromptRevisionReference {
+  key: string;
+  name: string;
+  version: string;
+  contentHash: string;
+  label: string;
+  source: 'langfuse' | 'builtin';
+  isFallback: boolean;
+  fallbackReason?: string;
+}
+
 type ResolvedSkillStages = Record<
   SkillStage,
   {
@@ -396,10 +407,25 @@ async function resolveWorkflowStageSkills(
       }
       return {
         ...stageSkillResolutions.intent_naming,
+        promptRevisionRefs: freezePromptRevisionRefs(
+          request.promptRevisionRefs,
+        ),
         stageSkillResolutions,
       };
     },
   );
+  const frozenPromptRevisionRefs = readFrozenPromptRevisionRefs(frozen);
+  const currentPromptRevisionRefs = freezePromptRevisionRefs(
+    request.promptRevisionRefs,
+  );
+  if (
+    !samePromptRevisionRefs(
+      frozenPromptRevisionRefs,
+      currentPromptRevisionRefs,
+    )
+  ) {
+    throw new Error('已冻结的 Prompt 版本或内容哈希不一致。');
+  }
   const stageSkillResolutions = normalizeFrozenSkillStages(frozen);
   const resolvedStages = emptyResolvedSkillStages();
   for (const stage of SKILL_STAGES) {
@@ -526,6 +552,86 @@ function sameOrderedValues(
   return (
     left.length === right.length &&
     left.every((value, index) => value === right[index])
+  );
+}
+
+function freezePromptRevisionRefs(
+  input: HarnessWorkflowInput['promptRevisionRefs'],
+): FrozenPromptRevisionReference[] {
+  return Object.entries(input ?? {})
+    .flatMap(([key, reference]) =>
+      reference
+        ? [
+            {
+              key,
+              name: reference.name,
+              version: reference.version,
+              contentHash: reference.contentHash,
+              label: reference.label,
+              source: reference.source,
+              isFallback: reference.isFallback,
+              ...(reference.fallbackReason
+                ? { fallbackReason: reference.fallbackReason }
+                : {}),
+            },
+          ]
+        : [],
+    )
+    .sort((left, right) => left.key.localeCompare(right.key));
+}
+
+function readFrozenPromptRevisionRefs(
+  frozen: unknown,
+): FrozenPromptRevisionReference[] {
+  if (!isRecord(frozen) || !('promptRevisionRefs' in frozen)) return [];
+  if (!isFrozenPromptRevisionRefs(frozen.promptRevisionRefs)) {
+    throw new Error('已冻结的 Prompt 版本或内容哈希不一致。');
+  }
+  return frozen.promptRevisionRefs;
+}
+
+function isFrozenPromptRevisionRefs(
+  input: unknown,
+): input is FrozenPromptRevisionReference[] {
+  return (
+    Array.isArray(input) &&
+    input.every(
+      (reference) =>
+        isRecord(reference) &&
+        typeof reference.key === 'string' &&
+        typeof reference.name === 'string' &&
+        typeof reference.version === 'string' &&
+        typeof reference.contentHash === 'string' &&
+        typeof reference.label === 'string' &&
+        (reference.source === 'langfuse' ||
+          reference.source === 'builtin') &&
+        typeof reference.isFallback === 'boolean' &&
+        (reference.fallbackReason === undefined ||
+          typeof reference.fallbackReason === 'string'),
+    )
+  );
+}
+
+function samePromptRevisionRefs(
+  left: readonly FrozenPromptRevisionReference[],
+  right: readonly FrozenPromptRevisionReference[],
+) {
+  return (
+    left.length === right.length &&
+    left.every((reference, index) => {
+      const current = right[index];
+      return (
+        current !== undefined &&
+        reference.key === current.key &&
+        reference.name === current.name &&
+        reference.version === current.version &&
+        reference.contentHash === current.contentHash &&
+        reference.label === current.label &&
+        reference.source === current.source &&
+        reference.isFallback === current.isFallback &&
+        reference.fallbackReason === current.fallbackReason
+      );
+    })
   );
 }
 
