@@ -16,6 +16,16 @@ export type BoundedExecutionLimitName = z.infer<
   typeof boundedExecutionLimitNameSchema
 >;
 
+const BOUNDED_EXECUTION_CONSUMPTION_BY_LIMIT = {
+  maxIterations: 'iterations',
+  maxCostCents: 'costCents',
+  maxWallClockMs: 'wallClockMs',
+  maxDelegations: 'delegations',
+} as const satisfies Record<
+  BoundedExecutionLimitName,
+  keyof BoundedExecutionConsumption
+>;
+
 const boundedExecutionLimitSchema = z.union([
   z.number().int().nonnegative().safe(),
   z.literal('unset'),
@@ -110,6 +120,23 @@ const boundedExecutionSuspendedEventSchema = z
         path: ['snapshot', 'stopReason'],
       });
     }
+    const triggeredLimit = event.snapshot.triggeredLimit;
+    if (triggeredLimit === null) {
+      return;
+    }
+    const limit = event.snapshot[triggeredLimit];
+    const consumption =
+      event.snapshot.consumption[
+        BOUNDED_EXECUTION_CONSUMPTION_BY_LIMIT[triggeredLimit]
+      ];
+    if (limit !== 'unset' && consumption < limit) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'A suspension event requires consumption to reach the triggered execution limit.',
+        path: ['snapshot', 'consumption'],
+      });
+    }
   });
 
 const boundedExecutionResumedEventSchema = z
@@ -124,13 +151,82 @@ const boundedExecutionResumedEventSchema = z
   .superRefine((event, context) => {
     if (
       event.previousSnapshot.stopReason !== 'limit_reached' ||
-      event.snapshot.stopReason !== null
+      event.previousSnapshot.triggeredLimit === null ||
+      event.snapshot.stopReason !== null ||
+      event.snapshot.triggeredLimit !== null
     ) {
       context.addIssue({
         code: 'custom',
         message:
           'A resume event requires a triggered predecessor and an active successor.',
         path: ['snapshot', 'stopReason'],
+      });
+    }
+    const triggeredLimit = event.previousSnapshot.triggeredLimit;
+    if (triggeredLimit === null) {
+      return;
+    }
+    const previousLimit = event.previousSnapshot[triggeredLimit];
+    const raisedLimit = event.snapshot[triggeredLimit];
+    if (
+      previousLimit === 'unset' ||
+      raisedLimit === 'unset' ||
+      raisedLimit <= previousLimit
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A resume event must strictly raise the triggered limit.',
+        path: ['snapshot', triggeredLimit],
+      });
+    }
+    if (event.snapshot.schemaVersion !== event.previousSnapshot.schemaVersion) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A resume event must preserve the snapshot schema version.',
+        path: ['snapshot', 'schemaVersion'],
+      });
+    }
+    if (
+      event.snapshot.requiredLimits.length !==
+        event.previousSnapshot.requiredLimits.length ||
+      event.snapshot.requiredLimits.some(
+        (limit, index) =>
+          limit !== event.previousSnapshot.requiredLimits[index],
+      )
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A resume event must preserve required execution limits.',
+        path: ['snapshot', 'requiredLimits'],
+      });
+    }
+    for (const limit of BOUNDED_EXECUTION_LIMITS) {
+      if (
+        limit !== triggeredLimit &&
+        event.snapshot[limit] !== event.previousSnapshot[limit]
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message:
+            'A resume event may only change the triggered execution limit.',
+          path: ['snapshot', limit],
+        });
+      }
+    }
+    if (
+      event.snapshot.consumption.iterations !==
+        event.previousSnapshot.consumption.iterations ||
+      event.snapshot.consumption.costCents !==
+        event.previousSnapshot.consumption.costCents ||
+      event.snapshot.consumption.wallClockMs !==
+        event.previousSnapshot.consumption.wallClockMs ||
+      event.snapshot.consumption.delegations !==
+        event.previousSnapshot.consumption.delegations
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A resume event must preserve execution consumption.',
+        path: ['snapshot', 'consumption'],
       });
     }
   });
