@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { Pool } from 'pg';
@@ -61,6 +62,25 @@ test(
         'operator acceptance fixture',
       );
     };
+    const runCli = (action: 'replay' | 'discard', auditId: string) =>
+      spawnSync(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          'src/p1/harness/langfuse-outbox-ops-cli.ts',
+          action,
+          auditId,
+        ],
+        {
+          cwd: new URL('../../..', import.meta.url),
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            DATABASE_URL: connectionString,
+          },
+        },
+      );
 
     try {
       await appendDeadLetter(workspaceA, sharedAuditId, runtimeSharedA);
@@ -69,12 +89,26 @@ test(
       await append(workspaceA, queuedAuditId);
 
       assert.notEqual(runtimeSharedA, runtimeSharedB);
-      assert.equal(await store.replayLangfuseDeadLetter(runtimeSharedA), true);
-      assert.equal(await store.discardLangfuseDeadLetter(runtimeDiscard), true);
+      const replayed = runCli('replay', runtimeSharedA);
+      assert.equal(replayed.status, 0, replayed.stderr);
+      assert.equal(replayed.stdout.trim(), `replayed ${runtimeSharedA}`);
+      const discarded = runCli('discard', runtimeDiscard);
+      assert.equal(discarded.status, 0, discarded.stderr);
+      assert.equal(discarded.stdout.trim(), `discarded ${runtimeDiscard}`);
 
       assert.equal(await store.replayLangfuseDeadLetter(runtimeSharedA), false);
-      assert.equal(await store.discardLangfuseDeadLetter(runtimeQueued), false);
-      assert.equal(await store.replayLangfuseDeadLetter(sharedAuditId), false);
+      const queuedRejected = runCli('discard', runtimeQueued);
+      assert.notEqual(queuedRejected.status, 0);
+      assert.match(
+        queuedRejected.stderr,
+        /No dead-letter Langfuse outbox row changed/u,
+      );
+      const logicalIdRejected = runCli('replay', sharedAuditId);
+      assert.notEqual(logicalIdRejected.status, 0);
+      assert.match(
+        logicalIdRejected.stderr,
+        /No dead-letter Langfuse outbox row changed/u,
+      );
 
       const states = await pool.query<{
         audit_id: string;
