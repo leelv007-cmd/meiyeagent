@@ -11,6 +11,7 @@ const quote = {
   billingMode: 'per_request' as const,
   catalogModelId: 'image-model',
   confirmedAmount: 4,
+  debitUnits: [{ quantity: 2, resource: 'image' as const }],
   formula: { currency: 'CNY', expression: 'server', unitRate: 2 },
   lifecycleStatus: 'quoted' as const,
   quoteId: 'quote-1',
@@ -19,7 +20,7 @@ const quote = {
 };
 
 describe('ImageAdjustConfirmation', () => {
-  it('shows the server quote and requires an explicit confirmation click', () => {
+  it('shows the cost in buckets, never in money, and waits for a click', () => {
     const onConfirm = vi.fn();
     render(
       <ImageAdjustConfirmation
@@ -31,7 +32,13 @@ describe('ImageAdjustConfirmation', () => {
       />
     );
 
-    expect(screen.getByText('整组 2 张·4 CNY')).toBeInTheDocument();
+    // D1 / D-109「供应细节不可见」: this read「整组 2 张·4 CNY」until 2026-07-29.
+    // The quote still carries an amount and a currency — the fixture above keeps
+    // both — and neither may reach the merchant.
+    expect(
+      screen.getByText('整组 2 张·本次用 2 张图片额度')
+    ).toBeInTheDocument();
+    expect(screen.getByRole('dialog').textContent).not.toMatch(/CNY|￥|¥|元/u);
     expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true');
     expect(onConfirm).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: '确认并生成' }));

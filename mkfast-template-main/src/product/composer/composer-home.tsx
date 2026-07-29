@@ -69,6 +69,22 @@ import {
 import { executeProductCommand, useProductState } from '@/product/client';
 import { DashboardContinueSection } from '@/product/dashboard-continue-section';
 import {
+  createExecutionConfirmState,
+  confirmExecution,
+  openExecutionConfirm,
+  projectExecutionConfirmCard,
+  projectExecutionCost,
+  projectExecutionParams,
+  rejectExecution,
+  shouldOpenExecutionConfirm,
+} from './execution-confirm-card';
+import { ExecutionConfirmCard } from './execution-confirm-card-panel';
+import {
+  projectExecutionCostFeedback,
+  type ExecutionCostFeedback,
+} from './execution-cost-feedback';
+import { ExecutionCostFeedbackLine } from './execution-cost-feedback-line';
+import {
   DashboardHomeGreeting,
   DashboardHomeSurface,
 } from '@/product/dashboard-home-surface';
@@ -509,6 +525,22 @@ export function ComposerHome({
     createBriefSurfaceState()
   );
   const [briefPending, setBriefPending] = useState(false);
+  // D-164③: the confirm card stands between Brief accept and the run. Its
+  // state is its own — sharing BriefSurfacePhase would be changing one of the
+  // seven HITL classes D-164③ leaves untouched.
+  const [executionConfirm, setExecutionConfirm] = useState(
+    createExecutionConfirmState
+  );
+  const pendingRunRef = useRef<{
+    lensId: CreationLensId;
+    videoConfirmAccepted?: boolean;
+    briefConfirmationId?: string;
+  } | null>(null);
+  // Deliberately outside `session`: declining clears the transcript, and a
+  // feedback line that lived there would be wiped by the very action it
+  // reports on (D-164⑥ 决定 B).
+  const [costFeedback, setCostFeedback] =
+    useState<ExecutionCostFeedback | null>(null);
   const [submissionQuotaBlocked, setSubmissionQuotaBlocked] = useState(false);
   const [submissionGroundingBlocked, setSubmissionGroundingBlocked] =
     useState<ComposerGroundingBlocker | null>(null);
@@ -1028,6 +1060,62 @@ export function ComposerHome({
     [quotaRequirements, usageQuery.data]
   );
   const quotaBlocked = quotaPassive.short || submissionQuotaBlocked;
+
+  /**
+   * D-164③ / D-164⑥: what this run will do and what it will cost, at the
+   * moment of committing to it. Every value is already on screen somewhere —
+   * the card's job is to put them in one place at the one moment they matter,
+   * and it reads the same quota sentence the passive row uses so one run is
+   * never described two ways.
+   */
+  const openExecutionConfirmFor = (run: {
+    lensId: CreationLensId;
+    videoConfirmAccepted?: boolean;
+    briefConfirmationId?: string;
+  }) => {
+    // Single decision point (D2). Call sites must not write their own `if`,
+    // so switching the trigger 口径 stays one edit.
+    if (!shouldOpenExecutionConfirm({ existingGate: true, generative: true })) {
+      runCreate(run.lensId, run.videoConfirmAccepted, run.briefConfirmationId);
+      return;
+    }
+    const rowValue = (key: 'destination' | 'deliverable') =>
+      signedPreview?.rows.find((row) => row.key === key)?.value ?? null;
+    pendingRunRef.current = run;
+    setCostFeedback(null);
+    setExecutionConfirm((current) =>
+      openExecutionConfirm(current, {
+        composerSnapshot: {
+          draftRevisionId:
+            briefState.projection?.bindRevisions.draftRevisionId ?? '',
+          lensId: lensState.lensId,
+          sources: [...lensState.draft.sources],
+          userText: lensState.draft.userText,
+        },
+        cost: projectExecutionCost({
+          available: {
+            copy: usageQuery.data?.usage.copy.available ?? null,
+            image: usageQuery.data?.usage.image.available ?? null,
+            video: usageQuery.data?.usage.video.available ?? null,
+          },
+          billingNote: currentQuoteView?.billingNote ?? null,
+          requirements: quotaRequirements,
+        }),
+        params: projectExecutionParams({
+          aspectRatio: submissionAspectRatio,
+          deliverable: rowValue('deliverable'),
+          destination: rowValue('destination'),
+          durationSeconds: submissionDurationSeconds,
+          lensId: run.lensId,
+          modelName: selectedModel?.displayName ?? null,
+          // Server-owned label bound to the output count — it is the
+          // authority on what this run produces, so it wins over local wording.
+          outputLabel: quoteQuery.data?.outputLabel ?? null,
+          quantity: submissionQuantity,
+        }),
+      })
+    );
+  };
 
   useEffect(() => {
     emitTelemetry('identity_state', { state: identitySelection.state });
@@ -2240,11 +2328,15 @@ export function ComposerHome({
         throw new Error('Brief confirmation was invalidated before submit.');
       }
       setBriefState(result.state);
-      runCreate(
-        lensState.lensId,
-        result.state.videoConfirmAccepted,
-        confirmationId
-      );
+      // D-164③ / §7.2: 安全确认 → 花费确认. Brief answers「这次跑有没有风险」;
+      // the confirm card answers「这次跑要花多少」. Two questions, two cards,
+      // still no new interception point — this is the gate that already
+      // existed, now saying what the run costs before it starts.
+      openExecutionConfirmFor({
+        briefConfirmationId: confirmationId,
+        lensId: lensState.lensId,
+        videoConfirmAccepted: result.state.videoConfirmAccepted,
+      });
     } catch {
       toast.error(workbench_operation_failed());
     } finally {
@@ -2785,6 +2877,13 @@ export function ComposerHome({
             onConfirm={handleBriefConfirm}
             onCancel={() => {
               setBriefState(cancelBriefSurface(briefState).state);
+              // D-164⑥ 决定 B: backing out is still an outcome, and the
+              // merchant is owed a straight answer about what it cost. Set
+              // before the line below, which clears the transcript — the
+              // feedback lives outside the session for exactly this reason.
+              setCostFeedback(
+                projectExecutionCostFeedback({ outcome: 'rejected' })
+              );
               // Cancelling abandons this attempt, so the transcript goes back to
               // empty rather than keeping a turn that never ran.
               setSession(createComposerSession(sessionIdRef.current));
@@ -2792,6 +2891,40 @@ export function ComposerHome({
             disabled={createWork.isPending}
           />
         ) : null}
+
+        {/*
+         * D-164③/⑥ 的挂载点。确认卡与它的反馈尾行共用这一格：卡消失后反馈出现
+         * 在同一坐标，商家的视线不用移动，「就地」是字面成立而不是近似。
+         */}
+        <div data-testid="execution-confirm-slot">
+          <ExecutionConfirmCard
+            {...projectExecutionConfirmCard(executionConfirm, {
+              busy: createWork.isPending || briefPending,
+              onConfirm: () => {
+                const run = pendingRunRef.current;
+                setExecutionConfirm(confirmExecution);
+                if (!run) return;
+                pendingRunRef.current = null;
+                runCreate(
+                  run.lensId,
+                  run.videoConfirmAccepted,
+                  run.briefConfirmationId
+                );
+              },
+              onReject: () => {
+                pendingRunRef.current = null;
+                setExecutionConfirm(
+                  (current) => rejectExecution(current).state
+                );
+                setCostFeedback(
+                  projectExecutionCostFeedback({ outcome: 'rejected' })
+                );
+              },
+              staleNotice: currentQuoteView ? null : briefStaleQuoteNotice(),
+            })}
+          />
+          <ExecutionCostFeedbackLine feedback={costFeedback} />
+        </div>
       </section>
 
       {/* 段③ 继续上次工作 — D-164① / D-126. */}

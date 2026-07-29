@@ -275,6 +275,26 @@ function amount(resource: ComposerQuotaResource, value: number) {
   return `${value} ${QUOTA_UNITS[resource]}`;
 }
 
+/**
+ * 「1 条文案额度和 3 张图片额度」— what this run spends, in each bucket's own
+ * unit and never in money (D-109「供应细节不可见」). Exported because more than
+ * one surface has to say this, and two hand-rolled versions would drift into
+ * describing one run two ways.
+ */
+export function quotaSpendLabel(
+  requirements: readonly QuotaRequirement[]
+): string {
+  return (
+    requirements
+      .map(
+        (row) =>
+          `${amount(row.resource, row.cost)}${QUOTA_RESOURCE_LABELS[row.resource]}额度`
+      )
+      // 「和 」 not 「和」: every item opens with a numeral, which needs the space.
+      .join('和 ')
+  );
+}
+
 export function projectQuotaPassiveView(input: {
   requirements: QuotaRequirement[];
   /** Remaining balances from the entitlements projection, in bucket units. */
@@ -291,13 +311,7 @@ export function projectQuotaPassiveView(input: {
     return HIDDEN;
   const loaded = rows as Array<(typeof rows)[number] & { available: number }>;
   const shortRows = loaded.filter((row) => row.available < row.cost);
-  const spend = loaded
-    .map(
-      (row) =>
-        `${amount(row.resource, row.cost)}${QUOTA_RESOURCE_LABELS[row.resource]}额度`
-    )
-    // 「和 」 not 「和」: every item opens with a numeral, which needs the space.
-    .join('和 ');
+  const spend = quotaSpendLabel(loaded);
   const left =
     loaded.length === 1
       ? `还剩 ${amount(loaded[0].resource, loaded[0].available)}`

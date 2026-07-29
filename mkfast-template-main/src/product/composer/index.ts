@@ -167,6 +167,30 @@ export {
 export { RecipePillRow, type RecipePillRowProps } from './recipe-pill-row';
 
 export {
+  EXECUTION_CONFIRM_TRIGGER_MODE,
+  confirmExecution,
+  createExecutionConfirmState,
+  openExecutionConfirm,
+  projectExecutionConfirmCard,
+  projectExecutionCost,
+  projectExecutionParams,
+  rejectExecution,
+  shouldOpenExecutionConfirm,
+  type ExecutionConfirmCardProps,
+  type ExecutionConfirmPhase,
+  type ExecutionConfirmState,
+  type ExecutionCostView,
+  type ExecutionParamRow,
+} from './execution-confirm-card';
+export { ExecutionConfirmCard } from './execution-confirm-card-panel';
+export {
+  projectExecutionCostFeedback,
+  type ExecutionCostFeedback,
+  type ExecutionOutcome,
+} from './execution-cost-feedback';
+export { ExecutionCostFeedbackLine } from './execution-cost-feedback-line';
+
+export {
   MARKETING_TASK_ORDER,
   groupRecipeCardsByMarketingTask,
   marketingTaskForCard,

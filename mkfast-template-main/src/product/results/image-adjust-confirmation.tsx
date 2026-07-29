@@ -12,6 +12,11 @@ import type {
   ResultAdjustCommand,
 } from '@meiye/contracts';
 
+import {
+  quotaSpendLabel,
+  type ComposerQuotaResource,
+} from '@/product/composer/quota-blocking';
+
 export type ImageAdjustConfirmationProps = {
   busy?: boolean;
   error?: string;
@@ -29,10 +34,24 @@ export function ImageAdjustConfirmation(props: ImageAdjustConfirmationProps) {
       : props.scope?.kind === 'asset'
         ? '单张图片'
         : '当前结果';
+  // D1（2026-07-29 拍板）/ D-109「供应细节不可见」: the merchant sees buckets,
+  // never money. This line used to print `${confirmedAmount} ${currency}` and
+  // put「4 CNY」in front of a shop owner — the amount belongs in the settings
+  // detail view, not on a confirmation.
+  // D1（2026-07-29 拍板）/ D-109「供应细节不可见」: the merchant sees buckets,
+  // never money. This line used to print `${confirmedAmount} ${currency}` and
+  // put「4 CNY」in front of a shop owner — amounts belong in the settings
+  // detail view, not on a confirmation.
+  const units = props.quote.debitUnits ?? [];
   const amount =
-    props.quote.confirmedAmount === undefined
-      ? '价格待确认'
-      : `${props.quote.confirmedAmount} ${props.quote.formula.currency ?? '额度'}`;
+    units.length > 0
+      ? `本次用 ${quotaSpendLabel(
+          units.map((unit) => ({
+            cost: unit.quantity,
+            resource: unit.resource as ComposerQuotaResource,
+          }))
+        )}`
+      : '本次会用掉一次生成额度';
 
   return (
     <Dialog
