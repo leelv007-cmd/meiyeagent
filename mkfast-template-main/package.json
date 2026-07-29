@@ -18,7 +18,7 @@
     "locale:check": "tsx scripts/check-locale-keys.ts",
     "locale:compile": "tsx scripts/compile-locale.ts",
     "locale:compile:e2e": "tsx scripts/compile-locale.ts --dev",
-    "test": "pnpm locale:compile && tsx --test $(find src -type f \\( -name '*.test.ts' -o -name '*.test.tsx' \\) ! -name '*.interaction.test.ts' ! -name '*.interaction.test.tsx')",
+    "test": "pnpm locale:compile && tsx --test $(find src scripts -type f \\( -name '*.test.ts' -o -name '*.test.tsx' \\) ! -name '*.interaction.test.ts' ! -name '*.interaction.test.tsx')",
     "test:interaction": "pnpm locale:compile && vitest run",
     "test:interaction:watch": "vitest",
     "deploy": "pnpm run build && wrangler deploy",
