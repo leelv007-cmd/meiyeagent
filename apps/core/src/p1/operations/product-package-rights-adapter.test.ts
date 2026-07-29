@@ -89,6 +89,40 @@ it('rejects an expired restricted-asset authorization during live resolution', a
   );
 });
 
+it('rejects an expired ordinary asset authorization during live resolution', async () => {
+  const resolver = new ProductContentPackageRightsResolver(
+    {
+      async load() {
+        return {
+          assets: [
+            {
+              authorizationStatus: 'authorized',
+              category: 'store',
+              consentScope: 'public_marketing',
+              id: 'asset-ordinary-expired',
+              rightsEvidence: 'merchant-release.pdf',
+              rightsValidUntil: '2026-07-22T09:59:59.000Z',
+              sourceType: 'real',
+            },
+          ],
+        };
+      },
+    },
+    () => new Date('2026-07-22T10:00:00.000Z'),
+  );
+
+  assert.deepEqual(
+    await resolver.resolve({
+      assetIds: ['asset-ordinary-expired'],
+      workspaceId: 'workspace-rights',
+    }),
+    {
+      knownAssetIds: ['asset-ordinary-expired'],
+      unauthorizedAssetIds: ['asset-ordinary-expired'],
+    },
+  );
+});
+
 it('rejects an asset whose authorization excludes the export platform', async () => {
   const resolver = new ProductContentPackageRightsResolver({
     async load() {

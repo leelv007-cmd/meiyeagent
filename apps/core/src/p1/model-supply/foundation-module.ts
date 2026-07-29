@@ -83,6 +83,7 @@ import {
 } from '../supply-registry/supply-control-plane.js';
 import {
   expandCatalogRevisionPayload,
+  LOCAL_FIXTURE_COMMERCIAL_USE_TERMS_SUFFIX,
   type ExpandedSupplyRegistrySnapshot,
 } from '../supply-registry/expand.js';
 import {
@@ -2263,6 +2264,7 @@ export class ModelSupplyControlPlaneService {
       snapshot.contracts = snapshot.contracts.map((contract) => ({
         ...contract,
         commercialUse: 'allowed',
+        termsRevisionId: `${contract.termsRevisionId}${LOCAL_FIXTURE_COMMERCIAL_USE_TERMS_SUFFIX}`,
       }));
     }
     await this.supplyRegistry.setCurrentRegistryRevision(

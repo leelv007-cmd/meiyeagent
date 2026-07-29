@@ -176,6 +176,8 @@ export function createModelSupplyRuntime(
   input: ModelSupplyRuntimeAssemblyInput,
 ) {
   const { deployments, models, runtime, runtimeCapabilities } = input.catalog;
+  const allowRecordedExecution =
+    runtime.activation === 'local_fixture_verified';
   const capabilityHotAssembly =
     input.capabilityHotAssembly ??
     seedCapabilityHotAssemblyFromCatalog(input.catalog).hotAssembly;
@@ -228,13 +230,14 @@ export function createModelSupplyRuntime(
   const controlPlane = new ModelSupplyControlPlaneService({
     ...input.controlPlane,
     activationProbeLiveDeploymentIds,
-    allowRecordedExecution: runtime.activation === 'local_fixture_verified',
+    allowRecordedExecution,
     application,
     configurationRevisions: input.catalog.configurationRevisions,
     fallbackCatalog,
   });
   return {
     activationProbeLiveDeploymentIds,
+    allowRecordedExecution,
     application,
     capabilityHotAssembly,
     controlPlane,

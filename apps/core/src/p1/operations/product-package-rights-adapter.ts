@@ -48,6 +48,7 @@ export class ProductContentPackageRightsResolver
     }
     const requested = new Set(input.assetIds);
     const knownAssets = state.assets.filter((asset) => requested.has(asset.id));
+    const now = this.clock();
     return {
       knownAssetIds: knownAssets.map((asset) => asset.id),
       unauthorizedAssetIds: knownAssets
@@ -57,6 +58,7 @@ export class ProductContentPackageRightsResolver
             asset.authorizationStatus !== 'authorized' ||
             asset.consentScope === 'internal_only' ||
             !asset.rightsEvidence?.trim() ||
+            hasExpiredRights(asset, now) ||
             (input.platform !== undefined &&
               asset.rightsPlatforms !== undefined &&
               !asset.rightsPlatforms.some(
@@ -70,7 +72,7 @@ export class ProductContentPackageRightsResolver
                 rightsPlatforms: asset.rightsPlatforms,
                 rightsValidUntil: asset.rightsValidUntil,
               },
-              this.clock()
+              now
             )
         )
       .map((asset) => asset.id),
@@ -125,6 +127,20 @@ export class ProductContentPackageRightsResolver
     }
     return { kind: 'authorized' as const };
   }
+}
+
+function hasExpiredRights(
+  asset: {
+    rightsNoFixedExpiry?: boolean;
+    rightsValidUntil?: string;
+  },
+  now: Date,
+) {
+  if (asset.rightsNoFixedExpiry === true || asset.rightsValidUntil === undefined) {
+    return false;
+  }
+  const validUntil = Date.parse(asset.rightsValidUntil);
+  return !Number.isFinite(validUntil) || validUntil <= now.getTime();
 }
 
 export class OperationsProductPackageRightsAdapter

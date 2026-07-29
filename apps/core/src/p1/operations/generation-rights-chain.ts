@@ -5,7 +5,6 @@ type GeneratedEvidence = Pick<
   'assetIds' | 'childRuns' | 'ownedAssets'
 >;
 type ChildRun = GeneratedEvidence['childRuns'][number];
-type OwnedAsset = NonNullable<GeneratedEvidence['ownedAssets']>[number];
 type ProviderAttempt = NonNullable<ChildRun['providerAttempts']>[number];
 type RouteSnapshot = NonNullable<ChildRun['routeSnapshot']>;
 
@@ -13,7 +12,6 @@ export interface CompleteGenerationRightsChain {
   childRun: ChildRun;
   completedAttempt: ProviderAttempt;
   generatedAssetId: string;
-  ownedAsset: OwnedAsset;
   providerTaskRef: string;
   route: RouteSnapshot;
 }
@@ -65,7 +63,6 @@ export function resolveCompleteGenerationRightsChain(input: {
     childRun,
     completedAttempt,
     generatedAssetId,
-    ownedAsset,
     providerTaskRef,
     route,
   };

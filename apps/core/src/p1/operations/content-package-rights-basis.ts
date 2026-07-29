@@ -12,6 +12,7 @@ import type {
   ContentPackageRightsResolverPort,
 } from './types.js';
 import { resolveCompleteGenerationRightsChain } from './generation-rights-chain.js';
+import { LOCAL_FIXTURE_COMMERCIAL_USE_TERMS_SUFFIX } from '../supply-registry/expand.js';
 
 export interface ContentPackageRightsBasisRegistryPort {
   getRegistryRevision(
@@ -39,6 +40,9 @@ export class ContentPackageRightsBasisResolver
   constructor(
     private readonly assetRights: ContentPackageRightsResolverPort,
     private readonly supplyRegistry: ContentPackageRightsBasisRegistryPort,
+    private readonly options: {
+      allowLocalFixtureTerms?: boolean;
+    } = {},
   ) {}
 
   async resolve(input: {
@@ -171,7 +175,11 @@ export class ContentPackageRightsBasisResolver
       contracts.length !== 1 ||
       !contract ||
       contract.commercialUse !== 'allowed' ||
-      !contract.termsRevisionId.trim()
+      !contract.termsRevisionId.trim() ||
+      (contract.termsRevisionId.endsWith(
+        LOCAL_FIXTURE_COMMERCIAL_USE_TERMS_SUFFIX,
+      ) &&
+        this.options.allowLocalFixtureTerms !== true)
     ) {
       throw unavailable(
         'The generation-time supply contract does not permit commercial use.',

@@ -655,6 +655,9 @@ operations = new OperationsApplicationService(operationsRepository, {
   contentPackageRightsBasisResolver: new ContentPackageRightsBasisResolver(
     contentPackageRightsResolver,
     supplyControlRepository,
+    {
+      allowLocalFixtureTerms: modelSupplyRuntime.allowRecordedExecution,
+    },
   ),
   contentPackageRightsResolver,
   contentWriteOwnership: contentPackageWriteOwnership,

@@ -8,6 +8,7 @@ import {
   ContentPackageRightsBasisResolver,
 } from './content-package-rights-basis.js';
 import { buildVideoPlatformVariants } from '../harness/output-compiler.js';
+import { LOCAL_FIXTURE_COMMERCIAL_USE_TERMS_SUFFIX } from '../supply-registry/expand.js';
 
 const CREATED_AT = '2026-07-30T08:00:00.000Z';
 
@@ -87,6 +88,46 @@ test('resolves source-free generated video rights from one completed generation 
       runId: 'generation-run-1',
       termsRevisionId: 'terms-provider-1-r7',
     },
+  );
+});
+
+test('accepts fixture-seeded commercial terms only in the explicit local fixture runtime', async () => {
+  const contentPackage = generatedVideoPackage();
+  const termsRevisionId =
+    `terms-provider-1-r7${LOCAL_FIXTURE_COMMERCIAL_USE_TERMS_SUFFIX}`;
+
+  await assert.rejects(
+    () =>
+      generationTermsResolver({
+        commercialUse: 'allowed',
+        termsRevisionId,
+      }).resolve({
+        contentPackage,
+        platform: 'douyin',
+        version: contentPackage.versions[0]!,
+        workspaceId: contentPackage.workspaceId,
+      }),
+    ContentPackageRightsBasisError,
+  );
+
+  const fixtureBasis = await generationTermsResolver(
+    {
+      commercialUse: 'allowed',
+      termsRevisionId,
+    },
+    { allowLocalFixtureTerms: true },
+  ).resolve({
+    contentPackage,
+    platform: 'douyin',
+    version: contentPackage.versions[0]!,
+    workspaceId: contentPackage.workspaceId,
+  });
+  assert.equal(fixtureBasis.kind, 'ai_generation_terms');
+  assert.equal(
+    fixtureBasis.kind === 'ai_generation_terms'
+      ? fixtureBasis.termsRevisionId
+      : undefined,
+    termsRevisionId,
   );
 });
 
@@ -338,6 +379,7 @@ function generationTermsResolver(
     lifecycleStatus?: 'active' | 'inactive';
     termsRevisionId?: string;
   } = { commercialUse: 'allowed' },
+  options: { allowLocalFixtureTerms?: boolean } = {},
 ) {
   return new ContentPackageRightsBasisResolver(
     {
@@ -379,5 +421,6 @@ function generationTermsResolver(
         };
       },
     },
+    options,
   );
 }

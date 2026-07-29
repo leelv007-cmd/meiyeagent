@@ -47,6 +47,9 @@ export interface ExpandedSupplyRegistrySnapshot {
   };
 }
 
+export const LOCAL_FIXTURE_COMMERCIAL_USE_TERMS_SUFFIX =
+  ':local-fixture-commercial-use';
+
 function channelKind(
   channel: PublishedDeployment['channel'] | ExecutionChannelRevision['channel'],
 ): SupplyChannelKind {

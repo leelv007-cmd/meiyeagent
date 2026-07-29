@@ -1214,6 +1214,9 @@ const contentPackageRightsBasisResolver =
   new ContentPackageRightsBasisResolver(
     contentPackageRightsResolver,
     supplyControlRepository,
+    {
+      allowLocalFixtureTerms: p1ModelSupplyRuntime.allowRecordedExecution,
+    },
   );
 const contentPackageExportAssets = new OperationsContentPackageExportAssetReader(
   operationsRepository,

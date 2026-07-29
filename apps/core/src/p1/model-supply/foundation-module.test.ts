@@ -34,6 +34,7 @@ import {
   type AdminConfigRepository,
 } from '../admin-config/foundation-module.js';
 import { MemoryHealthOverlayPort } from '../supply-registry/health-overlay.js';
+import { LOCAL_FIXTURE_COMMERCIAL_USE_TERMS_SUFFIX } from '../supply-registry/expand.js';
 import type { RankingCandidateInput } from '../supply-registry/three-layer-ranking.js';
 import type {
   AdminSupplyControlPlane,
@@ -1750,7 +1751,46 @@ describe('ModelSupplyFoundationModule', () => {
       fixtureContracts?.every(
         (contract) =>
           contract.commercialUse === 'allowed' &&
-          contract.termsRevisionId.trim().length > 0,
+          contract.termsRevisionId.endsWith(
+            LOCAL_FIXTURE_COMMERCIAL_USE_TERMS_SUFFIX,
+          ),
+      ),
+    );
+
+    let nonFixtureContracts:
+      | Array<{ commercialUse?: 'allowed'; termsRevisionId: string }>
+      | undefined;
+    const nonFixtureControlPlane = new ModelSupplyControlPlaneService({
+      application,
+      fallbackCatalog: {
+        payload: {
+          capabilities: [],
+          deployments: fixture.deployments,
+          executionChannels: createDefaultExecutionChannels(),
+          models: fixture.models,
+          prices: [],
+          providerProfiles: createDefaultProviderProfiles(),
+          routes: [],
+        },
+        revisionId: 'non-fixture-rights-contract-v1',
+      },
+      repository: new MemoryModelSupplyControlPlaneRepository(),
+      supplyRegistry: {
+        async getCurrentRegistryRevision() {
+          return null;
+        },
+        async setCurrentRegistryRevision(_workspaceId, snapshot) {
+          nonFixtureContracts = snapshot.contracts;
+        },
+      },
+    });
+
+    await nonFixtureControlPlane.initialize(`${owner.workspaceId}-non-fixture`);
+
+    assert.ok(nonFixtureContracts?.length);
+    assert.ok(
+      nonFixtureContracts?.every(
+        (contract) => contract.commercialUse === undefined,
       ),
     );
   });
