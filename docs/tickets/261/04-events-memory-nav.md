@@ -1,7 +1,7 @@
 # #261 设计稿（下）· 评价事件适配层／记忆一级导航／correction 处置／阻塞清单
 
 > 承接 `03-rating-memory-events.md`（§一 评价条、§二 动作 chip）。同一份设计稿的下半，**不重复其内容**。
-> 基点 main@cc04918d。零 rebase 面预备产出，不含任何源码改动。
+> 基点 main@a595808b。零 rebase 面预备产出，不含任何源码改动。
 > 同批：`00-blockers.md`（开工门与属主边界）、`DECISIONS.md`（D4 chip 生成方式 PENDING）、`01-ia-three-sections.md`、`02-confirm-card-and-cost.md`
 
 ---
@@ -23,11 +23,11 @@
 
 ## 3.2 五字段 ↔ 三轴：一处必须由 #248 澄清的歧义
 
-| 票面「五字段」 | #248 三轴扁平键（`00-blockers.md:29`） | 映射 |
+| 票面「五字段」 | #248 三轴扁平键（`00-blockers.md:35`） | 映射 |
 |---|---|---|
-| `skillId` ＋ `skillVersion` | `skillRevision` | 合并。`apps/core/src/p1/skills/types.ts:184 skillRevisionRef(skillId, revision)` → `"<skillId>@<revision>"` |
-| `promptName` ＋ `promptVersion` | `promptVersion` | 合并。同形 `"<name>@<version>"`（`langfuse-sender.ts:278-279` 现有嵌套 metadata 是同两值） |
-| `catalogRevision` | `catalogRevision` | 一一对应。注意 `packages/contracts/src/uiux.ts:44` 的同名字段属 `creativeExecutionContractSchema`（**执行契约**），**不是事件字段**，键名撞名不等于同源 |
+| `skillId` ＋ `skillVersion` | `skillRevision` | 合并。`apps/core/src/p1/skills/types.ts:244 skillRevisionRef(skillId, revision)` → `"<skillId>@<revision>"` |
+| `promptName` ＋ `promptVersion` | `promptVersion` | 合并。同形 `"<name>@<version>"`（`langfuse-sender.ts:280-281` 现有嵌套 metadata 是同两值） |
+| `catalogRevision` | `catalogRevision` | 一一对应。注意 `packages/contracts/src/uiux.ts:48` 的同名字段属 `creativeExecutionContractSchema`（**执行契约**），**不是事件字段**，键名撞名不等于同源 |
 | **`场景`** | **无对应轴** | ⚠️ **悬空**。D-160③ 原文要求「skillId ＋ skillVersion ＋ **场景标识**」，场景＝objective 或配方卡分组（D-139）。三轴里没有它 |
 
 **必须向 #248 提的一条**：场景是三轴之外的**第四个顶层键**，还是收进某一轴？在 #248 答复前，适配层里给它一个 `scene` 的**占位名并标注 TODO(#248)**，不做任何格式约定。
@@ -57,7 +57,7 @@
 type SkillRevisionRef = string;
 /** TODO(#248)：形如 "<promptName>@<version>"。 */
 type PromptVersionRef = string;
-/** TODO(#248)：与 uiux.ts:44 的同名执行契约字段不是同一个东西。 */
+/** TODO(#248)：与 uiux.ts:48 的同名执行契约字段不是同一个东西。 */
 type CatalogRevisionRef = string;
 
 /** TODO(#248)：三轴扁平顶层键，键名以 #248 为准。 */
@@ -132,8 +132,8 @@ export function resetRatingEventCounters(): void;
 | 轴 | main 上最接近的东西 | 为什么不能用 |
 |---|---|---|
 | `skillRevision` | `BrowserRecipeProjection.skillRevisionRefs?: string[]`（`packages/contracts/src/creation-experience.ts:178`） | 是**配方目录**上的引用数组，不是**这次执行实际用了哪个**；且是可选数组，不是单值 |
-| `promptVersion` | `BrowserRecipeProjection.promptRevisionRef`（`:177`）；`langfuse-sender.ts:278-279` 的嵌套 metadata | 同上，配方级不是执行级；langfuse 那份在 core 且是嵌套结构，不出前台 |
-| `catalogRevision` | `uiux.ts:44` `creativeExecutionContractSchema.catalogRevision` | 是执行契约的输入字段，不在交付回包上（`ContentPackageRevisionDelivery` 无此字段） |
+| `promptVersion` | `BrowserRecipeProjection.promptRevisionRef`（`:177`）；`langfuse-sender.ts:280-281` 的嵌套 metadata | 同上，配方级不是执行级；langfuse 那份在 core 且是嵌套结构，不出前台 |
+| `catalogRevision` | `uiux.ts:48` `creativeExecutionContractSchema.catalogRevision` | 是执行契约的输入字段，不在交付回包上（`ContentPackageRevisionDelivery` 无此字段） |
 
 **真正的来源是 #262**（D-165②「三轴钉扎进 Task 快照，绑 DBOS workflowID」）。故：
 
@@ -159,7 +159,7 @@ export function resetRatingEventCounters(): void;
 | | **A 前端遥测通道** | **B 后端 event_append** | **C 双写** |
 |---|---|---|---|
 | 入口 | `src/lib/product-telemetry.ts:101 emitTelemetry` | `apps/core/src/p1/creation-experience/foundation-module.ts:747 'event_append'` | A ＋ B |
-| 字符串支持 | ✅ `buildTelemetryEvent` `:79-97` 保留 string，`:94` 截 120 字符 | ❌ `sanitizeEventMeta:106` 丢弃 | 部分 |
+| 字符串支持 | ✅ `buildTelemetryEvent`（`:63`，字段循环 `:79-97`）保留 string，`:95` 截 120 字符 | ❌ `sanitizeEventMeta:106` 丢弃 | 部分 |
 | 需改的属主面 | allowlist 一行（`:3-18`），**#261 自己加** | **四处闭集全属他人**：`kind` 七类（`contracts:556`）无 rating／`actionId` 八值（`events:58 CREATION_EVENT_ACTION_IDS`）无 rating／`meta` 清洗（`events:106`）／`lensId` 必填硬校验（`foundation-module.ts:750-756`，非三 lens 直接 `INVALID_STATE`） | 全部 |
 | 落库 | ❌ **无 ingest 路由**（`src/routes/api/` 下无 telemetry 端点）；`:107` `dispatchEvent('meiye:telemetry')` **全仓零监听方**（grep 仅命中 dispatch 自身）；gtag/plausible/umami 仅 PROD 加载 → **dev 下纯 no-op** | ✅ 落库（`eventAudit.append`） | ✅ |
 | 与 D-160③ 的关系 | 通道可用，落库缺 | 落库可用，字段全丢 | **正是 Miora 的失效模式**：D-160③ 点名「三套遥测互不关联」 |
@@ -175,9 +175,9 @@ export function resetRatingEventCounters(): void;
 
 ⚠️ **诚实标注**：spec `:507` 的验收「评价按钮 → 信号落库并进入『已验证』层」，**#261 单独无法兑现**。A′ 能保证 payload 正确、可观测、可替换出口；**落库端属 #248**。这必须在票下写明，不得在验收时以「已埋点」充数。
 
-### 128 字符与截断
+### 120 字符与截断
 
-`buildTelemetryEvent:94` 对字符串 `.slice(0, 120)`。`"<skillId>@<revision>"` 一般远短于 120，但 `skillId` 若含租户前缀有溢出风险。**适配层不做预截断**（截断会产生看起来正常的错值）；改为：**投递前若任一轴长度 > 120 则拒发并计入 `deliver_failed`**，并在票下记一条给 #248：三轴键的长度上限须与遥测通道的 120 对齐。
+`buildTelemetryEvent:95` 对字符串 `.slice(0, 120)`。`"<skillId>@<revision>"` 一般远短于 120，但 `skillId` 若含租户前缀有溢出风险。**适配层不做预截断**（截断会产生看起来正常的错值）；改为：**投递前若任一轴长度 > 120 则拒发并计入 `deliver_failed`**，并在票下记一条给 #248：三轴键的长度上限须与遥测通道的 120 对齐。
 
 ## 3.6 「投递失败可观测、不静默」的最小改造
 
@@ -185,7 +185,7 @@ export function resetRatingEventCounters(): void;
 
 **规避 #251 冲突的关键：不改 `emitTelemetry` 本体。**
 
-`00-blockers.md:63` 已标「`product-telemetry.ts` #251 埋点通道同踩」。规避方案：
+`00-blockers.md:98` 已标「`product-telemetry.ts` #251 埋点通道同踩」。规避方案：
 
 | 改动 | 落点 | 冲突面 |
 |---|---|---|
@@ -299,13 +299,13 @@ D-164④ 只裁定「记忆升为一级导航可见项」与「分四域」。**
 | 被动沉淀管道、四态拦截、候选证据链、入库红线 | ❌ | ✅ | |
 | 「确认系统提议的沉淀」的**确认动作**（`propose_*→confirm_*` 前台面） | ❌ | ✅ 属主 | |
 | Skill 目录查询（`skills` 模块无 query，`apps/core/src/p1/skills/foundation-module.ts` 仅命令） | ❌ | | ✅ 属主 |
-| 「工作流」域的配方来源 | ✅ 复用**已有**配方投影（`recipe-cards.ts:104`） | | ❌ 不碰 `skills` 模块 |
+| 「工作流」域的配方来源 | ✅ 复用**已有**配方投影（`recipe-cards.ts:107`） | | ❌ 不碰 `skills` 模块 |
 
 > **一句话**：#261 建的是一间**有四个货架的空店**，货由 #251／#259 上。空店必须先建好，否则 D-164④ 的立论（「护城河必须商家一眼看得见」）在前台没有承载物。
 
 ## 4.2 路由与导航改动清单
 
-### ① `src/lib/routes.ts`（Dashboard routes 段，`:28-33` 附近）
+### ① `src/lib/routes.ts`（Dashboard routes 段 `:27-38`；下面 diff 的三行上下文实际落在 `:35`／`:36`／`:37`）
 
 ```diff
    ContentLibrary: '/dashboard/works',
@@ -386,8 +386,8 @@ D-164④ 只裁定「记忆升为一级导航可见项」与「分四域」。**
    );
 ```
 
-`:38-42` 是硬断言 ＋ 用例名写死「nav 四项合同」。**这是一条被有意固化的合同**，改它必须在票下评论引 D-164④ 原文留痕，不能当作顺手修红。
-`:22-32` 的另外两条断言（不得出现 `Routes.ContentLibrary` 等第二份清单）**不受影响且必须保持通过** —— 新增项走 `BUSINESS_SIDEBAR_ITEMS.map`，本来就不会在此文件出现 `Routes.Memory`。
+`:39-42` 是 id 硬断言，用例名（`:34`）写死「nav 四项合同」；同一用例内 `:35-38` 还有一条 href `deepEqual`（比 `BUSINESS_SIDEBAR_ITEMS` 与 `BUSINESS_NAVIGATION`），**上面的 diff 只呈现了 id 那条，href 那条会随导航新增自动跟随、无需改**。**这是一条被有意固化的合同**，改它必须在票下评论引 D-164④ 原文留痕，不能当作顺手修红。
+`:20-32` 那条独立用例的断言（不得出现 `Routes.ContentLibrary` 等第二份清单）**不受影响且必须保持通过** —— 新增项走 `BUSINESS_SIDEBAR_ITEMS.map`，本来就不会在此文件出现 `Routes.Memory`。
 
 ### ⑥ `scripts/check-locale-keys.ts`
 
@@ -406,7 +406,7 @@ D-164④ 只裁定「记忆升为一级导航可见项」与「分四域」。**
 
 ### ⑦ 现状确认
 
-`project.inlang/messages/zh.json` 全文**无 `memory_*` 前缀键，「记忆」二字零命中**（仅 `workspace_assets_description:3953` 出现「沉淀」一词，指素材库）。全部为新增，无键名冲突。
+`project.inlang/messages/zh.json` 全文**无 `memory_*` 前缀键，「记忆」二字零命中**（「沉淀」一词出现两处，均指素材库：`workspace_assets_description:3953`、`workspace_sample_isolation_note:3963`）。全部为新增，无键名冲突。
 
 ## 4.3 四域页面结构与数据源
 
@@ -414,9 +414,9 @@ D-164④ 只裁定「记忆升为一级导航可见项」与「分四域」。**
 
 | 域（tab） | tab id | D-164④ 对应 | 现有数据源 file:line | 判定 |
 |---|---|---|---|---|
-| **门店主体偏好** | `identity` | MarketingIdentity（D-142） | ① `marketing-identity` 模块已通电（`apps/core/src/main.ts:1604` 挂载 `MarketingIdentityFoundationModule`，`apps/core/src/p1/operations/marketing-identity.ts:1311`），模块名已在前台白名单 `packages/contracts/src/p1.ts:28`<br>② `preference_view`（`apps/core/src/p1/operations/asset-memory-foundation-module.ts:423` → `reuse-memory-service.ts:1003`，返回 `{signals, candidates, preferences}`），前端**零引用** | **有数据源**（两个）。#261 只读 |
+| **门店主体偏好** | `identity` | MarketingIdentity（D-142） | ① `marketing-identity` 模块已通电（`apps/core/src/main.ts:1623` 挂载 `MarketingIdentityFoundationModule`，`apps/core/src/p1/operations/marketing-identity.ts:1311`），模块名已在前台白名单 `packages/contracts/src/p1.ts:28`<br>② `preference_view`（`apps/core/src/p1/operations/asset-memory-foundation-module.ts:423` → `reuse-memory-service.ts:1003`，返回 `{signals, candidates, preferences}`），前端**零引用** | **有数据源**（两个）。#261 只读 |
 | **项目**（一次营销活动） | `projects` | —— | **无**。全仓无 project/campaign 实体。最近亲＝`CreativeWork`（`CreativeWorkbenchProjection`，前端已消费于 `today-recommendation-card.tsx:204-213`），但那是「作品」不是「一次营销活动」 | **需上游，属主未定** → 阻塞项 B4，本轮**空态占位** |
-| **工作流**（一条产线或配方） | `workflows` | 配方 | `BrowserSurfaceProjection.recipes`（`packages/contracts/src/creation-experience.ts:227`）→ 前端已有投影 `src/product/composer/recipe-cards.ts:104 listColdCardsFromRecipes` / 冷态种子 `:57 listColdCardsFromSeeds`（`launch-card-seeds.ts:101`） | **有数据源**（复用配方卡投影）。**禁碰 `skills` 模块**（`00-blockers.md:65`，属 #259） |
+| **工作流**（一条产线或配方） | `workflows` | 配方 | `BrowserSurfaceProjection.recipes`（`packages/contracts/src/creation-experience.ts:228`）→ 前端已有投影 `src/product/composer/recipe-cards.ts:107 listColdCardsFromRecipes` / 冷态种子 `:58 listColdCardsFromSeeds`（`launch-card-seeds.ts:86 LAUNCH_CARD_SEEDS`） | **有数据源**（复用配方卡投影）。**禁碰 `skills` 模块**（`00-blockers.md:100`，属 #259） |
 | **纠正** | `corrections` | `correction`（D-163②） | **无**。`packages/contracts/src/reuse-memory.ts:294` kind 枚举 ＝ `['adopted','modified','rejected']` | **需 #251** → 见 §五，本轮**空态占位** |
 
 **四域全部渲染，两域有货两域空。** 不因为空就藏 tab —— D-164④ 的产品意图是「让商家一眼看见系统在学什么」；藏掉一半等于只展示了一半的承诺，且商家会在 #251 合入后看到导航结构突变。
@@ -424,7 +424,7 @@ D-164④ 只裁定「记忆升为一级导航可见项」与「分四域」。**
 **「门店主体偏好」域为何双数据源**：D-164④ 明确写「对应 MarketingIdentity」，但 `preference_view` 的 `preferences`（`reuse-memory.ts:314 preferenceSchema`，含 `positiveExamples`/`negativeExamples`/`evidenceDecisionIds`）才是「经 `propose→confirm` 沉淀下来的门店偏好」——正是 D-159② 的策展产物。两者一个是「她是谁」（口吻/边界/禁语），一个是「她认可过什么」。同域两块，不合并渲染。
 
 **每域条目卡的最小形态**（不做编辑、不做删除 —— 那是 D-160② 的「可编辑可删除」，属 #251/#259 的写路径）：
-标题 ＋ 一句人话说明 ＋「从哪来的」来源行（`preferenceSchema` 的 `evidenceDecisionIds:319` 提供证据链，但 **id 不得上屏** —— 参照 `today-recommendation-card.tsx:94-115 recommendationFactLabels` 的做法：只出名字与条数，认不出的降级为计数）。
+标题 ＋ 一句人话说明 ＋「从哪来的」来源行（`preferenceSchema`（`reuse-memory.ts:314`）的 `evidenceDecisionIds:327` 提供证据链；注意 `:306` 是 `preferenceCandidateSchema` 的同名字段，别引错，但 **id 不得上屏** —— 参照 `today-recommendation-card.tsx:94-115 recommendationFactLabels` 的做法：只出名字与条数，认不出的降级为计数）。
 
 ## 4.4 冷启动空态：与 D-126 同构的四态机
 
@@ -546,7 +546,7 @@ D-163② 裁定 B 要求增设 `correction`，且「其权重高于普通偏好�
 
 三条理由，第一条是制度性的，后两条是技术性的：
 
-1. **属主明写**。`docs/specs/agent-substrate-dev-spec-2026-07-29.md:601` 语义锁把「记忆管道」锁给 #251；`:515` 的票包表把「（v2）沉淀管道 —— 四态拦截／候选证据链／入库红线」记在 #251 名下。`00-blockers.md:64` 已把「自建 `correction` kind → 撞 `reuse-memory.ts:294` 枚举属主」列为越界后果。
+1. **属主明写**。`docs/specs/agent-substrate-dev-spec-2026-07-29.md:601` 语义锁把「记忆管道」锁给 #251；`:515` 的票包表把「（v2）沉淀管道 —— 四态拦截／候选证据链／入库红线」记在 #251 名下。`00-blockers.md:99` 已把「自建 `correction` kind → 撞 `reuse-memory.ts:294` 枚举属主」列为越界后果。
 2. **它是写入侧的枚举，不是展示侧的**。`kind` 挂在 `preferenceSignalSchema` 上 —— 那是 `record_preference_signal`（`asset-memory-foundation-module.ts:325`）的入参形状，属**信号写入**。#261 是消费面，改写入侧枚举等于从展示端反向定义生产端。
 3. **它带一条纯后端语义**。「权重高于普通偏好」是归纳阶段的加权规则，落在 `ReuseMemoryService`（`reuse-memory-service.ts:515`）里；只加枚举值不加权重，等于加了一个没有行为差异的字面量 —— 把 D-163② 的裁定做成半条。
 
@@ -554,7 +554,7 @@ D-163② 裁定 B 要求增设 `correction`，且「其权重高于普通偏好�
 
 | # | 撞点 | 表现 |
 |---|---|---|
-| 1 | `preferenceSignalSchema` 带 `.strict()`（`reuse-memory.ts:296`），`z.enum` 闭集 | 前端发 `kind:'correction'` → `asset-memory-foundation-module.ts:88 parse()` 抛 `P1DomainError('INVALID_STATE','Invalid asset-memory payload.')`。**运行时才炸，typecheck 不拦** |
+| 1 | `preferenceSignalSchema` 带 `.strict()`（`reuse-memory.ts:297`），`z.enum` 闭集 | 前端发 `kind:'correction'` → `asset-memory-foundation-module.ts:88 parse()` 抛 `P1DomainError('INVALID_STATE','Invalid asset-memory payload.')`。**运行时才炸，typecheck 不拦** |
 | 2 | 写路径全在 core（`record_preference_signal` `:325` → `reuse.recordPreferenceSignal`） | 前端无论如何改不了落库的 kind；只能改自己怎么渲染 |
 | 3 | 语义分叉 | 若前端自建一个「UI 层的 correction 概念」（如按 `modified` 过滤后改标签叫「纠正」），#251 合入真 kind 后会有两套 correction 定义，且前者是错的（`modified` ≠ 纠正）。**这正是 `[feedback-partition-by-semantics-not-files]` 记录的失效模式**：文件面不冲突、语义面互斥，合入才暴露 |
 
@@ -589,7 +589,7 @@ const MEMORY_TAB_CORRECTIONS = 'corrections';
 | **B4** | 三轴的**数据来源**（Task 快照钉扎） | §3.4 —— main 上三轴取不到，生产路径一条都发不出 | **#262**（D-165②） | 交付回包／session 快照上能读到三轴 |
 | **B5** | `correction` 一等 kind ＋ 其**读取出口** | §4.3「纠正」域、§5 全节 | **#251** | `reuse-memory.ts:294` 枚举含 `correction`，且有分组/独立查询（§5.4 第 4 条） |
 | **B6** | 「**项目**（一次营销活动）」的实体与查询 | §4.3「项目」域 | **属主未定** ⚠️ | 全仓无 project/campaign 实体；**这一条没有已知属主票**，须主控裁定归 #251 还是另开 |
-| **B7** | 前序 lane 票 `#264FE` 合入 | 全部前台改动（D lane 串行 `#264FE→#261→#253FE`，spec `:596/:601`） | **#264FE** | `00-blockers.md:16` G4：`videoRegenScopes = ['shot']` 已摘 |
+| **B7** | 前序 lane 票 `#264FE` 合入 | 全部前台改动（D lane 串行 `#264FE→#261→#253FE`，spec `:596/:601`） | **#264FE** | `00-blockers.md:17` G4：`videoRegenScopes = ['shot']` 已摘（`:16` 是 G3b／#262，勿混） |
 | **B8** | `locale:compile` 互斥锁 | 任何跑 `test:interaction` 的动作 | **#266** | `00-blockers.md:13` G1 |
 
 ## 6.2 软阻塞（可先做、但结论可能翻）
@@ -606,8 +606,8 @@ const MEMORY_TAB_CORRECTIONS = 'corrections';
 | # | 发现 | file:line | 建议归属 |
 |---|---|---|---|
 | **N1** | **契约与运行时背离**：`CreationExperienceEvent.meta` 类型声明允许 `string`，运行时清洗把字符串全丢 | 声明 `packages/contracts/src/creation-experience.ts:599`；清洗 `apps/core/src/p1/creation-experience/creation-experience-events.ts:95-101,106` | #248 或单开票（typecheck 通过、运行时静默丢字段，属最难查一类） |
-| **N2** | 成品卡现有三动作命中区不足 44px（`px-3 py-1` ≈26px，低于 `DESIGN.md:191`） | `composer-delivery-card.tsx:113` | 既有问题，不顺手改（属主纪律）；建议并入前台 a11y 批 |
-| **N3** | `mobile-nav.static.test.ts` 的「nav 四项合同」是被有意固化的合同 | `src/components/product/mobile-nav.static.test.ts:38-42` | 本票必须改（§4.2⑤），须在票下引 D-164④ 原文留痕 |
+| **N2** | 成品卡现有三动作命中区不足 44px（`px-3 py-1` ≈26px，低于 `DESIGN.md:192`） | `composer-delivery-card.tsx:113` | 既有问题，不顺手改（属主纪律）；建议并入前台 a11y 批 |
+| **N3** | `mobile-nav.static.test.ts` 的「nav 四项合同」是被有意固化的合同 | `src/components/product/mobile-nav.static.test.ts:34`（用例名）、`:39-42`（id 硬断言） | 本票必须改（§4.2⑤），须在票下引 D-164④ 原文留痕 |
 
 ---
 
@@ -630,7 +630,7 @@ const MEMORY_TAB_CORRECTIONS = 'corrections';
 | `src/lib/routes.ts` | 加 `Memory` | 低 |
 | `src/lib/uiux/navigation.ts:10-39` | 加第 5 项 | 低 |
 | `src/config/sidebar-config.ts:50-58` | 加图标（不加则 typecheck 红） | 低 |
-| `src/components/product/mobile-nav.tsx:55` ＋ `mobile-nav.static.test.ts:38-42` | `grid-cols-4→5`；改「四项合同」断言 | **需留痕** |
+| `src/components/product/mobile-nav.tsx:55` ＋ `mobile-nav.static.test.ts:34,39-42` | `grid-cols-4→5`；改「四项合同」用例名与 id 断言 | **需留痕** |
 | `scripts/check-locale-keys.ts:6` | REQUIRED 加 1 键 | 低 |
 | `project.inlang/messages/{zh,en}.json` | 新增 31 键 ×2 | 低 |
 
@@ -644,36 +644,63 @@ const MEMORY_TAB_CORRECTIONS = 'corrections';
 
 ## 7.1 实际契约（逐字）
 
+`packages/contracts/src/observability.ts` 全文 43 行，逐字如下（行号即 main 上的行号）：
+
 ```ts
-// packages/contracts/src/observability.ts
-const compositeRevisionSchema = z.string().trim().regex(/^[^@\s]+@[^@\s]+$/u);
-
-export const observabilityAxesSchema = z.object({
-  skillRevision: compositeRevisionSchema,
-  promptVersion: compositeRevisionSchema,
-  /** Event-attribution revision. This is distinct from
-   *  CreativeExecutionContract.catalogRevision, which pins the accepted
-   *  execution catalog contract. */
-  catalogRevision: z.string().trim().min(1),
-  scene: z.string().trim().min(1),
-}).strict();
-export type ObservabilityAxes = z.infer<typeof observabilityAxesSchema>;
-
-export const observabilityDropEventSchema = z.object({
-  signal: z.enum(['trace','log','metric','score','feedback']),
-  reason: z.enum(['permanent-config','transient']),
-  count: z.number().int().positive(),
-  source: z.string().trim().min(1),
-}).strict();
+ 1  import { z } from 'zod';
+ 2
+ 3  const compositeRevisionSchema = z
+ 4    .string()
+ 5    .trim()
+ 6    .regex(/^[^@\s]+@[^@\s]+$/u);
+ 7
+ 8  export const observabilityAxesSchema = z
+ 9    .object({
+10      skillRevision: compositeRevisionSchema,
+11      promptVersion: compositeRevisionSchema,
+12      /**
+13       * Event-attribution revision. This is distinct from
+14       * CreativeExecutionContract.catalogRevision, which pins the accepted
+15       * execution catalog contract.
+16       */
+17      catalogRevision: z.string().trim().min(1),
+18      scene: z.string().trim().min(1),
+19    })
+20    .strict();
+21
+22  export type ObservabilityAxes = z.infer<typeof observabilityAxesSchema>;
+23
+24  export const observabilitySignalSchema = z.enum([
+25    'trace',
+26    'log',
+27    'metric',
+28    'score',
+29    'feedback',
+30  ]);
+31
+32  export const observabilityDropEventSchema = z
+33    .object({
+34      signal: observabilitySignalSchema,
+35      reason: z.enum(['permanent-config', 'transient']),
+36      count: z.number().int().positive(),
+37      source: z.string().trim().min(1),
+38    })
+39    .strict();
+40
+41  export type ObservabilityDropEvent = z.infer<
+42    typeof observabilityDropEventSchema
+43  >;
 ```
+
+两处易被漏掉：`signal` 的五值枚举是**独立导出** `observabilitySignalSchema`（`:24-30`），不是内联 `z.enum`；`ObservabilityDropEvent` 类型也已导出（`:41-43`）。
 
 ## 7.2 §3.2 的三个悬空问题，逐条结清
 
 | 本票提出的问题 | 上游答复 | 对设计稿的影响 |
 |---|---|---|
-| 「场景」是三轴之外的第四个顶层键，还是收进某一轴？ | **是第四个顶层键**：`scene: z.string().trim().min(1)` | §3.3 的 `scene` 占位名**猜对了**，`TODO(#248)` 可摘。类型直接 `import type { ObservabilityAxes } from '@contracts/observability'` |
+| 「场景」是三轴之外的第四个顶层键，还是收进某一轴？ | **是第四个顶层键**：`scene: z.string().trim().min(1)` | §3.3 的 `scene` 占位名**猜对了**，`TODO(#248)` 可摘。类型直接 `import type { ObservabilityAxes } from '@meiye/contracts'`——全仓无 `@contracts/*` 路径别名（`mkfast-template-main/tsconfig.json:23-26` 只有 `@/*` 与 `content-collections`），且 `@meiye/contracts` 的 `exports` 只有 `"."`，**没有子路径导出**，不能写 `@meiye/contracts/observability` |
 | 五字段 → 三轴怎么合并？ | `compositeRevisionSchema` 正则 `^[^@\s]+@[^@\s]+$` **强制**恰好一个 `@`、两侧非空且无空白 | §3.2 映射表**成立**：`skillId@revision` / `promptName@version`。但正则比设想更严——**skillId 或 promptName 自身含 `@` 或空格会被拒**，适配层组装后须先过 schema 再投递 |
-| `catalogRevision` 与 `uiux.ts:44` 的同名字段撞名 | **上游已在契约注释里显式划清**：「distinct from `CreativeExecutionContract.catalogRevision`, which pins the accepted execution catalog contract」 | §3.2 末行的告警成立且已被上游确认。适配层**不得**把执行契约的 `catalogRevision` 直接搬过来当事件轴，两者是不同的 revision |
+| `catalogRevision` 与 `uiux.ts:48` 的同名字段撞名 | **上游已在契约注释里显式划清**：「distinct from `CreativeExecutionContract.catalogRevision`, which pins the accepted execution catalog contract」 | §3.2 末行的告警成立且已被上游确认。适配层**不得**把执行契约的 `catalogRevision` 直接搬过来当事件轴，两者是不同的 revision |
 
 ## 7.3 §3.6「投递失败可观测」有官方合同了，不再自造计数器
 
@@ -687,6 +714,53 @@ export const observabilityDropEventSchema = z.object({
 
 ⚠️ 仍**未**解决的一条：`observabilityDropEventSchema` 只定了**事件形状**，没定**投递目的地**。#248 票面写「目的地=Postgres 为工作假设，最终以本票『信号 × 目的地』矩阵裁定为准」——**该矩阵尚未落库**。故 `00-blockers.md` 的 **G3/B2「落库端」仍然阻塞**，本节只是把 payload 形状从自造改成了消费上游合同。
 
-## 7.4 §3.5「128 字符截断」的复核结论
+## 7.4 §3.5「120 字符截断」的复核结论
 
-`observabilityAxesSchema` **没有**长度上限，而遥测通道 `mkfast-template-main/src/lib/product-telemetry.ts:94` 对字符串 `.slice(0, 120)`。两者未对齐这一条**依然成立**，§3.5 末尾给 #248 的那条建议**不撤**：三轴键的长度上限须与遥测通道的 120 对齐，否则长 `skillId` 会被静默截成看起来正常的错值。适配层维持「超长拒发并计入 drop 事件」的口径。
+`observabilityAxesSchema` **没有**长度上限，而遥测通道 `mkfast-template-main/src/lib/product-telemetry.ts:95` 对字符串 `.slice(0, 120)`。两者未对齐这一条**依然成立**，§3.5 末尾给 #248 的那条建议**不撤**：三轴键的长度上限须与遥测通道的 120 对齐，否则长 `skillId` 会被静默截成看起来正常的错值。适配层维持「超长拒发并计入 drop 事件」的口径。
+
+---
+
+## 锚点校准（2026-07-29，基点 main@a595808b）
+
+本轮只改 `file:line` 锚点、基点标注与两处被引文本的转录，**未改任何结论、判断或设计取舍**（§3.5 A′ 通道选择、§4.4 四态机、§5 correction 归属、§6 阻塞清单的等谁一列一字未动）。依据 `06-xcheck-reverse.md §一`，并逐条在 `main@a595808b` 上复验。
+
+**本稿改动 33 处锚点 ＋ 1 处基点标注**：
+
+| 处 | 原 | 现 | 来源 |
+|---|---|---|---|
+| 头部 · 基点 | `main@cc04918d` | `main@a595808b` | 06 O7 |
+| §3.2 三轴扁平键出处 | `00-blockers.md:29`（空行） | `:35`（票面偏差 #2，逐项列 `observabilityAxesSchema` 四键） | 06 B30 |
+| §3.2 `skillRevisionRef` | `skills/types.ts:184` | `:244`（`:184` 现在是 `settlementStatus`） | 06 A1 |
+| §3.2／§3.4 langfuse 嵌套 metadata | `langfuse-sender.ts:278-279` | `:280-281` | 06 A2（2 处） |
+| §3.2／§3.3 注释／§3.4／§7.2 撞名字段 | `uiux.ts:44` | `:48`（`:44-47` 是 #248 新插入的 4 行注释） | 06 A3（4 处） |
+| §3.5 表／§3.5 正文／§7.4 截断点 | `product-telemetry.ts:94` | `:95`；表内另补 `buildTelemetryEvent` 声明在 `:63` | 06 B18（3 处） |
+| §3.5／§7.4 小节标题 | 「128 字符…」 | 「120 字符…」（通道实际截断为 120，正文一直写对） | 06 B19（2 处） |
+| §3.6 #251 同踩标注 | `00-blockers.md:63` | `:98`（属主边界表内 `product-telemetry.ts` 行） | 06 B31 |
+| §4.2① routes.ts 段界 | 「`:28-33` 附近」 | 「Dashboard routes 段 `:27-38`；diff 三行上下文实际在 `:35/:36/:37`」 | 06 B23 |
+| §4.2⑤／§6.3 N3／附表 nav 合同 | `mobile-nav.static.test.ts:38-42` | `:39-42`（id 硬断言）＋ `:34`（用例名）；并补记同用例 `:35-38` 的 href `deepEqual`（上面 diff 未呈现、无需改） | 06 B24（3 处） |
+| §4.2⑤ 另一条用例范围 | `:22-32` | `:20-32` | **本轮新发现** |
+| §4.2⑦ 「沉淀」命中数 | 仅 `:3953` 一处 | 两处：`:3953` ＋ `workspace_sample_isolation_note:3963` | 06 B27 |
+| §4.3 marketing-identity 挂载点 | `apps/core/src/main.ts:1604` | `:1623`（**二次漂移**，见下） | 06 A4 |
+| §4.3 `BrowserSurfaceProjection.recipes` | `creation-experience.ts:227` | `:228`（`:227` 是 `contentHash`） | 06 B22 |
+| §4.1 表／§4.3 配方投影 | `recipe-cards.ts:104` / `:57` | `:107` / `:58` | 06 B7／B6（3 处） |
+| §4.3 冷态种子 | `launch-card-seeds.ts:101` | `:86 LAUNCH_CARD_SEEDS`（`:101` 是某条 seed 内部的 `notePageBound`） | 06 B8 |
+| §4.3 不碰 skills | `00-blockers.md:65` | `:100` | 06 B32 |
+| §4.3 证据链字段 | `evidenceDecisionIds:319` | `:327`（并注明 `preferenceSchema` 在 `:314`、`:306` 是 `preferenceCandidateSchema` 的同名字段） | 06 B20 |
+| §5.2 correction 越界后果 | `00-blockers.md:64` | `:99` | 06 B32 |
+| §5.3 `.strict()` | `reuse-memory.ts:296` | `:297`（`:296` 是 `})`） | 06 B21 |
+| §6.1 B7 判据 | `00-blockers.md:16` | `:17`（G4；`:16` 是 G3b／#262） | 06 B33 |
+| §6.3 N2 命中区依据 | `DESIGN.md:191` | `:192` | 06 B1 |
+| §7.1 「逐字」契约 | 内联 `z.enum`、漏 `ObservabilityDropEvent` 类型 | 换成 `observability.ts` 真正的 43 行逐字转录 ＋ 行号 | 06 B26 |
+| §7.2 类型 import | `from '@contracts/observability'` | `from '@meiye/contracts'`（全仓无 `@contracts/*` 别名；该包 `exports` 只有 `"."`，无子路径导出） | 06 B25 |
+
+**其中 2 条与 06 不同 / 06 未报**：
+
+1. **§4.3 `main.ts` 挂载点（二次漂移）**：06 给的正确值是 `:1622`（写作基点 `main@7f60a4e7`）。`7f60a4e7..a595808b` 之间 #247 改了 `apps/core/src/main.ts`，`new MarketingIdentityFoundationModule(` 现在在 **`:1623`**。取实测值。
+2. **§4.2⑤ `:22-32`**：06 未报；实测该独立用例（「the phone reads the same navigation list as the sidebar (U07)」）是 `:20-32`。
+
+**未能验的**：
+1. `@tabler/icons-react@^3.36.1` 的 `IconBookmarks` 实际导出名（本 worktree 未装 `node_modules`）——§4.2③ 已自标，仍为 S3。只能确认 `IconListDetails`（`sidebar-config.ts:29`）与 `IconHistory`（`:28`）确已 import。
+2. 未跑任何测试命令（`locale:compile` 互斥纪律），§3.7 四条验收断言草案的可满足性未验。
+3. `00-blockers.md` 是本 worktree 的未提交文件（不在 main 上），其行号以当前工作副本为准；该文件若再被改写，`:35/:98/:99/:100/:17` 会再漂——这正是 06 B30–B33 的原始成因。
+4. 未读任何 GitHub 票面（#248/#251/#259/#262 等），§3.1 属主表只核到 spec 与决策文档一侧。
+5. `en.json` 未逐键比对，§4.6 的 31 键只在 `zh.json` 侧确认了无重名。

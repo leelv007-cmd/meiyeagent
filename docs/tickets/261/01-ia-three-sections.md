@@ -1,7 +1,7 @@
 # #261 前端设计稿 ①：Dashboard 单路由三段 + 第二层 Skill pill
 
-> 范围：D-164① ＋ D-164②。决策原文 `docs/design/beauty-marketing-agent-product-design-2026-07-17.md:3073-3086`（①②）、`:3138-3145`（影响）、`:3153-3154`（证据边界）。
-> 基点：`lane-261` worktree，main@cc04918d。本稿为**零 rebase 面预备**（`docs/ops/agent-dispatch-runbook-2026-07-29.md:8`），不改任何现有文件。
+> 范围：D-164① ＋ D-164②。决策原文 `docs/design/beauty-marketing-agent-product-design-2026-07-17.md:3073-3086`（①②）、`:3145-3152`（影响）、`:3154-3161`（证据边界）。
+> 基点：`lane-261` worktree，main@a595808b。本稿为**零 rebase 面预备**（`docs/ops/agent-dispatch-runbook-2026-07-29.md:8`），不改任何现有文件。
 > 不在本稿范围：D-164③（执行确认卡）、④（记忆升一级导航）、⑤（动作 chip）、⑥（成本即时反馈）。**④ 明确不做**——`src/lib/uiux/navigation.ts:10` 的四项与 `src/components/product/mobile-nav.tsx:55` 的 `grid-cols-4` 本票一律不动。
 
 ## 0. 盘点复核结论（与派发说明的三处出入）
@@ -92,7 +92,7 @@
 | **桌面**（`viewportKind==='desktop'`，判定见 `composer-home.tsx:543`） | 完整推荐卡（三格分区 ＋ 机会卡）／冷态三家示例店 | 完整：模式开关 → lens 轴 → pill 行 → 大输入框 → 附件 → 报价行 | 完整：在跑任务列 ＋ 最近会话一条 ＋「全部创作记录」 |
 | **移动**（`isMobile \|\| singleColumn`） | `compact`：一行标题 ＋「用这条」；冷态收成一个「查看示例」按钮 | 完整（pill 行横向可滚，不换行堆高） | `compact`：只出「还有 N 条在生成中」＋ 最近一条，其余进「全部创作记录」 |
 
-理由：D-164 待验证明写「三段结构在移动端的信息密度与滚动体验」未验（`:3158`）。段① 在手机上若是完整卡，Composer 输入框会被挤出首屏——这正是 `composer-home.tsx:2764-2771` 当初把它压到最底下的动机。压缩密度而不是改顺序，既守住 D-164① 的段序，也守住 PRODUCT.md:37「Composer 永远是唯一主轴，任何面板不与它竞争视觉重心」。
+理由：D-164 待验证明写「三段结构在移动端的信息密度与滚动体验」未验（`:3165`）。段① 在手机上若是完整卡，Composer 输入框会被挤出首屏——这正是 `composer-home.tsx:2764-2771` 当初把它压到最底下的动机。压缩密度而不是改顺序，既守住 D-164① 的段序，也守住 PRODUCT.md:37「Composer 永远是唯一主轴，任何面板不与它竞争视觉重心」。
 
 **PRODUCT.md:37 与本改动的关系（不是冲突）**：该条前半句是「商家打开工作台第一眼看到的是『今天值得发什么』」——与 D-164① 段① 前置**同向**；后半句「不与它竞争视觉重心」约束的是**视觉权重**不是**纵向位置**。`composer-home.tsx:2766-2771` 的注释把两者当成同一件事，本改动把它们分开：位置按 D-164①，权重靠段① 的轻量化（无实底大卡、无指标、冷态可折叠）保证。该注释须随改动一并重写，不能留着与新排布互相打脸。
 
@@ -164,7 +164,7 @@
 
 **推荐 (A)**，四条理由：
 
-1. **决策原文已经指定了挂载点**。设计文档 `:2945`：「商家可见入口须挂在 D-139 已改约的输出类型轴上（文案／图文／视频 lens ＋ **配方卡目录**）——**配方卡目录即 Skill 的前台挂载点**。」D-164② 说「采纳 pill 形态」，D-164 影响段说「**D-139 配方卡目录的前台排布形态**按本条② 参照 pill」（`:3142`）。也就是说 (A) 不是「用配方卡代替 skill」，(A) **就是决策原文写的那件事**；(B) 反而是把决策没要求的东西提前引进来。
+1. **决策原文已经指定了挂载点**。设计文档 `:2945`：「商家可见入口须挂在 D-139 已改约的输出类型轴上（文案／图文／视频 lens ＋ **配方卡目录**）——**配方卡目录即 Skill 的前台挂载点**。」D-164② 说「采纳 pill 形态」，D-164 影响段说「**D-139 配方卡目录的前台排布形态**按本条② 参照 pill」（`:3149`）。也就是说 (A) 不是「用配方卡代替 skill」，(A) **就是决策原文写的那件事**；(B) 反而是把决策没要求的东西提前引进来。
 2. **不违反语义锁**。spec `:601` 的锁清单里，与本票相关的三条是：控制台模块（`#259→#254`）、事件合同（`#248` 唯一属主）、前台创作面（D lane 内 `#264FE→#261→#253FE` 串行，且与 `#260` 的前台入口段互斥）。方案 (A) 只改 `mkfast-template-main/src/product/composer/**` 与 `src/routes/dashboard/index.tsx`——**不新增任何后端命令/查询/契约字段**，不写入 #248 的事件键，不碰 #259 的控制台模块。它落在 D lane 自己的锁内，靠 lane 内串行本身满足。
 3. **不触发 D-150 的失效模式**。(B) 会先建一个「查询已建、前台不接」的中间态；(A) 从头到尾只增加消费点。
 4. **可平移**。pill 的数据接口只依赖 `RecipeCardView`（`recipe-cards.ts:33-52`）。#259 之后若要让 pill 显示门店层 Skill，只需在 `listVisibleRecipeCards` 上游多喂一路投影，pill 组件与分组逻辑不动。
@@ -212,7 +212,7 @@ D-164① 段② 的四件套顺序是「输出类型轴三 lens ＋ 大输入框
 | `src/product/composer/launch-card-seeds.ts` | `LaunchCardSeedSpec`（`:70`）、`LAUNCH_CARD_SEEDS`（`:86`） | 每条 seed 加 `marketingTask` 字段，供冷态兜底路径分组 |
 | `src/product/composer/composer-home.tsx` | `:2695-2731` | `RecipeCardsPanel` 挂载点改为把 `RecipePillRow` 传进 PromptBar 的 `recipePillSlot`；apply/patch-preview/undo 三条既有链路（`recipe-apply.ts` 的 `requestApplyRecipe/confirmApply/undoApply`）**原样复用**，只换渲染件 |
 
-**分组键放在前端而不是契约里**：`RecipePresentation`（`packages/contracts/src/creation-experience.ts:45-51`）没有分组字段，加字段要改契约、动 `apps/core` 的 seeds 与 studio 编译（`launch-seeds.ts:481-575`），跨 lane 且撞契约锁。前端按 `familyId`（`RecipeCardView` 没直接带，但 `RecipeCardTarget.familyId` 有，`launch-card-seeds.ts:222`；`BrowserRecipeProjection.familyId` 也有，`recipe-cards.ts:97`）做静态映射，与 `launch-card-seeds.ts:1-7` 文件头已声明的「Mirror of core launch-seeds field labels — browser must not import core」是同一个既有先例。**未映射的 familyId 一律落到「项目 / 服务曝光」并在 dev 下 console.warn**，绝不静默丢卡。
+**分组键放在前端而不是契约里**：`RecipePresentation`（`packages/contracts/src/creation-experience.ts:45-51`）没有分组字段，加字段要改契约、动 `apps/core` 的 seeds 与 studio 编译（`launch-seeds.ts:481-575`），跨 lane 且撞契约锁。前端按 `familyId`（`RecipeCardView` 没直接带，但 `RecipeCardTarget.familyId` 有，`launch-card-seeds.ts:222`；`BrowserRecipeProjection.familyId` 也有，`packages/contracts/src/creation-experience.ts:164`，前端读取点见 `recipe-cards.ts:96-100` `isReuseFamily`）做静态映射，与 `launch-card-seeds.ts:1-7` 文件头已声明的「Mirror of core launch-seeds field labels — browser must not import core」是同一个既有先例。**未映射的 familyId 一律落到「项目 / 服务曝光」并在 dev 下 console.warn**，绝不静默丢卡。
 
 ### 4.5 pill 形态与 D-083/D-084 的关系（须守住的部分）
 
@@ -244,7 +244,7 @@ D-164 只改了**排布形态**，没有改 D-083/D-084。逐条对照，pill �
 | `creation_entry_marketing_brand_ip` | 品牌与个人 IP | 组标题（本版无配方，不渲染） |
 | `example_store_show` | 查看示例 | 段① 移动端 compact 折叠按钮（`dashboard-home-surface.tsx:181` 已在用） |
 
-这 6 个 `creation_entry_marketing_*` 目前在 `src/` 零引用——本票让它们**第一次有生产消费方**，同时消除一处「文案已建无人用」的存量。
+上表这 6 个 `creation_entry_marketing_*` 目前在 `src/` 零引用——本票让它们**第一次有生产消费方**，同时消除一处「文案已建无人用」的存量。（该前缀在 `zh.json` 实为 **7** 个键，第 7 个 `creation_entry_marketing_secondary`（`zh.json:1339`「继续细化场景」）不属五类宣发任务，本稿不处置，仍留为孤儿键。）
 
 ### 5.2 新增 key
 
@@ -262,7 +262,7 @@ D-164 只改了**排布形态**，没有改 D-083/D-084。逐条对照，pill �
 | `composer_recipe_pill_group_aria` | {group}相关的做法 | Ways to do {group} | `RecipePillRow` 每个 `role="group"` 的 `aria-label` |
 | `composer_recipe_pill_view_all` | 看全部做法 | See all approaches | pill 行末尾通往 `/dashboard/catalog` 的出口（若与 `composer-tools-strip.tsx:66` 现有出口重复则不新增，改复用——**实现时先核对该处现文案** |
 
-文案自检（D-116）：上表 zh 列无「路由 / 视图 / 会话 / 任务 / 配方 / 技能 / 模板 / lens」等技术词；「做法」代替「配方」、「做过的」代替「历史记录」、「在做」代替「运行中/进行中的任务」。段③ 行 2 的 `{title}` 取 `canonical_history_session_title()`（既有文案，`canonical-history-model.ts:350`），不自造。
+文案自检（D-116）：上表 zh 列无「路由 / 视图 / 会话 / 任务 / 配方 / 技能 / 模板 / lens」等技术词；「做法」代替「配方」、「做过的」代替「历史记录」、「在做」代替「运行中/进行中的任务」。段③ 行 2 的 `{title}` 取 `canonical_history_session_title()`（既有文案，`canonical-history-model.ts:352`），不自造。
 
 ## 6. 旧双路由入口收敛清单
 
@@ -330,7 +330,7 @@ it('冷态（Day-0）只上两段，第三段不存在', async () => {
   render(routerAt('/dashboard'));
 
   expect(await screen.findByTestId('today-recommendation'))
-    .toHaveAttribute('data-recommendation-state', 'cold');             // 既有属性，:224
+    .toHaveAttribute('data-recommendation-state', 'cold');             // 既有属性，:223
   expect(screen.queryByRole('region', { name: '接着上次继续' })).toBeNull();
   expect(screen.getByTestId('composer-intent-input')).toBeVisible();    // 段② 仍在
 });
@@ -443,7 +443,7 @@ test('pill 的「看全部做法」进目录、选一条再回到同一张工作
 
 **同批要改的既有断言**：`tests/e2e/specs/uiux-shell-routes.spec.ts:121-122` 两行从「`?view=` 各出一个 h1」改为「`?view=` 各自重定向到 `/dashboard/recent`、`/dashboard/works`」。理由与 §0 的既有假绿一并写进票下评论。
 
-**跑法纪律**：`typecheck` / `test` / `test:interaction` / `e2e` 四条都会重写 `src/locale/paraglide/`，同 worktree 内不与 `pnpm dev` 并跑（runbook `:17`）。新增 i18n key 后**先跑一次 `test:interaction` 让 paraglide 产物落盘**，再跑 e2e。
+**跑法纪律**：`typecheck` / `test` / `test:interaction` / `e2e` 四条都会重写 `src/locale/paraglide/`，同 worktree 内不与 `pnpm dev` 并跑（runbook `:14`）。新增 i18n key 后**先跑一次 `test:interaction` 让 paraglide 产物落盘**，再跑 e2e。
 
 ## 8. 风险与待用户拍板项
 
@@ -453,7 +453,7 @@ test('pill 的「看全部做法」进目录、选一条再回到同一张工作
 |---|---|---|---|
 | ① | **两类宣发任务没有配方**：热点借势、品牌与个人 IP 在 `launch-seeds.ts` 里零条（§4.2）。首版 pill 行只出 3 组 5 条 | D-139 把五类定为分组维度，但配方种子从来只覆盖三类。「热点」在别处有零件——推荐卡里已有 `HotTopicOpportunityCardView`（`today-recommendation-card.tsx:362-365`）——只是没有对应的**可套用配方** | **本票只出 3 组，不补配方**。补配方要动 `apps/core` 的 seeds ＋ studio 编译链（`launch-seeds.ts:481-575`），属后端面、跨 lane，不该塞进前端 lane 的串行链。建议单开一张「补齐热点/IP 两类配方种子」的票，排在 #261 之后 |
 | ② | **D-083「动作标签常驻可见」在 pill 上变成可访问名**（§4.5）。视觉上 pill 只有标题，「选择图文并套用」退到 `aria-label` | D-164② 采纳 pill 形态但没提 D-083；D-083 的原意是反 hover-only（信息只在悬停时出现，触屏上永不可达）。pill 的动作不是「隐藏」而是「合并进 pill 本身」——点 pill 就是套用，不存在第二个动作 | **按本稿实现**（aria-label 承载 D-083 文案），并在票下评论显式记录「D-083 视觉常驻在 pill 形态下改为可访问名常驻」这一形变。若用户认为 D-083 不可形变，退路是 pill 双行（标题 ＋ 小字动作），密度回升约 40%，与 D-164② 的「轻」相悖 |
-| ③ | **段① 上移与 `composer-home.tsx:2764-2771` 既有注释的立场相反**。该注释是上一轮实现刻意写下的产品判断（空推荐位压在主轴上方是最差读法） | D-164①（2026-07-29）晚于该注释，且逐字规定了段序；PRODUCT.md:37 前半句也要求「第一眼看到今天值得发什么」。冷态问题由「冷态段① 走示例店、段③ 不渲染」化解（§3.4） | **按 D-164① 上移**，同时重写该段注释（不能留着与新排布互相打脸）。**风险坦白**：D-164① 自己的证据边界写着「本条①②④⑤ 为产品裁定，无实现证据」（`:3152`），且移动端信息密度是公开的未验项（`:3158`）。建议上线后用真实商家观察首屏行为再决定是否回退 |
+| ③ | **段① 上移与 `composer-home.tsx:2764-2771` 既有注释的立场相反**。该注释是上一轮实现刻意写下的产品判断（空推荐位压在主轴上方是最差读法） | D-164①（2026-07-29）晚于该注释，且逐字规定了段序；PRODUCT.md:37 前半句也要求「第一眼看到今天值得发什么」。冷态问题由「冷态段① 走示例店、段③ 不渲染」化解（§3.4） | **按 D-164① 上移**，同时重写该段注释（不能留着与新排布互相打脸）。**风险坦白**：D-164① 自己的证据边界写着「本条①②④⑤ 为产品裁定，无实现证据」（`:3159`），且移动端信息密度是公开的未验项（`:3165`）。建议上线后用真实商家观察首屏行为再决定是否回退 |
 | ④ | **改了别的 lane 写的 e2e 断言**：`uiux-shell-routes.spec.ts:121-122`（§7.2） | 该断言锚的是 `?view=` 分叉的存在，而本票依 D-164① 移除它；且 `:122` 那行当前不可能通过（§0） | **改，不删**——改成断言重定向落点，覆盖面不减。改前在票下评论说明，并 @ 该 spec 的属主票号确认。若主控要求不动别人的 spec，退路是新建一条独立 spec 断言重定向、把 `:121-122` 标 `test.fixme` 并注明原因 |
 
 ### 遗留观察（不需拍板，供后续票参考）
@@ -461,3 +461,34 @@ test('pill 的「看全部做法」进目录、选一条再回到同一张工作
 - `readCreationDraftIntent`（`creation-entry-model.ts:60`）在生产代码里零消费方，只有 `creation-entry-model.test.ts:205` 用它 —— 一条写进 sessionStorage 但没人读的死通道。属既有存量，本票不删（不是本票改动造成的孤儿）。
 - `ComposerHome` 在本票后实际是整张 Dashboard 的容器，名字已经不准；改名会波及 e2e/测试定位器，建议与 #253FE 的流式改造同批处理。
 - D-164④「记忆升一级导航」会把 `BUSINESS_NAVIGATION`（`src/lib/uiux/navigation.ts:10`）从四项变五项，届时 `src/components/product/mobile-nav.tsx:55` 的 `grid-cols-4` 必须同批改成 5 栏，`src/config/sidebar-config.ts:50` 的 `businessIcons` 也要补一项，`scripts/check-locale-keys.ts:6` 的 `REQUIRED_PRODUCT_KEYS` 要加新导航 key。**本票不动这三处**，此处只作交接备忘。
+
+---
+
+## 锚点校准（2026-07-29，基点 main@a595808b）
+
+本轮只改 `file:line` 锚点与基点标注，**未改任何结论、判断或设计取舍**。依据 `06-xcheck-reverse.md §一`，并逐条在 `main@a595808b` 上用 `git grep -n` / `git show main:<path>` 复验（06 写作时基点是 `main@7f60a4e7`，其后 #247 合入，main 前进 4 个提交）。
+
+**本稿改动 11 处锚点 ＋ 1 处基点标注**：
+
+| 处 | 原 | 现 | 来源 |
+|---|---|---|---|
+| 头部 · 影响段 | `:3138-3145` | `:3145-3152` | 06 A5 |
+| 头部 · 证据边界段 | `:3153-3154` | `:3154-3161` | 06 A9（**二次修正**，见下） |
+| 头部 · 基点 | `main@cc04918d` | `main@a595808b` | 06 O7 |
+| §2.3 移动端未验项 | `:3158` | `:3165` | 06 A8 |
+| §4.1 D-139 影响条 | `:3142` | `:3149` | 06 A6 |
+| §4.4 `BrowserRecipeProjection.familyId` | `recipe-cards.ts:97` | `packages/contracts/src/creation-experience.ts:164` | 06 B5 |
+| §5 `canonical_history_session_title()` | `:350` | `:352` | 06 B16 |
+| §5.1 `creation_entry_marketing_*` 计数 | 「这 6 个」 | 上表 6 个＋补记该前缀实为 7 键 | 06 B35 |
+| §7.1 `data-recommendation-state` | `:224` | `:223` | 06 B17 |
+| §7.2 locale:compile 纪律 | runbook `:17` | runbook `:14` | 06 B29（**取反 06**，见下） |
+| §8③ 产品裁定条 ／ 移动端未验项 | `:3152` ／ `:3158` | `:3159` ／ `:3165` | 06 A7 ／ A8 |
+
+**其中 2 处是我复验后与 06 结论不同的**：
+
+1. **证据边界段范围**：06 给「`:3154-3165`」。实测 `:3154` 是「### 证据边界」，段落到 `:3161` 结束（`:3162` 空行、`:3163` 是「### 待验证」）。取 `:3154-3161`。
+2. **runbook `:17`**：06 判「该纪律不在 runbook 里，实际在仓根 `CLAUDE.md`」。实测 **`docs/ops/agent-dispatch-runbook-2026-07-29.md:14` 就是「locale:compile 冲突纪律」全条**（06 大概率只 grep 了别的词形）。故只改行号 `:17→:14`，不改指 `CLAUDE.md`。
+
+**设计文档锚点不是统一 +7**：`:3142→:3149`、`:3152→:3159`、`:3158→:3165` 确为 +7（新插入的用户裁定段 `:3138-3144`），但 `:3138-3145`→`:3145-3152` 与 `:3153-3154`→`:3154-3161` 是重新定位段界的结果，不是位移。`:3073-3086`（①②）在插入点之前，逐行复验无位移，未动。
+
+**未能验的**：本 worktree 未装 `node_modules`；未跑 `typecheck`／`test`／`test:interaction`／`e2e`（`locale:compile` 互斥纪律），故 §7 全部验收断言草案的**可满足性**仍是静态推断，本轮未验证。

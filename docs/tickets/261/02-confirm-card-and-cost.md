@@ -2,7 +2,7 @@
 
 > 范围：仅 D-164③（执行确认卡）与 D-164⑥（就地纠偏两分 + 本次动作成本即时反馈）。
 > 路由三段、记忆一级导航、评价条/动作 chip 不在本文。
-> 基点 `main@cc04918d`。本文只读源码，不改任何现有文件。
+> 基点 `main@a595808b`。本文只读源码，不改任何现有文件。
 > 姊妹文件：`00-blockers.md`（开工门）、`DECISIONS.md`（D1–D4 待拍板登记）。
 
 ---
@@ -22,7 +22,7 @@ D-109 原文用词是「面向用户的 `CreativeQuote` **收敛为** `UserDebit
 | 组件名 | `ExecutionConfirmCard`（渲染层）＋ `execution-confirm-card.ts`（纯投影/状态机） |
 | 文件位置 | `mkfast-template-main/src/product/composer/execution-confirm-card.tsx` ＋ `.ts` |
 | 反馈组件名 | `ExecutionCostFeedback`（同目录 `execution-cost-feedback.tsx`），**独立组件，不内嵌在卡里** |
-| 导出 | 经 `src/product/composer/index.ts`（该文件 `:89` 已是 composer 模块的统一出口） |
+| 导出 | 经 `src/product/composer/index.ts`（该文件已是 composer 模块的统一 barrel，392 行全是 re-export；追加一段 `export {…} from './execution-confirm-card'` 即可） |
 
 **为什么放 `composer/` 而不是 `results/`**：D-164⑥ 决定 A 要求「生成型改版走 D-164③ 的执行确认卡，**与首次生成同一形态**」。首次生成在 composer，就地纠偏在 results。同一形态只能有一个实现，放在被依赖方（composer）由 results 反向 import，与现状 `results/$workId.tsx:57` 已从 `@/product/results/` 跨目录 import 同构。
 
@@ -33,7 +33,7 @@ D-109 原文用词是「面向用户的 `CreativeQuote` **收敛为** `UserDebit
 | `quota-blocking-card.tsx:57` `QuotaBlockingCard` | **并存 + 复用其投影** | 两者职责不同：被动行（`:84-96`）是提交**前**的常驻说明，`:48-52` 注释明写「gates nothing — the merchant's tap on 生成 is the confirmation」（D-043 决定②）；阻塞态（`:128-222`）是 D-123「超额报停」。执行确认卡是提交**那一刻**的确认面。**不合并**，但成本行必须复用 `quota-blocking.ts:278` `projectQuotaPassiveView`，否则「本次用 X 条」会出现两套措辞 |
 | `brief-surface-panel.tsx:200-218` `BriefSurface` | **并存 + 吸收其 footer 形态与状态机骨架** | Brief 是 D-094 的**安全触发**卡（七类 trigger code，`brief-surface.ts:56-67`），触发条件是「这次跑有风险要素」，内容是证据抽屉/事实冲突；执行确认卡触发条件是「这次跑要花额度」，内容是参数＋消耗。两卡语义正交。**复用**：footer 双按钮布局（`:200-219`）、`phase` 状态机形状（`brief-surface.ts:85`）、`ComposerInputSnapshot` 快照-恢复模式（`:91-102`）。**不复用**：`视频计费只读区`（`:154-188`）应由执行确认卡接管，见 §4.4 |
 | `composer-signed-preview.ts` | **复用两行 + 另建扩展投影，不改原文件** | 原模块只回显「发到哪 / 交付物」两行，`:76-86` 注释明写模型行「已被删除」，`:14` 明写 no cost figures。执行确认卡需要模型/比例/数量/时长/成本——**不得**去改 `projectComposerSignedPreview`（它服务的是主轴常驻回显，那里删模型行的判断依然成立）。新建 `projectExecutionParams()` 独立投影 |
-| `results/image-adjust-confirmation.tsx:25` `ImageAdjustConfirmation` | **被吸收，退役** | 它就是「就地纠偏 → 生成型改版」的确认卡，已在 `results_/$workId.tsx:1207` 生产挂载。D-164⑥ 决定 A 要求它与首次生成**同一形态**，保留两个组件即两套形态。改造路径见 §5.4。注意它 `:32-35` 显示 `${confirmedAmount} ${currency}`，其交互测试 `image-adjust-confirmation.interaction.test.tsx:37` 断言字面量 `'整组 2 张·4 CNY'`——**CNY 已在商家面泄漏**，见 §4 |
+| `results/image-adjust-confirmation.tsx:25` `ImageAdjustConfirmation` | **被吸收，退役** | 它就是「就地纠偏 → 生成型改版」的确认卡，已在 `results_/$workId.tsx:1207` 生产挂载。D-164⑥ 决定 A 要求它与首次生成**同一形态**，保留两个组件即两套形态。改造路径见 §5.4。注意它 `:32-35` 显示 `${confirmedAmount} ${currency}`，其交互测试 `image-adjust-confirmation.interaction.test.tsx:34` 断言字面量 `'整组 2 张·4 CNY'`（fixture 源头 `:13 confirmedAmount: 4`、`:14 currency: 'CNY'`）——**CNY 已在商家面泄漏**，见 §4 |
 
 ### 1.4 一条硬约束：不得触发既有退役静态测试
 
@@ -107,7 +107,7 @@ export type ExecutionCostView = {
   readonly notice: string;
   readonly units: readonly ExecutionCostUnit[];
   /**
-   * 视频按成片秒计费的补充说明（quote-wiring.ts:46 billingNote）。
+   * 视频按成片秒计费的补充说明（quote-wiring.ts:49 billingNote；文案生成在 :149-152）。
    * 非视频恒为 null。这是「条数」说不了的唯一一件事，composer-home.tsx:2601-2609
    * 注释已把这条边界写死。
    */
@@ -255,7 +255,7 @@ export function projectExecutionConfirmCard(
 |---|---|---|
 | `durationSeconds` 存在 | N 秒 | 按最后生成出来的成片秒数计费 |
 
-hint 文案直接对齐 `video-confirm-zone.ts:63-65` 已有的 `「按生成成片 N 秒计费」`。
+hint 文案直接对齐 `video-confirm-zone.ts:59-61` 已有的 `「按生成成片 N 秒计费」`。
 
 **平台 / 交付物**：直接调用 `projectComposerSignedPreview`（`composer-signed-preview.ts:87`），不重写映射。
 
@@ -295,7 +295,7 @@ hint 文案直接对齐 `video-confirm-zone.ts:63-65` 已有的 `「按生成成
 | #261 票面验收 | 「点『拒绝』后，就地出现本次规划消耗反馈，**金额＝真实消耗**（Miora 反面教训：拒绝仍扣 79.65 且无提示）」 | 括号自己交代了「金额」一词的出处是 **Miora 的计价单位**，不是本产品的 |
 | D-164⑥ 决定 B 原文 | 「必须就地、即时反馈**本次实际消耗**」 | **未出现「金额」二字** |
 | D-164⑥ 原因段表格 | 「已扣 `79.65`」「`797.47 → 709.00`，扣 `88.47`」 | 全部是 **Miora 顶栏余额的观测值**，是证据不是规格 |
-| `image-adjust-confirmation.tsx:32-35` | `${props.quote.confirmedAmount} ${props.quote.formula.currency ?? '额度'}` | **现役代码正在把 `CNY` 打给商家看**（测试 `:37` 断言 `'整组 2 张·4 CNY'`）。这是既有违规，不是先例 |
+| `image-adjust-confirmation.tsx:32-35` | `${props.quote.confirmedAmount} ${props.quote.formula.currency ?? '额度'}` | **现役代码正在把 `CNY` 打给商家看**（测试 `:34` 断言 `'整组 2 张·4 CNY'`）。这是既有违规，不是先例 |
 | `brief-surface-panel.tsx:170-176` + `zh.json:983` | 「预计额度：{amount}」 | 用「额度」不用货币符号，是**弱形态**：数字来自 `quote.amount`（钱），但标签装成了额度 |
 
 ### 4.2 冲突性质
@@ -308,7 +308,7 @@ hint 文案直接对齐 `video-confirm-zone.ts:63-65` 已有的 `「按生成成
 
 **商家面一律用桶单位条数，金额一格都不出现。**
 
-1. **反馈数字＝服务端结算的 `settledUnits`**（`product-usage-ledger.ts:132-195` settle 写入，`ProductUsageRecord.settledUnits`）。这是「真实消耗」在本产品**唯一可对账的量**：预占 `reservedUnits` → 结算 `settledUnits` → 差额 `refundedUnits`，三者恒等。金额 `settledAmount`（`product-quote.ts:120`）是内部核算量，D-123 明写「内部成本基准…永不进前台」。
+1. **反馈数字＝服务端结算的 `settledUnits`**（`product-usage-ledger.ts:132-195` settle 写入，`ProductUsageRecord.settledUnits`）。这是「真实消耗」在本产品**唯一可对账的量**：预占 `reservedUnits` → 结算 `settledUnits` → 差额 `refundedUnits`，三者恒等。金额 `settledAmount`（`product-quote.ts:121`）是内部核算量，D-123 明写「内部成本基准…永不进前台」。
 2. **措辞单一来源**：复用 `quota-blocking.ts:278` `projectQuotaPassiveView`，让「本次用 1 条文案额度和 3 张图片额度」这句在提交前（被动行）、确认卡内、结束反馈三处**逐字一致**。三处不一致会被商家读成三件事。
 3. **视频例外照旧**：`billingNote`（「按生成成片 N 秒计费」）保留，因为它是条数说不了的事——`composer-home.tsx:2604-2608` 注释已经把这条边界写死了，照抄即可。
 4. **验收口径改写建议**：把票面的「金额＝真实消耗」执行为「**反馈数字逐桶等于服务端 settle 返回的 `settledUnits`**」。这比「金额相等」**更强**——它锁的是数据源同一性，而金额相等只锁了一个可以被前端算出来的数。
@@ -323,7 +323,7 @@ hint 文案直接对齐 `video-confirm-zone.ts:63-65` 已有的 `「按生成成
 
 ### 4.5 顺带清账（本票范围内必修）
 
-`image-adjust-confirmation.tsx:32-35` 现在会把 `CNY` 打到商家面。它正是 D-164⑥ 决定 A 所指的「就地纠偏 → 生成型改版」确认卡，本票要吸收它（§1.3），吸收时这行必须换成条数口径，其交互测试 `:37` 的字面量断言同步改。**这不是顺手改邻居代码，是本票要吸收的组件本身。**
+`image-adjust-confirmation.tsx:32-35` 现在会把 `CNY` 打到商家面。它正是 D-164⑥ 决定 A 所指的「就地纠偏 → 生成型改版」确认卡，本票要吸收它（§1.3），吸收时这行必须换成条数口径，其交互测试 `:34` 的字面量断言同步改。**这不是顺手改邻居代码，是本票要吸收的组件本身。**
 
 ---
 
@@ -380,7 +380,7 @@ hint 文案直接对齐 `video-confirm-zone.ts:63-65` 已有的 `「按生成成
 | **确定性编辑** | 不调模型 | **零阻塞、零提示**，一行代码都不加 | 直接编辑文本、`rollback_content_package_version`（`$workId.tsx:1188-1198`）、排序 / 采用 / 下载。D-109 原文已定「采用、下载、排序、复制和无需模型的确定性编辑不扣生成额度」 |
 | **生成型改版** | 再次调模型 | 走 `ExecutionConfirmCard`，与首次生成同一形态 | `$workId.tsx:1341-1394` `onAdjust`（当前用 `ImageAdjustConfirmation`）、后续动作 chip 触发的重出图 |
 
-**改造动作**：`$workId.tsx:1206-1218` 的 `<ImageAdjustConfirmation>` 换成 `<ExecutionConfirmCard>`，参数投影从 `prepared.quoteIntent`（`:1348-1355` 已带 `aspectRatio` / `quantity` / `catalogModelId`）＋ `quote.debitUnits` 组装；`onCancel`（`:1211-1214`）改为 `onReject`，加一句反馈。`image-adjust-confirmation.tsx` 与其两个测试文件退役（`git rm`，按 D-127「真删默认」）。
+**改造动作**：`$workId.tsx:1206-1218` 的 `<ImageAdjustConfirmation>` 换成 `<ExecutionConfirmCard>`，参数投影从 `prepared.quoteIntent`（`:1348-1355` 已带 `aspectRatio` / `quantity` / `catalogModelId`）＋ `quote.debitUnits` 组装；`onCancel`（`:1211-1214`）改为 `onReject`，加一句反馈。`image-adjust-confirmation.tsx` 与其**唯一**的测试文件 `image-adjust-confirmation.interaction.test.tsx` 退役（`git rm` 两个文件，按 D-127「真删默认」；`src/product/results/` 下与它相关的测试只此一个）。
 
 **注意 `result-route-live-wiring.static.test.ts:47`** 断言 `assert.match(route, /ImageAdjustConfirmation/)` ——退役时这条断言要同步改成 `/ExecutionConfirmCard/`，否则静态测试会挡住。
 
@@ -447,7 +447,7 @@ D-164⑥ 决定 C 说「规划阶段的消耗必须计入并反馈…不得让�
 | 能力 | 谁做 | 说明 |
 |---|---|---|
 | 参数只读投影、商家语言映射、卡渲染、两动作 | **前端（本票）** | 数据全部已在手（`ComposerSubmissionSignedFields` + `CatalogModelView` + `ProductQuoteSnapshot.debitUnits`） |
-| 确认前的「本次要用多少」 | **前端（本票）** | `quote-blocking.ts:226` `composerQuotaRequirements` 已是服务端 `debitUnitsFor` 的前端镜像（`:216-225` 注释注明权威在 `server-quote-authority.ts`） |
+| 确认前的「本次要用多少」 | **前端（本票）** | `quota-blocking.ts:226` `composerQuotaRequirements` 已是服务端 `debitUnitsFor` 的前端镜像（`:216-225` 注释注明权威在 `server-quote-authority.ts`） |
 | 拒绝时「未消耗额度」文案 | **前端（本票）** | 按 §6.2，这是产品口径不是数据，零后端依赖 |
 | **结束后「本次实际用了多少」** | **后端 → #248** | 必须从执行返回值直取，见下 |
 | **规划阶段成本的 stage 归属** | **后端 → #248**（若 §6.2 裁定改口径才需要） | `provider-cost-snapshot.ts:16-32` 需加 `stage: 'planning' \| 'execution'` |
@@ -510,7 +510,7 @@ D-164⑥ 决定 C 说「规划阶段的消耗必须计入并反馈…不得让�
 | 位置 | 今天的触发条件 | 明天 |
 |---|---|---|
 | Composer 提交 | `decideSubmitPath` 返回 `open_brief`（D-094 七码，含 `quote_policy_threshold` / `any_video`） | Brief 照旧；执行确认卡**并列**在 Brief 之后出现（安全确认 → 花费确认，两卡不合并，D-164③「不新增卡类型」指的是不新增 HITL 类别，不是不能有两张卡先后出现） |
-| 视频 lens | `evaluateSubmitGate`（`video-confirm-zone.ts:105-118`）恒拦 | 视频计费区（`brief-surface-panel.tsx:154-188`）迁入执行确认卡，Brief 里那段删掉 |
+| 视频 lens | `evaluateSubmitGate`（`video-confirm-zone.ts:82`，恒拦分支在函数体 `:105-118`）恒拦 | 视频计费区（`brief-surface-panel.tsx:154-188`）迁入执行确认卡，Brief 里那段删掉 |
 | 结果页就地纠偏 | `$workId.tsx:1341` `onAdjust` 恒拦 | 换成 `ExecutionConfirmCard`（§5.4） |
 
 净效果：**商家点击数不增加一次**，卡的内容变丰富（多了参数只读 + 消耗），并且拒绝路径第一次有了反馈。这符合「按最小形态实现，不自行扩展」。
@@ -727,3 +727,30 @@ it('确定性编辑不弹确认卡、不出成本反馈', async () => {
 - 不得改 `composer-signed-preview.ts` 的 `projectComposerSignedPreview` —— 它服务主轴常驻回显，另建投影（§1.3）。
 - 不得改 `brief-surface.ts:85` 的 `BriefSurfacePhase` —— D-013 七类一类不动（§5.5）。
 
+
+---
+
+## 锚点校准（2026-07-29，基点 main@a595808b）
+
+本轮只改 `file:line` 锚点与基点标注，**未改任何结论、判断或设计取舍**（§4 金额 vs 条数、§6.2 D-164⑥C 裁定、§7 触发口径一字未动）。依据 `06-xcheck-reverse.md §一`，并逐条在 `main@a595808b` 上复验。
+
+**本稿改动 10 处锚点 ＋ 1 处基点标注**：
+
+| 处 | 原 | 现 | 来源 |
+|---|---|---|---|
+| 头部 · 基点 | `main@cc04918d` | `main@a595808b` | 06 O7 |
+| §1.2 导出行 | `index.ts` 的 `:89`「统一出口」 | 删掉该无意义行号（`:89` 只是 barrel 中间一行 `} from './settings-row';`），改述为「392 行全是 re-export」 | 06 B28 |
+| §1.3／§4.1／§4.5 CNY 断言 | `image-adjust-confirmation.interaction.test.tsx:37` | `:34`（`:37` 是 `fireEvent.click`）；§1.3 补 fixture 源头 `:13/:14` | 06 B3（3 处） |
+| §2.2 `billingNote` 注释 | `quote-wiring.ts:46` | `:49`（`:48` 是其注释）；补文案生成点 `:149-152` | 06 B11 |
+| §3.2 时长 hint 对齐 | `video-confirm-zone.ts:63-65` | `:59-61`（`:63-65` 是 `return { visible: true,`） | 06 B12 |
+| §4.3 `settledAmount` | `product-quote.ts:120` | `:121`（`:120` 是其注释） | 06 B14 |
+| §5.4 退役文件数 | 「与其**两个**测试文件退役」 | 「与其**唯一**的测试文件 `image-adjust-confirmation.interaction.test.tsx` 退役（`git rm` 两个文件）」 | 06 B4 |
+| §6.3 前端镜像 | `quote-blocking.ts:226` | `quota-blocking.ts:226`（`quote-blocking.ts` 全仓不存在；行号本身正确） | 06 B34 |
+| §7.2 `evaluateSubmitGate` | `video-confirm-zone.ts:105-118` | `:82`（函数声明）＋注明 `:105-118` 在函数体内 | 06 B13 |
+
+**二次漂移：0**。06 给的正确值在 `main@a595808b` 上逐条复验全部仍成立（本稿引用的文件均不在 `7f60a4e7..a595808b` 的 diff 内）。
+
+**未能验的**：
+1. 未跑 `typecheck`／`test`／`test:interaction`／`e2e`（`locale:compile` 互斥纪律），§8 全部断言草案的可满足性仍是静态推断。
+2. §4.1 引的「#261 票面验收原文」、§6.4 引的「#248 票面任务清单原文／验收门 3」**未读 GitHub 票面**，只核到 spec 与决策文档一侧。
+3. §3.1 表末「分辨率全仓不存在」一行未复跑全仓穷举（其余 7 行已验）。

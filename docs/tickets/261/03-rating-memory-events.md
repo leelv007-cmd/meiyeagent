@@ -1,7 +1,7 @@
 # #261 设计稿 · 评价条／动作 chip／评价事件适配层／记忆一级导航
 
 > 范围：**D-164④**（记忆升一级导航）＋ **D-164⑤**（评价条与动作 chip）＋ **D-160③**（评价事件合同）
-> 基点：main@cc04918d（worktree `lane-261`）。**本文件是零 rebase 面预备产出，不含任何源码改动。**
+> 基点：main@a595808b（worktree `lane-261`）。**本文件是零 rebase 面预备产出，不含任何源码改动。**
 > 权威：`docs/design/beauty-marketing-agent-product-design-2026-07-17.md:3099-3111`（D-164④⑤）、`:2701-2739`（D-160③ 与其 07-29 补充）、`:3005-3033`（D-163②）、`:2120-2128`（D-126，一字不改）
 > 同批：`00-blockers.md`（开工门与属主边界）、`DECISIONS.md`（D4＝chip 生成方式 PENDING）、`01-ia-three-sections.md`、`02-confirm-card-and-cost.md`
 
@@ -12,7 +12,7 @@
 | # | 盘点结论写法 | main 实际 | 影响 |
 |---|---|---|---|
 | 4 | 「最近亲实现：`src/product/results/image-role-feedback.tsx` ＝评价条最近亲」 | **该 `.tsx` 不存在**，只有 `src/product/results/image-role-feedback.interaction.test.tsx`；它测的是 `ImageWorksurface` 的**采用动作完成文案**（`src/product/results/image-role-action-matrix.ts:83-97` `IMAGE_ROLE_FEEDBACK`，D-087 要求逐字符匹配），**与赞/踩评价无关** | 「评价条最近亲」不成立。**全仓无任何评价条前例**，本票是第一实现。可借的只有它的**逐字符文案纪律**与测试写法 |
-| 5 | 「移动底栏是 `grid-cols-4`（加第五项要改栅格）」 | 属实（`src/components/product/mobile-nav.tsx:55`），**但真正的硬门在测试**：`src/components/product/mobile-nav.static.test.ts:38-42` 硬断言 `['workbench','content','assets','store']` 四项，且用例名写死「**nav 四项合同**」 | 加第 5 项**必然红**这条测试。改它＝改「四项合同」，须在票下留痕；不是顺手改栅格 |
+| 5 | 「移动底栏是 `grid-cols-4`（加第五项要改栅格）」 | 属实（`src/components/product/mobile-nav.tsx:55`），**但真正的硬门在测试**：`src/components/product/mobile-nav.static.test.ts:39-42` 硬断言 `['workbench','content','assets','store']` 四项，且 `:34` 用例名写死「**nav 四项合同**」；同一用例内另有一条 `deepEqual`（`:35-38`，比 `BUSINESS_SIDEBAR_ITEMS` 与 `BUSINESS_NAVIGATION` 的 href），加第五项时两条都会红 | 加第 5 项**必然红**这条测试。改它＝改「四项合同」，须在票下留痕；不是顺手改栅格 |
 
 ---
 
@@ -72,17 +72,17 @@ export type ComposerDeliveryRatingBarProps = {
 
 ## 1.4 「纯图标、无文字标签、轻到可忽略」的实现口径
 
-这条与 `DESIGN.md:191`「触屏最小命中 44px」和 `src/product/results/outcome-chips-panel.tsx:129` 已落地的 `min-h-11 min-w-11` **表面冲突**。解法是把**墨量**与**命中区**分开——不是把按钮做小。
+这条与 `DESIGN.md:192`「触屏最小命中 44px」和 `src/product/results/outcome-chips-panel.tsx:129` 已落地的 `min-h-11 min-w-11` **表面冲突**。解法是把**墨量**与**命中区**分开——不是把按钮做小。
 
 | 维度 | 取值 | 依据 |
 |---|---|---|
 | 图标尺寸 | `size-3.5`（14px） | 比卡内正文 `text-sm` 的字面还小一档；`delivery-panel.tsx:47` 的 `size-4` 是「明确动作」的档，评价条要更低一档 |
-| 按钮命中区 | `size-11`（44×44），`inline-flex items-center justify-center` | `DESIGN.md:191` 硬约束，不可为「轻」牺牲 |
+| 按钮命中区 | `size-11`（44×44），`inline-flex items-center justify-center` | `DESIGN.md:192` 硬约束，不可为「轻」牺牲 |
 | 行整体收拢 | 容器 `-mx-2.5 -mt-0.5 flex`，按钮之间 `gap-0` | 44px 方框内 14px 图标自带 15px 留白，不负边距会让这一行读起来比正文块还宽。负边距把**光学左缘**对齐到正文左缘 |
 | 静息色 | `text-muted-foreground/60` | `DESIGN.md:145` 的灰痕体系；`/60` 让它低于 `:100` 的「点开看完整成品」提示行 |
 | hover | `hover:text-foreground hover:bg-[--tint-hover]`，`rounded-full` | `DESIGN.md:195` Ghost ＝「透明底 + tint-hover 悬停痕，行内三级动作」——评价条正是三级动作 |
 | 已表达态 | 该图标 `text-foreground`，另一个保持 `/60`；**不加底色、不加计数** | D-160③「行业通用惯例，不做发散」 |
-| focus | 继承壳级 `focus-visible:ring-2 focus-visible:ring-ring/50`（`mobile-nav.tsx:12` 同款） | `DESIGN.md:196` 全壳一档 |
+| focus | 继承壳级 `focus-visible:ring-2 focus-visible:ring-ring/50`（`mobile-nav.tsx:12` 同款） | `DESIGN.md:197` focus「**全壳一档**」（该条措辞为 `--product-focus` outline，壳内现行实现是 ring；本条只沿用壳级现状，不另开一档） |
 | 动效 | 仅 `transition-colors duration-150` | `DESIGN.md:227`「只动 transform/opacity」——颜色过渡不触发布局，且 150ms 在其区间下限 |
 | 上边距 | `mt-1` | 「紧贴文案末尾」；对比现有动作行 `:108` 的 `mt-3` |
 
@@ -175,11 +175,11 @@ D-164 待验证原文：「动作 chip 的**生成方式未定**（由模型即�
 | 候选源 | file:line | 有什么 | 判定 |
 |---|---|---|---|
 | `BrowserRecipeProjection` | `packages/contracts/src/creation-experience.ts:158` | `presentation`（`:165`→`RecipePresentation` `:45-51`：title/summary/actionLabel/previewAssetRef）、`delivery`（`:166`→`RecipeDeliveryDefaults` `:53-60`：platform/deliverableKind/quantity/**aspectRatio**）、`lensId`（`:163`） | **无 followUp/chips 字段**。加字段＝改 recipe 契约，属 creation-experience 属主面，#261 不得动 |
-| 前端静态种子 `LAUNCH_CARD_SEEDS` | `src/product/composer/launch-card-seeds.ts:101`（类型 `:84 LaunchCardSeedSpec`） | 已是「core launch-seeds 的浏览器侧镜像」，文件头 `:1-7` 明写「browser must not import core」「later Surface revisions may override presentation at runtime」 | **推荐**。零契约改动，且**镜像＋运行时可覆盖**这个模式是仓内既有先例 |
+| 前端静态种子 `LAUNCH_CARD_SEEDS` | `src/product/composer/launch-card-seeds.ts:86`（类型 `:70 LaunchCardSeedSpec`） | 已是「core launch-seeds 的浏览器侧镜像」，文件头 `:1-7` 明写「browser must not import core」「later Surface revisions may override presentation at runtime」 | **推荐**。零契约改动，且**镜像＋运行时可覆盖**这个模式是仓内既有先例 |
 | 镜像先例 `COMPOSER_LENS_LABELS` | `src/product/composer/lens-labels.ts:7`（文件头 `:1-4`「Mirror of core static seeds — no publish lifecycle」） | 三 lens 中文标签 | 同上模式的最小实例，直接照抄结构 |
-| 已投影的配方卡 | `src/product/composer/recipe-cards.ts:104 listColdCardsFromRecipes` / `:57 listColdCardsFromSeeds` | `RecipeCardView`（`:34-51`）含 `lensId`/`recipe`/`actionLabel` | 取 `lensId` 与已套用配方 id 用 |
+| 已投影的配方卡 | `src/product/composer/recipe-cards.ts:107 listColdCardsFromRecipes` / `:58 listColdCardsFromSeeds` | `RecipeCardView`（`:33-52`）含 `lensId`/`recipe`/`actionLabel` | 取 `lensId` 与已套用配方 id 用 |
 
-**结论**：chip 集合按 **`CreationLensId` 分档**（`lens-labels.ts:7`：`copy` / `image_text` / `video`），必要时按 `delivery.aspectRatio`（`creation-experience.ts:60`）与 `delivery.contentPackagePlatform`（`:56`）做**剔除**（例如已是横版就不出「再出一版横版的」）。**不新增任何后端字段，不碰 `skills` 模块**（`00-blockers.md:65`）。
+**结论**：chip 集合按 **`CreationLensId` 分档**（`lens-labels.ts:7`：`copy` / `image_text` / `video`），必要时按 `delivery.aspectRatio`（`creation-experience.ts:60`）与 `delivery.contentPackagePlatform`（`:56`）做**剔除**（例如已是横版就不出「再出一版横版的」）。**不新增任何后端字段，不碰 `skills` 模块**（`00-blockers.md:100`）。
 
 ## 2.3 声明形态（新文件，草案）
 
@@ -265,22 +265,54 @@ D-164⑤ ＋ D-126 ＋ Miora 实证三方同向：**点击只填输入框，不�
         src/product/creation-entry-model.ts:67（键 :46 CREATION_DRAFT_INTENT_STORAGE_KEY）
         —— 与 dashboard-home-surface.tsx:145-150 的 prefill 完全同两步
    b. setLensState((cur) => updateUserText(selectLens(cur, lens), intent))
-        composer-home.tsx:2779-2781
+        composer-home.tsx:2780-2782
    c. focusComposerIntentInput()
         composer-conversation.tsx:60-67（按 testid 取焦，:57 COMPOSER_INTENT_INPUT_TESTID）
-        —— 注释 :2782-2784 明写为何不能用 ref
+        —— 注释 :2783-2785 明写为何不能用 ref
 ```
 
-**一处必须与推荐卡不同**：`composer-home.tsx:2779` 把 lens 硬编码成 `'copy'`（推荐卡永远出文案意图，合理）。**后续动作 chip 必须传交付物自己的 lens** —— 对一张图点「换成深色背景」却把创作类型切成「文案」，商家下一步会得到一段文字。lens 来源＝该 delivery turn 所属 session 的当前 lens。
+**一处必须与推荐卡不同**：`composer-home.tsx:2781` 把 lens 硬编码成 `'copy'`（推荐卡永远出文案意图，合理）。**后续动作 chip 必须传交付物自己的 lens** —— 对一张图点「换成深色背景」却把创作类型切成「文案」，商家下一步会得到一段文字。lens 来源＝该 delivery turn 所属 session 的当前 lens。
 
 **禁止**：`onFollowUp` 里任何形式的 `createWork` / `submit` / `commandP1`。`composer-home.tsx:2765-2772` 的注释「Both CTAs prefill this same draft — never submit」是这条纪律的既有成文形态，新增第三个调用方后应把注释里的 "Both" 一并更新（这是本票**唯一**允许修改的既有注释）。
 
 ## 2.6 chip 视觉
 
-`rounded-full border border-border/60 bg-transparent px-3 py-1 text-xs text-muted-foreground hover:bg-[--tint-hover] hover:text-foreground`，容器 `mt-3 flex flex-wrap gap-2`，`min-h-11`? —— **不加 `min-h-11`**：chip 是文字药丸，`px-3 py-1 text-xs` 下高约 26px，低于 44px 命中要求。按 `DESIGN.md:191` 触屏最小命中 44px，实现取 `py-1` 视觉高度 ＋ `after:absolute after:inset-x-0 after:-inset-y-2.5` 的伪元素扩张命中区（或直接 `py-2.5` 让整行高 44px）。**建议后者**：`gap-2` 下两行 chip 的间距已足，44px 实高不会显得笨重，且不引入伪元素调试成本。现有 `:113` 三动作是 `px-3 py-1`，同样不足 44px —— **这是既有问题，本票不顺手改**（`00-blockers.md` 属主纪律：只清自己的），仅在票下记一条。
+`rounded-full border border-border/60 bg-transparent px-3 py-1 text-xs text-muted-foreground hover:bg-[--tint-hover] hover:text-foreground`，容器 `mt-3 flex flex-wrap gap-2`，`min-h-11`? —— **不加 `min-h-11`**：chip 是文字药丸，`px-3 py-1 text-xs` 下高约 26px，低于 44px 命中要求。按 `DESIGN.md:192` 触屏最小命中 44px，实现取 `py-1` 视觉高度 ＋ `after:absolute after:inset-x-0 after:-inset-y-2.5` 的伪元素扩张命中区（或直接 `py-2.5` 让整行高 44px）。**建议后者**：`gap-2` 下两行 chip 的间距已足，44px 实高不会显得笨重，且不引入伪元素调试成本。现有 `:113` 三动作是 `px-3 py-1`，同样不足 44px —— **这是既有问题，本票不顺手改**（`00-blockers.md` 属主纪律：只清自己的），仅在票下记一条。
 
 `data-testid="composer-delivery-followup-${seed.id}"`。
 
 ---
 
 **§三 评价事件适配层／§四 记忆一级导航／§五 `correction` 处置／§六 阻塞清单 → 见 `04-events-memory-nav.md`。**
+
+---
+
+## 锚点校准（2026-07-29，基点 main@a595808b）
+
+本轮只改 `file:line` 锚点与基点标注，**未改任何结论、判断或设计取舍**（§1.6 去重/撤回口径、§2.1 固定集合建议、§2.4 chip 文案一字未动）。依据 `06-xcheck-reverse.md §一`，并逐条在 `main@a595808b` 上复验。
+
+**本稿改动 11 处锚点 ＋ 1 处基点标注**：
+
+| 处 | 原 | 现 | 来源 |
+|---|---|---|---|
+| 头部 · 基点 | `main@cc04918d` | `main@a595808b` | 06 O7 |
+| §〇#5 nav 四项合同 | `mobile-nav.static.test.ts:38-42` | `:39-42`（id 硬断言）＋ `:34`（用例名）＋补记同用例 `:35-38` 还有一条 href `deepEqual` | 06 B24 |
+| §1.4 正文／表内 44px | `DESIGN.md:191`（2 处） | `:192`（`:191` 是小节标题 `### Buttons`） | 06 B1 |
+| §1.4 focus 行 | `DESIGN.md:196` | `:197`（**取反 06**，见下） | 06 B2 |
+| §2.2 前端种子 | `launch-card-seeds.ts:101`（类型 `:84`） | `:86`（类型 `:70`） | 06 B8／B9 |
+| §2.2 已投影配方卡 | `recipe-cards.ts:104` / `:57` / `RecipeCardView :34-51` | `:107` / `:58` / `:33-52` | 06 B7／B6／B10 |
+| §2.2 不碰 skills | `00-blockers.md:65` | `:100` | 06 B32 |
+| §2.5 `setLensState` 表达式 | `composer-home.tsx:2779-2781` | `:2780-2782` | 06 B15 |
+| §2.5 lens 硬编码 `'copy'` | `composer-home.tsx:2779` | `:2781`（`:2779` 是注释行） | 06 B15 |
+| §2.5 「为何不能用 ref」注释 | `:2782-2784` | `:2783-2785` | **本轮新发现** |
+| §2.6 chip 命中区 | `DESIGN.md:191` | `:192` | 06 B1 |
+
+**其中 2 处与 06 结论不同 / 06 未报**：
+
+1. **§1.4 focus 行（06 B2）**：06 判「`DESIGN.md` 全文没有 focus ring 条款，该依据是虚假的，应删」。**实测不成立**——`DESIGN.md:197` 就是 `- **Focus:** 2px \`--product-focus\` outline + 2px offset，全壳一档（…）`，「全壳一档」四字逐字在其中。06 只 grep 了 Tailwind 类名（`focus-visible` / `ring-ring`），而 `DESIGN.md` 用的是设计令牌语言。**依据保留**，只把锚点从 `:196`（Destructive 条）改到 `:197`，并注明「该条措辞是 outline、壳内现行实现是 ring，本条只沿用壳级现状不另开一档」。
+2. **§2.5 `:2782-2784`**：06 未报，本轮自查发现该注释实为 `:2783-2785`。
+
+**未能验的**：
+1. `@tabler/icons-react@^3.36.1` 的 `IconThumbUp` / `IconThumbDown` 实际导出名（本 worktree 未装 `node_modules`）——§1.3 已自标，仍为 S3。
+2. 未跑任何测试命令（`locale:compile` 互斥纪律），§1.4／§2.6 的 class 与命中区断言均未实跑。
+3. `00-blockers.md` 是本 worktree 的未提交文件，其行号以当前工作副本为准；该文件若再被改写，`:100` 会再漂。
