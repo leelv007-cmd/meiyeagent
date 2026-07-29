@@ -101,6 +101,12 @@ test(
     );
     const traces: string[] = [];
     const billingReceipts: string[] = [];
+    const terminalOrder: string[] = [];
+    const recallDue: Array<{
+      completedAt: string;
+      sourceTaskId: string;
+      workspaceId: string;
+    }> = [];
     const providerSkillRefs: string[][] = [];
     const skills = await createSmokeSkills(workflowId);
     let pendingQuestion: QuestionCard | null = null;
@@ -132,12 +138,22 @@ test(
       {
         async commit({ taskId }) {
           billingReceipts.push(`committed:${taskId}`);
+          terminalOrder.push(`committed:${taskId}`);
         },
         async refund({ taskId }) {
           billingReceipts.push(`refunded:${taskId}`);
         },
         async scheduleCompensation({ action, taskId }) {
           billingReceipts.push(`scheduled:${action}:${taskId}`);
+        },
+      },
+      undefined,
+      undefined,
+      undefined,
+      {
+        async produce(input) {
+          recallDue.push(input);
+          terminalOrder.push(`recalled:${input.sourceTaskId}`);
         },
       },
     );
@@ -258,6 +274,14 @@ test(
         'assembly_delivery',
       ]);
       assert.deepEqual(billingReceipts, [`committed:${workflowId}`]);
+      assert.deepEqual(terminalOrder, [
+        `committed:${workflowId}`,
+        `recalled:${workflowId}`,
+      ]);
+      assert.equal(recallDue.length, 1);
+      assert.equal(recallDue[0]?.workspaceId, 'workspace-smoke');
+      assert.equal(recallDue[0]?.sourceTaskId, workflowId);
+      assert.ok(Number.isFinite(Date.parse(recallDue[0]!.completedAt)));
       assert.deepEqual(providerSkillRefs, [['skill.intent-one@2']]);
 
       const afterSteps = await DBOS.listWorkflowSteps(runtimeWorkflowId);
@@ -577,6 +601,7 @@ test(
     let coreTimeouts = 0;
     let coreHoldExpiries = 0;
     let refunds = 0;
+    let recallDue = 0;
     DBOS.setConfig({
       name: 'beauty-marketing-harness-unattended-hold',
       systemDatabaseUrl: systemDatabaseUrl!,
@@ -619,6 +644,12 @@ test(
           return { eventId: 'hold-expired', replayed: false };
         },
       },
+      undefined,
+      {
+        async produce() {
+          recallDue += 1;
+        },
+      },
     );
 
     try {
@@ -640,6 +671,7 @@ test(
       assert.equal(coreTimeouts, 0);
       assert.equal(coreHoldExpiries, 1);
       assert.equal(refunds, 1);
+      assert.equal(recallDue, 0);
       assert.deepEqual(
         (await DBOS.listWorkflowSteps(runtimeWorkflowId))
           ?.filter((step) => step.functionID >= 4 && step.functionID <= 9)

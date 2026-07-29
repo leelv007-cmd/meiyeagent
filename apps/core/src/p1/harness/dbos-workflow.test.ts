@@ -18,6 +18,7 @@ import {
   resumeHarnessDbosWorkflow,
   suspensionQuestionFailOpen,
   settleHarnessCancellation,
+  settleHarnessTerminalSuccess,
   type HarnessBillingSettlementPort,
 } from './dbos-workflow.js';
 import type { AdminConfigRepository } from '../admin-config/foundation-module.js';
@@ -333,6 +334,81 @@ test('commit failure schedules durable compensation without rejecting delivery',
     'step:schedule-product-usage-commit',
     'scheduled:commit:quote-revision-1',
   ]);
+});
+
+test('terminal success enqueues recall after a failed commit is durably scheduled', async () => {
+  const events: string[] = [];
+  const request = {
+    workspaceId: settlement.workspaceId,
+  } as HarnessWorkflowInput;
+
+  await settleHarnessTerminalSuccess({
+    billing: {
+      async commit() {
+        events.push('commit');
+        throw new Error('billing unavailable');
+      },
+      async refund() {},
+      async scheduleCompensation() {
+        events.push('schedule');
+      },
+    },
+    completedAt: '2026-07-29T02:00:00.000Z',
+    request,
+    runStep: async (name, operation) => {
+      events.push(`step:${name}`);
+      return operation();
+    },
+    settlement,
+    taskRecallDue: {
+      async produce(input) {
+        events.push(`recall:${input.sourceTaskId}`);
+      },
+    },
+    workflowId: settlement.taskId,
+  });
+
+  assert.deepEqual(events, [
+    'step:commit-product-usage',
+    'commit',
+    'step:schedule-product-usage-commit',
+    'schedule',
+    'step:enqueue-task-recall',
+    `recall:${settlement.taskId}`,
+  ]);
+});
+
+test('terminal success does not enqueue recall when billing compensation cannot be scheduled', async () => {
+  let recallDue = 0;
+
+  await assert.rejects(
+    settleHarnessTerminalSuccess({
+      billing: {
+        async commit() {
+          throw new Error('billing unavailable');
+        },
+        async refund() {},
+        async scheduleCompensation() {
+          throw new Error('compensation store unavailable');
+        },
+      },
+      completedAt: '2026-07-29T02:00:00.000Z',
+      request: {
+        workspaceId: settlement.workspaceId,
+      } as HarnessWorkflowInput,
+      runStep: async (_name, operation) => operation(),
+      settlement,
+      taskRecallDue: {
+        async produce() {
+          recallDue += 1;
+        },
+      },
+      workflowId: settlement.taskId,
+    }),
+    /compensation store unavailable/u,
+  );
+
+  assert.equal(recallDue, 0);
 });
 
 test('refund failure still records terminal state and preserves the execution error', async () => {

@@ -53,6 +53,7 @@ import {
   AdminConfigNotePlanSettingsSource,
   DEFAULT_HARNESS_LANGFUSE_OUTBOX_CONFIG,
   DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
+  DUE_DELIVERY_RETENTION_DAYS_CONFIG_KEY,
   HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
   HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
   HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY,
@@ -225,6 +226,9 @@ import {
   UnifiedHarnessStagePorts,
 } from './p1/harness/unified-media-stage-ports.js';
 import { PostgresHarnessStore } from './p1/harness/postgres-store.js';
+import { PostgresDueDeliveryRepository } from './p1/due-delivery/postgres-repository.js';
+import { DueAwareHarnessRecommendationReader } from './p1/due-delivery/recommendation-reader.js';
+import { TaskRecallDueProducer } from './p1/due-delivery/task-recall-producer.js';
 import {
   assertPendingActionsShareDatabase,
   readHarnessRuntimeConfig,
@@ -452,6 +456,10 @@ const contentPackageMigration = new ContentPackageMigrationService({
   }),
 });
 const adminConfigRepository = new PostgresAdminConfigRepository(pool);
+const dueDeliveryRepository = new PostgresDueDeliveryRepository(
+  pool,
+  adminConfigRepository
+);
 const cloudflareMapping = {
   internalRef: process.env.CLOUDFLARE_MAPPING_REF ?? 'shell-production',
   accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
@@ -478,6 +486,7 @@ const promptAuditStore = new PostgresHarnessStore(
 );
 await migratePostgresSchema(pool, [
   adminConfigRepository,
+  dueDeliveryRepository,
   integrationRepository,
   promptAuditStore,
   skillRepository,
@@ -1333,6 +1342,10 @@ let composerSubmissionCoordinator: CreationSubmissionCoordinator | undefined;
 // Pending-actions is an unconditional platform service (Z2-WIRING / #94 handoff).
 // Harness questions need the harness_runtime schema; approvals come from operations.
 const pendingActionsQuestionStore = promptAuditStore;
+const dueAwareRecommendations = new DueAwareHarnessRecommendationReader(
+  pendingActionsQuestionStore,
+  dueDeliveryRepository,
+);
 if (harnessRuntimeConfig) {
   assertPendingActionsShareDatabase({
     approvalRequestsDatabaseUrl: databaseUrl,
@@ -1473,6 +1486,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       ),
       hotReadKeys: [
         ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
+        DUE_DELIVERY_RETENTION_DAYS_CONFIG_KEY,
         HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
         HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
         HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY,
@@ -1496,6 +1510,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       ],
       wiredKeys: [
         ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
+        DUE_DELIVERY_RETENTION_DAYS_CONFIG_KEY,
         HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
         HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
         HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY,
@@ -1893,6 +1908,8 @@ if (harnessRuntimeConfig) {
     },
     adminConfigRepository,
     harnessDecisions,
+    undefined,
+    new TaskRecallDueProducer(dueDeliveryRepository),
   );
   await DBOS.launch();
   harnessService = new HarnessApplicationService(
@@ -1904,7 +1921,7 @@ if (harnessRuntimeConfig) {
     ),
     harnessDecisions,
     harnessStore,
-    harnessStore,
+    dueAwareRecommendations,
     harnessStore,
     {
       async readTimeoutSeconds() {

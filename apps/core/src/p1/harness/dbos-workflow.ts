@@ -42,6 +42,7 @@ import {
   HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
   type AdminConfigRepository,
 } from '../admin-config/foundation-module.js';
+import type { TaskRecallDueInput } from '../due-delivery/task-recall-producer.js';
 
 export interface HarnessWorkflowPersistence {
   registerPending: HarnessDecisionStore['registerPending'];
@@ -106,6 +107,10 @@ export type HarnessDbosWorkflowInput =
 export interface HarnessBillingSettlementPort
   extends HarnessBillingSettlementExecutor {
   scheduleCompensation(input: HarnessBillingCompensationTask): Promise<void>;
+}
+
+export interface TaskRecallDuePort {
+  produce(input: TaskRecallDueInput): Promise<unknown>;
 }
 
 const PROGRESS_STREAM = 'progress';
@@ -209,6 +214,7 @@ export function registerHarnessDbosWorkflow(
   decisions?: Pick<HarnessDecisionService, 'submitCoreTimeout'> &
     Partial<Pick<HarnessDecisionService, 'submitCoreHoldExpired'>>,
   boundedContinuations?: HarnessBoundedExecutionContinuationResolver,
+  taskRecallDue?: TaskRecallDuePort,
 ) {
   const workflow = async (input: HarnessDbosWorkflowInput) => {
     const runtimeWorkflowId = DBOS.workflowID;
@@ -512,13 +518,18 @@ export function registerHarnessDbosWorkflow(
         workflowId,
         result,
       );
-      if (billing && settlement) {
-        await commitHarnessBillingOrSchedule({
-          billing,
-          input: settlement,
-          runStep: dbosBillingStep,
-        });
-      }
+      const completedAt = taskRecallDue
+        ? new Date(await DBOS.now()).toISOString()
+        : undefined;
+      await settleHarnessTerminalSuccess({
+        billing,
+        completedAt,
+        request,
+        runStep: dbosBillingStep,
+        settlement,
+        taskRecallDue,
+        workflowId,
+      });
       return result;
     } finally {
       await DBOS.closeStream(PROGRESS_STREAM);
@@ -533,6 +544,38 @@ type BillingRunStep = <T>(
   name: string,
   operation: () => Promise<T>,
 ) => Promise<T>;
+
+export async function settleHarnessTerminalSuccess(input: {
+  billing?: HarnessBillingSettlementPort;
+  completedAt?: string;
+  request: HarnessWorkflowInput;
+  runStep: BillingRunStep;
+  settlement: HarnessBillingSettlementInput | null;
+  taskRecallDue?: TaskRecallDuePort;
+  workflowId: string;
+}) {
+  if (input.billing && input.settlement) {
+    await commitHarnessBillingOrSchedule({
+      billing: input.billing,
+      input: input.settlement,
+      runStep: input.runStep,
+    });
+  }
+  if (input.taskRecallDue) {
+    if (!input.completedAt) {
+      throw new Error('Task recall due requires a terminal completion time.');
+    }
+    const taskRecallDue = input.taskRecallDue;
+    const completedAt = input.completedAt;
+    await input.runStep('enqueue-task-recall', () =>
+      taskRecallDue.produce({
+        completedAt,
+        sourceTaskId: input.workflowId,
+        workspaceId: input.request.workspaceId,
+      }),
+    );
+  }
+}
 
 export async function commitHarnessBillingOrSchedule(input: {
   billing: HarnessBillingSettlementPort;
