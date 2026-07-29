@@ -300,7 +300,6 @@ test('image-text note assembly accepts only a complete page-mapped revision', ()
     variants,
     version,
   };
-
   assert.doesNotThrow(() =>
     assertImageTextNoteRevisionAssemblyComplete(complete),
   );
@@ -333,6 +332,98 @@ test('image-text note assembly accepts only a complete page-mapped revision', ()
       version: {
         ...version,
         note: { ...version.note, evaluation: undefined },
+      },
+    },
+  ]) {
+    assert.throws(() =>
+      assertImageTextNoteRevisionAssemblyComplete(incomplete),
+    );
+  }
+});
+
+test('image-text note assembly accepts an explicitly unconfigured enhancement judge without weakening required assembly facts', () => {
+  const evaluatedVersion = imageTextNoteVersion();
+  const version = {
+    ...evaluatedVersion,
+    note: {
+      ...evaluatedVersion.note,
+      evaluation: undefined,
+    },
+  };
+  const variants = buildImageTextNotePlatformVariants({
+    currentVersionId: version.id,
+    packageId: 'package-note-no-enhancement-judge',
+    versions: [version],
+  });
+  const complete = {
+    enhancementJudge: {
+      status: 'unconfigured' as const,
+      reason: 'self_correction_judge_unconfigured' as const,
+    },
+    marketing: {
+      contextBundle: {
+        bundleId: 'bundle-note-no-enhancement-judge',
+        hash: 'a'.repeat(64),
+        revision: 1,
+      },
+      factRefs: ['fact:service:1'],
+      rightsRefs: ['rights-r1'],
+    },
+    variants,
+    version,
+  };
+  const failedEvaluationVersion = {
+    ...evaluatedVersion,
+    note: {
+      ...evaluatedVersion.note,
+      evaluation: {
+        ...evaluatedVersion.note.evaluation!,
+        dimensions: evaluatedVersion.note.evaluation!.dimensions.map(
+          (dimension, index) =>
+            index === 0 ? { ...dimension, passed: false } : dimension,
+        ),
+      },
+    },
+  };
+
+  assert.doesNotThrow(() =>
+    assertImageTextNoteRevisionAssemblyComplete(complete),
+  );
+  for (const incomplete of [
+    {
+      ...complete,
+      marketing: { ...complete.marketing, rightsRefs: [] },
+    },
+    { ...complete, variants: variants.slice(0, 2) },
+    {
+      ...complete,
+      partial: {
+        unresolvedPageIds: ['page-2'],
+        reason: 'consistency_remained_incomplete' as const,
+      },
+    },
+    {
+      ...complete,
+      variants: buildImageTextNotePlatformVariants({
+        currentVersionId: failedEvaluationVersion.id,
+        packageId: 'package-note-failed-enhancement-evaluation',
+        versions: [failedEvaluationVersion],
+      }),
+      version: failedEvaluationVersion,
+    },
+    {
+      ...complete,
+      version: {
+        ...version,
+        note: {
+          ...version.note,
+          plan: {
+            ...version.note.plan,
+            pages: version.note.plan.pages.map((page, index) =>
+              index === 0 ? { ...page, imageAssetId: undefined } : page,
+            ),
+          },
+        },
       },
     },
   ]) {

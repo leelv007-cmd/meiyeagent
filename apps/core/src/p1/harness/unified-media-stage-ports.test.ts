@@ -45,6 +45,72 @@ import {
 	HARNESS_LANGFUSE_PROMPT_NAMES,
 	type HarnessFrozenPrompts,
 } from "./langfuse-prompts.js";
+import { unconfiguredNotePlanEnhancementJudgeResolver } from "./note-plan-structured-port.js";
+
+test("unified stages forward bounded copy selection to the production copy port", async () => {
+	const copy = unsupportedCopyPorts();
+	const input = {
+		workflowId: "workflow-copy-bounded",
+	} as Parameters<
+		NonNullable<HarnessStagePorts["executeAndSelectBounded"]>
+	>[0];
+	let forwarded:
+		| Parameters<
+				NonNullable<HarnessStagePorts["executeAndSelectBounded"]>
+		  >[0]
+		| undefined;
+	const skillInput = {
+		workflowId: "workflow-copy-bounded",
+		stage: "execution_selection",
+	} as Parameters<
+		NonNullable<HarnessStagePorts["resolveStageSkills"]>
+	>[0];
+	let forwardedSkillInput:
+		| Parameters<NonNullable<HarnessStagePorts["resolveStageSkills"]>>[0]
+		| undefined;
+	copy.executeAndSelectBounded = async (received) => {
+		forwarded = received;
+		return {
+			state: "suspended",
+			snapshot: {
+				schemaVersion: "bounded-execution-snapshot/v1",
+				maxIterations: 1,
+				maxCostCents: "unset",
+				maxWallClockMs: "unset",
+				maxDelegations: "unset",
+				requiredLimits: ["maxIterations"],
+				consumption: {
+					iterations: 1,
+					costCents: 0,
+					wallClockMs: 0,
+					delegations: 0,
+				},
+				stopReason: "limit_reached",
+				triggeredLimit: "maxIterations",
+			},
+			currentBest: null,
+			unmetExplanation: "needs another iteration",
+			resumable: true,
+		};
+	};
+	copy.resolveStageSkills = async (received) => {
+		forwardedSkillInput = received;
+		return { instructions: [], receipts: [] };
+	};
+	const ports = new UnifiedHarnessStagePorts(
+		copy,
+		undefined as never,
+		undefined as never,
+		undefined as never,
+		() => "2026-07-29T00:00:00.000Z",
+	);
+
+	await ports.executeAndSelectBounded(input);
+	await ports.resolveStageSkills(skillInput);
+
+	assert.equal(forwarded, input);
+	assert.equal(forwardedSkillInput, skillInput);
+});
 
 test("image and video use the existing Model Supply path with stable submission facts", async () => {
 	for (const kind of ["image", "video"] as const) {
@@ -709,6 +775,147 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 		"the page that came out right is left alone",
 	);
 	assert.match(partialPages.at(-1) ?? "", /还没对上/u);
+});
+
+test("production note assembly can disable an unavailable enhancement judge without bypassing canonical gates", async () => {
+	const packageId = "package-note-without-enhancement-judge";
+	const request = harnessInput("image_text_note", packageId);
+	let generated = 0;
+	let writes = 0;
+	const ports = new UnifiedHarnessStagePorts(
+		noteCopyPorts(),
+		noteRunnerFactory(true),
+		{
+			async execute() {
+				generated += 1;
+				const selection = completedResult("image", String(generated));
+				return {
+					asset: selection.asset!,
+					childRun: {
+						assetIds: [selection.asset!.id],
+						runId: `run-note-no-judge-${generated}`,
+						runType: "model_job",
+						status: "succeeded",
+					},
+					kind: "image",
+					trace: {
+						stage: "execution_selection",
+						winnerCandidateId: selection.asset!.id,
+						candidateScores: [],
+						blockedCandidates: [],
+						rubricVersion: "image-v1",
+						rubricHash: "a".repeat(64),
+					},
+				};
+			},
+		},
+		{
+			async write(input) {
+				writes += 1;
+				return {
+					packageId: input.packageId,
+					revision: input.expectedRevision + 1,
+					versionId: input.version.id,
+				};
+			},
+		},
+		() => "2026-07-29T00:00:00.000Z",
+		{
+			async read() {
+				return {
+					styles: {
+						styles: [
+							{
+								id: "facts",
+								name: "干货版",
+								writingGuide: "清楚说明",
+								structureTemplate: "结论、依据、行动",
+								platforms: ["xiaohongshu"],
+							},
+						],
+					},
+				};
+			},
+		},
+		unconfiguredNotePlanEnhancementJudgeResolver,
+	);
+	const context = contextSnapshot();
+	const declaration = {
+		normalizedIntent: "介绍夏日护理项目",
+		taskType: "daily_service_exposure" as const,
+		deliveryLayer: "finished_media" as const,
+		relevantAssetCategories: ["product_service" as const],
+		usedAssetCategories: ["product_service" as const],
+		route: "customized" as const,
+		routingSource: "model" as const,
+		implicitConstraints: [],
+	};
+	const workflowId = request.executionSnapshot!.task.id;
+	const brief = await ports.compileNoteBrief({
+		workflowId,
+		request,
+		declaration,
+		context,
+	});
+	const selection = await ports.executeNoteAndSelect({
+		workflowId,
+		request,
+		brief,
+		context,
+		selectedStyleId: "facts",
+	});
+
+	assert.equal(generated, 2);
+	assert.deepEqual(selection.enhancementJudge, {
+		status: "unconfigured",
+		reason: "self_correction_judge_unconfigured",
+	});
+	assert.equal(selection.version.evaluation, undefined);
+	assert.deepEqual(
+		selection.auditSignals.filter(
+			({ eventType }) => eventType === "note_consistency_evaluated",
+		),
+		[
+			{
+				eventType: "note_consistency_evaluated",
+				payload: {
+					attempt: "initial",
+					evaluationUnavailable: true,
+					reason: "self_correction_judge_unconfigured",
+					selfCorrectionDisabled: true,
+				},
+			},
+		],
+	);
+
+	const unsafeSelection = structuredClone(selection);
+	unsafeSelection.version.plan.pages[0]!.textBlock.body =
+		"国家认证五星机构，团购价398元";
+	await assert.rejects(
+		ports.assembleNoteAndDeliver({
+			workflowId,
+			request,
+			declaration,
+			context,
+			brief,
+			selection: unsafeSelection,
+		}),
+		(error: unknown) =>
+			error instanceof HarnessSelectionError &&
+			error.gateIds.includes("critical_fact_source"),
+	);
+	assert.equal(writes, 0);
+
+	const delivery = await ports.assembleNoteAndDeliver({
+		workflowId,
+		request,
+		declaration,
+		context,
+		brief,
+		selection,
+	});
+	assert.equal(delivery.packageId, packageId);
+	assert.equal(writes, 1);
 });
 
 test("media delivery blocks malicious visible copy before the canonical writer", async () => {

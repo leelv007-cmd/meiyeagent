@@ -2022,6 +2022,50 @@ test('bounded selection suspends outside the durable step with a current-best co
   );
 });
 
+test('configured bounded execution fails closed when the stage port is unavailable', async () => {
+  const request: HarnessWorkflowInput = {
+    ...taskInput(),
+    boundedExecution: {
+      schemaVersion: 'bounded-execution-snapshot/v1',
+      maxIterations: 1,
+      maxCostCents: 'unset',
+      maxWallClockMs: 'unset',
+      maxDelegations: 'unset',
+      requiredLimits: ['maxIterations'],
+      consumption: {
+        iterations: 0,
+        costCents: 0,
+        wallClockMs: 0,
+        delegations: 0,
+      },
+      stopReason: null,
+      triggeredLimit: null,
+    },
+  };
+  const stages = fixtureStages();
+  let ordinarySelections = 0;
+  stages.executeAndSelect = async () => {
+    ordinarySelections += 1;
+    throw new Error('Configured bounds must not use ordinary selection.');
+  };
+
+  await assert.rejects(
+    runHarnessWorkflow('task-35', request, stages, {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision() {
+        throw new Error('Missing bounded ports must fail before suspension.');
+      },
+      async recordTrace() {},
+    }),
+    /Configured bounded execution requires a bounded selection port/u,
+  );
+  assert.equal(ordinarySelections, 0);
+});
+
 test('server-raised limit resumes bounded selection from its checkpoint and delivers once', async () => {
   const request: HarnessWorkflowInput = {
     ...taskInput(),
@@ -2126,6 +2170,102 @@ test('server-raised limit resumes bounded selection from its checkpoint and deli
   assert.equal(boundedCalls, 2);
   assert.equal(resumptions, 1);
   assert.equal(deliveries, 1);
+});
+
+test('repeated non-iteration suspensions keep distinct durable trace identities', async () => {
+  const request: HarnessWorkflowInput = {
+    ...taskInput(),
+    boundedExecution: {
+      schemaVersion: 'bounded-execution-snapshot/v1',
+      maxIterations: 'unset',
+      maxCostCents: 1,
+      maxWallClockMs: 'unset',
+      maxDelegations: 'unset',
+      requiredLimits: ['maxCostCents'],
+      consumption: {
+        iterations: 0,
+        costCents: 0,
+        wallClockMs: 0,
+        delegations: 0,
+      },
+      stopReason: null,
+      triggeredLimit: null,
+    },
+  };
+  const stages = fixtureStages();
+  const completedSelection = stages.executeAndSelect.bind(stages);
+  let boundedCalls = 0;
+  stages.executeAndSelectBounded = async (input) => {
+    boundedCalls += 1;
+    if (boundedCalls === 3) return completedSelection(input);
+    const snapshot = input.request.boundedExecution!;
+    return {
+      state: 'suspended',
+      snapshot: {
+        ...snapshot,
+        consumption: {
+          ...snapshot.consumption,
+          costCents: boundedCalls,
+        },
+        stopReason: 'limit_reached',
+        triggeredLimit: 'maxCostCents',
+      },
+      currentBest: {
+        candidate: { candidateId: 'c01', title: '当前最好版本' },
+        deliverable: false,
+      },
+      unmetExplanation: '仍需追加一次成本额度',
+      resumable: true,
+    };
+  };
+  const boundedTraceIds: string[] = [];
+
+  const result = await runHarnessWorkflow('task-cost-repeat', request, stages, {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision(question) {
+      return {
+        idempotencyKey: `bounded-continuation-${boundedCalls}`,
+        questionId: question.questionId,
+        workflowRevision: question.workflowRevision,
+        patch: {
+          field: question.response.field,
+          value: question.options[0]!.label,
+          reason: question.response.reason,
+        },
+        decision: {
+          state: 'accepted',
+          value: question.options[0]!.label,
+        },
+      };
+    },
+    async resumeBoundedExecution(input) {
+      return {
+        ...input.request,
+        boundedExecution: resumeWithRaisedServerLimit(
+          input.suspension.snapshot,
+          {
+            limit: 'maxCostCents',
+            value:
+              input.suspension.snapshot.maxCostCents === 'unset'
+                ? 1
+                : input.suspension.snapshot.maxCostCents + 1,
+          },
+        ),
+      };
+    },
+    async recordTrace(input) {
+      if (input.id.includes('bounded-')) boundedTraceIds.push(input.id);
+    },
+  });
+
+  assert.ok(result.delivery);
+  assert.equal(boundedCalls, 3);
+  assert.equal(boundedTraceIds.length, 2);
+  assert.equal(new Set(boundedTraceIds).size, 2);
 });
 
 const NON_ITERATION_BOUNDS = [

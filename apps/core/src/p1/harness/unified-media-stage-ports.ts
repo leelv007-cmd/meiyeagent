@@ -65,6 +65,7 @@ import {
 	buildVideoPlatformVariants,
 } from "./output-compiler.js";
 import {
+	type NotePlanEnhancementJudgeState,
 	NotePlanCompiler,
 	type NotePlanSettingsSource,
 } from "./note-plan-compiler.js";
@@ -72,7 +73,11 @@ import type {
 	NoteMediaAdmissionPort,
 	NoteMediaAdmissionToken,
 } from "./note-media-admission.js";
-import { ModelSupplyNotePlanStructuredPort } from "./note-plan-structured-port.js";
+import {
+	configuredNotePlanEnhancementJudgeResolver,
+	type NotePlanEnhancementJudgeResolver,
+	ModelSupplyNotePlanStructuredPort,
+} from "./note-plan-structured-port.js";
 
 type MediaBrief = Exclude<ExecutionBrief, { kind: "copy" }>;
 
@@ -107,7 +112,22 @@ export class UnifiedHarnessStagePorts
 		private readonly contentPackages: ContentPackageRevisionWritePort,
 		private readonly now: () => string,
 		private readonly noteSettings?: NotePlanSettingsSource,
+		private readonly noteEnhancementJudge: NotePlanEnhancementJudgeResolver =
+			configuredNotePlanEnhancementJudgeResolver,
 	) {}
+
+	resolveStageSkills(
+		input: Parameters<
+			NonNullable<HarnessStagePorts["resolveStageSkills"]>
+		>[0],
+	) {
+		if (!this.copy.resolveStageSkills) {
+			throw new Error(
+				"Unified Harness requires the configured Skill resolver.",
+			);
+		}
+		return this.copy.resolveStageSkills(input);
+	}
 
 	async nameIntent(input: Parameters<HarnessStagePorts["nameIntent"]>[0]) {
 		const result = await this.copy.nameIntent(input);
@@ -158,6 +178,19 @@ export class UnifiedHarnessStagePorts
 		input: Parameters<HarnessStagePorts["executeAndSelect"]>[0],
 	) {
 		return this.copy.executeAndSelect(input);
+	}
+
+	executeAndSelectBounded(
+		input: Parameters<
+			NonNullable<HarnessStagePorts["executeAndSelectBounded"]>
+		>[0],
+	) {
+		if (!this.copy.executeAndSelectBounded) {
+			throw new Error(
+				"Configured bounded execution requires a bounded selection port.",
+			);
+		}
+		return this.copy.executeAndSelectBounded(input);
 	}
 
 	assembleAndDeliver(
@@ -377,13 +410,21 @@ export class UnifiedHarnessStagePorts
 	async executeNoteAndSelect(
 		input: Parameters<HarnessNoteStagePorts["executeNoteAndSelect"]>[0],
 	): Promise<HarnessNoteSelectionResult> {
-		const selected = await this.noteCompiler(input).selectAndGenerate({
+		const enhancementJudge = await this.noteEnhancementJudge.resolve({
+			workflowId: input.workflowId,
+			workspaceId: input.request.workspaceId,
+		});
+		const selected = await this.noteCompiler(
+			input,
+			enhancementJudge,
+		).selectAndGenerate({
 			candidates: input.brief.candidates,
 			selectedStyleId: input.selectedStyleId,
 			notePageBound: requireNotePageBound(input.request),
 		});
 		return {
 			...selected,
+			enhancementJudge,
 			trace: {
 				stage: "execution_selection",
 				winnerCandidateId: selected.selectedStyleId,
@@ -476,6 +517,30 @@ export class UnifiedHarnessStagePorts
 			throw new Error("The selected NotePlan style must be delivered.");
 		}
 		const claimExtraction = assertNoteVisibleDelivery(input, winner, now);
+		const enhancementJudge =
+			input.selection.enhancementJudge ??
+			(input.selection.version.evaluation
+				? ({ status: "configured" } as const)
+				: undefined);
+		if (!enhancementJudge) {
+			throw new Error(
+				"NotePlan assembly requires the frozen enhancement judge state.",
+			);
+		}
+		if (
+			enhancementJudge.status === "unconfigured" &&
+			!input.selection.auditSignals.some(
+				({ eventType, payload }) =>
+					eventType === "note_consistency_evaluated" &&
+					payload.evaluationUnavailable === true &&
+					payload.reason === enhancementJudge.reason &&
+					payload.selfCorrectionDisabled === true,
+			)
+		) {
+			throw new Error(
+				"An unconfigured NotePlan enhancement judge requires an audit signal.",
+			);
+		}
 		const revision = {
 			additionalVersions: versions.filter(({ id }) => id !== winner.id),
 			claimExtraction,
@@ -525,6 +590,7 @@ export class UnifiedHarnessStagePorts
 		};
 		assertImageTextNoteRevisionAssemblyComplete({
 			...revision,
+			enhancementJudge,
 			...(input.selection.partial
 				? { partial: input.selection.partial }
 				: {}),
@@ -539,13 +605,16 @@ export class UnifiedHarnessStagePorts
 		return this.noteSettings;
 	}
 
-	private noteCompiler(input: {
-		workflowId: string;
-		request: HarnessWorkflowInput;
-		context: HarnessContextSnapshot;
-		awaitSignal?: HarnessSignalReceiver;
-		runStep?: HarnessEffectRunner;
-	}) {
+	private noteCompiler(
+		input: {
+			workflowId: string;
+			request: HarnessWorkflowInput;
+			context: HarnessContextSnapshot;
+			awaitSignal?: HarnessSignalReceiver;
+			runStep?: HarnessEffectRunner;
+		},
+		enhancementJudge?: NotePlanEnhancementJudgeState,
+	) {
 		const snapshot = requireSnapshot(input.request);
 		const runner = this.runners.create({
 			actorId: input.request.actorId,
@@ -593,6 +662,7 @@ export class UnifiedHarnessStagePorts
 					};
 				},
 			},
+			enhancementJudge,
 		);
 	}
 }

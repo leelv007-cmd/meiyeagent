@@ -5,12 +5,40 @@ import {
 } from '@meiye/contracts';
 
 import type { StructuredNodeRunner } from './structured-nodes.js';
-import type { NotePlanStructuredPort } from './note-plan-compiler.js';
+import {
+  CONFIGURED_NOTE_PLAN_ENHANCEMENT_JUDGE,
+  type NotePlanEnhancementJudgeState,
+  type NotePlanStructuredPort,
+} from './note-plan-compiler.js';
 import type { HarnessEffectRunner } from './workflow-core.js';
 import {
   HARNESS_BUILTIN_PROMPTS,
   type HarnessFrozenPrompt,
 } from './langfuse-prompts.js';
+
+export interface NotePlanEnhancementJudgeResolver {
+  resolve(input: {
+    workflowId: string;
+    workspaceId: string;
+  }): Promise<NotePlanEnhancementJudgeState>;
+}
+
+export const configuredNotePlanEnhancementJudgeResolver: NotePlanEnhancementJudgeResolver =
+  {
+    async resolve() {
+      return CONFIGURED_NOTE_PLAN_ENHANCEMENT_JUDGE;
+    },
+  };
+
+export const unconfiguredNotePlanEnhancementJudgeResolver: NotePlanEnhancementJudgeResolver =
+  {
+    async resolve() {
+      return {
+        status: 'unconfigured',
+        reason: 'self_correction_judge_unconfigured',
+      };
+    },
+  };
 
 export class ModelSupplyNotePlanStructuredPort
   implements NotePlanStructuredPort

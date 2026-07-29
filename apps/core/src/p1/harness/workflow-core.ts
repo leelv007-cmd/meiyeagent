@@ -96,6 +96,12 @@ export interface HarnessNoteBrief {
 }
 
 export interface HarnessNoteSelectionResult {
+  enhancementJudge?:
+    | { status: 'configured' }
+    | {
+        status: 'unconfigured';
+        reason: 'self_correction_judge_unconfigured';
+      };
   auditSignals: Array<{
     eventType:
       | 'note_consistency_evaluated'
@@ -738,15 +744,22 @@ export async function runHarnessWorkflow(
       NonNullable<HarnessStagePorts['executeAndSelectBounded']>
     >[0],
   ) => {
+    const bounded = hasConfiguredBoundedExecution(
+      input.request.boundedExecution,
+    );
+    if (bounded && !ports.executeAndSelectBounded) {
+      throw new Error(
+        'Configured bounded execution requires a bounded selection port.',
+      );
+    }
     const firstTokenSequence = eventSequence;
     const executed = await runtime.runStep(
       effectIdempotencyKey,
       async () => {
         let tokenCount = 0;
         const selection = await (
-          hasConfiguredBoundedExecution(input.request.boundedExecution) &&
-          ports.executeAndSelectBounded
-            ? ports.executeAndSelectBounded.bind(ports)
+          bounded
+            ? ports.executeAndSelectBounded!.bind(ports)
             : ports.executeAndSelect.bind(ports)
         )({
           ...input,
@@ -814,7 +827,15 @@ export async function runHarnessWorkflow(
           unmetExplanation: outcome.unmetExplanation,
           resumable: true,
         },
-        `bounded-${outcome.snapshot.triggeredLimit}-${outcome.snapshot.consumption.iterations}`,
+        [
+          'bounded',
+          outcome.snapshot.triggeredLimit,
+          outcome.snapshot.consumption.iterations,
+          outcome.snapshot.consumption.costCents,
+          outcome.snapshot.consumption.wallClockMs,
+          outcome.snapshot.consumption.delegations,
+          continuation,
+        ].join('-'),
       );
       const command = await awaitResolvedDecision(
         runtime,

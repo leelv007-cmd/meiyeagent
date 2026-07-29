@@ -203,6 +203,7 @@ import { PostgresHarnessResumeReconcilerStore } from './p1/harness/postgres-resu
 import { PostgresHarnessBillingCompensationStore } from './p1/harness/postgres-billing-compensation-store.js';
 import { HarnessProductBillingSettlementExecutor } from './p1/harness/product-billing-settlement.js';
 import { PostgresNoteMediaAdmissionCoordinator } from './p1/harness/note-media-admission.js';
+import { unconfiguredNotePlanEnhancementJudgeResolver } from './p1/harness/note-plan-structured-port.js';
 import { HarnessResumeReconciler } from './p1/harness/resume-reconciler.js';
 import {
   DEFAULT_CONFIRMATION_CARD_HOLD_TIMEOUT_SECONDS,
@@ -1836,6 +1837,7 @@ if (harnessRuntimeConfig) {
     contentPackageRevisionWriter,
     () => new Date().toISOString(),
     notePlanSettings,
+    unconfiguredNotePlanEnhancementJudgeResolver,
   );
   DBOS.setConfig(harnessRuntimeConfig.dbos);
   const harnessBilling = new HarnessProductBillingSettlementExecutor(

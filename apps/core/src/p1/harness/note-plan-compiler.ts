@@ -43,6 +43,17 @@ export interface NotePlanStructuredPort {
   }): Promise<NotePlanConsistencyEvaluation>;
 }
 
+export type NotePlanEnhancementJudgeState =
+  | { status: 'configured' }
+  | {
+      status: 'unconfigured';
+      reason: 'self_correction_judge_unconfigured';
+    };
+
+export const CONFIGURED_NOTE_PLAN_ENHANCEMENT_JUDGE = {
+  status: 'configured',
+} as const satisfies NotePlanEnhancementJudgeState;
+
 export interface NotePlanImagePort {
   generate(input: {
     page: NotePlan['pages'][number];
@@ -131,6 +142,8 @@ export class NotePlanCompiler {
   constructor(
     private readonly structured: NotePlanStructuredPort,
     private readonly images: NotePlanImagePort,
+    private readonly enhancementJudge: NotePlanEnhancementJudgeState =
+      CONFIGURED_NOTE_PLAN_ENHANCEMENT_JUDGE,
   ) {}
 
   async compileDrafts(input: {
@@ -226,14 +239,13 @@ export class NotePlanCompiler {
       })),
     });
     assertNotePlanWithinBound(plan, input.notePageBound);
-    const evaluate = this.structured.evaluate?.bind(this.structured);
-    if (!evaluate) {
+    if (this.enhancementJudge.status === 'unconfigured') {
       auditSignals.push({
         eventType: 'note_consistency_evaluated',
         payload: {
           attempt: 'initial',
           evaluationUnavailable: true,
-          reason: 'self_correction_judge_unconfigured',
+          reason: this.enhancementJudge.reason,
           selfCorrectionDisabled: true,
         },
       });
@@ -248,6 +260,12 @@ export class NotePlanCompiler {
           regenerationReceipts: [],
         }),
       };
+    }
+    const evaluate = this.structured.evaluate?.bind(this.structured);
+    if (!evaluate) {
+      throw new Error(
+        'Configured NotePlan enhancement judge requires an evaluation port.',
+      );
     }
     const initialEvaluation = notePlanConsistencyEvaluationSchema.parse(
       await evaluate({ plan, attempt: 'initial' }),

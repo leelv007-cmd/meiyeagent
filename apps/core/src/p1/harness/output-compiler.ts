@@ -4,6 +4,7 @@ import {
   type ContentPackage,
   type ContentPackageVersion,
 } from '@meiye/contracts';
+import type { NotePlanEnhancementJudgeState } from './note-plan-compiler.js';
 
 export function compileCopyGenerationRequest(input: {
   brief: {
@@ -261,6 +262,7 @@ export function assertImageRevisionAssemblyComplete(input: {
 }
 
 export function assertImageTextNoteRevisionAssemblyComplete(input: {
+  enhancementJudge?: NotePlanEnhancementJudgeState;
   marketing?: {
     contextBundle?: {
       bundleId?: string;
@@ -318,17 +320,22 @@ export function assertImageTextNoteRevisionAssemblyComplete(input: {
     [...partialPageIds].every((pageId) =>
       note.plan.pages.some(({ id }) => id === pageId),
     );
+  const enhancementEvaluationUnavailable =
+    input.enhancementJudge?.status === 'unconfigured' &&
+    input.partial === undefined &&
+    evaluation === undefined;
   if (
-    !evaluation ||
-    evaluation.dimensions.length !==
-      NOTE_PLAN_CONSISTENCY_DIMENSIONS.length ||
-    (!partialCurrentVersion &&
-      (evaluation.dimensions.some(({ passed }) => !passed) ||
-        evaluation.regenerationPageIds.length > 0)) ||
-    (partialCurrentVersion &&
-      ![...partialPageIds].every((pageId) =>
-        evaluation.regenerationPageIds.includes(pageId),
-      ))
+    (!evaluation && !enhancementEvaluationUnavailable) ||
+    (evaluation !== undefined &&
+      (evaluation.dimensions.length !==
+        NOTE_PLAN_CONSISTENCY_DIMENSIONS.length ||
+        (!partialCurrentVersion &&
+          (evaluation.dimensions.some(({ passed }) => !passed) ||
+            evaluation.regenerationPageIds.length > 0)) ||
+        (partialCurrentVersion &&
+          ![...partialPageIds].every((pageId) =>
+            evaluation.regenerationPageIds.includes(pageId),
+          ))))
   ) {
     throw new Error(
       partialCurrentVersion
@@ -371,19 +378,27 @@ export function assertImageTextNoteRevisionAssemblyComplete(input: {
       const isPartialCurrent =
         current?.id === input.version.id ||
         current?.id.startsWith(`${input.version.id}-`) === true;
+      const currentEvaluation = current?.note?.evaluation;
+      const currentEvaluationUnavailable =
+        input.enhancementJudge?.status === 'unconfigured' &&
+        input.partial === undefined &&
+        currentEvaluation === undefined;
+      const invalidCurrentEvaluation =
+        currentEvaluation === undefined
+          ? !currentEvaluationUnavailable
+          : (!isPartialCurrent &&
+              (currentEvaluation.dimensions.some(({ passed }) => !passed) ||
+                currentEvaluation.regenerationPageIds.length > 0)) ||
+            (isPartialCurrent &&
+              input.partial === undefined &&
+              (currentEvaluation.dimensions.some(({ passed }) => !passed) ||
+                currentEvaluation.regenerationPageIds.length > 0));
       return (
         !current?.title.trim() ||
         !current.body.trim() ||
         !current.conversionHook?.trim() ||
         !current.note ||
-        !current.note.evaluation ||
-        (!isPartialCurrent &&
-          (current.note.evaluation.dimensions.some(({ passed }) => !passed) ||
-            current.note.evaluation.regenerationPageIds.length > 0)) ||
-        (isPartialCurrent &&
-          input.partial === undefined &&
-          (current.note.evaluation.dimensions.some(({ passed }) => !passed) ||
-            current.note.evaluation.regenerationPageIds.length > 0)) ||
+        invalidCurrentEvaluation ||
         current.note.plan.pages.some(({ imageAssetId }) => !imageAssetId)
       );
     })

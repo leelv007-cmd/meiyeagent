@@ -424,6 +424,10 @@ test('missing self-correction judge disables the loop, records it, and delivers 
       },
     },
     imagePort(calls),
+    {
+      status: 'unconfigured',
+      reason: 'self_correction_judge_unconfigured',
+    },
   );
   const drafts = await compiler.compileDrafts({
     intent: '介绍护理项目',
@@ -460,6 +464,35 @@ test('missing self-correction judge disables the loop, records it, and delivers 
         },
       },
     ],
+  );
+});
+
+test('configured self-correction judge fails closed when its evaluation port is missing', async () => {
+  const compiler = new NotePlanCompiler(
+    {
+      async plan() {
+        return structuredClone(basePlan());
+      },
+      async draftPage({ page }) {
+        return page.textBlock;
+      },
+    },
+    imagePort([]),
+  );
+  const drafts = await compiler.compileDrafts({
+    intent: '介绍护理项目',
+    factRefs: [],
+    rightsRefs: [],
+    notePageBound: 3,
+  });
+
+  await assert.rejects(
+    compiler.selectAndGenerate({
+      candidates: drafts,
+      selectedStyleId: 'story_recommendation',
+      notePageBound: 3,
+    }),
+    /configured NotePlan enhancement judge requires an evaluation port/iu,
   );
 });
 
