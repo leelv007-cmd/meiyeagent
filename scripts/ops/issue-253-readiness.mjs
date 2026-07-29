@@ -120,7 +120,9 @@ function inspect(mainSha, id, marker) {
   if (
     !Array.isArray(commands) ||
     commands.length === 0 ||
-    commands.some((command) => typeof command !== 'string')
+    commands.some(
+      (command) => typeof command !== 'string' || command.trim().length === 0
+    )
   ) {
     gaps.push('acceptanceCommands must not be empty');
   }
@@ -131,11 +133,32 @@ function inspect(mainSha, id, marker) {
     gaps.push('currentTreeChecks must not be empty');
   }
   if (
+    treeChecks.some((check) =>
+      [...(check.contains ?? []), ...(check.notContains ?? [])].some(
+        (value) => typeof value !== 'string' || value.trim().length === 0
+      )
+    )
+  ) {
+    gaps.push('currentTreeChecks predicates must not be blank');
+  }
+  if (
     [...ownedPaths, ...treeChecks.map((check) => check.path)].some(
       (path) => typeof path !== 'string' || !scope.test(path)
     )
   ) {
     gaps.push('marker path is outside the dependency scope');
+  }
+  const covers = (path, owner) =>
+    path === owner || path.startsWith(`${owner}/`);
+  if (
+    treeChecks.some(
+      (check) => !ownedPaths.some((ownedPath) => covers(check.path, ownedPath))
+    ) ||
+    ownedPaths.some(
+      (ownedPath) => !treeChecks.some((check) => covers(check.path, ownedPath))
+    )
+  ) {
+    gaps.push('currentTreeChecks must cover ownedPaths');
   }
   const hasSemanticCheck =
     id === '264FE'

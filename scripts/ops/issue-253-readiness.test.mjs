@@ -140,6 +140,8 @@ test('a closed issue cannot replace an unmerged marker commit', async () => {
   data.markers.dependencies['264FE'].ownedPaths = [
     'mkfast-template-main/src/video-extra.tsx',
   ];
+  data.markers.dependencies['264FE'].currentTreeChecks[0].path =
+    'mkfast-template-main/src/video-extra.tsx';
   await writeFile(data.markerPath, JSON.stringify(data.markers));
   git(data.root, 'switch', 'main');
 
@@ -167,7 +169,8 @@ test('a reverted semantic outcome fails even while its marker remains in main', 
 
 test('missing semantic rebase commands fail closed', async () => {
   const data = await fixture();
-  data.markers.dependencies['248'].acceptanceCommands = [];
+  data.markers.dependencies['248'].acceptanceCommands = ['   '];
+  data.markers.dependencies['248'].currentTreeChecks[0].contains = [''];
   await writeFile(data.markerPath, JSON.stringify(data.markers));
   const result = check(data);
   assert.equal(result.status, 1);
@@ -175,4 +178,18 @@ test('missing semantic rebase commands fail closed', async () => {
     JSON.parse(result.stdout).dependencies[0].evidence.status,
     'invalid_marker'
   );
+});
+
+test('a semantic check cannot use an unrelated path', async () => {
+  const data = await fixture();
+  data.markers.dependencies['264FE'].currentTreeChecks = [
+    {
+      exists: false,
+      path: 'mkfast-template-main/src/unrelated.ts',
+    },
+  ];
+  await writeFile(data.markerPath, JSON.stringify(data.markers));
+  const result = check(data);
+  assert.equal(result.status, 1);
+  assert.match(JSON.parse(result.stdout).gaps.join('\n'), /cover ownedPaths/);
 });
