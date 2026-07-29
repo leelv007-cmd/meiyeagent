@@ -230,6 +230,26 @@ export class PostgresIssue255LiveReceiptRepository {
         issue255_live_receipt_provider_cost_unique
         ON issue255_live_generation_receipts (provider_cost_event_id)
     `);
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS issue255_live_generation_authorizations (
+        effect_id text PRIMARY KEY,
+        run_nonce text NOT NULL,
+        modality text NOT NULL
+          CHECK (modality IN ('copy', 'image_text', 'video')),
+        request_fingerprint text NOT NULL,
+        workspace_id text NOT NULL,
+        adapter text NOT NULL,
+        deployment_id text NOT NULL,
+        provider_idempotency_key text NOT NULL,
+        recorded_matrix_digest text NOT NULL,
+        reserved_amount_micros bigint NOT NULL
+          CHECK (reserved_amount_micros > 0),
+        price_revision text NOT NULL,
+        exchange_revision text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        UNIQUE (run_nonce, modality)
+      )
+    `);
   }
 
   async listRun(runNonce: string) {
@@ -318,13 +338,9 @@ export class PostgresIssue255LiveReceiptRepository {
         run_count: string;
       }>(
         `SELECT
-           COUNT(*) FILTER (
-             WHERE generation_submit_count = 1
-           )::bigint AS global_count,
-           COUNT(*) FILTER (
-             WHERE run_nonce = $1 AND generation_submit_count = 1
-           )::bigint AS run_count
-         FROM issue255_live_generation_receipts`,
+           COUNT(*)::bigint AS global_count,
+           COUNT(*) FILTER (WHERE run_nonce = $1)::bigint AS run_count
+         FROM issue255_live_generation_authorizations`,
         [parsed.runNonce],
       );
       if (
@@ -363,6 +379,46 @@ export class PostgresIssue255LiveReceiptRepository {
       if (!row) {
         throw new Error(
           'Issue 255 generation POST is already fenced, differs from the frozen provider identity, or requires reconciliation.',
+        );
+      }
+      const authorization = await client.query(
+        `INSERT INTO issue255_live_generation_authorizations (
+           effect_id,
+           run_nonce,
+           modality,
+           request_fingerprint,
+           workspace_id,
+           adapter,
+           deployment_id,
+           provider_idempotency_key,
+           recorded_matrix_digest,
+           reserved_amount_micros,
+           price_revision,
+           exchange_revision
+         )
+         VALUES (
+           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+         )
+         ON CONFLICT DO NOTHING
+         RETURNING effect_id`,
+        [
+          row.effect_id,
+          row.run_nonce,
+          row.modality,
+          row.request_fingerprint,
+          row.workspace_id,
+          row.adapter,
+          row.deployment_id,
+          row.provider_idempotency_key,
+          row.recorded_matrix_digest,
+          row.reserved_amount_micros,
+          row.price_revision,
+          row.exchange_revision,
+        ],
+      );
+      if (!authorization.rows[0]) {
+        throw new Error(
+          'Issue 255 generation authorization already exists and cannot be replayed.',
         );
       }
       return receiptFromRow(row);
@@ -654,30 +710,52 @@ export class PostgresIssue255LiveReceiptRepository {
     client: PoolClient,
     input: Issue255LiveReceiptClaimInput,
   ) {
-    const [runBudget, globalBudget] = await Promise.all([
-      client.query<{ amount_micros: string }>(
-        `SELECT COALESCE(SUM(
-           CASE
-             WHEN status = 'completed'
-               THEN COALESCE(actual_amount_micros, reserved_amount_micros)
-             ELSE reserved_amount_micros
-           END
-         ), 0)::bigint AS amount_micros
-           FROM issue255_live_generation_receipts
-          WHERE run_nonce = $1`,
-        [input.runNonce],
-      ),
-      client.query<{ amount_micros: string }>(
-        `SELECT COALESCE(SUM(
-           CASE
-             WHEN status = 'completed'
-               THEN COALESCE(actual_amount_micros, reserved_amount_micros)
-             ELSE reserved_amount_micros
-           END
-         ), 0)::bigint AS amount_micros
-           FROM issue255_live_generation_receipts`,
-      ),
-    ]);
+    const authorizationCount = await client.query<{ count: string }>(
+      `SELECT COUNT(*)::bigint AS count
+         FROM issue255_live_generation_authorizations`,
+    );
+    if (Number(authorizationCount.rows[0]?.count ?? 0) >= 3) {
+      throw new Error(
+        'Issue 255 permits exactly three billable generation POSTs globally.',
+      );
+    }
+    const runBudget = await client.query<{ amount_micros: string }>(
+      `SELECT (
+         COALESCE((
+           SELECT SUM(reserved_amount_micros)
+             FROM issue255_live_generation_authorizations
+            WHERE run_nonce = $1
+         ), 0) +
+         COALESCE((
+           SELECT SUM(receipt.reserved_amount_micros)
+             FROM issue255_live_generation_receipts receipt
+            WHERE receipt.run_nonce = $1
+              AND NOT EXISTS (
+                SELECT 1
+                  FROM issue255_live_generation_authorizations history
+                 WHERE history.effect_id = receipt.effect_id
+              )
+         ), 0)
+       )::bigint AS amount_micros`,
+      [input.runNonce],
+    );
+    const globalBudget = await client.query<{ amount_micros: string }>(
+      `SELECT (
+         COALESCE((
+           SELECT SUM(reserved_amount_micros)
+             FROM issue255_live_generation_authorizations
+         ), 0) +
+         COALESCE((
+           SELECT SUM(receipt.reserved_amount_micros)
+             FROM issue255_live_generation_receipts receipt
+            WHERE NOT EXISTS (
+              SELECT 1
+                FROM issue255_live_generation_authorizations history
+               WHERE history.effect_id = receipt.effect_id
+            )
+         ), 0)
+       )::bigint AS amount_micros`,
+    );
     const nextRunAmount =
       Number(runBudget.rows[0]?.amount_micros ?? 0) +
       input.reservedAmountMicros;

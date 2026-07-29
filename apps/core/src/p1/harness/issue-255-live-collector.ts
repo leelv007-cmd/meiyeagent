@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto';
-import { mkdir, rename, writeFile } from 'node:fs/promises';
+import {
+  link,
+  lstat,
+  mkdir,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 import type { Pool } from 'pg';
@@ -141,6 +147,8 @@ export async function collectIssue255LiveAnchors(input: {
   const recordedMatrixDigest =
     canonicalRecordedMatrixDigest(recordedSamples);
   const executors = validateExecutors(input.executors);
+  const pendingPath = `${input.manifestPath}.pending`;
+  await reserveManifestPaths(input.manifestPath, pendingPath);
   const workspaceId =
     `issue-255-live-${hash(runNonce).slice(0, 24)}`;
   const manifestSamples: Issue255LiveManifest['samples'] = [];
@@ -266,11 +274,6 @@ export async function collectIssue255LiveAnchors(input: {
     );
   }
 
-  const pendingPath = `${input.manifestPath}.pending`;
-  await mkdir(dirname(input.manifestPath), {
-    mode: 0o700,
-    recursive: true,
-  });
   const preliminary = manifestSchema.parse({
     schemaVersion: 1,
     runNonceHash: hash(runNonce),
@@ -294,7 +297,7 @@ export async function collectIssue255LiveAnchors(input: {
   });
   const serialized = `${JSON.stringify(preliminary, null, 2)}\n`;
   assertIssue255SanitizedManifest(serialized);
-  await writeFile(pendingPath, serialized, { flag: 'wx', mode: 0o600 });
+  await writeFile(pendingPath, serialized, { flag: 'w', mode: 0o600 });
 
   await input.database.query(
     'DELETE FROM issue255_live_generation_receipts WHERE run_nonce = $1',
@@ -304,18 +307,83 @@ export async function collectIssue255LiveAnchors(input: {
     'DELETE FROM workspaces WHERE id = $1',
     [workspaceId],
   );
-  const residue = await input.database.query<{ count: number }>(
-    `SELECT (
+  const cleanup = await input.database.query<{
+    authorization_count: number;
+    operational_count: number;
+  }>(
+    `SELECT
+       (
        (SELECT COUNT(*) FROM issue255_live_generation_receipts WHERE run_nonce = $1) +
-       (SELECT COUNT(*) FROM workspaces WHERE id = $2)
-     )::int AS count`,
+       (SELECT COUNT(*) FROM workspaces WHERE id = $2) +
+       (SELECT COUNT(*) FROM p1_generation_jobs WHERE workspace_id = $2) +
+       (SELECT COUNT(*) FROM p1_provider_attempts WHERE workspace_id = $2) +
+       (SELECT COUNT(*) FROM p1_provider_cost_events WHERE workspace_id = $2)
+       )::int AS operational_count,
+       (
+         SELECT COUNT(*)
+           FROM issue255_live_generation_authorizations
+          WHERE run_nonce = $1
+       )::int AS authorization_count`,
     [runNonce, workspaceId],
   );
-  if (residue.rows[0]?.count !== 0) {
+  if (cleanup.rows[0]?.operational_count !== 0) {
     throw new Error('Issue 255 live collector cleanup left database residue.');
   }
-  await rename(pendingPath, input.manifestPath);
+  if (cleanup.rows[0]?.authorization_count !== 3) {
+    throw new Error(
+      'Issue 255 live collector did not preserve three durable authorizations.',
+    );
+  }
+  try {
+    await link(pendingPath, input.manifestPath);
+  } catch (error) {
+    if (isFileSystemError(error, 'EEXIST')) {
+      throw new Error(
+        'Issue 255 final manifest already exists; pending evidence was preserved.',
+      );
+    }
+    throw error;
+  }
+  await unlink(pendingPath);
   return preliminary;
+}
+
+async function reserveManifestPaths(
+  manifestPath: string,
+  pendingPath: string,
+) {
+  await mkdir(dirname(manifestPath), {
+    mode: 0o700,
+    recursive: true,
+  });
+  try {
+    await writeFile(pendingPath, '', { flag: 'wx', mode: 0o600 });
+  } catch (error) {
+    if (isFileSystemError(error, 'EEXIST')) {
+      throw new Error(
+        'Issue 255 pending manifest already exists and requires recovery.',
+      );
+    }
+    throw error;
+  }
+  try {
+    await lstat(manifestPath);
+  } catch (error) {
+    if (isFileSystemError(error, 'ENOENT')) return;
+    throw error;
+  }
+  await unlink(pendingPath);
+  throw new Error(
+    'Issue 255 final manifest already exists and cannot be replaced.',
+  );
+}
+
+function isFileSystemError(error: unknown, code: string) {
+  return (
+    error instanceof Error &&
+    'code' in error &&
+    error.code === code
+  );
 }
 
 export function issue255DirectCopyExecutor(input: {

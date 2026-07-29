@@ -30,6 +30,10 @@ describe(
         [`issue-255-pg-${suiteNonce}-%`],
       );
       await firstPool.query(
+        'DELETE FROM issue255_live_generation_authorizations WHERE run_nonce LIKE $1',
+        [`issue-255-pg-${suiteNonce}-%`],
+      );
+      await firstPool.query(
         'DELETE FROM workspaces WHERE id LIKE $1',
         [`issue-255-workspace-${suiteNonce}%`],
       );
@@ -41,6 +45,10 @@ describe(
         [`issue-255-pg-${suiteNonce}-%`],
       );
       await firstPool.query(
+        'DELETE FROM issue255_live_generation_authorizations WHERE run_nonce LIKE $1',
+        [`issue-255-pg-${suiteNonce}-%`],
+      );
+      await firstPool.query(
         'DELETE FROM workspaces WHERE id LIKE $1',
         [`issue-255-workspace-${suiteNonce}%`],
       );
@@ -48,6 +56,9 @@ describe(
         `SELECT (
            (SELECT COUNT(*)
               FROM issue255_live_generation_receipts
+             WHERE run_nonce LIKE $1) +
+           (SELECT COUNT(*)
+              FROM issue255_live_generation_authorizations
              WHERE run_nonce LIKE $1) +
            (SELECT COUNT(*)
               FROM workspaces
@@ -119,6 +130,31 @@ describe(
           `${column} must have a receipt-level unique index`,
         );
       }
+      const authorizationColumns = await firstPool.query<{
+        column_name: string;
+        is_nullable: 'NO' | 'YES';
+      }>(
+        `SELECT column_name, is_nullable
+           FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'issue255_live_generation_authorizations'
+            AND column_name IN (
+              'effect_id',
+              'run_nonce',
+              'modality',
+              'reserved_amount_micros'
+            )
+          ORDER BY column_name`,
+      );
+      assert.deepEqual(
+        authorizationColumns.rows,
+        [
+          { column_name: 'effect_id', is_nullable: 'NO' },
+          { column_name: 'modality', is_nullable: 'NO' },
+          { column_name: 'reserved_amount_micros', is_nullable: 'NO' },
+          { column_name: 'run_nonce', is_nullable: 'NO' },
+        ],
+      );
     });
 
     it('allows only one cross-process claim for the same generation effect', async () => {
@@ -447,40 +483,34 @@ describe(
       const fourthEffectId = createHash('sha256')
         .update(`issue255/v1\0${fourthRunNonce}\0copy`)
         .digest('hex');
-      await first.claim({
-        workspaceId: receiptWorkspaceId,
-        runNonce: fourthRunNonce,
-        modality: 'copy',
-        effectId: fourthEffectId,
-        requestFingerprint: '9'.repeat(64),
-        adapter: 'direct-copy',
-        deploymentId: 'deepseek-v4-pro-direct',
-        providerIdempotencyKey: fourthEffectId,
-        providerJobId: `${fourthEffectId}:job`,
-        providerAttemptId: `${fourthEffectId}:attempt`,
-        providerCostEventId: `${fourthEffectId}:cost`,
-        recordedMatrixDigest: '8'.repeat(64),
-        reservedAmountMicros: 100_000,
-        priceRevision: 'direct-copy-price-v1',
-        exchangeRevision: 'native-cny-v1',
-      });
-
       await assert.rejects(
-        first.claimGenerationPost({
-          adapter: 'direct-copy',
-          deploymentId: 'deepseek-v4-pro-direct',
+        first.claim({
+          workspaceId: receiptWorkspaceId,
           runNonce: fourthRunNonce,
           modality: 'copy',
+          adapter: 'direct-copy',
+          deploymentId: 'deepseek-v4-pro-direct',
           effectId: fourthEffectId,
           providerIdempotencyKey: fourthEffectId,
+          providerJobId: `${fourthEffectId}:job`,
+          providerAttemptId: `${fourthEffectId}:attempt`,
+          providerCostEventId: `${fourthEffectId}:cost`,
           requestFingerprint: '9'.repeat(64),
+          recordedMatrixDigest: '8'.repeat(64),
+          reservedAmountMicros: 100_000,
+          priceRevision: 'direct-copy-price-v1',
+          exchangeRevision: 'native-cny-v1',
         }),
         /exactly three billable generation POSTs/u,
       );
-      assert.equal(
-        (await first.listRun(fourthRunNonce))[0]?.generationSubmitCount,
-        0,
+      assert.equal((await first.listRun(fourthRunNonce)).length, 0);
+      const history = await firstPool.query<{ count: number }>(
+        `SELECT COUNT(*)::int AS count
+           FROM issue255_live_generation_authorizations
+          WHERE run_nonce LIKE $1`,
+        [`issue-255-pg-${suiteNonce}-global-%`],
       );
+      assert.equal(history.rows[0]?.count, 3);
     });
 
     it('accepts only known integer-micro-CNY terminal cost truth', async () => {

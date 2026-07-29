@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -12,6 +12,7 @@ import {
   collectIssue255LiveAnchors,
   issue255DirectCopyExecutor,
   issue255TuziExecutor,
+  type Issue255LiveExecutor,
 } from './issue-255-live-collector.js';
 import { PostgresIssue255LiveReceiptRepository } from './issue-255-postgres-live-receipt.js';
 import { runIssue255RecordedCalibration } from './issue-255-recorded-calibration.js';
@@ -32,11 +33,49 @@ test(
     const runNonce = `issue-255-collector-${randomUUID()}`;
     const workspaceId =
       `issue-255-live-${hash(runNonce).slice(0, 24)}`;
+    const rerunNonce = `${runNonce}-rerun`;
+    const rerunWorkspaceId =
+      `issue-255-live-${hash(rerunNonce).slice(0, 24)}`;
 
     try {
       await foundation.migrate();
       await receipts.migrate();
       const recordedSamples = await runIssue255RecordedCalibration();
+      let blockedExecutorCalls = 0;
+      const blockedExecutors = collisionGuardExecutors(() => {
+        blockedExecutorCalls += 1;
+      });
+      const staleManifestPath = join(directory, 'stale.json');
+      await writeFile(`${staleManifestPath}.pending`, 'stale');
+      await assert.rejects(
+        collectIssue255LiveAnchors({
+          database: pool,
+          executors: blockedExecutors,
+          foundation,
+          manifestPath: staleManifestPath,
+          recordedSamples,
+          receipts,
+          runNonce: `${runNonce}-stale`,
+        }),
+        /pending manifest already exists/u,
+      );
+      const collisionManifestPath = join(directory, 'collision.json');
+      await writeFile(collisionManifestPath, 'existing');
+      await assert.rejects(
+        collectIssue255LiveAnchors({
+          database: pool,
+          executors: blockedExecutors,
+          foundation,
+          manifestPath: collisionManifestPath,
+          recordedSamples,
+          receipts,
+          runNonce: `${runNonce}-collision`,
+        }),
+        /final manifest already exists/u,
+      );
+      assert.equal(await readFile(collisionManifestPath, 'utf8'), 'existing');
+      assert.equal(blockedExecutorCalls, 0);
+
       const tuziOptions = {
         apiKey: 'test-key',
         assetFetch: {
@@ -197,33 +236,59 @@ test(
           .databaseResidueCount,
         0,
       );
+      const durableHistory = await pool.query<{ count: number }>(
+        `SELECT COUNT(*)::int AS count
+           FROM issue255_live_generation_authorizations
+          WHERE run_nonce = $1`,
+        [runNonce],
+      );
+      assert.equal(durableHistory.rows[0]?.count, 3);
+
+      await assert.rejects(
+        collectIssue255LiveAnchors({
+          database: pool,
+          executors: blockedExecutors,
+          foundation,
+          manifestPath: join(directory, 'rerun.json'),
+          recordedSamples,
+          receipts,
+          runNonce: rerunNonce,
+        }),
+        /exactly three billable generation POSTs globally/u,
+      );
+      assert.equal(blockedExecutorCalls, 0);
 
       const residue = await pool.query<{ count: number }>(
         `SELECT (
            (SELECT COUNT(*)
               FROM issue255_live_generation_receipts
-             WHERE run_nonce = $1) +
-           (SELECT COUNT(*) FROM workspaces WHERE id = $2) +
+             WHERE run_nonce IN ($1, $2)) +
+           (SELECT COUNT(*) FROM workspaces WHERE id IN ($3, $4)) +
            (SELECT COUNT(*)
               FROM p1_generation_jobs
-             WHERE workspace_id = $2) +
+             WHERE workspace_id IN ($3, $4)) +
            (SELECT COUNT(*)
               FROM p1_provider_attempts
-             WHERE workspace_id = $2) +
+             WHERE workspace_id IN ($3, $4)) +
            (SELECT COUNT(*)
               FROM p1_provider_cost_events
-             WHERE workspace_id = $2)
+             WHERE workspace_id IN ($3, $4))
          )::int AS count`,
-        [runNonce, workspaceId],
+        [runNonce, rerunNonce, workspaceId, rerunWorkspaceId],
       );
       assert.equal(residue.rows[0]?.count, 0);
     } finally {
       await pool.query(
-        'DELETE FROM issue255_live_generation_receipts WHERE run_nonce = $1',
-        [runNonce],
+        'DELETE FROM issue255_live_generation_receipts WHERE run_nonce LIKE $1',
+        [`${runNonce}%`],
       );
-      await pool.query('DELETE FROM workspaces WHERE id = $1', [
+      await pool.query(
+        'DELETE FROM issue255_live_generation_authorizations WHERE run_nonce LIKE $1',
+        [`${runNonce}%`],
+      );
+      await pool.query('DELETE FROM workspaces WHERE id IN ($1, $2)', [
         workspaceId,
+        rerunWorkspaceId,
       ]);
       await pool.end();
       await rm(directory, { force: true, recursive: true });
@@ -233,4 +298,56 @@ test(
 
 function hash(input: string) {
   return createHash('sha256').update(input).digest('hex');
+}
+
+function collisionGuardExecutors(
+  onExecute: () => void,
+): readonly Issue255LiveExecutor[] {
+  return [
+    {
+      adapter: 'direct-copy',
+      catalogModelId: 'deepseek-v4-pro',
+      configurationRevision: 'collision-copy-config-v1',
+      credentialRevision: 'collision-credential-v1',
+      deploymentId: 'deepseek-v4-pro-direct',
+      modality: 'copy',
+      priceRevision: 'collision-copy-price-v1',
+      promptHash: '1'.repeat(64),
+      quoteAmountMicros: 100_000,
+      async execute() {
+        onExecute();
+        throw new Error('Provider execution crossed a pre-network guard.');
+      },
+    },
+    {
+      adapter: 'tuzi-image',
+      catalogModelId: 'gpt-image-2',
+      configurationRevision: 'collision-image-config-v1',
+      credentialRevision: 'collision-credential-v1',
+      deploymentId: 'gpt-image-2-tuzi-relay',
+      modality: 'image_text',
+      priceRevision: 'collision-image-price-v1',
+      promptHash: '2'.repeat(64),
+      quoteAmountMicros: 500_000,
+      async execute() {
+        onExecute();
+        throw new Error('Provider execution crossed a pre-network guard.');
+      },
+    },
+    {
+      adapter: 'tuzi-video',
+      catalogModelId: 'seedance-1-5-pro',
+      configurationRevision: 'collision-video-config-v1',
+      credentialRevision: 'collision-credential-v1',
+      deploymentId: 'seedance-1-5-pro-tuzi-relay',
+      modality: 'video',
+      priceRevision: 'collision-video-price-v1',
+      promptHash: '3'.repeat(64),
+      quoteAmountMicros: 3_000_000,
+      async execute() {
+        onExecute();
+        throw new Error('Provider execution crossed a pre-network guard.');
+      },
+    },
+  ];
 }
