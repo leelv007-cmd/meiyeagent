@@ -5,15 +5,34 @@ import {
   lateAnswerSuccessorWorkflowId,
 } from './decision-service.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
+import type { HarnessInteractionResumeSignal } from './interaction-resume.js';
 
-export interface HarnessPendingResume {
+interface HarnessPendingResumeBase {
   claimId: string;
   eventId: string;
   workspaceId: string;
   taskId: string;
-  command: StructuredDecisionInput;
-  request?: HarnessWorkflowInput;
-  resolutionSource: 'decision' | 'late_answer';
+}
+
+export type HarnessPendingResume =
+  | (HarnessPendingResumeBase & {
+      kind: 'structured_decision';
+      command: StructuredDecisionInput;
+      request?: HarnessWorkflowInput;
+      resolutionSource: 'decision' | 'late_answer';
+    })
+  | (HarnessPendingResumeBase & {
+      kind: 'interaction';
+      resolutionSource: 'decision' | 'system_default';
+      resume: HarnessInteractionResumeSignal;
+    });
+
+export interface HarnessResumeWorkflow extends HarnessWorkflowResumer {
+  resumeInteraction(
+    workspaceId: string,
+    taskId: string,
+    signal: HarnessInteractionResumeSignal,
+  ): Promise<void>;
 }
 
 export interface HarnessResumeReconcilerStore {
@@ -25,7 +44,7 @@ export interface HarnessResumeReconcilerStore {
 export class HarnessResumeReconciler {
   constructor(
     private readonly store: HarnessResumeReconcilerStore,
-    private readonly workflow: HarnessWorkflowResumer,
+    private readonly workflow: HarnessResumeWorkflow,
     private readonly batchSize = 20
   ) {}
 
@@ -37,7 +56,13 @@ export class HarnessResumeReconciler {
       const [item] = await this.store.claimPending(1);
       if (!item) break;
       try {
-        if (item.resolutionSource === 'late_answer') {
+        if (item.kind === 'interaction') {
+          await this.workflow.resumeInteraction(
+            item.workspaceId,
+            item.taskId,
+            item.resume,
+          );
+        } else if (item.resolutionSource === 'late_answer') {
           if (!item.request || !this.workflow.startSuccessor) {
             throw new Error('Late-answer successor workflow is unavailable.');
           }

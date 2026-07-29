@@ -1,5 +1,6 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import {
+  harnessInteractionAnswerSchema,
   questionCardSchema,
   structuredDecisionInputSchema,
   workflowProgressEnvelopeSchema,
@@ -44,6 +45,10 @@ import {
   type HarnessBillingSettlementExecutor,
   type HarnessBillingSettlementInput,
 } from './billing-compensation.js';
+import {
+  harnessInteractionResumeSignalSchema,
+  type HarnessInteractionResumeSignal,
+} from './interaction-resume.js';
 import {
   HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
   HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
@@ -415,7 +420,7 @@ export function registerHarnessDbosWorkflow(
         const timeoutSeconds =
           pendingProjection?.timeoutSeconds ??
           DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS;
-        const decision = await DBOS.recv<StructuredDecisionInput>(
+        const decision = await DBOS.recv<unknown>(
           decisionTopic(question.questionId),
           { timeoutSeconds },
         );
@@ -921,6 +926,29 @@ export async function resumeHarnessDbosWorkflow(
   );
 }
 
+export async function resumeHarnessDbosInteractionWorkflow(
+  workspaceId: string,
+  workflowId: string,
+  signal: unknown,
+  resolver?: HarnessRuntimeIdResolver,
+) {
+  const parsedSignal = harnessInteractionResumeSignalSchema.parse(signal);
+  if (parsedSignal.runId !== workflowId) {
+    throw new Error(
+      'Interaction resume signal does not match its target workflow.',
+    );
+  }
+  const runtimeWorkflowId =
+    (await resolver?.workflowRuntimeId(workspaceId, workflowId)) ??
+    harnessRuntimeId(workspaceId, workflowId);
+  await DBOS.send(
+    runtimeWorkflowId,
+    parsedSignal,
+    decisionTopic(parsedSignal.requestId),
+    `harness-interaction:${workspaceId}:${runtimeWorkflowId}:${parsedSignal.idempotencyKey}`,
+  );
+}
+
 export type HarnessMediaJobTerminalNotification = {
   workspaceId: string;
   jobId: string;
@@ -989,7 +1017,7 @@ export function normalizeHarnessDbosWorkflowInput(
 
 export function confirmationCardDecision(
   question: QuestionCard,
-  decision: StructuredDecisionInput | null,
+  decision: unknown,
 ) {
   if (!decision) {
     return structuredDecisionInputSchema.parse({
@@ -1007,6 +1035,10 @@ export function confirmationCardDecision(
       },
     });
   }
+  const interaction = harnessInteractionResumeSignalSchema.safeParse(decision);
+  if (interaction.success) {
+    return interactionConfirmationCardDecision(question, interaction.data);
+  }
   const parsed = structuredDecisionInputSchema.parse(decision);
   if (parsed.questionId !== question.questionId) {
     throw new Error('Structured decision does not match the pending question.');
@@ -1015,6 +1047,82 @@ export function confirmationCardDecision(
     throw new Error('Structured decision targets a stale workflow revision.');
   }
   return parsed;
+}
+
+function interactionConfirmationCardDecision(
+  question: QuestionCard,
+  signal: HarnessInteractionResumeSignal,
+) {
+  if (
+    signal.requestId !== question.questionId ||
+    signal.revision !== question.workflowRevision ||
+    signal.runId !== question.workflowId
+  ) {
+    throw new Error(
+      'Interaction resume signal does not match the pending question.',
+    );
+  }
+  const answer = harnessInteractionAnswerSchema.parse({
+    requestId: signal.requestId,
+    revision: signal.revision,
+    idempotencyKey: signal.idempotencyKey,
+    resume: {
+      runId: signal.runId,
+      step: signal.step,
+    },
+    response: signal.resumeData,
+  });
+  let state: StructuredDecisionInput['decision']['state'];
+  let value: string;
+  if (
+    answer.response.kind === 'answer' ||
+    answer.response.kind === 'skipped'
+  ) {
+    if (answer.response.kind === 'skipped') {
+      state = 'ignored';
+      value = '暂未确定';
+    } else {
+      const item =
+        answer.response.items.find(
+          (candidate) => candidate.itemId === question.response.field,
+        ) ??
+        (answer.response.items.length === 1
+          ? answer.response.items[0]
+          : undefined);
+      if (!item) {
+        throw new Error(
+          'Interaction answer does not identify the pending question field.',
+        );
+      }
+      state = item.result.kind === 'answer' ? 'accepted' : 'ignored';
+      value =
+        item.result.kind === 'answer' ? item.result.value : '暂未确定';
+    }
+  } else if (answer.response.kind === 'approved') {
+    state = 'accepted';
+    value = 'approved';
+  } else if (answer.response.feedback) {
+    state = 'accepted';
+    value = answer.response.feedback;
+  } else {
+    throw new Error(
+      'A rejection without feedback must remain waiting for the merchant.',
+    );
+  }
+  return structuredDecisionInputSchema.parse({
+    idempotencyKey: signal.idempotencyKey,
+    questionId: question.questionId,
+    workflowRevision: question.workflowRevision,
+    patch: {
+      field: question.response.field,
+      value,
+      reason: question.response.reason,
+    },
+    decision: {
+      state,
+      value,
+    },
+  });
 }
 
 export function confirmationCardHoldExpired(question: QuestionCard) {
@@ -1038,7 +1146,7 @@ async function waitForHeldDecision(
   question: QuestionCard,
   timeoutSeconds: number,
 ) {
-  const decision = await DBOS.recv<StructuredDecisionInput>(
+  const decision = await DBOS.recv<unknown>(
     decisionTopic(question.questionId),
     { timeoutSeconds },
   );
@@ -1047,7 +1155,7 @@ async function waitForHeldDecision(
 
 async function waitForDecisionWithoutTimeout(question: QuestionCard) {
   for (;;) {
-    const decision = await DBOS.recv<StructuredDecisionInput>(
+    const decision = await DBOS.recv<unknown>(
       decisionTopic(question.questionId),
     );
     if (decision) return confirmationCardDecision(question, decision);

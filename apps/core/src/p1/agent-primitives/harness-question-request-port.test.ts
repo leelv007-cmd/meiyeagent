@@ -51,8 +51,13 @@ const serverContext: AgentPrimitiveServerContext = {
   workspaceId: 'workspace-a',
 };
 
-test('the production question adapter validates the canonical card without owning pending persistence', async () => {
-  const port = new HarnessQuestionRequestPort();
+test('the production question adapter validates and durably groups the canonical card', async () => {
+  const registered: unknown[] = [];
+  const port = new HarnessQuestionRequestPort({
+    async register(workspaceId, request) {
+      registered.push({ request, workspaceId });
+    },
+  });
 
   const result = await port.request({
     options: question.options.map(({ description, label }) => ({
@@ -64,6 +69,44 @@ test('the production question adapter validates the canonical card without ownin
   });
 
   assert.deepEqual(result, { requestRef: question.questionId });
+  assert.deepEqual(registered, [
+    {
+      workspaceId: 'workspace-a',
+      request: {
+        requestId: question.questionId,
+        runId: question.workflowId,
+        step: 'intent_naming',
+        revision: question.workflowRevision,
+        kind: 'ask_merchant',
+        questions: [
+          {
+            itemId: 'offer',
+            question: question.question,
+            options: [
+              {
+                description:
+                  'Feature the current introductory package.',
+                label: 'New customer offer',
+              },
+            ],
+            fallback: { kind: 'deferred' },
+          },
+        ],
+        groupSkip: true,
+        timeoutPolicy: {
+          kind: 'hold',
+          reason: 'unknown',
+          serverEvaluated: true,
+        },
+        presentation: {
+          carriers: ['conversation', 'store_page'],
+          blocking: 'none',
+          notification: 'none',
+          renderer: 'ask_merchant_group',
+        },
+      },
+    },
+  ]);
 });
 
 test('the production question adapter rejects model text that differs from the canonical card', async () => {
@@ -83,7 +126,11 @@ test('the production question adapter rejects model text that differs from the c
       question: question.question,
     },
   ]) {
-    const port = new HarnessQuestionRequestPort();
+    const port = new HarnessQuestionRequestPort({
+      async register() {
+        throw new Error('invalid input must not be registered');
+      },
+    });
 
     await assert.rejects(
       port.request({
@@ -96,7 +143,11 @@ test('the production question adapter rejects model text that differs from the c
 });
 
 test('the production question adapter requires server-owned canonical Harness context', async () => {
-  const port = new HarnessQuestionRequestPort();
+  const port = new HarnessQuestionRequestPort({
+    async register() {
+      throw new Error('invalid input must not be registered');
+    },
+  });
   const { harness: _harness, ...withoutHarness } = serverContext;
 
   await assert.rejects(

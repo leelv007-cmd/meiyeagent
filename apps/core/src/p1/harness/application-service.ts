@@ -17,6 +17,7 @@ import type {
   HarnessTaskAdmissionService,
   HarnessTaskRequest,
 } from './task-admission.js';
+import type { HarnessInteractionService } from './interaction-service.js';
 
 export interface HarnessTaskAccess {
   taskBelongsToWorkspace(taskId: string, workspaceId: string): Promise<boolean>;
@@ -51,6 +52,11 @@ export interface HarnessConfirmationTimeoutReader {
   readTimeoutSeconds(): Promise<unknown>;
 }
 
+export type HarnessInteractionApplicationPort = Pick<
+  HarnessInteractionService,
+  'readForCarrier' | 'setEditing' | 'setRendererCapability' | 'submit'
+>;
+
 export class HarnessAccessError extends Error {
   readonly code = 'HARNESS_TASK_NOT_FOUND';
   readonly status = 404;
@@ -69,6 +75,7 @@ export class HarnessApplicationService {
     private readonly recommendations?: HarnessRecommendationReader,
     private readonly productMetrics?: HarnessProductMetricRecorder,
     private readonly confirmationTimeout?: HarnessConfirmationTimeoutReader,
+    private readonly interactions?: HarnessInteractionApplicationPort,
   ) {}
 
   submit(input: HarnessTaskRequest) {
@@ -143,6 +150,45 @@ export class HarnessApplicationService {
   ) {
     await this.requireTask(workspaceId, taskId);
     return this.decisions.submit(workspaceId, taskId, input);
+  }
+
+  async readPendingInteraction(workspaceId: string, taskId: string) {
+    await this.requireTask(workspaceId, taskId);
+    if (!this.interactions) return null;
+    await this.interactions.setRendererCapability(
+      workspaceId,
+      taskId,
+      'available',
+    );
+    return this.interactions.readForCarrier(
+      workspaceId,
+      taskId,
+      'conversation',
+    );
+  }
+
+  async submitInteraction(
+    workspaceId: string,
+    taskId: string,
+    input: unknown,
+  ) {
+    await this.requireTask(workspaceId, taskId);
+    if (!this.interactions) {
+      throw new Error('Harness interactions are unavailable.');
+    }
+    return this.interactions.submit(workspaceId, input);
+  }
+
+  async setInteractionEditing(
+    workspaceId: string,
+    taskId: string,
+    editing: boolean,
+  ) {
+    await this.requireTask(workspaceId, taskId);
+    if (!this.interactions) {
+      throw new Error('Harness interactions are unavailable.');
+    }
+    return this.interactions.setEditing(workspaceId, taskId, editing);
   }
 
   readTodayRecommendation(workspaceId: string) {

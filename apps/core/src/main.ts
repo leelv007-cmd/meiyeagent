@@ -189,8 +189,8 @@ import {
 import { HarnessApplicationService } from './p1/harness/application-service.js';
 import {
   HarnessDecisionService,
-  type HarnessWorkflowResumer,
 } from './p1/harness/decision-service.js';
+import { HarnessInteractionService } from './p1/harness/interaction-service.js';
 import { HarnessDbosWorkflowEventReader } from './p1/harness/dbos-workflow-events.js';
 import { HarnessBillingCompensationWorker } from './p1/harness/billing-compensation.js';
 import {
@@ -209,7 +209,10 @@ import { PostgresHarnessBillingCompensationStore } from './p1/harness/postgres-b
 import { HarnessProductBillingSettlementExecutor } from './p1/harness/product-billing-settlement.js';
 import { PostgresNoteMediaAdmissionCoordinator } from './p1/harness/note-media-admission.js';
 import { unconfiguredNotePlanEnhancementJudgeResolver } from './p1/harness/note-plan-structured-port.js';
-import { HarnessResumeReconciler } from './p1/harness/resume-reconciler.js';
+import {
+  HarnessResumeReconciler,
+  type HarnessResumeWorkflow,
+} from './p1/harness/resume-reconciler.js';
 import {
   HarnessObservabilityReconciler,
   shouldPublishObservabilityDeliverySnapshot,
@@ -219,6 +222,7 @@ import {
   DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS,
   DbosHarnessWorkflowStarter,
   registerHarnessDbosWorkflow,
+  resumeHarnessDbosInteractionWorkflow,
   resumeHarnessDbosWorkflow,
 } from './p1/harness/dbos-workflow.js';
 import {
@@ -340,7 +344,10 @@ import {
   HarnessObservabilityEventAudit,
 } from './p1/creation-experience/index.js';
 import { HarnessCheckTargetScope } from './p1/agent-primitives/harness-check-target-scope.js';
-import { HarnessQuestionRequestPort } from './p1/agent-primitives/harness-question-request-port.js';
+import {
+  HarnessQuestionRequestPort,
+  type HarnessInteractionRequestRegistrar,
+} from './p1/agent-primitives/harness-question-request-port.js';
 import { P1HarnessAskInvoker } from './p1/agent-primitives/p1-harness-ask-invoker.js';
 import { P1HarnessCandidateRunnerScope } from './p1/agent-primitives/p1-harness-candidate-runner.js';
 import { P1HarnessCheckInvoker } from './p1/agent-primitives/p1-harness-check-invoker.js';
@@ -1431,9 +1438,17 @@ const creationExperienceRuntime =
 const harnessCheckTargetScope = new HarnessCheckTargetScope();
 const harnessCandidatePrimitiveScope =
   new P1HarnessCandidateRunnerScope('harness-copy-primitive-worker');
+let harnessInteractionRegistrar: HarnessInteractionRequestRegistrar | undefined;
 const agentPrimitiveAssembly = createProductionAgentPrimitiveAssembly({
   audit: harnessObservabilityEvents,
-  askMerchant: new HarnessQuestionRequestPort(),
+  askMerchant: new HarnessQuestionRequestPort({
+    async register(workspaceId, request) {
+      if (!harnessInteractionRegistrar) {
+        throw new Error('Harness interaction registration is unavailable.');
+      }
+      await harnessInteractionRegistrar.register(workspaceId, request);
+    },
+  }),
   checkTarget: harnessCheckTargetScope,
   checkViolationAudit: {
     async append(input) {
@@ -2022,7 +2037,7 @@ if (harnessRuntimeConfig) {
   const billingCompensations =
     new PostgresHarnessBillingCompensationStore(pool);
   await billingCompensations.migrate();
-  const workflowResumer: HarnessWorkflowResumer = {
+  const workflowResumer: HarnessResumeWorkflow = {
     resume: (
       workspaceId: string,
       workflowId: string,
@@ -2032,6 +2047,17 @@ if (harnessRuntimeConfig) {
         workspaceId,
         workflowId,
         command,
+        harnessStore,
+      ),
+    resumeInteraction: (
+      workspaceId,
+      workflowId,
+      signal,
+    ) =>
+      resumeHarnessDbosInteractionWorkflow(
+        workspaceId,
+        workflowId,
+        signal,
         harnessStore,
       ),
     async startSuccessor(input) {
@@ -2045,6 +2071,31 @@ if (harnessRuntimeConfig) {
     harnessStore,
     workflowResumer,
   );
+  const harnessInteractions = new HarnessInteractionService(harnessStore, {
+    resume(input) {
+      return workflowResumer.resumeInteraction(
+        input.workspaceId,
+        input.runId,
+        {
+          kind: 'harness_interaction_resume',
+          schemaVersion: 'v1',
+          idempotencyKey: input.idempotencyKey,
+          interactionKind: input.interactionKind,
+          requestId: input.requestId,
+          revision: input.revision,
+          runId: input.runId,
+          step: input.step,
+          resumeData: input.resumeData,
+          resolutionSource: input.resolutionSource,
+        },
+      );
+    },
+  });
+  harnessInteractionRegistrar = {
+    async register(workspaceId, request) {
+      await harnessInteractions.request(workspaceId, request);
+    },
+  };
   const boundedExecutionLimits =
     new AdminConfigBoundedExecutionLimitsSource(adminConfigRepository);
   const harnessWorkflow = registerHarnessDbosWorkflow(
@@ -2201,6 +2252,7 @@ if (harnessRuntimeConfig) {
         );
       },
     },
+    harnessInteractions,
   );
   composerSubmissionCoordinator = new CreationSubmissionCoordinator(
     creationSubmissionStore,

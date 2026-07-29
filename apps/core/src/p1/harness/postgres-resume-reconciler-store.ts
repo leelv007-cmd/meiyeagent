@@ -6,6 +6,7 @@ import type {
   HarnessPendingResume,
   HarnessResumeReconcilerStore,
 } from './resume-reconciler.js';
+import { interactionResumeSignalFromEvent } from './interaction-resume.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 
 export class PostgresHarnessResumeReconcilerStore
@@ -21,7 +22,7 @@ export class PostgresHarnessResumeReconcilerStore
       payload: unknown;
       question_id: string;
       request: HarnessWorkflowInput;
-      resolution_source: 'decision' | 'late_answer';
+      resolution_source: 'decision' | 'late_answer' | 'system_default';
       task_id: string;
       workflow_revision: string;
       workspace_id: string;
@@ -39,7 +40,11 @@ export class PostgresHarnessResumeReconcilerStore
                )
              )
            )
-           and events.resolution_source in ('decision','late_answer')
+           and events.resolution_source in (
+             'decision',
+             'late_answer',
+             'system_default'
+           )
          order by events.created_at, events.id
          limit $1
          for update skip locked
@@ -71,7 +76,36 @@ export class PostgresHarnessResumeReconcilerStore
     );
     return result.rows.map((row) => {
       const payload = record(row.payload);
+      if (payload?.kind === 'harness_interaction_resolution') {
+        if (row.resolution_source === 'late_answer') {
+          throw new Error(
+            'A late-answer event cannot carry an interaction resume.',
+          );
+        }
+        return {
+          kind: 'interaction' as const,
+          claimId,
+          eventId: row.event_id,
+          workspaceId: row.workspace_id,
+          taskId: row.task_id,
+          resolutionSource: row.resolution_source,
+          resume: interactionResumeSignalFromEvent({
+            idempotencyKey: row.idempotency_key,
+            payload: row.payload,
+            questionId: row.question_id,
+            resolutionSource: row.resolution_source,
+            runId: row.task_id,
+            workflowRevision: Number(row.workflow_revision),
+          }),
+        };
+      }
+      if (row.resolution_source === 'system_default') {
+        throw new Error(
+          'A system-default event requires a typed interaction payload.',
+        );
+      }
       return {
+        kind: 'structured_decision' as const,
         claimId,
         eventId: row.event_id,
         workspaceId: row.workspace_id,

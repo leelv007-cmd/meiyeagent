@@ -17,6 +17,7 @@ import {
   readConfirmationCardTimeoutSeconds,
   refundHarnessBillingPreservingFailure,
   resolveHarnessBoundedExecutionContinuation,
+  resumeHarnessDbosInteractionWorkflow,
   resumeHarnessDbosWorkflow,
   suspensionQuestionFailOpen,
   settleHarnessCancellation,
@@ -140,6 +141,53 @@ test('resume accepts a valid command after rejecting invalid runtime data', asyn
       command,
       'structured-decision:question-1',
       'harness-decision:workspace-1:runtime-1:decision-1',
+    ],
+  ]);
+});
+
+test('interaction resume keeps its typed payload and idempotency on the existing decision topic', async (t) => {
+  const sent: unknown[][] = [];
+  t.mock.method(DBOS, 'send', async (...args: unknown[]) => {
+    sent.push(args);
+  });
+  const signal = {
+    kind: 'harness_interaction_resume',
+    schemaVersion: 'v1',
+    idempotencyKey: 'interaction-answer-1',
+    interactionKind: 'ask_merchant',
+    requestId: 'question-1',
+    revision: 1,
+    runId: 'task-1',
+    step: 'context_injection',
+    resumeData: {
+      kind: 'answer',
+      items: [
+        {
+          itemId: 'offer_price',
+          result: { kind: 'answer', value: '398 元' },
+        },
+      ],
+    },
+    resolutionSource: 'decision',
+  } as const;
+
+  await resumeHarnessDbosInteractionWorkflow(
+    'workspace-1',
+    'task-1',
+    signal,
+    {
+      async workflowRuntimeId() {
+        return 'runtime-1';
+      },
+    },
+  );
+
+  assert.deepEqual(sent, [
+    [
+      'runtime-1',
+      signal,
+      'structured-decision:question-1',
+      'harness-interaction:workspace-1:runtime-1:interaction-answer-1',
     ],
   ]);
 });

@@ -8,6 +8,7 @@ import {
   p1ModuleRequestSchema,
   assistantStreamRequestSchema,
   firstUsableDraftMetricSchema,
+  harnessInteractionAnswerSchema,
   structuredDecisionInputSchema,
   hasProductCapability,
   productCommandSchema,
@@ -21,6 +22,7 @@ import {
   type ProductContext,
   toPublicContentPackage,
 } from '@meiye/contracts';
+import { z } from 'zod';
 import type {
   DiagnosticIdentity,
   DiagnosticRepository,
@@ -1561,6 +1563,12 @@ export function createCoreServer({
     const harnessDecisionMatch = url.pathname.match(
       /^\/v1\/workspaces\/([^/]+)\/p1\/harness\/tasks\/([^/]+)\/decision$/
     );
+    const harnessInteractionMatch = url.pathname.match(
+      /^\/v1\/workspaces\/([^/]+)\/p1\/harness\/tasks\/([^/]+)\/interaction$/
+    );
+    const harnessInteractionEditingMatch = url.pathname.match(
+      /^\/v1\/workspaces\/([^/]+)\/p1\/harness\/tasks\/([^/]+)\/interaction\/editing$/
+    );
     if (
       harnessService &&
       request.method === 'POST' &&
@@ -1673,6 +1681,78 @@ export function createCoreServer({
           {
             code: 'INVALID_HARNESS_REQUEST',
             message: 'Harness request is invalid.',
+            status: 400,
+          },
+          requestCorrelationId
+        );
+      }
+      return;
+    }
+    if (
+      harnessService &&
+      (request.method === 'GET' || request.method === 'POST') &&
+      harnessInteractionMatch
+    ) {
+      try {
+        const workspaceId = decodeURIComponent(harnessInteractionMatch[1]!);
+        const taskId = decodeURIComponent(harnessInteractionMatch[2]!);
+        const context = p1Identity(request, workspaceId, requestCorrelationId);
+        authorizeContentCreation(context);
+        const result =
+          request.method === 'GET'
+            ? await harnessService.readPendingInteraction(workspaceId, taskId)
+            : await harnessService.submitInteraction(
+                workspaceId,
+                taskId,
+                harnessInteractionAnswerSchema.parse(await readJson(request))
+              );
+        sendJson(response, 200, result, requestCorrelationId);
+      } catch (error) {
+        sendP1HttpError(
+          response,
+          error,
+          {
+            code: 'INVALID_HARNESS_INTERACTION',
+            message: 'Harness interaction is invalid.',
+            status: 400,
+          },
+          requestCorrelationId
+        );
+      }
+      return;
+    }
+    if (
+      harnessService &&
+      request.method === 'POST' &&
+      harnessInteractionEditingMatch
+    ) {
+      try {
+        const workspaceId = decodeURIComponent(
+          harnessInteractionEditingMatch[1]!
+        );
+        const taskId = decodeURIComponent(harnessInteractionEditingMatch[2]!);
+        const context = p1Identity(request, workspaceId, requestCorrelationId);
+        authorizeContentCreation(context);
+        const { editing } = z
+          .object({ editing: z.boolean() })
+          .strict()
+          .parse(await readJson(request));
+        await harnessService.setInteractionEditing(
+          workspaceId,
+          taskId,
+          editing
+        );
+        response.writeHead(204, {
+          'x-correlation-id': requestCorrelationId,
+        });
+        response.end();
+      } catch (error) {
+        sendP1HttpError(
+          response,
+          error,
+          {
+            code: 'INVALID_HARNESS_INTERACTION_EDITING',
+            message: 'Harness interaction editing state is invalid.',
             status: 400,
           },
           requestCorrelationId

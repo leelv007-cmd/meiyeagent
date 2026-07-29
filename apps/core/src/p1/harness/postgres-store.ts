@@ -40,7 +40,12 @@ import type {
   HarnessPendingDecisionProjection,
   HarnessDecisionTrace,
 } from './decision-service.js';
-import type { HarnessInteractionStore } from './interaction-service.js';
+import {
+  harnessInteractionPendingProjectionSchema,
+  type HarnessInteractionPendingProjection,
+  type HarnessInteractionStore,
+} from './interaction-service.js';
+import { interactionKind } from './interaction-resume.js';
 import type {
   HarnessTaskRequestRegistry,
   HarnessWorkflowInput,
@@ -149,7 +154,7 @@ export class PostgresHarnessStore
         payload jsonb not null,
         resolution_source text not null default 'decision',
         resume_status text not null default 'pending'
-          check (resume_status in ('pending', 'sending', 'sent')),
+          check (resume_status in ('pending', 'sending', 'sent', 'waiting')),
         resume_claim_id text,
         resume_lease_expires_at timestamptz,
         resume_attempts integer not null default 0,
@@ -410,7 +415,7 @@ export class PostgresHarnessStore
         drop constraint if exists decision_events_resume_status_check;
       alter table harness_runtime.decision_events
         add constraint decision_events_resume_status_check
-        check (resume_status in ('pending', 'sending', 'sent'));
+        check (resume_status in ('pending', 'sending', 'sent', 'waiting'));
 
       alter table harness_runtime.task_requests
         add column if not exists runtime_id text;
@@ -856,9 +861,17 @@ export class PostgresHarnessStore
         [runtimeTaskId],
       );
       const pending = existing.rows[0];
-      let frozenTimeoutSeconds = pending
-        ? pendingDecisionTimeoutSeconds(pending.pending_projection)
-        : proposedTimeoutSeconds;
+      const pendingInteractionProjection = pending
+        ? harnessInteractionPendingProjectionSchema.safeParse(
+            pending.pending_projection,
+          )
+        : null;
+      let frozenTimeoutSeconds =
+        pendingInteractionProjection?.success === true
+          ? proposedTimeoutSeconds
+          : pending
+            ? pendingDecisionTimeoutSeconds(pending.pending_projection)
+            : proposedTimeoutSeconds;
       if (
         pending &&
         (pending.question_id !== parsed.questionId ||
@@ -883,6 +896,7 @@ export class PostgresHarnessStore
       }
       if (
         pending &&
+        pendingInteractionProjection?.success !== true &&
         frozenTimeoutSeconds === undefined &&
         proposedTimeoutSeconds !== undefined
       ) {
@@ -939,8 +953,17 @@ export class PostgresHarnessStore
   async registerInteraction(
     workspaceId: string,
     request: HarnessInteractionRequest,
+    projection?: HarnessInteractionPendingProjection,
   ): ReturnType<HarnessInteractionStore['registerInteraction']> {
     const parsed = harnessInteractionRequestSchema.parse(request);
+    const parsedProjection = harnessInteractionPendingProjectionSchema.parse(
+      projection ?? {
+        version: 1,
+        rendererCapability: 'unknown',
+        waitingState: 'answer',
+        timer: { kind: 'hold' },
+      },
+    );
     const runtimeTaskId = await this.requireWorkflowRuntimeId(
       workspaceId,
       parsed.runId,
@@ -987,7 +1010,7 @@ export class PostgresHarnessStore
         `insert into harness_runtime.pending_questions
            (task_id, question_id, workflow_revision, payload,
             pending_projection, status)
-         values ($1,$2,$3,$4::jsonb,'{}'::jsonb,'pending')
+         values ($1,$2,$3,$4::jsonb,$5::jsonb,'pending')
          on conflict (task_id) do update set
            question_id=excluded.question_id,
            workflow_revision=excluded.workflow_revision,
@@ -1000,6 +1023,7 @@ export class PostgresHarnessStore
           parsed.requestId,
           parsed.revision,
           JSON.stringify(parsed),
+          JSON.stringify(parsedProjection),
         ],
       );
       await client.query('commit');
@@ -1022,7 +1046,17 @@ export class PostgresHarnessStore
     const result = await this.pool.query<{ payload: unknown }>(
       `select payload
          from harness_runtime.pending_questions
-        where task_id=$1 and ($2::boolean or status='pending')`,
+        where task_id=$1
+          and (
+            $2::boolean
+            or (
+              status='pending'
+              and coalesce(
+                pending_projection->>'waitingState',
+                'answer'
+              ) <> 'merchant_message'
+            )
+          )`,
       [runtimeTaskId, options?.includeResolved === true],
     );
     const parsed = harnessInteractionRequestSchema.safeParse(
@@ -1046,7 +1080,7 @@ export class PostgresHarnessStore
       ]);
       const existing = await client.query<{
         payload_fingerprint: string;
-        resume_status: 'pending' | 'sending' | 'sent';
+        resume_status: 'pending' | 'sending' | 'sent' | 'waiting';
       }>(
         `select payload_fingerprint, resume_status
            from harness_runtime.decision_events
@@ -1060,15 +1094,19 @@ export class PostgresHarnessStore
             existing.rows[0].payload_fingerprint === input.payloadFingerprint
               ? 'replayed'
               : 'idempotency_conflict',
-          resumeRequired: existing.rows[0].resume_status !== 'sent',
+          resumeRequired:
+            existing.rows[0].resume_status !== 'sent' &&
+            existing.rows[0].resume_status !== 'waiting',
         };
       }
       const pending = await client.query<{
         question_id: string;
+        pending_projection: unknown;
         status: 'pending' | 'resolved';
         workflow_revision: string;
       }>(
-        `select question_id, workflow_revision::text as workflow_revision, status
+        `select question_id, workflow_revision::text as workflow_revision,
+                pending_projection, status
            from harness_runtime.pending_questions
           where task_id=$1
           for update`,
@@ -1087,6 +1125,38 @@ export class PostgresHarnessStore
         await client.query('rollback');
         return { outcome: 'stale_revision', resumeRequired: false };
       }
+      if (input.trigger === 'system_default') {
+        const projection =
+          harnessInteractionPendingProjectionSchema.safeParse(
+            node.pending_projection,
+          );
+        if (!projection.success) {
+          await client.query('rollback');
+          return { outcome: 'unknown_state', resumeRequired: false };
+        }
+        if (projection.data.timer.kind !== 'armed') {
+          await client.query('rollback');
+          return { outcome: 'ineligible', resumeRequired: false };
+        }
+        if (projection.data.rendererCapability !== 'available') {
+          await client.query('rollback');
+          return {
+            outcome: 'renderer_unavailable',
+            resumeRequired: false,
+          };
+        }
+        if (projection.data.timer.editingStartedAt !== null) {
+          await client.query('rollback');
+          return { outcome: 'editing', resumeRequired: false };
+        }
+        if (
+          Date.parse(input.resolvedAt) <
+          Date.parse(projection.data.timer.deadlineAt)
+        ) {
+          await client.query('rollback');
+          return { outcome: 'not_due', resumeRequired: false };
+        }
+      }
       const logicalEventId = `interaction-event-${input.answer.idempotencyKey}`;
       const runtimeEventId = this.runtimeObjectId(
         input.workspaceId,
@@ -1095,10 +1165,10 @@ export class PostgresHarnessStore
         logicalEventId,
       );
       await client.query(
-        `insert into harness_runtime.decision_events
+         `insert into harness_runtime.decision_events
            (id, task_id, question_id, workflow_revision, idempotency_key,
             payload_fingerprint, payload, resolution_source, resume_status)
-         values ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,'pending')`,
+         values ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9)`,
         [
           runtimeEventId,
           runtimeTaskId,
@@ -1107,10 +1177,15 @@ export class PostgresHarnessStore
           input.answer.idempotencyKey,
           input.payloadFingerprint,
           JSON.stringify({
+            kind: 'harness_interaction_resolution',
+            schemaVersion: 'v1',
+            interactionKind: interactionKind(input.answer),
             answer: input.answer,
             resumeData: input.resumeData,
+            resolutionSource: input.resolutionSource,
           }),
           input.resolutionSource,
+          input.resumeDisposition === 'wait' ? 'waiting' : 'pending',
         ],
       );
       await this.writeAuditAndOutbox(
@@ -1131,12 +1206,25 @@ export class PostgresHarnessStore
       );
       await client.query(
         `update harness_runtime.pending_questions
-            set status='resolved', updated_at=now()
+            set status=case when $2='wait' then 'pending' else 'resolved' end,
+                pending_projection=case
+                  when $2='wait' then jsonb_set(
+                    pending_projection,
+                    '{waitingState}',
+                    '"merchant_message"'::jsonb,
+                    true
+                  )
+                  else pending_projection
+                end,
+                updated_at=now()
           where task_id=$1`,
-        [runtimeTaskId],
+        [runtimeTaskId, input.resumeDisposition],
       );
       await client.query('commit');
-      return { outcome: 'created', resumeRequired: true };
+      return {
+        outcome: 'created',
+        resumeRequired: input.resumeDisposition === 'resume',
+      };
     } catch (error) {
       await client.query('rollback');
       throw error;
@@ -1226,25 +1314,82 @@ export class PostgresHarnessStore
     return result.rowCount === 1;
   }
 
-  async isInteractionEditing(workspaceId: string, runId: string) {
-    const runtimeTaskId = await this.workflowRuntimeId(workspaceId, runId);
-    if (!runtimeTaskId) return false;
-    const result = await this.pool.query<{ editing: boolean }>(
-      `select coalesce(
-                (pending_projection->>'editing')::boolean,
-                false
-              ) as editing
-         from harness_runtime.pending_questions
-        where task_id=$1 and status='pending'`,
-      [runtimeTaskId],
-    );
-    return result.rows[0]?.editing ?? false;
-  }
-
-  async setInteractionEditing(
+  async transitionInteractionEditing(
     workspaceId: string,
     runId: string,
     editing: boolean,
+    at: string,
+  ): ReturnType<HarnessInteractionStore['transitionInteractionEditing']> {
+    const runtimeTaskId = await this.workflowRuntimeId(workspaceId, runId);
+    if (!runtimeTaskId) return 'stale';
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      const result = await client.query<{ pending_projection: unknown }>(
+        `select pending_projection
+           from harness_runtime.pending_questions
+          where task_id=$1 and status='pending'
+          for update`,
+        [runtimeTaskId],
+      );
+      const projection = harnessInteractionPendingProjectionSchema.safeParse(
+        result.rows[0]?.pending_projection,
+      );
+      if (!projection.success || projection.data.timer.kind !== 'armed') {
+        await client.query('rollback');
+        return result.rows[0] ? 'unknown_state' : 'stale';
+      }
+      const current = projection.data.timer.editingStartedAt;
+      if ((editing && current !== null) || (!editing && current === null)) {
+        await client.query('commit');
+        return 'replayed';
+      }
+      const transitionAt = Date.parse(at);
+      if (!Number.isFinite(transitionAt)) {
+        await client.query('rollback');
+        return 'unknown_state';
+      }
+      if (editing) {
+        projection.data.timer.editingStartedAt = new Date(
+          transitionAt,
+        ).toISOString();
+      } else {
+        const editingStartedAt = Date.parse(current!);
+        const deadlineAt = Date.parse(projection.data.timer.deadlineAt);
+        if (
+          !Number.isFinite(editingStartedAt) ||
+          !Number.isFinite(deadlineAt) ||
+          transitionAt < editingStartedAt
+        ) {
+          await client.query('rollback');
+          return 'unknown_state';
+        }
+        projection.data.timer.deadlineAt = new Date(
+          deadlineAt + transitionAt - editingStartedAt,
+        ).toISOString();
+        projection.data.timer.editingStartedAt = null;
+      }
+      await client.query(
+        `update harness_runtime.pending_questions
+            set pending_projection=$2::jsonb,
+                updated_at=now()
+          where task_id=$1 and status='pending'`,
+        [runtimeTaskId, JSON.stringify(projection.data)],
+      );
+      await client.query('commit');
+      return 'updated';
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async setInteractionRendererCapability(
+    workspaceId: string,
+    runId: string,
+    capability: HarnessInteractionPendingProjection['rendererCapability'],
   ) {
     const runtimeTaskId = await this.workflowRuntimeId(workspaceId, runId);
     if (!runtimeTaskId) return false;
@@ -1252,13 +1397,13 @@ export class PostgresHarnessStore
       `update harness_runtime.pending_questions
           set pending_projection=jsonb_set(
                 pending_projection,
-                '{editing}',
-                to_jsonb($2::boolean),
+                '{rendererCapability}',
+                to_jsonb($2::text),
                 true
               ),
               updated_at=now()
         where task_id=$1 and status='pending'`,
-      [runtimeTaskId, editing],
+      [runtimeTaskId, capability],
     );
     return result.rowCount === 1;
   }

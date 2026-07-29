@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { StructuredDecisionInput } from '@meiye/contracts';
 
 import {
   HarnessResumeReconciler,
@@ -10,22 +11,20 @@ import {
 test('pending resume is replayed with its persisted idempotency key', async () => {
   const pending = pendingResume();
   const store = new MemoryResumeStore([pending]);
-  const resumed: HarnessPendingResume[] = [];
+  const resumed: StructuredDecisionInput[] = [];
   const reconciler = new HarnessResumeReconciler(store, {
     async resume(workspaceId, taskId, command) {
-      resumed.push({
-        claimId: pending.claimId,
-        eventId: pending.eventId,
-        workspaceId,
-        taskId,
-        command,
-        resolutionSource: 'decision',
-      });
+      void workspaceId;
+      void taskId;
+      resumed.push(command);
+    },
+    async resumeInteraction() {
+      throw new Error('No interaction resume was expected.');
     },
   });
 
   assert.deepEqual(await reconciler.runOnce(), { resumed: 1, failed: 0 });
-  assert.equal(resumed[0]?.command.idempotencyKey, 'decision-retry-1');
+  assert.equal(resumed[0]?.idempotencyKey, 'decision-retry-1');
   assert.deepEqual(store.marked, ['decision-event-1']);
 });
 
@@ -33,6 +32,9 @@ test('failed resume remains pending for the next reconciliation pass', async () 
   const store = new MemoryResumeStore([pendingResume()]);
   const reconciler = new HarnessResumeReconciler(store, {
     async resume() {
+      throw new Error('workflow runtime unavailable');
+    },
+    async resumeInteraction() {
       throw new Error('workflow runtime unavailable');
     },
   });
@@ -73,6 +75,9 @@ test('late answer reconciliation creates the C1 successor instead of messaging t
     async startSuccessor(input) {
       actions.push(`successor:${input.sourceTaskId}:${input.workflowId}`);
     },
+    async resumeInteraction() {
+      actions.push('unsafe-interaction-resume');
+    },
   });
 
   assert.deepEqual(await reconciler.runOnce(), { resumed: 1, failed: 0 });
@@ -80,6 +85,56 @@ test('late answer reconciliation creates the C1 successor instead of messaging t
     'successor:task-35:composer-task:late-answer-d3724871c13976fac6cae12b',
   ]);
   assert.deepEqual(store.marked, ['decision-event-1']);
+});
+
+test('interaction reconciliation dispatches its typed resume without using the legacy decision path', async () => {
+  const pending = {
+    claimId: 'interaction-claim-1',
+    eventId: 'interaction-event-1',
+    kind: 'interaction',
+    workspaceId: 'workspace-a',
+    taskId: 'task-35',
+    resolutionSource: 'system_default',
+    resume: {
+      kind: 'harness_interaction_resume',
+      schemaVersion: 'v1',
+      idempotencyKey: 'interaction-default-1',
+      interactionKind: 'ask_merchant',
+      requestId: 'interaction-request-1',
+      revision: 1,
+      runId: 'task-35',
+      step: 'context_injection',
+      resumeData: {
+        kind: 'answer',
+        items: [
+          {
+            itemId: 'window',
+            result: { kind: 'deferred' },
+          },
+        ],
+      },
+      resolutionSource: 'system_default',
+    },
+  } satisfies HarnessPendingResume;
+  const store = new MemoryResumeStore([pending]);
+  const actions: string[] = [];
+  const reconciler = new HarnessResumeReconciler(
+    store,
+    {
+      async resume() {
+        actions.push('unsafe-legacy-decision-resume');
+      },
+      async resumeInteraction(_workspaceId: string, _taskId: string, signal: {
+        idempotencyKey: string;
+      }) {
+        actions.push(`interaction:${signal.idempotencyKey}`);
+      },
+    },
+  );
+
+  assert.deepEqual(await reconciler.runOnce(), { resumed: 1, failed: 0 });
+  assert.deepEqual(actions, ['interaction:interaction-default-1']);
+  assert.deepEqual(store.marked, ['interaction-event-1']);
 });
 
 class MemoryResumeStore implements HarnessResumeReconcilerStore {
@@ -103,10 +158,14 @@ class MemoryResumeStore implements HarnessResumeReconcilerStore {
   }
 }
 
-function pendingResume(): HarnessPendingResume {
+function pendingResume(): Extract<
+  HarnessPendingResume,
+  { kind: 'structured_decision' }
+> {
   return {
     claimId: 'resume-claim-1',
     eventId: 'decision-event-1',
+    kind: 'structured_decision',
     workspaceId: 'workspace-a',
     taskId: 'task-35',
     resolutionSource: 'decision',

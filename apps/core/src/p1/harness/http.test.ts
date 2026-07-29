@@ -64,6 +64,7 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
     workflowId: string;
   }> = [];
   let resumeAttempts = 0;
+  const interactionCalls: unknown[] = [];
   const decisions = new HarnessDecisionService(registry, {
     async resume(_workspaceId, _taskId, command) {
       resumeAttempts += 1;
@@ -87,6 +88,46 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
     {
       async readTimeoutSeconds() {
         return currentTimeoutSeconds;
+      },
+    },
+    {
+      async readForCarrier(workspaceId, taskId, carrier) {
+        interactionCalls.push(['read', workspaceId, taskId, carrier]);
+        return {
+          requestId: 'interaction-http-1',
+          runId: taskId,
+          step: 'context_injection',
+          revision: 1,
+          kind: 'ask_merchant',
+          questions: [
+            {
+              itemId: 'service',
+              question: '这次主推哪个项目？',
+              fallback: { kind: 'deferred' },
+            },
+          ],
+          groupSkip: true,
+          presentation: {
+            carriers: ['conversation'],
+            blocking: 'none',
+            notification: 'none',
+          },
+        };
+      },
+      async setRendererCapability(workspaceId, taskId, capability) {
+        interactionCalls.push([
+          'renderer',
+          workspaceId,
+          taskId,
+          capability,
+        ]);
+      },
+      async setEditing(workspaceId, taskId, editing) {
+        interactionCalls.push(['editing', workspaceId, taskId, editing]);
+      },
+      async submit(workspaceId, answer) {
+        interactionCalls.push(['submit', workspaceId, answer]);
+        return { kind: 'resumed' as const, replayed: false };
       },
     },
   );
@@ -263,6 +304,52 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
     status: 'pending',
     timeoutSeconds: 17,
   });
+
+  const interaction = await fetch(`${base}/task-http-1/interaction`, {
+    headers,
+  });
+  assert.equal(interaction.status, 200);
+  assert.equal((await interaction.json()).data.requestId, 'interaction-http-1');
+  const interactionAnswer = {
+    requestId: 'interaction-http-1',
+    revision: 1,
+    idempotencyKey: 'interaction-http-answer-1',
+    resume: { runId: 'task-http-1', step: 'context_injection' },
+    response: {
+      kind: 'answer',
+      items: [
+        {
+          itemId: 'service',
+          result: { kind: 'answer', value: '头皮护理' },
+        },
+      ],
+    },
+  };
+  const interactionAnswered = await fetch(
+    `${base}/task-http-1/interaction`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(interactionAnswer),
+    },
+  );
+  assert.equal(interactionAnswered.status, 200);
+  assert.deepEqual((await interactionAnswered.json()).data, {
+    kind: 'resumed',
+    replayed: false,
+  });
+  const editing = await fetch(`${base}/task-http-1/interaction/editing`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ editing: true }),
+  });
+  assert.equal(editing.status, 204);
+  assert.deepEqual(interactionCalls, [
+    ['renderer', 'workspace-1', 'task-http-1', 'available'],
+    ['read', 'workspace-1', 'task-http-1', 'conversation'],
+    ['submit', 'workspace-1', interactionAnswer],
+    ['editing', 'workspace-1', 'task-http-1', true],
+  ]);
 
   await harnessService.submit({
     ...taskRequest('task-http-legacy'),
