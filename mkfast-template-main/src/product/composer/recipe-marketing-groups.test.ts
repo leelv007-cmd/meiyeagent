@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import {
+  LAUNCH_CARD_SEEDS,
+  REUSE_CONTENT_FAMILY_ID,
+} from './launch-card-seeds';
 import { listColdCardsFromSeeds } from './recipe-cards';
 import {
   MARKETING_TASK_ORDER,
@@ -96,4 +100,27 @@ test('a lens variant groups by its family, not by its recipe id', () => {
   // `cardKey` carries the recipe id, which varies per lens; grouping on it
   // would scatter one family across the row as lenses are added.
   assert.equal(marketingTaskForCard(variant), 'promotional_material');
+});
+
+test('every known recipe family is mapped, not caught by the fallback', () => {
+  // The fallback exists so an unrecognised recipe is still offered rather than
+  // dropped — but a family that ships in this repo landing there means the row
+  // quietly mis-files it, and nothing goes red. Core seeds the same familyIds
+  // this mirror lists, so covering the mirror covers the catalog.
+  const unmapped = LAUNCH_CARD_SEEDS.filter(
+    (seed) => seed.familyId !== REUSE_CONTENT_FAMILY_ID
+  )
+    .map((seed) => seed.familyId)
+    .filter(
+      (familyId) =>
+        marketingTaskForCard({
+          cardKey: familyId,
+          recipe: { familyId },
+        } as never) === 'project_exposure' &&
+        !['case_to_xhs_note', 'project_intro', 'douyin_project_video'].includes(
+          familyId
+        )
+    );
+
+  assert.deepEqual(unmapped, []);
 });

@@ -77,16 +77,21 @@ export async function assertThreeModalDiscovery(page: Page) {
     'aria-required',
     'true'
   );
-  await expect(page.getByTestId('composer-recipe-card-grid')).toHaveAttribute(
-    'data-card-count',
-    '6'
+  // D-164②: the cold catalog is a pill row under the lens axis now, not a card
+  // grid below the quote line. Six cold entries, five pills — 旧内容换平台 is a
+  // reuse action rather than a marketing task and lives in the reuse chips, so
+  // it is not offered here. Three groups: 热点借势 and 品牌与个人 IP have no
+  // recipe behind them and are absent rather than greyed out.
+  await expect(page.getByTestId('composer-recipe-pill-row')).toHaveAttribute(
+    'data-group-count',
+    '3'
   );
 
   for (const modality of ['copy', 'image_text', 'video'] as const) {
     await expect(
       page
         .locator(
-          `[data-testid="composer-recipe-card-grid"] [data-card-lens="${modality}"]`
+          `[data-testid="composer-recipe-pill-row"] [data-card-lens="${modality}"]`
         )
         .first(),
       `cold Composer must expose a discoverable ${modality} recipe`
@@ -447,9 +452,9 @@ export async function adjustResult(
   expect(prepareResponse.ok(), await prepareResponse.text()).toBeTruthy();
 
   // Quoted adjust path shows confirmation (quote + confirm) before submit.
-  const confirm = page.getByRole('button', {
-    name: /确认调整|确认提交|确认并生成|Confirm adjust/u,
-  });
+  // D-164⑥ 决定 A: 就地纠偏 goes through the same execution confirm card as
+  // first-time generation, so the button carries that card's label now.
+  const confirm = page.getByTestId('execution-confirm-accept');
   await expect(confirm).toBeVisible({ timeout: 30_000 });
   const previousResultUrl = page.url();
   const confirmPromise = mutationResponse(

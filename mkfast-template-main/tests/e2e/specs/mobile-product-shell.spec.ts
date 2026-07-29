@@ -51,7 +51,8 @@ test('keeps identity, assets, and camera authorization reachable on mobile', asy
     await expect(
       mobileNav.getByTestId('mobile-identity-assets-entry')
     ).toHaveAttribute('href', /^\/dashboard\/assets(?:\?|$)/u);
-    for (const label of ['创作', '身份素材', '内容', '门店']) {
+    // 记忆 joined the bar under D-164④; the grid widened to five with it.
+    for (const label of ['创作', '身份素材', '内容', '门店', '记忆']) {
       await expect(mobileNav.getByText(label, { exact: true })).toBeVisible();
     }
 

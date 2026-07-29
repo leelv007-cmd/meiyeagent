@@ -5,13 +5,16 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 
-const businessNavigation = ['创作', '内容', '素材', '门店'] as const;
+// Written out rather than imported from the app: this is the list a merchant
+// can actually see, and deriving it from the source would make the spec agree
+// with any change by construction. 记忆 joined it under D-164④.
+const businessNavigation = ['创作', '内容', '素材', '门店', '记忆'] as const;
 
 test.afterEach(async ({ request }) => {
   await cleanupE2EUsers(request);
 });
 
-test('product shell exposes the collapsed four-item navigation and utility modes', async ({
+test('product shell exposes the whole business navigation and utility modes', async ({
   page,
   request,
 }) => {
@@ -124,6 +127,9 @@ test('canonical shell routes survive direct navigation and reload', async ({
     // somewhere real.
     ['/dashboard?view=recent', '最近活动'],
     ['/dashboard?view=works', '内容'],
+    // D-164④: 记忆 is a first-class destination now, so it has to survive a
+    // typed URL and a reload like every other one.
+    ['/dashboard/memory', '记忆'],
     ['/dashboard/sessions/session-proof', '创作记录'],
     ['/dashboard/works/work-proof', '作品详情'],
     ['/dashboard/jobs/job-proof', '执行详情'],
