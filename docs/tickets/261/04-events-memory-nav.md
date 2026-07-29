@@ -635,3 +635,58 @@ const MEMORY_TAB_CORRECTIONS = 'corrections';
 | `project.inlang/messages/{zh,en}.json` | 新增 31 键 ×2 | 低 |
 
 **不碰**：`packages/contracts/src/**`、`apps/core/**`、`skills` 模块、`reuse-memory.ts:294`、`emitTelemetry` 本体、D-126 推荐卡合同（`today-recommendation-card.tsx` 仅**读取**其 `todayRecommendationView`/`workbenchHasWork` 作同构参照，不改）。
+
+---
+
+# 七、上游回填：#248 合同已落 main（2026-07-29，main@7f60a4e7）
+
+本文件 §3.2–§3.5 写作时三轴合同尚未合入，故用了占位类型与 `TODO(#248)`。**该合同现已合入**，落点 `packages/contracts/src/observability.ts`。以下三处按实际契约回填，**§3.2 的悬空问题与 §3.5 的通道疑点均已被上游答掉**。
+
+## 7.1 实际契约（逐字）
+
+```ts
+// packages/contracts/src/observability.ts
+const compositeRevisionSchema = z.string().trim().regex(/^[^@\s]+@[^@\s]+$/u);
+
+export const observabilityAxesSchema = z.object({
+  skillRevision: compositeRevisionSchema,
+  promptVersion: compositeRevisionSchema,
+  /** Event-attribution revision. This is distinct from
+   *  CreativeExecutionContract.catalogRevision, which pins the accepted
+   *  execution catalog contract. */
+  catalogRevision: z.string().trim().min(1),
+  scene: z.string().trim().min(1),
+}).strict();
+export type ObservabilityAxes = z.infer<typeof observabilityAxesSchema>;
+
+export const observabilityDropEventSchema = z.object({
+  signal: z.enum(['trace','log','metric','score','feedback']),
+  reason: z.enum(['permanent-config','transient']),
+  count: z.number().int().positive(),
+  source: z.string().trim().min(1),
+}).strict();
+```
+
+## 7.2 §3.2 的三个悬空问题，逐条结清
+
+| 本票提出的问题 | 上游答复 | 对设计稿的影响 |
+|---|---|---|
+| 「场景」是三轴之外的第四个顶层键，还是收进某一轴？ | **是第四个顶层键**：`scene: z.string().trim().min(1)` | §3.3 的 `scene` 占位名**猜对了**，`TODO(#248)` 可摘。类型直接 `import type { ObservabilityAxes } from '@contracts/observability'` |
+| 五字段 → 三轴怎么合并？ | `compositeRevisionSchema` 正则 `^[^@\s]+@[^@\s]+$` **强制**恰好一个 `@`、两侧非空且无空白 | §3.2 映射表**成立**：`skillId@revision` / `promptName@version`。但正则比设想更严——**skillId 或 promptName 自身含 `@` 或空格会被拒**，适配层组装后须先过 schema 再投递 |
+| `catalogRevision` 与 `uiux.ts:44` 的同名字段撞名 | **上游已在契约注释里显式划清**：「distinct from `CreativeExecutionContract.catalogRevision`, which pins the accepted execution catalog contract」 | §3.2 末行的告警成立且已被上游确认。适配层**不得**把执行契约的 `catalogRevision` 直接搬过来当事件轴，两者是不同的 revision |
+
+## 7.3 §3.6「投递失败可观测」有官方合同了，不再自造计数器
+
+§3.6 原方案是在适配层自建失败计数器。**上游已给出丢弃事件一等合同** `observabilityDropEventSchema`，本票应**消费它而不是自造**：
+
+| 原设计 | 回填后 |
+|---|---|
+| 自建 `deliver_failed` 计数 | 发一条 `ObservabilityDropEvent`：`{signal:'feedback', reason, count, source}` |
+| 失败原因自定义字符串 | 用闭集 `'permanent-config' \| 'transient'`。映射：sink 缺失/被广告拦截器屏蔽＝`permanent-config`；网络抖动/超时＝`transient` |
+| `source` 未定义 | 取本票适配层的稳定标识（如 `'dashboard.rating-bar'`），值须与 #248 的对账口径对齐 |
+
+⚠️ 仍**未**解决的一条：`observabilityDropEventSchema` 只定了**事件形状**，没定**投递目的地**。#248 票面写「目的地=Postgres 为工作假设，最终以本票『信号 × 目的地』矩阵裁定为准」——**该矩阵尚未落库**。故 `00-blockers.md` 的 **G3/B2「落库端」仍然阻塞**，本节只是把 payload 形状从自造改成了消费上游合同。
+
+## 7.4 §3.5「128 字符截断」的复核结论
+
+`observabilityAxesSchema` **没有**长度上限，而遥测通道 `mkfast-template-main/src/lib/product-telemetry.ts:94` 对字符串 `.slice(0, 120)`。两者未对齐这一条**依然成立**，§3.5 末尾给 #248 的那条建议**不撤**：三轴键的长度上限须与遥测通道的 120 对齐，否则长 `skillId` 会被静默截成看起来正常的错值。适配层维持「超长拒发并计入 drop 事件」的口径。

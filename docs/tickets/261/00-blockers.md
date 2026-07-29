@@ -1,6 +1,6 @@
 # #261 开工门 · 阻塞与拍板登记
 
-> 状态：**NO-GO（5/7 未过）**，基点 main@fb20cf20，最后检查 2026-07-29
+> 状态：**NO-GO（4/7 未过）**，基点 main@7f60a4e7，最后检查 2026-07-29
 > 复检命令：`./docs/tickets/261/gate.sh`（`--watch` 轮询直到 GO）
 > 依据：`docs/ops/agent-dispatch-runbook-2026-07-29.md:8`（前置未满足只准做零 rebase 面预备）、`docs/specs/agent-substrate-dev-spec-2026-07-29.md:580/596/601`
 
@@ -11,7 +11,7 @@
 | 门 | 判据 | 现状 | 等谁 |
 |---|---|---|---|
 | G1 | `mkfast-template-main/scripts/compile-locale.ts` 含互斥锁 + write-if-changed | ✔ **已过**（#266 于 `04dda7e1..fb20cf20` 合入 main） | — |
-| G2 | `packages/contracts/src/*.ts` 三轴扁平顶层键同现 | 仅 2/3；`skillVersion`／`skillRevision` **全仓 0 处** | **#248** |
+| G2 | `packages/contracts/src/*.ts` 三轴扁平顶层键同现 | ✔ **已过**（#248 合同落 `packages/contracts/src/observability.ts`） | — |
 | G3 | 契约/账本暴露「被拒消耗／规划消耗」字段 | 0 处，成本反馈无数据源 | **#248** |
 | G3b | Task 快照侧可读三轴（钉扎载体 + 降级留痕同现） | 无运行时取数点 | **#262** |
 | G4 | 视频编辑四动作真退役、前台入口摘除 | `apps/core/src/p1/model-supply/video-regeneration.ts:39` `videoRegenScopes = ['shot']` 仍在 | **#264FE** |
@@ -32,7 +32,7 @@
 | # | 票面写法 | main 实际 | 处置 |
 |---|---|---|---|
 | 1 | 「执行确认卡（**UserDebitPreview** 扩容）」 | **该组件在代码中不存在**，只在 `docs/design/beauty-marketing-agent-product-design-2026-07-17.md` 与 `docs/adr/0016-*.md` 里作为设计名出现。最近亲三个：`mkfast-template-main/src/product/composer/quota-blocking-card.tsx:57`（额度被动行＋阻塞卡）、`src/product/composer/brief-surface-panel.tsx:200-218`（**唯一带取消/确认双按钮的执行前确认面板**）、`src/product/composer/composer-signed-preview.ts:1`（只读参数投影，模块头明写 "deliberately a projection and not a form"） | 「扩容」实为**净新建**，落位与命名见 `02-confirm-card-and-cost.md`。不是重命名一个已有组件 |
-| 2 | 评价事件五字段＝`skillId + skillVersion + 场景 + promptName@promptVersion + catalogRevision` | #248 票面定义的是**三个**扁平顶层键：`skillRevision` / `promptVersion` / `catalogRevision`（`skillRevision` 疑为 `apps/core/src/p1/skills/types.ts:184` `skillRevisionRef(skillId, revision)` 的 `"<skillId>@<revision>"` 合并形态） | 键名映射须由 **#248 定**；#261 只消费。开工前需 #248 明确「五字段 ↔ 三轴」的对应，否则前台埋点会造出第二套键名 |
+| 2 | 评价事件五字段＝`skillId + skillVersion + 场景 + promptName@promptVersion + catalogRevision` | ~~待 #248 定~~ → **已由 #248 结清**（`packages/contracts/src/observability.ts`）：`observabilityAxesSchema` ＝ `skillRevision` ＋ `promptVersion`（两者均为 `^[^@\s]+@[^@\s]+$` 复合形）＋ `catalogRevision` ＋ **`scene`（第四个顶层键）**，`.strict()` | 三处结清：①「场景」确为独立第四键；②五字段按 `@` 合并成立，但正则更严——`skillId`/`promptName` 自身含 `@` 或空格会被拒，适配层须先过 schema 再投递；③`catalogRevision` 与 `packages/contracts/src/uiux.ts:44` 撞名一事，上游已在契约注释里显式划清「distinct from `CreativeExecutionContract.catalogRevision`」，**不得混用**。回填见 `04-events-memory-nav.md §七` |
 | 3 | 「canonical 历史页的 `canonical_canvas_job_*` 键组亦无历史岛口径」（评论补充项，D-137） | `project.inlang/messages/zh.json:721-732` 的 `canonical_canvas_job_*` 共 12 条**已是孤儿键**，全仓源码零引用；实际在用的是 `legacy_projection_canvas_job_*`（`zh.json:2256-2264`），消费点 `src/product/canonical-history-page.tsx:60-68 / :843-876` | 补文案要补在 `legacy_projection_` 前缀那组，不是 `canonical_canvas_job_` |
 | 4 | 「评价条最近亲＝`src/product/results/image-role-feedback.tsx`」（初盘结论） | **该 `.tsx` 不存在**，只有同名的 `image-role-feedback.interaction.test.tsx`；它测的是 `ImageWorksurface` 的**采用动作完成文案**（`src/product/results/image-role-action-matrix.ts:83-97` `IMAGE_ROLE_FEEDBACK`，D-087 要求逐字符匹配），与赞/踩评价无关 | **全仓无任何评价条前例，本票是第一实现**。可借的只有它的逐字符文案纪律与测试写法 |
 | 5 | 「移动底栏 `grid-cols-4`，加第五项要改栅格」 | 栅格属实（`src/components/product/mobile-nav.tsx:55`），**但真正的硬门在测试**：`src/components/product/mobile-nav.static.test.ts:34-43` 用例名写死「**nav 四项合同**」，硬断言 `['workbench','content','assets','store']` | 记忆升一级导航**必然红**这条测试。改它＝改「四项合同」，须在票下留痕；不是顺手改栅格 |

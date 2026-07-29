@@ -130,8 +130,10 @@ check_all() {
   for br in issue-264 issue/253; do
     if git -C "$REPO" rev-parse --verify --quiet "$br" >/dev/null 2>&1; then
       local src_commits
+      # 只数碰**前台**的提交：D lane 的串行锁是「前台创作面」（spec :601）。
+      # 同一票的后端半（apps/core）走的是别的批次，不占前端 lane 的槽。
       src_commits="$(git -C "$REPO" rev-list --count "$REF..$br" \
-        -- 'mkfast-template-main/src' 'apps' 'packages' 2>/dev/null || echo 0)"
+        -- 'mkfast-template-main/src' 2>/dev/null || echo 0)"
       [ "$src_commits" -gt 0 ] && busy="$busy $br(+$src_commits src)"
     fi
   done
