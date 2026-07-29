@@ -8,6 +8,7 @@ import {
 } from '@meiye/contracts';
 
 import { P1ApplicationService } from '../foundation/application-service.js';
+import { P1DomainError } from '../foundation/domain.js';
 import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
 import { WIRING_NEGATIVE_CASE_IDS } from '../testing/wiring-negative-corpus.js';
 import {
@@ -153,6 +154,147 @@ test('the application entry releases a rejected prompt claim for deterministic r
   );
   assert.equal(
     await skillRepository.getRevisionHead('skill.rejected-prompt-retry'),
+    null,
+  );
+  assert.deepEqual(await application.listCommandAudits(context), []);
+});
+
+test('the application entry releases an inline prompt rejection without dispatching the resolver', async () => {
+  const skillRepository = new MemorySkillRepository();
+  let promptCaptures = 0;
+  const skillService = new SkillService(skillRepository, () => NOW, {
+    async capture(reference) {
+      promptCaptures += 1;
+      return frozenPrompt(reference.name);
+    },
+  });
+  const foundationRepository = new MemoryFoundationRepository();
+  foundationRepository.grantOwner(
+    'workspace-inline-prompt-retry',
+    'operator-inline-prompt-retry',
+  );
+  const application = new P1ApplicationService(foundationRepository, {
+    operations: [new SkillFoundationModule(skillService)],
+  });
+  const context = {
+    actor: 'admin' as const,
+    correlationId: 'corr-inline-prompt-retry',
+    userId: 'operator-inline-prompt-retry',
+    workspaceId: 'workspace-inline-prompt-retry',
+  };
+  const input = {
+    action: 'skill_define',
+    payload: {
+      expectedRevision: null,
+      frontmatter: manifest('inline-prompt-retry'),
+      governance: governance(),
+      instruction: 'Use only the pinned prompt.',
+      name: 'Inline prompt retry',
+      presentationPolicy: 'backend_only',
+      promptReference: {
+        content: 'Forbidden inline prompt.',
+        contentHash: 'c'.repeat(64),
+        name: 'skills/inline-prompt-retry',
+        version: '1',
+      },
+      skillId: 'skill.inline-prompt-retry',
+    },
+  };
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await assert.rejects(
+      application.executeModule(
+        context,
+        'skills',
+        input,
+        'inline-prompt-retry',
+      ),
+      /content/u,
+    );
+  }
+
+  assert.equal(promptCaptures, 0);
+  assert.equal(
+    await skillRepository.getCatalog('skill.inline-prompt-retry'),
+    null,
+  );
+  assert.equal(
+    await skillRepository.getRevisionHead('skill.inline-prompt-retry'),
+    null,
+  );
+  assert.deepEqual(await application.listCommandAudits(context), []);
+});
+
+test('the application keeps the claim when prompt capture records an effect before invalid state', async () => {
+  const skillRepository = new MemorySkillRepository();
+  let promptCaptures = 0;
+  const skillService = new SkillService(skillRepository, () => NOW, {
+    async capture() {
+      promptCaptures += 1;
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Prompt capture failed after recording its effect.',
+      );
+    },
+  });
+  const foundationRepository = new MemoryFoundationRepository();
+  foundationRepository.grantOwner(
+    'workspace-effectful-prompt-capture',
+    'operator-effectful-prompt-capture',
+  );
+  const application = new P1ApplicationService(foundationRepository, {
+    operations: [new SkillFoundationModule(skillService)],
+  });
+  const context = {
+    actor: 'admin' as const,
+    correlationId: 'corr-effectful-prompt-capture',
+    userId: 'operator-effectful-prompt-capture',
+    workspaceId: 'workspace-effectful-prompt-capture',
+  };
+  const input = {
+    action: 'skill_define',
+    payload: {
+      expectedRevision: null,
+      frontmatter: manifest('effectful-prompt-capture'),
+      governance: governance(),
+      instruction: 'Use only the pinned prompt.',
+      name: 'Effectful prompt capture',
+      presentationPolicy: 'backend_only',
+      promptReference: {
+        contentHash: 'c'.repeat(64),
+        name: 'skills/effectful-prompt-capture',
+        version: '1',
+      },
+      skillId: 'skill.effectful-prompt-capture',
+    },
+  };
+
+  await assert.rejects(
+    application.executeModule(
+      context,
+      'skills',
+      input,
+      'effectful-prompt-capture',
+    ),
+    /failed after recording its effect/u,
+  );
+  await assert.rejects(
+    application.executeModule(
+      context,
+      'skills',
+      input,
+      'effectful-prompt-capture',
+    ),
+    /still in progress/u,
+  );
+
+  assert.equal(promptCaptures, 1);
+  assert.equal(
+    await skillRepository.getCatalog('skill.effectful-prompt-capture'),
+    null,
+  );
+  assert.equal(
+    await skillRepository.getRevisionHead('skill.effectful-prompt-capture'),
     null,
   );
   assert.deepEqual(await application.listCommandAudits(context), []);

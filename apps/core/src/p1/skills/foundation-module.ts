@@ -1,6 +1,7 @@
 import { HARNESS_STAGES, type EvalRun } from '@meiye/contracts';
 
 import {
+  P1DomainError,
   PrewriteDeterministicRejectionError,
   type P1Context,
 } from '../foundation/domain.js';
@@ -16,7 +17,36 @@ import type {
 import { SkillService } from './service.js';
 
 function fail(message: string): never {
-  throw new PrewriteDeterministicRejectionError(message);
+  throw new P1DomainError('INVALID_STATE', message);
+}
+
+function parsePrewritePromptReference(value: Record<string, unknown>) {
+  try {
+    const promptReference = object(value, 'promptReference');
+    onlyKeys(
+      promptReference,
+      ['contentHash', 'name', 'version'],
+      'Skill prompt reference',
+    );
+    const contentHash = text(promptReference, 'contentHash');
+    const name = text(promptReference, 'name');
+    const version = text(promptReference, 'version');
+    if (!/^[a-f0-9]{64}$/u.test(contentHash)) {
+      fail('Skill prompt contentHash 必须是 64 位小写 SHA-256。');
+    }
+    if (/^<[^>]+>$/u.test(name) || /^<[^>]+>$/u.test(version)) {
+      fail('Skill prompt name 与 version 必须是可解析的固定引用。');
+    }
+    return { contentHash, name, version };
+  } catch (error) {
+    if (
+      error instanceof P1DomainError &&
+      error.code === 'INVALID_STATE'
+    ) {
+      throw new PrewriteDeterministicRejectionError(error.message);
+    }
+    throw error;
+  }
 }
 
 function payload(input: Record<string, unknown>) {
@@ -174,24 +204,7 @@ export class SkillFoundationModule implements P1OperationModule {
             '定义 Skill 版本时必须同时提供 instruction、frontmatter、governance 与 promptReference。',
           );
         }
-        const promptReference = object(value, 'promptReference');
-        onlyKeys(
-          promptReference,
-          ['contentHash', 'name', 'version'],
-          'Skill prompt reference',
-        );
-        const contentHash = text(promptReference, 'contentHash');
-        const promptName = text(promptReference, 'name');
-        const promptVersion = text(promptReference, 'version');
-        if (!/^[a-f0-9]{64}$/u.test(contentHash)) {
-          fail('Skill prompt contentHash 必须是 64 位小写 SHA-256。');
-        }
-        if (
-          /^<[^>]+>$/u.test(promptName) ||
-          /^<[^>]+>$/u.test(promptVersion)
-        ) {
-          fail('Skill prompt name 与 version 必须是可解析的固定引用。');
-        }
+        const promptReference = parsePrewritePromptReference(value);
         const packagePaths =
           value.packagePaths === undefined
             ? ['SKILL.md']
@@ -213,11 +226,7 @@ export class SkillFoundationModule implements P1OperationModule {
           instruction,
           manifest: value.frontmatter as SkillRevisionManifest,
           governance: value.governance as SkillGovernanceSidecar,
-          promptReference: {
-            contentHash,
-            name: promptName,
-            version: promptVersion,
-          },
+          promptReference,
           packagePaths,
           });
         return { catalog, revision: publicRevision(revision) };

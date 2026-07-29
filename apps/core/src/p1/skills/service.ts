@@ -54,6 +54,10 @@ function fail(message: string): never {
   throw new P1DomainError('INVALID_STATE', message);
 }
 
+function failPrewrite(message: string): never {
+  throw new PrewriteDeterministicRejectionError(message);
+}
+
 export class SkillInvocationValidationError extends P1DomainError {
   constructor(
     readonly phase: 'input' | 'output',
@@ -167,40 +171,30 @@ export class SkillService {
   private async prepareSkillDraft(
     input: SkillDraftRevisionInput,
   ): Promise<PreparedSkillDraft> {
+    const manifest = validateSkillFrontmatter(input.manifest);
+    let governance: SkillGovernanceSidecar;
     try {
-      const manifest = validateSkillFrontmatter(input.manifest);
-      let governance: SkillGovernanceSidecar;
-      try {
-        governance = parseSkillGovernance(input.governance);
-      } catch (error) {
-        fail(
-          `Skill governance sidecar is invalid: ${
-            error instanceof Error ? error.message : 'unknown error'
-          }`,
-        );
-      }
-      const packagePaths = validateSkillPackagePaths(
-        input.packagePaths ?? ['SKILL.md'],
-      );
-      const instruction = required(input.instruction, 'Skill instruction');
-      const prompt = await this.capturePromptSnapshot(input.promptReference);
-      return {
-        actorId: required(input.actorId, 'Actor ID'),
-        governance,
-        instruction,
-        manifest,
-        packagePaths,
-        prompt,
-      };
+      governance = parseSkillGovernance(input.governance);
     } catch (error) {
-      if (
-        error instanceof P1DomainError &&
-        error.code === 'INVALID_STATE'
-      ) {
-        throw new PrewriteDeterministicRejectionError(error.message);
-      }
-      throw error;
+      fail(
+        `Skill governance sidecar is invalid: ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`,
+      );
     }
+    const packagePaths = validateSkillPackagePaths(
+      input.packagePaths ?? ['SKILL.md'],
+    );
+    const instruction = required(input.instruction, 'Skill instruction');
+    const prompt = await this.capturePromptSnapshot(input.promptReference);
+    return {
+      actorId: required(input.actorId, 'Actor ID'),
+      governance,
+      instruction,
+      manifest,
+      packagePaths,
+      prompt,
+    };
   }
 
   private persistSkillDraft(
@@ -255,33 +249,44 @@ export class SkillService {
         (key) => !['name', 'version', 'contentHash'].includes(key),
       )
     ) {
-      fail('Skill prompt reference must not include content or fallback fields.');
+      failPrewrite(
+        'Skill prompt reference must not include content or fallback fields.',
+      );
     }
     const normalized = {
-      name: required(reference.name, 'Skill prompt name'),
-      version: required(reference.version, 'Skill prompt version'),
-      contentHash: required(
-        reference.contentHash,
-        'Skill prompt content hash',
-      ),
+      name: reference.name?.trim(),
+      version: reference.version?.trim(),
+      contentHash: reference.contentHash?.trim(),
     };
-    if (!this.promptSnapshots) {
-      fail('Skill prompt snapshot resolver is not configured.');
+    if (!normalized.name) {
+      failPrewrite('Skill prompt name is required.');
     }
-    const captured = await this.promptSnapshots.capture(normalized);
+    if (!normalized.version) {
+      failPrewrite('Skill prompt version is required.');
+    }
+    if (!normalized.contentHash) {
+      failPrewrite('Skill prompt content hash is required.');
+    }
+    const promptSnapshots = this.promptSnapshots;
+    if (!promptSnapshots) {
+      failPrewrite('Skill prompt snapshot resolver is not configured.');
+    }
+    const captured = await promptSnapshots.capture(normalized);
     if (
       captured.name !== normalized.name ||
       captured.version !== normalized.version ||
       captured.contentHash !== normalized.contentHash ||
       sha256(captured.content) !== normalized.contentHash
     ) {
-      fail('Skill prompt snapshot does not match its pinned reference.');
+      failPrewrite(
+        'Skill prompt snapshot does not match its pinned reference.',
+      );
     }
     if (
       captured.isFallback &&
       !captured.fallbackReason?.trim()
     ) {
-      fail('Skill prompt fallback requires a reason.');
+      failPrewrite('Skill prompt fallback requires a reason.');
     }
     return {
       ...normalized,
