@@ -92,6 +92,9 @@ export default defineConfig({
         'INTEGRATION_SECRET_STORE_MODE=recorded',
         `INTEGRATION_SECRET_STORE_KEY=${integrationSecretStoreKey}`,
         'MODEL_EXECUTION_MODE=fixture',
+        // The e2e stack boots without Langfuse credentials; strict (the
+        // default) refuses to start, so pin the audited builtin-fallback mode.
+        'LANGFUSE_PROMPT_POLICY=pilot',
         // E2E-only observation window: 10,000 ms instead of the 40 ms fixture
         // default, adding 9,960 ms to each structured copy run.
         'E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS=10000',
@@ -124,6 +127,7 @@ export default defineConfig({
         'INTEGRATION_SECRET_STORE_MODE=recorded',
         `INTEGRATION_SECRET_STORE_KEY=${integrationSecretStoreKey}`,
         'MODEL_EXECUTION_MODE=fixture',
+        'LANGFUSE_PROMPT_POLICY=pilot',
         // Keep the worker on the same E2E-only 10,000 ms first-copy-chunk hold.
         'E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS=10000',
         'node scripts/e2e/run-service.mjs pnpm --dir .. --filter @meiye/core start:worker',
