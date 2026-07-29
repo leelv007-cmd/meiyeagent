@@ -222,6 +222,22 @@ test('a governance run keeps polling until it reaches a terminal status', () => 
     }),
     false
   );
+  assert.equal(
+    governanceRunPollInterval({
+      runId: 'run-poll',
+      state: { status: 'awaiting_approval' },
+      workflowStatus: 'ERROR',
+    }),
+    false
+  );
+  assert.equal(
+    governanceRunPollInterval({
+      runId: 'run-poll',
+      state: { status: 'applying' },
+      workflowStatus: 'MAX_RECOVERY_ATTEMPTS_EXCEEDED',
+    }),
+    false
+  );
 });
 
 test('structured Skill forms build the revision and acceptance contracts', () => {

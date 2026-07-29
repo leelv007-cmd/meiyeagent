@@ -454,6 +454,12 @@ function governanceRunStatus(run: SkillGovernanceRunState | undefined) {
   if (workflowStatus === 'cancelled' || workflowStatus === 'canceled') {
     return 'administrative_cancelled';
   }
+  if (
+    workflowStatus === 'error' ||
+    workflowStatus === 'max_recovery_attempts_exceeded'
+  ) {
+    return 'failed';
+  }
   const stateStatus = run?.state?.status ?? run?.run?.status ?? run?.status;
   if (stateStatus === 'cancelled' || stateStatus === 'canceled') {
     return 'business_cancelled';
