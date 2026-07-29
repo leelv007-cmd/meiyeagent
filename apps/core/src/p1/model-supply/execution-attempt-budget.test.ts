@@ -41,6 +41,34 @@ test('one execution attempt budget governs every physical provider callback', as
   assert.equal(budget.consumedAttempts, 2);
 });
 
+test('a zero-attempt budget blocks before the first provider effect', async () => {
+  const runner = new PhysicalAttemptRunner(1);
+  const budget = new ExecutionAttemptBudget({
+    maxAttempts: 0,
+    consumedAttempts: 0,
+  });
+
+  await assert.rejects(
+    withExecutionAttemptBudget(runner, budget).run({
+      effectIdempotencyKey: 'effect-zero-budget',
+      instructions: 'Return the object.',
+      prompt: '{}',
+      schema: z.object({ ok: z.boolean() }),
+      schemaName: 'attempt_budget_test',
+      schemaRevision: 'v1',
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof ExecutionAttemptBudgetExceeded);
+      assert.equal(error.maxAttempts, 0);
+      assert.equal(error.consumedAttempts, 0);
+      return true;
+    },
+  );
+
+  assert.equal(runner.physicalAttempts, 0);
+  assert.equal(budget.consumedAttempts, 0);
+});
+
 test('the shared budget composes the existing source fence once per physical attempt', async () => {
   const runner = new PhysicalAttemptRunner(1);
   const budget = new ExecutionAttemptBudget({

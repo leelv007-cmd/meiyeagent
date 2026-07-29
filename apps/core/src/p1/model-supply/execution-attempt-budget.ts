@@ -25,7 +25,7 @@ export class ExecutionAttemptBudget {
   }) {
     if (
       !Number.isSafeInteger(input.maxAttempts) ||
-      input.maxAttempts < 1 ||
+      input.maxAttempts < 0 ||
       !Number.isSafeInteger(input.consumedAttempts) ||
       input.consumedAttempts < 0 ||
       input.consumedAttempts > input.maxAttempts

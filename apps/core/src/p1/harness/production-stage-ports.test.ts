@@ -1914,6 +1914,47 @@ test('bounded production selection preserves the blocked primary instead of star
   assert.equal(runner.requests.length, 2);
 });
 
+test('zero maxIterations suspends before the first production provider effect', async () => {
+  const runner = new PhysicalAttemptQueueRunner(
+    [candidate('不应执行的候选')],
+    [1],
+  );
+  const base = unpricedExecutionInput('task-zero-iteration-budget');
+  const input = {
+    ...base,
+    request: {
+      ...base.request,
+      boundedExecution: {
+        schemaVersion: 'bounded-execution-snapshot/v1' as const,
+        maxIterations: 0,
+        maxCostCents: 'unset' as const,
+        maxWallClockMs: 'unset' as const,
+        maxDelegations: 'unset' as const,
+        requiredLimits: ['maxIterations' as const],
+        consumption: {
+          iterations: 0,
+          costCents: 0,
+          wallClockMs: 0,
+          delegations: 0,
+        },
+        stopReason: null,
+        triggeredLimit: null,
+      },
+    },
+  };
+
+  const result = await unpricedPorts(runner).executeAndSelectBounded(input);
+
+  assert.equal(isBoundedExecutionSuspension(result), true);
+  if (!isBoundedExecutionSuspension(result)) return;
+  assert.equal(result.snapshot.triggeredLimit, 'maxIterations');
+  assert.equal(result.snapshot.consumption.iterations, 0);
+  assert.equal(isCopySelectionCurrentBest(result.currentBest), true);
+  if (!isCopySelectionCurrentBest(result.currentBest)) return;
+  assert.equal(result.currentBest.candidate, null);
+  assert.equal(runner.physicalAttempts, 0);
+});
+
 test('bounded production selection shares one physical attempt budget across correction layers', async () => {
   const runner = new PhysicalAttemptQueueRunner(
     [candidate('限时护理3次'), candidate('门店护理步骤说明')],
