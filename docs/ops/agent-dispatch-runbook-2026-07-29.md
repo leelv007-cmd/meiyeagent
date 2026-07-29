@@ -40,7 +40,34 @@
 Backlog：#265（R 门前）
 ```
 
-## 五、单票交代模板（主控复制即用）
+## 五、受阻轮询协议（Codex /goal 模式适配，2026-07-29 增补）
+
+**指令总线＝票面评论**：主控裁决一律以「主控裁决」「依赖更新（v4 编排）」「主控合同增补」前缀落在票下，**覆盖票面原文**；main 的合入本身就是最强解锁信号（前置满足＝对应 commit 落 main）。
+
+**受阻处置改约——禁止三连撞墙**：同一障碍**只允许撞一次**。第一次受阻立即：①在票下发「交底/readiness 记录」评论（写清卡在哪、等什么、判据是什么——lane-253/259/261 均有范例）；②把解锁条件写成可执行的 readiness gate 脚本（判据＝main 上的 commit/文件语义谓词＋票下是否出现晚于交底的主控评论；issue open/closed 仅作诊断）；③进入待命，不再重试。**受阻≠失败，交底本身就是合格产出。**
+
+**唤醒器（每 lane 一个终端跑着，事件驱动不烧 token）**：
+
+```bash
+#!/bin/bash
+# lane-driver.sh <票号> <worktree路径> [gate脚本]   # codex flags 按你自己的习惯补
+N=$1; W=$2; GATE=$3; REPO=/Users/bin/Desktop/开发/内容无人区/美业内容2
+ST="/tmp/lane-$N-driver-sig"
+while true; do
+  sig="$(git -C "$REPO" rev-parse main) $(gh issue view "$N" --json comments -q '.comments[-1].createdAt' 2>/dev/null)"
+  if [ "$sig" != "$(cat "$ST" 2>/dev/null)" ]; then
+    echo "$sig" > "$ST"
+    if [ -z "$GATE" ] || (cd "$W" && "$GATE"); then
+      (cd "$W" && codex exec "你负责 #$N，单票。先 gh issue view $N --comments——带『主控裁决/依赖更新/主控合同增补』前缀的评论覆盖票面原文，以最新一条为准。若你上次的交底已被主控批复，按批复继续推进到下一个交验点或新的受阻点；新受阻则发交底评论后退出。遵守 docs/ops/agent-dispatch-runbook-2026-07-29.md 全部纪律；不 push、不关票。")
+    fi
+  fi
+  sleep 180
+done
+```
+
+要点：**信号＝main 头＋票下最新评论时间戳**，变了才唤醒一轮 codex exec——主控合入或批复自动触发续跑，无事件时零消耗。交互式会话不想挂脚本的，把 gate 脚本用 `--watch`（lane-261 的 `gate.sh --watch` 范式）跑着，GO 时弹通知、人工回会话说「继续」。
+
+## 五-b、单票交代模板（主控复制即用）
 
 ```
 你负责 #<N>，单票，不做其他票。
