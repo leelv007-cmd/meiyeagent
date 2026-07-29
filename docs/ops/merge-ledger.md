@@ -15,4 +15,5 @@
 | 7ef16c7d | #242 | fresh-DB auth schema bootstrap（cherry-pick 自 d43a4c54，纯测试基建） | quality-gates 10/0＋双库 provision 后原红 spec 抽验 4/0＋core tsc 0（合入态）；9 个 session 缺表红根治 | #242 其余面仍在 lane |
 | aec25cdc+ab5a7c84 | #253 | A 组交付链后端（due-row 链自续/SKIP LOCKED/租约围栏/eligibility/召回，cherry-pick 自 95fdaae0+32555148） | core tsc 0＋harness 六件 170/0＋due-delivery 全套 fresh 双库 32/0（合入态） | B 组（#253FE）仍等 #264FE→#261 |
 | 93072db4（尾 7 commits） | #246 | C4 尾款（trigger 判别接生产发射器）＋outbox 运维 CLI 行为证据＋收口文档 | core tsc 0＋harness 170/0＋contracts 111/0（合入态）；lane 侧红 33/3→绿 36/0、fresh 全量 2533/0 | **#246 关票**；live Langfuse 残量归项目 live 门；六格 invoked/persisted 生产格归 #256 |
-| 1f1c81c5 | — | e2e 基建 hotfix：playwright core/worker 块声明 LANGFUSE_PROMPT_POLICY=pilot | e2e 启动恢复验证进行中（#267 两 spec） | 6cef418e 使 strict 成缺省，无凭证 e2e 栈全线拒启；主控直接提交 |
+| 1f1c81c5 | — | e2e 基建 hotfix：playwright core/worker 块声明 LANGFUSE_PROMPT_POLICY=pilot | three-modal wechat_moments desktop 1/0（43.5s）＋pilot 降级审计打点确认 | 6cef418e 使 strict 成缺省，无凭证 e2e 栈全线拒启；主控直接提交 |
+| 26d44359+f795b70b | #242 | L1 事实满足度护栏干净切片（recorded 接缝 provider/exact scorer＋11 frozen golden＋incomplete fail-closed＋promptfoo 正负门与 CI 段，cherry-pick 自 issue/242-l1-slice ee26e007+f3600a8d） | eval 11/11/0＋promptfoo 11/0/0＋control 如期 exit 100＋core tsc 0（合入态） | **A 批合流达成**（#246 关＋#247 机制＋#242-L1）；#257 删除窗口开启 |
