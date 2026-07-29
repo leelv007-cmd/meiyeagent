@@ -50,6 +50,37 @@ test('copy compiler makes one model call and returns one primary candidate', asy
   assert.match(runner.requests[0]!.prompt, /xiaohongshu/u);
 });
 
+test('copy candidate runner consumes the frozen prompt for primary and retry calls', async () => {
+  const runner = new QueueRunner([
+    candidate('主推荐', '正文 A', ['asset-withdrawn']),
+    candidate('安全重试', '正文 B', []),
+  ]);
+  const prompt = {
+    name: 'harness/copy-candidate',
+    version: '7',
+    content: 'frozen:copy-candidate',
+    contentHash: '7'.repeat(64),
+    label: 'production',
+    source: 'langfuse' as const,
+    isFallback: false,
+  };
+
+  await executeCopySelection(
+    { ...selectionInput(), prompt },
+    {
+      runner,
+      validator: new WithdrawnAssetValidator(),
+    },
+  );
+
+  assert.equal(
+    runner.requests.every(({ instructions }) =>
+      instructions.startsWith('frozen:copy-candidate'),
+    ),
+    true,
+  );
+});
+
 test('one policy failure retries once with feedback and delivers the safe result', async () => {
   const runner = new QueueRunner([
     candidate('主推荐', '正文 A', ['asset-withdrawn']),

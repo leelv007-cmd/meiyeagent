@@ -48,6 +48,46 @@ test('all eight formal Recipes use ContextBundle factTypes instead of text uploa
   }
 });
 
+test('fact satisfaction and criticality runners consume their own frozen prompts', async () => {
+  const runner = new QueueRunner([
+    {
+      status: 'partial',
+      matchedFactRefs: ['store_fact:fact-service:1'],
+      missingFactTypes: ['price'],
+    },
+    { criticality: 'optional' },
+  ]);
+
+  const result = await assessRecipeFactSatisfaction(
+    {
+      workflowId: 'workflow-frozen-fact-prompts',
+      workflowRevision: 1,
+      intent: '介绍护理服务和价格',
+      factTypes: ['service', 'price'],
+      bundle: bundleWithFacts(['service']),
+      at: NOW,
+      prompts: {
+        factSatisfaction: frozenPrompt(
+          'harness/fact-satisfaction',
+          'frozen:fact-satisfaction',
+        ),
+        factCriticality: frozenPrompt(
+          'harness/fact-criticality',
+          'frozen:fact-criticality',
+        ),
+      },
+    },
+    runner,
+    authorizedRights,
+  );
+
+  assert.equal(result.action, 'execute_with_notice');
+  assert.deepEqual(
+    runner.requests.map(({ instructions }) => instructions),
+    ['frozen:fact-satisfaction', 'frozen:fact-criticality'],
+  );
+});
+
 test('partial critical facts ask through QuestionCard and retain canonical ledger intake', async () => {
   const runner = new QueueRunner([
     {
@@ -604,4 +644,16 @@ class QueueRunner implements StructuredNodeRunner {
       usage: { inputTokens: 0, outputTokens: 0 },
     };
   }
+}
+
+function frozenPrompt(name: string, content: string) {
+  return {
+    name,
+    version: '8',
+    content,
+    contentHash: '8'.repeat(64),
+    label: 'production',
+    source: 'langfuse' as const,
+    isFallback: false,
+  };
 }

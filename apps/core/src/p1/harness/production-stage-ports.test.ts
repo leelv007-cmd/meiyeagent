@@ -20,6 +20,7 @@ import type {
   StructuredNodeRunner,
   StructuredNodeRunnerRequest,
 } from '../model-supply/structured-node-runner.js';
+import type { HarnessFrozenPrompts } from './langfuse-prompts.js';
 
 test('production tracer keeps its server-owned copy delivery layer', async () => {
   const runner = new QueueRunner([
@@ -253,7 +254,10 @@ test('production Recipe fact satisfaction gates the facts visible to the Copy Br
     },
   );
   const snapshot = composerSnapshot();
-  const request = composerRequest(snapshot);
+  const request = {
+    ...composerRequest(snapshot),
+    prompts: harnessPromptBundle(),
+  };
   const declaration = {
     normalizedIntent: '介绍护理服务',
     taskType: 'daily_service_exposure' as const,
@@ -294,6 +298,8 @@ test('production Recipe fact satisfaction gates the facts visible to the Copy Br
     prompt.bundle.dimensions.store_facts_assets.price.factSnapshot,
     undefined,
   );
+  assert.equal(runner.requests[0]?.instructions, 'frozen:factSatisfaction');
+  assert.equal(runner.requests[1]?.instructions, 'frozen:briefCompilation');
 });
 
 test('an unanswered industry gap reports the confirmed grounding surface to the workflow', async () => {
@@ -1601,9 +1607,13 @@ test('production ports compose #31, canonical gates, a single primary result and
     () => '2026-07-18T00:01:00.000Z',
   );
   const traces = new Map<string, Record<string, unknown>>();
+  const request = {
+    ...taskInput(),
+    prompts: harnessPromptBundle(),
+  };
   const result = await runHarnessWorkflow(
     'task-production',
-    taskInput(),
+    request,
     ports,
     {
       async runStep(_key, operation) {
@@ -1649,6 +1659,12 @@ test('production ports compose #31, canonical gates, a single primary result and
       'wf:task-production:s3:copy-primary:0',
       'wf:task-production:s4:copy-primary:c01',
     ],
+  );
+  assert.equal(runner.requests[0]?.instructions, 'frozen:intentNaming');
+  assert.equal(runner.requests[1]?.instructions, 'frozen:briefCompilation');
+  assert.equal(
+    runner.requests[2]?.instructions.startsWith('frozen:copyCandidate'),
+    true,
   );
 });
 
@@ -2143,6 +2159,39 @@ function taskInput() {
       assetReferences: [],
     },
   };
+}
+
+function harnessPromptBundle(): HarnessFrozenPrompts {
+  const keys = [
+    'intentNaming',
+    'briefCompilation',
+    'briefImage',
+    'briefVideo',
+    'factSatisfaction',
+    'factCriticality',
+    'copyCandidate',
+    'notePlan',
+    'noteTextBlock',
+    'noteConsistency',
+    'destinationMapping',
+    'copyGeneration',
+    'platformAdaptation',
+    'textResponse',
+  ] as const;
+  return Object.fromEntries(
+    keys.map((key) => [
+      key,
+      {
+        name: `harness/${key}`,
+        version: '11',
+        content: `frozen:${key}`,
+        contentHash: '1'.repeat(64),
+        label: 'production',
+        source: 'langfuse',
+        isFallback: false,
+      },
+    ]),
+  ) as HarnessFrozenPrompts;
 }
 
 function contextWithSourcePackage(): HarnessContextSnapshot {

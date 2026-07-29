@@ -10,6 +10,10 @@ import { compileCopyGenerationRequest } from './output-compiler.js';
 import { materializeSkillInstructions } from '../skills/stage-injection.js';
 import type { ResolvedSkillInstruction } from '../skills/types.js';
 import { merchantSelectionWhyNow } from './merchant-delivery-language.js';
+import {
+  HARNESS_BUILTIN_PROMPTS,
+  type HarnessFrozenPrompt,
+} from './langfuse-prompts.js';
 
 const generatedCandidateSchema = z
   .object({
@@ -135,6 +139,7 @@ export async function executeCopySelection(
     workspaceId: string;
     intendedUse: GeneratedCandidate['intendedUse'];
     generationContext: Record<string, unknown>;
+    prompt?: HarnessFrozenPrompt;
     skillInstructions?: readonly ResolvedSkillInstruction[];
     onToken?: (token: {
       candidateId: string;
@@ -161,7 +166,10 @@ export async function executeCopySelection(
     schemaName: 'harness_copy_candidate_v1',
     schemaRevision: 'copy-candidate-v1',
     instructions: materializeSkillInstructions(
-      primaryRequest.instructions,
+      [
+        input.prompt?.content ?? HARNESS_BUILTIN_PROMPTS.copyCandidate,
+        primaryRequest.instructions,
+      ].join('\n\n'),
       input.skillInstructions,
     ),
     prompt: primaryRequest.prompt,
@@ -200,7 +208,10 @@ export async function executeCopySelection(
       schemaName: 'harness_copy_candidate_v1',
       schemaRevision: 'copy-candidate-v1',
       instructions: materializeSkillInstructions(
-        retryRequest.instructions,
+        [
+          input.prompt?.content ?? HARNESS_BUILTIN_PROMPTS.copyCandidate,
+          retryRequest.instructions,
+        ].join('\n\n'),
         input.skillInstructions,
       ),
       prompt: retryRequest.prompt,

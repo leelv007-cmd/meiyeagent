@@ -181,7 +181,10 @@ export class UnifiedHarnessStagePorts
 					? { allowedFactRefs: input.allowedFactRefs }
 					: {}),
 				executionSnapshot: requireSnapshot(input.request),
-				prompt: input.request.prompts?.briefCompilation,
+				prompt:
+					kind === "image"
+						? input.request.prompts?.briefImage
+						: input.request.prompts?.briefVideo,
 				...(input.skillInstructions?.length
 					? { skillInstructions: input.skillInstructions }
 					: {}),
@@ -555,6 +558,19 @@ export class UnifiedHarnessStagePorts
 				input.workflowId,
 				this.now,
 				input.runStep,
+				input.request.prompts
+					? {
+							...(input.request.prompts.notePlan
+								? { notePlan: input.request.prompts.notePlan }
+								: {}),
+							...(input.request.prompts.noteTextBlock
+								? { noteTextBlock: input.request.prompts.noteTextBlock }
+								: {}),
+							...(input.request.prompts.noteConsistency
+								? { noteConsistency: input.request.prompts.noteConsistency }
+								: {}),
+						}
+					: undefined,
 			),
 			{
 				generate: async ({ page, reason, evaluationReason }) => {

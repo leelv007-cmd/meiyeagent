@@ -8,6 +8,10 @@ import {
 import { z } from 'zod';
 import type { StructuredNodeRunner } from '../model-supply/structured-node-runner.js';
 import { isReferenceEligibleFactSnapshot } from './structured-nodes.js';
+import {
+  HARNESS_BUILTIN_PROMPTS,
+  type HarnessFrozenPrompt,
+} from './langfuse-prompts.js';
 
 export const factSatisfactionOutputSchema = z
   .object({
@@ -63,6 +67,10 @@ export async function assessRecipeFactSatisfaction(
     factTypes: readonly StoreFactKind[];
     bundle: ContextBundle;
     at: string;
+    prompts?: {
+      factSatisfaction?: HarnessFrozenPrompt;
+      factCriticality?: HarnessFrozenPrompt;
+    };
   },
   runner: StructuredNodeRunner,
   rights: FactRightsAuthorizationPort = conservativeFactRightsAuthorization,
@@ -83,7 +91,8 @@ export async function assessRecipeFactSatisfaction(
       schemaName: 'harness_fact_satisfaction_v1',
       schemaRevision: 'fact-satisfaction-v1',
       instructions:
-        'Judge only whether the supplied authorized current facts satisfy the requested fact types. Never infer expiry, revocation, or rights.',
+        input.prompts?.factSatisfaction?.content ??
+        HARNESS_BUILTIN_PROMPTS.factSatisfaction,
       prompt: canonicalJson({
         intent: input.intent,
         factTypes: input.factTypes,
@@ -134,7 +143,8 @@ export async function assessRecipeFactSatisfaction(
       schemaName: 'harness_fact_criticality_v1',
       schemaRevision: 'fact-criticality-v1',
       instructions:
-        'Classify whether the missing facts block truthful execution for this intent. Return critical or optional only.',
+        input.prompts?.factCriticality?.content ??
+        HARNESS_BUILTIN_PROMPTS.factCriticality,
       prompt: canonicalJson({
         intent: input.intent,
         missingFactTypes: assessment.missingFactTypes,

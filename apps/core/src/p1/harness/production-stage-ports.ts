@@ -366,6 +366,10 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         factTypes: recipe.factTypes,
         bundle: input.context.bundle,
         at: this.now(),
+        prompts: {
+          factSatisfaction: input.request.prompts?.factSatisfaction,
+          factCriticality: input.request.prompts?.factCriticality,
+        },
       },
       this.runnerWithSourceFence(input.request),
       this.factRights,
@@ -503,6 +507,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         generationContext: {
           bundle: input.context.bundle,
         },
+        prompt: input.request.prompts?.copyCandidate,
         ...(input.skillInstructions?.length
           ? { skillInstructions: input.skillInstructions }
           : {}),

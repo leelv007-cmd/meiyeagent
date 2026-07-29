@@ -907,6 +907,99 @@ test('structured nodes execute the prompt content frozen at task admission', asy
   );
 });
 
+test('copy, image, and video brief runners consume their own frozen prompts', async () => {
+  const declaration = {
+    normalizedIntent: '制作门店护理内容',
+    taskType: 'daily_service_exposure' as const,
+    deliveryLayer: 'finished_media' as const,
+    relevantAssetCategories: ['industry_category' as const],
+    usedAssetCategories: ['industry_category' as const],
+    route: 'customized' as const,
+    routingSource: 'model' as const,
+    implicitConstraints: [],
+  };
+  const fixtures = [
+    {
+      key: 'brief-copy',
+      kind: 'copy' as const,
+      output: {
+        kind: 'copy',
+        instructions:
+          '只使用已确认的门店护理事实，写一条可以直接审核的内容；不得编造价格、效果或资质，并使用低压力的私信预约行动建议。'.repeat(
+            2,
+          ),
+        platform: 'xiaohongshu',
+        cta: '私信预约',
+        factRefs: [],
+        assetRefs: [],
+        identityRefs: [],
+        constraints: ['不得编造事实'],
+      },
+    },
+    {
+      key: 'brief-image',
+      kind: 'image' as const,
+      output: {
+        kind: 'image',
+        intent: {
+          operation: 'image.generate',
+          purpose: '护理项目封面',
+          subject: '护理项目',
+          scene: '真实门店环境',
+          composition: '竖版主体居中',
+          references: [],
+          exactText: [],
+          changes: [],
+          invariants: [],
+          factRefs: [],
+          rightsRefs: [],
+          outputPlan: { kind: 'single' },
+        },
+        prompt: '竖版门店项目封面，真实环境照片为主体，留出标题安全区。',
+        referenceAssetIds: [],
+        parameters: { ratio: '3:4', resolution: '2048' },
+        constraints: ['不得使用未授权素材'],
+      },
+    },
+    {
+      key: 'brief-video',
+      kind: 'video' as const,
+      output: {
+        kind: 'video',
+        storyboard: [
+          {
+            index: 1,
+            description: '从门店外景进入护理项目区',
+            durationSeconds: 4,
+          },
+        ],
+        firstFramePrompt:
+          '使用真实门店外景作为首帧，竖屏构图，并保留清晰安全的标题区域。',
+        referenceAssetIds: [],
+        parameters: { durationSeconds: 8, ratio: '9:16' },
+        constraints: ['不得使用未授权素材'],
+      },
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    const runner = new FixtureStructuredNodeRunner(fixture.output);
+    const content = `frozen:${fixture.key}`;
+    await compileExecutionBrief(
+      {
+        workflowId: `workflow-${fixture.key}`,
+        unitId: fixture.key,
+        unitKind: fixture.kind,
+        declaration,
+        bundle: contextBundleFixture(),
+        prompt: frozenPrompt(`harness/${fixture.key}`, content),
+      },
+      runner,
+    );
+    assert.equal(runner.requests[0]?.instructions, content);
+  }
+});
+
 test('nested completeness reports an empty optional choice list honestly', async () => {
   const metrics = new InMemoryStructuredNodeMetrics();
   await nameHarnessIntent(
@@ -1170,5 +1263,17 @@ function factContribution(
       effectiveFrom: '2026-07-18T00:00:00.000Z',
       expiresAt: null,
     },
+  };
+}
+
+function frozenPrompt(name: string, content: string) {
+  return {
+    name,
+    version: '9',
+    content,
+    contentHash: '9'.repeat(64),
+    label: 'production',
+    source: 'langfuse' as const,
+    isFallback: false,
   };
 }

@@ -7,6 +7,10 @@ import {
 import type { StructuredNodeRunner } from './structured-nodes.js';
 import type { NotePlanStructuredPort } from './note-plan-compiler.js';
 import type { HarnessEffectRunner } from './workflow-core.js';
+import {
+  HARNESS_BUILTIN_PROMPTS,
+  type HarnessFrozenPrompt,
+} from './langfuse-prompts.js';
 
 export class ModelSupplyNotePlanStructuredPort
   implements NotePlanStructuredPort
@@ -16,6 +20,11 @@ export class ModelSupplyNotePlanStructuredPort
     private readonly workflowId: string,
     private readonly now: () => string,
     private readonly runStep?: HarnessEffectRunner,
+    private readonly prompts?: {
+      notePlan?: HarnessFrozenPrompt;
+      noteTextBlock?: HarnessFrozenPrompt;
+      noteConsistency?: HarnessFrozenPrompt;
+    },
   ) {}
 
   private runEffect<Output>(
@@ -36,7 +45,8 @@ export class ModelSupplyNotePlanStructuredPort
           schemaName: 'harness_note_plan_v1',
           schemaRevision: 'note-plan-v1',
           instructions:
-            'Create a semantic NotePlan before any page generation. Page count and roles must follow the merchant intent, not a fixed template. Include one single ImageIntent, one text block, and dependency edges per page.',
+            this.prompts?.notePlan?.content ??
+            HARNESS_BUILTIN_PROMPTS.notePlan,
           prompt: JSON.stringify(input),
           schema: notePlanSchema,
         }),
@@ -58,7 +68,8 @@ export class ModelSupplyNotePlanStructuredPort
         schemaName: 'harness_note_text_block_v1',
         schemaRevision: 'note-text-block-v1',
         instructions:
-          'Finalize this page text in the configured style. Preserve the theme and prior-page dependency. If consistencyFailure is present, rewrite only the text-side issue described there. Return title, body and exactText only.',
+          this.prompts?.noteTextBlock?.content ??
+          HARNESS_BUILTIN_PROMPTS.noteTextBlock,
         prompt: JSON.stringify(input),
         schema: notePlanTextBlockSchema,
       }),
@@ -77,7 +88,8 @@ export class ModelSupplyNotePlanStructuredPort
         schemaName: 'harness_note_consistency_v1',
         schemaRevision: 'note-consistency-v1',
         instructions:
-          'Evaluate theme continuity, visual consistency, non-repetition, role coverage, and image-text cross-reference. Return every dimension exactly once and only page ids that require regeneration.',
+          this.prompts?.noteConsistency?.content ??
+          HARNESS_BUILTIN_PROMPTS.noteConsistency,
         prompt: JSON.stringify({
           ...input,
           evaluatedAt: this.now(),
