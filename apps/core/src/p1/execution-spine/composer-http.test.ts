@@ -385,8 +385,8 @@ test("authenticated Composer HTTP carries all four output kinds through one snap
 		assert.equal(body.data.snapshot.id, `snapshot-task-${kind}`);
 
 		// Merchant entitlement units. `video` reserves one 成片 even though this
-		// deliverable names 8 seconds: the plan offers grant trial 1 / starter 5
-		// / growth 20 / pro 60 videos, so charging by duration made every trial
+		// deliverable names 8 seconds: the plan offers trial 1 / starter 3 /
+		// growth 6 / pro 9 videos, so charging by duration made every trial
 		// submission 409 INSUFFICIENT_ENTITLEMENT while the Composer's own quota
 		// card — which prices the run at 1 — showed nothing wrong. Per-second
 		// accounting is the supply-side ledger's, not this allowance's.

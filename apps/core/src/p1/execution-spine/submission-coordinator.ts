@@ -539,7 +539,7 @@ function productUsageUnits(
 			throw new Error("Video submission requires whole duration seconds.");
 		}
 		// The merchant's video entitlement counts 成片, not seconds: the plan
-		// offers grant trial 1 / starter 5 / growth 20 / pro 60
+		// offers trial 1 / starter 3 / growth 6 / pro 9
 		// (`foundation/entitlement-module.ts`) and the Composer prices the same
 		// run at 1. Reserving `durationSeconds` here charged an 8s 抖音成片 eight
 		// videos, which no trial workspace can ever cover — every video
