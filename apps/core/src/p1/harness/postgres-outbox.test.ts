@@ -48,6 +48,7 @@ test('Langfuse outbox schema exposes terminal states without silently dropping e
   assert.match(schema, /sent_at/u);
   assert.match(schema, /observability_drop_events/u);
   assert.match(schema, /trace_id/u);
+  assert.match(schema, /completed_at/u);
 
   await store.claimLangfuseBatch(5, 300, 3);
   assert.equal(statements.length, 2);
@@ -179,6 +180,61 @@ test('delivery health measures the oldest queued work independent of retry readi
   assert.doesNotMatch(calls[0] ?? '', /next_attempt_at\s*<=/u);
 });
 
+test('reconciliation cursor resumes from the last persisted window or cutover', async () => {
+  const calls: Array<{ statement: string; values?: unknown[] }> = [];
+  const cursor = new Date('2026-07-29T09:40:00.000Z');
+  const pool = {
+    async query(statement: string, values?: unknown[]) {
+      calls.push({ statement, values });
+      return { rows: [{ cursor_at: cursor }] };
+    },
+  } as unknown as Pool;
+  const store = new PostgresHarnessStore(pool);
+
+  assert.equal(await store.readObservabilityReconciliationCursor(), cursor);
+  assert.match(calls[0]?.statement ?? '', /max\(run\.window_end\)/u);
+  assert.match(calls[0]?.statement ?? '', /run\.completed_at is not null/u);
+  assert.match(
+    calls[0]?.statement ?? '',
+    /observability_reconciliation_cutovers/u,
+  );
+  assert.deepEqual(calls[0]?.values, ['observability/v1']);
+});
+
+test('reconciliation boundary and completion use PostgreSQL authority', async () => {
+  const calls: Array<{ statement: string; values?: unknown[] }> = [];
+  const windowEnd = new Date('2026-07-29T10:05:00.000Z');
+  const pool = {
+    async query(statement: string, values?: unknown[]) {
+      calls.push({ statement, values });
+      return calls.length === 1
+        ? { rows: [{ window_end: windowEnd }] }
+        : { rows: [{ id: 1 }], rowCount: 1 };
+    },
+  } as unknown as Pool;
+  const store = new PostgresHarnessStore(pool);
+
+  assert.equal(
+    await store.readObservabilityReconciliationBoundary({
+      intervalMs: 5 * 60_000,
+    }),
+    windowEnd,
+  );
+  await store.completeObservabilityReconciliationWindow({
+    windowStart: new Date('2026-07-29T09:40:00.000Z'),
+    windowEnd,
+  });
+
+  assert.match(calls[0]?.statement ?? '', /clock_timestamp\(\)/u);
+  assert.deepEqual(calls[0]?.values, [5 * 60_000]);
+  assert.match(calls[1]?.statement ?? '', /completed_at=coalesce/u);
+  assert.deepEqual(calls[1]?.values, [
+    'observability/v1',
+    '2026-07-29T09:40:00.000Z',
+    '2026-07-29T10:05:00.000Z',
+  ]);
+});
+
 test('reconciliation includes broken trace-backed events and derives delivery loss from drops', async () => {
   const calls: string[] = [];
   const pool = {
@@ -214,6 +270,17 @@ test('reconciliation includes broken trace-backed events and derives delivery lo
   );
   assert.match(calls[0] ?? '', /observability_drop_events/u);
   assert.match(calls[0] ?? '', /langfuse_outbox/u);
+  for (const eventType of [
+    'delivery_rating.recorded',
+    'delivery_rating.withdrawn',
+    'action_usage.recorded',
+    'bounded_execution.suspended',
+    'bounded_execution.resumed',
+    'note_page_regenerated',
+    'agent_primitive.lifecycle',
+  ]) {
+    assert.match(calls[0] ?? '', new RegExp(`'${eventType}'`, 'u'));
+  }
 });
 
 test('drop aggregation is queryable by signal, reason, and source', async () => {

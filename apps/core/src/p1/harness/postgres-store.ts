@@ -210,6 +210,7 @@ export class PostgresHarnessStore
         rating_event_count integer not null,
         action_usage_event_count integer not null,
         undelivered_event_count integer not null,
+        completed_at timestamptz,
         created_at timestamptz not null default clock_timestamp(),
         unique (contract_version, window_start, window_end, cutover_at)
       );
@@ -247,6 +248,8 @@ export class PostgresHarnessStore
       alter table harness_runtime.observability_reconciliation_runs
         add column if not exists undelivered_event_count integer not null
           default 0;
+      alter table harness_runtime.observability_reconciliation_runs
+        add column if not exists completed_at timestamptz;
       alter table harness_runtime.langfuse_outbox
         drop constraint if exists langfuse_outbox_status_check;
       alter table harness_runtime.langfuse_outbox
@@ -1691,6 +1694,73 @@ export class PostgresHarnessStore
     };
   }
 
+  async readObservabilityReconciliationBoundary(input: {
+    intervalMs: number;
+  }) {
+    const result = await this.pool.query<{ window_end: Date }>(
+      `select to_timestamp(
+         floor(
+           extract(epoch from clock_timestamp())
+           / ($1::double precision / 1000)
+         )
+         * ($1::double precision / 1000)
+       ) as window_end`,
+      [input.intervalMs],
+    );
+    const windowEnd = result.rows[0]?.window_end;
+    if (!windowEnd) {
+      throw new Error('Observability reconciliation boundary is unavailable.');
+    }
+    return windowEnd;
+  }
+
+  async readObservabilityReconciliationCursor(
+    contractVersion = 'observability/v1',
+  ) {
+    const result = await this.pool.query<{ cursor_at: Date | null }>(
+      `select coalesce(
+         (
+           select max(run.window_end)
+           from harness_runtime.observability_reconciliation_runs run
+           where run.contract_version=$1
+             and run.completed_at is not null
+         ),
+         (
+           select cutover.cutover_at
+           from harness_runtime.observability_reconciliation_cutovers cutover
+           where cutover.contract_version=$1
+         )
+       ) as cursor_at`,
+      [contractVersion],
+    );
+    return result.rows[0]?.cursor_at ?? null;
+  }
+
+  async completeObservabilityReconciliationWindow(
+    input: { windowStart: Date; windowEnd: Date },
+    contractVersion = 'observability/v1',
+  ) {
+    assertObservabilityWindow(input.windowStart, input.windowEnd);
+    const result = await this.pool.query(
+      `update harness_runtime.observability_reconciliation_runs
+       set completed_at=coalesce(completed_at, clock_timestamp())
+       where contract_version=$1
+         and window_start=$2::timestamptz
+         and window_end=$3::timestamptz
+       returning id`,
+      [
+        contractVersion,
+        input.windowStart.toISOString(),
+        input.windowEnd.toISOString(),
+      ],
+    );
+    if (result.rowCount !== 1) {
+      throw new Error(
+        'Observability reconciliation window cannot be completed.',
+      );
+    }
+  }
+
   async readObservabilityDropSummary(input: {
     windowStart: Date;
     windowEnd: Date;
@@ -1789,7 +1859,11 @@ export class PostgresHarnessStore
            and event.event_type in (
              'delivery_rating.recorded',
              'delivery_rating.withdrawn',
-             'action_usage.recorded'
+             'action_usage.recorded',
+             'bounded_execution.suspended',
+             'bounded_execution.resumed',
+             'note_page_regenerated',
+             'agent_primitive.lifecycle'
            )
            and event.created_at >= greatest(
              $2::timestamptz, cutover.cutover_at

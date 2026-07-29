@@ -1713,6 +1713,15 @@ promptOutboxLoop.start();
 const observabilityReconciler = new HarnessObservabilityReconciler(
   promptAuditStore,
   {
+    onDeliverySnapshot(snapshot) {
+      if (
+        snapshot.deliveryHealth.queueAgeMs === null &&
+        snapshot.dropSummary.length === 0
+      ) {
+        return;
+      }
+      console.log('Harness observability delivery snapshot.', snapshot);
+    },
     onViolation(violation) {
       console.warn('Harness observability drift detected.', violation);
     },

@@ -233,6 +233,10 @@ test(
       const ratingAuditId = `rating-aggregate-${suffix}`;
       const usageAuditId = `usage-aggregate-${suffix}`;
       const missingOutboxAuditId = `rating-missing-outbox-${suffix}`;
+      const suspendedAuditId = `bounded-suspended-${suffix}`;
+      const resumedAuditId = `bounded-resumed-${suffix}`;
+      const noteAuditId = `note-regenerated-${suffix}`;
+      const primitiveAuditId = `primitive-lifecycle-${suffix}`;
       await pool.query(
         `insert into harness_runtime.audit_events
            (id, workflow_id, stage, event_type, payload, created_at)
@@ -242,8 +246,25 @@ test(
            ($2,$2,'observability_event_ingest','action_usage.recorded',
             '{}'::jsonb,$3),
            ($4,$4,'observability_event_ingest','delivery_rating.withdrawn',
+            '{}'::jsonb,$3),
+           ($5,$5,'observability_event_ingest','bounded_execution.suspended',
+            '{}'::jsonb,$3),
+           ($6,$6,'observability_event_ingest','bounded_execution.resumed',
+            '{}'::jsonb,$3),
+           ($7,$7,'observability_event_ingest','note_page_regenerated',
+            '{}'::jsonb,$3),
+           ($8,$8,'observability_event_ingest','agent_primitive.lifecycle',
             '{}'::jsonb,$3)`,
-        [ratingAuditId, usageAuditId, inside, missingOutboxAuditId],
+        [
+          ratingAuditId,
+          usageAuditId,
+          inside,
+          missingOutboxAuditId,
+          suspendedAuditId,
+          resumedAuditId,
+          noteAuditId,
+          primitiveAuditId,
+        ],
       );
       await pool.query(
         `insert into harness_runtime.langfuse_outbox
@@ -355,7 +376,7 @@ test(
           orphanTraceCount: 2,
           ratingEventCount: 2,
           actionUsageEventCount: 1,
-          undeliveredEventCount: 2,
+          undeliveredEventCount: 6,
         },
       );
       await store.reconcileBusinessEventsToTraces({
@@ -369,6 +390,20 @@ test(
         [start, end],
       );
       assert.equal(runs.rows[0]?.count, 1);
+      await store.completeObservabilityReconciliationWindow({
+        windowStart: start,
+        windowEnd: end,
+      });
+      assert.equal(
+        (await store.readObservabilityReconciliationCursor())?.toISOString(),
+        end.toISOString(),
+      );
+      const boundary = await store.readObservabilityReconciliationBoundary({
+        intervalMs: 5 * 60_000,
+      });
+      assert.equal(boundary.getUTCMinutes() % 5, 0);
+      assert.equal(boundary.getUTCSeconds(), 0);
+      assert.equal(boundary.getUTCMilliseconds(), 0);
 
       const healthBefore = await store.readObservabilityDeliveryHealth({
         now: new Date(),
