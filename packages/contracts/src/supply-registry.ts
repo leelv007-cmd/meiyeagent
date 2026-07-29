@@ -4,6 +4,8 @@
  * ProductUsage / ProductQuote naming stay with #92 — this file uses SupplierPriceRevision.
  */
 
+import { z } from 'zod';
+
 import type { HealthOverlayState } from './capability-registry.js';
 
 export type SupplyModality = 'llm' | 'image' | 'video' | 'audio';
@@ -28,6 +30,113 @@ export type CredentialAccountLifecycle = 'pending' | 'active' | 'retired';
 export type CredentialDrainSubstate = 'draining' | 'none';
 
 export type ActivationEvidenceStatus = 'documented' | 'recorded' | 'live_verified';
+
+export const MODEL_CAPABILITY_VOCABULARY_VERSION = 'model-capability-v1';
+
+export const modelCapabilityClaimBasisSchema = z.enum([
+  'inferred',
+  'explicit_override',
+]);
+
+const modelCapabilityClaimEvidenceSchema = z
+  .object({
+    basis: modelCapabilityClaimBasisSchema,
+    evidenceRef: z.string().min(1),
+  })
+  .strict();
+
+export const modelProtocolCapabilityClaimSchema =
+  modelCapabilityClaimEvidenceSchema
+    .extend({
+      value: z.boolean(),
+    })
+    .strict();
+
+export const modelCapabilityMimeSchema = z
+  .string()
+  .regex(
+    /^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\/(?:[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*|\*)$/,
+  );
+
+export const modelModalityClaimSchema = modelCapabilityClaimEvidenceSchema
+  .extend({
+    mime: modelCapabilityMimeSchema,
+    supported: z.boolean(),
+  })
+  .strict();
+
+export const modelBusinessTagClaimSchema = modelCapabilityClaimEvidenceSchema
+  .extend({
+    tag: z.string().min(1),
+    supported: z.boolean(),
+  })
+  .strict();
+
+export const modelModalityScopedCapabilityClaimSchema =
+  modelCapabilityClaimEvidenceSchema
+    .extend({
+      modality: modelCapabilityMimeSchema,
+      capability: z.string().min(1),
+      supported: z.boolean(),
+      channelBound: z.boolean(),
+    })
+    .strict();
+
+export const modelCapabilityProfileSchema = z
+  .object({
+    vocabularyVersion: z.literal(MODEL_CAPABILITY_VOCABULARY_VERSION),
+    protocolCapabilities: z.record(
+      z.string().min(1),
+      modelProtocolCapabilityClaimSchema,
+    ),
+    modalities: z.array(modelModalityClaimSchema),
+    businessTags: z.array(modelBusinessTagClaimSchema),
+    modalityCapabilities: z.array(
+      modelModalityScopedCapabilityClaimSchema,
+    ),
+  })
+  .strict();
+
+const modelModalityScopedCapabilityRequirementSchema = z
+  .object({
+    modality: modelCapabilityMimeSchema,
+    capability: z.string().min(1),
+  })
+  .strict();
+
+export const modelCapabilityRequirementAxisSchema = z
+  .object({
+    axisId: z.string().min(1),
+    vocabularyVersion: z.literal(MODEL_CAPABILITY_VOCABULARY_VERSION),
+    requiredProtocolCapabilities: z.array(z.string().min(1)),
+    requiredModalities: z.array(modelCapabilityMimeSchema),
+    requiredBusinessTags: z.array(z.string().min(1)),
+    requiredModalityCapabilities: z.array(
+      modelModalityScopedCapabilityRequirementSchema,
+    ),
+    unknownPolicy: z.literal('conservative_always_available'),
+  })
+  .strict();
+
+export type ModelCapabilityClaimBasis = z.infer<
+  typeof modelCapabilityClaimBasisSchema
+>;
+export type ModelProtocolCapabilityClaim = z.infer<
+  typeof modelProtocolCapabilityClaimSchema
+>;
+export type ModelModalityClaim = z.infer<typeof modelModalityClaimSchema>;
+export type ModelBusinessTagClaim = z.infer<
+  typeof modelBusinessTagClaimSchema
+>;
+export type ModelModalityScopedCapabilityClaim = z.infer<
+  typeof modelModalityScopedCapabilityClaimSchema
+>;
+export type ModelCapabilityProfile = z.infer<
+  typeof modelCapabilityProfileSchema
+>;
+export type ModelCapabilityRequirementAxis = z.infer<
+  typeof modelCapabilityRequirementAxisSchema
+>;
 
 /** Layer 1: manufacturer model identity. */
 export interface SupplyCatalogModel {
@@ -95,6 +204,7 @@ export interface SupplyDeployment {
     evidenceRef?: string;
     configurationRevision?: string;
   };
+  capabilityProfile?: ModelCapabilityProfile;
   revisionId: string;
 }
 
