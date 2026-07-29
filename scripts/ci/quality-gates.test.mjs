@@ -12,7 +12,7 @@ const releaseCommitSha = 'a'.repeat(40);
 async function runGate(scriptName, environment = {}, expectedStatus = 0) {
   const directory = await mkdtemp(join(tmpdir(), 'meiye-ci-gate-'));
   const logPath = join(directory, 'commands.log');
-  const commandStub = `#!/usr/bin/env bash
+  const commandStub = `#!/bin/bash
 printf '%s' "$0" >> '${logPath}'
 printf ' %s' "$@" >> '${logPath}'
 printf '\\n' >> '${logPath}'
@@ -21,7 +21,7 @@ if [[ "\${CI_STUB_FAIL_COMMAND:-}" == "\${0##*/} $*" ]]; then
 fi
 `;
 
-  for (const command of ['node', 'pnpm']) {
+  for (const command of ['bash', 'node', 'pnpm']) {
     const path = join(directory, command);
     await writeFile(path, commandStub);
     await chmod(path, 0o755);
@@ -166,6 +166,7 @@ test('the persistence gate uses Node test output before asserting database execu
       TEST_DBOS_SYSTEM_DATABASE_URL: 'postgres://dbos.example.test/dbos',
     }),
     [
+      'bash scripts/ci/provision-test-db.sh',
       'pnpm --filter @meiye/core exec node --import tsx --test --test-concurrency=1 --test-reporter=spec src/**/*.test.ts',
       'node scripts/ci/assert-core-persistence-ran.mjs /dev/null',
     ]

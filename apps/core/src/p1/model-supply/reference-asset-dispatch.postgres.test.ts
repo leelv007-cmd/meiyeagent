@@ -55,6 +55,7 @@ test(
         `INSERT INTO workspaces (id, name) VALUES ($1, 'T15'), ($2, 'T15 other')`,
         [workspaceId, otherWorkspaceId],
       );
+      await new PostgresFoundationRepository(pool).migrate();
       const client = await pool.connect();
       try {
         await new PostgresProStudioMigration().migrate(client);
