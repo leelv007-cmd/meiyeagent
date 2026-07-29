@@ -12,7 +12,7 @@
 
 - **每 lane 独立 worktree**：`git worktree add ../lane-<票号> main`；主 checkout 留给主控复核合入，不跑长驻 dev。
 - **locale:compile 冲突纪律**：`typecheck`／`test`／`test:interaction`／`e2e` 都会重写共享 paraglide 产物（`src/locale/paraglide/`），会掀掉在跑的 dev 与并行测试，换端口无效。同一 worktree 内不并跑；跨 lane 靠 worktree 隔离。#266 合入后有机制兜底（write-if-changed＋锁），纪律照旧不放松。
-- **并发额度**：全局同时 ≤3 个「需 dev server／测试基础设施」的工作面；前端 lane 整 lane 只占 1 槽且 lane 内严格串行（#264FE → #261 → #253FE）。设计、schema、文档、只读分析不占额度。
+- **并发额度**：全局同时 ≤3 个「需 dev server／测试基础设施」的工作面；前端 lane 整 lane 只占 1 槽且 lane 内严格串行（#264FE → #261 → #253FE）。设计、schema、文档、只读分析不占额度。**澄清（2026-07-29）**：纯 Node 单测＋typecheck（不带 TEST_DATABASE_URL、不起 dev server、不跑浏览器）同样不占槽；占槽的是 PG-backed 测试、dev server、playwright/e2e 面。
 - 不改 spec、不改 `docs/design/` 决策文档、不动别人的票和别人的 worktree、不动 `.scratch/`。
 - **秘密不进 argv（2026-07-29 增补）**：`e2e-lock.sh` 会把传入命令参数记录到 `/tmp/meiye-e2e.log`——一切 DB URL／provider secret 只准以子进程 env 受控注入，禁止写成锁脚本（或任何会留日志的包装脚本）argv；证据文件与命令输出不得包含连接串。
 
