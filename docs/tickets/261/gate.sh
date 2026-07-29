@@ -114,17 +114,14 @@ check_all() {
   fi
 
   # ---- G4 · #264 FE 半合入（D lane 串行前序） ---------------------------
-  # 合入判据：视频编辑四动作真退役。videoRegenScopes 应为空或模块不存在。
-  local regen
-  regen="$(at_ref apps/core/src/p1/model-supply/video-regeneration.ts)"
-  if [ -z "$regen" ] || ! printf '%s' "$regen" | grep -q "'shot'"; then
-    if ! git -C "$REPO" grep -q -E 'subtitle_text_edit|cover_select' "$REF" -- 'mkfast-template-main/src' 2>/dev/null; then
-      report "G4 #264FE 视频编辑面退役" ok "四动作已退役，前台入口已摘" "-"
-    else
-      report "G4 #264FE 视频编辑面退役" no "core 已退役但前台仍有 subtitle_text_edit/cover_select 入口" "#264FE"
-    fi
+  # 判据修正（2026-07-29）：原探针验 apps/core 的 videoRegenScopes 是否清空 —— 那是
+  # #264 的 **core 半**，台账 43238d5f 行明写 core 半仍等 C2 明文开工。#261 的串行前序
+  # 只是 **FE 半**（spec :601 语义锁锁的是「前台创作面」）。拿 core 半当判据 = 永远为
+  # 假，把已经开的门判成关的。改验 FE 半真正交付的面：商家侧视频编辑入口摘除。
+  if ! git -C "$REPO" grep -q -E 'subtitle_text_edit|cover_select' "$REF" -- 'mkfast-template-main/src' 2>/dev/null; then
+    report "G4 #264FE 视频编辑面退役" ok "商家侧编辑入口已摘（core 半另计，等 C2）" "-"
   else
-    report "G4 #264FE 视频编辑面退役" no "videoRegenScopes = ['shot'] 仍在" "#264FE"
+    report "G4 #264FE 视频编辑面退役" no "前台仍有 subtitle_text_edit/cover_select 入口" "#264FE"
   fi
 
   # ---- G5 · 前端 lane 槽位空闲（lane 内严格串行） -----------------------

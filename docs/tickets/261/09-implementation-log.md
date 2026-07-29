@@ -15,6 +15,13 @@
 | Step 3 | `622921bc` | 单路由三段 提议 → 创作 → 继续（段③ 新建） |
 | Step 4 | `212e1efd` | 第二层 Skill pill 行（五类宣发任务分组） |
 | L4 | `a36d4553` | 执行确认卡 ＋ 成本即时反馈 ＋ CNY 泄漏清账 |
+| Step 6 | `4952c79e` | 评价条 ＋ 后续动作 chip（impl-step6 产出 ＋ 我补的端口与挂载测试） |
+| Step 7 | `2798d237` | 评价事件适配层（impl-step7 产出 ＋ 我补的宿主接线） |
+| J10 | `0665a6ff` | `ImageAdjustConfirmation` 退役收编（#264FE 合入后解锁） |
+
+> commit 号为 rebase 到 `main@5e96f555` **之后**的值。
+
+**Step 6/7 的头号发现**：两者交付时都是「建了但没挂」——`composer-delivery-card.tsx` 长出了 `onRate`／`onFollowUp` 两个端口，而全仓唯一渲染它的 `composer-conversation.tsx:299` 两个都不传，`emitDeliveryRatingEvent` 全仓零调用点。即评价条与 chip 在商家面**一次都不会出现**，评价事件**一条都不会发**。这正是 D-150「组件已建未挂载＝未完成」与 U04 删 `ComposerBriefChips` 的同一失效模式；组件级测试抓不到它，因为 props 是测试自己传的。已补：端口贯穿 `ComposerConversation`、宿主 `composer-home.tsx` 两个回调、以及**从容器出发**的 `composer-delivery-mount.interaction.test.tsx`（含宿主侧源码守卫，变异验证：宿主不传端口 → 红）。
 
 Step 6（评价条 ＋ 动作 chip）与 Step 7（评价事件适配层）由并行 agent 在**同一 worktree** 内产出，尚未提交——见 §四。
 
@@ -66,6 +73,18 @@ pill 行不渲染 reuse collection 卡，该回调在本仓再无触发路径。
 
 **退役动作整条留给 #264FE 合入之后**，连同 `result-route-live-wiring.static.test.ts:47` 的 `/ImageAdjustConfirmation/` → `/ExecutionConfirmCard/`。
 
+### J11 · 门检 G4 探针写错，把已开的门判成关的
+
+原 G4 验 `apps/core/.../video-regeneration.ts` 的 `videoRegenScopes` 是否清空。但 #264 分**两半**：FE 半（商家侧编辑入口摘除）已于 `43238d5f` 合入并进台账，**core 半仍等 C2 明文开工**。拿 core 半当判据 → 永远为假。#261 的串行前序只是 FE 半（spec `:601` 语义锁锁的是「前台创作面」）。已改验 FE 半真正交付的面：`mkfast-template-main/src` 内无 `subtitle_text_edit|cover_select`。**门检现 6/7**，仅剩 G3b（#262）。
+
+这是本票第四次同类探针错误（前三次：G3b 误匹配、G5 误计文档提交、G6 自锁）。共同教训：门的判据必须指向**该票真正交付的那个面**，指向邻近但不同属主的产物就会稳定说谎。
+
+### J12 · 退役时把「它是个模态」一起弄没了，已回补
+
+`ImageAdjustConfirmation` 是一个 `Dialog`：Escape 关闭、`finalFocus` 把焦点还给 `#result-adjust-input`。`ExecutionConfirmCard` 是一个 `<section>`。直接对换等于**静默去掉焦点归还与 Escape**，并让 `shell-visual-contract.test.ts:196` 的三条模态保证失去活的对象。
+
+处置：**保留 Dialog 外壳、只换卡体**——「一个决定一张卡」说的是卡的内容与形状，不是要把模态改成内联。`shell-visual-contract` 的三条断言改读 `$workId.tsx`（外壳搬到哪就跟到哪），不是随旧文件一起删掉。
+
 ### J7 · `dashboard-home-contract.test.ts` 的段序断言改写而非删除
 
 原断言 `Composer < DashboardHomeSurface`，理由挂 PRODUCT.md 原则 1。**D-164① 明写三段自上而下，正面推翻该序**。改写为断四段锚点顺序（问候 → 提议 → 创作 → 继续）并额外断「每段真的装着它冠名的面」，避免三个空 `<section>` 也能过。原则 1 的存续形态按 `01 §3` 的裁定＝**移动端压密度而非改顺序**，那半条在移动端 e2e 上守，不在源码序上守。
@@ -81,7 +100,7 @@ pill 行不渲染 reuse collection 卡，该回调在本仓再无触发路径。
 | **R3** | 热点借势 / 品牌与个人 IP 两组零配方 | 不渲染空组 | 真实产品缺口，需要排配方而不是排 UI |
 | **R4** | 段③「继续上次工作」的数据面 | 复用 `creative_workbench` 投影同一 query key，零新增后端面 | 若主控希望它读别的投影，现在改成本最低 |
 | **R5** | 确认卡插在 **Brief 之后**（安全确认 → 花费确认，两卡先后出现） | 已按 `02 §7.2` 实施 | 商家在一次提交里会连看两张卡。点击数没增加（两处都是既有拦截位），但**观感上是两跳**；若主控认为该合并，那是改 D-164③「不新增卡类型」的边界，须先裁 |
-| **R6** | `ImageAdjustConfirmation` 退役排期 | 本轮只清 CNY，退役留给 #264FE 之后（J10） | 属主面重叠，需主控给排期 |
+| **R6** | ~~`ImageAdjustConfirmation` 退役排期~~ | **已办**：#264FE 合入（`43238d5f`）解锁，`0665a6ff` 完成收编，`git ls-files` 空 | 台账那行明写「#261 J10 退役残项就此解锁」，无需再裁 |
 
 ---
 
@@ -93,16 +112,24 @@ pill 行不渲染 reuse collection 卡，该回调在本仓再无触发路径。
 
 ---
 
-## 五、当前验证状态（截至 Step 4 提交）
+## 五、当前验证状态（rebase 到 `main@5e96f555` 之后，全部重跑）
 
 | 命令 | 结果 |
 |---|---|
 | `pnpm typecheck` | rc=0 |
 | `pnpm check`（Biome 只读） | rc=0 |
-| `pnpm test:interaction` | 42 files / 252 tests 全绿 |
-| `pnpm test` | 1 红 ＝ §四.2 的落后基点，其余全绿 |
-| `pnpm locale:check` | rc=0（3995 键） |
-| `pnpm test:interaction`（L4 后） | 43 files / 260 tests 全绿 |
-| `pnpm e2e` | **未跑**。三段顺序、`?view=` 重定向、复用 chip 三处证据都落在 e2e 里，须在 rebase 后由主控或本 lane 补跑 |
+| `pnpm test:interaction` | 43 files / 259 tests 全绿 |
+| `pnpm test` | **rc=0 全绿**（此前那条红确系落后基点，rebase 后消失） |
+| `pnpm locale:check` | rc=0 |
+| 门检 `./docs/tickets/261/gate.sh` | **6/7**，仅剩 G3b（#262 三轴钉扎） |
+| `pnpm e2e` | **未跑**。三段顺序、`?view=` 重定向、复用 chip、pill 行四处证据落在 e2e，须由主控或本 lane 补跑 |
 
-变异验证（每条新断言都实证过能红）：段序 testid 对调 → `dashboard-home-contract` 红；`isError` 分支短路 → 段③ 错误态测试红；未完成优先排序反转 → 段③ 排序测试红；空组不再剔除 → 分组测试 ＋ 交互测试各红；分组键改回 cardKey → 分组测试红；`aria-label` 去掉动作标签 → 两个交互测试红。
+变异验证（每条新断言都实证过能红）：段序 testid 对调 → `dashboard-home-contract` 红；段③ `isError` 短路 → 错误态测试红；未完成优先排序反转 → 排序测试红；空组不再剔除 → 分组＋交互测试各红；分组键改回 cardKey → 分组测试红；pill `aria-label` 去掉动作标签 → 两交互测试红；确认卡 props 加 `onParamChange` → **tsc 直接红**（只读是编译门不是纪律）；纠偏卡把币种拼回去 → 泄漏测试红；宿主不传评价端口 → 挂载守卫红。
+
+## 六、本票**未**交付的部分（关票时必须如实列出）
+
+1. **L5 三轴真值**：卡 G3b／#262。评价事件当前**每次都发不出去**，但每次都留一条 `ObservabilityDropEvent` 作负向证据——不是静默失败。
+2. **成功路径「本次实际消耗」**：卡 #248。`settledUnits` 只在 core 账本，无浏览器投影；`projectExecutionCostFeedback` 的 `settled` 分支取不到数时**返回 null 什么都不说**，绝不拿预占数冒充结算数。
+3. **记忆页四域里的三域**（纠正／项目／工作流）：只出「这项还在建」占位。纠正等 #251；**项目域全仓无实体、属主未定**（`00-blockers.md 四·补`）。
+4. **模型档位的商家语言 hint**：等 #252 能力词表，v1 只显示 `displayName`、hint 为 null。
+5. **e2e 未跑**（见上）。
