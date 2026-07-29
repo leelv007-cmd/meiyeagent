@@ -227,6 +227,7 @@ export class CreationSubmissionCoordinator {
 		actorId: string;
 		idempotencyKey: string;
 		instruction: string;
+		outputCount: number;
 		quote: { id: string; revision: string };
 		sourceContentPackage: { id: string; revision: number };
 		sourceSnapshot: CreationExecutionSnapshot;
@@ -239,12 +240,20 @@ export class CreationSubmissionCoordinator {
 			throw new Error("Result adjustment source does not match its workspace.");
 		}
 		const intent = `${source.intent.text}\n\n调整要求：${input.instruction}`;
+		const deliverable = {
+			...source.deliverable,
+			quantity: input.outputCount,
+		};
+		const deliverables = source.deliverables.map((item) => ({
+			...item,
+			quantity: input.outputCount,
+		}));
 		const signedSubmission = pickComposerSubmissionSignedFields({
 			...(source.signedSubmission ?? {}),
 			catalogModel: source.catalogModel,
 			contentPackagePlatform: source.contentPackagePlatform,
 			creationMode: source.creationMode,
-			deliverable: source.deliverable,
+			deliverable,
 			distributionTarget: source.distributionTarget,
 			intent,
 			recipe: source.recipe,
@@ -258,8 +267,8 @@ export class CreationSubmissionCoordinator {
 			contentPackageId: this.ids.createId("content-package"),
 			contentPackagePlatform: source.contentPackagePlatform,
 			creationMode: source.creationMode,
-			deliverable: source.deliverable,
-			deliverables: source.deliverables,
+			deliverable,
+			deliverables,
 			distributionTarget: source.distributionTarget,
 			expectedContentPackageRevision: 0,
 			idempotencyKey: input.idempotencyKey,
@@ -303,6 +312,7 @@ export class CreationSubmissionCoordinator {
 			idempotencyKey: input.idempotencyKey,
 			payloadHash: fingerprintValue({
 				instruction: input.instruction,
+				outputCount: input.outputCount,
 				quote: input.quote,
 				sourceContentPackage: input.sourceContentPackage,
 				sourceSnapshotId: source.id,

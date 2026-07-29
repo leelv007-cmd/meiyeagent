@@ -134,6 +134,18 @@ test('canonical result commands keep adoption OCC and adjustment contract server
   assert.deepEqual(
     resultAdjustConfirmCommandSchema.parse({
       billingQuoteId: 'quote-1',
+      derivedWorkId: 'work-derived-1',
+      source: { kind: 'legacy_job', baseJobId: 'job-1' },
+    }),
+    {
+      billingQuoteId: 'quote-1',
+      derivedWorkId: 'work-derived-1',
+      source: { kind: 'legacy_job', baseJobId: 'job-1' },
+    },
+  );
+  assert.deepEqual(
+    resultAdjustConfirmCommandSchema.parse({
+      billingQuoteId: 'quote-1',
       derivedTaskId: 'composer-task:result-adjust:prepared-1',
       derivedWorkId: 'work-derived-1',
       instruction: '语气更亲切',

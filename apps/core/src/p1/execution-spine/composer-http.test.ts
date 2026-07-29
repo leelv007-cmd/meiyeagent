@@ -922,14 +922,21 @@ test("a Result adjustment starts one new-chain submission from the frozen source
 		workspaceId: "workspace-1",
 	});
 	const source = starter.starts[0]!;
+	const sourceSnapshot = structuredClone(source.snapshot);
+	sourceSnapshot.deliverable.quantity = 3;
+	sourceSnapshot.deliverables[0]!.quantity = 3;
+	if (sourceSnapshot.signedSubmission?.deliverable) {
+		sourceSnapshot.signedSubmission.deliverable.quantity = 3;
+	}
 
 	const result = await coordinator.submitResultAdjustment({
 		actorId: "owner-1",
 		idempotencyKey: "result-adjust-1",
 		instruction: "语气更自然",
+		outputCount: 1,
 		quote: { id: "quote-adjust-1", revision: "quote-adjust-r1" },
 		sourceContentPackage: { id: source.contentPackage.id, revision: 3 },
-		sourceSnapshot: source.snapshot,
+		sourceSnapshot,
 		taskId: "composer-task:result-adjust:1",
 		workId: "work-result-adjust-1",
 		workspaceId: "workspace-1",
@@ -946,6 +953,11 @@ test("a Result adjustment starts one new-chain submission from the frozen source
 	assert.equal(adjusted.snapshot.sources.contentPackage?.revision, "3");
 	assert.match(adjusted.snapshot.intent.text, /调整要求：语气更自然/u);
 	assert.equal(adjusted.snapshot.deliverable.quantity, 1);
+	assert.equal(adjusted.snapshot.deliverables[0]?.quantity, 1);
+	assert.deepEqual(
+		submissions.reservedUnits("workspace-1", "result-adjust-1"),
+		[{ resource: "copy", quantity: 1 }],
+	);
 });
 
 test("a rejected Composer admission does not claim a shell or start Harness", async () => {

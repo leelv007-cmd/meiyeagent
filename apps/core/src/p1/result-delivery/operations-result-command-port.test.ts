@@ -140,6 +140,7 @@ function fixture(
   } as unknown as OperationsApplicationService;
   const confirmCalls: unknown[] = [];
   let quoteStatus = options.quoteStatus ?? 'confirmed';
+  let quoteTaskId = options.quoteTaskId ?? 'derived-work-1';
   const quoteOutputCount =
     options.quoteOutputCount ?? options.scopedAssetIds?.length ?? 1;
   const currentQuote = () => ({
@@ -150,7 +151,7 @@ function fixture(
     ...(quoteStatus === 'confirmed'
       ? {
           confirmedAt: '2026-07-20T00:02:00.000Z',
-          taskId: options.quoteTaskId ?? 'derived-work-1',
+          taskId: quoteTaskId,
         }
       : {}),
     formula: { currency: 'CNY', expression: 'fresh', unitRate: 2 },
@@ -168,6 +169,7 @@ function fixture(
     },
     async confirm(input: unknown) {
       confirmCalls.push(input);
+      quoteTaskId = (input as { taskId: string }).taskId;
       quoteStatus = 'confirmed';
       return currentQuote();
     },
@@ -275,28 +277,96 @@ test('Composer snapshot adjustment preparation does not create a legacy Work', a
 test('Composer snapshot adjustment never fabricates a legacy CreativeJob', async () => {
   const { composerCalls, port, submitCalls } = fixture({
     quoteOutputCount: 2,
-    quoteTaskId: 'composer-task:result-adjust:fixture',
+    quoteStatus: 'quoted',
   });
+  const command = {
+    expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+    instruction: '换成夏日风格',
+    source: {
+      expectedPackageRevision: 3,
+      kind: 'content_package_snapshot' as const,
+      packageId: 'package-1',
+      snapshotId: 'snapshot-task-1',
+      workflowId: 'task-1',
+    },
+    workId: 'work-1',
+  };
+  const prepared = await port.prepareAdjust(
+    context,
+    command,
+    'adjust-composer-prepare-success',
+  );
   await port.adjust(
     context,
     {
       billingQuoteId: 'quote-fresh',
-      derivedTaskId: 'composer-task:result-adjust:fixture',
-      derivedWorkId: 'work-result-adjust-fixture',
-      instruction: '换成夏日风格',
-      source: {
-        expectedPackageRevision: 3,
-        kind: 'content_package_snapshot',
-        packageId: 'package-1',
-        snapshotId: 'snapshot-task-1',
-        workflowId: 'task-1',
-      },
+      derivedTaskId: prepared.task.id,
+      derivedWorkId: prepared.work.id,
+      instruction: command.instruction,
+      source: command.source,
     },
     'adjust-composer-confirm',
   );
 
   assert.deepEqual(submitCalls, []);
   assert.equal(composerCalls.length, 1);
+});
+
+test('Composer snapshot adjustment confirmation rejects changed prepared semantics', async () => {
+  const { composerCalls, port } = fixture({
+    quoteOutputCount: 1,
+    quoteStatus: 'quoted',
+  });
+  const source = {
+    expectedPackageRevision: 3,
+    kind: 'content_package_snapshot' as const,
+    packageId: 'package-1',
+    snapshotId: 'snapshot-task-1',
+    workflowId: 'task-1',
+  };
+  const prepared = await port.prepareAdjust(
+    context,
+    {
+      expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+      instruction: '换成夏日风格',
+      scope: { assetId: 'asset-1', kind: 'asset' },
+      source,
+      workId: 'work-1',
+    },
+    'adjust-composer-prepare-binding',
+  );
+
+  await assert.rejects(
+    port.adjust(
+      context,
+      {
+        billingQuoteId: 'quote-fresh',
+        derivedTaskId: prepared.task.id,
+        derivedWorkId: prepared.work.id,
+        instruction: '改成冬日风格',
+        scope: { assetId: 'asset-1', kind: 'asset' },
+        source,
+      },
+      'adjust-composer-confirm-tampered',
+    ),
+    /prepared adjustment Work and its frozen source were not found/,
+  );
+  await assert.rejects(
+    port.adjust(
+      context,
+      {
+        billingQuoteId: 'quote-fresh',
+        derivedTaskId: prepared.task.id,
+        derivedWorkId: prepared.work.id,
+        instruction: '换成夏日风格',
+        scope: { assetId: 'asset-2', kind: 'asset' },
+        source,
+      },
+      'adjust-composer-confirm-scope-tampered',
+    ),
+    /prepared adjustment Work and its frozen source were not found/,
+  );
+  assert.deepEqual(composerCalls, []);
 });
 
 test('Composer snapshot adjustment fails closed on package revision drift', async () => {
@@ -375,22 +445,36 @@ test('Composer snapshot adjustment rejects scope outside the current package', a
 });
 
 test('Composer snapshot adjustment rejects a quote for another quantity', async () => {
-  const { port, submitCalls } = fixture({ quoteOutputCount: 1 });
+  const { port, submitCalls } = fixture({
+    quoteOutputCount: 1,
+    quoteStatus: 'quoted',
+  });
+  const command = {
+    expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+    instruction: '换成夏日风格',
+    source: {
+      expectedPackageRevision: 3,
+      kind: 'content_package_snapshot' as const,
+      packageId: 'package-1',
+      snapshotId: 'snapshot-task-1',
+      workflowId: 'task-1',
+    },
+    workId: 'work-1',
+  };
+  const prepared = await port.prepareAdjust(
+    context,
+    command,
+    'adjust-composer-prepare-wrong-quantity',
+  );
   await assert.rejects(
     port.adjust(
       context,
       {
         billingQuoteId: 'quote-fresh',
-        derivedTaskId: 'composer-task:result-adjust:fixture',
-        derivedWorkId: 'work-result-adjust-fixture',
-        instruction: '换成夏日风格',
-        source: {
-          expectedPackageRevision: 3,
-          kind: 'content_package_snapshot',
-          packageId: 'package-1',
-          snapshotId: 'snapshot-task-1',
-          workflowId: 'task-1',
-        },
+        derivedTaskId: prepared.task.id,
+        derivedWorkId: prepared.work.id,
+        instruction: command.instruction,
+        source: command.source,
       },
       'adjust-composer-wrong-quantity',
     ),
@@ -447,9 +531,7 @@ test('confirmed adjustment submits with only the server quote facts', async () =
     context,
     {
       billingQuoteId: 'quote-fresh',
-      derivedTaskId: 'derived-work-1',
       derivedWorkId: 'derived-work-1',
-      instruction: '换成夏日风格',
       source: { baseJobId: 'job-1', kind: 'legacy_job' },
     },
     'adjust-confirm-1',
@@ -484,9 +566,7 @@ test('adjust confirmation binds a fresh quote to the server-derived Work', async
     context,
     {
       billingQuoteId: 'quote-fresh',
-      derivedTaskId: 'derived-work-1',
       derivedWorkId: 'derived-work-1',
-      instruction: '换成夏日风格',
       source: { baseJobId: 'job-1', kind: 'legacy_job' },
     },
     'adjust-confirm-quoted',
@@ -508,9 +588,7 @@ test('set adjustment freezes the explicit set size into the submitted contract',
     context,
     {
       billingQuoteId: 'quote-fresh',
-      derivedTaskId: 'derived-work-1',
       derivedWorkId: 'derived-work-1',
-      instruction: '换成夏日风格',
       source: { baseJobId: 'job-1', kind: 'legacy_job' },
     },
     'adjust-confirm-set',
@@ -531,9 +609,7 @@ test('set adjustment rejects a quote for a different output quantity', async () 
       context,
       {
         billingQuoteId: 'quote-fresh',
-        derivedTaskId: 'derived-work-1',
         derivedWorkId: 'derived-work-1',
-        instruction: '换成夏日风格',
         source: { baseJobId: 'job-1', kind: 'legacy_job' },
       },
       'adjust-confirm-wrong-quantity',

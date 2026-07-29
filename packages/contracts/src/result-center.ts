@@ -205,22 +205,26 @@ export const resultAdoptCommandSchema = z
   })
   .strict();
 
+const resultAdjustLegacySourceSchema = z
+  .object({
+    baseJobId: resultObjectIdSchema,
+    kind: z.literal('legacy_job'),
+  })
+  .strict();
+
+const resultAdjustContentPackageSourceSchema = z
+  .object({
+    expectedPackageRevision: z.number().int().nonnegative(),
+    kind: z.literal('content_package_snapshot'),
+    packageId: resultObjectIdSchema,
+    snapshotId: resultObjectIdSchema,
+    workflowId: resultObjectIdSchema,
+  })
+  .strict();
+
 export const resultAdjustSourceSchema = z.discriminatedUnion('kind', [
-  z
-    .object({
-      baseJobId: resultObjectIdSchema,
-      kind: z.literal('legacy_job'),
-    })
-    .strict(),
-  z
-    .object({
-      expectedPackageRevision: z.number().int().nonnegative(),
-      kind: z.literal('content_package_snapshot'),
-      packageId: resultObjectIdSchema,
-      snapshotId: resultObjectIdSchema,
-      workflowId: resultObjectIdSchema,
-    })
-    .strict(),
+  resultAdjustLegacySourceSchema,
+  resultAdjustContentPackageSourceSchema,
 ]);
 
 const resultAdjustScopeSchema = z.discriminatedUnion('kind', [
@@ -253,16 +257,25 @@ export const resultAdjustCommandSchema = z
  * Submit a prepared adjustment with a server-owned, already-confirmed quote.
  * Money, pricing policy, and execution-contract fields are never browser input.
  */
-export const resultAdjustConfirmCommandSchema = z
-  .object({
-    billingQuoteId: resultObjectIdSchema,
-    derivedTaskId: resultObjectIdSchema,
-    derivedWorkId: resultObjectIdSchema,
-    instruction: z.string().trim().min(1).max(2_000),
-    scope: resultAdjustScopeSchema.optional(),
-    source: resultAdjustSourceSchema,
-  })
-  .strict();
+export const resultAdjustConfirmCommandSchema = z.union([
+  z
+    .object({
+      billingQuoteId: resultObjectIdSchema,
+      derivedWorkId: resultObjectIdSchema,
+      source: resultAdjustLegacySourceSchema,
+    })
+    .strict(),
+  z
+    .object({
+      billingQuoteId: resultObjectIdSchema,
+      derivedTaskId: resultObjectIdSchema,
+      derivedWorkId: resultObjectIdSchema,
+      instruction: z.string().trim().min(1).max(2_000),
+      scope: resultAdjustScopeSchema.optional(),
+      source: resultAdjustContentPackageSourceSchema,
+    })
+    .strict(),
+]);
 
 export const resultExportCommandSchema = z
   .object({

@@ -1057,19 +1057,27 @@ function ResultCenterRoutePage() {
     setAdjustBusy(true);
     setAdjustError(undefined);
     try {
+      const command =
+        pendingImageAdjust.source.kind === 'legacy_job'
+          ? {
+              billingQuoteId: pendingImageAdjust.quote.quoteId,
+              derivedWorkId: pendingImageAdjust.derivedWorkId,
+              source: pendingImageAdjust.source,
+            }
+          : {
+              billingQuoteId: pendingImageAdjust.quote.quoteId,
+              derivedTaskId: pendingImageAdjust.derivedTaskId,
+              derivedWorkId: pendingImageAdjust.derivedWorkId,
+              instruction: pendingImageAdjust.instruction,
+              ...(pendingImageAdjust.scope
+                ? { scope: pendingImageAdjust.scope }
+                : {}),
+              source: pendingImageAdjust.source,
+            };
       const result = await executeIntent<{ work: { id: string } }>(
         `adjust-confirm:${pendingImageAdjust.derivedWorkId}:${pendingImageAdjust.quote.quoteId}`,
         'result_adjust',
-        {
-          billingQuoteId: pendingImageAdjust.quote.quoteId,
-          derivedTaskId: pendingImageAdjust.derivedTaskId,
-          derivedWorkId: pendingImageAdjust.derivedWorkId,
-          instruction: pendingImageAdjust.instruction,
-          ...(pendingImageAdjust.scope
-            ? { scope: pendingImageAdjust.scope }
-            : {}),
-          source: pendingImageAdjust.source,
-        }
+        command
       );
       setPendingImageAdjust(null);
       window.requestAnimationFrame(() => {

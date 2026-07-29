@@ -36,6 +36,7 @@ export interface ResultAdjustComposerSubmissionPort {
     actorId: string;
     idempotencyKey: string;
     instruction: string;
+    outputCount: number;
     quote: { id: string; revision: string };
     sourceContentPackage: { id: string; revision: number };
     sourceSnapshot: CreationExecutionSnapshot;
@@ -69,39 +70,53 @@ function merchantPackage(contentPackage: ContentPackage): VisualAdoptionResult {
   };
 }
 
-const CREATIVE_SESSION_ID = /^[A-Za-z0-9._:-]{1,160}$/u;
-
-function resultAdjustSessionId(work: { id: string; sessionId: string }) {
-  if (CREATIVE_SESSION_ID.test(work.sessionId)) return work.sessionId;
-  return `result-adjust:${work.id}`
-    .replace(/[^A-Za-z0-9._:-]/gu, '-')
-    .slice(0, 160);
-}
-
-function composerAdjustmentIds(workspaceId: string, idempotencyKey: string) {
-  const suffix = fingerprintValue({ idempotencyKey, workspaceId }).slice(0, 32);
+function composerAdjustmentIds(input: {
+  instruction: string;
+  scope: ResultAdjustCommand['scope'];
+  source: Extract<ResultAdjustSource, { kind: 'content_package_snapshot' }>;
+  workId: string;
+  workspaceId: string;
+}) {
+  const suffix = fingerprintValue({
+    instruction: input.instruction,
+    scope: input.scope ?? null,
+    source: input.source,
+    workId: input.workId,
+    workspaceId: input.workspaceId,
+  }).slice(0, 32);
   return {
     task: { id: `composer-task:result-adjust:${suffix}` },
     work: { id: `work-result-adjust-${suffix}` },
   };
 }
 
-function isComposerAdjustmentPair(workId: string, taskId: string) {
-  return (
-    workId.startsWith('work-result-adjust-') &&
-    taskId ===
-      `composer-task:result-adjust:${workId.slice('work-result-adjust-'.length)}`
-  );
-}
-
-function resultAdjustScopeAssetIds(
-  scope: ResultAdjustCommand['scope'] | ResultAdjustConfirmCommand['scope'],
-) {
+function resultAdjustScopeAssetIds(scope: ResultAdjustCommand['scope']) {
   return scope
     ? scope.kind === 'asset'
       ? [scope.assetId]
       : scope.assetIds
     : [];
+}
+
+function resultAdjustInstruction(
+  instruction: string,
+  scope: ResultAdjustCommand['scope'],
+) {
+  if (!scope) return instruction;
+  return scope.kind === 'asset'
+    ? `${instruction}\n调整范围：单张 ${scope.assetId}`
+    : `${instruction}\n调整范围：整组 ${scope.assetIds.join(', ')}`;
+}
+
+type ComposerAdjustConfirmCommand = Extract<
+  ResultAdjustConfirmCommand,
+  { source: { kind: 'content_package_snapshot' } }
+>;
+
+function isComposerAdjustConfirmCommand(
+  command: ResultAdjustConfirmCommand,
+): command is ComposerAdjustConfirmCommand {
+  return command.source.kind === 'content_package_snapshot';
 }
 
 /**
@@ -243,10 +258,13 @@ export class OperationsResultCommandPort {
             404,
           );
         }
-        const frozen =
+        const composerSource =
           command.source.kind === 'content_package_snapshot'
-            ? await this.frozenSource(operation, command.source)
+            ? command.source
             : undefined;
+        const frozen = composerSource
+          ? await this.frozenSource(operation, composerSource)
+          : undefined;
         const legacyBaseJobId =
           command.source.kind === 'legacy_job'
             ? command.source.baseJobId
@@ -330,14 +348,16 @@ export class OperationsResultCommandPort {
             409,
           );
         }
-        const scopeInstruction = command.scope
-          ? command.scope.kind === 'asset'
-            ? `\n调整范围：单张 ${command.scope.assetId}`
-            : `\n调整范围：整组 ${command.scope.assetIds.join(', ')}`
-          : '';
-        const preparedIds = frozen
-          ? composerAdjustmentIds(operation.workspaceId, idempotencyKey)
-          : undefined;
+        const preparedIds =
+          frozen && composerSource
+            ? composerAdjustmentIds({
+                instruction: command.instruction,
+                scope: command.scope,
+                source: composerSource,
+                workId: source.id,
+                workspaceId: operation.workspaceId,
+              })
+            : undefined;
         const derived =
           preparedIds?.work ??
           (await this.operations.deriveCreativeWork(
@@ -345,8 +365,11 @@ export class OperationsResultCommandPort {
             source.id,
             {
               autoConfirmBrief: true,
-              intent: `${source.intent}\n\n调整要求：${command.instruction}${scopeInstruction}`,
-              sessionId: resultAdjustSessionId(source),
+              intent: `${source.intent}\n\n调整要求：${resultAdjustInstruction(
+                command.instruction,
+                command.scope,
+              )}`,
+              sessionId: source.sessionId,
               sourceReferences: [
                 { id: source.id, kind: 'work' },
                 ...scopeAssetIds.map((id) => ({ id, kind: 'asset' as const })),
@@ -392,10 +415,12 @@ export class OperationsResultCommandPort {
       { action: 'result_adjust', payload: command },
       async () => {
         const workbench = await this.operations.getCreativeWorkbench(operation);
-        const frozen =
-          command.source.kind === 'content_package_snapshot'
-            ? await this.frozenSource(operation, command.source)
-            : undefined;
+        const composerCommand = isComposerAdjustConfirmCommand(command)
+          ? command
+          : undefined;
+        const frozen = composerCommand
+          ? await this.frozenSource(operation, composerCommand.source)
+          : undefined;
         const legacyBaseJobId =
           command.source.kind === 'legacy_job'
             ? command.source.baseJobId
@@ -413,6 +438,16 @@ export class OperationsResultCommandPort {
         const derived = sourceJob
           ? workbench.works.find(({ id }) => id === command.derivedWorkId)
           : undefined;
+        const preparedIds =
+          frozen && composerCommand
+            ? composerAdjustmentIds({
+                instruction: composerCommand.instruction,
+                scope: composerCommand.scope,
+                source: composerCommand.source,
+                workId: frozen.snapshot.work.id,
+                workspaceId: operation.workspaceId,
+              })
+            : undefined;
         if (
           !source ||
           (sourceJob &&
@@ -426,11 +461,11 @@ export class OperationsResultCommandPort {
                   reference.kind === 'work' && reference.id === source.id,
               ))) ||
           (frozen &&
-            (!this.composerSubmissions ||
-              !isComposerAdjustmentPair(
-                command.derivedWorkId,
-                command.derivedTaskId,
-              )))
+            (!composerCommand ||
+              !preparedIds ||
+              !this.composerSubmissions ||
+              composerCommand.derivedWorkId !== preparedIds.work.id ||
+              composerCommand.derivedTaskId !== preparedIds.task.id))
         ) {
           throw new OperationsError(
             'RESULT_ADJUST_PREPARATION_NOT_FOUND',
@@ -456,7 +491,7 @@ export class OperationsResultCommandPort {
             .map((reference) => reference.id),
         );
         const scopedAssetIds = frozen
-          ? resultAdjustScopeAssetIds(command.scope)
+          ? resultAdjustScopeAssetIds(composerCommand?.scope)
           : (derived?.sourceReferences ?? [])
               .filter(
                 (reference) =>
@@ -507,6 +542,8 @@ export class OperationsResultCommandPort {
           command.billingQuoteId,
           operation.workspaceId,
         );
+        const derivedTaskId =
+          composerCommand?.derivedTaskId ?? command.derivedWorkId;
         if (
           !pendingQuote ||
           pendingQuote.workspaceId !== operation.workspaceId ||
@@ -516,7 +553,7 @@ export class OperationsResultCommandPort {
           (pendingQuote.lifecycleStatus !== 'quoted' &&
             pendingQuote.lifecycleStatus !== 'confirmed') ||
           (pendingQuote.taskId !== undefined &&
-            pendingQuote.taskId !== command.derivedTaskId)
+            pendingQuote.taskId !== derivedTaskId)
         ) {
           throw new OperationsError(
             'RESULT_ADJUST_QUOTE_MISMATCH',
@@ -529,11 +566,11 @@ export class OperationsResultCommandPort {
             ? pendingQuote
             : await this.quotes.confirm({
                 quoteId: pendingQuote.quoteId,
-                taskId: command.derivedTaskId,
+                taskId: derivedTaskId,
                 workspaceId: operation.workspaceId,
               });
         if (
-          quote.taskId !== command.derivedTaskId ||
+          quote.taskId !== derivedTaskId ||
           quote.lifecycleStatus !== 'confirmed' ||
           !quote.catalogModelRevision ||
           quote.confirmedAmount === undefined ||
@@ -548,19 +585,23 @@ export class OperationsResultCommandPort {
             409,
           );
         }
-        if (frozen) {
+        if (frozen && composerCommand) {
           return this.composerSubmissions!.submit({
             actorId: operation.userId,
             idempotencyKey: `result-adjust:${idempotencyKey}`,
-            instruction: command.instruction,
+            instruction: resultAdjustInstruction(
+              composerCommand.instruction,
+              composerCommand.scope,
+            ),
+            outputCount: expectedOutputCount,
             quote: { id: quote.quoteId, revision: quote.revision },
             sourceContentPackage: {
               id: frozen.contentPackage.id,
               revision: frozen.contentPackage.revision,
             },
             sourceSnapshot: frozen.snapshot,
-            taskId: command.derivedTaskId,
-            workId: command.derivedWorkId,
+            taskId: composerCommand.derivedTaskId,
+            workId: composerCommand.derivedWorkId,
             workspaceId: operation.workspaceId,
           });
         }
