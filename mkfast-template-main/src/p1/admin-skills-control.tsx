@@ -24,7 +24,6 @@ const ACTION_TEMPLATES = {
       name: 'beauty-story',
     },
     governance: {
-      allowedTools: [],
       budget: {
         maxChildEffects: 0,
         maxCostCents: 0,
