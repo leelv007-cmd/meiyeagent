@@ -1,4 +1,9 @@
-import type { ObservabilityEvent } from '@meiye/contracts';
+import {
+  observabilityAxisBindingSchema,
+  observabilityEventSchema,
+  type ObservabilityAxisBinding,
+  type ObservabilityEvent,
+} from '@meiye/contracts';
 import { isDeepStrictEqual } from 'node:util';
 
 interface HarnessAuditWriter {
@@ -31,12 +36,77 @@ function assertServerOwnedEventIdentity(
   }
 }
 
+function taskRootClaim(event: ObservabilityEvent) {
+  if (
+    event.eventType !== 'agent_primitive.lifecycle' ||
+    event.axisScope !== 'task_root' ||
+    event.payload.primitiveId !== 'harness-assembly:event_persistence'
+  ) {
+    return;
+  }
+  const { idempotencyKey: _idempotencyKey, ...claim } = event;
+  return claim;
+}
+
 export interface ObservabilityEventAuditPort {
   append<Event extends ObservabilityEvent>(
     workspaceId: string,
     event: Event,
     idempotencyKey: string,
   ): Promise<Event> | Event;
+}
+
+export interface TaskObservabilityContextPort {
+  readTaskRootAxes(
+    workspaceId: string,
+    taskId: string,
+  ): Promise<ObservabilityAxisBinding | null>;
+  deliveryBelongsToTask(
+    workspaceId: string,
+    taskId: string,
+    delivery: {
+      packageId: string;
+      versionId: string;
+      revision: number;
+    },
+  ): Promise<boolean>;
+}
+
+export function childObservabilityEnvelope(
+  binding: ObservabilityAxisBinding,
+) {
+  const parsed = observabilityAxisBindingSchema.parse(binding);
+  const value = (
+    axis:
+      | ObservabilityAxisBinding['skillRevision']
+      | ObservabilityAxisBinding['promptVersion']
+      | ObservabilityAxisBinding['catalogRevision']
+      | ObservabilityAxisBinding['scene'],
+  ) => (axis.kind === 'bound' ? axis.value : null);
+  return {
+    axisScope: 'execution_child' as const,
+    skillRevision: value(parsed.skillRevision),
+    promptVersion: value(parsed.promptVersion),
+    catalogRevision: value(parsed.catalogRevision),
+    scene: value(parsed.scene),
+  };
+}
+
+export function canonicalObservabilityEvent(input: {
+  taskId: string;
+  binding: ObservabilityAxisBinding;
+  eventType: Exclude<
+    ObservabilityEvent['eventType'],
+    'agent_primitive.lifecycle'
+  >;
+  payload: unknown;
+}): ObservabilityEvent {
+  return observabilityEventSchema.parse({
+    eventType: input.eventType,
+    taskId: input.taskId,
+    ...childObservabilityEnvelope(input.binding),
+    payload: input.payload,
+  });
 }
 
 export class HarnessObservabilityEventAudit
@@ -70,6 +140,7 @@ export class MemoryObservabilityEventAudit
     idempotencyKey: string;
     workspaceId: string;
   }> = [];
+  private readonly taskRootClaims = new Map<string, unknown>();
 
   append<Event extends ObservabilityEvent>(
     workspaceId: string,
@@ -88,6 +159,16 @@ export class MemoryObservabilityEventAudit
         throw new Error('Observability idempotency conflict.');
       }
       return structuredClone(existing.event) as Event;
+    }
+    const rootClaim = taskRootClaim(storedEvent);
+    if (rootClaim) {
+      const claimKey = `${workspaceId}\u0000${event.taskId}`;
+      const existingClaim = this.taskRootClaims.get(claimKey);
+      if (existingClaim && !isDeepStrictEqual(existingClaim, rootClaim)) {
+        throw new Error('Task root observability conflict.');
+      }
+      if (existingClaim) return structuredClone(storedEvent);
+      this.taskRootClaims.set(claimKey, structuredClone(rootClaim));
     }
     this.events.push({ event: storedEvent, idempotencyKey, workspaceId });
     return structuredClone(storedEvent);

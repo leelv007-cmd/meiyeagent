@@ -78,6 +78,10 @@ import type {
   AgentPrimitiveLifecycleInput,
   AgentPrimitiveObservabilityAdapter,
 } from '../creation-experience/agent-primitive-observability.js';
+import {
+  canonicalObservabilityEvent,
+  type ObservabilityEventAuditPort,
+} from '../creation-experience/observability-events.js';
 
 export interface ProductionHarnessContextPort {
   compileAndFreeze(input: {
@@ -350,7 +354,33 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     private readonly executionChildObservability?: HarnessExecutionChildObservabilityFactory,
     private readonly primitiveCheck?: HarnessPrimitiveCheckPort,
     private readonly candidatePrimitiveRunner?: HarnessCandidatePrimitiveRunnerFactory,
+    private readonly observabilityEvents?: ObservabilityEventAuditPort,
   ) {}
+
+  async recordObservabilityEvent(
+    input: Parameters<
+      NonNullable<HarnessStagePorts['recordObservabilityEvent']>
+    >[0],
+  ) {
+    if (!this.observabilityEvents) {
+      throw new Error('Canonical Harness observability is not configured.');
+    }
+    const event = canonicalObservabilityEvent({
+      taskId: input.workflowId,
+      binding: harnessCanonicalChildAxes({
+        request: input.request,
+        stage: 'execution_selection',
+        ...(input.promptKey ? { promptKey: input.promptKey } : {}),
+      }),
+      eventType: input.event.eventType,
+      payload: input.event.payload,
+    });
+    await this.observabilityEvents.append(
+      input.request.workspaceId,
+      event,
+      input.idempotencyKey,
+    );
+  }
 
   async recordExecutionAssemblyStep(input: {
     workflowId: string;
@@ -368,7 +398,6 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         'Execution assembly requires observability for workflow completion.',
       );
     }
-    const root = input.step === 'event_persistence';
     await this.executionChildObservability.create(input.request).append({
       context: {
         actor: 'worker',
@@ -379,15 +408,13 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       taskId: input.workflowId,
       primitiveId: `harness-assembly:${input.step}`,
       baseIdempotencyKey: `harness-assembly:${input.workflowId}:${input.step}`,
-      axes: root
-        ? assembly.rootAxes
-        : {
-            axisScope: 'execution_child',
-            skillRevision: { kind: 'absent' },
-            promptVersion: { kind: 'absent' },
-            catalogRevision: { kind: 'absent' },
-            scene: { kind: 'absent' },
-          },
+      axes: {
+        axisScope: 'execution_child',
+        skillRevision: { kind: 'absent' },
+        promptVersion: { kind: 'absent' },
+        catalogRevision: { kind: 'absent' },
+        scene: { kind: 'absent' },
+      },
       phase: 'succeeded',
     });
   }
@@ -976,11 +1003,9 @@ export function harnessExecutionChildLifecycleInput(input: {
   primitiveId: string;
   baseIdempotencyKey: string;
   promptKey?: keyof NonNullable<HarnessWorkflowInput['prompts']>;
-  catalogRoute?: NonNullable<HarnessWorkflowInput['frozenRouteSnapshot']>;
 }): Omit<AgentPrimitiveLifecycleInput, 'phase'> {
   const { request, stage } = input;
   const assembly = request.executionAssembly;
-  const route = input.catalogRoute ?? structuredControllerFrozenRoute(request);
   if (!assembly) {
     throw new Error(
       'Execution child observability requires the frozen assembly.',
@@ -1032,10 +1057,10 @@ export function harnessExecutionChildLifecycleInput(input: {
           value: `${prompt.name}@${prompt.version}`,
         }
       : { kind: 'absent' },
-    catalogRevision: route
+    catalogRevision: request.executionSnapshot?.catalogModel.revision
       ? {
           kind: 'bound',
-          value: route.catalogRevisionId,
+          value: request.executionSnapshot.catalogModel.revision,
         }
       : { kind: 'absent' },
     scene:
@@ -1055,6 +1080,20 @@ export function harnessExecutionChildLifecycleInput(input: {
     baseIdempotencyKey: input.baseIdempotencyKey,
     axes,
   };
+}
+
+export function harnessCanonicalChildAxes(input: {
+  request: HarnessWorkflowInput;
+  stage: HarnessStage;
+  promptKey?: keyof NonNullable<HarnessWorkflowInput['prompts']>;
+}): ObservabilityAxisBinding {
+  return harnessExecutionChildLifecycleInput({
+    request: input.request,
+    stage: input.stage,
+    primitiveId: 'canonical-observability',
+    baseIdempotencyKey: 'canonical-observability',
+    ...(input.promptKey ? { promptKey: input.promptKey } : {}),
+  }).axes;
 }
 
 function structuredControllerFrozenRoute(

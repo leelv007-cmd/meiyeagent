@@ -517,6 +517,19 @@ export class HarnessTaskAdmissionService {
     if (!this.assemblyAudits || !request.executionAssembly) return;
     const workflowId = request.executionAssembly.workflowId;
     for (const step of steps) {
+      const root = step === 'task_pin';
+      const axes = root
+        ? request.executionAssembly.rootAxes
+        : {
+            axisScope: 'execution_child' as const,
+            skillRevision: { kind: 'absent' as const },
+            promptVersion: { kind: 'absent' as const },
+            catalogRevision: { kind: 'absent' as const },
+            scene: { kind: 'absent' as const },
+          };
+      const axisValue = (
+        value: ObservabilityAxisBinding['skillRevision'],
+      ) => (value.kind === 'bound' ? value.value : null);
       const idempotencyKey = `harness-assembly-${fingerprintValue([
         workflowId,
         step,
@@ -528,11 +541,11 @@ export class HarnessTaskAdmissionService {
         actorId: serverAuditReference(request.actorId),
         actorKind: 'worker',
         idempotencyKey,
-        axisScope: 'execution_child',
-        skillRevision: null,
-        promptVersion: null,
-        catalogRevision: null,
-        scene: null,
+        axisScope: axes.axisScope,
+        skillRevision: axisValue(axes.skillRevision),
+        promptVersion: axisValue(axes.promptVersion),
+        catalogRevision: axisValue(axes.catalogRevision),
+        scene: axisValue(axes.scene),
         payload: {
           primitiveId: `harness-assembly:${step}`,
           phase: 'succeeded',
@@ -773,7 +786,7 @@ function executionAssemblySnapshot(input: {
       : { kind: 'absent' };
   const scene =
     input.request.intent.context.scene?.trim() ||
-    input.request.executionSnapshot?.recipe.id;
+    input.request.intent.context.intent.trim();
   const rootAxes = observabilityAxisBindingSchema.parse({
     axisScope: 'task_root',
     skillRevision: binding(skillRefs),

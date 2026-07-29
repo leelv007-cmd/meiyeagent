@@ -8,7 +8,7 @@ import {
   creationLensIds,
   type ContentPackageRevisionDelivery,
 } from '@meiye/contracts';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { FormEvent } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -90,14 +90,30 @@ describe('成品卡评价条', () => {
     const down = screen.getByRole('button', { name: '这一版不好用' });
 
     await user.click(up);
-    expect(onRate.mock.calls).toEqual([['up']]);
+    expect(onRate.mock.calls).toEqual([
+      [
+        {
+          action: 'up',
+          idempotencyKey: expect.any(String),
+          previousVerdict: null,
+          nextVerdict: 'up',
+        },
+      ],
+    ]);
     expect(up).toHaveAttribute('aria-pressed', 'true');
     expect(down).toHaveAttribute('aria-pressed', 'false');
     // 视觉反馈只有图标变色，读屏用户拿这条 sr-only 播报。
     expect(within(ratingGroup()).getByText('已记下：好用')).toBeInTheDocument();
 
     await user.click(down);
-    expect(onRate.mock.calls).toEqual([['up'], ['down']]);
+    expect(onRate.mock.calls.at(-1)).toEqual([
+      {
+        action: 'down',
+        idempotencyKey: expect.any(String),
+        previousVerdict: 'up',
+        nextVerdict: 'down',
+      },
+    ]);
     expect(up).toHaveAttribute('aria-pressed', 'false');
     expect(down).toHaveAttribute('aria-pressed', 'true');
     expect(
@@ -107,12 +123,70 @@ describe('成品卡评价条', () => {
     // 撤回：UI 复位，但事件照发 —— 前端不做去重，「商家改了主意」是最强的一条
     // 时序证据，在信号进入之前合并掉等于先把它丢了。
     await user.click(down);
-    expect(onRate.mock.calls).toEqual([['up'], ['down'], ['down']]);
+    expect(onRate.mock.calls.at(-1)).toEqual([
+      {
+        action: 'down',
+        idempotencyKey: expect.any(String),
+        previousVerdict: 'down',
+        nextVerdict: null,
+      },
+    ]);
     expect(down).toHaveAttribute('aria-pressed', 'false');
     expect(within(ratingGroup()).queryByText('已记下：不好用')).toBeNull();
 
     // R-05：评价不是一条写路径，不得顺带打开结果中心。
     expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it('only shows a rating after the canonical append is acknowledged', async () => {
+    const user = userEvent.setup();
+    let acknowledge!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      acknowledge = resolve;
+    });
+    renderCard({ onRate: () => pending });
+    const up = screen.getByRole('button', { name: '这一版好用' });
+
+    await user.click(up);
+    expect(up).toHaveAttribute('aria-pressed', 'false');
+    expect(up).toBeDisabled();
+    expect(screen.getByRole('button', { name: '这一版不好用' })).toBeDisabled();
+
+    acknowledge();
+    await pending;
+    await waitFor(() => expect(up).toHaveAttribute('aria-pressed', 'true'));
+    expect(up).not.toBeDisabled();
+  });
+
+  it('serializes rating writes and reuses the transition key after an ambiguous failure', async () => {
+    const user = userEvent.setup();
+    let rejectFirst!: (error: Error) => void;
+    const first = new Promise<void>((_resolve, reject) => {
+      rejectFirst = reject;
+    });
+    const onRate = vi
+      .fn()
+      .mockImplementationOnce(() => first)
+      .mockResolvedValueOnce(undefined);
+    renderCard({ onRate });
+    const up = screen.getByRole('button', { name: '这一版好用' });
+    const down = screen.getByRole('button', { name: '这一版不好用' });
+
+    await user.click(up);
+    await user.click(down);
+    expect(onRate).toHaveBeenCalledTimes(1);
+
+    rejectFirst(new Error('response lost after commit'));
+    await first.catch(() => undefined);
+    await waitFor(() => expect(up).not.toBeDisabled());
+    expect(up).toHaveAttribute('aria-pressed', 'false');
+
+    await user.click(up);
+    expect(onRate).toHaveBeenCalledTimes(2);
+    expect(onRate.mock.calls[1]?.[0].idempotencyKey).toBe(
+      onRate.mock.calls[0]?.[0].idempotencyKey
+    );
+    await waitFor(() => expect(up).toHaveAttribute('aria-pressed', 'true'));
   });
 
   it('复制只报告动作，不改变态度也不打开结果中心', async () => {
@@ -121,7 +195,16 @@ describe('成品卡评价条', () => {
 
     await user.click(screen.getByRole('button', { name: '复制文案' }));
 
-    expect(onRate.mock.calls).toEqual([['copy']]);
+    expect(onRate.mock.calls).toEqual([
+      [
+        {
+          action: 'copy',
+          idempotencyKey: expect.any(String),
+          previousVerdict: null,
+          nextVerdict: null,
+        },
+      ],
+    ]);
     expect(screen.getByRole('button', { name: '这一版好用' })).toHaveAttribute(
       'aria-pressed',
       'false'

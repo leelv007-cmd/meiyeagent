@@ -410,7 +410,7 @@ test('Composer admission assembles manifest, binding, prompts, pin, then starts'
       kind: 'bound',
       value: snapshot.catalogModel.revision,
     },
-    scene: { kind: 'bound', value: snapshot.recipe.id },
+    scene: { kind: 'bound', value: snapshot.intent.text },
   });
   assert.equal(
     starter.requests[0]?.executionAssembly?.frozenRouteSnapshotDigest,
@@ -461,11 +461,11 @@ test('Composer admission assembles manifest, binding, prompts, pin, then starts'
     actorId: taskPinEvent.actorId,
     actorKind: 'worker',
     idempotencyKey: taskPinEvent.idempotencyKey,
-    axisScope: 'execution_child',
-    skillRevision: null,
+    axisScope: 'task_root',
+    skillRevision: 'skill.intent@3',
     promptVersion: null,
-    catalogRevision: null,
-    scene: null,
+    catalogRevision: snapshot.catalogModel.revision,
+    scene: snapshot.intent.text,
     payload: {
       primitiveId: 'harness-assembly:task_pin',
       phase: 'succeeded',
@@ -477,6 +477,11 @@ test('Composer admission assembles manifest, binding, prompts, pin, then starts'
 test('workflow start failure cannot prewrite execution or persistence success', async () => {
   const snapshot = composerSnapshot();
   const auditSteps: string[] = [];
+  const taskPinAxes: Array<{
+    axisScope: string;
+    catalogRevision: string | null;
+    scene: string | null;
+  }> = [];
   const service = new HarnessTaskAdmissionService(
     new MemoryRequestRegistry(),
     {
@@ -503,6 +508,16 @@ test('workflow start failure cannot prewrite execution or persistence success', 
     {
       async appendAuditIdempotently(event) {
         auditSteps.push(event.payload.payload.primitiveId);
+        if (
+          event.payload.payload.primitiveId ===
+          'harness-assembly:task_pin'
+        ) {
+          taskPinAxes.push({
+            axisScope: event.payload.axisScope,
+            catalogRevision: event.payload.catalogRevision,
+            scene: event.payload.scene,
+          });
+        }
       },
     },
   );
@@ -516,6 +531,13 @@ test('workflow start failure cannot prewrite execution or persistence success', 
     'harness-assembly:hot_assembly',
     'harness-assembly:prompt_resolution',
     'harness-assembly:task_pin',
+  ]);
+  assert.deepEqual(taskPinAxes, [
+    {
+      axisScope: 'task_root',
+      catalogRevision: snapshot.catalogModel.revision,
+      scene: snapshot.intent.text,
+    },
   ]);
 });
 

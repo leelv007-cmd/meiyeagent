@@ -9,10 +9,6 @@ import {
 const event: MerchantObservabilityEvent = {
   eventType: 'delivery_rating.recorded',
   taskId: 'task-248',
-  skillRevision: 'copywriter@rev-17',
-  promptVersion: 'marketing/copy@v4',
-  catalogRevision: 'catalog-2026-07-29',
-  scene: 'opening-campaign',
   payload: {
     packageId: 'package-248',
     versionId: 'version-3',

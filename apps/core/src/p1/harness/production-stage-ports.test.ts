@@ -2160,6 +2160,85 @@ test('execution assembly drift stops before the structured provider effect', asy
   assert.equal(runner.requests.length, 0);
 });
 
+test('canonical emitter flattens frozen child axes and uses snapshot catalog authority', async () => {
+  const events = new MemoryObservabilityEventAudit();
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => new QueueRunner([]) },
+    {
+      async compileAndFreeze() {
+        return contextSnapshot();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-18T00:01:00.000Z',
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    events,
+  );
+  const request = taskInputWithExecutionAssembly('task-canonical');
+  request.executionAssembly!.skillStages.execution_selection = [
+    {
+      skillRevisionRef: 'skill.selection@3',
+      contentHash: 'hash-selection',
+      requiredModelCapabilities: [],
+    },
+  ];
+
+  await ports.recordObservabilityEvent({
+    workflowId: 'task-canonical',
+    request,
+    idempotencyKey: 'bounded:task-canonical:0:suspended',
+    event: {
+      eventType: 'bounded_execution.suspended',
+      payload: {
+        snapshot: {
+          schemaVersion: 'bounded-execution-snapshot/v1',
+          maxIterations: 1,
+          maxCostCents: 'unset',
+          maxWallClockMs: 'unset',
+          maxDelegations: 'unset',
+          requiredLimits: ['maxIterations'],
+          consumption: {
+            iterations: 1,
+            costCents: 0,
+            wallClockMs: 0,
+            delegations: 0,
+          },
+          stopReason: 'limit_reached',
+          triggeredLimit: 'maxIterations',
+        },
+        currentBest: { candidateId: 'candidate-1' },
+        unmetExplanation: 'One more iteration is required.',
+        resumable: true,
+      },
+    },
+    promptKey: 'copyCandidate',
+  });
+
+  const [event] = events.list(request.workspaceId);
+  assert.equal(event?.eventType, 'bounded_execution.suspended');
+  assert.equal(event?.axisScope, 'execution_child');
+  assert.equal(event?.skillRevision, 'skill.selection@3');
+  assert.equal(
+    event?.promptVersion,
+    `${request.promptRevisionRefs!.copyCandidate!.name}@${request.promptRevisionRefs!.copyCandidate!.version}`,
+  );
+  assert.equal(
+    event?.catalogRevision,
+    request.executionSnapshot!.catalogModel.revision,
+  );
+});
+
 test('a legacy request without execution assembly cannot start structured generation', async () => {
   const runner = new QueueRunner([
     {
@@ -2294,7 +2373,7 @@ test('structured provider child lifecycle uses frozen single-value axes', async 
         axisScope: 'execution_child',
         skillRevision: 'skill.intent@2',
         promptVersion: 'skill/intent-prompt@7',
-        catalogRevision: 'catalog-pinned',
+        catalogRevision: 'model-r1',
         scene: 'harness:copy',
       },
       {
@@ -2302,7 +2381,7 @@ test('structured provider child lifecycle uses frozen single-value axes', async 
         axisScope: 'execution_child',
         skillRevision: 'skill.intent@2',
         promptVersion: 'skill/intent-prompt@7',
-        catalogRevision: 'catalog-pinned',
+        catalogRevision: 'model-r1',
         scene: 'harness:copy',
       },
     ],
@@ -2393,7 +2472,7 @@ test('copy selection awaits the additive primitive check with frozen child axes'
         kind: 'bound',
         value: 'harness/copyCandidate@11',
       },
-      catalogRevision: { kind: 'bound', value: 'catalog-pinned' },
+      catalogRevision: { kind: 'bound', value: 'model-r1' },
       scene: { kind: 'bound', value: 'harness:copy' },
     },
     policyInput: {
@@ -2611,7 +2690,7 @@ test('copy self-correction uses the injected primitive candidate runner', async 
         kind: 'bound',
         value: 'harness/copyCandidate@11',
       },
-      catalogRevision: { kind: 'bound', value: 'catalog-pinned' },
+      catalogRevision: { kind: 'bound', value: 'model-r1' },
       scene: { kind: 'bound', value: 'harness:copy' },
     },
     taskId: workflowId,
@@ -2889,7 +2968,7 @@ test('structured controller receives the frozen route only for copy work', async
   assert.deepEqual(receivedRouteIds, ['route-pinned', null, null]);
 });
 
-test('media structured controller child lifecycle has no catalog axis', async () => {
+test('media structured controller child lifecycle uses snapshot catalog authority', async () => {
   const runner = new QueueRunner([
     {
       normalizedIntent: '制作团购图片',
@@ -2940,7 +3019,7 @@ test('media structured controller child lifecycle has no catalog axis', async ()
 
   assert.deepEqual(
     audit.list('workspace-1').map((event) => event.catalogRevision),
-    [null, null],
+    ['model-r1', 'model-r1'],
   );
 });
 

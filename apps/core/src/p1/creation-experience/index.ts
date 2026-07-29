@@ -104,9 +104,12 @@ export {
   type AgentPrimitiveLifecycleInput,
 } from './agent-primitive-observability.js';
 export {
+  canonicalObservabilityEvent,
+  childObservabilityEnvelope,
   HarnessObservabilityEventAudit,
   MemoryObservabilityEventAudit,
   type ObservabilityEventAuditPort,
+  type TaskObservabilityContextPort,
 } from './observability-events.js';
 export { PostgresCreationExperienceCatalogRepository } from './postgres-repository.js';
 export { PostgresCreationExperienceAuditRepository } from './postgres-audit-repository.js';

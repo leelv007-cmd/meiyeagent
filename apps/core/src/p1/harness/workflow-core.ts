@@ -148,6 +148,34 @@ export interface HarnessContextSnapshot {
 }
 
 export interface HarnessStagePorts {
+  recordObservabilityEvent?(input: {
+    workflowId: string;
+    request: HarnessWorkflowInput;
+    idempotencyKey: string;
+    event:
+      | {
+          eventType: 'bounded_execution.suspended';
+          payload: {
+            snapshot: BoundedExecutionSnapshot;
+            currentBest: unknown;
+            unmetExplanation: string;
+            resumable: true;
+          };
+        }
+      | {
+          eventType: 'bounded_execution.resumed';
+          payload: {
+            previousSnapshot: BoundedExecutionSnapshot;
+            snapshot: BoundedExecutionSnapshot;
+            decisionId: string;
+          };
+        }
+      | {
+          eventType: 'note_page_regenerated';
+          payload: unknown;
+        };
+    promptKey?: 'copyCandidate' | 'noteTextBlock';
+  }): Promise<void>;
   recordExecutionAssemblyStep?(input: {
     workflowId: string;
     request: HarnessWorkflowInput;
@@ -388,7 +416,7 @@ export interface HarnessWorkflowRuntime {
       | 'execution_selection'
       | 'assembly_delivery';
     payload: unknown;
-  }): Promise<void>;
+  }, afterPersist?: () => Promise<void>): Promise<void>;
 }
 
 export class HarnessSnapshotDecisionError extends Error {
@@ -850,6 +878,7 @@ export async function runHarnessWorkflow(
     input: Parameters<
       NonNullable<HarnessStagePorts['executeAndSelectBounded']>
     >[0],
+    beforeSelection?: () => Promise<void>,
   ) => {
     const bounded = hasConfiguredBoundedExecution(
       input.request.boundedExecution,
@@ -863,6 +892,7 @@ export async function runHarnessWorkflow(
     const executed = await runtime.runStep(
       effectIdempotencyKey,
       async () => {
+        await beforeSelection?.();
         let tokenCount = 0;
         const selection = await (
           bounded
@@ -925,6 +955,7 @@ export async function runHarnessWorkflow(
     );
     let continuation = 0;
     while (isBoundedExecutionSuspension(outcome)) {
+      const suspension = outcome;
       await reportProgress({
         stage: 'execution_selection',
         state: 'suspended',
@@ -949,6 +980,27 @@ export async function runHarnessWorkflow(
           outcome.snapshot.consumption.delegations,
           continuation,
         ].join('-'),
+        ports.recordObservabilityEvent
+          ? () => {
+              const idempotencyKey =
+                `bounded:${workflowId}:${continuation}:suspended`;
+              return ports.recordObservabilityEvent!({
+                workflowId,
+                request: activeRequest,
+                idempotencyKey,
+                event: {
+                  eventType: 'bounded_execution.suspended',
+                  payload: {
+                    snapshot: suspension.snapshot,
+                    currentBest: suspension.currentBest,
+                    unmetExplanation: suspension.unmetExplanation,
+                    resumable: true,
+                  },
+                },
+                promptKey: 'copyCandidate',
+              });
+            }
+          : undefined,
       );
       const command = await awaitResolvedDecision(
         runtime,
@@ -966,6 +1018,11 @@ export async function runHarnessWorkflow(
         suspension: outcome,
         command,
       });
+      if (!activeRequest.boundedExecution) {
+        throw new BoundedExecutionResumeError(
+          'A resumed execution requires the raised bounded snapshot.',
+        );
+      }
       continuation += 1;
       input = {
         ...input,
@@ -975,6 +1032,26 @@ export async function runHarnessWorkflow(
       outcome = await executeSelectionWithPermissionHold(
         `${effectIdempotencyKey}:bounded-resume:${continuation}`,
         input,
+        ports.recordObservabilityEvent
+          ? () => {
+              const idempotencyKey =
+                `bounded:${workflowId}:${command.idempotencyKey}:resumed`;
+              return ports.recordObservabilityEvent!({
+                workflowId,
+                request: activeRequest,
+                idempotencyKey,
+                event: {
+                  eventType: 'bounded_execution.resumed',
+                  payload: {
+                    previousSnapshot: suspension.snapshot,
+                    snapshot: activeRequest.boundedExecution!,
+                    decisionId: command.idempotencyKey,
+                  },
+                },
+                promptKey: 'copyCandidate',
+              });
+            }
+          : undefined,
       );
     }
     return outcome;
@@ -1621,12 +1698,55 @@ async function runNoteHarnessWorkflow(
       return selected;
     },
   );
-  await trace(runtime, workflowId, 'execution_selection', {
-    executionRoot: mediaExecutionRoot(activeRequest),
-    ...selection.trace,
-    auditSignals: selection.auditSignals,
-    ...skillTraceLineage(executionSkills),
-  }, `r${context.bundle.revision}`);
+  const noteRegenerationSignals = selection.auditSignals.filter(
+    (signal) => signal.eventType === 'note_page_regenerated',
+  );
+  await trace(
+    runtime,
+    workflowId,
+    'execution_selection',
+    {
+      executionRoot: mediaExecutionRoot(activeRequest),
+      ...selection.trace,
+      auditSignals: selection.auditSignals,
+      ...skillTraceLineage(executionSkills),
+    },
+    `r${context.bundle.revision}`,
+    noteRegenerationSignals.length > 0
+      ? async () => {
+          if (!ports.recordObservabilityEvent) {
+            throw new Error(
+              'Note regeneration requires canonical observability.',
+            );
+          }
+          for (const signal of noteRegenerationSignals) {
+            const auditRef = signal.payload.auditRef;
+            if (
+              typeof auditRef !== 'string' ||
+              auditRef.trim().length === 0
+            ) {
+              throw new Error(
+                'Note regeneration observability requires an auditRef.',
+              );
+            }
+            const idempotencyKey =
+              `note-regenerated:${workflowId}:${auditRef}`;
+            await ports.recordObservabilityEvent({
+              workflowId,
+              request: activeRequest,
+              idempotencyKey,
+              event: {
+                eventType: 'note_page_regenerated',
+                payload: signal.payload,
+              },
+              ...(signal.payload.imagePoints === 0
+                ? { promptKey: 'noteTextBlock' as const }
+                : {}),
+            });
+          }
+        }
+      : undefined,
+  );
   await reportProgress({
     stage: 'execution_selection',
     state: 'success',
@@ -2865,13 +2985,17 @@ function trace(
   stage: Parameters<HarnessWorkflowRuntime['recordTrace']>[0]['stage'],
   payload: unknown,
   discriminator?: string,
+  afterPersist?: () => Promise<void>,
 ) {
-  return runtime.recordTrace({
-    id: `trace-${workflowId}-${stage}${discriminator ? `-${discriminator}` : ''}`,
-    taskId: workflowId,
-    stage,
-    payload,
-  });
+  return runtime.recordTrace(
+    {
+      id: `trace-${workflowId}-${stage}${discriminator ? `-${discriminator}` : ''}`,
+      taskId: workflowId,
+      stage,
+      payload,
+    },
+    afterPersist,
+  );
 }
 
 async function runSelectionStage<Input extends { runStep?: HarnessEffectRunner }, Output>(

@@ -474,7 +474,7 @@ test(
           kind: 'bound',
           value: snapshot.catalogModel.revision,
         },
-        scene: { kind: 'bound', value: 'recipe-production-media' },
+        scene: { kind: 'bound', value: '制作夏日护理项目图片' },
       });
       assert.deepEqual(frozen.rows[0]?.request.boundedExecution, {
         schemaVersion: 'bounded-execution-snapshot/v1',
@@ -703,11 +703,11 @@ test(
       const rootAudit = assemblyAudits.rows.find(
         ({ payload }) =>
           payload.payload.primitiveId ===
-          'harness-assembly:event_persistence',
+          'harness-assembly:task_pin',
       )?.payload;
       assert.ok(rootAudit);
       assert.match(rootAudit.actorId, /^ref:[a-f0-9]{64}$/u);
-      assert.match(rootAudit.idempotencyKey, /^agent-primitive-/u);
+      assert.match(rootAudit.idempotencyKey, /^harness-assembly-/u);
       assert.deepEqual(
         {
           eventType: rootAudit.eventType,
@@ -730,18 +730,20 @@ test(
           skillRevision: skillManifest.skillRevisionRef,
           promptVersion: null,
           catalogRevision: snapshot.catalogModel.revision,
-          scene: 'recipe-production-media',
+          scene: '制作夏日护理项目图片',
           payload: {
-            primitiveId: 'harness-assembly:event_persistence',
+            primitiveId: 'harness-assembly:task_pin',
             phase: 'succeeded',
-            billing: {
-              kind: 'product_usage',
-              productUsageTaskId: snapshot.task.id,
-              quoteId: snapshot.quote.id,
-            },
+            billing: { kind: 'not_billed' },
           },
         },
       );
+      const eventPersistenceAudit = assemblyAudits.rows.find(
+        ({ payload }) =>
+          payload.payload.primitiveId ===
+          'harness-assembly:event_persistence',
+      )?.payload;
+      assert.equal(eventPersistenceAudit?.axisScope, 'execution_child');
       const childAudits = await pool.query<{
         payload: {
           taskId: string;
@@ -786,7 +788,7 @@ test(
             skillRevision: null,
             promptVersion: null,
             catalogRevision: snapshot.catalogModel.revision,
-            scene: 'recipe-production-media',
+            scene: '制作夏日护理项目图片',
             primitiveId: 'harness-media:image',
             phase,
           })),
@@ -795,8 +797,8 @@ test(
             axisScope: 'execution_child',
             skillRevision: null,
             promptVersion: 'harness/brief-image@262-test-v1',
-            catalogRevision: null,
-            scene: 'recipe-production-media',
+            catalogRevision: snapshot.catalogModel.revision,
+            scene: '制作夏日护理项目图片',
             primitiveId: 'harness_image_brief_v1',
             phase,
           })),
@@ -805,8 +807,8 @@ test(
             axisScope: 'execution_child',
             skillRevision: skillManifest.skillRevisionRef,
             promptVersion: 'harness/intent-naming@262-test-v1',
-            catalogRevision: null,
-            scene: 'recipe-production-media',
+            catalogRevision: snapshot.catalogModel.revision,
+            scene: '制作夏日护理项目图片',
             primitiveId: 'harness_intent_naming_v1',
             phase: 'invoked',
           },
@@ -815,8 +817,8 @@ test(
             axisScope: 'execution_child',
             skillRevision: skillManifest.skillRevisionRef,
             promptVersion: 'harness/intent-naming@262-test-v1',
-            catalogRevision: null,
-            scene: 'recipe-production-media',
+            catalogRevision: snapshot.catalogModel.revision,
+            scene: '制作夏日护理项目图片',
             primitiveId: 'harness_intent_naming_v1',
             phase: 'succeeded',
           },

@@ -58,7 +58,8 @@ export type ActionUsage = z.infer<typeof actionUsageSchema>;
 
 const observabilityEnvelopeShape = {
   taskId: observabilityIdSchema,
-  ...observabilityAxesSchema.shape,
+  axisScope: z.enum(['task_root', 'execution_child']),
+  ...nullableObservabilityAxesShape,
 };
 
 const deliveryRatingRecordedEventSchema = z
@@ -86,6 +87,40 @@ const deliveryRatingWithdrawnEventSchema = z
       .strict(),
   })
   .strict();
+
+export const merchantDeliveryRatingEventInputSchema = z.discriminatedUnion(
+  'eventType',
+  [
+    z
+      .object({
+        eventType: z.literal('delivery_rating.recorded'),
+        taskId: observabilityIdSchema,
+        payload: z
+          .object({
+            ...deliveryRatingIdentityShape,
+            verdict: deliveryRatingVerdictSchema,
+          })
+          .strict(),
+      })
+      .strict(),
+    z
+      .object({
+        eventType: z.literal('delivery_rating.withdrawn'),
+        taskId: observabilityIdSchema,
+        payload: z
+          .object({
+            ...deliveryRatingIdentityShape,
+            previousVerdict: deliveryRatingVerdictSchema,
+          })
+          .strict(),
+      })
+      .strict(),
+  ],
+);
+
+export type MerchantDeliveryRatingEventInput = z.infer<
+  typeof merchantDeliveryRatingEventInputSchema
+>;
 
 const actionUsageRecordedEventSchema = z
   .object({
@@ -233,10 +268,10 @@ export const observabilityEventSchema = z
     ) {
       const sourceEvent = {
         event: event.eventType,
-        skillRevision: event.skillRevision,
-        promptVersion: event.promptVersion,
-        catalogRevision: event.catalogRevision,
-        scene: event.scene,
+        skillRevision: event.skillRevision ?? 'absent@1',
+        promptVersion: event.promptVersion ?? 'absent@1',
+        catalogRevision: event.catalogRevision ?? 'absent',
+        scene: event.scene ?? 'absent',
         ...event.payload,
       };
       if (!boundedExecutionEventSchema.safeParse(sourceEvent).success) {
@@ -268,6 +303,7 @@ export function canonicalizeBoundedExecutionEvent(
   return observabilityEventSchema.parse({
     eventType,
     taskId,
+    axisScope: 'execution_child',
     skillRevision,
     promptVersion,
     catalogRevision,
@@ -286,6 +322,7 @@ export function canonicalizeNotePageRegeneratedEvent(
   return observabilityEventSchema.parse({
     eventType: parsedEvent.eventType,
     taskId,
+    axisScope: 'execution_child',
     ...parsedAxes,
     payload: parsedEvent.payload,
   });

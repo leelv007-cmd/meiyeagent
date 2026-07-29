@@ -226,6 +226,7 @@ test('assembly writes root axes once while canonical events keep axes on child s
     payload: {
       eventType: 'delivery_rating.recorded',
       taskId: 'task-48',
+      axisScope: 'execution_child',
       skillRevision: 'copywriter@rev-17',
       promptVersion: 'marketing/copy@v4',
       catalogRevision: 'catalog-2026-07-29',
@@ -246,16 +247,9 @@ test('assembly writes root axes once while canonical events keep axes on child s
   const span = bodies[0]?.batch.find(
     ({ type }) => type === 'span-create',
   )?.body;
-  const traceMetadata = trace?.metadata as Record<string, unknown>;
-  for (const axis of [
-    'skillRevision',
-    'promptVersion',
-    'catalogRevision',
-    'scene',
-  ]) {
-    assert.equal(axis in traceMetadata, false);
-  }
+  assert.equal(trace, undefined);
   const spanMetadata = span?.metadata as Record<string, unknown>;
+  assert.equal(spanMetadata.axisScope, 'execution_child');
   assert.equal(spanMetadata.skillRevision, 'copywriter@rev-17');
   assert.equal(spanMetadata.promptVersion, 'marketing/copy@v4');
   assert.equal(spanMetadata.catalogRevision, 'catalog-2026-07-29');
@@ -279,14 +273,14 @@ test('assembly writes root axes once while canonical events keep axes on child s
       workspaceId: 'workspace-1',
       actorId: `ref:${'a'.repeat(64)}`,
       actorKind: 'worker',
-      idempotencyKey: 'harness-assembly-event-persistence',
+      idempotencyKey: 'harness-assembly-task-pin',
       axisScope: 'task_root',
       skillRevision: null,
       promptVersion: null,
       catalogRevision: 'catalog-2026-07-29',
       scene: 'recipe-card-group',
       payload: {
-        primitiveId: 'harness-assembly:event_persistence',
+        primitiveId: 'harness-assembly:task_pin',
         phase: 'succeeded',
         billing: { kind: 'not_billed' },
       },
@@ -363,15 +357,7 @@ test('agent primitive lifecycle exports explicit absent axes and safe server ide
   const rootSpan = bodies[0]?.batch.find(
     ({ type }) => type === 'span-create',
   )?.body;
-  const rootTraceMetadata = rootTrace?.metadata as Record<string, unknown>;
-  for (const axis of [
-    'skillRevision',
-    'promptVersion',
-    'catalogRevision',
-    'scene',
-  ]) {
-    assert.equal(axis in rootTraceMetadata, false);
-  }
+  assert.equal(rootTrace, undefined);
   const rootSpanMetadata = rootSpan?.metadata as Record<string, unknown>;
   for (const metadata of [rootSpanMetadata]) {
     assert.equal(metadata.skillRevision, null);
@@ -379,7 +365,6 @@ test('agent primitive lifecycle exports explicit absent axes and safe server ide
     assert.equal(metadata.catalogRevision, null);
     assert.equal(metadata.scene, null);
   }
-  assert.equal('primitiveId' in rootTraceMetadata, false);
   for (const metadata of [rootSpanMetadata]) {
     assert.equal(metadata.axisScope, 'task_root');
     assert.equal(metadata.primitiveId, 'generate');

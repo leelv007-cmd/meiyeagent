@@ -86,8 +86,14 @@ describe('the delivered result carries its own feedback surfaces', () => {
     // A verdict with no version attached says nothing about which version was
     // good, which is the whole point of collecting it.
     expect(onRateDelivery).toHaveBeenCalledWith({
-      action: 'up',
+      transition: {
+        action: 'up',
+        idempotencyKey: expect.any(String),
+        previousVerdict: null,
+        nextVerdict: 'up',
+      },
       revision: REVISION,
+      taskId: 'task-1',
     });
   });
 
@@ -125,6 +131,6 @@ describe('the production host supplies those ports', () => {
     expect(home).toMatch(/onDeliveryFollowUp=\{/u);
     expect(home).toMatch(/deliveryLensId=\{/u);
     // 评价必须真的发出去，不能只在本地态里翻个颜色。
-    expect(home).toMatch(/emitDeliveryRatingEvent\(/u);
+    expect(home).toMatch(/appendObservabilityEvent\(/u);
   });
 });

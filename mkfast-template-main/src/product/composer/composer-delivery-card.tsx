@@ -18,7 +18,7 @@ import type {
   ContentPackageRevisionDelivery,
   CreationLensId,
 } from '@meiye/contracts';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -38,6 +38,13 @@ export type ComposerDeliveryOpenInput = {
   taskId: string;
   action: ComposerDeliveryAction | 'open';
   revision: ContentPackageRevisionDelivery | null;
+};
+
+export type DeliveryRatingTransition = {
+  action: DeliveryRatingAction;
+  idempotencyKey: string;
+  previousVerdict: DeliveryRatingVerdict | null;
+  nextVerdict: DeliveryRatingVerdict | null;
 };
 
 const ACTION_LABELS: Record<ComposerDeliveryAction, string> = {
@@ -65,7 +72,9 @@ export type ComposerDeliveryCardProps = {
    * 评价条出口。事件的组装与投递属适配层，这里连事件名都不知道 —— 卡片知道
    * 键名，#248 改一次就要改两处。
    */
-  onRate?: (action: DeliveryRatingAction) => void;
+  onRate?: (
+    transition: DeliveryRatingTransition
+  ) => Promise<unknown> | unknown;
   /** 后续动作出口：把整句交出去预填 Composer，禁止在此提交。 */
   onFollowUp?: (seed: DeliveryFollowUpSeed) => void;
   className?: string;
@@ -87,15 +96,47 @@ export function ComposerDeliveryCard({
   const body = excerpt?.body?.trim() ?? '';
   const preview = body.length > 120 ? `${body.slice(0, 120)}…` : body;
   const [verdict, setVerdict] = useState<DeliveryRatingVerdict | null>(null);
+  const [ratingPending, setRatingPending] = useState(false);
+  const ratingPendingRef = useRef(false);
+  const retryTransitionRef = useRef<{
+    signature: string;
+    idempotencyKey: string;
+  } | null>(null);
 
-  const handleRate = (action: DeliveryRatingAction) => {
-    if (action !== 'copy') {
-      // 同一版只保留一个态度，再点同一个＝撤回。前端只管当前态、不做去重：
-      // 归纳侧要的是时序证据，「商家改了主意」恰恰是最强的一条，在信号进入之前
-      // 就合并掉等于先把它丢了。哪一条是最终态是查询问题，不是写入问题。
-      setVerdict((current) => (current === action ? null : action));
+  const handleRate = async (action: DeliveryRatingAction) => {
+    if (ratingPendingRef.current) return;
+    const nextVerdict =
+      action === 'copy' ? verdict : verdict === action ? null : action;
+    const signature = [action, verdict ?? 'none', nextVerdict ?? 'none'].join(
+      ':'
+    );
+    const retry = retryTransitionRef.current;
+    const idempotencyKey =
+      retry?.signature === signature
+        ? retry.idempotencyKey
+        : crypto.randomUUID();
+    retryTransitionRef.current = { signature, idempotencyKey };
+    ratingPendingRef.current = true;
+    setRatingPending(true);
+    try {
+      await onRate?.({
+        action,
+        idempotencyKey,
+        previousVerdict: verdict,
+        nextVerdict,
+      });
+      retryTransitionRef.current = null;
+      if (action !== 'copy') {
+        // The visible state is an acknowledgement of the canonical PG append.
+        // A failed command leaves the previous verdict visible.
+        setVerdict(nextVerdict);
+      }
+    } catch {
+      // Feedback delivery must not break the delivery card or pretend success.
+    } finally {
+      ratingPendingRef.current = false;
+      setRatingPending(false);
     }
-    onRate?.(action);
   };
 
   return (
@@ -148,7 +189,11 @@ export function ComposerDeliveryCard({
         本卡对三动作的处置一致（宁可不给，不猜）。
       */}
       {revision && onRate ? (
-        <ComposerDeliveryRatingBar onRate={handleRate} verdict={verdict} />
+        <ComposerDeliveryRatingBar
+          disabled={ratingPending}
+          onRate={(action) => void handleRate(action)}
+          verdict={verdict}
+        />
       ) : null}
 
       {lensId && onFollowUp ? (

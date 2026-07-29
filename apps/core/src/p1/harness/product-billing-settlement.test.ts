@@ -5,6 +5,7 @@ import type {
   ProductUsageRecord,
 } from '@meiye/contracts';
 
+import { MemoryObservabilityEventAudit } from '../creation-experience/observability-events.js';
 import { HarnessProductBillingSettlementExecutor } from './product-billing-settlement.js';
 
 const input = {
@@ -109,6 +110,126 @@ test('harness commit settles a dispatched quote without re-running the submissio
   await executor.commit(input);
 
   assert.equal(settleCalls, 1);
+});
+
+test('harness settlement emits final ActionUsage once with frozen server axes', async () => {
+  const events = new MemoryObservabilityEventAudit();
+  const executor = new HarnessProductBillingSettlementExecutor(
+    {
+      async getQuote() {
+        return quote({ lifecycleStatus: 'dispatched' });
+      },
+      async settleTask() {},
+      async getUsage() {
+        return usage({
+          status: 'committed',
+          settlementStatus: 'reconciled',
+          settledQuantity: 15,
+        });
+      },
+    },
+    {
+      async refundUsageOperation() {
+        return [];
+      },
+    },
+    undefined,
+    {
+      events,
+      context: {
+        async readTaskRootAxes() {
+          return {
+            axisScope: 'task_root',
+            skillRevision: { kind: 'absent' },
+            promptVersion: { kind: 'bound', value: 'copy@v4' },
+            catalogRevision: { kind: 'bound', value: 'catalog-r7' },
+            scene: { kind: 'bound', value: 'opening-campaign' },
+          };
+        },
+      },
+    },
+  );
+
+  await executor.commit(input);
+  await executor.commit(input);
+
+  assert.deepEqual(events.list(input.workspaceId), [
+    {
+      eventType: 'action_usage.recorded',
+      taskId: input.taskId,
+      axisScope: 'execution_child',
+      skillRevision: null,
+      promptVersion: 'copy@v4',
+      catalogRevision: 'catalog-r7',
+      scene: 'opening-campaign',
+      payload: {
+        actionId: 'usage-settlement',
+        taskId: input.taskId,
+        status: 'completed',
+        settlementStatus: 'reconciled',
+        settledUnits: 15,
+        refundedUnits: 0,
+      },
+    },
+  ]);
+});
+
+test('harness commit rejects a refunded terminal usage instead of recording it as completed', async () => {
+  const executor = new HarnessProductBillingSettlementExecutor(
+    {
+      async getQuote() {
+        return quote({ lifecycleStatus: 'refunded' });
+      },
+      async settleTask() {},
+      async getUsage() {
+        return usage({
+          status: 'refunded',
+          settlementStatus: 'reconciled',
+          settledQuantity: 0,
+          refundedQuantity: 15,
+        });
+      },
+    },
+    {
+      async refundUsageOperation() {
+        return [];
+      },
+    },
+  );
+
+  await assert.rejects(
+    executor.commit(input),
+    /terminal usage refunded cannot satisfy completed settlement/u,
+  );
+});
+
+test('harness refund rejects a committed terminal usage instead of recording it as rejected', async () => {
+  const executor = new HarnessProductBillingSettlementExecutor(
+    {
+      async getQuote() {
+        return quote({ lifecycleStatus: 'settled' });
+      },
+      async settleTask() {},
+      async getUsage() {
+        return usage({
+          status: 'committed',
+          settlementStatus: 'reconciled',
+          settledQuantity: 15,
+          refundedQuantity: 0,
+        });
+      },
+    },
+    {
+      async refundUsageOperation() {
+        return [];
+      },
+    },
+  );
+
+  await assert.rejects(
+    executor.refund(input),
+    /terminal usage committed cannot satisfy rejected settlement/u,
+  );
 });
 
 test('harness settlement rejects a quote before the settlement lifecycle', async () => {

@@ -1,8 +1,9 @@
 # Issue #248：信号 × 目的地矩阵
 
-> 状态：M1／M1.5／M2 主体及公共入口收窄与 durable reconciliation 三提交
-> （`23ff8add`／`8f36307d`／`4704cbd6`）均已有 merge-ledger 记录；已核对
-> `main@5e96f555`。本文不把任一切片声明为 #248 整票完成。
+> 状态：M1／M1.5／M2 主体、公共入口收窄、durable reconciliation，以及
+> #262 assembly carrier（台账 `2c979709`）均已进入本地 main；本轮基线为
+> `main@c0623688`。本 lane 已接入 rating hydration 与 ActionUsage／bounded／note
+> 生产 emitters；live Langfuse 证据仍单独列为未核销。
 > 权威依据：Issue #248、D-169②、`_digest-B.md` 切片 05。  
 > 当前实现核对：`packages/contracts/src/observability-event.ts`、
 > `apps/core/src/p1/creation-experience/observability-events.ts`、
@@ -22,8 +23,8 @@
 
 | 信号 | 目的地 | #248 裁定 | 当前生产状态 | 数据源 | 采样／投递语义 | 消费者 |
 |---|---|---|---|---|---|---|
-| traces | Langfuse | `derived` | canonical 事件已从 PG audit/outbox 投影为 trace + span，并输出 `skillRevision` / `promptVersion` / `catalogRevision` / `scene` 四个扁平键；primitive lifecycle 只投 execution child，不覆盖 root。Task root write-once 与 bounded/note 生产 emitter 仍等待 #262 的合法单值／absent 快照载体 | PostgreSQL `audit_events` + `decision_traces` | PG 事务提交后由 durable outbox 至少一次投递；稳定 ID 去重；业务执行 trace 不做应用层采样；不得由 stage 后写覆盖 root | 运营按任一扁平轴过滤、回放与归因；真实可过滤性仍需 live Langfuse 证明 |
-| traces | Postgres | `authoritative` | canonical event、`decision_traces`、`audit_events` 已落库，audit 与 Langfuse outbox 同事务；primitive lifecycle 已有并发幂等／冲突终态。Task root 四轴尚无 #262 提供的 admission write-once carrier | 执行入口上下文、canonical 事件与五段 stage trace | 不采样；业务写失败硬停；新 Task root 只允许从 server-owned admission 快照写一次，子 span 显式携带天然单值；禁止导出时回查补齐 | 业务审计、重放、对账任务、Langfuse outbox |
+| traces | Langfuse | `derived` | canonical 事件已从 PG audit/outbox 投影为 span，并输出 `axisScope` 与 `skillRevision` / `promptVersion` / `catalogRevision` / `scene` 四个扁平 nullable 键；admission 在 workflow starter 前发出的 `harness-assembly:task_pin` 是新任务唯一可写 Task-root 四轴 metadata 的事件，失败／取消／挂起任务也先有根；`event_persistence`、rating／usage／bounded／note 与其他 primitive 不再二次改写 root。既有 generic stage trace 仍可幂等 ensure trace 外壳但不携带 canonical root 四轴；旧 `event_persistence` root 仅保留迁移投递兼容 | PostgreSQL `audit_events` + `decision_traces` | PG 事务提交后由 durable outbox 至少一次投递；稳定 ID 去重；业务执行 trace 不做应用层采样；不得由 stage 后写覆盖 root | 运营按任一扁平轴过滤、回放与归因；真实可过滤性仍需 live Langfuse 证明 |
+| traces | Postgres | `authoritative` | #262 已把 `executionAssembly.rootAxes` 随完整 Task request 原子冻结并 durable replay；admission 在 workflow starter 前以 `task_pin` 原子落 root，canonical event、`decision_traces`、`audit_events` 已落库，audit 与 Langfuse outbox 同事务。rating／ActionUsage 读取 root carrier 归因，bounded／note 在实际 child 转换点保留 bound／absent，catalog 轴只取 `executionSnapshot.catalogModel.revision`；`observability_root_claims` 以 workflow 为键执行 root write-once CAS，同事实异键重放复用首条 audit，异事实拒绝并独立记录 `permanent-config` drop。升级时既存 `event_persistence` root claim 归一化兼容、额外 root outbox 被隔离，异事实同样留 drop | 执行入口上下文、canonical 事件与五段 stage trace | 不采样；业务写失败硬停；Task root 只从 server-owned admission 快照写一次，子 span 显式携带天然单值；route 只做一致性检查，不作为 catalog 轴；禁止导出时回查补齐 | 业务审计、重放、对账任务、Langfuse outbox |
 | traces | 前台 | `not routed` | 未见 trace 合同直达前台 | 无 | 不投递原始 trace；如需客服锚点，另投影无敏感信息的 support reference，不把它当 trace 真相源 | 无；商家不消费内部 trace |
 | logs | Langfuse | `derived` | audit event 当前被降维映射为 span output/metadata，并非 Langfuse 原生日志流 | PostgreSQL `audit_events` | 跟随 trace outbox 至少一次投递；不得以“映射成 span”宣称已具备独立 logs 能力 | 运营在 trace 上查看阶段事件上下文 |
 | logs | Postgres | `authoritative` | `audit_events` 已是审计先写的权威日志；dead-letter 与 drop 原子落入独立健康通道 | 业务事件、门禁、阶段结果、投递健康事件 | 不采样；幂等 append；审计失败硬停。观测 drop event 不进入被丢信号所用的 Langfuse outbox，operator discard 不重复计数 | 审计、恢复、故障排查、定期业务事件↔trace 对账 |
@@ -35,8 +36,8 @@
 | scores | Postgres | `authoritative` | 候选 score 在 decision trace；质量评测 run/case 有独立 PG 表 | scorer 输出及 scorer revision、被评分 trace/span 引用 | 不采样；与执行/评测记录原子或幂等保存；必须区分“被评分 trace/span”和“评分动作 trace” | 执行择优、评测审计、Langfuse score 投影 |
 | scores | 前台 | `unsupported` | 未见内部 score 直达商家前台 | 无 | 不展示内部候选分、阈值或 scorer 调试数据；仅投影商家可理解的结果/门禁原因 | 无；商家评价属于 feedback，不属于 score |
 | feedback | Langfuse | `derived` | canonical `delivery_rating.recorded` / `delivery_rating.withdrawn` 已走 PG outbox，但当前只投影为带四轴的 trace + span metadata，不是 Langfuse 原生 feedback/score observation；不得前台直写 Langfuse | PostgreSQL 权威 feedback event | PG 成功后异步投影为 trace/span；失败产生异通道 drop event；真实筛选仍需 live Langfuse 证明，不以 signal 分类冒充原生 observation | 运营在 trace/span 上按四轴比较反馈 |
-| feedback | Postgres | `authoritative` | canonical rating 已复用认证的 `event_append` 入口；当前树把 public allowlist 收窄为两种 rating，对应 follow-up 已有 merge-ledger 主控行。usage/bounded/note/primitive 均为 server-owned，只能走内部 audit port；ActionUsage emitter 仍等 #262 合法轴载体 | 商家评价动作与最终 action usage | 同步、不可采样；PG 成功才确认已记录；append-only 撤回为反向事件、不物理删除；rating 四轴必须在 #262 carrier 后由 Core hydrate/校验，不能长期信任浏览器 | 质量面板、detect 档聚合、Langfuse 投影、D-126 推荐燃料 |
-| feedback | 前台 | `derived` | 当前树已把 web client 类型收窄为 rating union；评价按钮、服务端归因校验、回执可见性与交互验收仍属 #261/#262 接缝 | 商家点击 + PG 持久化回执 | 浏览器只提交评价事实与服务端结果引用；只有 Core 绑定权威四轴并持久化成功才显示已记录；前台不是权威存储 | 商家查看自己的提交状态并继续后续动作 |
+| feedback | Postgres | `authoritative` | canonical rating 复用认证 `event_append`，公共 payload 仅含 task／delivery／verdict 事实；Core workspace-scope 校验 `package_delivered` 后从冻结 Task hydrate bound／absent 轴。ActionUsage 在最终 settlement／refund 终态发射；bounded suspend/resume 与 note check-violation regeneration 均在真实 workflow 转换点发射；四类都复用内部 audit/outbox，稳定键重放不重复 | 商家评价动作、最终 ProductUsage、bounded continuation、NotePlan audit signal | 同步、不可采样；PG 成功才确认已记录；append-only 撤回为反向事件、不物理删除；客户端轴字段 strict 拒绝 | 质量面板、detect 档聚合、Langfuse 投影、D-126 推荐燃料 |
+| feedback | 前台 | `derived` | Web 已移除无后端监听方的 `rating_signal` telemetry 适配；按钮将 recorded／withdrawn 事实发到认证 P1 command，只有命令成功后才更新 `aria-pressed`，失败保留原态 | 商家点击 + PG 持久化回执 | 浏览器只提交评价事实与服务端结果引用；Core 绑定权威轴并持久化成功后才显示已记录；前台不是权威存储 | 商家查看自己的提交状态并继续后续动作 |
 
 ## 跨格硬约束
 
@@ -69,7 +70,14 @@
 
 - fixture/单测只可证明 schema、扁平键、稳定 ID、路由选择、重试和前台回执
   分支；不得证明真实 PostgreSQL 事务、Langfuse 可过滤性或长中文未截断。
-- 本地真实 PostgreSQL + 外部 HTTP 边界故障注入已证明 outbox 遇 503 后写入
+- production focused tests 分别从 settlement、bounded workflow、NotePlan workflow
+  与 Web/Core rating command 的真实转换点触发 emitter，并锁定 DBOS 既有 durable
+  step 布局不新增 function ID；本地真实 PostgreSQL 测试单独证明这些 canonical
+  输出各自仅落一份 audit/outbox、重放不重复，以及 Task-root 同事实异键只保留
+  首条 claim、异事实冲突。两层证据不互相冒充：前者不证明 PG 事务，后者不冒充
+  workflow/provider 执行；PG 层另覆盖并发同事实／异事实 root CAS，以及升级前
+  重复 root audit/outbox 的隔离与冲突 drop。外部 HTTP 边界故障注入
+  另已证明 outbox 遇 503 后写入
   带 `transient` reason 的异通道 drop event，并在 replay + 200 后更新
   `last-success`；这不等同于自托管/live Langfuse。自托管 Langfuse 仍需证明
   四轴过滤和 >1024 中文。

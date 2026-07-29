@@ -17,12 +17,17 @@ const axes = {
   scene: 'opening-campaign',
 };
 
+const childEnvelope = {
+  axisScope: 'execution_child' as const,
+  ...axes,
+};
+
 test('canonical feedback events retain only named safe strings and flat axes', () => {
   assert.deepEqual(
     observabilityEventSchema.parse({
       eventType: 'delivery_rating.recorded',
       taskId: 'task-248',
-      ...axes,
+      ...childEnvelope,
       payload: {
         packageId: 'package-248',
         versionId: 'version-3',
@@ -33,7 +38,7 @@ test('canonical feedback events retain only named safe strings and flat axes', (
     {
       eventType: 'delivery_rating.recorded',
       taskId: 'task-248',
-      ...axes,
+      ...childEnvelope,
       payload: {
         packageId: 'package-248',
         versionId: 'version-3',
@@ -47,7 +52,7 @@ test('canonical feedback events retain only named safe strings and flat axes', (
     observabilityEventSchema.safeParse({
       eventType: 'delivery_rating.withdrawn',
       taskId: 'task-248',
-      ...axes,
+      ...childEnvelope,
       payload: {
         packageId: 'package-248',
         versionId: 'version-3',
@@ -62,7 +67,7 @@ test('canonical feedback events retain only named safe strings and flat axes', (
     {
       eventType: 'delivery_rating.recorded',
       taskId: 'task-248',
-      ...axes,
+      ...childEnvelope,
       payload: {
         packageId: 'package-248',
         versionId: 'version-3',
@@ -85,6 +90,7 @@ test('canonical feedback events retain only named safe strings and flat axes', (
     {
       eventType: 'delivery_rating.recorded',
       taskId: 'task-248',
+      axisScope: 'execution_child',
       skillRevision: axes.skillRevision,
       promptVersion: axes.promptVersion,
       catalogRevision: axes.catalogRevision,
@@ -179,7 +185,7 @@ test('canonical action usage events share the same flat observability envelope',
   const parsed = observabilityEventSchema.parse({
     eventType: 'action_usage.recorded',
     taskId: 'task-248',
-    ...axes,
+    ...childEnvelope,
     payload: {
       actionId: 'usage-record-248',
       taskId: 'task-248',
@@ -192,6 +198,35 @@ test('canonical action usage events share the same flat observability envelope',
 
   assert.equal(parsed.eventType, 'action_usage.recorded');
   assert.equal(parsed.taskId, parsed.payload.taskId);
+});
+
+test('canonical production events preserve explicit absent child axes', () => {
+  const parsed = observabilityEventSchema.parse({
+    eventType: 'delivery_rating.recorded',
+    taskId: 'task-absent',
+    axisScope: 'execution_child',
+    skillRevision: null,
+    promptVersion: null,
+    catalogRevision: 'catalog-2026-07-29',
+    scene: null,
+    payload: {
+      packageId: 'package-248',
+      versionId: 'version-3',
+      revision: 3,
+      verdict: 'down',
+    },
+  });
+
+  assert.equal(parsed.skillRevision, null);
+  assert.equal(parsed.promptVersion, null);
+  assert.equal(parsed.scene, null);
+  assert.equal(
+    observabilityEventSchema.safeParse({
+      ...parsed,
+      skillRevision: 'unknown@0',
+    }).success,
+    false,
+  );
 });
 
 test('bounded execution facts adapt to one canonical envelope without nested axes', () => {
@@ -226,6 +261,7 @@ test('bounded execution facts adapt to one canonical envelope without nested axe
 
   assert.equal(suspended.eventType, 'bounded_execution.suspended');
   assert.equal(suspended.taskId, 'task-bounded');
+  assert.equal(suspended.axisScope, 'execution_child');
   assert.equal('skillRevision' in suspended.payload, false);
   assert.equal(
     observabilityEventSchema.safeParse({
@@ -259,6 +295,7 @@ test('note regeneration facts adapt to the same strict canonical envelope', () =
   assert.deepEqual(regenerated, {
     eventType: 'note_page_regenerated',
     taskId: 'task-note',
+    axisScope: 'execution_child',
     ...axes,
     payload: {
       auditRef: 'audit-note-1',

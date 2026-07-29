@@ -1456,6 +1456,7 @@ const creationExperienceRuntime =
   await createDurableCreationExperienceRuntime({
     modelCatalog: modelSupplyRepository,
     observabilityEvents: harnessObservabilityEvents,
+    taskObservability: promptAuditStore,
     pool,
     productQuotes: productBillingRepository,
     skillRevisionValidation: skillRuntime.revisionValidation,
@@ -2011,6 +2012,7 @@ if (harnessRuntimeConfig) {
     harnessExecutionChildObservability,
     p1HarnessCheckInvoker,
     p1HarnessCandidateRunner,
+    harnessObservabilityEvents,
   );
   // Single wiring owner: wrap copy ports so image/video share the same
   // Coordinator → StagePort → Harness path (#139/#140).
@@ -2043,6 +2045,11 @@ if (harnessRuntimeConfig) {
   const harnessBilling = new HarnessProductBillingSettlementExecutor(
     productQuoteService,
     grantLotLedger,
+    undefined,
+    {
+      events: harnessObservabilityEvents,
+      context: harnessStore,
+    },
   );
   const billingCompensations =
     new PostgresHarnessBillingCompensationStore(pool);

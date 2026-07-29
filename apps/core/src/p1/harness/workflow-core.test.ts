@@ -515,12 +515,38 @@ test('image and video snapshots use the same five Harness stages with modality-s
 test('image-text note uses the fourth Harness fork and waits for style choice before page generation', async () => {
   const keys: string[] = [];
   const progress: string[] = [];
+  const observabilityEvents: unknown[] = [];
   let executionSelectionTrace: Record<string, unknown> | undefined;
   const request = mediaTaskInput('image_text_note');
+  const stages = noteStages();
+  const executeNoteAndSelect = stages.executeNoteAndSelect.bind(stages);
+  stages.executeNoteAndSelect = async (input) => {
+    const selected = await executeNoteAndSelect(input);
+    return {
+      ...selected,
+      auditSignals: [
+        ...selected.auditSignals,
+        {
+          eventType: 'note_page_regenerated' as const,
+          payload: {
+            auditRef: 'note-text-rewrite-page-1',
+            imagePoints: 0 as const,
+            pageId: 'page-1',
+            reason: 'Exact text mismatch.',
+            side: 'text' as const,
+            trigger: 'check_violation' as const,
+          },
+        },
+      ],
+    };
+  };
+  stages.recordObservabilityEvent = async (event) => {
+    observabilityEvents.push(event);
+  };
   const result = await runHarnessWorkflow(
     'task-image-text-note',
     request,
-    noteStages(),
+    stages,
     {
       async runStep(key, operation) {
         keys.push(key);
@@ -549,10 +575,11 @@ test('image-text note uses the fourth Harness fork and waits for style choice be
           decision: { state: 'accepted', value: '故事版' },
         };
       },
-      async recordTrace(trace) {
+      async recordTrace(trace, afterPersist) {
         if (trace.stage === 'execution_selection') {
           executionSelectionTrace = trace.payload as Record<string, unknown>;
         }
+        await afterPersist?.();
       },
     },
   );
@@ -584,7 +611,39 @@ test('image-text note uses the fourth Harness fork and waits for style choice be
         strategy: 'warn',
       },
     },
+    {
+      eventType: 'note_page_regenerated',
+      payload: {
+        auditRef: 'note-text-rewrite-page-1',
+        imagePoints: 0,
+        pageId: 'page-1',
+        reason: 'Exact text mismatch.',
+        side: 'text',
+        trigger: 'check_violation',
+      },
+    },
   ]);
+  assert.deepEqual(
+    observabilityEvents.map((event) => {
+      const value = event as {
+        event: { eventType: string };
+        idempotencyKey: string;
+        promptKey?: string;
+      };
+      return [
+        value.event.eventType,
+        value.idempotencyKey,
+        value.promptKey,
+      ];
+    }),
+    [
+      [
+        'note_page_regenerated',
+        'note-regenerated:task-image-text-note:note-text-rewrite-page-1',
+        'noteTextBlock',
+      ],
+    ],
+  );
   assert.deepEqual(result.billingReceipt, {
     trustedUsage: {
       kind: 'product_units',
@@ -800,7 +859,9 @@ test('one blocking question suspends and resumes before context injection', asyn
         decision: { state: 'accepted', value: '当前团购价 398 元' },
       };
     },
-    async recordTrace() {},
+    async recordTrace(_trace, afterPersist) {
+      await afterPersist?.();
+    },
   };
 
   await runHarnessWorkflow('task-35', taskInput(), stages, runtime);
@@ -2123,9 +2184,14 @@ test('server-raised limit resumes bounded selection from its checkpoint and deli
     },
   };
   const stages = fixtureStages();
+  const observabilityEvents: unknown[] = [];
+  stages.recordObservabilityEvent = async (event) => {
+    observabilityEvents.push(event);
+  };
   const completedSelection = stages.executeAndSelect.bind(stages);
   let boundedCalls = 0;
   let deliveries = 0;
+  const effectKeys: string[] = [];
   stages.executeAndSelectBounded = async (input) => {
     boundedCalls += 1;
     if (input.boundedResume) {
@@ -2161,7 +2227,8 @@ test('server-raised limit resumes bounded selection from its checkpoint and deli
   let resumptions = 0;
 
   const result = await runHarnessWorkflow('task-35', request, stages, {
-    async runStep(_key, operation) {
+    async runStep(key, operation) {
+      effectKeys.push(key);
       return operation();
     },
     async progress() {},
@@ -2195,7 +2262,9 @@ test('server-raised limit resumes bounded selection from its checkpoint and deli
         ),
       };
     },
-    async recordTrace() {},
+    async recordTrace(_trace, afterPersist) {
+      await afterPersist?.();
+    },
   });
 
   assert.deepEqual(result.delivery, {
@@ -2206,6 +2275,29 @@ test('server-raised limit resumes bounded selection from its checkpoint and deli
   assert.equal(boundedCalls, 2);
   assert.equal(resumptions, 1);
   assert.equal(deliveries, 1);
+  assert.equal(
+    effectKeys.some((key) => key.startsWith('bounded:')),
+    false,
+  );
+  assert.deepEqual(
+    observabilityEvents.map((event) => {
+      const value = event as {
+        event: { eventType: string };
+        idempotencyKey: string;
+      };
+      return [value.event.eventType, value.idempotencyKey];
+    }),
+    [
+      [
+        'bounded_execution.suspended',
+        'bounded:task-35:0:suspended',
+      ],
+      [
+        'bounded_execution.resumed',
+        'bounded:task-35:bounded-continuation-1:resumed',
+      ],
+    ],
+  );
 });
 
 test('repeated non-iteration suspensions keep distinct durable trace identities', async () => {

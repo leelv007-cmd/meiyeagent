@@ -496,13 +496,15 @@ export function registerHarnessDbosWorkflow(
             },
           }
         : {}),
-      recordTrace(input) {
+      recordTrace(input, afterPersist) {
         return DBOS.runStep(
-          () =>
-            persistence.recordStageTrace({
+          async () => {
+            await persistence.recordStageTrace({
               ...input,
               workspaceId: request.workspaceId,
-            }),
+            });
+            await afterPersist?.();
+          },
           { name: `persist-${input.stage}-trace` },
         );
       },

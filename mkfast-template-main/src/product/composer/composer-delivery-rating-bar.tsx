@@ -61,12 +61,14 @@ export type ComposerDeliveryRatingBarProps = {
   verdict: DeliveryRatingVerdict | null;
   /** 唯一出口。 */
   onRate: (action: DeliveryRatingAction) => void;
+  disabled?: boolean;
   className?: string;
 };
 
 export function ComposerDeliveryRatingBar({
   verdict,
   onRate,
+  disabled = false,
   className,
 }: ComposerDeliveryRatingBarProps) {
   return (
@@ -101,6 +103,7 @@ export function ComposerDeliveryRatingBar({
               pressed ? 'text-foreground' : 'text-muted-foreground/60'
             )}
             data-testid={`composer-delivery-rating-${action}`}
+            disabled={disabled}
             key={action}
             onClick={() => onRate(action)}
             type="button"

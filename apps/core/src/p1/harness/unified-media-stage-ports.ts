@@ -137,6 +137,19 @@ export class UnifiedHarnessStagePorts
 		return this.copy.recordExecutionAssemblyStep(input);
 	}
 
+	recordObservabilityEvent(
+		input: Parameters<
+			NonNullable<HarnessStagePorts["recordObservabilityEvent"]>
+		>[0],
+	) {
+		if (!this.copy.recordObservabilityEvent) {
+			throw new Error(
+				"Unified Harness requires canonical observability.",
+			);
+		}
+		return this.copy.recordObservabilityEvent(input);
+	}
+
 	resolveStageSkills(
 		input: Parameters<NonNullable<HarnessStagePorts["resolveStageSkills"]>>[0],
 	) {
@@ -265,7 +278,6 @@ export class UnifiedHarnessStagePorts
 				stage: "execution_selection",
 				primitiveId: `harness-media:${input.brief.kind}`,
 				baseIdempotencyKey: `harness-media:${input.workflowId}:${input.brief.kind}`,
-				catalogRoute: input.request.frozenRouteSnapshot!,
 			},
 			() =>
 				this.media.execute({
@@ -694,7 +706,6 @@ export class UnifiedHarnessStagePorts
 							stage: "execution_selection",
 							primitiveId: "harness-media:note-page-image",
 							baseIdempotencyKey: pageWorkflowId,
-							catalogRoute: input.request.frozenRouteSnapshot!,
 						},
 						() =>
 							this.media.execute({

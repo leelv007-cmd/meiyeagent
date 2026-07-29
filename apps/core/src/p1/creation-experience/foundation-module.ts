@@ -13,7 +13,7 @@ import type {
   CreationLensId,
   RecipeDraftFields,
 } from '@meiye/contracts';
-import { observabilityEventSchema } from '@meiye/contracts';
+import { merchantDeliveryRatingEventInputSchema } from '@meiye/contracts';
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
 import type { P1OperationModule } from '../foundation/ports.js';
 import {
@@ -35,8 +35,10 @@ import {
   type RecordCreationExperienceEventInput,
 } from './creation-experience-events.js';
 import {
+  canonicalObservabilityEvent,
   MemoryObservabilityEventAudit,
   type ObservabilityEventAuditPort,
+  type TaskObservabilityContextPort,
 } from './observability-events.js';
 import { buildRecipePatchPreview } from './recipe-patch-preview.js';
 import {
@@ -374,6 +376,7 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
   private readonly briefRevisionResolver: BriefRevisionResolver;
   private readonly eventAudit: CreationExperienceEventAuditPort;
   private readonly observabilityEvents: ObservabilityEventAuditPort;
+  private readonly taskObservability?: TaskObservabilityContextPort;
   private readonly recipeStudio: RecipeStudioService;
 
   constructor(
@@ -385,6 +388,7 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
       briefRevisionResolver?: BriefRevisionResolver;
       eventAudit?: CreationExperienceEventAuditPort;
       observabilityEvents?: ObservabilityEventAuditPort;
+      taskObservability?: TaskObservabilityContextPort;
       skillRevisionValidation?: RecipeSkillRevisionValidationPort;
     } = {},
   ) {
@@ -401,6 +405,7 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
       options.eventAudit ?? new MemoryCreationExperienceEventAudit();
     this.observabilityEvents =
       options.observabilityEvents ?? new MemoryObservabilityEventAudit();
+    this.taskObservability = options.taskObservability;
     this.recipeStudio = new RecipeStudioService(
       this.service,
       undefined,
@@ -765,16 +770,51 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
               'Only merchant-authored delivery rating events may use the public command seam.',
             );
           }
-          const parsed = observabilityEventSchema.safeParse(value);
+          const parsed = merchantDeliveryRatingEventInputSchema.safeParse(value);
           if (!parsed.success) {
             throw new P1DomainError(
               'INVALID_STATE',
-              'Observability event does not match the canonical contract.',
+              'Delivery rating does not match the public event contract.',
             );
           }
+          if (!this.taskObservability) {
+            throw new P1DomainError(
+              'INVALID_STATE',
+              'Task observability context is not configured.',
+            );
+          }
+          const delivery = parsed.data.payload;
+          if (
+            !(await this.taskObservability.deliveryBelongsToTask(
+              args.context.workspaceId,
+              parsed.data.taskId,
+              delivery,
+            ))
+          ) {
+            throw new P1DomainError(
+              'INVALID_STATE',
+              'Delivery rating does not match the frozen task delivery.',
+            );
+          }
+          const binding = await this.taskObservability.readTaskRootAxes(
+            args.context.workspaceId,
+            parsed.data.taskId,
+          );
+          if (!binding) {
+            throw new P1DomainError(
+              'INVALID_STATE',
+              'Task observability axes are unavailable.',
+            );
+          }
+          const event = canonicalObservabilityEvent({
+            taskId: parsed.data.taskId,
+            binding,
+            eventType: parsed.data.eventType,
+            payload: parsed.data.payload,
+          });
           return this.observabilityEvents.append(
             args.context.workspaceId,
-            parsed.data,
+            event,
             args.idempotencyKey,
           );
         }

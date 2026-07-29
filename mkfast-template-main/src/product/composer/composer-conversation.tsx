@@ -42,9 +42,9 @@ import type { ResultTokenStreamProjection } from '@/product/results/result-token
 
 import {
   ComposerDeliveryCard,
+  type DeliveryRatingTransition,
   type ComposerDeliveryOpenInput,
 } from './composer-delivery-card';
-import type { DeliveryRatingAction } from './composer-delivery-rating-bar';
 import type { DeliveryFollowUpSeed } from './delivery-followup-seeds';
 import { ComposerProgressCard } from './composer-progress-card';
 import {
@@ -216,9 +216,10 @@ export type ComposerConversationProps = {
    * 一个点了没有去处的按钮比没有按钮更糟。
    */
   onRateDelivery?: (input: {
-    action: DeliveryRatingAction;
+    transition: DeliveryRatingTransition;
     revision: ContentPackageRevisionDelivery;
-  }) => void;
+    taskId: string;
+  }) => Promise<unknown> | unknown;
   onDeliveryFollowUp?: (seed: DeliveryFollowUpSeed) => void;
   /** 交付物自己的创作类型与画幅 — chip 集合按它取，横版上不再问要不要横版。 */
   deliveryLensId?: CreationLensId;
@@ -331,8 +332,12 @@ export function ComposerConversation({
             onOpen={onOpenDelivery}
             onRate={
               onRateDelivery && turn.revision
-                ? (action) =>
-                    onRateDelivery({ action, revision: turn.revision! })
+                ? (transition) =>
+                    onRateDelivery({
+                      transition,
+                      revision: turn.revision!,
+                      taskId: turn.taskId,
+                    })
                 : undefined
             }
             revision={turn.revision}

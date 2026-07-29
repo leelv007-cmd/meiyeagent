@@ -76,6 +76,25 @@ test('creation-experience HTTP seam persists Brief confirmation, revalidates rev
       },
       eventAudit,
       observabilityEvents,
+      taskObservability: {
+        async readTaskRootAxes(workspaceId, taskId) {
+          assert.equal(workspaceId, 'workspace-a');
+          assert.equal(taskId, 'task-248');
+          return {
+            axisScope: 'task_root',
+            skillRevision: { kind: 'bound', value: 'copywriter@rev-17' },
+            promptVersion: { kind: 'bound', value: 'marketing/copy@v4' },
+            catalogRevision: {
+              kind: 'bound',
+              value: 'catalog-2026-07-29',
+            },
+            scene: { kind: 'bound', value: 'opening-campaign' },
+          };
+        },
+        async deliveryBelongsToTask() {
+          return true;
+        },
+      },
     },
   );
   const application = new P1ApplicationService(foundation, {
@@ -296,10 +315,6 @@ test('creation-experience HTTP seam persists Brief confirmation, revalidates rev
       payload: {
         eventType: 'delivery_rating.recorded',
         taskId: 'task-248',
-        skillRevision: 'copywriter@rev-17',
-        promptVersion: 'marketing/copy@v4',
-        catalogRevision: 'catalog-2026-07-29',
-        scene: 'opening-campaign',
         payload: {
           packageId: 'package-248',
           versionId: 'version-3',
@@ -313,6 +328,7 @@ test('creation-experience HTTP seam persists Brief confirmation, revalidates rev
   });
   assert.equal(canonical.status, 200);
   const canonicalBody = (await canonical.json()).data;
+  assert.equal(canonicalBody.axisScope, 'execution_child');
   assert.equal(canonicalBody.skillRevision, 'copywriter@rev-17');
   assert.equal(canonicalBody.promptVersion, 'marketing/copy@v4');
   assert.equal(canonicalBody.catalogRevision, 'catalog-2026-07-29');
@@ -324,7 +340,8 @@ test('creation-experience HTTP seam persists Brief confirmation, revalidates rev
       action: 'event_append',
       module: 'creation-experience',
       payload: {
-        ...canonicalBody,
+        eventType: canonicalBody.eventType,
+        taskId: canonicalBody.taskId,
         payload: {
           ...canonicalBody.payload,
           message: 'must-not-persist',

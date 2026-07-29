@@ -21,6 +21,7 @@ const context = {
 const canonicalFeedbackEvent = {
   eventType: 'delivery_rating.recorded',
   taskId: 'task-248',
+  axisScope: 'execution_child',
   skillRevision: 'copywriter@rev-17',
   promptVersion: 'marketing/copy@v4',
   catalogRevision: 'catalog-2026-07-29',
@@ -33,11 +34,45 @@ const canonicalFeedbackEvent = {
   },
 } as const;
 
+const publicFeedbackEvent = {
+  eventType: 'delivery_rating.recorded',
+  taskId: 'task-248',
+  payload: canonicalFeedbackEvent.payload,
+} as const;
+
+const taskObservability = {
+  async readTaskRootAxes() {
+    return {
+      axisScope: 'task_root' as const,
+      skillRevision: {
+        kind: 'bound' as const,
+        value: canonicalFeedbackEvent.skillRevision,
+      },
+      promptVersion: {
+        kind: 'bound' as const,
+        value: canonicalFeedbackEvent.promptVersion,
+      },
+      catalogRevision: {
+        kind: 'bound' as const,
+        value: canonicalFeedbackEvent.catalogRevision,
+      },
+      scene: {
+        kind: 'bound' as const,
+        value: canonicalFeedbackEvent.scene,
+      },
+    };
+  },
+  async deliveryBelongsToTask() {
+    return true;
+  },
+};
+
 describe('canonical observability event ingest', () => {
-  it('parses and appends the strict event through the existing command module', async () => {
+  it('hydrates server-owned axes before appending a public rating fact', async () => {
     const audit = new MemoryObservabilityEventAudit();
     const module = new CreationExperienceFoundationModule(undefined, undefined, {
       observabilityEvents: audit,
+      taskObservability,
     });
 
     const result = await module.execute({
@@ -45,7 +80,7 @@ describe('canonical observability event ingest', () => {
       idempotencyKey: 'feedback-248',
       input: {
         action: 'event_append',
-        payload: canonicalFeedbackEvent,
+        payload: publicFeedbackEvent,
       },
     });
 
@@ -91,17 +126,18 @@ describe('canonical observability event ingest', () => {
     };
     const module = new CreationExperienceFoundationModule(undefined, undefined, {
       observabilityEvents: audit,
+      taskObservability,
     });
 
     for (const payload of [
       {
-        ...canonicalFeedbackEvent,
-        scene: undefined,
+        ...publicFeedbackEvent,
+        skillRevision: canonicalFeedbackEvent.skillRevision,
       },
       {
-        ...canonicalFeedbackEvent,
+        ...publicFeedbackEvent,
         payload: {
-          ...canonicalFeedbackEvent.payload,
+          ...publicFeedbackEvent.payload,
           message: 'must not persist',
         },
       },
@@ -130,6 +166,7 @@ describe('canonical observability event ingest', () => {
           return event;
         },
       },
+      taskObservability,
     });
 
     for (const eventType of [
@@ -194,5 +231,48 @@ describe('canonical observability event ingest', () => {
       /idempotency identity/i,
     );
     assert.equal(writes, 0);
+  });
+
+  it('claims task-root attribution once across different idempotency keys', () => {
+    const audit = new MemoryObservabilityEventAudit();
+    const rootEvent = {
+      eventType: 'agent_primitive.lifecycle',
+      taskId: 'task-root',
+      workspaceId: 'workspace-a',
+      actorId: `ref:${'a'.repeat(64)}`,
+      actorKind: 'worker',
+      idempotencyKey: 'root-first',
+      axisScope: 'task_root',
+      skillRevision: null,
+      promptVersion: null,
+      catalogRevision: 'catalog-r1',
+      scene: 'opening-campaign',
+      payload: {
+        primitiveId: 'harness-assembly:event_persistence',
+        phase: 'succeeded',
+        billing: { kind: 'not_billed' },
+      },
+    } as const;
+
+    audit.append('workspace-a', rootEvent, rootEvent.idempotencyKey);
+    audit.append(
+      'workspace-a',
+      { ...rootEvent, idempotencyKey: 'root-replay' },
+      'root-replay',
+    );
+    assert.equal(audit.list('workspace-a').length, 1);
+    assert.throws(
+      () =>
+        audit.append(
+          'workspace-a',
+          {
+            ...rootEvent,
+            idempotencyKey: 'root-conflict',
+            scene: 'different-scene',
+          },
+          'root-conflict',
+        ),
+      /Task root observability conflict/u,
+    );
   });
 });

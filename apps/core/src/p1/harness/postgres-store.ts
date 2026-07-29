@@ -1,6 +1,8 @@
 import {
   confirmationCardTimeoutSecondsSchema,
   contentPackageSchema,
+  observabilityAxisBindingSchema,
+  observabilityEventSchema,
   observabilityDropEventSchema,
   questionCardSchema,
   structuredDecisionInputSchema,
@@ -8,6 +10,7 @@ import {
   type CreativeRecommendationDecisionTrace,
   type MarketingPackageEvidence,
   type ObservabilityDropEvent,
+  type ObservabilityAxisBinding,
   type QuestionCard,
   type ReuseTaskSeed,
 } from '@meiye/contracts';
@@ -79,6 +82,13 @@ export class HarnessDeliveryError extends Error {
   ) {
     super(message);
     this.name = 'HarnessDeliveryError';
+  }
+}
+
+class TaskRootObservabilityConflictError extends Error {
+  constructor(readonly auditId: string) {
+    super('Task root observability conflict.');
+    this.name = 'TaskRootObservabilityConflictError';
   }
 }
 
@@ -163,6 +173,13 @@ export class PostgresHarnessStore
         created_at timestamptz not null default now()
       );
 
+      create table if not exists harness_runtime.observability_root_claims (
+        workflow_id text primary key,
+        audit_id text not null unique,
+        payload jsonb not null,
+        created_at timestamptz not null default now()
+      );
+
       create table if not exists harness_runtime.langfuse_outbox (
         audit_id text primary key references harness_runtime.audit_events(id)
           on delete cascade,
@@ -243,6 +260,7 @@ export class PostgresHarnessStore
         add column if not exists sent_at timestamptz;
       alter table harness_runtime.langfuse_outbox
         add column if not exists delivery_generation integer not null default 1;
+
       update harness_runtime.langfuse_outbox
         set sent_at=updated_at
         where status='sent' and sent_at is null;
@@ -271,6 +289,105 @@ export class PostgresHarnessStore
       update harness_runtime.langfuse_outbox
         set status='dead_letter'
         where status='failed' and dead_lettered_at is not null;
+
+      update harness_runtime.observability_root_claims claim
+      set payload=jsonb_build_object(
+        'taskId', audit.payload->'taskId',
+        'workspaceId', audit.payload->'workspaceId',
+        'axisScope', audit.payload->'axisScope',
+        'skillRevision', audit.payload->'skillRevision',
+        'promptVersion', audit.payload->'promptVersion',
+        'catalogRevision', audit.payload->'catalogRevision',
+        'scene', audit.payload->'scene'
+      )
+      from harness_runtime.audit_events audit
+      where claim.audit_id=audit.id
+        and audit.stage='observability_event_ingest'
+        and audit.event_type='agent_primitive.lifecycle'
+        and audit.payload->>'axisScope'='task_root'
+        and audit.payload#>>'{payload,primitiveId}' in (
+          'harness-assembly:task_pin',
+          'harness-assembly:event_persistence'
+        );
+
+      insert into harness_runtime.observability_root_claims
+        (workflow_id, audit_id, payload, created_at)
+      select distinct on (workflow_id)
+        workflow_id,
+        id,
+        jsonb_build_object(
+          'taskId', payload->'taskId',
+          'workspaceId', payload->'workspaceId',
+          'axisScope', payload->'axisScope',
+          'skillRevision', payload->'skillRevision',
+          'promptVersion', payload->'promptVersion',
+          'catalogRevision', payload->'catalogRevision',
+          'scene', payload->'scene'
+        ),
+        created_at
+      from harness_runtime.audit_events
+      where stage='observability_event_ingest'
+        and event_type='agent_primitive.lifecycle'
+        and payload->>'axisScope'='task_root'
+        and payload#>>'{payload,primitiveId}' in (
+          'harness-assembly:task_pin',
+          'harness-assembly:event_persistence'
+        )
+      order by workflow_id, created_at, id
+      on conflict (workflow_id) do nothing;
+
+      insert into harness_runtime.observability_drop_events
+        (audit_id, delivery_generation, signal, reason, count, source,
+         occurred_at)
+      select audit.id,
+             coalesce(outbox.delivery_generation, 1),
+             'trace',
+             'permanent-config',
+             1,
+             'task-root-observability-conflict',
+             clock_timestamp()
+      from harness_runtime.audit_events audit
+      join harness_runtime.observability_root_claims claim
+        on claim.workflow_id=audit.workflow_id
+      left join harness_runtime.langfuse_outbox outbox
+        on outbox.audit_id=audit.id
+      where audit.stage='observability_event_ingest'
+        and audit.event_type='agent_primitive.lifecycle'
+        and audit.payload->>'axisScope'='task_root'
+        and audit.payload#>>'{payload,primitiveId}' in (
+          'harness-assembly:task_pin',
+          'harness-assembly:event_persistence'
+        )
+        and audit.id<>claim.audit_id
+        and jsonb_build_object(
+          'taskId', audit.payload->'taskId',
+          'workspaceId', audit.payload->'workspaceId',
+          'axisScope', audit.payload->'axisScope',
+          'skillRevision', audit.payload->'skillRevision',
+          'promptVersion', audit.payload->'promptVersion',
+          'catalogRevision', audit.payload->'catalogRevision',
+          'scene', audit.payload->'scene'
+        )<>claim.payload
+      on conflict (
+        audit_id, delivery_generation, signal, reason, source
+      ) do nothing;
+
+      update harness_runtime.langfuse_outbox outbox
+      set status='discarded', updated_at=clock_timestamp()
+      from harness_runtime.audit_events audit,
+           harness_runtime.observability_root_claims claim
+      where outbox.audit_id=audit.id
+        and claim.workflow_id=audit.workflow_id
+        and audit.stage='observability_event_ingest'
+        and audit.event_type='agent_primitive.lifecycle'
+        and audit.payload->>'axisScope'='task_root'
+        and audit.payload#>>'{payload,primitiveId}' in (
+          'harness-assembly:task_pin',
+          'harness-assembly:event_persistence'
+        )
+        and audit.id<>claim.audit_id
+        and outbox.status in ('queued', 'sending', 'failed', 'dead_letter');
+
       alter table harness_runtime.decision_events
         add column if not exists resolution_source text;
       update harness_runtime.decision_events
@@ -429,6 +546,62 @@ export class PostgresHarnessStore
       [workspaceId, harnessRuntimeId(workspaceId, workflowId), workflowId],
     );
     return result.rows[0]?.runtime_id ?? null;
+  }
+
+  async readTaskRootAxes(
+    workspaceId: string,
+    taskId: string,
+  ): Promise<ObservabilityAxisBinding | null> {
+    const result = await this.pool.query<{ root_axes: unknown }>(
+      `select request#>'{executionAssembly,rootAxes}' as root_axes
+       from harness_runtime.task_requests
+       where request->>'workspaceId'=$1
+         and (task_id=$2 or workflow_id=$3 or runtime_id=$2)
+       order by created_at, task_id
+       limit 1`,
+      [workspaceId, harnessRuntimeId(workspaceId, taskId), taskId],
+    );
+    const rootAxes = result.rows[0]?.root_axes;
+    if (rootAxes === undefined || rootAxes === null) return null;
+    const parsed = observabilityAxisBindingSchema.parse(rootAxes);
+    if (parsed.axisScope !== 'task_root') {
+      throw new Error('Frozen task observability axes must use task_root scope.');
+    }
+    return parsed;
+  }
+
+  async deliveryBelongsToTask(
+    workspaceId: string,
+    taskId: string,
+    delivery: {
+      packageId: string;
+      versionId: string;
+      revision: number;
+    },
+  ) {
+    const result = await this.pool.query<{ payload: unknown }>(
+      `select delivered.payload
+       from harness_runtime.task_requests requests
+       join harness_runtime.audit_events delivered
+         on delivered.workflow_id=requests.task_id
+        and delivered.event_type='package_delivered'
+       where requests.request->>'workspaceId'=$1
+         and (requests.task_id=$2 or requests.workflow_id=$3
+              or requests.runtime_id=$2)
+       order by delivered.created_at desc
+       limit 1`,
+      [workspaceId, harnessRuntimeId(workspaceId, taskId), taskId],
+    );
+    const payload = result.rows[0]?.payload;
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return false;
+    }
+    const value = payload as Record<string, unknown>;
+    return (
+      value.packageId === delivery.packageId &&
+      value.versionId === delivery.versionId &&
+      value.revision === delivery.revision
+    );
   }
 
   /**
@@ -1124,6 +1297,9 @@ export class PostgresHarnessStore
       await client.query('commit');
     } catch (error) {
       await client.query('rollback');
+      if (error instanceof TaskRootObservabilityConflictError) {
+        await this.recordTaskRootObservabilityConflict(client, error.auditId);
+      }
       throw error;
     } finally {
       client.release();
@@ -2144,6 +2320,22 @@ export class PostgresHarnessStore
       runtimeWorkflowId,
       event.id,
     );
+    const rootClaim = taskRootObservabilityClaim(event.payload);
+    if (rootClaim) {
+      const claim = await client.query<{ audit_id: string }>(
+        `insert into harness_runtime.observability_root_claims as existing
+           (workflow_id, audit_id, payload)
+         values ($1,$2,$3)
+         on conflict (workflow_id) do update set workflow_id=excluded.workflow_id
+         where existing.payload=excluded.payload
+         returning audit_id`,
+        [runtimeWorkflowId, auditId, JSON.stringify(rootClaim)],
+      );
+      if (claim.rowCount !== 1) {
+        throw new TaskRootObservabilityConflictError(auditId);
+      }
+      if (claim.rows[0]?.audit_id !== auditId) return;
+    }
     const result = await client.query(
       `insert into harness_runtime.audit_events as existing
          (id, workflow_id, trace_id, trace_contract_version, stage,
@@ -2174,6 +2366,25 @@ export class PostgresHarnessStore
     await client.query(
       `insert into harness_runtime.langfuse_outbox (audit_id, status)
        values ($1,'queued') on conflict (audit_id) do nothing`,
+      [auditId],
+    );
+  }
+
+  private async recordTaskRootObservabilityConflict(
+    client: PoolClient,
+    auditId: string,
+  ) {
+    await client.query(
+      `insert into harness_runtime.observability_drop_events
+         (audit_id, delivery_generation, signal, reason, count, source,
+          occurred_at)
+       values (
+         $1, 1, 'trace', 'permanent-config', 1,
+         'task-root-observability-conflict', clock_timestamp()
+       )
+       on conflict (
+         audit_id, delivery_generation, signal, reason, source
+       ) do nothing`,
       [auditId],
     );
   }
@@ -2264,6 +2475,29 @@ export class PostgresHarnessStore
       ? logicalObjectId
       : harnessRuntimeId(workspaceId, logicalObjectId);
   }
+}
+
+function taskRootObservabilityClaim(payload: unknown) {
+  const parsed = observabilityEventSchema.safeParse(payload);
+  if (
+    !parsed.success ||
+    parsed.data.eventType !== 'agent_primitive.lifecycle' ||
+    parsed.data.axisScope !== 'task_root' ||
+    (parsed.data.payload.primitiveId !== 'harness-assembly:task_pin' &&
+      parsed.data.payload.primitiveId !==
+        'harness-assembly:event_persistence')
+  ) {
+    return;
+  }
+  return {
+    taskId: parsed.data.taskId,
+    workspaceId: parsed.data.workspaceId,
+    axisScope: parsed.data.axisScope,
+    skillRevision: parsed.data.skillRevision,
+    promptVersion: parsed.data.promptVersion,
+    catalogRevision: parsed.data.catalogRevision,
+    scene: parsed.data.scene,
+  };
 }
 
 function assertObservabilityWindow(windowStart: Date, windowEnd: Date) {

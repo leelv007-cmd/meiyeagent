@@ -1,11 +1,6 @@
-import type { ObservabilityEvent } from '@meiye/contracts';
+import type { MerchantDeliveryRatingEventInput } from '@meiye/contracts';
 
-export type MerchantObservabilityEvent = Extract<
-  ObservabilityEvent,
-  {
-    eventType: 'delivery_rating.recorded' | 'delivery_rating.withdrawn';
-  }
->;
+export type MerchantObservabilityEvent = MerchantDeliveryRatingEventInput;
 
 export type ObservabilityEventCommand = (
   module: 'creation-experience',

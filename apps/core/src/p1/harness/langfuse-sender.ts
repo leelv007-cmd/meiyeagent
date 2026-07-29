@@ -334,6 +334,7 @@ function mapOutboxItem(item: HarnessLangfuseOutboxItem) {
           phase: observabilityEvent.payload.phase,
         }
       : {};
+  const eventAxisScope = observabilityEvent?.axisScope;
   const traceObservabilityAxes =
     observabilityEvent?.eventType === 'agent_primitive.lifecycle' &&
     observabilityEvent.axisScope === 'task_root'
@@ -387,6 +388,7 @@ function mapOutboxItem(item: HarnessLangfuseOutboxItem) {
     ...(metrics ? { metrics } : {}),
     ...(productMetrics ? { productMetrics } : {}),
     ...observabilityAxes,
+    ...(eventAxisScope ? { axisScope: eventAxisScope } : {}),
     ...primitiveLifecycle,
     ...skillLineage,
   };
@@ -402,8 +404,13 @@ function mapOutboxItem(item: HarnessLangfuseOutboxItem) {
     metadata: spanMetadata,
   });
   const writesTaskRoot =
-    observabilityEvent?.eventType !== 'agent_primitive.lifecycle' ||
-    observabilityEvent.axisScope === 'task_root';
+    !observabilityEvent ||
+    (observabilityEvent.eventType === 'agent_primitive.lifecycle' &&
+      observabilityEvent.axisScope === 'task_root' &&
+      (observabilityEvent.payload.primitiveId ===
+        'harness-assembly:task_pin' ||
+        observabilityEvent.payload.primitiveId ===
+          'harness-assembly:event_persistence'));
   const events: IngestionEvent[] = [
     ...(writesTaskRoot
       ? [ingestionEvent(item, 'trace', 'trace-create', traceBody)]
