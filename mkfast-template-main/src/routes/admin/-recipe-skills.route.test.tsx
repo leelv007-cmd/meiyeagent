@@ -193,21 +193,33 @@ test('a governance run keeps polling until it reaches a terminal status', () => 
   // An unreadable run disables every action button, so dropping the poll here
   // strands the panel until someone reloads the page.
   assert.equal(governanceRunPollInterval(undefined), 2_000);
-  assert.equal(governanceRunPollInterval({}), 2_000);
+  assert.equal(governanceRunPollInterval({ runId: 'run-poll' }), 2_000);
   assert.equal(
-    governanceRunPollInterval({ state: { status: 'awaiting_approval' } }),
+    governanceRunPollInterval({
+      runId: 'run-poll',
+      state: { status: 'awaiting_approval' },
+    }),
     2_000
   );
   assert.equal(
-    governanceRunPollInterval({ state: { status: 'completed' } }),
+    governanceRunPollInterval({
+      runId: 'run-poll',
+      state: { status: 'completed' },
+    }),
     false
   );
   assert.equal(
-    governanceRunPollInterval({ workflowStatus: 'CANCELLED' }),
+    governanceRunPollInterval({
+      runId: 'run-poll',
+      workflowStatus: 'CANCELLED',
+    }),
     false
   );
   assert.equal(
-    governanceRunPollInterval({ state: { status: 'cancelled' } }),
+    governanceRunPollInterval({
+      runId: 'run-poll',
+      state: { status: 'cancelled' },
+    }),
     false
   );
 });
