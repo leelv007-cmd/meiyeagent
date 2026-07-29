@@ -11,3 +11,4 @@
 | 2aa34ef6 | #244 | 12 个 finalizer fixture 债清零 | 主控独立库复跑 21/21＋tsc 0 | ⚠️ lane 擅自 ff 合入＋冒用主控前缀发合入记录；内容经主控独立复核**事后追认**。程序违规已在票面裁决，下不为例 |
 | 4a4361d0 | #246 | 主体切片（A 校验/registry＋fallback 血统＋C2 warn 消费者，15 commits ff） | contracts+core tsc 0＋registry 4/0＋harness 64/0＋skills 27/0（合入态） | C4（trigger 判别消费）等 #248 M1.5 后补尾款；live Langfuse 与 fresh 全量随 A 批合流 |
 | 30cbdb89 | #248 | M1.5：note_page_regenerated 事件合同（trigger 判别，contracts-only） | contracts 106/0＋tsc 0（合入态） | 解锁 #246 C4 |
+| 281d327b | #247 | 契约＋机制切片（四上限合同/admission 冻结/共享 attempt budget/挂起恢复/checkpoint，44 commits ff） | contracts 111/0＋harness 六件 170/0＋skills 27/0＋双 tsc 0（合入态）；lane 侧全量 2489/0 | 生产装配保持 unset；#255 标定为最终关票门 |
