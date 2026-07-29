@@ -47,6 +47,24 @@ export interface AgentPrimitiveExecutionRequest {
   serverContext: AgentPrimitiveServerContext;
 }
 
+export class AgentPrimitiveRequestError extends Error {
+  readonly code = 'AGENT_PRIMITIVE_REQUEST_INVALID';
+  readonly status = 400;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'AgentPrimitiveRequestError';
+  }
+}
+
+function invalidRequest(error: unknown): AgentPrimitiveRequestError {
+  return error instanceof AgentPrimitiveRequestError
+    ? error
+    : new AgentPrimitiveRequestError(
+        error instanceof Error ? error.message : String(error),
+      );
+}
+
 export class AgentPrimitiveRuntime {
   readonly #bindings: Partial<AgentPrimitiveBindings>;
 
@@ -72,13 +90,20 @@ export class AgentPrimitiveRuntime {
   async execute(args: AgentPrimitiveExecutionRequest): Promise<unknown> {
     const serverContext = snapshotServerContext(args.serverContext);
     try {
-      const definition = this.options.registry.resolve(args.primitiveId);
-      const input = definition.inputSchema.parse(args.modelInput);
-      if (definition.billed && !serverContext.billing) {
-        throw new Error(
-          `Billed agent primitive requires billing context: ${args.primitiveId}`,
-        );
-      }
+      const { definition, input } = (() => {
+        try {
+          const definition = this.options.registry.resolve(args.primitiveId);
+          const input = definition.inputSchema.parse(args.modelInput);
+          if (definition.billed && !serverContext.billing) {
+            throw new AgentPrimitiveRequestError(
+              `Billed agent primitive requires billing context: ${args.primitiveId}`,
+            );
+          }
+          return { definition, input };
+        } catch (error) {
+          throw invalidRequest(error);
+        }
+      })();
       const handler = this.#bindings[
         definition.id
       ] as (args: {

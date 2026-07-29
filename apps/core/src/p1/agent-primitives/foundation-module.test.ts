@@ -9,6 +9,7 @@ import {
 } from './foundation-module.js';
 import { createCanonicalAgentPrimitiveRegistry } from './registry.js';
 import {
+  AgentPrimitiveRequestError,
   AgentPrimitiveRuntime,
   type AgentPrimitiveBindings,
   type AgentPrimitiveExecutionRequest,
@@ -121,6 +122,29 @@ test('the module rejects every non-worker context before runtime dispatch', asyn
     );
     assert.equal(calls.length, 0);
   }
+});
+
+test('invalid server envelope is a retry-safe request rejection', async () => {
+  const { calls, module } = fixture();
+
+  await assert.rejects(
+    module.execute({
+      context: workerContext,
+      idempotencyKey: 'primitive-call-invalid-envelope',
+      input: {
+        action: 'execute',
+        payload: {
+          modelInput: { scope: 'store.current' },
+          observability: { ...observability, scene: '' },
+          primitiveId: 'read_context',
+        },
+      },
+      store: {} as FoundationStore,
+    }),
+    (error: unknown) =>
+      error instanceof AgentPrimitiveRequestError && error.status === 400,
+  );
+  assert.deepEqual(calls, []);
 });
 
 test('the production module seam rejects forged model identity through the real runtime and traces it', async () => {

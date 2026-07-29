@@ -5,6 +5,7 @@ import {
   createCanonicalAgentPrimitiveRegistry,
 } from './registry.js';
 import {
+  AgentPrimitiveRequestError,
   AgentPrimitiveRuntime,
   type AgentPrimitiveBindings,
   type AgentPrimitiveServerContext,
@@ -188,7 +189,11 @@ test('billed primitives require server-owned billing context before tracing or h
         primitiveId,
         serverContext,
       }),
-      new Error(`Billed agent primitive requires billing context: ${primitiveId}`),
+      (error: unknown) =>
+        error instanceof AgentPrimitiveRequestError &&
+        error.status === 400 &&
+        error.message ===
+          `Billed agent primitive requires billing context: ${primitiveId}`,
     );
     assert.equal(executions, 0);
     assert.deepEqual(
@@ -264,7 +269,10 @@ test('unknown and merchant-only identifiers are rejected and traced before any h
         primitiveId: primitiveId as 'read_context',
         serverContext,
       }),
-      new Error(`Agent primitive is not registered: ${primitiveId}`),
+      (error: unknown) =>
+        error instanceof AgentPrimitiveRequestError &&
+        error.status === 400 &&
+        error.message === `Agent primitive is not registered: ${primitiveId}`,
     );
     assert.equal(executions, 0);
     assert.deepEqual(

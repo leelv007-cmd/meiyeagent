@@ -5,14 +5,26 @@ import type {
   FoundationStore,
   P1OperationModule,
 } from '../foundation/ports.js';
-import type { AgentPrimitiveExecutionRequest } from './runtime.js';
+import {
+  AgentPrimitiveRequestError,
+  type AgentPrimitiveExecutionRequest,
+} from './runtime.js';
 
 export interface AgentPrimitiveExecutionPort {
   execute(input: AgentPrimitiveExecutionRequest): Promise<unknown>;
 }
 
+export class AgentPrimitiveExecutionError extends Error {
+  readonly code = 'AGENT_PRIMITIVE_EXECUTION_UNCERTAIN';
+
+  constructor(cause: unknown) {
+    super('Agent primitive execution outcome is uncertain.', { cause });
+    this.name = 'AgentPrimitiveExecutionError';
+  }
+}
+
 function fail(message: string): never {
-  throw new P1DomainError('INVALID_STATE', message);
+  throw new AgentPrimitiveRequestError(message);
 }
 
 function object(value: unknown, field: string): Record<string, unknown> {
@@ -71,17 +83,22 @@ export class AgentPrimitiveFoundationModule implements P1OperationModule {
       fail('Agent primitive observability context is invalid.');
     }
 
-    return this.runtime.execute({
-      modelInput: payload.modelInput,
-      primitiveId: text(payload, 'primitiveId'),
-      serverContext: {
-        actorId: args.context.userId,
-        billing,
-        correlationId: args.context.correlationId,
-        idempotencyKey: args.idempotencyKey,
-        observability: observability.data,
-        workspaceId: args.context.workspaceId,
-      },
-    });
+    try {
+      return await this.runtime.execute({
+        modelInput: payload.modelInput,
+        primitiveId: text(payload, 'primitiveId'),
+        serverContext: {
+          actorId: args.context.userId,
+          billing,
+          correlationId: args.context.correlationId,
+          idempotencyKey: args.idempotencyKey,
+          observability: observability.data,
+          workspaceId: args.context.workspaceId,
+        },
+      });
+    } catch (error) {
+      if (error instanceof AgentPrimitiveRequestError) throw error;
+      throw new AgentPrimitiveExecutionError(error);
+    }
   }
 }

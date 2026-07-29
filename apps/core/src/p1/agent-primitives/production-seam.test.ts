@@ -6,9 +6,13 @@ import type { AgentPrimitiveId } from '@meiye/contracts';
 import { P1ApplicationService } from '../foundation/application-service.js';
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
 import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
-import { AgentPrimitiveFoundationModule } from './foundation-module.js';
+import {
+  AgentPrimitiveExecutionError,
+  AgentPrimitiveFoundationModule,
+} from './foundation-module.js';
 import { createCanonicalAgentPrimitiveRegistry } from './registry.js';
 import {
+  AgentPrimitiveRequestError,
   AgentPrimitiveRuntime,
   type AgentPrimitiveBindings,
   type AgentPrimitiveTraceEvent,
@@ -44,7 +48,10 @@ const modelInputByPrimitive: Record<AgentPrimitiveId, Record<string, unknown>> =
   },
 };
 
-function createFixture(writeOwner: 'legacy' | 'frozen' | 'p1' = 'p1') {
+function createFixture(
+  writeOwner: 'legacy' | 'frozen' | 'p1' = 'p1',
+  handlerError?: unknown,
+) {
   const repository = new MemoryFoundationRepository();
   repository.grantOwner(worker.workspaceId, 'owner-agent-primitives');
   repository.grantMembership(
@@ -58,6 +65,7 @@ function createFixture(writeOwner: 'legacy' | 'frozen' | 'p1' = 'p1') {
     (primitiveId: AgentPrimitiveId) =>
     async (): Promise<Record<string, string>> => {
       executions.push(primitiveId);
+      if (handlerError) throw handlerError;
       return { primitiveId };
     };
   const bindings: AgentPrimitiveBindings = {
@@ -179,6 +187,82 @@ test('the production P1 seam default-denies browser and service roles while work
         idempotencyKey: 'worker-read-context',
       },
     ],
+  );
+});
+
+test('invalid model input releases the P1 claim for deterministic same-key retry', async () => {
+  const { executions, repository, service, traces } = createFixture();
+  const invalid = command('read_context');
+  invalid.payload.modelInput = {
+    scope: 'store.current',
+    workspaceId: 'forged-workspace',
+  };
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await assert.rejects(
+      service.executeModule(
+        worker,
+        'agent-primitives',
+        invalid,
+        'worker-invalid-read-context',
+      ),
+      (error: unknown) => error instanceof AgentPrimitiveRequestError,
+    );
+  }
+
+  assert.deepEqual(executions, []);
+  assert.deepEqual(
+    traces.map(({ phase }) => phase),
+    ['rejected', 'rejected'],
+  );
+  assert.deepEqual(
+    await repository.listCommandAudits(worker.workspaceId),
+    [],
+  );
+});
+
+test('a handler 4xx after dispatch keeps the P1 claim and cannot execute twice', async () => {
+  const handlerError = Object.assign(
+    new Error('Provider rejected after accepting the request.'),
+    { status: 400 },
+  );
+  const { executions, repository, service, traces } = createFixture(
+    'p1',
+    handlerError,
+  );
+
+  await assert.rejects(
+    service.executeModule(
+      worker,
+      'agent-primitives',
+      command('read_context'),
+      'worker-uncertain-read-context',
+    ),
+    (error: unknown) =>
+      error instanceof AgentPrimitiveExecutionError &&
+      error.cause === handlerError,
+  );
+  await assert.rejects(
+    service.executeModule(
+      worker,
+      'agent-primitives',
+      command('read_context'),
+      'worker-uncertain-read-context',
+    ),
+    (error: unknown) =>
+      error instanceof P1DomainError &&
+      error.code === 'INVALID_STATE' &&
+      /still in progress/u.test(error.message),
+  );
+
+  assert.deepEqual(executions, ['read_context']);
+  assert.deepEqual(
+    traces.map(({ phase }) => phase),
+    ['invoked', 'rejected'],
+  );
+  assert.deepEqual(
+    await repository.listCommandAudits(worker.workspaceId),
+    [],
   );
 });
 
