@@ -217,13 +217,12 @@ import {
   LedgerBackedFactRightsAuthorizationPort,
   LedgerBackedHarnessContextPort,
 } from './p1/harness/production-context-port.js';
+import { createProductionHarnessMediaAssembly } from './p1/harness/production-media-assembly.js';
 import { ProductionHarnessStagePorts } from './p1/harness/production-stage-ports.js';
 import { IMAGE_MODEL_RECIPE_PROFILE } from './p1/harness/image-intent-compiler.js';
 import {
   FixtureImageExactTextVerifier,
-  ModelSupplyHarnessMediaExecutionPort,
   ModelSupplyImageExactTextVerifier,
-  UnifiedHarnessStagePorts,
 } from './p1/harness/unified-media-stage-ports.js';
 import { PostgresHarnessStore } from './p1/harness/postgres-store.js';
 import { PostgresDueDeliveryRepository } from './p1/due-delivery/postgres-repository.js';
@@ -1848,22 +1847,21 @@ if (harnessRuntimeConfig) {
   const noteMediaAdmission =
     new PostgresNoteMediaAdmissionCoordinator(pool);
   await noteMediaAdmission.migrate();
-  const harnessStages = new UnifiedHarnessStagePorts(
-    copyHarnessStages,
-    structuredNodeRunnerFactory,
-    new ModelSupplyHarnessMediaExecutionPort(
-      p1ModelSupplyService,
+  const harnessStages = createProductionHarnessMediaAssembly({
+    contentPackages: contentPackageRevisionWriter,
+    copy: copyHarnessStages,
+    exactText:
       modelRuntime.mode === 'fixture'
         ? new FixtureImageExactTextVerifier()
         : new ModelSupplyImageExactTextVerifier(p1ModelSupplyService),
-      noteMediaAdmission,
-      IMAGE_MODEL_RECIPE_PROFILE,
-    ),
-    contentPackageRevisionWriter,
-    () => new Date().toISOString(),
-    notePlanSettings,
-    unconfiguredNotePlanEnhancementJudgeResolver,
-  );
+    imageProfile: IMAGE_MODEL_RECIPE_PROFILE,
+    models: p1ModelSupplyService,
+    noteAdmission: noteMediaAdmission,
+    noteEnhancementJudge: unconfiguredNotePlanEnhancementJudgeResolver,
+    noteSettings: notePlanSettings,
+    now: () => new Date().toISOString(),
+    runners: structuredNodeRunnerFactory,
+  });
   DBOS.setConfig(harnessRuntimeConfig.dbos);
   const harnessBilling = new HarnessProductBillingSettlementExecutor(
     productQuoteService,
