@@ -2,7 +2,7 @@ import {
   askMerchantQuestionRequestSchema,
   askMerchantAnswerSchema,
   executionConfirmationRequestSchema,
-  harnessInteractionAnswerSchema,
+  executionConfirmationAnswerSchema,
   harnessInteractionMerchantMessageSchema,
   harnessInteractionRequestSchema,
   type AskMerchantQuestionRequest,
@@ -404,10 +404,6 @@ export class HarnessInteractionService {
         'The interaction request does not belong to the requested task.',
       );
     }
-    const parsed = harnessInteractionAnswerSchema.safeParse(input);
-    if (parsed.success) {
-      return this.submitParsed(workspaceId, parsed.data, 'decision');
-    }
     const request = await this.store.readPendingInteraction(
       workspaceId,
       identity.resume.runId,
@@ -415,15 +411,26 @@ export class HarnessInteractionService {
     );
     if (
       !request ||
-      request.kind !== 'ask_merchant' ||
       request.requestId !== identity.requestId ||
       request.revision !== identity.revision ||
+      request.runId !== identity.resume.runId ||
       request.step !== identity.resume.step
     ) {
       throw new HarnessInteractionError(
         'STALE_INTERACTION_REQUEST',
         'The interaction request is no longer pending.',
       );
+    }
+    if (request.kind === 'execution_confirmation') {
+      return this.submitParsed(
+        workspaceId,
+        executionConfirmationAnswerSchema.parse(input),
+        'decision',
+      );
+    }
+    const parsed = askMerchantAnswerSchema.safeParse(input);
+    if (parsed.success) {
+      return this.submitParsed(workspaceId, parsed.data, 'decision');
     }
     const resolution = resolveAskMerchantAnswer(request, input);
     if (resolution.kind !== 'reask') {

@@ -259,6 +259,33 @@ test('malformed ask answers reask after identity validation while forged identit
   );
 });
 
+test('an execution-shaped response to an exact ask identity advances one durable reask', async () => {
+  const store = new MemoryInteractionStore([]);
+  const request = askRequest({ step: 'execution_selection' });
+  await store.seed(request);
+  const service = new HarnessInteractionService(store, {
+    async resume() {
+      throw new Error('A mismatched answer must not resume.');
+    },
+  });
+
+  const result = await service.submit('workspace-a', {
+    requestId: request.requestId,
+    revision: request.revision,
+    idempotencyKey: 'execution-shaped-ask-answer',
+    resume: { runId: request.runId, step: request.step },
+    response: { kind: 'approved' },
+  });
+
+  assert.equal(result.kind, 'reask');
+  assert.equal(result.request.revision, request.revision + 1);
+  assert.equal(
+    (await store.readPendingInteraction('workspace-a', request.runId))
+      ?.revision,
+    request.revision + 1,
+  );
+});
+
 test('reask keeps the original durable deadline and renderer capability', async () => {
   const resumes: unknown[] = [];
   const store = new MemoryInteractionStore([]);
