@@ -106,7 +106,11 @@ function* walk(dir) {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) {
-      if (SKIP_DIRS.has(entry)) continue;
+      // Hidden directories hold local tool output (.playwright-cli snapshots,
+      // .impeccable critiques, .gstack reports) — never user-visible copy, and
+      // present only on whichever machine ran the tool, so walking them makes
+      // the gate's verdict depend on local debris instead of the tree.
+      if (SKIP_DIRS.has(entry) || entry.startsWith('.')) continue;
       yield* walk(full);
       continue;
     }
