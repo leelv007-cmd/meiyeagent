@@ -12,6 +12,7 @@ import {
   type PublishLaunchCatalogResult,
 } from './launch-seeds.js';
 import { PostgresCreationExperienceAuditRepository } from './postgres-audit-repository.js';
+import type { ObservabilityEventAuditPort } from './observability-events.js';
 import {
   CompositeBriefRevisionResolver,
   PostgresBriefRevisionContextRepository,
@@ -97,6 +98,7 @@ async function ensureLaunchCatalog(
  */
 export async function createDurableCreationExperienceRuntime(input: {
   modelCatalog: CurrentModelCatalogSource;
+  observabilityEvents: ObservabilityEventAuditPort;
   pool: Pool;
   productQuotes: CurrentProductQuoteSource;
   seedLaunchCatalog?: boolean;
@@ -129,6 +131,7 @@ export async function createDurableCreationExperienceRuntime(input: {
       briefRevisionContexts,
       briefRevisionResolver,
       eventAudit: audit,
+      observabilityEvents: input.observabilityEvents,
       skillRevisionValidation: input.skillRevisionValidation,
     },
   );

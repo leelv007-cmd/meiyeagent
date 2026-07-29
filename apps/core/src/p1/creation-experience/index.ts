@@ -97,6 +97,11 @@ export {
   type CreationExperienceEventAuditPort,
   type RecordCreationExperienceEventInput,
 } from './creation-experience-events.js';
+export {
+  HarnessObservabilityEventAudit,
+  MemoryObservabilityEventAudit,
+  type ObservabilityEventAuditPort,
+} from './observability-events.js';
 export { PostgresCreationExperienceCatalogRepository } from './postgres-repository.js';
 export { PostgresCreationExperienceAuditRepository } from './postgres-audit-repository.js';
 export {

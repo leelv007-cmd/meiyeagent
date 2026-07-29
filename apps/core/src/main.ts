@@ -328,6 +328,7 @@ import {
 } from './p1/workflow-events.js';
 import {
   createDurableCreationExperienceRuntime,
+  HarnessObservabilityEventAudit,
 } from './p1/creation-experience/index.js';
 import {
   createDurableSkillRuntime,
@@ -1425,6 +1426,7 @@ const skillRuntime = await createDurableSkillRuntime({
 const creationExperienceRuntime =
   await createDurableCreationExperienceRuntime({
     modelCatalog: modelSupplyRepository,
+    observabilityEvents: new HarnessObservabilityEventAudit(promptAuditStore),
     pool,
     productQuotes: productBillingRepository,
     skillRevisionValidation: skillRuntime.revisionValidation,

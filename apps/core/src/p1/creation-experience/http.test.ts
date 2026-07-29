@@ -16,6 +16,7 @@ import { MemoryBriefConfirmationRepository } from './brief-confirmation-reposito
 import { CreationExperienceFoundationModule } from './foundation-module.js';
 import { MemoryCreationExperienceCatalogRepository } from './memory-repository.js';
 import { MemoryCreationExperienceEventAudit } from './creation-experience-events.js';
+import { MemoryObservabilityEventAudit } from './observability-events.js';
 import { MemoryBriefRevisionContextRepository } from './postgres-brief-revision-context.js';
 
 const emptyDiagnostics: DiagnosticRepository = {
@@ -46,6 +47,7 @@ test('creation-experience HTTP seam persists Brief confirmation, revalidates rev
   foundation.grantMembership('workspace-a', 'reviewer-a', 'reviewer');
 
   const eventAudit = new MemoryCreationExperienceEventAudit();
+  const observabilityEvents = new MemoryObservabilityEventAudit();
   const confirmations = new MemoryBriefConfirmationRepository();
   const revisionContexts = new MemoryBriefRevisionContextRepository();
   const module = new CreationExperienceFoundationModule(
@@ -73,6 +75,7 @@ test('creation-experience HTTP seam persists Brief confirmation, revalidates rev
         },
       },
       eventAudit,
+      observabilityEvents,
     },
   );
   const application = new P1ApplicationService(foundation, {
@@ -285,6 +288,54 @@ test('creation-experience HTTP seam persists Brief confirmation, revalidates rev
   assert.doesNotMatch(JSON.stringify(appendedBody), /must-not-persist/);
   assert.equal((await eventAudit.list('workspace-a')).length, 1);
   assert.equal((await eventAudit.list('workspace-b')).length, 0);
+
+  const canonical = await fetch(`${base}/commands`, {
+    body: JSON.stringify({
+      action: 'event_append',
+      module: 'creation-experience',
+      payload: {
+        eventType: 'delivery_rating.recorded',
+        taskId: 'task-248',
+        skillRevision: 'copywriter@rev-17',
+        promptVersion: 'marketing/copy@v4',
+        catalogRevision: 'catalog-2026-07-29',
+        scene: 'opening-campaign',
+        payload: {
+          packageId: 'package-248',
+          versionId: 'version-3',
+          revision: 3,
+          verdict: 'up',
+        },
+      },
+    }),
+    headers: { ...headers, 'idempotency-key': 'canonical-event-248' },
+    method: 'POST',
+  });
+  assert.equal(canonical.status, 200);
+  const canonicalBody = (await canonical.json()).data;
+  assert.equal(canonicalBody.skillRevision, 'copywriter@rev-17');
+  assert.equal(canonicalBody.promptVersion, 'marketing/copy@v4');
+  assert.equal(canonicalBody.catalogRevision, 'catalog-2026-07-29');
+  assert.equal(canonicalBody.scene, 'opening-campaign');
+  assert.deepEqual(observabilityEvents.list('workspace-a'), [canonicalBody]);
+
+  const unsafeCanonical = await fetch(`${base}/commands`, {
+    body: JSON.stringify({
+      action: 'event_append',
+      module: 'creation-experience',
+      payload: {
+        ...canonicalBody,
+        payload: {
+          ...canonicalBody.payload,
+          message: 'must-not-persist',
+        },
+      },
+    }),
+    headers: { ...headers, 'idempotency-key': 'unsafe-canonical-event-248' },
+    method: 'POST',
+  });
+  assert.equal(unsafeCanonical.status, 409);
+  assert.equal(observabilityEvents.list('workspace-a').length, 1);
 
   const reviewerAppend = await fetch(`${base}/commands`, {
     body: JSON.stringify({

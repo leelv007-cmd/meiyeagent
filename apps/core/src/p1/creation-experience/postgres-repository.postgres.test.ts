@@ -7,6 +7,7 @@ import { Pool } from 'pg';
 import { confirmBrief, projectBriefTrigger } from './brief-trigger-projection.js';
 import { CreationExperienceCatalogService } from './catalog-service.js';
 import { CreationExperienceFoundationModule } from './foundation-module.js';
+import { MemoryObservabilityEventAudit } from './observability-events.js';
 import { PostgresCreationExperienceAuditRepository } from './postgres-audit-repository.js';
 import {
   CompositeBriefRevisionResolver,
@@ -351,6 +352,7 @@ test(
     });
     try {
       const first = await createDurableCreationExperienceRuntime({
+        observabilityEvents: new MemoryObservabilityEventAudit(),
         pool: runtimePool,
         ...unusedRevisionSources,
       });
@@ -432,6 +434,7 @@ test(
       });
 
       const restarted = await createDurableCreationExperienceRuntime({
+        observabilityEvents: new MemoryObservabilityEventAudit(),
         pool: runtimePool,
         ...unusedRevisionSources,
       });

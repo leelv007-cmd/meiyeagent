@@ -13,6 +13,7 @@ import type {
   CreationLensId,
   RecipeDraftFields,
 } from '@meiye/contracts';
+import { observabilityEventSchema } from '@meiye/contracts';
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
 import type { P1OperationModule } from '../foundation/ports.js';
 import {
@@ -32,6 +33,10 @@ import {
   type CreationExperienceEventAuditPort,
   type RecordCreationExperienceEventInput,
 } from './creation-experience-events.js';
+import {
+  MemoryObservabilityEventAudit,
+  type ObservabilityEventAuditPort,
+} from './observability-events.js';
 import { buildRecipePatchPreview } from './recipe-patch-preview.js';
 import {
   RecipeStudioService,
@@ -367,6 +372,7 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
   private readonly briefRevisionContexts: BriefRevisionContextRepository;
   private readonly briefRevisionResolver: BriefRevisionResolver;
   private readonly eventAudit: CreationExperienceEventAuditPort;
+  private readonly observabilityEvents: ObservabilityEventAuditPort;
   private readonly recipeStudio: RecipeStudioService;
 
   constructor(
@@ -377,6 +383,7 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
       briefRevisionContexts?: BriefRevisionContextRepository;
       briefRevisionResolver?: BriefRevisionResolver;
       eventAudit?: CreationExperienceEventAuditPort;
+      observabilityEvents?: ObservabilityEventAuditPort;
       skillRevisionValidation?: RecipeSkillRevisionValidationPort;
     } = {},
   ) {
@@ -391,6 +398,8 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
       options.briefRevisionResolver ?? new MissingBriefRevisionResolver();
     this.eventAudit =
       options.eventAudit ?? new MemoryCreationExperienceEventAudit();
+    this.observabilityEvents =
+      options.observabilityEvents ?? new MemoryObservabilityEventAudit();
     this.recipeStudio = new RecipeStudioService(
       this.service,
       undefined,
@@ -745,6 +754,20 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
         return { confirmationId, ...stored };
       }
       case 'event_append': {
+        if (typeof value.eventType === 'string') {
+          const parsed = observabilityEventSchema.safeParse(value);
+          if (!parsed.success) {
+            throw new P1DomainError(
+              'INVALID_STATE',
+              'Observability event does not match the canonical contract.',
+            );
+          }
+          return this.observabilityEvents.append(
+            args.context.workspaceId,
+            parsed.data,
+            args.idempotencyKey,
+          );
+        }
         const kind = stringField(value, 'kind') as CreationExperienceEventKind;
         const lensId = stringField(value, 'lensId');
         if (
