@@ -1992,6 +1992,21 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 		"note_plan_confirmation",
 	);
 	assert.equal(confirmation.blockingQuestion?.unattended, "hold");
+	const resumed = await ports.nameIntent({
+		workflowId: snapshot.task.id,
+		request: {
+			...request,
+			decisionReferences: [
+				{
+					field: "note_style",
+					id: "decision-note-style",
+					revision: snapshot.revision,
+					value: "故事版",
+				},
+			],
+		},
+	});
+	assert.equal(resumed.blockingQuestion, null);
 
 	const brief = await ports.compileNoteBrief({
 		workflowId: snapshot.task.id,

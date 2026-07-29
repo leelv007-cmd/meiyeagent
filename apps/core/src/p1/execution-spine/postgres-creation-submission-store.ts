@@ -790,12 +790,16 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
   }
   const candidate = value as {
     contentPackage?: { expectedRevision?: unknown; id?: unknown };
+    decisionReferences?: unknown;
     snapshot?: unknown;
     task?: { id?: unknown };
     usageReservation?: { id?: unknown; units?: unknown };
     work?: { id?: unknown };
   };
   const snapshot = creationExecutionSnapshotSchema.parse(candidate.snapshot);
+  const decisionReferences = storedDecisionReferences(
+    candidate.decisionReferences,
+  );
   const contentPackageId = requiredId(
     candidate.contentPackage?.id,
     "contentPackage.id",
@@ -821,6 +825,7 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
       expectedRevision: candidate.contentPackage.expectedRevision,
       id: contentPackageId,
     },
+    ...(decisionReferences ? { decisionReferences } : {}),
     snapshot,
     task: { id: taskId },
     usageReservation: {
@@ -829,6 +834,48 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
     },
     work: { id: workId },
   };
+}
+
+function storedDecisionReferences(
+  value: unknown,
+): CreationSubmissionRecord["decisionReferences"] {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error("Stored creation submission has invalid decision references.");
+  }
+  return value.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error(
+        "Stored creation submission has invalid decision references.",
+      );
+    }
+    const candidate = entry as {
+      field?: unknown;
+      id?: unknown;
+      revision?: unknown;
+      value?: unknown;
+    };
+    if (
+      typeof candidate.field !== "string" ||
+      candidate.field.trim().length === 0 ||
+      typeof candidate.id !== "string" ||
+      candidate.id.trim().length === 0 ||
+      !Number.isSafeInteger(candidate.revision) ||
+      (candidate.revision as number) < 0 ||
+      typeof candidate.value !== "string" ||
+      candidate.value.trim().length === 0
+    ) {
+      throw new Error(
+        "Stored creation submission has invalid decision references.",
+      );
+    }
+    return {
+      field: candidate.field,
+      id: candidate.id,
+      revision: candidate.revision as number,
+      value: candidate.value,
+    };
+  });
 }
 
 function cloneSubmission(submission: CreationSubmissionRecord) {

@@ -1116,6 +1116,7 @@ test("an image-text note Result adjustment reserves the quoted image output", as
 		outputCount: 1,
 		quote: { id: "quote-adjust-note-1", revision: "quote-adjust-note-r1" },
 		sourceContentPackage: { id: source.contentPackage.id, revision: 1 },
+		sourceNoteStyleId: "story",
 		sourceSnapshot: source.snapshot,
 		taskId: "composer-task:result-adjust:note-1",
 		workId: "work-result-adjust-note-1",
@@ -1124,6 +1125,18 @@ test("an image-text note Result adjustment reserves the quoted image output", as
 
 	assert.equal(result.work.id, "work-result-adjust-note-1");
 	assert.equal(starter.starts.length, 2);
+	const noteStyleDecision = starter.starts[1]?.decisionReferences?.[0];
+	assert.match(noteStyleDecision?.id ?? "", /^decision-[a-f0-9]{24}$/u);
+	assert.deepEqual(
+		noteStyleDecision
+			? {
+					field: noteStyleDecision.field,
+					revision: noteStyleDecision.revision,
+					value: noteStyleDecision.value,
+				}
+			: undefined,
+		{ field: "note_style", revision: 1, value: "story" },
+	);
 	assert.deepEqual(
 		submissions.reservedUnits("workspace-1", "result-adjust-note-1"),
 		[{ resource: "image", quantity: 1 }],

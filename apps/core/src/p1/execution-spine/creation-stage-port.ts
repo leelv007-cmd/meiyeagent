@@ -28,6 +28,7 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 			...toHarnessWorkflowInput(
 				submission.snapshot,
 				submission.usageReservation,
+				submission.decisionReferences,
 			),
 		});
 		if (started.workflowId !== submission.task.id) {
@@ -50,8 +51,13 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 export function toHarnessWorkflowInput(
 	snapshot: CreationExecutionSnapshot,
 	usageReservation?: CreationSubmissionRecord["usageReservation"],
+	frozenDecisionReferences?: CreationSubmissionRecord["decisionReferences"],
 ): HarnessWorkflowInput {
 	const semanticDecision = snapshot.semanticDecision;
+	const decisionReferences = [
+		...(semanticDecision ? [semanticDecision.reference] : []),
+		...(frozenDecisionReferences ?? []),
+	];
 	return {
 		actorId: snapshot.actorId,
 		workspaceId: snapshot.workspaceId,
@@ -79,9 +85,7 @@ export function toHarnessWorkflowInput(
 			assetReferences: snapshot.sources.assets.map((asset) => asset.id),
 		},
 		executionSnapshot: snapshot,
-		...(semanticDecision
-			? { decisionReferences: [semanticDecision.reference] }
-			: {}),
+		...(decisionReferences.length > 0 ? { decisionReferences } : {}),
 		...(usageReservation ? { usageReservation } : {}),
 	};
 }

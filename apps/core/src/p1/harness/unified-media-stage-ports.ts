@@ -217,7 +217,8 @@ export class UnifiedHarnessStagePorts
 		if (
 			input.request.executionSnapshot?.lens !== "image_text_note" ||
 			input.request.decisionReferences?.some(
-				({ field }) => field === "note_plan_confirmation",
+				({ field }) =>
+					field === "note_plan_confirmation" || field === "note_style",
 			)
 		) {
 			return result;

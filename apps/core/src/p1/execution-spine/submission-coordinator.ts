@@ -24,6 +24,7 @@ export interface CreationSubmissionRecord {
 	work: { id: string };
 	task: { id: string };
 	contentPackage: { id: string; expectedRevision: number };
+	decisionReferences?: NonNullable<HarnessWorkflowInput["decisionReferences"]>;
 	usageReservation: { id: string; units: CreationSubmissionUsageUnit[] };
 }
 
@@ -243,6 +244,7 @@ export class CreationSubmissionCoordinator {
 		outputCount: number;
 		quote: { id: string; revision: string };
 		sourceContentPackage: { id: string; revision: number };
+		sourceNoteStyleId?: string;
 		sourceSnapshot: CreationExecutionSnapshot;
 		taskId: string;
 		workId: string;
@@ -251,6 +253,11 @@ export class CreationSubmissionCoordinator {
 		const source = creationExecutionSnapshotSchema.parse(input.sourceSnapshot);
 		if (source.workspaceId !== input.workspaceId) {
 			throw new Error("Result adjustment source does not match its workspace.");
+		}
+		if (source.lens === "image_text_note" && !input.sourceNoteStyleId) {
+			throw new Error(
+				"Image-text note Result adjustment requires its frozen style.",
+			);
 		}
 		const intent = `${source.intent.text}\n\n调整要求：${input.instruction}`;
 		const deliverable = {
@@ -313,6 +320,21 @@ export class CreationSubmissionCoordinator {
 		const snapshot = createCreationExecutionSnapshot(command, this.ids.now());
 		const submission: CreationSubmissionRecord = {
 			contentPackage: { ...snapshot.contentPackage },
+			...(source.lens === "image_text_note" && input.sourceNoteStyleId
+				? {
+						decisionReferences: [
+							{
+								field: "note_style",
+								id: `decision-${fingerprintValue({
+									sourceSnapshotId: source.id,
+									styleId: input.sourceNoteStyleId,
+								}).slice(0, 24)}`,
+								revision: source.revision,
+								value: input.sourceNoteStyleId,
+							},
+						],
+					}
+				: {}),
 			snapshot,
 			task: { id: snapshot.task.id },
 			usageReservation: {

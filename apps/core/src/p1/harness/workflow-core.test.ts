@@ -1192,6 +1192,38 @@ test('image-text note uses the fourth Harness fork and waits for style choice be
   });
 });
 
+test('image-text note reuses its frozen style decision without asking again', async () => {
+  const request = {
+    ...mediaTaskInput('image_text_note'),
+    decisionReferences: [
+      {
+        id: 'decision-note-style-1',
+        field: 'note_style',
+        value: '故事版',
+        revision: 1,
+      },
+    ],
+  };
+  const result = await runHarnessWorkflow(
+    'task-image-text-note-adjustment',
+    request,
+    noteStages(),
+    {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision() {
+        throw new Error('A frozen note style must not ask the merchant again.');
+      },
+      async recordTrace() {},
+    },
+  );
+
+  assert.equal(result.recommendation.recommendedCandidateId, 'story');
+});
+
 test('image-text note partial selection keeps merchantReport in the workflow result', async () => {
   const result = await runHarnessWorkflow(
     'task-image-text-note-partial',

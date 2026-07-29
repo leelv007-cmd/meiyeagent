@@ -14,12 +14,14 @@ const context = {
 
 function fixture(
   options: {
+    noteSnapshot?: boolean;
     packageWorkflowId?: string;
     packageRevision?: number;
     quoteStatus?: 'confirmed' | 'quoted';
     quoteOutputCount?: number;
     quoteTaskId?: string;
     scopedAssetIds?: string[];
+    semanticSnapshot?: boolean;
     sourceOperation?: 'copy.generate' | 'image.generate' | 'video.generate';
     sourceSessionId?: string;
   } = {},
@@ -123,6 +125,9 @@ function fixture(
         },
         versions: [
           {
+            ...(options.noteSnapshot
+              ? { harnessCandidateId: 'story' }
+              : {}),
             id: 'version-1',
             orderedAssetIds: ['asset-1', 'asset-2'],
           },
@@ -186,7 +191,10 @@ function fixture(
           kind: 'image_set' as const,
           quantity: 2,
         },
-        id: 'snapshot-task-1',
+        id: options.semanticSnapshot
+          ? 'snapshot-decision-note-style'
+          : 'snapshot-task-1',
+        ...(options.noteSnapshot ? { lens: 'image_text_note' as const } : {}),
         modelSelection: {
           catalogModelId: 'image-model-old',
           platformConfigRevision: null,
@@ -197,6 +205,19 @@ function fixture(
         task: { id: 'task-1' },
         work: { id: 'work-1' },
         workspaceId: 'ws-1',
+        ...(options.semanticSnapshot
+          ? {
+              semanticDecision: {
+                sourceSnapshotId: 'snapshot-task-1',
+                reference: {
+                  field: 'note_style',
+                  id: 'decision-note-style',
+                  revision: 1,
+                  value: '故事版',
+                },
+              },
+            }
+          : {}),
       } as unknown as CreationExecutionSnapshot;
     },
   };
@@ -273,6 +294,58 @@ test('Composer snapshot adjustment preparation does not create a legacy Work', a
   );
 
   assert.deepEqual(deriveCalls, []);
+});
+
+test('Composer snapshot adjustment keeps the latest semantic decision snapshot', async () => {
+  const { composerCalls, port } = fixture({
+    noteSnapshot: true,
+    quoteStatus: 'quoted',
+    semanticSnapshot: true,
+  });
+  const source = {
+    expectedPackageRevision: 3,
+    kind: 'content_package_snapshot' as const,
+    packageId: 'package-1',
+    snapshotId: 'snapshot-task-1',
+    workflowId: 'task-1',
+  };
+  const prepared = await port.prepareAdjust(
+    context,
+    {
+      expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+      instruction: '只调整当前图片',
+      scope: { assetId: 'asset-1', kind: 'asset' },
+      source,
+      workId: 'work-1',
+    },
+    'adjust-semantic-prepare',
+  );
+  await port.adjust(
+    context,
+    {
+      billingQuoteId: 'quote-fresh',
+      derivedTaskId: prepared.task.id,
+      derivedWorkId: prepared.work.id,
+      instruction: '只调整当前图片',
+      scope: { assetId: 'asset-1', kind: 'asset' },
+      source,
+    },
+    'adjust-semantic-confirm',
+  );
+
+  assert.equal(composerCalls.length, 1);
+  assert.equal(
+    (composerCalls[0] as { sourceNoteStyleId?: string }).sourceNoteStyleId,
+    'story',
+  );
+  assert.equal(
+    (
+      composerCalls[0] as {
+        sourceSnapshot: CreationExecutionSnapshot;
+      }
+    ).sourceSnapshot.semanticDecision?.reference.value,
+    '故事版',
+  );
 });
 
 test('Composer snapshot adjustment never fabricates a legacy CreativeJob', async () => {

@@ -1677,14 +1677,19 @@ async function runNoteHarnessWorkflow(
     state: 'suspended',
     message: merchantNoteProgressMessage('styles_ready'),
   });
-  let selectedStyleId = noteStyleIdFromDecision(
-    brief,
-    await awaitResolvedDecision(
-      runtime,
-      noteStyleQuestion(workflowId, request, brief),
-      'brief_compilation',
-    ),
-  );
+  const frozenStyle = [...(activeRequest.decisionReferences ?? [])]
+    .reverse()
+    .find(({ field }) => field === 'note_style');
+  let selectedStyleId = frozenStyle
+    ? noteStyleIdFromValue(brief, frozenStyle.value)
+    : noteStyleIdFromDecision(
+        brief,
+        await awaitResolvedDecision(
+          runtime,
+          noteStyleQuestion(workflowId, request, brief),
+          'brief_compilation',
+        ),
+      );
   await reportProgress({
     stage: 'brief_compilation',
     state: 'success',
@@ -2780,10 +2785,17 @@ function noteStyleIdFromDecision(
   brief: HarnessNoteBrief,
   decision: StructuredDecisionInput,
 ) {
+  return noteStyleIdFromValue(brief, decision.decision.value);
+}
+
+function noteStyleIdFromValue(
+  brief: HarnessNoteBrief,
+  value: string,
+) {
   const selected = brief.candidates.candidates.find(
     (candidate) =>
-      candidate.styleId === decision.decision.value ||
-      candidate.styleName === decision.decision.value,
+      candidate.styleId === value ||
+      candidate.styleName === value,
   );
   if (!selected) {
     throw new HarnessMediaScopeError(

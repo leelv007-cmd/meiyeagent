@@ -39,6 +39,7 @@ export interface ResultAdjustComposerSubmissionPort {
     outputCount: number;
     quote: { id: string; revision: string };
     sourceContentPackage: { id: string; revision: number };
+    sourceNoteStyleId?: string;
     sourceSnapshot: CreationExecutionSnapshot;
     taskId: string;
     workId: string;
@@ -197,6 +198,12 @@ export class OperationsResultCommandPort {
       workspaceId: operation.workspaceId,
     });
     const snapshotRef = contentPackage.source.creationExecutionSnapshot;
+    const snapshotMatchesSource =
+      snapshotRef?.id === snapshot?.id ||
+      (snapshot?.semanticDecision !== undefined &&
+        snapshot.task.id === contentPackage.source.workflowId &&
+        snapshot.work.id === contentPackage.source.workId &&
+        snapshot.contentPackage.id === contentPackage.id);
     if (
       !snapshot ||
       !snapshotRef ||
@@ -206,8 +213,8 @@ export class OperationsResultCommandPort {
       contentPackage.source.workflowId !== snapshot.task.id ||
       contentPackage.source.workflowRevision !== snapshot.revision ||
       snapshot.workspaceId !== operation.workspaceId ||
-      snapshot.id !== source.snapshotId ||
-      snapshotRef.id !== snapshot.id ||
+      source.snapshotId !== snapshotRef.id ||
+      !snapshotMatchesSource ||
       snapshotRef.revision !== snapshot.revision ||
       snapshot.contentPackage.id !== contentPackage.id ||
       (snapshotRef.modelSelection !== undefined &&
@@ -579,6 +586,20 @@ export class OperationsResultCommandPort {
           );
         }
         if (frozen && composerCommand) {
+          const sourceNoteStyleId =
+            frozen.snapshot.lens === 'image_text_note'
+              ? currentPackageVersion?.harnessCandidateId
+              : undefined;
+          if (
+            frozen.snapshot.lens === 'image_text_note' &&
+            !sourceNoteStyleId
+          ) {
+            throw new OperationsError(
+              'RESULT_ADJUST_SOURCE_NOT_FOUND',
+              'The frozen image-text note style was not found.',
+              404,
+            );
+          }
           return this.composerSubmissions!.submit({
             actorId: operation.userId,
             idempotencyKey: `result-adjust:${idempotencyKey}`,
@@ -592,6 +613,7 @@ export class OperationsResultCommandPort {
               id: frozen.contentPackage.id,
               revision: frozen.contentPackage.revision,
             },
+            ...(sourceNoteStyleId ? { sourceNoteStyleId } : {}),
             sourceSnapshot: frozen.snapshot,
             taskId: composerCommand.derivedTaskId,
             workId: composerCommand.derivedWorkId,
