@@ -22,6 +22,10 @@ import {
   HARNESS_LANGFUSE_PROMPT_NAMES,
   type HarnessFrozenPrompts,
 } from './langfuse-prompts.js';
+import {
+  BoundedExecutionResumeError,
+  resumeWithRaisedServerLimit,
+} from './bounded-execution-controller.js';
 
 test('five semantic stages run in order with stable effect keys and a delivery fence', async () => {
   const calls: string[] = [];
@@ -1913,6 +1917,215 @@ test('permission selection cancellation uses the existing workflow cancellation'
     },
   );
   assert.equal(deliveryCount, 0);
+});
+
+test('bounded selection suspends outside the durable step with a current-best continuation card', async () => {
+  const request: HarnessWorkflowInput = {
+    ...taskInput(),
+    boundedExecution: {
+      schemaVersion: 'bounded-execution-snapshot/v1',
+      maxIterations: 1,
+      maxCostCents: 'unset',
+      maxWallClockMs: 'unset',
+      maxDelegations: 'unset',
+      requiredLimits: ['maxIterations'],
+      consumption: {
+        iterations: 0,
+        costCents: 0,
+        wallClockMs: 0,
+        delegations: 0,
+      },
+      stopReason: null,
+      triggeredLimit: null,
+    },
+  };
+  const stages = fixtureStages();
+  let insideStep = false;
+  let decisions = 0;
+  let deliveries = 0;
+  const traces: unknown[] = [];
+  stages.executeAndSelectBounded = async () => ({
+    state: 'suspended',
+    snapshot: {
+      ...request.boundedExecution!,
+      consumption: {
+        ...request.boundedExecution!.consumption,
+        iterations: 1,
+      },
+      stopReason: 'limit_reached',
+      triggeredLimit: 'maxIterations',
+    },
+    currentBest: {
+      candidate: { candidateId: 'c01', title: '当前最好版本' },
+      deliverable: false,
+    },
+    unmetExplanation: '关键事实表达仍需一次修正',
+    resumable: true,
+  });
+  stages.assembleAndDeliver = async () => {
+    deliveries += 1;
+    throw new Error('A bounded suspension must not reach delivery.');
+  };
+
+  await assert.rejects(
+    runHarnessWorkflow('task-35', request, stages, {
+      async runStep(_key, operation) {
+        insideStep = true;
+        try {
+          return await operation();
+        } finally {
+          insideStep = false;
+        }
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision(question) {
+        assert.equal(insideStep, false);
+        decisions += 1;
+        assert.equal(
+          question.questionId,
+          'task-35:execution-selection:bounded',
+        );
+        assert.match(question.question, /当前最好结果/u);
+        assert.match(question.question, /还可以继续|可以继续/u);
+        return {
+          idempotencyKey: 'bounded-continuation-1',
+          questionId: question.questionId,
+          workflowRevision: question.workflowRevision,
+          patch: {
+            field: question.response.field,
+            value: question.options[0]!.label,
+            reason: question.response.reason,
+          },
+          decision: {
+            state: 'accepted',
+            value: question.options[0]!.label,
+          },
+        };
+      },
+      async recordTrace(input) {
+        traces.push(input.payload);
+      },
+    }),
+    BoundedExecutionResumeError,
+  );
+
+  assert.equal(decisions, 1);
+  assert.equal(deliveries, 0);
+  assert.ok(
+    traces.some(
+      (payload) =>
+        typeof payload === 'object' &&
+        payload !== null &&
+        'boundedExecution' in payload,
+    ),
+  );
+});
+
+test('server-raised limit resumes bounded selection from its checkpoint and delivers once', async () => {
+  const request: HarnessWorkflowInput = {
+    ...taskInput(),
+    boundedExecution: {
+      schemaVersion: 'bounded-execution-snapshot/v1',
+      maxIterations: 1,
+      maxCostCents: 'unset',
+      maxWallClockMs: 'unset',
+      maxDelegations: 'unset',
+      requiredLimits: ['maxIterations'],
+      consumption: {
+        iterations: 0,
+        costCents: 0,
+        wallClockMs: 0,
+        delegations: 0,
+      },
+      stopReason: null,
+      triggeredLimit: null,
+    },
+  };
+  const stages = fixtureStages();
+  const completedSelection = stages.executeAndSelect.bind(stages);
+  let boundedCalls = 0;
+  let deliveries = 0;
+  stages.executeAndSelectBounded = async (input) => {
+    boundedCalls += 1;
+    if (input.boundedResume) {
+      assert.equal(
+        input.boundedResume.snapshot.consumption.iterations,
+        1,
+      );
+      return completedSelection(input);
+    }
+    return {
+      state: 'suspended',
+      snapshot: {
+        ...request.boundedExecution!,
+        consumption: {
+          ...request.boundedExecution!.consumption,
+          iterations: 1,
+        },
+        stopReason: 'limit_reached',
+        triggeredLimit: 'maxIterations',
+      },
+      currentBest: {
+        candidate: { candidateId: 'c01', title: '当前最好版本' },
+        deliverable: false,
+      },
+      unmetExplanation: '仍需一次修正',
+      resumable: true,
+    };
+  };
+  stages.assembleAndDeliver = async () => {
+    deliveries += 1;
+    return { packageId: 'package-1', versionId: 'version-3', revision: 3 };
+  };
+  let resumptions = 0;
+
+  const result = await runHarnessWorkflow('task-35', request, stages, {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision(question) {
+      return {
+        idempotencyKey: 'bounded-continuation-1',
+        questionId: question.questionId,
+        workflowRevision: question.workflowRevision,
+        patch: {
+          field: question.response.field,
+          value: question.options[0]!.label,
+          reason: question.response.reason,
+        },
+        decision: {
+          state: 'accepted',
+          value: question.options[0]!.label,
+        },
+      };
+    },
+    async resumeBoundedExecution(input) {
+      resumptions += 1;
+      return {
+        ...input.request,
+        boundedExecution: resumeWithRaisedServerLimit(
+          input.suspension.snapshot,
+          {
+            limit: 'maxIterations',
+            value: 2,
+          },
+        ),
+      };
+    },
+    async recordTrace() {},
+  });
+
+  assert.deepEqual(result.delivery, {
+    packageId: 'package-1',
+    versionId: 'version-3',
+    revision: 3,
+  });
+  assert.equal(boundedCalls, 2);
+  assert.equal(resumptions, 1);
+  assert.equal(deliveries, 1);
 });
 
 test('non-permission selection failure does not enter permission HITL', async () => {

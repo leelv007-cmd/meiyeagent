@@ -15,6 +15,10 @@ import {
   type HarnessContextSnapshot,
 } from './workflow-core.js';
 import { HarnessSelectionError } from './execution-selection.js';
+import {
+  isBoundedExecutionSuspension,
+  resumeWithRaisedServerLimit,
+} from './bounded-execution-controller.js';
 import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import type {
   StructuredNodeRunner,
@@ -1847,6 +1851,62 @@ test('unpriced promotion keeps structured fact claims as an additional guard', a
       factClaims: [{ kind: 'price', value: '199 CNY' }],
     }),
   );
+});
+
+test('bounded production selection preserves the blocked primary instead of starting correction', async () => {
+  const runner = new QueueRunner([
+    candidate('限时护理3次'),
+    candidate('门店护理步骤说明'),
+  ]);
+  const base = unpricedExecutionInput('task-unpriced-bounded');
+  const input = {
+    ...base,
+    request: {
+      ...base.request,
+      boundedExecution: {
+        schemaVersion: 'bounded-execution-snapshot/v1' as const,
+        maxIterations: 1,
+        maxCostCents: 'unset' as const,
+        maxWallClockMs: 'unset' as const,
+        maxDelegations: 'unset' as const,
+        requiredLimits: ['maxIterations' as const],
+        consumption: {
+          iterations: 0,
+          costCents: 0,
+          wallClockMs: 0,
+          delegations: 0,
+        },
+        stopReason: null,
+        triggeredLimit: null,
+      },
+    },
+  };
+
+  const result = await unpricedPorts(runner).executeAndSelectBounded(input);
+
+  assert.equal(isBoundedExecutionSuspension(result), true);
+  if (!isBoundedExecutionSuspension(result)) return;
+  assert.equal(result.snapshot.triggeredLimit, 'maxIterations');
+  assert.equal(result.snapshot.consumption.iterations, 1);
+  assert.equal(runner.requests.length, 1);
+
+  const resumed = await unpricedPorts(runner).executeAndSelectBounded({
+    ...input,
+    request: {
+      ...input.request,
+      boundedExecution: resumeWithRaisedServerLimit(result.snapshot, {
+        limit: 'maxIterations',
+        value: 2,
+      }),
+    },
+    boundedResume: result,
+  });
+
+  assert.equal(isBoundedExecutionSuspension(resumed), false);
+  if (isBoundedExecutionSuspension(resumed)) return;
+  assert.equal(resumed.winner.title, '门店护理步骤说明');
+  assert.equal(resumed.boundedExecution?.consumption.iterations, 2);
+  assert.equal(runner.requests.length, 2);
 });
 
 const unpricedAllowedNumberCases = [

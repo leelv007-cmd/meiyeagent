@@ -6,11 +6,13 @@ import {
   executeCopySelection,
   HarnessSelectionError,
   type CandidatePolicyValidator,
+  type CopySelectionInput,
 } from './execution-selection.js';
 import type {
   StructuredNodeRunner,
   StructuredNodeRunnerRequest,
 } from '../model-supply/structured-node-runner.js';
+import { resumeWithRaisedServerLimit } from './bounded-execution-controller.js';
 
 test('copy compiler makes one model call and returns one primary candidate', async () => {
   const runner = new QueueRunner([candidate('主推荐', '正文 A', [])]);
@@ -124,6 +126,114 @@ test('non-permission policy failures stop after exactly one self-correction', as
     },
   );
   assert.equal(runner.requests.length, 2);
+});
+
+test('maxIterations suspends before self-correction and retains the blocked primary as current best', async () => {
+  const runner = new QueueRunner([
+    candidate('主推荐', '正文 A', ['asset-medical']),
+    candidate('不应执行的重试', '正文 B', []),
+  ]);
+
+  const result = await executeCopySelection(
+    {
+      ...selectionInput(),
+      boundedExecution: {
+        schemaVersion: 'bounded-execution-snapshot/v1',
+        maxIterations: 1,
+        maxCostCents: 'unset',
+        maxWallClockMs: 'unset',
+        maxDelegations: 'unset',
+        requiredLimits: ['maxIterations'],
+        consumption: {
+          iterations: 0,
+          costCents: 0,
+          wallClockMs: 0,
+          delegations: 0,
+        },
+        stopReason: null,
+        triggeredLimit: null,
+      },
+    },
+    {
+      runner,
+      validator: new WithdrawnAssetValidator(),
+    },
+  );
+
+  assert.equal('state' in result && result.state, 'suspended');
+  if (!('state' in result) || result.state !== 'suspended') return;
+  assert.equal(result.snapshot.triggeredLimit, 'maxIterations');
+  assert.equal(result.snapshot.consumption.iterations, 1);
+  assert.equal(result.currentBest.deliverable, false);
+  assert.equal(result.currentBest.candidate.title, '主推荐');
+  assert.deepEqual(result.currentBest.policyFailures, [
+    {
+      gateId: 'medical_claim',
+      reason: '文案包含未核验医疗宣称',
+      alternativePath: ['改用生活化体验描述'],
+    },
+  ]);
+  assert.equal(result.resumable, true);
+  assert.equal(runner.requests.length, 1);
+});
+
+test('raised maxIterations resumes from the blocked primary without replaying it', async () => {
+  const runner = new QueueRunner([
+    candidate('主推荐', '正文 A', ['asset-medical']),
+    candidate('安全修正版', '正文 B', []),
+  ]);
+  const boundedExecution = {
+    schemaVersion: 'bounded-execution-snapshot/v1' as const,
+    maxIterations: 1,
+    maxCostCents: 'unset' as const,
+    maxWallClockMs: 'unset' as const,
+    maxDelegations: 'unset' as const,
+    requiredLimits: ['maxIterations' as const],
+    consumption: {
+      iterations: 0,
+      costCents: 0,
+      wallClockMs: 0,
+      delegations: 0,
+    },
+    stopReason: null,
+    triggeredLimit: null,
+  };
+  const suspended = await executeCopySelection(
+    { ...selectionInput(), boundedExecution },
+    {
+      runner,
+      validator: new WithdrawnAssetValidator(),
+    },
+  );
+  assert.equal('state' in suspended && suspended.state, 'suspended');
+  if (!('state' in suspended) || suspended.state !== 'suspended') return;
+
+  const resumed = await executeCopySelection(
+    {
+      ...selectionInput(),
+      boundedExecution: resumeWithRaisedServerLimit(suspended.snapshot, {
+        limit: 'maxIterations',
+        value: 2,
+      }),
+      resumeFrom: suspended.currentBest,
+    },
+    {
+      runner,
+      validator: new WithdrawnAssetValidator(),
+    },
+  );
+
+  assert.equal('state' in resumed, false);
+  if ('state' in resumed) return;
+  assert.equal(resumed.winner.title, '安全修正版');
+  assert.equal(resumed.boundedExecution?.consumption.iterations, 2);
+  assert.deepEqual(
+    runner.requests.map(({ effectIdempotencyKey }) => effectIdempotencyKey),
+    [
+      'wf:workflow-34:s4:copy-primary:c01',
+      'wf:workflow-34:s4:copy-primary:c01-retry',
+    ],
+  );
 });
 
 test('copy generation publishes append-only semantic deltas for the primary candidate', async () => {
@@ -281,7 +391,7 @@ function candidate(title: string, body: string, assetRefs: string[]) {
   };
 }
 
-function selectionInput(): Parameters<typeof executeCopySelection>[0] {
+function selectionInput(): CopySelectionInput {
   return {
     workflowId: 'workflow-34',
     unitId: 'copy-primary',

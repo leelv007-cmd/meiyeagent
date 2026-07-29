@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 
+import type {
+  BoundedExecutionSnapshot,
+} from '@meiye/contracts';
 import type { VisibleClaimExtraction } from './policy-gates.js';
 
 import type { Acceptance } from '../model-supply/index.js';
@@ -14,6 +17,11 @@ import {
   HARNESS_BUILTIN_PROMPTS,
   type HarnessFrozenPrompt,
 } from './langfuse-prompts.js';
+import {
+  advanceBoundedExecution,
+  evaluateBoundedExecution,
+  type BoundedExecutionSuspension,
+} from './bounded-execution-controller.js';
 
 const generatedCandidateSchema = z
   .object({
@@ -44,6 +52,49 @@ type GeneratedCandidate = z.infer<typeof generatedCandidateSchema> & {
   workspaceId: string;
   intendedUse: 'internal_draft' | 'public_content' | 'paid_promotion';
 };
+
+export interface CopySelectionInput {
+  workflowId: string;
+  unitId: string;
+  brief: Extract<ExecutionBrief, { kind: 'copy' }>;
+  workspaceId: string;
+  intendedUse: GeneratedCandidate['intendedUse'];
+  generationContext: Record<string, unknown>;
+  prompt?: HarnessFrozenPrompt;
+  skillInstructions?: readonly ResolvedSkillInstruction[];
+  onToken?: (token: {
+    candidateId: string;
+    channel: 'copy.title' | 'copy.body' | 'copy.cta';
+    delta: string;
+  }) => Promise<void> | void;
+}
+
+interface CopySelectionPorts {
+  runner: StructuredNodeRunner;
+  validator: CandidatePolicyValidator;
+}
+
+export interface CopySelectionCurrentBest {
+  candidate: GeneratedCandidate;
+  policyFailures: ReturnType<CandidatePolicyValidator['validate']>['failures'];
+  deliverable: false;
+}
+
+export function isCopySelectionCurrentBest(
+  input: unknown,
+): input is CopySelectionCurrentBest {
+  return (
+    typeof input === 'object' &&
+    input !== null &&
+    'candidate' in input &&
+    typeof input.candidate === 'object' &&
+    input.candidate !== null &&
+    'policyFailures' in input &&
+    Array.isArray(input.policyFailures) &&
+    'deliverable' in input &&
+    input.deliverable === false
+  );
+}
 
 export interface CandidatePolicyValidator {
   validate(candidate: GeneratedCandidate): {
@@ -146,63 +197,78 @@ export async function executeImageSelection<Result>(input: {
   };
 }
 
+export function executeCopySelection(
+  input: CopySelectionInput & {
+    boundedExecution: BoundedExecutionSnapshot;
+    resumeFrom?: CopySelectionCurrentBest;
+  },
+  ports: CopySelectionPorts,
+): Promise<
+  CopySelectionSuccess | BoundedExecutionSuspension<CopySelectionCurrentBest>
+>;
+export function executeCopySelection(
+  input: CopySelectionInput,
+  ports: CopySelectionPorts,
+): Promise<CopySelectionSuccess>;
 export async function executeCopySelection(
-  input: {
-    workflowId: string;
-    unitId: string;
-    brief: Extract<ExecutionBrief, { kind: 'copy' }>;
-    workspaceId: string;
-    intendedUse: GeneratedCandidate['intendedUse'];
-    generationContext: Record<string, unknown>;
-    prompt?: HarnessFrozenPrompt;
-    skillInstructions?: readonly ResolvedSkillInstruction[];
-    onToken?: (token: {
-      candidateId: string;
-      channel: 'copy.title' | 'copy.body' | 'copy.cta';
-      delta: string;
-    }) => Promise<void> | void;
+  input: CopySelectionInput & {
+    boundedExecution?: BoundedExecutionSnapshot;
+    resumeFrom?: CopySelectionCurrentBest;
   },
-  ports: {
-    runner: StructuredNodeRunner;
-    validator: CandidatePolicyValidator;
-  },
+  ports: CopySelectionPorts,
 ) {
-  const primaryRequest = compileCopyGenerationRequest({
-    brief: input.brief,
-    context: input.generationContext,
-  });
-  const primaryEmitter = copyCandidateTokenEmitter(
-    primaryRequest.candidateId,
-    input.onToken,
-  );
-  const primary = await ports.runner.run({
-    effectIdempotencyKey:
-      `wf:${input.workflowId}:s4:${input.unitId}:${primaryRequest.candidateId}`,
-    schemaName: 'harness_copy_candidate_v1',
-    schemaRevision: 'copy-candidate-v1',
-    instructions: materializeSkillInstructions(
-      [
-        input.prompt?.content ?? HARNESS_BUILTIN_PROMPTS.copyCandidate,
-        primaryRequest.instructions,
-      ].join('\n\n'),
-      input.skillInstructions,
-    ),
-    prompt: primaryRequest.prompt,
-    schema: generatedCandidateSchema,
-    ...(primaryEmitter ? { onPartialOutput: primaryEmitter } : {}),
-  });
-  let candidate: GeneratedCandidate = {
-    ...primary.output,
-    candidateId: primaryRequest.candidateId,
-    workspaceId: input.workspaceId,
-    intendedUse: input.intendedUse,
-  };
+  let candidate: GeneratedCandidate;
+  let policy: ReturnType<CandidatePolicyValidator['validate']>;
+  let boundedExecution = input.boundedExecution;
+  if (input.resumeFrom) {
+    candidate = structuredClone(input.resumeFrom.candidate);
+    policy = {
+      passed: false,
+      failures: structuredClone(input.resumeFrom.policyFailures),
+    };
+  } else {
+    const primaryRequest = compileCopyGenerationRequest({
+      brief: input.brief,
+      context: input.generationContext,
+    });
+    const primaryEmitter = copyCandidateTokenEmitter(
+      primaryRequest.candidateId,
+      input.onToken,
+    );
+    const primary = await ports.runner.run({
+      effectIdempotencyKey:
+        `wf:${input.workflowId}:s4:${input.unitId}:${primaryRequest.candidateId}`,
+      schemaName: 'harness_copy_candidate_v1',
+      schemaRevision: 'copy-candidate-v1',
+      instructions: materializeSkillInstructions(
+        [
+          input.prompt?.content ?? HARNESS_BUILTIN_PROMPTS.copyCandidate,
+          primaryRequest.instructions,
+        ].join('\n\n'),
+        input.skillInstructions,
+      ),
+      prompt: primaryRequest.prompt,
+      schema: generatedCandidateSchema,
+      ...(primaryEmitter ? { onPartialOutput: primaryEmitter } : {}),
+    });
+    candidate = {
+      ...primary.output,
+      candidateId: primaryRequest.candidateId,
+      workspaceId: input.workspaceId,
+      intendedUse: input.intendedUse,
+    };
+    policy = ports.validator.validate(structuredClone(candidate));
+    if (boundedExecution) {
+      boundedExecution = advanceBoundedExecution(boundedExecution, {
+        iterations: boundedExecution.consumption.iterations + 1,
+      });
+    }
+  }
   const blockedCandidates: Array<{
     candidateId: string;
     gateIds: string[];
     alternativePath: string[];
   }> = [];
-  let policy = ports.validator.validate(structuredClone(candidate));
   if (!policy.passed) {
     blockedCandidates.push(blockedCandidate(candidate.candidateId, policy.failures));
     const nonSelfCorrectableFailure = policy.failures.find(({ gateId }) =>
@@ -215,6 +281,23 @@ export async function executeCopySelection(
         [],
         unique(policy.failures.flatMap(({ alternativePath }) => alternativePath)),
       );
+    }
+    if (boundedExecution) {
+      const bounded = evaluateBoundedExecution(boundedExecution, {
+        consumption: {
+          iterations: boundedExecution.consumption.iterations,
+        },
+        currentBest: {
+          candidate: structuredClone(candidate),
+          policyFailures: structuredClone(policy.failures),
+          deliverable: false as const,
+        },
+        unmetExplanation: policy.failures
+          .map(({ reason }) => reason)
+          .join('；'),
+      });
+      if (bounded.state === 'suspended') return bounded;
+      boundedExecution = bounded.snapshot;
     }
     const retryRequest = compileCopyGenerationRequest({
       brief: input.brief,
@@ -251,9 +334,30 @@ export async function executeCopySelection(
       intendedUse: input.intendedUse,
     };
     policy = ports.validator.validate(structuredClone(candidate));
+    if (boundedExecution) {
+      boundedExecution = advanceBoundedExecution(boundedExecution, {
+        iterations: boundedExecution.consumption.iterations + 1,
+      });
+    }
   }
   if (!policy.passed) {
     blockedCandidates.push(blockedCandidate(candidate.candidateId, policy.failures));
+    if (boundedExecution) {
+      const bounded = evaluateBoundedExecution(boundedExecution, {
+        consumption: {
+          iterations: boundedExecution.consumption.iterations,
+        },
+        currentBest: {
+          candidate: structuredClone(candidate),
+          policyFailures: structuredClone(policy.failures),
+          deliverable: false as const,
+        },
+        unmetExplanation: policy.failures
+          .map(({ reason }) => reason)
+          .join('；'),
+      });
+      if (bounded.state === 'suspended') return bounded;
+    }
     throw new HarnessSelectionError(
       unique(blockedCandidates.flatMap(({ gateIds }) => gateIds)),
     );
@@ -289,8 +393,22 @@ export async function executeCopySelection(
     scores,
     blockedCandidates,
     trace,
+    ...(boundedExecution ? { boundedExecution } : {}),
   };
 }
+
+type CopySelectionSuccess = {
+  candidates: Array<GeneratedCandidate & { score: number }>;
+  winner: GeneratedCandidate;
+  scores: DecisionTraceFragment['candidateScores'];
+  blockedCandidates: Array<{
+    candidateId: string;
+    gateIds: string[];
+    alternativePath: string[];
+  }>;
+  trace: DecisionTraceFragment;
+  boundedExecution?: BoundedExecutionSnapshot;
+};
 
 function blockedCandidate(
   candidateId: string,

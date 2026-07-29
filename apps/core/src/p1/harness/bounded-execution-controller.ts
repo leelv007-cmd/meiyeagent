@@ -30,6 +30,24 @@ export type BoundedExecutionDecision<CurrentBest> =
       resumable: true;
     };
 
+export type BoundedExecutionSuspension<CurrentBest> = Extract<
+  BoundedExecutionDecision<CurrentBest>,
+  { state: 'suspended' }
+>;
+
+export function isBoundedExecutionSuspension(
+  input: unknown,
+): input is BoundedExecutionSuspension<unknown> {
+  return (
+    typeof input === 'object' &&
+    input !== null &&
+    'state' in input &&
+    input.state === 'suspended' &&
+    'resumable' in input &&
+    input.resumable === true
+  );
+}
+
 export class BoundedExecutionResumeError extends Error {
   readonly code = 'BOUNDED_EXECUTION_RESUME_INVALID';
   readonly status = 409;
@@ -38,6 +56,34 @@ export class BoundedExecutionResumeError extends Error {
     super(message);
     this.name = 'BoundedExecutionResumeError';
   }
+}
+
+export function advanceBoundedExecution(
+  input: BoundedExecutionSnapshot,
+  observedConsumption: Partial<BoundedExecutionConsumption>,
+): BoundedExecutionSnapshot {
+  const snapshot = boundedExecutionSnapshotSchema.parse(input);
+  if (snapshot.stopReason !== null) {
+    throw new BoundedExecutionResumeError(
+      'A suspended execution must be resumed before it can consume more resources.',
+    );
+  }
+  const observed = boundedExecutionConsumptionSchema
+    .partial()
+    .parse(observedConsumption);
+  if (Object.keys(observed).length === 0) {
+    throw new Error(
+      'Advancing bounded execution requires at least one observed consumption fact.',
+    );
+  }
+  assertMonotonicConsumption(snapshot.consumption, observed);
+  return boundedExecutionSnapshotSchema.parse({
+    ...snapshot,
+    consumption: {
+      ...snapshot.consumption,
+      ...observed,
+    },
+  });
 }
 
 export function evaluateBoundedExecution<CurrentBest>(

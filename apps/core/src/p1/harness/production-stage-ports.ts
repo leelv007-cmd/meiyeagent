@@ -24,6 +24,7 @@ import { isOfficialNeutralIdentity } from '../execution-spine/creation-execution
 import {
   executeCopySelection,
   HarnessSelectionError,
+  isCopySelectionCurrentBest,
 } from './execution-selection.js';
 import {
   createHarnessCandidateValidator,
@@ -427,6 +428,13 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
   executeAndSelect(
     input: Parameters<HarnessStagePorts['executeAndSelect']>[0],
   ) {
+    this.assertExecutionSelectionInput(input);
+    return this.executeAndSelectLive(input);
+  }
+
+  private assertExecutionSelectionInput(
+    input: Parameters<HarnessStagePorts['executeAndSelect']>[0],
+  ) {
     const registeredIdentityRefs = new Set(
       input.context.policyReferences.identityRefs
         .filter((reference) => reference.status === 'registered')
@@ -449,11 +457,34 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     if (invalidIdentityRefs.length > 0) {
       throw new HarnessIdentityPreflightError(invalidIdentityRefs);
     }
-    return this.executeAndSelectLive(input);
+  }
+
+  executeAndSelectBounded(
+    input: Parameters<
+      NonNullable<HarnessStagePorts['executeAndSelectBounded']>
+    >[0],
+  ) {
+    this.assertExecutionSelectionInput(input);
+    const boundedExecution = input.request.boundedExecution;
+    if (
+      !boundedExecution ||
+      boundedExecution.maxIterations === 'unset'
+    ) {
+      throw new Error(
+        'Bounded copy selection requires an explicit maxIterations pin.',
+      );
+    }
+    const resumeFrom = input.boundedResume?.currentBest;
+    if (resumeFrom !== undefined && !isCopySelectionCurrentBest(resumeFrom)) {
+      throw new Error('Bounded copy continuation has an invalid checkpoint.');
+    }
+    return this.executeAndSelectLive(input, boundedExecution, resumeFrom);
   }
 
   private async executeAndSelectLive(
     input: Parameters<HarnessStagePorts['executeAndSelect']>[0],
+    boundedExecution?: NonNullable<HarnessWorkflowInput['boundedExecution']>,
+    resumeFrom?: import('./execution-selection.js').CopySelectionCurrentBest,
   ) {
     const sourceContentPackage = await this.resolveLiveSourceContentPackage(
       input.request,
@@ -508,6 +539,8 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
           bundle: input.context.bundle,
         },
         prompt: input.request.prompts?.copyCandidate,
+        ...(boundedExecution ? { boundedExecution } : {}),
+        ...(resumeFrom ? { resumeFrom } : {}),
         ...(input.skillInstructions?.length
           ? { skillInstructions: input.skillInstructions }
           : {}),

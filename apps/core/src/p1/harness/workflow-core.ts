@@ -1,4 +1,5 @@
 import type {
+  BoundedExecutionSnapshot,
   ContentPackage,
   ContentPackageRevisionDelivery,
   CreativeRecommendationDecisionTrace,
@@ -12,6 +13,11 @@ import {
   isNonSelfCorrectableSelectionError,
   type DecisionTraceFragment,
 } from './execution-selection.js';
+import {
+  BoundedExecutionResumeError,
+  isBoundedExecutionSuspension,
+  type BoundedExecutionSuspension,
+} from './bounded-execution-controller.js';
 import type {
   BriefContextBundle,
   IntentDeclaration,
@@ -72,6 +78,7 @@ export interface HarnessSelectionResult {
     conversionHook: string;
   };
   trace: DecisionTraceFragment;
+  boundedExecution?: BoundedExecutionSnapshot;
 }
 
 export interface HarnessMediaSelectionResult {
@@ -192,6 +199,21 @@ export interface HarnessStagePorts {
       delta: string;
     }) => Promise<void> | void;
   }): Promise<HarnessSelectionResult>;
+  executeAndSelectBounded?(input: {
+    workflowId: string;
+    request: HarnessWorkflowInput;
+    brief: CopyBrief;
+    context: HarnessContextSnapshot;
+    skillInstructions?: readonly ResolvedSkillInstruction[];
+    onToken?: (token: {
+      candidateId: string;
+      channel: 'copy.title' | 'copy.body' | 'copy.cta';
+      delta: string;
+    }) => Promise<void> | void;
+    boundedResume?: BoundedExecutionSuspension<unknown>;
+  }): Promise<
+    HarnessSelectionResult | BoundedExecutionSuspension<unknown>
+  >;
   assembleAndDeliver(input: {
     workflowId: string;
     request: HarnessWorkflowInput;
@@ -326,6 +348,12 @@ export interface HarnessWorkflowRuntime {
     request: HarnessWorkflowInput & {
       executionSnapshot: NonNullable<HarnessWorkflowInput['executionSnapshot']>;
     };
+    command: StructuredDecisionInput;
+  }): Promise<HarnessWorkflowInput>;
+  resumeBoundedExecution?(input: {
+    workflowId: string;
+    request: HarnessWorkflowInput;
+    suspension: BoundedExecutionSuspension<unknown>;
     command: StructuredDecisionInput;
   }): Promise<HarnessWorkflowInput>;
   recordTrace(input: {
@@ -705,14 +733,21 @@ export async function runHarnessWorkflow(
   ) => runtime.progress({ ...event, sequence: eventSequence++ });
   const executeSelection = async (
     effectIdempotencyKey: string,
-    input: Parameters<HarnessStagePorts['executeAndSelect']>[0],
+    input: Parameters<
+      NonNullable<HarnessStagePorts['executeAndSelectBounded']>
+    >[0],
   ) => {
     const firstTokenSequence = eventSequence;
     const executed = await runtime.runStep(
       effectIdempotencyKey,
       async () => {
         let tokenCount = 0;
-        const selection = await ports.executeAndSelect({
+        const selection = await (
+          input.request.boundedExecution?.maxIterations !== 'unset' &&
+          ports.executeAndSelectBounded
+            ? ports.executeAndSelectBounded.bind(ports)
+            : ports.executeAndSelect.bind(ports)
+        )({
           ...input,
           onToken: async (token) => {
             await runtime.token({
@@ -752,6 +787,62 @@ export async function runHarnessWorkflow(
     }
   };
   let activeRequest = request;
+  const executeSelectionToCompletion = async (
+    effectIdempotencyKey: string,
+    initialInput: Parameters<typeof executeSelection>[1],
+  ): Promise<HarnessSelectionResult> => {
+    let input = initialInput;
+    let outcome = await executeSelectionWithPermissionHold(
+      effectIdempotencyKey,
+      input,
+    );
+    let continuation = 0;
+    while (isBoundedExecutionSuspension(outcome)) {
+      await reportProgress({
+        stage: 'execution_selection',
+        state: 'suspended',
+        message: `已保留当前最好结果；${outcome.unmetExplanation}。还可以继续。`,
+      });
+      await trace(
+        runtime,
+        workflowId,
+        'execution_selection',
+        {
+          boundedExecution: outcome.snapshot,
+          currentBest: outcome.currentBest,
+          unmetExplanation: outcome.unmetExplanation,
+          resumable: true,
+        },
+        `bounded-${outcome.snapshot.triggeredLimit}-${outcome.snapshot.consumption.iterations}`,
+      );
+      const command = await awaitResolvedDecision(
+        runtime,
+        boundedExecutionQuestion(workflowId, activeRequest, outcome),
+      );
+      if (!runtime.resumeBoundedExecution) {
+        throw new BoundedExecutionResumeError(
+          'A server-side raised-limit continuation resolver is required.',
+        );
+      }
+      activeRequest = await runtime.resumeBoundedExecution({
+        workflowId,
+        request: activeRequest,
+        suspension: outcome,
+        command,
+      });
+      continuation += 1;
+      input = {
+        ...input,
+        request: activeRequest,
+        boundedResume: outcome,
+      };
+      outcome = await executeSelectionWithPermissionHold(
+        `${effectIdempotencyKey}:bounded-resume:${continuation}`,
+        input,
+      );
+    }
+    return outcome;
+  };
   const stageSkills = await resolveWorkflowStageSkills(
     workflowId,
     request,
@@ -906,7 +997,7 @@ export async function runHarnessWorkflow(
 
   const executionSkills = stageSkills.execution_selection;
   let selection: HarnessSelectionResult =
-    await executeSelectionWithPermissionHold(
+    await executeSelectionToCompletion(
       harnessEffectKey(
         workflowId,
         4,
@@ -923,11 +1014,23 @@ export async function runHarnessWorkflow(
           : {}),
       },
     );
+  if (selection.boundedExecution) {
+    activeRequest = {
+      ...activeRequest,
+      boundedExecution: selection.boundedExecution,
+    };
+  }
   await trace(
     runtime,
     workflowId,
     'execution_selection',
-    { ...selection.trace, ...skillTraceLineage(executionSkills) },
+    {
+      ...selection.trace,
+      ...(selection.boundedExecution
+        ? { boundedExecution: selection.boundedExecution }
+        : {}),
+      ...skillTraceLineage(executionSkills),
+    },
     `r${bundle.bundle.revision}`,
   );
   await reportProgress({
@@ -1017,7 +1120,7 @@ export async function runHarnessWorkflow(
       ...(briefDegraded ? { degraded: true } : {}),
       ...skillTraceLineage(briefSkills),
     }, `r${bundle.bundle.revision}`);
-    selection = await executeSelectionWithPermissionHold(
+    selection = await executeSelectionToCompletion(
       harnessEffectKey(
         workflowId,
         4,
@@ -1037,11 +1140,23 @@ export async function runHarnessWorkflow(
           : {}),
       },
     );
+    if (selection.boundedExecution) {
+      activeRequest = {
+        ...activeRequest,
+        boundedExecution: selection.boundedExecution,
+      };
+    }
     await trace(
       runtime,
       workflowId,
       'execution_selection',
-      { ...selection.trace, ...skillTraceLineage(executionSkills) },
+      {
+        ...selection.trace,
+        ...(selection.boundedExecution
+          ? { boundedExecution: selection.boundedExecution }
+          : {}),
+        ...skillTraceLineage(executionSkills),
+      },
       `r${bundle.bundle.revision}`,
     );
     await reportProgress({
@@ -1914,6 +2029,35 @@ function permissionSelectionQuestion(
     response: {
       field: 'permission_resolution',
       reason: '选择当前权限硬门的安全后续路径',
+    },
+    unattended: 'hold',
+    scope: 'current_task',
+  };
+}
+
+function boundedExecutionQuestion(
+  workflowId: string,
+  request: HarnessWorkflowInput,
+  suspension: BoundedExecutionSuspension<unknown>,
+): QuestionCard {
+  return {
+    questionId: `${workflowId}:execution-selection:bounded`,
+    workflowId,
+    workflowRevision: request.workflowRevision,
+    question:
+      `已保留当前最好结果；${suspension.unmetExplanation}。` +
+      '提高本次任务上限后可以继续。',
+    options: [
+      {
+        id: 'continue',
+        label: '提高上限后继续',
+        description: '具体上限由服务端策略决定，不接受前台传入数值。',
+      },
+    ],
+    freeText: { enabled: false },
+    response: {
+      field: 'bounded_execution_continuation',
+      reason: '请求服务端为本次有界执行生成后继钉扎',
     },
     unattended: 'hold',
     scope: 'current_task',
