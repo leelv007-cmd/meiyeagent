@@ -73,6 +73,7 @@ export interface HarnessInteractionResumer {
     workspaceId: string;
     runId: string;
     step: string;
+    idempotencyKey: string;
     resumeData: HarnessInteractionAnswer['response'];
     resolutionSource: HarnessDecisionResolutionSource;
   }): Promise<void>;
@@ -358,6 +359,7 @@ export class HarnessInteractionService {
           workspaceId: input.workspaceId,
           runId: input.request.runId,
           step: input.request.step,
+          idempotencyKey: input.answer.idempotencyKey,
           resumeData: input.resumeData,
           resolutionSource: input.resolutionSource,
         });

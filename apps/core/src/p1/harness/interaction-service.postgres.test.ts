@@ -118,6 +118,7 @@ test(
         workspaceId,
         runId,
         step: 'context_injection',
+        idempotencyKey: answer.idempotencyKey,
         resumeData: answer.response,
         resolutionSource: 'decision',
       });
