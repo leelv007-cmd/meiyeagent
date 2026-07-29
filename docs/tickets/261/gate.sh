@@ -173,14 +173,22 @@ run_once() {
 }
 
 if [ "$WATCH" = 1 ]; then
-  while true; do
+  # Self-limiting: give up after GATE_WATCH_MAX_HOURS so a forgotten watcher
+  # cannot outlive the work it is watching for.
+  MAX_HOURS="${GATE_WATCH_MAX_HOURS:-12}"
+  MARKER="$REPO/docs/tickets/261/.gate-open"
+  deadline=$((SECONDS + MAX_HOURS * 3600))
+  while [ "$SECONDS" -lt "$deadline" ]; do
     if run_once; then
+      git -C "$REPO" rev-parse --short "$REF" > "$MARKER"
       command -v osascript >/dev/null 2>&1 && \
         osascript -e 'display notification "#261 前置全部满足，可开工" with title "开工门 GO"' >/dev/null 2>&1
       exit 0
     fi
     sleep "$WATCH_INTERVAL"
   done
+  [ "$QUIET" = 1 ] || printf '%s watch 到时退出（%s 小时未开门）%s\n' "$YELLOW" "$MAX_HOURS" "$OFF"
+  exit 3
 else
   run_once
 fi
