@@ -474,6 +474,7 @@ export class PostgresIssue255LiveReceiptRepository {
             AND effect_id = $3
             AND request_fingerprint = $4
             AND status = 'claimed'
+            AND generation_submit_count = 1
         RETURNING *`,
         [
           parsed.runNonce,
@@ -486,7 +487,7 @@ export class PostgresIssue255LiveReceiptRepository {
       const row = updated.rows[0];
       if (!row) {
         throw new Error(
-          'Issue 255 claimed receipt could not be marked unknown.',
+          'Issue 255 claimed receipt with a submitted generation could not be marked unknown.',
         );
       }
       return receiptFromRow(row);

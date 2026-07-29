@@ -532,6 +532,25 @@ describe(
         exchangeRevision: 'native-cny-v1',
       };
       await first.claim(copy);
+      await assert.rejects(
+        first.markUnknown({
+          runNonce,
+          modality: 'copy',
+          effectId: copy.effectId,
+          requestFingerprint: copy.requestFingerprint,
+          reason: 'provider_acceptance_unknown',
+        }),
+        /submitted generation/u,
+      );
+      await first.claimGenerationPost({
+        adapter: copy.adapter,
+        deploymentId: copy.deploymentId,
+        runNonce,
+        modality: 'copy',
+        effectId: copy.effectId,
+        providerIdempotencyKey: copy.providerIdempotencyKey,
+        requestFingerprint: copy.requestFingerprint,
+      });
       await first.markUnknown({
         runNonce,
         modality: 'copy',
