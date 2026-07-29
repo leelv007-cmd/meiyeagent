@@ -158,6 +158,18 @@ function governedCopyFallbackPlanning(): ModelSupplyPlanningControlPlanePort {
   };
 }
 
+function governedCopyFallbackDeployments() {
+  return deployments.map((deployment) =>
+    deployment.id === 'openai-direct' ||
+    deployment.id === 'anthropic-direct'
+      ? {
+          ...deployment,
+          executionChannelId: `channel-${deployment.id}`,
+        }
+      : deployment,
+  );
+}
+
 test('historical Canvas submissions keep input assets without inventing empty node lineage', () => {
   const historicalService = new ModelSupplyApplicationService({
     models: [
@@ -990,7 +1002,7 @@ test('Auto records every pre-accept fallback attempt and provider cost under one
   let promptResolutions = 0;
   const app = new ModelSupplyApplicationService({
     models,
-    deployments,
+    deployments: governedCopyFallbackDeployments(),
     execution: {
       async execute(request) {
         requests.push(structuredClone(request));
@@ -1059,7 +1071,7 @@ test('Auto keeps Product Core as the only retry owner and stops after two pre-ac
   const execution = new RecordedProviderExecutionPort();
   const app = new ModelSupplyApplicationService({
     models,
-    deployments,
+    deployments: governedCopyFallbackDeployments(),
     execution,
     planningControlPlane: governedCopyFallbackPlanning(),
   });

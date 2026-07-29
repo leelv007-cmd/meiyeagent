@@ -2000,12 +2000,7 @@ export class ModelSupplyControlPlaneService {
     if (this.modelCatalogAllows(workspaceId)) {
       return source;
     }
-    if (!this.warnedDisallowedCatalogWorkspaces.has(workspaceId)) {
-      this.warnedDisallowedCatalogWorkspaces.add(workspaceId);
-      this.warn?.(
-        `Model catalog defaults were discarded because workspace ${workspaceId} is outside modelCatalogTenantAllowlist.`,
-      );
-    }
+    this.warnCatalogTenantViolation(workspaceId);
     return {
       ...source,
       payload: {
@@ -2025,6 +2020,14 @@ export class ModelSupplyControlPlaneService {
     return (
       this.modelCatalogTenantAllowlist.size === 0 ||
       this.modelCatalogTenantAllowlist.has(workspaceId)
+    );
+  }
+
+  private warnCatalogTenantViolation(workspaceId: string) {
+    if (this.warnedDisallowedCatalogWorkspaces.has(workspaceId)) return;
+    this.warnedDisallowedCatalogWorkspaces.add(workspaceId);
+    this.warn?.(
+      `Model catalog defaults were discarded because workspace ${workspaceId} is outside modelCatalogTenantAllowlist.`,
     );
   }
 
@@ -3421,6 +3424,10 @@ export class ModelSupplyControlPlaneService {
       userId,
       operation,
     );
+    if (!this.modelCatalogAllows(workspaceId)) {
+      this.warnCatalogTenantViolation(workspaceId);
+      return view;
+    }
     const configKey = platformDefaultModelConfigKeyForOperation(operation);
     if (!this.platformDefaultModels || !configKey) return view;
     const binding = (

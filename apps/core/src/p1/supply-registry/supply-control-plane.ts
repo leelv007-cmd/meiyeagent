@@ -246,6 +246,7 @@ export function planModelSupplyCandidatesWithPolicy(input: {
         (rank.get(right.deployment.id) ?? Number.MAX_SAFE_INTEGER),
     );
   }
+  prioritizeRequestedFixedModel(plan.candidates, input.selection);
 
   // Cost boundary hard constraint (policy): drop candidates over budget.
   if (
@@ -568,6 +569,7 @@ export function planModelSupplyCandidatesWithDataPolicy(
     }
   }
 
+  prioritizeRequestedFixedModel(base.candidates, input.selection);
   const closedAfterRank = failClosedWithoutCompliantCandidate({
     eligibleCount: base.candidates.length,
   });
@@ -618,6 +620,7 @@ export function explainPlanDecision(input: {
     r === 'deployment_inactive' ||
     r === 'operation_unsupported' ||
     r === 'fixed_model_mismatch' ||
+    r === 'capability_requirement_not_selected' ||
     r === 'custom_requires_fixed_selection' ||
     r === 'data_class_disallowed' ||
     r === 'simulated_unavailable' ||
@@ -695,4 +698,15 @@ export function explainPlanDecision(input: {
     };
   }
   return explanation;
+}
+
+function prioritizeRequestedFixedModel<
+  T extends { model: { id: string } },
+>(candidates: T[], selection: RequestedSelection) {
+  if (selection.mode !== 'fixed') return;
+  candidates.sort((left, right) => {
+    const leftIsRequested = left.model.id === selection.catalogModelId;
+    const rightIsRequested = right.model.id === selection.catalogModelId;
+    return Number(rightIsRequested) - Number(leftIsRequested);
+  });
 }

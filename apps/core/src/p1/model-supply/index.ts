@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
   MODEL_CAPABILITY_VOCABULARY_VERSION,
+  type ModelCapabilityRequirementAxis,
   type ModelCapabilityProfile,
   type GeneratedCopyCandidateContent,
   type GeneratedPlatformVariants,
@@ -184,6 +185,7 @@ import {
 } from '../supply-registry/health-overlay.js';
 import {
   constrainDeploymentsToCapability,
+  matchRuntimeCapabilityRequirement,
   type CapabilityHotAssemblyPort,
 } from '../supply-registry/hot-assembly.js';
 import {
@@ -796,6 +798,9 @@ interface StoredIdempotency {
 
 interface SubmissionPlanningDecision {
   candidates: Array<{ model: CatalogModel; deployment: ModelDeployment }>;
+  capabilityRevisionId?: string;
+  capabilityRequirements?: ModelCapabilityRequirementAxis[];
+  capabilityMatches?: NonNullable<RouteSnapshot['capabilityMatches']>;
   routePolicyRevisionId?: string;
   dataPolicyRevisionIdByDeploymentId: ReadonlyMap<string, string>;
   runtimeExclusionReasons: string[];
@@ -1128,6 +1133,7 @@ export class ModelSupplyApplicationService {
     deploymentId?: string;
     dataClass: DataClass[];
     promptRevision?: string;
+    capabilityRequirements?: ModelCapabilityRequirementAxis[];
   }): Promise<RouteSnapshot> {
     const submission: ModelSupplySubmission = {
       workspaceId: input.workspaceId,
@@ -1163,7 +1169,14 @@ export class ModelSupplyApplicationService {
             storedCatalog.deployments,
           ),
     };
-    const planning = await this.planSubmissionCandidates(submission, catalog);
+    const planning = await this.planSubmissionCandidates(
+      submission,
+      catalog,
+      input.capabilityRequirements,
+    );
+    if (capabilityRevision) {
+      planning.capabilityRevisionId = capabilityRevision.revisionId;
+    }
     const selected = input.deploymentId
       ? planning.candidates.find(
           (candidate) => candidate.deployment.id === input.deploymentId,
@@ -3575,6 +3588,7 @@ export class ModelSupplyApplicationService {
       deployments: ModelDeployment[];
       prices?: PriceRevision[];
     },
+    capabilityRequirements: readonly ModelCapabilityRequirementAxis[] = [],
   ): Promise<SubmissionPlanningDecision> {
     const tierCatalog = this.catalogForPricingTier(submission, catalog);
     const planningCatalog =
@@ -3587,11 +3601,17 @@ export class ModelSupplyApplicationService {
           }
         : tierCatalog;
     if (!this.planningControlPlane || submission.frozenRouteSnapshot) {
-      return {
-        candidates: this.resolveCandidates(submission, planningCatalog),
-        dataPolicyRevisionIdByDeploymentId: new Map(),
-        runtimeExclusionReasons: [],
-      };
+      return this.applyCapabilityRequirements(
+        {
+          candidates: this.resolveCandidates(submission, planningCatalog),
+          dataPolicyRevisionIdByDeploymentId: new Map(),
+          runtimeExclusionReasons: [],
+        },
+        capabilityRequirements,
+        submission.selection.mode === 'fixed'
+          ? submission.selection.catalogModelId
+          : undefined,
+      );
     }
 
     const qualityTier =
@@ -3625,7 +3645,39 @@ export class ModelSupplyApplicationService {
       dataPolicyByDeploymentId: state.dataPolicyByDeploymentId,
       rankingInputsByDeploymentId: state.rankingInputsByDeploymentId,
     });
-    const primaryDeploymentId = planResult.plan.candidates[0]?.deployment.id;
+    const capabilityPlan = this.applyCapabilityRequirements(
+      {
+        candidates: planResult.plan.candidates,
+        dataPolicyRevisionIdByDeploymentId: new Map(),
+        runtimeExclusionReasons: [],
+      },
+      capabilityRequirements,
+      submission.selection.mode === 'fixed'
+        ? submission.selection.catalogModelId
+        : undefined,
+    );
+    planResult.plan.candidates = capabilityPlan.candidates;
+    const capabilityCandidateIds = new Set(
+      capabilityPlan.candidates.map(
+        (candidate) => candidate.deployment.id,
+      ),
+    );
+    for (const evaluation of planResult.plan.candidateEvaluations) {
+      if (
+        evaluation.eligible &&
+        !capabilityCandidateIds.has(evaluation.deploymentId)
+      ) {
+        evaluation.eligible = false;
+        evaluation.exclusionReasons.push(
+          'capability_requirement_not_selected',
+        );
+      }
+    }
+    if (capabilityPlan.candidates.length === 0) {
+      planResult.failClosed = true;
+      planResult.failClosedReason = 'no_compliant_candidate';
+    }
+    const primaryDeploymentId = capabilityPlan.candidates[0]?.deployment.id;
     const decisionExplanation = explainPlanDecision({
       surface: 'task_audit',
       planResult,
@@ -3655,7 +3707,7 @@ export class ModelSupplyApplicationService {
     });
 
     return {
-      candidates: planResult.plan.candidates,
+      ...capabilityPlan,
       ...(state.routePolicyRevisionId
         ? { routePolicyRevisionId: state.routePolicyRevisionId }
         : {}),
@@ -3683,6 +3735,85 @@ export class ModelSupplyApplicationService {
               state.routePolicy.modelSubstitutionDegradationSurfaces,
             ),
           }
+        : {}),
+    };
+  }
+
+  private applyCapabilityRequirements(
+    planning: SubmissionPlanningDecision,
+    requirements: readonly ModelCapabilityRequirementAxis[],
+    requestedCatalogModelId?: string,
+  ): SubmissionPlanningDecision {
+    const orderedPlanning = {
+      ...planning,
+      candidates: [...planning.candidates],
+    };
+    if (requirements.length === 0) return orderedPlanning;
+    const matchesByDeploymentId = new Map(
+      orderedPlanning.candidates.map((candidate) => [
+        candidate.deployment.id,
+        requirements.map((requirement) =>
+          matchRuntimeCapabilityRequirement(
+            candidate.deployment,
+            requirement,
+          ),
+        ),
+      ]),
+    );
+    const eligibleFrom = (
+      candidates: SubmissionPlanningDecision['candidates'],
+    ) => candidates.filter((candidate) =>
+      matchesByDeploymentId
+        .get(candidate.deployment.id)
+        ?.every((decision) => decision.outcome === 'eligible'),
+    );
+    const conservativeFrom = (
+      candidates: SubmissionPlanningDecision['candidates'],
+    ) => candidates.filter((candidate) => {
+      const decisions = matchesByDeploymentId.get(candidate.deployment.id);
+      return (
+        decisions?.some(
+          (decision) => decision.outcome === 'conservative_fallback',
+        ) === true &&
+        decisions.every((decision) => decision.outcome !== 'ineligible')
+      );
+    });
+    let candidates: SubmissionPlanningDecision['candidates'];
+    if (requestedCatalogModelId) {
+      const requested = orderedPlanning.candidates.filter(
+        (candidate) => candidate.model.id === requestedCatalogModelId,
+      );
+      const requestedEligible = eligibleFrom(requested);
+      const requestedConservative = conservativeFrom(requested);
+      const primary =
+        requestedEligible.length > 0
+          ? requestedEligible
+          : requestedConservative;
+      const eligibleSubstitutions =
+        primary.length > 0
+          ? eligibleFrom(
+              orderedPlanning.candidates.filter(
+                (candidate) => candidate.model.id !== requestedCatalogModelId,
+              ),
+            )
+          : [];
+      candidates = [...primary, ...eligibleSubstitutions];
+    } else {
+      const eligible = eligibleFrom(orderedPlanning.candidates);
+      const conservative = conservativeFrom(orderedPlanning.candidates);
+      candidates = eligible.length > 0 ? eligible : conservative;
+    }
+    const selectedMatches = candidates[0]
+      ? matchesByDeploymentId.get(candidates[0].deployment.id)
+      : undefined;
+    return {
+      ...orderedPlanning,
+      candidates,
+      capabilityRequirements: requirements.map((requirement) =>
+        structuredClone(requirement),
+      ),
+      ...(selectedMatches
+        ? { capabilityMatches: structuredClone(selectedMatches) }
         : {}),
     };
   }
@@ -4115,11 +4246,35 @@ export class ModelSupplyApplicationService {
       if (promptReference) frozen.promptReference = promptReference;
       return frozen;
     }
+    const capabilityIdentity =
+      planning?.capabilityRevisionId ||
+      planning?.capabilityRequirements?.length
+      ? JSON.stringify({
+          capabilityRevisionId: planning.capabilityRevisionId ?? null,
+          requirements: [...(planning.capabilityRequirements ?? [])].sort(
+            (left, right) => left.axisId.localeCompare(right.axisId),
+          ),
+        })
+      : null;
     return {
       id: `model-route-${hash(
-        `${canonical(submission)}:${catalogRevisionId}:${selected.deployment.id}:${fallback ?? 'primary'}`
+        `${canonical(submission)}:${catalogRevisionId}:${selected.deployment.id}:${fallback ?? 'primary'}${capabilityIdentity ? `:${capabilityIdentity}` : ''}`
       ).slice(0, 28)}`,
       catalogRevisionId,
+      ...(planning?.capabilityRequirements?.length
+        ? {
+            capabilityRequirements: structuredClone(
+              planning.capabilityRequirements,
+            ),
+          }
+        : {}),
+      ...(planning?.capabilityMatches?.length
+        ? {
+            capabilityMatches: structuredClone(
+              planning.capabilityMatches,
+            ),
+          }
+        : {}),
       requestedSelection: { ...submission.selection },
       candidateCatalogModelIds: [
         ...new Set(candidates.map(({ model }) => model.id)),

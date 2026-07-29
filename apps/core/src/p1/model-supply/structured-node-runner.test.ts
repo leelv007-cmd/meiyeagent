@@ -1682,6 +1682,7 @@ function createAutoRunner(
         channel: 'direct',
         region: 'domestic',
         status: 'active',
+        executionChannelId: 'channel-primary',
       },
       {
         id: 'deployment-fallback',
@@ -1690,6 +1691,7 @@ function createAutoRunner(
         channel: 'direct',
         region: 'domestic',
         status: 'active',
+        executionChannelId: 'channel-fallback',
       },
     ],
     execution: new RecordedProviderExecutionPort(),

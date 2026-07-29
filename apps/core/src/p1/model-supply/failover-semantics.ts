@@ -21,6 +21,7 @@ export type ModelFailoverDecision =
   | {
       allowed: false;
       reason:
+        | 'execution_channel_unknown'
         | 'same_execution_channel'
         | 'model_substitution_degradation_undeclared'
         | 'channel_bound_capability_not_equivalent';
@@ -81,8 +82,13 @@ export function evaluateModelFailover(input: {
       ? 'same_model_channel'
       : 'model_substitution';
   if (
+    !input.from.executionChannelId?.trim() ||
+    !input.to.executionChannelId?.trim()
+  ) {
+    return { allowed: false, reason: 'execution_channel_unknown' };
+  }
+  if (
     kind === 'same_model_channel' &&
-    input.from.executionChannelId &&
     input.from.executionChannelId === input.to.executionChannelId
   ) {
     return { allowed: false, reason: 'same_execution_channel' };

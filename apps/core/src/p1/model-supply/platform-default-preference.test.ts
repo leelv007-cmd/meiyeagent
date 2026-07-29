@@ -25,7 +25,13 @@ import {
 } from './index.js';
 import type { PlatformDefaultModelSourcePort } from '../foundation/workspace-provision.js';
 
-function controlPlane(platformDefaultModels?: PlatformDefaultModelSourcePort) {
+function controlPlane(
+  platformDefaultModels?: PlatformDefaultModelSourcePort,
+  options: {
+    modelCatalogTenantAllowlist?: readonly string[];
+    warn?: (message: string) => void;
+  } = {},
+) {
   const repository = new MemoryModelSupplyControlPlaneRepository();
   const application = new ModelSupplyApplicationService({
     models: createDefaultCatalogModels(),
@@ -38,6 +44,7 @@ function controlPlane(platformDefaultModels?: PlatformDefaultModelSourcePort) {
       application,
       repository,
       ...(platformDefaultModels ? { platformDefaultModels } : {}),
+      ...options,
     }),
   };
 }
@@ -128,6 +135,25 @@ test('no configured source means no platform default, not a substitute', async (
   );
   assert.equal(view.platformDefault, undefined);
   assert.deepEqual(view.favorites, []);
+});
+
+test('tenant allowlist drops the platform default and warns without failing the preference read', async () => {
+  const warnings: string[] = [];
+  const { service } = controlPlane(configuredSource, {
+    modelCatalogTenantAllowlist: ['workspace-allowed'],
+    warn: (message) => warnings.push(message),
+  });
+
+  const view = await service.getPreferences(
+    'workspace-blocked',
+    'owner-a',
+    'image.generate',
+  );
+
+  assert.equal(view.platformDefault, undefined);
+  assert.equal(view.platformDefaultRevision, undefined);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0] ?? '', /workspace-blocked/);
 });
 
 test('operations with no platform default concept never grow one', async () => {

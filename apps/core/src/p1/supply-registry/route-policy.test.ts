@@ -107,6 +107,31 @@ test('model substitution degradation surfaces bind only non-empty unique facts t
   );
 });
 
+test('fixed selection remains the first attempt when substitution fallback is authorized', () => {
+  const plan = planModelSupplyCandidatesWithPolicy({
+    catalog: catalog(),
+    operation: 'copy.generate',
+    selection: { mode: 'fixed', catalogModelId: 'copy-quality' },
+    dataClass: [],
+    routePolicy: {
+      operation: 'copy.generate',
+      qualityTier: 'quality',
+      hardConstraints: ['deployment_active'],
+      candidateDeploymentIds: ['anthropic-direct', 'openai-direct'],
+      maxAttempts: 2,
+      fallbackAuthorized: true,
+      modelSubstitutionDegradationSurfaces: {
+        'anthropic-direct': ['tone_consistency'],
+      },
+    },
+  });
+
+  assert.deepEqual(
+    plan.candidates.map((candidate) => candidate.deployment.id),
+    ['openai-direct', 'anthropic-direct'],
+  );
+});
+
 function publishPolicy(
   registry: RoutePolicyRegistry,
   payload: Parameters<RoutePolicyRegistry['createCandidate']>[0],

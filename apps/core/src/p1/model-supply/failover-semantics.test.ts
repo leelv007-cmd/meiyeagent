@@ -66,6 +66,29 @@ test('same-model channel failover emits a billing event with the new channel pri
   });
 });
 
+test('failover requires two explicit execution channels', () => {
+  for (const [fromChannel, toChannel] of [
+    [undefined, 'channel-b'],
+    ['channel-a', undefined],
+    ['', 'channel-b'],
+  ] as const) {
+    assert.deepEqual(
+      evaluateModelFailover({
+        from: candidate({ executionChannelId: fromChannel }),
+        to: candidate({
+          deploymentId: 'deployment-b',
+          executionChannelId: toChannel,
+          priceRevision: 'price-b',
+        }),
+      }),
+      {
+        allowed: false,
+        reason: 'execution_channel_unknown',
+      },
+    );
+  }
+});
+
 test('model substitution requires declared degradation surfaces', () => {
   const rejected = evaluateModelFailover({
     from: candidate({}),

@@ -50,6 +50,8 @@ const deployment: ModelDeployment = {
   status: 'active',
   policyRevision: 'policy-image-v3',
   priceRevision: 'price-image-v5',
+  pricingTier: 'standard',
+  executionChannelId: 'channel-image-managed',
   credentialMode: 'platform',
   credentialVersion: 'credential-7',
   unitPrice: {
@@ -682,6 +684,43 @@ test('persists one immutable supply freeze before provider I/O and links settlem
   );
 });
 
+test('rejects a fresh supplier freeze without an explicit execution channel before provider I/O', async () => {
+  const { foundation } = await fixture();
+  const { freezes, supplyFreezes } = createStrictSupplyFreezeStore();
+  let providerExecutions = 0;
+  const application = new ModelSupplyApplicationService({
+    models: [model],
+    deployments: [{ ...deployment, executionChannelId: undefined }],
+    ledger: new FoundationModelSupplyLedger(
+      foundation,
+      undefined,
+      undefined,
+      { supplyFreezes },
+    ),
+    execution: {
+      async execute(request) {
+        providerExecutions += 1;
+        return new RecordedProviderExecutionPort().execute(request);
+      },
+    },
+  });
+
+  await assert.rejects(
+    application.submit({
+      workspaceId: context.workspaceId,
+      actorId: context.userId,
+      idempotencyKey: 'missing-execution-channel',
+      operation: 'image.generate',
+      selection: { mode: 'fixed', catalogModelId: model.id },
+      dataClass: [],
+      prompt: 'Missing channel must fail closed.',
+    }),
+    /requires an explicit execution channel and pricing tier/,
+  );
+  assert.equal(providerExecutions, 0);
+  assert.equal(freezes.size, 0);
+});
+
 test('replays a pre-upgrade settlement without rewriting its provider cost fact', async () => {
   const { repository, foundation } = await fixture();
   const currentSettleProviderOutcome =
@@ -871,6 +910,7 @@ test('checkpoints route, job, reservation and pending attempt before provider ex
         catalogModelId: 'gpt-image-2',
         deploymentId: 'gpt-image-2-managed',
         region: 'global',
+        executionChannelId: 'channel-image-managed',
         credentialMode: 'platform',
         credentialVersion: 'credential-7',
         policyRevision: 'policy-image-v3',

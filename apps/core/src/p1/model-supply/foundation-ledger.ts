@@ -671,7 +671,14 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
     const candidate = snapshot.allowedCandidates?.find(
       (row) => row.deploymentId === snapshot.deploymentId,
     );
-    if (!candidate || candidate.pricingStatus === 'unknown') return null;
+    if (
+      !candidate ||
+      candidate.pricingStatus === 'unknown' ||
+      !candidate.executionChannelId?.trim() ||
+      !candidate.pricingTier
+    ) {
+      return null;
+    }
     const resource = usageResource(input.submission.operation);
     const billingTaskId = input.submission.billingTaskId;
     const freeze = buildSupplyRequestFreeze({
@@ -688,8 +695,8 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
       supplierPriceRevision: {
         id: candidate.priceRevision,
         deploymentId: snapshot.deploymentId,
-        executionChannelId: candidate.executionChannelId ?? 'unknown',
-        pricingTier: candidate.pricingTier ?? 'standard',
+        executionChannelId: candidate.executionChannelId,
+        pricingTier: candidate.pricingTier,
         amountMicros: candidate.unitPriceMicros,
         currency: candidate.currency,
         unit: candidate.unit,
@@ -754,6 +761,11 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
     ) {
       return null;
     }
+    if (!candidate.executionChannelId?.trim() || !candidate.pricingTier) {
+      throw new Error(
+        'SupplyRequestFreeze requires an explicit execution channel and pricing tier.',
+      );
+    }
     const resource = usageResource(input.submission.operation);
     const billingTaskId = input.submission.billingTaskId;
     let freeze = buildSupplyRequestFreeze({
@@ -770,8 +782,8 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
       supplierPriceRevision: {
         id: candidate.priceRevision,
         deploymentId: snapshot.deploymentId,
-        executionChannelId: candidate.executionChannelId ?? 'unknown',
-        pricingTier: candidate.pricingTier ?? 'standard',
+        executionChannelId: candidate.executionChannelId,
+        pricingTier: candidate.pricingTier,
         amountMicros: candidate.unitPriceMicros,
         currency: candidate.currency,
         unit: candidate.unit,
