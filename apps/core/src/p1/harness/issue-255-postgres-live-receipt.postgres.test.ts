@@ -20,6 +20,84 @@ describe(
     const suiteNonce = randomUUID();
     const receiptWorkspaceId =
       `issue-255-receipt-workspace-${suiteNonce}`;
+    const providerIdentity = {
+      copy: {
+        adapter: 'direct-copy',
+        deploymentId: 'deepseek-v4-pro-direct',
+        priceRevision: 'direct-copy-price-v1',
+      },
+      video: {
+        adapter: 'tuzi-video',
+        deploymentId: 'seedance-1-5-pro-tuzi-relay',
+        priceRevision: 'video-price-v1',
+      },
+    } as const;
+    const insertLegacyReceipt = async (input: {
+      runNonce: string;
+      modality: keyof typeof providerIdentity;
+      generationSubmitCount: 0 | 1;
+      reservedAmountMicros: number;
+      providerJobId?: string | null;
+    }) => {
+      const effectId = createHash('sha256')
+        .update(`issue255/v1\0${input.runNonce}\0${input.modality}`)
+        .digest('hex');
+      const identity = providerIdentity[input.modality];
+      await firstPool.query(
+        `INSERT INTO issue255_live_generation_receipts (
+           workspace_id, run_nonce, modality, effect_id, request_fingerprint,
+           adapter, deployment_id, provider_idempotency_key, provider_job_id,
+           provider_attempt_id, provider_cost_event_id, recorded_matrix_digest,
+           reserved_amount_micros, price_revision, exchange_revision, status,
+           generation_submit_count
+         )
+         VALUES (
+           $1, $2, $3, $4, $5, $6, $7, $4, $8, $9, $10, $11, $12, $13,
+           'native-cny-v1', 'completed', $14
+         )`,
+        [
+          receiptWorkspaceId,
+          input.runNonce,
+          input.modality,
+          effectId,
+          createHash('sha256').update(input.runNonce).digest('hex'),
+          identity.adapter,
+          identity.deploymentId,
+          input.providerJobId === undefined
+            ? `${effectId}:job`
+            : input.providerJobId,
+          `${effectId}:attempt`,
+          `${effectId}:cost`,
+          'a'.repeat(64),
+          input.reservedAmountMicros,
+          identity.priceRevision,
+          input.generationSubmitCount,
+        ],
+      );
+      return effectId;
+    };
+    const copyClaim = (runNonce: string, reservedAmountMicros = 100_000) => {
+      const effectId = createHash('sha256')
+        .update(`issue255/v1\0${runNonce}\0copy`)
+        .digest('hex');
+      return {
+        workspaceId: receiptWorkspaceId,
+        runNonce,
+        modality: 'copy' as const,
+        effectId,
+        requestFingerprint: createHash('sha256')
+          .update(`claim/${runNonce}`)
+          .digest('hex'),
+        ...providerIdentity.copy,
+        providerIdempotencyKey: effectId,
+        providerJobId: `${effectId}:job`,
+        providerAttemptId: `${effectId}:attempt`,
+        providerCostEventId: `${effectId}:cost`,
+        recordedMatrixDigest: 'b'.repeat(64),
+        reservedAmountMicros,
+        exchangeRevision: 'native-cny-v1',
+      };
+    };
 
     before(async () => {
       await first.migrate();
@@ -156,6 +234,145 @@ describe(
           { column_name: 'run_nonce', is_nullable: 'NO' },
         ],
       );
+    });
+
+    it('backfills three legacy submitted receipts before rejecting a fourth claim', async () => {
+      const legacyRunPrefix =
+        `issue-255-pg-${suiteNonce}-legacy-three`;
+      await firstPool.query(
+        'DROP TABLE issue255_live_generation_authorizations',
+      );
+      for (const index of [1, 2, 3]) {
+        await insertLegacyReceipt({
+          runNonce: `${legacyRunPrefix}-${index}`,
+          modality: 'copy',
+          generationSubmitCount: 1,
+          reservedAmountMicros: 100_000,
+        });
+      }
+
+      await first.migrate();
+
+      const fourthRunNonce = `${legacyRunPrefix}-4`;
+      await assert.rejects(
+        first.claim(copyClaim(fourthRunNonce)),
+        /exactly three billable generation POSTs/u,
+      );
+      const history = await firstPool.query<{ count: number }>(
+        `SELECT COUNT(*)::int AS count
+           FROM issue255_live_generation_authorizations
+          WHERE run_nonce LIKE $1`,
+        [`${legacyRunPrefix}-%`],
+      );
+      assert.equal(history.rows[0]?.count, 3);
+    });
+
+    it('migrates only submitted legacy receipts idempotently without double-counting budget', async () => {
+      const submittedRunNonce =
+        `issue-255-pg-${suiteNonce}-legacy-one`;
+      const pendingRunNonce =
+        `issue-255-pg-${suiteNonce}-legacy-zero`;
+
+      await firstPool.query(
+        'DROP TABLE issue255_live_generation_authorizations',
+      );
+      const submittedEffectId = await insertLegacyReceipt({
+        runNonce: submittedRunNonce,
+        modality: 'video',
+        generationSubmitCount: 1,
+        reservedAmountMicros: 3_000_000,
+      });
+      await insertLegacyReceipt({
+        runNonce: pendingRunNonce,
+        modality: 'copy',
+        generationSubmitCount: 0,
+        reservedAmountMicros: 100_000,
+      });
+
+      await first.migrate();
+      await first.migrate();
+
+      const history = await firstPool.query<{
+        effect_id: string;
+        run_nonce: string;
+        reserved_amount_micros: string;
+      }>(
+        `SELECT effect_id, run_nonce, reserved_amount_micros
+           FROM issue255_live_generation_authorizations
+          WHERE run_nonce LIKE $1`,
+        [`issue-255-pg-${suiteNonce}-legacy-%`],
+      );
+      assert.deepEqual(history.rows, [
+        {
+          effect_id: submittedEffectId,
+          run_nonce: submittedRunNonce,
+          reserved_amount_micros: '3000000',
+        },
+      ]);
+
+      const nextEffectId = createHash('sha256')
+        .update(`issue255/v1\0${submittedRunNonce}\0copy`)
+        .digest('hex');
+      assert.equal(
+        (await first.claim(copyClaim(submittedRunNonce))).kind,
+        'claimed',
+      );
+      assert.equal(
+        (await first.listRun(submittedRunNonce))[1]?.effectId,
+        nextEffectId,
+      );
+    });
+
+    it('fails closed when legacy receipt identity conflicts with authorization history', async () => {
+      const runNonce =
+        `issue-255-pg-${suiteNonce}-legacy-identity-conflict`;
+      await insertLegacyReceipt({
+        runNonce,
+        modality: 'copy',
+        generationSubmitCount: 1,
+        reservedAmountMicros: 100_000,
+      });
+      await first.migrate();
+      await firstPool.query(
+        `UPDATE issue255_live_generation_receipts
+            SET request_fingerprint = $2
+          WHERE run_nonce = $1`,
+        [runNonce, '4'.repeat(64)],
+      );
+
+      await assert.rejects(
+        first.migrate(),
+        /legacy authorization identity conflict/iu,
+      );
+    });
+
+    it('fails closed when a submitted legacy receipt lacks required provider lineage', async () => {
+      const runNonce =
+        `issue-255-pg-${suiteNonce}-legacy-missing-lineage`;
+      await firstPool.query(`
+        ALTER TABLE issue255_live_generation_receipts
+        ALTER COLUMN provider_job_id DROP NOT NULL
+      `);
+      await insertLegacyReceipt({
+        runNonce,
+        modality: 'copy',
+        generationSubmitCount: 1,
+        reservedAmountMicros: 100_000,
+        providerJobId: null,
+      });
+
+      try {
+        await assert.rejects(
+          first.migrate(),
+          /refuses legacy receipts without frozen lineage/iu,
+        );
+      } finally {
+        await firstPool.query(
+          'DELETE FROM issue255_live_generation_receipts WHERE run_nonce = $1',
+          [runNonce],
+        );
+        await first.migrate();
+      }
     });
 
     it('allows only one cross-process claim for the same generation effect', async () => {

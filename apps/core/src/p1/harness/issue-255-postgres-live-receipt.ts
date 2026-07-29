@@ -146,7 +146,8 @@ export class PostgresIssue255LiveReceiptRepository {
   constructor(private readonly pool: Pool) {}
 
   async migrate() {
-    await this.pool.query(`
+    return this.locked('issue255-live-migration-v1', async (client) => {
+      await client.query(`
       CREATE TABLE IF NOT EXISTS issue255_live_generation_receipts (
         workspace_id text NOT NULL,
         run_nonce text NOT NULL,
@@ -178,20 +179,20 @@ export class PostgresIssue255LiveReceiptRepository {
         updated_at timestamptz NOT NULL DEFAULT now(),
         PRIMARY KEY (run_nonce, modality)
       )
-    `);
-    await this.pool.query(`
+      `);
+      await client.query(`
       ALTER TABLE issue255_live_generation_receipts
       ADD COLUMN IF NOT EXISTS reconciliation_reason text
-    `);
-    await this.pool.query(`
+      `);
+      await client.query(`
       ALTER TABLE issue255_live_generation_receipts
         ADD COLUMN IF NOT EXISTS workspace_id text,
         ADD COLUMN IF NOT EXISTS provider_job_id text,
         ADD COLUMN IF NOT EXISTS provider_attempt_id text,
         ADD COLUMN IF NOT EXISTS provider_cost_event_id text,
         ADD COLUMN IF NOT EXISTS provider_http_request_count integer NOT NULL DEFAULT 0
-    `);
-    await this.pool.query(`
+      `);
+      await client.query(`
       DO $issue255$
       BEGIN
         IF EXISTS (
@@ -207,49 +208,131 @@ export class PostgresIssue255LiveReceiptRepository {
         END IF;
       END
       $issue255$
-    `);
-    await this.pool.query(`
+      `);
+      await client.query(`
       ALTER TABLE issue255_live_generation_receipts
         ALTER COLUMN workspace_id SET NOT NULL,
         ALTER COLUMN provider_job_id SET NOT NULL,
         ALTER COLUMN provider_attempt_id SET NOT NULL,
         ALTER COLUMN provider_cost_event_id SET NOT NULL
-    `);
-    await this.pool.query(`
+      `);
+      await client.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS
         issue255_live_receipt_provider_job_unique
         ON issue255_live_generation_receipts (provider_job_id)
-    `);
-    await this.pool.query(`
+      `);
+      await client.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS
         issue255_live_receipt_provider_attempt_unique
         ON issue255_live_generation_receipts (provider_attempt_id)
-    `);
-    await this.pool.query(`
+      `);
+      await client.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS
         issue255_live_receipt_provider_cost_unique
         ON issue255_live_generation_receipts (provider_cost_event_id)
-    `);
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS issue255_live_generation_authorizations (
-        effect_id text PRIMARY KEY,
-        run_nonce text NOT NULL,
-        modality text NOT NULL
-          CHECK (modality IN ('copy', 'image_text', 'video')),
-        request_fingerprint text NOT NULL,
-        workspace_id text NOT NULL,
-        adapter text NOT NULL,
-        deployment_id text NOT NULL,
-        provider_idempotency_key text NOT NULL,
-        recorded_matrix_digest text NOT NULL,
-        reserved_amount_micros bigint NOT NULL
-          CHECK (reserved_amount_micros > 0),
-        price_revision text NOT NULL,
-        exchange_revision text NOT NULL,
-        created_at timestamptz NOT NULL DEFAULT now(),
-        UNIQUE (run_nonce, modality)
-      )
-    `);
+      `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS issue255_live_generation_authorizations (
+          effect_id text PRIMARY KEY,
+          run_nonce text NOT NULL,
+          modality text NOT NULL
+            CHECK (modality IN ('copy', 'image_text', 'video')),
+          request_fingerprint text NOT NULL,
+          workspace_id text NOT NULL,
+          adapter text NOT NULL,
+          deployment_id text NOT NULL,
+          provider_idempotency_key text NOT NULL,
+          recorded_matrix_digest text NOT NULL,
+          reserved_amount_micros bigint NOT NULL
+            CHECK (reserved_amount_micros > 0),
+          price_revision text NOT NULL,
+          exchange_revision text NOT NULL,
+          created_at timestamptz NOT NULL DEFAULT now(),
+          UNIQUE (run_nonce, modality)
+        )
+      `);
+      await client.query(`
+        DO $issue255$
+        BEGIN
+          IF EXISTS (
+            SELECT 1
+              FROM issue255_live_generation_receipts receipt
+              JOIN issue255_live_generation_authorizations history
+                ON history.effect_id = receipt.effect_id
+                OR (
+                  history.run_nonce = receipt.run_nonce
+                  AND history.modality = receipt.modality
+                )
+             WHERE receipt.generation_submit_count = 1
+               AND ROW(
+                 history.effect_id,
+                 history.run_nonce,
+                 history.modality,
+                 history.request_fingerprint,
+                 history.workspace_id,
+                 history.adapter,
+                 history.deployment_id,
+                 history.provider_idempotency_key,
+                 history.recorded_matrix_digest,
+                 history.reserved_amount_micros,
+                 history.price_revision,
+                 history.exchange_revision
+               ) IS DISTINCT FROM ROW(
+                 receipt.effect_id,
+                 receipt.run_nonce,
+                 receipt.modality,
+                 receipt.request_fingerprint,
+                 receipt.workspace_id,
+                 receipt.adapter,
+                 receipt.deployment_id,
+                 receipt.provider_idempotency_key,
+                 receipt.recorded_matrix_digest,
+                 receipt.reserved_amount_micros,
+                 receipt.price_revision,
+                 receipt.exchange_revision
+               )
+          ) THEN
+            RAISE EXCEPTION
+              'Issue 255 legacy authorization identity conflict';
+          END IF;
+        END
+        $issue255$
+      `);
+      await client.query(`
+        INSERT INTO issue255_live_generation_authorizations (
+          effect_id,
+          run_nonce,
+          modality,
+          request_fingerprint,
+          workspace_id,
+          adapter,
+          deployment_id,
+          provider_idempotency_key,
+          recorded_matrix_digest,
+          reserved_amount_micros,
+          price_revision,
+          exchange_revision,
+          created_at
+        )
+        SELECT
+          effect_id,
+          run_nonce,
+          modality,
+          request_fingerprint,
+          workspace_id,
+          adapter,
+          deployment_id,
+          provider_idempotency_key,
+          recorded_matrix_digest,
+          reserved_amount_micros,
+          price_revision,
+          exchange_revision,
+          created_at
+        FROM issue255_live_generation_receipts
+        WHERE generation_submit_count = 1
+        ON CONFLICT DO NOTHING
+      `);
+    });
   }
 
   async listRun(runNonce: string) {
