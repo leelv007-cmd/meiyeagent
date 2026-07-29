@@ -410,6 +410,59 @@ test('second consistency schema failure returns partial instead of throwing', as
   });
 });
 
+test('missing self-correction judge disables the loop, records it, and delivers the primary result', async () => {
+  const calls: string[] = [];
+  const compiler = new NotePlanCompiler(
+    {
+      async plan() {
+        calls.push('plan');
+        return structuredClone(basePlan());
+      },
+      async draftPage({ page }) {
+        calls.push(`text:${page.id}`);
+        return page.textBlock;
+      },
+    },
+    imagePort(calls),
+  );
+  const drafts = await compiler.compileDrafts({
+    intent: '介绍护理项目',
+    factRefs: [],
+    rightsRefs: [],
+    notePageBound: 3,
+  });
+  calls.length = 0;
+
+  const result = await compiler.selectAndGenerate({
+    candidates: drafts,
+    selectedStyleId: 'story_recommendation',
+    notePageBound: 3,
+  });
+
+  assert.equal(result.partial, undefined);
+  assert.equal(result.version.evaluation, undefined);
+  assert.deepEqual(calls, [
+    'image:initial:page-1',
+    'image:initial:page-2',
+  ]);
+  assert.deepEqual(
+    result.auditSignals.filter(
+      ({ eventType }) => eventType === 'note_consistency_evaluated',
+    ),
+    [
+      {
+        eventType: 'note_consistency_evaluated',
+        payload: {
+          attempt: 'initial',
+          evaluationUnavailable: true,
+          reason: 'self_correction_judge_unconfigured',
+          selfCorrectionDisabled: true,
+        },
+      },
+    ],
+  );
+});
+
 test('system errors in the second consistency evaluation are not downgraded to partial', async () => {
   const initialEvaluation = passingNoteEvaluation('2026-07-26T00:00:00.000Z');
   const compiler = new NotePlanCompiler(

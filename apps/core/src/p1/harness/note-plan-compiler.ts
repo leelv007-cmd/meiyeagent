@@ -37,7 +37,7 @@ export interface NotePlanStructuredPort {
     themeAnchor: string;
     consistencyFailure?: string;
   }): Promise<NotePlan['pages'][number]['textBlock']>;
-  evaluate(input: {
+  evaluate?(input: {
     plan: NotePlan;
     attempt: 'initial' | 'after_regeneration';
   }): Promise<NotePlanConsistencyEvaluation>;
@@ -226,8 +226,31 @@ export class NotePlanCompiler {
       })),
     });
     assertNotePlanWithinBound(plan, input.notePageBound);
+    const evaluate = this.structured.evaluate?.bind(this.structured);
+    if (!evaluate) {
+      auditSignals.push({
+        eventType: 'note_consistency_evaluated',
+        payload: {
+          attempt: 'initial',
+          evaluationUnavailable: true,
+          reason: 'self_correction_judge_unconfigured',
+          selfCorrectionDisabled: true,
+        },
+      });
+      return {
+        auditSignals,
+        childRuns: initial.map(({ childRun }) => childRun),
+        ownedAssets: initial.map(({ asset }) => asset),
+        selectedStyleId: selected.styleId,
+        version: imageTextNoteVersionSchema.parse({
+          schema: 'image-text-note-version/v1',
+          plan,
+          regenerationReceipts: [],
+        }),
+      };
+    }
     const initialEvaluation = notePlanConsistencyEvaluationSchema.parse(
-      await this.structured.evaluate({ plan, attempt: 'initial' }),
+      await evaluate({ plan, attempt: 'initial' }),
     );
     const regenerationReceipts: ImageTextNoteVersion['regenerationReceipts'] =
       [];
@@ -364,7 +387,7 @@ export class NotePlanCompiler {
     if (regeneratedAnything) {
       try {
         evaluation = notePlanConsistencyEvaluationSchema.parse(
-          await this.structured.evaluate({
+          await evaluate({
             plan,
             attempt: 'after_regeneration',
           }),

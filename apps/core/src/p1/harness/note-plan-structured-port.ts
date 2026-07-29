@@ -78,7 +78,7 @@ export class ModelSupplyNotePlanStructuredPort
   }
 
   async evaluate(
-    input: Parameters<NotePlanStructuredPort['evaluate']>[0],
+    input: Parameters<NonNullable<NotePlanStructuredPort['evaluate']>>[0],
   ) {
     const effectIdempotencyKey =
       `wf:${this.workflowId}:note:evaluate:${input.attempt}`;
