@@ -102,6 +102,31 @@ test('rejects duplicate primitive identifiers', () => {
   );
 });
 
+test('rejects non-canonical primitive authority metadata', () => {
+  for (const definition of [
+    {
+      ...AGENT_PRIMITIVE_DEFINITIONS[2],
+      billed: false,
+    },
+    {
+      ...AGENT_PRIMITIVE_DEFINITIONS[2],
+      sideEffectClass: 'none' as const,
+    },
+    {
+      ...AGENT_PRIMITIVE_DEFINITIONS[2],
+      inputSchema: agentPrimitiveInputSchemas.check,
+    },
+  ]) {
+    assert.throws(
+      () =>
+        new AgentPrimitiveRegistry([
+          definition as AgentPrimitiveDefinition,
+        ]),
+      /Agent primitive authority metadata is not canonical: revise/u,
+    );
+  }
+});
+
 test('returns a mutation-safe inventory snapshot', () => {
   const registry = new AgentPrimitiveRegistry(AGENT_PRIMITIVE_DEFINITIONS);
   const listed = registry.list();

@@ -6,6 +6,7 @@ import type { AgentPrimitiveId } from '@meiye/contracts';
 import { P1ApplicationService } from '../foundation/application-service.js';
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
 import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
+import { ExecutionAttemptBudgetExceeded } from '../model-supply/execution-attempt-budget.js';
 import {
   AgentPrimitiveExecutionError,
   AgentPrimitiveFoundationModule,
@@ -103,6 +104,26 @@ function command(primitiveId: AgentPrimitiveId) {
               productUsageTaskId: `usage-${primitiveId}`,
               quoteId: `quote-${primitiveId}`,
             },
+            ...(primitiveId === 'generate' || primitiveId === 'revise'
+              ? {
+                  boundedExecution: {
+                    schemaVersion: 'bounded-execution-snapshot/v1',
+                    maxIterations: 2,
+                    maxCostCents: 'unset',
+                    maxWallClockMs: 'unset',
+                    maxDelegations: 'unset',
+                    requiredLimits: ['maxIterations'],
+                    consumption: {
+                      iterations: 0,
+                      costCents: 0,
+                      wallClockMs: 0,
+                      delegations: 0,
+                    },
+                    stopReason: null,
+                    triggeredLimit: null,
+                  },
+                }
+              : {}),
           }
         : {}),
       modelInput: modelInputByPrimitive[primitiveId],
@@ -264,6 +285,79 @@ test('a handler 4xx after dispatch keeps the P1 claim and cannot execute twice',
     await repository.listCommandAudits(worker.workspaceId),
     [],
   );
+});
+
+test('a typed request error after dispatch cannot release the P1 claim', async () => {
+  const handlerError = new AgentPrimitiveRequestError(
+    'The handler rejected after dispatch.',
+  );
+  const { executions, service, traces } = createFixture('p1', handlerError);
+  const idempotencyKey = 'worker-dispatched-request-error';
+
+  await assert.rejects(
+    service.executeModule(
+      worker,
+      'agent-primitives',
+      command('read_context'),
+      idempotencyKey,
+    ),
+    (error: unknown) => error instanceof AgentPrimitiveExecutionError,
+  );
+  await assert.rejects(
+    service.executeModule(
+      worker,
+      'agent-primitives',
+      command('read_context'),
+      idempotencyKey,
+    ),
+    (error: unknown) =>
+      error instanceof P1DomainError &&
+      error.code === 'INVALID_STATE' &&
+      /still in progress/u.test(error.message),
+  );
+  assert.deepEqual(executions, ['read_context']);
+  assert.deepEqual(
+    traces.map(({ phase }) => phase),
+    ['invoked', 'rejected'],
+  );
+});
+
+test('exhausted billed primitive budgets release the P1 claim before dispatch', async () => {
+  for (const primitiveId of ['generate', 'revise'] as const) {
+    const { executions, repository, service, traces } = createFixture();
+    const exhausted = command(primitiveId);
+    const boundedExecution = exhausted.payload.boundedExecution as {
+      maxIterations: number;
+      consumption: { iterations: number };
+    };
+    boundedExecution.maxIterations = 1;
+    boundedExecution.consumption.iterations = 1;
+    const idempotencyKey = `worker-${primitiveId}-budget`;
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await assert.rejects(
+        service.executeModule(
+          worker,
+          'agent-primitives',
+          exhausted,
+          idempotencyKey,
+        ),
+        (error: unknown) =>
+          error instanceof ExecutionAttemptBudgetExceeded &&
+          error.maxAttempts === 1 &&
+          error.consumedAttempts === 1,
+      );
+    }
+    assert.deepEqual(executions, []);
+    assert.deepEqual(
+      traces.map(({ phase }) => phase),
+      ['rejected', 'rejected'],
+    );
+    assert.deepEqual(
+      await repository.listCommandAudits(worker.workspaceId),
+      [],
+    );
+  }
 });
 
 test('the P1 cutover gate blocks only generating and bounded-write primitives before runtime dispatch', async () => {

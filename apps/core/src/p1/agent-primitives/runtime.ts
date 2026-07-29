@@ -2,11 +2,16 @@ import {
   AGENT_PRIMITIVE_IDS,
   type AgentPrimitiveId,
   type AgentPrimitiveInputById,
+  type BoundedExecutionSnapshot,
   type HarnessStage,
   type ObservabilityAxes,
   type QuestionCard,
 } from '@meiye/contracts';
 
+import {
+  ExecutionAttemptBudget,
+  ExecutionAttemptBudgetExceeded,
+} from '../model-supply/execution-attempt-budget.js';
 import type { AgentPrimitiveRegistry } from './registry.js';
 
 export interface AgentPrimitiveServerContext {
@@ -19,6 +24,7 @@ export interface AgentPrimitiveServerContext {
     productUsageTaskId: string;
     quoteId: string;
   };
+  boundedExecution?: BoundedExecutionSnapshot;
   harness?: {
     stage: HarnessStage;
     question: QuestionCard;
@@ -74,6 +80,30 @@ export class AgentPrimitiveRequestError extends Error {
   }
 }
 
+export function requireAvailableExecutionAttempt(
+  serverContext: AgentPrimitiveServerContext,
+  primitiveId: 'generate' | 'revise',
+): BoundedExecutionSnapshot {
+  const snapshot = serverContext.boundedExecution;
+  if (
+    !snapshot ||
+    snapshot.stopReason !== null ||
+    snapshot.maxIterations === 'unset' ||
+    !snapshot.requiredLimits.includes('maxIterations')
+  ) {
+    throw new AgentPrimitiveRequestError(
+      `${primitiveId} requires an active server-owned bounded execution snapshot with maxIterations.`,
+    );
+  }
+  const availability = new ExecutionAttemptBudget({
+    maxAttempts: snapshot.maxIterations,
+    consumedAttempts: snapshot.consumption.iterations,
+  });
+  // This is an availability probe. The provider port owns observed consumption.
+  availability.consume();
+  return snapshot;
+}
+
 function invalidRequest(error: unknown): AgentPrimitiveRequestError {
   return error instanceof AgentPrimitiveRequestError
     ? error
@@ -97,7 +127,15 @@ export class AgentPrimitiveRuntime {
   }
 
   assertComplete(): void {
+    const registered = new Set(
+      this.options.registry.list().map(({ id }) => id),
+    );
     for (const primitiveId of AGENT_PRIMITIVE_IDS) {
+      if (!registered.has(primitiveId)) {
+        throw new Error(
+          `Agent primitive registry is incomplete: ${primitiveId}`,
+        );
+      }
       if (typeof this.#bindings[primitiveId] !== 'function') {
         throw new Error(`Agent primitive handler is not bound: ${primitiveId}`);
       }
@@ -107,21 +145,34 @@ export class AgentPrimitiveRuntime {
   async execute(args: AgentPrimitiveExecutionRequest): Promise<unknown> {
     const serverContext = snapshotServerContext(args.serverContext);
     const traceServerContext = projectTraceServerContext(serverContext);
-    try {
-      const { definition, input } = (() => {
-        try {
-          const definition = this.options.registry.resolve(args.primitiveId);
-          const input = definition.inputSchema.parse(args.modelInput);
-          if (definition.billed && !serverContext.billing) {
-            throw new AgentPrimitiveRequestError(
-              `Billed agent primitive requires billing context: ${args.primitiveId}`,
-            );
-          }
-          return { definition, input };
-        } catch (error) {
-          throw invalidRequest(error);
+    const { definition, input } = await (async () => {
+      try {
+        const definition = this.options.registry.resolve(args.primitiveId);
+        const input = definition.inputSchema.parse(args.modelInput);
+        if (definition.billed && !serverContext.billing) {
+          throw new AgentPrimitiveRequestError(
+            `Billed agent primitive requires billing context: ${args.primitiveId}`,
+          );
         }
-      })();
+        if (definition.id === 'generate' || definition.id === 'revise') {
+          requireAvailableExecutionAttempt(serverContext, definition.id);
+        }
+        return { definition, input };
+      } catch (error) {
+        const rejection =
+          error instanceof ExecutionAttemptBudgetExceeded
+            ? error
+            : invalidRequest(error);
+        await this.options.tracePort.append({
+          error: rejection.message,
+          phase: 'rejected',
+          primitiveId: args.primitiveId,
+          serverContext: traceServerContext,
+        });
+        throw rejection;
+      }
+    })();
+    try {
       const handler = this.#bindings[
         definition.id
       ] as (args: {
@@ -144,12 +195,27 @@ export class AgentPrimitiveRuntime {
       });
       return result;
     } catch (error) {
-      await this.options.tracePort.append({
-        error: error instanceof Error ? error.message : String(error),
-        phase: 'rejected',
-        primitiveId: args.primitiveId,
-        serverContext: traceServerContext,
-      });
+      try {
+        await this.options.tracePort.append({
+          error: error instanceof Error ? error.message : String(error),
+          phase: 'rejected',
+          primitiveId: args.primitiveId,
+          serverContext: traceServerContext,
+        });
+      } catch (traceError) {
+        throw new Error('Agent primitive trace failed after request validation.', {
+          cause: traceError,
+        });
+      }
+      if (
+        error instanceof AgentPrimitiveRequestError ||
+        error instanceof ExecutionAttemptBudgetExceeded
+      ) {
+        throw new Error(
+          'Agent primitive execution failed after request validation.',
+          { cause: error },
+        );
+      }
       throw error;
     }
   }
@@ -161,13 +227,29 @@ function snapshotServerContext(
   const harness = input.harness
     ? freezeHarnessContext(input.harness)
     : undefined;
+  const boundedExecution = input.boundedExecution
+    ? freezeBoundedExecution(input.boundedExecution)
+    : undefined;
   return Object.freeze({
     ...input,
     observability: Object.freeze({ ...input.observability }),
     ...(input.billing
       ? { billing: Object.freeze({ ...input.billing }) }
       : {}),
+    ...(boundedExecution ? { boundedExecution } : {}),
     ...(harness ? { harness } : {}),
+  });
+}
+
+function freezeBoundedExecution(
+  input: BoundedExecutionSnapshot,
+): BoundedExecutionSnapshot {
+  const requiredLimits = [...input.requiredLimits];
+  Object.freeze(requiredLimits);
+  return Object.freeze({
+    ...input,
+    consumption: Object.freeze({ ...input.consumption }),
+    requiredLimits,
   });
 }
 

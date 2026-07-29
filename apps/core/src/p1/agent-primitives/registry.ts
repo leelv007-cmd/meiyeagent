@@ -56,6 +56,12 @@ export const AGENT_PRIMITIVE_DEFINITIONS = Object.freeze([
 ] as const satisfies readonly AgentPrimitiveDefinition[]);
 
 const allowedPrimitiveIds = new Set<string>(AGENT_PRIMITIVE_IDS);
+const canonicalDefinitions = new Map(
+  AGENT_PRIMITIVE_DEFINITIONS.map((definition) => [
+    definition.id,
+    definition,
+  ]),
+);
 
 export class AgentPrimitiveRegistry {
   readonly #definitions = new Map<AgentPrimitiveId, AgentPrimitiveDefinition>();
@@ -70,6 +76,17 @@ export class AgentPrimitiveRegistry {
       if (this.#definitions.has(candidate.id)) {
         throw new Error(
           `Agent primitive is registered more than once: ${candidate.id}`,
+        );
+      }
+      const canonical = canonicalDefinitions.get(candidate.id);
+      if (
+        !canonical ||
+        candidate.inputSchema !== canonical.inputSchema ||
+        candidate.sideEffectClass !== canonical.sideEffectClass ||
+        candidate.billed !== canonical.billed
+      ) {
+        throw new Error(
+          `Agent primitive authority metadata is not canonical: ${candidate.id}`,
         );
       }
 

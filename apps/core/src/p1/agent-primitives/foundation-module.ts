@@ -1,4 +1,5 @@
 import {
+  boundedExecutionSnapshotSchema,
   harnessStageSchema,
   observabilityAxesSchema,
   questionCardSchema,
@@ -9,6 +10,7 @@ import type {
   FoundationStore,
   P1OperationModule,
 } from '../foundation/ports.js';
+import { ExecutionAttemptBudgetExceeded } from '../model-supply/execution-attempt-budget.js';
 import {
   AgentPrimitiveRequestError,
   type AgentPrimitiveExecutionRequest,
@@ -86,6 +88,38 @@ export class AgentPrimitiveFoundationModule implements P1OperationModule {
     if (!observability.success) {
       fail('Agent primitive observability context is invalid.');
     }
+    const primitiveId = text(payload, 'primitiveId');
+    const boundedExecution =
+      payload.boundedExecution === undefined
+        ? undefined
+        : boundedExecutionSnapshotSchema.safeParse(
+            payload.boundedExecution,
+          );
+    if (
+      boundedExecution &&
+      !boundedExecution.success
+    ) {
+      fail('Agent primitive bounded execution context is invalid.');
+    }
+    const requiresExecutionBudget =
+      primitiveId === 'generate' || primitiveId === 'revise';
+    if (
+      requiresExecutionBudget &&
+      (
+        !boundedExecution ||
+        !boundedExecution.success ||
+        boundedExecution.data.maxIterations === 'unset' ||
+        !boundedExecution.data.requiredLimits.includes('maxIterations')
+      )
+    ) {
+      fail('Agent primitive bounded execution context is invalid.');
+    }
+    if (requiresExecutionBudget && boundedExecution?.success) {
+      const snapshot = boundedExecution.data;
+      if (snapshot.stopReason !== null) {
+        fail('Agent primitive bounded execution context is invalid.');
+      }
+    }
     const harness =
       payload.harness === undefined
         ? undefined
@@ -105,10 +139,13 @@ export class AgentPrimitiveFoundationModule implements P1OperationModule {
     try {
       return await this.runtime.execute({
         modelInput: payload.modelInput,
-        primitiveId: text(payload, 'primitiveId'),
+        primitiveId,
         serverContext: {
           actorId: args.context.userId,
           billing,
+          ...(boundedExecution?.success
+            ? { boundedExecution: boundedExecution.data }
+            : {}),
           correlationId: args.context.correlationId,
           ...(harness ? { harness } : {}),
           idempotencyKey: args.idempotencyKey,
@@ -117,7 +154,12 @@ export class AgentPrimitiveFoundationModule implements P1OperationModule {
         },
       });
     } catch (error) {
-      if (error instanceof AgentPrimitiveRequestError) throw error;
+      if (
+        error instanceof AgentPrimitiveRequestError ||
+        error instanceof ExecutionAttemptBudgetExceeded
+      ) {
+        throw error;
+      }
       throw new AgentPrimitiveExecutionError(error);
     }
   }

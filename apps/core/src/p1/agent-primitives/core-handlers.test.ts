@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import type { BoundedExecutionSnapshot } from '@meiye/contracts';
+
 import type { AgentPrimitiveServerContext } from './runtime.js';
 import {
   createGenerateHandler,
@@ -25,6 +27,23 @@ const serverContext: AgentPrimitiveServerContext = {
     skillRevision: 'copywriter@rev-17',
   },
   workspaceId: 'workspace-1',
+};
+
+const boundedExecution: BoundedExecutionSnapshot = {
+  schemaVersion: 'bounded-execution-snapshot/v1',
+  maxIterations: 3,
+  maxCostCents: 'unset',
+  maxWallClockMs: 'unset',
+  maxDelegations: 'unset',
+  requiredLimits: ['maxIterations'],
+  consumption: {
+    iterations: 2,
+    costCents: 0,
+    wallClockMs: 0,
+    delegations: 0,
+  },
+  stopReason: null,
+  triggeredLimit: null,
 };
 
 test('read_context preserves the bounded query and injects the server-owned workspace', async () => {
@@ -69,26 +88,28 @@ test('generate keeps parsing and extraction kinds open and injects server billin
   assert.deepEqual(
     await handler({
       input: { brief: { sourceRef: 'upload-1' }, kind: 'parsing' },
-      serverContext: { ...serverContext, billing },
+      serverContext: { ...serverContext, billing, boundedExecution },
     }),
     { artifactRef: 'artifact-parsing' },
   );
   assert.deepEqual(
     await handler({
       input: { brief: { sourceRef: 'upload-2' }, kind: 'extraction' },
-      serverContext: { ...serverContext, billing },
+      serverContext: { ...serverContext, billing, boundedExecution },
     }),
     { artifactRef: 'artifact-extraction' },
   );
   assert.deepEqual(received, [
     {
       billing,
+      boundedExecution,
       brief: { sourceRef: 'upload-1' },
       kind: 'parsing',
       workspaceId: 'workspace-1',
     },
     {
       billing,
+      boundedExecution,
       brief: { sourceRef: 'upload-2' },
       kind: 'extraction',
       workspaceId: 'workspace-1',
@@ -173,6 +194,7 @@ test('revise resolves a trusted OCC fence before calling the revision writer', a
     serverContext: {
       ...serverContext,
       billing,
+      boundedExecution,
       idempotencyKey: 'revise-call-1',
     },
   });
@@ -183,6 +205,7 @@ test('revise resolves a trusted OCC fence before calling the revision writer', a
   });
   assert.deepEqual(written, {
     billing,
+    boundedExecution,
     expectedRevision: 2,
     idempotencyKey: 'revise-call-1',
     instruction: 'Shorten the opening sentence.',
@@ -226,6 +249,7 @@ test('two revise calls from one base revision produce one write and one OCC conf
           productUsageTaskId: 'usage-task-3',
           quoteId: 'quote-3',
         },
+        boundedExecution,
         idempotencyKey: 'revise-call-a',
       },
     }),
@@ -240,6 +264,7 @@ test('two revise calls from one base revision produce one write and one OCC conf
           productUsageTaskId: 'usage-task-4',
           quoteId: 'quote-4',
         },
+        boundedExecution,
         idempotencyKey: 'revise-call-b',
       },
     }),
@@ -257,6 +282,63 @@ test('two revise calls from one base revision produce one write and one OCC conf
     1,
   );
   assert.equal(currentRevision, 3);
+});
+
+test('revise fails closed before its writer when maxIterations is missing or exhausted', async () => {
+  let resolved = false;
+  let written = false;
+  const handler = createReviseHandler({
+    resolver: {
+      async resolve() {
+        resolved = true;
+        return {
+          expectedRevision: 2,
+          targetRef: 'content-package:content-package-1',
+        };
+      },
+    },
+    writer: {
+      async revise() {
+        written = true;
+        return {};
+      },
+    },
+  });
+  const input = {
+    instruction: 'Use a shorter opening.',
+    target_ref: 'content-package-1@revision-2',
+  };
+  const billing = {
+    productUsageTaskId: 'usage-task-budget',
+    quoteId: 'quote-budget',
+  };
+
+  await assert.rejects(
+    handler({
+      input,
+      serverContext: { ...serverContext, billing },
+    }),
+    /bounded execution snapshot/u,
+  );
+  await assert.rejects(
+    handler({
+      input,
+      serverContext: {
+        ...serverContext,
+        billing,
+        boundedExecution: {
+          ...boundedExecution,
+          consumption: {
+            ...boundedExecution.consumption,
+            iterations: 3,
+          },
+        },
+      },
+    }),
+    /Execution attempt budget exhausted/u,
+  );
+  assert.equal(resolved, false);
+  assert.equal(written, false);
 });
 
 test('record accepts a future kind when the port resolves it to a proposal and preserves provenance', async () => {

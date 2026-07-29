@@ -88,6 +88,7 @@ function createEffectTestService(repository: MemorySkillRepository) {
 }
 
 class ManifestTamperingRepository extends MemorySkillRepository {
+  tamperedSideEffectClass: string | null = null;
   tamperedToolId: string | null = null;
   acceptAttempts = 0;
 
@@ -96,17 +97,25 @@ class ManifestTamperingRepository extends MemorySkillRepository {
     if (
       !revision ||
       revision.formatVersion !== 2 ||
-      !this.tamperedToolId
+      (!this.tamperedToolId && !this.tamperedSideEffectClass)
     ) {
       return revision;
     }
     return {
       ...revision,
+      governance: {
+        ...revision.governance,
+        ...(this.tamperedSideEffectClass
+          ? { sideEffectClass: this.tamperedSideEffectClass }
+          : {}),
+      },
       manifest: {
         ...revision.manifest,
-        'allowed-tools': this.tamperedToolId,
+        ...(this.tamperedToolId
+          ? { 'allowed-tools': this.tamperedToolId }
+          : {}),
       },
-    };
+    } as SkillRevision;
   }
 
   override async acceptRevision(
@@ -120,7 +129,11 @@ class ManifestTamperingRepository extends MemorySkillRepository {
 test('a Skill draft rejects unknown and merchant-only self-reported tools', async () => {
   for (const toolId of ['tool.self_reported', 'confirm_publish']) {
     const repository = new MemorySkillRepository();
-    const service = new SkillService(repository, () => NOW);
+    const service = new SkillService(
+      repository,
+      () => NOW,
+      testPromptSnapshots,
+    );
     const skillId = `skill.registry-${toolId}`;
     await service.defineCatalogEntry({
       actorId: 'operator-registry',
@@ -158,6 +171,137 @@ test('a Skill draft rejects unknown and merchant-only self-reported tools', asyn
     );
     assert.equal(await repository.getRevisionHead(skillId), null);
   }
+});
+
+test('a Skill draft cannot understate primitive side effects or billed budget', async () => {
+  for (const testCase of [
+    {
+      allowedTools: ['revise'],
+      expected: /side-effect class/u,
+      maxCostCents: 10,
+      sideEffectClass: 'none' as const,
+      suffix: 'understated-write',
+    },
+    {
+      allowedTools: ['generate'],
+      expected: /positive cost budget/u,
+      maxCostCents: 0,
+      sideEffectClass: 'none' as const,
+      suffix: 'unfunded-generation',
+    },
+  ]) {
+    const repository = new MemorySkillRepository();
+    const service = new SkillService(
+      repository,
+      () => NOW,
+      testPromptSnapshots,
+    );
+    const skillId = `skill.${testCase.suffix}`;
+    await service.defineCatalogEntry({
+      actorId: 'operator-registry',
+      name: testCase.suffix,
+      description: 'Verifies primitive budget authority.',
+      sourceKind: 'authored',
+      tier: 'platform',
+      presentationPolicy: 'backend_only',
+      skillId,
+    });
+
+    await assert.rejects(
+      service.draftRevision({
+        actorId: 'operator-registry',
+        expectedRevision: null,
+        governance: {
+          ...governance(),
+          budget: {
+            maxChildEffects: 1,
+            maxCostCents: testCase.maxCostCents,
+            timeoutMs: 10_000,
+          },
+          contextScopes: ['facts'],
+          executionMode: 'harness_native',
+          fallback: 'fail_closed',
+          requiredModelCapabilities: ['structured_output', 'tool_calling'],
+          sideEffectClass: testCase.sideEffectClass,
+          workflowRevisionRefs: ['workflow.registry@1'],
+        },
+        instruction: PROMPT_CONTENT,
+        manifest: {
+          'allowed-tools': testCase.allowedTools.join(' '),
+          description: 'Verifies primitive budget authority.',
+          name: testCase.suffix,
+        },
+        promptReference: registerPrompt({
+          content: PROMPT_CONTENT,
+          contentHash: sha256(PROMPT_CONTENT),
+          isFallback: false,
+          label: 'production',
+          name: 'harness/intent-naming',
+          source: 'langfuse',
+          version: '42',
+        }),
+        skillId,
+      }),
+      testCase.expected,
+    );
+    assert.equal(await repository.getRevisionHead(skillId), null);
+  }
+});
+
+test('a Skill manifest may conservatively overstate its side-effect ceiling', async () => {
+  const repository = new MemorySkillRepository();
+  const service = new SkillService(
+    repository,
+    () => NOW,
+    testPromptSnapshots,
+  );
+  const skillId = 'skill.conservative-side-effect-ceiling';
+  await service.defineCatalogEntry({
+    actorId: 'operator-registry',
+    name: 'Conservative side-effect ceiling',
+    description: 'Allows a conservative side-effect declaration.',
+    sourceKind: 'authored',
+    tier: 'platform',
+    presentationPolicy: 'backend_only',
+    skillId,
+  });
+
+  const draft = await service.draftRevision({
+    actorId: 'operator-registry',
+    expectedRevision: null,
+    governance: {
+      ...governance(),
+      budget: {
+        maxChildEffects: 1,
+        maxCostCents: 0,
+        timeoutMs: 10_000,
+      },
+      contextScopes: ['facts'],
+      executionMode: 'harness_native',
+      fallback: 'fail_closed',
+      requiredModelCapabilities: ['structured_output', 'tool_calling'],
+      sideEffectClass: 'read',
+      workflowRevisionRefs: ['workflow.registry@1'],
+    },
+    instruction: PROMPT_CONTENT,
+    manifest: {
+      'allowed-tools': 'check',
+      description: 'Allows a conservative side-effect declaration.',
+      name: 'conservative-side-effect-ceiling',
+    },
+    promptReference: registerPrompt({
+      content: PROMPT_CONTENT,
+      contentHash: sha256(PROMPT_CONTENT),
+      isFallback: false,
+      label: 'production',
+      name: 'harness/intent-naming',
+      source: 'langfuse',
+      version: '42',
+    }),
+    skillId,
+  });
+
+  assert.equal(draft.governance.sideEffectClass, 'read');
 });
 
 test('acceptance revalidates every frozen manifest tool against the canonical registry', async () => {
@@ -241,6 +385,117 @@ test('invocation resolves a self-reported allowlisted tool before executor dispa
   assert.equal(executions, 0);
 });
 
+test('invocation revalidates frozen manifest authority before executor dispatch', async () => {
+  const repository = new ManifestTamperingRepository();
+  const service = createEffectTestService(repository);
+  const revision = await createAcceptedEffectSkill(service);
+  repository.tamperedToolId = 'revise';
+  let executions = 0;
+
+  await assert.rejects(
+    service.invoke(
+      {
+        calls: [
+          {
+            callId: 'tampered-revise',
+            contextRefs: ['facts:current-offer'],
+            declaredBudgetCapCents: 1,
+            payload: {
+              instruction: 'Shorten the opening.',
+              target_ref: 'content-package-1@revision-2',
+            },
+            toolId: 'revise',
+          },
+        ],
+        input: dailyIndustrySkillInput(),
+        invocationId: 'invocation-tampered-manifest-authority',
+        output: {
+          schemaRevision: 'skill-output.intent-decision@1',
+          target: 'workflow_artifact',
+        },
+        productUsageTaskId: 'task-one-product-usage',
+        skillRevisionRef: revision.skillRevisionRef,
+        taskId: 'task-tampered-manifest-authority',
+        workspaceId: 'workspace-skill-invocation',
+      },
+      {
+        async execute() {
+          executions += 1;
+          return {
+            acceptanceStatus: 'accepted',
+            costCents: 1,
+            providerReceipt: {
+              accepted: true,
+              providerTaskRef: 'provider-must-not-run',
+            },
+            usage: { inputTokens: 1, outputTokens: 1 },
+          };
+        },
+        async generate() {
+          return { value: intentDecisionOutput() };
+        },
+      },
+      discardResultPublisher,
+    ),
+    /side-effect class/u,
+  );
+  assert.equal(executions, 0);
+});
+
+test('invocation rejects an unknown frozen side-effect class before executor dispatch', async () => {
+  const repository = new ManifestTamperingRepository();
+  const service = createEffectTestService(repository);
+  const revision = await createAcceptedEffectSkill(service);
+  repository.tamperedSideEffectClass = 'unbounded';
+  let executions = 0;
+
+  await assert.rejects(
+    service.invoke(
+      {
+        calls: [
+          {
+            callId: 'read-with-tampered-authority',
+            contextRefs: ['facts:current-offer'],
+            declaredBudgetCapCents: 1,
+            payload: { scope: 'store.current' },
+            toolId: 'read_context',
+          },
+        ],
+        input: dailyIndustrySkillInput(),
+        invocationId: 'invocation-unknown-side-effect-class',
+        output: {
+          schemaRevision: 'skill-output.intent-decision@1',
+          target: 'workflow_artifact',
+        },
+        productUsageTaskId: 'task-one-product-usage',
+        skillRevisionRef: revision.skillRevisionRef,
+        taskId: 'task-unknown-side-effect-class',
+        workspaceId: 'workspace-skill-invocation',
+      },
+      {
+        async execute() {
+          executions += 1;
+          return {
+            acceptanceStatus: 'accepted',
+            costCents: 0,
+            providerReceipt: {
+              accepted: true,
+              providerTaskRef: 'provider-must-not-run',
+            },
+            usage: { inputTokens: 0, outputTokens: 0 },
+          };
+        },
+        async generate() {
+          return { value: intentDecisionOutput() };
+        },
+      },
+      discardResultPublisher,
+    ),
+    /side-effect class is invalid/u,
+  );
+  assert.equal(executions, 0);
+});
+
 for (const identityField of [
   'workspaceId',
   'actorId',
@@ -249,7 +504,7 @@ for (const identityField of [
 ] as const) {
   test(`primitive payload rejects caller-supplied ${identityField} before executor and persistence`, async () => {
     const repository = new MemorySkillRepository();
-    const service = new SkillService(repository, () => NOW);
+    const service = createEffectTestService(repository);
     const revision = await createAcceptedEffectSkill(service);
     const invocationId = `invocation-forged-${identityField}`;
     let executions = 0;
@@ -316,7 +571,7 @@ for (const identityField of [
 
 test('executor receives the canonical payload parsed by the primitive schema', async () => {
   const repository = new MemorySkillRepository();
-  const service = new SkillService(repository, () => NOW);
+  const service = createEffectTestService(repository);
   const revision = await createAcceptedEffectSkill(service);
   let executedPayload: unknown;
 
@@ -2474,6 +2729,7 @@ test('skill_define separates frontmatter, governance, and trusted prompt fallbac
         },
         governance: {
           ...governance(),
+          sideEffectClass: 'read',
         },
         instruction: 'Use grounded daily context.',
         name: 'Daily beauty context',
@@ -2505,6 +2761,7 @@ test('skill_define separates frontmatter, governance, and trusted prompt fallbac
   });
   assert.deepEqual(stored?.governance, {
     ...governance(),
+    sideEffectClass: 'read',
   });
   assert.equal(stored?.prompt.content, promptContent);
   assert.equal(
@@ -2905,10 +3162,14 @@ test('skill_accept redacts legacy prompt content and instruction fields', async 
       createdBy: 'operator-legacy-redaction',
       evalRunId: 'eval-legacy-redaction',
       formatVersion: 1,
-      governance: governance(),
+      governance: {
+        ...governance(),
+        allowedTools: [],
+      },
       instruction: legacyContent,
       manifest: {
         ...governance(),
+        allowedTools: [],
         compatibility: {
           workflowRevisionRefs: ['workflow.daily-copy@1'],
         },

@@ -1,8 +1,12 @@
-import type { AgentPrimitiveInputById } from '@meiye/contracts';
-
 import type {
-  AgentPrimitiveHandler,
-  AgentPrimitiveServerContext,
+  AgentPrimitiveInputById,
+  BoundedExecutionSnapshot,
+} from '@meiye/contracts';
+
+import {
+  requireAvailableExecutionAttempt,
+  type AgentPrimitiveHandler,
+  type AgentPrimitiveServerContext,
 } from './runtime.js';
 
 type ReadContextInput = AgentPrimitiveInputById['read_context'];
@@ -45,6 +49,7 @@ export interface GeneratePort {
     brief: GenerateInput['brief'];
     workspaceId: string;
     billing: BillingContext;
+    boundedExecution: BoundedExecutionSnapshot;
   }): Promise<unknown>;
 }
 
@@ -53,11 +58,16 @@ export function createGenerateHandler(
 ): AgentPrimitiveHandler<'generate'> {
   return async ({ input, serverContext }) => {
     const billing = requireBilling(serverContext);
+    const boundedExecution = requireAvailableExecutionAttempt(
+      serverContext,
+      'generate',
+    );
     return port.generate({
       kind: input.kind,
       brief: input.brief,
       workspaceId: serverContext.workspaceId,
       billing,
+      boundedExecution,
     });
   };
 }
@@ -81,6 +91,7 @@ export interface RevisePort {
     instruction: ReviseInput['instruction'];
     workspaceId: string;
     billing: BillingContext;
+    boundedExecution: BoundedExecutionSnapshot;
     idempotencyKey: string;
   }): Promise<unknown>;
 }
@@ -93,6 +104,10 @@ export function createReviseHandler(
 ): AgentPrimitiveHandler<'revise'> {
   return async ({ input, serverContext }) => {
     const billing = requireBilling(serverContext);
+    const boundedExecution = requireAvailableExecutionAttempt(
+      serverContext,
+      'revise',
+    );
     const fence = await ports.resolver.resolve({
       targetRef: input.target_ref,
       workspaceId: serverContext.workspaceId,
@@ -110,6 +125,7 @@ export function createReviseHandler(
       instruction: input.instruction,
       workspaceId: serverContext.workspaceId,
       billing,
+      boundedExecution,
       idempotencyKey: serverContext.idempotencyKey,
     });
   };

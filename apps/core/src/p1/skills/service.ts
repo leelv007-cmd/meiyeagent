@@ -310,12 +310,6 @@ export class SkillService {
     const manifest = validatePrewrite(() =>
       validateSkillFrontmatter(input.manifest),
     );
-    validatePrewrite(() =>
-      validatePrimitiveAllowlist(
-        this.primitiveRegistry,
-        validateSkillPermissionAuthority(manifest),
-      ),
-    );
     let governance: SkillGovernanceSidecar;
     try {
       governance = parseSkillGovernance(input.governance);
@@ -326,6 +320,13 @@ export class SkillService {
         }`,
       );
     }
+    validatePrewrite(() =>
+      validatePrimitiveAuthority(
+        this.primitiveRegistry,
+        validateSkillPermissionAuthority(manifest),
+        governance,
+      ),
+    );
     const packagePaths = validatePrewrite(() =>
       validateSkillPackagePaths(input.packagePaths ?? ['SKILL.md']),
     );
@@ -450,11 +451,12 @@ export class SkillService {
     evalRunId: string;
   }) {
     const revision = await this.requireRevision(input.skillRevisionRef);
-    validatePrimitiveAllowlist(
+    validatePrimitiveAuthority(
       this.primitiveRegistry,
       revision.formatVersion === 1
         ? revision.governance.allowedTools
         : validateSkillPermissionAuthority(revision.manifest),
+      revision.governance,
     );
     const evalRunId = required(input.evalRunId, 'EvalRun ID');
     const stored = await this.repository.get(evalRunId);
@@ -868,6 +870,13 @@ export class SkillService {
     if (revision.status !== 'accepted_frozen') {
       fail('只能调用已受理冻结的 Skill 版本。');
     }
+    validatePrimitiveAuthority(
+      this.primitiveRegistry,
+      revision.formatVersion === 1
+        ? revision.governance.allowedTools
+        : validateSkillPermissionAuthority(revision.manifest),
+      revision.governance,
+    );
     try {
       parseSkillSchema(revision.governance.inputSchemaRef, input.input);
     } catch {
@@ -1284,6 +1293,49 @@ export function skillAcceptanceGateFailure(
   return null;
 }
 
+function validatePrimitiveAuthority(
+  primitiveRegistry: AgentPrimitiveRegistry,
+  toolIds: readonly string[] | undefined,
+  governance: SkillGovernanceSidecar,
+) {
+  if (!toolIds) {
+    fail('Skill primitive allowlist is missing.');
+  }
+  const primitiveDefinitions = toolIds.map((toolId) =>
+    resolvePrimitive(primitiveRegistry, toolId),
+  );
+  const sideEffectRank = {
+    none: 0,
+    read: 1,
+    bounded_write: 2,
+  } as const;
+  if (!Object.hasOwn(sideEffectRank, governance.sideEffectClass)) {
+    fail('Skill manifest side-effect class is invalid.');
+  }
+  const requiredSideEffectClass = primitiveDefinitions.reduce(
+    (required, definition) =>
+      sideEffectRank[definition.sideEffectClass] >
+      sideEffectRank[required]
+        ? definition.sideEffectClass
+        : required,
+    'none' as keyof typeof sideEffectRank,
+  );
+  if (
+    sideEffectRank[governance.sideEffectClass] <
+    sideEffectRank[requiredSideEffectClass]
+  ) {
+    fail(
+      `Skill manifest side-effect class must cover its allowed primitives: ${requiredSideEffectClass}.`,
+    );
+  }
+  if (
+    primitiveDefinitions.some(({ billed }) => billed) &&
+    governance.budget.maxCostCents <= 0
+  ) {
+    fail('A Skill with billed primitives requires a positive cost budget.');
+  }
+}
+
 function validateChildEffect(
   revision: SkillRevision,
   call: {
@@ -1305,15 +1357,6 @@ function validateChildEffect(
     )
   ) {
     fail('Skill 子调用读取了声明范围之外的 Context。');
-  }
-}
-
-function validatePrimitiveAllowlist(
-  primitiveRegistry: AgentPrimitiveRegistry,
-  toolIds: readonly string[] | undefined,
-) {
-  for (const toolId of toolIds ?? []) {
-    resolvePrimitive(primitiveRegistry, toolId);
   }
 }
 

@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { QuestionCard } from '@meiye/contracts';
+import type {
+  BoundedExecutionSnapshot,
+  QuestionCard,
+} from '@meiye/contracts';
 
 import {
+  AGENT_PRIMITIVE_DEFINITIONS,
+  AgentPrimitiveRegistry,
   createCanonicalAgentPrimitiveRegistry,
 } from './registry.js';
 import {
@@ -55,6 +60,23 @@ const serverContext: AgentPrimitiveServerContext = {
   workspaceId: 'workspace-1',
 };
 
+const boundedExecution = {
+  schemaVersion: 'bounded-execution-snapshot/v1' as const,
+  maxIterations: 2,
+  maxCostCents: 'unset' as const,
+  maxWallClockMs: 'unset' as const,
+  maxDelegations: 'unset' as const,
+  requiredLimits: ['maxIterations'],
+  consumption: {
+    iterations: 0,
+    costCents: 0,
+    wallClockMs: 0,
+    delegations: 0,
+  },
+  stopReason: null,
+  triggeredLimit: null,
+} satisfies BoundedExecutionSnapshot;
+
 const question: QuestionCard = {
   freeText: {
     enabled: true,
@@ -90,6 +112,20 @@ test('construction fails closed when any canonical primitive has no binding', ()
         tracePort,
       }),
     /Agent primitive handler is not bound: revise/u,
+  );
+});
+
+test('construction fails closed when the registry omits a canonical primitive', () => {
+  assert.throws(
+    () =>
+      new AgentPrimitiveRuntime({
+        bindings: completeBindings(),
+        registry: new AgentPrimitiveRegistry(
+          AGENT_PRIMITIVE_DEFINITIONS.slice(0, -1),
+        ),
+        tracePort,
+      }),
+    /Agent primitive registry is incomplete: ask_merchant/u,
   );
 });
 
@@ -477,7 +513,7 @@ test('billed primitive handlers receive billing context only from the server env
   await runtime.execute({
     modelInput: { brief: {}, kind: 'copy' },
     primitiveId: 'generate',
-    serverContext: { ...serverContext, billing },
+    serverContext: { ...serverContext, billing, boundedExecution },
   });
 
   assert.notEqual(received, billing);

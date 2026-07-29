@@ -32,6 +32,23 @@ const observability = {
   skillRevision: 'copywriter@rev-17',
 };
 
+const boundedExecution = {
+  schemaVersion: 'bounded-execution-snapshot/v1' as const,
+  maxIterations: 3,
+  maxCostCents: 'unset' as const,
+  maxWallClockMs: 'unset' as const,
+  maxDelegations: 'unset' as const,
+  requiredLimits: ['maxIterations'],
+  consumption: {
+    iterations: 2,
+    costCents: 0,
+    wallClockMs: 0,
+    delegations: 0,
+  },
+  stopReason: null,
+  triggeredLimit: null,
+};
+
 const question: QuestionCard = {
   freeText: {
     enabled: true,
@@ -83,6 +100,7 @@ test('worker execution keeps model input separate from server-owned identity and
           productUsageTaskId: 'usage-task-1',
           quoteId: 'quote-1',
         },
+        boundedExecution,
         modelInput: {
           scope: 'store.current',
           workspaceId: 'forged-workspace',
@@ -108,6 +126,7 @@ test('worker execution keeps model input separate from server-owned identity and
           productUsageTaskId: 'usage-task-1',
           quoteId: 'quote-1',
         },
+        boundedExecution,
         correlationId: workerContext.correlationId,
         idempotencyKey: 'primitive-call-1',
         observability,
@@ -255,6 +274,37 @@ test('invalid server envelope is a retry-safe request rejection', async () => {
     }),
     (error: unknown) =>
       error instanceof AgentPrimitiveRequestError && error.status === 400,
+  );
+  assert.deepEqual(calls, []);
+});
+
+test('invalid bounded execution is rejected before runtime dispatch', async () => {
+  const { calls, module } = fixture();
+
+  await assert.rejects(
+    module.execute({
+      context: workerContext,
+      idempotencyKey: 'primitive-call-invalid-bounds',
+      input: {
+        action: 'execute',
+        payload: {
+          boundedExecution: {
+            ...boundedExecution,
+            maxIterations: 'unset',
+          },
+          modelInput: {
+            instruction: 'Shorten it.',
+            target_ref: 'content-package-1@revision-2',
+          },
+          observability,
+          primitiveId: 'revise',
+        },
+      },
+      store: {} as FoundationStore,
+    }),
+    (error: unknown) =>
+      error instanceof AgentPrimitiveRequestError &&
+      error.message === 'Agent primitive bounded execution context is invalid.',
   );
   assert.deepEqual(calls, []);
 });
