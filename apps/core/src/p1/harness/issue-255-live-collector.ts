@@ -149,7 +149,6 @@ export async function collectIssue255LiveAnchors(input: {
   runNonce: string;
 }) {
   const runNonce = z.string().trim().min(1).parse(input.runNonce);
-  await input.receipts.assertAuthorizationHistoryEmpty();
   const recordedSamples = assertIssue255RecordedMatrix(
     input.recordedSamples,
   );
@@ -172,6 +171,12 @@ export async function collectIssue255LiveAnchors(input: {
   );
   const pendingPath = `${input.manifestPath}.pending`;
   await reserveManifestPaths(input.manifestPath, pendingPath);
+  try {
+    await input.receipts.claimFreshLiveRunOwner(runNonce);
+  } catch (error) {
+    await unlink(pendingPath);
+    throw error;
+  }
   const workspaceId =
     `issue-255-live-${hash(runNonce).slice(0, 24)}`;
   const manifestSamples: Issue255LiveManifest['samples'] = [];

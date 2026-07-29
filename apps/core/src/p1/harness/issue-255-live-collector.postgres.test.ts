@@ -48,6 +48,55 @@ test(
       await foundation.migrate();
       await receipts.migrate();
       const recordedSamples = await runIssue255RecordedCalibration();
+      const competingPool = new Pool({ connectionString, max: 4 });
+      try {
+        let firstStartupExecutorCalls = 0;
+        let secondStartupExecutorCalls = 0;
+        const startupResults = await Promise.allSettled([
+          collectIssue255LiveAnchors({
+            database: pool,
+            executors: collisionGuardExecutors(() => {
+              firstStartupExecutorCalls += 1;
+            }),
+            foundation,
+            manifestPath: join(directory, 'startup-first.json'),
+            providerCapMicros: 5_000_000,
+            recordedSamples,
+            receipts,
+            runNonce: `${runNonce}-startup-first`,
+          }),
+          collectIssue255LiveAnchors({
+            database: competingPool,
+            executors: collisionGuardExecutors(() => {
+              secondStartupExecutorCalls += 1;
+            }),
+            foundation: new PostgresFoundationRepository(competingPool),
+            manifestPath: join(directory, 'startup-second.json'),
+            providerCapMicros: 5_000_000,
+            recordedSamples,
+            receipts: new PostgresIssue255LiveReceiptRepository(
+              competingPool,
+            ),
+            runNonce: `${runNonce}-startup-second`,
+          }),
+        ]);
+        assert.deepEqual(
+          [firstStartupExecutorCalls, secondStartupExecutorCalls].sort(),
+          [0, 1],
+        );
+        assert.equal(
+          startupResults.filter(
+            (result) =>
+              result.status === 'rejected' &&
+              result.reason instanceof Error &&
+              /live run owner/u.test(result.reason.message),
+          ).length,
+          1,
+        );
+      } finally {
+        await competingPool.end();
+      }
+      await pool.query('DELETE FROM issue255_live_run_owners');
       let blockedExecutorCalls = 0;
       const blockedExecutors = collisionGuardExecutors(() => {
         blockedExecutorCalls += 1;
@@ -184,6 +233,7 @@ test(
         [rejectedRunNonce, rejectedWorkspaceId],
       );
       assert.equal(rejectedResidue.rows[0]?.count, 0);
+      await pool.query('DELETE FROM issue255_live_run_owners');
       blockedExecutorCalls = 0;
 
       const tuziOptions = {
@@ -361,6 +411,13 @@ test(
         [runNonce],
       );
       assert.equal(durableHistory.rows[0]?.count, 3);
+      const durableRunOwner = await pool.query<{ count: number }>(
+        `SELECT COUNT(*)::int AS count
+           FROM issue255_live_run_owners
+          WHERE run_nonce = $1`,
+        [runNonce],
+      );
+      assert.equal(durableRunOwner.rows[0]?.count, 1);
       const tamperedPath = join(directory, 'tampered.json');
       const tamperedManifest = JSON.parse(
         await readFile(manifestPath, 'utf8'),
@@ -479,6 +536,7 @@ test(
         'DELETE FROM issue255_live_generation_authorizations WHERE run_nonce LIKE $1',
         [`${runNonce}%`],
       );
+      await pool.query('DELETE FROM issue255_live_run_owners');
       await pool.query('DELETE FROM workspaces WHERE id IN ($1, $2, $3)', [
         workspaceId,
         rerunWorkspaceId,

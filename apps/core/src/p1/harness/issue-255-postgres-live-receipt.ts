@@ -259,6 +259,14 @@ export class PostgresIssue255LiveReceiptRepository {
           ADD COLUMN IF NOT EXISTS evidence_envelope_digest text
       `);
       await client.query(`
+        CREATE TABLE IF NOT EXISTS issue255_live_run_owners (
+          singleton_key boolean PRIMARY KEY DEFAULT true
+            CHECK (singleton_key),
+          run_nonce text NOT NULL UNIQUE,
+          created_at timestamptz NOT NULL DEFAULT now()
+        )
+      `);
+      await client.query(`
         DO $issue255$
         BEGIN
           IF EXISTS (
@@ -354,9 +362,10 @@ export class PostgresIssue255LiveReceiptRepository {
     return result.rows.map(receiptFromRow);
   }
 
-  async assertAuthorizationHistoryEmpty() {
+  async claimFreshLiveRunOwner(runNonce: string) {
+    const parsedRunNonce = z.string().trim().min(1).parse(runNonce);
     return this.locked(
-      'issue255-live-authorization-empty-v1',
+      'issue255-live-run-owner-v1',
       async (client) => {
         const result = await client.query<{ count: string }>(
           `SELECT COUNT(*)::bigint AS count
@@ -365,6 +374,21 @@ export class PostgresIssue255LiveReceiptRepository {
         if (Number(result.rows[0]?.count ?? 0) !== 0) {
           throw new Error(
             'Issue 255 live collector requires empty authorization history before starting.',
+          );
+        }
+        const owner = await client.query(
+          `INSERT INTO issue255_live_run_owners (
+             singleton_key,
+             run_nonce
+           )
+           VALUES (true, $1)
+           ON CONFLICT DO NOTHING
+           RETURNING run_nonce`,
+          [parsedRunNonce],
+        );
+        if (!owner.rows[0]) {
+          throw new Error(
+            'Issue 255 live run owner is already durably claimed.',
           );
         }
       },
