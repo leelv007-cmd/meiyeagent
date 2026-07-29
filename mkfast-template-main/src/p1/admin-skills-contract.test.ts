@@ -51,6 +51,12 @@ test('admin Skill writes require a real pinned prompt reference', () => {
       },
     })
   );
+  for (const promptReference of [null, 'pinned', 42]) {
+    assert.throws(
+      () => assertReferenceOnlySkillPayload({ promptReference }),
+      /固定引用/u
+    );
+  }
 });
 
 test('admin Skill results omit new and legacy prompt content fields', () => {

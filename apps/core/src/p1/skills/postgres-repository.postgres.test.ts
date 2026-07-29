@@ -67,13 +67,13 @@ test(
       evalRunId: 'eval-postgres',
       instruction: 'Use the declared fact scope.',
       manifest: {
+        'allowed-tools': 'tool.fact.read',
         description:
           'Uses a declared fact scope. Use in PostgreSQL persistence tests.',
         name: 'postgres-skill',
       },
       packagePaths: ['SKILL.md'],
       governance: {
-        allowedTools: ['tool.fact.read'],
         budget: {
           maxChildEffects: 1,
           maxCostCents: 1,
@@ -370,7 +370,6 @@ test(
       evalRunId: null,
       formatVersion: 2,
       governance: {
-        allowedTools: [],
         budget: {
           maxChildEffects: 0,
           maxCostCents: 0,
@@ -885,13 +884,13 @@ test(
         evalRunId: 'eval-invalid-output',
         instruction: 'Validate output before any side effect.',
         manifest: {
+          'allowed-tools': 'tool.fact.read',
           description:
             'Validates generated output. Use in persistence boundary tests.',
           name: 'invalid-output',
         },
         packagePaths: ['SKILL.md'],
         governance: {
-          allowedTools: ['tool.fact.read'],
           budget: {
             maxChildEffects: 1,
             maxCostCents: 1,
@@ -1077,7 +1076,6 @@ test(
       name: `postgres-journey-${suffix}`,
     };
     const governance = {
-      allowedTools: [],
       budget: {
         maxChildEffects: 0,
         maxCostCents: 0,

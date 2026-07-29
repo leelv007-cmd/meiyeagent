@@ -150,7 +150,7 @@ export function validateSkillFrontmatter(value: unknown): SkillFrontmatter {
     );
   }
   const description = requiredString(value.description, 'description');
-  if (description.length > 1024) {
+  if ([...description].length > 1024) {
     throw new Error('Skill frontmatter description exceeds 1024 characters.');
   }
   const optional = (field: 'license' | 'allowed-tools' | 'compatibility') => {
@@ -159,7 +159,10 @@ export function validateSkillFrontmatter(value: unknown): SkillFrontmatter {
     if (typeof candidate !== 'string') {
       throw new Error(`Skill frontmatter ${field} must be a string.`);
     }
-    if (field === 'compatibility' && (!candidate || candidate.length > 500)) {
+    if (
+      field === 'compatibility' &&
+      (!candidate || [...candidate].length > 500)
+    ) {
       throw new Error(
         'Skill frontmatter compatibility must contain 1-500 characters.',
       );
@@ -203,18 +206,12 @@ export function validateSkillFrontmatter(value: unknown): SkillFrontmatter {
 
 export function validateSkillPermissionAuthority(
   frontmatter: SkillFrontmatter,
-  sidecarAllowedTools: readonly string[],
 ) {
   const allowedTools = frontmatter['allowed-tools']
     ?.split(/\s+/u)
     .filter(Boolean) ?? [];
-  const normalizedSidecar = sidecarAllowedTools.map((tool) => tool.trim());
   if (
-    normalizedSidecar.some((tool) => !tool) ||
-    new Set(allowedTools).size !== allowedTools.length ||
-    new Set(normalizedSidecar).size !== normalizedSidecar.length ||
-    [...allowedTools].sort().join('\0') !==
-      [...normalizedSidecar].sort().join('\0')
+    new Set(allowedTools).size !== allowedTools.length
   ) {
     throw new Error(
       'Skill frontmatter allowed-tools is the single permission authority.',

@@ -62,6 +62,11 @@ function visitPromptFields(
   }
   if (!isRecord(value)) return;
   for (const [key, nested] of Object.entries(value)) {
+    if (key === 'promptReference' && !isRecord(nested)) {
+      throw new Error(
+        'Skill promptReference 必须使用可解析的 name、version 与 64 位 contentHash 固定引用。'
+      );
+    }
     if (PROMPT_FIELDS.has(key) && isRecord(nested)) {
       inspectPrompt(key, nested);
     }

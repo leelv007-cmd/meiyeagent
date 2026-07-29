@@ -33,8 +33,13 @@ export interface SkillCatalog {
 
 export type SkillRevisionManifest = SkillFrontmatter;
 
+export interface LegacySkillGovernanceSidecar
+  extends SkillGovernanceSidecar {
+  allowedTools: string[];
+}
+
 export interface LegacySkillRevisionManifest
-  extends Omit<SkillGovernanceSidecar, 'workflowRevisionRefs'> {
+  extends Omit<LegacySkillGovernanceSidecar, 'workflowRevisionRefs'> {
   evalSuiteRef: string;
   compatibility: {
     workflowRevisionRefs: string[];
@@ -45,7 +50,6 @@ export interface SkillGovernanceSidecar {
   inputSchemaRef: string;
   outputSchemaRef: string;
   contextScopes: string[];
-  allowedTools: string[];
   sideEffectClass: 'none' | 'read' | 'bounded_write';
   requiredModelCapabilities: string[];
   executionMode: SkillExecutionMode;
@@ -83,13 +87,15 @@ export class SkillPromptAuthorityUnavailableError extends Error {
   }
 }
 
-interface SkillRevisionBase {
+interface SkillRevisionBase<
+  Governance extends SkillGovernanceSidecar,
+> {
   skillId: string;
   revision: number;
   skillRevisionRef: string;
   contentHash: string;
   instruction: string;
-  governance: SkillGovernanceSidecar;
+  governance: Governance;
   prompt: SkillPromptSnapshot;
   status: 'draft' | 'accepted_frozen';
   createdAt: string;
@@ -99,19 +105,17 @@ interface SkillRevisionBase {
   evalRunId: string | null;
 }
 
-export type SkillRevision = SkillRevisionBase &
-  (
-    | {
-        formatVersion: 2;
-        manifest: SkillRevisionManifest;
-        packagePaths: string[];
-      }
-    | {
-        formatVersion: 1;
-        manifest: SkillRevisionManifest | LegacySkillRevisionManifest;
-        packagePaths?: string[];
-      }
-  );
+export type SkillRevision =
+  | (SkillRevisionBase<SkillGovernanceSidecar> & {
+      formatVersion: 2;
+      manifest: SkillRevisionManifest;
+      packagePaths: string[];
+    })
+  | (SkillRevisionBase<LegacySkillGovernanceSidecar> & {
+      formatVersion: 1;
+      manifest: SkillRevisionManifest | LegacySkillRevisionManifest;
+      packagePaths?: string[];
+    });
 
 export interface SkillBinding {
   bindingId: string;

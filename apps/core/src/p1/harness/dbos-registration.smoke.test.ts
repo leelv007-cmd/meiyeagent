@@ -1853,7 +1853,6 @@ function smokeSkillRevision(
     },
     packagePaths: ['SKILL.md'],
     governance: {
-      allowedTools: [],
       budget: {
         maxChildEffects: 0,
         maxCostCents: 0,

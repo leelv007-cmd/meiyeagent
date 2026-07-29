@@ -83,6 +83,26 @@ function normalizeTriggerCondition(
   };
 }
 
+type SkillDraftRevisionInput = {
+  skillId: string;
+  expectedRevision: number | null;
+  actorId: string;
+  instruction: string;
+  manifest: SkillRevisionManifest;
+  governance: SkillGovernanceSidecar;
+  promptReference: SkillPromptReference;
+  packagePaths?: string[];
+};
+
+type PreparedSkillDraft = {
+  actorId: string;
+  governance: SkillGovernanceSidecar;
+  instruction: string;
+  manifest: SkillRevisionManifest;
+  packagePaths: string[];
+  prompt: SkillPromptSnapshot;
+};
+
 export class SkillService {
   constructor(
     private readonly repository: SkillRepository,
@@ -113,25 +133,41 @@ export class SkillService {
     });
   }
 
-  async draftRevision(input: {
-    skillId: string;
-    expectedRevision: number | null;
-    actorId: string;
-    instruction: string;
-    manifest: SkillRevisionManifest;
-    governance: SkillGovernanceSidecar;
-    promptReference: SkillPromptReference;
-    packagePaths?: string[];
-  }) {
+  async defineCatalogAndDraftRevision(
+    input: SkillDraftRevisionInput & {
+      name: string;
+      presentationPolicy: SkillCatalog['presentationPolicy'];
+    },
+  ) {
+    const prepared = await this.prepareSkillDraft(input);
+    const catalog = await this.defineCatalogEntry({
+      actorId: input.actorId,
+      name: input.name,
+      presentationPolicy: input.presentationPolicy,
+      skillId: input.skillId,
+    });
+    return {
+      catalog,
+      revision: await this.persistSkillDraft(input, catalog, prepared),
+    };
+  }
+
+  async draftRevision(input: SkillDraftRevisionInput) {
+    const prepared = await this.prepareSkillDraft(input);
     const catalog = await this.repository.getCatalog(input.skillId);
     if (!catalog) {
       throw new P1DomainError('NOT_FOUND', 'Skill 目录项不存在。');
     }
+    return this.persistSkillDraft(input, catalog, prepared);
+  }
+
+  private async prepareSkillDraft(
+    input: SkillDraftRevisionInput,
+  ): Promise<PreparedSkillDraft> {
     const manifest = validateSkillFrontmatter(input.manifest);
     let governance: SkillGovernanceSidecar;
     try {
       governance = parseSkillGovernance(input.governance);
-      validateSkillPermissionAuthority(manifest, governance.allowedTools);
     } catch (error) {
       fail(
         `Skill governance sidecar is invalid: ${
@@ -144,6 +180,29 @@ export class SkillService {
     );
     const instruction = required(input.instruction, 'Skill instruction');
     const prompt = await this.capturePromptSnapshot(input.promptReference);
+    return {
+      actorId: required(input.actorId, 'Actor ID'),
+      governance,
+      instruction,
+      manifest,
+      packagePaths,
+      prompt,
+    };
+  }
+
+  private persistSkillDraft(
+    input: SkillDraftRevisionInput,
+    catalog: SkillCatalog,
+    prepared: PreparedSkillDraft,
+  ) {
+    const {
+      actorId,
+      governance,
+      instruction,
+      manifest,
+      packagePaths,
+      prompt,
+    } = prepared;
     const revision = (input.expectedRevision ?? 0) + 1;
     const record: SkillRevision = {
       formatVersion: 2,
@@ -166,7 +225,7 @@ export class SkillService {
       prompt,
       status: 'draft',
       createdAt: this.now(),
-      createdBy: required(input.actorId, 'Actor ID'),
+      createdBy: actorId,
       acceptedAt: null,
       acceptedBy: null,
       evalRunId: null,
@@ -1011,10 +1070,7 @@ function validateChildEffect(
   const allowedTools =
     revision.formatVersion === 1
       ? revision.governance.allowedTools
-      : validateSkillPermissionAuthority(
-          revision.manifest,
-          revision.governance.allowedTools,
-        );
+      : validateSkillPermissionAuthority(revision.manifest);
   if (!allowedTools.includes(call.toolId)) {
     fail(`Tool "${call.toolId}" is outside the Skill allowlist.`);
   }

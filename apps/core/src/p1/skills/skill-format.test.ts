@@ -126,6 +126,37 @@ metadata:
   );
 });
 
+test('Skill text limits count Unicode code points instead of UTF-16 code units', () => {
+  const description = '💇'.repeat(600);
+  const compatibility = '✨'.repeat(300);
+  const imported = importSkillPackage({
+    directoryName: 'unicode-length',
+    files: {
+      'SKILL.md': `---
+name: unicode-length
+description: ${description}
+compatibility: ${compatibility}
+---
+
+Preserve astral Unicode text within the official character limits.
+`,
+    },
+  });
+
+  assert.equal([...imported.frontmatter.description].length, 600);
+  assert.equal(
+    [...(imported.frontmatter.compatibility ?? '')].length,
+    300,
+  );
+  assert.deepEqual(
+    importSkillPackage({
+      directoryName: imported.directoryName,
+      files: exportSkillPackage(imported),
+    }),
+    imported,
+  );
+});
+
 test('standard SKILL.md and assets round-trip without platform conversion', () => {
   const logo = new Uint8Array([0, 1, 2, 255]);
   const imported = importSkillPackage({

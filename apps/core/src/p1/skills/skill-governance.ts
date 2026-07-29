@@ -1,14 +1,16 @@
 import { resolveSkillSchema } from '@meiye/contracts';
 import { z } from 'zod';
 
-import type { SkillGovernanceSidecar } from './types.js';
+import type {
+  LegacySkillGovernanceSidecar,
+  SkillGovernanceSidecar,
+} from './types.js';
 
 const skillGovernanceSchema = z
   .object({
     inputSchemaRef: z.string().trim().min(1),
     outputSchemaRef: z.string().trim().min(1),
     contextScopes: z.array(z.string()),
-    allowedTools: z.array(z.string()),
     sideEffectClass: z.enum(['none', 'read', 'bounded_write']),
     requiredModelCapabilities: z.array(z.string()),
     executionMode: z.enum([
@@ -28,10 +30,27 @@ const skillGovernanceSchema = z
   })
   .strict();
 
+const legacySkillGovernanceSchema = skillGovernanceSchema
+  .extend({
+    allowedTools: z.array(z.string()),
+  })
+  .strict();
+
 export function parseSkillGovernance(
   value: unknown,
 ): SkillGovernanceSidecar {
-  const governance = skillGovernanceSchema.parse(value);
+  return validateSchemaRefs(skillGovernanceSchema.parse(value));
+}
+
+export function parseLegacySkillGovernance(
+  value: unknown,
+): LegacySkillGovernanceSidecar {
+  return validateSchemaRefs(legacySkillGovernanceSchema.parse(value));
+}
+
+function validateSchemaRefs<
+  Governance extends SkillGovernanceSidecar,
+>(governance: Governance): Governance {
   if (!governance.inputSchemaRef.startsWith('skill-input.')) {
     throw new Error(
       'Skill governance inputSchemaRef must reference a skill-input schema.',

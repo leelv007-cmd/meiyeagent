@@ -85,6 +85,75 @@ test('the real Foundation entry admits a revision only through registered schema
   );
 });
 
+test('the application entry releases a rejected prompt claim for deterministic retry without writes', async () => {
+  const skillRepository = new MemorySkillRepository();
+  let promptCaptures = 0;
+  const skillService = new SkillService(skillRepository, () => NOW, {
+    async capture(reference) {
+      promptCaptures += 1;
+      const content = 'Different authority content.';
+      return {
+        ...reference,
+        content,
+        contentHash: createHash('sha256').update(content).digest('hex'),
+        isFallback: false,
+        label: 'production',
+        source: 'langfuse',
+      };
+    },
+  });
+  const foundationRepository = new MemoryFoundationRepository();
+  const application = new P1ApplicationService(foundationRepository, {
+    operations: [new SkillFoundationModule(skillService)],
+  });
+  const context = {
+    actor: 'admin' as const,
+    correlationId: 'corr-rejected-prompt-retry',
+    userId: 'operator-rejected-prompt-retry',
+    workspaceId: 'workspace-rejected-prompt-retry',
+  };
+  const input = {
+    action: 'skill_define',
+    payload: {
+      expectedRevision: null,
+      frontmatter: manifest('rejected-prompt-retry'),
+      governance: governance(),
+      instruction: 'Use only the pinned prompt.',
+      name: 'Rejected prompt retry',
+      presentationPolicy: 'backend_only',
+      promptReference: {
+        contentHash: 'c'.repeat(64),
+        name: 'skills/rejected-prompt-retry',
+        version: '1',
+      },
+      skillId: 'skill.rejected-prompt-retry',
+    },
+  };
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await assert.rejects(
+      application.executeModule(
+        context,
+        'skills',
+        input,
+        'rejected-prompt-retry',
+      ),
+      /does not match its pinned reference/u,
+    );
+  }
+
+  assert.equal(promptCaptures, 2);
+  assert.equal(
+    await skillRepository.getCatalog('skill.rejected-prompt-retry'),
+    null,
+  );
+  assert.equal(
+    await skillRepository.getRevisionHead('skill.rejected-prompt-retry'),
+    null,
+  );
+  assert.deepEqual(await application.listCommandAudits(context), []);
+});
+
 test('available-but-unbound: an accepted Skill does not enter a stage allowlist', async () => {
   const { service, revision } = await acceptedSkill('available-unbound');
 
@@ -412,7 +481,6 @@ async function acceptedSkill(
     expectedRevision: null,
     governance: {
       ...governance(),
-      allowedTools: ['tool.fact.read'],
       budget: {
         maxChildEffects: 1,
         maxCostCents: 1,
@@ -466,7 +534,6 @@ function manifest(name: string) {
 
 function governance() {
   return {
-    allowedTools: [],
     budget: {
       maxChildEffects: 0,
       maxCostCents: 0,

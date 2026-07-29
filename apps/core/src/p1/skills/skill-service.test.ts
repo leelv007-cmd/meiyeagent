@@ -22,6 +22,7 @@ import {
   StaticSkillToolExecutionAuthorizer,
   type SkillBinding,
   type SkillChildEffectExecutor,
+  type SkillGovernanceSidecar,
   type SkillInvocationExecutor,
   type SkillInvocationResultPublisher,
 } from './index.js';
@@ -1553,6 +1554,64 @@ test('skill_define rejects inline prompt content before a revision write', async
   assert.equal(promptCaptureCount, 0);
 });
 
+test('skill_define resolves the prompt authority before creating its catalog', async () => {
+  const repository = new MemorySkillRepository();
+  const service = new SkillService(repository, () => NOW, {
+    async capture(reference) {
+      return {
+        ...reference,
+        content: 'Different authority content.',
+        contentHash: sha256('Different authority content.'),
+        isFallback: false,
+        label: 'production',
+        source: 'langfuse',
+      };
+    },
+  });
+  const module = new SkillFoundationModule(service);
+
+  await assert.rejects(
+    module.execute({
+      context: {
+        actor: 'admin',
+        correlationId: 'corr-prompt-authority-rejected',
+        userId: 'operator-prompt-authority-rejected',
+        workspaceId: 'workspace-prompt-authority-rejected',
+      },
+      idempotencyKey: 'skill-define-prompt-authority-rejected',
+      input: {
+        action: 'skill_define',
+        payload: {
+          expectedRevision: null,
+          frontmatter: {
+            description: 'Rejects a prompt authority mismatch before writing.',
+            name: 'prompt-authority-rejected',
+          },
+          governance: governance(),
+          instruction: 'Use only the pinned prompt.',
+          name: 'Prompt authority rejection',
+          presentationPolicy: 'backend_only',
+          promptReference: {
+            contentHash: 'c'.repeat(64),
+            name: 'harness/intent-naming',
+            version: '99',
+          },
+          skillId: 'skill.prompt-authority-rejected',
+        },
+      },
+    }),
+    /does not match its pinned reference/u,
+  );
+  assert.equal(
+    await repository.getCatalog('skill.prompt-authority-rejected'),
+    null,
+  );
+  assert.equal(
+    await repository.getRevisionHead('skill.prompt-authority-rejected'),
+    null,
+  );
+});
+
 test('draftRevision normalizes instruction before persistence and content hashing', async () => {
   const repository = new MemorySkillRepository();
   const promptContent = 'Trusted prompt snapshot from Langfuse.';
@@ -1643,7 +1702,6 @@ test('skill_define separates frontmatter, governance, and trusted prompt fallbac
         },
         governance: {
           ...governance(),
-          allowedTools: ['read_context', 'check'],
         },
         instruction: 'Use grounded daily context.',
         name: 'Daily beauty context',
@@ -1675,7 +1733,6 @@ test('skill_define separates frontmatter, governance, and trusted prompt fallbac
   });
   assert.deepEqual(stored?.governance, {
     ...governance(),
-    allowedTools: ['read_context', 'check'],
   });
   assert.equal(stored?.prompt.content, promptContent);
   assert.equal(
@@ -1684,7 +1741,7 @@ test('skill_define separates frontmatter, governance, and trusted prompt fallbac
   );
 });
 
-test('skill revision rejects divergent frontmatter and sidecar tool permissions', async () => {
+test('skill revision rejects any duplicate allowedTools permission authority in the v2 sidecar', async () => {
   const repository = new MemorySkillRepository();
   const promptContent = 'Trusted prompt snapshot from Langfuse.';
   const service = new SkillService(repository, () => NOW, {
@@ -1713,8 +1770,8 @@ test('skill revision rejects divergent frontmatter and sidecar tool permissions'
       expectedRevision: null,
       governance: {
         ...governance(),
-        allowedTools: ['check'],
-      },
+        allowedTools: ['read_context'],
+      } as unknown as SkillGovernanceSidecar,
       instruction: 'Use only the official Skill tool permission.',
       manifest: {
         'allowed-tools': 'read_context',
@@ -1728,7 +1785,7 @@ test('skill revision rejects divergent frontmatter and sidecar tool permissions'
       },
       skillId: 'skill.permission-authority',
     }),
-    /allowed-tools is the single permission authority/u,
+    /governance sidecar is invalid/u,
   );
   assert.equal(
     await repository.getRevisionHead('skill.permission-authority'),
@@ -2407,7 +2464,6 @@ test('rollback rejects the same revision and supersedes a binding on the same wo
 
 function governance() {
   return {
-    allowedTools: [],
     budget: {
       maxChildEffects: 2,
       maxCostCents: 5,
@@ -2601,7 +2657,6 @@ async function createAcceptedEffectSkill(
     expectedRevision: null,
     governance: {
       ...governance(),
-      allowedTools: ['tool.fact.read', 'tool.quality.score'],
       budget: {
         maxChildEffects: 2,
         maxCostCents: 4,

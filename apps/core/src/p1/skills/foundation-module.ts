@@ -3,17 +3,12 @@ import { HARNESS_STAGES, type EvalRun } from '@meiye/contracts';
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
 import type { P1OperationModule } from '../foundation/ports.js';
 import { SKILL_BINDING_MODES } from './types.js';
-import {
-  validateSkillFrontmatter,
-  validateSkillPackagePaths,
-  validateSkillPermissionAuthority,
-} from './skill-format.js';
-import { parseSkillGovernance } from './skill-governance.js';
 import type {
   SkillCatalog,
   SkillExecutionMode,
   SkillGovernanceSidecar,
   SkillRevision,
+  SkillRevisionManifest,
 } from './types.js';
 import { SkillService } from './service.js';
 
@@ -194,26 +189,10 @@ export class SkillFoundationModule implements P1OperationModule {
         ) {
           fail('Skill prompt name 与 version 必须是可解析的固定引用。');
         }
-        const manifest = validateSkillFrontmatter(value.frontmatter);
-        let governance: SkillGovernanceSidecar;
-        try {
-          governance = parseSkillGovernance(value.governance);
-          validateSkillPermissionAuthority(
-            manifest,
-            governance.allowedTools,
-          );
-        } catch (error) {
-          fail(
-            `Skill governance sidecar is invalid: ${
-              error instanceof Error ? error.message : 'unknown error'
-            }`,
-          );
-        }
-        const packagePaths = validateSkillPackagePaths(
+        const packagePaths =
           value.packagePaths === undefined
             ? ['SKILL.md']
-            : stringArray(value, 'packagePaths'),
-        );
+            : stringArray(value, 'packagePaths');
         const expectedRevision = integerOrNull(
           value,
           'expectedRevision',
@@ -221,26 +200,23 @@ export class SkillFoundationModule implements P1OperationModule {
         const instruction = text(value, 'instruction');
         const skillId = text(value, 'skillId');
         const catalogName = text(value, 'name');
-        const catalog = await this.service.defineCatalogEntry({
+        const { catalog, revision } =
+          await this.service.defineCatalogAndDraftRevision({
           skillId,
           name: catalogName,
           presentationPolicy,
           actorId: args.context.userId,
-        });
-        const revision = await this.service.draftRevision({
-          skillId: catalog.skillId,
           expectedRevision,
-          actorId: args.context.userId,
           instruction,
-          manifest,
-          governance,
+          manifest: value.frontmatter as SkillRevisionManifest,
+          governance: value.governance as SkillGovernanceSidecar,
           promptReference: {
             contentHash,
             name: promptName,
             version: promptVersion,
           },
           packagePaths,
-        });
+          });
         return { catalog, revision: publicRevision(revision) };
       }
       case 'skill_accept':

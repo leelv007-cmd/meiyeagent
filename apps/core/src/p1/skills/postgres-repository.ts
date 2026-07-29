@@ -5,11 +5,11 @@ import { z } from 'zod';
 
 import { P1DomainError } from '../foundation/domain.js';
 import type { SkillRepository } from './repository.js';
+import { validateSkillFrontmatter } from './skill-format.js';
 import {
-  validateSkillFrontmatter,
-  validateSkillPermissionAuthority,
-} from './skill-format.js';
-import { parseSkillGovernance } from './skill-governance.js';
+  parseLegacySkillGovernance,
+  parseSkillGovernance,
+} from './skill-governance.js';
 import type {
   AuditedSkillBinding,
   LegacySkillRevisionManifest,
@@ -803,7 +803,6 @@ function cloneRevisionRow(row: RevisionRow): SkillRevision {
       const governance = parseSkillGovernance(
         structuredClone(row.governance_sidecar),
       );
-      validateSkillPermissionAuthority(manifest, governance.allowedTools);
       return {
         ...revisionPayloadV2Schema.parse(structuredClone(row.payload)),
         manifest,
@@ -845,10 +844,10 @@ function normalizeLegacyRevision(
   const governance =
     legacy.governance
       ? decodePersistedRevision(() =>
-          parseSkillGovernance(legacy.governance),
+          parseLegacySkillGovernance(legacy.governance),
         )
       : decodePersistedRevision(() =>
-          parseSkillGovernance(
+          parseLegacySkillGovernance(
             governanceFromLegacyManifest(legacyManifest),
           ),
         );
