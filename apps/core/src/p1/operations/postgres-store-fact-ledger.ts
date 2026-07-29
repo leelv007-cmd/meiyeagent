@@ -8,7 +8,9 @@ import type {
 import {
   type ActiveStoreFactQuery,
   type AppendStoreFactInput,
+  isLegacyPromotionWindowCandidate,
   isStoreFactActive,
+  type LegacyPromotionWindowCandidateQuery,
   type StoreFactLedger,
   StoreFactRevisionConflictError,
   storeFactAppliesTo,
@@ -321,6 +323,33 @@ export class PostgresStoreFactLedger
           storeFactAppliesTo(fact.scope, input.scope),
       )
       .sort((left, right) => left.factId.localeCompare(right.factId));
+  }
+
+  async listLegacyPromotionWindowCandidates(
+    input: LegacyPromotionWindowCandidateQuery,
+  ) {
+    const result = await this.pool.query<StoreFactRow>(
+      `SELECT revision.payload
+         FROM p1_store_fact_heads head
+         JOIN p1_store_fact_revisions revision
+           ON revision.workspace_id = head.workspace_id
+          AND revision.fact_id = head.fact_id
+          AND revision.revision = head.revision
+        WHERE head.workspace_id = $1
+          AND revision.payload->>'kind' = ANY($2::text[])
+          AND revision.expires_at IS NULL
+          AND revision.payload->>'revisionKind' IS DISTINCT FROM 'revocation'
+        ORDER BY head.fact_id`,
+      [input.workspaceId, ['group_buy', 'discount']],
+    );
+    return result.rows
+      .map((row) => storeFactSchema.parse(row.payload))
+      .filter(
+        (fact) =>
+          isLegacyPromotionWindowCandidate(fact) &&
+          (input.scope === undefined ||
+            storeFactAppliesTo(fact.scope, input.scope)),
+      );
   }
 
   async claimBatch(input: {

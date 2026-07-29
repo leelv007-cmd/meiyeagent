@@ -34,6 +34,11 @@ export interface ActiveStoreFactQuery {
   at: string;
 }
 
+export interface LegacyPromotionWindowCandidateQuery {
+  workspaceId: string;
+  scope?: StoreFactApplicability;
+}
+
 export type ExpiredStoreFact = StoreFact & { expiresAt: string };
 
 export interface StoreFactLedger {
@@ -42,6 +47,9 @@ export interface StoreFactLedger {
   contextRevision(input: ActiveStoreFactQuery): Promise<string>;
   history(workspaceId: string, factId: string): Promise<StoreFact[]>;
   listActive(input: ActiveStoreFactQuery): Promise<StoreFact[]>;
+  listLegacyPromotionWindowCandidates(
+    input: LegacyPromotionWindowCandidateQuery,
+  ): Promise<StoreFact[]>;
   /**
    * Reads the named heads and runs `action` with them while no append to those
    * facts may commit. A caller that has to act on a head it just read — write
@@ -111,6 +119,14 @@ export function isStoreFactActive(fact: StoreFact, at: string) {
       fact.expiresAt === null
     ) &&
     !isStoreFactExpired(fact, at)
+  );
+}
+
+export function isLegacyPromotionWindowCandidate(fact: StoreFact) {
+  return (
+    (fact.kind === 'group_buy' || fact.kind === 'discount') &&
+    fact.expiresAt === null &&
+    fact.revisionKind !== 'revocation'
   );
 }
 
@@ -212,6 +228,26 @@ export class MemoryStoreFactLedger implements StoreFactLedger {
     }
     return structuredClone(
       active.sort((left, right) => left.factId.localeCompare(right.factId)),
+    );
+  }
+
+  async listLegacyPromotionWindowCandidates(
+    input: LegacyPromotionWindowCandidateQuery,
+  ) {
+    const candidates: StoreFact[] = [];
+    for (const history of this.revisions.values()) {
+      const head = history.at(-1);
+      if (
+        head?.workspaceId === input.workspaceId &&
+        isLegacyPromotionWindowCandidate(head) &&
+        (input.scope === undefined ||
+          storeFactAppliesTo(head.scope, input.scope))
+      ) {
+        candidates.push(head);
+      }
+    }
+    return structuredClone(
+      candidates.sort((left, right) => left.factId.localeCompare(right.factId)),
     );
   }
 
