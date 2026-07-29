@@ -114,14 +114,6 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
           },
         };
       },
-      async setRendererCapability(workspaceId, taskId, capability) {
-        interactionCalls.push([
-          'renderer',
-          workspaceId,
-          taskId,
-          capability,
-        ]);
-      },
       async setEditing(workspaceId, taskId, editing) {
         interactionCalls.push(['editing', workspaceId, taskId, editing]);
       },
@@ -345,11 +337,25 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
   });
   assert.equal(editing.status, 204);
   assert.deepEqual(interactionCalls, [
-    ['renderer', 'workspace-1', 'task-http-1', 'available'],
     ['read', 'workspace-1', 'task-http-1', 'conversation'],
     ['submit', 'workspace-1', interactionAnswer],
     ['editing', 'workspace-1', 'task-http-1', true],
   ]);
+  const mismatchedInteraction = await fetch(
+    `${base}/task-http-1/interaction`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        ...interactionAnswer,
+        resume: {
+          ...interactionAnswer.resume,
+          runId: 'task-http-other',
+        },
+      }),
+    },
+  );
+  assert.equal(mismatchedInteraction.status, 409);
 
   await harnessService.submit({
     ...taskRequest('task-http-legacy'),

@@ -266,6 +266,18 @@ test(
         ),
         { timeoutSeconds: null },
       );
+      assert.equal(
+        (await new PostgresHarnessStore(pool).readPending(workspaceId, runId))
+          ?.questionId,
+        timeoutRequest.requestId,
+      );
+      assert.equal(
+        await new PostgresHarnessStore(pool).readDecisionTarget(
+          workspaceId,
+          runId,
+        ),
+        null,
+      );
       assert.deepEqual(
         await timeoutService.submitSystemDefault(workspaceId, runId),
         { kind: 'held', reason: 'deadline' },

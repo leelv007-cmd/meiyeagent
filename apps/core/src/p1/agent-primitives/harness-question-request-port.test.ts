@@ -60,10 +60,7 @@ test('the production question adapter validates and durably groups the canonical
   });
 
   const result = await port.request({
-    options: question.options.map(({ description, label }) => ({
-      description,
-      label,
-    })),
+    options: question.options.map(({ label }) => ({ label })),
     question: question.question,
     serverContext,
   });
@@ -112,14 +109,18 @@ test('the production question adapter validates and durably groups the canonical
 test('the production question adapter rejects model text that differs from the canonical card', async () => {
   for (const modelInput of [
     {
+      options: question.options.map(({ label }) => ({ label })),
+      question: 'Which service should this post feature?',
+    },
+    {
+      options: [{ label: 'Legacy offer' }],
+      question: question.question,
+    },
+    {
       options: question.options.map(({ description, label }) => ({
         description,
         label,
       })),
-      question: 'Which service should this post feature?',
-    },
-    {
-      options: [{ label: 'New customer offer' }],
       question: question.question,
     },
     {

@@ -120,7 +120,6 @@ test('ask invoker carries the canonical card and frozen child axes through P1', 
             question: question.question,
             options: [
               {
-                description: 'Use the currently verified offer.',
                 label: 'Current offer',
               },
             ],

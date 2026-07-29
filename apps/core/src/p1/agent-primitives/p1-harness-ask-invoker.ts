@@ -61,10 +61,7 @@ export class P1HarnessAskInvoker {
             ...(input.question.options.length > 0
               ? {
                   options: input.question.options.map(
-                    ({ description, label }) => ({
-                      ...(description ? { description } : {}),
-                      label,
-                    }),
+                    ({ label }) => ({ label }),
                   ),
                 }
               : {}),

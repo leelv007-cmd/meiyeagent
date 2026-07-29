@@ -529,7 +529,7 @@ test('execution confirmation freezes server conditions and all three merchant ou
   );
 });
 
-test('execution semantic defaults reject unsafe or unknown server conditions', () => {
+test('execution semantic defaults stay closed until resource authority is available', () => {
   const base = {
     requestId: 'execution-safe-default',
     runId: 'run-safe-default',
@@ -562,7 +562,7 @@ test('execution semantic defaults reject unsafe or unknown server conditions', (
     },
   } as const;
 
-  assert.equal(executionConfirmationRequestSchema.safeParse(base).success, true);
+  assert.equal(executionConfirmationRequestSchema.safeParse(base).success, false);
   for (const kind of [
     'quote_threshold',
     'external_action',

@@ -609,7 +609,7 @@ function executionRequest(
         serverEvaluated: true,
       },
       timeoutPolicy:
-        options.timeoutKind === 'hold'
+        options.timeoutKind !== 'semantic_default'
           ? {
               kind: 'hold',
               reason:

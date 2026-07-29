@@ -2093,7 +2093,9 @@ if (harnessRuntimeConfig) {
   });
   harnessInteractionRegistrar = {
     async register(workspaceId, request) {
-      await harnessInteractions.request(workspaceId, request);
+      await harnessInteractions.request(workspaceId, request, {
+        rendererCapability: 'available',
+      });
     },
   };
   const boundedExecutionLimits =

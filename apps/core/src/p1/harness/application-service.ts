@@ -5,6 +5,7 @@ import type {
 } from '@meiye/contracts';
 import {
   confirmationCardTimeoutSecondsSchema,
+  harnessInteractionAnswerSchema,
   harnessDecisionSnapshotSchema,
   questionCardUnattended,
 } from '@meiye/contracts';
@@ -54,7 +55,7 @@ export interface HarnessConfirmationTimeoutReader {
 
 export type HarnessInteractionApplicationPort = Pick<
   HarnessInteractionService,
-  'readForCarrier' | 'setEditing' | 'setRendererCapability' | 'submit'
+  'readForCarrier' | 'setEditing' | 'submit'
 >;
 
 export class HarnessAccessError extends Error {
@@ -64,6 +65,16 @@ export class HarnessAccessError extends Error {
   constructor() {
     super('Harness task was not found.');
     this.name = 'HarnessAccessError';
+  }
+}
+
+export class HarnessInteractionTaskMismatchError extends Error {
+  readonly code = 'HARNESS_INTERACTION_TASK_MISMATCH';
+  readonly status = 409;
+
+  constructor() {
+    super('Harness interaction does not belong to the requested task.');
+    this.name = 'HarnessInteractionTaskMismatchError';
   }
 }
 
@@ -155,11 +166,6 @@ export class HarnessApplicationService {
   async readPendingInteraction(workspaceId: string, taskId: string) {
     await this.requireTask(workspaceId, taskId);
     if (!this.interactions) return null;
-    await this.interactions.setRendererCapability(
-      workspaceId,
-      taskId,
-      'available',
-    );
     return this.interactions.readForCarrier(
       workspaceId,
       taskId,
@@ -176,7 +182,11 @@ export class HarnessApplicationService {
     if (!this.interactions) {
       throw new Error('Harness interactions are unavailable.');
     }
-    return this.interactions.submit(workspaceId, input);
+    const answer = harnessInteractionAnswerSchema.parse(input);
+    if (answer.resume.runId !== taskId) {
+      throw new HarnessInteractionTaskMismatchError();
+    }
+    return this.interactions.submit(workspaceId, answer);
   }
 
   async setInteractionEditing(

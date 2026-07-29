@@ -347,13 +347,12 @@ export const executionConfirmationRequestSchema = z
   .strict()
   .superRefine((request, context) => {
     if (
-      request.frozen.timeoutPolicy.kind === 'semantic_default' &&
-      request.frozen.condition.kind !== 'existing_gate'
+      request.frozen.timeoutPolicy.kind === 'semantic_default'
     ) {
       context.addIssue({
         code: 'custom',
         message:
-          'Unsafe or unknown execution conditions cannot use a semantic default.',
+          'Execution semantic defaults require resource authority.',
         path: ['frozen', 'timeoutPolicy'],
       });
     }

@@ -1421,7 +1421,7 @@ export class PostgresHarnessStore
       [runtimeTaskId, options?.includeResolved === true],
     );
     return result.rows[0]
-      ? questionCardSchema.parse(result.rows[0].payload)
+      ? pendingQuestionCard(result.rows[0].payload)
       : null;
   }
 
@@ -1460,6 +1460,12 @@ export class PostgresHarnessStore
       [runtimeTaskId],
     );
     const row = result.rows[0];
+    if (
+      row &&
+      harnessInteractionRequestSchema.safeParse(row.payload).success
+    ) {
+      return null;
+    }
     const timeoutSeconds = row
       ? pendingDecisionTimeoutSeconds(row.pending_projection)
       : undefined;
@@ -3011,6 +3017,38 @@ function pendingDecisionTimeoutSeconds(value: unknown) {
     : confirmationCardTimeoutSecondsSchema.parse(
         projection.timeoutSeconds,
       );
+}
+
+function pendingQuestionCard(value: unknown): QuestionCard {
+  const legacy = questionCardSchema.safeParse(value);
+  if (legacy.success) return legacy.data;
+  const interaction = harnessInteractionRequestSchema.parse(value);
+  if (interaction.kind !== 'ask_merchant') {
+    throw new Error(
+      'Execution confirmation cannot be projected as a legacy question.',
+    );
+  }
+  const question = interaction.questions[0]!;
+  return questionCardSchema.parse({
+    questionId: interaction.requestId,
+    workflowId: interaction.runId,
+    workflowRevision: interaction.revision,
+    question: question.question,
+    options: (question.options ?? []).map((option, index) => ({
+      id: `${question.itemId}:${index}`,
+      label: option.label,
+      ...(option.description
+        ? { description: option.description }
+        : {}),
+    })),
+    freeText: { enabled: true },
+    response: {
+      field: question.itemId,
+      reason: 'The merchant answer is required by the pending workflow.',
+    },
+    unattended: 'hold',
+    scope: 'current_task',
+  });
 }
 
 function commandFromDecisionEvent(value: unknown) {

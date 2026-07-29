@@ -35,7 +35,7 @@ export class HarnessQuestionRequestPort
       modelOptions.every(
         (option, index) =>
           option.label === canonicalOptions[index]?.label &&
-          option.description === canonicalOptions[index]?.description,
+          option.description === undefined,
       );
     if (input.question !== harness.question.question || !optionsMatch) {
       throw new Error(
