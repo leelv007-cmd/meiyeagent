@@ -321,7 +321,7 @@ function priceValidityFinalizer(facts: MemoryStoreFactLedger) {
       return profile;
     }),
   );
-  return { finalizer, merged };
+  return { finalizer, intake, merged };
 }
 
 /** The inline arm of the finalize batch union — the one these tests build. */
@@ -367,6 +367,70 @@ test('a merchant-confirmed price without a stated validity is refused, not store
 
   await assert.rejects(
     finalizer.finalize(context, input, 'price-validity-missing'),
+    (error) =>
+      error instanceof StoreIntakeFinalizationError &&
+      error.code === 'STORE_FACT_MAPPING_INVALID' &&
+      /stated validity/u.test(error.message),
+  );
+  assert.deepEqual(merged, []);
+  assert.deepEqual(
+    await facts.history(context.workspaceId, 'store-project:project-a:price'),
+    [],
+  );
+});
+
+test('a screenshot-extracted price without a stated validity is refused, not stored as permanent', async () => {
+  const facts = new MemoryStoreFactLedger();
+  const { finalizer, intake, merged } = priceValidityFinalizer(facts);
+  const staged = inlineProjectBatch();
+  const batch = {
+    ...staged,
+    workspaceId: context.workspaceId,
+    createdAt: now,
+    source: {
+      ...staged.source,
+      kind: 'price_list' as const,
+    },
+    candidates: staged.candidates.map((candidate) =>
+      candidate.objectKind === 'store_fact'
+        ? {
+            ...candidate,
+            fact: {
+              ...candidate.fact,
+              scope: {
+                ...candidate.fact.scope,
+                serviceId: 'project-a',
+              },
+              source: {
+                ...candidate.fact.source,
+                kind: 'screenshot_extraction' as const,
+              },
+            },
+          }
+        : candidate,
+    ),
+  };
+  await intake.recordBatch(batch, 'screenshot-price-without-validity');
+  const input = projectInput(
+    { batchId: batch.batchId },
+    {
+      expectedRevision: 1,
+      projects: {
+        upsert: [
+          {
+            id: 'project-a',
+            name: '透亮猫眼',
+            price: 299,
+            durationMinutes: 90,
+            confirmed: true,
+          },
+        ],
+      },
+    },
+  );
+
+  await assert.rejects(
+    finalizer.finalize(context, input, 'screenshot-validity-missing'),
     (error) =>
       error instanceof StoreIntakeFinalizationError &&
       error.code === 'STORE_FACT_MAPPING_INVALID' &&

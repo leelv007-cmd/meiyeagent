@@ -899,13 +899,12 @@ async function assertStoreFactMappings(
           `Store project price fact ${confirmation.factId} does not match its profile patch.`,
         );
       }
-      // #244 — a price the merchant is confirming right now has to say how long
-      // it is good for. The wizard asks; this refuses the command if the answer
-      // never arrived, so "no answer" can never be stored as "never expires".
-      // A staged historical value (`source.kind: 'import'`) is exempt on
-      // purpose: nobody ever asked about it, and the wizard keeps showing it as
-      // waiting on the merchant until they say.
-      if (fact.source.kind === 'user_confirmation') {
+      // #244 — every newly confirmed price has to say how long it is good for.
+      // A staged historical value (`source.kind: 'import'`) is the sole
+      // exception: nobody ever asked about it, and the wizard keeps showing it
+      // as waiting on the merchant until they say. Parsed screenshots and
+      // other sources must not turn a missing answer into "never expires".
+      if (fact.source.kind !== 'import') {
         if (projectedProject.priceValidUntil === undefined) {
           throw new StoreIntakeFinalizationError(
             'STORE_FACT_MAPPING_INVALID',
