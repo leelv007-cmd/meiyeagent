@@ -21,10 +21,6 @@ import { PostgresAssetIntakeRepository } from './postgres-asset-intake-repositor
 import { PostgresContextBundleRepository } from './postgres-context-bundle-repository.js';
 import { PostgresParseRepository } from './postgres-parse-repository.js';
 import { PostgresStoreFactLedger } from './postgres-store-fact-ledger.js';
-import {
-  MemoryReuseMemoryRepository,
-  ReuseMemoryService,
-} from './reuse-memory-service.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
 const now = '2026-07-26T02:00:00.000Z';
@@ -59,18 +55,8 @@ test(
       undefined,
       () => now,
     );
-    const module = new AssetMemoryFoundationModule(
-      new AssetIntakeService(intakeRepository, facts, () => now),
-      bundles,
-      new ReuseMemoryService(
-        new MemoryReuseMemoryRepository(),
-        { verifyCandidate: async () => {}, verifyRevision: async () => {} },
-        () => now,
-      ),
-      undefined,
-      () => now,
-      parsing,
-    );
+    const intake = new AssetIntakeService(intakeRepository, facts, () => now);
+    const module = new AssetMemoryFoundationModule(intake, parsing);
     try {
       const parsed = (await module.execute({
         context,
@@ -93,29 +79,15 @@ test(
           },
         },
       })) as { draft: { draftId: string; revision: number } };
-      const taskView = (await module.query({
-        context,
-        input: {
-          action: 'parse_task_view',
-          payload: { taskId: 't24-parse-task' },
-        },
-      })) as { status: string; progress: { completed: number; total: number } };
+      const taskView = await parsing.task(workspaceId, 't24-parse-task');
       assert.equal(taskView.progress.completed, 1);
       assert.equal(taskView.progress.total, 1);
       assert.equal(taskView.status, 'completed');
-      const draftView = (await module.query({
-        context,
-        input: {
-          action: 'asset_draft_view',
-          payload: {
-            draftId: parsed.draft.draftId,
-            revision: parsed.draft.revision,
-          },
-        },
-      })) as {
-        fields: Array<{ status: string }>;
-        parser: { kind: string } | null;
-      };
+      const draftView = await parsing.draftView(
+        workspaceId,
+        parsed.draft.draftId,
+        parsed.draft.revision,
+      );
       assert.ok(draftView.fields.every((field) => field.status === 'unconfirmed'));
       assert.equal(draftView.parser?.kind, 'fixture');
       const experience = (await module.query({
@@ -135,18 +107,15 @@ test(
           'confirm_each',
         ],
       );
-      const promoted = (await module.execute({
-        context,
-        idempotencyKey: 't24-promote',
-        input: {
-          action: 'promote_asset_draft',
-          payload: {
-            draftId: parsed.draft.draftId,
-            draftRevision: parsed.draft.revision,
-            batchId: 't24-confirmation-batch',
-          },
-        },
-      })) as { candidates: Array<{ candidateId: string }> };
+      const promoted = await recordDraftBatch(
+        intake,
+        await parsing.draft(
+          workspaceId,
+          parsed.draft.draftId,
+          parsed.draft.revision,
+        ),
+        't24-confirmation-batch',
+      );
       assert.equal(await facts.currentRevision(workspaceId), 0);
 
       const contextPort = new LedgerBackedHarnessContextPort(
@@ -200,14 +169,6 @@ test(
       );
       const unavailableModule = new AssetMemoryFoundationModule(
         new AssetIntakeService(intakeRepository, facts, () => now),
-        bundles,
-        new ReuseMemoryService(
-          new MemoryReuseMemoryRepository(),
-          { verifyCandidate: async () => {}, verifyRevision: async () => {} },
-          () => now,
-        ),
-        undefined,
-        () => now,
         unavailableParsing,
       );
       const manualSource = {
@@ -259,18 +220,15 @@ test(
           },
         },
       })) as { draftId: string; revision: number };
-      const manualBatch = (await unavailableModule.execute({
-        context,
-        idempotencyKey: 't24-manual-promote',
-        input: {
-          action: 'promote_asset_draft',
-          payload: {
-            draftId: manualDraft.draftId,
-            draftRevision: manualDraft.revision,
-            batchId: 't24-manual-batch',
-          },
-        },
-      })) as { candidates: Array<{ candidateId: string }> };
+      const manualBatch = await recordDraftBatch(
+        intake,
+        await unavailableParsing.draft(
+          workspaceId,
+          manualDraft.draftId,
+          manualDraft.revision,
+        ),
+        't24-manual-batch',
+      );
       const manualFact = (await unavailableModule.execute({
         context,
         idempotencyKey: 't24-manual-confirm',
@@ -301,6 +259,40 @@ test(
     }
   },
 );
+
+async function recordDraftBatch(
+  intake: AssetIntakeService,
+  draft: Awaited<ReturnType<ParseService['draft']>>,
+  batchId: string,
+) {
+  return intake.recordBatch({
+    batchId,
+    workspaceId: draft.workspaceId,
+    taskId: draft.taskId,
+    source: {
+      sourceId: draft.sourceAssetId,
+      kind:
+        draft.target === 'group_buy'
+          ? 'group_buy_screenshot'
+          : draft.target === 'price_list'
+            ? 'price_list'
+            : 'gallery',
+      referenceId: draft.sourceAssetId,
+      capabilityStatus: 'assisted',
+      sourceWorkspaceId: draft.workspaceId,
+      capturedAt: draft.createdAt,
+      example: false,
+    },
+    summary: `已整理出 ${draft.factCandidates.length} 项待确认资料。`,
+    candidates: draft.factCandidates.map((fact, index) => ({
+      candidateId: `${draft.draftId}:fact:${index + 1}`,
+      status: 'pending' as const,
+      objectKind: 'store_fact' as const,
+      fact,
+    })),
+    createdAt: now,
+  });
+}
 
 function workflowRequest(
   workspaceId: string,

@@ -14,7 +14,6 @@ import type { ContextBundleRepository } from './context-bundle-repository.js';
 import { ContextFoundationModule } from './context-foundation-module.js';
 import type { ContextSourceRevisionRepository } from './context-source-revisions.js';
 import { OperationsFoundationModule } from './foundation-module.js';
-import type { ReuseMemoryService } from './reuse-memory-service.js';
 import type { StoreFactLedger } from './store-fact-ledger.js';
 
 const context: P1Context = {
@@ -165,8 +164,6 @@ test('Issue 257 retires 81 reviewed E actions from the public module surface', a
   );
   const assetMemory = new AssetMemoryFoundationModule(
     {} as AssetIntakeService,
-    {} as ContextBundleRepository,
-    {} as ReuseMemoryService,
   );
   const contextModule = new ContextFoundationModule(
     {} as StoreFactLedger,

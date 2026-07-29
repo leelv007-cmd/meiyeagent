@@ -15,7 +15,6 @@ import { ProductService } from '../../product/product-service.js';
 import type { P1Context } from '../foundation/domain.js';
 import { AssetIntakeService } from './asset-intake-service.js';
 import { AssetMemoryFoundationModule } from './asset-memory-foundation-module.js';
-import { MemoryContextBundleRepository } from './context-bundle-repository.js';
 import {
   FixtureAssetDraftCompiler,
   FixtureDocumentParseProvider,
@@ -25,10 +24,6 @@ import {
 } from './parse-service.js';
 import { PostgresAssetIntakeRepository } from './postgres-asset-intake-repository.js';
 import { PostgresStoreFactLedger } from './postgres-store-fact-ledger.js';
-import {
-  MemoryReuseMemoryRepository,
-  ReuseMemoryService,
-} from './reuse-memory-service.js';
 import {
   PostgresStoreIntakeFinalizationRepository,
   StoreIntakeFinalizationError,
@@ -783,14 +778,6 @@ test(
       );
       const module = new AssetMemoryFoundationModule(
         environment.intake,
-        new MemoryContextBundleRepository(),
-        new ReuseMemoryService(
-          new MemoryReuseMemoryRepository(),
-          { verifyCandidate: async () => {}, verifyRevision: async () => {} },
-          () => now,
-        ),
-        undefined,
-        () => now,
         parsing,
         environment.finalizer,
       );
@@ -848,18 +835,28 @@ test(
           },
         ],
       });
-      const promoted = (await module.execute({
-        context: environment.context,
-        idempotencyKey: 'w02-promote',
-        input: {
-          action: 'promote_asset_draft',
-          payload: {
-            draftId: draft.draftId,
-            draftRevision: draft.revision,
-            batchId: 'w02-promoted-batch',
-          },
+      const promoted = await environment.intake.recordBatch({
+        batchId: 'w02-promoted-batch',
+        workspaceId: environment.context.workspaceId,
+        taskId: draft.taskId,
+        source: {
+          sourceId: draft.sourceAssetId,
+          kind: 'price_list',
+          referenceId: draft.sourceAssetId,
+          capabilityStatus: 'assisted',
+          sourceWorkspaceId: environment.context.workspaceId,
+          capturedAt: draft.createdAt,
+          example: false,
         },
-      })) as { candidates: Array<{ candidateId: string }> };
+        summary: `已整理出 ${draft.factCandidates.length} 项待确认资料。`,
+        candidates: draft.factCandidates.map((fact, index) => ({
+          candidateId: `${draft.draftId}:fact:${index + 1}`,
+          status: 'pending',
+          objectKind: 'store_fact',
+          fact,
+        })),
+        createdAt: now,
+      });
 
       const finalized = (await module.execute({
         context: environment.context,

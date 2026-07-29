@@ -188,14 +188,6 @@ test('P1 module actions resolve to the same role capabilities used by the UI', (
     requiredP1Capability(
       'command',
       'asset-memory',
-      'record_asset_intake_batch'
-    ),
-    'content.create'
-  );
-  assert.equal(
-    requiredP1Capability(
-      'command',
-      'asset-memory',
       'finalize_store_intake'
     ),
     'content.create'
@@ -214,37 +206,19 @@ test('P1 module actions resolve to the same role capabilities used by the UI', (
   );
   for (const action of [
     'parse_single_asset',
-    'parse_asset_batch',
     'prepare_manual_asset_draft',
-    'promote_asset_draft',
   ]) {
     assert.equal(
       requiredP1Capability('command', 'asset-memory', action),
       'content.create',
     );
   }
-  for (const action of [
-    'asset_draft_view',
-    'asset_intake_experience',
-    'parse_task_view',
-  ]) {
+  for (const action of ['asset_intake_experience']) {
     assert.equal(
       requiredP1Capability('query', 'asset-memory', action),
       'workspace.read',
     );
   }
-  assert.equal(
-    requiredP1Capability('command', 'asset-memory', 'confirm_reusable_asset'),
-    'content.review'
-  );
-  assert.equal(
-    requiredP1Capability('command', 'asset-memory', 'confirm_preference'),
-    'personal.preferences.manage'
-  );
-  assert.equal(
-    requiredP1Capability('query', 'asset-memory', 'preference_view'),
-    'workspace.read'
-  );
   assert.equal(
     requiredP1Capability(
       'command',

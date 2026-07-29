@@ -277,7 +277,6 @@ import {
   ProductContentPackageRightsResolver,
   OperationsReusableAssetSourceVerifier,
   ReuseMemoryService,
-  ReuseTaskHarnessAdapter,
   ContentPackageMigrationService,
   ContentPackageDeliveryService,
   createContextInvalidationRuntime,
@@ -1372,9 +1371,6 @@ const resultDeliveryRuntime = await createDurableResultDeliveryRuntime({
   },
   pool,
 });
-const reuseTaskHarnessAdapter = new ReuseTaskHarnessAdapter(
-  () => harnessService
-);
 const contentPackageDelivery = new ContentPackageDeliveryService(
   operationsRepository,
   {
@@ -1687,10 +1683,6 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
     ),
     new AssetMemoryFoundationModule(
       assetIntakeService,
-      contextBundleRepository,
-      reuseMemoryService,
-      reuseTaskHarnessAdapter,
-      undefined,
       parseService,
       storeIntakeFinalizer,
       storeProfileImportPreparer

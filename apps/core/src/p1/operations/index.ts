@@ -35,7 +35,6 @@ export * from './product-search-projection.js';
 export * from './repository.js';
 export * from './reuse-memory-service.js';
 export * from './reuse-memory-source-verifier.js';
-export * from './reuse-task-harness-adapter.js';
 export * from './search.js';
 export * from './store-fact-ledger.js';
 export * from './postgres-store-fact-ledger.js';

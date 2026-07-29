@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { requiredP1Capability } from '@meiye/contracts';
 
 import type { P1Context } from '../foundation/domain.js';
 import { AssetMemoryFoundationModule } from './asset-memory-foundation-module.js';
@@ -7,23 +8,8 @@ import {
   AssetIntakeService,
   MemoryAssetIntakeRepository,
 } from './asset-intake-service.js';
-import { MemoryContextBundleRepository } from './context-bundle-repository.js';
-import {
-  MemoryReuseMemoryRepository,
-  ReuseMemoryService,
-} from './reuse-memory-service.js';
 import { MemoryStoreFactLedger } from './store-fact-ledger.js';
-import {
-  FixtureAssetDraftCompiler,
-  FixtureDocumentParseProvider,
-  FixtureVisualAssetClassifier,
-  MemoryParseRepository,
-  ParseService,
-} from './parse-service.js';
 
-// These tests invoke the trusted kernel module directly; browser callers must
-// use the mapped finalize_store_intake command instead of direct StoreFact
-// intake/confirmation commands.
 const now = '2026-07-18T06:00:00.000Z';
 const context: P1Context = {
   actor: 'owner',
@@ -32,41 +18,50 @@ const context: P1Context = {
   workspaceId: 'workspace-a',
 };
 
-test('asset-memory module exposes fact intake with server-owned workspace and append-only decisions', async () => {
-  const module = moduleFixture();
-  const recorded = await module.execute({
-    context,
-    idempotencyKey: 'record-batch',
-    input: {
-      action: 'record_asset_intake_batch',
-      payload: intakeBatch(),
-    },
-  });
-  assert.equal(
-    (recorded as { workspaceId: string }).workspaceId,
-    'workspace-a',
+test('asset-memory keeps direct fact confirmation as a trusted kernel seam', async () => {
+  const intake = new AssetIntakeService(
+    new MemoryAssetIntakeRepository(),
+    new MemoryStoreFactLedger(),
+    () => now,
   );
-  const correctedFact = {
-    ...intakeBatch().candidates[0]!.fact,
-    value: { amount: 299, currency: 'CNY' },
+  await intake.recordBatch({
+    batchId: 'batch-a',
+    workspaceId: context.workspaceId,
+    taskId: 'task-a',
     source: {
-      kind: 'user_confirmation' as const,
-      referenceId: 'decision-correct',
+      sourceId: 'source-a',
+      kind: 'manual',
+      referenceId: 'upload-a',
+      capabilityStatus: 'assisted',
+      sourceWorkspaceId: context.workspaceId,
       capturedAt: now,
+      example: false,
     },
-  };
-  await module.execute({
-    context,
-    idempotencyKey: 'correct-price',
-    input: {
-      action: 'correct_asset_intake_fact',
-      payload: {
-        batchId: 'batch-a',
+    summary: '识别到一个待确认项目价格。',
+    candidates: [
+      {
         candidateId: 'candidate-price',
-        correctedFact,
+        objectKind: 'store_fact',
+        status: 'pending',
+        fact: {
+          kind: 'price',
+          key: 'offer.price',
+          value: { amount: 299, currency: 'CNY' },
+          scope: { storeId: 'store-a' },
+          source: {
+            kind: 'user_confirmation',
+            referenceId: 'upload-a',
+            capturedAt: now,
+          },
+          effectiveFrom: now,
+          expiresAt: null,
+        },
       },
-    },
+    ],
+    createdAt: now,
   });
+
+  const module = new AssetMemoryFoundationModule(intake);
   const fact = await module.execute({
     context,
     idempotencyKey: 'confirm-price',
@@ -80,363 +75,64 @@ test('asset-memory module exposes fact intake with server-owned workspace and ap
       },
     },
   });
+
   assert.deepEqual((fact as { value: unknown }).value, {
     amount: 299,
     currency: 'CNY',
   });
-  const view = (await module.query({
-    context,
-    input: { action: 'asset_intake_view', payload: { batchId: 'batch-a' } },
-  })) as {
-    decisions: Array<{ action: string }>;
-    capability: { status: string };
-  };
-  assert.deepEqual(
-    view.decisions.map((decision) => decision.action),
-    ['corrected', 'confirmed'],
-  );
-  assert.equal(view.capability.status, 'assisted');
 });
 
-test('direct batch recording cannot forge a parsed screenshot receipt', async () => {
-  const module = moduleFixture();
-  const manual = intakeBatch();
-  const payload = {
-    ...manual,
-    source: { ...manual.source, kind: 'price_list' as const },
-    candidates: manual.candidates.map((candidate) => ({
-      ...candidate,
-      fact: {
-        ...candidate.fact,
-        source: {
-          ...candidate.fact.source,
-          kind: 'screenshot_extraction' as const,
-        },
-      },
-    })),
-  };
-
-  await assert.rejects(
-    module.execute({
-      context,
-      idempotencyKey: 'forged-parsed-batch',
-      input: {
-        action: 'record_asset_intake_batch',
-        payload,
-      },
-    }),
-    /only accepts manual user confirmations/u,
-  );
-});
-
-test('batch creation replays after the server clock advances', async () => {
-  let tick = 0;
-  const clock = () =>
-    new Date(Date.parse(now) + tick++ * 1_000).toISOString();
-  const module = moduleFixture(undefined, clock);
-  const record = {
-    context,
-    idempotencyKey: 'record-batch-recovery',
-    input: {
-      action: 'record_asset_intake_batch',
-      payload: intakeBatch(),
-    },
-  };
-  const firstRecorded = await module.execute(record);
-  const replayedRecorded = await module.execute(record);
-  assert.deepEqual(replayedRecorded, firstRecorded);
-
-});
-
-test('the retired assisted price command is no longer an asset-memory action', async () => {
-  // D-244 retired `prepare_assisted_price_intake`. It was the only command that
-  // ever carried a price validity window and no merchant surface ever called
-  // it; the wizard now asks the question and writes through the one channel.
-  await assert.rejects(
-    moduleFixture().execute({
-      context,
-      idempotencyKey: 'retired-assisted-price',
-      input: {
-        action: 'prepare_assisted_price_intake',
-        payload: { batchId: 'batch-retired' },
-      },
-    }),
-    /Unknown asset-memory command prepare_assisted_price_intake/u,
-  );
-});
-
-test('asset-memory exposes queued and refreshed batch progress for the presentation lane', async () => {
-  const submitted: unknown[] = [];
-  const parsing = new ParseService(
-    new MemoryParseRepository(),
-    new FixtureDocumentParseProvider(),
-    new FixtureAssetDraftCompiler(),
-    new FixtureVisualAssetClassifier(),
-    { isAuthorized: async () => true },
-    undefined,
-    {
-      async submit(input) {
-        submitted.push(input);
-        return {} as never;
-      },
-    },
-    () => now,
-  );
+test('asset-memory denies and rejects all 21 retired public seams', async () => {
   const module = new AssetMemoryFoundationModule(
     new AssetIntakeService(
       new MemoryAssetIntakeRepository(),
       new MemoryStoreFactLedger(),
       () => now,
     ),
-    new MemoryContextBundleRepository(),
-    new ReuseMemoryService(
-      new MemoryReuseMemoryRepository(),
-      { verifyCandidate: async () => {}, verifyRevision: async () => {} },
-      () => now,
-    ),
-    undefined,
-    () => now,
-    parsing,
   );
-  const queued = (await module.execute({
-    context,
-    idempotencyKey: 'parse-batch',
-    input: {
-      action: 'parse_asset_batch',
-      payload: {
-        taskId: 'parse-batch',
-        sources: ['one', 'two'].map((assetId) => ({
-          assetId,
-          objectKey: `${context.workspaceId}/${assetId}.png`,
-          sha256: 'e'.repeat(64),
-          sizeBytes: 100,
-          contentType: 'image/png',
-          sourceUrl: `https://assets.example.test/${assetId}.png`,
-          inputKind: 'document_image',
-          target: 'price_list',
-          rightsStatus: 'confirmed',
-        })),
-      },
-    },
-  })) as { status: string; carrierAttempt?: number };
-  assert.equal(queued.status, 'queued');
-  assert.equal(submitted.length, 1);
-  await parsing.runBatchTask(
-    context.workspaceId,
-    'parse-batch',
-    queued.carrierAttempt,
-  );
-  const refreshed = (await module.query({
-    context,
-    input: {
-      action: 'parse_task_view',
-      payload: { taskId: 'parse-batch' },
-    },
-  })) as { status: string; progress: { completed: number; total: number } };
-  assert.equal(refreshed.status, 'completed');
-  assert.equal(refreshed.progress.completed, 2);
-  assert.equal(refreshed.progress.total, 2);
-});
 
-test('asset-memory module creates a content-free reuse Task from an exact AssetRevision', async () => {
-  const submissions: unknown[] = [];
-  const module = moduleFixture({
-    async submit(input) {
-      submissions.push(input);
-      return { workflowId: input.taskId, packageId: input.packageId };
-    },
-  });
-  await module.execute({
-    context,
-    idempotencyKey: 'propose-series',
-    input: {
-      action: 'propose_reusable_asset',
-      payload: reusableProposal(),
-    },
-  });
-  await module.execute({
-    context,
-    idempotencyKey: 'confirm-series',
-    input: {
-      action: 'confirm_reusable_asset',
-      payload: {
-        candidateId: 'candidate-series',
-        expectedAssetRevision: 0,
-        revisionId: 'series-a:1',
-        nextSuggestions: [
-          {
-            suggestionId: 'suggestion-a',
-            explanation: '按当前价格续写下一条。',
-            variableSlotKeys: ['offer.price'],
-          },
-        ],
-      },
-    },
-  });
-  const result = await module.execute({
-    context,
-    idempotencyKey: 'reuse-task',
-    input: {
-      action: 'create_reuse_task',
-      payload: {
-        taskId: 'task-reuse-a',
-        assetId: 'series-a',
-        assetRevision: 1,
-        assetIds: ['asset-current'],
-        suggestionId: 'suggestion-a',
-        rawInput: '沿用这个系列结构，按当前门店事实写下一条。',
-      },
-    },
-  });
-  assert.deepEqual(result, {
-    workflowId: 'task-reuse-a',
-    packageId: 'reuse-task-reuse-a',
-  });
-  const submission = submissions[0] as {
-    assetIds: string[];
-    seed: Record<string, unknown>;
-    suggestion: { suggestionId: string };
-  };
-  assert.equal(submission.seed.sourcePackageId, 'package-a');
-  assert.equal(submission.seed.sourceVersionId, 'version-a');
-  assert.deepEqual(submission.assetIds, ['asset-current']);
-  assert.equal(submission.suggestion.suggestionId, 'suggestion-a');
-  for (const forbidden of ['body', 'title', 'topics', 'orderedAssetIds']) {
-    assert.equal(forbidden in submission.seed, false);
+  const commands = [
+    'parse_asset_batch',
+    'promote_asset_draft',
+    'record_asset_intake_batch',
+    'correct_asset_intake_fact',
+    'reject_asset_intake_candidate',
+    'propose_reusable_asset',
+    'confirm_reusable_asset',
+    'deactivate_series',
+    'create_reuse_task',
+    'record_preference_signal',
+    'propose_preference',
+    'confirm_preference',
+    'revoke_preference',
+  ] as const;
+  const queries = [
+    'parse_task_view',
+    'asset_draft_view',
+    'asset_intake_view',
+    'asset_intake_missing_fact_keys',
+    'reusable_asset_view',
+    'reuse_task_seed',
+    'series_suggestions',
+    'preference_view',
+  ] as const;
+
+  for (const action of commands) {
+    assert.equal(requiredP1Capability('command', 'asset-memory', action), null);
+    await assert.rejects(
+      module.execute({
+        context,
+        idempotencyKey: `retired-${action}`,
+        input: { action, payload: {} },
+      }),
+      new RegExp(`Unknown asset-memory command ${action}`, 'u'),
+    );
+  }
+  for (const action of queries) {
+    assert.equal(requiredP1Capability('query', 'asset-memory', action), null);
+    await assert.rejects(
+      module.query({ context, input: { action, payload: {} } }),
+      new RegExp(`Unknown asset-memory query ${action}`, 'u'),
+    );
   }
 });
-
-test('asset-memory module promotes only three independent modification signals and keeps the preference inactive', async () => {
-  const module = moduleFixture();
-  let candidateId = '';
-  for (const suffix of ['a', 'b', 'c']) {
-    const result = (await module.execute({
-      context,
-      idempotencyKey: `signal-${suffix}`,
-      input: {
-        action: 'record_preference_signal',
-        payload: {
-          signalId: `signal-${suffix}`,
-          decisionId: `decision-${suffix}`,
-          taskId: `task-${suffix}`,
-          semanticKey: 'tone.less-promotional',
-          value: true,
-          defaultScope: { storeId: 'store-a' },
-          kind: 'modified',
-        },
-      },
-    })) as { candidate: { candidateId: string } | null };
-    if (result.candidate) candidateId = result.candidate.candidateId;
-  }
-  assert.ok(candidateId);
-  const preference = await module.execute({
-    context,
-    idempotencyKey: 'confirm-preference',
-    input: {
-      action: 'confirm_preference',
-      payload: {
-        candidateId,
-        preferenceId: 'preference-a',
-        expectedRevision: 0,
-        positiveExamples: ['克制表达'],
-        negativeExamples: ['限时疯抢'],
-      },
-    },
-  });
-  assert.equal((preference as { status: string }).status, 'inactive_stage2');
-  const view = (await module.query({
-    context,
-    input: { action: 'preference_view', payload: {} },
-  })) as { signals: unknown[]; preferences: Array<{ status: string }> };
-  assert.equal(view.signals.length, 3);
-  assert.deepEqual(
-    view.preferences.map((item) => item.status),
-    ['inactive_stage2'],
-  );
-});
-
-function moduleFixture(
-  reuseTasks?: ConstructorParameters<typeof AssetMemoryFoundationModule>[3],
-  clock: () => string = () => now,
-) {
-  return new AssetMemoryFoundationModule(
-    new AssetIntakeService(
-      new MemoryAssetIntakeRepository(),
-      new MemoryStoreFactLedger(),
-      clock,
-    ),
-    new MemoryContextBundleRepository(),
-    new ReuseMemoryService(
-      new MemoryReuseMemoryRepository(),
-      { verifyCandidate: async () => {}, verifyRevision: async () => {} },
-      () => now,
-    ),
-    reuseTasks,
-    clock,
-  );
-}
-
-function intakeBatch() {
-  return {
-    batchId: 'batch-a',
-    taskId: 'task-a',
-    source: {
-      sourceId: 'source-a',
-      kind: 'manual' as const,
-      referenceId: 'upload-a',
-      capabilityStatus: 'assisted' as const,
-      sourceWorkspaceId: 'workspace-a',
-      capturedAt: now,
-      example: false,
-    },
-    summary: '识别到一个待确认项目价格。',
-    candidates: [
-      {
-        candidateId: 'candidate-price',
-        objectKind: 'store_fact' as const,
-        status: 'pending' as const,
-        fact: {
-          kind: 'price' as const,
-          key: 'offer.price',
-          value: { amount: 239, currency: 'CNY' },
-          scope: { storeId: 'store-a' },
-          source: {
-            kind: 'user_confirmation' as const,
-            referenceId: 'upload-a',
-            capturedAt: now,
-          },
-          effectiveFrom: now,
-          expiresAt: null,
-        },
-      },
-    ],
-  };
-}
-
-function reusableProposal() {
-  return {
-    candidateId: 'candidate-series',
-    assetId: 'series-a',
-    kind: 'series' as const,
-    name: '三段式系列',
-    fixedItems: [
-      {
-        key: 'structure.three-part',
-        value: ['experience', 'evidence', 'cta'],
-        sourceRef: 'package-a:version-a',
-      },
-    ],
-    variableSlots: [
-      { key: 'offer.price', source: 'current_fact' as const, required: true },
-    ],
-    defaultScope: { storeId: 'store-a' },
-    provenance: {
-      sourcePackageId: 'package-a',
-      sourceVersionId: 'version-a',
-      sourcePackageRevision: 3,
-      contextBundleId: 'bundle-a',
-      contextBundleRevision: 1,
-    },
-    rights: { assetIds: [], status: 'authorized' as const },
-  };
-}

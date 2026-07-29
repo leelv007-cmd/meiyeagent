@@ -231,31 +231,12 @@ const registeredOperationsConfirmActions = new Set([
 ]);
 const assetMemoryCreateActions = new Set([
   'confirm_asset_intake_fact',
-  'correct_asset_intake_fact',
-  'create_reuse_task',
   'finalize_store_intake',
-  'parse_asset_batch',
   'parse_single_asset',
   'prepare_manual_asset_draft',
   'prepare_store_profile_import',
-  'promote_asset_draft',
-  'propose_preference',
-  'propose_reusable_asset',
-  'record_asset_intake_batch',
-  'record_preference_signal',
-  'reject_asset_intake_candidate',
 ]);
-const assetMemoryQueryActions = new Set([
-  'asset_draft_view',
-  'asset_intake_experience',
-  'asset_intake_missing_fact_keys',
-  'asset_intake_view',
-  'parse_task_view',
-  'preference_view',
-  'reusable_asset_view',
-  'reuse_task_seed',
-  'series_suggestions',
-]);
+const assetMemoryQueryActions = new Set(['asset_intake_experience']);
 /**
  * Channel/deployment lifecycle actions (isolate/drain/recover).
  * Pre-registered for supply-control tickets; unregistered elsewhere → deny.
@@ -448,12 +429,6 @@ export function requiredP1Capability(
     // worker authorizer bypass below preserves the trusted internal channel;
     // browser roles must use finalize_store_intake instead.
     if (action === 'confirm_asset_intake_fact') return null;
-    if (action === 'confirm_preference' || action === 'revoke_preference') {
-      return 'personal.preferences.manage';
-    }
-    if (action === 'confirm_reusable_asset' || action === 'deactivate_series') {
-      return 'content.review';
-    }
     if (assetMemoryCreateActions.has(action)) return 'content.create';
     return null;
   }

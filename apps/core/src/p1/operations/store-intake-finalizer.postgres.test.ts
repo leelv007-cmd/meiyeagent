@@ -19,10 +19,6 @@ import {
   PostgresStoreIntakeFinalizationRepository,
   StoreIntakeFinalizer,
 } from './store-intake-finalizer.js';
-import {
-  MemoryReuseMemoryRepository,
-  ReuseMemoryService,
-} from './reuse-memory-service.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
 const now = '2026-07-27T10:00:00.000Z';
@@ -74,14 +70,6 @@ test(
     );
     const module = new AssetMemoryFoundationModule(
       intake,
-      bundles,
-      new ReuseMemoryService(
-        new MemoryReuseMemoryRepository(),
-        { verifyCandidate: async () => {}, verifyRevision: async () => {} },
-        () => now,
-      ),
-      undefined,
-      () => now,
       undefined,
       finalizer,
     );
