@@ -84,12 +84,18 @@ check_all() {
     report "G2 #248 三轴事件合同" no "三轴仅 $axes/3 存在于 contracts（skillVersion/skillRevision 缺失）" "#248"
   fi
 
-  # ---- G3 · #248 「本次消耗从执行返回值直取」供给 -----------------------
-  # #261 的成本即时反馈（含被拒）依赖这条供给，属主是 #248 而非本票。
-  if git -C "$REPO" grep -qiE 'rejected.*(consum|debit|units)|planningUnits|plannedUnits' "$REF" -- 'packages/contracts/src/*.ts' 'apps/core/src/p1/product-billing/*.ts' 2>/dev/null; then
-    report "G3 #248 被拒消耗供给" ok "契约/账本已暴露被拒消耗字段" "-"
+  # ---- G3 · 成功分支的实际结算值供给 ------------------------------------
+  # 用户裁定（2026-07-29，DECISIONS D5）：拒绝＝真实消耗 0，就地明示「本次未
+  # 消耗额度」，零后端依赖 —— 故**拒绝分支不再受本门约束**。本门收窄为只管
+  # 成功分支的「本次实际结算」取数。前端已有 debitUnitsFor 的镜像
+  # (composer/quota-blocking.ts:226)，够不够权威由实装时对账决定。
+  # 判据必须落在**前端够得着的合同面**（packages/contracts）。只查 apps/core
+  # 会把账本内部的 `payload->'settledUnits'` JSON 列表达式当成已交付 —— 那是
+  # 存储细节，前端读不到。这是本门第三次踩同一类假绿，故判据写死到合同面。
+  if git -C "$REPO" grep -qiE 'settledUnits|settlementUnits' "$REF" -- 'packages/contracts/src/*.ts' 2>/dev/null; then
+    report "G3 成功分支实际结算取数" ok "结算单位已上合同面，前端可读" "-"
   else
-    report "G3 #248 被拒消耗供给" no "无被拒/规划消耗字段，成本反馈无数据源" "#248"
+    report "G3 成功分支实际结算取数" no "结算单位只在 core 账本内部，未上合同面" "#248（拒绝分支已解锁）"
   fi
 
   # ---- G3b · #262 三轴钉扎进 Task 快照 ----------------------------------
@@ -145,10 +151,16 @@ check_all() {
 
   # ---- G6 · 三项形态未定项的用户拍板（票面「形态争议交用户拍板」）-------
   # 判据：本票目录下出现 DECISIONS.md 且不含 PENDING 标记。
-  if exists_at_ref docs/tickets/261/DECISIONS.md && ! at_ref docs/tickets/261/DECISIONS.md | grep -q 'PENDING'; then
-    report "G6 形态未定项已拍板" ok "DECISIONS.md 无 PENDING" "-"
+  # 判据只认条目的状态行，不认散文里提到的 PENDING 三个字母 —— 否则文件
+  # 自己解释判据的那句话会把门永远钉死。工作区版本优先（裁决可能尚未 commit）。
+  local decisions
+  decisions="$(cat "$REPO/docs/tickets/261/DECISIONS.md" 2>/dev/null || at_ref docs/tickets/261/DECISIONS.md)"
+  local open_items
+  open_items="$(printf '%s' "$decisions" | grep -c '状态：\*\*PENDING\*\*' || true)"
+  if [ -n "$decisions" ] && [ "$open_items" -eq 0 ]; then
+    report "G6 形态未定项已拍板" ok "五项全部 DECIDED" "-"
   else
-    report "G6 形态未定项已拍板" no "金额/条数口径等未拍板（见 00-blockers.md）" "用户"
+    report "G6 形态未定项已拍板" no "$open_items 项未拍板（见 DECISIONS.md）" "用户"
   fi
 }
 

@@ -1,14 +1,16 @@
 # #261 待拍板登记
 
 > 本文件是开工门 G6 的判据：**全文不含 `PENDING` 时 G6 通过**。
-> 拍板后把 `PENDING` 改为 `DECIDED`，填「裁定」与「日期」两栏，并在票下评论留痕。
+> **G6 已过**：五项全部裁定，出处＝#261 票下主控/用户裁决三条（2026-07-29 01:39 / 01:57 / 07:37 UTC）。
 > 依据：票面「三项待验证未定项……按最小形态实现并留痕，不自行扩展，形态争议交用户拍板」。
 
 ---
 
 ## D1 · 成本反馈的单位口径
 
-- 状态：**PENDING**
+- 状态：**DECIDED**（2026-07-29）
+- **裁定：条数**。商家面一律桶单位条数（与 `projectQuotaPassiveView` 同口径），金额仅设置页明细可见。
+- **附带必修**：`src/product/results/image-adjust-confirmation.tsx:32-35` 的 CNY 泄漏（测试断言含 `整组 2 张·4 CNY`）属既有违规，本票一并修正。
 - 冲突：票面验收写「金额＝真实消耗」；`mkfast-template-main/src/product/composer/composer-home.tsx:2601-2609` 与 `src/product/composer/composer-signed-preview.ts:14` 记录商家面刻意只显条数不显金额（D-109/D-123）；D-164⑥ 原文只写「实际消耗」未指定单位。
 - 主控建议：**商家面用条数**，与 `src/product/composer/quota-blocking.ts:278` `projectQuotaPassiveView` 同口径；金额仅在设置页 `src/product/account-usage-panel.tsx:137` 明细可见。
 - 裁定：
@@ -16,7 +18,8 @@
 
 ## D2 · 执行确认卡触发条件
 
-- 状态：**PENDING**
+- 状态：**DECIDED**（2026-07-29）
+- **裁定：零新增拦截点**。只在既有三处拦截位出现，商家点击数不增加；切「全拦」保留**单个常量开关**。同时结项 D-164 待验证「触发条件」，回写设计文档归延后的对齐轮。
 - 未定来源：D-164「待验证」——「是否所有生成都拦，还是仅超过成本阈值时拦。与 D-162③ 循环预算上限合并处理」。
 - ~~主控初判：先全拦生成型动作~~ —— **已被代码事实推翻**（`02-confirm-card-and-cost.md §7.1`）：
   - 成本阈值通道**本仓已建好**：`mkfast-template-main/src/product/composer/brief-surface.ts:63` 七个 D-094 trigger code 已含 `quote_policy_threshold`；后端 `apps/core/src/p1/creation-experience/brief-trigger-projection.test.ts:343` 有真实测试 `fires when amount >= extraConfirmThreshold`。
@@ -28,7 +31,8 @@
 
 ## D3 · 成本反馈形态
 
-- 状态：**PENDING**
+- 状态：**DECIDED**（2026-07-29）
+- **裁定：消息尾行**。挂确认卡原位、持久可见、拒绝/成功两分支同形态。**形态隔离在渲染层**——取值走纯函数 `projectExecutionCostFeedback()`，将来换形态只动渲染约 5 行。
 - 未定来源：D-164「待验证」——「⑥ 决定 B 的反馈形态未定（成品卡角标／消息尾行／Toast）」。
 - 约束：拒绝路径 `src/product/composer/composer-home.tsx:2754-2758` 会清空整条 transcript，落点不能挂在被清空的消息流上。
 - 主控建议：见 `02-confirm-card-and-cost.md`。
@@ -37,7 +41,8 @@
 
 ## D4 · 动作 chip 生成方式
 
-- 状态：**PENDING**
+- 状态：**DECIDED**（2026-07-29）
+- **裁定：配方声明的固定集合**。可测、零延迟、零额外规划成本；chip 维持「预填充不自动执行」。
 - 未定来源：D-164「待验证」——「由模型即时生成，还是配方声明的固定集合」。
 - 主控建议：**配方声明的固定集合**（可测、零延迟、不产生额外规划成本）。
 - 裁定：
@@ -45,7 +50,8 @@
 
 ## D5 · 规划成本反馈：D-164⑥C 与 D-109 正面冲突（**优先级最高，决策 vs 决策**）
 
-- 状态：**PENDING**
+- 状态：**DECIDED**（2026-07-29，用户拍板，裁定全文已写入设计文档 D-164⑥「补充裁定」小节，commit `e9d1dbb4`）
+- **裁定：按本文建议口径批准。** 拒绝时就地明示「**本次未消耗额度**」；规划成本按 D-109 留 ProviderCost 台账、**永不进商家桶**；**D-109 不动**，未来若改计费拆分须另立决策。据此 `00-blockers.md` 的 G3「被拒消耗供给」对**拒绝分支**不再构成阻塞——拒绝分支零后端依赖。
 - 冲突两端（两条都是 `accepted` 决策原文，不是票面误写）：
   - **D-164⑥ 决定 C**（`docs/design/beauty-marketing-agent-product-design-2026-07-17.md` D-164 段）：「确认卡弹出前的规划推理**已经产生真实成本**，即便商家点『拒绝』也已发生。此成本**必须计入并明示**，不得让商家以为『拒绝＝没花钱』。」其证据是 Miora 实测（709.00 → 629.35，拒绝仍扣 79.65）。
   - **D-109**（同文件 `:1871`）：「一个用户主动任务只产生一笔产品权益预占。内部 **Planner**、LLM、图片/视频调用、评估、质量淘汰、fallback、系统重试和同 supplier task 恢复分别进入 **ProviderCost Ledger**，**不重复扣用户**」；并另定「**供应细节不可见**」（`:1865` / `:2082`「内部成本基准…**永不进前台**」）。
