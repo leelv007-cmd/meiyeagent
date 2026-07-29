@@ -6,7 +6,7 @@
  * as #161 pass evidence.
  *
  * Journeys covered as far as local recorded mode allows:
- *   1. Day-0 Landing intent → restore → Composer submit → first usable result
+ *   1. Merchant-language UUID leak negative control
  *   2. Copy close-loop: Result → adjust → adopt → delivery → publication →
  *      outcome chips → weekly review → next-round action
  *   3. Image-text Result → adopt → delivery package
@@ -34,7 +34,10 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { setTheme, type ThemeMode } from '../fixtures/page-health';
-import { seedConfirmedStore } from '../fixtures/product';
+import {
+  seedComposerInlineAuthorize,
+  seedConfirmedStore,
+} from '../fixtures/product';
 import {
   adoptResult,
   adjustResult,
@@ -66,6 +69,12 @@ const AXE_SURFACES = [
 
 const MERCHANT_LEAK_PATTERN =
   /\b(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\b|(?:\b(?:running|ready|delivered|candidate_ready|needs_input|automatic_verified|assisted|unavailable|internal_only|public_marketing)\b)|(?:provider|workId=|workspaceId=|assetId=|catalogModelId|seedance-2|gpt-image|llm-openai)/iu;
+
+function merchantRunSuffix() {
+  // Intents are echoed on merchant surfaces, so keep the unique test marker
+  // useful without writing a full UUID into the product-visible transcript.
+  return crypto.randomUUID().slice(0, 8);
+}
 
 function copyContract(): JourneyContract {
   return JOURNEY_CONTRACTS.find((c) => c.modality === 'copy')!;
@@ -312,6 +321,18 @@ test.describe('P1-F2 continuous acceptance (#161)', () => {
     await cleanupE2EUsers(request);
   });
 
+  test('merchant-language guard rejects a full UUID negative control', async ({
+    page,
+  }) => {
+    await page.setContent(
+      '<main>P1-F2 negative control 123e4567-e89b-42d3-a456-426614174000</main>'
+    );
+
+    await expect(
+      assertMerchantLanguage(page, 'merchant-language negative control')
+    ).rejects.toThrow(/must not leak UUID/u);
+  });
+
   test('Copy continuous close-loop: Result → adopt → delivery → publication → outcome → weekly next', async ({
     page,
     request,
@@ -330,7 +351,7 @@ test.describe('P1-F2 continuous acceptance (#161)', () => {
     const workId = await submitComposerJourney(
       page,
       contract,
-      `P1-F2 皮肤护理 朋友圈项目介绍 copy ${crypto.randomUUID()}`
+      `P1-F2 皮肤护理 朋友圈项目介绍 copy ${merchantRunSuffix()}`
     );
     await waitForResultJourney(page, contract, workId);
     await assertMerchantLanguage(page, 'Result (copy ready)');
@@ -365,10 +386,11 @@ test.describe('P1-F2 continuous acceptance (#161)', () => {
     await loginByForm(page, user);
     await seedConfirmedStore(page);
     await page.goto('/dashboard');
+    await seedComposerInlineAuthorize(page);
     const workId = await submitComposerJourney(
       page,
       contract,
-      `P1-F2 皮肤护理 小红书套图 image_text ${crypto.randomUUID()}`
+      `P1-F2 皮肤护理 小红书套图 image_text ${merchantRunSuffix()}`
     );
     await waitForResultJourney(page, contract, workId);
     await assertMerchantLanguage(page, 'Result (image_text ready)');
@@ -390,10 +412,11 @@ test.describe('P1-F2 continuous acceptance (#161)', () => {
     await loginByForm(page, user);
     await seedConfirmedStore(page);
     await page.goto('/dashboard');
+    await seedComposerInlineAuthorize(page);
     const workId = await submitComposerJourney(
       page,
       contract,
-      `P1-F2 抖音项目成片 video ${crypto.randomUUID()}`
+      `P1-F2 抖音项目成片 video ${merchantRunSuffix()}`
     );
     await waitForResultJourney(page, contract, workId);
     await assertMerchantLanguage(page, 'Result (video ready, dark)');
@@ -459,7 +482,7 @@ test.describe('P1-F2 continuous acceptance (#161)', () => {
     const workId = await submitComposerJourney(
       page,
       contract,
-      `P1-F2 responsive 朋友圈 ${crypto.randomUUID()}`
+      `P1-F2 responsive 朋友圈 ${merchantRunSuffix()}`
     );
     await waitForResultJourney(page, contract, workId);
 
@@ -509,7 +532,7 @@ test.describe('P1-F2 continuous acceptance (#161)', () => {
     const workId = await submitComposerJourney(
       page,
       contract,
-      `P1-F2 reduced-motion 朋友圈 ${crypto.randomUUID()}`
+      `P1-F2 reduced-motion 朋友圈 ${merchantRunSuffix()}`
     );
     await waitForResultJourney(page, contract, workId);
     await adoptResult(page, contract);
@@ -553,7 +576,7 @@ test.describe('P1-F2 continuous acceptance (#161)', () => {
     const workId = await submitComposerJourney(
       page,
       contract,
-      `P1-F2 mobile-dark 朋友圈 ${crypto.randomUUID()}`
+      `P1-F2 mobile-dark 朋友圈 ${merchantRunSuffix()}`
     );
     await waitForResultJourney(page, contract, workId);
     const actions = page.getByTestId('result-shell-actions');

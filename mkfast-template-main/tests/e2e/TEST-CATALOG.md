@@ -607,7 +607,7 @@ short-circuits are never treated as #161 pass evidence. Evidence and residuals:
 
 | # | Test name | Flow |
 |---|---|---|
-| 1 | Day-0 Landing intent restores without auto-submit | Capture Landing intent into same-browser handoff, sign in, confirm restore into Composer intent, require no automatic Result navigation. |
+| 1 | Merchant-language guard rejects a full UUID negative control | Render a deliberate full UUID on a merchant-visible surface and require the same merchant-language guard used by the journeys to reject it, proving the UUID leak regex is live. |
 | 2 | Copy continuous close-loop | Discover three modalities, submit copy through the Composer Submission BFF with only public references, require Core to freeze the confirmed quote/model/route and return canonical Work/Task/ContentPackage IDs, follow the Task Harness stream into the same Result route, then adjust, adopt, open Delivery, download the full package, record manual publication, record an outcome chip, confirm weekly-review next-round action, and restore after reload. Axe + merchant-language on Composer/Result/Delivery. |
 | 3 | Image-text continuous to delivery | Upload and authorize the Recipe-required image, submit image_text through the same Composer Submission BFF, follow the returned Task Harness stream to Result, adopt, download 小红书 ZIP, and restore after reload. |
 | 4 | Video continuous to delivery | Upload and authorize the Recipe-required source, submit video (抖音) through the same Composer Submission BFF, follow the returned Task Harness stream to Result in dark theme, adopt, download 抖音 ZIP, and restore after reload. |
