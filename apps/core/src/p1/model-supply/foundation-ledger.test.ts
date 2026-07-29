@@ -190,25 +190,27 @@ test('settles one initial video through the production ledger across a fresh app
       return productUsage.getByTask(taskId);
     },
   };
-  const ledger = new FoundationModelSupplyLedger(
-    foundation,
-    undefined,
-    undefined,
-    {
-      billingLifecycle,
-      productUsage: durableProductUsage,
-      supplyFreezes,
-    },
-  );
-  const application = new ModelSupplyApplicationService({
-    deployments: [videoDeployment],
-    execution: new RecordedProviderExecutionPort(),
-    ledger: {
-      checkpointAttempt: (input) => ledger.checkpointAttempt(input),
-      settleAttempt: (input) => ledger.settleAttempt(input),
-    },
-    models: [videoModel],
-  });
+  const createApplication = () => {
+    const processLedger = new FoundationModelSupplyLedger(
+      foundation,
+      undefined,
+      undefined,
+      {
+        billingLifecycle,
+        productUsage: durableProductUsage,
+        supplyFreezes,
+      },
+    );
+    return new ModelSupplyApplicationService({
+      deployments: [videoDeployment],
+      execution: new RecordedProviderExecutionPort(),
+      ledger: {
+        checkpointAttempt: (input) => processLedger.checkpointAttempt(input),
+        settleAttempt: (input) => processLedger.settleAttempt(input),
+      },
+      models: [videoModel],
+    });
+  };
   const submission = {
     actorId: context.userId,
     billingQuoteRevision: quote.revision,
@@ -223,10 +225,10 @@ test('settles one initial video through the production ledger across a fresh app
   };
 
   await assert.rejects(
-    application.submit(submission),
+    createApplication().submit(submission),
     /billing settle response lost/,
   );
-  const replay = await application.submit(submission);
+  const replay = await createApplication().submit(submission);
 
   assert.equal(productUsage.listByWorkspace(context.workspaceId).length, 1);
   assert.equal(productUsage.getByTask('creative-work-1')?.status, 'committed');
