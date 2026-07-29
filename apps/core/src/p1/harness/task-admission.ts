@@ -1,8 +1,13 @@
 import {
+  boundedExecutionLimitsSchema,
+  boundedExecutionSnapshotSchema,
   harnessTaskSubmissionSchema,
   reuseTaskSeedSchema,
   storeFactScopeSchema,
   taskIntentInputSchema,
+  type BoundedExecutionLimitName,
+  type BoundedExecutionLimits,
+  type BoundedExecutionSnapshot,
   type ReuseTaskSeed,
   type StoreFact,
   type TaskIntentInput,
@@ -46,15 +51,25 @@ export interface HarnessWorkflowInput {
   executionSnapshot?: CreationExecutionSnapshot;
   /** Canonical product units frozen by the Coordinator for that submission. */
   usageReservation?: CreationSubmissionRecord['usageReservation'];
+  /** Missing only from durable requests admitted before bounded execution was introduced. */
+  boundedExecution?: BoundedExecutionSnapshot;
   prompts?: HarnessFrozenPrompts;
   /** Explicit prompt lineage copied into the durable task request snapshot. */
   promptRevisionRefs?: Record<string, HarnessPromptRevisionReference>;
 }
 
 export interface HarnessTaskRequest
-  extends Omit<HarnessWorkflowInput, 'prompts' | 'promptRevisionRefs'> {
+  extends Omit<
+    HarnessWorkflowInput,
+    'boundedExecution' | 'prompts' | 'promptRevisionRefs'
+  > {
   taskId: string;
 }
+
+type HarnessWorkflowInputBeforeBounds = Omit<
+  HarnessWorkflowInput,
+  'boundedExecution' | 'prompts' | 'promptRevisionRefs'
+>;
 
 export const harnessTaskRequestSchema = harnessTaskSubmissionSchema
   .extend({
@@ -128,6 +143,12 @@ export interface HarnessPromptFallbackAuditPort {
   }): Promise<void>;
 }
 
+export interface HarnessExecutionBoundsResolver {
+  resolve(
+    input: HarnessWorkflowInputBeforeBounds,
+  ): Promise<BoundedExecutionLimits>;
+}
+
 export class HarnessAdmissionError extends Error {
   readonly status = 409;
 
@@ -143,12 +164,36 @@ export class HarnessAdmissionError extends Error {
   }
 }
 
+export class HarnessExecutionBoundsAdmissionError extends Error {
+  readonly status = 503;
+  readonly code = 'REQUIRED_EXECUTION_LIMIT_UNSET';
+
+  constructor(readonly limit: BoundedExecutionLimitName) {
+    super(`Required execution limit ${limit} is unset.`);
+    this.name = 'HarnessExecutionBoundsAdmissionError';
+  }
+}
+
+const DEFAULT_EXECUTION_BOUNDS_RESOLVER: HarnessExecutionBoundsResolver = {
+  async resolve() {
+    return {
+      maxIterations: 'unset',
+      maxCostCents: 'unset',
+      maxWallClockMs: 'unset',
+      maxDelegations: 'unset',
+      requiredLimits: [],
+    };
+  },
+};
+
 export class HarnessTaskAdmissionService {
   constructor(
     private readonly registry: HarnessTaskRequestRegistry,
     private readonly starter: HarnessWorkflowStarter,
     private readonly prompts?: HarnessPromptResolver,
     private readonly promptFallbackAudits?: HarnessPromptFallbackAuditPort,
+    private readonly executionBounds: HarnessExecutionBoundsResolver =
+      DEFAULT_EXECUTION_BOUNDS_RESOLVER,
   ) {}
 
   async submit(input: HarnessTaskRequest) {
@@ -162,11 +207,34 @@ export class HarnessTaskAdmissionService {
     if (existing) {
       return this.resumeExisting(existing);
     }
-    let request = normalized;
+    const limits = boundedExecutionLimitsSchema.parse(
+      await this.executionBounds.resolve(normalized),
+    );
+    for (const requiredLimit of limits.requiredLimits) {
+      if (limits[requiredLimit] === 'unset') {
+        throw new HarnessExecutionBoundsAdmissionError(requiredLimit);
+      }
+    }
+    const boundedExecution = boundedExecutionSnapshotSchema.parse({
+      schemaVersion: 'bounded-execution-snapshot/v1',
+      ...limits,
+      consumption: {
+        iterations: 0,
+        costCents: 0,
+        wallClockMs: 0,
+        delegations: 0,
+      },
+      stopReason: null,
+      triggeredLimit: null,
+    });
+    let request: HarnessWorkflowInput = {
+      ...normalized,
+      boundedExecution,
+    };
     if (this.prompts) {
       const prompts = await this.prompts.resolve();
       request = {
-        ...normalized,
+        ...request,
         prompts,
         promptRevisionRefs: promptRevisionReferences(prompts),
       };
@@ -253,7 +321,9 @@ export class HarnessTaskAdmissionService {
   }
 }
 
-function normalizeRequest(input: HarnessTaskRequest): HarnessWorkflowInput {
+function normalizeRequest(
+  input: HarnessTaskRequest,
+): HarnessWorkflowInputBeforeBounds {
   const { executionSnapshot, usageReservation, ...request } = input;
   const parsed = harnessTaskRequestSchema.parse(request);
   const snapshot = executionSnapshot
@@ -280,7 +350,7 @@ function normalizeRequest(input: HarnessTaskRequest): HarnessWorkflowInput {
 function snapshotWorkflowInput(
   snapshot: CreationExecutionSnapshot,
   usageReservation?: CreationSubmissionRecord['usageReservation'],
-): HarnessWorkflowInput {
+): HarnessWorkflowInputBeforeBounds {
   return {
     actorId: snapshot.actorId,
     workspaceId: snapshot.workspaceId,

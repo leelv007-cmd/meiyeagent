@@ -32,6 +32,7 @@ export * from './note-plan.js';
 export * from './observability.js';
 export * from './note-page-regenerated.js';
 export * from './skill-schema-registry.js';
+export * from './bounded-execution.js';
 
 export interface ApiMeta {
   correlationId: string;

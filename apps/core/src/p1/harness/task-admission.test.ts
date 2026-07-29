@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import type { BoundedExecutionLimits } from '@meiye/contracts';
+
 import {
   HarnessAdmissionError,
+  HarnessExecutionBoundsAdmissionError,
   HarnessTaskAdmissionService,
   harnessTaskRequestSchema,
+  type HarnessExecutionBoundsResolver,
   type HarnessTaskRequestRegistry,
   type HarnessWorkflowStarter,
 } from './task-admission.js';
@@ -302,6 +306,86 @@ test('prompt fallback is persisted through the first-party audit port', async ()
   );
 });
 
+test('a required unset execution limit rejects admission before prompt resolution or workflow effects', async () => {
+  const registry = new MemoryRequestRegistry();
+  const starter = new RecordingStarter();
+  const prompts = new MutablePromptResolver();
+  const bounds = new RequiredUnsetBoundsResolver();
+  const service = new HarnessTaskAdmissionService(
+    registry,
+    starter,
+    prompts,
+    undefined,
+    bounds,
+  );
+
+  await assert.rejects(
+    service.submit(snapshotTaskRequest(composerSnapshot())),
+    (error: unknown) =>
+      error instanceof HarnessExecutionBoundsAdmissionError &&
+      error.code === 'REQUIRED_EXECUTION_LIMIT_UNSET' &&
+      error.status === 503 &&
+      error.limit === 'maxCostCents',
+  );
+  assert.equal(bounds.calls, 1);
+  assert.equal(prompts.calls, 0);
+  assert.equal(registry.claims.length, 0);
+  assert.equal(starter.starts, 0);
+});
+
+test('admission freezes explicit default execution bounds without changing the request fingerprint', async () => {
+  const registry = new MemoryRequestRegistry();
+  const starter = new RecordingStarter();
+  const service = new HarnessTaskAdmissionService(registry, starter);
+
+  await service.submit(taskRequest());
+  await service.submit(taskRequest());
+
+  assert.deepEqual(starter.requests[0]?.boundedExecution, {
+    schemaVersion: 'bounded-execution-snapshot/v1',
+    maxIterations: 'unset',
+    maxCostCents: 'unset',
+    maxWallClockMs: 'unset',
+    maxDelegations: 'unset',
+    requiredLimits: [],
+    consumption: {
+      iterations: 0,
+      costCents: 0,
+      wallClockMs: 0,
+      delegations: 0,
+    },
+    stopReason: null,
+    triggeredLimit: null,
+  });
+  assert.equal(registry.claims[0]?.fingerprint, registry.lookups[1]?.fingerprint);
+});
+
+test('changed server execution bounds do not change the client request fingerprint or a replayed pin', async () => {
+  const registry = new MemoryRequestRegistry();
+  const starter = new RecordingStarter();
+  const bounds = new MutableBoundsResolver();
+  const service = new HarnessTaskAdmissionService(
+    registry,
+    starter,
+    undefined,
+    undefined,
+    bounds,
+  );
+
+  await service.submit(taskRequest());
+  bounds.maxIterations = 25;
+  await service.submit(taskRequest());
+
+  assert.equal(bounds.calls, 1);
+  assert.equal(registry.claims[0]?.fingerprint, registry.lookups[1]?.fingerprint);
+  assert.deepEqual(
+    starter.requests.map(
+      (request) => request.boundedExecution?.maxIterations,
+    ),
+    [50, 50],
+  );
+});
+
 class MemoryRequestRegistry implements HarnessTaskRequestRegistry {
   readonly claims: Array<{ taskId: string; fingerprint: string }> = [];
   readonly lookups: Array<{ taskId: string; fingerprint: string }> = [];
@@ -380,6 +464,37 @@ class MutablePromptResolver implements HarnessPromptResolver {
         ),
       ]),
     ) as HarnessFrozenPrompts;
+  }
+}
+
+class RequiredUnsetBoundsResolver implements HarnessExecutionBoundsResolver {
+  calls = 0;
+
+  async resolve(): Promise<BoundedExecutionLimits> {
+    this.calls += 1;
+    return {
+      maxIterations: 50,
+      maxCostCents: 'unset',
+      maxWallClockMs: 'unset',
+      maxDelegations: 'unset',
+      requiredLimits: ['maxCostCents'],
+    };
+  }
+}
+
+class MutableBoundsResolver implements HarnessExecutionBoundsResolver {
+  calls = 0;
+  maxIterations = 50;
+
+  async resolve(): Promise<BoundedExecutionLimits> {
+    this.calls += 1;
+    return {
+      maxIterations: this.maxIterations,
+      maxCostCents: 'unset',
+      maxWallClockMs: 'unset',
+      maxDelegations: 'unset',
+      requiredLimits: [],
+    };
   }
 }
 
