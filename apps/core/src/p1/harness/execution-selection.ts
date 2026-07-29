@@ -2,6 +2,7 @@ export {
   assessImageExactText,
   candidateBillingDisposition,
   copySelectionCurrentBestSchema,
+  executeCopySelection,
   executeImageSelection,
   executePlatformCopySelection,
   HarnessSelectionError,
