@@ -34,6 +34,7 @@ import {
 export * from './job-contracts.js';
 
 export interface PgBossClient {
+  on?(event: 'error', listener: (error: Error) => void): unknown;
   start(): Promise<unknown>;
   stop(options?: { close?: boolean; graceful?: boolean; timeout?: number }): Promise<void>;
   createQueue(name: string, options?: Omit<Queue, 'name'>): Promise<void>;
@@ -72,6 +73,8 @@ export interface PgBossJobPortOptions {
   terminalNotifier?: (
     input: PgBossTerminalNotifierInput,
   ) => Promise<void>;
+  /** Background pg-boss errors stay observable without becoming unhandled events. */
+  runtimeErrorReporter?: (error: Error) => void;
 }
 
 export interface PgBossTerminalNotifierInput {
@@ -155,6 +158,16 @@ export class PgBossJobPort implements JobPort {
     );
     this.clock = options.clock ?? (() => new Date());
     this.terminalNotifier = options.terminalNotifier;
+    this.boss.on?.(
+      'error',
+      options.runtimeErrorReporter ??
+        ((error) => {
+          console.error(
+            '[job-runtime] pg-boss background error; its internal polling loop will retry.',
+            error,
+          );
+        }),
+    );
   }
 
   static connect(options: PgBossConnectionOptions) {

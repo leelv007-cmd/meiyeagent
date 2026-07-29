@@ -5,6 +5,7 @@ import type { PoolClient } from 'pg';
 import { PgBossJobPort, type PgBossClient } from './pg-boss-job-port.js';
 
 class RecordedPgBossClient implements PgBossClient {
+  private readonly errorListeners: Array<(error: Error) => void> = [];
   readonly jobs = new Map<string, JobWithMetadata<Record<string, unknown>>>();
   readonly queues = new Map<string, QueueResult>();
   readonly schedules: Schedule[] = [];
@@ -13,6 +14,15 @@ class RecordedPgBossClient implements PgBossClient {
   lastWorkOptions?: WorkOptions;
   redriveCount = 0;
   workerHandler?: (jobs: JobWithMetadata<Record<string, unknown>>[]) => Promise<JobResult[]>;
+
+  on(event: 'error', listener: (error: Error) => void) {
+    if (event === 'error') this.errorListeners.push(listener);
+    return this;
+  }
+
+  emitError(error: Error) {
+    for (const listener of this.errorListeners) listener(error);
+  }
 
   async start() {
     return this;
@@ -186,6 +196,19 @@ class RecordedPgBossClient implements PgBossClient {
 }
 
 describe('PgBossJobPort', () => {
+  it('keeps background pg-boss errors observable without a process-level failure', () => {
+    const client = new RecordedPgBossClient();
+    const reported: unknown[] = [];
+    new PgBossJobPort(client, {
+      queuePrefix: 'p1',
+      runtimeErrorReporter: (error) => reported.push(error),
+    });
+    const failure = new Error('temporary queue poll timeout');
+
+    assert.doesNotThrow(() => client.emitError(failure));
+    assert.deepEqual(reported, [failure]);
+  });
+
   it('keeps a delayed enqueue idempotent across processes and cancels it by logical job id', async () => {
     const client = new RecordedPgBossClient();
     const first = new PgBossJobPort(client, { queuePrefix: 'p1' });
