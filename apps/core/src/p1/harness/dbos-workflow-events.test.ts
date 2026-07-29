@@ -53,6 +53,29 @@ test('DBOS event reader exposes durable progress then the revision result', asyn
       },
     },
     () => '2026-07-18T09:00:00.000Z',
+    {
+      async getUsage(taskId, workspaceId) {
+        assert.equal(taskId, 'task-1');
+        assert.equal(workspaceId, 'workspace-1');
+        return {
+          id: 'usage-task-1',
+          taskId,
+          workspaceId,
+          quoteId: 'quote-task-1',
+          status: 'committed',
+          reservedQuantity: 2,
+          reservedUnits: [{ resource: 'copy', quantity: 2 }],
+          settledQuantity: 2,
+          settledUnits: [{ resource: 'copy', quantity: 2 }],
+          refundedQuantity: 0,
+          refundedUnits: [],
+          billingMode: 'per_request',
+          settlementStatus: 'reconciled',
+          createdAt: '2026-07-18T08:00:00.000Z',
+          updatedAt: '2026-07-18T09:00:00.000Z',
+        };
+      },
+    },
   );
   const source = new HarnessWorkflowEventSource(reader);
 
@@ -100,6 +123,14 @@ test('DBOS event reader exposes durable progress then the revision result', asyn
         },
       },
     },
+    actionUsage: {
+      actionId: 'usage-task-1',
+      taskId: 'task-1',
+      status: 'completed',
+      settlementStatus: 'reconciled',
+      settledUnits: 2,
+      refundedUnits: 0,
+    },
   });
 });
 
@@ -128,6 +159,27 @@ test('DBOS event reader preserves revision conflict details in failed state', as
       },
     },
     () => '2026-07-18T09:00:00.000Z',
+    {
+      async getUsage(taskId, workspaceId) {
+        return {
+          id: 'usage-task-failed',
+          taskId,
+          workspaceId,
+          quoteId: 'quote-task-failed',
+          status: 'refunded',
+          reservedQuantity: 1,
+          reservedUnits: [{ resource: 'copy', quantity: 1 }],
+          settledQuantity: 0,
+          settledUnits: [],
+          refundedQuantity: 1,
+          refundedUnits: [{ resource: 'copy', quantity: 1 }],
+          billingMode: 'per_request',
+          settlementStatus: 'reconciled',
+          createdAt: '2026-07-18T08:00:00.000Z',
+          updatedAt: '2026-07-18T09:00:00.000Z',
+        };
+      },
+    },
   );
 
   assert.deepEqual(
@@ -159,6 +211,14 @@ test('DBOS event reader preserves revision conflict details in failed state', as
         nextStep: '按现在的内容再生成一次就好。',
         actions: ['retry'],
         quotaRefunded: false,
+      },
+      actionUsage: {
+        actionId: 'usage-task-failed',
+        taskId: 'task-1',
+        status: 'rejected',
+        settlementStatus: 'reconciled',
+        settledUnits: 0,
+        refundedUnits: 1,
       },
     },
   );

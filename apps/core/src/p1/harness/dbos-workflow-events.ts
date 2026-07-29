@@ -4,11 +4,13 @@ import {
   workflowProgressEnvelopeSchema,
   workflowStateEnvelopeSchema,
   workflowTokenEnvelopeSchema,
+  type ProductUsageRecord,
   type WorkflowProgressEnvelope,
   type WorkflowTokenEnvelope,
 } from '@meiye/contracts';
 
 import type { HarnessWorkflowEventReader } from '../workflow-events.js';
+import { projectActionUsage } from './action-usage.js';
 import { merchantFailureReport } from './merchant-delivery-language.js';
 import { harnessRuntimeId } from './workspace-scope.js';
 import {
@@ -34,6 +36,13 @@ export interface HarnessDbosEventTransport {
   getResult(workflowId: string): Promise<unknown>;
 }
 
+export interface HarnessActionUsageReader {
+  getUsage(
+    taskId: string,
+    workspaceId: string,
+  ): Promise<ProductUsageRecord | null>;
+}
+
 const dbosTransport: HarnessDbosEventTransport = {
   readStream(workflowId, key) {
     return DBOS.readStream(workflowId, key);
@@ -50,6 +59,7 @@ export class HarnessDbosWorkflowEventReader
     private readonly access: HarnessWorkflowEventAccess,
     private readonly transport: HarnessDbosEventTransport = dbosTransport,
     private readonly now: () => string = () => new Date().toISOString(),
+    private readonly usage?: HarnessActionUsageReader,
   ) {}
 
   owns(workspaceId: string, workflowId: string) {
@@ -101,6 +111,11 @@ export class HarnessDbosWorkflowEventReader
       // result carries the 申报; the envelope lifts it so the browser never has
       // to read Core's result shape.
       const partial = merchantReportSchema.safeParse(snapshot.merchantReport);
+      const actionUsage = await this.readActionUsage(
+        workspaceId,
+        workflowId,
+        snapshot.outcome === 'cancelled' ? 'rejected' : 'completed',
+      );
       return workflowStateEnvelopeSchema.parse({
         workflowId,
         sourceRevision: deliveryRevision(snapshot),
@@ -108,6 +123,7 @@ export class HarnessDbosWorkflowEventReader
         occurredAt: this.now(),
         snapshot,
         ...(partial.success ? { merchantReport: partial.data } : {}),
+        ...(actionUsage ? { actionUsage } : {}),
       });
     } catch (error) {
       const failure = await this.access.readTerminalFailure(
@@ -115,6 +131,11 @@ export class HarnessDbosWorkflowEventReader
         workflowId,
       );
       if (!failure) throw error;
+      const actionUsage = await this.readActionUsage(
+        workspaceId,
+        workflowId,
+        'rejected',
+      );
       return workflowStateEnvelopeSchema.parse({
         workflowId,
         sourceRevision: failureRevision(failure),
@@ -128,6 +149,7 @@ export class HarnessDbosWorkflowEventReader
         // one deterministic mapping over the persisted failure — is what keeps
         // Core's failure copy from dying in the transport layer (P0-2).
         merchantReport: merchantFailureReport(failure),
+        ...(actionUsage ? { actionUsage } : {}),
       });
     }
   }
@@ -142,6 +164,15 @@ export class HarnessDbosWorkflowEventReader
       (await this.access.workflowRuntimeId(workspaceId, workflowId)) ??
       harnessRuntimeId(workspaceId, workflowId)
     );
+  }
+
+  private async readActionUsage(
+    workspaceId: string,
+    workflowId: string,
+    status: 'completed' | 'rejected',
+  ) {
+    const usage = await this.usage?.getUsage(workflowId, workspaceId);
+    return usage ? projectActionUsage(usage, status) : null;
   }
 }
 

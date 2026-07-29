@@ -54,6 +54,14 @@ test('workflow SSE preserves the cursor, heartbeat, frame types, and ownership 4
           sourceRevision: 3,
           status: 'success',
           workflowId: 'task-a',
+          actionUsage: {
+            actionId: 'usage-task-a',
+            taskId: 'task-a',
+            status: 'completed',
+            settlementStatus: 'reconciled',
+            settledUnits: 2,
+            refundedUnits: 0,
+          },
         },
         event: 'workflow.state',
       };
@@ -94,6 +102,19 @@ test('workflow SSE preserves the cursor, heartbeat, frame types, and ownership 4
   assert.match(body, /: heartbeat/);
   assert.match(body, /id: task-a:2\nevent: workflow\.progress/);
   assert.match(body, /id: task-a:3:success\nevent: workflow\.state/);
+  const stateData = body
+    .split('\n')
+    .filter((line) => line.startsWith('data: '))
+    .map((line) => JSON.parse(line.slice('data: '.length)))
+    .find((data) => data.workflowId === 'task-a' && data.status === 'success');
+  assert.deepEqual(stateData.actionUsage, {
+    actionId: 'usage-task-a',
+    taskId: 'task-a',
+    status: 'completed',
+    settlementStatus: 'reconciled',
+    settledUnits: 2,
+    refundedUnits: 0,
+  });
   assert.deepEqual(cursors, ['task-a:1']);
 
   const foreign = await fetch(

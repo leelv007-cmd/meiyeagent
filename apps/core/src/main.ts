@@ -1976,7 +1976,12 @@ if (harnessRuntimeConfig) {
   );
   await composerSubmissionCoordinator.recoverPendingStarts();
   harnessWorkflowEventSource = new HarnessWorkflowEventSource(
-    new HarnessDbosWorkflowEventReader(harnessStore),
+    new HarnessDbosWorkflowEventReader(
+      harnessStore,
+      undefined,
+      undefined,
+      productQuoteService,
+    ),
   );
   const resumeReconciler = new HarnessResumeReconciler(
     new PostgresHarnessResumeReconcilerStore(pool),
