@@ -6,7 +6,6 @@ import { pathToFileURL } from 'node:url';
 const lanePath = '/Users/bin/Desktop/开发/内容无人区/lane-255';
 const allowedModes = [
   'provision',
-  '--cleanup',
   '--inspect',
   '--cleanup-if-safe',
 ];
@@ -25,7 +24,7 @@ export function runIssue255SafeProvision({
   validateDatabaseTargets(businessUrl, dbosUrl);
   if (!allowedModes.includes(mode) || argv.length > 1) {
     fail(
-      'Usage: issue-255-safe-provision.mjs [--cleanup|--inspect|--cleanup-if-safe]',
+      'Usage: issue-255-safe-provision.mjs [--inspect|--cleanup-if-safe]',
     );
   }
 
@@ -61,7 +60,7 @@ export function runIssue255SafeProvision({
     }
   }
 
-  if (mode === '--cleanup' || mode === '--cleanup-if-safe') {
+  if (mode === '--cleanup-if-safe') {
     cleanupDatabase(context, businessUrl, 'meiye_issue255');
     cleanupDatabase(context, dbosUrl, 'meiye_issue255_dbos');
     process.stdout.write(

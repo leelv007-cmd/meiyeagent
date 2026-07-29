@@ -37,9 +37,11 @@ If any predicate is unknown, treat the reset as unsafe.
 
 The only approved entrypoint is the digest-pinned launcher at
 `/Users/bin/.codex/monitors/issue-255-safe-provision.mjs`. Its SHA-256 is
-`5934aaab706b4b2bea57353b33ca10a00e5413a5cdd4750463455c9e8235a5e9`;
+`32aea0c1f4e540b310b83d4a1a961f870da56c15197b68b7596eed2396933dff`;
 it refuses to load the versioned implementation unless that file has SHA-256
-`c2429f2a7548a49870ead2ee0bcd486c0c792ccd9fe65d19a2bcf1ec51e5bf2e`.
+`be63e72204812a5d5569d2b6adb5b90eb6ac71db5c8d1fccc19402903ffb3dc0`.
+The launcher executes the already-verified bytes directly; it does not reopen
+the owner-writable implementation path after digest verification.
 Before inspection or cleanup, the implementation validates both fixed database
 names and their separation in one preflight; any invalid target refuses the
 operation before either database can be dropped.
@@ -65,9 +67,10 @@ node /Users/bin/.codex/monitors/issue-255-safe-provision.mjs --cleanup-if-safe
 ```
 
 Any false or unknown predicate refuses cleanup before either database is
-dropped. An accepted cleanup must report residual count `0`, which verifies
-both isolated database names are absent. Recreate both fresh, separate
-databases only through the same provisioner:
+dropped. The launcher has no unconditional cleanup mode. An accepted cleanup
+must report residual count `0`, which verifies both isolated database names are
+absent. Recreate both fresh, separate databases only through the same
+provisioner:
 
 ```sh
 node /Users/bin/.codex/monitors/issue-255-safe-provision.mjs
