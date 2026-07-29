@@ -103,8 +103,10 @@ test('standard SKILL.md and assets round-trip without platform conversion', () =
     files: {
       'SKILL.md': STANDARD_SKILL_MD,
       'assets/logo.png': logo,
+      'custom/portable.txt': 'Preserve third-party package additions.',
       'evals/evals.json': JSON.stringify({ cases: [] }),
       'references/voice.md': 'Prefer specific, useful language.',
+      'scripts/inspect.sh': '#!/bin/sh\nexit 0\n',
     },
   });
 
@@ -131,8 +133,35 @@ test('standard SKILL.md and assets round-trip without platform conversion', () =
     [
       'SKILL.md',
       'assets/logo.png',
+      'custom/portable.txt',
       'evals/evals.json',
       'references/voice.md',
+      'scripts/inspect.sh',
     ],
+  );
+});
+
+test('Skill package paths cannot escape the portable directory', () => {
+  assert.throws(
+    () =>
+      importSkillPackage({
+        directoryName: 'daily-beauty-context',
+        files: {
+          'SKILL.md': STANDARD_SKILL_MD,
+          '../secret.txt': 'must not escape',
+        },
+      }),
+    /safe relative path/u,
+  );
+  assert.throws(
+    () =>
+      importSkillPackage({
+        directoryName: 'daily-beauty-context',
+        files: {
+          'SKILL.md': STANDARD_SKILL_MD,
+          '/tmp/secret.txt': 'must not be absolute',
+        },
+      }),
+    /safe relative path/u,
   );
 });

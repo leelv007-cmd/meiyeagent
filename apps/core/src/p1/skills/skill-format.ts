@@ -53,7 +53,7 @@ export function importSkillPackage(
   const files: Record<string, SkillPackageFile> = {};
   for (const [path, value] of Object.entries(packageFiles)) {
     if (path === 'SKILL.md') continue;
-    assertStandardPackagePath(path);
+    assertSafePackagePath(path);
     files[path] = structuredClone(value);
   }
   return {
@@ -75,7 +75,7 @@ export function exportSkillPackage(
     'SKILL.md': serializeSkillMarkdown(frontmatter, skill.instructions),
   };
   for (const [path, value] of Object.entries(skill.files)) {
-    assertStandardPackagePath(path);
+    assertSafePackagePath(path);
     files[path] = structuredClone(value);
   }
   return files;
@@ -180,16 +180,16 @@ function requiredString(value: unknown, field: string) {
   return value;
 }
 
-function assertStandardPackagePath(path: string) {
+function assertSafePackagePath(path: string) {
+  const segments = path.split('/');
   if (
-    path.startsWith('scripts/') ||
-    path.startsWith('references/') ||
-    path.startsWith('assets/') ||
-    path === 'evals/evals.json'
+    !path ||
+    path.startsWith('/') ||
+    path.includes('\0') ||
+    segments.some((segment) => !segment || segment === '.' || segment === '..')
   ) {
-    return;
+    throw new Error(`Skill package path must be a safe relative path: ${path}.`);
   }
-  throw new Error(`Unsupported Skill package path: ${path}.`);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
