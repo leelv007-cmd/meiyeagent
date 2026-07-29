@@ -1,9 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type {
-  GeneratedCopyCandidateContent,
-  GeneratedPlatformVariants,
-  HealthOverlayPort,
-  VideoCompositionEvidence,
+import {
+  MODEL_CAPABILITY_VOCABULARY_VERSION,
+  type ModelCapabilityProfile,
+  type GeneratedCopyCandidateContent,
+  type GeneratedPlatformVariants,
+  type HealthOverlayPort,
+  type VideoCompositionEvidence,
 } from '@meiye/contracts';
 import { toJSONSchema, type ZodType } from 'zod';
 import { recordedH264Video } from './recorded-media-adapters.js';
@@ -869,6 +871,7 @@ export class ModelSupplyApplicationService {
   private readonly providerAdmission?: ModelSupplyProviderAdmissionPort;
   private readonly promptResolver?: ModelSupplyPromptResolver;
   private readonly promptAudits?: ModelSupplyPromptAuditPort;
+  private readonly inferFixtureMediaCapabilityProfiles: boolean;
   private readonly preparedPromptBindings = new Map<
     string,
     ModelSupplySubmission['promptBinding']
@@ -890,6 +893,7 @@ export class ModelSupplyApplicationService {
     providerAdmission?: ModelSupplyProviderAdmissionPort;
     promptResolver?: ModelSupplyPromptResolver;
     promptAudits?: ModelSupplyPromptAuditPort;
+    inferFixtureMediaCapabilityProfiles?: boolean;
   }) {
     for (const model of options.models) this.modelById.set(model.id, model);
     this.runtimeCapabilities = options.runtimeCapabilities
@@ -913,6 +917,8 @@ export class ModelSupplyApplicationService {
     this.providerAdmission = options.providerAdmission;
     this.promptResolver = options.promptResolver;
     this.promptAudits = options.promptAudits;
+    this.inferFixtureMediaCapabilityProfiles =
+      options.inferFixtureMediaCapabilityProfiles ?? false;
   }
 
   attempts() {
@@ -4021,9 +4027,7 @@ export class ModelSupplyApplicationService {
         ...(deployment.activationEvidence
           ? { activationStatus: deployment.activationEvidence.status }
           : {}),
-        capabilityProfile: deployment.capabilityProfile
-          ? structuredClone(deployment.capabilityProfile)
-          : null,
+        capabilityProfile: this.routeCapabilityProfile(model, deployment),
       })),
       reason:
         fallback ??
@@ -4039,6 +4043,39 @@ export class ModelSupplyApplicationService {
         ? { exampleSetRevision: submission.exampleSetRevision }
         : {}),
       createdAt: now(),
+    };
+  }
+
+  private routeCapabilityProfile(
+    model: CatalogModel,
+    deployment: ModelDeployment,
+  ): ModelCapabilityProfile | null {
+    if (deployment.capabilityProfile) {
+      return structuredClone(deployment.capabilityProfile);
+    }
+    if (!this.inferFixtureMediaCapabilityProfiles) return null;
+    const mime =
+      model.modality === 'image'
+        ? 'image/*'
+        : model.modality === 'video'
+          ? 'video/*'
+          : model.modality === 'audio'
+            ? 'audio/*'
+            : null;
+    if (!mime) return null;
+    return {
+      vocabularyVersion: MODEL_CAPABILITY_VOCABULARY_VERSION,
+      protocolCapabilities: {},
+      modalities: [
+        {
+          mime,
+          supported: true,
+          basis: 'inferred',
+          evidenceRef: `catalog-model:${model.id}:modality:${mime}`,
+        },
+      ],
+      businessTags: [],
+      modalityCapabilities: [],
     };
   }
 

@@ -300,6 +300,17 @@ test('durable media effects receive the request-time capability binding', async 
     catalogModelId: model.id,
     dataClass: [],
   });
+  assert.deepEqual(
+    frozenRouteSnapshot.allowedCandidates?.[0]?.capabilityProfile?.modalities,
+    [
+      {
+        mime: 'image/*',
+        supported: true,
+        basis: 'inferred',
+        evidenceRef: `catalog-model:${model.id}:modality:image/*`,
+      },
+    ],
+  );
 
   const request = await runtime.application.mediaProviderRequestForExecution({
     workspaceId: 'workspace-media-request-binding',

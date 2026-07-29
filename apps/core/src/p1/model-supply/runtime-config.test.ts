@@ -116,7 +116,46 @@ test('runtime env assembly exposes honest disabled, recorded, and gateway modes'
     models: fixture.models,
     deployments: fixture.deployments,
     execution: fixture.runtime.execution,
+    inferFixtureMediaCapabilityProfiles: true,
     runtimeCapabilities: fixture.runtimeCapabilities,
+  });
+  const fixtureImageRoute = fixtureService.freezeFixedRoute({
+    workspaceId: 'workspace-image-fixture',
+    operation: 'image.generate',
+    catalogModelId: 'nano-banana-2',
+    dataClass: [],
+  });
+  const fixtureImageCandidate = fixtureImageRoute.allowedCandidates?.[0];
+  assert.ok(fixtureImageCandidate);
+  assert.deepEqual(fixtureImageCandidate.allowedDataClasses, ['public']);
+  assert.equal(fixtureImageCandidate.deploymentStatus, 'active');
+  assert.equal(fixtureImageCandidate.modelModality, 'image');
+  assert.deepEqual(fixtureImageCandidate.modelOperations, [
+    'image.generate',
+    'image.edit',
+  ]);
+  assert.equal(fixtureImageCandidate.modelDisplayName, 'Nano Banana 2');
+  assert.equal(fixtureImageCandidate.modelQualityRank, 82);
+  assert.equal(fixtureImageCandidate.modelManufacturer, 'Google');
+  assert.deepEqual(fixtureImageCandidate.modelCapabilities, [
+    'image.generate',
+    'image.edit',
+  ]);
+  assert.equal(fixtureImageCandidate.stableModelName, 'nano-banana-2');
+  assert.equal(fixtureImageCandidate.modelVersion, '2');
+  assert.deepEqual(fixtureImageCandidate.capabilityProfile, {
+    vocabularyVersion: 'model-capability-v1',
+    protocolCapabilities: {},
+    modalities: [
+      {
+        mime: 'image/*',
+        supported: true,
+        basis: 'inferred',
+        evidenceRef: 'catalog-model:nano-banana-2:modality:image/*',
+      },
+    ],
+    businessTags: [],
+    modalityCapabilities: [],
   });
   const customProbe = await fixtureService.executeCopyQualityProbe({
     workspaceId: 'workspace-custom-fixture',

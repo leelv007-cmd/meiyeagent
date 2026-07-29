@@ -210,6 +210,71 @@ test('unknown capability uses the live platform default and freezes fallback fac
   ]);
 });
 
+test('explicit media capability remains on the confirmed route without platform fallback', async () => {
+  const snapshot = mediaSnapshot();
+  const frozen = modelSupplyRoute(snapshot);
+  const candidate = frozen.allowedCandidates?.[0];
+  assert.ok(candidate);
+  candidate.capabilityProfile = {
+    vocabularyVersion: 'model-capability-v1',
+    protocolCapabilities: {},
+    modalities: [
+      {
+        mime: 'image/*',
+        supported: true,
+        basis: 'inferred',
+        evidenceRef: 'catalog-model:model-route:modality:image/*',
+      },
+    ],
+    businessTags: [],
+    modalityCapabilities: [],
+  };
+  let platformDefaultResolutions = 0;
+  const resolver = new ProductionHarnessFrozenRouteSnapshotResolver(
+    {
+      async getRouteSnapshot() {
+        return foundationRoute(snapshot);
+      },
+    },
+    {
+      async freezeFixedRouteForExecution() {
+        return structuredClone(frozen);
+      },
+    },
+    {
+      async resolve() {
+        platformDefaultResolutions += 1;
+        throw new Error('Platform fallback must not run.');
+      },
+    },
+  );
+  const requirement: ModelCapabilityRequirementAxis = {
+    axisId: 'imagePrimary',
+    vocabularyVersion: 'model-capability-v1',
+    requiredProtocolCapabilities: [],
+    requiredModalities: ['image/*'],
+    requiredBusinessTags: [],
+    requiredModalityCapabilities: [],
+    unknownPolicy: 'conservative_always_available',
+  };
+
+  const result = await resolver.resolve(snapshot, {
+    requirements: [requirement],
+  });
+
+  assert.equal(platformDefaultResolutions, 0);
+  assert.deepEqual(result.capabilityMatches, [
+    {
+      axisId: 'imagePrimary',
+      deploymentId: 'deployment-route',
+      outcome: 'eligible',
+      reasons: [],
+      evidenceRefs: ['catalog-model:model-route:modality:image/*'],
+    },
+  ]);
+  assert.equal(result.capabilityFallbackFacts, undefined);
+});
+
 test('unknown capability refreezes a different live platform default as the final durable route', async () => {
   const snapshot = mediaSnapshot();
   const original = modelSupplyRoute(snapshot);

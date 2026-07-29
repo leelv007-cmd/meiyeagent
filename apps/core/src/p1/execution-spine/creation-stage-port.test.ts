@@ -114,7 +114,7 @@ test("a terminal successor carries the late answer into Harness context and deci
 	]);
 });
 
-test("only an authoritative pre-admission rejection can terminate a start", async () => {
+test("only permanent immutable-request conflicts terminate a start", async () => {
 	const snapshot = createCreationExecutionSnapshot(
 		command(),
 		"2026-07-22T09:00:00.000Z",
@@ -133,33 +133,48 @@ test("only an authoritative pre-admission rejection can terminate a start", asyn
 		"EXECUTION_SNAPSHOT_MISMATCH",
 		"Immutable request rejected.",
 	);
-	const rejected = new CreationStagePort({
+	const stage = new CreationStagePort({
 		async submit(input) {
 			return { workflowId: input.taskId };
-		},
-		async taskBelongsToWorkspace() {
-			return false;
-		},
-	});
-	const admitted = new CreationStagePort({
-		async submit(input) {
-			return { workflowId: input.taskId };
-		},
-		async taskBelongsToWorkspace() {
-			return true;
 		},
 	});
 
 	assert.equal(
-		await rejected.classifyStartFailure(submission, rejection),
+		await stage.classifyStartFailure(submission, rejection),
 		"terminal_rejection",
 	);
 	assert.equal(
-		await admitted.classifyStartFailure(submission, rejection),
+		await stage.classifyStartFailure(
+			submission,
+			new HarnessAdmissionError(
+				"REQUEST_FINGERPRINT_CONFLICT",
+				"Task ID was reused with a different immutable request.",
+			),
+		),
+		"terminal_rejection",
+	);
+	assert.equal(
+		await stage.classifyStartFailure(
+			submission,
+			new HarnessAdmissionError(
+				"FROZEN_ROUTE_MISMATCH",
+				"Frozen media route is not ready for admission.",
+			),
+		),
 		"retry",
 	);
 	assert.equal(
-		await rejected.classifyStartFailure(
+		await stage.classifyStartFailure(
+			submission,
+			new HarnessAdmissionError(
+				"FROZEN_REQUEST_MISSING",
+				"Accepted task is missing its durable request.",
+			),
+		),
+		"retry",
+	);
+	assert.equal(
+		await stage.classifyStartFailure(
 			submission,
 			new Error("Acknowledgement unavailable"),
 		),

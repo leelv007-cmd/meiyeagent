@@ -17,10 +17,6 @@ import type {
  */
 export interface HarnessCreationAdmissionPort {
 	submit(input: HarnessTaskRequest): Promise<{ workflowId: string }>;
-	taskBelongsToWorkspace?(
-		taskId: string,
-		workspaceId: string,
-	): Promise<boolean>;
 }
 
 export class CreationStagePort implements CreationSubmissionHarnessStarter {
@@ -40,21 +36,14 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 	}
 
 	async classifyStartFailure(
-		submission: CreationSubmissionRecord,
+		_submission: CreationSubmissionRecord,
 		error: unknown,
 	) {
-		if (!this.admission.taskBelongsToWorkspace) return "retry" as const;
-		try {
-			const admitted = await this.admission.taskBelongsToWorkspace(
-				submission.task.id,
-				submission.snapshot.workspaceId,
-			);
-			return !admitted && error instanceof HarnessAdmissionError
-				? ("terminal_rejection" as const)
-				: ("retry" as const);
-		} catch {
-			return "retry" as const;
-		}
+		if (!(error instanceof HarnessAdmissionError)) return "retry" as const;
+		return error.code === "REQUEST_FINGERPRINT_CONFLICT" ||
+			error.code === "EXECUTION_SNAPSHOT_MISMATCH"
+			? ("terminal_rejection" as const)
+			: ("retry" as const);
 	}
 }
 

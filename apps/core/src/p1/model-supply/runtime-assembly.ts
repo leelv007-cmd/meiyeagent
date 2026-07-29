@@ -187,6 +187,8 @@ export function createModelSupplyRuntime(
     deployments,
     models,
     capabilityHotAssembly,
+    inferFixtureMediaCapabilityProfiles:
+      runtime.activation === 'local_fixture_verified',
     planningControlPlane: input.controlPlane.planningControlPlane,
     runtimeCapabilities,
   });
