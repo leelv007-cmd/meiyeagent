@@ -33,6 +33,7 @@ test('one execution attempt budget governs every physical provider callback', as
       assert.ok(error instanceof ExecutionAttemptBudgetExceeded);
       assert.equal(error.maxAttempts, 2);
       assert.equal(error.consumedAttempts, 2);
+      assert.equal(error.completedAttemptsInRun, 2);
       return true;
     },
   );
@@ -61,6 +62,7 @@ test('a zero-attempt budget blocks before the first provider effect', async () =
       assert.ok(error instanceof ExecutionAttemptBudgetExceeded);
       assert.equal(error.maxAttempts, 0);
       assert.equal(error.consumedAttempts, 0);
+      assert.equal(error.completedAttemptsInRun, 0);
       return true;
     },
   );

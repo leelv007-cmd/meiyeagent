@@ -19,6 +19,8 @@ import {
 } from './owned-asset-registration-lifecycle.js';
 import { withServerDerivedReferenceDataClass } from './reference-asset-dispatch-guard.js';
 
+const EXECUTION_ATTEMPT_BUDGET_SUSPENSION_CODE =
+  'EXECUTION_ATTEMPT_BUDGET_SUSPENDED_BEFORE_PROVIDER';
 
 // S2a: behavior-preserving extracts (re-export for existing import paths)
 export {
@@ -2518,7 +2520,14 @@ export class ModelSupplyApplicationService {
       }
       if (
         checkpoint?.recoveredResult &&
-        !options.continueAfterRecoveredCheckpoint
+        !options.continueAfterRecoveredCheckpoint &&
+        !(
+          checkpoint.recoveredResult.status === 'unknown' &&
+          checkpoint.recoveredResult.failureCode ===
+            EXECUTION_ATTEMPT_BUDGET_SUSPENSION_CODE &&
+          checkpoint.recoveredResult.attempt.acceptance ===
+            'acceptance_unknown'
+        )
       ) {
         if (admission?.status === 'admitted') {
           await this.providerAdmission?.release(admission.leaseId);
@@ -2721,6 +2730,49 @@ export class ModelSupplyApplicationService {
         }
       } catch (error) {
         if (error instanceof ExecutionAttemptBudgetExceeded) {
+          if (error.completedAttemptsInRun === 0) {
+            const attempt: ProviderAttempt = {
+              id: attemptId,
+              jobId,
+              catalogModelId: candidate.model.id,
+              deploymentId: candidate.deployment.id,
+              acceptance: 'acceptance_unknown',
+              status: 'unknown',
+              createdAt: now(),
+            };
+            const providerCost: ProviderCost = {
+              id: `provider-cost-${hash(`${attemptId}:budget-suspended`).slice(0, 24)}`,
+              status: 'estimated',
+              amount: 0,
+              currency:
+                candidate.deployment.region === 'domestic' ? 'CNY' : 'USD',
+              usage: {},
+            };
+            await this.ledger?.settleAttempt({
+              submission: attemptSubmission,
+              result: {
+                jobId,
+                operation: attemptSubmission.operation,
+                ...canvasGenerationResultInputs(attemptSubmission),
+                status: 'unknown',
+                failureCode: EXECUTION_ATTEMPT_BUDGET_SUSPENSION_CODE,
+                ...(attemptSubmission.origin
+                  ? { origin: structuredClone(attemptSubmission.origin) }
+                  : {}),
+                snapshot,
+                attempt,
+                attempts: [...attemptChain, attempt],
+                usage: {
+                  id: `model-usage-${hash(jobId).slice(0, 28)}`,
+                  status: 'reserved',
+                  quantity: productUsageQuantity,
+                },
+                providerCost,
+                providerCosts: [...providerCostChain, providerCost],
+              },
+              evidence: 'execution_attempt_budget_exhausted_before_provider',
+            });
+          }
           throw error;
         }
         const attempt: ProviderAttempt = {

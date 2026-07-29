@@ -7,6 +7,7 @@ export class ExecutionAttemptBudgetExceeded extends Error {
   constructor(
     readonly maxAttempts: number,
     readonly consumedAttempts: number,
+    readonly completedAttemptsInRun?: number,
   ) {
     super(
       `Execution attempt budget exhausted after ${consumedAttempts} of ${maxAttempts} attempts.`,
@@ -63,7 +64,18 @@ export function withExecutionAttemptBudget(
         ...request,
         async beforeProviderAttempt() {
           await beforeProviderAttempt?.();
-          budget.consume();
+          try {
+            budget.consume();
+          } catch (error) {
+            if (error instanceof ExecutionAttemptBudgetExceeded) {
+              throw new ExecutionAttemptBudgetExceeded(
+                error.maxAttempts,
+                error.consumedAttempts,
+                budget.consumedAttempts - consumedBefore,
+              );
+            }
+            throw error;
+          }
         },
       });
       return {

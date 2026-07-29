@@ -24,6 +24,9 @@ import {
   ExecutionAttemptBudgetExceeded,
   withExecutionAttemptBudget,
 } from './execution-attempt-budget.js';
+import { P1ApplicationService } from '../foundation/application-service.js';
+import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
+import { FoundationModelSupplyLedger } from './foundation-ledger.js';
 
 test('AI SDK structured executor uses Output.object and final-step metadata', async () => {
   const requests: Array<Record<string, unknown>> = [];
@@ -209,6 +212,56 @@ test('one shared attempt budget blocks a real schema repair before its provider 
 
   assert.equal(providerCalls, 1);
   assert.equal(budget.consumedAttempts, 1);
+});
+
+test('a raised attempt limit resumes a durable zero-attempt suspension without repeating completed provider effects', async () => {
+  const repository = new MemoryFoundationRepository();
+  repository.grantOwner('workspace-1', 'user-1');
+  const foundation = new P1ApplicationService(repository);
+  const ledger = new FoundationModelSupplyLedger(foundation);
+  const executor = new CountingStructuredExecutor({
+    normalized: '提高上限后继续',
+  });
+  const request = {
+    effectIdempotencyKey: 'wf:workflow-budget-resume:s1:intent:0',
+    schemaName: 'intent_naming_v1',
+    schemaRevision: 'intent-naming-v1',
+    instructions: 'Return the normalized intent.',
+    prompt: '{"intent":"提高上限后继续"}',
+    schema: z.object({ normalized: z.string() }).strict(),
+  };
+
+  await assert.rejects(
+    withExecutionAttemptBudget(
+      createRunner(ledger, executor, false),
+      new ExecutionAttemptBudget({
+        maxAttempts: 0,
+        consumedAttempts: 0,
+      }),
+    ).run(request),
+    ExecutionAttemptBudgetExceeded,
+  );
+  assert.equal(executor.calls, 0);
+
+  const resumed = await withExecutionAttemptBudget(
+    createRunner(ledger, executor, false),
+    new ExecutionAttemptBudget({
+      maxAttempts: 1,
+      consumedAttempts: 0,
+    }),
+  ).run(request);
+  const replayed = await withExecutionAttemptBudget(
+    createRunner(ledger, executor, false),
+    new ExecutionAttemptBudget({
+      maxAttempts: 1,
+      consumedAttempts: 0,
+    }),
+  ).run(request);
+
+  assert.deepEqual(resumed.output, { normalized: '提高上限后继续' });
+  assert.equal(resumed.replayed, false);
+  assert.deepEqual(replayed.output, resumed.output);
+  assert.equal(executor.calls, 1);
 });
 
 test('D-035 counts a call when both the first pass and bounded repair fail', async () => {
