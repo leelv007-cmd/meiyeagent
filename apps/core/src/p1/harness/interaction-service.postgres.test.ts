@@ -578,6 +578,7 @@ test(
           ?.requestId,
         timeoutRequest.requestId,
       );
+      await timeoutService.ackRenderer(workspaceId, runId);
       assert.equal(
         (await new PostgresHarnessStore(pool).readPending(workspaceId, runId))
           ?.questionId,
@@ -760,11 +761,13 @@ test(
           },
           () => new Date(casNow),
         );
-      await createCasService().readForCarrier(
+      const casCarrierService = createCasService();
+      await casCarrierService.readForCarrier(
         workspaceId,
         runId,
         'conversation',
       );
+      await casCarrierService.ackRenderer(workspaceId, runId);
       casNow += 30_000;
       const merchantCasKey = `interaction-cas-merchant-${suffix}`;
       const casResults = await Promise.allSettled([

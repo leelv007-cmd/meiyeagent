@@ -178,6 +178,11 @@ export interface HarnessInteractionStore {
     runId: string,
     capability: HarnessInteractionPendingProjection['rendererCapability'],
   ): Promise<boolean>;
+  ackInteractionRenderer(
+    workspaceId: string,
+    runId: string,
+    at: string,
+  ): Promise<'acked' | 'replayed' | 'stale' | 'unknown_state'>;
 }
 
 export interface HarnessInteractionResumer {
@@ -277,16 +282,27 @@ export class HarnessInteractionService {
     ) {
       return null;
     }
-    if (
-      !(await this.store.setInteractionRendererCapability(
-        workspaceId,
-        runId,
-        'available',
-      ))
-    ) {
-      return null;
-    }
     return request;
+  }
+
+  async ackRenderer(workspaceId: string, runId: string) {
+    const outcome = await this.store.ackInteractionRenderer(
+      workspaceId,
+      runId,
+      this.now().toISOString(),
+    );
+    if (outcome === 'stale') {
+      throw new HarnessInteractionError(
+        'STALE_INTERACTION_REQUEST',
+        'The interaction request is no longer pending.',
+      );
+    }
+    if (outcome === 'unknown_state') {
+      throw new HarnessInteractionError(
+        'INTERACTION_KIND_MISMATCH',
+        'The interaction renderer cannot acknowledge this pending state.',
+      );
+    }
   }
 
   async submit(

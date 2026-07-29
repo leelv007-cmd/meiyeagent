@@ -245,7 +245,8 @@ export type WorkspaceHarnessDecisionResource =
 export type WorkspaceHarnessInteractionResource =
   | `p1/harness/tasks/${string}/interaction`
   | `p1/harness/tasks/${string}/interaction/editing`
-  | `p1/harness/tasks/${string}/interaction/message`;
+  | `p1/harness/tasks/${string}/interaction/message`
+  | `p1/harness/tasks/${string}/interaction/renderer`;
 export type WorkspaceHarnessProductMetricResource =
   `p1/harness/tasks/${string}/product-metrics`;
 
@@ -263,11 +264,12 @@ export function workspaceHarnessDecisionResource(
 
 export function workspaceHarnessInteractionResource(
   taskId: string,
-  action?: 'editing' | 'message'
+  action?: 'editing' | 'message' | 'renderer'
 ): WorkspaceHarnessInteractionResource {
   const base: `p1/harness/tasks/${string}/interaction` = `p1/harness/tasks/${encodeURIComponent(taskId)}/interaction`;
   if (action === 'editing') return `${base}/editing`;
   if (action === 'message') return `${base}/message`;
+  if (action === 'renderer') return `${base}/renderer`;
   return base;
 }
 

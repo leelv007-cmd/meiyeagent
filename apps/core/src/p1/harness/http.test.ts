@@ -114,6 +114,9 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
           },
         };
       },
+      async ackRenderer(workspaceId, taskId) {
+        interactionCalls.push(['renderer', workspaceId, taskId]);
+      },
       async setEditing(workspaceId, taskId, editing) {
         interactionCalls.push(['editing', workspaceId, taskId, editing]);
       },
@@ -383,6 +386,14 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
     (await malformedInteraction.json()).data.request.revision,
     2,
   );
+  const renderer = await fetch(
+    `${base}/task-http-1/interaction/renderer`,
+    {
+      method: 'POST',
+      headers,
+    },
+  );
+  assert.equal(renderer.status, 204);
   const editing = await fetch(`${base}/task-http-1/interaction/editing`, {
     method: 'POST',
     headers,
@@ -410,6 +421,7 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
     ['read', 'workspace-1', 'task-http-1', 'conversation'],
     ['submit', 'workspace-1', interactionAnswer],
     ['submit', 'workspace-1', malformedInteractionAnswer],
+    ['renderer', 'workspace-1', 'task-http-1'],
     ['editing', 'workspace-1', 'task-http-1', true],
     ['message', 'workspace-1', 'task-http-1', merchantMessage],
   ]);

@@ -14,11 +14,13 @@ type ItemResult = Extract<
 
 export function AskMerchantGroupCard({
   onEditingChange,
+  onRendererReady,
   onSubmit,
   pending = false,
   request,
 }: {
   onEditingChange: (editing: boolean) => Promise<void>;
+  onRendererReady: () => Promise<void>;
   onSubmit: (response: AskMerchantAnswer['response']) => Promise<void>;
   pending?: boolean;
   request: AskMerchantQuestionRequest;
@@ -26,6 +28,9 @@ export function AskMerchantGroupCard({
   const [results, setResults] = useState<Record<string, ItemResult>>({});
 
   useEffect(() => setResults({}), [request.requestId, request.revision]);
+  useEffect(() => {
+    void onRendererReady();
+  }, [onRendererReady, request.requestId, request.revision]);
 
   const complete = useMemo(
     () =>

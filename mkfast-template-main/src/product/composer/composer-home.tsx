@@ -96,6 +96,7 @@ import {
   type CreativeGroundingRequirement,
 } from '@/product/creative-brief-editor';
 import {
+  acknowledgeHarnessInteractionRenderer,
   readActiveHarnessTasks,
   readPendingHarnessInteraction,
   readPendingHarnessDecision,
@@ -1489,6 +1490,10 @@ export function ComposerHome({
     },
     [decisionQuery, interactionQuery, pendingAskRequest, taskId]
   );
+  const acknowledgeAskMerchantRenderer = useCallback(
+    async () => acknowledgeHarnessInteractionRenderer(taskId),
+    [taskId]
+  );
 
   const addSource = (assetId: string) => {
     const facts = sourceFactsRef.current.get(assetId);
@@ -2631,6 +2636,7 @@ export function ComposerHome({
                 onEditingChange={(editing) =>
                   setHarnessInteractionEditing(taskId, editing)
                 }
+                onRendererReady={acknowledgeAskMerchantRenderer}
                 onSubmit={answerAskMerchant}
                 pending={questionPending}
                 request={pendingAskRequest}

@@ -521,6 +521,60 @@ test('an unavailable renderer holds an otherwise eligible expired default', asyn
   );
 });
 
+test('carrier reads do not self-ack and the first renderer ack starts the timeout window', async () => {
+  const store = new MemoryInteractionStore([]);
+  let now = Date.parse('2026-07-30T00:01:00.000Z');
+  const request = askRequest({
+    timeoutPolicy: {
+      kind: 'semantic_default',
+      timeoutSeconds: 30,
+      eligibility: semanticDefaultEligibility(['window']),
+    },
+  });
+  const service = new HarnessInteractionService(
+    store,
+    { async resume() {} },
+    () => new Date(now),
+  );
+  await store.seed(
+    request,
+    'unknown',
+    new Date('2026-07-30T00:00:00.000Z'),
+  );
+
+  assert.equal(
+    (await service.readForCarrier('workspace-a', request.runId, 'conversation'))
+      ?.requestId,
+    request.requestId,
+  );
+  assert.equal(store.rendererCapability, 'unknown');
+  assert.deepEqual(
+    await service.submitSystemDefault('workspace-a', request.runId),
+    { kind: 'held', reason: 'renderer' },
+  );
+
+  await (
+    service as HarnessInteractionService & {
+      ackRenderer(workspaceId: string, runId: string): Promise<void>;
+    }
+  ).ackRenderer('workspace-a', request.runId);
+  assert.equal(store.rendererCapability, 'available');
+  assert.equal(
+    store.deadlineAt,
+    '2026-07-30T00:01:30.000Z',
+  );
+  now += 10_000;
+  await (
+    service as HarnessInteractionService & {
+      ackRenderer(workspaceId: string, runId: string): Promise<void>;
+    }
+  ).ackRenderer('workspace-a', request.runId);
+  assert.equal(
+    store.deadlineAt,
+    '2026-07-30T00:01:30.000Z',
+  );
+});
+
 test('the production default producer retries a due interaction after its durable timer unblocks', async () => {
   const calls: string[] = [];
   const producer = new HarnessSystemDefaultProducer(
@@ -586,6 +640,14 @@ class MemoryInteractionStore implements HarnessInteractionStore {
   get eventResumeRequired() {
     return this.lastEventKey
       ? this.events.get(this.lastEventKey)?.resumeRequired
+      : undefined;
+  }
+  get rendererCapability() {
+    return this.projection?.rendererCapability;
+  }
+  get deadlineAt() {
+    return this.projection?.timer.kind === 'armed'
+      ? this.projection.timer.deadlineAt
       : undefined;
   }
 
@@ -738,6 +800,27 @@ class MemoryInteractionStore implements HarnessInteractionStore {
     if (!this.projection) return false;
     this.projection.rendererCapability = capability;
     return true;
+  }
+
+  async ackInteractionRenderer(
+    _workspaceId: string,
+    _runId: string,
+    at: string,
+  ) {
+    if (!this.pending || !this.projection) return 'stale' as const;
+    if (this.projection.rendererCapability === 'available') {
+      return 'replayed' as const;
+    }
+    if (this.projection.rendererCapability !== 'unknown') {
+      return 'unknown_state' as const;
+    }
+    this.projection.rendererCapability = 'available';
+    if (this.projection.timer.kind === 'armed') {
+      this.projection.timer.deadlineAt = new Date(
+        Date.parse(at) + this.projection.timer.timeoutSeconds * 1_000,
+      ).toISOString();
+    }
+    return 'acked' as const;
   }
 }
 

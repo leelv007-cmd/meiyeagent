@@ -1573,6 +1573,9 @@ export function createCoreServer({
     const harnessInteractionMessageMatch = url.pathname.match(
       /^\/v1\/workspaces\/([^/]+)\/p1\/harness\/tasks\/([^/]+)\/interaction\/message$/
     );
+    const harnessInteractionRendererMatch = url.pathname.match(
+      /^\/v1\/workspaces\/([^/]+)\/p1\/harness\/tasks\/([^/]+)\/interaction\/renderer$/
+    );
     if (
       harnessService &&
       request.method === 'POST' &&
@@ -1756,6 +1759,37 @@ export function createCoreServer({
           {
             code: 'INVALID_HARNESS_INTERACTION_MESSAGE',
             message: 'Harness interaction message is invalid.',
+            status: 400,
+          },
+          requestCorrelationId
+        );
+      }
+      return;
+    }
+    if (
+      harnessService &&
+      request.method === 'POST' &&
+      harnessInteractionRendererMatch
+    ) {
+      try {
+        const workspaceId = decodeURIComponent(
+          harnessInteractionRendererMatch[1]!
+        );
+        const taskId = decodeURIComponent(harnessInteractionRendererMatch[2]!);
+        const context = p1Identity(request, workspaceId, requestCorrelationId);
+        authorizeContentCreation(context);
+        await harnessService.ackInteractionRenderer(workspaceId, taskId);
+        response.writeHead(204, {
+          'x-correlation-id': requestCorrelationId,
+        });
+        response.end();
+      } catch (error) {
+        sendP1HttpError(
+          response,
+          error,
+          {
+            code: 'INVALID_HARNESS_INTERACTION_RENDERER',
+            message: 'Harness interaction renderer acknowledgement is invalid.',
             status: 400,
           },
           requestCorrelationId

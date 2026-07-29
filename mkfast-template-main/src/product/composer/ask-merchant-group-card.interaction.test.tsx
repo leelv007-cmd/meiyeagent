@@ -48,15 +48,18 @@ const REQUEST: AskMerchantQuestionRequest = {
 it('renders every item but submits labels without descriptions', async () => {
   const user = userEvent.setup();
   const onEditingChange = vi.fn(async () => undefined);
+  const onRendererReady = vi.fn(async () => undefined);
   const onSubmit = vi.fn(async () => undefined);
   render(
     <AskMerchantGroupCard
       onEditingChange={onEditingChange}
+      onRendererReady={onRendererReady}
       onSubmit={onSubmit}
       request={REQUEST}
     />
   );
 
+  expect(onRendererReady).toHaveBeenCalledOnce();
   expect(screen.getByText('说明只给商家看')).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: /头皮护理/u }));
   const freeText = screen.getByRole('textbox', {
@@ -91,6 +94,7 @@ it('submits one explicit group skip', async () => {
   render(
     <AskMerchantGroupCard
       onEditingChange={async () => undefined}
+      onRendererReady={async () => undefined}
       onSubmit={onSubmit}
       request={REQUEST}
     />

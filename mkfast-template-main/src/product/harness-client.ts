@@ -168,6 +168,19 @@ export async function setHarnessInteractionEditing(
   }
 }
 
+export async function acknowledgeHarnessInteractionRenderer(taskId: string) {
+  const response = await telemetryFetch(
+    `/api/core/p1/harness/tasks/${encodeURIComponent(taskId)}/interaction/renderer`,
+    {
+      credentials: 'same-origin',
+      method: 'POST',
+    }
+  );
+  if (!response.ok) {
+    await readEnvelope<unknown>(response);
+  }
+}
+
 export async function recordFirstUsableDraftMetric(
   taskId: string,
   input: FirstUsableDraftMetric

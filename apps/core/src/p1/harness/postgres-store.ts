@@ -1465,6 +1465,68 @@ export class PostgresHarnessStore
     return result.rowCount === 1;
   }
 
+  async ackInteractionRenderer(
+    workspaceId: string,
+    runId: string,
+    at: string,
+  ) {
+    const runtimeTaskId = await this.workflowRuntimeId(workspaceId, runId);
+    if (!runtimeTaskId) return 'stale' as const;
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      const current = await client.query<{
+        pending_projection: unknown;
+        status: string;
+      }>(
+        `select pending_projection, status
+           from harness_runtime.pending_questions
+          where task_id=$1 for update`,
+        [runtimeTaskId],
+      );
+      const row = current.rows[0];
+      if (!row || row.status !== 'pending') {
+        await client.query('rollback');
+        return 'stale' as const;
+      }
+      const projection = harnessInteractionPendingProjectionSchema.safeParse(
+        row.pending_projection,
+      );
+      if (!projection.success) {
+        await client.query('rollback');
+        return 'unknown_state' as const;
+      }
+      if (projection.data.rendererCapability === 'available') {
+        await client.query('commit');
+        return 'replayed' as const;
+      }
+      if (projection.data.rendererCapability !== 'unknown') {
+        await client.query('rollback');
+        return 'unknown_state' as const;
+      }
+      projection.data.rendererCapability = 'available';
+      if (projection.data.timer.kind === 'armed') {
+        projection.data.timer.deadlineAt = new Date(
+          Date.parse(at) + projection.data.timer.timeoutSeconds * 1_000,
+        ).toISOString();
+      }
+      await client.query(
+        `update harness_runtime.pending_questions
+            set pending_projection=$2::jsonb,
+                updated_at=now()
+          where task_id=$1 and status='pending'`,
+        [runtimeTaskId, JSON.stringify(projection.data)],
+      );
+      await client.query('commit');
+      return 'acked' as const;
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async readPending(
     workspaceId: string,
     taskId: string,

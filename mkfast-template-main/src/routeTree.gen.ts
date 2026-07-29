@@ -115,6 +115,7 @@ import { Route as ApiCoreP1WorkflowsWorkflowIdEventsRouteImport } from './routes
 import { Route as ApiCoreP1HarnessTasksTaskIdProductMetricsRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/product-metrics'
 import { Route as ApiCoreP1HarnessTasksTaskIdInteractionRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction'
 import { Route as ApiCoreP1HarnessTasksTaskIdDecisionRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/decision'
+import { Route as ApiCoreP1HarnessTasksTaskIdInteractionRendererRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction/renderer'
 import { Route as ApiCoreP1HarnessTasksTaskIdInteractionMessageRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction/message'
 import { Route as ApiCoreP1HarnessTasksTaskIdInteractionEditingRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction/editing'
 
@@ -661,6 +662,12 @@ const ApiCoreP1HarnessTasksTaskIdDecisionRoute =
     path: '/$taskId/decision',
     getParentRoute: () => ApiCoreP1HarnessTasksRoute,
   } as any)
+const ApiCoreP1HarnessTasksTaskIdInteractionRendererRoute =
+  ApiCoreP1HarnessTasksTaskIdInteractionRendererRouteImport.update({
+    id: '/renderer',
+    path: '/renderer',
+    getParentRoute: () => ApiCoreP1HarnessTasksTaskIdInteractionRoute,
+  } as any)
 const ApiCoreP1HarnessTasksTaskIdInteractionMessageRoute =
   ApiCoreP1HarnessTasksTaskIdInteractionMessageRouteImport.update({
     id: '/message',
@@ -783,6 +790,7 @@ export interface FileRoutesByFullPath {
   '/api/core/p1/harness/tasks/$taskId/product-metrics': typeof ApiCoreP1HarnessTasksTaskIdProductMetricsRoute
   '/api/core/p1/harness/tasks/$taskId/interaction/editing': typeof ApiCoreP1HarnessTasksTaskIdInteractionEditingRoute
   '/api/core/p1/harness/tasks/$taskId/interaction/message': typeof ApiCoreP1HarnessTasksTaskIdInteractionMessageRoute
+  '/api/core/p1/harness/tasks/$taskId/interaction/renderer': typeof ApiCoreP1HarnessTasksTaskIdInteractionRendererRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -889,6 +897,7 @@ export interface FileRoutesByTo {
   '/api/core/p1/harness/tasks/$taskId/product-metrics': typeof ApiCoreP1HarnessTasksTaskIdProductMetricsRoute
   '/api/core/p1/harness/tasks/$taskId/interaction/editing': typeof ApiCoreP1HarnessTasksTaskIdInteractionEditingRoute
   '/api/core/p1/harness/tasks/$taskId/interaction/message': typeof ApiCoreP1HarnessTasksTaskIdInteractionMessageRoute
+  '/api/core/p1/harness/tasks/$taskId/interaction/renderer': typeof ApiCoreP1HarnessTasksTaskIdInteractionRendererRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -1000,6 +1009,7 @@ export interface FileRoutesById {
   '/api/core/p1/harness/tasks/$taskId/product-metrics': typeof ApiCoreP1HarnessTasksTaskIdProductMetricsRoute
   '/api/core/p1/harness/tasks/$taskId/interaction/editing': typeof ApiCoreP1HarnessTasksTaskIdInteractionEditingRoute
   '/api/core/p1/harness/tasks/$taskId/interaction/message': typeof ApiCoreP1HarnessTasksTaskIdInteractionMessageRoute
+  '/api/core/p1/harness/tasks/$taskId/interaction/renderer': typeof ApiCoreP1HarnessTasksTaskIdInteractionRendererRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -1112,6 +1122,7 @@ export interface FileRouteTypes {
     | '/api/core/p1/harness/tasks/$taskId/product-metrics'
     | '/api/core/p1/harness/tasks/$taskId/interaction/editing'
     | '/api/core/p1/harness/tasks/$taskId/interaction/message'
+    | '/api/core/p1/harness/tasks/$taskId/interaction/renderer'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -1218,6 +1229,7 @@ export interface FileRouteTypes {
     | '/api/core/p1/harness/tasks/$taskId/product-metrics'
     | '/api/core/p1/harness/tasks/$taskId/interaction/editing'
     | '/api/core/p1/harness/tasks/$taskId/interaction/message'
+    | '/api/core/p1/harness/tasks/$taskId/interaction/renderer'
   id:
     | '__root__'
     | '/'
@@ -1328,6 +1340,7 @@ export interface FileRouteTypes {
     | '/api/core/p1/harness/tasks/$taskId/product-metrics'
     | '/api/core/p1/harness/tasks/$taskId/interaction/editing'
     | '/api/core/p1/harness/tasks/$taskId/interaction/message'
+    | '/api/core/p1/harness/tasks/$taskId/interaction/renderer'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -2118,6 +2131,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCoreP1HarnessTasksTaskIdDecisionRouteImport
       parentRoute: typeof ApiCoreP1HarnessTasksRoute
     }
+    '/api/core/p1/harness/tasks/$taskId/interaction/renderer': {
+      id: '/api/core/p1/harness/tasks/$taskId/interaction/renderer'
+      path: '/renderer'
+      fullPath: '/api/core/p1/harness/tasks/$taskId/interaction/renderer'
+      preLoaderRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionRendererRouteImport
+      parentRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionRoute
+    }
     '/api/core/p1/harness/tasks/$taskId/interaction/message': {
       id: '/api/core/p1/harness/tasks/$taskId/interaction/message'
       path: '/message'
@@ -2327,6 +2347,7 @@ const ApiCoreDiagnosticsRouteWithChildren =
 interface ApiCoreP1HarnessTasksTaskIdInteractionRouteChildren {
   ApiCoreP1HarnessTasksTaskIdInteractionEditingRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionEditingRoute
   ApiCoreP1HarnessTasksTaskIdInteractionMessageRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionMessageRoute
+  ApiCoreP1HarnessTasksTaskIdInteractionRendererRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionRendererRoute
 }
 
 const ApiCoreP1HarnessTasksTaskIdInteractionRouteChildren: ApiCoreP1HarnessTasksTaskIdInteractionRouteChildren =
@@ -2335,6 +2356,8 @@ const ApiCoreP1HarnessTasksTaskIdInteractionRouteChildren: ApiCoreP1HarnessTasks
       ApiCoreP1HarnessTasksTaskIdInteractionEditingRoute,
     ApiCoreP1HarnessTasksTaskIdInteractionMessageRoute:
       ApiCoreP1HarnessTasksTaskIdInteractionMessageRoute,
+    ApiCoreP1HarnessTasksTaskIdInteractionRendererRoute:
+      ApiCoreP1HarnessTasksTaskIdInteractionRendererRoute,
   }
 
 const ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren =
