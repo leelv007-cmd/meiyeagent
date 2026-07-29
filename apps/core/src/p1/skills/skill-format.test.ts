@@ -5,6 +5,7 @@ import {
   exportSkillPackage,
   importSkillPackage,
   SKILL_FRONTMATTER_FIELDS,
+  validateSkillPackagePaths,
 } from './skill-format.js';
 
 const STANDARD_SKILL_MD = `---
@@ -163,5 +164,41 @@ test('Skill package paths cannot escape the portable directory', () => {
         },
       }),
     /safe relative path/u,
+  );
+  assert.throws(
+    () =>
+      importSkillPackage({
+        directoryName: 'daily-beauty-context',
+        files: {
+          'SKILL.md': STANDARD_SKILL_MD,
+          'evals/custom.json': '{}',
+        },
+      }),
+    /evals\/evals\.json/u,
+  );
+});
+
+test('Skill package paths use standard directories and the project eval convention', () => {
+  assert.deepEqual(
+    validateSkillPackagePaths([
+      'SKILL.md',
+      'assets/preview.png',
+      'references/guide.md',
+      'evals/evals.json',
+    ]),
+    [
+      'SKILL.md',
+      'assets/preview.png',
+      'evals/evals.json',
+      'references/guide.md',
+    ],
+  );
+  assert.throws(
+    () =>
+      validateSkillPackagePaths([
+        'SKILL.md',
+        'evals/custom-suite.json',
+      ]),
+    /evals\/evals\.json/u,
   );
 });

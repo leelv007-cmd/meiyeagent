@@ -79,6 +79,13 @@ export interface HarnessPromptResolver {
   resolve(): Promise<HarnessFrozenPrompts>;
 }
 
+export class HarnessPromptAuthorityUnavailableError extends Error {
+  constructor(readonly reason: string, message: string) {
+    super(message);
+    this.name = 'HarnessPromptAuthorityUnavailableError';
+  }
+}
+
 export function requireHarnessFrozenPrompt(
   prompts: HarnessFrozenPrompts,
   key: HarnessPromptKey,
@@ -231,9 +238,12 @@ export class LangfuseHarnessPromptResolver implements HarnessPromptResolver {
   ) {
     if ((this.options.policy ?? 'strict') === 'strict') {
       const pin = version === undefined ? '' : ` version=${version}`;
-      throw new Error(
-        `Strict Langfuse prompt resolution failed: ${name}${pin} (${reason}).`,
-      );
+      const message =
+        `Strict Langfuse prompt resolution failed: ${name}${pin} (${reason}).`;
+      if (isPromptAuthorityUnavailableReason(reason)) {
+        throw new HarnessPromptAuthorityUnavailableError(reason, message);
+      }
+      throw new Error(message);
     }
     (this.options.warn ?? warnPromptFallback)({
       name,
@@ -242,6 +252,14 @@ export class LangfuseHarnessPromptResolver implements HarnessPromptResolver {
     });
     return fallbackPrompt(name, builtin, label, reason);
   }
+}
+
+function isPromptAuthorityUnavailableReason(reason: string) {
+  if (reason === 'request_failed') return true;
+  const status = /^http_(\d{3})$/u.exec(reason)?.[1];
+  if (!status) return false;
+  const code = Number(status);
+  return code === 408 || code === 425 || code === 429 || code >= 500;
 }
 
 export function assertLangfusePromptRuntimePolicy(

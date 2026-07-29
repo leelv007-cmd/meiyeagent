@@ -1,3 +1,5 @@
+import type { HarnessStage } from '@meiye/contracts';
+
 import type { HarnessFrozenPrompt } from '../harness/langfuse-prompts.js';
 import type { SkillFrontmatter } from './skill-format.js';
 
@@ -7,25 +9,17 @@ export const SKILL_BINDING_MODES = [
   'disabled',
 ] as const;
 
-export const SKILL_STAGES = [
-  'intent_naming',
-  'context_injection',
-  'brief_compilation',
-  'execution_selection',
-  'assembly_delivery',
-] as const;
-
 export type SkillBindingMode = (typeof SKILL_BINDING_MODES)[number];
-export type SkillStage = (typeof SKILL_STAGES)[number];
 export type SkillExecutionMode =
   | 'provider_native'
   | 'harness_native'
   | 'prompt_materialized';
-export type SkillDeploymentArtifactType =
-  | 'instruction'
-  | 'reference'
-  | 'scripts'
-  | 'sandbox';
+
+export interface SkillTriggerCondition {
+  harnessStage: HarnessStage;
+  industryCategory?: string | null;
+  tenantId?: string | null;
+}
 
 export interface SkillCatalog {
   skillId: string;
@@ -38,6 +32,14 @@ export interface SkillCatalog {
 }
 
 export type SkillRevisionManifest = SkillFrontmatter;
+
+export interface LegacySkillRevisionManifest
+  extends Omit<SkillGovernanceSidecar, 'workflowRevisionRefs'> {
+  evalSuiteRef: string;
+  compatibility: {
+    workflowRevisionRefs: string[];
+  };
+}
 
 export interface SkillGovernanceSidecar {
   inputSchemaRef: string;
@@ -74,13 +76,19 @@ export interface SkillPromptSnapshotPort {
   capture(reference: SkillPromptReference): Promise<HarnessFrozenPrompt>;
 }
 
-export interface SkillRevision {
+export class SkillPromptAuthorityUnavailableError extends Error {
+  constructor(message = 'Skill prompt authority is unavailable.') {
+    super(message);
+    this.name = 'SkillPromptAuthorityUnavailableError';
+  }
+}
+
+interface SkillRevisionBase {
   skillId: string;
   revision: number;
   skillRevisionRef: string;
   contentHash: string;
   instruction: string;
-  manifest: SkillRevisionManifest;
   governance: SkillGovernanceSidecar;
   prompt: SkillPromptSnapshot;
   status: 'draft' | 'accepted_frozen';
@@ -91,10 +99,24 @@ export interface SkillRevision {
   evalRunId: string | null;
 }
 
+export type SkillRevision = SkillRevisionBase &
+  (
+    | {
+        formatVersion: 2;
+        manifest: SkillRevisionManifest;
+        packagePaths: string[];
+      }
+    | {
+        formatVersion: 1;
+        manifest: SkillRevisionManifest | LegacySkillRevisionManifest;
+        packagePaths?: string[];
+      }
+  );
+
 export interface SkillBinding {
   bindingId: string;
   workflowRevisionRef: string;
-  stage: SkillStage;
+  triggerCondition: SkillTriggerCondition;
   skillId: string;
   skillRevisionRef: string;
   mode: SkillBindingMode;
@@ -116,7 +138,7 @@ export interface SkillDeployment {
   nativeSkillId: string;
   nativeVersion: string;
   executionMode: SkillExecutionMode;
-  artifactType: SkillDeploymentArtifactType;
+  packagePaths: string[];
   rolloutEvidenceRef: string | null;
   createdAt: string;
 }
@@ -126,6 +148,12 @@ export interface ResolvedSkillInstruction {
   instruction: string;
   contentHash: string;
   executionMode: SkillExecutionMode;
+  prompt?: SkillPromptReference & {
+    isFallback: boolean;
+    fallbackReason?: string;
+  };
+  /** Internal execution material; never expose through admin or audit responses. */
+  promptContent?: string;
 }
 
 export interface SkillInvocationReceipt {
@@ -141,6 +169,10 @@ export interface SkillInvocationReceipt {
   status: 'settled';
   createdAt: string;
   inputFingerprint: string;
+  prompt?: SkillPromptReference & {
+    isFallback: boolean;
+    fallbackReason?: string;
+  };
   output?: SkillInvocationResult;
 }
 

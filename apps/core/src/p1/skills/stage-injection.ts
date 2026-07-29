@@ -5,8 +5,20 @@ export function materializeSkillInstructions(
   skills: readonly ResolvedSkillInstruction[] | undefined,
 ) {
   if (!skills?.length) return baseInstructions;
+  const resolvedPrompts = skills.filter((skill) => skill.promptContent);
+  if (
+    resolvedPrompts.some(
+      (skill) =>
+        skill.prompt?.contentHash !==
+        resolvedPrompts[0]?.prompt?.contentHash,
+    )
+  ) {
+    throw new Error(
+      'Resolved Skills disagree on the frozen prompt snapshot.',
+    );
+  }
   return [
-    baseInstructions,
+    resolvedPrompts[0]?.promptContent ?? baseInstructions,
     '',
     'Apply only these accepted and frozen Skills for the current stage:',
     ...skills.map(

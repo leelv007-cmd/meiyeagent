@@ -58,6 +58,7 @@ test(
       updatedAt: '2026-07-26T03:01:00.000Z',
     };
     const revision: SkillRevision = {
+      formatVersion: 2,
       acceptedAt: '2026-07-26T03:01:00.000Z',
       acceptedBy: 'operator-postgres',
       contentHash: 'a'.repeat(64),
@@ -70,6 +71,7 @@ test(
           'Uses a declared fact scope. Use in PostgreSQL persistence tests.',
         name: 'postgres-skill',
       },
+      packagePaths: ['SKILL.md'],
       governance: {
         allowedTools: ['tool.fact.read'],
         budget: {
@@ -87,7 +89,9 @@ test(
         workflowRevisionRefs: [workflowRevisionRef],
       },
       prompt: {
-        contentHash: 'b'.repeat(64),
+        contentHash: createHash('sha256')
+          .update('Use the declared fact scope.')
+          .digest('hex'),
         fallbackContent: 'Use the declared fact scope.',
         isFallback: false,
         label: 'production',
@@ -106,20 +110,24 @@ test(
       mode: 'required',
       skillId,
       skillRevisionRef,
-      stage: 'intent_naming',
+      triggerCondition: {
+        harnessStage: 'intent_naming',
+        industryCategory: null,
+        tenantId: null,
+      },
       status: 'active',
       supersededAt: null,
       supersededByBindingId: null,
       workflowRevisionRef,
     };
     const deployment: SkillDeployment = {
-      artifactType: 'instruction',
       channel: 'official-direct',
       createdAt: '2026-07-26T03:03:00.000Z',
       deploymentId: `deployment-postgres-${suffix}`,
       executionMode: 'harness_native',
       nativeSkillId: 'native-postgres',
       nativeVersion: '1',
+      packagePaths: ['SKILL.md', 'assets/preview.png'],
       provider: 'fixture',
       rolloutEvidenceRef: 'evidence://fixture/harness-native',
       skillRevisionRef,
@@ -161,7 +169,37 @@ test(
     try {
       await repository.putCatalog(catalog);
       await repository.putRevision(revision, null);
-      await repository.putBinding(binding);
+      await pool.query(
+        `INSERT INTO p1_skill_bindings
+           (binding_id, workflow_revision_ref, stage, trigger_condition, skill_id,
+            skill_revision_ref, status, superseded_at, payload, created_at)
+         VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, NULL, $8::jsonb, $9::timestamptz)`,
+        [
+          binding.bindingId,
+          binding.workflowRevisionRef,
+          binding.triggerCondition.harnessStage,
+          JSON.stringify({
+            harnessStage: binding.triggerCondition.harnessStage,
+          }),
+          binding.skillId,
+          binding.skillRevisionRef,
+          binding.status,
+          JSON.stringify({
+            bindingId: binding.bindingId,
+            createdAt: binding.createdAt,
+            mode: binding.mode,
+            skillId: binding.skillId,
+            skillRevisionRef: binding.skillRevisionRef,
+            stage: binding.triggerCondition.harnessStage,
+            status: binding.status,
+            supersededAt: binding.supersededAt,
+            supersededByBindingId: binding.supersededByBindingId,
+            workflowRevisionRef: binding.workflowRevisionRef,
+          }),
+          binding.createdAt,
+        ],
+      );
+      assert.deepEqual(await repository.putBinding(binding), binding);
       await repository.putDeployment(deployment);
       await repository.putChildEffect(effect);
       await repository.putInvocationReceipt(receipt);
@@ -175,7 +213,7 @@ test(
       assert.deepEqual(
         await restarted.listBindings(
           binding.workflowRevisionRef,
-          binding.stage,
+          binding.triggerCondition,
         ),
         [binding],
       );
@@ -231,6 +269,408 @@ test(
 );
 
 test(
+  'migration reads legacy revision payloads and writes v2 physical sidecars',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const suffix = randomUUID();
+    const legacySkillId = `skill.legacy-revision.${suffix}`;
+    const legacyRevisionRef = `${legacySkillId}@1`;
+    const transitionalSkillId = `skill.transitional-revision.${suffix}`;
+    const transitionalRevisionRef = `${transitionalSkillId}@1`;
+    const v2SkillId = `skill.v2-revision.${suffix}`;
+    const v2RevisionRef = `${v2SkillId}@1`;
+    const legacyDeploymentId = `deployment.legacy.${suffix}`;
+    const repository = new PostgresSkillRepository(pool);
+    const legacyContent = 'Legacy prompt content.';
+    const legacyPayload = {
+      acceptedAt: '2026-07-25T00:00:00.000Z',
+      acceptedBy: 'operator-legacy',
+      contentHash: '1'.repeat(64),
+      createdAt: '2026-07-25T00:00:00.000Z',
+      createdBy: 'operator-legacy',
+      evalRunId: 'eval-legacy',
+      instruction: legacyContent,
+      manifest: {
+        allowedTools: [],
+        budget: {
+          maxChildEffects: 0,
+          maxCostCents: 0,
+          timeoutMs: 10_000,
+        },
+        compatibility: {
+          workflowRevisionRefs: ['workflow.legacy@1'],
+        },
+        contextScopes: [],
+        evalSuiteRef: 'legacy@1',
+        executionMode: 'prompt_materialized',
+        fallback: 'skip',
+        inputSchemaRef: 'skill-input.daily-industry@1',
+        outputSchemaRef: 'skill-output.intent-decision@1',
+        requiredModelCapabilities: ['structured_output'],
+        sideEffectClass: 'none',
+      },
+      prompt: {
+        content: legacyContent,
+        contentHash: createHash('sha256')
+          .update(legacyContent)
+          .digest('hex'),
+        isFallback: false,
+        label: 'production',
+        name: 'skills/legacy',
+        source: 'langfuse',
+        version: '1',
+      },
+      revision: 1,
+      skillId: legacySkillId,
+      skillRevisionRef: legacyRevisionRef,
+      status: 'accepted_frozen',
+    };
+    const v2Fallback = 'V2 trusted prompt fallback.';
+    const transitionalPayload = {
+      ...legacyPayload,
+      acceptedAt: null,
+      acceptedBy: null,
+      evalRunId: null,
+      governance: {
+        allowedTools: [],
+        budget: {
+          maxChildEffects: 0,
+          maxCostCents: 0,
+          timeoutMs: 10_000,
+        },
+        contextScopes: [],
+        executionMode: 'prompt_materialized',
+        fallback: 'skip',
+        inputSchemaRef: 'skill-input.daily-industry@1',
+        outputSchemaRef: 'skill-output.intent-decision@1',
+        requiredModelCapabilities: ['structured_output'],
+        sideEffectClass: 'none',
+        workflowRevisionRefs: ['workflow.transitional@1'],
+      },
+      manifest: {
+        description: 'Transitional standard Skill frontmatter.',
+        name: 'transitional-revision',
+      },
+      prompt: {
+        ...legacyPayload.prompt,
+        content: undefined,
+        fallbackContent: legacyContent,
+      },
+      skillId: transitionalSkillId,
+      skillRevisionRef: transitionalRevisionRef,
+      status: 'draft',
+    };
+    const v2Revision: SkillRevision = {
+      acceptedAt: null,
+      acceptedBy: null,
+      contentHash: '2'.repeat(64),
+      createdAt: '2026-07-29T00:00:00.000Z',
+      createdBy: 'operator-v2',
+      evalRunId: null,
+      formatVersion: 2,
+      governance: {
+        allowedTools: [],
+        budget: {
+          maxChildEffects: 0,
+          maxCostCents: 0,
+          timeoutMs: 10_000,
+        },
+        contextScopes: [],
+        executionMode: 'prompt_materialized',
+        fallback: 'skip',
+        inputSchemaRef: 'skill-input.daily-industry@1',
+        outputSchemaRef: 'skill-output.intent-decision@1',
+        requiredModelCapabilities: ['structured_output'],
+        sideEffectClass: 'none',
+        workflowRevisionRefs: ['workflow.v2@1'],
+      },
+      instruction: v2Fallback,
+      manifest: {
+        description: 'Exercises the v2 physical Skill sidecars.',
+        name: 'v2-revision',
+      },
+      packagePaths: ['SKILL.md'],
+      prompt: {
+        contentHash: createHash('sha256')
+          .update(v2Fallback)
+          .digest('hex'),
+        fallbackContent: v2Fallback,
+        isFallback: false,
+        label: 'production',
+        name: 'skills/v2',
+        source: 'langfuse',
+        version: '1',
+      },
+      revision: 1,
+      skillId: v2SkillId,
+      skillRevisionRef: v2RevisionRef,
+      status: 'draft',
+    };
+
+    try {
+      await repository.migrate();
+      await pool.query(
+        `INSERT INTO p1_skill_revisions
+           (skill_id, revision, skill_revision_ref, status, content_hash,
+            payload, created_at)
+         VALUES
+           ($1, 1, $2, 'accepted_frozen', $3, $4::jsonb, $5::timestamptz),
+           ($6, 1, $7, 'draft', $8, $9::jsonb, $10::timestamptz)`,
+        [
+          legacySkillId,
+          legacyRevisionRef,
+          legacyPayload.contentHash,
+          JSON.stringify(legacyPayload),
+          legacyPayload.createdAt,
+          transitionalSkillId,
+          transitionalRevisionRef,
+          transitionalPayload.contentHash,
+          JSON.stringify(transitionalPayload),
+          transitionalPayload.createdAt,
+        ],
+      );
+
+      const legacy = await repository.getRevision(legacyRevisionRef);
+      assert.equal(legacy?.formatVersion, 1);
+      assert.deepEqual(legacy?.governance.workflowRevisionRefs, [
+        'workflow.legacy@1',
+      ]);
+      assert.equal(legacy?.prompt.fallbackContent, legacyContent);
+      assert.equal(Object.hasOwn(legacy?.prompt ?? {}, 'content'), false);
+      const transitional = await repository.getRevision(
+        transitionalRevisionRef,
+      );
+      assert.equal(transitional?.formatVersion, 1);
+      assert.deepEqual(
+        transitional?.governance.workflowRevisionRefs,
+        ['workflow.transitional@1'],
+      );
+      assert.deepEqual(transitional?.manifest, transitionalPayload.manifest);
+      assert.equal(
+        transitional?.prompt.fallbackContent,
+        legacyContent,
+      );
+      assert.ok(transitional);
+      const acceptedTransitional: SkillRevision = {
+        ...transitional,
+        acceptedAt: '2026-07-29T00:01:00.000Z',
+        acceptedBy: 'operator-transitional-accept',
+        evalRunId: 'eval-transitional-accept',
+        status: 'accepted_frozen',
+      };
+      await repository.acceptRevision(acceptedTransitional);
+      assert.deepEqual(
+        await repository.getRevision(transitionalRevisionRef),
+        acceptedTransitional,
+      );
+      await pool.query(
+        `INSERT INTO p1_skill_deployments
+           (deployment_id, skill_revision_ref, payload, created_at)
+         VALUES ($1, $2, $3::jsonb, $4::timestamptz)`,
+        [
+          legacyDeploymentId,
+          legacyRevisionRef,
+          JSON.stringify({
+            artifactType: 'reference',
+            channel: 'legacy',
+            createdAt: legacyPayload.createdAt,
+            deploymentId: legacyDeploymentId,
+            executionMode: 'harness_native',
+            nativeSkillId: 'legacy-native',
+            nativeVersion: '1',
+            provider: 'fixture',
+            rolloutEvidenceRef: null,
+            skillRevisionRef: legacyRevisionRef,
+          }),
+          legacyPayload.createdAt,
+        ],
+      );
+      const normalizedLegacyDeployment: SkillDeployment = {
+        channel: 'legacy',
+        createdAt: legacyPayload.createdAt,
+        deploymentId: legacyDeploymentId,
+        executionMode: 'harness_native',
+        nativeSkillId: 'legacy-native',
+        nativeVersion: '1',
+        packagePaths: ['SKILL.md', 'references/'],
+        provider: 'fixture',
+        rolloutEvidenceRef: null,
+        skillRevisionRef: legacyRevisionRef,
+      };
+      assert.deepEqual(
+        await repository.getDeployment(legacyDeploymentId),
+        normalizedLegacyDeployment,
+      );
+      assert.deepEqual(
+        await repository.putDeployment(normalizedLegacyDeployment),
+        normalizedLegacyDeployment,
+      );
+
+      await repository.putRevision(v2Revision, null);
+      const stored = await pool.query<{
+        format_version: number;
+        frontmatter: unknown;
+        governance_sidecar: unknown;
+        payload_has_governance: boolean;
+        payload_has_prompt: boolean;
+        prompt_fallback_content: string;
+      }>(
+        `SELECT format_version,
+                frontmatter,
+                governance_sidecar,
+                payload ? 'governance' AS payload_has_governance,
+                payload ? 'prompt' AS payload_has_prompt,
+                prompt_fallback_content
+           FROM p1_skill_revisions
+          WHERE skill_revision_ref = $1`,
+        [v2RevisionRef],
+      );
+      assert.deepEqual(stored.rows, [
+        {
+          format_version: 2,
+          frontmatter: v2Revision.manifest,
+          governance_sidecar: v2Revision.governance,
+          payload_has_governance: false,
+          payload_has_prompt: false,
+          prompt_fallback_content: v2Fallback,
+        },
+      ]);
+      assert.deepEqual(
+        await repository.getRevision(v2RevisionRef),
+        v2Revision,
+      );
+      await pool.query(
+        `UPDATE p1_skill_revisions
+            SET governance_sidecar = '{}'::jsonb
+          WHERE skill_revision_ref = $1`,
+        [v2RevisionRef],
+      );
+      await assert.rejects(
+        repository.getRevision(v2RevisionRef),
+        /Persisted Skill revision payload is invalid/u,
+      );
+    } finally {
+      await pool.query(
+        'DELETE FROM p1_skill_deployments WHERE deployment_id = $1',
+        [legacyDeploymentId],
+      );
+      await pool.query(
+        'DELETE FROM p1_skill_revisions WHERE skill_id = ANY($1::text[])',
+        [[legacySkillId, transitionalSkillId, v2SkillId]],
+      );
+      await pool.query(
+        'DELETE FROM p1_skill_revision_heads WHERE skill_id = $1',
+        [v2SkillId],
+      );
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'migration upgrades an authentic v1 revision table before reading its rows',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const adminPool = new Pool({ connectionString });
+    const schema = `skill_migration_${randomUUID().replaceAll('-', '_')}`;
+    await adminPool.query(`CREATE SCHEMA "${schema}"`);
+    const pool = new Pool({
+      connectionString,
+      options: `-c search_path=${schema}`,
+    });
+    const skillId = `skill.authentic-v1.${randomUUID()}`;
+    const skillRevisionRef = `${skillId}@1`;
+    const promptContent = 'Authentic v1 prompt content.';
+    const legacyPayload = {
+      acceptedAt: null,
+      acceptedBy: null,
+      contentHash: '1'.repeat(64),
+      createdAt: '2026-07-25T00:00:00.000Z',
+      createdBy: 'operator-authentic-v1',
+      evalRunId: null,
+      instruction: promptContent,
+      manifest: {
+        allowedTools: [],
+        budget: {
+          maxChildEffects: 0,
+          maxCostCents: 0,
+          timeoutMs: 10_000,
+        },
+        compatibility: {
+          workflowRevisionRefs: ['workflow.authentic-v1@1'],
+        },
+        contextScopes: [],
+        evalSuiteRef: 'authentic-v1@1',
+        executionMode: 'prompt_materialized',
+        fallback: 'skip',
+        inputSchemaRef: 'skill-input.daily-industry@1',
+        outputSchemaRef: 'skill-output.intent-decision@1',
+        requiredModelCapabilities: ['structured_output'],
+        sideEffectClass: 'none',
+      },
+      prompt: {
+        content: promptContent,
+        contentHash: createHash('sha256')
+          .update(promptContent)
+          .digest('hex'),
+        isFallback: false,
+        label: 'production',
+        name: 'skills/authentic-v1',
+        source: 'langfuse',
+        version: '1',
+      },
+      revision: 1,
+      skillId,
+      skillRevisionRef,
+      status: 'draft',
+    };
+
+    try {
+      await pool.query(`
+        CREATE TABLE p1_skill_revisions (
+          skill_id text NOT NULL,
+          revision bigint NOT NULL CHECK (revision > 0),
+          skill_revision_ref text NOT NULL UNIQUE,
+          status text NOT NULL CHECK (status IN ('draft', 'accepted_frozen')),
+          content_hash text NOT NULL,
+          payload jsonb NOT NULL,
+          created_at timestamptz NOT NULL,
+          PRIMARY KEY (skill_id, revision)
+        )
+      `);
+      await pool.query(
+        `INSERT INTO p1_skill_revisions
+           (skill_id, revision, skill_revision_ref, status, content_hash,
+            payload, created_at)
+         VALUES ($1, 1, $2, 'draft', $3, $4::jsonb, $5::timestamptz)`,
+        [
+          skillId,
+          skillRevisionRef,
+          legacyPayload.contentHash,
+          JSON.stringify(legacyPayload),
+          legacyPayload.createdAt,
+        ],
+      );
+      const repository = new PostgresSkillRepository(pool);
+      await repository.migrate();
+
+      const migrated = await repository.getRevision(skillRevisionRef);
+      assert.equal(migrated?.formatVersion, 1);
+      assert.equal(migrated?.status, 'draft');
+      assert.deepEqual(migrated?.governance.workflowRevisionRefs, [
+        'workflow.authentic-v1@1',
+      ]);
+      assert.equal(migrated?.prompt.fallbackContent, promptContent);
+    } finally {
+      await pool.end();
+      await adminPool.query(`DROP SCHEMA "${schema}" CASCADE`);
+      await adminPool.end();
+    }
+  },
+);
+
+test(
   'migration supersedes legacy planner-selected bindings without deleting their audit facts',
   { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
   async () => {
@@ -258,13 +698,14 @@ test(
       await repository.migrate();
       await pool.query(
         `INSERT INTO p1_skill_bindings
-           (binding_id, workflow_revision_ref, stage, skill_id,
+           (binding_id, workflow_revision_ref, stage, trigger_condition, skill_id,
             skill_revision_ref, status, superseded_at, payload, created_at)
-         VALUES ($1, $2, $3, $4, $5, 'active', NULL, $6::jsonb, $7::timestamptz)`,
+         VALUES ($1, $2, $3, $4::jsonb, $5, $6, 'active', NULL, $7::jsonb, $8::timestamptz)`,
         [
           bindingId,
           workflowRevisionRef,
           legacyBinding.stage,
+          JSON.stringify({ harnessStage: legacyBinding.stage }),
           skillId,
           skillRevisionRef,
           JSON.stringify(legacyBinding),
@@ -275,7 +716,7 @@ test(
       assert.deepEqual(
         await repository.listBindings(
           workflowRevisionRef,
-          'intent_naming',
+          { harnessStage: 'intent_naming' },
         ),
         [],
       );
@@ -289,7 +730,7 @@ test(
       assert.deepEqual(
         await repository.listBindings(
           workflowRevisionRef,
-          'intent_naming',
+          { harnessStage: 'intent_naming' },
         ),
         [],
       );
@@ -325,6 +766,7 @@ test(
     });
     await repository.putRevision(
       {
+        formatVersion: 2,
         acceptedAt: '2026-07-29T02:00:00.000Z',
         acceptedBy: 'operator-postgres',
         contentHash: 'a'.repeat(64),
@@ -337,6 +779,7 @@ test(
             'Validates generated output. Use in persistence boundary tests.',
           name: 'invalid-output',
         },
+        packagePaths: ['SKILL.md'],
         governance: {
           allowedTools: ['tool.fact.read'],
           budget: {
@@ -613,7 +1056,7 @@ test(
         bindingId: `binding-${suffix}-v2`,
         mode: 'required',
         skillRevisionRef: draftV2.skillRevisionRef,
-        stage: 'intent_naming',
+        triggerCondition: { harnessStage: 'intent_naming' },
         workflowRevisionRef,
       });
       const current = await service.resolveStage({
@@ -705,10 +1148,18 @@ test(
         `SELECT skill_revision_ref
            FROM p1_skill_bindings
           WHERE workflow_revision_ref = $1
-            AND stage = 'intent_naming'
-            AND skill_id = $2
+            AND trigger_condition = $2::jsonb
+            AND skill_id = $3
             AND status = 'active'`,
-        [workflowRevisionRef, skillId],
+        [
+          workflowRevisionRef,
+          JSON.stringify({
+            harnessStage: 'intent_naming',
+            industryCategory: null,
+            tenantId: null,
+          }),
+          skillId,
+        ],
       );
       assert.deepEqual(active.rows, [
         { skill_revision_ref: draftV1.skillRevisionRef },
@@ -717,11 +1168,11 @@ test(
         `SELECT indexdef
            FROM pg_indexes
           WHERE schemaname = current_schema()
-            AND indexname = 'p1_skill_bindings_active_slot_uq'`,
+            AND indexname = 'p1_skill_bindings_active_trigger_uq'`,
       );
       assert.match(
         uniqueIndex.rows[0]?.indexdef ?? '',
-        /UNIQUE INDEX .*workflow_revision_ref, stage, skill_id/u,
+        /UNIQUE INDEX .*workflow_revision_ref, trigger_condition, skill_id/u,
       );
     } finally {
       await pool.query(

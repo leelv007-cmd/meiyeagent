@@ -81,6 +81,20 @@ export function exportSkillPackage(
   return files;
 }
 
+export function validateSkillPackagePaths(paths: readonly string[]) {
+  const normalized = paths.map((path) => {
+    assertSafePackagePath(path);
+    return path;
+  });
+  if (!normalized.includes('SKILL.md')) {
+    throw new Error('Skill package paths must include SKILL.md.');
+  }
+  if (new Set(normalized).size !== normalized.length) {
+    throw new Error('Skill package paths must not contain duplicates.');
+  }
+  return [...normalized].sort();
+}
+
 function parseSkillMarkdown(markdown: string) {
   const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)([\s\S]*)$/u.exec(
     markdown,
@@ -189,6 +203,11 @@ function assertSafePackagePath(path: string) {
     segments.some((segment) => !segment || segment === '.' || segment === '..')
   ) {
     throw new Error(`Skill package path must be a safe relative path: ${path}.`);
+  }
+  if (path.startsWith('evals/') && path !== 'evals/evals.json') {
+    throw new Error(
+      'Skill evaluations must use the project convention evals/evals.json.',
+    );
   }
 }
 

@@ -12,6 +12,7 @@ export {
 } from './tool-adapter.js';
 export {
   createDurableSkillRuntime,
+  skillPromptSnapshotPortFromHarness,
   type DurableSkillRuntime,
 } from './runtime.js';
 export { materializeSkillInstructions } from './stage-injection.js';
@@ -28,13 +29,14 @@ export {
   SKILL_FRONTMATTER_FIELDS,
   SKILL_PACKAGE_PATHS,
   validateSkillFrontmatter,
+  validateSkillPackagePaths,
   type ImportedSkillPackage,
   type SkillFrontmatter,
   type SkillPackageFile,
 } from './skill-format.js';
 export {
   SKILL_BINDING_MODES,
-  SKILL_STAGES,
+  SkillPromptAuthorityUnavailableError,
   skillRevisionRef,
   type AuditedSkillBinding,
   type ResolvedSkillInstruction,
@@ -45,7 +47,6 @@ export {
   type SkillChildEffectExecutor,
   type SkillChildEffectExecutorInput,
   type SkillDeployment,
-  type SkillDeploymentArtifactType,
   type SkillExecutionMode,
   type SkillGovernanceSidecar,
   type SkillInvocationExecution,
@@ -61,5 +62,5 @@ export {
   type SkillPromptSnapshotPort,
   type SkillRevision,
   type SkillRevisionManifest,
-  type SkillStage,
+  type SkillTriggerCondition,
 } from './types.js';

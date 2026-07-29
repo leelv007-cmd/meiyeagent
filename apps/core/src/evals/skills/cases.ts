@@ -21,6 +21,7 @@ const INSTRUCTION =
 
 function revision(): SkillRevision {
   return {
+    formatVersion: 2,
     acceptedAt: null,
     acceptedBy: null,
     contentHash: createHash('sha256').update(INSTRUCTION).digest('hex'),
@@ -33,6 +34,7 @@ function revision(): SkillRevision {
         'Uses accepted industry context. Use during intent classification.',
       name: 'daily-industry',
     },
+    packagePaths: ['SKILL.md'],
     governance: {
       allowedTools: [],
       budget: {

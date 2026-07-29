@@ -1423,6 +1423,7 @@ await operationsService.seedOfficialTemplateFamilies({
 // Z1/#105 thin wiring — independent FoundationModules (S1 freeze discipline).
 const skillRuntime = await createDurableSkillRuntime({
   pool,
+  promptResolver: harnessPromptResolver,
   repository: skillRepository,
 });
 const creationExperienceRuntime =

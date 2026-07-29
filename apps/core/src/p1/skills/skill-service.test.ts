@@ -13,8 +13,11 @@ import { LangfuseHarnessPromptResolver } from '../harness/langfuse-prompts.js';
 import type { HarnessFrozenPrompt } from '../harness/langfuse-prompts.js';
 import {
   MemorySkillRepository,
+  materializeSkillInstructions,
   RegistrySkillOutputValidator,
+  skillPromptSnapshotPortFromHarness,
   SkillFoundationModule,
+  SkillPromptAuthorityUnavailableError,
   SkillService,
   StaticSkillToolExecutionAuthorizer,
   type SkillBinding,
@@ -115,7 +118,7 @@ test('only an evaluated and frozen Skill revision enters a stage allowlist', asy
     bindingId: 'binding.daily-industry',
     mode: 'required',
     skillRevisionRef: draft.skillRevisionRef,
-    stage: 'intent_naming',
+    triggerCondition: { harnessStage: 'intent_naming' },
     workflowRevisionRef: 'workflow.daily-copy@1',
   });
 
@@ -185,7 +188,7 @@ test('retired planner-selected bindings remain auditable but never enter the rea
       bindingId: `binding.${mode}`,
       mode,
       skillRevisionRef: revision.skillRevisionRef,
-      stage: 'intent_naming',
+      triggerCondition: { harnessStage: 'intent_naming' },
       workflowRevisionRef: 'workflow.binding-matrix@1',
     });
   }
@@ -196,7 +199,7 @@ test('retired planner-selected bindings remain auditable but never enter the rea
   await repository.putBinding({
     bindingId: 'binding.retired-planner',
     workflowRevisionRef: 'workflow.binding-matrix@1',
-    stage: 'intent_naming',
+    triggerCondition: { harnessStage: 'intent_naming' },
     skillId: retiredRevision.skillId,
     skillRevisionRef: retiredRevision.skillRevisionRef,
     mode: 'planner_selected',
@@ -221,7 +224,11 @@ test('retired planner-selected bindings remain auditable but never enter the rea
     {
       bindingId: 'binding.retired-planner',
       workflowRevisionRef: 'workflow.binding-matrix@1',
-      stage: 'intent_naming',
+      triggerCondition: {
+        harnessStage: 'intent_naming',
+        industryCategory: null,
+        tenantId: null,
+      },
       skillId: retiredRevision.skillId,
       skillRevisionRef: retiredRevision.skillRevisionRef,
       mode: 'planner_selected',
@@ -263,7 +270,7 @@ test('an accepted prompt Skill changes the fixture judgment at its declared Harn
     bindingId: 'binding.fixture-judgment',
     mode: 'required',
     skillRevisionRef: revision.skillRevisionRef,
-    stage: 'intent_naming',
+    triggerCondition: { harnessStage: 'intent_naming' },
     workflowRevisionRef: 'workflow.binding-matrix@1',
   });
   const resolved = await service.resolveStage({
@@ -547,6 +554,34 @@ test('manifest admission rejects unknown schema refs before persisting a revisio
       skillId: 'skill.invalid-schema',
     }),
     /schema ref/u,
+  );
+  await assert.rejects(
+    service.draftRevision({
+      actorId: 'operator-1',
+      expectedRevision: null,
+      governance: {
+        ...governance(),
+        inputSchemaRef: 'skill-output.intent-decision@1',
+        outputSchemaRef: 'skill-input.daily-industry@1',
+        workflowRevisionRefs: ['workflow.invalid-schema@1'],
+      },
+      instruction: PROMPT_CONTENT,
+      manifest: {
+        description: 'Swapped input and output schema fixture.',
+        name: 'invalid-schema',
+      },
+      promptReference: registerPrompt({
+        content: PROMPT_CONTENT,
+        contentHash: sha256(PROMPT_CONTENT),
+        isFallback: false,
+        label: 'production',
+        name: 'skills/invalid-schema',
+        source: 'langfuse',
+        version: '1',
+      }),
+      skillId: 'skill.invalid-schema',
+    }),
+    /inputSchemaRef must reference a skill-input schema/u,
   );
   assert.equal(
     await repository.getRevision('skill.invalid-schema@1'),
@@ -1089,16 +1124,34 @@ test('retry after a mid-invocation crash replays each settled effect and execute
 test('SkillDeployment maps one canonical frozen revision to a provider native version without replacing product truth', async () => {
   const repository = new MemorySkillRepository();
   const service = new SkillService(repository, () => NOW, testPromptSnapshots);
-  const revision = await createAcceptedEffectSkill(service);
+  const revision = await createAcceptedEffectSkill(
+    service,
+    'harness_native',
+    ['SKILL.md', 'assets/preview.png'],
+  );
 
   await assert.rejects(
     service.registerDeployment({
-      artifactType: 'instruction',
+      channel: 'official-direct',
+      deploymentId: 'skill-deployment-package-drift',
+      executionMode: 'harness_native',
+      nativeSkillId: 'provider-skill-87',
+      nativeVersion: 'provider-revision-4',
+      packagePaths: ['SKILL.md'],
+      provider: 'fixture-provider',
+      skillRevisionRef: revision.skillRevisionRef,
+    }),
+    /package paths must match the frozen revision/u,
+  );
+
+  await assert.rejects(
+    service.registerDeployment({
       channel: 'official-direct',
       deploymentId: 'skill-deployment-effect-boundary',
       executionMode: 'harness_native',
       nativeSkillId: 'provider-skill-88',
       nativeVersion: 'provider-revision-5',
+      packagePaths: ['SKILL.md', 'assets/preview.png'],
       provider: 'fixture-provider',
       skillRevisionRef: revision.skillRevisionRef,
     }),
@@ -1119,16 +1172,20 @@ test('SkillDeployment maps one canonical frozen revision to a provider native ve
 test('provider-native deployment requires an explicit gate and evidence reference', async () => {
   const repository = new MemorySkillRepository();
   const service = new SkillService(repository, () => NOW, testPromptSnapshots);
-  const revision = await createAcceptedEffectSkill(service);
+  const revision = await createAcceptedEffectSkill(
+    service,
+    'harness_native',
+    ['SKILL.md', 'references/provider.md'],
+  );
 
   await assert.rejects(
     service.registerDeployment({
-      artifactType: 'reference',
       channel: 'official-direct',
       deploymentId: 'skill-deployment-provider-native',
       executionMode: 'provider_native',
       nativeSkillId: 'provider-skill-89',
       nativeVersion: 'provider-revision-6',
+      packagePaths: ['SKILL.md', 'references/provider.md'],
       provider: 'fixture-provider',
       skillRevisionRef: revision.skillRevisionRef,
     }),
@@ -1143,9 +1200,9 @@ test('provider-native deployment requires an explicit gate and evidence referenc
   const providerRevision = await createAcceptedEffectSkill(
     providerService,
     'provider_native',
+    ['SKILL.md', 'references/provider.md'],
   );
   const gated = await providerService.registerDeployment({
-    artifactType: 'reference',
     channel: 'official-direct',
     deploymentId: 'skill-deployment-provider-native-gated',
     executionMode: 'provider_native',
@@ -1155,6 +1212,7 @@ test('provider-native deployment requires an explicit gate and evidence referenc
     },
     nativeSkillId: 'provider-skill-90',
     nativeVersion: 'provider-revision-7',
+    packagePaths: ['SKILL.md', 'references/provider.md'],
     provider: 'fixture-provider',
     skillRevisionRef: providerRevision.skillRevisionRef,
   });
@@ -1197,6 +1255,7 @@ test('Foundation commands reach define, accept, bind, rollback, and deployment o
       workflowRevisionRefs: [workflowRevisionRef],
     },
     instruction,
+    packagePaths: ['SKILL.md', 'assets/example.png', 'evals/evals.json'],
     name: 'Foundation chain',
     presentationPolicy: 'explainable',
     promptReference: registerPrompt({
@@ -1253,16 +1312,16 @@ test('Foundation commands reach define, accept, bind, rollback, and deployment o
       bindingId: 'binding-foundation-retired-planner',
       mode: 'planner_selected',
       skillRevisionRef: definedV2.revision.skillRevisionRef,
-      stage: 'intent_naming',
+      triggerCondition: { harnessStage: 'intent_naming' },
       workflowRevisionRef,
     }),
-    /绑定模式或阶段不受支持/u,
+    /绑定模式或触发条件不受支持/u,
   );
   await execute('skill_bind', {
     bindingId: 'binding-foundation-v2',
     mode: 'required',
     skillRevisionRef: definedV2.revision.skillRevisionRef,
-    stage: 'intent_naming',
+    triggerCondition: { harnessStage: 'intent_naming' },
     workflowRevisionRef,
   });
   await execute('skill_rollback', {
@@ -1272,15 +1331,15 @@ test('Foundation commands reach define, accept, bind, rollback, and deployment o
     workflowRevisionRef,
   });
   const deployment = (await execute('skill_deployment', {
-    artifactType: 'instruction',
     channel: 'prompt-materialization',
     deploymentId: 'deployment-foundation-v1',
     executionMode: 'prompt_materialized',
     nativeSkillId: 'materialized-foundation-v1',
     nativeVersion: '1',
+    packagePaths: ['SKILL.md', 'assets/example.png', 'evals/evals.json'],
     provider: 'core-harness',
     skillRevisionRef: definedV1.revision.skillRevisionRef,
-  })) as { skillRevisionRef: string };
+  })) as { packagePaths: string[]; skillRevisionRef: string };
 
   assert.equal(
     (
@@ -1295,6 +1354,10 @@ test('Foundation commands reach define, accept, bind, rollback, and deployment o
   assert.equal(
     deployment.skillRevisionRef,
     definedV1.revision.skillRevisionRef,
+  );
+  assert.deepEqual(
+    deployment.packagePaths,
+    ['SKILL.md', 'assets/example.png', 'evals/evals.json'],
   );
 });
 
@@ -1315,6 +1378,24 @@ test('skill_define rejects inline prompt content before a revision write', async
     },
   });
   const module = new SkillFoundationModule(service);
+  const basePayload = {
+    expectedRevision: null,
+    frontmatter: {
+      description:
+        'Grounds daily beauty content. Use for daily merchant posts.',
+      name: 'inline-prompt-rejected',
+    },
+    governance: governance(),
+    instruction: 'Use grounded daily context.',
+    name: 'Inline prompt rejection',
+    presentationPolicy: 'backend_only',
+    promptReference: {
+      contentHash: sha256(promptContent),
+      name: 'harness/intent-naming',
+      version: '42',
+    },
+    skillId: 'skill.inline-prompt-rejected',
+  };
 
   await assert.rejects(
     module.execute({
@@ -1328,27 +1409,75 @@ test('skill_define rejects inline prompt content before a revision write', async
       input: {
         action: 'skill_define',
         payload: {
-          expectedRevision: null,
-          frontmatter: {
-            description:
-              'Grounds daily beauty content. Use for daily merchant posts.',
-            name: 'inline-prompt-rejected',
-          },
-          governance: governance(),
-          instruction: 'Use grounded daily context.',
-          name: 'Inline prompt rejection',
-          presentationPolicy: 'backend_only',
+          ...basePayload,
           promptReference: {
+            ...basePayload.promptReference,
             content: 'Caller-controlled prompt body.',
-            contentHash: sha256(promptContent),
-            name: 'harness/intent-naming',
-            version: '42',
           },
-          skillId: 'skill.inline-prompt-rejected',
         },
       },
     }),
-    /prompt reference must not include content/u,
+    /prompt reference 不支持字段 content/u,
+  );
+  await assert.rejects(
+    module.execute({
+      context: {
+        actor: 'admin',
+        correlationId: 'corr-legacy-prompt-rejected',
+        userId: 'operator-inline-prompt-rejected',
+        workspaceId: 'workspace-inline-prompt-rejected',
+      },
+      idempotencyKey: 'skill-define-legacy-prompt-rejected',
+      input: {
+        action: 'skill_define',
+        payload: {
+          ...basePayload,
+          prompt: { content: 'Legacy caller-controlled prompt body.' },
+        },
+      },
+    }),
+    /Skill 定义命令 不支持字段 prompt/u,
+  );
+  await assert.rejects(
+    module.execute({
+      context: {
+        actor: 'admin',
+        correlationId: 'corr-fallback-content-rejected',
+        userId: 'operator-inline-prompt-rejected',
+        workspaceId: 'workspace-inline-prompt-rejected',
+      },
+      idempotencyKey: 'skill-define-fallback-content-rejected',
+      input: {
+        action: 'skill_define',
+        payload: {
+          ...basePayload,
+          fallbackContent: 'Caller-controlled frozen fallback.',
+        },
+      },
+    }),
+    /Skill 定义命令 不支持字段 fallbackContent/u,
+  );
+  await assert.rejects(
+    module.execute({
+      context: {
+        actor: 'admin',
+        correlationId: 'corr-governance-prompt-rejected',
+        userId: 'operator-inline-prompt-rejected',
+        workspaceId: 'workspace-inline-prompt-rejected',
+      },
+      idempotencyKey: 'skill-define-governance-prompt-rejected',
+      input: {
+        action: 'skill_define',
+        payload: {
+          ...basePayload,
+          governance: {
+            ...basePayload.governance,
+            prompt: { content: 'Sidecar prompt smuggling.' },
+          },
+        },
+      },
+    }),
+    /governance sidecar is invalid/u,
   );
   assert.equal(
     await repository.getRevisionHead('skill.inline-prompt-rejected'),
@@ -1425,6 +1554,384 @@ test('skill_define separates frontmatter, governance, and trusted prompt fallbac
   assert.equal(stored?.prompt.fallbackContent, promptContent);
 });
 
+test('stage resolution uses the frozen prompt fallback with explicit lineage when prompt authority is unavailable', async () => {
+  const repository = new MemorySkillRepository();
+  const promptContent = 'Trusted fallback for a temporarily unavailable prompt.';
+  let authorityFailure: 'none' | 'unavailable' | 'invalid' = 'none';
+  let authorityDrifted = false;
+  const service = new SkillService(repository, () => NOW, {
+    async capture() {
+      if (authorityFailure === 'unavailable') {
+        throw new SkillPromptAuthorityUnavailableError('fixture unavailable');
+      }
+      if (authorityFailure === 'invalid') {
+        throw new Error('fixture pinned prompt is missing');
+      }
+      return {
+        content: authorityDrifted
+          ? 'Drifted prompt authority content.'
+          : promptContent,
+        contentHash: sha256(promptContent),
+        isFallback: false,
+        label: 'production',
+        name: 'harness/intent-naming',
+        source: 'langfuse',
+        version: '42',
+      };
+    },
+  });
+  await service.defineCatalogEntry({
+    actorId: 'operator-fallback',
+    name: 'Prompt fallback',
+    presentationPolicy: 'backend_only',
+    skillId: 'skill.prompt-fallback',
+  });
+  const draft = await service.draftRevision({
+    actorId: 'operator-fallback',
+    expectedRevision: null,
+    governance: governance(),
+    instruction: 'Use the portable Skill instructions.',
+    manifest: {
+      description: 'Exercises frozen prompt fallback lineage.',
+      name: 'prompt-fallback',
+    },
+    promptReference: {
+      contentHash: sha256(promptContent),
+      name: 'harness/intent-naming',
+      version: '42',
+    },
+    skillId: 'skill.prompt-fallback',
+  });
+  await service.acceptAndFreezeRevision({
+    actorId: 'operator-fallback',
+    evalRun: skillEvalRun(draft.skillRevisionRef),
+    skillRevisionRef: draft.skillRevisionRef,
+  });
+  await service.bindRevision({
+    bindingId: 'binding.prompt-fallback',
+    mode: 'required',
+    skillRevisionRef: draft.skillRevisionRef,
+    triggerCondition: { harnessStage: 'intent_naming' },
+    workflowRevisionRef: 'workflow.daily-copy@1',
+  });
+
+  authorityFailure = 'unavailable';
+  const resolved = await service.resolveStage({
+    stage: 'intent_naming',
+    userSelectedSkillRefs: [],
+    workflowRevisionRef: 'workflow.daily-copy@1',
+  });
+
+  assert.equal(
+    resolved.allowlist[0]?.instruction,
+    'Use the portable Skill instructions.',
+  );
+  assert.equal(resolved.allowlist[0]?.prompt?.isFallback, true);
+  assert.match(
+    resolved.allowlist[0]?.prompt?.fallbackReason ?? '',
+    /authority is unavailable/u,
+  );
+  const [receipt] = await service.recordPromptMaterializationReceipts({
+    instructions: resolved.allowlist,
+    stage: 'intent_naming',
+    taskId: 'task-prompt-fallback',
+    workflowRevisionRef: 'workflow.daily-copy@1',
+    workspaceId: 'workspace-prompt-fallback',
+  });
+  assert.equal(receipt?.prompt?.isFallback, true);
+  assert.match(
+    receipt?.prompt?.fallbackReason ?? '',
+    /authority is unavailable/u,
+  );
+  const fallback = await service.resolvePromptSnapshot(
+    draft.skillRevisionRef,
+  );
+  assert.equal(fallback.content, promptContent);
+  assert.equal(fallback.isFallback, true);
+  assert.match(
+    fallback.fallbackReason ?? '',
+    /authority is unavailable/u,
+  );
+  const materialized = materializeSkillInstructions(
+    'Live authority prompt must be replaced.',
+    resolved.allowlist,
+  );
+  assert.match(materialized, new RegExp(promptContent, 'u'));
+  assert.doesNotMatch(materialized, /Live authority prompt must be replaced/u);
+  authorityFailure = 'none';
+  const online = await service.resolveStage({
+    stage: 'intent_naming',
+    userSelectedSkillRefs: [],
+    workflowRevisionRef: 'workflow.daily-copy@1',
+  });
+  assert.equal(online.allowlist[0]?.prompt?.isFallback, false);
+  const onlineMaterialized = materializeSkillInstructions(
+    'Caller prompt must not replace the authoritative snapshot.',
+    online.allowlist,
+  );
+  assert.match(onlineMaterialized, new RegExp(promptContent, 'u'));
+  assert.doesNotMatch(
+    onlineMaterialized,
+    /Caller prompt must not replace the authoritative snapshot/u,
+  );
+  const [replayed] = await service.recordPromptMaterializationReceipts({
+    instructions: online.allowlist,
+    stage: 'intent_naming',
+    taskId: 'task-prompt-fallback',
+    workflowRevisionRef: 'workflow.daily-copy@1',
+    workspaceId: 'workspace-prompt-fallback',
+  });
+  assert.deepEqual(replayed, receipt);
+  authorityFailure = 'invalid';
+  await assert.rejects(
+    service.resolvePromptSnapshot(draft.skillRevisionRef),
+    /fixture pinned prompt is missing/u,
+  );
+  authorityFailure = 'none';
+  authorityDrifted = true;
+  await assert.rejects(
+    service.resolvePromptSnapshot(draft.skillRevisionRef),
+    /authority returned a mismatched pinned prompt/u,
+  );
+});
+
+test('Harness prompt adapter distinguishes authority unavailability from a missing pin', async () => {
+  const reference = {
+    contentHash: 'a'.repeat(64),
+    name: 'harness/intent-naming',
+    version: '42',
+  };
+  const unavailable = skillPromptSnapshotPortFromHarness(
+    new LangfuseHarnessPromptResolver({
+      baseUrl: 'https://langfuse.invalid',
+      fetch: async () => {
+        throw new Error('fixture network failure');
+      },
+      policy: 'pilot',
+      publicKey: 'fixture-public',
+      secretKey: 'fixture-secret',
+      versions: { intentNaming: 42 },
+      warn() {},
+    }),
+  );
+  await assert.rejects(
+    unavailable.capture(reference),
+    SkillPromptAuthorityUnavailableError,
+  );
+
+  const missingPin = skillPromptSnapshotPortFromHarness(
+    new LangfuseHarnessPromptResolver({
+      policy: 'pilot',
+      warn() {},
+    }),
+  );
+  await assert.rejects(
+    missingPin.capture(reference),
+    (error: unknown) =>
+      error instanceof Error &&
+      !(error instanceof SkillPromptAuthorityUnavailableError) &&
+      /did not return the pinned Skill prompt/u.test(error.message),
+  );
+});
+
+test('frozen prompt fallback fails closed when its content no longer matches the pinned hash', async () => {
+  const repository = new MemorySkillRepository();
+  await repository.putRevision(
+    {
+      acceptedAt: NOW,
+      acceptedBy: 'operator-fallback-hash',
+      contentHash: 'a'.repeat(64),
+      createdAt: NOW,
+      createdBy: 'operator-fallback-hash',
+      evalRunId: 'eval-fallback-hash',
+      formatVersion: 2,
+      governance: governance(),
+      instruction: 'Use portable Skill instructions.',
+      manifest: {
+        description: 'Rejects a drifted frozen prompt fallback.',
+        name: 'fallback-hash',
+      },
+      packagePaths: ['SKILL.md'],
+      prompt: {
+        contentHash: sha256('Expected frozen prompt content.'),
+        fallbackContent: 'Drifted frozen prompt content.',
+        isFallback: false,
+        label: 'production',
+        name: 'harness/intent-naming',
+        source: 'langfuse',
+        version: '42',
+      },
+      revision: 1,
+      skillId: 'skill.fallback-hash',
+      skillRevisionRef: 'skill.fallback-hash@1',
+      status: 'accepted_frozen',
+    },
+    null,
+  );
+  const service = new SkillService(repository, () => NOW);
+
+  await assert.rejects(
+    service.resolvePromptSnapshot('skill.fallback-hash@1'),
+    /fallback does not match its pinned hash/u,
+  );
+});
+
+test('prompt materialization replays receipts written before prompt lineage entered the fingerprint', async () => {
+  const repository = new MemorySkillRepository();
+  const promptContent = 'Frozen prompt content.';
+  const revision = {
+    acceptedAt: NOW,
+    acceptedBy: 'operator-legacy-fingerprint',
+    contentHash: 'a'.repeat(64),
+    createdAt: NOW,
+    createdBy: 'operator-legacy-fingerprint',
+    evalRunId: 'eval-legacy-fingerprint',
+    formatVersion: 2 as const,
+    governance: governance(),
+    instruction: 'Use portable Skill instructions.',
+    manifest: {
+      description: 'Replays a pre-lineage materialization receipt.',
+      name: 'legacy-fingerprint',
+    },
+    packagePaths: ['SKILL.md'],
+    prompt: {
+      contentHash: sha256(promptContent),
+      fallbackContent: promptContent,
+      isFallback: false,
+      label: 'production',
+      name: 'harness/intent-naming',
+      source: 'langfuse' as const,
+      version: '42',
+    },
+    revision: 1,
+    skillId: 'skill.legacy-fingerprint',
+    skillRevisionRef: 'skill.legacy-fingerprint@1',
+    status: 'accepted_frozen' as const,
+  };
+  await repository.putRevision(revision, null);
+  const invocationId =
+    'skill-materialized:task-legacy-fingerprint:intent_naming:' +
+    encodeURIComponent(revision.skillRevisionRef);
+  const legacyFacts = {
+    contentHash: revision.contentHash,
+    skillRevisionRef: revision.skillRevisionRef,
+    stage: 'intent_naming',
+    workflowRevisionRef: 'workflow.daily-copy@1',
+  };
+  const existing = await repository.putInvocationReceipt({
+    childEffectIds: [],
+    createdAt: NOW,
+    inputFingerprint: sha256(canonicalTestJson(legacyFacts)),
+    invocationId,
+    productUsageTaskId: 'task-legacy-fingerprint',
+    skillRevisionRef: revision.skillRevisionRef,
+    status: 'settled',
+    taskId: 'task-legacy-fingerprint',
+    totalCostCents: 0,
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    workspaceId: 'workspace-legacy-fingerprint',
+  });
+  const service = new SkillService(repository, () => NOW);
+
+  assert.deepEqual(
+    await service.recordPromptMaterializationReceipts({
+      instructions: [
+        {
+          contentHash: revision.contentHash,
+          executionMode: 'prompt_materialized',
+          instruction: revision.instruction,
+          prompt: {
+            contentHash: revision.prompt.contentHash,
+            isFallback: false,
+            name: revision.prompt.name,
+            version: revision.prompt.version,
+          },
+          skillRevisionRef: revision.skillRevisionRef,
+        },
+      ],
+      stage: 'intent_naming',
+      taskId: 'task-legacy-fingerprint',
+      workflowRevisionRef: 'workflow.daily-copy@1',
+      workspaceId: 'workspace-legacy-fingerprint',
+    }),
+    [existing],
+  );
+});
+
+test('skill_accept redacts legacy prompt content and instruction fields', async () => {
+  const repository = new MemorySkillRepository();
+  const legacyContent = 'Legacy prompt content must never reach the admin UI.';
+  await repository.putCatalog({
+    activeRevisionRef: 'skill.legacy-redaction@1',
+    actorId: 'operator-legacy-redaction',
+    createdAt: NOW,
+    name: 'Legacy redaction',
+    presentationPolicy: 'backend_only',
+    skillId: 'skill.legacy-redaction',
+    updatedAt: NOW,
+  });
+  await repository.putRevision(
+    {
+      acceptedAt: NOW,
+      acceptedBy: 'operator-legacy-redaction',
+      contentHash: sha256(legacyContent),
+      createdAt: NOW,
+      createdBy: 'operator-legacy-redaction',
+      evalRunId: 'eval-legacy-redaction',
+      formatVersion: 1,
+      governance: governance(),
+      instruction: legacyContent,
+      manifest: {
+        ...governance(),
+        compatibility: {
+          workflowRevisionRefs: ['workflow.daily-copy@1'],
+        },
+        evalSuiteRef: 'legacy-redaction@1',
+      },
+      prompt: {
+        content: legacyContent,
+        contentHash: sha256(legacyContent),
+        fallbackContent: legacyContent,
+        isFallback: false,
+        label: 'production',
+        name: 'harness/intent-naming',
+        source: 'langfuse',
+        version: '42',
+      },
+      revision: 1,
+      skillId: 'skill.legacy-redaction',
+      skillRevisionRef: 'skill.legacy-redaction@1',
+      status: 'accepted_frozen',
+    } as unknown as Parameters<
+      MemorySkillRepository['putRevision']
+    >[0],
+    null,
+  );
+  const module = new SkillFoundationModule(
+    new SkillService(repository, () => NOW),
+  );
+  const result = await module.execute({
+    context: {
+      actor: 'admin',
+      correlationId: 'corr-legacy-redaction',
+      userId: 'operator-legacy-redaction',
+      workspaceId: 'workspace-legacy-redaction',
+    },
+    idempotencyKey: 'skill-accept-legacy-redaction',
+    input: {
+      action: 'skill_accept',
+      payload: {
+        evalRun: skillEvalRun('skill.legacy-redaction@1'),
+        skillRevisionRef: 'skill.legacy-redaction@1',
+      },
+    },
+  });
+
+  assert.equal(JSON.stringify(result).includes(legacyContent), false);
+  assert.equal(JSON.stringify(result).includes('"instruction"'), false);
+});
+
 test('backend-only Skill cannot be bound as user-selected', async () => {
   const service = new SkillService(
     new MemorySkillRepository(),
@@ -1438,10 +1945,116 @@ test('backend-only Skill cannot be bound as user-selected', async () => {
       bindingId: 'binding.backend-user-selected',
       mode: 'user_selected',
       skillRevisionRef: revision.skillRevisionRef,
-      stage: 'intent_naming',
+      triggerCondition: { harnessStage: 'intent_naming' },
       workflowRevisionRef: 'workflow.binding-matrix@1',
     }),
     /后台专用 Skill 不能由用户选择/u,
+  );
+});
+
+test('deterministic Skill triggers match stage, industry category, and tenant', async () => {
+  const repository = new MemorySkillRepository();
+  const service = new SkillService(repository, () => NOW, testPromptSnapshots);
+  const globalHair = await createAcceptedSkill(service, 'global_hair');
+  const tenantInstruction =
+    'Apply the tenant hair instruction only in the declared stage.';
+  const tenantHairDraft = await service.draftRevision({
+    actorId: 'operator-1',
+    expectedRevision: 1,
+    governance: {
+      ...governance(),
+      workflowRevisionRefs: ['workflow.binding-matrix@1'],
+    },
+    instruction: tenantInstruction,
+    manifest: {
+      description: 'Fixture for tenant-specific hair behavior.',
+      name: 'global-hair',
+    },
+    promptReference: registerPrompt({
+      content: tenantInstruction,
+      contentHash: sha256(tenantInstruction),
+      isFallback: false,
+      label: 'production',
+      name: 'skills/global_hair',
+      source: 'langfuse',
+      version: '2',
+    }),
+    skillId: globalHair.skillId,
+  });
+  const tenantHair = await service.acceptAndFreezeRevision({
+    actorId: 'operator-2',
+    evalRun: {
+      ...skillEvalRun(tenantHairDraft.skillRevisionRef),
+      results: [
+        {
+          ...skillEvalRun(tenantHairDraft.skillRevisionRef).results[0]!,
+          promptRevision: 'skills/global_hair@2',
+        },
+      ],
+      runId: 'skills-global-hair-run-2',
+      suiteId: 'skills-global-hair',
+      suiteRevision: 'skills-global-hair@2',
+    },
+    skillRevisionRef: tenantHairDraft.skillRevisionRef,
+  });
+  await service.bindRevision({
+    bindingId: 'binding.global-hair',
+    mode: 'required',
+    skillRevisionRef: globalHair.skillRevisionRef,
+    triggerCondition: {
+      harnessStage: 'intent_naming',
+      industryCategory: 'hair',
+      tenantId: null,
+    },
+    workflowRevisionRef: 'workflow.binding-matrix@1',
+  });
+  await service.bindRevision({
+    bindingId: 'binding.tenant-hair',
+    mode: 'required',
+    skillRevisionRef: tenantHair.skillRevisionRef,
+    triggerCondition: {
+      harnessStage: 'intent_naming',
+      industryCategory: 'hair',
+      tenantId: 'tenant-a',
+    },
+    workflowRevisionRef: 'workflow.binding-matrix@1',
+  });
+
+  assert.deepEqual(
+    (
+      await service.resolveStage({
+        industryCategory: 'hair',
+        stage: 'intent_naming',
+        tenantId: 'tenant-a',
+        userSelectedSkillRefs: [],
+        workflowRevisionRef: 'workflow.binding-matrix@1',
+      })
+    ).allowlist.map((skill) => skill.skillRevisionRef),
+    [tenantHair.skillRevisionRef],
+  );
+  assert.deepEqual(
+    (
+      await service.resolveStage({
+        industryCategory: 'hair',
+        stage: 'intent_naming',
+        tenantId: 'tenant-b',
+        userSelectedSkillRefs: [],
+        workflowRevisionRef: 'workflow.binding-matrix@1',
+      })
+    ).allowlist.map((skill) => skill.skillRevisionRef),
+    [globalHair.skillRevisionRef],
+  );
+  assert.deepEqual(
+    (
+      await service.resolveStage({
+        industryCategory: 'nails',
+        stage: 'intent_naming',
+        tenantId: 'tenant-a',
+        userSelectedSkillRefs: [],
+        workflowRevisionRef: 'workflow.binding-matrix@1',
+      })
+    ).allowlist,
+    [],
   );
 });
 
@@ -1476,7 +2089,7 @@ test('rolling a binding back to the previous frozen revision restores the fixtur
     bindingId: 'binding.rollback-current',
     mode: 'required',
     skillRevisionRef: second.skillRevisionRef,
-    stage: 'intent_naming',
+    triggerCondition: { harnessStage: 'intent_naming' },
     workflowRevisionRef: 'workflow.rollback@2',
   });
 
@@ -1578,7 +2191,7 @@ test('rollback rejects the same revision and supersedes a binding on the same wo
     bindingId: 'binding.rollback-v2',
     mode: 'required',
     skillRevisionRef: second.skillRevisionRef,
-    stage: 'intent_naming',
+    triggerCondition: { harnessStage: 'intent_naming' },
     workflowRevisionRef: 'workflow.rollback@2',
   });
 
@@ -1655,6 +2268,22 @@ function skillEvalRun(skillRevisionRef: string): EvalRun {
 
 function sha256(value: string) {
   return createHash('sha256').update(value).digest('hex');
+}
+
+function canonicalTestJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalTestJson).join(',')}]`;
+  }
+  const object = value as Record<string, unknown>;
+  return `{${Object.keys(object)
+    .filter((key) => object[key] !== undefined)
+    .sort()
+    .map(
+      (key) =>
+        `${JSON.stringify(key)}:${canonicalTestJson(object[key])}`,
+    )
+    .join(',')}}`;
 }
 
 function promptKey(reference: {
@@ -1771,6 +2400,7 @@ async function createAcceptedSkill(
 async function createAcceptedEffectSkill(
   service: SkillService,
   executionMode: 'harness_native' | 'provider_native' = 'harness_native',
+  packagePaths: string[] = ['SKILL.md'],
 ) {
   const skillId =
     executionMode === 'provider_native'
@@ -1806,6 +2436,7 @@ async function createAcceptedEffectSkill(
       workflowRevisionRefs: ['workflow.effects@1'],
     },
     instruction,
+    packagePaths,
     manifest: {
       description: 'Exercises the bounded Skill effect contract.',
       name:

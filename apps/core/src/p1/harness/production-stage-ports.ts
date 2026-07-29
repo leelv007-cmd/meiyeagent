@@ -7,6 +7,7 @@ import type {
   MarketingPackageEvidence,
   ReuseTaskSeed,
   StoreFactKind,
+  HarnessStage,
 } from '@meiye/contracts';
 
 import type {
@@ -57,7 +58,6 @@ import {
 import type {
   ResolvedSkillInstruction,
   SkillInvocationReceipt,
-  SkillStage,
 } from '../skills/types.js';
 import {
   assessRecipeFactSatisfaction,
@@ -124,7 +124,8 @@ export interface HarnessSkillInstructionResolverPort {
     workflowRevision: number;
     recipeId?: string;
     recipeRevisionId?: string;
-    stage: SkillStage;
+    stage: HarnessStage;
+    industryCategory?: string;
     userSelectedSkillRefs?: readonly string[];
     skillRevisionRefs?: readonly string[];
   }): Promise<{
@@ -230,6 +231,9 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       return { instructions: [], receipts: [] };
     }
     const recipe = input.request.executionSnapshot?.recipe;
+    const industryCategory = input.request.decisionReferences?.find(
+      (reference) => reference.field === 'industry_category',
+    )?.value;
     return this.skillInstructions.resolve({
       workspaceId: input.request.workspaceId,
       workflowId: input.workflowId,
@@ -241,6 +245,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
           }
         : {}),
       stage: input.stage,
+      ...(industryCategory ? { industryCategory } : {}),
       ...(input.userSelectedSkillRefs
         ? { userSelectedSkillRefs: input.userSelectedSkillRefs }
         : {}),

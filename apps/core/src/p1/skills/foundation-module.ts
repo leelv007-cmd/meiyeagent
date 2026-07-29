@@ -1,11 +1,10 @@
-import type { EvalRun } from '@meiye/contracts';
+import { HARNESS_STAGES, type EvalRun } from '@meiye/contracts';
 
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
 import type { P1OperationModule } from '../foundation/ports.js';
-import { SKILL_BINDING_MODES, SKILL_STAGES } from './types.js';
+import { SKILL_BINDING_MODES } from './types.js';
 import type {
   SkillCatalog,
-  SkillDeploymentArtifactType,
   SkillExecutionMode,
   SkillGovernanceSidecar,
   SkillPromptReference,
@@ -50,6 +49,15 @@ function integerOrNull(value: Record<string, unknown>, key: string) {
   return candidate;
 }
 
+function optionalTextOrNull(value: Record<string, unknown>, key: string) {
+  const candidate = value[key];
+  if (candidate === undefined || candidate === null) return null;
+  if (typeof candidate !== 'string' || !candidate.trim()) {
+    fail(`Skill 命令字段 ${key} 必须是非空字符串或 null。`);
+  }
+  return candidate.trim();
+}
+
 function object(value: Record<string, unknown>, key: string) {
   const candidate = value[key];
   if (
@@ -62,9 +70,39 @@ function object(value: Record<string, unknown>, key: string) {
   return candidate as Record<string, unknown>;
 }
 
+function stringArray(value: Record<string, unknown>, key: string) {
+  const candidate = value[key];
+  if (
+    !Array.isArray(candidate) ||
+    candidate.some((item) => typeof item !== 'string')
+  ) {
+    fail(`Skill 命令字段 ${key} 必须是字符串数组。`);
+  }
+  return candidate as string[];
+}
+
+function onlyKeys(
+  value: Record<string, unknown>,
+  allowed: readonly string[],
+  label: string,
+) {
+  const allowedKeys = new Set(allowed);
+  const unexpected = Object.keys(value).find((key) => !allowedKeys.has(key));
+  if (unexpected) {
+    fail(`${label} 不支持字段 ${unexpected}。`);
+  }
+}
+
 function publicRevision(revision: SkillRevision) {
-  const { fallbackContent: _fallbackContent, ...prompt } = revision.prompt;
-  return { ...revision, prompt };
+  const { instruction: _instruction, ...publicFields } = revision;
+  const {
+    fallbackContent: _fallbackContent,
+    content: _legacyContent,
+    ...prompt
+  } = revision.prompt as SkillRevision['prompt'] & { content?: string };
+  return revision.formatVersion === 1
+    ? { ...publicFields, prompt }
+    : { ...publicFields, instruction: revision.instruction, prompt };
 }
 
 export class SkillFoundationModule implements P1OperationModule {
@@ -81,6 +119,21 @@ export class SkillFoundationModule implements P1OperationModule {
     const value = payload(args.input);
     switch (name) {
       case 'skill_define': {
+        onlyKeys(
+          value,
+          [
+            'expectedRevision',
+            'frontmatter',
+            'governance',
+            'instruction',
+            'name',
+            'packagePaths',
+            'presentationPolicy',
+            'promptReference',
+            'skillId',
+          ],
+          'Skill 定义命令',
+        );
         const presentationPolicy = text(
           value,
           'presentationPolicy',
@@ -116,9 +169,11 @@ export class SkillFoundationModule implements P1OperationModule {
           );
         }
         const promptReference = object(value, 'promptReference');
-        if ('content' in promptReference) {
-          fail('Skill prompt reference must not include content.');
-        }
+        onlyKeys(
+          promptReference,
+          ['contentHash', 'name', 'version'],
+          'Skill prompt reference',
+        );
         const revision = await this.service.draftRevision({
           skillId: catalog.skillId,
           expectedRevision: integerOrNull(value, 'expectedRevision'),
@@ -127,6 +182,9 @@ export class SkillFoundationModule implements P1OperationModule {
           manifest: value.frontmatter as SkillRevisionManifest,
           governance: value.governance as SkillGovernanceSidecar,
           promptReference: promptReference as unknown as SkillPromptReference,
+          ...(value.packagePaths === undefined
+            ? {}
+            : { packagePaths: stringArray(value, 'packagePaths') }),
         });
         return { catalog, revision: publicRevision(revision) };
       }
@@ -140,19 +198,35 @@ export class SkillFoundationModule implements P1OperationModule {
         );
       case 'skill_bind': {
         const mode = text(value, 'mode');
-        const stage = text(value, 'stage');
+        const triggerCondition = object(value, 'triggerCondition');
+        onlyKeys(
+          triggerCondition,
+          ['harnessStage', 'industryCategory', 'tenantId'],
+          'Skill 触发条件',
+        );
+        const harnessStage = text(triggerCondition, 'harnessStage');
         if (
           !SKILL_BINDING_MODES.includes(
             mode as (typeof SKILL_BINDING_MODES)[number],
           ) ||
-          !SKILL_STAGES.includes(stage as (typeof SKILL_STAGES)[number])
+          !HARNESS_STAGES.includes(
+            harnessStage as (typeof HARNESS_STAGES)[number],
+          )
         ) {
-          fail('Skill 绑定模式或阶段不受支持。');
+          fail('Skill 绑定模式或触发条件不受支持。');
         }
         return this.service.bindRevision({
           bindingId: text(value, 'bindingId'),
           workflowRevisionRef: text(value, 'workflowRevisionRef'),
-          stage: stage as (typeof SKILL_STAGES)[number],
+          triggerCondition: {
+            harnessStage:
+              harnessStage as (typeof HARNESS_STAGES)[number],
+            industryCategory: optionalTextOrNull(
+              triggerCondition,
+              'industryCategory',
+            ),
+            tenantId: optionalTextOrNull(triggerCondition, 'tenantId'),
+          },
           skillRevisionRef: text(value, 'skillRevisionRef'),
           mode: mode as (typeof SKILL_BINDING_MODES)[number],
         });
@@ -166,10 +240,6 @@ export class SkillFoundationModule implements P1OperationModule {
         });
       case 'skill_deployment': {
         const executionMode = text(value, 'executionMode') as SkillExecutionMode;
-        const artifactType = text(
-          value,
-          'artifactType',
-        ) as SkillDeploymentArtifactType;
         const gate =
           value.experimentalGate &&
           typeof value.experimentalGate === 'object' &&
@@ -184,7 +254,7 @@ export class SkillFoundationModule implements P1OperationModule {
           nativeSkillId: text(value, 'nativeSkillId'),
           nativeVersion: text(value, 'nativeVersion'),
           executionMode,
-          artifactType,
+          packagePaths: stringArray(value, 'packagePaths'),
           ...(gate
             ? {
                 experimentalGate: {

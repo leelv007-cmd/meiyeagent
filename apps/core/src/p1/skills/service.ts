@@ -3,14 +3,19 @@ import { createHash } from 'node:crypto';
 import {
   evalRunSchema,
   parseSkillSchema,
-  resolveSkillSchema,
   type EvalRun,
+  type HarnessStage,
 } from '@meiye/contracts';
 
 import { P1DomainError } from '../foundation/domain.js';
 import type { SkillRepository } from './repository.js';
-import { validateSkillFrontmatter } from './skill-format.js';
 import {
+  validateSkillFrontmatter,
+  validateSkillPackagePaths,
+} from './skill-format.js';
+import { parseSkillGovernance } from './skill-governance.js';
+import {
+  SkillPromptAuthorityUnavailableError,
   skillRevisionRef,
   type ResolvedSkillInstruction,
   type SkillBinding,
@@ -18,7 +23,6 @@ import {
   type SkillCatalog,
   type SkillChildEffect,
   type SkillDeployment,
-  type SkillDeploymentArtifactType,
   type SkillExecutionMode,
   type SkillGovernanceSidecar,
   type SkillInvocationExecution,
@@ -32,7 +36,7 @@ import {
   type SkillPromptSnapshotPort,
   type SkillRevision,
   type SkillRevisionManifest,
-  type SkillStage,
+  type SkillTriggerCondition,
 } from './types.js';
 import { RegistrySkillOutputValidator } from './schema-validator.js';
 import {
@@ -66,6 +70,16 @@ function required(value: string, label: string) {
   const normalized = value?.trim();
   if (!normalized) fail(`${label} is required.`);
   return normalized;
+}
+
+function normalizeTriggerCondition(
+  condition: SkillTriggerCondition,
+): SkillTriggerCondition {
+  return {
+    harnessStage: condition.harnessStage,
+    industryCategory: condition.industryCategory?.trim() || null,
+    tenantId: condition.tenantId?.trim() || null,
+  };
 }
 
 export class SkillService {
@@ -106,16 +120,30 @@ export class SkillService {
     manifest: SkillRevisionManifest;
     governance: SkillGovernanceSidecar;
     promptReference: SkillPromptReference;
+    packagePaths?: string[];
   }) {
     const catalog = await this.repository.getCatalog(input.skillId);
     if (!catalog) {
       throw new P1DomainError('NOT_FOUND', 'Skill 目录项不存在。');
     }
     const manifest = validateSkillFrontmatter(input.manifest);
-    validateGovernance(input.governance);
+    let governance: SkillGovernanceSidecar;
+    try {
+      governance = parseSkillGovernance(input.governance);
+    } catch (error) {
+      fail(
+        `Skill governance sidecar is invalid: ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`,
+      );
+    }
+    const packagePaths = validateSkillPackagePaths(
+      input.packagePaths ?? ['SKILL.md'],
+    );
     const prompt = await this.capturePromptSnapshot(input.promptReference);
     const revision = (input.expectedRevision ?? 0) + 1;
     const record: SkillRevision = {
+      formatVersion: 2,
       skillId: catalog.skillId,
       revision,
       skillRevisionRef: skillRevisionRef(catalog.skillId, revision),
@@ -123,13 +151,15 @@ export class SkillService {
         canonicalJson({
           instruction: input.instruction,
           manifest,
-          governance: input.governance,
+          governance,
+          packagePaths,
           prompt,
         }),
       ),
       instruction: required(input.instruction, 'Skill instruction'),
       manifest: structuredClone(manifest),
-      governance: structuredClone(input.governance),
+      governance: structuredClone(governance),
+      packagePaths,
       prompt,
       status: 'draft',
       createdAt: this.now(),
@@ -222,7 +252,7 @@ export class SkillService {
   async bindRevision(input: {
     bindingId: string;
     workflowRevisionRef: string;
-    stage: SkillStage;
+    triggerCondition: SkillTriggerCondition;
     skillRevisionRef: string;
     mode: SkillBindingMode;
   }) {
@@ -243,7 +273,7 @@ export class SkillService {
         input.workflowRevisionRef,
         'Workflow revision',
       ),
-      stage: input.stage,
+      triggerCondition: normalizeTriggerCondition(input.triggerCondition),
       skillId: revision.skillId,
       skillRevisionRef: input.skillRevisionRef,
       mode: input.mode,
@@ -291,7 +321,7 @@ export class SkillService {
         input.workflowRevisionRef,
         'Workflow revision',
       ),
-      stage: source.stage,
+      triggerCondition: structuredClone(source.triggerCondition),
       skillId: sourceRevision.skillId,
       skillRevisionRef: targetRevision.skillRevisionRef,
       mode: source.mode,
@@ -318,7 +348,7 @@ export class SkillService {
     nativeSkillId: string;
     nativeVersion: string;
     executionMode: SkillExecutionMode;
-    artifactType: SkillDeploymentArtifactType;
+    packagePaths: string[];
     experimentalGate?: {
       enabled: boolean;
       evidenceRef: string;
@@ -328,23 +358,31 @@ export class SkillService {
     if (revision.status !== 'accepted_frozen') {
       fail('只能部署已受理冻结的 Skill 版本。');
     }
-    const firstReleaseArtifact =
-      input.artifactType === 'instruction' ||
-      input.artifactType === 'reference';
+    const packagePaths = validateSkillPackagePaths(input.packagePaths);
+    const frozenPackagePaths = validateSkillPackagePaths(
+      revision.packagePaths ?? ['SKILL.md'],
+    );
+    if (
+      canonicalJson(packagePaths) !== canonicalJson(frozenPackagePaths)
+    ) {
+      fail('Skill deployment package paths must match the frozen revision.');
+    }
+    const containsScripts = packagePaths.some((path) =>
+      path.startsWith('scripts/'),
+    );
     const firstReleaseMode = input.executionMode === 'prompt_materialized';
-    if (!firstReleaseArtifact || !firstReleaseMode) {
+    if (containsScripts || !firstReleaseMode) {
       if (
         !input.experimentalGate?.enabled ||
         !input.experimentalGate.evidenceRef.trim()
       ) {
         if (
           input.executionMode === 'provider_native' ||
-          input.artifactType === 'scripts' ||
-          input.artifactType === 'sandbox'
+          containsScripts
         ) {
           fail('Provider 原生、脚本或沙箱部署必须提供显式开关和证据引用。');
         }
-        fail('首发部署只开放 prompt_materialized 的 instruction/reference Skill。');
+        fail('首发部署只开放不含 scripts/ 的 prompt_materialized Skill package。');
       }
     }
     if (input.executionMode !== revision.governance.executionMode) {
@@ -358,7 +396,7 @@ export class SkillService {
       nativeSkillId: required(input.nativeSkillId, 'Native Skill ID'),
       nativeVersion: required(input.nativeVersion, 'Native Skill version'),
       executionMode: input.executionMode,
-      artifactType: input.artifactType,
+      packagePaths,
       rolloutEvidenceRef: input.experimentalGate?.evidenceRef.trim() || null,
       createdAt: this.now(),
     };
@@ -367,18 +405,35 @@ export class SkillService {
 
   async resolveStage(input: {
     workflowRevisionRef: string;
-    stage: SkillStage;
+    stage: HarnessStage;
+    industryCategory?: string;
+    tenantId?: string;
     userSelectedSkillRefs: string[];
   }): Promise<{
     allowlist: ResolvedSkillInstruction[];
   }> {
     const bindings = await this.repository.listBindings(
       input.workflowRevisionRef,
-      input.stage,
+      {
+        harnessStage: input.stage,
+        industryCategory: input.industryCategory?.trim() || null,
+        tenantId: input.tenantId?.trim() || null,
+      },
     );
+    const selectedBindings = new Map<string, SkillBinding>();
+    for (const binding of bindings) {
+      const selected = selectedBindings.get(binding.skillId);
+      if (
+        !selected ||
+        triggerSpecificity(binding.triggerCondition) >
+          triggerSpecificity(selected.triggerCondition)
+      ) {
+        selectedBindings.set(binding.skillId, binding);
+      }
+    }
     const user = new Set(input.userSelectedSkillRefs);
     const allowlist: ResolvedSkillInstruction[] = [];
-    for (const binding of bindings) {
+    for (const binding of selectedBindings.values()) {
       if (binding.mode === 'disabled') continue;
       const revision = await this.repository.getRevision(
         binding.skillRevisionRef,
@@ -394,7 +449,7 @@ export class SkillService {
       if (binding.mode === 'user_selected' && !user.has(binding.skillRevisionRef)) {
         continue;
       }
-      const resolved = toResolved(revision);
+      const resolved = await this.resolveInstruction(revision);
       allowlist.push(resolved);
     }
     return { allowlist };
@@ -424,7 +479,7 @@ export class SkillService {
       fail('Skill 调用回执引用的工具调用记录不完整。');
     }
     const revision = await this.requireRevision(receipt.skillRevisionRef);
-    return [toResolved(revision)];
+    return [await this.resolveInstruction(revision)];
   }
 
   async resolveFrozenRevisions(
@@ -436,7 +491,7 @@ export class SkillService {
       if (revision.status !== 'accepted_frozen') {
         fail('只能恢复已受理冻结的 Skill 版本。');
       }
-      resolved.push(toResolved(revision));
+      resolved.push(await this.resolveInstruction(revision));
     }
     return resolved;
   }
@@ -445,7 +500,7 @@ export class SkillService {
     workspaceId: string;
     taskId: string;
     workflowRevisionRef: string;
-    stage: SkillStage;
+    stage: HarnessStage;
     instructions: readonly ResolvedSkillInstruction[];
   }) {
     const receipts: SkillInvocationReceipt[] = [];
@@ -470,13 +525,31 @@ export class SkillService {
         workflowRevisionRef: input.workflowRevisionRef,
         skillRevisionRef: revision.skillRevisionRef,
         contentHash: revision.contentHash,
+        prompt: instruction.prompt
+          ? {
+              contentHash: instruction.prompt.contentHash,
+              name: instruction.prompt.name,
+              version: instruction.prompt.version,
+            }
+          : undefined,
       };
       const inputFingerprint = sha256(canonicalJson(facts));
+      const legacyInputFingerprint = sha256(
+        canonicalJson({
+          stage: input.stage,
+          workflowRevisionRef: input.workflowRevisionRef,
+          skillRevisionRef: revision.skillRevisionRef,
+          contentHash: revision.contentHash,
+        }),
+      );
       const existing = await this.repository.getInvocationReceipt(
         invocationId,
       );
       if (existing) {
-        if (existing.inputFingerprint !== inputFingerprint) {
+        if (
+          existing.inputFingerprint !== inputFingerprint &&
+          existing.inputFingerprint !== legacyInputFingerprint
+        ) {
           throw new P1DomainError(
             'IDEMPOTENCY_CONFLICT',
             'Skill 物化回执已绑定到不同事实。',
@@ -499,6 +572,9 @@ export class SkillService {
           status: 'settled',
           createdAt: this.now(),
           inputFingerprint,
+          ...(instruction.prompt
+            ? { prompt: structuredClone(instruction.prompt) }
+            : {}),
         }),
       );
     }
@@ -762,26 +838,138 @@ export class SkillService {
   private async assertBindingSlotAvailable(binding: SkillBinding) {
     const bindings = await this.repository.listBindings(
       binding.workflowRevisionRef,
-      binding.stage,
+      binding.triggerCondition,
     );
     if (
       bindings.some(
         (candidate) =>
           candidate.skillId === binding.skillId &&
+          isSameTriggerCondition(
+            candidate.triggerCondition,
+            binding.triggerCondition,
+          ) &&
           candidate.bindingId !== binding.bindingId,
       )
     ) {
       fail('该 Workflow 阶段已经绑定了这个 Skill；请先回滚或取代现有绑定。');
     }
   }
+
+  private async resolveInstruction(
+    revision: SkillRevision,
+  ): Promise<ResolvedSkillInstruction> {
+    const prompt = await this.resolveRevisionPrompt(revision);
+    return resolvedInstruction(
+      revision,
+      revision.instruction,
+      prompt.isFallback,
+      prompt.fallbackReason,
+      prompt.content,
+    );
+  }
+
+  async resolvePromptSnapshot(
+    skillRevisionRef: string,
+  ) {
+    return this.resolveRevisionPrompt(
+      await this.requireRevision(skillRevisionRef),
+    );
+  }
+
+  private async resolveRevisionPrompt(
+    revision: SkillRevision,
+  ) {
+    let fallbackReason = 'Skill prompt resolver is not configured.';
+    if (this.promptSnapshots) {
+      let captured:
+        | Awaited<ReturnType<SkillPromptSnapshotPort['capture']>>
+        | undefined;
+      try {
+        captured = await this.promptSnapshots.capture({
+          contentHash: revision.prompt.contentHash,
+          name: revision.prompt.name,
+          version: revision.prompt.version,
+        });
+      } catch (error) {
+        if (!(error instanceof SkillPromptAuthorityUnavailableError)) {
+          throw error;
+        }
+        fallbackReason =
+          'Skill prompt authority is unavailable; using the frozen fallback.';
+      }
+      if (captured) {
+        if (
+          captured.name !== revision.prompt.name ||
+          captured.version !== revision.prompt.version ||
+          captured.contentHash !== revision.prompt.contentHash ||
+          sha256(captured.content) !== revision.prompt.contentHash
+        ) {
+          fail('Skill prompt authority returned a mismatched pinned prompt.');
+        }
+        if (
+          captured.isFallback &&
+          !captured.fallbackReason?.trim()
+        ) {
+          fail('Skill prompt authority returned fallback content without a reason.');
+        }
+        return captured;
+      }
+    }
+    if (sha256(revision.prompt.fallbackContent) !== revision.prompt.contentHash) {
+      fail('Frozen Skill prompt fallback does not match its pinned hash.');
+    }
+    return {
+      content: revision.prompt.fallbackContent,
+      contentHash: revision.prompt.contentHash,
+      fallbackReason,
+      isFallback: true as const,
+      label: revision.prompt.label,
+      name: revision.prompt.name,
+      source: revision.prompt.source,
+      version: revision.prompt.version,
+    };
+  }
 }
 
-function toResolved(revision: SkillRevision): ResolvedSkillInstruction {
+function isSameTriggerCondition(
+  left: SkillTriggerCondition,
+  right: SkillTriggerCondition,
+) {
+  return (
+    left.harnessStage === right.harnessStage &&
+    (left.industryCategory ?? null) ===
+      (right.industryCategory ?? null) &&
+    (left.tenantId ?? null) === (right.tenantId ?? null)
+  );
+}
+
+function triggerSpecificity(condition: SkillTriggerCondition) {
+  return (
+    (condition.industryCategory ? 1 : 0) +
+    (condition.tenantId ? 2 : 0)
+  );
+}
+
+function resolvedInstruction(
+  revision: SkillRevision,
+  instruction: string,
+  isFallback: boolean,
+  fallbackReason?: string,
+  promptContent?: string,
+): ResolvedSkillInstruction {
   return {
     skillRevisionRef: revision.skillRevisionRef,
-    instruction: revision.instruction,
+    instruction,
     contentHash: revision.contentHash,
     executionMode: revision.governance.executionMode,
+    prompt: {
+      contentHash: revision.prompt.contentHash,
+      isFallback,
+      name: revision.prompt.name,
+      version: revision.prompt.version,
+      ...(fallbackReason ? { fallbackReason } : {}),
+    },
+    ...(promptContent ? { promptContent } : {}),
   };
 }
 
@@ -808,41 +996,6 @@ export function skillAcceptanceGateFailure(
     return 'Prompt Skill acceptance requires a frozen Langfuse production revision.';
   }
   return null;
-}
-
-function validateGovernance(manifest: SkillGovernanceSidecar) {
-  for (const [label, value] of [
-    ['input schema', manifest.inputSchemaRef],
-    ['output schema', manifest.outputSchemaRef],
-  ] as const) {
-    required(value, label);
-  }
-  if (!manifest.inputSchemaRef.startsWith('skill-input.')) {
-    fail('Skill manifest input schema ref must use the skill-input namespace.');
-  }
-  if (!manifest.outputSchemaRef.startsWith('skill-output.')) {
-    fail('Skill manifest output schema ref must use the skill-output namespace.');
-  }
-  for (const ref of [
-    manifest.inputSchemaRef,
-    manifest.outputSchemaRef,
-  ]) {
-    try {
-      resolveSkillSchema(ref);
-    } catch {
-      fail(`Skill manifest schema ref cannot be resolved: ${ref}.`);
-    }
-  }
-  if (
-    !Number.isInteger(manifest.budget.maxChildEffects) ||
-    manifest.budget.maxChildEffects < 0 ||
-    !Number.isFinite(manifest.budget.maxCostCents) ||
-    manifest.budget.maxCostCents < 0 ||
-    !Number.isInteger(manifest.budget.timeoutMs) ||
-    manifest.budget.timeoutMs <= 0
-  ) {
-    fail('Skill 预算必须为有限的非负数。');
-  }
 }
 
 function validateChildEffect(

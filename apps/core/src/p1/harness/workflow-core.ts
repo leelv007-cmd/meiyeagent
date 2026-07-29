@@ -1,6 +1,8 @@
 import {
   BOUNDED_EXECUTION_LIMITS,
   type BoundedExecutionSnapshot,
+  HARNESS_STAGES,
+  type HarnessStage,
   type ContentPackage,
   type ContentPackageRevisionDelivery,
   type CreativeRecommendationDecisionTrace,
@@ -29,7 +31,6 @@ import type { HarnessWorkflowInput } from './task-admission.js';
 import type {
   ResolvedSkillInstruction,
   SkillInvocationReceipt,
-  SkillStage,
 } from '../skills/types.js';
 import { promptTraceReference } from './langfuse-prompts.js';
 import type { HarnessPolicyInput } from './policy-gates.js';
@@ -146,7 +147,7 @@ export interface HarnessStagePorts {
   resolveStageSkills?(input: {
     workflowId: string;
     request: HarnessWorkflowInput;
-    stage: SkillStage;
+    stage: HarnessStage;
     userSelectedSkillRefs?: readonly string[];
     skillRevisionRefs?: readonly string[];
   }): Promise<{
@@ -387,14 +388,6 @@ export class HarnessSnapshotDecisionError extends Error {
 }
 
 const SKILL_RESOLUTION_STEP = 'skill:resolve:intent';
-const SKILL_STAGES: readonly SkillStage[] = [
-  'intent_naming',
-  'context_injection',
-  'brief_compilation',
-  'execution_selection',
-  'assembly_delivery',
-];
-
 interface FrozenSkillStageResolution {
   skillRevisionRefs: string[];
   skillContentHashes: string[];
@@ -402,7 +395,7 @@ interface FrozenSkillStageResolution {
 }
 
 type FrozenSkillStageResolutions = Record<
-  SkillStage,
+  HarnessStage,
   FrozenSkillStageResolution
 >;
 
@@ -418,7 +411,7 @@ interface FrozenPromptRevisionReference {
 }
 
 type ResolvedSkillStages = Record<
-  SkillStage,
+  HarnessStage,
   {
     instructions: ResolvedSkillInstruction[];
     receipts: SkillInvocationReceipt[];
@@ -435,7 +428,7 @@ async function resolveWorkflowStageSkills(
     SKILL_RESOLUTION_STEP,
     async () => {
       const stageSkillResolutions = emptyFrozenSkillStages();
-      for (const stage of SKILL_STAGES) {
+      for (const stage of HARNESS_STAGES) {
         const resolved =
           (await ports.resolveStageSkills?.({
             workflowId,
@@ -467,7 +460,7 @@ async function resolveWorkflowStageSkills(
   }
   const stageSkillResolutions = normalizeFrozenSkillStages(frozen);
   const resolvedStages = emptyResolvedSkillStages();
-  for (const stage of SKILL_STAGES) {
+  for (const stage of HARNESS_STAGES) {
     const stageFrozen = stageSkillResolutions[stage];
     if (stageFrozen.skillRevisionRefs.length === 0) continue;
     if (!ports.resolveStageSkills) {
@@ -519,7 +512,7 @@ function normalizeFrozenSkillStages(input: unknown): FrozenSkillStageResolutions
   const stages = emptyFrozenSkillStages();
   if (!isRecord(input)) return stages;
   if (isRecord(input.stageSkillResolutions)) {
-    for (const stage of SKILL_STAGES) {
+    for (const stage of HARNESS_STAGES) {
       const resolution = input.stageSkillResolutions[stage];
       if (isFrozenSkillStageResolution(resolution)) {
         stages[stage] = resolution;

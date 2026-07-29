@@ -1824,7 +1824,7 @@ async function createSmokeSkills(workflowId: string) {
     bindingId: `binding.smoke-v2-${workflowId}`,
     mode: 'required',
     skillRevisionRef: 'skill.intent-one@2',
-    stage: 'intent_naming',
+    triggerCondition: { harnessStage: 'intent_naming' },
     workflowRevisionRef: 'workflow.copy@1',
   });
   return {
@@ -1838,6 +1838,7 @@ function smokeSkillRevision(
   instruction: string,
 ): SkillRevision {
   return {
+    formatVersion: 2,
     acceptedAt: '2026-07-26T09:00:00.000Z',
     acceptedBy: 'operator-smoke',
     contentHash: `hash-skill-${revision}`,
@@ -1850,6 +1851,7 @@ function smokeSkillRevision(
         'Applies a frozen smoke-test instruction. Use in DBOS replay tests.',
       name: 'f21-smoke',
     },
+    packagePaths: ['SKILL.md'],
     governance: {
       allowedTools: [],
       budget: {

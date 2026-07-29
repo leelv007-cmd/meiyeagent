@@ -1,16 +1,22 @@
 import type { Pool } from 'pg';
 
 import { PostgresCreationExperienceCatalogRepository } from '../creation-experience/postgres-repository.js';
+import {
+  HarnessPromptAuthorityUnavailableError,
+  type HarnessPromptResolver,
+} from '../harness/langfuse-prompts.js';
 import type { HarnessSkillInstructionResolverPort } from '../harness/production-stage-ports.js';
 import { SkillFoundationModule } from './foundation-module.js';
 import { PostgresSkillRepository } from './postgres-repository.js';
 import { SkillService } from './service.js';
 import { SkillInvocationToolAdapter } from './tool-adapter.js';
 import { StaticSkillToolExecutionAuthorizer } from './tool-authorization.js';
+import { SkillPromptAuthorityUnavailableError } from './types.js';
 import type {
   SkillInvocationExecutor,
   SkillInvocationResultPublisher,
   SkillOutputValidator,
+  SkillPromptSnapshotPort,
 } from './types.js';
 
 export type DurableSkillInstructionResolutionInput = Parameters<
@@ -48,6 +54,10 @@ export class DurableSkillInstructionResolver
           await this.service.resolveStage({
             workflowRevisionRef,
             stage: input.stage,
+            ...(input.industryCategory
+              ? { industryCategory: input.industryCategory }
+              : {}),
+            tenantId: input.workspaceId,
             userSelectedSkillRefs: [...(input.userSelectedSkillRefs ?? [])],
           })
         ).allowlist;
@@ -64,6 +74,7 @@ export class DurableSkillInstructionResolver
 
 export async function createDurableSkillRuntime(input: {
   pool: Pool;
+  promptResolver?: HarnessPromptResolver;
   repository?: PostgresSkillRepository;
   toolExecutionAllowlist?: readonly {
     caller: string;
@@ -76,6 +87,9 @@ export async function createDurableSkillRuntime(input: {
   const service = new SkillService(
     repository,
     undefined,
+    input.promptResolver
+      ? skillPromptSnapshotPortFromHarness(input.promptResolver)
+      : undefined,
     new StaticSkillToolExecutionAuthorizer(
       input.toolExecutionAllowlist ?? [],
     ),
@@ -118,6 +132,55 @@ export async function createDurableSkillRuntime(input: {
     revisionValidation,
     service,
   };
+}
+
+export function skillPromptSnapshotPortFromHarness(
+  resolver: HarnessPromptResolver,
+): SkillPromptSnapshotPort {
+  return {
+    async capture(reference) {
+      let prompts: Awaited<ReturnType<HarnessPromptResolver['resolve']>>;
+      try {
+        prompts = await resolver.resolve();
+      } catch (error) {
+        if (error instanceof HarnessPromptAuthorityUnavailableError) {
+          throw new SkillPromptAuthorityUnavailableError(error.message);
+        }
+        throw error;
+      }
+      const prompt = Object.values(prompts).find(
+        (candidate) =>
+          candidate.name === reference.name &&
+          candidate.version === reference.version &&
+          candidate.contentHash === reference.contentHash,
+      );
+      if (!prompt) {
+        const fallback = Object.values(prompts).find(
+          (candidate) =>
+            candidate.name === reference.name &&
+            candidate.isFallback &&
+            isPromptAuthorityUnavailableReason(candidate.fallbackReason),
+        );
+        if (fallback) {
+          throw new SkillPromptAuthorityUnavailableError(
+            `Harness prompt authority is unavailable (${fallback.fallbackReason}).`,
+          );
+        }
+        throw new Error(
+          'Harness prompt resolver did not return the pinned Skill prompt.',
+        );
+      }
+      return structuredClone(prompt);
+    },
+  };
+}
+
+function isPromptAuthorityUnavailableReason(reason: string | undefined) {
+  if (reason === 'request_failed') return true;
+  const status = /^http_(\d{3})$/u.exec(reason ?? '')?.[1];
+  if (!status) return false;
+  const code = Number(status);
+  return code === 408 || code === 425 || code === 429 || code >= 500;
 }
 
 export type DurableSkillRuntime = Awaited<

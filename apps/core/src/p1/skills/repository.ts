@@ -9,7 +9,7 @@ import type {
   SkillDeployment,
   SkillInvocationReceipt,
   SkillRevision,
-  SkillStage,
+  SkillTriggerCondition,
 } from './types.js';
 
 export interface SkillRepository {
@@ -30,7 +30,7 @@ export interface SkillRepository {
   getBinding(bindingId: string): Promise<AuditedSkillBinding | null>;
   listBindings(
     workflowRevisionRef: string,
-    stage: SkillStage,
+    triggerCondition: SkillTriggerCondition,
   ): Promise<SkillBinding[]>;
   retireLegacyPlannerSelectedBindings(retiredAt: string): Promise<number>;
   putDeployment(deployment: SkillDeployment): Promise<SkillDeployment>;
@@ -135,11 +135,19 @@ export class MemorySkillRepository implements SkillRepository {
   }
 
   async putBinding(binding: SkillBinding) {
-    this.assertBindingSlotAvailable(binding);
+    const canonical: SkillBinding = {
+      ...binding,
+      triggerCondition: {
+        harnessStage: binding.triggerCondition.harnessStage,
+        industryCategory: binding.triggerCondition.industryCategory ?? null,
+        tenantId: binding.triggerCondition.tenantId ?? null,
+      },
+    };
+    this.assertBindingSlotAvailable(canonical);
     const stored = putOnce(
       this.bindings,
-      binding.bindingId,
-      binding,
+      canonical.bindingId,
+      canonical,
       'Skill binding',
     );
     return stored as SkillBinding;
@@ -181,12 +189,15 @@ export class MemorySkillRepository implements SkillRepository {
     return value ? clone(value) : null;
   }
 
-  async listBindings(workflowRevisionRef: string, stage: SkillStage) {
+  async listBindings(
+    workflowRevisionRef: string,
+    triggerCondition: SkillTriggerCondition,
+  ) {
     return [...this.bindings.values()]
       .filter(
         (binding): binding is SkillBinding =>
           binding.workflowRevisionRef === workflowRevisionRef &&
-          binding.stage === stage &&
+          triggerConditionMatches(binding.triggerCondition, triggerCondition) &&
           binding.status === 'active' &&
           binding.mode !== 'planner_selected',
       )
@@ -218,7 +229,10 @@ export class MemorySkillRepository implements SkillRepository {
       (candidate) =>
         candidate.status === 'active' &&
         candidate.workflowRevisionRef === binding.workflowRevisionRef &&
-        candidate.stage === binding.stage &&
+        isDeepStrictEqual(
+          candidate.triggerCondition,
+          binding.triggerCondition,
+        ) &&
         candidate.skillId === binding.skillId,
     );
     if (conflict && conflict.bindingId !== binding.bindingId) {
@@ -277,4 +291,16 @@ export class MemorySkillRepository implements SkillRepository {
     const value = this.receipts.get(invocationId);
     return value ? clone(value) : null;
   }
+}
+
+function triggerConditionMatches(
+  binding: SkillTriggerCondition,
+  query: SkillTriggerCondition,
+) {
+  return (
+    binding.harnessStage === query.harnessStage &&
+    (!binding.industryCategory ||
+      binding.industryCategory === query.industryCategory) &&
+    (!binding.tenantId || binding.tenantId === query.tenantId)
+  );
 }
