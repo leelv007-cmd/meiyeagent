@@ -12,6 +12,7 @@ import {
   contentPackageStatusGroup,
   contentPackageStatusLabel,
   contentPackageStatusSchema,
+  type ContentPackage,
 } from '@meiye/contracts';
 import {
   MemoryFoundationRepository,
@@ -26,6 +27,7 @@ import {
 import { ResultDeliveryFoundationModule } from '../result-delivery/foundation-module.js';
 import { OperationsVisualAdoptionPort } from '../result-delivery/operations-visual-adoption.js';
 import { ContentPackageDeliveryService } from './content-package-delivery.js';
+import { buildVideoPlatformVariants } from '../harness/output-compiler.js';
 import {
   type CreationExecutorPort,
   type ContentPackageExportPort,
@@ -180,6 +182,17 @@ function recordedSourceRightsBasisResolver(): ContentPackageRightsBasisResolverP
       };
     },
   };
+}
+
+function seedDistinctPlatformVariants(
+  contentPackage: ContentPackage,
+) {
+  const rootVersion = contentPackage.versions[0]!;
+  contentPackage.variants = buildVideoPlatformVariants({
+    currentVersionId: rootVersion.id,
+    packageId: contentPackage.id,
+    versions: [rootVersion],
+  });
 }
 
 async function seedWorkflowPackageWithVariants(
@@ -1032,14 +1045,7 @@ describe('ContentPackage application service contract', () => {
       identityRefs: [],
       rightsRefs: ['source-video'],
     };
-    stored.variants = (
-      ['xiaohongshu', 'douyin', 'video_account'] as const
-    ).map((platform) => ({
-        currentVersionId: stored.versions[0]!.id,
-        id: `${stored.id}-${platform}`,
-        platform,
-        versions: [stored.versions[0]!],
-      }));
+    seedDistinctPlatformVariants(stored);
     await operations.saveWorkspace(state);
 
     await operationsService.exportContentPackage(
@@ -1129,14 +1135,7 @@ describe('ContentPackage application service contract', () => {
       identityRefs: [],
       rightsRefs: [],
     };
-    stored.variants = (
-      ['xiaohongshu', 'douyin', 'video_account'] as const
-    ).map((platform) => ({
-      currentVersionId: stored.versions[0]!.id,
-      id: `${stored.id}-${platform}`,
-      platform,
-      versions: [stored.versions[0]!],
-    }));
+    seedDistinctPlatformVariants(stored);
     await operations.saveWorkspace(state);
 
     await operationsService.exportContentPackage(
@@ -1150,6 +1149,44 @@ describe('ContentPackage application service contract', () => {
 
     assert.deepEqual(resolvedAssetIds, [[]]);
     assert.equal(exportEffects, 1);
+  });
+
+  it('preserves unexpected rights-basis dependency failures', async () => {
+    const registryFailure = new Error('registry read failed');
+    const { context, operations, operationsService } = setup({
+      contentPackageExporter: recordedPackageExporter(),
+      contentPackageRightsBasisResolver: {
+        async resolve() {
+          throw registryFailure;
+        },
+      },
+    });
+    const contentPackage = await seedAcceptedPackage(
+      operations,
+      operationsService,
+      context,
+      'video',
+    );
+    const state = await operations.loadWorkspace(context.workspaceId);
+    assert.ok(state);
+    const stored = state.contentPackages.find(
+      (candidate) => candidate.id === contentPackage.id,
+    );
+    assert.ok(stored);
+    seedDistinctPlatformVariants(stored);
+    await operations.saveWorkspace(state);
+
+    await assert.rejects(
+      operationsService.exportContentPackage(
+        { ...context, actor: 'owner' },
+        {
+          expectedRevision: stored.revision,
+          packageId: stored.id,
+          platform: 'douyin',
+        },
+      ),
+      (error: unknown) => error === registryFailure,
+    );
   });
 
   it('fails closed before video export when the rights-basis consumer is unavailable', async () => {

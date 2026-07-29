@@ -906,6 +906,7 @@ export interface ContentPackageExportPort {
 export interface ContentPackageRightsBasisResolverPort {
   resolve(input: {
     contentPackage: ContentPackage;
+    platform: ContentPackage['variants'][number]['platform'];
     version: ContentPackage['versions'][number];
     workspaceId: string;
   }): Promise<RightsBasis>;

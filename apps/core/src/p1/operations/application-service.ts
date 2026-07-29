@@ -32,6 +32,7 @@ import {
 } from './approval-receipt-validity.js';
 import type { ContentPackageApprovalPolicyPort } from './content-package-delivery.js';
 import { validateContentPackageVisibleCopyPolicy } from './content-package-visible-copy-policy.js';
+import { ContentPackageRightsBasisError } from './content-package-rights-basis.js';
 import {
   buildContentPackage,
   assertContentPackageExportAllowed,
@@ -9147,10 +9148,14 @@ export class OperationsApplicationService {
         rightsBasis =
           await this.dependencies.contentPackageRightsBasisResolver.resolve({
             contentPackage,
+            platform: input.platform,
             version,
             workspaceId: context.workspaceId,
           });
-      } catch {
+      } catch (error) {
+        if (!(error instanceof ContentPackageRightsBasisError)) {
+          throw error;
+        }
         throw new OperationsError(
           'CONTENT_PACKAGE_EXPORT_CONFLICT',
           'The ContentPackage rights basis is unavailable.',

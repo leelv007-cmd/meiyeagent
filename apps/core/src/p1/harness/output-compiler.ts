@@ -410,6 +410,10 @@ export function assertImageTextNoteRevisionAssemblyComplete(input: {
 }
 
 export function assertVideoRevisionAssemblyComplete(input: {
+  generated?: Pick<
+    ContentPackage['generated'],
+    'assetIds' | 'childRuns' | 'ownedAssets'
+  >;
   marketing?: {
     contextBundle?: {
       bundleId?: string;
@@ -419,6 +423,7 @@ export function assertVideoRevisionAssemblyComplete(input: {
     factRefs?: string[];
     rightsRefs?: string[];
   };
+  sourceAssetIds?: readonly string[];
   variants?: ContentPackage['variants'];
   version: Pick<
     ContentPackageVersion,
@@ -436,11 +441,16 @@ export function assertVideoRevisionAssemblyComplete(input: {
   if (!input.version.conversionHook?.trim()) {
     throw new Error('Video revision assembly requires a conversion CTA.');
   }
-  if (
-    !Array.isArray(input.marketing.rightsRefs) ||
-    input.marketing.rightsRefs.length === 0
-  ) {
+  if (!Array.isArray(input.marketing.rightsRefs)) {
     throw new Error('Video revision assembly requires rights references.');
+  }
+  if (
+    input.marketing.rightsRefs.length === 0 &&
+    !hasCompleteSourceFreeVideoGeneration(input)
+  ) {
+    throw new Error(
+      'Source-free video assembly requires complete generation evidence.',
+    );
   }
   if (input.version.orderedAssetIds.length === 0) {
     throw new Error('Video revision assembly requires a generated video asset.');
@@ -468,4 +478,56 @@ export function assertVideoRevisionAssemblyComplete(input: {
       'Video revision assembly requires one complete current variant per platform.',
     );
   }
+}
+
+function hasCompleteSourceFreeVideoGeneration(input: {
+  generated?: Pick<
+    ContentPackage['generated'],
+    'assetIds' | 'childRuns' | 'ownedAssets'
+  >;
+  sourceAssetIds?: readonly string[];
+  version: Pick<ContentPackageVersion, 'orderedAssetIds'>;
+}) {
+  if (!input.sourceAssetIds || input.sourceAssetIds.length > 0) return false;
+  const selectedAssetIds = [...new Set(input.version.orderedAssetIds)];
+  const generated = input.generated;
+  if (
+    selectedAssetIds.length !== 1 ||
+    !generated ||
+    generated.assetIds.length !== 1 ||
+    generated.assetIds[0] !== selectedAssetIds[0]
+  ) {
+    return false;
+  }
+  const generatedAssetId = selectedAssetIds[0]!;
+  const ownedAssets = (generated.ownedAssets ?? []).filter(
+    (asset) => asset.id === generatedAssetId,
+  );
+  const childRuns = generated.childRuns.filter((run) =>
+    run.assetIds?.includes(generatedAssetId),
+  );
+  if (ownedAssets.length !== 1 || childRuns.length !== 1) return false;
+  const ownedAsset = ownedAssets[0]!;
+  const childRun = childRuns[0]!;
+  const providerTaskRef = ownedAsset.sourceTaskRef?.trim();
+  const route = childRun.routeSnapshot;
+  if (
+    childRun.status !== 'succeeded' ||
+    !providerTaskRef ||
+    !route ||
+    childRun.routeSnapshotId !== route.id ||
+    route.actualCatalogModelId !== childRun.actualCatalogModelId
+  ) {
+    return false;
+  }
+  const completedAttempts = (childRun.providerAttempts ?? []).filter(
+    (attempt) =>
+      attempt.acceptance === 'accepted' &&
+      attempt.status === 'completed' &&
+      attempt.jobId === childRun.runId &&
+      attempt.providerTaskRef === providerTaskRef &&
+      attempt.deploymentId === route.deploymentId &&
+      attempt.catalogModelId === route.actualCatalogModelId,
+  );
+  return completedAttempts.length === 1;
 }

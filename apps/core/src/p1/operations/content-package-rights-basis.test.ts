@@ -7,6 +7,7 @@ import {
   ContentPackageRightsBasisError,
   ContentPackageRightsBasisResolver,
 } from './content-package-rights-basis.js';
+import { buildVideoPlatformVariants } from '../harness/output-compiler.js';
 
 const CREATED_AT = '2026-07-30T08:00:00.000Z';
 
@@ -34,6 +35,7 @@ test('resolves exact current source authorizations without treating generation r
   assert.deepEqual(
     await resolver.resolve({
       contentPackage,
+      platform: 'douyin',
       version: contentPackage.versions[0]!,
       workspaceId: contentPackage.workspaceId,
     }),
@@ -46,12 +48,34 @@ test('resolves exact current source authorizations without treating generation r
 
 test('resolves source-free generated video rights from one completed generation and historical supply contract chain', async () => {
   const contentPackage = generatedVideoPackage();
+  const historicalVersion = {
+    ...contentPackage.versions[0]!,
+    id: 'version-video-douyin-r1',
+  };
+  contentPackage.variants = buildVideoPlatformVariants({
+    currentVersionId: 'version-video-douyin-r2',
+    packageId: contentPackage.id,
+    versions: [
+      historicalVersion,
+      {
+        ...historicalVersion,
+        id: 'version-video-douyin-r2',
+      },
+    ],
+  });
+  const douyinVariant = contentPackage.variants.find(
+    (variant) => variant.platform === 'douyin',
+  )!;
+  const douyinHistoricalVersion = douyinVariant.versions.find(
+    (version) => version.id === `${historicalVersion.id}-douyin`,
+  )!;
   const resolver = generationTermsResolver();
 
   assert.deepEqual(
     await resolver.resolve({
       contentPackage,
-      version: contentPackage.versions[0]!,
+      platform: 'douyin',
+      version: douyinHistoricalVersion,
       workspaceId: contentPackage.workspaceId,
     }),
     {
@@ -63,6 +87,37 @@ test('resolves source-free generated video rights from one completed generation 
       termsRevisionId: 'terms-provider-1-r7',
     },
   );
+});
+
+test('rejects a variant version outside the selected platform rights scope', async () => {
+  const contentPackage = generatedVideoPackage();
+  contentPackage.variants = buildVideoPlatformVariants({
+    currentVersionId: contentPackage.versions[0]!.id,
+    packageId: contentPackage.id,
+    versions: contentPackage.versions,
+  });
+  const xiaohongshuVersion = contentPackage.variants.find(
+    (variant) => variant.platform === 'xiaohongshu',
+  )!.versions[0]!;
+  const foreignPackage = generatedVideoPackage();
+  foreignPackage.id = 'package-video-foreign';
+  foreignPackage.versions[0]!.id = 'version-video-foreign';
+
+  for (const version of [
+    xiaohongshuVersion,
+    foreignPackage.versions[0]!,
+  ]) {
+    await assert.rejects(
+      () =>
+        generationTermsResolver().resolve({
+          contentPackage,
+          platform: 'douyin',
+          version,
+          workspaceId: contentPackage.workspaceId,
+        }),
+      ContentPackageRightsBasisError,
+    );
+  }
 });
 
 test('fails closed when any source authorization or generation-contract link is missing, stale, or mismatched', async () => {
@@ -167,6 +222,7 @@ test('fails closed when any source authorization or generation-contract link is 
       () =>
         (scenario.resolver ?? generationTermsResolver()).resolve({
           contentPackage,
+          platform: 'douyin',
           version: contentPackage.versions[0]!,
           workspaceId: contentPackage.workspaceId,
         }),

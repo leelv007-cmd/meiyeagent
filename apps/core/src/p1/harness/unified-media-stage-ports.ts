@@ -412,7 +412,12 @@ export class UnifiedHarnessStagePorts
 			workflowRevision: input.request.workflowRevision,
 			workspaceId: input.request.workspaceId,
 		};
-		assertVideoRevisionAssemblyComplete(revision);
+		assertVideoRevisionAssemblyComplete({
+			...revision,
+			sourceAssetIds: input.context.policyReferences.rightsRefs.map(
+				(reference) => reference.assetId,
+			),
+		});
 		return this.contentPackages.write(revision);
 	}
 
@@ -1670,6 +1675,7 @@ function mediaSelection(
 					? { providerModel: result.snapshot.providerModel }
 					: {}),
 			},
+			routeSnapshotId: result.snapshot.id,
 			runId: result.jobId,
 			runType: "model_job",
 			status: "succeeded",

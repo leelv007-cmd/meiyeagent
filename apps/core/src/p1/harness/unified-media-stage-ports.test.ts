@@ -23,6 +23,7 @@ import type {
 	ModelSupplySubmission,
 } from "../model-supply/index.js";
 import { buildContentPackage } from "../operations/content-package.js";
+import { ContentPackageRightsBasisResolver } from "../operations/content-package-rights-basis.js";
 import type { HarnessStructuredNodeRunnerFactory } from "./production-stage-ports.js";
 import type {
 	ExecutionBrief,
@@ -820,6 +821,149 @@ test("media delivery writes the shared ContentPackage once with asset, usage, co
 			assert.equal(contentPackage?.versions[0]?.title, "视频成品");
 		}
 	}
+});
+
+test("source-free video production reaches AI generation terms through the real platform variant", async () => {
+	const packageId = "package-video-source-free";
+	const request = harnessInputWithExecutionAssembly(
+		"video",
+		packageId,
+		"image.edit",
+		0,
+	);
+	const snapshot = request.executionSnapshot!;
+	const writer = new MemoryContentPackageRevisionWritePort();
+	writer.seed(
+		buildContentPackage({
+			id: packageId,
+			kind: "video",
+			source: {
+				assetIds: [],
+				creationExecutionSnapshot: {
+					id: snapshot.id,
+					revision: snapshot.revision,
+					schemaVersion: snapshot.schemaVersion,
+				},
+				targetPlatform: "douyin",
+				workId: snapshot.work.id,
+				workflowId: snapshot.task.id,
+				workflowRevision: snapshot.revision,
+			},
+			timestamp: "2026-07-22T09:00:00.000Z",
+			workspaceId: "workspace-1",
+		}),
+	);
+	const media = new ModelSupplyHarnessMediaExecutionPort({
+		async submit() {
+			return completedResult("video");
+		},
+	});
+	const ports = new UnifiedHarnessStagePorts(
+		unsupportedCopyPorts(),
+		{
+			create() {
+				throw new Error("Media delivery does not compile a copy brief.");
+			},
+		},
+		media,
+		writer,
+		() => "2026-07-22T09:00:01.000Z",
+	);
+	const brief = {
+		...mediaBrief("video"),
+		referenceAssetIds: [],
+	};
+	const context = contextSnapshot([]);
+	const selection = await media.execute({
+		brief,
+		context,
+		request,
+		workflowId: snapshot.task.id,
+	});
+
+	await ports.assembleMediaAndDeliver({
+		workflowId: snapshot.task.id,
+		request,
+		declaration: {
+			normalizedIntent: "制作全 AI 视频",
+			taskType: "promotion_groupbuy_conversion",
+			deliveryLayer: "finished_media",
+			relevantAssetCategories: [],
+			usedAssetCategories: [],
+			route: "customized",
+			routingSource: "model",
+			implicitConstraints: [],
+		},
+		context,
+		brief,
+		selection,
+	});
+
+	const contentPackage = writer.get("workspace-1", packageId);
+	assert.ok(contentPackage);
+	assert.deepEqual(contentPackage.source.assetIds, []);
+	assert.deepEqual(contentPackage.marketing?.rightsRefs, []);
+	const douyinVariant = contentPackage.variants.find(
+		(variant) => variant.platform === "douyin",
+	);
+	assert.ok(douyinVariant);
+	const version = douyinVariant.versions.find(
+		(candidate) => candidate.id === douyinVariant.currentVersionId,
+	);
+	assert.ok(version);
+	assert.notEqual(version.id, contentPackage.versions[0]?.id);
+
+	const basis = await new ContentPackageRightsBasisResolver(
+		{
+			async resolve() {
+				throw new Error(
+					"Source-free generation must not consult merchant source rights.",
+				);
+			},
+		},
+		{
+			async getRegistryRevision(workspaceId, revisionId) {
+				assert.equal(workspaceId, "workspace-1");
+				assert.equal(revisionId, "model-video-r1");
+				return {
+					catalogRevisionId: revisionId,
+					contracts: [
+						{
+							id: "contract-video-source-free",
+							providerProfileId: "provider-video-source-free",
+							termsRevisionId: "terms-video-source-free-r1",
+							commercialUse: "allowed",
+							effectiveFrom: "2026-07-01T00:00:00.000Z",
+						},
+					],
+					deployments: [
+						{
+							catalogModelId: "model-video-1",
+							executionChannelId: "channel-video-source-free",
+							id: "deployment-video-1",
+							lifecycleStatus: "active",
+							providerProfileId: "provider-video-source-free",
+							revisionId: "deployment-video-source-free-r1",
+						},
+					],
+				};
+			},
+		},
+	).resolve({
+		contentPackage,
+		platform: "douyin",
+		version,
+		workspaceId: "workspace-1",
+	});
+
+	assert.deepEqual(basis, {
+		commercialUse: "allowed",
+		generatedAssetId: "video-asset-1",
+		kind: "ai_generation_terms",
+		providerTaskRef: "provider-task-video-1",
+		runId: "job-video-1",
+		termsRevisionId: "terms-video-source-free-r1",
+	});
 });
 
 test("image-text note compiles dual styles, generates selected pages, and writes one complete revision", async () => {
@@ -2615,6 +2759,7 @@ function completedResult(
 		deploymentId: `deployment-${kind}-1`,
 		id: `attempt-${kind}-${suffix}`,
 		jobId: `job-${kind}-${suffix}`,
+		providerTaskRef: `provider-task-${kind}-${suffix}`,
 		status: "completed" as const,
 	};
 	const providerCost = {

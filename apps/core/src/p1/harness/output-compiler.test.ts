@@ -46,6 +46,89 @@ test('video revision assembly accepts one complete current variant per platform'
   assert.doesNotThrow(() => assertVideoRevisionAssemblyComplete(revision));
 });
 
+test('video revision assembly accepts source-free AI output only with one complete generation chain', () => {
+  const version = {
+    body: '夏日护理活动短视频',
+    conversionHook: '私信预约',
+    createdAt: '2026-07-25T00:00:00.000Z',
+    id: 'video-version-source-free',
+    orderedAssetIds: ['asset-video-source-free'],
+    source: 'ai_generated' as const,
+    title: '夏日护理活动',
+    topics: [],
+  };
+  const variants = buildVideoPlatformVariants({
+    currentVersionId: version.id,
+    packageId: 'package-video-source-free',
+    versions: [version],
+  });
+  const generated = completeVideoGenerationEvidence();
+  const complete = {
+    generated,
+    marketing: {
+      contextBundle: {
+        bundleId: 'bundle-source-free',
+        hash: 'b'.repeat(64),
+        revision: 1,
+      },
+      factRefs: [],
+      rightsRefs: [],
+    },
+    sourceAssetIds: [],
+    variants,
+    version,
+  };
+
+  assert.doesNotThrow(() => assertVideoRevisionAssemblyComplete(complete));
+
+  for (const incomplete of [
+    { ...complete, sourceAssetIds: ['source-asset-unauthorized'] },
+    {
+      ...complete,
+      generated: {
+        ...generated,
+        ownedAssets: [
+          {
+            ...generated.ownedAssets[0]!,
+            sourceTaskRef: undefined,
+          },
+        ],
+      },
+    },
+    {
+      ...complete,
+      generated: {
+        ...generated,
+        childRuns: [
+          {
+            ...generated.childRuns[0]!,
+            providerAttempts: [
+              {
+                ...generated.childRuns[0]!.providerAttempts[0]!,
+                providerTaskRef: 'provider-task-mismatch',
+              },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      ...complete,
+      generated: {
+        ...generated,
+        childRuns: [
+          {
+            ...generated.childRuns[0]!,
+            status: 'failed' as const,
+          },
+        ],
+      },
+    },
+  ]) {
+    assert.throws(() => assertVideoRevisionAssemblyComplete(incomplete));
+  }
+});
+
 test('video revision assembly rejects each missing required part', () => {
   const version = {
     body: '夏日护理活动短视频',
@@ -89,6 +172,49 @@ test('video revision assembly rejects each missing required part', () => {
     assert.throws(() => assertVideoRevisionAssemblyComplete(incomplete));
   }
 });
+
+function completeVideoGenerationEvidence() {
+  return {
+    assetIds: ['asset-video-source-free'],
+    childRuns: [
+      {
+        actualCatalogModelId: 'model-video-source-free',
+        assetIds: ['asset-video-source-free'],
+        providerAttempts: [
+          {
+            acceptance: 'accepted' as const,
+            catalogModelId: 'model-video-source-free',
+            createdAt: '2026-07-25T00:00:00.000Z',
+            deploymentId: 'deployment-video-source-free',
+            id: 'attempt-video-source-free',
+            jobId: 'run-video-source-free',
+            providerTaskRef: 'provider-task-video-source-free',
+            status: 'completed' as const,
+          },
+        ],
+        routeSnapshot: {
+          actualCatalogModelId: 'model-video-source-free',
+          catalogRevisionId: 'catalog-video-source-free',
+          deploymentId: 'deployment-video-source-free',
+          id: 'route-video-source-free',
+        },
+        routeSnapshotId: 'route-video-source-free',
+        runId: 'run-video-source-free',
+        runType: 'model_job' as const,
+        status: 'succeeded' as const,
+      },
+    ],
+    ownedAssets: [
+      {
+        contentType: 'video/mp4',
+        id: 'asset-video-source-free',
+        objectKey: 'owned/asset-video-source-free.mp4',
+        sha256: 'a'.repeat(64),
+        sourceTaskRef: 'provider-task-video-source-free',
+      },
+    ],
+  };
+}
 
 test('image revision assembly accepts one complete current variant per platform', () => {
   const version = {

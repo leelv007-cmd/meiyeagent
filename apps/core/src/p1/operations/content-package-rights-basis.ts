@@ -42,14 +42,20 @@ export class ContentPackageRightsBasisResolver
 
   async resolve(input: {
     contentPackage: ContentPackage;
+    platform: ContentPackage['variants'][number]['platform'];
     version: ContentPackageVersion;
     workspaceId: string;
   }): Promise<RightsBasis> {
+    const versionInPackage =
+      input.contentPackage.versions.some(
+        (version) => version.id === input.version.id,
+      ) ||
+      input.contentPackage.variants
+        .find((variant) => variant.platform === input.platform)
+        ?.versions.some((version) => version.id === input.version.id);
     if (
       input.contentPackage.workspaceId !== input.workspaceId ||
-      !input.contentPackage.versions.some(
-        (version) => version.id === input.version.id,
-      )
+      !versionInPackage
     ) {
       throw unavailable('The ContentPackage export scope is invalid.');
     }
