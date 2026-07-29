@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   HarnessMediaScopeError,
   HarnessSnapshotDecisionError,
+  HarnessWorkflowCancellation,
   runHarnessWorkflow,
   type HarnessMediaSelectionResult,
   type HarnessMediaStagePorts,
@@ -12,6 +13,7 @@ import {
   type HarnessStagePorts,
   type HarnessWorkflowRuntime,
 } from './workflow-core.js';
+import { HarnessSelectionError } from './execution-selection.js';
 import { normalizeHarnessTerminalFailure } from './terminal-failure.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
@@ -1721,6 +1723,171 @@ test('source revision fence recompiles brief and selection with new effect keys'
       /Harness|revision|candidate|workflow|direct mode|直接模式|排查与详情/iu
     );
   }
+});
+
+test('permission selection hard-block waits on a held QuestionCard and never delivers', async () => {
+  const stages = fixtureStages();
+  const selectionError = new HarnessSelectionError(
+    ['subject_asset_rights'],
+    '素材授权已撤回',
+    [],
+    ['换安全素材', '匿名化', '请求授权', '放弃该表达'],
+  );
+  let executionCount = 0;
+  let deliveryCount = 0;
+  let decisionCount = 0;
+  const progress: string[] = [];
+  stages.executeAndSelect = async () => {
+    executionCount += 1;
+    throw selectionError;
+  };
+  stages.assembleAndDeliver = async () => {
+    deliveryCount += 1;
+    throw new Error('Permission-blocked selection must not reach delivery.');
+  };
+
+  await assert.rejects(
+    runHarnessWorkflow('task-35', taskInput(), stages, {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress(event) {
+        progress.push(`${event.stage}:${event.state}`);
+      },
+      async token() {},
+      async awaitDecision(question) {
+        decisionCount += 1;
+        assert.equal(question.questionId, 'task-35:execution-selection:permission');
+        assert.equal(question.workflowId, 'task-35');
+        assert.equal(question.workflowRevision, 4);
+        assert.equal(question.question, selectionError.merchantMessage);
+        assert.equal(question.unattended, 'hold');
+        assert.equal(question.scope, 'current_task');
+        assert.equal(question.freeText.enabled, false);
+        assert.deepEqual(
+          question.options.map(({ label }) => label),
+          selectionError.alternativePaths,
+        );
+        return {
+          idempotencyKey: 'permission-decision-1',
+          questionId: question.questionId,
+          workflowRevision: question.workflowRevision,
+          patch: {
+            field: question.response.field,
+            value: question.options[2]!.label,
+            reason: question.response.reason,
+          },
+          decision: {
+            state: 'accepted',
+            value: question.options[2]!.label,
+          },
+        };
+      },
+      async recordTrace() {},
+    }),
+    (error: unknown) => {
+      assert.equal(error, selectionError);
+      return true;
+    },
+  );
+
+  assert.equal(executionCount, 1);
+  assert.equal(decisionCount, 1);
+  assert.equal(deliveryCount, 0);
+  assert.deepEqual(progress, [
+    'intent_naming:success',
+    'context_injection:success',
+    'brief_compilation:success',
+    'execution_selection:suspended',
+  ]);
+});
+
+test('permission selection cancellation uses the existing workflow cancellation', async () => {
+  const stages = fixtureStages();
+  stages.executeAndSelect = async () => {
+    throw new HarnessSelectionError(
+      ['external_action_approval'],
+      '需要先完成外部授权',
+      [],
+      ['先完成授权'],
+    );
+  };
+  let deliveryCount = 0;
+  stages.assembleAndDeliver = async () => {
+    deliveryCount += 1;
+    throw new Error('Cancelled selection must not reach delivery.');
+  };
+
+  await assert.rejects(
+    runHarnessWorkflow('task-35', taskInput(), stages, {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision() {
+        return {
+          cancelled: true,
+          merchantMessage: '等待授权已取消',
+          resolutionSource: 'core_hold_expired',
+        };
+      },
+      async recordTrace() {},
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof HarnessWorkflowCancellation);
+      assert.equal(error.message, '等待授权已取消');
+      return true;
+    },
+  );
+  assert.equal(deliveryCount, 0);
+});
+
+test('non-permission selection failure does not enter permission HITL', async () => {
+  const stages = fixtureStages();
+  const selectionError = new HarnessSelectionError(
+    ['critical_fact_source'],
+    '关键事实缺少来源',
+  );
+  let decisionCount = 0;
+  let deliveryCount = 0;
+  const progress: string[] = [];
+  stages.executeAndSelect = async () => {
+    throw selectionError;
+  };
+  stages.assembleAndDeliver = async () => {
+    deliveryCount += 1;
+    throw new Error('Blocked selection must not reach delivery.');
+  };
+
+  await assert.rejects(
+    runHarnessWorkflow('task-35', taskInput(), stages, {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress(event) {
+        progress.push(`${event.stage}:${event.state}`);
+      },
+      async token() {},
+      async awaitDecision() {
+        decisionCount += 1;
+        throw new Error('Non-permission failures must not enter HITL.');
+      },
+      async recordTrace() {},
+    }),
+    (error: unknown) => {
+      assert.equal(error, selectionError);
+      return true;
+    },
+  );
+
+  assert.equal(decisionCount, 0);
+  assert.equal(deliveryCount, 0);
+  assert.deepEqual(progress, [
+    'intent_naming:success',
+    'context_injection:success',
+    'brief_compilation:success',
+  ]);
 });
 
 function fixtureStages(): HarnessStagePorts {

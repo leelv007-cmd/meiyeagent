@@ -7,7 +7,11 @@ import type {
   StructuredDecisionInput,
 } from '@meiye/contracts';
 
-import type { DecisionTraceFragment } from './execution-selection.js';
+import {
+  HarnessSelectionError,
+  isNonSelfCorrectableSelectionError,
+  type DecisionTraceFragment,
+} from './execution-selection.js';
 import type {
   BriefContextBundle,
   IntentDeclaration,
@@ -878,23 +882,42 @@ export async function runHarnessWorkflow(
   });
 
   const executionSkills = stageSkills.execution_selection;
-  let selection = await executeSelection(
-    harnessEffectKey(
-      workflowId,
-      4,
-      skillEffectUnit('copy', executionSkills.instructions),
-      'selection',
-    ),
-    {
-      workflowId,
-      request: activeRequest,
-      brief,
-      context: bundle,
-      ...(executionSkills.instructions.length > 0
-        ? { skillInstructions: executionSkills.instructions }
-        : {}),
-    },
-  );
+  let selection: HarnessSelectionResult;
+  try {
+    selection = await executeSelection(
+      harnessEffectKey(
+        workflowId,
+        4,
+        skillEffectUnit('copy', executionSkills.instructions),
+        'selection',
+      ),
+      {
+        workflowId,
+        request: activeRequest,
+        brief,
+        context: bundle,
+        ...(executionSkills.instructions.length > 0
+          ? { skillInstructions: executionSkills.instructions }
+          : {}),
+      },
+    );
+  } catch (error) {
+    if (!isNonSelfCorrectableSelectionError(error)) {
+      throw error;
+    }
+    await reportProgress({
+      stage: 'execution_selection',
+      state: 'suspended',
+      message:
+        error.merchantMessage ??
+        '当前候选触发权限硬门，请选择安全的后续处理方式。',
+    });
+    await awaitResolvedDecision(
+      runtime,
+      permissionSelectionQuestion(workflowId, activeRequest, error),
+    );
+    throw error;
+  }
   await trace(
     runtime,
     workflowId,
@@ -1855,6 +1878,37 @@ function noteStyleQuestion(
     response: {
       field: 'note_style',
       reason: language.responseReason,
+    },
+    unattended: 'hold',
+    scope: 'current_task',
+  };
+}
+
+function permissionSelectionQuestion(
+  workflowId: string,
+  request: HarnessWorkflowInput,
+  error: HarnessSelectionError,
+): QuestionCard {
+  const alternatives =
+    error.alternativePaths.length > 0
+      ? error.alternativePaths
+      : ['补充授权后重新发起'];
+  return {
+    questionId: `${workflowId}:execution-selection:permission`,
+    workflowId,
+    workflowRevision: request.workflowRevision,
+    question:
+      error.merchantMessage ??
+      '当前候选触发权限硬门，请选择安全的后续处理方式。',
+    options: alternatives.map((label, index) => ({
+      id: `permission-alternative-${index + 1}`,
+      label,
+      description: '当前运行保持拦截，处理完成后可重新发起。',
+    })),
+    freeText: { enabled: false },
+    response: {
+      field: 'permission_resolution',
+      reason: '选择当前权限硬门的安全后续路径',
     },
     unattended: 'hold',
     scope: 'current_task',

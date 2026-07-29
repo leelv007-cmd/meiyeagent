@@ -85,10 +85,20 @@ export class HarnessSelectionError extends Error {
     readonly gateIds: string[],
     readonly merchantMessage?: string,
     readonly triggeredClaims: VisibleClaimExtraction['claims'] = [],
+    readonly alternativePaths: string[] = [],
   ) {
     super('Every generated candidate was blocked by canonical policy.');
     this.name = 'HarnessSelectionError';
   }
+}
+
+export function isNonSelfCorrectableSelectionError(
+  error: unknown,
+): error is HarnessSelectionError {
+  return (
+    error instanceof HarnessSelectionError &&
+    error.gateIds.some((gateId) => NON_SELF_CORRECTABLE_GATE_IDS.has(gateId))
+  );
 }
 
 export interface ImageExactTextAssessment {
@@ -202,6 +212,8 @@ export async function executeCopySelection(
       throw new HarnessSelectionError(
         unique(blockedCandidates.flatMap(({ gateIds }) => gateIds)),
         nonSelfCorrectableFailure.reason,
+        [],
+        unique(policy.failures.flatMap(({ alternativePath }) => alternativePath)),
       );
     }
     const retryRequest = compileCopyGenerationRequest({
