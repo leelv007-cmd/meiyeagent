@@ -57,11 +57,35 @@ const NON_SELF_CORRECTABLE_GATE_IDS = new Set([
 
 type GeneratedCandidateOutput = z.infer<typeof generatedCandidateSchema>;
 
-type GeneratedCandidate = GeneratedCandidateOutput & {
-  candidateId: string;
-  workspaceId: string;
-  intendedUse: 'internal_draft' | 'public_content' | 'paid_promotion';
-};
+const generatedCandidateCheckpointSchema = generatedCandidateSchema
+  .extend({
+    candidateId: z.string().trim().min(1),
+    workspaceId: z.string().trim().min(1),
+    intendedUse: z.enum([
+      'internal_draft',
+      'public_content',
+      'paid_promotion',
+    ]),
+  })
+  .strict();
+
+type GeneratedCandidate = z.infer<typeof generatedCandidateCheckpointSchema>;
+
+const candidatePolicyFailureSchema = z
+  .object({
+    gateId: z.string().trim().min(1),
+    reason: z.string().trim().min(1),
+    alternativePath: z.array(z.string().trim().min(1)),
+  })
+  .strict();
+
+export const copySelectionCurrentBestSchema = z
+  .object({
+    candidate: generatedCandidateCheckpointSchema.nullable(),
+    policyFailures: z.array(candidatePolicyFailureSchema),
+    deliverable: z.literal(false),
+  })
+  .strict();
 
 export interface CopySelectionInput {
   workflowId: string;
@@ -84,26 +108,14 @@ interface CopySelectionPorts {
   validator: CandidatePolicyValidator;
 }
 
-export interface CopySelectionCurrentBest {
-  candidate: GeneratedCandidate | null;
-  policyFailures: ReturnType<CandidatePolicyValidator['validate']>['failures'];
-  deliverable: false;
-}
+export type CopySelectionCurrentBest = z.infer<
+  typeof copySelectionCurrentBestSchema
+>;
 
 export function isCopySelectionCurrentBest(
   input: unknown,
 ): input is CopySelectionCurrentBest {
-  return (
-    typeof input === 'object' &&
-    input !== null &&
-    'candidate' in input &&
-    (input.candidate === null ||
-      (typeof input.candidate === 'object' && input.candidate !== null)) &&
-    'policyFailures' in input &&
-    Array.isArray(input.policyFailures) &&
-    'deliverable' in input &&
-    input.deliverable === false
-  );
+  return copySelectionCurrentBestSchema.safeParse(input).success;
 }
 
 export interface CandidatePolicyValidator {

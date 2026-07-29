@@ -6,6 +6,7 @@ import {
   candidateBillingDisposition,
   executeCopySelection,
   HarnessSelectionError,
+  isCopySelectionCurrentBest,
   type CandidatePolicyValidator,
   type CopySelectionInput,
 } from './execution-selection.js';
@@ -82,6 +83,31 @@ test('copy candidate runner consumes the frozen prompt for primary and retry cal
       instructions.startsWith('frozen:copy-candidate'),
     ),
     true,
+  );
+});
+
+test('bounded copy checkpoints reject malformed nested candidate data', () => {
+  assert.equal(
+    isCopySelectionCurrentBest({
+      candidate: {},
+      policyFailures: [],
+      deliverable: false,
+    }),
+    false,
+  );
+  assert.equal(
+    isCopySelectionCurrentBest({
+      candidate: null,
+      policyFailures: [
+        {
+          gateId: '',
+          reason: 'missing gate id',
+          alternativePath: [],
+        },
+      ],
+      deliverable: false,
+    }),
+    false,
   );
 });
 
