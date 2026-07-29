@@ -14,6 +14,7 @@ import {
   harnessBillingSettlementInput,
   readConfirmationCardHoldTimeoutSeconds,
   readConfirmationCardTimeoutSeconds,
+  resolveHarnessBoundedExecutionContinuation,
   resumeHarnessDbosWorkflow,
   suspensionQuestionFailOpen,
   settleHarnessCancellation,
@@ -132,6 +133,65 @@ test('resume accepts a valid command after rejecting invalid runtime data', asyn
       'structured-decision:question-1',
     ],
   ]);
+});
+
+test('bounded continuation applies only the server-resolved raised limit', async () => {
+  const request = {
+    workspaceId: 'workspace-1',
+    boundedExecution: {
+      schemaVersion: 'bounded-execution-snapshot/v1',
+      maxIterations: 1,
+      maxCostCents: 'unset',
+      maxWallClockMs: 'unset',
+      maxDelegations: 'unset',
+      requiredLimits: ['maxIterations'],
+      consumption: {
+        iterations: 1,
+        costCents: 0,
+        wallClockMs: 0,
+        delegations: 0,
+      },
+      stopReason: 'limit_reached',
+      triggeredLimit: 'maxIterations',
+    },
+  } as HarnessWorkflowInput;
+  const suspension = {
+    state: 'suspended' as const,
+    snapshot: request.boundedExecution!,
+    currentBest: null,
+    unmetExplanation: '还需要一次尝试',
+    resumable: true as const,
+  };
+  const command: StructuredDecisionInput = {
+    idempotencyKey: 'decision-bounded-1',
+    questionId: 'workflow-1:execution-selection:bounded',
+    workflowRevision: 1,
+    patch: {
+      field: 'bounded_execution_continuation',
+      reason: '请求服务端为本次有界执行生成后继钉扎',
+      value: '999',
+    },
+    decision: { state: 'accepted', value: '999' },
+  };
+
+  const resumed = await resolveHarnessBoundedExecutionContinuation(
+    {
+      workflowId: 'workflow-1',
+      request,
+      suspension,
+      command,
+    },
+    {
+      async resolve(input) {
+        assert.equal(input.command.decision.value, '999');
+        return { limit: 'maxIterations', value: 2 };
+      },
+    },
+  );
+
+  assert.equal(resumed.boundedExecution?.maxIterations, 2);
+  assert.equal(resumed.boundedExecution?.consumption.iterations, 1);
+  assert.equal(resumed.boundedExecution?.stopReason, null);
 });
 
 test('confirmation-card hold and continuation waits read admin-config', async () => {

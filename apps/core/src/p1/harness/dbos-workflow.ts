@@ -4,6 +4,7 @@ import {
   structuredDecisionInputSchema,
   workflowProgressEnvelopeSchema,
   workflowTokenEnvelopeSchema,
+  type BoundedExecutionLimitName,
   type ProductUsageUnit,
   type QuestionCard,
   type StructuredDecisionInput,
@@ -16,6 +17,7 @@ import {
   type HarnessStagePorts,
   type HarnessWorkflowRuntime,
 } from './workflow-core.js';
+import { resumeWithRaisedServerLimit } from './bounded-execution-controller.js';
 import type {
   HarnessWorkflowInput,
   HarnessWorkflowStarter,
@@ -63,6 +65,38 @@ export interface HarnessRuntimeIdResolver {
     workspaceId: string,
     workflowId: string,
   ): Promise<string | null>;
+}
+
+type HarnessBoundedExecutionContinuationInput = Parameters<
+  NonNullable<HarnessWorkflowRuntime['resumeBoundedExecution']>
+>[0];
+
+export interface HarnessBoundedExecutionContinuationResolver {
+  resolve(
+    input: HarnessBoundedExecutionContinuationInput & {
+      workspaceId: string;
+    },
+  ): Promise<{
+    limit: BoundedExecutionLimitName;
+    value: number;
+  }>;
+}
+
+export async function resolveHarnessBoundedExecutionContinuation(
+  input: HarnessBoundedExecutionContinuationInput,
+  resolver: HarnessBoundedExecutionContinuationResolver,
+) {
+  const raise = await resolver.resolve({
+    ...input,
+    workspaceId: input.request.workspaceId,
+  });
+  return {
+    ...input.request,
+    boundedExecution: resumeWithRaisedServerLimit(
+      input.suspension.snapshot,
+      raise,
+    ),
+  };
 }
 
 export type HarnessDbosWorkflowInput =
@@ -174,6 +208,7 @@ export function registerHarnessDbosWorkflow(
   config?: Pick<AdminConfigRepository, 'get'>,
   decisions?: Pick<HarnessDecisionService, 'submitCoreTimeout'> &
     Partial<Pick<HarnessDecisionService, 'submitCoreHoldExpired'>>,
+  boundedContinuations?: HarnessBoundedExecutionContinuationResolver,
 ) {
   const workflow = async (input: HarnessDbosWorkflowInput) => {
     const runtimeWorkflowId = DBOS.workflowID;
@@ -382,6 +417,24 @@ export function registerHarnessDbosWorkflow(
                 },
                 {
                   name: `persist-semantic-resubmission-${input.command.idempotencyKey}`,
+                },
+              );
+            },
+          }
+        : {}),
+      ...(boundedContinuations
+        ? {
+            resumeBoundedExecution(input) {
+              return DBOS.runStep(
+                () =>
+                  resolveHarnessBoundedExecutionContinuation(
+                    input,
+                    boundedContinuations,
+                  ),
+                {
+                  name:
+                    'resolve-bounded-continuation-' +
+                    input.command.idempotencyKey.replaceAll(':', '-'),
                 },
               );
             },
