@@ -10,7 +10,9 @@ import {
   collectIssue255LiveAnchors,
   issue255DirectCopyExecutor,
   issue255TuziExecutor,
+  recoverIssue255LiveManifest,
 } from './issue-255-live-collector.js';
+import { reconcileIssue255LiveRun } from './issue-255-live-reconciliation.js';
 import { PostgresIssue255LiveReceiptRepository } from './issue-255-postgres-live-receipt.js';
 
 export function assertIssue255LiveCollectorLaunch(
@@ -29,23 +31,32 @@ export function assertIssue255LiveCollectorLaunch(
       'Issue 255 live collector requires fixed direct copy and Tuzi media modes.',
     );
   }
+  if (env.RUN_LIVE_TUZI_CANCELLATION_TEST === '1') {
+    throw new Error(
+      'Issue 255 live collector and Tuzi cancellation mode are mutually exclusive.',
+    );
+  }
   const providerCap = Number(env.PROVIDER_LIVE_COST_CAP_CNY);
+  const providerCapMicros = Math.floor(providerCap * 1_000_000);
   if (
     !Number.isFinite(providerCap) ||
     providerCap <= 0 ||
-    providerCap > 5
+    providerCap > 5 ||
+    !Number.isSafeInteger(providerCapMicros) ||
+    providerCapMicros <= 0
   ) {
     throw new Error(
       'Issue 255 live collector requires the existing provider cap at or below CNY 5.',
     );
   }
+  return { providerCapMicros };
 }
 
 export async function runIssue255LiveCollectorCli(input: {
   argv: readonly string[];
   env: NodeJS.ProcessEnv;
 }) {
-  assertIssue255LiveCollectorLaunch(input.env);
+  const launch = assertIssue255LiveCollectorLaunch(input.env);
   const [recordedSamplesPath, manifestPath, runNonce] = input.argv;
   if (!recordedSamplesPath || !manifestPath || !runNonce?.trim()) {
     throw new Error(
@@ -164,12 +175,84 @@ export async function runIssue255LiveCollectorCli(input: {
       ],
       foundation,
       manifestPath: resolve(manifestPath),
+      providerCapMicros: launch.providerCapMicros,
       recordedSamples,
       receipts,
       runNonce,
     });
   } finally {
     await Promise.all([business.end(), dbos.end()]);
+  }
+}
+
+export async function runIssue255LiveReconciliationCli(input: {
+  argv: readonly string[];
+  env: NodeJS.ProcessEnv;
+}) {
+  if (input.env.RUN_ISSUE_255_RECONCILIATION !== '1') {
+    throw new Error(
+      'Issue 255 reconciliation remains disabled without explicit recovery authorization.',
+    );
+  }
+  const [runNonce] = input.argv;
+  if (!runNonce?.trim()) {
+    throw new Error(
+      'Usage: issue-255-live-reconciliation <run-nonce>',
+    );
+  }
+  const business = new Pool({
+    connectionString: isolatedDatabaseUrl(
+      input.env.TEST_DATABASE_URL,
+      'meiye_issue255',
+    ),
+    max: 2,
+  });
+  try {
+    const foundation = new PostgresFoundationRepository(business);
+    const receipts = new PostgresIssue255LiveReceiptRepository(business);
+    await foundation.migrate();
+    await receipts.migrate();
+    return await reconcileIssue255LiveRun({
+      foundation,
+      receipts,
+      runNonce,
+    });
+  } finally {
+    await business.end();
+  }
+}
+
+export async function runIssue255LiveManifestRecoveryCli(input: {
+  argv: readonly string[];
+  env: NodeJS.ProcessEnv;
+}) {
+  if (input.env.RUN_ISSUE_255_MANIFEST_RECOVERY !== '1') {
+    throw new Error(
+      'Issue 255 manifest recovery remains disabled without explicit recovery authorization.',
+    );
+  }
+  const [manifestPath] = input.argv;
+  if (!manifestPath) {
+    throw new Error(
+      'Usage: issue-255-live-manifest-recovery <manifest.json>',
+    );
+  }
+  const business = new Pool({
+    connectionString: isolatedDatabaseUrl(
+      input.env.TEST_DATABASE_URL,
+      'meiye_issue255',
+    ),
+    max: 1,
+  });
+  try {
+    const receipts = new PostgresIssue255LiveReceiptRepository(business);
+    await receipts.migrate();
+    return await recoverIssue255LiveManifest({
+      database: business,
+      manifestPath: resolve(manifestPath),
+    });
+  } finally {
+    await business.end();
   }
 }
 

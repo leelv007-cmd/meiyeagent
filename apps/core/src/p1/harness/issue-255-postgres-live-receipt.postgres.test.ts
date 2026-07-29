@@ -4,6 +4,7 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 import { Pool } from 'pg';
 
 import { PostgresFoundationRepository } from '../foundation/postgres-repository.js';
+import { reconcileIssue255LiveRun } from './issue-255-live-reconciliation.js';
 import { PostgresIssue255LiveReceiptRepository } from './issue-255-postgres-live-receipt.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
@@ -394,6 +395,62 @@ describe(
         (await first.listRun(runNonce))[0]?.generationSubmitCount,
         1,
       );
+    });
+
+    it('distinguishes pre-network rejection from provider acceptance unknown', async () => {
+      const claim = async (
+        suffix: string,
+        requestFingerprint: string,
+      ) => {
+        const runNonce =
+          `issue-255-pg-${suiteNonce}-failure-${suffix}`;
+        const effectId = createHash('sha256')
+          .update(`issue255/v1\0${runNonce}\0copy`)
+          .digest('hex');
+        await first.claim({
+          workspaceId: receiptWorkspaceId,
+          runNonce,
+          modality: 'copy',
+          effectId,
+          requestFingerprint,
+          adapter: 'direct-copy',
+          deploymentId: 'deepseek-v4-pro-direct',
+          providerIdempotencyKey: effectId,
+          providerJobId: `${effectId}:job`,
+          providerAttemptId: `${effectId}:attempt`,
+          providerCostEventId: `${effectId}:cost`,
+          recordedMatrixDigest: '5'.repeat(64),
+          reservedAmountMicros: 100_000,
+          priceRevision: 'direct-copy-price-v1',
+          exchangeRevision: 'native-cny-v1',
+        });
+        return { effectId, requestFingerprint, runNonce };
+      };
+
+      const rejected = await claim('rejected', '5'.repeat(64));
+      assert.deepEqual(
+        await first.recordExecutionFailure({
+          ...rejected,
+          modality: 'copy',
+        }),
+        { kind: 'rejected_before_accept' },
+      );
+      assert.equal((await first.listRun(rejected.runNonce)).length, 0);
+
+      const unknown = await claim('unknown', '6'.repeat(64));
+      await first.claimGenerationPost({
+        adapter: 'direct-copy',
+        deploymentId: 'deepseek-v4-pro-direct',
+        ...unknown,
+        modality: 'copy',
+        providerIdempotencyKey: unknown.effectId,
+      });
+      const classified = await first.recordExecutionFailure({
+        ...unknown,
+        modality: 'copy',
+      });
+      assert.equal(classified.kind, 'provider_acceptance_unknown');
+      assert.equal((await first.listRun(unknown.runNonce))[0]?.status, 'unknown');
     });
 
     it('rejects caller adapter, deployment, and idempotency identity that differs from the receipt', async () => {
@@ -986,18 +1043,14 @@ describe(
         reason: 'provider_acceptance_unknown',
       });
 
-      const reconciled = await first.reconcileFromProviderLedger(
-        {
-          runNonce: reconciliationRunNonce,
-          modality: 'copy',
-          effectId: reconciliationEffectId,
-          requestFingerprint,
-        },
+      const [reconciled] = await reconcileIssue255LiveRun({
         foundation,
-      );
-      assert.equal(reconciled.status, 'completed');
+        receipts: first,
+        runNonce: reconciliationRunNonce,
+      });
+      assert.equal(reconciled?.status, 'completed');
       assert.equal(
-        reconciled.reconciliationReason,
+        reconciled?.reconciliationReason,
         'provider_ledger_reconciled',
       );
     });

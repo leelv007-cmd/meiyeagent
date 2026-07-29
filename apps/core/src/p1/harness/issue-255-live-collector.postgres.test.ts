@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -12,6 +18,7 @@ import {
   collectIssue255LiveAnchors,
   issue255DirectCopyExecutor,
   issue255TuziExecutor,
+  recoverIssue255LiveManifest,
   type Issue255LiveExecutor,
 } from './issue-255-live-collector.js';
 import { PostgresIssue255LiveReceiptRepository } from './issue-255-postgres-live-receipt.js';
@@ -53,6 +60,7 @@ test(
           executors: blockedExecutors,
           foundation,
           manifestPath: staleManifestPath,
+          providerCapMicros: 5_000_000,
           recordedSamples,
           receipts,
           runNonce: `${runNonce}-stale`,
@@ -67,6 +75,7 @@ test(
           executors: blockedExecutors,
           foundation,
           manifestPath: collisionManifestPath,
+          providerCapMicros: 5_000_000,
           recordedSamples,
           receipts,
           runNonce: `${runNonce}-collision`,
@@ -75,6 +84,52 @@ test(
       );
       assert.equal(await readFile(collisionManifestPath, 'utf8'), 'existing');
       assert.equal(blockedExecutorCalls, 0);
+      await assert.rejects(
+        collectIssue255LiveAnchors({
+          database: pool,
+          executors: blockedExecutors,
+          foundation,
+          manifestPath: join(directory, 'provider-cap.json'),
+          providerCapMicros: 100_000,
+          recordedSamples,
+          receipts,
+          runNonce: `${runNonce}-provider-cap`,
+        }),
+        /effective provider cap/u,
+      );
+      assert.equal(blockedExecutorCalls, 0);
+
+      const rejectedRunNonce = `${runNonce}-pre-network`;
+      const rejectedWorkspaceId =
+        `issue-255-live-${hash(rejectedRunNonce).slice(0, 24)}`;
+      await assert.rejects(
+        collectIssue255LiveAnchors({
+          database: pool,
+          executors: blockedExecutors,
+          foundation,
+          manifestPath: join(directory, 'pre-network.json'),
+          providerCapMicros: 5_000_000,
+          recordedSamples,
+          receipts,
+          runNonce: rejectedRunNonce,
+        }),
+        /pre-network guard/u,
+      );
+      assert.equal(blockedExecutorCalls, 1);
+      const rejectedResidue = await pool.query<{ count: number }>(
+        `SELECT (
+           (SELECT COUNT(*)
+              FROM issue255_live_generation_receipts
+             WHERE run_nonce = $1) +
+           (SELECT COUNT(*)
+              FROM issue255_live_generation_authorizations
+             WHERE run_nonce = $1) +
+           (SELECT COUNT(*) FROM workspaces WHERE id = $2)
+         )::int AS count`,
+        [rejectedRunNonce, rejectedWorkspaceId],
+      );
+      assert.equal(rejectedResidue.rows[0]?.count, 0);
+      blockedExecutorCalls = 0;
 
       const tuziOptions = {
         apiKey: 'test-key',
@@ -184,6 +239,7 @@ test(
                   },
                 }),
               inputCostPerMillion: 1,
+              maxOutputTokens: 384_000,
               model: 'deepseek-v4-pro',
               outputCostPerMillion: 2,
             },
@@ -212,6 +268,7 @@ test(
         ],
         foundation,
         manifestPath,
+        providerCapMicros: 5_000_000,
         recordedSamples,
         receipts,
         runNonce,
@@ -243,6 +300,17 @@ test(
         [runNonce],
       );
       assert.equal(durableHistory.rows[0]?.count, 3);
+      const recoveryPath = join(directory, 'recovered.json');
+      await rename(manifestPath, `${recoveryPath}.pending`);
+      const recovered = await recoverIssue255LiveManifest({
+        database: pool,
+        manifestPath: recoveryPath,
+      });
+      assert.equal(recovered.samples.length, 3);
+      assert.equal(
+        JSON.parse(await readFile(recoveryPath, 'utf8')).samples.length,
+        3,
+      );
 
       await assert.rejects(
         collectIssue255LiveAnchors({
@@ -250,6 +318,7 @@ test(
           executors: blockedExecutors,
           foundation,
           manifestPath: join(directory, 'rerun.json'),
+          providerCapMicros: 5_000_000,
           recordedSamples,
           receipts,
           runNonce: rerunNonce,
@@ -286,9 +355,10 @@ test(
         'DELETE FROM issue255_live_generation_authorizations WHERE run_nonce LIKE $1',
         [`${runNonce}%`],
       );
-      await pool.query('DELETE FROM workspaces WHERE id IN ($1, $2)', [
+      await pool.query('DELETE FROM workspaces WHERE id IN ($1, $2, $3)', [
         workspaceId,
         rerunWorkspaceId,
+        `issue-255-live-${hash(`${runNonce}-pre-network`).slice(0, 24)}`,
       ]);
       await pool.end();
       await rm(directory, { force: true, recursive: true });
@@ -314,6 +384,7 @@ function collisionGuardExecutors(
       priceRevision: 'collision-copy-price-v1',
       promptHash: '1'.repeat(64),
       quoteAmountMicros: 100_000,
+      quoteBasis: { maxInputTokens: 1, maxOutputTokens: 1 },
       async execute() {
         onExecute();
         throw new Error('Provider execution crossed a pre-network guard.');
@@ -329,6 +400,7 @@ function collisionGuardExecutors(
       priceRevision: 'collision-image-price-v1',
       promptHash: '2'.repeat(64),
       quoteAmountMicros: 500_000,
+      quoteBasis: { outputCount: 1 },
       async execute() {
         onExecute();
         throw new Error('Provider execution crossed a pre-network guard.');
@@ -344,6 +416,10 @@ function collisionGuardExecutors(
       priceRevision: 'collision-video-price-v1',
       promptHash: '3'.repeat(64),
       quoteAmountMicros: 3_000_000,
+      quoteBasis: {
+        durationSeconds: 1,
+        estimatedTokensPerSecond: 1_000_000,
+      },
       async execute() {
         onExecute();
         throw new Error('Provider execution crossed a pre-network guard.');

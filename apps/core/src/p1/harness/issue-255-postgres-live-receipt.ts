@@ -311,6 +311,100 @@ export class PostgresIssue255LiveReceiptRepository {
     });
   }
 
+  async recordExecutionFailure(input: {
+    runNonce: string;
+    modality: (typeof modalities)[number];
+    effectId: string;
+    requestFingerprint: string;
+  }): Promise<
+    | { kind: 'rejected_before_accept' }
+    | {
+        kind: 'provider_acceptance_unknown';
+        receipt: Issue255LiveReceipt;
+      }
+  > {
+    const parsed = z
+      .object({
+        runNonce: z.string().trim().min(1),
+        modality: z.enum(modalities),
+        effectId: z.string().regex(/^[a-f0-9]{64}$/u),
+        requestFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
+      })
+      .strict()
+      .parse(input);
+    return this.locked(parsed.runNonce, async (client) => {
+      const selected = await client.query<ReceiptRow>(
+        `SELECT *
+           FROM issue255_live_generation_receipts
+          WHERE run_nonce = $1
+            AND modality = $2
+            AND effect_id = $3
+            AND request_fingerprint = $4
+            AND status = 'claimed'
+          FOR UPDATE`,
+        [
+          parsed.runNonce,
+          parsed.modality,
+          parsed.effectId,
+          parsed.requestFingerprint,
+        ],
+      );
+      const row = selected.rows[0];
+      if (!row) {
+        throw new Error(
+          'Issue 255 claimed receipt could not classify its execution failure.',
+        );
+      }
+      if (row.generation_submit_count === 0) {
+        await client.query(
+          `DELETE FROM issue255_live_generation_receipts
+            WHERE run_nonce = $1
+              AND modality = $2
+              AND effect_id = $3
+              AND request_fingerprint = $4
+              AND status = 'claimed'
+              AND generation_submit_count = 0`,
+          [
+            parsed.runNonce,
+            parsed.modality,
+            parsed.effectId,
+            parsed.requestFingerprint,
+          ],
+        );
+        return { kind: 'rejected_before_accept' };
+      }
+      const updated = await client.query<ReceiptRow>(
+        `UPDATE issue255_live_generation_receipts
+            SET status = 'unknown',
+                reconciliation_reason = 'provider_acceptance_unknown',
+                updated_at = now()
+          WHERE run_nonce = $1
+            AND modality = $2
+            AND effect_id = $3
+            AND request_fingerprint = $4
+            AND status = 'claimed'
+            AND generation_submit_count = 1
+        RETURNING *`,
+        [
+          parsed.runNonce,
+          parsed.modality,
+          parsed.effectId,
+          parsed.requestFingerprint,
+        ],
+      );
+      const unknown = updated.rows[0];
+      if (!unknown) {
+        throw new Error(
+          'Issue 255 submitted receipt could not be frozen for reconciliation.',
+        );
+      }
+      return {
+        kind: 'provider_acceptance_unknown',
+        receipt: receiptFromRow(unknown),
+      };
+    });
+  }
+
   async claimGenerationPost(input: {
     adapter: 'direct-copy' | 'tuzi-image' | 'tuzi-video';
     deploymentId: string;

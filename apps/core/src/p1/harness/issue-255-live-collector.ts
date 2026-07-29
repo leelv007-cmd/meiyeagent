@@ -3,6 +3,7 @@ import {
   link,
   lstat,
   mkdir,
+  readFile,
   unlink,
   writeFile,
 } from 'node:fs/promises';
@@ -37,6 +38,9 @@ const approvedQuoteMicros = {
   image_text: 500_000,
   video: 3_000_000,
 } as const;
+const COPY_INPUT_TOKEN_UPPER_BOUND = 4_096;
+const COPY_INSTRUCTIONS =
+  'Return exactly 3 materially distinct beauty-business copy candidates. Every candidate must include a non-empty title, body, and conversionHook.';
 
 type Modality = (typeof modalities)[number];
 
@@ -61,6 +65,7 @@ export type Issue255LiveExecutor = {
   priceRevision: string;
   promptHash: string;
   quoteAmountMicros: number;
+  quoteBasis: Readonly<Record<string, number>>;
   execute(identity: {
     effectId: string;
     requestFingerprint: string;
@@ -78,6 +83,8 @@ const manifestSchema = z
         generationSubmitCap: z.literal(3),
         probeCapMicros: z.literal(3_600_000),
         globalCapMicros: z.literal(5_000_000),
+        configuredProviderCapMicros: z.number().int().positive().max(5_000_000),
+        effectiveCapMicros: z.number().int().positive().max(3_600_000),
         currency: z.literal('CNY'),
       })
       .strict(),
@@ -136,6 +143,7 @@ export async function collectIssue255LiveAnchors(input: {
   executors: readonly Issue255LiveExecutor[];
   foundation: FoundationStore;
   manifestPath: string;
+  providerCapMicros: number;
   recordedSamples: unknown;
   receipts: PostgresIssue255LiveReceiptRepository;
   runNonce: string;
@@ -146,7 +154,21 @@ export async function collectIssue255LiveAnchors(input: {
   );
   const recordedMatrixDigest =
     canonicalRecordedMatrixDigest(recordedSamples);
-  const executors = validateExecutors(input.executors);
+  const providerCapMicros = z
+    .number()
+    .int()
+    .positive()
+    .max(5_000_000)
+    .parse(input.providerCapMicros);
+  const effectiveCapMicros = Math.min(
+    3_600_000,
+    5_000_000,
+    providerCapMicros,
+  );
+  const executors = validateExecutors(
+    input.executors,
+    effectiveCapMicros,
+  );
   const pendingPath = `${input.manifestPath}.pending`;
   await reserveManifestPaths(input.manifestPath, pendingPath);
   const workspaceId =
@@ -169,6 +191,7 @@ export async function collectIssue255LiveAnchors(input: {
         priceRevision: executor.priceRevision,
         promptHash: executor.promptHash,
         quoteAmountMicros: executor.quoteAmountMicros,
+        quoteBasis: executor.quoteBasis,
         recordedMatrixDigest,
       }),
     );
@@ -215,13 +238,18 @@ export async function collectIssue255LiveAnchors(input: {
         runNonce,
       });
     } catch (error) {
-      await input.receipts.markUnknown({
+      const failure = await input.receipts.recordExecutionFailure({
         runNonce,
         modality: executor.modality,
         effectId,
         requestFingerprint,
-        reason: 'provider_acceptance_unknown',
       });
+      if (failure.kind === 'rejected_before_accept') {
+        await input.database.query(
+          'DELETE FROM workspaces WHERE id = $1',
+          [workspaceId],
+        );
+      }
       throw error;
     }
     if (
@@ -229,12 +257,11 @@ export async function collectIssue255LiveAnchors(input: {
       terminal.amountMicros > executor.quoteAmountMicros ||
       terminal.usageEvidenceKind !== 'provider_reported'
     ) {
-      await input.receipts.markUnknown({
+      await input.receipts.recordExecutionFailure({
         runNonce,
         modality: executor.modality,
         effectId,
         requestFingerprint,
-        reason: 'provider_acceptance_unknown',
       });
       throw new Error(
         `Issue 255 ${executor.modality} terminal cost or usage is not trustworthy.`,
@@ -282,6 +309,8 @@ export async function collectIssue255LiveAnchors(input: {
       generationSubmitCap: 3,
       probeCapMicros: 3_600_000,
       globalCapMicros: 5_000_000,
+      configuredProviderCapMicros: providerCapMicros,
+      effectiveCapMicros,
       currency: 'CNY',
     },
     samples: manifestSamples,
@@ -348,6 +377,106 @@ export async function collectIssue255LiveAnchors(input: {
   return preliminary;
 }
 
+export async function recoverIssue255LiveManifest(input: {
+  database: Pool;
+  manifestPath: string;
+}) {
+  const pendingPath = `${input.manifestPath}.pending`;
+  let finalExists = true;
+  try {
+    await lstat(input.manifestPath);
+  } catch (error) {
+    if (!isFileSystemError(error, 'ENOENT')) throw error;
+    finalExists = false;
+  }
+  if (finalExists) {
+    throw new Error(
+      'Issue 255 final manifest already exists and cannot be recovered over.',
+    );
+  }
+  const serialized = await readFile(pendingPath, 'utf8');
+  assertIssue255SanitizedManifest(serialized);
+  const manifest = manifestSchema.parse(JSON.parse(serialized));
+  const effectIds = manifest.samples.map(({ effectId }) => effectId);
+  const authorizations = await input.database.query<{
+    effect_id: string;
+    price_revision: string;
+    request_fingerprint: string;
+    reserved_amount_micros: string;
+    workspace_id: string;
+  }>(
+    `SELECT effect_id,
+            price_revision,
+            request_fingerprint,
+            reserved_amount_micros,
+            workspace_id
+       FROM issue255_live_generation_authorizations
+      WHERE effect_id = ANY($1::text[])`,
+    [effectIds],
+  );
+  if (authorizations.rows.length !== 3) {
+    throw new Error(
+      'Issue 255 pending manifest has no complete durable authorization history.',
+    );
+  }
+  for (const sample of manifest.samples) {
+    const authorization = authorizations.rows.find(
+      ({ effect_id }) => effect_id === sample.effectId,
+    );
+    if (
+      !authorization ||
+      authorization.request_fingerprint !== sample.requestFingerprint ||
+      Number(authorization.reserved_amount_micros) !==
+        sample.reservedAmountMicros ||
+      authorization.price_revision !== sample.priceRevision
+    ) {
+      throw new Error(
+        'Issue 255 pending manifest differs from durable authorization truth.',
+      );
+    }
+  }
+  const workspaceIds = authorizations.rows.map(
+    ({ workspace_id }) => workspace_id,
+  );
+  const residue = await input.database.query<{ count: number }>(
+    `SELECT (
+       (SELECT COUNT(*)
+          FROM issue255_live_generation_receipts
+         WHERE effect_id = ANY($1::text[])) +
+       (SELECT COUNT(*)
+          FROM workspaces
+         WHERE id = ANY($2::text[])) +
+       (SELECT COUNT(*)
+          FROM p1_generation_jobs
+         WHERE workspace_id = ANY($2::text[])) +
+       (SELECT COUNT(*)
+          FROM p1_provider_attempts
+         WHERE workspace_id = ANY($2::text[])) +
+       (SELECT COUNT(*)
+          FROM p1_provider_cost_events
+         WHERE workspace_id = ANY($2::text[]))
+     )::int AS count`,
+    [effectIds, workspaceIds],
+  );
+  if (residue.rows[0]?.count !== 0) {
+    throw new Error(
+      'Issue 255 pending manifest recovery requires operational cleanup first.',
+    );
+  }
+  try {
+    await link(pendingPath, input.manifestPath);
+  } catch (error) {
+    if (isFileSystemError(error, 'EEXIST')) {
+      throw new Error(
+        'Issue 255 final manifest appeared during recovery; pending evidence was preserved.',
+      );
+    }
+    throw error;
+  }
+  await unlink(pendingPath);
+  return manifest;
+}
+
 async function reserveManifestPaths(
   manifestPath: string,
   pendingPath: string,
@@ -404,6 +533,48 @@ export function issue255DirectCopyExecutor(input: {
     input.options.outputCostPerMillion,
     'direct output price',
   );
+  const configuredMaxOutputTokens = z
+    .number()
+    .int()
+    .positive()
+    .parse(input.options.maxOutputTokens);
+  if (
+    new TextEncoder().encode(`${COPY_INSTRUCTIONS}\n${prompt}`).length >
+    COPY_INPUT_TOKEN_UPPER_BOUND
+  ) {
+    throw new Error(
+      'Issue 255 direct prompt exceeds its frozen input token upper bound.',
+    );
+  }
+  const inputQuoteMicros = proratedPriceMicros(
+    [[inputPriceMicrosPerMillion, COPY_INPUT_TOKEN_UPPER_BOUND]],
+    1_000_000,
+  );
+  const affordableOutputTokens = Number(
+    (BigInt(approvedQuoteMicros.copy - inputQuoteMicros) *
+      1_000_000n) /
+      BigInt(outputPriceMicrosPerMillion),
+  );
+  const maxOutputTokens = Math.min(
+    configuredMaxOutputTokens,
+    affordableOutputTokens,
+  );
+  if (maxOutputTokens <= 0) {
+    throw new Error(
+      'Issue 255 direct prices leave no provider-enforced output budget.',
+    );
+  }
+  const quoteAmountMicros = proratedPriceMicros(
+    [
+      [inputPriceMicrosPerMillion, COPY_INPUT_TOKEN_UPPER_BOUND],
+      [outputPriceMicrosPerMillion, maxOutputTokens],
+    ],
+    1_000_000,
+  );
+  const probeOptions = {
+    ...input.options,
+    maxOutputTokens,
+  };
   return {
     adapter: 'direct-copy',
     catalogModelId: input.options.catalogModelId,
@@ -412,8 +583,12 @@ export function issue255DirectCopyExecutor(input: {
     deploymentId: input.deploymentId,
     modality: 'copy',
     priceRevision: input.priceRevision,
-    promptHash: hash(prompt),
-    quoteAmountMicros: approvedQuoteMicros.copy,
+    promptHash: hash(`${COPY_INSTRUCTIONS}\0${prompt}`),
+    quoteAmountMicros,
+    quoteBasis: {
+      maxInputTokens: COPY_INPUT_TOKEN_UPPER_BOUND,
+      maxOutputTokens,
+    },
     async execute(identity) {
       const port = createIssue255DirectCopyPort({
         identity: {
@@ -422,7 +597,7 @@ export function issue255DirectCopyExecutor(input: {
           modality: 'copy',
           providerIdempotencyKey: identity.effectId,
         },
-        options: input.options,
+        options: probeOptions,
         receipts: input.receipts,
       });
       const request = recordedRequest(
@@ -433,6 +608,15 @@ export function issue255DirectCopyExecutor(input: {
       request.jobId = identity.effectId;
       request.submission.prompt = prompt;
       request.submission.copyCandidateCount = 3;
+      request.submission.promptBinding = {
+        name: 'issue-255/live-copy',
+        version: 'v1',
+        content: COPY_INSTRUCTIONS,
+        contentHash: hash(COPY_INSTRUCTIONS),
+        label: 'issue-255-live',
+        source: 'builtin',
+        isFallback: false,
+      };
       const result = await port.execute(request);
       if (
         result.kind !== 'completed' ||
@@ -457,6 +641,14 @@ export function issue255DirectCopyExecutor(input: {
         result.providerCost.usage.outputTokens,
         'direct output tokens',
       );
+      if (
+        inputTokens > COPY_INPUT_TOKEN_UPPER_BOUND ||
+        outputTokens > maxOutputTokens
+      ) {
+        throw new Error(
+          'Issue 255 direct provider usage exceeded the frozen quote basis.',
+        );
+      }
       return {
         providerTaskRef: result.providerTaskRef,
         amountMicros: proratedPriceMicros(
@@ -502,6 +694,36 @@ export function issue255TuziExecutor(input: {
       : input.options.video.costPerMillionTokens,
     isImage ? 'Tuzi image price' : 'Tuzi video price',
   );
+  const durationSeconds = 1;
+  const estimatedTokensPerSecond = isImage
+    ? null
+    : z
+        .number()
+        .int()
+        .positive()
+        .parse(input.options.video.estimatedTokensPerSecond);
+  const quoteBasis: Readonly<Record<string, number>> = isImage
+    ? { outputCount: 1 }
+    : {
+        durationSeconds,
+        estimatedTokensPerSecond: estimatedTokensPerSecond!,
+      };
+  const quoteAmountMicros = isImage
+    ? proratedPriceMicros([[priceMicros, 1]], 1)
+    : proratedPriceMicros(
+        [
+          [
+            priceMicros,
+            durationSeconds * estimatedTokensPerSecond!,
+          ],
+        ],
+        1_000_000,
+      );
+  if (quoteAmountMicros > approvedQuoteMicros[input.modality]) {
+    throw new Error(
+      `Issue 255 ${input.modality} worst-case quote exceeds its approved cap.`,
+    );
+  }
   return {
     adapter: isImage ? 'tuzi-image' : 'tuzi-video',
     catalogModelId,
@@ -511,7 +733,8 @@ export function issue255TuziExecutor(input: {
     modality: input.modality,
     priceRevision: input.priceRevision,
     promptHash: hash(prompt),
-    quoteAmountMicros: approvedQuoteMicros[input.modality],
+    quoteAmountMicros,
+    quoteBasis,
     async execute(identity) {
       const port = createIssue255TuziMediaPort({
         identity: {
@@ -529,7 +752,7 @@ export function issue255TuziExecutor(input: {
           isImage ? 'image.generate' : 'video.generate',
           isImage
             ? { height: 2048, width: 2048 }
-            : { durationSeconds: 1 },
+            : { durationSeconds },
         ),
         effectIdempotencyKey: identity.effectId,
       };
@@ -613,7 +836,10 @@ export function issue255TuziExecutor(input: {
   };
 }
 
-function validateExecutors(input: readonly Issue255LiveExecutor[]) {
+function validateExecutors(
+  input: readonly Issue255LiveExecutor[],
+  effectiveCapMicros: number,
+) {
   const parsed = z
     .array(z.custom<Issue255LiveExecutor>())
     .length(3)
@@ -629,12 +855,24 @@ function validateExecutors(input: readonly Issue255LiveExecutor[]) {
           : modality === 'image_text'
             ? 'tuzi-image'
             : 'tuzi-video') ||
-      executor.quoteAmountMicros !== approvedQuoteMicros[modality]
+      !Number.isSafeInteger(executor.quoteAmountMicros) ||
+      executor.quoteAmountMicros <= 0 ||
+      executor.quoteAmountMicros > approvedQuoteMicros[modality] ||
+      Object.keys(executor.quoteBasis).length === 0
     ) {
       throw new Error(
         'Issue 255 live executors must be fixed copy, image_text, video with approved quotes.',
       );
     }
+  }
+  const totalQuoteMicros = parsed.reduce(
+    (total, executor) => total + executor.quoteAmountMicros,
+    0,
+  );
+  if (totalQuoteMicros > effectiveCapMicros) {
+    throw new Error(
+      'Issue 255 live worst-case quotes exceed the effective provider cap.',
+    );
   }
   return parsed;
 }
@@ -871,10 +1109,11 @@ function frozenPriceMicros(amount: number, label: string) {
   const micros = Math.ceil(amount * 1_000_000);
   if (
     !Number.isFinite(amount) ||
-    amount < 0 ||
+    amount <= 0 ||
+    micros <= 0 ||
     !Number.isSafeInteger(micros)
   ) {
-    throw new Error(`Issue 255 ${label} is not a safe frozen price.`);
+    throw new Error(`Issue 255 ${label} is not a positive frozen price.`);
   }
   return micros;
 }
