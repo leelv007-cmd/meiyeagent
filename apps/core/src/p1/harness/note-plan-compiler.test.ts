@@ -9,7 +9,10 @@ import {
   regenerateNotePlanPage,
   type NotePlanStructuredPort,
 } from './note-plan-compiler.js';
-import type { NotePlan } from '@meiye/contracts';
+import {
+  notePageRegeneratedEventSchema,
+  type NotePlan,
+} from '@meiye/contracts';
 import { StructuredNodeRunError } from '../model-supply/structured-node-runner.js';
 
 test('NotePlan compiles configured styles while keeping text dependencies serial', async () => {
@@ -140,7 +143,10 @@ test('selected style requests every page and records a bounded conflict regenera
       strategy: 'warn',
     },
   );
-  assert.equal(result.auditSignals[2]?.eventType, 'note_page_regenerated');
+  const regenerationEvent = notePageRegeneratedEventSchema.parse(
+    result.auditSignals[2],
+  );
+  assert.equal(regenerationEvent.payload.trigger, 'check_violation');
 });
 
 test('text consistency failure rewrites text with its reason and retains an honest partial result', async () => {
@@ -204,6 +210,19 @@ test('text consistency failure rewrites text with its reason and retains an hone
     reason: 'consistency_remained_incomplete',
   });
   assert.equal(result.version.plan.pages[1]?.revision, 2);
+  const regenerationEvent = notePageRegeneratedEventSchema.parse(
+    result.auditSignals.find(
+      ({ eventType }) => eventType === 'note_page_regenerated',
+    ),
+  );
+  assert.deepEqual(regenerationEvent.payload, {
+    auditRef: 'note-page-rewrite:page-2:r2',
+    imagePoints: 0,
+    pageId: 'page-2',
+    reason: '主题衔接不连贯',
+    side: 'text',
+    trigger: 'check_violation',
+  });
   assert.deepEqual(
     result.auditSignals
       .filter(

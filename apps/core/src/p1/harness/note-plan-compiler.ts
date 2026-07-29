@@ -2,6 +2,7 @@ import {
   DEFAULT_NOTE_STYLES,
   NOTE_PLAN_CONSISTENCY_DIMENSIONS,
   imageTextNoteVersionSchema,
+  notePageRegeneratedEventSchema,
   notePlanConsistencyEvaluationSchema,
   notePlanSchema,
   noteStyleCandidatesSchemaFor,
@@ -318,16 +319,19 @@ export class NotePlanCompiler {
           });
           assertNotePlanWithinBound(plan, input.notePageBound);
           textRewrites += 1;
-          auditSignals.push({
-            eventType: 'note_page_regenerated',
-            payload: {
-              auditRef: `note-page-rewrite:${page.id}:r${page.revision + 1}`,
-              imagePoints: 0,
-              pageId: page.id,
-              reason: regeneration.textReason ?? regeneration.reason,
-              side: 'text',
-            },
-          });
+          auditSignals.push(
+            notePageRegeneratedEventSchema.parse({
+              eventType: 'note_page_regenerated',
+              payload: {
+                auditRef: `note-page-rewrite:${page.id}:r${page.revision + 1}`,
+                imagePoints: 0,
+                pageId: page.id,
+                reason: regeneration.textReason ?? regeneration.reason,
+                side: 'text',
+                trigger: 'check_violation',
+              },
+            }),
+          );
           if (regeneration.side === 'text') continue;
         }
         const target = plan.pages.find(({ id }) => id === pageId) ?? page;
@@ -359,10 +363,17 @@ export class NotePlanCompiler {
           ),
         });
         assertNotePlanWithinBound(plan, input.notePageBound);
-        auditSignals.push({
-          eventType: 'note_page_regenerated',
-          payload: { auditRef, imagePoints: 1, pageId: page.id },
-        });
+        auditSignals.push(
+          notePageRegeneratedEventSchema.parse({
+            eventType: 'note_page_regenerated',
+            payload: {
+              auditRef,
+              imagePoints: 1,
+              pageId: page.id,
+              trigger: 'check_violation',
+            },
+          }),
+        );
       }
     };
     const initialCheck = await check({

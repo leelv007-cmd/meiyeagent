@@ -647,32 +647,38 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 			eventType,
 			status: payload.status,
 			strategy: payload.strategy,
+			trigger: payload.trigger,
 		})),
 		[
 			{
 				eventType: "note_style_selected",
 				status: undefined,
 				strategy: undefined,
+				trigger: undefined,
 			},
 			{
 				eventType: "note_consistency_evaluated",
 				status: "warned",
 				strategy: "warn",
+				trigger: undefined,
 			},
 			{
 				eventType: "note_page_regenerated",
 				status: undefined,
 				strategy: undefined,
+				trigger: "check_violation",
 			},
 			{
 				eventType: "note_page_regenerated",
 				status: undefined,
 				strategy: undefined,
+				trigger: "check_violation",
 			},
 			{
 				eventType: "note_consistency_evaluated",
 				status: "passed",
 				strategy: "warn",
+				trigger: undefined,
 			},
 		],
 	);
