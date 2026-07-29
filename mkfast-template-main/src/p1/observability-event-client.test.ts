@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { ObservabilityEvent } from '@meiye/contracts';
+import {
+  submitObservabilityEvent,
+  type MerchantObservabilityEvent,
+} from './observability-event-command.js';
 
-import { submitObservabilityEvent } from './observability-event-command.js';
-
-const event: ObservabilityEvent = {
+const event: MerchantObservabilityEvent = {
   eventType: 'delivery_rating.recorded',
   taskId: 'task-248',
   skillRevision: 'copywriter@rev-17',

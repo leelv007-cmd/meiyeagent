@@ -756,10 +756,13 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
       }
       case 'event_append': {
         if (typeof value.eventType === 'string') {
-          if (value.eventType === 'agent_primitive.lifecycle') {
+          if (
+            value.eventType !== 'delivery_rating.recorded' &&
+            value.eventType !== 'delivery_rating.withdrawn'
+          ) {
             throw new P1DomainError(
               'FORBIDDEN',
-              'Agent primitive lifecycle events are server-owned.',
+              'Only merchant-authored delivery rating events may use the public command seam.',
             );
           }
           const parsed = observabilityEventSchema.safeParse(value);

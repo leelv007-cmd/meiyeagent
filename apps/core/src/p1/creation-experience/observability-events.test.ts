@@ -121,7 +121,7 @@ describe('canonical observability event ingest', () => {
     assert.deepEqual(received, []);
   });
 
-  it('rejects server-owned primitive lifecycle events at the public command seam', async () => {
+  it('rejects every server-owned event at the public command seam', async () => {
     const received: ObservabilityEvent[] = [];
     const module = new CreationExperienceFoundationModule(undefined, undefined, {
       observabilityEvents: {
@@ -132,36 +132,29 @@ describe('canonical observability event ingest', () => {
       },
     });
 
-    await assert.rejects(
-      () =>
-        module.execute({
-          context,
-          idempotencyKey: 'forged-primitive',
-          input: {
-            action: 'event_append',
-            payload: {
-              eventType: 'agent_primitive.lifecycle',
-              taskId: 'task-primitive',
-              workspaceId: context.workspaceId,
-              actorId: context.userId,
-              actorKind: context.actor,
-              idempotencyKey: 'forged-primitive',
-              axisScope: 'task_root',
-              skillRevision: null,
-              promptVersion: null,
-              catalogRevision: null,
-              scene: null,
+    for (const eventType of [
+      'action_usage.recorded',
+      'bounded_execution.suspended',
+      'bounded_execution.resumed',
+      'note_page_regenerated',
+      'agent_primitive.lifecycle',
+    ]) {
+      await assert.rejects(
+        () =>
+          module.execute({
+            context,
+            idempotencyKey: `forged-${eventType}`,
+            input: {
+              action: 'event_append',
               payload: {
-                primitiveId: 'generate',
-                phase: 'invoked',
-                billing: { kind: 'not_billed' },
+                eventType,
               },
             },
-          },
-        }),
-      (error: unknown) =>
-        error instanceof P1DomainError && error.code === 'FORBIDDEN',
-    );
+          }),
+        (error: unknown) =>
+          error instanceof P1DomainError && error.code === 'FORBIDDEN',
+      );
+    }
 
     assert.deepEqual(received, []);
   });

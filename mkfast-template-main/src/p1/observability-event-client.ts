@@ -1,13 +1,12 @@
-import type { ObservabilityEvent } from '@meiye/contracts';
-
 import { commandP1 } from './client.js';
 import {
   submitObservabilityEvent,
+  type MerchantObservabilityEvent,
   type ObservabilityEventCommand,
 } from './observability-event-command.js';
 
 export function appendObservabilityEvent(
-  event: ObservabilityEvent,
+  event: MerchantObservabilityEvent,
   idempotencyKey: string,
   submit: ObservabilityEventCommand = commandP1
 ) {
