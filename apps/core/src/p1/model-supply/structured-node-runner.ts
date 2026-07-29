@@ -34,6 +34,8 @@ export interface StructuredNodeRunnerRequest<Output> {
 export interface StructuredNodeRunnerResult<Output> {
   output: Output;
   attempts: number;
+  /** Observed provider spend normalized to CNY cents for bounded execution. */
+  observedCostCents?: number;
   providerTaskRef: string;
   replayed: boolean;
   usage: { inputTokens: number; outputTokens: number };
@@ -56,6 +58,7 @@ export class StructuredNodeRunError extends Error {
     readonly acceptance: Acceptance,
     readonly measurement?: StructuredObjectMeasurement,
     readonly attempts = 1,
+    readonly observedCostCents?: number,
   ) {
     super(
       status === 'unknown'
@@ -195,6 +198,7 @@ export class ModelSupplyStructuredNodeRunner implements StructuredNodeRunner {
         measurement,
         result.attempts.length +
           Math.max(0, (measurement?.providerAttempts ?? 1) - 1),
+        providerCostsToCnyCents(result.providerCosts),
       );
     }
     const output = request.schema.parse(result.structuredOutput);
@@ -203,6 +207,7 @@ export class ModelSupplyStructuredNodeRunner implements StructuredNodeRunner {
       attempts:
         result.attempts.length +
         Math.max(0, (measurement?.providerAttempts ?? 1) - 1),
+      observedCostCents: providerCostsToCnyCents(result.providerCosts),
       providerTaskRef: result.attempt.providerTaskRef ?? result.attempt.id,
       usage:
         result.structuredCumulativeUsage ??
@@ -221,6 +226,24 @@ export class ModelSupplyStructuredNodeRunner implements StructuredNodeRunner {
         : {}),
     };
   }
+}
+
+function providerCostsToCnyCents(
+  costs: readonly { amount: number; currency: 'CNY' | 'USD' }[],
+) {
+  let amountCny = 0;
+  for (const cost of costs) {
+    if (!Number.isFinite(cost.amount) || cost.amount < 0) {
+      throw new Error('Observed provider cost must be a non-negative number.');
+    }
+    if (cost.currency !== 'CNY' && cost.amount !== 0) return undefined;
+    amountCny += cost.amount;
+  }
+  const cents = Math.ceil(amountCny * 100);
+  if (!Number.isSafeInteger(cents)) {
+    throw new Error('Observed provider cost exceeds the bounded integer range.');
+  }
+  return cents;
 }
 
 function measuredStructuredExecutor(

@@ -111,6 +111,8 @@ export interface CopySelectionInput {
 interface CopySelectionPorts {
   runner: StructuredNodeRunner;
   validator: CandidatePolicyValidator;
+  /** Monotonic active-execution clock; durable suspension time is excluded. */
+  nowMs?: () => number;
 }
 
 export type CopySelectionCurrentBest = z.infer<
@@ -336,6 +338,37 @@ export async function executeCopySelection(
   let candidate: GeneratedCandidate;
   let policy: ReturnType<CandidatePolicyValidator['validate']>;
   let boundedExecution = input.boundedExecution;
+  const nowMs = ports.nowMs ?? (() => performance.now());
+  const activeStartedAt = boundedExecution ? nowMs() : 0;
+  const activeWallClockBase =
+    boundedExecution?.consumption.wallClockMs ?? 0;
+  const observedConsumption = (
+    snapshot: BoundedExecutionSnapshot,
+    result: Pick<
+      StructuredNodeRunnerResult<unknown>,
+      'attempts' | 'observedCostCents' | 'replayed'
+    >,
+  ) => {
+    if (
+      snapshot.maxCostCents !== 'unset' &&
+      result.observedCostCents === undefined
+    ) {
+      throw new Error(
+        'Bounded execution requires observed provider cost in CNY cents.',
+      );
+    }
+    const elapsed = Math.max(0, Math.ceil(nowMs() - activeStartedAt));
+    return {
+      iterations:
+        snapshot.consumption.iterations +
+        (result.replayed ? 0 : result.attempts),
+      costCents:
+        snapshot.consumption.costCents +
+        (result.replayed ? 0 : (result.observedCostCents ?? 0)),
+      wallClockMs: activeWallClockBase + elapsed,
+      delegations: snapshot.consumption.delegations,
+    };
+  };
   if (input.resumeFrom?.candidate) {
     candidate = structuredClone(input.resumeFrom.candidate);
     policy = {
@@ -371,9 +404,18 @@ export async function executeCopySelection(
       });
     } catch (error) {
       if (boundedExecution && error instanceof ExecutionAttemptBudgetExceeded) {
+        const elapsed = Math.max(
+          0,
+          Math.ceil(nowMs() - activeStartedAt),
+        );
         const decision = evaluateBoundedExecution(boundedExecution, {
           consumption: {
             iterations: error.consumedAttempts,
+            costCents:
+              boundedExecution.consumption.costCents +
+              providerCostToCnyCents(error.observedProviderCost),
+            wallClockMs: activeWallClockBase + elapsed,
+            delegations: boundedExecution.consumption.delegations,
           },
           currentBest: {
             candidate: null,
@@ -399,11 +441,10 @@ export async function executeCopySelection(
     };
     policy = ports.validator.validate(structuredClone(candidate));
     if (boundedExecution) {
-      boundedExecution = advanceBoundedExecution(boundedExecution, {
-        iterations:
-          boundedExecution.consumption.iterations +
-          (primary.replayed ? 0 : primary.attempts),
-      });
+      boundedExecution = advanceBoundedExecution(
+        boundedExecution,
+        observedConsumption(boundedExecution, primary),
+      );
     }
   }
   const blockedCandidates: Array<{
@@ -426,9 +467,7 @@ export async function executeCopySelection(
     }
     if (boundedExecution) {
       const bounded = evaluateBoundedExecution(boundedExecution, {
-        consumption: {
-          iterations: boundedExecution.consumption.iterations,
-        },
+        consumption: boundedExecution.consumption,
         currentBest: {
           candidate: structuredClone(candidate),
           policyFailures: structuredClone(policy.failures),
@@ -473,9 +512,18 @@ export async function executeCopySelection(
       });
     } catch (error) {
       if (boundedExecution && error instanceof ExecutionAttemptBudgetExceeded) {
+        const elapsed = Math.max(
+          0,
+          Math.ceil(nowMs() - activeStartedAt),
+        );
         const decision = evaluateBoundedExecution(boundedExecution, {
           consumption: {
             iterations: error.consumedAttempts,
+            costCents:
+              boundedExecution.consumption.costCents +
+              providerCostToCnyCents(error.observedProviderCost),
+            wallClockMs: activeWallClockBase + elapsed,
+            delegations: boundedExecution.consumption.delegations,
           },
           currentBest: {
             candidate: structuredClone(candidate),
@@ -503,20 +551,17 @@ export async function executeCopySelection(
     };
     policy = ports.validator.validate(structuredClone(candidate));
     if (boundedExecution) {
-      boundedExecution = advanceBoundedExecution(boundedExecution, {
-        iterations:
-          boundedExecution.consumption.iterations +
-          (retry.replayed ? 0 : retry.attempts),
-      });
+      boundedExecution = advanceBoundedExecution(
+        boundedExecution,
+        observedConsumption(boundedExecution, retry),
+      );
     }
   }
   if (!policy.passed) {
     blockedCandidates.push(blockedCandidate(candidate.candidateId, policy.failures));
     if (boundedExecution) {
       const bounded = evaluateBoundedExecution(boundedExecution, {
-        consumption: {
-          iterations: boundedExecution.consumption.iterations,
-        },
+        consumption: boundedExecution.consumption,
         currentBest: {
           candidate: structuredClone(candidate),
           policyFailures: structuredClone(policy.failures),
@@ -595,6 +640,30 @@ function blockedCandidate(
       failures.flatMap(({ alternativePath }) => alternativePath),
     ),
   };
+}
+
+function providerCostToCnyCents(
+  cost:
+    | {
+        amount: number;
+        currency: 'CNY' | 'USD';
+      }
+    | undefined,
+) {
+  if (!cost) return 0;
+  if (!Number.isFinite(cost.amount) || cost.amount < 0) {
+    throw new Error('Observed provider cost must be a non-negative number.');
+  }
+  if (cost.currency !== 'CNY' && cost.amount !== 0) {
+    throw new Error(
+      'Bounded execution cost requires provider spend normalized to CNY.',
+    );
+  }
+  const cents = Math.ceil(cost.amount * 100);
+  if (!Number.isSafeInteger(cents)) {
+    throw new Error('Observed provider cost exceeds the bounded integer range.');
+  }
+  return cents;
 }
 
 function copyCandidateTokenEmitter(

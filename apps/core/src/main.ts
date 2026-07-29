@@ -49,8 +49,12 @@ import {
 } from './server-shutdown.js';
 import {
   AdminConfigFoundationModule,
+  AdminConfigBoundedExecutionContinuationResolver,
+  AdminConfigBoundedExecutionLimitsResolver,
+  AdminConfigBoundedExecutionLimitsSource,
   AdminConfigEntitlementCatalogSource,
   AdminConfigNotePlanSettingsSource,
+  BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
   DEFAULT_HARNESS_LANGFUSE_OUTBOX_CONFIG,
   DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
   DUE_DELIVERY_RETENTION_DAYS_CONFIG_KEY,
@@ -1501,6 +1505,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY,
         HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
         HARNESS_WOZ_RECIPE_CONFIG_KEY,
+        BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
         // 笔记风格集合每次编译都现读（AdminConfigNotePlanSettingsSource.read），
         // 不登记的话后台会告诉运营「重启后生效」——与事实相反（D-116）。
         NOTE_STYLE_CONFIG_KEY,
@@ -1525,6 +1530,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY,
         HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
         HARNESS_WOZ_RECIPE_CONFIG_KEY,
+        BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
         NOTE_STYLE_CONFIG_KEY,
         'byok.adapter.assembly',
         'douyin.adapter.assembly',
@@ -1952,6 +1958,8 @@ if (harnessRuntimeConfig) {
     harnessStore,
     workflowResumer,
   );
+  const boundedExecutionLimits =
+    new AdminConfigBoundedExecutionLimitsSource(adminConfigRepository);
   const harnessWorkflow = registerHarnessDbosWorkflow(
     harnessStages,
     harnessStore,
@@ -1968,7 +1976,9 @@ if (harnessRuntimeConfig) {
     },
     adminConfigRepository,
     harnessDecisions,
-    undefined,
+    new AdminConfigBoundedExecutionContinuationResolver(
+      boundedExecutionLimits,
+    ),
     new TaskRecallDueProducer(dueDeliveryRepository),
   );
   await DBOS.launch();
@@ -1978,7 +1988,9 @@ if (harnessRuntimeConfig) {
       new DbosHarnessWorkflowStarter(harnessWorkflow),
       harnessPromptResolver,
       harnessStore,
-      undefined,
+      new AdminConfigBoundedExecutionLimitsResolver(
+        boundedExecutionLimits,
+      ),
       new ProductionHarnessFrozenRouteSnapshotResolver(
         foundationRepository,
         p1ModelSupplyService,

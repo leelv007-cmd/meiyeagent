@@ -340,6 +340,99 @@ test('raised maxIterations resumes from the blocked primary without replaying it
   );
 });
 
+test('bounded copy selection consumes observed CNY cost and active wall clock before evaluating limits', async () => {
+  const runner = new ObservedCostQueueRunner(
+    [candidate('已生成候选', '正文 A', ['asset-medical'])],
+    25,
+  );
+  const ticks = [1_000, 1_125];
+
+  const result = await executeCopySelection(
+    {
+      ...selectionInput(),
+      boundedExecution: {
+        schemaVersion: 'bounded-execution-snapshot/v1',
+        maxIterations: 10,
+        maxCostCents: 20,
+        maxWallClockMs: 1_000,
+        maxDelegations: 'unset',
+        requiredLimits: [
+          'maxIterations',
+          'maxCostCents',
+          'maxWallClockMs',
+        ],
+        consumption: {
+          iterations: 0,
+          costCents: 0,
+          wallClockMs: 0,
+          delegations: 0,
+        },
+        stopReason: null,
+        triggeredLimit: null,
+      },
+    },
+    {
+      nowMs: () => ticks.shift()!,
+      runner,
+      validator: new WithdrawnAssetValidator(),
+    },
+  );
+
+  assert.equal('state' in result && result.state, 'suspended');
+  if (!('state' in result) || result.state !== 'suspended') return;
+  assert.equal(result.snapshot.triggeredLimit, 'maxCostCents');
+  assert.deepEqual(result.snapshot.consumption, {
+    iterations: 1,
+    costCents: 25,
+    wallClockMs: 125,
+    delegations: 0,
+  });
+});
+
+test('bounded copy selection measures only active continuation time against maxWallClockMs', async () => {
+  const runner = new ObservedCostQueueRunner(
+    [candidate('已生成候选', '正文 A', ['asset-medical'])],
+    0,
+  );
+  const ticks = [50_000, 50_151];
+
+  const result = await executeCopySelection(
+    {
+      ...selectionInput(),
+      boundedExecution: {
+        schemaVersion: 'bounded-execution-snapshot/v1',
+        maxIterations: 10,
+        maxCostCents: 100,
+        maxWallClockMs: 150,
+        maxDelegations: 'unset',
+        requiredLimits: [
+          'maxIterations',
+          'maxCostCents',
+          'maxWallClockMs',
+        ],
+        consumption: {
+          iterations: 0,
+          costCents: 0,
+          wallClockMs: 0,
+          delegations: 0,
+        },
+        stopReason: null,
+        triggeredLimit: null,
+      },
+    },
+    {
+      nowMs: () => ticks.shift()!,
+      runner,
+      validator: new WithdrawnAssetValidator(),
+    },
+  );
+
+  assert.equal('state' in result && result.state, 'suspended');
+  if (!('state' in result) || result.state !== 'suspended') return;
+  assert.equal(result.snapshot.triggeredLimit, 'maxWallClockMs');
+  assert.equal(result.snapshot.consumption.wallClockMs, 151);
+});
+
 test('maxIterations suspends without a draft when schema repair exhausts the first attempt', async () => {
   const runner = new BudgetThenQueueRunner([
     candidate('抬限后的主推荐', '正文 A', []),
@@ -483,6 +576,22 @@ class QueueRunner implements StructuredNodeRunner {
       providerTaskRef: `provider-${this.requests.length}`,
       replayed: false,
       usage: { inputTokens: 5, outputTokens: 8 },
+    };
+  }
+}
+
+class ObservedCostQueueRunner extends QueueRunner {
+  constructor(
+    outputs: unknown[],
+    private readonly observedCostCents: number,
+  ) {
+    super(outputs);
+  }
+
+  override async run<Output>(request: StructuredNodeRunnerRequest<Output>) {
+    return {
+      ...(await super.run(request)),
+      observedCostCents: this.observedCostCents,
     };
   }
 }

@@ -2022,6 +2022,7 @@ test('bounded selection suspends outside the durable step with a current-best co
           'task-35:execution-selection:bounded',
         );
         assert.match(question.question, /当前最好结果/u);
+        assert.match(question.question, /当前最好版本/u);
         assert.match(question.question, /还可以继续|可以继续/u);
         return {
           idempotencyKey: 'bounded-continuation-1',

@@ -21,6 +21,10 @@ import type {
   CloudflareInventorySnapshot,
   CloudflareSelfProbeResult,
 } from '../cloudflare-read/index.js';
+import {
+  BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
+  boundedExecutionLimitsConfigSchema,
+} from './bounded-execution-limits.js';
 
 export type AdminConfigScope = 'global' | 'workspace';
 export type AdminConfigStatus = 'applied' | 'rolled_back';
@@ -370,6 +374,13 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
     scope: 'global',
     description: 'Terminal due-delivery item and run retention in days.',
     valueSchema: dueDeliveryRetentionDaysConfigSchema,
+  },
+  {
+    key: BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
+    scope: 'global',
+    description:
+      'Calibrated default and hard-cap values for bounded Harness execution.',
+    valueSchema: boundedExecutionLimitsConfigSchema,
   },
   {
     key: 'compliance.regulated_mode.default',

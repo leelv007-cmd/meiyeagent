@@ -2218,12 +2218,13 @@ function boundedExecutionQuestion(
   request: HarnessWorkflowInput,
   suspension: BoundedExecutionSuspension<unknown>,
 ): QuestionCard {
+  const currentBest = boundedCurrentBestSummary(suspension.currentBest);
   return {
     questionId: `${workflowId}:execution-selection:bounded`,
     workflowId,
     workflowRevision: request.workflowRevision,
     question:
-      `已保留当前最好结果；${suspension.unmetExplanation}。` +
+      `已保留当前最好结果${currentBest}；${suspension.unmetExplanation}。` +
       '提高本次任务上限后可以继续。',
     options: [
       {
@@ -2240,6 +2241,35 @@ function boundedExecutionQuestion(
     unattended: 'hold',
     scope: 'current_task',
   };
+}
+
+function boundedCurrentBestSummary(input: unknown) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return '';
+  }
+  const candidate = 'candidate' in input ? input.candidate : null;
+  if (
+    candidate &&
+    typeof candidate === 'object' &&
+    !Array.isArray(candidate) &&
+    'title' in candidate &&
+    typeof candidate.title === 'string'
+  ) {
+    const title = candidate.title.replace(/\s+/gu, ' ').trim().slice(0, 120);
+    return title.length > 0 ? `（当前最好版本：${title}）` : '';
+  }
+  const asset = 'asset' in input ? input.asset : null;
+  if (
+    asset &&
+    typeof asset === 'object' &&
+    !Array.isArray(asset) &&
+    'id' in asset &&
+    typeof asset.id === 'string'
+  ) {
+    const assetId = asset.id.replace(/\s+/gu, '').slice(0, 120);
+    return assetId.length > 0 ? `（当前最好素材：${assetId}）` : '';
+  }
+  return '';
 }
 
 function hasConfiguredBoundedExecution(
