@@ -41,6 +41,10 @@ export interface CreativeSourceReference {
 export const creativeExecutionContractSchema = z.object({
   operation: creativeOperationSchema,
   catalogModelId: z.string().trim().min(1),
+  /**
+   * Catalog revision pinned by the accepted execution contract. This is not
+   * the observability event-attribution field with the same key.
+   */
   catalogRevision: z.string().trim().min(1),
   quoteRevision: z.string().trim().min(1),
   quoteAcceptedAt: z.iso.datetime(),
