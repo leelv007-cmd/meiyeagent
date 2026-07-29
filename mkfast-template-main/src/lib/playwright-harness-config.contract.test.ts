@@ -31,6 +31,11 @@ test('Playwright provisions an isolated DBOS database and enables the real Harne
   );
   assert.match(config, /DBOS__VMID=core-e2e-\$\{corePort\}/u);
   assert.match(config, /DBOS__VMID=p1-worker-e2e-\$\{corePort\}/u);
+  assert.equal(
+    config.match(/LANGFUSE_PROMPT_POLICY=pilot/gu)?.length,
+    2,
+    'provider-free Core and Worker fixtures must explicitly opt into warned prompt fallback'
+  );
   assert.match(config, /MODEL_EXECUTION_MODE=fixture/u);
   assert.equal(
     config.match(/JOB_QUEUE_PREFIX=\$\{jobQueuePrefix\}/gu)?.length,
