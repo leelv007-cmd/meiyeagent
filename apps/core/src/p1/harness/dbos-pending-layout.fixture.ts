@@ -27,26 +27,30 @@ const workflow = registerHarnessDbosWorkflow(
     async recordStageTrace() {},
     async recordTerminalFailure() {},
   },
-  undefined,
-  undefined,
   {
-    async get() {
-      return {
-        actorId: 'platform-admin',
-        correlationId: 'legacy-layout',
-        createdAt: '2026-07-26T09:00:00.000Z',
-        key: 'harness.confirmation_card.timeout_seconds',
-        reason: 'Keep the legacy run pending',
-        revision: 1,
-        rolledBackToRevision: null,
-        scope: 'global',
-        status: 'applied',
-        value: 300,
-        workspaceId: '__global__',
-      };
+    config: {
+      async get() {
+        return {
+          actorId: 'platform-admin',
+          correlationId: 'legacy-layout',
+          createdAt: '2026-07-26T09:00:00.000Z',
+          key: 'harness.confirmation_card.timeout_seconds',
+          reason: 'Keep the legacy run pending',
+          revision: 1,
+          rolledBackToRevision: null,
+          scope: 'global',
+          status: 'applied',
+          value: 300,
+          workspaceId: '__global__',
+        };
+      },
+    },
+    decisions: {
+      async submitCoreTimeout() {
+        throw new Error('Unexpected timeout.');
+      },
     },
   },
-  { async submitCoreTimeout() { throw new Error('Unexpected timeout.'); } },
 );
 await DBOS.launch();
 await DBOS.startWorkflow(workflow, {

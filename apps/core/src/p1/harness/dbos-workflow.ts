@@ -287,22 +287,36 @@ export async function readConfirmationCardHoldTimeoutSeconds(
   return timeoutSeconds;
 }
 
-export function registerHarnessDbosWorkflow(
-  ports: HarnessStagePorts,
-  persistence: HarnessWorkflowPersistence,
-  semanticResumptions?: HarnessSemanticDecisionResumptionStore,
-  billing?: HarnessBillingSettlementPort,
-  config?: Pick<AdminConfigRepository, 'get'>,
+interface HarnessDbosWorkflowOptions {
+  semanticResumptions?: HarnessSemanticDecisionResumptionStore;
+  billing?: HarnessBillingSettlementPort;
+  config?: Pick<AdminConfigRepository, 'get'>;
   decisions?: Pick<HarnessDecisionService, 'submitCoreTimeout'> &
-    Partial<Pick<HarnessDecisionService, 'submitCoreHoldExpired'>>,
-  boundedContinuations?: HarnessBoundedExecutionContinuationResolver,
-  taskRecallDue?: TaskRecallDuePort,
-  askMerchant?: HarnessAskMerchantPrimitivePort,
+    Partial<Pick<HarnessDecisionService, 'submitCoreHoldExpired'>>;
+  boundedContinuations?: HarnessBoundedExecutionContinuationResolver;
+  taskRecallDue?: TaskRecallDuePort;
+  askMerchant?: HarnessAskMerchantPrimitivePort;
   interactions?: Pick<
     HarnessInteractionService,
     'expireUnrendered' | 'submitSystemDefault'
-  >,
+  >;
+}
+
+export function registerHarnessDbosWorkflow(
+  ports: HarnessStagePorts,
+  persistence: HarnessWorkflowPersistence,
+  options: HarnessDbosWorkflowOptions = {},
 ) {
+  const {
+    semanticResumptions,
+    billing,
+    config,
+    decisions,
+    boundedContinuations,
+    taskRecallDue,
+    askMerchant,
+    interactions,
+  } = options;
   const workflow = async (input: HarnessDbosWorkflowInput) => {
     const runtimeWorkflowId = DBOS.workflowID;
     if (!runtimeWorkflowId) {

@@ -2085,25 +2085,28 @@ if (harnessRuntimeConfig) {
   const harnessWorkflow = registerHarnessDbosWorkflow(
     harnessStages,
     harnessStore,
-    creationSubmissionStore,
     {
-      commit: (input) => harnessBilling.commit(input),
-      refund: (input) => harnessBilling.refund(input),
-      async scheduleCompensation(input) {
-        await billingCompensations.enqueue(input);
+      semanticResumptions: creationSubmissionStore,
+      billing: {
+        commit: (input) => harnessBilling.commit(input),
+        refund: (input) => harnessBilling.refund(input),
+        async scheduleCompensation(input) {
+          await billingCompensations.enqueue(input);
+        },
+        async completeCompensation(input) {
+          await billingCompensations.markCompleted(input);
+        },
       },
-      async completeCompensation(input) {
-        await billingCompensations.markCompleted(input);
-      },
+      config: adminConfigRepository,
+      decisions: harnessDecisions,
+      boundedContinuations:
+        new AdminConfigBoundedExecutionContinuationResolver(
+          boundedExecutionLimits,
+        ),
+      taskRecallDue: new TaskRecallDueProducer(dueDeliveryRepository),
+      askMerchant: p1HarnessAskInvoker,
+      interactions: harnessInteractions,
     },
-    adminConfigRepository,
-    harnessDecisions,
-    new AdminConfigBoundedExecutionContinuationResolver(
-      boundedExecutionLimits,
-    ),
-    new TaskRecallDueProducer(dueDeliveryRepository),
-    p1HarnessAskInvoker,
-    harnessInteractions,
   );
   await DBOS.launch();
   harnessService = new HarnessApplicationService(

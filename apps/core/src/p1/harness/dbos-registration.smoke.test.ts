@@ -142,26 +142,24 @@ test(
         },
         async recordTerminalFailure() {},
       },
-      undefined,
       {
-        async commit({ taskId }) {
-          billingReceipts.push(`committed:${taskId}`);
-          terminalOrder.push(`committed:${taskId}`);
+        billing: {
+          async commit({ taskId }) {
+            billingReceipts.push(`committed:${taskId}`);
+            terminalOrder.push(`committed:${taskId}`);
+          },
+          async refund({ taskId }) {
+            billingReceipts.push(`refunded:${taskId}`);
+          },
+          async scheduleCompensation({ action, taskId }) {
+            billingReceipts.push(`scheduled:${action}:${taskId}`);
+          },
         },
-        async refund({ taskId }) {
-          billingReceipts.push(`refunded:${taskId}`);
-        },
-        async scheduleCompensation({ action, taskId }) {
-          billingReceipts.push(`scheduled:${action}:${taskId}`);
-        },
-      },
-      undefined,
-      undefined,
-      undefined,
-      {
-        async produce(input) {
-          recallDue.push(input);
-          terminalOrder.push(`recalled:${input.sourceTaskId}`);
+        taskRecallDue: {
+          async produce(input) {
+            recallDue.push(input);
+            terminalOrder.push(`recalled:${input.sourceTaskId}`);
+          },
         },
       },
     );
@@ -468,30 +466,30 @@ test(
         async recordStageTrace() {},
         async recordTerminalFailure() {},
       },
-      undefined,
-      undefined,
       {
-        async get() {
-          configReads += 1;
-          return {
-            actorId: 'platform-admin',
-            correlationId: 'timeout-smoke-config',
-            createdAt: '2026-07-26T09:00:00.000Z',
-            key: 'harness.confirmation_card.timeout_seconds',
-            reason: 'Exercise durable timeout',
-            revision: 1,
-            rolledBackToRevision: null,
-            scope: 'global',
-            status: 'applied',
-            value: 2,
-            workspaceId: '__global__',
-          };
+        config: {
+          async get() {
+            configReads += 1;
+            return {
+              actorId: 'platform-admin',
+              correlationId: 'timeout-smoke-config',
+              createdAt: '2026-07-26T09:00:00.000Z',
+              key: 'harness.confirmation_card.timeout_seconds',
+              reason: 'Exercise durable timeout',
+              revision: 1,
+              rolledBackToRevision: null,
+              scope: 'global',
+              status: 'applied',
+              value: 2,
+              workspaceId: '__global__',
+            };
+          },
         },
-      },
-      {
-        async submitCoreTimeout(_workspaceId, _taskId, command) {
-          persistedTimeouts.push(command.idempotencyKey);
-          return { eventId: 'timeout-event', replayed: false };
+        decisions: {
+          async submitCoreTimeout(_workspaceId, _taskId, command) {
+            persistedTimeouts.push(command.idempotencyKey);
+            return { eventId: 'timeout-event', replayed: false };
+          },
         },
       },
     );
@@ -1323,37 +1321,37 @@ test(
         async recordStageTrace() {},
         async recordTerminalFailure() {},
       },
-      undefined,
       {
-        async commit() {
-          throw new Error('A cancelled hold must not commit usage.');
+        billing: {
+          async commit() {
+            throw new Error('A cancelled hold must not commit usage.');
+          },
+          async refund() {
+            refunds += 1;
+          },
+          async scheduleCompensation() {
+            throw new Error('The refund succeeds in this fixture.');
+          },
         },
-        async refund() {
-          refunds += 1;
+        config: {
+          async get() {
+            throw new Error('A recovered hold must use its frozen value.');
+          },
         },
-        async scheduleCompensation() {
-          throw new Error('The refund succeeds in this fixture.');
+        decisions: {
+          async submitCoreTimeout() {
+            coreTimeouts += 1;
+            return { eventId: 'unexpected', replayed: false };
+          },
+          async submitCoreHoldExpired() {
+            coreHoldExpiries += 1;
+            return { eventId: 'hold-expired', replayed: false };
+          },
         },
-      },
-      {
-        async get() {
-          throw new Error('A recovered hold must use its frozen value.');
-        },
-      },
-      {
-        async submitCoreTimeout() {
-          coreTimeouts += 1;
-          return { eventId: 'unexpected', replayed: false };
-        },
-        async submitCoreHoldExpired() {
-          coreHoldExpiries += 1;
-          return { eventId: 'hold-expired', replayed: false };
-        },
-      },
-      undefined,
-      {
-        async produce() {
-          recallDue += 1;
+        taskRecallDue: {
+          async produce() {
+            recallDue += 1;
+          },
         },
       },
     );
@@ -1453,43 +1451,44 @@ test(
         async recordStageTrace() {},
         async recordTerminalFailure() {},
       },
-      undefined,
       {
-        async commit() {
-          commits += 1;
+        billing: {
+          async commit() {
+            commits += 1;
+          },
+          async refund() {
+            throw new Error('A delivered hold must not refund usage.');
+          },
+          async scheduleCompensation() {
+            throw new Error('The commit succeeds in this fixture.');
+          },
         },
-        async refund() {
-          throw new Error('A delivered hold must not refund usage.');
+        config: {
+          async get(_scope, _workspaceId, key) {
+            configReads += 1;
+            return {
+              actorId: 'platform-admin',
+              correlationId: 'held-answer-config',
+              createdAt: '2026-07-26T09:00:00.000Z',
+              key,
+              reason: 'Keep the hold open for a merchant answer',
+              revision: 1,
+              rolledBackToRevision: null,
+              scope: 'global',
+              status: 'applied',
+              value: 3_600,
+              workspaceId: '__global__',
+            };
+          },
         },
-        async scheduleCompensation() {
-          throw new Error('The commit succeeds in this fixture.');
-        },
-      },
-      {
-        async get(_scope, _workspaceId, key) {
-          configReads += 1;
-          return {
-            actorId: 'platform-admin',
-            correlationId: 'held-answer-config',
-            createdAt: '2026-07-26T09:00:00.000Z',
-            key,
-            reason: 'Keep the hold open for a merchant answer',
-            revision: 1,
-            rolledBackToRevision: null,
-            scope: 'global',
-            status: 'applied',
-            value: 3_600,
-            workspaceId: '__global__',
-          };
-        },
-      },
-      {
-        async submitCoreTimeout() {
-          throw new Error('A hold must not use continuation timeout.');
-        },
-        async submitCoreHoldExpired() {
-          expiries += 1;
-          return { eventId: 'unexpected', replayed: false };
+        decisions: {
+          async submitCoreTimeout() {
+            throw new Error('A hold must not use continuation timeout.');
+          },
+          async submitCoreHoldExpired() {
+            expiries += 1;
+            return { eventId: 'unexpected', replayed: false };
+          },
         },
       },
     );
@@ -1594,26 +1593,30 @@ test(
     registerHarnessDbosWorkflow(
       ports,
       persistence,
-      undefined,
-      undefined,
       {
-        async get() {
-          return {
-            actorId: 'platform-admin',
-            correlationId: 'replayed-layout',
-            createdAt: '2026-07-26T09:01:00.000Z',
-            key: 'harness.confirmation_card.timeout_seconds',
-            reason: 'Recovered layout must not fork replay',
-            revision: 2,
-            rolledBackToRevision: null,
-            scope: 'global',
-            status: 'applied',
-            value: 1,
-            workspaceId: '__global__',
-          };
+        config: {
+          async get() {
+            return {
+              actorId: 'platform-admin',
+              correlationId: 'replayed-layout',
+              createdAt: '2026-07-26T09:01:00.000Z',
+              key: 'harness.confirmation_card.timeout_seconds',
+              reason: 'Recovered layout must not fork replay',
+              revision: 2,
+              rolledBackToRevision: null,
+              scope: 'global',
+              status: 'applied',
+              value: 1,
+              workspaceId: '__global__',
+            };
+          },
+        },
+        decisions: {
+          async submitCoreTimeout() {
+            throw new Error('Unexpected timeout.');
+          },
         },
       },
-      { async submitCoreTimeout() { throw new Error('Unexpected timeout.'); } },
     );
     try {
       await DBOS.launch();
@@ -1712,25 +1715,26 @@ test(
         async recordStageTrace() {},
         async recordTerminalFailure() {},
       },
-      undefined,
       {
-        async commit() {},
-        async refund() {
-          throw new Error('A recovered hold must not be refunded.');
+        billing: {
+          async commit() {},
+          async refund() {
+            throw new Error('A recovered hold must not be refunded.');
+          },
+          async scheduleCompensation() {},
         },
-        async scheduleCompensation() {},
-      },
-      {
-        async get() {
-          throw new Error('A replayed hold must not read live config.');
+        config: {
+          async get() {
+            throw new Error('A replayed hold must not read live config.');
+          },
         },
-      },
-      {
-        async submitCoreTimeout() {
-          throw new Error('A hold must not use continuation timeout.');
-        },
-        async submitCoreHoldExpired() {
-          throw new Error('A legacy hold must retain its original wait.');
+        decisions: {
+          async submitCoreTimeout() {
+            throw new Error('A hold must not use continuation timeout.');
+          },
+          async submitCoreHoldExpired() {
+            throw new Error('A legacy hold must retain its original wait.');
+          },
         },
       },
     );
@@ -1819,30 +1823,30 @@ test(
         async recordStageTrace() {},
         async recordTerminalFailure() {},
       },
-      undefined,
-      undefined,
       {
-        async get() {
-          configReads += 1;
-          return {
-            actorId: 'platform-admin',
-            correlationId: 'quota-hold-config',
-            createdAt: '2026-07-26T09:00:00.000Z',
-            key: 'harness.confirmation_card.timeout_seconds',
-            reason: 'Would release if the quota guard failed',
-            revision: 1,
-            rolledBackToRevision: null,
-            scope: 'global',
-            status: 'applied',
-            value: 1,
-            workspaceId: '__global__',
-          };
+        config: {
+          async get() {
+            configReads += 1;
+            return {
+              actorId: 'platform-admin',
+              correlationId: 'quota-hold-config',
+              createdAt: '2026-07-26T09:00:00.000Z',
+              key: 'harness.confirmation_card.timeout_seconds',
+              reason: 'Would release if the quota guard failed',
+              revision: 1,
+              rolledBackToRevision: null,
+              scope: 'global',
+              status: 'applied',
+              value: 1,
+              workspaceId: '__global__',
+            };
+          },
         },
-      },
-      {
-        async submitCoreTimeout() {
-          coreTimeouts += 1;
-          return { eventId: 'unexpected', replayed: false };
+        decisions: {
+          async submitCoreTimeout() {
+            coreTimeouts += 1;
+            return { eventId: 'unexpected', replayed: false };
+          },
         },
       },
     );
