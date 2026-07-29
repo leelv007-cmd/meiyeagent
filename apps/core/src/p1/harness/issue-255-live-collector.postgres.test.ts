@@ -99,6 +99,61 @@ test(
       );
       assert.equal(blockedExecutorCalls, 0);
 
+      const partialRunNonce = `${runNonce}-partial-history`;
+      const partialEffectId = hash(
+        `issue255/v1\0${partialRunNonce}\0copy`,
+      );
+      const partialFingerprint = '9'.repeat(64);
+      await receipts.claim({
+        workspaceId:
+          `issue-255-live-${hash(partialRunNonce).slice(0, 24)}`,
+        runNonce: partialRunNonce,
+        modality: 'copy',
+        effectId: partialEffectId,
+        requestFingerprint: partialFingerprint,
+        adapter: 'direct-copy',
+        deploymentId: 'deepseek-v4-pro-direct',
+        providerIdempotencyKey: partialEffectId,
+        providerJobId: `${partialEffectId}:job`,
+        providerAttemptId: `${partialEffectId}:attempt`,
+        providerCostEventId: `${partialEffectId}:cost`,
+        recordedMatrixDigest: '8'.repeat(64),
+        reservedAmountMicros: 100_000,
+        priceRevision: 'partial-price-v1',
+        exchangeRevision: 'native-cny-v1',
+      });
+      await receipts.claimGenerationPost({
+        adapter: 'direct-copy',
+        deploymentId: 'deepseek-v4-pro-direct',
+        runNonce: partialRunNonce,
+        modality: 'copy',
+        effectId: partialEffectId,
+        providerIdempotencyKey: partialEffectId,
+        requestFingerprint: partialFingerprint,
+      });
+      await assert.rejects(
+        collectIssue255LiveAnchors({
+          database: pool,
+          executors: blockedExecutors,
+          foundation,
+          manifestPath: join(directory, 'partial-history.json'),
+          providerCapMicros: 5_000_000,
+          recordedSamples,
+          receipts,
+          runNonce: `${runNonce}-after-partial`,
+        }),
+        /empty authorization history/u,
+      );
+      assert.equal(blockedExecutorCalls, 0);
+      await pool.query(
+        'DELETE FROM issue255_live_generation_receipts WHERE run_nonce = $1',
+        [partialRunNonce],
+      );
+      await pool.query(
+        'DELETE FROM issue255_live_generation_authorizations WHERE run_nonce = $1',
+        [partialRunNonce],
+      );
+
       const rejectedRunNonce = `${runNonce}-pre-network`;
       const rejectedWorkspaceId =
         `issue-255-live-${hash(rejectedRunNonce).slice(0, 24)}`;
@@ -392,7 +447,7 @@ test(
           receipts,
           runNonce: rerunNonce,
         }),
-        /exactly three billable generation POSTs globally/u,
+        /empty authorization history/u,
       );
       assert.equal(blockedExecutorCalls, 0);
 

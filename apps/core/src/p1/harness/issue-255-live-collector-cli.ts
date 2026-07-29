@@ -15,9 +15,23 @@ import {
 import { reconcileIssue255LiveRun } from './issue-255-live-reconciliation.js';
 import { PostgresIssue255LiveReceiptRepository } from './issue-255-postgres-live-receipt.js';
 
+export function assertIssue255LiveModesMutuallyExclusive(
+  env: NodeJS.ProcessEnv,
+) {
+  if (
+    env.RUN_LIVE_ISSUE_255 === '1' &&
+    env.RUN_LIVE_TUZI_CANCELLATION_TEST === '1'
+  ) {
+    throw new Error(
+      'Issue 255 live collector and Tuzi cancellation mode are mutually exclusive.',
+    );
+  }
+}
+
 export function assertIssue255LiveCollectorLaunch(
   env: NodeJS.ProcessEnv,
 ) {
+  assertIssue255LiveModesMutuallyExclusive(env);
   if (env.RUN_LIVE_ISSUE_255 !== '1') {
     throw new Error(
       'Issue 255 live collector remains disabled until RUN_LIVE_ISSUE_255=1 is explicitly authorized.',
@@ -29,11 +43,6 @@ export function assertIssue255LiveCollectorLaunch(
   ) {
     throw new Error(
       'Issue 255 live collector requires fixed direct copy and Tuzi media modes.',
-    );
-  }
-  if (env.RUN_LIVE_TUZI_CANCELLATION_TEST === '1') {
-    throw new Error(
-      'Issue 255 live collector and Tuzi cancellation mode are mutually exclusive.',
     );
   }
   const providerCap = Number(env.PROVIDER_LIVE_COST_CAP_CNY);

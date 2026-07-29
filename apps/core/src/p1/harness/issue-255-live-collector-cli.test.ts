@@ -2,15 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  assertIssue255LiveCollectorLaunch,
-  runIssue255LiveManifestRecoveryCli,
-  runIssue255LiveReconciliationCli,
-} from './issue-255-live-collector-cli.js';
-import {
   assertIssue255SanitizedManifest,
   issue255DirectCopyExecutor,
   issue255TuziExecutor,
 } from './issue-255-live-collector.js';
+import {
+  assertIssue255LiveCollectorLaunch,
+  assertIssue255LiveModesMutuallyExclusive,
+  runIssue255LiveManifestRecoveryCli,
+  runIssue255LiveReconciliationCli,
+} from './issue-255-live-collector-cli.js';
 
 test('issue 255 live collector CLI stays fail-closed without explicit live GO', () => {
   assert.throws(
@@ -46,6 +47,17 @@ test('issue 255 live collector CLI stays fail-closed without explicit live GO', 
       PROVIDER_LIVE_COST_CAP_CNY: '0.1',
     }),
     { providerCapMicros: 100_000 },
+  );
+});
+
+test('issue 255 Tuzi cancellation launch rejects the live collector flag in reverse', () => {
+  assert.throws(
+    () =>
+      assertIssue255LiveModesMutuallyExclusive({
+        RUN_LIVE_ISSUE_255: '1',
+        RUN_LIVE_TUZI_CANCELLATION_TEST: '1',
+      }),
+    /mutually exclusive/u,
   );
 });
 

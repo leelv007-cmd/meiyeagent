@@ -543,7 +543,7 @@ describe(
         /submitted generation/u,
       );
       await first.claimGenerationPost({
-        adapter: copy.adapter,
+        adapter: 'direct-copy',
         deploymentId: copy.deploymentId,
         runNonce,
         modality: 'copy',

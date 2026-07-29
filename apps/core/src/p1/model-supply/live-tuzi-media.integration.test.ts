@@ -4,6 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
+import { assertIssue255LiveModesMutuallyExclusive } from '../harness/issue-255-live-collector-cli.js';
 import { ProviderSafeFetch } from './reference-asset-delivery.js';
 import { MediaActivationProbeExecutor } from './activation-probe-executor.js';
 import { recordedRequest } from './adapters.js';
@@ -13,6 +14,7 @@ import {
 } from './catalog.js';
 import { TuziMediaExecutionPort } from './tuzi-media-adapter.js';
 
+assertIssue255LiveModesMutuallyExclusive(process.env);
 const enabled = process.env.RUN_LIVE_TUZI_MEDIA_TEST === '1';
 const cancellationEnabled =
   process.env.RUN_LIVE_TUZI_CANCELLATION_TEST === '1';

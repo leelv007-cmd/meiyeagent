@@ -354,6 +354,23 @@ export class PostgresIssue255LiveReceiptRepository {
     return result.rows.map(receiptFromRow);
   }
 
+  async assertAuthorizationHistoryEmpty() {
+    return this.locked(
+      'issue255-live-authorization-empty-v1',
+      async (client) => {
+        const result = await client.query<{ count: string }>(
+          `SELECT COUNT(*)::bigint AS count
+             FROM issue255_live_generation_authorizations`,
+        );
+        if (Number(result.rows[0]?.count ?? 0) !== 0) {
+          throw new Error(
+            'Issue 255 live collector requires empty authorization history before starting.',
+          );
+        }
+      },
+    );
+  }
+
   async bindManifestEvidence(input: {
     runNonce: string;
     envelopeDigest: string;

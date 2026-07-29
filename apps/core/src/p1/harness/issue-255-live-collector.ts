@@ -149,6 +149,7 @@ export async function collectIssue255LiveAnchors(input: {
   runNonce: string;
 }) {
   const runNonce = z.string().trim().min(1).parse(input.runNonce);
+  await input.receipts.assertAuthorizationHistoryEmpty();
   const recordedSamples = assertIssue255RecordedMatrix(
     input.recordedSamples,
   );
