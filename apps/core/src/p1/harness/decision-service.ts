@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 import { authorizeHarnessAction } from './action-registry.js';
+import { HARNESS_ACTION_CARRIERS } from './action-carriers.js';
 
 export interface HarnessDecisionEvent {
   id: string;
@@ -286,7 +287,7 @@ export class HarnessDecisionService {
       );
     }
     authorizeHarnessAction({
-      actionId: 'workflow.decision_resume',
+      actionId: HARNESS_ACTION_CARRIERS.decisionResume,
       caller: 'server',
     });
     const payloadFingerprint = fingerprintValue(command);

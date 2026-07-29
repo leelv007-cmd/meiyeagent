@@ -26,6 +26,7 @@ import {
 } from "./production-stage-ports.js";
 import { validateHarnessPolicy } from "./policy-gates.js";
 import { authorizeHarnessAction } from "./action-registry.js";
+import { HARNESS_ACTION_CARRIERS } from "./action-carriers.js";
 import {
   harnessMediaJobTopic,
   type HarnessContextSnapshot,
@@ -933,7 +934,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 		runStep?: HarnessEffectRunner;
 	}): Promise<HarnessMediaSelectionResult> {
 			authorizeHarnessAction({
-				actionId: "workflow.media_queue_submit",
+				actionId: HARNESS_ACTION_CARRIERS.mediaQueueSubmit,
 				caller: "server",
 			});
 			const snapshot = requireSnapshot(input.request);

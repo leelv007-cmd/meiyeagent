@@ -9,6 +9,7 @@ import type { CreationSubmissionRecord } from '../execution-spine/submission-coo
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 import { authorizeHarnessAction } from './action-registry.js';
+import { HARNESS_ACTION_CARRIERS } from './action-carriers.js';
 
 export interface HarnessSemanticDecisionResumptionStore {
   claimSemanticDecisionResumption(input: {
@@ -35,7 +36,7 @@ export function buildSemanticDecisionResumption(input: {
     );
   }
   authorizeHarnessAction({
-    actionId: 'workflow.semantic_resubmission',
+    actionId: HARNESS_ACTION_CARRIERS.semanticResubmission,
     caller: 'server',
   });
   if (!input.request.usageReservation) {

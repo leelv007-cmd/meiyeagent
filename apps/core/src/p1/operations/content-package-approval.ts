@@ -19,6 +19,7 @@ import {
   type VisibleClaimExtraction,
 } from '../harness/policy-gates.js';
 import { authorizeHarnessAction } from '../harness/action-registry.js';
+import { HARNESS_ACTION_CARRIERS } from '../harness/action-carriers.js';
 import type { ContextInvalidationSink } from './context-invalidation.js';
 import { TaskBlockingNodeConflictError } from './repository.js';
 import {
@@ -101,7 +102,7 @@ export class ContentPackageApprovalService implements ContextInvalidationSink {
     } = input;
     const binding = approvalBindingSchema.parse(bindingInput);
     authorizeHarnessAction({
-      actionId: 'workflow.approval_callback',
+      actionId: HARNESS_ACTION_CARRIERS.approvalCallback,
       caller: 'server',
     });
     const actorId = requiredText(actorInput, 'actorId');
@@ -155,7 +156,7 @@ export class ContentPackageApprovalService implements ContextInvalidationSink {
 
   async authorize(input: ApprovalAuthorizationInput) {
     authorizeHarnessAction({
-      actionId: 'workflow.approval_callback',
+      actionId: HARNESS_ACTION_CARRIERS.approvalCallback,
       caller: 'server',
     });
     const receipt = input.receiptId

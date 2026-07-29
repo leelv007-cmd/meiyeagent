@@ -36,6 +36,7 @@ import {
   authorizeHarnessAction,
   HarnessActionAuthorizationError,
 } from './action-registry.js';
+import { HARNESS_ACTION_CARRIERS } from './action-carriers.js';
 import type {
   HarnessBillingCompensationTask,
   HarnessBillingSettlementExecutor,
@@ -230,7 +231,7 @@ export function registerHarnessDbosWorkflow(
       runtimeWorkflowId,
     );
     authorizeHarnessAction({
-      actionId: 'workflow.replay',
+      actionId: HARNESS_ACTION_CARRIERS.replay,
       caller: 'server',
     });
     const runtime: HarnessWorkflowRuntime = {
@@ -786,7 +787,7 @@ export class DbosHarnessWorkflowStarter implements HarnessWorkflowStarter {
     runtimeId?: string;
   }) {
     authorizeHarnessAction({
-      actionId: 'workflow.start',
+      actionId: HARNESS_ACTION_CARRIERS.start,
       caller: 'server',
     });
     const handle = await DBOS.startWorkflow(this.workflow, {
@@ -852,7 +853,7 @@ export async function sendHarnessMediaJobTerminal(
     );
   }
   authorizeHarnessAction({
-    actionId: 'workflow.media_signal',
+    actionId: HARNESS_ACTION_CARRIERS.mediaSignal,
     caller: 'worker',
   });
   const destination = harnessRuntimeId(

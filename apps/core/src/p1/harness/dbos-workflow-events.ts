@@ -15,6 +15,7 @@ import {
   authorizeHarnessAction,
   HarnessActionAuthorizationError,
 } from './action-registry.js';
+import { HARNESS_ACTION_CARRIERS } from './action-carriers.js';
 
 export interface HarnessWorkflowEventAccess {
   taskBelongsToWorkspace(taskId: string, workspaceId: string): Promise<boolean>;
@@ -61,7 +62,7 @@ export class HarnessDbosWorkflowEventReader
     signal: AbortSignal,
   ): AsyncIterable<WorkflowProgressEnvelope | WorkflowTokenEnvelope> {
     authorizeHarnessAction({
-      actionId: 'workflow.subscription',
+      actionId: HARNESS_ACTION_CARRIERS.subscription,
       caller: 'server',
     });
     const runtimeWorkflowId = await this.runtimeId(workspaceId, workflowId);
@@ -88,7 +89,7 @@ export class HarnessDbosWorkflowEventReader
     _signal: AbortSignal,
   ) {
     authorizeHarnessAction({
-      actionId: 'workflow.subscription',
+      actionId: HARNESS_ACTION_CARRIERS.subscription,
       caller: 'server',
     });
     const runtimeWorkflowId = await this.runtimeId(workspaceId, workflowId);

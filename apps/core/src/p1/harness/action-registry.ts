@@ -2,6 +2,12 @@ import {
   HARNESS_GATE_IDS,
   type HarnessGateId,
 } from './policy-gates.js';
+import {
+  HARNESS_ACTION_CARRIERS,
+  type HarnessActionId,
+} from './action-carriers.js';
+
+export type { HarnessActionId } from './action-carriers.js';
 
 export type HarnessActionCaller = 'server' | 'worker';
 export type HarnessActionAuthoritySource =
@@ -29,46 +35,41 @@ export class HarnessActionAuthorizationError extends Error {
 }
 
 export const HARNESS_ACTION_DEFINITIONS = [
-  definition('workflow.start', 'server_request', ['server']),
-  definition('workflow.replay', 'workflow_input', ['server']),
+  definition(HARNESS_ACTION_CARRIERS.start, 'server_request', ['server']),
+  definition(HARNESS_ACTION_CARRIERS.replay, 'workflow_input', ['server']),
   definition(
-    'workflow.decision_resume',
+    HARNESS_ACTION_CARRIERS.decisionResume,
     'durable_task_scope',
     ['server'],
   ),
   definition(
-    'workflow.semantic_resubmission',
+    HARNESS_ACTION_CARRIERS.semanticResubmission,
     'durable_execution_snapshot',
     ['server'],
   ),
   definition(
-    'workflow.media_queue_submit',
+    HARNESS_ACTION_CARRIERS.mediaQueueSubmit,
     'durable_execution_snapshot',
     ['server'],
   ),
   definition(
-    'workflow.media_signal',
+    HARNESS_ACTION_CARRIERS.mediaSignal,
     'durable_job_envelope',
     ['worker'],
   ),
   definition(
-    'workflow.approval_callback',
+    HARNESS_ACTION_CARRIERS.approvalCallback,
     'external_action_policy',
     ['server'],
   ),
   definition(
-    'workflow.subscription',
+    HARNESS_ACTION_CARRIERS.subscription,
     'durable_task_scope',
     ['server'],
   ),
 ] as const;
 
-export type HarnessActionId =
-  (typeof HARNESS_ACTION_DEFINITIONS)[number]['actionId'];
-
-const PRODUCTION_HARNESS_ACTION_IDS = HARNESS_ACTION_DEFINITIONS.map(
-  ({ actionId }) => actionId,
-);
+const PRODUCTION_HARNESS_ACTION_IDS = Object.values(HARNESS_ACTION_CARRIERS);
 
 export function createHarnessActionRegistry(definitions: readonly unknown[]) {
   const byId = new Map<HarnessActionId, HarnessActionDefinition>();
