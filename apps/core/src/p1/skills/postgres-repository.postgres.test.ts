@@ -569,7 +569,7 @@ test(
 );
 
 test(
-  'migration upgrades an authentic v1 revision table before reading its rows',
+  'migration upgrades authentic v1 revision and stage-only binding rows',
   { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
   async () => {
     const adminPool = new Pool({ connectionString });
@@ -581,6 +581,8 @@ test(
     });
     const skillId = `skill.authentic-v1.${randomUUID()}`;
     const skillRevisionRef = `${skillId}@1`;
+    const bindingId = `binding.authentic-v1.${randomUUID()}`;
+    const workflowRevisionRef = `workflow.authentic-v1.${randomUUID()}@1`;
     const promptContent = 'Authentic v1 prompt content.';
     const legacyPayload = {
       acceptedAt: null,
@@ -625,6 +627,18 @@ test(
       skillRevisionRef,
       status: 'draft',
     };
+    const legacyBinding = {
+      bindingId,
+      workflowRevisionRef,
+      stage: 'intent_naming',
+      skillId,
+      skillRevisionRef,
+      mode: 'required',
+      status: 'active',
+      supersededAt: null,
+      supersededByBindingId: null,
+      createdAt: '2026-07-25T00:01:00.000Z',
+    };
 
     try {
       await pool.query(`
@@ -637,6 +651,18 @@ test(
           payload jsonb NOT NULL,
           created_at timestamptz NOT NULL,
           PRIMARY KEY (skill_id, revision)
+        );
+        CREATE TABLE p1_skill_bindings (
+          binding_id text PRIMARY KEY,
+          workflow_revision_ref text NOT NULL,
+          stage text NOT NULL,
+          skill_id text NOT NULL,
+          skill_revision_ref text NOT NULL,
+          status text NOT NULL DEFAULT 'active'
+            CHECK (status IN ('active', 'superseded')),
+          superseded_at timestamptz,
+          payload jsonb NOT NULL,
+          created_at timestamptz NOT NULL
         )
       `);
       await pool.query(
@@ -652,16 +678,91 @@ test(
           legacyPayload.createdAt,
         ],
       );
+      await pool.query(
+        `INSERT INTO p1_skill_bindings
+           (binding_id, workflow_revision_ref, stage, skill_id,
+            skill_revision_ref, status, superseded_at, payload, created_at)
+         VALUES ($1, $2, $3, $4, $5, 'active', NULL, $6::jsonb, $7::timestamptz)`,
+        [
+          bindingId,
+          workflowRevisionRef,
+          legacyBinding.stage,
+          skillId,
+          skillRevisionRef,
+          JSON.stringify(legacyBinding),
+          legacyBinding.createdAt,
+        ],
+      );
       const repository = new PostgresSkillRepository(pool);
       await repository.migrate();
 
-      const migrated = await repository.getRevision(skillRevisionRef);
+      const restarted = new PostgresSkillRepository(pool);
+      const migrated = await restarted.getRevision(skillRevisionRef);
       assert.equal(migrated?.formatVersion, 1);
       assert.equal(migrated?.status, 'draft');
       assert.deepEqual(migrated?.governance.workflowRevisionRefs, [
         'workflow.authentic-v1@1',
       ]);
       assert.equal(migrated?.prompt.content, promptContent);
+      assert.deepEqual(await restarted.getBinding(bindingId), {
+        bindingId,
+        workflowRevisionRef,
+        skillId,
+        skillRevisionRef,
+        mode: legacyBinding.mode,
+        status: legacyBinding.status,
+        supersededAt: legacyBinding.supersededAt,
+        supersededByBindingId: legacyBinding.supersededByBindingId,
+        createdAt: legacyBinding.createdAt,
+        triggerCondition: {
+          harnessStage: legacyBinding.stage,
+          industryCategory: null,
+          tenantId: null,
+        },
+      });
+
+      const firstBackfill = await pool.query<{
+        format_version: number;
+        frontmatter: unknown;
+        governance_sidecar: unknown;
+        trigger_condition: unknown;
+      }>(
+        `SELECT revisions.format_version,
+                revisions.frontmatter,
+                revisions.governance_sidecar,
+                bindings.trigger_condition
+           FROM p1_skill_revisions revisions
+           JOIN p1_skill_bindings bindings
+             ON bindings.skill_revision_ref = revisions.skill_revision_ref
+          WHERE revisions.skill_revision_ref = $1
+            AND bindings.binding_id = $2`,
+        [skillRevisionRef, bindingId],
+      );
+      assert.deepEqual(firstBackfill.rows[0], {
+        format_version: 1,
+        frontmatter: null,
+        governance_sidecar: null,
+        trigger_condition: {
+          harnessStage: legacyBinding.stage,
+          industryCategory: null,
+          tenantId: null,
+        },
+      });
+
+      await restarted.migrate();
+      const secondBackfill = await pool.query(
+        `SELECT revisions.format_version,
+                revisions.frontmatter,
+                revisions.governance_sidecar,
+                bindings.trigger_condition
+           FROM p1_skill_revisions revisions
+           JOIN p1_skill_bindings bindings
+             ON bindings.skill_revision_ref = revisions.skill_revision_ref
+          WHERE revisions.skill_revision_ref = $1
+            AND bindings.binding_id = $2`,
+        [skillRevisionRef, bindingId],
+      );
+      assert.deepEqual(secondBackfill.rows, firstBackfill.rows);
     } finally {
       await pool.end();
       await adminPool.query(`DROP SCHEMA "${schema}" CASCADE`);
