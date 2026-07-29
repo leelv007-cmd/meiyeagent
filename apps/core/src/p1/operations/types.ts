@@ -915,6 +915,7 @@ export interface ContentPackageRightsBasisResolverPort {
 export interface ContentPackageRightsResolverPort {
   resolve(input: {
     assetIds: string[];
+    platform?: ContentPackage['variants'][number]['platform'];
     workspaceId: string;
   }): Promise<{
     knownAssetIds?: string[];

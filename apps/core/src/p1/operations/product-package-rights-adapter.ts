@@ -57,6 +57,11 @@ export class ProductContentPackageRightsResolver
             asset.authorizationStatus !== 'authorized' ||
             asset.consentScope === 'internal_only' ||
             !asset.rightsEvidence?.trim() ||
+            (input.platform !== undefined &&
+              asset.rightsPlatforms !== undefined &&
+              !asset.rightsPlatforms.some(
+                (platform) => platform === input.platform,
+              )) ||
             !hasCurrentRestrictedAssetAuthorization(
               {
                 category: asset.category,

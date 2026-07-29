@@ -14,7 +14,8 @@ const CREATED_AT = '2026-07-30T08:00:00.000Z';
 test('resolves exact current source authorizations without treating generation receipts as rights', async () => {
   const resolver = new ContentPackageRightsBasisResolver(
     {
-      async resolve() {
+      async resolve(input) {
+        assert.equal(input.platform, 'douyin');
         return {
           knownAssetIds: ['source-asset-1'],
           unauthorizedAssetIds: [],

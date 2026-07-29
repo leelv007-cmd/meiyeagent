@@ -89,6 +89,39 @@ it('rejects an expired restricted-asset authorization during live resolution', a
   );
 });
 
+it('rejects an asset whose authorization excludes the export platform', async () => {
+  const resolver = new ProductContentPackageRightsResolver({
+    async load() {
+      return {
+        assets: [
+          {
+            authorizationStatus: 'authorized',
+            consentScope: 'public_marketing',
+            containsPerson: true,
+            id: 'asset-xiaohongshu-only',
+            rightsEvidence: 'merchant-release.pdf',
+            rightsNoFixedExpiry: true,
+            rightsPlatforms: ['xiaohongshu'],
+            sourceType: 'real',
+          },
+        ],
+      };
+    },
+  });
+
+  assert.deepEqual(
+    await resolver.resolve({
+      assetIds: ['asset-xiaohongshu-only'],
+      platform: 'douyin',
+      workspaceId: 'workspace-rights',
+    }),
+    {
+      knownAssetIds: ['asset-xiaohongshu-only'],
+      unauthorizedAssetIds: ['asset-xiaohongshu-only'],
+    },
+  );
+});
+
 it('exposes precise read-only export policy reasons from the live Product facts', async () => {
   const resolver = new ProductContentPackageRightsResolver(
     {

@@ -11,6 +11,7 @@ import type {
   ContentPackageRightsBasisResolverPort,
   ContentPackageRightsResolverPort,
 } from './types.js';
+import { resolveCompleteGenerationRightsChain } from './generation-rights-chain.js';
 
 export interface ContentPackageRightsBasisRegistryPort {
   getRegistryRevision(
@@ -65,6 +66,7 @@ export class ContentPackageRightsBasisResolver
       return this.resolveSourceAuthorizations(
         input.contentPackage,
         sourceAssetIds,
+        input.platform,
         input.workspaceId,
       );
     }
@@ -74,6 +76,7 @@ export class ContentPackageRightsBasisResolver
   private async resolveSourceAuthorizations(
     contentPackage: ContentPackage,
     sourceAssetIds: string[],
+    platform: ContentPackage['variants'][number]['platform'],
     workspaceId: string,
   ): Promise<RightsBasis> {
     if (
@@ -86,6 +89,7 @@ export class ContentPackageRightsBasisResolver
     }
     const current = await this.assetRights.resolve({
       assetIds: sourceAssetIds,
+      platform,
       workspaceId,
     });
     if (
@@ -114,70 +118,22 @@ export class ContentPackageRightsBasisResolver
         'Source-free generation cannot carry source authorization references.',
       );
     }
-    const selectedAssetIds = unique(version.orderedAssetIds);
-    if (selectedAssetIds.length !== 1) {
+    const chain = resolveCompleteGenerationRightsChain({
+      generated: contentPackage.generated,
+      selectedAssetIds: version.orderedAssetIds,
+    });
+    if (!chain) {
       throw unavailable(
-        'AI generation terms require one unambiguous selected generated asset.',
+        'The selected asset is not bound to one complete generation chain.',
       );
     }
-    const generatedAssetId = selectedAssetIds[0];
-    if (!generatedAssetId) {
-      throw unavailable('The selected generated asset is unavailable.');
-    }
-    const ownedAssets = (contentPackage.generated.ownedAssets ?? []).filter(
-      (asset) => asset.id === generatedAssetId,
-    );
-    const childRuns = contentPackage.generated.childRuns.filter(
-      (run) => run.assetIds?.includes(generatedAssetId),
-    );
-    if (
-      ownedAssets.length !== 1 ||
-      childRuns.length !== 1 ||
-      !contentPackage.generated.assetIds.includes(generatedAssetId)
-    ) {
-      throw unavailable(
-        'The selected asset is not bound to one durable generation run.',
-      );
-    }
-    const ownedAsset = ownedAssets[0];
-    const childRun = childRuns[0];
-    if (!ownedAsset || !childRun) {
-      throw unavailable(
-        'The selected asset is not bound to one durable generation run.',
-      );
-    }
-    const providerTaskRef = ownedAsset.sourceTaskRef?.trim();
-    const route = childRun.routeSnapshot;
-    if (
-      childRun.status !== 'succeeded' ||
-      !providerTaskRef ||
-      !route ||
-      !childRun.routeSnapshotId ||
-      childRun.routeSnapshotId !== route.id ||
-      route.actualCatalogModelId !== childRun.actualCatalogModelId
-    ) {
-      throw unavailable('The generation run is incomplete or mismatched.');
-    }
-    const completedAttempts = (childRun.providerAttempts ?? []).filter(
-      (attempt) =>
-        attempt.acceptance === 'accepted' &&
-        attempt.status === 'completed' &&
-        attempt.jobId === childRun.runId &&
-        attempt.providerTaskRef === providerTaskRef &&
-        attempt.deploymentId === route.deploymentId &&
-        attempt.catalogModelId === route.actualCatalogModelId,
-    );
-    if (completedAttempts.length !== 1) {
-      throw unavailable(
-        'The generated asset does not match one completed provider attempt.',
-      );
-    }
-    const completedAttempt = completedAttempts[0];
-    if (!completedAttempt) {
-      throw unavailable(
-        'The generated asset does not match one completed provider attempt.',
-      );
-    }
+    const {
+      childRun,
+      completedAttempt,
+      generatedAssetId,
+      providerTaskRef,
+      route,
+    } = chain;
     const registry = await this.supplyRegistry.getRegistryRevision(
       workspaceId,
       route.catalogRevisionId,

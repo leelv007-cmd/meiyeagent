@@ -4,6 +4,7 @@ import {
   type ContentPackage,
   type ContentPackageVersion,
 } from '@meiye/contracts';
+import { resolveCompleteGenerationRightsChain } from '../operations/generation-rights-chain.js';
 import type { NotePlanEnhancementJudgeState } from './note-plan-compiler.js';
 
 export function compileCopyGenerationRequest(input: {
@@ -489,45 +490,12 @@ function hasCompleteSourceFreeVideoGeneration(input: {
   version: Pick<ContentPackageVersion, 'orderedAssetIds'>;
 }) {
   if (!input.sourceAssetIds || input.sourceAssetIds.length > 0) return false;
-  const selectedAssetIds = [...new Set(input.version.orderedAssetIds)];
   const generated = input.generated;
-  if (
-    selectedAssetIds.length !== 1 ||
-    !generated ||
-    generated.assetIds.length !== 1 ||
-    generated.assetIds[0] !== selectedAssetIds[0]
-  ) {
-    return false;
-  }
-  const generatedAssetId = selectedAssetIds[0]!;
-  const ownedAssets = (generated.ownedAssets ?? []).filter(
-    (asset) => asset.id === generatedAssetId,
+  if (!generated || generated.assetIds.length !== 1) return false;
+  return Boolean(
+    resolveCompleteGenerationRightsChain({
+      generated,
+      selectedAssetIds: input.version.orderedAssetIds,
+    }),
   );
-  const childRuns = generated.childRuns.filter((run) =>
-    run.assetIds?.includes(generatedAssetId),
-  );
-  if (ownedAssets.length !== 1 || childRuns.length !== 1) return false;
-  const ownedAsset = ownedAssets[0]!;
-  const childRun = childRuns[0]!;
-  const providerTaskRef = ownedAsset.sourceTaskRef?.trim();
-  const route = childRun.routeSnapshot;
-  if (
-    childRun.status !== 'succeeded' ||
-    !providerTaskRef ||
-    !route ||
-    childRun.routeSnapshotId !== route.id ||
-    route.actualCatalogModelId !== childRun.actualCatalogModelId
-  ) {
-    return false;
-  }
-  const completedAttempts = (childRun.providerAttempts ?? []).filter(
-    (attempt) =>
-      attempt.acceptance === 'accepted' &&
-      attempt.status === 'completed' &&
-      attempt.jobId === childRun.runId &&
-      attempt.providerTaskRef === providerTaskRef &&
-      attempt.deploymentId === route.deploymentId &&
-      attempt.catalogModelId === route.actualCatalogModelId,
-  );
-  return completedAttempts.length === 1;
 }
