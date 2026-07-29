@@ -125,7 +125,10 @@ test('the workbench opens 问候语 → 提议 → 创作 → 继续', () => {
     greeting < proposal,
     'DESIGN.md §3: the greeting is the page opening'
   );
-  assert.ok(proposal < create && create < continued, 'D-164①: 提议 → 创作 → 继续');
+  assert.ok(
+    proposal < create && create < continued,
+    'D-164①: 提议 → 创作 → 继续'
+  );
 
   // The sections are the page's skeleton, so each one has to actually contain
   // the surface it is named for — three empty <section>s in the right order
