@@ -22,9 +22,7 @@ export function runIssue255SafeProvision({
   );
   const mode = argv[0] ?? 'provision';
 
-  if (normalizedUrl(businessUrl) === normalizedUrl(dbosUrl)) {
-    fail('Issue 255 business and DBOS databases must be separate.');
-  }
+  validateDatabaseTargets(businessUrl, dbosUrl);
   if (!allowedModes.includes(mode) || argv.length > 1) {
     fail(
       'Usage: issue-255-safe-provision.mjs [--cleanup|--inspect|--cleanup-if-safe]',
@@ -352,6 +350,22 @@ function normalizedUrl(url) {
   normalized.search = '';
   normalized.hash = '';
   return normalized.toString();
+}
+
+function validateDatabaseTargets(businessUrl, dbosUrl) {
+  const targets = [
+    [businessUrl, 'meiye_issue255'],
+    [dbosUrl, 'meiye_issue255_dbos'],
+  ];
+
+  for (const [url, expectedName] of targets) {
+    if (databaseName(url) !== expectedName) {
+      fail('Issue 255 cleanup refused an unexpected database name.');
+    }
+  }
+  if (normalizedUrl(businessUrl) === normalizedUrl(dbosUrl)) {
+    fail('Issue 255 business and DBOS databases must be separate.');
+  }
 }
 
 function databaseName(url) {

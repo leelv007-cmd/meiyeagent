@@ -37,9 +37,12 @@ If any predicate is unknown, treat the reset as unsafe.
 
 The only approved entrypoint is the digest-pinned launcher at
 `/Users/bin/.codex/monitors/issue-255-safe-provision.mjs`. Its SHA-256 is
-`2a7aca6b60180074e6444cd69648885e47367f62a73cb9e074bcdffd0af7225d`;
+`5934aaab706b4b2bea57353b33ca10a00e5413a5cdd4750463455c9e8235a5e9`;
 it refuses to load the versioned implementation unless that file has SHA-256
-`e2df475c13c0659d5fbb020933c92c8d383ab7b907eab77c217cdb65cbe801f9`.
+`c2429f2a7548a49870ead2ee0bcd486c0c792ccd9fe65d19a2bcf1ec51e5bf2e`.
+Before inspection or cleanup, the implementation validates both fixed database
+names and their separation in one preflight; any invalid target refuses the
+operation before either database can be dropped.
 Inspect the five predicates without changing either database:
 
 ```sh

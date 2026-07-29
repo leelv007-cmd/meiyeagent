@@ -14,6 +14,48 @@ const provisioner =
   '/Users/bin/.codex/monitors/issue-255-safe-provision.mjs';
 
 test(
+  'issue 255 conditional reset validates both targets before dropping either database',
+  {
+    skip:
+      businessUrl && dbosUrl
+        ? false
+        : 'Issue 255 isolated database URLs are not configured',
+  },
+  async () => {
+    const business = new Pool({ connectionString: businessUrl, max: 1 });
+    const dbos = new Pool({ connectionString: dbosUrl, max: 1 });
+    const unexpectedDbosUrl = new URL(dbosUrl!);
+    unexpectedDbosUrl.pathname = '/postgres';
+    const unexpectedDbos = new Pool({
+      connectionString: unexpectedDbosUrl.toString(),
+      max: 1,
+    });
+
+    try {
+      await business.query('SELECT 1');
+      await dbos.query('SELECT 1');
+      await unexpectedDbos.query('SELECT 1');
+
+      const refusedCleanup = runProvisioner('--cleanup-if-safe', {
+        TEST_DBOS_SYSTEM_DATABASE_URL: unexpectedDbosUrl.toString(),
+      });
+      assert.notEqual(refusedCleanup.status, 0);
+      assert.match(
+        refusedCleanup.stderr,
+        /cleanup refused an unexpected database name/u,
+      );
+
+      await business.query('SELECT 1');
+      await dbos.query('SELECT 1');
+    } finally {
+      await unexpectedDbos.end();
+      await business.end();
+      await dbos.end();
+    }
+  },
+);
+
+test(
   'issue 255 conditional reset inspects, refuses unsafe state, and drops both safe databases',
   {
     skip:
@@ -104,10 +146,16 @@ test(
   },
 );
 
-function runProvisioner(mode: '--inspect' | '--cleanup-if-safe') {
+function runProvisioner(
+  mode: '--inspect' | '--cleanup-if-safe',
+  environment: NodeJS.ProcessEnv = {},
+) {
   return spawnSync(process.execPath, [provisioner, mode], {
     encoding: 'utf8',
-    env: process.env,
+    env: {
+      ...process.env,
+      ...environment,
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 }
