@@ -498,8 +498,9 @@ export function requiredP1Capability(
   }
 
   if (module === 'operations') {
-    // Pattern registration for the large operations surface (not per-action list).
-    // admin_* stays platform.manage except publish template → config.publish.
+    // Ordinary operations commands and queries use explicit allowlists below.
+    // Only admin_* keeps prefix classification, with template publication
+    // actions narrowed to config.publish.
     if (action.startsWith('admin_')) {
       if (
         action === 'admin_publish_template_version' ||
