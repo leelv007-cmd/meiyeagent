@@ -57,7 +57,7 @@ test('copy compiler makes one model call and returns one primary candidate', asy
 
 test('copy candidate runner consumes the frozen prompt for primary and retry calls', async () => {
   const runner = new QueueRunner([
-    candidate('主推荐', '正文 A', ['asset-withdrawn']),
+    candidate('主推荐', '正文 A', ['asset-medical']),
     candidate('安全重试', '正文 B', []),
   ]);
   const prompt = {
