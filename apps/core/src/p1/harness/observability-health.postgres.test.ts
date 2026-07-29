@@ -4,6 +4,8 @@ import test from 'node:test';
 
 import { Pool } from 'pg';
 
+import { LangfuseHttpSender } from './langfuse-sender.js';
+import { HarnessLangfuseOutboxWorker } from './outbox-worker.js';
 import { PostgresHarnessStore } from './postgres-store.js';
 import { harnessRuntimeId } from './workspace-scope.js';
 
@@ -152,6 +154,111 @@ test(
 );
 
 test(
+  'real PostgreSQL records a Langfuse outage and updates delivery health after recovery',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresHarnessStore(pool);
+    const auditId = `observability-recovery-${randomUUID()}`;
+    const windowStart = new Date(Date.now() - 1_000);
+    let available = false;
+    let requests = 0;
+    const sender = new LangfuseHttpSender({
+      baseUrl: 'https://langfuse.test',
+      publicKey: 'pk-test',
+      secretKey: 'sk-test',
+      async fetch() {
+        requests += 1;
+        return new Response(
+          JSON.stringify(
+            available
+              ? { successes: [] }
+              : { error: 'temporarily unavailable' },
+          ),
+          {
+            headers: { 'content-type': 'application/json' },
+            status: available ? 200 : 503,
+          },
+        );
+      },
+    });
+    const worker = new HarnessLangfuseOutboxWorker(store, sender, {
+      maxAttempts: 1,
+    });
+    try {
+      await store.applySchema();
+      await insertOutboxFixture(pool, auditId);
+
+      assert.deepEqual(await worker.runOnce(), {
+        sent: 0,
+        failed: 1,
+        deadLettered: 1,
+      });
+      const drops = await store.readObservabilityDropSummary({
+        windowStart,
+        windowEnd: new Date(Date.now() + 1_000),
+      });
+      assert.deepEqual(
+        drops.filter(
+          ({ reason, source }) =>
+            reason === 'transient' && source === 'langfuse_ingestion',
+        ),
+        [
+          {
+            signal: 'trace',
+            reason: 'transient',
+            source: 'langfuse_ingestion',
+            count: 2,
+          },
+        ],
+      );
+
+      assert.equal(await store.replayLangfuseDeadLetter(auditId), true);
+      const healthBeforeRecovery =
+        await store.readObservabilityDeliveryHealth({
+          now: new Date(),
+        });
+      const recoveryClock = await pool.query<{ current_time: Date }>(
+        'select clock_timestamp() as current_time',
+      );
+      const recoveryStartedAt = recoveryClock.rows[0]?.current_time;
+      assert.ok(recoveryStartedAt);
+      available = true;
+      assert.deepEqual(await worker.runOnce(), {
+        sent: 1,
+        failed: 0,
+        deadLettered: 0,
+      });
+      const health = await store.readObservabilityDeliveryHealth({
+        now: new Date(),
+      });
+      assert.ok(health.lastSuccessAt);
+      assert.ok(
+        health.lastSuccessAt.getTime() >= recoveryStartedAt.getTime(),
+      );
+      if (healthBeforeRecovery.lastSuccessAt) {
+        assert.ok(
+          health.lastSuccessAt.getTime() >
+            healthBeforeRecovery.lastSuccessAt.getTime(),
+        );
+      }
+      assert.equal(requests, 2);
+    } finally {
+      await pool.query(
+        `delete from harness_runtime.observability_drop_events
+         where audit_id=$1`,
+        [auditId],
+      );
+      await pool.query(
+        `delete from harness_runtime.audit_events where id=$1`,
+        [auditId],
+      );
+      await pool.end();
+    }
+  },
+);
+
+test(
   'real PostgreSQL health and cutover reconciliation distinguish matched, missing, orphan, and legacy facts',
   { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
   async () => {
@@ -162,13 +269,16 @@ test(
     const taskId = `observability-task-${suffix}`;
     const runtimeTaskId = harnessRuntimeId(workspaceId, taskId);
     const cleanupPattern = `%${suffix}%`;
+    const reconciliationContractVersion = `observability/test/${suffix}`;
     let reconciliationWindow:
       | { start: Date; end: Date }
       | undefined;
     try {
       await store.applySchema();
       const cutoverAt =
-        await store.activateObservabilityReconciliationCutover();
+        await store.activateObservabilityReconciliationCutover(
+          reconciliationContractVersion,
+        );
       await pool.query(
         `insert into harness_runtime.task_requests
            (task_id, workflow_id, runtime_id, fingerprint, request)
@@ -290,6 +400,7 @@ test(
         `trace-matched-${suffix}`,
         `task-matched-${suffix}`,
         inside,
+        reconciliationContractVersion,
       );
       await insertReconciliationEvent(
         pool,
@@ -297,6 +408,7 @@ test(
         `task-matched-${suffix}`,
         `trace-matched-${suffix}`,
         inside,
+        reconciliationContractVersion,
       );
       await insertReconciliationEvent(
         pool,
@@ -304,6 +416,7 @@ test(
         `task-missing-${suffix}`,
         `trace-does-not-exist-${suffix}`,
         inside,
+        reconciliationContractVersion,
       );
       await insertReconciliationEventWithoutTrace(
         pool,
@@ -316,6 +429,7 @@ test(
         `trace-wrong-workflow-${suffix}`,
         `task-other-${suffix}`,
         inside,
+        reconciliationContractVersion,
       );
       await insertReconciliationEvent(
         pool,
@@ -323,18 +437,21 @@ test(
         `task-wrong-${suffix}`,
         `trace-wrong-workflow-${suffix}`,
         inside,
+        reconciliationContractVersion,
       );
       await insertReconciliationTrace(
         pool,
         `trace-orphan-${suffix}`,
         `task-orphan-${suffix}`,
         inside,
+        reconciliationContractVersion,
       );
       await insertReconciliationTrace(
         pool,
         `trace-before-${suffix}`,
         `task-cross-event-${suffix}`,
         before,
+        reconciliationContractVersion,
       );
       await insertReconciliationEvent(
         pool,
@@ -342,12 +459,14 @@ test(
         `task-cross-event-${suffix}`,
         `trace-before-${suffix}`,
         inside,
+        reconciliationContractVersion,
       );
       await insertReconciliationTrace(
         pool,
         `trace-cross-event-${suffix}`,
         `task-cross-trace-${suffix}`,
         inside,
+        reconciliationContractVersion,
       );
       await insertReconciliationEvent(
         pool,
@@ -355,18 +474,20 @@ test(
         `task-cross-trace-${suffix}`,
         `trace-cross-event-${suffix}`,
         after,
+        reconciliationContractVersion,
       );
       await pool.query(
         `delete from harness_runtime.observability_reconciliation_runs
-         where contract_version='observability/v1'
+         where contract_version=$3
            and window_start=$1
            and window_end=$2`,
-        [start, end],
+        [start, end, reconciliationContractVersion],
       );
 
       const result = await store.reconcileBusinessEventsToTraces({
         windowStart: start,
         windowEnd: end,
+        contractVersion: reconciliationContractVersion,
       });
       assert.deepEqual(
         {
@@ -393,27 +514,36 @@ test(
       await store.reconcileBusinessEventsToTraces({
         windowStart: start,
         windowEnd: end,
+        contractVersion: reconciliationContractVersion,
       });
       const runs = await pool.query<{ count: number }>(
         `select count(*)::int as count
          from harness_runtime.observability_reconciliation_runs
-         where window_start=$1 and window_end=$2`,
-        [start, end],
+         where window_start=$1 and window_end=$2 and contract_version=$3`,
+        [start, end, reconciliationContractVersion],
       );
       assert.equal(runs.rows[0]?.count, 1);
-      await store.completeObservabilityReconciliationWindow({
-        windowStart: start,
-        windowEnd: end,
-      });
+      await store.completeObservabilityReconciliationWindow(
+        {
+          windowStart: start,
+          windowEnd: end,
+        },
+        reconciliationContractVersion,
+      );
       await assert.rejects(
         store.reconcileBusinessEventsToTraces({
           windowStart: start,
           windowEnd: end,
+          contractVersion: reconciliationContractVersion,
         }),
         /window is unavailable/u,
       );
       assert.equal(
-        (await store.readObservabilityReconciliationCursor())?.toISOString(),
+        (
+          await store.readObservabilityReconciliationCursor(
+            reconciliationContractVersion,
+          )
+        )?.toISOString(),
         end.toISOString(),
       );
       const boundary = await store.readObservabilityReconciliationBoundary({
@@ -458,12 +588,21 @@ test(
       if (reconciliationWindow) {
         await pool.query(
           `delete from harness_runtime.observability_reconciliation_runs
-           where contract_version='observability/v1'
+           where contract_version=$3
              and window_start=$1
              and window_end=$2`,
-          [reconciliationWindow.start, reconciliationWindow.end],
+          [
+            reconciliationWindow.start,
+            reconciliationWindow.end,
+            reconciliationContractVersion,
+          ],
         );
       }
+      await pool.query(
+        `delete from harness_runtime.observability_reconciliation_cutovers
+         where contract_version=$1`,
+        [reconciliationContractVersion],
+      );
       await pool.query(
         `delete from harness_runtime.observability_drop_events
          where audit_id like $1`,
@@ -517,12 +656,13 @@ async function insertReconciliationTrace(
   id: string,
   taskId: string,
   createdAt: Date,
+  contractVersion: string,
 ) {
   await pool.query(
     `insert into harness_runtime.decision_traces
        (id, task_id, stage, payload, trace_contract_version, created_at)
-     values ($1,$2,'fixture','{}'::jsonb,'observability/v1',$3)`,
-    [id, taskId, createdAt],
+     values ($1,$2,'fixture','{}'::jsonb,$4,$3)`,
+    [id, taskId, createdAt, contractVersion],
   );
 }
 
@@ -532,16 +672,16 @@ async function insertReconciliationEvent(
   workflowId: string,
   traceId: string,
   createdAt: Date,
+  contractVersion: string,
 ) {
   await pool.query(
     `insert into harness_runtime.audit_events
        (id, workflow_id, trace_id, trace_contract_version, stage, event_type,
         payload, created_at)
      values (
-       $1,$2,$3,'observability/v1','fixture','stage_decision_recorded',
-       '{}'::jsonb,$4
+       $1,$2,$3,$5,'fixture','stage_decision_recorded','{}'::jsonb,$4
      )`,
-    [id, workflowId, traceId, createdAt],
+    [id, workflowId, traceId, createdAt, contractVersion],
   );
 }
 
