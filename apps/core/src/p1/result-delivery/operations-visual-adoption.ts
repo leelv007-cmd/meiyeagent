@@ -4,12 +4,15 @@ import {
   type ContentPackage,
   type ResultAdjustCommand,
   type ResultAdjustConfirmCommand,
+  type ResultAdjustSource,
   type ResultAdoptCommand,
   type ResultExportCommand,
   type ReviseContentPackageVisualsCommand,
 } from '@meiye/contracts';
 
 import type { P1Context } from '../foundation/domain.js';
+import type { CreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
+import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import {
   OperationsApplicationService,
   OperationsError,
@@ -20,6 +23,27 @@ import type {
   FirstAdoptCommand,
   VisualAdoptionResult,
 } from './visual-adoption.js';
+
+export interface ResultAdjustSnapshotReadPort {
+  get(input: {
+    snapshotId: string;
+    workspaceId: string;
+  }): Promise<CreationExecutionSnapshot | null>;
+}
+
+export interface ResultAdjustComposerSubmissionPort {
+  submit(input: {
+    actorId: string;
+    idempotencyKey: string;
+    instruction: string;
+    quote: { id: string; revision: string };
+    sourceContentPackage: { id: string; revision: number };
+    sourceSnapshot: CreationExecutionSnapshot;
+    taskId: string;
+    workId: string;
+    workspaceId: string;
+  }): Promise<{ work: { id: string } }>;
+}
 
 function operationContext(context: P1Context): OperationContext {
   const actor = context.actor ?? 'owner';
@@ -43,6 +67,41 @@ function merchantPackage(contentPackage: ContentPackage): VisualAdoptionResult {
     ...toPublicContentPackage(contentPackage),
     ...contentPackageVisibleStatus(contentPackage.status),
   };
+}
+
+const CREATIVE_SESSION_ID = /^[A-Za-z0-9._:-]{1,160}$/u;
+
+function resultAdjustSessionId(work: { id: string; sessionId: string }) {
+  if (CREATIVE_SESSION_ID.test(work.sessionId)) return work.sessionId;
+  return `result-adjust:${work.id}`
+    .replace(/[^A-Za-z0-9._:-]/gu, '-')
+    .slice(0, 160);
+}
+
+function composerAdjustmentIds(workspaceId: string, idempotencyKey: string) {
+  const suffix = fingerprintValue({ idempotencyKey, workspaceId }).slice(0, 32);
+  return {
+    task: { id: `composer-task:result-adjust:${suffix}` },
+    work: { id: `work-result-adjust-${suffix}` },
+  };
+}
+
+function isComposerAdjustmentPair(workId: string, taskId: string) {
+  return (
+    workId.startsWith('work-result-adjust-') &&
+    taskId ===
+      `composer-task:result-adjust:${workId.slice('work-result-adjust-'.length)}`
+  );
+}
+
+function resultAdjustScopeAssetIds(
+  scope: ResultAdjustCommand['scope'] | ResultAdjustConfirmCommand['scope'],
+) {
+  return scope
+    ? scope.kind === 'asset'
+      ? [scope.assetId]
+      : scope.assetIds
+    : [];
 }
 
 /**
@@ -99,7 +158,55 @@ export class OperationsResultCommandPort {
       ProductBillingApplicationPort,
       'confirm' | 'getQuote'
     >,
+    private readonly snapshots?: ResultAdjustSnapshotReadPort,
+    private readonly composerSubmissions?: ResultAdjustComposerSubmissionPort,
   ) {}
+
+  private async frozenSource(
+    operation: OperationContext,
+    source: Extract<ResultAdjustSource, { kind: 'content_package_snapshot' }>,
+  ) {
+    const contentPackage = await this.operations.getContentPackage(
+      operation,
+      source.packageId,
+    );
+    if (contentPackage.revision !== source.expectedPackageRevision) {
+      throw new OperationsError(
+        'RESULT_ADJUST_REVISION_CONFLICT',
+        'The Result changed before this adjustment was submitted.',
+        409,
+      );
+    }
+    const snapshot = await this.snapshots?.get({
+      snapshotId: source.snapshotId,
+      workspaceId: operation.workspaceId,
+    });
+    const snapshotRef = contentPackage.source.creationExecutionSnapshot;
+    if (
+      !snapshot ||
+      !snapshotRef ||
+      contentPackage.workspaceId !== operation.workspaceId ||
+      contentPackage.source.workId !== snapshot.work.id ||
+      contentPackage.source.workflowId !== source.workflowId ||
+      contentPackage.source.workflowId !== snapshot.task.id ||
+      contentPackage.source.workflowRevision !== snapshot.revision ||
+      snapshot.workspaceId !== operation.workspaceId ||
+      snapshot.id !== source.snapshotId ||
+      snapshotRef.id !== snapshot.id ||
+      snapshotRef.revision !== snapshot.revision ||
+      snapshot.contentPackage.id !== contentPackage.id ||
+      (snapshotRef.modelSelection !== undefined &&
+        JSON.stringify(snapshotRef.modelSelection) !==
+          JSON.stringify(snapshot.modelSelection))
+    ) {
+      throw new OperationsError(
+        'RESULT_ADJUST_SOURCE_NOT_FOUND',
+        'The frozen ContentPackage adjustment source was not found.',
+        404,
+      );
+    }
+    return { contentPackage, snapshot };
+  }
 
   async adopt(
     context: P1Context,
@@ -129,20 +236,46 @@ export class OperationsResultCommandPort {
       async () => {
         const workbench = await this.operations.getCreativeWorkbench(operation);
         const source = workbench.works.find(({ id }) => id === command.workId);
-        const sourceJob = workbench.jobs.find(
-          ({ id }) => id === command.baseJobId,
-        );
-        if (!source || !sourceJob || sourceJob.workId !== source.id) {
+        if (!source) {
+          throw new OperationsError(
+            'RESULT_ADJUST_SOURCE_NOT_FOUND',
+            'The source Work was not found.',
+            404,
+          );
+        }
+        const frozen =
+          command.source.kind === 'content_package_snapshot'
+            ? await this.frozenSource(operation, command.source)
+            : undefined;
+        const legacyBaseJobId =
+          command.source.kind === 'legacy_job'
+            ? command.source.baseJobId
+            : undefined;
+        const sourceJob = legacyBaseJobId
+          ? workbench.jobs.find(({ id }) => id === legacyBaseJobId)
+          : undefined;
+        if (
+          command.source.kind === 'legacy_job' &&
+          (!sourceJob || sourceJob.workId !== source.id)
+        ) {
           throw new OperationsError(
             'RESULT_ADJUST_SOURCE_NOT_FOUND',
             'The source Work and frozen Job were not found.',
             404,
           );
         }
+        if (frozen && frozen.snapshot.work.id !== source.id) {
+          throw new OperationsError(
+            'RESULT_ADJUST_SOURCE_NOT_FOUND',
+            'The frozen ContentPackage does not belong to the source Work.',
+            404,
+          );
+        }
         if (
-          source.currentJobId !== sourceJob.id ||
           source.updatedAt !== command.expectedWorkUpdatedAt ||
-          sourceJob.status !== 'completed'
+          (sourceJob &&
+            (source.currentJobId !== sourceJob.id ||
+              sourceJob.status !== 'completed'))
         ) {
           throw new OperationsError(
             'RESULT_ADJUST_REVISION_CONFLICT',
@@ -150,7 +283,9 @@ export class OperationsResultCommandPort {
             409,
           );
         }
-        if (sourceJob.contract.operation === 'video.generate') {
+        const sourceOperation =
+          sourceJob?.contract.operation ?? frozen?.snapshot.operation;
+        if (sourceOperation === 'video.generate') {
           throw new OperationsError(
             'RESULT_VIDEO_REGENERATION_REQUIRED',
             'Video adjustments use the quoted regeneration workflow.',
@@ -158,8 +293,8 @@ export class OperationsResultCommandPort {
           );
         }
         if (
-          sourceJob.contract.operation !== 'copy.generate' &&
-          sourceJob.contract.operation !== 'image.generate'
+          sourceOperation !== 'copy.generate' &&
+          sourceOperation !== 'image.generate'
         ) {
           throw new OperationsError(
             'RESULT_ADJUST_OPERATION_UNSUPPORTED',
@@ -167,16 +302,24 @@ export class OperationsResultCommandPort {
             409,
           );
         }
-        const scopeAssetIds = command.scope
-          ? command.scope.kind === 'asset'
-            ? [command.scope.assetId]
-            : command.scope.assetIds
-          : [];
-        const sourceAssetIds = new Set(
-          workbench.assets
-            .filter((asset) => asset.jobId === sourceJob.id)
-            .map((asset) => asset.id),
+        const scopeAssetIds = resultAdjustScopeAssetIds(command.scope);
+        const currentPackageVersion = frozen?.contentPackage.versions.find(
+          (version) =>
+            version.id === frozen.contentPackage.currentVersionId,
         );
+        const sourceAssetIds = sourceJob
+          ? new Set(
+              workbench.assets
+                .filter((asset) => asset.jobId === sourceJob.id)
+                .map((asset) => asset.id),
+            )
+          : new Set([
+              ...(frozen?.contentPackage.generated.assetIds ?? []),
+              ...(frozen?.contentPackage.generated.ownedAssets ?? []).map(
+                ({ id }) => id,
+              ),
+              ...(currentPackageVersion?.orderedAssetIds ?? []),
+            ]);
         if (
           new Set(scopeAssetIds).size !== scopeAssetIds.length ||
           scopeAssetIds.some((assetId) => !sourceAssetIds.has(assetId))
@@ -192,31 +335,45 @@ export class OperationsResultCommandPort {
             ? `\n调整范围：单张 ${command.scope.assetId}`
             : `\n调整范围：整组 ${command.scope.assetIds.join(', ')}`
           : '';
-        const derived = await this.operations.deriveCreativeWork(
-          operation,
-          source.id,
-          {
-            autoConfirmBrief: true,
-            intent: `${source.intent}\n\n调整要求：${command.instruction}${scopeInstruction}`,
-            sessionId: source.sessionId,
-            sourceReferences: [
-              { id: source.id, kind: 'work' },
-              ...scopeAssetIds.map((id) => ({ id, kind: 'asset' as const })),
-            ],
-          },
-        );
+        const preparedIds = frozen
+          ? composerAdjustmentIds(operation.workspaceId, idempotencyKey)
+          : undefined;
+        const derived =
+          preparedIds?.work ??
+          (await this.operations.deriveCreativeWork(
+            operation,
+            source.id,
+            {
+              autoConfirmBrief: true,
+              intent: `${source.intent}\n\n调整要求：${command.instruction}${scopeInstruction}`,
+              sessionId: resultAdjustSessionId(source),
+              sourceReferences: [
+                { id: source.id, kind: 'work' },
+                ...scopeAssetIds.map((id) => ({ id, kind: 'asset' as const })),
+              ],
+            },
+          ));
         return {
           quoteIntent: {
-            ...(sourceJob.contract.aspectRatio
-              ? { aspectRatio: sourceJob.contract.aspectRatio }
+            ...(sourceJob?.contract.aspectRatio ??
+            frozen?.snapshot.deliverable.aspectRatio
+              ? {
+                  aspectRatio:
+                    sourceJob?.contract.aspectRatio ??
+                    frozen?.snapshot.deliverable.aspectRatio,
+                }
               : {}),
-            catalogModelId: sourceJob.contract.catalogModelId,
-            operation: sourceJob.contract.operation,
+            catalogModelId:
+              sourceJob?.contract.catalogModelId ??
+              frozen!.snapshot.catalogModel.id,
+            operation: sourceOperation,
             quantity:
               scopeAssetIds.length > 0
                 ? scopeAssetIds.length
-                : sourceJob.contract.outputCount,
+                : (sourceJob?.contract.outputCount ??
+                  frozen!.snapshot.deliverable.quantity),
           },
+          task: preparedIds?.task ?? { id: derived.id },
           work: derived,
         };
       },
@@ -235,26 +392,45 @@ export class OperationsResultCommandPort {
       { action: 'result_adjust', payload: command },
       async () => {
         const workbench = await this.operations.getCreativeWorkbench(operation);
-        const sourceJob = workbench.jobs.find(
-          ({ id }) => id === command.baseJobId,
-        );
+        const frozen =
+          command.source.kind === 'content_package_snapshot'
+            ? await this.frozenSource(operation, command.source)
+            : undefined;
+        const legacyBaseJobId =
+          command.source.kind === 'legacy_job'
+            ? command.source.baseJobId
+            : undefined;
+        const sourceJob = legacyBaseJobId
+          ? workbench.jobs.find(({ id }) => id === legacyBaseJobId)
+          : undefined;
         const source = sourceJob
           ? workbench.works.find(({ id }) => id === sourceJob.workId)
+          : frozen
+            ? workbench.works.find(
+                ({ id }) => id === frozen.snapshot.work.id,
+              )
+            : undefined;
+        const derived = sourceJob
+          ? workbench.works.find(({ id }) => id === command.derivedWorkId)
           : undefined;
-        const derived = workbench.works.find(
-          ({ id }) => id === command.derivedWorkId,
-        );
         if (
           !source ||
-          !sourceJob ||
-          !derived ||
-          source.currentJobId !== sourceJob.id ||
-          sourceJob.status !== 'completed' ||
-          derived.currentJobId ||
-          !derived.sourceReferences.some(
-            (reference) =>
-              reference.kind === 'work' && reference.id === source.id,
-          )
+          (sourceJob &&
+            (!derived ||
+              source.currentJobId !== sourceJob.id ||
+              sourceJob.status !== 'completed')) ||
+          (derived &&
+            (derived.currentJobId ||
+              !derived.sourceReferences.some(
+                (reference) =>
+                  reference.kind === 'work' && reference.id === source.id,
+              ))) ||
+          (frozen &&
+            (!this.composerSubmissions ||
+              !isComposerAdjustmentPair(
+                command.derivedWorkId,
+                command.derivedTaskId,
+              )))
         ) {
           throw new OperationsError(
             'RESULT_ADJUST_PREPARATION_NOT_FOUND',
@@ -262,27 +438,53 @@ export class OperationsResultCommandPort {
             404,
           );
         }
+        const sourceOperation =
+          sourceJob?.contract.operation ?? frozen?.snapshot.operation;
+        if (
+          sourceOperation !== 'copy.generate' &&
+          sourceOperation !== 'image.generate'
+        ) {
+          throw new OperationsError(
+            'RESULT_ADJUST_OPERATION_UNSUPPORTED',
+            'This Result operation does not support quoted adjustment.',
+            409,
+          );
+        }
         const inheritedAssetIds = new Set(
           source.sourceReferences
             .filter((reference) => reference.kind === 'asset')
             .map((reference) => reference.id),
         );
-        const scopedAssetIds = derived.sourceReferences
-          .filter(
-            (reference) =>
-              reference.kind === 'asset' &&
-              !inheritedAssetIds.has(reference.id),
-          )
-          .map((reference) => reference.id);
-        const sourceJobAssetIds = new Set(
-          workbench.assets
-            .filter((asset) => asset.jobId === sourceJob.id)
-            .map((asset) => asset.id),
+        const scopedAssetIds = frozen
+          ? resultAdjustScopeAssetIds(command.scope)
+          : (derived?.sourceReferences ?? [])
+              .filter(
+                (reference) =>
+                  reference.kind === 'asset' &&
+                  !inheritedAssetIds.has(reference.id),
+              )
+              .map((reference) => reference.id);
+        const currentPackageVersion = frozen?.contentPackage.versions.find(
+          (version) =>
+            version.id === frozen.contentPackage.currentVersionId,
         );
-        if (scopedAssetIds.some((assetId) => !sourceJobAssetIds.has(assetId))) {
+        const sourceAssetIds = sourceJob
+          ? new Set(
+              workbench.assets
+                .filter((asset) => asset.jobId === sourceJob.id)
+                .map((asset) => asset.id),
+            )
+          : new Set([
+              ...(frozen?.contentPackage.generated.assetIds ?? []),
+              ...(frozen?.contentPackage.generated.ownedAssets ?? []).map(
+                ({ id }) => id,
+              ),
+              ...(currentPackageVersion?.orderedAssetIds ?? []),
+            ]);
+        if (scopedAssetIds.some((assetId) => !sourceAssetIds.has(assetId))) {
           throw new OperationsError(
             'RESULT_ADJUST_SCOPE_MISMATCH',
-            'The prepared adjustment scope no longer belongs to the source Job.',
+            'The prepared adjustment scope no longer belongs to the frozen source.',
             409,
           );
         }
@@ -290,12 +492,17 @@ export class OperationsResultCommandPort {
         const expectedOutputCount =
           scopedAssetCount > 0
             ? scopedAssetCount
-            : sourceJob.contract.outputCount;
-        const expectedOutputLabel = sourceJob.contract.operation.startsWith(
-          'copy.',
-        )
+            : (sourceJob?.contract.outputCount ??
+              frozen!.snapshot.deliverable.quantity);
+        const aspectRatio =
+          sourceJob?.contract.aspectRatio ??
+          frozen?.snapshot.deliverable.aspectRatio;
+        const expectedOutputLabel = sourceOperation.startsWith('copy.')
           ? `${expectedOutputCount} 条内容候选`
-          : `${expectedOutputCount} 张 ${sourceJob.contract.aspectRatio} 图片`;
+          : `${expectedOutputCount} 张 ${aspectRatio} 图片`;
+        const catalogModelId =
+          sourceJob?.contract.catalogModelId ??
+          frozen!.snapshot.catalogModel.id;
         const pendingQuote = await this.quotes.getQuote(
           command.billingQuoteId,
           operation.workspaceId,
@@ -303,13 +510,13 @@ export class OperationsResultCommandPort {
         if (
           !pendingQuote ||
           pendingQuote.workspaceId !== operation.workspaceId ||
-          pendingQuote.catalogModelId !== sourceJob.contract.catalogModelId ||
+          pendingQuote.catalogModelId !== catalogModelId ||
           pendingQuote.outputCount !== expectedOutputCount ||
           pendingQuote.outputLabel !== expectedOutputLabel ||
           (pendingQuote.lifecycleStatus !== 'quoted' &&
             pendingQuote.lifecycleStatus !== 'confirmed') ||
           (pendingQuote.taskId !== undefined &&
-            pendingQuote.taskId !== derived.id)
+            pendingQuote.taskId !== command.derivedTaskId)
         ) {
           throw new OperationsError(
             'RESULT_ADJUST_QUOTE_MISMATCH',
@@ -322,11 +529,11 @@ export class OperationsResultCommandPort {
             ? pendingQuote
             : await this.quotes.confirm({
                 quoteId: pendingQuote.quoteId,
-                taskId: derived.id,
+                taskId: command.derivedTaskId,
                 workspaceId: operation.workspaceId,
               });
         if (
-          quote.taskId !== derived.id ||
+          quote.taskId !== command.derivedTaskId ||
           quote.lifecycleStatus !== 'confirmed' ||
           !quote.catalogModelRevision ||
           quote.confirmedAmount === undefined ||
@@ -341,8 +548,24 @@ export class OperationsResultCommandPort {
             409,
           );
         }
+        if (frozen) {
+          return this.composerSubmissions!.submit({
+            actorId: operation.userId,
+            idempotencyKey: `result-adjust:${idempotencyKey}`,
+            instruction: command.instruction,
+            quote: { id: quote.quoteId, revision: quote.revision },
+            sourceContentPackage: {
+              id: frozen.contentPackage.id,
+              revision: frozen.contentPackage.revision,
+            },
+            sourceSnapshot: frozen.snapshot,
+            taskId: command.derivedTaskId,
+            workId: command.derivedWorkId,
+            workspaceId: operation.workspaceId,
+          });
+        }
         const contract = {
-          ...structuredClone(sourceJob.contract),
+          ...structuredClone(sourceJob!.contract),
           catalogModelId: quote.catalogModelId,
           catalogRevision: quote.catalogModelRevision,
           currency: quote.formula.currency,
@@ -354,7 +577,7 @@ export class OperationsResultCommandPort {
         };
         return this.operations.submitCreativeWork(
           operation,
-          derived.id,
+          derived!.id,
           contract,
           `result-adjust:${idempotencyKey}`,
           undefined,

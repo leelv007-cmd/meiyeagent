@@ -112,6 +112,9 @@ test.describe('Z1 / #105 real Playwright three-modal Day-0 journeys', () => {
         ).toBe(contract.expectedActivations);
 
         const adjusted = await adjustResult(page, contract.modality);
+        if (adjusted.workId) {
+          await waitForResultJourney(page, contract, adjusted.workId);
+        }
         await adoptResult(page, contract);
         await openDeliveryPanel(page, contract.modality);
         await downloadFullPackage(page, contract);

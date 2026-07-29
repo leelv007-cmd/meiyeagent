@@ -343,6 +343,7 @@ import {
   OperationsResultCommandPort,
   OperationsVisualAdoptionPort,
 } from './p1/result-delivery/operations-visual-adoption.js';
+import { PostgresResultAdjustSnapshotReadPort } from './p1/result-delivery/postgres-result-adjust-snapshot.js';
 
 assertLangfusePromptRuntimePolicy(process.env);
 const harnessPromptResolver = langfusePromptResolverFromEnv(process.env);
@@ -1424,6 +1425,15 @@ const visualAdoptionService = new OperationsVisualAdoptionPort(
 const resultCommands = new OperationsResultCommandPort(
   operationsService,
   productQuoteService,
+  new PostgresResultAdjustSnapshotReadPort(pool),
+  {
+    async submit(input) {
+      if (!composerSubmissionCoordinator) {
+        throw new Error('Composer Result adjustment is unavailable.');
+      }
+      return composerSubmissionCoordinator.submitResultAdjustment(input);
+    },
+  },
 );
 
 const p1ApplicationService = new P1ApplicationService(foundationRepository, {

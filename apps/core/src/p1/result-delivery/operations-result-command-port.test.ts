@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { OperationsApplicationService } from '../operations/application-service.js';
+import type { CreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import type { ProductBillingApplicationPort } from '../product-billing/durable-service.js';
 import { OperationsResultCommandPort } from './operations-visual-adoption.js';
 
@@ -13,11 +14,16 @@ const context = {
 
 function fixture(
   options: {
+    packageWorkflowId?: string;
+    packageRevision?: number;
     quoteStatus?: 'confirmed' | 'quoted';
     quoteOutputCount?: number;
+    quoteTaskId?: string;
     scopedAssetIds?: string[];
+    sourceSessionId?: string;
   } = {},
 ) {
+  const composerCalls: unknown[] = [];
   const deriveCalls: unknown[] = [];
   const submitCalls: unknown[][] = [];
   const operations = {
@@ -36,7 +42,7 @@ function fixture(
             id: 'work-1',
             currentJobId: 'job-1',
             intent: '夏日海报',
-            sessionId: 'session-1',
+            sessionId: options.sourceSessionId ?? 'session-1',
             sourceReferences: [{ id: 'grounding-1', kind: 'asset' }],
             updatedAt: '2026-07-20T00:00:00.000Z',
           },
@@ -86,6 +92,43 @@ function fixture(
         ],
       };
     },
+    async getContentPackage() {
+      return {
+        currentVersionId: 'version-1',
+        generated: {
+          assetIds: ['asset-1', 'asset-2'],
+          ownedAssets: [
+            { id: 'asset-1' },
+            { id: 'asset-2' },
+          ],
+        },
+        id: 'package-1',
+        revision: options.packageRevision ?? 3,
+        source: {
+          aigcLabelEnabled: true,
+          creationExecutionSnapshot: {
+            id: 'snapshot-task-1',
+            modelSelection: {
+              catalogModelId: 'image-model-old',
+              platformConfigRevision: null,
+              source: 'current_selection',
+            },
+            revision: 1,
+            schemaVersion: 'creation-execution-snapshot/v1',
+          },
+          workId: 'work-1',
+          workflowId: options.packageWorkflowId ?? 'task-1',
+          workflowRevision: 1,
+        },
+        versions: [
+          {
+            id: 'version-1',
+            orderedAssetIds: ['asset-1', 'asset-2'],
+          },
+        ],
+        workspaceId: 'ws-1',
+      };
+    },
     async deriveCreativeWork(_context: unknown, _workId: string, input: unknown) {
       deriveCalls.push(input);
       return { id: 'derived-work-1' };
@@ -107,7 +150,7 @@ function fixture(
     ...(quoteStatus === 'confirmed'
       ? {
           confirmedAt: '2026-07-20T00:02:00.000Z',
-          taskId: 'derived-work-1',
+          taskId: options.quoteTaskId ?? 'derived-work-1',
         }
       : {}),
     formula: { currency: 'CNY', expression: 'fresh', unitRate: 2 },
@@ -129,23 +172,242 @@ function fixture(
       return currentQuote();
     },
   } as unknown as ProductBillingApplicationPort;
+  const snapshots = {
+    async get() {
+      return {
+        catalogModel: { id: 'image-model-old', revision: 'catalog-old' },
+        contentModules: ['social_cover'] as ['social_cover'],
+        contentPackage: { expectedRevision: 0, id: 'package-1' },
+        deliverable: {
+          aspectRatio: '3:4' as const,
+          kind: 'image_set' as const,
+          quantity: 2,
+        },
+        id: 'snapshot-task-1',
+        modelSelection: {
+          catalogModelId: 'image-model-old',
+          platformConfigRevision: null,
+          source: 'current_selection' as const,
+        },
+        operation: 'image.generate' as const,
+        revision: 1 as const,
+        task: { id: 'task-1' },
+        work: { id: 'work-1' },
+        workspaceId: 'ws-1',
+      } as unknown as CreationExecutionSnapshot;
+    },
+  };
+  const composerSubmissions = {
+    async submit(input: { workId: string }) {
+      composerCalls.push(input);
+      return { work: { id: input.workId } };
+    },
+  };
   return {
+    composerCalls,
     confirmCalls,
     deriveCalls,
-    port: new OperationsResultCommandPort(operations, quotes),
+    port: new OperationsResultCommandPort(
+      operations,
+      quotes,
+      snapshots,
+      composerSubmissions,
+    ),
     submitCalls,
   };
 }
+
+test('Composer snapshot adjustment prepares from frozen server facts', async () => {
+  const { deriveCalls, port } = fixture();
+  const prepared = await port.prepareAdjust(
+    context,
+    {
+      expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+      instruction: '换成夏日风格',
+      scope: { assetId: 'asset-1', kind: 'asset' },
+      source: {
+        expectedPackageRevision: 3,
+        kind: 'content_package_snapshot',
+        packageId: 'package-1',
+        snapshotId: 'snapshot-task-1',
+        workflowId: 'task-1',
+      },
+      workId: 'work-1',
+    },
+    'adjust-composer-prepare',
+  );
+
+  assert.deepEqual(deriveCalls, []);
+  assert.match(prepared.work.id, /^work-result-adjust-/u);
+  assert.match(prepared.task.id, /^composer-task:result-adjust:/u);
+  assert.deepEqual(prepared.quoteIntent, {
+    aspectRatio: '3:4',
+    catalogModelId: 'image-model-old',
+    operation: 'image.generate',
+    quantity: 1,
+  });
+});
+
+test('Composer snapshot adjustment preparation does not create a legacy Work', async () => {
+  const { deriveCalls, port } = fixture({
+    sourceSessionId: 'composer:surface-copy:copy@r1',
+  });
+  await port.prepareAdjust(
+    context,
+    {
+      expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+      instruction: '语气更自然',
+      source: {
+        expectedPackageRevision: 3,
+        kind: 'content_package_snapshot',
+        packageId: 'package-1',
+        snapshotId: 'snapshot-task-1',
+        workflowId: 'task-1',
+      },
+      workId: 'work-1',
+    },
+    'adjust-composer-session',
+  );
+
+  assert.deepEqual(deriveCalls, []);
+});
+
+test('Composer snapshot adjustment never fabricates a legacy CreativeJob', async () => {
+  const { composerCalls, port, submitCalls } = fixture({
+    quoteOutputCount: 2,
+    quoteTaskId: 'composer-task:result-adjust:fixture',
+  });
+  await port.adjust(
+    context,
+    {
+      billingQuoteId: 'quote-fresh',
+      derivedTaskId: 'composer-task:result-adjust:fixture',
+      derivedWorkId: 'work-result-adjust-fixture',
+      instruction: '换成夏日风格',
+      source: {
+        expectedPackageRevision: 3,
+        kind: 'content_package_snapshot',
+        packageId: 'package-1',
+        snapshotId: 'snapshot-task-1',
+        workflowId: 'task-1',
+      },
+    },
+    'adjust-composer-confirm',
+  );
+
+  assert.deepEqual(submitCalls, []);
+  assert.equal(composerCalls.length, 1);
+});
+
+test('Composer snapshot adjustment fails closed on package revision drift', async () => {
+  const { deriveCalls, port } = fixture({ packageRevision: 4 });
+  await assert.rejects(
+    port.prepareAdjust(
+      context,
+      {
+        expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+        instruction: '换成夏日风格',
+        source: {
+          expectedPackageRevision: 3,
+          kind: 'content_package_snapshot',
+          packageId: 'package-1',
+          snapshotId: 'snapshot-task-1',
+          workflowId: 'task-1',
+        },
+        workId: 'work-1',
+      },
+      'adjust-composer-stale-package',
+    ),
+    /Result changed before this adjustment was submitted/,
+  );
+  assert.deepEqual(deriveCalls, []);
+});
+
+test('Composer snapshot adjustment fails closed on workflow binding drift', async () => {
+  const { deriveCalls, port } = fixture({
+    packageWorkflowId: 'task-other',
+  });
+  await assert.rejects(
+    port.prepareAdjust(
+      context,
+      {
+        expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+        instruction: '换成夏日风格',
+        source: {
+          expectedPackageRevision: 3,
+          kind: 'content_package_snapshot',
+          packageId: 'package-1',
+          snapshotId: 'snapshot-task-1',
+          workflowId: 'task-1',
+        },
+        workId: 'work-1',
+      },
+      'adjust-composer-workflow-drift',
+    ),
+    /frozen ContentPackage adjustment source was not found/,
+  );
+  assert.deepEqual(deriveCalls, []);
+});
+
+test('Composer snapshot adjustment rejects scope outside the current package', async () => {
+  const { deriveCalls, port } = fixture();
+  await assert.rejects(
+    port.prepareAdjust(
+      context,
+      {
+        expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+        instruction: '换成夏日风格',
+        scope: { assetId: 'foreign-asset', kind: 'asset' },
+        source: {
+          expectedPackageRevision: 3,
+          kind: 'content_package_snapshot',
+          packageId: 'package-1',
+          snapshotId: 'snapshot-task-1',
+          workflowId: 'task-1',
+        },
+        workId: 'work-1',
+      },
+      'adjust-composer-foreign-scope',
+    ),
+    /adjustment scope does not belong to the source Job/,
+  );
+  assert.deepEqual(deriveCalls, []);
+});
+
+test('Composer snapshot adjustment rejects a quote for another quantity', async () => {
+  const { port, submitCalls } = fixture({ quoteOutputCount: 1 });
+  await assert.rejects(
+    port.adjust(
+      context,
+      {
+        billingQuoteId: 'quote-fresh',
+        derivedTaskId: 'composer-task:result-adjust:fixture',
+        derivedWorkId: 'work-result-adjust-fixture',
+        instruction: '换成夏日风格',
+        source: {
+          expectedPackageRevision: 3,
+          kind: 'content_package_snapshot',
+          packageId: 'package-1',
+          snapshotId: 'snapshot-task-1',
+          workflowId: 'task-1',
+        },
+      },
+      'adjust-composer-wrong-quantity',
+    ),
+    /fresh Product quote does not match this prepared adjustment/,
+  );
+  assert.deepEqual(submitCalls, []);
+});
 
 test('image adjustment freezes an owned explicit scope into derived intent', async () => {
   const { deriveCalls, port, submitCalls } = fixture();
   const prepared = await port.prepareAdjust(
     context,
     {
-      baseJobId: 'job-1',
       expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
       instruction: '换成夏日风格',
       scope: { assetId: 'asset-1', kind: 'asset' },
+      source: { baseJobId: 'job-1', kind: 'legacy_job' },
       workId: 'work-1',
     },
     'adjust-1',
@@ -166,10 +428,10 @@ test('image adjustment rejects an asset outside the frozen source Job', async ()
     port.prepareAdjust(
       context,
       {
-        baseJobId: 'job-1',
         expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
         instruction: '换成夏日风格',
         scope: { assetId: 'foreign-asset', kind: 'asset' },
+        source: { baseJobId: 'job-1', kind: 'legacy_job' },
         workId: 'work-1',
       },
       'adjust-2',
@@ -184,9 +446,11 @@ test('confirmed adjustment submits with only the server quote facts', async () =
   await port.adjust(
     context,
     {
-      baseJobId: 'job-1',
       billingQuoteId: 'quote-fresh',
+      derivedTaskId: 'derived-work-1',
       derivedWorkId: 'derived-work-1',
+      instruction: '换成夏日风格',
+      source: { baseJobId: 'job-1', kind: 'legacy_job' },
     },
     'adjust-confirm-1',
   );
@@ -219,9 +483,11 @@ test('adjust confirmation binds a fresh quote to the server-derived Work', async
   await port.adjust(
     context,
     {
-      baseJobId: 'job-1',
       billingQuoteId: 'quote-fresh',
+      derivedTaskId: 'derived-work-1',
       derivedWorkId: 'derived-work-1',
+      instruction: '换成夏日风格',
+      source: { baseJobId: 'job-1', kind: 'legacy_job' },
     },
     'adjust-confirm-quoted',
   );
@@ -241,9 +507,11 @@ test('set adjustment freezes the explicit set size into the submitted contract',
   await port.adjust(
     context,
     {
-      baseJobId: 'job-1',
       billingQuoteId: 'quote-fresh',
+      derivedTaskId: 'derived-work-1',
       derivedWorkId: 'derived-work-1',
+      instruction: '换成夏日风格',
+      source: { baseJobId: 'job-1', kind: 'legacy_job' },
     },
     'adjust-confirm-set',
   );
@@ -262,9 +530,11 @@ test('set adjustment rejects a quote for a different output quantity', async () 
     port.adjust(
       context,
       {
-        baseJobId: 'job-1',
         billingQuoteId: 'quote-fresh',
+        derivedTaskId: 'derived-work-1',
         derivedWorkId: 'derived-work-1',
+        instruction: '换成夏日风格',
+        source: { baseJobId: 'job-1', kind: 'legacy_job' },
       },
       'adjust-confirm-wrong-quantity',
     ),

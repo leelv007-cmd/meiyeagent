@@ -13,6 +13,7 @@ import type {
   CreativeWorkbenchProjection,
   CreativeWork,
   PublicContentPackage,
+  ResultAdjustSource,
   ResultWorkspaceKind,
   VideoWorkflowPublicProjection,
   WorkflowState,
@@ -75,6 +76,39 @@ export function resultWorkflowIdForWork<
   TPackage extends { source: { workId?: string; workflowId?: string } },
 >(packages: TPackage[] | undefined, workId: string) {
   return latestContentPackageForWork(packages, workId)?.source.workflowId ?? '';
+}
+
+export function resultAdjustSourceForResult(input: {
+  contentPackage:
+    | Pick<
+        PublicContentPackage,
+        'currentVersionId' | 'id' | 'revision' | 'source'
+      >
+    | undefined;
+  job: Pick<CreativeJob, 'id' | 'status'> | null | undefined;
+  workId: string;
+}): ResultAdjustSource | null {
+  if (input.job?.status === 'completed') {
+    return { baseJobId: input.job.id, kind: 'legacy_job' };
+  }
+  const snapshot = input.contentPackage?.source.creationExecutionSnapshot;
+  const workflowId = input.contentPackage?.source.workflowId;
+  if (
+    !input.contentPackage?.currentVersionId ||
+    input.contentPackage.source.workId !== input.workId ||
+    !workflowId ||
+    !snapshot ||
+    input.contentPackage.source.workflowRevision !== snapshot.revision
+  ) {
+    return null;
+  }
+  return {
+    expectedPackageRevision: input.contentPackage.revision,
+    kind: 'content_package_snapshot',
+    packageId: input.contentPackage.id,
+    snapshotId: snapshot.id,
+    workflowId,
+  };
 }
 
 export function resultHarnessStreamLifecycle(input: {

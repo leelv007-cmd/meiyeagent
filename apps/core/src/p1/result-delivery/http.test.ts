@@ -230,18 +230,20 @@ test('result-delivery assisted and projection actions are reachable over shared 
     [
       'result_adjust_prepare',
       {
-        baseJobId: 'job-1',
         expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
         instruction: '调整语气',
+        source: { baseJobId: 'job-1', kind: 'legacy_job' },
         workId: 'work-1',
       },
     ],
     [
       'result_adjust',
       {
-        baseJobId: 'job-1',
         billingQuoteId: 'quote-1',
+        derivedTaskId: 'derived-work-http-1',
         derivedWorkId: 'derived-work-http-1',
+        instruction: '调整语气',
+        source: { baseJobId: 'job-1', kind: 'legacy_job' },
       },
     ],
     [

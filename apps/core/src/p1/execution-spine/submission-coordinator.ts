@@ -223,6 +223,105 @@ export class CreationSubmissionCoordinator {
 		);
 	}
 
+	async submitResultAdjustment(input: {
+		actorId: string;
+		idempotencyKey: string;
+		instruction: string;
+		quote: { id: string; revision: string };
+		sourceContentPackage: { id: string; revision: number };
+		sourceSnapshot: CreationExecutionSnapshot;
+		taskId: string;
+		workId: string;
+		workspaceId: string;
+	}) {
+		const source = creationExecutionSnapshotSchema.parse(input.sourceSnapshot);
+		if (source.workspaceId !== input.workspaceId) {
+			throw new Error("Result adjustment source does not match its workspace.");
+		}
+		const intent = `${source.intent.text}\n\n调整要求：${input.instruction}`;
+		const signedSubmission = pickComposerSubmissionSignedFields({
+			...(source.signedSubmission ?? {}),
+			catalogModel: source.catalogModel,
+			contentPackagePlatform: source.contentPackagePlatform,
+			creationMode: source.creationMode,
+			deliverable: source.deliverable,
+			distributionTarget: source.distributionTarget,
+			intent,
+			recipe: source.recipe,
+		});
+		const command = creationSubmissionCommandSchema.parse({
+			actorId: input.actorId,
+			briefConfirmation: source.briefConfirmation,
+			briefContext: source.briefContext,
+			catalogModel: source.catalogModel,
+			contentModules: source.contentModules,
+			contentPackageId: this.ids.createId("content-package"),
+			contentPackagePlatform: source.contentPackagePlatform,
+			creationMode: source.creationMode,
+			deliverable: source.deliverable,
+			deliverables: source.deliverables,
+			distributionTarget: source.distributionTarget,
+			expectedContentPackageRevision: 0,
+			idempotencyKey: input.idempotencyKey,
+			identity: source.identity,
+			identityDecision: source.identityDecision,
+			intent,
+			lens: source.lens,
+			modelPolicy: source.modelPolicy,
+			modelSelection: source.modelSelection,
+			operation: source.operation,
+			platform: source.platform,
+			quote: input.quote,
+			recipe: source.recipe,
+			rights: source.rights,
+			route: source.route,
+			signedSubmission,
+			sources: {
+				assets: source.sources.assets,
+				contentPackage: {
+					id: input.sourceContentPackage.id,
+					revision: String(input.sourceContentPackage.revision),
+				},
+			},
+			surface: source.surface,
+			taskId: input.taskId,
+			workId: input.workId,
+			workspaceId: input.workspaceId,
+		});
+		const snapshot = createCreationExecutionSnapshot(command, this.ids.now());
+		const submission: CreationSubmissionRecord = {
+			contentPackage: { ...snapshot.contentPackage },
+			snapshot,
+			task: { id: snapshot.task.id },
+			usageReservation: {
+				id: `usage-reservation-${snapshot.task.id}`,
+				units: productUsageUnits(snapshot),
+			},
+			work: { id: snapshot.work.id },
+		};
+		const claimed = await this.store.claim({
+			idempotencyKey: input.idempotencyKey,
+			payloadHash: fingerprintValue({
+				instruction: input.instruction,
+				quote: input.quote,
+				sourceContentPackage: input.sourceContentPackage,
+				sourceSnapshotId: source.id,
+				taskId: input.taskId,
+				workId: input.workId,
+			}),
+			submission,
+			workspaceId: input.workspaceId,
+		});
+		if (claimed.kind === "conflict") {
+			throw new CreationSubmissionConflictError();
+		}
+		await this.startHarness(claimed.submission);
+		return submissionResponse(
+			claimed.submission,
+			claimed.kind === "existing",
+		);
+	}
+
 	async submitSemanticSuccessor(input: {
 		command: StructuredDecisionInput;
 		request: HarnessWorkflowInput;

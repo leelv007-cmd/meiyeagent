@@ -14,6 +14,7 @@ import {
   imageWorksurfaceFromContentPackage,
   latestContentPackageForWork,
   projectResultCenterLiveProjection,
+  resultAdjustSourceForResult,
   resultHarnessStreamLifecycle,
   resultWorkflowIdForWork,
   resultContentPackageMutationFacts,
@@ -22,6 +23,64 @@ import {
 } from './result-live-projection';
 import { projectRevisionTimeline } from './result-revision-timeline-model';
 import { projectResultRunDetail } from './result-run-detail-model';
+
+test('projects only completed legacy or verifiable Composer adjustment sources', () => {
+  assert.deepEqual(
+    resultAdjustSourceForResult({
+      contentPackage: undefined,
+      job: { id: 'job-1', status: 'completed' },
+      workId: 'work-1',
+    }),
+    { baseJobId: 'job-1', kind: 'legacy_job' }
+  );
+
+  const composerPackage = {
+    currentVersionId: 'version-1',
+    id: 'package-1',
+    revision: 3,
+    source: {
+      creationExecutionSnapshot: {
+        id: 'snapshot-task-1',
+        revision: 1,
+        schemaVersion: 'creation-execution-snapshot/v1',
+      },
+      workId: 'work-1',
+      workflowId: 'task-1',
+      workflowRevision: 1,
+    },
+  } as Pick<
+    PublicContentPackage,
+    'currentVersionId' | 'id' | 'revision' | 'source'
+  >;
+  assert.deepEqual(
+    resultAdjustSourceForResult({
+      contentPackage: composerPackage,
+      job: null,
+      workId: 'work-1',
+    }),
+    {
+      expectedPackageRevision: 3,
+      kind: 'content_package_snapshot',
+      packageId: 'package-1',
+      snapshotId: 'snapshot-task-1',
+      workflowId: 'task-1',
+    }
+  );
+
+  // contentPackageSourceSchema makes the snapshot optional for historical
+  // packages, so this is a production-producible negative fixture.
+  assert.equal(
+    resultAdjustSourceForResult({
+      contentPackage: {
+        ...composerPackage,
+        source: { assetIds: [], workId: 'work-1' },
+      },
+      job: null,
+      workId: 'work-1',
+    }),
+    null
+  );
+});
 
 test('uses the newest same-Work ContentPackage instead of locking the original workflow package', () => {
   const packages = [

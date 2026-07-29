@@ -205,28 +205,46 @@ export const resultAdoptCommandSchema = z
   })
   .strict();
 
+export const resultAdjustSourceSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      baseJobId: resultObjectIdSchema,
+      kind: z.literal('legacy_job'),
+    })
+    .strict(),
+  z
+    .object({
+      expectedPackageRevision: z.number().int().nonnegative(),
+      kind: z.literal('content_package_snapshot'),
+      packageId: resultObjectIdSchema,
+      snapshotId: resultObjectIdSchema,
+      workflowId: resultObjectIdSchema,
+    })
+    .strict(),
+]);
+
+const resultAdjustScopeSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      assetId: resultObjectIdSchema,
+      kind: z.literal('asset'),
+    })
+    .strict(),
+  z
+    .object({
+      assetIds: z.array(resultObjectIdSchema).min(1),
+      kind: z.literal('set'),
+    })
+    .strict(),
+]);
+
 /** Prepare an adjustment by freezing its source revision and explicit scope. */
 export const resultAdjustCommandSchema = z
   .object({
-    baseJobId: resultObjectIdSchema,
     expectedWorkUpdatedAt: z.iso.datetime(),
     instruction: z.string().trim().min(1).max(2_000),
-    scope: z
-      .discriminatedUnion('kind', [
-        z
-          .object({
-            assetId: resultObjectIdSchema,
-            kind: z.literal('asset'),
-          })
-          .strict(),
-        z
-          .object({
-            assetIds: z.array(resultObjectIdSchema).min(1),
-            kind: z.literal('set'),
-          })
-          .strict(),
-      ])
-      .optional(),
+    scope: resultAdjustScopeSchema.optional(),
+    source: resultAdjustSourceSchema,
     workId: resultObjectIdSchema,
   })
   .strict();
@@ -237,9 +255,12 @@ export const resultAdjustCommandSchema = z
  */
 export const resultAdjustConfirmCommandSchema = z
   .object({
-    baseJobId: resultObjectIdSchema,
     billingQuoteId: resultObjectIdSchema,
+    derivedTaskId: resultObjectIdSchema,
     derivedWorkId: resultObjectIdSchema,
+    instruction: z.string().trim().min(1).max(2_000),
+    scope: resultAdjustScopeSchema.optional(),
+    source: resultAdjustSourceSchema,
   })
   .strict();
 
@@ -257,6 +278,7 @@ export type ResultAdjustCommand = z.infer<typeof resultAdjustCommandSchema>;
 export type ResultAdjustConfirmCommand = z.infer<
   typeof resultAdjustConfirmCommandSchema
 >;
+export type ResultAdjustSource = z.infer<typeof resultAdjustSourceSchema>;
 export type ResultExportCommand = z.infer<typeof resultExportCommandSchema>;
 
 /**

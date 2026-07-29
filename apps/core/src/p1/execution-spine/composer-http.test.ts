@@ -907,6 +907,47 @@ test("a terminal late answer starts one fresh quoted successor from the source s
 	);
 });
 
+test("a Result adjustment starts one new-chain submission from the frozen source", async () => {
+	const submissions = new MemorySubmissionStore();
+	const starter = new RecordingHarnessStarter();
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		starter,
+		fixedIds(),
+		fixedAdmission(),
+	);
+	await coordinator.submit({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	const source = starter.starts[0]!;
+
+	const result = await coordinator.submitResultAdjustment({
+		actorId: "owner-1",
+		idempotencyKey: "result-adjust-1",
+		instruction: "语气更自然",
+		quote: { id: "quote-adjust-1", revision: "quote-adjust-r1" },
+		sourceContentPackage: { id: source.contentPackage.id, revision: 3 },
+		sourceSnapshot: source.snapshot,
+		taskId: "composer-task:result-adjust:1",
+		workId: "work-result-adjust-1",
+		workspaceId: "workspace-1",
+	});
+
+	assert.equal(result.work.id, "work-result-adjust-1");
+	assert.equal(starter.starts.length, 2);
+	const adjusted = starter.starts[1]!;
+	assert.equal(adjusted.task.id, "composer-task:result-adjust:1");
+	assert.equal(
+		adjusted.snapshot.sources.contentPackage?.id,
+		source.contentPackage.id,
+	);
+	assert.equal(adjusted.snapshot.sources.contentPackage?.revision, "3");
+	assert.match(adjusted.snapshot.intent.text, /调整要求：语气更自然/u);
+	assert.equal(adjusted.snapshot.deliverable.quantity, 1);
+});
+
 test("a rejected Composer admission does not claim a shell or start Harness", async () => {
 	const submissions = new MemorySubmissionStore();
 	const starter = new RecordingHarnessStarter();

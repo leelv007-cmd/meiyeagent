@@ -40,6 +40,11 @@ test('result route resolves exact lineage on the server before rendering canonic
 });
 
 test('result route quotes and confirms adjustment before canonical submit', () => {
+  assert.match(route, /resultAdjustSourceForResult/u);
+  assert.match(route, /const adjustSource = resultAdjustSourceForResult\(/u);
+  assert.match(route, /source: pendingImageAdjust\.source/u);
+  assert.match(route, /source: adjustSource/u);
+  assert.match(route, /\{\.\.\.\(adjustSource\s*\?\s*\{\}/u);
   assert.match(route, /['"]result_adjust_prepare['"]/);
   assert.match(route, /['"]result_adjust['"]/);
   assert.match(route, /['"]product-billing['"]/);

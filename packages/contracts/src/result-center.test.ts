@@ -75,43 +75,88 @@ test('canonical result commands keep adoption OCC and adjustment contract server
   );
   assert.equal(
     resultAdjustCommandSchema.safeParse({
-      baseJobId: 'job-1',
       contract: { quoteRevision: 'client-controlled' },
       expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
       instruction: '更突出价值感',
+      source: { kind: 'legacy_job', baseJobId: 'job-1' },
       workId: 'work-1',
     }).success,
     false,
   );
   assert.deepEqual(
     resultAdjustCommandSchema.parse({
-      baseJobId: 'job-1',
       expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
       instruction: '换成夏日风格',
       scope: { kind: 'set', assetIds: ['image-1', 'image-2'] },
+      source: { kind: 'legacy_job', baseJobId: 'job-1' },
       workId: 'work-1',
-    }).scope,
-    { kind: 'set', assetIds: ['image-1', 'image-2'] },
+    }),
+    {
+      expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+      instruction: '换成夏日风格',
+      scope: { kind: 'set', assetIds: ['image-1', 'image-2'] },
+      source: { kind: 'legacy_job', baseJobId: 'job-1' },
+      workId: 'work-1',
+    },
+  );
+  assert.deepEqual(
+    resultAdjustCommandSchema.parse({
+      expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+      instruction: '语气更亲切',
+      source: {
+        kind: 'content_package_snapshot',
+        expectedPackageRevision: 3,
+        packageId: 'package-1',
+        snapshotId: 'snapshot-task-1',
+        workflowId: 'task-1',
+      },
+      workId: 'work-1',
+    }).source,
+    {
+      kind: 'content_package_snapshot',
+      expectedPackageRevision: 3,
+      packageId: 'package-1',
+      snapshotId: 'snapshot-task-1',
+      workflowId: 'task-1',
+    },
   );
   assert.equal(
     resultAdjustConfirmCommandSchema.safeParse({
-      baseJobId: 'job-1',
       billingQuoteId: 'quote-1',
+      derivedTaskId: 'work-derived-1',
       derivedWorkId: 'work-derived-1',
       confirmedAmount: 0,
+      instruction: '语气更亲切',
+      source: { kind: 'legacy_job', baseJobId: 'job-1' },
     }).success,
     false,
   );
   assert.deepEqual(
     resultAdjustConfirmCommandSchema.parse({
-      baseJobId: 'job-1',
       billingQuoteId: 'quote-1',
+      derivedTaskId: 'composer-task:result-adjust:prepared-1',
       derivedWorkId: 'work-derived-1',
+      instruction: '语气更亲切',
+      source: {
+        kind: 'content_package_snapshot',
+        expectedPackageRevision: 3,
+        packageId: 'package-1',
+        snapshotId: 'snapshot-task-1',
+        workflowId: 'task-1',
+      },
     }),
     {
-      baseJobId: 'job-1',
       billingQuoteId: 'quote-1',
+      derivedTaskId: 'composer-task:result-adjust:prepared-1',
       derivedWorkId: 'work-derived-1',
+      instruction: '语气更亲切',
+      source: {
+        kind: 'content_package_snapshot',
+        expectedPackageRevision: 3,
+        packageId: 'package-1',
+        snapshotId: 'snapshot-task-1',
+        workflowId: 'task-1',
+      },
     },
   );
   assert.equal(

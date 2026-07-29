@@ -30,6 +30,7 @@ import {
   latestContentPackageForWork,
   platformPreviewsFromContentPackage,
   projectResultCenterLiveProjection,
+  resultAdjustSourceForResult,
   resultContentPackageMutationFacts,
   resultDeliveryAttemptState,
   resultDeriveSessionId,
@@ -90,6 +91,7 @@ import type {
   PublicContentPackage,
   ResultAction,
   ResultAdjustCommand,
+  ResultAdjustSource,
   ResultTargetResolveOutcome,
   VideoWorkflowPublicProjection,
 } from '@meiye/contracts';
@@ -106,11 +108,12 @@ const WEEKLY_PLATFORM_LABELS: Record<string, string> = {
 };
 
 type PendingImageAdjust = {
-  baseJobId: string;
+  derivedTaskId: string;
   derivedWorkId: string;
   instruction: string;
   quote: ProductQuoteSnapshot;
   scope?: ResultAdjustCommand['scope'];
+  source: ResultAdjustSource;
 };
 
 export type { ResultCenterSearch } from '@/product/results/result-center-search';
@@ -231,6 +234,11 @@ function ResultCenterRoutePage() {
     ? projectResultCenterLiveProjection(workbenchQuery.data, workId)
     : null;
   const selected = live?.selected ?? null;
+  const adjustSource = resultAdjustSourceForResult({
+    contentPackage,
+    job: selected?.job,
+    workId,
+  });
   useCreativeJobObserver(creativeJobObservation(selected?.job ?? undefined));
   // Which canonical run this Work's video surface opens. The two write shapes
   // it has to reconcile — and why — live in `resolveVideoWorkflowBinding`,
@@ -1053,9 +1061,14 @@ function ResultCenterRoutePage() {
         `adjust-confirm:${pendingImageAdjust.derivedWorkId}:${pendingImageAdjust.quote.quoteId}`,
         'result_adjust',
         {
-          baseJobId: pendingImageAdjust.baseJobId,
           billingQuoteId: pendingImageAdjust.quote.quoteId,
+          derivedTaskId: pendingImageAdjust.derivedTaskId,
           derivedWorkId: pendingImageAdjust.derivedWorkId,
+          instruction: pendingImageAdjust.instruction,
+          ...(pendingImageAdjust.scope
+            ? { scope: pendingImageAdjust.scope }
+            : {}),
+          source: pendingImageAdjust.source,
         }
       );
       setPendingImageAdjust(null);
@@ -1303,7 +1316,7 @@ function ResultCenterRoutePage() {
             }
           : undefined
       }
-      {...(selected?.job
+      {...(adjustSource
         ? {}
         : { adjustUnavailableReason: result_adjust_unavailable() })}
       onImageAdopt={async (_actionKind, orderedAssetIds) => {
@@ -1339,7 +1352,8 @@ function ResultCenterRoutePage() {
       }}
       onImageCreateFromThis={createFromCurrent}
       onAdjust={async (instruction, scope) => {
-        if (!selected?.job || adjustBusy || pendingImageAdjust) return;
+        if (!selected || !adjustSource || adjustBusy || pendingImageAdjust)
+          return;
         setAdjustBusy(true);
         setAdjustError(undefined);
         try {
@@ -1350,15 +1364,16 @@ function ResultCenterRoutePage() {
               operation: 'copy.generate' | 'image.generate';
               quantity: number;
             };
+            task: { id: string };
             work: { id: string };
           }>(
-            `adjust-prepare:${workId}:${selected.job.id}:${selected.work.updatedAt}:${instruction}:${JSON.stringify(scope)}`,
+            `adjust-prepare:${workId}:${JSON.stringify(adjustSource)}:${selected.work.updatedAt}:${instruction}:${JSON.stringify(scope)}`,
             'result_adjust_prepare',
             {
-              baseJobId: selected.job.id,
               expectedWorkUpdatedAt: selected.work.updatedAt,
               instruction,
               ...(scope ? { scope } : {}),
+              source: adjustSource,
               workId,
             }
           );
@@ -1380,11 +1395,12 @@ function ResultCenterRoutePage() {
             quoteId
           );
           setPendingImageAdjust({
-            baseJobId: selected.job.id,
+            derivedTaskId: prepared.task.id,
             derivedWorkId: prepared.work.id,
             instruction,
             quote,
             ...(scope ? { scope } : {}),
+            source: adjustSource,
           });
         } catch {
           setAdjustError(
