@@ -126,7 +126,15 @@ ZIP 内英文路径名（`images/`、`evidence/rights-and-facts.json`）同理�
 `uiux-shell-routes.spec.ts:105,186` 对「进入管理模式」有断言。
 **只有完整词元 `美业内容簿` / `美业内容中台` / `美业管理模式` 参与替换**，判据脚本按此设计。
 
-**④ `meiye-` CSS/存储命名空间 —— 内部标识，禁改。**
+**④ 「创作中台」不进 `LEGACY_BRAND_NAMES` —— Landing 面，且是品类词非名字。**
+`zh.json:2165` 的 `landing_hero_subhead`＝「更懂你门店和品牌的内容引流创作**中台**」，
+消费点 `src/components/landing/hero.tsx:146`（公开首屏，未登录可见）。「中台」二字全仓仅此一处。
+两条理由都指向不动：①**票面边界写死「Landing 与论坛一页纸不在本票」**；
+②它出现在**定位句**里而非名字槽里，与 `shell_product_brand` 那种裸名不同语法角色——
+英文侧 `site_title` 的对应位置是「AI content copilot for beauty studios」，同属品类描述，无人主张删。
+若日后判定它也算自称需统一，那是 Landing 文案的活，重估时连 §6-5 一起看。
+
+**⑤ `meiye-` CSS/存储命名空间 —— 内部标识，禁改。**
 `src/`、`tests/`、`apps/` 共 825 处（`meiye-product-shell`、`meiye-sidebar-nav-item`、约 60 个 DB/存储键前缀），
 从不对用户可见。`package.json:2` 的 `"name": "meiyeweb-agent"` 同理。按 D-152① 明确排除。
 
@@ -138,11 +146,20 @@ ZIP 内英文路径名（`images/`、`evidence/rights-and-facts.json`）同理�
 2. **事务邮件锁死英文**：`src/mail/render.ts:19` 的 `const en = { locale: 'en' }` 用于全部主题（`:21-23`），
    `email-layout.tsx:17` 同。邮件页脚恒为 `LIKEPAGE Team`，永不出现中文品牌形态。既存行为，非本次改名引入，
    但决定了邮件验收样张能展示什么。
-3. **`en.json:2167` `landing_nav_header_brand = "丽客美页x泽发润复丝"`**：CJK 落在英文目录。
-   现有判据抓不到——`expectNoChineseSystemCopy` 只访问 `/en/dashboard` 等六条路由，不含 landing。
-   将来若把 EN CJK 门扩到 `/` 会红。
+3. **`landing_nav_header_brand = "丽客美页x泽发润复丝"`（`zh.json:2167` 与 `en.json:2167` 同值）**，
+   消费点 `src/components/landing/header.tsx:301`（顶导可见文字）与 `:291`（同串作 aria-label）。三个问题叠在一起：
+   ①品牌本体写作「丽客美页」，**无空格、无 LIKEPAGE**，与 `site_name`「丽客美页 LIKEPAGE」不一致；
+   ②硬拼联名后缀「x泽发润复丝」（小写 x 无空格）——**是否有意联名属业务决策，不由本票判**；
+   ③这是 `en.json` 里**唯一**残留的 CJK，英文 locale 的 landing 顶栏会渲染整串中文。
+   现有判据抓不到——`expectNoChineseSystemCopy` 只访问 `/en/dashboard` 等六条路由，不含 landing；
+   将来若把 EN CJK 门扩到 `/` 会红。**属 Landing 面，按票面边界不在本票。**
 4. **`uiux-precutover-baseline.spec.ts:226,233` 已存在的失效断言**：断言 `'内容簿还是空的'`，
    该串在 `src/`、`project.inlang/`、`apps/` 全仓零命中，冻结基线已陈旧。**非本票引入，单独开票，不吸收进 #265。**
+5. **第六个自称「创作中台」**：`zh.json:2165` `landing_hero_subhead`＝「更懂你门店和品牌的内容引流创作中台」，
+   消费点 `src/components/landing/hero.tsx:146`（公开首屏，未登录可见）。「中台」全仓仅此一处，
+   en 值另写整段无对应词。性质与 `美业内容中台` 同型——决策记录从未点名的自我定位词。
+   **属 Landing 面，按票面边界不在本票**，判据亦不收该词元（理由见 §5-④）。
+   R 门前重估本票时应与第 3 项一并处理。
 
 ## 7. 清单如何不腐烂
 
