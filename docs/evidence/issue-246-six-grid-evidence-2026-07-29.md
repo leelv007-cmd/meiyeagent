@@ -1,7 +1,7 @@
 # Issue 246 Six-Grid Evidence
 
-Status: working evidence for local committed `issue/246@322ecbae`, rebased on
-`main@c62fa6aa`. This document is deliberately not a closeout claim. A cell is
+Status: working evidence for local committed `issue/246@872146ba`, rebased on
+`main@4569dfe0`. This document is deliberately not a closeout claim. A cell is
 `OPEN` when the current runtime evidence does not prove it.
 
 ## Verification runs
@@ -13,6 +13,7 @@ Status: working evidence for local committed `issue/246@322ecbae`, rebased on
 | Current Skill service/tool behavior tests | 27 pass, 0 fail, 0 skip |
 | Current prompt fallback/replay/production-loop focused behavior tests | 87 pass, 0 fail, 0 skip |
 | Skill schema registry focused tests | 4 pass, 0 fail, 0 skip |
+| Post-ledger-rebase controller merge-slice Harness assertions | 64 pass, 0 fail, 0 skip |
 | Changed PostgreSQL Harness, Model Supply, and Skill suites | 27 pass, 0 fail, 0 skip |
 | Current isolated PostgreSQL Skill/fallback/frozen-restart/outbox-ops gates | 9 pass, 0 fail, 0 skip |
 | #266 upstream locale synchronization assertions after rebase | 10 pass, 0 fail, 0 skip |
