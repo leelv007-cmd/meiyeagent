@@ -1900,9 +1900,15 @@ export function ComposerHome({
 
   useEffect(() => {
     if (!focusIntentAfterPrefillRef.current || createWork.isPending) return;
+    const intentInput = document.querySelector(
+      '[data-testid="composer-intent-input"]'
+    );
+    if (!(intentInput instanceof HTMLTextAreaElement) || intentInput.disabled) {
+      return;
+    }
     focusIntentAfterPrefillRef.current = false;
     focusComposerIntentInput();
-  }, [createWork.isPending, lensState.draft.userText]);
+  });
 
   const runCreate = (
     selectedLens: CreationLensId,
