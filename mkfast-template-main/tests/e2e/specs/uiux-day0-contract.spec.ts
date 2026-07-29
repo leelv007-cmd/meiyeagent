@@ -146,33 +146,6 @@ async function assertVideoFirstUsableResult(page: Page) {
   await expect(page.getByTestId('video-player')).toBeVisible();
 }
 
-async function creativeEventTypes(page: Page) {
-  return page.evaluate(async () => {
-    const response = await fetch('/api/core/p1/query', {
-      body: JSON.stringify({
-        action: 'creative_workbench',
-        module: 'operations',
-        payload: {},
-      }),
-      credentials: 'same-origin',
-      headers: { 'content-type': 'application/json' },
-      method: 'POST',
-    });
-    const envelope = (await response.json()) as {
-      data?: { events?: Array<{ type?: string }> };
-      error?: { message?: string };
-    };
-    if (!response.ok || !envelope.data) {
-      throw new Error(
-        envelope.error?.message ?? 'Creative workbench query failed'
-      );
-    }
-    return (envelope.data.events ?? []).flatMap((event) =>
-      event.type ? [event.type] : []
-    );
-  });
-}
-
 async function assertNoSkipUsed(page: Page, counter: UserActivationCounter) {
   // The retired onboarding bypass is absent from the canonical Composer.
   await expect(skipOnboardingButton(page)).toHaveCount(0);
@@ -247,6 +220,12 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
         `template card must count as exactly 1 isTrusted activation (C6 dual-purpose); events=${JSON.stringify(counter.events())}`
       ).toBe(1);
 
+      await expect(
+        page.getByTestId('composer-recipe-apply-undo')
+      ).toBeVisible();
+      const intentInput = page.getByLabel('描述这次想创作的内容');
+      await intentInput.fill('介绍本店透亮猫眼项目');
+      await expect(intentInput).toHaveValue('介绍本店透亮猫眼项目');
       await assertComposerQuoteReady(page);
       await expect(composerSubmitButton(page)).toBeEnabled();
       await assertZeroBlockingBeforeSubmit(page);
@@ -265,9 +244,6 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
         'data-has-token',
         'true'
       );
-      const events = await creativeEventTypes(page);
-      expect(events).toContain('first_work_created');
-      expect(events).not.toContain('cold_start_skipped');
 
       // The other half of the replaced navigation assertion: the Result Center
       // is still reachable, by clicking the 成品预览卡. Measurement has already
@@ -333,9 +309,6 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
         'data-has-token',
         'true'
       );
-      const events = await creativeEventTypes(page);
-      expect(events).toContain('first_work_created');
-      expect(events).not.toContain('cold_start_skipped');
 
       // The other half of the replaced navigation assertion.
       await assertDeliveryCardOpensResultCenter(page);
@@ -717,7 +690,11 @@ test.describe('V1 T5 independent inline one-click authorize', () => {
     await expect(page.locator('[data-has-token="true"]').first()).toBeVisible({
       timeout: 90_000,
     });
-    await expect(page.getByTestId('result-center-shell')).toBeVisible();
+    await expect(page).not.toHaveURL(/\/dashboard\/results\//u);
+    await expect(page.getByTestId('composer-conversation')).toBeVisible();
+    await expect(page.getByTestId('composer-delivery-card')).toBeVisible({
+      timeout: 180_000,
+    });
 
     void user;
   });

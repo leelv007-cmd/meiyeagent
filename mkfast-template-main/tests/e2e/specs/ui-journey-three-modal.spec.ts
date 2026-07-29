@@ -124,11 +124,18 @@ test.describe('Z1 / #105 real Playwright three-modal Day-0 journeys', () => {
           `${contract.modality} C6 activation budget: ${JSON.stringify(activationCounter.events())}`
         ).toBe(contract.expectedActivations);
 
+        // Copy hand edits belong to the adopted canonical ContentPackage.
+        // Media adjustments derive a candidate Work that must be adopted next.
+        if (contract.modality === 'copy') {
+          await adoptResult(page, contract);
+        }
         const adjusted = await adjustResult(page, contract.modality);
         if (adjusted.workId) {
           await waitForResultJourney(page, contract, adjusted.workId);
         }
-        await adoptResult(page, contract);
+        if (contract.modality !== 'copy') {
+          await adoptResult(page, contract);
+        }
         await openDeliveryPanel(page, contract.modality);
         await downloadFullPackage(page, contract);
         await assertJourneyRestored(page, contract, adjusted.workId ?? workId);
