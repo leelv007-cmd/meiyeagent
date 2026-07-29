@@ -129,7 +129,6 @@ export interface HarnessStagePorts {
     workflowId: string;
     request: HarnessWorkflowInput;
     stage: SkillStage;
-    plannerSelectedSkillRefs?: readonly string[];
     userSelectedSkillRefs?: readonly string[];
     skillRevisionRefs?: readonly string[];
   }): Promise<{

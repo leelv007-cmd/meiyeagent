@@ -1,6 +1,11 @@
 import { createHash } from 'node:crypto';
 
-import { evalRunSchema, type EvalRun } from '@meiye/contracts';
+import {
+  evalRunSchema,
+  parseSkillSchema,
+  resolveSkillSchema,
+  type EvalRun,
+} from '@meiye/contracts';
 
 import { P1DomainError } from '../foundation/domain.js';
 import type { SkillRepository } from './repository.js';
@@ -15,6 +20,7 @@ import {
   type SkillDeployment,
   type SkillDeploymentArtifactType,
   type SkillExecutionMode,
+  type SkillInvocationExecution,
   type SkillInvocationReceipt,
   type SkillOutputValidator,
   type SkillRevision,
@@ -22,6 +28,9 @@ import {
   type SkillStage,
 } from './types.js';
 import type { HarnessFrozenPrompt } from '../harness/langfuse-prompts.js';
+import { RegistrySkillOutputValidator } from './schema-validator.js';
+
+const registrySkillOutputValidator = new RegistrySkillOutputValidator();
 
 function fail(message: string): never {
   throw new P1DomainError('INVALID_STATE', message);
@@ -178,6 +187,9 @@ export class SkillService {
     if (source.status !== 'active') {
       fail('只能回滚当前仍生效的 Skill 绑定。');
     }
+    if (source.mode === 'planner_selected') {
+      fail('已退役的规划器 Skill 绑定不能回滚。');
+    }
     const sourceRevision = await this.requireRevision(source.skillRevisionRef);
     const targetRevision = await this.requireRevision(
       input.targetSkillRevisionRef,
@@ -274,21 +286,16 @@ export class SkillService {
   async resolveStage(input: {
     workflowRevisionRef: string;
     stage: SkillStage;
-    plannerSelectedSkillRefs: string[];
     userSelectedSkillRefs: string[];
   }): Promise<{
     allowlist: ResolvedSkillInstruction[];
-    selected: ResolvedSkillInstruction[];
   }> {
     const bindings = await this.repository.listBindings(
       input.workflowRevisionRef,
       input.stage,
     );
-    const planner = new Set(input.plannerSelectedSkillRefs);
     const user = new Set(input.userSelectedSkillRefs);
     const allowlist: ResolvedSkillInstruction[] = [];
-    const selected: ResolvedSkillInstruction[] = [];
-    const allowedPlannerRefs = new Set<string>();
     for (const binding of bindings) {
       if (binding.mode === 'disabled') continue;
       const revision = await this.repository.getRevision(
@@ -302,27 +309,40 @@ export class SkillService {
       ) {
         continue;
       }
-      if (binding.mode === 'planner_selected') {
-        allowedPlannerRefs.add(binding.skillRevisionRef);
-      }
       if (binding.mode === 'user_selected' && !user.has(binding.skillRevisionRef)) {
         continue;
       }
       const resolved = toResolved(revision);
       allowlist.push(resolved);
-      if (
-        binding.mode === 'required' ||
-        (binding.mode === 'planner_selected' &&
-          planner.has(binding.skillRevisionRef)) ||
-        (binding.mode === 'user_selected' && user.has(binding.skillRevisionRef))
-      ) {
-        selected.push(resolved);
-      }
     }
-    if ([...planner].some((ref) => !allowedPlannerRefs.has(ref))) {
-      fail('规划器选择了当前阶段允许列表之外的 Skill。');
+    return { allowlist };
+  }
+
+  retireLegacyPlannerSelectedBindings() {
+    return this.repository.retireLegacyPlannerSelectedBindings(this.now());
+  }
+
+  async resolveExecutedSelection(
+    invocationId: string,
+  ): Promise<ResolvedSkillInstruction[]> {
+    const receipt = await this.repository.getInvocationReceipt(
+      required(invocationId, 'Invocation ID'),
+    );
+    if (!receipt || receipt.childEffectIds.length === 0) return [];
+    const effects = await Promise.all(
+      receipt.childEffectIds.map((effectId) =>
+        this.repository.getChildEffect(effectId),
+      ),
+    );
+    if (
+      effects.some(
+        (effect) => !effect || effect.invocationId !== receipt.invocationId,
+      )
+    ) {
+      fail('Skill 调用回执引用的工具调用记录不完整。');
     }
-    return { allowlist, selected };
+    const revision = await this.requireRevision(receipt.skillRevisionRef);
+    return [toResolved(revision)];
   }
 
   async resolveFrozenRevisions(
@@ -410,6 +430,7 @@ export class SkillService {
       taskId: string;
       productUsageTaskId: string;
       skillRevisionRef: string;
+      input: unknown;
       calls: Array<{
         callId: string;
         toolId: string;
@@ -424,8 +445,8 @@ export class SkillService {
       };
     },
     executor: SkillChildEffectExecutor,
-    outputValidator: SkillOutputValidator,
-  ): Promise<SkillInvocationReceipt> {
+    outputValidator: SkillOutputValidator = registrySkillOutputValidator,
+  ): Promise<SkillInvocationExecution> {
     const invocationId = required(input.invocationId, 'Invocation ID');
     const fingerprint = sha256(canonicalJson(input));
     const existingReceipt =
@@ -446,11 +467,16 @@ export class SkillService {
           });
         }
       }
-      return existingReceipt;
+      return this.withExecutedSelection(existingReceipt);
     }
     const revision = await this.requireRevision(input.skillRevisionRef);
     if (revision.status !== 'accepted_frozen') {
       fail('只能调用已受理冻结的 Skill 版本。');
+    }
+    try {
+      parseSkillSchema(revision.manifest.inputSchemaRef, input.input);
+    } catch {
+      fail('Skill input does not match its frozen input schema.');
     }
     if (input.output.target === 'content_package') {
       fail('Skill 输出不能写入 ContentPackage。');
@@ -554,7 +580,7 @@ export class SkillService {
       effects.push(persisted);
     }
 
-    return this.repository.putInvocationReceipt({
+    const receipt = await this.repository.putInvocationReceipt({
       invocationId,
       workspaceId: required(input.workspaceId, 'Workspace ID'),
       taskId: required(input.taskId, 'Task ID'),
@@ -580,6 +606,7 @@ export class SkillService {
       createdAt: this.now(),
       inputFingerprint: fingerprint,
     });
+    return this.withExecutedSelection(receipt);
   }
 
   private async requireRevision(skillRevisionRef: string) {
@@ -588,6 +615,15 @@ export class SkillService {
       throw new P1DomainError('NOT_FOUND', 'Skill 版本不存在。');
     }
     return revision;
+  }
+
+  private async withExecutedSelection(
+    receipt: SkillInvocationReceipt,
+  ): Promise<SkillInvocationExecution> {
+    return {
+      ...receipt,
+      selected: await this.resolveExecutedSelection(receipt.invocationId),
+    };
   }
 
   private async assertBindingSlotAvailable(binding: SkillBinding) {
@@ -659,6 +695,22 @@ function validateManifest(manifest: SkillRevisionManifest) {
     ['eval suite', manifest.evalSuiteRef],
   ] as const) {
     required(value, label);
+  }
+  if (!manifest.inputSchemaRef.startsWith('skill-input.')) {
+    fail('Skill manifest input schema ref must use the skill-input namespace.');
+  }
+  if (!manifest.outputSchemaRef.startsWith('skill-output.')) {
+    fail('Skill manifest output schema ref must use the skill-output namespace.');
+  }
+  for (const ref of [
+    manifest.inputSchemaRef,
+    manifest.outputSchemaRef,
+  ]) {
+    try {
+      resolveSkillSchema(ref);
+    } catch {
+      fail(`Skill manifest schema ref cannot be resolved: ${ref}.`);
+    }
   }
   if (
     !Number.isInteger(manifest.budget.maxChildEffects) ||

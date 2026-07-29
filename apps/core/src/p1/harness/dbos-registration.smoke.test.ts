@@ -1654,12 +1654,11 @@ function smokePorts(
         ? await skills.resolveFrozenRevisions(input.skillRevisionRefs)
         : (
             await skills.resolveStage({
-              plannerSelectedSkillRefs: [],
               stage: input.stage,
               userSelectedSkillRefs: [],
               workflowRevisionRef: 'workflow.copy@1',
             })
-          ).selected;
+          ).allowlist;
       const receipts = await skills.recordPromptMaterializationReceipts({
         instructions,
         stage: input.stage,

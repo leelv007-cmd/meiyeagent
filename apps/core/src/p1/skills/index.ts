@@ -7,10 +7,12 @@ export {
   type DurableSkillRuntime,
 } from './runtime.js';
 export { materializeSkillInstructions } from './stage-injection.js';
+export { RegistrySkillOutputValidator } from './schema-validator.js';
 export {
   SKILL_BINDING_MODES,
   SKILL_STAGES,
   skillRevisionRef,
+  type AuditedSkillBinding,
   type ResolvedSkillInstruction,
   type SkillBinding,
   type SkillBindingMode,
@@ -21,6 +23,7 @@ export {
   type SkillDeployment,
   type SkillDeploymentArtifactType,
   type SkillExecutionMode,
+  type SkillInvocationExecution,
   type SkillInvocationReceipt,
   type SkillOutputValidator,
   type SkillRevision,

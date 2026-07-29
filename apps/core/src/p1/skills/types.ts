@@ -2,7 +2,6 @@ import type { HarnessFrozenPrompt } from '../harness/langfuse-prompts.js';
 
 export const SKILL_BINDING_MODES = [
   'required',
-  'planner_selected',
   'user_selected',
   'disabled',
 ] as const;
@@ -86,6 +85,10 @@ export interface SkillBinding {
   createdAt: string;
 }
 
+export type AuditedSkillBinding = Omit<SkillBinding, 'mode'> & {
+  mode: SkillBindingMode | 'planner_selected';
+};
+
 export interface SkillDeployment {
   deploymentId: string;
   skillRevisionRef: string;
@@ -119,6 +122,10 @@ export interface SkillInvocationReceipt {
   status: 'settled';
   createdAt: string;
   inputFingerprint: string;
+}
+
+export interface SkillInvocationExecution extends SkillInvocationReceipt {
+  selected: ResolvedSkillInstruction[];
 }
 
 export interface SkillChildEffect {

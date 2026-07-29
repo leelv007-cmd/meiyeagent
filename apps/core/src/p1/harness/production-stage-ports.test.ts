@@ -111,7 +111,6 @@ test('production intent naming receives resolved Skill value objects through the
     workflowId: 'task-skill-port',
     request,
     stage: 'intent_naming',
-    plannerSelectedSkillRefs: ['skill.planner@2'],
     userSelectedSkillRefs: ['skill.user@3'],
   });
 
@@ -124,7 +123,6 @@ test('production intent naming receives resolved Skill value objects through the
   assert.deepEqual(resolverInputs, [
     {
       stage: 'intent_naming',
-      plannerSelectedSkillRefs: ['skill.planner@2'],
       userSelectedSkillRefs: ['skill.user@3'],
       workflowId: 'task-skill-port',
       workflowRevision: 4,

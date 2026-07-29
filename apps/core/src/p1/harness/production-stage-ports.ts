@@ -122,7 +122,6 @@ export interface HarnessSkillInstructionResolverPort {
     recipeId?: string;
     recipeRevisionId?: string;
     stage: SkillStage;
-    plannerSelectedSkillRefs?: readonly string[];
     userSelectedSkillRefs?: readonly string[];
     skillRevisionRefs?: readonly string[];
   }): Promise<{
@@ -239,9 +238,6 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
           }
         : {}),
       stage: input.stage,
-      ...(input.plannerSelectedSkillRefs
-        ? { plannerSelectedSkillRefs: input.plannerSelectedSkillRefs }
-        : {}),
       ...(input.userSelectedSkillRefs
         ? { userSelectedSkillRefs: input.userSelectedSkillRefs }
         : {}),

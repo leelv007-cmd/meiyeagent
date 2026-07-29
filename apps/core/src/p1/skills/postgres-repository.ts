@@ -5,6 +5,7 @@ import type { Pool, PoolClient } from 'pg';
 import { P1DomainError } from '../foundation/domain.js';
 import type { SkillRepository } from './repository.js';
 import type {
+  AuditedSkillBinding,
   SkillBinding,
   SkillCatalog,
   SkillChildEffect,
@@ -61,6 +62,16 @@ export class PostgresSkillRepository implements SkillRepository {
        WHERE skill_id IS NULL;
       ALTER TABLE p1_skill_bindings
         ALTER COLUMN skill_id SET NOT NULL;
+      UPDATE p1_skill_bindings
+         SET status = 'superseded',
+             superseded_at = COALESCE(superseded_at, now()),
+             payload = jsonb_set(
+               jsonb_set(payload, '{status}', '"superseded"'),
+               '{supersededAt}',
+               to_jsonb(COALESCE(superseded_at, now())::text)
+             )
+       WHERE status = 'active'
+         AND payload->>'mode' = 'planner_selected';
       WITH ranked AS (
         SELECT binding_id,
                row_number() OVER (
@@ -319,7 +330,7 @@ export class PostgresSkillRepository implements SkillRepository {
   }
 
   getBinding(bindingId: string) {
-    return this.getOne<SkillBinding>(
+    return this.getOne<AuditedSkillBinding>(
       'p1_skill_bindings',
       'binding_id',
       bindingId,
@@ -330,11 +341,31 @@ export class PostgresSkillRepository implements SkillRepository {
     const result = await this.pool.query<PayloadRow<SkillBinding>>(
       `SELECT payload
          FROM p1_skill_bindings
-        WHERE workflow_revision_ref = $1 AND stage = $2 AND status = 'active'
+        WHERE workflow_revision_ref = $1
+          AND stage = $2
+          AND status = 'active'
+          AND payload->>'mode' IS DISTINCT FROM 'planner_selected'
         ORDER BY created_at, binding_id`,
       [workflowRevisionRef, stage],
     );
     return result.rows.map(cloneRow);
+  }
+
+  async retireLegacyPlannerSelectedBindings(retiredAt: string) {
+    const result = await this.pool.query(
+      `UPDATE p1_skill_bindings
+          SET status = 'superseded',
+              superseded_at = $1::timestamptz,
+              payload = jsonb_set(
+                jsonb_set(payload, '{status}', '"superseded"'),
+                '{supersededAt}',
+                to_jsonb($1::text)
+              )
+        WHERE status = 'active'
+          AND payload->>'mode' = 'planner_selected'`,
+      [retiredAt],
+    );
+    return result.rowCount ?? 0;
   }
 
   putDeployment(deployment: SkillDeployment) {

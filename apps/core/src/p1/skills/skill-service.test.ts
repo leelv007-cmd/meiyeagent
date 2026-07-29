@@ -11,8 +11,10 @@ import {
 import { LangfuseHarnessPromptResolver } from '../harness/langfuse-prompts.js';
 import {
   MemorySkillRepository,
+  RegistrySkillOutputValidator,
   SkillFoundationModule,
   SkillService,
+  type SkillBinding,
   type SkillChildEffectExecutor,
 } from './index.js';
 
@@ -44,6 +46,8 @@ test('only an evaluated and frozen Skill revision enters a stage allowlist', asy
       ),
     publicKey: 'fixture-public',
     secretKey: 'fixture-secret',
+    policy: 'pilot',
+    versions: { intentNaming: 42 },
   }).resolve();
   const draft = await service.draftRevision({
     actorId: 'operator-1',
@@ -81,12 +85,11 @@ test('only an evaluated and frozen Skill revision enters a stage allowlist', asy
 
   assert.deepEqual(
     await service.resolveStage({
-      plannerSelectedSkillRefs: [],
       stage: 'intent_naming',
       userSelectedSkillRefs: [],
       workflowRevisionRef: 'workflow.daily-copy@1',
     }),
-    { allowlist: [], selected: [] },
+    { allowlist: [] },
   );
 
   const frozen = await service.acceptAndFreezeRevision({
@@ -95,7 +98,6 @@ test('only an evaluated and frozen Skill revision enters a stage allowlist', asy
     skillRevisionRef: draft.skillRevisionRef,
   });
   const resolved = await service.resolveStage({
-    plannerSelectedSkillRefs: [],
     stage: 'intent_naming',
     userSelectedSkillRefs: [],
     workflowRevisionRef: 'workflow.daily-copy@1',
@@ -106,10 +108,9 @@ test('only an evaluated and frozen Skill revision enters a stage allowlist', asy
     resolved.allowlist.map((skill) => skill.skillRevisionRef),
     [draft.skillRevisionRef],
   );
-  assert.deepEqual(resolved.selected, resolved.allowlist);
 
   const receipts = await service.recordPromptMaterializationReceipts({
-    instructions: resolved.selected,
+    instructions: resolved.allowlist,
     stage: 'intent_naming',
     taskId: 'task-daily-copy',
     workflowRevisionRef: 'workflow.daily-copy@1',
@@ -117,7 +118,7 @@ test('only an evaluated and frozen Skill revision enters a stage allowlist', asy
   });
   const replayedReceipts =
     await service.recordPromptMaterializationReceipts({
-      instructions: resolved.selected,
+      instructions: resolved.allowlist,
       stage: 'intent_naming',
       taskId: 'task-daily-copy',
       workflowRevisionRef: 'workflow.daily-copy@1',
@@ -127,17 +128,18 @@ test('only an evaluated and frozen Skill revision enters a stage allowlist', asy
   assert.equal(receipts[0]?.skillRevisionRef, draft.skillRevisionRef);
   assert.deepEqual(receipts[0]?.childEffectIds, []);
   assert.deepEqual(replayedReceipts, receipts);
+  assert.deepEqual(
+    await service.resolveExecutedSelection(receipts[0]!.invocationId),
+    [],
+  );
 });
 
-test('SkillBinding enforces required, planner-selected, user-selected and disabled behavior', async () => {
-  const service = new SkillService(
-    new MemorySkillRepository(),
-    () => NOW,
-  );
+test('retired planner-selected bindings remain auditable but never enter the real stage allowlist', async () => {
+  const repository = new MemorySkillRepository();
+  const service = new SkillService(repository, () => NOW);
   const revisions = new Map<string, string>();
   for (const mode of [
     'required',
-    'planner_selected',
     'user_selected',
     'disabled',
   ] as const) {
@@ -151,24 +153,50 @@ test('SkillBinding enforces required, planner-selected, user-selected and disabl
       workflowRevisionRef: 'workflow.binding-matrix@1',
     });
   }
+  const retiredRevision = await createAcceptedSkill(
+    service,
+    'retired-planner',
+  );
+  await repository.putBinding({
+    bindingId: 'binding.retired-planner',
+    workflowRevisionRef: 'workflow.binding-matrix@1',
+    stage: 'intent_naming',
+    skillId: retiredRevision.skillId,
+    skillRevisionRef: retiredRevision.skillRevisionRef,
+    mode: 'planner_selected',
+    status: 'active',
+    supersededAt: null,
+    supersededByBindingId: null,
+    createdAt: NOW,
+  } as unknown as SkillBinding);
+  assert.equal(await service.retireLegacyPlannerSelectedBindings(), 1);
 
   const unresolved = await service.resolveStage({
-    plannerSelectedSkillRefs: [],
     stage: 'intent_naming',
     userSelectedSkillRefs: [],
     workflowRevisionRef: 'workflow.binding-matrix@1',
   });
   assert.deepEqual(
     unresolved.allowlist.map((skill) => skill.skillRevisionRef),
-    [revisions.get('required'), revisions.get('planner_selected')],
+    [revisions.get('required')],
   );
   assert.deepEqual(
-    unresolved.selected.map((skill) => skill.skillRevisionRef),
-    [revisions.get('required')],
+    await repository.getBinding('binding.retired-planner'),
+    {
+      bindingId: 'binding.retired-planner',
+      workflowRevisionRef: 'workflow.binding-matrix@1',
+      stage: 'intent_naming',
+      skillId: retiredRevision.skillId,
+      skillRevisionRef: retiredRevision.skillRevisionRef,
+      mode: 'planner_selected',
+      status: 'superseded',
+      supersededAt: NOW,
+      supersededByBindingId: null,
+      createdAt: NOW,
+    },
   );
 
   const selected = await service.resolveStage({
-    plannerSelectedSkillRefs: [revisions.get('planner_selected')!],
     stage: 'intent_naming',
     userSelectedSkillRefs: [revisions.get('user_selected')!],
     workflowRevisionRef: 'workflow.binding-matrix@1',
@@ -177,43 +205,14 @@ test('SkillBinding enforces required, planner-selected, user-selected and disabl
     selected.allowlist.map((skill) => skill.skillRevisionRef),
     [
       revisions.get('required'),
-      revisions.get('planner_selected'),
       revisions.get('user_selected'),
     ],
   );
-  assert.deepEqual(selected.selected, selected.allowlist);
   assert.equal(
     selected.allowlist.some(
       (skill) => skill.skillRevisionRef === revisions.get('disabled'),
     ),
     false,
-  );
-
-  await assert.rejects(
-    service.resolveStage({
-      plannerSelectedSkillRefs: [revisions.get('user_selected')!],
-      stage: 'intent_naming',
-      userSelectedSkillRefs: [],
-      workflowRevisionRef: 'workflow.binding-matrix@1',
-    }),
-    /当前阶段允许列表之外/u,
-  );
-
-  await service.bindRevision({
-    bindingId: 'binding.planner-incompatible',
-    mode: 'planner_selected',
-    skillRevisionRef: revisions.get('planner_selected')!,
-    stage: 'intent_naming',
-    workflowRevisionRef: 'workflow.binding-matrix@2',
-  });
-  await assert.rejects(
-    service.resolveStage({
-      plannerSelectedSkillRefs: [revisions.get('planner_selected')!],
-      stage: 'intent_naming',
-      userSelectedSkillRefs: [],
-      workflowRevisionRef: 'workflow.binding-matrix@2',
-    }),
-    /当前阶段允许列表之外/u,
   );
 });
 
@@ -231,7 +230,6 @@ test('an accepted prompt Skill changes the fixture judgment at its declared Harn
     workflowRevisionRef: 'workflow.binding-matrix@1',
   });
   const resolved = await service.resolveStage({
-    plannerSelectedSkillRefs: [],
     stage: 'intent_naming',
     userSelectedSkillRefs: [],
     workflowRevisionRef: 'workflow.binding-matrix@1',
@@ -282,7 +280,7 @@ test('an accepted prompt Skill changes the fixture judgment at its declared Harn
 
   const baseline = await nameHarnessIntent(input, runner);
   const enhanced = await nameHarnessIntent(
-    { ...input, skillInstructions: resolved.selected },
+    { ...input, skillInstructions: resolved.allowlist },
     runner,
   );
 
@@ -329,11 +327,12 @@ test('one Skill invocation settles two child effects independently and replay do
         toolId: 'tool.quality.score',
       },
     ],
+    input: dailyIndustrySkillInput(),
     invocationId: 'invocation-two-effects',
     output: {
-      schemaRevision: 'skill-output.scored-copy@1',
+      schemaRevision: 'skill-output.intent-decision@1',
       target: 'workflow_artifact' as const,
-      value: { acceptedCandidateRef: 'candidate-1' },
+      value: intentDecisionOutput(),
     },
     productUsageTaskId: 'task-one-product-usage',
     skillRevisionRef: revision.skillRevisionRef,
@@ -341,6 +340,10 @@ test('one Skill invocation settles two child effects independently and replay do
     workspaceId: 'workspace-skill-invocation',
   };
 
+  assert.deepEqual(
+    await service.resolveExecutedSelection(input.invocationId),
+    [],
+  );
   const first = await service.invoke(
     input,
     executor,
@@ -369,6 +372,16 @@ test('one Skill invocation settles two child effects independently and replay do
   assert.equal(first.totalCostCents, 4);
   assert.equal(first.totalInputTokens, 20);
   assert.equal(first.totalOutputTokens, 10);
+  assert.deepEqual(
+    first.selected.map((skill) => skill.skillRevisionRef),
+    [revision.skillRevisionRef],
+  );
+  assert.deepEqual(
+    (
+      await service.resolveExecutedSelection(input.invocationId)
+    ).map((skill) => skill.skillRevisionRef),
+    [revision.skillRevisionRef],
+  );
   const effects = await Promise.all(
     first.childEffectIds.map((effectId) =>
       repository.getChildEffect(effectId),
@@ -421,6 +434,7 @@ test('Skill output cannot write ContentPackage and never reaches a child effect'
             toolId: 'tool.fact.read',
           },
         ],
+        input: dailyIndustrySkillInput(),
         invocationId: 'invocation-forbidden-content-package',
         output: {
           schemaRevision: 'content-package@1',
@@ -449,6 +463,158 @@ test('Skill output cannot write ContentPackage and never reaches a child effect'
   assert.equal(executions, 0);
 });
 
+test('manifest admission rejects unknown schema refs before persisting a revision', async () => {
+  const repository = new MemorySkillRepository();
+  const service = new SkillService(repository, () => NOW);
+  await service.defineCatalogEntry({
+    actorId: 'operator-1',
+    name: 'Invalid schema fixture',
+    presentationPolicy: 'backend_only',
+    skillId: 'skill.invalid-schema',
+  });
+
+  await assert.rejects(
+    service.draftRevision({
+      actorId: 'operator-1',
+      expectedRevision: null,
+      instruction: PROMPT_CONTENT,
+      manifest: {
+        allowedTools: [],
+        budget: {
+          maxChildEffects: 0,
+          maxCostCents: 0,
+          timeoutMs: 10_000,
+        },
+        compatibility: {
+          workflowRevisionRefs: ['workflow.invalid-schema@1'],
+        },
+        contextScopes: [],
+        evalSuiteRef: 'skills-invalid-schema@1',
+        executionMode: 'prompt_materialized',
+        fallback: 'fail_closed',
+        inputSchemaRef: 'skill-input.daily-industry@1',
+        outputSchemaRef: 'skill-output.not-registered@1',
+        requiredModelCapabilities: ['structured_output'],
+        sideEffectClass: 'none',
+      },
+      prompt: {
+        content: PROMPT_CONTENT,
+        contentHash: sha256(PROMPT_CONTENT),
+        isFallback: false,
+        label: 'production',
+        name: 'skills/invalid-schema',
+        source: 'langfuse',
+        version: '1',
+      },
+      skillId: 'skill.invalid-schema',
+    }),
+    /schema ref/u,
+  );
+  assert.equal(
+    await repository.getRevision('skill.invalid-schema@1'),
+    null,
+  );
+});
+
+test('invalid Skill input fails before any child executor call', async () => {
+  const repository = new MemorySkillRepository();
+  const service = new SkillService(repository, () => NOW);
+  const revision = await createAcceptedEffectSkill(service);
+  let executions = 0;
+
+  await assert.rejects(
+    service.invoke(
+      {
+        calls: [
+          {
+            callId: 'read-facts',
+            contextRefs: ['facts:current-offer'],
+            declaredBudgetCapCents: 1,
+            payload: {},
+            toolId: 'tool.fact.read',
+          },
+        ],
+        input: { context: null, assetReferences: [] },
+        invocationId: 'invocation-invalid-input',
+        output: {
+          schemaRevision: 'skill-output.intent-decision@1',
+          target: 'workflow_artifact',
+          value: intentDecisionOutput(),
+        },
+        productUsageTaskId: 'task-one-product-usage',
+        skillRevisionRef: revision.skillRevisionRef,
+        taskId: 'task-invalid-input',
+        workspaceId: 'workspace-skill-invocation',
+      },
+      {
+        async execute() {
+          executions += 1;
+          throw new Error('must not execute');
+        },
+      },
+    ),
+    /Skill input does not match/u,
+  );
+  assert.equal(executions, 0);
+  assert.equal(
+    await repository.getInvocationReceipt('invocation-invalid-input'),
+    null,
+  );
+});
+
+test('registry-backed output validation rejects invalid shape before any Skill fact persists', async () => {
+  const repository = new MemorySkillRepository();
+  const service = new SkillService(repository, () => NOW);
+  const revision = await createAcceptedEffectSkill(service);
+  let executions = 0;
+
+  await assert.rejects(
+    service.invoke(
+      {
+        calls: [
+          {
+            callId: 'read-facts',
+            contextRefs: ['facts:current-offer'],
+            declaredBudgetCapCents: 1,
+            payload: {},
+            toolId: 'tool.fact.read',
+          },
+        ],
+        input: dailyIndustrySkillInput(),
+        invocationId: 'invocation-invalid-output',
+        output: {
+          schemaRevision: 'skill-output.intent-decision@1',
+          target: 'workflow_artifact',
+          value: { route: 'customized' },
+        },
+        productUsageTaskId: 'task-one-product-usage',
+        skillRevisionRef: revision.skillRevisionRef,
+        taskId: 'task-invalid-output',
+        workspaceId: 'workspace-skill-invocation',
+      },
+      {
+        async execute() {
+          executions += 1;
+          throw new Error('must not execute');
+        },
+      },
+      new RegistrySkillOutputValidator(),
+    ),
+    /Schema 或质量门/u,
+  );
+  assert.equal(executions, 0);
+  assert.equal(
+    await repository.getChildEffect(
+      'invocation-invalid-output:read-facts',
+    ),
+    null,
+  );
+  assert.equal(
+    await repository.getInvocationReceipt('invocation-invalid-output'),
+    null,
+  );
+});
+
 test('an observed over-budget child effect is persisted before invocation rejection', async () => {
   const repository = new MemorySkillRepository();
   const service = new SkillService(repository, () => NOW);
@@ -466,11 +632,12 @@ test('an observed over-budget child effect is persisted before invocation reject
             toolId: 'tool.fact.read',
           },
         ],
+        input: dailyIndustrySkillInput(),
         invocationId: 'invocation-over-budget',
         output: {
-          schemaRevision: 'skill-output.scored-copy@1',
+          schemaRevision: 'skill-output.intent-decision@1',
           target: 'workflow_artifact',
-          value: {},
+          value: intentDecisionOutput(),
         },
         productUsageTaskId: 'task-one-product-usage',
         skillRevisionRef: revision.skillRevisionRef,
@@ -530,11 +697,12 @@ test('retry after a mid-invocation crash replays each settled effect and execute
         toolId: 'tool.quality.score',
       },
     ],
+    input: dailyIndustrySkillInput(),
     invocationId: 'invocation-mid-crash',
     output: {
-      schemaRevision: 'skill-output.scored-copy@1',
+      schemaRevision: 'skill-output.intent-decision@1',
       target: 'workflow_artifact' as const,
-      value: {},
+      value: intentDecisionOutput(),
     },
     productUsageTaskId: 'task-one-product-usage',
     skillRevisionRef: revision.skillRevisionRef,
@@ -692,8 +860,8 @@ test('Foundation commands reach define, accept, bind, rollback, and deployment o
       evalSuiteRef: 'skills-foundation-chain@1',
       executionMode: 'prompt_materialized' as const,
       fallback: 'skip' as const,
-      inputSchemaRef: 'skill-input.foundation-chain@1',
-      outputSchemaRef: 'skill-output.foundation-chain@1',
+      inputSchemaRef: 'skill-input.daily-industry@1',
+      outputSchemaRef: 'skill-output.intent-decision@1',
       requiredModelCapabilities: ['structured_output'],
       sideEffectClass: 'none' as const,
     },
@@ -748,6 +916,16 @@ test('Foundation commands reach define, accept, bind, rollback, and deployment o
     evalRun: evalFor(definedV2.revision.skillRevisionRef, '2'),
     skillRevisionRef: definedV2.revision.skillRevisionRef,
   });
+  await assert.rejects(
+    execute('skill_bind', {
+      bindingId: 'binding-foundation-retired-planner',
+      mode: 'planner_selected',
+      skillRevisionRef: definedV2.revision.skillRevisionRef,
+      stage: 'intent_naming',
+      workflowRevisionRef,
+    }),
+    /绑定模式或阶段不受支持/u,
+  );
   await execute('skill_bind', {
     bindingId: 'binding-foundation-v2',
     mode: 'required',
@@ -775,12 +953,11 @@ test('Foundation commands reach define, accept, bind, rollback, and deployment o
   assert.equal(
     (
       await service.resolveStage({
-        plannerSelectedSkillRefs: [],
         stage: 'intent_naming',
         userSelectedSkillRefs: [],
         workflowRevisionRef,
       })
-    ).selected[0]?.skillRevisionRef,
+    ).allowlist[0]?.skillRevisionRef,
     definedV1.revision.skillRevisionRef,
   );
   assert.equal(
@@ -840,7 +1017,6 @@ test('rolling a binding back to the previous frozen revision restores the fixtur
   });
 
   const current = await service.resolveStage({
-    plannerSelectedSkillRefs: [],
     stage: 'intent_naming',
     userSelectedSkillRefs: [],
     workflowRevisionRef: 'workflow.rollback@2',
@@ -852,7 +1028,6 @@ test('rolling a binding back to the previous frozen revision restores the fixtur
     workflowRevisionRef: 'workflow.rollback@3',
   });
   const restored = await service.resolveStage({
-    plannerSelectedSkillRefs: [],
     stage: 'intent_naming',
     userSelectedSkillRefs: [],
     workflowRevisionRef: 'workflow.rollback@3',
@@ -899,11 +1074,11 @@ test('rolling a binding back to the previous frozen revision restores the fixtur
     workflowRevision: 1,
   };
   const currentJudgment = await nameHarnessIntent(
-    { ...intentInput, skillInstructions: current.selected },
+    { ...intentInput, skillInstructions: current.allowlist },
     runner,
   );
   const restoredJudgment = await nameHarnessIntent(
-    { ...intentInput, skillInstructions: restored.selected },
+    { ...intentInput, skillInstructions: restored.allowlist },
     runner,
   );
 
@@ -960,14 +1135,13 @@ test('rollback rejects the same revision and supersedes a binding on the same wo
     workflowRevisionRef: 'workflow.rollback@2',
   });
   const resolved = await service.resolveStage({
-    plannerSelectedSkillRefs: [],
     stage: 'intent_naming',
     userSelectedSkillRefs: [],
     workflowRevisionRef: 'workflow.rollback@2',
   });
 
   assert.deepEqual(
-    resolved.selected.map((skill) => skill.skillRevisionRef),
+    resolved.allowlist.map((skill) => skill.skillRevisionRef),
     [first.skillRevisionRef],
   );
 });
@@ -998,6 +1172,34 @@ function skillEvalRun(skillRevisionRef: string): EvalRun {
 
 function sha256(value: string) {
   return createHash('sha256').update(value).digest('hex');
+}
+
+function dailyIndustrySkillInput() {
+  return {
+    context: {
+      workId: 'work-skill-invocation',
+      intent: '为今天的团购写一条行业内容',
+      scene: '日常项目曝光',
+      sourceSummaries: ['门店价目表'],
+    },
+    assetReferences: ['asset-price-list'],
+  };
+}
+
+function intentDecisionOutput() {
+  return {
+    normalizedIntent: '为今天的团购写一条行业内容',
+    taskType: 'daily_service_exposure',
+    deliveryLayer: 'copy',
+    relevantAssetCategories: [
+      'product_service',
+      'industry_category',
+    ],
+    usedAssetCategories: ['industry_category'],
+    route: 'customized',
+    implicitConstraints: ['只使用已确认的行业事实'],
+    blockingGap: null,
+  };
 }
 
 async function createAcceptedSkill(
@@ -1031,8 +1233,8 @@ async function createAcceptedSkill(
       evalSuiteRef: `skills-${suffix}@1`,
       executionMode: 'prompt_materialized',
       fallback: 'skip',
-      inputSchemaRef: `skill-input.${suffix}@1`,
-      outputSchemaRef: `skill-output.${suffix}@1`,
+      inputSchemaRef: 'skill-input.daily-industry@1',
+      outputSchemaRef: 'skill-output.intent-decision@1',
       requiredModelCapabilities: ['structured_output'],
       sideEffectClass: 'none',
     },
@@ -1099,8 +1301,8 @@ async function createAcceptedEffectSkill(
       evalSuiteRef: 'skills-effect-boundary@1',
       executionMode,
       fallback: 'fail_closed',
-      inputSchemaRef: 'skill-input.effect-boundary@1',
-      outputSchemaRef: 'skill-output.scored-copy@1',
+      inputSchemaRef: 'skill-input.daily-industry@1',
+      outputSchemaRef: 'skill-output.intent-decision@1',
       requiredModelCapabilities: ['structured_output', 'tool_calling'],
       sideEffectClass: 'read',
     },
@@ -1161,8 +1363,8 @@ async function draftAndAcceptRevision(
       evalSuiteRef: `skills-rollback@${version}`,
       executionMode: 'prompt_materialized',
       fallback: 'skip',
-      inputSchemaRef: 'skill-input.rollback@1',
-      outputSchemaRef: 'skill-output.rollback@1',
+      inputSchemaRef: 'skill-input.daily-industry@1',
+      outputSchemaRef: 'skill-output.intent-decision@1',
       requiredModelCapabilities: ['structured_output'],
       sideEffectClass: 'none',
     },

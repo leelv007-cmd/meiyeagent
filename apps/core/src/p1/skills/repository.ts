@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { P1DomainError } from '../foundation/domain.js';
 import type {
+  AuditedSkillBinding,
   SkillBinding,
   SkillCatalog,
   SkillChildEffect,
@@ -26,11 +27,12 @@ export interface SkillRepository {
     sourceBindingId: string,
     replacement: SkillBinding,
   ): Promise<SkillBinding>;
-  getBinding(bindingId: string): Promise<SkillBinding | null>;
+  getBinding(bindingId: string): Promise<AuditedSkillBinding | null>;
   listBindings(
     workflowRevisionRef: string,
     stage: SkillStage,
   ): Promise<SkillBinding[]>;
+  retireLegacyPlannerSelectedBindings(retiredAt: string): Promise<number>;
   putDeployment(deployment: SkillDeployment): Promise<SkillDeployment>;
   getDeployment(deploymentId: string): Promise<SkillDeployment | null>;
   putChildEffect(effect: SkillChildEffect): Promise<SkillChildEffect>;
@@ -69,7 +71,7 @@ function putOnce<T>(
 export class MemorySkillRepository implements SkillRepository {
   private readonly catalogs = new Map<string, SkillCatalog>();
   private readonly revisions = new Map<string, SkillRevision>();
-  private readonly bindings = new Map<string, SkillBinding>();
+  private readonly bindings = new Map<string, AuditedSkillBinding>();
   private readonly deployments = new Map<string, SkillDeployment>();
   private readonly effects = new Map<string, SkillChildEffect>();
   private readonly receipts = new Map<string, SkillInvocationReceipt>();
@@ -134,12 +136,13 @@ export class MemorySkillRepository implements SkillRepository {
 
   async putBinding(binding: SkillBinding) {
     this.assertBindingSlotAvailable(binding);
-    return putOnce(
+    const stored = putOnce(
       this.bindings,
       binding.bindingId,
       binding,
       'Skill binding',
     );
+    return stored as SkillBinding;
   }
 
   async supersedeBinding(
@@ -147,7 +150,11 @@ export class MemorySkillRepository implements SkillRepository {
     replacement: SkillBinding,
   ) {
     const source = this.bindings.get(sourceBindingId);
-    if (!source || source.status !== 'active') {
+    if (
+      !source ||
+      source.status !== 'active' ||
+      source.mode === 'planner_selected'
+    ) {
       throw new P1DomainError(
         'INVALID_STATE',
         'Only an active Skill binding can be superseded.',
@@ -158,6 +165,7 @@ export class MemorySkillRepository implements SkillRepository {
       status: 'superseded',
       supersededAt: replacement.createdAt,
       supersededByBindingId: replacement.bindingId,
+      mode: source.mode,
     };
     this.bindings.set(sourceBindingId, clone(superseded));
     try {
@@ -176,12 +184,33 @@ export class MemorySkillRepository implements SkillRepository {
   async listBindings(workflowRevisionRef: string, stage: SkillStage) {
     return [...this.bindings.values()]
       .filter(
-        (binding) =>
+        (binding): binding is SkillBinding =>
           binding.workflowRevisionRef === workflowRevisionRef &&
           binding.stage === stage &&
-          binding.status === 'active',
+          binding.status === 'active' &&
+          binding.mode !== 'planner_selected',
       )
       .map(clone);
+  }
+
+  async retireLegacyPlannerSelectedBindings(retiredAt: string) {
+    let retired = 0;
+    for (const [bindingId, binding] of this.bindings) {
+      if (
+        binding.status !== 'active' ||
+        binding.mode !== 'planner_selected'
+      ) {
+        continue;
+      }
+      this.bindings.set(bindingId, {
+        ...binding,
+        status: 'superseded',
+        supersededAt: retiredAt,
+        supersededByBindingId: null,
+      });
+      retired += 1;
+    }
+    return retired;
   }
 
   private assertBindingSlotAvailable(binding: SkillBinding) {

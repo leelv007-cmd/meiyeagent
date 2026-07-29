@@ -63,8 +63,8 @@ test(
         evalSuiteRef: 'eval.skill.postgres@1',
         executionMode: 'harness_native',
         fallback: 'fail_closed',
-        inputSchemaRef: 'skill-input.postgres@1',
-        outputSchemaRef: 'skill-output.postgres@1',
+        inputSchemaRef: 'skill-input.daily-industry@1',
+        outputSchemaRef: 'skill-output.intent-decision@1',
         requiredModelCapabilities: ['structured_output'],
         sideEffectClass: 'read',
       },
@@ -170,6 +170,14 @@ test(
         await restarted.getInvocationReceipt(invocationId),
         receipt,
       );
+      assert.deepEqual(
+        (
+          await new SkillService(restarted).resolveExecutedSelection(
+            invocationId,
+          )
+        ).map((skill) => skill.skillRevisionRef),
+        [skillRevisionRef],
+      );
     } finally {
       await pool.query(
         'DELETE FROM p1_skill_invocation_receipts WHERE invocation_id = $1',
@@ -186,6 +194,228 @@ test(
       await pool.query(
         'DELETE FROM p1_skill_bindings WHERE skill_revision_ref = $1',
         [skillRevisionRef],
+      );
+      await pool.query(
+        'DELETE FROM p1_skill_revisions WHERE skill_id = $1',
+        [skillId],
+      );
+      await pool.query(
+        'DELETE FROM p1_skill_revision_heads WHERE skill_id = $1',
+        [skillId],
+      );
+      await pool.query(
+        'DELETE FROM p1_skill_catalogs WHERE skill_id = $1',
+        [skillId],
+      );
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'migration supersedes legacy planner-selected bindings without deleting their audit facts',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const suffix = randomUUID();
+    const bindingId = `binding-legacy-planner-${suffix}`;
+    const skillId = `skill.legacy-planner.${suffix}`;
+    const skillRevisionRef = `${skillId}@1`;
+    const workflowRevisionRef = `workflow.legacy-planner.${suffix}@1`;
+    const repository = new PostgresSkillRepository(pool);
+    const legacyBinding = {
+      bindingId,
+      workflowRevisionRef,
+      stage: 'intent_naming',
+      skillId,
+      skillRevisionRef,
+      mode: 'planner_selected',
+      status: 'active',
+      supersededAt: null,
+      supersededByBindingId: null,
+      createdAt: '2026-07-26T03:02:00.000Z',
+    };
+
+    try {
+      await repository.migrate();
+      await pool.query(
+        `INSERT INTO p1_skill_bindings
+           (binding_id, workflow_revision_ref, stage, skill_id,
+            skill_revision_ref, status, superseded_at, payload, created_at)
+         VALUES ($1, $2, $3, $4, $5, 'active', NULL, $6::jsonb, $7::timestamptz)`,
+        [
+          bindingId,
+          workflowRevisionRef,
+          legacyBinding.stage,
+          skillId,
+          skillRevisionRef,
+          JSON.stringify(legacyBinding),
+          legacyBinding.createdAt,
+        ],
+      );
+
+      assert.deepEqual(
+        await repository.listBindings(
+          workflowRevisionRef,
+          'intent_naming',
+        ),
+        [],
+      );
+      await repository.migrate();
+
+      const audited = await repository.getBinding(bindingId);
+      assert.equal(audited?.status, 'superseded');
+      assert.equal((audited?.mode as string | undefined), 'planner_selected');
+      assert.ok(audited?.supersededAt);
+      assert.equal(audited?.supersededByBindingId, null);
+      assert.deepEqual(
+        await repository.listBindings(
+          workflowRevisionRef,
+          'intent_naming',
+        ),
+        [],
+      );
+    } finally {
+      await pool.query(
+        'DELETE FROM p1_skill_bindings WHERE binding_id = $1',
+        [bindingId],
+      );
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'invalid Skill output leaves PostgreSQL receipts and child effects empty',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const suffix = randomUUID();
+    const invocationId = `invocation-invalid-output-${suffix}`;
+    const skillId = `skill.invalid-output.${suffix}`;
+    const skillRevisionRef = `${skillId}@1`;
+    const repository = new PostgresSkillRepository(pool);
+    await repository.migrate();
+    await repository.putCatalog({
+      activeRevisionRef: skillRevisionRef,
+      actorId: 'operator-postgres',
+      createdAt: '2026-07-29T02:00:00.000Z',
+      name: 'Invalid output PostgreSQL fixture',
+      presentationPolicy: 'backend_only',
+      skillId,
+      updatedAt: '2026-07-29T02:00:00.000Z',
+    });
+    await repository.putRevision(
+      {
+        acceptedAt: '2026-07-29T02:00:00.000Z',
+        acceptedBy: 'operator-postgres',
+        contentHash: 'a'.repeat(64),
+        createdAt: '2026-07-29T02:00:00.000Z',
+        createdBy: 'operator-postgres',
+        evalRunId: 'eval-invalid-output',
+        instruction: 'Validate output before any side effect.',
+        manifest: {
+          allowedTools: ['tool.fact.read'],
+          budget: {
+            maxChildEffects: 1,
+            maxCostCents: 1,
+            timeoutMs: 10_000,
+          },
+          compatibility: {
+            workflowRevisionRefs: ['workflow.invalid-output@1'],
+          },
+          contextScopes: ['facts'],
+          evalSuiteRef: 'eval.invalid-output@1',
+          executionMode: 'harness_native',
+          fallback: 'fail_closed',
+          inputSchemaRef: 'skill-input.daily-industry@1',
+          outputSchemaRef: 'skill-output.intent-decision@1',
+          requiredModelCapabilities: ['structured_output'],
+          sideEffectClass: 'read',
+        },
+        prompt: {
+          content: 'Validate output before any side effect.',
+          contentHash: 'b'.repeat(64),
+          isFallback: false,
+          label: 'production',
+          name: 'skills/invalid-output',
+          source: 'langfuse',
+          version: '1',
+        },
+        revision: 1,
+        skillId,
+        skillRevisionRef,
+        status: 'accepted_frozen',
+      },
+      null,
+    );
+    let executions = 0;
+
+    try {
+      await assert.rejects(
+        new SkillService(repository).invoke(
+          {
+            calls: [
+              {
+                callId: 'read-facts',
+                contextRefs: ['facts:current-offer'],
+                declaredBudgetCapCents: 1,
+                payload: {},
+                toolId: 'tool.fact.read',
+              },
+            ],
+            input: {
+              context: {
+                workId: 'work-invalid-output',
+                intent: '写一条行业内容',
+                scene: '日常项目曝光',
+                sourceSummaries: ['门店价目表'],
+              },
+              assetReferences: [],
+            },
+            invocationId,
+            output: {
+              schemaRevision: 'skill-output.intent-decision@1',
+              target: 'workflow_artifact',
+              value: { route: 'customized' },
+            },
+            productUsageTaskId: `product-usage-${suffix}`,
+            skillRevisionRef,
+            taskId: `task-${suffix}`,
+            workspaceId: `workspace-${suffix}`,
+          },
+          {
+            async execute() {
+              executions += 1;
+              throw new Error('must not execute');
+            },
+          },
+        ),
+        /Schema 或质量门/u,
+      );
+      const receiptRows = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count
+           FROM p1_skill_invocation_receipts
+          WHERE invocation_id = $1`,
+        [invocationId],
+      );
+      const effectRows = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count
+           FROM p1_skill_child_effects
+          WHERE invocation_id = $1`,
+        [invocationId],
+      );
+      assert.equal(executions, 0);
+      assert.equal(receiptRows.rows[0]?.count, '0');
+      assert.equal(effectRows.rows[0]?.count, '0');
+    } finally {
+      await pool.query(
+        'DELETE FROM p1_skill_child_effects WHERE invocation_id = $1',
+        [invocationId],
+      );
+      await pool.query(
+        'DELETE FROM p1_skill_invocation_receipts WHERE invocation_id = $1',
+        [invocationId],
       );
       await pool.query(
         'DELETE FROM p1_skill_revisions WHERE skill_id = $1',
@@ -241,8 +471,8 @@ test(
       evalSuiteRef: `skills-postgres-journey-${suffix}@1`,
       executionMode: 'prompt_materialized' as const,
       fallback: 'skip' as const,
-      inputSchemaRef: `skill-input.postgres-journey-${suffix}@1`,
-      outputSchemaRef: `skill-output.postgres-journey-${suffix}@1`,
+      inputSchemaRef: 'skill-input.daily-industry@1',
+      outputSchemaRef: 'skill-output.intent-decision@1',
       requiredModelCapabilities: ['structured_output'],
       sideEffectClass: 'none' as const,
     };
@@ -322,13 +552,12 @@ test(
         workflowRevisionRef,
       });
       const current = await service.resolveStage({
-        plannerSelectedSkillRefs: [],
         stage: 'intent_naming',
         userSelectedSkillRefs: [],
         workflowRevisionRef,
       });
       assert.deepEqual(
-        current.selected.map((skill) => skill.skillRevisionRef),
+        current.allowlist.map((skill) => skill.skillRevisionRef),
         [draftV2.skillRevisionRef],
       );
       await service.rollbackBinding({
@@ -338,13 +567,12 @@ test(
         workflowRevisionRef,
       });
       const restored = await service.resolveStage({
-        plannerSelectedSkillRefs: [],
         stage: 'intent_naming',
         userSelectedSkillRefs: [],
         workflowRevisionRef,
       });
       assert.deepEqual(
-        restored.selected.map((skill) => skill.skillRevisionRef),
+        restored.allowlist.map((skill) => skill.skillRevisionRef),
         [draftV1.skillRevisionRef],
       );
       const runner: StructuredNodeRunner = {
@@ -393,7 +621,7 @@ test(
       assert.equal(
         (
           await nameHarnessIntent(
-            { ...intentInput, skillInstructions: current.selected },
+            { ...intentInput, skillInstructions: current.allowlist },
             runner,
           )
         ).declaration.route,
@@ -402,7 +630,7 @@ test(
       assert.equal(
         (
           await nameHarnessIntent(
-            { ...intentInput, skillInstructions: restored.selected },
+            { ...intentInput, skillInstructions: restored.allowlist },
             runner,
           )
         ).declaration.route,

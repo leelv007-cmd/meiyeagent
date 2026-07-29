@@ -9,7 +9,6 @@ import { SkillService } from './service.js';
 export type DurableSkillInstructionResolutionInput = Parameters<
   HarnessSkillInstructionResolverPort['resolve']
 >[0] & {
-  plannerSelectedSkillRefs?: readonly string[];
   userSelectedSkillRefs?: readonly string[];
 };
 
@@ -42,12 +41,9 @@ export class DurableSkillInstructionResolver
           await this.service.resolveStage({
             workflowRevisionRef,
             stage: input.stage,
-            plannerSelectedSkillRefs: [
-              ...(input.plannerSelectedSkillRefs ?? []),
-            ],
             userSelectedSkillRefs: [...(input.userSelectedSkillRefs ?? [])],
           })
-        ).selected;
+        ).allowlist;
     const receipts = await this.service.recordPromptMaterializationReceipts({
       workspaceId: input.workspaceId,
       taskId: input.workflowId,
