@@ -15,7 +15,7 @@ test('issue 255 recorded runner executes the strict 27-sample matrix with networ
   };
 
   try {
-    const samples = await runIssue255RecordedCalibration();
+    const samples = await runIssue255RecordedCalibration(globalThis.fetch);
     assert.equal(assertIssue255RecordedMatrix(samples).length, 27);
     assert.equal(networkCalls, 0);
     assert.deepEqual(
@@ -30,10 +30,59 @@ test('issue 255 recorded runner executes the strict 27-sample matrix with networ
     );
     assert.equal(
       samples
-        .filter((sample) => sample.modality === 'copy')
-        .every((sample) => sample.observed.iterations === 1),
+        .filter(
+          (sample) =>
+            sample.modality === 'copy' &&
+            sample.scenarioBand === 'low',
+        )
+        .every(
+          (sample) =>
+            sample.observed.iterations === 1 &&
+            sample.loopEvidence === 'bounded_single_pass',
+        ),
       true,
-      'copy samples must cross the production bounded selection loop once',
+      'low copy samples must cross the production bounded selection once',
+    );
+    assert.equal(
+      samples
+        .filter(
+          (sample) =>
+            sample.modality === 'copy' &&
+            sample.scenarioBand === 'typical',
+        )
+        .every(
+          (sample) =>
+            sample.observed.iterations === 2 &&
+            sample.loopEvidence === 'full_limit_loop',
+        ),
+      true,
+      'typical copy samples must self-correct through the canonical gate',
+    );
+    assert.equal(
+      samples
+        .filter(
+          (sample) =>
+            sample.modality === 'copy' &&
+            sample.scenarioBand === 'boundary',
+        )
+        .every(
+          (sample) =>
+            sample.observed.iterations === 1 &&
+            sample.loopEvidence === 'full_limit_loop',
+        ),
+      true,
+      'boundary copy samples must hit the real maxIterations suspension',
+    );
+    assert.equal(
+      samples
+        .filter((sample) => sample.modality !== 'copy')
+        .every(
+          (sample) =>
+            sample.loopEvidence === 'non_limit_loop' &&
+            sample.observed.costCents === 0,
+        ),
+      true,
+      'recorded media samples must be labeled as non-limit-loop zero-cost observations',
     );
   } finally {
     globalThis.fetch = originalFetch;

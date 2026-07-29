@@ -37,6 +37,12 @@ function recordedMatrix(): BoundedExecutionCalibrationSample[] {
         },
         artifactRef: `recorded://issue-255/${modality}-${scenarioBand}-${seed}`,
         evidenceKind: 'recorded' as const,
+        loopEvidence:
+          modality === 'copy'
+            ? scenarioBand === 'low'
+              ? ('bounded_single_pass' as const)
+              : ('full_limit_loop' as const)
+            : ('non_limit_loop' as const),
         modality,
         sampleId: `${modality}-${scenarioBand}-${seed}`,
         scenarioBand,

@@ -9,6 +9,7 @@ import type {
 import { executeCopySelection } from './execution-selection.js';
 import type { BoundedExecutionCalibrationSample } from './bounded-execution-calibration.js';
 import { assertIssue255RecordedMatrix } from './issue-255-calibration-guard.js';
+import { createHarnessCandidateValidator } from './policy-gates.js';
 
 const modalities = ['copy', 'image_text', 'video'] as const;
 const bands = ['low', 'typical', 'boundary'] as const;
@@ -22,7 +23,12 @@ const bandPrompts = {
 } as const;
 
 class RecordedCopyRunner implements StructuredNodeRunner {
-  constructor(private readonly router: RecordedAdapterRouter) {}
+  private callCount = 0;
+
+  constructor(
+    private readonly router: RecordedAdapterRouter,
+    private readonly scenarioBand: (typeof bands)[number],
+  ) {}
 
   async run<Output>(request: StructuredNodeRunnerRequest<Output>) {
     const providerRequest = recordedRequest(
@@ -46,10 +52,20 @@ class RecordedCopyRunner implements StructuredNodeRunner {
       );
     }
     const source = result.copyCandidates[0];
+    this.callCount += 1;
+    const needsCorrection =
+      this.scenarioBand !== 'low' && this.callCount === 1;
     return {
       output: request.schema.parse({
         ...source,
-        factClaims: [],
+        factClaims: needsCorrection
+          ? [
+              {
+                kind: 'offer',
+                value: '首次候选中的无来源优惠',
+              },
+            ]
+          : [],
         assetRefs: [],
         expressionIdentityRef: 'issue-255-recorded-identity',
       }),
@@ -65,11 +81,13 @@ class RecordedCopyRunner implements StructuredNodeRunner {
   }
 }
 
-export async function runIssue255RecordedCalibration() {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => {
+export async function runIssue255RecordedCalibration(
+  networkFetch: typeof globalThis.fetch = async () => {
     throw new Error('Issue 255 recorded calibration forbids network access.');
-  };
+  },
+) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = networkFetch;
   try {
     const router = new RecordedAdapterRouter();
     const samples: BoundedExecutionCalibrationSample[] = [];
@@ -113,7 +131,7 @@ export async function runIssue255RecordedCalibration() {
                 },
                 boundedExecution: {
                   schemaVersion: 'bounded-execution-snapshot/v1',
-                  maxIterations: 2,
+                  maxIterations: scenarioBand === 'boundary' ? 1 : 2,
                   maxCostCents: 100,
                   maxWallClockMs: 60_000,
                   maxDelegations: 'unset',
@@ -133,19 +151,32 @@ export async function runIssue255RecordedCalibration() {
                 },
               },
               {
-                runner: new RecordedCopyRunner(router),
-                validator: {
-                  validate() {
-                    return { passed: true, failures: [] };
+                runner: new RecordedCopyRunner(router, scenarioBand),
+                validator: createHarnessCandidateValidator({
+                  phase: 'execution',
+                  bundle: {
+                    workspaceId: 'issue-255-recorded',
+                    revision: seed,
                   },
-                },
+                  brief: {},
+                  sourceRefs: [],
+                  rightsRefs: [],
+                  identityRefs: [
+                    {
+                      id: 'issue-255-recorded-identity',
+                      workspaceId: 'issue-255-recorded',
+                      status: 'registered',
+                    },
+                  ],
+                }),
               },
             );
-            if ('state' in result) {
-              throw new Error('Issue 255 recorded copy unexpectedly suspended.');
-            }
-            iterations = result.boundedExecution?.consumption.iterations ?? 0;
-            costCents = result.boundedExecution?.consumption.costCents ?? 0;
+            const consumption =
+              'state' in result
+                ? result.snapshot.consumption
+                : result.boundedExecution?.consumption;
+            iterations = consumption?.iterations ?? 0;
+            costCents = consumption?.costCents ?? 0;
           } else {
             const catalogModelId =
               modality === 'image_text'
@@ -179,6 +210,12 @@ export async function runIssue255RecordedCalibration() {
             },
             artifactRef: `recorded://issue-255/${sampleId}`,
             evidenceKind: 'recorded',
+            loopEvidence:
+              modality === 'copy'
+                ? scenarioBand === 'low'
+                  ? 'bounded_single_pass'
+                  : 'full_limit_loop'
+                : 'non_limit_loop',
             modality,
             sampleId,
             scenarioBand,

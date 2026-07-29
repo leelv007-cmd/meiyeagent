@@ -18,6 +18,9 @@ export const boundedExecutionCalibrationSampleSchema = z
     axes: observabilityAxesSchema,
     artifactRef: z.string().trim().min(1),
     evidenceKind: calibrationEvidenceKindSchema,
+    loopEvidence: z
+      .enum(['full_limit_loop', 'bounded_single_pass', 'non_limit_loop'])
+      .optional(),
     modality: calibrationModalitySchema,
     sampleId: z.string().trim().min(1),
     scenarioBand: calibrationScenarioBandSchema,

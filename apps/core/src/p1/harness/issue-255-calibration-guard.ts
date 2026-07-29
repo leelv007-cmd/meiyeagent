@@ -190,6 +190,20 @@ export function assertIssue255RecordedMatrix(input: unknown) {
   if (samples.some((sample) => sample.evidenceKind !== 'recorded')) {
     throw new Error('Issue 255 recorded matrix accepts recorded evidence only.');
   }
+  if (
+    samples.some((sample) =>
+      sample.modality === 'copy'
+        ? sample.loopEvidence !==
+            (sample.scenarioBand === 'low'
+              ? 'bounded_single_pass'
+              : 'full_limit_loop')
+        : sample.loopEvidence !== 'non_limit_loop',
+    )
+  ) {
+    throw new Error(
+      'Issue 255 recorded matrix must mark low copy as bounded_single_pass, other copy as full_limit_loop, and media as non_limit_loop.',
+    );
+  }
   const coordinates = new Set(
     samples.map(
       (sample) =>
@@ -515,7 +529,7 @@ export class Issue255LiveCalibrationGuard {
   }
 }
 
-function canonicalRecordedMatrixDigest(
+export function canonicalRecordedMatrixDigest(
   samples: readonly BoundedExecutionCalibrationSample[],
 ) {
   return createHash('sha256')
