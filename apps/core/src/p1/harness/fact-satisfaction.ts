@@ -6,7 +6,11 @@ import {
   type StoreFactKind,
 } from '@meiye/contracts';
 import { z } from 'zod';
-import type { StructuredNodeRunner } from '../model-supply/structured-node-runner.js';
+import { P1DomainError } from '../foundation/domain.js';
+import {
+  StructuredNodeRunError,
+  type StructuredNodeRunner,
+} from '../model-supply/structured-node-runner.js';
 import { isReferenceEligibleFactSnapshot } from './structured-nodes.js';
 import {
   HARNESS_BUILTIN_PROMPTS,
@@ -53,11 +57,35 @@ export interface FactRightsAuthorizationPort {
   }): Promise<boolean>;
 }
 
+export interface FactSatisfactionDiagnosticEvent {
+  event: 'harness_fact_node_failure';
+  stage: 'runner' | 'schema_parse';
+  workflowId: string;
+  workspaceId: string;
+  effectIdempotencyKey: string;
+  schemaName: string;
+  error: {
+    name: string;
+    code?: string;
+    message: string;
+    stack?: string;
+  };
+}
+
+export type FactSatisfactionDiagnosticLogger = (
+  event: FactSatisfactionDiagnosticEvent,
+) => void;
+
 export const conservativeFactRightsAuthorization: FactRightsAuthorizationPort = {
   async isAuthorized() {
     return false;
   },
 };
+
+const defaultFactSatisfactionDiagnosticLogger: FactSatisfactionDiagnosticLogger =
+  (event) => {
+    console.warn('Harness fact node failed.', event);
+  };
 
 export async function assessRecipeFactSatisfaction(
   input: {
@@ -74,6 +102,7 @@ export async function assessRecipeFactSatisfaction(
   },
   runner: StructuredNodeRunner,
   rights: FactRightsAuthorizationPort = conservativeFactRightsAuthorization,
+  diagnostics: FactSatisfactionDiagnosticLogger = defaultFactSatisfactionDiagnosticLogger,
 ) {
   const facts = await eligibleFacts(input.bundle, input.at, rights);
   if (input.factTypes.length === 0) {
@@ -84,9 +113,9 @@ export async function assessRecipeFactSatisfaction(
     };
   }
 
-  let assessment: z.infer<typeof factSatisfactionOutputSchema>;
+  let assessmentResult;
   try {
-    const result = await runner.run({
+    assessmentResult = await runner.run({
       effectIdempotencyKey: `wf:${input.workflowId}:s2:facts:0`,
       schemaName: 'harness_fact_satisfaction_v1',
       schemaRevision: 'fact-satisfaction-v1',
@@ -100,8 +129,25 @@ export async function assessRecipeFactSatisfaction(
       }),
       schema: factSatisfactionOutputSchema,
     });
-    assessment = factSatisfactionOutputSchema.parse(result.output);
-  } catch {
+  } catch (error) {
+    emitFactDiagnostic(
+      diagnostics,
+      factDiagnosticEvent(
+        input,
+        error instanceof z.ZodError ? 'schema_parse' : 'runner',
+        error,
+      ),
+    );
+    return conservativeGuidance(input.factTypes);
+  }
+  let assessment: z.infer<typeof factSatisfactionOutputSchema>;
+  try {
+    assessment = factSatisfactionOutputSchema.parse(assessmentResult.output);
+  } catch (error) {
+    emitFactDiagnostic(
+      diagnostics,
+      factDiagnosticEvent(input, 'schema_parse', error),
+    );
     return conservativeGuidance(input.factTypes);
   }
 
@@ -201,6 +247,96 @@ export async function assessRecipeFactSatisfaction(
 export type RecipeFactSatisfaction = Awaited<
   ReturnType<typeof assessRecipeFactSatisfaction>
 >;
+
+function emitFactDiagnostic(
+  diagnostics: FactSatisfactionDiagnosticLogger,
+  event: FactSatisfactionDiagnosticEvent,
+) {
+  try {
+    diagnostics(event);
+  } catch {
+    // Diagnostics must never replace the conservative failure result.
+  }
+}
+
+function factDiagnosticEvent(
+  input: {
+    workflowId: string;
+    bundle: Pick<ContextBundle, 'workspaceId'>;
+  },
+  stage: FactSatisfactionDiagnosticEvent['stage'],
+  error: unknown,
+): FactSatisfactionDiagnosticEvent {
+  const schemaName = 'harness_fact_satisfaction_v1';
+  const safeError = safeDiagnosticError(error, stage, schemaName);
+  return {
+    event: 'harness_fact_node_failure',
+    stage,
+    workflowId: input.workflowId,
+    workspaceId: input.bundle.workspaceId,
+    effectIdempotencyKey: `wf:${input.workflowId}:s2:facts:0`,
+    schemaName,
+    error: {
+      ...safeError,
+      stack: safeDiagnosticStack(safeError.name, safeError.message),
+    },
+  };
+}
+
+function safeDiagnosticError(
+  error: unknown,
+  stage: FactSatisfactionDiagnosticEvent['stage'],
+  schemaName: string,
+): FactSatisfactionDiagnosticEvent['error'] {
+  if (stage === 'schema_parse') {
+    return {
+      name: 'ZodError',
+      code: 'SCHEMA_PARSE_FAILED',
+      message: `${schemaName} output failed schema validation.`,
+    };
+  }
+  if (error instanceof P1DomainError) {
+    return {
+      name: 'P1DomainError',
+      code: error.code,
+      message:
+        error.code === 'NOT_FOUND'
+          ? 'Workspace resource was not found.'
+          : 'Structured fact runner failed.',
+    };
+  }
+  if (error instanceof StructuredNodeRunError) {
+    return {
+      name: 'StructuredNodeRunError',
+      code:
+        error.status === 'unknown'
+          ? 'STRUCTURED_NODE_OUTCOME_UNKNOWN'
+          : 'STRUCTURED_NODE_EXECUTION_FAILED',
+      message:
+        error.status === 'unknown'
+          ? 'Structured node outcome is unknown.'
+          : 'Structured node execution failed.',
+    };
+  }
+  return {
+    name: 'Error',
+    code: 'STRUCTURED_NODE_RUNNER_FAILED',
+    message: 'Structured fact runner failed.',
+  };
+}
+
+function safeDiagnosticStack(name: string, message: string) {
+  const frames = (new Error().stack ?? '')
+    .split('\n')
+    .flatMap((line) => {
+      const match = line.match(
+        /(apps\/core\/src\/[A-Za-z0-9_./-]+\.(?:c|m)?(?:j|t)sx?:\d+:\d+)/u,
+      );
+      return match?.[1] ? [`    at ${match[1]}`] : [];
+    })
+    .slice(0, 12);
+  return [`${name}: ${message}`, ...frames].join('\n');
+}
 
 async function eligibleFacts(
   bundle: ContextBundle,

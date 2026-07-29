@@ -8,6 +8,7 @@ import {
   type StoreFactKind,
 } from '@meiye/contracts';
 import { LAUNCH_RECIPE_SPECS } from '../creation-experience/launch-seeds.js';
+import { P1DomainError } from '../foundation/domain.js';
 import { FixtureAiStructuredObjectExecutor } from '../model-supply/ai-sdk-runner.js';
 import type {
   StructuredNodeRunner,
@@ -15,6 +16,7 @@ import type {
 } from '../model-supply/structured-node-runner.js';
 import {
   assessRecipeFactSatisfaction,
+  type FactSatisfactionDiagnosticEvent,
   type FactRightsAuthorizationPort,
 } from './fact-satisfaction.js';
 
@@ -230,6 +232,133 @@ test('unsatisfied or invalid model output stays conservative', async () => {
     authorizedRights,
   );
   assert.equal(failed.action, 'conservative_guidance');
+});
+
+test('runner failures emit only structured safe fact diagnostics', async () => {
+  const diagnostics: FactSatisfactionDiagnosticEvent[] = [];
+  const runnerError = new P1DomainError(
+    'NOT_FOUND',
+    'workspace lookup failed: SECRET_PROMPT_AND_CREDENTIAL',
+  );
+  runnerError.stack = [
+    'Error: workspace lookup failed: SECRET_PROMPT_AND_CREDENTIAL',
+    '    at SECRET_ROUTE (apps/core/src/p1/harness/fact-satisfaction.test.ts:238:1)',
+    '    at credential-provider (/tmp/SECRET_FACT_VALUE:1:1)',
+  ].join('\n');
+  const result = await assessRecipeFactSatisfaction(
+    {
+      ...request(['service']),
+      intent: 'SECRET_PROMPT_MARKER',
+    },
+    new QueueRunner([runnerError]),
+    authorizedRights,
+    (event) => diagnostics.push(event),
+  );
+  await assessRecipeFactSatisfaction(
+    request(['service']),
+    new QueueRunner([
+      Object.assign(new Error('ABCD1234'), {
+        code: 'AKIAIOSFODNN7EXAMPLE',
+        stack: 'Error: ABCD1234\n    at apps/core/src/sk-abc123.ts:1:1',
+      }),
+    ]),
+    authorizedRights,
+    (event) => diagnostics.push(event),
+  );
+
+  assert.equal(result.action, 'conservative_guidance');
+  assert.equal(diagnostics.length, 2);
+  assert.deepEqual(
+    {
+      ...diagnostics[0],
+      error: {
+        ...diagnostics[0]!.error,
+        stack: undefined,
+      },
+    },
+    {
+      event: 'harness_fact_node_failure',
+      stage: 'runner',
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      effectIdempotencyKey: 'wf:workflow-1:s2:facts:0',
+      schemaName: 'harness_fact_satisfaction_v1',
+      error: {
+        name: 'P1DomainError',
+        code: 'NOT_FOUND',
+        message: 'Workspace resource was not found.',
+        stack: undefined,
+      },
+    },
+  );
+  assert.match(diagnostics[0]!.error.stack ?? '', /fact-satisfaction\.test/u);
+  assert.deepEqual(diagnostics[1]!.error, {
+    name: 'Error',
+    code: 'STRUCTURED_NODE_RUNNER_FAILED',
+    message: 'Structured fact runner failed.',
+    stack: diagnostics[1]!.error.stack,
+  });
+  const serialized = JSON.stringify(diagnostics);
+  assert.doesNotMatch(serialized, /SECRET_|ABCD1234|AKIA|sk-abc/u);
+  assert.doesNotMatch(serialized, /store_fact:/u);
+  assert.doesNotMatch(serialized, /credential|provider|route/iu);
+});
+
+test('schema failures are distinct and redact invalid fact values', async () => {
+  const diagnostics: FactSatisfactionDiagnosticEvent[] = [];
+  const invalidOutput = {
+    status: 'satisfied',
+    matchedFactRefs: ['SECRET_FACT_REF'],
+    missingFactTypes: ['price'],
+  };
+  for (const runner of [
+    new QueueRunner([invalidOutput]),
+    new RawOutputRunner(invalidOutput),
+  ]) {
+    const result = await assessRecipeFactSatisfaction(
+      request(['service', 'price']),
+      runner,
+      authorizedRights,
+      (event) => diagnostics.push(event),
+    );
+    assert.equal(result.action, 'conservative_guidance');
+  }
+
+  assert.equal(diagnostics.length, 2);
+  for (const diagnostic of diagnostics) {
+    assert.equal(diagnostic.stage, 'schema_parse');
+    assert.equal(diagnostic.error.name, 'ZodError');
+    assert.equal(diagnostic.error.code, 'SCHEMA_PARSE_FAILED');
+    assert.equal(
+      diagnostic.error.message,
+      'harness_fact_satisfaction_v1 output failed schema validation.',
+    );
+    assert.match(diagnostic.error.stack ?? '', /fact-satisfaction/u);
+    const serialized = JSON.stringify(diagnostic);
+    assert.doesNotMatch(serialized, /SECRET_FACT_REF|store_fact:/u);
+    assert.doesNotMatch(serialized, /credential|route/iu);
+  }
+});
+
+test('diagnostic logger failures preserve conservative guidance', async () => {
+  for (const runner of [
+    new QueueRunner([new Error('runner failed')]),
+    new RawOutputRunner({
+      status: 'satisfied',
+      matchedFactRefs: [],
+      missingFactTypes: ['price'],
+    }),
+  ]) {
+    const result = await assessRecipeFactSatisfaction(
+      request(['price']),
+      runner,
+      authorizedRights,
+      () => {
+        throw new Error('diagnostic transport failed');
+      },
+    );
+    assert.equal(result.action, 'conservative_guidance');
+  }
 });
 
 test('a ledger wider than the recipe factTypes keeps every matched fact authorized', async () => {
@@ -715,6 +844,20 @@ class QueueRunner implements StructuredNodeRunner {
       output: request.schema.parse(output),
       attempts: 1,
       providerTaskRef: 'fixture-fact-assessment',
+      replayed: false,
+      usage: { inputTokens: 0, outputTokens: 0 },
+    };
+  }
+}
+
+class RawOutputRunner implements StructuredNodeRunner {
+  constructor(private readonly output: unknown) {}
+
+  async run<Output>(_request: StructuredNodeRunnerRequest<Output>) {
+    return {
+      output: this.output as Output,
+      attempts: 1,
+      providerTaskRef: 'fixture-unparsed-fact-assessment',
       replayed: false,
       usage: { inputTokens: 0, outputTokens: 0 },
     };
