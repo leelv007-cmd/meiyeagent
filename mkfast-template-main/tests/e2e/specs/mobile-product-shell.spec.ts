@@ -52,13 +52,20 @@ test('keeps identity, assets, and camera authorization reachable on mobile', asy
       mobileNav.getByTestId('mobile-identity-assets-entry')
     ).toHaveAttribute('href', /^\/dashboard\/assets(?:\?|$)/u);
     // 记忆 joined the bar under D-164④; the grid widened to five with it.
-    for (const label of ['创作', '身份素材', '内容', '门店', '记忆']) {
+    // 「口吻与素材」是手机端独有的覆盖标签：product_navigation_identity_assets
+    // (project.inlang/messages/zh.json:3279)，由 mobile-nav.tsx:32 挂到 assets 槽。
+    for (const label of ['创作', '口吻与素材', '内容', '门店', '记忆']) {
       await expect(mobileNav.getByText(label, { exact: true })).toBeVisible();
     }
 
-    await mobileNav.getByText('身份素材', { exact: true }).click();
+    await mobileNav.getByText('口吻与素材', { exact: true }).click();
     await expect(page).toHaveURL(/\/dashboard\/assets(?:\?|$)/u);
-    await expect(page.getByRole('region', { name: '表达身份' })).toBeVisible();
+    // a539378f 把「表达身份」改名为「口吻」：region 名来自
+    // marketing-identity-manager.tsx:53 的 aria-labelledby → 同文件 :56 的 h3，
+    // 文案是 COPY.zh.title（:25）。
+    await expect(
+      page.getByRole('region', { exact: true, name: '口吻' })
+    ).toBeVisible();
     await expect(page.getByText('素材', { exact: true }).first()).toBeVisible();
 
     await mobileNav.getByText('创作', { exact: true }).click();
@@ -141,7 +148,9 @@ test('keeps mobile identity and assets reachable during a slow canonical query',
     await page.unroute('**/api/core/p1/query');
     await identityAssetsEntry.click();
     await expect(page).toHaveURL(/\/dashboard\/assets/u);
-    await expect(page.getByRole('region', { name: '表达身份' })).toBeVisible();
+    await expect(
+      page.getByRole('region', { exact: true, name: '口吻' })
+    ).toBeVisible();
   } finally {
     releaseWorkbenchQuery();
     await cleanupE2EUsers(request);

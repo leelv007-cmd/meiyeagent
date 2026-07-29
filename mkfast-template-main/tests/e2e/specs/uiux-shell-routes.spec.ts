@@ -14,6 +14,19 @@ test.afterEach(async ({ request }) => {
   await cleanupE2EUsers(request);
 });
 
+/**
+ * 两条内联 color 断言在这一轮被删掉，不是降标准，是宿主没了：
+ *
+ *  - `next-action-guide` 挂在 operations-rail 上，27e74740（§1A 死码退役）把整个
+ *    组件删了，全仓只剩这份 spec 还在找这个 testid；它量的 `--product-guide`
+ *    (styles.css:181) 如今零消费者。
+ *  - 「今天的创作记录」只剩 `dashboard_pending_eyebrow` 一处渲染，在
+ *    routes/dashboard.tsx:38 的 pendingComponent 里。上面那句
+ *    `expect(navigation).toBeVisible()` 一过，加载态就已卸载，这条断言只会等超时。
+ *
+ * 两处都无同义后继可改指，硬要重基线只能写出一条恒红的断言，所以留证据在这里，
+ * 由属主决定要不要给这两个 token 补新的渲染宿主。
+ */
 test('product shell exposes the whole business navigation and utility modes', async ({
   page,
   request,
@@ -39,17 +52,15 @@ test('product shell exposes the whole business navigation and utility modes', as
         guide: style.getPropertyValue('--product-guide').trim(),
       };
     });
+  // 门店橱窗 palette，src/styles.css:179-182 的 `.meiye-product-shell` 基础块。
+  // 默认主题就是 light（config/website.ts:40 defaultMode），所以这一组读到的
+  // 是基础块原值，下面那组显式 light 读到的也是同一份。
   expect(productTokens).toEqual({
-    brand: 'oklch(0.78 0.14 166)',
-    brandInk: 'oklch(0.16 0.03 166)',
-    focus: 'oklch(0.85 0.15 166)',
-    guide: 'oklch(0.79 0.13 66)',
+    brand: 'oklch(0.63 0.13 18)',
+    brandInk: 'oklch(0.98 0.008 18)',
+    focus: 'oklch(0.22 0 0)',
+    guide: 'oklch(0 0 0 / 0.6)',
   });
-  const nextActionGuide = page.getByTestId('next-action-guide');
-  await expect(nextActionGuide).toBeVisible();
-  expect(
-    await nextActionGuide.evaluate((element) => getComputedStyle(element).color)
-  ).toBe('oklch(0.79 0.13 66)');
 
   await page.evaluate(() => localStorage.setItem('theme', 'light'));
   await page.reload();
@@ -68,17 +79,15 @@ test('product shell exposes the whole business navigation and utility modes', as
         sidebarRing: style.getPropertyValue('--sidebar-ring').trim(),
       };
     });
+  // --primary / --primary-foreground / --sidebar-ring 在壳里都是 var() 链
+  // (styles.css:230/231/249)，自定义属性的计算值会把 var() 代换掉，所以量到的是
+  // 链尾的字面量：--ink (styles.css:183) 与 --paper (styles.css:187)。
   expect(lightTokens).toEqual({
-    focus: 'oklch(0.43 0.075 188)',
-    primary: 'oklch(0.43 0.075 188)',
-    primaryForeground: 'oklch(0.985 0.008 190)',
-    sidebarRing: 'oklch(0.85 0.15 166)',
+    focus: 'oklch(0.22 0 0)',
+    primary: 'oklch(0.22 0 0)',
+    primaryForeground: 'oklch(1 0 0)',
+    sidebarRing: 'oklch(0.22 0 0)',
   });
-  expect(
-    await page
-      .getByText('今天的创作记录', { exact: true })
-      .evaluate((element) => getComputedStyle(element).color)
-  ).toBe('oklch(0.43 0.075 188)');
 
   const firstBusinessLink = navigation.getByRole('link').first();
   await page.evaluate(() => {
@@ -97,11 +106,15 @@ test('product shell exposes the whole business navigation and utility modes', as
     await page.keyboard.press('Tab');
   }
   await expect(firstBusinessLink).toBeFocused();
+  // 这条是本用例里唯一还量得到「token 真的落到渲染件上」的证据：两条内联 color
+  // 断言的宿主都已不在（见用例头注释）。焦点环走 styles.css:340-343 的
+  // `outline: 2px solid var(--ink) !important`，light 下 --ink = styles.css:183，
+  // 它压过 custom.css:92 的 --sidebar-ring 那条。
   const sidebarOutline = await firstBusinessLink.evaluate(
     (element) => getComputedStyle(element).outline
   );
   expect(sidebarOutline).toContain('2px');
-  expect(sidebarOutline).toContain('oklch(0.85 0.15 166)');
+  expect(sidebarOutline).toContain('oklch(0.22 0 0)');
 
   await page.getByRole('button', { name: /用户菜单/ }).click();
   await expect(
@@ -120,7 +133,9 @@ test('canonical shell routes survive direct navigation and reload', async ({
   const routes = [
     // T34 / #228 — 一级导航「内容」lands here; the old task inbox is a redirect shell.
     ['/dashboard/works', '内容'],
-    ['/dashboard/assets', '资产库'],
+    // h1 走 canonical-history-page.tsx:527 的 `page.title()`，assets 档取
+    // product_navigation_assets（同文件 :148）＝「素材」，与侧栏标签同名。
+    ['/dashboard/assets', '素材'],
     // D-164④: 记忆 is a first-class destination now, so it has to survive a
     // typed URL and a reload like every other one.
     ['/dashboard/memory', '记忆'],
