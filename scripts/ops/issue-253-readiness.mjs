@@ -60,13 +60,17 @@ function pathsAtCommit(sha) {
 function mergeLedgerAt(mainSha) {
   const result = git('show', `${mainSha}:docs/ops/merge-ledger.md`);
   if (result.status !== 0) return null;
-  return result.stdout
-    .split('\n')
-    .map((line) =>
-      line.match(/^\|\s*([0-9a-f]{7,40})\s*\|\s*#(\d+)\s*\|/u)
-    )
-    .filter(Boolean)
-    .map((match) => ({ issue: Number(match[2]), revision: match[1] }));
+  return result.stdout.split('\n').flatMap((line) => {
+    const cells = line.match(/^\|\s*([^|]+?)\s*\|\s*#(\d+)\s*\|/u);
+    if (!cells) return [];
+    const revisions = cells[1].match(
+      /^([0-9a-f]{7,40}(?:\s*\+\s*[0-9a-f]{7,40})*)(?:\s*(?:（[^|\r\n]*）|\([^|\r\n]*\)))?$/u
+    );
+    if (!revisions) return [];
+    return revisions[1]
+      .split(/\s*\+\s*/u)
+      .map((revision) => ({ issue: Number(cells[2]), revision }));
+  });
 }
 
 function issue(options, number) {

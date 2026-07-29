@@ -31,8 +31,14 @@ function writeMergeLedger(root, entries, message) {
       '| main sha | 票 | 内容 |',
       '|---|---|---|',
       ...entries.map(
-        ({ content, issue, revision }) =>
-          `| ${revision.slice(0, 8)} | #${issue} | ${content} |`
+        ({
+          annotation = '',
+          content,
+          issue,
+          revision,
+          revisions = [revision],
+        }) =>
+          `| ${revisions.map((value) => value.slice(0, 8)).join('+')}${annotation} | #${issue} | ${content} |`
       ),
       '',
     ].join('\n'),
@@ -158,6 +164,116 @@ test('open issue states are diagnostic when current main proves every marker', a
     ['merged', 'merged', 'merged']
   );
   assert.equal(report.semanticRebase.commands.length, 3);
+});
+
+test('an annotated merge-ledger revision still records its leading commit', async () => {
+  const data = await fixture();
+  await writeMergeLedger(
+    data.root,
+    [
+      {
+        annotation: '（尾 9 commits，cherry-pick 自 1111111..2222222）',
+        content: 'observability',
+        issue: 248,
+        revision: data.commits['248'],
+      },
+      { content: 'dashboard', issue: 261, revision: data.commits['261'] },
+      {
+        content: 'frontend retirement',
+        issue: 264,
+        revision: data.commits['264FE'],
+      },
+    ],
+    'docs(ops): annotate dependency merge'
+  );
+
+  const result = check(data);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    JSON.parse(result.stdout).dependencies[0].evidence.status,
+    'merged'
+  );
+});
+
+test('a compound annotated ledger cell records each canonical commit', async () => {
+  const data = await fixture();
+  const tail = await commit(
+    data.root,
+    'apps/core/src/events.ts',
+    'export const skillRevision = true;\nexport const deliveryHealth = true;\n',
+    'feat(events): add delivery health'
+  );
+  await writeMergeLedger(
+    data.root,
+    [
+      {
+        annotation: '(2 commits ff)',
+        content: 'observability',
+        issue: 248,
+        revision: data.commits['248'],
+        revisions: [data.commits['248'], tail],
+      },
+      { content: 'dashboard', issue: 261, revision: data.commits['261'] },
+      {
+        content: 'frontend retirement',
+        issue: 264,
+        revision: data.commits['264FE'],
+      },
+    ],
+    'docs(ops): record compound dependency merge'
+  );
+  data.markers.dependencies['248'].commit = tail;
+  data.markers.dependencies['248'].currentTreeChecks[0].contains = [
+    'deliveryHealth',
+  ];
+  await writeFile(data.markerPath, JSON.stringify(data.markers));
+
+  const result = check(data);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    JSON.parse(result.stdout).dependencies[0].evidence.status,
+    'merged'
+  );
+});
+
+test('a source commit mentioned only inside an annotation is not recorded', async () => {
+  const data = await fixture();
+  const source = await commit(
+    data.root,
+    'apps/core/src/events.ts',
+    'export const skillRevision = true;\nexport const sourceOnly = true;\n',
+    'feat(events): add source-only change'
+  );
+  await writeMergeLedger(
+    data.root,
+    [
+      {
+        annotation: `（cherry-pick 自 ${source.slice(0, 8)}）`,
+        content: 'observability',
+        issue: 248,
+        revision: data.commits['248'],
+      },
+      { content: 'dashboard', issue: 261, revision: data.commits['261'] },
+      {
+        content: 'frontend retirement',
+        issue: 264,
+        revision: data.commits['264FE'],
+      },
+    ],
+    'docs(ops): mention a source commit'
+  );
+  data.markers.dependencies['248'].commit = source;
+  data.markers.dependencies['248'].currentTreeChecks[0].contains = [
+    'sourceOnly',
+  ];
+  await writeFile(data.markerPath, JSON.stringify(data.markers));
+
+  const result = check(data);
+  assert.equal(result.status, 1);
+  assert.equal(
+    JSON.parse(result.stdout).dependencies[0].evidence.status,
+    'not_recorded'
+  );
 });
 
 test('a closed issue cannot replace an unmerged marker commit', async () => {
