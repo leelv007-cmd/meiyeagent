@@ -48,7 +48,9 @@ async function seedCanonicalVideoWorkflow(input: {
   workId: string;
 }) {
   const sql = postgres(
-    process.env.DATABASE_URL ?? 'postgres://meiye:meiye@127.0.0.1:54329/meiye',
+    process.env.TEST_DATABASE_URL ??
+      process.env.DATABASE_URL ??
+      'postgres://meiye:meiye@127.0.0.1:54329/meiye',
     { max: 1 }
   );
   const workflowId = `video-workflow-e2e-${crypto.randomUUID()}`;
@@ -264,7 +266,7 @@ test.describe('video Result canonical live commands', () => {
     await cleanupE2EUsers(request);
   });
 
-  test('persists edits and executes server quote → confirm → derived task', async ({
+  test('persists received-candidate choices without video editing controls', async ({
     page,
     request,
   }) => {
@@ -289,11 +291,22 @@ test.describe('video Result canonical live commands', () => {
     const workId = await submitComposerJourney(
       page,
       contract,
-      `皮肤护理 video-live-commands-${crypto.randomUUID()}`
+      '为门店已确认的透亮猫眼项目制作抖音成片'
     );
     await waitForResultJourney(page, contract, workId);
     await seedCanonicalVideoWorkflow({ email: user.email, workId });
     await page.reload();
+
+    for (const testId of [
+      'video-cover-panel',
+      'video-subtitle-panel',
+      'video-shot-regenerate',
+      'video-full-recompose',
+      'video-pro-studio-refine',
+    ]) {
+      await expect(page.getByTestId(testId)).toHaveCount(0);
+    }
+    await expect(page.getByText('继续调整', { exact: true })).toHaveCount(0);
 
     const candidate = page
       .locator('[data-testid="video-shot-candidate"][aria-pressed="false"]')
@@ -333,57 +346,5 @@ test.describe('video Result canonical live commands', () => {
     await expect(page.getByTestId('video-shot').first()).not.toHaveText(
       firstShotBefore
     );
-
-    const subtitle = `已持久化字幕-${crypto.randomUUID()}`;
-    await page.getByTestId('video-subtitle-input').fill(subtitle);
-    const subtitleResponsePromise = waitForP1Command(
-      page,
-      'model-supply',
-      'video_workflow_edit'
-    );
-    await page.getByTestId('video-subtitle-save').click();
-    const subtitleResponse = await subtitleResponsePromise;
-    expect(subtitleResponse.ok(), await subtitleResponse.text()).toBeTruthy();
-    await page.reload();
-    await expect(page.getByTestId('video-subtitle-input')).toHaveValue(
-      subtitle
-    );
-
-    const quoteResponsePromise = waitForP1Command(
-      page,
-      'video-regeneration',
-      'quote'
-    );
-    await page.getByTestId('video-shot-regenerate').first().click();
-    const quoteResponse = await quoteResponsePromise;
-    expect(quoteResponse.ok(), await quoteResponse.text()).toBeTruthy();
-    const quoteRequest = quoteResponse.request().postDataJSON() as {
-      payload: Record<string, unknown>;
-    };
-    expect(Object.keys(quoteRequest.payload).sort()).toEqual([
-      'scope',
-      'shotId',
-      'sourceRunId',
-    ]);
-    expect(quoteRequest.payload).not.toHaveProperty('unitRate');
-    expect(quoteRequest.payload).not.toHaveProperty('targetSeconds');
-    await expect(page.getByTestId('video-regen-confirm')).toContainText('预估');
-
-    const confirmResponsePromise = waitForP1Command(
-      page,
-      'video-regeneration',
-      'confirm'
-    );
-    await page.getByTestId('video-regen-confirm-action').click();
-    const confirmResponse = await confirmResponsePromise;
-    expect(confirmResponse.ok()).toBeFalsy();
-    const confirmRequest = confirmResponse.request().postDataJSON() as {
-      payload: { quoteId?: string; taskId?: string };
-    };
-    expect(confirmRequest.payload.quoteId).toBeTruthy();
-    expect(confirmRequest.payload.taskId).toMatch(/^video-regen-/u);
-    await expect(
-      page.getByText('视频重生成能力升级中，本次未产生扣费。')
-    ).toBeVisible({ timeout: 60_000 });
   });
 });

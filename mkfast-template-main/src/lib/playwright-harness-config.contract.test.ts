@@ -24,6 +24,8 @@ test('Playwright provisions an isolated DBOS database and enables the real Harne
     2,
     'core and the P1 worker must share the DBOS system database'
   );
+  assert.match(config, /DBOS__VMID=core-e2e-\$\{corePort\}/u);
+  assert.match(config, /DBOS__VMID=p1-worker-e2e-\$\{corePort\}/u);
   assert.match(config, /MODEL_EXECUTION_MODE=fixture/u);
   assert.equal(
     config.match(/JOB_QUEUE_PREFIX=\$\{jobQueuePrefix\}/gu)?.length,

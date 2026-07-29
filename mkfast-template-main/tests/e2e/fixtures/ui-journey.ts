@@ -1,6 +1,5 @@
 import {
   expect,
-  test,
   type Download,
   type Locator,
   type Page,
@@ -416,143 +415,24 @@ function mutationResponse(page: Page, actionPattern: RegExp) {
   );
 }
 
-type VideoRegenerationTask = {
-  quoteId: string;
-  scope: 'shot' | 'full_compose';
-  shotId?: string;
-  sourceRunId: string;
-  status: 'dispatching' | 'running' | 'completed' | 'cancelled' | 'failed';
-  taskId: string;
-};
-
-async function videoRegenerationTask(page: Page, taskId: string) {
-  return page.evaluate(async (derivedTaskId) => {
-    const response = await fetch('/api/core/p1/query', {
-      body: JSON.stringify({
-        action: 'get_task',
-        module: 'video-regeneration',
-        payload: { taskId: derivedTaskId },
-      }),
-      credentials: 'same-origin',
-      headers: { 'content-type': 'application/json' },
-      method: 'POST',
-    });
-    const envelope = (await response.json()) as {
-      data?: VideoRegenerationTask;
-      error?: { message?: string };
-    };
-    if (!response.ok || !envelope.data) {
-      throw new Error(
-        envelope.error?.message ?? 'Video regeneration task query failed'
-      );
-    }
-    return envelope.data;
-  }, taskId);
-}
-
-async function videoWorkflowStatus(page: Page, workflowId: string) {
-  return page.evaluate(async (derivedWorkflowId) => {
-    const response = await fetch('/api/core/p1/query', {
-      body: JSON.stringify({
-        action: 'video_workflow_public',
-        module: 'model-supply',
-        payload: { workflowId: derivedWorkflowId },
-      }),
-      credentials: 'same-origin',
-      headers: { 'content-type': 'application/json' },
-      method: 'POST',
-    });
-    const envelope = (await response.json()) as {
-      data?: { status?: string };
-      error?: { message?: string };
-    };
-    if (!response.ok || !envelope.data?.status) {
-      throw new Error(
-        envelope.error?.message ?? 'Derived video workflow query failed'
-      );
-    }
-    return envelope.data.status;
-  }, workflowId);
-}
-
 export async function adjustResult(
   page: Page,
   modality: JourneyModality
 ): Promise<{ instruction: string; workId?: string }> {
   const instruction = `e2e-${modality}-adjust-${crypto.randomUUID()}`;
   if (modality === 'video') {
-    // D-133 (2026-07-26): keep the retired full-compose assertions intact as
-    // historical coverage; the native video editing surface stays dark with
-    // no rebuild commitment pending demand validation.
-    test.skip(
-      true,
-      'D-133: full video recomposition is retired with no rebuild planned.'
-    );
     const worksurface = page.getByTestId('video-worksurface');
     await expect(worksurface).toBeVisible();
-    await expect(page.getByTestId('video-subtitle-save')).toBeDisabled();
-
-    const quotePromise = mutationResponse(page, /^quote$/u);
-    await page.getByTestId('video-full-recompose').click();
-    const quoteResponse = await quotePromise;
-    expect(quoteResponse.ok(), await quoteResponse.text()).toBeTruthy();
-    const quoteRequest = quoteResponse.request().postDataJSON() as {
-      module?: string;
-      payload?: Record<string, unknown>;
-    };
-    expect(quoteRequest).toMatchObject({
-      module: 'video-regeneration',
-      payload: { scope: 'full_compose' },
-    });
-    const sourceRunId = quoteRequest.payload?.sourceRunId;
-    expect(typeof sourceRunId).toBe('string');
-
-    const confirm = page.getByTestId('video-regen-confirm-action');
-    await expect(confirm).toBeEnabled();
-    const confirmPromise = mutationResponse(page, /^confirm$/u);
-    await confirm.click();
-    const confirmResponse = await confirmPromise;
-    expect(confirmResponse.ok(), await confirmResponse.text()).toBeTruthy();
-    const confirmRequest = confirmResponse.request().postDataJSON() as {
-      module?: string;
-      payload?: { quoteId?: string; taskId?: string };
-    };
-    expect(confirmRequest.module).toBe('video-regeneration');
-    expect(confirmRequest.payload?.quoteId).toBeTruthy();
-    expect(confirmRequest.payload?.taskId).toMatch(/^video-regen-/u);
-    const taskId = confirmRequest.payload!.taskId!;
-    const confirmEnvelope = (await confirmResponse.json()) as {
-      data?: { task?: VideoRegenerationTask };
-    };
-    expect(confirmEnvelope.data?.task).toMatchObject({
-      quoteId: confirmRequest.payload!.quoteId,
-      scope: 'full_compose',
-      sourceRunId: sourceRunId!,
-      taskId,
-    });
-
-    await expect
-      .poll(async () => (await videoRegenerationTask(page, taskId)).status, {
-        message: 'derived video regeneration task must recover to terminal',
-        timeout: 180_000,
-      })
-      .toBe('completed');
-    expect(await videoRegenerationTask(page, taskId)).toMatchObject({
-      quoteId: confirmRequest.payload!.quoteId,
-      scope: 'full_compose',
-      sourceRunId: sourceRunId!,
-      status: 'completed',
-      taskId,
-    });
-    expect(await videoWorkflowStatus(page, taskId)).toBe('completed');
-
-    await page.reload();
-    const refreshed = page.getByTestId('video-worksurface');
-    await expect(refreshed).toBeVisible({ timeout: 60_000 });
-    await expect(page.getByTestId('video-result-status')).toContainText(
-      '成片待确认',
-      { timeout: 60_000 }
-    );
+    for (const testId of [
+      'video-cover-panel',
+      'video-subtitle-panel',
+      'video-shot-regenerate',
+      'video-full-recompose',
+      'video-pro-studio-refine',
+    ]) {
+      await expect(page.getByTestId(testId)).toHaveCount(0);
+    }
+    await expect(page.getByText('继续调整', { exact: true })).toHaveCount(0);
     return { instruction };
   }
 

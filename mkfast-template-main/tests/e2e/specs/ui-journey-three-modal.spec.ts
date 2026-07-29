@@ -6,7 +6,10 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { setTheme, type ThemeMode } from '../fixtures/page-health';
-import { seedConfirmedStore } from '../fixtures/product';
+import {
+  seedComposerInlineAuthorize,
+  seedConfirmedStore,
+} from '../fixtures/product';
 import { installUserActivationCounter } from '../fixtures/user-activation';
 import {
   adoptResult,
@@ -54,7 +57,8 @@ test.describe('Z1 / #105 real Playwright three-modal Day-0 journeys', () => {
 
   for (const contract of JOURNEY_CONTRACTS) {
     for (const surface of SURFACE_PROFILES) {
-      test(`${contract.modality}:${contract.deliveryTarget} · ${surface.name}: discover → submit → wait → result → adjust → adopt → download → restore`, async ({
+      const resultStep = contract.modality === 'video' ? 'receive' : 'adjust';
+      test(`${contract.modality}:${contract.deliveryTarget} · ${surface.name}: discover → submit → wait → result → ${resultStep} → adopt → download → restore`, async ({
         page,
         request,
       }) => {
@@ -71,6 +75,11 @@ test.describe('Z1 / #105 real Playwright three-modal Day-0 journeys', () => {
           new RegExp(`\\b${surface.theme}\\b`)
         );
         await assertThreeModalDiscovery(page);
+        if (contract.modality === 'video') {
+          await seedComposerInlineAuthorize(page, {
+            fileName: `video-day0-${contract.deliveryTarget}-${surface.name}.png`,
+          });
+        }
 
         activationCounter.beginMeasurement();
         // Intent must name the distribution target for delivery package labels:
@@ -83,10 +92,14 @@ test.describe('Z1 / #105 real Playwright three-modal Day-0 journeys', () => {
               : contract.deliveryTarget === 'video_account'
                 ? '微信视频号项目成片'
                 : '抖音项目成片';
+        const intent =
+          contract.modality === 'video'
+            ? `为门店已确认的透亮猫眼项目制作${intentSeed}`
+            : `Z1 皮肤护理 ${intentSeed} ${contract.modality} ${surface.name} ${crypto.randomUUID()}`;
         const workId = await submitComposerJourney(
           page,
           contract,
-          `Z1 皮肤护理 ${intentSeed} ${contract.modality} ${surface.name} ${crypto.randomUUID()}`,
+          intent,
           // ADR-0014: opening Result Center from the 成品预览卡 is a navigation,
           // not an activation. Freeze the count at the point the merchant has
           // their result, which is what the C6 budget is about.

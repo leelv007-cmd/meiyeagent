@@ -392,6 +392,68 @@ test.describe('T32 作品面换壳', () => {
         } else {
           await expect(page.getByTestId('works-media-gallery')).toHaveCount(0);
         }
+        if (shape.id === 'fixture-video') {
+          const video = page.locator(
+            '[data-testid="works-media-gallery"] [data-media-kind="video"] video'
+          );
+          await expect(video).toHaveAttribute('src', /fixture-video-asset/u);
+          const playback = await video.evaluate(async (element) => {
+            const media = element as HTMLVideoElement;
+            media.loop = true;
+            media.currentTime = 0;
+            if (media.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+              await new Promise<void>((resolve, reject) => {
+                media.addEventListener('canplay', () => resolve(), {
+                  once: true,
+                });
+                media.addEventListener(
+                  'error',
+                  () => reject(media.error ?? new Error('video load failed')),
+                  { once: true }
+                );
+              });
+            }
+            await media.play();
+            const presentedFrames = await new Promise<number>((resolve) => {
+              media.requestVideoFrameCallback((_now, metadata) => {
+                resolve(metadata.presentedFrames);
+              });
+            });
+            return {
+              duration: media.duration,
+              ended: media.ended,
+              paused: media.paused,
+              presentedFrames,
+              readyState: media.readyState,
+            };
+          });
+          expect(playback.readyState).toBeGreaterThanOrEqual(2);
+          expect(playback.duration).toBeGreaterThan(0);
+          expect(playback.ended).toBe(false);
+          expect(playback.paused).toBe(false);
+          expect(playback.presentedFrames).toBeGreaterThan(0);
+          await expect(page.getByTestId('works-video-readonly')).toContainText(
+            '历史档案'
+          );
+          await expect(page.getByTestId('works-video-readonly')).toContainText(
+            '只读'
+          );
+          await expect(page.getByTestId('works-video-readonly')).toContainText(
+            '不能继续确认、编辑或导出'
+          );
+          await expect(
+            page.getByTestId('works-video-confirm-unavailable')
+          ).toBeDisabled();
+          await expect(page.getByTestId('works-action-export')).toHaveCount(0);
+          await expect(page.getByTestId('works-action-adopt')).toHaveCount(0);
+          await expect(page.getByTestId('works-action-handoff')).toHaveCount(0);
+          await expect(page.getByTestId('works-action-light-edit')).toHaveCount(
+            0
+          );
+          await expect(page.getByText('继续调整', { exact: true })).toHaveCount(
+            0
+          );
+        }
       });
     }
   });

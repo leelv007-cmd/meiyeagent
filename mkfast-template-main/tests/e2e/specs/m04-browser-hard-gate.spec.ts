@@ -83,7 +83,7 @@ const HARD_GATE_CONTRACTS: readonly JourneyContract[] = REQUIRED_MODALITIES.map(
 const INTENT_SEED: Record<JourneyContract['modality'], string> = {
   copy: '皮肤护理 朋友圈项目介绍',
   image_text: '皮肤护理 小红书套图',
-  video: '皮肤护理 抖音项目成片',
+  video: '为门店已确认的透亮猫眼项目制作抖音成片',
 };
 
 type SubmissionBody = {

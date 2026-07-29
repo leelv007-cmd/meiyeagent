@@ -608,7 +608,8 @@ boots the real four-service Playwright stack and covers copy, image-text, and
 video in desktop/light and mobile/dark profiles. Every path must discover the
 three modalities, submit with the exact C6 activation budget, visibly pass
 through the running/first-token state, use the modality-specific Result Center
-workspace, send real adjust and adopt mutations, enter canonical delivery,
+workspace, send real adjust/adopt mutations for copy and image, use received
+candidate adoption without video editing for video, enter canonical delivery,
 download a real non-empty package for the expected platform (小红书 ZIP、抖音
 ZIP、朋友圈分段文本), and preserve the same work/adoption/delivery state after
 reload. Missing wiring is a hard failure; the spec has no fixture-submit or

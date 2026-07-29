@@ -81,6 +81,7 @@ export default defineConfig({
         '&&',
         `DATABASE_URL='${databaseURL}'`,
         `HARNESS_DBOS_SYSTEM_DATABASE_URL='${dbosSystemDatabaseURL}'`,
+        `DBOS__VMID=core-e2e-${corePort}`,
         'CORE_SERVICE_TOKEN=local-core-service-token',
         'DOUYIN_CALLBACK_TOKEN=local-douyin-callback-token',
         `JOB_QUEUE_PREFIX=${jobQueuePrefix}`,
@@ -122,6 +123,7 @@ export default defineConfig({
         // notifier (DBOS.send) must land where core's DBOS.recv waits, or
         // every image/video journey stalls into the 150s media timeout.
         `HARNESS_DBOS_SYSTEM_DATABASE_URL='${dbosSystemDatabaseURL}'`,
+        `DBOS__VMID=p1-worker-e2e-${corePort}`,
         `APP_BASE_URL=${baseURL}`,
         'CORE_SERVICE_TOKEN=local-core-service-token',
         `JOB_QUEUE_PREFIX=${jobQueuePrefix}`,
