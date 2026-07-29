@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import test from 'node:test';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import type { QuestionCard } from '@meiye/contracts';
@@ -1868,7 +1868,9 @@ function smokeSkillRevision(
       workflowRevisionRefs: ['workflow.copy@1'],
     },
     prompt: {
-      contentHash: `prompt-hash-${revision}`,
+      // The Skill service verifies the fallback pin for real, so the fixture
+      // hash must be the production-producible value, not a placeholder.
+      contentHash: createHash('sha256').update(instruction).digest('hex'),
       content: instruction,
       isFallback: false,
       label: 'production',
