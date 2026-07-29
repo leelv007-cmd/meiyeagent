@@ -124,6 +124,18 @@ function parseSourceRef(
   };
 }
 
+function positiveInteger(value: Record<string, unknown>, key: string) {
+  const candidate = value[key];
+  if (
+    typeof candidate !== 'number' ||
+    !Number.isInteger(candidate) ||
+    candidate <= 0
+  ) {
+    fail(`Skill 命令字段 ${key} 必须是正整数。`);
+  }
+  return candidate;
+}
+
 function optionalTextOrNull(value: Record<string, unknown>, key: string) {
   const candidate = value[key];
   if (candidate === undefined || candidate === null) return null;
@@ -186,6 +198,41 @@ export class SkillFoundationModule implements P1OperationModule {
   readonly name = 'skills';
 
   constructor(private readonly service: SkillService) {}
+
+  /**
+   * Read face for the operator catalog. Until now the module was
+   * command-only, so the catalog had no way to be listed at all.
+   */
+  async query(args: {
+    context: P1Context;
+    input: Record<string, unknown>;
+  }) {
+    const name = action(args.input);
+    const value = payload(args.input);
+    switch (name) {
+      case 'skill_catalog_list': {
+        onlyKeys(value, ['limit', 'sourceKind', 'tier'], 'Skill 目录查询');
+        return this.service.listCatalog({
+          ...(value.tier === undefined ? {} : { tier: skillTier(value) }),
+          ...(value.sourceKind === undefined
+            ? {}
+            : { sourceKind: skillSourceKind(value) }),
+          ...(value.limit === undefined
+            ? {}
+            : { limit: positiveInteger(value, 'limit') }),
+        });
+      }
+      case 'skill_revision_history': {
+        onlyKeys(value, ['skillId'], 'Skill 版本历史查询');
+        return this.service.listRevisionHistory(text(value, 'skillId'));
+      }
+      default:
+        throw new P1DomainError(
+          'INVALID_STATE',
+          `Skill 查询 ${name} 不受支持。`,
+        );
+    }
+  }
 
   async execute(args: {
     context: P1Context;

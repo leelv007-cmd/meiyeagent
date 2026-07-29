@@ -207,6 +207,60 @@ export class SkillService {
     };
   }
 
+  /**
+   * Operator catalog projection. Carries the description and source that the
+   * catalog page shows, and nothing that would let a caller pull instructions
+   * out in bulk.
+   */
+  async listCatalog(filter?: {
+    tier?: SkillTier;
+    sourceKind?: SkillSourceKind;
+    limit?: number;
+  }) {
+    const catalogs = await this.repository.listCatalogs(filter);
+    return catalogs.map((catalog) => ({
+      skillId: catalog.skillId,
+      name: catalog.name,
+      description: catalog.description,
+      sourceKind: catalog.sourceKind,
+      tier: catalog.tier,
+      sourceRef: catalog.sourceRef ?? null,
+      presentationPolicy: catalog.presentationPolicy,
+      activeRevisionRef: catalog.activeRevisionRef,
+      updatedAt: catalog.updatedAt,
+    }));
+  }
+
+  /**
+   * Revision history for one Skill. Instructions and prompt content stay out
+   * — the catalog page shows lineage, not payloads.
+   */
+  async listRevisionHistory(skillId: string) {
+    const head = await this.repository.getRevisionHead(
+      required(skillId, 'Skill ID'),
+    );
+    if (!head) return [];
+    const history = [];
+    for (let revision = head.revision; revision >= 1; revision -= 1) {
+      const record = await this.repository.getRevision(
+        skillRevisionRef(head.skillId, revision),
+      );
+      if (!record) continue;
+      history.push({
+        skillRevisionRef: record.skillRevisionRef,
+        revision: record.revision,
+        status: record.status,
+        contentHash: record.contentHash,
+        createdAt: record.createdAt,
+        createdBy: record.createdBy,
+        acceptedAt: record.acceptedAt,
+        acceptedBy: record.acceptedBy,
+        evalRunId: record.evalRunId,
+      });
+    }
+    return history;
+  }
+
   async draftRevision(input: SkillDraftRevisionInput) {
     const prepared = await this.prepareSkillDraft(input);
     const catalog = await this.repository.getCatalog(input.skillId);

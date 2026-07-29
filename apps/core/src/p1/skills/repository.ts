@@ -9,12 +9,23 @@ import type {
   SkillDeployment,
   SkillInvocationReceipt,
   SkillRevision,
+  SkillSourceKind,
+  SkillTier,
   SkillTriggerCondition,
 } from './types.js';
 
 export interface SkillRepository {
   putCatalog(catalog: SkillCatalog): Promise<SkillCatalog>;
   getCatalog(skillId: string): Promise<SkillCatalog | null>;
+  /**
+   * Operator catalog read. Filters are columns rather than payload lookups
+   * because the industry-tier corroboration metric aggregates over them.
+   */
+  listCatalogs(filter?: {
+    tier?: SkillTier;
+    sourceKind?: SkillSourceKind;
+    limit?: number;
+  }): Promise<SkillCatalog[]>;
   putRevision(
     revision: SkillRevision,
     expectedRevision: number | null,
@@ -84,6 +95,22 @@ export class MemorySkillRepository implements SkillRepository {
   async getCatalog(skillId: string) {
     const value = this.catalogs.get(skillId);
     return value ? clone(value) : null;
+  }
+
+  async listCatalogs(filter?: {
+    tier?: SkillTier;
+    sourceKind?: SkillSourceKind;
+    limit?: number;
+  }) {
+    const matches = [...this.catalogs.values()]
+      .filter(
+        (catalog) =>
+          (filter?.tier === undefined || catalog.tier === filter.tier) &&
+          (filter?.sourceKind === undefined ||
+            catalog.sourceKind === filter.sourceKind),
+      )
+      .sort((left, right) => left.skillId.localeCompare(right.skillId));
+    return matches.slice(0, filter?.limit ?? matches.length).map(clone);
   }
 
   async putRevision(

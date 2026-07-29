@@ -19,6 +19,8 @@ import type {
   SkillDeployment,
   SkillInvocationReceipt,
   SkillRevision,
+  SkillSourceKind,
+  SkillTier,
   SkillTriggerCondition,
 } from './types.js';
 
@@ -111,6 +113,19 @@ export class PostgresSkillRepository implements SkillRepository {
         payload jsonb NOT NULL,
         updated_at timestamptz NOT NULL
       );
+      -- Source and tier are promoted out of the payload because the operator
+      -- catalog filters on them and the corroboration metric aggregates over
+      -- them; a jsonb lookup can do neither with an index.
+      ALTER TABLE p1_skill_catalogs
+        ADD COLUMN IF NOT EXISTS source_kind text;
+      ALTER TABLE p1_skill_catalogs
+        ADD COLUMN IF NOT EXISTS tier text;
+      UPDATE p1_skill_catalogs
+        SET source_kind = COALESCE(source_kind, payload->>'sourceKind'),
+            tier = COALESCE(tier, payload->>'tier')
+        WHERE source_kind IS NULL OR tier IS NULL;
+      CREATE INDEX IF NOT EXISTS p1_skill_catalogs_tier_source_idx
+        ON p1_skill_catalogs (tier, source_kind);
       CREATE TABLE IF NOT EXISTS p1_skill_revision_heads (
         skill_id text PRIMARY KEY,
         revision bigint NOT NULL CHECK (revision >= 0)
@@ -275,13 +290,22 @@ export class PostgresSkillRepository implements SkillRepository {
 
   async putCatalog(catalog: SkillCatalog) {
     const result = await this.pool.query<PayloadRow<SkillCatalog>>(
-      `INSERT INTO p1_skill_catalogs (skill_id, payload, updated_at)
-       VALUES ($1, $2::jsonb, $3::timestamptz)
+      `INSERT INTO p1_skill_catalogs
+         (skill_id, payload, updated_at, source_kind, tier)
+       VALUES ($1, $2::jsonb, $3::timestamptz, $4, $5)
        ON CONFLICT (skill_id) DO UPDATE
          SET payload = EXCLUDED.payload,
-             updated_at = EXCLUDED.updated_at
+             updated_at = EXCLUDED.updated_at,
+             source_kind = EXCLUDED.source_kind,
+             tier = EXCLUDED.tier
        RETURNING payload`,
-      [catalog.skillId, JSON.stringify(catalog), catalog.updatedAt],
+      [
+        catalog.skillId,
+        JSON.stringify(catalog),
+        catalog.updatedAt,
+        catalog.sourceKind,
+        catalog.tier,
+      ],
     );
     return cloneRow(result.rows[0]!);
   }
@@ -292,6 +316,33 @@ export class PostgresSkillRepository implements SkillRepository {
       'skill_id',
       skillId,
     );
+  }
+
+  async listCatalogs(filter?: {
+    tier?: SkillTier;
+    sourceKind?: SkillSourceKind;
+    limit?: number;
+  }) {
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+    if (filter?.tier !== undefined) {
+      values.push(filter.tier);
+      conditions.push(`tier = $${values.length}`);
+    }
+    if (filter?.sourceKind !== undefined) {
+      values.push(filter.sourceKind);
+      conditions.push(`source_kind = $${values.length}`);
+    }
+    // A hard ceiling keeps this from becoming a bulk-export surface.
+    values.push(Math.min(filter?.limit ?? 200, 200));
+    const result = await this.pool.query<PayloadRow<SkillCatalog>>(
+      `SELECT payload FROM p1_skill_catalogs
+       ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
+       ORDER BY skill_id
+       LIMIT $${values.length}`,
+      values,
+    );
+    return result.rows.map((row) => cloneRow(row));
   }
 
   async putRevision(
