@@ -1059,6 +1059,28 @@ export class PostgresHarnessStore
     }
   }
 
+  async appendAuditIdempotently(event: HarnessAuditEvent) {
+    const runtimeWorkflowId = await this.requireWorkflowRuntimeId(
+      event.workspaceId,
+      event.workflowId,
+    );
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      await this.writeAuditAndOutboxIdempotently(
+        client,
+        event,
+        runtimeWorkflowId,
+      );
+      await client.query('commit');
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async appendPromptAudit(event: ModelSupplyPromptFallbackAuditEvent) {
     const runtimeWorkflowId = harnessRuntimeId(
       event.workspaceId,
@@ -1982,6 +2004,51 @@ export class PostgresHarnessStore
         JSON.stringify(event.payload),
       ],
     );
+    await client.query(
+      `insert into harness_runtime.langfuse_outbox (audit_id, status)
+       values ($1,'queued') on conflict (audit_id) do nothing`,
+      [auditId],
+    );
+  }
+
+  private async writeAuditAndOutboxIdempotently(
+    client: PoolClient,
+    event: HarnessAuditEvent,
+    runtimeWorkflowId: string,
+  ) {
+    const auditId = this.runtimeObjectId(
+      event.workspaceId,
+      event.workflowId,
+      runtimeWorkflowId,
+      event.id,
+    );
+    const result = await client.query(
+      `insert into harness_runtime.audit_events as existing
+         (id, workflow_id, trace_id, trace_contract_version, stage,
+          event_type, payload)
+       values ($1,$2,$3,$4,$5,$6,$7)
+       on conflict (id) do update set id=excluded.id
+       where existing.workflow_id=excluded.workflow_id
+         and existing.trace_id is not distinct from excluded.trace_id
+         and existing.trace_contract_version
+           is not distinct from excluded.trace_contract_version
+         and existing.stage=excluded.stage
+         and existing.event_type=excluded.event_type
+         and existing.payload=excluded.payload
+       returning id`,
+      [
+        auditId,
+        runtimeWorkflowId,
+        event.traceId ?? null,
+        event.traceContractVersion ?? null,
+        event.stage,
+        event.eventType,
+        JSON.stringify(event.payload),
+      ],
+    );
+    if (result.rowCount !== 1) {
+      throw new Error('Observability idempotency conflict.');
+    }
     await client.query(
       `insert into harness_runtime.langfuse_outbox (audit_id, status)
        values ($1,'queued') on conflict (audit_id) do nothing`,

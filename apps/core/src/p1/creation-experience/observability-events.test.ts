@@ -57,7 +57,7 @@ describe('canonical observability event ingest', () => {
   it('maps canonical events to the existing Harness audit and outbox seam', async () => {
     const appended: unknown[] = [];
     const audit = new HarnessObservabilityEventAudit({
-      async appendAudit(event) {
+      async appendAuditIdempotently(event) {
         appended.push(event);
       },
     });
@@ -119,5 +119,87 @@ describe('canonical observability event ingest', () => {
     }
 
     assert.deepEqual(received, []);
+  });
+
+  it('rejects server-owned primitive lifecycle events at the public command seam', async () => {
+    const received: ObservabilityEvent[] = [];
+    const module = new CreationExperienceFoundationModule(undefined, undefined, {
+      observabilityEvents: {
+        append(_workspaceId, event) {
+          received.push(event);
+          return event;
+        },
+      },
+    });
+
+    await assert.rejects(
+      () =>
+        module.execute({
+          context,
+          idempotencyKey: 'forged-primitive',
+          input: {
+            action: 'event_append',
+            payload: {
+              eventType: 'agent_primitive.lifecycle',
+              taskId: 'task-primitive',
+              workspaceId: context.workspaceId,
+              actorId: context.userId,
+              actorKind: context.actor,
+              idempotencyKey: 'forged-primitive',
+              axisScope: 'task_root',
+              skillRevision: null,
+              promptVersion: null,
+              catalogRevision: null,
+              scene: null,
+              payload: {
+                primitiveId: 'generate',
+                phase: 'invoked',
+                billing: { kind: 'not_billed' },
+              },
+            },
+          },
+        }),
+      (error: unknown) =>
+        error instanceof P1DomainError && error.code === 'FORBIDDEN',
+    );
+
+    assert.deepEqual(received, []);
+  });
+
+  it('rejects primitive identity mismatches before the durable audit writer', async () => {
+    let writes = 0;
+    const audit = new HarnessObservabilityEventAudit({
+      async appendAuditIdempotently() {
+        writes += 1;
+      },
+    });
+    const event = {
+      eventType: 'agent_primitive.lifecycle',
+      taskId: 'task-primitive',
+      workspaceId: 'workspace-a',
+      actorId: `ref:${'a'.repeat(64)}`,
+      actorKind: 'worker',
+      idempotencyKey: 'primitive-event-id',
+      axisScope: 'task_root',
+      skillRevision: null,
+      promptVersion: null,
+      catalogRevision: null,
+      scene: null,
+      payload: {
+        primitiveId: 'generate',
+        phase: 'invoked',
+        billing: { kind: 'not_billed' },
+      },
+    } as const;
+
+    await assert.rejects(
+      () => audit.append('workspace-b', event, event.idempotencyKey),
+      /workspace identity/i,
+    );
+    await assert.rejects(
+      () => audit.append(event.workspaceId, event, 'different-key'),
+      /idempotency identity/i,
+    );
+    assert.equal(writes, 0);
   });
 });

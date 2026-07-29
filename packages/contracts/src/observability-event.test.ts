@@ -3,8 +3,10 @@ import test from 'node:test';
 
 import {
   actionUsageSchema,
+  agentPrimitiveLifecycleEventSchema,
   canonicalizeBoundedExecutionEvent,
   canonicalizeNotePageRegeneratedEvent,
+  observabilityAxisBindingSchema,
   observabilityEventSchema,
 } from './index.js';
 
@@ -267,4 +269,114 @@ test('note regeneration facts adapt to the same strict canonical envelope', () =
       trigger: 'check_violation',
     },
   });
+});
+
+test('agent primitive lifecycle preserves explicit absent root axes', () => {
+  const axisBinding = observabilityAxisBindingSchema.parse({
+    axisScope: 'task_root',
+    skillRevision: { kind: 'absent' },
+    promptVersion: { kind: 'absent' },
+    catalogRevision: { kind: 'absent' },
+    scene: { kind: 'absent' },
+  });
+
+  assert.deepEqual(axisBinding, {
+    axisScope: 'task_root',
+    skillRevision: { kind: 'absent' },
+    promptVersion: { kind: 'absent' },
+    catalogRevision: { kind: 'absent' },
+    scene: { kind: 'absent' },
+  });
+
+  assert.deepEqual(
+    agentPrimitiveLifecycleEventSchema.parse({
+      eventType: 'agent_primitive.lifecycle',
+      taskId: 'task-primitive',
+      workspaceId: 'workspace-a',
+      actorId: `ref:${'a'.repeat(64)}`,
+      actorKind: 'worker',
+      idempotencyKey: 'primitive-event-id',
+      axisScope: 'task_root',
+      skillRevision: null,
+      promptVersion: null,
+      catalogRevision: null,
+      scene: null,
+      payload: {
+        primitiveId: 'generate',
+        phase: 'invoked',
+        billing: { kind: 'not_billed' },
+      },
+    }),
+    {
+      eventType: 'agent_primitive.lifecycle',
+      taskId: 'task-primitive',
+      workspaceId: 'workspace-a',
+      actorId: `ref:${'a'.repeat(64)}`,
+      actorKind: 'worker',
+      idempotencyKey: 'primitive-event-id',
+      axisScope: 'task_root',
+      skillRevision: null,
+      promptVersion: null,
+      catalogRevision: null,
+      scene: null,
+      payload: {
+        primitiveId: 'generate',
+        phase: 'invoked',
+        billing: { kind: 'not_billed' },
+      },
+    },
+  );
+});
+
+test('agent primitive lifecycle rejects forged axes and sensitive failure details', () => {
+  const valid = {
+    eventType: 'agent_primitive.lifecycle',
+    taskId: 'task-primitive',
+    workspaceId: 'workspace-a',
+    actorId: `ref:${'a'.repeat(64)}`,
+    actorKind: 'worker',
+    idempotencyKey: 'primitive-event-id',
+    axisScope: 'execution_child',
+    skillRevision: axes.skillRevision,
+    promptVersion: axes.promptVersion,
+    catalogRevision: axes.catalogRevision,
+    scene: axes.scene,
+    payload: {
+      primitiveId: 'generate',
+      phase: 'rejected',
+      billing: {
+        kind: 'product_usage',
+        productUsageTaskId: 'usage-task-1',
+        quoteId: 'quote-1',
+      },
+      rejectionClass: 'execution_failed',
+    },
+  } as const;
+
+  assert.equal(agentPrimitiveLifecycleEventSchema.safeParse(valid).success, true);
+
+  for (const invalid of [
+    { ...valid, scene: undefined },
+    { ...valid, actorId: 'worker-a' },
+    { ...valid, skillRevision: 'unknown@0' },
+    {
+      ...valid,
+      payload: { ...valid.payload, rawError: 'provider secret' },
+    },
+    {
+      ...valid,
+      payload: { ...valid.payload, rejectionClass: undefined },
+    },
+    {
+      ...valid,
+      payload: {
+        primitiveId: 'generate',
+        phase: 'succeeded',
+        billing: { kind: 'not_billed' },
+        rejectionClass: 'execution_failed',
+      },
+    },
+  ]) {
+    assert.equal(agentPrimitiveLifecycleEventSchema.safeParse(invalid).success, false);
+  }
 });

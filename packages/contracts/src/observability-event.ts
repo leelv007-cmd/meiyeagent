@@ -17,7 +17,16 @@ import {
 import { productSettlementStatuses } from './product-quote.js';
 
 const observabilityIdSchema = z.string().trim().min(1).max(500);
+const observabilityAuditReferenceSchema = z
+  .string()
+  .regex(/^ref:[a-f0-9]{64}$/u);
 const deliveryRatingVerdictSchema = z.enum(['up', 'down']);
+const nullableObservabilityAxesShape = {
+  skillRevision: observabilityAxesSchema.shape.skillRevision.nullable(),
+  promptVersion: observabilityAxesSchema.shape.promptVersion.nullable(),
+  catalogRevision: observabilityAxesSchema.shape.catalogRevision.nullable(),
+  scene: observabilityAxesSchema.shape.scene.nullable(),
+};
 
 const deliveryRatingIdentityShape = {
   packageId: observabilityIdSchema,
@@ -123,6 +132,80 @@ const notePageRegeneratedObservabilityEventSchema = z
   })
   .strict();
 
+export const agentPrimitiveRejectionClassSchema = z.enum([
+  'request_invalid',
+  'actor_forbidden',
+  'billing_identity_missing',
+  'execution_budget_exceeded',
+  'execution_failed',
+  'execution_uncertain',
+]);
+
+export type AgentPrimitiveRejectionClass = z.infer<
+  typeof agentPrimitiveRejectionClassSchema
+>;
+
+const agentPrimitiveBillingSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('not_billed') }).strict(),
+  z
+    .object({
+      kind: z.literal('product_usage'),
+      productUsageTaskId: observabilityIdSchema,
+      quoteId: observabilityIdSchema,
+    })
+    .strict(),
+]);
+
+const agentPrimitiveLifecyclePayloadSchema = z.discriminatedUnion('phase', [
+  z
+    .object({
+      primitiveId: observabilityIdSchema,
+      phase: z.literal('invoked'),
+      billing: agentPrimitiveBillingSchema,
+    })
+    .strict(),
+  z
+    .object({
+      primitiveId: observabilityIdSchema,
+      phase: z.literal('succeeded'),
+      billing: agentPrimitiveBillingSchema,
+    })
+    .strict(),
+  z
+    .object({
+      primitiveId: observabilityIdSchema,
+      phase: z.literal('rejected'),
+      billing: agentPrimitiveBillingSchema,
+      rejectionClass: agentPrimitiveRejectionClassSchema,
+    })
+    .strict(),
+]);
+
+export const agentPrimitiveLifecycleEventSchema = z
+  .object({
+    eventType: z.literal('agent_primitive.lifecycle'),
+    taskId: observabilityIdSchema,
+    workspaceId: observabilityIdSchema,
+    actorId: observabilityAuditReferenceSchema,
+    actorKind: z.enum([
+      'admin',
+      'owner',
+      'operator',
+      'reviewer',
+      'worker',
+      'payment',
+    ]),
+    idempotencyKey: observabilityIdSchema,
+    axisScope: z.enum(['task_root', 'execution_child']),
+    ...nullableObservabilityAxesShape,
+    payload: agentPrimitiveLifecyclePayloadSchema,
+  })
+  .strict();
+
+export type AgentPrimitiveLifecycleEvent = z.infer<
+  typeof agentPrimitiveLifecycleEventSchema
+>;
+
 export const observabilityEventSchema = z
   .discriminatedUnion('eventType', [
     deliveryRatingRecordedEventSchema,
@@ -131,6 +214,7 @@ export const observabilityEventSchema = z
     boundedExecutionSuspendedObservabilityEventSchema,
     boundedExecutionResumedObservabilityEventSchema,
     notePageRegeneratedObservabilityEventSchema,
+    agentPrimitiveLifecycleEventSchema,
   ])
   .superRefine((event, context) => {
     if (

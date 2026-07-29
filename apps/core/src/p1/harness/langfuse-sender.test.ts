@@ -258,6 +258,133 @@ test('canonical observability events expose four flat filter axes on trace and s
   });
 });
 
+test('agent primitive lifecycle exports explicit absent axes and safe server identity', async (t) => {
+  const bodies: Array<{
+    batch: Array<{ type: string; body: Record<string, unknown> }>;
+  }> = [];
+  const server = createServer(async (request, response) => {
+    bodies.push(await readJson(request));
+    sendJson(response, 200, { successes: [] });
+  });
+  const sender = new LangfuseHttpSender({
+    baseUrl: await listen(t, server),
+    publicKey: 'pk-test',
+    secretKey: 'sk-test',
+  });
+
+  await sender.send({
+    ...selectionItem(),
+    auditId: 'audit-agent-primitive-invoked',
+    stage: 'observability_event_ingest',
+    eventType: 'agent_primitive.lifecycle',
+    payload: {
+      eventType: 'agent_primitive.lifecycle',
+      taskId: 'task-48',
+      workspaceId: 'workspace-1',
+      actorId: `ref:${'a'.repeat(64)}`,
+      actorKind: 'worker',
+      idempotencyKey: 'agent-primitive-id',
+      axisScope: 'task_root',
+      skillRevision: null,
+      promptVersion: null,
+      catalogRevision: null,
+      scene: null,
+      payload: {
+        primitiveId: 'generate',
+        phase: 'invoked',
+        billing: { kind: 'not_billed' },
+      },
+    },
+    decisionTrace: null,
+  });
+
+  const rootTrace = bodies[0]?.batch.find(
+    ({ type }) => type === 'trace-create',
+  )?.body;
+  const rootSpan = bodies[0]?.batch.find(
+    ({ type }) => type === 'span-create',
+  )?.body;
+  const rootTraceMetadata = rootTrace?.metadata as Record<string, unknown>;
+  for (const axis of [
+    'skillRevision',
+    'promptVersion',
+    'catalogRevision',
+    'scene',
+  ]) {
+    assert.equal(axis in rootTraceMetadata, false);
+  }
+  const rootSpanMetadata = rootSpan?.metadata as Record<string, unknown>;
+  for (const metadata of [rootSpanMetadata]) {
+    assert.equal(metadata.skillRevision, null);
+    assert.equal(metadata.promptVersion, null);
+    assert.equal(metadata.catalogRevision, null);
+    assert.equal(metadata.scene, null);
+  }
+  assert.equal('primitiveId' in rootTraceMetadata, false);
+  for (const metadata of [rootSpanMetadata]) {
+    assert.equal(metadata.axisScope, 'task_root');
+    assert.equal(metadata.primitiveId, 'generate');
+    assert.equal(metadata.phase, 'invoked');
+    assert.equal(metadata.actorId, `ref:${'a'.repeat(64)}`);
+    assert.equal(metadata.actorKind, 'worker');
+    assert.equal(metadata.idempotencyKey, 'agent-primitive-id');
+    assert.equal('rawError' in metadata, false);
+  }
+  assert.deepEqual(rootSpan?.output, {
+    primitiveId: 'generate',
+    phase: 'invoked',
+    billing: { kind: 'not_billed' },
+  });
+
+  await sender.send({
+    ...selectionItem(),
+    auditId: 'audit-agent-primitive-child',
+    stage: 'observability_event_ingest',
+    eventType: 'agent_primitive.lifecycle',
+    payload: {
+      eventType: 'agent_primitive.lifecycle',
+      taskId: 'task-48',
+      workspaceId: 'workspace-1',
+      actorId: `ref:${'a'.repeat(64)}`,
+      actorKind: 'worker',
+      idempotencyKey: 'agent-primitive-child-id',
+      axisScope: 'execution_child',
+      skillRevision: 'copywriter@rev-17',
+      promptVersion: 'marketing/copy@v4',
+      catalogRevision: 'catalog-2026-07-29',
+      scene: 'opening-campaign',
+      payload: {
+        primitiveId: 'generate',
+        phase: 'succeeded',
+        billing: { kind: 'not_billed' },
+      },
+    },
+    decisionTrace: null,
+  });
+
+  const childTrace = bodies[1]?.batch.find(
+    ({ type }) => type === 'trace-create',
+  )?.body;
+  const childSpan = bodies[1]?.batch.find(
+    ({ type }) => type === 'span-create',
+  )?.body;
+  const childTraceMetadata = childTrace?.metadata as Record<string, unknown>;
+  for (const axis of [
+    'skillRevision',
+    'promptVersion',
+    'catalogRevision',
+    'scene',
+  ]) {
+    assert.equal(axis in childTraceMetadata, false);
+  }
+  const childSpanMetadata = childSpan?.metadata as Record<string, unknown>;
+  assert.equal(childSpanMetadata.skillRevision, 'copywriter@rev-17');
+  assert.equal(childSpanMetadata.promptVersion, 'marketing/copy@v4');
+  assert.equal(childSpanMetadata.catalogRevision, 'catalog-2026-07-29');
+  assert.equal(childSpanMetadata.scene, 'opening-campaign');
+  assert.equal(childSpanMetadata.axisScope, 'execution_child');
+});
+
 test('same semantic stage keeps retries stable without collapsing distinct attempts', async (t) => {
   const bodies: Array<{
     batch: Array<{ type: string; body: Record<string, unknown> }>;

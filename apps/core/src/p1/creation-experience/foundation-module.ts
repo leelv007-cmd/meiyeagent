@@ -30,6 +30,7 @@ import {
 } from './brief-revision-resolver.js';
 import {
   MemoryCreationExperienceEventAudit,
+  serverAuditReference,
   type CreationExperienceEventAuditPort,
   type RecordCreationExperienceEventInput,
 } from './creation-experience-events.js';
@@ -755,6 +756,12 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
       }
       case 'event_append': {
         if (typeof value.eventType === 'string') {
+          if (value.eventType === 'agent_primitive.lifecycle') {
+            throw new P1DomainError(
+              'FORBIDDEN',
+              'Agent primitive lifecycle events are server-owned.',
+            );
+          }
           const parsed = observabilityEventSchema.safeParse(value);
           if (!parsed.success) {
             throw new P1DomainError(
@@ -812,8 +819,8 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
         const actionId = stringField(value, 'actionId');
         const input: RecordCreationExperienceEventInput = {
           kind,
-          actorId: revisionHash('ref', args.context.userId),
-          correlationId: revisionHash('ref', args.context.correlationId),
+          actorId: serverAuditReference(args.context.userId),
+          correlationId: serverAuditReference(args.context.correlationId),
           lensId,
           lensRevisionId: 'lens.static@1',
           ...(surfaceRevisionId ? { surfaceRevisionId } : {}),
@@ -821,7 +828,7 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
           actionId,
           actionRevisionId: `${actionId}@1`,
           ...(typeof value.sessionId === 'string'
-            ? { sessionId: revisionHash('ref', value.sessionId) }
+            ? { sessionId: serverAuditReference(value.sessionId) }
             : {}),
           ...(value.meta &&
           typeof value.meta === 'object' &&

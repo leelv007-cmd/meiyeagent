@@ -93,10 +93,16 @@ export {
   findForbiddenEventPayloadKey,
   listCreationExperienceEventKinds,
   sanitizeEventMeta,
+  serverAuditReference,
   type ForbiddenEventPayloadKey,
   type CreationExperienceEventAuditPort,
   type RecordCreationExperienceEventInput,
 } from './creation-experience-events.js';
+export {
+  AgentPrimitiveObservabilityAdapter,
+  type AgentPrimitiveBillingIdentityPort,
+  type AgentPrimitiveLifecycleInput,
+} from './agent-primitive-observability.js';
 export {
   HarnessObservabilityEventAudit,
   MemoryObservabilityEventAudit,

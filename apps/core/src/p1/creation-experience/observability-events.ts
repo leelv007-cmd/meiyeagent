@@ -1,7 +1,8 @@
 import type { ObservabilityEvent } from '@meiye/contracts';
+import { isDeepStrictEqual } from 'node:util';
 
 interface HarnessAuditWriter {
-  appendAudit(event: {
+  appendAuditIdempotently(event: {
     workspaceId: string;
     id: string;
     workflowId: string;
@@ -11,12 +12,31 @@ interface HarnessAuditWriter {
   }): Promise<void>;
 }
 
+function assertServerOwnedEventIdentity(
+  workspaceId: string,
+  event: ObservabilityEvent,
+  idempotencyKey: string,
+) {
+  if (
+    event.eventType === 'agent_primitive.lifecycle' &&
+    event.workspaceId !== workspaceId
+  ) {
+    throw new Error('Agent primitive workspace identity mismatch.');
+  }
+  if (
+    event.eventType === 'agent_primitive.lifecycle' &&
+    event.idempotencyKey !== idempotencyKey
+  ) {
+    throw new Error('Agent primitive idempotency identity mismatch.');
+  }
+}
+
 export interface ObservabilityEventAuditPort {
-  append(
+  append<Event extends ObservabilityEvent>(
     workspaceId: string,
-    event: ObservabilityEvent,
+    event: Event,
     idempotencyKey: string,
-  ): Promise<ObservabilityEvent> | ObservabilityEvent;
+  ): Promise<Event> | Event;
 }
 
 export class HarnessObservabilityEventAudit
@@ -24,12 +44,13 @@ export class HarnessObservabilityEventAudit
 {
   constructor(private readonly auditWriter: HarnessAuditWriter) {}
 
-  async append(
+  async append<Event extends ObservabilityEvent>(
     workspaceId: string,
-    event: ObservabilityEvent,
+    event: Event,
     idempotencyKey: string,
-  ): Promise<ObservabilityEvent> {
-    await this.auditWriter.appendAudit({
+  ): Promise<Event> {
+    assertServerOwnedEventIdentity(workspaceId, event, idempotencyKey);
+    await this.auditWriter.appendAuditIdempotently({
       workspaceId,
       id: `observability-${idempotencyKey}`,
       workflowId: event.taskId,
@@ -50,19 +71,31 @@ export class MemoryObservabilityEventAudit
     workspaceId: string;
   }> = [];
 
-  append(
+  append<Event extends ObservabilityEvent>(
     workspaceId: string,
-    event: ObservabilityEvent,
+    event: Event,
     idempotencyKey: string,
-  ): ObservabilityEvent {
-    const frozen = Object.freeze(structuredClone(event));
-    this.events.push({ event: frozen, idempotencyKey, workspaceId });
-    return frozen;
+  ): Event {
+    assertServerOwnedEventIdentity(workspaceId, event, idempotencyKey);
+    const storedEvent = structuredClone(event) as Event;
+    const existing = this.events.find(
+      (stored) =>
+        stored.workspaceId === workspaceId &&
+        stored.idempotencyKey === idempotencyKey,
+    );
+    if (existing) {
+      if (!isDeepStrictEqual(existing.event, storedEvent)) {
+        throw new Error('Observability idempotency conflict.');
+      }
+      return structuredClone(existing.event) as Event;
+    }
+    this.events.push({ event: storedEvent, idempotencyKey, workspaceId });
+    return structuredClone(storedEvent);
   }
 
   list(workspaceId?: string): readonly ObservabilityEvent[] {
     return this.events
       .filter((stored) => !workspaceId || stored.workspaceId === workspaceId)
-      .map((stored) => stored.event);
+      .map((stored) => structuredClone(stored.event));
   }
 }

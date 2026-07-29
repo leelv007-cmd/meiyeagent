@@ -8,6 +8,10 @@ import { Pool } from 'pg';
 
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import { PostgresOperationsRepository } from '../operations/postgres-repository.js';
+import {
+  AgentPrimitiveObservabilityAdapter,
+  HarnessObservabilityEventAudit,
+} from '../creation-experience/index.js';
 import { HarnessDecisionService } from './decision-service.js';
 import { PostgresHarnessStore } from './postgres-store.js';
 import { harnessRuntimeId } from './workspace-scope.js';
@@ -55,6 +59,124 @@ test(
       await pool.query(
         'delete from harness_runtime.audit_events where id=$1',
         [auditId],
+      );
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'Postgres observability audit replays exact payloads and rejects identity conflicts',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresHarnessStore(pool);
+    const taskId = `observability-idempotency-${randomUUID()}`;
+    const workspaceId = 'workspace-1';
+    const runtimeTaskId = harnessRuntimeId(workspaceId, taskId);
+
+    try {
+      await store.applySchema();
+      await new HarnessTaskAdmissionService(store, {
+        async start({ workflowId }) {
+          return { workflowId };
+        },
+      }).submit(taskRequest(taskId));
+      const adapter = new AgentPrimitiveObservabilityAdapter(
+        new HarnessObservabilityEventAudit(store),
+        {
+          resolve() {
+            return { kind: 'not_billed' };
+          },
+        },
+      );
+      const input = {
+        context: {
+          workspaceId,
+          userId: 'worker-a',
+          correlationId: 'corr-primitive',
+          actor: 'worker' as const,
+        },
+        taskId,
+        primitiveId: 'generate',
+        baseIdempotencyKey: 'primitive-call-terminal',
+        axes: {
+          axisScope: 'task_root',
+          skillRevision: { kind: 'absent' },
+          promptVersion: { kind: 'absent' },
+          catalogRevision: { kind: 'absent' },
+          scene: { kind: 'absent' },
+        } as const,
+      };
+
+      const exactReplays = await Promise.all([
+        adapter.append({ ...input, phase: 'succeeded' }),
+        adapter.append({ ...input, phase: 'succeeded' }),
+      ]);
+      assert.equal(
+        exactReplays[0]?.idempotencyKey,
+        exactReplays[1]?.idempotencyKey,
+      );
+      const conflictingTerminals = await Promise.allSettled([
+        adapter.append({ ...input, phase: 'succeeded' }),
+        adapter.append({
+          ...input,
+          phase: 'rejected',
+          rejectionClass: 'execution_failed',
+        }),
+      ]);
+      assert.deepEqual(
+        conflictingTerminals.map(({ status }) => status).sort(),
+        ['fulfilled', 'rejected'],
+      );
+      const rejection = conflictingTerminals.find(
+        ({ status }) => status === 'rejected',
+      );
+      assert.match(
+        String(
+          rejection?.status === 'rejected' ? rejection.reason : undefined,
+        ),
+        /idempotency conflict/i,
+      );
+
+      const persisted = await pool.query<{
+        audits: number;
+        outbox: number;
+        phase: string;
+      }>(
+        `select
+           (select count(*)::int
+              from harness_runtime.audit_events
+             where workflow_id=$1 and event_type='agent_primitive.lifecycle')
+             as audits,
+           (select count(*)::int
+              from harness_runtime.langfuse_outbox outbox
+              join harness_runtime.audit_events audit
+                on audit.id=outbox.audit_id
+             where audit.workflow_id=$1
+               and audit.event_type='agent_primitive.lifecycle')
+             as outbox,
+           (select payload->'payload'->>'phase'
+              from harness_runtime.audit_events
+             where workflow_id=$1
+               and event_type='agent_primitive.lifecycle')
+             as phase`,
+        [runtimeTaskId],
+      );
+      assert.deepEqual(persisted.rows[0], {
+        audits: 1,
+        outbox: 1,
+        phase: 'succeeded',
+      });
+    } finally {
+      await pool.query(
+        `delete from harness_runtime.audit_events
+          where workflow_id=$1 and event_type='agent_primitive.lifecycle'`,
+        [runtimeTaskId],
+      );
+      await pool.query(
+        'delete from harness_runtime.task_requests where task_id=$1',
+        [runtimeTaskId],
       );
       await pool.end();
     }

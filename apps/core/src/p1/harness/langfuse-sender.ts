@@ -322,6 +322,22 @@ function mapOutboxItem(item: HarnessLangfuseOutboxItem) {
         scene: observabilityEvent.scene,
       }
     : {};
+  const primitiveLifecycle =
+    observabilityEvent?.eventType === 'agent_primitive.lifecycle'
+      ? {
+          workspaceId: observabilityEvent.workspaceId,
+          actorId: observabilityEvent.actorId,
+          actorKind: observabilityEvent.actorKind,
+          idempotencyKey: observabilityEvent.idempotencyKey,
+          axisScope: observabilityEvent.axisScope,
+          primitiveId: observabilityEvent.payload.primitiveId,
+          phase: observabilityEvent.payload.phase,
+        }
+      : {};
+  const traceObservabilityAxes =
+    observabilityEvent?.eventType === 'agent_primitive.lifecycle'
+      ? {}
+      : observabilityAxes;
   const traceId = langfuseTraceId(item.workflowId);
   const spanId = stableUuid(
     `span:${item.workflowId}:${item.stage}:${item.auditId}`,
@@ -350,7 +366,7 @@ function mapOutboxItem(item: HarnessLangfuseOutboxItem) {
     metadata: {
       taskId,
       workflowId: item.workflowId,
-      ...observabilityAxes,
+      ...traceObservabilityAxes,
       ...skillLineage,
     },
   });
@@ -366,6 +382,7 @@ function mapOutboxItem(item: HarnessLangfuseOutboxItem) {
     ...(metrics ? { metrics } : {}),
     ...(productMetrics ? { productMetrics } : {}),
     ...observabilityAxes,
+    ...primitiveLifecycle,
     ...skillLineage,
   };
   const spanBody = exactFields(LANGFUSE_SPAN_BODY_FIELDS, {

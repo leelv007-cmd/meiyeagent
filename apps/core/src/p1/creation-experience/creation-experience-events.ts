@@ -7,6 +7,8 @@
  * Append-only audit channel — no dashboard aggregation.
  */
 
+import { createHash } from 'node:crypto';
+
 import type {
   CreationExperienceEvent,
   CreationExperienceEventKind,
@@ -66,6 +68,12 @@ export const CREATION_EVENT_ACTION_IDS = [
   'action.cancel',
 ] as const;
 const ACTION_ID_SET = new Set<string>(CREATION_EVENT_ACTION_IDS);
+
+export function serverAuditReference(value: string) {
+  return `ref:${createHash('sha256')
+    .update(JSON.stringify(value))
+    .digest('hex')}`;
+}
 
 export interface RecordCreationExperienceEventInput {
   kind: CreationExperienceEventKind;
