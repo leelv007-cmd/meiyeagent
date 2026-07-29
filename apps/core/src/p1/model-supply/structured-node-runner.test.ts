@@ -503,6 +503,56 @@ test('one shared attempt budget blocks route fallback before a second provider e
   assert.equal(budget.consumedAttempts, 1);
 });
 
+test('provider 5xx consumes one shared physical attempt across SDK and route layers', async () => {
+  let providerCalls = 0;
+  const executor = new AiSdkStructuredObjectExecutor({
+    apiKey: 'test-key',
+    baseUrl: 'https://provider.example/v1',
+    catalogModelId: 'llm-primary',
+    fetch: (async () => {
+      providerCalls += 1;
+      return new Response(
+        JSON.stringify({
+          error: {
+            message: 'temporary upstream failure',
+            type: 'server_error',
+          },
+        }),
+        {
+          status: 503,
+          headers: { 'content-type': 'application/json' },
+        },
+      );
+    }) as typeof fetch,
+    inputCostPerMillion: 1,
+    model: 'provider-model',
+    outputCostPerMillion: 2,
+  });
+  const budget = new ExecutionAttemptBudget({
+    maxAttempts: 1,
+    consumedAttempts: 0,
+  });
+  const runner = withExecutionAttemptBudget(
+    createAutoRunner(new CountingLedger(), executor),
+    budget,
+  );
+
+  await assert.rejects(
+    runner.run({
+      effectIdempotencyKey: 'wf:workflow-budgeted-5xx:s3:brief:0',
+      schemaName: 'copy_brief_v1',
+      schemaRevision: 'copy-brief-v1',
+      instructions: 'Return a Copy Brief.',
+      prompt: '{"intent":"介绍日常护理"}',
+      schema: z.object({ normalized: z.string() }).strict(),
+    }),
+    StructuredNodeRunError,
+  );
+
+  assert.equal(providerCalls, 1);
+  assert.equal(budget.consumedAttempts, 1);
+});
+
 function createRunner(
   ledger: ModelSupplyLedgerPort,
   executor: StructuredObjectExecutor,
