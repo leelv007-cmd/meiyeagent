@@ -1,6 +1,6 @@
 # #261 开工门 · 阻塞与拍板登记
 
-> 状态：**NO-GO（5/6 未过）**，基点 main@cc04918d，检查时间 2026-07-29
+> 状态：**NO-GO（5/7 未过）**，基点 main@fb20cf20，最后检查 2026-07-29
 > 复检命令：`./docs/tickets/261/gate.sh`（`--watch` 轮询直到 GO）
 > 依据：`docs/ops/agent-dispatch-runbook-2026-07-29.md:8`（前置未满足只准做零 rebase 面预备）、`docs/specs/agent-substrate-dev-spec-2026-07-29.md:580/596/601`
 
@@ -10,12 +10,18 @@
 
 | 门 | 判据 | 现状 | 等谁 |
 |---|---|---|---|
-| G1 | `mkfast-template-main/scripts/compile-locale.ts` 含互斥锁 + write-if-changed | 仍是 11 行裸全量编译 | **#266** |
+| G1 | `mkfast-template-main/scripts/compile-locale.ts` 含互斥锁 + write-if-changed | ✔ **已过**（#266 于 `04dda7e1..fb20cf20` 合入 main） | — |
 | G2 | `packages/contracts/src/*.ts` 三轴扁平顶层键同现 | 仅 2/3；`skillVersion`／`skillRevision` **全仓 0 处** | **#248** |
 | G3 | 契约/账本暴露「被拒消耗／规划消耗」字段 | 0 处，成本反馈无数据源 | **#248** |
-| G4 | 视频编辑四动作真退役、前台入口摘除 | `videoRegenScopes = ['shot']` 仍在 | **#264FE** |
-| G5 | 前端 lane 无前序在飞（lane 内串行） | ✔ 空闲 | — |
-| G6 | 三项形态未定项已拍板（`DECISIONS.md` 无 PENDING） | 未拍板 | **用户** |
+| G3b | Task 快照侧可读三轴（钉扎载体 + 降级留痕同现） | 无运行时取数点 | **#262** |
+| G4 | 视频编辑四动作真退役、前台入口摘除 | `apps/core/src/p1/model-supply/video-regeneration.ts:39` `videoRegenScopes = ['shot']` 仍在 | **#264FE** |
+| G5 | 前端 lane 无前序**碰源码**在飞（lane 内串行） | ✔ 空闲（`issue/253` 的 3 个提交是门脚本，文档不占额度，runbook `:15`） | — |
+| G6 | 形态未定项已拍板（`DECISIONS.md` 无 PENDING） | 未拍板 | **用户** |
+
+**票面未列的两条依赖**（本轮设计过程发现）：
+
+- **#262 是三轴的真正供给方**（G3b）。#248 只定**键名**，把三轴**钉扎进 Task 快照**是 #262 的任务（其票面任务 2「Task 快照三轴钉扎：存储形态实施时定」、任务 3 第④步「三轴钉扎绑 workflowID」）。**只有键名没有值，评价事件发不出真数据。** 票面「依赖：#248」不完整。
+- **「项目」域没有实体也没有属主票**（见下节）。
 
 ---
 
@@ -94,6 +100,19 @@ D-164①（2026-07-29，晚于该注释）逐字规定推荐位是**段①**，�
 | Skill 目录查询（第二层 pill 数据源） | **#259**（Skill 维护面） | 复用现有配方卡目录（`launch-seeds.ts:101` + `recipe-cards.ts:233`），**不碰 `skills` 模块** | `apps/core/src/p1/skills/foundation-module.ts:52` 只有命令无查询，自建查询即抢 #259 属主 |
 | 前台创作面 | D lane 内串行 `#264FE→#261→#253FE`，且与 #260 前台入口段互斥 | 等 #264FE 合入再动 | 先重构后删除 → #264FE 大面积冲突（rebase 纪律第 4 条） |
 | 规划成本计量 | 后端无 stage 维度（`apps/core/src/p1/product-billing/provider-cost-snapshot.ts:16-32` 只有 `attemptId/taskId/deploymentId`） | 只渲染上游给的数字 | 前端自算规划成本＝编造数字 |
+
+---
+
+## 四·补 · 「项目」记忆域：**没有实体，也没有属主票**（须主控裁定）
+
+D-164④ 定记忆四域＝门店主体偏好／**项目**（一次营销活动）／工作流／纠正。核过全仓：
+
+- 门店主体偏好 → 有（`apps/core/src/p1/operations/marketing-identity.ts`，已通电 `apps/core/src/main.ts:1604`）
+- 工作流 → 有（配方目录 `apps/core/src/p1/creation-experience/launch-seeds.ts:101`）
+- 纠正 → 等 #251（`packages/contracts/src/reuse-memory.ts:294` 枚举无 `correction`，D-163② 要求新增）
+- **项目（一次营销活动）→ 全仓无实体**。`packages/contracts/src` 与 `apps/core/src` 里没有 campaign/project 的 schema 或 id 类型；现有的「项目」只是门店档案里的字段组（`mkfast-template-main/src/routes/dashboard/store.tsx:305-309`），语义是**美业服务项目**（护发/皮肤管理），不是「一次营销活动」。
+
+**同名不同义，不能拿来充数。** 这一域在在册 20 票里找不到属主。请裁定：归 #251 一并建，还是另开票，还是本轮该域只出空态占位（`04-events-memory-nav.md §4.3` 已按空态占位设计，结构与其余三域一致，属主到位后零结构改动接数据源）。
 
 ---
 

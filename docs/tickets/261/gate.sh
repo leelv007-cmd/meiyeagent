@@ -92,6 +92,21 @@ check_all() {
     report "G3 #248 被拒消耗供给" no "无被拒/规划消耗字段，成本反馈无数据源" "#248"
   fi
 
+  # ---- G3b · #262 三轴钉扎进 Task 快照 ----------------------------------
+  # #261 的评价事件要带三轴值，但值本身由 #262 钉扎进 Task 快照才取得到。
+  # 票面未列这条依赖 —— 只定了键名（#248）不等于运行时读得到值。
+  # 判据必须避开既有的 `skillRevisionRefs`（creation-experience 的数组字段，
+  # 与三轴钉扎无关）—— 只认 #262 票面点名的钉扎载体与降级留痕字段同现。
+  local pin_axes=0
+  for key in assemblyRef pinnedAxes fallbackReason; do
+    git -C "$REPO" grep -q "$key" "$REF" -- 'apps/core/src/p1/harness' 'apps/core/src/p1/model-supply' 2>/dev/null && pin_axes=$((pin_axes + 1))
+  done
+  if [ "$pin_axes" -ge 2 ]; then
+    report "G3b #262 三轴钉扎 Task 快照" ok "快照钉扎载体 + 降级留痕已在" "-"
+  else
+    report "G3b #262 三轴钉扎 Task 快照" no "三轴无运行时取数点，事件发不出真值" "#262"
+  fi
+
   # ---- G4 · #264 FE 半合入（D lane 串行前序） ---------------------------
   # 合入判据：视频编辑四动作真退役。videoRegenScopes 应为空或模块不存在。
   local regen
@@ -109,12 +124,15 @@ check_all() {
   # ---- G5 · 前端 lane 槽位空闲（lane 内严格串行） -----------------------
   # D lane 只占 1 个额度槽：#264FE → #261 → #253FE。前序 lane 分支若还有
   # 未合入 main 的提交，说明它还在飞，#261 不得同时占槽。
+  # 只数**碰源码**的提交：runbook :15 明确「设计、schema、文档、只读分析不占额度」，
+  # 所以另一条 lane 的门脚本/设计稿提交不构成占槽。
   local busy=""
   for br in issue-264 issue/253; do
     if git -C "$REPO" rev-parse --verify --quiet "$br" >/dev/null 2>&1; then
-      local ahead
-      ahead="$(git -C "$REPO" rev-list --count "$REF..$br" 2>/dev/null || echo 0)"
-      [ "$ahead" -gt 0 ] && busy="$busy $br(+$ahead)"
+      local src_commits
+      src_commits="$(git -C "$REPO" rev-list --count "$REF..$br" \
+        -- 'mkfast-template-main/src' 'apps' 'packages' 2>/dev/null || echo 0)"
+      [ "$src_commits" -gt 0 ] && busy="$busy $br(+$src_commits src)"
     fi
   done
   if [ -z "$busy" ]; then
