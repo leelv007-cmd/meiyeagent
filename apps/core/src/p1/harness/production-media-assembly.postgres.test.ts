@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
+import { once } from 'node:events';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
@@ -19,6 +22,7 @@ import { PostgresContentPackageRevisionWritePort } from '../execution-spine/cont
 import { PostgresFoundationRepository } from '../foundation/postgres-repository.js';
 import {
   ModelSupplyApplicationService,
+  type CatalogModel,
   type ModelSupplyResult,
   type ProviderExecutionRequest,
 } from '../model-supply/index.js';
@@ -26,7 +30,10 @@ import { buildContentPackage } from '../operations/content-package.js';
 import { MemoryContextBundleRepository } from '../operations/context-bundle-repository.js';
 import { PostgresOperationsRepository } from '../operations/postgres-repository.js';
 import { MemoryStoreFactLedger } from '../operations/store-fact-ledger.js';
-import { CapabilityHotAssemblyRegistry } from '../supply-registry/hot-assembly.js';
+import {
+  CapabilityHotAssemblyRegistry,
+  type RuntimeCapabilityEntry,
+} from '../supply-registry/hot-assembly.js';
 import type { CredentialSecretBrokerPort } from '../supply-registry/secret-broker.js';
 import {
   DbosHarnessWorkflowStarter,
@@ -37,7 +44,12 @@ import {
   HARNESS_LANGFUSE_PROMPT_NAMES,
   type HarnessFrozenPrompts,
 } from './langfuse-prompts.js';
+import {
+  LangfuseHttpSender,
+  langfuseTraceId,
+} from './langfuse-sender.js';
 import { PostgresNoteMediaAdmissionCoordinator } from './note-media-admission.js';
+import type { HarnessLangfuseOutboxItem } from './outbox-worker.js';
 import { unconfiguredNotePlanEnhancementJudgeResolver } from './note-plan-structured-port.js';
 import { LedgerBackedHarnessContextPort } from './production-context-port.js';
 import { ProductionHarnessFrozenRouteSnapshotResolver } from './production-frozen-route.js';
@@ -78,7 +90,7 @@ test(
         ? false
         : 'TEST_DATABASE_URL and TEST_DBOS_SYSTEM_DATABASE_URL are required',
   },
-  async () => {
+  async (t) => {
     if (!databaseUrl || !systemDatabaseUrl) {
       throw new Error('Production media assembly databases are unavailable.');
     }
@@ -108,6 +120,23 @@ test(
     const foundationRoutes = new PostgresFoundationRepository(pool);
     const completedModelResults: ModelSupplyResult[] = [];
     const noteAdmission = new PostgresNoteMediaAdmissionCoordinator(pool);
+    const langfuseRequests: Array<{
+      authorization: string | undefined;
+      url: string | undefined;
+      body: {
+        batch: Array<{ type: string; body: Record<string, unknown> }>;
+      };
+    }> = [];
+    const langfuseServer = createServer(async (incoming, response) => {
+      const body = await readJson(incoming);
+      langfuseRequests.push({
+        authorization: incoming.headers.authorization,
+        url: incoming.url,
+        body,
+      });
+      sendJson(response, 200, { successes: body.batch });
+    });
+    const langfuseBaseUrl = await listen(t, langfuseServer);
     let dbosLaunched = false;
 
     try {
@@ -355,8 +384,33 @@ test(
           executionMode: 'prompt_materialized',
         },
       };
+      supply.publishNextCatalogHead(workspaceId);
       supply.publishNextCapabilityHead();
       supply.publishNextCredentialHead();
+      const nextRoute = await models.freezeFixedRouteForExecution({
+        catalogModelId: 'model-production-media',
+        dataClass: ['contains_face'],
+        operation: 'image.generate',
+        workspaceId,
+      });
+      assert.equal(nextRoute.catalogRevisionId, 'model-r2');
+      assert.equal(
+        nextRoute.capabilityRevisionId,
+        'capability-production-media-r2',
+      );
+      assert.equal(nextRoute.credentialVersion, 'credential-r2');
+      assert.equal(
+        nextRoute.allowedCandidates?.[0]?.providerModel,
+        'provider-model-production-media-v2',
+      );
+      assert.equal(
+        nextRoute.allowedCandidates?.[0]?.deploymentLifecycleRevision,
+        'deployment-r2',
+      );
+      assert.equal(
+        nextRoute.allowedCandidates?.[0]?.modelVersion,
+        'endpoint-r2',
+      );
       releaseProviderResolve();
       const firstResult = await DBOS.retrieveWorkflow<{
         delivery: {
@@ -451,6 +505,7 @@ test(
       );
       assert.equal(durableRoute.deploymentId, frozenRoute.deploymentId);
       const assemblyAudits = await pool.query<{
+        audit_id: string;
         outbox_status: string;
         payload: {
           eventType: string;
@@ -467,7 +522,8 @@ test(
           payload: { primitiveId: string; phase: string };
         };
       }>(
-        `SELECT audit.payload,
+        `SELECT audit.id AS audit_id,
+                audit.payload,
                 outbox.status AS outbox_status
            FROM harness_runtime.audit_events audit
            JOIN harness_runtime.langfuse_outbox outbox
@@ -497,6 +553,132 @@ test(
           phase: 'succeeded',
           outboxStatus: 'queued',
         })),
+      );
+      const assemblyAuditIds = assemblyAudits.rows.map(
+        ({ audit_id }) => audit_id,
+      );
+      const claimedAssemblyAudits =
+        await pool.query<HarnessLangfuseOutboxItem>(
+          `WITH claimed AS (
+             UPDATE harness_runtime.langfuse_outbox
+                SET status='sending',
+                    attempts=attempts+1,
+                    updated_at=now()
+              WHERE audit_id=ANY($1::text[])
+                AND status='queued'
+             RETURNING audit_id, attempts
+           )
+           SELECT claimed.audit_id AS "auditId",
+                  audit.workflow_id AS "workflowId",
+                  audit.stage,
+                  audit.event_type AS "eventType",
+                  audit.created_at AS "occurredAt",
+                  audit.payload,
+                  claimed.attempts
+             FROM claimed
+             JOIN harness_runtime.audit_events audit
+               ON audit.id=claimed.audit_id
+            ORDER BY claimed.audit_id`,
+          [assemblyAuditIds],
+        );
+      assert.equal(
+        claimedAssemblyAudits.rowCount,
+        assemblyAuditIds.length,
+      );
+      const langfuseSender = new LangfuseHttpSender({
+        baseUrl: langfuseBaseUrl,
+        publicKey: 'pk-issue-262-fixture',
+        secretKey: 'sk-issue-262-fixture',
+      });
+      for (const item of claimedAssemblyAudits.rows) {
+        await langfuseSender.send({
+          ...item,
+          occurredAt: new Date(item.occurredAt).toISOString(),
+        });
+        await harnessStore.markLangfuseSent(item.auditId);
+      }
+      const delivery = {
+        sent: claimedAssemblyAudits.rowCount,
+        failed: 0,
+        deadLettered: 0,
+      };
+      assert.deepEqual(delivery, {
+        sent: assemblyAuditIds.length,
+        failed: 0,
+        deadLettered: 0,
+      });
+      const deliveredAssemblyAudits = await pool.query<{
+        audit_id: string;
+        status: string;
+      }>(
+        `SELECT audit_id, status
+           FROM harness_runtime.langfuse_outbox
+          WHERE audit_id=ANY($1::text[])
+          ORDER BY audit_id`,
+        [assemblyAuditIds],
+      );
+      assert.equal(deliveredAssemblyAudits.rowCount, assemblyAuditIds.length);
+      assert.ok(
+        deliveredAssemblyAudits.rows.every(
+          ({ status }) => status === 'sent',
+        ),
+      );
+      assert.equal(langfuseRequests.length, assemblyAuditIds.length);
+      assert.ok(
+        langfuseRequests.every(
+          ({ url }) => url === '/api/public/ingestion',
+        ),
+      );
+      assert.ok(
+        langfuseRequests.every(
+          ({ authorization }) =>
+            authorization ===
+            `Basic ${Buffer.from(
+              'pk-issue-262-fixture:sk-issue-262-fixture',
+            ).toString('base64')}`,
+        ),
+      );
+      const langfuseSpans = langfuseRequests.map(({ body }) => {
+        const span = body.batch.find(
+          ({ type }) => type === 'span-create',
+        )?.body;
+        assert.ok(span);
+        return span;
+      });
+      assert.equal(langfuseSpans.length, assemblyAuditIds.length);
+      assert.deepEqual(
+        langfuseSpans
+          .map(({ metadata }) => {
+            assert.ok(metadata && typeof metadata === 'object');
+            return (metadata as Record<string, unknown>).primitiveId;
+          })
+          .sort(),
+        [
+          'manifest_resolution',
+          'hot_assembly',
+          'prompt_resolution',
+          'task_pin',
+          'execution_check',
+          'event_persistence',
+        ]
+          .map((step) => `harness-assembly:${step}`)
+          .sort(),
+      );
+      const expectedTraceId = langfuseTraceId(runtimeId);
+      assert.ok(
+        langfuseSpans.every(
+          ({ traceId }) =>
+            typeof traceId === 'string' && traceId === expectedTraceId,
+        ),
+      );
+      const langfuseTraces = langfuseRequests.flatMap(({ body }) =>
+        body.batch
+          .filter(({ type }) => type === 'trace-create')
+          .map(({ body: trace }) => trace),
+      );
+      assert.deepEqual(
+        langfuseTraces.map(({ id }) => id),
+        [expectedTraceId],
       );
       const fallbackAudits = await pool.query<{
         outbox_status: string;
@@ -671,9 +853,22 @@ test(
       assert.equal(submission.workspaceId, workspaceId);
       assert.deepEqual(submission.dataClass, ['contains_face']);
       assert.equal(providerRequest.model.id, snapshot.catalogModel.id);
+      assert.equal(providerRequest.model.version, 'endpoint-r1');
       assert.equal(
         providerRequest.deployment.id,
         frozenRoute.deploymentId,
+      );
+      assert.equal(
+        providerRequest.deployment.providerModel,
+        'provider-model-production-media',
+      );
+      assert.equal(
+        providerRequest.deployment.lifecycleRevision,
+        'deployment-r1',
+      );
+      assert.equal(
+        providerRequest.deployment.endpointRevision,
+        'endpoint-r1',
       );
       assert.equal(
         providerRequest.runtimeBinding?.credential?.version,
@@ -1033,21 +1228,49 @@ function productionModelSupply(providerRequests: ProviderExecutionRequest[]) {
     },
     capabilityProfile,
   };
-  const capabilityEntries = [
+  const capabilityEntry: RuntimeCapabilityEntry = {
+    deploymentId: deployment.id,
+    catalogModelId: deployment.catalogModelId,
+    apiFamily: deployment.apiFamily,
+    channel: deployment.channel,
+    region: deployment.region,
+    executionChannelId: deployment.executionChannelId,
+    providerModel: deployment.providerModel,
+    endpointRevision: deployment.endpointRevision,
+    lifecycleRevision: deployment.lifecycleRevision,
+    credentialAccountId: 'credential-account-production-media',
+    credentialVersion: deployment.credentialVersion,
+    adapterKey: 'recorded',
+    capabilityProfile,
+  };
+  const capabilityEntries = [capabilityEntry];
+  const nextDeployment = {
+    ...deployment,
+    providerModel: 'provider-model-production-media-v2',
+    endpointRevision: 'endpoint-r2',
+    lifecycleRevision: 'deployment-r2',
+    credentialVersion: 'credential-r2',
+  };
+  const nextCapabilityEntries: RuntimeCapabilityEntry[] = [
     {
-      deploymentId: deployment.id,
-      catalogModelId: deployment.catalogModelId,
-      apiFamily: deployment.apiFamily,
-      channel: deployment.channel,
-      region: deployment.region,
-      executionChannelId: deployment.executionChannelId,
-      providerModel: deployment.providerModel,
-      endpointRevision: deployment.endpointRevision,
-      lifecycleRevision: deployment.lifecycleRevision,
-      credentialAccountId: 'credential-account-production-media',
-      credentialVersion: deployment.credentialVersion,
-      adapterKey: 'recorded',
-      capabilityProfile,
+      ...capabilityEntry,
+      providerModel: nextDeployment.providerModel,
+      endpointRevision: nextDeployment.endpointRevision,
+      lifecycleRevision: nextDeployment.lifecycleRevision,
+      credentialVersion: nextDeployment.credentialVersion,
+    },
+  ];
+  const catalogModels: CatalogModel[] = [
+    {
+      id: 'model-production-media',
+      modality: 'image' as const,
+      operations: ['image.generate' as const],
+      displayName: 'Production media fixture',
+      qualityRank: 100,
+      manufacturer: 'fixture',
+      stableModelName: 'production-media-fixture',
+      version: '1',
+      capabilities: ['image.generate'],
     },
   ];
   const capabilityHotAssembly = new CapabilityHotAssemblyRegistry(
@@ -1062,19 +1285,7 @@ function productionModelSupply(providerRequests: ProviderExecutionRequest[]) {
   });
   const models = new ModelSupplyApplicationService({
     catalogRevisionId: 'model-r1',
-    models: [
-      {
-        id: 'model-production-media',
-        modality: 'image',
-        operations: ['image.generate'],
-        displayName: 'Production media fixture',
-        qualityRank: 100,
-        manufacturer: 'fixture',
-        stableModelName: 'production-media-fixture',
-        version: '1',
-        capabilities: ['image.generate'],
-      },
-    ],
+    models: catalogModels,
     deployments: [deployment],
     capabilityHotAssembly,
     execution: {
@@ -1096,13 +1307,21 @@ function productionModelSupply(providerRequests: ProviderExecutionRequest[]) {
   return {
     credentialAssemblyRequests,
     models,
+    publishNextCatalogHead(workspaceId: string) {
+      models.applyCatalogRevision(
+        workspaceId,
+        'model-r2',
+        catalogModels.map((model) => ({ ...model, version: '2' })),
+        [nextDeployment],
+      );
+    },
     publishNextCapabilityHead() {
       capabilityHotAssembly.applyCapabilityRevision({
         revisionId: 'capability-production-media-r2',
         number: 2,
         previousRevisionId: 'capability-production-media-r1',
         publishedAt: '2026-07-29T09:31:00.000Z',
-        entries: capabilityEntries,
+        entries: nextCapabilityEntries,
       });
     },
     publishNextCredentialHead() {
@@ -1288,4 +1507,33 @@ function requireExecutionSnapshot(request: HarnessWorkflowInput) {
     throw new Error('Production media assembly requires a frozen snapshot.');
   }
   return request.executionSnapshot;
+}
+
+async function readJson(request: IncomingMessage) {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) chunks.push(Buffer.from(chunk));
+  return JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
+    batch: Array<{ type: string; body: Record<string, unknown> }>;
+  };
+}
+
+function sendJson(response: ServerResponse, status: number, body: unknown) {
+  response.writeHead(status, { 'content-type': 'application/json' });
+  response.end(JSON.stringify(body));
+}
+
+async function listen(
+  t: test.TestContext,
+  server: ReturnType<typeof createServer>,
+) {
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      }),
+  );
+  const { port } = server.address() as AddressInfo;
+  return `http://127.0.0.1:${port}`;
 }
