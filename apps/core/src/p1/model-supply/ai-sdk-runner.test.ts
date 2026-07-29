@@ -415,6 +415,7 @@ test('fixture copy brief derives exactly the fact references present in its prom
   const generate = (
     storeFacts: Record<string, unknown>,
     normalizedIntent = '介绍本店护理项目',
+    authorizedFactRefs?: string[],
   ) =>
     executor.generate({
       instructions: 'Compile one grounded copy brief.',
@@ -425,6 +426,13 @@ test('fixture copy brief derives exactly the fact references present in its prom
           },
         },
         declaration: { normalizedIntent },
+        ...(authorizedFactRefs
+          ? {
+              factReferencePolicy: {
+                authorizedFactRefs,
+              },
+            }
+          : {}),
       }),
       schema: executionBriefSchema,
       schemaName: 'harness_copy_brief_v1',
@@ -456,6 +464,27 @@ test('fixture copy brief derives exactly the fact references present in its prom
     new Set(['store_fact:price-1:2', 'store_fact:service-1:4']),
   );
   assert.equal(grounded.output.factRefs.length, 2);
+
+  const satisfactionBound = await generate(
+    {
+      'offer.price': {
+        sourceRef: 'store_fact:price-1:2',
+        value: { amount: 299, currency: 'CNY' },
+      },
+      'service.name': {
+        sourceRef: 'store_fact:service-1:4',
+        value: '透亮猫眼',
+      },
+    },
+    '介绍本店护理项目',
+    ['store_fact:service-1:4'],
+  );
+  if (satisfactionBound.output.kind !== 'copy') {
+    throw new Error('Expected a copy brief.');
+  }
+  assert.deepEqual(satisfactionBound.output.factRefs, [
+    'store_fact:service-1:4',
+  ]);
 
   const lineageMarker = 'M04LINEAGE_A_12345678';
   const marked = await generate({}, `介绍护理项目 ${lineageMarker}`);

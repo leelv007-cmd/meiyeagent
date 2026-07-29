@@ -1531,6 +1531,16 @@ function fixturePromptFactRefs(payload: Record<string, unknown>) {
   const bundle = fixtureRecord(payload.bundle);
   const dimensions = fixtureRecord(bundle.dimensions);
   const facts = fixtureRecord(dimensions.store_facts_assets);
+  const referencePolicy = fixtureRecord(payload.factReferencePolicy);
+  const authorizedFactRefs = Array.isArray(
+    referencePolicy.authorizedFactRefs,
+  )
+    ? new Set(
+        referencePolicy.authorizedFactRefs.filter(
+          (reference): reference is string => typeof reference === 'string',
+        ),
+      )
+    : null;
   return [
     ...new Set(
       Object.values(facts)
@@ -1539,7 +1549,9 @@ function fixturePromptFactRefs(payload: Record<string, unknown>) {
         .filter(
           (reference): reference is string =>
             typeof reference === 'string' &&
-            reference.startsWith('store_fact:'),
+            reference.startsWith('store_fact:') &&
+            (authorizedFactRefs === null ||
+              authorizedFactRefs.has(reference)),
         ),
     ),
   ].sort((left, right) => left.localeCompare(right));
