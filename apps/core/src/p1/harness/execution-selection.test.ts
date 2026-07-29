@@ -12,6 +12,7 @@ import type {
   StructuredNodeRunner,
   StructuredNodeRunnerRequest,
 } from '../model-supply/structured-node-runner.js';
+import { ExecutionAttemptBudgetExceeded } from '../model-supply/execution-attempt-budget.js';
 import { resumeWithRaisedServerLimit } from './bounded-execution-controller.js';
 
 test('copy compiler makes one model call and returns one primary candidate', async () => {
@@ -165,6 +166,7 @@ test('maxIterations suspends before self-correction and retains the blocked prim
   assert.equal(result.snapshot.triggeredLimit, 'maxIterations');
   assert.equal(result.snapshot.consumption.iterations, 1);
   assert.equal(result.currentBest.deliverable, false);
+  assert.ok(result.currentBest.candidate);
   assert.equal(result.currentBest.candidate.title, '主推荐');
   assert.deepEqual(result.currentBest.policyFailures, [
     {
@@ -234,6 +236,55 @@ test('raised maxIterations resumes from the blocked primary without replaying it
       'wf:workflow-34:s4:copy-primary:c01-retry',
     ],
   );
+});
+
+test('maxIterations suspends without a draft when schema repair exhausts the first attempt', async () => {
+  const runner = new BudgetThenQueueRunner([
+    candidate('抬限后的主推荐', '正文 A', []),
+  ]);
+  const boundedExecution = {
+    schemaVersion: 'bounded-execution-snapshot/v1' as const,
+    maxIterations: 1,
+    maxCostCents: 'unset' as const,
+    maxWallClockMs: 'unset' as const,
+    maxDelegations: 'unset' as const,
+    requiredLimits: ['maxIterations' as const],
+    consumption: {
+      iterations: 0,
+      costCents: 0,
+      wallClockMs: 0,
+      delegations: 0,
+    },
+    stopReason: null,
+    triggeredLimit: null,
+  };
+
+  const suspended = await executeCopySelection(
+    { ...selectionInput(), boundedExecution },
+    { runner, validator: new PassValidator() },
+  );
+
+  assert.equal('state' in suspended && suspended.state, 'suspended');
+  if (!('state' in suspended) || suspended.state !== 'suspended') return;
+  assert.equal(suspended.currentBest.candidate, null);
+  assert.match(suspended.unmetExplanation, /尚未产出可校验草稿/u);
+
+  const resumed = await executeCopySelection(
+    {
+      ...selectionInput(),
+      boundedExecution: resumeWithRaisedServerLimit(suspended.snapshot, {
+        limit: 'maxIterations',
+        value: 2,
+      }),
+      resumeFrom: suspended.currentBest,
+    },
+    { runner, validator: new PassValidator() },
+  );
+
+  assert.equal('state' in resumed, false);
+  if ('state' in resumed) return;
+  assert.equal(resumed.winner.title, '抬限后的主推荐');
+  assert.equal(resumed.boundedExecution?.consumption.iterations, 2);
 });
 
 test('copy generation publishes append-only semantic deltas for the primary candidate', async () => {
@@ -316,6 +367,18 @@ class QueueRunner implements StructuredNodeRunner {
       replayed: false,
       usage: { inputTokens: 5, outputTokens: 8 },
     };
+  }
+}
+
+class BudgetThenQueueRunner extends QueueRunner {
+  private exhausted = false;
+
+  override async run<Output>(request: StructuredNodeRunnerRequest<Output>) {
+    if (!this.exhausted) {
+      this.exhausted = true;
+      throw new ExecutionAttemptBudgetExceeded(1, 1);
+    }
+    return super.run(request);
   }
 }
 

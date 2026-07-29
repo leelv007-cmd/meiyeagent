@@ -743,7 +743,7 @@ export async function runHarnessWorkflow(
       async () => {
         let tokenCount = 0;
         const selection = await (
-          input.request.boundedExecution?.maxIterations !== 'unset' &&
+          typeof input.request.boundedExecution?.maxIterations === 'number' &&
           ports.executeAndSelectBounded
             ? ports.executeAndSelectBounded.bind(ports)
             : ports.executeAndSelect.bind(ports)

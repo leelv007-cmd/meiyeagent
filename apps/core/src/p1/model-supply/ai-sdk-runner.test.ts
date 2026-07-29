@@ -193,6 +193,44 @@ test('formal non-streaming copy generation uses one structured object request', 
   );
 });
 
+test('provider 5xx is attempted once because SDK retry is disabled', async () => {
+  let requests = 0;
+  const runner = new OpenAiCompatibleAiSdkRunner({
+    apiKey: 'test-key',
+    baseUrl: 'https://provider.example/v1',
+    catalogModelId: 'llm-fixed',
+    fetch: (async () => {
+      requests += 1;
+      return new Response('upstream unavailable', { status: 503 });
+    }) as typeof fetch,
+    inputCostPerMillion: 1,
+    model: 'provider-model',
+    outputCostPerMillion: 2,
+  });
+
+  await assert.rejects(runner.generateCopy('Write one honest primary option.'));
+  assert.equal(requests, 1);
+});
+
+test('unknown provider errors are attempted once and are not retried', async () => {
+  let requests = 0;
+  const runner = new OpenAiCompatibleAiSdkRunner({
+    apiKey: 'test-key',
+    baseUrl: 'https://provider.example/v1',
+    catalogModelId: 'llm-fixed',
+    fetch: (async () => {
+      requests += 1;
+      throw new Error('unknown provider failure');
+    }) as typeof fetch,
+    inputCostPerMillion: 1,
+    model: 'provider-model',
+    outputCostPerMillion: 2,
+  });
+
+  await assert.rejects(runner.generateCopy('Write one honest primary option.'));
+  assert.equal(requests, 1);
+});
+
 test('DeepSeek V4 sends the mirrored thinking and long-output parameters', async () => {
   let requestUrl = '';
   let requestBody: Record<string, unknown> = {};

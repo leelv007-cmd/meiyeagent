@@ -14,7 +14,10 @@ import {
   runHarnessWorkflow,
   type HarnessContextSnapshot,
 } from './workflow-core.js';
-import { HarnessSelectionError } from './execution-selection.js';
+import {
+  HarnessSelectionError,
+  isCopySelectionCurrentBest,
+} from './execution-selection.js';
 import {
   isBoundedExecutionSuspension,
   resumeWithRaisedServerLimit,
@@ -1886,6 +1889,8 @@ test('bounded production selection preserves the blocked primary instead of star
 
   assert.equal(isBoundedExecutionSuspension(result), true);
   if (!isBoundedExecutionSuspension(result)) return;
+  assert.equal(isCopySelectionCurrentBest(result.currentBest), true);
+  if (!isCopySelectionCurrentBest(result.currentBest)) return;
   assert.equal(result.snapshot.triggeredLimit, 'maxIterations');
   assert.equal(result.snapshot.consumption.iterations, 1);
   assert.equal(runner.requests.length, 1);
@@ -1906,6 +1911,49 @@ test('bounded production selection preserves the blocked primary instead of star
   if (isBoundedExecutionSuspension(resumed)) return;
   assert.equal(resumed.winner.title, '门店护理步骤说明');
   assert.equal(resumed.boundedExecution?.consumption.iterations, 2);
+  assert.equal(runner.requests.length, 2);
+});
+
+test('bounded production selection shares one physical attempt budget across correction layers', async () => {
+  const runner = new PhysicalAttemptQueueRunner(
+    [candidate('限时护理3次'), candidate('门店护理步骤说明')],
+    [1, 2],
+  );
+  const base = unpricedExecutionInput('task-unpriced-shared-budget');
+  const input = {
+    ...base,
+    request: {
+      ...base.request,
+      boundedExecution: {
+        schemaVersion: 'bounded-execution-snapshot/v1' as const,
+        maxIterations: 2,
+        maxCostCents: 'unset' as const,
+        maxWallClockMs: 'unset' as const,
+        maxDelegations: 'unset' as const,
+        requiredLimits: ['maxIterations' as const],
+        consumption: {
+          iterations: 0,
+          costCents: 0,
+          wallClockMs: 0,
+          delegations: 0,
+        },
+        stopReason: null,
+        triggeredLimit: null,
+      },
+    },
+  };
+
+  const result = await unpricedPorts(runner).executeAndSelectBounded(input);
+
+  assert.equal(isBoundedExecutionSuspension(result), true);
+  if (!isBoundedExecutionSuspension(result)) return;
+  assert.equal(isCopySelectionCurrentBest(result.currentBest), true);
+  if (!isCopySelectionCurrentBest(result.currentBest)) return;
+  assert.equal(result.snapshot.triggeredLimit, 'maxIterations');
+  assert.equal(result.snapshot.consumption.iterations, 2);
+  assert.ok(result.currentBest.candidate);
+  assert.equal(result.currentBest.candidate.title, '限时护理3次');
+  assert.equal(runner.physicalAttempts, 2);
   assert.equal(runner.requests.length, 2);
 });
 
@@ -1987,9 +2035,36 @@ class QueueRunner implements StructuredNodeRunner {
 
   async run<Output>(request: StructuredNodeRunnerRequest<Output>) {
     this.requests.push(request as StructuredNodeRunnerRequest<unknown>);
+    await request.beforeProviderAttempt?.();
     return {
       output: request.schema.parse(this.outputs.shift()),
       attempts: 1,
+      providerTaskRef: `provider-${this.requests.length}`,
+      replayed: false,
+      usage: { inputTokens: 1, outputTokens: 1 },
+    };
+  }
+}
+
+class PhysicalAttemptQueueRunner implements StructuredNodeRunner {
+  readonly requests: StructuredNodeRunnerRequest<unknown>[] = [];
+  physicalAttempts = 0;
+
+  constructor(
+    private readonly outputs: unknown[],
+    private readonly attemptsPerRun: number[],
+  ) {}
+
+  async run<Output>(request: StructuredNodeRunnerRequest<Output>) {
+    this.requests.push(request as StructuredNodeRunnerRequest<unknown>);
+    const attempts = this.attemptsPerRun.shift() ?? 1;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      await request.beforeProviderAttempt?.();
+      this.physicalAttempts += 1;
+    }
+    return {
+      output: request.schema.parse(this.outputs.shift()),
+      attempts,
       providerTaskRef: `provider-${this.requests.length}`,
       replayed: false,
       usage: { inputTokens: 1, outputTokens: 1 },
@@ -2091,7 +2166,7 @@ async function assertUnpricedCandidateBlocked(output: CandidateFixture) {
   assert.equal(runner.requests.length, 2);
 }
 
-function unpricedPorts(runner: QueueRunner) {
+function unpricedPorts(runner: StructuredNodeRunner) {
   return new ProductionHarnessStagePorts(
     { create: () => runner },
     {

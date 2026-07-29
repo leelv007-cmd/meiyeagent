@@ -7,7 +7,11 @@ import type {
 import type { VisibleClaimExtraction } from './policy-gates.js';
 
 import type { Acceptance } from '../model-supply/index.js';
-import type { StructuredNodeRunner } from '../model-supply/structured-node-runner.js';
+import { ExecutionAttemptBudgetExceeded } from '../model-supply/execution-attempt-budget.js';
+import type {
+  StructuredNodeRunner,
+  StructuredNodeRunnerResult,
+} from '../model-supply/structured-node-runner.js';
 import type { ExecutionBrief } from './structured-nodes.js';
 import { compileCopyGenerationRequest } from './output-compiler.js';
 import { materializeSkillInstructions } from '../skills/stage-injection.js';
@@ -47,7 +51,9 @@ const NON_SELF_CORRECTABLE_GATE_IDS = new Set([
   'external_action_approval',
 ]);
 
-type GeneratedCandidate = z.infer<typeof generatedCandidateSchema> & {
+type GeneratedCandidateOutput = z.infer<typeof generatedCandidateSchema>;
+
+type GeneratedCandidate = GeneratedCandidateOutput & {
   candidateId: string;
   workspaceId: string;
   intendedUse: 'internal_draft' | 'public_content' | 'paid_promotion';
@@ -75,7 +81,7 @@ interface CopySelectionPorts {
 }
 
 export interface CopySelectionCurrentBest {
-  candidate: GeneratedCandidate;
+  candidate: GeneratedCandidate | null;
   policyFailures: ReturnType<CandidatePolicyValidator['validate']>['failures'];
   deliverable: false;
 }
@@ -87,8 +93,8 @@ export function isCopySelectionCurrentBest(
     typeof input === 'object' &&
     input !== null &&
     'candidate' in input &&
-    typeof input.candidate === 'object' &&
-    input.candidate !== null &&
+    (input.candidate === null ||
+      (typeof input.candidate === 'object' && input.candidate !== null)) &&
     'policyFailures' in input &&
     Array.isArray(input.policyFailures) &&
     'deliverable' in input &&
@@ -216,11 +222,13 @@ export async function executeCopySelection(
     resumeFrom?: CopySelectionCurrentBest;
   },
   ports: CopySelectionPorts,
-) {
+): Promise<
+  CopySelectionSuccess | BoundedExecutionSuspension<CopySelectionCurrentBest>
+> {
   let candidate: GeneratedCandidate;
   let policy: ReturnType<CandidatePolicyValidator['validate']>;
   let boundedExecution = input.boundedExecution;
-  if (input.resumeFrom) {
+  if (input.resumeFrom?.candidate) {
     candidate = structuredClone(input.resumeFrom.candidate);
     policy = {
       passed: false,
@@ -235,22 +243,46 @@ export async function executeCopySelection(
       primaryRequest.candidateId,
       input.onToken,
     );
-    const primary = await ports.runner.run({
-      effectIdempotencyKey:
-        `wf:${input.workflowId}:s4:${input.unitId}:${primaryRequest.candidateId}`,
-      schemaName: 'harness_copy_candidate_v1',
-      schemaRevision: 'copy-candidate-v1',
-      instructions: materializeSkillInstructions(
-        [
-          input.prompt?.content ?? HARNESS_BUILTIN_PROMPTS.copyCandidate,
-          primaryRequest.instructions,
-        ].join('\n\n'),
-        input.skillInstructions,
-      ),
-      prompt: primaryRequest.prompt,
-      schema: generatedCandidateSchema,
-      ...(primaryEmitter ? { onPartialOutput: primaryEmitter } : {}),
-    });
+    let primary: StructuredNodeRunnerResult<GeneratedCandidateOutput>;
+    try {
+      primary = await ports.runner.run({
+        effectIdempotencyKey:
+          `wf:${input.workflowId}:s4:${input.unitId}:${primaryRequest.candidateId}`,
+        schemaName: 'harness_copy_candidate_v1',
+        schemaRevision: 'copy-candidate-v1',
+        instructions: materializeSkillInstructions(
+          [
+            input.prompt?.content ?? HARNESS_BUILTIN_PROMPTS.copyCandidate,
+            primaryRequest.instructions,
+          ].join('\n\n'),
+          input.skillInstructions,
+        ),
+        prompt: primaryRequest.prompt,
+        schema: generatedCandidateSchema,
+        ...(primaryEmitter ? { onPartialOutput: primaryEmitter } : {}),
+      });
+    } catch (error) {
+      if (boundedExecution && error instanceof ExecutionAttemptBudgetExceeded) {
+        const decision = evaluateBoundedExecution(boundedExecution, {
+          consumption: {
+            iterations: error.consumedAttempts,
+          },
+          currentBest: {
+            candidate: null,
+            policyFailures: [],
+            deliverable: false as const,
+          },
+          unmetExplanation: '模型尚未产出可校验草稿；提高迭代上限后可继续。',
+        });
+        if (decision.state !== 'suspended') {
+          throw new Error(
+            'An exhausted execution attempt budget must suspend the selection.',
+          );
+        }
+        return decision;
+      }
+      throw error;
+    }
     candidate = {
       ...primary.output,
       candidateId: primaryRequest.candidateId,
@@ -260,7 +292,9 @@ export async function executeCopySelection(
     policy = ports.validator.validate(structuredClone(candidate));
     if (boundedExecution) {
       boundedExecution = advanceBoundedExecution(boundedExecution, {
-        iterations: boundedExecution.consumption.iterations + 1,
+        iterations:
+          boundedExecution.consumption.iterations +
+          (primary.replayed ? 0 : primary.attempts),
       });
     }
   }
@@ -311,22 +345,48 @@ export async function executeCopySelection(
       retryRequest.candidateId,
       input.onToken,
     );
-    const retry = await ports.runner.run({
-      effectIdempotencyKey:
-        `wf:${input.workflowId}:s4:${input.unitId}:${retryRequest.candidateId}`,
-      schemaName: 'harness_copy_candidate_v1',
-      schemaRevision: 'copy-candidate-v1',
-      instructions: materializeSkillInstructions(
-        [
-          input.prompt?.content ?? HARNESS_BUILTIN_PROMPTS.copyCandidate,
-          retryRequest.instructions,
-        ].join('\n\n'),
-        input.skillInstructions,
-      ),
-      prompt: retryRequest.prompt,
-      schema: generatedCandidateSchema,
-      ...(retryEmitter ? { onPartialOutput: retryEmitter } : {}),
-    });
+    let retry: StructuredNodeRunnerResult<GeneratedCandidateOutput>;
+    try {
+      retry = await ports.runner.run({
+        effectIdempotencyKey:
+          `wf:${input.workflowId}:s4:${input.unitId}:${retryRequest.candidateId}`,
+        schemaName: 'harness_copy_candidate_v1',
+        schemaRevision: 'copy-candidate-v1',
+        instructions: materializeSkillInstructions(
+          [
+            input.prompt?.content ?? HARNESS_BUILTIN_PROMPTS.copyCandidate,
+            retryRequest.instructions,
+          ].join('\n\n'),
+          input.skillInstructions,
+        ),
+        prompt: retryRequest.prompt,
+        schema: generatedCandidateSchema,
+        ...(retryEmitter ? { onPartialOutput: retryEmitter } : {}),
+      });
+    } catch (error) {
+      if (boundedExecution && error instanceof ExecutionAttemptBudgetExceeded) {
+        const decision = evaluateBoundedExecution(boundedExecution, {
+          consumption: {
+            iterations: error.consumedAttempts,
+          },
+          currentBest: {
+            candidate: structuredClone(candidate),
+            policyFailures: structuredClone(policy.failures),
+            deliverable: false as const,
+          },
+          unmetExplanation: policy.failures
+            .map(({ reason }) => reason)
+            .join('；'),
+        });
+        if (decision.state !== 'suspended') {
+          throw new Error(
+            'An exhausted execution attempt budget must suspend the selection.',
+          );
+        }
+        return decision;
+      }
+      throw error;
+    }
     candidate = {
       ...retry.output,
       candidateId: retryRequest.candidateId,
@@ -336,7 +396,9 @@ export async function executeCopySelection(
     policy = ports.validator.validate(structuredClone(candidate));
     if (boundedExecution) {
       boundedExecution = advanceBoundedExecution(boundedExecution, {
-        iterations: boundedExecution.consumption.iterations + 1,
+        iterations:
+          boundedExecution.consumption.iterations +
+          (retry.replayed ? 0 : retry.attempts),
       });
     }
   }

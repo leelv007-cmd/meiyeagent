@@ -12,6 +12,7 @@ import type {
   ReferenceAssetResolverPort,
   ResolvedReferenceAsset,
 } from './reference-asset-resolver.js';
+import { ExecutionAttemptBudgetExceeded } from './execution-attempt-budget.js';
 import {
   ownedAssetRegistrationLifecycle,
   type OwnedAssetRegistrationFailureStage,
@@ -1566,6 +1567,9 @@ export class ModelSupplyApplicationService {
             providerCost: executor.providerCost(generated.usage),
           };
         } catch (error) {
+          if (error instanceof ExecutionAttemptBudgetExceeded) {
+            throw error;
+          }
           if (error instanceof StructuredObjectGenerationError) {
             return {
               kind: 'failure',
@@ -2716,6 +2720,9 @@ export class ModelSupplyApplicationService {
           }
         }
       } catch (error) {
+        if (error instanceof ExecutionAttemptBudgetExceeded) {
+          throw error;
+        }
         const attempt: ProviderAttempt = {
           id: attemptId,
           jobId,

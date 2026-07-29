@@ -19,6 +19,11 @@ import {
   InMemoryStructuredNodeMetrics,
   nameHarnessIntent,
 } from '../harness/structured-nodes.js';
+import {
+  ExecutionAttemptBudget,
+  ExecutionAttemptBudgetExceeded,
+  withExecutionAttemptBudget,
+} from './execution-attempt-budget.js';
 
 test('AI SDK structured executor uses Output.object and final-step metadata', async () => {
   const requests: Array<Record<string, unknown>> = [];
@@ -158,6 +163,52 @@ test('D-035 measures one real schema repair as first-pass miss, repair, and retr
     retry: { triggered: 1 },
     nestedCompleteness: { complete: 6, total: 7 },
   });
+});
+
+test('one shared attempt budget blocks a real schema repair before its provider effect', async () => {
+  let providerCalls = 0;
+  const executor = new AiSdkStructuredObjectExecutor({
+    apiKey: 'test-key',
+    baseUrl: 'https://provider.example/v1',
+    catalogModelId: 'llm-harness',
+    fetch: (async () => {
+      providerCalls += 1;
+      return openAiStructuredResponse('chatcmpl-invalid-budgeted', {
+        normalizedIntent: 'missing required fields',
+      });
+    }) as typeof fetch,
+    inputCostPerMillion: 1,
+    model: 'provider-model',
+    outputCostPerMillion: 2,
+  });
+  const budget = new ExecutionAttemptBudget({
+    maxAttempts: 1,
+    consumedAttempts: 0,
+  });
+  const runner = withExecutionAttemptBudget(
+    createRunner(new CountingLedger(), executor),
+    budget,
+  );
+
+  await assert.rejects(
+    runner.run({
+      effectIdempotencyKey: 'wf:workflow-budgeted-repair:s1:intent:0',
+      schemaName: 'harness_intent_naming_v1',
+      schemaRevision: 'intent-naming-v1',
+      instructions: 'Return the normalized intent.',
+      prompt: '{"intent":"介绍日常护理"}',
+      schema: z
+        .object({
+          normalizedIntent: z.string(),
+          taskType: z.string(),
+        })
+        .strict(),
+    }),
+    ExecutionAttemptBudgetExceeded,
+  );
+
+  assert.equal(providerCalls, 1);
+  assert.equal(budget.consumedAttempts, 1);
 });
 
 test('D-035 counts a call when both the first pass and bounded repair fail', async () => {
@@ -423,6 +474,33 @@ test('structured runner fences every auto provider attempt before fallback', asy
 
   assert.equal(fenceCalls, 2);
   assert.equal(executor.calls, 1);
+});
+
+test('one shared attempt budget blocks route fallback before a second provider effect', async () => {
+  const executor = new FallbackStructuredExecutor(() => undefined);
+  const budget = new ExecutionAttemptBudget({
+    maxAttempts: 1,
+    consumedAttempts: 0,
+  });
+  const runner = withExecutionAttemptBudget(
+    createAutoRunner(new CountingLedger(), executor),
+    budget,
+  );
+
+  await assert.rejects(
+    runner.run({
+      effectIdempotencyKey: 'wf:workflow-budgeted-fallback:s3:brief:0',
+      schemaName: 'copy_brief_v1',
+      schemaRevision: 'copy-brief-v1',
+      instructions: 'Return a Copy Brief.',
+      prompt: '{"intent":"改写旧内容"}',
+      schema: z.object({ normalized: z.string() }).strict(),
+    }),
+    ExecutionAttemptBudgetExceeded,
+  );
+
+  assert.equal(executor.calls, 1);
+  assert.equal(budget.consumedAttempts, 1);
 });
 
 function createRunner(

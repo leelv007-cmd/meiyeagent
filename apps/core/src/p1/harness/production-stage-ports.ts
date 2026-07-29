@@ -45,6 +45,10 @@ import type {
   HarnessContextSnapshot,
   HarnessStagePorts,
 } from './workflow-core.js';
+import {
+  ExecutionAttemptBudget,
+  withExecutionAttemptBudget,
+} from '../model-supply/execution-attempt-budget.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 import { createMarketingPackageEvidence } from './marketing-package-evidence.js';
 import {
@@ -195,7 +199,7 @@ class SourceContentPackageGuardedRunner implements StructuredNodeRunner {
       await this.verify();
       await request.beforeProviderAttempt?.();
     };
-    await beforeProviderAttempt();
+    await this.verify();
     return this.runner.run({ ...request, beforeProviderAttempt });
   }
 }
@@ -501,7 +505,17 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       input.context,
       input.brief.factRefs,
     );
-    const runner = this.runnerWithSourceFence(input.request);
+    const unboundedRunner = this.runnerWithSourceFence(input.request);
+    const runner =
+      boundedExecution && boundedExecution.maxIterations !== 'unset'
+        ? withExecutionAttemptBudget(
+            unboundedRunner,
+            new ExecutionAttemptBudget({
+              maxAttempts: boundedExecution.maxIterations,
+              consumedAttempts: boundedExecution.consumption.iterations,
+            }),
+          )
+        : unboundedRunner;
     const canonicalValidator = createHarnessCandidateValidator({
       phase: 'execution',
       bundle: {
