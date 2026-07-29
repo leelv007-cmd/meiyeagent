@@ -721,9 +721,10 @@ it('exports an unlabeled video package as a full delivery ZIP with manifest revi
     storyboardRevision: 'story-unlabeled',
     workspaceId: 'workspace-video-export',
   });
+  const readAssetIds: string[] = [];
   const adapter = new ContentPackageZipExportAdapter(storage, {
     async readOwnedAsset(input) {
-      if (input.assetId === delivery.cover.id) return coverReadResult(delivery);
+      readAssetIds.push(input.assetId);
       assert.equal(input.assetId, video.id);
       const bytes = storage.read(video.objectKey);
       assert.ok(bytes);
@@ -781,6 +782,7 @@ it('exports an unlabeled video package as a full delivery ZIP with manifest revi
   };
   const artifact = await adapter.export(input);
 
+  assert.deepEqual(readAssetIds, [video.id]);
   assert.equal(artifact.contentType, 'application/zip');
   assert.notEqual(artifact.artifactAssetId, video.id);
   assert.match(artifact.artifactObjectKey, /\.zip$/u);
@@ -789,7 +791,8 @@ it('exports an unlabeled video package as a full delivery ZIP with manifest revi
   const files = unzipSync(archiveBytes);
   assert.ok(files['video.mp4']);
   assert.deepEqual(files['video.mp4'], videoBytes);
-  assert.ok(files['cover.jpg']);
+  assert.equal(files['cover.jpg'], undefined);
+  assert.equal(files['cover.png'], undefined);
   assert.ok(files['subtitles.srt']);
   assert.ok(files['manifest.json']);
   assert.ok(files['caption.txt']);
@@ -797,7 +800,12 @@ it('exports an unlabeled video package as a full delivery ZIP with manifest revi
   const manifest = JSON.parse(new TextDecoder().decode(files['manifest.json']));
   assert.equal(manifest.schema, 'beauty-delivery-manifest/v1');
   assert.equal(manifest.kind, 'video');
-  assert.ok(manifest.files.some(({ path }: { path: string }) => path === 'cover.jpg'));
+  assert.equal(
+    manifest.files.some(
+      ({ role }: { role: string }) => role === 'cover',
+    ),
+    false,
+  );
   assert.ok(
     manifest.files.some(
       ({ path }: { path: string }) => path === 'subtitles.srt',
@@ -805,6 +813,7 @@ it('exports an unlabeled video package as a full delivery ZIP with manifest revi
   );
   assert.equal(manifest.contentPackageRevision, 4);
   const replayed = await adapter.export(input);
+  assert.deepEqual(readAssetIds, [video.id, video.id]);
   assert.equal(replayed.artifactObjectKey, artifact.artifactObjectKey);
   assert.equal(replayed.sha256, artifact.sha256);
   assert.equal(replayed.sizeBytes, artifact.sizeBytes);
@@ -1489,10 +1498,12 @@ it('builds a video full delivery ZIP with manifest/v1 and deterministic replay',
       validationMethod: 'composition_manifest' as const,
     },
   };
+  const readAssetIds: string[] = [];
   const adapter = new ContentPackageZipExportAdapter(
     storage,
     {
       async readOwnedAsset({ assetId }) {
+        readAssetIds.push(assetId);
         if (assetId === video.id) {
           return {
             asset: {
@@ -1528,7 +1539,6 @@ it('builds a video full delivery ZIP with manifest/v1 and deterministic replay',
   const input = {
     compliance: { aigcLabelEnabled: false, watermarkEnabled: false },
     contentPackageRevision: 3,
-    coverAssetId: cover.id,
     kind: 'video' as const,
     packageId: 'package-video-full',
     platform: 'douyin' as const,
@@ -1555,6 +1565,7 @@ it('builds a video full delivery ZIP with manifest/v1 and deterministic replay',
 
   const first = await adapter.exportVideoFullPackage(input);
   const second = await adapter.exportVideoFullPackage(input);
+  assert.deepEqual(readAssetIds, [video.id, video.id]);
   assert.equal(first.contentType, 'application/zip');
   assert.equal(first.fileName, '清风美学-视频-抖音-20260715-r3.zip');
   assert.equal(second.sha256, first.sha256);
@@ -1564,7 +1575,8 @@ it('builds a video full delivery ZIP with manifest/v1 and deterministic replay',
   assert.ok(archiveBytes);
   const files = unzipSync(archiveBytes);
   assert.ok(files['video.mp4']);
-  assert.ok(files['cover.jpg']);
+  assert.equal(files['cover.jpg'], undefined);
+  assert.equal(files['cover.png'], undefined);
   assert.ok(files['caption.txt']);
   assert.ok(files['subtitles.srt']);
   assert.ok(files['platform-checklist.md']);
@@ -1574,6 +1586,10 @@ it('builds a video full delivery ZIP with manifest/v1 and deterministic replay',
   assert.equal(manifest.schema, 'beauty-delivery-manifest/v1');
   assert.equal(manifest.kind, 'video');
   assert.equal(manifest.contentPackageRevision, 3);
+  assert.equal(
+    manifest.files.some(({ role }: { role: string }) => role === 'cover'),
+    false,
+  );
   assert.ok(
     !JSON.stringify(manifest).toLowerCase().includes('provider') ||
       !Object.keys(manifest).includes('provider'),

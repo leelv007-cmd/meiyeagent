@@ -11,6 +11,7 @@ import {
 import {
   buildDeliveryZipFileName,
   buildImageTextDeliveryPackage,
+  buildPlatformChecklistMarkdown,
   buildVideoFullDeliveryPackage,
   packDeterministicZip,
   sanitizeDeliveryZipSegment,
@@ -168,10 +169,10 @@ test('image_text package is byte-identical on replay and includes manifest roles
   }
 });
 
-test('video full package includes video/cover/caption/subtitles/checklist', () => {
+test('video full package ignores legacy cover input and uses honest platform checklists', () => {
   const videoBytes = Uint8Array.from([0, 0, 0, 24, 102, 116, 121, 112]);
   const coverBytes = Uint8Array.from([255, 216, 255, 224]);
-  const built = buildVideoFullDeliveryPackage({
+  const legacyInput = {
     caption: {
       body: '视频正文',
       title: '视频标题',
@@ -187,38 +188,46 @@ test('video full package includes video/cover/caption/subtitles/checklist', () =
     subtitles: { format: 'srt', text: '1\n00:00:00,000 --> 00:00:01,000\nhi\n' },
     variantVersionId: 'ver-vid',
     video: { bytes: videoBytes },
-  });
+  } as const;
+  const built = buildVideoFullDeliveryPackage(legacyInput);
 
   assert.deepEqual(
-    buildVideoFullDeliveryPackage({
-      caption: {
-        body: '视频正文',
-        title: '视频标题',
-        topics: ['同城'],
-      },
-      compliance: { aigcLabelEnabled: true, watermarkEnabled: false },
-      contentPackageRevision: 1,
-      cover: { bytes: coverBytes, mimeType: 'image/jpeg' },
-      generatedAt: '2026-07-19T12:00:00.000Z',
-      packageId: 'pkg-vid',
-      platform: 'douyin',
-      storeName: '门店A',
-      subtitles: {
-        format: 'srt',
-        text: '1\n00:00:00,000 --> 00:00:01,000\nhi\n',
-      },
-      variantVersionId: 'ver-vid',
-      video: { bytes: videoBytes },
-    }).zipBytes,
+    buildVideoFullDeliveryPackage(legacyInput).zipBytes,
     built.zipBytes,
   );
 
   assert.ok(built.files['video.mp4']);
-  assert.ok(built.files['cover.jpg']);
+  assert.equal(built.files['cover.jpg'], undefined);
+  assert.equal(built.files['cover.png'], undefined);
   assert.ok(built.files['caption.txt']);
   assert.ok(built.files['subtitles.srt']);
   assert.ok(built.files['platform-checklist.md']);
   assert.ok(built.files['manifest.json']);
+  assert.equal(
+    built.manifest.files.some((file) => file.role === 'cover'),
+    false,
+  );
+  const douyinChecklist = new TextDecoder().decode(
+    built.files['platform-checklist.md'],
+  );
+  assert.match(
+    douyinChecklist,
+    /封面与字幕可在抖音发布页自选\/自动生成/,
+  );
+  assert.doesNotMatch(douyinChecklist, /上传 video\.mp4 与封面|revision/);
+
+  const videoAccount = buildVideoFullDeliveryPackage({
+    ...legacyInput,
+    platform: 'video_account',
+  });
+  const videoAccountChecklist = new TextDecoder().decode(
+    videoAccount.files['platform-checklist.md'],
+  );
+  assert.match(videoAccountChecklist, /上传 video\.mp4/);
+  assert.doesNotMatch(
+    videoAccountChecklist,
+    /与封面|抖音发布页|revision/,
+  );
   assert.equal(built.fileName, '门店A-视频-抖音-20260719-r1.zip');
   assert.equal(built.manifest.kind, 'video');
 });
@@ -268,6 +277,32 @@ test('delivery exposes only the safe AI-generation rights summary', () => {
   assert.doesNotMatch(
     rightsEvidence,
     /provider-task-secret|generation-run-secret|terms-provider-1-r7/u,
+  );
+});
+
+test('platform checklists keep image and video publishing instructions separate', () => {
+  for (const platform of ['douyin', 'video_account', 'xiaohongshu'] as const) {
+    const imageChecklist = buildPlatformChecklistMarkdown({
+      kind: 'image_text',
+      platform,
+    });
+    const videoChecklist = buildPlatformChecklistMarkdown({
+      kind: 'video',
+      platform,
+    });
+
+    assert.match(imageChecklist, /images\//);
+    assert.doesNotMatch(imageChecklist, /video\.mp4/);
+    assert.match(videoChecklist, /video\.mp4/);
+    assert.doesNotMatch(videoChecklist, /同一 revision|上传 video\.mp4 与封面/);
+  }
+
+  assert.match(
+    buildPlatformChecklistMarkdown({
+      kind: 'image_text',
+      platform: 'xiaohongshu',
+    }),
+    /确认封面为第 1 张图/,
   );
 });
 

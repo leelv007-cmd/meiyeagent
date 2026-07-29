@@ -66,7 +66,6 @@ export type ContentPackageVideoFullExportInput = Parameters<
   ContentPackageExportPort['export']
 >[0] & {
   contentPackageRevision?: number;
-  coverAssetId?: string;
   factSummary?: string;
   rightsState?: string;
   storeName?: string;
@@ -363,9 +362,6 @@ export class ContentPackageZipExportAdapter
     ) {
       throw new UnverifiedVideoComplianceError();
     }
-    let cover:
-      | { bytes: Uint8Array; mimeType: 'image/jpeg' | 'image/png' }
-      | undefined;
     let subtitles = input.subtitles;
     if (!nativeSingleCall) {
       if (
@@ -397,26 +393,6 @@ export class ContentPackageZipExportAdapter
       };
     }
 
-    const coverAssetId =
-      input.coverAssetId ?? (nativeSingleCall ? undefined : delivery?.cover.id);
-    if (coverAssetId) {
-      const { asset, bytes } = await this.assets.readOwnedAsset({
-        assetId: coverAssetId,
-        workspaceId: input.workspaceId,
-      });
-      if (asset.contentType !== 'image/jpeg' && asset.contentType !== 'image/png') {
-        throw new Error('Video cover must be image/jpeg or image/png.');
-      }
-      cover = { bytes, mimeType: asset.contentType };
-      if (
-        !nativeSingleCall &&
-        delivery &&
-        (asset.sha256 !== delivery.cover.sha256 ||
-          asset.sizeBytes !== delivery.cover.sizeBytes ||
-          asset.objectKey !== delivery.cover.objectKey)
-      ) throw new Error('Video cover receipt does not match delivery evidence.');
-    }
-
     const built = buildVideoFullDeliveryPackage({
       caption: {
         body: input.version.body,
@@ -428,7 +404,6 @@ export class ContentPackageZipExportAdapter
       },
       compliance: input.compliance,
       contentPackageRevision,
-      ...(cover ? { cover } : {}),
       factSummary: input.factSummary ?? this.options.factSummary,
       generatedAt: input.version.createdAt,
       packageId: input.packageId,

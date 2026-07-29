@@ -20,6 +20,7 @@ function fixture(
     quoteOutputCount?: number;
     quoteTaskId?: string;
     scopedAssetIds?: string[];
+    sourceOperation?: 'copy.generate' | 'image.generate' | 'video.generate';
     sourceSessionId?: string;
   } = {},
 ) {
@@ -75,7 +76,7 @@ function fixture(
               currency: 'CNY',
               dataClass: [],
               estimatedAmount: 1,
-              operation: 'image.generate',
+              operation: options.sourceOperation ?? 'image.generate',
               outputCount: 1,
               outputLabel: '1 张 3:4 图片',
               quoteAcceptedAt: '2026-07-19T00:00:00.000Z',
@@ -191,7 +192,7 @@ function fixture(
           platformConfigRevision: null,
           source: 'current_selection' as const,
         },
-        operation: 'image.generate' as const,
+        operation: options.sourceOperation ?? ('image.generate' as const),
         revision: 1 as const,
         task: { id: 'task-1' },
         work: { id: 'work-1' },
@@ -310,6 +311,43 @@ test('Composer snapshot adjustment never fabricates a legacy CreativeJob', async
 
   assert.deepEqual(submitCalls, []);
   assert.equal(composerCalls.length, 1);
+});
+
+test('video adjustment is unavailable before quote or derived work creation', async () => {
+  const {
+    composerCalls,
+    confirmCalls,
+    deriveCalls,
+    port,
+    submitCalls,
+  } = fixture({ sourceOperation: 'video.generate' });
+
+  await assert.rejects(
+    port.prepareAdjust(
+      context,
+      {
+        expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+        instruction: '修改字幕',
+        source: {
+          expectedPackageRevision: 3,
+          kind: 'content_package_snapshot',
+          packageId: 'package-1',
+          snapshotId: 'snapshot-task-1',
+          workflowId: 'task-1',
+        },
+        workId: 'work-1',
+      },
+      'adjust-video-unavailable',
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'RESULT_ADJUST_OPERATION_UNSUPPORTED',
+  );
+  assert.deepEqual(confirmCalls, []);
+  assert.deepEqual(deriveCalls, []);
+  assert.deepEqual(composerCalls, []);
+  assert.deepEqual(submitCalls, []);
 });
 
 test('Composer snapshot adjustment confirmation rejects changed prepared semantics', async () => {

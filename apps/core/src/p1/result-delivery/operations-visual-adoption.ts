@@ -305,8 +305,8 @@ export class OperationsResultCommandPort {
           sourceJob?.contract.operation ?? frozen?.snapshot.operation;
         if (sourceOperation === 'video.generate') {
           throw new OperationsError(
-            'RESULT_VIDEO_REGENERATION_REQUIRED',
-            'Video adjustments use the quoted regeneration workflow.',
+            'RESULT_ADJUST_OPERATION_UNSUPPORTED',
+            'This Result operation does not support quoted adjustment.',
             409,
           );
         }
