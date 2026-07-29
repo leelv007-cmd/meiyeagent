@@ -57,7 +57,7 @@ function pathsAtCommit(sha) {
     .filter(Boolean);
 }
 
-function ledgerRevisions(revisionList, annotation) {
+function ledgerRevisions(revisionList, annotation, issueNumber) {
   const revisions = revisionList.split(/\s*\+\s*/u);
   const recorded = revisions.map((revision) => ({
     orderRevision: revision,
@@ -67,7 +67,17 @@ function ledgerRevisions(revisionList, annotation) {
     revisions.length === 1
       ? annotation.match(/^([1-9]\d{0,2}) commits ff$/u)
       : null;
-  const count = ff ? Number(ff[1]) : 0;
+  const cherryPick =
+    revisions.length === 1
+      ? annotation.match(
+          /^([1-9]\d{0,2}) commits cherry-pick 自 issue-(\d+)(?:，base [0-9a-f]{7,40})?$/u
+        )
+      : null;
+  const count = ff
+    ? Number(ff[1])
+    : cherryPick && Number(cherryPick[2]) === issueNumber
+      ? Number(cherryPick[1])
+      : 0;
   if (count === 0 || count > 100) return recorded;
   const tip = commit(revisions[0]);
   if (!tip) return recorded;
@@ -96,7 +106,8 @@ function mergeLedgerAt(mainSha) {
     if (!revisions) return [];
     return ledgerRevisions(
       revisions[1],
-      revisions[2] ?? revisions[3] ?? ''
+      revisions[2] ?? revisions[3] ?? '',
+      Number(cells[2])
     ).map((entry) => ({ ...entry, issue: Number(cells[2]) }));
   });
 }

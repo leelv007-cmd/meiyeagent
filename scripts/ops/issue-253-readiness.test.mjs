@@ -282,6 +282,106 @@ test('an ff stack annotation records each contiguous first-parent commit', async
   );
 });
 
+test('an issue-scoped cherry-pick stack records each contiguous first-parent commit', async () => {
+  const data = await fixture();
+  const base = git(data.root, 'rev-parse', 'HEAD');
+  const first = await commit(
+    data.root,
+    'mkfast-template-main/src/dashboard.tsx',
+    'export const dashboardSections = 3;\nexport const stackFirst = true;\n',
+    'feat(dashboard): start the issue stack'
+  );
+  const tail = await commit(
+    data.root,
+    'mkfast-template-main/src/dashboard.tsx',
+    'export const dashboardSections = 3;\nexport const stackFirst = true;\nexport const stackTail = true;\n',
+    'feat(dashboard): finish the issue stack'
+  );
+  await writeMergeLedger(
+    data.root,
+    [
+      {
+        content: 'observability',
+        issue: 248,
+        revision: data.commits['248'],
+      },
+      {
+        annotation: `（2 commits cherry-pick 自 issue-261，base ${base.slice(0, 8)}）`,
+        content: 'dashboard',
+        issue: 261,
+        revision: tail,
+      },
+      {
+        content: 'frontend retirement',
+        issue: 264,
+        revision: data.commits['264FE'],
+      },
+    ],
+    'docs(ops): record an issue-scoped cherry-pick stack'
+  );
+  data.markers.dependencies['261'].commit = first;
+  data.markers.dependencies['261'].currentTreeChecks[0].contains = [
+    'stackFirst',
+  ];
+  await writeFile(data.markerPath, JSON.stringify(data.markers));
+
+  const result = check(data);
+  assert.equal(result.status, 0, result.stderr);
+  const evidence = JSON.parse(result.stdout).dependencies[1].evidence;
+  assert.equal(evidence.status, 'merged');
+  assert.equal(evidence.orderSha, tail);
+});
+
+test('other-issue and free-form cherry-pick annotations do not expand ledger evidence', async () => {
+  for (const annotation of [
+    '（2 commits cherry-pick 自 issue-999，base 1111111）',
+    '（2 commits cherry-pick 自 issue-261，base 1111111，source branch）',
+  ]) {
+    const data = await fixture();
+    const first = await commit(
+      data.root,
+      'mkfast-template-main/src/dashboard.tsx',
+      'export const dashboardSections = 3;\nexport const unrecorded = true;\n',
+      'feat(dashboard): add an unrecorded stack commit'
+    );
+    const tail = await commit(
+      data.root,
+      'mkfast-template-main/src/dashboard.tsx',
+      'export const dashboardSections = 3;\nexport const unrecorded = true;\nexport const recordedTail = true;\n',
+      'feat(dashboard): add a recorded stack tail'
+    );
+    await writeMergeLedger(
+      data.root,
+      [
+        {
+          content: 'observability',
+          issue: 248,
+          revision: data.commits['248'],
+        },
+        { annotation, content: 'dashboard', issue: 261, revision: tail },
+        {
+          content: 'frontend retirement',
+          issue: 264,
+          revision: data.commits['264FE'],
+        },
+      ],
+      'docs(ops): record a noncanonical cherry-pick annotation'
+    );
+    data.markers.dependencies['261'].commit = first;
+    data.markers.dependencies['261'].currentTreeChecks[0].contains = [
+      'unrecorded',
+    ];
+    await writeFile(data.markerPath, JSON.stringify(data.markers));
+
+    const result = check(data);
+    assert.equal(result.status, 1);
+    assert.equal(
+      JSON.parse(result.stdout).dependencies[1].evidence.status,
+      'not_recorded'
+    );
+  }
+});
+
 test('free-form ff text does not expand ledger evidence', async () => {
   const data = await fixture();
   const source = await commit(
