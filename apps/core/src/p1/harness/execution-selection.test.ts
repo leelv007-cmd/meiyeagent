@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  assessImageExactText,
   candidateBillingDisposition,
   executeCopySelection,
   HarnessSelectionError,
@@ -351,6 +352,21 @@ test('acceptance and cancellation matrix never refunds an uncertain effect', () 
     }),
     'settle_terminal',
   );
+});
+
+test('image exact-text matching is a pure decision over an observation', () => {
+  const observation = {
+    expected: ['价格 398'],
+    observed: ['价格 398', '价格 389'],
+    conflictingText: ['价格 389'],
+  };
+
+  const assessment = assessImageExactText(observation);
+
+  assert.equal(assessment.passed, false);
+  assert.deepEqual(assessment.observed, ['价格 398', '价格 389']);
+  assert.match(assessment.reason, /conflicting/u);
+  assert.deepEqual(observation.conflictingText, ['价格 389']);
 });
 
 class QueueRunner implements StructuredNodeRunner {

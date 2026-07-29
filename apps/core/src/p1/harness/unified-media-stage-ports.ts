@@ -40,6 +40,7 @@ import type { HarnessWorkflowInput } from "./task-admission.js";
 import {
 	executeImageSelection,
 	HarnessSelectionError,
+	type ImageExactTextObservation,
 } from "./execution-selection.js";
 import {
 	compileImageIntentForProfile,
@@ -731,17 +732,12 @@ function mediaPlatform(
 }
 
 export interface ImageExactTextVerifier {
-	verify(input: {
+	observe(input: {
 		assetId: string;
 		expected: string[];
 		request: HarnessWorkflowInput;
 		workflowId: string;
-	}): Promise<{
-		passed: boolean;
-		expected: string[];
-		observed: string[];
-		reason: string;
-	}>;
+	}): Promise<ImageExactTextObservation>;
 }
 
 const exactTextObservationSchema = z
@@ -761,7 +757,7 @@ export class ModelSupplyImageExactTextVerifier
 		>,
 	) {}
 
-	async verify(input: {
+	async observe(input: {
 		assetId: string;
 		expected: string[];
 		request: HarnessWorkflowInput;
@@ -769,10 +765,9 @@ export class ModelSupplyImageExactTextVerifier
 	}) {
 		if (input.expected.length === 0) {
 			return {
-				passed: true,
 				expected: [],
 				observed: [],
-				reason: "No exact text was requested.",
+				conflictingText: [],
 			};
 		}
 		const result = await this.models.submit({
@@ -815,32 +810,22 @@ export class ModelSupplyImageExactTextVerifier
 		const observation = exactTextObservationSchema.parse(
 			JSON.parse(jsonObject(result.text)),
 		);
-		const observed = observation.observedText;
-		const passed =
-			input.expected.every((expected) => observed.includes(expected)) &&
-			observation.conflictingText.length === 0;
 		return {
-			passed,
 			expected: [...input.expected],
-			observed,
-			reason: passed
-				? "Every exact text value matched."
-				: observation.conflictingText.length > 0
-					? "The generated image contains conflicting exact text."
-					: "The generated image did not preserve every exact text value.",
+			observed: observation.observedText,
+			conflictingText: observation.conflictingText,
 		};
 	}
 }
 
 export class FixtureImageExactTextVerifier implements ImageExactTextVerifier {
-	async verify(input: {
+	async observe(input: {
 		expected: string[];
 	}) {
 		return {
-			passed: true,
 			expected: [...input.expected],
 			observed: [...input.expected],
-			reason: "Fixture observation matches the requested exact text.",
+			conflictingText: [],
 		};
 	}
 }
@@ -918,20 +903,19 @@ export class ModelSupplyHarnessMediaExecutionPort
 						input.awaitSignal,
 						input.runStep,
 					),
-				verify: async (result) => {
+				observe: async (result) => {
 					const completed = requireCompletedMediaResult(result, "image");
 					if (expected.length === 0) {
 						return {
-							passed: true,
 							expected: [],
 							observed: [],
-							reason: "No exact text was requested.",
+							conflictingText: [],
 						};
 					}
 					return this.runEffect(
 						`verify:${completed.asset!.id}`,
 						() =>
-							this.exactText!.verify({
+							this.exactText!.observe({
 								assetId: completed.asset!.id,
 								expected,
 								request: input.request,

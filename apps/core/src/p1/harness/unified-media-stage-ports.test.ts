@@ -28,7 +28,10 @@ import {
 	ModelSupplyImageExactTextVerifier,
 	UnifiedHarnessStagePorts,
 } from "./unified-media-stage-ports.js";
-import { HarnessSelectionError } from "./execution-selection.js";
+import {
+	assessImageExactText,
+	HarnessSelectionError,
+} from "./execution-selection.js";
 import { merchantVisibleLanguageIssues } from "./merchant-delivery-language.js";
 import type {
 	HarnessContextSnapshot,
@@ -1043,12 +1046,11 @@ test("image exact text is included in the visible-copy delivery gate", async () 
 			},
 		},
 		{
-			async verify(input) {
+			async observe(input) {
 				return {
-					passed: true,
 					expected: input.expected,
 					observed: input.expected,
-					reason: "Exact text matches.",
+					conflictingText: [],
 				};
 			},
 		},
@@ -1376,20 +1378,18 @@ test("exact text blocks the first image, retries once, and keeps both provider c
 	let generation = 0;
 	let verification = 0;
 	const verifier: ImageExactTextVerifier = {
-		async verify(input) {
+		async observe(input) {
 			verification += 1;
 			return verification === 1
 				? {
-						passed: false,
 						expected: input.expected,
 						observed: ["价格 389"],
-						reason: "价格数字不一致",
+						conflictingText: [],
 					}
 				: {
-						passed: true,
 						expected: input.expected,
 						observed: ["价格 398"],
-						reason: "逐字一致",
+						conflictingText: [],
 					};
 		},
 	};
@@ -1426,7 +1426,10 @@ test("exact text blocks the first image, retries once, and keeps both provider c
 		submissions[1]?.idempotencyKey,
 		"harness-media:task-image:image:exact-text-retry",
 	);
-	assert.match(submissions[1]?.prompt ?? "", /价格数字不一致/u);
+	assert.match(
+		submissions[1]?.prompt ?? "",
+		/did not preserve every exact text value/u,
+	);
 	// T19 originally asserted the key was ABSENT. T14 (merged after it) makes every
 	// media sub-job explicitly cost-only, so absence is no longer the right shape —
 	// and absence was never the safe one: before T14 an absent value fell through to
@@ -1448,12 +1451,11 @@ test("a second exact-text mismatch hard-blocks delivery with merchant-safe wordi
 			},
 		},
 		{
-			async verify(input) {
+			async observe(input) {
 				return {
-					passed: false,
 					expected: input.expected,
 					observed: ["价格 389"],
-					reason: "价格数字不一致",
+					conflictingText: [],
 				};
 			},
 		},
@@ -1501,12 +1503,13 @@ test("the production exact-text verifier reuses multimodal text.respond without 
 		...harnessInput("image", "package-image"),
 		prompts: frozenPromptBundle(),
 	};
-	const assessment = await verifier.verify({
+	const observation = await verifier.observe({
 		assetId: "image-asset-1",
 		expected: ["价格 398"],
 		request,
 		workflowId: "task-image",
 	});
+	const assessment = assessImageExactText(observation);
 
 	assert.equal(assessment.passed, true);
 	assert.equal(submissions[0]?.operation, "text.respond");
@@ -1537,12 +1540,13 @@ test("the production exact-text verifier rejects a conflicting value even when t
 			};
 		},
 	});
-	const assessment = await verifier.verify({
+	const observation = await verifier.observe({
 		assetId: "image-asset-1",
 		expected: ["价格 398"],
 		request: harnessInput("image", "package-image"),
 		workflowId: "task-image-conflict",
 	});
+	const assessment = assessImageExactText(observation);
 
 	assert.equal(assessment.passed, false);
 	assert.deepEqual(assessment.observed, ["价格 398", "价格 389"]);

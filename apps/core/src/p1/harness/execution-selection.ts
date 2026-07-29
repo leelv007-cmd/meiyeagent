@@ -26,6 +26,10 @@ import {
   evaluateBoundedExecution,
   type BoundedExecutionSuspension,
 } from './bounded-execution-controller.js';
+import {
+  evaluatePurePredicate,
+  type PurePredicate,
+} from './pure-predicate.js';
 
 const generatedCandidateSchema = z
   .object({
@@ -165,17 +169,46 @@ export interface ImageExactTextAssessment {
   reason: string;
 }
 
+export interface ImageExactTextObservation {
+  expected: string[];
+  observed: string[];
+  conflictingText: string[];
+}
+
+const imageExactTextMatches: PurePredicate<ImageExactTextObservation> = (
+  observation,
+) =>
+  observation.expected.every((expected) =>
+    observation.observed.includes(expected),
+  ) && observation.conflictingText.length === 0;
+
+export function assessImageExactText(
+  observation: ImageExactTextObservation,
+): ImageExactTextAssessment {
+  const passed = evaluatePurePredicate(observation, imageExactTextMatches);
+  return {
+    passed,
+    expected: [...observation.expected],
+    observed: [...observation.observed],
+    reason: passed
+      ? 'Every exact text value matched.'
+      : observation.conflictingText.length > 0
+        ? 'The generated image contains conflicting exact text.'
+        : 'The generated image did not preserve every exact text value.',
+  };
+}
+
 export async function executeImageSelection<Result>(input: {
   candidateId(result: Result): string;
   generate(attempt: {
     attempt: 'primary' | 'retry';
     exactTextFailure?: ImageExactTextAssessment;
   }): Promise<Result>;
-  verify(result: Result): Promise<ImageExactTextAssessment>;
+  observe(result: Result): Promise<ImageExactTextObservation>;
   merchantFailure(assessment: ImageExactTextAssessment): string;
 }) {
   const primary = await input.generate({ attempt: 'primary' });
-  const primaryAssessment = await input.verify(primary);
+  const primaryAssessment = assessImageExactText(await input.observe(primary));
   if (primaryAssessment.passed) {
     return { result: primary, executions: [primary], blockedCandidates: [] };
   }
@@ -184,7 +217,7 @@ export async function executeImageSelection<Result>(input: {
     attempt: 'retry',
     exactTextFailure: primaryAssessment,
   });
-  const retryAssessment = await input.verify(retry);
+  const retryAssessment = assessImageExactText(await input.observe(retry));
   if (!retryAssessment.passed) {
     throw new HarnessSelectionError(
       ['image_exact_text'],

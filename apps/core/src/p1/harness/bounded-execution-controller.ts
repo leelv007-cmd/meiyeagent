@@ -6,6 +6,10 @@ import {
   type BoundedExecutionLimitName,
   type BoundedExecutionSnapshot,
 } from '@meiye/contracts';
+import {
+  evaluatePurePredicate,
+  type PurePredicate,
+} from './pure-predicate.js';
 
 const CONSUMPTION_BY_LIMIT = {
   maxIterations: 'iterations',
@@ -16,6 +20,13 @@ const CONSUMPTION_BY_LIMIT = {
   BoundedExecutionLimitName,
   keyof BoundedExecutionConsumption
 >;
+
+const executionLimitReached: PurePredicate<{
+  limit: number | 'unset';
+  observed: boolean;
+  consumed: number;
+}> = ({ limit, observed, consumed }) =>
+  observed && limit !== 'unset' && consumed >= limit;
 
 export type BoundedExecutionDecision<CurrentBest> =
   | {
@@ -119,10 +130,13 @@ export function evaluateBoundedExecution<CurrentBest>(
   const triggeredLimit = BOUNDED_EXECUTION_LIMITS.find((limit) => {
     const value = snapshot[limit];
     const consumptionKey = CONSUMPTION_BY_LIMIT[limit];
-    return (
-      Object.hasOwn(observed, consumptionKey) &&
-      value !== 'unset' &&
-      consumption[consumptionKey] >= value
+    return evaluatePurePredicate(
+      {
+        limit: value,
+        observed: Object.hasOwn(observed, consumptionKey),
+        consumed: consumption[consumptionKey],
+      },
+      executionLimitReached,
     );
   });
   const next = boundedExecutionSnapshotSchema.parse({
