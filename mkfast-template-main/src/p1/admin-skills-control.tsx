@@ -637,8 +637,7 @@ export function AdminSkillsControl() {
         },
         signal
       ),
-    refetchInterval: (query) =>
-      governanceRunPollInterval(query.state.data),
+    refetchInterval: (query) => governanceRunPollInterval(query.state.data),
   });
   const dependencyQuery = useQuery({
     enabled: Boolean(dependencyTarget),
