@@ -259,6 +259,28 @@ export class PostgresIssue255LiveReceiptRepository {
       .strict()
       .parse(input);
     return this.locked(parsed.runNonce, async (client) => {
+      const submissionCounts = await client.query<{
+        global_count: string;
+        run_count: string;
+      }>(
+        `SELECT
+           COUNT(*) FILTER (
+             WHERE generation_submit_count = 1
+           )::bigint AS global_count,
+           COUNT(*) FILTER (
+             WHERE run_nonce = $1 AND generation_submit_count = 1
+           )::bigint AS run_count
+         FROM issue255_live_generation_receipts`,
+        [parsed.runNonce],
+      );
+      if (
+        Number(submissionCounts.rows[0]?.global_count ?? 0) >= 3 ||
+        Number(submissionCounts.rows[0]?.run_count ?? 0) >= 3
+      ) {
+        throw new Error(
+          'Issue 255 permits exactly three billable generation POSTs globally.',
+        );
+      }
       const updated = await client.query<ReceiptRow>(
         `UPDATE issue255_live_generation_receipts
             SET generation_submit_count = 1,

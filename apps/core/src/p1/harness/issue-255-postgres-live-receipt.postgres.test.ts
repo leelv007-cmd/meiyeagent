@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
-import { after, before, describe, it } from 'node:test';
+import { after, before, beforeEach, describe, it } from 'node:test';
 import { Pool } from 'pg';
 
 import { PostgresFoundationRepository } from '../foundation/postgres-repository.js';
@@ -20,6 +20,17 @@ describe(
 
     before(async () => {
       await first.migrate();
+    });
+
+    beforeEach(async () => {
+      await firstPool.query(
+        'DELETE FROM issue255_live_generation_receipts WHERE run_nonce LIKE $1',
+        [`issue-255-pg-${suiteNonce}-%`],
+      );
+      await firstPool.query(
+        'DELETE FROM workspaces WHERE id LIKE $1',
+        [`issue-255-workspace-${suiteNonce}%`],
+      );
     });
 
     after(async () => {
@@ -257,6 +268,72 @@ describe(
       assert.equal(
         (await first.listRun(runNonce))[0]?.generationSubmitCount,
         1,
+      );
+    });
+
+    it('rejects a fourth billable generation POST globally before provider fetch', async () => {
+      for (const index of [1, 2, 3]) {
+        const runNonce = `issue-255-pg-${suiteNonce}-global-${index}`;
+        const effectId = createHash('sha256')
+          .update(`issue255/v1\0${runNonce}\0copy`)
+          .digest('hex');
+        const requestFingerprint = String(index).repeat(64);
+        await first.claim({
+          runNonce,
+          modality: 'copy',
+          effectId,
+          requestFingerprint,
+          adapter: 'direct-copy',
+          deploymentId: 'deepseek-v4-pro-direct',
+          providerIdempotencyKey: effectId,
+          providerJobId: `${effectId}:job`,
+          providerAttemptId: `${effectId}:attempt`,
+          providerCostEventId: `${effectId}:cost`,
+          recordedMatrixDigest: '8'.repeat(64),
+          reservedAmountMicros: 100_000,
+          priceRevision: 'direct-copy-price-v1',
+          exchangeRevision: 'native-cny-v1',
+        });
+        await first.claimGenerationPost({
+          runNonce,
+          modality: 'copy',
+          effectId,
+          requestFingerprint,
+        });
+      }
+      const fourthRunNonce = `issue-255-pg-${suiteNonce}-global-4`;
+      const fourthEffectId = createHash('sha256')
+        .update(`issue255/v1\0${fourthRunNonce}\0copy`)
+        .digest('hex');
+      await first.claim({
+        runNonce: fourthRunNonce,
+        modality: 'copy',
+        effectId: fourthEffectId,
+        requestFingerprint: '9'.repeat(64),
+        adapter: 'direct-copy',
+        deploymentId: 'deepseek-v4-pro-direct',
+        providerIdempotencyKey: fourthEffectId,
+        providerJobId: `${fourthEffectId}:job`,
+        providerAttemptId: `${fourthEffectId}:attempt`,
+        providerCostEventId: `${fourthEffectId}:cost`,
+        recordedMatrixDigest: '8'.repeat(64),
+        reservedAmountMicros: 100_000,
+        priceRevision: 'direct-copy-price-v1',
+        exchangeRevision: 'native-cny-v1',
+      });
+
+      await assert.rejects(
+        first.claimGenerationPost({
+          runNonce: fourthRunNonce,
+          modality: 'copy',
+          effectId: fourthEffectId,
+          requestFingerprint: '9'.repeat(64),
+        }),
+        /exactly three billable generation POSTs/u,
+      );
+      assert.equal(
+        (await first.listRun(fourthRunNonce))[0]?.generationSubmitCount,
+        0,
       );
     });
 
