@@ -51,7 +51,7 @@ test('interaction answers persist before one resume with the canonical triple', 
       ],
     },
   });
-  await store.register('workspace-a', request);
+  await store.registerInteraction('workspace-a', request);
   const service = new HarnessInteractionService(store, {
     async resume(input) {
       order.push(
@@ -84,7 +84,7 @@ test('invalid offered labels become a durable follow-up revision without resumin
       },
     ],
   });
-  await store.register('workspace-a', request);
+  await store.registerInteraction('workspace-a', request);
   const service = new HarnessInteractionService(store, {
     async resume() {
       throw new Error('A rejected answer must not resume.');
@@ -110,7 +110,8 @@ test('invalid offered labels become a durable follow-up revision without resumin
   assert.equal(result.kind, 'reask');
   assert.equal(result.request.revision, request.revision + 1);
   assert.equal(
-    (await store.readPending('workspace-a', request.runId))?.revision,
+    (await store.readPendingInteraction('workspace-a', request.runId))
+      ?.revision,
     request.revision + 1,
   );
 });
@@ -120,7 +121,7 @@ test('a failed resume retries the persisted answer without writing it twice', as
   const store = new MemoryInteractionStore(order);
   const request = askRequest();
   const answer = askAnswer(request, 'retry-answer');
-  await store.register('workspace-a', request);
+  await store.registerInteraction('workspace-a', request);
   let attempts = 0;
   const service = new HarnessInteractionService(store, {
     async resume() {
@@ -155,13 +156,17 @@ test('execution confirmation only persists when the server condition requires it
   assert.deepEqual(await service.request('workspace-a', direct), {
     kind: 'continued',
   });
-  assert.equal(await store.readPending('workspace-a', direct.runId), null);
+  assert.equal(
+    await store.readPendingInteraction('workspace-a', direct.runId),
+    null,
+  );
   assert.deepEqual(await service.request('workspace-a', held), {
     kind: 'pending',
     replayed: false,
   });
   assert.equal(
-    (await store.readPending('workspace-a', held.runId))?.requestId,
+    (await store.readPendingInteraction('workspace-a', held.runId))
+      ?.requestId,
     held.requestId,
   );
 });
@@ -175,7 +180,7 @@ for (const response of [
     const resumes: unknown[] = [];
     const store = new MemoryInteractionStore([]);
     const request = executionRequest(true);
-    await store.register('workspace-a', request);
+    await store.registerInteraction('workspace-a', request);
     const service = new HarnessInteractionService(store, {
       async resume(input) {
         resumes.push(input.resumeData);
@@ -214,19 +219,19 @@ test('semantic timeout defers merchant questions but pauses while the merchant e
       },
     ],
   });
-  await store.register('workspace-a', request);
+  await store.registerInteraction('workspace-a', request);
   const service = new HarnessInteractionService(store, {
     async resume({ resolutionSource, resumeData }) {
       resumes.push({ resolutionSource, resumeData });
     },
   });
 
-  store.editing = true;
+  await service.setEditing('workspace-a', request.runId, true);
   assert.deepEqual(
     await service.submitSystemDefault('workspace-a', request.runId),
     { kind: 'held', reason: 'editing' },
   );
-  store.editing = false;
+  await service.setEditing('workspace-a', request.runId, false);
   assert.deepEqual(
     await service.submitSystemDefault('workspace-a', request.runId),
     { kind: 'resumed', replayed: false },
@@ -260,7 +265,8 @@ test('external execution effects hold forever and an unsupported carrier cannot 
     null,
   );
   assert.equal(
-    (await store.readPending('workspace-a', request.runId))?.requestId,
+    (await store.readPendingInteraction('workspace-a', request.runId))
+      ?.requestId,
     request.requestId,
   );
   assert.deepEqual(
@@ -270,8 +276,9 @@ test('external execution effects hold forever and an unsupported carrier cannot 
 });
 
 class MemoryInteractionStore implements HarnessInteractionStore {
-  private pending: Parameters<HarnessInteractionStore['register']>[1] | null =
-    null;
+  private pending:
+    | Parameters<HarnessInteractionStore['registerInteraction']>[1]
+    | null = null;
   private event:
     | {
         idempotencyKey: string;
@@ -284,19 +291,21 @@ class MemoryInteractionStore implements HarnessInteractionStore {
 
   constructor(private readonly order: string[]) {}
 
-  async register(
+  async registerInteraction(
     _workspaceId: string,
-    request: Parameters<HarnessInteractionStore['register']>[1],
+    request: Parameters<HarnessInteractionStore['registerInteraction']>[1],
   ) {
     this.pending = request;
     return { outcome: 'created' as const };
   }
 
-  async readPending(_workspaceId: string, _runId: string) {
+  async readPendingInteraction(_workspaceId: string, _runId: string) {
     return this.pending;
   }
 
-  async resolve(input: Parameters<HarnessInteractionStore['resolve']>[0]) {
+  async resolveInteraction(
+    input: Parameters<HarnessInteractionStore['resolveInteraction']>[0],
+  ) {
     if (this.event) {
       return {
         outcome:
@@ -316,17 +325,17 @@ class MemoryInteractionStore implements HarnessInteractionStore {
     return { outcome: 'created' as const, resumeRequired: true };
   }
 
-  async claimResume() {
+  async claimInteractionResume() {
     if (!this.event?.resumeRequired) return false;
     this.event.resumeRequired = false;
     return true;
   }
 
-  async releaseResume() {
+  async releaseInteractionResume() {
     if (this.event) this.event.resumeRequired = true;
   }
 
-  async markResumed(
+  async markInteractionResumed(
     _workspaceId: string,
     _runId: string,
     idempotencyKey: string,
@@ -335,8 +344,18 @@ class MemoryInteractionStore implements HarnessInteractionStore {
     return true;
   }
 
-  async isEditing(_workspaceId: string, _runId: string) {
+  async isInteractionEditing(_workspaceId: string, _runId: string) {
     return this.editing;
+  }
+
+  async setInteractionEditing(
+    _workspaceId: string,
+    _runId: string,
+    editing: boolean,
+  ) {
+    if (!this.pending) return false;
+    this.editing = editing;
+    return true;
   }
 }
 

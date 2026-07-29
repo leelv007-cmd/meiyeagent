@@ -13,17 +13,18 @@ import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import { resolveAskMerchantAnswer } from './ask-merchant-resolution.js';
 
 export interface HarnessInteractionStore {
-  register(
+  registerInteraction(
     workspaceId: string,
     request: HarnessInteractionRequest,
   ): Promise<{
     outcome: 'created' | 'replayed' | 'conflict';
   }>;
-  readPending(
+  readPendingInteraction(
     workspaceId: string,
     runId: string,
+    options?: { includeResolved?: boolean },
   ): Promise<HarnessInteractionRequest | null>;
-  resolve(input: {
+  resolveInteraction(input: {
     workspaceId: string;
     answer: HarnessInteractionAnswer;
     payloadFingerprint: string;
@@ -38,25 +39,33 @@ export interface HarnessInteractionStore {
       | 'idempotency_conflict';
     resumeRequired: boolean;
   }>;
-  claimResume(
+  claimInteractionResume(
     workspaceId: string,
     runId: string,
     idempotencyKey: string,
     claimId: string,
   ): Promise<boolean>;
-  releaseResume(
+  releaseInteractionResume(
     workspaceId: string,
     runId: string,
     idempotencyKey: string,
     claimId: string,
   ): Promise<void>;
-  markResumed(
+  markInteractionResumed(
     workspaceId: string,
     runId: string,
     idempotencyKey: string,
     claimId: string,
   ): Promise<boolean>;
-  isEditing?(workspaceId: string, runId: string): Promise<boolean>;
+  isInteractionEditing?(
+    workspaceId: string,
+    runId: string,
+  ): Promise<boolean>;
+  setInteractionEditing?(
+    workspaceId: string,
+    runId: string,
+    editing: boolean,
+  ): Promise<boolean>;
 }
 
 export interface HarnessInteractionResumer {
@@ -101,7 +110,10 @@ export class HarnessInteractionService {
     ) {
       return { kind: 'continued' as const };
     }
-    const registered = await this.store.register(workspaceId, request);
+    const registered = await this.store.registerInteraction(
+      workspaceId,
+      request,
+    );
     if (registered.outcome === 'conflict') {
       throw new HarnessInteractionError(
         'STALE_INTERACTION_REVISION',
@@ -119,7 +131,10 @@ export class HarnessInteractionService {
     runId: string,
     carrier: 'conversation' | 'store_page' | 'task_card',
   ) {
-    const request = await this.store.readPending(workspaceId, runId);
+    const request = await this.store.readPendingInteraction(
+      workspaceId,
+      runId,
+    );
     if (
       !request ||
       !(request.presentation.carriers as readonly string[]).includes(carrier)
@@ -141,14 +156,17 @@ export class HarnessInteractionService {
   }
 
   async submitSystemDefault(workspaceId: string, runId: string) {
-    const request = await this.store.readPending(workspaceId, runId);
+    const request = await this.store.readPendingInteraction(
+      workspaceId,
+      runId,
+    );
     if (!request) {
       throw new HarnessInteractionError(
         'STALE_INTERACTION_REQUEST',
         'The interaction request is no longer pending.',
       );
     }
-    if (await this.store.isEditing?.(workspaceId, runId)) {
+    if (await this.store.isInteractionEditing?.(workspaceId, runId)) {
       return { kind: 'held' as const, reason: 'editing' as const };
     }
     if (request.kind === 'execution_confirmation') {
@@ -189,6 +207,23 @@ export class HarnessInteractionService {
     );
   }
 
+  async setEditing(workspaceId: string, runId: string, editing: boolean) {
+    if (!this.store.setInteractionEditing) {
+      throw new HarnessInteractionError(
+        'INTERACTION_KIND_MISMATCH',
+        'Interaction editing persistence is unavailable.',
+      );
+    }
+    if (
+      !(await this.store.setInteractionEditing(workspaceId, runId, editing))
+    ) {
+      throw new HarnessInteractionError(
+        'STALE_INTERACTION_REQUEST',
+        'The interaction request is no longer pending.',
+      );
+    }
+  }
+
   private async submitParsed(
     workspaceId: string,
     answer: HarnessInteractionAnswer,
@@ -197,9 +232,10 @@ export class HarnessInteractionService {
     | { kind: 'reask'; request: HarnessInteractionRequest }
     | { kind: 'resumed'; replayed: boolean }
   > {
-    const request = await this.store.readPending(
+    const request = await this.store.readPendingInteraction(
       workspaceId,
       answer.resume.runId,
+      { includeResolved: true },
     );
     if (!request || request.requestId !== answer.requestId) {
       throw new HarnessInteractionError(
@@ -222,7 +258,7 @@ export class HarnessInteractionService {
         );
       }
       if (resolution.kind === 'reask') {
-        const registered = await this.store.register(
+        const registered = await this.store.registerInteraction(
           workspaceId,
           resolution.request,
         );
@@ -277,7 +313,7 @@ export class HarnessInteractionService {
     resumeData: HarnessInteractionAnswer['response'];
     workspaceId: string;
   }): Promise<{ kind: 'resumed'; replayed: boolean }> {
-    const persisted = await this.store.resolve({
+    const persisted = await this.store.resolveInteraction({
       workspaceId: input.workspaceId,
       answer: input.answer,
       payloadFingerprint: fingerprintValue({
@@ -310,7 +346,7 @@ export class HarnessInteractionService {
     const claimId = randomUUID();
     if (
       persisted.resumeRequired &&
-      (await this.store.claimResume(
+      (await this.store.claimInteractionResume(
         input.workspaceId,
         input.request.runId,
         input.answer.idempotencyKey,
@@ -326,7 +362,7 @@ export class HarnessInteractionService {
           resolutionSource: input.resolutionSource,
         });
         if (
-          !(await this.store.markResumed(
+          !(await this.store.markInteractionResumed(
             input.workspaceId,
             input.request.runId,
             input.answer.idempotencyKey,
@@ -336,7 +372,7 @@ export class HarnessInteractionService {
           throw new Error('The interaction resume lease was lost.');
         }
       } catch (error) {
-        await this.store.releaseResume(
+        await this.store.releaseInteractionResume(
           input.workspaceId,
           input.request.runId,
           input.answer.idempotencyKey,

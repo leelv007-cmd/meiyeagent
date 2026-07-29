@@ -1,6 +1,7 @@
 import {
   confirmationCardTimeoutSecondsSchema,
   contentPackageSchema,
+  harnessInteractionRequestSchema,
   observabilityAxisBindingSchema,
   observabilityEventSchema,
   observabilityDropEventSchema,
@@ -8,6 +9,7 @@ import {
   structuredDecisionInputSchema,
   type ContentPackageRevisionDelivery,
   type CreativeRecommendationDecisionTrace,
+  type HarnessInteractionRequest,
   type MarketingPackageEvidence,
   type ObservabilityDropEvent,
   type ObservabilityAxisBinding,
@@ -38,6 +40,7 @@ import type {
   HarnessPendingDecisionProjection,
   HarnessDecisionTrace,
 } from './decision-service.js';
+import type { HarnessInteractionStore } from './interaction-service.js';
 import type {
   HarnessTaskRequestRegistry,
   HarnessWorkflowInput,
@@ -96,6 +99,7 @@ export class PostgresHarnessStore
   implements
     HarnessTaskRequestRegistry,
     HarnessDecisionStore,
+    HarnessInteractionStore,
     PostgresSchemaMigrator
 {
   constructor(
@@ -932,6 +936,333 @@ export class PostgresHarnessStore
     }
   }
 
+  async registerInteraction(
+    workspaceId: string,
+    request: HarnessInteractionRequest,
+  ): ReturnType<HarnessInteractionStore['registerInteraction']> {
+    const parsed = harnessInteractionRequestSchema.parse(request);
+    const runtimeTaskId = await this.requireWorkflowRuntimeId(
+      workspaceId,
+      parsed.runId,
+    );
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      await client.query('select pg_advisory_xact_lock(hashtext($1))', [
+        `${runtimeTaskId}:interaction`,
+      ]);
+      const existing = await client.query<{
+        payload: unknown;
+        status: 'pending' | 'resolved';
+      }>(
+        `select payload, status
+           from harness_runtime.pending_questions
+          where task_id=$1
+          for update`,
+        [runtimeTaskId],
+      );
+      const current = existing.rows[0];
+      const currentRequest = current
+        ? harnessInteractionRequestSchema.safeParse(current.payload)
+        : null;
+      if (
+        current?.status === 'pending' &&
+        currentRequest?.success &&
+        fingerprintValue(currentRequest.data) === fingerprintValue(parsed)
+      ) {
+        await client.query('commit');
+        return { outcome: 'replayed' };
+      }
+      if (
+        current?.status === 'pending' &&
+        (!currentRequest?.success ||
+          currentRequest.data.requestId !== parsed.requestId ||
+          currentRequest.data.runId !== parsed.runId ||
+          parsed.revision !== currentRequest.data.revision + 1)
+      ) {
+        await client.query('rollback');
+        return { outcome: 'conflict' };
+      }
+      await client.query(
+        `insert into harness_runtime.pending_questions
+           (task_id, question_id, workflow_revision, payload,
+            pending_projection, status)
+         values ($1,$2,$3,$4::jsonb,'{}'::jsonb,'pending')
+         on conflict (task_id) do update set
+           question_id=excluded.question_id,
+           workflow_revision=excluded.workflow_revision,
+           payload=excluded.payload,
+           pending_projection=excluded.pending_projection,
+           status='pending',
+           updated_at=now()`,
+        [
+          runtimeTaskId,
+          parsed.requestId,
+          parsed.revision,
+          JSON.stringify(parsed),
+        ],
+      );
+      await client.query('commit');
+      return { outcome: 'created' };
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async readPendingInteraction(
+    workspaceId: string,
+    runId: string,
+    options?: { includeResolved?: boolean },
+  ) {
+    const runtimeTaskId = await this.workflowRuntimeId(workspaceId, runId);
+    if (!runtimeTaskId) return null;
+    const result = await this.pool.query<{ payload: unknown }>(
+      `select payload
+         from harness_runtime.pending_questions
+        where task_id=$1 and ($2::boolean or status='pending')`,
+      [runtimeTaskId, options?.includeResolved === true],
+    );
+    const parsed = harnessInteractionRequestSchema.safeParse(
+      result.rows[0]?.payload,
+    );
+    return parsed.success ? parsed.data : null;
+  }
+
+  async resolveInteraction(
+    input: Parameters<HarnessInteractionStore['resolveInteraction']>[0],
+  ): ReturnType<HarnessInteractionStore['resolveInteraction']> {
+    const runtimeTaskId = await this.requireWorkflowRuntimeId(
+      input.workspaceId,
+      input.answer.resume.runId,
+    );
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      await client.query('select pg_advisory_xact_lock(hashtext($1))', [
+        `${runtimeTaskId}:interaction:${input.answer.idempotencyKey}`,
+      ]);
+      const existing = await client.query<{
+        payload_fingerprint: string;
+        resume_status: 'pending' | 'sending' | 'sent';
+      }>(
+        `select payload_fingerprint, resume_status
+           from harness_runtime.decision_events
+          where task_id=$1 and idempotency_key=$2`,
+        [runtimeTaskId, input.answer.idempotencyKey],
+      );
+      if (existing.rows[0]) {
+        await client.query('commit');
+        return {
+          outcome:
+            existing.rows[0].payload_fingerprint === input.payloadFingerprint
+              ? 'replayed'
+              : 'idempotency_conflict',
+          resumeRequired: existing.rows[0].resume_status !== 'sent',
+        };
+      }
+      const pending = await client.query<{
+        question_id: string;
+        status: 'pending' | 'resolved';
+        workflow_revision: string;
+      }>(
+        `select question_id, workflow_revision::text as workflow_revision, status
+           from harness_runtime.pending_questions
+          where task_id=$1
+          for update`,
+        [runtimeTaskId],
+      );
+      const node = pending.rows[0];
+      if (
+        !node ||
+        node.status !== 'pending' ||
+        node.question_id !== input.answer.requestId
+      ) {
+        await client.query('rollback');
+        return { outcome: 'stale_request', resumeRequired: false };
+      }
+      if (Number(node.workflow_revision) !== input.answer.revision) {
+        await client.query('rollback');
+        return { outcome: 'stale_revision', resumeRequired: false };
+      }
+      const logicalEventId = `interaction-event-${input.answer.idempotencyKey}`;
+      const runtimeEventId = this.runtimeObjectId(
+        input.workspaceId,
+        input.answer.resume.runId,
+        runtimeTaskId,
+        logicalEventId,
+      );
+      await client.query(
+        `insert into harness_runtime.decision_events
+           (id, task_id, question_id, workflow_revision, idempotency_key,
+            payload_fingerprint, payload, resolution_source, resume_status)
+         values ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,'pending')`,
+        [
+          runtimeEventId,
+          runtimeTaskId,
+          input.answer.requestId,
+          input.answer.revision,
+          input.answer.idempotencyKey,
+          input.payloadFingerprint,
+          JSON.stringify({
+            answer: input.answer,
+            resumeData: input.resumeData,
+          }),
+          input.resolutionSource,
+        ],
+      );
+      await this.writeAuditAndOutbox(
+        client,
+        {
+          workspaceId: input.workspaceId,
+          id: `audit-${logicalEventId}`,
+          workflowId: input.answer.resume.runId,
+          stage: input.answer.resume.step,
+          eventType: 'harness_interaction_resolved',
+          payload: {
+            requestId: input.answer.requestId,
+            resolutionSource: input.resolutionSource,
+            revision: input.answer.revision,
+          },
+        },
+        runtimeTaskId,
+      );
+      await client.query(
+        `update harness_runtime.pending_questions
+            set status='resolved', updated_at=now()
+          where task_id=$1`,
+        [runtimeTaskId],
+      );
+      await client.query('commit');
+      return { outcome: 'created', resumeRequired: true };
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async claimInteractionResume(
+    workspaceId: string,
+    runId: string,
+    idempotencyKey: string,
+    claimId: string,
+  ) {
+    const runtimeTaskId = await this.requireWorkflowRuntimeId(
+      workspaceId,
+      runId,
+    );
+    const result = await this.pool.query(
+      `update harness_runtime.decision_events
+          set resume_status='sending',
+              resume_claim_id=$3,
+              resume_lease_expires_at=clock_timestamp() + interval '5 minutes',
+              resume_attempts=resume_attempts + 1
+        where task_id=$1
+          and idempotency_key=$2
+          and (
+            resume_status='pending'
+            or (
+              resume_status='sending'
+              and (
+                resume_lease_expires_at is null
+                or resume_lease_expires_at <= clock_timestamp()
+              )
+            )
+          )
+      returning id`,
+      [runtimeTaskId, idempotencyKey, claimId],
+    );
+    return result.rowCount === 1;
+  }
+
+  async releaseInteractionResume(
+    workspaceId: string,
+    runId: string,
+    idempotencyKey: string,
+    claimId: string,
+  ) {
+    const runtimeTaskId = await this.requireWorkflowRuntimeId(
+      workspaceId,
+      runId,
+    );
+    await this.pool.query(
+      `update harness_runtime.decision_events
+          set resume_status='pending',
+              resume_claim_id=null,
+              resume_lease_expires_at=null
+        where task_id=$1
+          and idempotency_key=$2
+          and resume_status='sending'
+          and resume_claim_id=$3`,
+      [runtimeTaskId, idempotencyKey, claimId],
+    );
+  }
+
+  async markInteractionResumed(
+    workspaceId: string,
+    runId: string,
+    idempotencyKey: string,
+    claimId: string,
+  ) {
+    const runtimeTaskId = await this.requireWorkflowRuntimeId(
+      workspaceId,
+      runId,
+    );
+    const result = await this.pool.query(
+      `update harness_runtime.decision_events
+          set resume_status='sent',
+              resume_claim_id=null,
+              resume_lease_expires_at=null
+        where task_id=$1
+          and idempotency_key=$2
+          and resume_status='sending'
+          and resume_claim_id=$3`,
+      [runtimeTaskId, idempotencyKey, claimId],
+    );
+    return result.rowCount === 1;
+  }
+
+  async isInteractionEditing(workspaceId: string, runId: string) {
+    const runtimeTaskId = await this.workflowRuntimeId(workspaceId, runId);
+    if (!runtimeTaskId) return false;
+    const result = await this.pool.query<{ editing: boolean }>(
+      `select coalesce(
+                (pending_projection->>'editing')::boolean,
+                false
+              ) as editing
+         from harness_runtime.pending_questions
+        where task_id=$1 and status='pending'`,
+      [runtimeTaskId],
+    );
+    return result.rows[0]?.editing ?? false;
+  }
+
+  async setInteractionEditing(
+    workspaceId: string,
+    runId: string,
+    editing: boolean,
+  ) {
+    const runtimeTaskId = await this.workflowRuntimeId(workspaceId, runId);
+    if (!runtimeTaskId) return false;
+    const result = await this.pool.query(
+      `update harness_runtime.pending_questions
+          set pending_projection=jsonb_set(
+                pending_projection,
+                '{editing}',
+                to_jsonb($2::boolean),
+                true
+              ),
+              updated_at=now()
+        where task_id=$1 and status='pending'`,
+      [runtimeTaskId, editing],
+    );
+    return result.rowCount === 1;
+  }
+
   async readPending(
     workspaceId: string,
     taskId: string,
@@ -1012,6 +1343,10 @@ export class PostgresHarnessStore
            on requests.runtime_id=questions.task_id
         where requests.request->>'workspaceId'=$1
           and questions.status='pending'
+          and coalesce(
+                questions.payload->'presentation'->>'notification',
+                ''
+              ) <> 'none'
         order by questions.updated_at, requests.workflow_id, questions.question_id`,
       [workspaceId],
     );
