@@ -95,7 +95,14 @@ export class ExecutionSourceContentPackageResolver
 		];
 		if (currentVersion.conversionHook) slots.push("conversion_hook");
 		const assets = sourceAssets(contentPackage);
-		await this.assertSelectedAssetsAvailable(input.workspaceId, assets, source);
+		await this.assertSelectedAssetsAvailable(
+			input.workspaceId,
+			assets,
+			new Set(
+				(contentPackage.generated.ownedAssets ?? []).map((asset) => asset.id),
+			),
+			source,
+		);
 		return {
 			reference: { ...source },
 			structure: {
@@ -112,10 +119,14 @@ export class ExecutionSourceContentPackageResolver
 	private async assertSelectedAssetsAvailable(
 		workspaceId: string,
 		assets: ResolvedSourceContentPackage["assets"],
+		ownedAssetIds: ReadonlySet<string>,
 		source: SourceContentPackageReference,
 	) {
 		const selectedAssetIds = assets
-			.filter((asset) => asset.role === "selected")
+			.filter(
+				(asset) =>
+					asset.role === "selected" && !ownedAssetIds.has(asset.id),
+			)
 			.map((asset) => asset.id);
 		if (selectedAssetIds.length === 0) return;
 		if (!this.assetRights) {

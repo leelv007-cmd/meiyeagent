@@ -317,7 +317,10 @@ export class CreationSubmissionCoordinator {
 			task: { id: snapshot.task.id },
 			usageReservation: {
 				id: `usage-reservation-${snapshot.task.id}`,
-				units: productUsageUnits(snapshot),
+				units:
+					snapshot.lens === "image_text_note"
+						? [{ resource: "image", quantity: input.outputCount }]
+						: productUsageUnits(snapshot),
 			},
 			work: { id: snapshot.work.id },
 		};

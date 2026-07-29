@@ -1093,6 +1093,43 @@ test("a Result adjustment starts one new-chain submission from the frozen source
 	);
 });
 
+test("an image-text note Result adjustment reserves the quoted image output", async () => {
+	const submissions = new MemorySubmissionStore();
+	const starter = new RecordingHarnessStarter();
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		starter,
+		fixedIds(),
+		modalityAdmission(),
+	);
+	await coordinator.submit({
+		...modalitySubmissionPayload("image_text_note"),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	const source = starter.starts[0]!;
+
+	const result = await coordinator.submitResultAdjustment({
+		actorId: "owner-1",
+		idempotencyKey: "result-adjust-note-1",
+		instruction: "重做指定图片",
+		outputCount: 1,
+		quote: { id: "quote-adjust-note-1", revision: "quote-adjust-note-r1" },
+		sourceContentPackage: { id: source.contentPackage.id, revision: 1 },
+		sourceSnapshot: source.snapshot,
+		taskId: "composer-task:result-adjust:note-1",
+		workId: "work-result-adjust-note-1",
+		workspaceId: "workspace-1",
+	});
+
+	assert.equal(result.work.id, "work-result-adjust-note-1");
+	assert.equal(starter.starts.length, 2);
+	assert.deepEqual(
+		submissions.reservedUnits("workspace-1", "result-adjust-note-1"),
+		[{ resource: "image", quantity: 1 }],
+	);
+});
+
 test("a rejected Composer admission does not claim a shell or start Harness", async () => {
 	const submissions = new MemorySubmissionStore();
 	const starter = new RecordingHarnessStarter();

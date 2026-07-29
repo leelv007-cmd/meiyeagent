@@ -463,7 +463,12 @@ export async function adjustResult(
   );
   await confirm.click();
   const confirmResponse = await confirmPromise;
-  expect(confirmResponse.ok(), await confirmResponse.text()).toBeTruthy();
+  const confirmBody = await confirmResponse.text();
+  const confirmRequest = confirmResponse.request().postDataJSON();
+  expect(
+    confirmResponse.ok(),
+    `${confirmBody}; request=${JSON.stringify(confirmRequest)}`
+  ).toBeTruthy();
   await expect
     .poll(() => page.url(), {
       message: 'confirmed adjustment must leave the quoted Result route',

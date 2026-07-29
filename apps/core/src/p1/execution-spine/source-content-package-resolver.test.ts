@@ -118,6 +118,40 @@ test("runtime source resolver rejects a selected asset whose live rights were wi
 	);
 });
 
+test("runtime source resolver accepts a package-owned selected asset without external rights lookup", async () => {
+	const source = sourcePackage();
+	source.generated.ownedAssets = [
+		{
+			contentType: "image/jpeg",
+			id: "selected-asset-1",
+			objectKey: "owned/source-package-1/selected-asset-1",
+			sha256: "owned-selected-asset-sha256",
+		},
+	];
+	const resolver = new ExecutionSourceContentPackageResolver(
+		{
+			async get() {
+				return source;
+			},
+		},
+		{
+			async resolve() {
+				throw new Error("Package-owned assets must not use external rights.");
+			},
+		},
+	);
+
+	const resolved = await resolver.resolve({
+		workspaceId: "workspace-1",
+		source: { id: "source-package-1", revision: "3" },
+	});
+
+	assert.deepEqual(resolved?.assets, [
+		{ id: "source-asset-1", role: "source" },
+		{ id: "selected-asset-1", role: "selected" },
+	]);
+});
+
 function authorizedAssetRights() {
 	return {
 		async resolve({ assetIds }: { assetIds: string[] }) {
