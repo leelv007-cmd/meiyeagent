@@ -357,12 +357,13 @@ test.describe('P1-F2 continuous acceptance (#161)', () => {
     await assertMerchantLanguage(page, 'Result (copy ready)');
     await assertAxeClean(page, 'Result (light)');
 
+    await adoptResult(page, contract);
     const adjusted = await adjustResult(page, contract.modality);
     const resultWorkId = adjusted.workId ?? workId;
     if (adjusted.workId) {
       await waitForResultJourney(page, contract, adjusted.workId);
+      await adoptResult(page, contract);
     }
-    await adoptResult(page, contract);
     await openDeliveryPanel(page, contract.modality);
     await downloadFullPackage(page, contract);
     await assertAxeClean(page, 'Delivery (light)');

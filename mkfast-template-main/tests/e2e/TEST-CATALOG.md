@@ -369,7 +369,7 @@ evidence.
 
 | # | Test name | Flow |
 |---|---|---|
-| 1 | Example storefront stays opt-in and isolated below the canonical Composer | Open an empty workspace, verify the honest Day-0 recommendation invitation and editable Composer are present, reveal the read-only three-industry sample showcase (护发／皮肤管理／生发), switch industry, remix a sample structure into the Composer, and prove browsing, remixing, hiding, and reloading create no Work, Job, Asset, ContentPackage, or store fact. |
+| 1 | Example storefront stays opt-in and isolated below the canonical Composer | Open an empty workspace, verify the honest Day-0 recommendation invitation and editable Composer are present, reveal the read-only three-industry sample showcase (护发／皮肤管理／生发), switch industry, remix a sample structure into the Composer, require submit to remain fact-gated rather than treating platform samples as merchant facts, and prove browsing, remixing, hiding, and reloading create no Work, Job, Asset, ContentPackage, or store fact. |
 | 2 | Today recommendation follows the persisted fact revision state | Read revision 0 as an honest invitation, then read a server recommendation bound to revision 1 and verify why-now, the merchant-language fact count (never a `store_fact:` id), customer action, source, and the compact active opportunity summary. Verify the CTA prefills the Composer draft in place instead of navigating. Advance to revision 2 and verify the revision-1 recommendation and its opportunity are withheld instead of being described as current personalization. |
 
 ## 25b. D-126 Dashboard Home Mount (Hot / Cold)

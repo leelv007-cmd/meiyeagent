@@ -202,10 +202,12 @@ test.describe('Day-0 recommendation and example store', () => {
     await expect(remixedIntent).toHaveValue(
       `做一条抖音美业内容，主题是养发护理，内容角度围绕“${growthContent.title}”；用“开场钩子—项目体验—到店行动”结构，语气真实克制，所有门店与价格事实由我稍后补充。`
     );
-    // Remixing only fills the draft — submission stays the merchant's own click.
-    // Enabled, not merely present: a submit button that mounts but cannot be
-    // clicked would make reuse a dead end, which is the OI-15 shape.
-    await expect(page.getByTestId('composer-submit')).toBeEnabled();
+    // Remixing only fills the draft. Platform samples remain read-only and
+    // cannot satisfy the merchant's own StoreFact gate.
+    await expect(page.getByTestId('composer-submit')).toBeDisabled();
+    await expect(page.getByTestId('composer-submit')).toHaveAccessibleName(
+      '先补门店信息'
+    );
     expect(await creativeProjection(page)).toMatchObject({
       assets: [],
       contents: [],

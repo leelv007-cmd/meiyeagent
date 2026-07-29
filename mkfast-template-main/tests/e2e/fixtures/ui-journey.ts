@@ -460,6 +460,32 @@ export async function adjustResult(
   }
 
   const input = page.getByTestId('result-adjust-input').first();
+  if (modality === 'copy' && (await input.isDisabled())) {
+    // Composer Coordinator results are ContentPackage-backed and deliberately
+    // have no legacy CreativeJob. Their quoted regeneration box therefore
+    // stays unavailable, while the canonical package edit remains writable.
+    const title = page.getByTestId('copy-field-title');
+    const nextTitle = `${await title.inputValue()} · ${instruction}`;
+    await title.fill(nextTitle);
+    const editPromise = mutationResponse(
+      page,
+      /^edit_content_package_version$/u
+    );
+    await page.getByTestId('copy-save-hand-edit').click();
+    const editResponse = await editPromise;
+    expect(editResponse.ok(), await editResponse.text()).toBeTruthy();
+    await expect(title).toHaveValue(nextTitle);
+    await page.reload();
+    await expect(page.getByTestId('copy-image-text-worksurface')).toBeVisible({
+      timeout: 60_000,
+    });
+    await expect(page.getByTestId('copy-field-title')).toHaveValue(nextTitle);
+    return { instruction };
+  }
+  await expect(
+    input,
+    'quoted adjustment requires a source CreativeJob'
+  ).toBeEnabled({ timeout: 30_000 });
   await input.fill(instruction);
   const preparePromise = mutationResponse(
     page,

@@ -901,6 +901,7 @@ const SidebarTrigger = ({
   const { toggleSidebar } = useSidebar();
   return (
     <Button
+      aria-label="Toggle sidebar"
       isIconOnly
       className={className}
       data-slot="sidebar-trigger"
