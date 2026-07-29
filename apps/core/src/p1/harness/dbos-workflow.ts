@@ -1,5 +1,6 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import {
+  questionCardSchema,
   structuredDecisionInputSchema,
   workflowProgressEnvelopeSchema,
   workflowTokenEnvelopeSchema,
@@ -76,6 +77,40 @@ export interface HarnessBillingSettlementPort
 const PROGRESS_STREAM = 'progress';
 export const DEFAULT_CONFIRMATION_CARD_HOLD_TIMEOUT_SECONDS = 48 * 60 * 60;
 export const DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS = 30;
+
+export function suspensionQuestionFailOpen(
+  input: unknown,
+  context: {
+    workflowId: string;
+    workflowRevision: number;
+  },
+): QuestionCard {
+  const parsed = questionCardSchema.safeParse(input);
+  if (parsed.success) return parsed.data;
+  return questionCardSchema.parse({
+    questionId:
+      `${context.workflowId}:suspension-recovery:r${context.workflowRevision}`,
+    workflowId: context.workflowId,
+    workflowRevision: context.workflowRevision,
+    question: '任务已安全挂起，但原介入卡数据无效。请人工检查后再继续。',
+    options: [
+      {
+        id: 'continue_after_review',
+        label: '人工检查后继续',
+      },
+    ],
+    freeText: {
+      enabled: true,
+      placeholder: '填写检查结论或修正说明',
+    },
+    response: {
+      field: 'suspension_recovery',
+      reason: '原挂起介入卡校验失败，需要人工确认恢复条件',
+    },
+    unattended: 'hold',
+    scope: 'current_task',
+  });
+}
 
 export async function readConfirmationCardTimeoutSeconds(
   config?: Pick<AdminConfigRepository, 'get'>,
@@ -200,6 +235,10 @@ export function registerHarnessDbosWorkflow(
         );
       },
       async awaitDecision(question) {
+        question = suspensionQuestionFailOpen(question, {
+          workflowId,
+          workflowRevision: request.workflowRevision,
+        });
         const pendingProjection = await DBOS.runStep(
           async () => {
             const timeoutSeconds =

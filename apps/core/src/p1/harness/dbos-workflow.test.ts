@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import type { StructuredDecisionInput } from '@meiye/contracts';
+import {
+  questionCardSchema,
+  type StructuredDecisionInput,
+} from '@meiye/contracts';
 
 import {
   commitHarnessBillingOrSchedule,
@@ -12,6 +15,7 @@ import {
   readConfirmationCardHoldTimeoutSeconds,
   readConfirmationCardTimeoutSeconds,
   resumeHarnessDbosWorkflow,
+  suspensionQuestionFailOpen,
   settleHarnessCancellation,
   type HarnessBillingSettlementPort,
 } from './dbos-workflow.js';
@@ -25,6 +29,32 @@ const settlement = {
   quoteId: 'quote-billing-failure',
   quoteRevision: 'quote-revision-1',
 };
+
+test('invalid suspension data fails open to a valid held recovery card', () => {
+  const question = suspensionQuestionFailOpen(
+    {
+      questionId: 'broken-question',
+      workflowId: 'wrong-workflow',
+      workflowRevision: -1,
+      question: '',
+      options: [],
+      freeText: { enabled: false },
+      response: { field: '', reason: '' },
+      scope: 'current_task',
+    },
+    {
+      workflowId: 'workflow-1',
+      workflowRevision: 3,
+    },
+  );
+
+  assert.deepEqual(questionCardSchema.parse(question), question);
+  assert.equal(question.workflowId, 'workflow-1');
+  assert.equal(question.workflowRevision, 3);
+  assert.equal(question.unattended, 'hold');
+  assert.equal(question.response.field, 'suspension_recovery');
+  assert.equal(question.freeText.enabled, true);
+});
 
 test('resume rejects an invalid runtime command before resolving or sending', async (t) => {
   let resolverCalls = 0;

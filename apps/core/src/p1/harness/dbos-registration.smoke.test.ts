@@ -773,6 +773,11 @@ test(
       await DBOS.getEvent(runtimeWorkflowId, 'pending-structured-decision', {
         timeoutSeconds: 5,
       });
+      await assert.rejects(
+        resumeHarnessDbosWorkflow(workspaceId, workflowId, {
+          questionId,
+        }),
+      );
       await resumeHarnessDbosWorkflow(workspaceId, workflowId, {
         idempotencyKey: `${questionId}:merchant-answer`,
         questionId,
