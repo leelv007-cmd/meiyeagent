@@ -5,16 +5,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { contentPackageVersionSchema } from '@meiye/contracts';
-import {
-  MemoryFoundationRepository,
-  P1ApplicationService,
-} from '../foundation/index.js';
 import { transitionContentPackage } from './content-package.js';
 import {
   type ContentPackageExportPort,
   MemoryOperationsRepository,
   OperationsApplicationService,
-  OperationsFoundationModule,
   RecordedCanvasExportAdapter,
   RecordedImageGenerationAdapter,
 } from './index.js';
@@ -22,7 +17,6 @@ import {
 const NOW = '2026-07-16T12:00:00.000Z';
 
 function setup(options: { contentPackageExporter?: ContentPackageExportPort } = {}) {
-  const foundation = new MemoryFoundationRepository();
   const operations = new MemoryOperationsRepository();
   const context = {
     actor: 'owner' as const,
@@ -30,7 +24,6 @@ function setup(options: { contentPackageExporter?: ContentPackageExportPort } = 
     userId: 'owner-advanced-canvas',
     workspaceId: 'workspace-advanced-canvas',
   };
-  foundation.grantOwner(context.workspaceId, context.userId);
   operations.grantMembership(context.userId, context.workspaceId);
   const operationsService = new OperationsApplicationService(operations, {
     canvasExporter: new RecordedCanvasExportAdapter(),
@@ -40,10 +33,7 @@ function setup(options: { contentPackageExporter?: ContentPackageExportPort } = 
     imageGenerator: new RecordedImageGenerationAdapter(),
     notifier: { async send() {} },
   });
-  const service = new P1ApplicationService(foundation, {
-    operations: [new OperationsFoundationModule(operationsService)],
-  });
-  return { context, operations, operationsService, service };
+  return { context, operations, operationsService };
 }
 
 async function seedAdvancedCanvasAcceptedPackage(
@@ -94,7 +84,7 @@ async function seedAdvancedCanvasAcceptedPackage(
 }
 
 describe('ticket 13 advanced canvas package library lifecycle', () => {
-  it('exports an advanced-canvas package and rejects the retired direct-copy command', async () => {
+  it('exports an advanced-canvas package through the internal service and rejects direct copying', async () => {
     let exportEffects = 0;
     const contentPackageExporter: ContentPackageExportPort = {
       async export() {
@@ -108,7 +98,7 @@ describe('ticket 13 advanced canvas package library lifecycle', () => {
         };
       },
     };
-    const { context, operations, operationsService, service } = setup({
+    const { context, operations, operationsService } = setup({
       contentPackageExporter,
     });
     const source = await seedAdvancedCanvasAcceptedPackage(
@@ -148,33 +138,23 @@ describe('ticket 13 advanced canvas package library lifecycle', () => {
     );
     await operations.saveWorkspace(state);
 
-    const exported = (await service.executeModule(
+    const exported = await operationsService.exportContentPackage(
       context,
-      'operations',
       {
-        action: 'export_content_package',
-        payload: {
-          expectedRevision: stored.revision,
-          packageId: source.id,
-          platform: 'xiaohongshu',
-        },
+        expectedRevision: stored.revision,
+        packageId: source.id,
+        platform: 'xiaohongshu',
       },
-      'export-advanced-canvas-v1',
-    )) as { exportReceipts: Array<Record<string, unknown>>; status: string };
+    );
 
     assert.equal(exportEffects, 1);
     assert.equal(exported.status, 'accepted');
     assert.equal(exported.exportReceipts.length, 1);
 
     await assert.rejects(
-      service.executeModule(
+      operationsService.reuseContentPackage(
         context,
-        'operations',
-        {
-          action: 'reuse_content_package',
-          payload: { sourcePackageId: source.id },
-        },
-        'reuse-advanced-canvas-v1'
+        { sourcePackageId: source.id },
       ),
       (error: unknown) =>
         error instanceof Error &&

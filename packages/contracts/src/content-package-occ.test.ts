@@ -2,15 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  attachContentPackageGenerationCommandSchema,
-  cancelContentPackageCommandSchema,
   contentPackageSchema,
   contentPackageVersionSchema,
   editContentPackageVersionCommandSchema,
-  editContentPackageVariantCommandSchema,
-  exportContentPackageCommandSchema,
   generateContentPackageVariantsCommandSchema,
-  revokeContentPackageRightsCommandSchema,
   rollbackContentPackageVersionCommandSchema,
 } from './content-package.js';
 
@@ -38,25 +33,8 @@ test('ContentPackage aggregate owns revision while immutable versions do not', (
   assert.equal('revision' in contentPackageVersionSchema.shape, false);
 });
 
-test('every existing-package command requires a non-negative expectedRevision', () => {
+test('retained version mutation commands require a non-negative expectedRevision', () => {
   const commands = [
-    [cancelContentPackageCommandSchema, { packageId: 'package-1' }],
-    [
-      revokeContentPackageRightsCommandSchema,
-      { packageId: 'package-1', reason: 'asset withdrawn' },
-    ],
-    [
-      attachContentPackageGenerationCommandSchema,
-      {
-        assetIds: [],
-        childRun: {
-          runId: 'run-1',
-          runType: 'creative_job',
-          status: 'running',
-        },
-        packageId: 'package-1',
-      },
-    ],
     [
       editContentPackageVersionCommandSchema,
       {
@@ -94,24 +72,6 @@ test('every existing-package command requires a non-negative expectedRevision', 
         packageId: 'package-1',
         submissionKey: 'variant-submit-1',
       },
-    ],
-    [
-      editContentPackageVariantCommandSchema,
-      {
-        baseVersionId: 'variant-version-1',
-        changes: {
-          body: 'body',
-          orderedAssetIds: [],
-          title: 'title',
-          topics: [],
-        },
-        packageId: 'package-1',
-        platform: 'xiaohongshu',
-      },
-    ],
-    [
-      exportContentPackageCommandSchema,
-      { packageId: 'package-1', platform: 'xiaohongshu' },
     ],
   ] as const;
 

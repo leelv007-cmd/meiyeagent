@@ -222,12 +222,36 @@ const jobRuntimeCommands = new Set([
 const contentReviewOperations = new Set([
   'adopt_canvas_work_export',
   'adopt_into_content_package',
-  'revoke_content_package_rights',
-  'transition_task',
 ]);
-const registeredOperationsConfirmActions = new Set([
-  'confirm_creative_work_brief',
-  'confirm_weekly_candidates',
+const operationsContentCreateActions = new Set([
+  'adopt_harness_candidate',
+  'approve_content_package_action',
+  'cancel_creative_job',
+  'content_package_migration_activate',
+  'content_package_migration_backfill',
+  'content_package_migration_dry_run',
+  'content_package_migration_freeze',
+  'content_package_migration_inspect',
+  'content_package_migration_rollback',
+  'copy_template_version_to_work',
+  'create_work_from_content_package',
+  'deliver_content_package',
+  'derive_creative_work',
+  'edit_content_package_version',
+  'export_work',
+  'generate_content_package_variants',
+  'record_content_package_manual_result',
+  'record_content_package_result_review_action',
+  'record_content_package_result_signal',
+  'resume_creative_job',
+  'retry_creative_job',
+  'rollback_content_package_version',
+  'save_canvas_revision',
+  'save_creative_assets_to_library',
+  'save_creative_work_selection_draft',
+  'save_user_template',
+  'set_creation_labels',
+  'upgrade_work_template',
 ]);
 const operationsWorkspaceQueryActions = new Set([
   'canonical_history',
@@ -500,17 +524,7 @@ export function requiredP1Capability(
     if (action === 'accept_creative_asset') return null;
     if (taskRecoverActions.has(action)) return 'task.recover';
     if (contentReviewOperations.has(action)) return 'content.review';
-    if (registeredOperationsConfirmActions.has(action)) {
-      return 'content.create';
-    }
-    if (
-      action.startsWith('propose_') ||
-      action.startsWith('confirm_')
-    ) {
-      return null;
-    }
-    // Remaining operations commands are product content work (registered class).
-    return 'content.create';
+    return operationsContentCreateActions.has(action) ? 'content.create' : null;
   }
 
   if (module === 'entitlements') {

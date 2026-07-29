@@ -689,31 +689,14 @@ describe(
 				kind: "image_text",
 				source: { assetIds: [`occ-${workspaceId}`] },
 			});
-			const foundation = new MemoryFoundationRepository();
-			foundation.grantOwner(workspaceId, userId);
-			const p1 = new P1ApplicationService(foundation, {
-				operations: [new OperationsFoundationModule(service)],
-			});
-			const cancelCorrelationId = `pg-occ-cancel-${workspaceId}`;
-			const revokeCorrelationId = `pg-occ-revoke-${workspaceId}`;
 			const results = await Promise.allSettled([
-				p1.executeModule(
-					{ ...context, correlationId: cancelCorrelationId },
-					"operations",
-					{
-						action: "cancel_content_package",
-						payload: { expectedRevision: 0, packageId: packageValue.id },
-					},
-					`pg-occ-cancel-${workspaceId}`,
+				service.cancelContentPackage(
+					{ ...context, correlationId: `pg-occ-cancel-${workspaceId}` },
+					{ expectedRevision: 0, packageId: packageValue.id },
 				),
-				p1.executeModule(
-					{ ...context, correlationId: revokeCorrelationId },
-					"operations",
-					{
-						action: "revoke_content_package_rights",
-						payload: { expectedRevision: 0, packageId: packageValue.id },
-					},
-					`pg-occ-revoke-${workspaceId}`,
+				service.revokeContentPackageRights(
+					{ ...context, correlationId: `pg-occ-revoke-${workspaceId}` },
+					{ expectedRevision: 0, packageId: packageValue.id },
 				),
 			]);
 			assert.equal(
@@ -930,7 +913,7 @@ describe(
 
 		});
 
-		it("replays one Operations fact from Postgres after Foundation completion crashes", async () => {
+		it("replays one Operations template fact from Postgres after Foundation completion crashes", async () => {
 			let now = Date.parse("2026-07-11T12:00:00.000Z");
 			const foundation = new MemoryFoundationRepository(
 				() => new Date(now),
@@ -945,16 +928,6 @@ describe(
 					throw new Error("simulated postgres completion crash");
 				}
 				return complete(...args);
-			};
-			const command = {
-				action: "create_task",
-				payload: {
-					dueAt: "2026-07-18T09:00:00.000Z",
-					executable: true,
-					risk: "normal",
-					source: "manual",
-					title: `PG crash task ${workspaceId}`,
-				},
 			};
 			const createModuleService = () =>
 				new P1ApplicationService(foundation, {
@@ -973,42 +946,6 @@ describe(
 						),
 					],
 				});
-
-			await assert.rejects(
-				createModuleService().executeModule(
-					context,
-					"operations",
-					command,
-					"pg-crash-create-task",
-				),
-				/simulated postgres completion crash/,
-			);
-			now += 11;
-			const replayed = (await createModuleService().executeModule(
-				context,
-				"operations",
-				command,
-				"pg-crash-create-task",
-			)) as { id: string };
-			const facts = await pool.query<{ id: string }>(
-				`SELECT id
-           FROM p1_content_tasks
-          WHERE workspace_id = $1 AND payload->>'title' = $2`,
-				[workspaceId, command.payload.title],
-			);
-
-			assert.deepEqual(facts.rows, [{ id: replayed.id }]);
-			const reloadedOperations = new PostgresOperationsRepository(pool);
-			const workspaceReceipt = (
-				await reloadedOperations.loadWorkspace(workspaceId)
-			)?.commandReceipts.find(
-				(receipt) => receipt.idempotencyKey === "pg-crash-create-task",
-			);
-			assert.equal(workspaceReceipt?.status, "completed");
-			assert.equal(
-				(workspaceReceipt?.result as { id?: string } | undefined)?.id,
-				replayed.id,
-			);
 
 			const templateCommand = {
 				action: "admin_create_template",
@@ -1050,6 +987,7 @@ describe(
 			assert.deepEqual(templateFacts.rows, [
 				{ id: templateReplay.template.id },
 			]);
+			const reloadedOperations = new PostgresOperationsRepository(pool);
 			const templateReceipt = (
 				await reloadedOperations.loadTemplateCatalog()
 			).commandReceipts.find(

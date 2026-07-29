@@ -256,7 +256,7 @@ describe('P1ApplicationService foundation seam', () => {
     const submitted = await service.executeModule(
       owner,
       'operations',
-      command('submit_creative_work'),
+      command('retry_creative_job'),
       'submitted-before-freeze'
     );
     writeOwner = 'frozen';
@@ -264,7 +264,7 @@ describe('P1ApplicationService foundation seam', () => {
       await service.executeModule(
         owner,
         'operations',
-        command('submit_creative_work'),
+        command('retry_creative_job'),
         'submitted-before-freeze'
       ),
       submitted
@@ -273,7 +273,7 @@ describe('P1ApplicationService foundation seam', () => {
       service.executeModule(
         owner,
         'operations',
-        command('submit_creative_work'),
+        command('retry_creative_job'),
         'new-during-freeze'
       ),
       (error: unknown) =>
@@ -284,7 +284,7 @@ describe('P1ApplicationService foundation seam', () => {
     await service.executeModule(
       owner,
       'operations',
-      command('create_blank_work'),
+      command('save_canvas_revision'),
       'draft-during-freeze'
     );
     await service.executeModule(
@@ -299,7 +299,7 @@ describe('P1ApplicationService foundation seam', () => {
       service.executeModule(
         owner,
         'operations',
-        command('start_canvas_image'),
+        command('admin_enable_template_version'),
         'new-after-rollback'
       ),
       (error: unknown) =>
@@ -310,15 +310,15 @@ describe('P1ApplicationService foundation seam', () => {
     await service.executeModule(
       owner,
       'operations',
-      command('complete_canvas_image'),
+      command('record_content_package_manual_result'),
       'callback-after-rollback'
     );
 
     assert.deepEqual(executedActions, [
-      'submit_creative_work',
-      'create_blank_work',
+      'retry_creative_job',
+      'save_canvas_revision',
       'resume_creative_job',
-      'complete_canvas_image',
+      'record_content_package_manual_result',
     ]);
   });
 

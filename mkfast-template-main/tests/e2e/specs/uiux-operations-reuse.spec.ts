@@ -87,64 +87,6 @@ test.describe('S3 operations, reuse, assets, and history', () => {
     await cleanupE2EUsers(request);
   });
 
-  test('keeps one next action and five points in the rail, with full work in canonical tasks', async ({
-    page,
-    request,
-  }) => {
-    const user = await registerE2EUser(request);
-    await loginByForm(page, user);
-    const dueAt = new Date(Date.now() + 3_600_000).toISOString();
-    await p1Command(page, 'create_task', {
-      dueAt,
-      executable: false,
-      risk: 'attention',
-      source: 'asset_gap',
-      title: 'S3 补齐猫眼前后对比素材',
-    });
-    await p1Command(page, 'create_task', {
-      dueAt,
-      executable: true,
-      risk: 'normal',
-      source: 'publish_ready',
-      title: 'S3 待人工发布内容',
-    });
-
-    await page.reload();
-    const rail = page.getByRole('complementary', { name: '今日运营' });
-    await expect(rail.getByRole('heading', { name: '下一行动' })).toBeVisible();
-    await expect(rail.getByText('只显示 1 条')).toBeVisible();
-    await expect(
-      rail.getByLabel('本周五点态势紧凑周条').locator('li')
-    ).toHaveCount(5);
-    await expect(rail.getByRole('heading', { name: '异常摘要' })).toBeVisible();
-
-    await rail.getByRole('link', { name: '打开完整任务收件箱' }).click();
-    await expect(page).toHaveURL(/\/dashboard\/tasks/);
-    await expect(
-      page.getByRole('heading', { level: 1, name: '内容任务' })
-    ).toBeVisible();
-    await expect(page.getByText('S3 补齐猫眼前后对比素材')).toBeVisible();
-
-    await page.getByRole('button', { name: '周批次与回顾' }).click();
-    await expect(page).toHaveURL(/mode=week/);
-    const batch = await p1Query<{
-      included: Array<{ source: string }>;
-      excluded: Array<{ source: string; reason: string }>;
-    }>(page, 'weekly_batch', {
-      from: new Date(Date.now() - 86_400_000).toISOString(),
-      to: new Date(Date.now() + 7 * 86_400_000).toISOString(),
-    });
-    expect(batch.included.some((task) => task.source === 'publish_ready')).toBe(
-      false
-    );
-    expect(batch.excluded.some((task) => task.source === 'publish_ready')).toBe(
-      true
-    );
-    await expect(
-      page.getByRole('button', { name: '生成只基于事实的周回顾' })
-    ).toBeVisible();
-  });
-
   test('uses one catalog, inserts tools without a Job, and persists explicit references', async ({
     page,
     request,

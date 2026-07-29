@@ -251,11 +251,11 @@ test('P1 module actions resolve to the same role capabilities used by the UI', (
   );
   assert.equal(
     requiredP1Capability('command', 'operations', 'create_task'),
-    'content.create'
+    null
   );
   assert.equal(
     requiredP1Capability('command', 'operations', 'transition_task'),
-    'content.review'
+    null
   );
   assert.equal(
     requiredP1Capability(
@@ -271,7 +271,23 @@ test('P1 module actions resolve to the same role capabilities used by the UI', (
       'operations',
       'revoke_content_package_rights'
     ),
-    'content.review'
+    null
+  );
+  assert.equal(
+    requiredP1Capability(
+      'command',
+      'operations',
+      'content_package_migration_dry_run'
+    ),
+    'content.create'
+  );
+  assert.equal(
+    requiredP1Capability(
+      'command',
+      'operations',
+      'create_work_from_content_package'
+    ),
+    'content.create'
   );
   assert.equal(
     requiredP1Capability(

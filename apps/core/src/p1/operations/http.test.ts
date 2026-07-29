@@ -48,6 +48,15 @@ test('P1 HTTP boundary uses the shared module seam and workspace identity', asyn
     imageGenerator: new RecordedImageGenerationAdapter(),
     notifier: { async send() {} },
   });
+  const work = await operationsService.createBlankWork(
+    {
+      actor: 'owner',
+      correlationId: 'corr-p1-http-setup',
+      userId: 'owner-a',
+      workspaceId: 'workspace-a',
+    },
+    { height: 1350, name: 'HTTP boundary work', width: 1080 },
+  );
   const p1ApplicationService = new P1ApplicationService(foundation, {
     operations: [new OperationsFoundationModule(operationsService)],
   });
@@ -70,23 +79,25 @@ test('P1 HTTP boundary uses the shared module seam and workspace identity', asyn
     'x-workspace-role': 'owner',
   };
 
-  const created = await fetch(`${base}/commands`, {
+  const labelUpdateResponse = await fetch(`${base}/commands`, {
     body: JSON.stringify({
-      action: 'create_task',
+      action: 'set_creation_labels',
       module: 'operations',
       payload: {
-        dueAt: '2026-07-14T09:00:00.000Z',
-        executable: true,
-        risk: 'normal',
-        source: 'manual',
-        title: '确认本周内容',
+        aigcLabelEnabled: true,
+        brandWatermarkEnabled: false,
+        workId: work.id,
       },
     }),
-    headers: { ...headers, 'idempotency-key': 'p1-create-task' },
+    headers: { ...headers, 'idempotency-key': 'p1-set-creation-labels' },
     method: 'POST',
   });
-  assert.equal(created.status, 200);
-  const createdPayload = (await created.json()) as { data: { id: string } };
+  assert.equal(labelUpdateResponse.status, 200);
+  const labelUpdatePayload = (await labelUpdateResponse.json()) as {
+    data: { aigcLabelEnabled: boolean; brandWatermarkEnabled: boolean };
+  };
+  assert.equal(labelUpdatePayload.data.aigcLabelEnabled, true);
+  assert.equal(labelUpdatePayload.data.brandWatermarkEnabled, false);
 
   const catalog = await fetch(`${base}/query`, {
     body: JSON.stringify({
@@ -111,39 +122,21 @@ test('P1 HTTP boundary uses the shared module seam and workspace identity', asyn
     userTemplates: [],
   });
 
-  const creativeWork = await fetch(`${base}/commands`, {
+  const workProjection = await fetch(`${base}/query`, {
     body: JSON.stringify({
-      action: 'create_creative_work',
+      action: 'work',
       module: 'operations',
-      payload: {
-        intent: '为本周项目准备一条真实内容',
-        mode: 'agent',
-        operation: 'video.generate',
-        sessionId: 'session-http-a',
-        sourceReferences: [{ id: createdPayload.data.id, kind: 'task' }],
-      },
-    }),
-    headers: { ...headers, 'idempotency-key': 'p1-create-creative-work' },
-    method: 'POST',
-  });
-  assert.equal(creativeWork.status, 200);
-  assert.equal((await creativeWork.json()).data.operation, 'video.generate');
-  const creativeProjection = await fetch(`${base}/query`, {
-    body: JSON.stringify({
-      action: 'creative_workbench',
-      module: 'operations',
-      payload: {},
+      payload: { workId: work.id },
     }),
     headers,
     method: 'POST',
   });
-  assert.equal(creativeProjection.status, 200);
-  const creativePayload = (await creativeProjection.json()) as {
-    data: { works: unknown[]; jobs: unknown[]; contents: unknown[] };
+  assert.equal(workProjection.status, 200);
+  const workPayload = (await workProjection.json()) as {
+    data: { aigcLabelEnabled: boolean; brandWatermarkEnabled: boolean };
   };
-  assert.equal(creativePayload.data.works.length, 1);
-  assert.equal(creativePayload.data.jobs.length, 0);
-  assert.equal(creativePayload.data.contents.length, 0);
+  assert.equal(workPayload.data.aigcLabelEnabled, true);
+  assert.equal(workPayload.data.brandWatermarkEnabled, false);
 
   const adminCreated = await fetch(`${base}/commands`, {
     body: JSON.stringify({
@@ -169,55 +162,51 @@ test('P1 HTTP boundary uses the shared module seam and workspace identity', asyn
   });
   assert.equal(adminCreated.status, 200);
 
-  const operatorCreate = await fetch(`${base}/commands`, {
+  const operatorUpdate = await fetch(`${base}/commands`, {
     body: JSON.stringify({
-      action: 'create_task',
+      action: 'set_creation_labels',
       module: 'operations',
       payload: {
-        dueAt: '2026-07-15T08:00:00.000Z',
-        executable: true,
-        risk: 'normal',
-        source: 'manual',
-        title: '操作员创建任务',
+        aigcLabelEnabled: false,
+        brandWatermarkEnabled: true,
+        workId: work.id,
       },
     }),
     headers: {
       ...headers,
-      'idempotency-key': 'p1-operator-create-task',
+      'idempotency-key': 'p1-operator-set-creation-labels',
       'x-user-id': 'operator-a',
       'x-workspace-role': 'operator',
     },
     method: 'POST',
   });
-  assert.equal(operatorCreate.status, 200);
+  assert.equal(operatorUpdate.status, 200);
 
-  const reviewerCreate = await fetch(`${base}/commands`, {
+  const reviewerUpdate = await fetch(`${base}/commands`, {
     body: JSON.stringify({
-      action: 'create_task',
+      action: 'set_creation_labels',
       module: 'operations',
       payload: {
-        dueAt: '2026-07-15T09:00:00.000Z',
-        executable: true,
-        risk: 'normal',
-        source: 'manual',
-        title: '审核员不得创建任务',
+        aigcLabelEnabled: false,
+        brandWatermarkEnabled: true,
+        workId: work.id,
       },
     }),
     headers: {
       ...headers,
-      'idempotency-key': 'p1-reviewer-create-task',
+      'idempotency-key': 'p1-reviewer-set-creation-labels',
       'x-user-id': 'reviewer-a',
       'x-workspace-role': 'reviewer',
     },
     method: 'POST',
   });
-  assert.equal(reviewerCreate.status, 403);
+  assert.equal(reviewerUpdate.status, 403);
 
-  const reviewerCatalog = await fetch(`${base}/query`, {
+  const reviewerWork = await fetch(`${base}/query`, {
     body: JSON.stringify({
-      action: 'creation_catalog',
+      action: 'work',
       module: 'operations',
-      payload: {},
+      payload: { workId: work.id },
     }),
     headers: {
       ...headers,
@@ -226,13 +215,13 @@ test('P1 HTTP boundary uses the shared module seam and workspace identity', asyn
     },
     method: 'POST',
   });
-  assert.equal(reviewerCatalog.status, 200);
+  assert.equal(reviewerWork.status, 200);
 
   const spoofed = await fetch(`${base}/query`, {
     body: JSON.stringify({
-      action: 'creation_catalog',
+      action: 'work',
       module: 'operations',
-      payload: {},
+      payload: { workId: work.id },
     }),
     headers: { ...headers, 'x-workspace-id': 'workspace-b' },
     method: 'POST',
@@ -270,8 +259,8 @@ test('P1 HTTP boundary never exposes unexpected exception messages', async (t) =
   };
 
   for (const [path, action] of [
-    ['commands', 'create_task'],
-    ['query', 'creation_catalog'],
+    ['commands', 'set_creation_labels'],
+    ['query', 'work'],
   ] as const) {
     const response = await fetch(`${base}/${path}`, {
       body: JSON.stringify({ action, module: 'operations', payload: {} }),
@@ -311,7 +300,7 @@ test('P1 HTTP boundary preserves the typed insufficient entitlement code', async
     `http://127.0.0.1:${port}/v1/workspaces/workspace-a/p1/commands`,
     {
       body: JSON.stringify({
-        action: 'create_task',
+        action: 'set_creation_labels',
         module: 'operations',
         payload: {},
       }),
@@ -359,7 +348,7 @@ test('P1 HTTP boundary returns the current ContentPackage revision on conflict',
     `http://127.0.0.1:${port}/v1/workspaces/workspace-a/p1/commands`,
     {
       body: JSON.stringify({
-        action: 'cancel_content_package',
+        action: 'edit_content_package_version',
         module: 'operations',
         payload: { expectedRevision: 3, packageId: 'package-1' },
       }),
@@ -488,7 +477,7 @@ test('P1 HTTP boundary preserves approval and delivery error codes and statuses'
       `http://127.0.0.1:${port}/v1/workspaces/workspace-a/p1/commands`,
       {
         body: JSON.stringify({
-          action: 'create_task',
+          action: 'set_creation_labels',
           module: 'operations',
           payload: {},
         }),

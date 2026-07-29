@@ -858,20 +858,7 @@ export type ContentPackageLegacySource = z.infer<
 >;
 export type ContentPackage = z.infer<typeof contentPackageSchema>;
 
-export const createContentPackageCommandSchema = z.object({
-  kind: contentPackageKindSchema,
-  source: contentPackageSourceSchema,
-});
 const contentPackageExpectedRevisionSchema = z.number().int().nonnegative();
-export const cancelContentPackageCommandSchema = z.object({
-  expectedRevision: contentPackageExpectedRevisionSchema,
-  packageId: contentPackageIdSchema,
-});
-export const revokeContentPackageRightsCommandSchema = z.object({
-  expectedRevision: contentPackageExpectedRevisionSchema,
-  packageId: contentPackageIdSchema,
-  reason: z.string().trim().min(1).optional(),
-});
 export const adoptIntoContentPackageCommandSchema = z.object({
   copyCandidateAssetId: contentPackageIdSchema,
   visualAssetIds: z.array(contentPackageIdSchema).min(1),
@@ -924,23 +911,6 @@ export const adoptCanvasWorkExportCommandSchema = z.object({
   workId: contentPackageIdSchema,
   workRevisionId: contentPackageIdSchema,
 });
-const attachContentPackageChildRunSchema = contentPackageChildRunSchema
-  .pick({
-    assetIds: true,
-    runId: true,
-    runType: true,
-    status: true,
-  })
-  .extend({
-    runType: z.literal('creative_job'),
-  })
-  .strict();
-export const attachContentPackageGenerationCommandSchema = z.object({
-  assetIds: z.array(contentPackageIdSchema),
-  childRun: attachContentPackageChildRunSchema,
-  expectedRevision: contentPackageExpectedRevisionSchema,
-  packageId: contentPackageIdSchema,
-});
 export const editContentPackageVersionCommandSchema = z.object({
   baseVersionId: contentPackageIdSchema,
   changes: contentPackageVersionSchema.pick({
@@ -987,39 +957,6 @@ export const generateContentPackageVariantsCommandSchema = z.object({
       path: ['billingQuoteId'],
     });
   }
-});
-export const editContentPackageVariantCommandSchema = z
-  .object({
-    baseVersionId: contentPackageIdSchema,
-    changes: contentPackageVersionSchema.pick({
-      body: true,
-      conversionHook: true,
-      orderedAssetIds: true,
-      title: true,
-      topics: true,
-    }),
-    expectedRevision: contentPackageExpectedRevisionSchema,
-    intent: quickEditIntentSchema.optional(),
-    packageId: contentPackageIdSchema,
-    platform: contentPackagePlatformSchema,
-  })
-  .superRefine((command, context) => {
-    if (
-      command.intent &&
-      (command.intent.baseVersionId !== command.baseVersionId ||
-        command.intent.target !== 'platform_variant')
-    ) {
-      context.addIssue({
-        code: 'custom',
-        message: 'Variant quick edit intent must target its command base version.',
-        path: ['intent'],
-      });
-    }
-  });
-export const exportContentPackageCommandSchema = z.object({
-  expectedRevision: contentPackageExpectedRevisionSchema,
-  packageId: contentPackageIdSchema,
-  platform: contentPackagePlatformSchema,
 });
 const contentPackageExternalActionSchema = z.object({
   accountId: contentPackageIdSchema,
@@ -1077,11 +1014,6 @@ export const recordContentPackageResultReviewActionCommandSchema = z.object({
   expectedRevision: contentPackageExpectedRevisionSchema,
   packageId: contentPackageIdSchema,
 });
-export const reuseContentPackageCommandSchema = z.object({
-  sourcePackageId: contentPackageIdSchema,
-  versionId: contentPackageIdSchema.optional(),
-});
-
 export const contentPackageMigrationCommandSchema = z.object({
   runId: contentPackageIdSchema,
 });
@@ -1136,15 +1068,9 @@ export const CONTENT_PACKAGE_COMMAND_SCHEMAS = {
   adopt_harness_candidate: adoptHarnessCandidateCommandSchema,
   adopt_canvas_work_export: adoptCanvasWorkExportCommandSchema,
   adopt_into_content_package: adoptIntoContentPackageCommandSchema,
-  attach_content_package_generation:
-    attachContentPackageGenerationCommandSchema,
   approve_content_package_action: approveContentPackageActionCommandSchema,
-  cancel_content_package: cancelContentPackageCommandSchema,
-  create_content_package: createContentPackageCommandSchema,
-  edit_content_package_variant: editContentPackageVariantCommandSchema,
   edit_content_package_version: editContentPackageVersionCommandSchema,
   deliver_content_package: deliverContentPackageCommandSchema,
-  export_content_package: exportContentPackageCommandSchema,
   generate_content_package_variants:
     generateContentPackageVariantsCommandSchema,
   content_package_migration_activate: contentPackageMigrationCommandSchema,
@@ -1153,7 +1079,6 @@ export const CONTENT_PACKAGE_COMMAND_SCHEMAS = {
   content_package_migration_freeze: contentPackageMigrationCommandSchema,
   content_package_migration_inspect: contentPackageMigrationCommandSchema,
   content_package_migration_rollback: contentPackageMigrationCommandSchema,
-  reuse_content_package: reuseContentPackageCommandSchema,
   record_content_package_manual_result:
     recordContentPackageManualResultCommandSchema,
   record_content_package_result_signal:
@@ -1161,7 +1086,6 @@ export const CONTENT_PACKAGE_COMMAND_SCHEMAS = {
   record_content_package_result_review_action:
     recordContentPackageResultReviewActionCommandSchema,
   revise_content_package_visuals: reviseContentPackageVisualsCommandSchema,
-  revoke_content_package_rights: revokeContentPackageRightsCommandSchema,
   rollback_content_package_version: rollbackContentPackageVersionCommandSchema,
 } as const;
 

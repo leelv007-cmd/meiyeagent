@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { describe, it } from 'node:test';
-import sharp from 'sharp';
 import {
   MemoryFoundationRepository,
   P1ApplicationService,
@@ -91,73 +89,6 @@ describe('operations foundation module', () => {
     assert.deepEqual(calls, ['dry-run:run-1', 'report:run-1']);
   });
 
-  it('routes persistent Creative Brief field ownership commands', async () => {
-    const calls: unknown[] = [];
-    const module = new OperationsFoundationModule({
-      async updateCreativeWorkBrief(
-        _context: unknown,
-        workId: string,
-        input: unknown
-      ) {
-        calls.push({ input, workId });
-        return input;
-      },
-      async confirmCreativeWorkBrief(_context: unknown, workId: string) {
-        calls.push({ confirm: workId });
-        return { id: workId };
-      },
-    } as unknown as OperationsApplicationService);
-    const context = {
-      correlationId: 'corr-brief-module',
-      userId: 'owner-brief-module',
-      workspaceId: 'workspace-brief-module',
-    };
-
-    for (const payload of [
-      {
-        action: 'adopt',
-        aiDraft: 'AI 建议',
-        field: 'tone',
-        workId: 'work-a',
-      },
-      {
-        action: 'edit',
-        current: '商家改稿',
-        field: 'tone',
-        workId: 'work-a',
-      },
-      { action: 'revert', field: 'tone', workId: 'work-a' },
-    ]) {
-      await module.execute({
-        context,
-        input: { action: 'update_creative_work_brief', payload },
-      });
-    }
-    await module.execute({
-      context,
-      input: {
-        action: 'confirm_creative_work_brief',
-        payload: { workId: 'work-a' },
-      },
-    });
-
-    assert.deepEqual(calls, [
-      {
-        input: { action: 'adopt', aiDraft: 'AI 建议', field: 'tone' },
-        workId: 'work-a',
-      },
-      {
-        input: { action: 'edit', current: '商家改稿', field: 'tone' },
-        workId: 'work-a',
-      },
-      {
-        input: { action: 'revert', field: 'tone' },
-        workId: 'work-a',
-      },
-      { confirm: 'work-a' },
-    ]);
-  });
-
   it('routes only trusted package lineage when creating a Canvas work from content', async () => {
     const calls: unknown[] = [];
     const module = new OperationsFoundationModule({
@@ -237,177 +168,6 @@ describe('operations foundation module', () => {
     assert.deepEqual(calls, []);
   });
 
-  it('routes paid and quality reroll payloads as separate commands', async () => {
-    const calls: Array<{
-      action: 'paid' | 'quality';
-      jobId: string;
-      quoteId?: string;
-      submissionKey: string;
-    }> = [];
-    const module = new OperationsFoundationModule({
-      async rerollCreativeJob(
-        _context: unknown,
-        jobId: string,
-        submissionKey: string,
-        quoteId: string,
-      ) {
-        calls.push({ action: 'paid', jobId, quoteId, submissionKey });
-        return { action: 'paid' };
-      },
-      async qualityRetryCreativeJob(
-        _context: unknown,
-        jobId: string,
-        submissionKey: string
-      ) {
-        calls.push({ action: 'quality', jobId, submissionKey });
-        return { action: 'quality' };
-      },
-    } as unknown as OperationsApplicationService);
-    const context = {
-      correlationId: 'corr-reroll-module',
-      userId: 'owner-reroll-module',
-      workspaceId: 'workspace-reroll-module',
-    };
-
-    await assert.rejects(
-      module.execute({
-        context,
-        input: {
-          action: 'reroll_creative_job',
-          payload: {
-            jobId: 'job-paid',
-            submissionKey: 'paid-key',
-          },
-        },
-      }),
-      /quoteId is required/,
-    );
-    assert.deepEqual(calls, []);
-
-    await module.execute({
-      context,
-      input: {
-        action: 'reroll_creative_job',
-        payload: {
-          jobId: 'job-paid',
-          quoteId: 'quote-paid-new',
-          submissionKey: 'paid-key',
-        },
-      },
-    });
-    await module.execute({
-      context,
-      input: {
-        action: 'quality_retry_creative_job',
-        payload: { jobId: 'job-quality', submissionKey: 'quality-key' },
-      },
-    });
-
-    assert.deepEqual(calls, [
-      {
-        action: 'paid',
-        jobId: 'job-paid',
-        quoteId: 'quote-paid-new',
-        submissionKey: 'paid-key',
-      },
-      {
-        action: 'quality',
-        jobId: 'job-quality',
-        submissionKey: 'quality-key',
-      },
-    ]);
-  });
-
-  it('routes idempotent commands and live queries through P1ApplicationService', async () => {
-    const foundation = new MemoryFoundationRepository();
-    const operations = new MemoryOperationsRepository();
-    const context = {
-      actor: 'owner' as const,
-      correlationId: 'corr-module',
-      userId: 'owner-module',
-      workspaceId: 'workspace-module',
-    };
-    foundation.grantOwner(context.workspaceId, context.userId);
-    operations.grantMembership(context.userId, context.workspaceId);
-    const module = new OperationsFoundationModule(
-      new OperationsApplicationService(operations, {
-        canvasExporter: new RecordedCanvasExportAdapter(),
-        imageGenerator: new RecordedImageGenerationAdapter(),
-        notifier: { async send() {} },
-      })
-    );
-    const service = new P1ApplicationService(foundation, {
-      operations: [module],
-    });
-    const input = {
-      action: 'create_task',
-      payload: {
-        dueAt: '2026-07-13T09:00:00.000Z',
-        executable: true,
-        risk: 'normal',
-        source: 'manual',
-        title: '确认本周内容',
-      },
-    };
-
-    const created = await service.executeModule<typeof input, { id: string }>(
-      context,
-      'operations',
-      input,
-      'create-task-1'
-    );
-    const replay = await service.executeModule<typeof input, { id: string }>(
-      context,
-      'operations',
-      input,
-      'create-task-1'
-    );
-    assert.equal(replay.id, created.id);
-
-    const creationCatalog = await service.queryModule<
-      { action: string; payload: Record<string, never> },
-      {
-        shortcuts: unknown[];
-        templates: unknown[];
-        userTemplates: unknown[];
-      }
-    >(context, 'operations', {
-      action: 'creation_catalog',
-      payload: {},
-    });
-    assert.deepEqual(creationCatalog, {
-      shortcuts: [],
-      templates: [],
-      userTemplates: [],
-    });
-    const evaluationInput = {
-      action: 'retrieval_evaluation',
-      payload: {
-        cases: [
-          {
-            expectedIds: [created.id],
-            query: '确认本周内容',
-            revised: false,
-          },
-        ],
-        k: 5,
-        revision: 'module-fixed-query-v1',
-      },
-    };
-    const evaluation = await service.executeModule<
-      typeof evaluationInput,
-      { id: string; querySetHash: string }
-    >(context, 'operations', evaluationInput, 'evaluate-retrieval-v1');
-    assert.match(evaluation.querySetHash, /^[a-f0-9]{64}$/);
-    await assert.rejects(
-      service.queryModule(context, 'operations', {
-        action: 'retrieval_evaluation',
-        payload: evaluationInput.payload,
-      }),
-      /This module action is not registered for authorization/
-    );
-  });
-
   it('replays the Operations fact after Foundation completion crashes and the lease is reclaimed', async () => {
     let now = Date.parse('2026-07-11T10:00:00.000Z');
     const foundation = new MemoryFoundationRepository(() => new Date(now), 10);
@@ -429,15 +189,10 @@ describe('operations foundation module', () => {
     };
     foundation.grantOwner(context.workspaceId, context.userId);
     operations.grantMembership(context.userId, context.workspaceId);
-    const notifications: string[] = [];
     const operationsService = new OperationsApplicationService(operations, {
       canvasExporter: new RecordedCanvasExportAdapter(),
       imageGenerator: new RecordedImageGenerationAdapter(),
-      notifier: {
-        async send(notification) {
-          notifications.push(notification.taskId);
-        },
-      },
+      notifier: { async send() {} },
     });
     const service = new P1ApplicationService(foundation, {
       moduleCommandHeartbeatMs: 60_000,
@@ -464,57 +219,6 @@ describe('operations foundation module', () => {
         idempotencyKey
       );
     };
-    const input = {
-      action: 'create_task',
-      payload: {
-        dueAt: '2026-07-13T09:00:00.000Z',
-        executable: true,
-        risk: 'normal',
-        source: 'manual',
-        title: '崩溃后只保留一个任务',
-      },
-    };
-
-    const replayed = await crashAndReplay<{ id: string }>(
-      'crash-create-task',
-      input
-    );
-    const inbox = await operationsService.listInbox(context);
-
-    assert.equal(inbox.tasks.length, 1);
-    assert.equal(inbox.tasks[0]?.id, replayed.id);
-    await operationsService.configureTrigger(
-      { ...context, actor: 'owner' },
-      'weekly_batch_ready',
-      true
-    );
-    const trigger = await crashAndReplay<{ task: { id: string } }>(
-      'crash-run-trigger',
-      {
-        action: 'run_trigger',
-        payload: {
-          kind: 'weekly_batch_ready',
-          sourceId: 'crash-trigger-source',
-          timeWindow: '2026-W30',
-        },
-      }
-    );
-    assert.deepEqual(notifications, [trigger.task.id]);
-
-    const work = await crashAndReplay<{
-      id: string;
-      currentRevisionId: string;
-    }>('crash-create-work', {
-      action: 'create_blank_work',
-      payload: { height: 1350, name: '崩溃作品', width: 1080 },
-    });
-    await crashAndReplay<{ id: string }>('crash-create-review', {
-      action: 'create_weekly_review',
-      payload: {
-        from: '2026-07-13T00:00:00.000Z',
-        to: '2026-07-19T23:59:59.999Z',
-      },
-    });
     await crashAndReplay('crash-create-template', {
       action: 'admin_create_template',
       payload: {
@@ -528,43 +232,7 @@ describe('operations foundation module', () => {
         tags: ['崩溃'],
       },
     });
-    const renderedPngBytes = await sharp({
-      create: {
-        background: { alpha: 0, b: 0, g: 0, r: 0 },
-        channels: 4,
-        height: 1350,
-        width: 1080,
-      },
-    })
-      .png()
-      .toBuffer();
-    await crashAndReplay('crash-export-work', {
-      action: 'export_work',
-      payload: {
-        request: {
-          format: 'png',
-          height: 1350,
-          renderedDataUrl: `data:image/png;base64,${renderedPngBytes.toString('base64')}`,
-          renderEvidenceMarker: {
-            version: 'canvas-raster-v1',
-            rasterSha256: createHash('sha256')
-              .update(renderedPngBytes)
-              .digest('hex'),
-            imageElementIds: [],
-            fontFamilies: [],
-            cjkLineBreakElementIds: [],
-          },
-          width: 1080,
-          workRevisionId: work.currentRevisionId,
-        },
-        workId: work.id,
-      },
-    });
-    const state = await operations.loadWorkspace(context.workspaceId);
     const catalog = await operations.loadTemplateCatalog();
-    assert.equal(state?.works.length, 1);
-    assert.equal(state?.weeklyReviews.length, 1);
-    assert.equal(state?.exportReceipts.length, 1);
     assert.equal(
       catalog.templates.filter((template) => template.family === 'crash_family')
         .length,
@@ -610,18 +278,6 @@ describe('operations foundation module', () => {
     const publishedTemplate = (
       await operations.listTemplates({ ...owner, actor: 'owner' })
     )[0]!;
-    const ownerPreview = (await module.execute({
-      context: owner,
-      input: {
-        action: 'preview_template_version',
-        payload: {
-          templateId: publishedTemplate.id,
-          versionId: publishedTemplate.publishedVersionId,
-        },
-      },
-    })) as { document: { width: number }; versionId: string };
-    assert.equal(ownerPreview.versionId, publishedTemplate.publishedVersionId);
-    assert.equal(ownerPreview.document.width, 1080);
     const ownerCopy = (await module.execute({
       context: owner,
       input: {
@@ -810,55 +466,6 @@ describe('operations foundation module', () => {
     assert.equal(retired.publicationStatus, 'retired');
   });
 
-  it('passes an explicit prompt-only image data class through the Foundation command', async () => {
-    const repository = new MemoryOperationsRepository();
-    const context = {
-      correlationId: 'corr-image-data-class',
-      userId: 'owner-image-data-class',
-      workspaceId: 'workspace-image-data-class',
-    };
-    repository.grantMembership(context.userId, context.workspaceId);
-    const submissions: string[][] = [];
-    const operations = new OperationsApplicationService(repository, {
-      canvasExporter: new RecordedCanvasExportAdapter(),
-      imageGenerator: {
-        jobId() {
-          return 'prompt-only-image-job';
-        },
-        async submit(request) {
-          submissions.push(request.dataClass);
-          return {
-            actualModelId: request.requestedModelId,
-            id: 'prompt-only-image-job',
-            status: 'queued' as const,
-          };
-        },
-      },
-      notifier: { async send() {} },
-    });
-    const work = await operations.createBlankWork(
-      { ...context, actor: 'owner' },
-      { height: 1350, name: '显式分类生图', width: 1080 }
-    );
-    const module = new OperationsFoundationModule(operations);
-
-    await module.execute({
-      context,
-      input: {
-        action: 'start_canvas_image',
-        payload: {
-          dataClass: ['medical', 'contains_face', 'medical'],
-          modelId: 'seedream-5-pro',
-          operation: 'generate',
-          prompt: '含顾客面部和疗程语义的创意图',
-          workId: work.id,
-        },
-      },
-    });
-
-    assert.deepEqual(submissions, [['contains_face', 'medical']]);
-  });
-
   it('does not grant admin bypass to ordinary operations actions', async () => {
     const repository = new MemoryOperationsRepository();
     const module = new OperationsFoundationModule(
@@ -878,13 +485,12 @@ describe('operations foundation module', () => {
           workspaceId: 'workspace-ordinary',
         },
         input: {
-          action: 'create_task',
+          action: 'create_work_from_content_package',
           payload: {
-            dueAt: '2026-07-13T09:00:00.000Z',
-            executable: true,
-            risk: 'normal',
-            source: 'manual',
-            title: 'Must remain owner-scoped',
+            height: 1350,
+            sourcePackageId: 'package-owner-scoped',
+            sourceVersionId: 'package-owner-scoped-v1',
+            width: 1080,
           },
         },
       }),

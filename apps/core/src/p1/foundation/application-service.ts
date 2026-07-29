@@ -94,12 +94,7 @@ const NEW_P1_SIDE_EFFECTS = new Set([
   'operations:admin_enable_template_version',
   'operations:admin_publish_template_version',
   'operations:admin_retire_template',
-  'operations:run_trigger',
-  'operations:start_canvas_image',
-  'operations:submit_creative_work',
   'operations:retry_creative_job',
-  'operations:reroll_creative_job',
-  'operations:quality_retry_creative_job',
 ]);
 
 export interface GenerationOpeningEntitlement {

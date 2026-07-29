@@ -226,7 +226,7 @@ test('a command without a deadline keeps its unbounded legacy behaviour', async 
   }
 });
 
-test('retries one export or reuse intent with its original idempotency key', async () => {
+test('retries each operations intent with its original idempotency key', async () => {
   const attempts: Array<{ action: string; idempotencyKey: string }> = [];
   const succeedingActions = new Set<string>();
   let keySequence = 0;
@@ -242,42 +242,57 @@ test('retries one export or reuse intent with its original idempotency key', asy
   );
 
   await assert.rejects(
-    registry.execute('export_content_package', {
-      packageId: 'package-a',
-      platform: 'xiaohongshu',
+    registry.execute('set_creation_labels', {
+      aigcLabelEnabled: true,
+      brandWatermarkEnabled: false,
+      workId: 'work-a',
     }),
     /simulated response loss/
   );
   await assert.rejects(
-    registry.execute('reuse_content_package', {
+    registry.execute('create_work_from_content_package', {
+      height: 1350,
       sourcePackageId: 'package-a',
+      sourceVersionId: 'version-a',
+      width: 1080,
     }),
     /simulated response loss/
   );
 
-  succeedingActions.add('export_content_package');
-  await registry.execute('export_content_package', {
-    platform: 'xiaohongshu',
-    packageId: 'package-a',
+  succeedingActions.add('set_creation_labels');
+  await registry.execute('set_creation_labels', {
+    aigcLabelEnabled: true,
+    brandWatermarkEnabled: false,
+    workId: 'work-a',
   });
-  succeedingActions.add('reuse_content_package');
-  await registry.execute('reuse_content_package', {
+  succeedingActions.add('create_work_from_content_package');
+  await registry.execute('create_work_from_content_package', {
+    height: 1350,
     sourcePackageId: 'package-a',
+    sourceVersionId: 'version-a',
+    width: 1080,
   });
 
   assert.deepEqual(attempts.slice(0, 4), [
-    { action: 'export_content_package', idempotencyKey: 'intent-1' },
-    { action: 'reuse_content_package', idempotencyKey: 'intent-2' },
-    { action: 'export_content_package', idempotencyKey: 'intent-1' },
-    { action: 'reuse_content_package', idempotencyKey: 'intent-2' },
+    { action: 'set_creation_labels', idempotencyKey: 'intent-1' },
+    {
+      action: 'create_work_from_content_package',
+      idempotencyKey: 'intent-2',
+    },
+    { action: 'set_creation_labels', idempotencyKey: 'intent-1' },
+    {
+      action: 'create_work_from_content_package',
+      idempotencyKey: 'intent-2',
+    },
   ]);
 
-  await registry.execute('export_content_package', {
-    packageId: 'package-a',
-    platform: 'xiaohongshu',
+  await registry.execute('set_creation_labels', {
+    aigcLabelEnabled: true,
+    brandWatermarkEnabled: false,
+    workId: 'work-a',
   });
   assert.deepEqual(attempts.at(-1), {
-    action: 'export_content_package',
+    action: 'set_creation_labels',
     idempotencyKey: 'intent-3',
   });
 });

@@ -317,24 +317,18 @@ test('public delivery rejects a receipt frozen to an old content revision before
   const module = new OperationsFoundationModule(operations, {
     delivery: setup.service,
   });
-  const edited = (await module.execute({
-    context,
-    input: {
-      action: 'edit_content_package_variant',
-      payload: {
-        baseVersionId: 'douyin-v1',
-        changes: {
-          body: '正文第二版',
-          orderedAssetIds: [],
-          title: '标题第二版',
-          topics: [],
-        },
-        expectedRevision: 2,
-        packageId: 'package-a',
-        platform: 'douyin',
-      },
+  const edited = await operations.editContentPackageVariant(context, {
+    baseVersionId: 'douyin-v1',
+    changes: {
+      body: '正文第二版',
+      orderedAssetIds: [],
+      title: '标题第二版',
+      topics: [],
     },
-  })) as ContentPackage;
+    expectedRevision: 2,
+    packageId: 'package-a',
+    platform: 'douyin',
+  });
   const currentVersionId = edited.variants.find(
     (variant) => variant.platform === 'douyin',
   )!.currentVersionId;

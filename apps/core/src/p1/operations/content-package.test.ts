@@ -661,30 +661,21 @@ describe('ContentPackage application service contract', () => {
     assert.ok(beforePackage);
     const billingFacts = structuredClone(beforePackage.generated.childRuns);
 
-    const edited = (await service.executeModule(
-      context,
-      'operations',
+    const edited = await operationsService.editContentPackageVersion(
+      { ...context, actor: 'owner' },
       {
-        action: 'edit_content_package_version',
-        payload: {
-          baseVersionId: beforePackage.currentVersionId,
-          changes: {
-            body: '撤权后补充说明的正文',
-            conversionHook: '更换素材后预约',
-            orderedAssetIds: ['owned-image_text-1'],
-            title: '撤权后补充说明的标题',
-            topics: ['素材待替换'],
-          },
-          expectedRevision: beforePackage.revision,
-          packageId: beforePackage.id,
+        baseVersionId: beforePackage.currentVersionId,
+        changes: {
+          body: '撤权后补充说明的正文',
+          conversionHook: '更换素材后预约',
+          orderedAssetIds: ['owned-image_text-1'],
+          title: '撤权后补充说明的标题',
+          topics: ['素材待替换'],
         },
+        expectedRevision: beforePackage.revision,
+        packageId: beforePackage.id,
       },
-      'edit-needs-replacement-base'
-    )) as {
-      generated: { childRuns: unknown[] };
-      status: string;
-      versions: Array<{ body: string }>;
-    };
+    );
 
     assert.equal(edited.status, 'needs_replacement');
     assert.equal(edited.versions.length, 2);
@@ -693,7 +684,7 @@ describe('ContentPackage application service contract', () => {
   });
 
   it('edits a needs-replacement variant with the same free-edit contract', async () => {
-    const { context, operations, operationsService, service } = setup();
+    const { context, operations, operationsService } = setup();
     const contentPackage = await seedAcceptedPackage(
       operations,
       operationsService,
@@ -735,25 +726,20 @@ describe('ContentPackage application service contract', () => {
     assert.ok(beforePackage);
     const billingFacts = structuredClone(beforePackage.generated.childRuns);
 
-    const edited = (await service.executeModule(
-      context,
-      'operations',
+    const edited = (await operationsService.editContentPackageVariant(
+      { ...context, actor: 'owner' },
       {
-        action: 'edit_content_package_variant',
-        payload: {
-          baseVersionId: 'needs-replacement-xiaohongshu-v1',
-          changes: {
-            body: '撤权后补充说明的小红书正文',
-            orderedAssetIds: ['owned-image_text-1'],
-            title: '撤权后补充说明的小红书标题',
-            topics: ['素材待替换'],
-          },
-          expectedRevision: beforePackage.revision,
-          packageId: beforePackage.id,
-          platform: 'xiaohongshu',
+        baseVersionId: 'needs-replacement-xiaohongshu-v1',
+        changes: {
+          body: '撤权后补充说明的小红书正文',
+          orderedAssetIds: ['owned-image_text-1'],
+          title: '撤权后补充说明的小红书标题',
+          topics: ['素材待替换'],
         },
-      },
-      'edit-needs-replacement-variant'
+        expectedRevision: beforePackage.revision,
+        packageId: beforePackage.id,
+        platform: 'xiaohongshu',
+      }
     )) as {
       generated: { childRuns: unknown[] };
       status: string;
@@ -769,8 +755,8 @@ describe('ContentPackage application service contract', () => {
     assert.deepEqual(edited.generated.childRuns, billingFacts);
   });
 
-  it('rejects the legacy direct-copy command and keeps the source package unchanged', async () => {
-    const { context, operations, operationsService, service } = setup();
+  it('rejects legacy direct copying and keeps the source package unchanged', async () => {
+    const { context, operations, operationsService } = setup();
     const source = await seedAcceptedPackage(
       operations,
       operationsService,
@@ -778,14 +764,9 @@ describe('ContentPackage application service contract', () => {
       'image_text'
     );
     await assert.rejects(
-      service.executeModule(
-        context,
-        'operations',
-        {
-          action: 'reuse_content_package',
-          payload: { sourcePackageId: source.id },
-        },
-        'reuse-source-v1'
+      operationsService.reuseContentPackage(
+        { ...context, actor: 'owner' },
+        { sourcePackageId: source.id }
       ),
       (error: unknown) =>
         error instanceof OperationsError &&
@@ -863,7 +844,7 @@ describe('ContentPackage application service contract', () => {
         };
       },
     };
-    const { context, operations, operationsService, service } = setup({
+    const { context, operations, operationsService } = setup({
       contentPackageExporter,
     });
     const contentPackage = await seedAcceptedPackage(
@@ -912,36 +893,18 @@ describe('ContentPackage application service contract', () => {
       }
     );
     await operations.saveWorkspace(state);
-    const command = {
-      action: 'export_content_package',
-      payload: {
+    const exported = (await operationsService.exportContentPackage(
+      { ...context, actor: 'owner' },
+      {
         expectedRevision: stored.revision,
         packageId: stored.id,
         platform: 'xiaohongshu',
-      },
-    };
-
-    const exported = (await service.executeModule(
-      context,
-      'operations',
-      command,
-      'export-xiaohongshu-v1'
+      }
     )) as { exportReceipts: Array<Record<string, unknown>>; status: string };
-    const replayed = await service.executeModule(
-      context,
-      'operations',
-      command,
-      'export-xiaohongshu-v1'
-    );
 
     assert.equal(exportEffects, 1);
     assert.equal(exported.status, 'accepted');
-    assert.deepEqual(replayed, exported);
     assert.equal(exported.exportReceipts.length, 1);
-    assert.equal(JSON.stringify(exported).includes('providerCost'), false);
-    assert.equal(JSON.stringify(exported).includes('apiCounterparty'), false);
-    assert.equal(JSON.stringify(exported).includes('providerModel'), false);
-    assert.equal(JSON.stringify(exported).includes('routeSnapshotId'), false);
     assert.equal(typeof exported.exportReceipts[0]?.createdAt, 'string');
     assert.equal(typeof exported.exportReceipts[0]?.id, 'string');
     assert.deepEqual(
@@ -1365,26 +1328,21 @@ describe('ContentPackage application service contract', () => {
     );
     await operations.saveWorkspace(state);
 
-    const editedVariant = (await service.executeModule(
-      context,
-      'operations',
+    const editedVariant = (await operationsService.editContentPackageVariant(
+      { ...context, actor: 'owner' },
       {
-        action: 'edit_content_package_variant',
-        payload: {
-          baseVersionId: 'douyin-v1',
-          changes: {
-            body: '抖音编辑稿',
-            conversionHook: '评论预约',
-            orderedAssetIds: ['owned-image_text-1'],
-            title: '抖音编辑标题',
-            topics: ['同城探店'],
-          },
-          expectedRevision: stored.revision,
-          packageId: stored.id,
-          platform: 'douyin',
+        baseVersionId: 'douyin-v1',
+        changes: {
+          body: '抖音编辑稿',
+          conversionHook: '评论预约',
+          orderedAssetIds: ['owned-image_text-1'],
+          title: '抖音编辑标题',
+          topics: ['同城探店'],
         },
-      },
-      'edit-douyin-v2'
+        expectedRevision: stored.revision,
+        packageId: stored.id,
+        platform: 'douyin',
+      }
     )) as { revision: number };
     await service.executeModule(
       context,
@@ -2753,72 +2711,38 @@ describe('ContentPackage application service contract', () => {
     });
     await operations.saveWorkspace(state);
 
-    const command = {
-      action: 'attach_content_package_generation',
-      payload: {
+    const input = {
+      assetIds: ['image-attach-1'],
+      childRun: {
         assetIds: ['image-attach-1'],
-        childRun: {
-          assetIds: ['image-attach-1'],
-          runId: 'image-job-attach',
-          runType: 'creative_job' as const,
-          status: 'succeeded' as const,
-        },
-        expectedRevision: storedPackage.revision,
-        packageId: contentPackage.id,
+        runId: 'image-job-attach',
+        runType: 'creative_job' as const,
+        status: 'succeeded' as const,
       },
+      expectedRevision: storedPackage.revision,
+      packageId: contentPackage.id,
     };
     await assert.rejects(
-      service.executeModule(
-        context,
-        'operations',
+      operationsService.attachContentPackageGeneration(
+        { ...context, actor: 'owner' },
         {
-          ...command,
-          payload: {
-            ...command.payload,
-            childRun: {
-              ...command.payload.childRun,
-              runType: 'durable_video_workflow' as const,
-            },
+          ...input,
+          childRun: {
+            ...input.childRun,
+            runType: 'durable_video_workflow' as const,
           },
-        },
-        'attach-generation-wrong-run-type',
+        }
       ),
       (error: unknown) =>
         error instanceof OperationsError &&
-        error.code === 'INVALID_CONTENT_PACKAGE',
-    );
-    await assert.rejects(
-      service.executeModule(
-        context,
-        'operations',
-        {
-          ...command,
-          payload: {
-            ...command.payload,
-            childRun: {
-              ...command.payload.childRun,
-              providerCost: {
-                amount: 999,
-                currency: 'USD' as const,
-                status: 'observed' as const,
-              },
-            },
-          },
-        },
-        'attach-generation-forged-cost',
-      ),
-      (error: unknown) =>
-        error instanceof OperationsError &&
-        error.code === 'INVALID_CONTENT_PACKAGE',
+        error.code === 'INVALID_CONTENT_PACKAGE_CHILD_RUN',
     );
     storedPackage.status = 'cancelled';
     await operations.saveWorkspace(state);
     await assert.rejects(
-      service.executeModule(
-        context,
-        'operations',
-        command,
-        'attach-generation-cancelled-package',
+      operationsService.attachContentPackageGeneration(
+        { ...context, actor: 'owner' },
+        input
       ),
       (error: unknown) =>
         error instanceof OperationsError &&
@@ -2833,11 +2757,9 @@ describe('ContentPackage application service contract', () => {
     storedImageAsset.objectKey = `${context.workspaceId}/creative/image-attach-1.png`;
     await operations.saveWorkspace(state);
     await assert.rejects(
-      service.executeModule(
-        context,
-        'operations',
-        command,
-        'attach-generation-unexportable-receipt',
+      operationsService.attachContentPackageGeneration(
+        { ...context, actor: 'owner' },
+        input
       ),
       (error: unknown) =>
         error instanceof OperationsError &&
@@ -2852,11 +2774,9 @@ describe('ContentPackage application service contract', () => {
     storedMediaWork.sessionId = 'session-other';
     await operations.saveWorkspace(state);
     await assert.rejects(
-      service.executeModule(
-        context,
-        'operations',
-        command,
-        'attach-generation-cross-session',
+      operationsService.attachContentPackageGeneration(
+        { ...context, actor: 'owner' },
+        input
       ),
       (error: unknown) =>
         error instanceof OperationsError &&
@@ -2870,11 +2790,9 @@ describe('ContentPackage application service contract', () => {
     storedImageJob.status = 'failed';
     await operations.saveWorkspace(state);
     await assert.rejects(
-      service.executeModule(
-        context,
-        'operations',
-        command,
-        'attach-generation-failed-job',
+      operationsService.attachContentPackageGeneration(
+        { ...context, actor: 'owner' },
+        input
       ),
       (error: unknown) =>
         error instanceof OperationsError &&
@@ -2882,9 +2800,10 @@ describe('ContentPackage application service contract', () => {
     );
     storedImageJob.status = 'completed';
     await operations.saveWorkspace(state);
-    const attached = await service.executeModule<
-      typeof command,
-      {
+    const attached = (await operationsService.attachContentPackageGeneration(
+      { ...context, actor: 'owner' },
+      input
+    )) as {
         currentVersionId: string;
         generated: {
           assetIds: string[];
@@ -2902,26 +2821,7 @@ describe('ContentPackage application service contract', () => {
           versions: Array<{ id: string; orderedAssetIds: string[] }>;
         }>;
         versions: Array<{ id: string; orderedAssetIds: string[] }>;
-      }
-    >(context, 'operations', command, 'attach-generation-1');
-    const replay = await service.executeModule<typeof command, typeof attached>(
-      context,
-      'operations',
-      command,
-      'attach-generation-1',
-    );
-    const crossKeyReplay = await service.executeModule<
-      typeof command,
-      typeof attached
-    >(
-      context,
-      'operations',
-      {
-        ...command,
-        payload: { ...command.payload, expectedRevision: attached.revision },
-      },
-      'attach-generation-cross-key-replay'
-    );
+      };
     const persisted = await operations.loadWorkspace(context.workspaceId);
     const persistedPackage = persisted?.contentPackages.find(
       (candidate) => candidate.id === contentPackage.id,
@@ -2931,8 +2831,6 @@ describe('ContentPackage application service contract', () => {
     );
 
     assert.equal(attached.id, contentPackage.id);
-    assert.equal(replay.currentVersionId, attached.currentVersionId);
-    assert.equal(crossKeyReplay.versions.length, attached.versions.length);
     assert.deepEqual(attached.generated.assetIds, ['image-attach-1']);
     assert.deepEqual(currentVersion?.orderedAssetIds, [
       'owned-image_text-1',
@@ -2968,10 +2866,10 @@ describe('ContentPackage application service contract', () => {
   });
 
   it('creates one package and immediately returns the same object from detail and library queries', async () => {
-    const { context, service } = setup();
-    const command = {
-      action: 'create_content_package',
-      payload: {
+    const { context, operationsService } = setup();
+    const created = await operationsService.createContentPackage(
+      { ...context, actor: 'owner' },
+      {
         kind: 'image_text',
         source: {
           assetIds: [
@@ -2984,33 +2882,15 @@ describe('ContentPackage application service contract', () => {
           groundingId: 'grounding-1',
           storeProfileId: 'store-profile-1',
         },
-      },
-    };
-
-    const created = await service.executeModule<
-      typeof command,
-      {
-        id: string;
-        kind: 'image_text';
-        status: 'draft';
-        statusGroup: 'creating';
-        statusLabel: '创作中';
       }
-    >(context, 'operations', command, 'create-content-package-1');
-
-    const detail = await service.queryModule<
-      { action: string; payload: { packageId: string } },
-      typeof created
-    >(context, 'operations', {
-      action: 'content_package',
-      payload: { packageId: created.id },
-    });
-    const library = await service.queryModule<
-      { action: string; payload: Record<string, never> },
-      Array<typeof created>
-    >(context, 'operations', {
-      action: 'content_packages',
-      payload: {},
+    );
+    const detail = await operationsService.getContentPackage(
+      { ...context, actor: 'owner' },
+      created.id
+    );
+    const library = await operationsService.listContentPackages({
+      ...context,
+      actor: 'owner',
     });
 
     assert.equal(created.kind, 'image_text');
@@ -3021,95 +2901,28 @@ describe('ContentPackage application service contract', () => {
     assert.deepEqual(library, [created]);
   });
 
-  it('replays the same create command without duplicating the package and rejects a changed payload', async () => {
-    const { context, service } = setup();
-    const command = {
-      action: 'create_content_package',
-      payload: {
+  it('does not expose a package to another workspace', async () => {
+    const { context, operationsService, otherContext } = setup();
+    const created = await operationsService.createContentPackage(
+      { ...context, actor: 'owner' },
+      {
         kind: 'image_text',
         source: { assetIds: ['asset-1'], briefId: 'brief-1' },
-      },
-    };
-
-    const created = await service.executeModule<typeof command, { id: string }>(
-      context,
-      'operations',
-      command,
-      'create-content-package-replay'
-    );
-    const replay = await service.executeModule<typeof command, { id: string }>(
-      context,
-      'operations',
-      command,
-      'create-content-package-replay'
-    );
-
-    assert.equal(replay.id, created.id);
-    assert.equal(
-      (
-        await service.queryModule<
-          { action: string; payload: Record<string, never> },
-          Array<{ id: string }>
-        >(context, 'operations', {
-          action: 'content_packages',
-          payload: {},
-        })
-      ).length,
-      1
-    );
-    await assert.rejects(
-      service.executeModule(
-        context,
-        'operations',
-        {
-          ...command,
-          payload: { ...command.payload, kind: 'video' },
-        },
-        'create-content-package-replay'
-      ),
-      (error: unknown) =>
-        error instanceof Error &&
-        'code' in error &&
-        error.code === 'IDEMPOTENCY_CONFLICT'
-    );
-  });
-
-  it('does not expose a package to another workspace', async () => {
-    const { context, otherContext, service } = setup();
-    const created = await service.executeModule<
-      {
-        action: string;
-        payload: {
-          kind: 'image_text';
-          source: { assetIds: string[]; briefId: string };
-        };
-      },
-      { id: string; revision: number }
-    >(
-      context,
-      'operations',
-      {
-        action: 'create_content_package',
-        payload: {
-          kind: 'image_text',
-          source: { assetIds: ['asset-1'], briefId: 'brief-1' },
-        },
-      },
-      'create-content-package-isolation'
+      }
     );
 
     assert.deepEqual(
-      await service.queryModule(otherContext, 'operations', {
-        action: 'content_packages',
-        payload: {},
+      await operationsService.listContentPackages({
+        ...otherContext,
+        actor: 'owner',
       }),
       []
     );
     await assert.rejects(
-      service.queryModule(otherContext, 'operations', {
-        action: 'content_package',
-        payload: { packageId: created.id },
-      }),
+      operationsService.getContentPackage(
+        { ...otherContext, actor: 'owner' },
+        created.id
+      ),
       (error: unknown) =>
         error instanceof Error &&
         'code' in error &&
@@ -3118,66 +2931,33 @@ describe('ContentPackage application service contract', () => {
   });
 
   it('cancels a package once and rejects resubmission from the cancelled state', async () => {
-    const { context, service } = setup();
-    const created = await service.executeModule<
+    const { context, operationsService } = setup();
+    const created = await operationsService.createContentPackage(
+      { ...context, actor: 'owner' },
       {
-        action: string;
-        payload: {
-          kind: 'image_text';
-          source: { assetIds: string[]; briefId: string };
-        };
-      },
-      { id: string; revision: number }
-    >(
-      context,
-      'operations',
-      {
-        action: 'create_content_package',
-        payload: {
-          kind: 'image_text',
-          source: { assetIds: ['asset-1'], briefId: 'brief-1' },
-        },
-      },
-      'create-content-package-cancel'
+        kind: 'image_text',
+        source: { assetIds: ['asset-1'], briefId: 'brief-1' },
+      }
     );
 
-    const cancelled = await service.executeModule<
+    const cancelled = await operationsService.cancelContentPackage(
+      { ...context, actor: 'owner' },
       {
-        action: string;
-        payload: { expectedRevision: number; packageId: string };
-      },
-      {
-        id: string;
-        revision: number;
-        status: string;
-        statusGroup: string;
-        statusLabel: string;
+        expectedRevision: created.revision,
+        packageId: created.id,
       }
-    >(
-      context,
-      'operations',
-      {
-        action: 'cancel_content_package',
-        payload: { expectedRevision: created.revision, packageId: created.id },
-      },
-      'cancel-content-package-1'
     );
 
     assert.equal(cancelled.status, 'cancelled');
     assert.equal(cancelled.statusGroup, 'needs_attention');
     assert.equal(cancelled.statusLabel, '需处理');
     await assert.rejects(
-      service.executeModule(
-        context,
-        'operations',
+      operationsService.cancelContentPackage(
+        { ...context, actor: 'owner' },
         {
-          action: 'cancel_content_package',
-          payload: {
-            expectedRevision: cancelled.revision,
-            packageId: created.id,
-          },
-        },
-        'cancel-content-package-2'
+          expectedRevision: cancelled.revision,
+          packageId: created.id,
+        }
       ),
       (error: unknown) =>
         error instanceof Error &&
@@ -3186,12 +2966,9 @@ describe('ContentPackage application service contract', () => {
     );
     assert.equal(
       (
-        await service.queryModule<
-          { action: string; payload: Record<string, never> },
-          Array<{ id: string }>
-        >(context, 'operations', {
-          action: 'content_packages',
-          payload: {},
+        await operationsService.listContentPackages({
+          ...context,
+          actor: 'owner',
         })
       ).length,
       1
@@ -3199,56 +2976,22 @@ describe('ContentPackage application service contract', () => {
   });
 
   it('revokes package rights and immediately projects the package as needing attention', async () => {
-    const { context, service } = setup();
-    const created = await service.executeModule<
+    const { context, operationsService } = setup();
+    const created = await operationsService.createContentPackage(
+      { ...context, actor: 'owner' },
       {
-        action: string;
-        payload: {
-          kind: 'image_text';
-          source: { assetIds: string[]; briefId: string };
-        };
-      },
-      { id: string; revision: number }
-    >(
-      context,
-      'operations',
-      {
-        action: 'create_content_package',
-        payload: {
-          kind: 'image_text',
-          source: { assetIds: ['asset-1'], briefId: 'brief-1' },
-        },
-      },
-      'create-content-package-revoke'
+        kind: 'image_text',
+        source: { assetIds: ['asset-1'], briefId: 'brief-1' },
+      }
     );
 
-    const revoked = await service.executeModule<
+    const revoked = await operationsService.revokeContentPackageRights(
+      { ...context, actor: 'owner' },
       {
-        action: string;
-        payload: {
-          expectedRevision: number;
-          packageId: string;
-          reason: string;
-        };
-      },
-      {
-        rights: { reason: string; revokedAt: string; state: string };
-        status: string;
-        statusGroup: string;
-        statusLabel: string;
+        expectedRevision: created.revision,
+        packageId: created.id,
+        reason: 'source_asset_authorization_revoked',
       }
-    >(
-      context,
-      'operations',
-      {
-        action: 'revoke_content_package_rights',
-        payload: {
-          expectedRevision: created.revision,
-          packageId: created.id,
-          reason: 'source_asset_authorization_revoked',
-        },
-      },
-      'revoke-content-package-1'
     );
 
     assert.equal(revoked.status, 'needs_replacement');
@@ -3848,26 +3591,19 @@ describe('ContentPackage frozen command and query contract', () => {
       'adopt_harness_candidate',
       'adopt_into_content_package',
       'approve_content_package_action',
-      'attach_content_package_generation',
-      'cancel_content_package',
       'content_package_migration_activate',
       'content_package_migration_backfill',
       'content_package_migration_dry_run',
       'content_package_migration_freeze',
       'content_package_migration_inspect',
       'content_package_migration_rollback',
-      'create_content_package',
       'deliver_content_package',
-      'edit_content_package_variant',
       'edit_content_package_version',
-      'export_content_package',
       'generate_content_package_variants',
       'record_content_package_manual_result',
       'record_content_package_result_review_action',
       'record_content_package_result_signal',
-      'reuse_content_package',
       'revise_content_package_visuals',
-      'revoke_content_package_rights',
       'rollback_content_package_version',
     ]);
     assert.deepEqual(Object.keys(CONTENT_PACKAGE_QUERY_SCHEMAS).sort(), [

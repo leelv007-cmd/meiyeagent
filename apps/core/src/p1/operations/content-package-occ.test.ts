@@ -2,15 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  MemoryFoundationRepository,
-  P1ApplicationService,
-} from '../foundation/index.js';
-import {
   ContentPackageRevisionConflictError,
   MemoryOperationsRepository,
   OperationsApplicationService,
   OperationsError,
-  OperationsFoundationModule,
   RecordedCanvasExportAdapter,
   RecordedImageGenerationAdapter,
 } from './index.js';
@@ -30,7 +25,6 @@ class FinalCasConflictRepository extends MemoryOperationsRepository {
 }
 
 function setup() {
-  const foundation = new MemoryFoundationRepository();
   const operations = new MemoryOperationsRepository();
   const context = {
     actor: 'owner' as const,
@@ -38,21 +32,17 @@ function setup() {
     userId: 'owner-occ',
     workspaceId: 'workspace-occ',
   };
-  foundation.grantOwner(context.workspaceId, context.userId);
   operations.grantMembership(context.userId, context.workspaceId);
   const operationsService = new OperationsApplicationService(operations, {
     canvasExporter: new RecordedCanvasExportAdapter(),
     imageGenerator: new RecordedImageGenerationAdapter(),
     notifier: { async send() {} },
   });
-  const service = new P1ApplicationService(foundation, {
-    operations: [new OperationsFoundationModule(operationsService)],
-  });
-  return { context, operations, operationsService, service };
+  return { context, operations, operationsService };
 }
 
 test('same expectedRevision allows one mutation and records exactly one conflict audit', async () => {
-  const { context, operations, operationsService, service } = setup();
+  const { context, operations, operationsService } = setup();
   const created = await operationsService.createContentPackage(
     { ...context, actor: 'owner' },
     { kind: 'image_text', source: { assetIds: ['asset-1'] } }
@@ -62,23 +52,13 @@ test('same expectedRevision allows one mutation and records exactly one conflict
   const cancelContext = { ...context, correlationId: 'corr-occ-cancel' };
   const revokeContext = { ...context, correlationId: 'corr-occ-revoke' };
   const [cancelled, revoked] = await Promise.allSettled([
-    service.executeModule(
+    operationsService.cancelContentPackage(
       cancelContext,
-      'operations',
-      {
-        action: 'cancel_content_package',
-        payload: { expectedRevision: 0, packageId: created.id },
-      },
-      'occ-cancel'
+      { expectedRevision: 0, packageId: created.id },
     ),
-    service.executeModule(
+    operationsService.revokeContentPackageRights(
       revokeContext,
-      'operations',
-      {
-        action: 'revoke_content_package_rights',
-        payload: { expectedRevision: 0, packageId: created.id },
-      },
-      'occ-revoke'
+      { expectedRevision: 0, packageId: created.id },
     ),
   ]);
 
@@ -129,24 +109,37 @@ test('same expectedRevision allows one mutation and records exactly one conflict
 });
 
 test('receipt replay returns the committed result without incrementing revision again', async () => {
-  const { context, operationsService, service } = setup();
+  const { context, operationsService } = setup();
   const created = await operationsService.createContentPackage(
     { ...context, actor: 'owner' },
     { kind: 'image_text', source: { assetIds: ['asset-1'] } }
   );
-  const command = {
-    action: 'cancel_content_package',
-    payload: { expectedRevision: 0, packageId: created.id },
+  const input = {
+    expectedRevision: 0,
+    operation: 'content_package.cancel',
+    packageId: created.id,
   };
 
-  const first = await service.executeModule<
-    typeof command,
-    { id: string; revision: number; status: string }
-  >(context, 'operations', command, 'occ-replay');
-  const replayed = await service.executeModule<
-    typeof command,
-    { id: string; revision: number; status: string }
-  >(context, 'operations', command, 'occ-replay');
+  const first = await operationsService.executeIdempotentModuleCommand(
+    context,
+    'occ-replay',
+    input,
+    () =>
+      operationsService.cancelContentPackage(context, {
+        expectedRevision: input.expectedRevision,
+        packageId: input.packageId,
+      }),
+  );
+  const replayed = await operationsService.executeIdempotentModuleCommand(
+    context,
+    'occ-replay',
+    input,
+    () =>
+      operationsService.cancelContentPackage(context, {
+        expectedRevision: input.expectedRevision,
+        packageId: input.packageId,
+      }),
+  );
 
   assert.deepEqual(replayed, first);
   assert.equal(first.revision, 1);
@@ -162,7 +155,6 @@ test('receipt replay returns the committed result without incrementing revision 
 });
 
 test('the final repository CAS guard returns 409 and persists one conflict audit', async () => {
-  const foundation = new MemoryFoundationRepository();
   const operations = new FinalCasConflictRepository();
   const context = {
     actor: 'owner' as const,
@@ -170,15 +162,11 @@ test('the final repository CAS guard returns 409 and persists one conflict audit
     userId: 'owner-final-cas',
     workspaceId: 'workspace-final-cas',
   };
-  foundation.grantOwner(context.workspaceId, context.userId);
   operations.grantMembership(context.userId, context.workspaceId);
   const operationsService = new OperationsApplicationService(operations, {
     canvasExporter: new RecordedCanvasExportAdapter(),
     imageGenerator: new RecordedImageGenerationAdapter(),
     notifier: { async send() {} },
-  });
-  const service = new P1ApplicationService(foundation, {
-    operations: [new OperationsFoundationModule(operationsService)],
   });
   const created = await operationsService.createContentPackage(
     { ...context, actor: 'owner' },
@@ -191,14 +179,9 @@ test('the final repository CAS guard returns 409 and persists one conflict audit
   );
 
   await assert.rejects(
-    service.executeModule(
+    operationsService.cancelContentPackage(
       context,
-      'operations',
-      {
-        action: 'cancel_content_package',
-        payload: { expectedRevision: 0, packageId: created.id },
-      },
-      'final-cas-conflict',
+      { expectedRevision: 0, packageId: created.id },
     ),
     (error: unknown) =>
       error instanceof OperationsError &&

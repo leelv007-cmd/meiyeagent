@@ -196,14 +196,13 @@ The two still-live Day-0 cases remain in this file and are catalogued in §25.
 
 **File:** `specs/uiux-operations-reuse.spec.ts` | **Priority:** P0
 
-Locks the desktop Operations rail, shared reuse catalog, explicit tool Job
-boundary, canonical history, and Canvas owning-route boundary.
+Locks the shared reuse catalog, explicit tool Job boundary, canonical history,
+and Canvas owning-route boundary.
 
 | # | Test name | Flow |
 |---|---|---|
-| 1 | Rail stays thin and complete work stays canonical | Create normal and publication Tasks, verify the workbench shows one next action, five weekdays, and anomaly summary, open the complete Task inbox, switch to the URL-backed week view, and assert publication is excluded from the executable batch while a missing review stays an explicit create action. |
-| 2 | One catalog inserts tools and references without hidden execution | Create one Work, choose an image tool from the contextual shelf, assert no Job exists, open the same catalog with `Cmd+K`, verify an honest empty result, use reference decomposition with zero fields selected, persist an explicit historical Work reference, then explicitly execute and assert one Job. Reload URL-backed Search and verify the same canonical Work remains. |
-| 3 | Daily light editor owns Canvas Work routes and compliance exports | Create a blank Canvas Work from the shared catalog, enter its exact `/dashboard/works/:id` route, edit copy, crop and reorder its modules, save the revision, then export all four watermark/AIGC switch combinations. Verify four distinct PNG binaries and matching receipts with image, font, CJK line-break, raster dimension, and SHA-256 evidence; return to the same route and capture the visible daily light editor without any Polotno request. |
+| 1 | One catalog inserts tools and references without hidden execution | Create one Work, choose an image tool from the contextual shelf, assert no Job exists, open the same catalog with `Cmd+K`, verify an honest empty result, inspect reference decomposition with zero fields initially selected, persist one explicitly selected historical Work reference, then explicitly execute and assert one Job. Reload URL-backed Search and verify the same canonical Work remains. |
+| 2 | Daily light editor owns Canvas Work routes and compliance exports | Create a blank Canvas Work from the shared catalog, enter its exact `/dashboard/works/:id` route, edit copy, crop and reorder its modules, save the revision, then export all four watermark/AIGC switch combinations. Verify four distinct PNG binaries and matching receipts with image, font, CJK line-break, raster dimension, and SHA-256 evidence; return to the same route and capture the visible daily light editor without any Polotno request. |
 
 ## 14. Keyboard Governance
 
