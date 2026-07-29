@@ -4,7 +4,15 @@ import {
 } from '@meiye/contracts';
 import { z } from 'zod';
 
-import type { StructuredObjectExecutor } from '../model-supply/index.js';
+import type {
+  ModelSupplyPromptAuditPort,
+  ModelSupplyPromptBinding,
+  StructuredObjectExecutor,
+} from '../model-supply/index.js';
+import {
+  assertModelSupplyPromptBinding,
+  promptFallbackAuditId,
+} from '../model-supply/route-contracts.js';
 
 const destinationOptionSchema = z
   .object({
@@ -93,6 +101,8 @@ export interface ComposerDestinationMappingPort {
   map(input: {
     abortSignal?: AbortSignal;
     destination: string;
+    idempotencyKey?: string;
+    workspaceId?: string;
   }): Promise<ComposerDestinationMapping>;
 }
 
@@ -102,18 +112,53 @@ export class StructuredComposerDestinationMapper
   constructor(
     private readonly executor: StructuredObjectExecutor,
     private readonly prompt?: {
-      resolve(): Promise<{ content: string }>;
+      resolve(): Promise<ModelSupplyPromptBinding>;
     },
+    private readonly promptAudits?: ModelSupplyPromptAuditPort,
   ) {}
 
   async map(input: {
     abortSignal?: AbortSignal;
     destination: string;
+    idempotencyKey?: string;
+    workspaceId?: string;
   }): Promise<ComposerDestinationMapping> {
     const destination = input.destination.trim();
     if (!destination) return DEFAULT_CLARIFICATION;
+    const prompt = await this.prompt?.resolve();
+    if (prompt) {
+      assertModelSupplyPromptBinding(
+        prompt,
+        'harness/destination-mapping',
+      );
+    }
+    if (prompt?.isFallback && this.promptAudits) {
+      if (!input.workspaceId || !input.idempotencyKey) {
+        throw new Error(
+          'Destination prompt fallback audit requires workspace and idempotency context.',
+        );
+      }
+      const promptLineage = promptReference(prompt);
+      await this.promptAudits.appendPromptAudit({
+        workspaceId: input.workspaceId,
+        id: promptFallbackAuditId({
+          workspaceId: input.workspaceId,
+          idempotencyKey: input.idempotencyKey,
+          promptKey: 'destinationMapping',
+          prompt: promptLineage,
+        }),
+        workflowId: input.idempotencyKey,
+        stage: 'prompt_resolution',
+        eventType: 'langfuse_prompt_fallback',
+        payload: {
+          promptKey: 'destinationMapping',
+          prompt: promptLineage,
+          operation: 'destination.map',
+        },
+      });
+    }
     const instructions =
-      (await this.prompt?.resolve())?.content ??
+      prompt?.content ??
       [
         'Map one merchant answer about where content will be used and how it will be delivered.',
         'Return mapped only when both fields are unambiguous; otherwise return one focused clarification question with safe options.',
@@ -137,4 +182,18 @@ export class StructuredComposerDestinationMapper
       return DEFAULT_CLARIFICATION;
     }
   }
+}
+
+function promptReference(prompt: ModelSupplyPromptBinding) {
+  return {
+    name: prompt.name,
+    version: prompt.version,
+    contentHash: prompt.contentHash,
+    label: prompt.label,
+    source: prompt.source,
+    isFallback: prompt.isFallback,
+    ...(prompt.fallbackReason
+      ? { fallbackReason: prompt.fallbackReason }
+      : {}),
+  };
 }

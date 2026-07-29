@@ -179,7 +179,7 @@ test('Langfuse dead letters use an additive terminal marker', async () => {
   } as unknown as Pool;
   const store = new PostgresHarnessStore(pool);
 
-  await store.applySchema();
+  await store.migrate(pool as unknown as import('pg').PoolClient);
   await store.markLangfuseDeadLetter('audit-1', 'attempt limit reached');
 
   assert.ok(

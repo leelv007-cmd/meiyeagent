@@ -327,6 +327,56 @@ test('prompt fallback fact reaches the Langfuse span without prompt content', as
   assert.equal(JSON.stringify(body).includes('private prompt content'), false);
 });
 
+test('detached prompt audits project prompt lineage from the audited payload', async (t) => {
+  let body: { batch: Array<{ type: string; body: Record<string, unknown> }> } | undefined;
+  const server = createServer(async (request, response) => {
+    body = await readJson(request);
+    sendJson(response, 200, { successes: [] });
+  });
+  const sender = new LangfuseHttpSender({
+    baseUrl: await listen(t, server),
+    publicKey: 'pk-test',
+    secretKey: 'sk-test',
+  });
+
+  await sender.send({
+    auditId: 'audit-direct-prompt-fallback',
+    workflowId: 'harness.v1:d29ya3NwYWNlLTE:ZGlyZWN0LTE',
+    stage: 'prompt_resolution',
+    eventType: 'langfuse_prompt_fallback',
+    occurredAt: '2026-07-29T00:00:00.000Z',
+    attempts: 1,
+    payload: {
+      promptKey: 'copyGeneration',
+      prompt: {
+        name: 'harness/copy-generation',
+        version: 'builtin-v1',
+        content: 'private prompt content',
+        contentHash: 'f'.repeat(64),
+        label: 'production',
+        source: 'builtin',
+        isFallback: true,
+        fallbackReason: 'http_503',
+      },
+    },
+  });
+
+  const span = body?.batch.find(({ type }) => type === 'span-create');
+  assert.deepEqual(
+    (span?.body.metadata as Record<string, unknown>).prompt,
+    {
+      name: 'harness/copy-generation',
+      version: 'builtin-v1',
+      contentHash: 'f'.repeat(64),
+      label: 'production',
+      source: 'builtin',
+      isFallback: true,
+      fallbackReason: 'http_503',
+    },
+  );
+  assert.equal(JSON.stringify(body).includes('private prompt content'), false);
+});
+
 test('local structured-node sample exports identical four metrics and prompt-version dataset item', async (t) => {
   const localSnapshot = {
     initial: { calls: 4, schemaValid: 3, schemaInvalid: 1 },

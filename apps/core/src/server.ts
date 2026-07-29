@@ -1,4 +1,4 @@
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import {
   createServer,
   type IncomingMessage,
@@ -1295,7 +1295,18 @@ export function createCoreServer({
         const body = composerDestinationMappingRequestSchema.parse(
           await readJson(request)
         );
-        const result = await composerDestinationMapper.map(body);
+        const result = await composerDestinationMapper.map({
+          ...body,
+          idempotencyKey: `destination-map-${createHash('sha256')
+            .update(
+              JSON.stringify({
+                destination: body.destination.trim(),
+                workspaceId: context.workspaceId,
+              }),
+            )
+            .digest('hex')}`,
+          workspaceId: context.workspaceId,
+        });
         sendJson(response, 200, result, requestCorrelationId);
       } catch (error) {
         sendP1HttpError(

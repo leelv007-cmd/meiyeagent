@@ -619,7 +619,11 @@ class MemoryHarnessStore
       return { kind: 'created' as const };
     }
     return existing.fingerprint === input.fingerprint
-      ? { kind: 'existing' as const, workflowId: input.taskId }
+      ? {
+          kind: 'existing' as const,
+          workflowId: input.taskId,
+          request: structuredClone(existing.request),
+        }
       : { kind: 'conflict' as const };
   }
 

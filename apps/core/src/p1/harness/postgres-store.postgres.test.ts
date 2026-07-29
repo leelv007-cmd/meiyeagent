@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { randomUUID } from 'node:crypto';
+import { once } from 'node:events';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { Pool } from 'pg';
 
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
@@ -8,9 +11,13 @@ import { PostgresOperationsRepository } from '../operations/postgres-repository.
 import { HarnessDecisionService } from './decision-service.js';
 import { PostgresHarnessStore } from './postgres-store.js';
 import { harnessRuntimeId } from './workspace-scope.js';
-import { HarnessTaskAdmissionService } from './task-admission.js';
+import {
+  HarnessTaskAdmissionService,
+  type HarnessWorkflowInput,
+} from './task-admission.js';
 import {
   HARNESS_LANGFUSE_PROMPT_NAMES,
+  LangfuseHarnessPromptResolver,
   type HarnessFrozenPrompts,
 } from './langfuse-prompts.js';
 
@@ -408,16 +415,20 @@ test(
     const workspaceId = 'workspace-1';
     const runtimeTaskId = harnessRuntimeId(workspaceId, taskId);
     const contentHash = 'f'.repeat(64);
+    const startedRequests: HarnessWorkflowInput[] = [];
+    let promptFailure: Error | undefined;
     await store.applySchema();
     const admission = new HarnessTaskAdmissionService(
       store,
       {
-        async start({ workflowId }) {
+        async start({ workflowId, request }) {
+          startedRequests.push(structuredClone(request));
           return { workflowId };
         },
       },
       {
         async resolve() {
+          if (promptFailure) throw promptFailure;
           const prompts = Object.fromEntries(
             Object.entries(HARNESS_LANGFUSE_PROMPT_NAMES).map(([key, name]) => [
               key,
@@ -464,6 +475,20 @@ test(
         ...taskRequest(taskId),
         workspaceId,
       });
+      promptFailure = new Error('Langfuse unavailable after admission');
+      assert.equal(
+        (
+          await admission.submit({
+            ...taskRequest(taskId),
+            workspaceId,
+          })
+        ).replayed,
+        true,
+      );
+      assert.equal(
+        startedRequests[1]?.prompts?.intentNaming.content,
+        'private builtin prompt content',
+      );
       const audit = await pool.query<{
         event_type: string;
         payload: Record<string, unknown>;
@@ -485,6 +510,15 @@ test(
         version: 'builtin-v1',
         contentHash,
         fallbackReason: 'request_failed',
+        prompt: {
+          name: 'harness/intent-naming',
+          version: 'builtin-v1',
+          contentHash,
+          label: 'production',
+          source: 'builtin',
+          isFallback: true,
+          fallbackReason: 'request_failed',
+        },
       });
       assert.equal(
         JSON.stringify(audit.rows[0]?.payload).includes(
@@ -506,6 +540,199 @@ test(
       );
       await pool.query(
         'delete from harness_runtime.task_requests where task_id=$1',
+        [runtimeTaskId],
+      );
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'detached prompt audit reaches PostgreSQL and outbox without a Harness task request',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresHarnessStore(pool);
+    const suffix = randomUUID();
+    const workspaceId = `prompt-audit-${suffix}`;
+    const workflowId = `canvas-text-${suffix}`;
+    const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
+    const contentHash = 'd'.repeat(64);
+    await store.applySchema();
+
+    try {
+      await store.appendPromptAudit({
+        workspaceId,
+        id: `audit-${workflowId}-prompt-fallback-textResponse-${contentHash}`,
+        workflowId,
+        stage: 'prompt_resolution',
+        eventType: 'langfuse_prompt_fallback',
+        payload: {
+          promptKey: 'textResponse',
+          prompt: {
+            name: 'harness/text-response',
+            version: 'builtin-v1',
+            content: 'private prompt content',
+            contentHash,
+            label: 'production',
+            source: 'builtin',
+            isFallback: false,
+            fallbackReason: 'request_failed',
+          },
+          untrusted: 'must not persist',
+        },
+      } as Parameters<PostgresHarnessStore['appendPromptAudit']>[0]);
+
+      const persisted = await pool.query<{
+        event_type: string;
+        payload: Record<string, unknown>;
+        outbox_status: string;
+        task_request_count: number;
+      }>(
+        `select audit.event_type,
+                audit.payload,
+                outbox.status as outbox_status,
+                (select count(*)::int
+                   from harness_runtime.task_requests request
+                  where request.runtime_id=$1) as task_request_count
+           from harness_runtime.audit_events audit
+           join harness_runtime.langfuse_outbox outbox
+             on outbox.audit_id=audit.id
+          where audit.workflow_id=$1
+            and audit.event_type='langfuse_prompt_fallback'`,
+        [runtimeWorkflowId],
+      );
+      assert.equal(persisted.rowCount, 1);
+      assert.equal(persisted.rows[0]?.outbox_status, 'queued');
+      assert.equal(persisted.rows[0]?.task_request_count, 0);
+      assert.equal(
+        JSON.stringify(persisted.rows[0]?.payload).includes(
+          'private prompt content',
+        ),
+        false,
+      );
+      assert.deepEqual(persisted.rows[0]?.payload, {
+        promptKey: 'textResponse',
+        prompt: {
+          name: 'harness/text-response',
+          version: 'builtin-v1',
+          contentHash,
+          label: 'production',
+          source: 'builtin',
+          isFallback: true,
+          fallbackReason: 'request_failed',
+        },
+      });
+    } finally {
+      await pool.query(
+        `delete from harness_runtime.langfuse_outbox
+          where audit_id in (
+            select id from harness_runtime.audit_events
+             where workflow_id=$1)`,
+        [runtimeWorkflowId],
+      );
+      await pool.query(
+        'delete from harness_runtime.audit_events where workflow_id=$1',
+        [runtimeWorkflowId],
+      );
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'local Langfuse HTTP 503 persists pilot fallbacks before Harness workflow start',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async (t) => {
+    let promptRequests = 0;
+    const server = createServer((_request, response) => {
+      promptRequests += 1;
+      response.writeHead(503, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ error: 'local test outage' }));
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    t.after(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          server.close((error) => (error ? reject(error) : resolve()));
+        }),
+    );
+    const { port } = server.address() as AddressInfo;
+    const pool = new Pool({ connectionString });
+    const store = new PostgresHarnessStore(pool);
+    const suffix = randomUUID();
+    const workspaceId = `prompt-503-${suffix}`;
+    const taskId = `prompt-503-task-${suffix}`;
+    const runtimeTaskId = harnessRuntimeId(workspaceId, taskId);
+    const promptCount = Object.keys(HARNESS_LANGFUSE_PROMPT_NAMES).length;
+    let workflowStarts = 0;
+    await store.applySchema();
+    const admission = new HarnessTaskAdmissionService(
+      store,
+      {
+        async start({ workflowId }) {
+          const persisted = await pool.query<{
+            outbox_status: string;
+            payload: Record<string, unknown>;
+          }>(
+            `select outbox.status as outbox_status, audit.payload
+               from harness_runtime.audit_events audit
+               join harness_runtime.langfuse_outbox outbox
+                 on outbox.audit_id=audit.id
+              where audit.workflow_id=$1
+                and audit.event_type='langfuse_prompt_fallback'
+              order by audit.id`,
+            [runtimeTaskId],
+          );
+          assert.equal(persisted.rowCount, promptCount);
+          for (const row of persisted.rows) {
+            assert.equal(row.outbox_status, 'queued');
+            const prompt = row.payload.prompt as Record<string, unknown>;
+            assert.equal(Object.hasOwn(prompt, 'content'), false);
+            assert.equal(prompt.source, 'builtin');
+            assert.equal(prompt.isFallback, true);
+            assert.equal(prompt.fallbackReason, 'http_503');
+          }
+          workflowStarts += 1;
+          return { workflowId };
+        },
+      },
+      new LangfuseHarnessPromptResolver({
+        baseUrl: `http://127.0.0.1:${port}`,
+        publicKey: 'pk-local-503',
+        secretKey: 'sk-local-503',
+        policy: 'pilot',
+        versions: Object.fromEntries(
+          Object.keys(HARNESS_LANGFUSE_PROMPT_NAMES).map((key) => [key, 9]),
+        ),
+        warn() {},
+      }),
+      store,
+    );
+
+    try {
+      const result = await admission.submit({
+        ...taskRequest(taskId),
+        workspaceId,
+      });
+      assert.deepEqual(result, { workflowId: taskId, replayed: false });
+      assert.equal(promptRequests, promptCount);
+      assert.equal(workflowStarts, 1);
+    } finally {
+      await pool.query(
+        `delete from harness_runtime.langfuse_outbox
+          where audit_id in (
+            select id from harness_runtime.audit_events
+             where workflow_id=$1)`,
+        [runtimeTaskId],
+      );
+      await pool.query(
+        'delete from harness_runtime.audit_events where workflow_id=$1',
+        [runtimeTaskId],
+      );
+      await pool.query(
+        'delete from harness_runtime.task_requests where runtime_id=$1',
         [runtimeTaskId],
       );
       await pool.end();

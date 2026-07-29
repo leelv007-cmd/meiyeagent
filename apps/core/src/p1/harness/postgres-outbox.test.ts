@@ -4,6 +4,32 @@ import type { Pool } from 'pg';
 
 import { PostgresHarnessStore } from './postgres-store.js';
 
+test('Harness schema migration stays inside the shared advisory-lock transaction', async () => {
+  const statements: string[] = [];
+  const client = {
+    async query(statement: string) {
+      statements.push(statement);
+      return { rows: [], rowCount: 0 };
+    },
+    release() {},
+  };
+  const pool = {
+    async connect() {
+      return client;
+    },
+    async query() {
+      throw new Error('schema migration escaped the advisory-lock client');
+    },
+  } as unknown as Pool;
+
+  await new PostgresHarnessStore(pool).applySchema();
+
+  assert.equal(statements[0], 'BEGIN');
+  assert.match(statements[1] ?? '', /pg_advisory_xact_lock/u);
+  assert.match(statements[2] ?? '', /create schema if not exists harness_runtime/u);
+  assert.equal(statements.at(-1), 'COMMIT');
+});
+
 test('Langfuse outbox schema has terminal dead-letter states and claim cap', async () => {
   const statements: string[] = [];
   const pool = {
@@ -14,7 +40,7 @@ test('Langfuse outbox schema has terminal dead-letter states and claim cap', asy
   } as unknown as Pool;
   const store = new PostgresHarnessStore(pool);
 
-  await store.applySchema();
+  await store.migrate(pool as unknown as import('pg').PoolClient);
   const schema = statements[0] ?? '';
   assert.match(schema, /'dead_letter'/u);
   assert.match(schema, /'discarded'/u);

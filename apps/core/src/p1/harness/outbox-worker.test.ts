@@ -2,10 +2,42 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  HarnessLangfuseOutboxLoop,
   HarnessLangfuseOutboxWorker,
   type HarnessLangfuseOutboxStore,
 } from './outbox-worker.js';
 import type { AdminConfigRepository } from '../admin-config/foundation-module.js';
+
+test('one prompt outbox loop starts once and never overlaps delivery', async () => {
+  let calls = 0;
+  let releaseFirst: (() => void) | undefined;
+  const firstRun = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  const loop = new HarnessLangfuseOutboxLoop(
+    {
+      async runOnce() {
+        calls += 1;
+        if (calls === 1) await firstRun;
+        return { sent: 0, failed: 0, deadLettered: 0 };
+      },
+    },
+    { pollMs: 60_000 },
+  );
+
+  loop.start();
+  loop.start();
+  await Promise.resolve();
+  assert.equal(calls, 1);
+  assert.equal(await loop.runOnce(), false);
+
+  releaseFirst?.();
+  await firstRun;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(await loop.runOnce(), true);
+  assert.equal(calls, 2);
+  loop.stop();
+});
 
 test('Langfuse failure leaves the audit queued for compensation', async () => {
   const store = new MemoryOutboxStore();

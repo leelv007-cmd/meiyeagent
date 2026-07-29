@@ -15,7 +15,10 @@ import {
 } from '../execution-spine/creation-execution-snapshot.js';
 import type { CreationSubmissionRecord } from '../execution-spine/submission-coordinator.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
-import { promptRevisionReferences } from './langfuse-prompts.js';
+import {
+  promptRevisionReferences,
+  promptTraceReference,
+} from './langfuse-prompts.js';
 import type {
   HarnessFrozenPrompts,
   HarnessPromptResolver,
@@ -69,6 +72,20 @@ export const harnessTaskRequestSchema = harnessTaskSubmissionSchema
   .strict();
 
 export interface HarnessTaskRequestRegistry {
+  lookup?(input: {
+    taskId: string;
+    fingerprint: string;
+    request: HarnessWorkflowInput;
+  }): Promise<
+    | {
+        kind: 'existing';
+        workflowId: string;
+        runtimeId?: string;
+        request: HarnessWorkflowInput;
+      }
+    | { kind: 'conflict' }
+    | null
+  >;
   claim(input: {
     taskId: string;
     fingerprint: string;
@@ -79,7 +96,7 @@ export interface HarnessTaskRequestRegistry {
         kind: 'existing';
         workflowId: string;
         runtimeId?: string;
-        request?: HarnessWorkflowInput;
+        request: HarnessWorkflowInput;
       }
     | { kind: 'conflict' }
   >;
@@ -106,6 +123,7 @@ export interface HarnessPromptFallbackAuditPort {
       version: string;
       contentHash: string;
       fallbackReason: string;
+      prompt: HarnessPromptRevisionReference;
     };
   }): Promise<void>;
 }
@@ -116,6 +134,7 @@ export class HarnessAdmissionError extends Error {
   constructor(
     readonly code:
       | 'EXECUTION_SNAPSHOT_MISMATCH'
+      | 'FROZEN_REQUEST_MISSING'
       | 'REQUEST_FINGERPRINT_CONFLICT',
     message: string,
   ) {
@@ -134,6 +153,15 @@ export class HarnessTaskAdmissionService {
 
   async submit(input: HarnessTaskRequest) {
     const normalized = normalizeRequest(input);
+    const fingerprint = fingerprintValue(normalized);
+    const existing = await this.registry.lookup?.({
+      taskId: input.taskId,
+      fingerprint,
+      request: normalized,
+    });
+    if (existing) {
+      return this.resumeExisting(existing);
+    }
     let request = normalized;
     if (this.prompts) {
       const prompts = await this.prompts.resolve();
@@ -145,7 +173,7 @@ export class HarnessTaskAdmissionService {
     }
     const claim = await this.registry.claim({
       taskId: input.taskId,
-      fingerprint: fingerprintValue(normalized),
+      fingerprint,
       request,
     });
     if (claim.kind === 'conflict') {
@@ -155,17 +183,7 @@ export class HarnessTaskAdmissionService {
       );
     }
     if (claim.kind === 'existing') {
-      const frozenRequest = claim.request ?? request;
-      await this.recordPromptFallbackAudits(
-        claim.workflowId,
-        frozenRequest,
-      );
-      const handle = await this.starter.start({
-        workflowId: claim.workflowId,
-        request: frozenRequest,
-        ...(claim.runtimeId ? { runtimeId: claim.runtimeId } : {}),
-      });
-      return { workflowId: handle.workflowId, replayed: true as const };
+      return this.resumeExisting(claim);
     }
     await this.recordPromptFallbackAudits(input.taskId, request);
     const handle = await this.starter.start({
@@ -173,6 +191,38 @@ export class HarnessTaskAdmissionService {
       request,
     });
     return { workflowId: handle.workflowId, replayed: false as const };
+  }
+
+  private async resumeExisting(
+    claim:
+      | {
+          kind: 'existing';
+          workflowId: string;
+          runtimeId?: string;
+          request: HarnessWorkflowInput;
+        }
+      | { kind: 'conflict' },
+  ) {
+    if (claim.kind === 'conflict') {
+      throw new HarnessAdmissionError(
+        'REQUEST_FINGERPRINT_CONFLICT',
+        'Task ID was reused with a different harness request payload.',
+      );
+    }
+    if (!claim.request) {
+      throw new HarnessAdmissionError(
+        'FROZEN_REQUEST_MISSING',
+        'Accepted task replay is missing its frozen harness request.',
+      );
+    }
+    const frozenRequest = claim.request;
+    await this.recordPromptFallbackAudits(claim.workflowId, frozenRequest);
+    const handle = await this.starter.start({
+      workflowId: claim.workflowId,
+      request: frozenRequest,
+      ...(claim.runtimeId ? { runtimeId: claim.runtimeId } : {}),
+    });
+    return { workflowId: handle.workflowId, replayed: true as const };
   }
 
   private async recordPromptFallbackAudits(
@@ -196,6 +246,7 @@ export class HarnessTaskAdmissionService {
           version: prompt.version,
           contentHash: prompt.contentHash,
           fallbackReason: prompt.fallbackReason ?? 'unknown',
+          prompt: promptTraceReference(prompt)!,
         },
       });
     }

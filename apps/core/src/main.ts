@@ -188,7 +188,10 @@ import {
 } from './p1/harness/decision-service.js';
 import { HarnessDbosWorkflowEventReader } from './p1/harness/dbos-workflow-events.js';
 import { HarnessBillingCompensationWorker } from './p1/harness/billing-compensation.js';
-import { HarnessLangfuseOutboxWorker } from './p1/harness/outbox-worker.js';
+import {
+  HarnessLangfuseOutboxLoop,
+  HarnessLangfuseOutboxWorker,
+} from './p1/harness/outbox-worker.js';
 import { langfuseSenderFromEnv } from './p1/harness/langfuse-sender.js';
 import {
   assertLangfusePromptRuntimePolicy,
@@ -466,9 +469,15 @@ const supplyPlanningControlPlane = new PostgresSupplyPlanningControlPlane(
   pool,
   PLATFORM_SUPPLY_SCOPE_ID,
 );
+const promptAuditStore = new PostgresHarnessStore(
+  pool,
+  storeFactLedger,
+  adminConfigRepository,
+);
 await migratePostgresSchema(pool, [
   adminConfigRepository,
   integrationRepository,
+  promptAuditStore,
   skillRepository,
   supplyControlRepository,
   new PostgresCapabilityHotAssemblyMigration(),
@@ -725,6 +734,7 @@ const p1ModelSupplyRuntime = createModelSupplyRuntime({
       },
     ),
     providerAdmission: modelSupplyProviderAdmission,
+    promptAudits: promptAuditStore,
     promptResolver: modelSupplyPromptResolver,
     referenceAssets,
     resultSink: modelSupplyRepository,
@@ -811,6 +821,7 @@ const legacyModelSupplyRuntime = createModelSupplyRuntime({
   application: {
     assetStorage,
     execution: gatedModelExecution,
+    promptAudits: promptAuditStore,
     promptResolver: modelSupplyPromptResolver,
     resultSink: modelSupplyRepository,
   },
@@ -1319,12 +1330,7 @@ let composerDestinationMapper: ComposerDestinationMappingPort | undefined;
 let composerSubmissionCoordinator: CreationSubmissionCoordinator | undefined;
 // Pending-actions is an unconditional platform service (Z2-WIRING / #94 handoff).
 // Harness questions need the harness_runtime schema; approvals come from operations.
-const pendingActionsQuestionStore = new PostgresHarnessStore(
-  pool,
-  undefined,
-  adminConfigRepository,
-);
-await pendingActionsQuestionStore.applySchema();
+const pendingActionsQuestionStore = promptAuditStore;
 if (harnessRuntimeConfig) {
   assertPendingActionsShareDatabase({
     approvalRequestsDatabaseUrl: databaseUrl,
@@ -1676,6 +1682,21 @@ let harnessWorkflowEventSource: HarnessWorkflowEventSource | undefined;
 let harnessCompensationInterval: ReturnType<typeof setInterval> | undefined;
 let expirationInvalidationInterval: ReturnType<typeof setInterval> | undefined;
 let expirationInvalidationRunning = false;
+const promptOutboxWorker = new HarnessLangfuseOutboxWorker(
+  promptAuditStore,
+  langfuseSenderFromEnv(process.env),
+  { config: adminConfigRepository },
+);
+const promptOutboxLoop = new HarnessLangfuseOutboxLoop(
+  promptOutboxWorker,
+  {
+    onError(error) {
+      console.error('Langfuse prompt outbox iteration failed.', error);
+    },
+    pollMs: Number(process.env.HARNESS_COMPENSATION_POLL_MS ?? 1_000),
+  },
+);
+promptOutboxLoop.start();
 const expirationInvalidationWorkerId =
   process.env.P1_FACT_EXPIRATION_WORKER_ID ?? `core-${randomUUID()}`;
 const runExpirationInvalidation = async () => {
@@ -1715,6 +1736,7 @@ if (harnessRuntimeConfig) {
         );
       },
     },
+    promptAuditStore,
   );
   // Reuse the unconditionally applied pending-actions harness store for DBOS.
   const harnessStore = pendingActionsQuestionStore;
@@ -1921,11 +1943,6 @@ if (harnessRuntimeConfig) {
   harnessWorkflowEventSource = new HarnessWorkflowEventSource(
     new HarnessDbosWorkflowEventReader(harnessStore),
   );
-  const outboxWorker = new HarnessLangfuseOutboxWorker(
-    harnessStore,
-    langfuseSenderFromEnv(process.env),
-    { config: adminConfigRepository },
-  );
   const resumeReconciler = new HarnessResumeReconciler(
     new PostgresHarnessResumeReconcilerStore(pool),
     workflowResumer,
@@ -1940,7 +1957,6 @@ if (harnessRuntimeConfig) {
     compensationRunning = true;
     try {
       const results = await Promise.allSettled([
-        outboxWorker.runOnce(),
         resumeReconciler.runOnce(),
         billingCompensationWorker.runOnce(),
       ]);
@@ -2120,6 +2136,7 @@ const shutdown = () => {
     clearInterval(expirationInvalidationInterval);
   }
   if (harnessCompensationInterval) clearInterval(harnessCompensationInterval);
+  promptOutboxLoop.stop();
   void shutdownCoreRuntime({
     closeHttp: () => closeHttpServerWithDeadline(server, 5_000),
     shutdownDbos: () =>

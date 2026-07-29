@@ -1,6 +1,7 @@
 /**
  * S2a behavior-preserving extract: route / simulation contracts.
  */
+import { createHash } from 'node:crypto';
 import type {
 	Acceptance,
 	AdvancedCanvasGenerationOrigin,
@@ -34,6 +35,12 @@ export const LANGUAGE_MODEL_PROMPT_NAME_BY_OPERATION = {
   'text.respond': 'harness/text-response',
 } as const satisfies Record<LanguageModelOperation, string>;
 
+export const LANGUAGE_MODEL_PROMPT_KEY_BY_OPERATION = {
+  'copy.generate': 'copyGeneration',
+  'copy.adapt': 'platformAdaptation',
+  'text.respond': 'textResponse',
+} as const satisfies Record<LanguageModelOperation, string>;
+
 export interface ModelSupplyPromptBinding {
   name: string;
   version: string;
@@ -50,11 +57,72 @@ export type ModelSupplyPromptReference = Omit<
   'content'
 >;
 
+export function assertModelSupplyPromptBinding(
+  binding: ModelSupplyPromptBinding,
+  expectedName: string,
+) {
+  if (binding.name !== expectedName) {
+    throw new Error(
+      `Prompt binding ${binding.name} does not match ${expectedName}.`,
+    );
+  }
+  if (!binding.version.trim() || !binding.content.trim()) {
+    throw new Error('Prompt binding requires a version and content.');
+  }
+  const contentHash = createHash('sha256')
+    .update(binding.content)
+    .digest('hex');
+  if (contentHash !== binding.contentHash) {
+    throw new Error('Prompt binding content hash does not match its content.');
+  }
+}
+
+export function promptFallbackAuditId(input: {
+  workspaceId: string;
+  idempotencyKey: string;
+  promptKey: string;
+  prompt: ModelSupplyPromptReference;
+}) {
+  const fingerprint = createHash('sha256')
+    .update(
+      JSON.stringify({
+        workspaceId: input.workspaceId,
+        idempotencyKey: input.idempotencyKey,
+        promptKey: input.promptKey,
+        name: input.prompt.name,
+        version: input.prompt.version,
+        contentHash: input.prompt.contentHash,
+        label: input.prompt.label,
+        source: input.prompt.source,
+        fallbackReason: input.prompt.fallbackReason ?? null,
+      }),
+    )
+    .digest('hex');
+  return `audit-prompt-fallback-${fingerprint}`;
+}
+
 export interface ModelSupplyPromptResolver {
   resolve(input: {
     operation: LanguageModelOperation;
     workspaceId: string;
   }): Promise<ModelSupplyPromptBinding>;
+}
+
+export interface ModelSupplyPromptFallbackAuditEvent {
+  workspaceId: string;
+  id: string;
+  workflowId: string;
+  stage: 'prompt_resolution';
+  eventType: 'langfuse_prompt_fallback';
+  payload: {
+    promptKey: string;
+    prompt: ModelSupplyPromptReference;
+    operation?: LanguageModelOperation | 'destination.map';
+  };
+}
+
+export interface ModelSupplyPromptAuditPort {
+  appendPromptAudit(event: ModelSupplyPromptFallbackAuditEvent): Promise<void>;
 }
 
 export interface ModelSupplySubmission {

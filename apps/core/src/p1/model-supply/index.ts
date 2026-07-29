@@ -48,10 +48,14 @@ export {
   type PersistedCustodyOwnedAsset,
 } from './supply-contracts.js';
 export {
+  assertModelSupplyPromptBinding,
+  LANGUAGE_MODEL_PROMPT_KEY_BY_OPERATION,
   LANGUAGE_MODEL_PROMPT_NAME_BY_OPERATION,
   type RequestedSelection,
   type LanguageModelOperation,
   type ModelSupplyPromptBinding,
+  type ModelSupplyPromptAuditPort,
+  type ModelSupplyPromptFallbackAuditEvent,
   type ModelSupplyPromptReference,
   type ModelSupplyPromptResolver,
   type ModelSupplySubmission,
@@ -114,6 +118,7 @@ import {
 } from './supply-contracts.js';
 import type {
   LanguageModelOperation,
+  ModelSupplyPromptAuditPort,
   ModelSupplyPromptResolver,
   ModelSupplyRouteSimulation,
   ModelSupplyRouteSimulationInput,
@@ -124,7 +129,12 @@ import type {
   RouteCandidateEvaluation,
   RouteSnapshot,
 } from './route-contracts.js';
-import { LANGUAGE_MODEL_PROMPT_NAME_BY_OPERATION } from './route-contracts.js';
+import {
+  assertModelSupplyPromptBinding,
+  LANGUAGE_MODEL_PROMPT_KEY_BY_OPERATION,
+  LANGUAGE_MODEL_PROMPT_NAME_BY_OPERATION,
+  promptFallbackAuditId,
+} from './route-contracts.js';
 import {
   copyCandidateBodiesAreDistinct,
   type CancelledMediaProviderTerminalReconciliation,
@@ -456,17 +466,7 @@ function assertPromptBinding(
   binding: NonNullable<ModelSupplySubmission['promptBinding']>,
 ) {
   const expectedName = LANGUAGE_MODEL_PROMPT_NAME_BY_OPERATION[operation];
-  if (binding.name !== expectedName) {
-    throw new Error(
-      `Prompt ${binding.name} cannot bind ${operation}; expected ${expectedName}.`,
-    );
-  }
-  if (!binding.version.trim() || !binding.content.trim()) {
-    throw new Error('Prompt binding requires a version and content.');
-  }
-  if (hash(binding.content) !== binding.contentHash) {
-    throw new Error('Prompt binding content hash does not match its content.');
-  }
+  assertModelSupplyPromptBinding(binding, expectedName);
 }
 
 function canonicalPromptBinding(
@@ -856,6 +856,7 @@ export class ModelSupplyApplicationService {
   };
   private readonly providerAdmission?: ModelSupplyProviderAdmissionPort;
   private readonly promptResolver?: ModelSupplyPromptResolver;
+  private readonly promptAudits?: ModelSupplyPromptAuditPort;
   private readonly preparedPromptBindings = new Map<
     string,
     ModelSupplySubmission['promptBinding']
@@ -876,6 +877,7 @@ export class ModelSupplyApplicationService {
     submissionGate?: { blocksNewSubmission(): Promise<boolean> };
     providerAdmission?: ModelSupplyProviderAdmissionPort;
     promptResolver?: ModelSupplyPromptResolver;
+    promptAudits?: ModelSupplyPromptAuditPort;
   }) {
     for (const model of options.models) this.modelById.set(model.id, model);
     this.runtimeCapabilities = options.runtimeCapabilities
@@ -898,6 +900,7 @@ export class ModelSupplyApplicationService {
     this.submissionGate = options.submissionGate;
     this.providerAdmission = options.providerAdmission;
     this.promptResolver = options.promptResolver;
+    this.promptAudits = options.promptAudits;
   }
 
   attempts() {
@@ -1449,7 +1452,12 @@ export class ModelSupplyApplicationService {
       ) {
         throw new Error('Idempotency key conflicts with a different prompt binding.');
       }
-      return { ...submission, promptBinding: structuredClone(prepared) };
+      const frozenSubmission = {
+        ...submission,
+        promptBinding: structuredClone(prepared),
+      };
+      await this.recordPromptFallback(frozenSubmission);
+      return frozenSubmission;
     }
     const promptBinding =
       submission.promptBinding ??
@@ -1461,10 +1469,43 @@ export class ModelSupplyApplicationService {
     assertPromptBinding(submission.operation, promptBinding);
     const frozen = structuredClone(promptBinding);
     this.preparedPromptBindings.set(key, frozen);
-    return {
+    const frozenSubmission = {
       ...submission,
       promptBinding: structuredClone(frozen),
     };
+    await this.recordPromptFallback(frozenSubmission);
+    return frozenSubmission;
+  }
+
+  private async recordPromptFallback(submission: ModelSupplySubmission) {
+    if (
+      !this.promptAudits ||
+      !isLanguageModelOperation(submission.operation) ||
+      !submission.promptBinding?.isFallback
+    ) {
+      return;
+    }
+    const promptKey =
+      LANGUAGE_MODEL_PROMPT_KEY_BY_OPERATION[submission.operation];
+    const workflowId = submission.idempotencyKey;
+    const prompt = promptReferenceFromBinding(submission.promptBinding);
+    await this.promptAudits.appendPromptAudit({
+      workspaceId: submission.workspaceId,
+      id: promptFallbackAuditId({
+        workspaceId: submission.workspaceId,
+        idempotencyKey: submission.idempotencyKey,
+        promptKey,
+        prompt,
+      }),
+      workflowId,
+      stage: 'prompt_resolution',
+      eventType: 'langfuse_prompt_fallback',
+      payload: {
+        promptKey,
+        prompt,
+        operation: submission.operation,
+      },
+    });
   }
 
   executeStructuredObject<Output>(

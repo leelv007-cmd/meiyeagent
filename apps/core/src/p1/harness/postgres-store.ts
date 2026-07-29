@@ -11,6 +11,10 @@ import {
 } from '@meiye/contracts';
 import type { Pool, PoolClient } from 'pg';
 import { createHash } from 'node:crypto';
+import {
+  migratePostgresSchema,
+  type PostgresSchemaMigrator,
+} from '../../postgres-schema-migration.js';
 
 import { buildContentPackage } from '../operations/content-package.js';
 import {
@@ -20,6 +24,7 @@ import {
 import { PostgresStoreFactLedger } from '../operations/postgres-store-fact-ledger.js';
 import { TaskBlockingNodeConflictError } from '../operations/repository.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
+import type { ModelSupplyPromptFallbackAuditEvent } from '../model-supply/route-contracts.js';
 import { buildCopyPlatformVariants } from './output-compiler.js';
 import type { VisibleClaimExtraction } from './policy-gates.js';
 
@@ -74,7 +79,10 @@ export class HarnessDeliveryError extends Error {
 }
 
 export class PostgresHarnessStore
-  implements HarnessTaskRequestRegistry, HarnessDecisionStore
+  implements
+    HarnessTaskRequestRegistry,
+    HarnessDecisionStore,
+    PostgresSchemaMigrator
 {
   constructor(
     private readonly pool: Pool,
@@ -87,7 +95,11 @@ export class PostgresHarnessStore
   ) {}
 
   async applySchema() {
-    await this.pool.query(`
+    await migratePostgresSchema(this.pool, [this]);
+  }
+
+  async migrate(client: PoolClient) {
+    await client.query(`
       create schema if not exists harness_runtime;
 
       create table if not exists harness_runtime.task_requests (
@@ -271,6 +283,49 @@ export class PostgresHarnessStore
     } finally {
       client.release();
     }
+  }
+
+  async lookup(input: {
+    taskId: string;
+    fingerprint: string;
+    request: HarnessWorkflowInput;
+  }) {
+    const runtimeTaskId = harnessRuntimeId(
+      input.request.workspaceId,
+      input.taskId,
+    );
+    const existing = await this.pool.query<{
+      workflow_id: string;
+      runtime_id: string;
+      fingerprint: string;
+      request: unknown;
+    }>(
+      `select workflow_id, runtime_id, fingerprint, request
+       from harness_runtime.task_requests
+       where request->>'workspaceId'=$1
+         and (task_id=$2 or workflow_id=$3)
+       order by created_at, task_id
+       limit 1`,
+      [input.request.workspaceId, runtimeTaskId, input.taskId],
+    );
+    const row = existing.rows[0];
+    if (!row) return null;
+    const { factScope: _factScope, ...legacyRequest } = input.request;
+    const legacyScopeCompatible =
+      input.request.factScope?.storeId === input.request.workspaceId &&
+      input.request.factScope.serviceId === undefined &&
+      input.request.factScope.personaId === undefined &&
+      input.request.factScope.platform === undefined;
+    return row.fingerprint === input.fingerprint ||
+      (legacyScopeCompatible &&
+        row.fingerprint === fingerprintValue(legacyRequest))
+      ? {
+          kind: 'existing' as const,
+          workflowId: row.workflow_id,
+          runtimeId: row.runtime_id,
+          request: row.request as HarnessWorkflowInput,
+        }
+      : { kind: 'conflict' as const };
   }
 
   async taskBelongsToWorkspace(taskId: string, workspaceId: string) {
@@ -903,6 +958,48 @@ export class PostgresHarnessStore
     try {
       await client.query('begin');
       await this.writeAuditAndOutbox(client, event, runtimeWorkflowId);
+      await client.query('commit');
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async appendPromptAudit(event: ModelSupplyPromptFallbackAuditEvent) {
+    const runtimeWorkflowId = harnessRuntimeId(
+      event.workspaceId,
+      event.workflowId,
+    );
+    const safeEvent: HarnessAuditEvent = {
+      workspaceId: event.workspaceId,
+      id: event.id,
+      workflowId: event.workflowId,
+      stage: 'prompt_resolution',
+      eventType: 'langfuse_prompt_fallback',
+      payload: {
+        promptKey: event.payload.promptKey,
+        prompt: {
+          name: event.payload.prompt.name,
+          version: event.payload.prompt.version,
+          contentHash: event.payload.prompt.contentHash,
+          label: event.payload.prompt.label,
+          source: event.payload.prompt.source,
+          isFallback: true,
+          ...(event.payload.prompt.fallbackReason
+            ? { fallbackReason: event.payload.prompt.fallbackReason }
+            : {}),
+        },
+        ...(event.payload.operation
+          ? { operation: event.payload.operation }
+          : {}),
+      },
+    };
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      await this.writeAuditAndOutbox(client, safeEvent, runtimeWorkflowId);
       await client.query('commit');
     } catch (error) {
       await client.query('rollback');

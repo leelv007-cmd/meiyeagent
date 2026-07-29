@@ -71,7 +71,7 @@ test('workflow id is the task id and request fingerprint is canonical', async ()
   });
 
   assert.equal(starter.workflowIds[0], 'task-35');
-  assert.equal(registry.claims[0]?.fingerprint, registry.claims[1]?.fingerprint);
+  assert.equal(registry.claims[0]?.fingerprint, registry.lookups[1]?.fingerprint);
 });
 
 test('Composer execution snapshots cannot be submitted under another task envelope', async () => {
@@ -179,7 +179,51 @@ test('accepted task keeps its frozen prompt while only a new task observes a pub
     starter.requests.map((request) => request.promptRevisionRefs?.intentNaming?.version),
     ['7', '7', '8', '8', '6'],
   );
-  assert.equal(registry.claims[0]?.fingerprint, registry.claims[1]?.fingerprint);
+  assert.equal(registry.claims[0]?.fingerprint, registry.lookups[1]?.fingerprint);
+});
+
+test('accepted task replay reads the frozen request before prompt resolution', async () => {
+  const registry = new MemoryRequestRegistry();
+  const starter = new RecordingStarter();
+  const resolver = new MutablePromptResolver();
+  const service = new HarnessTaskAdmissionService(registry, starter, resolver);
+
+  await service.submit(taskRequest());
+  resolver.failure = new Error('Langfuse unavailable');
+
+  const replay = await service.submit(taskRequest());
+
+  assert.deepEqual(replay, { workflowId: 'task-35', replayed: true });
+  assert.equal(resolver.calls, 1);
+  assert.equal(starter.requests[1]?.prompts?.intentNaming.version, '7');
+});
+
+test('accepted task replay fails closed when the registry omits its frozen request', async () => {
+  const registry = {
+    async lookup() {
+      return {
+        kind: 'existing' as const,
+        workflowId: 'task-35',
+      };
+    },
+    async claim() {
+      throw new Error('claim must not run for an accepted task');
+    },
+  } as unknown as HarnessTaskRequestRegistry;
+  const resolver = new MutablePromptResolver();
+  const service = new HarnessTaskAdmissionService(
+    registry,
+    new RecordingStarter(),
+    resolver,
+  );
+
+  await assert.rejects(
+    service.submit(taskRequest()),
+    (error: unknown) =>
+      error instanceof HarnessAdmissionError &&
+      error.code === 'FROZEN_REQUEST_MISSING',
+  );
+  assert.equal(resolver.calls, 0);
 });
 
 test('prompt fallback is persisted through the first-party audit port', async () => {
@@ -237,6 +281,15 @@ test('prompt fallback is persisted through the first-party audit port', async ()
         version: 'builtin-v1',
         contentHash: fallback.contentHash,
         fallbackReason: 'request_failed',
+        prompt: {
+          name: 'harness/intent-naming',
+          version: 'builtin-v1',
+          contentHash: fallback.contentHash,
+          label: 'production',
+          source: 'builtin',
+          isFallback: true,
+          fallbackReason: 'request_failed',
+        },
       },
       stage: 'prompt_resolution',
       workflowId: 'task-35',
@@ -251,8 +304,22 @@ test('prompt fallback is persisted through the first-party audit port', async ()
 
 class MemoryRequestRegistry implements HarnessTaskRequestRegistry {
   readonly claims: Array<{ taskId: string; fingerprint: string }> = [];
+  readonly lookups: Array<{ taskId: string; fingerprint: string }> = [];
   private readonly fingerprints = new Map<string, string>();
   private readonly requests = new Map<string, Parameters<HarnessTaskRequestRegistry['claim']>[0]['request']>();
+
+  async lookup(input: Parameters<NonNullable<HarnessTaskRequestRegistry['lookup']>>[0]) {
+    this.lookups.push(input);
+    const existing = this.fingerprints.get(input.taskId);
+    if (existing === undefined) return null;
+    if (existing !== input.fingerprint) return { kind: 'conflict' as const };
+    return {
+      kind: 'existing' as const,
+      workflowId: input.taskId,
+      runtimeId: `legacy-${input.taskId}`,
+      request: structuredClone(this.requests.get(input.taskId)!),
+    };
+  }
 
   async claim(input: Parameters<HarnessTaskRequestRegistry['claim']>[0]) {
     this.claims.push(input);
@@ -291,8 +358,12 @@ class RecordingStarter implements HarnessWorkflowStarter {
 
 class MutablePromptResolver implements HarnessPromptResolver {
   version = 7;
+  calls = 0;
+  failure?: Error;
 
   async resolve(): Promise<HarnessFrozenPrompts> {
+    this.calls += 1;
+    if (this.failure) throw this.failure;
     return Object.fromEntries(
       Object.entries(HARNESS_LANGFUSE_PROMPT_NAMES).map(([key, name]) => [
         key,

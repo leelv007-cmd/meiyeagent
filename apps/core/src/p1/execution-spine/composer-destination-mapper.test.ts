@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import type { ZodType } from 'zod';
 
@@ -61,6 +62,98 @@ test('destination mapping consumes the request-pinned prompt and does not swallo
     /pinned prompt unavailable/u,
   );
   assert.equal(executor.calls.length, 1);
+});
+
+test('destination mapping persists pilot fallback lineage before provider invocation', async () => {
+  const executor = new RecordingExecutor({
+    contentPackagePlatform: 'xiaohongshu',
+    distributionTarget: 'manual_copy',
+    status: 'mapped',
+  });
+  const audits: Array<Record<string, unknown>> = [];
+  const fallback = {
+    ...frozenPrompt('builtin:destination-mapping'),
+    version: 'builtin-v1',
+    source: 'builtin' as const,
+    isFallback: true,
+    fallbackReason: 'http_503',
+  };
+  const mapper = new StructuredComposerDestinationMapper(
+    executor,
+    {
+      async resolve() {
+        return fallback;
+      },
+    },
+    {
+      async appendPromptAudit(event) {
+        audits.push(
+          structuredClone(event) as unknown as Record<string, unknown>,
+        );
+      },
+    },
+  );
+
+  await mapper.map({
+    destination: '发到小红书，生成后手动复制',
+    idempotencyKey: 'destination-map-stable-1',
+    workspaceId: 'workspace-1',
+  });
+  await mapper.map({
+    destination: '发到小红书，生成后手动复制',
+    idempotencyKey: 'destination-map-stable-1',
+    workspaceId: 'workspace-1',
+  });
+
+  assert.equal(executor.calls[0]?.instructions, fallback.content);
+  assert.deepEqual(audits.map(({ eventType }) => eventType), [
+    'langfuse_prompt_fallback',
+    'langfuse_prompt_fallback',
+  ]);
+  assert.equal(audits[0]?.id, audits[1]?.id);
+  assert.equal(JSON.stringify(audits).includes(fallback.content), false);
+  assert.deepEqual(
+    (audits[0]?.payload as { prompt?: Record<string, unknown> }).prompt,
+    {
+      name: 'harness/destination-mapping',
+      version: 'builtin-v1',
+      contentHash: fallback.contentHash,
+      label: 'production',
+      source: 'builtin',
+      isFallback: true,
+      fallbackReason: 'http_503',
+    },
+  );
+});
+
+test('destination mapping rejects the wrong prompt name or content hash before provider I/O', async () => {
+  for (const prompt of [
+    {
+      ...frozenPrompt('wrong prompt name'),
+      name: 'harness/copy-generation',
+    },
+    {
+      ...frozenPrompt('wrong prompt hash'),
+      contentHash: 'f'.repeat(64),
+    },
+  ]) {
+    const executor = new RecordingExecutor({
+      contentPackagePlatform: 'xiaohongshu',
+      distributionTarget: 'manual_copy',
+      status: 'mapped',
+    });
+    const mapper = new StructuredComposerDestinationMapper(executor, {
+      async resolve() {
+        return prompt;
+      },
+    });
+
+    await assert.rejects(
+      mapper.map({ destination: '发到小红书，生成后手动复制' }),
+      /Prompt binding/u,
+    );
+    assert.equal(executor.calls.length, 0);
+  }
 });
 
 test('fixture Day-0 mappings cover Moments handoff and offline export without treating Moments as a variant', async () => {
@@ -157,7 +250,7 @@ function frozenPrompt(content: string) {
     name: 'harness/destination-mapping',
     version: '17',
     content,
-    contentHash: '1'.repeat(64),
+    contentHash: createHash('sha256').update(content).digest('hex'),
     label: 'production',
     source: 'langfuse' as const,
     isFallback: false,

@@ -10,6 +10,7 @@ import {
   RecordedProviderExecutionPort,
   type CatalogModel,
   type ModelDeployment,
+  type ModelSupplySubmission,
   type ProviderExecutionRequest,
   type ProviderExecutionResponse,
 } from './index.js';
@@ -268,6 +269,152 @@ test('direct language submissions freeze one resolved prompt binding before prov
     Object.hasOwn(result.snapshot.promptReference ?? {}, 'content'),
     false,
   );
+});
+
+test('direct language prompt fallbacks enter the Harness audit outbox without prompt content', async () => {
+  const languageModel: CatalogModel = {
+    id: 'all-language-operations',
+    modality: 'llm',
+    operations: ['copy.generate', 'copy.adapt', 'text.respond'],
+    displayName: 'All language operations',
+    qualityRank: 90,
+  };
+  const languageDeployment: ModelDeployment = {
+    id: 'all-language-operations-direct',
+    catalogModelId: languageModel.id,
+    apiFamily: 'openai',
+    channel: 'direct',
+    region: 'domestic',
+    status: 'active',
+  };
+  const audits: Array<Record<string, unknown>> = [];
+  let resolverCalls = 0;
+  const promptNames = {
+    'copy.generate': 'harness/copy-generation',
+    'copy.adapt': 'harness/platform-adaptation',
+    'text.respond': 'harness/text-response',
+  } as const;
+  const app = new ModelSupplyApplicationService({
+    models: [languageModel],
+    deployments: [languageDeployment],
+    execution: new RecordedProviderExecutionPort(),
+    promptResolver: {
+      async resolve({ operation }) {
+        resolverCalls += 1;
+        const content = `builtin:${operation}`;
+        return {
+          name: promptNames[operation],
+          version: 'builtin-v1',
+          content,
+          contentHash: contentHash(content),
+          label: 'production',
+          source: 'builtin',
+          isFallback: true,
+          fallbackReason: 'http_503',
+        };
+      },
+    },
+    promptAudits: {
+      async appendPromptAudit(event) {
+        audits.push(
+          structuredClone(event) as unknown as Record<string, unknown>,
+        );
+      },
+    },
+  });
+
+  for (const operation of [
+    'copy.generate',
+    'copy.adapt',
+    'text.respond',
+  ] as const) {
+    await app.submit({
+      workspaceId: 'workspace-direct-fallback',
+      actorId: 'owner-direct-fallback',
+      correlationId: `correlation-${operation}`,
+      idempotencyKey: `direct-fallback-${operation}`,
+      operation,
+      selection: { mode: 'fixed', catalogModelId: languageModel.id },
+      dataClass: [],
+      prompt: `Execute ${operation}.`,
+    });
+  }
+
+  assert.equal(resolverCalls, 3);
+  assert.equal(
+    audits.filter(({ eventType }) => eventType === 'langfuse_prompt_fallback')
+      .length,
+    3,
+  );
+  assert.equal(JSON.stringify(audits).includes('builtin:copy.generate'), false);
+  assert.deepEqual(
+    audits
+      .filter(({ eventType }) => eventType === 'langfuse_prompt_fallback')
+      .map(({ payload }) => (payload as { promptKey: string }).promptKey),
+    ['copyGeneration', 'platformAdaptation', 'textResponse'],
+  );
+});
+
+test('prompt fallback audit identity ignores correlation ids and includes frozen lineage', async () => {
+  const auditIdFor = async (
+    promptBinding: ModelSupplySubmission['promptBinding'],
+    correlationId: string,
+  ) => {
+    const audits: Array<{ id: string }> = [];
+    const app = new ModelSupplyApplicationService({
+      models,
+      deployments,
+      execution: new RecordedProviderExecutionPort(),
+      promptAudits: {
+        async appendPromptAudit(event) {
+          audits.push(event);
+        },
+      },
+    });
+    await app.prepareSubmission({
+      workspaceId: 'workspace-stable-prompt-audit',
+      actorId: 'owner-stable-prompt-audit',
+      correlationId,
+      idempotencyKey: 'stable-prompt-audit',
+      operation: 'copy.generate',
+      selection: { mode: 'fixed', catalogModelId: 'copy-quality' },
+      dataClass: [],
+      prompt: 'Stable prompt audit identity.',
+      promptBinding,
+    });
+    return audits[0]?.id;
+  };
+  const content = 'builtin:stable-copy-generation';
+  const binding = {
+    name: 'harness/copy-generation',
+    version: 'builtin-v1',
+    content,
+    contentHash: contentHash(content),
+    label: 'production',
+    source: 'builtin' as const,
+    isFallback: true,
+    fallbackReason: 'request_failed',
+  };
+
+  const first = await auditIdFor(binding, 'correlation-first');
+  const replay = await auditIdFor(binding, 'correlation-retry');
+  const changedVersion = await auditIdFor(
+    { ...binding, version: 'builtin-v2' },
+    'correlation-first',
+  );
+  const changedSource = await auditIdFor(
+    { ...binding, source: 'langfuse' },
+    'correlation-first',
+  );
+  const changedReason = await auditIdFor(
+    { ...binding, fallbackReason: 'http_503' },
+    'correlation-first',
+  );
+
+  assert.equal(first, replay);
+  assert.notEqual(first, changedVersion);
+  assert.notEqual(first, changedSource);
+  assert.notEqual(first, changedReason);
 });
 
 test('explicit frozen prompt binding wins on replay and resolver failures stop before provider I/O', async () => {
@@ -762,6 +909,7 @@ test('route simulator explains data-class exclusions and safe-only stop semantic
 test('Auto records every pre-accept fallback attempt and provider cost under one generation job', async () => {
   const recorded = new RecordedProviderExecutionPort();
   const requests: ProviderExecutionRequest[] = [];
+  const promptAudits: Array<Record<string, unknown>> = [];
   let promptResolutions = 0;
   const app = new ModelSupplyApplicationService({
     models,
@@ -782,9 +930,17 @@ test('Auto records every pre-accept fallback attempt and provider cost under one
           content,
           contentHash: contentHash(content),
           label: 'production',
-          source: 'langfuse',
-          isFallback: false,
+          source: 'builtin',
+          isFallback: true,
+          fallbackReason: 'request_failed',
         };
+      },
+    },
+    promptAudits: {
+      async appendPromptAudit(event) {
+        promptAudits.push(
+          structuredClone(event) as unknown as Record<string, unknown>,
+        );
       },
     },
   });
@@ -804,6 +960,8 @@ test('Auto records every pre-accept fallback attempt and provider cost under one
   assert.equal(new Set(result.attempts.map((attempt) => attempt.jobId)).size, 1);
   assert.equal(result.providerCosts.length, 2);
   assert.equal(promptResolutions, 1);
+  assert.equal(promptAudits.length, 1);
+  assert.equal(promptAudits[0]?.eventType, 'langfuse_prompt_fallback');
   assert.equal(requests.length, 2);
   assert.deepEqual(
     requests.map(({ submission }) => submission.promptBinding),

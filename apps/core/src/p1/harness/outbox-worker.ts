@@ -102,3 +102,46 @@ export class HarnessLangfuseOutboxWorker {
     return { sent, failed, deadLettered };
   }
 }
+
+export class HarnessLangfuseOutboxLoop {
+  private interval: ReturnType<typeof setInterval> | undefined;
+  private running = false;
+
+  constructor(
+    private readonly worker: Pick<HarnessLangfuseOutboxWorker, 'runOnce'>,
+    private readonly options: {
+      onError?: (error: unknown) => void;
+      pollMs?: number;
+    } = {},
+  ) {}
+
+  start() {
+    if (this.interval) return;
+    this.interval = setInterval(
+      () => void this.runOnce(),
+      this.options.pollMs ?? 1_000,
+    );
+    this.interval.unref();
+    void this.runOnce();
+  }
+
+  stop() {
+    if (!this.interval) return;
+    clearInterval(this.interval);
+    this.interval = undefined;
+  }
+
+  async runOnce() {
+    if (this.running) return false;
+    this.running = true;
+    try {
+      await this.worker.runOnce();
+      return true;
+    } catch (error) {
+      this.options.onError?.(error);
+      return false;
+    } finally {
+      this.running = false;
+    }
+  }
+}

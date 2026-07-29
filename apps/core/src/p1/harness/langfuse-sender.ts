@@ -160,7 +160,9 @@ function mapOutboxItem(item: HarnessLangfuseOutboxItem) {
     `span:${item.workflowId}:${item.stage}:${item.auditId}`,
   );
   const decisionTrace = projectDecisionTrace(item.stage, item.decisionTrace);
-  const prompt = projectPromptReference(isRecord(item.decisionTrace)?.prompt);
+  const prompt =
+    projectPromptReference(isRecord(item.decisionTrace)?.prompt) ??
+    projectPromptReference(isRecord(item.payload)?.prompt);
   const metrics = projectMetrics(isRecord(item.decisionTrace)?.metrics);
   const productMetrics = projectProductMetrics(item.eventType, item.payload);
   const skillRevisionRefs = stringArray(
