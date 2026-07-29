@@ -1730,7 +1730,7 @@ export function createCoreServer({
     }
     if (
       harnessService &&
-      request.method === 'POST' &&
+      (request.method === 'GET' || request.method === 'POST') &&
       harnessInteractionMessageMatch
     ) {
       try {
@@ -1740,18 +1740,20 @@ export function createCoreServer({
         const taskId = decodeURIComponent(harnessInteractionMessageMatch[2]!);
         const context = p1Identity(request, workspaceId, requestCorrelationId);
         authorizeContentCreation(context);
-        sendJson(
-          response,
-          200,
-          await harnessService.submitInteractionMerchantMessage(
-            workspaceId,
-            taskId,
-            harnessInteractionMerchantMessageSchema.parse(
-              await readJson(request)
-            )
-          ),
-          requestCorrelationId
-        );
+        const result =
+          request.method === 'GET'
+            ? await harnessService.readInteractionMerchantMessage(
+                workspaceId,
+                taskId
+              )
+            : await harnessService.submitInteractionMerchantMessage(
+                workspaceId,
+                taskId,
+                harnessInteractionMerchantMessageSchema.parse(
+                  await readJson(request)
+                )
+              );
+        sendJson(response, 200, result, requestCorrelationId);
       } catch (error) {
         sendP1HttpError(
           response,

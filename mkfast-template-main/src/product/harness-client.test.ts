@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  readPendingHarnessInteractionMessage,
   readHarnessDecisionSnapshot,
   readHarnessSubmitResult,
   readTodayRecommendation,
+  submitHarnessInteractionMerchantMessage,
   submitHarnessTask,
 } from '@/product/harness-client';
 
@@ -82,6 +84,81 @@ test('reads a persisted current recommendation without accepting a stale revisio
       recommendation: null,
       stale: true,
     });
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test('reads and consumes the durable merchant-message interaction boundary', async () => {
+  const previousFetch = globalThis.fetch;
+  const requests: Request[] = [];
+  const waiting = {
+    requestId: 'execution-request-1',
+    runId: 'task-1',
+    step: 'execution_selection',
+    revision: 2,
+    kind: 'execution_confirmation',
+    frozen: {
+      executionSnapshotRef: { id: 'snapshot-1', revision: 1 },
+      quoteRevision: 'quote-1',
+      params: [],
+      debitPreview: [],
+      condition: {
+        kind: 'existing_gate',
+        required: true,
+        serverEvaluated: true,
+      },
+      timeoutPolicy: {
+        kind: 'hold',
+        reason: 'unknown',
+        serverEvaluated: true,
+      },
+    },
+    presentation: {
+      carriers: ['conversation'],
+      notification: 'none',
+      renderer: 'execution_confirmation',
+    },
+  };
+  globalThis.fetch = async (input, init) => {
+    const request = new Request(
+      new URL(String(input), 'http://localhost'),
+      init
+    );
+    requests.push(request);
+    return request.method === 'GET'
+      ? Response.json({ data: waiting })
+      : Response.json({ data: { kind: 'resumed', replayed: false } });
+  };
+  try {
+    assert.deepEqual(
+      await readPendingHarnessInteractionMessage('task-1'),
+      waiting
+    );
+    assert.deepEqual(
+      await submitHarnessInteractionMerchantMessage('task-1', {
+        idempotencyKey: 'merchant-message-1',
+        message: '请换成更稳妥的模型',
+      }),
+      { kind: 'resumed', replayed: false }
+    );
+    assert.deepEqual(
+      requests.map((request) => [request.method, request.url]),
+      [
+        [
+          'GET',
+          'http://localhost/api/core/p1/harness/tasks/task-1/interaction/message',
+        ],
+        [
+          'POST',
+          'http://localhost/api/core/p1/harness/tasks/task-1/interaction/message',
+        ],
+      ]
+    );
+    assert.equal(
+      requests[1]?.headers.get('idempotency-key'),
+      'merchant-message-1'
+    );
   } finally {
     globalThis.fetch = previousFetch;
   }

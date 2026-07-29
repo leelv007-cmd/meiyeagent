@@ -159,6 +159,15 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
         interactionCalls.push(['message', workspaceId, taskId, input]);
         return { kind: 'resumed' as const, replayed: false };
       },
+      async readWaitingMessageForCarrier(workspaceId, taskId, carrier) {
+        interactionCalls.push([
+          'read-message',
+          workspaceId,
+          taskId,
+          carrier,
+        ]);
+        return null;
+      },
     },
   );
   const server = createCoreServer({
@@ -404,6 +413,12 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
     idempotencyKey: 'interaction-http-message-1',
     message: '请换成更稳妥的方案',
   };
+  const merchantMessageTarget = await fetch(
+    `${base}/task-http-1/interaction/message`,
+    { headers },
+  );
+  assert.equal(merchantMessageTarget.status, 200);
+  assert.equal((await merchantMessageTarget.json()).data, null);
   const merchantMessageResponse = await fetch(
     `${base}/task-http-1/interaction/message`,
     {
@@ -423,6 +438,7 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
     ['submit', 'workspace-1', malformedInteractionAnswer],
     ['renderer', 'workspace-1', 'task-http-1'],
     ['editing', 'workspace-1', 'task-http-1', true],
+    ['read-message', 'workspace-1', 'task-http-1', 'conversation'],
     ['message', 'workspace-1', 'task-http-1', merchantMessage],
   ]);
   const mismatchedInteraction = await fetch(

@@ -57,6 +57,7 @@ export type HarnessInteractionApplicationPort = Pick<
   HarnessInteractionService,
   | 'ackRenderer'
   | 'readForCarrier'
+  | 'readWaitingMessageForCarrier'
   | 'setEditing'
   | 'submit'
   | 'submitMerchantMessage'
@@ -231,6 +232,19 @@ export class HarnessApplicationService {
       workspaceId,
       taskId,
       input,
+    );
+  }
+
+  async readInteractionMerchantMessage(
+    workspaceId: string,
+    taskId: string,
+  ) {
+    await this.requireTask(workspaceId, taskId);
+    if (!this.interactions) return null;
+    return this.interactions.readWaitingMessageForCarrier(
+      workspaceId,
+      taskId,
+      'conversation',
     );
   }
 

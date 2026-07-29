@@ -16,6 +16,7 @@ export const Route = createFileRoute(
 )({
   server: {
     handlers: {
+      GET: ({ request }) => forward(request),
       POST: ({ request }) => forward(request),
     },
   },

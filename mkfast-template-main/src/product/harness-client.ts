@@ -150,6 +150,45 @@ export async function submitHarnessInteraction(
   return readEnvelope<unknown>(response);
 }
 
+export async function readPendingHarnessInteractionMessage(
+  taskId: string,
+  signal?: AbortSignal
+) {
+  const response = await telemetryFetch(
+    `/api/core/p1/harness/tasks/${encodeURIComponent(taskId)}/interaction/message`,
+    { credentials: 'same-origin', signal }
+  );
+  return harnessInteractionRequestSchema
+    .nullable()
+    .parse(await readEnvelope<unknown>(response));
+}
+
+export async function submitHarnessInteractionMerchantMessage(
+  taskId: string,
+  input: { idempotencyKey: string; message: string }
+) {
+  const message = z
+    .object({
+      idempotencyKey: z.string().trim().min(1),
+      message: z.string().trim().min(1).max(2_000),
+    })
+    .strict()
+    .parse(input);
+  const response = await telemetryFetch(
+    `/api/core/p1/harness/tasks/${encodeURIComponent(taskId)}/interaction/message`,
+    {
+      body: JSON.stringify(message),
+      credentials: 'same-origin',
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': message.idempotencyKey,
+      },
+      method: 'POST',
+    }
+  );
+  return readEnvelope<unknown>(response);
+}
+
 export async function setHarnessInteractionEditing(
   taskId: string,
   editing: boolean

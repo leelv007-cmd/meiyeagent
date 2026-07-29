@@ -1125,6 +1125,23 @@ export class PostgresHarnessStore
     return parsed.success ? parsed.data.request : null;
   }
 
+  async readWaitingInteraction(workspaceId: string, runId: string) {
+    const runtimeTaskId = await this.workflowRuntimeId(workspaceId, runId);
+    if (!runtimeTaskId) return null;
+    const result = await this.pool.query<{ pending_projection: unknown }>(
+      `select pending_projection
+         from harness_runtime.pending_questions
+        where task_id=$1
+          and status='pending'
+          and pending_projection->>'waitingState'='merchant_message'`,
+      [runtimeTaskId],
+    );
+    const parsed = harnessInteractionPendingProjectionSchema.safeParse(
+      result.rows[0]?.pending_projection,
+    );
+    return parsed.success ? parsed.data.request : null;
+  }
+
   async listSystemDefaultCandidates(limit: number) {
     const result = await this.pool.query<{
       run_id: string;

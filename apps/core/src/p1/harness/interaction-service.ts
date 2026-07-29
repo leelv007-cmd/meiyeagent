@@ -143,6 +143,10 @@ export interface HarnessInteractionStore {
     runId: string,
     options?: { includeResolved?: boolean },
   ): Promise<HarnessInteractionRequest | null>;
+  readWaitingInteraction(
+    workspaceId: string,
+    runId: string,
+  ): Promise<HarnessInteractionRequest | null>;
   resolveInteraction(input: {
     workspaceId: string;
     answer: HarnessInteractionAnswer;
@@ -438,6 +442,22 @@ export class HarnessInteractionService {
       trigger: 'merchant_message',
       workspaceId,
     });
+  }
+
+  async readWaitingMessageForCarrier(
+    workspaceId: string,
+    runId: string,
+    carrier: 'conversation' | 'store_page' | 'task_card',
+  ) {
+    const request = await this.store.readWaitingInteraction(
+      workspaceId,
+      runId,
+    );
+    return request &&
+      request.kind === 'execution_confirmation' &&
+      (request.presentation.carriers as readonly string[]).includes(carrier)
+      ? request
+      : null;
   }
 
   async setEditing(workspaceId: string, runId: string, editing: boolean) {

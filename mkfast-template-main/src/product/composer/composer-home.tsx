@@ -99,9 +99,11 @@ import {
   acknowledgeHarnessInteractionRenderer,
   readActiveHarnessTasks,
   readPendingHarnessInteraction,
+  readPendingHarnessInteractionMessage,
   readPendingHarnessDecision,
   setHarnessInteractionEditing,
   submitHarnessInteraction,
+  submitHarnessInteractionMerchantMessage,
   submitHarnessDecision,
 } from '@/product/harness-client';
 import { navigateAfterSubmitSuccess } from '@/product/results/result-center-navigation';
@@ -1379,6 +1381,13 @@ export function ComposerHome({
     queryFn: ({ signal }) => readPendingHarnessInteraction(taskId, signal),
     refetchInterval: session.phase === 'delivered' ? false : 2_000,
   });
+  const interactionMessageQuery = useQuery({
+    enabled: Boolean(taskId) && session.phase !== 'delivered',
+    queryKey: ['harness', 'interaction-message', taskId],
+    queryFn: ({ signal }) =>
+      readPendingHarnessInteractionMessage(taskId, signal),
+    refetchInterval: session.phase === 'delivered' ? false : 2_000,
+  });
   const pendingAskRequest =
     interactionQuery.data?.kind === 'ask_merchant'
       ? interactionQuery.data
@@ -1980,6 +1989,38 @@ export function ComposerHome({
 
   const attemptSubmit = async () => {
     setSubmitBlockedMessage(null);
+    const waitingMessage = interactionMessageQuery.data;
+    if (
+      waitingMessage?.kind === 'execution_confirmation' &&
+      waitingMessage.runId === taskId
+    ) {
+      const message = lensState.draft.userText.trim();
+      if (!message) {
+        setShowRequiredHint(true);
+        focusComposerIntentInput();
+        return;
+      }
+      setQuestionPending(true);
+      setSession((current) => openComposerTurn(current, message));
+      try {
+        await submitHarnessInteractionMerchantMessage(taskId, {
+          idempotencyKey:
+            `composer-interaction:${waitingMessage.requestId}:` +
+            `r${waitingMessage.revision}:merchant-message`,
+          message,
+        });
+        await Promise.all([
+          interactionMessageQuery.refetch(),
+          interactionQuery.refetch(),
+          decisionQuery.refetch(),
+        ]);
+      } catch {
+        toast.error(workbench_operation_failed());
+      } finally {
+        setQuestionPending(false);
+      }
+      return;
+    }
     if (!imageCardinality.valid) {
       document
         .querySelector<HTMLElement>(

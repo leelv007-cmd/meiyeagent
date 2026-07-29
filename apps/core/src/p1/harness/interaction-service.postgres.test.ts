@@ -459,6 +459,16 @@ test(
         await restartedStore.readPendingInteraction(workspaceId, runId),
         null,
       );
+      assert.equal(
+        (
+          await executionService.readWaitingMessageForCarrier(
+            workspaceId,
+            runId,
+            'conversation',
+          )
+        )?.requestId,
+        executionRequest.requestId,
+      );
       const legacyResumes: unknown[] = [];
       const legacyDecisions = new HarnessDecisionService(restartedStore, {
         async resume(_workspaceId, _taskId, command) {
@@ -503,6 +513,14 @@ test(
         { kind: 'resumed', replayed: true },
       );
       assert.equal(executionResumes.length, 1);
+      assert.equal(
+        await executionService.readWaitingMessageForCarrier(
+          workspaceId,
+          runId,
+          'conversation',
+        ),
+        null,
+      );
       assert.deepEqual(
         (executionResumes[0] as { resumeData: unknown }).resumeData,
         {

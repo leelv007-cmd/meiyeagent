@@ -696,6 +696,10 @@ class MemoryInteractionStore implements HarnessInteractionStore {
     return this.pending;
   }
 
+  async readWaitingInteraction(_workspaceId: string, _runId: string) {
+    return this.waitingForMerchantMessage ? this.pending : null;
+  }
+
   async resolveInteraction(
     input: Parameters<HarnessInteractionStore['resolveInteraction']>[0],
   ) {
