@@ -156,24 +156,29 @@ function report(findings, { check }) {
     }
   };
 
+  // A passing gate stays quiet. Listing the 工程内部 hits on success reads as
+  // "the gate found something" in `pnpm check` output when it found nothing.
+  if (check && external.length === 0) {
+    console.log(
+      `OK: no 对外 occurrence of a retired product name (${internal.length} 工程内部 hit(s) ignored).`
+    );
+    return 0;
+  }
+
   console.log(`# brand exposure scan — legacy names → ${BRAND_ZH} / ${BRAND_EN}`);
   print('对外（user-visible copy）', external);
   print('工程内部（test guards, comments）', internal);
 
   if (!check) {
     console.log(
-      `\nreport mode: ${findings.length} occurrence(s). Re-run with --check once the rename has landed.`
+      `\nreport mode: ${findings.length} occurrence(s). Re-run with --check to fail on any 对外 hit.`
     );
     return 0;
   }
-  if (external.length > 0) {
-    console.log(
-      `\nFAIL: ${external.length} 对外 occurrence(s) still carry a retired product name.`
-    );
-    return 1;
-  }
-  console.log('\nOK: no 对外 occurrence of a retired product name.');
-  return 0;
+  console.log(
+    `\nFAIL: ${external.length} 对外 occurrence(s) still carry a retired product name.`
+  );
+  return 1;
 }
 
 if (import.meta.url === pathToFileURL(resolve(process.argv[1] ?? '')).href) {
