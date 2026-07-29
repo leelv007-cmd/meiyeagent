@@ -81,6 +81,42 @@ function integerOrNull(value: Record<string, unknown>, key: string) {
   return candidate;
 }
 
+function skillSourceKind(value: Record<string, unknown>): SkillSourceKind {
+  const candidate = text(value, 'sourceKind');
+  if (!(SKILL_SOURCE_KINDS as readonly string[]).includes(candidate)) {
+    fail(`Skill 来源必须是 ${SKILL_SOURCE_KINDS.join('、')} 之一。`);
+  }
+  return candidate as SkillSourceKind;
+}
+
+function skillTier(value: Record<string, unknown>): SkillTier {
+  const candidate = text(value, 'tier');
+  if (!(SKILL_TIERS as readonly string[]).includes(candidate)) {
+    fail(`Skill 层级必须是 ${SKILL_TIERS.join('、')} 之一。`);
+  }
+  return candidate as SkillTier;
+}
+
+function parseSourceRef(
+  value: Record<string, unknown>,
+): SkillSourceRef | undefined {
+  const candidate = value.sourceRef;
+  if (candidate === undefined || candidate === null) return undefined;
+  if (typeof candidate !== 'object' || Array.isArray(candidate)) {
+    fail('Skill 命令字段 sourceRef 必须是对象。');
+  }
+  const record = candidate as Record<string, unknown>;
+  onlyKeys(record, ['externalUrl', 'harvestedAt'], 'Skill 来源出处');
+  return {
+    ...(record.externalUrl === undefined
+      ? {}
+      : { externalUrl: text(record, 'externalUrl') }),
+    ...(record.harvestedAt === undefined
+      ? {}
+      : { harvestedAt: text(record, 'harvestedAt') }),
+  };
+}
+
 function optionalTextOrNull(value: Record<string, unknown>, key: string) {
   const candidate = value[key];
   if (candidate === undefined || candidate === null) return null;
@@ -156,6 +192,7 @@ export class SkillFoundationModule implements P1OperationModule {
         onlyKeys(
           value,
           [
+            'description',
             'expectedRevision',
             'frontmatter',
             'governance',
@@ -165,9 +202,15 @@ export class SkillFoundationModule implements P1OperationModule {
             'presentationPolicy',
             'promptReference',
             'skillId',
+            'sourceKind',
+            'sourceRef',
+            'tier',
           ],
           'Skill 定义命令',
         );
+        const sourceKind = skillSourceKind(value);
+        const tier = skillTier(value);
+        const sourceRef = parseSourceRef(value);
         const presentationPolicy = text(
           value,
           'presentationPolicy',
@@ -189,6 +232,12 @@ export class SkillFoundationModule implements P1OperationModule {
           const catalog = await this.service.defineCatalogEntry({
             skillId: text(value, 'skillId'),
             name: text(value, 'name'),
+            // No revision here, so there is no frontmatter to take the
+            // description from — the caller must supply it.
+            description: text(value, 'description'),
+            sourceKind,
+            tier,
+            ...(sourceRef ? { sourceRef } : {}),
             presentationPolicy,
             actorId: args.context.userId,
           });
@@ -216,10 +265,18 @@ export class SkillFoundationModule implements P1OperationModule {
         const instruction = text(value, 'instruction');
         const skillId = text(value, 'skillId');
         const catalogName = text(value, 'name');
+        const frontmatter = value.frontmatter as SkillRevisionManifest;
         const { catalog, revision } =
           await this.service.defineCatalogAndDraftRevision({
           skillId,
           name: catalogName,
+          // Single authority: when a revision is drafted the standard
+          // frontmatter owns the description, so the catalog projects it
+          // rather than keeping a second editable copy.
+          description: frontmatter?.description,
+          sourceKind,
+          tier,
+          ...(sourceRef ? { sourceRef } : {}),
           presentationPolicy,
           actorId: args.context.userId,
           expectedRevision,

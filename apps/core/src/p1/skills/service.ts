@@ -40,7 +40,12 @@ import {
   type SkillPromptSnapshotPort,
   type SkillRevision,
   type SkillRevisionManifest,
+  type SkillSourceKind,
+  type SkillSourceRef,
+  type SkillTier,
   type SkillTriggerCondition,
+  SKILL_SOURCE_KINDS,
+  SKILL_TIERS,
 } from './types.js';
 import { RegistrySkillOutputValidator } from './schema-validator.js';
 import {
@@ -91,6 +96,22 @@ function required(value: string, label: string) {
   return normalized;
 }
 
+// The catalog metric is a ratio over these enums, so an unrecognised value
+// would make it silently uncomputable rather than loudly wrong.
+function assertSkillSourceKind(value: SkillSourceKind): SkillSourceKind {
+  if (!(SKILL_SOURCE_KINDS as readonly string[]).includes(value)) {
+    fail(`Skill source must be one of ${SKILL_SOURCE_KINDS.join(', ')}.`);
+  }
+  return value;
+}
+
+function assertSkillTier(value: SkillTier): SkillTier {
+  if (!(SKILL_TIERS as readonly string[]).includes(value)) {
+    fail(`Skill tier must be one of ${SKILL_TIERS.join(', ')}.`);
+  }
+  return value;
+}
+
 function normalizeTriggerCondition(
   condition: SkillTriggerCondition,
 ): SkillTriggerCondition {
@@ -133,6 +154,10 @@ export class SkillService {
   async defineCatalogEntry(input: {
     skillId: string;
     name: string;
+    description: string;
+    sourceKind: SkillSourceKind;
+    tier: SkillTier;
+    sourceRef?: SkillSourceRef;
     presentationPolicy: SkillCatalog['presentationPolicy'];
     actorId: string;
   }) {
@@ -143,6 +168,10 @@ export class SkillService {
     return this.repository.putCatalog({
       skillId,
       name: required(input.name, 'Skill name'),
+      description: required(input.description, 'Skill description'),
+      sourceKind: assertSkillSourceKind(input.sourceKind),
+      tier: assertSkillTier(input.tier),
+      ...(input.sourceRef ? { sourceRef: input.sourceRef } : {}),
       presentationPolicy: input.presentationPolicy,
       activeRevisionRef: null,
       createdAt: at,
@@ -154,6 +183,10 @@ export class SkillService {
   async defineCatalogAndDraftRevision(
     input: SkillDraftRevisionInput & {
       name: string;
+      description: string;
+      sourceKind: SkillSourceKind;
+      tier: SkillTier;
+      sourceRef?: SkillSourceRef;
       presentationPolicy: SkillCatalog['presentationPolicy'];
     },
   ) {
@@ -161,6 +194,10 @@ export class SkillService {
     const catalog = await this.defineCatalogEntry({
       actorId: input.actorId,
       name: input.name,
+      description: input.description,
+      sourceKind: input.sourceKind,
+      tier: input.tier,
+      ...(input.sourceRef ? { sourceRef: input.sourceRef } : {}),
       presentationPolicy: input.presentationPolicy,
       skillId: input.skillId,
     });
