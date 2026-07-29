@@ -122,10 +122,42 @@ export interface SkillInvocationReceipt {
   status: 'settled';
   createdAt: string;
   inputFingerprint: string;
+  output?: SkillInvocationResult;
+}
+
+export interface SkillInvocationOutputDescriptor {
+  target: 'workflow_artifact' | 'content_package';
+  schemaRevision: string;
+}
+
+export interface SkillInvocationRequest {
+  invocationId: string;
+  workspaceId: string;
+  taskId: string;
+  productUsageTaskId: string;
+  skillRevisionRef: string;
+  input: unknown;
+  calls: Array<{
+    callId: string;
+    toolId: string;
+    contextRefs: string[];
+    declaredBudgetCapCents: number;
+    payload: unknown;
+  }>;
+  output: SkillInvocationOutputDescriptor;
+}
+
+export interface SkillInvocationResult {
+  invocationId: string;
+  target: 'workflow_artifact';
+  schemaRevision: string;
+  value: unknown;
+  createdAt: string;
 }
 
 export interface SkillInvocationExecution extends SkillInvocationReceipt {
   selected: ResolvedSkillInstruction[];
+  output: SkillInvocationResult;
 }
 
 export interface SkillChildEffect {
@@ -176,6 +208,27 @@ export interface SkillChildEffectExecutor {
     costCents: number;
     acceptanceStatus: 'accepted' | 'rejected_before_accept';
   }>;
+}
+
+export interface SkillInvocationExecutor extends SkillChildEffectExecutor {
+  generate(input: {
+    invocationId: string;
+    skillRevisionRef: string;
+    input: unknown;
+    childEffects: readonly SkillChildEffect[];
+    output: SkillInvocationOutputDescriptor;
+  }): Promise<{ value: unknown }>;
+}
+
+export interface SkillInvocationResultPublisher {
+  /**
+   * Must deduplicate by `idempotencyKey`. Publication happens before the
+   * invocation receipt is settled, so a retry may submit the same result.
+   */
+  publishOnce(input: {
+    idempotencyKey: string;
+    result: SkillInvocationResult;
+  }): Promise<SkillInvocationResult>;
 }
 
 export interface SkillOutputValidator {

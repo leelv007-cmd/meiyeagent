@@ -1,7 +1,15 @@
 export { MemorySkillRepository, type SkillRepository } from './repository.js';
 export { PostgresSkillRepository } from './postgres-repository.js';
-export { SkillService, skillAcceptanceGateFailure } from './service.js';
+export {
+  SkillInvocationValidationError,
+  SkillService,
+  skillAcceptanceGateFailure,
+} from './service.js';
 export { SkillFoundationModule } from './foundation-module.js';
+export {
+  SkillInvocationToolAdapter,
+  type SkillInvocationToolResult,
+} from './tool-adapter.js';
 export {
   createDurableSkillRuntime,
   type DurableSkillRuntime,
@@ -24,7 +32,12 @@ export {
   type SkillDeploymentArtifactType,
   type SkillExecutionMode,
   type SkillInvocationExecution,
+  type SkillInvocationExecutor,
+  type SkillInvocationOutputDescriptor,
   type SkillInvocationReceipt,
+  type SkillInvocationRequest,
+  type SkillInvocationResult,
+  type SkillInvocationResultPublisher,
   type SkillOutputValidator,
   type SkillRevision,
   type SkillRevisionManifest,

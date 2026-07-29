@@ -5,6 +5,12 @@ import type { HarnessSkillInstructionResolverPort } from '../harness/production-
 import { SkillFoundationModule } from './foundation-module.js';
 import { PostgresSkillRepository } from './postgres-repository.js';
 import { SkillService } from './service.js';
+import { SkillInvocationToolAdapter } from './tool-adapter.js';
+import type {
+  SkillInvocationExecutor,
+  SkillInvocationResultPublisher,
+  SkillOutputValidator,
+} from './types.js';
 
 export type DurableSkillInstructionResolutionInput = Parameters<
   HarnessSkillInstructionResolverPort['resolve']
@@ -83,6 +89,18 @@ export async function createDurableSkillRuntime(input: {
     },
   };
   return {
+    createInvocationTool(input: {
+      executor: SkillInvocationExecutor;
+      resultPublisher: SkillInvocationResultPublisher;
+      outputValidator?: SkillOutputValidator;
+    }) {
+      return new SkillInvocationToolAdapter(
+        service,
+        input.executor,
+        input.resultPublisher,
+        input.outputValidator,
+      );
+    },
     foundationModule: new SkillFoundationModule(service),
     instructionResolver,
     repository,

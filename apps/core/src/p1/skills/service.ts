@@ -16,12 +16,14 @@ import {
   type SkillBindingMode,
   type SkillCatalog,
   type SkillChildEffect,
-  type SkillChildEffectExecutor,
   type SkillDeployment,
   type SkillDeploymentArtifactType,
   type SkillExecutionMode,
   type SkillInvocationExecution,
+  type SkillInvocationExecutor,
   type SkillInvocationReceipt,
+  type SkillInvocationRequest,
+  type SkillInvocationResultPublisher,
   type SkillOutputValidator,
   type SkillRevision,
   type SkillRevisionManifest,
@@ -34,6 +36,22 @@ const registrySkillOutputValidator = new RegistrySkillOutputValidator();
 
 function fail(message: string): never {
   throw new P1DomainError('INVALID_STATE', message);
+}
+
+export class SkillInvocationValidationError extends P1DomainError {
+  constructor(
+    readonly phase: 'input' | 'output',
+    message: string,
+  ) {
+    super('INVALID_STATE', message);
+  }
+}
+
+function failValidation(
+  phase: SkillInvocationValidationError['phase'],
+  message: string,
+): never {
+  throw new SkillInvocationValidationError(phase, message);
 }
 
 function required(value: string, label: string) {
@@ -424,30 +442,33 @@ export class SkillService {
   }
 
   async invoke(
-    input: {
-      invocationId: string;
-      workspaceId: string;
-      taskId: string;
-      productUsageTaskId: string;
-      skillRevisionRef: string;
-      input: unknown;
-      calls: Array<{
-        callId: string;
-        toolId: string;
-        contextRefs: string[];
-        declaredBudgetCapCents: number;
-        payload: unknown;
-      }>;
-      output: {
-        target: 'workflow_artifact' | 'content_package';
-        schemaRevision: string;
-        value: unknown;
-      };
-    },
-    executor: SkillChildEffectExecutor,
+    input: SkillInvocationRequest,
+    executor: SkillInvocationExecutor,
+    resultPublisher: SkillInvocationResultPublisher,
     outputValidator: SkillOutputValidator = registrySkillOutputValidator,
   ): Promise<SkillInvocationExecution> {
     const invocationId = required(input.invocationId, 'Invocation ID');
+    const revision = await this.requireRevision(input.skillRevisionRef);
+    if (revision.status !== 'accepted_frozen') {
+      fail('只能调用已受理冻结的 Skill 版本。');
+    }
+    try {
+      parseSkillSchema(revision.manifest.inputSchemaRef, input.input);
+    } catch {
+      failValidation(
+        'input',
+        'Skill input does not match its frozen input schema.',
+      );
+    }
+    if (input.output.target === 'content_package') {
+      failValidation('output', 'Skill 输出不能写入 ContentPackage。');
+    }
+    if (input.output.schemaRevision !== revision.manifest.outputSchemaRef) {
+      failValidation(
+        'output',
+        'Skill 输出未使用已冻结的输出 Schema 版本。',
+      );
+    }
     const fingerprint = sha256(canonicalJson(input));
     const existingReceipt =
       await this.repository.getInvocationReceipt(invocationId);
@@ -458,38 +479,25 @@ export class SkillService {
           'Skill invocation ID is already bound to different facts.',
         );
       }
+      const recordedEffects: SkillChildEffect[] = [];
       for (const effectId of existingReceipt.childEffectIds) {
         const effect = await this.repository.getChildEffect(effectId);
-        if (effect && effect.retryStatus !== 'replayed') {
-          await this.repository.updateChildEffect({
-            ...effect,
-            retryStatus: 'replayed',
-          });
+        if (!effect || effect.invocationId !== invocationId) {
+          fail('Skill 调用回执引用的工具调用记录不完整。');
         }
+        recordedEffects.push(effect);
+      }
+      if (!existingReceipt.output) {
+        fail('Skill 调用回执缺少已校验的输出结果。');
+      }
+      for (const effect of recordedEffects) {
+        if (effect.retryStatus === 'replayed') continue;
+        await this.repository.updateChildEffect({
+          ...effect,
+          retryStatus: 'replayed',
+        });
       }
       return this.withExecutedSelection(existingReceipt);
-    }
-    const revision = await this.requireRevision(input.skillRevisionRef);
-    if (revision.status !== 'accepted_frozen') {
-      fail('只能调用已受理冻结的 Skill 版本。');
-    }
-    try {
-      parseSkillSchema(revision.manifest.inputSchemaRef, input.input);
-    } catch {
-      fail('Skill input does not match its frozen input schema.');
-    }
-    if (input.output.target === 'content_package') {
-      fail('Skill 输出不能写入 ContentPackage。');
-    }
-    if (input.output.schemaRevision !== revision.manifest.outputSchemaRef) {
-      fail('Skill 输出未使用已冻结的输出 Schema 版本。');
-    }
-    const validation = outputValidator.validate({
-      schemaRevision: input.output.schemaRevision,
-      value: input.output.value,
-    });
-    if (!validation.schemaValid || !validation.qualityPassed) {
-      fail('Skill 输出未通过 Schema 或质量门。');
     }
     const callIds = input.calls.map((call) => required(call.callId, 'Call ID'));
     if (
@@ -580,6 +588,58 @@ export class SkillService {
       effects.push(persisted);
     }
 
+    const generated = await executor.generate({
+      invocationId,
+      skillRevisionRef: revision.skillRevisionRef,
+      input: structuredClone(input.input),
+      childEffects: effects.map((effect) => structuredClone(effect)),
+      output: structuredClone(input.output),
+    });
+    let validation: ReturnType<SkillOutputValidator['validate']>;
+    try {
+      validation = outputValidator.validate({
+        schemaRevision: input.output.schemaRevision,
+        value: generated.value,
+      });
+    } catch {
+      failValidation('output', 'Skill 输出未通过 Schema 或质量门。');
+    }
+    if (!validation.schemaValid || !validation.qualityPassed) {
+      failValidation('output', 'Skill 输出未通过 Schema 或质量门。');
+    }
+    const output = {
+      invocationId,
+      target: input.output.target,
+      schemaRevision: input.output.schemaRevision,
+      value: structuredClone(generated.value),
+      createdAt: this.now(),
+    };
+    const canonicalOutput = await resultPublisher.publishOnce({
+      idempotencyKey: invocationId,
+      result: structuredClone(output),
+    });
+    if (
+      canonicalOutput.invocationId !== invocationId ||
+      canonicalOutput.target !== output.target ||
+      canonicalOutput.schemaRevision !== output.schemaRevision
+    ) {
+      fail('Skill 业务结果发布器返回了不匹配的幂等事实。');
+    }
+    let canonicalValidation: ReturnType<SkillOutputValidator['validate']>;
+    try {
+      canonicalValidation = outputValidator.validate({
+        schemaRevision: canonicalOutput.schemaRevision,
+        value: canonicalOutput.value,
+      });
+    } catch {
+      fail('Skill 业务结果发布器返回了无效的已发布结果。');
+    }
+    if (
+      !canonicalValidation.schemaValid ||
+      !canonicalValidation.qualityPassed
+    ) {
+      fail('Skill 业务结果发布器返回了无效的已发布结果。');
+    }
     const receipt = await this.repository.putInvocationReceipt({
       invocationId,
       workspaceId: required(input.workspaceId, 'Workspace ID'),
@@ -605,6 +665,7 @@ export class SkillService {
       status: 'settled',
       createdAt: this.now(),
       inputFingerprint: fingerprint,
+      output: structuredClone(canonicalOutput),
     });
     return this.withExecutedSelection(receipt);
   }
@@ -620,8 +681,12 @@ export class SkillService {
   private async withExecutedSelection(
     receipt: SkillInvocationReceipt,
   ): Promise<SkillInvocationExecution> {
+    if (!receipt.output) {
+      fail('Skill 调用回执缺少已校验的输出结果。');
+    }
     return {
       ...receipt,
+      output: receipt.output,
       selected: await this.resolveExecutedSelection(receipt.invocationId),
     };
   }

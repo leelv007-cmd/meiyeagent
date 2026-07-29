@@ -8,6 +8,7 @@ import {
   nameHarnessIntent,
   type StructuredNodeRunner,
 } from '../harness/structured-nodes.js';
+import { P1DomainError } from '../foundation/domain.js';
 import { LangfuseHarnessPromptResolver } from '../harness/langfuse-prompts.js';
 import {
   MemorySkillRepository,
@@ -16,11 +17,18 @@ import {
   SkillService,
   type SkillBinding,
   type SkillChildEffectExecutor,
+  type SkillInvocationExecutor,
+  type SkillInvocationResultPublisher,
 } from './index.js';
 
 const NOW = '2026-07-26T02:00:00.000Z';
 const PROMPT_CONTENT =
   'When the merchant asks for a daily post, prefer useful industry context.';
+const discardResultPublisher: SkillInvocationResultPublisher = {
+  async publishOnce(input) {
+    return input.result;
+  },
+};
 
 test('only an evaluated and frozen Skill revision enters a stage allowlist', async () => {
   const service = new SkillService(
@@ -332,7 +340,6 @@ test('one Skill invocation settles two child effects independently and replay do
     output: {
       schemaRevision: 'skill-output.intent-decision@1',
       target: 'workflow_artifact' as const,
-      value: intentDecisionOutput(),
     },
     productUsageTaskId: 'task-one-product-usage',
     skillRevisionRef: revision.skillRevisionRef,
@@ -346,7 +353,8 @@ test('one Skill invocation settles two child effects independently and replay do
   );
   const first = await service.invoke(
     input,
-    executor,
+    withGeneratedOutput(executor),
+    discardResultPublisher,
     {
       validate() {
         return { qualityPassed: true, schemaValid: true };
@@ -355,7 +363,8 @@ test('one Skill invocation settles two child effects independently and replay do
   );
   const replay = await service.invoke(
     input,
-    executor,
+    withGeneratedOutput(executor),
+    discardResultPublisher,
     {
       validate() {
         return { qualityPassed: true, schemaValid: true };
@@ -372,6 +381,7 @@ test('one Skill invocation settles two child effects independently and replay do
   assert.equal(first.totalCostCents, 4);
   assert.equal(first.totalInputTokens, 20);
   assert.equal(first.totalOutputTokens, 10);
+  assert.deepEqual(first.output.value, intentDecisionOutput());
   assert.deepEqual(
     first.selected.map((skill) => skill.skillRevisionRef),
     [revision.skillRevisionRef],
@@ -439,7 +449,6 @@ test('Skill output cannot write ContentPackage and never reaches a child effect'
         output: {
           schemaRevision: 'content-package@1',
           target: 'content_package',
-          value: { packageId: 'package-forbidden' },
         },
         productUsageTaskId: 'task-one-product-usage',
         skillRevisionRef: revision.skillRevisionRef,
@@ -451,7 +460,12 @@ test('Skill output cannot write ContentPackage and never reaches a child effect'
           executions += 1;
           throw new Error('must not execute');
         },
+        async generate() {
+          executions += 1;
+          throw new Error('must not generate');
+        },
       },
+      discardResultPublisher,
       {
         validate() {
           return { qualityPassed: true, schemaValid: true };
@@ -539,7 +553,6 @@ test('invalid Skill input fails before any child executor call', async () => {
         output: {
           schemaRevision: 'skill-output.intent-decision@1',
           target: 'workflow_artifact',
-          value: intentDecisionOutput(),
         },
         productUsageTaskId: 'task-one-product-usage',
         skillRevisionRef: revision.skillRevisionRef,
@@ -551,7 +564,12 @@ test('invalid Skill input fails before any child executor call', async () => {
           executions += 1;
           throw new Error('must not execute');
         },
+        async generate() {
+          executions += 1;
+          throw new Error('must not generate');
+        },
       },
+      discardResultPublisher,
     ),
     /Skill input does not match/u,
   );
@@ -562,11 +580,68 @@ test('invalid Skill input fails before any child executor call', async () => {
   );
 });
 
-test('registry-backed output validation rejects invalid shape before any Skill fact persists', async () => {
+test('invalid Skill input is rejected before the invocation receipt replay fast path', async () => {
+  class ReceiptReadTrackingRepository extends MemorySkillRepository {
+    receiptReads = 0;
+
+    override async getInvocationReceipt(invocationId: string) {
+      this.receiptReads += 1;
+      return super.getInvocationReceipt(invocationId);
+    }
+  }
+
+  const repository = new ReceiptReadTrackingRepository();
+  const service = new SkillService(repository, () => NOW);
+  const revision = await createAcceptedEffectSkill(service);
+  const invocation = {
+    calls: [],
+    input: dailyIndustrySkillInput(),
+    invocationId: 'invocation-input-replay-order',
+    output: {
+      schemaRevision: 'skill-output.intent-decision@1',
+      target: 'workflow_artifact' as const,
+    },
+    productUsageTaskId: 'task-one-product-usage',
+    skillRevisionRef: revision.skillRevisionRef,
+    taskId: 'task-input-replay-order',
+    workspaceId: 'workspace-skill-invocation',
+  };
+  const executor: SkillChildEffectExecutor = {
+    async execute() {
+      throw new Error('No child effects are expected.');
+    },
+  };
+
+  await service.invoke(
+    invocation,
+    withGeneratedOutput(executor),
+    discardResultPublisher,
+  );
+  repository.receiptReads = 0;
+
+  await assert.rejects(
+    service.invoke(
+      {
+        ...invocation,
+        input: { context: null, assetReferences: [] },
+      },
+      withGeneratedOutput(executor),
+      discardResultPublisher,
+    ),
+    /Skill input does not match/u,
+  );
+  assert.equal(repository.receiptReads, 0);
+});
+
+test('registry-backed validation rejects the actual generated output before business publication and receipt persistence', async () => {
   const repository = new MemorySkillRepository();
   const service = new SkillService(repository, () => NOW);
   const revision = await createAcceptedEffectSkill(service);
   let executions = 0;
+  let generations = 0;
+  let publications = 0;
+  const order: string[] = [];
+  const registryValidator = new RegistrySkillOutputValidator();
 
   await assert.rejects(
     service.invoke(
@@ -585,7 +660,6 @@ test('registry-backed output validation rejects invalid shape before any Skill f
         output: {
           schemaRevision: 'skill-output.intent-decision@1',
           target: 'workflow_artifact',
-          value: { route: 'customized' },
         },
         productUsageTaskId: 'task-one-product-usage',
         skillRevisionRef: revision.skillRevisionRef,
@@ -595,24 +669,252 @@ test('registry-backed output validation rejects invalid shape before any Skill f
       {
         async execute() {
           executions += 1;
-          throw new Error('must not execute');
+          order.push('child-effect');
+          return {
+            acceptanceStatus: 'accepted',
+            costCents: 1,
+            providerReceipt: {
+              accepted: true,
+              providerTaskRef: 'provider-invalid-output-audit',
+            },
+            usage: { inputTokens: 5, outputTokens: 2 },
+          };
+        },
+        async generate() {
+          generations += 1;
+          order.push('generate');
+          return { value: { route: 'customized' } };
         },
       },
-      new RegistrySkillOutputValidator(),
+      {
+        async publishOnce(input) {
+          publications += 1;
+          order.push('publish');
+          return input.result;
+        },
+      },
+      {
+        validate(input) {
+          order.push('validate');
+          return registryValidator.validate(input);
+        },
+      },
     ),
-    /Schema 或质量门/u,
+    (error: unknown) => {
+      assert.ok(error instanceof P1DomainError);
+      assert.equal(error.code, 'INVALID_STATE');
+      assert.match(error.message, /Schema 或质量门/u);
+      return true;
+    },
   );
-  assert.equal(executions, 0);
+  assert.equal(executions, 1);
+  assert.equal(generations, 1);
+  assert.equal(publications, 0);
+  assert.deepEqual(order, ['child-effect', 'generate', 'validate']);
   assert.equal(
-    await repository.getChildEffect(
-      'invocation-invalid-output:read-facts',
-    ),
-    null,
+    (
+      await repository.getChildEffect(
+        'invocation-invalid-output:read-facts',
+      )
+    )?.providerReceipt.providerTaskRef,
+    'provider-invalid-output-audit',
   );
   assert.equal(
     await repository.getInvocationReceipt('invocation-invalid-output'),
     null,
   );
+});
+
+test('receipt persistence retry reuses child effects and publishes the business result once', async () => {
+  class FailFirstReceiptRepository extends MemorySkillRepository {
+    failNextReceipt = true;
+
+    override async putInvocationReceipt(
+      receipt: Parameters<MemorySkillRepository['putInvocationReceipt']>[0],
+    ) {
+      if (
+        receipt.invocationId === 'invocation-receipt-retry' &&
+        this.failNextReceipt
+      ) {
+        this.failNextReceipt = false;
+        throw new Error('fixture receipt persistence failure');
+      }
+      return super.putInvocationReceipt(receipt);
+    }
+  }
+
+  const repository = new FailFirstReceiptRepository();
+  const service = new SkillService(repository, () => NOW);
+  const revision = await createAcceptedEffectSkill(service);
+  const published = new Map<
+    string,
+    Parameters<SkillInvocationResultPublisher['publishOnce']>[0]['result']
+  >();
+  let childExecutions = 0;
+  let generations = 0;
+  let publicationAttempts = 0;
+  const invocation = {
+    calls: [
+      {
+        callId: 'read-facts',
+        contextRefs: ['facts:current-offer'],
+        declaredBudgetCapCents: 1,
+        payload: {},
+        toolId: 'tool.fact.read',
+      },
+    ],
+    input: dailyIndustrySkillInput(),
+    invocationId: 'invocation-receipt-retry',
+    output: {
+      schemaRevision: 'skill-output.intent-decision@1',
+      target: 'workflow_artifact' as const,
+    },
+    productUsageTaskId: 'task-one-product-usage',
+    skillRevisionRef: revision.skillRevisionRef,
+    taskId: 'task-receipt-retry',
+    workspaceId: 'workspace-skill-invocation',
+  };
+  const executor: SkillInvocationExecutor = {
+    async execute() {
+      childExecutions += 1;
+      return {
+        acceptanceStatus: 'accepted',
+        costCents: 1,
+        providerReceipt: {
+          accepted: true,
+          providerTaskRef: 'provider-receipt-retry',
+        },
+        usage: { inputTokens: 3, outputTokens: 1 },
+      };
+    },
+    async generate() {
+      generations += 1;
+      return {
+        value: {
+          ...intentDecisionOutput(),
+          normalizedIntent:
+            generations === 1
+              ? '首次生成的权威结果'
+              : '重试生成的不同结果',
+        },
+      };
+    },
+  };
+  const publisher: SkillInvocationResultPublisher = {
+    async publishOnce(input) {
+      publicationAttempts += 1;
+      const existing = published.get(input.idempotencyKey);
+      if (existing !== undefined) {
+        return structuredClone(existing);
+      }
+      published.set(input.idempotencyKey, structuredClone(input.result));
+      return structuredClone(input.result);
+    },
+  };
+
+  await assert.rejects(
+    service.invoke(invocation, executor, publisher),
+    /fixture receipt persistence failure/u,
+  );
+  assert.equal(
+    await repository.getInvocationReceipt(invocation.invocationId),
+    null,
+  );
+
+  const recovered = await service.invoke(invocation, executor, publisher);
+  assert.deepEqual(recovered.output.value, {
+    ...intentDecisionOutput(),
+    normalizedIntent: '首次生成的权威结果',
+  });
+  assert.equal(childExecutions, 1);
+  assert.equal(generations, 2);
+  assert.equal(publicationAttempts, 2);
+  assert.equal(published.size, 1);
+  assert.deepEqual(
+    published.get(invocation.invocationId)?.value,
+    {
+      ...intentDecisionOutput(),
+      normalizedIntent: '首次生成的权威结果',
+    },
+  );
+});
+
+test('replay fails closed before mutating any effect when one recorded effect is missing', async () => {
+  class MissingEffectRepository extends MemorySkillRepository {
+    readonly missingEffectIds = new Set<string>();
+    updates = 0;
+
+    override async getChildEffect(effectId: string) {
+      if (this.missingEffectIds.has(effectId)) return null;
+      return super.getChildEffect(effectId);
+    }
+
+    override async updateChildEffect(
+      effect: Parameters<MemorySkillRepository['updateChildEffect']>[0],
+    ) {
+      this.updates += 1;
+      return super.updateChildEffect(effect);
+    }
+  }
+
+  const repository = new MissingEffectRepository();
+  const service = new SkillService(repository, () => NOW);
+  const revision = await createAcceptedEffectSkill(service);
+  const invocation = {
+    calls: [
+      {
+        callId: 'read-facts',
+        contextRefs: ['facts:current-offer'],
+        declaredBudgetCapCents: 1,
+        payload: {},
+        toolId: 'tool.fact.read',
+      },
+      {
+        callId: 'score-output',
+        contextRefs: ['facts:current-offer'],
+        declaredBudgetCapCents: 1,
+        payload: {},
+        toolId: 'tool.quality.score',
+      },
+    ],
+    input: dailyIndustrySkillInput(),
+    invocationId: 'invocation-missing-effect-replay',
+    output: {
+      schemaRevision: 'skill-output.intent-decision@1',
+      target: 'workflow_artifact' as const,
+    },
+    productUsageTaskId: 'task-one-product-usage',
+    skillRevisionRef: revision.skillRevisionRef,
+    taskId: 'task-missing-effect-replay',
+    workspaceId: 'workspace-skill-invocation',
+  };
+  const executor: SkillInvocationExecutor = {
+    async execute(effect) {
+      return {
+        acceptanceStatus: 'accepted',
+        costCents: 1,
+        providerReceipt: {
+          accepted: true,
+          providerTaskRef: `provider-${effect.callId}`,
+        },
+        usage: { inputTokens: 2, outputTokens: 1 },
+      };
+    },
+    async generate() {
+      return { value: intentDecisionOutput() };
+    },
+  };
+
+  await service.invoke(invocation, executor, discardResultPublisher);
+  repository.missingEffectIds.add(
+    'invocation-missing-effect-replay:score-output',
+  );
+
+  await assert.rejects(
+    service.invoke(invocation, executor, discardResultPublisher),
+    /工具调用记录不完整/u,
+  );
+  assert.equal(repository.updates, 0);
 });
 
 test('an observed over-budget child effect is persisted before invocation rejection', async () => {
@@ -637,7 +939,6 @@ test('an observed over-budget child effect is persisted before invocation reject
         output: {
           schemaRevision: 'skill-output.intent-decision@1',
           target: 'workflow_artifact',
-          value: intentDecisionOutput(),
         },
         productUsageTaskId: 'task-one-product-usage',
         skillRevisionRef: revision.skillRevisionRef,
@@ -656,7 +957,11 @@ test('an observed over-budget child effect is persisted before invocation reject
             usage: { inputTokens: 12, outputTokens: 4 },
           };
         },
+        async generate() {
+          throw new Error('over-budget effects must stop before generation');
+        },
       },
+      discardResultPublisher,
       {
         validate() {
           return { qualityPassed: true, schemaValid: true };
@@ -702,14 +1007,13 @@ test('retry after a mid-invocation crash replays each settled effect and execute
     output: {
       schemaRevision: 'skill-output.intent-decision@1',
       target: 'workflow_artifact' as const,
-      value: intentDecisionOutput(),
     },
     productUsageTaskId: 'task-one-product-usage',
     skillRevisionRef: revision.skillRevisionRef,
     taskId: 'task-mid-crash',
     workspaceId: 'workspace-skill-invocation',
   };
-  const executor: SkillChildEffectExecutor = {
+  const executor: SkillInvocationExecutor = {
     async execute(effect) {
       const attempt = (attempts.get(effect.callId) ?? 0) + 1;
       attempts.set(effect.callId, attempt);
@@ -726,6 +1030,9 @@ test('retry after a mid-invocation crash replays each settled effect and execute
         usage: { inputTokens: 1, outputTokens: 1 },
       };
     },
+    async generate() {
+      return { value: intentDecisionOutput() };
+    },
   };
   const validator = {
     validate() {
@@ -734,10 +1041,15 @@ test('retry after a mid-invocation crash replays each settled effect and execute
   };
 
   await assert.rejects(
-    service.invoke(input, executor, validator),
+    service.invoke(input, executor, discardResultPublisher, validator),
     /fixture crash/u,
   );
-  const receipt = await service.invoke(input, executor, validator);
+  const receipt = await service.invoke(
+    input,
+    executor,
+    discardResultPublisher,
+    validator,
+  );
 
   assert.deepEqual(Object.fromEntries(attempts), {
     'read-facts': 1,
@@ -1199,6 +1511,18 @@ function intentDecisionOutput() {
     route: 'customized',
     implicitConstraints: ['只使用已确认的行业事实'],
     blockingGap: null,
+  };
+}
+
+function withGeneratedOutput(
+  executor: SkillChildEffectExecutor,
+  value: unknown = intentDecisionOutput(),
+): SkillInvocationExecutor {
+  return {
+    ...executor,
+    async generate() {
+      return { value: structuredClone(value) };
+    },
   };
 }
 

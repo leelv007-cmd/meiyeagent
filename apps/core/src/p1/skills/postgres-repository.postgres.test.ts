@@ -4,7 +4,11 @@ import test from 'node:test';
 
 import { Pool } from 'pg';
 
-import { PostgresSkillRepository, SkillService } from './index.js';
+import {
+  createDurableSkillRuntime,
+  PostgresSkillRepository,
+  SkillService,
+} from './index.js';
 import {
   nameHarnessIntent,
   type StructuredNodeRunner,
@@ -286,7 +290,7 @@ test(
 );
 
 test(
-  'invalid Skill output leaves PostgreSQL receipts and child effects empty',
+  'invalid generated Skill output leaves PostgreSQL receipt empty while preserving provider audit',
   { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
   async () => {
     const pool = new Pool({ connectionString });
@@ -350,49 +354,74 @@ test(
       null,
     );
     let executions = 0;
+    let generations = 0;
+    let publications = 0;
 
     try {
-      await assert.rejects(
-        new SkillService(repository).invoke(
-          {
-            calls: [
-              {
-                callId: 'read-facts',
-                contextRefs: ['facts:current-offer'],
-                declaredBudgetCapCents: 1,
-                payload: {},
-                toolId: 'tool.fact.read',
+      const runtime = await createDurableSkillRuntime({ pool, repository });
+      const tool = runtime.createInvocationTool({
+        executor: {
+          async execute() {
+            executions += 1;
+            return {
+              acceptanceStatus: 'accepted',
+              costCents: 1,
+              providerReceipt: {
+                accepted: true,
+                providerTaskRef: 'provider-invalid-output-postgres',
               },
-            ],
-            input: {
-              context: {
-                workId: 'work-invalid-output',
-                intent: '写一条行业内容',
-                scene: '日常项目曝光',
-                sourceSummaries: ['门店价目表'],
-              },
-              assetReferences: [],
-            },
-            invocationId,
-            output: {
-              schemaRevision: 'skill-output.intent-decision@1',
-              target: 'workflow_artifact',
-              value: { route: 'customized' },
-            },
-            productUsageTaskId: `product-usage-${suffix}`,
-            skillRevisionRef,
-            taskId: `task-${suffix}`,
-            workspaceId: `workspace-${suffix}`,
+              usage: { inputTokens: 5, outputTokens: 2 },
+            };
           },
+          async generate() {
+            generations += 1;
+            return { value: { route: 'customized' } };
+          },
+        },
+        resultPublisher: {
+          async publishOnce(input) {
+            publications += 1;
+            return input.result;
+          },
+        },
+      });
+      const result = await tool.execute({
+        calls: [
           {
-            async execute() {
-              executions += 1;
-              throw new Error('must not execute');
-            },
+            callId: 'read-facts',
+            contextRefs: ['facts:current-offer'],
+            declaredBudgetCapCents: 1,
+            payload: {},
+            toolId: 'tool.fact.read',
           },
-        ),
-        /Schema 或质量门/u,
-      );
+        ],
+        input: {
+          context: {
+            workId: 'work-invalid-output',
+            intent: '写一条行业内容',
+            scene: '日常项目曝光',
+            sourceSummaries: ['门店价目表'],
+          },
+          assetReferences: [],
+        },
+        invocationId,
+        output: {
+          schemaRevision: 'skill-output.intent-decision@1',
+          target: 'workflow_artifact',
+        },
+        productUsageTaskId: `product-usage-${suffix}`,
+        skillRevisionRef,
+        taskId: `task-${suffix}`,
+        workspaceId: `workspace-${suffix}`,
+      });
+      assert.deepEqual(result, {
+        ok: false,
+        error: {
+          code: 'SKILL_OUTPUT_INVALID',
+          message: 'Skill 输出未通过 Schema 或质量门。',
+          retryable: false,
+        },
+      });
       const receiptRows = await pool.query<{ count: string }>(
         `SELECT count(*)::text AS count
            FROM p1_skill_invocation_receipts
@@ -405,9 +434,11 @@ test(
           WHERE invocation_id = $1`,
         [invocationId],
       );
-      assert.equal(executions, 0);
+      assert.equal(executions, 1);
+      assert.equal(generations, 1);
+      assert.equal(publications, 0);
       assert.equal(receiptRows.rows[0]?.count, '0');
-      assert.equal(effectRows.rows[0]?.count, '0');
+      assert.equal(effectRows.rows[0]?.count, '1');
     } finally {
       await pool.query(
         'DELETE FROM p1_skill_child_effects WHERE invocation_id = $1',
