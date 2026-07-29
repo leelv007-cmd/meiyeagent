@@ -82,6 +82,23 @@ test(
         await repository.listReferenceEdges(catalog.activeRevisionRef)
       ).filter((edge) => edge.consumerKind === 'published_lifecycle');
       assert.equal(lifecycleEdges.length, 1);
+      const otherRevision = revisions.find(
+        (revision) =>
+          revision.skillRevisionRef !== catalog.activeRevisionRef,
+      );
+      assert.ok(otherRevision);
+      await assert.rejects(
+        repository.putReferenceEdge({
+          consumerId: skillId,
+          consumerKind: 'published_lifecycle',
+          consumerLabel: 'forged second lifecycle pointer',
+          createdAt: NOW,
+          edgeId: `forged-lifecycle-${suffix}`,
+          scope: { kind: 'global', proof: 'platform_catalog' },
+          targetSkillRevisionRef: otherRevision.skillRevisionRef,
+        }),
+        /unique|duplicate/u,
+      );
       await pool.query(
         `DELETE FROM p1_skill_reference_edges
           WHERE consumer_kind = 'published_lifecycle'

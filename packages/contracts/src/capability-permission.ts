@@ -391,6 +391,7 @@ export function requiredP1Capability(
         'skill_rollback',
         'skill_deployment',
         'skill_governance_approve',
+        'skill_governance_business_cancel',
         'skill_governance_cancel',
         'skill_governance_resume',
         'skill_governance_start',

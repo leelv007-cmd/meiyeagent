@@ -5,6 +5,7 @@ import type { Pool, PoolClient } from 'pg';
 import { z } from 'zod';
 
 import { P1DomainError } from '../foundation/domain.js';
+import { lockSkillReferenceTarget } from './reference-lock.js';
 import {
   bindingReferenceEdge,
   deploymentReferenceEdge,
@@ -387,8 +388,7 @@ export class PostgresSkillRepository implements SkillRepository {
             'deployment',
             'eval_run',
             'governance_run',
-            'invocation_receipt',
-            'traffic_target'
+            'invocation_receipt'
           )
         ),
         consumer_id text NOT NULL,
@@ -413,6 +413,24 @@ export class PostgresSkillRepository implements SkillRepository {
         ),
         UNIQUE (consumer_kind, consumer_id, target_skill_revision_ref)
       );
+      DELETE FROM p1_skill_reference_edges
+       WHERE consumer_kind = 'traffic_target';
+      ALTER TABLE p1_skill_reference_edges
+        DROP CONSTRAINT IF EXISTS
+          p1_skill_reference_edges_consumer_kind_check;
+      ALTER TABLE p1_skill_reference_edges
+        ADD CONSTRAINT p1_skill_reference_edges_consumer_kind_check
+        CHECK (
+          consumer_kind IN (
+            'published_lifecycle',
+            'workflow_binding',
+            'recipe_revision',
+            'deployment',
+            'eval_run',
+            'governance_run',
+            'invocation_receipt'
+          )
+        );
       CREATE INDEX IF NOT EXISTS p1_skill_reference_edges_target_scope_idx
         ON p1_skill_reference_edges (
           target_skill_revision_ref,
@@ -486,6 +504,21 @@ export class PostgresSkillRepository implements SkillRepository {
         FROM p1_skill_catalogs
        WHERE NULLIF(payload->>'activeRevisionRef', '') IS NOT NULL
       ON CONFLICT DO NOTHING;
+      DELETE FROM p1_skill_reference_edges edges
+       WHERE edges.consumer_kind = 'published_lifecycle'
+         AND NOT EXISTS (
+           SELECT 1
+             FROM p1_skill_catalogs catalogs
+            WHERE catalogs.skill_id = edges.consumer_id
+              AND NULLIF(
+                    catalogs.payload->>'activeRevisionRef',
+                    ''
+                  ) = edges.target_skill_revision_ref
+         );
+      CREATE UNIQUE INDEX IF NOT EXISTS
+        p1_skill_reference_edges_published_lifecycle_uq
+        ON p1_skill_reference_edges (consumer_id)
+        WHERE consumer_kind = 'published_lifecycle';
       INSERT INTO p1_skill_reference_edges
         (edge_id, target_skill_revision_ref, consumer_kind, consumer_id,
          consumer_label, scope_kind, owner_workspace_id, global_proof,
@@ -2176,18 +2209,6 @@ export class PostgresSkillRepository implements SkillRepository {
       ? cloneRow(existing.rows[0])
       : this.insertReferenceEdge(client, edge);
   }
-}
-
-function lockSkillReferenceTarget(
-  client: PoolClient,
-  targetSkillRevisionRef: string,
-) {
-  return client.query(
-    `SELECT pg_advisory_xact_lock(
-       hashtextextended('skill-reference-target:' || $1, 0)
-     )`,
-    [targetSkillRevisionRef],
-  );
 }
 
 function cloneRow<T>(row: PayloadRow<T>) {

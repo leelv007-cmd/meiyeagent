@@ -249,6 +249,13 @@ export class SkillGovernanceDbosRuntime {
       input.workspaceId,
       input.runId,
     );
+    const workflowStatus =
+      await this.dbos.getWorkflowStatus(workflowId);
+    if (workflowStatus?.status !== 'CANCELLED') {
+      throw new Error(
+        'Only an administratively cancelled Skill governance workflow can resume.',
+      );
+    }
     await this.dbos.resumeWorkflow(workflowId);
     return { runId: input.runId, workflowId };
   }

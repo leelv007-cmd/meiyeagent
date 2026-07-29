@@ -390,7 +390,7 @@ function cancelGovernance(
     context: foundationContext('operator-business-cancel', workspaceId),
     idempotencyKey: 'business-cancel-once',
     input: {
-      action: 'skill_governance_cancel',
+      action: 'skill_governance_business_cancel',
       payload: { runId },
     },
   });

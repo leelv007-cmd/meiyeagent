@@ -730,11 +730,6 @@ export class SkillService {
       'Skill revision ref',
     );
     const workspaceId = required(input.workspaceId, 'Workspace ID');
-    const revision = await this.requireRevision(skillRevisionRef);
-    if (revision.status !== 'accepted_frozen') {
-      fail('只能退役已受理冻结的 Skill 版本。');
-    }
-    const at = this.now();
     const inputFingerprint = sha256(
       canonicalJson({
         actorId,
@@ -743,6 +738,21 @@ export class SkillService {
         workspaceId,
       }),
     );
+    const existing = await this.repository.getGovernanceRun(runId);
+    if (existing) {
+      if (existing.inputFingerprint !== inputFingerprint) {
+        throw new P1DomainError(
+          'IDEMPOTENCY_CONFLICT',
+          'Skill retirement run is already bound to different facts.',
+        );
+      }
+      return existing.result;
+    }
+    const revision = await this.requireRevision(skillRevisionRef);
+    if (revision.status !== 'accepted_frozen') {
+      fail('只能退役已受理冻结的 Skill 版本。');
+    }
+    const at = this.now();
     const runInput = {
       actorId,
       at,

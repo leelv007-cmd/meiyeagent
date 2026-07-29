@@ -120,6 +120,7 @@ async function installSkillDispatchMocks(page: Page) {
   const commands: CapturedSkillRequest[] = [];
   const queries: CapturedSkillRequest[] = [];
   let governanceRunStatus = 'awaiting_approval';
+  let governanceWorkflowStatus = 'PENDING';
 
   await page.route('**/api/core/p1/query', async (route) => {
     const request = route.request();
@@ -196,11 +197,23 @@ async function installSkillDispatchMocks(page: Page) {
                         },
                       ],
                     }
-                  : null,
+                  : governanceRunStatus === 'cancelled'
+                    ? {
+                        applied: false,
+                        success: true,
+                        validationResults: [
+                          {
+                            fieldPath: '$workflow',
+                            reasonCode: 'governance_cancelled',
+                            status: 'not_applied',
+                          },
+                        ],
+                      }
+                    : null,
               runId: body.payload?.runId,
               status: governanceRunStatus,
             },
-            workflowStatus: governanceRunStatus,
+            workflowStatus: governanceWorkflowStatus,
           },
         }),
       });
@@ -274,12 +287,17 @@ async function installSkillDispatchMocks(page: Page) {
     });
     if (body.action === 'skill_governance_start') {
       governanceRunStatus = 'awaiting_approval';
+      governanceWorkflowStatus = 'PENDING';
     } else if (body.action === 'skill_governance_cancel') {
-      governanceRunStatus = 'cancelled';
+      governanceWorkflowStatus = 'CANCELLED';
     } else if (body.action === 'skill_governance_resume') {
-      governanceRunStatus = 'awaiting_approval';
+      governanceWorkflowStatus = 'PENDING';
+    } else if (body.action === 'skill_governance_business_cancel') {
+      governanceRunStatus = 'cancelled';
+      governanceWorkflowStatus = 'SUCCESS';
     } else if (body.action === 'skill_governance_approve') {
       governanceRunStatus = 'completed';
+      governanceWorkflowStatus = 'SUCCESS';
     }
     await route.fulfill({
       contentType: 'application/json',
@@ -298,10 +316,22 @@ async function installSkillDispatchMocks(page: Page) {
                   },
                 ],
               }
-            : {
-                accepted: true,
-                action: body.action,
-              },
+            : body.action === 'skill_retire'
+              ? {
+                  applied: false,
+                  success: true,
+                  validationResults: [
+                    {
+                      fieldPath: '$dependencies',
+                      reasonCode: 'dependency_blocked',
+                      status: 'not_applied',
+                    },
+                  ],
+                }
+              : {
+                  accepted: true,
+                  action: body.action,
+                },
       }),
     });
   });
@@ -460,11 +490,11 @@ test('admin Skill catalog dispatches structured lifecycle and governance command
     await expect(page.getByTestId('skills-governance-run')).toContainText(
       'awaiting_approval'
     );
-    await page.getByRole('button', { name: '取消运行' }).click();
+    await page.getByRole('button', { name: '管理取消（可恢复）' }).click();
     await expect(page.getByTestId('skills-governance-run')).toContainText(
-      'cancelled'
+      '管理取消（可恢复）'
     );
-    await page.getByRole('button', { name: '恢复运行' }).click();
+    await page.getByRole('button', { name: '恢复管理取消' }).click();
     await expect(page.getByTestId('skills-governance-run')).toContainText(
       'awaiting_approval'
     );
@@ -482,6 +512,31 @@ test('admin Skill catalog dispatches structured lifecycle and governance command
     await expect(page.getByTestId('skill-governance-result')).toContainText(
       'manifest.description · field_applied · applied'
     );
+    await page
+      .locator('#skills-governance-run-id')
+      .fill(`run-business-cancel-${suffix}`);
+    await page.locator('#skills-governance-base-ref').fill(skillRevisionRef);
+    await page.locator('#skills-governance-head').fill('1');
+    await page
+      .locator('#skills-governance-description')
+      .fill('业务终止不应用这次说明。');
+    await page
+      .locator('#skills-governance-instruction')
+      .fill('业务终止不应用这次正文。');
+    await page.getByRole('button', { name: '启动修订运行' }).click();
+    await expect(page.getByTestId('skills-governance-run')).toContainText(
+      `run-business-cancel-${suffix} · awaiting_approval`
+    );
+    await page.getByRole('button', { name: '业务终止（不可恢复）' }).click();
+    await expect(page.getByTestId('skills-governance-run')).toContainText(
+      '业务终止（不可恢复）'
+    );
+    await expect(page.getByTestId('skill-governance-result')).toContainText(
+      '$workflow · governance_cancelled · not_applied'
+    );
+    await expect(
+      page.getByRole('button', { name: '恢复管理取消' })
+    ).toBeDisabled();
 
     await page.locator('#skills-publish-runId').fill(`publish-${suffix}`);
     await page
@@ -516,6 +571,12 @@ test('admin Skill catalog dispatches structured lifecycle and governance command
     );
     await page.locator('#skills-retire-run-id').fill(`retire-${suffix}`);
     await page.getByRole('button', { name: '退役这个版本' }).click();
+    await expect(
+      page.getByTestId('skill-governance-result').last()
+    ).toContainText('success=true · applied=false');
+    await expect(
+      page.getByTestId('skill-governance-result').last()
+    ).toContainText('$dependencies · dependency_blocked · not_applied');
 
     const promptQuery = dispatch.queries.find(
       (query) => query.action === 'skill_prompt_reference'
@@ -567,6 +628,27 @@ test('admin Skill catalog dispatches structured lifecycle and governance command
       targetSkillRevisionRef: skillRevisionRef,
     });
     expect(
+      dispatch.commands.find(
+        (command) => command.action === 'skill_governance_cancel'
+      )?.payload
+    ).toEqual({
+      runId: `run-${suffix}`,
+    });
+    expect(
+      dispatch.commands.find(
+        (command) => command.action === 'skill_governance_resume'
+      )?.payload
+    ).toEqual({
+      runId: `run-${suffix}`,
+    });
+    expect(
+      dispatch.commands.find(
+        (command) => command.action === 'skill_governance_business_cancel'
+      )?.payload
+    ).toEqual({
+      runId: `run-business-cancel-${suffix}`,
+    });
+    expect(
       dispatch.commands.find((command) => command.action === 'skill_retire')
         ?.payload
     ).toEqual({
@@ -590,6 +672,7 @@ test('admin Skill catalog dispatches structured lifecycle and governance command
     for (const action of [
       'skill_governance_start',
       'skill_governance_approve',
+      'skill_governance_business_cancel',
       'skill_governance_cancel',
       'skill_governance_resume',
       'skill_publish',

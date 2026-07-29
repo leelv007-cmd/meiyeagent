@@ -412,9 +412,8 @@ test('retirement is blocked atomically by dependencies and succeeds only when cl
     scope: { kind: 'workspace', workspaceId: 'workspace-retirement' },
     createdAt: NOW,
   });
-  const module = new SkillFoundationModule(
-    new SkillService(repository, () => NOW),
-  );
+  const service = new SkillService(repository, () => NOW);
+  const module = new SkillFoundationModule(service);
   const context = {
     actor: 'admin' as const,
     correlationId: 'corr-retirement',
@@ -474,6 +473,24 @@ test('retirement is blocked atomically by dependencies and succeeds only when cl
     ],
   });
   assert.equal((await repository.getRevision(clearRef))?.status, 'retired');
+  assert.deepEqual(
+    await service.retireRevision({
+      actorId: context.userId,
+      runId: 'retire-clear',
+      skillRevisionRef: clearRef,
+      workspaceId: context.workspaceId,
+    }),
+    retired,
+  );
+  await assert.rejects(
+    service.retireRevision({
+      actorId: 'operator-other',
+      runId: 'retire-clear',
+      skillRevisionRef: clearRef,
+      workspaceId: context.workspaceId,
+    }),
+    /different facts/u,
+  );
 });
 
 async function seedRetirementTarget(

@@ -41,6 +41,7 @@ test('the Skill action registry exposes no export or download verb', () => {
     'skill_define',
     'skill_deployment',
     'skill_governance_approve',
+    'skill_governance_business_cancel',
     'skill_governance_cancel',
     'skill_governance_resume',
     'skill_governance_start',

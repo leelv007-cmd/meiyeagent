@@ -26,6 +26,7 @@ const {
   buildSkillCommandPayload,
   buildSkillGovernanceStartPayload,
   buildSkillPublishPayload,
+  governanceRunPollInterval,
 } = await import('@/p1/admin-skills-control');
 const { p1QueryKeys } = await import('@/p1/query-keys');
 
@@ -122,6 +123,9 @@ test('Skills admin route separates governed revision, Published, traffic, and re
   assert.match(html, /流量目标（新请求）/);
   assert.match(html, /反向依赖与退役/);
   assert.match(html, /治理运行/);
+  assert.match(html, /管理取消（可恢复）/);
+  assert.match(html, /业务终止（不可恢复）/);
+  assert.match(html, /恢复管理取消/);
   assert.match(html, /只有“受控做法正文”和“一句话说明”可修改/);
   assert.match(
     html,
@@ -182,6 +186,29 @@ test('governed revision and Published payloads contain only their structured aut
       skillId: 'skill.first',
       targetSkillRevisionRef: 'skill.first@1',
     }
+  );
+});
+
+test('a governance run keeps polling until it reaches a terminal status', () => {
+  // An unreadable run disables every action button, so dropping the poll here
+  // strands the panel until someone reloads the page.
+  assert.equal(governanceRunPollInterval(undefined), 2_000);
+  assert.equal(governanceRunPollInterval({}), 2_000);
+  assert.equal(
+    governanceRunPollInterval({ state: { status: 'awaiting_approval' } }),
+    2_000
+  );
+  assert.equal(
+    governanceRunPollInterval({ state: { status: 'completed' } }),
+    false
+  );
+  assert.equal(
+    governanceRunPollInterval({ workflowStatus: 'CANCELLED' }),
+    false
+  );
+  assert.equal(
+    governanceRunPollInterval({ state: { status: 'cancelled' } }),
+    false
   );
 });
 

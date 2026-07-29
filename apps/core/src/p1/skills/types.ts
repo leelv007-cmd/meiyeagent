@@ -304,7 +304,6 @@ export const SKILL_REFERENCE_CONSUMER_KINDS = [
   'eval_run',
   'governance_run',
   'invocation_receipt',
-  'traffic_target',
 ] as const;
 
 export type SkillReferenceConsumerKind =

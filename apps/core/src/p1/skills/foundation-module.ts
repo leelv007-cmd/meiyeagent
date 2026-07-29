@@ -37,6 +37,7 @@ export const SKILL_COMMAND_ACTIONS = [
   'skill_define',
   'skill_deployment',
   'skill_governance_approve',
+  'skill_governance_business_cancel',
   'skill_governance_cancel',
   'skill_governance_resume',
   'skill_governance_start',
@@ -56,6 +57,11 @@ export interface SkillGovernanceRuntimePort {
   businessCancel(input: {
     actorId: string;
     idempotencyKey: string;
+    runId: string;
+    workspaceId: string;
+  }): Promise<unknown>;
+  cancel(input: {
+    actorId: string;
     runId: string;
     workspaceId: string;
   }): Promise<unknown>;
@@ -512,11 +518,18 @@ export class SkillFoundationModule implements P1OperationModule {
           runId: text(value, 'runId'),
           workspaceId: args.context.workspaceId,
         });
-      case 'skill_governance_cancel':
-        onlyKeys(value, ['runId'], 'Skill 治理取消命令');
+      case 'skill_governance_business_cancel':
+        onlyKeys(value, ['runId'], 'Skill 治理业务终止命令');
         return this.requireGovernanceRuntime().businessCancel({
           actorId: args.context.userId,
           idempotencyKey: args.idempotencyKey,
+          runId: text(value, 'runId'),
+          workspaceId: args.context.workspaceId,
+        });
+      case 'skill_governance_cancel':
+        onlyKeys(value, ['runId'], 'Skill 治理管理取消命令');
+        return this.requireGovernanceRuntime().cancel({
+          actorId: args.context.userId,
           runId: text(value, 'runId'),
           workspaceId: args.context.workspaceId,
         });

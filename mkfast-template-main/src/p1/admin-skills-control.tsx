@@ -286,6 +286,7 @@ const ACTION_ORDER = [
 
 const GOVERNANCE_RUN_ACTIONS = [
   'skill_governance_approve',
+  'skill_governance_business_cancel',
   'skill_governance_cancel',
   'skill_governance_resume',
 ] as const;
@@ -444,18 +445,54 @@ function requiredFormValue(value: string, label: string) {
   return normalized;
 }
 
+function governanceWorkflowStatus(run: SkillGovernanceRunState | undefined) {
+  return run?.workflowStatus?.toLowerCase();
+}
+
 function governanceRunStatus(run: SkillGovernanceRunState | undefined) {
   const workflowStatus = run?.workflowStatus?.toLowerCase();
   if (workflowStatus === 'cancelled' || workflowStatus === 'canceled') {
-    return 'cancelled';
+    return 'administrative_cancelled';
   }
-  return (
-    run?.state?.status ??
-    run?.run?.status ??
-    run?.status ??
-    workflowStatus ??
-    undefined
-  );
+  const stateStatus = run?.state?.status ?? run?.run?.status ?? run?.status;
+  if (stateStatus === 'cancelled' || stateStatus === 'canceled') {
+    return 'business_cancelled';
+  }
+  return stateStatus ?? workflowStatus ?? undefined;
+}
+
+const GOVERNANCE_RUN_TERMINAL_STATUSES = [
+  'administrative_cancelled',
+  'business_cancelled',
+  'completed',
+  'failed',
+];
+
+/**
+ * Poll a governance run until it reaches a terminal status.
+ *
+ * An unknown status keeps polling on purpose. Every run action is disabled
+ * while the status is unreadable, so a read that was aborted or failed would
+ * otherwise strand the panel: no poll to recover it, and no enabled control to
+ * act on. Only a terminal run has nothing left to observe.
+ */
+export function governanceRunPollInterval(
+  run: SkillGovernanceRunState | undefined
+) {
+  const status = governanceRunStatus(run);
+  return status && GOVERNANCE_RUN_TERMINAL_STATUSES.includes(status)
+    ? false
+    : 2_000;
+}
+
+function governanceRunStatusLabel(status: string | undefined) {
+  if (status === 'administrative_cancelled') {
+    return '管理取消（可恢复）';
+  }
+  if (status === 'business_cancelled') {
+    return '业务终止（不可恢复）';
+  }
+  return status;
 }
 
 function governanceRunResult(run: SkillGovernanceRunState | undefined) {
@@ -520,6 +557,8 @@ export function AdminSkillsControl() {
   const [retireRunId, setRetireRunId] = useState('');
   const [retireError, setRetireError] = useState('');
   const [retireBusy, setRetireBusy] = useState(false);
+  const [retireResult, setRetireResult] =
+    useState<SkillGovernanceResult | null>(null);
   const [result, setResult] = useState<unknown>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -598,12 +637,8 @@ export function AdminSkillsControl() {
         },
         signal
       ),
-    refetchInterval: (query) => {
-      const status = governanceRunStatus(query.state.data);
-      return status && !['cancelled', 'completed', 'failed'].includes(status)
-        ? 2_000
-        : false;
-    },
+    refetchInterval: (query) =>
+      governanceRunPollInterval(query.state.data),
   });
   const dependencyQuery = useQuery({
     enabled: Boolean(dependencyTarget),
@@ -735,6 +770,7 @@ export function AdminSkillsControl() {
 
   const inspectDependencies = () => {
     const target = dependencyInput.trim();
+    setRetireResult(null);
     if (!target) {
       setRetireError('版本引用不能为空。');
       return;
@@ -757,13 +793,14 @@ export function AdminSkillsControl() {
   const retireRevision = async () => {
     setRetireBusy(true);
     setRetireError('');
+    setRetireResult(null);
     try {
       const runId = requiredFormValue(retireRunId, '退役运行号');
       const skillRevisionRef = requiredFormValue(dependencyTarget, '版本引用');
       if (retirementBlocked) {
         throw new Error('仍有反向依赖，当前版本不能退役。');
       }
-      await commandP1(
+      const response = await commandP1<SkillGovernanceResult>(
         'skills',
         {
           action: 'skill_retire',
@@ -771,6 +808,7 @@ export function AdminSkillsControl() {
         },
         `skill_retire:${runId}`
       );
+      setRetireResult(response);
       await queryClient.invalidateQueries({
         queryKey: p1QueryKeys.module('skills'),
       });
@@ -1024,7 +1062,9 @@ export function AdminSkillsControl() {
                 <p className="text-muted-foreground text-sm">
                   {governanceRunId
                     ? `${governanceRunId} · ${
-                        governanceRunStatus(governanceRunQuery.data) ?? '读取中'
+                        governanceRunStatusLabel(
+                          governanceRunStatus(governanceRunQuery.data)
+                        ) ?? '读取中'
                       }`
                     : '启动后会在这里恢复运行状态。'}
                 </p>
@@ -1059,7 +1099,7 @@ export function AdminSkillsControl() {
                 disabled={
                   governanceBusy ||
                   !governanceRunId ||
-                  ['cancelled', 'completed', 'failed'].includes(
+                  !['awaiting_approval', 'applying'].includes(
                     governanceRunStatus(governanceRunQuery.data) ?? ''
                   )
                 }
@@ -1069,15 +1109,29 @@ export function AdminSkillsControl() {
                 size="sm"
                 variant="outline"
               >
-                取消运行
+                管理取消（可恢复）
               </Button>
               <Button
                 data-ops-control="button"
                 disabled={
                   governanceBusy ||
-                  !['cancelled', 'canceled'].includes(
-                    governanceRunStatus(governanceRunQuery.data) ?? ''
-                  )
+                  governanceRunStatus(governanceRunQuery.data) !==
+                    'awaiting_approval'
+                }
+                onClick={() =>
+                  void actOnGovernanceRun('skill_governance_business_cancel')
+                }
+                size="sm"
+                variant="outline"
+              >
+                业务终止（不可恢复）
+              </Button>
+              <Button
+                data-ops-control="button"
+                disabled={
+                  governanceBusy ||
+                  governanceWorkflowStatus(governanceRunQuery.data) !==
+                    'cancelled'
                 }
                 onClick={() =>
                   void actOnGovernanceRun('skill_governance_resume')
@@ -1085,7 +1139,7 @@ export function AdminSkillsControl() {
                 size="sm"
                 variant="outline"
               >
-                恢复运行
+                恢复管理取消
               </Button>
               <Button
                 data-ops-control="button"
@@ -1234,6 +1288,7 @@ export function AdminSkillsControl() {
               {retireError}
             </p>
           ) : null}
+          {retireResult ? <GovernanceResultView result={retireResult} /> : null}
         </AdminPanelContent>
       </AdminPanel>
 

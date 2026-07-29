@@ -57,6 +57,71 @@ test(
           new PostgresSkillRepository(pool).migrate(),
         ),
       );
+      const driftPool = pools[0];
+      assert.ok(driftPool);
+      await driftPool.query(`
+        DROP INDEX p1_skill_reference_edges_published_lifecycle_uq;
+        ALTER TABLE p1_skill_reference_edges
+          DROP CONSTRAINT p1_skill_reference_edges_consumer_kind_check;
+        INSERT INTO p1_skill_catalogs
+          (skill_id, payload, updated_at, source_kind, tier,
+           publication_generation)
+        VALUES (
+          'skill.migration-lifecycle',
+          '{"activeRevisionRef":"skill.migration-lifecycle@2",
+            "name":"Migration lifecycle fixture"}'::jsonb,
+          now(),
+          'authored',
+          'platform',
+          0
+        );
+        INSERT INTO p1_skill_reference_edges
+          (edge_id, target_skill_revision_ref, consumer_kind, consumer_id,
+           consumer_label, scope_kind, owner_workspace_id, global_proof,
+           payload, created_at)
+        VALUES
+          (
+            'migration-lifecycle-old',
+            'skill.migration-lifecycle@1',
+            'published_lifecycle',
+            'skill.migration-lifecycle',
+            'Migration lifecycle fixture',
+            'global',
+            NULL,
+            'platform_catalog',
+            '{}'::jsonb,
+            now()
+          ),
+          (
+            'migration-lifecycle-current',
+            'skill.migration-lifecycle@2',
+            'published_lifecycle',
+            'skill.migration-lifecycle',
+            'Migration lifecycle fixture',
+            'global',
+            NULL,
+            'platform_catalog',
+            '{}'::jsonb,
+            now()
+          ),
+          (
+            'migration-obsolete-traffic',
+            'skill.migration-lifecycle@1',
+            'traffic_target',
+            'traffic-obsolete',
+            'Obsolete traffic edge',
+            'unknown',
+            NULL,
+            NULL,
+            '{}'::jsonb,
+            now()
+          );
+      `);
+      await Promise.all(
+        pools.map((pool) =>
+          new PostgresSkillRepository(pool).migrate(),
+        ),
+      );
       const constraints = await adminPool.query<{ count: string }>(
         `SELECT count(*)::text AS count
            FROM pg_constraint constraints
@@ -68,6 +133,49 @@ test(
         [schema],
       );
       assert.equal(constraints.rows[0]?.count, '1');
+      const referenceKindConstraint = await adminPool.query<{
+        definition: string;
+      }>(
+        `SELECT pg_get_constraintdef(constraints.oid) AS definition
+           FROM pg_constraint constraints
+           JOIN pg_namespace namespaces
+             ON namespaces.oid = constraints.connamespace
+          WHERE namespaces.nspname = $1
+            AND constraints.conname =
+                'p1_skill_reference_edges_consumer_kind_check'`,
+        [schema],
+      );
+      assert.equal(referenceKindConstraint.rows.length, 1);
+      assert.doesNotMatch(
+        referenceKindConstraint.rows[0]?.definition ?? '',
+        /traffic_target/u,
+      );
+      const lifecycleIndex = await adminPool.query<{ count: string }>(
+        `SELECT count(*)::text AS count
+           FROM pg_indexes
+          WHERE schemaname = $1
+            AND indexname =
+                'p1_skill_reference_edges_published_lifecycle_uq'
+            AND indexdef LIKE '%UNIQUE%'
+            AND indexdef LIKE '%consumer_id%'
+            AND indexdef LIKE '%published_lifecycle%'`,
+        [schema],
+      );
+      assert.equal(lifecycleIndex.rows[0]?.count, '1');
+      const migratedReferences = await driftPool.query<{
+        consumer_kind: string;
+        target_skill_revision_ref: string;
+      }>(
+        `SELECT consumer_kind, target_skill_revision_ref
+           FROM p1_skill_reference_edges
+          ORDER BY edge_id`,
+      );
+      assert.deepEqual(migratedReferences.rows, [
+        {
+          consumer_kind: 'published_lifecycle',
+          target_skill_revision_ref: 'skill.migration-lifecycle@2',
+        },
+      ]);
     } finally {
       await Promise.all(pools.map((pool) => pool.end()));
       await adminPool.query(`DROP SCHEMA "${schema}" CASCADE`);

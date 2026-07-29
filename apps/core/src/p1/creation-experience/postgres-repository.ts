@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type { Pool, PoolClient } from 'pg';
 
 import { P1DomainError } from '../foundation/domain.js';
+import { lockSkillReferenceTarget } from '../skills/reference-lock.js';
 import type { SkillReferenceEdge } from '../skills/types.js';
 import type { CreationExperienceCatalogRepository } from './memory-repository.js';
 import type {
@@ -363,6 +364,19 @@ export class PostgresCreationExperienceCatalogRepository
     for (const targetSkillRevisionRef of [
       ...new Set(recipe.skillRevisionRefs),
     ].sort()) {
+      await lockSkillReferenceTarget(client, targetSkillRevisionRef);
+      const target = await client.query<{ status: string }>(
+        `SELECT status
+           FROM p1_skill_revisions
+          WHERE skill_revision_ref = $1`,
+        [targetSkillRevisionRef],
+      );
+      if (target.rows[0]?.status === 'retired') {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'Retired Skill revisions cannot acquire new references.',
+        );
+      }
       const edge: SkillReferenceEdge = {
         edgeId: [
           'skill-reference',

@@ -179,6 +179,14 @@ test('business cancellation is audited as a stable terminal result and never app
     (await runtime.inspect(request.workspaceId, request.runId)).state?.status,
     'cancelled',
   );
+  await assert.rejects(
+    runtime.resume({
+      actorId: 'operator-resumer',
+      runId: request.runId,
+      workspaceId: request.workspaceId,
+    }),
+    /administratively cancelled/u,
+  );
 });
 
 test('the same run ID rejects different facts before approval', async () => {
@@ -316,6 +324,10 @@ test('Foundation routes governance lifecycle actions with trusted context', asyn
       calls.push({ action: 'businessCancel', input });
       return { ok: true };
     },
+    async cancel(input: unknown) {
+      calls.push({ action: 'cancel', input });
+      return { ok: true };
+    },
     async inspect(workspaceId: string, runId: string) {
       calls.push({ action: 'inspect', input: { runId, workspaceId } });
       return { runId, workflowStatus: 'PENDING' };
@@ -355,6 +367,14 @@ test('Foundation routes governance lifecycle actions with trusted context', asyn
     idempotencyKey: 'approve-foundation',
     input: {
       action: 'skill_governance_approve',
+      payload: { runId: 'run-foundation' },
+    },
+  });
+  await module.execute({
+    context,
+    idempotencyKey: 'business-cancel-foundation',
+    input: {
+      action: 'skill_governance_business_cancel',
       payload: { runId: 'run-foundation' },
     },
   });
@@ -407,7 +427,15 @@ test('Foundation routes governance lifecycle actions with trusted context', asyn
       action: 'businessCancel',
       input: {
         actorId: 'operator-foundation',
-        idempotencyKey: 'cancel-foundation',
+        idempotencyKey: 'business-cancel-foundation',
+        runId: 'run-foundation',
+        workspaceId: 'workspace-foundation',
+      },
+    },
+    {
+      action: 'cancel',
+      input: {
+        actorId: 'operator-foundation',
         runId: 'run-foundation',
         workspaceId: 'workspace-foundation',
       },
