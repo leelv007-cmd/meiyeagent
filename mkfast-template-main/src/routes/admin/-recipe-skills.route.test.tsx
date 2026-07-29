@@ -270,6 +270,14 @@ test('governance action intents rotate after success and survive an ambiguous fa
   );
   await registry.execute('skill_governance_cancel', 'run-ambiguous', submit);
   assert.equal(submittedKeys.at(-1), submittedKeys.at(-2));
+
+  const longRunId = 'r'.repeat(150);
+  await registry.execute('skill_governance_start', longRunId, submit);
+  await registry.execute('skill_governance_business_cancel', longRunId, submit);
+  for (const idempotencyKey of submittedKeys.slice(-2)) {
+    assert.ok(idempotencyKey.length <= 200);
+    assert.equal(idempotencyKey.includes(longRunId), false);
+  }
 });
 
 test('structured Skill forms build the revision and acceptance contracts', () => {

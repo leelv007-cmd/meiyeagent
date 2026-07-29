@@ -292,6 +292,7 @@ const GOVERNANCE_RUN_ACTIONS = [
 ] as const;
 
 type GovernanceRunAction = (typeof GOVERNANCE_RUN_ACTIONS)[number];
+type GovernanceIntentAction = GovernanceRunAction | 'skill_governance_start';
 
 export function createGovernanceActionIntentRegistry(
   createIdempotencyKey: () => string = () => crypto.randomUUID()
@@ -299,14 +300,14 @@ export function createGovernanceActionIntentRegistry(
   const pendingKeys = new Map<string, string>();
   return {
     async execute<T>(
-      runAction: GovernanceRunAction,
+      runAction: GovernanceIntentAction,
       runId: string,
       submit: (idempotencyKey: string) => Promise<T>
     ) {
       const fingerprint = `${runAction}:${runId}`;
       const idempotencyKey =
         pendingKeys.get(fingerprint) ??
-        `${fingerprint}:${createIdempotencyKey()}`;
+        `${runAction}:${createIdempotencyKey()}`;
       pendingKeys.set(fingerprint, idempotencyKey);
       const result = await submit(idempotencyKey);
       if (pendingKeys.get(fingerprint) === idempotencyKey) {
@@ -726,10 +727,15 @@ export function AdminSkillsControl() {
     setGovernanceError('');
     try {
       const payload = buildSkillGovernanceStartPayload(governanceValues);
-      await commandP1(
-        'skills',
-        { action: 'skill_governance_start', payload },
-        `skill_governance_start:${payload.runId}`
+      await governanceActionIntents.execute(
+        'skill_governance_start',
+        payload.runId,
+        (idempotencyKey) =>
+          commandP1(
+            'skills',
+            { action: 'skill_governance_start', payload },
+            idempotencyKey
+          )
       );
       setGovernanceRunId(payload.runId);
       await queryClient.invalidateQueries({
