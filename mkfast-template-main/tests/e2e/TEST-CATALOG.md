@@ -262,18 +262,6 @@ time, unread completion, and one-click return without fake percentage progress.
 | 1 | One image Job remains observable across routes and completes without manual refresh | Gate the submit and provider-query boundaries long enough to observe the submitting and running states, leave the Work for the Asset page, inspect the global task center on desktop and mobile, release the real query, verify exactly one automatic resume and one completed Asset, then return to the same canonical Job. |
 | 2 | **MISSING SPEC:** Workflow SSE survives BFF transport, reconnects by stable cursor, and falls back temporarily | Start a non-terminal video workflow, observe named `workflow.progress` and `workflow.state` frames through the authenticated BFF without buffering, disconnect after a captured stable event ID, reconnect with the same cursor and verify no duplicate revision plus the final authoritative state. While the stream is unavailable, verify the existing five-second snapshot query resumes; after SSE reconnects, verify polling stops and the same five-step video panel continues from its cached `VideoWorkflowEnvelope`. |
 
-## 19. UI/UX Upgrade B Durable Video Workflow
-
-**File:** `specs/uiux-upgrade-b-video.spec.ts` | **Priority:** P0
-
-Locks the composed-video workflow as one durable, recoverable track rather than
-a duplicate generic creative Job or synchronous render request.
-
-| # | Test name | Flow |
-|---|---|---|
-| 1 | A Work edits and restores V1 before completing one durable video workflow | Create and lock an AIDA storyboard, prove every draft freezes the accepted 15-second 9:16 quote into explicit 4/4/4/3 shot timing and 720x1280 framing, derive a V2 workflow instead of mutating V1, reload the same revision, confirm it for background execution, recover and complete any required shot review on mobile, play the authorized MP4, reload the completed workflow on desktop and its ContentPackage detail with the exact completed workflow still visible, prove mobile Handoff stays bound to that Work after a newer unrelated package exists, verify no generic video Job or legacy synchronous process request was submitted, and prove the retired legacy route returns 404 through the API request context. |
-| 2 | A confirmed workflow can be cancelled and restores cancellation after reload | Lock and confirm a video storyboard, explicitly cancel the running workflow, wait for the durable cancelled state, reload, and verify the same workflow remains cancelled without another cancel action. |
-
 ## 20. UI/UX Upgrade B I18n, Motion, And Mobile Contracts
 
 **File:** `specs/uiux-upgrade-b-i18n-motion.spec.ts` | **Priority:** P0
