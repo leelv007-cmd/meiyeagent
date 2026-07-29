@@ -113,3 +113,7 @@ Enforced by Biome (`biome.json`):
 
 ### Cloudflare Workers Constraint
 Avoid Node.js-specific APIs — this runs on Cloudflare Workers runtime, not Node.js.
+
+## Ticket Dispatch (领票开发必读)
+
+Tickets are GitHub issues (`gh issue view <N> --comments`; comments override body dependencies). Before starting any ticket, read the dispatch runbook at repo-root `docs/ops/agent-dispatch-runbook-2026-07-29.md` — worktree isolation, the locale:compile collision rule (`typecheck`/`test`/`test:interaction`/`e2e` rewrite shared paraglide output in `src/locale/paraglide/` and will knock over a running dev server; never run them concurrently in one worktree), closure gates (consumer-proof, behavior-as-evidence, `git ls-files` for deletions), and the batch order in repo-root `docs/specs/agent-substrate-dev-spec-2026-07-29.md`. Do not push or close tickets — the coordinator verifies and merges.
