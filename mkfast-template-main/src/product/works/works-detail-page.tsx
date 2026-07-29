@@ -118,6 +118,8 @@ function WorkPackageBody({
     const delivery = version?.exportUseDelivery;
     return delivery?.kind === 'light_composer' ? delivery : undefined;
   }, [contentPackage]);
+  const legacyVideo =
+    detail.outputShape === 'video' && detail.legacyVideoArchive;
 
   const exportPackage = useMutation({
     mutationFn: async () => {
@@ -225,6 +227,23 @@ function WorkPackageBody({
         <WorksMediaGallery media={detail.media} />
       ) : null}
 
+      {legacyVideo ? (
+        <section
+          className="meiye-porcelain rounded-2xl p-4"
+          data-testid="works-video-readonly"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="meiye-glass-piece rounded-full px-3 py-1 text-xs">
+              {copyText.detail.archive}
+            </span>
+            <span className="meiye-type-aux">{copyText.detail.readonly}</span>
+          </div>
+          <p className="text-muted-foreground mt-2 text-sm">
+            {copyText.detail.readonlyDescription}
+          </p>
+        </section>
+      ) : null}
+
       {detail.body ? (
         <section className="meiye-porcelain rounded-2xl p-4">
           <p
@@ -284,7 +303,17 @@ function WorkPackageBody({
         data-testid="works-detail-actions"
       >
         <div className="flex flex-wrap gap-2">
-          {detail.exportability === 'ready' ? (
+          {legacyVideo ? (
+            <button
+              className="meiye-glass-piece min-h-touch-target rounded-full px-4 py-2 text-sm opacity-50"
+              data-testid="works-video-confirm-unavailable"
+              disabled
+              type="button"
+            >
+              {copyText.detail.confirmUnavailable}
+            </button>
+          ) : null}
+          {!legacyVideo && detail.exportability === 'ready' ? (
             <ActionButton
               busy={exportPackage.isPending || !detail.confirmedRevision}
               onClick={() => exportPackage.mutate()}
@@ -294,7 +323,9 @@ function WorkPackageBody({
                 ? copyText.detail.exporting
                 : copyText.detail.export}
             </ActionButton>
-          ) : detail.exportability === 'needs_adoption' && adoptHref ? (
+          ) : !legacyVideo &&
+            detail.exportability === 'needs_adoption' &&
+            adoptHref ? (
             // 导出 on an un-adopted 成品 is a server error, not a file. Point at
             // 采用 — the canonical Result Center action — bound to this revision.
             // `text_only` falls through to neither: a 文案 作品 has no delivery
@@ -308,7 +339,9 @@ function WorkPackageBody({
               <IconExternalLink aria-hidden="true" className="size-3.5" />
             </a>
           ) : null}
-          {detail.exportability === 'text_only' && textExport ? (
+          {!legacyVideo &&
+          detail.exportability === 'text_only' &&
+          textExport ? (
             <ActionButton
               onClick={downloadText}
               testId="works-action-download-text"
@@ -319,7 +352,7 @@ function WorkPackageBody({
           <ActionButton onClick={copy} testId="works-action-copy">
             {copied ? copyText.detail.copied : copyText.detail.copy}
           </ActionButton>
-          {handoffHref ? (
+          {!legacyVideo && handoffHref ? (
             <a
               className="meiye-glass-piece min-h-touch-target inline-flex items-center gap-1 rounded-full px-4 py-2 text-sm"
               data-testid="works-action-handoff"
@@ -329,7 +362,7 @@ function WorkPackageBody({
               <IconExternalLink aria-hidden="true" className="size-3.5" />
             </a>
           ) : null}
-          {lightComposerDelivery ? (
+          {!legacyVideo && lightComposerDelivery ? (
             <span data-testid="works-action-light-edit">
               <ContentPackageExportCarrier delivery={lightComposerDelivery} />
             </span>

@@ -17,7 +17,9 @@ const WORKS_COPY = {
     unavailable: 'Content is unavailable right now. Refresh and try again.',
     detail: {
       adopt: 'Adopt this version first',
+      archive: 'Historical archive',
       back: 'Back to content',
+      confirmUnavailable: 'Historical content cannot be confirmed',
       copy: 'Copy text',
       copied: 'Copied',
       download: 'Download text',
@@ -35,6 +37,9 @@ const WORKS_COPY = {
       unavailableTitle: 'Content is temporarily unavailable',
       pendingConfirmation:
         'A confirmation is waiting. Complete it before exporting.',
+      readonly: 'Read-only',
+      readonlyDescription:
+        'This historical video is view-only. It cannot be confirmed, edited, or exported.',
       use: 'How to use this content',
     },
     light: {
@@ -73,7 +78,9 @@ const WORKS_COPY = {
     unavailable: '内容暂时没能取回来，刷新一下再看。',
     detail: {
       adopt: '先采用这一版',
+      archive: '历史档案',
       back: '回到内容列表',
+      confirmUnavailable: '历史作品无法继续确认',
       copy: '复制文字',
       copied: '已复制',
       download: '下载文字',
@@ -89,6 +96,8 @@ const WORKS_COPY = {
       unavailableDescription: '刷新一下再打开。',
       unavailableTitle: '这份内容暂时没能取回来',
       pendingConfirmation: '有一笔待处理的确认，处理完成后再导出。',
+      readonly: '只读',
+      readonlyDescription: '这份历史成片仅供查看，不能继续确认、编辑或导出。',
       use: '怎么用这份内容',
     },
     light: {
@@ -183,14 +192,8 @@ const ENGLISH_WORKS_TEXT = new Map([
     '图和文是一整份，导出时会一起带走。',
     'Images and text export together as one package.',
   ],
-  [
-    '成片可以导出使用，封面与字幕一并交付。',
-    'Export the video with its cover and captions.',
-  ],
-  [
-    '成片与封面、字幕会作为一整份内容交付。',
-    'The video, cover, and captions are delivered together.',
-  ],
+  ['成片可以导出使用。', 'Export the video.'],
+  ['成片会作为一份完整内容交付。', 'The video is delivered as one result.'],
 ]);
 
 export function translateWorksSystemText(locale: Locale, value: string) {

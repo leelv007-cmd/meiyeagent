@@ -801,7 +801,7 @@ test('non-ready image guidance does not promise export', () => {
 test('non-ready video guidance does not promise export', () => {
   assert.equal(
     workUsageGuidance(videoPackage, 'video', 'text_only').at(-1),
-    '成片与封面、字幕会作为一整份内容交付。'
+    '成片会作为一份完整内容交付。'
   );
 });
 
@@ -852,4 +852,40 @@ test('with no source work there is no handoff doorway or handoff promise', () =>
   if (detail.kind !== 'package') return;
   assert.equal(workHandoffHref(detail), null);
   assert.doesNotMatch(detail.guidance.join(' '), /交给同事|协办/u);
+});
+
+test('legacy video archive status comes from durable source provenance, not work linkage', () => {
+  const legacy = packageFixture({
+    id: 'package-legacy-video',
+    kind: 'video',
+    legacySource: {
+      mappingConfidence: 'exact',
+      sourceId: 'legacy-video-1',
+      sourceType: 'durable_video_workflow',
+    },
+    source: { assetIds: [], workId: 'work-legacy-video' },
+    status: 'accepted',
+  });
+  const detachedCurrent = packageFixture({
+    id: 'package-detached-current-video',
+    kind: 'video',
+    source: { assetIds: [] },
+    status: 'accepted',
+  });
+
+  const legacyDetail = workDetail({
+    contentPackages: [legacy],
+    id: legacy.id,
+  });
+  const currentDetail = workDetail({
+    contentPackages: [detachedCurrent],
+    id: detachedCurrent.id,
+  });
+  assert.equal(legacyDetail.kind, 'package');
+  assert.equal(currentDetail.kind, 'package');
+  if (legacyDetail.kind !== 'package' || currentDetail.kind !== 'package') {
+    return;
+  }
+  assert.equal(legacyDetail.legacyVideoArchive, true);
+  assert.equal(currentDetail.legacyVideoArchive, false);
 });

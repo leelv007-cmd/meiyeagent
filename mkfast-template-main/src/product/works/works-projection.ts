@@ -93,6 +93,8 @@ export type WorkPackageDetail = {
    * how a words-only 作品 gets used.
    */
   exportability: 'ready' | 'needs_adoption' | 'text_only' | 'blocked';
+  /** Pre-lineage video imported from the retired durable workflow. */
+  legacyVideoArchive: boolean;
   media: WorkMedia[];
   outputShape: WorkOutputShape;
   packageId: string;
@@ -353,8 +355,8 @@ export function workUsageGuidance(
     case 'video':
       lines.push(
         exportability === 'ready'
-          ? '成片可以导出使用，封面与字幕一并交付。'
-          : '成片与封面、字幕会作为一整份内容交付。'
+          ? '成片可以导出使用。'
+          : '成片会作为一份完整内容交付。'
       );
       break;
   }
@@ -566,6 +568,8 @@ function packageDetail(
     exportability,
     guidance: workUsageGuidance(contentPackage, shape, exportability),
     kind: 'package',
+    legacyVideoArchive:
+      contentPackage.legacySource?.sourceType === 'durable_video_workflow',
     media: deliveredMedia(contentPackage),
     outputShape: shape,
     packageId: contentPackage.id,
