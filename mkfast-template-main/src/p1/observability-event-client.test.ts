@@ -28,7 +28,7 @@ test('the observability client reuses the authenticated P1 command route', async
       return { accepted: true };
     },
     event,
-    'feedback-248',
+    'feedback-248'
   );
 
   assert.deepEqual(result, { accepted: true });
