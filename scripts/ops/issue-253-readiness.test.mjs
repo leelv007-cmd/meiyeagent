@@ -50,6 +50,21 @@ async function fixture() {
       'fix(web): retire video editing'
     ),
   };
+  await commit(
+    root,
+    'docs/ops/merge-ledger.md',
+    [
+      '# Merge ledger',
+      '',
+      '| main sha | 票 | 内容 |',
+      '|---|---|---|',
+      `| ${commits['248'].slice(0, 8)} | #248 | observability |`,
+      `| ${commits['261'].slice(0, 8)} | #261 | dashboard |`,
+      `| ${commits['264FE'].slice(0, 8)} | #264 | frontend retirement |`,
+      '',
+    ].join('\n'),
+    'docs(ops): record dependency merges'
+  );
   const markers = {
     dependencies: {
       '248': {
@@ -192,4 +207,26 @@ test('a semantic check cannot use an unrelated path', async () => {
   const result = check(data);
   assert.equal(result.status, 1);
   assert.match(JSON.parse(result.stdout).gaps.join('\n'), /cover ownedPaths/);
+});
+
+test('an ancestor marker absent from the merge ledger fails closed', async () => {
+  const data = await fixture();
+  await commit(
+    data.root,
+    'docs/ops/merge-ledger.md',
+    [
+      '# Merge ledger',
+      '',
+      '| main sha | 票 | 内容 |',
+      '|---|---|---|',
+      `| ${data.commits['248'].slice(0, 8)} | #248 | observability |`,
+      `| ${data.commits['264FE'].slice(0, 8)} | #264 | frontend retirement |`,
+      '',
+    ].join('\n'),
+    'docs(ops): remove invalid merge claim'
+  );
+
+  const result = check(data);
+  assert.equal(result.status, 1);
+  assert.match(JSON.parse(result.stdout).gaps.join('\n'), /merge ledger.*#261/i);
 });

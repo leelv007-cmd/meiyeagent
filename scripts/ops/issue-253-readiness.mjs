@@ -57,6 +57,18 @@ function pathsAtCommit(sha) {
     .filter(Boolean);
 }
 
+function mergeLedgerAt(mainSha) {
+  const result = git('show', `${mainSha}:docs/ops/merge-ledger.md`);
+  if (result.status !== 0) return null;
+  return result.stdout
+    .split('\n')
+    .map((line) =>
+      line.match(/^\|\s*([0-9a-f]{7,40})\s*\|\s*#(\d+)\s*\|/u)
+    )
+    .filter(Boolean)
+    .map((match) => ({ issue: Number(match[2]), revision: match[1] }));
+}
+
 function issue(options, number) {
   try {
     const data = options.fixtures
@@ -107,8 +119,8 @@ function checkCurrentTree(mainSha, check) {
   return gaps;
 }
 
-function inspect(mainSha, id, marker) {
-  const { scope } = dependencies[id];
+function inspect(mainSha, ledger, id, marker) {
+  const { issue: issueNumber, scope } = dependencies[id];
   const gaps = [];
   if (!marker) {
     return { commands: [], gaps: ['marker is required'], status: 'invalid_marker' };
@@ -174,6 +186,18 @@ function inspect(mainSha, id, marker) {
   if (git('merge-base', '--is-ancestor', sha, mainSha).status !== 0) {
     return { commands, gaps: [`${sha} is not in local main`], sha, status: 'not_merged' };
   }
+  if (
+    !ledger?.some(
+      (entry) => entry.issue === issueNumber && commit(entry.revision) === sha
+    )
+  ) {
+    return {
+      commands,
+      gaps: [`merge ledger has no ${sha} entry for #${issueNumber}`],
+      sha,
+      status: 'not_recorded',
+    };
+  }
   const changedPaths = pathsAtCommit(sha);
   if (
     !ownedPaths.every((ownedPath) =>
@@ -200,6 +224,8 @@ function inspect(mainSha, id, marker) {
 function report(options) {
   const mainSha = commit('main');
   const gaps = mainSha ? [] : ['local main cannot be resolved'];
+  const ledger = mainSha ? mergeLedgerAt(mainSha) : null;
+  if (mainSha && !ledger) gaps.push('merge ledger is missing from local main');
   let markers = {};
   try {
     markers = json(options.markers).dependencies;
@@ -214,7 +240,7 @@ function report(options) {
   }
   const results = Object.entries(dependencies).map(([id, dependency]) => {
     const evidence = mainSha
-      ? inspect(mainSha, id, markers?.[id])
+      ? inspect(mainSha, ledger, id, markers?.[id])
       : { commands: [], gaps: ['local main unavailable'], status: 'unavailable' };
     gaps.push(...evidence.gaps.map((gap) => `${id}: ${gap}`));
     return { evidence, id, issue: issues[dependency.issue] };
@@ -264,7 +290,9 @@ function help() {
 
 Each dependency marker requires commit, ownedPaths, acceptanceCommands, and
 currentTreeChecks. A currentTreeCheck has path plus exists:false, contains, or
-notContains. The command only reads local main and GitHub issues #253/#248/#261/#264.`);
+notContains. The exact marker commit must also be recorded for that issue in
+local main's docs/ops/merge-ledger.md. The command only reads local main and
+GitHub issues #253/#248/#261/#264.`);
 }
 
 try {
