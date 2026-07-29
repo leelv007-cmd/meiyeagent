@@ -504,17 +504,13 @@ test.describe('P1-F2 continuous acceptance (#161)', () => {
       );
     }
 
-    // 200% zoom ≈ 720 CSS px wide at a 1440 device frame.
+    // Browser zoom reflows a 1440 device-pixel frame to a 720 CSS-pixel
+    // viewport. Applying CSS `zoom` here would double-scale that viewport and
+    // exercise an artificial 360 px layout while media queries still see 720.
     await page.setViewportSize({ width: 720, height: 450 });
-    await page.evaluate(() => {
-      document.documentElement.style.zoom = '2';
-    });
     await expect(page.getByTestId('result-center-shell')).toBeVisible();
     await assertNoHorizontalOverflow(page, 'Result 200% zoom');
     await assertPrimaryCtaNotOccluded(page, 'Result 200% zoom');
-    await page.evaluate(() => {
-      document.documentElement.style.zoom = '1';
-    });
   });
 
   test('prefers-reduced-motion keeps Result and Delivery usable', async ({

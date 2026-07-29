@@ -204,10 +204,11 @@ test.describe('Day-0 recommendation and example store', () => {
     );
     // Remixing only fills the draft. Platform samples remain read-only and
     // cannot satisfy the merchant's own StoreFact gate.
-    await expect(page.getByTestId('composer-submit')).toBeDisabled();
-    await expect(page.getByTestId('composer-submit')).toHaveAccessibleName(
-      '先补门店信息'
-    );
+    const submit = page.getByTestId('composer-submit');
+    await expect(submit).toBeEnabled();
+    await expect(submit).toHaveAccessibleName('先补门店信息');
+    await submit.click();
+    await expect(page.getByTestId('progressive-fact-card')).toBeVisible();
     expect(await creativeProjection(page)).toMatchObject({
       assets: [],
       contents: [],
