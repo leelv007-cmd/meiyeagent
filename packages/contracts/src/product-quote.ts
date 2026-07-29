@@ -2,7 +2,7 @@
  * Product quote / billing cross-lane contract (S1 / #87 skeleton → #92 WT-B).
  *
  * WT-B exclusive owner — no second quote object elsewhere.
- * Consumers (WT-C confirm UI, WT-E regeneration settle, AP/MP H2) import only.
+ * Consumers (WT-C confirm UI, initial generation settlement, AP/MP H2) import only.
  */
 
 /** Product-level billing basis frozen into ProductQuoteSnapshot. */

@@ -108,7 +108,7 @@ export interface DurableVideoWorkflow {
   referenceAssetIds?: string[];
   /** Missing only on workflows created before the frozen video contract shipped. */
   executionContract?: VideoExecutionContract;
-  /** Canonical presentation draft; changing it does not re-compose a video. */
+  /** Historical read-only subtitle text retained for legacy projection. */
   subtitleText?: string;
   shots: DurableVideoShot[];
   attempts: ProviderAttempt[];

@@ -740,6 +740,10 @@ export function applyCanonicalVideoEdit(
     }
     const byId = new Map(edited.task.shots.map((shot) => [shot.id, shot]));
     edited.task.shots = shotIds.map((shotId) => byId.get(shotId)!);
+  } else {
+    throw new Error(
+      `Unsupported video edit ${(edit as { kind?: unknown }).kind}.`,
+    );
   }
   edited.assets.clipAssetIds = edited.task.shots.flatMap((shot) => {
     const selected = edited.job.candidatesByShot[shot.id]?.find(

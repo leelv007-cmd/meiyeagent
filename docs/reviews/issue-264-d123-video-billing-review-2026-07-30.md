@@ -32,10 +32,10 @@
 - 商家额度单位：`apps/core/src/p1/execution-spine/submission-coordinator.ts` 的视频提交固定预占 `{ resource: "video", quantity: 1 }`。
 - 服务端报价：`apps/core/src/p1/product-billing/server-quote-authority.ts` 将 `video.generate` / `video_package` 映射到 video bucket。
 - 档位种子：`packages/contracts/src/billing-balance.ts` 与 `apps/core/src/product/plans.ts` 固定 3/6/9。
-- 初次视频结算：`apps/core/src/p1/model-supply/video-initial-generation-job-settlement.test.ts` 覆盖成功一次结算、replay 幂等与失败前退回。
+- 初次视频结算：`apps/core/src/p1/model-supply/foundation-ledger.test.ts` 通过生产 ledger 覆盖成功结算与 fresh application replay；`video-initial-generation-job-settlement.test.ts` 保留失败前退回合同。
 - 编辑计费负向：`apps/core/src/p1/model-supply/retired-video-editing-contract.test.ts` 与 `apps/core/src/p1/result-delivery/operations-result-command-port.test.ts` 覆盖退役 module / subtitle edit 拒绝及 video adjustment 零副作用。
 
-`createInitialVideoTerminalObserver` 当前是独立结算合同接缝，未作为生产装配证据；生产初次提交的一单位预占以 execution-spine 的 HTTP/Coordinator 行为测试为准。
+`createInitialVideoTerminalObserver` 当前是独立失败退回合同接缝，不作为生产成功结算证据；生产初次提交的一单位预占以 execution-spine 的 HTTP/Coordinator 行为测试为准。
 
 ## 仍待 D-123 验证
 

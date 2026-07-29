@@ -115,7 +115,31 @@ function createStrictSupplyFreezeStore(
   return { freezes, supplyFreezes };
 }
 
-test('persists a settlement fallback freeze for fresh-process ProductUsage lookup', async () => {
+test('settles one initial video through the production ledger across a fresh application replay', async () => {
+  const videoModel: CatalogModel = {
+    displayName: 'Seedance 2',
+    id: 'seedance-2',
+    modality: 'video',
+    operations: ['video.generate'],
+    qualityRank: 100,
+  };
+  const videoDeployment: ModelDeployment = {
+    apiFamily: 'media',
+    catalogModelId: videoModel.id,
+    channel: 'managed',
+    credentialMode: 'platform',
+    credentialVersion: 'credential-video-1',
+    id: 'seedance-2-managed',
+    policyRevision: 'policy-video-v1',
+    priceRevision: 'price-video-v1',
+    region: 'domestic',
+    status: 'active',
+    unitPrice: {
+      amountMicros: 200_000,
+      currency: 'CNY',
+      unit: 'request',
+    },
+  };
   const repository = new MemoryFoundationRepository();
   repository.grantOwner(context.workspaceId, context.userId);
   const foundation = new P1ApplicationService(repository);
@@ -124,18 +148,18 @@ test('persists a settlement fallback freeze for fresh-process ProductUsage looku
     {
       action: 'adjust',
       amount: 10,
-      id: 'single-ledger-image-entitlement',
+      id: 'single-ledger-video-entitlement',
       reason: 'opening entitlement',
-      resource: 'image',
+      resource: 'video',
     },
-    'single-ledger-image-entitlement',
+    'single-ledger-video-entitlement',
   );
   const productUsage = new MemoryProductUsageLedger();
   const quotes = new ProductQuoteService({ usageLedger: productUsage });
   const quote = quotes.buildQuote({
     billingMode: 'per_request',
-    catalogModelId: model.id,
-    frozenCandidateDeploymentIds: [deployment.id],
+    catalogModelId: videoModel.id,
+    frozenCandidateDeploymentIds: [videoDeployment.id],
     quoteId: 'operations-quote-1',
     quotePolicyRevision: 'product-policy-1',
     unitRate: 1,
@@ -145,7 +169,7 @@ test('persists a settlement fallback freeze for fresh-process ProductUsage looku
   const canonicalBilling = new ProductBillingLifecycle(quotes);
   canonicalBilling.beforeSubmit({
     quoteRevision: quote.revision,
-    resource: 'image',
+    resource: 'video',
     taskId: 'creative-work-1',
     workspaceId: context.workspaceId,
   });
@@ -177,23 +201,24 @@ test('persists a settlement fallback freeze for fresh-process ProductUsage looku
     },
   );
   const application = new ModelSupplyApplicationService({
-    deployments: [deployment],
+    deployments: [videoDeployment],
     execution: new RecordedProviderExecutionPort(),
     ledger: {
       checkpointAttempt: (input) => ledger.checkpointAttempt(input),
       settleAttempt: (input) => ledger.settleAttempt(input),
     },
-    models: [model],
+    models: [videoModel],
   });
   const submission = {
     actorId: context.userId,
     billingQuoteRevision: quote.revision,
     billingTaskId: 'creative-work-1',
     dataClass: [],
+    input: { durationSeconds: 15 },
     idempotencyKey: 'single-product-ledger-submit',
-    operation: 'image.generate' as const,
+    operation: 'video.generate' as const,
     prompt: '单一账本生成',
-    selection: { catalogModelId: model.id, mode: 'fixed' as const },
+    selection: { catalogModelId: videoModel.id, mode: 'fixed' as const },
     workspaceId: context.workspaceId,
   };
 
@@ -223,9 +248,9 @@ test('persists a settlement fallback freeze for fresh-process ProductUsage looku
   assert.deepEqual(
     await workerLedger.freezeAttempt({
       attemptId: replay.attempt.id,
-      deployment,
+      deployment: videoDeployment,
       jobId: replay.jobId,
-      model,
+      model: videoModel,
       ordinal: 1,
       previousAttempts: [],
       previousProviderCosts: [],

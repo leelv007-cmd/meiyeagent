@@ -320,7 +320,7 @@ export class ContentPackageZipExportAdapter
 
   /**
    * Video full delivery package (B-01 / D-096):
-   * video.mp4 + cover + caption + optional subtitles + checklist + manifest/v1.
+   * video.mp4 + caption + optional subtitles + checklist + manifest/v1.
    * Primary video export path — returns application/zip.
    */
   async exportVideoFullPackage(

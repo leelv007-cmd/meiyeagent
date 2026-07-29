@@ -430,6 +430,23 @@ describe('VideoWorkflow derivation (#102)', () => {
     const commands = new VideoWorkflowCanonicalCommands(store);
     const base = completed.revision;
 
+    assert.throws(
+      () =>
+        commands.edit(
+          {
+            actorId: 'actor-a',
+            correlationId: 'corr-retired-subtitle',
+            edit: { kind: 'set_subtitle', text: '不应写入' } as never,
+            expectedRevision: base,
+            workflowId: completed.id,
+            workspaceId: completed.workspaceId,
+          },
+          () => Date.parse('2026-07-20T07:59:59.000Z'),
+        ),
+      /Unsupported video edit set_subtitle/,
+    );
+    assert.equal(commands.get(completed.id)?.revision, base);
+
     const selected = commands.edit(
       {
         actorId: 'actor-a',
