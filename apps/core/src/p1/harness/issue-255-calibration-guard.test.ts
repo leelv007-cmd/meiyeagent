@@ -241,6 +241,20 @@ test('issue 255 recorded acceptance requires exactly the 3 modalities x 3 bands 
       ]),
     /matrix coordinate/u,
   );
+  assert.throws(
+    () =>
+      assertIssue255RecordedMatrix(
+        recordedMatrix().map((sample) => ({
+          ...sample,
+          observed: {
+            ...sample.observed,
+            iterations: 0,
+            costCents: 0,
+          },
+        })),
+      ),
+    /useful observed execution/u,
+  );
 });
 
 test('issue 255 typed live fence permits direct copy plus Tuzi image and video exactly once and rejects a fourth before POST', async () => {

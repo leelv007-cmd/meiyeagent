@@ -224,6 +224,17 @@ export function assertIssue255RecordedMatrix(input: unknown) {
   if (coordinates.size !== 27) {
     throw new Error('Issue 255 recorded matrix coordinate must be unique.');
   }
+  if (
+    samples.some(
+      (sample) =>
+        sample.observed.iterations === 0 ||
+        (sample.modality === 'copy' && sample.observed.costCents === 0),
+    )
+  ) {
+    throw new Error(
+      'Issue 255 recorded matrix requires useful observed execution and copy cost evidence.',
+    );
+  }
   return samples satisfies BoundedExecutionCalibrationSample[];
 }
 
