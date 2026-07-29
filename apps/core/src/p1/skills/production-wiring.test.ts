@@ -103,6 +103,10 @@ test('the application entry releases a rejected prompt claim for deterministic r
     },
   });
   const foundationRepository = new MemoryFoundationRepository();
+  foundationRepository.grantOwner(
+    'workspace-rejected-prompt-retry',
+    'operator-rejected-prompt-retry',
+  );
   const application = new P1ApplicationService(foundationRepository, {
     operations: [new SkillFoundationModule(skillService)],
   });
