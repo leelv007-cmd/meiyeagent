@@ -432,7 +432,7 @@ export function AdminSkillsControl() {
             Skill 目录
           </h2>
           <AdminPanelDescription>
-            平台层、行业层与门店层的场景配方与行业话术。「来源」列区分收割转译、手写与归纳。
+            当前承载平台层与行业层的场景配方与行业话术。「来源」列区分收割转译、手写与归纳。
           </AdminPanelDescription>
         </AdminPanelHeader>
         <AdminPanelContent className="space-y-4">

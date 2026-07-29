@@ -352,50 +352,50 @@ test(
       : 'TEST_DATABASE_URL is not configured',
   },
   async (t) => {
-  let requests = 0;
-  const server = createServer(async (request, response) => {
-    requests += 1;
-    const body = await readJson(request);
-    sendJson(response, 200, { id: body.id });
-  });
-  const baseUrl = await listen(t, server);
-  const child = spawn(
-    process.execPath,
-    [
-      '--import',
-      'tsx',
-      CLI_ENTRY,
-      'apps/core/src/evals/redlines/redlines.baseline.eval-run.json',
-    ],
-    {
-      cwd: CORE_DIRECTORY,
-      env: {
-        ...process.env,
-        INIT_CWD: WORKSPACE_DIRECTORY,
-        LANGFUSE_BASE_URL: baseUrl,
-        LANGFUSE_PUBLIC_KEY: 'pk-test',
-        LANGFUSE_SECRET_KEY: 'sk-test',
-        DATABASE_URL: process.env.TEST_DATABASE_URL!,
+    let requests = 0;
+    const server = createServer(async (request, response) => {
+      requests += 1;
+      const body = await readJson(request);
+      sendJson(response, 200, { id: body.id });
+    });
+    const baseUrl = await listen(t, server);
+    const child = spawn(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        CLI_ENTRY,
+        'apps/core/src/evals/redlines/redlines.baseline.eval-run.json',
+      ],
+      {
+        cwd: CORE_DIRECTORY,
+        env: {
+          ...process.env,
+          INIT_CWD: WORKSPACE_DIRECTORY,
+          LANGFUSE_BASE_URL: baseUrl,
+          LANGFUSE_PUBLIC_KEY: 'pk-test',
+          LANGFUSE_SECRET_KEY: 'sk-test',
+          DATABASE_URL: process.env.TEST_DATABASE_URL!,
+        },
       },
-    },
-  );
-  let stdout = '';
-  let stderr = '';
-  child.stdout.on('data', (chunk) => {
-    stdout += String(chunk);
-  });
-  child.stderr.on('data', (chunk) => {
-    stderr += String(chunk);
-  });
+    );
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += String(chunk);
+    });
 
-  const [exitCode] = (await once(child, 'close')) as [number];
+    const [exitCode] = (await once(child, 'close')) as [number];
 
-  assert.equal(exitCode, 0, stderr);
-  assert.equal(requests, 21);
-  assert.match(
-    stdout,
-    /Imported 21 EvalRun items from harness-seven-redlines-recorded-v2/u,
-  );
+    assert.equal(exitCode, 0, stderr);
+    assert.equal(requests, 21);
+    assert.match(
+      stdout,
+      /Imported 21 EvalRun items from harness-seven-redlines-recorded-v2/u,
+    );
   },
 );
 

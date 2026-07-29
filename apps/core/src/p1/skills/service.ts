@@ -247,16 +247,16 @@ export class SkillService {
       Math.min(limit, 100),
     );
     return history.map((record) => ({
-        skillRevisionRef: record.skillRevisionRef,
-        revision: record.revision,
-        status: record.status,
-        contentHash: record.contentHash,
-        createdAt: record.createdAt,
-        createdBy: record.createdBy,
-        acceptedAt: record.acceptedAt,
-        acceptedBy: record.acceptedBy,
-        evalRunId: record.evalRunId,
-      }));
+      skillRevisionRef: record.skillRevisionRef,
+      revision: record.revision,
+      status: record.status,
+      contentHash: record.contentHash,
+      createdAt: record.createdAt,
+      createdBy: record.createdBy,
+      acceptedAt: record.acceptedAt,
+      acceptedBy: record.acceptedBy,
+      evalRunId: record.evalRunId,
+    }));
   }
 
   async promptReference(slot: 'intentNaming') {

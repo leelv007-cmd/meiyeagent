@@ -212,7 +212,8 @@ export const ADMIN_DRILLDOWN_PAGES: readonly AdminDrilldownPage[] = [
     domain: 'content_and_assets',
     title: 'Skill 目录',
     functionSummary: '场景配方与行业话术的目录、来源标注与生命周期操作',
-    userImpact: '影响运营能否自助增删改配方，以及行业层来源可追溯性',
+    userImpact:
+      '影响运营能否按治理链定义、受理、绑定、回滚与登记平台/行业层配方，以及来源可追溯性',
     capabilityIds: ['content_package_canvas'],
     hostsOperationsHealth: false,
   },

@@ -1,9 +1,10 @@
 /**
  * T35 acceptance: 运营后台 on the D-130 template-dashboard shell.
  *
- * Four journeys, all against the live stack — the admin surfaces read the real
- * admin-config / model-supply / job-runtime projections, so none of this can go
- * green on fixture data (ADR-0019 / D-131).
+ * Journeys 1–4 run against the live stack and read the real admin-config /
+ * model-supply / job-runtime projections. Journey 5 route-mocks only the Skills
+ * query/command seam to prove browser dispatch shape; it is not live Core,
+ * PostgreSQL, Langfuse, or provider evidence.
  *
  *   1. every admin page renders the new shell in both themes, and the merchant
  *      shell no longer wraps /admin;
