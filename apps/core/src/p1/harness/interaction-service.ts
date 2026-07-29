@@ -25,6 +25,20 @@ const interactionRendererCapabilitySchema = z.enum([
   'unknown',
 ]);
 
+const interactionAnswerIdentitySchema = z
+  .object({
+    requestId: z.string().trim().min(1),
+    revision: z.number().int().nonnegative(),
+    idempotencyKey: z.string().trim().min(1),
+    resume: z
+      .object({
+        runId: z.string().trim().min(1),
+        step: z.string().trim().min(1),
+      })
+      .passthrough(),
+  })
+  .passthrough();
+
 export const harnessInteractionPendingProjectionSchema = z
   .object({
     kind: z.literal('harness_interaction'),
@@ -278,6 +292,7 @@ export class HarnessInteractionService {
   async submit(
     workspaceId: string,
     input: unknown,
+    expectedRunId?: string,
   ): Promise<
     | { kind: 'reask'; request: HarnessInteractionRequest }
     | { kind: 'resumed'; replayed: boolean }
@@ -287,8 +302,52 @@ export class HarnessInteractionService {
         reason: 'deadline' | 'editing' | 'renderer' | 'policy';
       }
   > {
-    const answer = harnessInteractionAnswerSchema.parse(input);
-    return this.submitParsed(workspaceId, answer, 'decision');
+    const identity = interactionAnswerIdentitySchema.parse(input);
+    if (expectedRunId && identity.resume.runId !== expectedRunId) {
+      throw new HarnessInteractionError(
+        'STALE_INTERACTION_REQUEST',
+        'The interaction request does not belong to the requested task.',
+      );
+    }
+    const parsed = harnessInteractionAnswerSchema.safeParse(input);
+    if (parsed.success) {
+      return this.submitParsed(workspaceId, parsed.data, 'decision');
+    }
+    const request = await this.store.readPendingInteraction(
+      workspaceId,
+      identity.resume.runId,
+      { includeResolved: true },
+    );
+    if (
+      !request ||
+      request.kind !== 'ask_merchant' ||
+      request.requestId !== identity.requestId ||
+      request.revision !== identity.revision ||
+      request.step !== identity.resume.step
+    ) {
+      throw new HarnessInteractionError(
+        'STALE_INTERACTION_REQUEST',
+        'The interaction request is no longer pending.',
+      );
+    }
+    const resolution = resolveAskMerchantAnswer(request, input);
+    if (resolution.kind !== 'reask') {
+      throw new HarnessInteractionError(
+        'INTERACTION_KIND_MISMATCH',
+        'The malformed interaction answer cannot be resumed.',
+      );
+    }
+    const registered = await this.store.advanceInteraction(
+      workspaceId,
+      resolution.request,
+    );
+    if (registered.outcome === 'conflict') {
+      throw new HarnessInteractionError(
+        'STALE_INTERACTION_REVISION',
+        'The interaction changed before the follow-up could be registered.',
+      );
+    }
+    return { kind: 'reask', request: resolution.request };
   }
 
   async submitSystemDefault(workspaceId: string, runId: string) {

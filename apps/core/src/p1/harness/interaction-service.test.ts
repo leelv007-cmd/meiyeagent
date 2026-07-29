@@ -171,6 +171,46 @@ test('invalid offered labels become a durable follow-up revision without resumin
   );
 });
 
+test('malformed ask answers reask after identity validation while forged identities fail closed', async () => {
+  const store = new MemoryInteractionStore([]);
+  const request = askRequest();
+  await store.seed(request);
+  const service = new HarnessInteractionService(store, {
+    async resume() {
+      throw new Error('A malformed answer must not resume.');
+    },
+  });
+  const malformed = {
+    requestId: request.requestId,
+    revision: request.revision,
+    idempotencyKey: 'malformed-answer',
+    resume: { runId: request.runId, step: request.step },
+    response: {
+      kind: 'answer',
+      items: [{ itemId: 'service', result: { kind: 'answer', value: '' } }],
+    },
+  };
+
+  const result = await service.submit('workspace-a', malformed);
+
+  assert.equal(result.kind, 'reask');
+  assert.equal(result.request.revision, request.revision + 1);
+  assert.equal(
+    (await store.readPendingInteraction('workspace-a', request.runId))
+      ?.revision,
+    request.revision + 1,
+  );
+  await assert.rejects(
+    service.submit('workspace-a', {
+      ...malformed,
+      requestId: 'forged-request',
+      revision: request.revision + 1,
+      resume: { ...malformed.resume, runId: 'forged-run' },
+    }),
+    /no longer pending|stale/u,
+  );
+});
+
 test('reask keeps the original durable deadline and renderer capability', async () => {
   const resumes: unknown[] = [];
   const store = new MemoryInteractionStore([]);

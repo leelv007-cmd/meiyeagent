@@ -119,6 +119,37 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
       },
       async submit(workspaceId, answer) {
         interactionCalls.push(['submit', workspaceId, answer]);
+        if (
+          typeof answer === 'object' &&
+          answer !== null &&
+          'response' in answer &&
+          (answer as { response?: { malformed?: boolean } }).response
+            ?.malformed
+        ) {
+          return {
+            kind: 'reask' as const,
+            request: {
+              requestId: 'interaction-http-1',
+              runId: 'task-http-1',
+              step: 'context_injection' as const,
+              revision: 2,
+              kind: 'ask_merchant' as const,
+              questions: [
+                {
+                  itemId: 'service',
+                  question: '这次主推哪个项目？',
+                  fallback: { kind: 'deferred' as const },
+                },
+              ],
+              groupSkip: true as const,
+              presentation: {
+                carriers: ['conversation' as const],
+                blocking: 'none' as const,
+                notification: 'none' as const,
+              },
+            },
+          };
+        }
         return { kind: 'resumed' as const, replayed: false };
       },
       async submitMerchantMessage(workspaceId, taskId, input) {
@@ -334,6 +365,24 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
     kind: 'resumed',
     replayed: false,
   });
+  const malformedInteractionAnswer = {
+    ...interactionAnswer,
+    idempotencyKey: 'interaction-http-malformed-1',
+    response: { malformed: true },
+  };
+  const malformedInteraction = await fetch(
+    `${base}/task-http-1/interaction`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(malformedInteractionAnswer),
+    },
+  );
+  assert.equal(malformedInteraction.status, 200);
+  assert.equal(
+    (await malformedInteraction.json()).data.request.revision,
+    2,
+  );
   const editing = await fetch(`${base}/task-http-1/interaction/editing`, {
     method: 'POST',
     headers,
@@ -360,6 +409,7 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
   assert.deepEqual(interactionCalls, [
     ['read', 'workspace-1', 'task-http-1', 'conversation'],
     ['submit', 'workspace-1', interactionAnswer],
+    ['submit', 'workspace-1', malformedInteractionAnswer],
     ['editing', 'workspace-1', 'task-http-1', true],
     ['message', 'workspace-1', 'task-http-1', merchantMessage],
   ]);

@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
+import { z } from 'zod';
 import type {
   FirstUsableDraftMetric,
   StructuredDecisionInput,
 } from '@meiye/contracts';
 import {
   confirmationCardTimeoutSecondsSchema,
-  harnessInteractionAnswerSchema,
   harnessDecisionSnapshotSchema,
   questionCardUnattended,
 } from '@meiye/contracts';
@@ -77,6 +77,12 @@ export class HarnessInteractionTaskMismatchError extends Error {
     this.name = 'HarnessInteractionTaskMismatchError';
   }
 }
+
+const interactionAnswerTaskSchema = z
+  .object({
+    resume: z.object({ runId: z.string().trim().min(1) }).passthrough(),
+  })
+  .passthrough();
 
 export class HarnessApplicationService {
   constructor(
@@ -182,11 +188,10 @@ export class HarnessApplicationService {
     if (!this.interactions) {
       throw new Error('Harness interactions are unavailable.');
     }
-    const answer = harnessInteractionAnswerSchema.parse(input);
-    if (answer.resume.runId !== taskId) {
+    if (interactionAnswerTaskSchema.parse(input).resume.runId !== taskId) {
       throw new HarnessInteractionTaskMismatchError();
     }
-    return this.interactions.submit(workspaceId, answer);
+    return this.interactions.submit(workspaceId, input, taskId);
   }
 
   async setInteractionEditing(

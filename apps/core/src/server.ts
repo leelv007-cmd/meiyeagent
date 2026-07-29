@@ -1708,7 +1708,7 @@ export function createCoreServer({
             : await harnessService.submitInteraction(
                 workspaceId,
                 taskId,
-                harnessInteractionAnswerSchema.parse(await readJson(request))
+                await readJson(request)
               );
         sendJson(response, 200, result, requestCorrelationId);
       } catch (error) {
