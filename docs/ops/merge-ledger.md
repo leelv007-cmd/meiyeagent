@@ -12,3 +12,4 @@
 | 4a4361d0 | #246 | 主体切片（A 校验/registry＋fallback 血统＋C2 warn 消费者，15 commits ff） | contracts+core tsc 0＋registry 4/0＋harness 64/0＋skills 27/0（合入态） | C4（trigger 判别消费）等 #248 M1.5 后补尾款；live Langfuse 与 fresh 全量随 A 批合流 |
 | 30cbdb89 | #248 | M1.5：note_page_regenerated 事件合同（trigger 判别，contracts-only） | contracts 106/0＋tsc 0（合入态） | 解锁 #246 C4 |
 | 281d327b | #247 | 契约＋机制切片（四上限合同/admission 冻结/共享 attempt budget/挂起恢复/checkpoint，44 commits ff） | contracts 111/0＋harness 六件 170/0＋skills 27/0＋双 tsc 0（合入态）；lane 侧全量 2489/0 | 生产装配保持 unset；#255 标定为最终关票门 |
+| 7ef16c7d | #242 | fresh-DB auth schema bootstrap（cherry-pick 自 d43a4c54，纯测试基建） | quality-gates 10/0＋双库 provision 后原红 spec 抽验 4/0＋core tsc 0（合入态）；lane 侧 6 spec 31/0 | 9 个 session 缺表红根治；#242 其余面仍在 lane |
