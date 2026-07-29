@@ -29,6 +29,7 @@
     "n2:recovery:drill": "node scripts/recovery/production-recovery-cli.mjs drill",
     "n2:recovery:verify": "node scripts/recovery/production-recovery-cli.mjs verify",
     "ops:verify-wrangler": "node scripts/ops/verify-wrangler-config.mjs",
+    "ops:issue257:delete-window": "node scripts/ops/issue-257-delete-window.mjs",
     "pro-studio:conformance": "node scripts/pro-studio/conformance-gate.mjs",
     "pro-studio:security": "node scripts/pro-studio/security-matrix.mjs",
     "security:production-boundary": "node scripts/production-network-boundary-gate.mjs",
