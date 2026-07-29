@@ -5,7 +5,17 @@ import type { Pool, PoolClient } from 'pg';
 import { z } from 'zod';
 
 import { P1DomainError } from '../foundation/domain.js';
-import type { SkillRepository } from './repository.js';
+import {
+  bindingReferenceEdge,
+  deploymentReferenceEdge,
+  evalRunReferenceEdges,
+  governanceReservationReferenceEdge,
+  governanceRunReferenceEdges,
+  invocationReceiptReferenceEdge,
+  type CompareAndSetPublishedRevisionInput,
+  type RetireSkillRevisionInput,
+  type SkillRepository,
+} from './repository.js';
 import { validateSkillFrontmatter } from './skill-format.js';
 import {
   parseLegacySkillGovernance,
@@ -18,8 +28,11 @@ import type {
   SkillCatalog,
   SkillChildEffect,
   SkillDeployment,
+  SkillGovernanceReservation,
   SkillGovernanceRun,
   SkillInvocationReceipt,
+  SkillReferenceEdge,
+  SkillReferenceScope,
   SkillRevision,
   SkillSourceKind,
   SkillTier,
@@ -53,7 +66,7 @@ const revisionPayloadV2Schema = z
     contentHash: z.string().trim().min(1),
     instruction: z.string().trim().min(1),
     packagePaths: z.array(z.string()),
-    status: z.enum(['draft', 'accepted_frozen']),
+    status: z.enum(['draft', 'accepted_frozen', 'retired']),
     createdAt: z.string().trim().min(1),
     createdBy: z.string().trim().min(1),
     acceptedAt: z.string().trim().min(1).nullable(),
@@ -96,7 +109,7 @@ const legacyRevisionPayloadSchema = z
         fallbackReason: z.string().trim().min(1).optional(),
       })
       .strict(),
-    status: z.enum(['draft', 'accepted_frozen']),
+    status: z.enum(['draft', 'accepted_frozen', 'retired']),
     createdAt: z.string().trim().min(1),
     createdBy: z.string().trim().min(1),
     acceptedAt: z.string().trim().min(1).nullable(),
@@ -109,7 +122,11 @@ export class PostgresSkillRepository implements SkillRepository {
   constructor(private readonly pool: Pool) {}
 
   async migrate(client?: PoolClient) {
-    await (client ?? this.pool).query(`
+    const executor = client ?? this.pool;
+    await executor.query(`
+      SELECT pg_advisory_xact_lock(
+        hashtext('p1-skill-repository-migration-v1')
+      );
       CREATE TABLE IF NOT EXISTS p1_skill_catalogs (
         skill_id text PRIMARY KEY,
         payload jsonb NOT NULL,
@@ -122,6 +139,9 @@ export class PostgresSkillRepository implements SkillRepository {
         ADD COLUMN IF NOT EXISTS source_kind text;
       ALTER TABLE p1_skill_catalogs
         ADD COLUMN IF NOT EXISTS tier text;
+      ALTER TABLE p1_skill_catalogs
+        ADD COLUMN IF NOT EXISTS publication_generation bigint NOT NULL
+          DEFAULT 0;
       UPDATE p1_skill_catalogs
         SET source_kind = COALESCE(
               source_kind,
@@ -152,6 +172,17 @@ export class PostgresSkillRepository implements SkillRepository {
         payload jsonb NOT NULL,
         created_at timestamptz NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS p1_skill_governance_reservations (
+        run_id text PRIMARY KEY,
+        input_fingerprint text NOT NULL,
+        payload jsonb NOT NULL,
+        created_at timestamptz NOT NULL
+      );
+      ALTER TABLE p1_skill_revisions
+        DROP CONSTRAINT IF EXISTS p1_skill_revisions_status_check;
+      ALTER TABLE p1_skill_revisions
+        ADD CONSTRAINT p1_skill_revisions_status_check
+        CHECK (status IN ('draft', 'accepted_frozen', 'retired'));
       ALTER TABLE p1_skill_revisions
         ADD COLUMN IF NOT EXISTS format_version smallint NOT NULL DEFAULT 1,
         ADD COLUMN IF NOT EXISTS frontmatter jsonb,
@@ -209,11 +240,14 @@ export class PostgresSkillRepository implements SkillRepository {
            'sourceKind',
            catalogs.source_kind,
            'tier',
-           catalogs.tier
+           catalogs.tier,
+           'publicationGeneration',
+           catalogs.publication_generation
          )
        WHERE catalogs.payload->>'description' IS NULL
           OR catalogs.payload->>'sourceKind' IS NULL
-          OR catalogs.payload->>'tier' IS NULL;
+          OR catalogs.payload->>'tier' IS NULL
+          OR catalogs.payload->>'publicationGeneration' IS NULL;
       ALTER TABLE p1_skill_catalogs
         ALTER COLUMN source_kind SET NOT NULL,
         ALTER COLUMN tier SET NOT NULL;
@@ -342,37 +376,563 @@ export class PostgresSkillRepository implements SkillRepository {
         payload jsonb NOT NULL,
         created_at timestamptz NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS p1_skill_reference_edges (
+        edge_id text PRIMARY KEY,
+        target_skill_revision_ref text NOT NULL,
+        consumer_kind text NOT NULL CHECK (
+          consumer_kind IN (
+            'published_lifecycle',
+            'workflow_binding',
+            'recipe_revision',
+            'deployment',
+            'eval_run',
+            'governance_run',
+            'invocation_receipt',
+            'traffic_target'
+          )
+        ),
+        consumer_id text NOT NULL,
+        consumer_label text NOT NULL,
+        scope_kind text NOT NULL CHECK (
+          scope_kind IN ('workspace', 'global', 'unknown')
+        ),
+        owner_workspace_id text,
+        global_proof text,
+        payload jsonb NOT NULL,
+        created_at timestamptz NOT NULL,
+        CHECK (
+          (scope_kind = 'workspace'
+            AND owner_workspace_id IS NOT NULL
+            AND global_proof IS NULL)
+          OR (scope_kind = 'global'
+            AND owner_workspace_id IS NULL
+            AND global_proof IS NOT NULL)
+          OR (scope_kind = 'unknown'
+            AND owner_workspace_id IS NULL
+            AND global_proof IS NULL)
+        ),
+        UNIQUE (consumer_kind, consumer_id, target_skill_revision_ref)
+      );
+      CREATE INDEX IF NOT EXISTS p1_skill_reference_edges_target_scope_idx
+        ON p1_skill_reference_edges (
+          target_skill_revision_ref,
+          scope_kind,
+          owner_workspace_id,
+          consumer_kind,
+          consumer_id
+        );
+      INSERT INTO p1_skill_reference_edges
+        (edge_id, target_skill_revision_ref, consumer_kind, consumer_id,
+         consumer_label, scope_kind, owner_workspace_id, global_proof,
+         payload, created_at)
+      SELECT concat(
+               'skill-reference:published_lifecycle:',
+               skill_id,
+               ':',
+               payload->>'activeRevisionRef'
+             ),
+             payload->>'activeRevisionRef',
+             'published_lifecycle',
+             skill_id,
+             COALESCE(payload->>'name', skill_id),
+             CASE
+               WHEN tier IN ('platform', 'industry') THEN 'global'
+               ELSE 'unknown'
+             END,
+             NULL,
+             CASE
+               WHEN tier = 'platform' THEN 'platform_catalog'
+               WHEN tier = 'industry' THEN 'industry_catalog'
+               ELSE NULL
+             END,
+             jsonb_build_object(
+               'edgeId',
+               concat(
+                 'skill-reference:published_lifecycle:',
+                 skill_id,
+                 ':',
+                 payload->>'activeRevisionRef'
+               ),
+               'targetSkillRevisionRef',
+               payload->>'activeRevisionRef',
+               'consumerKind',
+               'published_lifecycle',
+               'consumerId',
+               skill_id,
+               'consumerLabel',
+               COALESCE(payload->>'name', skill_id),
+               'scope',
+               CASE
+                 WHEN tier = 'platform'
+                   THEN jsonb_build_object(
+                     'kind',
+                     'global',
+                     'proof',
+                     'platform_catalog'
+                   )
+                 WHEN tier = 'industry'
+                   THEN jsonb_build_object(
+                     'kind',
+                     'global',
+                     'proof',
+                     'industry_catalog'
+                   )
+                 ELSE jsonb_build_object('kind', 'unknown')
+               END,
+               'createdAt',
+               updated_at::text
+             ),
+             updated_at
+        FROM p1_skill_catalogs
+       WHERE NULLIF(payload->>'activeRevisionRef', '') IS NOT NULL
+      ON CONFLICT DO NOTHING;
+      INSERT INTO p1_skill_reference_edges
+        (edge_id, target_skill_revision_ref, consumer_kind, consumer_id,
+         consumer_label, scope_kind, owner_workspace_id, global_proof,
+         payload, created_at)
+      SELECT concat(
+               'skill-reference:workflow_binding:',
+               binding_id,
+               ':',
+               skill_revision_ref
+             ),
+             skill_revision_ref,
+             'workflow_binding',
+             binding_id,
+             workflow_revision_ref,
+             CASE
+               WHEN NULLIF(payload->>'ownerWorkspaceId', '') IS NOT NULL
+                 THEN 'workspace'
+               ELSE 'unknown'
+             END,
+             NULLIF(payload->>'ownerWorkspaceId', ''),
+             NULL,
+             jsonb_build_object(
+               'edgeId',
+               concat(
+                 'skill-reference:workflow_binding:',
+                 binding_id,
+                 ':',
+                 skill_revision_ref
+               ),
+               'targetSkillRevisionRef',
+               skill_revision_ref,
+               'consumerKind',
+               'workflow_binding',
+               'consumerId',
+               binding_id,
+               'consumerLabel',
+               workflow_revision_ref,
+               'scope',
+               CASE
+                 WHEN NULLIF(payload->>'ownerWorkspaceId', '') IS NOT NULL
+                   THEN jsonb_build_object(
+                     'kind',
+                     'workspace',
+                     'workspaceId',
+                     payload->>'ownerWorkspaceId'
+                   )
+                 ELSE jsonb_build_object('kind', 'unknown')
+               END,
+               'createdAt',
+               created_at::text
+             ),
+             created_at
+        FROM p1_skill_bindings
+      ON CONFLICT DO NOTHING;
+      INSERT INTO p1_skill_reference_edges
+        (edge_id, target_skill_revision_ref, consumer_kind, consumer_id,
+         consumer_label, scope_kind, owner_workspace_id, global_proof,
+         payload, created_at)
+      SELECT concat(
+               'skill-reference:deployment:',
+               deployment_id,
+               ':',
+               skill_revision_ref
+             ),
+             skill_revision_ref,
+             'deployment',
+             deployment_id,
+             concat(
+               COALESCE(payload->>'provider', 'unknown'),
+               '/',
+               COALESCE(payload->>'channel', 'unknown')
+             ),
+             'unknown',
+             NULL,
+             NULL,
+             jsonb_build_object(
+               'edgeId',
+               concat(
+                 'skill-reference:deployment:',
+                 deployment_id,
+                 ':',
+                 skill_revision_ref
+               ),
+               'targetSkillRevisionRef',
+               skill_revision_ref,
+               'consumerKind',
+               'deployment',
+               'consumerId',
+               deployment_id,
+               'consumerLabel',
+               concat(
+                 COALESCE(payload->>'provider', 'unknown'),
+                 '/',
+                 COALESCE(payload->>'channel', 'unknown')
+               ),
+               'scope',
+               jsonb_build_object('kind', 'unknown'),
+               'createdAt',
+               created_at::text
+             ),
+             created_at
+        FROM p1_skill_deployments
+      ON CONFLICT DO NOTHING;
+      INSERT INTO p1_skill_reference_edges
+        (edge_id, target_skill_revision_ref, consumer_kind, consumer_id,
+         consumer_label, scope_kind, owner_workspace_id, global_proof,
+         payload, created_at)
+      SELECT concat(
+               'skill-reference:invocation_receipt:',
+               invocation_id,
+               ':',
+               skill_revision_ref
+             ),
+             skill_revision_ref,
+             'invocation_receipt',
+             invocation_id,
+             COALESCE(payload->>'taskId', invocation_id),
+             CASE
+               WHEN NULLIF(payload->>'workspaceId', '') IS NOT NULL
+                 THEN 'workspace'
+               ELSE 'unknown'
+             END,
+             NULLIF(payload->>'workspaceId', ''),
+             NULL,
+             jsonb_build_object(
+               'edgeId',
+               concat(
+                 'skill-reference:invocation_receipt:',
+                 invocation_id,
+                 ':',
+                 skill_revision_ref
+               ),
+               'targetSkillRevisionRef',
+               skill_revision_ref,
+               'consumerKind',
+               'invocation_receipt',
+               'consumerId',
+               invocation_id,
+               'consumerLabel',
+               COALESCE(payload->>'taskId', invocation_id),
+               'scope',
+               CASE
+                 WHEN NULLIF(payload->>'workspaceId', '') IS NOT NULL
+                   THEN jsonb_build_object(
+                     'kind',
+                     'workspace',
+                     'workspaceId',
+                     payload->>'workspaceId'
+                   )
+                 ELSE jsonb_build_object('kind', 'unknown')
+               END,
+               'createdAt',
+               created_at::text
+             ),
+             created_at
+        FROM p1_skill_invocation_receipts
+      ON CONFLICT DO NOTHING;
+      INSERT INTO p1_skill_reference_edges
+        (edge_id, target_skill_revision_ref, consumer_kind, consumer_id,
+         consumer_label, scope_kind, owner_workspace_id, global_proof,
+         payload, created_at)
+      SELECT DISTINCT
+             concat(
+               'skill-reference:eval_run:',
+               runs.run_id,
+               ':',
+               result->>'skillRevisionRef'
+             ),
+             result->>'skillRevisionRef',
+             'eval_run',
+             runs.run_id,
+             concat(
+               COALESCE(runs.payload->>'suiteId', 'unknown'),
+               '@',
+               COALESCE(runs.payload->>'suiteRevision', 'unknown')
+             ),
+             'global',
+             NULL,
+             'evaluation',
+             jsonb_build_object(
+               'edgeId',
+               concat(
+                 'skill-reference:eval_run:',
+                 runs.run_id,
+                 ':',
+                 result->>'skillRevisionRef'
+               ),
+               'targetSkillRevisionRef',
+               result->>'skillRevisionRef',
+               'consumerKind',
+               'eval_run',
+               'consumerId',
+               runs.run_id,
+               'consumerLabel',
+               concat(
+                 COALESCE(runs.payload->>'suiteId', 'unknown'),
+                 '@',
+                 COALESCE(runs.payload->>'suiteRevision', 'unknown')
+               ),
+               'scope',
+               jsonb_build_object(
+                 'kind',
+                 'global',
+                 'proof',
+                 'evaluation'
+               ),
+               'createdAt',
+               runs.created_at::text
+             ),
+             runs.created_at
+        FROM p1_skill_eval_runs runs
+        CROSS JOIN LATERAL jsonb_array_elements(
+          COALESCE(runs.payload->'results', '[]'::jsonb)
+        ) result
+       WHERE NULLIF(result->>'skillRevisionRef', '') IS NOT NULL
+      ON CONFLICT DO NOTHING;
+      INSERT INTO p1_skill_reference_edges
+        (edge_id, target_skill_revision_ref, consumer_kind, consumer_id,
+         consumer_label, scope_kind, owner_workspace_id, global_proof,
+         payload, created_at)
+      SELECT concat(
+               'skill-reference:governance_run:',
+               reservation.run_id,
+               ':',
+               reservation.payload->>'baseSkillRevisionRef'
+             ),
+             reservation.payload->>'baseSkillRevisionRef',
+             'governance_run',
+             reservation.run_id,
+             COALESCE(reservation.payload->>'skillId', reservation.run_id),
+             CASE
+               WHEN NULLIF(reservation.payload->>'workspaceId', '') IS NOT NULL
+                 THEN 'workspace'
+               ELSE 'unknown'
+             END,
+             NULLIF(reservation.payload->>'workspaceId', ''),
+             NULL,
+             jsonb_build_object(
+               'edgeId',
+               concat(
+                 'skill-reference:governance_run:',
+                 reservation.run_id,
+                 ':',
+                 reservation.payload->>'baseSkillRevisionRef'
+               ),
+               'targetSkillRevisionRef',
+               reservation.payload->>'baseSkillRevisionRef',
+               'consumerKind',
+               'governance_run',
+               'consumerId',
+               reservation.run_id,
+               'consumerLabel',
+               COALESCE(
+                 reservation.payload->>'skillId',
+                 reservation.run_id
+               ),
+               'scope',
+               CASE
+                 WHEN NULLIF(
+                   reservation.payload->>'workspaceId',
+                   ''
+                 ) IS NOT NULL
+                   THEN jsonb_build_object(
+                     'kind',
+                     'workspace',
+                     'workspaceId',
+                     reservation.payload->>'workspaceId'
+                   )
+                 ELSE jsonb_build_object('kind', 'unknown')
+               END,
+               'createdAt',
+               reservation.payload->>'createdAt'
+             ),
+             reservation.created_at
+        FROM p1_skill_governance_reservations reservation
+       WHERE NULLIF(
+               reservation.payload->>'baseSkillRevisionRef',
+               ''
+             ) IS NOT NULL
+      ON CONFLICT DO NOTHING;
+      INSERT INTO p1_skill_reference_edges
+        (edge_id, target_skill_revision_ref, consumer_kind, consumer_id,
+         consumer_label, scope_kind, owner_workspace_id, global_proof,
+         payload, created_at)
+      SELECT DISTINCT
+             concat(
+               'skill-reference:governance_run:',
+               run.run_id,
+               ':',
+               reference.skill_revision_ref
+             ),
+             reference.skill_revision_ref,
+             'governance_run',
+             run.run_id,
+             COALESCE(run.payload->>'skillId', run.run_id),
+             CASE
+               WHEN NULLIF(run.payload->>'workspaceId', '') IS NOT NULL
+                 THEN 'workspace'
+               ELSE 'unknown'
+             END,
+             NULLIF(run.payload->>'workspaceId', ''),
+             NULL,
+             jsonb_build_object(
+               'edgeId',
+               concat(
+                 'skill-reference:governance_run:',
+                 run.run_id,
+                 ':',
+                 reference.skill_revision_ref
+               ),
+               'targetSkillRevisionRef',
+               reference.skill_revision_ref,
+               'consumerKind',
+               'governance_run',
+               'consumerId',
+               run.run_id,
+               'consumerLabel',
+               COALESCE(run.payload->>'skillId', run.run_id),
+               'scope',
+               CASE
+                 WHEN NULLIF(run.payload->>'workspaceId', '') IS NOT NULL
+                   THEN jsonb_build_object(
+                     'kind',
+                     'workspace',
+                     'workspaceId',
+                     run.payload->>'workspaceId'
+                   )
+                 ELSE jsonb_build_object('kind', 'unknown')
+               END,
+               'createdAt',
+               run.payload->>'createdAt'
+             ),
+             run.created_at
+        FROM p1_skill_governance_runs run
+        CROSS JOIN LATERAL (
+          VALUES
+            (run.payload->>'baseSkillRevisionRef'),
+            (run.payload->>'draftSkillRevisionRef')
+        ) reference(skill_revision_ref)
+       WHERE NULLIF(reference.skill_revision_ref, '') IS NOT NULL
+      ON CONFLICT DO NOTHING;
     `);
+    const creationCatalog = await executor.query<{ relation: string | null }>(
+      `SELECT to_regclass('p1_creation_recipe_revisions')::text AS relation`,
+    );
+    if (creationCatalog.rows[0]?.relation) {
+      await executor.query(`
+        INSERT INTO p1_skill_reference_edges
+          (edge_id, target_skill_revision_ref, consumer_kind, consumer_id,
+           consumer_label, scope_kind, owner_workspace_id, global_proof,
+           payload, created_at)
+        SELECT DISTINCT
+               concat(
+                 'skill-reference:recipe_revision:',
+                 COALESCE(
+                   recipe.payload->>'revisionId',
+                   concat(recipe.recipe_id, '@', recipe.revision::text)
+                 ),
+                 ':',
+                 reference.skill_revision_ref
+               ),
+               reference.skill_revision_ref,
+               'recipe_revision',
+               COALESCE(
+                 recipe.payload->>'revisionId',
+                 concat(recipe.recipe_id, '@', recipe.revision::text)
+               ),
+               recipe.recipe_id,
+               'global',
+               NULL,
+               'recipe_catalog',
+               jsonb_build_object(
+                 'edgeId',
+                 concat(
+                   'skill-reference:recipe_revision:',
+                   COALESCE(
+                     recipe.payload->>'revisionId',
+                     concat(recipe.recipe_id, '@', recipe.revision::text)
+                   ),
+                   ':',
+                   reference.skill_revision_ref
+                 ),
+                 'targetSkillRevisionRef',
+                 reference.skill_revision_ref,
+                 'consumerKind',
+                 'recipe_revision',
+                 'consumerId',
+                 COALESCE(
+                   recipe.payload->>'revisionId',
+                   concat(recipe.recipe_id, '@', recipe.revision::text)
+                 ),
+                 'consumerLabel',
+                 recipe.recipe_id,
+                 'scope',
+                 jsonb_build_object(
+                   'kind',
+                   'global',
+                   'proof',
+                   'recipe_catalog'
+                 ),
+                 'createdAt',
+                 recipe.payload->>'createdAt'
+               ),
+               recipe.created_at
+          FROM p1_creation_recipe_revisions recipe
+          CROSS JOIN LATERAL jsonb_array_elements_text(
+            COALESCE(recipe.payload->'skillRevisionRefs', '[]'::jsonb)
+          ) reference(skill_revision_ref)
+         WHERE NULLIF(reference.skill_revision_ref, '') IS NOT NULL
+        ON CONFLICT DO NOTHING
+      `);
+    }
   }
 
   async putCatalog(catalog: SkillCatalog) {
+    const canonical = normalizeCatalog(catalog);
     const result = await this.pool.query<PayloadRow<SkillCatalog>>(
       `INSERT INTO p1_skill_catalogs
-         (skill_id, payload, updated_at, source_kind, tier)
-       VALUES ($1, $2::jsonb, $3::timestamptz, $4, $5)
+         (skill_id, payload, updated_at, source_kind, tier,
+          publication_generation)
+       VALUES ($1, $2::jsonb, $3::timestamptz, $4, $5, $6)
        ON CONFLICT (skill_id) DO UPDATE
          SET payload = EXCLUDED.payload,
              updated_at = EXCLUDED.updated_at,
              source_kind = EXCLUDED.source_kind,
-             tier = EXCLUDED.tier
+             tier = EXCLUDED.tier,
+             publication_generation = EXCLUDED.publication_generation
        RETURNING payload`,
       [
-        catalog.skillId,
-        JSON.stringify(catalog),
-        catalog.updatedAt,
-        catalog.sourceKind,
-        catalog.tier,
+        canonical.skillId,
+        JSON.stringify(canonical),
+        canonical.updatedAt,
+        canonical.sourceKind,
+        canonical.tier,
+        canonical.publicationGeneration,
       ],
     );
-    return cloneRow(result.rows[0]!);
+    return normalizeCatalog(cloneRow(result.rows[0]!));
   }
 
   async getCatalog(skillId: string) {
-    return this.getOne<SkillCatalog>(
+    const catalog = await this.getOne<SkillCatalog>(
       'p1_skill_catalogs',
       'skill_id',
       skillId,
     );
+    return catalog ? normalizeCatalog(catalog) : null;
   }
 
   async listCatalogs(filter?: {
@@ -399,7 +959,7 @@ export class PostgresSkillRepository implements SkillRepository {
        LIMIT $${values.length}`,
       values,
     );
-    return result.rows.map((row) => cloneRow(row));
+    return result.rows.map((row) => normalizeCatalog(cloneRow(row)));
   }
 
   async getCatalogStats() {
@@ -564,6 +1124,184 @@ export class PostgresSkillRepository implements SkillRepository {
     return result.rows.map(cloneRevisionRow);
   }
 
+  async compareAndSetPublishedRevision(
+    input: CompareAndSetPublishedRevisionInput,
+  ) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [input.publishedRun.runId],
+      );
+      const existing = await client.query<
+        PayloadRow<SkillGovernanceRun> & {
+          input_fingerprint: string;
+        }
+      >(
+        `SELECT input_fingerprint, payload
+           FROM p1_skill_governance_runs
+          WHERE run_id = $1`,
+        [input.publishedRun.runId],
+      );
+      const persisted = existing.rows[0];
+      if (persisted) {
+        if (
+          persisted.input_fingerprint !==
+          input.publishedRun.inputFingerprint
+        ) {
+          throw new P1DomainError(
+            'IDEMPOTENCY_CONFLICT',
+            'Skill publication run is already bound to different facts.',
+          );
+        }
+        await client.query('COMMIT');
+        return cloneRow(persisted);
+      }
+
+      const currentResult = await client.query<PayloadRow<SkillCatalog>>(
+        `SELECT payload
+           FROM p1_skill_catalogs
+          WHERE skill_id = $1
+          FOR UPDATE`,
+        [input.publishedCatalog.skillId],
+      );
+      const currentRow = currentResult.rows[0];
+      if (!currentRow) {
+        throw new P1DomainError('NOT_FOUND', 'Skill catalog does not exist.');
+      }
+      const current = normalizeCatalog(cloneRow(currentRow));
+      if (
+        current.activeRevisionRef !==
+          input.expectedPublishedRevisionRef ||
+        current.publicationGeneration !==
+          input.expectedPublicationGeneration
+      ) {
+        await insertGovernanceRun(client, input.casConflictRun);
+        await client.query('COMMIT');
+        return structuredClone(input.casConflictRun);
+      }
+
+      const published = normalizeCatalog(input.publishedCatalog);
+      await client.query(
+        `UPDATE p1_skill_catalogs
+            SET payload = $2::jsonb,
+                updated_at = $3::timestamptz,
+                source_kind = $4,
+                tier = $5,
+                publication_generation = $6
+          WHERE skill_id = $1`,
+        [
+          published.skillId,
+          JSON.stringify(published),
+          published.updatedAt,
+          published.sourceKind,
+          published.tier,
+          published.publicationGeneration,
+        ],
+      );
+      await client.query(
+        `DELETE FROM p1_skill_reference_edges
+          WHERE consumer_kind = 'published_lifecycle'
+            AND consumer_id = $1`,
+        [published.skillId],
+      );
+      await this.insertReferenceEdge(client, input.referenceEdge);
+      await insertGovernanceRun(client, input.publishedRun);
+      await client.query('COMMIT');
+      return structuredClone(input.publishedRun);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async retireRevision(input: RetireSkillRevisionInput) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [input.appliedRun.runId],
+      );
+      await lockSkillReferenceTarget(
+        client,
+        input.targetSkillRevisionRef,
+      );
+      const existing = await client.query<
+        PayloadRow<SkillGovernanceRun> & {
+          input_fingerprint: string;
+        }
+      >(
+        `SELECT input_fingerprint, payload
+           FROM p1_skill_governance_runs
+          WHERE run_id = $1`,
+        [input.appliedRun.runId],
+      );
+      const persisted = existing.rows[0];
+      if (persisted) {
+        if (
+          persisted.input_fingerprint !== input.appliedRun.inputFingerprint
+        ) {
+          throw new P1DomainError(
+            'IDEMPOTENCY_CONFLICT',
+            'Skill retirement run is already bound to different facts.',
+          );
+        }
+        await client.query('COMMIT');
+        return cloneRow(persisted);
+      }
+
+      const revision = await client.query<{ status: string }>(
+        `SELECT status
+           FROM p1_skill_revisions
+          WHERE skill_revision_ref = $1
+          FOR UPDATE`,
+        [input.targetSkillRevisionRef],
+      );
+      if (!revision.rows[0]) {
+        throw new P1DomainError('NOT_FOUND', 'Skill revision does not exist.');
+      }
+      if (revision.rows[0].status !== 'accepted_frozen') {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'Only an accepted frozen Skill revision can be retired.',
+        );
+      }
+      const dependencies = await client.query<{ count: string }>(
+        `SELECT count(*)::text AS count
+           FROM p1_skill_reference_edges
+          WHERE target_skill_revision_ref = $1`,
+        [input.targetSkillRevisionRef],
+      );
+      const blocked = Number(dependencies.rows[0]?.count ?? 0) > 0;
+      const run = blocked ? input.blockedRun : input.appliedRun;
+      if (!blocked) {
+        await client.query(
+          `UPDATE p1_skill_revisions
+              SET status = 'retired',
+                  payload = jsonb_set(
+                    payload,
+                    '{status}',
+                    to_jsonb('retired'::text)
+                  )
+            WHERE skill_revision_ref = $1`,
+          [input.targetSkillRevisionRef],
+        );
+      }
+      await insertGovernanceRun(client, run);
+      await client.query('COMMIT');
+      return structuredClone(run);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async applyGovernanceDraft(input: {
     run: SkillGovernanceRun;
     draft: SkillRevision | null;
@@ -601,11 +1339,17 @@ export class PostgresSkillRepository implements SkillRepository {
             'Skill governance run is already bound to different facts.',
           );
         }
+        for (const edge of governanceRunReferenceEdges(cloneRow(persisted))) {
+          await this.preserveOrInsertReferenceEdge(client, edge);
+        }
         await client.query('COMMIT');
         return cloneRow(persisted);
       }
       if (!input.draft) {
         await insertGovernanceRun(client, input.run);
+        for (const edge of governanceRunReferenceEdges(input.run)) {
+          await this.preserveOrInsertReferenceEdge(client, edge);
+        }
         await client.query('COMMIT');
         return structuredClone(input.run);
       }
@@ -629,6 +1373,11 @@ export class PostgresSkillRepository implements SkillRepository {
         input.draft.revision !== input.expectedHeadRevision + 1
       ) {
         await insertGovernanceRun(client, input.casConflictRun);
+        for (const edge of governanceRunReferenceEdges(
+          input.casConflictRun,
+        )) {
+          await this.preserveOrInsertReferenceEdge(client, edge);
+        }
         await client.query('COMMIT');
         return structuredClone(input.casConflictRun);
       }
@@ -670,8 +1419,143 @@ export class PostgresSkillRepository implements SkillRepository {
         [input.draft.skillId, input.draft.revision],
       );
       await insertGovernanceRun(client, input.run);
+      for (const edge of governanceRunReferenceEdges(input.run)) {
+        await this.preserveOrInsertReferenceEdge(client, edge);
+      }
       await client.query('COMMIT');
       return structuredClone(input.run);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async reserveGovernanceRun(
+    reservation: SkillGovernanceReservation,
+  ) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query<
+        PayloadRow<SkillGovernanceReservation> & {
+          input_fingerprint: string;
+        }
+      >(
+        `INSERT INTO p1_skill_governance_reservations
+           (run_id, input_fingerprint, payload, created_at)
+         VALUES ($1, $2, $3::jsonb, $4::timestamptz)
+         ON CONFLICT (run_id) DO NOTHING
+         RETURNING input_fingerprint, payload`,
+        [
+          reservation.runId,
+          reservation.inputFingerprint,
+          JSON.stringify(reservation),
+          reservation.createdAt,
+        ],
+      );
+      const inserted = Boolean(result.rows[0]);
+      const existing = inserted
+        ? result
+        : await client.query<
+            PayloadRow<SkillGovernanceReservation> & {
+              input_fingerprint: string;
+            }
+          >(
+            `SELECT input_fingerprint, payload
+               FROM p1_skill_governance_reservations
+              WHERE run_id = $1`,
+            [reservation.runId],
+          );
+      const stored = existing.rows[0];
+      if (
+        !stored ||
+        stored.input_fingerprint !== reservation.inputFingerprint
+      ) {
+        throw new P1DomainError(
+          'IDEMPOTENCY_CONFLICT',
+          'Skill governance reservation is already bound to different facts.',
+        );
+      }
+      const edge = governanceReservationReferenceEdge(reservation);
+      if (inserted) {
+        await this.insertReferenceEdge(client, edge);
+      } else {
+        await this.preserveOrInsertReferenceEdge(client, edge);
+      }
+      await client.query('COMMIT');
+      return cloneRow(stored);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getGovernanceReservation(runId: string) {
+    return this.getOne<SkillGovernanceReservation>(
+      'p1_skill_governance_reservations',
+      'run_id',
+      runId,
+    );
+  }
+
+  async completeGovernanceCancellation(run: SkillGovernanceRun) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [run.runId],
+      );
+      const existing = await client.query<
+        PayloadRow<SkillGovernanceRun> & {
+          input_fingerprint: string;
+        }
+      >(
+        `SELECT input_fingerprint, payload
+           FROM p1_skill_governance_runs
+          WHERE run_id = $1`,
+        [run.runId],
+      );
+      if (existing.rows[0]) {
+        if (existing.rows[0].input_fingerprint !== run.inputFingerprint) {
+          throw new P1DomainError(
+            'IDEMPOTENCY_CONFLICT',
+            'Skill governance run is already bound to different facts.',
+          );
+        }
+        for (const edge of governanceRunReferenceEdges(run)) {
+          await this.preserveOrInsertReferenceEdge(client, edge);
+        }
+        await client.query('COMMIT');
+        return cloneRow(existing.rows[0]);
+      }
+      const reservation = await client.query<{
+        input_fingerprint: string;
+      }>(
+        `SELECT input_fingerprint
+           FROM p1_skill_governance_reservations
+          WHERE run_id = $1
+          FOR UPDATE`,
+        [run.runId],
+      );
+      if (
+        reservation.rows[0]?.input_fingerprint !== run.inputFingerprint
+      ) {
+        throw new P1DomainError(
+          'IDEMPOTENCY_CONFLICT',
+          'Skill governance cancellation does not match its reserved facts.',
+        );
+      }
+      await insertGovernanceRun(client, run);
+      for (const edge of governanceRunReferenceEdges(run)) {
+        await this.preserveOrInsertReferenceEdge(client, edge);
+      }
+      await client.query('COMMIT');
+      return structuredClone(run);
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -692,41 +1576,71 @@ export class PostgresSkillRepository implements SkillRepository {
 
   async putBinding(binding: SkillBinding) {
     const canonical = normalizeBindingCondition(binding) as SkillBinding;
-    const result = await this.pool.query<PayloadRow<SkillBinding>>(
-      `INSERT INTO p1_skill_bindings
-         (binding_id, workflow_revision_ref, stage, trigger_condition, skill_id,
-          skill_revision_ref, status, superseded_at, payload, created_at)
-       VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8::timestamptz, $9::jsonb, $10::timestamptz)
-       ON CONFLICT (binding_id) DO NOTHING
-       RETURNING payload`,
-      [
-        canonical.bindingId,
-        canonical.workflowRevisionRef,
-        canonical.triggerCondition.harnessStage,
-        JSON.stringify(canonical.triggerCondition),
-        canonical.skillId,
-        canonical.skillRevisionRef,
-        canonical.status,
-        canonical.supersededAt,
-        JSON.stringify(canonical),
-        canonical.createdAt,
-      ],
-    );
-    if (result.rows[0]) return cloneRow(result.rows[0]);
-    const existing = await this.getBindingById(canonical.bindingId);
-    if (
-      existing &&
-      isDeepStrictEqual(
-        normalizeBindingCondition(existing),
-        canonical,
-      )
-    ) {
-      return existing as SkillBinding;
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query<PayloadRow<SkillBinding>>(
+        `INSERT INTO p1_skill_bindings
+           (binding_id, workflow_revision_ref, stage, trigger_condition, skill_id,
+            skill_revision_ref, status, superseded_at, payload, created_at)
+         VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8::timestamptz, $9::jsonb, $10::timestamptz)
+         ON CONFLICT (binding_id) DO NOTHING
+         RETURNING payload`,
+        [
+          canonical.bindingId,
+          canonical.workflowRevisionRef,
+          canonical.triggerCondition.harnessStage,
+          JSON.stringify(canonical.triggerCondition),
+          canonical.skillId,
+          canonical.skillRevisionRef,
+          canonical.status,
+          canonical.supersededAt,
+          JSON.stringify(canonical),
+          canonical.createdAt,
+        ],
+      );
+      const inserted = Boolean(result.rows[0]);
+      let stored = result.rows[0]
+        ? cloneRow(result.rows[0])
+        : null;
+      if (!stored) {
+        const existing = await client.query<BindingPayloadRow>(
+          `SELECT payload, stage
+             FROM p1_skill_bindings
+            WHERE binding_id = $1`,
+          [canonical.bindingId],
+        );
+        const existingBinding = existing.rows[0]
+          ? cloneBindingRow(existing.rows[0])
+          : null;
+        if (
+          !existingBinding ||
+          !isDeepStrictEqual(
+            normalizeBindingCondition(existingBinding),
+            canonical,
+          )
+        ) {
+          throw new P1DomainError(
+            'IDEMPOTENCY_CONFLICT',
+            'Skill binding is already bound to different facts.',
+          );
+        }
+        stored = existingBinding as SkillBinding;
+      }
+      const edge = bindingReferenceEdge(canonical);
+      if (inserted) {
+        await this.insertReferenceEdge(client, edge);
+      } else {
+        await this.preserveOrInsertReferenceEdge(client, edge);
+      }
+      await client.query('COMMIT');
+      return stored;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
-    throw new P1DomainError(
-      'IDEMPOTENCY_CONFLICT',
-      'Skill binding is already bound to different facts.',
-    );
   }
 
   async supersedeBinding(
@@ -776,6 +1690,10 @@ export class PostgresSkillRepository implements SkillRepository {
           JSON.stringify(replacement),
           replacement.createdAt,
         ],
+      );
+      await this.insertReferenceEdge(
+        client,
+        bindingReferenceEdge(replacement),
       );
       await client.query('COMMIT');
       return structuredClone(replacement);
@@ -838,26 +1756,20 @@ export class PostgresSkillRepository implements SkillRepository {
     return result.rowCount ?? 0;
   }
 
-  async putDeployment(deployment: SkillDeployment) {
-    const result = await this.pool.query<PayloadRow<SkillDeployment>>(
-      `INSERT INTO p1_skill_deployments
-         (deployment_id, payload, skill_revision_ref, created_at)
-       VALUES ($1, $2::jsonb, $3, $4::timestamptz)
-       ON CONFLICT (deployment_id) DO NOTHING
-       RETURNING payload`,
-      [
-        deployment.deploymentId,
-        JSON.stringify(deployment),
-        deployment.skillRevisionRef,
-        deployment.createdAt,
-      ],
-    );
-    if (result.rows[0]) return cloneRow(result.rows[0]);
-    const existing = await this.getDeployment(deployment.deploymentId);
-    if (existing && isDeepStrictEqual(existing, deployment)) return existing;
-    throw new P1DomainError(
-      'IDEMPOTENCY_CONFLICT',
-      'Skill deployment is already bound to different facts.',
+  async putDeployment(
+    deployment: SkillDeployment,
+    referenceScope: SkillReferenceScope = { kind: 'unknown' },
+  ) {
+    return this.putOnceWithReferenceEdge(
+      'p1_skill_deployments',
+      'deployment_id',
+      deployment.deploymentId,
+      deployment,
+      ['skill_revision_ref', 'created_at'],
+      [deployment.skillRevisionRef, deployment.createdAt],
+      'Skill deployment',
+      deploymentReferenceEdge(deployment, referenceScope),
+      normalizeDeployment,
     );
   }
 
@@ -875,7 +1787,7 @@ export class PostgresSkillRepository implements SkillRepository {
       : null;
   }
 
-  putImmutable(runId: string, input: EvalRun) {
+  async putImmutable(runId: string, input: EvalRun) {
     const run = evalRunSchema.parse(input);
     if (run.runId !== runId) {
       throw new P1DomainError(
@@ -883,15 +1795,48 @@ export class PostgresSkillRepository implements SkillRepository {
         'Skill EvalRun ID must match the immutable registry key.',
       );
     }
-    return this.putOnce(
-      'p1_skill_eval_runs',
-      'run_id',
-      runId,
-      run,
-      ['created_at'],
-      [run.createdAt],
-      'Skill EvalRun',
-    );
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const inserted = await client.query<PayloadRow<EvalRun>>(
+        `INSERT INTO p1_skill_eval_runs
+           (run_id, payload, created_at)
+         VALUES ($1, $2::jsonb, $3::timestamptz)
+         ON CONFLICT (run_id) DO NOTHING
+         RETURNING payload`,
+        [runId, JSON.stringify(run), run.createdAt],
+      );
+      const stored = inserted.rows[0]
+        ? cloneRow(inserted.rows[0])
+        : await client
+            .query<PayloadRow<EvalRun>>(
+              'SELECT payload FROM p1_skill_eval_runs WHERE run_id = $1',
+              [runId],
+            )
+            .then((result) =>
+              result.rows[0] ? cloneRow(result.rows[0]) : null,
+            );
+      if (!stored || !isDeepStrictEqual(stored, run)) {
+        throw new P1DomainError(
+          'IDEMPOTENCY_CONFLICT',
+          'Skill EvalRun is already bound to different facts.',
+        );
+      }
+      for (const edge of evalRunReferenceEdges(run)) {
+        if (inserted.rows[0]) {
+          await this.insertReferenceEdge(client, edge);
+        } else {
+          await this.preserveOrInsertReferenceEdge(client, edge);
+        }
+      }
+      await client.query('COMMIT');
+      return structuredClone(run);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async get(runId: string) {
@@ -952,7 +1897,7 @@ export class PostgresSkillRepository implements SkillRepository {
   }
 
   putInvocationReceipt(receipt: SkillInvocationReceipt) {
-    return this.putOnce(
+    return this.putOnceWithReferenceEdge(
       'p1_skill_invocation_receipts',
       'invocation_id',
       receipt.invocationId,
@@ -964,6 +1909,7 @@ export class PostgresSkillRepository implements SkillRepository {
         receipt.createdAt,
       ],
       'Skill invocation receipt',
+      invocationReceiptReferenceEdge(receipt),
     );
   }
 
@@ -973,6 +1919,71 @@ export class PostgresSkillRepository implements SkillRepository {
       'invocation_id',
       invocationId,
     );
+  }
+
+  async putReferenceEdge(edge: SkillReferenceEdge) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const stored = await this.insertReferenceEdge(client, edge);
+      await client.query('COMMIT');
+      return stored;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async listReferenceEdges(targetSkillRevisionRef: string) {
+    const result = await this.pool.query<PayloadRow<SkillReferenceEdge>>(
+      `SELECT payload
+         FROM p1_skill_reference_edges
+        WHERE target_skill_revision_ref = $1
+        ORDER BY consumer_kind, consumer_id, edge_id`,
+      [targetSkillRevisionRef],
+    );
+    return result.rows.map(cloneRow);
+  }
+
+  async inspectReferenceEdges(
+    targetSkillRevisionRef: string,
+    viewerWorkspaceId: string,
+  ) {
+    const [visible, hidden] = await Promise.all([
+      this.pool.query<PayloadRow<SkillReferenceEdge>>(
+        `SELECT payload
+           FROM p1_skill_reference_edges
+          WHERE target_skill_revision_ref = $1
+            AND (
+              scope_kind = 'global'
+              OR (
+                scope_kind = 'workspace'
+                AND owner_workspace_id = $2
+              )
+            )
+          ORDER BY consumer_kind, consumer_id, edge_id`,
+        [targetSkillRevisionRef, viewerWorkspaceId],
+      ),
+      this.pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count
+           FROM p1_skill_reference_edges
+          WHERE target_skill_revision_ref = $1
+            AND NOT (
+              scope_kind = 'global'
+              OR (
+                scope_kind = 'workspace'
+                AND owner_workspace_id = $2
+              )
+            )`,
+        [targetSkillRevisionRef, viewerWorkspaceId],
+      ),
+    ]);
+    return {
+      visibleDependencies: visible.rows.map(cloneRow),
+      hiddenCount: Number(hidden.rows[0]?.count ?? 0),
+    };
   }
 
   private async getOne<T>(
@@ -1026,10 +2037,175 @@ export class PostgresSkillRepository implements SkillRepository {
       `${label} is already bound to different facts.`,
     );
   }
+
+  private async putOnceWithReferenceEdge<T>(
+    table: string,
+    idColumn: string,
+    id: string,
+    payload: T,
+    extraColumns: string[],
+    extraValues: unknown[],
+    label: string,
+    edge: SkillReferenceEdge,
+    normalizeStored: (payload: T) => T = (payload) => payload,
+  ): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const columns = [idColumn, 'payload', ...extraColumns];
+      const parameters = columns.map((column, index) =>
+        column === 'payload' ? `$${index + 1}::jsonb` : `$${index + 1}`,
+      );
+      const values = [id, JSON.stringify(payload), ...extraValues];
+      const inserted = await client.query<PayloadRow<T>>(
+        `INSERT INTO ${table} (${columns.join(', ')})
+         VALUES (${parameters.join(', ')})
+         ON CONFLICT (${idColumn}) DO NOTHING
+         RETURNING payload`,
+        values,
+      );
+      const factInserted = Boolean(inserted.rows[0]);
+      let stored = inserted.rows[0] ? cloneRow(inserted.rows[0]) : null;
+      if (!stored) {
+        const existing = await client.query<PayloadRow<T>>(
+          `SELECT payload FROM ${table} WHERE ${idColumn} = $1`,
+          [id],
+        );
+        stored = existing.rows[0]
+          ? normalizeStored(cloneRow(existing.rows[0]))
+          : null;
+        if (!stored || !isDeepStrictEqual(stored, payload)) {
+          throw new P1DomainError(
+            'IDEMPOTENCY_CONFLICT',
+            `${label} is already bound to different facts.`,
+          );
+        }
+      }
+      if (factInserted) {
+        await this.insertReferenceEdge(client, edge);
+      } else {
+        await this.preserveOrInsertReferenceEdge(client, edge);
+      }
+      await client.query('COMMIT');
+      return stored;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async insertReferenceEdge(
+    client: PoolClient,
+    edge: SkillReferenceEdge,
+  ) {
+    await lockSkillReferenceTarget(
+      client,
+      edge.targetSkillRevisionRef,
+    );
+    const target = await client.query<{ status: string }>(
+      `SELECT status
+         FROM p1_skill_revisions
+        WHERE skill_revision_ref = $1`,
+      [edge.targetSkillRevisionRef],
+    );
+    if (target.rows[0]?.status === 'retired') {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Retired Skill revisions cannot acquire new references.',
+      );
+    }
+    const ownerWorkspaceId =
+      edge.scope.kind === 'workspace' ? edge.scope.workspaceId : null;
+    const globalProof =
+      edge.scope.kind === 'global' ? edge.scope.proof : null;
+    const inserted = await client.query<PayloadRow<SkillReferenceEdge>>(
+      `INSERT INTO p1_skill_reference_edges
+         (edge_id, target_skill_revision_ref, consumer_kind, consumer_id,
+          consumer_label, scope_kind, owner_workspace_id, global_proof,
+          payload, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::timestamptz)
+       ON CONFLICT (edge_id) DO NOTHING
+       RETURNING payload`,
+      [
+        edge.edgeId,
+        edge.targetSkillRevisionRef,
+        edge.consumerKind,
+        edge.consumerId,
+        edge.consumerLabel,
+        edge.scope.kind,
+        ownerWorkspaceId,
+        globalProof,
+        JSON.stringify(edge),
+        edge.createdAt,
+      ],
+    );
+    if (inserted.rows[0]) return cloneRow(inserted.rows[0]);
+    const existing = await client.query<PayloadRow<SkillReferenceEdge>>(
+      `SELECT payload
+         FROM p1_skill_reference_edges
+        WHERE edge_id = $1`,
+      [edge.edgeId],
+    );
+    const stored = existing.rows[0] ? cloneRow(existing.rows[0]) : null;
+    if (stored && isDeepStrictEqual(stored, edge)) return stored;
+    throw new P1DomainError(
+      'IDEMPOTENCY_CONFLICT',
+      'Skill reference edge is already bound to different facts.',
+    );
+  }
+
+  private async preserveOrInsertReferenceEdge(
+    client: PoolClient,
+    edge: SkillReferenceEdge,
+  ) {
+    const existing = await client.query<PayloadRow<SkillReferenceEdge>>(
+      `SELECT payload
+         FROM p1_skill_reference_edges
+        WHERE consumer_kind = $1
+          AND consumer_id = $2
+          AND target_skill_revision_ref = $3`,
+      [
+        edge.consumerKind,
+        edge.consumerId,
+        edge.targetSkillRevisionRef,
+      ],
+    );
+    return existing.rows[0]
+      ? cloneRow(existing.rows[0])
+      : this.insertReferenceEdge(client, edge);
+  }
+}
+
+function lockSkillReferenceTarget(
+  client: PoolClient,
+  targetSkillRevisionRef: string,
+) {
+  return client.query(
+    `SELECT pg_advisory_xact_lock(
+       hashtextextended('skill-reference-target:' || $1, 0)
+     )`,
+    [targetSkillRevisionRef],
+  );
 }
 
 function cloneRow<T>(row: PayloadRow<T>) {
   return structuredClone(row.payload);
+}
+
+function normalizeCatalog(catalog: SkillCatalog): SkillCatalog {
+  const legacy = catalog as SkillCatalog & {
+    publicationGeneration?: number;
+  };
+  return {
+    ...catalog,
+    publicationGeneration:
+      Number.isInteger(legacy.publicationGeneration) &&
+      (legacy.publicationGeneration ?? -1) >= 0
+        ? legacy.publicationGeneration!
+        : 0,
+  };
 }
 
 function revisionSelect() {

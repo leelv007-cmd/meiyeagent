@@ -1821,6 +1821,7 @@ async function createSmokeSkills(workflowId: string) {
     sourceKind: 'authored',
     tier: 'platform',
     presentationPolicy: 'backend_only',
+    publicationGeneration: 0,
     skillId: 'skill.intent-one',
     updatedAt: '2026-07-26T09:00:00.000Z',
   });

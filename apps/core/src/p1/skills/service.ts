@@ -15,7 +15,10 @@ import {
   canonicalAgentPrimitiveRegistry,
   type AgentPrimitiveRegistry,
 } from '../agent-primitives/registry.js';
-import type { SkillRepository } from './repository.js';
+import {
+  publishedLifecycleReferenceEdge,
+  type SkillRepository,
+} from './repository.js';
 import {
   validateSkillPermissionAuthority,
   validateSkillFrontmatter,
@@ -24,6 +27,8 @@ import {
 import { parseSkillGovernance } from './skill-governance.js';
 import {
   SkillPromptAuthorityUnavailableError,
+  SKILL_GOVERNANCE_PATCH_FIELDS,
+  SKILL_OPERATOR_EDITABLE_FIELDS,
   skillRevisionRef,
   type ResolvedSkillInstruction,
   type SkillBinding,
@@ -46,6 +51,7 @@ import {
   type SkillPromptReference,
   type SkillPromptSnapshot,
   type SkillPromptSnapshotPort,
+  type SkillReverseDependencyView,
   type SkillRevision,
   type SkillRevisionManifest,
   type SkillSourceKind,
@@ -104,48 +110,10 @@ function required(value: string, label: string) {
   return normalized;
 }
 
-const SKILL_GOVERNANCE_PATCH_FIELDS = new Set([
-  'acceptedAt',
-  'acceptedBy',
-  'activeRevisionRef',
-  'contentHash',
-  'createdAt',
-  'createdBy',
-  'evalRunId',
-  'governance.budget.maxChildEffects',
-  'governance.budget.maxCostCents',
-  'governance.budget.timeoutMs',
-  'governance.contextScopes',
-  'governance.executionMode',
-  'governance.fallback',
-  'governance.inputSchemaRef',
-  'governance.outputSchemaRef',
-  'governance.requiredModelCapabilities',
-  'governance.sideEffectClass',
-  'governance.workflowRevisionRefs',
-  'instruction',
-  'manifest.allowed-tools',
-  'manifest.compatibility',
-  'manifest.description',
-  'manifest.license',
-  'manifest.metadata',
-  'manifest.name',
-  'packagePaths',
-  'prompt.content',
-  'prompt.contentHash',
-  'prompt.fallbackReason',
-  'prompt.isFallback',
-  'prompt.label',
-  'prompt.name',
-  'prompt.source',
-  'prompt.version',
-  'revision',
-  'skillId',
-  'skillRevisionRef',
-  'sourceKind',
-  'status',
-  'tier',
-]);
+const SKILL_GOVERNANCE_PATCH_FIELD_SET =
+  new Set<string>(SKILL_GOVERNANCE_PATCH_FIELDS);
+const SKILL_OPERATOR_EDITABLE_FIELD_SET =
+  new Set<string>(SKILL_OPERATOR_EDITABLE_FIELDS);
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return (
@@ -193,6 +161,24 @@ function governanceRun(input: {
     status: 'completed',
     workspaceId: input.workspaceId,
   };
+}
+
+function governanceRevisionFingerprint(input: {
+  actorId: string;
+  baseSkillRevisionRef: string;
+  expectedHeadRevision: number;
+  patch: Record<string, unknown>;
+  workspaceId: string;
+}) {
+  return sha256(
+    canonicalJson({
+      actorId: input.actorId,
+      baseSkillRevisionRef: input.baseSkillRevisionRef,
+      expectedHeadRevision: input.expectedHeadRevision,
+      patch: input.patch,
+      workspaceId: input.workspaceId,
+    }),
+  );
 }
 
 // The catalog metric is a ratio over these enums, so an unrecognised value
@@ -275,6 +261,7 @@ export class SkillService {
       ...(input.sourceRef ? { sourceRef: input.sourceRef } : {}),
       presentationPolicy: input.presentationPolicy,
       activeRevisionRef: null,
+      publicationGeneration: 0,
       createdAt: at,
       updatedAt: at,
       actorId: required(input.actorId, 'Actor ID'),
@@ -332,6 +319,7 @@ export class SkillService {
         sourceRef: catalog.sourceRef ?? null,
         presentationPolicy: catalog.presentationPolicy,
         activeRevisionRef: catalog.activeRevisionRef,
+        publicationGeneration: catalog.publicationGeneration,
         updatedAt: catalog.updatedAt,
       })),
       stats,
@@ -358,6 +346,38 @@ export class SkillService {
       acceptedBy: record.acceptedBy,
       evalRunId: record.evalRunId,
     }));
+  }
+
+  async inspectReverseDependencies(input: {
+    targetSkillRevisionRef: string;
+    viewerWorkspaceId: string;
+  }): Promise<SkillReverseDependencyView> {
+    const targetSkillRevisionRef = required(
+      input.targetSkillRevisionRef,
+      'Target Skill revision ref',
+    );
+    const viewerWorkspaceId = required(
+      input.viewerWorkspaceId,
+      'Viewer workspace ID',
+    );
+    const { hiddenCount, visibleDependencies: visibleEdges } =
+      await this.repository.inspectReferenceEdges(
+        targetSkillRevisionRef,
+        viewerWorkspaceId,
+      );
+    const visibleDependencies = visibleEdges
+      .map((edge) => ({
+        consumerKind: edge.consumerKind,
+        consumerId: edge.consumerId,
+        consumerLabel: edge.consumerLabel,
+        scopeKind: edge.scope.kind as 'workspace' | 'global',
+      }));
+    return {
+      targetSkillRevisionRef,
+      visibleDependencies,
+      hiddenCount,
+      blocked: hiddenCount > 0 || visibleDependencies.length > 0,
+    };
   }
 
   async promptReference(slot: 'intentNaming') {
@@ -403,6 +423,7 @@ export class SkillService {
     runId: string;
     workspaceId: string;
     actorId: string;
+    initiatingActorId?: string;
     baseSkillRevisionRef: string;
     expectedHeadRevision: number;
     patch: Record<string, unknown>;
@@ -410,6 +431,10 @@ export class SkillService {
     const runId = required(input.runId, 'Governance run ID');
     const workspaceId = required(input.workspaceId, 'Workspace ID');
     const actorId = required(input.actorId, 'Actor ID');
+    const initiatingActorId = required(
+      input.initiatingActorId ?? actorId,
+      'Initiating actor ID',
+    );
     const baseSkillRevisionRef = required(
       input.baseSkillRevisionRef,
       'Base Skill revision ref',
@@ -424,7 +449,7 @@ export class SkillService {
       fail('Skill governance patch must be a non-empty mapping.');
     }
     const unknownFields = Object.keys(input.patch).filter(
-      (fieldPath) => !SKILL_GOVERNANCE_PATCH_FIELDS.has(fieldPath),
+      (fieldPath) => !SKILL_GOVERNANCE_PATCH_FIELD_SET.has(fieldPath),
     );
     if (unknownFields.length > 0) {
       fail(`Unknown Skill governance field: ${unknownFields.sort()[0]}.`);
@@ -452,10 +477,7 @@ export class SkillService {
     for (const [fieldPath, value] of Object.entries(input.patch).sort(
       ([left], [right]) => left.localeCompare(right),
     )) {
-      if (
-        fieldPath !== 'instruction' &&
-        fieldPath !== 'manifest.description'
-      ) {
+      if (!SKILL_OPERATOR_EDITABLE_FIELD_SET.has(fieldPath)) {
         validationResults.push({
           fieldPath,
           reasonCode: 'field_not_editable',
@@ -523,15 +545,13 @@ export class SkillService {
       acceptedBy: null,
       evalRunId: null,
     };
-    const inputFingerprint = sha256(
-      canonicalJson({
-        actorId,
-        baseSkillRevisionRef,
-        expectedHeadRevision: input.expectedHeadRevision,
-        patch: input.patch,
-        workspaceId,
-      }),
-    );
+    const inputFingerprint = governanceRevisionFingerprint({
+      actorId: initiatingActorId,
+      baseSkillRevisionRef,
+      expectedHeadRevision: input.expectedHeadRevision,
+      patch: input.patch,
+      workspaceId,
+    });
     const appliedResult: SkillGovernanceResult = {
       runId,
       success: true,
@@ -588,6 +608,185 @@ export class SkillService {
     return this.repository.getGovernanceRun(
       required(runId, 'Governance run ID'),
     );
+  }
+
+  async reserveGovernanceRevision(input: {
+    runId: string;
+    workspaceId: string;
+    actorId: string;
+    baseSkillRevisionRef: string;
+    expectedHeadRevision: number;
+    patch: Record<string, unknown>;
+  }) {
+    const runId = required(input.runId, 'Governance run ID');
+    const workspaceId = required(input.workspaceId, 'Workspace ID');
+    const actorId = required(input.actorId, 'Actor ID');
+    const baseSkillRevisionRef = required(
+      input.baseSkillRevisionRef,
+      'Base Skill revision ref',
+    );
+    if (
+      !Number.isInteger(input.expectedHeadRevision) ||
+      input.expectedHeadRevision < 1
+    ) {
+      fail('Expected Skill revision head must be a positive integer.');
+    }
+    if (!isPlainRecord(input.patch) || Object.keys(input.patch).length === 0) {
+      fail('Skill governance patch must be a non-empty mapping.');
+    }
+    const unknownFields = Object.keys(input.patch).filter(
+      (fieldPath) => !SKILL_GOVERNANCE_PATCH_FIELD_SET.has(fieldPath),
+    );
+    if (unknownFields.length > 0) {
+      fail(`Unknown Skill governance field: ${unknownFields.sort()[0]}.`);
+    }
+    const base = await this.repository.getRevision(baseSkillRevisionRef);
+    if (!base) {
+      throw new P1DomainError(
+        'NOT_FOUND',
+        'Base Skill revision does not exist.',
+      );
+    }
+    if (
+      base.formatVersion !== 2 ||
+      base.revision !== input.expectedHeadRevision
+    ) {
+      fail(
+        'Skill governance changes require the expected v2 revision head as their base.',
+      );
+    }
+    return this.repository.reserveGovernanceRun({
+      actorId,
+      baseSkillRevisionRef,
+      createdAt: this.now(),
+      inputFingerprint: governanceRevisionFingerprint({
+        actorId,
+        baseSkillRevisionRef,
+        expectedHeadRevision: input.expectedHeadRevision,
+        patch: input.patch,
+        workspaceId,
+      }),
+      runId,
+      skillId: base.skillId,
+      workspaceId,
+    });
+  }
+
+  async cancelGovernanceRevision(input: {
+    actorId: string;
+    runId: string;
+    workspaceId: string;
+  }) {
+    const actorId = required(input.actorId, 'Actor ID');
+    const runId = required(input.runId, 'Governance run ID');
+    const workspaceId = required(input.workspaceId, 'Workspace ID');
+    const reservation =
+      await this.repository.getGovernanceReservation(runId);
+    if (!reservation || reservation.workspaceId !== workspaceId) {
+      throw new P1DomainError(
+        'NOT_FOUND',
+        'Skill governance run does not exist in this workspace.',
+      );
+    }
+    const at = this.now();
+    return (
+      await this.repository.completeGovernanceCancellation(
+      governanceRun({
+        actorId,
+        at,
+        baseSkillRevisionRef: reservation.baseSkillRevisionRef,
+        draftSkillRevisionRef: null,
+        inputFingerprint: reservation.inputFingerprint,
+        result: {
+          applied: false,
+          runId,
+          success: true,
+          validationResults: [
+            {
+              fieldPath: '$workflow',
+              reasonCode: 'governance_cancelled',
+              status: 'not_applied',
+            },
+          ],
+        },
+        runId,
+        skillId: reservation.skillId,
+        workspaceId,
+      }),
+      )
+    ).result;
+  }
+
+  async retireRevision(input: {
+    actorId: string;
+    runId: string;
+    skillRevisionRef: string;
+    workspaceId: string;
+  }): Promise<SkillGovernanceResult> {
+    const actorId = required(input.actorId, 'Actor ID');
+    const runId = required(input.runId, 'Retirement run ID');
+    const skillRevisionRef = required(
+      input.skillRevisionRef,
+      'Skill revision ref',
+    );
+    const workspaceId = required(input.workspaceId, 'Workspace ID');
+    const revision = await this.requireRevision(skillRevisionRef);
+    if (revision.status !== 'accepted_frozen') {
+      fail('只能退役已受理冻结的 Skill 版本。');
+    }
+    const at = this.now();
+    const inputFingerprint = sha256(
+      canonicalJson({
+        actorId,
+        runId,
+        skillRevisionRef,
+        workspaceId,
+      }),
+    );
+    const runInput = {
+      actorId,
+      at,
+      baseSkillRevisionRef: skillRevisionRef,
+      draftSkillRevisionRef: null,
+      inputFingerprint,
+      runId,
+      skillId: revision.skillId,
+      workspaceId,
+    };
+    const stored = await this.repository.retireRevision({
+      targetSkillRevisionRef: skillRevisionRef,
+      appliedRun: governanceRun({
+        ...runInput,
+        result: {
+          applied: true,
+          runId,
+          success: true,
+          validationResults: [
+            {
+              fieldPath: 'lifecycle.status',
+              reasonCode: 'field_applied',
+              status: 'applied',
+            },
+          ],
+        },
+      }),
+      blockedRun: governanceRun({
+        ...runInput,
+        result: {
+          applied: false,
+          runId,
+          success: true,
+          validationResults: [
+            {
+              fieldPath: 'lifecycle.status',
+              reasonCode: 'dependency_blocked',
+              status: 'not_applied',
+            },
+          ],
+        },
+      }),
+    });
+    return stored.result;
   }
 
   private async prepareSkillDraft(
@@ -769,28 +968,138 @@ export class SkillService {
       evalRunId: run.runId,
     };
     await this.repository.acceptRevision(next);
-    const catalog = await this.repository.getCatalog(revision.skillId);
-    if (!catalog) throw new P1DomainError('NOT_FOUND', 'Skill 目录不存在。');
-    await this.repository.putCatalog({
-      ...catalog,
-      activeRevisionRef: next.skillRevisionRef,
-      ...(next.formatVersion === 2
-        ? { description: next.manifest.description }
-        : {}),
-      updatedAt: this.now(),
-      actorId: input.actorId,
-    });
     return next;
+  }
+
+  async publishAcceptedRevision(input: {
+    runId: string;
+    skillId: string;
+    targetSkillRevisionRef: string;
+    expectedPublishedRevisionRef: string | null;
+    expectedPublicationGeneration: number;
+    actorId: string;
+    workspaceId: string;
+  }): Promise<SkillGovernanceResult> {
+    const runId = required(input.runId, 'Publication run ID');
+    const skillId = required(input.skillId, 'Skill ID');
+    const targetSkillRevisionRef = required(
+      input.targetSkillRevisionRef,
+      'Target Skill revision ref',
+    );
+    const actorId = required(input.actorId, 'Actor ID');
+    const workspaceId = required(input.workspaceId, 'Workspace ID');
+    if (
+      !Number.isInteger(input.expectedPublicationGeneration) ||
+      input.expectedPublicationGeneration < 0
+    ) {
+      fail('Expected publication generation must be a non-negative integer.');
+    }
+    const expectedPublishedRevisionRef =
+      input.expectedPublishedRevisionRef === null
+        ? null
+        : required(
+            input.expectedPublishedRevisionRef,
+            'Expected Published Skill revision ref',
+          );
+    const [catalog, target] = await Promise.all([
+      this.repository.getCatalog(skillId),
+      this.repository.getRevision(targetSkillRevisionRef),
+    ]);
+    if (!catalog) {
+      throw new P1DomainError('NOT_FOUND', 'Skill 目录项不存在。');
+    }
+    if (!target) {
+      throw new P1DomainError('NOT_FOUND', 'Skill 版本不存在。');
+    }
+    if (target.skillId !== skillId || target.status !== 'accepted_frozen') {
+      fail('只能发布同一 Skill 目录下已受理冻结的版本。');
+    }
+
+    const at = this.now();
+    const inputFingerprint = sha256(
+      canonicalJson({
+        actorId,
+        expectedPublicationGeneration: input.expectedPublicationGeneration,
+        expectedPublishedRevisionRef,
+        runId,
+        skillId,
+        targetSkillRevisionRef,
+        workspaceId,
+      }),
+    );
+    const appliedResult: SkillGovernanceResult = {
+      applied: true,
+      runId,
+      success: true,
+      validationResults: [
+        {
+          fieldPath: 'activeRevisionRef',
+          reasonCode: 'field_applied',
+          status: 'applied',
+        },
+      ],
+    };
+    const casConflictResult: SkillGovernanceResult = {
+      applied: false,
+      runId,
+      success: true,
+      validationResults: [
+        {
+          fieldPath: 'activeRevisionRef',
+          reasonCode: 'cas_conflict',
+          status: 'not_applied',
+        },
+      ],
+    };
+    const publishedCatalog: SkillCatalog = {
+      ...catalog,
+      activeRevisionRef: targetSkillRevisionRef,
+      actorId,
+      ...(target.formatVersion === 2
+        ? { description: target.manifest.description }
+        : {}),
+      publicationGeneration: input.expectedPublicationGeneration + 1,
+      updatedAt: at,
+    };
+    const runInput = {
+      actorId,
+      at,
+      baseSkillRevisionRef: targetSkillRevisionRef,
+      draftSkillRevisionRef: null,
+      inputFingerprint,
+      runId,
+      skillId,
+      workspaceId,
+    };
+    const stored = await this.repository.compareAndSetPublishedRevision({
+      casConflictRun: governanceRun({
+        ...runInput,
+        result: casConflictResult,
+      }),
+      expectedPublicationGeneration: input.expectedPublicationGeneration,
+      expectedPublishedRevisionRef,
+      publishedCatalog,
+      publishedRun: governanceRun({
+        ...runInput,
+        result: appliedResult,
+      }),
+      referenceEdge: publishedLifecycleReferenceEdge(publishedCatalog),
+    });
+    return stored.result;
   }
 
   async bindRevision(input: {
     bindingId: string;
     workflowRevisionRef: string;
     triggerCondition: SkillTriggerCondition;
+    ownerWorkspaceId?: string | null;
     skillRevisionRef: string;
     mode: SkillBindingMode;
   }) {
     const revision = await this.requireRevision(input.skillRevisionRef);
+    if (revision.status !== 'accepted_frozen') {
+      fail('只能绑定已受理冻结的 Skill 版本。');
+    }
     const catalog = await this.repository.getCatalog(revision.skillId);
     if (!catalog) {
       throw new P1DomainError('NOT_FOUND', 'Skill 目录项不存在。');
@@ -808,6 +1117,9 @@ export class SkillService {
         'Workflow revision',
       ),
       triggerCondition: normalizeTriggerCondition(input.triggerCondition),
+      ...(input.ownerWorkspaceId?.trim()
+        ? { ownerWorkspaceId: input.ownerWorkspaceId.trim() }
+        : {}),
       skillId: revision.skillId,
       skillRevisionRef: input.skillRevisionRef,
       mode: input.mode,
@@ -856,6 +1168,9 @@ export class SkillService {
         'Workflow revision',
       ),
       triggerCondition: structuredClone(source.triggerCondition),
+      ...(source.ownerWorkspaceId
+        ? { ownerWorkspaceId: source.ownerWorkspaceId }
+        : {}),
       skillId: sourceRevision.skillId,
       skillRevisionRef: targetRevision.skillRevisionRef,
       mode: source.mode,
@@ -883,6 +1198,7 @@ export class SkillService {
     nativeVersion: string;
     executionMode: SkillExecutionMode;
     packagePaths: string[];
+    ownerWorkspaceId?: string | null;
     experimentalGate?: {
       enabled: boolean;
       evidenceRef: string;
@@ -891,6 +1207,10 @@ export class SkillService {
     const revision = await this.requireRevision(input.skillRevisionRef);
     if (revision.status !== 'accepted_frozen') {
       fail('只能部署已受理冻结的 Skill 版本。');
+    }
+    const catalog = await this.repository.getCatalog(revision.skillId);
+    if (!catalog) {
+      throw new P1DomainError('NOT_FOUND', 'Skill 目录项不存在。');
     }
     const packagePaths = validateSkillPackagePaths(input.packagePaths);
     const frozenPackagePaths = validateSkillPackagePaths(
@@ -934,7 +1254,18 @@ export class SkillService {
       rolloutEvidenceRef: input.experimentalGate?.evidenceRef.trim() || null,
       createdAt: this.now(),
     };
-    return this.repository.putDeployment(deployment);
+    const referenceScope =
+      catalog.tier === 'platform'
+        ? ({ kind: 'global', proof: 'platform_catalog' } as const)
+        : catalog.tier === 'industry'
+          ? ({ kind: 'global', proof: 'industry_catalog' } as const)
+          : input.ownerWorkspaceId?.trim()
+            ? ({
+                kind: 'workspace',
+                workspaceId: input.ownerWorkspaceId.trim(),
+              } as const)
+            : ({ kind: 'unknown' } as const);
+    return this.repository.putDeployment(deployment, referenceScope);
   }
 
   async resolveStage(input: {

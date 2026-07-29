@@ -1,6 +1,16 @@
 export { MemorySkillRepository, type SkillRepository } from './repository.js';
 export { PostgresSkillRepository } from './postgres-repository.js';
 export {
+  createSkillGovernanceDbosRuntime,
+  registerSkillGovernanceDbosWorkflow,
+  skillGovernanceWorkflowId,
+  SkillGovernanceDbosRuntime,
+  type SkillGovernanceDbosAdapter,
+  type SkillGovernanceWorkflowInput,
+  type SkillGovernanceWorkflowResult,
+  type SkillGovernanceWorkflowState,
+} from './dbos-governance-workflow.js';
+export {
   SkillInvocationValidationError,
   SkillService,
   skillAcceptanceGateFailure,
@@ -64,6 +74,11 @@ export {
   type SkillPromptReference,
   type SkillPromptSnapshot,
   type SkillPromptSnapshotPort,
+  type SkillReferenceConsumerKind,
+  type SkillReferenceEdge,
+  type SkillReferenceScope,
+  type SkillReverseDependencyDetail,
+  type SkillReverseDependencyView,
   type SkillRevision,
   type SkillRevisionManifest,
   type SkillTriggerCondition,

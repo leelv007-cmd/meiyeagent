@@ -119,6 +119,7 @@ async function submitSkillAction(
 async function installSkillDispatchMocks(page: Page) {
   const commands: CapturedSkillRequest[] = [];
   const queries: CapturedSkillRequest[] = [];
+  let governanceRunStatus = 'awaiting_approval';
 
   await page.route('**/api/core/p1/query', async (route) => {
     const request = route.request();
@@ -151,13 +152,93 @@ async function installSkillDispatchMocks(page: Page) {
         status: 200,
         body: JSON.stringify({
           data: {
-            items: [],
+            items: [
+              {
+                activeRevisionRef: 'skill.browser-published@1',
+                description: 'Browser Published CAS fixture.',
+                name: 'Browser Published',
+                presentationPolicy: 'backend_only',
+                publicationGeneration: 7,
+                skillId: 'skill.browser-published',
+                sourceKind: 'authored',
+                tier: 'platform',
+                updatedAt: '2026-07-30T12:00:00.000Z',
+              },
+            ],
             stats: {
               industryTierCorroborated: 0,
               industryTierTotal: 0,
-              total: 0,
+              total: 1,
             },
           },
+        }),
+      });
+      return;
+    }
+    if (body.action === 'skill_governance_run_get') {
+      await route.fulfill({
+        contentType: 'application/json',
+        status: 200,
+        body: JSON.stringify({
+          data: {
+            runId: body.payload?.runId,
+            state: {
+              result:
+                governanceRunStatus === 'completed'
+                  ? {
+                      applied: true,
+                      success: true,
+                      validationResults: [
+                        {
+                          fieldPath: 'manifest.description',
+                          reasonCode: 'field_applied',
+                          status: 'applied',
+                        },
+                      ],
+                    }
+                  : null,
+              runId: body.payload?.runId,
+              status: governanceRunStatus,
+            },
+            workflowStatus: governanceRunStatus,
+          },
+        }),
+      });
+      return;
+    }
+    if (body.action === 'skill_reverse_dependencies') {
+      const blocked =
+        body.payload?.skillRevisionRef === 'skill.browser-blocked@1';
+      await route.fulfill({
+        contentType: 'application/json',
+        status: 200,
+        body: JSON.stringify({
+          data: blocked
+            ? {
+                blocked: true,
+                hiddenCount: 2,
+                visibleDependencies: [
+                  {
+                    consumerId: 'binding-visible',
+                    consumerKind: 'workflow_binding',
+                    consumerLabel: '当前投放绑定',
+                    scopeKind: 'workspace',
+                  },
+                  {
+                    consumerId: 'published-visible',
+                    consumerKind: 'published_lifecycle',
+                    consumerLabel: '平台 Published 指针',
+                    scopeKind: 'global',
+                  },
+                ],
+                targetSkillRevisionRef: body.payload?.skillRevisionRef,
+              }
+            : {
+                blocked: false,
+                hiddenCount: 0,
+                targetSkillRevisionRef: body.payload?.skillRevisionRef,
+                visibleDependencies: [],
+              },
         }),
       });
       return;
@@ -191,14 +272,36 @@ async function installSkillDispatchMocks(page: Page) {
       action: body.action,
       payload: body.payload ?? {},
     });
+    if (body.action === 'skill_governance_start') {
+      governanceRunStatus = 'awaiting_approval';
+    } else if (body.action === 'skill_governance_cancel') {
+      governanceRunStatus = 'cancelled';
+    } else if (body.action === 'skill_governance_resume') {
+      governanceRunStatus = 'awaiting_approval';
+    } else if (body.action === 'skill_governance_approve') {
+      governanceRunStatus = 'completed';
+    }
     await route.fulfill({
       contentType: 'application/json',
       status: 200,
       body: JSON.stringify({
-        data: {
-          accepted: true,
-          action: body.action,
-        },
+        data:
+          body.action === 'skill_publish'
+            ? {
+                applied: true,
+                success: true,
+                validationResults: [
+                  {
+                    fieldPath: 'activeRevisionRef',
+                    reasonCode: 'field_applied',
+                    status: 'applied',
+                  },
+                ],
+              }
+            : {
+                accepted: true,
+                action: body.action,
+              },
       }),
     });
   });
@@ -262,11 +365,11 @@ test('every admin page renders the template-dashboard shell in both themes', asy
   }
 });
 
-test('admin Skill catalog dispatches the five structured lifecycle commands', async ({
+test('admin Skill catalog dispatches structured lifecycle and governance commands', async ({
   page,
   request,
 }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   const admin = await registerE2EUser(request, { role: 'admin' });
   const commandOutcomes: Array<{
     accepted: boolean;
@@ -344,6 +447,76 @@ test('admin Skill catalog dispatches the five structured lifecycle commands', as
       })
     );
 
+    await page.locator('#skills-governance-run-id').fill(`run-${suffix}`);
+    await page.locator('#skills-governance-base-ref').fill(skillRevisionRef);
+    await page.locator('#skills-governance-head').fill('1');
+    await page
+      .locator('#skills-governance-description')
+      .fill('只更新受控的一句话说明。');
+    await page
+      .locator('#skills-governance-instruction')
+      .fill('只使用已确认事实。');
+    await page.getByRole('button', { name: '启动修订运行' }).click();
+    await expect(page.getByTestId('skills-governance-run')).toContainText(
+      'awaiting_approval'
+    );
+    await page.getByRole('button', { name: '取消运行' }).click();
+    await expect(page.getByTestId('skills-governance-run')).toContainText(
+      'cancelled'
+    );
+    await page.getByRole('button', { name: '恢复运行' }).click();
+    await expect(page.getByTestId('skills-governance-run')).toContainText(
+      'awaiting_approval'
+    );
+    await page.getByRole('button', { name: '批准并继续' }).click();
+    await expect(page.getByTestId('skills-governance-run')).toContainText(
+      'completed'
+    );
+    await expect(page.getByTestId('skill-governance-result')).toContainText(
+      'manifest.description · field_applied · applied'
+    );
+    await page.reload();
+    await expect(page.getByTestId('skills-governance-run')).toContainText(
+      `run-${suffix} · completed`
+    );
+    await expect(page.getByTestId('skill-governance-result')).toContainText(
+      'manifest.description · field_applied · applied'
+    );
+
+    await page.locator('#skills-publish-runId').fill(`publish-${suffix}`);
+    await page
+      .locator('#skills-publish-skillId')
+      .fill('skill.browser-published');
+    await page
+      .locator('#skills-publish-targetSkillRevisionRef')
+      .fill(skillRevisionRef);
+    await page.getByRole('button', { name: '切换 Published' }).click();
+
+    await page
+      .locator('#skills-dependency-ref')
+      .fill('skill.browser-blocked@1');
+    await page.getByRole('button', { name: '查看反向依赖' }).click();
+    await expect(page.getByTestId('skills-reverse-dependencies')).toContainText(
+      '当前投放绑定'
+    );
+    await expect(page.getByTestId('skills-reverse-dependencies')).toContainText(
+      '平台 Published 指针'
+    );
+    await expect(page.getByTestId('skills-reverse-dependencies')).toContainText(
+      '其他工作区依赖 2'
+    );
+    await expect(
+      page.getByRole('button', { name: '退役这个版本' })
+    ).toBeDisabled();
+
+    await page.locator('#skills-dependency-ref').fill(skillRevisionRef);
+    await page.getByRole('button', { name: '查看反向依赖' }).click();
+    await expect(page.getByTestId('skills-reverse-dependencies')).toContainText(
+      '未发现依赖'
+    );
+    await page.locator('#skills-retire-run-id').fill(`retire-${suffix}`);
+    await page.getByRole('button', { name: '退役这个版本' }).click();
+
     const promptQuery = dispatch.queries.find(
       (query) => query.action === 'skill_prompt_reference'
     );
@@ -370,6 +543,37 @@ test('admin Skill catalog dispatches the five structured lifecycle commands', as
     expect(acceptance?.payload).not.toHaveProperty('results');
     expect(acceptance?.payload).not.toHaveProperty('scorerRevision');
 
+    expect(
+      dispatch.commands.find(
+        (command) => command.action === 'skill_governance_start'
+      )?.payload
+    ).toEqual({
+      baseSkillRevisionRef: skillRevisionRef,
+      expectedHeadRevision: 1,
+      patch: {
+        instruction: '只使用已确认事实。',
+        'manifest.description': '只更新受控的一句话说明。',
+      },
+      runId: `run-${suffix}`,
+    });
+    expect(
+      dispatch.commands.find((command) => command.action === 'skill_publish')
+        ?.payload
+    ).toEqual({
+      expectedPublicationGeneration: 7,
+      expectedPublishedRevisionRef: 'skill.browser-published@1',
+      runId: `publish-${suffix}`,
+      skillId: 'skill.browser-published',
+      targetSkillRevisionRef: skillRevisionRef,
+    });
+    expect(
+      dispatch.commands.find((command) => command.action === 'skill_retire')
+        ?.payload
+    ).toEqual({
+      runId: `retire-${suffix}`,
+      skillRevisionRef,
+    });
+
     const commandActions = dispatch.commands.map((command) => command.action);
     const queryActions = dispatch.queries.map((query) => query.action);
     for (const action of [
@@ -383,9 +587,34 @@ test('admin Skill catalog dispatches the five structured lifecycle commands', as
         commandActions.filter((candidate) => candidate === action).length
       ).toBeGreaterThanOrEqual(1);
     }
+    for (const action of [
+      'skill_governance_start',
+      'skill_governance_approve',
+      'skill_governance_cancel',
+      'skill_governance_resume',
+      'skill_publish',
+      'skill_retire',
+    ]) {
+      expect(commandActions).toContain(action);
+    }
     expect(queryActions).toContain('skill_catalog_list');
     expect(queryActions).toContain('skill_prompt_reference');
+    expect(queryActions).toContain('skill_governance_run_get');
+    expect(queryActions).toContain('skill_reverse_dependencies');
     expect(queryActions).not.toContain('skill_eval_run_fetch');
+    for (const request of [...dispatch.commands, ...dispatch.queries].filter(
+      ({ action }) =>
+        action.startsWith('skill_governance_') ||
+        [
+          'skill_publish',
+          'skill_retire',
+          'skill_reverse_dependencies',
+        ].includes(action)
+    )) {
+      expect(request.payload).not.toHaveProperty('workspaceId');
+      expect(request.payload).not.toHaveProperty('viewerWorkspaceId');
+      expect(request.payload).not.toHaveProperty('actorId');
+    }
     expect(
       commandActions.some((action) => /export|download/u.test(action))
     ).toBe(false);

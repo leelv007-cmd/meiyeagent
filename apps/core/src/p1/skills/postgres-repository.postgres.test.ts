@@ -37,6 +37,46 @@ import type {
 const connectionString = process.env.TEST_DATABASE_URL;
 
 test(
+  'concurrent Skill repository migrations serialize into one valid schema',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const adminPool = new Pool({ connectionString });
+    const schema = `skill_concurrent_migration_${randomUUID().replaceAll('-', '_')}`;
+    await adminPool.query(`CREATE SCHEMA "${schema}"`);
+    const pools = Array.from(
+      { length: 4 },
+      () =>
+        new Pool({
+          connectionString,
+          options: `-c search_path=${schema}`,
+        }),
+    );
+    try {
+      await Promise.all(
+        pools.map((pool) =>
+          new PostgresSkillRepository(pool).migrate(),
+        ),
+      );
+      const constraints = await adminPool.query<{ count: string }>(
+        `SELECT count(*)::text AS count
+           FROM pg_constraint constraints
+           JOIN pg_namespace namespaces
+             ON namespaces.oid = constraints.connamespace
+          WHERE namespaces.nspname = $1
+            AND constraints.conname = 'p1_skill_revisions_status_check'
+            AND pg_get_constraintdef(constraints.oid) LIKE '%retired%'`,
+        [schema],
+      );
+      assert.equal(constraints.rows[0]?.count, '1');
+    } finally {
+      await Promise.all(pools.map((pool) => pool.end()));
+      await adminPool.query(`DROP SCHEMA "${schema}" CASCADE`);
+      await adminPool.end();
+    }
+  },
+);
+
+test(
   'Skill EvalRun evidence is immutable and survives a PostgreSQL restart',
   { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
   async () => {
@@ -136,6 +176,22 @@ test(
       const restartedRepository = new PostgresSkillRepository(restartedPool);
       await restartedRepository.migrate();
       assert.deepEqual(await restartedRepository.get(runId), run);
+      assert.deepEqual(
+        (await restartedRepository.listReferenceEdges(skillRevisionRef)).map(
+          (edge) => ({
+            consumerId: edge.consumerId,
+            consumerKind: edge.consumerKind,
+            scope: edge.scope,
+          }),
+        ),
+        [
+          {
+            consumerId: runId,
+            consumerKind: 'eval_run',
+            scope: { kind: 'global', proof: 'evaluation' },
+          },
+        ],
+      );
       const accepted = await new SkillService(
         restartedRepository,
         () => '2026-07-29T15:01:00.000Z',
@@ -148,7 +204,7 @@ test(
       assert.equal(accepted.evalRunId, runId);
       assert.equal(
         (await restartedRepository.getCatalog(skillId))?.activeRevisionRef,
-        skillRevisionRef,
+        null,
       );
       assert.deepEqual(
         await restartedRepository.putImmutable(runId, run),
@@ -165,6 +221,11 @@ test(
           error.code === 'IDEMPOTENCY_CONFLICT',
       );
     } finally {
+      await restartedPool.query(
+        `DELETE FROM p1_skill_reference_edges
+          WHERE consumer_kind = 'eval_run' AND consumer_id = $1`,
+        [runId],
+      );
       await restartedPool.query(
         'DELETE FROM p1_skill_eval_runs WHERE run_id = $1',
         [runId],
@@ -207,6 +268,7 @@ test(
       sourceKind: 'authored',
       tier: 'platform',
       presentationPolicy: 'backend_only',
+      publicationGeneration: 0,
       skillId,
       updatedAt: '2026-07-26T03:01:00.000Z',
     };
@@ -456,6 +518,7 @@ test(
       assert.deepEqual(await repository.getCatalog(skillId), {
         ...legacyCatalog,
         description: legacyCatalog.name,
+        publicationGeneration: 0,
         sourceKind: 'authored',
         tier: 'platform',
       });
@@ -466,6 +529,7 @@ test(
         {
           ...legacyCatalog,
           description: legacyCatalog.name,
+          publicationGeneration: 0,
           sourceKind: 'authored',
           tier: 'platform',
         },
@@ -1085,6 +1149,7 @@ test(
       sourceKind: 'authored',
       tier: 'platform',
       presentationPolicy: 'backend_only',
+      publicationGeneration: 0,
       skillId,
       updatedAt: '2026-07-29T02:00:00.000Z',
     });

@@ -679,14 +679,6 @@ test('only an evaluated and frozen Skill revision enters a stage allowlist', asy
     promptReference: registerPrompt(prompts.intentNaming),
     skillId: 'skill.daily-industry',
   });
-  await service.bindRevision({
-    bindingId: 'binding.daily-industry',
-    mode: 'required',
-    skillRevisionRef: draft.skillRevisionRef,
-    triggerCondition: { harnessStage: 'intent_naming' },
-    workflowRevisionRef: 'workflow.daily-copy@1',
-  });
-
   assert.deepEqual(
     await service.resolveStage({
       stage: 'intent_naming',
@@ -702,6 +694,13 @@ test('only an evaluated and frozen Skill revision enters a stage allowlist', asy
     actorId: 'operator-2',
     evalRunId: evalRun.runId,
     skillRevisionRef: draft.skillRevisionRef,
+  });
+  await service.bindRevision({
+    bindingId: 'binding.daily-industry',
+    mode: 'required',
+    skillRevisionRef: frozen.skillRevisionRef,
+    triggerCondition: { harnessStage: 'intent_naming' },
+    workflowRevisionRef: 'workflow.daily-copy@1',
   });
   const resolver = new DurableSkillInstructionResolver(
     service,
@@ -1920,6 +1919,13 @@ test('Foundation commands reach define, accept, bind, rollback, and deployment o
     evalRunId: evalV2.runId,
     skillRevisionRef: definedV2.revision.skillRevisionRef,
   });
+  await execute('skill_publish', {
+    runId: 'publish-foundation-v2',
+    skillId,
+    targetSkillRevisionRef: definedV2.revision.skillRevisionRef,
+    expectedPublishedRevisionRef: null,
+    expectedPublicationGeneration: 0,
+  });
   assert.deepEqual(await service.listCatalog(), {
     items: [
       {
@@ -1927,6 +1933,7 @@ test('Foundation commands reach define, accept, bind, rollback, and deployment o
         description: 'Exercises Foundation Skill revision 2.',
         name: 'Foundation chain',
         presentationPolicy: 'explainable',
+        publicationGeneration: 1,
         skillId,
         sourceKind: 'authored',
         sourceRef: null,
@@ -3150,6 +3157,7 @@ test('skill_accept redacts legacy prompt content and instruction fields', async 
     sourceKind: 'authored',
     tier: 'platform',
     presentationPolicy: 'backend_only',
+    publicationGeneration: 0,
     skillId: 'skill.legacy-redaction',
     updatedAt: NOW,
   });

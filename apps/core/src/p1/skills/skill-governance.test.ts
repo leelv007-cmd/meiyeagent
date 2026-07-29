@@ -5,6 +5,10 @@ import test from 'node:test';
 import type { HarnessFrozenPrompt } from '../harness/langfuse-prompts.js';
 import { MemorySkillRepository } from './repository.js';
 import { SkillService } from './service.js';
+import {
+  SKILL_GOVERNANCE_PATCH_FIELDS,
+  SKILL_OPERATOR_EDITABLE_FIELDS,
+} from './types.js';
 
 const BASE_TIME = '2026-07-30T02:00:00.000Z';
 const APPLY_TIME = '2026-07-30T02:01:00.000Z';
@@ -111,6 +115,52 @@ test('an all-protected patch completes without applying or creating a revision',
     await repository.getRevision('skills/daily-industry@2'),
     null,
   );
+});
+
+test('every declared non-editable governance field is stripped by the server', async (t) => {
+  const editableFields = new Set<string>(SKILL_OPERATOR_EDITABLE_FIELDS);
+  const protectedFields = SKILL_GOVERNANCE_PATCH_FIELDS.filter(
+    (fieldPath) => !editableFields.has(fieldPath),
+  );
+
+  for (const fieldPath of protectedFields) {
+    await t.test(fieldPath, async () => {
+      const { base, repository } = await seedSkill();
+      const governance = new SkillService(repository, () => APPLY_TIME);
+      const protectedValue = `private-value-for-${fieldPath}`;
+      const runId = `protected-${fieldPath.replaceAll(/[^a-z0-9]+/giu, '-')}`;
+
+      const result = await governance.applyGovernanceRevision({
+        actorId: 'platform-admin-2',
+        baseSkillRevisionRef: base.skillRevisionRef,
+        expectedHeadRevision: 1,
+        patch: { [fieldPath]: protectedValue },
+        runId,
+        workspaceId: 'platform-operations',
+      });
+
+      assert.deepEqual(result, {
+        applied: false,
+        runId,
+        success: true,
+        validationResults: [
+          {
+            fieldPath,
+            reasonCode: 'field_not_editable',
+            status: 'stripped',
+          },
+        ],
+      });
+      assert.equal(
+        await repository.getRevision('skills/daily-industry@2'),
+        null,
+      );
+      assert.doesNotMatch(
+        JSON.stringify(await governance.inspectGovernanceRun(runId)),
+        new RegExp(protectedValue, 'u'),
+      );
+    });
+  }
 });
 
 test('a stale head records a non-applying CAS result and replays it idempotently', async () => {

@@ -35,10 +35,25 @@ const EXPECTED_SKILL_SCHEMA_REFS = [
 // copy could not run anywhere else. This asserts the absence stays true as
 // the action registry grows, rather than trusting that nobody adds one.
 test('the Skill action registry exposes no export or download verb', () => {
+  assert.deepEqual(SKILL_COMMAND_ACTIONS, [
+    'skill_accept',
+    'skill_bind',
+    'skill_define',
+    'skill_deployment',
+    'skill_governance_approve',
+    'skill_governance_cancel',
+    'skill_governance_resume',
+    'skill_governance_start',
+    'skill_publish',
+    'skill_retire',
+    'skill_rollback',
+  ]);
   assert.deepEqual(SKILL_QUERY_ACTIONS, [
     'skill_catalog_list',
+    'skill_governance_run_get',
     'skill_revision_history',
     'skill_prompt_reference',
+    'skill_reverse_dependencies',
   ]);
   const registered = [
     ...SKILL_COMMAND_ACTIONS,
@@ -71,6 +86,10 @@ test('the Skill action registry exposes no export or download verb', () => {
   }
   assert.equal(
     requiredP1Capability('query', 'skills', 'skill_prompt_reference'),
+    'config.publish',
+  );
+  assert.equal(
+    requiredP1Capability('query', 'skills', 'skill_reverse_dependencies'),
     'config.publish',
   );
 

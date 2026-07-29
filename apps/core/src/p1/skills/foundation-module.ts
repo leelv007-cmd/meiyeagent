@@ -25,8 +25,10 @@ import { SkillService } from './service.js';
 
 export const SKILL_QUERY_ACTIONS = [
   'skill_catalog_list',
+  'skill_governance_run_get',
   'skill_revision_history',
   'skill_prompt_reference',
+  'skill_reverse_dependencies',
 ] as const;
 
 export const SKILL_COMMAND_ACTIONS = [
@@ -34,8 +36,36 @@ export const SKILL_COMMAND_ACTIONS = [
   'skill_bind',
   'skill_define',
   'skill_deployment',
+  'skill_governance_approve',
+  'skill_governance_cancel',
+  'skill_governance_resume',
+  'skill_governance_start',
+  'skill_publish',
+  'skill_retire',
   'skill_rollback',
 ] as const;
+
+export interface SkillGovernanceRuntimePort {
+  start(input: Parameters<SkillService['applyGovernanceRevision']>[0]): Promise<unknown>;
+  approve(input: {
+    actorId: string;
+    idempotencyKey: string;
+    runId: string;
+    workspaceId: string;
+  }): Promise<unknown>;
+  businessCancel(input: {
+    actorId: string;
+    idempotencyKey: string;
+    runId: string;
+    workspaceId: string;
+  }): Promise<unknown>;
+  resume(input: {
+    actorId: string;
+    runId: string;
+    workspaceId: string;
+  }): Promise<unknown>;
+  inspect(workspaceId: string, runId: string): Promise<unknown>;
+}
 
 function isSkillQueryAction(
   value: string,
@@ -112,6 +142,12 @@ function integerOrNull(value: Record<string, unknown>, key: string) {
     fail(`Skill 命令字段 ${key} 必须是整数或 null。`);
   }
   return candidate;
+}
+
+function textOrNull(value: Record<string, unknown>, key: string) {
+  const candidate = value[key];
+  if (candidate === null) return null;
+  return text(value, key);
 }
 
 function skillSourceKind(value: Record<string, unknown>): SkillSourceKind {
@@ -223,7 +259,10 @@ function publicRevision(revision: SkillRevision) {
 export class SkillFoundationModule implements P1OperationModule {
   readonly name = 'skills';
 
-  constructor(private readonly service: SkillService) {}
+  constructor(
+    private readonly service: SkillService,
+    private readonly governanceRuntime?: SkillGovernanceRuntimePort,
+  ) {}
 
   /**
    * Read face for the operator catalog. Until now the module was
@@ -263,6 +302,13 @@ export class SkillFoundationModule implements P1OperationModule {
             : positiveInteger(value, 'limit'),
         );
       }
+      case 'skill_governance_run_get': {
+        onlyKeys(value, ['runId'], 'Skill 治理运行查询');
+        return this.requireGovernanceRuntime().inspect(
+          args.context.workspaceId,
+          text(value, 'runId'),
+        );
+      }
       case 'skill_prompt_reference': {
         onlyKeys(value, ['slot'], 'Skill prompt 引用查询');
         const slot = text(value, 'slot');
@@ -270,6 +316,17 @@ export class SkillFoundationModule implements P1OperationModule {
           fail('Skill prompt slot 不受支持。');
         }
         return this.service.promptReference(slot);
+      }
+      case 'skill_reverse_dependencies': {
+        onlyKeys(
+          value,
+          ['skillRevisionRef'],
+          'Skill 反向依赖查询',
+        );
+        return this.service.inspectReverseDependencies({
+          targetSkillRevisionRef: text(value, 'skillRevisionRef'),
+          viewerWorkspaceId: args.context.workspaceId,
+        });
       }
       default:
         return name satisfies never;
@@ -425,6 +482,93 @@ export class SkillFoundationModule implements P1OperationModule {
             evalRunId: text(value, 'evalRunId'),
           }),
         );
+      case 'skill_governance_start':
+        onlyKeys(
+          value,
+          [
+            'baseSkillRevisionRef',
+            'expectedHeadRevision',
+            'patch',
+            'runId',
+          ],
+          'Skill 治理启动命令',
+        );
+        return this.requireGovernanceRuntime().start({
+          actorId: args.context.userId,
+          baseSkillRevisionRef: text(value, 'baseSkillRevisionRef'),
+          expectedHeadRevision: positiveInteger(
+            value,
+            'expectedHeadRevision',
+          ),
+          patch: object(value, 'patch'),
+          runId: text(value, 'runId'),
+          workspaceId: args.context.workspaceId,
+        });
+      case 'skill_governance_approve':
+        onlyKeys(value, ['runId'], 'Skill 治理审批命令');
+        return this.requireGovernanceRuntime().approve({
+          actorId: args.context.userId,
+          idempotencyKey: args.idempotencyKey,
+          runId: text(value, 'runId'),
+          workspaceId: args.context.workspaceId,
+        });
+      case 'skill_governance_cancel':
+        onlyKeys(value, ['runId'], 'Skill 治理取消命令');
+        return this.requireGovernanceRuntime().businessCancel({
+          actorId: args.context.userId,
+          idempotencyKey: args.idempotencyKey,
+          runId: text(value, 'runId'),
+          workspaceId: args.context.workspaceId,
+        });
+      case 'skill_governance_resume':
+        onlyKeys(value, ['runId'], 'Skill 治理恢复命令');
+        return this.requireGovernanceRuntime().resume({
+          actorId: args.context.userId,
+          runId: text(value, 'runId'),
+          workspaceId: args.context.workspaceId,
+        });
+      case 'skill_publish':
+        onlyKeys(
+          value,
+          [
+            'runId',
+            'skillId',
+            'targetSkillRevisionRef',
+            'expectedPublishedRevisionRef',
+            'expectedPublicationGeneration',
+          ],
+          'Skill 发布命令',
+        );
+        return this.service.publishAcceptedRevision({
+          runId: text(value, 'runId'),
+          skillId: text(value, 'skillId'),
+          targetSkillRevisionRef: text(
+            value,
+            'targetSkillRevisionRef',
+          ),
+          expectedPublishedRevisionRef: textOrNull(
+            value,
+            'expectedPublishedRevisionRef',
+          ),
+          expectedPublicationGeneration: integerOrNull(
+            value,
+            'expectedPublicationGeneration',
+          ) as number,
+          actorId: args.context.userId,
+          workspaceId: args.context.workspaceId,
+        });
+      case 'skill_retire':
+        onlyKeys(
+          value,
+          ['runId', 'skillRevisionRef'],
+          'Skill 退役命令',
+        );
+        return this.service.retireRevision({
+          actorId: args.context.userId,
+          runId: text(value, 'runId'),
+          skillRevisionRef: text(value, 'skillRevisionRef'),
+          workspaceId: args.context.workspaceId,
+        });
       case 'skill_bind': {
         const mode = text(value, 'mode');
         const triggerCondition = object(value, 'triggerCondition');
@@ -456,6 +600,7 @@ export class SkillFoundationModule implements P1OperationModule {
             ),
             tenantId: optionalTextOrNull(triggerCondition, 'tenantId'),
           },
+          ownerWorkspaceId: args.context.workspaceId,
           skillRevisionRef: text(value, 'skillRevisionRef'),
           mode: mode as (typeof SKILL_BINDING_MODES)[number],
         });
@@ -482,6 +627,7 @@ export class SkillFoundationModule implements P1OperationModule {
           channel: text(value, 'channel'),
           nativeSkillId: text(value, 'nativeSkillId'),
           nativeVersion: text(value, 'nativeVersion'),
+          ownerWorkspaceId: args.context.workspaceId,
           executionMode,
           packagePaths: stringArray(value, 'packagePaths'),
           ...(gate
@@ -497,5 +643,15 @@ export class SkillFoundationModule implements P1OperationModule {
       default:
         return name satisfies never;
     }
+  }
+
+  private requireGovernanceRuntime() {
+    if (!this.governanceRuntime) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Skill 治理运行时未配置。',
+      );
+    }
+    return this.governanceRuntime;
   }
 }

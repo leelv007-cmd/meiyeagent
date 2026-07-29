@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import {
   AdminPanel,
@@ -56,6 +56,7 @@ export interface SkillCatalogRow {
   tier: Tier;
   presentationPolicy: string;
   activeRevisionRef: string | null;
+  publicationGeneration: number;
   updatedAt: string;
 }
 
@@ -81,6 +82,60 @@ interface CurrentSkillPromptReference {
 
 interface SkillCommandAuthorities {
   promptReference?: CurrentSkillPromptReference;
+}
+
+interface SkillGovernanceFormValues {
+  baseSkillRevisionRef: string;
+  description: string;
+  expectedHeadRevision: string;
+  instruction: string;
+  runId: string;
+}
+
+interface SkillPublishFormValues {
+  expectedPublicationGeneration: string;
+  expectedPublishedRevisionRef: string;
+  runId: string;
+  skillId: string;
+  targetSkillRevisionRef: string;
+}
+
+interface SkillReverseDependency {
+  consumerId: string;
+  consumerKind: string;
+  consumerLabel: string;
+  scopeKind: 'global' | 'workspace';
+}
+
+interface SkillReverseDependencyResult {
+  blocked: boolean;
+  hiddenCount: number;
+  targetSkillRevisionRef: string;
+  visibleDependencies: SkillReverseDependency[];
+}
+
+interface SkillGovernanceRunState {
+  runId: string;
+  state?: {
+    result?: SkillGovernanceResult | null;
+    status: string;
+  } | null;
+  run?: {
+    result: SkillGovernanceResult;
+    status: string;
+  } | null;
+  status?: string;
+  workflowStatus?: string | null;
+}
+
+interface SkillGovernanceResult {
+  applied: boolean;
+  success: boolean;
+  validationResults: Array<{
+    fieldPath: string;
+    reasonCode: string;
+    status: string;
+  }>;
 }
 
 type FieldKind = 'text' | 'select' | 'textarea';
@@ -229,6 +284,14 @@ const ACTION_ORDER = [
   'skill_deployment',
 ] as const satisfies readonly SkillAction[];
 
+const GOVERNANCE_RUN_ACTIONS = [
+  'skill_governance_approve',
+  'skill_governance_cancel',
+  'skill_governance_resume',
+] as const;
+
+type GovernanceRunAction = (typeof GOVERNANCE_RUN_ACTIONS)[number];
+
 const ADMIN_SKILL_GOVERNANCE = {
   budget: {
     maxChildEffects: 0,
@@ -328,15 +391,149 @@ export function buildSkillCommandPayload(
   return { ...values };
 }
 
+export function buildSkillGovernanceStartPayload(
+  values: SkillGovernanceFormValues
+) {
+  const expectedHeadRevision = Number(values.expectedHeadRevision);
+  if (!Number.isInteger(expectedHeadRevision) || expectedHeadRevision < 1) {
+    throw new Error('当前版本号必须是正整数。');
+  }
+  return {
+    baseSkillRevisionRef: requiredFormValue(
+      values.baseSkillRevisionRef,
+      '基础版本引用'
+    ),
+    expectedHeadRevision,
+    patch: {
+      instruction: requiredFormValue(values.instruction, '受控做法正文'),
+      'manifest.description': requiredFormValue(
+        values.description,
+        '一句话说明'
+      ),
+    },
+    runId: requiredFormValue(values.runId, '治理运行号'),
+  };
+}
+
+export function buildSkillPublishPayload(values: SkillPublishFormValues) {
+  const expectedPublicationGeneration = Number(
+    values.expectedPublicationGeneration
+  );
+  if (
+    !Number.isInteger(expectedPublicationGeneration) ||
+    expectedPublicationGeneration < 0
+  ) {
+    throw new Error('Published 代数必须是非负整数。');
+  }
+  return {
+    expectedPublicationGeneration,
+    expectedPublishedRevisionRef:
+      values.expectedPublishedRevisionRef.trim() || null,
+    runId: requiredFormValue(values.runId, '发布运行号'),
+    skillId: requiredFormValue(values.skillId, 'Skill 标识'),
+    targetSkillRevisionRef: requiredFormValue(
+      values.targetSkillRevisionRef,
+      '目标版本引用'
+    ),
+  };
+}
+
+function requiredFormValue(value: string, label: string) {
+  const normalized = value.trim();
+  if (!normalized) throw new Error(`${label}不能为空。`);
+  return normalized;
+}
+
+function governanceRunStatus(run: SkillGovernanceRunState | undefined) {
+  const workflowStatus = run?.workflowStatus?.toLowerCase();
+  if (workflowStatus === 'cancelled' || workflowStatus === 'canceled') {
+    return 'cancelled';
+  }
+  return (
+    run?.state?.status ??
+    run?.run?.status ??
+    run?.status ??
+    workflowStatus ??
+    undefined
+  );
+}
+
+function governanceRunResult(run: SkillGovernanceRunState | undefined) {
+  return run?.state?.result ?? run?.run?.result ?? null;
+}
+
+function GovernanceResultView({ result }: { result: SkillGovernanceResult }) {
+  return (
+    <div className="space-y-2 text-sm" data-testid="skill-governance-result">
+      <p>
+        success={String(result.success)}
+        {' · '}applied={String(result.applied)}
+      </p>
+      {result.validationResults.length > 0 ? (
+        <ul className="space-y-1 text-muted-foreground">
+          {result.validationResults.map((validation) => (
+            <li key={`${validation.fieldPath}:${validation.reasonCode}`}>
+              {validation.fieldPath} · {validation.reasonCode} ·{' '}
+              {validation.status}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 export function AdminSkillsControl() {
   const queryClient = useQueryClient();
   const [action, setAction] = useState<SkillAction>('skill_define');
   const [values, setValues] = useState<Record<string, string>>({});
   const [tierFilter, setTierFilter] = useState('');
   const [historySkillId, setHistorySkillId] = useState('');
+  const [governanceValues, setGovernanceValues] =
+    useState<SkillGovernanceFormValues>({
+      baseSkillRevisionRef: '',
+      description: '',
+      expectedHeadRevision: '',
+      instruction: '',
+      runId: '',
+    });
+  const [governanceRunId, setGovernanceRunId] = useState(() =>
+    typeof window === 'undefined'
+      ? ''
+      : (window.localStorage.getItem('admin-skill-governance-run-id') ?? '')
+  );
+  const [governanceError, setGovernanceError] = useState('');
+  const [governanceBusy, setGovernanceBusy] = useState(false);
+  const [publishValues, setPublishValues] = useState<SkillPublishFormValues>({
+    expectedPublicationGeneration: '',
+    expectedPublishedRevisionRef: '',
+    runId: '',
+    skillId: '',
+    targetSkillRevisionRef: '',
+  });
+  const [publishError, setPublishError] = useState('');
+  const [publishBusy, setPublishBusy] = useState(false);
+  const [publishResult, setPublishResult] =
+    useState<SkillGovernanceResult | null>(null);
+  const [dependencyInput, setDependencyInput] = useState('');
+  const [dependencyTarget, setDependencyTarget] = useState('');
+  const [retireRunId, setRetireRunId] = useState('');
+  const [retireError, setRetireError] = useState('');
+  const [retireBusy, setRetireBusy] = useState(false);
   const [result, setResult] = useState<unknown>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!governanceRunId) {
+      window.localStorage.removeItem('admin-skill-governance-run-id');
+      return;
+    }
+    window.localStorage.setItem(
+      'admin-skill-governance-run-id',
+      governanceRunId
+    );
+  }, [governanceRunId]);
 
   const catalogQuery = useQuery({
     queryKey: p1QueryKeys.request('skills', 'skill_catalog_list', {
@@ -387,6 +584,42 @@ export function AdminSkillsControl() {
         signal
       ),
   });
+  const governanceRunQuery = useQuery({
+    enabled: Boolean(governanceRunId),
+    queryKey: p1QueryKeys.request('skills', 'skill_governance_run_get', {
+      runId: governanceRunId,
+    }),
+    queryFn: ({ signal }) =>
+      queryP1<SkillGovernanceRunState>(
+        'skills',
+        {
+          action: 'skill_governance_run_get',
+          payload: { runId: governanceRunId },
+        },
+        signal
+      ),
+    refetchInterval: (query) => {
+      const status = governanceRunStatus(query.state.data);
+      return status && !['cancelled', 'completed', 'failed'].includes(status)
+        ? 2_000
+        : false;
+    },
+  });
+  const dependencyQuery = useQuery({
+    enabled: Boolean(dependencyTarget),
+    queryKey: p1QueryKeys.request('skills', 'skill_reverse_dependencies', {
+      skillRevisionRef: dependencyTarget,
+    }),
+    queryFn: ({ signal }) =>
+      queryP1<SkillReverseDependencyResult>(
+        'skills',
+        {
+          action: 'skill_reverse_dependencies',
+          payload: { skillRevisionRef: dependencyTarget },
+        },
+        signal
+      ),
+  });
   const form = COMMAND_FORMS[action];
   const authorityUnavailable =
     !promptReferenceQuery.data?.eligibleForAcceptance;
@@ -418,6 +651,135 @@ export function AdminSkillsControl() {
       );
     } finally {
       setBusy(false);
+    }
+  };
+
+  const startGovernanceRun = async () => {
+    setGovernanceBusy(true);
+    setGovernanceError('');
+    try {
+      const payload = buildSkillGovernanceStartPayload(governanceValues);
+      await commandP1(
+        'skills',
+        { action: 'skill_governance_start', payload },
+        `skill_governance_start:${payload.runId}`
+      );
+      setGovernanceRunId(payload.runId);
+      await queryClient.invalidateQueries({
+        queryKey: p1QueryKeys.module('skills'),
+      });
+    } catch (cause) {
+      setGovernanceError(
+        cause instanceof Error ? cause.message : '受控修订启动失败，请重试。'
+      );
+    } finally {
+      setGovernanceBusy(false);
+    }
+  };
+
+  const actOnGovernanceRun = async (runAction: GovernanceRunAction) => {
+    if (!governanceRunId) return;
+    setGovernanceBusy(true);
+    setGovernanceError('');
+    try {
+      await commandP1(
+        'skills',
+        {
+          action: runAction,
+          payload: { runId: governanceRunId },
+        },
+        `${runAction}:${governanceRunId}`
+      );
+      await governanceRunQuery.refetch();
+    } catch (cause) {
+      setGovernanceError(
+        cause instanceof Error ? cause.message : '治理运行操作失败，请重试。'
+      );
+    } finally {
+      setGovernanceBusy(false);
+    }
+  };
+
+  const publishRevision = async () => {
+    setPublishBusy(true);
+    setPublishError('');
+    try {
+      const catalog = rows.find(
+        (row) => row.skillId === publishValues.skillId.trim()
+      );
+      if (!catalog) {
+        throw new Error('请先从当前目录选择有效 Skill 标识。');
+      }
+      const payload = buildSkillPublishPayload({
+        ...publishValues,
+        expectedPublicationGeneration: String(catalog.publicationGeneration),
+        expectedPublishedRevisionRef: catalog.activeRevisionRef ?? '',
+      });
+      const response = await commandP1<SkillGovernanceResult>(
+        'skills',
+        { action: 'skill_publish', payload },
+        `skill_publish:${payload.runId}`
+      );
+      setPublishResult(response);
+      await queryClient.invalidateQueries({
+        queryKey: p1QueryKeys.module('skills'),
+      });
+    } catch (cause) {
+      setPublishError(
+        cause instanceof Error ? cause.message : 'Published 切换失败，请重试。'
+      );
+    } finally {
+      setPublishBusy(false);
+    }
+  };
+
+  const inspectDependencies = () => {
+    const target = dependencyInput.trim();
+    if (!target) {
+      setRetireError('版本引用不能为空。');
+      return;
+    }
+    setRetireError('');
+    if (target === dependencyTarget) {
+      void dependencyQuery.refetch();
+      return;
+    }
+    setDependencyTarget(target);
+  };
+
+  const visibleDependencies = dependencyQuery.data?.visibleDependencies ?? [];
+  const retirementBlocked =
+    !dependencyQuery.data ||
+    dependencyQuery.data.blocked === true ||
+    dependencyQuery.data.hiddenCount > 0 ||
+    visibleDependencies.length > 0;
+
+  const retireRevision = async () => {
+    setRetireBusy(true);
+    setRetireError('');
+    try {
+      const runId = requiredFormValue(retireRunId, '退役运行号');
+      const skillRevisionRef = requiredFormValue(dependencyTarget, '版本引用');
+      if (retirementBlocked) {
+        throw new Error('仍有反向依赖，当前版本不能退役。');
+      }
+      await commandP1(
+        'skills',
+        {
+          action: 'skill_retire',
+          payload: { runId, skillRevisionRef },
+        },
+        `skill_retire:${runId}`
+      );
+      await queryClient.invalidateQueries({
+        queryKey: p1QueryKeys.module('skills'),
+      });
+    } catch (cause) {
+      setRetireError(
+        cause instanceof Error ? cause.message : '版本退役失败，请重试。'
+      );
+    } finally {
+      setRetireBusy(false);
     }
   };
 
@@ -551,10 +913,335 @@ export function AdminSkillsControl() {
 
       <AdminPanel>
         <AdminPanelHeader>
-          <AdminPanelTitle>生命周期操作</AdminPanelTitle>
+          <AdminPanelTitle>受控修订</AdminPanelTitle>
           <AdminPanelDescription>
-            定义、受理、绑定、回滚与部署走同一条治理链；版本引用必须精确，不能使用
-            latest。
+            只有“受控做法正文”和“一句话说明”可修改。名称、来源、层级、治理预算、schema
+            与 prompt 引用保持只读。
+          </AdminPanelDescription>
+        </AdminPanelHeader>
+        <AdminPanelContent className="space-y-4">
+          <div
+            className="rounded-md border bg-muted/30 p-3 text-muted-foreground text-sm"
+            data-testid="skills-readonly-declaration"
+          >
+            不可覆盖：名称、来源、层级、治理预算、schema、prompt
+            引用、版本号与审计归属。
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="skills-governance-run-id">治理运行号</Label>
+              <Input
+                id="skills-governance-run-id"
+                data-ops-control="text"
+                value={governanceValues.runId}
+                onChange={(event) =>
+                  setGovernanceValues((current) => ({
+                    ...current,
+                    runId: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="skills-governance-base-ref">基础版本引用</Label>
+              <Input
+                id="skills-governance-base-ref"
+                data-ops-control="text"
+                value={governanceValues.baseSkillRevisionRef}
+                onChange={(event) =>
+                  setGovernanceValues((current) => ({
+                    ...current,
+                    baseSkillRevisionRef: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="skills-governance-head">当前版本号</Label>
+              <Input
+                id="skills-governance-head"
+                data-ops-control="text"
+                inputMode="numeric"
+                value={governanceValues.expectedHeadRevision}
+                onChange={(event) =>
+                  setGovernanceValues((current) => ({
+                    ...current,
+                    expectedHeadRevision: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="skills-governance-description">一句话说明</Label>
+              <Input
+                id="skills-governance-description"
+                data-ops-control="text"
+                value={governanceValues.description}
+                onChange={(event) =>
+                  setGovernanceValues((current) => ({
+                    ...current,
+                    description: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="skills-governance-instruction">
+                受控做法正文
+              </Label>
+              <Textarea
+                id="skills-governance-instruction"
+                data-ops-control="text"
+                value={governanceValues.instruction}
+                onChange={(event) =>
+                  setGovernanceValues((current) => ({
+                    ...current,
+                    instruction: event.target.value,
+                  }))
+                }
+              />
+            </div>
+          </div>
+          <Button
+            data-ops-control="button"
+            disabled={governanceBusy}
+            onClick={() => void startGovernanceRun()}
+          >
+            {governanceBusy ? '处理中…' : '启动修订运行'}
+          </Button>
+          {governanceError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {governanceError}
+            </p>
+          ) : null}
+          <div
+            className="space-y-3 rounded-md border p-3"
+            data-testid="skills-governance-run"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="font-medium text-sm">治理运行</p>
+                <p className="text-muted-foreground text-sm">
+                  {governanceRunId
+                    ? `${governanceRunId} · ${
+                        governanceRunStatus(governanceRunQuery.data) ?? '读取中'
+                      }`
+                    : '启动后会在这里恢复运行状态。'}
+                </p>
+              </div>
+              {governanceRunQuery.isFetching ? (
+                <AdminStatusChip variant="secondary">刷新中</AdminStatusChip>
+              ) : null}
+            </div>
+            {governanceRunResult(governanceRunQuery.data) ? (
+              <GovernanceResultView
+                result={governanceRunResult(governanceRunQuery.data)!}
+              />
+            ) : null}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                data-ops-control="button"
+                disabled={
+                  governanceBusy ||
+                  governanceRunStatus(governanceRunQuery.data) !==
+                    'awaiting_approval'
+                }
+                onClick={() =>
+                  void actOnGovernanceRun('skill_governance_approve')
+                }
+                size="sm"
+                variant="outline"
+              >
+                批准并继续
+              </Button>
+              <Button
+                data-ops-control="button"
+                disabled={
+                  governanceBusy ||
+                  !governanceRunId ||
+                  ['cancelled', 'completed', 'failed'].includes(
+                    governanceRunStatus(governanceRunQuery.data) ?? ''
+                  )
+                }
+                onClick={() =>
+                  void actOnGovernanceRun('skill_governance_cancel')
+                }
+                size="sm"
+                variant="outline"
+              >
+                取消运行
+              </Button>
+              <Button
+                data-ops-control="button"
+                disabled={
+                  governanceBusy ||
+                  !['cancelled', 'canceled'].includes(
+                    governanceRunStatus(governanceRunQuery.data) ?? ''
+                  )
+                }
+                onClick={() =>
+                  void actOnGovernanceRun('skill_governance_resume')
+                }
+                size="sm"
+                variant="outline"
+              >
+                恢复运行
+              </Button>
+              <Button
+                data-ops-control="button"
+                disabled={!governanceRunId}
+                onClick={() => void governanceRunQuery.refetch()}
+                size="sm"
+                variant="ghost"
+              >
+                刷新状态
+              </Button>
+            </div>
+          </div>
+        </AdminPanelContent>
+      </AdminPanel>
+
+      <AdminPanel>
+        <AdminPanelHeader>
+          <AdminPanelTitle>Published（唯一）</AdminPanelTitle>
+          <AdminPanelDescription>
+            Published 是每个 Skill
+            唯一的生命周期指针。切换它不会改动流量目标，也不会让历史版本变成第二个
+            Published。
+          </AdminPanelDescription>
+        </AdminPanelHeader>
+        <AdminPanelContent className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            {[
+              ['runId', '发布运行号'],
+              ['skillId', 'Skill 标识'],
+              ['targetSkillRevisionRef', '目标版本引用'],
+            ].map(([key, label]) => (
+              <div className="space-y-2" key={key}>
+                <Label htmlFor={`skills-publish-${key}`}>{label}</Label>
+                <Input
+                  id={`skills-publish-${key}`}
+                  data-ops-control="text"
+                  value={publishValues[key as keyof SkillPublishFormValues]}
+                  onChange={(event) =>
+                    setPublishValues((current) => ({
+                      ...current,
+                      [key]: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+            ))}
+          </div>
+          <Button
+            data-ops-control="button"
+            disabled={publishBusy}
+            onClick={() => void publishRevision()}
+          >
+            {publishBusy ? '切换中…' : '切换 Published'}
+          </Button>
+          {publishError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {publishError}
+            </p>
+          ) : null}
+          {publishResult ? (
+            <GovernanceResultView result={publishResult} />
+          ) : null}
+        </AdminPanelContent>
+      </AdminPanel>
+
+      <AdminPanel>
+        <AdminPanelHeader>
+          <AdminPanelTitle>反向依赖与退役</AdminPanelTitle>
+          <AdminPanelDescription>
+            退役前必须读取精确版本的反向依赖。本工作区与全局依赖显示明细，其他工作区只显示数量。
+          </AdminPanelDescription>
+        </AdminPanelHeader>
+        <AdminPanelContent className="space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex-1 space-y-2">
+              <Label htmlFor="skills-dependency-ref">版本引用</Label>
+              <Input
+                id="skills-dependency-ref"
+                data-ops-control="text"
+                value={dependencyInput}
+                onChange={(event) => setDependencyInput(event.target.value)}
+              />
+            </div>
+            <Button
+              data-ops-control="button"
+              onClick={inspectDependencies}
+              variant="outline"
+            >
+              查看反向依赖
+            </Button>
+          </div>
+          {dependencyQuery.isError ? (
+            <p role="alert" className="text-sm text-destructive">
+              依赖读取失败，退役保持阻断。
+            </p>
+          ) : null}
+          {dependencyQuery.data ? (
+            <div
+              className="space-y-3 rounded-md border p-3"
+              data-testid="skills-reverse-dependencies"
+            >
+              <div className="flex flex-wrap gap-2">
+                <AdminStatusChip
+                  variant={retirementBlocked ? 'destructive' : 'default'}
+                >
+                  {retirementBlocked ? '退役已阻断' : '未发现依赖'}
+                </AdminStatusChip>
+                <AdminStatusChip variant="secondary">
+                  其他工作区依赖 {dependencyQuery.data.hiddenCount}
+                </AdminStatusChip>
+              </div>
+              {visibleDependencies.map((dependency, index) => (
+                <div
+                  className="flex items-center justify-between gap-3 text-sm"
+                  key={`${dependency.consumerKind}:${dependency.consumerId || index}`}
+                >
+                  <span>{dependency.consumerLabel}</span>
+                  <span className="text-muted-foreground">
+                    {dependency.scopeKind === 'global' ? '全局' : '本工作区'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex-1 space-y-2">
+              <Label htmlFor="skills-retire-run-id">退役运行号</Label>
+              <Input
+                id="skills-retire-run-id"
+                data-ops-control="text"
+                value={retireRunId}
+                onChange={(event) => setRetireRunId(event.target.value)}
+              />
+            </div>
+            <Button
+              data-ops-control="button"
+              disabled={retireBusy || retirementBlocked}
+              onClick={() => void retireRevision()}
+              variant="outline"
+            >
+              {retireBusy ? '退役中…' : '退役这个版本'}
+            </Button>
+          </div>
+          {retireError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {retireError}
+            </p>
+          ) : null}
+        </AdminPanelContent>
+      </AdminPanel>
+
+      <AdminPanel>
+        <AdminPanelHeader>
+          <AdminPanelTitle>流量目标（新请求）与基础生命周期</AdminPanelTitle>
+          <AdminPanelDescription>
+            “绑定阶段”和“回滚绑定”只切换随后接纳的新请求；已接纳运行继续使用冻结的精确版本。定义、受理与部署不改变这个边界。
           </AdminPanelDescription>
         </AdminPanelHeader>
         <AdminPanelContent className="space-y-4">

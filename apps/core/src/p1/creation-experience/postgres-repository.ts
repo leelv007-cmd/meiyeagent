@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type { Pool, PoolClient } from 'pg';
 
 import { P1DomainError } from '../foundation/domain.js';
+import type { SkillReferenceEdge } from '../skills/types.js';
 import type { CreationExperienceCatalogRepository } from './memory-repository.js';
 import type {
   CatalogSessionFreeze,
@@ -329,6 +330,12 @@ export class PostgresCreationExperienceCatalogRepository
           input.record.createdAt,
         ],
       );
+      if (input.kind === 'recipe') {
+        await this.indexRecipeSkillReferences(
+          client,
+          input.record as unknown as ServerRecipeRecord,
+        );
+      }
       await client.query(
         `UPDATE ${input.headTable}
             SET revision = $2, updated_at = now()
@@ -342,6 +349,52 @@ export class PostgresCreationExperienceCatalogRepository
       throw error;
     } finally {
       client.release();
+    }
+  }
+
+  private async indexRecipeSkillReferences(
+    client: PoolClient,
+    recipe: ServerRecipeRecord,
+  ) {
+    const relation = await client.query<{ relation: string | null }>(
+      `SELECT to_regclass('p1_skill_reference_edges')::text AS relation`,
+    );
+    if (!relation.rows[0]?.relation) return;
+    for (const targetSkillRevisionRef of [
+      ...new Set(recipe.skillRevisionRefs),
+    ].sort()) {
+      const edge: SkillReferenceEdge = {
+        edgeId: [
+          'skill-reference',
+          'recipe_revision',
+          recipe.revisionId,
+          targetSkillRevisionRef,
+        ].join(':'),
+        targetSkillRevisionRef,
+        consumerKind: 'recipe_revision',
+        consumerId: recipe.revisionId,
+        consumerLabel: recipe.recipeId,
+        scope: { kind: 'global', proof: 'recipe_catalog' },
+        createdAt: recipe.createdAt,
+      };
+      await client.query(
+        `INSERT INTO p1_skill_reference_edges
+           (edge_id, target_skill_revision_ref, consumer_kind, consumer_id,
+            consumer_label, scope_kind, owner_workspace_id, global_proof,
+            payload, created_at)
+         VALUES ($1, $2, $3, $4, $5, 'global', NULL, 'recipe_catalog',
+                 $6::jsonb, $7::timestamptz)
+         ON CONFLICT (edge_id) DO NOTHING`,
+        [
+          edge.edgeId,
+          edge.targetSkillRevisionRef,
+          edge.consumerKind,
+          edge.consumerId,
+          edge.consumerLabel,
+          JSON.stringify(edge),
+          edge.createdAt,
+        ],
+      );
     }
   }
 

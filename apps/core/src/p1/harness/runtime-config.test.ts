@@ -22,6 +22,16 @@ test('DBOS system database must be explicitly separate from business Postgres', 
       }),
     /separate database/u,
   );
+  assert.throws(
+    () =>
+      readHarnessRuntimeConfig({
+        DATABASE_URL:
+          'postgres://business:secret@localhost/meiye?application_name=business',
+        HARNESS_DBOS_SYSTEM_DATABASE_URL:
+          'postgresql://dbos:other@LOCALHOST:5432/meiye#system',
+      }),
+    /separate database/u,
+  );
 });
 
 test('runtime config preserves explicit pool and sticky application version', () => {

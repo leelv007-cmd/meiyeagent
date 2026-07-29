@@ -21,6 +21,10 @@ import type {
   SkillOutputValidator,
   SkillPromptSnapshotPort,
 } from './types.js';
+import {
+  createSkillGovernanceDbosRuntime,
+  type SkillGovernanceDbosAdapter,
+} from './dbos-governance-workflow.js';
 
 export type DurableSkillInstructionResolutionInput = Parameters<
   HarnessSkillInstructionResolverPort['resolve']
@@ -122,6 +126,7 @@ export async function createDurableSkillRuntime(input: {
   pool: Pool;
   promptResolver?: HarnessPromptResolver;
   repository?: PostgresSkillRepository;
+  governanceDbos?: SkillGovernanceDbosAdapter;
   toolExecutionAllowlist?: readonly {
     caller: string;
     toolId: string;
@@ -145,6 +150,10 @@ export async function createDurableSkillRuntime(input: {
     service,
     recipes,
   );
+  const governanceRuntime = createSkillGovernanceDbosRuntime({
+    service,
+    ...(input.governanceDbos ? { dbos: input.governanceDbos } : {}),
+  });
   const revisionValidation = {
     async listUnavailableFrozenRevisionRefs(
       skillRevisionRefs: readonly string[],
@@ -172,7 +181,8 @@ export async function createDurableSkillRuntime(input: {
         input.outputValidator,
       );
     },
-    foundationModule: new SkillFoundationModule(service),
+    foundationModule: new SkillFoundationModule(service, governanceRuntime),
+    governanceRuntime,
     instructionResolver,
     repository,
     revisionValidation,

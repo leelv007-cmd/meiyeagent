@@ -21,9 +21,12 @@ const skillsRoute = await import('./skills');
 const { AdminRecipeStudioControl } = await import(
   '@/p1/admin-recipe-studio-control'
 );
-const { AdminSkillsControl, buildSkillCommandPayload } = await import(
-  '@/p1/admin-skills-control'
-);
+const {
+  AdminSkillsControl,
+  buildSkillCommandPayload,
+  buildSkillGovernanceStartPayload,
+  buildSkillPublishPayload,
+} = await import('@/p1/admin-skills-control');
 const { p1QueryKeys } = await import('@/p1/query-keys');
 
 /** Renders the control with a seeded catalog so the table has rows to show. */
@@ -97,6 +100,89 @@ test('Skills admin route exposes all five structured lifecycle commands', () => 
   assert.doesNotMatch(html, /<pre/);
   assert.doesNotMatch(html, /<option value="store"/);
   assert.doesNotMatch(html, /maxChildEffects|redlinePolicy/);
+});
+
+test('Skills admin route separates governed revision, Published, traffic, and retirement controls', () => {
+  const html = renderSkillsControl([
+    {
+      skillId: 'skill.governed',
+      name: '受控做法',
+      description: '只允许修改已声明的两个槽位。',
+      sourceKind: 'authored',
+      tier: 'platform',
+      presentationPolicy: 'explainable',
+      activeRevisionRef: 'skill.governed@2',
+      publicationGeneration: 2,
+      updatedAt: '2026-07-30T00:00:00.000Z',
+    },
+  ]);
+
+  assert.match(html, /受控修订/);
+  assert.match(html, /Published（唯一）/);
+  assert.match(html, /流量目标（新请求）/);
+  assert.match(html, /反向依赖与退役/);
+  assert.match(html, /治理运行/);
+  assert.match(html, /只有“受控做法正文”和“一句话说明”可修改/);
+  assert.match(
+    html,
+    /名称、来源、层级、治理预算、schema 与 prompt 引用保持只读/
+  );
+  assert.doesNotMatch(html, /data-ops-control="raw-json"/);
+  assert.doesNotMatch(html, /skill_eval_run_fetch/);
+  assert.doesNotMatch(html, /import|export|download/iu);
+});
+
+test('governed revision and Published payloads contain only their structured authority fields', () => {
+  assert.deepEqual(
+    buildSkillGovernanceStartPayload({
+      baseSkillRevisionRef: 'skill.governed@2',
+      description: '更新后的一句话说明。',
+      expectedHeadRevision: '2',
+      instruction: '只使用已确认事实。',
+      runId: 'run-governed-3',
+    }),
+    {
+      baseSkillRevisionRef: 'skill.governed@2',
+      expectedHeadRevision: 2,
+      patch: {
+        instruction: '只使用已确认事实。',
+        'manifest.description': '更新后的一句话说明。',
+      },
+      runId: 'run-governed-3',
+    }
+  );
+  assert.deepEqual(
+    buildSkillPublishPayload({
+      expectedPublicationGeneration: '7',
+      expectedPublishedRevisionRef: 'skill.governed@1',
+      runId: 'run-publish-2',
+      skillId: 'skill.governed',
+      targetSkillRevisionRef: 'skill.governed@2',
+    }),
+    {
+      expectedPublicationGeneration: 7,
+      expectedPublishedRevisionRef: 'skill.governed@1',
+      runId: 'run-publish-2',
+      skillId: 'skill.governed',
+      targetSkillRevisionRef: 'skill.governed@2',
+    }
+  );
+  assert.deepEqual(
+    buildSkillPublishPayload({
+      expectedPublicationGeneration: '0',
+      expectedPublishedRevisionRef: '',
+      runId: 'run-publish-first',
+      skillId: 'skill.first',
+      targetSkillRevisionRef: 'skill.first@1',
+    }),
+    {
+      expectedPublicationGeneration: 0,
+      expectedPublishedRevisionRef: null,
+      runId: 'run-publish-first',
+      skillId: 'skill.first',
+      targetSkillRevisionRef: 'skill.first@1',
+    }
+  );
 });
 
 test('structured Skill forms build the revision and acceptance contracts', () => {
@@ -265,6 +351,7 @@ test('Skills catalog renders the source column and its description', () => {
       tier: 'industry',
       presentationPolicy: 'explainable',
       activeRevisionRef: 'skill.beauty-story@1',
+      publicationGeneration: 1,
       updatedAt: '2026-07-29T00:00:00.000Z',
     },
     {
@@ -275,6 +362,7 @@ test('Skills catalog renders the source column and its description', () => {
       tier: 'industry',
       presentationPolicy: 'explainable',
       activeRevisionRef: null,
+      publicationGeneration: 0,
       updatedAt: '2026-07-29T00:00:00.000Z',
     },
   ]);

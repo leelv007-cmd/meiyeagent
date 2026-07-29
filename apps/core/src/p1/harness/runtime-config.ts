@@ -37,7 +37,10 @@ export function readHarnessRuntimeConfig(
     env.HARNESS_DBOS_SYSTEM_DATABASE_URL,
     'HARNESS_DBOS_SYSTEM_DATABASE_URL',
   );
-  if (normalizeDatabaseUrl(businessDatabaseUrl) === normalizeDatabaseUrl(systemDatabaseUrl)) {
+  if (
+    postgresDatabaseIdentity(businessDatabaseUrl) ===
+    postgresDatabaseIdentity(systemDatabaseUrl)
+  ) {
     throw new Error('Harness DBOS system storage must use a separate database.');
   }
   const applicationVersion =
@@ -79,13 +82,6 @@ function atLeastFinalizePeak(value: number) {
     `HARNESS_DB_POOL_MAX=${value} is below the ${MINIMUM_BUSINESS_POOL_MAX} connections one store-intake finalize holds at once (finalization advisory lock + pinned fact heads + profile merge); raising it to ${MINIMUM_BUSINESS_POOL_MAX}.`,
   );
   return MINIMUM_BUSINESS_POOL_MAX;
-}
-
-function normalizeDatabaseUrl(value: string) {
-  const url = new URL(value);
-  url.search = '';
-  url.hash = '';
-  return url.toString();
 }
 
 function postgresDatabaseIdentity(value: string) {

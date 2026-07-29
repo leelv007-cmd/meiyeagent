@@ -60,15 +60,62 @@ export interface SkillCatalog {
   sourceRef?: SkillSourceRef;
   presentationPolicy: 'backend_only' | 'explainable' | 'user_selectable';
   activeRevisionRef: string | null;
+  publicationGeneration: number;
   createdAt: string;
   updatedAt: string;
   actorId: string;
 }
 
+export const SKILL_GOVERNANCE_PATCH_FIELDS = [
+  'acceptedAt',
+  'acceptedBy',
+  'activeRevisionRef',
+  'contentHash',
+  'createdAt',
+  'createdBy',
+  'evalRunId',
+  'governance.budget.maxChildEffects',
+  'governance.budget.maxCostCents',
+  'governance.budget.timeoutMs',
+  'governance.contextScopes',
+  'governance.executionMode',
+  'governance.fallback',
+  'governance.inputSchemaRef',
+  'governance.outputSchemaRef',
+  'governance.requiredModelCapabilities',
+  'governance.sideEffectClass',
+  'governance.workflowRevisionRefs',
+  'instruction',
+  'manifest.allowed-tools',
+  'manifest.compatibility',
+  'manifest.description',
+  'manifest.license',
+  'manifest.metadata',
+  'manifest.name',
+  'packagePaths',
+  'prompt.content',
+  'prompt.contentHash',
+  'prompt.fallbackReason',
+  'prompt.isFallback',
+  'prompt.label',
+  'prompt.name',
+  'prompt.source',
+  'prompt.version',
+  'revision',
+  'skillId',
+  'skillRevisionRef',
+  'sourceKind',
+  'status',
+  'tier',
+] as const;
+
+export type SkillGovernancePatchField =
+  (typeof SKILL_GOVERNANCE_PATCH_FIELDS)[number];
+
 export const SKILL_OPERATOR_EDITABLE_FIELDS = [
   'instruction',
   'manifest.description',
-] as const;
+] as const satisfies readonly SkillGovernancePatchField[];
 
 export type SkillOperatorEditableField =
   (typeof SKILL_OPERATOR_EDITABLE_FIELDS)[number];
@@ -81,7 +128,9 @@ export type SkillGovernanceValidationResult = {
     | 'field_not_editable'
     | 'invalid_value'
     | 'unchanged'
-    | 'cas_conflict';
+    | 'cas_conflict'
+    | 'dependency_blocked'
+    | 'governance_cancelled';
 };
 
 export type SkillGovernanceResult = {
@@ -116,6 +165,16 @@ export type SkillGovernanceRun = {
   auditEntries: SkillGovernanceAuditEntry[];
   createdAt: string;
   completedAt: string;
+};
+
+export type SkillGovernanceReservation = {
+  runId: string;
+  inputFingerprint: string;
+  skillId: string;
+  baseSkillRevisionRef: string;
+  workspaceId: string;
+  actorId: string;
+  createdAt: string;
 };
 
 export type SkillRevisionManifest = SkillFrontmatter;
@@ -185,7 +244,7 @@ interface SkillRevisionBase<
   instruction: string;
   governance: Governance;
   prompt: SkillPromptSnapshot;
-  status: 'draft' | 'accepted_frozen';
+  status: 'draft' | 'accepted_frozen' | 'retired';
   createdAt: string;
   createdBy: string;
   acceptedAt: string | null;
@@ -209,6 +268,8 @@ export interface SkillBinding {
   bindingId: string;
   workflowRevisionRef: string;
   triggerCondition: SkillTriggerCondition;
+  /** Trusted consumer owner. Missing legacy values fail closed as unknown. */
+  ownerWorkspaceId?: string | null;
   skillId: string;
   skillRevisionRef: string;
   mode: SkillBindingMode;
@@ -233,6 +294,58 @@ export interface SkillDeployment {
   packagePaths: string[];
   rolloutEvidenceRef: string | null;
   createdAt: string;
+}
+
+export const SKILL_REFERENCE_CONSUMER_KINDS = [
+  'published_lifecycle',
+  'workflow_binding',
+  'recipe_revision',
+  'deployment',
+  'eval_run',
+  'governance_run',
+  'invocation_receipt',
+  'traffic_target',
+] as const;
+
+export type SkillReferenceConsumerKind =
+  (typeof SKILL_REFERENCE_CONSUMER_KINDS)[number];
+
+export type SkillReferenceScope =
+  | { kind: 'workspace'; workspaceId: string }
+  | {
+      kind: 'global';
+      proof:
+        | 'platform_catalog'
+        | 'industry_catalog'
+        | 'system_binding'
+        | 'deployment'
+        | 'evaluation'
+        | 'recipe_catalog';
+    }
+  | { kind: 'unknown' };
+
+export interface SkillReferenceEdge {
+  edgeId: string;
+  targetSkillRevisionRef: string;
+  consumerKind: SkillReferenceConsumerKind;
+  consumerId: string;
+  consumerLabel: string;
+  scope: SkillReferenceScope;
+  createdAt: string;
+}
+
+export interface SkillReverseDependencyDetail {
+  consumerKind: SkillReferenceConsumerKind;
+  consumerId: string;
+  consumerLabel: string;
+  scopeKind: 'workspace' | 'global';
+}
+
+export interface SkillReverseDependencyView {
+  targetSkillRevisionRef: string;
+  visibleDependencies: SkillReverseDependencyDetail[];
+  hiddenCount: number;
+  blocked: boolean;
 }
 
 export interface ResolvedSkillInstruction {

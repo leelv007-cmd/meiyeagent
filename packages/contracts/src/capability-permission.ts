@@ -367,7 +367,13 @@ export function requiredP1Capability(
 
   if (module === 'skills') {
     if (kind === 'query') {
-      if (action === 'skill_prompt_reference') return 'config.publish';
+      if (
+        action === 'skill_prompt_reference' ||
+        action === 'skill_reverse_dependencies' ||
+        action === 'skill_governance_run_get'
+      ) {
+        return 'config.publish';
+      }
       // Reading the catalog must not cost a config.publish step-up — an
       // operator who only wants to look would be re-authenticated on arrival.
       return new Set([
@@ -384,6 +390,12 @@ export function requiredP1Capability(
         'skill_bind',
         'skill_rollback',
         'skill_deployment',
+        'skill_governance_approve',
+        'skill_governance_cancel',
+        'skill_governance_resume',
+        'skill_governance_start',
+        'skill_publish',
+        'skill_retire',
       ]).has(action)
       ? 'config.publish'
       : null;
