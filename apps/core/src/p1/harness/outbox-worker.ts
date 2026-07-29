@@ -41,6 +41,7 @@ export interface HarnessLangfuseOutboxItem {
   occurredAt: string;
   payload: unknown;
   decisionTrace?: unknown;
+  traceContractVersion?: 'observability/v1';
   attempts: number;
 }
 
@@ -78,6 +79,9 @@ export async function readHarnessLangfuseOutboxConfig(
 
 export interface HarnessLangfuseSender {
   send(item: HarnessLangfuseOutboxItem): Promise<void>;
+  describeSignals?(
+    item: HarnessLangfuseOutboxItem,
+  ): Array<Pick<ObservabilityDropEvent, 'signal' | 'count'>>;
 }
 
 export class HarnessLangfuseOutboxWorker {
@@ -105,6 +109,27 @@ export class HarnessLangfuseOutboxWorker {
     let failed = 0;
     let deadLettered = 0;
     for (const item of items) {
+      if (
+        item.attempts >
+        (this.options.maxAttempts ?? config.maxAttempts)
+      ) {
+        failed += 1;
+        const signals = this.sender.describeSignals?.(item) ?? [
+          { signal: 'trace' as const, count: 1 },
+        ];
+        await this.store.markLangfuseDeadLetter(
+          item.auditId,
+          'Langfuse outbox attempt limit reached after an interrupted lease.',
+          signals.map(({ signal, count }) => ({
+            signal,
+            reason: 'transient' as const,
+            count,
+            source: 'langfuse_outbox',
+          })),
+        );
+        deadLettered += 1;
+        continue;
+      }
       try {
         await this.sender.send(item);
         await this.store.markLangfuseSent(item.auditId);

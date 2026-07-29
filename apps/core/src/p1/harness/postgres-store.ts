@@ -1,11 +1,13 @@
 import {
   confirmationCardTimeoutSecondsSchema,
   contentPackageSchema,
+  observabilityDropEventSchema,
   questionCardSchema,
   structuredDecisionInputSchema,
   type ContentPackageRevisionDelivery,
   type CreativeRecommendationDecisionTrace,
   type MarketingPackageEvidence,
+  type ObservabilityDropEvent,
   type QuestionCard,
   type ReuseTaskSeed,
 } from '@meiye/contracts';
@@ -57,6 +59,8 @@ export interface HarnessAuditEvent {
   stage: string;
   eventType: string;
   payload: unknown;
+  traceId?: string;
+  traceContractVersion?: 'observability/v1';
 }
 
 export class HarnessDeliveryError extends Error {
@@ -141,12 +145,15 @@ export class PostgresHarnessStore
         task_id text not null,
         stage text not null,
         payload jsonb not null,
+        trace_contract_version text,
         created_at timestamptz not null default now()
       );
 
       create table if not exists harness_runtime.audit_events (
         id text primary key,
         workflow_id text not null,
+        trace_id text,
+        trace_contract_version text,
         stage text not null,
         event_type text not null,
         payload jsonb not null,
@@ -162,11 +169,55 @@ export class PostgresHarnessStore
         next_attempt_at timestamptz not null default now(),
         last_error text,
         dead_lettered_at timestamptz,
+        sent_at timestamptz,
+        delivery_generation integer not null default 1,
         updated_at timestamptz not null default now()
+      );
+
+      create table if not exists harness_runtime.observability_drop_events (
+        id bigserial primary key,
+        audit_id text not null,
+        delivery_generation integer not null,
+        signal text not null check
+          (signal in ('trace', 'log', 'metric', 'score', 'feedback')),
+        reason text not null check
+          (reason in ('permanent-config', 'transient')),
+        count integer not null check (count > 0),
+        source text not null check (length(trim(source)) > 0),
+        occurred_at timestamptz not null,
+        unique (
+          audit_id, delivery_generation, signal, reason, source
+        )
+      );
+
+      create table if not exists harness_runtime.observability_reconciliation_cutovers (
+        contract_version text primary key,
+        cutover_at timestamptz not null,
+        activated_at timestamptz not null default clock_timestamp()
+      );
+
+      create table if not exists harness_runtime.observability_reconciliation_runs (
+        id bigserial primary key,
+        contract_version text not null,
+        window_start timestamptz not null,
+        window_end timestamptz not null,
+        cutover_at timestamptz not null,
+        business_event_count integer not null,
+        trace_count integer not null,
+        matched_count integer not null,
+        missing_trace_count integer not null,
+        orphan_trace_count integer not null,
+        rating_event_count integer not null,
+        action_usage_event_count integer not null,
+        undelivered_event_count integer not null,
+        created_at timestamptz not null default clock_timestamp(),
+        unique (contract_version, window_start, window_end, cutover_at)
       );
 
       create index if not exists harness_langfuse_outbox_ready_idx
         on harness_runtime.langfuse_outbox (status, next_attempt_at);
+      create index if not exists harness_observability_drop_occurred_idx
+        on harness_runtime.observability_drop_events (occurred_at);
 
       alter table harness_runtime.decision_events
         add column if not exists resume_status text not null default 'pending';
@@ -175,6 +226,27 @@ export class PostgresHarnessStore
           default '{}'::jsonb;
       alter table harness_runtime.langfuse_outbox
         add column if not exists dead_lettered_at timestamptz;
+      alter table harness_runtime.langfuse_outbox
+        add column if not exists sent_at timestamptz;
+      alter table harness_runtime.langfuse_outbox
+        add column if not exists delivery_generation integer not null default 1;
+      update harness_runtime.langfuse_outbox
+        set sent_at=updated_at
+        where status='sent' and sent_at is null;
+      alter table harness_runtime.audit_events
+        add column if not exists trace_id text;
+      alter table harness_runtime.audit_events
+        add column if not exists trace_contract_version text;
+      alter table harness_runtime.decision_traces
+        add column if not exists trace_contract_version text;
+      alter table harness_runtime.observability_reconciliation_runs
+        add column if not exists rating_event_count integer not null default 0;
+      alter table harness_runtime.observability_reconciliation_runs
+        add column if not exists action_usage_event_count integer not null
+          default 0;
+      alter table harness_runtime.observability_reconciliation_runs
+        add column if not exists undelivered_event_count integer not null
+          default 0;
       alter table harness_runtime.langfuse_outbox
         drop constraint if exists langfuse_outbox_status_check;
       alter table harness_runtime.langfuse_outbox
@@ -870,7 +942,7 @@ export class PostgresHarnessStore
             : 'pending',
         ],
       );
-      await this.writeDecisionTrace(
+      const runtimeTraceId = await this.writeDecisionTrace(
         client,
         input.workspaceId,
         runtimeTaskId,
@@ -882,6 +954,8 @@ export class PostgresHarnessStore
         workflowId: input.taskId,
         stage: 'intent_naming',
         eventType: 'structured_decision_recorded',
+        traceId: runtimeTraceId,
+        traceContractVersion: 'observability/v1',
         payload: {
           eventId: input.event.id,
           questionId: input.command.questionId,
@@ -1041,18 +1115,19 @@ export class PostgresHarnessStore
     const client = await this.pool.connect();
     try {
       await client.query('begin');
+      const runtimeTraceId = this.runtimeObjectId(
+        input.workspaceId,
+        input.taskId,
+        runtimeTaskId,
+        input.id,
+      );
       await client.query(
         `insert into harness_runtime.decision_traces
-           (id, task_id, stage, payload)
-         values ($1,$2,$3,$4)
+           (id, task_id, stage, payload, trace_contract_version)
+         values ($1,$2,$3,$4,'observability/v1')
          on conflict (id) do nothing`,
         [
-          this.runtimeObjectId(
-            input.workspaceId,
-            input.taskId,
-            runtimeTaskId,
-            input.id,
-          ),
+          runtimeTraceId,
           runtimeTaskId,
           input.stage,
           JSON.stringify(input.payload),
@@ -1066,6 +1141,8 @@ export class PostgresHarnessStore
           workflowId: input.taskId,
           stage: input.stage,
           eventType: 'stage_decision_recorded',
+          traceId: runtimeTraceId,
+          traceContractVersion: 'observability/v1',
           payload: { traceId: input.id },
         },
         runtimeTaskId,
@@ -1323,7 +1400,7 @@ export class PostgresHarnessStore
         if (!written) {
           throw new Error('ContentPackage CAS failed while holding the workspace lock.');
         }
-        await this.writeGeneralTrace(
+        const runtimeTraceId = await this.writeGeneralTrace(
           client,
           runtimeWorkflowId,
           {
@@ -1354,6 +1431,8 @@ export class PostgresHarnessStore
             workflowId: input.workflowId,
             stage: 'assembly_delivery',
             eventType: 'package_delivered',
+            traceId: runtimeTraceId,
+            traceContractVersion: 'observability/v1',
             payload: {
               workspaceId: input.workspaceId,
               expectedRevision: input.expectedRevision,
@@ -1401,7 +1480,7 @@ export class PostgresHarnessStore
   async claimLangfuseBatch(
     limit: number,
     leaseSeconds = 300,
-    maxAttempts = 8,
+    _maxAttempts = 8,
   ): Promise<HarnessLangfuseOutboxItem[]> {
     const result = await this.pool.query<{
       audit_id: string;
@@ -1411,22 +1490,15 @@ export class PostgresHarnessStore
       payload: unknown;
       created_at: Date | string;
       attempts: number;
+      trace_id: string | null;
+      trace_contract_version: string | null;
+      post_contract: boolean;
     }>(
-      `with over_limit as (
-         update harness_runtime.langfuse_outbox
-         set status='dead_letter', dead_lettered_at=coalesce(dead_lettered_at, now()),
-             last_error=coalesce(last_error, 'Langfuse outbox attempt limit reached.'),
-             updated_at=now()
-         where status in ('queued','failed','sending')
-           and dead_lettered_at is null
-           and attempts >= $3
-           and next_attempt_at <= now()
-       ), ready as (
+      `with ready as (
          select audit_id
          from harness_runtime.langfuse_outbox
          where status in ('queued','failed','sending')
            and dead_lettered_at is null
-           and attempts < $3
            and next_attempt_at <= now()
          order by next_attempt_at, audit_id
          for update skip locked
@@ -1439,12 +1511,24 @@ export class PostgresHarnessStore
          where o.audit_id=ready.audit_id
          returning o.audit_id, o.attempts
        )
-       select c.audit_id, c.attempts, a.workflow_id, a.stage,
-              a.event_type, a.payload, a.created_at
+       select c.audit_id, c.attempts, a.workflow_id, a.trace_id,
+              a.trace_contract_version, a.stage, a.event_type, a.payload,
+              a.created_at,
+              (
+                cutover.cutover_at is not null
+                and a.created_at >= cutover.cutover_at
+                and a.event_type in (
+                  'structured_decision_recorded',
+                  'stage_decision_recorded',
+                  'package_delivered'
+                )
+              ) as post_contract
        from claimed c
        join harness_runtime.audit_events a on a.id=c.audit_id
+       left join harness_runtime.observability_reconciliation_cutovers cutover
+         on cutover.contract_version='observability/v1'
        order by c.audit_id`,
-      [limit, leaseSeconds, maxAttempts],
+      [limit, leaseSeconds],
     );
     if (result.rows.length === 0) return [];
     const workflowIds = [...new Set(result.rows.map((row) => row.workflow_id))];
@@ -1454,8 +1538,9 @@ export class PostgresHarnessStore
         task_id: string;
         stage: string;
         payload: unknown;
+        trace_contract_version: string | null;
       }>(
-        `select id, task_id, stage, payload
+        `select id, task_id, stage, payload, trace_contract_version
          from harness_runtime.decision_traces
          where task_id=any($1::text[])
          order by created_at, id`,
@@ -1468,6 +1553,14 @@ export class PostgresHarnessStore
         row.payload,
       ]),
     );
+    const physicalTraces = new Map(
+      traceRows
+        .filter(
+          ({ trace_contract_version }) =>
+            trace_contract_version === 'observability/v1',
+        )
+        .map((row) => [`${row.task_id}:${row.id}`, row.payload]),
+    );
     const latestStageTraces = new Map(
       traceRows.map((row) => [
         `${row.task_id}:${row.stage}`,
@@ -1475,13 +1568,20 @@ export class PostgresHarnessStore
       ]),
     );
     return result.rows.map((row) => {
-      const traceId = String(record(row.payload)?.traceId ?? '');
+      const legacyTraceId = String(record(row.payload)?.traceId ?? '');
       const decisionTrace =
-        exactTraces.get(`${row.workflow_id}:${traceId}`) ??
-        latestStageTraces.get(`${row.workflow_id}:${row.stage}`);
+        row.post_contract
+          ? row.trace_id
+            ? physicalTraces.get(`${row.workflow_id}:${row.trace_id}`)
+            : undefined
+          : (exactTraces.get(`${row.workflow_id}:${legacyTraceId}`) ??
+            latestStageTraces.get(`${row.workflow_id}:${row.stage}`));
       return {
         auditId: row.audit_id,
         workflowId: row.workflow_id,
+        ...(row.post_contract
+          ? { traceContractVersion: 'observability/v1' as const }
+          : {}),
         stage: row.stage,
         eventType: row.event_type,
         occurredAt: new Date(row.created_at).toISOString(),
@@ -1495,7 +1595,7 @@ export class PostgresHarnessStore
   async markLangfuseSent(auditId: string) {
     await this.pool.query(
       `update harness_runtime.langfuse_outbox
-       set status='sent', last_error=null, updated_at=now()
+       set status='sent', last_error=null, sent_at=now(), updated_at=now()
        where audit_id=$1 and status='sending'`,
       [auditId],
     );
@@ -1510,21 +1610,275 @@ export class PostgresHarnessStore
     );
   }
 
-  async markLangfuseDeadLetter(auditId: string, error: string) {
+  async markLangfuseDeadLetter(
+    auditId: string,
+    error: string,
+    drops: ObservabilityDropEvent[],
+  ) {
+    const parsedDrops = observabilityDropEventSchema.array().min(1).parse(drops);
     await this.pool.query(
-      `update harness_runtime.langfuse_outbox
-       set status='dead_letter', last_error=$2, dead_lettered_at=now(),
-           updated_at=now()
-       where audit_id=$1 and status='sending'`,
-      [auditId, error.slice(0, 2_000)],
+      `with transitioned as (
+         update harness_runtime.langfuse_outbox
+         set status='dead_letter', last_error=$2, dead_lettered_at=now(),
+             updated_at=now()
+         where audit_id=$1 and status='sending'
+         returning audit_id, delivery_generation, dead_lettered_at
+       ), inserted as (
+         insert into harness_runtime.observability_drop_events
+           (audit_id, delivery_generation, signal, reason, count, source,
+            occurred_at)
+         select transitioned.audit_id, transitioned.delivery_generation,
+                drop_event.signal, drop_event.reason, drop_event.count,
+                drop_event.source, transitioned.dead_lettered_at
+         from transitioned
+         cross join jsonb_to_recordset($3::jsonb) as drop_event(
+           signal text, reason text, count integer, source text
+         )
+         on conflict (
+           audit_id, delivery_generation, signal, reason, source
+         ) do nothing
+       )
+       select count(*)::int as transitioned_count from transitioned`,
+      [auditId, error.slice(0, 2_000), JSON.stringify(parsedDrops)],
     );
+  }
+
+  async readObservabilityDeliveryHealth(input: { now: Date }) {
+    const result = await this.pool.query<{
+      last_success_at: Date | null;
+      oldest_queued_at: Date | null;
+    }>(
+      `select
+         max(outbox.sent_at) filter (where outbox.status='sent')
+           as last_success_at,
+         min(audit.created_at) filter (
+           where outbox.status in ('queued','failed','sending')
+         ) as oldest_queued_at
+       from harness_runtime.langfuse_outbox outbox
+       join harness_runtime.audit_events audit on audit.id=outbox.audit_id`,
+    );
+    const lastSuccessAt = result.rows[0]?.last_success_at ?? null;
+    const oldestQueuedAt = result.rows[0]?.oldest_queued_at ?? null;
+    return {
+      lastSuccessAt,
+      oldestQueuedAt,
+      queueAgeMs:
+        oldestQueuedAt === null
+          ? null
+          : Math.max(0, input.now.getTime() - oldestQueuedAt.getTime()),
+    };
+  }
+
+  async readObservabilityDropSummary(input: {
+    windowStart: Date;
+    windowEnd: Date;
+  }) {
+    assertObservabilityWindow(input.windowStart, input.windowEnd);
+    const result = await this.pool.query<{
+      signal: ObservabilityDropEvent['signal'];
+      reason: ObservabilityDropEvent['reason'];
+      source: string;
+      count: number;
+    }>(
+      `select signal, reason, source, sum(count)::int as count
+       from harness_runtime.observability_drop_events
+       where occurred_at >= $1::timestamptz
+         and occurred_at < $2::timestamptz
+       group by signal, reason, source
+       order by signal, reason, source`,
+      [input.windowStart.toISOString(), input.windowEnd.toISOString()],
+    );
+    return result.rows.map((row) => observabilityDropEventSchema.parse(row));
+  }
+
+  async activateObservabilityReconciliationCutover(
+    contractVersion = 'observability/v1',
+  ) {
+    const result = await this.pool.query<{ cutover_at: Date }>(
+      `insert into harness_runtime.observability_reconciliation_cutovers
+         (contract_version, cutover_at)
+       values ($1, clock_timestamp())
+       on conflict (contract_version) do update
+         set contract_version=excluded.contract_version
+       returning cutover_at`,
+      [contractVersion],
+    );
+    const cutoverAt = result.rows[0]?.cutover_at;
+    if (!cutoverAt) {
+      throw new Error('Observability reconciliation cutover was not activated.');
+    }
+    return cutoverAt;
+  }
+
+  async reconcileBusinessEventsToTraces(input: {
+    windowStart: Date;
+    windowEnd: Date;
+    contractVersion?: string;
+  }) {
+    assertObservabilityWindow(input.windowStart, input.windowEnd);
+    const contractVersion = input.contractVersion ?? 'observability/v1';
+    const result = await this.pool.query<{
+      action_usage_event_count: number;
+      business_event_count: number;
+      cutover_at: Date;
+      matched_count: number;
+      missing_trace_count: number;
+      orphan_trace_count: number;
+      rating_event_count: number;
+      trace_count: number;
+      undelivered_event_count: number;
+    }>(
+      `with cutover as (
+         select cutover_at
+         from harness_runtime.observability_reconciliation_cutovers
+         where contract_version=$1
+       ), eligible_events as (
+         select event.id, event.workflow_id, event.trace_id,
+                event.trace_contract_version
+         from harness_runtime.audit_events event, cutover
+         where event.event_type in (
+             'structured_decision_recorded',
+             'stage_decision_recorded',
+             'package_delivered'
+           )
+           and event.created_at >= greatest($2::timestamptz, cutover.cutover_at)
+           and event.created_at < $3::timestamptz
+       ), eligible_traces as (
+         select trace.id, trace.task_id
+         from harness_runtime.decision_traces trace, cutover
+         where trace.trace_contract_version=$1
+           and trace.created_at >= greatest($2::timestamptz, cutover.cutover_at)
+           and trace.created_at < $3::timestamptz
+       ), canonical_events as (
+         select event.id, event.event_type,
+                exists (
+                  select 1
+                  from harness_runtime.observability_drop_events drop_event
+                  where drop_event.audit_id=event.id
+                ) as dropped,
+                exists (
+                  select 1
+                  from harness_runtime.langfuse_outbox outbox
+                  where outbox.audit_id=event.id
+                ) as has_outbox
+         from harness_runtime.audit_events event
+         cross join cutover
+         where event.stage='observability_event_ingest'
+           and event.event_type in (
+             'delivery_rating.recorded',
+             'delivery_rating.withdrawn',
+             'action_usage.recorded'
+           )
+           and event.created_at >= greatest(
+             $2::timestamptz, cutover.cutover_at
+           )
+           and event.created_at < $3::timestamptz
+       ), event_facts as (
+         select event.id,
+                trace.id is not null as matched
+         from eligible_events event
+         left join harness_runtime.decision_traces trace
+           on trace.id=event.trace_id
+          and trace.task_id=event.workflow_id
+          and trace.trace_contract_version=$1
+          and event.trace_contract_version=$1
+       ), trace_facts as (
+         select trace.id,
+                event.id is not null as matched
+         from eligible_traces trace
+         left join harness_runtime.audit_events event
+           on event.trace_id=trace.id
+          and event.workflow_id=trace.task_id
+          and event.trace_contract_version=$1
+          and event.event_type in (
+            'structured_decision_recorded',
+            'stage_decision_recorded',
+            'package_delivered'
+          )
+       ), counts as (
+         select
+           (select count(*)::int from event_facts)
+             as business_event_count,
+           (select count(*)::int from trace_facts)
+             as trace_count,
+           (select count(*)::int from event_facts where matched)
+             as matched_count,
+           (select count(*)::int from event_facts where not matched)
+             as missing_trace_count,
+           (select count(*)::int from trace_facts where not matched)
+             as orphan_trace_count,
+           (select count(*)::int from canonical_events
+             where event_type in (
+               'delivery_rating.recorded', 'delivery_rating.withdrawn'
+             )) as rating_event_count,
+           (select count(*)::int from canonical_events
+             where event_type='action_usage.recorded')
+             as action_usage_event_count,
+           (select count(*)::int from canonical_events
+             where dropped or not has_outbox)
+             as undelivered_event_count,
+           cutover.cutover_at
+         from cutover
+       ), persisted as (
+         insert into harness_runtime.observability_reconciliation_runs
+           (contract_version, window_start, window_end, cutover_at,
+            business_event_count, trace_count, matched_count,
+            missing_trace_count, orphan_trace_count, rating_event_count,
+            action_usage_event_count, undelivered_event_count)
+         select $1, $2, $3, cutover_at, business_event_count, trace_count,
+                matched_count, missing_trace_count, orphan_trace_count,
+                rating_event_count, action_usage_event_count,
+                undelivered_event_count
+         from counts
+         on conflict (contract_version, window_start, window_end, cutover_at)
+         do update set
+           business_event_count=excluded.business_event_count,
+           trace_count=excluded.trace_count,
+           matched_count=excluded.matched_count,
+           missing_trace_count=excluded.missing_trace_count,
+           orphan_trace_count=excluded.orphan_trace_count,
+           rating_event_count=excluded.rating_event_count,
+           action_usage_event_count=excluded.action_usage_event_count,
+           undelivered_event_count=excluded.undelivered_event_count
+         returning 1
+       )
+       select counts.business_event_count, counts.trace_count,
+              counts.matched_count, counts.missing_trace_count,
+              counts.orphan_trace_count, counts.rating_event_count,
+              counts.action_usage_event_count,
+              counts.undelivered_event_count, counts.cutover_at
+       from counts, persisted`,
+      [
+        contractVersion,
+        input.windowStart.toISOString(),
+        input.windowEnd.toISOString(),
+      ],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error(
+        `Observability reconciliation cutover is not active for ${contractVersion}.`,
+      );
+    }
+    return {
+      businessEventCount: row.business_event_count,
+      traceCount: row.trace_count,
+      matchedCount: row.matched_count,
+      missingTraceCount: row.missing_trace_count,
+      orphanTraceCount: row.orphan_trace_count,
+      ratingEventCount: row.rating_event_count,
+      actionUsageEventCount: row.action_usage_event_count,
+      undeliveredEventCount: row.undelivered_event_count,
+      cutoverAt: row.cutover_at,
+    };
   }
 
   async replayLangfuseDeadLetter(auditId: string) {
     const result = await this.pool.query(
       `update harness_runtime.langfuse_outbox
        set status='queued', attempts=0, next_attempt_at=now(),
-           last_error=null, dead_lettered_at=null, updated_at=now()
+           last_error=null, dead_lettered_at=null,
+           delivery_generation=delivery_generation+1, updated_at=now()
        where audit_id=$1 and status='dead_letter'
        returning audit_id`,
       [auditId],
@@ -1549,22 +1903,24 @@ export class PostgresHarnessStore
     runtimeTaskId: string,
     trace: HarnessDecisionTrace,
   ) {
+    const runtimeTraceId = this.runtimeObjectId(
+      workspaceId,
+      trace.taskId,
+      runtimeTaskId,
+      trace.id,
+    );
     await client.query(
       `insert into harness_runtime.decision_traces
-         (id, task_id, stage, payload)
-       values ($1,$2,$3,$4)`,
+         (id, task_id, stage, payload, trace_contract_version)
+       values ($1,$2,$3,$4,'observability/v1')`,
       [
-        this.runtimeObjectId(
-          workspaceId,
-          trace.taskId,
-          runtimeTaskId,
-          trace.id,
-        ),
+        runtimeTraceId,
         runtimeTaskId,
         trace.stage,
         JSON.stringify(trace),
       ],
     );
+    return runtimeTraceId;
   }
 
   private async writeGeneralTrace(
@@ -1578,23 +1934,25 @@ export class PostgresHarnessStore
       payload: unknown;
     },
   ) {
+    const runtimeTraceId = this.runtimeObjectId(
+      input.workspaceId,
+      input.taskId,
+      runtimeTaskId,
+      input.id,
+    );
     await client.query(
       `insert into harness_runtime.decision_traces
-         (id, task_id, stage, payload)
-       values ($1,$2,$3,$4)
+         (id, task_id, stage, payload, trace_contract_version)
+       values ($1,$2,$3,$4,'observability/v1')
        on conflict (id) do nothing`,
       [
-        this.runtimeObjectId(
-          input.workspaceId,
-          input.taskId,
-          runtimeTaskId,
-          input.id,
-        ),
+        runtimeTraceId,
         runtimeTaskId,
         input.stage,
         JSON.stringify(input.payload),
       ],
     );
+    return runtimeTraceId;
   }
 
   private async writeAuditAndOutbox(
@@ -1610,12 +1968,15 @@ export class PostgresHarnessStore
     );
     await client.query(
       `insert into harness_runtime.audit_events
-         (id, workflow_id, stage, event_type, payload)
-       values ($1,$2,$3,$4,$5)
+         (id, workflow_id, trace_id, trace_contract_version, stage,
+          event_type, payload)
+       values ($1,$2,$3,$4,$5,$6,$7)
        on conflict (id) do nothing`,
       [
         auditId,
         runtimeWorkflowId,
+        event.traceId ?? null,
+        event.traceContractVersion ?? null,
         event.stage,
         event.eventType,
         JSON.stringify(event.payload),
@@ -1713,6 +2074,18 @@ export class PostgresHarnessStore
     return runtimeWorkflowId === logicalWorkflowId
       ? logicalObjectId
       : harnessRuntimeId(workspaceId, logicalObjectId);
+  }
+}
+
+function assertObservabilityWindow(windowStart: Date, windowEnd: Date) {
+  if (
+    !Number.isFinite(windowStart.getTime()) ||
+    !Number.isFinite(windowEnd.getTime()) ||
+    windowEnd.getTime() <= windowStart.getTime()
+  ) {
+    throw new Error(
+      'Observability reconciliation window end must follow its start.',
+    );
   }
 }
 

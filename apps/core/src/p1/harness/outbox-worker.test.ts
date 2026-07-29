@@ -183,6 +183,35 @@ test('permanent Langfuse configuration failure dead-letters immediately through 
   ]);
 });
 
+test('a lease crash at the attempt limit is dead-lettered without another send', async () => {
+  const store = new MemoryOutboxStore();
+  let sends = 0;
+  const worker = new HarnessLangfuseOutboxWorker(
+    store,
+    {
+      async send() {
+        sends += 1;
+      },
+    },
+    { maxAttempts: 0 },
+  );
+
+  assert.deepEqual(await worker.runOnce(), {
+    sent: 0,
+    failed: 1,
+    deadLettered: 1,
+  });
+  assert.equal(sends, 0);
+  assert.deepEqual(store.deadLetterDrops.get('audit-1'), [
+    {
+      signal: 'trace',
+      reason: 'transient',
+      count: 1,
+      source: 'langfuse_outbox',
+    },
+  ]);
+});
+
 test('Langfuse outbox retry and lease settings can be read from admin-config', async () => {
   let claimed: [number, number] | undefined;
   let retryAt: Date | undefined;

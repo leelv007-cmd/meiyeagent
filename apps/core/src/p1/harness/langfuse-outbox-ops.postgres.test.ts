@@ -60,6 +60,14 @@ test(
       await store.markLangfuseDeadLetter(
         runtimeAuditId,
         'operator acceptance fixture',
+        [
+          {
+            signal: 'trace',
+            reason: 'transient',
+            count: 1,
+            source: 'langfuse_outbox',
+          },
+        ],
       );
     };
     const runCli = (action: 'replay' | 'discard', auditId: string) =>

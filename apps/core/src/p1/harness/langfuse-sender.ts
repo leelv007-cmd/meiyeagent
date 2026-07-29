@@ -94,6 +94,10 @@ export class LangfuseHttpSender implements HarnessLangfuseSender {
     this.datasetItemsUrl = `${baseUrl}/api/public/dataset-items`;
   }
 
+  describeSignals(item: HarnessLangfuseOutboxItem) {
+    return describePlannedSignals(item);
+  }
+
   async send(item: HarnessLangfuseOutboxItem) {
     let projection: ReturnType<typeof mapOutboxItem>;
     try {
@@ -191,6 +195,7 @@ export function langfuseSenderFromEnv(
   ].filter((name) => !env[name]?.trim());
   if (missing.length > 0) {
     return {
+      describeSignals: describePlannedSignals,
       async send(item) {
         throw deliveryFailure(
           `Harness Langfuse sender is not configured: ${missing.join(', ')}.`,
@@ -289,6 +294,14 @@ function operationSource(operation: string) {
 }
 
 function mapOutboxItem(item: HarnessLangfuseOutboxItem) {
+  if (
+    item.traceContractVersion === 'observability/v1' &&
+    item.decisionTrace === undefined
+  ) {
+    throw new Error(
+      'Post-contract observability audit is missing its exact decision trace.',
+    );
+  }
   const taskId = harnessLogicalId(item.workflowId);
   const parsedObservabilityEvent = observabilityEventSchema.safeParse(
     item.payload,
@@ -309,7 +322,7 @@ function mapOutboxItem(item: HarnessLangfuseOutboxItem) {
         scene: observabilityEvent.scene,
       }
     : {};
-  const traceId = stableUuid(`trace:${item.workflowId}`);
+  const traceId = langfuseTraceId(item.workflowId);
   const spanId = stableUuid(
     `span:${item.workflowId}:${item.stage}:${item.auditId}`,
   );
@@ -801,6 +814,10 @@ function exactFields<const Fields extends readonly string[]>(
   return Object.fromEntries(
     fields.map((field) => [field, input[field as Fields[number]]]),
   );
+}
+
+export function langfuseTraceId(workflowId: string) {
+  return stableUuid(`trace:${workflowId}`);
 }
 
 function stableUuid(seed: string) {

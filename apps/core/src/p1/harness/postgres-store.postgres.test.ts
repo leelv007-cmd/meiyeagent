@@ -346,6 +346,14 @@ test(
       await store.markLangfuseDeadLetter(
         finalAttemptItem.auditId,
         'attempt limit reached',
+        [
+          {
+            signal: 'trace',
+            reason: 'transient',
+            count: 1,
+            source: 'langfuse_outbox',
+          },
+        ],
       );
       const deadLetter = await pool.query<{
         status: string;

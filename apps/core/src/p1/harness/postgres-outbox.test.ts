@@ -30,7 +30,7 @@ test('Harness schema migration stays inside the shared advisory-lock transaction
   assert.equal(statements.at(-1), 'COMMIT');
 });
 
-test('Langfuse outbox schema has terminal dead-letter states and claim cap', async () => {
+test('Langfuse outbox schema exposes terminal states without silently dropping expired leases', async () => {
   const statements: string[] = [];
   const pool = {
     async query(statement: string) {
@@ -45,10 +45,212 @@ test('Langfuse outbox schema has terminal dead-letter states and claim cap', asy
   assert.match(schema, /'dead_letter'/u);
   assert.match(schema, /'discarded'/u);
   assert.match(schema, /dead_lettered_at/u);
+  assert.match(schema, /sent_at/u);
+  assert.match(schema, /observability_drop_events/u);
+  assert.match(schema, /trace_id/u);
 
   await store.claimLangfuseBatch(5, 300, 3);
   assert.equal(statements.length, 2);
-  assert.match(statements[1] ?? '', /attempts < \$3/u);
+  assert.doesNotMatch(statements[1] ?? '', /over_limit/u);
+  assert.doesNotMatch(statements[1] ?? '', /attempts < \$3/u);
+});
+
+test('post-contract claims use the physical trace id and never the latest stage fallback', async () => {
+  let calls = 0;
+  const pool = {
+    async query() {
+      calls += 1;
+      if (calls === 1) {
+        return {
+          rows: [
+            {
+              audit_id: 'audit-1',
+              attempts: 1,
+              workflow_id: 'workflow-1',
+              trace_id: 'trace-required',
+              trace_contract_version: null,
+              post_contract: true,
+              stage: 'execution_selection',
+              event_type: 'stage_decision_recorded',
+              payload: { traceId: 'legacy-logical-id' },
+              created_at: new Date('2026-07-29T09:00:00.000Z'),
+            },
+          ],
+        };
+      }
+      return {
+        rows: [
+          {
+            id: 'trace-required',
+            task_id: 'workflow-1',
+            stage: 'execution_selection',
+            trace_contract_version: null,
+            payload: { winnerCandidateId: 'wrong-version' },
+          },
+        ],
+      };
+    },
+  } as unknown as Pool;
+  const store = new PostgresHarnessStore(pool);
+
+  assert.deepEqual(await store.claimLangfuseBatch(1), [
+    {
+      auditId: 'audit-1',
+      workflowId: 'workflow-1',
+      traceContractVersion: 'observability/v1',
+      stage: 'execution_selection',
+      eventType: 'stage_decision_recorded',
+      occurredAt: '2026-07-29T09:00:00.000Z',
+      payload: { traceId: 'legacy-logical-id' },
+      attempts: 1,
+    },
+  ]);
+});
+
+test('dead-letter transition and independent drop rows share one SQL statement', async () => {
+  const calls: Array<{ statement: string; values?: unknown[] }> = [];
+  const pool = {
+    async query(statement: string, values?: unknown[]) {
+      calls.push({ statement, values });
+      return { rows: [{ transitioned_count: 1 }], rowCount: 1 };
+    },
+  } as unknown as Pool;
+  const store = new PostgresHarnessStore(pool);
+
+  await store.markLangfuseDeadLetter('audit-1', 'invalid credentials', [
+    {
+      signal: 'trace',
+      reason: 'permanent-config',
+      count: 2,
+      source: 'langfuse_ingestion',
+    },
+  ]);
+
+  assert.equal(calls.length, 1);
+  assert.match(calls[0]?.statement ?? '', /status='dead_letter'/u);
+  assert.match(calls[0]?.statement ?? '', /returning audit_id/u);
+  assert.match(
+    calls[0]?.statement ?? '',
+    /insert into harness_runtime\.observability_drop_events/u,
+  );
+  assert.doesNotMatch(calls[0]?.statement ?? '', /audit_events/u);
+  assert.deepEqual(calls[0]?.values, [
+    'audit-1',
+    'invalid credentials',
+    JSON.stringify([
+      {
+        signal: 'trace',
+        reason: 'permanent-config',
+        count: 2,
+        source: 'langfuse_ingestion',
+      },
+    ]),
+  ]);
+});
+
+test('delivery health measures the oldest queued work independent of retry readiness', async () => {
+  const calls: string[] = [];
+  const pool = {
+    async query(statement: string) {
+      calls.push(statement);
+      return {
+        rows: [
+          {
+            last_success_at: new Date('2026-07-29T09:59:00.000Z'),
+            oldest_queued_at: new Date('2026-07-29T09:58:30.000Z'),
+          },
+        ],
+      };
+    },
+  } as unknown as Pool;
+  const store = new PostgresHarnessStore(pool);
+
+  assert.deepEqual(
+    await store.readObservabilityDeliveryHealth({
+      now: new Date('2026-07-29T10:00:00.000Z'),
+    }),
+    {
+      lastSuccessAt: new Date('2026-07-29T09:59:00.000Z'),
+      oldestQueuedAt: new Date('2026-07-29T09:58:30.000Z'),
+      queueAgeMs: 90_000,
+    },
+  );
+  assert.match(calls[0] ?? '', /status in \('queued','failed','sending'\)/u);
+  assert.doesNotMatch(calls[0] ?? '', /next_attempt_at\s*<=/u);
+});
+
+test('reconciliation includes broken trace-backed events and derives delivery loss from drops', async () => {
+  const calls: string[] = [];
+  const pool = {
+    async query(statement: string) {
+      calls.push(statement);
+      return {
+        rows: [
+          {
+            action_usage_event_count: 0,
+            business_event_count: 1,
+            cutover_at: new Date('2026-07-29T09:00:00.000Z'),
+            matched_count: 0,
+            missing_trace_count: 1,
+            orphan_trace_count: 0,
+            rating_event_count: 1,
+            trace_count: 0,
+            undelivered_event_count: 1,
+          },
+        ],
+      };
+    },
+  } as unknown as Pool;
+  const store = new PostgresHarnessStore(pool);
+
+  await store.reconcileBusinessEventsToTraces({
+    windowStart: new Date('2026-07-29T09:00:00.000Z'),
+    windowEnd: new Date('2026-07-29T10:00:00.000Z'),
+  });
+
+  assert.match(
+    calls[0] ?? '',
+    /event\.event_type in \([\s\S]*'structured_decision_recorded'[\s\S]*'stage_decision_recorded'[\s\S]*'package_delivered'/u,
+  );
+  assert.match(calls[0] ?? '', /observability_drop_events/u);
+  assert.match(calls[0] ?? '', /langfuse_outbox/u);
+});
+
+test('drop aggregation is queryable by signal, reason, and source', async () => {
+  const calls: string[] = [];
+  const pool = {
+    async query(statement: string) {
+      calls.push(statement);
+      return {
+        rows: [
+          {
+            signal: 'score',
+            reason: 'transient',
+            source: 'langfuse_ingestion',
+            count: 3,
+          },
+        ],
+      };
+    },
+  } as unknown as Pool;
+  const store = new PostgresHarnessStore(pool);
+
+  assert.deepEqual(
+    await store.readObservabilityDropSummary({
+      windowStart: new Date('2026-07-29T09:00:00.000Z'),
+      windowEnd: new Date('2026-07-29T10:00:00.000Z'),
+    }),
+    [
+      {
+        signal: 'score',
+        reason: 'transient',
+        source: 'langfuse_ingestion',
+        count: 3,
+      },
+    ],
+  );
+  assert.match(calls[0] ?? '', /sum\(count\)::int/u);
+  assert.match(calls[0] ?? '', /group by signal, reason, source/u);
 });
 
 test('operator replay and discard only move dead-letter rows', async () => {

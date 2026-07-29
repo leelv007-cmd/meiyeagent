@@ -206,6 +206,7 @@ import { HarnessProductBillingSettlementExecutor } from './p1/harness/product-bi
 import { PostgresNoteMediaAdmissionCoordinator } from './p1/harness/note-media-admission.js';
 import { unconfiguredNotePlanEnhancementJudgeResolver } from './p1/harness/note-plan-structured-port.js';
 import { HarnessResumeReconciler } from './p1/harness/resume-reconciler.js';
+import { HarnessObservabilityReconciler } from './p1/harness/observability-reconciliation.js';
 import {
   DEFAULT_CONFIRMATION_CARD_HOLD_TIMEOUT_SECONDS,
   DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS,
@@ -497,6 +498,7 @@ await migratePostgresSchema(pool, [
   new PostgresEntitlementPoolsMigration(),
   new PostgresAdminSupplyMigration(),
 ]);
+await promptAuditStore.activateObservabilityReconciliationCutover();
 const integrationSecrets = integrationSecretStoreFromEnv(process.env);
 const credentialRotationReceipts = new PostgresCredentialRotationReceiptStore(
   pool,
@@ -1708,6 +1710,9 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
 });
 let harnessWorkflowEventSource: HarnessWorkflowEventSource | undefined;
 let harnessCompensationInterval: ReturnType<typeof setInterval> | undefined;
+let observabilityReconciliationInterval:
+  | ReturnType<typeof setInterval>
+  | undefined;
 let expirationInvalidationInterval: ReturnType<typeof setInterval> | undefined;
 let expirationInvalidationRunning = false;
 const promptOutboxWorker = new HarnessLangfuseOutboxWorker(
@@ -1725,6 +1730,32 @@ const promptOutboxLoop = new HarnessLangfuseOutboxLoop(
   },
 );
 promptOutboxLoop.start();
+const observabilityReconciler = new HarnessObservabilityReconciler(
+  promptAuditStore,
+  {
+    onViolation(violation) {
+      console.warn('Harness observability drift detected.', violation);
+    },
+  },
+);
+let observabilityReconciliationRunning = false;
+const runObservabilityReconciliation = async () => {
+  if (observabilityReconciliationRunning) return;
+  observabilityReconciliationRunning = true;
+  try {
+    await observabilityReconciler.runOnce();
+  } catch (error) {
+    console.error('Harness observability reconciliation failed.', error);
+  } finally {
+    observabilityReconciliationRunning = false;
+  }
+};
+observabilityReconciliationInterval = setInterval(
+  () => void runObservabilityReconciliation(),
+  5 * 60_000,
+);
+observabilityReconciliationInterval.unref();
+void runObservabilityReconciliation();
 const expirationInvalidationWorkerId =
   process.env.P1_FACT_EXPIRATION_WORKER_ID ?? `core-${randomUUID()}`;
 const runExpirationInvalidation = async () => {
@@ -2176,6 +2207,9 @@ const shutdown = () => {
     clearInterval(expirationInvalidationInterval);
   }
   if (harnessCompensationInterval) clearInterval(harnessCompensationInterval);
+  if (observabilityReconciliationInterval) {
+    clearInterval(observabilityReconciliationInterval);
+  }
   promptOutboxLoop.stop();
   void shutdownCoreRuntime({
     closeHttp: () => closeHttpServerWithDeadline(server, 5_000),

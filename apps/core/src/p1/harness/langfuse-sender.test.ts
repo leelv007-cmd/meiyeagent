@@ -734,6 +734,39 @@ test('missing Langfuse configuration fails closed instead of acknowledging deliv
   );
 });
 
+test('post-contract trace-backed audit without its exact trace fails closed', async () => {
+  let requests = 0;
+  const sender = new LangfuseHttpSender({
+    baseUrl: 'https://langfuse.invalid',
+    publicKey: 'pk-test',
+    secretKey: 'sk-test',
+    async fetch() {
+      requests += 1;
+      return new Response('{}', { status: 200 });
+    },
+  });
+
+  await assert.rejects(
+    sender.send({
+      ...selectionItem(),
+      traceContractVersion: 'observability/v1',
+      decisionTrace: undefined,
+    }),
+    (error: unknown) => {
+      assert.deepEqual((error as { drops?: unknown }).drops, [
+        {
+          signal: 'trace',
+          reason: 'permanent-config',
+          count: 1,
+          source: 'langfuse_projection',
+        },
+      ]);
+      return true;
+    },
+  );
+  assert.equal(requests, 0);
+});
+
 function selectionItem(): HarnessLangfuseOutboxItem {
   return {
     auditId: 'audit-task-48-execution-r1',

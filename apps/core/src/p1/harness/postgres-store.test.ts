@@ -180,7 +180,14 @@ test('Langfuse dead letters use an additive terminal marker', async () => {
   const store = new PostgresHarnessStore(pool);
 
   await store.migrate(pool as unknown as import('pg').PoolClient);
-  await store.markLangfuseDeadLetter('audit-1', 'attempt limit reached');
+  await store.markLangfuseDeadLetter('audit-1', 'attempt limit reached', [
+    {
+      signal: 'trace',
+      reason: 'transient',
+      count: 1,
+      source: 'langfuse_outbox',
+    },
+  ]);
 
   assert.ok(
     queries[0]?.statement.includes(
@@ -192,7 +199,7 @@ test('Langfuse dead letters use an additive terminal marker', async () => {
     /set status='dead_letter'[\s\S]*where status='failed' and dead_lettered_at is not null/u,
   );
   assert.match(queries[1]!.statement, /dead_lettered_at=now\(\)/u);
-  assert.deepEqual(queries[1]!.values, [
+  assert.deepEqual(queries[1]!.values?.slice(0, 2), [
     'audit-1',
     'attempt limit reached',
   ]);
