@@ -70,6 +70,32 @@ test('Harness redlines always block and report canonical gate violations', async
   );
 });
 
+test('a runtime red-line override supplied as data stays inert', async () => {
+  // Operators govern Skill content and bindings; red lines go through
+  // compliance review instead. The compile-time guards below cannot protect a
+  // path that reaches check() with values read from configuration, so this
+  // asserts the override is ignored at runtime rather than merely untypeable.
+  const input = safeHarnessPolicyInput();
+  input.sourceRefs[0]!.workspaceId = 'workspace-foreign';
+
+  const smuggled = {
+    input,
+    onViolation() {},
+    strategy: 'warn',
+    sample: 0,
+  } as unknown as Parameters<typeof checkHarnessRedlines>[0];
+
+  const result = await checkHarnessRedlines(smuggled);
+
+  assert.equal(result.strategy, 'block');
+  assert.equal(result.allowed, false);
+  assert.equal(result.status, 'blocked');
+  assert.deepEqual(
+    result.violations.map(({ gateId }) => gateId),
+    ['cross_workspace_lineage']
+  );
+});
+
 function compileOnlyHarnessRedlineConstraints(input: HarnessPolicyInput) {
   void checkHarnessRedlines({
     input,
