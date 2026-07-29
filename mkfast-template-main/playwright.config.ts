@@ -117,6 +117,10 @@ export default defineConfig({
       name: 'P1 Worker',
       command: [
         `DATABASE_URL='${databaseURL}'`,
+        // Same DBOS system database as the core block: the worker's terminal
+        // notifier (DBOS.send) must land where core's DBOS.recv waits, or
+        // every image/video journey stalls into the 150s media timeout.
+        `HARNESS_DBOS_SYSTEM_DATABASE_URL='${dbosSystemDatabaseURL}'`,
         `APP_BASE_URL=${baseURL}`,
         'CORE_SERVICE_TOKEN=local-core-service-token',
         `JOB_QUEUE_PREFIX=${jobQueuePrefix}`,

@@ -17,7 +17,12 @@ test('Playwright provisions an isolated DBOS database and enables the real Harne
     /pnpm db:migrate:local/u,
     'the authoritative provision step must be the only migration apply path'
   );
-  assert.match(config, /HARNESS_DBOS_SYSTEM_DATABASE_URL/u);
+  assert.equal(
+    config.match(/HARNESS_DBOS_SYSTEM_DATABASE_URL='\$\{dbosSystemDatabaseURL\}'/gu)
+      ?.length,
+    2,
+    'core and the P1 worker must share the DBOS system database'
+  );
   assert.match(config, /MODEL_EXECUTION_MODE=fixture/u);
   assert.equal(
     config.match(/JOB_QUEUE_PREFIX=\$\{jobQueuePrefix\}/gu)?.length,
