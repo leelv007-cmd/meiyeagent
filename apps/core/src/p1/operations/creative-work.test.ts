@@ -176,6 +176,7 @@ function setup(
     get(workspaceId: string): Promise<'legacy' | 'frozen' | 'contentpackage'>;
   },
   billingLifecycle?: BillingLifecyclePort,
+  clock?: () => Date,
 ) {
   const repository = new MemoryOperationsRepository();
   repository.grantMembership(owner.userId, owner.workspaceId);
@@ -193,6 +194,7 @@ function setup(
   const service = new OperationsApplicationService(repository, {
     assetDataClassResolver,
     billingLifecycle: billingLifecycle ?? defaultBillingLifecycle,
+    clock,
     canvasExporter: {
       async export() {
         throw new Error('not used');
@@ -680,6 +682,83 @@ describe('creative work lifecycle', () => {
         ({ action }) => action === 'creative_generation.approval_consumed',
       ),
     );
+  });
+
+  it('rejects an expired generation approval and remains recoverable with a fresh receipt', async () => {
+    let now = new Date('2026-07-18T08:00:00.000Z');
+    const { service } = setup(
+      new RecordedCreationExecutor(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      () => now,
+    );
+    const work = await service.createCreativeWork(owner, {
+      autoConfirmBrief: true,
+      intent: '生成一条门店服务视频',
+      mode: 'direct',
+      operation: 'video.generate',
+      sessionId: 'session-expiring-video-approval',
+      sourceReferences: [],
+    });
+    const videoContract: CreativeExecutionContract & {
+      aspectRatio: '9:16';
+      durationSeconds: 15;
+      operation: 'video.generate';
+    } = {
+      ...contract,
+      aspectRatio: '9:16',
+      contentModules: ['social_cover'],
+      durationSeconds: 15,
+      estimatedAmount: 12,
+      operation: 'video.generate',
+      outputCount: 1,
+      outputLabel: '1 条视频',
+      quoteRevision: 'quote-video-expiry-v1',
+    };
+    const expired = await service.approveCreativeGeneration(owner, {
+      approvalKey: 'approval-video-expired',
+      contract: videoContract,
+      workId: work.id,
+    });
+    assert.equal(expired.expiresAt, '2026-07-18T08:15:00.000Z');
+    now = new Date(expired.expiresAt);
+
+    const confirmation = {
+      actorId: owner.userId,
+      aigcLabelEnabled: videoContract.aigcLabelEnabled,
+      catalogModelId: videoContract.catalogModelId,
+      dataClass: [],
+      executionContract: videoContract,
+      referenceAssetIds: [] as string[],
+      shots: [{ id: 'shot-expiry', prompt: '门店服务过程' }],
+      storyboardRevision: 'storyboard-expiry-v1',
+      storyboardVersion: 1,
+      workflowId: 'video-workflow-expiry',
+      workspaceId: owner.workspaceId,
+      workId: work.id,
+    };
+    await assert.rejects(
+      service.confirmVideoContentPackage(owner, {
+        ...confirmation,
+        approvalReceiptId: expired.id,
+      }),
+      (error: unknown) =>
+        error instanceof OperationsError &&
+        error.code === 'CREATIVE_GENERATION_APPROVAL_REQUIRED',
+    );
+
+    const fresh = await service.approveCreativeGeneration(owner, {
+      approvalKey: 'approval-video-fresh',
+      contract: videoContract,
+      workId: work.id,
+    });
+    const result = await service.confirmVideoContentPackage(owner, {
+      ...confirmation,
+      approvalReceiptId: fresh.id,
+    });
+    assert.equal(result.kind, 'video');
   });
 
   it('persists AI and merchant Brief ownership through adopt, edit, revert and confirm', async () => {

@@ -184,6 +184,38 @@ test("image and video use the existing Model Supply path with stable submission 
 	}
 });
 
+test("media queue submission stops before the provider when durable rights are withdrawn", async () => {
+	let submissions = 0;
+	const adapter = new ModelSupplyHarnessMediaExecutionPort({
+		async submit() {
+			submissions += 1;
+			return completedResult("image");
+		},
+	});
+	const context = contextSnapshot();
+	context.policyReferences.rightsRefs = [
+		{
+			assetId: "asset-1",
+			allowedUses: ["public_content"],
+			status: "withdrawn",
+			workspaceId: "workspace-1",
+		},
+	];
+
+	await assert.rejects(
+		adapter.execute({
+			brief: mediaBrief("image"),
+			context,
+			request: harnessInput("image", "package-image-policy-bypass"),
+			workflowId: "workflow-image-policy-bypass",
+		}),
+		(error: unknown) =>
+			error instanceof HarnessSelectionError &&
+			error.gateIds.includes("subject_asset_rights"),
+	);
+	assert.equal(submissions, 0);
+});
+
 test("three canonical image operations map to the two existing provider operations", async () => {
 	for (const [operation, referenceCount, nativeOperation] of [
 		["image.generate", 0, "image.generate"],
@@ -199,7 +231,12 @@ test("three canonical image operations map to the two existing provider operatio
 		});
 		await adapter.execute({
 			brief: imageBriefFor(operation, referenceCount),
-			context: contextSnapshot(),
+			context: contextSnapshot(
+				Array.from(
+					{ length: referenceCount },
+					(_, index) => `asset-${index + 1}`,
+				),
+			),
 			request: harnessInput(
 				"image",
 				`package-${operation}`,
@@ -251,7 +288,7 @@ test("image execution validates the selected recipe profile and preserves slot-n
 
 	await adapter.execute({
 		brief: imageBriefFor("image.reference_transform", 2),
-		context: contextSnapshot(),
+		context: contextSnapshot(["asset-1", "asset-2"]),
 		request: harnessInput(
 			"image",
 			"package-reference-transform",
@@ -288,7 +325,7 @@ test("image execution validates the selected recipe profile and preserves slot-n
 	await assert.rejects(
 		adapter.execute({
 			brief: invalidBrief,
-			context: contextSnapshot(),
+			context: contextSnapshot(["asset-1", "asset-2"]),
 			request: harnessInput(
 				"image",
 				"package-profile-invalid",
@@ -988,8 +1025,10 @@ test("media delivery blocks malicious visible copy before the canonical writer",
 test("media closeout enforces authoritative source rights and expression identity", async () => {
 	const request = harnessInput("image", "package-image-authority");
 	const brief = imageBriefFor("image.edit", 1);
+	let submissions = 0;
 	const media = new ModelSupplyHarnessMediaExecutionPort({
 		async submit() {
+			submissions += 1;
 			return completedResult("image");
 		},
 	});
@@ -1009,54 +1048,19 @@ test("media closeout enforces authoritative source rights and expression identit
 			status: "withdrawn",
 		},
 	];
-	let writes = 0;
-	const ports = new UnifiedHarnessStagePorts(
-		unsupportedCopyPorts(),
-		{
-			create() {
-				throw new Error("Media delivery does not compile a copy brief.");
-			},
-		},
-		media,
-		{
-			async write() {
-				writes += 1;
-				throw new Error("The authority gate must run before this writer.");
-			},
-		},
-		() => "2026-07-22T09:00:01.000Z",
-	);
-	const selection = await media.execute({
-		brief,
-		context,
-		request,
-		workflowId: request.executionSnapshot!.task.id,
-	});
-
 	await assert.rejects(
-		ports.assembleMediaAndDeliver({
-			workflowId: request.executionSnapshot!.task.id,
-			request,
-			declaration: {
-				normalizedIntent: "制作护理海报",
-				taskType: "promotion_groupbuy_conversion",
-				deliveryLayer: "finished_media",
-				relevantAssetCategories: ["promotion_activity"],
-				usedAssetCategories: ["promotion_activity"],
-				route: "customized",
-				routingSource: "model",
-				implicitConstraints: [],
-			},
-			context,
+		media.execute({
 			brief,
-			selection,
+			context,
+			request,
+			workflowId: request.executionSnapshot!.task.id,
 		}),
 		(error: unknown) =>
 			error instanceof HarnessSelectionError &&
 			error.gateIds.includes("subject_asset_rights") &&
 			error.gateIds.includes("expression_identity"),
 	);
-	assert.equal(writes, 0);
+	assert.equal(submissions, 0);
 });
 
 test("media closeout evaluates frozen price sources against delivery-time freshness", async () => {
@@ -1349,7 +1353,7 @@ test("an unknown durable media outcome stays on its stable reconciliation key", 
 	await assert.rejects(
 		adapter.execute({
 			brief: mediaBrief("video"),
-			context: {} as HarnessContextSnapshot,
+			context: contextSnapshot(),
 			request,
 			workflowId: "task-video",
 		}),
@@ -2183,7 +2187,9 @@ function unsupportedCopyPorts(): HarnessStagePorts {
 	};
 }
 
-function contextSnapshot(): HarnessContextSnapshot {
+function contextSnapshot(
+	authorizedAssetIds: readonly string[] = ["asset-1"],
+): HarnessContextSnapshot {
 	return {
 		bundle: {
 			bundleId: "bundle-1",
@@ -2218,14 +2224,12 @@ function contextSnapshot(): HarnessContextSnapshot {
 		activeFacts: [],
 		policyReferences: {
 			sourceRefs: [],
-			rightsRefs: [
-				{
-					assetId: "asset-1",
+				rightsRefs: authorizedAssetIds.map((assetId) => ({
+					assetId,
 					workspaceId: "workspace-1",
-					status: "authorized",
-					allowedUses: ["public_content"],
-				},
-			],
+					status: "authorized" as const,
+					allowedUses: ["public_content"] as const,
+				})),
 			identityRefs: [
 				{
 					id: "marketing_identity:identity-1:identity-r1",

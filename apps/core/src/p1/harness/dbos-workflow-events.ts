@@ -11,6 +11,10 @@ import {
 import type { HarnessWorkflowEventReader } from '../workflow-events.js';
 import { merchantFailureReport } from './merchant-delivery-language.js';
 import { harnessRuntimeId } from './workspace-scope.js';
+import {
+  authorizeHarnessAction,
+  HarnessActionAuthorizationError,
+} from './action-registry.js';
 
 export interface HarnessWorkflowEventAccess {
   taskBelongsToWorkspace(taskId: string, workspaceId: string): Promise<boolean>;
@@ -56,6 +60,10 @@ export class HarnessDbosWorkflowEventReader
     workflowId: string,
     signal: AbortSignal,
   ): AsyncIterable<WorkflowProgressEnvelope | WorkflowTokenEnvelope> {
+    authorizeHarnessAction({
+      actionId: 'workflow.subscription',
+      caller: 'server',
+    });
     const runtimeWorkflowId = await this.runtimeId(workspaceId, workflowId);
     const iterator = this.transport
       .readStream(runtimeWorkflowId, 'progress')
@@ -79,6 +87,10 @@ export class HarnessDbosWorkflowEventReader
     workflowId: string,
     _signal: AbortSignal,
   ) {
+    authorizeHarnessAction({
+      actionId: 'workflow.subscription',
+      caller: 'server',
+    });
     const runtimeWorkflowId = await this.runtimeId(workspaceId, workflowId);
     try {
       const result = await this.transport.getResult(runtimeWorkflowId);
@@ -120,6 +132,11 @@ export class HarnessDbosWorkflowEventReader
   }
 
   private async runtimeId(workspaceId: string, workflowId: string) {
+    if (!(await this.access.taskBelongsToWorkspace(workflowId, workspaceId))) {
+      throw new HarnessActionAuthorizationError(
+        'The Harness subscription is not authorized for this workspace.',
+      );
+    }
     return (
       (await this.access.workflowRuntimeId(workspaceId, workflowId)) ??
       harnessRuntimeId(workspaceId, workflowId)

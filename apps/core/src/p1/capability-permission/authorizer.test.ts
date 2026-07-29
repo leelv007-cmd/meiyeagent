@@ -118,6 +118,38 @@ test('authorizer default-denies unregistered module/action pairs', () => {
   );
 });
 
+test('claimed capabilities cannot authorize unregistered propose or confirm actions', () => {
+  for (const action of [
+    'propose_unlisted_action',
+    'confirm_unlisted_action',
+  ]) {
+    const decision = authorizer.decide({
+      actor: 'operator',
+      kind: 'command',
+      module: 'operations',
+      action,
+      permissions: ['content.create'],
+    } as Parameters<typeof authorizer.decide>[0] & {
+      permissions: string[];
+    });
+    assert.deepEqual(decision, {
+      allow: false,
+      required: null,
+      reason: 'unregistered',
+    });
+  }
+
+  assert.equal(
+    authorizer.decide({
+      actor: 'operator',
+      kind: 'command',
+      module: 'operations',
+      action: 'confirm_creative_work_brief',
+    }).allow,
+    true,
+  );
+});
+
 test('authorizer preserves publication.handoff for operators (#83 consumer)', () => {
   const decision = authorizer.decide({
     actor: 'operator',

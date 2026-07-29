@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
+import { authorizeHarnessAction } from './action-registry.js';
 
 export interface HarnessDecisionEvent {
   id: string;
@@ -284,6 +285,10 @@ export class HarnessDecisionService {
         'The decision target does not match the authoritative question.'
       );
     }
+    authorizeHarnessAction({
+      actionId: 'workflow.decision_resume',
+      caller: 'server',
+    });
     const payloadFingerprint = fingerprintValue(command);
     const event: HarnessDecisionEvent = {
       id: `event-${taskId}-${command.questionId}-${command.idempotencyKey}`,

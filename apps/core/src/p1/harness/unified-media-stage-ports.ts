@@ -24,6 +24,8 @@ import {
 	type HarnessStructuredNodeRunnerFactory,
 	validateHarnessVisibleDelivery,
 } from "./production-stage-ports.js";
+import { validateHarnessPolicy } from "./policy-gates.js";
+import { authorizeHarnessAction } from "./action-registry.js";
 import {
   harnessMediaJobTopic,
   type HarnessContextSnapshot,
@@ -930,9 +932,45 @@ export class ModelSupplyHarnessMediaExecutionPort
 		awaitSignal?: HarnessSignalReceiver;
 		runStep?: HarnessEffectRunner;
 	}): Promise<HarnessMediaSelectionResult> {
-		const snapshot = requireSnapshot(input.request);
-		assertBriefMatchesSnapshot(input.brief, snapshot);
-		const noteAdmissionInput =
+			authorizeHarnessAction({
+				actionId: "workflow.media_queue_submit",
+				caller: "server",
+			});
+			const snapshot = requireSnapshot(input.request);
+			assertBriefMatchesSnapshot(input.brief, snapshot);
+			const expressionIdentityRef = isOfficialNeutralIdentity(snapshot.identity)
+				? undefined
+				: `marketing_identity:${snapshot.identity.id}:${snapshot.identity.revision}`;
+			const preflight = validateHarnessPolicy({
+				phase: "execution",
+				bundle: {
+					workspaceId: input.context.bundle.workspaceId,
+					revision: input.context.bundle.revision,
+				},
+				brief: structuredClone(input.brief),
+				candidate: {
+					assetRefs: [...input.brief.referenceAssetIds],
+					candidateId: `${input.workflowId}:media-policy-preflight`,
+					factClaims: [],
+					intendedUse: "public_content",
+					...(expressionIdentityRef ? { expressionIdentityRef } : {}),
+					workspaceId: input.request.workspaceId,
+				},
+				...input.context.policyReferences,
+			});
+			if (!preflight.passed) {
+				throw new HarnessSelectionError(
+					[...new Set(preflight.failures.map(({ gateId }) => gateId))],
+					preflight.failures[0]?.reason,
+					[],
+					[...new Set(
+						preflight.failures.flatMap(
+							({ alternativePath }) => alternativePath,
+						),
+					)],
+				);
+			}
+			const noteAdmissionInput =
 			snapshot.lens === "image_text_note"
 				? {
 						taskId: snapshot.task.id,

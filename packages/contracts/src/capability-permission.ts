@@ -225,6 +225,10 @@ const contentReviewOperations = new Set([
   'revoke_content_package_rights',
   'transition_task',
 ]);
+const registeredOperationsConfirmActions = new Set([
+  'confirm_creative_work_brief',
+  'confirm_weekly_candidates',
+]);
 const assetMemoryCreateActions = new Set([
   'confirm_asset_intake_fact',
   'correct_asset_intake_fact',
@@ -498,6 +502,15 @@ export function requiredP1Capability(
     if (action === 'accept_creative_asset') return null;
     if (taskRecoverActions.has(action)) return 'task.recover';
     if (contentReviewOperations.has(action)) return 'content.review';
+    if (registeredOperationsConfirmActions.has(action)) {
+      return 'content.create';
+    }
+    if (
+      action.startsWith('propose_') ||
+      action.startsWith('confirm_')
+    ) {
+      return null;
+    }
     // Remaining operations commands are product content work (registered class).
     return 'content.create';
   }

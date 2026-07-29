@@ -124,6 +124,59 @@ test('approval binds the exact external action and is recorded as an immutable d
   );
 });
 
+test('an external-action approval expires after its scheduled-action grace period', async () => {
+  const repository = new MemoryApprovalReceiptRepository();
+  let now = '2026-07-18T07:00:00.000Z';
+  const service = new ContentPackageApprovalService(repository, () => now);
+  const receipt = await service.approve({
+    ...binding,
+    actorId: 'owner-a',
+    idempotencyKey: 'approve-expiring-action',
+    requestId: seedApprovalRequest(repository),
+  });
+
+  assert.equal(receipt.expiresAt, '2026-07-18T08:15:00.000Z');
+  now = receipt.expiresAt;
+  await assert.rejects(
+    service.authorize({ ...policyInput(), receiptId: receipt.id }),
+    (error: unknown) =>
+      error instanceof ApprovalReceiptError &&
+      error.code === 'APPROVAL_NOT_ACTIVE',
+  );
+});
+
+test('atomic consume rechecks expiry when the server clock crosses the deadline', async () => {
+  const repository = new MemoryApprovalReceiptRepository();
+  let consuming = false;
+  let consumeClockReads = 0;
+  const service = new ContentPackageApprovalService(repository, () => {
+    if (!consuming) return '2026-07-18T07:00:00.000Z';
+    consumeClockReads += 1;
+    return consumeClockReads === 1
+      ? '2026-07-18T08:14:59.999Z'
+      : '2026-07-18T08:15:00.000Z';
+  });
+  const receipt = await service.approve({
+    ...binding,
+    actorId: 'owner-a',
+    idempotencyKey: 'approve-expiry-race',
+    requestId: seedApprovalRequest(repository),
+  });
+
+  consuming = true;
+  await assert.rejects(
+    service.consume({
+      actorId: 'worker-a',
+      externalEffectId: 'publish-expiry-race',
+      receiptId: receipt.id,
+    }),
+    (error: unknown) =>
+      error instanceof ApprovalReceiptError &&
+      error.code === 'APPROVAL_NOT_ACTIVE',
+  );
+  assert.equal((await repository.get(receipt.id))?.status, 'approved');
+});
+
 test('canonical external gates reject missing approval and a stale revision', async () => {
   const repository = new MemoryApprovalReceiptRepository();
   const service = new ContentPackageApprovalService(repository);

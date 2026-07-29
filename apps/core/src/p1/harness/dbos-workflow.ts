@@ -32,6 +32,10 @@ import {
   buildSemanticDecisionResumption,
   type HarnessSemanticDecisionResumptionStore,
 } from './semantic-decision-resumption.js';
+import {
+  authorizeHarnessAction,
+  HarnessActionAuthorizationError,
+} from './action-registry.js';
 import type {
   HarnessBillingCompensationTask,
   HarnessBillingSettlementExecutor,
@@ -225,6 +229,10 @@ export function registerHarnessDbosWorkflow(
       input,
       runtimeWorkflowId,
     );
+    authorizeHarnessAction({
+      actionId: 'workflow.replay',
+      caller: 'server',
+    });
     const runtime: HarnessWorkflowRuntime = {
       runStep(effectIdempotencyKey, operation) {
         return DBOS.runStep(operation, {
@@ -777,6 +785,10 @@ export class DbosHarnessWorkflowStarter implements HarnessWorkflowStarter {
     request: HarnessWorkflowInput;
     runtimeId?: string;
   }) {
+    authorizeHarnessAction({
+      actionId: 'workflow.start',
+      caller: 'server',
+    });
     const handle = await DBOS.startWorkflow(this.workflow, {
       workflowID:
         input.runtimeId ??
@@ -830,6 +842,19 @@ export async function sendHarnessMediaJobTerminal(
   if (typeof orchestrationWorkflowId !== 'string' || !orchestrationWorkflowId) {
     return false;
   }
+  const targetWorkspaceId = (payload as { workspaceId?: unknown }).workspaceId;
+  if (typeof targetWorkspaceId !== 'string' || !targetWorkspaceId) {
+    return false;
+  }
+  if (targetWorkspaceId !== input.workspaceId) {
+    throw new HarnessActionAuthorizationError(
+      'The durable media job does not belong to the signaling workspace.',
+    );
+  }
+  authorizeHarnessAction({
+    actionId: 'workflow.media_signal',
+    caller: 'worker',
+  });
   const destination = harnessRuntimeId(
     input.workspaceId,
     orchestrationWorkflowId,

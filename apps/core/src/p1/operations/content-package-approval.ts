@@ -18,8 +18,13 @@ import {
   type HarnessPolicyInput,
   type VisibleClaimExtraction,
 } from '../harness/policy-gates.js';
+import { authorizeHarnessAction } from '../harness/action-registry.js';
 import type { ContextInvalidationSink } from './context-invalidation.js';
 import { TaskBlockingNodeConflictError } from './repository.js';
+import {
+  approvalReceiptExpiresAt,
+  isApprovalReceiptActiveAt,
+} from './approval-receipt-validity.js';
 
 export interface ApprovalReceiptRepository {
   create(input: {
@@ -36,7 +41,8 @@ export interface ApprovalReceiptRepository {
   listApproved(workspaceId: string): Promise<ApprovalReceipt[]>;
   saveTerminal(
     receipt: ApprovalReceipt,
-    expectedStatus: 'approved'
+    expectedStatus: 'approved',
+    activeAt?: string,
   ): Promise<ApprovalReceipt>;
 }
 
@@ -94,6 +100,10 @@ export class ContentPackageApprovalService implements ContextInvalidationSink {
       ...bindingInput
     } = input;
     const binding = approvalBindingSchema.parse(bindingInput);
+    authorizeHarnessAction({
+      actionId: 'workflow.approval_callback',
+      caller: 'server',
+    });
     const actorId = requiredText(actorInput, 'actorId');
     const idempotencyKey = requiredText(keyInput, 'idempotencyKey');
     const requestId = requiredText(requestInput, 'requestId');
@@ -103,16 +113,21 @@ export class ContentPackageApprovalService implements ContextInvalidationSink {
       binding.workspaceId,
       idempotencyKey
     );
+    const issuedAt = this.now();
     const receipt = approvalReceiptSchema.parse({
       binding,
       events: [
         {
           actorId,
           eventId: `${receiptId}:approved`,
-          occurredAt: this.now(),
+          occurredAt: issuedAt,
           type: 'approved',
         },
       ],
+      expiresAt: approvalReceiptExpiresAt(
+        issuedAt,
+        binding.actionScheduledAt,
+      ),
       id: receiptId,
       idempotencyKey,
       payloadFingerprint: fingerprint,
@@ -139,6 +154,10 @@ export class ContentPackageApprovalService implements ContextInvalidationSink {
   }
 
   async authorize(input: ApprovalAuthorizationInput) {
+    authorizeHarnessAction({
+      actionId: 'workflow.approval_callback',
+      caller: 'server',
+    });
     const receipt = input.receiptId
       ? await this.repository.get(input.receiptId)
       : null;
@@ -148,7 +167,7 @@ export class ContentPackageApprovalService implements ContextInvalidationSink {
         'The ApprovalReceipt was not found.'
       );
     }
-    if (receipt && receipt.status !== 'approved') {
+    if (receipt && !isApprovalReceiptActiveAt(receipt, this.now())) {
       throw new ApprovalReceiptError(
         'APPROVAL_NOT_ACTIVE',
         'The ApprovalReceipt is no longer active.'
@@ -198,6 +217,7 @@ export class ContentPackageApprovalService implements ContextInvalidationSink {
     receiptId: string;
   }) {
     const receipt = await this.requireApproved(input.receiptId);
+    const consumedAt = this.now();
     return this.repository.saveTerminal(
       approvalReceiptSchema.parse({
         ...receipt,
@@ -210,13 +230,14 @@ export class ContentPackageApprovalService implements ContextInvalidationSink {
               input.externalEffectId,
               'externalEffectId'
             ),
-            occurredAt: this.now(),
+            occurredAt: consumedAt,
             type: 'consumed',
           },
         ],
         status: 'consumed',
       }),
-      'approved'
+      'approved',
+      consumedAt,
     );
   }
 
@@ -278,7 +299,7 @@ export class ContentPackageApprovalService implements ContextInvalidationSink {
         'The ApprovalReceipt was not found.'
       );
     }
-    if (receipt.status !== 'approved') {
+    if (!isApprovalReceiptActiveAt(receipt, this.now())) {
       throw new ApprovalReceiptError(
         'APPROVAL_NOT_ACTIVE',
         'The ApprovalReceipt is no longer active.'
@@ -364,7 +385,8 @@ export class MemoryApprovalReceiptRepository
 
   async saveTerminal(
     receipt: ApprovalReceipt,
-    expectedStatus: 'approved'
+    expectedStatus: 'approved',
+    activeAt?: string,
   ) {
     const current = this.byId.get(receipt.id);
     if (!current) {
@@ -374,6 +396,12 @@ export class MemoryApprovalReceiptRepository
       );
     }
     if (current.status !== expectedStatus) {
+      throw new ApprovalReceiptError(
+        'APPROVAL_NOT_ACTIVE',
+        'The ApprovalReceipt is no longer active.'
+      );
+    }
+    if (activeAt && !isApprovalReceiptActiveAt(current, activeAt)) {
       throw new ApprovalReceiptError(
         'APPROVAL_NOT_ACTIVE',
         'The ApprovalReceipt is no longer active.'

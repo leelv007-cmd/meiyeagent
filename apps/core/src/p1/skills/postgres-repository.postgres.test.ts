@@ -358,7 +358,13 @@ test(
     let publications = 0;
 
     try {
-      const runtime = await createDurableSkillRuntime({ pool, repository });
+      const runtime = await createDurableSkillRuntime({
+        pool,
+        repository,
+        toolExecutionAllowlist: [
+          { caller: skillRevisionRef, toolId: 'tool.fact.read' },
+        ],
+      });
       const tool = runtime.createInvocationTool({
         executor: {
           async execute() {

@@ -26,6 +26,10 @@ import {
 import { VisualAdoptionError } from '../result-delivery/errors.js';
 import type { BillingLifecyclePort } from '../product-billing/lifecycle-port.js';
 import { appendPendingApprovalRequest } from './content-package-approval.js';
+import {
+  approvalReceiptExpiresAt,
+  isApprovalReceiptActiveAt,
+} from './approval-receipt-validity.js';
 import type { ContentPackageApprovalPolicyPort } from './content-package-delivery.js';
 import { validateContentPackageVisibleCopyPolicy } from './content-package-visible-copy-policy.js';
 import {
@@ -6234,7 +6238,7 @@ export class OperationsApplicationService {
       );
       if (
         !receipt ||
-        receipt.status !== 'approved' ||
+        !isApprovalReceiptActiveAt(receipt, this.timestamp()) ||
         receipt.binding.workId !== workId ||
         receipt.binding.workspaceId !== context.workspaceId ||
         receipt.binding.contractFingerprint !==
@@ -6555,7 +6559,7 @@ export class OperationsApplicationService {
         const receipt = state.creativeGenerationApprovalReceipts[receiptIndex];
         if (
           !receipt ||
-          receipt.status !== 'approved' ||
+          !isApprovalReceiptActiveAt(receipt, timestamp) ||
           receipt.binding.workId !== workId ||
           receipt.binding.workUpdatedAt !== work.updatedAt ||
           receipt.binding.contractFingerprint !==
@@ -6826,6 +6830,7 @@ export class OperationsApplicationService {
             type: 'approved',
           },
         ],
+        expiresAt: approvalReceiptExpiresAt(timestamp),
         id: receiptId,
         idempotencyKey: input.approvalKey,
         payloadFingerprint: contractFingerprint,
@@ -8228,7 +8233,7 @@ export class OperationsApplicationService {
         if (work) {
           if (
             !receipt ||
-            receipt.status !== 'approved' ||
+            !isApprovalReceiptActiveAt(receipt, timestamp) ||
             receipt.binding.workId !== work.id ||
             receipt.binding.workUpdatedAt !== work.updatedAt ||
             receipt.binding.contractFingerprint !==

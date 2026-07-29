@@ -21,6 +21,7 @@ import {
   approvalRequestMatchesBinding,
   type ApprovalReceiptRepository,
 } from './content-package-approval.js';
+import { isApprovalReceiptActiveAt } from './approval-receipt-validity.js';
 import type { OperationsRepository } from './repository.js';
 import type {
   OperationContext,
@@ -779,7 +780,7 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
           );
         }
         if (
-          receipt.status !== 'approved' ||
+          !isApprovalReceiptActiveAt(receipt, event.occurredAt) ||
           receipt.payloadFingerprint !== authorizedReceipt.payloadFingerprint
         ) {
           throw new ApprovalReceiptError(
@@ -1167,7 +1168,11 @@ class NestedApprovalReceiptRepository implements ApprovalReceiptRepository {
     );
   }
 
-  async saveTerminal(receipt: ApprovalReceipt, expectedStatus: 'approved') {
+  async saveTerminal(
+    receipt: ApprovalReceipt,
+    expectedStatus: 'approved',
+    activeAt?: string,
+  ) {
     return this.repository.withWorkspaceLock(
       this.context.workspaceId,
       async (repository) => {
@@ -1179,8 +1184,16 @@ class NestedApprovalReceiptRepository implements ApprovalReceiptRepository {
           );
           if (receiptIndex < 0) continue;
           const approvals = [...(current.approvalReceipts ?? [])];
-          if (approvals[receiptIndex]?.status !== expectedStatus) {
-            throw new Error('ApprovalReceipt is no longer active.');
+          const currentReceipt = approvals[receiptIndex];
+          if (
+            currentReceipt?.status !== expectedStatus ||
+            (activeAt &&
+              !isApprovalReceiptActiveAt(currentReceipt, activeAt))
+          ) {
+            throw new ApprovalReceiptError(
+              'APPROVAL_NOT_ACTIVE',
+              'The ApprovalReceipt is no longer active.'
+            );
           }
           approvals[receiptIndex] = structuredClone(receipt);
           state.contentPackages[packageIndex] = {

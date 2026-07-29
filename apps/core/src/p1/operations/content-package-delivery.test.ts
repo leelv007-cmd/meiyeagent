@@ -383,6 +383,49 @@ test('public delivery rejects a receipt frozen to an old content revision before
   assert.equal(afterPackage.revision, beforePackage.revision);
 });
 
+test('automatic publish rechecks expiry inside the atomic claim before provider effects', async () => {
+  let clockReads = 0;
+  const setup = await createSetup(
+    'automatic_verified',
+    false,
+    undefined,
+    undefined,
+    undefined,
+    () => {
+      clockReads += 1;
+      if (clockReads < 3) return '2026-07-18T07:00:00.000Z';
+      return clockReads < 6
+        ? '2026-07-18T07:14:59.999Z'
+        : '2026-07-18T07:15:00.000Z';
+    },
+  );
+  const approval = await setup.service.approve(context, {
+    ...actionBinding(),
+    actionScheduledAt: '2026-07-18T07:00:00.000Z',
+    expectedRevision: 1,
+    idempotencyKey: 'approve-expiry-claim-race',
+  });
+
+  await assert.rejects(
+    setup.service.deliver(context, {
+      ...actionBinding(),
+      actionScheduledAt: '2026-07-18T07:00:00.000Z',
+      expectedRevision: 2,
+      receiptId: approval.id,
+    }),
+    (error: unknown) =>
+      error instanceof ApprovalReceiptError &&
+      error.code === 'APPROVAL_NOT_ACTIVE',
+  );
+
+  const stored = await setup.repository.loadWorkspace('workspace-a');
+  assert.equal(setup.publishCalls.length, 0);
+  assert.equal(
+    stored?.contentPackages[0]?.approvalReceipts?.[0]?.status,
+    'approved',
+  );
+});
+
 test('approval consumes the pending entry in an existing duplicate-id aggregate', async () => {
   const setup = await createSetup('automatic_verified');
   const state = (await setup.repository.loadWorkspace('workspace-a'))!;
@@ -1015,7 +1058,8 @@ async function createSetup(
     hash: 'bundle-hash-a',
     revision: 3,
   },
-  repository: MemoryOperationsRepository = new MemoryOperationsRepository()
+  repository: MemoryOperationsRepository = new MemoryOperationsRepository(),
+  clock: () => string = () => '2026-07-18T07:00:00.000Z',
 ) {
   repository.grantMembership('owner-a', 'workspace-a');
   await repository.saveWorkspace(workspaceState());
@@ -1066,7 +1110,7 @@ async function createSetup(
     async capability(platform) {
       return { mode, platform, reason: `test_${mode}` };
     },
-    clock: () => '2026-07-18T07:00:00.000Z',
+    clock,
     createId: idSequence(),
     ...(legacy
       ? {

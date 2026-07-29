@@ -8,6 +8,7 @@ import {
 import type { CreationSubmissionRecord } from '../execution-spine/submission-coordinator.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
+import { authorizeHarnessAction } from './action-registry.js';
 
 export interface HarnessSemanticDecisionResumptionStore {
   claimSemanticDecisionResumption(input: {
@@ -26,6 +27,17 @@ export function buildSemanticDecisionResumption(input: {
   command: StructuredDecisionInput;
   createdAt: string;
 }) {
+  if (
+    input.request.executionSnapshot.workspaceId !== input.request.workspaceId
+  ) {
+    throw new Error(
+      'Semantic decision resumption workspace does not match its durable snapshot.',
+    );
+  }
+  authorizeHarnessAction({
+    actionId: 'workflow.semantic_resubmission',
+    caller: 'server',
+  });
   if (!input.request.usageReservation) {
     throw new Error(
       'Semantic decision resumption requires explicit product usage units.',

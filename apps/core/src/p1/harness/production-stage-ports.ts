@@ -22,12 +22,11 @@ import {
 import { isOfficialNeutralIdentity } from '../execution-spine/creation-execution-snapshot.js';
 
 import {
-  executeCopySelection,
+  executePlatformCopySelection,
   HarnessSelectionError,
   isCopySelectionCurrentBest,
 } from './execution-selection.js';
 import {
-  createHarnessCandidateValidator,
   validateHarnessPolicy,
   type HarnessFactClaim,
   type VisibleClaimExtraction,
@@ -55,7 +54,6 @@ import {
   assertCopyRevisionAssemblyComplete,
   buildCopyPlatformVariants,
 } from './output-compiler.js';
-import { containsConcreteOfferText } from './visible-claim-patterns.js';
 import type {
   ResolvedSkillInstruction,
   SkillInvocationReceipt,
@@ -516,33 +514,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
             }),
           )
         : unboundedRunner;
-    const canonicalValidator = createHarnessCandidateValidator({
-      phase: 'execution',
-      bundle: {
-        workspaceId: input.request.workspaceId,
-        revision: input.context.bundle.revision,
-      },
-      brief: { ...input.brief },
-      ...input.context.policyReferences,
-    });
-    const validator = {
-      validate(candidate: Parameters<typeof canonicalValidator.validate>[0]) {
-        const canonical = canonicalValidator.validate(candidate);
-        if (
-          !hasAuthorizedOffer &&
-          containsConcreteOfferCopy(candidate)
-        ) {
-          canonical.failures.push({
-            gateId: 'critical_fact_source',
-            reason: '没有已核验价格或权益时，候选不得出现具体优惠数字。',
-            alternativePath: ['改用无价格介绍', '先补充并确认当期优惠事实'],
-          });
-          canonical.passed = false;
-        }
-        return canonical;
-      },
-    };
-    return executeCopySelection(
+    return executePlatformCopySelection(
       {
         workflowId: input.workflowId,
         unitId: copyUnit(input.context.bundle.revision),
@@ -559,11 +531,18 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
           ? { skillInstructions: input.skillInstructions }
           : {}),
         onToken: input.onToken,
+        allowConcreteOffer: hasAuthorizedOffer,
+        policy: {
+          phase: 'execution',
+          bundle: {
+            workspaceId: input.request.workspaceId,
+            revision: input.context.bundle.revision,
+          },
+          brief: { ...input.brief },
+          ...input.context.policyReferences,
+        },
       },
-      {
-        runner,
-        validator,
-      },
+      { runner },
     );
   }
 
@@ -1049,16 +1028,6 @@ function hasAuthorizedOfferEvidence(
         contribution.factSnapshot.kind === 'discount'),
   );
 }
-
-function containsConcreteOfferCopy(candidate: unknown) {
-  const record = candidate as Record<string, unknown>;
-  return USER_VISIBLE_COPY_FIELDS.some((field) => {
-    const value = record[field];
-    return typeof value === 'string' && containsConcreteOfferText(value);
-  });
-}
-
-const USER_VISIBLE_COPY_FIELDS = ['title', 'body', 'conversionHook'] as const;
 
 function copyUnit(revision: number) {
   return revision === 1 ? 'copy-primary' : `copy-primary-r${revision}`;

@@ -17,6 +17,12 @@ export {
 export { materializeSkillInstructions } from './stage-injection.js';
 export { RegistrySkillOutputValidator } from './schema-validator.js';
 export {
+  StaticSkillToolExecutionAuthorizer,
+  denyAllSkillToolExecution,
+  type SkillToolExecutionAuthorizer,
+  type SkillToolExecutionGrant,
+} from './tool-authorization.js';
+export {
   SKILL_BINDING_MODES,
   SKILL_STAGES,
   skillRevisionRef,

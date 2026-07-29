@@ -31,6 +31,10 @@ import {
 } from './types.js';
 import type { HarnessFrozenPrompt } from '../harness/langfuse-prompts.js';
 import { RegistrySkillOutputValidator } from './schema-validator.js';
+import {
+  denyAllSkillToolExecution,
+  type SkillToolExecutionAuthorizer,
+} from './tool-authorization.js';
 
 const registrySkillOutputValidator = new RegistrySkillOutputValidator();
 
@@ -64,6 +68,8 @@ export class SkillService {
   constructor(
     private readonly repository: SkillRepository,
     private readonly now: () => string = () => new Date().toISOString(),
+    private readonly toolExecutionAuthorizer: SkillToolExecutionAuthorizer =
+      denyAllSkillToolExecution,
   ) {}
 
   async defineCatalogEntry(input: {
@@ -524,6 +530,10 @@ export class SkillService {
     const effects: SkillChildEffect[] = [];
     for (const call of input.calls) {
       validateChildEffect(revision, call);
+      this.toolExecutionAuthorizer.authorize({
+        caller: revision.skillRevisionRef,
+        toolId: call.toolId,
+      });
       const effectId = `${invocationId}:${call.callId}`;
       const idempotencyKey = `skill:${invocationId}:${call.callId}`;
       const effectFingerprint = sha256(

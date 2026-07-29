@@ -15,6 +15,7 @@ import {
   RegistrySkillOutputValidator,
   SkillFoundationModule,
   SkillService,
+  StaticSkillToolExecutionAuthorizer,
   type SkillBinding,
   type SkillChildEffectExecutor,
   type SkillInvocationExecutor,
@@ -29,6 +30,19 @@ const discardResultPublisher: SkillInvocationResultPublisher = {
     return input.result;
   },
 };
+
+function createEffectTestService(repository: MemorySkillRepository) {
+  return new SkillService(
+    repository,
+    () => NOW,
+    new StaticSkillToolExecutionAuthorizer(
+      ['tool.fact.read', 'tool.quality.score'].map((toolId) => ({
+        caller: 'skill.effect-boundary@1',
+        toolId,
+      })),
+    ),
+  );
+}
 
 test('only an evaluated and frozen Skill revision enters a stage allowlist', async () => {
   const service = new SkillService(
@@ -298,7 +312,7 @@ test('an accepted prompt Skill changes the fixture judgment at its declared Harn
 
 test('one Skill invocation settles two child effects independently and replay does not duplicate either settlement', async () => {
   const repository = new MemorySkillRepository();
-  const service = new SkillService(repository, () => NOW);
+  const service = createEffectTestService(repository);
   const revision = await createAcceptedEffectSkill(service);
   const executions: string[] = [];
   const executor: SkillChildEffectExecutor = {
@@ -635,7 +649,7 @@ test('invalid Skill input is rejected before the invocation receipt replay fast 
 
 test('registry-backed validation rejects the actual generated output before business publication and receipt persistence', async () => {
   const repository = new MemorySkillRepository();
-  const service = new SkillService(repository, () => NOW);
+  const service = createEffectTestService(repository);
   const revision = await createAcceptedEffectSkill(service);
   let executions = 0;
   let generations = 0;
@@ -744,7 +758,7 @@ test('receipt persistence retry reuses child effects and publishes the business 
   }
 
   const repository = new FailFirstReceiptRepository();
-  const service = new SkillService(repository, () => NOW);
+  const service = createEffectTestService(repository);
   const revision = await createAcceptedEffectSkill(service);
   const published = new Map<
     string,
@@ -858,7 +872,7 @@ test('replay fails closed before mutating any effect when one recorded effect is
   }
 
   const repository = new MissingEffectRepository();
-  const service = new SkillService(repository, () => NOW);
+  const service = createEffectTestService(repository);
   const revision = await createAcceptedEffectSkill(service);
   const invocation = {
     calls: [
@@ -919,7 +933,7 @@ test('replay fails closed before mutating any effect when one recorded effect is
 
 test('an observed over-budget child effect is persisted before invocation rejection', async () => {
   const repository = new MemorySkillRepository();
-  const service = new SkillService(repository, () => NOW);
+  const service = createEffectTestService(repository);
   const revision = await createAcceptedEffectSkill(service);
 
   await assert.rejects(
@@ -982,7 +996,7 @@ test('an observed over-budget child effect is persisted before invocation reject
 
 test('retry after a mid-invocation crash replays each settled effect and executes only the missing effect', async () => {
   const repository = new MemorySkillRepository();
-  const service = new SkillService(repository, () => NOW);
+  const service = createEffectTestService(repository);
   const revision = await createAcceptedEffectSkill(service);
   const attempts = new Map<string, number>();
   const input = {

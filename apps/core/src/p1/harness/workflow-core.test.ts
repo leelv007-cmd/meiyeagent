@@ -1382,6 +1382,39 @@ test('a snapshot-backed semantic answer resubmits the same task and work before 
   assert.ok(progress.includes('已收到，继续为你生成。'));
 });
 
+test('semantic resubmission rejects a forged workspace before persistence', () => {
+  const original = snapshotTaskInput();
+  const request = {
+    ...original,
+    executionSnapshot: original.executionSnapshot!,
+    workspaceId: 'workspace-forged',
+    usageReservation: {
+      id: 'usage-reservation-forged',
+      units: [{ resource: 'copy' as const, quantity: 1 }],
+    },
+  };
+
+  assert.throws(
+    () =>
+      buildSemanticDecisionResumption({
+        request,
+        command: {
+          idempotencyKey: 'decision-forged-workspace',
+          questionId: 'task-copy:s1:industry_category',
+          workflowRevision: 1,
+          patch: {
+            field: 'industry_category',
+            value: '美甲',
+            reason: '补充本次内容所属的美业服务类别',
+          },
+          decision: { state: 'accepted', value: '美甲' },
+        },
+        createdAt: '2026-07-25T09:05:00.000Z',
+      }),
+    /workspace does not match its durable snapshot/u,
+  );
+});
+
 test('directly applying a semantic answer to an existing snapshot remains forbidden', async () => {
   const stages = fixtureStages();
   stages.nameIntent = async () => ({

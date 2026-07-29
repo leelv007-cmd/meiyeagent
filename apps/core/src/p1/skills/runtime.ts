@@ -6,6 +6,7 @@ import { SkillFoundationModule } from './foundation-module.js';
 import { PostgresSkillRepository } from './postgres-repository.js';
 import { SkillService } from './service.js';
 import { SkillInvocationToolAdapter } from './tool-adapter.js';
+import { StaticSkillToolExecutionAuthorizer } from './tool-authorization.js';
 import type {
   SkillInvocationExecutor,
   SkillInvocationResultPublisher,
@@ -64,11 +65,21 @@ export class DurableSkillInstructionResolver
 export async function createDurableSkillRuntime(input: {
   pool: Pool;
   repository?: PostgresSkillRepository;
+  toolExecutionAllowlist?: readonly {
+    caller: string;
+    toolId: string;
+  }[];
 }) {
   const repository =
     input.repository ?? new PostgresSkillRepository(input.pool);
   await repository.migrate();
-  const service = new SkillService(repository);
+  const service = new SkillService(
+    repository,
+    undefined,
+    new StaticSkillToolExecutionAuthorizer(
+      input.toolExecutionAllowlist ?? [],
+    ),
+  );
   const recipes = new PostgresCreationExperienceCatalogRepository(input.pool);
   const instructionResolver = new DurableSkillInstructionResolver(
     service,

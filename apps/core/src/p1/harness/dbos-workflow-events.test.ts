@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { HarnessWorkflowEventSource } from '../workflow-events.js';
 import { HarnessDbosWorkflowEventReader } from './dbos-workflow-events.js';
+import { HarnessActionAuthorizationError } from './action-registry.js';
 import { harnessRuntimeId } from './workspace-scope.js';
 
 test('DBOS event reader exposes durable progress then the revision result', async () => {
@@ -365,6 +366,53 @@ test('DBOS event reader preserves a migrated legacy runtime identity', async () 
     new AbortController().signal,
   );
   assert.deepEqual(workflowIds, ['legacy-task-1', 'legacy-task-1']);
+});
+
+test('subscription restore rejects a foreign durable task before DBOS effects', async () => {
+  let transportEffects = 0;
+  const reader = new HarnessDbosWorkflowEventReader(
+    {
+      async taskBelongsToWorkspace() {
+        return false;
+      },
+      async workflowRuntimeId() {
+        throw new Error('foreign runtime lookup must not continue');
+      },
+      async readTerminalFailure() {
+        throw new Error('foreign failure lookup must not continue');
+      },
+    },
+    {
+      async *readStream() {
+        transportEffects += 1;
+      },
+      async getResult() {
+        transportEffects += 1;
+        return {};
+      },
+    },
+  );
+
+  await assert.rejects(
+    reader.readState(
+      'workspace-a',
+      'task-from-workspace-b',
+      new AbortController().signal,
+    ),
+    HarnessActionAuthorizationError,
+  );
+  await assert.rejects(
+    reader
+      .readEvents(
+        'workspace-a',
+        'task-from-workspace-b',
+        new AbortController().signal,
+      )
+      [Symbol.asyncIterator]()
+      .next(),
+    HarnessActionAuthorizationError,
+  );
+  assert.equal(transportEffects, 0);
 });
 
 function progress(

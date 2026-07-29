@@ -15,6 +15,7 @@ import {
   SkillFoundationModule,
   SkillInvocationToolAdapter,
   SkillService,
+  StaticSkillToolExecutionAuthorizer,
 } from './index.js';
 
 const NOW = '2026-07-29T02:00:00.000Z';
@@ -169,6 +170,69 @@ test('invalid-shape-silently-inert: invalid input stops before the executor', as
   );
 });
 
+test('a frozen manifest tool claim is not a trusted execution grant', async () => {
+  const { service, revision } = await acceptedSkill('merchant-tool-claim');
+  let executions = 0;
+
+  await assert.rejects(
+    service.invoke(
+      {
+        calls: [
+          {
+            callId: 'read-facts',
+            contextRefs: ['facts:current-offer'],
+            declaredBudgetCapCents: 1,
+            payload: {},
+            toolId: 'tool.fact.read',
+          },
+        ],
+        input: {
+          assetReferences: [],
+          context: {
+            intent: '读取已确认事实',
+            scene: '门店日常',
+            sourceSummaries: ['门店事实'],
+            workId: 'work-merchant-tool-claim',
+          },
+        },
+        invocationId: 'invocation-merchant-tool-claim',
+        output: {
+          schemaRevision: 'skill-output.intent-decision@1',
+          target: 'workflow_artifact',
+        },
+        productUsageTaskId: 'task-production-wiring',
+        skillRevisionRef: revision.skillRevisionRef,
+        taskId: 'task-production-wiring',
+        workspaceId: 'workspace-production-wiring',
+      },
+      {
+        async execute() {
+          executions += 1;
+          return {
+            acceptanceStatus: 'accepted',
+            costCents: 1,
+            providerReceipt: {
+              accepted: true,
+              providerTaskRef: 'must-not-execute',
+            },
+            usage: { inputTokens: 1, outputTokens: 1 },
+          };
+        },
+        async generate() {
+          return { value: intentDecisionOutput() };
+        },
+      },
+      {
+        async publishOnce(input) {
+          return input.result;
+        },
+      },
+    ),
+    /trusted tool grant/u,
+  );
+  assert.equal(executions, 0);
+});
+
 test('duplicate-authority-key: duplicate production modules fail at assembly', () => {
   const skillService = new SkillService(
     new MemorySkillRepository(),
@@ -187,7 +251,10 @@ test('duplicate-authority-key: duplicate production modules fail at assembly', (
 });
 
 test('the Skill tool adapter returns validated output and a stable invalid-output error object', async () => {
-  const { repository, revision, service } = await acceptedSkill('tool-entry');
+  const { repository, revision, service } = await acceptedSkill(
+    'tool-entry',
+    ['tool.fact.read'],
+  );
   const published: unknown[] = [];
   const validOutput = intentDecisionOutput();
   const tool = new SkillInvocationToolAdapter(
@@ -305,10 +372,22 @@ test('the Skill tool adapter returns validated output and a stable invalid-outpu
   );
 });
 
-async function acceptedSkill(suffix: string) {
+async function acceptedSkill(
+  suffix: string,
+  trustedTools: readonly string[] = [],
+) {
   const repository = new MemorySkillRepository();
-  const service = new SkillService(repository, () => NOW);
   const skillId = `skill.${suffix}`;
+  const service = new SkillService(
+    repository,
+    () => NOW,
+    new StaticSkillToolExecutionAuthorizer(
+      trustedTools.map((toolId) => ({
+        caller: `${skillId}@1`,
+        toolId,
+      })),
+    ),
+  );
   const instruction = `Apply ${suffix} only after explicit binding.`;
   await service.defineCatalogEntry({
     actorId: 'operator-production-wiring',

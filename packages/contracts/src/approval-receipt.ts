@@ -99,6 +99,7 @@ export const approvalReceiptSchema = z
   .object({
     binding: approvalBindingSchema,
     events: z.array(approvalReceiptEventSchema).min(1),
+    expiresAt: timestampSchema.optional(),
     id: idSchema,
     idempotencyKey: idSchema,
     payloadFingerprint: idSchema,
@@ -146,6 +147,7 @@ export const creativeGenerationApprovalReceiptSchema = z
   .object({
     binding: creativeGenerationApprovalBindingSchema,
     events: z.array(approvalReceiptEventSchema).min(1),
+    expiresAt: timestampSchema.optional(),
     id: idSchema,
     idempotencyKey: idSchema,
     payloadFingerprint: idSchema,

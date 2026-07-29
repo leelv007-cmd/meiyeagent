@@ -4,12 +4,15 @@ import test from 'node:test';
 import {
   assessImageExactText,
   candidateBillingDisposition,
-  executeCopySelection,
+  executePlatformCopySelection,
   HarnessSelectionError,
   isCopySelectionCurrentBest,
-  type CandidatePolicyValidator,
   type CopySelectionInput,
 } from './execution-selection.js';
+import {
+  executeCopySelection,
+  type CandidatePolicyValidator,
+} from './execution-selection.testing.js';
 import type {
   StructuredNodeRunner,
   StructuredNodeRunnerRequest,
@@ -134,6 +137,52 @@ test('subject asset rights failure hard-blocks without self-correction', async (
     ['wf:workflow-34:s4:copy-primary:c01'],
   );
   assert.equal(runner.requests.length, 1);
+});
+
+test('platform copy selection owns the canonical validator', async () => {
+  const runner = new QueueRunner([
+    candidate('主推荐', '正文 A', ['asset-withdrawn']),
+  ]);
+
+  await assert.rejects(
+    executePlatformCopySelection(
+      {
+        ...selectionInput(),
+        brief: {
+          ...selectionInput().brief,
+          assetRefs: ['asset-withdrawn'],
+        },
+        policy: {
+          phase: 'execution',
+          bundle: { workspaceId: 'workspace-1', revision: 1 },
+          brief: {},
+          sourceRefs: [],
+          rightsRefs: [
+            {
+              assetId: 'asset-withdrawn',
+              workspaceId: 'workspace-1',
+              status: 'withdrawn',
+              allowedUses: ['public_content'],
+            },
+          ],
+          identityRefs: [
+            {
+              id: 'identity-owner-1',
+              workspaceId: 'workspace-1',
+              status: 'registered',
+            },
+          ],
+        },
+      },
+      { runner },
+    ),
+    (error: unknown) => {
+      assert.ok(error instanceof HarnessSelectionError);
+      assert.deepEqual(error.gateIds, ['subject_asset_rights']);
+      return true;
+    },
+  );
+  assert.equal(runner.requests.length, 0);
 });
 
 test('external action approval failure hard-blocks without self-correction', async () => {
