@@ -88,22 +88,28 @@ test('P1 HTTP boundary uses the shared module seam and workspace identity', asyn
   assert.equal(created.status, 200);
   const createdPayload = (await created.json()) as { data: { id: string } };
 
-  const inbox = await fetch(`${base}/query`, {
+  const catalog = await fetch(`${base}/query`, {
     body: JSON.stringify({
-      action: 'inbox',
+      action: 'creation_catalog',
       module: 'operations',
       payload: {},
     }),
     headers,
     method: 'POST',
   });
-  assert.equal(inbox.status, 200);
-  const inboxPayload = (await inbox.json()) as {
-    data: { tasks: Array<{ id: string }> };
+  assert.equal(catalog.status, 200);
+  const catalogPayload = (await catalog.json()) as {
+    data: {
+      shortcuts: unknown[];
+      templates: unknown[];
+      userTemplates: unknown[];
+    };
   };
-  assert.deepEqual(inboxPayload.data.tasks.map((task) => task.id), [
-    createdPayload.data.id,
-  ]);
+  assert.deepEqual(catalogPayload.data, {
+    shortcuts: [],
+    templates: [],
+    userTemplates: [],
+  });
 
   const creativeWork = await fetch(`${base}/commands`, {
     body: JSON.stringify({
@@ -207,9 +213,9 @@ test('P1 HTTP boundary uses the shared module seam and workspace identity', asyn
   });
   assert.equal(reviewerCreate.status, 403);
 
-  const reviewerInbox = await fetch(`${base}/query`, {
+  const reviewerCatalog = await fetch(`${base}/query`, {
     body: JSON.stringify({
-      action: 'inbox',
+      action: 'creation_catalog',
       module: 'operations',
       payload: {},
     }),
@@ -220,11 +226,11 @@ test('P1 HTTP boundary uses the shared module seam and workspace identity', asyn
     },
     method: 'POST',
   });
-  assert.equal(reviewerInbox.status, 200);
+  assert.equal(reviewerCatalog.status, 200);
 
   const spoofed = await fetch(`${base}/query`, {
     body: JSON.stringify({
-      action: 'inbox',
+      action: 'creation_catalog',
       module: 'operations',
       payload: {},
     }),
@@ -265,7 +271,7 @@ test('P1 HTTP boundary never exposes unexpected exception messages', async (t) =
 
   for (const [path, action] of [
     ['commands', 'create_task'],
-    ['query', 'inbox'],
+    ['query', 'creation_catalog'],
   ] as const) {
     const response = await fetch(`${base}/${path}`, {
       body: JSON.stringify({ action, module: 'operations', payload: {} }),

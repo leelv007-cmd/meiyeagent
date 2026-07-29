@@ -14,7 +14,6 @@ import {
 	type OperationsRepository,
 } from "./repository.js";
 import type {
-	CanvasImageJob,
 	OperationsWorkspaceState,
 	RetrievalEvaluation,
 	SearchDocument,
@@ -712,26 +711,6 @@ export class PostgresOperationsRepository implements OperationsRepository {
 		);
 	}
 
-	async getLatestCanvasImageJob(workspaceId: string, workId: string) {
-		const result = await this.database.query<{ payload: CanvasImageJob }>(
-			`SELECT payload
-         FROM p1_canvas_image_jobs
-        WHERE workspace_id = $1
-          AND payload->'origin'->>'kind' = 'layout_work'
-          AND payload->'origin'->>'id' = $2
-        ORDER BY CASE
-                   WHEN payload->>'status' IN ('cancelled', 'completed', 'failed')
-                     THEN 1
-                   ELSE 0
-                 END,
-                 payload->>'createdAt' DESC,
-                 id DESC
-        LIMIT 1`,
-			[workspaceId, workId],
-		);
-		return result.rows[0]?.payload ?? null;
-	}
-
 	async loadTemplateCatalog(): Promise<TemplateCatalogState> {
 		return this.loadTemplateCatalogHistory();
 	}
@@ -1067,18 +1046,6 @@ export class PostgresOperationsRepository implements OperationsRepository {
         ORDER BY created_at DESC
         LIMIT 1`,
 			[workspaceId, revision],
-		);
-		return result.rows[0]?.payload ?? null;
-	}
-
-	async getLatestRetrievalEvaluation(workspaceId: string) {
-		const result = await this.database.query<{ payload: RetrievalEvaluation }>(
-			`SELECT payload
-         FROM p1_retrieval_evaluations
-        WHERE workspace_id = $1
-        ORDER BY created_at DESC
-        LIMIT 1`,
-			[workspaceId],
 		);
 		return result.rows[0]?.payload ?? null;
 	}

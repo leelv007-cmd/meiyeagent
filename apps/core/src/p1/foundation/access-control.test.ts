@@ -315,6 +315,10 @@ test('P1 module actions resolve to the same role capabilities used by the UI', (
   );
   assert.equal(
     requiredP1Capability('query', 'operations', 'inbox'),
+    null
+  );
+  assert.equal(
+    requiredP1Capability('query', 'operations', 'creation_catalog'),
     'workspace.read'
   );
   assert.equal(

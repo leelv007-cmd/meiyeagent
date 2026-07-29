@@ -71,10 +71,6 @@ test('the three-state gate opens automatic publish only with complete live evide
 test('assisted mode creates a native handoff event and makes zero provider calls', async () => {
   const setup = await createSetup('assisted');
 
-  assert.deepEqual(await setup.service.capabilities(context, 'package-a'), [
-    { mode: 'assisted', platform: 'douyin', reason: 'test_assisted' },
-  ]);
-
   await assert.rejects(
     setup.service.deliver(context, {
       ...actionBinding(),
@@ -874,38 +870,12 @@ test('merchant chips update the result ladder while verified and inferred source
     ]
   );
 
-  const review = await setup.service.weeklyResultReview(context);
-  assert.ok(
-    review.published.every(
-      ({ event }) => event.occurredAt >= '2026-07-13T00:00:00.000Z'
-    )
-  );
-  assert.ok(
-    review.observed.every(
-      ({ signal }) => signal.occurredAt >= '2026-07-13T00:00:00.000Z'
-    )
-  );
-  assert.equal(review.published.length, 1);
-  assert.equal(review.observed.length, 1);
-  assert.deepEqual(review.nextExperiments[0]?.actions, [
-    'continue_series',
-    'change_cta',
-    'change_platform',
-    'stop_series',
-  ]);
-  assert.equal(review.nextExperiments[0]?.nextTest, 'repeat_or_change_cta');
-  assert.equal('metrics' in review, false);
-
   const stopped = await setup.service.recordResultReviewAction(context, {
     action: 'stop_series',
     expectedRevision: 3,
     packageId: 'package-a',
   });
   assert.equal(stopped.resultReviewActions?.at(-1)?.action, 'stop_series');
-  assert.deepEqual(
-    (await setup.service.weeklyResultReview(context)).nextExperiments,
-    []
-  );
 });
 
 test('a backdated chip moves the signal clock without ageing the package', async () => {

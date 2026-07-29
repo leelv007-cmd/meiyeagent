@@ -1,6 +1,5 @@
 import { rankSearchDocuments } from "./search.js";
 import type {
-	CanvasImageJob,
 	OperationsWorkspaceState,
 	RetrievalEvaluation,
 	SearchDocument,
@@ -64,10 +63,6 @@ export interface OperationsRepository {
 	recordContentPackageRevisionConflict(
 		conflict: ContentPackageRevisionConflictRecord,
 	): Promise<void>;
-	getLatestCanvasImageJob(
-		workspaceId: string,
-		workId: string,
-	): Promise<CanvasImageJob | null>;
 	loadTemplateCatalog(): Promise<TemplateCatalogState>;
 	loadTemplateCatalogHistory(
 		templateId?: string,
@@ -104,9 +99,6 @@ export interface OperationsRepository {
 	getRetrievalEvaluation(
 		workspaceId: string,
 		revision: string,
-	): Promise<RetrievalEvaluation | null>;
-	getLatestRetrievalEvaluation(
-		workspaceId: string,
 	): Promise<RetrievalEvaluation | null>;
 	countSearchDocuments(workspaceId: string): Promise<number>;
 	getSearchIndexSizeBytes(workspaceId: string): Promise<number>;
@@ -216,27 +208,6 @@ export class MemoryOperationsRepository implements OperationsRepository {
 			id,
 			workspaceId: conflict.workspaceId,
 		});
-	}
-
-	async getLatestCanvasImageJob(workspaceId: string, workId: string) {
-		const terminalStatuses = new Set<CanvasImageJob["status"]>([
-			"cancelled",
-			"completed",
-			"failed",
-		]);
-		const jobs = this.states
-			.get(workspaceId)
-			?.imageJobs.filter(
-				(job) => job.origin.kind === "layout_work" && job.origin.id === workId,
-			)
-			.sort(
-				(left, right) =>
-					Number(terminalStatuses.has(left.status)) -
-						Number(terminalStatuses.has(right.status)) ||
-					right.createdAt.localeCompare(left.createdAt) ||
-					right.id.localeCompare(left.id),
-			);
-		return jobs?.[0] ? clone(jobs[0]) : null;
 	}
 
 	async loadTemplateCatalog() {
@@ -390,13 +361,6 @@ export class MemoryOperationsRepository implements OperationsRepository {
 		const value = this.evaluations
 			.get(workspaceId)
 			?.find((evaluation) => evaluation.revision === revision);
-		return value ? clone(value) : null;
-	}
-
-	async getLatestRetrievalEvaluation(workspaceId: string) {
-		const value = [...(this.evaluations.get(workspaceId) ?? [])].sort(
-			(left, right) => right.createdAt.localeCompare(left.createdAt),
-		)[0];
 		return value ? clone(value) : null;
 	}
 

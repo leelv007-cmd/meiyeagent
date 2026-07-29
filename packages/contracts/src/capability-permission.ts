@@ -229,6 +229,23 @@ const registeredOperationsConfirmActions = new Set([
   'confirm_creative_work_brief',
   'confirm_weekly_candidates',
 ]);
+const operationsWorkspaceQueryActions = new Set([
+  'canonical_history',
+  'canvas_export_asset',
+  'canvas_image_job',
+  'content_package',
+  'content_package_delivery_timeline',
+  'content_package_migration_report',
+  'content_package_migration_status',
+  'content_package_results',
+  'content_packages',
+  'creation_catalog',
+  'creative_workbench',
+  'export_receipts',
+  'search',
+  'templates',
+  'work',
+]);
 const assetMemoryCreateActions = new Set([
   'confirm_asset_intake_fact',
   'finalize_store_intake',
@@ -475,7 +492,9 @@ export function requiredP1Capability(
       if (action === 'audit_export' || action === 'audit_view') {
         return 'audit.view';
       }
-      return 'workspace.read';
+      return operationsWorkspaceQueryActions.has(action)
+        ? 'workspace.read'
+        : null;
     }
     // Z1/#105: legacy CreativeContent acceptance is no longer a public write.
     if (action === 'accept_creative_asset') return null;

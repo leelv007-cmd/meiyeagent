@@ -134,10 +134,12 @@ test('weekly batch actions create queryable Product and Operations facts exactly
     taskIds: [createTask.id],
   });
   assert.equal(batchResult.completed[0]?.status, 'done');
-  const [createExecution] = await operations.listWeeklyBatchExecutions(
-    owner,
-    createTask.id
-  );
+  const [createExecution] =
+    (
+      await operationsRepository.loadWorkspace(owner.workspaceId)
+    )?.weeklyBatchExecutions.filter(
+      (execution) => execution.taskId === createTask.id
+    ) ?? [];
   assert.equal(createExecution?.status, 'completed');
   assert.ok(createExecution?.output);
   assert.deepEqual(batchResult.completed[0]?.relatedObject, {

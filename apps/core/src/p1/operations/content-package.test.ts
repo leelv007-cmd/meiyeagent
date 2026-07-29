@@ -836,23 +836,16 @@ describe('ContentPackage application service contract', () => {
     state.contentPackages.push(target);
     await operations.saveWorkspace(state);
 
-    const targetLineage = await operationsService.getContentPackageLineage(
-      { ...context, actor: 'owner' },
-      target.id
+    const stored = await operations.loadWorkspace(context.workspaceId);
+    const storedTarget = stored?.contentPackages.find(
+      (contentPackage) => contentPackage.id === target.id
     );
-    const sourceLineage = await operationsService.getContentPackageLineage(
-      { ...context, actor: 'owner' },
-      source.id
+    const storedSource = stored?.contentPackages.find(
+      (contentPackage) => contentPackage.id === source.id
     );
 
-    assert.deepEqual(
-      targetLineage.ancestors.map((item) => item.id),
-      [source.id]
-    );
-    assert.deepEqual(
-      sourceLineage.children.map((item) => item.id),
-      [target.id]
-    );
+    assert.equal(storedTarget?.lineage.reusedFromPackageId, source.id);
+    assert.equal(storedSource?.id, source.id);
     assert.notEqual(target.versions[0]?.body, source.versions[0]?.body);
   });
 
@@ -1406,19 +1399,23 @@ describe('ContentPackage application service contract', () => {
       },
       'rollback-douyin-v1'
     );
-    const douyinHistory = (await service.queryModule(context, 'operations', {
-      action: 'content_package_versions',
-      payload: { packageId: stored.id, platform: 'douyin' },
-    })) as Array<{
-      body: string;
-      id: string;
-      revertedFromVersionId?: string;
-      source?: string;
-    }>;
     const loaded = (await service.queryModule(context, 'operations', {
       action: 'content_package',
       payload: { packageId: stored.id },
-    })) as { variants: Array<{ platform: string; versions: unknown[] }> };
+    })) as {
+      variants: Array<{
+        platform: string;
+        versions: Array<{
+          body: string;
+          id: string;
+          revertedFromVersionId?: string;
+          source?: string;
+        }>;
+      }>;
+    };
+    const douyinHistory =
+      loaded.variants.find((variant) => variant.platform === 'douyin')
+        ?.versions ?? [];
 
     assert.equal(douyinHistory.length, 3);
     assert.equal(douyinHistory.at(-1)?.body, 'douyin 初稿');
@@ -3875,14 +3872,10 @@ describe('ContentPackage frozen command and query contract', () => {
     ]);
     assert.deepEqual(Object.keys(CONTENT_PACKAGE_QUERY_SCHEMAS).sort(), [
       'content_package',
-      'content_package_delivery_capabilities',
       'content_package_delivery_timeline',
-      'content_package_lineage',
       'content_package_migration_report',
       'content_package_migration_status',
       'content_package_results',
-      'content_package_versions',
-      'content_package_weekly_result_review',
       'content_packages',
     ]);
     assert.equal(

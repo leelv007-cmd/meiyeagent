@@ -195,7 +195,12 @@ describe(
 
 			const reloaded = await service.listInbox(context, { statuses: ["done"] });
 			assert.equal(reloaded.tasks[0]?.id, task.id);
-			assert.equal((await service.listTaskEvents(context, task.id)).length, 2);
+			assert.equal(
+				(await repository.loadWorkspace(workspaceId))?.taskEvents.filter(
+					(event) => event.taskId === task.id,
+				).length,
+				2,
+			);
 			assert.deepEqual(
 				(
 					await service.search(context, {
@@ -814,20 +819,6 @@ describe(
 					error.code === "REUSE_TASK_REQUIRED",
 			);
 			const reloadedRepository = new PostgresOperationsRepository(pool);
-			const reloaded = new OperationsApplicationService(reloadedRepository, {
-				canvasExporter: new RecordedCanvasExportAdapter(),
-				creationExecutor,
-				imageGenerator: new RecordedImageGenerationAdapter(),
-				notifier: { async send() {} },
-			});
-			const targetLineage = await reloaded.getContentPackageLineage(
-				context,
-				target.id,
-			);
-			const sourceLineage = await reloaded.getContentPackageLineage(
-				context,
-				accepted.id,
-			);
 			const persisted = await reloadedRepository.loadWorkspace(workspaceId);
 			assert.equal(
 				persisted?.contentPackages.length,
@@ -837,13 +828,10 @@ describe(
 				persisted?.contentPackages.find((item) => item.id === accepted.id),
 				accepted,
 			);
-			assert.deepEqual(
-				targetLineage.ancestors.map((item) => item.id),
-				[accepted.id],
-			);
-			assert.deepEqual(
-				sourceLineage.children.map((item) => item.id),
-				[target.id],
+			assert.equal(
+				persisted?.contentPackages.find((item) => item.id === target.id)
+					?.lineage.reusedFromPackageId,
+				accepted.id,
 			);
 		});
 
@@ -940,18 +928,6 @@ describe(
 			assert.equal(persisted.rowCount, 1);
 			assert.deepEqual(persisted.rows[0]?.payload, evaluation);
 
-			const reloadedService = new OperationsApplicationService(
-				new PostgresOperationsRepository(pool),
-				{
-					canvasExporter: new RecordedCanvasExportAdapter(),
-					imageGenerator: new RecordedImageGenerationAdapter(),
-					notifier: { async send() {} },
-				},
-			);
-			assert.deepEqual(
-				await reloadedService.getLatestRetrievalEvaluation(context),
-				evaluation,
-			);
 		});
 
 		it("replays one Operations fact from Postgres after Foundation completion crashes", async () => {
@@ -1167,7 +1143,7 @@ describe(
 			assert.equal(reloadedVersion?.status, "retired");
 		});
 
-		it("recovers the latest canvas image job by work from Postgres", async () => {
+		it("recovers a canvas image job by exact id from Postgres", async () => {
 			let now = Date.parse("2026-07-11T13:00:00.000Z");
 			const imageGenerator: ImageGenerationPort = {
 				jobId(request) {
@@ -1216,7 +1192,7 @@ describe(
 			);
 
 			assert.equal(
-				(await reloaded.getLatestCanvasImageJob(context, work.id))?.id,
+				(await reloaded.getCanvasImageJob(context, running.id))?.id,
 				running.id,
 			);
 		});

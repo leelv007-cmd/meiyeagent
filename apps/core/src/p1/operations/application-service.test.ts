@@ -48,14 +48,6 @@ function setup() {
 describe('P1 operations application service', () => {
   it('delivers a recoverable task inbox, idempotent triggers, and factual weekly review', async () => {
     const { notifications, repository, service } = setup();
-    assert.equal(
-      await service.getLatestWeeklyReview(owner, {
-        from: '2026-07-13T00:00:00.000Z',
-        to: '2026-07-19T23:59:59.999Z',
-      }),
-      null
-    );
-
     const draftTask = await service.createTask(owner, {
       dueAt: '2026-07-14T09:00:00.000Z',
       executable: true,
@@ -87,13 +79,21 @@ describe('P1 operations application service', () => {
       inbox.tasks.map((task) => task.id),
       [missingAssetTask.id]
     );
-    assert.equal((await service.getTask(owner, draftTask.id)).id, draftTask.id);
+    const taskState = await repository.loadWorkspace(owner.workspaceId);
+    assert.equal(
+      taskState?.tasks.find((task) => task.id === draftTask.id)?.id,
+      draftTask.id
+    );
     assert.deepEqual(
       inbox.weekStrip.map((point) => point.date),
       ['2026-07-13', '2026-07-14', '2026-07-15', '2026-07-16', '2026-07-17']
     );
     assert.equal(inbox.renderSeam, 'inline-task-components');
-    assert.equal((await service.listTaskEvents(owner, draftTask.id)).length, 3);
+    assert.equal(
+      taskState?.taskEvents.filter((event) => event.taskId === draftTask.id)
+        .length,
+      3
+    );
     assert.deepEqual(
       (await service.listInbox(owner, { relatedKinds: ['asset'] })).tasks.map(
         (task) => task.id
@@ -129,16 +129,6 @@ describe('P1 operations application service', () => {
     assert.equal(duplicateTrigger.deduplicated, true);
     assert.equal(notifications.length, 1);
 
-    const batch = await service.buildWeeklyBatch(owner, {
-      from: '2026-07-13T00:00:00.000Z',
-      to: '2026-07-19T23:59:59.999Z',
-    });
-    assert.ok(batch.included.some((item) => item.id === firstTrigger.task.id));
-    assert.ok(batch.excluded.some((item) => item.id === missingAssetTask.id));
-    assert.equal(
-      batch.excluded.find((item) => item.id === missingAssetTask.id)?.reason,
-      '缺少授权前后对比图'
-    );
     const batchExecution = await service.executeWeeklyBatch(owner, {
       action: 'create',
       taskIds: [firstTrigger.task.id, missingAssetTask.id],
@@ -342,9 +332,16 @@ describe('P1 operations application service', () => {
       ),
       false
     );
-    const metrics = await service.getTriggerMetrics(owner);
-    assert.equal(metrics.notificationsSent, 1);
-    assert.equal(metrics.notificationsFailed, 0);
+    assert.equal(
+      state?.triggerRuns.filter((run) => run.notificationStatus === 'sent')
+        .length,
+      1
+    );
+    assert.equal(
+      state?.triggerRuns.filter((run) => run.notificationStatus === 'failed')
+        .length,
+      0
+    );
   });
 
   it('keeps official template versions immutable and traces canvas work and exports', async () => {
@@ -1557,10 +1554,6 @@ describe('P1 operations application service', () => {
       }),
       /permanently bound to one fixed query set/
     );
-    assert.equal(
-      (await service.getLatestRetrievalEvaluation(owner))?.id,
-      evaluation.id
-    );
     const positiveOnlyRecall = await service.evaluateRetrieval(owner, {
       cases: [
         {
@@ -1686,85 +1679,6 @@ describe('P1 operations application service', () => {
     assert.deepEqual(cancelCalls, [second.id]);
   });
 
-  it('recovers the latest canvas image job by work after local state is lost', async () => {
-    const repository = new MemoryOperationsRepository();
-    repository.grantMembership(owner.userId, owner.workspaceId);
-    let timestamp = Date.parse('2026-07-11T10:00:00.000Z');
-    const service = new OperationsApplicationService(repository, {
-      canvasExporter: new RecordedCanvasExportAdapter(),
-      clock: () => new Date(timestamp++),
-      imageGenerator: {
-        jobId(request) {
-          return `recoverable-image-${request.prompt}`;
-        },
-        async submit(request) {
-          return {
-            actualModelId: request.requestedModelId,
-            id: this.jobId?.(request) ?? 'missing-job-id',
-            status: request.prompt.includes('运行中')
-              ? ('queued' as const)
-              : request.prompt.includes('已完成')
-                ? ('completed' as const)
-                : ('failed' as const),
-          };
-        },
-      },
-      notifier: { async send() {} },
-    });
-    const work = await service.createBlankWork(owner, {
-      height: 1350,
-      name: '可恢复图片任务',
-      width: 1080,
-    });
-    const emptyWork = await service.createBlankWork(owner, {
-      height: 1350,
-      name: '无图片任务',
-      width: 1080,
-    });
-    const terminalWork = await service.createBlankWork(owner, {
-      height: 1350,
-      name: '只有终态图片任务',
-      width: 1080,
-    });
-    const running = await service.startCanvasImageGeneration(owner, {
-      modelId: 'gpt-image-2',
-      operation: 'generate',
-      prompt: '较旧但仍运行中',
-      workId: work.id,
-    });
-    await service.startCanvasImageGeneration(owner, {
-      modelId: 'seedream-5-pro',
-      operation: 'generate',
-      prompt: '较新但已失败',
-      workId: work.id,
-    });
-    await service.startCanvasImageGeneration(owner, {
-      modelId: 'gpt-image-2',
-      operation: 'generate',
-      prompt: '较旧且已失败',
-      workId: terminalWork.id,
-    });
-    const latestTerminal = await service.startCanvasImageGeneration(owner, {
-      modelId: 'seedream-5-pro',
-      operation: 'generate',
-      prompt: '较新且已完成',
-      workId: terminalWork.id,
-    });
-
-    assert.equal(
-      (await service.getLatestCanvasImageJob(owner, work.id))?.id,
-      running.id
-    );
-    assert.equal(
-      (await service.getLatestCanvasImageJob(owner, terminalWork.id))?.id,
-      latestTerminal.id
-    );
-    assert.equal(
-      await service.getLatestCanvasImageJob(owner, emptyWork.id),
-      null
-    );
-  });
-
   it('recovers a submitted image when Operations crashes before saving the provider receipt', async () => {
     const repository = new MemoryOperationsRepository();
     repository.grantMembership(owner.userId, owner.workspaceId);
@@ -1818,9 +1732,10 @@ describe('P1 operations application service', () => {
       }),
       /simulated image receipt crash/
     );
-    const checkpoint = await repository.getLatestCanvasImageJob(
-      owner.workspaceId,
-      work.id
+    const checkpoint = (
+      await repository.loadWorkspace(owner.workspaceId)
+    )?.imageJobs.find(
+      (job) => job.origin.kind === 'layout_work' && job.origin.id === work.id
     );
     assert.equal(checkpoint?.status, 'queued');
 
@@ -1829,7 +1744,8 @@ describe('P1 operations application service', () => {
       imageGenerator,
       notifier: { async send() {} },
     });
-    const recovered = await restarted.getLatestCanvasImageJob(owner, work.id);
+    assert.ok(checkpoint);
+    const recovered = await restarted.getCanvasImageJob(owner, checkpoint.id);
     assert.equal(recovered?.id, checkpoint?.id);
     assert.equal(recovered?.status, 'completed');
     assert.equal(recovered?.outputAssetId, 'asset-after-crash');
@@ -2339,7 +2255,11 @@ describe('P1 operations application service', () => {
       taskIds: [task.id],
     });
     assert.equal(retried.completed[0]?.status, 'needs_review');
-    const executions = await service.listWeeklyBatchExecutions(owner, task.id);
+    const executions = (
+      await repository.loadWorkspace(owner.workspaceId)
+    )?.weeklyBatchExecutions.filter(
+      (execution) => execution.taskId === task.id
+    ) ?? [];
     assert.deepEqual(
       executions.map((execution) => [execution.attempt, execution.status]),
       [
@@ -2354,8 +2274,9 @@ describe('P1 operations application service', () => {
     assert.deepEqual(review.metrics.planned, { status: 'known', value: 3 });
     assert.deepEqual(review.metrics.drafted, { status: 'known', value: 1 });
     assert.ok(
-      (await service.listTaskEvents(owner, task.id)).some(
-        (event) => event.event === 'execution_completed'
+      (await repository.loadWorkspace(owner.workspaceId))?.taskEvents.some(
+        (event) =>
+          event.taskId === task.id && event.event === 'execution_completed'
       )
     );
   });
@@ -2427,7 +2348,11 @@ describe('P1 operations application service', () => {
     );
     now += 5 * 60 * 1000 + 1;
     const recovered = await run('weekly-batch-crash-b');
-    const executions = await service.listWeeklyBatchExecutions(owner, task.id);
+    const executions = (
+      await repository.loadWorkspace(owner.workspaceId)
+    )?.weeklyBatchExecutions.filter(
+      (execution) => execution.taskId === task.id
+    ) ?? [];
 
     assert.equal(recovered.completed[0]?.id, task.id);
     assert.equal(externalEffects.size, 1);
@@ -2496,7 +2421,11 @@ describe('P1 operations application service', () => {
     await assert.rejects(staleWorker, /stale execution lease/);
     assert.equal(new Set(executionIds).size, 1);
     assert.equal(
-      (await service.listWeeklyBatchExecutions(owner, task.id)).length,
+      (
+        await repository.loadWorkspace(owner.workspaceId)
+      )?.weeklyBatchExecutions.filter(
+        (execution) => execution.taskId === task.id
+      ).length,
       1
     );
   });
@@ -2533,12 +2462,22 @@ describe('P1 operations application service', () => {
       sourceId: 'review-w29',
       timeWindow: '2026-W29',
     });
-    const metrics = await service.getTriggerMetrics(owner);
-    assert.equal(metrics.totalRuns, 1);
-    assert.equal(metrics.created, 1);
-    assert.equal(metrics.deduplicated, 0);
-    assert.equal(metrics.notificationsSent, 1);
-    assert.equal(metrics.byKind.weekly_review_ready, 1);
+    const state = await repository.loadWorkspace(owner.workspaceId);
+    assert.equal(state?.triggerRuns.length, 1);
+    assert.equal(
+      state?.triggerRuns.filter((run) => run.status === 'created').length,
+      1
+    );
+    assert.equal(
+      state?.triggerRuns.filter((run) => run.status === 'deduplicated').length,
+      0
+    );
+    assert.equal(
+      state?.triggerRuns.filter((run) => run.notificationStatus === 'sent')
+        .length,
+      1
+    );
+    assert.equal(state?.triggerRuns[0]?.kind, 'weekly_review_ready');
 
     await service.configureTrigger(owner, 'weekly_review_ready', false);
     assert.equal(unscheduled.length, 1);

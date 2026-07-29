@@ -364,14 +364,6 @@ describe('operations foundation module', () => {
     );
     assert.equal(replay.id, created.id);
 
-    const inbox = await service.queryModule<
-      { action: string; payload: Record<string, never> },
-      { tasks: Array<{ id: string }> }
-    >(context, 'operations', { action: 'inbox', payload: {} });
-    assert.deepEqual(
-      inbox.tasks.map((task) => task.id),
-      [created.id]
-    );
     const creationCatalog = await service.queryModule<
       { action: string; payload: Record<string, never> },
       {
@@ -406,21 +398,13 @@ describe('operations foundation module', () => {
       typeof evaluationInput,
       { id: string; querySetHash: string }
     >(context, 'operations', evaluationInput, 'evaluate-retrieval-v1');
-    const metrics = await service.queryModule<
-      { action: string; payload: Record<string, never> },
-      { id: string }
-    >(context, 'operations', {
-      action: 'retrieval_metrics',
-      payload: {},
-    });
-    assert.equal(metrics.id, evaluation.id);
     assert.match(evaluation.querySetHash, /^[a-f0-9]{64}$/);
     await assert.rejects(
       service.queryModule(context, 'operations', {
         action: 'retrieval_evaluation',
         payload: evaluationInput.payload,
       }),
-      /Unknown operations query retrieval_evaluation/
+      /This module action is not registered for authorization/
     );
   });
 
@@ -495,10 +479,7 @@ describe('operations foundation module', () => {
       'crash-create-task',
       input
     );
-    const inbox = await service.queryModule<
-      { action: string; payload: Record<string, never> },
-      { tasks: Array<{ id: string }> }
-    >(context, 'operations', { action: 'inbox', payload: {} });
+    const inbox = await operationsService.listInbox(context);
 
     assert.equal(inbox.tasks.length, 1);
     assert.equal(inbox.tasks[0]?.id, replayed.id);
@@ -876,45 +857,6 @@ describe('operations foundation module', () => {
     });
 
     assert.deepEqual(submissions, [['contains_face', 'medical']]);
-  });
-
-  it('queries the latest recoverable canvas image job by work', async () => {
-    const repository = new MemoryOperationsRepository();
-    const context = {
-      correlationId: 'corr-image-recovery',
-      userId: 'owner-image-recovery',
-      workspaceId: 'workspace-image-recovery',
-    };
-    repository.grantMembership(context.userId, context.workspaceId);
-    const operations = new OperationsApplicationService(repository, {
-      canvasExporter: new RecordedCanvasExportAdapter(),
-      imageGenerator: new RecordedImageGenerationAdapter(),
-      notifier: { async send() {} },
-    });
-    const work = await operations.createBlankWork(
-      { ...context, actor: 'owner' },
-      { height: 1350, name: '恢复生图任务', width: 1080 }
-    );
-    const job = await operations.startCanvasImageGeneration(
-      { ...context, actor: 'owner' },
-      {
-        modelId: 'gpt-image-2',
-        operation: 'generate',
-        prompt: '页面刷新后恢复',
-        workId: work.id,
-      }
-    );
-    const module = new OperationsFoundationModule(operations);
-
-    const recovered = (await module.query({
-      context,
-      input: {
-        action: 'latest_canvas_image_job',
-        payload: { workId: work.id },
-      },
-    })) as { id: string };
-
-    assert.equal(recovered.id, job.id);
   });
 
   it('does not grant admin bypass to ordinary operations actions', async () => {

@@ -1131,13 +1131,6 @@ export const contentPackageQuerySchema = z.object({
   packageId: contentPackageIdSchema,
 });
 export const contentPackagesQuerySchema = z.object({}).strict();
-export const contentPackageVersionsQuerySchema = z.object({
-  packageId: contentPackageIdSchema,
-  platform: contentPackagePlatformSchema.optional(),
-});
-export const contentPackageLineageQuerySchema = z.object({
-  packageId: contentPackageIdSchema,
-});
 
 export const CONTENT_PACKAGE_COMMAND_SCHEMAS = {
   adopt_harness_candidate: adoptHarnessCandidateCommandSchema,
@@ -1174,13 +1167,9 @@ export const CONTENT_PACKAGE_COMMAND_SCHEMAS = {
 
 export const CONTENT_PACKAGE_QUERY_SCHEMAS = {
   content_package: contentPackageQuerySchema,
-  content_package_lineage: contentPackageLineageQuerySchema,
-  content_package_versions: contentPackageVersionsQuerySchema,
   content_packages: contentPackagesQuerySchema,
-  content_package_delivery_capabilities: contentPackageQuerySchema,
   content_package_delivery_timeline: contentPackageQuerySchema,
   content_package_results: contentPackageQuerySchema,
-  content_package_weekly_result_review: contentPackagesQuerySchema,
   content_package_migration_report: contentPackageMigrationQuerySchema,
   content_package_migration_status: contentPackageMigrationQuerySchema,
 } as const;

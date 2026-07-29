@@ -422,16 +422,6 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
     );
   }
 
-  async capabilities(context: OperationContext, packageId: string) {
-    const contentPackage = await this.requirePackage(context, packageId);
-    const platforms = [
-      ...new Set(contentPackage.variants.map((variant) => variant.platform)),
-    ];
-    return Promise.all(
-      platforms.map((platform) => this.dependencies.capability(platform))
-    );
-  }
-
   async handle(event: ContextInvalidationEvent) {
     await this.approvals({
       actor: 'worker',
@@ -594,61 +584,6 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
         return structuredClone(updated);
       }
     );
-  }
-
-  async weeklyResultReview(context: OperationContext) {
-    const state = await this.repository.loadWorkspace(context.workspaceId);
-    if (
-      !state ||
-      !(await this.repository.hasMembership(context.userId, context.workspaceId))
-    ) {
-      throw new ContentPackageDeliveryError(
-        'CONTENT_PACKAGE_NOT_FOUND',
-        'ContentPackage results were not found.'
-      );
-    }
-    const now = this.now();
-    const published = state.contentPackages.flatMap((contentPackage) =>
-      (contentPackage.deliveryEvents ?? [])
-        .filter(
-          (event) =>
-            (event.type === 'automatic_publish_result' ||
-              event.type === 'manual_publish_result') &&
-            event.status === 'published' &&
-            isInCurrentUtcWeek(event.occurredAt, now)
-        )
-        .map((event) => ({ packageId: contentPackage.id, event }))
-    );
-    const observed = state.contentPackages.flatMap((contentPackage) =>
-      (contentPackage.resultSignals ?? [])
-        .filter((signal) => isInCurrentUtcWeek(signal.occurredAt, now))
-        .map((signal) => ({
-          packageId: contentPackage.id,
-          signal,
-        }))
-    );
-    return {
-      nextExperiments: published
-        .filter(({ packageId }) => {
-          const contentPackage = state.contentPackages.find(
-            (candidate) => candidate.id === packageId
-          );
-          return contentPackage?.resultReviewActions?.at(-1)?.action !== 'stop_series';
-        })
-        .slice(-3)
-        .map(({ packageId }) => ({
-          packageId,
-          actions: [
-            'continue_series',
-            'change_cta',
-            'change_platform',
-            'stop_series',
-          ] as const,
-          nextTest: 'repeat_or_change_cta' as const,
-        })),
-      observed,
-      published,
-    };
   }
 
   private approvals(context: OperationContext, expectedRevision?: number) {
@@ -826,16 +761,6 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
       }
     );
   }
-}
-
-function isInCurrentUtcWeek(timestamp: string, nowTimestamp: string) {
-  const now = new Date(nowTimestamp);
-  const weekStart = new Date(nowTimestamp);
-  const daysSinceMonday = (weekStart.getUTCDay() + 6) % 7;
-  weekStart.setUTCDate(weekStart.getUTCDate() - daysSinceMonday);
-  weekStart.setUTCHours(0, 0, 0, 0);
-  const occurredAt = new Date(timestamp).getTime();
-  return occurredAt >= weekStart.getTime() && occurredAt <= now.getTime();
 }
 
 export class ContextBundleApprovalPolicyResolver

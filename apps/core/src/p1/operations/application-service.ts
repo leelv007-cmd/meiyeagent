@@ -112,10 +112,8 @@ import type {
   TemplateFamily,
   TemplateShortcut,
   TemplateVersion,
-  TriggerMetrics,
   TriggerSchedulePort,
   UserTemplate,
-  WeeklyBatch,
   WeeklyBatchAction,
   WeeklyBatchExecution,
   WeeklyFact,
@@ -1520,23 +1518,6 @@ export class OperationsApplicationService {
     return task;
   }
 
-  async listTaskEvents(context: OperationContext, taskId: string) {
-    const state = await this.read(context);
-    if (!state.tasks.some((task) => task.id === taskId)) {
-      throw new OperationsError('TASK_NOT_FOUND', 'Task was not found.', 404);
-    }
-    return state.taskEvents.filter((event) => event.taskId === taskId);
-  }
-
-  async getTask(context: OperationContext, taskId: string) {
-    const state = await this.read(context);
-    const task = state.tasks.find((item) => item.id === taskId);
-    if (!task) {
-      throw new OperationsError('TASK_NOT_FOUND', 'Task was not found.', 404);
-    }
-    return task;
-  }
-
   async listInbox(
     context: OperationContext,
     filter: TaskFilter = {}
@@ -1935,66 +1916,6 @@ export class OperationsApplicationService {
     });
   }
 
-  async getTriggerMetrics(context: OperationContext): Promise<TriggerMetrics> {
-    const state = await this.read(context);
-    const byKind = state.triggerRuns.reduce<TriggerMetrics['byKind']>(
-      (counts, run) => {
-        counts[run.kind] = (counts[run.kind] ?? 0) + 1;
-        return counts;
-      },
-      {}
-    );
-    const lastRunAt = [...state.triggerRuns].sort((left, right) =>
-      right.createdAt.localeCompare(left.createdAt)
-    )[0]?.createdAt;
-    return {
-      byKind,
-      created: state.triggerRuns.filter((run) => run.status === 'created')
-        .length,
-      deduplicated: state.triggerRuns.filter(
-        (run) => run.status === 'deduplicated'
-      ).length,
-      disabled: state.triggerRuns.filter((run) => run.status === 'disabled')
-        .length,
-      failed: state.triggerRuns.filter((run) => run.status === 'failed').length,
-      ...(lastRunAt ? { lastRunAt } : {}),
-      notificationsFailed: state.triggerRuns.filter(
-        (run) => run.notificationStatus === 'failed'
-      ).length,
-      notificationsSent: state.triggerRuns.filter(
-        (run) => run.notificationStatus === 'sent'
-      ).length,
-      totalRuns: state.triggerRuns.length,
-    };
-  }
-
-  async buildWeeklyBatch(
-    context: OperationContext,
-    range: { from: string; to: string }
-  ): Promise<WeeklyBatch> {
-    const state = await this.read(context);
-    const tasks = state.tasks.filter(
-      (task) =>
-        within(task.dueAt, range.from, range.to) &&
-        !['done', 'archived'].includes(task.status)
-    );
-    const excluded = tasks
-      .filter((task) => !task.executable || task.source === 'publish_ready')
-      .map((task) => ({
-        ...task,
-        reason:
-          task.source === 'publish_ready'
-            ? '公开发布需按目标平台合同单独确认'
-            : (task.blockedReason ?? '当前缺少执行条件'),
-      }));
-    const excludedIds = new Set(excluded.map((task) => task.id));
-    return {
-      ...range,
-      excluded,
-      included: tasks.filter((task) => !excludedIds.has(task.id)),
-    };
-  }
-
   async executeWeeklyBatch(
     context: OperationContext,
     input: {
@@ -2300,13 +2221,6 @@ export class OperationsApplicationService {
     });
   }
 
-  async listWeeklyBatchExecutions(context: OperationContext, taskId?: string) {
-    const state = await this.read(context);
-    return state.weeklyBatchExecutions.filter(
-      (execution) => !taskId || execution.taskId === taskId
-    );
-  }
-
   async recordWeeklyFact(
     context: OperationContext,
     input: Pick<WeeklyFact, 'kind' | 'occurredAt' | 'sourceId'>
@@ -2425,23 +2339,6 @@ export class OperationsApplicationService {
       );
       return review;
     });
-  }
-
-  async getLatestWeeklyReview(
-    context: OperationContext,
-    range?: { from: string; to: string }
-  ) {
-    const state = await this.read(context);
-    return (
-      [...state.weeklyReviews]
-        .filter(
-          (review) =>
-            !range || (review.from === range.from && review.to === range.to)
-        )
-        .sort((left, right) =>
-          right.createdAt.localeCompare(left.createdAt)
-        )[0] ?? null
-    );
   }
 
   async seedOfficialTemplateFamilies(context: OperationContext) {
@@ -4498,15 +4395,6 @@ export class OperationsApplicationService {
       projection.updatedAt = this.timestamp();
       return projection;
     });
-  }
-
-  async getLatestCanvasImageJob(context: OperationContext, workId: string) {
-    await this.authorize(context);
-    const job = await this.repository.getLatestCanvasImageJob(
-      context.workspaceId,
-      workId
-    );
-    return job ? this.getCanvasImageJob(context, job.id) : null;
   }
 
   async completeCanvasImageGeneration(
@@ -9551,87 +9439,6 @@ export class OperationsApplicationService {
     );
   }
 
-  async getContentPackageLineage(context: OperationContext, packageId: string) {
-    const state = await this.read(context);
-    const contentPackages = state.contentPackages ?? [];
-    const contentPackage = contentPackages.find(
-      (candidate) => candidate.id === packageId
-    );
-    if (!contentPackage) {
-      throw new OperationsError(
-        'CONTENT_PACKAGE_NOT_FOUND',
-        'The ContentPackage was not found.',
-        404
-      );
-    }
-    const ancestors: ContentPackage[] = [];
-    const visited = new Set([contentPackage.id]);
-    let sourceId = contentPackage.lineage.reusedFromPackageId;
-    while (sourceId && ancestors.length < 20 && !visited.has(sourceId)) {
-      visited.add(sourceId);
-      const source = contentPackages.find(
-        (candidate) => candidate.id === sourceId
-      );
-      if (!source) break;
-      ancestors.push(source);
-      sourceId = source.lineage.reusedFromPackageId;
-    }
-    return {
-      ancestors: ancestors.map((item) => ({
-        ...item,
-        ...contentPackageVisibleStatus(item.status),
-      })),
-      children: contentPackages
-        .filter(
-          (candidate) => candidate.lineage.reusedFromPackageId === packageId
-        )
-        .sort(
-          (left, right) =>
-            left.createdAt.localeCompare(right.createdAt) ||
-            left.id.localeCompare(right.id)
-        )
-        .map((item) => ({
-          ...item,
-          ...contentPackageVisibleStatus(item.status),
-        })),
-      truncated: Boolean(sourceId),
-    };
-  }
-
-  async listContentPackageVersions(
-    context: OperationContext,
-    input: {
-      packageId: string;
-      platform?: ContentPackage['variants'][number]['platform'];
-    }
-  ) {
-    const contentPackage = await this.getContentPackage(
-      context,
-      input.packageId
-    );
-    const versions = input.platform
-      ? contentPackage.variants.find(
-          (variant) => variant.platform === input.platform
-        )?.versions
-      : contentPackage.versions;
-    const currentVersionId = input.platform
-      ? contentPackage.variants.find(
-          (variant) => variant.platform === input.platform
-        )?.currentVersionId
-      : contentPackage.currentVersionId;
-    if (!versions || !currentVersionId) {
-      throw new OperationsError(
-        'CONTENT_PACKAGE_VARIANT_NOT_FOUND',
-        'The platform variant was not found.',
-        404
-      );
-    }
-    return versions.map((version) => ({
-      ...version,
-      isCurrent: version.id === currentVersionId,
-    }));
-  }
-
   async cancelContentPackage(
     context: OperationContext,
     input: { expectedRevision: number; packageId: string }
@@ -9892,10 +9699,6 @@ export class OperationsApplicationService {
     return this.migration().report(context.workspaceId, runId);
   }
 
-  async getLatestRetrievalEvaluation(context: OperationContext) {
-    await this.authorize(context);
-    return this.repository.getLatestRetrievalEvaluation(context.workspaceId);
-  }
 }
 
 function assertNoPendingApprovalForTask(

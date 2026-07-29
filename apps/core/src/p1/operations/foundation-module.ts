@@ -8,8 +8,6 @@ import {
   contentPackageQuerySchema,
   contentPackageMigrationCommandSchema,
   contentPackageMigrationQuerySchema,
-  contentPackageLineageQuerySchema,
-  contentPackageVersionsQuerySchema,
   contentPackagesQuerySchema,
   creativeOperationSchema,
   createContentPackageCommandSchema,
@@ -49,7 +47,6 @@ import type {
   ImageModelId,
   OperationContext,
   SearchQuery,
-  TaskFilter,
   TemplateShortcut,
   WeeklyFact,
 } from './types.js';
@@ -1245,22 +1242,6 @@ export class OperationsFoundationModule implements P1OperationModule {
         }
         return this.options.delivery.timeline(context, parsed.data.packageId);
       }
-      case 'content_package_delivery_capabilities': {
-        const parsed = contentPackageQuerySchema.safeParse(payload);
-        if (!parsed.success || !this.options.delivery) {
-          throw new OperationsError(
-            'CONTENT_PACKAGE_DELIVERY_UNAVAILABLE',
-            parsed.success
-              ? 'ContentPackage delivery is unavailable.'
-              : parsed.error.message,
-            parsed.success ? 503 : 400
-          );
-        }
-        return this.options.delivery.capabilities(
-          context,
-          parsed.data.packageId
-        );
-      }
       case 'content_package_results': {
         const parsed = contentPackageQuerySchema.safeParse(payload);
         if (!parsed.success || !this.options.delivery) {
@@ -1271,33 +1252,6 @@ export class OperationsFoundationModule implements P1OperationModule {
           );
         }
         return this.options.delivery.results(context, parsed.data.packageId);
-      }
-      case 'content_package_weekly_result_review':
-        if (!this.options.delivery) {
-          throw new OperationsError(
-            'CONTENT_PACKAGE_DELIVERY_UNAVAILABLE',
-            'ContentPackage delivery is unavailable.',
-            503
-          );
-        }
-        return this.options.delivery.weeklyResultReview(context);
-      case 'content_package_lineage': {
-        const parsed = contentPackageLineageQuerySchema.safeParse(payload);
-        if (!parsed.success) {
-          throw new OperationsError(
-            'INVALID_CONTENT_PACKAGE_QUERY',
-            parsed.error.message
-          );
-        }
-        const lineage = await this.operations.getContentPackageLineage(
-          context,
-          parsed.data.packageId
-        );
-        return {
-          ...lineage,
-          ancestors: lineage.ancestors.map(merchantContentPackage),
-          children: lineage.children.map(merchantContentPackage),
-        };
       }
       case 'content_packages': {
         const parsed = contentPackagesQuerySchema.safeParse(payload);
@@ -1328,56 +1282,10 @@ export class OperationsFoundationModule implements P1OperationModule {
           payload.assetId
         );
       }
-      case 'content_package_versions': {
-        const parsed = contentPackageVersionsQuerySchema.safeParse(payload);
-        if (!parsed.success) {
-          throw new OperationsError(
-            'INVALID_CONTENT_PACKAGE_QUERY',
-            parsed.error.message
-          );
-        }
-        return this.operations.listContentPackageVersions(context, parsed.data);
-      }
-      case 'task':
-        return this.operations.getTask(
-          context,
-          requiredString(payload, 'taskId')
-        );
-      case 'inbox':
-        return this.operations.listInbox(
-          context,
-          payload as unknown as TaskFilter
-        );
-      case 'task_events':
-        return this.operations.listTaskEvents(
-          context,
-          requiredString(payload, 'taskId')
-        );
-      case 'weekly_batch':
-        return this.operations.buildWeeklyBatch(context, {
-          from: requiredString(payload, 'from'),
-          to: requiredString(payload, 'to'),
-        });
-      case 'weekly_review':
-        return this.operations.getLatestWeeklyReview(context, {
-          from: requiredString(payload, 'from'),
-          to: requiredString(payload, 'to'),
-        });
-      case 'weekly_batch_executions':
-        return this.operations.listWeeklyBatchExecutions(
-          context,
-          typeof payload.taskId === 'string' ? payload.taskId : undefined
-        );
-      case 'trigger_metrics':
-        return this.operations.getTriggerMetrics(context);
       case 'templates':
         return this.operations.listTemplates(context, payload);
       case 'creation_catalog':
         return this.operations.getCreationCatalog(context);
-      case 'user_templates':
-        return this.operations.listUserTemplates(context);
-      case 'template_shortcuts':
-        return this.operations.listTemplateShortcuts(context);
       case 'work':
         return this.operations.getWork(
           context,
@@ -1393,18 +1301,11 @@ export class OperationsFoundationModule implements P1OperationModule {
           context,
           requiredString(payload, 'jobId')
         );
-      case 'latest_canvas_image_job':
-        return this.operations.getLatestCanvasImageJob(
-          context,
-          requiredString(payload, 'workId')
-        );
       case 'search':
         return this.operations.search(
           context,
           payload as unknown as SearchQuery
         );
-      case 'retrieval_metrics':
-        return this.operations.getLatestRetrievalEvaluation(context);
       case 'admin_template_catalog':
         return this.operations.getTemplateCatalogHistory(
           context,

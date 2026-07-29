@@ -165,18 +165,6 @@ export interface TriggerRun {
   createdAt: string;
 }
 
-export interface TriggerMetrics {
-  totalRuns: number;
-  created: number;
-  deduplicated: number;
-  disabled: number;
-  failed: number;
-  notificationsSent: number;
-  notificationsFailed: number;
-  lastRunAt?: string;
-  byKind: Partial<Record<BuiltInTriggerKind, number>>;
-}
-
 export interface TriggerSchedulePort {
   /** Implementations must upsert idempotently by scheduleId. */
   scheduleRecurring(input: {
@@ -209,13 +197,6 @@ export interface TaskNotification {
 
 export interface NotificationPort {
   send(notification: TaskNotification): Promise<void>;
-}
-
-export interface WeeklyBatch {
-  from: string;
-  to: string;
-  included: ContentTask[];
-  excluded: Array<ContentTask & { reason: string }>;
 }
 
 export type WeeklyBatchAction =
