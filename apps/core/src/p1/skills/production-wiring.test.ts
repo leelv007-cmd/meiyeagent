@@ -4,6 +4,7 @@ import test from 'node:test';
 
 import {
   listSkillSchemaRefs,
+  requiredP1Capability,
   resolveSkillSchema,
 } from '@meiye/contracts';
 
@@ -25,6 +26,60 @@ const EXPECTED_SKILL_SCHEMA_REFS = [
   'skill-input.daily-industry@1',
   'skill-output.intent-decision@1',
 ] as const;
+
+// The merchant-facing product deliberately has no Skill export: a stored
+// Skill references tenant assets and platform identifiers, so a downloaded
+// copy could not run anywhere else. This asserts the absence stays true as
+// the action registry grows, rather than trusting that nobody adds one.
+const SKILL_REGISTRY_ACTIONS = {
+  command: [
+    'skill_accept',
+    'skill_bind',
+    'skill_define',
+    'skill_deployment',
+    'skill_rollback',
+  ],
+  query: ['skill_catalog_list', 'skill_revision_history'],
+} as const;
+
+test('the Skill action registry exposes no export or download verb', () => {
+  const registered = [
+    ...SKILL_REGISTRY_ACTIONS.command,
+    ...SKILL_REGISTRY_ACTIONS.query,
+  ];
+
+  for (const action of registered) {
+    assert.doesNotMatch(
+      action,
+      /export|download|dump|archive/u,
+      `Skill action ${action} looks like a bulk-extraction verb`,
+    );
+  }
+
+  // Every registered action must resolve to a capability; an unregistered one
+  // is denied by default, so a silent typo would look like "no export" too.
+  for (const action of SKILL_REGISTRY_ACTIONS.command) {
+    assert.equal(
+      requiredP1Capability('command', 'skills', action),
+      'config.publish',
+      `${action} must stay behind config.publish`,
+    );
+  }
+  for (const action of SKILL_REGISTRY_ACTIONS.query) {
+    assert.equal(
+      requiredP1Capability('query', 'skills', action),
+      'workspace.read',
+      `${action} must stay a plain read`,
+    );
+  }
+
+  // Anything not on the list stays denied, so the snapshot above is the whole
+  // authority surface rather than a sample of it.
+  assert.equal(
+    requiredP1Capability('query', 'skills', 'skill_export'),
+    null,
+  );
+});
 
 test('production Skill inventory matches the explicit contract snapshot', () => {
   assert.deepEqual(listSkillSchemaRefs(), EXPECTED_SKILL_SCHEMA_REFS);
