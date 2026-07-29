@@ -14,9 +14,21 @@
  * no confirmed revision the actions are withheld rather than guessed.
  */
 
-import type { ContentPackageRevisionDelivery } from '@meiye/contracts';
+import type {
+  ContentPackageRevisionDelivery,
+  CreationLensId,
+} from '@meiye/contracts';
+import { useState } from 'react';
 
 import { cn } from '@/lib/utils';
+
+import { ComposerDeliveryFollowUps } from './composer-delivery-followups';
+import {
+  ComposerDeliveryRatingBar,
+  type DeliveryRatingAction,
+  type DeliveryRatingVerdict,
+} from './composer-delivery-rating-bar';
+import type { DeliveryFollowUpSeed } from './delivery-followup-seeds';
 
 /** Which Result Center panel an entry opens, bound to the delivered revision. */
 export type ComposerDeliveryAction = 'adopt' | 'adjust' | 'export';
@@ -45,6 +57,17 @@ export type ComposerDeliveryCardProps = {
   /** 候选呈现 — an excerpt of what was delivered, so the card stands alone. */
   excerpt?: { title?: string; body?: string };
   onOpen: (input: ComposerDeliveryOpenInput) => void;
+  /** 交付物自己的创作类型 — 后续动作 chip 按它取固定集合。 */
+  lensId?: CreationLensId;
+  /** 交付物已有的画幅 — 用来剔除已经成立的动作（横版图不再问要不要横版）。 */
+  aspectRatio?: string;
+  /**
+   * 评价条出口。事件的组装与投递属适配层，这里连事件名都不知道 —— 卡片知道
+   * 键名，#248 改一次就要改两处。
+   */
+  onRate?: (action: DeliveryRatingAction) => void;
+  /** 后续动作出口：把整句交出去预填 Composer，禁止在此提交。 */
+  onFollowUp?: (seed: DeliveryFollowUpSeed) => void;
   className?: string;
 };
 
@@ -55,10 +78,25 @@ export function ComposerDeliveryCard({
   statement,
   excerpt,
   onOpen,
+  lensId,
+  aspectRatio,
+  onRate,
+  onFollowUp,
   className,
 }: ComposerDeliveryCardProps) {
   const body = excerpt?.body?.trim() ?? '';
   const preview = body.length > 120 ? `${body.slice(0, 120)}…` : body;
+  const [verdict, setVerdict] = useState<DeliveryRatingVerdict | null>(null);
+
+  const handleRate = (action: DeliveryRatingAction) => {
+    if (action !== 'copy') {
+      // 同一版只保留一个态度，再点同一个＝撤回。前端只管当前态、不做去重：
+      // 归纳侧要的是时序证据，「商家改了主意」恰恰是最强的一条，在信号进入之前
+      // 就合并掉等于先把它丢了。哪一条是最终态是查询问题，不是写入问题。
+      setVerdict((current) => (current === action ? null : action));
+    }
+    onRate?.(action);
+  };
 
   return (
     <section
@@ -102,6 +140,24 @@ export function ComposerDeliveryCard({
         ) : null}
         <p className="text-muted mt-2 text-xs">点开看完整成品</p>
       </button>
+
+      {/*
+        评价条与 chip 组各自跟着自己的出口渲染，没有出口就不渲染：一个点了没有
+        任何去处的按钮，与首版撤掉「更多」是同一条理由（PRODUCT.md:40）。评价条
+        另外还要 revision —— 「这一版好不好用」在没有确认交付版本时无从谈起，与
+        本卡对三动作的处置一致（宁可不给，不猜）。
+      */}
+      {revision && onRate ? (
+        <ComposerDeliveryRatingBar onRate={handleRate} verdict={verdict} />
+      ) : null}
+
+      {lensId && onFollowUp ? (
+        <ComposerDeliveryFollowUps
+          aspectRatio={aspectRatio}
+          lensId={lensId}
+          onFollowUp={onFollowUp}
+        />
+      ) : null}
 
       {revision ? (
         <div
