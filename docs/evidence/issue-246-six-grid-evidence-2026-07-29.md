@@ -1,6 +1,6 @@
 # Issue 246 Six-Grid Evidence
 
-Status: working evidence for local committed `issue/246@e2836679`, rebased on
+Status: working evidence for local committed `issue/246@322ecbae`, rebased on
 `main@c62fa6aa`. This document is deliberately not a closeout claim. A cell is
 `OPEN` when the current runtime evidence does not prove it.
 
@@ -20,18 +20,20 @@ Status: working evidence for local committed `issue/246@e2836679`, rebased on
 | Core typecheck | exit 0 |
 | Contracts typecheck | exit 0 |
 | `git diff --check` | exit 0 |
+| Current fresh Core full suite with provisioned business PostgreSQL and separate DBOS PostgreSQL | 2430 pass, 0 fail, 10 skip, exit 0 |
 | Historical pre-rebase Core full suite with business and DBOS PostgreSQL | 2393 pass, 22 fail, 10 skip, exit 1 |
 | Detached `cd3895db` full Core suite with fresh empty business and separate DBOS PostgreSQL | 2390 pass, 21 fail, 10 skip, exit 1 |
 | Detached pure `main@194a742a` affected PostgreSQL specs | 9 pass, 21 fail, 0 skip, exit 1 |
 
-The historical 22-failure full run is not reported as green. One #246-owned
-failure was the DBOS prompt-lineage assertion and is fixed by `8a512b4a`. The
-remaining 21 reproduced on pure
-`main@194a742a`: 9 lacked Better Auth `session`/`user` bootstrap and 12
-store-intake price fixtures omitted required validity. Those failures were
-consolidated in #244; newer main contains the #244 validity fixes, so the old
-counts are retained only as historical evidence and are not a current
-full-suite result. A fresh final full run remains required before closeout.
+The historical 22-failure run is not reported as green. One #246-owned failure
+was the DBOS prompt-lineage assertion and is fixed by `8a512b4a`. The remaining
+21 reproduced on pure `main@194a742a`: 9 lacked the provisioned App Shell
+schema and 12 store-intake price fixtures omitted required validity. Current
+main contains the #244 validity fixes, and the current run used
+`scripts/ci/provision-test-db.sh` to create a fresh business database plus a
+different DBOS system database. The resulting 2430/0/10 run supersedes the old
+counts as the current full-suite verdict. The 10 skips are explicit paid/live
+provider opt-ins.
 
 ## Six-grid matrix
 
@@ -97,6 +99,15 @@ pnpm --filter @meiye/contracts typecheck
 git diff --check
 ```
 
+Fresh full Core suite, with the two isolated database URLs provisioned by
+`scripts/ci/provision-test-db.sh` and supplied without printing credentials:
+
+```bash
+TEST_DATABASE_URL='<isolated-business-db>' \
+TEST_DBOS_SYSTEM_DATABASE_URL='<isolated-dbos-db>' \
+pnpm --filter @meiye/core test
+```
+
 ## External and upstream gates
 
 1. The main branch contains #248 M1's strict four observability axes, and the
@@ -114,7 +125,7 @@ git diff --check
    `main.ts`, `server.ts`, and `job-worker.ts` do not create it and the
    repository has no established production executor/business-result port to
    bind safely. Tests do not substitute for this missing production consumer.
-5. The previous full-suite run was not green on `main@194a742a`. Current main
-   contains the #244 fixes for one reproduced class, so those historical counts
-   are not reused as a current verdict; a fresh final full run remains part of
-   the closeout boundary.
+5. The current fresh Core/PostgreSQL/DBOS full suite is green. Because #248 and
+   #256 owner commits will change the final base, the same full gate must be
+   rerun after those dependencies land; the historical red counts are not
+   reused as the current verdict.
