@@ -21,6 +21,25 @@ async function commit(root, path, text, message) {
   return git(root, 'rev-parse', 'HEAD');
 }
 
+function writeMergeLedger(root, entries, message) {
+  return commit(
+    root,
+    'docs/ops/merge-ledger.md',
+    [
+      '# Merge ledger',
+      '',
+      '| main sha | 票 | 内容 |',
+      '|---|---|---|',
+      ...entries.map(
+        ({ content, issue, revision }) =>
+          `| ${revision.slice(0, 8)} | #${issue} | ${content} |`
+      ),
+      '',
+    ].join('\n'),
+    message
+  );
+}
+
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'issue-253-ready-'));
   git(root, 'init', '-b', 'main');
@@ -50,19 +69,17 @@ async function fixture() {
       'feat(web): build dashboard sections'
     ),
   };
-  await commit(
+  await writeMergeLedger(
     root,
-    'docs/ops/merge-ledger.md',
     [
-      '# Merge ledger',
-      '',
-      '| main sha | 票 | 内容 |',
-      '|---|---|---|',
-      `| ${commits['248'].slice(0, 8)} | #248 | observability |`,
-      `| ${commits['261'].slice(0, 8)} | #261 | dashboard |`,
-      `| ${commits['264FE'].slice(0, 8)} | #264 | frontend retirement |`,
-      '',
-    ].join('\n'),
+      { content: 'observability', issue: 248, revision: commits['248'] },
+      { content: 'dashboard', issue: 261, revision: commits['261'] },
+      {
+        content: 'frontend retirement',
+        issue: 264,
+        revision: commits['264FE'],
+      },
+    ],
     'docs(ops): record dependency merges'
   );
   const markers = {
@@ -211,18 +228,20 @@ test('a semantic check cannot use an unrelated path', async () => {
 
 test('an ancestor marker absent from the merge ledger fails closed', async () => {
   const data = await fixture();
-  await commit(
+  await writeMergeLedger(
     data.root,
-    'docs/ops/merge-ledger.md',
     [
-      '# Merge ledger',
-      '',
-      '| main sha | 票 | 内容 |',
-      '|---|---|---|',
-      `| ${data.commits['248'].slice(0, 8)} | #248 | observability |`,
-      `| ${data.commits['264FE'].slice(0, 8)} | #264 | frontend retirement |`,
-      '',
-    ].join('\n'),
+      {
+        content: 'observability',
+        issue: 248,
+        revision: data.commits['248'],
+      },
+      {
+        content: 'frontend retirement',
+        issue: 264,
+        revision: data.commits['264FE'],
+      },
+    ],
     'docs(ops): remove invalid merge claim'
   );
 
@@ -251,19 +270,17 @@ test('frontend markers merged in reverse order fail closed', async () => {
     ownedPaths: ['mkfast-template-main/src/video-order.tsx'],
   };
   await writeFile(data.markerPath, JSON.stringify(data.markers));
-  await commit(
+  await writeMergeLedger(
     data.root,
-    'docs/ops/merge-ledger.md',
     [
-      '# Merge ledger',
-      '',
-      '| main sha | 票 | 内容 |',
-      '|---|---|---|',
-      `| ${data.commits['248'].slice(0, 8)} | #248 | observability |`,
-      `| ${data.commits['261'].slice(0, 8)} | #261 | dashboard |`,
-      `| ${videoCommit.slice(0, 8)} | #264 | frontend retirement |`,
-      '',
-    ].join('\n'),
+      {
+        content: 'observability',
+        issue: 248,
+        revision: data.commits['248'],
+      },
+      { content: 'dashboard', issue: 261, revision: data.commits['261'] },
+      { content: 'frontend retirement', issue: 264, revision: videoCommit },
+    ],
     'docs(ops): record reversed frontend merges'
   );
 
