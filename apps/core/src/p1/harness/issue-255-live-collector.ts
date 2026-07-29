@@ -18,6 +18,7 @@ import {
 import {
   createIssue255DirectCopyPort,
   createIssue255TuziMediaPort,
+  type Issue255ReceiptFence,
 } from './issue-255-provider-attempt-fence.js';
 import {
   PostgresIssue255LiveReceiptRepository,
@@ -292,7 +293,7 @@ export async function collectIssue255LiveAnchors(input: {
     },
   });
   const serialized = `${JSON.stringify(preliminary, null, 2)}\n`;
-  assertSanitizedManifest(serialized);
+  assertIssue255SanitizedManifest(serialized);
   await writeFile(pendingPath, serialized, { flag: 'wx', mode: 0o600 });
 
   await input.database.query(
@@ -323,10 +324,18 @@ export function issue255DirectCopyExecutor(input: {
   deploymentId: string;
   options: OpenAiCompatibleLlmExecutionOptions;
   priceRevision: string;
-  receipts: PostgresIssue255LiveReceiptRepository;
+  receipts: Issue255ReceiptFence;
 }): Issue255LiveExecutor {
   const prompt =
     '基于门店已确认事实写三条合规且彼此不同的小红书护理介绍，不添加疗效承诺或虚构优惠。';
+  const inputPriceMicrosPerMillion = frozenPriceMicros(
+    input.options.inputCostPerMillion,
+    'direct input price',
+  );
+  const outputPriceMicrosPerMillion = frozenPriceMicros(
+    input.options.outputCostPerMillion,
+    'direct output price',
+  );
   return {
     adapter: 'direct-copy',
     catalogModelId: input.options.catalogModelId,
@@ -372,10 +381,28 @@ export function issue255DirectCopyExecutor(input: {
           `Issue 255 direct copy provider did not return a trusted terminal: ${detail}.`,
         );
       }
+      const inputTokens = requiredUsageQuantity(
+        result.providerCost.usage.inputTokens,
+        'direct input tokens',
+      );
+      const outputTokens = requiredUsageQuantity(
+        result.providerCost.usage.outputTokens,
+        'direct output tokens',
+      );
       return {
         providerTaskRef: result.providerTaskRef,
-        amountMicros: Math.round(
-          result.providerCost.amount * 1_000_000,
+        amountMicros: proratedPriceMicros(
+          [
+            [
+              inputPriceMicrosPerMillion,
+              inputTokens,
+            ],
+            [
+              outputPriceMicrosPerMillion,
+              outputTokens,
+            ],
+          ],
+          1_000_000,
         ),
         usage: result.providerCost.usage,
         usageEvidenceKind: 'provider_reported',
@@ -391,7 +418,7 @@ export function issue255TuziExecutor(input: {
   modality: 'image_text' | 'video';
   options: TuziMediaExecutionOptions;
   priceRevision: string;
-  receipts: PostgresIssue255LiveReceiptRepository;
+  receipts: Issue255ReceiptFence;
   wait?: (milliseconds: number) => Promise<void>;
 }): Issue255LiveExecutor {
   const isImage = input.modality === 'image_text';
@@ -401,6 +428,12 @@ export function issue255TuziExecutor(input: {
   const catalogModelId = isImage
     ? input.options.image.catalogModelId
     : input.options.video.catalogModelId;
+  const priceMicros = frozenPriceMicros(
+    isImage
+      ? input.options.image.costPerImage
+      : input.options.video.costPerMillionTokens,
+    isImage ? 'Tuzi image price' : 'Tuzi video price',
+  );
   return {
     adapter: isImage ? 'tuzi-image' : 'tuzi-video',
     catalogModelId,
@@ -452,8 +485,17 @@ export function issue255TuziExecutor(input: {
         }
         return {
           providerTaskRef: submitted.taskRef,
-          amountMicros: Math.round(
-            submitted.providerCost.amount * 1_000_000,
+          amountMicros: proratedPriceMicros(
+            [
+              [
+                priceMicros,
+                requiredUsageQuantity(
+                  submitted.providerCost.usage.mediaUnits,
+                  'Tuzi image media units',
+                ),
+              ],
+            ],
+            1,
           ),
           usage: submitted.providerCost.usage,
           usageEvidenceKind: 'provider_reported',
@@ -475,8 +517,17 @@ export function issue255TuziExecutor(input: {
           }
           return {
             providerTaskRef: submitted.taskRef,
-            amountMicros: Math.round(
-              terminal.providerCost.amount * 1_000_000,
+            amountMicros: proratedPriceMicros(
+              [
+                [
+                  priceMicros,
+                  requiredUsageQuantity(
+                    terminal.providerCost.usage.outputTokens,
+                    'Tuzi video output tokens',
+                  ),
+                ],
+              ],
+              1_000_000,
             ),
             usage: terminal.providerCost.usage,
             usageEvidenceKind: 'provider_reported',
@@ -727,7 +778,7 @@ function manifestSample(
   };
 }
 
-function assertSanitizedManifest(serialized: string) {
+export function assertIssue255SanitizedManifest(serialized: string) {
   if (
     /https?:\/\//iu.test(serialized) ||
     /postgres(?:ql)?:\/\//iu.test(serialized) ||
@@ -746,4 +797,45 @@ function hash(input: string) {
 
 function defaultWait(milliseconds: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function frozenPriceMicros(amount: number, label: string) {
+  const micros = Math.ceil(amount * 1_000_000);
+  if (
+    !Number.isFinite(amount) ||
+    amount < 0 ||
+    !Number.isSafeInteger(micros)
+  ) {
+    throw new Error(`Issue 255 ${label} is not a safe frozen price.`);
+  }
+  return micros;
+}
+
+function requiredUsageQuantity(
+  quantity: number | undefined,
+  label: string,
+) {
+  if (!Number.isSafeInteger(quantity) || (quantity ?? 0) <= 0) {
+    throw new Error(
+      `Issue 255 ${label} is not trusted provider-reported usage.`,
+    );
+  }
+  return quantity!;
+}
+
+function proratedPriceMicros(
+  components: readonly (readonly [priceMicros: number, quantity: number])[],
+  denominator: number,
+) {
+  const divisor = BigInt(denominator);
+  const numerator = components.reduce(
+    (total, [priceMicros, quantity]) =>
+      total + BigInt(priceMicros) * BigInt(quantity),
+    0n,
+  );
+  const amount = (numerator + divisor - 1n) / divisor;
+  if (amount > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error('Issue 255 provider cost exceeds safe integer micros.');
+  }
+  return Number(amount);
 }

@@ -15,7 +15,7 @@ type FenceIdentity = {
   providerIdempotencyKey: string;
 };
 
-interface ReceiptFence {
+export interface Issue255ReceiptFence {
   claimGenerationPost(
     input: FenceIdentity & {
       adapter: 'direct-copy' | 'tuzi-image' | 'tuzi-video';
@@ -32,7 +32,7 @@ export function createIssue255ProviderFetchFence(input: {
   adapter: 'direct-copy' | 'tuzi-image' | 'tuzi-video';
   fetch: typeof globalThis.fetch;
   identity: FenceIdentity;
-  receipts: ReceiptFence;
+  receipts: Issue255ReceiptFence;
 }): typeof globalThis.fetch {
   assertFrozenIdentity(input.adapter, input.identity);
   return async (request, init) => {
@@ -63,7 +63,7 @@ export function createIssue255ProviderFetchFence(input: {
 export function createIssue255DirectCopyPort(input: {
   identity: FenceIdentity & { modality: 'copy' };
   options: OpenAiCompatibleLlmExecutionOptions;
-  receipts: ReceiptFence;
+  receipts: Issue255ReceiptFence;
 }) {
   const fetch = createIssue255ProviderFetchFence({
     adapter: 'direct-copy',
@@ -82,7 +82,7 @@ export function createIssue255TuziMediaPort(input: {
     | (FenceIdentity & { modality: 'image_text' })
     | (FenceIdentity & { modality: 'video' });
   options: TuziMediaExecutionOptions;
-  receipts: ReceiptFence;
+  receipts: Issue255ReceiptFence;
 }) {
   const assetFetch = input.options.assetFetch;
   if (!assetFetch) {
