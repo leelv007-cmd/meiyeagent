@@ -139,7 +139,7 @@ const retiredAssetMemoryContractExports = [
   'assetIntakeViewQuerySchema',
   'assetIntakeMissingFactKeysQuerySchema',
   'reusableAssetViewQuerySchema',
-  'reuseTaskSeedQuerySchema',
+  'reusableAssetRevisionQuerySchema',
   'seriesSuggestionsQuerySchema',
   'preferenceViewQuerySchema',
 ] as const;

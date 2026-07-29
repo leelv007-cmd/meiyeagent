@@ -341,13 +341,6 @@ export const preferenceSchema = z
   .strict()
   .superRefine(validateScopeDecision);
 
-export const reusableAssetRevisionQuerySchema = z
-  .object({
-    assetId: idSchema,
-    revision: z.number().int().positive(),
-  })
-  .strict();
-
 export type ReusableAssetScope = z.infer<typeof reusableAssetScopeSchema>;
 export type ReusableScopeDecision = z.infer<
   typeof reusableScopeDecisionSchema
