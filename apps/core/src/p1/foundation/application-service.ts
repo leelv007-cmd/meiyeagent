@@ -51,6 +51,9 @@ export const ZERO_VALUE_USAGE_RESERVATION_PREFIX = 'zero-value-usage:';
 
 const NEW_P1_SIDE_EFFECTS = new Set([
   'advanced-canvas:adopt_advanced_canvas_output',
+  'agent-primitives:generate',
+  'agent-primitives:record',
+  'agent-primitives:revise',
   'asset-memory:confirm_asset_intake_fact',
   'asset-memory:finalize_store_intake',
   'asset-memory:parse_single_asset',
@@ -190,7 +193,24 @@ export class P1ApplicationService {
     input: Record<string, unknown>
   ) {
     const action = typeof input.action === 'string' ? input.action : undefined;
-    if (!action || !NEW_P1_SIDE_EFFECTS.has(`${name}:${action}`)) return;
+    const payload =
+      input.payload &&
+      typeof input.payload === 'object' &&
+      !Array.isArray(input.payload)
+        ? (input.payload as Record<string, unknown>)
+        : undefined;
+    const sideEffectAction =
+      name === 'agent-primitives' &&
+      action === 'execute' &&
+      typeof payload?.primitiveId === 'string'
+        ? payload.primitiveId
+        : action;
+    if (
+      !sideEffectAction ||
+      !NEW_P1_SIDE_EFFECTS.has(`${name}:${sideEffectAction}`)
+    ) {
+      return;
+    }
     const owner = await this.writeOwnershipReader?.(context.workspaceId);
     if (!owner || owner === 'p1') return;
     if (owner === 'frozen') {
