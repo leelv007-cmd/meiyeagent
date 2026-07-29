@@ -39,7 +39,6 @@
     "uiux:baseline": "node scripts/uiux/baseline-manifest.mjs --pre-cutover 0cba260",
     "uiux:bundle-check": "node scripts/uiux/bundle-budget.mjs",
     "uiux:cutover": "pnpm --filter @meiye/core cutover",
-    "uiux:quality": "PLAYWRIGHT_PRODUCTION_CANDIDATE=true PLAYWRIGHT_AUTH_BASE_URL=http://localhost:3000 pnpm --filter @meiye/web exec playwright test tests/e2e/specs/uiux-precutover-baseline.spec.ts",
     "uiux:secret-scan": "node scripts/uiux/secret-scan.mjs"
   }
 }
