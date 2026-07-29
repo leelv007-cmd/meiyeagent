@@ -562,18 +562,10 @@ test.describe
       expect(contentPackage.generated.childRuns).toHaveLength(
         selected?.note?.plan.pages.length ?? 0
       );
-      expect(
-        selected?.note?.evaluation.dimensions.map(({ dimension }) => dimension)
-      ).toEqual([
-        'theme_continuity',
-        'visual_consistency',
-        'non_repetition',
-        'role_coverage',
-        'image_text_cross_reference',
-      ]);
-      expect(
-        selected?.note?.evaluation.dimensions.every(({ passed }) => passed)
-      ).toBe(true);
+      // The current production wiring declares the optional enhancement judge
+      // unconfigured. A full package remains valid, but it must not invent a
+      // five-dimension evaluation that never ran.
+      expect(selected?.note?.evaluation).toBeUndefined();
       const usage = await queryProductUsage(page, submission.taskId);
       expect(usage).toMatchObject({
         reservedUnits: [

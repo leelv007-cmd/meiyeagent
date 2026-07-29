@@ -574,6 +574,7 @@ export function ComposerHome({
   // completed-attempt handoff. Guard that burst so it still mints exactly one
   // session identity.
   const reopeningCompletedAttemptRef = useRef(false);
+  const focusIntentAfterPrefillRef = useRef(false);
   // 「再生成一次」thaws the lens first, so the actual submit has to wait for the
   // reopened state to land (attemptSubmit reads lensState from the closure).
   const [retryAfterReport, setRetryAfterReport] = useState(false);
@@ -1897,6 +1898,12 @@ export function ComposerHome({
     },
   });
 
+  useEffect(() => {
+    if (!focusIntentAfterPrefillRef.current || createWork.isPending) return;
+    focusIntentAfterPrefillRef.current = false;
+    focusComposerIntentInput();
+  }, [createWork.isPending, lensState.draft.userText]);
+
   const runCreate = (
     selectedLens: CreationLensId,
     videoConfirmAccepted?: boolean,
@@ -2620,13 +2627,10 @@ export function ComposerHome({
             // recommendation/sample is written for, then seed the draft. Leaving
             // the lens unselected would make the merchant re-pick it before the
             // draft can be submitted.
+            focusIntentAfterPrefillRef.current = true;
             setLensState((current) =>
               updateUserText(selectLens(current, 'copy'), intent)
             );
-            // Not intentRef: PromptInput.TextArea spreads incoming props after
-            // its own ref, so handing it one silently replaces the ref its
-            // autosize depends on. Focus by testid instead.
-            focusComposerIntentInput();
           }}
           onRefresh={product.refresh}
           onStart={() => focusComposerIntentInput()}
