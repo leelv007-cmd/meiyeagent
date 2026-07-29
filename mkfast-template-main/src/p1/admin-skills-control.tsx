@@ -45,9 +45,10 @@ const ACTION_TEMPLATES = {
     name: '美业故事结构',
     presentationPolicy: 'explainable',
     promptReference: {
-      contentHash: '<sha256>',
+      contentHash:
+        'f07ef2e3a031b60c16d6048f28c6325c349845fa2b20ae56672b0b6473c8beb2',
       name: 'harness/intent-naming',
-      version: '<pinned-version>',
+      version: 'builtin-v1',
     },
   },
   skill_accept: {

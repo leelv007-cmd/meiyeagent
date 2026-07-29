@@ -47,7 +47,7 @@ test('official Skill frontmatter is a closed six-field set', () => {
   );
 });
 
-test('Skill frontmatter requires name and description and string metadata values', () => {
+test('Skill frontmatter requires name and description and scalar metadata values', () => {
   assert.throws(
     () =>
       importSkillPackage({
@@ -72,7 +72,7 @@ test('Skill frontmatter requires name and description and string metadata values
           ),
         },
       }),
-    /metadata values must be strings/u,
+    /metadata values must be scalar/u,
   );
   assert.throws(
     () =>
@@ -85,7 +85,7 @@ test('Skill frontmatter requires name and description and string metadata values
           ),
         },
       }),
-    /lowercase letters, numbers, and hyphens/u,
+    /lowercase Unicode letters, numbers, and hyphens/u,
   );
   assert.throws(
     () =>
@@ -94,6 +94,35 @@ test('Skill frontmatter requires name and description and string metadata values
         files: { 'SKILL.md': STANDARD_SKILL_MD },
       }),
     /must match its directory/u,
+  );
+});
+
+test('Unicode Skill names and numeric metadata round-trip with normalized values', () => {
+  const imported = importSkillPackage({
+    directoryName: '美业内容',
+    files: {
+      'SKILL.md': `---
+name: 美业内容
+description: 为美业内容提供受控工作流。
+metadata:
+  revision: 1
+---
+
+仅使用已确认事实。
+`,
+    },
+  });
+
+  assert.equal(imported.frontmatter.name, '美业内容');
+  assert.deepEqual(imported.frontmatter.metadata, { revision: '1' });
+
+  const exported = exportSkillPackage(imported);
+  assert.deepEqual(
+    importSkillPackage({
+      directoryName: imported.directoryName,
+      files: exported,
+    }),
+    imported,
   );
 });
 

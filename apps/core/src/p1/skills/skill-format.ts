@@ -47,7 +47,10 @@ export function importSkillPackage(
     throw new Error('Skill package requires a UTF-8 SKILL.md.');
   }
   const { frontmatter, instructions } = parseSkillMarkdown(skillMarkdown);
-  if (frontmatter.name !== input.directoryName) {
+  if (
+    frontmatter.name.normalize('NFKC') !==
+    input.directoryName.normalize('NFKC')
+  ) {
     throw new Error('Skill frontmatter name must match its directory.');
   }
   const files: Record<string, SkillPackageFile> = {};
@@ -68,7 +71,10 @@ export function exportSkillPackage(
   skill: ImportedSkillPackage,
 ): Record<string, SkillPackageFile> {
   const frontmatter = validateSkillFrontmatter(skill.frontmatter);
-  if (frontmatter.name !== skill.directoryName) {
+  if (
+    frontmatter.name.normalize('NFKC') !==
+    skill.directoryName.normalize('NFKC')
+  ) {
     throw new Error('Skill frontmatter name must match its directory.');
   }
   const files: Record<string, SkillPackageFile> = {
@@ -133,13 +139,14 @@ export function validateSkillFrontmatter(value: unknown): SkillFrontmatter {
       throw new Error(`Unknown Skill frontmatter field: ${field}.`);
     }
   }
-  const name = requiredString(value.name, 'name');
+  const name = requiredString(value.name, 'name').normalize('NFKC');
   if (
-    name.length > 64 ||
-    !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(name)
+    [...name].length > 64 ||
+    name !== name.toLowerCase() ||
+    !/^[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*$/u.test(name)
   ) {
     throw new Error(
-      'Skill frontmatter name must use 1-64 lowercase letters, numbers, and hyphens without edge or consecutive hyphens.',
+      'Skill frontmatter name must use 1-64 lowercase Unicode letters, numbers, and hyphens without edge or consecutive hyphens.',
     );
   }
   const description = requiredString(value.description, 'description');
@@ -164,12 +171,19 @@ export function validateSkillFrontmatter(value: unknown): SkillFrontmatter {
     if (
       !isRecord(value.metadata) ||
       Object.values(value.metadata).some(
-        (candidate) => typeof candidate !== 'string',
+        (candidate) =>
+          candidate !== null &&
+          !['string', 'number', 'boolean'].includes(typeof candidate),
       )
     ) {
-      throw new Error('Skill frontmatter metadata values must be strings.');
+      throw new Error('Skill frontmatter metadata values must be scalar.');
     }
-    metadata = structuredClone(value.metadata) as Record<string, string>;
+    metadata = Object.fromEntries(
+      Object.entries(value.metadata).map(([key, candidate]) => [
+        String(key),
+        String(candidate),
+      ]),
+    );
   }
   return {
     name,

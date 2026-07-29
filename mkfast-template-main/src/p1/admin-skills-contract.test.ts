@@ -30,6 +30,29 @@ test('admin Skill writes reject content only in prompt DTOs', () => {
   );
 });
 
+test('admin Skill writes require a real pinned prompt reference', () => {
+  assert.throws(
+    () =>
+      assertReferenceOnlySkillPayload({
+        promptReference: {
+          contentHash: '<sha256>',
+          name: 'harness/intent-naming',
+          version: '<pinned-version>',
+        },
+      }),
+    /固定引用/u
+  );
+  assert.doesNotThrow(() =>
+    assertReferenceOnlySkillPayload({
+      promptReference: {
+        contentHash: 'a'.repeat(64),
+        name: 'harness/intent-naming',
+        version: 'builtin-v1',
+      },
+    })
+  );
+});
+
 test('admin Skill results omit new and legacy prompt content fields', () => {
   assert.deepEqual(
     redactSkillCommandResult({

@@ -1364,8 +1364,10 @@ test('Foundation commands reach define, accept, bind, rollback, and deployment o
 test('skill_define rejects inline prompt content before a revision write', async () => {
   const repository = new MemorySkillRepository();
   const promptContent = 'Trusted prompt snapshot from Langfuse.';
+  let promptCaptureCount = 0;
   const service = new SkillService(repository, () => NOW, {
     async capture() {
+      promptCaptureCount += 1;
       return {
         content: promptContent,
         contentHash: sha256(promptContent),
@@ -1397,6 +1399,29 @@ test('skill_define rejects inline prompt content before a revision write', async
     skillId: 'skill.inline-prompt-rejected',
   };
 
+  await assert.rejects(
+    module.execute({
+      context: {
+        actor: 'admin',
+        correlationId: 'corr-placeholder-prompt-rejected',
+        userId: 'operator-inline-prompt-rejected',
+        workspaceId: 'workspace-inline-prompt-rejected',
+      },
+      idempotencyKey: 'skill-define-placeholder-prompt-rejected',
+      input: {
+        action: 'skill_define',
+        payload: {
+          ...basePayload,
+          promptReference: {
+            contentHash: '<sha256>',
+            name: 'harness/intent-naming',
+            version: '<pinned-version>',
+          },
+        },
+      },
+    }),
+    /contentHash/u,
+  );
   await assert.rejects(
     module.execute({
       context: {
@@ -1479,10 +1504,105 @@ test('skill_define rejects inline prompt content before a revision write', async
     }),
     /governance sidecar is invalid/u,
   );
+  await assert.rejects(
+    module.execute({
+      context: {
+        actor: 'admin',
+        correlationId: 'corr-empty-instruction-rejected',
+        userId: 'operator-inline-prompt-rejected',
+        workspaceId: 'workspace-inline-prompt-rejected',
+      },
+      idempotencyKey: 'skill-define-empty-instruction-rejected',
+      input: {
+        action: 'skill_define',
+        payload: {
+          ...basePayload,
+          instruction: '  ',
+        },
+      },
+    }),
+    /instruction/u,
+  );
+  await assert.rejects(
+    module.execute({
+      context: {
+        actor: 'admin',
+        correlationId: 'corr-invalid-revision-rejected',
+        userId: 'operator-inline-prompt-rejected',
+        workspaceId: 'workspace-inline-prompt-rejected',
+      },
+      idempotencyKey: 'skill-define-invalid-revision-rejected',
+      input: {
+        action: 'skill_define',
+        payload: {
+          ...basePayload,
+          expectedRevision: 'latest',
+        },
+      },
+    }),
+    /expectedRevision/u,
+  );
   assert.equal(
     await repository.getRevisionHead('skill.inline-prompt-rejected'),
     null,
   );
+  assert.equal(
+    await repository.getCatalog('skill.inline-prompt-rejected'),
+    null,
+  );
+  assert.equal(promptCaptureCount, 0);
+});
+
+test('draftRevision normalizes instruction before persistence and content hashing', async () => {
+  const repository = new MemorySkillRepository();
+  const promptContent = 'Trusted prompt snapshot from Langfuse.';
+  const service = new SkillService(repository, () => NOW, {
+    async capture(reference) {
+      return {
+        ...reference,
+        content: promptContent,
+        isFallback: false,
+        label: 'production',
+        source: 'langfuse',
+      };
+    },
+  });
+  await service.defineCatalogEntry({
+    actorId: 'operator-instruction-normalization',
+    name: 'Instruction normalization',
+    presentationPolicy: 'backend_only',
+    skillId: 'skill.instruction-normalization',
+  });
+  const promptReference = {
+    contentHash: sha256(promptContent),
+    name: 'harness/intent-naming',
+    version: '42',
+  };
+  const common = {
+    actorId: 'operator-instruction-normalization',
+    governance: governance(),
+    manifest: {
+      description: 'Normalizes portable Skill instructions before hashing.',
+      name: 'instruction-normalization',
+    },
+    promptReference,
+    skillId: 'skill.instruction-normalization',
+  };
+
+  const first = await service.draftRevision({
+    ...common,
+    expectedRevision: null,
+    instruction: '  Use only grounded facts. \n',
+  });
+  const second = await service.draftRevision({
+    ...common,
+    expectedRevision: 1,
+    instruction: 'Use only grounded facts.',
+  });
+
+  assert.equal(first.instruction, 'Use only grounded facts.');
+  assert.equal(second.instruction, first.instruction);
+  assert.equal(second.contentHash, first.contentHash);
 });
 
 test('skill_define separates frontmatter, governance, and trusted prompt fallback while redacting content from its response', async () => {

@@ -3,13 +3,17 @@ import { HARNESS_STAGES, type EvalRun } from '@meiye/contracts';
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
 import type { P1OperationModule } from '../foundation/ports.js';
 import { SKILL_BINDING_MODES } from './types.js';
+import {
+  validateSkillFrontmatter,
+  validateSkillPackagePaths,
+  validateSkillPermissionAuthority,
+} from './skill-format.js';
+import { parseSkillGovernance } from './skill-governance.js';
 import type {
   SkillCatalog,
   SkillExecutionMode,
   SkillGovernanceSidecar,
-  SkillPromptReference,
   SkillRevision,
-  SkillRevisionManifest,
 } from './types.js';
 import { SkillService } from './service.js';
 
@@ -147,21 +151,23 @@ export class SkillFoundationModule implements P1OperationModule {
         ) {
           fail('Skill 展示策略不受支持。');
         }
-        const catalog = await this.service.defineCatalogEntry({
-          skillId: text(value, 'skillId'),
-          name: text(value, 'name'),
-          presentationPolicy,
-          actorId: args.context.userId,
-        });
-        if (
+        const revisionRequested = !(
           value.instruction === undefined &&
           value.frontmatter === undefined &&
           value.governance === undefined &&
           value.promptReference === undefined
-        ) {
+        );
+        if (!revisionRequested) {
+          const catalog = await this.service.defineCatalogEntry({
+            skillId: text(value, 'skillId'),
+            name: text(value, 'name'),
+            presentationPolicy,
+            actorId: args.context.userId,
+          });
           return { catalog, revision: null };
         }
         if (
+          value.instruction === undefined ||
           !value.frontmatter ||
           !value.governance ||
           !value.promptReference
@@ -176,17 +182,64 @@ export class SkillFoundationModule implements P1OperationModule {
           ['contentHash', 'name', 'version'],
           'Skill prompt reference',
         );
+        const contentHash = text(promptReference, 'contentHash');
+        const promptName = text(promptReference, 'name');
+        const promptVersion = text(promptReference, 'version');
+        if (!/^[a-f0-9]{64}$/u.test(contentHash)) {
+          fail('Skill prompt contentHash 必须是 64 位小写 SHA-256。');
+        }
+        if (
+          /^<[^>]+>$/u.test(promptName) ||
+          /^<[^>]+>$/u.test(promptVersion)
+        ) {
+          fail('Skill prompt name 与 version 必须是可解析的固定引用。');
+        }
+        const manifest = validateSkillFrontmatter(value.frontmatter);
+        let governance: SkillGovernanceSidecar;
+        try {
+          governance = parseSkillGovernance(value.governance);
+          validateSkillPermissionAuthority(
+            manifest,
+            governance.allowedTools,
+          );
+        } catch (error) {
+          fail(
+            `Skill governance sidecar is invalid: ${
+              error instanceof Error ? error.message : 'unknown error'
+            }`,
+          );
+        }
+        const packagePaths = validateSkillPackagePaths(
+          value.packagePaths === undefined
+            ? ['SKILL.md']
+            : stringArray(value, 'packagePaths'),
+        );
+        const expectedRevision = integerOrNull(
+          value,
+          'expectedRevision',
+        );
+        const instruction = text(value, 'instruction');
+        const skillId = text(value, 'skillId');
+        const catalogName = text(value, 'name');
+        const catalog = await this.service.defineCatalogEntry({
+          skillId,
+          name: catalogName,
+          presentationPolicy,
+          actorId: args.context.userId,
+        });
         const revision = await this.service.draftRevision({
           skillId: catalog.skillId,
-          expectedRevision: integerOrNull(value, 'expectedRevision'),
+          expectedRevision,
           actorId: args.context.userId,
-          instruction: text(value, 'instruction'),
-          manifest: value.frontmatter as SkillRevisionManifest,
-          governance: value.governance as SkillGovernanceSidecar,
-          promptReference: promptReference as unknown as SkillPromptReference,
-          ...(value.packagePaths === undefined
-            ? {}
-            : { packagePaths: stringArray(value, 'packagePaths') }),
+          instruction,
+          manifest,
+          governance,
+          promptReference: {
+            contentHash,
+            name: promptName,
+            version: promptVersion,
+          },
+          packagePaths,
         });
         return { catalog, revision: publicRevision(revision) };
       }

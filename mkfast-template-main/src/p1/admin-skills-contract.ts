@@ -2,13 +2,18 @@ const FORBIDDEN_SKILL_CONTENT_FIELDS = new Set(['content', 'fallbackContent']);
 const PROMPT_FIELDS = new Set(['prompt', 'promptReference']);
 
 export function assertReferenceOnlySkillPayload(value: unknown): void {
-  visitPromptFields(value, (prompt) => {
+  visitPromptFields(value, (field, prompt) => {
     for (const key of Object.keys(prompt)) {
       if (FORBIDDEN_SKILL_CONTENT_FIELDS.has(key)) {
         throw new Error(
           `Skill 命令不能包含 ${key}；请只提交已冻结的 prompt 引用。`
         );
       }
+    }
+    if (field === 'promptReference' && !isPinnedPromptReference(prompt)) {
+      throw new Error(
+        'Skill promptReference 必须使用可解析的 name、version 与 64 位 contentHash 固定引用。'
+      );
     }
   });
 }
@@ -47,7 +52,7 @@ function redactPrompt(value: Record<string, unknown>): unknown {
 
 function visitPromptFields(
   value: unknown,
-  inspectPrompt: (prompt: Record<string, unknown>) => void
+  inspectPrompt: (field: string, prompt: Record<string, unknown>) => void
 ): void {
   if (Array.isArray(value)) {
     value.forEach((item) => {
@@ -58,10 +63,23 @@ function visitPromptFields(
   if (!isRecord(value)) return;
   for (const [key, nested] of Object.entries(value)) {
     if (PROMPT_FIELDS.has(key) && isRecord(nested)) {
-      inspectPrompt(nested);
+      inspectPrompt(key, nested);
     }
     visitPromptFields(nested, inspectPrompt);
   }
+}
+
+function isPinnedPromptReference(value: Record<string, unknown>) {
+  return (
+    typeof value.name === 'string' &&
+    Boolean(value.name.trim()) &&
+    !/^<[^>]+>$/u.test(value.name.trim()) &&
+    typeof value.version === 'string' &&
+    Boolean(value.version.trim()) &&
+    !/^<[^>]+>$/u.test(value.version.trim()) &&
+    typeof value.contentHash === 'string' &&
+    /^[a-f0-9]{64}$/u.test(value.contentHash)
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -109,6 +109,16 @@ test('admin Skill editor uses the reference-only v2 contract and rejects inline 
   request,
 }) => {
   const admin = await registerE2EUser(request, { role: 'admin' });
+  let skillCommandRequests = 0;
+  page.on('request', (outgoing) => {
+    if (
+      outgoing.method() === 'POST' &&
+      outgoing.url().includes('/api/core/p1/commands') &&
+      outgoing.postData()?.includes('"module":"skills"')
+    ) {
+      skillCommandRequests += 1;
+    }
+  });
   try {
     await loginByForm(page, admin);
     await page.goto('/admin/skills');
@@ -141,12 +151,43 @@ test('admin Skill editor uses the reference-only v2 contract and rejects inline 
     await page.locator('#skills-action').selectOption('skill_define');
     const definePayload = JSON.parse(await payloadEditor.inputValue()) as {
       promptReference?: Record<string, unknown>;
+      skillId?: string;
     };
+    expect(definePayload.promptReference).toMatchObject({
+      contentHash: /^[a-f0-9]{64}$/u,
+      name: 'harness/intent-naming',
+      version: 'builtin-v1',
+    });
     await payloadEditor.fill(
       JSON.stringify({
         ...definePayload,
         promptReference: {
-          ...definePayload.promptReference,
+          contentHash: '<sha256>',
+          name: 'harness/intent-naming',
+          version: '<pinned-version>',
+        },
+      })
+    );
+    await page.getByRole('button', { name: '提交受控命令' }).click();
+    await expect(page.getByRole('alert')).toContainText('固定引用');
+    expect(skillCommandRequests).toBe(0);
+
+    const successfulPayload = {
+      ...definePayload,
+      skillId: `skill.browser-reference-${Date.now()}`,
+    };
+    await payloadEditor.fill(JSON.stringify(successfulPayload));
+    await page.getByRole('button', { name: '提交受控命令' }).click();
+    await expect(page.locator('pre')).toContainText(successfulPayload.skillId, {
+      timeout: 30_000,
+    });
+    expect(skillCommandRequests).toBe(1);
+
+    await payloadEditor.fill(
+      JSON.stringify({
+        ...successfulPayload,
+        promptReference: {
+          ...successfulPayload.promptReference,
           content: 'caller-controlled prompt',
         },
       })
@@ -156,6 +197,7 @@ test('admin Skill editor uses the reference-only v2 contract and rejects inline 
     await expect(page.getByRole('alert')).toContainText(
       'Skill 命令不能包含 content'
     );
+    expect(skillCommandRequests).toBe(1);
   } finally {
     await cleanupE2EUsers(request);
   }

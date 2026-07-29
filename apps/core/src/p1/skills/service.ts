@@ -142,6 +142,7 @@ export class SkillService {
     const packagePaths = validateSkillPackagePaths(
       input.packagePaths ?? ['SKILL.md'],
     );
+    const instruction = required(input.instruction, 'Skill instruction');
     const prompt = await this.capturePromptSnapshot(input.promptReference);
     const revision = (input.expectedRevision ?? 0) + 1;
     const record: SkillRevision = {
@@ -151,14 +152,14 @@ export class SkillService {
       skillRevisionRef: skillRevisionRef(catalog.skillId, revision),
       contentHash: sha256(
         canonicalJson({
-          instruction: input.instruction,
+          instruction,
           manifest,
           governance,
           packagePaths,
           prompt,
         }),
       ),
-      instruction: required(input.instruction, 'Skill instruction'),
+      instruction,
       manifest: structuredClone(manifest),
       governance: structuredClone(governance),
       packagePaths,
