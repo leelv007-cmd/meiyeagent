@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 
 const provisioner =
+  process.env.ISSUE_255_SAFE_PROVISIONER_PATH?.trim() ||
   '/Users/bin/.codex/monitors/issue-255-safe-provision.mjs';
 
 test('issue 255 provisioner rejects the legacy unconditional cleanup mode', () => {

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
+import { existsSync } from 'node:fs';
 import { mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,15 +16,19 @@ import { PostgresIssue255LiveReceiptRepository } from './issue-255-postgres-live
 const businessUrl = process.env.TEST_DATABASE_URL;
 const dbosUrl = process.env.TEST_DBOS_SYSTEM_DATABASE_URL;
 const provisioner =
+  process.env.ISSUE_255_SAFE_PROVISIONER_PATH?.trim() ||
   '/Users/bin/.codex/monitors/issue-255-safe-provision.mjs';
+const provisionerSkip =
+  !businessUrl || !dbosUrl
+    ? 'Issue 255 isolated database URLs are not configured'
+    : !existsSync(provisioner)
+      ? 'Issue 255 safe provisioner is not available'
+      : false;
 
 test(
   'issue 255 conditional reset validates both targets before dropping either database',
   {
-    skip:
-      businessUrl && dbosUrl
-        ? false
-        : 'Issue 255 isolated database URLs are not configured',
+    skip: provisionerSkip,
   },
   async () => {
     const business = new Pool({ connectionString: businessUrl, max: 1 });
@@ -62,10 +67,7 @@ test(
 test(
   'issue 255 conditional reset rejects every unsafe or unknown predicate before mutation',
   {
-    skip:
-      businessUrl && dbosUrl
-        ? false
-        : 'Issue 255 isolated database URLs are not configured',
+    skip: provisionerSkip,
   },
   async () => {
     const business = new Pool({ connectionString: businessUrl, max: 2 });
@@ -268,10 +270,7 @@ test(
 test(
   'issue 255 conditional reset inspects, refuses unsafe state, and drops both safe databases',
   {
-    skip:
-      businessUrl && dbosUrl
-        ? false
-        : 'Issue 255 isolated database URLs are not configured',
+    skip: provisionerSkip,
   },
   async () => {
     const business = new Pool({ connectionString: businessUrl, max: 2 });
