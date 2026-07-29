@@ -136,6 +136,8 @@ export async function assessRecipeFactSatisfaction(
         input,
         error instanceof z.ZodError ? 'schema_parse' : 'runner',
         error,
+        'harness_fact_satisfaction_v1',
+        `wf:${input.workflowId}:s2:facts:0`,
       ),
     );
     return conservativeGuidance(input.factTypes);
@@ -146,7 +148,13 @@ export async function assessRecipeFactSatisfaction(
   } catch (error) {
     emitFactDiagnostic(
       diagnostics,
-      factDiagnosticEvent(input, 'schema_parse', error),
+      factDiagnosticEvent(
+        input,
+        'schema_parse',
+        error,
+        'harness_fact_satisfaction_v1',
+        `wf:${input.workflowId}:s2:facts:0`,
+      ),
     );
     return conservativeGuidance(input.factTypes);
   }
@@ -191,10 +199,13 @@ export async function assessRecipeFactSatisfaction(
     .map((kind) => STORE_FACT_KIND_LABELS[kind])
     .join('、');
 
+  const criticalityEffectIdempotencyKey = `wf:${input.workflowId}:s2:facts:criticality:0`;
+  const criticalitySchemaName = 'harness_fact_criticality_v1';
+  let result;
   try {
-    const result = await runner.run({
-      effectIdempotencyKey: `wf:${input.workflowId}:s2:facts:criticality:0`,
-      schemaName: 'harness_fact_criticality_v1',
+    result = await runner.run({
+      effectIdempotencyKey: criticalityEffectIdempotencyKey,
+      schemaName: criticalitySchemaName,
       schemaRevision: 'fact-criticality-v1',
       instructions:
         input.prompts?.factCriticality?.content ??
@@ -205,14 +216,39 @@ export async function assessRecipeFactSatisfaction(
       }),
       schema: factCriticalityOutputSchema,
     });
-    const criticality = factCriticalityOutputSchema.parse(result.output);
-    if (criticality.criticality === 'critical') {
-      return {
-        status: 'partial' as const,
-        action: 'ask_user' as const,
-        factRefs: assessment.matchedFactRefs,
-        missingFactTypes: assessment.missingFactTypes,
-        question: questionCardSchema.parse({
+  } catch (error) {
+    emitFactDiagnostic(
+      diagnostics,
+      factDiagnosticEvent(
+        input,
+        error instanceof z.ZodError ? 'schema_parse' : 'runner',
+        error,
+        criticalitySchemaName,
+        criticalityEffectIdempotencyKey,
+      ),
+    );
+    return conservativeGuidance(assessment.missingFactTypes);
+  }
+  let criticality: z.infer<typeof factCriticalityOutputSchema>;
+  try {
+    criticality = factCriticalityOutputSchema.parse(result.output);
+  } catch (error) {
+    emitFactDiagnostic(
+      diagnostics,
+      factDiagnosticEvent(
+        input,
+        'schema_parse',
+        error,
+        criticalitySchemaName,
+        criticalityEffectIdempotencyKey,
+      ),
+    );
+    return conservativeGuidance(assessment.missingFactTypes);
+  }
+  if (criticality.criticality === 'critical') {
+    let question: z.infer<typeof questionCardSchema>;
+    try {
+      question = questionCardSchema.parse({
           questionId: `${input.workflowId}:s2:missing-facts`,
           workflowId: input.workflowId,
           workflowRevision: input.workflowRevision,
@@ -225,23 +261,39 @@ export async function assessRecipeFactSatisfaction(
           },
           unattended: 'continue',
           scope: 'current_task',
-        }),
-        ledgerIntake: {
-          factTypes: assessment.missingFactTypes,
-          writePath: 'asset_intake.confirm_fact' as const,
-        },
-      };
+        });
+    } catch (error) {
+      emitFactDiagnostic(
+        diagnostics,
+        factDiagnosticEvent(
+          input,
+          'runner',
+          error,
+          criticalitySchemaName,
+          criticalityEffectIdempotencyKey,
+        ),
+      );
+      return conservativeGuidance(assessment.missingFactTypes);
     }
     return {
       status: 'partial' as const,
-      action: 'execute_with_notice' as const,
+      action: 'ask_user' as const,
       factRefs: assessment.matchedFactRefs,
       missingFactTypes: assessment.missingFactTypes,
-      resultNotice: `本次结果没有使用尚未确认的${missingFactLabels}。`,
+      question,
+      ledgerIntake: {
+        factTypes: assessment.missingFactTypes,
+        writePath: 'asset_intake.confirm_fact' as const,
+      },
     };
-  } catch {
-    return conservativeGuidance(assessment.missingFactTypes);
   }
+  return {
+    status: 'partial' as const,
+    action: 'execute_with_notice' as const,
+    factRefs: assessment.matchedFactRefs,
+    missingFactTypes: assessment.missingFactTypes,
+    resultNotice: `本次结果没有使用尚未确认的${missingFactLabels}。`,
+  };
 }
 
 export type RecipeFactSatisfaction = Awaited<
@@ -266,15 +318,16 @@ function factDiagnosticEvent(
   },
   stage: FactSatisfactionDiagnosticEvent['stage'],
   error: unknown,
+  schemaName: string,
+  effectIdempotencyKey: string,
 ): FactSatisfactionDiagnosticEvent {
-  const schemaName = 'harness_fact_satisfaction_v1';
   const safeError = safeDiagnosticError(error, stage, schemaName);
   return {
     event: 'harness_fact_node_failure',
     stage,
     workflowId: input.workflowId,
     workspaceId: input.bundle.workspaceId,
-    effectIdempotencyKey: `wf:${input.workflowId}:s2:facts:0`,
+    effectIdempotencyKey,
     schemaName,
     error: {
       ...safeError,

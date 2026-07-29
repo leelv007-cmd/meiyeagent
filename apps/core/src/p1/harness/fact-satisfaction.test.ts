@@ -340,6 +340,164 @@ test('schema failures are distinct and redact invalid fact values', async () => 
   }
 });
 
+test('diagnostics reject malicious names, codes, and newline stack frames', async () => {
+  const diagnostics: FactSatisfactionDiagnosticEvent[] = [];
+  const error = Object.assign(new Error('SECRET_ERROR_MESSAGE'), {
+    code: 'SECRET_CODE\n    at apps/core/src/secret-code.ts:1:1',
+    stack:
+      'SECRET_STACK\n    at apps/core/src/secret-stack.ts:2:2\n    at /tmp/private:3:3',
+  });
+  error.name = 'SECRET_NAME\n    at apps/core/src/secret-name.ts:4:4';
+
+  await assessRecipeFactSatisfaction(
+    request(['service']),
+    new QueueRunner([error]),
+    authorizedRights,
+    (event) => diagnostics.push(event),
+  );
+
+  assert.equal(diagnostics.length, 1);
+  assert.deepEqual(
+    {
+      ...diagnostics[0]!.error,
+      stack: undefined,
+    },
+    {
+      name: 'Error',
+      code: 'STRUCTURED_NODE_RUNNER_FAILED',
+      message: 'Structured fact runner failed.',
+      stack: undefined,
+    },
+  );
+  assert.doesNotMatch(
+    JSON.stringify(diagnostics),
+    /SECRET_|secret-(?:code|stack|name)|\/tmp\/private/u,
+  );
+});
+
+test('criticality runner failures emit safe diagnostics before conservative guidance', async () => {
+  const diagnostics: FactSatisfactionDiagnosticEvent[] = [];
+  const result = await assessRecipeFactSatisfaction(
+    request(['service', 'price']),
+    new QueueRunner([
+      {
+        status: 'partial',
+        matchedFactRefs: ['store_fact:fact-service:1'],
+        missingFactTypes: ['price'],
+      },
+      new Error('SECRET_CRITICALITY_RUNNER_FAILURE'),
+    ]),
+    authorizedRights,
+    (event) => diagnostics.push(event),
+  );
+
+  assert.equal(result.action, 'conservative_guidance');
+  assert.equal(diagnostics.length, 1);
+  assert.deepEqual(
+    {
+      ...diagnostics[0],
+      error: {
+        ...diagnostics[0]!.error,
+        stack: undefined,
+      },
+    },
+    {
+      event: 'harness_fact_node_failure',
+      stage: 'runner',
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      effectIdempotencyKey: 'wf:workflow-1:s2:facts:criticality:0',
+      schemaName: 'harness_fact_criticality_v1',
+      error: {
+        name: 'Error',
+        code: 'STRUCTURED_NODE_RUNNER_FAILED',
+        message: 'Structured fact runner failed.',
+        stack: undefined,
+      },
+    },
+  );
+  assert.doesNotMatch(
+    JSON.stringify(diagnostics),
+    /SECRET_CRITICALITY_RUNNER_FAILURE/u,
+  );
+});
+
+test('criticality schema failures emit distinct safe diagnostics', async () => {
+  const diagnostics: FactSatisfactionDiagnosticEvent[] = [];
+  const result = await assessRecipeFactSatisfaction(
+    request(['service', 'price']),
+    new RawOutputQueueRunner([
+      {
+        status: 'partial',
+        matchedFactRefs: ['store_fact:fact-service:1'],
+        missingFactTypes: ['price'],
+      },
+      { criticality: 'SECRET_INVALID_CRITICALITY' },
+    ]),
+    authorizedRights,
+    (event) => diagnostics.push(event),
+  );
+
+  assert.equal(result.action, 'conservative_guidance');
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]!.stage, 'schema_parse');
+  assert.equal(
+    diagnostics[0]!.effectIdempotencyKey,
+    'wf:workflow-1:s2:facts:criticality:0',
+  );
+  assert.equal(diagnostics[0]!.schemaName, 'harness_fact_criticality_v1');
+  assert.deepEqual(
+    {
+      ...diagnostics[0]!.error,
+      stack: undefined,
+    },
+    {
+      name: 'ZodError',
+      code: 'SCHEMA_PARSE_FAILED',
+      message:
+        'harness_fact_criticality_v1 output failed schema validation.',
+      stack: undefined,
+    },
+  );
+  assert.doesNotMatch(
+    JSON.stringify(diagnostics),
+    /SECRET_INVALID_CRITICALITY/u,
+  );
+});
+
+test('invalid local QuestionCard construction is a criticality runner-stage failure', async () => {
+  const diagnostics: FactSatisfactionDiagnosticEvent[] = [];
+  const result = await assessRecipeFactSatisfaction(
+    {
+      ...request(['service', 'price']),
+      workflowId: ' ',
+    },
+    new QueueRunner([
+      {
+        status: 'partial',
+        matchedFactRefs: ['store_fact:fact-service:1'],
+        missingFactTypes: ['price'],
+      },
+      { criticality: 'critical' },
+    ]),
+    authorizedRights,
+    (event) => diagnostics.push(event),
+  );
+
+  assert.equal(result.action, 'conservative_guidance');
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]!.stage, 'runner');
+  assert.equal(
+    diagnostics[0]!.effectIdempotencyKey,
+    'wf: :s2:facts:criticality:0',
+  );
+  assert.equal(diagnostics[0]!.schemaName, 'harness_fact_criticality_v1');
+  assert.equal(
+    diagnostics[0]!.error.code,
+    'STRUCTURED_NODE_RUNNER_FAILED',
+  );
+});
+
 test('diagnostic logger failures preserve conservative guidance', async () => {
   for (const runner of [
     new QueueRunner([new Error('runner failed')]),
@@ -856,6 +1014,20 @@ class RawOutputRunner implements StructuredNodeRunner {
   async run<Output>(_request: StructuredNodeRunnerRequest<Output>) {
     return {
       output: this.output as Output,
+      attempts: 1,
+      providerTaskRef: 'fixture-unparsed-fact-assessment',
+      replayed: false,
+      usage: { inputTokens: 0, outputTokens: 0 },
+    };
+  }
+}
+
+class RawOutputQueueRunner implements StructuredNodeRunner {
+  constructor(private readonly outputs: unknown[]) {}
+
+  async run<Output>(_request: StructuredNodeRunnerRequest<Output>) {
+    return {
+      output: this.outputs.shift() as Output,
       attempts: 1,
       providerTaskRef: 'fixture-unparsed-fact-assessment',
       replayed: false,
