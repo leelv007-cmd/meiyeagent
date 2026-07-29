@@ -31,7 +31,6 @@ export const p1ModuleRequestSchema = z.object({
     'redemptions',
     'result-delivery',
     'skills',
-    'video-regeneration',
   ]),
   action: z.string().min(1),
   payload: z.record(z.string(), z.unknown()).default({}),

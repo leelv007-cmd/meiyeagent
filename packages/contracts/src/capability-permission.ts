@@ -118,8 +118,7 @@ export type P1Module =
   | 'product-billing'
   | 'redemptions'
   | 'result-delivery'
-  | 'skills'
-  | 'video-regeneration';
+  | 'skills';
 
 const personalModelActions = new Set([
   'record_recent',
@@ -450,15 +449,6 @@ export function requiredP1Capability(
       'revise_content_package_visuals',
     ]).has(action)
       ? 'content.review'
-      : null;
-  }
-
-  if (module === 'video-regeneration') {
-    if (kind === 'query') {
-      return action === 'get_task' ? 'workspace.read' : null;
-    }
-    return new Set(['quote', 'confirm', 'recover', 'retry', 'free_action']).has(action)
-      ? 'content.create'
       : null;
   }
 
