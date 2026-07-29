@@ -55,7 +55,7 @@ export interface HarnessConfirmationTimeoutReader {
 
 export type HarnessInteractionApplicationPort = Pick<
   HarnessInteractionService,
-  'readForCarrier' | 'setEditing' | 'submit'
+  'readForCarrier' | 'setEditing' | 'submit' | 'submitMerchantMessage'
 >;
 
 export class HarnessAccessError extends Error {
@@ -199,6 +199,22 @@ export class HarnessApplicationService {
       throw new Error('Harness interactions are unavailable.');
     }
     return this.interactions.setEditing(workspaceId, taskId, editing);
+  }
+
+  async submitInteractionMerchantMessage(
+    workspaceId: string,
+    taskId: string,
+    input: unknown,
+  ) {
+    await this.requireTask(workspaceId, taskId);
+    if (!this.interactions) {
+      throw new Error('Harness interactions are unavailable.');
+    }
+    return this.interactions.submitMerchantMessage(
+      workspaceId,
+      taskId,
+      input,
+    );
   }
 
   readTodayRecommendation(workspaceId: string) {

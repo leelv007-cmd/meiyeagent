@@ -391,6 +391,13 @@ export const harnessInteractionAnswerSchema = z.union([
   executionConfirmationAnswerSchema,
 ]);
 
+export const harnessInteractionMerchantMessageSchema = z
+  .object({
+    idempotencyKey: harnessIdSchema,
+    message: z.string().trim().min(1).max(2_000),
+  })
+  .strict();
+
 export const harnessDecisionResolutionSourceSchema = z.enum([
   'decision',
   'core_timeout',
@@ -630,6 +637,9 @@ export type HarnessInteractionRequest = z.infer<
 >;
 export type HarnessInteractionAnswer = z.infer<
   typeof harnessInteractionAnswerSchema
+>;
+export type HarnessInteractionMerchantMessage = z.infer<
+  typeof harnessInteractionMerchantMessageSchema
 >;
 export type HarnessDecisionResolutionSource = z.infer<
   typeof harnessDecisionResolutionSourceSchema

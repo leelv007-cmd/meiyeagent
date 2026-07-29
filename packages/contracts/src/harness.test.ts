@@ -11,6 +11,7 @@ import {
   firstUsableDraftMetricSchema,
   harnessDecisionSnapshotSchema,
   harnessDecisionSubmitResultSchema,
+  harnessInteractionMerchantMessageSchema,
   harnessInteractionRequestSchema,
   harnessStageSchema,
   harnessTaskSubmissionSchema,
@@ -524,6 +525,27 @@ test('execution confirmation freezes server conditions and all three merchant ou
         ...request.frozen,
         params: [{ ...request.frozen.params[0], editable: true }],
       },
+    }).success,
+    false,
+  );
+});
+
+test('merchant continuation messages are strict typed interaction input', () => {
+  assert.deepEqual(
+    harnessInteractionMerchantMessageSchema.parse({
+      idempotencyKey: 'merchant-message-1',
+      message: '请换成更稳妥的方案',
+    }),
+    {
+      idempotencyKey: 'merchant-message-1',
+      message: '请换成更稳妥的方案',
+    },
+  );
+  assert.equal(
+    harnessInteractionMerchantMessageSchema.safeParse({
+      idempotencyKey: 'merchant-message-1',
+      message: '请换成更稳妥的方案',
+      runId: 'forged-path-authority',
     }).success,
     false,
   );

@@ -155,7 +155,7 @@ export class PostgresHarnessStore
         payload jsonb not null,
         resolution_source text not null default 'decision',
         resume_status text not null default 'pending'
-          check (resume_status in ('pending', 'sending', 'sent', 'waiting')),
+          check (resume_status in ('pending', 'sending', 'sent', 'waiting', 'invalid')),
         resume_claim_id text,
         resume_lease_expires_at timestamptz,
         resume_attempts integer not null default 0,
@@ -416,7 +416,7 @@ export class PostgresHarnessStore
         drop constraint if exists decision_events_resume_status_check;
       alter table harness_runtime.decision_events
         add constraint decision_events_resume_status_check
-        check (resume_status in ('pending', 'sending', 'sent', 'waiting'));
+        check (resume_status in ('pending', 'sending', 'sent', 'waiting', 'invalid'));
 
       alter table harness_runtime.task_requests
         add column if not exists runtime_id text;
@@ -989,9 +989,18 @@ export class PostgresHarnessStore
         );
       }
       await client.query('commit');
+      const frozenInteractionRequest =
+        pendingInteractionProjection?.success === true
+          ? pendingInteractionProjection.data.request
+          : proposedInteractionProjection?.request;
       return frozenTimeoutSeconds === undefined
         ? undefined
-        : { timeoutSeconds: frozenTimeoutSeconds };
+        : {
+            timeoutSeconds: frozenTimeoutSeconds,
+            ...(frozenInteractionRequest
+              ? { interactionRequest: frozenInteractionRequest }
+              : {}),
+          };
     } catch (error) {
       await client.query('rollback');
       throw error;
@@ -1106,6 +1115,38 @@ export class PostgresHarnessStore
     return parsed.success ? parsed.data.request : null;
   }
 
+  async listSystemDefaultCandidates(limit: number) {
+    const result = await this.pool.query<{
+      run_id: string;
+      workspace_id: string;
+    }>(
+      `select requests.workflow_id as run_id,
+              requests.request->>'workspaceId' as workspace_id
+         from harness_runtime.pending_questions pending
+         join harness_runtime.task_requests requests
+           on requests.runtime_id=pending.task_id
+        where pending.status='pending'
+          and pending.pending_projection->>'kind'='harness_interaction'
+          and pending.pending_projection->>'waitingState'='answer'
+          and pending.pending_projection->>'rendererCapability'='available'
+          and pending.pending_projection#>>'{timer,kind}'='armed'
+          and pending.pending_projection#>>'{timer,editingStartedAt}' is null
+          and pending.pending_projection#>>'{timer,deadlineAt}'
+                <= to_char(
+                  clock_timestamp() at time zone 'UTC',
+                  'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+                )
+          and coalesce(requests.request->>'workspaceId', '') <> ''
+        order by pending.updated_at, pending.task_id
+        limit $1`,
+      [limit],
+    );
+    return result.rows.map((row) => ({
+      runId: row.run_id,
+      workspaceId: row.workspace_id,
+    }));
+  }
+
   async resolveInteraction(
     input: Parameters<HarnessInteractionStore['resolveInteraction']>[0],
   ): ReturnType<HarnessInteractionStore['resolveInteraction']> {
@@ -1120,16 +1161,25 @@ export class PostgresHarnessStore
         `${runtimeTaskId}:interaction:${input.answer.idempotencyKey}`,
       ]);
       const existing = await client.query<{
+        id: string;
         payload_fingerprint: string;
-        resume_status: 'pending' | 'sending' | 'sent' | 'waiting';
+        resume_status:
+          | 'pending'
+          | 'sending'
+          | 'sent'
+          | 'waiting'
+          | 'invalid';
       }>(
-        `select payload_fingerprint, resume_status
+        `select id, payload_fingerprint, resume_status
            from harness_runtime.decision_events
           where task_id=$1 and idempotency_key=$2`,
         [runtimeTaskId, input.answer.idempotencyKey],
       );
       if (existing.rows[0]) {
         await client.query('commit');
+        if (existing.rows[0].resume_status === 'invalid') {
+          return { outcome: 'unknown_state', resumeRequired: false };
+        }
         return {
           outcome:
             existing.rows[0].payload_fingerprint === input.payloadFingerprint
@@ -1138,6 +1188,7 @@ export class PostgresHarnessStore
           resumeRequired:
             existing.rows[0].resume_status !== 'sent' &&
             existing.rows[0].resume_status !== 'waiting',
+          eventId: existing.rows[0].id,
         };
       }
       const pending = await client.query<{
@@ -1215,6 +1266,27 @@ export class PostgresHarnessStore
           return { outcome: 'not_due', resumeRequired: false };
         }
       }
+      const typedProjection =
+        harnessInteractionPendingProjectionSchema.safeParse(
+          node.pending_projection,
+        );
+      if (
+        input.trigger === 'merchant_message' &&
+        (!typedProjection.success ||
+          typedProjection.data.waitingState !== 'merchant_message' ||
+          typedProjection.data.request.kind !== 'execution_confirmation')
+      ) {
+        await client.query('rollback');
+        return { outcome: 'unknown_state', resumeRequired: false };
+      }
+      if (
+        input.trigger === 'merchant' &&
+        typedProjection.success &&
+        typedProjection.data.waitingState === 'merchant_message'
+      ) {
+        await client.query('rollback');
+        return { outcome: 'unknown_state', resumeRequired: false };
+      }
       const logicalEventId = `interaction-event-${input.answer.idempotencyKey}`;
       const runtimeEventId = this.runtimeObjectId(
         input.workspaceId,
@@ -1282,6 +1354,7 @@ export class PostgresHarnessStore
       return {
         outcome: 'created',
         resumeRequired: input.resumeDisposition === 'resume',
+        eventId: runtimeEventId,
       };
     } catch (error) {
       await client.query('rollback');
@@ -1289,87 +1362,6 @@ export class PostgresHarnessStore
     } finally {
       client.release();
     }
-  }
-
-  async claimInteractionResume(
-    workspaceId: string,
-    runId: string,
-    idempotencyKey: string,
-    claimId: string,
-  ) {
-    const runtimeTaskId = await this.requireWorkflowRuntimeId(
-      workspaceId,
-      runId,
-    );
-    const result = await this.pool.query(
-      `update harness_runtime.decision_events
-          set resume_status='sending',
-              resume_claim_id=$3,
-              resume_lease_expires_at=clock_timestamp() + interval '5 minutes',
-              resume_attempts=resume_attempts + 1
-        where task_id=$1
-          and idempotency_key=$2
-          and (
-            resume_status='pending'
-            or (
-              resume_status='sending'
-              and (
-                resume_lease_expires_at is null
-                or resume_lease_expires_at <= clock_timestamp()
-              )
-            )
-          )
-      returning id`,
-      [runtimeTaskId, idempotencyKey, claimId],
-    );
-    return result.rowCount === 1;
-  }
-
-  async releaseInteractionResume(
-    workspaceId: string,
-    runId: string,
-    idempotencyKey: string,
-    claimId: string,
-  ) {
-    const runtimeTaskId = await this.requireWorkflowRuntimeId(
-      workspaceId,
-      runId,
-    );
-    await this.pool.query(
-      `update harness_runtime.decision_events
-          set resume_status='pending',
-              resume_claim_id=null,
-              resume_lease_expires_at=null
-        where task_id=$1
-          and idempotency_key=$2
-          and resume_status='sending'
-          and resume_claim_id=$3`,
-      [runtimeTaskId, idempotencyKey, claimId],
-    );
-  }
-
-  async markInteractionResumed(
-    workspaceId: string,
-    runId: string,
-    idempotencyKey: string,
-    claimId: string,
-  ) {
-    const runtimeTaskId = await this.requireWorkflowRuntimeId(
-      workspaceId,
-      runId,
-    );
-    const result = await this.pool.query(
-      `update harness_runtime.decision_events
-          set resume_status='sent',
-              resume_claim_id=null,
-              resume_lease_expires_at=null
-        where task_id=$1
-          and idempotency_key=$2
-          and resume_status='sending'
-          and resume_claim_id=$3`,
-      [runtimeTaskId, idempotencyKey, claimId],
-    );
-    return result.rowCount === 1;
   }
 
   async transitionInteractionEditing(

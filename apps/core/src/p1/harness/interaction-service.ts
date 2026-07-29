@@ -2,6 +2,7 @@ import {
   askMerchantQuestionRequestSchema,
   askMerchantAnswerSchema,
   harnessInteractionAnswerSchema,
+  harnessInteractionMerchantMessageSchema,
   harnessInteractionRequestSchema,
   type AskMerchantQuestionRequest,
   type HarnessStage,
@@ -9,7 +10,6 @@ import {
   type HarnessInteractionRequest,
   type QuestionCard,
 } from '@meiye/contracts';
-import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
@@ -133,7 +133,7 @@ export interface HarnessInteractionStore {
     resumeDisposition: 'resume' | 'wait';
     resumeData: HarnessInteractionAnswer['response'];
     resolvedAt: string;
-    trigger: 'merchant' | 'system_default';
+    trigger: 'merchant' | 'merchant_message' | 'system_default';
   }): Promise<{
     outcome:
       | 'created'
@@ -147,25 +147,8 @@ export interface HarnessInteractionStore {
       | 'renderer_unavailable'
       | 'unknown_state';
     resumeRequired: boolean;
+    eventId?: string;
   }>;
-  claimInteractionResume(
-    workspaceId: string,
-    runId: string,
-    idempotencyKey: string,
-    claimId: string,
-  ): Promise<boolean>;
-  releaseInteractionResume(
-    workspaceId: string,
-    runId: string,
-    idempotencyKey: string,
-    claimId: string,
-  ): Promise<void>;
-  markInteractionResumed(
-    workspaceId: string,
-    runId: string,
-    idempotencyKey: string,
-    claimId: string,
-  ): Promise<boolean>;
   transitionInteractionEditing(
     workspaceId: string,
     runId: string,
@@ -181,6 +164,7 @@ export interface HarnessInteractionStore {
 
 export interface HarnessInteractionResumer {
   resume(input: {
+    eventId: string;
     workspaceId: string;
     runId: string;
     step: string;
@@ -191,6 +175,48 @@ export interface HarnessInteractionResumer {
     resumeData: HarnessInteractionAnswer['response'];
     resolutionSource: 'decision' | 'system_default';
   }): Promise<void>;
+}
+
+export interface HarnessSystemDefaultCandidateStore {
+  listSystemDefaultCandidates(
+    limit: number,
+  ): Promise<Array<{ workspaceId: string; runId: string }>>;
+}
+
+export class HarnessSystemDefaultProducer {
+  constructor(
+    private readonly store: HarnessSystemDefaultCandidateStore,
+    private readonly interactions: Pick<
+      HarnessInteractionService,
+      'submitSystemDefault'
+    >,
+    private readonly batchSize = 20,
+  ) {}
+
+  async runOnce() {
+    let failed = 0;
+    let held = 0;
+    let resumed = 0;
+    const candidates = await this.store.listSystemDefaultCandidates(
+      this.batchSize,
+    );
+    for (const candidate of candidates) {
+      try {
+        const result = await this.interactions.submitSystemDefault(
+          candidate.workspaceId,
+          candidate.runId,
+        );
+        if (result.kind === 'resumed') {
+          resumed += 1;
+        } else {
+          held += 1;
+        }
+      } catch {
+        failed += 1;
+      }
+    }
+    return { failed, held, resumed };
+  }
 }
 
 export class HarnessInteractionError extends Error {
@@ -265,6 +291,7 @@ export class HarnessInteractionService {
     const request = await this.store.readPendingInteraction(
       workspaceId,
       runId,
+      { includeResolved: true },
     );
     if (!request) {
       throw new HarnessInteractionError(
@@ -293,6 +320,45 @@ export class HarnessInteractionService {
       }),
       'system_default',
     );
+  }
+
+  async submitMerchantMessage(
+    workspaceId: string,
+    runId: string,
+    input: unknown,
+  ) {
+    const message = harnessInteractionMerchantMessageSchema.parse(input);
+    const request = await this.store.readPendingInteraction(
+      workspaceId,
+      runId,
+      { includeResolved: true },
+    );
+    if (!request) {
+      throw new HarnessInteractionError(
+        'STALE_INTERACTION_REQUEST',
+        'The interaction request is no longer pending.',
+      );
+    }
+    if (request.kind !== 'execution_confirmation') {
+      throw new HarnessInteractionError(
+        'INTERACTION_KIND_MISMATCH',
+        'The pending interaction is not waiting for an execution message.',
+      );
+    }
+    return this.persistAndResume({
+      answer: {
+        requestId: request.requestId,
+        revision: request.revision,
+        idempotencyKey: message.idempotencyKey,
+        resume: { runId: request.runId, step: request.step },
+        response: { kind: 'rejected', feedback: message.message },
+      },
+      request,
+      resolutionSource: 'decision',
+      resumeData: { kind: 'rejected', feedback: message.message },
+      trigger: 'merchant_message',
+      workspaceId,
+    });
   }
 
   async setEditing(workspaceId: string, runId: string, editing: boolean) {
@@ -441,6 +507,7 @@ export class HarnessInteractionService {
     resolutionSource: 'decision' | 'system_default';
     resumeDisposition?: 'resume' | 'wait';
     resumeData: HarnessInteractionAnswer['response'];
+    trigger?: 'merchant_message';
     workspaceId: string;
   }): Promise<
     | { kind: 'resumed'; replayed: boolean }
@@ -465,9 +532,10 @@ export class HarnessInteractionService {
       resumeData: input.resumeData,
       resolvedAt: this.now().toISOString(),
       trigger:
-        input.resolutionSource === 'system_default'
+        input.trigger ??
+        (input.resolutionSource === 'system_default'
           ? 'system_default'
-          : 'merchant',
+          : 'merchant'),
     });
     if (
       persisted.outcome === 'editing' ||
@@ -514,18 +582,16 @@ export class HarnessInteractionService {
       };
     }
 
-    const claimId = randomUUID();
-    if (
-      persisted.resumeRequired &&
-      (await this.store.claimInteractionResume(
-        input.workspaceId,
-        input.request.runId,
-        input.answer.idempotencyKey,
-        claimId,
-      ))
-    ) {
+    if (persisted.resumeRequired) {
+      if (!persisted.eventId) {
+        throw new HarnessInteractionError(
+          'INTERACTION_RESUME_UNAVAILABLE',
+          'The persisted interaction has no durable resume event.',
+        );
+      }
       try {
         await this.resumer.resume({
+          eventId: persisted.eventId,
           workspaceId: input.workspaceId,
           runId: input.request.runId,
           step: input.request.step,
@@ -536,23 +602,7 @@ export class HarnessInteractionService {
           resumeData: input.resumeData,
           resolutionSource: input.resolutionSource,
         });
-        if (
-          !(await this.store.markInteractionResumed(
-            input.workspaceId,
-            input.request.runId,
-            input.answer.idempotencyKey,
-            claimId,
-          ))
-        ) {
-          throw new Error('The interaction resume lease was lost.');
-        }
       } catch (error) {
-        await this.store.releaseInteractionResume(
-          input.workspaceId,
-          input.request.runId,
-          input.answer.idempotencyKey,
-          claimId,
-        );
         throw new HarnessInteractionError(
           'INTERACTION_RESUME_UNAVAILABLE',
           'The persisted interaction could not resume the workflow yet.',

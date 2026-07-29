@@ -190,7 +190,10 @@ import { HarnessApplicationService } from './p1/harness/application-service.js';
 import {
   HarnessDecisionService,
 } from './p1/harness/decision-service.js';
-import { HarnessInteractionService } from './p1/harness/interaction-service.js';
+import {
+  HarnessInteractionService,
+  HarnessSystemDefaultProducer,
+} from './p1/harness/interaction-service.js';
 import { HarnessDbosWorkflowEventReader } from './p1/harness/dbos-workflow-events.js';
 import { HarnessBillingCompensationWorker } from './p1/harness/billing-compensation.js';
 import {
@@ -2062,26 +2065,21 @@ if (harnessRuntimeConfig) {
     harnessStore,
     workflowResumer,
   );
+  const resumeReconciler = new HarnessResumeReconciler(
+    new PostgresHarnessResumeReconcilerStore(pool),
+    workflowResumer,
+  );
   const harnessInteractions = new HarnessInteractionService(harnessStore, {
-    resume(input) {
-      return workflowResumer.resumeInteraction(
-        input.workspaceId,
-        input.runId,
-        {
-          kind: 'harness_interaction_resume',
-          schemaVersion: 'v1',
-          idempotencyKey: input.idempotencyKey,
-          interactionKind: input.interactionKind,
-          requestId: input.requestId,
-          revision: input.revision,
-          runId: input.runId,
-          step: input.step,
-          resumeData: input.resumeData,
-          resolutionSource: input.resolutionSource,
-        },
-      );
+    async resume(input) {
+      if (!(await resumeReconciler.resumeEvent(input.eventId))) {
+        throw new Error('The persisted interaction resume is unavailable.');
+      }
     },
   });
+  const harnessSystemDefaults = new HarnessSystemDefaultProducer(
+    harnessStore,
+    harnessInteractions,
+  );
   const boundedExecutionLimits =
     new AdminConfigBoundedExecutionLimitsSource(adminConfigRepository);
   const harnessWorkflow = registerHarnessDbosWorkflow(
@@ -2105,6 +2103,7 @@ if (harnessRuntimeConfig) {
     ),
     new TaskRecallDueProducer(dueDeliveryRepository),
     p1HarnessAskInvoker,
+    harnessInteractions,
   );
   await DBOS.launch();
   harnessService = new HarnessApplicationService(
@@ -2302,10 +2301,6 @@ if (harnessRuntimeConfig) {
       productQuoteService,
     ),
   );
-  const resumeReconciler = new HarnessResumeReconciler(
-    new PostgresHarnessResumeReconcilerStore(pool),
-    workflowResumer,
-  );
   const billingCompensationWorker = new HarnessBillingCompensationWorker(
     billingCompensations,
     harnessBilling,
@@ -2317,6 +2312,7 @@ if (harnessRuntimeConfig) {
     try {
       const results = await Promise.allSettled([
         resumeReconciler.runOnce(),
+        harnessSystemDefaults.runOnce(),
         billingCompensationWorker.runOnce(),
       ]);
       for (const result of results) {

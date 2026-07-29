@@ -16,6 +16,9 @@ interface HarnessPendingResumeBase {
 
 export type HarnessPendingResume =
   | (HarnessPendingResumeBase & {
+      kind: 'malformed';
+    })
+  | (HarnessPendingResumeBase & {
       kind: 'structured_decision';
       command: StructuredDecisionInput;
       request?: HarnessWorkflowInput;
@@ -37,7 +40,9 @@ export interface HarnessResumeWorkflow extends HarnessWorkflowResumer {
 
 export interface HarnessResumeReconcilerStore {
   claimPending(limit: number): Promise<HarnessPendingResume[]>;
+  claimEvent(eventId: string): Promise<HarnessPendingResume | null>;
   markResumed(eventId: string, claimId: string): Promise<boolean>;
+  markInvalid(eventId: string, claimId: string): Promise<boolean>;
   release(eventId: string, claimId: string): Promise<void>;
 }
 
@@ -48,6 +53,25 @@ export class HarnessResumeReconciler {
     private readonly batchSize = 20
   ) {}
 
+  async resumeEvent(eventId: string) {
+    const item = await this.store.claimEvent(eventId);
+    if (!item) return false;
+    if (item.kind === 'malformed') {
+      await this.store.markInvalid(item.eventId, item.claimId);
+      throw new Error('The persisted Harness resume event is malformed.');
+    }
+    try {
+      await this.resumeClaim(item);
+      if (!(await this.store.markResumed(item.eventId, item.claimId))) {
+        throw new Error('The decision resume lease was lost.');
+      }
+      return true;
+    } catch (error) {
+      await this.store.release(item.eventId, item.claimId);
+      throw error;
+    }
+  }
+
   async runOnce() {
     let resumed = 0;
     let failed = 0;
@@ -55,34 +79,18 @@ export class HarnessResumeReconciler {
     for (let index = 0; index < this.batchSize; index += 1) {
       const [item] = await this.store.claimPending(1);
       if (!item) break;
-      try {
-        if (item.kind === 'interaction') {
-          await this.workflow.resumeInteraction(
-            item.workspaceId,
-            item.taskId,
-            item.resume,
-          );
-        } else if (item.resolutionSource === 'late_answer') {
-          if (!item.request || !this.workflow.startSuccessor) {
-            throw new Error('Late-answer successor workflow is unavailable.');
-          }
-          await this.workflow.startSuccessor({
-            command: item.command,
-            request: item.request,
-            sourceTaskId: item.taskId,
-            workflowId: lateAnswerSuccessorWorkflowId(
-              item.taskId,
-              item.command.questionId,
-            ),
-            workspaceId: item.workspaceId,
+      if (item.kind === 'malformed') {
+        if (!(await this.store.markInvalid(item.eventId, item.claimId))) {
+          failedClaims.push({
+            eventId: item.eventId,
+            claimId: item.claimId,
           });
-        } else {
-          await this.workflow.resume(
-            item.workspaceId,
-            item.taskId,
-            item.command,
-          );
         }
+        failed += 1;
+        continue;
+      }
+      try {
+        await this.resumeClaim(item);
         if (!(await this.store.markResumed(item.eventId, item.claimId))) {
           throw new Error('The decision resume lease was lost.');
         }
@@ -101,5 +109,37 @@ export class HarnessResumeReconciler {
       ),
     );
     return { resumed, failed };
+  }
+
+  private async resumeClaim(
+    item: Exclude<HarnessPendingResume, { kind: 'malformed' }>,
+  ) {
+    if (item.kind === 'interaction') {
+      await this.workflow.resumeInteraction(
+        item.workspaceId,
+        item.taskId,
+        item.resume,
+      );
+    } else if (item.resolutionSource === 'late_answer') {
+      if (!item.request || !this.workflow.startSuccessor) {
+        throw new Error('Late-answer successor workflow is unavailable.');
+      }
+      await this.workflow.startSuccessor({
+        command: item.command,
+        request: item.request,
+        sourceTaskId: item.taskId,
+        workflowId: lateAnswerSuccessorWorkflowId(
+          item.taskId,
+          item.command.questionId,
+        ),
+        workspaceId: item.workspaceId,
+      });
+    } else {
+      await this.workflow.resume(
+        item.workspaceId,
+        item.taskId,
+        item.command,
+      );
+    }
   }
 }

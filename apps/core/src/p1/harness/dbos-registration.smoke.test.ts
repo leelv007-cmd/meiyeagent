@@ -4,7 +4,10 @@ import test from 'node:test';
 import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import type { QuestionCard } from '@meiye/contracts';
+import type {
+  HarnessInteractionRequest,
+  QuestionCard,
+} from '@meiye/contracts';
 import { Pool } from 'pg';
 
 import { HarnessWorkflowEventSource } from '../workflow-events.js';
@@ -21,6 +24,7 @@ import {
 import {
   normalizeHarnessDbosWorkflowInput,
   registerHarnessDbosWorkflow,
+  resumeHarnessDbosInteractionWorkflow,
   resumeHarnessDbosWorkflow,
 } from './dbos-workflow.js';
 import { harnessRuntimeId } from './workspace-scope.js';
@@ -559,6 +563,160 @@ test(
           step.name.startsWith('snapshot-confirmation-timeout-'),
         ),
         false,
+      );
+    } finally {
+      await DBOS.shutdown({ deregister: true });
+    }
+  },
+);
+
+test(
+  'typed confirmation timeout persists system_default and resumes the production DBOS topic',
+  { skip: !systemDatabaseUrl },
+  async () => {
+    const workflowId = `harness-system-default-${randomUUID()}`;
+    const workspaceId = 'workspace-system-default';
+    const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
+    const skills = await createSmokeSkills(workflowId);
+    const ports = smokePorts(workflowId, skills.service, []);
+    ports.nameIntent = async () => ({
+      declaration: {
+        normalizedIntent: '推广本店团购',
+        taskType: 'promotion_groupbuy_conversion',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['promotion_activity'],
+        usedAssetCategories: [],
+        route: 'guidance',
+        routingSource: 'model',
+        implicitConstraints: [],
+      },
+      blockingQuestion: {
+        questionId: `${workflowId}:offer-price`,
+        workflowId,
+        workflowRevision: 1,
+        question: 'What is the current offer price?',
+        options: [],
+        freeText: { enabled: true },
+        response: {
+          field: 'offer_price',
+          reason: 'Ground the promotion in the current merchant offer',
+        },
+        unattended: 'continue',
+        scope: 'current_task',
+      },
+    });
+    let interactionRequest: HarnessInteractionRequest | undefined;
+    const persistedDefaults: string[] = [];
+    const forbiddenCoreTimeouts: string[] = [];
+    DBOS.setConfig({
+      name: 'beauty-marketing-harness-system-default-smoke',
+      systemDatabaseUrl: systemDatabaseUrl!,
+      applicationVersion: 'harness-system-default-smoke-v1',
+    });
+    const workflow = registerHarnessDbosWorkflow(
+      ports,
+      {
+        async registerPending(_workspaceId, _question, projection) {
+          interactionRequest = projection?.interactionRequest;
+          return projection;
+        },
+        async readPending() {
+          return null;
+        },
+        async recordStageTrace() {},
+        async recordTerminalFailure() {},
+      },
+      undefined,
+      undefined,
+      {
+        async get() {
+          return {
+            actorId: 'platform-admin',
+            correlationId: 'system-default-smoke-config',
+            createdAt: '2026-07-30T09:00:00.000Z',
+            key: 'harness.confirmation_card.timeout_seconds',
+            reason: 'Exercise typed durable timeout',
+            revision: 1,
+            rolledBackToRevision: null,
+            scope: 'global',
+            status: 'applied',
+            value: 1,
+            workspaceId: '__global__',
+          };
+        },
+      },
+      {
+        async submitCoreTimeout(_workspaceId, _taskId, command) {
+          forbiddenCoreTimeouts.push(command.idempotencyKey);
+          throw new Error('Typed timeout must not use core_timeout.');
+        },
+      },
+      undefined,
+      undefined,
+      undefined,
+      {
+        async submitSystemDefault(targetWorkspaceId, runId) {
+          const request = interactionRequest;
+          if (
+            !request ||
+            request.kind !== 'ask_merchant' ||
+            request.timeoutPolicy?.kind !== 'semantic_default'
+          ) {
+            throw new Error('Typed system-default request is unavailable.');
+          }
+          const idempotencyKey =
+            `${request.requestId}:r${request.revision}:system_default`;
+          persistedDefaults.push(idempotencyKey);
+          await resumeHarnessDbosInteractionWorkflow(
+            targetWorkspaceId,
+            runId,
+            {
+              kind: 'harness_interaction_resume',
+              schemaVersion: 'v1',
+              idempotencyKey,
+              interactionKind: request.kind,
+              requestId: request.requestId,
+              revision: request.revision,
+              runId: request.runId,
+              step: request.step,
+              resumeData:
+                request.timeoutPolicy.eligibility.defaultResponse,
+              resolutionSource: 'system_default',
+            },
+          );
+          return { kind: 'resumed' as const, replayed: false };
+        },
+      },
+    );
+
+    try {
+      await DBOS.launch();
+      const request = snapshotTimeoutRequest(workflowId, workspaceId);
+      const handle = await DBOS.startWorkflow(workflow, {
+        workflowID: runtimeWorkflowId,
+      })({
+        workflowId,
+        request: {
+          ...request,
+          usageReservation: {
+            id: `usage-reservation-${workflowId}`,
+            units: [{ resource: 'copy', quantity: 1 }],
+          },
+        },
+      });
+
+      const result = await handle.getResult();
+      assert.ok(result.delivery);
+      assert.deepEqual(forbiddenCoreTimeouts, []);
+      assert.deepEqual(persistedDefaults, [
+        `${workflowId}:offer-price:r1:system_default`,
+      ]);
+      assert.equal(await waitForWorkflowStatus(handle, 'SUCCESS'), 'SUCCESS');
+      assert.deepEqual(
+        (await DBOS.listWorkflowSteps(runtimeWorkflowId))
+          ?.filter((step) => step.functionID === 8)
+          .map((step) => step.name),
+        [`persist-system-default-${workflowId}:offer-price`],
       );
     } finally {
       await DBOS.shutdown({ deregister: true });

@@ -11,6 +11,7 @@ import {
 import {
   createHarnessInteractionPendingProjection,
   HarnessInteractionService,
+  HarnessSystemDefaultProducer,
   type HarnessInteractionPendingProjection,
   type HarnessInteractionStore,
 } from './interaction-service.js';
@@ -60,6 +61,7 @@ test('interaction answers persist before one resume with the canonical triple', 
       order.push(
         `resume:${input.runId}:${input.step}:${input.resumeData.kind}`,
       );
+      store.markResumed(input.eventId);
     },
   });
 
@@ -119,6 +121,65 @@ test('invalid offered labels become a durable follow-up revision without resumin
   );
 });
 
+test('reask keeps the original durable deadline and renderer capability', async () => {
+  const resumes: unknown[] = [];
+  const store = new MemoryInteractionStore([]);
+  let now = Date.parse('2026-07-30T00:00:00.000Z');
+  const request = askRequest({
+    timeoutPolicy: {
+      kind: 'semantic_default',
+      timeoutSeconds: 30,
+      eligibility: semanticDefaultEligibility(['service']),
+    },
+    questions: [
+      {
+        itemId: 'service',
+        question: '这次主推哪个项目？',
+        options: [{ label: '头皮护理' }],
+        fallback: { kind: 'deferred' },
+      },
+    ],
+  });
+  await store.seed(request, 'available', new Date(now));
+  const service = new HarnessInteractionService(
+    store,
+    {
+      async resume(input) {
+        resumes.push(input.resumeData);
+      },
+    },
+    () => new Date(now),
+  );
+
+  const reask = await service.submit('workspace-a', {
+    requestId: request.requestId,
+    revision: request.revision,
+    idempotencyKey: 'reask-before-timeout',
+    resume: { runId: request.runId, step: request.step },
+    response: {
+      kind: 'answer',
+      items: [
+        {
+          itemId: 'service',
+          result: { kind: 'answer', value: '伪造选项' },
+        },
+      ],
+    },
+  });
+  assert.equal(reask.kind, 'reask');
+  now += 30_000;
+  assert.deepEqual(
+    await service.submitSystemDefault('workspace-a', request.runId),
+    { kind: 'resumed', replayed: false },
+  );
+  assert.deepEqual(resumes, [
+    {
+      kind: 'answer',
+      items: [{ itemId: 'service', result: { kind: 'deferred' } }],
+    },
+  ]);
+});
+
 test('a failed resume retries the persisted answer without writing it twice', async () => {
   const order: string[] = [];
   const store = new MemoryInteractionStore(order);
@@ -131,6 +192,7 @@ test('a failed resume retries the persisted answer without writing it twice', as
       attempts += 1;
       order.push(`resume-attempt:${attempts}`);
       if (attempts === 1) throw new Error('DBOS unavailable');
+      store.markResumed('interaction-event-retry-answer');
     },
   });
 
@@ -188,6 +250,7 @@ test('execution rejection without feedback persists waiting without resuming', a
   const service = new HarnessInteractionService(store, {
     async resume(input) {
       resumes.push(input.resumeData);
+      store.markResumed(input.eventId);
     },
   });
   const answer = executionConfirmationAnswerSchema.parse({
@@ -216,6 +279,52 @@ test('execution rejection without feedback persists waiting without resuming', a
     )?.requestId,
     request.requestId,
   );
+});
+
+test('the next merchant message resumes a rejected execution exactly once', async () => {
+  const resumes: unknown[] = [];
+  const store = new MemoryInteractionStore([]);
+  const request = executionRequest(true);
+  await store.seed(request);
+  const service = new HarnessInteractionService(store, {
+    async resume(input) {
+      resumes.push(input.resumeData);
+      store.markResumed(input.eventId);
+    },
+  });
+
+  await service.submit('workspace-a', {
+    requestId: request.requestId,
+    revision: request.revision,
+    idempotencyKey: 'execution-rejected-awaiting-message',
+    resume: { runId: request.runId, step: request.step },
+    response: { kind: 'rejected' },
+  });
+  const first = await service.submitMerchantMessage(
+    'workspace-a',
+    request.runId,
+    {
+      idempotencyKey: 'execution-rejected-message',
+      message: '请改用更稳妥的模型并减少图片数量',
+    },
+  );
+  const replay = await service.submitMerchantMessage(
+    'workspace-a',
+    request.runId,
+    {
+      idempotencyKey: 'execution-rejected-message',
+      message: '请改用更稳妥的模型并减少图片数量',
+    },
+  );
+
+  assert.deepEqual(first, { kind: 'resumed', replayed: false });
+  assert.deepEqual(replay, { kind: 'resumed', replayed: true });
+  assert.deepEqual(resumes, [
+    {
+      kind: 'rejected',
+      feedback: '请改用更稳妥的模型并减少图片数量',
+    },
+  ]);
 });
 
 test('semantic timeout defers merchant questions but pauses while the merchant edits', async () => {
@@ -322,6 +431,30 @@ test('an unavailable renderer holds an otherwise eligible expired default', asyn
   );
 });
 
+test('the production default producer retries a due interaction after its durable timer unblocks', async () => {
+  const calls: string[] = [];
+  const producer = new HarnessSystemDefaultProducer(
+    {
+      async listSystemDefaultCandidates() {
+        return [{ workspaceId: 'workspace-a', runId: 'run-due' }];
+      },
+    },
+    {
+      async submitSystemDefault(workspaceId, runId) {
+        calls.push(`${workspaceId}:${runId}`);
+        return { kind: 'resumed' as const, replayed: false };
+      },
+    },
+  );
+
+  assert.deepEqual(await producer.runOnce(), {
+    failed: 0,
+    held: 0,
+    resumed: 1,
+  });
+  assert.deepEqual(calls, ['workspace-a:run-due']);
+});
+
 test('external execution effects hold forever and an unsupported carrier cannot release them', async () => {
   const store = new MemoryInteractionStore([]);
   const request = executionRequest(true, {
@@ -348,19 +481,22 @@ test('external execution effects hold forever and an unsupported carrier cannot 
 class MemoryInteractionStore implements HarnessInteractionStore {
   private pending: Parameters<HarnessInteractionStore['advanceInteraction']>[1]
     | null = null;
-  private event:
-    | {
-        idempotencyKey: string;
-        payloadFingerprint: string;
-        resumeRequired: boolean;
-      }
-    | undefined;
+  private readonly events = new Map<
+    string,
+    {
+      payloadFingerprint: string;
+      resumeRequired: boolean;
+    }
+  >();
+  private lastEventKey: string | undefined;
   private waitingForMerchantMessage = false;
   private projection: HarnessInteractionPendingProjection | null = null;
   editing = false;
   lastResolutionSource: string | undefined;
   get eventResumeRequired() {
-    return this.event?.resumeRequired;
+    return this.lastEventKey
+      ? this.events.get(this.lastEventKey)?.resumeRequired
+      : undefined;
   }
 
   constructor(private readonly order: string[]) {}
@@ -411,13 +547,15 @@ class MemoryInteractionStore implements HarnessInteractionStore {
   async resolveInteraction(
     input: Parameters<HarnessInteractionStore['resolveInteraction']>[0],
   ) {
-    if (this.event) {
+    const existing = this.events.get(input.answer.idempotencyKey);
+    if (existing) {
       return {
         outcome:
-          this.event.payloadFingerprint === input.payloadFingerprint
+          existing.payloadFingerprint === input.payloadFingerprint
             ? ('replayed' as const)
             : ('idempotency_conflict' as const),
-        resumeRequired: this.event.resumeRequired,
+        resumeRequired: existing.resumeRequired,
+        eventId: `interaction-event-${input.answer.idempotencyKey}`,
       };
     }
     if (input.trigger === 'system_default') {
@@ -440,34 +578,38 @@ class MemoryInteractionStore implements HarnessInteractionStore {
         return { outcome: 'not_due' as const, resumeRequired: false };
       }
     }
-    this.event = {
-      idempotencyKey: input.answer.idempotencyKey,
+    if (
+      input.trigger === 'merchant_message' &&
+      !this.waitingForMerchantMessage
+    ) {
+      return { outcome: 'unknown_state' as const, resumeRequired: false };
+    }
+    if (
+      input.trigger === 'merchant' &&
+      this.waitingForMerchantMessage
+    ) {
+      return { outcome: 'unknown_state' as const, resumeRequired: false };
+    }
+    this.events.set(input.answer.idempotencyKey, {
       payloadFingerprint: input.payloadFingerprint,
       resumeRequired: input.resumeDisposition === 'resume',
-    };
+    });
+    this.lastEventKey = input.answer.idempotencyKey;
     this.waitingForMerchantMessage = input.resumeDisposition === 'wait';
     this.lastResolutionSource = input.resolutionSource;
     this.order.push(`persist:${input.answer.idempotencyKey}`);
-    return { outcome: 'created' as const, resumeRequired: true };
+    return {
+      outcome: 'created' as const,
+      resumeRequired: input.resumeDisposition === 'resume',
+      eventId: `interaction-event-${input.answer.idempotencyKey}`,
+    };
   }
 
-  async claimInteractionResume() {
-    if (!this.event?.resumeRequired) return false;
-    this.event.resumeRequired = false;
-    return true;
-  }
-
-  async releaseInteractionResume() {
-    if (this.event) this.event.resumeRequired = true;
-  }
-
-  async markInteractionResumed(
-    _workspaceId: string,
-    _runId: string,
-    idempotencyKey: string,
-  ) {
+  markResumed(eventId: string) {
+    const idempotencyKey = eventId.replace('interaction-event-', '');
+    const event = this.events.get(idempotencyKey);
+    if (event) event.resumeRequired = false;
     this.order.push(`resumed:${idempotencyKey}`);
-    return true;
   }
 
   async transitionInteractionEditing(

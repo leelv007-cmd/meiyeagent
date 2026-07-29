@@ -380,7 +380,7 @@ export interface HarnessWorkflowRuntime {
     | StructuredDecisionInput
     | {
         command: StructuredDecisionInput;
-        resolutionSource: 'decision' | 'core_timeout';
+        resolutionSource: 'decision' | 'core_timeout' | 'system_default';
       }
     | {
         cancelled: true;
@@ -2815,7 +2815,10 @@ async function resolveIntentRoute(input: {
     return {
       declaration: freeRouteDeclaration(
         input.intent.declaration,
-        resolutionSource === 'core_timeout' ? 'policy' : 'decision',
+        resolutionSource === 'core_timeout' ||
+          resolutionSource === 'system_default'
+          ? 'policy'
+          : 'decision',
       ),
       request: activeRequest,
       notice: undefined,

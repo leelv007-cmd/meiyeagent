@@ -121,6 +121,10 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
         interactionCalls.push(['submit', workspaceId, answer]);
         return { kind: 'resumed' as const, replayed: false };
       },
+      async submitMerchantMessage(workspaceId, taskId, input) {
+        interactionCalls.push(['message', workspaceId, taskId, input]);
+        return { kind: 'resumed' as const, replayed: false };
+      },
     },
   );
   const server = createCoreServer({
@@ -336,10 +340,28 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
     body: JSON.stringify({ editing: true }),
   });
   assert.equal(editing.status, 204);
+  const merchantMessage = {
+    idempotencyKey: 'interaction-http-message-1',
+    message: '请换成更稳妥的方案',
+  };
+  const merchantMessageResponse = await fetch(
+    `${base}/task-http-1/interaction/message`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(merchantMessage),
+    },
+  );
+  assert.equal(merchantMessageResponse.status, 200);
+  assert.deepEqual((await merchantMessageResponse.json()).data, {
+    kind: 'resumed',
+    replayed: false,
+  });
   assert.deepEqual(interactionCalls, [
     ['read', 'workspace-1', 'task-http-1', 'conversation'],
     ['submit', 'workspace-1', interactionAnswer],
     ['editing', 'workspace-1', 'task-http-1', true],
+    ['message', 'workspace-1', 'task-http-1', merchantMessage],
   ]);
   const mismatchedInteraction = await fetch(
     `${base}/task-http-1/interaction`,

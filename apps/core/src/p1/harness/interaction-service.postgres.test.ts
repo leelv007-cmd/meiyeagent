@@ -5,16 +5,23 @@ import { randomUUID } from 'node:crypto';
 import {
   askMerchantAnswerSchema,
   askMerchantQuestionRequestSchema,
+  executionConfirmationRequestSchema,
   questionCardSchema,
   type AskMerchantQuestionRequest,
 } from '@meiye/contracts';
 import { Pool } from 'pg';
 
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
-import { HarnessInteractionService } from './interaction-service.js';
+import {
+  HarnessInteractionService,
+  HarnessSystemDefaultProducer,
+} from './interaction-service.js';
 import { PostgresHarnessResumeReconcilerStore } from './postgres-resume-reconciler-store.js';
 import { PostgresHarnessStore } from './postgres-store.js';
-import { HarnessResumeReconciler } from './resume-reconciler.js';
+import {
+  HarnessResumeReconciler,
+  type HarnessResumeWorkflow,
+} from './resume-reconciler.js';
 import { harnessRuntimeId } from './workspace-scope.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
@@ -77,6 +84,34 @@ function registerTypedPending(
           : null,
       interactionRequest: request,
     },
+  );
+}
+
+function createPgInteractionService(
+  pool: Pool,
+  store: PostgresHarnessStore,
+  resumeInteraction: HarnessResumeWorkflow['resumeInteraction'],
+  now: () => Date = () => new Date(),
+) {
+  const reconciler = new HarnessResumeReconciler(
+    new PostgresHarnessResumeReconcilerStore(pool),
+    {
+      async resume() {
+        throw new Error('A typed interaction must not use the legacy path.');
+      },
+      resumeInteraction,
+    },
+  );
+  return new HarnessInteractionService(
+    store,
+    {
+      async resume({ eventId }) {
+        if (!(await reconciler.resumeEvent(eventId))) {
+          throw new Error('The persisted interaction resume is unavailable.');
+        }
+      },
+    },
+    now,
   );
 }
 
@@ -156,8 +191,8 @@ test(
         registerTypedPending(firstStore, workspaceId, request),
       ]);
       assert.deepEqual(registrations, [
-        { timeoutSeconds: null },
-        { timeoutSeconds: null },
+        { timeoutSeconds: null, interactionRequest: request },
+        { timeoutSeconds: null, interactionRequest: request },
       ]);
 
       const restartedStore = new PostgresHarnessStore(pool);
@@ -171,11 +206,13 @@ test(
       );
 
       const resumes: unknown[] = [];
-      const service = new HarnessInteractionService(restartedStore, {
-        async resume(input) {
-          resumes.push(input);
+      const service = createPgInteractionService(
+        pool,
+        restartedStore,
+        async (_workspaceId, _taskId, signal) => {
+          resumes.push(signal);
         },
-      });
+      );
       assert.deepEqual(await service.submit(workspaceId, answer), {
         kind: 'resumed',
         replayed: false,
@@ -193,13 +230,14 @@ test(
       );
       assert.equal(resumes.length, 1);
       assert.deepEqual(resumes[0], {
-        workspaceId,
-        runId,
-        step: 'context_injection',
+        kind: 'harness_interaction_resume',
+        schemaVersion: 'v1',
         idempotencyKey: answer.idempotencyKey,
         interactionKind: 'ask_merchant',
         requestId: request.requestId,
         revision: request.revision,
+        runId,
+        step: 'context_injection',
         resumeData: answer.response,
         resolutionSource: 'decision',
       });
@@ -257,12 +295,11 @@ test(
       );
       const race = await Promise.allSettled(
         raceAnswers.map((raceAnswer) =>
-          new HarnessInteractionService(
+          createPgInteractionService(
+            pool,
             new PostgresHarnessStore(pool),
-            {
-              async resume(input) {
-                resumes.push(input);
-              },
+            async (_workspaceId, _taskId, signal) => {
+              resumes.push(signal);
             },
           ).submit(workspaceId, raceAnswer),
         ),
@@ -277,10 +314,116 @@ test(
       );
       assert.equal(resumes.length, 2);
 
+      const executionRequest = executionConfirmationRequestSchema.parse({
+        requestId: `interaction-execution-${suffix}`,
+        runId,
+        step: 'execution_selection',
+        revision: 3,
+        kind: 'execution_confirmation',
+        frozen: {
+          executionSnapshotRef: { id: `snapshot-${suffix}`, revision: 1 },
+          quoteRevision: `quote-${suffix}`,
+          params: [
+            {
+              key: 'model',
+              label: '模型',
+              value: 'ark-image-v3',
+              hint: null,
+            },
+          ],
+          debitPreview: [{ resource: 'image', quantity: 1 }],
+          condition: {
+            kind: 'existing_gate',
+            required: true,
+            serverEvaluated: true,
+          },
+          timeoutPolicy: {
+            kind: 'hold',
+            reason: 'unknown',
+            serverEvaluated: true,
+          },
+        },
+        presentation: {
+          carriers: ['conversation', 'task_card'],
+          notification: 'none',
+          renderer: 'execution_confirmation',
+        },
+      });
+      await restartedStore.registerPending(
+        workspaceId,
+        questionCardSchema.parse({
+          questionId: executionRequest.requestId,
+          workflowId: runId,
+          workflowRevision: executionRequest.revision,
+          question: '是否按当前方案执行？',
+          options: [
+            { id: 'approved', label: '确认执行' },
+            { id: 'rejected', label: '暂不执行' },
+          ],
+          freeText: { enabled: true },
+          response: {
+            field: 'execution_confirmation',
+            reason: '执行前需要商家确认',
+          },
+          scope: 'current_task',
+        }),
+        { timeoutSeconds: null, interactionRequest: executionRequest },
+      );
+      const executionResumes: unknown[] = [];
+      const executionService = createPgInteractionService(
+        pool,
+        restartedStore,
+        async (_workspaceId, _taskId, signal) => {
+          executionResumes.push(signal);
+        },
+      );
+      assert.deepEqual(
+        await executionService.submit(workspaceId, {
+          requestId: executionRequest.requestId,
+          revision: executionRequest.revision,
+          idempotencyKey: `execution-waiting-${suffix}`,
+          resume: { runId, step: executionRequest.step },
+          response: { kind: 'rejected' },
+        }),
+        { kind: 'waiting', replayed: false },
+      );
+      assert.equal(
+        await restartedStore.readPendingInteraction(workspaceId, runId),
+        null,
+      );
+      const messageInput = {
+        idempotencyKey: `execution-message-${suffix}`,
+        message: '请换成更稳妥的模型再继续',
+      };
+      assert.deepEqual(
+        await executionService.submitMerchantMessage(
+          workspaceId,
+          runId,
+          messageInput,
+        ),
+        { kind: 'resumed', replayed: false },
+      );
+      assert.deepEqual(
+        await executionService.submitMerchantMessage(
+          workspaceId,
+          runId,
+          messageInput,
+        ),
+        { kind: 'resumed', replayed: true },
+      );
+      assert.equal(executionResumes.length, 1);
+      assert.deepEqual(
+        (executionResumes[0] as { resumeData: unknown }).resumeData,
+        {
+          kind: 'rejected',
+          feedback: messageInput.message,
+        },
+      );
+
       const timeoutRequest = askMerchantQuestionRequestSchema.parse({
         ...request,
         requestId: `interaction-timeout-${suffix}`,
-        revision: 3,
+        revision: 4,
         timeoutPolicy: {
           kind: 'semantic_default',
           timeoutSeconds: 30,
@@ -301,12 +444,11 @@ test(
         undefined,
         () => new Date(now),
       );
-      const timeoutService = new HarnessInteractionService(
+      const timeoutService = createPgInteractionService(
+        pool,
         timeoutStore,
-        {
-          async resume(input) {
-            resumes.push(input);
-          },
+        async (_workspaceId, _taskId, signal) => {
+          resumes.push(signal);
         },
         () => new Date(now),
       );
@@ -316,7 +458,7 @@ test(
           workspaceId,
           timeoutRequest,
         ),
-        { timeoutSeconds: 30 },
+        { timeoutSeconds: 30, interactionRequest: timeoutRequest },
       );
       assert.equal(
         (await timeoutService.readForCarrier(workspaceId, runId, 'conversation'))
@@ -335,12 +477,11 @@ test(
       now += 10_000;
       await timeoutService.setEditing(workspaceId, runId, true);
       now += 90_000;
-      const restartedTimeoutService = new HarnessInteractionService(
+      const restartedTimeoutService = createPgInteractionService(
+        pool,
         new PostgresHarnessStore(pool),
-        {
-          async resume(input) {
-            resumes.push(input);
-          },
+        async (_workspaceId, _taskId, signal) => {
+          resumes.push(signal);
         },
         () => new Date(now),
       );
@@ -355,14 +496,103 @@ test(
         { kind: 'held', reason: 'deadline' },
       );
       now += 1;
+      const databaseDueAt = (
+        await pool.query<{ deadline_at: Date }>(
+          `select clock_timestamp() - interval '1 second' as deadline_at`,
+        )
+      ).rows[0]!.deadline_at.toISOString();
+      await pool.query(
+        `update harness_runtime.pending_questions
+            set pending_projection=jsonb_set(
+              pending_projection,
+              '{timer,deadlineAt}',
+              to_jsonb($2::text),
+              false
+            )
+          where task_id=$1`,
+        [runtimeId, databaseDueAt],
+      );
+      assert.deepEqual(
+        await new PostgresHarnessStore(pool).listSystemDefaultCandidates(20),
+        [
+          {
+            workspaceId,
+            runId,
+          },
+        ],
+      );
+      assert.deepEqual(
+        await new HarnessSystemDefaultProducer(
+          new PostgresHarnessStore(pool),
+          createPgInteractionService(
+            pool,
+            new PostgresHarnessStore(pool),
+            async () => {
+              throw new Error('simulated system-default DBOS outage');
+            },
+            () => new Date(now),
+          ),
+        ).runOnce(),
+        { failed: 1, held: 0, resumed: 0 },
+      );
+      assert.deepEqual(
+        await new PostgresHarnessStore(pool).listSystemDefaultCandidates(20),
+        [],
+      );
+      const recoveredDefaults: unknown[] = [];
+      const defaultReconciler = new HarnessResumeReconciler(
+        new PostgresHarnessResumeReconcilerStore(pool),
+        {
+          async resume() {
+            throw new Error('A system default must use the typed path.');
+          },
+          async resumeInteraction(_workspaceId, _taskId, signal) {
+            recoveredDefaults.push(signal);
+          },
+        },
+      );
+      assert.deepEqual(await defaultReconciler.runOnce(), {
+        resumed: 1,
+        failed: 0,
+      });
+      assert.deepEqual(
+        await new PostgresHarnessStore(pool).listSystemDefaultCandidates(20),
+        [],
+      );
+      assert.deepEqual(await defaultReconciler.runOnce(), {
+        resumed: 0,
+        failed: 0,
+      });
+      assert.equal(recoveredDefaults.length, 1);
       assert.deepEqual(
         await restartedTimeoutService.submitSystemDefault(workspaceId, runId),
-        { kind: 'resumed', replayed: false },
+        { kind: 'resumed', replayed: true },
+      );
+      await assert.rejects(
+        restartedTimeoutService.submit(workspaceId, {
+          requestId: timeoutRequest.requestId,
+          revision: timeoutRequest.revision,
+          idempotencyKey:
+            `${timeoutRequest.requestId}:r${timeoutRequest.revision}:system_default`,
+          resume: { runId, step: timeoutRequest.step },
+          response: {
+            kind: 'answer',
+            items: [
+              {
+                itemId: 'window',
+                result: { kind: 'answer', value: '伪造异载荷' },
+              },
+            ],
+          },
+        }),
+        /idempotency key belongs to another answer/u,
       );
       const timeoutEvent = await pool.query<{
+        resume_attempts: number;
         resolution_source: string;
+        resume_status: string;
       }>(
-        `select resolution_source
+        `select resolution_source, resume_attempts, resume_status
            from harness_runtime.decision_events
           where task_id=$1
             and idempotency_key=$2`,
@@ -375,12 +605,14 @@ test(
         timeoutEvent.rows[0]?.resolution_source,
         'system_default',
       );
-      assert.equal(resumes.length, 3);
+      assert.equal(timeoutEvent.rows[0]?.resume_attempts, 2);
+      assert.equal(timeoutEvent.rows[0]?.resume_status, 'sent');
+      assert.equal(resumes.length, 2);
 
       const recoveryRequest = askMerchantQuestionRequestSchema.parse({
         ...request,
         requestId: `interaction-recovery-${suffix}`,
-        revision: 4,
+        revision: 5,
       });
       await registerTypedPending(restartedStore, workspaceId, recoveryRequest);
       const recoveryAnswer = askMerchantAnswerSchema.parse({
@@ -390,12 +622,35 @@ test(
         idempotencyKey: `interaction-recovery-answer-${suffix}`,
       });
       await assert.rejects(
-        new HarnessInteractionService(restartedStore, {
-          async resume() {
+        createPgInteractionService(
+          pool,
+          restartedStore,
+          async () => {
             throw new Error('simulated DBOS outage');
           },
-        }).submit(workspaceId, recoveryAnswer),
+        ).submit(workspaceId, recoveryAnswer),
         /could not resume the workflow yet/u,
+      );
+      const malformedEventId = `malformed-interaction-event-${suffix}`;
+      await pool.query(
+        `insert into harness_runtime.decision_events
+           (id, task_id, question_id, workflow_revision, idempotency_key,
+            payload_fingerprint, payload, resolution_source, resume_status,
+            created_at)
+         values ($1,$2,$3,$4,$5,$6,$7::jsonb,'decision','pending',
+                 now() - interval '1 minute')`,
+        [
+          malformedEventId,
+          runtimeId,
+          `malformed-question-${suffix}`,
+          99,
+          `malformed-answer-${suffix}`,
+          fingerprintValue({ malformed: true }),
+          JSON.stringify({
+            kind: 'harness_interaction_resolution',
+            schemaVersion: 'v1',
+          }),
+        ],
       );
 
       const reconciled: unknown[] = [];
@@ -410,7 +665,7 @@ test(
           },
         },
       );
-      assert.deepEqual(await reconciler.runOnce(), { resumed: 1, failed: 0 });
+      assert.deepEqual(await reconciler.runOnce(), { resumed: 1, failed: 1 });
       assert.deepEqual(await reconciler.runOnce(), { resumed: 0, failed: 0 });
       assert.equal(reconciled.length, 1);
       assert.deepEqual(reconciled[0], {
@@ -438,6 +693,17 @@ test(
         resume_attempts: 2,
         resume_status: 'sent',
       });
+      assert.equal(
+        (
+          await pool.query<{ resume_status: string }>(
+            `select resume_status
+               from harness_runtime.decision_events
+              where id=$1`,
+            [malformedEventId],
+          )
+        ).rows[0]?.resume_status,
+        'invalid',
+      );
     } finally {
       await pool.query(
         `delete from harness_runtime.langfuse_outbox

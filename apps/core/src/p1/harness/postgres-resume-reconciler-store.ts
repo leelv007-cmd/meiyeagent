@@ -15,6 +15,17 @@ export class PostgresHarnessResumeReconcilerStore
   constructor(private readonly pool: Pool) {}
 
   async claimPending(limit: number): Promise<HarnessPendingResume[]> {
+    return this.claim(limit, null);
+  }
+
+  async claimEvent(eventId: string) {
+    return (await this.claim(1, eventId))[0] ?? null;
+  }
+
+  private async claim(
+    limit: number,
+    eventId: string | null,
+  ): Promise<HarnessPendingResume[]> {
     const claimId = randomUUID();
     const result = await this.pool.query<{
       event_id: string;
@@ -45,6 +56,7 @@ export class PostgresHarnessResumeReconcilerStore
              'late_answer',
              'system_default'
            )
+           and ($3::text is null or events.id=$3)
          order by events.created_at, events.id
          limit $1
          for update skip locked
@@ -72,54 +84,64 @@ export class PostgresHarnessResumeReconcilerStore
        join harness_runtime.task_requests requests
          on requests.runtime_id=events.task_id
        order by events.created_at, events.id`,
-      [limit, claimId]
+      [limit, claimId, eventId]
     );
     return result.rows.map((row) => {
-      const payload = record(row.payload);
-      if (payload?.kind === 'harness_interaction_resolution') {
-        if (row.resolution_source === 'late_answer') {
+      try {
+        const payload = record(row.payload);
+        if (payload?.kind === 'harness_interaction_resolution') {
+          if (row.resolution_source === 'late_answer') {
+            throw new Error(
+              'A late-answer event cannot carry an interaction resume.',
+            );
+          }
+          return {
+            kind: 'interaction' as const,
+            claimId,
+            eventId: row.event_id,
+            workspaceId: row.workspace_id,
+            taskId: row.task_id,
+            resolutionSource: row.resolution_source,
+            resume: interactionResumeSignalFromEvent({
+              idempotencyKey: row.idempotency_key,
+              payload: row.payload,
+              questionId: row.question_id,
+              resolutionSource: row.resolution_source,
+              runId: row.task_id,
+              workflowRevision: Number(row.workflow_revision),
+            }),
+          };
+        }
+        if (row.resolution_source === 'system_default') {
           throw new Error(
-            'A late-answer event cannot carry an interaction resume.',
+            'A system-default event requires a typed interaction payload.',
           );
         }
         return {
-          kind: 'interaction' as const,
+          kind: 'structured_decision' as const,
           claimId,
           eventId: row.event_id,
           workspaceId: row.workspace_id,
           taskId: row.task_id,
+          request: row.request,
           resolutionSource: row.resolution_source,
-          resume: interactionResumeSignalFromEvent({
+          command: structuredDecisionInputSchema.parse({
             idempotencyKey: row.idempotency_key,
-            payload: row.payload,
             questionId: row.question_id,
-            resolutionSource: row.resolution_source,
-            runId: row.task_id,
             workflowRevision: Number(row.workflow_revision),
+            patch: payload?.patch,
+            decision: payload?.decision,
           }),
         };
+      } catch {
+        return {
+          kind: 'malformed' as const,
+          claimId,
+          eventId: row.event_id,
+          workspaceId: row.workspace_id,
+          taskId: row.task_id,
+        };
       }
-      if (row.resolution_source === 'system_default') {
-        throw new Error(
-          'A system-default event requires a typed interaction payload.',
-        );
-      }
-      return {
-        kind: 'structured_decision' as const,
-        claimId,
-        eventId: row.event_id,
-        workspaceId: row.workspace_id,
-        taskId: row.task_id,
-        request: row.request,
-        resolutionSource: row.resolution_source,
-        command: structuredDecisionInputSchema.parse({
-          idempotencyKey: row.idempotency_key,
-          questionId: row.question_id,
-          workflowRevision: Number(row.workflow_revision),
-          patch: payload?.patch,
-          decision: payload?.decision,
-        }),
-      };
     });
   }
 
@@ -148,6 +170,20 @@ export class PostgresHarnessResumeReconcilerStore
          and resume_claim_id=$2`,
       [eventId, claimId]
     );
+  }
+
+  async markInvalid(eventId: string, claimId: string) {
+    const result = await this.pool.query(
+      `update harness_runtime.decision_events
+       set resume_status='invalid',
+           resume_claim_id=null,
+           resume_lease_expires_at=null
+       where id=$1
+         and resume_status='sending'
+         and resume_claim_id=$2`,
+      [eventId, claimId],
+    );
+    return result.rowCount === 1;
   }
 }
 

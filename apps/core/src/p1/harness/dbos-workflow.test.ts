@@ -340,6 +340,33 @@ test('hold config is frozen inside the pending step and exposed as hot-read wiri
   );
 });
 
+test('typed timeout persistence uses the production system-default owner', () => {
+  const workflowSource = readFileSync(
+    new URL('./dbos-workflow.ts', import.meta.url),
+    'utf8',
+  );
+  assert.match(
+    workflowSource,
+    /pendingProjection\?\.interactionRequest/u,
+  );
+  assert.match(
+    workflowSource,
+    /interactions\.submitSystemDefault/u,
+  );
+  assert.match(
+    workflowSource,
+    /persist-system-default-/u,
+  );
+  const mainSource = readFileSync(
+    new URL('../../main.ts', import.meta.url),
+    'utf8',
+  );
+  assert.match(
+    mainSource,
+    /p1HarnessAskInvoker,\s*harnessInteractions/u,
+  );
+});
+
 test('ask_merchant caller derives one replay-stable key from the canonical question', async () => {
   const question = questionCardSchema.parse({
     questionId: 'workflow-ask:offer-price',

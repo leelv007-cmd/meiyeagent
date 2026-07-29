@@ -9,6 +9,7 @@ import {
   assistantStreamRequestSchema,
   firstUsableDraftMetricSchema,
   harnessInteractionAnswerSchema,
+  harnessInteractionMerchantMessageSchema,
   structuredDecisionInputSchema,
   hasProductCapability,
   productCommandSchema,
@@ -1569,6 +1570,9 @@ export function createCoreServer({
     const harnessInteractionEditingMatch = url.pathname.match(
       /^\/v1\/workspaces\/([^/]+)\/p1\/harness\/tasks\/([^/]+)\/interaction\/editing$/
     );
+    const harnessInteractionMessageMatch = url.pathname.match(
+      /^\/v1\/workspaces\/([^/]+)\/p1\/harness\/tasks\/([^/]+)\/interaction\/message$/
+    );
     if (
       harnessService &&
       request.method === 'POST' &&
@@ -1714,6 +1718,44 @@ export function createCoreServer({
           {
             code: 'INVALID_HARNESS_INTERACTION',
             message: 'Harness interaction is invalid.',
+            status: 400,
+          },
+          requestCorrelationId
+        );
+      }
+      return;
+    }
+    if (
+      harnessService &&
+      request.method === 'POST' &&
+      harnessInteractionMessageMatch
+    ) {
+      try {
+        const workspaceId = decodeURIComponent(
+          harnessInteractionMessageMatch[1]!
+        );
+        const taskId = decodeURIComponent(harnessInteractionMessageMatch[2]!);
+        const context = p1Identity(request, workspaceId, requestCorrelationId);
+        authorizeContentCreation(context);
+        sendJson(
+          response,
+          200,
+          await harnessService.submitInteractionMerchantMessage(
+            workspaceId,
+            taskId,
+            harnessInteractionMerchantMessageSchema.parse(
+              await readJson(request)
+            )
+          ),
+          requestCorrelationId
+        );
+      } catch (error) {
+        sendP1HttpError(
+          response,
+          error,
+          {
+            code: 'INVALID_HARNESS_INTERACTION_MESSAGE',
+            message: 'Harness interaction message is invalid.',
             status: 400,
           },
           requestCorrelationId

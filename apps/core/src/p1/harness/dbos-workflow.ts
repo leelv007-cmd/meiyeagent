@@ -49,7 +49,10 @@ import {
   harnessInteractionResumeSignalSchema,
   type HarnessInteractionResumeSignal,
 } from './interaction-resume.js';
-import { askMerchantInteractionRequestFromQuestion } from './interaction-service.js';
+import {
+  askMerchantInteractionRequestFromQuestion,
+  type HarnessInteractionService,
+} from './interaction-service.js';
 import {
   HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
   HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
@@ -262,6 +265,7 @@ export function registerHarnessDbosWorkflow(
   boundedContinuations?: HarnessBoundedExecutionContinuationResolver,
   taskRecallDue?: TaskRecallDuePort,
   askMerchant?: HarnessAskMerchantPrimitivePort,
+  interactions?: Pick<HarnessInteractionService, 'submitSystemDefault'>,
 ) {
   const workflow = async (input: HarnessDbosWorkflowInput) => {
     const runtimeWorkflowId = DBOS.workflowID;
@@ -465,6 +469,24 @@ export function registerHarnessDbosWorkflow(
         );
         const command = confirmationCardDecision(question, decision);
         if (!decision) {
+          if (pendingProjection?.interactionRequest) {
+            if (!interactions) {
+              throw new Error(
+                'Typed interaction system-default persistence is unavailable.',
+              );
+            }
+            await DBOS.runStep(
+              () =>
+                interactions.submitSystemDefault(
+                  request.workspaceId,
+                  workflowId,
+                ),
+              {
+                name: `persist-system-default-${question.questionId}`,
+              },
+            );
+            return waitForDecisionWithResolutionSource(question);
+          }
           if (!decisions) {
             throw new Error('Core timeout decision persistence is unavailable.');
           }
@@ -1198,6 +1220,22 @@ async function waitForDecisionWithoutTimeout(question: QuestionCard) {
       decisionTopic(question.questionId),
     );
     if (decision) return confirmationCardDecision(question, decision);
+  }
+}
+
+async function waitForDecisionWithResolutionSource(question: QuestionCard) {
+  for (;;) {
+    const decision = await DBOS.recv<unknown>(
+      decisionTopic(question.questionId),
+    );
+    if (!decision) continue;
+    const interaction = harnessInteractionResumeSignalSchema.safeParse(decision);
+    return {
+      command: confirmationCardDecision(question, decision),
+      resolutionSource: interaction.success
+        ? interaction.data.resolutionSource
+        : ('decision' as const),
+    };
   }
 }
 
