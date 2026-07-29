@@ -366,6 +366,15 @@ export function requiredP1Capability(
   }
 
   if (module === 'skills') {
+    if (kind === 'query') {
+      // Reading the catalog must not cost a config.publish step-up — an
+      // operator who only wants to look would be re-authenticated on arrival.
+      return new Set(['skill_catalog_list', 'skill_revision_history']).has(
+        action
+      )
+        ? 'workspace.read'
+        : null;
+    }
     return kind === 'command' &&
       new Set([
         'skill_define',

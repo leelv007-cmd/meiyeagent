@@ -21,9 +21,43 @@ export interface SkillTriggerCondition {
   tenantId?: string | null;
 }
 
+/**
+ * Where a Skill came from. The operator catalog surfaces this as a column, and
+ * the "share of industry-tier entries with a second corroborating source"
+ * metric is computed from it — the number only exists if the field is stored,
+ * so this is a governance field rather than display metadata.
+ */
+export const SKILL_SOURCE_KINDS = [
+  'harvested',
+  'authored',
+  'induced',
+] as const;
+
+export type SkillSourceKind = (typeof SKILL_SOURCE_KINDS)[number];
+
+/** Which layer a Skill belongs to. Lower tiers override higher ones. */
+export const SKILL_TIERS = ['platform', 'industry', 'store'] as const;
+
+export type SkillTier = (typeof SKILL_TIERS)[number];
+
+/** Provenance for a harvested Skill, so a translation stays auditable. */
+export interface SkillSourceRef {
+  externalUrl?: string;
+  harvestedAt?: string;
+}
+
 export interface SkillCatalog {
   skillId: string;
   name: string;
+  /**
+   * Operator-facing one-liner, required on the catalog page: it is how an
+   * operator recognises what a Skill does. Authoring lives in the standard
+   * frontmatter; this is the catalog projection of it.
+   */
+  description: string;
+  sourceKind: SkillSourceKind;
+  tier: SkillTier;
+  sourceRef?: SkillSourceRef;
   presentationPolicy: 'backend_only' | 'explainable' | 'user_selectable';
   activeRevisionRef: string | null;
   createdAt: string;
