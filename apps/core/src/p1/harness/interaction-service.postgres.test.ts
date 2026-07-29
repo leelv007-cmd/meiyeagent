@@ -26,7 +26,10 @@ import { harnessRuntimeId } from './workspace-scope.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
 
-function semanticDefaultEligibility(itemIds: string[]) {
+function semanticDefaultEligibility(
+  itemIds: string[],
+  conditionRevision: string,
+) {
   const defaultResponse = {
     kind: 'answer' as const,
     items: itemIds.map((itemId) => ({
@@ -38,11 +41,11 @@ function semanticDefaultEligibility(itemIds: string[]) {
     kind: 'safe' as const,
     serverEvaluated: true as const,
     effect: 'none' as const,
-    quota: 'within_limit' as const,
+    quota: 'not_applicable' as const,
     defaultResponse,
     defaultResponseFingerprint: fingerprintValue(defaultResponse),
     policyRevision: 'ask-semantic-default/v1',
-    conditionRevision: 'postgres-test-condition-r1',
+    conditionRevision,
   };
 }
 
@@ -186,6 +189,59 @@ test(
           JSON.stringify({ workspaceId }),
         ],
       );
+      const forgedFingerprintRequest =
+        askMerchantQuestionRequestSchema.parse({
+          ...request,
+          timeoutPolicy: {
+            kind: 'semantic_default',
+            timeoutSeconds: 30,
+            eligibility: {
+              ...semanticDefaultEligibility(
+                ['service'],
+                `${request.requestId}:r${request.revision}`,
+              ),
+              defaultResponseFingerprint: '0'.repeat(64),
+            },
+          },
+        });
+      await assert.rejects(
+        registerTypedPending(
+          firstStore,
+          workspaceId,
+          forgedFingerprintRequest,
+        ),
+        /default response fingerprint/u,
+      );
+      const forgedRevisionRequest = askMerchantQuestionRequestSchema.parse({
+        ...request,
+        timeoutPolicy: {
+          kind: 'semantic_default',
+          timeoutSeconds: 30,
+          eligibility: semanticDefaultEligibility(
+            ['service'],
+            'forged-condition-r99',
+          ),
+        },
+      });
+      await assert.rejects(
+        registerTypedPending(
+          firstStore,
+          workspaceId,
+          forgedRevisionRequest,
+        ),
+        /policy or condition revision/u,
+      );
+      assert.equal(
+        (
+          await pool.query<{ pending_count: string }>(
+            `select count(*)::text as pending_count
+               from harness_runtime.pending_questions
+              where task_id=$1`,
+            [runtimeId],
+          )
+        ).rows[0]?.pending_count,
+        '0',
+      );
       const registrations = await Promise.all([
         registerTypedPending(firstStore, workspaceId, request),
         registerTypedPending(firstStore, workspaceId, request),
@@ -194,6 +250,10 @@ test(
         { timeoutSeconds: null, interactionRequest: request },
         { timeoutSeconds: null, interactionRequest: request },
       ]);
+      assert.deepEqual(
+        await firstStore.listPendingQuestions(workspaceId),
+        [],
+      );
 
       const restartedStore = new PostgresHarnessStore(pool);
       assert.deepEqual(
@@ -427,7 +487,10 @@ test(
         timeoutPolicy: {
           kind: 'semantic_default',
           timeoutSeconds: 30,
-          eligibility: semanticDefaultEligibility(['window']),
+          eligibility: semanticDefaultEligibility(
+            ['window'],
+            `interaction-timeout-${suffix}:r4`,
+          ),
         },
         questions: [
           {
@@ -459,6 +522,25 @@ test(
           timeoutRequest,
         ),
         { timeoutSeconds: 30, interactionRequest: timeoutRequest },
+      );
+      assert.deepEqual(
+        await timeoutService.submitSystemDefault(workspaceId, runId),
+        { kind: 'held', reason: 'renderer' },
+      );
+      assert.equal(
+        (
+          await pool.query<{ event_count: string }>(
+            `select count(*)::text as event_count
+               from harness_runtime.decision_events
+              where task_id=$1
+                and idempotency_key=$2`,
+            [
+              runtimeId,
+              `${timeoutRequest.requestId}:r${timeoutRequest.revision}:system_default`,
+            ],
+          )
+        ).rows[0]?.event_count,
+        '0',
       );
       assert.equal(
         (await timeoutService.readForCarrier(workspaceId, runId, 'conversation'))
@@ -609,10 +691,99 @@ test(
       assert.equal(timeoutEvent.rows[0]?.resume_status, 'sent');
       assert.equal(resumes.length, 2);
 
+      const casRequest = askMerchantQuestionRequestSchema.parse({
+        ...request,
+        requestId: `interaction-cas-${suffix}`,
+        revision: 5,
+        timeoutPolicy: {
+          kind: 'semantic_default',
+          timeoutSeconds: 30,
+          eligibility: semanticDefaultEligibility(
+            ['window'],
+            `interaction-cas-${suffix}:r5`,
+          ),
+        },
+        questions: [
+          {
+            itemId: 'window',
+            question: '活动到哪天结束？',
+            fallback: { kind: 'deferred' },
+          },
+        ],
+      });
+      let casNow = Date.parse('2026-07-30T01:00:00.000Z');
+      const casStore = new PostgresHarnessStore(
+        pool,
+        undefined,
+        undefined,
+        () => new Date(casNow),
+      );
+      await registerTypedPending(casStore, workspaceId, casRequest);
+      const casResumes: unknown[] = [];
+      const createCasService = () =>
+        createPgInteractionService(
+          pool,
+          casStore,
+          async (_workspaceId, _taskId, signal) => {
+            casResumes.push(signal);
+          },
+          () => new Date(casNow),
+        );
+      await createCasService().readForCarrier(
+        workspaceId,
+        runId,
+        'conversation',
+      );
+      casNow += 30_000;
+      const merchantCasKey = `interaction-cas-merchant-${suffix}`;
+      const casResults = await Promise.allSettled([
+        createCasService().submitSystemDefault(workspaceId, runId),
+        createCasService().submit(workspaceId, {
+          requestId: casRequest.requestId,
+          revision: casRequest.revision,
+          idempotencyKey: merchantCasKey,
+          resume: { runId, step: casRequest.step },
+          response: {
+            kind: 'answer',
+            items: [
+              {
+                itemId: 'window',
+                result: { kind: 'answer', value: '2026-08-31' },
+              },
+            ],
+          },
+        }),
+      ]);
+      assert.equal(
+        casResults.filter((result) => result.status === 'fulfilled').length,
+        1,
+      );
+      assert.equal(
+        casResults.filter((result) => result.status === 'rejected').length,
+        1,
+      );
+      assert.equal(casResumes.length, 1);
+      assert.equal(
+        (
+          await pool.query<{ event_count: string }>(
+            `select count(*)::text as event_count
+               from harness_runtime.decision_events
+              where task_id=$1
+                and idempotency_key in ($2,$3)`,
+            [
+              runtimeId,
+              merchantCasKey,
+              `${casRequest.requestId}:r${casRequest.revision}:system_default`,
+            ],
+          )
+        ).rows[0]?.event_count,
+        '1',
+      );
+
       const recoveryRequest = askMerchantQuestionRequestSchema.parse({
         ...request,
         requestId: `interaction-recovery-${suffix}`,
-        revision: 5,
+        revision: 6,
       });
       await registerTypedPending(restartedStore, workspaceId, recoveryRequest);
       const recoveryAnswer = askMerchantAnswerSchema.parse({

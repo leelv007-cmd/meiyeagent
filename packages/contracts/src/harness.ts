@@ -272,8 +272,11 @@ export function questionCardUnattended<T extends object>(
   return question.unattended ?? 'hold';
 }
 
-export const confirmationCardTimeoutSecondsSchema =
-  interactionTimeoutPolicySchema.options[1].shape.timeoutSeconds;
+export const confirmationCardTimeoutSecondsSchema = z
+  .number()
+  .int()
+  .min(1)
+  .max(3_600);
 
 const executionConfirmationParamSchema = z
   .object({
@@ -344,19 +347,7 @@ export const executionConfirmationRequestSchema = z
       })
       .strict(),
   })
-  .strict()
-  .superRefine((request, context) => {
-    if (
-      request.frozen.timeoutPolicy.kind === 'semantic_default'
-    ) {
-      context.addIssue({
-        code: 'custom',
-        message:
-          'Execution semantic defaults require resource authority.',
-        path: ['frozen', 'timeoutPolicy'],
-      });
-    }
-  });
+  .strict();
 
 export const executionConfirmationAnswerSchema = z
   .object({

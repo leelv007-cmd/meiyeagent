@@ -379,7 +379,7 @@ export function registerHarnessDbosWorkflow(
                           kind: 'safe',
                           serverEvaluated: true,
                           effect: 'none',
-                          quota: 'within_limit',
+                          quota: 'not_applicable',
                           defaultResponse,
                           defaultResponseFingerprint:
                             fingerprintValue(defaultResponse),
@@ -1116,7 +1116,7 @@ function interactionConfirmationCardDecision(
 ) {
   if (
     signal.requestId !== question.questionId ||
-    signal.revision !== question.workflowRevision ||
+    signal.revision < question.workflowRevision ||
     signal.runId !== question.workflowId
   ) {
     throw new Error(

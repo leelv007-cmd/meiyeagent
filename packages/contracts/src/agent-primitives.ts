@@ -102,16 +102,18 @@ export const askMerchantSemanticDefaultResponseSchema = z
   })
   .strict();
 
-export const interactionTimeoutPolicySchema = z.discriminatedUnion('kind', [
-  z
-    .object({
-      kind: z.literal('hold'),
-      reason: z
-        .enum(['quote_threshold', 'external_action', 'unknown'])
-        .optional(),
-      serverEvaluated: z.literal(true).optional(),
-    })
-    .strict(),
+export const interactionTimeoutPolicySchema = z
+  .object({
+    kind: z.literal('hold'),
+    reason: z
+      .enum(['quote_threshold', 'external_action', 'unknown'])
+      .optional(),
+    serverEvaluated: z.literal(true).optional(),
+  })
+  .strict();
+
+export const askMerchantTimeoutPolicySchema = z.discriminatedUnion('kind', [
+  interactionTimeoutPolicySchema,
   z
     .object({
       kind: z.literal('semantic_default'),
@@ -121,7 +123,7 @@ export const interactionTimeoutPolicySchema = z.discriminatedUnion('kind', [
           kind: z.literal('safe'),
           serverEvaluated: z.literal(true),
           effect: z.literal('none'),
-          quota: z.enum(['within_limit', 'not_applicable']),
+          quota: z.literal('not_applicable'),
           defaultResponse: askMerchantSemanticDefaultResponseSchema,
           defaultResponseFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
           policyRevision: primitiveTextSchema,
@@ -141,7 +143,7 @@ export const askMerchantQuestionRequestSchema = z
     kind: z.literal('ask_merchant'),
     questions: z.array(askMerchantQuestionSchema).min(1).max(12),
     groupSkip: z.literal(true),
-    timeoutPolicy: interactionTimeoutPolicySchema.optional(),
+    timeoutPolicy: askMerchantTimeoutPolicySchema.optional(),
     presentation: z
       .object({
         carriers: z

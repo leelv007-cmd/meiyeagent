@@ -138,6 +138,63 @@ test('malformed answers become a new question revision without throwing', () => 
   });
 });
 
+test('reask advances the frozen semantic-default condition revision', () => {
+  const request = askMerchantQuestionRequestSchema.parse({
+    requestId: 'request-semantic-reask',
+    runId: 'run-semantic-reask',
+    step: 'context_injection',
+    revision: 4,
+    kind: 'ask_merchant',
+    questions: [
+      {
+        itemId: 'window',
+        question: '活动到哪天结束？',
+        fallback: { kind: 'deferred' },
+      },
+    ],
+    groupSkip: true,
+    timeoutPolicy: {
+      kind: 'semantic_default',
+      timeoutSeconds: 30,
+      eligibility: {
+        kind: 'safe',
+        serverEvaluated: true,
+        effect: 'none',
+        quota: 'not_applicable',
+        defaultResponse: {
+          kind: 'answer',
+          items: [
+            { itemId: 'window', result: { kind: 'deferred' } },
+          ],
+        },
+        defaultResponseFingerprint: '0'.repeat(64),
+        policyRevision: 'ask-semantic-default/v1',
+        conditionRevision: 'request-semantic-reask:r4',
+      },
+    },
+    presentation: {
+      carriers: ['conversation'],
+      blocking: 'none',
+      notification: 'none',
+      renderer: 'ask_merchant_group',
+    },
+  });
+
+  const resolution = resolveAskMerchantAnswer(request, {
+    unexpected: true,
+  });
+
+  assert.equal(resolution.kind, 'reask');
+  assert.equal(
+    resolution.kind === 'reask'
+      ? resolution.request.timeoutPolicy?.kind === 'semantic_default'
+        ? resolution.request.timeoutPolicy.eligibility.conditionRevision
+        : null
+      : null,
+    'request-semantic-reask:r5',
+  );
+});
+
 test('free text and per-item deferred results resume together', () => {
   const request = askMerchantQuestionRequestSchema.parse({
     requestId: 'request-4',

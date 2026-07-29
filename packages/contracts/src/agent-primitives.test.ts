@@ -319,7 +319,7 @@ test('merchant semantic defaults require explicit server-owned safe authority', 
         kind: 'safe',
         serverEvaluated: true,
         effect: 'none',
-        quota: 'within_limit',
+        quota: 'not_applicable',
         defaultResponse: {
           kind: 'answer',
           items: [
@@ -344,6 +344,19 @@ test('merchant semantic defaults require explicit server-owned safe authority', 
   } as const;
 
   assert.deepEqual(askMerchantQuestionRequestSchema.parse(request), request);
+  assert.equal(
+    askMerchantQuestionRequestSchema.safeParse({
+      ...request,
+      timeoutPolicy: {
+        ...request.timeoutPolicy,
+        eligibility: {
+          ...request.timeoutPolicy.eligibility,
+          quota: 'within_limit',
+        },
+      },
+    }).success,
+    false,
+  );
   assert.equal(
     askMerchantQuestionRequestSchema.safeParse({
       ...request,

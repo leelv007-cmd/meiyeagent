@@ -76,11 +76,23 @@ export function resolveAskMerchantAnswer(
 function reask(
   request: AskMerchantQuestionRequest,
 ): Extract<AskMerchantResolution, { kind: 'reask' }> {
+  const revision = request.revision + 1;
   return {
     kind: 'reask',
     request: {
       ...request,
-      revision: request.revision + 1,
+      revision,
+      ...(request.timeoutPolicy?.kind === 'semantic_default'
+        ? {
+            timeoutPolicy: {
+              ...request.timeoutPolicy,
+              eligibility: {
+                ...request.timeoutPolicy.eligibility,
+                conditionRevision: `${request.requestId}:r${revision}`,
+              },
+            },
+          }
+        : {}),
     },
   };
 }

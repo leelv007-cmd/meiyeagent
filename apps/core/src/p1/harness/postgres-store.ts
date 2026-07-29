@@ -852,6 +852,29 @@ export class PostgresHarnessStore
         'Typed interaction identity must match the canonical QuestionCard.',
       );
     }
+    if (
+      interactionRequest?.kind === 'ask_merchant' &&
+      interactionRequest.timeoutPolicy?.kind === 'semantic_default'
+    ) {
+      const eligibility = interactionRequest.timeoutPolicy.eligibility;
+      if (
+        fingerprintValue(eligibility.defaultResponse) !==
+        eligibility.defaultResponseFingerprint
+      ) {
+        throw new Error(
+          'The semantic default response fingerprint is invalid.',
+        );
+      }
+      if (
+        eligibility.policyRevision !== 'ask-semantic-default/v1' ||
+        eligibility.conditionRevision !==
+          `${interactionRequest.requestId}:r${interactionRequest.revision}`
+      ) {
+        throw new Error(
+          'The semantic default policy or condition revision is invalid.',
+        );
+      }
+    }
     const proposedInteractionProjection = interactionRequest
       ? createHarnessInteractionPendingProjection(
           interactionRequest,
@@ -1233,8 +1256,11 @@ export class PostgresHarnessStore
         if (
           timeoutPolicy?.kind !== 'semantic_default' ||
           timeoutPolicy.eligibility.effect !== 'none' ||
-          (timeoutPolicy.eligibility.quota !== 'within_limit' &&
-            timeoutPolicy.eligibility.quota !== 'not_applicable') ||
+          timeoutPolicy.eligibility.quota !== 'not_applicable' ||
+          timeoutPolicy.eligibility.policyRevision !==
+            'ask-semantic-default/v1' ||
+          timeoutPolicy.eligibility.conditionRevision !==
+            `${projection.data.request.requestId}:r${projection.data.request.revision}` ||
           fingerprintValue(timeoutPolicy.eligibility.defaultResponse) !==
             timeoutPolicy.eligibility.defaultResponseFingerprint ||
           fingerprintValue(input.answer.response) !==
@@ -1545,6 +1571,8 @@ export class PostgresHarnessStore
         where requests.request->>'workspaceId'=$1
           and questions.status='pending'
           and coalesce(
+                questions.pending_projection
+                  #>>'{request,presentation,notification}',
                 questions.payload->'presentation'->>'notification',
                 ''
               ) <> 'none'

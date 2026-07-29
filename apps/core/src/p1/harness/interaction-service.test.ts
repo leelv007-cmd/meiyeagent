@@ -663,11 +663,11 @@ function semanticDefaultEligibility(itemIds: string[]) {
     kind: 'safe' as const,
     serverEvaluated: true as const,
     effect: 'none' as const,
-    quota: 'within_limit' as const,
+    quota: 'not_applicable' as const,
     defaultResponse,
     defaultResponseFingerprint: fingerprintValue(defaultResponse),
     policyRevision: 'ask-semantic-default/v1',
-    conditionRevision: 'test-condition-r1',
+    conditionRevision: 'request-ask:r1',
   };
 }
 

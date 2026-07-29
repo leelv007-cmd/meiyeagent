@@ -29,6 +29,10 @@ import {
 } from './dbos-workflow.js';
 import { harnessRuntimeId } from './workspace-scope.js';
 import { PostgresNoteMediaAdmissionCoordinator } from './note-media-admission.js';
+import { PostgresHarnessStore } from './postgres-store.js';
+import { HarnessInteractionService } from './interaction-service.js';
+import { PostgresHarnessResumeReconcilerStore } from './postgres-resume-reconciler-store.js';
+import { HarnessResumeReconciler } from './resume-reconciler.js';
 import type {
   HarnessMediaSelectionResult,
   HarnessStagePorts,
@@ -720,6 +724,228 @@ test(
       );
     } finally {
       await DBOS.shutdown({ deregister: true });
+    }
+  },
+);
+
+test(
+  'durable r2 reask resumes the original production DBOS question exactly once',
+  { skip: !systemDatabaseUrl || !databaseUrl },
+  async () => {
+    const suffix = randomUUID();
+    const workflowId = `harness-reask-${suffix}`;
+    const workspaceId = `workspace-reask-${suffix}`;
+    const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
+    const pool = new Pool({ connectionString: databaseUrl });
+    const store = new PostgresHarnessStore(pool);
+    await store.applySchema();
+    await pool.query(
+      `create table if not exists p1_content_packages (
+         workspace_id text not null,
+         payload jsonb not null
+       )`,
+    );
+    const request = snapshotTimeoutRequest(workflowId, workspaceId);
+    await pool.query(
+      `insert into harness_runtime.task_requests
+         (task_id, workflow_id, runtime_id, fingerprint, request)
+       values ($1,$2,$1,$3,$4::jsonb)`,
+      [
+        runtimeWorkflowId,
+        workflowId,
+        `reask-smoke-${suffix}`,
+        JSON.stringify(request),
+      ],
+    );
+    const skills = await createSmokeSkills(workflowId);
+    const ports = smokePorts(workflowId, skills.service, []);
+    ports.nameIntent = async () => ({
+      declaration: {
+        normalizedIntent: '推广本店团购',
+        taskType: 'promotion_groupbuy_conversion',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['promotion_activity'],
+        usedAssetCategories: [],
+        route: 'guidance',
+        routingSource: 'model',
+        implicitConstraints: [],
+      },
+      blockingQuestion: {
+        questionId: `${workflowId}:service`,
+        workflowId,
+        workflowRevision: 1,
+        question: '这次主推哪个项目？',
+        options: [{ id: 'scalp-care', label: '头皮护理' }],
+        freeText: { enabled: false },
+        response: {
+          field: 'service',
+          reason: '需要商家确认主推项目',
+        },
+        unattended: 'hold',
+        scope: 'current_task',
+      },
+    });
+    let resumeCalls = 0;
+    const workflowResumer = {
+      async resume() {
+        throw new Error('A typed interaction must not use the legacy path.');
+      },
+      async resumeInteraction(
+        targetWorkspaceId: string,
+        targetWorkflowId: string,
+        signal: unknown,
+      ) {
+        resumeCalls += 1;
+        await resumeHarnessDbosInteractionWorkflow(
+          targetWorkspaceId,
+          targetWorkflowId,
+          signal,
+          store,
+        );
+      },
+    };
+    const reconciler = new HarnessResumeReconciler(
+      new PostgresHarnessResumeReconcilerStore(pool),
+      workflowResumer,
+    );
+    const interactions = new HarnessInteractionService(store, {
+      async resume({ eventId }) {
+        if (!(await reconciler.resumeEvent(eventId))) {
+          throw new Error('The persisted interaction resume is unavailable.');
+        }
+      },
+    });
+    DBOS.setConfig({
+      name: 'beauty-marketing-harness-reask-smoke',
+      systemDatabaseUrl: systemDatabaseUrl!,
+      applicationVersion: 'harness-reask-smoke-v1',
+    });
+    const workflow = registerHarnessDbosWorkflow(
+      ports,
+      store,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      interactions,
+    );
+
+    try {
+      await DBOS.launch();
+      const handle = await DBOS.startWorkflow(workflow, {
+        workflowID: runtimeWorkflowId,
+      })({ workflowId, request });
+      await DBOS.getEvent(
+        runtimeWorkflowId,
+        'pending-structured-decision',
+        { timeoutSeconds: 5 },
+      );
+      const first = await interactions.readForCarrier(
+        workspaceId,
+        workflowId,
+        'conversation',
+      );
+      assert.equal(first?.revision, 1);
+      const reask = await interactions.submit(workspaceId, {
+        requestId: first?.requestId,
+        revision: first?.revision,
+        idempotencyKey: `invalid-r1-${suffix}`,
+        resume: { runId: workflowId, step: 'intent_naming' },
+        response: {
+          kind: 'answer',
+          items: [
+            {
+              itemId: 'service',
+              result: { kind: 'answer', value: '伪造选项' },
+            },
+          ],
+        },
+      });
+      assert.equal(reask.kind, 'reask');
+      assert.equal(reask.kind === 'reask' ? reask.request.revision : null, 2);
+      const second = await interactions.readForCarrier(
+        workspaceId,
+        workflowId,
+        'conversation',
+      );
+      assert.equal(second?.revision, 2);
+      const answer = {
+        requestId: second?.requestId,
+        revision: second?.revision,
+        idempotencyKey: `valid-r2-${suffix}`,
+        resume: { runId: workflowId, step: 'intent_naming' },
+        response: {
+          kind: 'answer',
+          items: [
+            {
+              itemId: 'service',
+              result: { kind: 'deferred' },
+            },
+          ],
+        },
+      } as const;
+      assert.deepEqual(await interactions.submit(workspaceId, answer), {
+        kind: 'resumed',
+        replayed: false,
+      });
+      assert.deepEqual(await interactions.submit(workspaceId, answer), {
+        kind: 'resumed',
+        replayed: true,
+      });
+      const result = await handle.getResult();
+      assert.ok(result.delivery);
+      assert.equal(await waitForWorkflowStatus(handle, 'SUCCESS'), 'SUCCESS');
+      assert.equal(resumeCalls, 1);
+      assert.deepEqual(
+        (
+          await pool.query<{
+            event_count: string;
+            resume_status: string;
+            workflow_revision: string;
+          }>(
+            `select count(*)::text as event_count,
+                    max(resume_status) as resume_status,
+                    max(workflow_revision)::text as workflow_revision
+               from harness_runtime.decision_events
+              where task_id=$1
+                and idempotency_key=$2`,
+            [runtimeWorkflowId, answer.idempotencyKey],
+          )
+        ).rows[0],
+        {
+          event_count: '1',
+          resume_status: 'sent',
+          workflow_revision: '2',
+        },
+      );
+    } finally {
+      await DBOS.shutdown({ deregister: true });
+      await pool.query(
+        `delete from harness_runtime.langfuse_outbox
+          where audit_id in (
+            select id from harness_runtime.audit_events where workflow_id=$1
+          )`,
+        [runtimeWorkflowId],
+      );
+      await pool.query(
+        'delete from harness_runtime.audit_events where workflow_id=$1',
+        [runtimeWorkflowId],
+      );
+      for (const table of [
+        'decision_traces',
+        'decision_events',
+        'pending_questions',
+        'task_requests',
+      ]) {
+        await pool.query(
+          `delete from harness_runtime.${table} where task_id=$1`,
+          [runtimeWorkflowId],
+        );
+      }
+      await pool.end();
     }
   },
 );
