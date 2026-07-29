@@ -342,7 +342,9 @@ test('public delivery rejects a receipt frozen to an old content revision before
   const currentVersionId = edited.variants.find(
     (variant) => variant.platform === 'douyin',
   )!.currentVersionId;
-  const beforeDelivery = (await setup.repository.loadWorkspace('workspace-a'))!;
+  const beforeDelivery = (
+    await setup.repository.loadWorkspace('workspace-a')
+  )!;
   const beforePackage = structuredClone(beforeDelivery.contentPackages[0]!);
 
   await assert.rejects(
@@ -363,7 +365,9 @@ test('public delivery rejects a receipt frozen to an old content revision before
       error.gateId === 'external_revision',
   );
 
-  const afterDelivery = (await setup.repository.loadWorkspace('workspace-a'))!;
+  const afterDelivery = (
+    await setup.repository.loadWorkspace('workspace-a')
+  )!;
   const afterPackage = afterDelivery.contentPackages[0]!;
   assert.equal(setup.publishCalls.length, 0);
   assert.deepEqual(afterPackage.deliveryEvents ?? [], []);
