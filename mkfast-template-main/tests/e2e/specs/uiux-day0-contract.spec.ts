@@ -124,7 +124,10 @@ async function assertDeliveryCardOpensResultCenter(page: Page) {
  * the 成品预览卡 is what opens the video worksurface — clicking it is a
  * navigation, not an activation, so the click budget is unaffected.
  */
-async function assertVideoFirstUsableResult(page: Page) {
+async function assertVideoFirstUsableResult(
+  page: Page,
+  onDeliveryCardVisible: () => void
+) {
   await expect(
     page,
     'submitting must not navigate away from the Composer conversation'
@@ -135,6 +138,7 @@ async function assertVideoFirstUsableResult(page: Page) {
 
   const deliveryCard = page.getByTestId('composer-delivery-card');
   await expect(deliveryCard).toBeVisible({ timeout: 180_000 });
+  onDeliveryCardVisible();
   await deliveryCard.click();
 
   await expect(page).toHaveURL(/\/dashboard\/results\/[^/?#]+/u, {
@@ -372,8 +376,7 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
       // First-token endpoint is the Day-0 stop condition for all three paths.
       // Video may still be red on the current surface until Result Center /
       // video first-token projection lands — keep the hard wait (no fake-green).
-      await assertVideoFirstUsableResult(page);
-      counter.stop();
+      await assertVideoFirstUsableResult(page, () => counter.stop());
       const activationCount = counter.count();
       expect(
         activationCount,

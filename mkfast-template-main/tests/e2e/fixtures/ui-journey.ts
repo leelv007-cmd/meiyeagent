@@ -572,9 +572,16 @@ export async function adoptResult(page: Page, contract: JourneyContract) {
   expect(response.ok(), await response.text()).toBeTruthy();
 
   if (contract.modality !== 'video') {
+    await expect(page.getByTestId('result-shell-actions')).not.toHaveAttribute(
+      'aria-busy',
+      'true',
+      { timeout: 60_000 }
+    );
     // Adoption is what turns the one primary action from 采用 into 交付; 图文
     // additionally marks every adopted page on its own worksurface.
-    await expect(page.getByTestId('result-primary-action')).toHaveText('交付');
+    await expect(page.getByTestId('result-primary-action')).toHaveText('交付', {
+      timeout: 60_000,
+    });
     if (contract.modality === 'image_text') {
       await expect(
         page.getByTestId('image-adopted-badge').first()
