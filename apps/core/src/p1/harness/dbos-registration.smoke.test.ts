@@ -276,6 +276,7 @@ test(
         skillReceiptIds: [
           `skill-materialized:${workflowId}:intent_naming:skill.intent-one%402`,
         ],
+        promptRevisionRefs: [],
         stageSkillResolutions: {
           intent_naming: {
             skillRevisionRefs: ['skill.intent-one@2'],
