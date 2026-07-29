@@ -35,6 +35,13 @@ export class P1DomainError extends Error {
   }
 }
 
+export class PrewriteDeterministicRejectionError extends P1DomainError {
+  constructor(message: string) {
+    super('INVALID_STATE', message);
+    this.name = 'PrewriteDeterministicRejectionError';
+  }
+}
+
 export type RelationFactKind =
   | 'store'
   | 'project'

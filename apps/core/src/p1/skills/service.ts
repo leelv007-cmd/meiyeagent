@@ -7,7 +7,10 @@ import {
   type HarnessStage,
 } from '@meiye/contracts';
 
-import { P1DomainError } from '../foundation/domain.js';
+import {
+  P1DomainError,
+  PrewriteDeterministicRejectionError,
+} from '../foundation/domain.js';
 import type { SkillRepository } from './repository.js';
 import {
   validateSkillPermissionAuthority,
@@ -164,30 +167,40 @@ export class SkillService {
   private async prepareSkillDraft(
     input: SkillDraftRevisionInput,
   ): Promise<PreparedSkillDraft> {
-    const manifest = validateSkillFrontmatter(input.manifest);
-    let governance: SkillGovernanceSidecar;
     try {
-      governance = parseSkillGovernance(input.governance);
-    } catch (error) {
-      fail(
-        `Skill governance sidecar is invalid: ${
-          error instanceof Error ? error.message : 'unknown error'
-        }`,
+      const manifest = validateSkillFrontmatter(input.manifest);
+      let governance: SkillGovernanceSidecar;
+      try {
+        governance = parseSkillGovernance(input.governance);
+      } catch (error) {
+        fail(
+          `Skill governance sidecar is invalid: ${
+            error instanceof Error ? error.message : 'unknown error'
+          }`,
+        );
+      }
+      const packagePaths = validateSkillPackagePaths(
+        input.packagePaths ?? ['SKILL.md'],
       );
+      const instruction = required(input.instruction, 'Skill instruction');
+      const prompt = await this.capturePromptSnapshot(input.promptReference);
+      return {
+        actorId: required(input.actorId, 'Actor ID'),
+        governance,
+        instruction,
+        manifest,
+        packagePaths,
+        prompt,
+      };
+    } catch (error) {
+      if (
+        error instanceof P1DomainError &&
+        error.code === 'INVALID_STATE'
+      ) {
+        throw new PrewriteDeterministicRejectionError(error.message);
+      }
+      throw error;
     }
-    const packagePaths = validateSkillPackagePaths(
-      input.packagePaths ?? ['SKILL.md'],
-    );
-    const instruction = required(input.instruction, 'Skill instruction');
-    const prompt = await this.capturePromptSnapshot(input.promptReference);
-    return {
-      actorId: required(input.actorId, 'Actor ID'),
-      governance,
-      instruction,
-      manifest,
-      packagePaths,
-      prompt,
-    };
   }
 
   private persistSkillDraft(

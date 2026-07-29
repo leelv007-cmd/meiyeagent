@@ -14,7 +14,10 @@ import type {
   UsageResource,
   RouteSnapshot,
 } from './domain.js';
-import { P1DomainError } from './domain.js';
+import {
+  P1DomainError,
+  PrewriteDeterministicRejectionError,
+} from './domain.js';
 import type {
   FoundationRepository,
   FoundationStore,
@@ -444,7 +447,7 @@ export class P1ApplicationService {
         code === 'FORBIDDEN' ||
         code === 'INSUFFICIENT_ENTITLEMENT' ||
         code === 'IDEMPOTENCY_CONFLICT' ||
-        code === 'INVALID_STATE';
+        error instanceof PrewriteDeterministicRejectionError;
       if (safeToRelease) {
         await this.repository
           .abandonModuleCommand(

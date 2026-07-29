@@ -1,6 +1,9 @@
 import { HARNESS_STAGES, type EvalRun } from '@meiye/contracts';
 
-import { P1DomainError, type P1Context } from '../foundation/domain.js';
+import {
+  PrewriteDeterministicRejectionError,
+  type P1Context,
+} from '../foundation/domain.js';
 import type { P1OperationModule } from '../foundation/ports.js';
 import { SKILL_BINDING_MODES } from './types.js';
 import type {
@@ -13,7 +16,7 @@ import type {
 import { SkillService } from './service.js';
 
 function fail(message: string): never {
-  throw new P1DomainError('INVALID_STATE', message);
+  throw new PrewriteDeterministicRejectionError(message);
 }
 
 function payload(input: Record<string, unknown>) {
