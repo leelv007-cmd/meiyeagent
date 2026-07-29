@@ -434,11 +434,15 @@ export function requiredP1Capability(
   }
 
   if (module === 'context') {
-    if (kind === 'query') return 'workspace.read';
+    if (
+      kind === 'query' &&
+      new Set(['store_fact_history', 'store_facts_active']).has(action)
+    ) {
+      return 'workspace.read';
+    }
     // D-151: only the kernel/server may append canonical StoreFacts. Browser
     // callers must use the mapped finalize_store_intake command.
-    if (action === 'store_fact_append') return null;
-    return 'content.create';
+    return null;
   }
 
   if (module === 'marketing-identity') {

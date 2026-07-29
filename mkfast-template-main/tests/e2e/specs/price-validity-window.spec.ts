@@ -4,13 +4,10 @@
  * The bug this pins: the wizard used to take a price and store it as "current,
  * never expires" without asking, so a promotion kept turning up in generated
  * content weeks after it ended. The journey states the window in the real
- * wizard, then freezes the production ContextBundle on both sides of that
- * window. The same price revision must enter the first bundle and leave the
- * second without another fact write.
- *
- * On the clock: `context_bundle_compile(at)` is the existing production
- * replay/audit seam. Supplying the two audit instants exercises the same
- * `listActive(at)` filter as generation without a test-only server clock.
+ * wizard, verifies the production generation path freezes the current fact,
+ * and checks the canonical active-fact query on both sides of the window.
+ * The Harness-level clock/fence behavior is covered in
+ * `production-context-port.test.ts`.
  *
  * Negative control: take the validity question out of the wizard and this spec
  * cannot even reach its first assertion — the save button never enables, so the
@@ -18,11 +15,7 @@
  */
 
 import { expect, test, type Page } from '@playwright/test';
-import type {
-  ContentPackage,
-  ContextBundle,
-  StoreFact,
-} from '@meiye/contracts';
+import type { ContentPackage, StoreFact } from '@meiye/contracts';
 
 import {
   cleanupE2EUsers,
@@ -80,46 +73,6 @@ async function p1Query<T>(
       return envelope.data;
     },
     { action, module, payload }
-  );
-}
-
-async function p1Command<T>(
-  page: Page,
-  module: string,
-  action: string,
-  payload: Record<string, unknown>,
-  idempotencyKey: string
-) {
-  return page.evaluate(
-    async ({
-      action: commandAction,
-      idempotencyKey: key,
-      module: commandModule,
-      payload: commandPayload,
-    }) => {
-      const response = await fetch('/api/core/p1/commands', {
-        body: JSON.stringify({
-          action: commandAction,
-          module: commandModule,
-          payload: commandPayload,
-        }),
-        credentials: 'same-origin',
-        headers: {
-          'content-type': 'application/json',
-          'idempotency-key': key,
-        },
-        method: 'POST',
-      });
-      const envelope = (await response.json()) as {
-        data?: T;
-        error?: { message?: string };
-      };
-      if (!response.ok || envelope.data === undefined) {
-        throw new Error(envelope.error?.message ?? 'P1 command failed');
-      }
-      return envelope.data;
-    },
-    { action, idempotencyKey, module, payload }
   );
 }
 
@@ -207,35 +160,6 @@ async function statePriceWindow(page: Page, validUntilDay: string) {
   };
 }
 
-function compileBundle(
-  page: Page,
-  input: {
-    at: string;
-    bundleId: string;
-    expectedRevision: number;
-    workspaceId: string;
-  }
-) {
-  return p1Command<ContextBundle>(
-    page,
-    'context',
-    'context_bundle_compile',
-    {
-      at: input.at,
-      bundleId: input.bundleId,
-      contributions: [],
-      expectedRevision: input.expectedRevision,
-      reason:
-        input.expectedRevision === 0
-          ? 'compile inside the stated price window'
-          : 'replay after the stated price window',
-      scope: { storeId: input.workspaceId },
-      taskId: `price-validity-window:${input.workspaceId}`,
-    },
-    `price-validity-window:${input.workspaceId}:${input.expectedRevision}`
-  );
-}
-
 async function generateAndFreezeBundle(page: Page, prompt: string) {
   const copyContract = JOURNEY_CONTRACTS.find(
     (contract) => contract.modality === 'copy'
@@ -277,23 +201,7 @@ async function generateAndFreezeBundle(page: Page, prompt: string) {
     )
     .toMatchObject({ bundleId: expect.any(String) });
 
-  const bundle = await p1Query<ContextBundle | null>(
-    page,
-    'context',
-    'context_bundle_get',
-    {
-      bundleId: marketing!.contextBundle.bundleId,
-      revision: marketing!.contextBundle.revision,
-    }
-  );
-  expect(bundle).not.toBeNull();
-  return { bundle: bundle!, marketing: marketing! };
-}
-
-function quotesPrice(bundle: ContextBundle) {
-  return bundle.referencedFactRevisions.some(
-    (reference) => reference.factId === PRICE_FACT_ID
-  );
+  return marketing!;
 }
 
 test.describe('#244 price validity window', () => {
@@ -307,7 +215,7 @@ test.describe('#244 price validity window', () => {
     await cleanupE2EUsers(request);
   });
 
-  test('a limited-time price is quoted inside its window and dropped once the clock passes it', async ({
+  test('a limited-time price is frozen inside its window and expires from active facts', async ({
     page,
     request,
   }) => {
@@ -372,28 +280,11 @@ test.describe('#244 price validity window', () => {
       revision: 1,
     });
 
-    const bundleId = `price-validity-window:${workspaceId}`;
-    const inside = await compileBundle(page, {
-      at: serverNow(),
-      bundleId,
-      expectedRevision: 0,
-      workspaceId,
-    });
-    expect(inside).toMatchObject({ bundleId, revision: 1 });
-    expect(quotesPrice(inside)).toBe(true);
-    expect(inside.referencedFactRevisions).toContainEqual({
-      factId: PRICE_FACT_ID,
-      revision: 1,
-    });
-
     const generatedInside = await generateAndFreezeBundle(
       page,
       `为${PROMOTION_PROJECT.name}写一条真实克制的朋友圈项目介绍`
     );
-    expect(quotesPrice(generatedInside.bundle)).toBe(true);
-    expect(generatedInside.marketing.factRefs).toContain(
-      `store_fact:${PRICE_FACT_ID}:1`
-    );
+    expect(generatedInside.factRefs).toContain(`store_fact:${PRICE_FACT_ID}:1`);
 
     /* ---- 拨钟：the window closes --------------------------------------- */
 
@@ -418,27 +309,5 @@ test.describe('#244 price validity window', () => {
     expect(closedFacts.some((fact) => fact.factId === SERVICE_FACT_ID)).toBe(
       true
     );
-
-    const outside = await compileBundle(page, {
-      at: afterExpiry,
-      bundleId,
-      expectedRevision: 1,
-      workspaceId,
-    });
-    expect(outside).toMatchObject({
-      bundleId,
-      previousRevision: 1,
-      revision: 2,
-    });
-    expect(quotesPrice(outside)).toBe(false);
-    expect(outside.referencedFactRevisions).toContainEqual({
-      factId: SERVICE_FACT_ID,
-      revision: 1,
-    });
-    expect(
-      outside.referencedFactRevisions.filter(
-        (reference) => reference.factId === PRICE_FACT_ID
-      )
-    ).toEqual([]);
   });
 });

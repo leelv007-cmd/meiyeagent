@@ -1536,20 +1536,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         'compliance.watermark.default',
       ],
     }),
-    new ContextFoundationModule(
-      storeFactLedger,
-      contextBundleRepository,
-      contextSourceRevisions,
-      undefined,
-      async (workspaceId) =>
-        (
-          await adminConfigRepository.get(
-            'workspace',
-            workspaceId,
-            HARNESS_WOZ_RECIPE_CONFIG_KEY,
-          )
-        )?.revision ?? 0,
-    ),
+    new ContextFoundationModule(storeFactLedger),
     new ProductEntitlementFoundationModule(productEntitlements, undefined, {
       recordedCommerceEnabled,
       catalogSource: new AdminConfigEntitlementCatalogSource(

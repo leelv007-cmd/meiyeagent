@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { AssetIntakeBatch, ContextBundle } from '@meiye/contracts';
+import {
+  contextBundleSchema,
+  type AssetIntakeBatch,
+} from '@meiye/contracts';
 import {
   AssetIntakeError,
   AssetIntakeService,
-  confirmedFactReferenceFromBundle,
   MemoryAssetIntakeRepository,
 } from './asset-intake-service.js';
-import { MemoryContextBundleRepository } from './context-bundle-repository.js';
-import { ContextFoundationModule } from './context-foundation-module.js';
-import { MemoryContextSourceRevisionRepository } from './context-source-revisions.js';
+import { compileContextBundle } from './context-compiler.js';
 import {
   MemoryStoreFactLedger,
   StoreFactRevisionConflictError,
@@ -145,37 +145,6 @@ test('confirm and correct append exact StoreFact revisions without leaving the o
     ],
   );
 
-  const contextModule = new ContextFoundationModule(
-    ledger,
-    new MemoryContextBundleRepository(),
-    new MemoryContextSourceRevisionRepository(),
-    () => '2026-07-18T03:00:00.000Z',
-  );
-  const bundle = (await contextModule.execute({
-    context: { ...context, actor: 'owner', correlationId: 'compile-after-fix' },
-    idempotencyKey: 'compile-after-fix',
-    input: {
-      action: 'context_bundle_compile',
-      payload: {
-        bundleId: 'bundle-after-fix',
-        taskId: 'task-after-fix',
-        scope: { storeId: 'store-a', serviceId: 'scalp-clean' },
-        at: '2026-07-18T03:00:00.000Z',
-        expectedRevision: 0,
-        contributions: [],
-        reason: 'new task after fact correction',
-      },
-    },
-  })) as ContextBundle;
-  assert.deepEqual(confirmedFactReferenceFromBundle(second, bundle), {
-    factId: 'fact-price',
-    factRevision: 2,
-    taskId: 'task-after-fix',
-    contextBundleId: 'bundle-after-fix',
-    contextBundleRevision: 1,
-  });
-  assert.equal(JSON.stringify(bundle).includes('199'), false);
-  assert.equal(JSON.stringify(bundle).includes('239'), true);
 });
 
 test('example and cross-workspace sources cannot write the user fact ledger', async () => {
@@ -221,7 +190,7 @@ test('missing fact keys only reports incremental gaps and never repeats active f
     () => '2026-07-18T02:00:00.000Z',
   );
   await service.recordBatch(batch());
-  await service.confirmFact(context, {
+  const confirmed = await service.confirmFact(context, {
     batchId: 'batch-a',
     candidateId: 'candidate-price',
     factId: 'fact-price',
@@ -229,28 +198,43 @@ test('missing fact keys only reports incremental gaps and never repeats active f
     idempotencyKey: 'confirm-price',
   });
 
-  const contextModule = new ContextFoundationModule(
-    ledger,
-    new MemoryContextBundleRepository(),
-    new MemoryContextSourceRevisionRepository(),
-    () => '2026-07-18T03:00:00.000Z',
-  );
-  const bundle = (await contextModule.execute({
-    context: { ...context, actor: 'owner', correlationId: 'compile-gaps' },
-    idempotencyKey: 'compile-gaps',
-    input: {
-      action: 'context_bundle_compile',
-      payload: {
-        bundleId: 'bundle-gaps',
-        taskId: 'task-gaps',
-        scope: { storeId: 'store-a', serviceId: 'scalp-clean' },
-        at: '2026-07-18T03:00:00.000Z',
-        expectedRevision: 0,
-        contributions: [],
-        reason: 'calculate gaps from the frozen bundle',
-      },
+  const compiled = compileContextBundle({
+    workspaceId: context.workspaceId,
+    taskId: 'task-gaps',
+    sourceRevisions: {
+      facts: 'facts-1',
+      assets: 0,
+      identity: 0,
+      rights: 0,
+      preferences: 0,
+      recipe: 0,
+      platformRules: 0,
+      currentSignal: 0,
     },
-  })) as ContextBundle;
+    contributions: [
+      {
+        dimension: 'store_facts_assets',
+        key: confirmed.key,
+        value: confirmed.value,
+        layer: 'current_fact',
+        pool: 'store_personal',
+        sourceRef: `store_fact:${confirmed.factId}:${confirmed.revision}`,
+        factRevision: {
+          factId: confirmed.factId,
+          revision: confirmed.revision,
+        },
+      },
+    ],
+  });
+  const bundle = contextBundleSchema.parse({
+    ...compiled.payload,
+    bundleId: 'bundle-gaps',
+    revision: 1,
+    hash: compiled.hash,
+    frozenAt: '2026-07-18T03:00:00.000Z',
+    frozenBy: context.userId,
+    previousRevision: null,
+  });
 
   assert.deepEqual(
     service.missingFactKeys({

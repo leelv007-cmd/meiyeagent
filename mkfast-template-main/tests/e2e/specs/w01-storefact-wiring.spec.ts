@@ -1,9 +1,5 @@
 import { expect, test, type Page, type Request } from '@playwright/test';
-import type {
-  ContentPackage,
-  ContextBundle,
-  StoreFact,
-} from '@meiye/contracts';
+import type { ContentPackage, StoreFact } from '@meiye/contracts';
 
 import {
   cleanupE2EUsers,
@@ -100,18 +96,6 @@ function activeStoreFacts(page: Page, storeId: string) {
 
 function contentPackages(page: Page) {
   return p1Query<ContentPackage[]>(page, 'operations', 'content_packages', {});
-}
-
-function contextBundle(
-  page: Page,
-  reference: { bundleId: string; revision: number }
-) {
-  return p1Query<ContextBundle | null>(
-    page,
-    'context',
-    'context_bundle_get',
-    reference
-  );
 }
 
 test.describe('W01 store intake fact wiring', () => {
@@ -341,45 +325,9 @@ test.describe('W01 store intake fact wiring', () => {
         revision: expect.any(Number),
       });
 
-    const bundleReference = contentPackage!.marketing!.contextBundle;
-    const bundle = await contextBundle(page, {
-      bundleId: bundleReference.bundleId,
-      revision: bundleReference.revision,
-    });
-    expect(bundle).not.toBeNull();
-    expect(bundle).toMatchObject({
-      bundleId: bundleReference.bundleId,
-      hash: bundleReference.hash,
-      revision: bundleReference.revision,
-      workspaceId: after.workspaceId,
-    });
-
     const exactFacts = [serviceFact!, priceFact!].sort((left, right) =>
       left.factId.localeCompare(right.factId)
     );
-    expect(
-      [...bundle!.referencedFactRevisions].sort((left, right) =>
-        left.factId.localeCompare(right.factId)
-      )
-    ).toEqual(exactFacts.map(({ factId, revision }) => ({ factId, revision })));
-
-    for (const fact of exactFacts) {
-      const contribution = bundle!.dimensions.store_facts_assets[fact.key];
-      expect(contribution).toMatchObject({
-        factSnapshot: {
-          effectiveFrom: fact.effectiveFrom,
-          expiresAt: fact.expiresAt,
-          factId: fact.factId,
-          kind: fact.kind,
-          revision: fact.revision,
-          source: fact.source,
-        },
-        layer: 'current_fact',
-        pool: 'store_personal',
-        sourceRef: `store_fact:${fact.factId}:${fact.revision}`,
-        value: fact.value,
-      });
-    }
 
     const expectedFactReferences = exactFacts
       .map((fact) => `store_fact:${fact.factId}:${fact.revision}`)

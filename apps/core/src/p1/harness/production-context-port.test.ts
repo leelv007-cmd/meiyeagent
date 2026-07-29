@@ -1,10 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import {
+  AdminConfigFoundationModule,
+  HARNESS_WOZ_RECIPE_CONFIG_KEY,
+  MemoryAdminConfigRepository,
+} from '../admin-config/foundation-module.js';
 import { MemoryContextBundleRepository } from '../operations/context-bundle-repository.js';
 import { MemoryContextSourceRevisionRepository } from '../operations/context-source-revisions.js';
 import { MemoryMarketingIdentityRepository } from '../operations/marketing-identity.js';
-import { MemoryStoreFactLedger } from '../operations/store-fact-ledger.js';
+import {
+  type AppendStoreFactInput,
+  MemoryStoreFactLedger,
+} from '../operations/store-fact-ledger.js';
 import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import { SourceContentPackageUnavailableError } from '../execution-spine/source-content-package-resolver.js';
 import {
@@ -193,6 +201,125 @@ test('production context port freezes the real #32 bundle and fact references', 
   assert.notEqual(recompiled.bundle.sourceRevisions.facts, firstFactsRevision);
   assert.deepEqual(recompiled.bundle.referencedFactRevisions, [
     { factId: 'price-1', revision: 2 },
+  ]);
+});
+
+test('production context fence recompiles when the applied recipe revision changes', async () => {
+  const repository = new MemoryAdminConfigRepository();
+  const admin = new AdminConfigFoundationModule(repository);
+  const adminContext = {
+    actor: 'owner' as const,
+    correlationId: 'recipe-fence',
+    userId: 'owner-1',
+    workspaceId: 'workspace-1',
+  };
+  const applyRecipe = (value: unknown, expectedRevision: number | null) =>
+    admin.execute({
+      context: adminContext,
+      input: {
+        action: 'config_apply',
+        payload: {
+          key: HARNESS_WOZ_RECIPE_CONFIG_KEY,
+          value,
+          expectedRevision,
+          reason: 'update WOZ recipe',
+        },
+      },
+    });
+  const port = new LedgerBackedHarnessContextPort(
+    new MemoryStoreFactLedger(),
+    new MemoryContextBundleRepository(),
+    () => '2026-07-18T03:00:00.000Z',
+    undefined,
+    async (workspaceId) =>
+      (
+        await repository.get(
+          'workspace',
+          workspaceId,
+          HARNESS_WOZ_RECIPE_CONFIG_KEY,
+        )
+      )?.revision ?? 0,
+  );
+  const input = {
+    workflowId: 'task-recipe-fence',
+    request: taskInput(),
+    declaration: customizedDeclaration('promotion_groupbuy_conversion'),
+  };
+
+  await applyRecipe({ markdown: 'recipe v1' }, null);
+  const first = await port.compileAndFreeze(input);
+  assert.equal(first.bundle.sourceRevisions.recipe, 1);
+  await applyRecipe({ markdown: 'recipe v2' }, 1);
+
+  const recompiled = await port.fence({ ...input, context: first });
+  assert.equal(recompiled.bundle.revision, 2);
+  assert.equal(recompiled.bundle.previousRevision, 1);
+  assert.equal(recompiled.bundle.sourceRevisions.recipe, 2);
+});
+
+test('production context fence drops an expired price without dropping the service', async () => {
+  const facts = new MemoryStoreFactLedger();
+  const factInputs: Array<
+    Pick<
+      AppendStoreFactInput,
+      'factId' | 'kind' | 'key' | 'value' | 'expiresAt'
+    >
+  > = [
+    {
+      factId: 'limited-price',
+      kind: 'price' as const,
+      key: 'offer.price',
+      value: { amount: 199, currency: 'CNY' },
+      expiresAt: '2026-07-18T02:00:00.000Z',
+    },
+    {
+      factId: 'service-name',
+      kind: 'service' as const,
+      key: 'service.name',
+      value: { name: '头皮舒缓护理' },
+      expiresAt: null,
+    },
+  ];
+  for (const input of factInputs) {
+    await facts.append({
+      ...input,
+      workspaceId: 'workspace-1',
+      scope: { storeId: 'workspace-1' },
+      source: {
+        kind: 'user_confirmation',
+        referenceId: `decision-${input.factId}`,
+        capturedAt: '2026-07-18T00:00:00.000Z',
+      },
+      effectiveFrom: '2026-07-18T00:00:00.000Z',
+      expectedRevision: 0,
+      recordedAt: '2026-07-18T00:00:00.000Z',
+      recordedBy: 'owner-1',
+    });
+  }
+  let now = '2026-07-18T01:00:00.000Z';
+  const port = new LedgerBackedHarnessContextPort(
+    facts,
+    new MemoryContextBundleRepository(),
+    () => now,
+  );
+  const input = {
+    workflowId: 'task-price-window',
+    request: taskInput(),
+    declaration: customizedDeclaration('promotion_groupbuy_conversion'),
+  };
+
+  const inside = await port.compileAndFreeze(input);
+  assert.deepEqual(inside.bundle.referencedFactRevisions, [
+    { factId: 'limited-price', revision: 1 },
+    { factId: 'service-name', revision: 1 },
+  ]);
+
+  now = '2026-07-18T02:00:00.001Z';
+  const outside = await port.fence({ ...input, context: inside });
+  assert.equal(outside.bundle.revision, 2);
+  assert.equal(outside.bundle.previousRevision, 1);
+  assert.deepEqual(outside.bundle.referencedFactRevisions, [
+    { factId: 'service-name', revision: 1 },
   ]);
 });
 

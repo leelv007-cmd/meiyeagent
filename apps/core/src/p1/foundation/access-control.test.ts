@@ -204,6 +204,12 @@ test('P1 module actions resolve to the same role capabilities used by the UI', (
     requiredP1Capability('command', 'context', 'store_fact_append'),
     null,
   );
+  for (const action of ['store_facts_active', 'store_fact_history']) {
+    assert.equal(
+      requiredP1Capability('query', 'context', action),
+      'workspace.read',
+    );
+  }
   for (const action of [
     'parse_single_asset',
     'prepare_manual_asset_draft',

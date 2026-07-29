@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {
-  ContextBundle,
   PreferenceCandidate,
   ReusableAssetCandidate,
 } from '@meiye/contracts';
@@ -10,10 +9,6 @@ import {
   ReuseMemoryError,
   ReuseMemoryService,
 } from './reuse-memory-service.js';
-import { MemoryContextBundleRepository } from './context-bundle-repository.js';
-import { ContextFoundationModule } from './context-foundation-module.js';
-import { MemoryContextSourceRevisionRepository } from './context-source-revisions.js';
-import { MemoryStoreFactLedger } from './store-fact-ledger.js';
 
 const context = { workspaceId: 'workspace-a', userId: 'owner-a' };
 const sourceVerifier = {
@@ -498,7 +493,7 @@ test('memory reuse identities cannot collide across colon-delimited workspaces',
   assert.equal((await repository.getReusableCandidate('a:b', 'c'))?.assetId, 'asset-b');
 });
 
-test('pending and inactive_stage2 preferences have no ContextBundle injection path', async () => {
+test('confirmed preferences remain inactive until the stage-two activation path exists', async () => {
   const repository = new MemoryReuseMemoryRepository();
   const service = new ReuseMemoryService(
     repository,
@@ -506,7 +501,7 @@ test('pending and inactive_stage2 preferences have no ContextBundle injection pa
     () => '2026-07-18T03:01:00.000Z',
   );
   await service.proposePreference(preferenceCandidate());
-  await service.confirmPreference(context, {
+  const preference = await service.confirmPreference(context, {
     candidateId: 'preference-candidate-a',
     preferenceId: 'preference-a',
     expectedRevision: 0,
@@ -514,38 +509,11 @@ test('pending and inactive_stage2 preferences have no ContextBundle injection pa
     negativeExamples: [],
     idempotencyKey: 'confirm-inactive-preference',
   });
-  const sourceRevisions = new MemoryContextSourceRevisionRepository();
-  const contextModule = new ContextFoundationModule(
-    new MemoryStoreFactLedger(),
-    new MemoryContextBundleRepository(),
-    sourceRevisions,
-    () => '2026-07-18T03:02:00.000Z',
-  );
-  const bundle = (await contextModule.execute({
-    context: {
-      ...context,
-      actor: 'owner',
-      correlationId: 'compile-with-inactive-preference',
-    },
-    idempotencyKey: 'compile-with-inactive-preference',
-    input: {
-      action: 'context_bundle_compile',
-      payload: {
-        bundleId: 'bundle-no-preference',
-        taskId: 'task-no-preference',
-        scope: { storeId: 'store-a' },
-        at: '2026-07-18T03:02:00.000Z',
-        expectedRevision: 0,
-        contributions: [],
-        reason: 'prove inactive preference isolation',
-      },
-    },
-  })) as ContextBundle;
-  assert.equal(bundle.sourceRevisions.preferences, 0);
-  assert.equal(JSON.stringify(bundle).includes('tone.less-promotional'), false);
-  assert.equal(
-    (await sourceRevisions.current(context.workspaceId)).preferences,
-    0,
+  assert.equal(preference.status, 'inactive_stage2');
+  assert.equal(preference.semanticKey, 'tone.less-promotional');
+  assert.deepEqual(
+    await repository.preferenceHistory(context.workspaceId, 'preference-a'),
+    [preference],
   );
 });
 
