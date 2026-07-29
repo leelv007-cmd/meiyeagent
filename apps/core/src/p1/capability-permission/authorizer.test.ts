@@ -122,6 +122,7 @@ test('claimed capabilities cannot authorize unregistered propose or confirm acti
   for (const action of [
     'propose_unlisted_action',
     'confirm_unlisted_action',
+    'confirm_creative_work_brief',
   ]) {
     const decision = authorizer.decide({
       actor: 'operator',
@@ -139,15 +140,6 @@ test('claimed capabilities cannot authorize unregistered propose or confirm acti
     });
   }
 
-  assert.equal(
-    authorizer.decide({
-      actor: 'operator',
-      kind: 'command',
-      module: 'operations',
-      action: 'confirm_creative_work_brief',
-    }).allow,
-    true,
-  );
 });
 
 test('authorizer preserves publication.handoff for operators (#83 consumer)', () => {
