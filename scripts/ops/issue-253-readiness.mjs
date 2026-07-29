@@ -57,6 +57,33 @@ function pathsAtCommit(sha) {
     .filter(Boolean);
 }
 
+function ledgerRevisions(revisionList, annotation) {
+  const revisions = revisionList.split(/\s*\+\s*/u);
+  const recorded = revisions.map((revision) => ({
+    orderRevision: revision,
+    revision,
+  }));
+  const ff =
+    revisions.length === 1
+      ? annotation.match(/^([1-9]\d{0,2}) commits ff$/u)
+      : null;
+  const count = ff ? Number(ff[1]) : 0;
+  if (count === 0 || count > 100) return recorded;
+  const tip = commit(revisions[0]);
+  if (!tip) return recorded;
+  const result = git(
+    'rev-list',
+    '--first-parent',
+    '--max-count',
+    String(count),
+    tip
+  );
+  const stack = result.stdout.split('\n').filter(Boolean);
+  return result.status === 0 && stack.length === count
+    ? stack.map((revision) => ({ orderRevision: stack[0], revision }))
+    : recorded;
+}
+
 function mergeLedgerAt(mainSha) {
   const result = git('show', `${mainSha}:docs/ops/merge-ledger.md`);
   if (result.status !== 0) return null;
@@ -64,12 +91,13 @@ function mergeLedgerAt(mainSha) {
     const cells = line.match(/^\|\s*([^|]+?)\s*\|\s*#(\d+)\s*\|/u);
     if (!cells) return [];
     const revisions = cells[1].match(
-      /^([0-9a-f]{7,40}(?:\s*\+\s*[0-9a-f]{7,40})*)(?:\s*(?:（[^|\r\n]*）|\([^|\r\n]*\)))?$/u
+      /^([0-9a-f]{7,40}(?:\s*\+\s*[0-9a-f]{7,40})*)(?:\s*(?:（([^|\r\n]*)）|\(([^|\r\n]*)\)))?$/u
     );
     if (!revisions) return [];
-    return revisions[1]
-      .split(/\s*\+\s*/u)
-      .map((revision) => ({ issue: Number(cells[2]), revision }));
+    return ledgerRevisions(
+      revisions[1],
+      revisions[2] ?? revisions[3] ?? ''
+    ).map((entry) => ({ ...entry, issue: Number(cells[2]) }));
   });
 }
 
@@ -190,16 +218,28 @@ function inspect(mainSha, ledger, id, marker) {
   if (git('merge-base', '--is-ancestor', sha, mainSha).status !== 0) {
     return { commands, gaps: [`${sha} is not in local main`], sha, status: 'not_merged' };
   }
-  if (
-    !ledger?.some(
-      (entry) => entry.issue === issueNumber && commit(entry.revision) === sha
-    )
-  ) {
+  const ledgerEntry = ledger?.find(
+    (entry) => entry.issue === issueNumber && commit(entry.revision) === sha
+  );
+  if (!ledgerEntry) {
     return {
       commands,
       gaps: [`merge ledger has no ${sha} entry for #${issueNumber}`],
       sha,
       status: 'not_recorded',
+    };
+  }
+  const orderSha = commit(ledgerEntry.orderRevision);
+  if (
+    !orderSha ||
+    git('merge-base', '--is-ancestor', orderSha, mainSha).status !== 0
+  ) {
+    return {
+      commands,
+      gaps: ['recorded ff stack tip is not in local main'],
+      orderSha,
+      sha,
+      status: 'not_merged',
     };
   }
   const changedPaths = pathsAtCommit(sha);
@@ -219,6 +259,7 @@ function inspect(mainSha, ledger, id, marker) {
     changedPaths,
     commands,
     gaps,
+    orderSha,
     ownedPaths,
     sha,
     status: gaps.length === 0 ? 'merged' : 'current_tree_mismatch',
@@ -253,13 +294,14 @@ function report(options) {
   const video = byId['264FE'].evidence;
   const dashboard = byId['261'].evidence;
   const frontendOrderCommand =
-    video.sha && dashboard.sha
-      ? `git merge-base --is-ancestor ${video.sha} ${dashboard.sha}`
+    video.orderSha && dashboard.sha
+      ? `git merge-base --is-ancestor ${video.orderSha} ${dashboard.sha}`
       : null;
   if (
     video.status === 'merged' &&
     dashboard.status === 'merged' &&
-    git('merge-base', '--is-ancestor', video.sha, dashboard.sha).status !== 0
+    git('merge-base', '--is-ancestor', video.orderSha, dashboard.sha).status !==
+      0
   ) {
     const gap = '264FE must be merged before 261';
     dashboard.gaps.push(gap);

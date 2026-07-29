@@ -236,6 +236,98 @@ test('a compound annotated ledger cell records each canonical commit', async () 
   );
 });
 
+test('an ff stack annotation records each contiguous first-parent commit', async () => {
+  const data = await fixture();
+  const first = await commit(
+    data.root,
+    'apps/core/src/events.ts',
+    'export const skillRevision = true;\nexport const stackFirst = true;\n',
+    'feat(events): start an ff stack'
+  );
+  const tail = await commit(
+    data.root,
+    'apps/core/src/events.ts',
+    'export const skillRevision = true;\nexport const stackFirst = true;\nexport const stackTail = true;\n',
+    'feat(events): finish an ff stack'
+  );
+  await writeMergeLedger(
+    data.root,
+    [
+      {
+        annotation: '(2 commits ff)',
+        content: 'observability',
+        issue: 248,
+        revision: tail,
+      },
+      { content: 'dashboard', issue: 261, revision: data.commits['261'] },
+      {
+        content: 'frontend retirement',
+        issue: 264,
+        revision: data.commits['264FE'],
+      },
+    ],
+    'docs(ops): record an ff stack'
+  );
+  data.markers.dependencies['248'].commit = first;
+  data.markers.dependencies['248'].currentTreeChecks[0].contains = [
+    'stackFirst',
+  ];
+  await writeFile(data.markerPath, JSON.stringify(data.markers));
+
+  const result = check(data);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    JSON.parse(result.stdout).dependencies[0].evidence.status,
+    'merged'
+  );
+});
+
+test('free-form ff text does not expand ledger evidence', async () => {
+  const data = await fixture();
+  const source = await commit(
+    data.root,
+    'apps/core/src/events.ts',
+    'export const skillRevision = true;\nexport const sourceStack = true;\n',
+    'feat(events): add an unrecorded source'
+  );
+  const tail = await commit(
+    data.root,
+    'apps/core/src/events.ts',
+    'export const skillRevision = true;\nexport const sourceStack = true;\nexport const recordedTail = true;\n',
+    'feat(events): add a recorded tail'
+  );
+  await writeMergeLedger(
+    data.root,
+    [
+      {
+        annotation: '(2 commits ff from source)',
+        content: 'observability',
+        issue: 248,
+        revision: tail,
+      },
+      { content: 'dashboard', issue: 261, revision: data.commits['261'] },
+      {
+        content: 'frontend retirement',
+        issue: 264,
+        revision: data.commits['264FE'],
+      },
+    ],
+    'docs(ops): mention free-form ff text'
+  );
+  data.markers.dependencies['248'].commit = source;
+  data.markers.dependencies['248'].currentTreeChecks[0].contains = [
+    'sourceStack',
+  ];
+  await writeFile(data.markerPath, JSON.stringify(data.markers));
+
+  const result = check(data);
+  assert.equal(result.status, 1);
+  assert.equal(
+    JSON.parse(result.stdout).dependencies[0].evidence.status,
+    'not_recorded'
+  );
+});
+
 test('a source commit mentioned only inside an annotation is not recorded', async () => {
   const data = await fixture();
   const source = await commit(
@@ -398,6 +490,38 @@ test('frontend markers merged in reverse order fail closed', async () => {
       { content: 'frontend retirement', issue: 264, revision: videoCommit },
     ],
     'docs(ops): record reversed frontend merges'
+  );
+
+  const result = check(data);
+  assert.equal(result.status, 1);
+  assert.match(JSON.parse(result.stdout).gaps.join('\n'), /264FE.*before.*261/i);
+});
+
+test('frontend order uses the tip of a recorded ff stack', async () => {
+  const data = await fixture();
+  const videoTail = await commit(
+    data.root,
+    'mkfast-template-main/src/video-tail.tsx',
+    'export const videoReceiverOnly = true;\n',
+    'fix(web): finish the video retirement stack'
+  );
+  await writeMergeLedger(
+    data.root,
+    [
+      {
+        content: 'observability',
+        issue: 248,
+        revision: data.commits['248'],
+      },
+      { content: 'dashboard', issue: 261, revision: data.commits['261'] },
+      {
+        annotation: '(5 commits ff)',
+        content: 'frontend retirement',
+        issue: 264,
+        revision: videoTail,
+      },
+    ],
+    'docs(ops): record the frontend stack'
   );
 
   const result = check(data);
