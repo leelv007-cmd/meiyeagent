@@ -8,6 +8,8 @@ const fetchRemote = args.has("--fetch");
 const repository =
 	process.env.ISSUE_262_GITHUB_REPOSITORY ??
 	"leelv007-cmd/meiyeweb-agent";
+const controllerLogin =
+	process.env.ISSUE_262_CONTROLLER_LOGIN ?? repository.split("/")[0];
 const remote = process.env.ISSUE_262_REMOTE ?? "origin";
 const branch = process.env.ISSUE_262_MAIN_BRANCH ?? "main";
 const baseRef = process.env.ISSUE_262_BASE_REF ?? branch;
@@ -17,19 +19,70 @@ const gates = [
 		issue: 246,
 		name: "prompt supply and fallback audit",
 		requiredFor: "implementation",
-		codeMarkers: ["promptRevisionRefs", "fallbackReason"],
+		semanticEvidence: [
+			{
+				path: "apps/core/src/p1/harness/langfuse-prompts.ts",
+				marker: "export type LangfusePromptPolicy =",
+			},
+			{
+				path: "apps/core/src/p1/harness/langfuse-prompts.ts",
+				marker: "export function assertLangfusePromptRuntimePolicy(",
+			},
+			{
+				path: "apps/core/src/p1/harness/task-admission.ts",
+				marker: "export interface HarnessPromptFallbackAuditPort",
+			},
+			{
+				path: "apps/core/src/p1/harness/task-admission.ts",
+				marker: "eventType: 'langfuse_prompt_fallback';",
+			},
+		],
 	},
 	{
-		issue: 252,
-		name: "capability vocabulary and matching axes",
+		issue: 247,
+		name: "bounded execution task snapshot",
 		requiredFor: "implementation",
-		codeMarkers: ["cjk-text-render"],
+		semanticEvidence: [
+			{
+				path: "packages/contracts/src/bounded-execution.ts",
+				marker: "export const boundedExecutionSnapshotSchema =",
+			},
+			{
+				path: "packages/contracts/src/bounded-execution.ts",
+				marker: "export const boundedExecutionEventSchema =",
+			},
+			{
+				path: "apps/core/src/p1/harness/task-admission.ts",
+				marker: "export interface HarnessExecutionBoundsResolver",
+			},
+			{
+				path: "apps/core/src/p1/harness/task-admission.ts",
+				marker: "readonly code = 'REQUIRED_EXECUTION_LIMIT_UNSET';",
+			},
+		],
 	},
 	{
 		issue: 248,
 		name: "flat three-axis event contract",
 		requiredFor: "closure",
-		codeMarkers: ["skillRevision:", "promptVersion", "catalogRevision"],
+		semanticEvidence: [
+			{
+				path: "packages/contracts/src/observability.ts",
+				marker: "export const observabilityAxesSchema =",
+			},
+			{
+				path: "packages/contracts/src/observability.ts",
+				marker: "skillRevision: compositeRevisionSchema,",
+			},
+			{
+				path: "packages/contracts/src/observability.ts",
+				marker: "promptVersion: compositeRevisionSchema,",
+			},
+			{
+				path: "packages/contracts/src/observability.ts",
+				marker: "catalogRevision: z.string().trim().min(1),",
+			},
+		],
 	},
 ];
 
@@ -39,7 +92,8 @@ try {
 	}
 	run("git", ["rev-parse", "--verify", `${baseRef}^{commit}`]);
 	const baseSha = run("git", ["rev-parse", baseRef]).stdout.trim();
-	const results = gates.map((gate) => inspectGate(gate));
+	const targetIssue = readIssue(262);
+	const results = gates.map((gate) => inspectGate(gate, targetIssue.comments));
 	const implementationReady = results
 		.filter((result) => result.requiredFor === "implementation")
 		.every((result) => result.ready);
@@ -82,41 +136,41 @@ try {
 	process.exitCode = 2;
 }
 
-function inspectGate(gate) {
-	const issue = JSON.parse(
+function readIssue(issueNumber) {
+	return JSON.parse(
 		runWithRetry("gh", [
 			"issue",
 			"view",
-			String(gate.issue),
+			String(issueNumber),
 			"--repo",
 			repository,
 			"--json",
 			"state,comments,url",
 		]).stdout,
 	);
-	const commentBodies = issue.comments.map((comment) => comment.body).join("\n");
-	const mergedCommit = findMergedCommit(commentBodies);
-	const hasTestCommand =
-		/\b(?:pnpm|npm|node|tsx|vitest|playwright|test|typecheck)\b/iu.test(
-			commentBodies,
-		);
-	const hasPassingExit =
-		/\b(?:exit(?: code)?\s*[:=]?\s*0|pass(?:ed)?|green)\b|退出码\s*[:=]?\s*0|通过|全绿/iu.test(
-			commentBodies,
-		);
-	const missingCodeMarkers = gate.codeMarkers.filter(
-		(marker) => !refContains(marker),
+}
+
+function inspectGate(gate, targetComments) {
+	const issue = readIssue(gate.issue);
+	const controllerMergeCommit = findControllerMergeCommit(
+		issue.comments,
+		targetComments,
+		gate.issue,
+	);
+	const missingSemanticEvidence = gate.semanticEvidence.filter(
+		(evidence) => !refContains(evidence),
 	);
 	const missing = [];
-	if (!mergedCommit) {
-		missing.push(`issue #${gate.issue} has no commented commit on ${baseRef}`);
-	}
-	if (!hasTestCommand || !hasPassingExit) {
-		missing.push(`issue #${gate.issue} lacks a commented test command and pass result`);
-	}
-	if (missingCodeMarkers.length > 0) {
+	if (!controllerMergeCommit) {
 		missing.push(
-			`${baseRef} lacks code markers: ${missingCodeMarkers.join(", ")}`,
+			`issue #${gate.issue} has no valid controller merge record on ${baseRef}`,
+		);
+	}
+	if (missingSemanticEvidence.length > 0) {
+		missing.push(
+			`${baseRef} lacks semantic evidence: ${missingSemanticEvidence
+				.map((evidence) => `${evidence.path} contains ${evidence.marker}`)
+				.join(", ")}`,
 		);
 	}
 	return {
@@ -125,38 +179,120 @@ function inspectGate(gate) {
 		requiredFor: gate.requiredFor,
 		state: issue.state,
 		url: issue.url,
-		mergedCommit,
+		controllerMergeCommit,
 		missing,
 		ready: missing.length === 0,
 	};
 }
 
-function findMergedCommit(text) {
-	const candidates = [
-		...new Set(text.match(/\b[0-9a-f]{7,40}\b/giu) ?? []),
-	];
-	for (const candidate of candidates) {
-		const resolved = run(
-			"git",
-			["rev-parse", "--verify", `${candidate}^{commit}`],
-			{ acceptedExitCodes: [0, 128] },
-		);
-		if (resolved.status !== 0) continue;
-		const sha = resolved.stdout.trim();
-		const ancestor = run(
-			"git",
-			["merge-base", "--is-ancestor", sha, baseRef],
-			{ acceptedExitCodes: [0, 1] },
-		);
-		if (ancestor.status === 0) return sha;
+function findControllerMergeCommit(issueComments, targetComments, issueNumber) {
+	const records = [];
+	for (const [index, comment] of issueComments.entries()) {
+		const normalizedBody = normalizeControllerRecordBody(comment.body);
+		const candidate = normalizedBody.match(
+			/已合入\s+main@([0-9a-f]{7,40})\b/iu,
+		)?.[1];
+		if (
+			comment.author?.login === controllerLogin &&
+			comment.authorAssociation === "OWNER" &&
+			normalizedBody.startsWith("主控亲验记录") &&
+			(candidate || explicitlyNotMerged(normalizedBody))
+		) {
+			records.push({
+				candidate,
+				comment,
+				index,
+			});
+		}
 	}
-	return null;
+	for (const [index, comment] of targetComments.entries()) {
+		const normalizedBody = normalizeControllerRecordBody(comment.body);
+		const issueSegment = ticketSegment(normalizedBody, issueNumber);
+		const candidate = issueSegment?.match(/\b([0-9a-f]{7,40})\b/iu)?.[1];
+		if (
+			comment.author?.login === controllerLogin &&
+			comment.authorAssociation === "OWNER" &&
+			isControllerDirective(normalizedBody) &&
+			issueSegment &&
+			(candidate || explicitlyNotMerged(issueSegment))
+		) {
+			records.push({
+				candidate,
+				comment,
+				index: issueComments.length + index,
+			});
+		}
+	}
+	const record = records.toSorted(compareControllerRecords).at(-1);
+	if (!record) return null;
+	const candidate = record.candidate;
+	if (!candidate) return null;
+	const resolved = run(
+		"git",
+		["rev-parse", "--verify", `${candidate}^{commit}`],
+		{ acceptedExitCodes: [0, 128] },
+	);
+	if (resolved.status !== 0) return null;
+	const sha = resolved.stdout.trim();
+	const ancestor = run(
+		"git",
+		["merge-base", "--is-ancestor", sha, baseRef],
+		{ acceptedExitCodes: [0, 1] },
+	);
+	return ancestor.status === 0 ? sha : null;
 }
 
-function refContains(marker) {
+function compareControllerRecords(left, right) {
+	const leftTime = Date.parse(left.comment.createdAt ?? "");
+	const rightTime = Date.parse(right.comment.createdAt ?? "");
+	if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) {
+		return leftTime - rightTime;
+	}
+	return left.index - right.index;
+}
+
+function ticketSegment(body, issueNumber) {
+	const match = body.match(
+		new RegExp(
+			`#${issueNumber}\\b((?:(?!#\\d+)[\\s\\S]){0,240})`,
+			"iu",
+		),
+	);
+	return match?.[1] ?? null;
+}
+
+function explicitlyNotMerged(body) {
+	return /(?:尚未合入|未合入|尚未进入|未进入|尚未落入|未落入|未入)\s*main/iu.test(
+		body,
+	);
+}
+
+function isControllerDirective(body) {
+	return [
+		"主控亲验记录",
+		"依赖更新（v4 编排）",
+		"主控合同增补",
+		"主控裁决",
+	].some((prefix) => body.startsWith(prefix));
+}
+
+function normalizeControllerRecordBody(body) {
+	const trimmed = body.trimStart();
+	return trimmed.startsWith("**主控亲验记录") ? trimmed.slice(2) : trimmed;
+}
+
+function refContains(evidence) {
 	const result = run(
 		"git",
-		["grep", "--quiet", "--fixed-strings", marker, baseRef, "--", "apps", "packages"],
+		[
+			"grep",
+			"--quiet",
+			"--fixed-strings",
+			evidence.marker,
+			baseRef,
+			"--",
+			evidence.path,
+		],
 		{ acceptedExitCodes: [0, 1] },
 	);
 	return result.status === 0;
