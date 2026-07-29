@@ -27,6 +27,7 @@
     "eval:import": "node --import tsx src/p1/harness/langfuse-evalrun-importer-cli.ts",
     "langfuse:prompt-long:live": "node --import tsx src/p1/harness/langfuse-prompt-live-acceptance-cli.ts",
     "harness:calibrate-bounds": "node --import tsx src/p1/harness/bounded-execution-calibration-cli.ts",
+    "harness:record-issue-255": "node --import tsx src/p1/harness/issue-255-recorded-calibration-cli.ts",
     "langfuse:prompts:push": "node --import tsx src/p1/harness/langfuse-prompt-push-cli.ts",
     "langfuse:outbox:ops": "node --import tsx src/p1/harness/langfuse-outbox-ops-cli.ts",
     "eval:merchant-language": "node --import tsx --test --test-concurrency=1 src/evals/merchant-language/promptfoo-provider.test.ts",
