@@ -9,13 +9,14 @@ import { cloudflare } from '@cloudflare/vite-plugin';
 import contentCollections from '@content-collections/vite';
 import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import { paraglideCompilerOptions } from './paraglide.config';
+import { e2eDisconnectedSocketPlugin } from './scripts/e2e/vite-disconnected-socket-plugin';
 import { paraglideDevHeartbeatPlugin } from './scripts/locale/dev-heartbeat-plugin';
 
 /**
  * Vite configuration
  * https://vite.dev/config/
  */
-const config = defineConfig(({ command }) => ({
+const config = defineConfig(({ command, mode }) => ({
   server: {
     allowedHosts: ['.trycloudflare.com'],
   },
@@ -30,6 +31,7 @@ const config = defineConfig(({ command }) => ({
         port: 0,
       },
     }),
+    mode === 'e2e' ? e2eDisconnectedSocketPlugin() : null,
     tailwindcss(),
     contentCollections(),
     // Heartbeat so `locale:compile` fails fast instead of rewriting
