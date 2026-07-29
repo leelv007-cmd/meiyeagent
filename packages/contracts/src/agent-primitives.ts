@@ -65,6 +65,129 @@ export const askMerchantPrimitiveOptionSchema = z
   })
   .strict();
 
+const askMerchantQuestionOptionSchema = z
+  .object({
+    label: z.string().trim().min(1).max(500),
+    description: z.string().trim().min(1).max(1_000).optional(),
+  })
+  .strict();
+
+export const askMerchantQuestionSchema = z
+  .object({
+    itemId: primitiveTextSchema,
+    question: primitiveTextSchema,
+    options: z
+      .array(askMerchantQuestionOptionSchema)
+      .min(1)
+      .max(12)
+      .optional(),
+    fallback: z.object({ kind: z.literal('deferred') }).strict(),
+  })
+  .strict();
+
+export const askMerchantQuestionRequestSchema = z
+  .object({
+    requestId: primitiveTextSchema,
+    runId: primitiveTextSchema,
+    step: primitiveTextSchema,
+    revision: z.number().int().nonnegative(),
+    kind: z.literal('ask_merchant'),
+    questions: z.array(askMerchantQuestionSchema).min(1).max(12),
+    groupSkip: z.literal(true),
+    presentation: z
+      .object({
+        carriers: z
+          .array(z.enum(['conversation', 'store_page', 'task_card']))
+          .min(1)
+          .max(3),
+        blocking: z.literal('none'),
+        notification: z.literal('none'),
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine((request, context) => {
+    const itemIds = new Set<string>();
+    for (const [index, question] of request.questions.entries()) {
+      if (itemIds.has(question.itemId)) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Merchant question item identifiers must be unique.',
+          path: ['questions', index, 'itemId'],
+        });
+      }
+      itemIds.add(question.itemId);
+      const labels = new Set<string>();
+      for (const [optionIndex, option] of (question.options ?? []).entries()) {
+        if (labels.has(option.label)) {
+          context.addIssue({
+            code: 'custom',
+            message: 'Merchant question option labels must be unique.',
+            path: ['questions', index, 'options', optionIndex, 'label'],
+          });
+        }
+        labels.add(option.label);
+      }
+    }
+  });
+
+const askMerchantItemResultSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('answer'),
+      value: primitiveTextSchema,
+    })
+    .strict(),
+  z.object({ kind: z.literal('deferred') }).strict(),
+]);
+
+export const askMerchantAnswerSchema = z
+  .object({
+    requestId: primitiveTextSchema,
+    revision: z.number().int().nonnegative(),
+    idempotencyKey: primitiveTextSchema,
+    resume: z
+      .object({
+        runId: primitiveTextSchema,
+        step: primitiveTextSchema,
+      })
+      .strict(),
+    response: z.discriminatedUnion('kind', [
+      z
+        .object({
+          kind: z.literal('answer'),
+          items: z
+            .array(
+              z
+                .object({
+                  itemId: primitiveTextSchema,
+                  result: askMerchantItemResultSchema,
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(12),
+        })
+        .strict(),
+      z.object({ kind: z.literal('skipped') }).strict(),
+    ]),
+  })
+  .strict()
+  .superRefine((answer, context) => {
+    if (answer.response.kind !== 'answer') return;
+    const itemIds = new Set<string>();
+    for (const [index, item] of answer.response.items.entries()) {
+      if (itemIds.has(item.itemId)) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Merchant answer item identifiers must be unique.',
+          path: ['response', 'items', index, 'itemId'],
+        });
+      }
+      itemIds.add(item.itemId);
+    }
+  });
+
 export const askMerchantPrimitiveInputSchema = z
   .object({
     question: primitiveTextSchema,
@@ -86,3 +209,8 @@ export type AgentPrimitiveInputById = {
     (typeof agentPrimitiveInputSchemas)[PrimitiveId]
   >;
 };
+
+export type AskMerchantQuestionRequest = z.infer<
+  typeof askMerchantQuestionRequestSchema
+>;
+export type AskMerchantAnswer = z.infer<typeof askMerchantAnswerSchema>;

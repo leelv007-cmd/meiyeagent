@@ -4,6 +4,8 @@ import test from 'node:test';
 import {
   AGENT_PRIMITIVE_IDS,
   agentPrimitiveInputSchemas,
+  askMerchantAnswerSchema,
+  askMerchantQuestionRequestSchema,
 } from './index.js';
 
 const EXPECTED_AGENT_PRIMITIVE_IDS = [
@@ -226,5 +228,134 @@ test('allows only label and description in merchant options', () => {
         ],
       }),
     /Unrecognized key/u,
+  );
+});
+
+test('merchant question requests group free-text items under one durable resume identity', () => {
+  const request = {
+    requestId: 'request-1',
+    runId: 'run-1',
+    step: 'intent_naming',
+    revision: 3,
+    kind: 'ask_merchant',
+    questions: [
+      {
+        itemId: 'service',
+        question: '这次主推哪个项目？',
+        fallback: { kind: 'deferred' },
+      },
+    ],
+    groupSkip: true,
+    presentation: {
+      carriers: ['conversation', 'store_page'],
+      blocking: 'none',
+      notification: 'none',
+    },
+  } as const;
+
+  assert.deepEqual(askMerchantQuestionRequestSchema.parse(request), request);
+  assert.equal(
+    askMerchantQuestionRequestSchema.safeParse({
+      ...request,
+      questions: [{ ...request.questions[0], options: [] }],
+    }).success,
+    false,
+  );
+  assert.equal(
+    askMerchantQuestionRequestSchema.safeParse({
+      ...request,
+      questions: [request.questions[0], request.questions[0]],
+    }).success,
+    false,
+  );
+  assert.equal(
+    askMerchantQuestionRequestSchema.safeParse({
+      ...request,
+      questions: [
+        {
+          ...request.questions[0],
+          options: [
+            { label: '头皮护理' },
+            { label: '头皮护理', description: '重复语义值' },
+          ],
+        },
+      ],
+    }).success,
+    false,
+  );
+  assert.equal(
+    askMerchantQuestionRequestSchema.safeParse({
+      ...request,
+      questions: [
+        {
+          ...request.questions[0],
+          options: [{ label: 'a'.repeat(501) }],
+        },
+      ],
+    }).success,
+    false,
+  );
+});
+
+test('merchant answers separate item results from one group-level skip', () => {
+  const base = {
+    requestId: 'request-1',
+    revision: 3,
+    idempotencyKey: 'answer-1',
+    resume: { runId: 'run-1', step: 'intent_naming' },
+  } as const;
+  const answer = {
+    ...base,
+    response: {
+      kind: 'answer',
+      items: [
+        {
+          itemId: 'service',
+          result: { kind: 'answer', value: '头皮护理' },
+        },
+        {
+          itemId: 'campaign_window',
+          result: { kind: 'deferred' },
+        },
+      ],
+    },
+  } as const;
+
+  assert.deepEqual(askMerchantAnswerSchema.parse(answer), answer);
+  assert.deepEqual(
+    askMerchantAnswerSchema.parse({
+      ...base,
+      response: { kind: 'skipped' },
+    }).response,
+    { kind: 'skipped' },
+  );
+  assert.equal(
+    askMerchantAnswerSchema.safeParse({
+      ...answer,
+      response: {
+        ...answer.response,
+        items: [
+          {
+            itemId: 'service',
+            result: {
+              kind: 'answer',
+              value: '头皮护理',
+              description: '只给商家看的说明',
+            },
+          },
+        ],
+      },
+    }).success,
+    false,
+  );
+  assert.equal(
+    askMerchantAnswerSchema.safeParse({
+      ...answer,
+      response: {
+        ...answer.response,
+        items: [answer.response.items[0], answer.response.items[0]],
+      },
+    }).success,
+    false,
   );
 });
