@@ -10,7 +10,11 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
-import { productState, seedConfirmedStore } from '../fixtures/product';
+import {
+  productState,
+  seedComposerInlineAuthorize,
+  seedConfirmedStore,
+} from '../fixtures/product';
 import {
   blockingQuestionLocator,
   briefConfirmButton,
@@ -323,6 +327,9 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
       test.setTimeout(180_000);
       const counter = await installUserActivationCounter(page);
       await day0SeedPrep(page, request);
+      await seedComposerInlineAuthorize(page, {
+        fileName: `day0-video-${crypto.randomUUID()}.png`,
+      });
 
       counter.beginMeasurement();
       await assertNoSkipUsed(page, counter);
@@ -508,6 +515,9 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
     ).toHaveCount(0);
 
     await briefConfirmButton(page).click();
+    const questionCard = page.getByTestId('composer-question-card');
+    await expect(questionCard).toBeVisible({ timeout: 60_000 });
+    await questionCard.getByTestId('composer-question-continue').click();
     await assertResultFirstToken(page, 'copy');
   });
 });

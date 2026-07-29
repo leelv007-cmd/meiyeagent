@@ -81,6 +81,12 @@ test.describe('Z1 / #105 real Playwright three-modal Day-0 journeys', () => {
           });
         }
 
+        if (contract.modality !== 'copy') {
+          await seedComposerInlineAuthorize(page, {
+            fileName: `three-modal-${contract.modality}-${crypto.randomUUID()}.png`,
+          });
+        }
+
         activationCounter.beginMeasurement();
         // Intent must name the distribution target for delivery package labels:
         // copy → 朋友圈分段包; image_text → 小红书 ZIP; video → 抖音 ZIP.
