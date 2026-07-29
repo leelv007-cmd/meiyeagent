@@ -7,9 +7,34 @@ import test from 'node:test';
 import {
   HARNESS_LANGFUSE_PROMPT_NAMES,
   LangfuseHarnessPromptResolver,
+  assertLangfusePromptRuntimePolicy,
 } from './langfuse-prompts.js';
 
-test('task admission prompt resolver freezes production versions and content hashes', async (t) => {
+test('strict prompt policy is the default and rejects missing runtime configuration', () => {
+  assert.throws(
+    () => assertLangfusePromptRuntimePolicy({}),
+    /LANGFUSE_BASE_URL, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_PROMPT_VERSIONS/u,
+  );
+  assert.throws(
+    () =>
+      assertLangfusePromptRuntimePolicy({
+        LANGFUSE_BASE_URL: 'https://langfuse.example',
+        LANGFUSE_PUBLIC_KEY: 'pk-prompt',
+        LANGFUSE_SECRET_KEY: 'sk-prompt',
+        LANGFUSE_PROMPT_VERSIONS: JSON.stringify({ intentNaming: 7 }),
+      }),
+    /briefCompilation/u,
+  );
+  assert.throws(
+    () =>
+      assertLangfusePromptRuntimePolicy({
+        LANGFUSE_PROMPT_POLICY: 'development',
+      }),
+    /LANGFUSE_PROMPT_POLICY/u,
+  );
+});
+
+test('strict prompt resolver fetches every prompt by an explicit version', async (t) => {
   const requests: Array<{ url?: string; authorization?: string }> = [];
   const server = createServer((request, response) => {
     requests.push({
@@ -39,6 +64,8 @@ test('task admission prompt resolver freezes production versions and content has
     baseUrl: await listen(t, server),
     publicKey: 'pk-prompt',
     secretKey: 'sk-prompt',
+    policy: 'strict',
+    versions: promptVersions((key) => (key === 'intentNaming' ? 7 : 12)),
   });
 
   const frozen = await resolver.resolve();
@@ -60,11 +87,12 @@ test('task admission prompt resolver freezes production versions and content has
   assert.deepEqual(
     requests.map(({ url }) => url).sort(),
     Object.values(HARNESS_LANGFUSE_PROMPT_NAMES)
-      .map((name) =>
-        `/api/public/v2/prompts/${encodeURIComponent(name)}?label=production`,
+      .map((name, index) =>
+        `/api/public/v2/prompts/${encodeURIComponent(name)}?version=${index === 0 ? 7 : 12}`,
       )
       .sort(),
   );
+  assert.ok(requests.every(({ url }) => !url?.includes('label=')));
   assert.ok(
     requests.every(
       ({ authorization }) =>
@@ -74,8 +102,27 @@ test('task admission prompt resolver freezes production versions and content has
   );
 });
 
+test('strict prompt resolver checks the complete pin set before any remote request', async () => {
+  let requests = 0;
+  const resolver = new LangfuseHarnessPromptResolver({
+    baseUrl: 'https://langfuse.example',
+    fetch: async () => {
+      requests += 1;
+      return new Response();
+    },
+    publicKey: 'pk-prompt',
+    secretKey: 'sk-prompt',
+    policy: 'strict',
+    versions: { intentNaming: 7 },
+  });
+
+  await assert.rejects(resolver.resolve(), /briefCompilation/u);
+  assert.equal(requests, 0);
+});
+
 test('configured prompt versions are fetched by version and surfaced as immutable references', async (t) => {
   const requests: string[] = [];
+  const warnings: Array<{ name: string; reason: string }> = [];
   const server = createServer((request, response) => {
     requests.push(request.url ?? '');
     sendJson(response, 200, {
@@ -88,7 +135,9 @@ test('configured prompt versions are fetched by version and surfaced as immutabl
     baseUrl: await listen(t, server),
     publicKey: 'pk-prompt',
     secretKey: 'sk-prompt',
+    policy: 'pilot',
     versions: { intentNaming: 9 },
+    warn: (warning) => warnings.push(warning),
   });
 
   const frozen = await resolver.resolve();
@@ -100,11 +149,17 @@ test('configured prompt versions are fetched by version and surfaced as immutabl
   );
   assert.equal(frozen.intentNaming.version, '9');
   assert.equal(frozen.intentNaming.isFallback, false);
+  assert.equal(frozen.briefCompilation.isFallback, true);
+  assert.equal(frozen.briefCompilation.fallbackReason, 'unpinned');
+  assert.equal(requests.length, 1);
+  assert.equal(warnings.length, Object.keys(HARNESS_LANGFUSE_PROMPT_NAMES).length - 1);
+  assert.ok(warnings.every(({ reason }) => reason === 'unpinned'));
 });
 
-test('missing Langfuse keeps fixture resolution green but emits one downgrade warning per registered prompt', async () => {
+test('only explicit pilot policy permits missing configuration to fall back', async () => {
   const warnings: Array<{ name: string; reason: string }> = [];
   const resolver = new LangfuseHarnessPromptResolver({
+    policy: 'pilot',
     warn: (warning) => warnings.push(warning),
   });
 
@@ -115,14 +170,32 @@ test('missing Langfuse keeps fixture resolution green but emits one downgrade wa
   assert.ok(Object.values(frozen).every((prompt) => prompt.isFallback));
 });
 
+test('pilot fallback emits a warning even when no warning callback is injected', async () => {
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (message) => warnings.push(String(message));
+  try {
+    await new LangfuseHarnessPromptResolver({ policy: 'pilot' }).resolve();
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  assert.equal(warnings.length, Object.keys(HARNESS_LANGFUSE_PROMPT_NAMES).length);
+  assert.ok(warnings.every((warning) => warning.includes('(unconfigured)')));
+});
+
 test('Langfuse prompt failure freezes built-in content and an explicit fallback fact', async (t) => {
   const server = createServer((_request, response) => {
     sendJson(response, 503, { error: 'unavailable' });
   });
+  const warnings: Array<{ name: string; reason: string }> = [];
   const resolver = new LangfuseHarnessPromptResolver({
     baseUrl: await listen(t, server),
     publicKey: 'pk-prompt',
     secretKey: 'sk-prompt',
+    policy: 'pilot',
+    versions: promptVersions(() => 9),
+    warn: (warning) => warnings.push(warning),
   });
 
   const frozen = await resolver.resolve();
@@ -135,7 +208,35 @@ test('Langfuse prompt failure freezes built-in content and an explicit fallback 
     assert.ok(prompt.content.length > 80);
     assert.match(prompt.contentHash, /^[a-f0-9]{64}$/u);
   }
+  assert.equal(warnings.length, Object.keys(HARNESS_LANGFUSE_PROMPT_NAMES).length);
+  assert.ok(warnings.every(({ reason }) => reason === 'http_503'));
 });
+
+test('strict prompt resolution fails closed instead of using a builtin on remote failure', async (t) => {
+  const server = createServer((_request, response) => {
+    sendJson(response, 503, { error: 'unavailable' });
+  });
+  const resolver = new LangfuseHarnessPromptResolver({
+    baseUrl: await listen(t, server),
+    publicKey: 'pk-prompt',
+    secretKey: 'sk-prompt',
+    policy: 'strict',
+    versions: promptVersions(() => 9),
+  });
+
+  await assert.rejects(resolver.resolve(), /http_503/u);
+});
+
+function promptVersions(
+  versionFor: (key: keyof typeof HARNESS_LANGFUSE_PROMPT_NAMES) => number,
+) {
+  return Object.fromEntries(
+    Object.keys(HARNESS_LANGFUSE_PROMPT_NAMES).map((key) => [
+      key,
+      versionFor(key as keyof typeof HARNESS_LANGFUSE_PROMPT_NAMES),
+    ]),
+  ) as Record<keyof typeof HARNESS_LANGFUSE_PROMPT_NAMES, number>;
+}
 
 function sendJson(response: ServerResponse, status: number, body: unknown) {
   response.writeHead(status, { 'content-type': 'application/json' });

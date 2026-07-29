@@ -160,6 +160,9 @@ import {
 import { migratePostgresSchema } from './postgres-schema-migration.js';
 import { readHarnessRuntimeConfig } from './p1/harness/runtime-config.js';
 import { sendHarnessMediaJobTerminal } from './p1/harness/dbos-workflow.js';
+import { assertLangfusePromptRuntimePolicy } from './p1/harness/langfuse-prompts.js';
+
+assertLangfusePromptRuntimePolicy(process.env);
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required.');

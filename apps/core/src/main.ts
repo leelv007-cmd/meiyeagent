@@ -190,7 +190,10 @@ import { HarnessDbosWorkflowEventReader } from './p1/harness/dbos-workflow-event
 import { HarnessBillingCompensationWorker } from './p1/harness/billing-compensation.js';
 import { HarnessLangfuseOutboxWorker } from './p1/harness/outbox-worker.js';
 import { langfuseSenderFromEnv } from './p1/harness/langfuse-sender.js';
-import { langfusePromptResolverFromEnv } from './p1/harness/langfuse-prompts.js';
+import {
+  assertLangfusePromptRuntimePolicy,
+  langfusePromptResolverFromEnv,
+} from './p1/harness/langfuse-prompts.js';
 import { PostgresHarnessResumeReconcilerStore } from './p1/harness/postgres-resume-reconciler-store.js';
 import { PostgresHarnessBillingCompensationStore } from './p1/harness/postgres-billing-compensation-store.js';
 import { HarnessProductBillingSettlementExecutor } from './p1/harness/product-billing-settlement.js';
@@ -334,6 +337,8 @@ import {
   OperationsResultCommandPort,
   OperationsVisualAdoptionPort,
 } from './p1/result-delivery/operations-visual-adoption.js';
+
+assertLangfusePromptRuntimePolicy(process.env);
 
 const databaseUrl = process.env.DATABASE_URL;
 const serviceToken = process.env.CORE_SERVICE_TOKEN;

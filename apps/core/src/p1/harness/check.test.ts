@@ -17,7 +17,8 @@ test('check awaits every violation and only block prevents continuation', async 
     'detect',
   ] as const satisfies readonly CheckStrategy[]) {
     const observed: string[] = [];
-    let releaseAudit = () => assert.fail('audit release was not initialized');
+    let releaseAudit: () => void = () =>
+      assert.fail('audit release was not initialized');
     const auditRecorded = new Promise<void>((resolve) => {
       releaseAudit = resolve;
     });

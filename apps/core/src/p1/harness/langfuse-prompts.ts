@@ -18,6 +18,7 @@ export const HARNESS_LANGFUSE_PROMPT_NAMES = {
 } as const;
 
 export type HarnessPromptKey = keyof typeof HARNESS_LANGFUSE_PROMPT_NAMES;
+export type LangfusePromptPolicy = 'pilot' | 'strict';
 
 export const HARNESS_BUILTIN_PROMPTS = {
   intentNaming:
@@ -80,6 +81,7 @@ export interface LangfuseHarnessPromptResolverOptions {
   publicKey?: string;
   secretKey?: string;
   label?: string;
+  policy?: LangfusePromptPolicy;
   versions?: Partial<Record<HarnessPromptKey, number>>;
   fetch?: typeof globalThis.fetch;
   timeoutMs?: number;
@@ -97,6 +99,16 @@ export class LangfuseHarnessPromptResolver implements HarnessPromptResolver {
     const entries = Object.entries(HARNESS_LANGFUSE_PROMPT_NAMES) as Array<
       [HarnessPromptKey, string]
     >;
+    if ((this.options.policy ?? 'strict') === 'strict') {
+      const missing = entries
+        .filter(([key]) => this.options.versions?.[key] === undefined)
+        .map(([key]) => key);
+      if (missing.length > 0) {
+        throw new Error(
+          `Strict Langfuse prompt resolution is missing pinned prompts: ${missing.join(', ')}.`,
+        );
+      }
+    }
     const resolved = await Promise.all(
       entries.map(async ([key, name]) => [
         key,
@@ -124,13 +136,13 @@ export class LangfuseHarnessPromptResolver implements HarnessPromptResolver {
     ) {
       return this.fallback(name, builtin, label, 'unconfigured', version);
     }
+    if (version === undefined) {
+      return this.fallback(name, builtin, label, 'unpinned');
+    }
+    const url = `${this.options.baseUrl.replace(/\/$/u, '')}/api/public/v2/prompts/${encodeURIComponent(name)}?version=${encodeURIComponent(String(version))}`;
+    let response: Response;
     try {
-      const selector =
-        version === undefined
-          ? `label=${encodeURIComponent(label)}`
-          : `version=${encodeURIComponent(String(version))}`;
-      const url = `${this.options.baseUrl.replace(/\/$/u, '')}/api/public/v2/prompts/${encodeURIComponent(name)}?${selector}`;
-      const response = await this.fetch(url, {
+      response = await this.fetch(url, {
         headers: {
           authorization: `Basic ${Buffer.from(
             `${this.options.publicKey}:${this.options.secretKey}`,
@@ -138,31 +150,40 @@ export class LangfuseHarnessPromptResolver implements HarnessPromptResolver {
         },
         signal: AbortSignal.timeout(this.options.timeoutMs ?? 10_000),
       });
-      if (!response.ok) {
-        return this.fallback(name, builtin, label, `http_${response.status}`, version);
-      }
-      const body = await response.json();
-      if (
-        !isRecord(body) ||
-        body.type !== 'text' ||
-        typeof body.prompt !== 'string' ||
-        body.prompt.trim().length === 0 ||
-        !validVersion(body.version)
-      ) {
-        return this.fallback(name, builtin, label, 'invalid_response', version);
-      }
-      return {
-        name,
-        version: String(body.version),
-        content: body.prompt,
-        contentHash: sha256(body.prompt),
-        label,
-        source: 'langfuse' as const,
-        isFallback: false,
-      };
     } catch {
       return this.fallback(name, builtin, label, 'request_failed', version);
     }
+    if (!response.ok) {
+      return this.fallback(
+        name,
+        builtin,
+        label,
+        `http_${response.status}`,
+        version,
+      );
+    }
+    const body = await response.json().catch(() => undefined);
+    if (
+      !isRecord(body) ||
+      body.type !== 'text' ||
+      typeof body.prompt !== 'string' ||
+      body.prompt.trim().length === 0 ||
+      !validVersion(body.version)
+    ) {
+      return this.fallback(name, builtin, label, 'invalid_response', version);
+    }
+    if (String(body.version) !== String(version)) {
+      return this.fallback(name, builtin, label, 'version_mismatch', version);
+    }
+    return {
+      name,
+      version: String(body.version),
+      content: body.prompt,
+      contentHash: sha256(body.prompt),
+      label,
+      source: 'langfuse' as const,
+      isFallback: false,
+    };
   }
 
   private fallback(
@@ -172,31 +193,72 @@ export class LangfuseHarnessPromptResolver implements HarnessPromptResolver {
     reason: string,
     version?: number,
   ) {
-    this.options.warn?.({ name, reason, ...(version === undefined ? {} : { version }) });
+    if ((this.options.policy ?? 'strict') === 'strict') {
+      const pin = version === undefined ? '' : ` version=${version}`;
+      throw new Error(
+        `Strict Langfuse prompt resolution failed: ${name}${pin} (${reason}).`,
+      );
+    }
+    (this.options.warn ?? warnPromptFallback)({
+      name,
+      reason,
+      ...(version === undefined ? {} : { version }),
+    });
     return fallbackPrompt(name, builtin, label, reason);
   }
+}
+
+export function assertLangfusePromptRuntimePolicy(
+  env: Record<string, string | undefined> = process.env,
+) {
+  readLangfusePromptRuntimeConfig(env);
+}
+
+function readLangfusePromptRuntimeConfig(
+  env: Record<string, string | undefined>,
+) {
+  const policy = promptPolicyFromEnv(env.LANGFUSE_PROMPT_POLICY);
+  const baseUrl = env.LANGFUSE_BASE_URL?.trim();
+  const publicKey = env.LANGFUSE_PUBLIC_KEY?.trim();
+  const secretKey = env.LANGFUSE_SECRET_KEY?.trim();
+  if (policy === 'strict') {
+    const missing = [
+      ...(baseUrl ? [] : ['LANGFUSE_BASE_URL']),
+      ...(publicKey ? [] : ['LANGFUSE_PUBLIC_KEY']),
+      ...(secretKey ? [] : ['LANGFUSE_SECRET_KEY']),
+      ...(env.LANGFUSE_PROMPT_VERSIONS?.trim()
+        ? []
+        : ['LANGFUSE_PROMPT_VERSIONS']),
+    ];
+    if (missing.length > 0) {
+      throw new Error(
+        `Strict Langfuse prompt policy requires ${missing.join(', ')}.`,
+      );
+    }
+  }
+  const versions = promptVersionsFromEnv(
+    env.LANGFUSE_PROMPT_VERSIONS,
+    policy,
+  );
+  return {
+    policy,
+    ...(baseUrl ? { baseUrl } : {}),
+    ...(publicKey ? { publicKey } : {}),
+    ...(secretKey ? { secretKey } : {}),
+    versions,
+  };
 }
 
 export function langfusePromptResolverFromEnv(
   env: Record<string, string | undefined> = process.env,
 ) {
+  const runtime = readLangfusePromptRuntimeConfig(env);
   return new LangfuseHarnessPromptResolver({
-    baseUrl: env.LANGFUSE_BASE_URL,
-    publicKey: env.LANGFUSE_PUBLIC_KEY,
-    secretKey: env.LANGFUSE_SECRET_KEY,
+    ...runtime,
     label: env.LANGFUSE_PROMPT_LABEL ?? 'production',
-    ...(env.LANGFUSE_PROMPT_VERSIONS
-      ? { versions: promptVersionsFromEnv(env.LANGFUSE_PROMPT_VERSIONS) }
-      : {}),
     ...(env.LANGFUSE_REQUEST_TIMEOUT_MS
       ? { timeoutMs: positiveInteger(env.LANGFUSE_REQUEST_TIMEOUT_MS) }
       : {}),
-    warn: ({ name, reason, version }) => {
-      const pin = version === undefined ? '' : ` version=${version}`;
-      console.warn(
-        `[harness] Langfuse prompt downgraded to builtin: ${name}${pin} (${reason}).`,
-      );
-    },
   });
 }
 
@@ -267,25 +329,60 @@ function positiveInteger(value: string) {
   return parsed;
 }
 
-function promptVersionsFromEnv(value: string): Partial<Record<HarnessPromptKey, number>> {
+function promptPolicyFromEnv(value: string | undefined): LangfusePromptPolicy {
+  const normalized = value?.trim() || 'strict';
+  if (normalized === 'pilot' || normalized === 'strict') return normalized;
+  throw new Error('LANGFUSE_PROMPT_POLICY must be pilot or strict.');
+}
+
+function warnPromptFallback(input: {
+  name: string;
+  reason: string;
+  version?: number;
+}) {
+  const pin = input.version === undefined ? '' : ` version=${input.version}`;
+  console.warn(
+    `[harness] Langfuse prompt downgraded to builtin: ${input.name}${pin} (${input.reason}).`,
+  );
+}
+
+function promptVersionsFromEnv(
+  value: string | undefined,
+  policy: LangfusePromptPolicy,
+): Partial<Record<HarnessPromptKey, number>> {
+  if (!value?.trim()) return {};
   let parsed: unknown;
   try {
     parsed = JSON.parse(value);
   } catch {
+    if (policy === 'pilot') return {};
     throw new Error('LANGFUSE_PROMPT_VERSIONS must be a JSON object.');
   }
   if (!isRecord(parsed)) {
+    if (policy === 'pilot') return {};
     throw new Error('LANGFUSE_PROMPT_VERSIONS must be a JSON object.');
   }
   const versions: Partial<Record<HarnessPromptKey, number>> = {};
   for (const [key, version] of Object.entries(parsed)) {
     if (!(key in HARNESS_LANGFUSE_PROMPT_NAMES)) {
+      if (policy === 'pilot') continue;
       throw new Error(`LANGFUSE_PROMPT_VERSIONS contains unknown key: ${key}.`);
     }
     if (typeof version !== 'number' || !Number.isInteger(version) || version <= 0) {
+      if (policy === 'pilot') continue;
       throw new Error(`LANGFUSE_PROMPT_VERSIONS.${key} must be a positive integer.`);
     }
     versions[key as HarnessPromptKey] = version;
+  }
+  if (policy === 'strict') {
+    const missing = Object.keys(HARNESS_LANGFUSE_PROMPT_NAMES).filter(
+      (key) => versions[key as HarnessPromptKey] === undefined,
+    );
+    if (missing.length > 0) {
+      throw new Error(
+        `LANGFUSE_PROMPT_VERSIONS is missing pinned prompts: ${missing.join(', ')}.`,
+      );
+    }
   }
   return versions;
 }
