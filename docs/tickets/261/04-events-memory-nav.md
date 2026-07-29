@@ -2,7 +2,7 @@
 
 > 承接 `03-rating-memory-events.md`（§一 评价条、§二 动作 chip）。同一份设计稿的下半，**不重复其内容**。
 > 基点 main@a595808b。零 rebase 面预备产出，不含任何源码改动。
-> 同批：`00-blockers.md`（开工门与属主边界）、`DECISIONS.md`（D4 chip 生成方式 PENDING）、`01-ia-three-sections.md`、`02-confirm-card-and-cost.md`
+> 同批：`00-blockers.md`（开工门与属主边界）、`DECISIONS.md`（D4 chip 生成方式＝**配方声明的固定集合，DECIDED 2026-07-29**）、`01-ia-three-sections.md`、`02-confirm-card-and-cost.md`、`08-reconciliation.md`（裁定台账，冲突以其为准）
 
 ---
 
@@ -30,7 +30,9 @@
 | `catalogRevision` | `catalogRevision` | 一一对应。注意 `packages/contracts/src/uiux.ts:48` 的同名字段属 `creativeExecutionContractSchema`（**执行契约**），**不是事件字段**，键名撞名不等于同源 |
 | **`场景`** | **无对应轴** | ⚠️ **悬空**。D-160③ 原文要求「skillId ＋ skillVersion ＋ **场景标识**」，场景＝objective 或配方卡分组（D-139）。三轴里没有它 |
 
-**必须向 #248 提的一条**：场景是三轴之外的**第四个顶层键**，还是收进某一轴？在 #248 答复前，适配层里给它一个 `scene` 的**占位名并标注 TODO(#248)**，不做任何格式约定。
+**必须向 #248 提的一条**：场景是三轴之外的**第四个顶层键**，还是收进某一轴？
+
+> ✅ **已由上游答掉**（见 §7.2）：`scene` 就是**第四个顶层键**（`observability.ts:18` `scene: z.string().trim().min(1)`）。下面 §3.3 已按实际契约就地改写——**不再留任何 `TODO(#248)` 与自造占位类型**，`scene` 收进 `ObservabilityAxes` 一并入场。本节表格末行保留，是为了记住这个问题当初为什么必须问。
 
 ## 3.3 适配层接口草案
 
@@ -41,38 +43,28 @@
  * 评价事件的消费适配层（#261）。
  *
  * 事件合同的唯一属主是 #248（spec:580/:601）。本文件不定义任何字段语义 ——
- * 它只做三件事：把前台已有的值装进 #248 给的形状、交给唯一出口、在出口失败
- * 时留下可观测的计数。#248 合入后，本文件顶部的占位类型整段删除、换成 import，
- * 调用点（composer-delivery-card.tsx）一行不动。
+ * 它只做三件事：把前台已有的值装进 #248 给的形状（上游合同已落 main，
+ * packages/contracts/src/observability.ts，见 §7）、交给唯一出口、在没投出去
+ * 时按上游的丢弃事件合同发一条可观测的 drop 事件。
  */
 
+import type {
+  ObservabilityAxes,
+  ObservabilityDropEvent,
+} from '@meiye/contracts';
+import type { TelemetryEventName } from '@/lib/product-telemetry';
+
 // ─────────────────────────────────────────────────────────────
-// ① 占位段 —— #248 合入后整段删除，替换为：
-//    import type { SubstrateEventAxes, SubstrateEventPayload }
-//      from '@meiye/contracts';
-//    预期落点：packages/contracts/src/（具体文件名由 #248 定）
+// ① #261 自己的入参形状（前台已有的值，不涉及合同）
 // ─────────────────────────────────────────────────────────────
 
-/** TODO(#248)：形如 "<skillId>@<revision>"，格式由 #248 定，此处不校验。 */
-type SkillRevisionRef = string;
-/** TODO(#248)：形如 "<promptName>@<version>"。 */
-type PromptVersionRef = string;
-/** TODO(#248)：与 uiux.ts:48 的同名执行契约字段不是同一个东西。 */
-type CatalogRevisionRef = string;
-
-/** TODO(#248)：三轴扁平顶层键，键名以 #248 为准。 */
-type SubstrateEventAxes = {
-  skillRevision: SkillRevisionRef;
-  promptVersion: PromptVersionRef;
-  catalogRevision: CatalogRevisionRef;
-};
-
-/** TODO(#248)：verdict 值集合由 #248 定；'up_cleared' 是 #261 的诉求（§1.6）。 */
+/**
+ * verdict 值集合仍属 #248，且**上游尚未给** —— observability.ts 全文没有任何
+ * verdict 枚举（§7 已点明，对应 §6.2 S2 与 03 §1.6 的 ⚠️）。
+ * 'up_cleared'/'down_cleared' 是 #261 的**诉求**，不是既成合同；
+ * #248 给出枚举后，本别名换成 import，调用点一行不动。
+ */
 type RatingVerdict = 'up' | 'down' | 'up_cleared' | 'down_cleared';
-
-// ─────────────────────────────────────────────────────────────
-// ② #261 自己的入参形状（前台已有的值，不涉及合同）
-// ─────────────────────────────────────────────────────────────
 
 export type DeliveryRatingEventInput = {
   verdict: RatingVerdict;
@@ -80,52 +72,69 @@ export type DeliveryRatingEventInput = {
   packageId: string;
   versionId: string;
   revision: number;
-  /** TODO(#248)：D-160③ 的「场景」，归属未定（§3.2）。 */
-  scene: string;
   /**
-   * 三轴。**允许为 undefined** —— 因为 main 上根本取不到（§3.4）。
-   * 取不到时本层拒发并计数，绝不补空串（D-160③「补录不可能」）。
+   * 四轴（`skillRevision` / `promptVersion` / `catalogRevision` / `scene`，
+   * observability.ts:8-22）。「场景」是第四个顶层键，不另开字段（§3.2 ✅）。
+   * **允许为 undefined** —— 因为 main 上根本取不到（§3.4）。
+   * 取不到时本层拒发并发一条 drop 事件，绝不补空串（D-160③「补录不可能」）。
    */
-  axes: Partial<SubstrateEventAxes> | undefined;
+  axes: Partial<ObservabilityAxes> | undefined;
 };
 
 // ─────────────────────────────────────────────────────────────
-// ③ 唯一出口 —— #248 合入后把实现换成它的 sender，签名不变
+// ② 两个出口 —— 实现可换，签名不变
 // ─────────────────────────────────────────────────────────────
 
-/** 投递一条事件。抛异常＝投递失败，由 emitDeliveryRatingEvent 接住并计数。 */
+/**
+ * 投递一条事件。抛异常＝投递失败，由 emitDeliveryRatingEvent 接住转成 drop 事件。
+ *
+ * `eventName` 收窄为 `TelemetryEventName`（＝ `keyof typeof fieldAllowlist`，
+ * product-telemetry.ts:20），**不是 `string`，也不用 `as` 断言绕**：allowlist 里
+ * 没有的事件名必须编译期就红。用断言绕过去等于把 allowlist 的编译期保护关掉，
+ * 而这个 allowlist 正是 §3.5 A′ 通道唯一的字段守卫。allowlist 加条目（§3.5 第 1 条）
+ * 后类型自动放宽，本文件无需跟改。
+ */
 export type SubstrateEventDeliverer = (
-  eventName: string,
+  eventName: TelemetryEventName,
   payload: Record<string, string | number | boolean>
 ) => void;
 
 /** 测试注入点；生产默认实现见 §3.5。 */
 export function setSubstrateEventDeliverer(next: SubstrateEventDeliverer): void;
 
+/**
+ * 丢弃事件出口。形状＝**上游一等合同** ObservabilityDropEvent
+ * （observability.ts:32-43），**不自造计数器**。
+ */
+export type ObservabilityDropSink = (event: ObservabilityDropEvent) => void;
+
+/** 测试注入点；生产默认实现见 §3.6。 */
+export function setObservabilityDropSink(next: ObservabilityDropSink): void;
+
 // ─────────────────────────────────────────────────────────────
-// ④ 调用点唯一 API
+// ③ 调用点唯一 API
 // ─────────────────────────────────────────────────────────────
 
 /**
  * 组装并投递。**永不抛** —— 评价按钮不该因为埋点失败而报错给商家。
  * 返回是否真的投出去了，供测试与调用点判断（调用点当前忽略返回值）。
+ *
+ * 没投出去时发一条 drop 事件（每次一条，count 恒为 1）：
+ *   { signal: 'feedback', reason, count: 1, source: 'dashboard.rating-bar' }
+ * reason 取上游闭集（observability.ts:35）：
+ *   'permanent-config' —— 轴缺失（上游未接，重试也不会有）、任一轴超 120 字符、
+ *                         sink 本身不存在
+ *   'transient'        —— deliverer 抛异常（网络抖动/超时/被拦截器打断）
  */
 export function emitDeliveryRatingEvent(
   input: DeliveryRatingEventInput
 ): boolean;
 
-/** 丢弃计数：轴缺失 ＋ 投递抛异常，两类合一。见 §3.5。 */
-export function ratingEventDropCount(): number;
-/** 分类计数，负向用例用它区分「缺轴丢」与「投递挂」。 */
-export function ratingEventDropCountByReason(): {
-  missing_axes: number;
-  deliver_failed: number;
-};
-/** 仅测试用：afterEach 复位。 */
-export function resetRatingEventCounters(): void;
+/** 仅测试用：afterEach 复位注入的 deliverer 与 drop sink。 */
+export function resetDeliveryRatingEventWiring(): void;
 ```
 
-**关键设计：`axes` 允许缺失但缺失即拒发。** D-160③ 的原话是「事件合同若不在第一版就带全字段，拿到的是无法归纳的废数据，且**补录不可能**」。把缺失轴补成 `''` 或 `'unknown'` 会产生**看起来带全五字段、实际是废数据**的记录——正是该决策要消灭的东西。宁可 0 条，也不要 N 条假的。
+**关键设计：`axes` 允许缺失但缺失即拒发。** D-160③ 的原话是「事件合同若不在第一版就带全字段，拿到的是无法归纳的废数据，且**补录不可能**」。把缺失轴补成 `''` 或 `'unknown'` 会产生**看起来带全五字段、实际是废数据**的记录——正是该决策要消灭的东西。宁可 0 条，也不要 N 条假的。拒发不是静默：每一次拒发都留下一条 `ObservabilityDropEvent`（§3.6）。
 
 ## 3.4 三轴在 main 上取不到（这是硬阻塞，不是实现细节）
 
@@ -137,9 +146,10 @@ export function resetRatingEventCounters(): void;
 
 **真正的来源是 #262**（D-165②「三轴钉扎进 Task 快照，绑 DBOS workflowID」）。故：
 
-> **#261 能兑现「事件带满五字段」的组装与拒发逻辑，但在 #248（键名）与 #262（快照产出）合入前，生产路径上一条都发不出去。** 这必须写进票下评论，不能在验收时含糊过去。
+> **#261 能兑现「事件带满五字段」的组装与拒发逻辑，但在 #248（落库端）与 #262（快照产出）合入前，生产路径上一条都发不出去。** 这必须写进票下评论，不能在验收时含糊过去。
+> （**键名一项已不再阻塞**：`observability.ts` 已落 main，四轴键名与格式齐备，见 §7.1；仍缺的是**值**——#262 的 Task 快照——与**落库端**——#248 的「信号 × 目的地」矩阵。）
 
-适配层对此的处理：`axes` 来自 delivery turn 的 revision 快照；main 上该处无字段 → 传 `undefined` → 全部计入 `missing_axes`。**这本身就是一条可观测的负向证据**，比静默强。
+适配层对此的处理：`axes` 来自 delivery turn 的 revision 快照；main 上该处无字段 → 传 `undefined` → 拒发，并发一条 `{signal:'feedback', reason:'permanent-config', count:1, source:'dashboard.rating-bar'}`。**这本身就是一条可观测的负向证据**，比静默强。
 
 ## 3.5 通道选择：三条候选路径与推荐
 
@@ -177,7 +187,7 @@ export function resetRatingEventCounters(): void;
 
 ### 120 字符与截断
 
-`buildTelemetryEvent:95` 对字符串 `.slice(0, 120)`。`"<skillId>@<revision>"` 一般远短于 120，但 `skillId` 若含租户前缀有溢出风险。**适配层不做预截断**（截断会产生看起来正常的错值）；改为：**投递前若任一轴长度 > 120 则拒发并计入 `deliver_failed`**，并在票下记一条给 #248：三轴键的长度上限须与遥测通道的 120 对齐。
+`buildTelemetryEvent:95` 对字符串 `.slice(0, 120)`。`"<skillId>@<revision>"` 一般远短于 120，但 `skillId` 若含租户前缀有溢出风险。**适配层不做预截断**（截断会产生看起来正常的错值）；改为：**投递前若任一轴长度 > 120 则拒发，并发一条 `reason:'permanent-config'` 的 drop 事件**（长度不对齐是配置问题，重试不会变好），并在票下记一条给 #248：四轴键的长度上限须与遥测通道的 120 对齐。
 
 ## 3.6 「投递失败可观测、不静默」的最小改造
 
@@ -189,14 +199,18 @@ export function resetRatingEventCounters(): void;
 
 | 改动 | 落点 | 冲突面 |
 |---|---|---|
-| try/catch ＋ 计数器 ＋ 缺轴拒发 | **`delivery-rating-event.ts`（#261 新建独占文件）** | 零 |
+| try/catch ＋ drop 事件 ＋ 缺轴拒发 | **`delivery-rating-event.ts`（#261 新建独占文件）** | 零 |
 | allowlist 新增一条事件 | `product-telemetry.ts:3-18` `fieldAllowlist` | **纯数据行追加**，与 #251 若也追加则是两条相邻新增行，git 自动合并；语义不重叠 |
 | `emitTelemetry` 本体（try/catch、sendBeacon、失败计数） | **不动** | —— |
 
-计数器形态：
+**丢弃的表达形态＝上游合同 `ObservabilityDropEvent`，不自造计数器**（裁定 `08-reconciliation.md` M4；§7.3 已给出映射，此处是正文对齐）：
 
-- `let dropped = { missing_axes: 0, deliver_failed: 0 }` —— **module scope，不挂 `window`**。理由：jsdom 测试直接 import 读取即可；挂 window 会污染全局且在 SSR 下需守卫。
-- 不做上报（上报失败的失败无处可去）、不做重试（评价是即时表达，重试会让「反复切换」的时序信号错乱，见 §1.6）。
+- 每次没投出去发**一条** `{ signal: 'feedback', reason, count: 1, source: 'dashboard.rating-bar' }`。`signal` 取上游五值枚举里的 `'feedback'`（`observabilitySignalSchema`，`observability.ts:24-30`）——评价条产出的正是 feedback 信号。
+- `reason` 取上游闭集（`observability.ts:35`）：**`'permanent-config'`** ＝ 轴缺失（上游未接，重试也不会有）／任一轴超 120 字符（长度合同不对齐）／drop sink 本身不存在；**`'transient'`** ＝ deliverer 抛异常。
+- `source` ＝ 本票适配层的稳定标识 `'dashboard.rating-bar'`，**值须与 #248 的对账口径对齐**（§7.3 已记）。
+- **原稿自造的 `ratingEventDropCount()` / `ratingEventDropCountByReason()` / `resetRatingEventCounters()` 三个 API 作废**：同一份稿里并存「自造计数器」与「消费上游 drop 合同」两套投递可观测，是本票自己制造的第二真相源。
+- 测试怎么看见：`setObservabilityDropSink(vi.fn())` 注入后直接断言收到的事件对象（§3.7 验收 2/3），比读一个模块级数字更接近生产形态——生产上这条事件真的会被发出去。
+- 不做上报的上报（drop 事件自身若发不出去就到此为止）、不做重试（评价是即时表达，重试会让「反复切换」的时序信号错乱，见 03 §1.6）。
 - **不进商家界面**。D-160③ 只要求「可观测其投递成功率」，不要求商家看见；给商家看一个「埋点没送到」是 D-116 明令的工程语言外泄。
 
 **要不要 sendBeacon：不要。** 三条理由：
@@ -208,11 +222,11 @@ export function resetRatingEventCounters(): void;
 ## 3.7 验收断言草案
 
 文件：`mkfast-template-main/src/product/composer/composer-delivery-rating.interaction.test.tsx`
-（样板：`src/routes/dashboard/store-qualification.interaction.test.tsx:15-38` 的 `vi.hoisted` ＋ `vi.mock` 写法；文案逐字符断言纪律见 `src/product/results/image-role-feedback.interaction.test.tsx:1-3`）
+（样板：`src/routes/dashboard/store-qualification.interaction.test.tsx:15-38` 的 `vi.hoisted` ＋ `vi.mock` 写法；文案逐字符断言纪律见 `src/product/results/image-role-feedback.interaction.test.tsx:1-3`。`afterEach(resetDeliveryRatingEventWiring)` 复位两个注入点；`observabilityAxesSchema` / `observabilityDropEventSchema` / `ObservabilityDropEvent` 从 `@meiye/contracts` 直接 import，**测试不手抄键名**）
 
 ```ts
 // 验收 1 —— 事件带满五字段（票面第一条）
-it('点赞发出的事件带满三轴 ＋ 场景 ＋ 产物标识，无一为空', async () => {
+it('点赞发出的事件带满四轴 ＋ 产物标识，无一为空', async () => {
   const deliver = vi.fn();
   setSubstrateEventDeliverer(deliver);
   render(<ComposerDeliveryCard {...propsWithAxes()} />);   // axes 由 fixture 给全
@@ -220,13 +234,18 @@ it('点赞发出的事件带满三轴 ＋ 场景 ＋ 产物标识，无一为空
 
   expect(deliver).toHaveBeenCalledTimes(1);
   const [, payload] = deliver.mock.calls[0];
-  // 三轴 ＋ 场景：键名以 #248 为准，此处对着 import 的类型断言
+  // 键名取自上游合同 observabilityAxesSchema（四键：三轴 ＋ scene），
+  // fixture 直接过一次 schema，避免这里退化成手抄键名的第二真相源。
+  expect(observabilityAxesSchema.safeParse({
+    skillRevision:   payload.skillRevision,
+    promptVersion:   payload.promptVersion,
+    catalogRevision: payload.catalogRevision,
+    scene:           payload.scene,
+  }).success).toBe(true);
   expect(payload).toMatchObject({
-    skillRevision:   expect.stringMatching(/@\d+$/u),
-    promptVersion:   expect.stringMatching(/@\d+$/u),
-    catalogRevision: expect.any(String),
-    scene:           expect.any(String),
-    verdict:         'up',
+    skillRevision: expect.stringMatching(/^[^@\s]+@[^@\s]+$/u),  // compositeRevisionSchema
+    promptVersion: expect.stringMatching(/^[^@\s]+@[^@\s]+$/u),
+    verdict:       'up',
   });
   // 「带满」＝没有空串占位（D-160③：补录不可能，宁可不发也不发假的）
   for (const value of Object.values(payload)) {
@@ -236,32 +255,45 @@ it('点赞发出的事件带满三轴 ＋ 场景 ＋ 产物标识，无一为空
   expect(onOpen).not.toHaveBeenCalled();
 });
 
-// 验收 2 —— 断投递后可见失败计数（票面第二条，负向）
-it('投递抛异常时计数可见、UI 不报错、按钮态仍翻转', async () => {
+// 验收 2 —— 断投递后发出 drop 事件（票面第二条，负向）
+it('投递抛异常时发一条 transient drop 事件、UI 不报错、按钮态仍翻转', async () => {
+  const drops: ObservabilityDropEvent[] = [];
   setSubstrateEventDeliverer(() => { throw new Error('offline'); });
-  resetRatingEventCounters();
-  render(<ComposerDeliveryCard {...propsWithAxes()} />);
+  setObservabilityDropSink((event) => drops.push(event));
 
+  render(<ComposerDeliveryCard {...propsWithAxes()} />);
   await userEvent.click(screen.getByTestId('composer-delivery-rating-down'));
 
-  expect(ratingEventDropCountByReason().deliver_failed).toBe(1);
-  expect(ratingEventDropCount()).toBe(1);
+  // 断的是上游一等合同的事件对象，不是自造计数器（M4）
+  expect(drops).toHaveLength(1);
+  expect(observabilityDropEventSchema.parse(drops[0])).toEqual({
+    signal: 'feedback',
+    reason: 'transient',            // 投递抛异常＝可恢复
+    count: 1,
+    source: 'dashboard.rating-bar',
+  });
   // 埋点挂掉不该让商家看见异常，也不该吞掉她的表达
   expect(screen.getByTestId('composer-delivery-rating-down'))
     .toHaveAttribute('aria-pressed', 'true');
 });
 
 // 验收 3 —— 缺轴拒发（防「看起来带全、其实是废数据」）
-it('三轴缺任一时不发事件，只计数', async () => {
+it('四轴缺任一时不发事件，只发 permanent-config drop 事件', async () => {
   const deliver = vi.fn();
+  const drops: ObservabilityDropEvent[] = [];
   setSubstrateEventDeliverer(deliver);
-  resetRatingEventCounters();
-  render(<ComposerDeliveryCard {...propsWithoutAxes()} />);  // main 现状
+  setObservabilityDropSink((event) => drops.push(event));
 
+  render(<ComposerDeliveryCard {...propsWithoutAxes()} />);  // main 现状
   await userEvent.click(screen.getByTestId('composer-delivery-rating-up'));
 
   expect(deliver).not.toHaveBeenCalled();
-  expect(ratingEventDropCountByReason().missing_axes).toBe(1);
+  expect(drops).toEqual([{
+    signal: 'feedback',
+    reason: 'permanent-config',     // 上游没接，重试也不会有
+    count: 1,
+    source: 'dashboard.rating-bar',
+  }]);
 });
 
 // 验收 4 —— chip 只预填不提交（D-164⑤ / D-126）
@@ -299,7 +331,7 @@ D-164④ 只裁定「记忆升为一级导航可见项」与「分四域」。**
 | 被动沉淀管道、四态拦截、候选证据链、入库红线 | ❌ | ✅ | |
 | 「确认系统提议的沉淀」的**确认动作**（`propose_*→confirm_*` 前台面） | ❌ | ✅ 属主 | |
 | Skill 目录查询（`skills` 模块无 query，`apps/core/src/p1/skills/foundation-module.ts` 仅命令） | ❌ | | ✅ 属主 |
-| 「工作流」域的配方来源 | ✅ 复用**已有**配方投影（`recipe-cards.ts:107`） | | ❌ 不碰 `skills` 模块 |
+| 「工作流」域的配方来源 | ✅ 复用**已有**配方投影（`recipe-cards.ts:107`），**只出计数/名称 ＋ 链到 `/dashboard/catalog`，不重渲配方卡**（C6，§4.3） | | ❌ 不碰 `skills` 模块 |
 
 > **一句话**：#261 建的是一间**有四个货架的空店**，货由 #251／#259 上。空店必须先建好，否则 D-164④ 的立论（「护城河必须商家一眼看得见」）在前台没有承载物。
 
@@ -416,10 +448,12 @@ D-164④ 只裁定「记忆升为一级导航可见项」与「分四域」。**
 |---|---|---|---|---|
 | **门店主体偏好** | `identity` | MarketingIdentity（D-142） | ① `marketing-identity` 模块已通电（`apps/core/src/main.ts:1623` 挂载 `MarketingIdentityFoundationModule`，`apps/core/src/p1/operations/marketing-identity.ts:1311`），模块名已在前台白名单 `packages/contracts/src/p1.ts:28`<br>② `preference_view`（`apps/core/src/p1/operations/asset-memory-foundation-module.ts:423` → `reuse-memory-service.ts:1003`，返回 `{signals, candidates, preferences}`），前端**零引用** | **有数据源**（两个）。#261 只读 |
 | **项目**（一次营销活动） | `projects` | —— | **无**。全仓无 project/campaign 实体。最近亲＝`CreativeWork`（`CreativeWorkbenchProjection`，前端已消费于 `today-recommendation-card.tsx:204-213`），但那是「作品」不是「一次营销活动」 | **需上游，属主未定** → 阻塞项 B4，本轮**空态占位** |
-| **工作流**（一条产线或配方） | `workflows` | 配方 | `BrowserSurfaceProjection.recipes`（`packages/contracts/src/creation-experience.ts:228`）→ 前端已有投影 `src/product/composer/recipe-cards.ts:107 listColdCardsFromRecipes` / 冷态种子 `:58 listColdCardsFromSeeds`（`launch-card-seeds.ts:86 LAUNCH_CARD_SEEDS`） | **有数据源**（复用配方卡投影）。**禁碰 `skills` 模块**（`00-blockers.md:100`，属 #259） |
+| **工作流**（一条产线或配方） | `workflows` | 配方 | `BrowserSurfaceProjection.recipes`（`packages/contracts/src/creation-experience.ts:228`）→ 前端已有投影 `src/product/composer/recipe-cards.ts:107 listColdCardsFromRecipes` / 冷态种子 `:58 listColdCardsFromSeeds`（`launch-card-seeds.ts:86 LAUNCH_CARD_SEEDS`） | **有数据源，但只取计数/名称，不重渲配方卡**（见下）。**禁碰 `skills` 模块**（`00-blockers.md:100`，属 #259） |
 | **纠正** | `corrections` | `correction`（D-163②） | **无**。`packages/contracts/src/reuse-memory.ts:294` kind 枚举 ＝ `['adopted','modified','rejected']` | **需 #251** → 见 §五，本轮**空态占位** |
 
 **四域全部渲染，两域有货两域空。** 不因为空就藏 tab —— D-164④ 的产品意图是「让商家一眼看见系统在学什么」；藏掉一半等于只展示了一半的承诺，且商家会在 #251 合入后看到导航结构突变。
+
+**「工作流」域不重渲配方卡**（裁定 `08-reconciliation.md` C6）：该域只出「**你常用的做法**」的**计数与名称**，加一条链到 `/dashboard/catalog`（`routes/dashboard/catalog.tsx:13`，全屏创作目录，已存在）。理由：同一份配方列表在前台已经有两个落点——`01 §4` 的 PromptBar pill 行与 `/dashboard/catalog`；记忆页再平铺一遍就是第三处，与 `01` 整稿的收敛论调正面打架（`01 §6`「产生第二个可长期停留的工作台的入口一律移除或重定向」）。记忆页要回答的是「系统学到了什么」，不是「现在挑一条来做」——**做**的入口归创作面。取数仍复用同一份投影（`recipe-cards.ts:107`），只是渲染降级为计数 ＋ 名称行，**不带 apply 动作**。
 
 **「门店主体偏好」域为何双数据源**：D-164④ 明确写「对应 MarketingIdentity」，但 `preference_view` 的 `preferences`（`reuse-memory.ts:314 preferenceSchema`，含 `positiveExamples`/`negativeExamples`/`evidenceDecisionIds`）才是「经 `propose→confirm` 沉淀下来的门店偏好」——正是 D-159② 的策展产物。两者一个是「她是谁」（口吻/边界/禁语），一个是「她认可过什么」。同域两块，不合并渲染。
 
@@ -525,8 +559,10 @@ export function memoryDomainView(
 | `memory_entry_source` | 从哪来的 | Where this came from | 条目来源行 |
 | `memory_entry_evidence_count` | 有 {count} 条依据 | {count} pieces of evidence | 证据条数（id 不上屏） |
 | `memory_tabs_aria` | 记忆分类 | Memory categories | tab 容器 aria-label |
+| `memory_workflows_count` | 你常用的做法有 {count} 种 | {count} ways you use often | 「工作流」域 current 态表头（C6：只出计数/名称，不重渲配方卡） |
+| `memory_workflows_open_catalog` | 去挑一个做法 | Pick one to use | 「工作流」域链到 `/dashboard/catalog` 的出口（C6） |
 
-共 **31 键**（zh/en 各一份）。全部为新增，`RETIRED_NAVIGATION_KEYS` 无冲突。
+共 **33 键**（zh/en 各一份）。全部为新增，`RETIRED_NAVIGATION_KEYS` 无冲突。
 
 ---
 
@@ -583,7 +619,7 @@ const MEMORY_TAB_CORRECTIONS = 'corrections';
 
 | # | 阻塞项 | 卡住本文件哪一段 | 等谁 | 判据（可脚本化） |
 |---|---|---|---|---|
-| **B1** | 三轴扁平顶层键的**键名与格式** | §3.3 适配层的占位类型、§3.5 allowlist 字段名、§3.7 验收 1 的 `toMatchObject` | **#248** | `packages/contracts/src/*.ts` 中 `skillRevision`/`promptVersion`/`catalogRevision` 三键同现（`00-blockers.md:14` G2；现 `skillVersion`/`skillRevision` **全仓 0 处**） |
+| **B1** ✅ | 三轴扁平顶层键的**键名与格式** | §3.3 适配层的类型 import、§3.5 allowlist 字段名、§3.7 验收 1 的 schema 断言 | ~~#248~~ | 判据＝`packages/contracts/src/*.ts` 中三键同现（`00-blockers.md:14` G2）。**判据现已满足**：`observability.ts:10/11/17/18` 四键齐（三轴 ＋ `scene`），格式由 `compositeRevisionSchema:3-6` 定死。原括注「`skillVersion`/`skillRevision` 全仓 0 处」写于合同落 main 之前，**已被 `observability.ts:10` 证伪**（裁定 `08-reconciliation.md` O6，措辞更新于 2026-07-29）。**仍阻塞的是 B2 落库端与 B4 数据来源**，与本条不同事 |
 | **B2** | 事件的**落库端**（ingest 路由或 sender） | §3.5 的 A′ 只保证 payload 正确；spec `:507`「信号落库并进入『已验证』层」**#261 单独不可兑现** | **#248** | 存在一个非 no-op 的投递目的地；现 `product-telemetry.ts:107` 的 `meiye:telemetry` 全仓零监听、gtag/plausible/umami 仅 PROD |
 | **B3** | 「**场景**」字段的归属（三轴之外的第四键？） | §3.2 表末行、§3.3 的 `scene` 占位 | **#248** | #248 契约中出现场景键，或书面裁定它并入某轴 |
 | **B4** | 三轴的**数据来源**（Task 快照钉扎） | §3.4 —— main 上三轴取不到，生产路径一条都发不出 | **#262**（D-165②） | 交付回包／session 快照上能读到三轴 |
@@ -596,8 +632,8 @@ const MEMORY_TAB_CORRECTIONS = 'corrections';
 
 | # | 项 | 影响 | 等谁 |
 |---|---|---|---|
-| **S1** | `DECISIONS.md` **D4 动作 chip 生成方式** 仍 PENDING | §二 全节按「固定集合」写；若拍板改「模型即时生成」，§2.2-2.4 作废 | 用户 |
-| **S2** | verdict 值集合（是否支持撤回，§1.6 ⚠️） | §1.6 的 `up_cleared`；若 #248 只给 `up|down`，撤回信号有损 | #248 |
+| ~~**S1**~~ ✅ | `DECISIONS.md` **D4 动作 chip 生成方式** | **已裁定（2026-07-29）＝配方声明的固定集合**，与 `03 §二` 的写法一致，`03 §2.2-2.4` 不作废。本条**已解除**（裁定 `08-reconciliation.md` O3，措辞更新，结论未变） | ~~用户~~ |
+| **S2** | verdict 值集合（是否支持撤回，`03 §1.6` ⚠️） | `03 §1.6` 的 `up_cleared`；若 #248 只给 `up\|down`，撤回信号有损 | #248 |
 | **S3** | `IconThumbUp`/`IconThumbDown`/`IconBookmarks` 的实际导出名 | §1.3、§4.2③ —— 本 worktree 无 `node_modules` 未能核实 | 装依赖后自查 |
 | **S4** | 记忆页面是否进 `check-locale-keys.ts` 的 `PRODUCT_SHELL_SOURCES` | §4.2⑥ —— 进则页面内中文全部强制走 i18n | 主控口径 |
 
@@ -615,7 +651,7 @@ const MEMORY_TAB_CORRECTIONS = 'corrections';
 
 **新建（5）**
 - `mkfast-template-main/src/product/composer/composer-delivery-rating-bar.tsx`
-- `mkfast-template-main/src/product/composer/delivery-rating-event.ts`（#261 独占，含失败计数）
+- `mkfast-template-main/src/product/composer/delivery-rating-event.ts`（#261 独占；投递失败／缺轴发上游 `ObservabilityDropEvent`，不自造计数器）
 - `mkfast-template-main/src/product/composer/delivery-followup-seeds.ts`
 - `mkfast-template-main/src/product/composer/composer-delivery-rating.interaction.test.tsx`
 - `mkfast-template-main/src/routes/dashboard/memory.tsx`（＋其 model/view 拆分与 interaction test）
@@ -632,7 +668,7 @@ const MEMORY_TAB_CORRECTIONS = 'corrections';
 | `src/config/sidebar-config.ts:50-58` | 加图标（不加则 typecheck 红） | 低 |
 | `src/components/product/mobile-nav.tsx:55` ＋ `mobile-nav.static.test.ts:34,39-42` | `grid-cols-4→5`；改「四项合同」用例名与 id 断言 | **需留痕** |
 | `scripts/check-locale-keys.ts:6` | REQUIRED 加 1 键 | 低 |
-| `project.inlang/messages/{zh,en}.json` | 新增 31 键 ×2 | 低 |
+| `project.inlang/messages/{zh,en}.json` | 新增 33 键 ×2 | 低 |
 
 **不碰**：`packages/contracts/src/**`、`apps/core/**`、`skills` 模块、`reuse-memory.ts:294`、`emitTelemetry` 本体、D-126 推荐卡合同（`today-recommendation-card.tsx` 仅**读取**其 `todayRecommendationView`/`workbenchHasWork` 作同构参照，不改）。
 
@@ -640,7 +676,16 @@ const MEMORY_TAB_CORRECTIONS = 'corrections';
 
 # 七、上游回填：#248 合同已落 main（2026-07-29，main@7f60a4e7）
 
-本文件 §3.2–§3.5 写作时三轴合同尚未合入，故用了占位类型与 `TODO(#248)`。**该合同现已合入**，落点 `packages/contracts/src/observability.ts`。以下三处按实际契约回填，**§3.2 的悬空问题与 §3.5 的通道疑点均已被上游答掉**。
+本文件 §3.2–§3.5 写作时三轴合同尚未合入，故曾用占位类型与 `TODO(#248)`。**该合同现已合入**，落点 `packages/contracts/src/observability.ts`。以下三处按实际契约回填，**§3.2 的悬空问题与 §3.5 的通道疑点已被上游答掉**。
+
+> ⚠️ **别把「上游回填」读成「全部结清」**（裁定 `08-reconciliation.md` O5，2026-07-29）。`observability.ts` 全文 43 行**只有** `observabilityAxesSchema`（四键）与 `observabilityDropEventSchema`（含 `observabilitySignalSchema`）——**没有任何 verdict 枚举**（`git grep -n verdict -- packages/contracts` 零命中）。因此：
+> - `03 §1.6` 的「撤回值属 #248、若只给 `up|down` 则撤回信号有损」**依然有效**；
+> - 本文 **§6.2 S2 依然是软阻塞**，不得因本节而划掉；
+> - §3.3 的 `RatingVerdict` 仍是本票的**诉求别名**，不是 import 来的合同类型——这是 §3.3 里唯一还没换成 import 的东西，且是**有意保留**的。
+>
+> 本节结清的是**轴（axes）**与**丢弃事件（drop event）**两件事，不含 verdict。
+
+**§3.3 正文已就地改写**（O4）：5 个 `TODO(#248)` 与 4 个自造占位类型（`SubstrateEventAxes`／`SkillRevisionRef`／`PromptVersionRef`／`CatalogRevisionRef`）全部删除，换成 `import type { ObservabilityAxes, ObservabilityDropEvent } from '@meiye/contracts'`。**读 §3.3 就能照着实现，不必先读到本节**——原先「正文留占位、文末才回填」的写法会让照 §3.3 实现的人直接抄占位类型。
 
 ## 7.1 实际契约（逐字）
 
@@ -704,7 +749,7 @@ const MEMORY_TAB_CORRECTIONS = 'corrections';
 
 ## 7.3 §3.6「投递失败可观测」有官方合同了，不再自造计数器
 
-§3.6 原方案是在适配层自建失败计数器。**上游已给出丢弃事件一等合同** `observabilityDropEventSchema`，本票应**消费它而不是自造**：
+§3.6 原方案是在适配层自建失败计数器。**上游已给出丢弃事件一等合同** `observabilityDropEventSchema`，本票**消费它而不是自造**——**§3.6／§3.3／§3.7 正文已按本表就地改写**（裁定 `08-reconciliation.md` M4），自造的 `ratingEventDropCount()` 系列三个 API 作废，验收 2/3 改为断言 drop 事件对象：
 
 | 原设计 | 回填后 |
 |---|---|
@@ -763,4 +808,34 @@ const MEMORY_TAB_CORRECTIONS = 'corrections';
 2. 未跑任何测试命令（`locale:compile` 互斥纪律），§3.7 四条验收断言草案的可满足性未验。
 3. `00-blockers.md` 是本 worktree 的未提交文件（不在 main 上），其行号以当前工作副本为准；该文件若再被改写，`:35/:98/:99/:100/:17` 会再漂——这正是 06 B30–B33 的原始成因。
 4. 未读任何 GitHub 票面（#248/#251/#259/#262 等），§3.1 属主表只核到 spec 与决策文档一侧。
-5. `en.json` 未逐键比对，§4.6 的 31 键只在 `zh.json` 侧确认了无重名。
+5. `en.json` 未逐键比对，§4.6 的键只在 `zh.json` 侧确认了无重名。
+
+---
+
+## 裁定落地（08-reconciliation，2026-07-29）
+
+本轮**改结论**，依据 `08-reconciliation.md` §五 Step 0。本稿落 4 条裁定 ＋ 3 条措辞更新：
+
+| 裁定 | 落在本稿哪一节 | 改了什么 |
+|---|---|---|
+| **C6** | §4.1 属主表「工作流域的配方来源」行、§4.3 表「工作流」行 ＋ 其后新增说明段、§4.6 i18n 表 | 记忆「工作流」域**不重渲配方卡**，改为「你常用的做法」计数/名称 ＋ 链到 `/dashboard/catalog`。取数仍复用 `recipe-cards.ts:107`，渲染降级为计数 ＋ 名称行、不带 apply 动作。连带新增两个 i18n 键（`memory_workflows_count` / `memory_workflows_open_catalog`），键数 31 → **33** |
+| **C7** | §3.3 代码块 `SubstrateEventDeliverer` | `eventName` 由 `string` 收窄为 `TelemetryEventName`（＝`keyof typeof fieldAllowlist`，`product-telemetry.ts:20`），并在注释里写死**不用 `as` 断言绕**的理由：绕过去等于关掉 allowlist 的编译期保护 |
+| **M4** | §3.3 代码块、§3.4 末、§3.5「120 字符」段、§3.6（改写「计数器形态」整段）、§3.7 验收 2/3、§7.3 引言、附表新建件说明 | 投递可观测统一到上游一等合同 `ObservabilityDropEvent`（`{signal:'feedback', reason, count, source}`）。**自造的 `ratingEventDropCount()` / `ratingEventDropCountByReason()` / `resetRatingEventCounters()` 三个 API 作废**，换成 `setObservabilityDropSink()` 注入点；验收 2/3 改为断言 drop 事件对象（过 `observabilityDropEventSchema`）。`reason` 闭集映射：缺轴／超长／sink 缺失＝`permanent-config`，投递抛异常＝`transient` |
+| **O4** | §3.2 末新增 ✅ 块、§3.3 代码块（整段重写）、§3.7 验收 1 注释与断言、§7 新增说明段 | **正文就地改**：删掉 5 个 `TODO(#248)` 与 4 个自造占位类型（`SubstrateEventAxes`／`SkillRevisionRef`／`PromptVersionRef`／`CatalogRevisionRef`），换成 `import type { ObservabilityAxes, ObservabilityDropEvent } from '@meiye/contracts'`；`scene` 收进 `ObservabilityAxes` 不再单列。§3.7 验收 1 的「键名以 #248 为准」注释改为**让 fixture 过一次 `observabilityAxesSchema`**，测试不手抄键名 |
+| **O5** | §7 引言后新增 ⚠️ 块、§3.3 `RatingVerdict` 注释、§6.2 S2 行 | 点明 **verdict 枚举上游未给**（`observability.ts` 只有 `observabilityAxesSchema` 与 `observabilityDropEventSchema`，全仓 `verdict` 零命中），故 `03 §1.6` 的撤回值问题与本文 **S2 依然有效**，§7 结清的只有「轴」与「丢弃事件」两件事 |
+| **O3**（措辞） | 头部第 5 行、§6.2 S1 行 | 「D4 chip 生成方式 PENDING」→ **DECIDED（2026-07-29）＝配方声明的固定集合**；S1 标 ✅ 已解除。**结论未变**（`03 §二` 本来就按固定集合写） |
+| **O6**（措辞） | §6.1 B1 行、§3.4 阻塞声明 | B1 括注「`skillVersion`/`skillRevision` 全仓 0 处」已被 `observability.ts:10` 证伪，改为「判据现已满足（四键齐，格式由 `compositeRevisionSchema:3-6` 定死）」并标 ✅；§3.4 的「在 #248（键名）…合入前发不出去」改为「#248（**落库端**）与 #262（快照产出）」。**结论未变**：仍阻塞的是 B2 落库端与 B4 数据来源 |
+
+### 一处与裁定字面不同、按台账「先 `git grep` 确认、别猜」的指示取实测值
+
+`08-reconciliation.md` O4 的字面写法是 `import type { ObservabilityAxes } from '@contracts/observability'`。**该路径在本仓不存在**，本轮已复核：
+
+- `git grep -rn "@contracts/" -- mkfast-template-main` **零命中**；`mkfast-template-main/tsconfig.json:23-26` 的 `paths` 只有 `@/*` 与 `content-collections`；
+- `packages/contracts/package.json` 的 `exports` 只有 `"."`（无子路径导出），`observability.ts` 经 `packages/contracts/src/index.ts:32 export * from './observability.js'` 出 barrel；
+- 前端既有写法一律是 `from '@meiye/contracts'`（如 `src/api/plan-catalog.ts:20`、`src/components/product/mobile-progress-target.ts:1`）。
+
+故 §3.3 取 **`from '@meiye/contracts'`**。这与本稿 §7.2、锚点校准表 06 B25 的结论一致，O4 的字面路径应视为台账的转录笔误。
+
+**本轮引用的锚点已用 `git grep -n` 在当前 `main`（`40e8efa9`）上复验**：`product-telemetry.ts:20 TelemetryEventName`／`:63`／`:95`／`:101`／`:107`，`packages/contracts/src/observability.ts`（43 行，`verdict` 零命中，`index.ts:32` 出 barrel），`packages/contracts/package.json` exports，`mkfast-template-main/tsconfig.json:23-26`。
+
+**未随本轮改的**：§3.5 的 A′ 通道选择、§4.4 四态机、§5 correction 归属、§6.1 B2-B8、§6.3 N1-N3——裁定台账未点名，一字未动。

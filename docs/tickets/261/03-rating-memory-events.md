@@ -3,7 +3,7 @@
 > 范围：**D-164④**（记忆升一级导航）＋ **D-164⑤**（评价条与动作 chip）＋ **D-160③**（评价事件合同）
 > 基点：main@a595808b（worktree `lane-261`）。**本文件是零 rebase 面预备产出，不含任何源码改动。**
 > 权威：`docs/design/beauty-marketing-agent-product-design-2026-07-17.md:3099-3111`（D-164④⑤）、`:2701-2739`（D-160③ 与其 07-29 补充）、`:3005-3033`（D-163②）、`:2120-2128`（D-126，一字不改）
-> 同批：`00-blockers.md`（开工门与属主边界）、`DECISIONS.md`（D4＝chip 生成方式 PENDING）、`01-ia-three-sections.md`、`02-confirm-card-and-cost.md`
+> 同批：`00-blockers.md`（开工门与属主边界）、`DECISIONS.md`（D4 chip 生成方式＝**配方声明的固定集合，DECIDED 2026-07-29**）、`01-ia-three-sections.md`、`02-confirm-card-and-cost.md`、`08-reconciliation.md`（裁定台账，冲突以其为准）
 
 ---
 
@@ -30,11 +30,17 @@
 - 组件：`ComposerDeliveryRatingBar`
 
 ```ts
-/** D-160③ 四动作，顺序即 Miora 实测顺序：复制／点赞／点踩／更多。 */
-export type DeliveryRatingAction = 'copy' | 'up' | 'down' | 'more';
+/**
+ * D-160③ 定的是四动作（复制／点赞／点踩／更多，顺序即 Miora 实测顺序）。
+ * **首版只出前三个。**「更多」在本仓无任何下游菜单——渲染一个点了没东西的按钮，
+ * 撞 PRODUCT.md:40「警惕无载体的想象功能」与 spec
+ * `docs/specs/agent-substrate-dev-spec-2026-07-29.md:509`「断言不再渲染无下游的
+ * 可点元素」。第四动作等它真有下游时由后续票补。
+ */
+export type DeliveryRatingAction = 'copy' | 'up' | 'down';
 
 export const DELIVERY_RATING_ORDER: readonly DeliveryRatingAction[] = [
-  'copy', 'up', 'down', 'more',
+  'copy', 'up', 'down',
 ];
 
 export type ComposerDeliveryRatingBarProps = {
@@ -43,30 +49,32 @@ export type ComposerDeliveryRatingBarProps = {
   /** 已表达过的态度；同一版只保留一个，再点同一个＝撤回（见 §1.6）。 */
   verdict: 'up' | 'down' | null;
   /**
-   * 唯一出口。复制的剪贴板写入、更多的菜单展开都在这里之上做，
-   * 本组件不持有任何副作用 —— 与 composer-delivery-card.tsx:6-9 同纪律。
+   * 唯一出口。复制的剪贴板写入在这里之上做，本组件不持有任何副作用
+   * —— 与 composer-delivery-card.tsx:6-9 同纪律。
    */
   onRate: (action: DeliveryRatingAction) => void;
   className?: string;
 };
 ```
 
+**「更多」的留痕（裁定 `08-reconciliation.md` M6）**：D-160③ 原文的四动作**一个都不撤**，只是**首版不渲染第四个**。本票不自己制造新的空承诺——「更多」要出，须先有它打开的东西（候选下游：举报这一版／换一个说法／查看这一版用了什么，均无现成落点）。开工时在票下留一条：「评价条首版三动作，『更多』待其下游落地后由后续票补，依据 M6 ＋ spec `:509`」。`DELIVERY_RATING_ORDER` 与 `data-testid` 命名保持可扩展，补第四个时不动既有三项。
+
 **不进 props 的东西（属主边界）**：三轴版本值、事件名、遥测函数。评价条只报告「谁点了哪个」，事件组装全在 §三 的适配层。理由：评价条是纯展示件，让它知道 `skillRevision` 就等于让 UI 组件成为事件合同的第二个知情方，#248 改键名时要改两处。
 
-## 1.3 四个图标的来源
+## 1.3 图标的来源（首版三个）
 
 | 动作 | 图标 | 来源 | 依据 |
 |---|---|---|---|
 | 复制 | `IconCopy` | `@tabler/icons-react`（`package.json:62` `^3.36.1`），仓内已用：`src/product/results/delivery-panel.tsx:47`、`src/product/results/canonical-handoff-page.tsx:222` | 同一语义仓内已有定名图标，不另选 |
 | 点赞 | `IconThumbUp` | `@tabler/icons-react`，**仓内零引用，开工时须核实导出名** | 见下 |
 | 点踩 | `IconThumbDown` | 同上 | 见下 |
-| 更多 | `IconDots` | `@tabler/icons-react`，仓内已用：`src/components/ui/breadcrumb.tsx:114`、`src/components/ui/pagination.tsx:123` | 同上 |
+| ~~更多~~ | ~~`IconDots`~~ | `@tabler/icons-react`，仓内已用：`src/components/ui/breadcrumb.tsx:114`、`src/components/ui/pagination.tsx:123` | **首版不渲染**（§1.2 M6）。行留着，是给后续补第四动作的人指路，不是本版要写的代码 |
 
 **明确不用 `src/components/heroui-pro/vendor/components/icons.tsx:290 ThumbsDown` / `:301 ThumbsUp`。** 理由不是风格偏好：
 
 1. `mkfast-template-main/CLAUDE.md` 的 Conventions 段把 **Icons ＝ `@tabler/icons-react`** 写成仓级约定。
 2. 该 vendor 文件在 `heroui-pro/vendor/` 下，是**上游镜像**（D-130 的「重拉镜像锁版本」路径），改上游镜像等于把本地修改暴露在下次重拉时被覆盖。
-3. 最实际的一条：**同一行里 `IconCopy` 是 Tabler、赞踩是 HeroUI vendor**，两套图标的 viewBox（Tabler 24、vendor 16）、描边风格（Tabler 线性、vendor 实心 `fill: currentColor`）不同，四个图标并排会明显不齐。这不是可以靠 `size-*` 拉平的差异。
+3. 最实际的一条：**同一行里 `IconCopy` 是 Tabler、赞踩是 HeroUI vendor**，两套图标的 viewBox（Tabler 24、vendor 16）、描边风格（Tabler 线性、vendor 实心 `fill: currentColor`）不同，并排会明显不齐。这不是可以靠 `size-*` 拉平的差异。
 
 **若 `IconThumbUp`/`IconThumbDown` 的实际导出名不同**（本 worktree 未装 `node_modules`，未能核实）：改成正确的 Tabler 名，**不要退回 vendor**。
 
@@ -90,14 +98,14 @@ export type ComposerDeliveryRatingBarProps = {
 
 ## 1.5 无障碍
 
-纯图标按钮必须有可读名。四个 `aria-label` 全部走 paraglide（`check-locale-keys.ts:97 sourceHasCjkOutsideComments` 会拒绝源码内 CJK 明文，若该文件被加入 `PRODUCT_SHELL_SOURCES`）：
+纯图标按钮必须有可读名。三个 `aria-label` 全部走 paraglide（`check-locale-keys.ts:97 sourceHasCjkOutsideComments` 会拒绝源码内 CJK 明文，若该文件被加入 `PRODUCT_SHELL_SOURCES`）：
 
 | i18n key | zh | en | 用处 |
 |---|---|---|---|
 | `delivery_rating_copy_aria` | 复制文案 | Copy text | 复制按钮 aria-label |
 | `delivery_rating_up_aria` | 这一版好用 | This one works | 点赞 aria-label |
 | `delivery_rating_down_aria` | 这一版不好用 | This one does not work | 点踩 aria-label |
-| `delivery_rating_more_aria` | 更多操作 | More actions | 更多 aria-label |
+| ~~`delivery_rating_more_aria`~~ | ~~更多操作~~ | ~~More actions~~ | **首版不新增该键**（§1.2 M6：不渲染「更多」）。补第四动作的票一并加 |
 | `delivery_rating_group_aria` | 对这一版的评价 | Feedback on this version | 外层 `<div role="group">` 的 aria-label |
 | `delivery_rating_up_done` | 已记下：好用 | Noted: works | `aria-live="polite"` 播报（见下） |
 | `delivery_rating_down_done` | 已记下：不好用 | Noted: does not work | 同上 |
@@ -124,6 +132,8 @@ D-160③ 补充段明写：「评价事件的**去重、撤回与重复评价**�
 
 ⚠️ `up_cleared` 这个**值**属 #248（它定 verdict 枚举）。此处只提出**需要一个表达撤回的值**，不占键名。若 #248 只给 `up|down`，退化方案＝撤回不发事件、UI 仍复位，并在票下留痕说明信号有损。
 
+⚠️ **这一条截至 2026-07-29 仍未结清**（裁定 `08-reconciliation.md` O5）：#248 的合同已落 main（`packages/contracts/src/observability.ts`），但它**只有** `observabilityAxesSchema`（四键）与 `observabilityDropEventSchema`，**没有任何 verdict 枚举**。看到 `04 §7`「上游回填」的读者容易误以为撤回值也被上游答掉了——**没有**。本条与 `04 §6.2 S2` 依然有效。
+
 ## 1.7 与现有三动作（`:31-37` adopt/adjust/export）的位置关系
 
 **现有三动作一个不动，标签不改，`ACTION_ORDER` 不改，`onOpen` 契约不改。** 它们是 ADR-0014 的「卡即门」——全部只开结果中心（`:6-9` R-05 唯一写路径）。评价条与后续动作 chip 都**不得**复用 `onOpen`。
@@ -133,7 +143,7 @@ D-160③ 补充段明写：「评价事件的**去重、撤回与重复评价**�
 ```
 ┌ ComposerDeliveryCard (composer-delivery-card.tsx:64 <section>)
 │ ① 整卡 button（:71-104）  标题 / 任务总结 / 摘录 /「点开看完整成品」
-│ ② 评价条                  mt-1，纯图标 ×4，text-muted-foreground/60   ← 新增
+│ ② 评价条                  mt-1，纯图标 ×3，text-muted-foreground/60   ← 新增（首版三动作，§1.2）
 │ ③ 后续动作 chip 组         mt-3，ghost 药丸 ×2-3，动词短句            ← 新增
 │ ④ 现有三动作              mt-3（:108），meiye-glass-piece 药丸 ×3     ← 原样
 └
@@ -153,17 +163,15 @@ D-160③ 补充段明写：「评价事件的**去重、撤回与重复评价**�
 
 **不加可见小标题**。加「接下来：」一行会让卡从三段变四段，且 D-116 要求人话——一行冒号标题恰恰是 SaaS 说明书骨架。可见的区分交给**动词 vs 判定语**与**ghost vs glass**两层；语义区分交给 `aria-label`。
 
-> 若走查后仍发现商家读混：**优先方案是把④收进「更多」菜单**（评价条的第四个图标），而不是给③加标题。这条留作备选，本轮不做。
+> 若走查后仍发现商家读混：**优先方案是把④收进「更多」菜单**（评价条的第四个图标），而不是给③加标题。这条留作备选，本轮不做——且按 §1.2（M6）首版不渲染「更多」，该备选要等第四动作有下游后才谈得上。
 
 ---
 
 # 二、动作 chip 设计（D-164⑤ 后半）
 
-## 2.1 生成方式：取「配方声明的固定集合」（`DECISIONS.md` D4，建议 → 待拍板）
+## 2.1 生成方式：**配方声明的固定集合**（`DECISIONS.md` D4，**DECIDED 2026-07-29**）
 
-D-164 待验证原文：「动作 chip 的**生成方式未定**（由模型即时生成，还是配方声明的固定集合）」。
-
-**建议：固定集合。四条理由，前两条是硬的。**
+D-164 待验证原文：「动作 chip 的**生成方式未定**（由模型即时生成，还是配方声明的固定集合）」。**该项已于 2026-07-29 裁定＝配方声明的固定集合**（`DECISIONS.md` D4，裁定方向与本节论证一致），下面四条理由是裁定依据的留档，前两条是硬的。
 
 1. **成本（硬）**：D-164⑥ 决定 C 已裁「凡经由 agent 规划完成的动作，规划本身即成本」，并以 Miora 实测「点拒绝仍扣 79.65」为据。让模型在每次交付后再生成一次 chip 文案，等于**每条成品额外产生一次商家没有请求、也看不见的规划消耗**——直接撞⑥C，且是⑥C 点名要消灭的那类不可见消耗。
 2. **可测（硬）**：仓内已有的完成文案纪律是 `src/product/results/image-role-action-matrix.ts:83`「Exact completion feedback (D-087). Must match character-for-character in RTL」，其测试 `image-role-feedback.interaction.test.tsx` 逐字符断言。模型即时生成的 chip **无法写任何文案断言**，只能断言「有 2-3 个按钮」——那等于验收不覆盖内容。
@@ -273,7 +281,9 @@ D-164⑤ ＋ D-126 ＋ Miora 实证三方同向：**点击只填输入框，不�
 
 **一处必须与推荐卡不同**：`composer-home.tsx:2781` 把 lens 硬编码成 `'copy'`（推荐卡永远出文案意图，合理）。**后续动作 chip 必须传交付物自己的 lens** —— 对一张图点「换成深色背景」却把创作类型切成「文案」，商家下一步会得到一段文字。lens 来源＝该 delivery turn 所属 session 的当前 lens。
 
-**禁止**：`onFollowUp` 里任何形式的 `createWork` / `submit` / `commandP1`。`composer-home.tsx:2765-2772` 的注释「Both CTAs prefill this same draft — never submit」是这条纪律的既有成文形态，新增第三个调用方后应把注释里的 "Both" 一并更新（这是本票**唯一**允许修改的既有注释）。
+**禁止**：`onFollowUp` 里任何形式的 `createWork` / `submit` / `commandP1`。`composer-home.tsx:2765-2772` 的注释「Both CTAs prefill this same draft — never submit」是这条纪律的既有成文形态，新增第三个调用方后，"Both" 须变成「三处 CTA」。
+
+**该注释的重写属主＝`01-ia-three-sections.md`**（裁定 `08-reconciliation.md` C2）。理由：01 做段① 上移与三段布局重排，被推翻的正是那段注释里的产品判断（「这块刻意压在 Composer 集群之后」），它必须整段重写；而本稿只是给它多加一个调用方。两种改法落在**同一个 git hunk**，不裁属主就会冲突。**本稿只在 01 重写后的文本里追加「三处 CTA」措辞，不另起一版重写。**
 
 ## 2.6 chip 视觉
 
@@ -316,3 +326,20 @@ D-164⑤ ＋ D-126 ＋ Miora 实证三方同向：**点击只填输入框，不�
 1. `@tabler/icons-react@^3.36.1` 的 `IconThumbUp` / `IconThumbDown` 实际导出名（本 worktree 未装 `node_modules`）——§1.3 已自标，仍为 S3。
 2. 未跑任何测试命令（`locale:compile` 互斥纪律），§1.4／§2.6 的 class 与命中区断言均未实跑。
 3. `00-blockers.md` 是本 worktree 的未提交文件，其行号以当前工作副本为准；该文件若再被改写，`:100` 会再漂。
+
+---
+
+## 裁定落地（08-reconciliation，2026-07-29）
+
+本轮**改结论**，依据 `08-reconciliation.md` §五 Step 0。本稿落 2 条裁定 ＋ 2 条措辞更新：
+
+| 裁定 | 落在本稿哪一节 | 改了什么 |
+|---|---|---|
+| **C2** | §2.5 末（「禁止」段） | 删掉「这是本票**唯一**允许修改的既有注释」；改为**该注释的重写属主＝`01`**（布局重排方，被推翻的正是那段的产品判断），本稿只在 01 重写后的文本里追加「三处 CTA」措辞。两种改法落在同一个 git hunk，不裁属主会冲突 |
+| **M6** | §1.2 类型块 ＋ 新增「更多的留痕」段、§1.3 表末行、§1.5 表、§1.7 卡内四段图与末尾备选注 | 评价条**首版只出三动作**（复制／点赞／点踩），不渲染「更多」：`DeliveryRatingAction` 与 `DELIVERY_RATING_ORDER` 收为三值，`IconDots` 行与 `delivery_rating_more_aria` 键标为首版不用。留痕说明「更多」待其下游落地后由后续票补，依据 PRODUCT.md:40 与 spec `agent-substrate-dev-spec-2026-07-29.md:509`。**D-160③ 的四动作原文一条未撤，只是首版不渲染第四个** |
+| **O3**（措辞） | 头部第 6 行、§2.1 标题与首段 | 「`DECISIONS.md`（D4＝chip 生成方式 PENDING）」「建议 → 待拍板」→ **DECIDED（2026-07-29）＝配方声明的固定集合**。裁定方向与本稿建议一致，**结论未动**，四条理由留作裁定依据留档 |
+| **O5**（补点明） | §1.6 末 | 补一句：#248 合同虽已落 main，但 `observability.ts` **无任何 verdict 枚举**，本条撤回值问题与 `04 §6.2 S2` **依然有效**，不要因为看到 `04 §7`「上游回填」就当已结清 |
+
+**本轮引用的锚点已复核**：`PRODUCT.md:40`「警惕无载体的想象功能」、`docs/specs/agent-substrate-dev-spec-2026-07-29.md:509`「断言不再渲染无下游的可点元素」、`packages/contracts/src/observability.ts`（全仓 `verdict` 零命中）。
+
+**未随本轮改的**：§1.4／§2.6 的视觉口径、§1.6 的去重/撤回口径本体、§2.1-§2.4 的固定集合方案与 chip 文案——裁定台账未点名，一字未动。
