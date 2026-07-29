@@ -34,6 +34,11 @@ const generatedCandidateSchema = z
   })
   .strict();
 
+const NON_SELF_CORRECTABLE_GATE_IDS = new Set([
+  'subject_asset_rights',
+  'external_action_approval',
+]);
+
 type GeneratedCandidate = z.infer<typeof generatedCandidateSchema> & {
   candidateId: string;
   workspaceId: string;
@@ -190,6 +195,15 @@ export async function executeCopySelection(
   let policy = ports.validator.validate(structuredClone(candidate));
   if (!policy.passed) {
     blockedCandidates.push(blockedCandidate(candidate.candidateId, policy.failures));
+    const nonSelfCorrectableFailure = policy.failures.find(({ gateId }) =>
+      NON_SELF_CORRECTABLE_GATE_IDS.has(gateId),
+    );
+    if (nonSelfCorrectableFailure) {
+      throw new HarnessSelectionError(
+        unique(blockedCandidates.flatMap(({ gateIds }) => gateIds)),
+        nonSelfCorrectableFailure.reason,
+      );
+    }
     const retryRequest = compileCopyGenerationRequest({
       brief: input.brief,
       context: input.generationContext,

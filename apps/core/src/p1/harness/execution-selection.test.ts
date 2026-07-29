@@ -81,49 +81,34 @@ test('copy candidate runner consumes the frozen prompt for primary and retry cal
   );
 });
 
-test('one policy failure retries once with feedback and delivers the safe result', async () => {
+test('subject asset rights failure hard-blocks without self-correction', async () => {
   const runner = new QueueRunner([
     candidate('主推荐', '正文 A', ['asset-withdrawn']),
     candidate('安全重试', '正文 B', []),
   ]);
-  const result = await executeCopySelection(selectionInput(), {
-    runner,
-    validator: new WithdrawnAssetValidator(),
-  });
-
-  assert.equal(result.winner.candidateId, 'c01-retry');
-  assert.deepEqual(result.blockedCandidates, [
-    {
-      candidateId: 'c01',
-      gateIds: ['subject_asset_rights'],
-      alternativePath: ['换安全素材', '匿名化', '请求授权', '放弃该表达'],
+  await assert.rejects(
+    executeCopySelection(selectionInput(), {
+      runner,
+      validator: new WithdrawnAssetValidator(),
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof HarnessSelectionError);
+      assert.equal(error.status, 409);
+      assert.deepEqual(error.gateIds, ['subject_asset_rights']);
+      assert.equal(error.merchantMessage, '素材授权已撤回');
+      return true;
     },
-  ]);
+  );
   assert.deepEqual(
     runner.requests.map((request) => request.effectIdempotencyKey),
-    [
-      'wf:workflow-34:s4:copy-primary:c01',
-      'wf:workflow-34:s4:copy-primary:c01-retry',
-    ],
+    ['wf:workflow-34:s4:copy-primary:c01'],
   );
-  assert.equal(
-    new Set(
-      runner.requests.map((request) => request.effectIdempotencyKey),
-    ).size,
-    2,
-  );
-  assert.match(runner.requests[1]!.instructions, /Correct every supplied policy failure/u);
-  assert.deepEqual(JSON.parse(runner.requests[1]!.prompt).policyFailures, [
-    {
-      gateId: 'subject_asset_rights',
-      reason: '素材授权已撤回',
-    },
-  ]);
+  assert.equal(runner.requests.length, 1);
 });
 
-test('two policy failures stop after one retry with every gate id', async () => {
+test('non-permission policy failures stop after exactly one self-correction', async () => {
   const runner = new QueueRunner([
-    candidate('主推荐', '正文 A', ['asset-withdrawn']),
+    candidate('主推荐', '正文 A', ['asset-medical']),
     candidate('重试仍不安全', '正文 B', ['asset-medical']),
   ]);
   await assert.rejects(
@@ -134,10 +119,7 @@ test('two policy failures stop after one retry with every gate id', async () => 
     (error: unknown) => {
       assert.ok(error instanceof HarnessSelectionError);
       assert.equal(error.status, 409);
-      assert.deepEqual(error.gateIds, [
-        'subject_asset_rights',
-        'medical_claim',
-      ]);
+      assert.deepEqual(error.gateIds, ['medical_claim']);
       return true;
     },
   );
