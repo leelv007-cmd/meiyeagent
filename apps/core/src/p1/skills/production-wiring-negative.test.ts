@@ -11,6 +11,7 @@ import { OperationsFoundationModule } from '../operations/foundation-module.js';
 import type { OperationsApplicationService } from '../operations/application-service.js';
 import type { ContentPackageDeliveryService } from '../operations/content-package-delivery.js';
 import {
+  assertWiringInventoryClosure,
   defineWiringNegativeCorpus,
   WIRING_NEGATIVE_CASE_IDS,
 } from '../testing/wiring-negative-corpus.js';
@@ -89,16 +90,16 @@ const negativeCorpus = defineWiringNegativeCorpus({
     );
   },
   'inventory-blind-to-closure'() {
+    assert.doesNotThrow(() =>
+      assertWiringInventoryClosure(inventoryKeys, [deliveryAction]),
+    );
     const blindSnapshot = inventoryKeys.filter(
       (key) => key !== deliveryAction,
     );
     assert.throws(
       () =>
-        assert.ok(
-          blindSnapshot.includes(deliveryAction),
-          'public delivery closure is missing from the inventory snapshot',
-        ),
-      /public delivery closure is missing/u,
+        assertWiringInventoryClosure(blindSnapshot, [deliveryAction]),
+      /missing closure-required keys: deliver_content_package/u,
     );
   },
   async 'invalid-shape-silently-inert'() {

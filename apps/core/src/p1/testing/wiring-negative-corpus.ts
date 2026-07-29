@@ -20,3 +20,16 @@ export function defineWiringNegativeCorpus<T>(
   }
   return cases;
 }
+
+export function assertWiringInventoryClosure(
+  inventoryKeys: readonly string[],
+  closureRequiredKeys: readonly string[],
+) {
+  const inventory = new Set(inventoryKeys);
+  const missing = closureRequiredKeys.filter((key) => !inventory.has(key));
+  if (missing.length > 0) {
+    throw new Error(
+      `Wiring inventory is missing closure-required keys: ${missing.join(', ')}`,
+    );
+  }
+}
