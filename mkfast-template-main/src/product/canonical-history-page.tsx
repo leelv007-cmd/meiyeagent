@@ -63,12 +63,14 @@ import {
   legacy_projection_canvas_job_material_relation,
   legacy_projection_canvas_job_not_found_description,
   legacy_projection_canvas_job_not_found_title,
+  legacy_projection_canvas_job_readonly_notice,
   legacy_projection_canvas_job_source,
   legacy_projection_canvas_job_title,
   legacy_projection_canvas_job_work_relation,
   legacy_projection_delivery_syncing,
   legacy_projection_history_content_detail,
   legacy_projection_history_jobs_description,
+  legacy_projection_history_jobs_readonly_notice,
   legacy_projection_history_navigation_aria,
   legacy_projection_history_recent_description,
   legacy_projection_history_search_description,
@@ -524,6 +526,20 @@ export function CanonicalHistoryPage({
           <div className="meiye-ambient-copy">
             <h1 className="hidden meiye-type-title md:block">{page.title()}</h1>
             <p className="meiye-type-aux mt-1">{page.description()}</p>
+            {/*
+             * D-137: the jobs island is a read-only leftover from the previous
+             * workflow. Say so in the merchant's words (D-116) instead of
+             * leaving her to infer it from the absence of any action. One
+             * sentence only — D-137 rules out investing further in this island.
+             */}
+            {mode === 'jobs' ? (
+              <p
+                className="meiye-type-aux mt-1"
+                data-testid="history-jobs-readonly-notice"
+              >
+                {legacy_projection_history_jobs_readonly_notice()}
+              </p>
+            ) : null}
           </div>
           <CanonicalHistoryNavigation mode={mode} />
           {mode === 'assets' ? (
@@ -845,6 +861,14 @@ export function CanvasImageJobDetailPage({ jobId }: { jobId: string }) {
       description={legacy_projection_canvas_job_description()}
       title={legacy_projection_canvas_job_title()}
     >
+      {/*
+       * D-137: sits above every state — loading, not-found and the record
+       * itself — because "this is old and you can only look at it" is true
+       * before the data arrives, not a property of the record.
+       */}
+      <p className="meiye-type-aux" data-testid="canvas-job-readonly-notice">
+        {legacy_projection_canvas_job_readonly_notice()}
+      </p>
       {historyQuery.isLoading || product.loading ? (
         <StatePanel
           kind="loading"
