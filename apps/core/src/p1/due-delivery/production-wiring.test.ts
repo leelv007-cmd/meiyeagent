@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-test('job worker migrates and runs the due-only system scanner', async () => {
+test('composition roots bind the due scanner and shared migration seam', async () => {
+  // This is a call-site guard only. Scanner behavior is covered by
+  // scanner-job.test.ts and the PostgreSQL due-delivery acceptance suite.
   const source = await readFile(
     new URL('../../job-worker.ts', import.meta.url),
     'utf8',
