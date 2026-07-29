@@ -1,11 +1,15 @@
 import { createHash } from 'node:crypto';
 
-import { observabilityEventSchema } from '@meiye/contracts';
+import {
+  observabilityEventSchema,
+  type ObservabilityDropEvent,
+} from '@meiye/contracts';
 
 import { harnessLogicalId } from './workspace-scope.js';
-import type {
-  HarnessLangfuseOutboxItem,
-  HarnessLangfuseSender,
+import {
+  ObservabilityDeliveryFailure,
+  type HarnessLangfuseOutboxItem,
+  type HarnessLangfuseSender,
 } from './outbox-worker.js';
 
 export const LANGFUSE_INGESTION_EVENT_FIELDS = [
@@ -91,28 +95,74 @@ export class LangfuseHttpSender implements HarnessLangfuseSender {
   }
 
   async send(item: HarnessLangfuseOutboxItem) {
-    const { batch, datasetItem } = mapOutboxItem(item);
-    await this.post(this.ingestionUrl, { batch }, 'ingestion');
+    let projection: ReturnType<typeof mapOutboxItem>;
+    try {
+      projection = mapOutboxItem(item);
+    } catch {
+      throw new ObservabilityDeliveryFailure(
+        'Langfuse projection rejected the outbox event.',
+        [
+          {
+            signal: 'trace',
+            reason: 'permanent-config',
+            count: 1,
+            source: 'langfuse_projection',
+          },
+        ],
+      );
+    }
+    const { batch, datasetItem } = projection;
+    await this.post(
+      this.ingestionUrl,
+      { batch },
+      'ingestion',
+      describeIngestionSignals(item, batch),
+    );
     if (datasetItem) {
-      await this.post(this.datasetItemsUrl, datasetItem, 'dataset item');
+      await this.post(
+        this.datasetItemsUrl,
+        datasetItem,
+        'dataset item',
+        [{ signal: 'metric', count: 1 }],
+      );
     }
   }
 
-  private async post(url: string, body: unknown, operation: string) {
-    const response = await this.fetch(url, {
-      method: 'POST',
-      headers: {
-        authorization: `Basic ${Buffer.from(
-          `${this.options.publicKey}:${this.options.secretKey}`,
-        ).toString('base64')}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(this.options.timeoutMs ?? 10_000),
-    });
+  private async post(
+    url: string,
+    body: unknown,
+    operation: string,
+    signals: SignalCount[],
+  ) {
+    let response: Response;
+    try {
+      response = await this.fetch(url, {
+        method: 'POST',
+        headers: {
+          authorization: `Basic ${Buffer.from(
+            `${this.options.publicKey}:${this.options.secretKey}`,
+          ).toString('base64')}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(this.options.timeoutMs ?? 10_000),
+      });
+    } catch {
+      throw deliveryFailure(
+        `Langfuse ${operation} request failed.`,
+        signals,
+        'transient',
+        operationSource(operation),
+      );
+    }
     if (!response.ok) {
-      throw new Error(
+      throw deliveryFailure(
         `Langfuse ${operation} failed with HTTP ${response.status}.`,
+        signals,
+        transientHttpStatus(response.status)
+          ? 'transient'
+          : 'permanent-config',
+        operationSource(operation),
       );
     }
     const result = await response.json().catch(() => null);
@@ -121,8 +171,11 @@ export class LangfuseHttpSender implements HarnessLangfuseSender {
       Array.isArray(result.errors) &&
       result.errors.length > 0
     ) {
-      throw new Error(
+      throw deliveryFailure(
         `Langfuse ${operation} reported one or more event errors.`,
+        signals,
+        'permanent-config',
+        operationSource(operation),
       );
     }
   }
@@ -138,9 +191,12 @@ export function langfuseSenderFromEnv(
   ].filter((name) => !env[name]?.trim());
   if (missing.length > 0) {
     return {
-      async send() {
-        throw new Error(
+      async send(item) {
+        throw deliveryFailure(
           `Harness Langfuse sender is not configured: ${missing.join(', ')}.`,
+          describePlannedSignals(item),
+          'permanent-config',
+          'langfuse_configuration',
         );
       },
     };
@@ -153,6 +209,83 @@ export function langfuseSenderFromEnv(
       ? { timeoutMs: positiveInteger(env.LANGFUSE_REQUEST_TIMEOUT_MS) }
       : {}),
   });
+}
+
+type SignalCount = {
+  signal: ObservabilityDropEvent['signal'];
+  count: number;
+};
+
+function describePlannedSignals(item: HarnessLangfuseOutboxItem) {
+  try {
+    const { batch, datasetItem } = mapOutboxItem(item);
+    return mergeSignalCounts([
+      ...describeIngestionSignals(item, batch),
+      ...(datasetItem ? [{ signal: 'metric' as const, count: 1 }] : []),
+    ]);
+  } catch {
+    return [{ signal: 'trace' as const, count: 1 }];
+  }
+}
+
+function describeIngestionSignals(
+  item: HarnessLangfuseOutboxItem,
+  batch: IngestionEvent[],
+) {
+  const signals: SignalCount[] = batch.map((event) => {
+    if (event.type !== 'score-create') {
+      return { signal: 'trace', count: 1 };
+    }
+    const name = String(event.body.name ?? '');
+    return {
+      signal:
+        name.startsWith('harness.schema.') ||
+        name.startsWith('harness.repair.') ||
+        name.startsWith('harness.retry.') ||
+        name.startsWith('harness.nested_') ||
+        name.startsWith('product.')
+          ? 'metric'
+          : 'score',
+      count: 1,
+    };
+  });
+  if (item.eventType.startsWith('delivery_rating.')) {
+    signals.push({ signal: 'feedback', count: 1 });
+  }
+  if (item.eventType === 'action_usage.recorded') {
+    signals.push({ signal: 'metric', count: 1 });
+  }
+  return mergeSignalCounts(signals);
+}
+
+function mergeSignalCounts(signals: SignalCount[]) {
+  const counts = new Map<SignalCount['signal'], number>();
+  for (const { signal, count } of signals) {
+    counts.set(signal, (counts.get(signal) ?? 0) + count);
+  }
+  return [...counts].map(([signal, count]) => ({ signal, count }));
+}
+
+function deliveryFailure(
+  message: string,
+  signals: SignalCount[],
+  reason: ObservabilityDropEvent['reason'],
+  source: string,
+) {
+  return new ObservabilityDeliveryFailure(
+    message,
+    signals.map(({ signal, count }) => ({ signal, reason, count, source })),
+  );
+}
+
+function transientHttpStatus(status: number) {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+function operationSource(operation: string) {
+  return operation === 'ingestion'
+    ? 'langfuse_ingestion'
+    : 'langfuse_dataset_item';
 }
 
 function mapOutboxItem(item: HarnessLangfuseOutboxItem) {

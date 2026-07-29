@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   HarnessLangfuseOutboxLoop,
   HarnessLangfuseOutboxWorker,
+  ObservabilityDeliveryFailure,
   type HarnessLangfuseOutboxStore,
 } from './outbox-worker.js';
 import type { AdminConfigRepository } from '../admin-config/foundation-module.js';
@@ -126,6 +127,60 @@ test('Langfuse failure dead-letters at the attempt limit and is not redelivered'
     deadLettered: 0,
   });
   assert.equal(sendAttempts, 2);
+  assert.deepEqual(store.deadLetterDrops.get('audit-1'), [
+    {
+      signal: 'trace',
+      reason: 'transient',
+      count: 1,
+      source: 'langfuse_outbox',
+    },
+  ]);
+});
+
+test('permanent Langfuse configuration failure dead-letters immediately through the independent drop contract', async () => {
+  const store = new MemoryOutboxStore();
+  const worker = new HarnessLangfuseOutboxWorker(store, {
+    async send() {
+      throw new ObservabilityDeliveryFailure(
+        'Langfuse credentials are invalid.',
+        [
+          {
+            signal: 'trace',
+            reason: 'permanent-config',
+            count: 2,
+            source: 'langfuse_ingestion',
+          },
+          {
+            signal: 'score',
+            reason: 'permanent-config',
+            count: 3,
+            source: 'langfuse_ingestion',
+          },
+        ],
+      );
+    },
+  });
+
+  assert.deepEqual(await worker.runOnce(), {
+    sent: 0,
+    failed: 1,
+    deadLettered: 1,
+  });
+  assert.equal(store.statuses.get('audit-1'), 'dead_letter');
+  assert.deepEqual(store.deadLetterDrops.get('audit-1'), [
+    {
+      signal: 'trace',
+      reason: 'permanent-config',
+      count: 2,
+      source: 'langfuse_ingestion',
+    },
+    {
+      signal: 'score',
+      reason: 'permanent-config',
+      count: 3,
+      source: 'langfuse_ingestion',
+    },
+  ]);
 });
 
 test('Langfuse outbox retry and lease settings can be read from admin-config', async () => {
@@ -196,6 +251,10 @@ test('Langfuse outbox retry and lease settings can be read from admin-config', a
 class MemoryOutboxStore implements HarnessLangfuseOutboxStore {
   readonly statuses = new Map<string, OutboxStatus>();
   readonly nextAttemptAt = new Map<string, Date>();
+  readonly deadLetterDrops = new Map<
+    string,
+    Parameters<HarnessLangfuseOutboxStore['markLangfuseDeadLetter']>[2]
+  >();
   private readonly attempts = new Map<string, number>();
 
   constructor(auditIds = ['audit-1']) {
@@ -235,8 +294,15 @@ class MemoryOutboxStore implements HarnessLangfuseOutboxStore {
     this.nextAttemptAt.set(auditId, retryAt);
   }
 
-  async markLangfuseDeadLetter(auditId: string) {
+  async markLangfuseDeadLetter(
+    auditId: string,
+    _error: string,
+    drops: Parameters<
+      HarnessLangfuseOutboxStore['markLangfuseDeadLetter']
+    >[2],
+  ) {
     this.statuses.set(auditId, 'dead_letter');
+    this.deadLetterDrops.set(auditId, drops);
   }
 }
 

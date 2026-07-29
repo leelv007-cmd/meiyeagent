@@ -669,9 +669,69 @@ test('HTTP failure remains retryable through the existing outbox worker', async 
   assert.equal(store.status, 'sent');
 });
 
+test('deterministic Langfuse HTTP failures dead-letter immediately with exact signal counts', async (t) => {
+  const server = createServer(async (request, response) => {
+    await readJson(request);
+    sendJson(response, 401, { error: 'invalid credentials' });
+  });
+  const store = new RetryStore(selectionItem());
+  const worker = new HarnessLangfuseOutboxWorker(
+    store,
+    new LangfuseHttpSender({
+      baseUrl: await listen(t, server),
+      publicKey: 'pk-test',
+      secretKey: 'sk-test',
+    }),
+  );
+
+  assert.deepEqual(await worker.runOnce(), {
+    sent: 0,
+    failed: 1,
+    deadLettered: 1,
+  });
+  assert.equal(store.status, 'dead_letter');
+  assert.deepEqual(store.deadLetterDrops, [
+    {
+      signal: 'trace',
+      reason: 'permanent-config',
+      count: 2,
+      source: 'langfuse_ingestion',
+    },
+    {
+      signal: 'score',
+      reason: 'permanent-config',
+      count: 2,
+      source: 'langfuse_ingestion',
+    },
+  ]);
+});
+
 test('missing Langfuse configuration fails closed instead of acknowledging delivery', async () => {
   const sender = langfuseSenderFromEnv({});
-  await assert.rejects(sender.send(selectionItem()), /LANGFUSE_BASE_URL/u);
+  await assert.rejects(
+    sender.send(selectionItem()),
+    (error: unknown) => {
+      assert.match(String(error), /LANGFUSE_BASE_URL/u);
+      assert.deepEqual(
+        (error as { drops?: unknown }).drops,
+        [
+          {
+            signal: 'trace',
+            reason: 'permanent-config',
+            count: 2,
+            source: 'langfuse_configuration',
+          },
+          {
+            signal: 'score',
+            reason: 'permanent-config',
+            count: 2,
+            source: 'langfuse_configuration',
+          },
+        ],
+      );
+      return true;
+    },
+  );
 });
 
 function selectionItem(): HarnessLangfuseOutboxItem {
@@ -738,6 +798,7 @@ function assemblyItem(): HarnessLangfuseOutboxItem {
 
 class RetryStore implements HarnessLangfuseOutboxStore {
   status: 'queued' | 'sending' | 'failed' | 'sent' | 'dead_letter' = 'queued';
+  deadLetterDrops: unknown;
 
   constructor(private readonly item: HarnessLangfuseOutboxItem) {}
 
@@ -755,8 +816,13 @@ class RetryStore implements HarnessLangfuseOutboxStore {
     this.status = 'failed';
   }
 
-  async markLangfuseDeadLetter() {
+  async markLangfuseDeadLetter(
+    _auditId: string,
+    _error: string,
+    drops: unknown,
+  ) {
     this.status = 'dead_letter';
+    this.deadLetterDrops = drops;
   }
 }
 

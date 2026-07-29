@@ -1,10 +1,37 @@
 import {
+  observabilityDropEventSchema,
+  type ObservabilityDropEvent,
+} from '@meiye/contracts';
+
+import {
   DEFAULT_HARNESS_LANGFUSE_OUTBOX_CONFIG,
   HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY,
   harnessLangfuseOutboxConfigSchema,
   type AdminConfigRepository,
   type HarnessLangfuseOutboxConfig,
 } from '../admin-config/foundation-module.js';
+
+export class ObservabilityDeliveryFailure extends Error {
+  readonly drops: ObservabilityDropEvent[];
+
+  constructor(message: string, drops: ObservabilityDropEvent[]) {
+    super(message);
+    this.name = 'ObservabilityDeliveryFailure';
+    this.drops = drops.map((drop) => observabilityDropEventSchema.parse(drop));
+    if (
+      this.drops.length === 0 ||
+      new Set(this.drops.map(({ reason }) => reason)).size !== 1
+    ) {
+      throw new Error(
+        'Observability delivery failure requires one non-empty drop reason.',
+      );
+    }
+  }
+
+  get reason() {
+    return this.drops[0]!.reason;
+  }
+}
 
 export interface HarnessLangfuseOutboxItem {
   auditId: string;
@@ -29,7 +56,11 @@ export interface HarnessLangfuseOutboxStore {
     error: string,
     retryAt: Date,
   ): Promise<void>;
-  markLangfuseDeadLetter(auditId: string, error: string): Promise<void>;
+  markLangfuseDeadLetter(
+    auditId: string,
+    error: string,
+    drops: ObservabilityDropEvent[],
+  ): Promise<void>;
   replayLangfuseDeadLetter?(auditId: string): Promise<boolean>;
   discardLangfuseDeadLetter?(auditId: string): Promise<boolean>;
 }
@@ -81,9 +112,25 @@ export class HarnessLangfuseOutboxWorker {
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
+        const deliveryFailure =
+          error instanceof ObservabilityDeliveryFailure ? error : undefined;
         failed += 1;
-        if (item.attempts >= (this.options.maxAttempts ?? config.maxAttempts)) {
-          await this.store.markLangfuseDeadLetter(item.auditId, errorMessage);
+        if (
+          deliveryFailure?.reason === 'permanent-config' ||
+          item.attempts >= (this.options.maxAttempts ?? config.maxAttempts)
+        ) {
+          await this.store.markLangfuseDeadLetter(
+            item.auditId,
+            errorMessage,
+            deliveryFailure?.drops ?? [
+              {
+                signal: 'trace',
+                reason: 'transient',
+                count: 1,
+                source: 'langfuse_outbox',
+              },
+            ],
+          );
           deadLettered += 1;
           continue;
         }
