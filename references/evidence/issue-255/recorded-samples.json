@@ -1,0 +1,623 @@
+[
+  {
+    "axes": {
+      "skillRevision": "issue-255/copy@recorded-v1",
+      "promptVersion": "issue-255/low@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "copy.generate"
+    },
+    "artifactRef": "recorded://issue-255/copy-low-1",
+    "evidenceKind": "recorded",
+    "loopEvidence": "bounded_single_pass",
+    "modality": "copy",
+    "sampleId": "copy-low-1",
+    "scenarioBand": "low",
+    "scenarioId": "copy-low",
+    "seed": 1,
+    "observed": {
+      "delegations": 0,
+      "iterations": 1,
+      "costCents": 2,
+      "wallClockMs": 4,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/copy@recorded-v1",
+      "promptVersion": "issue-255/low@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "copy.generate"
+    },
+    "artifactRef": "recorded://issue-255/copy-low-2",
+    "evidenceKind": "recorded",
+    "loopEvidence": "bounded_single_pass",
+    "modality": "copy",
+    "sampleId": "copy-low-2",
+    "scenarioBand": "low",
+    "scenarioId": "copy-low",
+    "seed": 2,
+    "observed": {
+      "delegations": 0,
+      "iterations": 1,
+      "costCents": 2,
+      "wallClockMs": 1,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/copy@recorded-v1",
+      "promptVersion": "issue-255/low@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "copy.generate"
+    },
+    "artifactRef": "recorded://issue-255/copy-low-3",
+    "evidenceKind": "recorded",
+    "loopEvidence": "bounded_single_pass",
+    "modality": "copy",
+    "sampleId": "copy-low-3",
+    "scenarioBand": "low",
+    "scenarioId": "copy-low",
+    "seed": 3,
+    "observed": {
+      "delegations": 0,
+      "iterations": 1,
+      "costCents": 2,
+      "wallClockMs": 1,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/copy@recorded-v1",
+      "promptVersion": "issue-255/typical@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "copy.generate"
+    },
+    "artifactRef": "recorded://issue-255/copy-typical-1",
+    "evidenceKind": "recorded",
+    "loopEvidence": "full_limit_loop",
+    "modality": "copy",
+    "sampleId": "copy-typical-1",
+    "scenarioBand": "typical",
+    "scenarioId": "copy-typical",
+    "seed": 1,
+    "observed": {
+      "delegations": 0,
+      "iterations": 2,
+      "costCents": 4,
+      "wallClockMs": 1,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/copy@recorded-v1",
+      "promptVersion": "issue-255/typical@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "copy.generate"
+    },
+    "artifactRef": "recorded://issue-255/copy-typical-2",
+    "evidenceKind": "recorded",
+    "loopEvidence": "full_limit_loop",
+    "modality": "copy",
+    "sampleId": "copy-typical-2",
+    "scenarioBand": "typical",
+    "scenarioId": "copy-typical",
+    "seed": 2,
+    "observed": {
+      "delegations": 0,
+      "iterations": 2,
+      "costCents": 4,
+      "wallClockMs": 1,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/copy@recorded-v1",
+      "promptVersion": "issue-255/typical@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "copy.generate"
+    },
+    "artifactRef": "recorded://issue-255/copy-typical-3",
+    "evidenceKind": "recorded",
+    "loopEvidence": "full_limit_loop",
+    "modality": "copy",
+    "sampleId": "copy-typical-3",
+    "scenarioBand": "typical",
+    "scenarioId": "copy-typical",
+    "seed": 3,
+    "observed": {
+      "delegations": 0,
+      "iterations": 2,
+      "costCents": 4,
+      "wallClockMs": 1,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/copy@recorded-v1",
+      "promptVersion": "issue-255/boundary@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "copy.generate"
+    },
+    "artifactRef": "recorded://issue-255/copy-boundary-1",
+    "evidenceKind": "recorded",
+    "loopEvidence": "full_limit_loop",
+    "modality": "copy",
+    "sampleId": "copy-boundary-1",
+    "scenarioBand": "boundary",
+    "scenarioId": "copy-boundary",
+    "seed": 1,
+    "observed": {
+      "delegations": 0,
+      "iterations": 1,
+      "costCents": 2,
+      "wallClockMs": 1,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/copy@recorded-v1",
+      "promptVersion": "issue-255/boundary@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "copy.generate"
+    },
+    "artifactRef": "recorded://issue-255/copy-boundary-2",
+    "evidenceKind": "recorded",
+    "loopEvidence": "full_limit_loop",
+    "modality": "copy",
+    "sampleId": "copy-boundary-2",
+    "scenarioBand": "boundary",
+    "scenarioId": "copy-boundary",
+    "seed": 2,
+    "observed": {
+      "delegations": 0,
+      "iterations": 1,
+      "costCents": 2,
+      "wallClockMs": 13,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/copy@recorded-v1",
+      "promptVersion": "issue-255/boundary@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "copy.generate"
+    },
+    "artifactRef": "recorded://issue-255/copy-boundary-3",
+    "evidenceKind": "recorded",
+    "loopEvidence": "full_limit_loop",
+    "modality": "copy",
+    "sampleId": "copy-boundary-3",
+    "scenarioBand": "boundary",
+    "scenarioId": "copy-boundary",
+    "seed": 3,
+    "observed": {
+      "delegations": 0,
+      "iterations": 1,
+      "costCents": 2,
+      "wallClockMs": 22,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/image_text@recorded-v1",
+      "promptVersion": "issue-255/low@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "image_text.generate"
+    },
+    "artifactRef": "recorded://issue-255/image_text-low-1",
+    "evidenceKind": "recorded",
+    "loopEvidence": "non_limit_loop",
+    "modality": "image_text",
+    "sampleId": "image_text-low-1",
+    "scenarioBand": "low",
+    "scenarioId": "image_text-low",
+    "seed": 1,
+    "observed": {
+      "delegations": 0,
+      "iterations": 1,
+      "costCents": 0,
+      "wallClockMs": 18,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/image_text@recorded-v1",
+      "promptVersion": "issue-255/low@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "image_text.generate"
+    },
+    "artifactRef": "recorded://issue-255/image_text-low-2",
+    "evidenceKind": "recorded",
+    "loopEvidence": "non_limit_loop",
+    "modality": "image_text",
+    "sampleId": "image_text-low-2",
+    "scenarioBand": "low",
+    "scenarioId": "image_text-low",
+    "seed": 2,
+    "observed": {
+      "delegations": 0,
+      "iterations": 1,
+      "costCents": 0,
+      "wallClockMs": 1,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/image_text@recorded-v1",
+      "promptVersion": "issue-255/low@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "image_text.generate"
+    },
+    "artifactRef": "recorded://issue-255/image_text-low-3",
+    "evidenceKind": "recorded",
+    "loopEvidence": "non_limit_loop",
+    "modality": "image_text",
+    "sampleId": "image_text-low-3",
+    "scenarioBand": "low",
+    "scenarioId": "image_text-low",
+    "seed": 3,
+    "observed": {
+      "delegations": 0,
+      "iterations": 1,
+      "costCents": 0,
+      "wallClockMs": 1,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/image_text@recorded-v1",
+      "promptVersion": "issue-255/typical@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "image_text.generate"
+    },
+    "artifactRef": "recorded://issue-255/image_text-typical-1",
+    "evidenceKind": "recorded",
+    "loopEvidence": "non_limit_loop",
+    "modality": "image_text",
+    "sampleId": "image_text-typical-1",
+    "scenarioBand": "typical",
+    "scenarioId": "image_text-typical",
+    "seed": 1,
+    "observed": {
+      "delegations": 0,
+      "iterations": 1,
+      "costCents": 0,
+      "wallClockMs": 1,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/image_text@recorded-v1",
+      "promptVersion": "issue-255/typical@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "image_text.generate"
+    },
+    "artifactRef": "recorded://issue-255/image_text-typical-2",
+    "evidenceKind": "recorded",
+    "loopEvidence": "non_limit_loop",
+    "modality": "image_text",
+    "sampleId": "image_text-typical-2",
+    "scenarioBand": "typical",
+    "scenarioId": "image_text-typical",
+    "seed": 2,
+    "observed": {
+      "delegations": 0,
+      "iterations": 1,
+      "costCents": 0,
+      "wallClockMs": 1,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/image_text@recorded-v1",
+      "promptVersion": "issue-255/typical@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "image_text.generate"
+    },
+    "artifactRef": "recorded://issue-255/image_text-typical-3",
+    "evidenceKind": "recorded",
+    "loopEvidence": "non_limit_loop",
+    "modality": "image_text",
+    "sampleId": "image_text-typical-3",
+    "scenarioBand": "typical",
+    "scenarioId": "image_text-typical",
+    "seed": 3,
+    "observed": {
+      "delegations": 0,
+      "iterations": 1,
+      "costCents": 0,
+      "wallClockMs": 1,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/image_text@recorded-v1",
+      "promptVersion": "issue-255/boundary@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "image_text.generate"
+    },
+    "artifactRef": "recorded://issue-255/image_text-boundary-1",
+    "evidenceKind": "recorded",
+    "loopEvidence": "non_limit_loop",
+    "modality": "image_text",
+    "sampleId": "image_text-boundary-1",
+    "scenarioBand": "boundary",
+    "scenarioId": "image_text-boundary",
+    "seed": 1,
+    "observed": {
+      "delegations": 0,
+      "iterations": 1,
+      "costCents": 0,
+      "wallClockMs": 1,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/image_text@recorded-v1",
+      "promptVersion": "issue-255/boundary@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "image_text.generate"
+    },
+    "artifactRef": "recorded://issue-255/image_text-boundary-2",
+    "evidenceKind": "recorded",
+    "loopEvidence": "non_limit_loop",
+    "modality": "image_text",
+    "sampleId": "image_text-boundary-2",
+    "scenarioBand": "boundary",
+    "scenarioId": "image_text-boundary",
+    "seed": 2,
+    "observed": {
+      "delegations": 0,
+      "iterations": 1,
+      "costCents": 0,
+      "wallClockMs": 1,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/image_text@recorded-v1",
+      "promptVersion": "issue-255/boundary@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "image_text.generate"
+    },
+    "artifactRef": "recorded://issue-255/image_text-boundary-3",
+    "evidenceKind": "recorded",
+    "loopEvidence": "non_limit_loop",
+    "modality": "image_text",
+    "sampleId": "image_text-boundary-3",
+    "scenarioBand": "boundary",
+    "scenarioId": "image_text-boundary",
+    "seed": 3,
+    "observed": {
+      "delegations": 0,
+      "iterations": 1,
+      "costCents": 0,
+      "wallClockMs": 1,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/video@recorded-v1",
+      "promptVersion": "issue-255/low@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "video.generate"
+    },
+    "artifactRef": "recorded://issue-255/video-low-1",
+    "evidenceKind": "recorded",
+    "loopEvidence": "non_limit_loop",
+    "modality": "video",
+    "sampleId": "video-low-1",
+    "scenarioBand": "low",
+    "scenarioId": "video-low",
+    "seed": 1,
+    "observed": {
+      "delegations": 0,
+      "iterations": 1,
+      "costCents": 0,
+      "wallClockMs": 574,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/video@recorded-v1",
+      "promptVersion": "issue-255/low@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "video.generate"
+    },
+    "artifactRef": "recorded://issue-255/video-low-2",
+    "evidenceKind": "recorded",
+    "loopEvidence": "non_limit_loop",
+    "modality": "video",
+    "sampleId": "video-low-2",
+    "scenarioBand": "low",
+    "scenarioId": "video-low",
+    "seed": 2,
+    "observed": {
+      "delegations": 0,
+      "iterations": 1,
+      "costCents": 0,
+      "wallClockMs": 1,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/video@recorded-v1",
+      "promptVersion": "issue-255/low@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "video.generate"
+    },
+    "artifactRef": "recorded://issue-255/video-low-3",
+    "evidenceKind": "recorded",
+    "loopEvidence": "non_limit_loop",
+    "modality": "video",
+    "sampleId": "video-low-3",
+    "scenarioBand": "low",
+    "scenarioId": "video-low",
+    "seed": 3,
+    "observed": {
+      "delegations": 0,
+      "iterations": 1,
+      "costCents": 0,
+      "wallClockMs": 1,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/video@recorded-v1",
+      "promptVersion": "issue-255/typical@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "video.generate"
+    },
+    "artifactRef": "recorded://issue-255/video-typical-1",
+    "evidenceKind": "recorded",
+    "loopEvidence": "non_limit_loop",
+    "modality": "video",
+    "sampleId": "video-typical-1",
+    "scenarioBand": "typical",
+    "scenarioId": "video-typical",
+    "seed": 1,
+    "observed": {
+      "delegations": 0,
+      "iterations": 1,
+      "costCents": 0,
+      "wallClockMs": 1,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/video@recorded-v1",
+      "promptVersion": "issue-255/typical@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "video.generate"
+    },
+    "artifactRef": "recorded://issue-255/video-typical-2",
+    "evidenceKind": "recorded",
+    "loopEvidence": "non_limit_loop",
+    "modality": "video",
+    "sampleId": "video-typical-2",
+    "scenarioBand": "typical",
+    "scenarioId": "video-typical",
+    "seed": 2,
+    "observed": {
+      "delegations": 0,
+      "iterations": 1,
+      "costCents": 0,
+      "wallClockMs": 1,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/video@recorded-v1",
+      "promptVersion": "issue-255/typical@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "video.generate"
+    },
+    "artifactRef": "recorded://issue-255/video-typical-3",
+    "evidenceKind": "recorded",
+    "loopEvidence": "non_limit_loop",
+    "modality": "video",
+    "sampleId": "video-typical-3",
+    "scenarioBand": "typical",
+    "scenarioId": "video-typical",
+    "seed": 3,
+    "observed": {
+      "delegations": 0,
+      "iterations": 1,
+      "costCents": 0,
+      "wallClockMs": 1,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/video@recorded-v1",
+      "promptVersion": "issue-255/boundary@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "video.generate"
+    },
+    "artifactRef": "recorded://issue-255/video-boundary-1",
+    "evidenceKind": "recorded",
+    "loopEvidence": "non_limit_loop",
+    "modality": "video",
+    "sampleId": "video-boundary-1",
+    "scenarioBand": "boundary",
+    "scenarioId": "video-boundary",
+    "seed": 1,
+    "observed": {
+      "delegations": 0,
+      "iterations": 1,
+      "costCents": 0,
+      "wallClockMs": 1,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/video@recorded-v1",
+      "promptVersion": "issue-255/boundary@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "video.generate"
+    },
+    "artifactRef": "recorded://issue-255/video-boundary-2",
+    "evidenceKind": "recorded",
+    "loopEvidence": "non_limit_loop",
+    "modality": "video",
+    "sampleId": "video-boundary-2",
+    "scenarioBand": "boundary",
+    "scenarioId": "video-boundary",
+    "seed": 2,
+    "observed": {
+      "delegations": 0,
+      "iterations": 1,
+      "costCents": 0,
+      "wallClockMs": 1,
+      "suspendedMs": 0
+    }
+  },
+  {
+    "axes": {
+      "skillRevision": "issue-255/video@recorded-v1",
+      "promptVersion": "issue-255/boundary@v1",
+      "catalogRevision": "issue-255-recorded-catalog-v1",
+      "scene": "video.generate"
+    },
+    "artifactRef": "recorded://issue-255/video-boundary-3",
+    "evidenceKind": "recorded",
+    "loopEvidence": "non_limit_loop",
+    "modality": "video",
+    "sampleId": "video-boundary-3",
+    "scenarioBand": "boundary",
+    "scenarioId": "video-boundary",
+    "seed": 3,
+    "observed": {
+      "delegations": 0,
+      "iterations": 1,
+      "costCents": 0,
+      "wallClockMs": 1,
+      "suspendedMs": 0
+    }
+  }
+]

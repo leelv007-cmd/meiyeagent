@@ -1,0 +1,271 @@
+{
+  "schemaVersion": 1,
+  "quantileMethod": "nearest_rank",
+  "sampleCount": 27,
+  "evidenceCounts": {
+    "fixture": 0,
+    "recorded": 27,
+    "live": 0
+  },
+  "scenarioBandCounts": {
+    "low": 9,
+    "typical": 9,
+    "boundary": 9
+  },
+  "overall": {
+    "maxIterations": {
+      "count": 27,
+      "min": 1,
+      "p50": 1,
+      "p90": 2,
+      "p95": 2,
+      "max": 2
+    },
+    "maxCostCents": {
+      "count": 27,
+      "min": 0,
+      "p50": 0,
+      "p90": 4,
+      "p95": 4,
+      "max": 4
+    },
+    "maxWallClockMs": {
+      "count": 27,
+      "min": 1,
+      "p50": 1,
+      "p90": 18,
+      "p95": 22,
+      "max": 574
+    },
+    "activeWallClockMs": {
+      "count": 27,
+      "min": 1,
+      "p50": 1,
+      "p90": 18,
+      "p95": 22,
+      "max": 574
+    },
+    "suspendedWallClockMs": {
+      "count": 27,
+      "min": 0,
+      "p50": 0,
+      "p90": 0,
+      "p95": 0,
+      "max": 0
+    },
+    "maxDelegations": {
+      "count": 27,
+      "min": 0,
+      "p50": 0,
+      "p90": 0,
+      "p95": 0,
+      "max": 0
+    }
+  },
+  "byEvidence": {
+    "fixture": null,
+    "recorded": {
+      "maxIterations": {
+        "count": 27,
+        "min": 1,
+        "p50": 1,
+        "p90": 2,
+        "p95": 2,
+        "max": 2
+      },
+      "maxCostCents": {
+        "count": 27,
+        "min": 0,
+        "p50": 0,
+        "p90": 4,
+        "p95": 4,
+        "max": 4
+      },
+      "maxWallClockMs": {
+        "count": 27,
+        "min": 1,
+        "p50": 1,
+        "p90": 18,
+        "p95": 22,
+        "max": 574
+      },
+      "activeWallClockMs": {
+        "count": 27,
+        "min": 1,
+        "p50": 1,
+        "p90": 18,
+        "p95": 22,
+        "max": 574
+      },
+      "suspendedWallClockMs": {
+        "count": 27,
+        "min": 0,
+        "p50": 0,
+        "p90": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "maxDelegations": {
+        "count": 27,
+        "min": 0,
+        "p50": 0,
+        "p90": 0,
+        "p95": 0,
+        "max": 0
+      }
+    },
+    "live": null
+  },
+  "byModality": {
+    "copy": {
+      "maxIterations": {
+        "count": 9,
+        "min": 1,
+        "p50": 1,
+        "p90": 2,
+        "p95": 2,
+        "max": 2
+      },
+      "maxCostCents": {
+        "count": 9,
+        "min": 2,
+        "p50": 2,
+        "p90": 4,
+        "p95": 4,
+        "max": 4
+      },
+      "maxWallClockMs": {
+        "count": 9,
+        "min": 1,
+        "p50": 1,
+        "p90": 22,
+        "p95": 22,
+        "max": 22
+      },
+      "activeWallClockMs": {
+        "count": 9,
+        "min": 1,
+        "p50": 1,
+        "p90": 22,
+        "p95": 22,
+        "max": 22
+      },
+      "suspendedWallClockMs": {
+        "count": 9,
+        "min": 0,
+        "p50": 0,
+        "p90": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "maxDelegations": {
+        "count": 9,
+        "min": 0,
+        "p50": 0,
+        "p90": 0,
+        "p95": 0,
+        "max": 0
+      }
+    },
+    "image_text": {
+      "maxIterations": {
+        "count": 9,
+        "min": 1,
+        "p50": 1,
+        "p90": 1,
+        "p95": 1,
+        "max": 1
+      },
+      "maxCostCents": {
+        "count": 9,
+        "min": 0,
+        "p50": 0,
+        "p90": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "maxWallClockMs": {
+        "count": 9,
+        "min": 1,
+        "p50": 1,
+        "p90": 18,
+        "p95": 18,
+        "max": 18
+      },
+      "activeWallClockMs": {
+        "count": 9,
+        "min": 1,
+        "p50": 1,
+        "p90": 18,
+        "p95": 18,
+        "max": 18
+      },
+      "suspendedWallClockMs": {
+        "count": 9,
+        "min": 0,
+        "p50": 0,
+        "p90": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "maxDelegations": {
+        "count": 9,
+        "min": 0,
+        "p50": 0,
+        "p90": 0,
+        "p95": 0,
+        "max": 0
+      }
+    },
+    "video": {
+      "maxIterations": {
+        "count": 9,
+        "min": 1,
+        "p50": 1,
+        "p90": 1,
+        "p95": 1,
+        "max": 1
+      },
+      "maxCostCents": {
+        "count": 9,
+        "min": 0,
+        "p50": 0,
+        "p90": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "maxWallClockMs": {
+        "count": 9,
+        "min": 1,
+        "p50": 1,
+        "p90": 574,
+        "p95": 574,
+        "max": 574
+      },
+      "activeWallClockMs": {
+        "count": 9,
+        "min": 1,
+        "p50": 1,
+        "p90": 574,
+        "p95": 574,
+        "max": 574
+      },
+      "suspendedWallClockMs": {
+        "count": 9,
+        "min": 0,
+        "p50": 0,
+        "p90": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "maxDelegations": {
+        "count": 9,
+        "min": 0,
+        "p50": 0,
+        "p90": 0,
+        "p95": 0,
+        "max": 0
+      }
+    }
+  }
+}

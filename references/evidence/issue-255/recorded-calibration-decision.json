@@ -1,7 +1,7 @@
 {
   "schemaVersion": "issue-255-calibration-decision/v1",
-  "measurementSourceHead": "79fe611c5822f6c982bb65e59c1eb8d87ddd9be0",
-  "recordedMatrixDigest": "f5ed8952d0bae2b43206fc476d7399ed7bd608ca5ba6d3662539b9c984219522",
+  "measurementSourceHead": "4edb0c90808ae3eee780f911a651bff71c8ee454",
+  "recordedMatrixDigest": "a3b601d062a543b07c14783eea674bf7a21807f5e20cdb393936b87750f8cf76",
   "evidence": {
     "fixture": {
       "sampleCount": 0,
@@ -37,7 +37,7 @@
   "quantileMethod": "nearest_rank",
   "observedDistributions": {
     "overall": {
-      "iterations": {
+      "maxIterations": {
         "count": 27,
         "min": 1,
         "p50": 1,
@@ -45,7 +45,7 @@
         "p95": 2,
         "max": 2
       },
-      "costCents": {
+      "maxCostCents": {
         "count": 27,
         "min": 0,
         "p50": 0,
@@ -53,13 +53,21 @@
         "p95": 4,
         "max": 4
       },
+      "maxWallClockMs": {
+        "count": 27,
+        "min": 1,
+        "p50": 1,
+        "p90": 18,
+        "p95": 22,
+        "max": 574
+      },
       "activeWallClockMs": {
         "count": 27,
         "min": 1,
         "p50": 1,
-        "p90": 1,
-        "p95": 3,
-        "max": 224
+        "p90": 18,
+        "p95": 22,
+        "max": 574
       },
       "suspendedWallClockMs": {
         "count": 27,
@@ -69,7 +77,7 @@
         "p95": 0,
         "max": 0
       },
-      "delegations": {
+      "maxDelegations": {
         "count": 27,
         "min": 0,
         "p50": 0,
@@ -80,58 +88,154 @@
     },
     "byModality": {
       "copy": {
-        "sampleCount": 9,
-        "iterations": {
+        "maxIterations": {
+          "count": 9,
           "min": 1,
           "p50": 1,
           "p90": 2,
           "p95": 2,
           "max": 2
         },
-        "costCents": {
+        "maxCostCents": {
+          "count": 9,
           "min": 2,
           "p50": 2,
           "p90": 4,
           "p95": 4,
           "max": 4
         },
-        "loopEvidence": "full_limit_loop for typical and boundary; bounded_single_pass for low"
+        "maxWallClockMs": {
+          "count": 9,
+          "min": 1,
+          "p50": 1,
+          "p90": 22,
+          "p95": 22,
+          "max": 22
+        },
+        "activeWallClockMs": {
+          "count": 9,
+          "min": 1,
+          "p50": 1,
+          "p90": 22,
+          "p95": 22,
+          "max": 22
+        },
+        "suspendedWallClockMs": {
+          "count": 9,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "maxDelegations": {
+          "count": 9,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "p95": 0,
+          "max": 0
+        }
       },
       "image_text": {
-        "sampleCount": 9,
-        "iterations": {
+        "maxIterations": {
+          "count": 9,
           "min": 1,
           "p50": 1,
           "p90": 1,
           "p95": 1,
           "max": 1
         },
-        "costCents": {
+        "maxCostCents": {
+          "count": 9,
           "min": 0,
           "p50": 0,
           "p90": 0,
           "p95": 0,
           "max": 0
         },
-        "loopEvidence": "non_limit_loop"
+        "maxWallClockMs": {
+          "count": 9,
+          "min": 1,
+          "p50": 1,
+          "p90": 18,
+          "p95": 18,
+          "max": 18
+        },
+        "activeWallClockMs": {
+          "count": 9,
+          "min": 1,
+          "p50": 1,
+          "p90": 18,
+          "p95": 18,
+          "max": 18
+        },
+        "suspendedWallClockMs": {
+          "count": 9,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "maxDelegations": {
+          "count": 9,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "p95": 0,
+          "max": 0
+        }
       },
       "video": {
-        "sampleCount": 9,
-        "iterations": {
+        "maxIterations": {
+          "count": 9,
           "min": 1,
           "p50": 1,
           "p90": 1,
           "p95": 1,
           "max": 1
         },
-        "costCents": {
+        "maxCostCents": {
+          "count": 9,
           "min": 0,
           "p50": 0,
           "p90": 0,
           "p95": 0,
           "max": 0
         },
-        "loopEvidence": "non_limit_loop"
+        "maxWallClockMs": {
+          "count": 9,
+          "min": 1,
+          "p50": 1,
+          "p90": 574,
+          "p95": 574,
+          "max": 574
+        },
+        "activeWallClockMs": {
+          "count": 9,
+          "min": 1,
+          "p50": 1,
+          "p90": 574,
+          "p95": 574,
+          "max": 574
+        },
+        "suspendedWallClockMs": {
+          "count": 9,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "maxDelegations": {
+          "count": 9,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "p95": 0,
+          "max": 0
+        }
       }
     }
   },
@@ -171,5 +275,12 @@
     "scope": "global",
     "workspaceId": "__global__",
     "application": "The exact decision table is exported as ISSUE_255_RECORDED_CALIBRATION_LIMITS and is applied only through the existing CAS and audit command. Missing config stays unset."
+  },
+  "recordedArtifacts": {
+    "samplesPath": "references/evidence/issue-255/recorded-samples.json",
+    "samplesFileSha256": "5ad825d26d05943e1fdedb89c1b6fa98d6efe71e4f1c6beb1fc6b60f8678e023",
+    "summaryPath": "references/evidence/issue-255/recorded-summary.json",
+    "summaryFileSha256": "0cbc291b0ead098334803c833d3208d7400ab40cba0d8467171d91f9211fc4cf",
+    "canonicalMatrixDigest": "a3b601d062a543b07c14783eea674bf7a21807f5e20cdb393936b87750f8cf76"
   }
 }

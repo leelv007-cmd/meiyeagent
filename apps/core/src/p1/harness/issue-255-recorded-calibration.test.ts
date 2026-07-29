@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
@@ -9,7 +10,10 @@ import { summarizeBoundedExecutionCalibration } from './bounded-execution-calibr
 import {
   runIssue255RecordedCalibration,
 } from './issue-255-recorded-calibration.js';
-import { assertIssue255RecordedMatrix } from './issue-255-calibration-guard.js';
+import {
+  assertIssue255RecordedMatrix,
+  canonicalRecordedMatrixDigest,
+} from './issue-255-calibration-guard.js';
 
 test('issue 255 recorded runner executes the strict 27-sample matrix with network disabled', async () => {
   const originalFetch = globalThis.fetch;
@@ -90,15 +94,43 @@ test('issue 255 recorded runner executes the strict 27-sample matrix with networ
       'recorded media samples must be labeled as non-limit-loop zero-cost observations',
     );
 
-    const summary = summarizeBoundedExecutionCalibration(samples);
-    const evidence = JSON.parse(
-      await readFile(
-        new URL(
-          '../../../../../references/evidence/issue-255/recorded-calibration-decision.json',
-          import.meta.url,
+    const evidenceDirectory = new URL(
+      '../../../../../references/evidence/issue-255/',
+      import.meta.url,
+    );
+    const [evidenceText, recordedSamplesText, recordedSummaryText] =
+      await Promise.all([
+        readFile(
+          new URL('recorded-calibration-decision.json', evidenceDirectory),
+          'utf8',
         ),
-        'utf8',
-      ),
+        readFile(new URL('recorded-samples.json', evidenceDirectory), 'utf8'),
+        readFile(new URL('recorded-summary.json', evidenceDirectory), 'utf8'),
+      ]);
+    const evidence = JSON.parse(evidenceText);
+    const recordedSamples = assertIssue255RecordedMatrix(
+      JSON.parse(recordedSamplesText),
+    );
+    const recordedSummary = JSON.parse(recordedSummaryText);
+    assert.deepEqual(
+      summarizeBoundedExecutionCalibration(recordedSamples),
+      recordedSummary,
+    );
+    assert.equal(
+      createHash('sha256').update(recordedSamplesText).digest('hex'),
+      evidence.recordedArtifacts.samplesFileSha256,
+    );
+    assert.equal(
+      createHash('sha256').update(recordedSummaryText).digest('hex'),
+      evidence.recordedArtifacts.summaryFileSha256,
+    );
+    assert.equal(
+      canonicalRecordedMatrixDigest(recordedSamples),
+      evidence.recordedMatrixDigest,
+    );
+    assert.equal(
+      evidence.recordedArtifacts.canonicalMatrixDigest,
+      evidence.recordedMatrixDigest,
     );
     assert.equal(evidence.evidence.recorded.sampleCount, 27);
     assert.deepEqual(evidence.evidence.recorded.distribution.modalities, {
@@ -107,8 +139,11 @@ test('issue 255 recorded runner executes the strict 27-sample matrix with networ
       video: 9,
     });
     assert.deepEqual(
-      evidence.observedDistributions.overall.iterations,
-      summary.overall.maxIterations,
+      evidence.observedDistributions,
+      {
+        overall: recordedSummary.overall,
+        byModality: recordedSummary.byModality,
+      },
     );
     assert.deepEqual(
       Object.fromEntries(
