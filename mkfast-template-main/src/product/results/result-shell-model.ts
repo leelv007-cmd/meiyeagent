@@ -221,6 +221,7 @@ export function projectResultShellActions(
   'primaryAction' | 'secondaryActions' | 'overflowActions'
 > {
   const delivery = facts.deliveryAttempt ?? 'none';
+  const videoReceiver = facts.workspaceKind === 'video';
   // P1-B1 / #150: History + Run Detail are real panels (not empty no-ops).
   // Keep them in overflow so they never steal the single primary action.
   const historyAndRun: ResultAction[] = [
@@ -237,6 +238,13 @@ export function projectResultShellActions(
   }
 
   if (delivery === 'awaiting_approval') {
+    if (videoReceiver) {
+      return {
+        primaryAction: action('deliver', 'primary', true, '查看并批准'),
+        secondaryActions: [],
+        overflowActions: historyAndRun,
+      };
+    }
     return {
       primaryAction: action(
         'handle_current_issue',
@@ -250,6 +258,13 @@ export function projectResultShellActions(
   }
 
   if (delivery === 'partial') {
+    if (videoReceiver) {
+      return {
+        primaryAction: action('deliver', 'primary', true, '处理未完成交付'),
+        secondaryActions: [],
+        overflowActions: historyAndRun,
+      };
+    }
     return {
       primaryAction: action(
         'handle_current_issue',
@@ -263,6 +278,13 @@ export function projectResultShellActions(
   }
 
   if (delivery === 'failed') {
+    if (videoReceiver) {
+      return {
+        primaryAction: action('deliver', 'primary', true, '处理交付问题'),
+        secondaryActions: [],
+        overflowActions: historyAndRun,
+      };
+    }
     return {
       primaryAction: action('retry', 'primary', true, '重试交付'),
       secondaryActions: [action('continue_adjust', 'secondary')],
@@ -282,7 +304,9 @@ export function projectResultShellActions(
     case 'running': {
       const primary =
         facts.progressState === 'suspended'
-          ? action('handle_current_issue', 'primary')
+          ? videoReceiver
+            ? action('leave_and_continue', 'primary', true, '返回工作台')
+            : action('handle_current_issue', 'primary')
           : action('leave_and_continue', 'primary');
       return {
         primaryAction: primary,
@@ -296,21 +320,49 @@ export function projectResultShellActions(
       };
     }
     case 'needs_input':
+      if (videoReceiver) {
+        return {
+          primaryAction: action(
+            'leave_and_continue',
+            'primary',
+            true,
+            '返回工作台'
+          ),
+          secondaryActions: [],
+          overflowActions: historyAndRun,
+        };
+      }
       return {
         primaryAction: action('handle_current_issue', 'primary'),
         secondaryActions: [action('leave_and_continue', 'secondary')],
         overflowActions: historyAndRun,
       };
     case 'failed':
+      if (videoReceiver) {
+        return {
+          primaryAction: action(
+            'leave_and_continue',
+            'primary',
+            true,
+            '返回工作台'
+          ),
+          secondaryActions: [],
+          overflowActions: historyAndRun,
+        };
+      }
       return {
         primaryAction: action('retry', 'primary'),
-        secondaryActions: [action('continue_adjust', 'secondary')],
+        secondaryActions: videoReceiver
+          ? []
+          : [action('continue_adjust', 'secondary')],
         overflowActions: historyAndRun,
       };
     case 'delivered':
       return {
         primaryAction: action('create_from_this', 'primary'),
-        secondaryActions: [action('continue_adjust', 'secondary')],
+        secondaryActions: videoReceiver
+          ? []
+          : [action('continue_adjust', 'secondary')],
         overflowActions: historyAndRun,
       };
     case 'ready': {
@@ -322,7 +374,9 @@ export function projectResultShellActions(
             true,
             adoptLabel(facts.workspaceKind)
           ),
-          secondaryActions: [action('continue_adjust', 'secondary')],
+          secondaryActions: videoReceiver
+            ? []
+            : [action('continue_adjust', 'secondary')],
           overflowActions: historyAndRun,
         };
       }
@@ -333,16 +387,22 @@ export function projectResultShellActions(
       ) {
         return {
           primaryAction: action('deliver', 'primary'),
-          secondaryActions: [
-            action('continue_adjust', 'secondary'),
-            action('create_from_this', 'secondary'),
-          ],
+          secondaryActions: videoReceiver
+            ? [action('create_from_this', 'secondary')]
+            : [
+                action('continue_adjust', 'secondary'),
+                action('create_from_this', 'secondary'),
+              ],
           overflowActions: historyAndRun,
         };
       }
       return {
-        primaryAction: action('continue_adjust', 'primary'),
-        secondaryActions: [action('create_from_this', 'secondary')],
+        primaryAction: videoReceiver
+          ? action('create_from_this', 'primary')
+          : action('continue_adjust', 'primary'),
+        secondaryActions: videoReceiver
+          ? []
+          : [action('create_from_this', 'secondary')],
         overflowActions: historyAndRun,
       };
     }

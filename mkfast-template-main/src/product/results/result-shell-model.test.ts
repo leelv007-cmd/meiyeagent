@@ -170,6 +170,101 @@ test('actions: video adopt label differs', () => {
   });
   const actions = projectResultShellActions('ready', facts);
   assert.equal(actions.primaryAction?.label, '使用此成片');
+  assert.deepEqual(actions.secondaryActions, []);
+});
+
+test('actions: video receiver removes editing and regeneration but keeps derivation', () => {
+  const adopted = baseFacts({
+    workspaceKind: 'video',
+    progressState: 'success',
+    hasAdoptedCandidate: true,
+    hasUsableCandidate: false,
+    hasDeliverableVariant: true,
+  });
+  const adoptedActions = projectResultShellActions('ready', adopted);
+  assert.equal(adoptedActions.primaryAction?.id, 'deliver');
+  assert.deepEqual(
+    adoptedActions.secondaryActions.map((action) => action.id),
+    ['create_from_this']
+  );
+
+  const deliveredActions = projectResultShellActions('delivered', {
+    ...adopted,
+    deliveryAttempt: 'delivered',
+  });
+  assert.equal(deliveredActions.primaryAction?.id, 'create_from_this');
+  assert.deepEqual(deliveredActions.secondaryActions, []);
+
+  for (const [label, phase, overrides] of [
+    [
+      'suspended receive',
+      'running',
+      { progressState: 'suspended', needsUserChoice: false },
+    ],
+    [
+      'supplier input',
+      'needs_input',
+      { progressState: 'suspended', needsUserChoice: true },
+    ],
+    ['failed receive', 'failed', { progressState: 'failed' }],
+  ] as const) {
+    const actions = projectResultShellActions(phase, {
+      ...baseFacts(),
+      workspaceKind: 'video',
+      ...overrides,
+    });
+    assert.equal(
+      actions.primaryAction?.id,
+      'leave_and_continue',
+      `${label} must not create or adjust video`
+    );
+    assert.equal(
+      actions.secondaryActions.some(
+        (candidate) =>
+          candidate.id === 'continue_adjust' ||
+          candidate.id === 'handle_current_issue' ||
+          candidate.id === 'retry'
+      ),
+      false,
+      `${label} has no video editing or regeneration fallback`
+    );
+  }
+
+  for (const [label, deliveryAttempt] of [
+    ['awaiting approval', 'awaiting_approval'],
+    ['partial delivery', 'partial'],
+    ['failed delivery', 'failed'],
+  ] as const) {
+    const actions = projectResultShellActions('needs_input', {
+      ...baseFacts(),
+      workspaceKind: 'video',
+      deliveryAttempt,
+    });
+    assert.equal(
+      actions.primaryAction?.id,
+      'deliver',
+      `${label} returns to delivery rather than video adjustment`
+    );
+    assert.deepEqual(actions.secondaryActions, []);
+  }
+
+  const recoverable = projectResultShellActions('needs_input', {
+    ...baseFacts(),
+    acceptanceUnknown: true,
+    progressState: 'suspended',
+    workspaceKind: 'video',
+  });
+  assert.equal(recoverable.primaryAction?.id, 'recover_or_verify');
+  assert.equal(
+    [
+      recoverable.primaryAction,
+      ...recoverable.secondaryActions,
+      ...recoverable.overflowActions,
+    ].some(
+      (action) => action?.id === 'retry' || action?.id === 'continue_adjust'
+    ),
+    false
+  );
 });
 
 test('actions: adopted without a platform variant cannot enter delivery', () => {

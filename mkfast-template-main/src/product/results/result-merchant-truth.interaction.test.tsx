@@ -144,6 +144,26 @@ describe('merchant Result Center truth', () => {
     expect(onBack).toHaveBeenCalledOnce();
   });
 
+  it('describes terminal video failure without promising a recovery action', () => {
+    render(
+      <ResultCenterPage
+        workId={workId}
+        resolveOutcome={resolvedTarget()}
+        facts={{
+          target: { workId },
+          workspaceKind: 'video',
+          progressState: 'failed',
+        }}
+      />
+    );
+
+    const page = screen.getByRole('main');
+    expect(page).toHaveTextContent('上游结果接收失败');
+    expect(page).toHaveTextContent('可返回工作台查看运行详情');
+    expect(page).not.toHaveTextContent('可恢复接收上游结果');
+    expect(page).not.toHaveTextContent('重新生成');
+  });
+
   it('exposes real version timeline and Run Detail after delivery without stealing primary', () => {
     render(
       <ResultCenterPage

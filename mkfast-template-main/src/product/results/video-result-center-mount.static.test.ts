@@ -21,17 +21,17 @@ test('Result Center mounts the video worksurface and has no E3 stub', () => {
   assert.doesNotMatch(page, /视频工作面将由 E3 接入/);
 });
 
-test('production Result route wires server quote, confirmation and canonical video edits', () => {
-  assert.match(page, /onRequestRegenerationQuote/);
-  assert.match(page, /onConfirmRegeneration/);
+test('production Result route wires retained receiver actions without regeneration', () => {
+  assert.doesNotMatch(page, /onRequestRegenerationQuote/);
+  assert.doesNotMatch(page, /onConfirmRegeneration/);
   assert.match(page, /onCanonicalEdit/);
-  assert.match(route, /onVideoRequestRegenerationQuote/);
-  assert.match(route, /'video-regeneration'/);
-  assert.match(route, /action: 'quote'/);
-  assert.match(route, /action: 'confirm'/);
+  assert.doesNotMatch(route, /onVideoRequestRegenerationQuote/);
+  assert.doesNotMatch(route, /'video-regeneration'/);
   assert.match(route, /action: 'video_workflow_edit'/);
   assert.doesNotMatch(
     route,
-    /onVideoRequestRegenerationQuote[\s\S]{0,900}(unitRate|quotePolicyRevision|billingMode|targetSeconds)/
+    /acceptanceUnknown =\s*workspaceKind !== 'video'/s
   );
+  assert.match(route, /action: 'resume_creative_job'/);
+  assert.match(route, /acceptanceUnknown,/);
 });

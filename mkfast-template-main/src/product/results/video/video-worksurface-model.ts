@@ -1,30 +1,25 @@
 /**
  * Video Result Worksurface pure model (WT-E / #104 / D-085 §7 / D-088).
  *
- * Player / cover / subtitles / storyboard candidates / per-shot adjust /
- * single-shot regen / "使用此成片" adopt / mobile P0 / Pro Studio refine
- * handoff.
+ * Player / received storyboard candidates / deterministic selection /
+ * "使用此成片" adopt / mobile P0.
  *
  * Contracts-only boundary: imports `@meiye/contracts` result-center +
  * video-workflow public projection. Does NOT import Result Shell internals
  * (`result-shell-model`, command adapter, page, token stream, etc.).
  *
  * Projection only — no Result table / second history / product ledger.
- * Billable regen scopes reuse the retained E2 single-shot confirmation
- * contract. Whole-film recomposition is unavailable by D-105/D-133 and must
- * never become a quote intent in this model.
+ * D-133 makes this a receiver surface: no cover, subtitle editing, or
+ * regeneration intent belongs in this model.
  */
 
 import type {
   ResultActionId,
-  ResultCenterNavigation,
-  ResultUncommittedEditKey,
   ResultWorkspaceKind,
   VideoShotSummary,
   VideoWorkflowPublicProjection,
   VideoWorkflowPublicStatus,
 } from '@meiye/contracts';
-import { resultCenterPath, resultCenterSearchParams } from '@meiye/contracts';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -37,25 +32,20 @@ export const videoWorksurfaceFreeActions = [
   'poll',
   'recover',
   'download_supplier_task',
-  'adopt_candidate',
-  'deterministic_sort',
-  'subtitle_text_edit',
-  'cover_select',
-  'subtitle_toggle',
   'play_control',
+  'adopt_candidate',
   'select_shot_candidate',
+  'deterministic_sort',
 ] as const;
 
 export type VideoWorksurfaceFreeAction =
   (typeof videoWorksurfaceFreeActions)[number];
 
-export const videoBillableScopes = ['shot'] as const;
+export const videoBillableScopes = [] as const;
 export type VideoBillableScope = (typeof videoBillableScopes)[number];
 
 /** Independent asset vs burned into the composed media. */
 export type VideoSubtitleMode = 'independent_asset' | 'burned_in';
-
-export type VideoCoverSource = 'frame' | 'authorized_image';
 
 export type VideoLoopPhase =
   | 'running'
@@ -78,21 +68,12 @@ export type VideoPlayerState = {
   hasTranscript: boolean;
 };
 
-export type VideoCoverState = {
-  source: VideoCoverSource | null;
-  assetId: string | null;
-  frameTimeSeconds: number | null;
-  posterUrl: string | null;
-};
-
 export type VideoSubtitleState = {
   mode: VideoSubtitleMode;
   assetId: string | null;
   text: string;
   enabled: boolean;
   transcript: string | null;
-  /** Local uncommitted text proof (independent asset). */
-  draftText: string | null;
 };
 
 export type VideoShotCandidate = {
@@ -137,18 +118,7 @@ export type VideoDeliveryState = {
     | 'delivered';
 };
 
-export type VideoPendingQuote = {
-  scope: VideoBillableScope;
-  shotId?: string;
-  /** Confirm-zone label (E2). */
-  actionLabel: string;
-  requiresConfirm: true;
-  createsNewTaskAndIndependentQuote: true;
-};
-
 export type VideoUncommittedAdjustments = {
-  coverDraft?: VideoCoverState;
-  subtitleDraftText?: string;
   shotOrder?: string[];
   shotSelections?: Record<string, number>;
 };
@@ -171,13 +141,11 @@ export type VideoWorksurfaceState = {
   versionId?: string;
   selectedObjectId?: string;
   player: VideoPlayerState;
-  cover: VideoCoverState;
   subtitle: VideoSubtitleState;
   storyboard: VideoStoryboardShot[];
   composedCandidate: VideoComposedCandidate | null;
   adoption: VideoAdoptionState;
   delivery: VideoDeliveryState;
-  pendingQuote: VideoPendingQuote | null;
   uncommitted: VideoUncommittedAdjustments;
   loopPhase: VideoLoopPhase;
 };
@@ -193,37 +161,7 @@ export type VideoFreeEditFeeDecision = {
   requiresFullRecomposeQuote: false;
 };
 
-export type VideoBillableEditFeeDecision = {
-  fee: 'billable';
-  scope: VideoBillableScope;
-  freeAction: null;
-  createsProductUsage: true;
-  requiresFullRecomposeQuote: boolean;
-  actionLabel: string;
-  reason: string;
-};
-
-export type VideoUnavailableEditFeeDecision = {
-  fee: 'unavailable';
-  freeAction: null;
-  createsProductUsage: false;
-  requiresFullRecomposeQuote: false;
-  reason: string;
-};
-
-export type VideoEditFeeDecision =
-  | VideoFreeEditFeeDecision
-  | VideoBillableEditFeeDecision
-  | VideoUnavailableEditFeeDecision;
-
-export function classifyCoverSelect(): VideoEditFeeDecision {
-  return {
-    fee: 'none',
-    freeAction: 'cover_select',
-    createsProductUsage: false,
-    requiresFullRecomposeQuote: false,
-  };
-}
+export type VideoEditFeeDecision = VideoFreeEditFeeDecision;
 
 export function classifyPlayControl(): VideoEditFeeDecision {
   return {
@@ -301,65 +239,6 @@ export function merchantShotLabel(input: {
   return orderLabel;
 }
 
-/**
- * Independent subtitle asset text / toggle / style-on-asset: free.
- * Burned-in subtitle changes are unavailable because whole-film
- * recomposition is retired; they never create a quote or product usage.
- */
-export function classifySubtitleEdit(input: {
-  mode: 'independent_asset';
-  change: 'text' | 'toggle' | 'style' | 'replace_asset';
-}): VideoFreeEditFeeDecision;
-export function classifySubtitleEdit(input: {
-  mode: 'burned_in';
-  change: 'text' | 'toggle' | 'style' | 'replace_asset';
-}): VideoUnavailableEditFeeDecision;
-export function classifySubtitleEdit(input: {
-  mode: VideoSubtitleMode;
-  change: 'text' | 'toggle' | 'style' | 'replace_asset';
-}): VideoEditFeeDecision;
-export function classifySubtitleEdit(input: {
-  mode: VideoSubtitleMode;
-  change: 'text' | 'toggle' | 'style' | 'replace_asset';
-}): VideoEditFeeDecision {
-  if (input.mode === 'independent_asset') {
-    // Pure asset edit — no media re-encode, no generation fee (D-088 §1 / #104).
-    return {
-      fee: 'none',
-      freeAction:
-        input.change === 'toggle' ? 'subtitle_toggle' : 'subtitle_text_edit',
-      createsProductUsage: false,
-      requiresFullRecomposeQuote: false,
-    };
-  }
-
-  // Burned-in media cannot be changed without the retired recomposition path.
-  return {
-    fee: 'unavailable',
-    freeAction: null,
-    createsProductUsage: false,
-    requiresFullRecomposeQuote: false,
-    reason: '整段视频重新合成已下线，本次未产生扣费。',
-  };
-}
-
-export function classifyShotRegen(
-  shotId: string
-): VideoBillableEditFeeDecision {
-  if (!shotId.trim()) {
-    throw new Error('classifyShotRegen requires shotId');
-  }
-  return {
-    fee: 'billable',
-    scope: 'shot',
-    freeAction: null,
-    createsProductUsage: true,
-    requiresFullRecomposeQuote: false,
-    actionLabel: '重新生成此镜头',
-    reason: '单镜重生成是新的独立计费生成任务',
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Fixture + builders
 // ---------------------------------------------------------------------------
@@ -378,7 +257,6 @@ export type BuildVideoWorksurfaceInput = {
   subtitleAssetId?: string;
   subtitleEnabled?: boolean;
   transcript?: string | null;
-  cover?: Partial<VideoCoverState>;
   adoption?: Partial<VideoAdoptionState>;
   delivery?: Partial<VideoDeliveryState>;
   uncommitted?: VideoUncommittedAdjustments;
@@ -486,25 +364,17 @@ export function buildVideoWorksurfaceState(
           : null,
       hasTranscript: Boolean(input.transcript?.trim()),
     },
-    cover: {
-      source: input.cover?.source ?? null,
-      assetId: input.cover?.assetId ?? null,
-      frameTimeSeconds: input.cover?.frameTimeSeconds ?? null,
-      posterUrl: input.cover?.posterUrl ?? composed?.posterUrl ?? null,
-    },
     subtitle: {
       mode: subtitleMode,
       assetId: input.subtitleAssetId ?? null,
       text: subtitleText,
       enabled: input.subtitleEnabled ?? true,
       transcript: input.transcript ?? null,
-      draftText: null,
     },
     storyboard: shotsFromPublic(input.workflow.shots),
     composedCandidate: composed,
     adoption,
     delivery,
-    pendingQuote: null,
     uncommitted: input.uncommitted ?? {},
     loopPhase: 'running',
   };
@@ -587,7 +457,6 @@ export function videoWorksurfaceFixture(
       overrides.transcript === undefined
         ? '欢迎到店体验 · 夏季护理套餐'
         : overrides.transcript,
-    cover: overrides.cover,
     adoption: overrides.adoption ?? { status: 'candidate_ready' },
     delivery: overrides.delivery,
     uncommitted: overrides.uncommitted,
@@ -595,7 +464,7 @@ export function videoWorksurfaceFixture(
 }
 
 // ---------------------------------------------------------------------------
-// Player / cover / subtitle mutations (pure)
+// Player controls (pure)
 // ---------------------------------------------------------------------------
 
 export function togglePlay(
@@ -632,145 +501,8 @@ export function setFullscreen(
   };
 }
 
-export function setCoverFromFrame(
-  state: VideoWorksurfaceState,
-  frameTimeSeconds: number
-): { state: VideoWorksurfaceState; fee: VideoEditFeeDecision } {
-  const fee = classifyCoverSelect();
-  const nextCover: VideoCoverState = {
-    source: 'frame',
-    assetId: state.composedCandidate?.assetId ?? null,
-    frameTimeSeconds,
-    posterUrl: state.composedCandidate?.posterUrl ?? state.cover.posterUrl,
-  };
-  return {
-    fee,
-    state: {
-      ...state,
-      cover: nextCover,
-      uncommitted: {
-        ...state.uncommitted,
-        coverDraft: nextCover,
-      },
-      selectedObjectId:
-        state.composedCandidate?.assetId ?? state.selectedObjectId,
-    },
-  };
-}
-
-export function setCoverFromAuthorizedImage(
-  state: VideoWorksurfaceState,
-  assetId: string,
-  posterUrl?: string
-): { state: VideoWorksurfaceState; fee: VideoEditFeeDecision } {
-  const fee = classifyCoverSelect();
-  const nextCover: VideoCoverState = {
-    source: 'authorized_image',
-    assetId,
-    frameTimeSeconds: null,
-    posterUrl: posterUrl ?? `/v1/assets/${assetId}`,
-  };
-  return {
-    fee,
-    state: {
-      ...state,
-      cover: nextCover,
-      uncommitted: {
-        ...state.uncommitted,
-        coverDraft: nextCover,
-      },
-      selectedObjectId: assetId,
-    },
-  };
-}
-
-/**
- * Independent subtitle asset text proof — free, no re-encode.
- * Burned-in mode stays unchanged and returns an unavailable decision.
- */
-export function editSubtitleText(
-  state: VideoWorksurfaceState,
-  nextText: string
-): {
-  state: VideoWorksurfaceState;
-  fee: VideoEditFeeDecision;
-  pendingQuote: VideoPendingQuote | null;
-} {
-  const fee = classifySubtitleEdit({
-    mode: state.subtitle.mode,
-    change: 'text',
-  });
-
-  if (fee.fee === 'unavailable') {
-    return {
-      fee,
-      pendingQuote: null,
-      state: {
-        ...state,
-        pendingQuote: null,
-        // Do not apply burned-in text without the retired media path.
-      },
-    };
-  }
-
-  return {
-    fee,
-    pendingQuote: null,
-    state: {
-      ...state,
-      subtitle: {
-        ...state.subtitle,
-        text: nextText,
-        draftText: nextText,
-      },
-      uncommitted: {
-        ...state.uncommitted,
-        subtitleDraftText: nextText,
-      },
-      pendingQuote: null,
-    },
-  };
-}
-
-export function toggleSubtitleEnabled(state: VideoWorksurfaceState): {
-  state: VideoWorksurfaceState;
-  fee: VideoEditFeeDecision;
-  pendingQuote: VideoPendingQuote | null;
-} {
-  const fee = classifySubtitleEdit({
-    mode: state.subtitle.mode,
-    change: 'toggle',
-  });
-
-  if (fee.fee === 'unavailable') {
-    return {
-      fee,
-      pendingQuote: null,
-      state: { ...state, pendingQuote: null },
-    };
-  }
-
-  const enabled = !state.subtitle.enabled;
-  return {
-    fee,
-    pendingQuote: null,
-    state: {
-      ...state,
-      subtitle: { ...state.subtitle, enabled },
-      player: {
-        ...state.player,
-        subtitleTrackUrl:
-          enabled && state.subtitle.assetId
-            ? `/v1/assets/${state.subtitle.assetId}`
-            : null,
-      },
-      pendingQuote: null,
-    },
-  };
-}
-
 // ---------------------------------------------------------------------------
-// Storyboard / regen / adopt / deliver
+// Storyboard selection / adopt / deliver
 // ---------------------------------------------------------------------------
 
 export function selectShotCandidate(
@@ -832,32 +564,6 @@ export function reorderShots(
   };
 }
 
-/** Request single-shot regen — opens billable shot quote (E2 confirm). */
-export function requestShotRegen(
-  state: VideoWorksurfaceState,
-  shotId: string
-): { state: VideoWorksurfaceState; fee: VideoBillableEditFeeDecision } {
-  if (!state.storyboard.some((s) => s.shotId === shotId)) {
-    throw new Error(`Unknown shotId: ${shotId}`);
-  }
-  const fee = classifyShotRegen(shotId);
-  const pendingQuote: VideoPendingQuote = {
-    scope: 'shot',
-    shotId,
-    actionLabel: fee.actionLabel,
-    requiresConfirm: true,
-    createsNewTaskAndIndependentQuote: true,
-  };
-  return {
-    fee,
-    state: {
-      ...state,
-      pendingQuote,
-      selectedObjectId: shotId,
-    },
-  };
-}
-
 /**
  * "使用此成片" — adopt composed candidate into ContentPackage revision.
  * Free action (no generation fee). Shot candidates alone cannot adopt.
@@ -901,7 +607,6 @@ export function adoptComposedFilm(
       versionId: `rev-${contentRevision}`,
       baseRevisionId: `rev-${contentRevision}`,
       loopPhase: 'adopted',
-      pendingQuote: null,
       // Clear uncommitted after successful adopt commit path.
       uncommitted: {},
     },
@@ -980,20 +685,8 @@ export function projectVideoWorksurfaceActions(state: VideoWorksurfaceState): {
       };
     case 'failed':
       return {
-        primaryAction: {
-          id: 'retry',
-          role: 'primary',
-          label: '重试',
-          enabled: true,
-        },
-        secondaryActions: [
-          {
-            id: 'continue_adjust',
-            role: 'secondary',
-            label: '继续调整',
-            enabled: true,
-          },
-        ],
+        primaryAction: null,
+        secondaryActions: [],
         overflowActions: overflow,
       };
     case 'candidate_ready':
@@ -1004,20 +697,7 @@ export function projectVideoWorksurfaceActions(state: VideoWorksurfaceState): {
           label: '使用此成片',
           enabled: Boolean(state.composedCandidate),
         },
-        secondaryActions: [
-          {
-            id: 'continue_adjust',
-            role: 'secondary',
-            label: '继续调整',
-            enabled: true,
-          },
-          {
-            id: 'deliver',
-            role: 'secondary',
-            label: '交付',
-            enabled: true,
-          },
-        ],
+        secondaryActions: [],
         overflowActions: overflow,
       };
     case 'adopted':
@@ -1028,38 +708,13 @@ export function projectVideoWorksurfaceActions(state: VideoWorksurfaceState): {
           label: '交付',
           enabled: true,
         },
-        secondaryActions: [
-          {
-            id: 'continue_adjust',
-            role: 'secondary',
-            label: '继续调整',
-            enabled: true,
-          },
-          {
-            id: 'create_from_this',
-            role: 'secondary',
-            label: '基于此再创作',
-            enabled: true,
-          },
-        ],
+        secondaryActions: [],
         overflowActions: overflow,
       };
     case 'delivered':
       return {
-        primaryAction: {
-          id: 'create_from_this',
-          role: 'primary',
-          label: '基于此再创作',
-          enabled: true,
-        },
-        secondaryActions: [
-          {
-            id: 'continue_adjust',
-            role: 'secondary',
-            label: '继续调整',
-            enabled: true,
-          },
-        ],
+        primaryAction: null,
+        secondaryActions: [],
         overflowActions: overflow,
       };
     default: {
@@ -1073,11 +728,7 @@ export function projectVideoWorksurfaceActions(state: VideoWorksurfaceState): {
 // Mobile P0
 // ---------------------------------------------------------------------------
 
-export type VideoMobileP0ActionId =
-  | 'play'
-  | 'light_cover'
-  | 'subtitle_proof'
-  | ResultActionId;
+export type VideoMobileP0ActionId = 'play' | ResultActionId;
 
 export type VideoMobileP0Action = {
   id: VideoMobileP0ActionId;
@@ -1088,8 +739,8 @@ export type VideoMobileP0Action = {
 };
 
 /**
- * Mobile P0: play / light cover / subtitle proof + shared result actions.
- * Must not collapse to "请到桌面继续" for these basics (D-085 §8).
+ * Mobile P0: playback + shared result actions.
+ * Video editing stays absent on every viewport (D-133).
  */
 export function projectVideoMobileP0Actions(state: VideoWorksurfaceState): {
   mediaActions: VideoMobileP0Action[];
@@ -1103,20 +754,6 @@ export function projectVideoMobileP0Actions(state: VideoWorksurfaceState): {
       id: 'play',
       label: state.player.playing ? '暂停' : '播放',
       enabled: Boolean(state.composedCandidate),
-      kind: 'media',
-    },
-    {
-      id: 'light_cover',
-      label: '设置封面',
-      enabled: Boolean(state.composedCandidate),
-      kind: 'media',
-    },
-    {
-      id: 'subtitle_proof',
-      label: '字幕校对',
-      enabled:
-        state.subtitle.mode === 'independent_asset' ||
-        state.subtitle.mode === 'burned_in',
       kind: 'media',
     },
   ];
@@ -1146,78 +783,6 @@ export function projectVideoMobileP0Actions(state: VideoWorksurfaceState): {
     primaryResult,
     moreResult,
     requiresDesktopContinue: false,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Pro Studio refine handoff
-// ---------------------------------------------------------------------------
-
-export type VideoProStudioRefineHandoff = {
-  /** Canonical gate path — never deep-link past entitlement. */
-  entryPath: '/pro-studio';
-  /** Clicking entry does not create an empty canvas project. */
-  createsEmptyProject: false;
-  workId: string;
-  contentId?: string;
-  versionId?: string;
-  selectedObjectId?: string;
-  baseRevisionId: string;
-  uncommittedEditKey: ResultUncommittedEditKey;
-  /** Local uncommitted adjustments carried across refine. */
-  uncommitted: VideoUncommittedAdjustments;
-  /** Typed return navigation (result-center contract). */
-  returnNavigation: ResultCenterNavigation;
-  returnPath: string;
-  returnSearch: Record<string, string>;
-};
-
-/**
- * Build Pro Studio refine entry context.
- * Preserves current revision / selection / uncommitted adjustments.
- */
-export function buildVideoProStudioRefineHandoff(
-  state: VideoWorksurfaceState,
-  options?: { returnToDraftKey?: string; focusKey?: string }
-): VideoProStudioRefineHandoff {
-  const focusKey = options?.focusKey ?? state.selectedObjectId;
-  const uncommittedEditKey: ResultUncommittedEditKey = {
-    workspaceKind: VIDEO_WORKSPACE_KIND,
-    workId: state.workId,
-    baseRevisionId: state.baseRevisionId,
-    surfaceVersion: state.surfaceVersion,
-  };
-
-  const returnNavigation: ResultCenterNavigation = {
-    workId: state.workId,
-    ...(options?.returnToDraftKey
-      ? { returnToDraftKey: options.returnToDraftKey }
-      : {}),
-    ...(focusKey ? { focusKey } : {}),
-  };
-
-  const returnSearch = resultCenterSearchParams({
-    ...(state.contentId ? { contentId: state.contentId } : {}),
-    ...(state.versionId ? { versionId: state.versionId } : {}),
-    panel: 'result',
-    ...(focusKey ? { focusKey } : {}),
-  });
-
-  return {
-    entryPath: '/pro-studio',
-    createsEmptyProject: false,
-    workId: state.workId,
-    ...(state.contentId ? { contentId: state.contentId } : {}),
-    ...(state.versionId ? { versionId: state.versionId } : {}),
-    ...(state.selectedObjectId
-      ? { selectedObjectId: state.selectedObjectId }
-      : {}),
-    baseRevisionId: state.baseRevisionId,
-    uncommittedEditKey,
-    uncommitted: structuredClone(state.uncommitted),
-    returnNavigation,
-    returnPath: resultCenterPath(state.workId),
-    returnSearch,
   };
 }
 

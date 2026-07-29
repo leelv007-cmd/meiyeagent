@@ -12,53 +12,17 @@ function source(relativePath: string) {
 
 const worksurfaceModel = source('./video-worksurface-model.ts');
 const worksurface = source('./video-worksurface.tsx');
-const coreRegeneration = source(
-  '../../../../../apps/core/src/p1/model-supply/video-regeneration.ts'
-);
-const postgresRegeneration = source(
-  '../../../../../apps/core/src/p1/model-supply/video-regeneration-postgres.ts'
-);
-const terminalBilling = source(
-  '../../../../../apps/core/src/p1/model-supply/video-workflow-billing.ts'
-);
-
-test('T23 keeps whole-film recomposition outside every billable production model', () => {
+test('D-133 keeps every video regeneration scope outside the frontend', () => {
   for (const [name, contents] of [
     ['Web worksurface model', worksurfaceModel],
     ['Web quote request contract', worksurface],
-    ['Core regeneration model', coreRegeneration],
-    ['Core regeneration persistence', postgresRegeneration],
   ] as const) {
     assert.doesNotMatch(
       contents,
-      /['"]full_compose['"]/,
-      `${name} must not revive the retired billable scope`
+      /\b(full_compose|classifyShotRegen|requestShotRegen)\b/,
+      `${name} must not revive a retired video regeneration scope`
     );
   }
 
-  assert.match(
-    worksurfaceModel,
-    /videoBillableScopes\s*=\s*\['shot'\]\s+as const/
-  );
-  assert.doesNotMatch(
-    worksurfaceModel,
-    /\b(classifyFullRecompose|requestFullRecompose)\b/
-  );
-  assert.match(postgresRegeneration, /CHECK \(scope = 'shot'\)/);
-});
-
-test('T23 preserves shot regeneration and generic terminal billing', () => {
-  assert.match(
-    coreRegeneration,
-    /videoRegenScopes\s*=\s*\['shot'\]\s+as const/
-  );
-  assert.match(terminalBilling, /createInitialVideoTerminalObserver/);
-  assert.match(
-    terminalBilling,
-    /status:\s*workflow\.status === 'completed' \? 'completed' : 'failed'/
-  );
-  assert.match(
-    terminalBilling,
-    /status === 'completed' \|\| status === 'failed' \|\| status === 'cancelled'/
-  );
+  assert.match(worksurfaceModel, /videoBillableScopes\s*=\s*\[\]\s+as const/);
 });

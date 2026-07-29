@@ -6,53 +6,13 @@ import { useEffect, useRef, useState } from 'react';
 
 import {
   adoptComposedFilm,
-  buildVideoProStudioRefineHandoff,
-  editSubtitleText,
   merchantShotLabel,
   projectVideoMobileP0Actions,
   reorderShots,
-  requestShotRegen,
   selectShotCandidate,
-  setCoverFromFrame,
   togglePlay,
-  toggleSubtitleEnabled,
-  type VideoEditFeeDecision,
-  type VideoProStudioRefineHandoff,
   type VideoWorksurfaceState,
 } from './video-worksurface-model';
-
-// D-133: whole-film recomposition stays dark with no rebuild commitment.
-const FULL_COMPOSE_UNAVAILABLE = '整段视频重新合成已下线，本次未产生扣费。';
-const VIDEO_REGENERATION_UNAVAILABLE = '视频重生成能力升级中，本次未产生扣费。';
-
-export type VideoRegenerationQuoteRequest = {
-  scope: 'shot';
-  sourceRunId: string;
-  shotId?: string;
-};
-
-export type VideoRegenerationServerQuote = {
-  confirm: {
-    actionLabel: string;
-    authorizedCeiling: number;
-    billingModeLabel: string;
-    createsNewTaskAndIndependentQuote: true;
-    createsNewTaskNotice: string;
-    estimatedCredits: number;
-    eta: {
-      estimatedCompletionAt: string | null;
-      honestyNote: string;
-      status: string;
-    };
-    formulaExpression: string;
-    quoteId: string;
-    quoteRevision: string;
-    scope: 'shot';
-    targetSeconds: number;
-  };
-  quote: { formula: { currency?: string } };
-  scope: 'shot';
-};
 
 export type VideoCanonicalEditCommand =
   | {
@@ -67,30 +27,15 @@ export type VideoCanonicalEditCommand =
       workflowId: string;
       expectedRevision: number;
       shotIds: string[];
-    }
-  | {
-      kind: 'set_subtitle';
-      workflowId: string;
-      expectedRevision: number;
-      text: string;
     };
 
 export type VideoWorksurfaceProps = {
   initialState: VideoWorksurfaceState;
   viewport?: 'desktop' | 'mobile';
   onStateChange?: (state: VideoWorksurfaceState) => void;
-  onSubtitleChange?: (text: string, fee: VideoEditFeeDecision) => void;
   onAdopt?: (state: VideoWorksurfaceState) => void | Promise<void>;
   onDeliver?: (state: VideoWorksurfaceState) => void | Promise<void>;
-  onRequestRegenerationQuote?: (
-    request: VideoRegenerationQuoteRequest
-  ) => Promise<VideoRegenerationServerQuote>;
-  onConfirmRegeneration?: (input: {
-    quoteId: string;
-    taskId: string;
-  }) => Promise<void>;
   onCanonicalEdit?: (command: VideoCanonicalEditCommand) => Promise<void>;
-  onOpenProStudio?: (handoff: VideoProStudioRefineHandoff) => void;
 };
 
 function videoMerchantStatusLabel(
@@ -116,13 +61,9 @@ function videoMerchantStatusLabel(
 
 export function VideoWorksurface(props: VideoWorksurfaceProps) {
   const [state, setState] = useState(props.initialState);
-  const [serverQuote, setServerQuote] =
-    useState<VideoRegenerationServerQuote | null>(null);
-  const [quotePending, setQuotePending] = useState(false);
   const [commandPending, setCommandPending] = useState(false);
   const [commandError, setCommandError] = useState<string | null>(null);
   const playerRef = useRef<HTMLVideoElement>(null);
-  const regenerationTaskIds = useRef(new Map<string, string>());
   const canonicalEditsLocked =
     state.workflowStatus === 'completed' ||
     state.workflowStatus === 'cancelled' ||
@@ -135,26 +76,6 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
     props.onStateChange?.(next);
   };
   const mobile = projectVideoMobileP0Actions(state);
-  const requestServerQuote = async (request: VideoRegenerationQuoteRequest) => {
-    setServerQuote(null);
-    setCommandError(null);
-    if (!props.onRequestRegenerationQuote) return;
-    setQuotePending(true);
-    try {
-      setServerQuote(await props.onRequestRegenerationQuote(request));
-    } catch {
-      setCommandError('暂时无法获取报价，请稍后重试。');
-    } finally {
-      setQuotePending(false);
-    }
-  };
-  const showFullComposeUnavailable = (next?: VideoWorksurfaceState) => {
-    if (next) {
-      update({ ...next, pendingQuote: null });
-    }
-    setServerQuote(null);
-    setCommandError(FULL_COMPOSE_UNAVAILABLE);
-  };
   const persistCanonicalEdit = async (
     command: VideoCanonicalEditCommand,
     next: VideoWorksurfaceState
@@ -193,24 +114,14 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
           data-testid="video-player"
         >
           {state.composedCandidate ? (
+            // biome-ignore lint/a11y/useMediaCaption: #264 retires the product-owned subtitle track; publishing platforms own captions.
             <video
               ref={playerRef}
               className="aspect-[9/16] max-h-[32rem] w-full object-contain"
               controls
-              poster={state.cover.posterUrl ?? undefined}
+              poster={state.composedCandidate.posterUrl}
               src={state.composedCandidate.playableUrl}
-            >
-              <track
-                default={state.subtitle.enabled}
-                kind="captions"
-                src={
-                  state.player.subtitleTrackUrl ??
-                  'data:text/vtt;charset=utf-8,WEBVTT'
-                }
-                srcLang="zh"
-                label="中文字幕"
-              />
-            </video>
+            />
           ) : (
             <div className="flex aspect-video items-center justify-center text-sm text-white/70">
               成片生成中…
@@ -240,113 +151,6 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
 
       <section
         className="space-y-3 rounded-lg border p-4"
-        data-testid="video-cover-panel"
-      >
-        <h3 className="text-sm font-medium">封面</h3>
-        {state.cover.posterUrl ? (
-          <img
-            className="aspect-video w-full max-w-sm rounded-md object-cover"
-            src={state.cover.posterUrl}
-            alt="当前视频封面"
-          />
-        ) : (
-          <p className="text-sm text-muted-foreground">尚未选择封面</p>
-        )}
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={!state.composedCandidate}
-          data-testid="video-cover-current-frame"
-          onClick={() =>
-            update(
-              setCoverFromFrame(
-                state,
-                playerRef.current?.currentTime ??
-                  state.player.currentTimeSeconds
-              ).state
-            )
-          }
-        >
-          使用当前帧
-        </Button>
-      </section>
-
-      <section
-        className="space-y-3 rounded-lg border p-4"
-        data-testid="video-subtitle-panel"
-      >
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-medium">字幕校对</h3>
-          <Badge variant="outline">
-            {state.subtitle.mode === 'independent_asset'
-              ? '独立字幕资产 · 免费修改'
-              : '烧录字幕 · 不支持修改'}
-          </Badge>
-        </div>
-        <textarea
-          className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
-          disabled={
-            canonicalEditsLocked && state.subtitle.mode === 'independent_asset'
-          }
-          value={state.subtitle.text}
-          data-testid="video-subtitle-input"
-          onChange={(event) => {
-            const result = editSubtitleText(state, event.target.value);
-            props.onSubtitleChange?.(event.target.value, result.fee);
-            if (result.fee.fee === 'unavailable') {
-              showFullComposeUnavailable(result.state);
-              return;
-            }
-            update(result.state);
-          }}
-        />
-        <Button
-          type="button"
-          size="sm"
-          disabled={
-            commandPending ||
-            canonicalEditsLocked ||
-            state.subtitle.mode !== 'independent_asset' ||
-            state.subtitle.draftText === null ||
-            !props.onCanonicalEdit
-          }
-          data-testid="video-subtitle-save"
-          onClick={() =>
-            void persistCanonicalEdit(
-              {
-                kind: 'set_subtitle',
-                workflowId: state.workflowId,
-                expectedRevision: state.workflowRevision,
-                text: state.subtitle.text,
-              },
-              state
-            )
-          }
-        >
-          保存字幕
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          data-testid="video-subtitle-toggle"
-          disabled={commandPending}
-          onClick={() => {
-            const result = toggleSubtitleEnabled(state);
-            if (result.fee.fee === 'unavailable') {
-              showFullComposeUnavailable(result.state);
-              return;
-            }
-            update(result.state);
-          }}
-        >
-          {state.subtitle.enabled ? '隐藏字幕' : '显示字幕'}
-        </Button>
-      </section>
-
-      <section
-        className="space-y-3 rounded-lg border p-4"
         data-testid="video-storyboard"
       >
         <h3 className="text-sm font-medium">分镜候选</h3>
@@ -357,38 +161,13 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
               className="space-y-2 rounded-md border p-3"
               data-testid="video-shot"
             >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p
-                    className="text-sm font-medium"
-                    data-testid="video-shot-label"
-                  >
-                    {merchantShotLabel({
-                      order: shotIndex,
-                      promptPreview: shot.promptPreview,
-                      shotId: shot.shotId,
-                    })}
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  data-testid="video-shot-regenerate"
-                  disabled={quotePending || commandPending}
-                  onClick={() => {
-                    const result = requestShotRegen(state, shot.shotId);
-                    update(result.state);
-                    void requestServerQuote({
-                      scope: 'shot',
-                      shotId: shot.shotId,
-                      sourceRunId: state.workflowId,
-                    });
-                  }}
-                >
-                  重新生成此镜头
-                </Button>
-              </div>
+              <p className="text-sm font-medium" data-testid="video-shot-label">
+                {merchantShotLabel({
+                  order: shotIndex,
+                  promptPreview: shot.promptPreview,
+                  shotId: shot.shotId,
+                })}
+              </p>
               <div className="flex flex-wrap gap-2">
                 {shot.candidates.map((candidate) => (
                   <Button
@@ -481,103 +260,7 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
             </li>
           ))}
         </ol>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={quotePending || commandPending}
-          data-testid="video-full-recompose"
-          onClick={() => showFullComposeUnavailable()}
-        >
-          重新合成整段
-        </Button>
       </section>
-
-      {state.pendingQuote ? (
-        <section
-          className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4"
-          data-testid="video-regen-confirm"
-        >
-          <p className="text-sm font-medium">
-            {state.pendingQuote.actionLabel}
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {quotePending
-              ? '正在获取服务端报价…'
-              : serverQuote
-                ? serverQuote.confirm.createsNewTaskNotice
-                : '等待服务端报价，不会先行执行。'}
-          </p>
-          {serverQuote ? (
-            <div className="mt-3 space-y-2 text-sm">
-              <p>
-                预估
-                {serverQuote.quote.formula.currency === 'CNY' ? '¥' : ''}
-                {serverQuote.confirm.estimatedCredits.toFixed(2)}
-                {' · '}
-                最高授权
-                {serverQuote.quote.formula.currency === 'CNY' ? '¥' : ''}
-                {serverQuote.confirm.authorizedCeiling.toFixed(2)}
-              </p>
-              <p className="text-muted-foreground">
-                {serverQuote.confirm.billingModeLabel}
-              </p>
-              <p className="text-muted-foreground">
-                {serverQuote.confirm.eta.honestyNote}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={commandPending || !props.onConfirmRegeneration}
-                  data-testid="video-regen-confirm-action"
-                  onClick={async () => {
-                    if (!props.onConfirmRegeneration) return;
-                    const quoteId = serverQuote.confirm.quoteId;
-                    const taskId =
-                      regenerationTaskIds.current.get(quoteId) ??
-                      `video-regen-${crypto.randomUUID()}`;
-                    regenerationTaskIds.current.set(quoteId, taskId);
-                    setCommandPending(true);
-                    setCommandError(null);
-                    update({ ...state, pendingQuote: null });
-                    try {
-                      await props.onConfirmRegeneration({
-                        quoteId,
-                        taskId,
-                      });
-                      regenerationTaskIds.current.delete(quoteId);
-                      setServerQuote(null);
-                    } catch {
-                      update(state);
-                      setCommandError(VIDEO_REGENERATION_UNAVAILABLE);
-                    } finally {
-                      setCommandPending(false);
-                    }
-                  }}
-                >
-                  确认并创建新任务
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={commandPending}
-                  data-testid="video-regen-cancel-action"
-                  onClick={() => {
-                    regenerationTaskIds.current.delete(
-                      serverQuote.confirm.quoteId
-                    );
-                    setServerQuote(null);
-                    update({ ...state, pendingQuote: null });
-                  }}
-                >
-                  取消
-                </Button>
-              </div>
-            </div>
-          ) : null}
-        </section>
-      ) : null}
 
       {commandError ? (
         <p className="text-sm text-destructive" role="alert">
@@ -613,17 +296,6 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
             交付
           </Button>
         ) : null}
-        <Button
-          type="button"
-          variant="outline"
-          disabled={!props.onOpenProStudio}
-          data-testid="video-pro-studio-refine"
-          onClick={() =>
-            props.onOpenProStudio?.(buildVideoProStudioRefineHandoff(state))
-          }
-        >
-          到 Pro Studio 精修
-        </Button>
       </div>
 
       {props.viewport === 'mobile' ? (

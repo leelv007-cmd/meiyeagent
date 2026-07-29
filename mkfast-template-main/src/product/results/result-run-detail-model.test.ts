@@ -76,3 +76,25 @@ test('run detail recovery path for acceptance unknown / suspended', () => {
     'current'
   );
 });
+
+test('video run detail keeps same-task recovery without promising regeneration', () => {
+  const view = projectResultRunDetail({
+    phase: 'failed',
+    progressState: 'failed',
+    jobStatus: 'recoverable',
+    failureCode: 'TIMEOUT',
+    supportReference: 'MY-VIDEO1',
+    workspaceKind: 'video',
+  });
+
+  assert.equal(view.stageSummary, '成片接收未完成');
+  assert.equal(
+    view.failureSummary,
+    '成片接收未完成，请返回工作台查看任务状态或联系支持。'
+  );
+  assert.equal(
+    view.recoveryHint,
+    '可点「恢复或核验」继续接收同一上游任务，不会创建新的成片任务。'
+  );
+  assert.doesNotMatch(JSON.stringify(view), /可点「重试」|重新生成前会/u);
+});

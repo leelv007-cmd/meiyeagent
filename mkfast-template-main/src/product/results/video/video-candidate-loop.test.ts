@@ -34,8 +34,8 @@ describe('video candidate → adopt → deliver closed loop', () => {
 
     assert.equal(steps[2]?.step, 'delivered');
     assert.equal(steps[2]?.phase, 'delivered');
-    assert.equal(steps[2]?.primaryActionId, 'create_from_this');
-    assert.equal(steps[2]?.primaryActionLabel, '基于此再创作');
+    assert.equal(steps[2]?.primaryActionId, null);
+    assert.equal(steps[2]?.primaryActionLabel, null);
     assert.equal(steps[2]?.deliveryAttempt, 'delivered');
     assert.equal(steps[2]?.createsProductUsage, false);
 
@@ -87,7 +87,7 @@ describe('video candidate → adopt → deliver closed loop', () => {
     assert.equal(first.contentRevision, 3);
     assert.equal(first.state.baseRevisionId, 'rev-3');
 
-    // Second adopt path: treat as new candidate after recompose.
+    // Second adopt path: treat a newly received upstream output as a candidate.
     state = {
       ...first.state,
       loopPhase: 'candidate_ready',

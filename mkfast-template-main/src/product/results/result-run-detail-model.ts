@@ -69,8 +69,14 @@ const FAILURE_MESSAGES: Record<string, string> = {
   UNKNOWN: '生成未完成，请重试或联系支持。',
 };
 
-function merchantFailureMessage(code: string | undefined): string | undefined {
+function merchantFailureMessage(
+  code: string | undefined,
+  workspaceKind: ResultRunDetailFacts['workspaceKind']
+): string | undefined {
   if (!code) return undefined;
+  if (workspaceKind === 'video') {
+    return '成片接收未完成，请返回工作台查看任务状态或联系支持。';
+  }
   const normalized = code.trim().toUpperCase();
   if (FAILURE_MESSAGES[normalized]) return FAILURE_MESSAGES[normalized];
   // Never echo raw internal codes / provider names to merchants.
@@ -78,6 +84,9 @@ function merchantFailureMessage(code: string | undefined): string | undefined {
 }
 
 function stageSummaryFor(facts: ResultRunDetailFacts): string {
+  if (facts.workspaceKind === 'video' && facts.phase === 'failed') {
+    return '成片接收未完成';
+  }
   switch (facts.phase) {
     case 'running':
       if (facts.progressState === 'suspended') return '等待你确认后继续';
@@ -151,12 +160,26 @@ function costSummaryFor(facts: ResultRunDetailFacts): string {
   if (facts.productUsageQuantity === 1) {
     return '本次按 1 次创作计费；是否扣费以账单记录为准。';
   }
+  if (facts.workspaceKind === 'video') {
+    return '费用以账单记录为准；当前页面不会发起新的成片生成。';
+  }
   return '费用以账单记录为准；重新生成前会再次确认。';
 }
 
 function recoveryHintFor(facts: ResultRunDetailFacts): string | undefined {
   if (facts.recoveredAt) {
     return '任务已恢复，可继续查看结果。';
+  }
+  if (
+    facts.workspaceKind === 'video' &&
+    (facts.jobStatus === 'recoverable' ||
+      facts.jobStatus === 'unknown' ||
+      facts.progressState === 'suspended')
+  ) {
+    return '可点「恢复或核验」继续接收同一上游任务，不会创建新的成片任务。';
+  }
+  if (facts.workspaceKind === 'video' && facts.phase === 'failed') {
+    return '请返回工作台查看上游任务状态；当前页面不会重新生成成片。';
   }
   if (
     facts.jobStatus === 'recoverable' ||
@@ -187,6 +210,11 @@ export function projectResultRunDetail(
     !/[0-9a-f]{8}-[0-9a-f]{4}-/iu.test(modelName)
       ? modelName
       : undefined;
+  const failureSummary = merchantFailureMessage(
+    facts.failureCode,
+    facts.workspaceKind
+  );
+  const recoveryHint = recoveryHintFor(facts);
 
   return {
     heading: '运行详情',
@@ -195,10 +223,8 @@ export function projectResultRunDetail(
     stages: projectStages(facts),
     costSummary: costSummaryFor(facts),
     ...(safeModel ? { modelSummary: `使用模型：${safeModel}` } : {}),
-    ...(merchantFailureMessage(facts.failureCode)
-      ? { failureSummary: merchantFailureMessage(facts.failureCode) }
-      : {}),
-    ...(recoveryHintFor(facts) ? { recoveryHint: recoveryHintFor(facts) } : {}),
+    ...(failureSummary ? { failureSummary } : {}),
+    ...(recoveryHint ? { recoveryHint } : {}),
     supportHint: `联系支持时请提供编号 ${facts.supportReference}`,
   };
 }

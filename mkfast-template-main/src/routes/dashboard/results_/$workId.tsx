@@ -23,7 +23,6 @@ import {
 import {
   buildLiveVideoWorksurface,
   buildNativeVideoWorksurface,
-  contentPackageRefreshToken,
   factSourcesFromGroundingSnapshot,
   imageWorksurfaceFromContentPackage,
   revisionTimelineFactsFromContentPackage,
@@ -67,11 +66,7 @@ import {
   deliveryTargetForIntent,
   useDeliveryViewport,
 } from '@/product/results/delivery-viewport';
-import type {
-  VideoCanonicalEditCommand,
-  VideoRegenerationQuoteRequest,
-  VideoRegenerationServerQuote,
-} from '@/product/results/video/video-worksurface';
+import type { VideoCanonicalEditCommand } from '@/product/results/video/video-worksurface';
 import { executeResultContentPackageHandEdit } from '@/product/results/result-content-package-hand-edit';
 import {
   validateResultCenterSearch,
@@ -98,7 +93,7 @@ import type {
 import { resultCenterPath } from '@meiye/contracts';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 
 /** Merchant-facing platform names for the weekly 「换平台」 prefill. */
 const WEEKLY_PLATFORM_LABELS: Record<string, string> = {
@@ -140,10 +135,6 @@ function ResultCenterRoutePage() {
     string | undefined
   >();
   const [closeLoopPending, setCloseLoopPending] = useState(false);
-  const [
-    videoRegenerationPackageBaseline,
-    setVideoRegenerationPackageBaseline,
-  ] = useState<string | null | undefined>(undefined);
   const deliveryViewport = useDeliveryViewport();
   const target = parseResultCenterSearch(workId, search);
   const workbenchQueryKey = p1QueryKeys.request(
@@ -183,8 +174,6 @@ function ResultCenterRoutePage() {
     queryFn: ({ signal }) =>
       operationsQuery<PublicContentPackage[]>('content_packages', {}, signal),
     retry: false,
-    refetchInterval:
-      videoRegenerationPackageBaseline === undefined ? false : 1_000,
   });
   // `content_packages` is ordered by updatedAt DESC. Its source binds Work and
   // Harness Task atomically, so canonical workId-only reopens reconnect without
@@ -273,15 +262,6 @@ function ResultCenterRoutePage() {
     },
     retry: false,
   });
-  const contentPackageToken = contentPackageRefreshToken(contentPackage);
-  useEffect(() => {
-    if (
-      videoRegenerationPackageBaseline !== undefined &&
-      contentPackageToken !== videoRegenerationPackageBaseline
-    ) {
-      setVideoRegenerationPackageBaseline(undefined);
-    }
-  }, [contentPackageToken, videoRegenerationPackageBaseline]);
   const currentPackageVersion = contentPackage?.versions.find(
     (version) => version.id === contentPackage.currentVersionId
   );
@@ -937,6 +917,9 @@ function ResultCenterRoutePage() {
     );
     window.location.assign(resultCenterPath(derived.id));
   };
+  const acceptanceUnknown =
+    selected?.job?.status === 'recoverable' ||
+    selected?.job?.status === 'unknown';
   const supportedActionIds: ResultAction['id'][] = [
     'adopt_candidate',
     'continue_adjust',
@@ -947,8 +930,7 @@ function ResultCenterRoutePage() {
     'cancel_run',
     'open_history',
     'open_run_detail',
-    ...(selected?.job?.status === 'recoverable' ||
-    selected?.job?.status === 'unknown'
+    ...(acceptanceUnknown
       ? (['recover_or_verify', 'handle_current_issue'] as const)
       : []),
   ];
@@ -1112,6 +1094,7 @@ function ResultCenterRoutePage() {
     target,
     workspaceKind,
     progressState: resultProgressState,
+    acceptanceUnknown,
     hasUsableCandidate,
     deliveryAttempt,
     ...packageMutationFacts,
@@ -1181,6 +1164,7 @@ function ResultCenterRoutePage() {
         workspaceKind,
         requestedPanel: search.panel,
         progressState: resultProgressState,
+        acceptanceUnknown,
         hasUsableCandidate,
         deliveryAttempt,
         ...packageMutationFacts,
@@ -1426,46 +1410,6 @@ function ResultCenterRoutePage() {
           search: (current) => ({ ...current, panel: 'delivery' }),
         })
       }
-      onVideoRequestRegenerationQuote={
-        selectedVideoWorkflowId
-          ? async (request: VideoRegenerationQuoteRequest) => {
-              const fingerprint = `video-regen-quote:${request.sourceRunId}:${request.scope}:${request.shotId ?? ''}`;
-              const key =
-                intentKeys.current.get(fingerprint) ?? crypto.randomUUID();
-              intentKeys.current.set(fingerprint, key);
-              const quoted = await commandP1<VideoRegenerationServerQuote>(
-                'video-regeneration',
-                { action: 'quote', payload: request },
-                key
-              );
-              intentKeys.current.delete(fingerprint);
-              return quoted;
-            }
-          : undefined
-      }
-      onVideoConfirmRegeneration={
-        selectedVideoWorkflowId
-          ? async ({ quoteId, taskId }) => {
-              const fingerprint = `video-regen-confirm:${quoteId}:${taskId}`;
-              const key =
-                intentKeys.current.get(fingerprint) ?? crypto.randomUUID();
-              intentKeys.current.set(fingerprint, key);
-              setVideoRegenerationPackageBaseline(contentPackageToken);
-              try {
-                await commandP1(
-                  'video-regeneration',
-                  { action: 'confirm', payload: { quoteId, taskId } },
-                  key
-                );
-              } catch (error) {
-                setVideoRegenerationPackageBaseline(undefined);
-                throw error;
-              }
-              intentKeys.current.delete(fingerprint);
-              await refreshCanonicalVideo();
-            }
-          : undefined
-      }
       onVideoCanonicalEdit={
         selectedVideoWorkflowId
           ? async (command: VideoCanonicalEditCommand) => {
@@ -1487,9 +1431,6 @@ function ResultCenterRoutePage() {
             }
           : undefined
       }
-      onVideoProStudio={() => {
-        window.location.assign('/pro-studio');
-      }}
       closeLoop={closeLoopFacts}
       closeLoopPending={closeLoopPending}
       onRecordManualPublication={async (input) => {

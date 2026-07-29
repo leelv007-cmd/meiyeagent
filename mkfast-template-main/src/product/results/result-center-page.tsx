@@ -42,13 +42,8 @@ import {
 } from './image-worksurface';
 import type { ImageWorksurfaceFacts } from './image-worksurface-model';
 import { VideoWorksurface } from './video/video-worksurface';
-import type {
-  VideoCanonicalEditCommand,
-  VideoRegenerationQuoteRequest,
-  VideoRegenerationServerQuote,
-} from './video/video-worksurface';
+import type { VideoCanonicalEditCommand } from './video/video-worksurface';
 import type { VideoWorksurfaceState } from './video/video-worksurface-model';
-import type { VideoProStudioRefineHandoff } from './video/video-worksurface-model';
 import {
   desktopVisibleActions,
   mobileVisibleActions,
@@ -143,15 +138,7 @@ export type ResultCenterPageProps = {
   videoWorksurface?: VideoWorksurfaceState;
   onVideoAdopt?: (state: VideoWorksurfaceState) => void | Promise<void>;
   onVideoDeliver?: (state: VideoWorksurfaceState) => void | Promise<void>;
-  onVideoRequestRegenerationQuote?: (
-    request: VideoRegenerationQuoteRequest
-  ) => Promise<VideoRegenerationServerQuote>;
-  onVideoConfirmRegeneration?: (input: {
-    quoteId: string;
-    taskId: string;
-  }) => Promise<void>;
   onVideoCanonicalEdit?: (command: VideoCanonicalEditCommand) => Promise<void>;
-  onVideoProStudio?: (handoff: VideoProStudioRefineHandoff) => void;
   onCopyAdopt?: () => void | Promise<void>;
   onCopyGeneratePlatformVariants?: CopyImageTextWorksurfaceProps['onGeneratePlatformVariants'];
   onCopyHandEdit?: CopyImageTextWorksurfaceProps['onHandEdit'];
@@ -319,10 +306,7 @@ function WorkspaceBody(props: {
   viewport?: ResultCenterPageProps['viewport'];
   onVideoAdopt?: ResultCenterPageProps['onVideoAdopt'];
   onVideoDeliver?: ResultCenterPageProps['onVideoDeliver'];
-  onVideoRequestRegenerationQuote?: ResultCenterPageProps['onVideoRequestRegenerationQuote'];
-  onVideoConfirmRegeneration?: ResultCenterPageProps['onVideoConfirmRegeneration'];
   onVideoCanonicalEdit?: ResultCenterPageProps['onVideoCanonicalEdit'];
-  onVideoProStudio?: ResultCenterPageProps['onVideoProStudio'];
   onCopyAdopt?: ResultCenterPageProps['onCopyAdopt'];
   onCopyGeneratePlatformVariants?: ResultCenterPageProps['onCopyGeneratePlatformVariants'];
   onCopyHandEdit?: ResultCenterPageProps['onCopyHandEdit'];
@@ -348,10 +332,7 @@ function WorkspaceBody(props: {
         viewport={props.viewport}
         onAdopt={props.onVideoAdopt}
         onDeliver={props.onVideoDeliver}
-        onRequestRegenerationQuote={props.onVideoRequestRegenerationQuote}
-        onConfirmRegeneration={props.onVideoConfirmRegeneration}
         onCanonicalEdit={props.onVideoCanonicalEdit}
-        onOpenProStudio={props.onVideoProStudio}
       />
     ) : (
       <div
@@ -556,7 +537,11 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
         </div>
         {shell.phase === 'failed' ? (
           <div className="space-y-1 text-xs text-muted-foreground">
-            <p>本次是否产生费用请以账单记录为准；重新生成前会再次确认费用。</p>
+            <p>
+              {shell.workspaceKind === 'video'
+                ? '本次是否产生费用请以账单记录为准；上游结果接收失败，可返回工作台查看运行详情。'
+                : '本次是否产生费用请以账单记录为准；重新生成前会再次确认费用。'}
+            </p>
             <p data-testid="result-support-reference">
               联系支持时请提供编号{' '}
               {formatMerchantSupportReference(props.workId)}
@@ -778,12 +763,7 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
             viewport={viewport}
             onVideoAdopt={props.onVideoAdopt}
             onVideoDeliver={props.onVideoDeliver}
-            onVideoRequestRegenerationQuote={
-              props.onVideoRequestRegenerationQuote
-            }
-            onVideoConfirmRegeneration={props.onVideoConfirmRegeneration}
             onVideoCanonicalEdit={props.onVideoCanonicalEdit}
-            onVideoProStudio={props.onVideoProStudio}
             onCopyAdopt={props.onCopyAdopt}
             onCopyGeneratePlatformVariants={
               props.onCopyGeneratePlatformVariants

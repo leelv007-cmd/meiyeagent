@@ -99,10 +99,12 @@ test('video worksurface model imports contracts only for cross-lane types', () =
   );
 
   assert.match(modelSource, /from '@meiye\/contracts'/);
-  assert.match(modelSource, /ResultCenterNavigation/);
+  assert.match(modelSource, /ResultActionId/);
+  assert.match(modelSource, /ResultWorkspaceKind/);
   assert.match(modelSource, /VideoWorkflowPublicProjection/);
-  assert.match(modelSource, /resultCenterPath/);
-  assert.match(modelSource, /ResultUncommittedEditKey/);
+  assert.doesNotMatch(modelSource, /ResultCenterNavigation/);
+  assert.doesNotMatch(modelSource, /resultCenterPath/);
+  assert.doesNotMatch(modelSource, /ResultUncommittedEditKey/);
 
   // Document contracts-only ownership in module header.
   assert.match(modelSource, /Contracts-only boundary/i);
