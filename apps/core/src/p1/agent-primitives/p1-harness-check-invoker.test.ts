@@ -20,10 +20,11 @@ import {
 } from './runtime.js';
 
 const observability = {
-  catalogRevision: 'catalog-2026-07-29',
-  promptVersion: 'marketing/copy@v4',
-  scene: 'copy.check',
-  skillRevision: 'copywriter@rev-17',
+  axisScope: 'execution_child' as const,
+  catalogRevision: { kind: 'bound' as const, value: 'catalog-2026-07-29' },
+  promptVersion: { kind: 'bound' as const, value: 'marketing/copy@v4' },
+  scene: { kind: 'bound' as const, value: 'copy.check' },
+  skillRevision: { kind: 'bound' as const, value: 'copywriter@rev-17' },
 };
 
 test('Harness invokes canonical check through P1 once and awaits its violation audit before replay', async () => {
@@ -95,6 +96,7 @@ test('Harness invokes canonical check through P1 once and awaits its violation a
     observability,
     policyInput: firstPolicy,
     rulesets: ['external_action_approval'],
+    taskId: 'task-check-1',
     workflowId: 'workflow-check-1',
     workflowRevision: 3,
     workspaceId: 'workspace-a',

@@ -4,8 +4,10 @@ import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { AGENT_PRIMITIVE_IDS } from '@meiye/contracts';
 import { Pool } from 'pg';
 
+import { AgentPrimitiveDurableTracePort } from '../agent-primitives/durable-trace-port.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import { PostgresOperationsRepository } from '../operations/postgres-repository.js';
 import {
@@ -243,6 +245,152 @@ test(
         catalog_revision: 'catalog-r1',
         scene: 'recipe-card-group',
       });
+    } finally {
+      await pool.query(
+        `delete from harness_runtime.audit_events
+          where workflow_id=$1
+            and event_type='agent_primitive.lifecycle'`,
+        [runtimeTaskId],
+      );
+      await pool.query(
+        'delete from harness_runtime.task_requests where task_id=$1',
+        [runtimeTaskId],
+      );
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'all six primitive lifecycles persist idempotently to Postgres audit and outbox',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresHarnessStore(pool);
+    const taskId = `primitive-durable-trace-${randomUUID()}`;
+    const workspaceId = 'workspace-1';
+    const runtimeTaskId = harnessRuntimeId(workspaceId, taskId);
+    const port = new AgentPrimitiveDurableTracePort(
+      new HarnessObservabilityEventAudit(store),
+    );
+    const serverContext = {
+      actorId: 'primitive-postgres-worker',
+      correlationId: `correlation-${taskId}`,
+      idempotencyKey: '',
+      observability: {
+        axisScope: 'execution_child' as const,
+        skillRevision: { kind: 'absent' as const },
+        promptVersion: {
+          kind: 'bound' as const,
+          value: 'harness/copy-candidate@7',
+        },
+        catalogRevision: {
+          kind: 'bound' as const,
+          value: 'catalog-r7',
+        },
+        scene: {
+          kind: 'bound' as const,
+          value: 'harness:copy',
+        },
+      },
+      taskId,
+      workspaceId,
+    };
+
+    try {
+      await store.applySchema();
+      await new HarnessTaskAdmissionService(store, {
+        async start({ workflowId }) {
+          return { workflowId };
+        },
+      }).submit(taskRequest(taskId));
+
+      for (const primitiveId of AGENT_PRIMITIVE_IDS) {
+        const context = {
+          ...serverContext,
+          idempotencyKey: `primitive-postgres-${primitiveId}`,
+          ...(primitiveId === 'generate' || primitiveId === 'revise'
+            ? {
+                billing: {
+                  productUsageTaskId: `usage-${primitiveId}`,
+                  quoteId: `quote-${primitiveId}`,
+                },
+              }
+            : {}),
+        };
+        await port.append({
+          phase: 'invoked',
+          primitiveId,
+          serverContext: context,
+        });
+        await port.append({
+          phase: 'succeeded',
+          primitiveId,
+          serverContext: context,
+        });
+        await port.append({
+          phase: 'succeeded',
+          primitiveId,
+          serverContext: context,
+        });
+      }
+      await assert.rejects(
+        port.append({
+          phase: 'rejected',
+          primitiveId: 'check',
+          rejectionClass: 'execution_failed',
+          serverContext: {
+            ...serverContext,
+            idempotencyKey: 'primitive-postgres-check',
+          },
+        }),
+        /idempotency conflict/iu,
+      );
+
+      const persisted = await pool.query<{
+        payload: unknown;
+        primitive_id: string;
+        phase: string;
+        outbox: number;
+      }>(
+        `select
+           audit.payload,
+           audit.payload->'payload'->>'primitiveId' as primitive_id,
+           audit.payload->'payload'->>'phase' as phase,
+           count(outbox.audit_id)::int as outbox
+         from harness_runtime.audit_events audit
+         left join harness_runtime.langfuse_outbox outbox
+           on outbox.audit_id=audit.id
+         where audit.workflow_id=$1
+           and audit.event_type='agent_primitive.lifecycle'
+         group by audit.id
+         order by primitive_id, phase`,
+        [runtimeTaskId],
+      );
+      assert.equal(persisted.rowCount, 12);
+      assert.equal(
+        persisted.rows.reduce((count, row) => count + row.outbox, 0),
+        12,
+      );
+      assert.deepEqual(
+        [...new Set(persisted.rows.map(({ primitive_id }) => primitive_id))],
+        [...AGENT_PRIMITIVE_IDS].sort(),
+      );
+      for (const primitiveId of AGENT_PRIMITIVE_IDS) {
+        assert.deepEqual(
+          persisted.rows
+            .filter(({ primitive_id }) => primitive_id === primitiveId)
+            .map(({ phase }) => phase)
+            .sort(),
+          ['invoked', 'succeeded'],
+        );
+      }
+      assert.equal(
+        JSON.stringify(persisted.rows.map(({ payload }) => payload)).includes(
+          '"error"',
+        ),
+        false,
+      );
     } finally {
       await pool.query(
         `delete from harness_runtime.audit_events

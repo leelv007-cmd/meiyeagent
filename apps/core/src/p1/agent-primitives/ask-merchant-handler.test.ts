@@ -11,11 +11,13 @@ const serverContext: AgentPrimitiveServerContext = {
   actorId: 'worker-agent-primitives',
   correlationId: 'correlation-ask-1',
   idempotencyKey: 'primitive-ask-1',
+  taskId: 'task-ask-1',
   observability: {
-    catalogRevision: 'catalog-2026-07-29',
-    promptVersion: 'marketing/copy@v4',
-    scene: 'copy.ask_merchant',
-    skillRevision: 'copywriter@rev-17',
+    axisScope: 'execution_child',
+    catalogRevision: { kind: 'bound', value: 'catalog-2026-07-29' },
+    promptVersion: { kind: 'bound', value: 'marketing/copy@v4' },
+    scene: { kind: 'bound', value: 'copy.ask_merchant' },
+    skillRevision: { kind: 'bound', value: 'copywriter@rev-17' },
   },
   workspaceId: 'workspace-a',
 };

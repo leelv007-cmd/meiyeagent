@@ -1,4 +1,4 @@
-import type { ObservabilityAxes } from '@meiye/contracts';
+import type { ObservabilityAxisBinding } from '@meiye/contracts';
 
 import type { P1Context } from '../foundation/domain.js';
 import type { CheckResult } from '../harness/check.js';
@@ -22,8 +22,9 @@ export interface P1HarnessCheckInvocation {
   workflowId: string;
   workflowRevision: number;
   workspaceId: string;
+  taskId: string;
   correlationId: string;
-  observability: ObservabilityAxes;
+  observability: ObservabilityAxisBinding;
   policyInput: HarnessPolicyInput;
   rulesets?: string[];
 }
@@ -50,6 +51,7 @@ export class P1HarnessCheckInvoker {
     return this.targetScope.withTarget(
       {
         policyInput: input.policyInput,
+        taskId: input.taskId,
         targetRef,
       },
       () =>
@@ -75,6 +77,7 @@ export class P1HarnessCheckInvoker {
               },
               observability: input.observability,
               primitiveId: 'check',
+              taskId: input.taskId,
             },
           },
           idempotencyKey,

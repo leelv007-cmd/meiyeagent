@@ -12,6 +12,7 @@ import {
   confirmationCardDecision,
   failHarnessWorkflowPreservingExecutionError,
   harnessBillingSettlementInput,
+  invokeHarnessAskMerchantPrimitive,
   readConfirmationCardHoldTimeoutSeconds,
   readConfirmationCardTimeoutSeconds,
   refundHarnessBillingPreservingFailure,
@@ -20,6 +21,7 @@ import {
   suspensionQuestionFailOpen,
   settleHarnessCancellation,
   settleHarnessTerminalSuccess,
+  type HarnessAskMerchantPrimitivePort,
   type HarnessBillingSettlementPort,
 } from './dbos-workflow.js';
 import {
@@ -252,6 +254,19 @@ test('hold config is frozen inside the pending step and exposed as hot-read wiri
   assert.ok(pendingStepStart >= 0);
   assert.ok(pendingStepEnd > pendingStepStart);
   const pendingStep = workflowSource.slice(pendingStepStart, pendingStepEnd);
+  const primitiveCall = pendingStep.indexOf(
+    'await invokeHarnessAskMerchantPrimitive(',
+  );
+  const canonicalRegistration = pendingStep.indexOf(
+    'await persistence.registerPending(',
+  );
+  assert.ok(primitiveCall >= 0);
+  assert.ok(canonicalRegistration > primitiveCall);
+  assert.equal(pendingStep.match(/DBOS\.runStep\(/gu)?.length, 1);
+  assert.match(
+    pendingStep,
+    /\{ name: `persist-pending-\$\{question\.questionId\}` \}/u,
+  );
   assert.match(
     pendingStep,
     /await readConfirmationCardHoldTimeoutSeconds\(config\)/u,
@@ -275,6 +290,64 @@ test('hold config is frozen inside the pending step and exposed as hot-read wiri
     wiredKeys ?? '',
     /HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY/u,
   );
+});
+
+test('ask_merchant caller derives one replay-stable key from the canonical question', async () => {
+  const question = questionCardSchema.parse({
+    questionId: 'workflow-ask:offer-price',
+    workflowId: 'workflow-ask',
+    workflowRevision: 3,
+    question: '当前团购价是多少？',
+    options: [],
+    freeText: { enabled: true },
+    response: {
+      field: 'offer_price',
+      reason: '需要商户确认当前价格',
+    },
+    unattended: 'hold',
+    scope: 'current_task',
+  });
+  const calls: Array<Parameters<HarnessAskMerchantPrimitivePort['invoke']>[0]> =
+    [];
+  const primitive: HarnessAskMerchantPrimitivePort = {
+    async invoke(input) {
+      calls.push(structuredClone(input));
+    },
+  };
+  const request = {
+    workspaceId: 'workspace-ask',
+    workflowRevision: question.workflowRevision,
+  } as HarnessWorkflowInput;
+
+  await invokeHarnessAskMerchantPrimitive(primitive, {
+    question,
+    request,
+    stage: 'intent_naming',
+    workspaceId: 'workspace-ask',
+  });
+  await invokeHarnessAskMerchantPrimitive(primitive, {
+    question,
+    request,
+    stage: 'intent_naming',
+    workspaceId: 'workspace-ask',
+  });
+
+  assert.deepEqual(calls, [
+    {
+      idempotencyKey: 'harness-ask-merchant:workflow-ask:offer-price',
+      question,
+      request,
+      stage: 'intent_naming',
+      workspaceId: 'workspace-ask',
+    },
+    {
+      idempotencyKey: 'harness-ask-merchant:workflow-ask:offer-price',
+      question,
+      request,
+      stage: 'intent_naming',
+      workspaceId: 'workspace-ask',
+    },
+  ]);
 });
 
 test('confirmation timeout becomes a legal ignored decision', () => {

@@ -1,7 +1,7 @@
 import {
   boundedExecutionSnapshotSchema,
   harnessStageSchema,
-  observabilityAxesSchema,
+  observabilityAxisBindingSchema,
   questionCardSchema,
 } from '@meiye/contracts';
 
@@ -82,13 +82,14 @@ export class AgentPrimitiveFoundationModule implements P1OperationModule {
               'quoteId',
             ),
           };
-    const observability = observabilityAxesSchema.safeParse(
+    const observability = observabilityAxisBindingSchema.safeParse(
       payload.observability,
     );
     if (!observability.success) {
       fail('Agent primitive observability context is invalid.');
     }
     const primitiveId = text(payload, 'primitiveId');
+    const taskId = text(payload, 'taskId');
     const boundedExecution =
       payload.boundedExecution === undefined
         ? undefined
@@ -150,6 +151,7 @@ export class AgentPrimitiveFoundationModule implements P1OperationModule {
           ...(harness ? { harness } : {}),
           idempotencyKey: args.idempotencyKey,
           observability: observability.data,
+          taskId,
           workspaceId: args.context.workspaceId,
         },
       });

@@ -339,6 +339,12 @@ import {
   createDurableCreationExperienceRuntime,
   HarnessObservabilityEventAudit,
 } from './p1/creation-experience/index.js';
+import { HarnessCheckTargetScope } from './p1/agent-primitives/harness-check-target-scope.js';
+import { HarnessQuestionRequestPort } from './p1/agent-primitives/harness-question-request-port.js';
+import { P1HarnessAskInvoker } from './p1/agent-primitives/p1-harness-ask-invoker.js';
+import { P1HarnessCandidateRunnerScope } from './p1/agent-primitives/p1-harness-candidate-runner.js';
+import { P1HarnessCheckInvoker } from './p1/agent-primitives/p1-harness-check-invoker.js';
+import { createProductionAgentPrimitiveAssembly } from './p1/agent-primitives/production-assembly.js';
 import {
   createDurableSkillRuntime,
   PostgresSkillRepository,
@@ -1442,6 +1448,75 @@ const creationExperienceRuntime =
     productQuotes: productBillingRepository,
     skillRevisionValidation: skillRuntime.revisionValidation,
   });
+const harnessCheckTargetScope = new HarnessCheckTargetScope();
+const harnessCandidatePrimitiveScope =
+  new P1HarnessCandidateRunnerScope('harness-copy-primitive-worker');
+const agentPrimitiveAssembly = createProductionAgentPrimitiveAssembly({
+  audit: harnessObservabilityEvents,
+  askMerchant: new HarnessQuestionRequestPort(),
+  checkTarget: harnessCheckTargetScope,
+  checkViolationAudit: {
+    async append(input) {
+      const active = harnessCheckTargetScope.activeTarget();
+      if (!active.taskId) {
+        throw new Error(
+          'Harness primitive violation audit requires a task identity.',
+        );
+      }
+      await promptAuditStore.recordStageTrace({
+        workspaceId: input.workspaceId,
+        id:
+          `${active.taskId}:primitive-check:${input.targetRef}:` +
+          input.violation.gateId,
+        taskId: active.taskId,
+        stage: 'execution_selection',
+        payload: {
+          primitiveId: 'check',
+          strategy: input.strategy,
+          targetRef: input.targetRef,
+          violation: structuredClone(input.violation),
+        },
+      });
+    },
+  },
+  generate: harnessCandidatePrimitiveScope,
+  readContext: {
+    async read(input) {
+      if (input.scope !== 'workspace' && input.scope !== 'store.current') {
+        throw new Error(
+          `Unsupported production context scope: ${input.scope}`,
+        );
+      }
+      const offset = input.query?.offset ?? 0;
+      const limit = input.query?.limit ?? 20;
+      const results = await operationsService.search(
+        {
+          actor: 'worker',
+          correlationId: 'agent-primitive:read-context',
+          userId: 'agent-primitive-worker',
+          workspaceId: input.workspaceId,
+        },
+        {
+          ...(input.query?.text ? { query: input.query.text } : {}),
+          limit: offset + limit + 1,
+        },
+      );
+      return {
+        facts: results.slice(offset, offset + limit),
+        ...(results.length > offset + limit
+          ? { nextOffset: offset + limit }
+          : {}),
+      };
+    },
+  },
+  recordProposal: {
+    async propose() {
+      return { status: 'unavailable' };
+    },
+  },
+  revise: harnessCandidatePrimitiveScope,
+  reviseTarget: harnessCandidatePrimitiveScope,
+});
 operationsService.attachBriefSubmissionGate(
   creationExperienceRuntime.briefSubmissionGate,
 );
@@ -1466,6 +1541,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
   // K1 authorizer port — internal executeModule/queryModule default-deny (Z2-WIRING).
   authorizer: permissionAuthorizer,
   operations: [
+    agentPrimitiveAssembly.foundationModule,
     new AdvancedCanvasAdoptionFoundationModule(
       new PostgresAdvancedCanvasAdoptionService(pool)
     ),
@@ -1702,6 +1778,28 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
     return result.rows[0]?.owner ?? null;
   },
 });
+const p1HarnessCheckInvoker = new P1HarnessCheckInvoker(
+  p1ApplicationService,
+  harnessCheckTargetScope,
+  'harness-check-primitive-worker',
+);
+const p1HarnessAskInvoker = new P1HarnessAskInvoker(
+  p1ApplicationService,
+  'harness-ask-primitive-worker',
+);
+const p1HarnessCandidateRunner = {
+  wrap(
+    input: Omit<
+      Parameters<P1HarnessCandidateRunnerScope['wrap']>[0],
+      'application'
+    >,
+  ) {
+    return harnessCandidatePrimitiveScope.wrap({
+      ...input,
+      application: p1ApplicationService,
+    });
+  },
+};
 let harnessWorkflowEventSource: HarnessWorkflowEventSource | undefined;
 let harnessCompensationInterval: ReturnType<typeof setInterval> | undefined;
 let harnessPendingStartRecoveryInterval:
@@ -1899,6 +1997,8 @@ if (harnessRuntimeConfig) {
       () => new Date().toISOString()
     ),
     harnessExecutionChildObservability,
+    p1HarnessCheckInvoker,
+    p1HarnessCandidateRunner,
   );
   // Single wiring owner: wrap copy ports so image/video share the same
   // Coordinator → StagePort → Harness path (#139/#140).
@@ -1980,6 +2080,7 @@ if (harnessRuntimeConfig) {
       boundedExecutionLimits,
     ),
     new TaskRecallDueProducer(dueDeliveryRepository),
+    p1HarnessAskInvoker,
   );
   await DBOS.launch();
   harnessService = new HarnessApplicationService(

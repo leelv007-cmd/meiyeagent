@@ -6,6 +6,7 @@ import type { CheckTargetResolverPort } from './check-handler.js';
 interface ScopedCheckTarget {
   targetRef: string;
   policyInput: HarnessPolicyInput;
+  taskId?: string;
 }
 
 export class HarnessCheckTargetScope implements CheckTargetResolverPort {
@@ -19,9 +20,18 @@ export class HarnessCheckTargetScope implements CheckTargetResolverPort {
       {
         policyInput: structuredClone(input.policyInput),
         targetRef: input.targetRef,
+        ...(input.taskId ? { taskId: input.taskId } : {}),
       },
       operation,
     );
+  }
+
+  activeTarget(): Readonly<ScopedCheckTarget> {
+    const target = this.storage.getStore();
+    if (!target) {
+      throw new Error('No Harness check target is active.');
+    }
+    return structuredClone(target);
   }
 
   async resolve(

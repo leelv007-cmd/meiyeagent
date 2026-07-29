@@ -1,13 +1,8 @@
-import type { HarnessDecisionStore } from '../harness/decision-service.js';
 import type { MerchantQuestionRequestPort } from './ask-merchant-handler.js';
 
 export class HarnessQuestionRequestPort
   implements MerchantQuestionRequestPort
 {
-  constructor(
-    private readonly store: Pick<HarnessDecisionStore, 'registerPending'>,
-  ) {}
-
   async request(
     input: Parameters<MerchantQuestionRequestPort['request']>[0],
   ): Promise<{ requestRef: string }> {
@@ -31,10 +26,6 @@ export class HarnessQuestionRequestPort
         'Model question does not match the canonical Harness QuestionCard.',
       );
     }
-    await this.store.registerPending(
-      input.serverContext.workspaceId,
-      harness.question,
-    );
     return { requestRef: harness.question.questionId };
   }
 }

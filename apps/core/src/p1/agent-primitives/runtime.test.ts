@@ -11,6 +11,7 @@ import {
   AgentPrimitiveRegistry,
   createCanonicalAgentPrimitiveRegistry,
 } from './registry.js';
+import { ExecutionAttemptBudgetExceeded } from '../model-supply/execution-attempt-budget.js';
 import {
   AgentPrimitiveRequestError,
   AgentPrimitiveRuntime,
@@ -51,11 +52,13 @@ const serverContext: AgentPrimitiveServerContext = {
   actorId: 'worker-agent-primitives',
   correlationId: 'correlation-1',
   idempotencyKey: 'primitive-call-1',
+  taskId: 'task-1',
   observability: {
-    catalogRevision: 'catalog-2026-07-29',
-    promptVersion: 'marketing/copy@v4',
-    scene: 'copy.generate',
-    skillRevision: 'copywriter@rev-17',
+    axisScope: 'execution_child',
+    catalogRevision: { kind: 'bound', value: 'catalog-2026-07-29' },
+    promptVersion: { kind: 'bound', value: 'marketing/copy@v4' },
+    scene: { kind: 'bound', value: 'copy.generate' },
+    skillRevision: { kind: 'bound', value: 'copywriter@rev-17' },
   },
   workspaceId: 'workspace-1',
 };
@@ -200,9 +203,9 @@ test('server-owned identity is snapshotted and frozen before handler dispatch', 
     assert.throws(() => {
       (
         context.observability as {
-          scene: string;
+          scene: { kind: string; value: string };
         }
-      ).scene = 'mutated-scene';
+      ).scene.value = 'mutated-scene';
     }, TypeError);
     return {};
   };
@@ -220,7 +223,10 @@ test('server-owned identity is snapshotted and frozen before handler dispatch', 
 
   assert.notEqual(received, serverContext);
   assert.equal(received?.workspaceId, 'workspace-1');
-  assert.equal(received?.observability.scene, 'copy.generate');
+  assert.deepEqual(received?.observability.scene, {
+    kind: 'bound',
+    value: 'copy.generate',
+  });
 });
 
 test('Harness question context is deep-frozen for handlers and projected without merchant content in traces', async () => {
@@ -448,12 +454,86 @@ test('a handler failure is traced after invocation and preserves the original er
     expected,
   );
   assert.deepEqual(
-    events.map(({ error, phase }) => ({ error, phase })),
+    events.map((event) => ({
+      phase: event.phase,
+      rejectionClass:
+        event.phase === 'rejected' ? event.rejectionClass : undefined,
+    })),
     [
-      { error: undefined, phase: 'invoked' },
-      { error: expected.message, phase: 'rejected' },
+      { phase: 'invoked', rejectionClass: undefined },
+      { phase: 'rejected', rejectionClass: 'execution_uncertain' },
     ],
   );
+});
+
+test('a provider budget suspension stays typed after invocation', async () => {
+  const events: AgentPrimitiveTraceEvent[] = [];
+  const expected = new ExecutionAttemptBudgetExceeded(2, 2);
+  const bindings = completeBindings();
+  bindings.generate = async () => {
+    throw expected;
+  };
+  const runtime = new AgentPrimitiveRuntime({
+    bindings,
+    registry: createCanonicalAgentPrimitiveRegistry(),
+    tracePort: {
+      async append(event) {
+        events.push(event);
+      },
+    },
+  });
+
+  await assert.rejects(
+    runtime.execute({
+      modelInput: { brief: {}, kind: 'copy' },
+      primitiveId: 'generate',
+      serverContext: {
+        ...serverContext,
+        billing: {
+          productUsageTaskId: 'usage-budget-suspension',
+          quoteId: 'quote-budget-suspension',
+        },
+        boundedExecution,
+      },
+    }),
+    expected,
+  );
+  assert.deepEqual(
+    events.map((event) => ({
+      phase: event.phase,
+      rejectionClass:
+        event.phase === 'rejected' ? event.rejectionClass : undefined,
+    })),
+    [
+      { phase: 'invoked', rejectionClass: undefined },
+      { phase: 'rejected', rejectionClass: 'execution_budget_exceeded' },
+    ],
+  );
+});
+
+test('a succeeded trace failure never rewrites a successful handler as rejected', async () => {
+  const phases: AgentPrimitiveTraceEvent['phase'][] = [];
+  const expected = new Error('succeeded trace unavailable');
+  const runtime = new AgentPrimitiveRuntime({
+    bindings: completeBindings(),
+    registry: createCanonicalAgentPrimitiveRegistry(),
+    tracePort: {
+      async append(event) {
+        phases.push(event.phase);
+        if (event.phase === 'succeeded') throw expected;
+      },
+    },
+  });
+
+  await assert.rejects(
+    runtime.execute({
+      modelInput: { scope: 'store.current' },
+      primitiveId: 'read_context',
+      serverContext,
+    }),
+    expected,
+  );
+  assert.deepEqual(phases, ['invoked', 'succeeded']);
 });
 
 test('non-billed primitives remain callable without quote context', async () => {

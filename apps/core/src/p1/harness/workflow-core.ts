@@ -347,6 +347,7 @@ export interface HarnessWorkflowRuntime {
   hasRegisteredPendingQuestion?(question: QuestionCard): Promise<boolean>;
   awaitDecision(
     question: QuestionCard,
+    stage: HarnessStage,
   ): Promise<
     | StructuredDecisionInput
     | {
@@ -907,6 +908,7 @@ export async function runHarnessWorkflow(
       await awaitResolvedDecision(
         runtime,
         permissionSelectionQuestion(workflowId, args[1].request, error),
+        'execution_selection',
       );
       throw error;
     }
@@ -951,6 +953,7 @@ export async function runHarnessWorkflow(
       const command = await awaitResolvedDecision(
         runtime,
         boundedExecutionQuestion(workflowId, activeRequest, outcome),
+        'execution_selection',
       );
       if (!runtime.resumeBoundedExecution) {
         throw new BoundedExecutionResumeError(
@@ -1507,6 +1510,7 @@ async function runNoteHarnessWorkflow(
     await awaitResolvedDecision(
       runtime,
       noteStyleQuestion(workflowId, request, brief),
+      'brief_compilation',
     ),
   );
   await reportProgress({
@@ -2570,7 +2574,10 @@ async function resolveFactSatisfaction(input: {
     state: 'suspended',
     message: assessment.question.question,
   });
-  const resolved = await input.runtime.awaitDecision(assessment.question);
+  const resolved = await input.runtime.awaitDecision(
+    assessment.question,
+    'context_injection',
+  );
   if ('cancelled' in resolved) {
     throw new HarnessWorkflowCancellation(resolved.merchantMessage);
   }
@@ -2670,6 +2677,7 @@ async function resolveIntentRoute(input: {
   });
   const resolved = await input.runtime.awaitDecision(
     input.intent.blockingQuestion,
+    'intent_naming',
   );
   if ('cancelled' in resolved) {
     throw new HarnessWorkflowCancellation(resolved.merchantMessage);
@@ -2739,8 +2747,9 @@ async function resolveIntentRoute(input: {
 async function awaitResolvedDecision(
   runtime: HarnessWorkflowRuntime,
   question: QuestionCard,
+  stage: HarnessStage,
 ) {
-  const resolved = await runtime.awaitDecision(question);
+  const resolved = await runtime.awaitDecision(question, stage);
   if ('cancelled' in resolved) {
     throw new HarnessWorkflowCancellation(resolved.merchantMessage);
   }

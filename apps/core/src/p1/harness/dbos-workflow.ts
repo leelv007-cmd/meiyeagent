@@ -5,6 +5,7 @@ import {
   workflowProgressEnvelopeSchema,
   workflowTokenEnvelopeSchema,
   type BoundedExecutionLimitName,
+  type HarnessStage,
   type ProductUsageUnit,
   type QuestionCard,
   type StructuredDecisionInput,
@@ -122,6 +123,35 @@ export interface TaskRecallDuePort {
   produce(input: TaskRecallDueInput): Promise<unknown>;
 }
 
+export interface HarnessAskMerchantPrimitivePort {
+  invoke(input: {
+    idempotencyKey: string;
+    question: QuestionCard;
+    request: HarnessWorkflowInput;
+    stage: HarnessStage;
+    workspaceId: string;
+  }): Promise<void>;
+}
+
+export async function invokeHarnessAskMerchantPrimitive(
+  primitive: HarnessAskMerchantPrimitivePort | undefined,
+  input: {
+    question: QuestionCard;
+    request: HarnessWorkflowInput;
+    stage: HarnessStage;
+    workspaceId: string;
+  },
+) {
+  if (!primitive) return;
+  await primitive.invoke({
+    idempotencyKey: `harness-ask-merchant:${input.question.questionId}`,
+    question: structuredClone(input.question),
+    request: structuredClone(input.request),
+    stage: input.stage,
+    workspaceId: input.workspaceId,
+  });
+}
+
 const PROGRESS_STREAM = 'progress';
 export const DEFAULT_CONFIRMATION_CARD_HOLD_TIMEOUT_SECONDS = 48 * 60 * 60;
 export const DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS = 30;
@@ -224,6 +254,7 @@ export function registerHarnessDbosWorkflow(
     Partial<Pick<HarnessDecisionService, 'submitCoreHoldExpired'>>,
   boundedContinuations?: HarnessBoundedExecutionContinuationResolver,
   taskRecallDue?: TaskRecallDuePort,
+  askMerchant?: HarnessAskMerchantPrimitivePort,
 ) {
   const workflow = async (input: HarnessDbosWorkflowInput) => {
     const runtimeWorkflowId = DBOS.workflowID;
@@ -288,7 +319,7 @@ export function registerHarnessDbosWorkflow(
           pending.workflowRevision === question.workflowRevision
         );
       },
-      async awaitDecision(question) {
+      async awaitDecision(question, stage) {
         question = suspensionQuestionFailOpen(question, {
           workflowId,
           workflowRevision: request.workflowRevision,
@@ -304,6 +335,12 @@ export function registerHarnessDbosWorkflow(
               request.usageReservation && question.unattended !== 'continue'
                 ? await readConfirmationCardHoldTimeoutSeconds(config)
                 : null;
+            await invokeHarnessAskMerchantPrimitive(askMerchant, {
+              question,
+              request,
+              stage,
+              workspaceId: request.workspaceId,
+            });
             const registered = await persistence.registerPending(
               request.workspaceId,
               question,

@@ -31,8 +31,11 @@ import {
 import {
   validateHarnessPolicy,
   type HarnessFactClaim,
+  type HarnessGateFailure,
+  type HarnessPolicyInput,
   type VisibleClaimExtraction,
 } from './policy-gates.js';
+import type { CheckResult } from './check.js';
 import {
   compileExecutionBrief,
   InMemoryStructuredNodeMetrics,
@@ -92,6 +95,36 @@ export interface ProductionHarnessContextPort {
     >[0]['declaration'];
     context: HarnessContextSnapshot;
   }): Promise<HarnessContextSnapshot>;
+}
+
+export interface HarnessPrimitiveCheckPort {
+  execute(input: {
+    correlationId: string;
+    observability: ObservabilityAxisBinding;
+    policyInput: HarnessPolicyInput;
+    taskId: string;
+    workflowId: string;
+    workflowRevision: number;
+    workspaceId: string;
+  }): Promise<CheckResult<'block', HarnessGateFailure>>;
+}
+
+export interface HarnessCandidatePrimitiveRunnerFactory {
+  wrap(input: {
+    billing: {
+      productUsageTaskId: string;
+      quoteId: string;
+    };
+    boundedExecution: NonNullable<HarnessWorkflowInput['boundedExecution']>;
+    observability: ObservabilityAxisBinding;
+    resumeCandidate?: {
+      revision: number;
+      sourceEffectIdempotencyKey: string;
+    };
+    runner: StructuredNodeRunner;
+    taskId: string;
+    workspaceId: string;
+  }): StructuredNodeRunner;
 }
 
 export interface HarnessCopyDeliveryPort {
@@ -315,6 +348,8 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     private readonly recipeFacts?: HarnessRecipeFactRequirementPort,
     private readonly factRights?: FactRightsAuthorizationPort,
     private readonly executionChildObservability?: HarnessExecutionChildObservabilityFactory,
+    private readonly primitiveCheck?: HarnessPrimitiveCheckPort,
+    private readonly candidatePrimitiveRunner?: HarnessCandidatePrimitiveRunnerFactory,
   ) {}
 
   async recordExecutionAssemblyStep(input: {
@@ -648,7 +683,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       input.request,
       'execution_selection',
     );
-    const runner =
+    let runner =
       boundedExecution && boundedExecution.maxIterations !== 'unset'
         ? withExecutionAttemptBudget(
             unboundedRunner,
@@ -658,7 +693,41 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
             }),
           )
         : unboundedRunner;
-    return executePlatformCopySelection(
+    if (this.candidatePrimitiveRunner) {
+      const snapshot = input.request.executionSnapshot;
+      if (!boundedExecution || !snapshot) {
+        throw new Error(
+          'Primitive copy generation requires bounded execution and billing lineage.',
+        );
+      }
+      const lifecycle = harnessExecutionChildLifecycleInput({
+        request: input.request,
+        stage: 'execution_selection',
+        primitiveId: 'generate',
+        baseIdempotencyKey: `wf:${input.workflowId}:s4:agent-generate`,
+        promptKey: 'copyCandidate',
+      });
+      const resumeCandidate = resumeFrom?.candidate
+        ? primitiveCandidateResumeFence({
+            candidateId: resumeFrom.candidate.candidateId,
+            taskId: input.workflowId,
+            unitId: copyUnit(input.context.bundle.revision),
+          })
+        : undefined;
+      runner = this.candidatePrimitiveRunner.wrap({
+        billing: {
+          productUsageTaskId: snapshot.task.id,
+          quoteId: snapshot.quote.id,
+        },
+        boundedExecution,
+        observability: lifecycle.axes,
+        ...(resumeCandidate ? { resumeCandidate } : {}),
+        runner,
+        taskId: lifecycle.taskId,
+        workspaceId: input.request.workspaceId,
+      });
+    }
+    const selection = await executePlatformCopySelection(
       {
         workflowId: input.workflowId,
         unitId: copyUnit(input.context.bundle.revision),
@@ -688,6 +757,44 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       },
       { runner },
     );
+    if ('state' in selection || !this.primitiveCheck) {
+      return selection;
+    }
+    const correlationId = `wf:${input.workflowId}:s4:agent-check`;
+    const lifecycle = harnessExecutionChildLifecycleInput({
+      request: input.request,
+      stage: 'execution_selection',
+      primitiveId: 'check',
+      baseIdempotencyKey: correlationId,
+      promptKey: 'copyCandidate',
+    });
+    const checked = await this.primitiveCheck.execute({
+      correlationId,
+      observability: lifecycle.axes,
+      policyInput: {
+        phase: 'execution',
+        bundle: {
+          workspaceId: input.request.workspaceId,
+          revision: input.context.bundle.revision,
+        },
+        brief: structuredClone(input.brief),
+        candidate: structuredClone(selection.winner),
+        ...input.context.policyReferences,
+      },
+      taskId: lifecycle.taskId,
+      workflowId: input.workflowId,
+      workflowRevision: input.request.workflowRevision,
+      workspaceId: input.request.workspaceId,
+    });
+    if (!checked.allowed) {
+      throw new HarnessSelectionError(
+        checked.violations.map(({ gateId }) => gateId),
+        checked.violations[0]?.reason,
+        [],
+        checked.violations.flatMap(({ alternativePath }) => alternativePath),
+      );
+    }
+    return selection;
   }
 
   async assembleAndDeliver(
@@ -1342,6 +1449,26 @@ function hasAuthorizedOfferEvidence(
 
 function copyUnit(revision: number) {
   return revision === 1 ? 'copy-primary' : `copy-primary-r${revision}`;
+}
+
+function primitiveCandidateResumeFence(input: {
+  candidateId: string;
+  taskId: string;
+  unitId: string;
+}) {
+  const retrySuffix = '-retry';
+  const isRevision = input.candidateId.endsWith(retrySuffix);
+  const sourceCandidateId = isRevision
+    ? input.candidateId.slice(0, -retrySuffix.length)
+    : input.candidateId;
+  if (!sourceCandidateId) {
+    throw new Error('Primitive copy resume candidate identity is invalid.');
+  }
+  return {
+    revision: isRevision ? 2 : 1,
+    sourceEffectIdempotencyKey:
+      `wf:${input.taskId}:s4:${input.unitId}:${sourceCandidateId}`,
+  };
 }
 
 function normalizedFactKey(value: string) {

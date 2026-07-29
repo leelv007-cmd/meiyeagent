@@ -374,6 +374,25 @@ export class P1ApplicationService {
     input: TInput,
     idempotencyKey: string
   ): Promise<TOutput> {
+    return (
+      await this.executeModuleWithReplay<TInput, TOutput>(
+        context,
+        name,
+        input,
+        idempotencyKey
+      )
+    ).value;
+  }
+
+  async executeModuleWithReplay<
+    TInput extends Record<string, unknown>,
+    TOutput,
+  >(
+    context: P1Context,
+    name: string,
+    input: TInput,
+    idempotencyKey: string
+  ): Promise<{ value: TOutput; replayed: boolean }> {
     const operation = this.operations.get(name);
     if (!operation) throw new P1DomainError('INVALID_STATE', `Operation ${name} is not registered.`);
     await this.authorizeWorkspaceMember(this.repository, context);
@@ -384,7 +403,9 @@ export class P1ApplicationService {
       idempotencyKey,
       commandHash
     );
-    if (claim.decision === 'replay') return claim.value;
+    if (claim.decision === 'replay') {
+      return { value: claim.value, replayed: true };
+    }
     if (claim.decision === 'in_progress') {
       throw new P1DomainError(
         'INVALID_STATE',
@@ -470,7 +491,7 @@ export class P1ApplicationService {
       claim.claimToken,
       value
     );
-    return value;
+    return { value, replayed: false };
   }
 
   async queryModule<TInput extends Record<string, unknown>, TOutput>(

@@ -2309,6 +2309,434 @@ test('structured provider child lifecycle uses frozen single-value axes', async 
   );
 });
 
+test('copy selection awaits the additive primitive check with frozen child axes', async () => {
+  const runner = new QueueRunner([
+    candidate('门店护理建议'),
+  ]);
+  const audit = new MemoryObservabilityEventAudit();
+  const observer = new AgentPrimitiveObservabilityAdapter(audit, {
+    resolve() {
+      return { kind: 'not_billed' };
+    },
+  });
+  const checks: unknown[] = [];
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => runner },
+    {
+      async compileAndFreeze() {
+        return contextSnapshot();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-18T00:01:00.000Z',
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      create() {
+        return observer;
+      },
+    },
+    {
+      async execute(input) {
+        checks.push(structuredClone(input));
+        return {
+          allowed: true,
+          status: 'passed' as const,
+          strategy: 'block' as const,
+          violations: [],
+        };
+      },
+    },
+  );
+  const workflowId = 'task-additive-primitive-check';
+  const request = taskInputWithExecutionAssembly(workflowId);
+  const context = contextSnapshot();
+  context.policyReferences.identityRefs = [
+    {
+      id: 'marketing_identity:identity-1:identity-r1',
+      workspaceId: request.workspaceId,
+      status: 'registered',
+    },
+  ];
+
+  const result = await ports.executeAndSelect({
+    workflowId,
+    request,
+    context,
+    brief: {
+      kind: 'copy',
+      instructions: 'x'.repeat(80),
+      platform: 'xiaohongshu',
+      cta: '私信预约',
+      factRefs: [],
+      assetRefs: [],
+      identityRefs: ['marketing_identity:identity-1:identity-r1'],
+      constraints: [],
+    },
+  });
+
+  assert.equal(result.winner.title, '门店护理建议');
+  assert.equal(checks.length, 1);
+  assert.deepEqual(checks[0], {
+    correlationId: `wf:${workflowId}:s4:agent-check`,
+    observability: {
+      axisScope: 'execution_child',
+      skillRevision: { kind: 'absent' },
+      promptVersion: {
+        kind: 'bound',
+        value: 'harness/copyCandidate@11',
+      },
+      catalogRevision: { kind: 'bound', value: 'catalog-pinned' },
+      scene: { kind: 'bound', value: 'harness:copy' },
+    },
+    policyInput: {
+      phase: 'execution',
+      bundle: {
+        workspaceId: request.workspaceId,
+        revision: context.bundle.revision,
+      },
+      brief: {
+        kind: 'copy',
+        instructions: 'x'.repeat(80),
+        platform: 'xiaohongshu',
+        cta: '私信预约',
+        factRefs: [],
+        assetRefs: [],
+        identityRefs: ['marketing_identity:identity-1:identity-r1'],
+        constraints: [],
+      },
+      candidate: result.winner,
+      ...context.policyReferences,
+    },
+    taskId: workflowId,
+    workflowId,
+    workflowRevision: request.workflowRevision,
+    workspaceId: request.workspaceId,
+  });
+});
+
+test('an additive primitive check violation blocks the selected candidate', async () => {
+  const runner = new QueueRunner([candidate('门店护理建议')]);
+  const observer = new AgentPrimitiveObservabilityAdapter(
+    new MemoryObservabilityEventAudit(),
+    {
+      resolve() {
+        return { kind: 'not_billed' };
+      },
+    },
+  );
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => runner },
+    {
+      async compileAndFreeze() {
+        return contextSnapshot();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-18T00:01:00.000Z',
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { create: () => observer },
+    {
+      async execute() {
+        return {
+          allowed: false,
+          status: 'blocked' as const,
+          strategy: 'block' as const,
+          violations: [
+            {
+              alternativePath: ['重新核验当前门店事实'],
+              gateId: 'critical_fact_source' as const,
+              reason: '候选使用了未经核验的关键事实。',
+            },
+          ],
+        };
+      },
+    },
+  );
+  const workflowId = 'task-blocked-additive-check';
+  const request = taskInputWithExecutionAssembly(workflowId);
+  const context = contextSnapshot();
+  context.policyReferences.identityRefs = [
+    {
+      id: 'marketing_identity:identity-1:identity-r1',
+      workspaceId: request.workspaceId,
+      status: 'registered',
+    },
+  ];
+
+  await assert.rejects(
+    ports.executeAndSelect({
+      workflowId,
+      request,
+      context,
+      brief: {
+        kind: 'copy',
+        instructions: 'x'.repeat(80),
+        platform: 'xiaohongshu',
+        cta: '私信预约',
+        factRefs: [],
+        assetRefs: [],
+        identityRefs: ['marketing_identity:identity-1:identity-r1'],
+        constraints: [],
+      },
+    }),
+    (error: unknown) =>
+      error instanceof HarnessSelectionError &&
+      error.gateIds[0] === 'critical_fact_source' &&
+      error.alternativePaths[0] === '重新核验当前门店事实',
+  );
+  assert.equal(runner.requests.length, 1);
+});
+
+test('copy self-correction uses the injected primitive candidate runner', async () => {
+  const runner = new QueueRunner([
+    candidate('99元护理体验'),
+    candidate('门店护理建议'),
+  ]);
+  const observer = new AgentPrimitiveObservabilityAdapter(
+    new MemoryObservabilityEventAudit(),
+    {
+      resolve() {
+        return { kind: 'not_billed' };
+      },
+    },
+  );
+  const wraps: unknown[] = [];
+  const primitiveRuns: string[] = [];
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => runner },
+    {
+      async compileAndFreeze() {
+        return contextSnapshot();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-18T00:01:00.000Z',
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { create: () => observer },
+    undefined,
+    {
+      wrap(input) {
+        const { runner: activeRunner, ...metadata } = input;
+        wraps.push(structuredClone(metadata));
+        return {
+          run(request) {
+            primitiveRuns.push(request.effectIdempotencyKey);
+            return activeRunner.run(request);
+          },
+        };
+      },
+    },
+  );
+  const workflowId = 'task-primitive-candidate-runner';
+  const request = taskInputWithExecutionAssembly(workflowId);
+  request.boundedExecution = {
+    schemaVersion: 'bounded-execution-snapshot/v1',
+    maxIterations: 2,
+    maxCostCents: 'unset',
+    maxWallClockMs: 'unset',
+    maxDelegations: 'unset',
+    requiredLimits: ['maxIterations'],
+    consumption: {
+      iterations: 0,
+      costCents: 0,
+      wallClockMs: 0,
+      delegations: 0,
+    },
+    stopReason: null,
+    triggeredLimit: null,
+  };
+  const context = contextSnapshot();
+  context.policyReferences.identityRefs = [
+    {
+      id: 'marketing_identity:identity-1:identity-r1',
+      workspaceId: request.workspaceId,
+      status: 'registered',
+    },
+  ];
+
+  const result = await ports.executeAndSelectBounded({
+    workflowId,
+    request,
+    context,
+    brief: {
+      kind: 'copy',
+      instructions: 'x'.repeat(80),
+      platform: 'xiaohongshu',
+      cta: '私信预约',
+      factRefs: [],
+      assetRefs: [],
+      identityRefs: ['marketing_identity:identity-1:identity-r1'],
+      constraints: [],
+    },
+  });
+
+  assert.equal('state' in result, false);
+  if ('state' in result) throw new Error('Expected a completed selection.');
+  assert.equal(result.winner.title, '门店护理建议');
+  assert.equal(wraps.length, 1);
+  assert.deepEqual(wraps[0], {
+    billing: {
+      productUsageTaskId: workflowId,
+      quoteId: request.executionSnapshot!.quote.id,
+    },
+    boundedExecution: request.boundedExecution,
+    observability: {
+      axisScope: 'execution_child',
+      skillRevision: { kind: 'absent' },
+      promptVersion: {
+        kind: 'bound',
+        value: 'harness/copyCandidate@11',
+      },
+      catalogRevision: { kind: 'bound', value: 'catalog-pinned' },
+      scene: { kind: 'bound', value: 'harness:copy' },
+    },
+    taskId: workflowId,
+    workspaceId: request.workspaceId,
+  });
+  assert.equal(primitiveRuns.length, 2);
+  assert.equal(runner.requests.length, 2);
+});
+
+test('bounded copy resume passes the durable candidate fence to the primitive runner', async () => {
+  const runner = new PhysicalAttemptQueueRunner(
+    [candidate('99元护理体验'), candidate('门店护理建议')],
+    [2, 1],
+  );
+  const observer = new AgentPrimitiveObservabilityAdapter(
+    new MemoryObservabilityEventAudit(),
+    { resolve: () => ({ kind: 'not_billed' }) },
+  );
+  const workflowId = 'task-primitive-candidate-resume';
+  const request = taskInputWithExecutionAssembly(workflowId);
+  request.boundedExecution = {
+    schemaVersion: 'bounded-execution-snapshot/v1',
+    maxIterations: 2,
+    maxCostCents: 'unset',
+    maxWallClockMs: 'unset',
+    maxDelegations: 'unset',
+    requiredLimits: ['maxIterations'],
+    consumption: {
+      iterations: 0,
+      costCents: 0,
+      wallClockMs: 0,
+      delegations: 0,
+    },
+    stopReason: null,
+    triggeredLimit: null,
+  };
+  const context = contextSnapshot();
+  context.policyReferences.identityRefs = [
+    {
+      id: 'marketing_identity:identity-1:identity-r1',
+      workspaceId: request.workspaceId,
+      status: 'registered',
+    },
+  ];
+  const input = {
+    workflowId,
+    request,
+    context,
+    brief: {
+      kind: 'copy' as const,
+      instructions: 'x'.repeat(80),
+      platform: 'xiaohongshu' as const,
+      cta: '私信预约',
+      factRefs: [],
+      assetRefs: [],
+      identityRefs: ['marketing_identity:identity-1:identity-r1'],
+      constraints: [],
+    },
+  };
+  const createPorts = (
+    candidateFactory?: ConstructorParameters<
+      typeof ProductionHarnessStagePorts
+    >[12],
+  ) =>
+    new ProductionHarnessStagePorts(
+      { create: () => runner },
+      {
+        async compileAndFreeze() {
+          return contextSnapshot();
+        },
+        async fence(value) {
+          return value.context;
+        },
+      },
+      new RecordingDelivery(),
+      () => '2026-07-18T00:01:00.000Z',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { create: () => observer },
+      undefined,
+      candidateFactory,
+    );
+
+  const suspended = await createPorts().executeAndSelectBounded(input);
+  assert.equal(isBoundedExecutionSuspension(suspended), true);
+  if (!isBoundedExecutionSuspension(suspended)) return;
+  const firstEffectIdempotencyKey =
+    runner.requests[0]?.effectIdempotencyKey;
+  assert.ok(firstEffectIdempotencyKey);
+  const wraps: unknown[] = [];
+  const resumed = await createPorts({
+    wrap(factoryInput) {
+      const { runner: activeRunner, ...metadata } = factoryInput;
+      wraps.push(structuredClone(metadata));
+      return activeRunner;
+    },
+  }).executeAndSelectBounded({
+    ...input,
+    request: {
+      ...request,
+      boundedExecution: resumeWithRaisedServerLimit(suspended.snapshot, {
+        limit: 'maxIterations',
+        value: 3,
+      }),
+    },
+    boundedResume: suspended,
+  });
+
+  assert.equal(isBoundedExecutionSuspension(resumed), false);
+  if (isBoundedExecutionSuspension(resumed)) return;
+  assert.equal(resumed.winner.title, '门店护理建议');
+  assert.deepEqual(
+    (wraps[0] as { resumeCandidate?: unknown }).resumeCandidate,
+    {
+      revision: 1,
+      sourceEffectIdempotencyKey: firstEffectIdempotencyKey,
+    },
+  );
+  assert.equal(runner.requests.length, 2);
+});
+
 test('a succeeded audit failure does not rewrite a successful structured provider as rejected', async () => {
   const phases: string[] = [];
   const runner = new QueueRunner([

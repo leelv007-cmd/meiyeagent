@@ -3,7 +3,6 @@ import test from 'node:test';
 
 import type { QuestionCard } from '@meiye/contracts';
 
-import type { HarnessDecisionStore } from '../harness/decision-service.js';
 import {
   HarnessQuestionRequestPort,
 } from './harness-question-request-port.js';
@@ -41,24 +40,19 @@ const serverContext: AgentPrimitiveServerContext = {
     stage: 'intent_naming',
   },
   idempotencyKey: 'primitive-ask-1',
+  taskId: 'task-ask-1',
   observability: {
-    catalogRevision: 'catalog-2026-07-29',
-    promptVersion: 'marketing/copy@v4',
-    scene: 'copy.ask_merchant',
-    skillRevision: 'copywriter@rev-17',
+    axisScope: 'execution_child',
+    catalogRevision: { kind: 'bound', value: 'catalog-2026-07-29' },
+    promptVersion: { kind: 'bound', value: 'marketing/copy@v4' },
+    scene: { kind: 'bound', value: 'copy.ask_merchant' },
+    skillRevision: { kind: 'bound', value: 'copywriter@rev-17' },
   },
   workspaceId: 'workspace-a',
 };
 
-test('the production question adapter registers the canonical card without a projection', async () => {
-  const calls: unknown[][] = [];
-  const store: Pick<HarnessDecisionStore, 'registerPending'> = {
-    async registerPending(...args) {
-      calls.push(args);
-      return { timeoutSeconds: 120 };
-    },
-  };
-  const port = new HarnessQuestionRequestPort(store);
+test('the production question adapter validates the canonical card without owning pending persistence', async () => {
+  const port = new HarnessQuestionRequestPort();
 
   const result = await port.request({
     options: question.options.map(({ description, label }) => ({
@@ -70,8 +64,6 @@ test('the production question adapter registers the canonical card without a pro
   });
 
   assert.deepEqual(result, { requestRef: question.questionId });
-  assert.equal(calls[0]?.length, 2);
-  assert.deepEqual(calls[0], [serverContext.workspaceId, question]);
 });
 
 test('the production question adapter rejects model text that differs from the canonical card', async () => {
@@ -91,12 +83,7 @@ test('the production question adapter rejects model text that differs from the c
       question: question.question,
     },
   ]) {
-    let registrations = 0;
-    const port = new HarnessQuestionRequestPort({
-      async registerPending() {
-        registrations += 1;
-      },
-    });
+    const port = new HarnessQuestionRequestPort();
 
     await assert.rejects(
       port.request({
@@ -105,17 +92,11 @@ test('the production question adapter rejects model text that differs from the c
       }),
       /does not match the canonical Harness QuestionCard/u,
     );
-    assert.equal(registrations, 0);
   }
 });
 
 test('the production question adapter requires server-owned canonical Harness context', async () => {
-  let registrations = 0;
-  const port = new HarnessQuestionRequestPort({
-    async registerPending() {
-      registrations += 1;
-    },
-  });
+  const port = new HarnessQuestionRequestPort();
   const { harness: _harness, ...withoutHarness } = serverContext;
 
   await assert.rejects(
@@ -125,5 +106,4 @@ test('the production question adapter requires server-owned canonical Harness co
     }),
     /Canonical Harness question context is required/u,
   );
-  assert.equal(registrations, 0);
 });

@@ -20,10 +20,11 @@ import {
 } from './runtime.js';
 
 const observability = {
-  catalogRevision: 'catalog-2026-07-29',
-  promptVersion: 'marketing/copy@v4',
-  scene: 'copy.generate',
-  skillRevision: 'copywriter@rev-17',
+  axisScope: 'execution_child' as const,
+  catalogRevision: { kind: 'bound' as const, value: 'catalog-2026-07-29' },
+  promptVersion: { kind: 'bound' as const, value: 'marketing/copy@v4' },
+  scene: { kind: 'bound' as const, value: 'copy.generate' },
+  skillRevision: { kind: 'bound' as const, value: 'copywriter@rev-17' },
 };
 
 const worker: P1Context = {
@@ -129,6 +130,7 @@ function command(primitiveId: AgentPrimitiveId) {
       modelInput: modelInputByPrimitive[primitiveId],
       observability,
       primitiveId,
+      taskId: 'task-agent-primitives',
     },
   };
 }

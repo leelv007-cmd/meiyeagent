@@ -2,9 +2,10 @@ import {
   AGENT_PRIMITIVE_IDS,
   type AgentPrimitiveId,
   type AgentPrimitiveInputById,
+  type AgentPrimitiveRejectionClass,
   type BoundedExecutionSnapshot,
   type HarnessStage,
-  type ObservabilityAxes,
+  type ObservabilityAxisBinding,
   type QuestionCard,
 } from '@meiye/contracts';
 
@@ -19,7 +20,8 @@ export interface AgentPrimitiveServerContext {
   actorId: string;
   correlationId: string;
   idempotencyKey: string;
-  observability: ObservabilityAxes;
+  observability: ObservabilityAxisBinding;
+  taskId: string;
   billing?: {
     productUsageTaskId: string;
     quoteId: string;
@@ -53,12 +55,19 @@ export type AgentPrimitiveTraceServerContext = Omit<
   };
 };
 
-export interface AgentPrimitiveTraceEvent {
+interface AgentPrimitiveTraceEventBase {
   primitiveId: string;
-  phase: 'invoked' | 'succeeded' | 'rejected';
   serverContext: AgentPrimitiveTraceServerContext;
-  error?: string;
 }
+
+export type AgentPrimitiveTraceEvent =
+  | (AgentPrimitiveTraceEventBase & {
+      phase: 'invoked' | 'succeeded';
+    })
+  | (AgentPrimitiveTraceEventBase & {
+      phase: 'rejected';
+      rejectionClass: AgentPrimitiveRejectionClass;
+    });
 
 export interface AgentPrimitiveTracePort {
   append(event: AgentPrimitiveTraceEvent): Promise<void>;
@@ -164,42 +173,45 @@ export class AgentPrimitiveRuntime {
             ? error
             : invalidRequest(error);
         await this.options.tracePort.append({
-          error: rejection.message,
           phase: 'rejected',
           primitiveId: args.primitiveId,
+          rejectionClass:
+            rejection instanceof ExecutionAttemptBudgetExceeded
+              ? 'execution_budget_exceeded'
+              : rejection.message.includes('billing context')
+                ? 'billing_identity_missing'
+                : 'request_invalid',
           serverContext: traceServerContext,
         });
         throw rejection;
       }
     })();
+    const handler = this.#bindings[
+      definition.id
+    ] as (args: {
+      input: unknown;
+      serverContext: AgentPrimitiveServerContext;
+    }) => Promise<unknown>;
+    let result: unknown;
     try {
-      const handler = this.#bindings[
-        definition.id
-      ] as (args: {
-        input: unknown;
-        serverContext: AgentPrimitiveServerContext;
-      }) => Promise<unknown>;
       await this.options.tracePort.append({
         phase: 'invoked',
         primitiveId: args.primitiveId,
         serverContext: traceServerContext,
       });
-      const result = await handler({
+      result = await handler({
         input,
         serverContext,
       });
-      await this.options.tracePort.append({
-        phase: 'succeeded',
-        primitiveId: args.primitiveId,
-        serverContext: traceServerContext,
-      });
-      return result;
     } catch (error) {
       try {
         await this.options.tracePort.append({
-          error: error instanceof Error ? error.message : String(error),
           phase: 'rejected',
           primitiveId: args.primitiveId,
+          rejectionClass:
+            error instanceof ExecutionAttemptBudgetExceeded
+              ? 'execution_budget_exceeded'
+              : 'execution_uncertain',
           serverContext: traceServerContext,
         });
       } catch (traceError) {
@@ -207,10 +219,10 @@ export class AgentPrimitiveRuntime {
           cause: traceError,
         });
       }
-      if (
-        error instanceof AgentPrimitiveRequestError ||
-        error instanceof ExecutionAttemptBudgetExceeded
-      ) {
+      if (error instanceof ExecutionAttemptBudgetExceeded) {
+        throw error;
+      }
+      if (error instanceof AgentPrimitiveRequestError) {
         throw new Error(
           'Agent primitive execution failed after request validation.',
           { cause: error },
@@ -218,6 +230,12 @@ export class AgentPrimitiveRuntime {
       }
       throw error;
     }
+    await this.options.tracePort.append({
+      phase: 'succeeded',
+      primitiveId: args.primitiveId,
+      serverContext: traceServerContext,
+    });
+    return result;
   }
 }
 
@@ -232,12 +250,24 @@ function snapshotServerContext(
     : undefined;
   return Object.freeze({
     ...input,
-    observability: Object.freeze({ ...input.observability }),
+    observability: freezeObservability(input.observability),
     ...(input.billing
       ? { billing: Object.freeze({ ...input.billing }) }
       : {}),
     ...(boundedExecution ? { boundedExecution } : {}),
     ...(harness ? { harness } : {}),
+  });
+}
+
+function freezeObservability(
+  input: ObservabilityAxisBinding,
+): ObservabilityAxisBinding {
+  return Object.freeze({
+    ...input,
+    catalogRevision: Object.freeze({ ...input.catalogRevision }),
+    promptVersion: Object.freeze({ ...input.promptVersion }),
+    scene: Object.freeze({ ...input.scene }),
+    skillRevision: Object.freeze({ ...input.skillRevision }),
   });
 }
 

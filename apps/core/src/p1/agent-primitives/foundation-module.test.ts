@@ -26,10 +26,11 @@ const workerContext: P1Context = {
 };
 
 const observability = {
-  catalogRevision: 'catalog-2026-07-29',
-  promptVersion: 'marketing/copy@v4',
-  scene: 'copy.generate',
-  skillRevision: 'copywriter@rev-17',
+  axisScope: 'execution_child' as const,
+  catalogRevision: { kind: 'bound' as const, value: 'catalog-2026-07-29' },
+  promptVersion: { kind: 'bound' as const, value: 'marketing/copy@v4' },
+  scene: { kind: 'bound' as const, value: 'copy.generate' },
+  skillRevision: { kind: 'bound' as const, value: 'copywriter@rev-17' },
 };
 
 const boundedExecution = {
@@ -107,6 +108,7 @@ test('worker execution keeps model input separate from server-owned identity and
         },
         observability,
         primitiveId: 'read_context',
+        taskId: 'task-read-context',
       },
     },
     store: {} as FoundationStore,
@@ -130,6 +132,7 @@ test('worker execution keeps model input separate from server-owned identity and
         correlationId: workerContext.correlationId,
         idempotencyKey: 'primitive-call-1',
         observability,
+        taskId: 'task-read-context',
         workspaceId: workerContext.workspaceId,
       },
     },
@@ -159,6 +162,7 @@ test('worker execution parses canonical Harness stage and QuestionCard only from
         },
         observability,
         primitiveId: 'ask_merchant',
+        taskId: 'task-ask-merchant',
       },
       question: {
         ...question,
@@ -210,6 +214,7 @@ test('invalid Harness stages and QuestionCards are rejected before runtime dispa
             modelInput: { question: question.question },
             observability,
             primitiveId: 'ask_merchant',
+            taskId: 'task-ask-merchant',
           },
         },
         store: {} as FoundationStore,
@@ -244,6 +249,7 @@ test('the module rejects every non-worker context before runtime dispatch', asyn
             modelInput: { scope: 'store.current' },
             observability,
             primitiveId: 'read_context',
+            taskId: 'task-read-context',
           },
         },
         store: {} as FoundationStore,
@@ -268,6 +274,7 @@ test('invalid server envelope is a retry-safe request rejection', async () => {
           modelInput: { scope: 'store.current' },
           observability: { ...observability, scene: '' },
           primitiveId: 'read_context',
+          taskId: 'task-read-context',
         },
       },
       store: {} as FoundationStore,
@@ -298,6 +305,7 @@ test('invalid bounded execution is rejected before runtime dispatch', async () =
           },
           observability,
           primitiveId: 'revise',
+          taskId: 'task-revise',
         },
       },
       store: {} as FoundationStore,
@@ -350,6 +358,7 @@ test('the production module seam rejects forged model identity through the real 
           },
           observability,
           primitiveId: 'read_context',
+          taskId: 'task-read-context',
         },
       },
       store: {} as FoundationStore,
