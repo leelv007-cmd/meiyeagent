@@ -739,7 +739,6 @@ test.describe.fixme('UI/UX Upgrade B result contracts', () => {
       page.getByText('Add your first piece of store material', { exact: true })
     ).toBeVisible();
     let visibleCopy = await page.locator('body').innerText();
-    visibleCopy = visibleCopy.replaceAll('美业内容簿', '');
     expect(visibleCopy).not.toMatch(/[\u3400-\u9fff]/u);
     expect(visibleCopy).not.toMatch(
       /TanStarter|MkFast|MkSaaS|recorded-|llm-[a-z]|gpt-[a-z]/i
@@ -760,10 +759,7 @@ test.describe.fixme('UI/UX Upgrade B result contracts', () => {
     await expect(
       page.getByRole('heading', { level: 1, name: 'Content library' })
     ).toBeVisible();
-    visibleCopy = (await page.locator('body').innerText()).replaceAll(
-      '美业内容簿',
-      ''
-    );
+    visibleCopy = await page.locator('body').innerText();
     expect(visibleCopy).not.toMatch(/[\u3400-\u9fff]/u);
   });
 });

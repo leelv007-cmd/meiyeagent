@@ -44,6 +44,11 @@ export const CHECK_GATES = [
     command: 'node',
     args: ['scripts/uiux/retired-ia-route-mount-guard.mjs'],
   },
+  {
+    name: 'brand exposure',
+    command: 'node',
+    args: ['scripts/ops/brand-exposure-scan.mjs', '--check'],
+  },
 ];
 
 export function runGates(

@@ -14,12 +14,12 @@
  *      exits 0. This is what runs *before* the rename: it is the inventory.
  *   2. Check (`--check`) — any surviving 对外 occurrence is a hard failure.
  *
- * Switch condition: `--check` is red until the rename actually lands, so it is
- * NOT wired into the `test` script yet. Wire it in the same commit that replaces
- * the strings; from then on it guards against re-introduction by the in-flight
- * lanes (#264FE / #261 / #253FE add user-facing copy and are the realistic
- * source of regression). This is D-156 in mechanical form — 靠票面/判据记账,
- * 不靠记忆.
+ * `--check` runs as the `brand exposure` gate in scripts/uiux/check-gates.mjs
+ * (root `pnpm check`), wired in the same commit that replaced the strings — it
+ * would have been red at birth any earlier. From here it guards against
+ * re-introduction by the in-flight lanes (#264FE / #261 / #253FE all add
+ * user-facing copy and are the realistic source of regression). This is D-156
+ * in mechanical form — 靠票面/判据记账, 不靠记忆.
  *
  * Boundary (D-152①): engineering-internal identifiers — package names,
  * directory names, code symbols — are not 对外 exposure and are never renamed.

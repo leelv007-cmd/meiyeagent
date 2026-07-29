@@ -51,9 +51,9 @@ PWA manifest、浏览器标题、og/twitter 卡、邮件页脚**全部解析到 
 
 | file:line | 内容 | 改名后 |
 |---|---|---|
-| `tests/e2e/specs/uiux-upgrade-b-i18n-motion.spec.ts:13` | `ALLOWED_ENGLISH_CJK = ['美业内容簿', …]`，喂 `removeAllowedEnglishCjk`（:66），断言于 `:72-75` | EN 取拉丁形态后该条目**失效应删**；留着＝白名单空放行，静默削弱下一次 CJK 泄漏的判据 |
-| `tests/e2e/specs/uiux-upgrade-b-results.spec.ts:742` | `visibleCopy.replaceAll('美业内容簿','')`，守 `:743` 的 `expect(visibleCopy).not.toMatch(/[㐀-鿿]/u)` | **删** `.replaceAll` |
-| `tests/e2e/specs/uiux-upgrade-b-results.spec.ts:764` | 同上，守 `:767` | **删** `.replaceAll` |
+| `tests/e2e/specs/uiux-upgrade-b-i18n-motion.spec.ts:13` | `ALLOWED_ENGLISH_CJK = ['美业内容簿', …]`，喂 `removeAllowedEnglishCjk`（:66），断言于 `:72-75`。**活判据**——所在 describe（`:271`）未 fixme，`expectNoChineseSystemCopy` 在 `:320`、`:359`、`:667`、`:675` 四处被调用 | EN 取拉丁形态后该条目**失效应删**；留着＝白名单空放行，静默削弱下一次 CJK 泄漏的判据 |
+| `tests/e2e/specs/uiux-upgrade-b-results.spec.ts:742` | `visibleCopy.replaceAll('美业内容簿','')`，守 `:743` 的 `expect(visibleCopy).not.toMatch(/[㐀-鿿]/u)`。**注意：所在 describe `:216` 是 `test.describe.fixme`，整块跳过**——该守卫不保护任何在跑的断言 | **删** `.replaceAll`。删除理由是「解除 fixme 时它已是错的」，不是「不删会红」 |
+| `tests/e2e/specs/uiux-upgrade-b-results.spec.ts:764` | 同上，守 `:767`，同属 fixme 块 | 同上 |
 | `tests/e2e/specs/uiux-shell-routes.spec.ts:246` | 注释：「品牌链接『美业内容簿标志』会连『内容』一起吃掉」 | 不红但**注释变假**（「丽客美页标志」不含「内容」）。改注释，**保留 `:247` 的 `exact:true`**——去掉会为将来任何含导航词的品牌名重开该缺陷类 |
 
 `tests/e2e/TEST-CATALOG.md:267`（「…contains no Chinese beyond the allowed product brand…」）描述的正是被删的 strip 守卫，随代码改。
@@ -73,23 +73,34 @@ PWA manifest、浏览器标题、og/twitter 卡、邮件页脚**全部解析到 
 | 静态资产 | `public/**`、`content/**` 零命中；`public/landing/logo.svg`、`logo-text.svg`、`favicon.svg` 为纯几何无 `<text>` |
 | promptfoo / CI / fixtures / golden | 5 份根 promptfoo 配置、`.github/workflows/*.yml`、`tests/e2e/fixtures/**`、全部单测与交互测试零命中 |
 
-## 4. 待拍决策（阻塞替换动作）
+## 4. 决策（2026-07-29 已拍板，替换按此执行）
 
-**① EN 取拉丁形态 `LIKEPAGE`（建议采纳，有硬约束支撑）**
-若 EN 键写入 CJK 形态「丽客美页 LIKEPAGE」，`uiux-upgrade-b-results.spec.ts:743,767` 的
-`expect(visibleCopy).not.toMatch(/[㐀-鿿]/u)` **必红**——丽 U+4E3D／客 U+5BA2／美 U+7F8E／页 U+9875 全部落在 U+3400–U+9FFF。
-`shell_product_brand` 渲染在 shell 上，两条 spec 访问的每个 `/en/*` 路由都带它。
+**① EN 取拉丁形态 `LIKEPAGE` —— 采纳（有活判据强制）**
+若 EN 键写入 CJK 形态「丽客美页 LIKEPAGE」，`uiux-upgrade-b-i18n-motion.spec.ts` 的
+`expectNoChineseSystemCopy`（断言 `:72-75`）**必红**——丽 U+4E3D／客 U+5BA2／美 U+7F8E／页 U+9875
+全部落在其 `CJK_PATTERN = /[㐀-鿿]/u`（`:11`）区间内。该 spec 的 describe（`:271`）**在跑**，
+四个调用点 `:320`、`:359`、`:667`、`:675` 覆盖 `/en/dashboard` 系列路由，
+而 `shell_product_brand` 渲染在 shell 上（`dashboard-sidebar.tsx:66`），每条 `/en/*` 路由都带它。
+
+**校正**：`uiux-upgrade-b-results.spec.ts:743,767` 有同形态断言，但其 describe（`:216`）是
+`test.describe.fixme`，**整块跳过**，不构成强制力。约束由上面那条活判据承担，本票的验收证据也只应取自它。
 且 `en.json` 既有先例已是拉丁：`landing_nav_brand: "LIKEPAGE"`、`site_name: "LIKEPAGE"`、`landing_footer_copyright: "© {year} LIKEPAGE"`。
 取拉丁形态还使 §2 的守卫可**删除**而非改写。
 
-**② `shell_admin_brand` 是模式标签而非产品名（须拍）**
+**② `shell_admin_brand` 取「丽客美页 LIKEPAGE 管理端」/「LIKEPAGE admin」—— 用户拍板**
 现值「美业管理模式」/「Beauty admin mode」渲染在后台页面标题上方的小眉批位，语义是「你在管理端」。
-直接换成纯品牌名会丢失该信号。三选一：`丽客美页 LIKEPAGE 管理端`（保信号，倾向）／纯品牌名（彻底统一）／判定不属改名范围不动。
+纯品牌名会丢失该信号，故取品牌名＋模式后缀：品牌统一与模式信号两留。
 
-**③ 内部代号「美业内容副驾」是否跟改（须拍）**
+**③ 内部代号「美业内容副驾」不动 —— 用户拍板**
 `CONTEXT.md:1`、`DESIGN.md:2,106`、`mkfast-template-main/docs/DESIGN.md:7`、`docs/specs/beauty-content-agent-p1-spec.md:2,19` 用的是
 项目内部代号「美业内容副驾」，非产品端露出名。D-152 只约束**对外**，对代号沉默。
-按 D-152① 边界（工程内部标识不属对外）默认**不动**；若判定这些文档属对外资料则另议。
+按 D-152① 边界（工程内部标识不属对外）不动，保持 #265 票面边界干净。
+判据脚本的 `LEGACY_BRAND_NAMES` 因此不含「美业内容副驾」。
+
+**④ 三个死键照改不删 —— 用户拍板**
+`built_with_brand` / `about_introduction` / `block_hero_image_alt`（中英共 6 处）零渲染点。
+改名边界内的最小动作是照改，使票面锚点得到字面交代；删除属清理动作，票面未授权。
+`--check` 判据对已改名死键恒绿，不留负担。若日后决定清理，另开票。
 
 ## 5. 明确排除项（写明以防日后被重新扫开）
 
@@ -141,8 +152,9 @@ ZIP 内英文路径名（`images/`、`evidence/rights-and-facts.json`）同理�
 故本清单的可执行形态是 `scripts/ops/brand-exposure-scan.mjs`（判据与本文同批合入）：
 
 - **报告档**（默认，恒 exit 0）：重新导出本文 §1／§2 的清单。清单腐烂时重跑即刷新。
-- **`--check` 档**：任何残存对外露出即硬失败。**改名落地前必红**，故当前**未**挂进根 `test`；
-  切换条件写在脚本文件头——**与替换动作落同一 commit 时挂上**，此后由它防止在飞 lane 把旧名写回来。
+- **`--check` 档**：任何残存对外露出即硬失败。改名落地前必红，故与替换动作落同一 commit 才挂门——
+  已注册为 `scripts/uiux/check-gates.mjs` 的 `brand exposure` 档（根 `pnpm check` 执行，
+  顺序由 `check-gates.test.mjs` 钉住）。此后由它防止在飞 lane 把旧名写回来。
 
 单测 `scripts/ops/brand-exposure-scan.test.mjs` 钉住三件事：分类规则（对外 vs 测试守卫/注释）、
 排除树（`docs/`、`references/`、paraglide 产物按设计保留旧名）、以及 EN 取拉丁形态的理由。

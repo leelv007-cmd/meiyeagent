@@ -10,7 +10,7 @@ import { evidencePath } from '../fixtures/evidence';
 
 const CJK_PATTERN = /[\u3400-\u9fff]/u;
 const LATIN_PATTERN = /[a-z]/iu;
-const ALLOWED_ENGLISH_CJK = ['美业内容簿', '小红书', '抖音', '飞书'] as const;
+const ALLOWED_ENGLISH_CJK = ['小红书', '抖音', '飞书'] as const;
 const ALLOWED_CHINESE_LATIN_PATTERNS = [
   /\bAIGC\b/giu,
   /\b(?:AI|BYOK|MCP)\b/giu,

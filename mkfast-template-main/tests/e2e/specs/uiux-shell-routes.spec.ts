@@ -294,7 +294,8 @@ test('sidebar links keep their accessible names when the shell is collapsed', as
     .locator('[data-sidebar="label"]');
   await expect(firstBusinessLabel).toBeHidden();
 
-  // exact: name 默认是子串匹配，品牌链接「美业内容簿标志」会连「内容」一起吃掉。
+  // exact: name 默认是子串匹配。品牌链接旧名「美业内容簿标志」会连「内容」一起吃掉；
+  // 改名为「丽客美页 LIKEPAGE 标志」后不再命中，exact 仍保留——任何含导航词的品牌名都会让它复发。
   for (const label of [...businessNavigation, '设置']) {
     await expect(
       sidebar.getByRole('link', { exact: true, name: label })
