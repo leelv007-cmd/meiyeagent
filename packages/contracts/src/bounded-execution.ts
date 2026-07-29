@@ -102,7 +102,7 @@ export type BoundedExecutionSnapshot = z.infer<
   typeof boundedExecutionSnapshotSchema
 >;
 
-const boundedExecutionSuspendedEventSchema = z
+export const boundedExecutionSuspendedEventSchema = z
   .object({
     event: z.literal('bounded_execution.suspended'),
     ...observabilityAxesSchema.shape,
@@ -139,7 +139,7 @@ const boundedExecutionSuspendedEventSchema = z
     }
   });
 
-const boundedExecutionResumedEventSchema = z
+export const boundedExecutionResumedEventSchema = z
   .object({
     event: z.literal('bounded_execution.resumed'),
     ...observabilityAxesSchema.shape,

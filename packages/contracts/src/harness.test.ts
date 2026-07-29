@@ -225,6 +225,56 @@ test('parses and round-trips progress and authoritative state frames', () => {
   );
 });
 
+test('terminal workflow state carries merchant action usage without internal cost fields', () => {
+  const completed = {
+    event: 'workflow.state',
+    data: {
+      workflowId: 'workflow-usage',
+      sourceRevision: 4,
+      status: 'success',
+      occurredAt: '2026-07-29T08:01:00.000Z',
+      snapshot: { packageId: 'package-usage' },
+      actionUsage: {
+        actionId: 'usage-record-248',
+        taskId: 'workflow-usage',
+        status: 'completed',
+        settlementStatus: 'reconciled',
+        settledUnits: 2,
+        refundedUnits: 1,
+      },
+    },
+  };
+  assert.deepEqual(roundTrip(workflowStateFrameSchema, completed), completed);
+
+  assert.equal(
+    workflowStateFrameSchema.safeParse({
+      ...completed,
+      data: {
+        ...completed.data,
+        actionUsage: {
+          ...completed.data.actionUsage,
+          status: 'rejected',
+          settledUnits: 0,
+        },
+      },
+    }).success,
+    true,
+  );
+  assert.equal(
+    workflowStateFrameSchema.safeParse({
+      ...completed,
+      data: {
+        ...completed.data,
+        actionUsage: {
+          ...completed.data.actionUsage,
+          provider: 'private-provider',
+        },
+      },
+    }).success,
+    false,
+  );
+});
+
 test('token frames carry replay-safe deltas on named copy channels', () => {
   const token = {
     event: 'workflow.token',

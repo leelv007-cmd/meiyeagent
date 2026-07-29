@@ -11,7 +11,7 @@ const notePageRegeneratedBaseShape = {
   trigger: notePageRegeneratedTriggerSchema,
 };
 
-const notePageRegeneratedPayloadSchema = z.discriminatedUnion('imagePoints', [
+export const notePageRegeneratedPayloadSchema = z.discriminatedUnion('imagePoints', [
   z
     .object({
       ...notePageRegeneratedBaseShape,

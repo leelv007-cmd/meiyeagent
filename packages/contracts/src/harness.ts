@@ -5,6 +5,7 @@ import {
   assistantFieldPatchBaseSchema,
 } from './p1.js';
 import { hotTopicOpportunityCardSchema } from './marketing-package.js';
+import { actionUsageSchema } from './observability-event.js';
 
 const harnessIdSchema = z.string().trim().min(1);
 const harnessTimestampSchema = z.iso.datetime();
@@ -191,6 +192,7 @@ export const workflowStateEnvelopeSchema = z
     occurredAt: harnessTimestampSchema,
     snapshot: z.record(z.string(), z.unknown()),
     merchantReport: merchantReportSchema.optional(),
+    actionUsage: actionUsageSchema.optional(),
   })
   .strict();
 
