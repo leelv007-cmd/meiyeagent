@@ -23,6 +23,15 @@ export {
   type SkillToolExecutionGrant,
 } from './tool-authorization.js';
 export {
+  exportSkillPackage,
+  importSkillPackage,
+  SKILL_FRONTMATTER_FIELDS,
+  SKILL_PACKAGE_PATHS,
+  type ImportedSkillPackage,
+  type SkillFrontmatter,
+  type SkillPackageFile,
+} from './skill-format.js';
+export {
   SKILL_BINDING_MODES,
   SKILL_STAGES,
   skillRevisionRef,
