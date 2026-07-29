@@ -247,9 +247,16 @@ export class PostgresIssue255LiveReceiptRepository {
             CHECK (reserved_amount_micros > 0),
           price_revision text NOT NULL,
           exchange_revision text NOT NULL,
+          evidence_sample_digest text,
+          evidence_envelope_digest text,
           created_at timestamptz NOT NULL DEFAULT now(),
           UNIQUE (run_nonce, modality)
         )
+      `);
+      await client.query(`
+        ALTER TABLE issue255_live_generation_authorizations
+          ADD COLUMN IF NOT EXISTS evidence_sample_digest text,
+          ADD COLUMN IF NOT EXISTS evidence_envelope_digest text
       `);
       await client.query(`
         DO $issue255$
@@ -345,6 +352,98 @@ export class PostgresIssue255LiveReceiptRepository {
       [parsedRunNonce],
     );
     return result.rows.map(receiptFromRow);
+  }
+
+  async bindManifestEvidence(input: {
+    runNonce: string;
+    envelopeDigest: string;
+    samples: readonly {
+      effectId: string;
+      sampleDigest: string;
+    }[];
+  }) {
+    const parsed = z
+      .object({
+        runNonce: z.string().trim().min(1),
+        envelopeDigest: z.string().regex(/^[a-f0-9]{64}$/u),
+        samples: z
+          .array(
+            z
+              .object({
+                effectId: z.string().regex(/^[a-f0-9]{64}$/u),
+                sampleDigest: z.string().regex(/^[a-f0-9]{64}$/u),
+              })
+              .strict(),
+          )
+          .length(3)
+          .refine(
+            (samples) =>
+              new Set(samples.map(({ effectId }) => effectId)).size === 3,
+            'Issue 255 manifest evidence requires three unique effects.',
+          ),
+      })
+      .strict()
+      .parse(input);
+    return this.locked(parsed.runNonce, async (client) => {
+      const completed = await client.query<{
+        effect_id: string;
+      }>(
+        `SELECT history.effect_id
+           FROM issue255_live_generation_authorizations history
+           JOIN issue255_live_generation_receipts receipt
+             ON receipt.effect_id = history.effect_id
+            AND receipt.run_nonce = history.run_nonce
+            AND receipt.modality = history.modality
+          WHERE history.run_nonce = $1
+            AND receipt.status = 'completed'
+            AND receipt.generation_submit_count = 1
+            AND receipt.terminal_lineage IS NOT NULL
+          FOR UPDATE OF history`,
+        [parsed.runNonce],
+      );
+      if (
+        completed.rows.length !== 3 ||
+        parsed.samples.some(
+          (sample) =>
+            !completed.rows.some(
+              ({ effect_id }) => effect_id === sample.effectId,
+            ),
+        )
+      ) {
+        throw new Error(
+          'Issue 255 manifest evidence requires three completed durable receipts.',
+        );
+      }
+      for (const sample of parsed.samples) {
+        const updated = await client.query(
+          `UPDATE issue255_live_generation_authorizations
+              SET evidence_sample_digest = $3,
+                  evidence_envelope_digest = $4
+            WHERE run_nonce = $1
+              AND effect_id = $2
+              AND (
+                evidence_sample_digest IS NULL
+                OR evidence_sample_digest = $3
+              )
+              AND (
+                evidence_envelope_digest IS NULL
+                OR evidence_envelope_digest = $4
+              )
+          RETURNING effect_id`,
+          [
+            parsed.runNonce,
+            sample.effectId,
+            sample.sampleDigest,
+            parsed.envelopeDigest,
+          ],
+        );
+        if (!updated.rows[0]) {
+          throw new Error(
+            'Issue 255 durable manifest evidence binding is immutable.',
+          );
+        }
+      }
+    });
   }
 
   async markUnknown(input: {

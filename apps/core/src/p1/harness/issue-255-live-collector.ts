@@ -324,6 +324,15 @@ export async function collectIssue255LiveAnchors(input: {
       status: 'completed',
     },
   });
+  const evidenceDigests = manifestEvidenceDigests(preliminary);
+  await input.receipts.bindManifestEvidence({
+    runNonce,
+    envelopeDigest: evidenceDigests.envelope,
+    samples: preliminary.samples.map((sample) => ({
+      effectId: sample.effectId,
+      sampleDigest: evidenceDigests.samples.get(sample.effectId)!,
+    })),
+  });
   const serialized = `${JSON.stringify(preliminary, null, 2)}\n`;
   assertIssue255SanitizedManifest(serialized);
   await writeFile(pendingPath, serialized, { flag: 'w', mode: 0o600 });
@@ -399,16 +408,30 @@ export async function recoverIssue255LiveManifest(input: {
   const manifest = manifestSchema.parse(JSON.parse(serialized));
   const effectIds = manifest.samples.map(({ effectId }) => effectId);
   const authorizations = await input.database.query<{
+    adapter: string;
+    deployment_id: string;
+    evidence_envelope_digest: string | null;
+    evidence_sample_digest: string | null;
     effect_id: string;
+    modality: Modality;
     price_revision: string;
+    recorded_matrix_digest: string;
     request_fingerprint: string;
     reserved_amount_micros: string;
+    run_nonce: string;
     workspace_id: string;
   }>(
-    `SELECT effect_id,
+    `SELECT adapter,
+            deployment_id,
+            evidence_envelope_digest,
+            evidence_sample_digest,
+            effect_id,
+            modality,
             price_revision,
+            recorded_matrix_digest,
             request_fingerprint,
             reserved_amount_micros,
+            run_nonce,
             workspace_id
        FROM issue255_live_generation_authorizations
       WHERE effect_id = ANY($1::text[])`,
@@ -419,25 +442,48 @@ export async function recoverIssue255LiveManifest(input: {
       'Issue 255 pending manifest has no complete durable authorization history.',
     );
   }
+  const runNonces = new Set(
+    authorizations.rows.map(({ run_nonce }) => run_nonce),
+  );
+  const workspaceIds = new Set(
+    authorizations.rows.map(({ workspace_id }) => workspace_id),
+  );
+  const evidenceDigests = manifestEvidenceDigests(manifest);
+  if (
+    runNonces.size !== 1 ||
+    workspaceIds.size !== 1 ||
+    hash([...runNonces][0]!) !== manifest.runNonceHash
+  ) {
+    throw new Error(
+      'Issue 255 pending manifest combines authorization history across runs.',
+    );
+  }
   for (const sample of manifest.samples) {
     const authorization = authorizations.rows.find(
       ({ effect_id }) => effect_id === sample.effectId,
     );
     if (
       !authorization ||
+      authorization.run_nonce !== [...runNonces][0] ||
+      authorization.modality !== sample.modality ||
+      authorization.adapter !== sample.adapter ||
+      authorization.deployment_id !== sample.deploymentId ||
+      authorization.recorded_matrix_digest !==
+        manifest.recordedMatrixDigest ||
       authorization.request_fingerprint !== sample.requestFingerprint ||
       Number(authorization.reserved_amount_micros) !==
         sample.reservedAmountMicros ||
-      authorization.price_revision !== sample.priceRevision
+      authorization.price_revision !== sample.priceRevision ||
+      authorization.evidence_sample_digest !==
+        evidenceDigests.samples.get(sample.effectId) ||
+      authorization.evidence_envelope_digest !== evidenceDigests.envelope
     ) {
       throw new Error(
-        'Issue 255 pending manifest differs from durable authorization truth.',
+        'Issue 255 pending manifest differs from durable terminal evidence truth.',
       );
     }
   }
-  const workspaceIds = authorizations.rows.map(
-    ({ workspace_id }) => workspace_id,
-  );
+  const durableWorkspaceIds = [...workspaceIds];
   const residue = await input.database.query<{ count: number }>(
     `SELECT (
        (SELECT COUNT(*)
@@ -456,7 +502,7 @@ export async function recoverIssue255LiveManifest(input: {
           FROM p1_provider_cost_events
          WHERE workspace_id = ANY($2::text[]))
      )::int AS count`,
-    [effectIds, workspaceIds],
+    [effectIds, durableWorkspaceIds],
   );
   if (residue.rows[0]?.count !== 0) {
     throw new Error(
@@ -1078,6 +1124,19 @@ function manifestSample(
     providerHttpRequestCount: receipt.providerHttpRequestCount,
     wallClockMs,
     usage: terminal.providerCost.usage,
+  };
+}
+
+function manifestEvidenceDigests(manifest: Issue255LiveManifest) {
+  const { samples, ...envelope } = manifest;
+  return {
+    envelope: hash(JSON.stringify(envelope)),
+    samples: new Map(
+      samples.map((sample) => [
+        sample.effectId,
+        hash(JSON.stringify(sample)),
+      ]),
+    ),
   };
 }
 

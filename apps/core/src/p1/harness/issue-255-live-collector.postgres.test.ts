@@ -306,6 +306,69 @@ test(
         [runNonce],
       );
       assert.equal(durableHistory.rows[0]?.count, 3);
+      const tamperedPath = join(directory, 'tampered.json');
+      const tamperedManifest = JSON.parse(
+        await readFile(manifestPath, 'utf8'),
+      );
+      tamperedManifest.samples[0].providerTaskRefHash = 'f'.repeat(64);
+      await writeFile(
+        `${tamperedPath}.pending`,
+        `${JSON.stringify(tamperedManifest, null, 2)}\n`,
+      );
+      await assert.rejects(
+        recoverIssue255LiveManifest({
+          database: pool,
+          manifestPath: tamperedPath,
+        }),
+        /differs from durable terminal evidence truth/u,
+      );
+      const tamperedEnvelopePath = join(
+        directory,
+        'tampered-envelope.json',
+      );
+      const tamperedEnvelope = JSON.parse(
+        await readFile(manifestPath, 'utf8'),
+      );
+      tamperedEnvelope.totalActualAmountMicros += 1;
+      await writeFile(
+        `${tamperedEnvelopePath}.pending`,
+        `${JSON.stringify(tamperedEnvelope, null, 2)}\n`,
+      );
+      await assert.rejects(
+        recoverIssue255LiveManifest({
+          database: pool,
+          manifestPath: tamperedEnvelopePath,
+        }),
+        /differs from durable terminal evidence truth/u,
+      );
+      const crossRunPath = join(directory, 'cross-run.json');
+      await writeFile(
+        `${crossRunPath}.pending`,
+        await readFile(manifestPath, 'utf8'),
+      );
+      const crossRunEffectId = manifest.samples[0]!.effectId;
+      await pool.query(
+        `UPDATE issue255_live_generation_authorizations
+            SET run_nonce = $2
+          WHERE effect_id = $1`,
+        [crossRunEffectId, `${runNonce}-forged`],
+      );
+      try {
+        await assert.rejects(
+          recoverIssue255LiveManifest({
+            database: pool,
+            manifestPath: crossRunPath,
+          }),
+          /across runs/u,
+        );
+      } finally {
+        await pool.query(
+          `UPDATE issue255_live_generation_authorizations
+              SET run_nonce = $2
+            WHERE effect_id = $1`,
+          [crossRunEffectId, runNonce],
+        );
+      }
       const recoveryPath = join(directory, 'recovered.json');
       await rename(manifestPath, `${recoveryPath}.pending`);
       const recovered = await recoverIssue255LiveManifest({
