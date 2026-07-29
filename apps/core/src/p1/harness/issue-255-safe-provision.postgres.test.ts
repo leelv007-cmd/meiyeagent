@@ -19,11 +19,13 @@ const provisioner =
   process.env.ISSUE_255_SAFE_PROVISIONER_PATH?.trim() ||
   '/Users/bin/.codex/monitors/issue-255-safe-provision.mjs';
 const provisionerSkip =
-  !businessUrl || !dbosUrl
-    ? 'Issue 255 isolated database URLs are not configured'
-    : !existsSync(provisioner)
-      ? 'Issue 255 safe provisioner is not available'
-      : false;
+  process.env.RUN_ISSUE_255_SAFE_PROVISION_POSTGRES_TEST !== '1'
+    ? 'Issue 255 destructive safe-provision test requires explicit opt-in'
+    : !businessUrl || !dbosUrl
+      ? 'Issue 255 isolated database URLs are not configured'
+      : !existsSync(provisioner)
+        ? 'Issue 255 safe provisioner is not available'
+        : false;
 
 test(
   'issue 255 conditional reset validates both targets before dropping either database',
