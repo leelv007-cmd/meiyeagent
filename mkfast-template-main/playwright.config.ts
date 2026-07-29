@@ -76,6 +76,7 @@ export default defineConfig({
   },
   webServer: [
     {
+      name: 'Core',
       command: [
         `APP_ENV=e2e RUN_ISSUE_247_E2E_PROVISIONAL_BOUNDS_SEED=true TEST_DATABASE_URL='${databaseURL}' TEST_DBOS_SYSTEM_DATABASE_URL='${dbosSystemDatabaseURL}' ../scripts/ci/provision-test-db.sh`,
         '&&',
@@ -147,6 +148,7 @@ export default defineConfig({
       wait: { stdout: /meiye-core P1 job worker started/ },
     },
     {
+      name: 'Web',
       command: [
         'pnpm locale:compile:e2e',
         [
