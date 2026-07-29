@@ -303,7 +303,13 @@ function priceValidityFinalizer(facts: MemoryStoreFactLedger) {
     intake,
     new MemoryFinalizationRepository(),
     profilePort(async (_context, patch) => {
-      const project = patch.projects!.upsert![0]!;
+      const project = patch.projects?.upsert?.[0] ?? {
+        id: 'project-a',
+        name: '透亮猫眼',
+        price: 299,
+        durationMinutes: 90,
+        confirmed: true,
+      };
       const profile: StoreProfile = {
         name: '青禾',
         city: '杭州',
@@ -439,6 +445,82 @@ test('a screenshot-extracted price without a stated validity is refused, not sto
   assert.deepEqual(merged, []);
   assert.deepEqual(
     await facts.history(context.workspaceId, 'store-project:project-a:price'),
+    [],
+  );
+});
+
+test('a legacy promotion without a validity window remains a pending candidate', async () => {
+  const facts = new MemoryStoreFactLedger();
+  const { finalizer, intake, merged } = priceValidityFinalizer(facts);
+  const batch = {
+    batchId: 'legacy-group-buy',
+    workspaceId: context.workspaceId,
+    taskId: 'legacy-group-buy-task',
+    source: {
+      sourceId: 'legacy-group-buy-source',
+      kind: 'import' as const,
+      referenceId: 'legacy-group-buy-reference',
+      capabilityStatus: 'assisted' as const,
+      sourceWorkspaceId: context.workspaceId,
+      capturedAt: now,
+      example: false,
+    },
+    summary: 'Historical group buy awaiting confirmation.',
+    candidates: [
+      {
+        candidateId: 'legacy-group-buy-candidate',
+        status: 'pending' as const,
+        objectKind: 'store_fact' as const,
+        fact: {
+          kind: 'group_buy' as const,
+          key: 'service.project-a.group_buy',
+          value: { amount: 199, currency: 'CNY' },
+          scope: { storeId: context.workspaceId, serviceId: 'project-a' },
+          source: {
+            kind: 'import' as const,
+            referenceId: 'legacy-group-buy-reference',
+            capturedAt: now,
+          },
+          effectiveFrom: now,
+          expiresAt: null,
+        },
+      },
+    ],
+    createdAt: now,
+  };
+  await intake.recordBatch(batch, 'legacy-group-buy-record');
+
+  await assert.rejects(
+    finalizer.finalize(
+      context,
+      {
+        batch: { batchId: batch.batchId },
+        confirmations: [
+          {
+            candidateId: 'legacy-group-buy-candidate',
+            factId: 'store-project:project-a:group_buy',
+            expectedFactRevision: 0,
+          },
+        ],
+        profilePatch: { expectedRevision: 1 },
+      },
+      'legacy-group-buy-finalize',
+    ),
+    (error) =>
+      error instanceof StoreIntakeFinalizationError &&
+      error.code === 'STORE_FACT_MAPPING_INVALID' &&
+      /validity window/u.test(error.message),
+  );
+  assert.deepEqual(merged, []);
+  assert.deepEqual(
+    await facts.history(
+      context.workspaceId,
+      'store-project:project-a:group_buy',
+    ),
+    [],
+  );
+  assert.deepEqual(
+    (await intake.view(context.workspaceId, batch.batchId)).decisions,
     [],
   );
 });

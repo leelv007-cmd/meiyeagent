@@ -866,6 +866,16 @@ async function assertStoreFactMappings(
         `Store project fact ${confirmation.factId} does not match its project, kind, and key.`,
       );
     }
+    if (
+      (kind === 'group_buy' || kind === 'discount') &&
+      fact.revisionKind !== 'revocation' &&
+      fact.expiresAt === null
+    ) {
+      throw new StoreIntakeFinalizationError(
+        'STORE_FACT_MAPPING_INVALID',
+        `Store project promotion fact ${confirmation.factId} requires a validity window.`,
+      );
+    }
     const projectedProject = profilePatch.projects?.upsert?.find(
       (project) => project.id === projectId,
     );
@@ -900,10 +910,11 @@ async function assertStoreFactMappings(
         );
       }
       // #244 — every newly confirmed price has to say how long it is good for.
-      // A staged historical value (`source.kind: 'import'`) is the sole
-      // exception: nobody ever asked about it, and the wizard keeps showing it
-      // as waiting on the merchant until they say. Parsed screenshots and
-      // other sources must not turn a missing answer into "never expires".
+      // A staged historical standard service price (`source.kind: 'import'`)
+      // stays active without a window: open-ended pricing is valid for this
+      // fact type. Promotions are rejected above because time is intrinsic to
+      // group-buy and discount evidence. Parsed screenshots and other sources
+      // must not turn a missing answer into "never expires".
       if (fact.source.kind !== 'import') {
         if (projectedProject.priceValidUntil === undefined) {
           throw new StoreIntakeFinalizationError(

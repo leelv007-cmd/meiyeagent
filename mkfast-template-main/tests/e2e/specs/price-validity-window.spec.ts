@@ -3,31 +3,22 @@
  *
  * The bug this pins: the wizard used to take a price and store it as "current,
  * never expires" without asking, so a promotion kept turning up in generated
- * content weeks after it ended. The journey walks the whole chain the merchant
- * actually walks — state the window in the wizard, generate inside it, move the
- * clock past it, generate again — and reads the answer off the frozen
- * ContextBundle, which is the thing generation actually quotes from.
+ * content weeks after it ended. The journey states the window in the real
+ * wizard, then freezes the production ContextBundle on both sides of that
+ * window. The same price revision must enter the first bundle and leave the
+ * second without another fact write.
  *
- * On the clock: the merchant's browser writes the window and the Core decides
- * whether it is still open, so "拨钟越过有效期" is staged by moving the browser's
- * own clock (`page.clock`) to a day well behind the server's. The window the
- * merchant states from there is a genuine, forward-looking window on their
- * calendar and a closed one on the server's — which is exactly the situation a
- * promotion is in the morning after it ends. No test-only server hook exists,
- * and none is added: the seam under test is the production
- * `listActive(at: now)` filter, untouched.
+ * On the clock: `context_bundle_compile(at)` is the existing production
+ * replay/audit seam. Supplying the two audit instants exercises the same
+ * `listActive(at)` filter as generation without a test-only server clock.
  *
  * Negative control: take the validity question out of the wizard and this spec
  * cannot even reach its first assertion — the save button never enables, so the
  * first `finalize_store_intake` never leaves the browser.
  */
 
-import { expect, test, type BrowserContext, type Page } from '@playwright/test';
-import type {
-  ContentPackage,
-  ContextBundle,
-  StoreFact,
-} from '@meiye/contracts';
+import { expect, test, type Page } from '@playwright/test';
+import type { ContextBundle, StoreFact } from '@meiye/contracts';
 
 import {
   cleanupE2EUsers,
@@ -35,12 +26,6 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { productCommand, productState } from '../fixtures/product';
-import {
-  assertThreeModalDiscovery,
-  JOURNEY_CONTRACTS,
-  submitComposerJourney,
-  waitForResultJourney,
-} from '../fixtures/ui-journey';
 
 const PROMOTION_PROJECT = {
   confirmed: true,
@@ -88,7 +73,47 @@ async function p1Query<T>(
   );
 }
 
-/** Read the ledger at the *server's* present, not the page's staged one. */
+async function p1Command<T>(
+  page: Page,
+  module: string,
+  action: string,
+  payload: Record<string, unknown>,
+  idempotencyKey: string
+) {
+  return page.evaluate(
+    async ({
+      action: commandAction,
+      idempotencyKey: key,
+      module: commandModule,
+      payload: commandPayload,
+    }) => {
+      const response = await fetch('/api/core/p1/commands', {
+        body: JSON.stringify({
+          action: commandAction,
+          module: commandModule,
+          payload: commandPayload,
+        }),
+        credentials: 'same-origin',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': key,
+        },
+        method: 'POST',
+      });
+      const envelope = (await response.json()) as {
+        data?: T;
+        error?: { message?: string };
+      };
+      if (!response.ok || envelope.data === undefined) {
+        throw new Error(envelope.error?.message ?? 'P1 command failed');
+      }
+      return envelope.data;
+    },
+    { action, idempotencyKey, module, payload }
+  );
+}
+
+/** Read the ledger at the production query's explicit replay/audit instant. */
 function activeStoreFacts(page: Page, storeId: string, at: string) {
   return p1Query<StoreFact[]>(page, 'context', 'store_facts_active', {
     at,
@@ -172,74 +197,33 @@ async function statePriceWindow(page: Page, validUntilDay: string) {
   };
 }
 
-/**
- * Run one customized copy journey and hand back its frozen ContextBundle.
- *
- * Each journey gets its own page, the way `m04-browser-hard-gate` runs repeat
- * submissions: a Composer session that has already delivered keeps its quote
- * bound to the sentence it priced, and a second send into it arms rather than
- * submits.
- */
-async function generateAndFreezeBundle(
-  context: BrowserContext,
-  prompt: string
-) {
-  const copyContract = JOURNEY_CONTRACTS.find(
-    (contract) => contract.modality === 'copy'
-  )!;
-  const page = await context.newPage();
-  try {
-    await page.goto('/dashboard');
-    await assertThreeModalDiscovery(page);
-
-    const submissionResponse = page.waitForResponse(
-      (response) =>
-        response.request().method() === 'POST' &&
-        response.url().includes('/api/core/p1/composer/submissions'),
-      { timeout: 120_000 }
-    );
-    const workId = await submitComposerJourney(page, copyContract, prompt);
-    const packageId = (
-      (await (await submissionResponse).json()) as {
-        data?: { contentPackage?: { id?: string } };
-      }
-    ).data?.contentPackage?.id;
-    expect(packageId).toBeTruthy();
-    await waitForResultJourney(page, copyContract, workId);
-
-    let reference: ContentPackage['marketing'] | undefined;
-    await expect
-      .poll(
-        async () => {
-          const packages = await p1Query<ContentPackage[]>(
-            page,
-            'operations',
-            'content_packages',
-            {}
-          );
-          reference = packages.find(
-            (candidate) => candidate.id === packageId
-          )?.marketing;
-          return reference?.contextBundle;
-        },
-        { timeout: 90_000 }
-      )
-      .toMatchObject({ bundleId: expect.any(String) });
-
-    const bundle = await p1Query<ContextBundle | null>(
-      page,
-      'context',
-      'context_bundle_get',
-      {
-        bundleId: reference!.contextBundle.bundleId,
-        revision: reference!.contextBundle.revision,
-      }
-    );
-    expect(bundle).not.toBeNull();
-    return { bundle: bundle!, marketing: reference! };
-  } finally {
-    await page.close();
+function compileBundle(
+  page: Page,
+  input: {
+    at: string;
+    bundleId: string;
+    expectedRevision: number;
+    workspaceId: string;
   }
+) {
+  return p1Command<ContextBundle>(
+    page,
+    'context',
+    'context_bundle_compile',
+    {
+      at: input.at,
+      bundleId: input.bundleId,
+      contributions: [],
+      expectedRevision: input.expectedRevision,
+      reason:
+        input.expectedRevision === 0
+          ? 'compile inside the stated price window'
+          : 'replay after the stated price window',
+      scope: { storeId: input.workspaceId },
+      taskId: `price-validity-window:${input.workspaceId}`,
+    },
+    `price-validity-window:${input.workspaceId}:${input.expectedRevision}`
+  );
 }
 
 function quotesPrice(bundle: ContextBundle) {
@@ -312,53 +296,47 @@ test.describe('#244 price validity window', () => {
       openFacts.find((fact) => fact.factId === PRICE_FACT_ID)
     ).toMatchObject({ expiresAt: statedExpiry, revision: 1 });
 
-    const inside = await generateAndFreezeBundle(
-      page.context(),
-      `为${PROMOTION_PROJECT.name}写一条真实克制的朋友圈项目介绍`
+    const priceHistory = await p1Query<StoreFact[]>(
+      page,
+      'context',
+      'store_fact_history',
+      { factId: PRICE_FACT_ID }
     );
-    expect(quotesPrice(inside.bundle)).toBe(true);
-    expect(inside.marketing!.factRefs).toContain(
-      `store_fact:${PRICE_FACT_ID}:1`
-    );
+    expect(priceHistory).toHaveLength(1);
+    expect(priceHistory[0]).toMatchObject({
+      expiresAt: statedExpiry,
+      revision: 1,
+    });
+
+    const bundleId = `price-validity-window:${workspaceId}`;
+    const inside = await compileBundle(page, {
+      at: serverNow(),
+      bundleId,
+      expectedRevision: 0,
+      workspaceId,
+    });
+    expect(inside).toMatchObject({ bundleId, revision: 1 });
+    expect(quotesPrice(inside)).toBe(true);
+    expect(inside.referencedFactRevisions).toContainEqual({
+      factId: PRICE_FACT_ID,
+      revision: 1,
+    });
 
     /* ---- 拨钟：the window closes --------------------------------------- */
 
-    // The merchant's calendar is moved to a day the server has long passed, so
-    // the window they state next is open to them and closed to the ledger. It
-    // runs on a throwaway page in the same session: a frozen clock stays frozen
-    // for the page that installed it, and the Composer measures elapsed time,
-    // so the staging must not leak into the journey that follows.
-    const lapsedNow = Date.now() - 60 * 86_400_000;
-    const lapsedPage = await page.context().newPage();
-    await lapsedPage.clock.setFixedTime(new Date(lapsedNow));
-    await lapsedPage.goto('/dashboard/store');
-    await expect(
-      lapsedPage.getByTestId('store-intake-wizard-store')
-    ).toBeVisible({ timeout: 60_000 });
-    const closedWindow = await statePriceWindow(
-      lapsedPage,
-      dayFromPageNow(lapsedNow, 7)
-    );
-    const lapsedExpiry = closedWindow.payload.batch.candidates.find(
-      (candidate) =>
-        candidate.fact.key === `service.${PROMOTION_PROJECT.id}.price`
-    )?.fact.expiresAt;
-    expect(Date.parse(lapsedExpiry!)).toBeLessThan(Date.now());
-    await lapsedPage.close();
-
-    // The ledger still holds the price — nothing was deleted — it simply no
-    // longer answers "what is current".
+    const afterExpiry = new Date(Date.parse(statedExpiry!) + 1).toISOString();
     const lapsedHistory = await p1Query<StoreFact[]>(
       page,
       'context',
       'store_fact_history',
       { factId: PRICE_FACT_ID }
     );
-    expect(lapsedHistory.at(-1)).toMatchObject({
-      expiresAt: lapsedExpiry,
-      revision: 2,
+    expect(lapsedHistory).toHaveLength(1);
+    expect(lapsedHistory[0]).toMatchObject({
+      expiresAt: statedExpiry,
+      revision: 1,
     });
-    const closedFacts = await activeStoreFacts(page, workspaceId, serverNow());
+    const closedFacts = await activeStoreFacts(page, workspaceId, afterExpiry);
     expect(closedFacts.some((fact) => fact.factId === PRICE_FACT_ID)).toBe(
       false
     );
@@ -368,21 +346,25 @@ test.describe('#244 price validity window', () => {
       true
     );
 
-    const outside = await generateAndFreezeBundle(
-      page.context(),
-      `再为${PROMOTION_PROJECT.name}写一条真实克制的朋友圈项目介绍`
-    );
-    expect(quotesPrice(outside.bundle)).toBe(false);
-    // The service name never carried a window, so it is still quoted — whatever
-    // revision it now stands at. Only the price fell out.
+    const outside = await compileBundle(page, {
+      at: afterExpiry,
+      bundleId,
+      expectedRevision: 1,
+      workspaceId,
+    });
+    expect(outside).toMatchObject({
+      bundleId,
+      previousRevision: 1,
+      revision: 2,
+    });
+    expect(quotesPrice(outside)).toBe(false);
+    expect(outside.referencedFactRevisions).toContainEqual({
+      factId: SERVICE_FACT_ID,
+      revision: 1,
+    });
     expect(
-      outside.marketing!.factRefs.filter((reference) =>
-        reference.startsWith(`store_fact:${SERVICE_FACT_ID}:`)
-      )
-    ).toHaveLength(1);
-    expect(
-      outside.marketing!.factRefs.filter((reference) =>
-        reference.startsWith(`store_fact:${PRICE_FACT_ID}:`)
+      outside.referencedFactRevisions.filter(
+        (reference) => reference.factId === PRICE_FACT_ID
       )
     ).toEqual([]);
   });

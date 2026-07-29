@@ -160,6 +160,20 @@ test('a staged import batch is confirmable through finalize_store_intake', async
       .projects?.upsert?.[0]?.priceValidUntil,
     undefined,
   );
+  const activeFacts = await facts.listActive({
+    workspaceId: context.workspaceId,
+    scope: {
+      storeId: context.workspaceId,
+      serviceId: 'legacy-primary',
+    },
+    at: '2026-07-27T00:00:00.000Z',
+  });
+  assert.equal(
+    activeFacts.find(
+      (fact) => fact.factId === 'store-project:legacy-primary:price',
+    )?.expiresAt,
+    null,
+  );
   assert.ok(mergedPatch);
 });
 

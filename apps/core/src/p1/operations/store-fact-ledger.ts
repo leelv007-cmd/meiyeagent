@@ -103,6 +103,13 @@ export function isStoreFactActive(fact: StoreFact, at: string) {
   return (
     Date.parse(fact.effectiveFrom) <= timestamp &&
     fact.revisionKind !== 'revocation' &&
+    // A standard service price may be open-ended. A promotion cannot: without
+    // a window, group-buy and discount evidence remains historical/pending
+    // rather than silently becoming a current promise.
+    !(
+      (fact.kind === 'group_buy' || fact.kind === 'discount') &&
+      fact.expiresAt === null
+    ) &&
     !isStoreFactExpired(fact, at)
   );
 }

@@ -83,6 +83,45 @@ test('active fact queries honor workspace, applicability, effective time and exp
   );
 });
 
+test('legacy open-ended prices stay active while promotions without a window do not', async () => {
+  const ledger = new MemoryStoreFactLedger();
+  const legacySource = {
+    kind: 'import' as const,
+    referenceId: 'legacy-profile',
+    capturedAt: '2026-07-18T01:00:00.000Z',
+  };
+  await ledger.append({
+    ...baseInput,
+    source: legacySource,
+    expiresAt: null,
+    expectedRevision: 0,
+  });
+  await ledger.append({
+    ...baseInput,
+    factId: 'legacy-group-buy',
+    kind: 'group_buy',
+    key: 'service.group-buy',
+    source: legacySource,
+    expiresAt: null,
+    expectedRevision: 0,
+  });
+
+  assert.deepEqual(
+    (
+      await ledger.listActive({
+        workspaceId: 'workspace-a',
+        scope: { storeId: 'store-a', serviceId: 'service-a' },
+        at: '2026-07-19T00:00:00.000Z',
+      })
+    ).map((fact) => fact.factId),
+    ['price-main'],
+  );
+  assert.equal(
+    (await ledger.history('workspace-a', 'legacy-group-buy')).length,
+    1,
+  );
+});
+
 test('store-only queries aggregate project facts without crossing other scope boundaries', async () => {
   const ledger = new MemoryStoreFactLedger();
   const scopedFacts = [
