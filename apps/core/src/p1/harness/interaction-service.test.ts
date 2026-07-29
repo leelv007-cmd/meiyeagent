@@ -9,6 +9,7 @@ import {
 } from '@meiye/contracts';
 
 import {
+  buildAskMerchantSemanticDefaultTimeoutPolicy,
   createHarnessInteractionPendingProjection,
   HarnessInteractionService,
   HarnessSystemDefaultProducer,
@@ -16,6 +17,55 @@ import {
   type HarnessInteractionStore,
 } from './interaction-service.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
+
+test('semantic defaults require independent server-owned safety authority', () => {
+  const question = {
+    questionId: 'question-authority',
+    workflowId: 'run-authority',
+    workflowRevision: 1,
+    question: '这次主推哪个项目？',
+    options: [],
+    freeText: { enabled: true },
+    response: {
+      field: 'service',
+      reason: '需要商家确认主推项目',
+    },
+    unattended: 'continue' as const,
+    scope: 'current_task' as const,
+  };
+
+  assert.deepEqual(
+    buildAskMerchantSemanticDefaultTimeoutPolicy(question, 30),
+    {
+      kind: 'hold',
+      reason: 'unknown',
+      serverEvaluated: true,
+    },
+  );
+  const policy = buildAskMerchantSemanticDefaultTimeoutPolicy(
+    {
+      ...question,
+      semanticDefaultAuthority: {
+        kind: 'non_resource_no_effect',
+        source: 'intent_gap',
+        revision: 'intent-gap/v1',
+      },
+    },
+    30,
+  );
+  assert.equal(policy?.kind, 'semantic_default');
+  if (!policy || policy.kind !== 'semantic_default') return;
+  assert.equal(policy.eligibility.effect, 'none');
+  assert.equal(policy.eligibility.quota, 'not_applicable');
+  assert.equal(
+    policy.eligibility.conditionRevision,
+    'question-authority:r1',
+  );
+  assert.equal(
+    policy.eligibility.defaultResponseFingerprint,
+    fingerprintValue(policy.eligibility.defaultResponse),
+  );
+});
 
 test('interaction answers persist before one resume with the canonical triple', async () => {
   const order: string[] = [];

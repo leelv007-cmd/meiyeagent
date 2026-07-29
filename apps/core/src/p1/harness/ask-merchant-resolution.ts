@@ -3,6 +3,7 @@ import {
   type AskMerchantAnswer,
   type AskMerchantQuestionRequest,
 } from '@meiye/contracts';
+import { askMerchantSemanticDefaultConditionRevision } from './ask-merchant-timeout-authority.js';
 
 export type AskMerchantResolution =
   | {
@@ -88,7 +89,11 @@ function reask(
               ...request.timeoutPolicy,
               eligibility: {
                 ...request.timeoutPolicy.eligibility,
-                conditionRevision: `${request.requestId}:r${revision}`,
+                conditionRevision:
+                  askMerchantSemanticDefaultConditionRevision(
+                    request.requestId,
+                    revision,
+                  ),
               },
             },
           }

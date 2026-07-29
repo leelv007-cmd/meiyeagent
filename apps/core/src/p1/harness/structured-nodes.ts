@@ -876,6 +876,11 @@ function toQuestionCard(
       reason: '让这次内容更贴合你的实际情况',
     },
     unattended: 'continue',
+    semanticDefaultAuthority: {
+      kind: 'non_resource_no_effect',
+      source: 'intent_gap',
+      revision: 'intent-gap/v1',
+    },
     scope: gap.scope,
   });
 }

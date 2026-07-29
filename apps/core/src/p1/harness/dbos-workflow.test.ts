@@ -192,7 +192,7 @@ test('interaction resume keeps its typed payload and idempotency on the existing
   ]);
 });
 
-test('a durable reask revision resumes the original DBOS question topic', () => {
+test('only the current durable reask revision resumes the original DBOS question topic', () => {
   const question = questionCardSchema.parse({
     questionId: 'question-reask',
     workflowId: 'task-reask',
@@ -208,7 +208,7 @@ test('a durable reask revision resumes the original DBOS question topic', () => 
     scope: 'current_task',
   });
 
-  const command = confirmationCardDecision(question, {
+  const signal = {
     kind: 'harness_interaction_resume',
     schemaVersion: 'v1',
     idempotencyKey: 'answer-reask-r2',
@@ -227,11 +227,19 @@ test('a durable reask revision resumes the original DBOS question topic', () => 
       ],
     },
     resolutionSource: 'decision',
-  });
+  } as const;
+  const command = confirmationCardDecision(question, signal, 2);
 
   assert.equal(command.idempotencyKey, 'answer-reask-r2');
   assert.equal(command.workflowRevision, question.workflowRevision);
   assert.equal(command.decision.value, '2026-08-31');
+  assert.throws(() =>
+    confirmationCardDecision(
+      question,
+      { ...signal, revision: 999 },
+      2,
+    ),
+  );
 });
 
 test('bounded continuation applies only the server-resolved raised limit', async () => {

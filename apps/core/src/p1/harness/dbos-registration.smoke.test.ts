@@ -438,6 +438,11 @@ test(
           reason: 'Ground the promotion in the current merchant offer',
         },
         unattended: 'continue',
+        semanticDefaultAuthority: {
+          kind: 'non_resource_no_effect',
+          source: 'intent_gap',
+          revision: 'intent-gap/v1',
+        },
         scope: 'current_task',
       },
     });
@@ -606,6 +611,11 @@ test(
           reason: 'Ground the promotion in the current merchant offer',
         },
         unattended: 'continue',
+        semanticDefaultAuthority: {
+          kind: 'non_resource_no_effect',
+          source: 'intent_gap',
+          revision: 'intent-gap/v1',
+        },
         scope: 'current_task',
       },
     });
@@ -781,7 +791,12 @@ test(
           field: 'service',
           reason: '需要商家确认主推项目',
         },
-        unattended: 'hold',
+        unattended: 'continue',
+        semanticDefaultAuthority: {
+          kind: 'non_resource_no_effect',
+          source: 'intent_gap',
+          revision: 'intent-gap/v1',
+        },
         scope: 'current_task',
       },
     });
@@ -825,7 +840,23 @@ test(
       store,
       undefined,
       undefined,
-      undefined,
+      {
+        async get() {
+          return {
+            actorId: 'platform-admin',
+            correlationId: `reask-timeout-${suffix}`,
+            createdAt: '2026-07-30T09:00:00.000Z',
+            key: 'harness.confirmation_card.timeout_seconds',
+            reason: 'Exercise durable r2 system default',
+            revision: 1,
+            rolledBackToRevision: null,
+            scope: 'global',
+            status: 'applied',
+            value: 2,
+            workspaceId: '__global__',
+          };
+        },
+      },
       undefined,
       undefined,
       undefined,
@@ -872,33 +903,19 @@ test(
         'conversation',
       );
       assert.equal(second?.revision, 2);
-      const answer = {
-        requestId: second?.requestId,
-        revision: second?.revision,
-        idempotencyKey: `valid-r2-${suffix}`,
-        resume: { runId: workflowId, step: 'intent_naming' },
-        response: {
-          kind: 'answer',
-          items: [
-            {
-              itemId: 'service',
-              result: { kind: 'deferred' },
-            },
-          ],
-        },
-      } as const;
-      assert.deepEqual(await interactions.submit(workspaceId, answer), {
-        kind: 'resumed',
-        replayed: false,
-      });
-      assert.deepEqual(await interactions.submit(workspaceId, answer), {
-        kind: 'resumed',
-        replayed: true,
-      });
       const result = await handle.getResult();
       assert.ok(result.delivery);
       assert.equal(await waitForWorkflowStatus(handle, 'SUCCESS'), 'SUCCESS');
       assert.equal(resumeCalls, 1);
+      assert.deepEqual(
+        await interactions.submitSystemDefault(workspaceId, workflowId),
+        {
+          kind: 'resumed',
+          replayed: true,
+        },
+      );
+      const systemDefaultKey =
+        `${workflowId}:service:r2:system_default`;
       assert.deepEqual(
         (
           await pool.query<{
@@ -912,7 +929,7 @@ test(
                from harness_runtime.decision_events
               where task_id=$1
                 and idempotency_key=$2`,
-            [runtimeWorkflowId, answer.idempotencyKey],
+            [runtimeWorkflowId, systemDefaultKey],
           )
         ).rows[0],
         {

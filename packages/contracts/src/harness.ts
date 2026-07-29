@@ -239,6 +239,14 @@ export const questionCardSchema = z
       .strict(),
     /** Missing means hold; only an explicit continue may auto-release. */
     unattended: z.enum(['continue', 'hold']).optional(),
+    semanticDefaultAuthority: z
+      .object({
+        kind: z.literal('non_resource_no_effect'),
+        source: z.literal('intent_gap'),
+        revision: z.literal('intent-gap/v1'),
+      })
+      .strict()
+      .optional(),
     scope: z.enum(['current_task', 'current_series', 'workspace']),
   })
   .strict()

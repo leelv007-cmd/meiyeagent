@@ -14,6 +14,10 @@ import { z } from 'zod';
 
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import { resolveAskMerchantAnswer } from './ask-merchant-resolution.js';
+export {
+  buildAskMerchantSemanticDefaultTimeoutPolicy,
+  isCurrentAskMerchantSemanticDefault,
+} from './ask-merchant-timeout-authority.js';
 
 const interactionRendererCapabilitySchema = z.enum([
   'available',

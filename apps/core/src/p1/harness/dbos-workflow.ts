@@ -51,19 +51,21 @@ import {
 } from './interaction-resume.js';
 import {
   askMerchantInteractionRequestFromQuestion,
+  type HarnessInteractionStore,
   type HarnessInteractionService,
 } from './interaction-service.js';
+import { buildAskMerchantSemanticDefaultTimeoutPolicy } from './ask-merchant-timeout-authority.js';
 import {
   HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
   HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
   type AdminConfigRepository,
 } from '../admin-config/foundation-module.js';
 import type { TaskRecallDueInput } from '../due-delivery/task-recall-producer.js';
-import { fingerprintValue } from '../job-runtime/job-contracts.js';
 
 export interface HarnessWorkflowPersistence {
   registerPending: HarnessDecisionStore['registerPending'];
   readPending: HarnessDecisionStore['readPending'];
+  readPendingInteraction?: HarnessInteractionStore['readPendingInteraction'];
   recordStageTrace(input: {
     workspaceId: string;
     id: string;
@@ -337,11 +339,13 @@ export function registerHarnessDbosWorkflow(
         });
         const pendingProjection = await DBOS.runStep(
           async () => {
-            const timeoutSeconds =
-              request.usageReservation &&
-              question.unattended === 'continue'
-                ? await readConfirmationCardTimeoutSeconds(config)
-                : null;
+            const hasSemanticDefaultAuthority =
+              question.unattended === 'continue' &&
+              question.semanticDefaultAuthority?.kind ===
+                'non_resource_no_effect';
+            const timeoutSeconds = hasSemanticDefaultAuthority
+              ? await readConfirmationCardTimeoutSeconds(config)
+              : null;
             const holdTimeoutSeconds =
               request.usageReservation && question.unattended !== 'continue'
                 ? await readConfirmationCardHoldTimeoutSeconds(config)
@@ -352,42 +356,15 @@ export function registerHarnessDbosWorkflow(
               stage,
               workspaceId: request.workspaceId,
             });
-            const defaultResponse = {
-              kind: 'answer' as const,
-              items: [
-                {
-                  itemId: question.response.field,
-                  result: { kind: 'deferred' as const },
-                },
-              ],
-            };
             const interactionRequest =
               askMerchantInteractionRequestFromQuestion({
                 question,
                 stage,
                 timeoutPolicy:
-                  timeoutSeconds === null
-                    ? {
-                        kind: 'hold',
-                        reason: 'unknown',
-                        serverEvaluated: true,
-                      }
-                    : {
-                        kind: 'semantic_default',
-                        timeoutSeconds,
-                        eligibility: {
-                          kind: 'safe',
-                          serverEvaluated: true,
-                          effect: 'none',
-                          quota: 'not_applicable',
-                          defaultResponse,
-                          defaultResponseFingerprint:
-                            fingerprintValue(defaultResponse),
-                          policyRevision: 'ask-semantic-default/v1',
-                          conditionRevision:
-                            `${question.questionId}:r${question.workflowRevision}`,
-                        },
-                      },
+                  buildAskMerchantSemanticDefaultTimeoutPolicy(
+                    question,
+                    timeoutSeconds,
+                  ),
               });
             const registered = await persistence.registerPending(
               request.workspaceId,
@@ -402,9 +379,16 @@ export function registerHarnessDbosWorkflow(
           { name: `persist-pending-${question.questionId}` },
         );
         await DBOS.setEvent('pending-structured-decision', question);
-        if (!request.usageReservation) {
+        if (
+          pendingProjection?.timeoutSeconds === null ||
+          (!pendingProjection && !request.usageReservation)
+        ) {
           return {
-            command: await waitForDecisionWithoutTimeout(question),
+            command: await waitForDecisionWithoutTimeout(
+              question,
+              persistence,
+              request.workspaceId,
+            ),
             resolutionSource: 'decision' as const,
           };
         }
@@ -415,13 +399,19 @@ export function registerHarnessDbosWorkflow(
             // layout. Branching into the new bounded layout would reuse a
             // historical recv function ID for a differently named runStep.
             return {
-              command: await waitForDecisionWithoutTimeout(question),
+              command: await waitForDecisionWithoutTimeout(
+                question,
+                persistence,
+                request.workspaceId,
+              ),
               resolutionSource: 'decision' as const,
             };
           }
           const decision = await waitForHeldDecision(
             question,
             holdTimeoutSeconds,
+            persistence,
+            request.workspaceId,
           );
           if (decision) {
             return {
@@ -448,7 +438,11 @@ export function registerHarnessDbosWorkflow(
           );
           if ('consumedByOther' in persisted && persisted.consumedByOther) {
             return {
-              command: await waitForDecisionWithoutTimeout(question),
+              command: await waitForDecisionWithoutTimeout(
+                question,
+                persistence,
+                request.workspaceId,
+              ),
               resolutionSource: 'decision' as const,
             };
           }
@@ -467,7 +461,16 @@ export function registerHarnessDbosWorkflow(
           decisionTopic(question.questionId),
           { timeoutSeconds },
         );
-        const command = confirmationCardDecision(question, decision);
+        const command = confirmationCardDecision(
+          question,
+          decision,
+          await currentDurableInteractionRevision(
+            question,
+            decision,
+            persistence,
+            request.workspaceId,
+          ),
+        );
         if (!decision) {
           if (pendingProjection?.interactionRequest) {
             if (!interactions) {
@@ -485,7 +488,11 @@ export function registerHarnessDbosWorkflow(
                 name: `persist-system-default-${question.questionId}`,
               },
             );
-            return waitForDecisionWithResolutionSource(question);
+            return waitForDecisionWithResolutionSource(
+              question,
+              persistence,
+              request.workspaceId,
+            );
           }
           if (!decisions) {
             throw new Error('Core timeout decision persistence is unavailable.');
@@ -503,7 +510,11 @@ export function registerHarnessDbosWorkflow(
           );
           if ('consumedByOther' in persisted && persisted.consumedByOther) {
             return {
-              command: await waitForDecisionWithoutTimeout(question),
+              command: await waitForDecisionWithoutTimeout(
+                question,
+                persistence,
+                request.workspaceId,
+              ),
               resolutionSource: 'decision' as const,
             };
           }
@@ -1079,6 +1090,7 @@ export function normalizeHarnessDbosWorkflowInput(
 export function confirmationCardDecision(
   question: QuestionCard,
   decision: unknown,
+  currentInteractionRevision = question.workflowRevision,
 ) {
   if (!decision) {
     return structuredDecisionInputSchema.parse({
@@ -1098,7 +1110,11 @@ export function confirmationCardDecision(
   }
   const interaction = harnessInteractionResumeSignalSchema.safeParse(decision);
   if (interaction.success) {
-    return interactionConfirmationCardDecision(question, interaction.data);
+    return interactionConfirmationCardDecision(
+      question,
+      interaction.data,
+      currentInteractionRevision,
+    );
   }
   const parsed = structuredDecisionInputSchema.parse(decision);
   if (parsed.questionId !== question.questionId) {
@@ -1113,10 +1129,11 @@ export function confirmationCardDecision(
 function interactionConfirmationCardDecision(
   question: QuestionCard,
   signal: HarnessInteractionResumeSignal,
+  currentInteractionRevision: number,
 ) {
   if (
     signal.requestId !== question.questionId ||
-    signal.revision < question.workflowRevision ||
+    signal.revision !== currentInteractionRevision ||
     signal.runId !== question.workflowId
   ) {
     throw new Error(
@@ -1206,24 +1223,56 @@ export function confirmationCardHoldExpired(question: QuestionCard) {
 async function waitForHeldDecision(
   question: QuestionCard,
   timeoutSeconds: number,
+  persistence: HarnessWorkflowPersistence,
+  workspaceId: string,
 ) {
   const decision = await DBOS.recv<unknown>(
     decisionTopic(question.questionId),
     { timeoutSeconds },
   );
-  return decision ? confirmationCardDecision(question, decision) : null;
+  return decision
+    ? confirmationCardDecision(
+        question,
+        decision,
+        await currentDurableInteractionRevision(
+          question,
+          decision,
+          persistence,
+          workspaceId,
+        ),
+      )
+    : null;
 }
 
-async function waitForDecisionWithoutTimeout(question: QuestionCard) {
+async function waitForDecisionWithoutTimeout(
+  question: QuestionCard,
+  persistence: HarnessWorkflowPersistence,
+  workspaceId: string,
+) {
   for (;;) {
     const decision = await DBOS.recv<unknown>(
       decisionTopic(question.questionId),
     );
-    if (decision) return confirmationCardDecision(question, decision);
+    if (decision) {
+      return confirmationCardDecision(
+        question,
+        decision,
+        await currentDurableInteractionRevision(
+          question,
+          decision,
+          persistence,
+          workspaceId,
+        ),
+      );
+    }
   }
 }
 
-async function waitForDecisionWithResolutionSource(question: QuestionCard) {
+async function waitForDecisionWithResolutionSource(
+  question: QuestionCard,
+  persistence: HarnessWorkflowPersistence,
+  workspaceId: string,
+) {
   for (;;) {
     const decision = await DBOS.recv<unknown>(
       decisionTopic(question.questionId),
@@ -1231,12 +1280,42 @@ async function waitForDecisionWithResolutionSource(question: QuestionCard) {
     if (!decision) continue;
     const interaction = harnessInteractionResumeSignalSchema.safeParse(decision);
     return {
-      command: confirmationCardDecision(question, decision),
+      command: confirmationCardDecision(
+        question,
+        decision,
+        await currentDurableInteractionRevision(
+          question,
+          decision,
+          persistence,
+          workspaceId,
+        ),
+      ),
       resolutionSource: interaction.success
         ? interaction.data.resolutionSource
         : ('decision' as const),
     };
   }
+}
+
+async function currentDurableInteractionRevision(
+  question: QuestionCard,
+  decision: unknown,
+  persistence: HarnessWorkflowPersistence,
+  workspaceId: string,
+) {
+  const signal = harnessInteractionResumeSignalSchema.safeParse(decision);
+  if (!signal.success) return question.workflowRevision;
+  const current = await persistence.readPendingInteraction?.(
+    workspaceId,
+    question.workflowId,
+    { includeResolved: true },
+  );
+  if (!current || current.requestId !== question.questionId) {
+    throw new Error(
+      'Current durable interaction revision is unavailable.',
+    );
+  }
+  return current.revision;
 }
 
 function decisionTopic(questionId: string) {

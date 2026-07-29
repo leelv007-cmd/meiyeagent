@@ -46,6 +46,7 @@ import {
   type HarnessInteractionPendingProjection,
   type HarnessInteractionStore,
 } from './interaction-service.js';
+import { isCurrentAskMerchantSemanticDefault } from './ask-merchant-timeout-authority.js';
 import { interactionKind } from './interaction-resume.js';
 import type {
   HarnessTaskRequestRegistry,
@@ -854,26 +855,12 @@ export class PostgresHarnessStore
     }
     if (
       interactionRequest?.kind === 'ask_merchant' &&
-      interactionRequest.timeoutPolicy?.kind === 'semantic_default'
+      interactionRequest.timeoutPolicy?.kind === 'semantic_default' &&
+      !isCurrentAskMerchantSemanticDefault(interactionRequest)
     ) {
-      const eligibility = interactionRequest.timeoutPolicy.eligibility;
-      if (
-        fingerprintValue(eligibility.defaultResponse) !==
-        eligibility.defaultResponseFingerprint
-      ) {
-        throw new Error(
-          'The semantic default response fingerprint is invalid.',
-        );
-      }
-      if (
-        eligibility.policyRevision !== 'ask-semantic-default/v1' ||
-        eligibility.conditionRevision !==
-          `${interactionRequest.requestId}:r${interactionRequest.revision}`
-      ) {
-        throw new Error(
-          'The semantic default policy or condition revision is invalid.',
-        );
-      }
+      throw new Error(
+        'The semantic default authority is not current.',
+      );
     }
     const proposedInteractionProjection = interactionRequest
       ? createHarnessInteractionPendingProjection(
@@ -1255,14 +1242,8 @@ export class PostgresHarnessStore
             : projection.data.request.frozen.timeoutPolicy;
         if (
           timeoutPolicy?.kind !== 'semantic_default' ||
-          timeoutPolicy.eligibility.effect !== 'none' ||
-          timeoutPolicy.eligibility.quota !== 'not_applicable' ||
-          timeoutPolicy.eligibility.policyRevision !==
-            'ask-semantic-default/v1' ||
-          timeoutPolicy.eligibility.conditionRevision !==
-            `${projection.data.request.requestId}:r${projection.data.request.revision}` ||
-          fingerprintValue(timeoutPolicy.eligibility.defaultResponse) !==
-            timeoutPolicy.eligibility.defaultResponseFingerprint ||
+          projection.data.request.kind !== 'ask_merchant' ||
+          !isCurrentAskMerchantSemanticDefault(projection.data.request) ||
           fingerprintValue(input.answer.response) !==
             timeoutPolicy.eligibility.defaultResponseFingerprint
         ) {
