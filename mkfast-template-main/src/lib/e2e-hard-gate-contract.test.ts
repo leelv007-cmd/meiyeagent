@@ -67,7 +67,9 @@ const RETIRED_ACTION_ALLOWLIST = new Map([
  */
 const DEMOTION_MARKER = 'M-04 DEMOTED';
 const SPECS_WITH_DEMOTED_CASES = [
-  'specs/uiux-creation-loop.spec.ts',
+  // uiux-creation-loop.spec.ts left this list on 2026-07-29: its demoted
+  // cases were deleted under the approved #242 IA disposition (TEST-CATALOG
+  // records each contract owner) and the two surviving journeys are active.
   'specs/uiux-day0-contract.spec.ts',
   'specs/uiux-upgrade-b-async.spec.ts',
   'specs/uiux-upgrade-b-composer.spec.ts',
