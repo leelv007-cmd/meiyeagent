@@ -65,47 +65,6 @@ async function p1Query<T>(
   ) as Promise<T>;
 }
 
-async function p1Command<T>(
-  page: Page,
-  module: string,
-  action: string,
-  payload: Record<string, unknown>
-) {
-  return page.evaluate(
-    async ({ commandAction, commandModule, commandPayload }) => {
-      const response = await fetch('/api/core/p1/commands', {
-        body: JSON.stringify({
-          action: commandAction,
-          module: commandModule,
-          payload: commandPayload,
-        }),
-        credentials: 'same-origin',
-        headers: {
-          'content-type': 'application/json',
-          'idempotency-key': `dashboard-home-e2e:${commandAction}:${crypto.randomUUID()}`,
-        },
-        method: 'POST',
-      });
-      const envelope = (await response.json()) as {
-        data?: unknown;
-        error?: { message?: string };
-      };
-      if (!response.ok || envelope.data === undefined) {
-        throw new Error(
-          envelope.error?.message ??
-            `${commandModule}.${commandAction} command failed`
-        );
-      }
-      return envelope.data;
-    },
-    {
-      commandAction: action,
-      commandModule: module,
-      commandPayload: payload,
-    }
-  ) as Promise<T>;
-}
-
 async function productState(page: Page) {
   return page.evaluate(async () => {
     const response = await fetch('/api/core/product/state', {
@@ -120,109 +79,6 @@ async function productState(page: Page) {
     }
     return envelope.data;
   });
-}
-
-async function seedConfirmedAssetFact(page: Page) {
-  const state = await productState(page);
-  const workspaceId = state.workspaceId;
-  const store = state.store;
-  const project = store?.projects.find(
-    ({ id }) => id === 'project-grounded-creation'
-  );
-  if (store?.revision === undefined || !project) {
-    throw new Error('A confirmed store project is required for fact seeding');
-  }
-  const suffix = crypto.randomUUID();
-  const batchId = `dashboard-home-batch-${suffix}`;
-  const serviceCandidateId = `dashboard-home-service-candidate-${suffix}`;
-  const priceCandidateId = `dashboard-home-price-candidate-${suffix}`;
-  const capturedAt = new Date(Date.now() - 1_000).toISOString();
-  const referenceId = `dashboard-home-reference-${suffix}`;
-  const result = await p1Command<{
-    facts: Array<{ factId: string; revision: number }>;
-  }>(page, 'asset-memory', 'finalize_store_intake', {
-    batch: {
-      batchId,
-      candidates: [
-        {
-          candidateId: serviceCandidateId,
-          fact: {
-            effectiveFrom: capturedAt,
-            expiresAt: null,
-            key: 'service.project-grounded-creation.name',
-            kind: 'service',
-            scope: { storeId: workspaceId },
-            source: {
-              capturedAt,
-              kind: 'user_confirmation',
-              referenceId,
-            },
-            value: { name: project.name },
-          },
-          objectKind: 'store_fact',
-          status: 'pending',
-        },
-        {
-          candidateId: priceCandidateId,
-          fact: {
-            effectiveFrom: capturedAt,
-            expiresAt: null,
-            key: 'service.project-grounded-creation.price',
-            kind: 'price',
-            scope: { storeId: workspaceId },
-            source: {
-              capturedAt,
-              kind: 'user_confirmation',
-              referenceId,
-            },
-            value: { amount: project.price, currency: 'CNY' },
-          },
-          objectKind: 'store_fact',
-          status: 'pending',
-        },
-      ],
-      source: {
-        capabilityStatus: 'assisted',
-        capturedAt,
-        example: false,
-        kind: 'manual',
-        referenceId,
-        sourceId: `dashboard-home-source-${suffix}`,
-        sourceWorkspaceId: workspaceId,
-      },
-      summary: '已整理出 1 项待确认服务资料和价格。',
-      taskId: `dashboard-home-intake-${suffix}`,
-    },
-    confirmations: [
-      {
-        candidateId: serviceCandidateId,
-        expectedFactRevision: 0,
-        factId: 'store-project:project-grounded-creation:service',
-      },
-      {
-        candidateId: priceCandidateId,
-        expectedFactRevision: 0,
-        factId: 'store-project:project-grounded-creation:price',
-      },
-    ],
-    profilePatch: {
-      expectedRevision: store.revision,
-      projects: { upsert: [project] },
-    },
-  });
-  expect(result.facts).toHaveLength(2);
-  expect(result.facts).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        factId: 'store-project:project-grounded-creation:service',
-        revision: 1,
-      }),
-      expect.objectContaining({
-        factId: 'store-project:project-grounded-creation:price',
-        revision: 1,
-      }),
-    ])
-  );
 }
 
 async function creativeWorkbench(page: Page) {
@@ -583,7 +439,6 @@ test.describe('D-126 dashboard home mount', () => {
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
     await seedConfirmedStore(page);
-    await seedConfirmedAssetFact(page);
     await page.goto('/dashboard');
 
     // Real history through the Composer execution spine — direct Harness task

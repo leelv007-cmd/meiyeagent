@@ -445,14 +445,6 @@ test.describe('M-04 required browser hard gate', () => {
     await seedConfirmedStore(page);
     await page.goto('/en/dashboard');
 
-    const factCard = page.getByTestId('progressive-fact-card');
-    await expect(factCard).toBeVisible({ timeout: 60_000 });
-    const factInput = factCard.getByTestId('progressive-fact-input');
-    await factCard.getByTestId('progressive-fact-continue').click();
-    await expect(factInput).toHaveValue('299');
-    await factCard.getByTestId('progressive-fact-continue').click();
-    await factCard.getByTestId('progressive-fact-confirm').click();
-    await expect(factCard).toBeHidden({ timeout: 60_000 });
     const state = await productState(page);
     const activeFacts = await p1Query<Array<{ kind?: string }>>(
       page,

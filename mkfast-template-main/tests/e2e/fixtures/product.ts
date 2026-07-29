@@ -58,7 +58,11 @@ export async function productState(page: Page) {
   });
 }
 
-/** Confirmed store facts only — measurement prep for Day-0, no library path. */
+/**
+ * Confirm the Product store and its matching StoreFact revisions through the
+ * public finalization command. Existing Composer journeys require both
+ * projections; a ProductState-only seed is intentionally fact-incomplete.
+ */
 export async function seedConfirmedStore(page: Page) {
   await productCommand(page, {
     type: 'confirm_store',
@@ -83,6 +87,136 @@ export async function seedConfirmedStore(page: Page) {
       regulated: false,
     },
   });
+  const state = await productState(page);
+  const store = state.store;
+  const project = store?.projects.find(
+    ({ id }) => id === 'project-grounded-creation'
+  );
+  if (store?.revision === undefined || !project) {
+    throw new Error('Confirmed store project is missing from ProductState');
+  }
+  const suffix = crypto.randomUUID();
+  const capturedAt = new Date(Date.now() - 1_000).toISOString();
+  const batchId = `seed-confirmed-store-${suffix}`;
+  const serviceCandidateId = `${batchId}:service`;
+  const priceCandidateId = `${batchId}:price`;
+  const referenceId = `${batchId}:merchant-confirmation`;
+  const result = (await page.evaluate(
+    async (payload) => {
+      const response = await fetch('/api/core/p1/commands', {
+        body: JSON.stringify({
+          action: 'finalize_store_intake',
+          module: 'asset-memory',
+          payload,
+        }),
+        credentials: 'same-origin',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': `product-fixture:finalize_store_intake:${crypto.randomUUID()}`,
+        },
+        method: 'POST',
+      });
+      const envelope = (await response.json()) as {
+        data?: unknown;
+        error?: { message?: string };
+      };
+      if (!response.ok || envelope.data === undefined) {
+        throw new Error(
+          envelope.error?.message ??
+            'asset-memory.finalize_store_intake command failed'
+        );
+      }
+      return envelope.data;
+    },
+    {
+      batch: {
+        batchId,
+        candidates: [
+          {
+            candidateId: serviceCandidateId,
+            fact: {
+              effectiveFrom: capturedAt,
+              expiresAt: null,
+              key: `service.${project.id}.name`,
+              kind: 'service',
+              scope: { storeId: state.workspaceId },
+              source: {
+                capturedAt,
+                kind: 'user_confirmation',
+                referenceId,
+              },
+              value: { name: project.name },
+            },
+            objectKind: 'store_fact',
+            status: 'pending',
+          },
+          {
+            candidateId: priceCandidateId,
+            fact: {
+              effectiveFrom: capturedAt,
+              expiresAt: null,
+              key: `service.${project.id}.price`,
+              kind: 'price',
+              scope: { storeId: state.workspaceId },
+              source: {
+                capturedAt,
+                kind: 'user_confirmation',
+                referenceId,
+              },
+              value: { amount: project.price, currency: 'CNY' },
+            },
+            objectKind: 'store_fact',
+            status: 'pending',
+          },
+        ],
+        source: {
+          capabilityStatus: 'assisted',
+          capturedAt,
+          example: false,
+          kind: 'manual',
+          referenceId,
+          sourceId: `${batchId}:source`,
+          sourceWorkspaceId: state.workspaceId,
+        },
+        summary: 'E2E confirmed store service and price facts.',
+        taskId: `${batchId}:task`,
+      },
+      confirmations: [
+        {
+          candidateId: serviceCandidateId,
+          expectedFactRevision: 0,
+          factId: `store-project:${project.id}:service`,
+        },
+        {
+          candidateId: priceCandidateId,
+          expectedFactRevision: 0,
+          factId: `store-project:${project.id}:price`,
+        },
+      ],
+      profilePatch: {
+        expectedRevision: store.revision,
+        projects: {
+          upsert: [
+            { ...project, priceValidUntil: project.priceValidUntil ?? null },
+          ],
+        },
+      },
+    }
+  )) as {
+    facts: Array<{ factId: string; revision: number }>;
+  };
+  expect(result.facts).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        factId: `store-project:${project.id}:service`,
+        revision: 1,
+      }),
+      expect.objectContaining({
+        factId: `store-project:${project.id}:price`,
+        revision: 1,
+      }),
+    ])
+  );
 }
 
 /**
