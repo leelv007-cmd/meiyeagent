@@ -230,6 +230,12 @@ export function planModelSupplyCandidatesWithPolicy(input: {
     selection: input.selection,
     dataClass: input.dataClass,
     unavailableDeploymentIds: [...unavailable],
+    authorizedModelSubstitutionDeploymentIds:
+      input.routePolicy?.fallbackAuthorized === true
+        ? Object.keys(
+            input.routePolicy.modelSubstitutionDegradationSurfaces ?? {},
+          )
+        : [],
   });
 
   if (policyOrder) {

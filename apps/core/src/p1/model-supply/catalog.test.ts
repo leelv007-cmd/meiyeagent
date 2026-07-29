@@ -11,8 +11,14 @@ import {
   createDefaultProviderProfiles,
   createDefaultRouteRevisions,
   forwardMigratePublishedCatalogPayload,
+  PRICE_REVISION_PRICING_TIERS,
+  priceRevisionKey,
 } from './catalog.js';
 import { planModelSupplyCandidates } from './route-planning.js';
+import {
+  ModelSupplyApplicationService,
+  RecordedProviderExecutionPort,
+} from './index.js';
 
 test('DeepSeek V4 Pro is the default text tier and OpenAI is never the default resolution', () => {
   const models = createDefaultCatalogModels();
@@ -104,6 +110,44 @@ test('OpenAI stays available only through explicit fixed selection', () => {
     }).candidates.map((candidate) => candidate.model.id),
     [],
   );
+});
+
+test('freezes the requested non-standard price tier for the selected execution channel', async () => {
+  const models = createDefaultCatalogModels();
+  const deployments = createDefaultDeployments({
+    activatedDeploymentIds: ['deepseek-v4-pro-direct'],
+  });
+  const prices = createDefaultPriceRevisions().map((price) =>
+    price.catalogModelId === 'deepseek-v4-pro' &&
+    price.executionChannelId === 'channel-deepseek-direct' &&
+    price.pricingTier === 'cache_hit'
+      ? { ...price, amount: 0.000001 }
+      : price,
+  );
+  const application = new ModelSupplyApplicationService({
+    models,
+    deployments,
+    prices,
+    execution: new RecordedProviderExecutionPort(),
+  });
+
+  const result = await application.submit({
+    workspaceId: 'workspace-price-tier',
+    actorId: 'owner-price-tier',
+    idempotencyKey: 'cache-hit-price-tier',
+    operation: 'copy.generate',
+    selection: { mode: 'fixed', catalogModelId: 'deepseek-v4-pro' },
+    pricingTier: 'cache_hit',
+    dataClass: [],
+    prompt: 'Use the server-selected cache tier.',
+  });
+
+  assert.equal(result.snapshot.pricingTier, 'cache_hit');
+  assert.equal(
+    result.snapshot.priceRevision,
+    'deepseek-v4-pro:channel-deepseek-direct:cache_hit:price-v1',
+  );
+  assert.equal(result.snapshot.allowedCandidates?.[0]?.unitPriceMicros, 1);
 });
 
 test('forward-migrates a pre-upgrade published catalog with new inactive fallback models and runtime identity', () => {
@@ -250,6 +294,28 @@ test('catalog revisions transition by creating immutable draft, enabled, publish
   assert.throws(() => registry.publish(draft.id), /enabled/);
 });
 
+test('provider discovery creates an unreviewed draft without changing the production catalog', () => {
+  const registry = new CatalogRevisionRegistry();
+  const payload = {
+    models: createDefaultCatalogModels(),
+    deployments: createDefaultDeployments(),
+    capabilities: createDefaultCapabilityRevisions(),
+    prices: createDefaultPriceRevisions(),
+    routes: createDefaultRouteRevisions(),
+    providerProfiles: createDefaultProviderProfiles(),
+    executionChannels: createDefaultExecutionChannels(),
+  };
+  const reviewed = registry.createDraft(payload);
+  const enabled = registry.enable(reviewed.id);
+  const published = registry.publish(enabled.id);
+
+  const discovered = registry.createDiscoveryDraft(payload);
+
+  assert.equal(discovered.stage, 'draft');
+  assert.equal(discovered.reason, 'provider_discovery');
+  assert.equal(registry.published()?.id, published.id);
+});
+
 test('default catalog keeps provider, counterparty, channel, credential owner, capability, and price revisions independent', () => {
   const profiles = createDefaultProviderProfiles();
   const channels = createDefaultExecutionChannels();
@@ -282,13 +348,38 @@ test('default catalog keeps provider, counterparty, channel, credential owner, c
         profile.apiCounterparty === 'Volcengine'
     )
   );
-  assert.equal(nanoPrices.length, 2);
-  assert.notEqual(nanoPrices[0]?.amount, nanoPrices[1]?.amount);
+  assert.equal(nanoPrices.length, 10);
+  assert.equal(new Set(nanoPrices.map((price) => price.amount)).size, 2);
   assert.equal(
     new Set(nanoCapabilities.map((item) => item.catalogModelId)).size,
     2
   );
   assert.ok(createDefaultRouteRevisions().length > 0);
+
+  const sameModelPrices = createDefaultPriceRevisions().filter(
+    (price) => price.catalogModelId === 'seedance-2',
+  );
+  assert.ok(sameModelPrices.length >= 10);
+  assert.equal(
+    new Set(sameModelPrices.map((price) => price.executionChannelId)).size,
+    2,
+  );
+  assert.deepEqual(
+    new Set(sameModelPrices.map((price) => price.pricingTier)),
+    new Set(PRICE_REVISION_PRICING_TIERS),
+  );
+  assert.equal(
+    new Set(
+      PRICE_REVISION_PRICING_TIERS.map((pricingTier) =>
+        priceRevisionKey({
+          catalogModelId: 'seedance-2',
+          executionChannelId: 'channel-tuzi-media',
+          pricingTier,
+        }),
+      ),
+    ).size,
+    5,
+  );
 
   const customModel = createDefaultCatalogModels().find(
     (model) => model.id === 'llm-custom'

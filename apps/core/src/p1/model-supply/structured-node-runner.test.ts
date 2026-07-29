@@ -1694,6 +1694,27 @@ function createAutoRunner(
     ],
     execution: new RecordedProviderExecutionPort(),
     ledger,
+    planningControlPlane: {
+      async readPlanningState() {
+        return {
+          routePolicyRevisionId: 'route-policy:text.respond:quality:r1',
+          routePolicy: {
+            operation: 'text.respond' as const,
+            qualityTier: 'quality' as const,
+            hardConstraints: ['deployment_active'],
+            candidateDeploymentIds: [
+              'deployment-primary',
+              'deployment-fallback',
+            ],
+            maxAttempts: 2,
+            fallbackAuthorized: true,
+            modelSubstitutionDegradationSurfaces: {
+              'deployment-fallback': ['tone_style'],
+            },
+          },
+        };
+      },
+    },
   });
   return new ModelSupplyStructuredNodeRunner({
     application,

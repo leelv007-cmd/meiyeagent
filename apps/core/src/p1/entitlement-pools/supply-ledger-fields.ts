@@ -143,16 +143,34 @@ export function buildSupplyRequestFreeze(
 }
 
 function assertSupplierPriceRevision(revision: SupplierPriceRevision) {
-  if (!revision.id.trim() || !revision.deploymentId.trim()) {
+  if (
+    !revision.id.trim() ||
+    !revision.deploymentId.trim() ||
+    !revision.executionChannelId?.trim()
+  ) {
     throw new P1DomainError(
       'INVALID_STATE',
-      'SupplierPriceRevision requires id and deploymentId.'
+      'SupplierPriceRevision requires id, deploymentId, and executionChannelId.'
     );
   }
   if (!Number.isFinite(revision.amountMicros) || revision.amountMicros < 0) {
     throw new P1DomainError(
       'INVALID_STATE',
       'SupplierPriceRevision.amountMicros must be a non-negative finite number.'
+    );
+  }
+  if (
+    ![
+      'standard',
+      'cache_hit',
+      'batch',
+      'long_context',
+      'package_volume',
+    ].includes(revision.pricingTier ?? '')
+  ) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'SupplierPriceRevision.pricingTier is invalid.'
     );
   }
   assertPricingEvidence(revision.evidence);

@@ -576,7 +576,15 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
         activationEvidenceStatus: 'recorded' as const,
       }),
       capabilities: [{ id: 'image-v2', operation: 'image.generate' as const, revision: 2 }],
-      prices: [{ id: 'image-price-v2', currency: 'CNY' as const, amount: 1, revision: 2 }],
+      prices: [{
+        id: 'image-price-v2',
+        catalogModelId: 'gpt-image-2',
+        executionChannelId: 'channel-openai-image-managed',
+        pricingTier: 'standard' as const,
+        currency: 'CNY' as const,
+        amount: 1,
+        revision: 2,
+      }],
       routes: [{ id: 'image-route-v2', operation: 'image.generate' as const, revision: 2 }],
     };
     const execute = (action: string, payload: Record<string, unknown>) =>

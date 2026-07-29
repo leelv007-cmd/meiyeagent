@@ -2,6 +2,7 @@ import type {
   ProductBillingMode,
   ProductQuoteSnapshot,
   ProductUsageRecord,
+  ProviderFailoverBillingEvent,
   TrustedUsageEvidenceKind,
 } from '@meiye/contracts';
 import { P1DomainError } from '../foundation/domain.js';
@@ -27,6 +28,7 @@ export interface BillingAttemptCost {
   evidence?: string;
   evidenceKind?: TrustedUsageEvidenceKind | 'estimated' | 'unknown';
   payer?: 'platform' | 'workspace_byok';
+  failover?: ProviderFailoverBillingEvent;
 }
 
 export function providerBillingMode(

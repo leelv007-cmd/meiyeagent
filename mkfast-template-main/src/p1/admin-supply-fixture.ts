@@ -320,6 +320,8 @@ const routePolicies: RoutePolicyRevision[] = [
 const priceRevisions: SupplierPriceRevision[] = deployments.map((d, i) => ({
   id: `price-${d.id}`,
   deploymentId: d.id,
+  executionChannelId: d.executionChannelId,
+  pricingTier: 'standard',
   amountMicros: 1_000 + i * 250,
   currency: 'CNY' as const,
   unit: d.catalogModelId.includes('video') ? 'second' : 'request',

@@ -568,6 +568,12 @@ const notifier = new PostgresIdempotentProductNotifier(
   downstreamNotifier
 );
 const productPlans = productPlanConfigFromEnv(process.env);
+const modelCatalogTenantAllowlist = (
+  process.env.MODEL_CATALOG_TENANT_ALLOWLIST ?? ''
+)
+  .split(',')
+  .map((workspaceId) => workspaceId.trim())
+  .filter(Boolean);
 const runtimeAssembly = await modelRuntimeAssemblyFromSources(
   adminConfigRepository,
   providerCredentialRuntime.env,
@@ -789,6 +795,8 @@ const p1ModelSupplyRuntime = createModelSupplyRuntime({
     platformDefaultModels: platformDefaultModelSource,
     repository: modelSupplyRepository,
     supplyRegistry: supplyControlRepository,
+    modelCatalogTenantAllowlist,
+    warn: (message) => console.warn(message),
   },
 });
 const p1ModelSupplyService = p1ModelSupplyRuntime.application;
@@ -857,7 +865,11 @@ const legacyModelSupplyRuntime = createModelSupplyRuntime({
     resultSink: modelSupplyRepository,
   },
   catalog: runtimeAssembly.assembly,
-  controlPlane: { repository: modelSupplyRepository },
+  controlPlane: {
+    repository: modelSupplyRepository,
+    modelCatalogTenantAllowlist,
+    warn: (message) => console.warn(message),
+  },
 });
 const legacyModelSupplyService = legacyModelSupplyRuntime.application;
 const legacyModelControlPlane = legacyModelSupplyRuntime.controlPlane;
@@ -1646,6 +1658,8 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         adminConfigRepository,
       ),
       monthlyOutput: productQuoteService,
+      modelCatalogTenantAllowlist,
+      warn: (message) => console.warn(message),
       modelDefaults: {
         getSnapshot: () => platformDefaultModelSource.getSnapshot(),
         async validateDefault(operation, modelId) {

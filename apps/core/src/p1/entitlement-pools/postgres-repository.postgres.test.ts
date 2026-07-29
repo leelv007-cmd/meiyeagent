@@ -844,6 +844,8 @@ test(
         supplierPriceRevision: {
           id: 'supplier-price-1',
           deploymentId: 'deployment-image-a',
+          executionChannelId: 'channel-image-a',
+          pricingTier: 'standard',
           amountMicros: 1200,
           currency: 'CNY',
           unit: 'request',

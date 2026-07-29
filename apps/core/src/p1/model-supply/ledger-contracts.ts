@@ -5,6 +5,8 @@
 import type {
   GeneratedCopyCandidateContent,
   GeneratedPlatformVariants,
+  ProviderFailoverAvailabilityEvent,
+  ProviderFailoverBillingEvent,
 } from '@meiye/contracts';
 import type { StructuredExecutionContinuation } from './execution-attempt-budget.js';
 import type { StructuredObjectMeasurement } from './provider-lifecycle.js';
@@ -36,6 +38,8 @@ export interface ProviderCost {
   amount: number;
   currency: 'CNY' | 'USD';
   usage: { inputTokens?: number; outputTokens?: number; mediaUnits?: number };
+  /** Explicit supply-side billing event for a fallback attempt. */
+  failover?: ProviderFailoverBillingEvent;
 }
 
 export interface CancelledMediaProviderTerminalReconciliation {
@@ -95,6 +99,8 @@ export interface ModelSupplyResult {
   usage: ProductUsage;
   providerCost: ProviderCost;
   providerCosts: ProviderCost[];
+  /** Availability event stream for actual fallback transitions. */
+  failoverAvailabilityEvents?: ProviderFailoverAvailabilityEvent[];
   cancelledProviderTerminal?: CancelledMediaProviderTerminalReconciliation;
 }
 

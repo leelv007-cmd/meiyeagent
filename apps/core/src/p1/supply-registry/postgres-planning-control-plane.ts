@@ -37,6 +37,13 @@ function routePayload(revision: RoutePolicyRevision): RoutePolicyPayload {
       ? { costBoundaryMicros: revision.costBoundaryMicros }
       : {}),
     fallbackAuthorized: revision.fallbackAuthorized,
+    ...(revision.modelSubstitutionDegradationSurfaces
+      ? {
+          modelSubstitutionDegradationSurfaces: structuredClone(
+            revision.modelSubstitutionDegradationSurfaces,
+          ),
+        }
+      : {}),
   };
 }
 

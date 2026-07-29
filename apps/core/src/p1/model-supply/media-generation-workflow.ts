@@ -32,6 +32,7 @@ import {
   type ReferenceAssetResolutionFailure,
   type ReferenceAssetResolverPort,
   type ResolvedReferenceAsset,
+  type RouteSnapshot,
 } from './index.js';
 
 export const MODEL_MEDIA_GENERATION_JOB_KIND = 'model.media-generation';
@@ -237,10 +238,10 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
     let providerSubmission = submission;
     if (request.providerTaskRef) {
       const pending = await this.recoverPending(submission);
-      providerSubmission = {
-        ...structuredClone(submission),
-        frozenRouteSnapshot: structuredClone(pending.snapshot),
-      };
+      providerSubmission = submissionWithPendingSnapshot(
+        submission,
+        pending.snapshot,
+      );
     }
     let providerRequest = await this.providerRequest(
       providerSubmission,
@@ -259,10 +260,10 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
       taskRef = submissionOutcome.taskRef;
       if (!taskRef) return submissionOutcome;
       const pending = await this.recoverPending(submission);
-      providerSubmission = {
-        ...structuredClone(submission),
-        frozenRouteSnapshot: structuredClone(pending.snapshot),
-      };
+      providerSubmission = submissionWithPendingSnapshot(
+        submission,
+        pending.snapshot,
+      );
       providerRequest = await this.providerRequest(providerSubmission, request);
     }
     const providerState = await this.providerEffect(
@@ -398,10 +399,10 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
         'Late provider terminal reconciliation requires a refunded cancelled result.'
       );
     }
-    const providerSubmission = {
-      ...structuredClone(submission),
-      frozenRouteSnapshot: structuredClone(pending.snapshot),
-    };
+    const providerSubmission = submissionWithPendingSnapshot(
+      submission,
+      pending.snapshot,
+    );
     const providerRequest = await this.providerRequest(
       providerSubmission,
       request
@@ -655,10 +656,7 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
       ? await this.recoverPending(submission)
       : undefined;
     const providerSubmission = pending
-      ? {
-          ...structuredClone(submission),
-          frozenRouteSnapshot: structuredClone(pending.snapshot),
-        }
+      ? submissionWithPendingSnapshot(submission, pending.snapshot)
       : submission;
     if (!taskRef && hadPriorAttempt) {
       const providerRequest = await this.providerRequest(
@@ -960,6 +958,22 @@ interface DurableTracerWorkerLike {
   handle: JobRuntimeHandler;
 }
 
+function submissionWithPendingSnapshot(
+  submission: ModelSupplySubmission,
+  snapshot: RouteSnapshot,
+): ModelSupplySubmission {
+  return {
+    ...structuredClone(submission),
+    selection: {
+      mode: 'fixed',
+      catalogModelId: snapshot.actualCatalogModelId,
+      fallbackConsent: submission.selection.fallbackConsent,
+    },
+    pricingTier: snapshot.pricingTier ?? submission.pricingTier ?? 'standard',
+    frozenRouteSnapshot: structuredClone(snapshot),
+  };
+}
+
 function terminalResult(
   pending: ModelSupplyResult,
   taskRef: string | undefined,
@@ -971,6 +985,13 @@ function terminalResult(
     id: `${pending.providerCost.id}-${status}-observed`,
     status: 'observed',
     ...cost,
+    ...(cost.failover || pending.providerCost.failover
+      ? {
+          failover: structuredClone(
+            cost.failover ?? pending.providerCost.failover!,
+          ),
+        }
+      : {}),
   };
   const attempt = {
     ...pending.attempt,

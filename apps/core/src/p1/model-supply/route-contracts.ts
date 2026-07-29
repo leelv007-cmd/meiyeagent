@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import type {
   ModelCapabilityProfile,
   ModelCapabilityRequirementAxis,
+  SupplierPricingTier,
 } from '@meiye/contracts';
 import type {
 	Acceptance,
@@ -138,6 +139,8 @@ export interface ModelSupplySubmission {
   billingTaskId?: string;
   /** Accepted ProductQuote revision checked before provider dispatch. */
   billingQuoteRevision?: string;
+  /** Server-selected supplier pricing tier frozen before provider I/O. */
+  pricingTier?: SupplierPricingTier;
   operation: ModelOperation;
   selection: RequestedSelection;
   dataClass: DataClass[];
@@ -315,6 +318,7 @@ export interface RouteSnapshot {
   deploymentId: string;
   policyRevision?: string;
   priceRevision?: string;
+  pricingTier?: SupplierPricingTier;
   credentialMode?: 'platform' | 'byok_strict';
   credentialVersion?: string;
   credentialAccountId?: string;
@@ -361,6 +365,7 @@ export interface RouteSnapshot {
     credentialVersion: string;
     policyRevision: string;
     priceRevision: string;
+    pricingTier?: SupplierPricingTier;
     unitPriceMicros: number;
     pricingStatus?: 'unknown';
     currency: 'CNY' | 'USD';
@@ -370,6 +375,8 @@ export interface RouteSnapshot {
       ModelDeployment['activationEvidence']
     >['status'];
     capabilityProfile?: ModelCapabilityProfile | null;
+    /** Required only for model-substitution fallback. */
+    fallbackDegradationSurfaces?: string[];
   }>;
   reason:
     | 'fixed_selection'

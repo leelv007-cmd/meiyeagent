@@ -5,6 +5,8 @@ import {
   type GeneratedCopyCandidateContent,
   type GeneratedPlatformVariants,
   type HealthOverlayPort,
+  type ProviderFailoverAvailabilityEvent,
+  type ProviderFailoverBillingEvent,
   type VideoCompositionEvidence,
 } from '@meiye/contracts';
 import { toJSONSchema, type ZodType } from 'zod';
@@ -26,6 +28,11 @@ import {
   type OwnedAssetRegistrationFailureStage,
 } from './owned-asset-registration-lifecycle.js';
 import { withServerDerivedReferenceDataClass } from './reference-asset-dispatch-guard.js';
+import {
+  evaluateModelFailover,
+  usedModalityCapabilityIds,
+} from './failover-semantics.js';
+import type { PriceRevision } from './catalog.js';
 
 const EXECUTION_ATTEMPT_BUDGET_SUSPENSION_CODE =
   'EXECUTION_ATTEMPT_BUDGET_SUSPENDED_BEFORE_PROVIDER';
@@ -795,6 +802,9 @@ interface SubmissionPlanningDecision {
   decisionExplanation?: RouteDecisionExplanation;
   maxAttempts?: number;
   fallbackAuthorized?: boolean;
+  modelSubstitutionDegradationSurfaces?: Readonly<
+    Record<string, string[]>
+  >;
 }
 
 export type ModelSupplyProviderAdmissionDecision =
@@ -842,6 +852,7 @@ export class ModelSupplyApplicationService {
   readonly execution: RecordedProviderExecutionPort | ProviderExecutionPort;
   private readonly modelById = new Map<string, CatalogModel>();
   private readonly deployments: ModelDeployment[];
+  private readonly prices: PriceRevision[];
   private readonly catalogRevisionId: string;
   private readonly workspaceCatalogs = new Map<
     string,
@@ -849,6 +860,7 @@ export class ModelSupplyApplicationService {
       revisionId: string;
       modelById: Map<string, CatalogModel>;
       deployments: ModelDeployment[];
+      prices: PriceRevision[];
     }
   >();
   private readonly storedAttempts: ProviderAttempt[] = [];
@@ -880,6 +892,7 @@ export class ModelSupplyApplicationService {
   constructor(options: {
     models: CatalogModel[];
     deployments: ModelDeployment[];
+    prices?: PriceRevision[];
     execution: ProviderExecutionPort;
     resultSink?: ModelSupplyResultSink;
     ledger?: ModelSupplyLedgerPort;
@@ -907,6 +920,7 @@ export class ModelSupplyApplicationService {
     this.capabilityHotAssembly = options.capabilityHotAssembly;
     this.planningControlPlane = options.planningControlPlane;
     this.deployments = this.constrainRuntimeDeployments(options.deployments);
+    this.prices = structuredClone(options.prices ?? []);
     this.catalogRevisionId = options.catalogRevisionId ?? 'recorded-runtime';
     this.execution = options.execution;
     this.resultSink = options.resultSink;
@@ -1039,7 +1053,8 @@ export class ModelSupplyApplicationService {
     workspaceId: string,
     revisionId: string,
     models: CatalogModel[],
-    deployments: ModelDeployment[]
+    deployments: ModelDeployment[],
+    prices: PriceRevision[] = [],
   ) {
     const modelIds = new Set(models.map((model) => model.id));
     const unknownDeployment = deployments.find(
@@ -1058,6 +1073,7 @@ export class ModelSupplyApplicationService {
       deployments: this.capabilityHotAssembly
         ? structuredClone(deployments)
         : this.constrainRuntimeDeployments(deployments),
+      prices: structuredClone(prices),
     });
   }
 
@@ -1083,6 +1099,7 @@ export class ModelSupplyApplicationService {
       revisionId: this.catalogRevisionId,
       modelById: this.modelById,
       deployments: this.deployments,
+      prices: this.prices,
     };
     const resolvedCandidates = this.resolveCandidates(submission, catalog);
     const candidates =
@@ -1126,6 +1143,7 @@ export class ModelSupplyApplicationService {
       revisionId: this.catalogRevisionId,
       modelById: this.modelById,
       deployments: this.deployments,
+      prices: this.prices,
     };
     const capabilityRevision =
       await this.capabilityHotAssembly?.getEffectiveRevision();
@@ -1188,6 +1206,7 @@ export class ModelSupplyApplicationService {
       revisionId: this.catalogRevisionId,
       modelById: this.modelById,
       deployments: this.deployments,
+      prices: this.prices,
     };
     const knownDeploymentIds = new Set(
       catalog.deployments.map((deployment) => deployment.id)
@@ -1713,6 +1732,7 @@ export class ModelSupplyApplicationService {
       revisionId: this.catalogRevisionId,
       modelById: this.modelById,
       deployments: this.deployments,
+      prices: this.prices,
     };
     const catalog = {
       ...storedCatalog,
@@ -1853,6 +1873,7 @@ export class ModelSupplyApplicationService {
       revisionId: this.catalogRevisionId,
       modelById: this.modelById,
       deployments: this.deployments,
+      prices: this.prices,
     };
     const candidates = this.resolveCandidates(submission, catalog);
     const selected = candidates[0];
@@ -1894,6 +1915,7 @@ export class ModelSupplyApplicationService {
           revisionId: this.catalogRevisionId,
           modelById: this.modelById,
           deployments: this.deployments,
+          prices: this.prices,
         };
       catalog = {
         ...storedCatalog,
@@ -1985,6 +2007,7 @@ export class ModelSupplyApplicationService {
       revisionId: this.catalogRevisionId,
       modelById: this.modelById,
       deployments: this.deployments,
+      prices: this.prices,
     };
     const candidates = this.resolveCandidates(submission, catalog);
     const selected = candidates[0];
@@ -2047,6 +2070,7 @@ export class ModelSupplyApplicationService {
       revisionId: this.catalogRevisionId,
       modelById: this.modelById,
       deployments: this.deployments,
+      prices: this.prices,
     };
     const selected = this.resolveCandidates(submission, catalog)[0];
     if (!selected) {
@@ -2068,6 +2092,7 @@ export class ModelSupplyApplicationService {
       revisionId: this.catalogRevisionId,
       modelById: this.modelById,
       deployments: this.deployments,
+      prices: this.prices,
     };
     const candidates = this.resolveCandidates(submission, catalog);
     const selected = candidates.find(
@@ -2459,6 +2484,7 @@ export class ModelSupplyApplicationService {
               revisionId: this.catalogRevisionId,
               modelById: this.modelById,
               deployments: this.deployments,
+              prices: this.prices,
             };
           return {
             ...storedCatalog,
@@ -2509,6 +2535,7 @@ export class ModelSupplyApplicationService {
     const jobId = modelSupplyJobId(submission);
     const attemptChain: ProviderAttempt[] = [];
     const providerCostChain: ProviderCost[] = [];
+    const failoverAvailabilityEvents: ProviderFailoverAvailabilityEvent[] = [];
     if (
       this.capabilityHotAssembly &&
       submission.frozenRouteSnapshot &&
@@ -2549,6 +2576,40 @@ export class ModelSupplyApplicationService {
         attemptSubmission.selection.mode === 'auto';
       if (capabilityRevisionId) {
         snapshot.capabilityRevisionId = capabilityRevisionId;
+      }
+      let failover:
+        | ProviderFailoverBillingEvent
+        | undefined;
+      if (candidateIndex > 0) {
+        const previousAttempt = attemptChain.at(-1);
+        const previousCandidate = snapshot.allowedCandidates?.find(
+          (entry) => entry.deploymentId === previousAttempt?.deploymentId,
+        );
+        const currentCandidate = snapshot.allowedCandidates?.find(
+          (entry) => entry.deploymentId === candidate.deployment.id,
+        );
+        if (!previousCandidate || !currentCandidate) {
+          throw new Error(
+            'Fallback execution requires complete previous and current candidate facts.',
+          );
+        }
+        const decision = evaluateModelFailover({
+          from: previousCandidate,
+          to: currentCandidate,
+          degradationSurfaces: currentCandidate.fallbackDegradationSurfaces,
+          usedCapabilityIds: usedModalityCapabilityIds(
+            snapshot.capabilityRequirements,
+          ),
+        });
+        if (!decision.allowed) {
+          throw new Error(`Fallback execution rejected: ${decision.reason}.`);
+        } else {
+          failover = decision.event;
+          failoverAvailabilityEvents.push({
+            eventType: 'provider_failover',
+            ...structuredClone(decision.event),
+          });
+        }
       }
       const attemptId = modelAttemptId(
         jobId,
@@ -2974,6 +3035,7 @@ export class ModelSupplyApplicationService {
               }`,
             ).slice(0, 24)}`,
             status: error.observedProviderCost ? 'observed' : 'estimated',
+            ...(failover ? { failover: structuredClone(failover) } : {}),
             ...(error.observedProviderCost ?? {
               amount: 0,
               currency:
@@ -3002,6 +3064,13 @@ export class ModelSupplyApplicationService {
               },
               providerCost,
               providerCosts: [...providerCostChain, providerCost],
+              ...(failoverAvailabilityEvents.length
+                ? {
+                    failoverAvailabilityEvents: structuredClone(
+                      failoverAvailabilityEvents,
+                    ),
+                  }
+                : {}),
               ...(options.structuredRequestFingerprint
                 ? {
                     attemptBudgetRequestFingerprint:
@@ -3049,6 +3118,7 @@ export class ModelSupplyApplicationService {
           amount: 0,
           currency: candidate.deployment.region === 'domestic' ? 'CNY' : 'USD',
           usage: {},
+          ...(failover ? { failover: structuredClone(failover) } : {}),
         };
         providerCostChain.push(providerCost);
         const unknown: ModelSupplyResult = {
@@ -3065,6 +3135,13 @@ export class ModelSupplyApplicationService {
           usage,
           providerCost,
           providerCosts: [...providerCostChain],
+          ...(failoverAvailabilityEvents.length
+            ? {
+                failoverAvailabilityEvents: structuredClone(
+                  failoverAvailabilityEvents,
+                ),
+              }
+            : {}),
         };
         applyActualRouteDecisionExplanation(unknown);
         await this.ledger?.settleAttempt({
@@ -3118,6 +3195,36 @@ export class ModelSupplyApplicationService {
       };
       this.storedAttempts.push(attempt);
       attemptChain.push(attempt);
+      let willFallback =
+        response.kind === 'failure' &&
+        response.acceptance === 'rejected_before_accept' &&
+        snapshot.fallbackConsent === true &&
+        fallbackAuthorized &&
+        candidateIndex < candidates.length - 1;
+      if (willFallback) {
+        const nextExecutionCandidate = candidates[candidateIndex + 1];
+        const from = snapshot.allowedCandidates?.find(
+          (entry) => entry.deploymentId === candidate.deployment.id,
+        );
+        const to = snapshot.allowedCandidates?.find(
+          (entry) =>
+            entry.deploymentId === nextExecutionCandidate?.deployment.id,
+        );
+        if (!from || !to) {
+          throw new Error(
+            'Fallback execution requires complete current and next candidate facts.',
+          );
+        }
+        const decision = evaluateModelFailover({
+          from,
+          to,
+          degradationSurfaces: to.fallbackDegradationSurfaces,
+          usedCapabilityIds: usedModalityCapabilityIds(
+            snapshot.capabilityRequirements,
+          ),
+        });
+        willFallback = decision.allowed;
+      }
       const isCopyOperation =
         attemptSubmission.operation.startsWith('copy.') ||
         attemptSubmission.operation === 'text.respond';
@@ -3138,9 +3245,7 @@ export class ModelSupplyApplicationService {
                 response.acceptance === 'accepted'
               ? 'reserved'
               : response.acceptance === 'rejected_before_accept' &&
-                  snapshot.fallbackConsent === true &&
-                  fallbackAuthorized &&
-                  candidateIndex < candidates.length - 1
+                  willFallback
                 ? 'reserved'
                 : 'refunded',
         quantity: productUsageQuantity,
@@ -3154,6 +3259,7 @@ export class ModelSupplyApplicationService {
         ).slice(0, 24)}`,
         status: providerCostObserved ? 'observed' : 'estimated',
         ...response.providerCost,
+        ...(failover ? { failover: structuredClone(failover) } : {}),
       };
       providerCostChain.push(providerCost);
 
@@ -3183,12 +3289,14 @@ export class ModelSupplyApplicationService {
           usage,
           providerCost,
           providerCosts: [...providerCostChain],
+          ...(failoverAvailabilityEvents.length
+            ? {
+                failoverAvailabilityEvents: structuredClone(
+                  failoverAvailabilityEvents,
+                ),
+              }
+            : {}),
         };
-        const willFallback =
-          response.acceptance === 'rejected_before_accept' &&
-          snapshot.fallbackConsent === true &&
-          fallbackAuthorized &&
-          candidateIndex < candidates.length - 1;
         if (!willFallback) {
           applyActualRouteDecisionExplanation(failed);
         }
@@ -3257,6 +3365,13 @@ export class ModelSupplyApplicationService {
         usage,
         providerCost,
         providerCosts: [...providerCostChain],
+        ...(failoverAvailabilityEvents.length
+          ? {
+              failoverAvailabilityEvents: structuredClone(
+                failoverAvailabilityEvents,
+              ),
+            }
+          : {}),
       };
       applyActualRouteDecisionExplanation(result);
       await this.settleResultWithOwnedAssetRegistration({
@@ -3458,17 +3573,19 @@ export class ModelSupplyApplicationService {
       revisionId: string;
       modelById: Map<string, CatalogModel>;
       deployments: ModelDeployment[];
+      prices?: PriceRevision[];
     },
   ): Promise<SubmissionPlanningDecision> {
+    const tierCatalog = this.catalogForPricingTier(submission, catalog);
     const planningCatalog =
       submission.referenceAssetRegionBoundary === 'domestic'
         ? {
-            ...catalog,
-            deployments: catalog.deployments.filter(
+            ...tierCatalog,
+            deployments: tierCatalog.deployments.filter(
               (deployment) => deployment.region === 'domestic',
             ),
           }
-        : catalog;
+        : tierCatalog;
     if (!this.planningControlPlane || submission.frozenRouteSnapshot) {
       return {
         candidates: this.resolveCandidates(submission, planningCatalog),
@@ -3560,6 +3677,13 @@ export class ModelSupplyApplicationService {
       ...(state.routePolicy?.fallbackAuthorized !== undefined
         ? { fallbackAuthorized: state.routePolicy.fallbackAuthorized }
         : {}),
+      ...(state.routePolicy?.modelSubstitutionDegradationSurfaces
+        ? {
+            modelSubstitutionDegradationSurfaces: structuredClone(
+              state.routePolicy.modelSubstitutionDegradationSurfaces,
+            ),
+          }
+        : {}),
     };
   }
 
@@ -3592,6 +3716,12 @@ export class ModelSupplyApplicationService {
     // routePolicyRevisionId unchanged so adapter/ledger resolve consistently.
     frozen.policyRevision = candidate.policyRevision;
     frozen.priceRevision = candidate.priceRevision;
+    frozen.pricingTier = candidate.pricingTier ?? 'standard';
+    frozen.allowedCandidates = frozen.allowedCandidates?.map((entry) =>
+      entry.deploymentId === candidate.deploymentId
+        ? { ...entry, fallbackRank: ordinal }
+        : entry,
+    );
     frozen.reason = ordinal > 1
       ? 'auto_fallback_before_accept'
       : frozen.reason;
@@ -3601,6 +3731,12 @@ export class ModelSupplyApplicationService {
     delete frozen.appliedAllocationIds;
     return {
       ...structuredClone(submission),
+      selection: {
+        mode: 'fixed',
+        catalogModelId: candidate.catalogModelId,
+        fallbackConsent: submission.selection.fallbackConsent,
+      },
+      pricingTier: candidate.pricingTier ?? submission.pricingTier ?? 'standard',
       frozenRouteSnapshot: frozen,
     };
   }
@@ -3633,18 +3769,29 @@ export class ModelSupplyApplicationService {
       primary,
       ...(fallbackAuthorized
         ? ordered.filter(
-            (candidate) =>
-              candidate.deploymentId !== primary.deploymentId &&
-              candidate.catalogModelId === primary.catalogModelId &&
-              Boolean(primary.executionChannelId) &&
-              Boolean(candidate.executionChannelId) &&
-              candidate.executionChannelId !== primary.executionChannelId &&
-              Boolean(primary.accountIdentity) &&
-              Boolean(candidate.accountIdentity) &&
-              candidate.accountIdentity !== primary.accountIdentity &&
-              Boolean(primary.endpointFingerprint) &&
-              Boolean(candidate.endpointFingerprint) &&
-              candidate.endpointFingerprint !== primary.endpointFingerprint,
+            (candidate) => {
+              const failover = evaluateModelFailover({
+                from: primary,
+                to: candidate,
+                degradationSurfaces: candidate.fallbackDegradationSurfaces,
+                usedCapabilityIds: usedModalityCapabilityIds(
+                  frozen.capabilityRequirements,
+                ),
+              });
+              return (
+                candidate.deploymentId !== primary.deploymentId &&
+                failover.allowed &&
+                Boolean(primary.executionChannelId) &&
+                Boolean(candidate.executionChannelId) &&
+                candidate.executionChannelId !== primary.executionChannelId &&
+                Boolean(primary.accountIdentity) &&
+                Boolean(candidate.accountIdentity) &&
+                candidate.accountIdentity !== primary.accountIdentity &&
+                Boolean(primary.endpointFingerprint) &&
+                Boolean(candidate.endpointFingerprint) &&
+                candidate.endpointFingerprint !== primary.endpointFingerprint
+              );
+            },
           )
         : []),
     ].slice(0, attemptLimit);
@@ -3678,6 +3825,18 @@ export class ModelSupplyApplicationService {
         : {}),
       maxAttempts: attemptLimit,
       fallbackAuthorized,
+      modelSubstitutionDegradationSurfaces: Object.fromEntries(
+        safe.flatMap((candidate) =>
+          candidate.fallbackDegradationSurfaces?.length
+            ? [
+                [
+                  candidate.deploymentId,
+                  [...candidate.fallbackDegradationSurfaces],
+                ],
+              ]
+            : [],
+        ),
+      ),
     };
   }
 
@@ -3686,6 +3845,7 @@ export class ModelSupplyApplicationService {
     catalog: {
       modelById: Map<string, CatalogModel>;
       deployments: ModelDeployment[];
+      prices?: PriceRevision[];
     }
   ) {
     if (submission.frozenRouteSnapshot) {
@@ -3799,6 +3959,9 @@ export class ModelSupplyApplicationService {
         credentialVersion: frozenCandidate.credentialVersion,
         policyRevision: frozenCandidate.policyRevision,
         priceRevision: frozenCandidate.priceRevision,
+        ...(frozenCandidate.pricingTier
+          ? { pricingTier: frozenCandidate.pricingTier }
+          : {}),
         unitPrice: {
           amountMicros: frozenCandidate.unitPriceMicros,
           currency: frozenCandidate.currency,
@@ -3835,8 +3998,9 @@ export class ModelSupplyApplicationService {
         },
       ];
     }
+    const pricedCatalog = this.catalogForPricingTier(submission, catalog);
     const plan = planModelSupplyCandidates({
-      catalog,
+      catalog: pricedCatalog,
       operation: submission.operation,
       selection: submission.selection,
       dataClass: submission.dataClass,
@@ -3844,7 +4008,7 @@ export class ModelSupplyApplicationService {
     if (submission.selection.mode === 'fixed') {
       if (!submission.selection.catalogModelId)
         throw new Error('Fixed selection requires catalogModelId.');
-      const fixedOperationCandidates = catalog.deployments.filter(
+      const fixedOperationCandidates = pricedCatalog.deployments.filter(
         (deployment) => {
           const model = catalog.modelById.get(deployment.catalogModelId);
           return (
@@ -3866,6 +4030,54 @@ export class ModelSupplyApplicationService {
         );
     }
     return plan.candidates;
+  }
+
+  private catalogForPricingTier<
+    T extends {
+      modelById: Map<string, CatalogModel>;
+      deployments: ModelDeployment[];
+      prices?: PriceRevision[];
+    },
+  >(
+    submission: ModelSupplySubmission,
+    catalog: T,
+  ): T {
+    if (submission.frozenRouteSnapshot) return catalog;
+    const pricingTier = submission.pricingTier ?? 'standard';
+    const prices = catalog.prices ?? [];
+    const deployments = catalog.deployments.flatMap((deployment) => {
+      const price = prices.find(
+        (candidate) =>
+          candidate.catalogModelId === deployment.catalogModelId &&
+          candidate.executionChannelId === deployment.executionChannelId &&
+          (candidate.pricingTier ?? 'standard') === pricingTier,
+      );
+      if (!price) {
+        if (
+          pricingTier !== 'standard' ||
+          (prices.length > 0 &&
+            prices.some(
+              (candidate) =>
+                candidate.catalogModelId === deployment.catalogModelId &&
+                candidate.executionChannelId === deployment.executionChannelId,
+            ))
+        ) {
+          return [];
+        }
+        return [deployment];
+      }
+      return [{
+        ...structuredClone(deployment),
+        priceRevision: price.id,
+        pricingTier,
+        unitPrice: {
+          amountMicros: Math.round(price.amount * 1_000_000),
+          currency: price.currency,
+          unit: price.unit ?? deployment.unitPrice?.unit ?? 'request',
+        },
+      }];
+    });
+    return { ...catalog, deployments };
   }
 
   private snapshotFor(
@@ -3946,6 +4158,7 @@ export class ModelSupplyApplicationService {
           }
         : {}),
       priceRevision: selected.deployment.priceRevision ?? 'recorded-price-v1',
+      pricingTier: selected.deployment.pricingTier ?? submission.pricingTier ?? 'standard',
       credentialMode: selected.deployment.credentialMode ?? 'platform',
       credentialVersion:
         selected.deployment.credentialVersion ?? 'recorded-credential-v1',
@@ -4017,6 +4230,7 @@ export class ModelSupplyApplicationService {
           deployment.credentialVersion ?? 'recorded-credential-v1',
         policyRevision: deployment.policyRevision ?? 'recorded-policy-v1',
         priceRevision: deployment.priceRevision ?? 'recorded-price-v1',
+        pricingTier: deployment.pricingTier ?? 'standard',
         unitPriceMicros: deployment.unitPrice?.amountMicros ?? 0,
         ...(!deployment.unitPrice ? { pricingStatus: 'unknown' as const } : {}),
         currency:
@@ -4028,6 +4242,17 @@ export class ModelSupplyApplicationService {
           ? { activationStatus: deployment.activationEvidence.status }
           : {}),
         capabilityProfile: this.routeCapabilityProfile(model, deployment),
+        ...(planning?.modelSubstitutionDegradationSurfaces?.[
+          deployment.id
+        ]?.length
+          ? {
+              fallbackDegradationSurfaces: [
+                ...(planning?.modelSubstitutionDegradationSurfaces?.[
+                  deployment.id
+                ] ?? []),
+              ],
+            }
+          : {}),
       })),
       reason:
         fallback ??

@@ -291,6 +291,8 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
       };
       /** Optional platform default model binding for workspace provision (Tb). */
       modelDefaults?: PlatformDefaultModelPort;
+      modelCatalogTenantAllowlist?: readonly string[];
+      warn?: (message: string) => void;
     } = {},
   ) {
     this.provisioner = new WorkspaceProvisionService(entitlements, {
@@ -307,6 +309,8 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
           }
         : undefined,
       modelDefaults: options.modelDefaults,
+      modelCatalogTenantAllowlist: options.modelCatalogTenantAllowlist,
+      warn: options.warn,
     });
   }
 

@@ -131,13 +131,36 @@ describe('ProductBillingLifecycle', () => {
     lifecycle.dispatchAttempt({
       attemptId: 'attempt-b',
       deploymentId: 'deployment-b',
-      providerCost: { ...estimatedCost, supplierPriceRevision: 'supplier-price-2' },
+      providerCost: {
+        ...estimatedCost,
+        supplierPriceRevision: 'supplier-price-2',
+        failover: {
+          kind: 'same_model_channel',
+          fromCatalogModelId: 'video-model',
+          toCatalogModelId: 'video-model',
+          fromDeploymentId: 'deployment-a',
+          toDeploymentId: 'deployment-b',
+          fromExecutionChannelId: 'channel-a',
+          toExecutionChannelId: 'channel-b',
+          fromPriceRevision: 'supplier-price-1',
+          toPriceRevision: 'supplier-price-2',
+          degradationSurfaces: [],
+        },
+      },
       taskId: 'work-1',
       workspaceId: 'workspace-1',
     });
 
     assert.equal(usage.listByWorkspace('workspace-1').length, 1);
     assert.equal(quotes.listProviderCosts('work-1').length, 2);
+    assert.equal(
+      quotes.listProviderCosts('work-1')[1]?.failover?.kind,
+      'same_model_channel',
+    );
+    assert.equal(
+      quotes.listProviderCosts('work-1')[1]?.failover?.toPriceRevision,
+      'supplier-price-2',
+    );
     assert.throws(() =>
       lifecycle.dispatchAttempt({
         attemptId: 'attempt-c',

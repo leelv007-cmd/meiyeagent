@@ -410,6 +410,12 @@ const providerCredentialSecretBroker = createProviderCredentialSecretBroker(
 const providerConnectivity = providerConnectivityProbeFromEnv(
   providerCredentialRuntime.env,
 );
+const modelCatalogTenantAllowlist = (
+  process.env.MODEL_CATALOG_TENANT_ALLOWLIST ?? ''
+)
+  .split(',')
+  .map((workspaceId) => workspaceId.trim())
+  .filter(Boolean);
 const runtimeAssembly = await modelRuntimeAssemblyFromSources(
   adminConfigRepository,
   providerCredentialRuntime.env,
@@ -505,6 +511,8 @@ const modelSupplyRuntime = createModelSupplyRuntime({
     planningControlPlane: supplyPlanningControlPlane,
     repository: modelRepository,
     supplyRegistry: supplyControlRepository,
+    modelCatalogTenantAllowlist,
+    warn: (message) => console.warn(message),
   },
 });
 const modelSupply = modelSupplyRuntime.application;

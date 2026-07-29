@@ -29,6 +29,10 @@ function setup(
       trialEnabled?: boolean;
     }>;
   },
+  governance?: {
+    modelCatalogTenantAllowlist?: readonly string[];
+    warn?: (message: string) => void;
+  },
 ) {
   const clock = () => new Date('2026-07-11T12:00:00.000Z');
   const repository = new MemoryFoundationRepository();
@@ -42,6 +46,7 @@ function setup(
     clock,
     catalog,
     modelDefaults,
+    ...governance,
   });
   return { entitlements, provisioner, repository };
 }
@@ -218,6 +223,74 @@ describe('WorkspaceProvisionService', () => {
         },
       },
     ]);
+  });
+
+  it('discards defaults outside modelCatalogTenantAllowlist and warns without rejecting provisioning', async () => {
+    const warnings: string[] = [];
+    let validated = false;
+    let written = false;
+    const modelDefaults: PlatformDefaultModelPort = {
+      async getSnapshot() {
+        return {
+          copy: {
+            catalogModelId: 'platform-copy-model',
+            configRevision: 'admin-config:11',
+          },
+        };
+      },
+      async validateDefault() {
+        validated = true;
+      },
+      async setWorkspaceDefault() {
+        written = true;
+      },
+    };
+    const { provisioner } = setup(modelDefaults, undefined, {
+      modelCatalogTenantAllowlist: ['another-workspace'],
+      warn: (message) => warnings.push(message),
+    });
+
+    const result = await provisioner.provisionModelDefaults(owner);
+
+    assert.deepEqual(result, { defaults: {}, applied: false });
+    assert.equal(validated, false);
+    assert.equal(written, false);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0] ?? '', /modelCatalogTenantAllowlist/u);
+  });
+
+  it('treats an empty modelCatalogTenantAllowlist as unrestricted', async () => {
+    const written: string[] = [];
+    const modelDefaults: PlatformDefaultModelPort = {
+      async getSnapshot() {
+        return {
+          copy: {
+            catalogModelId: 'platform-copy-model',
+            configRevision: 'admin-config:11',
+          },
+          image: {
+            catalogModelId: 'platform-image-model',
+            configRevision: 'admin-config:12',
+          },
+          video: {
+            catalogModelId: 'platform-video-model',
+            configRevision: 'admin-config:13',
+          },
+        };
+      },
+      async validateDefault() {},
+      async setWorkspaceDefault(_workspaceId, _operation, modelId) {
+        written.push(modelId);
+      },
+    };
+    const { provisioner } = setup(modelDefaults, undefined, {
+      modelCatalogTenantAllowlist: [],
+    });
+
+    const result = await provisioner.provisionModelDefaults(owner);
+
+    assert.equal(result.applied, true);
+    assert.equal(written.length, 3);
   });
 
   it('validates all platform defaults before writing any preference', async () => {

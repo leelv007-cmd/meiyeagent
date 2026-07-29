@@ -300,9 +300,15 @@ test('replays a pre-upgrade job-linked freeze without mutating immutable facts',
   };
   const current = await ledger.freezeAttempt(checkpoint);
   assert.ok(current);
+  const {
+    executionChannelId: _executionChannelId,
+    pricingTier: _pricingTier,
+    ...legacyPriceRevision
+  } = current.supplierPriceRevision;
   const legacy = {
     ...current,
     productUsageTaskId: preview.jobId,
+    supplierPriceRevision: legacyPriceRevision,
   };
   freezes.set(legacy.id, structuredClone(legacy));
 
@@ -321,6 +327,58 @@ test('replays a pre-upgrade job-linked freeze without mutating immutable facts',
     ),
     null,
   );
+});
+
+test('replays a pre-upgrade ordinary freeze without mutating immutable facts', async () => {
+  const { foundation } = await fixture();
+  const { freezes, supplyFreezes } = createStrictSupplyFreezeStore();
+  const ledger = new FoundationModelSupplyLedger(
+    foundation,
+    undefined,
+    undefined,
+    { supplyFreezes },
+  );
+  const submission = {
+    actorId: context.userId,
+    dataClass: [],
+    idempotencyKey: 'legacy-ordinary-freeze-submit',
+    operation: 'image.generate' as const,
+    prompt: '普通历史冻结重放',
+    selection: { catalogModelId: model.id, mode: 'fixed' as const },
+    workspaceId: context.workspaceId,
+  };
+  const preview = new ModelSupplyApplicationService({
+    deployments: [deployment],
+    execution: new RecordedProviderExecutionPort(),
+    models: [model],
+  }).previewMediaSubmission(submission);
+  const checkpoint = {
+    attemptId: preview.attempt.id,
+    deployment,
+    jobId: preview.jobId,
+    model,
+    ordinal: 1,
+    previousAttempts: [],
+    previousProviderCosts: [],
+    snapshot: preview.snapshot,
+    submission,
+  };
+  const current = await ledger.freezeAttempt(checkpoint);
+  assert.ok(current);
+  const {
+    executionChannelId: _executionChannelId,
+    pricingTier: _pricingTier,
+    ...legacyPriceRevision
+  } = current.supplierPriceRevision;
+  const legacy = {
+    ...current,
+    supplierPriceRevision: legacyPriceRevision,
+  };
+  freezes.set(legacy.id, structuredClone(legacy));
+
+  const replay = await ledger.freezeAttempt(checkpoint);
+
+  assert.deepEqual(replay, legacy);
 });
 
 test('re-reads a competing durable freeze when ProductUsage settles after a miss', async () => {
@@ -523,6 +581,12 @@ test('persists one immutable supply freeze before provider I/O and links settlem
   const { repository, foundation } = await fixture();
   const { freezes, supplyFreezes } = createStrictSupplyFreezeStore();
   let freezeObservedBeforeProvider = false;
+  const pricedDeployment = {
+    ...deployment,
+    executionChannelId: 'channel-image-cache',
+  };
+  const cachePriceRevision =
+    'gpt-image-2:channel-image-cache:cache_hit:price-v1';
   const ledger = new FoundationModelSupplyLedger(
     foundation,
     undefined,
@@ -534,7 +598,17 @@ test('persists one immutable supply freeze before provider I/O and links settlem
   );
   const application = new ModelSupplyApplicationService({
     models: [model],
-    deployments: [deployment],
+    deployments: [pricedDeployment],
+    prices: [{
+      id: cachePriceRevision,
+      catalogModelId: model.id,
+      executionChannelId: 'channel-image-cache',
+      pricingTier: 'cache_hit',
+      amount: 0.12,
+      currency: 'USD',
+      unit: 'image',
+      revision: 1,
+    }],
     ledger,
     execution: {
       async execute(request) {
@@ -555,6 +629,7 @@ test('persists one immutable supply freeze before provider I/O and links settlem
     idempotencyKey: 'durable-supply-freeze',
     operation: 'image.generate',
     selection: { mode: 'fixed', catalogModelId: model.id },
+    pricingTier: 'cache_hit',
     dataClass: [],
     prompt: '持久供应冻结',
   });
@@ -566,15 +641,170 @@ test('persists one immutable supply freeze before provider I/O and links settlem
   assert.equal(freeze.routeSnapshotRef, result.snapshot.id);
   assert.equal(freeze.providerCostAttemptId, result.attempt.id);
   assert.equal(freeze.supplyPoolId, 'pool-shared');
+  assert.deepEqual(
+    {
+      executionChannelId:
+        freeze.supplierPriceRevision.executionChannelId,
+      id: freeze.supplierPriceRevision.id,
+      pricingTier: freeze.supplierPriceRevision.pricingTier,
+    },
+    {
+      executionChannelId: 'channel-image-cache',
+      id: cachePriceRevision,
+      pricingTier: 'cache_hit',
+    },
+  );
   const providerCosts = await repository.listProviderCosts(
     context.workspaceId,
     result.attempt.id,
+  );
+  assert.deepEqual(
+    {
+      currency: providerCosts[0]?.snapshot?.currency,
+      deploymentId: providerCosts[0]?.snapshot?.deploymentId,
+      supplierPriceRevision:
+        providerCosts[0]?.snapshot?.supplierPriceRevision,
+      unit: providerCosts[0]?.snapshot?.unit,
+      unitPriceMicros: providerCosts[0]?.snapshot?.unitPriceMicros,
+    },
+    {
+      currency: 'USD',
+      deploymentId: pricedDeployment.id,
+      supplierPriceRevision: cachePriceRevision,
+      unit: 'image',
+      unitPriceMicros: 120_000,
+    },
   );
   assert.match(providerCosts[0]?.evidence ?? '', /supplyPoolId=pool-shared/);
   assert.match(
     providerCosts[0]?.evidence ?? '',
     new RegExp(`routeSnapshotRef=${result.snapshot.id}`),
   );
+});
+
+test('replays a pre-upgrade settlement without rewriting its provider cost fact', async () => {
+  const { repository, foundation } = await fixture();
+  const currentSettleProviderOutcome =
+    foundation.settleProviderOutcome.bind(foundation);
+  foundation.settleProviderOutcome = (settlementContext, input, key) => {
+    const { snapshot: _snapshot, ...legacyProviderCost } =
+      input.providerCost;
+    return currentSettleProviderOutcome(
+      settlementContext,
+      { ...input, providerCost: legacyProviderCost },
+      key,
+    );
+  };
+  const submission = {
+    actorId: context.userId,
+    dataClass: [],
+    idempotencyKey: 'legacy-settlement-replay',
+    operation: 'image.generate' as const,
+    prompt: '历史结算重放',
+    selection: { catalogModelId: model.id, mode: 'fixed' as const },
+    workspaceId: context.workspaceId,
+  };
+  const result = await new ModelSupplyApplicationService({
+    deployments: [deployment],
+    execution: new RecordedProviderExecutionPort(),
+    ledger: new FoundationModelSupplyLedger(foundation),
+    models: [model],
+  }).submit(submission);
+  foundation.settleProviderOutcome = currentSettleProviderOutcome;
+  const [legacyCost] = await repository.listProviderCosts(
+    context.workspaceId,
+    result.attempt.id,
+  );
+  assert.ok(legacyCost);
+  assert.equal(legacyCost.snapshot, undefined);
+
+  const { supplyFreezes } = createStrictSupplyFreezeStore();
+  const upgradedLedger = new FoundationModelSupplyLedger(
+    foundation,
+    undefined,
+    undefined,
+    { supplyFreezes },
+  );
+  await upgradedLedger.freezeAttempt({
+    attemptId: result.attempt.id,
+    deployment,
+    jobId: result.jobId,
+    model,
+    ordinal: 1,
+    previousAttempts: [],
+    previousProviderCosts: [],
+    snapshot: result.snapshot,
+    submission,
+  });
+
+  await upgradedLedger.settleAttempt({
+    evidence: 'provider_response',
+    result,
+    submission,
+  });
+
+  assert.deepEqual(
+    await repository.listProviderCosts(
+      context.workspaceId,
+      result.attempt.id,
+    ),
+    [legacyCost],
+  );
+});
+
+test('retries with the winning legacy cost fact during a rolling-upgrade settlement race', async () => {
+  const { repository, foundation } = await fixture();
+  const currentSettleProviderOutcome =
+    foundation.settleProviderOutcome.bind(foundation);
+  let legacyWriterInjected = false;
+  foundation.settleProviderOutcome = async (
+    settlementContext,
+    input,
+    key,
+  ) => {
+    if (!legacyWriterInjected) {
+      legacyWriterInjected = true;
+      const { snapshot: _snapshot, ...legacyProviderCost } =
+        input.providerCost;
+      await currentSettleProviderOutcome(
+        settlementContext,
+        { ...input, providerCost: legacyProviderCost },
+        key,
+      );
+    }
+    return currentSettleProviderOutcome(settlementContext, input, key);
+  };
+  const { supplyFreezes } = createStrictSupplyFreezeStore();
+  const submission = {
+    actorId: context.userId,
+    dataClass: [],
+    idempotencyKey: 'rolling-upgrade-settlement-race',
+    operation: 'image.generate' as const,
+    prompt: '滚动升级结算竞争',
+    selection: { catalogModelId: model.id, mode: 'fixed' as const },
+    workspaceId: context.workspaceId,
+  };
+
+  const result = await new ModelSupplyApplicationService({
+    deployments: [deployment],
+    execution: new RecordedProviderExecutionPort(),
+    ledger: new FoundationModelSupplyLedger(
+      foundation,
+      undefined,
+      undefined,
+      { supplyFreezes },
+    ),
+    models: [model],
+  }).submit(submission);
+  foundation.settleProviderOutcome = currentSettleProviderOutcome;
+
+  assert.equal(legacyWriterInjected, true);
+  const costs = await repository.listProviderCosts(
+    context.workspaceId,
+    result.attempt.id,
+  );
+  assert.equal(costs.length, 1);
+  assert.equal(costs[0]?.snapshot, undefined);
 });
 
 test('records unknown pricing explicitly instead of fabricating a zero estimate', async () => {
@@ -993,29 +1223,58 @@ test('keeps one reservation and one frozen candidate set across a safe pre-accep
       displayName: 'Copy quality',
       qualityRank: 100,
     },
-    {
-      id: 'copy-backup',
-      modality: 'llm',
-      operations: ['copy.generate'],
-      displayName: 'Copy backup',
-      qualityRank: 90,
-    },
   ];
-  const copyDeployments: ModelDeployment[] = copyModels.map((candidate) => ({
-    id: `${candidate.id}-direct`,
-    catalogModelId: candidate.id,
+  const copyDeployments: ModelDeployment[] = ['primary', 'fallback'].map(
+    (channel, index) => ({
+    id: `copy-quality-${channel}`,
+    catalogModelId: 'copy-quality',
+    executionChannelId: `channel-${channel}`,
+    providerProfileId: `provider-${channel}`,
+    accountIdentity: `account-${channel}`,
+    endpointFingerprint: `endpoint-${channel}`,
     apiFamily: 'openai',
     channel: 'direct',
     region: 'domestic',
     status: 'active',
+    priceRevision: `price-${channel}`,
+    unitPrice: { amountMicros: index + 1, currency: 'CNY', unit: 'request' },
   }));
   const execution = new RecordedProviderExecutionPort();
   execution.failNext('copy-quality', 'rejected_before_accept');
+  const freezes: SupplyRequestFreeze[] = [];
   const application = new ModelSupplyApplicationService({
     models: copyModels,
     deployments: copyDeployments,
     execution,
-    ledger: new FoundationModelSupplyLedger(foundation),
+    ledger: new FoundationModelSupplyLedger(
+      foundation,
+      undefined,
+      undefined,
+      {
+        supplyFreezes: {
+          async append(freeze) {
+            const existing = freezes.find((candidate) => candidate.id === freeze.id);
+            if (existing) return structuredClone(existing);
+            freezes.push(structuredClone(freeze));
+            return structuredClone(freeze);
+          },
+          async get(freezeId) {
+            return structuredClone(
+              freezes.find((candidate) => candidate.id === freezeId) ?? null,
+            );
+          },
+          async getByProductUsageTask(workspaceId, productUsageTaskId) {
+            return structuredClone(
+              freezes.find(
+                (candidate) =>
+                  candidate.workspaceId === workspaceId &&
+                  candidate.productUsageTaskId === productUsageTaskId,
+              ) ?? null,
+            );
+          },
+        },
+      },
+    ),
   });
 
   const result = await application.submit({
@@ -1030,6 +1289,11 @@ test('keeps one reservation and one frozen candidate set across a safe pre-accep
 
   assert.equal(result.status, 'completed');
   assert.equal(result.attempts.length, 2);
+  assert.equal(result.providerCosts[1]?.failover?.kind, 'same_model_channel');
+  assert.equal(
+    result.failoverAvailabilityEvents?.[0]?.eventType,
+    'provider_failover',
+  );
   const attempts = await repository.listProviderAttempts(
     context.workspaceId,
     result.jobId,
@@ -1044,16 +1308,161 @@ test('keeps one reservation and one frozen candidate set across a safe pre-accep
     released: 0,
     available: 2,
   });
+  const foundationCosts = (
+    await Promise.all(
+      attempts.map((attempt) =>
+        repository.listProviderCosts(context.workspaceId, attempt.id),
+      ),
+    )
+  ).flat();
+  assert.equal(foundationCosts.length, 2);
   assert.equal(
-    (
-      await Promise.all(
-        attempts.map((attempt) =>
-          repository.listProviderCosts(context.workspaceId, attempt.id),
-        ),
-      )
-    ).flat().length,
-    2,
+    foundationCosts[1]?.snapshot?.supplierPriceRevision,
+    'price-fallback',
   );
+  assert.equal(
+    foundationCosts[1]?.snapshot?.failover?.kind,
+    'same_model_channel',
+  );
+  assert.deepEqual(
+    freezes.map((freeze) => ({
+      executionChannelId:
+        freeze.supplierPriceRevision.executionChannelId,
+      priceRevisionId: freeze.supplierPriceRevision.id,
+    })),
+    [
+      {
+        executionChannelId: 'channel-primary',
+        priceRevisionId: 'price-primary',
+      },
+      {
+        executionChannelId: 'channel-fallback',
+        priceRevisionId: 'price-fallback',
+      },
+    ],
+  );
+});
+
+test('refunds canonical billing when a cross-model fallback is rejected', async () => {
+  const repository = new MemoryFoundationRepository();
+  repository.grantOwner(context.workspaceId, context.userId);
+  const foundation = new P1ApplicationService(repository);
+  await foundation.appendUsageEvent(
+    context,
+    {
+      id: 'invalid-fallback-copy-entitlement',
+      resource: 'copy',
+      action: 'adjust',
+      amount: 1,
+      reason: 'copy plan',
+    },
+    'invalid-fallback-copy-entitlement',
+  );
+  const copyModels: CatalogModel[] = [
+    {
+      id: 'copy-primary',
+      modality: 'llm',
+      operations: ['copy.generate'],
+      displayName: 'Copy primary',
+      qualityRank: 100,
+    },
+    {
+      id: 'copy-fallback',
+      modality: 'llm',
+      operations: ['copy.generate'],
+      displayName: 'Copy fallback',
+      qualityRank: 90,
+    },
+  ];
+  const copyDeployments: ModelDeployment[] = copyModels.map((copyModel) => ({
+    id: `${copyModel.id}-direct`,
+    catalogModelId: copyModel.id,
+    executionChannelId: `channel-${copyModel.id}`,
+    providerProfileId: `provider-${copyModel.id}`,
+    accountIdentity: `account-${copyModel.id}`,
+    endpointFingerprint: `endpoint-${copyModel.id}`,
+    apiFamily: 'openai',
+    channel: 'direct',
+    region: 'domestic',
+    status: 'active',
+    priceRevision: `price-${copyModel.id}`,
+    unitPrice: { amountMicros: 1, currency: 'CNY', unit: 'request' },
+  }));
+  const productUsage = new MemoryProductUsageLedger();
+  const quotes = new ProductQuoteService({ usageLedger: productUsage });
+  const quote = quotes.buildQuote({
+    billingMode: 'per_request',
+    catalogModelId: copyModels[0]!.id,
+    frozenCandidateDeploymentIds: copyDeployments.map(
+      (candidate) => candidate.id,
+    ),
+    quoteId: 'invalid-fallback-quote',
+    quotePolicyRevision: 'product-policy-invalid-fallback',
+    unitRate: 1,
+    workspaceId: context.workspaceId,
+  });
+  const billingTaskId = 'invalid-fallback-task';
+  quotes.confirm({ quoteId: quote.quoteId, taskId: billingTaskId });
+  const billingLifecycle = new ProductBillingLifecycle(quotes);
+  billingLifecycle.beforeSubmit({
+    quoteRevision: quote.revision,
+    resource: 'copy',
+    taskId: billingTaskId,
+    workspaceId: context.workspaceId,
+  });
+  const execution = new RecordedProviderExecutionPort();
+  execution.failNext(copyModels[0]!.id, 'rejected_before_accept');
+  let providerExecutions = 0;
+  const result = await new ModelSupplyApplicationService({
+    models: copyModels,
+    deployments: copyDeployments,
+    execution: {
+      async execute(request) {
+        providerExecutions += 1;
+        return execution.execute(request);
+      },
+    },
+    ledger: new FoundationModelSupplyLedger(
+      foundation,
+      undefined,
+      undefined,
+      { billingLifecycle },
+    ),
+    planningControlPlane: {
+      async readPlanningState() {
+        return {
+          routePolicyRevisionId: 'route-policy:invalid-fallback:r1',
+          routePolicy: {
+            operation: 'copy.generate' as const,
+            qualityTier: 'quality' as const,
+            hardConstraints: ['deployment_active'],
+            candidateDeploymentIds: copyDeployments.map(
+              (candidate) => candidate.id,
+            ),
+            maxAttempts: 2,
+            fallbackAuthorized: true,
+          },
+        };
+      },
+    },
+  }).submit({
+    actorId: context.userId,
+    billingQuoteRevision: quote.revision,
+    billingTaskId,
+    dataClass: [],
+    idempotencyKey: 'invalid-cross-model-fallback',
+    operation: 'copy.generate',
+    prompt: '跨模型回退必须先声明降级面',
+    selection: { mode: 'auto', profile: 'quality' },
+    workspaceId: context.workspaceId,
+  });
+
+  assert.equal(result.status, 'failed');
+  assert.equal(result.usage.status, 'refunded');
+  assert.equal(providerExecutions, 1);
+  assert.equal(quotes.getQuoteByTask(billingTaskId)?.lifecycleStatus, 'refunded');
+  assert.equal(productUsage.getByTask(billingTaskId)?.status, 'refunded');
+  assert.equal(quotes.listProviderCosts(billingTaskId).length, 1);
 });
 
 test('refunds grant-lot copy usage after acceptance-unknown partial delivery', async () => {

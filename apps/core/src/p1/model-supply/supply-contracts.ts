@@ -6,6 +6,7 @@ import type {
   AdvancedCanvasEditingContext,
   ImageIntent,
   ModelCapabilityProfile,
+  SupplierPricingTier,
   VideoCompositionEvidence,
 } from '@meiye/contracts';
 
@@ -144,6 +145,7 @@ export interface ModelDeployment {
   allowedDataClasses?: Array<'public' | DataClass>;
   policyRevision?: string;
   priceRevision?: string;
+  pricingTier?: SupplierPricingTier;
   credentialMode?: 'platform' | 'byok_strict';
   credentialVersion?: string;
   unitPrice?: {

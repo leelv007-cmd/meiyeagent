@@ -536,6 +536,7 @@ test('catalog-only hot switch does not change capability revision or invalidate 
     frozenCredentialVersion: '1',
     requiredScope: 'platform',
   });
+  assert.equal(before.role, 'primary');
   assert.equal(before.credential?.secret, 'sk-live-secret-v1');
   const statsBefore = registry.getAssemblyCacheStats();
   assert.equal(statsBefore.size, 0);
@@ -565,10 +566,12 @@ test('catalog-only hot switch does not change capability revision or invalidate 
     deploymentId: 'qwen-direct',
     frozenCredentialVersion: '1',
     requiredScope: 'platform',
+    role: 'structuring',
   });
   assert.equal(after.capabilityRevisionId, 'cap-v1');
   assert.equal(after.credential?.secret, 'sk-live-secret-v1');
   assert.equal(after.adapterKey, 'direct-llm');
+  assert.equal(after.role, 'structuring');
 });
 
 // ---------------------------------------------------------------------------

@@ -11,6 +11,7 @@ import {
   type CatalogModel,
   type ModelDeployment,
   type ModelSupplySubmission,
+  type ModelSupplyPlanningControlPlanePort,
   type ProviderExecutionRequest,
   type ProviderExecutionResponse,
 } from './index.js';
@@ -134,6 +135,27 @@ function service() {
     deployments,
     execution: new RecordedProviderExecutionPort(),
   });
+}
+
+function governedCopyFallbackPlanning(): ModelSupplyPlanningControlPlanePort {
+  return {
+    async readPlanningState() {
+      return {
+        routePolicyRevisionId: 'route-policy:copy.generate:quality:r1',
+        routePolicy: {
+          operation: 'copy.generate' as const,
+          qualityTier: 'quality' as const,
+          hardConstraints: ['deployment_active', 'data_class'],
+          candidateDeploymentIds: ['openai-direct', 'anthropic-direct'],
+          maxAttempts: 2,
+          fallbackAuthorized: true,
+          modelSubstitutionDegradationSurfaces: {
+            'anthropic-direct': ['tone_style'],
+          },
+        },
+      };
+    },
+  };
 }
 
 test('historical Canvas submissions keep input assets without inventing empty node lineage', () => {
@@ -906,6 +928,61 @@ test('route simulator explains data-class exclusions and safe-only stop semantic
   assert.equal(app.attempts().length, 0);
 });
 
+test('Auto settles and refunds before an undeclared cross-model fallback', async () => {
+  const recorded = new RecordedProviderExecutionPort();
+  let checkpointCalls = 0;
+  let providerCalls = 0;
+  let settlementCalls = 0;
+  let settledUsageStatus: string | undefined;
+  const app = new ModelSupplyApplicationService({
+    models,
+    deployments,
+    execution: {
+      async execute(request) {
+        providerCalls += 1;
+        return recorded.execute(request);
+      },
+    },
+    ledger: {
+      async checkpointAttempt() {
+        checkpointCalls += 1;
+        return { replayed: false };
+      },
+      async settleAttempt({ result }) {
+        settlementCalls += 1;
+        settledUsageStatus = result.usage.status;
+      },
+    },
+  });
+  recorded.failNext('copy-quality', 'rejected_before_accept');
+
+  const result = await app.submit({
+    workspaceId: 'workspace-undeclared-fallback',
+    actorId: 'owner-a',
+    idempotencyKey: 'copy-auto-undeclared-fallback',
+    operation: 'copy.generate',
+    selection: { mode: 'auto', profile: 'quality' },
+    dataClass: [],
+    prompt: '不得静默换模型',
+  });
+  assert.equal(result.status, 'failed');
+  assert.equal(result.usage.status, 'refunded');
+  assert.deepEqual(
+    {
+      checkpointCalls,
+      providerCalls,
+      settlementCalls,
+      settledUsageStatus,
+    },
+    {
+      checkpointCalls: 1,
+      providerCalls: 1,
+      settlementCalls: 1,
+      settledUsageStatus: 'refunded',
+    },
+  );
+});
+
 test('Auto records every pre-accept fallback attempt and provider cost under one generation job', async () => {
   const recorded = new RecordedProviderExecutionPort();
   const requests: ProviderExecutionRequest[] = [];
@@ -943,6 +1020,7 @@ test('Auto records every pre-accept fallback attempt and provider cost under one
         );
       },
     },
+    planningControlPlane: governedCopyFallbackPlanning(),
   });
   recorded.failNext('copy-quality', 'rejected_before_accept');
   const result = await app.submit({
@@ -959,6 +1037,14 @@ test('Auto records every pre-accept fallback attempt and provider cost under one
   assert.equal(result.attempts.length, 2);
   assert.equal(new Set(result.attempts.map((attempt) => attempt.jobId)).size, 1);
   assert.equal(result.providerCosts.length, 2);
+  assert.deepEqual(
+    result.failoverAvailabilityEvents?.[0]?.degradationSurfaces,
+    ['tone_style'],
+  );
+  assert.deepEqual(
+    result.providerCosts[1]?.failover?.degradationSurfaces,
+    ['tone_style'],
+  );
   assert.equal(promptResolutions, 1);
   assert.equal(promptAudits.length, 1);
   assert.equal(promptAudits[0]?.eventType, 'langfuse_prompt_fallback');
@@ -971,7 +1057,12 @@ test('Auto records every pre-accept fallback attempt and provider cost under one
 
 test('Auto keeps Product Core as the only retry owner and stops after two pre-accept attempts', async () => {
   const execution = new RecordedProviderExecutionPort();
-  const app = new ModelSupplyApplicationService({ models, deployments, execution });
+  const app = new ModelSupplyApplicationService({
+    models,
+    deployments,
+    execution,
+    planningControlPlane: governedCopyFallbackPlanning(),
+  });
   execution.failNext('copy-quality', 'rejected_before_accept');
   execution.failNext('copy-anthropic', 'rejected_before_accept');
   const result = await app.submit({
@@ -1358,7 +1449,10 @@ test('frozen routes survive worker restart after their catalog entries are delet
 
   assert.equal(result.status, 'completed');
   assert.deepEqual(executed?.model, frozenModel);
-  assert.deepEqual(executed?.deployment, frozenDeployment);
+  assert.deepEqual(executed?.deployment, {
+    ...frozenDeployment,
+    pricingTier: 'standard',
+  });
 });
 
 test('Bifrost and LiteLLM isolated PoC ports satisfy the same LLM result contract without owning catalog state', async () => {

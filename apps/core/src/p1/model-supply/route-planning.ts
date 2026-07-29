@@ -85,8 +85,12 @@ export function planModelSupplyCandidates(input: {
   selection: RequestedSelection;
   dataClass: DataClass[];
   unavailableDeploymentIds?: readonly string[];
+  authorizedModelSubstitutionDeploymentIds?: readonly string[];
 }) {
   const unavailable = new Set(input.unavailableDeploymentIds ?? []);
+  const authorizedModelSubstitutions = new Set(
+    input.authorizedModelSubstitutionDeploymentIds ?? [],
+  );
   const candidateEvaluations = input.catalog.deployments.map(
     (deployment): RouteCandidateEvaluation => {
       const model = input.catalog.modelById.get(deployment.catalogModelId);
@@ -100,7 +104,8 @@ export function planModelSupplyCandidates(input: {
       }
       if (
         input.selection.mode === 'fixed' &&
-        model?.id !== input.selection.catalogModelId
+        model?.id !== input.selection.catalogModelId &&
+        !authorizedModelSubstitutions.has(deployment.id)
       ) {
         exclusionReasons.push('fixed_model_mismatch');
       }

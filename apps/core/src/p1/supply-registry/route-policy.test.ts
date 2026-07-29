@@ -74,6 +74,39 @@ function catalog() {
   };
 }
 
+test('model substitution degradation surfaces bind only non-empty unique facts to frozen candidates', () => {
+  const registry = new RoutePolicyRegistry();
+  const payload = {
+    operation: 'copy.generate' as const,
+    qualityTier: 'quality' as const,
+    hardConstraints: ['deployment_active'],
+    candidateDeploymentIds: ['openai-direct', 'anthropic-direct'],
+    maxAttempts: 2,
+    fallbackAuthorized: true,
+  };
+  const candidate = registry.createCandidate({
+    ...payload,
+    modelSubstitutionDegradationSurfaces: {
+      'anthropic-direct': ['tone_consistency'],
+    },
+  });
+  assert.deepEqual(
+    candidate.payload.modelSubstitutionDegradationSurfaces,
+    { 'anthropic-direct': ['tone_consistency'] },
+  );
+  assert.throws(
+    () =>
+      registry.createCandidate({
+        ...payload,
+        modelSubstitutionDegradationSurfaces: {
+          'outside-policy': ['tone_consistency'],
+        },
+      }),
+    (error: unknown) =>
+      error instanceof P1DomainError && error.code === 'INVALID_STATE',
+  );
+});
+
 function publishPolicy(
   registry: RoutePolicyRegistry,
   payload: Parameters<RoutePolicyRegistry['createCandidate']>[0],

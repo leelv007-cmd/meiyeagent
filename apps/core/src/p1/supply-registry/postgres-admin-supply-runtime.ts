@@ -1812,21 +1812,27 @@ function supplierPrices(
     ReturnType<ModelSupplyControlPlaneService['getAdminCatalogControl']>
   >
 ): SupplierPriceRevision[] {
-  return catalog.catalog.prices.flatMap((price) =>
-    catalog.catalog.deployments
-      .filter(
-        (deployment) => deployment.catalogModelId === price.catalogModelId
-      )
-      .map((deployment) => ({
-        id: `${price.id}:${deployment.id}`,
+  return catalog.catalog.prices.flatMap((price) => {
+    const deployment = catalog.catalog.deployments.find(
+      (candidate) =>
+        candidate.catalogModelId === price.catalogModelId &&
+        (!price.executionChannelId ||
+          candidate.executionChannelId === price.executionChannelId),
+    );
+    return deployment
+      ? [{
+        id: price.id,
         deploymentId: deployment.id,
+        executionChannelId: deployment.executionChannelId ?? 'unknown',
+        pricingTier: price.pricingTier ?? 'standard',
         amountMicros: Math.round(price.amount * 1_000_000),
         currency: price.currency,
         unit: price.unit ?? 'request',
         evidence: { source: 'gateway_estimate' as const },
         revisionId: `${price.id}:r${price.revision}`,
-      }))
-  );
+      }]
+      : [];
+  });
 }
 
 export async function projectPostgresSupplyRuns(

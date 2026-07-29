@@ -9,6 +9,7 @@ import {
 import {
   CatalogRevisionRegistry,
   ModelPreferenceRegistry,
+  PRICE_REVISION_PRICING_TIERS,
   createDefaultCatalogModels,
   createDefaultCapabilityRevisions,
   createDefaultDeployments,
@@ -1541,6 +1542,9 @@ function adminCatalogPayload(payload: CatalogRevisionPayload) {
       ...(deployment.priceRevision
         ? { priceRevision: deployment.priceRevision }
         : {}),
+      ...(deployment.pricingTier
+        ? { pricingTier: deployment.pricingTier }
+        : {}),
       ...(deployment.credentialMode
         ? { credentialMode: deployment.credentialMode }
         : {}),
@@ -1578,6 +1582,12 @@ function adminCatalogPayload(payload: CatalogRevisionPayload) {
         ? { catalogModelId: revision.catalogModelId }
         : {}),
       ...(revision.unit ? { unit: revision.unit } : {}),
+      ...(revision.executionChannelId
+        ? { executionChannelId: revision.executionChannelId }
+        : {}),
+      ...(revision.pricingTier
+        ? { pricingTier: revision.pricingTier }
+        : {}),
     })),
     routes: payload.routes.map((revision) => ({
       id: revision.id,
@@ -1928,6 +1938,9 @@ export class ModelSupplyControlPlaneService {
   private readonly planningControlPlane?: ModelSupplyPlanningControlPlanePort;
   private readonly supplyRegistry?: ModelSupplyRegistryPersistencePort;
   private readonly platformDefaultModels?: PlatformDefaultModelSourcePort;
+  private readonly modelCatalogTenantAllowlist: ReadonlySet<string>;
+  private readonly warn?: (message: string) => void;
+  private readonly warnedDisallowedCatalogWorkspaces = new Set<string>();
   private readonly canvasTextProducers = new Map<string, CanvasTextStreamProducer>();
 
   constructor(options: {
@@ -1949,6 +1962,8 @@ export class ModelSupplyControlPlaneService {
      * default at all rather than substituting a built-in guess.
      */
     platformDefaultModels?: PlatformDefaultModelSourcePort;
+    modelCatalogTenantAllowlist?: readonly string[];
+    warn?: (message: string) => void;
     clock?: () => Date;
   }) {
     this.application = options.application;
@@ -1968,7 +1983,49 @@ export class ModelSupplyControlPlaneService {
     this.planningControlPlane = options.planningControlPlane;
     this.supplyRegistry = options.supplyRegistry;
     this.platformDefaultModels = options.platformDefaultModels;
+    this.modelCatalogTenantAllowlist = new Set(
+      (options.modelCatalogTenantAllowlist ?? [])
+        .map((workspaceId) => workspaceId.trim())
+        .filter(Boolean),
+    );
+    this.warn = options.warn;
     this.clock = options.clock ?? (() => new Date());
+  }
+
+  private catalogSourceForWorkspace(
+    workspaceId: string,
+    published: CatalogRevision | null,
+  ) {
+    const source = catalogSource(published, this.fallbackCatalog);
+    if (this.modelCatalogAllows(workspaceId)) {
+      return source;
+    }
+    if (!this.warnedDisallowedCatalogWorkspaces.has(workspaceId)) {
+      this.warnedDisallowedCatalogWorkspaces.add(workspaceId);
+      this.warn?.(
+        `Model catalog defaults were discarded because workspace ${workspaceId} is outside modelCatalogTenantAllowlist.`,
+      );
+    }
+    return {
+      ...source,
+      payload: {
+        ...source.payload,
+        models: [],
+        deployments: [],
+        capabilities: [],
+        prices: [],
+        routes: [],
+        providerProfiles: [],
+        executionChannels: [],
+      },
+    };
+  }
+
+  private modelCatalogAllows(workspaceId: string) {
+    return (
+      this.modelCatalogTenantAllowlist.size === 0 ||
+      this.modelCatalogTenantAllowlist.has(workspaceId)
+    );
   }
 
   async runActivationProbe(
@@ -1980,11 +2037,11 @@ export class ModelSupplyControlPlaneService {
     const runId = `activation-probe-${stableId(
       `${context.workspaceId}:${deploymentId}:${operation}:${idempotencyKey}`,
     )}`;
-    const source = catalogSource(
+    const source = this.catalogSourceForWorkspace(
+      context.workspaceId,
       await this.repository.getCurrentPublishedCatalogRevision(
         context.workspaceId,
       ),
-      this.fallbackCatalog,
     );
     const deployment = source.payload.deployments.find(
       (candidate) => candidate.id === deploymentId,
@@ -2174,9 +2231,9 @@ export class ModelSupplyControlPlaneService {
   }
 
   async activationStatus(workspaceId: string) {
-    const source = catalogSource(
+    const source = this.catalogSourceForWorkspace(
+      workspaceId,
       await this.repository.getCurrentPublishedCatalogRevision(workspaceId),
-      this.fallbackCatalog,
     );
     const runs = await this.repository.listActivationProbeRuns(workspaceId);
     return Promise.all(
@@ -2229,10 +2286,15 @@ export class ModelSupplyControlPlaneService {
   async initialize(workspaceId: string) {
     const published =
       await this.repository.getCurrentPublishedCatalogRevision(workspaceId);
-    const source = catalogSource(published, this.fallbackCatalog);
+    const source = this.catalogSourceForWorkspace(workspaceId, published);
     await this.syncSupplyRegistry(
       workspaceId,
-      source,
+      this.modelCatalogAllows(workspaceId)
+        ? source
+        : {
+            ...source,
+            revisionId: `${source.revisionId}:tenant-blocked`,
+          },
       published?.number ?? 0,
     );
     this.application.applyCatalogRevision(
@@ -2240,6 +2302,7 @@ export class ModelSupplyControlPlaneService {
       source.revisionId,
       source.payload.models,
       source.payload.deployments,
+      source.payload.prices,
     );
     return source.revisionId;
   }
@@ -2275,9 +2338,9 @@ export class ModelSupplyControlPlaneService {
   }
 
   async getCatalog(workspaceId: string, operation: ModelOperation): Promise<CatalogView> {
-    const source = catalogSource(
+    const source = this.catalogSourceForWorkspace(
+      workspaceId,
       await this.repository.getCurrentPublishedCatalogRevision(workspaceId),
-      this.fallbackCatalog,
     );
     const deployments =
       await this.application.constrainRuntimeDeploymentsForRequest(
@@ -2327,9 +2390,9 @@ export class ModelSupplyControlPlaneService {
   }
 
   async getCanvasGenerationCatalog(workspaceId: string, userId: string) {
-    const source = catalogSource(
+    const source = this.catalogSourceForWorkspace(
+      workspaceId,
       await this.repository.getCurrentPublishedCatalogRevision(workspaceId),
-      this.fallbackCatalog,
     );
     const deployments =
       await this.application.constrainRuntimeDeploymentsForRequest(
@@ -3185,9 +3248,9 @@ export class ModelSupplyControlPlaneService {
     userId: string,
     request: ReturnType<typeof canvasGenerationRequest>,
   ) {
-    const source = catalogSource(
+    const source = this.catalogSourceForWorkspace(
+      workspaceId,
       await this.repository.getCurrentPublishedCatalogRevision(workspaceId),
-      this.fallbackCatalog,
     );
     const candidates = (
       await this.application.constrainRuntimeDeploymentsForRequest(
@@ -3302,9 +3365,9 @@ export class ModelSupplyControlPlaneService {
   }
 
   async getAdminCatalogControl(workspaceId: string) {
-    const source = catalogSource(
+    const source = this.catalogSourceForWorkspace(
+      workspaceId,
       await this.repository.getCurrentPublishedCatalogRevision(workspaceId),
-      this.fallbackCatalog,
     );
     const catalog = adminCatalogPayload(source.payload);
     const activationStatuses = new Map(
@@ -3379,11 +3442,11 @@ export class ModelSupplyControlPlaneService {
       ...structuredClone(input),
       workspaceId: context.workspaceId,
     });
-    const source = catalogSource(
+    const source = this.catalogSourceForWorkspace(
+      context.workspaceId,
       await this.repository.getCurrentPublishedCatalogRevision(
         context.workspaceId,
       ),
-      this.fallbackCatalog,
     );
     const deployments =
       await this.application.constrainRuntimeDeploymentsForRequest(
@@ -3661,6 +3724,23 @@ export class ModelSupplyControlPlaneService {
     return revision;
   }
 
+  async createCatalogDiscoveryDraft(
+    workspaceId: string,
+    payload: CatalogRevisionPayload,
+    audit?: { actorId: string; correlationId: string },
+  ) {
+    validateCatalogPayload(payload);
+    await this.assertProbeBackedActivationEvidence(
+      workspaceId,
+      payload.models,
+      payload.deployments,
+    );
+    const registry = await this.registry(workspaceId);
+    const revision = registry.createDiscoveryDraft(payload, audit);
+    await this.repository.saveCatalogRevision(workspaceId, revision);
+    return revision;
+  }
+
   private async assertProbeBackedActivationEvidence(
     workspaceId: string,
     models: CatalogModel[],
@@ -3727,9 +3807,9 @@ export class ModelSupplyControlPlaneService {
     edits: SafeCatalogModelEdit[],
     audit?: { actorId: string; correlationId: string },
   ) {
-    const source = catalogSource(
+    const source = this.catalogSourceForWorkspace(
+      workspaceId,
       await this.repository.getCurrentPublishedCatalogRevision(workspaceId),
-      this.fallbackCatalog,
     );
     const editByModel = new Map<string, SafeCatalogModelEdit>();
     const modelIds = new Set(source.payload.models.map((model) => model.id));
@@ -3813,6 +3893,7 @@ export class ModelSupplyControlPlaneService {
       revision.id,
       revision.payload.models,
       revision.payload.deployments,
+      revision.payload.prices,
     );
     return revision;
   }
@@ -4541,6 +4622,38 @@ function validateCatalogPayload(payload: CatalogRevisionPayload) {
     }
     deploymentIds.add(deployment.id);
   }
+  const priceIds = new Set<string>();
+  const priceKeys = new Set<string>();
+  for (const price of payload.prices) {
+    const pricingTier = price.pricingTier;
+    const executionChannelId = price.executionChannelId?.trim();
+    const catalogModelId = price.catalogModelId?.trim();
+    const priceKey =
+      catalogModelId && executionChannelId && pricingTier
+        ? `${catalogModelId}:${executionChannelId}:${pricingTier}`
+        : null;
+    if (
+      !price.id.trim() ||
+      priceIds.has(price.id) ||
+      !PRICE_REVISION_PRICING_TIERS.includes(
+        pricingTier as (typeof PRICE_REVISION_PRICING_TIERS)[number],
+      ) ||
+      !priceKey ||
+      priceKeys.has(priceKey) ||
+      !payload.deployments.some(
+        (deployment) =>
+          deployment.catalogModelId === catalogModelId &&
+          deployment.executionChannelId === executionChannelId,
+      )
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'PriceRevision requires a unique CatalogModel, ExecutionChannel, and pricing tier key.',
+      );
+    }
+    priceIds.add(price.id);
+    priceKeys.add(priceKey);
+  }
 }
 
 function catalogPayload(value: unknown): CatalogRevisionPayload {
@@ -4665,6 +4778,7 @@ const adminActions = new Set([
   'admin_supply_reconcile_pending',
   'activation_probe_run',
   'catalog_create_draft',
+  'catalog_discover_draft',
   'catalog_create_safe_draft',
   'catalog_enable',
   'catalog_publish',
@@ -5258,6 +5372,12 @@ function canvasGenerationRetryRouteSnapshot(
 	if (policyRevision) snapshot.policyRevision = policyRevision;
 	const priceRevision = canvasGenerationRetryOptionalString(value, 'priceRevision');
 	if (priceRevision) snapshot.priceRevision = priceRevision;
+	const pricingTier = canvasGenerationRetryOptionalEnum(
+		value,
+		'pricingTier',
+		['standard', 'cache_hit', 'batch', 'long_context', 'package_volume'] as const,
+	);
+	if (pricingTier) snapshot.pricingTier = pricingTier;
 	const credentialMode = canvasGenerationRetryOptionalEnum(
 		value,
 		'credentialMode',
@@ -5473,6 +5593,19 @@ function canvasGenerationRetryRouteCandidate(
 			field('unitPriceMicros'),
 		),
 	};
+	const pricingTier = canvasGenerationRetryOptionalEnum(
+		candidate,
+		'pricingTier',
+		['standard', 'cache_hit', 'batch', 'long_context', 'package_volume'] as const,
+	);
+	if (pricingTier) parsed.pricingTier = pricingTier;
+	const fallbackDegradationSurfaces = canvasGenerationRetryOptionalStrings(
+		candidate,
+		'fallbackDegradationSurfaces',
+	);
+	if (fallbackDegradationSurfaces) {
+		parsed.fallbackDegradationSurfaces = fallbackDegradationSurfaces;
+	}
 	const pricingStatus = canvasGenerationRetryOptionalEnum(
 		candidate,
 		'pricingStatus',
@@ -5959,6 +6092,17 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
             correlationId: args.context.correlationId,
           },
         ));
+      case 'catalog_discover_draft':
+        return publicCatalogRevision(
+          await this.controlPlane.createCatalogDiscoveryDraft(
+            args.context.workspaceId,
+            catalogPayload(payload.catalog),
+            {
+              actorId: args.context.userId,
+              correlationId: args.context.correlationId,
+            },
+          ),
+        );
       case 'catalog_create_safe_draft':
         return publicCatalogRevision(await this.controlPlane.createSafeCatalogDraft(
           args.context.workspaceId,

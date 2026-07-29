@@ -13,6 +13,7 @@ export type {
   ProductEntitlementPolicyPort,
 } from '../foundation/entitlement-policy.js';
 import type {
+  ProviderCostEvent,
   P1Context,
   UsageResource,
 } from '../foundation/domain.js';
@@ -30,6 +31,10 @@ import {
 } from '../entitlement-pools/supply-ledger-fields.js';
 import type { BillingLifecyclePort } from '../product-billing/lifecycle-port.js';
 import { modelSupplyCheckpointToFoundationRoute } from '../route-snapshot-normalize.js';
+import {
+  evaluateModelFailover,
+  usedModalityCapabilityIds,
+} from './failover-semantics.js';
 import type {
   ModelSupplyLedgerCheckpointInput,
   ModelSupplyLedgerPort,
@@ -324,16 +329,54 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
       input.result.snapshot.credentialMode === 'byok_strict'
         ? ('workspace_byok' as const)
         : ('platform' as const);
-    const providerCost: {
-      id: string;
-      attemptId: string;
-      stage: 'observed' | 'estimated';
-      amountMicros: number;
-      currency: 'CNY' | 'USD';
-      unit: string;
-      evidence: string;
-      payer: 'platform' | 'workspace_byok';
-    } = freeze
+    const existingProviderCost = (
+      await this.foundation.listProviderCosts(
+        context,
+        input.result.attempt.id,
+      )
+    ).find((event) => event.id === cost.id && event.stage === stage);
+    const existingProviderCostFacts = existingProviderCost
+      ? providerCostEventFacts(existingProviderCost)
+      : undefined;
+    const providerCostSnapshot = freeze || cost.failover
+      ? {
+          attemptId: input.result.attempt.id,
+          taskId:
+            input.submission.billingTaskId ?? input.result.jobId,
+          deploymentId: input.result.attempt.deploymentId,
+          supplierPriceRevision:
+            freeze?.supplierPriceRevision.id ??
+            input.result.snapshot.priceRevision ??
+            candidatePriceRevision(input.result) ??
+            'unknown',
+          billingMode: 'per_request' as const,
+          unitPriceMicros:
+            freeze?.supplierPriceRevision.amountMicros ??
+            candidateUnitPriceMicros(input.result) ??
+            amountMicros,
+          currency:
+            freeze?.supplierPriceRevision.currency ?? cost.currency,
+          unit:
+            freeze?.supplierPriceRevision.unit ?? providerCostUnit(cost),
+          estimatedCostMicros:
+            cost.status === 'estimated' ? amountMicros : null,
+          ...(cost.status === 'observed'
+            ? { observedCostMicros: amountMicros }
+            : {}),
+          ...(cost.failover
+            ? { failover: structuredClone(cost.failover) }
+            : {}),
+          payer,
+          billingStatus:
+            cost.status === 'observed'
+              ? ('known' as const)
+              : ('estimated' as const),
+        }
+      : undefined;
+    const providerCost: Omit<
+      ProviderCostEvent,
+      'workspaceId' | 'actorId' | 'correlationId' | 'createdAt'
+    > = existingProviderCostFacts ?? (freeze
       ? (() => {
           const event = buildProviderCostEventFromFreeze({
             freeze,
@@ -356,6 +399,9 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
             // the original settlement evidence token.
             evidence: `${input.evidence};${event.evidence}`,
             payer,
+            ...(providerCostSnapshot
+              ? { snapshot: structuredClone(providerCostSnapshot) }
+              : {}),
           };
         })()
       : {
@@ -367,21 +413,56 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
           unit: providerCostUnit(cost),
           evidence: input.evidence,
           payer,
-        };
-    await this.foundation.settleProviderOutcome(
-      context,
-      {
-        attemptId: input.result.attempt.id,
-        acceptance: input.result.attempt.acceptance,
-        ...(input.result.attempt.providerTaskRef
-          ? { providerTaskRef: input.result.attempt.providerTaskRef }
-          : {}),
-        providerCost,
-        result: { ...structuredClone(input.result) },
-        outcome,
-      },
-      `model-settlement:${input.result.attempt.id}:${input.result.status}:${input.result.providerCost.status}`,
-    );
+          ...(providerCostSnapshot
+            ? { snapshot: structuredClone(providerCostSnapshot) }
+            : {}),
+        });
+    const settlement = {
+      attemptId: input.result.attempt.id,
+      acceptance: input.result.attempt.acceptance,
+      ...(input.result.attempt.providerTaskRef
+        ? { providerTaskRef: input.result.attempt.providerTaskRef }
+        : {}),
+      providerCost,
+      result: { ...structuredClone(input.result) },
+      outcome,
+    };
+    const settlementKey =
+      `model-settlement:${input.result.attempt.id}:${input.result.status}:${input.result.providerCost.status}`;
+    try {
+      await this.foundation.settleProviderOutcome(
+        context,
+        settlement,
+        settlementKey,
+      );
+    } catch (error) {
+      if (
+        !(error instanceof P1DomainError) ||
+        error.code !== 'IDEMPOTENCY_CONFLICT'
+      ) {
+        throw error;
+      }
+      const winningProviderCost = (
+        await this.foundation.listProviderCosts(
+          context,
+          input.result.attempt.id,
+        )
+      ).find((event) => event.id === cost.id && event.stage === stage);
+      if (!winningProviderCost) throw error;
+      const winningProviderCostFacts =
+        providerCostEventFacts(winningProviderCost);
+      if (isDeepStrictEqual(winningProviderCostFacts, providerCost)) {
+        throw error;
+      }
+      await this.foundation.settleProviderOutcome(
+        context,
+        {
+          ...settlement,
+          providerCost: winningProviderCostFacts,
+        },
+        settlementKey,
+      );
+    }
     if (outcome.status === 'failed') {
       await this.refundGrantUsage({
         workspaceId: input.submission.workspaceId,
@@ -410,6 +491,32 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
     );
     const unitPriceMicros =
       candidate?.unitPriceMicros ?? input.deployment.unitPrice?.amountMicros ?? 0;
+    let failover:
+      | import('@meiye/contracts').ProviderFailoverBillingEvent
+      | undefined;
+    if (input.previousAttempts.length > 0 && candidate) {
+      const previousAttempt = input.previousAttempts.at(-1);
+      const previous = input.snapshot.allowedCandidates?.find(
+        (row) => row.deploymentId === previousAttempt?.deploymentId,
+      );
+      if (previous) {
+        const decision = evaluateModelFailover({
+          from: previous,
+          to: candidate,
+          degradationSurfaces: candidate.fallbackDegradationSurfaces,
+          usedCapabilityIds: usedModalityCapabilityIds(
+            input.snapshot.capabilityRequirements,
+          ),
+        });
+        if (!decision.allowed) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            `Fallback billing event rejected: ${decision.reason}.`,
+          );
+        }
+        failover = decision.event;
+      }
+    }
     await this.billingLifecycle.dispatchAttempt({
       attemptId: input.attemptId,
       deploymentId: input.deployment.id,
@@ -423,6 +530,7 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
           input.snapshot.credentialMode === 'byok_strict'
             ? 'workspace_byok'
             : 'platform',
+        ...(failover ? { failover } : {}),
         supplierPriceRevision:
           candidate?.priceRevision ??
           input.deployment.priceRevision ??
@@ -455,6 +563,7 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
     );
     const canFallback =
       input.result.status === 'failed' &&
+      input.result.usage.status === 'reserved' &&
       attempt.acceptance === 'rejected_before_accept' &&
       snapshot.fallbackConsent === true &&
       input.result.attempts.length < (snapshot.allowedCandidates?.length ?? 1);
@@ -494,6 +603,7 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
         candidate?.priceRevision ?? snapshot.priceRevision ?? 'unknown',
       unit: candidate?.unit ?? providerCostUnit(cost),
       unitPriceMicros,
+      ...(cost.failover ? { failover: structuredClone(cost.failover) } : {}),
       ...(cost.usage.mediaUnits !== undefined
         ? { usageQuantity: cost.usage.mediaUnits, usageUnit: 'media_unit' }
         : {}),
@@ -578,6 +688,8 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
       supplierPriceRevision: {
         id: candidate.priceRevision,
         deploymentId: snapshot.deploymentId,
+        executionChannelId: candidate.executionChannelId ?? 'unknown',
+        pricingTier: candidate.pricingTier ?? 'standard',
         amountMicros: candidate.unitPriceMicros,
         currency: candidate.currency,
         unit: candidate.unit,
@@ -658,6 +770,8 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
       supplierPriceRevision: {
         id: candidate.priceRevision,
         deploymentId: snapshot.deploymentId,
+        executionChannelId: candidate.executionChannelId ?? 'unknown',
+        pricingTier: candidate.pricingTier ?? 'standard',
         amountMicros: candidate.unitPriceMicros,
         currency: candidate.currency,
         unit: candidate.unit,
@@ -680,6 +794,9 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
       // immutable durable store verify identical facts instead of requiring a
       // second reserved-state validation for an already-persisted freeze.
       if (isLegacyJobLinkedFreeze(existing, freeze, input.jobId)) {
+        return existing;
+      }
+      if (sameImmutableFreeze(existing, freeze)) {
         return existing;
       }
       return this.supplyFreezes.append(freeze);
@@ -805,7 +922,10 @@ function isLegacyJobLinkedFreeze(
     frozenAt: _replayedFrozenAt,
     ...replayedFacts
   } = replayed;
-  return isDeepStrictEqual(existingFacts, replayedFacts);
+  return freezesMatchWithHistoricalPriceFields(
+    existingFacts,
+    replayedFacts,
+  );
 }
 
 function sameImmutableFreeze(
@@ -814,7 +934,35 @@ function sameImmutableFreeze(
 ) {
   const { frozenAt: _existingFrozenAt, ...existingFacts } = existing;
   const { frozenAt: _replayedFrozenAt, ...replayedFacts } = replayed;
-  return isDeepStrictEqual(existingFacts, replayedFacts);
+  return freezesMatchWithHistoricalPriceFields(
+    existingFacts,
+    replayedFacts,
+  );
+}
+
+function freezesMatchWithHistoricalPriceFields(
+  existing: Omit<SupplyRequestFreeze, 'frozenAt'>,
+  replayed: Omit<SupplyRequestFreeze, 'frozenAt'>,
+) {
+  const comparableReplayed = structuredClone(replayed);
+  if (!existing.supplierPriceRevision.executionChannelId) {
+    delete comparableReplayed.supplierPriceRevision.executionChannelId;
+  }
+  if (!existing.supplierPriceRevision.pricingTier) {
+    delete comparableReplayed.supplierPriceRevision.pricingTier;
+  }
+  return isDeepStrictEqual(existing, comparableReplayed);
+}
+
+function providerCostEventFacts(event: ProviderCostEvent) {
+  const {
+    workspaceId: _workspaceId,
+    actorId: _actorId,
+    correlationId: _correlationId,
+    createdAt: _createdAt,
+    ...facts
+  } = event;
+  return facts;
 }
 
 function usageReservationIdFor(jobId: string, quantity = 1) {
@@ -901,6 +1049,20 @@ function providerCostUnit(cost: ProviderCost) {
     return 'token';
   }
   return 'request';
+}
+
+function resultCandidate(result: ModelSupplyResult) {
+  return result.snapshot.allowedCandidates?.find(
+    (candidate) => candidate.deploymentId === result.attempt.deploymentId,
+  );
+}
+
+function candidatePriceRevision(result: ModelSupplyResult) {
+  return resultCandidate(result)?.priceRevision;
+}
+
+function candidateUnitPriceMicros(result: ModelSupplyResult) {
+  return resultCandidate(result)?.unitPriceMicros;
 }
 
 function recoveryCost(

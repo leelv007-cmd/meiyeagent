@@ -131,6 +131,8 @@ export class WorkspaceProvisionService {
         get(): Promise<{ plans: PlanOffer[]; trialEnabled?: boolean }>;
       };
       modelDefaults?: PlatformDefaultModelPort;
+      modelCatalogTenantAllowlist?: readonly string[];
+      warn?: (message: string) => void;
     } = {}
   ) {}
 
@@ -185,6 +187,20 @@ export class WorkspaceProvisionService {
         'INVALID_STATE',
         'Platform default models are not configured.',
       );
+    }
+    const tenantAllowlist = new Set(
+      (this.options.modelCatalogTenantAllowlist ?? [])
+        .map((workspaceId) => workspaceId.trim())
+        .filter(Boolean),
+    );
+    if (
+      tenantAllowlist.size > 0 &&
+      !tenantAllowlist.has(context.workspaceId)
+    ) {
+      this.options.warn?.(
+        `Platform model defaults were discarded because workspace ${context.workspaceId} is outside modelCatalogTenantAllowlist.`,
+      );
+      return { defaults: {}, applied: false };
     }
     const catalog = this.options.catalog
       ? await this.options.catalog.get()

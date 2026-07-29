@@ -186,6 +186,7 @@ export function createModelSupplyRuntime(
     catalogRevisionId: RECORDED_CATALOG_REVISION_ID,
     deployments,
     models,
+    prices: createDefaultPriceRevisions(),
     capabilityHotAssembly,
     inferFixtureMediaCapabilityProfiles:
       runtime.activation === 'local_fixture_verified',

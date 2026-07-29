@@ -186,8 +186,33 @@ export interface ProviderCostSnapshot {
    * Written to supply cost ledger only.
    */
   supplyCostDeltaMicros?: number;
+  /** Explicit supply-side failover event; never creates a second product charge. */
+  failover?: ProviderFailoverBillingEvent;
   payer: 'platform' | 'workspace_byok';
   billingStatus: 'known' | 'externally_billed' | 'unknown' | 'estimated';
+}
+
+export type ProviderFailoverKind =
+  | 'same_model_channel'
+  | 'model_substitution';
+
+export interface ProviderFailoverBillingEvent {
+  kind: ProviderFailoverKind;
+  fromCatalogModelId: string;
+  toCatalogModelId: string;
+  fromDeploymentId: string;
+  toDeploymentId: string;
+  fromExecutionChannelId: string | null;
+  toExecutionChannelId: string | null;
+  fromPriceRevision: string;
+  toPriceRevision: string;
+  degradationSurfaces: string[];
+}
+
+/** Supply availability telemetry emitted when execution moves to a fallback. */
+export interface ProviderFailoverAvailabilityEvent
+  extends ProviderFailoverBillingEvent {
+  eventType: 'provider_failover';
 }
 
 /**

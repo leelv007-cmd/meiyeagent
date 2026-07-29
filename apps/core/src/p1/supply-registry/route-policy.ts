@@ -32,6 +32,7 @@ export interface RoutePolicyPayload {
   maxAttempts: number;
   costBoundaryMicros?: number;
   fallbackAuthorized: boolean;
+  modelSubstitutionDegradationSurfaces?: Record<string, string[]>;
 }
 
 export interface RoutePolicySimulationSummary {
@@ -110,6 +111,28 @@ function copyPayload(payload: RoutePolicyPayload): RoutePolicyPayload {
   return structuredClone(payload);
 }
 
+function assertModelSubstitutionDegradationSurfaces(
+  payload: RoutePolicyPayload,
+) {
+  const candidateIds = new Set(payload.candidateDeploymentIds);
+  for (const [deploymentId, surfaces] of Object.entries(
+    payload.modelSubstitutionDegradationSurfaces ?? {},
+  )) {
+    if (
+      !candidateIds.has(deploymentId) ||
+      surfaces.length === 0 ||
+      surfaces.some((surface) => !surface.trim()) ||
+      new Set(surfaces.map((surface) => surface.trim())).size !==
+        surfaces.length
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `Model substitution degradation surfaces are invalid for ${deploymentId}.`,
+      );
+    }
+  }
+}
+
 /** Bootstrap a thin catalog RouteRevision into a RoutePolicy candidate payload. */
 export function expandThinRouteRevision(
   route: RouteRevision,
@@ -121,6 +144,7 @@ export function expandThinRouteRevision(
     fallbackAuthorized?: boolean;
     costBoundaryMicros?: number;
     orderBands?: string[];
+    modelSubstitutionDegradationSurfaces?: Record<string, string[]>;
   } = {},
 ): RoutePolicyPayload {
   return {
@@ -138,6 +162,13 @@ export function expandThinRouteRevision(
       ? { costBoundaryMicros: options.costBoundaryMicros }
       : {}),
     fallbackAuthorized: options.fallbackAuthorized ?? true,
+    ...(options.modelSubstitutionDegradationSurfaces
+      ? {
+          modelSubstitutionDegradationSurfaces: structuredClone(
+            options.modelSubstitutionDegradationSurfaces,
+          ),
+        }
+      : {}),
   };
 }
 
@@ -159,6 +190,13 @@ export function toPublicRoutePolicyRevision(
       ? { costBoundaryMicros: record.payload.costBoundaryMicros }
       : {}),
     fallbackAuthorized: record.payload.fallbackAuthorized,
+    ...(record.payload.modelSubstitutionDegradationSurfaces
+      ? {
+          modelSubstitutionDegradationSurfaces: structuredClone(
+            record.payload.modelSubstitutionDegradationSurfaces,
+          ),
+        }
+      : {}),
     ...(record.publishedAt ? { publishedAt: record.publishedAt } : {}),
     revisionId: `route-policy:${record.payload.operation}:${record.payload.qualityTier}:r${record.number}`,
   };
@@ -178,6 +216,7 @@ export class RoutePolicyRegistry {
     payload: RoutePolicyPayload,
     audit?: RoutePolicyAudit,
   ): RoutePolicyRevisionRecord {
+    assertModelSubstitutionDegradationSurfaces(payload);
     return this.create('candidate', copyPayload(payload), undefined, audit);
   }
 

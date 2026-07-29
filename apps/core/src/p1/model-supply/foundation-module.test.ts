@@ -2001,6 +2001,46 @@ describe('ModelSupplyFoundationModule', () => {
     );
   });
 
+  it('keeps a disallowed tenant outside the production model catalog and warns without rejecting startup', async () => {
+    const warnings: string[] = [];
+    const repository = new MemoryModelSupplyControlPlaneRepository();
+    const models = new ModelSupplyApplicationService({
+      models: createDefaultCatalogModels(),
+      deployments: createDefaultDeployments({
+        activatedDeploymentIds: ['openai-direct-recorded'],
+        activationEvidenceStatus: 'recorded',
+      }),
+      execution: new RecordedProviderExecutionPort(),
+    });
+    const controlPlane = new ModelSupplyControlPlaneService({
+      application: models,
+      repository,
+      modelCatalogTenantAllowlist: ['workspace-allowed'],
+      warn: (message) => warnings.push(message),
+    });
+
+    await controlPlane.initialize(owner.workspaceId);
+    const catalog = await controlPlane.getCatalog(
+      owner.workspaceId,
+      'copy.generate',
+    );
+    assert.deepEqual(catalog.models, []);
+    await assert.rejects(
+      models.submit({
+        workspaceId: owner.workspaceId,
+        actorId: owner.userId,
+        idempotencyKey: 'disallowed-explicit-model',
+        operation: 'copy.generate',
+        selection: { mode: 'fixed', catalogModelId: 'llm-openai' },
+        dataClass: [],
+        prompt: 'must remain unavailable',
+      }),
+      /not active/u,
+    );
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0] ?? '', /modelCatalogTenantAllowlist/u);
+  });
+
   it('gates catalog lifecycle commands to configured admin actors and activates the published revision', async () => {
     const { controlPlane, models, module } = setup();
     await controlPlane.initialize('workspace-b');
@@ -2011,13 +2051,43 @@ describe('ModelSupplyFoundationModule', () => {
         activationEvidenceStatus: 'recorded' as const,
       }),
       capabilities: [{ id: 'image-v2', operation: 'image.generate', revision: 2 }],
-      prices: [{ id: 'image-price-v2', currency: 'CNY' as const, amount: 1, revision: 2 }],
+      prices: [{
+        id: 'image-price-v2',
+        catalogModelId: 'gpt-image-2',
+        executionChannelId: 'channel-openai-image-managed',
+        pricingTier: 'standard' as const,
+        currency: 'CNY' as const,
+        amount: 1,
+        revision: 2,
+      }],
       routes: [{ id: 'image-route-v2', operation: 'image.generate', revision: 2 }],
     };
 
     await assert.rejects(
       command(module, owner, 'catalog_create_draft', { catalog: payload }),
       (error: unknown) => error instanceof P1DomainError && error.code === 'FORBIDDEN',
+    );
+    await assert.rejects(
+      command(module, admin, 'catalog_create_draft', {
+        catalog: {
+          ...payload,
+          prices: [{
+            ...payload.prices[0],
+            pricingTier: 'merchant_discount',
+          }],
+        },
+      }),
+      /pricing tier/u,
+    );
+    const discovered = (await command(
+      module,
+      admin,
+      'catalog_discover_draft',
+      { catalog: payload },
+    )) as { stage: string; reason: string };
+    assert.deepEqual(
+      { stage: discovered.stage, reason: discovered.reason },
+      { stage: 'draft', reason: 'provider_discovery' },
     );
     await assert.rejects(
       command(module, owner, 'reconcile_cancelled_provider_terminal', {
@@ -2526,7 +2596,15 @@ describe('ModelSupplyFoundationModule', () => {
           { id: 'copy-cap-v1', operation: 'copy.generate', revision: 1 },
         ],
         prices: [
-          { id: 'copy-price-v1', currency: 'CNY', amount: 1, revision: 1 },
+          {
+            id: 'copy-price-v1',
+            catalogModelId: 'llm-openai',
+            executionChannelId: 'channel-openai-direct',
+            pricingTier: 'standard',
+            currency: 'CNY',
+            amount: 1,
+            revision: 1,
+          },
         ],
         routes: [
           { id: 'copy-route-v1', operation: 'copy.generate', revision: 1 },
@@ -2551,7 +2629,15 @@ describe('ModelSupplyFoundationModule', () => {
           { id: 'copy-cap-v2', operation: 'copy.generate', revision: 2 },
         ],
         prices: [
-          { id: 'copy-price-v2', currency: 'CNY', amount: 2, revision: 2 },
+          {
+            id: 'copy-price-v2',
+            catalogModelId: 'llm-openai',
+            executionChannelId: 'channel-openai-direct',
+            pricingTier: 'standard',
+            currency: 'CNY',
+            amount: 2,
+            revision: 2,
+          },
         ],
         routes: [
           { id: 'copy-route-v2', operation: 'copy.generate', revision: 2 },

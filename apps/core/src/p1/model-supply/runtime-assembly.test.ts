@@ -377,6 +377,9 @@ test('real submit uses route policy, health overlay, and three-layer ranking the
           candidateDeploymentIds: [primary.id, selected.id],
           maxAttempts: 1,
           fallbackAuthorized: false,
+          modelSubstitutionDegradationSurfaces: {
+            [selected.id]: ['tone_consistency'],
+          },
         },
         healthOverlay,
         dataPolicyByDeploymentId: new Map([
@@ -425,6 +428,12 @@ test('real submit uses route policy, health overlay, and three-layer ranking the
   );
   assert.equal(result.snapshot.policyRevision, 'route-policy:copy.generate:quality:r9');
   assert.equal(result.snapshot.dataPolicyRevisionId, 'data-policy:anthropic:r4');
+  assert.deepEqual(
+    result.snapshot.allowedCandidates?.find(
+      (candidate) => candidate.deploymentId === selected.id,
+    )?.fallbackDegradationSurfaces,
+    ['tone_consistency'],
+  );
   assert.deepEqual(result.snapshot.runtimeExclusionReasons, [
     `${primary.id}:health_overlay_blocking`,
   ]);
@@ -533,6 +542,9 @@ test('task-audit explanation records the observed safe fallback branch', async (
           candidateDeploymentIds: [primaryId, fallbackId],
           maxAttempts: 2,
           fallbackAuthorized: true,
+          modelSubstitutionDegradationSurfaces: {
+            [fallbackId]: ['latency_profile'],
+          },
         },
       };
     },

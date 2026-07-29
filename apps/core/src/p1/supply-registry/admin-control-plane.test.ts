@@ -144,6 +144,8 @@ function snapshotPorts(
   const price: SupplierPriceRevision = {
     id: 'price-seedream',
     deploymentId: 'seedream-5-ark',
+    executionChannelId: 'channel-volcengine-ark',
+    pricingTier: 'standard',
     amountMicros: 40_000,
     currency: 'CNY',
     unit: 'image',

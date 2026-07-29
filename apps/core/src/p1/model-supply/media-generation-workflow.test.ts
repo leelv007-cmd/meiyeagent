@@ -450,9 +450,10 @@ describe('durable media generation', () => {
 
   it('runs the production media chain across independent frozen channels only after pre-accept rejection', async () => {
     const primaryId = 'gpt-image-2-managed';
-    const fallbackId = 'gpt-image-2-tuzi-relay';
+    const unsafeMiddleId = 'gpt-image-2-tuzi-relay';
+    const fallbackId = 'seedream-5-pro-tuzi-relay';
     const deployments = createDefaultDeployments({
-      activatedDeploymentIds: [primaryId, fallbackId],
+      activatedDeploymentIds: [primaryId, unsafeMiddleId, fallbackId],
       activationEvidenceStatus: 'recorded',
     }).map((deployment) =>
       deployment.id === primaryId
@@ -461,6 +462,12 @@ describe('durable media generation', () => {
             accountIdentity: 'account-openai-image',
             endpointFingerprint: 'endpoint-openai-image',
           }
+        : deployment.id === unsafeMiddleId
+          ? {
+              ...deployment,
+              accountIdentity: 'account-openai-image',
+              endpointFingerprint: 'endpoint-openai-image',
+            }
         : deployment.id === fallbackId
           ? {
               ...deployment,
@@ -480,6 +487,9 @@ describe('durable media generation', () => {
             candidateDeploymentIds: [primaryId, fallbackId],
             maxAttempts: 2,
             fallbackAuthorized: true,
+            modelSubstitutionDegradationSurfaces: {
+              [fallbackId]: ['prompt_adherence'],
+            },
           },
           dataPolicyByDeploymentId: new Map(
             [primaryId, fallbackId].map((deploymentId) => [
@@ -489,7 +499,10 @@ describe('durable media generation', () => {
                 dataPolicyRevisionId: `data-policy:${deploymentId}:r1`,
                 dataPolicy: {
                   sourceTrustLevel: 'contract_attested' as const,
-                  processingRegion: 'overseas' as const,
+                  processingRegion:
+                    deploymentId === primaryId
+                      ? ('overseas' as const)
+                      : ('domestic' as const),
                   allowedDataClasses: ['public' as const],
                 },
               },
@@ -535,6 +548,7 @@ describe('durable media generation', () => {
       deploymentId: string;
       effectIdempotencyKey: string;
     }> = [];
+    const polled: string[] = [];
     const provider: MediaProviderLifecyclePort = {
       async submit(request) {
         submitted.push({
@@ -564,6 +578,7 @@ describe('durable media generation', () => {
         throw new Error('accepted fallback already has a durable task ref');
       },
       async poll(request) {
+        polled.push(request.deployment.id);
         assert.equal(request.deployment.id, fallbackId);
         return {
           status: 'completed',
@@ -585,9 +600,41 @@ describe('durable media generation', () => {
     const runtime = new DurableMediaGenerationApplicationService({ jobs, models });
     models.attachDurableMediaRuntime(runtime);
     const workspaceId = 'workspace-media-safe-fallback';
+    const seed = await models.submit({
+      actorId: 'owner-a',
+      dataClass: [],
+      idempotencyKey: 'media-safe-fallback-seed',
+      operation: 'image.generate',
+      prompt: '主渠道接单前失败后安全切换',
+      selection: {
+        catalogModelId: 'gpt-image-2',
+        fallbackConsent: true,
+        mode: 'fixed',
+      },
+      workspaceId,
+    });
+    const [primaryCandidate, fallbackCandidate] =
+      seed.snapshot.allowedCandidates ?? [];
+    assert.ok(primaryCandidate);
+    assert.ok(fallbackCandidate);
+    const frozenRouteSnapshot = structuredClone(seed.snapshot);
+    frozenRouteSnapshot.maxAttempts = 3;
+    frozenRouteSnapshot.allowedCandidates = [
+      primaryCandidate,
+      {
+        ...structuredClone(primaryCandidate),
+        deploymentId: unsafeMiddleId,
+        fallbackRank: 2,
+      },
+      {
+        ...structuredClone(fallbackCandidate),
+        fallbackRank: 3,
+      },
+    ];
     const queued = await models.submit({
       actorId: 'owner-a',
       dataClass: [],
+      frozenRouteSnapshot,
       idempotencyKey: 'media-safe-fallback',
       operation: 'image.generate',
       prompt: '主渠道接单前失败后安全切换',
@@ -604,7 +651,7 @@ describe('durable media generation', () => {
       new ModelMediaGenerationEffect({ models, provider }),
     );
 
-    assert.equal(queued.snapshot.maxAttempts, 2);
+    assert.equal(queued.snapshot.maxAttempts, 3);
     assert.equal(queued.snapshot.fallbackAuthorized, true);
     assert.deepEqual(
       queued.snapshot.allowedCandidates?.map((candidate) => ({
@@ -619,14 +666,36 @@ describe('durable media generation', () => {
           endpointFingerprint: 'endpoint-openai-image',
         },
         {
+          deploymentId: unsafeMiddleId,
+          accountIdentity: 'account-openai-image',
+          endpointFingerprint: 'endpoint-openai-image',
+        },
+        {
           deploymentId: fallbackId,
           accountIdentity: 'account-tuzi-image',
           endpointFingerprint: 'endpoint-tuzi-image',
         },
       ],
     );
-    assert.equal((await worker.handle(envelope(record))).status, 'deferred');
-    assert.equal((await worker.handle(envelope(record))).status, 'completed');
+    const firstRun = await worker.handle(envelope(record));
+    const secondRun = await worker.handle(envelope(record));
+    const afterSecondRun = await jobs.get(workspaceId, queued.jobId);
+    assert.deepEqual(
+      {
+        firstStatus: firstRun.status,
+        secondStatus: secondRun.status,
+        submitted: submitted.map((entry) => entry.deploymentId),
+        polled,
+        providerTaskRef: afterSecondRun.providerTaskRef,
+      },
+      {
+        firstStatus: 'deferred',
+        secondStatus: 'completed',
+        submitted: [primaryId, fallbackId],
+        polled: [fallbackId],
+        providerTaskRef: 'provider-task-fallback',
+      },
+    );
     const completed = await runtime.get(workspaceId, queued.jobId);
 
     assert.deepEqual(
@@ -661,6 +730,32 @@ describe('durable media generation', () => {
       ],
     );
     assert.equal(completed.result.snapshot.deploymentId, fallbackId);
+    assert.deepEqual(completed.result.providerCost.failover, {
+      kind: 'model_substitution',
+      fromCatalogModelId: 'gpt-image-2',
+      toCatalogModelId: 'seedream-5-pro',
+      fromDeploymentId: primaryId,
+      toDeploymentId: fallbackId,
+      fromExecutionChannelId: 'channel-openai-image-managed',
+      toExecutionChannelId: 'channel-tuzi-seedream-relay',
+      fromPriceRevision:
+        'gpt-image-2:channel-openai-image-managed:standard:price-v1',
+      toPriceRevision:
+        'seedream-5-pro:channel-tuzi-seedream-relay:standard:price-v1',
+      degradationSurfaces: ['prompt_adherence'],
+    });
+    assert.deepEqual(
+      completed.result.failoverAvailabilityEvents?.map((event) => ({
+        eventType: event.eventType,
+        kind: event.kind,
+        degradationSurfaces: event.degradationSurfaces,
+      })),
+      [{
+        eventType: 'provider_failover',
+        kind: 'model_substitution',
+        degradationSurfaces: ['prompt_adherence'],
+      }],
+    );
     assert.deepEqual(
       completed.result.snapshot.decisionExplanation?.acceptanceBranch,
       {

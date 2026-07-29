@@ -8,6 +8,7 @@
 
 import type {
   ProductBillingMode,
+  ProviderFailoverBillingEvent,
   ProviderCostSnapshot,
   TrustedUsageEvidenceKind,
 } from '@meiye/contracts';
@@ -29,6 +30,7 @@ export type BuildProviderCostSnapshotInput = {
   evidence?: string;
   evidenceKind?: TrustedUsageEvidenceKind | 'estimated' | 'unknown';
   supplyCostDeltaMicros?: number;
+  failover?: ProviderFailoverBillingEvent;
   payer?: 'platform' | 'workspace_byok';
 };
 
@@ -99,6 +101,7 @@ export function buildProviderCostSnapshot(
     ...(input.supplyCostDeltaMicros !== undefined
       ? { supplyCostDeltaMicros: input.supplyCostDeltaMicros }
       : {}),
+    ...(input.failover ? { failover: structuredClone(input.failover) } : {}),
     payer: input.payer ?? 'platform',
     billingStatus,
   };

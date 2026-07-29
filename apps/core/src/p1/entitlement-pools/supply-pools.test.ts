@@ -34,6 +34,8 @@ import { ThreeLayerCapacityGate } from './three-layer-capacity.js';
 const priceRevision = (): SupplierPriceRevision => ({
   id: 'spr-1',
   deploymentId: 'dep-copy-a',
+  executionChannelId: 'channel-copy-a',
+  pricingTier: 'standard',
   amountMicros: 1200,
   currency: 'CNY',
   unit: 'request',
@@ -707,6 +709,20 @@ test('supply request freezes RouteSnapshot/CredentialAccountVersion/price eviden
   // Must not be named QuotePolicy.
   assert.equal('quotePolicy' in freeze, false);
   assert.equal('quotePolicyRevision' in freeze.supplierPriceRevision, false);
+  await assert.rejects(
+    async () =>
+      buildSupplyRequestFreeze({
+        ...freeze,
+        supplierPriceRevision: {
+          ...freeze.supplierPriceRevision,
+          executionChannelId: undefined,
+          pricingTier: undefined,
+        },
+      }),
+    (error: unknown) =>
+      error instanceof P1DomainError &&
+      error.code === 'INVALID_STATE',
+  );
 
   const costEvent = buildProviderCostEventFromFreeze({
     freeze,

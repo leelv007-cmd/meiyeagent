@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { SupplierPricingTier } from '@meiye/contracts';
 import type {
   CanvasGenerationCapability,
   CatalogModel,
@@ -90,6 +91,30 @@ export interface PriceRevision {
   amount: number;
   revision: number;
   unit?: string;
+  /** Historical revisions may omit the channel key and are read-only. */
+  executionChannelId?: string;
+  /** Historical revisions may omit the tier and are treated as standard. */
+  pricingTier?: SupplierPricingTier;
+}
+
+export const PRICE_REVISION_PRICING_TIERS = [
+  'standard',
+  'cache_hit',
+  'batch',
+  'long_context',
+  'package_volume',
+] as const satisfies readonly SupplierPricingTier[];
+
+export function priceRevisionKey(input: {
+  catalogModelId: string;
+  executionChannelId: string;
+  pricingTier: SupplierPricingTier;
+}): string {
+  return [
+    input.catalogModelId.trim(),
+    input.executionChannelId.trim(),
+    input.pricingTier,
+  ].join(':');
 }
 
 export interface RouteRevision {
@@ -287,6 +312,19 @@ export class CatalogRevisionRegistry {
       undefined,
       undefined,
       audit
+    );
+  }
+
+  createDiscoveryDraft(
+    payload: CatalogRevisionPayload,
+    audit?: { actorId: string; correlationId: string },
+  ) {
+    return this.create(
+      'draft',
+      copyPayload(payload),
+      undefined,
+      'provider_discovery',
+      audit,
     );
   }
 
@@ -943,7 +981,12 @@ export function createDefaultCapabilityRevisions(): CapabilityRevision[] {
   );
 }
 
-export function createDefaultPriceRevisions(): PriceRevision[] {
+function defaultPriceForModel(model: CatalogModel): {
+  amount: number;
+  currency: PriceRevision['currency'];
+  unit: string;
+} | null {
+  if (model.id === 'seed-tts-2') return null;
   const amountByModel: Record<string, number> = {
     'gpt-image-2': 0.12,
     'nano-banana-2': 0.08,
@@ -958,24 +1001,16 @@ export function createDefaultPriceRevisions(): PriceRevision[] {
     'audio-speech-fixture': 0.01,
     'audio-sfx-fixture': 0.01,
   };
-  return createDefaultCatalogModels().flatMap((model) => {
-    if (model.id === 'seed-tts-2') return [];
-    return [{
-      id: `${model.id}:price-v1`,
-      catalogModelId: model.id,
-      currency: model.id.startsWith('deepseek-v4-')
-        ? ('CNY' as const)
-        : ('USD' as const),
-      amount: amountByModel[model.id] ?? 0.02,
-      revision: 1,
-      unit:
-        model.modality === 'llm'
-          ? 'recorded_request'
-          : model.modality === 'audio'
-            ? 'recorded_audio_unit'
-            : 'recorded_media_unit',
-    }];
-  });
+  return {
+    amount: amountByModel[model.id] ?? 0.02,
+    currency: model.id.startsWith('deepseek-v4-') ? 'CNY' : 'USD',
+    unit:
+      model.modality === 'llm'
+        ? 'recorded_request'
+        : model.modality === 'audio'
+          ? 'recorded_audio_unit'
+          : 'recorded_media_unit',
+  };
 }
 
 export function createDefaultRouteRevisions(): RouteRevision[] {
@@ -1004,6 +1039,7 @@ export function createDefaultDeployments(
         string,
         {
           priceRevision: string;
+          pricingTier?: SupplierPricingTier;
           unitPrice: NonNullable<ModelDeployment['unitPrice']>;
         }
       >
@@ -1326,9 +1362,10 @@ export function createDefaultDeployments(
     const activationEvidence: ActivationEvidence = explicitEvidence
       ? structuredClone(explicitEvidence)
       : { status: options.activationEvidenceStatus ?? 'recorded' };
-    const price = createDefaultPriceRevisions().find(
-      (candidate) => candidate.catalogModelId === deployment.catalogModelId
+    const model = createDefaultCatalogModels().find(
+      (candidate) => candidate.id === deployment.catalogModelId,
     );
+    const price = model ? defaultPriceForModel(model) : null;
     const explicitPricing = options.deploymentPricingById?.[deployment.id];
     const unitPrice = explicitPricing?.unitPrice ??
       (price
@@ -1352,8 +1389,11 @@ export function createDefaultDeployments(
       policyRevision: 'data-class-policy-v1',
       priceRevision:
         explicitPricing?.priceRevision ??
-        price?.id ??
+        (price
+          ? `${deployment.catalogModelId}:${deployment.executionChannelId}:standard:price-v1`
+          : undefined) ??
         `${deployment.catalogModelId}:price-unavailable`,
+      pricingTier: explicitPricing?.pricingTier ?? 'standard',
       credentialMode: 'platform' as const,
       credentialVersion: 'recorded-credential-v1',
       ...(unitPrice ? { unitPrice } : {}),
@@ -1375,6 +1415,36 @@ export function createDefaultDeployments(
           }),
     };
   });
+}
+
+export function createDefaultPriceRevisions(): PriceRevision[] {
+  const modelById = new Map(
+    createDefaultCatalogModels().map((model) => [model.id, model]),
+  );
+  const revisions = new Map<string, PriceRevision>();
+  for (const deployment of createDefaultDeployments()) {
+    const model = modelById.get(deployment.catalogModelId);
+    const price = model ? defaultPriceForModel(model) : null;
+    if (!model || !price || !deployment.executionChannelId) continue;
+    for (const pricingTier of PRICE_REVISION_PRICING_TIERS) {
+      const key = priceRevisionKey({
+        catalogModelId: model.id,
+        executionChannelId: deployment.executionChannelId,
+        pricingTier,
+      });
+      revisions.set(key, {
+        id: `${key}:price-v1`,
+        catalogModelId: model.id,
+        executionChannelId: deployment.executionChannelId,
+        pricingTier,
+        currency: price.currency,
+        amount: price.amount,
+        revision: 1,
+        unit: price.unit,
+      });
+    }
+  }
+  return [...revisions.values()];
 }
 
 /** Canonical live-probe shape required before any audio deployment may activate. */

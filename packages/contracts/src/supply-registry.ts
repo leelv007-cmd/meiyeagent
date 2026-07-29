@@ -293,6 +293,8 @@ export interface RoutePolicyRevision {
   maxAttempts: number;
   costBoundaryMicros?: number;
   fallbackAuthorized: boolean;
+  /** Target deployment id -> user-visible degradation surfaces. */
+  modelSubstitutionDegradationSurfaces?: Record<string, string[]>;
   publishedAt?: string;
   revisionId: string;
 }
@@ -311,12 +313,23 @@ export interface DataPolicyRevision {
 export interface SupplierPriceRevision {
   id: string;
   deploymentId: string;
+  /** Missing only on historical freezes created before the channel price key. */
+  executionChannelId?: string;
+  /** Missing only on historical freezes; new writes must provide a tier. */
+  pricingTier?: SupplierPricingTier;
   amountMicros: number;
   currency: 'CNY' | 'USD';
   unit: string;
   evidence: PricingEvidence;
   revisionId: string;
 }
+
+export type SupplierPricingTier =
+  | 'standard'
+  | 'cache_hit'
+  | 'batch'
+  | 'long_context'
+  | 'package_volume';
 
 export type PricingEvidenceSource = 'invoice' | 'observed_usage' | 'gateway_estimate';
 

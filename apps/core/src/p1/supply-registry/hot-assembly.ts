@@ -171,6 +171,7 @@ export interface ChannelSubmissionAdmission extends ChannelAdmissionDecision {
 
 export interface AssembleCapabilityRequest {
   deploymentId: string;
+  role?: 'primary' | 'structuring';
   /**
    * Capability revision frozen on the RouteSnapshot / attempt.
    * When omitted, the effective (head) revision is used (new tasks).
@@ -186,6 +187,7 @@ export interface AssembleCapabilityRequest {
 
 /** Runtime-only assembly result — must never be returned from product APIs. */
 export interface AssembledCapabilityBinding {
+  role: 'primary' | 'structuring';
   capabilityRevisionId: string;
   deploymentId: string;
   entry: RuntimeCapabilityEntry;
@@ -1133,6 +1135,7 @@ export class CapabilityHotAssemblyRegistry implements CapabilityHotAssemblyPort 
     const cacheKey = [
       revision.revisionId,
       entry.deploymentId,
+      request.role ?? 'primary',
       request.frozenCredentialVersion ?? '',
       adapterKey,
       adapterBindingRevision ?? '',
@@ -1173,6 +1176,7 @@ export class CapabilityHotAssemblyRegistry implements CapabilityHotAssemblyPort 
     }
 
     const binding: AssembledCapabilityBinding = {
+      role: request.role ?? 'primary',
       capabilityRevisionId: revision.revisionId,
       deploymentId: entry.deploymentId,
       entry: { ...entry, adapterKey, adapterBindingRevision },
