@@ -1725,6 +1725,78 @@ test('source revision fence recompiles brief and selection with new effect keys'
   }
 });
 
+test('permission hard-block after a context fence uses the same held QuestionCard path', async () => {
+  const stages = fixtureStages();
+  const firstSelection = stages.executeAndSelect.bind(stages);
+  const selectionError = new HarnessSelectionError(
+    ['external_action_approval'],
+    '更新后的候选需要外部动作授权',
+    [],
+    ['先完成授权'],
+  );
+  let executions = 0;
+  let decisions = 0;
+  let deliveries = 0;
+  stages.fenceContext = async (input) => ({
+    ...input.context,
+    bundle: {
+      ...input.context.bundle,
+      revision: 2,
+      previousRevision: 1,
+      hash: 'b'.repeat(64),
+    },
+  });
+  stages.executeAndSelect = async (input) => {
+    executions += 1;
+    if (executions === 2) throw selectionError;
+    return firstSelection(input);
+  };
+  stages.assembleAndDeliver = async () => {
+    deliveries += 1;
+    throw new Error('Permission-blocked re-selection must not deliver.');
+  };
+
+  await assert.rejects(
+    runHarnessWorkflow('task-35', taskInput(), stages, {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision(question) {
+        decisions += 1;
+        assert.equal(
+          question.questionId,
+          'task-35:execution-selection:permission',
+        );
+        return {
+          idempotencyKey: 'permission-after-fence-1',
+          questionId: question.questionId,
+          workflowRevision: question.workflowRevision,
+          patch: {
+            field: question.response.field,
+            value: question.options[0]!.label,
+            reason: question.response.reason,
+          },
+          decision: {
+            state: 'accepted',
+            value: question.options[0]!.label,
+          },
+        };
+      },
+      async recordTrace() {},
+    }),
+    (error: unknown) => {
+      assert.equal(error, selectionError);
+      return true;
+    },
+  );
+
+  assert.equal(executions, 2);
+  assert.equal(decisions, 1);
+  assert.equal(deliveries, 0);
+});
+
 test('permission selection hard-block waits on a held QuestionCard and never delivers', async () => {
   const stages = fixtureStages();
   const selectionError = new HarnessSelectionError(

@@ -728,6 +728,29 @@ export async function runHarnessWorkflow(
     eventSequence += executed.tokenCount;
     return executed.selection;
   };
+  const executeSelectionWithPermissionHold = async (
+    ...args: Parameters<typeof executeSelection>
+  ) => {
+    try {
+      return await executeSelection(...args);
+    } catch (error) {
+      if (!isNonSelfCorrectableSelectionError(error)) {
+        throw error;
+      }
+      await reportProgress({
+        stage: 'execution_selection',
+        state: 'suspended',
+        message:
+          error.merchantMessage ??
+          '当前候选触发权限硬门，请选择安全的后续处理方式。',
+      });
+      await awaitResolvedDecision(
+        runtime,
+        permissionSelectionQuestion(workflowId, args[1].request, error),
+      );
+      throw error;
+    }
+  };
   let activeRequest = request;
   const stageSkills = await resolveWorkflowStageSkills(
     workflowId,
@@ -882,9 +905,8 @@ export async function runHarnessWorkflow(
   });
 
   const executionSkills = stageSkills.execution_selection;
-  let selection: HarnessSelectionResult;
-  try {
-    selection = await executeSelection(
+  let selection: HarnessSelectionResult =
+    await executeSelectionWithPermissionHold(
       harnessEffectKey(
         workflowId,
         4,
@@ -901,23 +923,6 @@ export async function runHarnessWorkflow(
           : {}),
       },
     );
-  } catch (error) {
-    if (!isNonSelfCorrectableSelectionError(error)) {
-      throw error;
-    }
-    await reportProgress({
-      stage: 'execution_selection',
-      state: 'suspended',
-      message:
-        error.merchantMessage ??
-        '当前候选触发权限硬门，请选择安全的后续处理方式。',
-    });
-    await awaitResolvedDecision(
-      runtime,
-      permissionSelectionQuestion(workflowId, activeRequest, error),
-    );
-    throw error;
-  }
   await trace(
     runtime,
     workflowId,
@@ -1012,7 +1017,7 @@ export async function runHarnessWorkflow(
       ...(briefDegraded ? { degraded: true } : {}),
       ...skillTraceLineage(briefSkills),
     }, `r${bundle.bundle.revision}`);
-    selection = await executeSelection(
+    selection = await executeSelectionWithPermissionHold(
       harnessEffectKey(
         workflowId,
         4,
