@@ -3,6 +3,8 @@ import type { Pool } from 'pg';
 import { PostgresCreationExperienceCatalogRepository } from '../creation-experience/postgres-repository.js';
 import {
   HarnessPromptAuthorityUnavailableError,
+  promptTraceReference,
+  requireHarnessFrozenPrompt,
   type HarnessPromptResolver,
 } from '../harness/langfuse-prompts.js';
 import type { HarnessSkillInstructionResolverPort } from '../harness/production-stage-ports.js';
@@ -137,17 +139,19 @@ export async function createDurableSkillRuntime(input: {
 export function skillPromptSnapshotPortFromHarness(
   resolver: HarnessPromptResolver,
 ): SkillPromptSnapshotPort {
+  const resolvePrompts = async () => {
+    try {
+      return await resolver.resolve();
+    } catch (error) {
+      if (error instanceof HarnessPromptAuthorityUnavailableError) {
+        throw new SkillPromptAuthorityUnavailableError(error.message);
+      }
+      throw error;
+    }
+  };
   return {
     async capture(reference) {
-      let prompts: Awaited<ReturnType<HarnessPromptResolver['resolve']>>;
-      try {
-        prompts = await resolver.resolve();
-      } catch (error) {
-        if (error instanceof HarnessPromptAuthorityUnavailableError) {
-          throw new SkillPromptAuthorityUnavailableError(error.message);
-        }
-        throw error;
-      }
+      const prompts = await resolvePrompts();
       const prompt = Object.values(prompts).find(
         (candidate) =>
           candidate.name === reference.name &&
@@ -171,6 +175,20 @@ export function skillPromptSnapshotPortFromHarness(
         );
       }
       return structuredClone(prompt);
+    },
+    async reference(slot) {
+      const prompts = await resolvePrompts();
+      const prompt = requireHarnessFrozenPrompt(prompts, slot);
+      const reference = promptTraceReference(prompt);
+      if (!reference) {
+        throw new SkillPromptAuthorityUnavailableError(
+          'Harness prompt resolver did not return the requested prompt.',
+        );
+      }
+      return {
+        ...structuredClone(prompt),
+        ...reference,
+      };
     },
   };
 }

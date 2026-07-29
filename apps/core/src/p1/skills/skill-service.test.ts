@@ -46,7 +46,25 @@ const testPromptSnapshots = {
     assert.ok(snapshot, 'Test prompt snapshot must be registered.');
     return snapshot;
   },
+  async reference() {
+    const snapshot = [...testPromptSnapshotsByReference.values()].find(
+      (candidate) => candidate.name === 'harness/intent-naming',
+    );
+    assert.ok(snapshot, 'Test prompt reference must be registered.');
+    return snapshot;
+  },
 };
+
+async function registerEvalRunForTest(
+  service: SkillService,
+  run: EvalRun,
+) {
+  const repository = Reflect.get(
+    service,
+    'repository',
+  ) as MemorySkillRepository;
+  return repository.putImmutable(run.runId, run);
+}
 const discardResultPublisher: SkillInvocationResultPublisher = {
   async publishOnce(input) {
     return input.result;
@@ -135,9 +153,11 @@ test('only an evaluated and frozen Skill revision enters a stage allowlist', asy
     { allowlist: [] },
   );
 
+  const evalRun = skillEvalRun(draft.skillRevisionRef);
+  await registerEvalRunForTest(service, evalRun);
   const frozen = await service.acceptAndFreezeRevision({
     actorId: 'operator-2',
-    evalRun: skillEvalRun(draft.skillRevisionRef),
+    evalRunId: evalRun.runId,
     skillRevisionRef: draft.skillRevisionRef,
   });
   const resolved = await service.resolveStage({
@@ -1254,7 +1274,7 @@ test('Foundation commands reach define, accept, bind, rollback, and deployment o
   ) => ({
     expectedRevision,
     frontmatter: {
-      description: 'Exercises the Foundation Skill command chain.',
+      description: `Exercises Foundation Skill revision ${version}.`,
       name: 'foundation-chain',
     },
     governance: {
@@ -1304,17 +1324,41 @@ test('Foundation commands reach define, accept, bind, rollback, and deployment o
     'skill_define',
     definition(instructionV1, null, '1'),
   )) as { revision: { skillRevisionRef: string } };
+  const evalV1 = evalFor(definedV1.revision.skillRevisionRef, '1');
+  await repository.putImmutable(evalV1.runId, evalV1);
   await execute('skill_accept', {
-    evalRun: evalFor(definedV1.revision.skillRevisionRef, '1'),
+    evalRunId: evalV1.runId,
     skillRevisionRef: definedV1.revision.skillRevisionRef,
   });
   const definedV2 = (await execute(
     'skill_define',
     definition(instructionV2, 1, '2'),
   )) as { revision: { skillRevisionRef: string } };
+  const evalV2 = evalFor(definedV2.revision.skillRevisionRef, '2');
+  await repository.putImmutable(evalV2.runId, evalV2);
   await execute('skill_accept', {
-    evalRun: evalFor(definedV2.revision.skillRevisionRef, '2'),
+    evalRunId: evalV2.runId,
     skillRevisionRef: definedV2.revision.skillRevisionRef,
+  });
+  assert.deepEqual(await service.listCatalog(), {
+    items: [
+      {
+        activeRevisionRef: definedV2.revision.skillRevisionRef,
+        description: 'Exercises Foundation Skill revision 2.',
+        name: 'Foundation chain',
+        presentationPolicy: 'explainable',
+        skillId,
+        sourceKind: 'authored',
+        sourceRef: null,
+        tier: 'platform',
+        updatedAt: NOW,
+      },
+    ],
+    stats: {
+      industryTierCorroborated: 0,
+      industryTierTotal: 0,
+      total: 1,
+    },
   });
   await assert.rejects(
     execute('skill_bind', {
@@ -1367,6 +1411,380 @@ test('Foundation commands reach define, accept, bind, rollback, and deployment o
   assert.deepEqual(
     deployment.packagePaths,
     ['SKILL.md', 'assets/example.png', 'evals/evals.json'],
+  );
+});
+
+test('Skill operator reads only the fixed production prompt reference', async () => {
+  const repository = new MemorySkillRepository();
+  const currentPrompt = {
+    content: 'Current production prompt.',
+    contentHash: sha256('Current production prompt.'),
+    isFallback: false,
+    label: 'production',
+    name: 'harness/intent-naming',
+    source: 'langfuse' as const,
+    version: '42',
+  };
+  const service = new SkillService(repository, () => NOW, {
+    async capture(reference) {
+      assert.deepEqual(reference, {
+        contentHash: currentPrompt.contentHash,
+        name: currentPrompt.name,
+        version: currentPrompt.version,
+      });
+      return currentPrompt;
+    },
+    async reference(slot) {
+      assert.equal(slot, 'intentNaming');
+      return currentPrompt;
+    },
+  });
+  const module = new SkillFoundationModule(service);
+  const context = {
+    actor: 'admin' as const,
+    correlationId: 'corr-skill-authorities',
+    userId: 'operator-skill-authorities',
+    workspaceId: 'workspace-skill-authorities',
+  };
+
+  const promptReference = await module.query({
+    context,
+    input: {
+      action: 'skill_prompt_reference',
+      payload: { slot: 'intentNaming' },
+    },
+  });
+  assert.deepEqual(promptReference, {
+    contentHash: currentPrompt.contentHash,
+    eligibleForAcceptance: true,
+    isFallback: false,
+    label: 'production',
+    name: 'harness/intent-naming',
+    source: 'langfuse',
+    version: '42',
+  });
+  assert.equal('content' in promptReference, false);
+
+  await assert.rejects(
+    module.query({
+      context,
+      input: {
+        action: 'skill_prompt_reference',
+        payload: { slot: 'arbitraryPrompt' },
+      },
+    }),
+    /prompt slot 不受支持/u,
+  );
+
+  const defined = (await module.execute({
+    context,
+    idempotencyKey: 'skill-define-authorities',
+    input: {
+      action: 'skill_define',
+      payload: {
+        expectedRevision: null,
+        frontmatter: {
+          description: 'Uses only server-owned prompt and evaluation facts.',
+          name: 'server-owned-authorities',
+        },
+        governance: governance(),
+        instruction: 'Use only confirmed facts.',
+        name: 'Server-owned authorities',
+        packagePaths: ['SKILL.md'],
+        presentationPolicy: 'backend_only',
+        promptReference: {
+          contentHash: currentPrompt.contentHash,
+          name: currentPrompt.name,
+          version: currentPrompt.version,
+        },
+        skillId: 'skill.server-owned-authorities',
+        sourceKind: 'authored',
+        tier: 'platform',
+      },
+    },
+  })) as { revision: { skillRevisionRef: string } };
+  const evalRun = {
+    ...skillEvalRun(defined.revision.skillRevisionRef),
+    runId: 'eval-server-owned-authorities',
+  };
+  await repository.putImmutable(evalRun.runId, evalRun);
+  assert.deepEqual(
+    await repository.putImmutable(evalRun.runId, evalRun),
+    evalRun,
+  );
+  await assert.rejects(
+    repository.putImmutable(evalRun.runId, {
+      ...evalRun,
+      suiteId: 'different-suite',
+    }),
+    (error: unknown) =>
+      error instanceof P1DomainError &&
+      error.code === 'IDEMPOTENCY_CONFLICT',
+  );
+  await assert.rejects(
+    module.execute({
+      context,
+      idempotencyKey: 'skill-accept-inline-eval-rejected',
+      input: {
+        action: 'skill_accept',
+        payload: {
+          evalRun,
+          skillRevisionRef: defined.revision.skillRevisionRef,
+        },
+      },
+    }),
+    /不支持字段 evalRun/u,
+  );
+  await assert.rejects(
+    module.execute({
+      context,
+      idempotencyKey: 'skill-accept-passed-claim-rejected',
+      input: {
+        action: 'skill_accept',
+        payload: {
+          evalRunId: evalRun.runId,
+          passed: true,
+          skillRevisionRef: defined.revision.skillRevisionRef,
+        },
+      },
+    }),
+    /不支持字段 passed/u,
+  );
+  const accepted = (await module.execute({
+    context,
+    idempotencyKey: 'skill-accept-stored-eval',
+    input: {
+      action: 'skill_accept',
+      payload: {
+        evalRunId: evalRun.runId,
+        skillRevisionRef: defined.revision.skillRevisionRef,
+      },
+    },
+  })) as { evalRunId: string; status: string };
+  assert.equal(accepted.evalRunId, evalRun.runId);
+  assert.equal(accepted.status, 'accepted_frozen');
+});
+
+test('fallback prompt reference is visible but never acceptance-eligible', async () => {
+  const prompt = {
+    content: 'Builtin fallback body must stay private.',
+    contentHash: sha256('Builtin fallback body must stay private.'),
+    fallbackReason: 'unavailable',
+    isFallback: true,
+    label: 'builtin',
+    name: 'harness/intent-naming',
+    source: 'builtin' as const,
+    version: 'builtin-v1',
+  };
+  const module = new SkillFoundationModule(
+    new SkillService(new MemorySkillRepository(), () => NOW, {
+      async capture() {
+        return prompt;
+      },
+      async reference() {
+        return prompt;
+      },
+    }),
+  );
+  const result = await module.query({
+    context: {
+      actor: 'admin',
+      correlationId: 'corr-skill-fallback-reference',
+      userId: 'operator-skill-fallback-reference',
+      workspaceId: 'workspace-skill-fallback-reference',
+    },
+    input: {
+      action: 'skill_prompt_reference',
+      payload: { slot: 'intentNaming' },
+    },
+  });
+
+  assert.deepEqual(result, {
+    contentHash: prompt.contentHash,
+    eligibleForAcceptance: false,
+    isFallback: true,
+    label: 'builtin',
+    name: 'harness/intent-naming',
+    reasonCode: 'fallback_prompt',
+    source: 'builtin',
+    version: 'builtin-v1',
+  });
+  assert.equal('content' in result, false);
+  assert.equal(JSON.stringify(result).includes(prompt.content), false);
+});
+
+test('trusted EvalRun registry failures leave the draft and catalog unchanged', async () => {
+  const repository = new MemorySkillRepository();
+  const prompt = {
+    content: 'Trusted production prompt.',
+    contentHash: sha256('Trusted production prompt.'),
+    isFallback: false,
+    label: 'production',
+    name: 'harness/intent-naming',
+    source: 'langfuse' as const,
+    version: '42',
+  };
+  const service = new SkillService(repository, () => NOW, {
+    async capture() {
+      return prompt;
+    },
+  });
+  const skillId = 'skill.trusted-eval-failure';
+  await service.defineCatalogEntry({
+    actorId: 'operator-trusted-eval-failure',
+    description: 'Must not progress on untrusted evaluation facts.',
+    name: 'Trusted EvalRun failure',
+    presentationPolicy: 'backend_only',
+    skillId,
+    sourceKind: 'authored',
+    tier: 'platform',
+  });
+  const draft = await service.draftRevision({
+    actorId: 'operator-trusted-eval-failure',
+    expectedRevision: null,
+    governance: governance(),
+    instruction: 'Use only trusted facts.',
+    manifest: {
+      description: 'Must not progress on untrusted evaluation facts.',
+      name: 'trusted-eval-failure',
+    },
+    promptReference: {
+      contentHash: prompt.contentHash,
+      name: prompt.name,
+      version: prompt.version,
+    },
+    skillId,
+  });
+  const exact = skillEvalRun(draft.skillRevisionRef);
+  const cases: Array<{ runId: string; run?: EvalRun }> = [
+    { runId: 'eval-not-registered' },
+    {
+      runId: 'eval-wrong-skill',
+      run: {
+        ...exact,
+        results: exact.results.map((result) => ({
+          ...result,
+          skillRevisionRef: 'skill.someone-else@1',
+        })),
+        runId: 'eval-wrong-skill',
+      },
+    },
+    {
+      runId: 'eval-wrong-prompt',
+      run: {
+        ...exact,
+        results: exact.results.map((result) => ({
+          ...result,
+          promptRevision: 'harness/intent-naming@41',
+        })),
+        runId: 'eval-wrong-prompt',
+      },
+    },
+    {
+      runId: 'eval-failed',
+      run: {
+        ...exact,
+        passed: false,
+        results: exact.results.map((result) => ({
+          ...result,
+          passed: false,
+          reason: 'The exact gate failed.',
+        })),
+        runId: 'eval-failed',
+      },
+    },
+  ];
+
+  for (const candidate of cases) {
+    if (candidate.run) {
+      await repository.putImmutable(candidate.runId, candidate.run);
+    }
+    await assert.rejects(
+      service.acceptAndFreezeRevision({
+        actorId: 'operator-trusted-eval-failure',
+        evalRunId: candidate.runId,
+        skillRevisionRef: draft.skillRevisionRef,
+      }),
+      candidate.run
+        ? /must pass its exact prompt and Skill eval gate/u
+        : (error: unknown) =>
+            error instanceof P1DomainError && error.code === 'NOT_FOUND',
+    );
+    assert.equal(
+      (await repository.getRevision(draft.skillRevisionRef))?.status,
+      'draft',
+    );
+    assert.equal((await repository.getCatalog(skillId))?.activeRevisionRef, null);
+  }
+});
+
+test('skill_define keeps store-tier writes closed until workspace ownership exists', async () => {
+  const repository = new MemorySkillRepository();
+  const module = new SkillFoundationModule(
+    new SkillService(repository, () => NOW, testPromptSnapshots),
+  );
+
+  await assert.rejects(
+    module.execute({
+      context: {
+        actor: 'admin',
+        correlationId: 'corr-store-tier-rejected',
+        userId: 'operator-store-tier-rejected',
+        workspaceId: 'workspace-store-tier-rejected',
+      },
+      idempotencyKey: 'skill-define-store-tier-rejected',
+      input: {
+        action: 'skill_define',
+        payload: {
+          description: 'Must not become a global store-level entry.',
+          name: 'Store entry without ownership',
+          presentationPolicy: 'explainable',
+          skillId: 'skill.store-without-owner',
+          sourceKind: 'induced',
+          tier: 'store',
+        },
+      },
+    }),
+    /租户维度通电前只允许平台层或行业层/u,
+  );
+  assert.equal(
+    await repository.getCatalog('skill.store-without-owner'),
+    null,
+  );
+});
+
+test('skill_define requires traceable provenance for harvested entries', async () => {
+  const repository = new MemorySkillRepository();
+  const module = new SkillFoundationModule(
+    new SkillService(repository, () => NOW, testPromptSnapshots),
+  );
+
+  await assert.rejects(
+    module.execute({
+      context: {
+        actor: 'admin',
+        correlationId: 'corr-harvest-source-rejected',
+        userId: 'operator-harvest-source-rejected',
+        workspaceId: 'workspace-harvest-source-rejected',
+      },
+      idempotencyKey: 'skill-define-harvest-source-rejected',
+      input: {
+        action: 'skill_define',
+        payload: {
+          description: 'Missing the public source evidence.',
+          name: 'Untraceable harvest',
+          presentationPolicy: 'backend_only',
+          skillId: 'skill.untraceable-harvest',
+          sourceKind: 'harvested',
+          tier: 'platform',
+        },
+      },
+    }),
+    /必须提供来源链接与收割时间/u,
+  );
+  assert.equal(
+    await repository.getCatalog('skill.untraceable-harvest'),
+    null,
   );
 });
 
@@ -1876,9 +2294,11 @@ test('stage resolution uses the frozen prompt fallback with explicit lineage whe
     },
     skillId: 'skill.prompt-fallback',
   });
+  const evalRun = skillEvalRun(draft.skillRevisionRef);
+  await registerEvalRunForTest(service, evalRun);
   await service.acceptAndFreezeRevision({
     actorId: 'operator-fallback',
-    evalRun: skillEvalRun(draft.skillRevisionRef),
+    evalRunId: evalRun.runId,
     skillRevisionRef: draft.skillRevisionRef,
   });
   await service.bindRevision({
@@ -2188,6 +2608,11 @@ test('skill_accept redacts legacy prompt content and instruction fields', async 
   const module = new SkillFoundationModule(
     new SkillService(repository, () => NOW),
   );
+  const evalRun = {
+    ...skillEvalRun('skill.legacy-redaction@1'),
+    runId: 'eval-legacy-redaction',
+  };
+  await repository.putImmutable(evalRun.runId, evalRun);
   const result = await module.execute({
     context: {
       actor: 'admin',
@@ -2199,7 +2624,7 @@ test('skill_accept redacts legacy prompt content and instruction fields', async 
     input: {
       action: 'skill_accept',
       payload: {
-        evalRun: skillEvalRun('skill.legacy-redaction@1'),
+        evalRunId: evalRun.runId,
         skillRevisionRef: 'skill.legacy-redaction@1',
       },
     },
@@ -2258,9 +2683,7 @@ test('deterministic Skill triggers match stage, industry category, and tenant', 
     }),
     skillId: globalHair.skillId,
   });
-  const tenantHair = await service.acceptAndFreezeRevision({
-    actorId: 'operator-2',
-    evalRun: {
+  const tenantHairRun: EvalRun = {
       ...skillEvalRun(tenantHairDraft.skillRevisionRef),
       results: [
         {
@@ -2271,7 +2694,11 @@ test('deterministic Skill triggers match stage, industry category, and tenant', 
       runId: 'skills-global-hair-run-2',
       suiteId: 'skills-global-hair',
       suiteRevision: 'skills-global-hair@2',
-    },
+  };
+  await registerEvalRunForTest(service, tenantHairRun);
+  const tenantHair = await service.acceptAndFreezeRevision({
+    actorId: 'operator-2',
+    evalRunId: tenantHairRun.runId,
     skillRevisionRef: tenantHairDraft.skillRevisionRef,
   });
   await service.bindRevision({
@@ -2664,9 +3091,7 @@ async function createAcceptedSkill(
     }),
     skillId,
   });
-  return service.acceptAndFreezeRevision({
-    actorId: 'operator-2',
-    evalRun: {
+  const run: EvalRun = {
       ...skillEvalRun(draft.skillRevisionRef),
       results: [
         {
@@ -2677,7 +3102,11 @@ async function createAcceptedSkill(
       runId: `skills-${suffix}-run-1`,
       suiteId: `skills-${suffix}`,
       suiteRevision: `skills-${suffix}@1`,
-    },
+  };
+  await registerEvalRunForTest(service, run);
+  return service.acceptAndFreezeRevision({
+    actorId: 'operator-2',
+    evalRunId: run.runId,
     skillRevisionRef: draft.skillRevisionRef,
   });
 }
@@ -2743,9 +3172,7 @@ async function createAcceptedEffectSkill(
     }),
     skillId,
   });
-  return service.acceptAndFreezeRevision({
-    actorId: 'operator-2',
-    evalRun: {
+  const run: EvalRun = {
       ...skillEvalRun(draft.skillRevisionRef),
       results: [
         {
@@ -2756,7 +3183,11 @@ async function createAcceptedEffectSkill(
       runId: 'skills-effect-boundary-run-1',
       suiteId: 'skills-effect-boundary',
       suiteRevision: 'skills-effect-boundary@1',
-    },
+  };
+  await registerEvalRunForTest(service, run);
+  return service.acceptAndFreezeRevision({
+    actorId: 'operator-2',
+    evalRunId: run.runId,
     skillRevisionRef: draft.skillRevisionRef,
   });
 }
@@ -2794,9 +3225,7 @@ async function draftAndAcceptRevision(
     }),
     skillId,
   });
-  return service.acceptAndFreezeRevision({
-    actorId: 'operator-2',
-    evalRun: {
+  const run: EvalRun = {
       ...skillEvalRun(draft.skillRevisionRef),
       results: [
         {
@@ -2807,7 +3236,11 @@ async function draftAndAcceptRevision(
       runId: `skills-rollback-run-${version}`,
       suiteId: 'skills-rollback',
       suiteRevision: `skills-rollback@${version}`,
-    },
+  };
+  await registerEvalRunForTest(service, run);
+  return service.acceptAndFreezeRevision({
+    actorId: 'operator-2',
+    evalRunId: run.runId,
     skillRevisionRef: draft.skillRevisionRef,
   });
 }

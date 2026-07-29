@@ -7,6 +7,7 @@ import {
   LANGFUSE_DATASET_ITEM_FIELDS,
   type LangfuseHttpSenderOptions,
 } from './langfuse-sender.js';
+import type { EvalRunRegistryPort } from './eval-run-registry.js';
 
 export const LANGFUSE_EVAL_RUN_DATASET_ITEM_FIELDS = [
   'id',
@@ -28,7 +29,10 @@ export class LangfuseEvalRunImporter {
   private readonly datasetItemsUrl: string;
   private readonly fetch: typeof globalThis.fetch;
 
-  constructor(private readonly options: LangfuseHttpSenderOptions) {
+  constructor(
+    private readonly options: LangfuseHttpSenderOptions,
+    private readonly registry: EvalRunRegistryPort,
+  ) {
     this.fetch = options.fetch ?? globalThis.fetch;
     this.datasetItemsUrl = `${options.baseUrl.replace(/\/$/u, '')}/api/public/dataset-items`;
   }
@@ -40,6 +44,7 @@ export class LangfuseEvalRunImporter {
     for (const result of run.results) {
       await this.postDatasetItem(projectDatasetItem(run, result, datasetName));
     }
+    await this.registry.putImmutable(run.runId, run);
 
     return {
       datasetName,
@@ -80,6 +85,7 @@ export class LangfuseEvalRunImporter {
 
 export function langfuseEvalRunImporterFromEnv(
   env: Record<string, string | undefined> = process.env,
+  registry: EvalRunRegistryPort,
 ) {
   const missing = [
     'LANGFUSE_BASE_URL',
@@ -92,14 +98,17 @@ export function langfuseEvalRunImporterFromEnv(
     );
   }
 
-  return new LangfuseEvalRunImporter({
-    baseUrl: env.LANGFUSE_BASE_URL!,
-    publicKey: env.LANGFUSE_PUBLIC_KEY!,
-    secretKey: env.LANGFUSE_SECRET_KEY!,
-    ...(env.LANGFUSE_REQUEST_TIMEOUT_MS
-      ? { timeoutMs: positiveInteger(env.LANGFUSE_REQUEST_TIMEOUT_MS) }
-      : {}),
-  });
+  return new LangfuseEvalRunImporter(
+    {
+      baseUrl: env.LANGFUSE_BASE_URL!,
+      publicKey: env.LANGFUSE_PUBLIC_KEY!,
+      secretKey: env.LANGFUSE_SECRET_KEY!,
+      ...(env.LANGFUSE_REQUEST_TIMEOUT_MS
+        ? { timeoutMs: positiveInteger(env.LANGFUSE_REQUEST_TIMEOUT_MS) }
+        : {}),
+    },
+    registry,
+  );
 }
 
 async function readEvalRunArtifact(artifactPath: string) {

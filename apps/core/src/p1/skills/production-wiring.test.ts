@@ -6,6 +6,7 @@ import {
   listSkillSchemaRefs,
   requiredP1Capability,
   resolveSkillSchema,
+  type EvalRun,
 } from '@meiye/contracts';
 
 import { P1ApplicationService } from '../foundation/application-service.js';
@@ -14,6 +15,8 @@ import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
 import { WIRING_NEGATIVE_CASE_IDS } from '../testing/wiring-negative-corpus.js';
 import {
   MemorySkillRepository,
+  SKILL_COMMAND_ACTIONS,
+  SKILL_QUERY_ACTIONS,
   SkillFoundationModule,
   SkillInvocationToolAdapter,
   SkillService,
@@ -31,21 +34,15 @@ const EXPECTED_SKILL_SCHEMA_REFS = [
 // Skill references tenant assets and platform identifiers, so a downloaded
 // copy could not run anywhere else. This asserts the absence stays true as
 // the action registry grows, rather than trusting that nobody adds one.
-const SKILL_REGISTRY_ACTIONS = {
-  command: [
-    'skill_accept',
-    'skill_bind',
-    'skill_define',
-    'skill_deployment',
-    'skill_rollback',
-  ],
-  query: ['skill_catalog_list', 'skill_revision_history'],
-} as const;
-
 test('the Skill action registry exposes no export or download verb', () => {
+  assert.deepEqual(SKILL_QUERY_ACTIONS, [
+    'skill_catalog_list',
+    'skill_revision_history',
+    'skill_prompt_reference',
+  ]);
   const registered = [
-    ...SKILL_REGISTRY_ACTIONS.command,
-    ...SKILL_REGISTRY_ACTIONS.query,
+    ...SKILL_COMMAND_ACTIONS,
+    ...SKILL_QUERY_ACTIONS,
   ];
 
   for (const action of registered) {
@@ -58,20 +55,24 @@ test('the Skill action registry exposes no export or download verb', () => {
 
   // Every registered action must resolve to a capability; an unregistered one
   // is denied by default, so a silent typo would look like "no export" too.
-  for (const action of SKILL_REGISTRY_ACTIONS.command) {
+  for (const action of SKILL_COMMAND_ACTIONS) {
     assert.equal(
       requiredP1Capability('command', 'skills', action),
       'config.publish',
       `${action} must stay behind config.publish`,
     );
   }
-  for (const action of SKILL_REGISTRY_ACTIONS.query) {
+  for (const action of ['skill_catalog_list', 'skill_revision_history']) {
     assert.equal(
       requiredP1Capability('query', 'skills', action),
       'workspace.read',
       `${action} must stay a plain read`,
     );
   }
+  assert.equal(
+    requiredP1Capability('query', 'skills', 'skill_prompt_reference'),
+    'config.publish',
+  );
 
   // Anything not on the list stays denied, so the snapshot above is the whole
   // authority surface rather than a sample of it.
@@ -669,6 +670,33 @@ test('the Skill tool adapter returns validated output and a stable invalid-outpu
   );
 });
 
+test('the operator Skill seam rejects a data-supplied red-line override', async () => {
+  const harness = applicationSkillHarness(
+    'operator-redline-override',
+    async () => {
+      throw new Error('prompt capture must not run');
+    },
+    {},
+    {
+      redlinePolicy: {
+        sample: 0,
+        strategy: 'warn',
+      },
+    },
+  );
+
+  await assert.rejects(
+    harness.application.executeModule(
+      harness.context,
+      'skills',
+      harness.input,
+      'operator-redline-override',
+    ),
+    /Skill 定义命令 不支持字段 redlinePolicy/u,
+  );
+  await assertRejectedSkillUnwritten(harness);
+});
+
 function applicationSkillHarness(
   suffix: string,
   capture: SkillPromptSnapshotPort['capture'],
@@ -790,9 +818,7 @@ async function acceptedSkill(
     promptReference: promptReference(prompt),
     skillId,
   });
-  const revision = await service.acceptAndFreezeRevision({
-    actorId: 'operator-production-wiring',
-    evalRun: {
+  const evalRun: EvalRun = {
       createdAt: NOW,
       mode: 'recorded_fixture',
       passed: true,
@@ -812,7 +838,11 @@ async function acceptedSkill(
       schemaVersion: 'eval-run/v1',
       suiteId: 'production-wiring',
       suiteRevision: 'production-wiring@1',
-    },
+  };
+  await repository.putImmutable(evalRun.runId, evalRun);
+  const revision = await service.acceptAndFreezeRevision({
+    actorId: 'operator-production-wiring',
+    evalRunId: evalRun.runId,
     skillRevisionRef: draft.skillRevisionRef,
   });
   return { repository, revision, service };

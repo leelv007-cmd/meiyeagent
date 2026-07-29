@@ -217,36 +217,36 @@ export class SkillService {
     sourceKind?: SkillSourceKind;
     limit?: number;
   }) {
-    const catalogs = await this.repository.listCatalogs(filter);
-    return catalogs.map((catalog) => ({
-      skillId: catalog.skillId,
-      name: catalog.name,
-      description: catalog.description,
-      sourceKind: catalog.sourceKind,
-      tier: catalog.tier,
-      sourceRef: catalog.sourceRef ?? null,
-      presentationPolicy: catalog.presentationPolicy,
-      activeRevisionRef: catalog.activeRevisionRef,
-      updatedAt: catalog.updatedAt,
-    }));
+    const [catalogs, stats] = await Promise.all([
+      this.repository.listCatalogs(filter),
+      this.repository.getCatalogStats(),
+    ]);
+    return {
+      items: catalogs.map((catalog) => ({
+        skillId: catalog.skillId,
+        name: catalog.name,
+        description: catalog.description,
+        sourceKind: catalog.sourceKind,
+        tier: catalog.tier,
+        sourceRef: catalog.sourceRef ?? null,
+        presentationPolicy: catalog.presentationPolicy,
+        activeRevisionRef: catalog.activeRevisionRef,
+        updatedAt: catalog.updatedAt,
+      })),
+      stats,
+    };
   }
 
   /**
    * Revision history for one Skill. Instructions and prompt content stay out
    * — the catalog page shows lineage, not payloads.
    */
-  async listRevisionHistory(skillId: string) {
-    const head = await this.repository.getRevisionHead(
+  async listRevisionHistory(skillId: string, limit = 50) {
+    const history = await this.repository.listRevisions(
       required(skillId, 'Skill ID'),
+      Math.min(limit, 100),
     );
-    if (!head) return [];
-    const history = [];
-    for (let revision = head.revision; revision >= 1; revision -= 1) {
-      const record = await this.repository.getRevision(
-        skillRevisionRef(head.skillId, revision),
-      );
-      if (!record) continue;
-      history.push({
+    return history.map((record) => ({
         skillRevisionRef: record.skillRevisionRef,
         revision: record.revision,
         status: record.status,
@@ -256,9 +256,37 @@ export class SkillService {
         acceptedAt: record.acceptedAt,
         acceptedBy: record.acceptedBy,
         evalRunId: record.evalRunId,
-      });
+      }));
+  }
+
+  async promptReference(slot: 'intentNaming') {
+    if (!this.promptSnapshots?.reference) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Skill prompt authority is not configured for operator reads.',
+      );
     }
-    return history;
+    const prompt = await this.promptSnapshots.reference(slot);
+    const eligibleForAcceptance =
+      prompt.source === 'langfuse' &&
+      prompt.label === 'production' &&
+      !prompt.isFallback;
+    return {
+      contentHash: prompt.contentHash,
+      eligibleForAcceptance,
+      isFallback: prompt.isFallback,
+      label: prompt.label,
+      name: prompt.name,
+      source: prompt.source,
+      version: prompt.version,
+      ...(!eligibleForAcceptance
+        ? {
+            reasonCode: prompt.isFallback
+              ? 'fallback_prompt'
+              : 'not_production_prompt',
+          }
+        : {}),
+    };
   }
 
   async draftRevision(input: SkillDraftRevisionInput) {
@@ -407,13 +435,26 @@ export class SkillService {
   async acceptAndFreezeRevision(input: {
     skillRevisionRef: string;
     actorId: string;
-    evalRun: EvalRun;
+    evalRunId: string;
   }) {
     const revision = await this.requireRevision(input.skillRevisionRef);
-    if (revision.status === 'accepted_frozen') return revision;
-    const run = evalRunSchema.parse(input.evalRun);
+    const evalRunId = required(input.evalRunId, 'EvalRun ID');
+    const stored = await this.repository.get(evalRunId);
+    if (!stored) {
+      throw new P1DomainError('NOT_FOUND', 'Skill EvalRun 不存在。');
+    }
+    const run = evalRunSchema.parse(stored);
     const gateFailure = skillAcceptanceGateFailure(revision, run);
     if (gateFailure) fail(gateFailure);
+    if (revision.status === 'accepted_frozen') {
+      if (revision.evalRunId !== run.runId) {
+        throw new P1DomainError(
+          'IDEMPOTENCY_CONFLICT',
+          'Skill revision was accepted with different evaluation facts.',
+        );
+      }
+      return revision;
+    }
     const next: SkillRevision = {
       ...revision,
       status: 'accepted_frozen',
@@ -427,6 +468,9 @@ export class SkillService {
     await this.repository.putCatalog({
       ...catalog,
       activeRevisionRef: next.skillRevisionRef,
+      ...(next.formatVersion === 2
+        ? { description: next.manifest.description }
+        : {}),
       updatedAt: this.now(),
       actorId: input.actorId,
     });

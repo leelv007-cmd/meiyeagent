@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
 
+import { evalRunSchema, type EvalRun } from '@meiye/contracts';
 import type { Pool, PoolClient } from 'pg';
 import { z } from 'zod';
 
@@ -121,8 +122,12 @@ export class PostgresSkillRepository implements SkillRepository {
       ALTER TABLE p1_skill_catalogs
         ADD COLUMN IF NOT EXISTS tier text;
       UPDATE p1_skill_catalogs
-        SET source_kind = COALESCE(source_kind, payload->>'sourceKind'),
-            tier = COALESCE(tier, payload->>'tier')
+        SET source_kind = COALESCE(
+              source_kind,
+              payload->>'sourceKind',
+              'authored'
+            ),
+            tier = COALESCE(tier, payload->>'tier', 'platform')
         WHERE source_kind IS NULL OR tier IS NULL;
       CREATE INDEX IF NOT EXISTS p1_skill_catalogs_tier_source_idx
         ON p1_skill_catalogs (tier, source_kind);
@@ -173,6 +178,46 @@ export class PostgresSkillRepository implements SkillRepository {
               )
             )
           );
+      EXCEPTION
+        WHEN duplicate_object THEN NULL;
+      END
+      $$;
+      UPDATE p1_skill_catalogs catalogs
+         SET payload = catalogs.payload || jsonb_build_object(
+           'description',
+           COALESCE(
+             catalogs.payload->>'description',
+             (
+               SELECT COALESCE(
+                 revisions.frontmatter->>'description',
+                 revisions.payload->'manifest'->>'description'
+               )
+                 FROM p1_skill_revisions revisions
+                WHERE revisions.skill_revision_ref =
+                      catalogs.payload->>'activeRevisionRef'
+                LIMIT 1
+             ),
+             catalogs.payload->>'name'
+           ),
+           'sourceKind',
+           catalogs.source_kind,
+           'tier',
+           catalogs.tier
+         )
+       WHERE catalogs.payload->>'description' IS NULL
+          OR catalogs.payload->>'sourceKind' IS NULL
+          OR catalogs.payload->>'tier' IS NULL;
+      ALTER TABLE p1_skill_catalogs
+        ALTER COLUMN source_kind SET NOT NULL,
+        ALTER COLUMN tier SET NOT NULL;
+      DO $$
+      BEGIN
+        ALTER TABLE p1_skill_catalogs
+          ADD CONSTRAINT p1_skill_catalogs_source_kind_ck
+          CHECK (source_kind IN ('harvested', 'authored', 'induced'));
+        ALTER TABLE p1_skill_catalogs
+          ADD CONSTRAINT p1_skill_catalogs_tier_ck
+          CHECK (tier IN ('platform', 'industry', 'store'));
       EXCEPTION
         WHEN duplicate_object THEN NULL;
       END
@@ -268,6 +313,11 @@ export class PostgresSkillRepository implements SkillRepository {
         payload jsonb NOT NULL,
         created_at timestamptz NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS p1_skill_eval_runs (
+        run_id text PRIMARY KEY,
+        payload jsonb NOT NULL,
+        created_at timestamptz NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS p1_skill_child_effects (
         effect_id text PRIMARY KEY,
         invocation_id text NOT NULL,
@@ -343,6 +393,28 @@ export class PostgresSkillRepository implements SkillRepository {
       values,
     );
     return result.rows.map((row) => cloneRow(row));
+  }
+
+  async getCatalogStats() {
+    const result = await this.pool.query<{
+      total: string;
+      industry_tier_total: string;
+      industry_tier_corroborated: string;
+    }>(
+      `SELECT count(*)::text AS total,
+              count(*) FILTER (WHERE tier = 'industry')::text
+                AS industry_tier_total,
+              count(*) FILTER (
+                WHERE tier = 'industry' AND source_kind = 'induced'
+              )::text AS industry_tier_corroborated
+         FROM p1_skill_catalogs`,
+    );
+    const row = result.rows[0]!;
+    return {
+      total: Number(row.total),
+      industryTierTotal: Number(row.industry_tier_total),
+      industryTierCorroborated: Number(row.industry_tier_corroborated),
+    };
   }
 
   async putRevision(
@@ -472,6 +544,17 @@ export class PostgresSkillRepository implements SkillRepository {
       [skillId],
     );
     return result.rows[0] ? cloneRevisionRow(result.rows[0]) : null;
+  }
+
+  async listRevisions(skillId: string, limit: number) {
+    const result = await this.pool.query<RevisionRow>(
+      `${revisionSelect()}
+        WHERE skill_id = $1
+        ORDER BY revision DESC
+        LIMIT $2`,
+      [skillId, limit],
+    );
+    return result.rows.map(cloneRevisionRow);
   }
 
   async putBinding(binding: SkillBinding) {
@@ -657,6 +740,34 @@ export class PostgresSkillRepository implements SkillRepository {
     return result.rows[0]
       ? normalizeDeployment(structuredClone(result.rows[0].payload))
       : null;
+  }
+
+  putImmutable(runId: string, input: EvalRun) {
+    const run = evalRunSchema.parse(input);
+    if (run.runId !== runId) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Skill EvalRun ID must match the immutable registry key.',
+      );
+    }
+    return this.putOnce(
+      'p1_skill_eval_runs',
+      'run_id',
+      runId,
+      run,
+      ['created_at'],
+      [run.createdAt],
+      'Skill EvalRun',
+    );
+  }
+
+  async get(runId: string) {
+    const run = await this.getOne<unknown>(
+      'p1_skill_eval_runs',
+      'run_id',
+      runId,
+    );
+    return run ? evalRunSchema.parse(run) : null;
   }
 
   putChildEffect(effect: SkillChildEffect) {

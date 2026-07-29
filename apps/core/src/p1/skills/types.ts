@@ -112,6 +112,7 @@ export interface SkillPromptSnapshot extends SkillPromptReference {
 
 export interface SkillPromptSnapshotPort {
   capture(reference: SkillPromptReference): Promise<HarnessFrozenPrompt>;
+  reference?(slot: 'intentNaming'): Promise<HarnessFrozenPrompt>;
 }
 
 export class SkillPromptAuthorityUnavailableError extends Error {

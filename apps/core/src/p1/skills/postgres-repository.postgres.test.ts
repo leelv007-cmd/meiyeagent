@@ -37,6 +37,156 @@ import type {
 const connectionString = process.env.TEST_DATABASE_URL;
 
 test(
+  'Skill EvalRun evidence is immutable and survives a PostgreSQL restart',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const suffix = randomUUID();
+    const runId = `eval-postgres-${suffix}`;
+    const skillId = `skill.postgres-authority.${suffix}`;
+    const skillRevisionRef = `${skillId}@1`;
+    const prompt = {
+      content: 'Use only PostgreSQL-backed trusted facts.',
+      contentHash: createHash('sha256')
+        .update('Use only PostgreSQL-backed trusted facts.')
+        .digest('hex'),
+      isFallback: false as const,
+      label: 'production',
+      name: 'harness/intent-naming',
+      source: 'langfuse' as const,
+      version: '42',
+    };
+    const run = {
+      createdAt: '2026-07-29T15:00:00.000Z',
+      mode: 'live_red_team' as const,
+      passed: true,
+      results: [
+        {
+          caseId: 'postgres-authority',
+          gateId: 'skill_revision_acceptance',
+          memoryDiff: null,
+          passed: true,
+          promptRevision: 'harness/intent-naming@42',
+          reason: 'The stored evaluation passed through the Core repository.',
+          scorerRevision: 'skill-routing-scorer@1',
+          skillRevisionRef,
+        },
+      ],
+      runId,
+      schemaVersion: 'eval-run/v1' as const,
+      suiteId: 'skills-postgres-authority',
+      suiteRevision: 'skills-postgres-authority@1',
+    };
+    const firstPool = new Pool({ connectionString });
+    try {
+      const firstRepository = new PostgresSkillRepository(firstPool);
+      await firstRepository.migrate();
+      const firstService = new SkillService(
+        firstRepository,
+        () => '2026-07-29T15:00:00.000Z',
+        {
+          async capture(reference) {
+            assert.deepEqual(reference, promptReference(prompt));
+            return prompt;
+          },
+        },
+      );
+      await firstService.defineCatalogEntry({
+        actorId: 'operator-postgres-authority',
+        description: 'Proves trusted EvalRun recovery across pools.',
+        name: 'Postgres authority',
+        presentationPolicy: 'backend_only',
+        skillId,
+        sourceKind: 'authored',
+        tier: 'platform',
+      });
+      const draft = await firstService.draftRevision({
+        actorId: 'operator-postgres-authority',
+        expectedRevision: null,
+        governance: {
+          budget: {
+            maxChildEffects: 0,
+            maxCostCents: 0,
+            timeoutMs: 10_000,
+          },
+          contextScopes: [],
+          executionMode: 'prompt_materialized',
+          fallback: 'fail_closed',
+          inputSchemaRef: 'skill-input.daily-industry@1',
+          outputSchemaRef: 'skill-output.intent-decision@1',
+          requiredModelCapabilities: ['structured_output'],
+          sideEffectClass: 'none',
+          workflowRevisionRefs: ['workflow.copy@1'],
+        },
+        instruction: prompt.content,
+        manifest: {
+          description: 'Proves trusted EvalRun recovery across pools.',
+          name: `postgres-authority-${suffix}`,
+        },
+        promptReference: promptReference(prompt),
+        skillId,
+      });
+      assert.equal(draft.skillRevisionRef, skillRevisionRef);
+      assert.deepEqual(await firstRepository.putImmutable(runId, run), run);
+    } finally {
+      await firstPool.end();
+    }
+
+    const restartedPool = new Pool({ connectionString });
+    try {
+      const restartedRepository = new PostgresSkillRepository(restartedPool);
+      await restartedRepository.migrate();
+      assert.deepEqual(await restartedRepository.get(runId), run);
+      const accepted = await new SkillService(
+        restartedRepository,
+        () => '2026-07-29T15:01:00.000Z',
+      ).acceptAndFreezeRevision({
+        actorId: 'operator-postgres-authority',
+        evalRunId: runId,
+        skillRevisionRef,
+      });
+      assert.equal(accepted.status, 'accepted_frozen');
+      assert.equal(accepted.evalRunId, runId);
+      assert.equal(
+        (await restartedRepository.getCatalog(skillId))?.activeRevisionRef,
+        skillRevisionRef,
+      );
+      assert.deepEqual(
+        await restartedRepository.putImmutable(runId, run),
+        run,
+      );
+      await assert.rejects(
+        restartedRepository.putImmutable(runId, {
+          ...run,
+          suiteId: 'different-suite',
+        }),
+        (error: unknown) =>
+          error instanceof Error &&
+          'code' in error &&
+          error.code === 'IDEMPOTENCY_CONFLICT',
+      );
+    } finally {
+      await restartedPool.query(
+        'DELETE FROM p1_skill_eval_runs WHERE run_id = $1',
+        [runId],
+      );
+      await restartedPool.query(
+        'DELETE FROM p1_skill_revisions WHERE skill_id = $1',
+        [skillId],
+      );
+      await restartedPool.query(
+        'DELETE FROM p1_skill_revision_heads WHERE skill_id = $1',
+        [skillId],
+      );
+      await restartedPool.query(
+        'DELETE FROM p1_skill_catalogs WHERE skill_id = $1',
+        [skillId],
+      );
+      await restartedPool.end();
+    }
+  },
+);
+
+test(
   'all five Skill objects and child-effect settlements survive a PostgreSQL restart',
   { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
   async () => {
@@ -213,6 +363,8 @@ test(
         await restarted.getRevision(skillRevisionRef),
         revision,
       );
+      assert.deepEqual(await restarted.listRevisions(skillId, 10), [revision]);
+      assert.ok((await restarted.getCatalogStats()).total >= 1);
       assert.deepEqual(
         await restarted.listBindings(
           binding.workflowRevisionRef,
@@ -262,6 +414,63 @@ test(
         'DELETE FROM p1_skill_revision_heads WHERE skill_id = $1',
         [skillId],
       );
+      await pool.query(
+        'DELETE FROM p1_skill_catalogs WHERE skill_id = $1',
+        [skillId],
+      );
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'migration backfills the #258 catalog shape before #259 list reads',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const suffix = randomUUID();
+    const skillId = `skill.legacy-catalog.${suffix}`;
+    const createdAt = '2026-07-28T00:00:00.000Z';
+    const repository = new PostgresSkillRepository(pool);
+    const legacyCatalog = {
+      activeRevisionRef: null,
+      actorId: 'operator-legacy-catalog',
+      createdAt,
+      name: 'Legacy catalog entry',
+      presentationPolicy: 'backend_only',
+      skillId,
+      updatedAt: createdAt,
+    };
+
+    try {
+      await repository.migrate();
+      await pool.query(
+        `INSERT INTO p1_skill_catalogs
+         (skill_id, payload, updated_at, source_kind, tier)
+         VALUES ($1, $2::jsonb, $3::timestamptz, 'authored', 'platform')`,
+        [skillId, JSON.stringify(legacyCatalog), createdAt],
+      );
+
+      await repository.migrate();
+
+      assert.deepEqual(await repository.getCatalog(skillId), {
+        ...legacyCatalog,
+        description: legacyCatalog.name,
+        sourceKind: 'authored',
+        tier: 'platform',
+      });
+      assert.deepEqual(
+        (await repository.listCatalogs({ sourceKind: 'authored' })).find(
+          (catalog) => catalog.skillId === skillId,
+        ),
+        {
+          ...legacyCatalog,
+          description: legacyCatalog.name,
+          sourceKind: 'authored',
+          tier: 'platform',
+        },
+      );
+    } finally {
       await pool.query(
         'DELETE FROM p1_skill_catalogs WHERE skill_id = $1',
         [skillId],
@@ -1100,32 +1309,35 @@ test(
       skillRevisionRef: string,
       promptRevision: string,
       runId: string,
-    ) =>
-      service.acceptAndFreezeRevision({
+    ) => {
+      const run = {
+        createdAt: '2026-07-26T04:00:00.000Z',
+        mode: 'recorded_fixture' as const,
+        passed: true,
+        results: [
+          {
+            caseId: 'postgres-journey',
+            gateId: 'skill_revision_acceptance',
+            memoryDiff: null,
+            passed: true,
+            promptRevision,
+            reason: 'Fixture passed.',
+            scorerRevision: 'skill-routing-scorer@1',
+            skillRevisionRef,
+          },
+        ],
+        runId,
+        schemaVersion: 'eval-run/v1' as const,
+        suiteId: 'skills-postgres-journey',
+        suiteRevision: 'skills-postgres-journey@1',
+      };
+      await repository.putImmutable(runId, run);
+      return service.acceptAndFreezeRevision({
         actorId: 'operator-postgres',
         skillRevisionRef,
-        evalRun: {
-          createdAt: '2026-07-26T04:00:00.000Z',
-          mode: 'recorded_fixture',
-          passed: true,
-          results: [
-            {
-              caseId: 'postgres-journey',
-              gateId: 'skill_revision_acceptance',
-              memoryDiff: null,
-              passed: true,
-              promptRevision,
-              reason: 'Fixture passed.',
-              scorerRevision: 'skill-routing-scorer@1',
-              skillRevisionRef,
-            },
-          ],
-          runId,
-          schemaVersion: 'eval-run/v1',
-          suiteId: 'skills-postgres-journey',
-          suiteRevision: 'skills-postgres-journey@1',
-        },
+        evalRunId: runId,
       });
+    };
 
     try {
       await service.defineCatalogEntry({

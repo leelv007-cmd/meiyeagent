@@ -5,7 +5,11 @@ export {
   SkillService,
   skillAcceptanceGateFailure,
 } from './service.js';
-export { SkillFoundationModule } from './foundation-module.js';
+export {
+  SKILL_COMMAND_ACTIONS,
+  SKILL_QUERY_ACTIONS,
+  SkillFoundationModule,
+} from './foundation-module.js';
 export {
   SkillInvocationToolAdapter,
   type SkillInvocationToolResult,

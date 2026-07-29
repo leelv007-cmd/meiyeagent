@@ -1,4 +1,4 @@
-import { HARNESS_STAGES, type EvalRun } from '@meiye/contracts';
+import { HARNESS_STAGES } from '@meiye/contracts';
 
 import {
   P1DomainError,
@@ -22,6 +22,32 @@ import type {
   SkillTier,
 } from './types.js';
 import { SkillService } from './service.js';
+
+export const SKILL_QUERY_ACTIONS = [
+  'skill_catalog_list',
+  'skill_revision_history',
+  'skill_prompt_reference',
+] as const;
+
+export const SKILL_COMMAND_ACTIONS = [
+  'skill_accept',
+  'skill_bind',
+  'skill_define',
+  'skill_deployment',
+  'skill_rollback',
+] as const;
+
+function isSkillQueryAction(
+  value: string,
+): value is (typeof SKILL_QUERY_ACTIONS)[number] {
+  return (SKILL_QUERY_ACTIONS as readonly string[]).includes(value);
+}
+
+function isSkillCommandAction(
+  value: string,
+): value is (typeof SKILL_COMMAND_ACTIONS)[number] {
+  return (SKILL_COMMAND_ACTIONS as readonly string[]).includes(value);
+}
 
 function fail(message: string): never {
   throw new PrewriteDeterministicRejectionError(message);
@@ -209,6 +235,12 @@ export class SkillFoundationModule implements P1OperationModule {
   }) {
     const name = action(args.input);
     const value = payload(args.input);
+    if (!isSkillQueryAction(name)) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `Skill 查询 ${name} 不受支持。`,
+      );
+    }
     switch (name) {
       case 'skill_catalog_list': {
         onlyKeys(value, ['limit', 'sourceKind', 'tier'], 'Skill 目录查询');
@@ -223,14 +255,24 @@ export class SkillFoundationModule implements P1OperationModule {
         });
       }
       case 'skill_revision_history': {
-        onlyKeys(value, ['skillId'], 'Skill 版本历史查询');
-        return this.service.listRevisionHistory(text(value, 'skillId'));
+        onlyKeys(value, ['limit', 'skillId'], 'Skill 版本历史查询');
+        return this.service.listRevisionHistory(
+          text(value, 'skillId'),
+          value.limit === undefined
+            ? undefined
+            : positiveInteger(value, 'limit'),
+        );
+      }
+      case 'skill_prompt_reference': {
+        onlyKeys(value, ['slot'], 'Skill prompt 引用查询');
+        const slot = text(value, 'slot');
+        if (slot !== 'intentNaming') {
+          fail('Skill prompt slot 不受支持。');
+        }
+        return this.service.promptReference(slot);
       }
       default:
-        throw new P1DomainError(
-          'INVALID_STATE',
-          `Skill 查询 ${name} 不受支持。`,
-        );
+        return name satisfies never;
     }
   }
 
@@ -241,6 +283,9 @@ export class SkillFoundationModule implements P1OperationModule {
   }) {
     const name = action(args.input);
     const value = payload(args.input);
+    if (!isSkillCommandAction(name)) {
+      fail(`未知的 Skill 运营命令：“${name}”。`);
+    }
     switch (name) {
       case 'skill_define': {
         onlyKeys(
@@ -264,7 +309,32 @@ export class SkillFoundationModule implements P1OperationModule {
         );
         const sourceKind = skillSourceKind(value);
         const tier = skillTier(value);
+        if (tier === 'store') {
+          fail(
+            '门店层 Skill 需要工作区归属；租户维度通电前只允许平台层或行业层。',
+          );
+        }
         const sourceRef = parseSourceRef(value);
+        if (
+          sourceKind === 'harvested' &&
+          (!sourceRef?.externalUrl || !sourceRef.harvestedAt)
+        ) {
+          fail('收割转译 Skill 必须提供来源链接与收割时间。');
+        }
+        if (sourceKind === 'harvested' && sourceRef) {
+          let sourceUrl: URL;
+          try {
+            sourceUrl = new URL(sourceRef.externalUrl!);
+          } catch {
+            fail('收割转译 Skill 的来源链接必须是有效 URL。');
+          }
+          if (
+            !['http:', 'https:'].includes(sourceUrl.protocol) ||
+            Number.isNaN(Date.parse(sourceRef.harvestedAt!))
+          ) {
+            fail('收割转译 Skill 的来源链接或收割时间无效。');
+          }
+        }
         const presentationPolicy = text(
           value,
           'presentationPolicy',
@@ -343,11 +413,16 @@ export class SkillFoundationModule implements P1OperationModule {
         return { catalog, revision: publicRevision(revision) };
       }
       case 'skill_accept':
+        onlyKeys(
+          value,
+          ['evalRunId', 'skillRevisionRef'],
+          'Skill 接受命令',
+        );
         return publicRevision(
           await this.service.acceptAndFreezeRevision({
             skillRevisionRef: text(value, 'skillRevisionRef'),
             actorId: args.context.userId,
-            evalRun: value.evalRun as EvalRun,
+            evalRunId: text(value, 'evalRunId'),
           }),
         );
       case 'skill_bind': {
@@ -420,7 +495,7 @@ export class SkillFoundationModule implements P1OperationModule {
         });
       }
       default:
-        fail(`未知的 Skill 运营命令：“${name}”。`);
+        return name satisfies never;
     }
   }
 }

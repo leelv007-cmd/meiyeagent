@@ -1,6 +1,9 @@
 import { isDeepStrictEqual } from 'node:util';
 
+import { evalRunSchema, type EvalRun } from '@meiye/contracts';
+
 import { P1DomainError } from '../foundation/domain.js';
+import type { EvalRunRegistryPort } from '../harness/eval-run-registry.js';
 import type {
   AuditedSkillBinding,
   SkillBinding,
@@ -14,7 +17,7 @@ import type {
   SkillTriggerCondition,
 } from './types.js';
 
-export interface SkillRepository {
+export interface SkillRepository extends EvalRunRegistryPort {
   putCatalog(catalog: SkillCatalog): Promise<SkillCatalog>;
   getCatalog(skillId: string): Promise<SkillCatalog | null>;
   /**
@@ -26,6 +29,11 @@ export interface SkillRepository {
     sourceKind?: SkillSourceKind;
     limit?: number;
   }): Promise<SkillCatalog[]>;
+  getCatalogStats(): Promise<{
+    total: number;
+    industryTierTotal: number;
+    industryTierCorroborated: number;
+  }>;
   putRevision(
     revision: SkillRevision,
     expectedRevision: number | null,
@@ -33,6 +41,7 @@ export interface SkillRepository {
   acceptRevision(revision: SkillRevision): Promise<SkillRevision>;
   getRevision(skillRevisionRef: string): Promise<SkillRevision | null>;
   getRevisionHead(skillId: string): Promise<SkillRevision | null>;
+  listRevisions(skillId: string, limit: number): Promise<SkillRevision[]>;
   putBinding(binding: SkillBinding): Promise<SkillBinding>;
   supersedeBinding(
     sourceBindingId: string,
@@ -82,6 +91,7 @@ function putOnce<T>(
 export class MemorySkillRepository implements SkillRepository {
   private readonly catalogs = new Map<string, SkillCatalog>();
   private readonly revisions = new Map<string, SkillRevision>();
+  private readonly evalRuns = new Map<string, EvalRun>();
   private readonly bindings = new Map<string, AuditedSkillBinding>();
   private readonly deployments = new Map<string, SkillDeployment>();
   private readonly effects = new Map<string, SkillChildEffect>();
@@ -111,6 +121,18 @@ export class MemorySkillRepository implements SkillRepository {
       )
       .sort((left, right) => left.skillId.localeCompare(right.skillId));
     return matches.slice(0, filter?.limit ?? matches.length).map(clone);
+  }
+
+  async getCatalogStats() {
+    const catalogs = [...this.catalogs.values()];
+    const industry = catalogs.filter((catalog) => catalog.tier === 'industry');
+    return {
+      total: catalogs.length,
+      industryTierTotal: industry.length,
+      industryTierCorroborated: industry.filter(
+        (catalog) => catalog.sourceKind === 'induced',
+      ).length,
+    };
   }
 
   async putRevision(
@@ -159,6 +181,30 @@ export class MemorySkillRepository implements SkillRepository {
       .filter((revision) => revision.skillId === skillId)
       .sort((left, right) => right.revision - left.revision);
     return values[0] ? clone(values[0]) : null;
+  }
+
+  async listRevisions(skillId: string, limit: number) {
+    return [...this.revisions.values()]
+      .filter((revision) => revision.skillId === skillId)
+      .sort((left, right) => right.revision - left.revision)
+      .slice(0, limit)
+      .map(clone);
+  }
+
+  async putImmutable(runId: string, input: EvalRun) {
+    const run = evalRunSchema.parse(input);
+    if (run.runId !== runId) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Skill EvalRun ID must match the immutable registry key.',
+      );
+    }
+    return putOnce(this.evalRuns, run.runId, run, 'Skill EvalRun');
+  }
+
+  async get(runId: string) {
+    const value = this.evalRuns.get(runId);
+    return value ? evalRunSchema.parse(clone(value)) : null;
   }
 
   async putBinding(binding: SkillBinding) {

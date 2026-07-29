@@ -13,6 +13,7 @@ import {
   LANGFUSE_EVAL_RUN_DATASET_ITEM_FIELDS,
   LangfuseEvalRunImporter,
 } from './langfuse-evalrun-importer.js';
+import type { EvalRunRegistryPort } from './eval-run-registry.js';
 
 const REDLINES_BASELINE = fileURLToPath(
   new URL(
@@ -37,6 +38,24 @@ const WORKSPACE_DIRECTORY = fileURLToPath(
   new URL('../../../../../', import.meta.url),
 );
 
+function memoryRegistry() {
+  const runs = new Map<
+    string,
+    Parameters<EvalRunRegistryPort['putImmutable']>[1]
+  >();
+  const port: EvalRunRegistryPort = {
+    async putImmutable(runId, fullRun) {
+      runs.set(runId, structuredClone(fullRun));
+      return structuredClone(fullRun);
+    },
+    async get(runId) {
+      const run = runs.get(runId);
+      return run ? structuredClone(run) : null;
+    },
+  };
+  return { port, runs };
+}
+
 test('imports versioned redline, memory and Skill EvalRuns through the dataset-item whitelist', async (t) => {
   const requests: Array<{
     authorization?: string;
@@ -51,11 +70,15 @@ test('imports versioned redline, memory and Skill EvalRuns through the dataset-i
     });
     sendJson(response, 200, { id: requests.at(-1)?.body.id });
   });
-  const importer = new LangfuseEvalRunImporter({
-    baseUrl: await listen(t, server),
-    publicKey: 'pk-test',
-    secretKey: 'sk-test',
-  });
+  const registry = memoryRegistry();
+  const importer = new LangfuseEvalRunImporter(
+    {
+      baseUrl: await listen(t, server),
+      publicKey: 'pk-test',
+      secretKey: 'sk-test',
+    },
+    registry.port,
+  );
 
   const redlines = await importer.importArtifact(REDLINES_BASELINE);
   const preferenceMemory = await importer.importArtifact(
@@ -124,6 +147,11 @@ test('imports versioned redline, memory and Skill EvalRuns through the dataset-i
     scorerRevision: 'skill-routing-scorer@2',
     skillRevisionRef: 'skill.daily-industry@1',
   });
+  assert.equal(registry.runs.size, 3);
+  assert.equal(
+    registry.runs.get('skills-five-piece-recorded-v2')?.results.length,
+    2,
+  );
 });
 
 test('reimporting the same EvalRun leaves zero duplicate dataset items', async (t) => {
@@ -135,11 +163,15 @@ test('reimporting the same EvalRun leaves zero duplicate dataset items', async (
     items.set(String(body.id), body);
     sendJson(response, 200, { id: body.id });
   });
-  const importer = new LangfuseEvalRunImporter({
-    baseUrl: await listen(t, server),
-    publicKey: 'pk-test',
-    secretKey: 'sk-test',
-  });
+  const registry = memoryRegistry();
+  const importer = new LangfuseEvalRunImporter(
+    {
+      baseUrl: await listen(t, server),
+      publicKey: 'pk-test',
+      secretKey: 'sk-test',
+    },
+    registry.port,
+  );
 
   await importer.importArtifact(REDLINES_BASELINE);
   const firstImport = structuredClone([...items]);
@@ -157,11 +189,15 @@ test('rejects an artifact that fails the EvalRun schema before HTTP import', asy
     await readJson(request);
     sendJson(response, 200, {});
   });
-  const importer = new LangfuseEvalRunImporter({
-    baseUrl: await listen(t, server),
-    publicKey: 'pk-test',
-    secretKey: 'sk-test',
-  });
+  const registry = memoryRegistry();
+  const importer = new LangfuseEvalRunImporter(
+    {
+      baseUrl: await listen(t, server),
+      publicKey: 'pk-test',
+      secretKey: 'sk-test',
+    },
+    registry.port,
+  );
   const directory = await mkdtemp(join(tmpdir(), 'evalrun-importer-test-'));
   t.after(() => rm(directory, { force: true, recursive: true }));
   const invalidArtifactPath = join(directory, 'invalid.eval-run.json');
@@ -176,10 +212,93 @@ test('rejects an artifact that fails the EvalRun schema before HTTP import', asy
     /EvalRun artifact validation failed/u,
   );
   assert.equal(requests, 0);
+  assert.equal(registry.runs.size, 0);
+});
+
+test('a partial Langfuse failure leaves the immutable EvalRun registry untouched', async (t) => {
+  let requests = 0;
+  let registryPuts = 0;
+  const server = createServer(async (request, response) => {
+    requests += 1;
+    await readJson(request);
+    sendJson(response, requests === 2 ? 503 : 200, {});
+  });
+  const registry: EvalRunRegistryPort = {
+    async putImmutable(_runId, fullRun) {
+      registryPuts += 1;
+      return fullRun;
+    },
+    async get() {
+      return null;
+    },
+  };
+  const importer = new LangfuseEvalRunImporter(
+    {
+      baseUrl: await listen(t, server),
+      publicKey: 'pk-test',
+      secretKey: 'sk-test',
+    },
+    registry,
+  );
+
+  await assert.rejects(
+    importer.importArtifact(SKILLS_BASELINE),
+    /Langfuse dataset item import failed with HTTP 503/u,
+  );
+  assert.equal(requests, 2);
+  assert.equal(registryPuts, 0);
+});
+
+test('a registry failure can replay the stable Langfuse projections and then succeed', async (t) => {
+  const requestIds: string[] = [];
+  const server = createServer(async (request, response) => {
+    const body = await readJson(request);
+    requestIds.push(String(body.id));
+    sendJson(response, 200, { id: body.id });
+  });
+  let registryAttempts = 0;
+  let storedRunId: string | null = null;
+  const registry: EvalRunRegistryPort = {
+    async putImmutable(runId, fullRun) {
+      registryAttempts += 1;
+      if (registryAttempts === 1) {
+        throw new Error('fixture registry write failed');
+      }
+      storedRunId = runId;
+      return structuredClone(fullRun);
+    },
+    async get() {
+      return null;
+    },
+  };
+  const importer = new LangfuseEvalRunImporter(
+    {
+      baseUrl: await listen(t, server),
+      publicKey: 'pk-test',
+      secretKey: 'sk-test',
+    },
+    registry,
+  );
+
+  await assert.rejects(
+    importer.importArtifact(SKILLS_BASELINE),
+    /fixture registry write failed/u,
+  );
+  const result = await importer.importArtifact(SKILLS_BASELINE);
+
+  assert.deepEqual(result, {
+    datasetName: 'harness-evalrun:harness-skills',
+    importedItems: 2,
+    runId: 'skills-five-piece-recorded-v2',
+  });
+  assert.equal(registryAttempts, 2);
+  assert.equal(storedRunId, 'skills-five-piece-recorded-v2');
+  assert.deepEqual(requestIds.slice(0, 2), requestIds.slice(2));
 });
 
 test('CLI exits nonzero when Langfuse environment is not configured', () => {
   const env = { ...process.env };
+  env.DATABASE_URL = 'postgres://fixture.invalid/unused';
   delete env.LANGFUSE_BASE_URL;
   delete env.LANGFUSE_PUBLIC_KEY;
   delete env.LANGFUSE_SECRET_KEY;
@@ -200,7 +319,39 @@ test('CLI exits nonzero when Langfuse environment is not configured', () => {
   );
 });
 
-test('CLI imports a workspace-relative EvalRun artifact', async (t) => {
+test('CLI exits nonzero when the EvalRun registry database is not configured', () => {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    LANGFUSE_BASE_URL: 'https://langfuse.invalid',
+    LANGFUSE_PUBLIC_KEY: 'pk-test',
+    LANGFUSE_SECRET_KEY: 'sk-test',
+  };
+  delete env.DATABASE_URL;
+  const result = spawnSync(
+    process.execPath,
+    ['--import', 'tsx', CLI_ENTRY, REDLINES_BASELINE],
+    {
+      cwd: CORE_DIRECTORY,
+      encoding: 'utf8',
+      env,
+    },
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /DATABASE_URL is required to persist the imported EvalRun/u,
+  );
+});
+
+test(
+  'CLI imports a workspace-relative EvalRun artifact into Langfuse and PostgreSQL',
+  {
+    skip: process.env.TEST_DATABASE_URL
+      ? false
+      : 'TEST_DATABASE_URL is not configured',
+  },
+  async (t) => {
   let requests = 0;
   const server = createServer(async (request, response) => {
     requests += 1;
@@ -224,6 +375,7 @@ test('CLI imports a workspace-relative EvalRun artifact', async (t) => {
         LANGFUSE_BASE_URL: baseUrl,
         LANGFUSE_PUBLIC_KEY: 'pk-test',
         LANGFUSE_SECRET_KEY: 'sk-test',
+        DATABASE_URL: process.env.TEST_DATABASE_URL!,
       },
     },
   );
@@ -244,7 +396,8 @@ test('CLI imports a workspace-relative EvalRun artifact', async (t) => {
     stdout,
     /Imported 21 EvalRun items from harness-seven-redlines-recorded-v2/u,
   );
-});
+  },
+);
 
 async function readJson(request: IncomingMessage) {
   const chunks: Buffer[] = [];
