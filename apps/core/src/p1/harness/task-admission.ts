@@ -93,6 +93,23 @@ export interface HarnessWorkflowStarter {
   }): Promise<{ workflowId: string }>;
 }
 
+export interface HarnessPromptFallbackAuditPort {
+  appendAudit(event: {
+    workspaceId: string;
+    id: string;
+    workflowId: string;
+    stage: 'prompt_resolution';
+    eventType: 'langfuse_prompt_fallback';
+    payload: {
+      promptKey: string;
+      name: string;
+      version: string;
+      contentHash: string;
+      fallbackReason: string;
+    };
+  }): Promise<void>;
+}
+
 export class HarnessAdmissionError extends Error {
   readonly status = 409;
 
@@ -112,6 +129,7 @@ export class HarnessTaskAdmissionService {
     private readonly registry: HarnessTaskRequestRegistry,
     private readonly starter: HarnessWorkflowStarter,
     private readonly prompts?: HarnessPromptResolver,
+    private readonly promptFallbackAudits?: HarnessPromptFallbackAuditPort,
   ) {}
 
   async submit(input: HarnessTaskRequest) {
@@ -137,18 +155,50 @@ export class HarnessTaskAdmissionService {
       );
     }
     if (claim.kind === 'existing') {
+      const frozenRequest = claim.request ?? request;
+      await this.recordPromptFallbackAudits(
+        claim.workflowId,
+        frozenRequest,
+      );
       const handle = await this.starter.start({
         workflowId: claim.workflowId,
-        request: claim.request ?? request,
+        request: frozenRequest,
         ...(claim.runtimeId ? { runtimeId: claim.runtimeId } : {}),
       });
       return { workflowId: handle.workflowId, replayed: true as const };
     }
+    await this.recordPromptFallbackAudits(input.taskId, request);
     const handle = await this.starter.start({
       workflowId: input.taskId,
       request,
     });
     return { workflowId: handle.workflowId, replayed: false as const };
+  }
+
+  private async recordPromptFallbackAudits(
+    workflowId: string,
+    request: HarnessWorkflowInput,
+  ) {
+    if (!this.promptFallbackAudits) return;
+    for (const [promptKey, prompt] of Object.entries(
+      request.prompts ?? {},
+    )) {
+      if (!prompt.isFallback) continue;
+      await this.promptFallbackAudits.appendAudit({
+        workspaceId: request.workspaceId,
+        id: `audit-${workflowId}-prompt-fallback-${promptKey}-${prompt.contentHash}`,
+        workflowId,
+        stage: 'prompt_resolution',
+        eventType: 'langfuse_prompt_fallback',
+        payload: {
+          promptKey,
+          name: prompt.name,
+          version: prompt.version,
+          contentHash: prompt.contentHash,
+          fallbackReason: prompt.fallbackReason ?? 'unknown',
+        },
+      });
+    }
   }
 }
 

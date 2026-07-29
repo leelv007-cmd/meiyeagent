@@ -1851,6 +1851,7 @@ if (harnessRuntimeConfig) {
       harnessStore,
       new DbosHarnessWorkflowStarter(harnessWorkflow),
       langfusePromptResolverFromEnv(process.env),
+      harnessStore,
     ),
     harnessDecisions,
     harnessStore,

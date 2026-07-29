@@ -181,6 +181,71 @@ test('accepted task keeps its frozen prompt while only a new task observes a pub
   assert.equal(registry.claims[0]?.fingerprint, registry.claims[1]?.fingerprint);
 });
 
+test('prompt fallback is persisted through the first-party audit port', async () => {
+  const registry = new MemoryRequestRegistry();
+  const starter = new RecordingStarter();
+  const audits: Array<{
+    id: string;
+    eventType: string;
+    payload: unknown;
+  }> = [];
+  const fallback = {
+    ...prompt(
+      'harness/intent-naming',
+      'builtin intent fallback',
+      1,
+    ),
+    version: 'builtin-v1',
+    source: 'builtin' as const,
+    isFallback: true,
+    fallbackReason: 'request_failed',
+  };
+  const service = new HarnessTaskAdmissionService(
+    registry,
+    starter,
+    {
+      async resolve() {
+        return {
+          intentNaming: fallback,
+          briefCompilation: prompt(
+            'harness/brief-copy',
+            'brief-v7',
+            7,
+          ),
+        };
+      },
+    },
+    {
+      async appendAudit(event) {
+        audits.push(event);
+      },
+    },
+  );
+
+  await service.submit(taskRequest());
+
+  assert.deepEqual(audits, [
+    {
+      id: `audit-task-35-prompt-fallback-intentNaming-${fallback.contentHash}`,
+      eventType: 'langfuse_prompt_fallback',
+      payload: {
+        promptKey: 'intentNaming',
+        name: 'harness/intent-naming',
+        version: 'builtin-v1',
+        contentHash: fallback.contentHash,
+        fallbackReason: 'request_failed',
+      },
+      stage: 'prompt_resolution',
+      workflowId: 'task-35',
+      workspaceId: 'workspace-1',
+    },
+  ]);
+  assert.equal(
+    JSON.stringify(audits).includes('builtin intent fallback'),
+    false,
+  );
+});
+
 class MemoryRequestRegistry implements HarnessTaskRequestRegistry {
   readonly claims: Array<{ taskId: string; fingerprint: string }> = [];
   private readonly fingerprints = new Map<string, string>();

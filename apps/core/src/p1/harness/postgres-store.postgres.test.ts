@@ -395,6 +395,106 @@ test(
 );
 
 test(
+  'prompt fallback audit reaches PostgreSQL without prompt content',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresHarnessStore(pool);
+    const taskId = `prompt-fallback-${randomUUID()}`;
+    const workspaceId = 'workspace-1';
+    const runtimeTaskId = harnessRuntimeId(workspaceId, taskId);
+    const contentHash = 'f'.repeat(64);
+    await store.applySchema();
+    const admission = new HarnessTaskAdmissionService(
+      store,
+      {
+        async start({ workflowId }) {
+          return { workflowId };
+        },
+      },
+      {
+        async resolve() {
+          return {
+            intentNaming: {
+              name: 'harness/intent-naming',
+              version: 'builtin-v1',
+              content: 'private builtin prompt content',
+              contentHash,
+              label: 'production',
+              source: 'builtin',
+              isFallback: true,
+              fallbackReason: 'request_failed',
+            },
+            briefCompilation: {
+              name: 'harness/brief-copy',
+              version: '7',
+              content: 'private pinned prompt content',
+              contentHash: 'e'.repeat(64),
+              label: 'production',
+              source: 'langfuse',
+              isFallback: false,
+            },
+          };
+        },
+      },
+      store,
+    );
+
+    try {
+      await admission.submit({
+        ...taskRequest(taskId),
+        workspaceId,
+      });
+      const audit = await pool.query<{
+        event_type: string;
+        payload: Record<string, unknown>;
+      }>(
+        `select event_type, payload
+           from harness_runtime.audit_events
+          where workflow_id=$1
+            and event_type='langfuse_prompt_fallback'`,
+        [runtimeTaskId],
+      );
+      assert.equal(audit.rowCount, 1);
+      assert.equal(
+        audit.rows[0]?.event_type,
+        'langfuse_prompt_fallback',
+      );
+      assert.deepEqual(audit.rows[0]?.payload, {
+        promptKey: 'intentNaming',
+        name: 'harness/intent-naming',
+        version: 'builtin-v1',
+        contentHash,
+        fallbackReason: 'request_failed',
+      });
+      assert.equal(
+        JSON.stringify(audit.rows[0]?.payload).includes(
+          'private builtin prompt content',
+        ),
+        false,
+      );
+    } finally {
+      await pool.query(
+        `delete from harness_runtime.langfuse_outbox
+          where audit_id in (
+            select id from harness_runtime.audit_events
+             where workflow_id=$1)`,
+        [runtimeTaskId],
+      );
+      await pool.query(
+        'delete from harness_runtime.audit_events where workflow_id=$1',
+        [runtimeTaskId],
+      );
+      await pool.query(
+        'delete from harness_runtime.task_requests where task_id=$1',
+        [runtimeTaskId],
+      );
+      await pool.end();
+    }
+  },
+);
+
+test(
   'Postgres timeout decisions resolve the row and separate browser from core ledger facts',
   { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
   async () => {
