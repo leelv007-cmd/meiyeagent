@@ -1,6 +1,7 @@
 import {
   askMerchantQuestionRequestSchema,
   askMerchantAnswerSchema,
+  executionConfirmationRequestSchema,
   harnessInteractionAnswerSchema,
   harnessInteractionMerchantMessageSchema,
   harnessInteractionRequestSchema,
@@ -128,6 +129,80 @@ export function createHarnessInteractionPendingProjection(
             editingStartedAt: null,
           }
         : { kind: 'hold' },
+  });
+}
+
+export function executionConfirmationInteractionRequestFromQuestion(input: {
+  question: QuestionCard;
+  request: {
+    executionSnapshot?: {
+      id: string;
+      revision: number;
+      quote: { revision: string };
+      operation: string;
+      catalogModel: { id: string; revision: string };
+      deliverable: { kind: string };
+      distributionTarget: string;
+    };
+  };
+}) {
+  const { question, request } = input;
+  const snapshot = request.executionSnapshot;
+  if (
+    question.executionConfirmationAuthority?.kind !== 'external_action' ||
+    !snapshot
+  ) {
+    return null;
+  }
+  return executionConfirmationRequestSchema.parse({
+    requestId: question.questionId,
+    runId: question.workflowId,
+    step: 'execution_selection',
+    revision: question.workflowRevision,
+    kind: 'execution_confirmation',
+    frozen: {
+      executionSnapshotRef: {
+        id: snapshot.id,
+        revision: snapshot.revision,
+      },
+      quoteRevision: snapshot.quote.revision,
+      params: [
+        {
+          key: 'model',
+          label: '模型',
+          value: `${snapshot.catalogModel.id}@${snapshot.catalogModel.revision}`,
+          hint: null,
+        },
+        {
+          key: 'deliverable',
+          label: '交付内容',
+          value: snapshot.deliverable.kind,
+          hint: null,
+        },
+        {
+          key: 'destination',
+          label: '发布去向',
+          value: snapshot.distributionTarget,
+          hint: null,
+        },
+      ],
+      debitPreview: [],
+      condition: {
+        kind: 'external_action',
+        required: true,
+        serverEvaluated: true,
+      },
+      timeoutPolicy: {
+        kind: 'hold',
+        reason: 'external_action',
+        serverEvaluated: true,
+      },
+    },
+    presentation: {
+      carriers: ['conversation', 'task_card'],
+      notification: 'none',
+      renderer: 'execution_confirmation',
+    },
   });
 }
 

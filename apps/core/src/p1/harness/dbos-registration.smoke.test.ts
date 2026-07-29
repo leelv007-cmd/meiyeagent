@@ -739,6 +739,117 @@ test(
 );
 
 test(
+  'external publish confirmation persists through the production DBOS owner before execution',
+  { skip: !systemDatabaseUrl },
+  async () => {
+    const workflowId = `harness-execution-confirmation-${randomUUID()}`;
+    const workspaceId = `workspace-execution-confirmation-${randomUUID()}`;
+    const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
+    const skills = await createSmokeSkills(workflowId);
+    const ports = smokePorts(workflowId, skills.service, []);
+    ports.nameIntent = async () => ({
+      declaration: {
+        normalizedIntent: '发布本店团购',
+        taskType: 'promotion_groupbuy_conversion',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['promotion_activity'],
+        usedAssetCategories: ['promotion_activity'],
+        route: 'customized',
+        routingSource: 'model',
+        implicitConstraints: [],
+      },
+      blockingQuestion: null,
+    });
+    let interactionRequest: HarnessInteractionRequest | undefined;
+    let signalPendingRegistered = () => {};
+    const pendingRegistered = new Promise<void>((resolve) => {
+      signalPendingRegistered = resolve;
+    });
+    DBOS.setConfig({
+      name: 'beauty-marketing-harness-execution-confirmation-smoke',
+      systemDatabaseUrl: systemDatabaseUrl!,
+      applicationVersion: 'harness-execution-confirmation-smoke-v1',
+    });
+    const workflow = registerHarnessDbosWorkflow(ports, {
+      async registerPending(_workspaceId, _question, projection) {
+        interactionRequest = projection?.interactionRequest;
+        signalPendingRegistered();
+        return projection;
+      },
+      async readPending() {
+        return null;
+      },
+      async readPendingInteraction() {
+        return interactionRequest ?? null;
+      },
+      async recordStageTrace() {},
+      async recordTerminalFailure() {},
+    });
+
+    try {
+      await DBOS.launch();
+      const request = snapshotTimeoutRequest(
+        workflowId,
+        workspaceId,
+        'publish:xiaohongshu',
+      );
+      const handle = await DBOS.startWorkflow(workflow, {
+        workflowID: runtimeWorkflowId,
+      })({ workflowId, request });
+      let pendingTimeout: NodeJS.Timeout | undefined;
+      try {
+        await Promise.race([
+          pendingRegistered,
+          new Promise<never>((_resolve, reject) => {
+            pendingTimeout = setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    'DBOS workflow did not persist execution confirmation.',
+                  ),
+                ),
+              15_000,
+            );
+          }),
+        ]);
+      } finally {
+        if (pendingTimeout) clearTimeout(pendingTimeout);
+      }
+      const pending = interactionRequest;
+      assert.equal(pending?.kind, 'execution_confirmation');
+      assert.equal(
+        pending?.requestId,
+        `execution-confirmation:${request.executionSnapshot.id}`,
+      );
+      assert.equal(pending?.step, 'execution_selection');
+      assert.equal(
+        pending?.kind === 'execution_confirmation'
+          ? pending.frozen.timeoutPolicy.kind
+          : null,
+        'hold',
+      );
+      await resumeHarnessDbosInteractionWorkflow(workspaceId, workflowId, {
+        kind: 'harness_interaction_resume',
+        schemaVersion: 'v1',
+        idempotencyKey: `${pending?.requestId}:approved`,
+        interactionKind: 'execution_confirmation',
+        requestId: pending?.requestId,
+        revision: pending?.revision,
+        runId: pending?.runId,
+        step: 'execution_selection',
+        resumeData: { kind: 'approved' },
+        resolutionSource: 'decision',
+      });
+      const result = await handle.getResult();
+      assert.ok(result.delivery);
+      assert.equal(await waitForWorkflowStatus(handle, 'SUCCESS'), 'SUCCESS');
+    } finally {
+      await DBOS.shutdown({ deregister: true });
+    }
+  },
+);
+
+test(
   'durable r2 reask resumes the original production DBOS question exactly once',
   { skip: !systemDatabaseUrl || !databaseUrl },
   async () => {
@@ -1813,7 +1924,17 @@ function legacyTimeoutRequest(workflowId: string, workspaceId: string) {
   };
 }
 
-function snapshotTimeoutRequest(workflowId: string, workspaceId: string) {
+function snapshotTimeoutRequest(
+  workflowId: string,
+  workspaceId: string,
+  distributionTarget:
+    | 'export'
+    | 'manual_copy'
+    | 'assisted_handoff'
+    | 'publish:xiaohongshu'
+    | 'publish:douyin'
+    | 'publish:video_account' = 'export',
+) {
   return {
     ...legacyTimeoutRequest(workflowId, workspaceId),
     executionSnapshot: createCreationExecutionSnapshot(
@@ -1847,6 +1968,7 @@ function snapshotTimeoutRequest(workflowId: string, workspaceId: string) {
         route: { id: 'route-smoke', revision: 'route-r1' },
         briefContext: { id: 'brief-smoke', revision: 1 },
         contentModules: ['social_cover'],
+        distributionTarget,
       },
       '2026-07-26T09:00:00.000Z',
     ),

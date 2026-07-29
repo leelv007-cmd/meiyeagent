@@ -51,6 +51,7 @@ import {
 } from './interaction-resume.js';
 import {
   askMerchantInteractionRequestFromQuestion,
+  executionConfirmationInteractionRequestFromQuestion,
   type HarnessInteractionStore,
   type HarnessInteractionService,
 } from './interaction-service.js';
@@ -347,21 +348,30 @@ export function registerHarnessDbosWorkflow(
               ? await readConfirmationCardTimeoutSeconds(config)
               : null;
             const holdTimeoutSeconds =
-              request.usageReservation && question.unattended !== 'continue'
+              request.usageReservation &&
+              question.unattended !== 'continue' &&
+              !question.executionConfirmationAuthority
                 ? await readConfirmationCardHoldTimeoutSeconds(config)
                 : null;
-            await invokeHarnessAskMerchantPrimitive(askMerchant, {
-              question,
-              request,
-              stage,
-              workspaceId: request.workspaceId,
-            });
+            const executionInteractionRequest =
+              executionConfirmationInteractionRequestFromQuestion({
+                question,
+                request,
+              });
+            if (!executionInteractionRequest) {
+              await invokeHarnessAskMerchantPrimitive(askMerchant, {
+                question,
+                request,
+                stage,
+                workspaceId: request.workspaceId,
+              });
+            }
             const interactionRequest =
+              executionInteractionRequest ??
               askMerchantInteractionRequestFromQuestion({
                 question,
                 stage,
-                timeoutPolicy:
-                  buildAskMerchantSemanticDefaultTimeoutPolicy(
+                timeoutPolicy: buildAskMerchantSemanticDefaultTimeoutPolicy(
                     question,
                     timeoutSeconds,
                   ),

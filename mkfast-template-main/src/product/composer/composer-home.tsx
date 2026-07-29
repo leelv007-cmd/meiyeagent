@@ -53,6 +53,7 @@ import type {
   BriefTriggerProjection,
   BrowserRecipeProjection,
   CreationLensId,
+  ExecutionConfirmationAnswer,
   MarketingIdentityAsset,
   ProductQuoteSnapshot,
   QuestionCard,
@@ -116,6 +117,7 @@ import {
 
 import { BriefSurface } from './brief-surface-panel';
 import { AskMerchantGroupCard } from './ask-merchant-group-card';
+import { ExecutionConfirmationInteractionCard } from './execution-confirmation-interaction-card';
 import { applyCatalogRecipeSelection } from './catalog-selection';
 import { ProgressiveFactCard } from './progressive-fact-card';
 import {
@@ -1392,6 +1394,10 @@ export function ComposerHome({
     interactionQuery.data?.kind === 'ask_merchant'
       ? interactionQuery.data
       : null;
+  const pendingExecutionConfirmation =
+    interactionQuery.data?.kind === 'execution_confirmation'
+      ? interactionQuery.data
+      : null;
   const pendingQuestion: QuestionCard | null =
     decisionQuery.data?.question ?? null;
   const questionResolutionSource =
@@ -1498,6 +1504,33 @@ export function ComposerHome({
       }
     },
     [decisionQuery, interactionQuery, pendingAskRequest, taskId]
+  );
+  const answerExecutionConfirmation = useCallback(
+    async (response: ExecutionConfirmationAnswer['response']) => {
+      if (!pendingExecutionConfirmation || !taskId) return;
+      setQuestionPending(true);
+      try {
+        await submitHarnessInteraction(taskId, {
+          requestId: pendingExecutionConfirmation.requestId,
+          revision: pendingExecutionConfirmation.revision,
+          idempotencyKey:
+            `composer-interaction:${pendingExecutionConfirmation.requestId}:` +
+            `r${pendingExecutionConfirmation.revision}:merchant`,
+          resume: {
+            runId: pendingExecutionConfirmation.runId,
+            step: pendingExecutionConfirmation.step,
+          },
+          response,
+        });
+        await interactionQuery.refetch();
+      } catch {
+        toast.error(workbench_operation_failed());
+        throw new Error('The execution confirmation could not be submitted.');
+      } finally {
+        setQuestionPending(false);
+      }
+    },
+    [interactionQuery, pendingExecutionConfirmation, taskId]
   );
   const acknowledgeAskMerchantRenderer = useCallback(
     async () => acknowledgeHarnessInteractionRenderer(taskId),
@@ -2681,6 +2714,13 @@ export function ComposerHome({
                 onSubmit={answerAskMerchant}
                 pending={questionPending}
                 request={pendingAskRequest}
+              />
+            ) : pendingExecutionConfirmation ? (
+              <ExecutionConfirmationInteractionCard
+                onRendererReady={acknowledgeAskMerchantRenderer}
+                onSubmit={answerExecutionConfirmation}
+                pending={questionPending}
+                request={pendingExecutionConfirmation}
               />
             ) : pendingQuestion ? (
               <ComposerQuestionCard

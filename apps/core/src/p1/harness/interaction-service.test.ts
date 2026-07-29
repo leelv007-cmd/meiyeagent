@@ -11,6 +11,7 @@ import {
 import {
   buildAskMerchantSemanticDefaultTimeoutPolicy,
   createHarnessInteractionPendingProjection,
+  executionConfirmationInteractionRequestFromQuestion,
   HarnessInteractionService,
   HarnessSystemDefaultProducer,
   type HarnessInteractionPendingProjection,
@@ -65,6 +66,53 @@ test('semantic defaults require independent server-owned safety authority', () =
     policy.eligibility.defaultResponseFingerprint,
     fingerprintValue(policy.eligibility.defaultResponse),
   );
+});
+
+test('external execution authority freezes a hold-only confirmation request', () => {
+  const request = executionConfirmationInteractionRequestFromQuestion({
+    question: {
+      questionId: 'execution-confirmation:snapshot-1',
+      workflowId: 'run-1',
+      workflowRevision: 1,
+      question: '是否按当前冻结方案执行外部发布？',
+      options: [
+        { id: 'approved', label: '确认执行' },
+        { id: 'rejected', label: '暂不执行' },
+      ],
+      freeText: { enabled: false },
+      response: {
+        field: 'execution_confirmation',
+        reason: '外部发布前需要商家确认冻结方案',
+      },
+      unattended: 'hold',
+      executionConfirmationAuthority: {
+        kind: 'external_action',
+        revision: 'execution-external-action/v1',
+      },
+      scope: 'current_task',
+    },
+    request: {
+      executionSnapshot: {
+        id: 'snapshot-1',
+        revision: 1,
+        quote: { revision: 'quote-r1' },
+        operation: 'copy.generate',
+        catalogModel: { id: 'model-1', revision: 'model-r1' },
+        deliverable: { kind: 'copy_document' },
+        distributionTarget: 'publish:xiaohongshu',
+      },
+    },
+  });
+
+  assert.equal(request?.kind, 'execution_confirmation');
+  assert.equal(request?.frozen.condition.kind, 'external_action');
+  assert.equal(request?.frozen.condition.required, true);
+  assert.deepEqual(request?.frozen.debitPreview, []);
+  assert.deepEqual(request?.frozen.timeoutPolicy, {
+    kind: 'hold',
+    reason: 'external_action',
+    serverEvaluated: true,
+  });
 });
 
 test('interaction answers persist before one resume with the canonical triple', async () => {

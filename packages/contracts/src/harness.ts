@@ -247,6 +247,13 @@ export const questionCardSchema = z
       })
       .strict()
       .optional(),
+    executionConfirmationAuthority: z
+      .object({
+        kind: z.literal('external_action'),
+        revision: z.literal('execution-external-action/v1'),
+      })
+      .strict()
+      .optional(),
     scope: z.enum(['current_task', 'current_series', 'workspace']),
   })
   .strict()
