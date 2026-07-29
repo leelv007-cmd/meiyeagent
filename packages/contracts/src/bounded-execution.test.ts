@@ -289,4 +289,41 @@ test('bounded resume events only raise the triggered limit and preserve frozen f
       false,
     );
   }
+
+  assert.equal(
+    boundedExecutionEventSchema.safeParse({
+      ...valid,
+      previousSnapshot: {
+        ...previousSnapshot,
+        maxIterations: 2,
+      },
+      snapshot: {
+        ...valid.snapshot,
+        maxIterations: 3,
+      },
+    }).success,
+    false,
+  );
+
+  assert.equal(
+    boundedExecutionEventSchema.safeParse({
+      ...valid,
+      previousSnapshot: {
+        ...previousSnapshot,
+        consumption: {
+          ...previousSnapshot.consumption,
+          iterations: 2,
+        },
+      },
+      snapshot: {
+        ...valid.snapshot,
+        maxIterations: 2,
+        consumption: {
+          ...valid.snapshot.consumption,
+          iterations: 2,
+        },
+      },
+    }).success,
+    false,
+  );
 });

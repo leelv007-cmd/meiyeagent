@@ -168,14 +168,31 @@ const boundedExecutionResumedEventSchema = z
     }
     const previousLimit = event.previousSnapshot[triggeredLimit];
     const raisedLimit = event.snapshot[triggeredLimit];
+    const previousConsumption =
+      event.previousSnapshot.consumption[
+        BOUNDED_EXECUTION_CONSUMPTION_BY_LIMIT[triggeredLimit]
+      ];
     if (
-      previousLimit === 'unset' ||
-      raisedLimit === 'unset' ||
-      raisedLimit <= previousLimit
+      previousLimit !== 'unset' &&
+      previousConsumption < previousLimit
     ) {
       context.addIssue({
         code: 'custom',
-        message: 'A resume event must strictly raise the triggered limit.',
+        message:
+          'A resume event requires predecessor consumption to reach the triggered limit.',
+        path: ['previousSnapshot', 'consumption'],
+      });
+    }
+    if (
+      previousLimit === 'unset' ||
+      raisedLimit === 'unset' ||
+      raisedLimit <= previousLimit ||
+      raisedLimit <= previousConsumption
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'A resume event must raise the triggered limit above previous consumption.',
         path: ['snapshot', triggeredLimit],
       });
     }
