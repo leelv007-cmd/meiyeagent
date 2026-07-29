@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 
 import type {
+  AssetIntakeBatch,
   FinalizeStoreIntakeCommand,
   RecordAssetIntakeBatchCommand,
   StoreProfilePatch,
@@ -229,6 +230,114 @@ test(
       });
       assert.equal(state.store?.revision, 1);
       assert.equal(state.store?.projects[0]?.price, 299);
+    } finally {
+      await environment.cleanup();
+    }
+  },
+);
+
+test(
+  'a persisted corrected price reaches both PostgreSQL projections',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const environment = await createEnvironment();
+    try {
+      await seedStore(environment);
+      const input = finalizeInput(environment.context.workspaceId, {
+        candidate: {
+          candidateId: 'project-a-corrected-price',
+          status: 'pending',
+          objectKind: 'store_fact',
+          fact: {
+            kind: 'price',
+            key: 'service.project-a.price',
+            value: { amount: 239, currency: 'CNY' },
+            scope: {
+              storeId: environment.context.workspaceId,
+              serviceId: 'project-a',
+            },
+            source: {
+              kind: 'user_confirmation',
+              referenceId: 'progressive-card',
+              capturedAt: now,
+            },
+            effectiveFrom: now,
+            expiresAt: null,
+          },
+        },
+        confirmation: {
+          candidateId: 'project-a-corrected-price',
+          factId: 'store-project:project-a:price',
+          expectedFactRevision: 0,
+        },
+        profilePatch: {
+          expectedRevision: 1,
+          projects: {
+            upsert: [
+              {
+                ...project('project-a', '透亮猫眼', 299),
+                priceValidUntil: null,
+              },
+            ],
+          },
+        },
+      });
+      const batch = inlineBatch(input);
+      const persistedBatch = {
+        ...batch,
+        workspaceId: environment.context.workspaceId,
+        createdAt: now,
+      } satisfies AssetIntakeBatch;
+      await environment.intake.recordBatch(persistedBatch);
+      const priceCandidate = persistedBatch.candidates.find(
+        (candidate) =>
+          candidate.objectKind === 'store_fact' &&
+          candidate.candidateId === 'project-a-corrected-price',
+      );
+      if (priceCandidate?.objectKind !== 'store_fact') {
+        assert.fail('corrected price candidate is missing');
+      }
+      await environment.intake.correctFact(environment.context, {
+        batchId: persistedBatch.batchId,
+        candidateId: priceCandidate.candidateId,
+        correctedFact: {
+          ...priceCandidate.fact,
+          value: { amount: 299, currency: 'CNY' },
+        },
+        idempotencyKey: 'correct-project-a-price',
+      });
+
+      const result = await environment.finalizer.finalize(
+        environment.context,
+        {
+          ...input,
+          batch: { batchId: persistedBatch.batchId },
+        },
+        'finalize-corrected-project-a-price',
+      );
+      const priceFact = result.facts.find(
+        (fact) => fact.factId === 'store-project:project-a:price',
+      );
+      const state = await environment.product.bootstrap({
+        ...environment.context,
+        actor: 'user',
+      });
+
+      assert.deepEqual(priceFact?.value, { amount: 299, currency: 'CNY' });
+      assert.deepEqual(
+        (
+          await environment.facts.history(
+            environment.context.workspaceId,
+            'store-project:project-a:price',
+          )
+        )[0]?.value,
+        { amount: 299, currency: 'CNY' },
+      );
+      assert.equal(state.store?.revision, 2);
+      assert.equal(
+        state.store?.projects.find((item) => item.id === 'project-a')?.price,
+        299,
+      );
     } finally {
       await environment.cleanup();
     }
@@ -1637,6 +1746,7 @@ test(
           intake.confirmedFactRevision(...args),
         currentFact: (...args) => intake.currentFact(...args),
         currentFactRevision: (...args) => intake.currentFactRevision(...args),
+        effectiveFactDraft: (...args) => intake.effectiveFactDraft(...args),
         persistedBatch: (...args) => intake.persistedBatch(...args),
         recordBatch: (...args) => intake.recordBatch(...args),
         withPinnedFactHeads: (...args) => intake.withPinnedFactHeads(...args),
@@ -1830,6 +1940,7 @@ test(
           intake.confirmedFactRevision(...args),
         currentFact: (...args) => intake.currentFact(...args),
         currentFactRevision: (...args) => intake.currentFactRevision(...args),
+        effectiveFactDraft: (...args) => intake.effectiveFactDraft(...args),
         persistedBatch: (...args) => intake.persistedBatch(...args),
         recordBatch: (...args) => intake.recordBatch(...args),
         withPinnedFactHeads: (...args) => intake.withPinnedFactHeads(...args),

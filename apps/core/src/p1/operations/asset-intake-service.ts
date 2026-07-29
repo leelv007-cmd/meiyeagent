@@ -420,6 +420,14 @@ export class AssetIntakeService {
     return receipt;
   }
 
+  async effectiveFactDraft(
+    workspaceId: string,
+    batchId: string,
+    candidateId: string,
+  ) {
+    return (await this.factDraft(workspaceId, batchId, candidateId)).draft;
+  }
+
   async confirmedFactRevision(
     workspaceId: string,
     idempotencyKey: string,

@@ -29,6 +29,7 @@ export type StoreIntakeFinalizationIntakePort = Pick<
   | 'confirmedFactRevision'
   | 'currentFact'
   | 'currentFactRevision'
+  | 'effectiveFactDraft'
   | 'persistedBatch'
   | 'recordBatch'
   | 'withPinnedFactHeads'
@@ -613,7 +614,26 @@ export class StoreIntakeFinalizer {
         'A parsed or screenshot intake batch requires a server persistence receipt.',
       );
     }
-    return { batch: receipt.batch, inline: false };
+    return {
+      batch: assetIntakeBatchSchema.parse({
+        ...receipt.batch,
+        candidates: await Promise.all(
+          receipt.batch.candidates.map(async (candidate) =>
+            candidate.objectKind === 'store_fact'
+              ? {
+                  ...candidate,
+                  fact: await this.intake.effectiveFactDraft(
+                    workspaceId,
+                    receipt.batch.batchId,
+                    candidate.candidateId,
+                  ),
+                }
+              : candidate,
+          ),
+        ),
+      }),
+      inline: false,
+    };
   }
 
   private async hasStagedFactReceipt(

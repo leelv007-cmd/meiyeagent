@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type {
+  AssetIntakeBatch,
   FinalizeStoreIntakeCommand,
   StoreProfile,
+  StoreProfilePatch,
 } from '@meiye/contracts';
 
 import type { P1Context } from '../foundation/domain.js';
@@ -580,4 +582,263 @@ test('a price window the profile disagrees with is refused', async () => {
       error.code === 'STORE_FACT_MAPPING_INVALID' &&
       /stated validity/u.test(error.message),
   );
+});
+
+function persistedProjectBatch(
+  batchId: string,
+  price: number,
+): AssetIntakeBatch {
+  const batch = inlineProjectBatch();
+  return {
+    ...batch,
+    batchId,
+    workspaceId: context.workspaceId,
+    candidates: batch.candidates.map((candidate) =>
+      candidate.objectKind === 'store_fact'
+        ? {
+            ...candidate,
+            fact: {
+              ...candidate.fact,
+              scope: {
+                storeId: context.workspaceId,
+                serviceId: 'project-a',
+              },
+              ...(candidate.candidateId === 'project-price'
+                ? {
+                    value: { amount: price, currency: 'CNY' },
+                  }
+                : {}),
+            },
+          }
+        : candidate,
+    ),
+    createdAt: now,
+  };
+}
+
+function priceCandidate(batch: AssetIntakeBatch) {
+  const candidate = batch.candidates.find(
+    (item) =>
+      item.objectKind === 'store_fact' &&
+      item.candidateId === 'project-price',
+  );
+  if (candidate?.objectKind !== 'store_fact') {
+    assert.fail('project price candidate is missing');
+  }
+  return candidate;
+}
+
+function projectProfile(patch: StoreProfilePatch): StoreProfile {
+  return {
+    name: '青禾',
+    city: '杭州',
+    district: '拱墅区',
+    address: '湖墅南路 88 号',
+    booking: '提前一天私信预约',
+    brandVoice: '克制',
+    prohibitions: [],
+    accounts: [],
+    projects: patch.projects?.upsert ?? [],
+    regulated: false,
+    revision: patch.expectedRevision + 1,
+  };
+}
+
+async function prepareCorrectedPrice(
+  batchId: string,
+  correctedPrice: number,
+) {
+  const facts = new MemoryStoreFactLedger();
+  const intake = new AssetIntakeService(
+    new MemoryAssetIntakeRepository(),
+    facts,
+    () => now,
+  );
+  const batch = persistedProjectBatch(batchId, 239);
+  await intake.recordBatch(batch);
+  const candidate = priceCandidate(batch);
+  await intake.correctFact(context, {
+    batchId,
+    candidateId: candidate.candidateId,
+    correctedFact: {
+      ...candidate.fact,
+      value: { amount: correctedPrice, currency: 'CNY' },
+    },
+    idempotencyKey: `${batchId}:correct-price`,
+  });
+  return { batch, facts, intake };
+}
+
+test('a corrected price reaches both StoreFact and the profile projection', async () => {
+  const { batch, facts, intake } = await prepareCorrectedPrice(
+    'corrected-price-batch',
+    299,
+  );
+  const mergedPatches: StoreProfilePatch[] = [];
+  const finalizer = new StoreIntakeFinalizer(
+    intake,
+    new MemoryFinalizationRepository(),
+    profilePort(async (_context, patch) => {
+      mergedPatches.push(patch);
+      return projectProfile(patch);
+    }),
+    () => now,
+  );
+  const input = projectInput(
+    { batchId: batch.batchId },
+    {
+      expectedRevision: 1,
+      projects: {
+        upsert: [
+          {
+            id: 'project-a',
+            name: '透亮猫眼',
+            price: 299,
+            durationMinutes: 90,
+            confirmed: true,
+            priceValidUntil: null,
+          },
+        ],
+      },
+    },
+  );
+
+  const result = await finalizer.finalize(
+    context,
+    input,
+    'corrected-price-finalize',
+  );
+  const priceFact = result.facts.find(
+    (fact) => fact.factId === 'store-project:project-a:price',
+  );
+
+  assert.deepEqual(priceFact?.value, { amount: 299, currency: 'CNY' });
+  assert.equal(mergedPatches[0]?.projects?.upsert?.[0]?.price, 299);
+  assert.deepEqual(
+    (
+      await facts.history(context.workspaceId, 'store-project:project-a:price')
+    )[0]?.value,
+    { amount: 299, currency: 'CNY' },
+  );
+});
+
+test('a profile patch with the pre-correction price is rejected before either projection writes', async () => {
+  const { batch, facts, intake } = await prepareCorrectedPrice(
+    'stale-corrected-price-batch',
+    299,
+  );
+  let mergeCalls = 0;
+  const finalizer = new StoreIntakeFinalizer(
+    intake,
+    new MemoryFinalizationRepository(),
+    profilePort(async (_context, patch) => {
+      mergeCalls += 1;
+      return projectProfile(patch);
+    }),
+    () => now,
+  );
+  const input = projectInput(
+    { batchId: batch.batchId },
+    {
+      expectedRevision: 1,
+      projects: {
+        upsert: [
+          {
+            id: 'project-a',
+            name: '透亮猫眼',
+            price: 239,
+            durationMinutes: 90,
+            confirmed: true,
+            priceValidUntil: null,
+          },
+        ],
+      },
+    },
+  );
+
+  await assert.rejects(
+    finalizer.finalize(context, input, 'stale-corrected-price-finalize'),
+    (error) =>
+      error instanceof StoreIntakeFinalizationError &&
+      error.code === 'STORE_FACT_MAPPING_INVALID',
+  );
+
+  assert.equal(mergeCalls, 0);
+  assert.deepEqual(
+    await facts.history(
+      context.workspaceId,
+      'store-project:project-a:service',
+    ),
+    [],
+  );
+  assert.deepEqual(
+    await facts.history(context.workspaceId, 'store-project:project-a:price'),
+    [],
+  );
+});
+
+test('a corrected revocation satisfies the project clear gate', async () => {
+  const facts = new MemoryStoreFactLedger();
+  const intake = new AssetIntakeService(
+    new MemoryAssetIntakeRepository(),
+    facts,
+    () => now,
+  );
+  const activeBatch = persistedProjectBatch('active-price-batch', 239);
+  await intake.recordBatch(activeBatch);
+  await intake.confirmFact(context, {
+    batchId: activeBatch.batchId,
+    candidateId: 'project-price',
+    factId: 'store-project:project-a:price',
+    expectedFactRevision: 0,
+    idempotencyKey: 'confirm-active-price',
+  });
+
+  const revocationBatch = persistedProjectBatch('revoke-price-batch', 239);
+  await intake.recordBatch(revocationBatch);
+  const revocationCandidate = priceCandidate(revocationBatch);
+  await intake.correctFact(context, {
+    batchId: revocationBatch.batchId,
+    candidateId: revocationCandidate.candidateId,
+    correctedFact: {
+      ...revocationCandidate.fact,
+      value: null,
+      revisionKind: 'revocation',
+    },
+    idempotencyKey: 'correct-price-to-revocation',
+  });
+  const mergedPatches: StoreProfilePatch[] = [];
+  const finalizer = new StoreIntakeFinalizer(
+    intake,
+    new MemoryFinalizationRepository(),
+    profilePort(async (_context, patch) => {
+      mergedPatches.push(patch);
+      return projectProfile(patch);
+    }),
+    () => now,
+  );
+  const input: FinalizeStoreIntakeCommand = {
+    batch: { batchId: revocationBatch.batchId },
+    confirmations: [
+      {
+        candidateId: 'project-price',
+        factId: 'store-project:project-a:price',
+        expectedFactRevision: 1,
+      },
+    ],
+    profilePatch: {
+      expectedRevision: 1,
+      projects: { clear: ['project-a'] },
+    },
+  };
+
+  const result = await finalizer.finalize(
+    context,
+    input,
+    'corrected-price-revocation-finalize',
+  );
+
+  assert.equal(result.facts[0]?.revisionKind, 'revocation');
+  assert.equal(result.facts[0]?.value, null);
+  assert.deepEqual(mergedPatches[0]?.projects?.clear, ['project-a']);
 });
