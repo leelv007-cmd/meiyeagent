@@ -77,12 +77,6 @@ test.describe('Z1 / #105 real Playwright three-modal Day-0 journeys', () => {
         await assertThreeModalDiscovery(page);
         if (contract.modality !== 'copy') {
           await seedComposerInlineAuthorize(page, {
-            fileName: `${contract.modality}-day0-${contract.deliveryTarget}-${surface.name}.png`,
-          });
-        }
-
-        if (contract.modality !== 'copy') {
-          await seedComposerInlineAuthorize(page, {
             fileName: `three-modal-${contract.modality}-${crypto.randomUUID()}.png`,
           });
         }
