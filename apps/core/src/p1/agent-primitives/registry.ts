@@ -89,3 +89,10 @@ export class AgentPrimitiveRegistry {
     return definition;
   }
 }
+
+export function createCanonicalAgentPrimitiveRegistry() {
+  return new AgentPrimitiveRegistry(AGENT_PRIMITIVE_DEFINITIONS);
+}
+
+export const canonicalAgentPrimitiveRegistry =
+  createCanonicalAgentPrimitiveRegistry();

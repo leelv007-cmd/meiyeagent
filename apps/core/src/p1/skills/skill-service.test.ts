@@ -25,6 +25,7 @@ import {
   type SkillGovernanceSidecar,
   type SkillInvocationExecutor,
   type SkillInvocationResultPublisher,
+  type SkillRevision,
 } from './index.js';
 import { DurableSkillInstructionResolver } from './runtime.js';
 
@@ -78,13 +79,167 @@ function createEffectTestService(repository: MemorySkillRepository) {
     () => NOW,
     testPromptSnapshots,
     new StaticSkillToolExecutionAuthorizer(
-      ['tool.fact.read', 'tool.quality.score'].map((toolId) => ({
+      ['read_context', 'check'].map((toolId) => ({
         caller: 'skill.effect-boundary@1',
         toolId,
       })),
     ),
   );
 }
+
+class ManifestTamperingRepository extends MemorySkillRepository {
+  tamperedToolId: string | null = null;
+  acceptAttempts = 0;
+
+  override async getRevision(skillRevisionRef: string) {
+    const revision = await super.getRevision(skillRevisionRef);
+    if (
+      !revision ||
+      revision.formatVersion !== 2 ||
+      !this.tamperedToolId
+    ) {
+      return revision;
+    }
+    return {
+      ...revision,
+      manifest: {
+        ...revision.manifest,
+        'allowed-tools': this.tamperedToolId,
+      },
+    };
+  }
+
+  override async acceptRevision(
+    revision: Parameters<MemorySkillRepository['acceptRevision']>[0],
+  ) {
+    this.acceptAttempts += 1;
+    return super.acceptRevision(revision);
+  }
+}
+
+test('a Skill draft rejects unknown and merchant-only self-reported tools', async () => {
+  for (const toolId of ['tool.self_reported', 'confirm_publish']) {
+    const repository = new MemorySkillRepository();
+    const service = new SkillService(repository, () => NOW);
+    const skillId = `skill.registry-${toolId}`;
+    await service.defineCatalogEntry({
+      actorId: 'operator-registry',
+      name: 'Registry validation',
+      description: 'Rejects tools outside the canonical primitive registry.',
+      sourceKind: 'authored',
+      tier: 'platform',
+      presentationPolicy: 'backend_only',
+      skillId,
+    });
+
+    await assert.rejects(
+      service.draftRevision({
+        actorId: 'operator-registry',
+        expectedRevision: null,
+        governance: governance(),
+        instruction: PROMPT_CONTENT,
+        manifest: {
+          'allowed-tools': toolId,
+          description: 'Rejects self-reported or merchant-only tools.',
+          name: 'registry-validation',
+        },
+        promptReference: registerPrompt({
+          content: PROMPT_CONTENT,
+          contentHash: sha256(PROMPT_CONTENT),
+          isFallback: false,
+          label: 'production',
+          name: 'harness/intent-naming',
+          source: 'langfuse',
+          version: '42',
+        }),
+        skillId,
+      }),
+      /Agent primitive is not registered/u,
+    );
+    assert.equal(await repository.getRevisionHead(skillId), null);
+  }
+});
+
+test('acceptance revalidates every frozen manifest tool against the canonical registry', async () => {
+  const repository = new ManifestTamperingRepository();
+  const service = new SkillService(
+    repository,
+    () => NOW,
+    testPromptSnapshots,
+  );
+  const revision = await createAcceptedEffectSkillDraft(service);
+  const run = effectSkillEvalRun(revision);
+  await repository.putImmutable(run.runId, run);
+  repository.tamperedToolId = 'tool.self_reported';
+
+  await assert.rejects(
+    service.acceptAndFreezeRevision({
+      actorId: 'operator-2',
+      evalRunId: run.runId,
+      skillRevisionRef: revision.skillRevisionRef,
+    }),
+    /Agent primitive is not registered/u,
+  );
+  assert.equal(repository.acceptAttempts, 0);
+});
+
+test('invocation resolves a self-reported allowlisted tool before executor dispatch', async () => {
+  const repository = new ManifestTamperingRepository();
+  const service = new SkillService(
+    repository,
+    () => NOW,
+    testPromptSnapshots,
+  );
+  const revision = await createAcceptedEffectSkill(service);
+  repository.tamperedToolId = 'confirm_publish';
+  let executions = 0;
+
+  await assert.rejects(
+    service.invoke(
+      {
+        calls: [
+          {
+            callId: 'merchant-confirm',
+            contextRefs: ['facts:current-offer'],
+            declaredBudgetCapCents: 1,
+            payload: {},
+            toolId: 'confirm_publish',
+          },
+        ],
+        input: dailyIndustrySkillInput(),
+        invocationId: 'invocation-self-reported-tool',
+        output: {
+          schemaRevision: 'skill-output.intent-decision@1',
+          target: 'workflow_artifact',
+        },
+        productUsageTaskId: 'task-one-product-usage',
+        skillRevisionRef: revision.skillRevisionRef,
+        taskId: 'task-self-reported-tool',
+        workspaceId: 'workspace-skill-invocation',
+      },
+      {
+        async execute() {
+          executions += 1;
+          return {
+            acceptanceStatus: 'accepted',
+            costCents: 0,
+            providerReceipt: {
+              accepted: true,
+              providerTaskRef: 'provider-must-not-run',
+            },
+            usage: { inputTokens: 0, outputTokens: 0 },
+          };
+        },
+        async generate() {
+          return { value: intentDecisionOutput() };
+        },
+      },
+      discardResultPublisher,
+    ),
+    /Agent primitive is not registered/u,
+  );
+  assert.equal(executions, 0);
+});
 
 test('only an evaluated and frozen Skill revision enters a stage allowlist', async () => {
   let promptCaptureCount = 0;
@@ -429,14 +584,14 @@ test('one Skill invocation settles two child effects independently and replay do
         callId: 'read-facts',
         contextRefs: ['facts:current-offer'],
         payload: { factType: 'campaign_offer' },
-        toolId: 'tool.fact.read',
+        toolId: 'read_context',
       },
       {
         declaredBudgetCapCents: 2,
         callId: 'score-output',
         contextRefs: ['facts:current-offer'],
         payload: { candidateRef: 'candidate-1' },
-        toolId: 'tool.quality.score',
+        toolId: 'check',
       },
     ],
     input: dailyIndustrySkillInput(),
@@ -546,7 +701,7 @@ test('Skill output cannot write ContentPackage and never reaches a child effect'
             callId: 'forbidden-write',
             contextRefs: ['facts:current-offer'],
             payload: {},
-            toolId: 'tool.fact.read',
+            toolId: 'read_context',
           },
         ],
         input: dailyIndustrySkillInput(),
@@ -675,7 +830,7 @@ test('invalid Skill input fails before any child executor call', async () => {
             contextRefs: ['facts:current-offer'],
             declaredBudgetCapCents: 1,
             payload: {},
-            toolId: 'tool.fact.read',
+            toolId: 'read_context',
           },
         ],
         input: { context: null, assetReferences: [] },
@@ -782,7 +937,7 @@ test('registry-backed validation rejects the actual generated output before busi
             contextRefs: ['facts:current-offer'],
             declaredBudgetCapCents: 1,
             payload: {},
-            toolId: 'tool.fact.read',
+            toolId: 'read_context',
           },
         ],
         input: dailyIndustrySkillInput(),
@@ -890,7 +1045,7 @@ test('receipt persistence retry reuses child effects and publishes the business 
         contextRefs: ['facts:current-offer'],
         declaredBudgetCapCents: 1,
         payload: {},
-        toolId: 'tool.fact.read',
+        toolId: 'read_context',
       },
     ],
     input: dailyIndustrySkillInput(),
@@ -997,14 +1152,14 @@ test('replay fails closed before mutating any effect when one recorded effect is
         contextRefs: ['facts:current-offer'],
         declaredBudgetCapCents: 1,
         payload: {},
-        toolId: 'tool.fact.read',
+        toolId: 'read_context',
       },
       {
         callId: 'score-output',
         contextRefs: ['facts:current-offer'],
         declaredBudgetCapCents: 1,
         payload: {},
-        toolId: 'tool.quality.score',
+        toolId: 'check',
       },
     ],
     input: dailyIndustrySkillInput(),
@@ -1061,7 +1216,7 @@ test('an observed over-budget child effect is persisted before invocation reject
             contextRefs: ['facts:current-offer'],
             declaredBudgetCapCents: 1,
             payload: {},
-            toolId: 'tool.fact.read',
+            toolId: 'read_context',
           },
         ],
         input: dailyIndustrySkillInput(),
@@ -1122,14 +1277,14 @@ test('retry after a mid-invocation crash replays each settled effect and execute
         contextRefs: ['facts:current-offer'],
         declaredBudgetCapCents: 2,
         payload: {},
-        toolId: 'tool.fact.read',
+        toolId: 'read_context',
       },
       {
         callId: 'score-output',
         contextRefs: ['facts:current-offer'],
         declaredBudgetCapCents: 2,
         payload: {},
-        toolId: 'tool.quality.score',
+        toolId: 'check',
       },
     ],
     input: dailyIndustrySkillInput(),
@@ -3163,6 +3318,25 @@ async function createAcceptedEffectSkill(
   executionMode: 'harness_native' | 'provider_native' = 'harness_native',
   packagePaths: string[] = ['SKILL.md'],
 ) {
+  const draft = await createAcceptedEffectSkillDraft(
+    service,
+    executionMode,
+    packagePaths,
+  );
+  const run = effectSkillEvalRun(draft);
+  await registerEvalRunForTest(service, run);
+  return service.acceptAndFreezeRevision({
+    actorId: 'operator-2',
+    evalRunId: run.runId,
+    skillRevisionRef: draft.skillRevisionRef,
+  });
+}
+
+async function createAcceptedEffectSkillDraft(
+  service: SkillService,
+  executionMode: 'harness_native' | 'provider_native' = 'harness_native',
+  packagePaths: string[] = ['SKILL.md'],
+) {
   const skillId =
     executionMode === 'provider_native'
       ? 'skill.effect-boundary-provider-native'
@@ -3201,7 +3375,7 @@ async function createAcceptedEffectSkill(
     instruction,
     packagePaths,
     manifest: {
-      'allowed-tools': 'tool.fact.read tool.quality.score',
+      'allowed-tools': 'read_context check',
       description: 'Exercises the bounded Skill effect contract.',
       name:
         executionMode === 'provider_native'
@@ -3219,24 +3393,22 @@ async function createAcceptedEffectSkill(
     }),
     skillId,
   });
-  const run: EvalRun = {
-      ...skillEvalRun(draft.skillRevisionRef),
-      results: [
-        {
-          ...skillEvalRun(draft.skillRevisionRef).results[0]!,
-          promptRevision: 'skills/effect-boundary@1',
-        },
-      ],
-      runId: 'skills-effect-boundary-run-1',
-      suiteId: 'skills-effect-boundary',
-      suiteRevision: 'skills-effect-boundary@1',
+  return draft;
+}
+
+function effectSkillEvalRun(draft: SkillRevision): EvalRun {
+  return {
+    ...skillEvalRun(draft.skillRevisionRef),
+    results: [
+      {
+        ...skillEvalRun(draft.skillRevisionRef).results[0]!,
+        promptRevision: 'skills/effect-boundary@1',
+      },
+    ],
+    runId: 'skills-effect-boundary-run-1',
+    suiteId: 'skills-effect-boundary',
+    suiteRevision: 'skills-effect-boundary@1',
   };
-  await registerEvalRunForTest(service, run);
-  return service.acceptAndFreezeRevision({
-    actorId: 'operator-2',
-    evalRunId: run.runId,
-    skillRevisionRef: draft.skillRevisionRef,
-  });
 }
 
 async function draftAndAcceptRevision(

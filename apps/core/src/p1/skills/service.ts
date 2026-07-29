@@ -11,6 +11,10 @@ import {
   P1DomainError,
   PrewriteDeterministicRejectionError,
 } from '../foundation/domain.js';
+import {
+  canonicalAgentPrimitiveRegistry,
+  type AgentPrimitiveRegistry,
+} from '../agent-primitives/registry.js';
 import type { SkillRepository } from './repository.js';
 import {
   validateSkillPermissionAuthority,
@@ -149,6 +153,8 @@ export class SkillService {
     private readonly promptSnapshots?: SkillPromptSnapshotPort,
     private readonly toolExecutionAuthorizer: SkillToolExecutionAuthorizer =
       denyAllSkillToolExecution,
+    private readonly primitiveRegistry: AgentPrimitiveRegistry =
+      canonicalAgentPrimitiveRegistry,
   ) {}
 
   async defineCatalogEntry(input: {
@@ -304,6 +310,12 @@ export class SkillService {
     const manifest = validatePrewrite(() =>
       validateSkillFrontmatter(input.manifest),
     );
+    validatePrewrite(() =>
+      validatePrimitiveAllowlist(
+        this.primitiveRegistry,
+        validateSkillPermissionAuthority(manifest),
+      ),
+    );
     let governance: SkillGovernanceSidecar;
     try {
       governance = parseSkillGovernance(input.governance);
@@ -438,6 +450,12 @@ export class SkillService {
     evalRunId: string;
   }) {
     const revision = await this.requireRevision(input.skillRevisionRef);
+    validatePrimitiveAllowlist(
+      this.primitiveRegistry,
+      revision.formatVersion === 1
+        ? revision.governance.allowedTools
+        : validateSkillPermissionAuthority(revision.manifest),
+    );
     const evalRunId = required(input.evalRunId, 'EvalRun ID');
     const stored = await this.repository.get(evalRunId);
     if (!stored) {
@@ -867,6 +885,9 @@ export class SkillService {
         'Skill 输出未使用已冻结的输出 Schema 版本。',
       );
     }
+    for (const call of input.calls) {
+      resolvePrimitive(this.primitiveRegistry, call.toolId);
+    }
     const fingerprint = sha256(canonicalJson(input));
     const existingReceipt =
       await this.repository.getInvocationReceipt(invocationId);
@@ -1280,6 +1301,26 @@ function validateChildEffect(
     )
   ) {
     fail('Skill 子调用读取了声明范围之外的 Context。');
+  }
+}
+
+function validatePrimitiveAllowlist(
+  primitiveRegistry: AgentPrimitiveRegistry,
+  toolIds: readonly string[] | undefined,
+) {
+  for (const toolId of toolIds ?? []) {
+    resolvePrimitive(primitiveRegistry, toolId);
+  }
+}
+
+function resolvePrimitive(
+  primitiveRegistry: AgentPrimitiveRegistry,
+  toolId: string,
+) {
+  try {
+    return primitiveRegistry.resolve(toolId);
+  } catch {
+    fail(`Agent primitive is not registered: ${toolId}`);
   }
 }
 

@@ -220,7 +220,7 @@ test(
       evalRunId: 'eval-postgres',
       instruction: 'Use the declared fact scope.',
       manifest: {
-        'allowed-tools': 'tool.fact.read',
+        'allowed-tools': 'read_context',
         description:
           'Uses a declared fact scope. Use in PostgreSQL persistence tests.',
         name: 'postgres-skill',
@@ -301,7 +301,7 @@ test(
       },
       retryStatus: 'first_attempt',
       settlementStatus: 'settled',
-      toolId: 'tool.fact.read',
+      toolId: 'read_context',
       usage: { inputTokens: 2, outputTokens: 1 },
     };
     const receipt: SkillInvocationReceipt = {
@@ -1099,7 +1099,7 @@ test(
         evalRunId: 'eval-invalid-output',
         instruction: 'Validate output before any side effect.',
         manifest: {
-          'allowed-tools': 'tool.fact.read',
+          'allowed-tools': 'read_context',
           description:
             'Validates generated output. Use in persistence boundary tests.',
           name: 'invalid-output',
@@ -1145,7 +1145,7 @@ test(
         pool,
         repository,
         toolExecutionAllowlist: [
-          { caller: skillRevisionRef, toolId: 'tool.fact.read' },
+          { caller: skillRevisionRef, toolId: 'read_context' },
         ],
       });
       const tool = runtime.createInvocationTool({
@@ -1181,7 +1181,7 @@ test(
             contextRefs: ['facts:current-offer'],
             declaredBudgetCapCents: 1,
             payload: {},
-            toolId: 'tool.fact.read',
+            toolId: 'read_context',
           },
         ],
         input: {

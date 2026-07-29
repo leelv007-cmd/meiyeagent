@@ -427,7 +427,7 @@ test('invalid-shape-silently-inert: invalid input stops before the executor', as
             contextRefs: ['facts:current-offer'],
             declaredBudgetCapCents: 1,
             payload: {},
-            toolId: 'tool.fact.read',
+            toolId: 'read_context',
           },
         ],
         input: { context: null, assetReferences: [] },
@@ -481,7 +481,7 @@ test('a frozen manifest tool claim is not a trusted execution grant', async () =
             contextRefs: ['facts:current-offer'],
             declaredBudgetCapCents: 1,
             payload: {},
-            toolId: 'tool.fact.read',
+            toolId: 'read_context',
           },
         ],
         input: {
@@ -551,7 +551,7 @@ test('duplicate-authority-key: duplicate production modules fail at assembly', (
 test('the Skill tool adapter returns validated output and a stable invalid-output error object', async () => {
   const { repository, revision, service } = await acceptedSkill(
     'tool-entry',
-    ['tool.fact.read'],
+    ['read_context'],
   );
   const published: unknown[] = [];
   const validOutput = intentDecisionOutput();
@@ -592,7 +592,7 @@ test('the Skill tool adapter returns validated output and a stable invalid-outpu
         contextRefs: ['facts:current-offer'],
         declaredBudgetCapCents: 1,
         payload: {},
-        toolId: 'tool.fact.read',
+        toolId: 'read_context',
       },
     ],
     input: {
@@ -813,7 +813,7 @@ async function acceptedSkill(
     instruction,
     manifest: {
       ...manifest(suffix),
-      'allowed-tools': 'tool.fact.read',
+      'allowed-tools': 'read_context',
     },
     promptReference: promptReference(prompt),
     skillId,
