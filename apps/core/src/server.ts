@@ -763,7 +763,7 @@ export async function streamWorkflowEvents(input: {
   } catch (error) {
     if (abortController.signal.aborted) return;
     if (input.response.headersSent) {
-      input.response.destroy(error instanceof Error ? error : undefined);
+      input.response.destroy();
     } else {
       sendP1HttpError(
         input.response,

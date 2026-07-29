@@ -635,6 +635,35 @@ test("Core Composer SSE keeps only one heartbeat queued while a drain is blocked
 	assert.equal(response.writableEnded, true);
 });
 
+test("Core Composer SSE consumes a post-header stream error without re-emitting it on the socket", async () => {
+	const response = new ErrorDestroyingSseResponse();
+	const request = new EventEmitter() as EventEmitter & { headers: Record<string, string> };
+	request.headers = {};
+	await streamWorkflowEvents({
+		request: request as never,
+		requestCorrelationId: "correlation-1",
+		response: response as never,
+		workflowEvents: new WorkflowEventApplicationService([
+			{
+				async owns() {
+					return true;
+				},
+				async *stream() {
+					yield progressFrame("task-1", 1);
+					const error = new Error("read ECONNRESET") as NodeJS.ErrnoException;
+					error.code = "ECONNRESET";
+					throw error;
+				},
+			},
+		]),
+		workflowHeartbeatMs: 60_000,
+		workflowId: "task-1",
+		workspaceId: "workspace-1",
+	});
+	assert.equal(response.destroyed, true);
+	assert.equal(response.destroyError, undefined);
+});
+
 test("legacy Harness task admission stays retired without a configured Harness service", async (t) => {
 	const server = createCoreServer({
 		diagnosticRepository: diagnostics,
@@ -1277,6 +1306,29 @@ class HeartbeatBackpressuredSseResponse extends EventEmitter {
 
 	end() {
 		this.writableEnded = true;
+	}
+}
+
+class ErrorDestroyingSseResponse extends EventEmitter {
+	destroyed = false;
+	destroyError: Error | undefined;
+	headersSent = false;
+	writableEnded = false;
+
+	writeHead() {
+		this.headersSent = true;
+		return this;
+	}
+
+	write() {
+		return true;
+	}
+
+	destroy(error?: Error) {
+		this.destroyed = true;
+		this.destroyError = error;
+		if (error) this.emit("error", error);
+		return this;
 	}
 }
 
