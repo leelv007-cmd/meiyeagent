@@ -150,6 +150,69 @@ test('the application entry releases an inline prompt rejection without dispatch
   await assertRejectedSkillUnwritten(harness);
 });
 
+test('the application entry releases an invalid frontmatter claim before dispatching the resolver', async () => {
+  let promptCaptures = 0;
+  const harness = applicationSkillHarness(
+    'invalid-frontmatter-retry',
+    async (reference) => {
+      promptCaptures += 1;
+      return frozenPrompt(reference.name);
+    },
+    {},
+    {
+      frontmatter: {
+        ...manifest('invalid-frontmatter-retry'),
+        unknown: 'not allowed',
+      },
+    },
+  );
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await assert.rejects(
+      harness.application.executeModule(
+        harness.context,
+        'skills',
+        harness.input,
+        'invalid-frontmatter-retry',
+      ),
+      /Unknown Skill frontmatter field/u,
+    );
+  }
+
+  assert.equal(promptCaptures, 0);
+  await assertRejectedSkillUnwritten(harness);
+});
+
+test('the application entry releases an invalid package path claim before dispatching the resolver', async () => {
+  let promptCaptures = 0;
+  const harness = applicationSkillHarness(
+    'invalid-package-path-retry',
+    async (reference) => {
+      promptCaptures += 1;
+      return frozenPrompt(reference.name);
+    },
+    {},
+    {
+      packagePaths: ['SKILL.md', '../escape.ts'],
+    },
+  );
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await assert.rejects(
+      harness.application.executeModule(
+        harness.context,
+        'skills',
+        harness.input,
+        'invalid-package-path-retry',
+      ),
+      /safe relative path/u,
+    );
+  }
+
+  assert.equal(promptCaptures, 0);
+  await assertRejectedSkillUnwritten(harness);
+});
+
 test('the application keeps the claim when prompt capture records an effect before invalid state', async () => {
   let promptCaptures = 0;
   const harness = applicationSkillHarness(
@@ -483,6 +546,7 @@ function applicationSkillHarness(
   suffix: string,
   capture: SkillPromptSnapshotPort['capture'],
   promptReferenceOverrides: Record<string, unknown> = {},
+  payloadOverrides: Record<string, unknown> = {},
 ) {
   const skillRepository = new MemorySkillRepository();
   const skillService = new SkillService(skillRepository, () => NOW, {
@@ -519,6 +583,7 @@ function applicationSkillHarness(
           ...promptReferenceOverrides,
         },
         skillId,
+        ...payloadOverrides,
       },
     },
     skillId,

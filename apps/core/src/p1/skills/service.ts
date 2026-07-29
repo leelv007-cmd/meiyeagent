@@ -58,6 +58,17 @@ function failPrewrite(message: string): never {
   throw new PrewriteDeterministicRejectionError(message);
 }
 
+function validatePrewrite<T>(validation: () => T): T {
+  try {
+    return validation();
+  } catch (error) {
+    if (error instanceof Error) {
+      failPrewrite(error.message);
+    }
+    throw error;
+  }
+}
+
 export class SkillInvocationValidationError extends P1DomainError {
   constructor(
     readonly phase: 'input' | 'output',
@@ -171,7 +182,9 @@ export class SkillService {
   private async prepareSkillDraft(
     input: SkillDraftRevisionInput,
   ): Promise<PreparedSkillDraft> {
-    const manifest = validateSkillFrontmatter(input.manifest);
+    const manifest = validatePrewrite(() =>
+      validateSkillFrontmatter(input.manifest),
+    );
     let governance: SkillGovernanceSidecar;
     try {
       governance = parseSkillGovernance(input.governance);
@@ -182,8 +195,8 @@ export class SkillService {
         }`,
       );
     }
-    const packagePaths = validateSkillPackagePaths(
-      input.packagePaths ?? ['SKILL.md'],
+    const packagePaths = validatePrewrite(() =>
+      validateSkillPackagePaths(input.packagePaths ?? ['SKILL.md']),
     );
     const instruction = required(input.instruction, 'Skill instruction');
     const prompt = await this.capturePromptSnapshot(input.promptReference);
