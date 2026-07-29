@@ -4,7 +4,7 @@ import test from 'node:test';
 
 import { attachDisconnectedSocketGuard } from './vite-disconnected-socket-plugin';
 
-test('E2E Vite sockets contain only disconnected reads', () => {
+test('E2E Vite sockets contain disconnected reads and writes', () => {
   const server = new EventEmitter();
   const socket = new EventEmitter();
   attachDisconnectedSocketGuard(
@@ -21,6 +21,24 @@ test('E2E Vite sockets contain only disconnected reads', () => {
       })
     );
   });
+  assert.doesNotThrow(() => {
+    socket.emit(
+      'error',
+      Object.assign(new Error('write ECONNRESET'), {
+        code: 'ECONNRESET',
+        syscall: 'write',
+      })
+    );
+  });
+  assert.throws(() => {
+    socket.emit(
+      'error',
+      Object.assign(new Error('connect ECONNRESET'), {
+        code: 'ECONNRESET',
+        syscall: 'connect',
+      })
+    );
+  }, /connect ECONNRESET/u);
   assert.throws(() => {
     socket.emit(
       'error',

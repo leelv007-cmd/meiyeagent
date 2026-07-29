@@ -14,7 +14,10 @@ interface ConnectionEventSource {
 export function attachDisconnectedSocketGuard(server: ConnectionEventSource) {
   server.on('connection', (socket) => {
     socket.on('error', (error: NodeJS.ErrnoException) => {
-      if (error.code === 'ECONNRESET' && error.syscall === 'read') {
+      if (
+        error.code === 'ECONNRESET' &&
+        (error.syscall === 'read' || error.syscall === 'write')
+      ) {
         return;
       }
       throw error;
