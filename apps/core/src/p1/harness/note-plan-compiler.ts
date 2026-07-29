@@ -14,6 +14,7 @@ import {
 } from '@meiye/contracts';
 import { ZodError } from 'zod';
 import { StructuredNodeRunError } from '../model-supply/structured-node-runner.js';
+import { check } from './check.js';
 
 // 这份默认集合已搬进契约（后台风格编辑器也要用同一份），此处保留导出口不动。
 export { DEFAULT_NOTE_STYLES };
@@ -228,100 +229,132 @@ export class NotePlanCompiler {
     const initialEvaluation = notePlanConsistencyEvaluationSchema.parse(
       await this.structured.evaluate({ plan, attempt: 'initial' }),
     );
-    auditSignals.push({
-      eventType: 'note_consistency_evaluated',
-      payload: {
-        attempt: 'initial',
-        dimensions: initialEvaluation.dimensions,
-        regenerationPageIds: initialEvaluation.regenerationPageIds,
-      },
-    });
-
     const regenerationReceipts: ImageTextNoteVersion['regenerationReceipts'] =
       [];
-    const regenerated = [];
+    const regenerated: Array<
+      Awaited<ReturnType<NotePlanImagePort['generate']>>
+    > = [];
     let textRewrites = 0;
-    for (const pageId of initialEvaluation.regenerationPageIds) {
-      const page = plan.pages.find(({ id }) => id === pageId);
-      if (!page) {
-        throw new Error('Consistency evaluation referenced an unknown page.');
-      }
-      const regeneration = notePageRegenerationPlan(initialEvaluation, pageId);
-      if (regeneration.side !== 'image') {
-        const index = plan.pages.findIndex(({ id }) => id === pageId);
-        const previousTextBlock = plan.pages[index - 1]?.textBlock;
-        const rewritten = await this.structured.draftPage({
-          page,
-          ...(previousTextBlock ? { previousTextBlock } : {}),
-          style: {
-            id: selected.plan.style.id,
-            name: selected.plan.style.name,
-            writingGuide: selected.plan.style.positioning,
-          },
-          themeAnchor: plan.themeAnchor,
-          consistencyFailure: regeneration.textReason ?? regeneration.reason,
+    const regenerateViolations = async (
+      evaluation: NotePlanConsistencyEvaluation,
+    ) => {
+      for (const pageId of evaluation.regenerationPageIds) {
+        const page = plan.pages.find(({ id }) => id === pageId);
+        if (!page) {
+          throw new Error(
+            'Consistency evaluation referenced an unknown page.',
+          );
+        }
+        const regeneration = notePageRegenerationPlan(evaluation, pageId);
+        if (regeneration.side !== 'image') {
+          const index = plan.pages.findIndex(({ id }) => id === pageId);
+          const previousTextBlock = plan.pages[index - 1]?.textBlock;
+          const rewritten = await this.structured.draftPage({
+            page,
+            ...(previousTextBlock ? { previousTextBlock } : {}),
+            style: {
+              id: selected.plan.style.id,
+              name: selected.plan.style.name,
+              writingGuide: selected.plan.style.positioning,
+            },
+            themeAnchor: plan.themeAnchor,
+            consistencyFailure: regeneration.textReason ?? regeneration.reason,
+          });
+          plan = notePlanSchema.parse({
+            ...plan,
+            pages: plan.pages.map((candidate) =>
+              candidate.id === page.id
+                ? {
+                    ...candidate,
+                    revision: candidate.revision + 1,
+                    textBlock: {
+                      ...rewritten,
+                      exactText: candidate.textBlock.exactText,
+                    },
+                  }
+                : candidate,
+            ),
+          });
+          assertNotePlanWithinBound(plan, input.notePageBound);
+          textRewrites += 1;
+          auditSignals.push({
+            eventType: 'note_page_regenerated',
+            payload: {
+              auditRef: `note-page-rewrite:${page.id}:r${page.revision + 1}`,
+              imagePoints: 0,
+              pageId: page.id,
+              reason: regeneration.textReason ?? regeneration.reason,
+              side: 'text',
+            },
+          });
+          if (regeneration.side === 'text') continue;
+        }
+        const target = plan.pages.find(({ id }) => id === pageId) ?? page;
+        const generation = await this.images.generate({
+          page: target,
+          reason: 'consistency_conflict',
+          evaluationReason: regeneration.imageReason ?? regeneration.reason,
+        });
+        regenerated.push(generation);
+        const auditRef = `note-page-regeneration:${target.id}:r${target.revision + 1}`;
+        regenerationReceipts.push({
+          pageId: target.id,
+          fromRevision: target.revision,
+          toRevision: target.revision + 1,
+          imagePoints: 1,
+          reason: 'consistency_conflict',
+          auditRef,
         });
         plan = notePlanSchema.parse({
           ...plan,
           pages: plan.pages.map((candidate) =>
-            candidate.id === page.id
+            candidate.id === target.id
               ? {
                   ...candidate,
                   revision: candidate.revision + 1,
-                  textBlock: {
-                    ...rewritten,
-                    exactText: candidate.textBlock.exactText,
-                  },
+                  imageAssetId: generation.asset.id,
                 }
               : candidate,
           ),
         });
         assertNotePlanWithinBound(plan, input.notePageBound);
-        textRewrites += 1;
         auditSignals.push({
           eventType: 'note_page_regenerated',
+          payload: { auditRef, imagePoints: 1, pageId: page.id },
+        });
+      }
+    };
+    const initialCheck = await check({
+      target: initialEvaluation,
+      strategy: 'warn',
+      evaluate: (evaluation) =>
+        evaluation.regenerationPageIds.length > 0 ? [evaluation] : [],
+      async onViolation(evaluation, { strategy }) {
+        auditSignals.push({
+          eventType: 'note_consistency_evaluated',
           payload: {
-            auditRef: `note-page-rewrite:${page.id}:r${page.revision + 1}`,
-            imagePoints: 0,
-            pageId: page.id,
-            reason: regeneration.textReason ?? regeneration.reason,
-            side: 'text',
+            attempt: 'initial',
+            checkId: 'note-plan-consistency',
+            dimensions: evaluation.dimensions,
+            regenerationPageIds: evaluation.regenerationPageIds,
+            status: 'warned',
+            strategy,
           },
         });
-        if (regeneration.side === 'text') continue;
-      }
-      const target = plan.pages.find(({ id }) => id === pageId) ?? page;
-      const generation = await this.images.generate({
-        page: target,
-        reason: 'consistency_conflict',
-        evaluationReason: regeneration.imageReason ?? regeneration.reason,
-      });
-      regenerated.push(generation);
-      const auditRef = `note-page-regeneration:${target.id}:r${target.revision + 1}`;
-      regenerationReceipts.push({
-        pageId: target.id,
-        fromRevision: target.revision,
-        toRevision: target.revision + 1,
-        imagePoints: 1,
-        reason: 'consistency_conflict',
-        auditRef,
-      });
-      plan = notePlanSchema.parse({
-        ...plan,
-        pages: plan.pages.map((candidate) =>
-          candidate.id === target.id
-            ? {
-                ...candidate,
-                revision: candidate.revision + 1,
-                imageAssetId: generation.asset.id,
-              }
-            : candidate,
-        ),
-      });
-      assertNotePlanWithinBound(plan, input.notePageBound);
+        await regenerateViolations(evaluation);
+      },
+    });
+    if (initialCheck.status === 'passed') {
       auditSignals.push({
-        eventType: 'note_page_regenerated',
-        payload: { auditRef, imagePoints: 1, pageId: page.id },
+        eventType: 'note_consistency_evaluated',
+        payload: {
+          attempt: 'initial',
+          checkId: 'note-plan-consistency',
+          dimensions: initialEvaluation.dimensions,
+          regenerationPageIds: initialEvaluation.regenerationPageIds,
+          status: initialCheck.status,
+          strategy: initialCheck.strategy,
+        },
       });
     }
     const regeneratedAnything =
@@ -345,17 +378,47 @@ export class NotePlanCompiler {
         }
         secondEvaluationFailed = true;
       }
-      auditSignals.push({
-        eventType: 'note_consistency_evaluated',
-        payload: {
-          attempt: 'after_regeneration',
-          dimensions: evaluation.dimensions,
-          regenerationPageIds: evaluation.regenerationPageIds,
-          ...(secondEvaluationFailed
-            ? { evaluationUnavailable: true, reason: 'second_evaluation_failed' }
-            : {}),
+      const finalCheck = await check({
+        target: { evaluation, secondEvaluationFailed },
+        strategy: 'warn',
+        evaluate: (target) =>
+          target.secondEvaluationFailed ||
+          target.evaluation.regenerationPageIds.length > 0
+            ? [target]
+            : [],
+        onViolation(target, { strategy }) {
+          auditSignals.push({
+            eventType: 'note_consistency_evaluated',
+            payload: {
+              attempt: 'after_regeneration',
+              checkId: 'note-plan-consistency',
+              dimensions: target.evaluation.dimensions,
+              regenerationPageIds: target.evaluation.regenerationPageIds,
+              status: 'warned',
+              strategy,
+              ...(target.secondEvaluationFailed
+                ? {
+                    evaluationUnavailable: true,
+                    reason: 'second_evaluation_failed',
+                  }
+                : {}),
+            },
+          });
         },
       });
+      if (finalCheck.status === 'passed') {
+        auditSignals.push({
+          eventType: 'note_consistency_evaluated',
+          payload: {
+            attempt: 'after_regeneration',
+            checkId: 'note-plan-consistency',
+            dimensions: evaluation.dimensions,
+            regenerationPageIds: evaluation.regenerationPageIds,
+            status: finalCheck.status,
+            strategy: finalCheck.strategy,
+          },
+        });
+      }
     }
     const unresolvedPageIds = evaluation.regenerationPageIds;
     const partial: NotePlanPartialDelivery | undefined =

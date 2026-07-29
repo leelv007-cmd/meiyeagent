@@ -122,6 +122,25 @@ test('selected style requests every page and records a bounded conflict regenera
       ({ eventType }) => eventType === 'note_consistency_evaluated',
     ),
   );
+  assert.equal(
+    result.auditSignals[1]?.eventType,
+    'note_consistency_evaluated',
+  );
+  assert.deepEqual(
+    {
+      attempt: result.auditSignals[1]?.payload.attempt,
+      checkId: result.auditSignals[1]?.payload.checkId,
+      status: result.auditSignals[1]?.payload.status,
+      strategy: result.auditSignals[1]?.payload.strategy,
+    },
+    {
+      attempt: 'initial',
+      checkId: 'note-plan-consistency',
+      status: 'warned',
+      strategy: 'warn',
+    },
+  );
+  assert.equal(result.auditSignals[2]?.eventType, 'note_page_regenerated');
 });
 
 test('text consistency failure rewrites text with its reason and retains an honest partial result', async () => {
@@ -185,6 +204,32 @@ test('text consistency failure rewrites text with its reason and retains an hone
     reason: 'consistency_remained_incomplete',
   });
   assert.equal(result.version.plan.pages[1]?.revision, 2);
+  assert.deepEqual(
+    result.auditSignals
+      .filter(
+        ({ eventType }) => eventType === 'note_consistency_evaluated',
+      )
+      .map(({ payload }) => ({
+        attempt: payload.attempt,
+        checkId: payload.checkId,
+        status: payload.status,
+        strategy: payload.strategy,
+      })),
+    [
+      {
+        attempt: 'initial',
+        checkId: 'note-plan-consistency',
+        status: 'warned',
+        strategy: 'warn',
+      },
+      {
+        attempt: 'after_regeneration',
+        checkId: 'note-plan-consistency',
+        status: 'warned',
+        strategy: 'warn',
+      },
+    ],
+  );
 });
 
 test('a page that fails on both sides is fixed on both, not re-imaged over a wording problem', async () => {

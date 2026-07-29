@@ -507,6 +507,7 @@ test('image and video snapshots use the same five Harness stages with modality-s
 test('image-text note uses the fourth Harness fork and waits for style choice before page generation', async () => {
   const keys: string[] = [];
   const progress: string[] = [];
+  let executionSelectionTrace: Record<string, unknown> | undefined;
   const request = mediaTaskInput('image_text_note');
   const result = await runHarnessWorkflow(
     'task-image-text-note',
@@ -540,7 +541,11 @@ test('image-text note uses the fourth Harness fork and waits for style choice be
           decision: { state: 'accepted', value: '故事版' },
         };
       },
-      async recordTrace() {},
+      async recordTrace(trace) {
+        if (trace.stage === 'execution_selection') {
+          executionSelectionTrace = trace.payload as Record<string, unknown>;
+        }
+      },
     },
   );
 
@@ -562,6 +567,16 @@ test('image-text note uses the fourth Harness fork and waits for style choice be
     'assembly_delivery:success',
   ]);
   assert.equal(result.recommendation.recommendedCandidateId, 'story');
+  assert.deepEqual(executionSelectionTrace?.auditSignals, [
+    {
+      eventType: 'note_consistency_evaluated',
+      payload: {
+        checkId: 'note-plan-consistency',
+        status: 'passed',
+        strategy: 'warn',
+      },
+    },
+  ]);
   assert.deepEqual(result.billingReceipt, {
     trustedUsage: {
       kind: 'product_units',
@@ -2011,7 +2026,16 @@ function noteStages(
       assert.equal(input.selectedStyleId, 'story');
       await onExecute?.(input);
       return {
-        auditSignals: [],
+        auditSignals: [
+          {
+            eventType: 'note_consistency_evaluated',
+            payload: {
+              checkId: 'note-plan-consistency',
+              status: partial ? 'warned' : 'passed',
+              strategy: 'warn',
+            },
+          },
+        ],
         childRuns: [],
         ownedAssets: [],
         selectedStyleId: input.selectedStyleId,

@@ -465,7 +465,7 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 	let generated = 0;
 	const ports = new UnifiedHarnessStagePorts(
 		noteCopyPorts(),
-		noteRunnerFactory(),
+		noteRunnerFactory(true),
 		{
 			async execute() {
 				generated += 1;
@@ -572,7 +572,41 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 	});
 
 	assert.equal(delivery.revision, 1);
-	assert.equal(generated, 2);
+	assert.equal(generated, 3);
+	assert.deepEqual(
+		selection.auditSignals.map(({ eventType, payload }) => ({
+			eventType,
+			status: payload.status,
+			strategy: payload.strategy,
+		})),
+		[
+			{
+				eventType: "note_style_selected",
+				status: undefined,
+				strategy: undefined,
+			},
+			{
+				eventType: "note_consistency_evaluated",
+				status: "warned",
+				strategy: "warn",
+			},
+			{
+				eventType: "note_page_regenerated",
+				status: undefined,
+				strategy: undefined,
+			},
+			{
+				eventType: "note_page_regenerated",
+				status: undefined,
+				strategy: undefined,
+			},
+			{
+				eventType: "note_consistency_evaluated",
+				status: "passed",
+				strategy: "warn",
+			},
+		],
+	);
 	const contentPackage = writer.get("workspace-1", packageId);
 	assert.equal(contentPackage?.revision, 1);
 	assert.equal(contentPackage?.versions.length, 2);
@@ -585,7 +619,7 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 		selectedVersion?.note?.plan.pages.map(
 			({ imageAssetId }) => imageAssetId,
 		),
-		["image-asset-1", "image-asset-2"],
+		["image-asset-1", "image-asset-3"],
 	);
 	assert.ok(contentPackage?.marketing?.contextBundle.bundleId);
 	assert.ok(contentPackage?.marketing?.rightsRefs.length);
@@ -1807,9 +1841,12 @@ function noteCopyPorts(): HarnessStagePorts {
 	};
 }
 
-function noteRunnerFactory(): HarnessStructuredNodeRunnerFactory {
+function noteRunnerFactory(
+	conflictBeforeRegeneration = false,
+): HarnessStructuredNodeRunnerFactory {
 	return {
 		create() {
+			let consistencyAttempts = 0;
 			return {
 				async run<Output>(request: StructuredNodeRunnerRequest<Output>) {
 					const payload = JSON.parse(request.prompt) as Record<string, unknown>;
@@ -1830,6 +1867,8 @@ function noteRunnerFactory(): HarnessStructuredNodeRunnerFactory {
 					} else if (
 						request.schemaName === "harness_note_consistency_v1"
 					) {
+						const conflict =
+							conflictBeforeRegeneration && consistencyAttempts++ === 0;
 						output = {
 							evaluatedAt: "2026-07-22T09:00:01.000Z",
 							dimensions: [
@@ -1838,14 +1877,14 @@ function noteRunnerFactory(): HarnessStructuredNodeRunnerFactory {
 								"non_repetition",
 								"role_coverage",
 								"image_text_cross_reference",
-							].map((dimension) => ({
-								dimension,
-								passed: true,
-								reason: `${dimension} passed`,
-								pageIds: [],
-							})),
-							regenerationPageIds: [],
-						};
+								].map((dimension) => ({
+									dimension,
+									passed: !conflict,
+									reason: `${dimension} passed`,
+									pageIds: conflict ? ["page-2"] : [],
+								})),
+								regenerationPageIds: conflict ? ["page-2"] : [],
+							};
 					} else {
 						throw new Error(`Unexpected schema ${request.schemaName}.`);
 					}
