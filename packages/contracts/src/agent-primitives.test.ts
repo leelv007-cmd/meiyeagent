@@ -318,6 +318,21 @@ test('merchant semantic defaults require explicit server-owned safe authority', 
       eligibility: {
         kind: 'safe',
         serverEvaluated: true,
+        effect: 'none',
+        quota: 'within_limit',
+        defaultResponse: {
+          kind: 'answer',
+          items: [
+            {
+              itemId: 'window',
+              result: { kind: 'deferred' },
+            },
+          ],
+        },
+        defaultResponseFingerprint:
+          'b733d7f423fda07a6df7cad8318bd1132f45a6f0043bef329e9731763267be8d',
+        policyRevision: 'ask-semantic-default/v1',
+        conditionRevision: 'request-safe-default:r1',
       },
     },
     presentation: {
@@ -329,6 +344,20 @@ test('merchant semantic defaults require explicit server-owned safe authority', 
   } as const;
 
   assert.deepEqual(askMerchantQuestionRequestSchema.parse(request), request);
+  assert.equal(
+    askMerchantQuestionRequestSchema.safeParse({
+      ...request,
+      timeoutPolicy: {
+        kind: 'semantic_default',
+        timeoutSeconds: 30,
+        eligibility: {
+          kind: 'safe',
+          serverEvaluated: true,
+        },
+      },
+    }).success,
+    false,
+  );
   assert.equal(
     askMerchantQuestionRequestSchema.safeParse({
       ...request,

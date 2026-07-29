@@ -49,12 +49,14 @@ import {
   harnessInteractionResumeSignalSchema,
   type HarnessInteractionResumeSignal,
 } from './interaction-resume.js';
+import { askMerchantInteractionRequestFromQuestion } from './interaction-service.js';
 import {
   HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
   HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
   type AdminConfigRepository,
 } from '../admin-config/foundation-module.js';
 import type { TaskRecallDueInput } from '../due-delivery/task-recall-producer.js';
+import { fingerprintValue } from '../job-runtime/job-contracts.js';
 
 export interface HarnessWorkflowPersistence {
   registerPending: HarnessDecisionStore['registerPending'];
@@ -346,10 +348,47 @@ export function registerHarnessDbosWorkflow(
               stage,
               workspaceId: request.workspaceId,
             });
+            const defaultResponse = {
+              kind: 'answer' as const,
+              items: [
+                {
+                  itemId: question.response.field,
+                  result: { kind: 'deferred' as const },
+                },
+              ],
+            };
+            const interactionRequest =
+              askMerchantInteractionRequestFromQuestion({
+                question,
+                stage,
+                timeoutPolicy:
+                  timeoutSeconds === null
+                    ? {
+                        kind: 'hold',
+                        reason: 'unknown',
+                        serverEvaluated: true,
+                      }
+                    : {
+                        kind: 'semantic_default',
+                        timeoutSeconds,
+                        eligibility: {
+                          kind: 'safe',
+                          serverEvaluated: true,
+                          effect: 'none',
+                          quota: 'within_limit',
+                          defaultResponse,
+                          defaultResponseFingerprint:
+                            fingerprintValue(defaultResponse),
+                          policyRevision: 'ask-semantic-default/v1',
+                          conditionRevision:
+                            `${question.questionId}:r${question.workflowRevision}`,
+                        },
+                      },
+              });
             const registered = await persistence.registerPending(
               request.workspaceId,
               question,
-              { timeoutSeconds },
+              { interactionRequest, timeoutSeconds },
             );
             return {
               ...(registered ?? { timeoutSeconds }),

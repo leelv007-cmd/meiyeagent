@@ -6,6 +6,7 @@ import {
   askMerchantAnswerSchema,
   askMerchantQuestionRequestSchema,
   questionCardSchema,
+  type AskMerchantQuestionRequest,
 } from '@meiye/contracts';
 import { Pool } from 'pg';
 
@@ -17,6 +18,67 @@ import { HarnessResumeReconciler } from './resume-reconciler.js';
 import { harnessRuntimeId } from './workspace-scope.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
+
+function semanticDefaultEligibility(itemIds: string[]) {
+  const defaultResponse = {
+    kind: 'answer' as const,
+    items: itemIds.map((itemId) => ({
+      itemId,
+      result: { kind: 'deferred' as const },
+    })),
+  };
+  return {
+    kind: 'safe' as const,
+    serverEvaluated: true as const,
+    effect: 'none' as const,
+    quota: 'within_limit' as const,
+    defaultResponse,
+    defaultResponseFingerprint: fingerprintValue(defaultResponse),
+    policyRevision: 'ask-semantic-default/v1',
+    conditionRevision: 'postgres-test-condition-r1',
+  };
+}
+
+function registerTypedPending(
+  store: PostgresHarnessStore,
+  workspaceId: string,
+  request: AskMerchantQuestionRequest,
+) {
+  const firstQuestion = request.questions[0]!;
+  return store.registerPending(
+    workspaceId,
+    questionCardSchema.parse({
+      questionId: request.requestId,
+      workflowId: request.runId,
+      workflowRevision: request.revision,
+      question: firstQuestion.question,
+      options: (firstQuestion.options ?? []).map((option, index) => ({
+        id: `${firstQuestion.itemId}:${index}`,
+        label: option.label,
+        ...(option.description
+          ? { description: option.description }
+          : {}),
+      })),
+      freeText: { enabled: true },
+      response: {
+        field: firstQuestion.itemId,
+        reason: '需要商家确认后继续',
+      },
+      unattended:
+        request.timeoutPolicy?.kind === 'semantic_default'
+          ? 'continue'
+          : 'hold',
+      scope: 'current_task',
+    }),
+    {
+      timeoutSeconds:
+        request.timeoutPolicy?.kind === 'semantic_default'
+          ? request.timeoutPolicy.timeoutSeconds
+          : null,
+      interactionRequest: request,
+    },
+  );
+}
 
 test(
   'Postgres interactions survive restart, stay out of pending actions and resume once',
@@ -90,22 +152,22 @@ test(
         ],
       );
       const registrations = await Promise.all([
-        firstStore.registerInteraction(workspaceId, request),
-        firstStore.registerInteraction(workspaceId, request),
+        registerTypedPending(firstStore, workspaceId, request),
+        registerTypedPending(firstStore, workspaceId, request),
       ]);
-      assert.deepEqual(
-        registrations.map((item) => item.outcome).sort(),
-        ['created', 'replayed'],
-      );
+      assert.deepEqual(registrations, [
+        { timeoutSeconds: null },
+        { timeoutSeconds: null },
+      ]);
 
       const restartedStore = new PostgresHarnessStore(pool);
       assert.deepEqual(
         await restartedStore.readPendingInteraction(workspaceId, runId),
         request,
       );
-      assert.deepEqual(
-        await restartedStore.listPendingQuestions(workspaceId),
-        [],
+      assert.equal(
+        (await restartedStore.readPending(workspaceId, runId))?.questionId,
+        request.requestId,
       );
 
       const resumes: unknown[] = [];
@@ -175,7 +237,7 @@ test(
           },
         ],
       });
-      await restartedStore.registerInteraction(workspaceId, raceRequest);
+      await registerTypedPending(restartedStore, workspaceId, raceRequest);
       const raceAnswers = ['2026-08-31', '2026-09-30'].map((value, index) =>
         askMerchantAnswerSchema.parse({
           requestId: raceRequest.requestId,
@@ -222,7 +284,7 @@ test(
         timeoutPolicy: {
           kind: 'semantic_default',
           timeoutSeconds: 30,
-          eligibility: { kind: 'safe', serverEvaluated: true },
+          eligibility: semanticDefaultEligibility(['window']),
         },
         questions: [
           {
@@ -233,8 +295,14 @@ test(
         ],
       });
       let now = Date.parse('2026-07-30T00:00:00.000Z');
+      const timeoutStore = new PostgresHarnessStore(
+        pool,
+        undefined,
+        undefined,
+        () => new Date(now),
+      );
       const timeoutService = new HarnessInteractionService(
-        new PostgresHarnessStore(pool),
+        timeoutStore,
         {
           async resume(input) {
             resumes.push(input);
@@ -242,41 +310,23 @@ test(
         },
         () => new Date(now),
       );
-      await timeoutService.request(workspaceId, timeoutRequest, {
-        rendererCapability: 'available',
-      });
       assert.deepEqual(
-        await new PostgresHarnessStore(pool).registerPending(
+        await registerTypedPending(
+          timeoutStore,
           workspaceId,
-          questionCardSchema.parse({
-            questionId: timeoutRequest.requestId,
-            workflowId: runId,
-            workflowRevision: timeoutRequest.revision,
-            question: '活动到哪天结束？',
-            options: [],
-            freeText: { enabled: true },
-            response: {
-              field: 'window',
-              reason: '需要商家确认活动窗口',
-            },
-            unattended: 'hold',
-            scope: 'current_task',
-          }),
-          { timeoutSeconds: null },
+          timeoutRequest,
         ),
-        { timeoutSeconds: null },
+        { timeoutSeconds: 30 },
+      );
+      assert.equal(
+        (await timeoutService.readForCarrier(workspaceId, runId, 'conversation'))
+          ?.requestId,
+        timeoutRequest.requestId,
       );
       assert.equal(
         (await new PostgresHarnessStore(pool).readPending(workspaceId, runId))
           ?.questionId,
         timeoutRequest.requestId,
-      );
-      assert.equal(
-        await new PostgresHarnessStore(pool).readDecisionTarget(
-          workspaceId,
-          runId,
-        ),
-        null,
       );
       assert.deepEqual(
         await timeoutService.submitSystemDefault(workspaceId, runId),
@@ -332,7 +382,7 @@ test(
         requestId: `interaction-recovery-${suffix}`,
         revision: 4,
       });
-      await restartedStore.registerInteraction(workspaceId, recoveryRequest);
+      await registerTypedPending(restartedStore, workspaceId, recoveryRequest);
       const recoveryAnswer = askMerchantAnswerSchema.parse({
         ...answer,
         requestId: recoveryRequest.requestId,

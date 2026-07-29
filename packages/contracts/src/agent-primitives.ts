@@ -85,6 +85,23 @@ export const askMerchantQuestionSchema = z
   })
   .strict();
 
+export const askMerchantSemanticDefaultResponseSchema = z
+  .object({
+    kind: z.literal('answer'),
+    items: z
+      .array(
+        z
+          .object({
+            itemId: primitiveTextSchema,
+            result: z.object({ kind: z.literal('deferred') }).strict(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(12),
+  })
+  .strict();
+
 export const interactionTimeoutPolicySchema = z.discriminatedUnion('kind', [
   z
     .object({
@@ -103,6 +120,12 @@ export const interactionTimeoutPolicySchema = z.discriminatedUnion('kind', [
         .object({
           kind: z.literal('safe'),
           serverEvaluated: z.literal(true),
+          effect: z.literal('none'),
+          quota: z.enum(['within_limit', 'not_applicable']),
+          defaultResponse: askMerchantSemanticDefaultResponseSchema,
+          defaultResponseFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
+          policyRevision: primitiveTextSchema,
+          conditionRevision: primitiveTextSchema,
         })
         .strict(),
     })
@@ -153,6 +176,30 @@ export const askMerchantQuestionRequestSchema = z
           });
         }
         labels.add(option.label);
+      }
+    }
+    if (request.timeoutPolicy?.kind === 'semantic_default') {
+      const defaultItemIds =
+        request.timeoutPolicy.eligibility.defaultResponse.items.map(
+          (item) => item.itemId,
+        );
+      if (
+        defaultItemIds.length !== request.questions.length ||
+        defaultItemIds.some(
+          (itemId, index) => itemId !== request.questions[index]?.itemId,
+        )
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message:
+            'Merchant semantic defaults must freeze one ordered fallback per question.',
+          path: [
+            'timeoutPolicy',
+            'eligibility',
+            'defaultResponse',
+            'items',
+          ],
+        });
       }
     }
   });

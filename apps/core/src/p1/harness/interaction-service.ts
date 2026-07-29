@@ -1,10 +1,13 @@
 import {
+  askMerchantQuestionRequestSchema,
   askMerchantAnswerSchema,
-  executionConfirmationAnswerSchema,
   harnessInteractionAnswerSchema,
   harnessInteractionRequestSchema,
+  type AskMerchantQuestionRequest,
+  type HarnessStage,
   type HarnessInteractionAnswer,
   type HarnessInteractionRequest,
+  type QuestionCard,
 } from '@meiye/contracts';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -20,7 +23,9 @@ const interactionRendererCapabilitySchema = z.enum([
 
 export const harnessInteractionPendingProjectionSchema = z
   .object({
+    kind: z.literal('harness_interaction'),
     version: z.literal(1),
+    request: harnessInteractionRequestSchema,
     rendererCapability: interactionRendererCapabilitySchema,
     waitingState: z.enum(['answer', 'merchant_message']),
     timer: z.discriminatedUnion('kind', [
@@ -28,6 +33,7 @@ export const harnessInteractionPendingProjectionSchema = z
       z
         .object({
           kind: z.literal('armed'),
+          timeoutSeconds: z.number().int().min(1).max(3_600),
           deadlineAt: z.iso.datetime(),
           editingStartedAt: z.iso.datetime().nullable(),
         })
@@ -40,30 +46,64 @@ export type HarnessInteractionPendingProjection = z.infer<
   typeof harnessInteractionPendingProjectionSchema
 >;
 
-const failClosedProjection = (): HarnessInteractionPendingProjection => ({
-  version: 1,
-  rendererCapability: 'unknown',
-  waitingState: 'answer',
-  timer: { kind: 'hold' },
-});
+export function askMerchantInteractionRequestFromQuestion(input: {
+  question: QuestionCard;
+  stage: HarnessStage;
+  timeoutPolicy?: AskMerchantQuestionRequest['timeoutPolicy'];
+}) {
+  const { question } = input;
+  return askMerchantQuestionRequestSchema.parse({
+    requestId: question.questionId,
+    runId: question.workflowId,
+    step: input.stage,
+    revision: question.workflowRevision,
+    kind: 'ask_merchant',
+    questions: [
+      {
+        itemId: question.response.field,
+        question: question.question,
+        ...(question.options.length > 0
+          ? {
+              options: question.options.map(({ description, label }) => ({
+                ...(description ? { description } : {}),
+                label,
+              })),
+            }
+          : {}),
+        fallback: { kind: 'deferred' },
+      },
+    ],
+    groupSkip: true,
+    ...(input.timeoutPolicy ? { timeoutPolicy: input.timeoutPolicy } : {}),
+    presentation: {
+      carriers: ['conversation', 'store_page'],
+      blocking: 'none',
+      notification: 'none',
+      renderer: 'ask_merchant_group',
+    },
+  });
+}
 
-function pendingProjection(
+export function createHarnessInteractionPendingProjection(
   request: HarnessInteractionRequest,
   rendererCapability: HarnessInteractionPendingProjection['rendererCapability'],
   registeredAt: Date,
-) {
+): HarnessInteractionPendingProjection {
   const policy =
     request.kind === 'ask_merchant'
       ? request.timeoutPolicy
       : request.frozen.timeoutPolicy;
   return harnessInteractionPendingProjectionSchema.parse({
+    kind: 'harness_interaction',
     version: 1,
+    request,
     rendererCapability,
     waitingState: 'answer',
     timer:
       policy?.kind === 'semantic_default'
         ? {
             kind: 'armed',
+            timeoutSeconds: policy.timeoutSeconds,
             deadlineAt: new Date(
               registeredAt.getTime() + policy.timeoutSeconds * 1_000,
             ).toISOString(),
@@ -74,12 +114,11 @@ function pendingProjection(
 }
 
 export interface HarnessInteractionStore {
-  registerInteraction(
+  advanceInteraction(
     workspaceId: string,
     request: HarnessInteractionRequest,
-    projection?: HarnessInteractionPendingProjection,
   ): Promise<{
-    outcome: 'created' | 'replayed' | 'conflict';
+    outcome: 'advanced' | 'replayed' | 'conflict';
   }>;
   readPendingInteraction(
     workspaceId: string,
@@ -179,41 +218,6 @@ export class HarnessInteractionService {
     private readonly now: () => Date = () => new Date(),
   ) {}
 
-  async request(
-    workspaceId: string,
-    input: unknown,
-    authority?: {
-      rendererCapability: HarnessInteractionPendingProjection['rendererCapability'];
-    },
-  ) {
-    const request = harnessInteractionRequestSchema.parse(input);
-    if (
-      request.kind === 'execution_confirmation' &&
-      !request.frozen.condition.required
-    ) {
-      return { kind: 'continued' as const };
-    }
-    const registered = await this.store.registerInteraction(
-      workspaceId,
-      request,
-      pendingProjection(
-        request,
-        authority?.rendererCapability ?? 'unknown',
-        this.now(),
-      ),
-    );
-    if (registered.outcome === 'conflict') {
-      throw new HarnessInteractionError(
-        'STALE_INTERACTION_REVISION',
-        'Another interaction is already pending for this run.',
-      );
-    }
-    return {
-      kind: 'pending' as const,
-      replayed: registered.outcome === 'replayed',
-    };
-  }
-
   async readForCarrier(
     workspaceId: string,
     runId: string,
@@ -226,6 +230,15 @@ export class HarnessInteractionService {
     if (
       !request ||
       !(request.presentation.carriers as readonly string[]).includes(carrier)
+    ) {
+      return null;
+    }
+    if (
+      !(await this.store.setInteractionRendererCapability(
+        workspaceId,
+        runId,
+        'available',
+      ))
     ) {
       return null;
     }
@@ -267,17 +280,7 @@ export class HarnessInteractionService {
       return { kind: 'held' as const, reason: 'policy' as const };
     }
     if (request.kind === 'execution_confirmation') {
-      return this.submitParsed(
-        workspaceId,
-        executionConfirmationAnswerSchema.parse({
-          requestId: request.requestId,
-          revision: request.revision,
-          idempotencyKey: `${request.requestId}:r${request.revision}:system_default`,
-          resume: { runId: request.runId, step: request.step },
-          response: { kind: 'approved' },
-        }),
-        'system_default',
-      );
+      return { kind: 'held' as const, reason: 'policy' as const };
     }
     return this.submitParsed(
       workspaceId,
@@ -286,13 +289,7 @@ export class HarnessInteractionService {
         revision: request.revision,
         idempotencyKey: `${request.requestId}:r${request.revision}:system_default`,
         resume: { runId: request.runId, step: request.step },
-        response: {
-          kind: 'answer',
-          items: request.questions.map((question) => ({
-            itemId: question.itemId,
-            result: { kind: 'deferred' },
-          })),
-        },
+        response: policy.eligibility.defaultResponse,
       }),
       'system_default',
     );
@@ -377,7 +374,7 @@ export class HarnessInteractionService {
         );
       }
       if (resolution.kind === 'reask') {
-        const registered = await this.store.registerInteraction(
+        const registered = await this.store.advanceInteraction(
           workspaceId,
           resolution.request,
         );

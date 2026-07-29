@@ -9,10 +9,12 @@ import {
 } from '@meiye/contracts';
 
 import {
+  createHarnessInteractionPendingProjection,
   HarnessInteractionService,
   type HarnessInteractionPendingProjection,
   type HarnessInteractionStore,
 } from './interaction-service.js';
+import { fingerprintValue } from '../job-runtime/job-contracts.js';
 
 test('interaction answers persist before one resume with the canonical triple', async () => {
   const order: string[] = [];
@@ -52,7 +54,7 @@ test('interaction answers persist before one resume with the canonical triple', 
       ],
     },
   });
-  await store.registerInteraction('workspace-a', request);
+  await store.seed(request);
   const service = new HarnessInteractionService(store, {
     async resume(input) {
       order.push(
@@ -85,7 +87,7 @@ test('invalid offered labels become a durable follow-up revision without resumin
       },
     ],
   });
-  await store.registerInteraction('workspace-a', request);
+  await store.seed(request);
   const service = new HarnessInteractionService(store, {
     async resume() {
       throw new Error('A rejected answer must not resume.');
@@ -122,7 +124,7 @@ test('a failed resume retries the persisted answer without writing it twice', as
   const store = new MemoryInteractionStore(order);
   const request = askRequest();
   const answer = askAnswer(request, 'retry-answer');
-  await store.registerInteraction('workspace-a', request);
+  await store.seed(request);
   let attempts = 0;
   const service = new HarnessInteractionService(store, {
     async resume() {
@@ -148,30 +150,6 @@ test('a failed resume retries the persisted answer without writing it twice', as
   ]);
 });
 
-test('execution confirmation only persists when the server condition requires it', async () => {
-  const store = new MemoryInteractionStore([]);
-  const service = new HarnessInteractionService(store, { async resume() {} });
-  const direct = executionRequest(false);
-  const held = executionRequest(true);
-
-  assert.deepEqual(await service.request('workspace-a', direct), {
-    kind: 'continued',
-  });
-  assert.equal(
-    await store.readPendingInteraction('workspace-a', direct.runId),
-    null,
-  );
-  assert.deepEqual(await service.request('workspace-a', held), {
-    kind: 'pending',
-    replayed: false,
-  });
-  assert.equal(
-    (await store.readPendingInteraction('workspace-a', held.runId))
-      ?.requestId,
-    held.requestId,
-  );
-});
-
 for (const response of [
   { kind: 'approved' as const },
   { kind: 'rejected' as const, feedback: '请换成更稳妥的方案' },
@@ -180,7 +158,7 @@ for (const response of [
     const resumes: unknown[] = [];
     const store = new MemoryInteractionStore([]);
     const request = executionRequest(true);
-    await store.registerInteraction('workspace-a', request);
+    await store.seed(request);
     const service = new HarnessInteractionService(store, {
       async resume(input) {
         resumes.push(input.resumeData);
@@ -206,7 +184,7 @@ test('execution rejection without feedback persists waiting without resuming', a
   const resumes: unknown[] = [];
   const store = new MemoryInteractionStore([]);
   const request = executionRequest(true);
-  await store.registerInteraction('workspace-a', request);
+  await store.seed(request);
   const service = new HarnessInteractionService(store, {
     async resume(input) {
       resumes.push(input.resumeData);
@@ -248,10 +226,7 @@ test('semantic timeout defers merchant questions but pauses while the merchant e
     timeoutPolicy: {
       kind: 'semantic_default',
       timeoutSeconds: 30,
-      eligibility: {
-        kind: 'safe',
-        serverEvaluated: true,
-      },
+      eligibility: semanticDefaultEligibility(['service', 'window']),
     },
     questions: [
       {
@@ -276,9 +251,7 @@ test('semantic timeout defers merchant questions but pauses while the merchant e
     () => new Date(now),
   );
 
-  await service.request('workspace-a', request, {
-    rendererCapability: 'available',
-  });
+  await store.seed(request, 'available', new Date(now));
   assert.deepEqual(
     await service.submitSystemDefault('workspace-a', request.runId),
     { kind: 'held', reason: 'deadline' },
@@ -323,10 +296,7 @@ test('an unavailable renderer holds an otherwise eligible expired default', asyn
     timeoutPolicy: {
       kind: 'semantic_default',
       timeoutSeconds: 30,
-      eligibility: {
-        kind: 'safe',
-        serverEvaluated: true,
-      },
+      eligibility: semanticDefaultEligibility(['window']),
     },
   });
   const service = new HarnessInteractionService(
@@ -334,9 +304,7 @@ test('an unavailable renderer holds an otherwise eligible expired default', asyn
     { async resume() {} },
     () => new Date(now),
   );
-  await service.request('workspace-a', request, {
-    rendererCapability: 'unavailable',
-  });
+  await store.seed(request, 'unavailable', new Date(now));
   now += 30_000;
 
   assert.deepEqual(
@@ -358,10 +326,9 @@ test('external execution effects hold forever and an unsupported carrier cannot 
   const store = new MemoryInteractionStore([]);
   const request = executionRequest(true, {
     conditionKind: 'external_action',
-    timeoutKind: 'hold',
   });
   const service = new HarnessInteractionService(store, { async resume() {} });
-  await service.request('workspace-a', request);
+  await store.seed(request);
 
   assert.equal(
     await service.readForCarrier('workspace-a', request.runId, 'store_page'),
@@ -379,8 +346,7 @@ test('external execution effects hold forever and an unsupported carrier cannot 
 });
 
 class MemoryInteractionStore implements HarnessInteractionStore {
-  private pending:
-    | Parameters<HarnessInteractionStore['registerInteraction']>[1]
+  private pending: Parameters<HarnessInteractionStore['advanceInteraction']>[1]
     | null = null;
   private event:
     | {
@@ -390,12 +356,7 @@ class MemoryInteractionStore implements HarnessInteractionStore {
       }
     | undefined;
   private waitingForMerchantMessage = false;
-  private projection: HarnessInteractionPendingProjection = {
-    version: 1,
-    rendererCapability: 'unknown',
-    waitingState: 'answer',
-    timer: { kind: 'hold' },
-  };
+  private projection: HarnessInteractionPendingProjection | null = null;
   editing = false;
   lastResolutionSource: string | undefined;
   get eventResumeRequired() {
@@ -404,14 +365,36 @@ class MemoryInteractionStore implements HarnessInteractionStore {
 
   constructor(private readonly order: string[]) {}
 
-  async registerInteraction(
-    _workspaceId: string,
-    request: Parameters<HarnessInteractionStore['registerInteraction']>[1],
-    projection?: Parameters<HarnessInteractionStore['registerInteraction']>[2],
+  async seed(
+    request: Parameters<HarnessInteractionStore['advanceInteraction']>[1],
+    rendererCapability: HarnessInteractionPendingProjection['rendererCapability'] = 'unknown',
+    registeredAt = new Date('2026-07-30T00:00:00.000Z'),
   ) {
     this.pending = request;
-    if (projection) this.projection = structuredClone(projection);
-    return { outcome: 'created' as const };
+    this.projection = createHarnessInteractionPendingProjection(
+      request,
+      rendererCapability,
+      registeredAt,
+    );
+  }
+
+  async advanceInteraction(
+    _workspaceId: string,
+    request: Parameters<HarnessInteractionStore['advanceInteraction']>[1],
+  ) {
+    if (!this.pending || !this.projection) {
+      return { outcome: 'conflict' as const };
+    }
+    if (
+      this.pending.requestId !== request.requestId ||
+      this.pending.runId !== request.runId ||
+      request.revision !== this.pending.revision + 1
+    ) {
+      return { outcome: 'conflict' as const };
+    }
+    this.pending = request;
+    this.projection.request = request;
+    return { outcome: 'advanced' as const };
   }
 
   async readPendingInteraction(
@@ -438,7 +421,7 @@ class MemoryInteractionStore implements HarnessInteractionStore {
       };
     }
     if (input.trigger === 'system_default') {
-      if (this.projection.timer.kind !== 'armed') {
+      if (!this.projection || this.projection.timer.kind !== 'armed') {
         return { outcome: 'ineligible' as const, resumeRequired: false };
       }
       if (this.projection.rendererCapability !== 'available') {
@@ -494,7 +477,7 @@ class MemoryInteractionStore implements HarnessInteractionStore {
     at: string,
   ) {
     if (!this.pending) return 'stale' as const;
-    if (this.projection.timer.kind !== 'armed') {
+    if (!this.projection || this.projection.timer.kind !== 'armed') {
       return 'unknown_state' as const;
     }
     const current = this.projection.timer.editingStartedAt;
@@ -520,9 +503,30 @@ class MemoryInteractionStore implements HarnessInteractionStore {
     capability: 'available' | 'unavailable' | 'unknown',
   ) {
     if (!this.pending) return false;
+    if (!this.projection) return false;
     this.projection.rendererCapability = capability;
     return true;
   }
+}
+
+function semanticDefaultEligibility(itemIds: string[]) {
+  const defaultResponse = {
+    kind: 'answer' as const,
+    items: itemIds.map((itemId) => ({
+      itemId,
+      result: { kind: 'deferred' as const },
+    })),
+  };
+  return {
+    kind: 'safe' as const,
+    serverEvaluated: true as const,
+    effect: 'none' as const,
+    quota: 'within_limit' as const,
+    defaultResponse,
+    defaultResponseFingerprint: fingerprintValue(defaultResponse),
+    policyRevision: 'ask-semantic-default/v1',
+    conditionRevision: 'test-condition-r1',
+  };
 }
 
 function askRequest(
@@ -582,7 +586,6 @@ function executionRequest(
       | 'quote_threshold'
       | 'external_action'
       | 'unknown';
-    timeoutKind?: 'hold' | 'semantic_default';
   } = {},
 ) {
   return executionConfirmationRequestSchema.parse({
@@ -608,27 +611,16 @@ function executionRequest(
         required,
         serverEvaluated: true,
       },
-      timeoutPolicy:
-        options.timeoutKind !== 'semantic_default'
-          ? {
-              kind: 'hold',
-              reason:
-                (options.conditionKind ?? 'existing_gate') === 'external_action'
-                  ? 'external_action'
-                  : (options.conditionKind ?? 'existing_gate') ===
-                      'quote_threshold'
-                    ? 'quote_threshold'
-                    : 'unknown',
-              serverEvaluated: true,
-            }
-          : {
-              kind: 'semantic_default',
-              timeoutSeconds: 30,
-              eligibility: {
-                kind: 'safe',
-                serverEvaluated: true,
-              },
-            },
+      timeoutPolicy: {
+        kind: 'hold',
+        reason:
+          (options.conditionKind ?? 'existing_gate') === 'external_action'
+            ? 'external_action'
+            : (options.conditionKind ?? 'existing_gate') === 'quote_threshold'
+              ? 'quote_threshold'
+              : 'unknown',
+        serverEvaluated: true,
+      },
     },
     presentation: {
       carriers: ['conversation', 'task_card'],

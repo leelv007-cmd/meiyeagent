@@ -1,5 +1,6 @@
 import {
   structuredDecisionInputSchema,
+  type HarnessInteractionRequest,
   type QuestionCard,
   type StructuredDecisionInput,
 } from '@meiye/contracts';
@@ -34,6 +35,7 @@ export interface HarnessDecisionTrace {
 
 export interface HarnessPendingDecisionProjection {
   timeoutSeconds: number | null;
+  interactionRequest?: HarnessInteractionRequest;
 }
 
 export interface HarnessDecisionStore {

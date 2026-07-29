@@ -346,7 +346,6 @@ import {
 import { HarnessCheckTargetScope } from './p1/agent-primitives/harness-check-target-scope.js';
 import {
   HarnessQuestionRequestPort,
-  type HarnessInteractionRequestRegistrar,
 } from './p1/agent-primitives/harness-question-request-port.js';
 import { P1HarnessAskInvoker } from './p1/agent-primitives/p1-harness-ask-invoker.js';
 import { P1HarnessCandidateRunnerScope } from './p1/agent-primitives/p1-harness-candidate-runner.js';
@@ -1438,17 +1437,9 @@ const creationExperienceRuntime =
 const harnessCheckTargetScope = new HarnessCheckTargetScope();
 const harnessCandidatePrimitiveScope =
   new P1HarnessCandidateRunnerScope('harness-copy-primitive-worker');
-let harnessInteractionRegistrar: HarnessInteractionRequestRegistrar | undefined;
 const agentPrimitiveAssembly = createProductionAgentPrimitiveAssembly({
   audit: harnessObservabilityEvents,
-  askMerchant: new HarnessQuestionRequestPort({
-    async register(workspaceId, request) {
-      if (!harnessInteractionRegistrar) {
-        throw new Error('Harness interaction registration is unavailable.');
-      }
-      await harnessInteractionRegistrar.register(workspaceId, request);
-    },
-  }),
+  askMerchant: new HarnessQuestionRequestPort(),
   checkTarget: harnessCheckTargetScope,
   checkViolationAudit: {
     async append(input) {
@@ -2091,13 +2082,6 @@ if (harnessRuntimeConfig) {
       );
     },
   });
-  harnessInteractionRegistrar = {
-    async register(workspaceId, request) {
-      await harnessInteractions.request(workspaceId, request, {
-        rendererCapability: 'available',
-      });
-    },
-  };
   const boundedExecutionLimits =
     new AdminConfigBoundedExecutionLimitsSource(adminConfigRepository);
   const harnessWorkflow = registerHarnessDbosWorkflow(
