@@ -18,6 +18,7 @@ import {
   SkillService,
   StaticSkillToolExecutionAuthorizer,
 } from './index.js';
+import type { SkillPromptSnapshotPort } from './types.js';
 
 const NOW = '2026-07-29T02:00:00.000Z';
 const EXPECTED_SKILL_SCHEMA_REFS = [
@@ -87,10 +88,10 @@ test('the real Foundation entry admits a revision only through registered schema
 });
 
 test('the application entry releases a rejected prompt claim for deterministic retry without writes', async () => {
-  const skillRepository = new MemorySkillRepository();
   let promptCaptures = 0;
-  const skillService = new SkillService(skillRepository, () => NOW, {
-    async capture(reference) {
+  const harness = applicationSkillHarness(
+    'rejected-prompt-retry',
+    async (reference) => {
       promptCaptures += 1;
       const content = 'Different authority content.';
       return {
@@ -102,45 +103,14 @@ test('the application entry releases a rejected prompt claim for deterministic r
         source: 'langfuse',
       };
     },
-  });
-  const foundationRepository = new MemoryFoundationRepository();
-  foundationRepository.grantOwner(
-    'workspace-rejected-prompt-retry',
-    'operator-rejected-prompt-retry',
   );
-  const application = new P1ApplicationService(foundationRepository, {
-    operations: [new SkillFoundationModule(skillService)],
-  });
-  const context = {
-    actor: 'admin' as const,
-    correlationId: 'corr-rejected-prompt-retry',
-    userId: 'operator-rejected-prompt-retry',
-    workspaceId: 'workspace-rejected-prompt-retry',
-  };
-  const input = {
-    action: 'skill_define',
-    payload: {
-      expectedRevision: null,
-      frontmatter: manifest('rejected-prompt-retry'),
-      governance: governance(),
-      instruction: 'Use only the pinned prompt.',
-      name: 'Rejected prompt retry',
-      presentationPolicy: 'backend_only',
-      promptReference: {
-        contentHash: 'c'.repeat(64),
-        name: 'skills/rejected-prompt-retry',
-        version: '1',
-      },
-      skillId: 'skill.rejected-prompt-retry',
-    },
-  };
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     await assert.rejects(
-      application.executeModule(
-        context,
+      harness.application.executeModule(
+        harness.context,
         'skills',
-        input,
+        harness.input,
         'rejected-prompt-retry',
       ),
       /does not match its pinned reference/u,
@@ -148,65 +118,28 @@ test('the application entry releases a rejected prompt claim for deterministic r
   }
 
   assert.equal(promptCaptures, 2);
-  assert.equal(
-    await skillRepository.getCatalog('skill.rejected-prompt-retry'),
-    null,
-  );
-  assert.equal(
-    await skillRepository.getRevisionHead('skill.rejected-prompt-retry'),
-    null,
-  );
-  assert.deepEqual(await application.listCommandAudits(context), []);
+  await assertRejectedSkillUnwritten(harness);
 });
 
 test('the application entry releases an inline prompt rejection without dispatching the resolver', async () => {
-  const skillRepository = new MemorySkillRepository();
   let promptCaptures = 0;
-  const skillService = new SkillService(skillRepository, () => NOW, {
-    async capture(reference) {
+  const harness = applicationSkillHarness(
+    'inline-prompt-retry',
+    async (reference) => {
       promptCaptures += 1;
       return frozenPrompt(reference.name);
     },
-  });
-  const foundationRepository = new MemoryFoundationRepository();
-  foundationRepository.grantOwner(
-    'workspace-inline-prompt-retry',
-    'operator-inline-prompt-retry',
-  );
-  const application = new P1ApplicationService(foundationRepository, {
-    operations: [new SkillFoundationModule(skillService)],
-  });
-  const context = {
-    actor: 'admin' as const,
-    correlationId: 'corr-inline-prompt-retry',
-    userId: 'operator-inline-prompt-retry',
-    workspaceId: 'workspace-inline-prompt-retry',
-  };
-  const input = {
-    action: 'skill_define',
-    payload: {
-      expectedRevision: null,
-      frontmatter: manifest('inline-prompt-retry'),
-      governance: governance(),
-      instruction: 'Use only the pinned prompt.',
-      name: 'Inline prompt retry',
-      presentationPolicy: 'backend_only',
-      promptReference: {
-        content: 'Forbidden inline prompt.',
-        contentHash: 'c'.repeat(64),
-        name: 'skills/inline-prompt-retry',
-        version: '1',
-      },
-      skillId: 'skill.inline-prompt-retry',
+    {
+      content: 'Forbidden inline prompt.',
     },
-  };
+  );
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     await assert.rejects(
-      application.executeModule(
-        context,
+      harness.application.executeModule(
+        harness.context,
         'skills',
-        input,
+        harness.input,
         'inline-prompt-retry',
       ),
       /content/u,
@@ -214,90 +147,43 @@ test('the application entry releases an inline prompt rejection without dispatch
   }
 
   assert.equal(promptCaptures, 0);
-  assert.equal(
-    await skillRepository.getCatalog('skill.inline-prompt-retry'),
-    null,
-  );
-  assert.equal(
-    await skillRepository.getRevisionHead('skill.inline-prompt-retry'),
-    null,
-  );
-  assert.deepEqual(await application.listCommandAudits(context), []);
+  await assertRejectedSkillUnwritten(harness);
 });
 
 test('the application keeps the claim when prompt capture records an effect before invalid state', async () => {
-  const skillRepository = new MemorySkillRepository();
   let promptCaptures = 0;
-  const skillService = new SkillService(skillRepository, () => NOW, {
-    async capture() {
+  const harness = applicationSkillHarness(
+    'effectful-prompt-capture',
+    async () => {
       promptCaptures += 1;
       throw new P1DomainError(
         'INVALID_STATE',
         'Prompt capture failed after recording its effect.',
       );
     },
-  });
-  const foundationRepository = new MemoryFoundationRepository();
-  foundationRepository.grantOwner(
-    'workspace-effectful-prompt-capture',
-    'operator-effectful-prompt-capture',
   );
-  const application = new P1ApplicationService(foundationRepository, {
-    operations: [new SkillFoundationModule(skillService)],
-  });
-  const context = {
-    actor: 'admin' as const,
-    correlationId: 'corr-effectful-prompt-capture',
-    userId: 'operator-effectful-prompt-capture',
-    workspaceId: 'workspace-effectful-prompt-capture',
-  };
-  const input = {
-    action: 'skill_define',
-    payload: {
-      expectedRevision: null,
-      frontmatter: manifest('effectful-prompt-capture'),
-      governance: governance(),
-      instruction: 'Use only the pinned prompt.',
-      name: 'Effectful prompt capture',
-      presentationPolicy: 'backend_only',
-      promptReference: {
-        contentHash: 'c'.repeat(64),
-        name: 'skills/effectful-prompt-capture',
-        version: '1',
-      },
-      skillId: 'skill.effectful-prompt-capture',
-    },
-  };
 
   await assert.rejects(
-    application.executeModule(
-      context,
+    harness.application.executeModule(
+      harness.context,
       'skills',
-      input,
+      harness.input,
       'effectful-prompt-capture',
     ),
     /failed after recording its effect/u,
   );
   await assert.rejects(
-    application.executeModule(
-      context,
+    harness.application.executeModule(
+      harness.context,
       'skills',
-      input,
+      harness.input,
       'effectful-prompt-capture',
     ),
     /still in progress/u,
   );
 
   assert.equal(promptCaptures, 1);
-  assert.equal(
-    await skillRepository.getCatalog('skill.effectful-prompt-capture'),
-    null,
-  );
-  assert.equal(
-    await skillRepository.getRevisionHead('skill.effectful-prompt-capture'),
-    null,
-  );
-  assert.deepEqual(await application.listCommandAudits(context), []);
+  await assertRejectedSkillUnwritten(harness);
 });
 
 test('available-but-unbound: an accepted Skill does not enter a stage allowlist', async () => {
@@ -593,15 +479,86 @@ test('the Skill tool adapter returns validated output and a stable invalid-outpu
   );
 });
 
+function applicationSkillHarness(
+  suffix: string,
+  capture: SkillPromptSnapshotPort['capture'],
+  promptReferenceOverrides: Record<string, unknown> = {},
+) {
+  const skillRepository = new MemorySkillRepository();
+  const skillService = new SkillService(skillRepository, () => NOW, {
+    capture,
+  });
+  const foundationRepository = new MemoryFoundationRepository();
+  const context = {
+    actor: 'admin' as const,
+    correlationId: `corr-${suffix}`,
+    userId: `operator-${suffix}`,
+    workspaceId: `workspace-${suffix}`,
+  };
+  foundationRepository.grantOwner(context.workspaceId, context.userId);
+  const application = new P1ApplicationService(foundationRepository, {
+    operations: [new SkillFoundationModule(skillService)],
+  });
+  const skillId = `skill.${suffix}`;
+  return {
+    application,
+    context,
+    input: {
+      action: 'skill_define',
+      payload: {
+        expectedRevision: null,
+        frontmatter: manifest(suffix),
+        governance: governance(),
+        instruction: 'Use only the pinned prompt.',
+        name: suffix,
+        presentationPolicy: 'backend_only',
+        promptReference: {
+          contentHash: 'c'.repeat(64),
+          name: `skills/${suffix}`,
+          version: '1',
+          ...promptReferenceOverrides,
+        },
+        skillId,
+      },
+    },
+    skillId,
+    skillRepository,
+  };
+}
+
+async function assertRejectedSkillUnwritten(
+  harness: ReturnType<typeof applicationSkillHarness>,
+) {
+  assert.equal(
+    await harness.skillRepository.getCatalog(harness.skillId),
+    null,
+  );
+  assert.equal(
+    await harness.skillRepository.getRevisionHead(harness.skillId),
+    null,
+  );
+  assert.deepEqual(
+    await harness.application.listCommandAudits(harness.context),
+    [],
+  );
+}
+
 async function acceptedSkill(
   suffix: string,
   trustedTools: readonly string[] = [],
 ) {
   const repository = new MemorySkillRepository();
   const skillId = `skill.${suffix}`;
+  const instruction = `Apply ${suffix} only after explicit binding.`;
+  const prompt = frozenPrompt(instruction);
   const service = new SkillService(
     repository,
     () => NOW,
+    {
+      async capture() {
+        return prompt;
+      },
+    },
     new StaticSkillToolExecutionAuthorizer(
       trustedTools.map((toolId) => ({
         caller: `${skillId}@1`,
@@ -609,13 +566,6 @@ async function acceptedSkill(
       })),
     ),
   );
-  const instruction = `Apply ${suffix} only after explicit binding.`;
-  const prompt = frozenPrompt(instruction);
-  const service = new SkillService(repository, () => NOW, {
-    async capture() {
-      return prompt;
-    },
-  });
   await service.defineCatalogEntry({
     actorId: 'operator-production-wiring',
     name: suffix,
