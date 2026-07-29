@@ -16,6 +16,7 @@ import type {
   RouteSnapshot,
 } from './route-contracts.js';
 import type { CopyCandidate, ProviderCost } from './ledger-contracts.js';
+import type { StructuredExecutionContinuation } from './execution-attempt-budget.js';
 
 /** Serializable, secret-free provider configuration frozen with an adapter revision. */
 export interface AdapterRuntimeConfig {
@@ -96,6 +97,7 @@ export interface ProviderExecutionRequest {
   routeSnapshot?: RouteSnapshot;
   previousAttempts?: ProviderAttempt[];
   previousProviderCosts?: ProviderCost[];
+  structuredContinuation?: StructuredExecutionContinuation;
   resolvedReferenceAssets?: import('./reference-asset-resolver.js').ResolvedReferenceAsset[];
   resolvedInputAssets?: Array<
     import('./reference-asset-resolver.js').ResolvedReferenceAsset & {
@@ -148,6 +150,7 @@ export interface StructuredObjectExecutor {
     prompt: string;
     schema: ZodType<Output>;
     schemaName: string;
+    structuredContinuation?: StructuredExecutionContinuation;
   }): Promise<{
     output: Output;
     providerTaskRef: string;

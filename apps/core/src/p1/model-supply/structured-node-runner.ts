@@ -12,6 +12,7 @@ import {
   OpenAiCompatibleAiSdkRunner,
   type OpenAiCompatibleAiSdkOptions,
 } from './ai-sdk-runner.js';
+import type { StructuredExecutionContinuation } from './execution-attempt-budget.js';
 
 export type { StructuredObjectExecutor } from './index.js';
 
@@ -236,8 +237,11 @@ function providerAttemptFencedExecutor(
       prompt: string;
       schema: ZodType<Output>;
       schemaName: string;
+      structuredContinuation?: StructuredExecutionContinuation;
     }) {
-      await beforeProviderAttempt();
+      if (!input.structuredContinuation) {
+        await beforeProviderAttempt();
+      }
       return executor.generate({ ...input, beforeProviderAttempt });
     },
     providerCost(usage) {

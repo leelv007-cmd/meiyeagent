@@ -23,6 +23,11 @@ import {
 } from 'ai';
 import { z, type ZodType } from 'zod';
 import type { StructuredObjectExecutor } from './index.js';
+import {
+  ExecutionAttemptBudgetExceeded,
+  structuredExecutionContinuationSchema,
+  type StructuredExecutionContinuation,
+} from './execution-attempt-budget.js';
 import { StructuredObjectGenerationError } from './provider-lifecycle.js';
 import type { ResolvedReferenceAsset } from './reference-asset-resolver.js';
 
@@ -247,7 +252,11 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     prompt: string;
     schema: ZodType<StructuredOutput>;
     schemaName: string;
+    structuredContinuation?: StructuredExecutionContinuation;
   }) {
+    if (input.structuredContinuation?.kind === 'schema_repair') {
+      return this.repairStructured(input, input.structuredContinuation);
+    }
     if (input.onPartialOutput) {
       try {
         const result = streamText({
@@ -280,7 +289,7 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
         };
       } catch (error) {
         if (!NoObjectGeneratedError.isInstance(error)) throw error;
-        return this.repairStructured(input, error);
+        return this.repairStructured(input, structuredRepairSeed(error));
       }
     }
     try {
@@ -288,7 +297,7 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
       return structuredAttemptResult(input.schema, result);
     } catch (error) {
       if (!NoObjectGeneratedError.isInstance(error)) throw error;
-      return this.repairStructured(input, error);
+      return this.repairStructured(input, structuredRepairSeed(error));
     }
   }
 
@@ -301,9 +310,21 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
       schema: ZodType<StructuredOutput>;
       schemaName: string;
     },
-    error: NoObjectGeneratedError,
+    continuation: StructuredExecutionContinuation,
   ) {
-    await input.beforeProviderAttempt?.();
+    try {
+      await input.beforeProviderAttempt?.();
+    } catch (error) {
+      if (error instanceof ExecutionAttemptBudgetExceeded) {
+        throw new ExecutionAttemptBudgetExceeded(
+          error.maxAttempts,
+          error.consumedAttempts,
+          error.completedAttemptsInRun,
+          continuation,
+        );
+      }
+      throw error;
+    }
     let repaired: Awaited<ReturnType<typeof generateText>>;
     try {
       repaired = await this.generateStructuredAttempt({
@@ -311,17 +332,17 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
         instructions:
           `${input.instructions}\n\n` +
           'The previous response failed schema validation. Return one corrected object that matches the schema exactly.',
-        prompt: structuredRepairPrompt(input.prompt, error.text ?? ''),
+        prompt: structuredRepairPrompt(input.prompt, continuation.invalidText),
       });
     } catch (repairError) {
       if (!NoObjectGeneratedError.isInstance(repairError)) throw repairError;
       throw new StructuredObjectGenerationError(
         {
           inputTokens:
-            (error.usage?.inputTokens ?? 0) +
+            continuation.usage.inputTokens +
             (repairError.usage?.inputTokens ?? 0),
           outputTokens:
-            (error.usage?.outputTokens ?? 0) +
+            continuation.usage.outputTokens +
             (repairError.usage?.outputTokens ?? 0),
         },
         {
@@ -338,9 +359,9 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
       ...result,
       usage: {
         inputTokens:
-          (error.usage?.inputTokens ?? 0) + result.usage.inputTokens,
+          continuation.usage.inputTokens + result.usage.inputTokens,
         outputTokens:
-          (error.usage?.outputTokens ?? 0) + result.usage.outputTokens,
+          continuation.usage.outputTokens + result.usage.outputTokens,
       },
       measurement: {
         firstPassSchemaValid: false,
@@ -502,6 +523,19 @@ function structuredRepairPrompt(prompt: string, invalidText: string) {
     invalidResponse: invalidText.slice(0, 8_000),
     repairInstruction:
       'Correct only the structure needed to satisfy the requested schema. Preserve supported facts and do not invent missing merchant facts.',
+  });
+}
+
+function structuredRepairSeed(
+  error: NoObjectGeneratedError,
+): StructuredExecutionContinuation {
+  return structuredExecutionContinuationSchema.parse({
+    kind: 'schema_repair',
+    invalidText: (error.text ?? '').slice(0, 8_000),
+    usage: {
+      inputTokens: error.usage?.inputTokens ?? 0,
+      outputTokens: error.usage?.outputTokens ?? 0,
+    },
   });
 }
 

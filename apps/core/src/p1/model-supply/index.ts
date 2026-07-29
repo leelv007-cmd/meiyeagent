@@ -12,7 +12,11 @@ import type {
   ReferenceAssetResolverPort,
   ResolvedReferenceAsset,
 } from './reference-asset-resolver.js';
-import { ExecutionAttemptBudgetExceeded } from './execution-attempt-budget.js';
+import {
+  ExecutionAttemptBudgetExceeded,
+  parseRecoveredStructuredExecutionContinuation,
+  type StructuredExecutionContinuation,
+} from './execution-attempt-budget.js';
 import {
   ownedAssetRegistrationLifecycle,
   type OwnedAssetRegistrationFailureStage,
@@ -1558,7 +1562,15 @@ export class ModelSupplyApplicationService {
           };
         }
         try {
-          const generated = await executor.generate(input);
+          const generated = await executor.generate({
+            ...input,
+            ...(request.structuredContinuation
+              ? {
+                  structuredContinuation:
+                    request.structuredContinuation,
+                }
+              : {}),
+          });
           return {
             kind: 'completed',
             providerTaskRef: generated.providerTaskRef,
@@ -2508,6 +2520,7 @@ export class ModelSupplyApplicationService {
       let checkpoint:
         | Awaited<ReturnType<ModelSupplyLedgerPort['checkpointAttempt']>>
         | undefined;
+      let structuredContinuation: StructuredExecutionContinuation | undefined;
       if (!options.attemptEffectGuardsCheckpoint) {
         try {
           checkpoint = await this.ledger?.checkpointAttempt(checkpointInput);
@@ -2518,15 +2531,85 @@ export class ModelSupplyApplicationService {
           throw error;
         }
       }
+      const recoveredBudgetSuspension =
+        checkpoint?.recoveredResult?.status === 'unknown' &&
+        checkpoint.recoveredResult.failureCode ===
+          EXECUTION_ATTEMPT_BUDGET_SUSPENSION_CODE &&
+        checkpoint.recoveredResult.attempt.acceptance ===
+          'acceptance_unknown'
+          ? checkpoint.recoveredResult
+          : undefined;
+      if (
+        recoveredBudgetSuspension &&
+        recoveredBudgetSuspension.attempt.id === attemptId
+      ) {
+        if (recoveredBudgetSuspension.structuredContinuation !== undefined) {
+          try {
+            structuredContinuation =
+              parseRecoveredStructuredExecutionContinuation(
+                recoveredBudgetSuspension.structuredContinuation,
+              );
+          } catch (error) {
+            if (admission?.status === 'admitted') {
+              await this.providerAdmission?.release(admission.leaseId);
+            }
+            throw error;
+          }
+        }
+      } else if (recoveredBudgetSuspension) {
+        const recoveredAttemptIndex =
+          recoveredBudgetSuspension.attempts.findIndex(
+            (attempt) => attempt.id === attemptId,
+          );
+        const recoveredAttempt =
+          recoveredBudgetSuspension.attempts[recoveredAttemptIndex];
+        if (
+          recoveredAttempt &&
+          recoveredAttemptIndex >= 0 &&
+          recoveredAttempt.acceptance === 'rejected_before_accept' &&
+          snapshot.fallbackConsent === true &&
+          fallbackAuthorized &&
+          candidateIndex < candidates.length - 1
+        ) {
+          if (admission?.status === 'admitted') {
+            await this.providerAdmission?.release(admission.leaseId);
+          }
+          const recoveredAttempts = recoveredBudgetSuspension.attempts.slice(
+            0,
+            recoveredAttemptIndex + 1,
+          );
+          const recoveredProviderCosts =
+            recoveredBudgetSuspension.providerCosts.slice(
+              0,
+              recoveredAttemptIndex + 1,
+            );
+          attemptChain.splice(
+            0,
+            attemptChain.length,
+            ...structuredClone(recoveredAttempts),
+          );
+          providerCostChain.splice(
+            0,
+            providerCostChain.length,
+            ...structuredClone(recoveredProviderCosts),
+          );
+          for (const attempt of recoveredAttempts) {
+            if (
+              !this.storedAttempts.some((stored) => stored.id === attempt.id)
+            ) {
+              this.storedAttempts.push(structuredClone(attempt));
+            }
+          }
+          lastFailure = recoveredBudgetSuspension;
+          continue;
+        }
+      }
       if (
         checkpoint?.recoveredResult &&
         !options.continueAfterRecoveredCheckpoint &&
         !(
-          checkpoint.recoveredResult.status === 'unknown' &&
-          checkpoint.recoveredResult.failureCode ===
-            EXECUTION_ATTEMPT_BUDGET_SUSPENSION_CODE &&
-          checkpoint.recoveredResult.attempt.acceptance ===
-            'acceptance_unknown'
+          recoveredBudgetSuspension &&
+          recoveredBudgetSuspension.attempt.id === attemptId
         )
       ) {
         if (admission?.status === 'admitted') {
@@ -2661,6 +2744,9 @@ export class ModelSupplyApplicationService {
                     routeSnapshot: snapshot,
                     previousAttempts: structuredClone(attemptChain),
                     previousProviderCosts: structuredClone(providerCostChain),
+                    ...(structuredContinuation
+                      ? { structuredContinuation }
+                      : {}),
                     ...(options.effectIdempotencyKey
                       ? {
                           effectIdempotencyKey:
@@ -2701,6 +2787,9 @@ export class ModelSupplyApplicationService {
                 routeSnapshot: snapshot,
                 previousAttempts: structuredClone(attemptChain),
                 previousProviderCosts: structuredClone(providerCostChain),
+                ...(structuredContinuation
+                  ? { structuredContinuation }
+                  : {}),
                 ...(options.effectIdempotencyKey
                   ? {
                       effectIdempotencyKey:
@@ -2730,49 +2819,56 @@ export class ModelSupplyApplicationService {
         }
       } catch (error) {
         if (error instanceof ExecutionAttemptBudgetExceeded) {
-          if (error.completedAttemptsInRun === 0) {
-            const attempt: ProviderAttempt = {
-              id: attemptId,
-              jobId,
-              catalogModelId: candidate.model.id,
-              deploymentId: candidate.deployment.id,
-              acceptance: 'acceptance_unknown',
-              status: 'unknown',
-              createdAt: now(),
-            };
-            const providerCost: ProviderCost = {
-              id: `provider-cost-${hash(`${attemptId}:budget-suspended`).slice(0, 24)}`,
-              status: 'estimated',
-              amount: 0,
-              currency:
-                candidate.deployment.region === 'domestic' ? 'CNY' : 'USD',
-              usage: {},
-            };
-            await this.ledger?.settleAttempt({
-              submission: attemptSubmission,
-              result: {
-                jobId,
-                operation: attemptSubmission.operation,
-                ...canvasGenerationResultInputs(attemptSubmission),
-                status: 'unknown',
-                failureCode: EXECUTION_ATTEMPT_BUDGET_SUSPENSION_CODE,
-                ...(attemptSubmission.origin
-                  ? { origin: structuredClone(attemptSubmission.origin) }
-                  : {}),
-                snapshot,
-                attempt,
-                attempts: [...attemptChain, attempt],
-                usage: {
-                  id: `model-usage-${hash(jobId).slice(0, 28)}`,
-                  status: 'reserved',
-                  quantity: productUsageQuantity,
-                },
-                providerCost,
-                providerCosts: [...providerCostChain, providerCost],
-              },
-              evidence: 'execution_attempt_budget_exhausted_before_provider',
-            });
+          if (recoveredBudgetSuspension?.attempt.id === attemptId) {
+            throw error;
           }
+          const attempt: ProviderAttempt = {
+            id: attemptId,
+            jobId,
+            catalogModelId: candidate.model.id,
+            deploymentId: candidate.deployment.id,
+            acceptance: 'acceptance_unknown',
+            status: 'unknown',
+            createdAt: now(),
+          };
+          const providerCost: ProviderCost = {
+            id: `provider-cost-${hash(`${attemptId}:budget-suspended`).slice(0, 24)}`,
+            status: 'estimated',
+            amount: 0,
+            currency:
+              candidate.deployment.region === 'domestic' ? 'CNY' : 'USD',
+            usage: {},
+          };
+          await this.ledger?.settleAttempt({
+            submission: attemptSubmission,
+            result: {
+              jobId,
+              operation: attemptSubmission.operation,
+              ...canvasGenerationResultInputs(attemptSubmission),
+              status: 'unknown',
+              failureCode: EXECUTION_ATTEMPT_BUDGET_SUSPENSION_CODE,
+              ...(attemptSubmission.origin
+                ? { origin: structuredClone(attemptSubmission.origin) }
+                : {}),
+              snapshot,
+              attempt,
+              attempts: [...attemptChain, attempt],
+              usage: {
+                id: `model-usage-${hash(jobId).slice(0, 28)}`,
+                status: 'reserved',
+                quantity: productUsageQuantity,
+              },
+              providerCost,
+              providerCosts: [...providerCostChain, providerCost],
+              ...(error.structuredContinuation
+                ? {
+                    structuredContinuation:
+                      error.structuredContinuation,
+                  }
+                : {}),
+            },
+            evidence: 'execution_attempt_budget_exhausted_before_provider',
+          });
           throw error;
         }
         const attempt: ProviderAttempt = {

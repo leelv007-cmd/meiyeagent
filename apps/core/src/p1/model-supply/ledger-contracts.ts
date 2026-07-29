@@ -6,6 +6,7 @@ import type {
   GeneratedCopyCandidateContent,
   GeneratedPlatformVariants,
 } from '@meiye/contracts';
+import type { StructuredExecutionContinuation } from './execution-attempt-budget.js';
 import type { StructuredObjectMeasurement } from './provider-lifecycle.js';
 import type {
 	AdvancedCanvasGenerationOrigin,
@@ -85,6 +86,7 @@ export interface ModelSupplyResult {
   text?: string;
   structuredOutput?: unknown;
   structuredMeasurement?: StructuredObjectMeasurement;
+  structuredContinuation?: StructuredExecutionContinuation;
   usage: ProductUsage;
   providerCost: ProviderCost;
   providerCosts: ProviderCost[];

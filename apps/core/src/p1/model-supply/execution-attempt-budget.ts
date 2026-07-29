@@ -1,4 +1,34 @@
+import { z } from 'zod';
 import type { StructuredNodeRunner } from './structured-node-runner.js';
+
+export const structuredExecutionContinuationSchema = z
+  .object({
+    kind: z.literal('schema_repair'),
+    // Provider invalid-output text only. Prompts, instructions and credentials
+    // are never copied into this bounded durable continuation.
+    invalidText: z.string().max(8_000),
+    usage: z
+      .object({
+        inputTokens: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+        outputTokens: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type StructuredExecutionContinuation = z.infer<
+  typeof structuredExecutionContinuationSchema
+>;
+
+export function parseRecoveredStructuredExecutionContinuation(input: unknown) {
+  const parsed = structuredExecutionContinuationSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new TypeError(
+      'Recovered structured execution continuation is invalid.',
+    );
+  }
+  return parsed.data;
+}
 
 export class ExecutionAttemptBudgetExceeded extends Error {
   readonly code = 'EXECUTION_ATTEMPT_BUDGET_EXCEEDED';
@@ -8,6 +38,7 @@ export class ExecutionAttemptBudgetExceeded extends Error {
     readonly maxAttempts: number,
     readonly consumedAttempts: number,
     readonly completedAttemptsInRun?: number,
+    readonly structuredContinuation?: StructuredExecutionContinuation,
   ) {
     super(
       `Execution attempt budget exhausted after ${consumedAttempts} of ${maxAttempts} attempts.`,
@@ -72,6 +103,7 @@ export function withExecutionAttemptBudget(
                 error.maxAttempts,
                 error.consumedAttempts,
                 budget.consumedAttempts - consumedBefore,
+                error.structuredContinuation,
               );
             }
             throw error;

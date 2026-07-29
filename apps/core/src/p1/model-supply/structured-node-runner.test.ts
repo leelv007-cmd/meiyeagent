@@ -214,13 +214,28 @@ test('one shared attempt budget blocks a real schema repair before its provider 
   assert.equal(budget.consumedAttempts, 1);
 });
 
-test('a raised attempt limit resumes a durable zero-attempt suspension without repeating completed provider effects', async () => {
+test('a raised attempt limit resumes durable schema repair without repeating the completed first pass', async () => {
   const repository = new MemoryFoundationRepository();
   repository.grantOwner('workspace-1', 'user-1');
   const foundation = new P1ApplicationService(repository);
   const ledger = new FoundationModelSupplyLedger(foundation);
-  const executor = new CountingStructuredExecutor({
-    normalized: '提高上限后继续',
+  const responses = [
+    { normalized: '提高上限后继续' },
+    { normalized: '提高上限后继续', taskType: 'copy' },
+  ];
+  let providerCalls = 0;
+  const executor = new AiSdkStructuredObjectExecutor({
+    apiKey: 'test-key',
+    baseUrl: 'https://provider.example/v1',
+    catalogModelId: 'llm-harness',
+    fetch: (async () =>
+      openAiStructuredResponse(
+        `chatcmpl-budget-resume-${providerCalls}`,
+        responses[providerCalls++]!,
+      )) as typeof fetch,
+    inputCostPerMillion: 1,
+    model: 'provider-model',
+    outputCostPerMillion: 2,
   });
   const request = {
     effectIdempotencyKey: 'wf:workflow-budget-resume:s1:intent:0',
@@ -228,6 +243,77 @@ test('a raised attempt limit resumes a durable zero-attempt suspension without r
     schemaRevision: 'intent-naming-v1',
     instructions: 'Return the normalized intent.',
     prompt: '{"intent":"提高上限后继续"}',
+    schema: z
+      .object({ normalized: z.string(), taskType: z.string() })
+      .strict(),
+  };
+
+  await assert.rejects(
+    withExecutionAttemptBudget(
+      createRunner(ledger, executor, false),
+      new ExecutionAttemptBudget({
+        maxAttempts: 1,
+        consumedAttempts: 0,
+      }),
+    ).run(request),
+    ExecutionAttemptBudgetExceeded,
+  );
+  assert.equal(providerCalls, 1);
+
+  await assert.rejects(
+    withExecutionAttemptBudget(
+      createRunner(ledger, executor, false),
+      new ExecutionAttemptBudget({
+        maxAttempts: 1,
+        consumedAttempts: 1,
+      }),
+    ).run(request),
+    ExecutionAttemptBudgetExceeded,
+  );
+  assert.equal(providerCalls, 1);
+
+  const resumed = await withExecutionAttemptBudget(
+    createRunner(ledger, executor, false),
+    new ExecutionAttemptBudget({
+      maxAttempts: 2,
+      consumedAttempts: 1,
+    }),
+  ).run(request);
+  const replayed = await withExecutionAttemptBudget(
+    createRunner(ledger, executor, false),
+    new ExecutionAttemptBudget({
+      maxAttempts: 2,
+      consumedAttempts: 2,
+    }),
+  ).run(request);
+
+  assert.deepEqual(resumed.output, {
+    normalized: '提高上限后继续',
+    taskType: 'copy',
+  });
+  assert.deepEqual(resumed.usage, {
+    inputTokens: 16,
+    outputTokens: 26,
+  });
+  assert.equal(resumed.replayed, false);
+  assert.deepEqual(replayed.output, resumed.output);
+  assert.equal(providerCalls, 2);
+});
+
+test('a raised attempt limit resumes a durable zero-attempt suspension with one provider effect', async () => {
+  const repository = new MemoryFoundationRepository();
+  repository.grantOwner('workspace-1', 'user-1');
+  const foundation = new P1ApplicationService(repository);
+  const ledger = new FoundationModelSupplyLedger(foundation);
+  const executor = new CountingStructuredExecutor({
+    normalized: '零次暂停后继续',
+  });
+  const request = {
+    effectIdempotencyKey: 'wf:workflow-zero-budget-resume:s1:intent:0',
+    schemaName: 'intent_naming_v1',
+    schemaRevision: 'intent-naming-v1',
+    instructions: 'Return the normalized intent.',
+    prompt: '{"intent":"零次暂停后继续"}',
     schema: z.object({ normalized: z.string() }).strict(),
   };
 
@@ -254,14 +340,135 @@ test('a raised attempt limit resumes a durable zero-attempt suspension without r
     createRunner(ledger, executor, false),
     new ExecutionAttemptBudget({
       maxAttempts: 1,
-      consumedAttempts: 0,
+      consumedAttempts: 1,
     }),
   ).run(request);
 
-  assert.deepEqual(resumed.output, { normalized: '提高上限后继续' });
-  assert.equal(resumed.replayed, false);
+  assert.deepEqual(resumed.output, { normalized: '零次暂停后继续' });
   assert.deepEqual(replayed.output, resumed.output);
   assert.equal(executor.calls, 1);
+});
+
+test('durable schema repair rejects a malformed recovered continuation before provider execution', async () => {
+  const repository = new MemoryFoundationRepository();
+  repository.grantOwner('workspace-1', 'user-1');
+  const foundation = new P1ApplicationService(repository);
+  const durableLedger = new FoundationModelSupplyLedger(foundation);
+  const malformedLedger: ModelSupplyLedgerPort = {
+    async checkpointAttempt(input) {
+      const checkpoint = await durableLedger.checkpointAttempt(input);
+      if (
+        checkpoint.recoveredResult?.failureCode ===
+        'EXECUTION_ATTEMPT_BUDGET_SUSPENDED_BEFORE_PROVIDER'
+      ) {
+        checkpoint.recoveredResult.structuredContinuation = {
+          kind: 'schema_repair',
+          invalidText: 42,
+          usage: { inputTokens: -1, outputTokens: 0 },
+        } as never;
+      }
+      return checkpoint;
+    },
+    settleAttempt: (input) => durableLedger.settleAttempt(input),
+  };
+  let providerCalls = 0;
+  const executor = new AiSdkStructuredObjectExecutor({
+    apiKey: 'test-key',
+    baseUrl: 'https://provider.example/v1',
+    catalogModelId: 'llm-harness',
+    fetch: (async () => {
+      providerCalls += 1;
+      return openAiStructuredResponse('chatcmpl-malformed-continuation', {
+        normalized: 'missing taskType',
+      });
+    }) as typeof fetch,
+    inputCostPerMillion: 1,
+    model: 'provider-model',
+    outputCostPerMillion: 2,
+  });
+  const request = {
+    effectIdempotencyKey: 'wf:workflow-malformed-continuation:s1:intent:0',
+    schemaName: 'intent_naming_v1',
+    schemaRevision: 'intent-naming-v1',
+    instructions: 'Return the normalized intent.',
+    prompt: '{"intent":"验证坏恢复数据"}',
+    schema: z
+      .object({ normalized: z.string(), taskType: z.string() })
+      .strict(),
+  };
+
+  await assert.rejects(
+    withExecutionAttemptBudget(
+      createRunner(malformedLedger, executor, false),
+      new ExecutionAttemptBudget({
+        maxAttempts: 1,
+        consumedAttempts: 0,
+      }),
+    ).run(request),
+    ExecutionAttemptBudgetExceeded,
+  );
+  await assert.rejects(
+    withExecutionAttemptBudget(
+      createRunner(malformedLedger, executor, false),
+      new ExecutionAttemptBudget({
+        maxAttempts: 2,
+        consumedAttempts: 1,
+      }),
+    ).run(request),
+    /Recovered structured execution continuation is invalid/u,
+  );
+
+  assert.equal(providerCalls, 1);
+});
+
+test('a raised attempt limit resumes durable route fallback at the next model without repeating the rejected model', async () => {
+  const repository = new MemoryFoundationRepository();
+  repository.grantOwner('workspace-1', 'user-1');
+  const foundation = new P1ApplicationService(repository);
+  const ledger = new FoundationModelSupplyLedger(foundation);
+  const executor = new RouteTrackingFallbackStructuredExecutor();
+  const request = {
+    effectIdempotencyKey: 'wf:workflow-budget-route-resume:s3:brief:0',
+    schemaName: 'copy_brief_v1',
+    schemaRevision: 'copy-brief-v1',
+    instructions: 'Return a Copy Brief.',
+    prompt: '{"intent":"改写旧内容"}',
+    schema: z.object({ normalized: z.string() }).strict(),
+  };
+
+  await assert.rejects(
+    withExecutionAttemptBudget(
+      createAutoRunner(ledger, executor, false),
+      new ExecutionAttemptBudget({
+        maxAttempts: 1,
+        consumedAttempts: 0,
+      }),
+    ).run(request),
+    ExecutionAttemptBudgetExceeded,
+  );
+  assert.deepEqual(executor.invokedCatalogModels, ['llm-primary']);
+
+  const resumed = await withExecutionAttemptBudget(
+    createAutoRunner(ledger, executor, false),
+    new ExecutionAttemptBudget({
+      maxAttempts: 2,
+      consumedAttempts: 1,
+    }),
+  ).run(request);
+  const replayed = await withExecutionAttemptBudget(
+    createAutoRunner(ledger, executor, false),
+    new ExecutionAttemptBudget({
+      maxAttempts: 2,
+      consumedAttempts: 2,
+    }),
+  ).run(request);
+
+  assert.deepEqual(resumed.output, { normalized: 'fallback output' });
+  assert.deepEqual(replayed.output, resumed.output);
+  assert.deepEqual(executor.invokedCatalogModels, [
+    'llm-primary',
+    'llm-fallback',
+  ]);
 });
 
 test('D-035 counts a call when both the first pass and bounded repair fail', async () => {
@@ -691,6 +898,7 @@ class MeasuredStructuredExecutor implements StructuredObjectExecutor {
 function createAutoRunner(
   ledger: ModelSupplyLedgerPort,
   executor: StructuredObjectExecutor,
+  withProductBilling = true,
 ) {
   const application = new ModelSupplyApplicationService({
     models: [
@@ -736,8 +944,12 @@ function createAutoRunner(
     workspaceId: 'workspace-1',
     actorId: 'user-1',
     selection: { mode: 'auto', profile: 'quality' },
-    billingTaskId: 'task-1',
-    billingQuoteRevision: 'quote-r1',
+    ...(withProductBilling
+      ? {
+          billingTaskId: 'task-1',
+          billingQuoteRevision: 'quote-r1',
+        }
+      : {}),
   });
 }
 
@@ -779,6 +991,34 @@ class FallbackStructuredExecutor implements StructuredObjectExecutor {
     this.calls += 1;
     if (this.calls === 1) {
       this.afterFirstProviderAttempt();
+      throw rejectedBeforeAcceptance('provider rejected before acceptance');
+    }
+    return {
+      output: input.schema.parse({ normalized: 'fallback output' }),
+      providerTaskRef: 'provider-structured-fallback',
+      usage: { inputTokens: 8, outputTokens: 13 },
+    };
+  }
+
+  providerCost(usage: { inputTokens: number; outputTokens: number }) {
+    return { amount: 0.000034, currency: 'CNY' as const, usage };
+  }
+}
+
+class RouteTrackingFallbackStructuredExecutor
+  implements StructuredObjectExecutor
+{
+  readonly invokedCatalogModels: string[] = [];
+  private catalogModelId = '';
+
+  supportsCatalogModel(catalogModelId: string) {
+    this.catalogModelId = catalogModelId;
+    return true;
+  }
+
+  async generate<Output>(input: { schema: z.ZodType<Output> }) {
+    this.invokedCatalogModels.push(this.catalogModelId);
+    if (this.invokedCatalogModels.length === 1) {
       throw rejectedBeforeAcceptance('provider rejected before acceptance');
     }
     return {
