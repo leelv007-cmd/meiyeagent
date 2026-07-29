@@ -21,6 +21,7 @@ import {
   type WorkspaceComposerSubmissionResource,
   type WorkspaceHarnessTaskCollectionResource,
   type WorkspaceHarnessDecisionResource,
+  type WorkspaceHarnessInteractionResource,
   type WorkspaceHarnessProductMetricResource,
   type WorkspacePendingActionsResource,
   type WorkspaceWorkflowEventResource,
@@ -127,6 +128,7 @@ export async function forwardWorkspaceCoreRequest(
     | WorkspacePendingActionsResource
     | WorkspaceHarnessTaskCollectionResource
     | WorkspaceHarnessDecisionResource
+    | WorkspaceHarnessInteractionResource
     | WorkspaceHarnessProductMetricResource
     | WorkspaceWorkflowEventResource
 ) {

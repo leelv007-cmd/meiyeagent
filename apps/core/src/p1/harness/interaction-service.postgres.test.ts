@@ -210,7 +210,7 @@ test(
           workspaceId,
           forgedFingerprintRequest,
         ),
-        /default response fingerprint/u,
+        /semantic default authority is not current/u,
       );
       const forgedRevisionRequest = askMerchantQuestionRequestSchema.parse({
         ...request,
@@ -229,7 +229,7 @@ test(
           workspaceId,
           forgedRevisionRequest,
         ),
-        /policy or condition revision/u,
+        /semantic default authority is not current/u,
       );
       assert.equal(
         (
@@ -253,6 +253,10 @@ test(
       assert.deepEqual(
         await firstStore.listPendingQuestions(workspaceId),
         [],
+      );
+      assert.equal(
+        await firstStore.readDecisionTarget(workspaceId, runId),
+        null,
       );
 
       const restartedStore = new PostgresHarnessStore(pool);

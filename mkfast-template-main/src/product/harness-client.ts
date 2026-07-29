@@ -3,6 +3,8 @@ import {
   harnessTaskSubmissionSchema,
   harnessDecisionSnapshotSchema,
   harnessDecisionSubmitResultSchema,
+  harnessInteractionAnswerSchema,
+  harnessInteractionRequestSchema,
   firstUsableDraftMetricSchema,
   structuredDecisionInputSchema,
   todayRecommendationStateSchema,
@@ -10,6 +12,7 @@ import {
   type HarnessTaskSubmission,
   type FirstUsableDraftMetric,
   type HarnessDecisionSnapshot as HarnessDecisionReadModel,
+  type HarnessInteractionAnswer,
   type StructuredDecisionInput,
 } from '@meiye/contracts';
 import { z } from 'zod';
@@ -112,6 +115,57 @@ export async function submitHarnessDecision(
     }
   );
   return readHarnessSubmitResult(response);
+}
+
+export async function readPendingHarnessInteraction(
+  taskId: string,
+  signal?: AbortSignal
+) {
+  const response = await telemetryFetch(
+    `/api/core/p1/harness/tasks/${encodeURIComponent(taskId)}/interaction`,
+    { credentials: 'same-origin', signal }
+  );
+  return harnessInteractionRequestSchema
+    .nullable()
+    .parse(await readEnvelope<unknown>(response));
+}
+
+export async function submitHarnessInteraction(
+  taskId: string,
+  input: HarnessInteractionAnswer
+) {
+  const answer = harnessInteractionAnswerSchema.parse(input);
+  const response = await telemetryFetch(
+    `/api/core/p1/harness/tasks/${encodeURIComponent(taskId)}/interaction`,
+    {
+      body: JSON.stringify(answer),
+      credentials: 'same-origin',
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': answer.idempotencyKey,
+      },
+      method: 'POST',
+    }
+  );
+  return readEnvelope<unknown>(response);
+}
+
+export async function setHarnessInteractionEditing(
+  taskId: string,
+  editing: boolean
+) {
+  const response = await telemetryFetch(
+    `/api/core/p1/harness/tasks/${encodeURIComponent(taskId)}/interaction/editing`,
+    {
+      body: JSON.stringify({ editing }),
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    }
+  );
+  if (!response.ok) {
+    await readEnvelope<unknown>(response);
+  }
 }
 
 export async function recordFirstUsableDraftMetric(

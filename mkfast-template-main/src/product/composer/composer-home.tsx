@@ -46,6 +46,7 @@ import {
 import { resolveCreationModelSelection } from '@/p1/model-current-selection';
 import { useComplianceDefaults } from '@/p1/use-compliance-defaults';
 import type {
+  AskMerchantAnswer,
   BriefBoundRevisions,
   BriefSourceSignal,
   BriefTriggerInput,
@@ -96,7 +97,10 @@ import {
 } from '@/product/creative-brief-editor';
 import {
   readActiveHarnessTasks,
+  readPendingHarnessInteraction,
   readPendingHarnessDecision,
+  setHarnessInteractionEditing,
+  submitHarnessInteraction,
   submitHarnessDecision,
 } from '@/product/harness-client';
 import { navigateAfterSubmitSuccess } from '@/product/results/result-center-navigation';
@@ -108,6 +112,7 @@ import {
 } from '@/product/marketing-identity-queries';
 
 import { BriefSurface } from './brief-surface-panel';
+import { AskMerchantGroupCard } from './ask-merchant-group-card';
 import { applyCatalogRecipeSelection } from './catalog-selection';
 import { ProgressiveFactCard } from './progressive-fact-card';
 import {
@@ -1311,6 +1316,10 @@ export function ComposerHome({
     () => ['harness', 'decision', taskId] as const,
     [taskId]
   );
+  const interactionQueryKey = useMemo(
+    () => ['harness', 'interaction', taskId] as const,
+    [taskId]
+  );
   const workflowStream = useWorkflowEventStream({
     enabled: Boolean(taskId),
     workflowId: taskId,
@@ -1363,6 +1372,16 @@ export function ComposerHome({
     queryFn: ({ signal }) => readPendingHarnessDecision(taskId, signal),
     refetchInterval: session.phase === 'delivered' ? false : 2_000,
   });
+  const interactionQuery = useQuery({
+    enabled: Boolean(taskId) && session.phase !== 'delivered',
+    queryKey: interactionQueryKey,
+    queryFn: ({ signal }) => readPendingHarnessInteraction(taskId, signal),
+    refetchInterval: session.phase === 'delivered' ? false : 2_000,
+  });
+  const pendingAskRequest =
+    interactionQuery.data?.kind === 'ask_merchant'
+      ? interactionQuery.data
+      : null;
   const pendingQuestion: QuestionCard | null =
     decisionQuery.data?.question ?? null;
   const questionResolutionSource =
@@ -1439,6 +1458,36 @@ export function ComposerHome({
       }
     },
     [decisionQuery, pendingQuestion, taskId]
+  );
+  const answerAskMerchant = useCallback(
+    async (response: AskMerchantAnswer['response']) => {
+      if (!pendingAskRequest || !taskId) return;
+      setQuestionPending(true);
+      try {
+        await submitHarnessInteraction(taskId, {
+          requestId: pendingAskRequest.requestId,
+          revision: pendingAskRequest.revision,
+          idempotencyKey:
+            `composer-interaction:${pendingAskRequest.requestId}:` +
+            `r${pendingAskRequest.revision}:merchant`,
+          resume: {
+            runId: pendingAskRequest.runId,
+            step: pendingAskRequest.step,
+          },
+          response,
+        });
+        await Promise.all([
+          interactionQuery.refetch(),
+          decisionQuery.refetch(),
+        ]);
+      } catch {
+        toast.error(workbench_operation_failed());
+        throw new Error('The merchant interaction could not be submitted.');
+      } finally {
+        setQuestionPending(false);
+      }
+    },
+    [decisionQuery, interactionQuery, pendingAskRequest, taskId]
   );
 
   const addSource = (assetId: string) => {
@@ -2577,7 +2626,16 @@ export function ComposerHome({
           }}
           onRecover={recoverFromReport}
           questionSlot={
-            pendingQuestion ? (
+            pendingAskRequest ? (
+              <AskMerchantGroupCard
+                onEditingChange={(editing) =>
+                  setHarnessInteractionEditing(taskId, editing)
+                }
+                onSubmit={answerAskMerchant}
+                pending={questionPending}
+                request={pendingAskRequest}
+              />
+            ) : pendingQuestion ? (
               <ComposerQuestionCard
                 disabled={createWork.isPending}
                 // D-116 safety edge ②: quota or an external effect means D-112

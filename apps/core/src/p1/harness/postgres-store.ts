@@ -1519,7 +1519,9 @@ export class PostgresHarnessStore
     const row = result.rows[0];
     if (
       row &&
-      harnessInteractionRequestSchema.safeParse(row.payload).success
+      harnessInteractionPendingProjectionSchema.safeParse(
+        row.pending_projection,
+      ).success
     ) {
       return null;
     }

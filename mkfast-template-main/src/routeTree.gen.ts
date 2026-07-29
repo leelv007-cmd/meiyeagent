@@ -113,7 +113,10 @@ import { Route as ApiCoreDiagnosticsIdResumeRouteImport } from './routes/api/cor
 import { Route as ApiCoreDiagnosticsIdEventsRouteImport } from './routes/api/core/diagnostics/$id/events'
 import { Route as ApiCoreP1WorkflowsWorkflowIdEventsRouteImport } from './routes/api/core/p1/workflows/$workflowId/events'
 import { Route as ApiCoreP1HarnessTasksTaskIdProductMetricsRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/product-metrics'
+import { Route as ApiCoreP1HarnessTasksTaskIdInteractionRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction'
 import { Route as ApiCoreP1HarnessTasksTaskIdDecisionRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/decision'
+import { Route as ApiCoreP1HarnessTasksTaskIdInteractionMessageRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction/message'
+import { Route as ApiCoreP1HarnessTasksTaskIdInteractionEditingRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction/editing'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -646,11 +649,29 @@ const ApiCoreP1HarnessTasksTaskIdProductMetricsRoute =
     path: '/$taskId/product-metrics',
     getParentRoute: () => ApiCoreP1HarnessTasksRoute,
   } as any)
+const ApiCoreP1HarnessTasksTaskIdInteractionRoute =
+  ApiCoreP1HarnessTasksTaskIdInteractionRouteImport.update({
+    id: '/$taskId/interaction',
+    path: '/$taskId/interaction',
+    getParentRoute: () => ApiCoreP1HarnessTasksRoute,
+  } as any)
 const ApiCoreP1HarnessTasksTaskIdDecisionRoute =
   ApiCoreP1HarnessTasksTaskIdDecisionRouteImport.update({
     id: '/$taskId/decision',
     path: '/$taskId/decision',
     getParentRoute: () => ApiCoreP1HarnessTasksRoute,
+  } as any)
+const ApiCoreP1HarnessTasksTaskIdInteractionMessageRoute =
+  ApiCoreP1HarnessTasksTaskIdInteractionMessageRouteImport.update({
+    id: '/message',
+    path: '/message',
+    getParentRoute: () => ApiCoreP1HarnessTasksTaskIdInteractionRoute,
+  } as any)
+const ApiCoreP1HarnessTasksTaskIdInteractionEditingRoute =
+  ApiCoreP1HarnessTasksTaskIdInteractionEditingRouteImport.update({
+    id: '/editing',
+    path: '/editing',
+    getParentRoute: () => ApiCoreP1HarnessTasksTaskIdInteractionRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -758,7 +779,10 @@ export interface FileRoutesByFullPath {
   '/api/core/p1/harness/tasks': typeof ApiCoreP1HarnessTasksRouteWithChildren
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
   '/api/core/p1/harness/tasks/$taskId/decision': typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
+  '/api/core/p1/harness/tasks/$taskId/interaction': typeof ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren
   '/api/core/p1/harness/tasks/$taskId/product-metrics': typeof ApiCoreP1HarnessTasksTaskIdProductMetricsRoute
+  '/api/core/p1/harness/tasks/$taskId/interaction/editing': typeof ApiCoreP1HarnessTasksTaskIdInteractionEditingRoute
+  '/api/core/p1/harness/tasks/$taskId/interaction/message': typeof ApiCoreP1HarnessTasksTaskIdInteractionMessageRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -861,7 +885,10 @@ export interface FileRoutesByTo {
   '/api/core/p1/harness/tasks': typeof ApiCoreP1HarnessTasksRouteWithChildren
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
   '/api/core/p1/harness/tasks/$taskId/decision': typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
+  '/api/core/p1/harness/tasks/$taskId/interaction': typeof ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren
   '/api/core/p1/harness/tasks/$taskId/product-metrics': typeof ApiCoreP1HarnessTasksTaskIdProductMetricsRoute
+  '/api/core/p1/harness/tasks/$taskId/interaction/editing': typeof ApiCoreP1HarnessTasksTaskIdInteractionEditingRoute
+  '/api/core/p1/harness/tasks/$taskId/interaction/message': typeof ApiCoreP1HarnessTasksTaskIdInteractionMessageRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -969,7 +996,10 @@ export interface FileRoutesById {
   '/api/core/p1/harness/tasks': typeof ApiCoreP1HarnessTasksRouteWithChildren
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
   '/api/core/p1/harness/tasks/$taskId/decision': typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
+  '/api/core/p1/harness/tasks/$taskId/interaction': typeof ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren
   '/api/core/p1/harness/tasks/$taskId/product-metrics': typeof ApiCoreP1HarnessTasksTaskIdProductMetricsRoute
+  '/api/core/p1/harness/tasks/$taskId/interaction/editing': typeof ApiCoreP1HarnessTasksTaskIdInteractionEditingRoute
+  '/api/core/p1/harness/tasks/$taskId/interaction/message': typeof ApiCoreP1HarnessTasksTaskIdInteractionMessageRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -1078,7 +1108,10 @@ export interface FileRouteTypes {
     | '/api/core/p1/harness/tasks'
     | '/api/core/p1/workflows/$workflowId/events'
     | '/api/core/p1/harness/tasks/$taskId/decision'
+    | '/api/core/p1/harness/tasks/$taskId/interaction'
     | '/api/core/p1/harness/tasks/$taskId/product-metrics'
+    | '/api/core/p1/harness/tasks/$taskId/interaction/editing'
+    | '/api/core/p1/harness/tasks/$taskId/interaction/message'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -1181,7 +1214,10 @@ export interface FileRouteTypes {
     | '/api/core/p1/harness/tasks'
     | '/api/core/p1/workflows/$workflowId/events'
     | '/api/core/p1/harness/tasks/$taskId/decision'
+    | '/api/core/p1/harness/tasks/$taskId/interaction'
     | '/api/core/p1/harness/tasks/$taskId/product-metrics'
+    | '/api/core/p1/harness/tasks/$taskId/interaction/editing'
+    | '/api/core/p1/harness/tasks/$taskId/interaction/message'
   id:
     | '__root__'
     | '/'
@@ -1288,7 +1324,10 @@ export interface FileRouteTypes {
     | '/api/core/p1/harness/tasks'
     | '/api/core/p1/workflows/$workflowId/events'
     | '/api/core/p1/harness/tasks/$taskId/decision'
+    | '/api/core/p1/harness/tasks/$taskId/interaction'
     | '/api/core/p1/harness/tasks/$taskId/product-metrics'
+    | '/api/core/p1/harness/tasks/$taskId/interaction/editing'
+    | '/api/core/p1/harness/tasks/$taskId/interaction/message'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -2065,12 +2104,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCoreP1HarnessTasksTaskIdProductMetricsRouteImport
       parentRoute: typeof ApiCoreP1HarnessTasksRoute
     }
+    '/api/core/p1/harness/tasks/$taskId/interaction': {
+      id: '/api/core/p1/harness/tasks/$taskId/interaction'
+      path: '/$taskId/interaction'
+      fullPath: '/api/core/p1/harness/tasks/$taskId/interaction'
+      preLoaderRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionRouteImport
+      parentRoute: typeof ApiCoreP1HarnessTasksRoute
+    }
     '/api/core/p1/harness/tasks/$taskId/decision': {
       id: '/api/core/p1/harness/tasks/$taskId/decision'
       path: '/$taskId/decision'
       fullPath: '/api/core/p1/harness/tasks/$taskId/decision'
       preLoaderRoute: typeof ApiCoreP1HarnessTasksTaskIdDecisionRouteImport
       parentRoute: typeof ApiCoreP1HarnessTasksRoute
+    }
+    '/api/core/p1/harness/tasks/$taskId/interaction/message': {
+      id: '/api/core/p1/harness/tasks/$taskId/interaction/message'
+      path: '/message'
+      fullPath: '/api/core/p1/harness/tasks/$taskId/interaction/message'
+      preLoaderRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionMessageRouteImport
+      parentRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionRoute
+    }
+    '/api/core/p1/harness/tasks/$taskId/interaction/editing': {
+      id: '/api/core/p1/harness/tasks/$taskId/interaction/editing'
+      path: '/editing'
+      fullPath: '/api/core/p1/harness/tasks/$taskId/interaction/editing'
+      preLoaderRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionEditingRouteImport
+      parentRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionRoute
     }
   }
 }
@@ -2264,14 +2324,35 @@ const ApiCoreDiagnosticsRouteChildren: ApiCoreDiagnosticsRouteChildren = {
 const ApiCoreDiagnosticsRouteWithChildren =
   ApiCoreDiagnosticsRoute._addFileChildren(ApiCoreDiagnosticsRouteChildren)
 
+interface ApiCoreP1HarnessTasksTaskIdInteractionRouteChildren {
+  ApiCoreP1HarnessTasksTaskIdInteractionEditingRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionEditingRoute
+  ApiCoreP1HarnessTasksTaskIdInteractionMessageRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionMessageRoute
+}
+
+const ApiCoreP1HarnessTasksTaskIdInteractionRouteChildren: ApiCoreP1HarnessTasksTaskIdInteractionRouteChildren =
+  {
+    ApiCoreP1HarnessTasksTaskIdInteractionEditingRoute:
+      ApiCoreP1HarnessTasksTaskIdInteractionEditingRoute,
+    ApiCoreP1HarnessTasksTaskIdInteractionMessageRoute:
+      ApiCoreP1HarnessTasksTaskIdInteractionMessageRoute,
+  }
+
+const ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren =
+  ApiCoreP1HarnessTasksTaskIdInteractionRoute._addFileChildren(
+    ApiCoreP1HarnessTasksTaskIdInteractionRouteChildren,
+  )
+
 interface ApiCoreP1HarnessTasksRouteChildren {
   ApiCoreP1HarnessTasksTaskIdDecisionRoute: typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
+  ApiCoreP1HarnessTasksTaskIdInteractionRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren
   ApiCoreP1HarnessTasksTaskIdProductMetricsRoute: typeof ApiCoreP1HarnessTasksTaskIdProductMetricsRoute
 }
 
 const ApiCoreP1HarnessTasksRouteChildren: ApiCoreP1HarnessTasksRouteChildren = {
   ApiCoreP1HarnessTasksTaskIdDecisionRoute:
     ApiCoreP1HarnessTasksTaskIdDecisionRoute,
+  ApiCoreP1HarnessTasksTaskIdInteractionRoute:
+    ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren,
   ApiCoreP1HarnessTasksTaskIdProductMetricsRoute:
     ApiCoreP1HarnessTasksTaskIdProductMetricsRoute,
 }
