@@ -659,6 +659,7 @@ describe('ContentPackage application service contract', () => {
       (candidate) => candidate.id === contentPackage.id
     );
     assert.ok(beforePackage);
+    assert.ok(beforePackage.currentVersionId);
     const billingFacts = structuredClone(beforePackage.generated.childRuns);
 
     const edited = await operationsService.editContentPackageVersion(
@@ -2999,6 +3000,7 @@ describe('ContentPackage application service contract', () => {
     assert.equal(revoked.statusLabel, '需处理');
     assert.equal(revoked.rights.state, 'revoked');
     assert.equal(revoked.rights.reason, 'source_asset_authorization_revoked');
+    assert.ok(revoked.rights.revokedAt);
     assert.ok(Number.isFinite(Date.parse(revoked.rights.revokedAt)));
   });
 });
