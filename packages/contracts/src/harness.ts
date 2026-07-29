@@ -4,6 +4,10 @@ import {
   assistantContextSchema,
   assistantFieldPatchBaseSchema,
 } from './p1.js';
+import {
+  askMerchantAnswerSchema,
+  askMerchantQuestionRequestSchema,
+} from './agent-primitives.js';
 import { hotTopicOpportunityCardSchema } from './marketing-package.js';
 import { actionUsageSchema } from './observability-event.js';
 
@@ -273,10 +277,122 @@ export const confirmationCardTimeoutSecondsSchema = z
   .min(1)
   .max(3_600);
 
+const executionConfirmationParamSchema = z
+  .object({
+    key: z.enum([
+      'model',
+      'aspectRatio',
+      'quantity',
+      'durationSeconds',
+      'destination',
+      'deliverable',
+    ]),
+    label: z.string().trim().min(1).max(500),
+    value: z.string().trim().min(1).max(1_000),
+    hint: z.string().trim().min(1).max(1_000).nullable(),
+  })
+  .strict();
+
+export const executionConfirmationRequestSchema = z
+  .object({
+    requestId: harnessIdSchema,
+    runId: harnessIdSchema,
+    step: z.literal('execution_selection'),
+    revision: workflowRevisionSchema,
+    kind: z.literal('execution_confirmation'),
+    frozen: z
+      .object({
+        executionSnapshotRef: z
+          .object({
+            id: harnessIdSchema,
+            revision: workflowRevisionSchema,
+          })
+          .strict(),
+        quoteRevision: harnessIdSchema,
+        params: z.array(executionConfirmationParamSchema).max(12),
+        debitPreview: z
+          .array(
+            z
+              .object({
+                resource: z.enum(['copy', 'image', 'video']),
+                quantity: z.number().int().positive(),
+              })
+              .strict()
+          )
+          .max(3),
+        condition: z
+          .object({
+            kind: z.enum([
+              'existing_gate',
+              'quote_threshold',
+              'external_action',
+            ]),
+            required: z.boolean(),
+            serverEvaluated: z.literal(true),
+          })
+          .strict(),
+        timeoutPolicy: z.union([
+          z.object({ kind: z.literal('hold') }).strict(),
+          z
+            .object({
+              kind: z.literal('semantic_default'),
+              timeoutSeconds: confirmationCardTimeoutSecondsSchema,
+            })
+            .strict(),
+        ]),
+      })
+      .strict(),
+    presentation: z
+      .object({
+        carriers: z
+          .array(z.enum(['conversation', 'task_card']))
+          .min(1)
+          .max(2),
+        notification: z.literal('none'),
+        renderer: z.literal('execution_confirmation'),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const executionConfirmationAnswerSchema = z
+  .object({
+    requestId: harnessIdSchema,
+    revision: workflowRevisionSchema,
+    idempotencyKey: harnessIdSchema,
+    resume: z
+      .object({
+        runId: harnessIdSchema,
+        step: z.literal('execution_selection'),
+      })
+      .strict(),
+    response: z.union([
+      z.object({ kind: z.literal('approved') }).strict(),
+      z
+        .object({
+          kind: z.literal('rejected'),
+          feedback: z.string().trim().min(1).max(2_000).optional(),
+        })
+        .strict(),
+    ]),
+  })
+  .strict();
+
+export const harnessInteractionRequestSchema = z.union([
+  askMerchantQuestionRequestSchema,
+  executionConfirmationRequestSchema,
+]);
+
+export const harnessInteractionAnswerSchema = z.union([
+  askMerchantAnswerSchema,
+  executionConfirmationAnswerSchema,
+]);
+
 export const harnessDecisionResolutionSourceSchema = z.enum([
   'decision',
   'core_timeout',
   'core_hold_expired',
+  'system_default',
   'late_answer',
 ]);
 
@@ -499,6 +615,18 @@ export type WorkflowStateFrame = z.infer<typeof workflowStateFrameSchema>;
 export type QuestionCard = z.infer<typeof questionCardSchema>;
 export type QuestionCardUnattended = z.infer<
   typeof questionCardUnattendedSchema
+>;
+export type ExecutionConfirmationRequest = z.infer<
+  typeof executionConfirmationRequestSchema
+>;
+export type ExecutionConfirmationAnswer = z.infer<
+  typeof executionConfirmationAnswerSchema
+>;
+export type HarnessInteractionRequest = z.infer<
+  typeof harnessInteractionRequestSchema
+>;
+export type HarnessInteractionAnswer = z.infer<
+  typeof harnessInteractionAnswerSchema
 >;
 export type HarnessDecisionResolutionSource = z.infer<
   typeof harnessDecisionResolutionSourceSchema

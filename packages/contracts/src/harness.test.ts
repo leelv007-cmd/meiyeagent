@@ -6,9 +6,12 @@ import {
   chipsSignalInputSchema,
   contentPackageRevisionDeliverySchema,
   creationModeSchema,
+  executionConfirmationAnswerSchema,
+  executionConfirmationRequestSchema,
   firstUsableDraftMetricSchema,
   harnessDecisionSnapshotSchema,
   harnessDecisionSubmitResultSchema,
+  harnessInteractionRequestSchema,
   harnessStageSchema,
   harnessTaskSubmissionSchema,
   questionCardUnattended,
@@ -433,6 +436,96 @@ test('decision receipts preserve timeout races and late-answer successors', () =
         workflowId: 'workflow-late',
       },
     }
+  );
+});
+
+test('semantic defaults remain distinct from carrier timeout cancellation', () => {
+  const question = questionCardSchema.parse({
+    questionId: 'question-system-default',
+    workflowId: 'workflow-system-default',
+    workflowRevision: 1,
+    question: '没有补充时，是否按推荐重点继续？',
+    options: [{ id: 'continue', label: '按推荐继续' }],
+    freeText: { enabled: false },
+    response: {
+      field: 'campaign_focus',
+      reason: '采用商家可见的安全默认值',
+    },
+    unattended: 'continue',
+    scope: 'current_task',
+  });
+
+  assert.equal(
+    harnessDecisionSnapshotSchema.safeParse({
+      question,
+      resolutionSource: 'system_default',
+      status: 'resolved',
+      timeoutSeconds: null,
+    }).success,
+    true,
+  );
+});
+
+test('execution confirmation freezes server conditions and all three merchant outcomes', () => {
+  const request = {
+    requestId: 'execution-confirmation-1',
+    runId: 'run-1',
+    step: 'execution_selection',
+    revision: 2,
+    kind: 'execution_confirmation',
+    frozen: {
+      executionSnapshotRef: { id: 'snapshot-task-1', revision: 1 },
+      quoteRevision: 'quote-r7',
+      params: [
+        {
+          key: 'aspectRatio',
+          label: '画面比例',
+          value: '3:4 竖版',
+          hint: '适合朋友圈、小红书，也够印展架',
+        },
+      ],
+      debitPreview: [{ resource: 'image', quantity: 1 }],
+      condition: {
+        kind: 'existing_gate',
+        required: true,
+        serverEvaluated: true,
+      },
+      timeoutPolicy: { kind: 'hold' },
+    },
+    presentation: {
+      carriers: ['conversation'],
+      notification: 'none',
+      renderer: 'execution_confirmation',
+    },
+  } as const;
+
+  assert.deepEqual(executionConfirmationRequestSchema.parse(request), request);
+  assert.deepEqual(harnessInteractionRequestSchema.parse(request), request);
+  for (const response of [
+    { kind: 'approved' },
+    { kind: 'rejected', feedback: '换成方图再做' },
+    { kind: 'rejected' },
+  ] as const) {
+    assert.deepEqual(
+      executionConfirmationAnswerSchema.parse({
+        requestId: request.requestId,
+        revision: request.revision,
+        idempotencyKey: `answer-${response.kind}-${'feedback' in response}`,
+        resume: { runId: request.runId, step: request.step },
+        response,
+      }).response,
+      response,
+    );
+  }
+  assert.equal(
+    executionConfirmationRequestSchema.safeParse({
+      ...request,
+      frozen: {
+        ...request.frozen,
+        params: [{ ...request.frozen.params[0], editable: true }],
+      },
+    }).success,
+    false,
   );
 });
 
