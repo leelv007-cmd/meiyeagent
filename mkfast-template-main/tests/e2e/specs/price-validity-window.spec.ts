@@ -18,7 +18,11 @@
  */
 
 import { expect, test, type Page } from '@playwright/test';
-import type { ContextBundle, StoreFact } from '@meiye/contracts';
+import type {
+  ContentPackage,
+  ContextBundle,
+  StoreFact,
+} from '@meiye/contracts';
 
 import {
   cleanupE2EUsers,
@@ -26,6 +30,12 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { productCommand, productState } from '../fixtures/product';
+import {
+  assertThreeModalDiscovery,
+  JOURNEY_CONTRACTS,
+  submitComposerJourney,
+  waitForResultJourney,
+} from '../fixtures/ui-journey';
 
 const PROMOTION_PROJECT = {
   confirmed: true,
@@ -226,6 +236,60 @@ function compileBundle(
   );
 }
 
+async function generateAndFreezeBundle(page: Page, prompt: string) {
+  const copyContract = JOURNEY_CONTRACTS.find(
+    (contract) => contract.modality === 'copy'
+  )!;
+  await page.goto('/dashboard');
+  await assertThreeModalDiscovery(page);
+
+  const submissionResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      response.url().includes('/api/core/p1/composer/submissions'),
+    { timeout: 120_000 }
+  );
+  const workId = await submitComposerJourney(page, copyContract, prompt);
+  const packageId = (
+    (await (await submissionResponse).json()) as {
+      data?: { contentPackage?: { id?: string } };
+    }
+  ).data?.contentPackage?.id;
+  expect(packageId).toBeTruthy();
+  await waitForResultJourney(page, copyContract, workId);
+
+  let marketing: ContentPackage['marketing'] | undefined;
+  await expect
+    .poll(
+      async () => {
+        const packages = await p1Query<ContentPackage[]>(
+          page,
+          'operations',
+          'content_packages',
+          {}
+        );
+        marketing = packages.find(
+          (candidate) => candidate.id === packageId
+        )?.marketing;
+        return marketing?.contextBundle;
+      },
+      { timeout: 90_000 }
+    )
+    .toMatchObject({ bundleId: expect.any(String) });
+
+  const bundle = await p1Query<ContextBundle | null>(
+    page,
+    'context',
+    'context_bundle_get',
+    {
+      bundleId: marketing!.contextBundle.bundleId,
+      revision: marketing!.contextBundle.revision,
+    }
+  );
+  expect(bundle).not.toBeNull();
+  return { bundle: bundle!, marketing: marketing! };
+}
+
 function quotesPrice(bundle: ContextBundle) {
   return bundle.referencedFactRevisions.some(
     (reference) => reference.factId === PRICE_FACT_ID
@@ -321,6 +385,15 @@ test.describe('#244 price validity window', () => {
       factId: PRICE_FACT_ID,
       revision: 1,
     });
+
+    const generatedInside = await generateAndFreezeBundle(
+      page,
+      `为${PROMOTION_PROJECT.name}写一条真实克制的朋友圈项目介绍`
+    );
+    expect(quotesPrice(generatedInside.bundle)).toBe(true);
+    expect(generatedInside.marketing.factRefs).toContain(
+      `store_fact:${PRICE_FACT_ID}:1`
+    );
 
     /* ---- 拨钟：the window closes --------------------------------------- */
 
