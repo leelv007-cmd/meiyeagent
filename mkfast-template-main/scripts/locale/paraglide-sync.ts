@@ -9,6 +9,7 @@
  * - a dev-server heartbeat file with pid-liveness validation.
  */
 import {
+  type Dirent,
   mkdirSync,
   readFileSync,
   renameSync,
@@ -64,7 +65,7 @@ function errorCode(error: unknown): string | undefined {
 async function listFiles(root: string): Promise<string[]> {
   const files: string[] = [];
   async function walk(current: string, prefix: string): Promise<void> {
-    let entries: Awaited<ReturnType<typeof readdir>>;
+    let entries: Dirent[];
     try {
       entries = await readdir(current, { withFileTypes: true });
     } catch (error) {
@@ -125,7 +126,7 @@ export async function diffDirectories(
 }
 
 async function pruneEmptyDirectories(dir: string): Promise<void> {
-  let entries: Awaited<ReturnType<typeof readdir>>;
+  let entries: Dirent[];
   try {
     entries = await readdir(dir, { withFileTypes: true });
   } catch {
