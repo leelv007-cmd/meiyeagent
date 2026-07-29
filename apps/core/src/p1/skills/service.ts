@@ -9,6 +9,7 @@ import {
 
 import { P1DomainError } from '../foundation/domain.js';
 import type { SkillRepository } from './repository.js';
+import { validateSkillFrontmatter } from './skill-format.js';
 import {
   skillRevisionRef,
   type ResolvedSkillInstruction,
@@ -19,17 +20,20 @@ import {
   type SkillDeployment,
   type SkillDeploymentArtifactType,
   type SkillExecutionMode,
+  type SkillGovernanceSidecar,
   type SkillInvocationExecution,
   type SkillInvocationExecutor,
   type SkillInvocationReceipt,
   type SkillInvocationRequest,
   type SkillInvocationResultPublisher,
   type SkillOutputValidator,
+  type SkillPromptReference,
+  type SkillPromptSnapshot,
+  type SkillPromptSnapshotPort,
   type SkillRevision,
   type SkillRevisionManifest,
   type SkillStage,
 } from './types.js';
-import type { HarnessFrozenPrompt } from '../harness/langfuse-prompts.js';
 import { RegistrySkillOutputValidator } from './schema-validator.js';
 import {
   denyAllSkillToolExecution,
@@ -68,6 +72,7 @@ export class SkillService {
   constructor(
     private readonly repository: SkillRepository,
     private readonly now: () => string = () => new Date().toISOString(),
+    private readonly promptSnapshots?: SkillPromptSnapshotPort,
     private readonly toolExecutionAuthorizer: SkillToolExecutionAuthorizer =
       denyAllSkillToolExecution,
   ) {}
@@ -99,14 +104,16 @@ export class SkillService {
     actorId: string;
     instruction: string;
     manifest: SkillRevisionManifest;
-    prompt: HarnessFrozenPrompt;
+    governance: SkillGovernanceSidecar;
+    promptReference: SkillPromptReference;
   }) {
     const catalog = await this.repository.getCatalog(input.skillId);
     if (!catalog) {
       throw new P1DomainError('NOT_FOUND', 'Skill 目录项不存在。');
     }
-    validateManifest(input.manifest);
-    validatePrompt(input.prompt, input.instruction);
+    const manifest = validateSkillFrontmatter(input.manifest);
+    validateGovernance(input.governance);
+    const prompt = await this.capturePromptSnapshot(input.promptReference);
     const revision = (input.expectedRevision ?? 0) + 1;
     const record: SkillRevision = {
       skillId: catalog.skillId,
@@ -115,13 +122,15 @@ export class SkillService {
       contentHash: sha256(
         canonicalJson({
           instruction: input.instruction,
-          manifest: input.manifest,
-          prompt: input.prompt,
+          manifest,
+          governance: input.governance,
+          prompt,
         }),
       ),
       instruction: required(input.instruction, 'Skill instruction'),
-      manifest: structuredClone(input.manifest),
-      prompt: structuredClone(input.prompt),
+      manifest: structuredClone(manifest),
+      governance: structuredClone(input.governance),
+      prompt,
       status: 'draft',
       createdAt: this.now(),
       createdBy: required(input.actorId, 'Actor ID'),
@@ -130,6 +139,55 @@ export class SkillService {
       evalRunId: null,
     };
     return this.repository.putRevision(record, input.expectedRevision);
+  }
+
+  private async capturePromptSnapshot(
+    reference: SkillPromptReference,
+  ): Promise<SkillPromptSnapshot> {
+    const keys = Object.keys(reference);
+    if (
+      keys.some(
+        (key) => !['name', 'version', 'contentHash'].includes(key),
+      )
+    ) {
+      fail('Skill prompt reference must not include content or fallback fields.');
+    }
+    const normalized = {
+      name: required(reference.name, 'Skill prompt name'),
+      version: required(reference.version, 'Skill prompt version'),
+      contentHash: required(
+        reference.contentHash,
+        'Skill prompt content hash',
+      ),
+    };
+    if (!this.promptSnapshots) {
+      fail('Skill prompt snapshot resolver is not configured.');
+    }
+    const captured = await this.promptSnapshots.capture(normalized);
+    if (
+      captured.name !== normalized.name ||
+      captured.version !== normalized.version ||
+      captured.contentHash !== normalized.contentHash ||
+      sha256(captured.content) !== normalized.contentHash
+    ) {
+      fail('Skill prompt snapshot does not match its pinned reference.');
+    }
+    if (
+      captured.isFallback &&
+      !captured.fallbackReason?.trim()
+    ) {
+      fail('Skill prompt fallback requires a reason.');
+    }
+    return {
+      ...normalized,
+      fallbackContent: captured.content,
+      label: captured.label,
+      source: captured.source,
+      isFallback: captured.isFallback,
+      ...(captured.fallbackReason
+        ? { fallbackReason: captured.fallbackReason }
+        : {}),
+    };
   }
 
   async acceptAndFreezeRevision(input: {
@@ -289,7 +347,7 @@ export class SkillService {
         fail('首发部署只开放 prompt_materialized 的 instruction/reference Skill。');
       }
     }
-    if (input.executionMode !== revision.manifest.executionMode) {
+    if (input.executionMode !== revision.governance.executionMode) {
       fail('Skill 部署执行模式必须与权威版本一致。');
     }
     const deployment: SkillDeployment = {
@@ -327,7 +385,7 @@ export class SkillService {
       );
       if (!revision || revision.status !== 'accepted_frozen') continue;
       if (
-        !revision.manifest.compatibility.workflowRevisionRefs.includes(
+        !revision.governance.workflowRevisionRefs.includes(
           input.workflowRevisionRef,
         )
       ) {
@@ -397,7 +455,7 @@ export class SkillService {
       );
       if (
         revision.status !== 'accepted_frozen' ||
-        revision.manifest.executionMode !== 'prompt_materialized'
+        revision.governance.executionMode !== 'prompt_materialized'
       ) {
         fail('生产判断位只能物化已受理冻结的 prompt_materialized Skill。');
       }
@@ -459,7 +517,7 @@ export class SkillService {
       fail('只能调用已受理冻结的 Skill 版本。');
     }
     try {
-      parseSkillSchema(revision.manifest.inputSchemaRef, input.input);
+      parseSkillSchema(revision.governance.inputSchemaRef, input.input);
     } catch {
       failValidation(
         'input',
@@ -469,7 +527,7 @@ export class SkillService {
     if (input.output.target === 'content_package') {
       failValidation('output', 'Skill 输出不能写入 ContentPackage。');
     }
-    if (input.output.schemaRevision !== revision.manifest.outputSchemaRef) {
+    if (input.output.schemaRevision !== revision.governance.outputSchemaRef) {
       failValidation(
         'output',
         'Skill 输出未使用已冻结的输出 Schema 版本。',
@@ -508,7 +566,7 @@ export class SkillService {
     const callIds = input.calls.map((call) => required(call.callId, 'Call ID'));
     if (
       new Set(callIds).size !== callIds.length ||
-      input.calls.length > revision.manifest.budget.maxChildEffects
+      input.calls.length > revision.governance.budget.maxChildEffects
     ) {
       fail('Skill 子调用超过已冻结的调用预算。');
     }
@@ -522,7 +580,7 @@ export class SkillService {
           !Number.isFinite(call.declaredBudgetCapCents) ||
           call.declaredBudgetCapCents < 0,
       ) ||
-      declaredCostCap > revision.manifest.budget.maxCostCents
+      declaredCostCap > revision.governance.budget.maxCostCents
     ) {
       fail('Skill 子调用超过已冻结的成本预算。');
     }
@@ -723,19 +781,8 @@ function toResolved(revision: SkillRevision): ResolvedSkillInstruction {
     skillRevisionRef: revision.skillRevisionRef,
     instruction: revision.instruction,
     contentHash: revision.contentHash,
-    executionMode: revision.manifest.executionMode,
+    executionMode: revision.governance.executionMode,
   };
-}
-
-function validatePrompt(prompt: HarnessFrozenPrompt, instruction: string) {
-  if (
-    prompt.content !== instruction ||
-    prompt.contentHash !== sha256(prompt.content) ||
-    !prompt.name.trim() ||
-    !prompt.version.trim()
-  ) {
-    fail('Prompt Skill 必须绑定精确的提示词版本与内容哈希。');
-  }
 }
 
 export function skillAcceptanceGateFailure(
@@ -763,11 +810,10 @@ export function skillAcceptanceGateFailure(
   return null;
 }
 
-function validateManifest(manifest: SkillRevisionManifest) {
+function validateGovernance(manifest: SkillGovernanceSidecar) {
   for (const [label, value] of [
     ['input schema', manifest.inputSchemaRef],
     ['output schema', manifest.outputSchemaRef],
-    ['eval suite', manifest.evalSuiteRef],
   ] as const) {
     required(value, label);
   }
@@ -806,10 +852,10 @@ function validateChildEffect(
     contextRefs: string[];
   },
 ) {
-  if (!revision.manifest.allowedTools.includes(call.toolId)) {
+  if (!revision.governance.allowedTools.includes(call.toolId)) {
     fail(`Tool "${call.toolId}" is outside the Skill allowlist.`);
   }
-  const allowedScopes = new Set(revision.manifest.contextScopes);
+  const allowedScopes = new Set(revision.governance.contextScopes);
   if (
     call.contextRefs.some(
       (reference) => !allowedScopes.has(reference.split(':', 1)[0] ?? ''),

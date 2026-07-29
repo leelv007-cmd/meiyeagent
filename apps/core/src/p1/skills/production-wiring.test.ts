@@ -37,9 +37,14 @@ test('production Skill inventory matches the explicit contract snapshot', () => 
 
 test('the real Foundation entry admits a revision only through registered schemas', async () => {
   const repository = new MemorySkillRepository();
-  const service = new SkillService(repository, () => NOW);
-  const module = new SkillFoundationModule(service);
   const instruction = 'Use grounded daily-industry context.';
+  const prompt = frozenPrompt(instruction);
+  const service = new SkillService(repository, () => NOW, {
+    async capture() {
+      return prompt;
+    },
+  });
+  const module = new SkillFoundationModule(service);
 
   const result = (await module.execute({
     context: {
@@ -53,11 +58,12 @@ test('the real Foundation entry admits a revision only through registered schema
       action: 'skill_define',
       payload: {
         expectedRevision: null,
+        frontmatter: manifest('production-wiring'),
+        governance: governance(),
         instruction,
-        manifest: manifest(),
         name: 'Production wiring',
         presentationPolicy: 'backend_only',
-        prompt: prompt(instruction),
+        promptReference: promptReference(prompt),
         skillId: 'skill.production-wiring',
       },
     },
@@ -74,7 +80,7 @@ test('the real Foundation entry admits a revision only through registered schema
       await repository.getRevision(
         result.revision.skillRevisionRef,
       )
-    )?.manifest.inputSchemaRef,
+    )?.governance.inputSchemaRef,
     'skill-input.daily-industry@1',
   );
 });
@@ -389,6 +395,12 @@ async function acceptedSkill(
     ),
   );
   const instruction = `Apply ${suffix} only after explicit binding.`;
+  const prompt = frozenPrompt(instruction);
+  const service = new SkillService(repository, () => NOW, {
+    async capture() {
+      return prompt;
+    },
+  });
   await service.defineCatalogEntry({
     actorId: 'operator-production-wiring',
     name: suffix,
@@ -398,9 +410,8 @@ async function acceptedSkill(
   const draft = await service.draftRevision({
     actorId: 'operator-production-wiring',
     expectedRevision: null,
-    instruction,
-    manifest: {
-      ...manifest(),
+    governance: {
+      ...governance(),
       allowedTools: ['tool.fact.read'],
       budget: {
         maxChildEffects: 1,
@@ -410,7 +421,9 @@ async function acceptedSkill(
       contextScopes: ['facts'],
       executionMode: 'harness_native',
     },
-    prompt: prompt(instruction),
+    instruction,
+    manifest: manifest(suffix),
+    promptReference: promptReference(prompt),
     skillId,
   });
   const revision = await service.acceptAndFreezeRevision({
@@ -441,7 +454,14 @@ async function acceptedSkill(
   return { repository, revision, service };
 }
 
-function manifest() {
+function manifest(name: string) {
+  return {
+    description: `Production wiring fixture for ${name}.`,
+    name,
+  };
+}
+
+function governance() {
   return {
     allowedTools: [],
     budget: {
@@ -449,21 +469,18 @@ function manifest() {
       maxCostCents: 0,
       timeoutMs: 10_000,
     },
-    compatibility: {
-      workflowRevisionRefs: ['workflow.production-wiring@1'],
-    },
     contextScopes: [],
-    evalSuiteRef: 'production-wiring@1',
     executionMode: 'prompt_materialized' as const,
     fallback: 'fail_closed' as const,
     inputSchemaRef: 'skill-input.daily-industry@1',
     outputSchemaRef: 'skill-output.intent-decision@1',
     requiredModelCapabilities: ['structured_output'],
     sideEffectClass: 'none' as const,
+    workflowRevisionRefs: ['workflow.production-wiring@1'],
   };
 }
 
-function prompt(content: string) {
+function frozenPrompt(content: string) {
   return {
     content,
     contentHash: createHash('sha256').update(content).digest('hex'),
@@ -472,6 +489,14 @@ function prompt(content: string) {
     name: 'skills/production-wiring',
     source: 'langfuse' as const,
     version: '1',
+  };
+}
+
+function promptReference(prompt: ReturnType<typeof frozenPrompt>) {
+  return {
+    contentHash: prompt.contentHash,
+    name: prompt.name,
+    version: prompt.version,
   };
 }
 

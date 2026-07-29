@@ -10,6 +10,7 @@ import {
 } from '../harness/structured-nodes.js';
 import { P1DomainError } from '../foundation/domain.js';
 import { LangfuseHarnessPromptResolver } from '../harness/langfuse-prompts.js';
+import type { HarnessFrozenPrompt } from '../harness/langfuse-prompts.js';
 import {
   MemorySkillRepository,
   RegistrySkillOutputValidator,
@@ -25,6 +26,23 @@ import {
 const NOW = '2026-07-26T02:00:00.000Z';
 const PROMPT_CONTENT =
   'When the merchant asks for a daily post, prefer useful industry context.';
+const testPromptSnapshotsByReference = new Map<
+  string,
+  HarnessFrozenPrompt
+>();
+const testPromptSnapshots = {
+  async capture(reference: {
+    contentHash: string;
+    name: string;
+    version: string;
+  }) {
+    const snapshot = testPromptSnapshotsByReference.get(
+      promptKey(reference),
+    );
+    assert.ok(snapshot, 'Test prompt snapshot must be registered.');
+    return snapshot;
+  },
+};
 const discardResultPublisher: SkillInvocationResultPublisher = {
   async publishOnce(input) {
     return input.result;
@@ -35,6 +53,7 @@ function createEffectTestService(repository: MemorySkillRepository) {
   return new SkillService(
     repository,
     () => NOW,
+    testPromptSnapshots,
     new StaticSkillToolExecutionAuthorizer(
       ['tool.fact.read', 'tool.quality.score'].map((toolId) => ({
         caller: 'skill.effect-boundary@1',
@@ -48,6 +67,7 @@ test('only an evaluated and frozen Skill revision enters a stage allowlist', asy
   const service = new SkillService(
     new MemorySkillRepository(),
     () => NOW,
+    testPromptSnapshots,
   );
   await service.defineCatalogEntry({
     actorId: 'operator-1',
@@ -74,27 +94,21 @@ test('only an evaluated and frozen Skill revision enters a stage allowlist', asy
   const draft = await service.draftRevision({
     actorId: 'operator-1',
     expectedRevision: null,
-    instruction: PROMPT_CONTENT,
-    manifest: {
-      allowedTools: [],
+    governance: {
+      ...governance(),
       budget: {
         maxChildEffects: 2,
         maxCostCents: 5,
         timeoutMs: 10_000,
       },
-      compatibility: {
-        workflowRevisionRefs: ['workflow.daily-copy@1'],
-      },
-      contextScopes: ['industry_category'],
-      evalSuiteRef: 'skills-intent-routing@1',
-      executionMode: 'prompt_materialized',
-      fallback: 'skip',
-      inputSchemaRef: 'skill-input.daily-industry@1',
-      outputSchemaRef: 'skill-output.intent-decision@1',
-      requiredModelCapabilities: ['structured_output'],
-      sideEffectClass: 'none',
+      workflowRevisionRefs: ['workflow.daily-copy@1'],
     },
-    prompt: prompts.intentNaming,
+    instruction: PROMPT_CONTENT,
+    manifest: {
+      description: 'Adds grounded daily industry context.',
+      name: 'daily-industry',
+    },
+    promptReference: registerPrompt(prompts.intentNaming),
     skillId: 'skill.daily-industry',
   });
   await service.bindRevision({
@@ -158,7 +172,7 @@ test('only an evaluated and frozen Skill revision enters a stage allowlist', asy
 
 test('retired planner-selected bindings remain auditable but never enter the real stage allowlist', async () => {
   const repository = new MemorySkillRepository();
-  const service = new SkillService(repository, () => NOW);
+  const service = new SkillService(repository, () => NOW, testPromptSnapshots);
   const revisions = new Map<string, string>();
   for (const mode of [
     'required',
@@ -242,6 +256,7 @@ test('an accepted prompt Skill changes the fixture judgment at its declared Harn
   const service = new SkillService(
     new MemorySkillRepository(),
     () => NOW,
+    testPromptSnapshots,
   );
   const revision = await createAcceptedSkill(service, 'required');
   await service.bindRevision({
@@ -442,6 +457,7 @@ test('Skill output cannot write ContentPackage and never reaches a child effect'
   const service = new SkillService(
     new MemorySkillRepository(),
     () => NOW,
+    testPromptSnapshots,
   );
   const revision = await createAcceptedEffectSkill(service);
   let executions = 0;
@@ -493,7 +509,11 @@ test('Skill output cannot write ContentPackage and never reaches a child effect'
 
 test('manifest admission rejects unknown schema refs before persisting a revision', async () => {
   const repository = new MemorySkillRepository();
-  const service = new SkillService(repository, () => NOW);
+  const service = new SkillService(
+    repository,
+    () => NOW,
+    testPromptSnapshots,
+  );
   await service.defineCatalogEntry({
     actorId: 'operator-1',
     name: 'Invalid schema fixture',
@@ -505,27 +525,17 @@ test('manifest admission rejects unknown schema refs before persisting a revisio
     service.draftRevision({
       actorId: 'operator-1',
       expectedRevision: null,
+      governance: {
+        ...governance(),
+        outputSchemaRef: 'skill-output.not-registered@1',
+        workflowRevisionRefs: ['workflow.invalid-schema@1'],
+      },
       instruction: PROMPT_CONTENT,
       manifest: {
-        allowedTools: [],
-        budget: {
-          maxChildEffects: 0,
-          maxCostCents: 0,
-          timeoutMs: 10_000,
-        },
-        compatibility: {
-          workflowRevisionRefs: ['workflow.invalid-schema@1'],
-        },
-        contextScopes: [],
-        evalSuiteRef: 'skills-invalid-schema@1',
-        executionMode: 'prompt_materialized',
-        fallback: 'fail_closed',
-        inputSchemaRef: 'skill-input.daily-industry@1',
-        outputSchemaRef: 'skill-output.not-registered@1',
-        requiredModelCapabilities: ['structured_output'],
-        sideEffectClass: 'none',
+        description: 'Invalid output schema fixture.',
+        name: 'invalid-schema',
       },
-      prompt: {
+      promptReference: registerPrompt({
         content: PROMPT_CONTENT,
         contentHash: sha256(PROMPT_CONTENT),
         isFallback: false,
@@ -533,7 +543,7 @@ test('manifest admission rejects unknown schema refs before persisting a revisio
         name: 'skills/invalid-schema',
         source: 'langfuse',
         version: '1',
-      },
+      }),
       skillId: 'skill.invalid-schema',
     }),
     /schema ref/u,
@@ -546,7 +556,7 @@ test('manifest admission rejects unknown schema refs before persisting a revisio
 
 test('invalid Skill input fails before any child executor call', async () => {
   const repository = new MemorySkillRepository();
-  const service = new SkillService(repository, () => NOW);
+  const service = new SkillService(repository, () => NOW, testPromptSnapshots);
   const revision = await createAcceptedEffectSkill(service);
   let executions = 0;
 
@@ -605,7 +615,7 @@ test('invalid Skill input is rejected before the invocation receipt replay fast 
   }
 
   const repository = new ReceiptReadTrackingRepository();
-  const service = new SkillService(repository, () => NOW);
+  const service = new SkillService(repository, () => NOW, testPromptSnapshots);
   const revision = await createAcceptedEffectSkill(service);
   const invocation = {
     calls: [],
@@ -1078,7 +1088,7 @@ test('retry after a mid-invocation crash replays each settled effect and execute
 
 test('SkillDeployment maps one canonical frozen revision to a provider native version without replacing product truth', async () => {
   const repository = new MemorySkillRepository();
-  const service = new SkillService(repository, () => NOW);
+  const service = new SkillService(repository, () => NOW, testPromptSnapshots);
   const revision = await createAcceptedEffectSkill(service);
 
   await assert.rejects(
@@ -1108,7 +1118,7 @@ test('SkillDeployment maps one canonical frozen revision to a provider native ve
 
 test('provider-native deployment requires an explicit gate and evidence reference', async () => {
   const repository = new MemorySkillRepository();
-  const service = new SkillService(repository, () => NOW);
+  const service = new SkillService(repository, () => NOW, testPromptSnapshots);
   const revision = await createAcceptedEffectSkill(service);
 
   await assert.rejects(
@@ -1128,6 +1138,7 @@ test('provider-native deployment requires an explicit gate and evidence referenc
   const providerService = new SkillService(
     new MemorySkillRepository(),
     () => NOW,
+    testPromptSnapshots,
   );
   const providerRevision = await createAcceptedEffectSkill(
     providerService,
@@ -1155,7 +1166,11 @@ test('provider-native deployment requires an explicit gate and evidence referenc
 
 test('Foundation commands reach define, accept, bind, rollback, and deployment operations', async () => {
   const repository = new MemorySkillRepository();
-  const service = new SkillService(repository, () => NOW);
+  const service = new SkillService(
+    repository,
+    () => NOW,
+    testPromptSnapshots,
+  );
   const module = new SkillFoundationModule(service);
   const context = {
     actor: 'admin' as const,
@@ -1173,27 +1188,18 @@ test('Foundation commands reach define, accept, bind, rollback, and deployment o
     version: string,
   ) => ({
     expectedRevision,
-    instruction,
-    manifest: {
-      allowedTools: [],
-      budget: {
-        maxChildEffects: 0,
-        maxCostCents: 0,
-        timeoutMs: 10_000,
-      },
-      compatibility: { workflowRevisionRefs: [workflowRevisionRef] },
-      contextScopes: [],
-      evalSuiteRef: 'skills-foundation-chain@1',
-      executionMode: 'prompt_materialized' as const,
-      fallback: 'skip' as const,
-      inputSchemaRef: 'skill-input.daily-industry@1',
-      outputSchemaRef: 'skill-output.intent-decision@1',
-      requiredModelCapabilities: ['structured_output'],
-      sideEffectClass: 'none' as const,
+    frontmatter: {
+      description: 'Exercises the Foundation Skill command chain.',
+      name: 'foundation-chain',
     },
+    governance: {
+      ...governance(),
+      workflowRevisionRefs: [workflowRevisionRef],
+    },
+    instruction,
     name: 'Foundation chain',
     presentationPolicy: 'explainable',
-    prompt: {
+    promptReference: registerPrompt({
       content: instruction,
       contentHash: sha256(instruction),
       isFallback: false as const,
@@ -1201,7 +1207,7 @@ test('Foundation commands reach define, accept, bind, rollback, and deployment o
       name: 'skills/foundation-chain',
       source: 'langfuse' as const,
       version,
-    },
+    }),
     skillId,
   });
   const execute = (
@@ -1292,8 +1298,139 @@ test('Foundation commands reach define, accept, bind, rollback, and deployment o
   );
 });
 
+test('skill_define rejects inline prompt content before a revision write', async () => {
+  const repository = new MemorySkillRepository();
+  const promptContent = 'Trusted prompt snapshot from Langfuse.';
+  const service = new SkillService(repository, () => NOW, {
+    async capture() {
+      return {
+        content: promptContent,
+        contentHash: sha256(promptContent),
+        isFallback: false,
+        label: 'production',
+        name: 'harness/intent-naming',
+        source: 'langfuse',
+        version: '42',
+      };
+    },
+  });
+  const module = new SkillFoundationModule(service);
+
+  await assert.rejects(
+    module.execute({
+      context: {
+        actor: 'admin',
+        correlationId: 'corr-inline-prompt-rejected',
+        userId: 'operator-inline-prompt-rejected',
+        workspaceId: 'workspace-inline-prompt-rejected',
+      },
+      idempotencyKey: 'skill-define-inline-prompt-rejected',
+      input: {
+        action: 'skill_define',
+        payload: {
+          expectedRevision: null,
+          frontmatter: {
+            description:
+              'Grounds daily beauty content. Use for daily merchant posts.',
+            name: 'inline-prompt-rejected',
+          },
+          governance: governance(),
+          instruction: 'Use grounded daily context.',
+          name: 'Inline prompt rejection',
+          presentationPolicy: 'backend_only',
+          promptReference: {
+            content: 'Caller-controlled prompt body.',
+            contentHash: sha256(promptContent),
+            name: 'harness/intent-naming',
+            version: '42',
+          },
+          skillId: 'skill.inline-prompt-rejected',
+        },
+      },
+    }),
+    /prompt reference must not include content/u,
+  );
+  assert.equal(
+    await repository.getRevisionHead('skill.inline-prompt-rejected'),
+    null,
+  );
+});
+
+test('skill_define separates frontmatter, governance, and trusted prompt fallback while redacting content from its response', async () => {
+  const repository = new MemorySkillRepository();
+  const promptContent = 'Trusted prompt snapshot from Langfuse.';
+  const service = new SkillService(repository, () => NOW, {
+    async capture() {
+      return {
+        content: promptContent,
+        contentHash: sha256(promptContent),
+        isFallback: false,
+        label: 'production',
+        name: 'harness/intent-naming',
+        source: 'langfuse',
+        version: '42',
+      };
+    },
+  });
+  const module = new SkillFoundationModule(service);
+  const result = (await module.execute({
+    context: {
+      actor: 'admin',
+      correlationId: 'corr-sidecar-definition',
+      userId: 'operator-sidecar-definition',
+      workspaceId: 'workspace-sidecar-definition',
+    },
+    idempotencyKey: 'skill-define-sidecar-definition',
+    input: {
+      action: 'skill_define',
+      payload: {
+        expectedRevision: null,
+        frontmatter: {
+          'allowed-tools': 'read_context check',
+          description:
+            'Grounds daily beauty content. Use for daily merchant posts.',
+          metadata: { author: 'meiye' },
+          name: 'daily-beauty-context',
+        },
+        governance: governance(),
+        instruction: 'Use grounded daily context.',
+        name: 'Daily beauty context',
+        presentationPolicy: 'backend_only',
+        promptReference: {
+          contentHash: sha256(promptContent),
+          name: 'harness/intent-naming',
+          version: '42',
+        },
+        skillId: 'skill.sidecar-definition',
+      },
+    },
+  })) as {
+    revision: {
+      skillRevisionRef: string;
+    };
+  };
+
+  assert.equal(JSON.stringify(result).includes(promptContent), false);
+  const stored = await repository.getRevision(
+    result.revision.skillRevisionRef,
+  );
+  assert.deepEqual(stored?.manifest, {
+    'allowed-tools': 'read_context check',
+    description:
+      'Grounds daily beauty content. Use for daily merchant posts.',
+    metadata: { author: 'meiye' },
+    name: 'daily-beauty-context',
+  });
+  assert.deepEqual(stored?.governance, governance());
+  assert.equal(stored?.prompt.fallbackContent, promptContent);
+});
+
 test('backend-only Skill cannot be bound as user-selected', async () => {
-  const service = new SkillService(new MemorySkillRepository(), () => NOW);
+  const service = new SkillService(
+    new MemorySkillRepository(),
+    () => NOW,
+    testPromptSnapshots,
+  );
   const revision = await createAcceptedSkill(service, 'backend-binding');
 
   await assert.rejects(
@@ -1312,6 +1449,7 @@ test('rolling a binding back to the previous frozen revision restores the fixtur
   const service = new SkillService(
     new MemorySkillRepository(),
     () => NOW,
+    testPromptSnapshots,
   );
   const skillId = 'skill.rollback';
   await service.defineCatalogEntry({
@@ -1414,7 +1552,7 @@ test('rolling a binding back to the previous frozen revision restores the fixtur
 
 test('rollback rejects the same revision and supersedes a binding on the same workflow stage', async () => {
   const repository = new MemorySkillRepository();
-  const service = new SkillService(repository, () => NOW);
+  const service = new SkillService(repository, () => NOW, testPromptSnapshots);
   const skillId = 'skill.rollback-same-workflow';
   await service.defineCatalogEntry({
     actorId: 'operator-1',
@@ -1472,6 +1610,25 @@ test('rollback rejects the same revision and supersedes a binding on the same wo
   );
 });
 
+function governance() {
+  return {
+    allowedTools: ['read_context', 'check'],
+    budget: {
+      maxChildEffects: 2,
+      maxCostCents: 5,
+      timeoutMs: 10_000,
+    },
+    contextScopes: ['industry_category'],
+    executionMode: 'prompt_materialized' as const,
+    fallback: 'skip' as const,
+    inputSchemaRef: 'skill-input.daily-industry@1',
+    outputSchemaRef: 'skill-output.intent-decision@1',
+    requiredModelCapabilities: ['structured_output'],
+    sideEffectClass: 'none' as const,
+    workflowRevisionRefs: ['workflow.daily-copy@1'],
+  };
+}
+
 function skillEvalRun(skillRevisionRef: string): EvalRun {
   return {
     createdAt: NOW,
@@ -1498,6 +1655,23 @@ function skillEvalRun(skillRevisionRef: string): EvalRun {
 
 function sha256(value: string) {
   return createHash('sha256').update(value).digest('hex');
+}
+
+function promptKey(reference: {
+  contentHash: string;
+  name: string;
+  version: string;
+}) {
+  return `${reference.name}\u0000${reference.version}\u0000${reference.contentHash}`;
+}
+
+function registerPrompt(prompt: HarnessFrozenPrompt) {
+  testPromptSnapshotsByReference.set(promptKey(prompt), prompt);
+  return {
+    contentHash: prompt.contentHash,
+    name: prompt.name,
+    version: prompt.version,
+  };
 }
 
 function dailyIndustrySkillInput() {
@@ -1556,27 +1730,16 @@ async function createAcceptedSkill(
   const draft = await service.draftRevision({
     actorId: 'operator-1',
     expectedRevision: null,
+    governance: {
+      ...governance(),
+      workflowRevisionRefs: ['workflow.binding-matrix@1'],
+    },
     instruction,
     manifest: {
-      allowedTools: [],
-      budget: {
-        maxChildEffects: 0,
-        maxCostCents: 0,
-        timeoutMs: 10_000,
-      },
-      compatibility: {
-        workflowRevisionRefs: ['workflow.binding-matrix@1'],
-      },
-      contextScopes: [],
-      evalSuiteRef: `skills-${suffix}@1`,
-      executionMode: 'prompt_materialized',
-      fallback: 'skip',
-      inputSchemaRef: 'skill-input.daily-industry@1',
-      outputSchemaRef: 'skill-output.intent-decision@1',
-      requiredModelCapabilities: ['structured_output'],
-      sideEffectClass: 'none',
+      description: `Fixture for the ${suffix} Skill behavior.`,
+      name: suffix.replaceAll('_', '-'),
     },
-    prompt: {
+    promptReference: registerPrompt({
       content: instruction,
       contentHash: sha256(instruction),
       isFallback: false,
@@ -1584,7 +1747,7 @@ async function createAcceptedSkill(
       name: `skills/${suffix}`,
       source: 'langfuse',
       version: '1',
-    },
+    }),
     skillId,
   });
   return service.acceptAndFreezeRevision({
@@ -1624,27 +1787,33 @@ async function createAcceptedEffectSkill(
   const draft = await service.draftRevision({
     actorId: 'operator-1',
     expectedRevision: null,
-    instruction,
-    manifest: {
+    governance: {
+      ...governance(),
       allowedTools: ['tool.fact.read', 'tool.quality.score'],
       budget: {
         maxChildEffects: 2,
         maxCostCents: 4,
         timeoutMs: 10_000,
       },
-      compatibility: {
-        workflowRevisionRefs: ['workflow.effects@1'],
-      },
       contextScopes: ['facts'],
-      evalSuiteRef: 'skills-effect-boundary@1',
       executionMode,
       fallback: 'fail_closed',
-      inputSchemaRef: 'skill-input.daily-industry@1',
-      outputSchemaRef: 'skill-output.intent-decision@1',
-      requiredModelCapabilities: ['structured_output', 'tool_calling'],
+      requiredModelCapabilities: [
+        'structured_output',
+        'tool_calling',
+      ],
       sideEffectClass: 'read',
+      workflowRevisionRefs: ['workflow.effects@1'],
     },
-    prompt: {
+    instruction,
+    manifest: {
+      description: 'Exercises the bounded Skill effect contract.',
+      name:
+        executionMode === 'provider_native'
+          ? 'effect-boundary-provider-native'
+          : 'effect-boundary',
+    },
+    promptReference: registerPrompt({
       content: instruction,
       contentHash: sha256(instruction),
       isFallback: false,
@@ -1652,7 +1821,7 @@ async function createAcceptedEffectSkill(
       name: 'skills/effect-boundary',
       source: 'langfuse',
       version: '1',
-    },
+    }),
     skillId,
   });
   return service.acceptAndFreezeRevision({
@@ -1683,30 +1852,19 @@ async function draftAndAcceptRevision(
   const draft = await service.draftRevision({
     actorId: 'operator-1',
     expectedRevision,
+    governance: {
+      ...governance(),
+      workflowRevisionRefs: [
+        'workflow.rollback@2',
+        'workflow.rollback@3',
+      ],
+    },
     instruction,
     manifest: {
-      allowedTools: [],
-      budget: {
-        maxChildEffects: 0,
-        maxCostCents: 0,
-        timeoutMs: 10_000,
-      },
-      compatibility: {
-        workflowRevisionRefs: [
-          'workflow.rollback@2',
-          'workflow.rollback@3',
-        ],
-      },
-      contextScopes: ['industry_category'],
-      evalSuiteRef: `skills-rollback@${version}`,
-      executionMode: 'prompt_materialized',
-      fallback: 'skip',
-      inputSchemaRef: 'skill-input.daily-industry@1',
-      outputSchemaRef: 'skill-output.intent-decision@1',
-      requiredModelCapabilities: ['structured_output'],
-      sideEffectClass: 'none',
+      description: 'Exercises deterministic Skill rollback behavior.',
+      name: 'rollback',
     },
-    prompt: {
+    promptReference: registerPrompt({
       content: instruction,
       contentHash: sha256(instruction),
       isFallback: false,
@@ -1714,7 +1872,7 @@ async function draftAndAcceptRevision(
       name: 'skills/rollback',
       source: 'langfuse',
       version,
-    },
+    }),
     skillId,
   });
   return service.acceptAndFreezeRevision({

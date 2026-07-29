@@ -1846,27 +1846,29 @@ function smokeSkillRevision(
     evalRunId: `eval-smoke-${revision}`,
     instruction,
     manifest: {
+      description:
+        'Applies a frozen smoke-test instruction. Use in DBOS replay tests.',
+      name: 'f21-smoke',
+    },
+    governance: {
       allowedTools: [],
       budget: {
         maxChildEffects: 0,
         maxCostCents: 0,
         timeoutMs: 10_000,
       },
-      compatibility: {
-        workflowRevisionRefs: ['workflow.copy@1'],
-      },
       contextScopes: [],
-      evalSuiteRef: 'skills-f21-smoke@1',
       executionMode: 'prompt_materialized',
       fallback: 'fail_closed',
       inputSchemaRef: 'skill-input.intent@1',
       outputSchemaRef: 'skill-output.intent@1',
       requiredModelCapabilities: ['structured_output'],
       sideEffectClass: 'none',
+      workflowRevisionRefs: ['workflow.copy@1'],
     },
     prompt: {
-      content: instruction,
       contentHash: `prompt-hash-${revision}`,
+      fallbackContent: instruction,
       isFallback: false,
       label: 'production',
       name: 'skills/f21-smoke',

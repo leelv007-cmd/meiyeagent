@@ -9,6 +9,18 @@ import {
   PostgresSkillRepository,
   SkillService,
 } from './index.js';
+
+function promptReference(prompt: {
+  contentHash: string;
+  name: string;
+  version: string;
+}) {
+  return {
+    contentHash: prompt.contentHash,
+    name: prompt.name,
+    version: prompt.version,
+  };
+}
 import {
   nameHarnessIntent,
   type StructuredNodeRunner,
@@ -54,27 +66,29 @@ test(
       evalRunId: 'eval-postgres',
       instruction: 'Use the declared fact scope.',
       manifest: {
+        description:
+          'Uses a declared fact scope. Use in PostgreSQL persistence tests.',
+        name: 'postgres-skill',
+      },
+      governance: {
         allowedTools: ['tool.fact.read'],
         budget: {
           maxChildEffects: 1,
           maxCostCents: 1,
           timeoutMs: 10_000,
         },
-        compatibility: {
-          workflowRevisionRefs: [workflowRevisionRef],
-        },
         contextScopes: ['facts'],
-        evalSuiteRef: 'eval.skill.postgres@1',
         executionMode: 'harness_native',
         fallback: 'fail_closed',
         inputSchemaRef: 'skill-input.daily-industry@1',
         outputSchemaRef: 'skill-output.intent-decision@1',
         requiredModelCapabilities: ['structured_output'],
         sideEffectClass: 'read',
+        workflowRevisionRefs: [workflowRevisionRef],
       },
       prompt: {
-        content: 'Use the declared fact scope.',
         contentHash: 'b'.repeat(64),
+        fallbackContent: 'Use the declared fact scope.',
         isFallback: false,
         label: 'production',
         name: 'skills/postgres',
@@ -319,27 +333,29 @@ test(
         evalRunId: 'eval-invalid-output',
         instruction: 'Validate output before any side effect.',
         manifest: {
+          description:
+            'Validates generated output. Use in persistence boundary tests.',
+          name: 'invalid-output',
+        },
+        governance: {
           allowedTools: ['tool.fact.read'],
           budget: {
             maxChildEffects: 1,
             maxCostCents: 1,
             timeoutMs: 10_000,
           },
-          compatibility: {
-            workflowRevisionRefs: ['workflow.invalid-output@1'],
-          },
           contextScopes: ['facts'],
-          evalSuiteRef: 'eval.invalid-output@1',
           executionMode: 'harness_native',
           fallback: 'fail_closed',
           inputSchemaRef: 'skill-input.daily-industry@1',
           outputSchemaRef: 'skill-output.intent-decision@1',
           requiredModelCapabilities: ['structured_output'],
           sideEffectClass: 'read',
+          workflowRevisionRefs: ['workflow.invalid-output@1'],
         },
         prompt: {
-          content: 'Validate output before any side effect.',
           contentHash: 'b'.repeat(64),
+          fallbackContent: 'Validate output before any side effect.',
           isFallback: false,
           label: 'production',
           name: 'skills/invalid-output',
@@ -484,6 +500,13 @@ test(
     const service = new SkillService(
       repository,
       () => '2026-07-26T04:00:00.000Z',
+      {
+        async capture(reference) {
+          const content =
+            reference.version === '1' ? instructionV1 : instructionV2;
+          return prompt(content, reference.version);
+        },
+      },
     );
     const instructionV1 = 'Use the stable journey behavior.';
     const instructionV2 = 'Use the changed journey behavior.';
@@ -497,21 +520,24 @@ test(
       version,
     });
     const manifest = {
+      description: 'Exercises the PostgreSQL Skill revision journey.',
+      name: `postgres-journey-${suffix}`,
+    };
+    const governance = {
       allowedTools: [],
       budget: {
         maxChildEffects: 0,
         maxCostCents: 0,
         timeoutMs: 10_000,
       },
-      compatibility: { workflowRevisionRefs: [workflowRevisionRef] },
       contextScopes: [],
-      evalSuiteRef: `skills-postgres-journey-${suffix}@1`,
       executionMode: 'prompt_materialized' as const,
       fallback: 'skip' as const,
       inputSchemaRef: 'skill-input.daily-industry@1',
       outputSchemaRef: 'skill-output.intent-decision@1',
       requiredModelCapabilities: ['structured_output'],
       sideEffectClass: 'none' as const,
+      workflowRevisionRefs: [workflowRevisionRef],
     };
     const accept = async (
       skillRevisionRef: string,
@@ -554,9 +580,10 @@ test(
       const draftV1 = await service.draftRevision({
         actorId: 'operator-postgres',
         expectedRevision: null,
+        governance,
         instruction: instructionV1,
         manifest,
-        prompt: prompt(instructionV1, '1'),
+        promptReference: promptReference(prompt(instructionV1, '1')),
         skillId,
       });
       await accept(
@@ -567,9 +594,10 @@ test(
       const draftV2 = await service.draftRevision({
         actorId: 'operator-postgres',
         expectedRevision: 1,
+        governance,
         instruction: instructionV2,
         manifest,
-        prompt: prompt(instructionV2, '2'),
+        promptReference: promptReference(prompt(instructionV2, '2')),
         skillId,
       });
       await accept(

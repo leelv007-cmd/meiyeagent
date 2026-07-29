@@ -29,27 +29,29 @@ function revision(): SkillRevision {
     evalRunId: null,
     instruction: INSTRUCTION,
     manifest: {
+      description:
+        'Uses accepted industry context. Use during intent classification.',
+      name: 'daily-industry',
+    },
+    governance: {
       allowedTools: [],
       budget: {
         maxChildEffects: 0,
         maxCostCents: 0,
         timeoutMs: 10_000,
       },
-      compatibility: {
-        workflowRevisionRefs: ['workflow.copy@1'],
-      },
       contextScopes: ['industry_category'],
-      evalSuiteRef: 'harness-skills-fixtures-v2',
       executionMode: 'prompt_materialized',
       fallback: 'skip',
       inputSchemaRef: 'skill-input.daily-industry@1',
       outputSchemaRef: 'skill-output.intent-decision@1',
       requiredModelCapabilities: ['structured_output'],
       sideEffectClass: 'none',
+      workflowRevisionRefs: ['workflow.copy@1'],
     },
     prompt: {
-      content: INSTRUCTION,
       contentHash: createHash('sha256').update(INSTRUCTION).digest('hex'),
+      fallbackContent: INSTRUCTION,
       isFallback: false,
       label: 'production',
       name: PROMPT_NAME,

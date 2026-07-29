@@ -67,7 +67,7 @@ export function importSkillPackage(
 export function exportSkillPackage(
   skill: ImportedSkillPackage,
 ): Record<string, SkillPackageFile> {
-  const frontmatter = validateFrontmatter(skill.frontmatter);
+  const frontmatter = validateSkillFrontmatter(skill.frontmatter);
   if (frontmatter.name !== skill.directoryName) {
     throw new Error('Skill frontmatter name must match its directory.');
   }
@@ -90,7 +90,7 @@ function parseSkillMarkdown(markdown: string) {
   }
   const parsed = parse(match[1] ?? '');
   return {
-    frontmatter: validateFrontmatter(parsed),
+    frontmatter: validateSkillFrontmatter(parsed),
     instructions: (match[2] ?? '').trim(),
   };
 }
@@ -109,7 +109,7 @@ function serializeSkillMarkdown(
   return `---\n${stringify(ordered).trimEnd()}\n---\n\n${instructions.trim()}\n`;
 }
 
-function validateFrontmatter(value: unknown): SkillFrontmatter {
+export function validateSkillFrontmatter(value: unknown): SkillFrontmatter {
   if (!isRecord(value)) {
     throw new Error('Skill frontmatter must be a mapping.');
   }

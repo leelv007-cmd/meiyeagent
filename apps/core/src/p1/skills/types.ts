@@ -1,4 +1,5 @@
 import type { HarnessFrozenPrompt } from '../harness/langfuse-prompts.js';
+import type { SkillFrontmatter } from './skill-format.js';
 
 export const SKILL_BINDING_MODES = [
   'required',
@@ -36,7 +37,9 @@ export interface SkillCatalog {
   actorId: string;
 }
 
-export interface SkillRevisionManifest {
+export type SkillRevisionManifest = SkillFrontmatter;
+
+export interface SkillGovernanceSidecar {
   inputSchemaRef: string;
   outputSchemaRef: string;
   contextScopes: string[];
@@ -49,11 +52,26 @@ export interface SkillRevisionManifest {
     maxCostCents: number;
     timeoutMs: number;
   };
-  evalSuiteRef: string;
-  compatibility: {
-    workflowRevisionRefs: string[];
-  };
+  workflowRevisionRefs: string[];
   fallback: 'skip' | 'fail_closed';
+}
+
+export interface SkillPromptReference {
+  name: string;
+  version: string;
+  contentHash: string;
+}
+
+export interface SkillPromptSnapshot extends SkillPromptReference {
+  readonly fallbackContent: string;
+  label: string;
+  source: 'langfuse' | 'builtin';
+  isFallback: boolean;
+  fallbackReason?: string;
+}
+
+export interface SkillPromptSnapshotPort {
+  capture(reference: SkillPromptReference): Promise<HarnessFrozenPrompt>;
 }
 
 export interface SkillRevision {
@@ -63,7 +81,8 @@ export interface SkillRevision {
   contentHash: string;
   instruction: string;
   manifest: SkillRevisionManifest;
-  prompt: HarnessFrozenPrompt;
+  governance: SkillGovernanceSidecar;
+  prompt: SkillPromptSnapshot;
   status: 'draft' | 'accepted_frozen';
   createdAt: string;
   createdBy: string;

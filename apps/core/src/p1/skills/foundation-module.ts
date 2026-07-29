@@ -7,10 +7,12 @@ import type {
   SkillCatalog,
   SkillDeploymentArtifactType,
   SkillExecutionMode,
+  SkillGovernanceSidecar,
+  SkillPromptReference,
+  SkillRevision,
   SkillRevisionManifest,
 } from './types.js';
 import { SkillService } from './service.js';
-import type { HarnessFrozenPrompt } from '../harness/langfuse-prompts.js';
 
 function fail(message: string): never {
   throw new P1DomainError('INVALID_STATE', message);
@@ -48,6 +50,23 @@ function integerOrNull(value: Record<string, unknown>, key: string) {
   return candidate;
 }
 
+function object(value: Record<string, unknown>, key: string) {
+  const candidate = value[key];
+  if (
+    !candidate ||
+    typeof candidate !== 'object' ||
+    Array.isArray(candidate)
+  ) {
+    fail(`Skill 命令字段 ${key} 必须是对象。`);
+  }
+  return candidate as Record<string, unknown>;
+}
+
+function publicRevision(revision: SkillRevision) {
+  const { fallbackContent: _fallbackContent, ...prompt } = revision.prompt;
+  return { ...revision, prompt };
+}
+
 export class SkillFoundationModule implements P1OperationModule {
   readonly name = 'skills';
 
@@ -81,30 +100,44 @@ export class SkillFoundationModule implements P1OperationModule {
         });
         if (
           value.instruction === undefined &&
-          value.manifest === undefined &&
-          value.prompt === undefined
+          value.frontmatter === undefined &&
+          value.governance === undefined &&
+          value.promptReference === undefined
         ) {
           return { catalog, revision: null };
         }
-        if (!value.manifest || !value.prompt) {
-          fail('定义 Skill 版本时必须同时提供 instruction、manifest 与 prompt。');
+        if (
+          !value.frontmatter ||
+          !value.governance ||
+          !value.promptReference
+        ) {
+          fail(
+            '定义 Skill 版本时必须同时提供 instruction、frontmatter、governance 与 promptReference。',
+          );
+        }
+        const promptReference = object(value, 'promptReference');
+        if ('content' in promptReference) {
+          fail('Skill prompt reference must not include content.');
         }
         const revision = await this.service.draftRevision({
           skillId: catalog.skillId,
           expectedRevision: integerOrNull(value, 'expectedRevision'),
           actorId: args.context.userId,
           instruction: text(value, 'instruction'),
-          manifest: value.manifest as SkillRevisionManifest,
-          prompt: value.prompt as HarnessFrozenPrompt,
+          manifest: value.frontmatter as SkillRevisionManifest,
+          governance: value.governance as SkillGovernanceSidecar,
+          promptReference: promptReference as unknown as SkillPromptReference,
         });
-        return { catalog, revision };
+        return { catalog, revision: publicRevision(revision) };
       }
       case 'skill_accept':
-        return this.service.acceptAndFreezeRevision({
-          skillRevisionRef: text(value, 'skillRevisionRef'),
-          actorId: args.context.userId,
-          evalRun: value.evalRun as EvalRun,
-        });
+        return publicRevision(
+          await this.service.acceptAndFreezeRevision({
+            skillRevisionRef: text(value, 'skillRevisionRef'),
+            actorId: args.context.userId,
+            evalRun: value.evalRun as EvalRun,
+          }),
+        );
       case 'skill_bind': {
         const mode = text(value, 'mode');
         const stage = text(value, 'stage');
