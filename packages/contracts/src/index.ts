@@ -30,6 +30,7 @@ export * from './asset-storage.js';
 export * from './image-intent.js';
 export * from './note-plan.js';
 export * from './observability.js';
+export * from './note-page-regenerated.js';
 export * from './skill-schema-registry.js';
 
 export interface ApiMeta {
