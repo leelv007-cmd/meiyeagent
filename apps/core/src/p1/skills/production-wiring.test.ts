@@ -422,7 +422,10 @@ async function acceptedSkill(
       executionMode: 'harness_native',
     },
     instruction,
-    manifest: manifest(suffix),
+    manifest: {
+      ...manifest(suffix),
+      'allowed-tools': 'tool.fact.read',
+    },
     promptReference: promptReference(prompt),
     skillId,
   });
