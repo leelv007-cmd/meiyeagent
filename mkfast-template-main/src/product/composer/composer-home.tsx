@@ -2559,9 +2559,7 @@ export function ComposerHome({
               }
               const previousVerdict = transition.previousVerdict;
               if (!previousVerdict) {
-                throw new Error(
-                  'Rating withdrawal requires a prior verdict.'
-                );
+                throw new Error('Rating withdrawal requires a prior verdict.');
               }
               return {
                 eventType: 'delivery_rating.withdrawn' as const,

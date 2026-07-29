@@ -72,9 +72,7 @@ export type ComposerDeliveryCardProps = {
    * 评价条出口。事件的组装与投递属适配层，这里连事件名都不知道 —— 卡片知道
    * 键名，#248 改一次就要改两处。
    */
-  onRate?: (
-    transition: DeliveryRatingTransition
-  ) => Promise<unknown> | unknown;
+  onRate?: (transition: DeliveryRatingTransition) => Promise<unknown> | unknown;
   /** 后续动作出口：把整句交出去预填 Composer，禁止在此提交。 */
   onFollowUp?: (seed: DeliveryFollowUpSeed) => void;
   className?: string;

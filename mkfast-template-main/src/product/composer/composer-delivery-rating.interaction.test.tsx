@@ -8,7 +8,13 @@ import {
   creationLensIds,
   type ContentPackageRevisionDelivery,
 } from '@meiye/contracts';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { FormEvent } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
