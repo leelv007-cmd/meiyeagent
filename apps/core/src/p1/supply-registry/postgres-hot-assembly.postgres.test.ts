@@ -154,6 +154,47 @@ describe(
       );
     });
 
+    it('refreshes a boot-derived capability head without replacing an operator head', async () => {
+      const scopedWorkspaceId = `hot-boot-refresh-${randomUUID()}`;
+      const port = new PostgresCapabilityHotAssemblyPort(
+        pool,
+        repository,
+        scopedWorkspaceId,
+      );
+      const firstBoot = {
+        ...revision('boot-capability:catalog-r1:first', 1, 'deployment-a'),
+        reason: 'process_boot_from_runtime_capabilities',
+      };
+      await port.seedIfEmpty(firstBoot);
+
+      const secondBoot = {
+        ...revision('boot-capability:catalog-r1:second', 1, 'deployment-b'),
+        reason: 'process_boot_from_runtime_capabilities',
+      };
+      await port.seedIfEmpty(secondBoot);
+      const refreshed = await port.getEffectiveRevision();
+      assert.equal(refreshed?.revisionId, secondBoot.revisionId);
+      assert.equal(refreshed?.number, 2);
+      assert.equal(refreshed?.previousRevisionId, firstBoot.revisionId);
+      assert.equal(refreshed?.entries[0]?.deploymentId, 'deployment-b');
+
+      const operator = {
+        ...revision('capability:operator-r3', 3, 'deployment-a'),
+        previousRevisionId: refreshed?.revisionId,
+        reason: 'operator_publish',
+      };
+      await port.applyCapabilityRevision(operator);
+      await port.seedIfEmpty({
+        ...secondBoot,
+        revisionId: 'boot-capability:catalog-r1:third',
+      });
+      assert.equal(
+        await port.getEffectiveRevisionId(),
+        operator.revisionId,
+      );
+      await repository.deleteWorkspaceForTest(scopedWorkspaceId);
+    });
+
     it('assembles the frozen credential from the shared secret store at request time', async () => {
       const credentialWorkspaceId = `credential-${randomUUID()}`;
       const secrets = new FakeKmsSecretStore();

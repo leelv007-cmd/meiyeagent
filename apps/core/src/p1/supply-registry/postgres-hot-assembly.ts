@@ -141,6 +141,29 @@ export class PostgresCapabilityHotAssemblyPort
     if (!revision) return;
     const current = await this.getEffectiveRevision();
     if (current) {
+      if (
+        current.reason === 'process_boot_from_runtime_capabilities' &&
+        revision.reason === 'process_boot_from_runtime_capabilities' &&
+        current.revisionId !== revision.revisionId
+      ) {
+        const refreshed = {
+          ...revision,
+          number: current.number + 1,
+          previousRevisionId: current.revisionId,
+        };
+        try {
+          await this.repository.setEffectiveCapabilityRevision(
+            this.workspaceId,
+            refreshed,
+            current.revisionId,
+          );
+        } catch (error) {
+          const winner = await this.getEffectiveRevision();
+          if (winner?.revisionId !== refreshed.revisionId) throw error;
+        }
+        this.invalidateAssemblyCache();
+        return;
+      }
       await this.reconcileCredentialBindings(current, revision);
       return;
     }
