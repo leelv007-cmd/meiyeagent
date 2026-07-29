@@ -119,6 +119,27 @@ export const modelCapabilityRequirementAxisSchema = z
   })
   .strict();
 
+const rightsBasisIdSchema = z.string().trim().min(1);
+
+export const rightsBasisSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('source_asset_authorizations'),
+      rightsRefs: z.array(rightsBasisIdSchema).min(1),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('ai_generation_terms'),
+      generatedAssetId: rightsBasisIdSchema,
+      runId: rightsBasisIdSchema,
+      providerTaskRef: rightsBasisIdSchema,
+      termsRevisionId: rightsBasisIdSchema,
+      commercialUse: z.literal('allowed'),
+    })
+    .strict(),
+]);
+
 export type ModelCapabilityClaimBasis = z.infer<
   typeof modelCapabilityClaimBasisSchema
 >;
@@ -138,6 +159,7 @@ export type ModelCapabilityProfile = z.infer<
 export type ModelCapabilityRequirementAxis = z.infer<
   typeof modelCapabilityRequirementAxisSchema
 >;
+export type RightsBasis = z.infer<typeof rightsBasisSchema>;
 
 /** Layer 1: manufacturer model identity. */
 export interface SupplyCatalogModel {
@@ -178,6 +200,8 @@ export interface SupplyContract {
   id: string;
   providerProfileId: string;
   termsRevisionId: string;
+  /** Historical records omit this field and must remain readable. */
+  commercialUse?: 'allowed';
   dataProcessingSummary?: string;
   retentionTrainingSubprocessor?: string;
   effectiveFrom: string;
