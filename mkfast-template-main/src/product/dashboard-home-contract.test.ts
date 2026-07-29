@@ -91,20 +91,52 @@ test('the greeting is its own export and no panel rides along with it', () => {
   assert.doesNotMatch(restOfPage, /meiye-greeting|dashboard-greeting/u);
 });
 
-test('the workbench opens 问候语 → Composer → 今天值得发什么', () => {
+/**
+ * D-164① supersedes the order this test used to hold.
+ *
+ * It read `Composer < DashboardHomeSurface`, on the grounds of PRODUCT.md 原则
+ * 1「Composer 永远是唯一主轴，任何面板不与它竞争视觉重心」— the recommendation
+ * panel had been pushed below the whole Composer cluster because, empty, it
+ * pushed the input off the first screen. D-164① settles the page as 三段
+ * 自上而下: 提议 → 创作 → 继续. The first question a shop owner arrives with is
+ * "what should I post today", not "what shall I type".
+ *
+ * 原则 1 survives in the form the design draft rules for it (docs/tickets/261
+ * `01-ia-three-sections.md` §3): keep D-164's order and hold the Composer's
+ * weight by compressing 段① on narrow screens, never by reordering the page.
+ * That half is enforced where it is observable — in the mobile e2e journey, not
+ * in source order — so this test now holds the order alone.
+ */
+test('the workbench opens 问候语 → 提议 → 创作 → 继续', () => {
   const home = readSource('src/product/composer/composer-home.tsx');
 
   const greeting = home.indexOf('<DashboardHomeGreeting');
+  const proposal = home.indexOf('data-testid="dashboard-section-proposal"');
+  const create = home.indexOf('data-testid="dashboard-section-create"');
+  const continued = home.indexOf('<DashboardContinueSection');
   const composer = home.indexOf('<ComposerPromptBar');
   const recommendations = home.indexOf('<DashboardHomeSurface');
+
   assert.ok(greeting > -1, 'the workbench renders the greeting');
+  assert.ok(proposal > -1, 'D-164①: 段① 提议位 is a named section');
+  assert.ok(create > -1, 'D-164①: 段② 创作面 is a named section');
+  assert.ok(continued > -1, 'D-164①: 段③ 继续上次工作 is a named section');
   assert.ok(
-    greeting < composer,
+    greeting < proposal,
     'DESIGN.md §3: the greeting is the page opening'
   );
+  assert.ok(proposal < create && create < continued, 'D-164①: 提议 → 创作 → 继续');
+
+  // The sections are the page's skeleton, so each one has to actually contain
+  // the surface it is named for — three empty <section>s in the right order
+  // would satisfy the assertions above and mean nothing.
   assert.ok(
-    composer < recommendations,
-    'PRODUCT.md 原则 1: Composer 永远是唯一主轴，任何面板不与它竞争视觉重心'
+    proposal < recommendations && recommendations < create,
+    'D-164①: 段① holds the recommendation surface'
+  );
+  assert.ok(
+    create < composer && composer < continued,
+    'D-164①: 段② holds the creation axis'
   );
 });
 

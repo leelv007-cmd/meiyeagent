@@ -342,6 +342,21 @@ async function submitPrefilledCopy(page: Page, prefilled = false) {
   return { taskId: taskId!, workId: workId! };
 }
 
+/**
+ * D-164①: the dashboard's own three sections, in DOM order.
+ *
+ * Reads the dedicated section testids rather than counting landmarks — the
+ * page's shell already renders regions of its own, so a role count would pass
+ * or fail for reasons that have nothing to do with this ticket.
+ */
+async function dashboardSectionOrder(page: Page) {
+  return await page
+    .locator('[data-testid^="dashboard-section-"]')
+    .evaluateAll((nodes) =>
+      nodes.map((node) => node.getAttribute('data-testid'))
+    );
+}
+
 test.describe('D-126 dashboard home mount', () => {
   test.describe.configure({ mode: 'default' });
 
@@ -424,6 +439,14 @@ test.describe('D-126 dashboard home mount', () => {
     const workbench = await creativeWorkbench(page);
     expect(workbench.works).toEqual([]);
     expect(workbench.jobs).toEqual([]);
+
+    // D-164①: 段③ is absent here and only here. An empty workspace has nothing
+    // to continue, and a second empty panel under the sample stores would say
+    // nothing 段① has not already said.
+    expect(await dashboardSectionOrder(page)).toEqual([
+      'dashboard-section-proposal',
+      'dashboard-section-create',
+    ]);
   });
 
   test('sample task runs on the real chain, spends trial allowance and exports', async ({
@@ -610,6 +633,18 @@ test.describe('D-126 dashboard home mount', () => {
     await expect(
       card.getByText(/store_fact:|platform-sample|null|undefined/u)
     ).toHaveCount(0);
+
+    // D-164①: 提议 → 创作 → 继续, all three on the one dashboard route and in
+    // that order. The order is the claim: what to do next comes before the
+    // place to do it, and unfinished work comes last so it nudges without
+    // displacing the entry the merchant came here for.
+    await expect(page.getByTestId('dashboard-section-continue')).toBeVisible();
+    expect(await dashboardSectionOrder(page)).toEqual([
+      'dashboard-section-proposal',
+      'dashboard-section-create',
+      'dashboard-section-continue',
+    ]);
+    await expect(page.getByTestId('continue-item').first()).toBeVisible();
 
     await card.getByTestId('today-recommendation-use').click();
     const intentInput = page.getByTestId('composer-intent-input');

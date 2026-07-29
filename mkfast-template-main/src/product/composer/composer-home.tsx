@@ -67,6 +67,7 @@ import {
   type ComposerImageIdentity,
 } from '@/product/composer-image-input';
 import { executeProductCommand, useProductState } from '@/product/client';
+import { DashboardContinueSection } from '@/product/dashboard-continue-section';
 import {
   DashboardHomeGreeting,
   DashboardHomeSurface,
@@ -2322,473 +2323,490 @@ export function ComposerHome({
       data-viewport={viewportKind}
     >
       {/*
-       * PRODUCT.md 原则 1「Composer 永远是唯一主轴，任何面板不与它竞争视觉重心」.
        * The greeting is the one personified moment the design system reserves a
-       * whole type role for (DESIGN.md §3 问候语法则), so it opens the workbench;
-       * everything that used to sit above the Composer now sits below it.
+       * whole type role for (DESIGN.md §3 问候语法则), so it opens the workbench.
+       * What follows is D-164① 的三段：提议 → 创作 → 继续.
        */}
       <DashboardHomeGreeting state={product.state} />
 
-      {storeFactLedgerFailed ? (
-        <div
-          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3"
-          data-testid="progressive-fact-ledger-error"
-          role="alert"
-        >
-          <p className="text-sm text-destructive">
-            {workbench_operation_failed()}
-          </p>
-          <Button
-            data-testid="progressive-fact-ledger-retry"
-            onClick={() => {
-              void storeFacts.refetch();
-              if (needsServiceHistory) void serviceFactHistory.refetch();
-              if (needsPriceHistory) void priceFactHistory.refetch();
-            }}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {account_usage_retry()}
-          </Button>
-        </div>
-      ) : null}
-
-      {showProgressiveFact ? (
-        <ProgressiveFactCard
-          activeFacts={product.state?.store ? (storeFacts.data ?? []) : []}
-          factHeads={product.state?.store ? storeFactHeads : []}
-          key={`progressive-fact:${product.state?.workspaceId}:${product.state?.store?.revision ?? 0}:${storeFactHeadRevisionKey}`}
-          onConfirm={async (request, idempotencyKey) => {
-            await commandP1('asset-memory', request, idempotencyKey);
-            setSubmissionGroundingBlocked(null);
-            await Promise.all([product.refresh(), storeFacts.refetch()]);
-          }}
-          pending={product.pending}
-          regulatedDefault={
-            complianceDefaults.data?.['compliance.regulated_mode.default']
-          }
-          store={product.state?.store}
-          workspaceId={product.state?.workspaceId ?? ''}
-        />
-      ) : null}
-
-      {/* Layer ① — the conversation. Stage announcements, the 引导补问卡 and the
-          streaming candidate all land here; nothing navigates away. */}
-      <ComposerConversation
-        identitySlot={
-          <ComposerIdentityCard
-            defaultPending={defaultIdentityDecision.isPending}
-            onRemember={(identityId) =>
-              defaultIdentityDecision.mutate(identityId)
-            }
-            onRetry={() => void identitiesQuery.refetch()}
-            onSelect={(identityId) =>
-              sessionIdentityDecision.mutate(identityId)
-            }
-            selectionPending={sessionIdentityDecision.isPending}
-            selection={identitySelection}
-          />
-        }
-        onOpenDelivery={openDelivery}
-        onRecover={recoverFromReport}
-        questionSlot={
-          pendingQuestion ? (
-            <ComposerQuestionCard
-              disabled={createWork.isPending}
-              // D-116 safety edge ②: quota or an external effect means D-112
-              // wants an explicit confirmation, so the card stops releasing
-              // itself. v1's composer only signs export / assisted_handoff, so
-              // the external branch is not reachable from here yet.
-              hold={composerQuestionHold({
-                externalEffect: Boolean(
-                  destination?.distributionTarget.startsWith('publish:')
-                ),
-                quotaBlocked,
-              })}
-              // Returned, not voided: the card awaits this and rolls its
-              // settlement back if the post never reaches the ledger.
-              onDecide={answerQuestion}
-              pending={questionPending}
-              question={pendingQuestion}
-              resolutionSource={questionResolutionSource}
-              timeoutSeconds={questionTimeoutSeconds}
-            />
-          ) : null
-        }
-        session={session}
-        stream={tokenStream}
-      />
-
-      {preferencesQuery.isError ? (
-        <div
-          className="rounded-2xl border border-danger/30 bg-danger/5 px-4 py-3 text-sm"
-          data-testid="composer-model-preferences-error"
-          role="alert"
-        >
-          <p>暂时没能读取你的模型偏好，当前不会提交创作任务。</p>
-          <button
-            className="mt-2 font-medium underline underline-offset-4"
-            onClick={() => void preferencesQuery.refetch()}
-            type="button"
-          >
-            重新读取
-          </button>
-        </div>
-      ) : null}
-
-      <ComposerPromptBar
-        ariaLabel={creation_entry_intent_aria()}
-        // DESIGN.md 白瓷 Composer 大卡 — pinned by the product shell contract.
-        className="meiye-composer meiye-entry-card rounded-3xl p-4 sm:p-5"
-        attachmentSlot={
-          <div data-testid="composer-source-picker">
-            {explicitImageOperation ? (
-              <ComposerImageOperationPicker
-                disabled={createWork.isPending || lensState.phase === 'frozen'}
-                onChange={setImageOperation}
-                value={explicitImageOperation}
-              />
-            ) : null}
-            <ComposerImageInput
-              focusRef={sourcePickerRef}
-              onAssetAdded={addSource}
-              onAssetRemoved={removeSource}
-              onAuthorize={authorizeComposerImage}
-              onQueueChange={(uploads) =>
-                setUploadsReady(
-                  uploads.every((upload) => upload.status === 'ready')
-                )
-              }
-              onUpload={uploadComposerImage}
-            >
-              <p className="text-muted text-xs">
-                {explicitImageOperation
-                  ? imageOperationAttachmentHint(explicitImageOperation)
-                  : '可选：上传门店图片、顾客案例或价目素材'}
-              </p>
-            </ComposerImageInput>
-            {imageCardinality.message ? (
-              <p
-                className="mt-2 text-destructive text-xs"
-                data-testid="composer-image-cardinality"
-                role="alert"
-              >
-                {imageCardinality.message}
-              </p>
-            ) : null}
-          </div>
-        }
-        creationMode={creationMode}
-        destination={lensState.draft.delivery.platform ?? null}
-        destinationCapability={
-          destination
-            ? composerDestinationCapability(destination.distributionTarget)
-            : null
-        }
-        disabled={createWork.isPending || lensState.phase === 'frozen'}
-        submitDisabled={
-          createWork.isPending ||
-          briefPending ||
-          destinationMapPending ||
-          !uploadsReady ||
-          !imageCardinality.valid ||
-          lensState.phase === 'frozen' ||
-          quotaBlocked ||
-          // Every state without a current price disables the button, except the
-          // one that means 「we have not asked yet」: pressing send there ends
-          // the settle window and asks now. Disabling it would make the click
-          // that resolves the wait the one click the merchant cannot make.
-          (lensId != null && !currentQuoteView && !quoteSettling)
-        }
-        lensSlot={
-          <>
-            <LensRadiogroup
-              value={lensId}
-              onChange={handleLensChange}
-              showRequiredHint={showRequiredHint}
-              disabled={createWork.isPending || lensState.phase === 'frozen'}
-            />
-            <LensSwitchPreviewPanel state={lensState} onChange={setLensState} />
-          </>
-        }
-        onCreationModeChange={setCreationMode}
-        onDestinationChange={(platform) => {
-          const next = composerDestinationContract(platform);
-          setDestinationPreflight(null);
-          if (!next) return;
-          setLensState((current) =>
-            updateDeliverySuggestion(current, {
-              distributionTarget: next.distributionTarget,
-              platform: next.contentPackagePlatform,
-            })
-          );
-        }}
-        onReuseChip={(chip) => {
-          const next = composerDestinationContract(chip.id);
-          setDestinationPreflight(null);
-          // 旧内容换平台 becomes one sentence in the merchant's own draft.
-          setLensState((current) =>
-            updateDeliverySuggestion(
-              updateUserText(
-                current,
-                current.draft.userText.trim()
-                  ? `${current.draft.userText.trim()}\n${chip.intent}`
-                  : chip.intent
-              ),
-              {
-                distributionTarget: next?.distributionTarget ?? null,
-                platform: next?.contentPackagePlatform ?? chip.id,
-              }
-            )
-          );
-          focusComposerIntentInput();
-        }}
-        modelChannelReadiness={selectedModel?.channelReadiness ?? null}
-        onSubmit={() => void attemptSubmit()}
-        onValueChange={handleIntentChange}
-        placeholder={creation_entry_intent_placeholder()}
-        reuseChips={COMPOSER_REUSE_CHIPS}
-        running={session.phase === 'running'}
-        signedPreview={signedPreview}
-        submitHint={submitIntent.hint}
-        submitLabel={submitIntent.label}
-        intentError={submitBlockedMessage}
-        value={userText}
-      />
-
-      {destinationPreflight?.intent === userText.trim() &&
-      destinationPreflight.result.status === 'needs_clarification' ? (
-        <div
-          className="rounded-2xl border border-default-200 bg-content1/80 p-3"
-          data-testid="composer-destination-clarification"
-          role="alert"
-          tabIndex={-1}
-        >
-          <p className="text-sm">{destinationPreflight.result.question}</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {destinationPreflight.result.options.map((option) => (
-              <button
-                className="rounded-full border border-default-300 px-3 py-1.5 text-sm"
-                key={`${option.contentPackagePlatform}:${option.distributionTarget}`}
-                onClick={() => {
-                  setDestinationPreflight(null);
-                  setLensState((current) =>
-                    updateDeliverySuggestion(current, {
-                      distributionTarget: option.distributionTarget,
-                      platform: option.contentPackagePlatform,
-                    })
-                  );
-                }}
-                type="button"
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {currentQuoteView ? (
-        <p
-          className="text-muted text-xs"
-          data-quote-revision={quoteQuery.data?.revision}
-          data-submission-contract-hash={
-            quoteQuery.data?.submissionContractHash
-          }
-          data-testid="composer-quote-line"
-        >
-          {/*
-            `预计消耗 0.06` used to print here: a bare float in an invisible
-            unit, one line above 「本次用 1 条文案额度和 3 张图片额度 · 文案还剩
-            5 条」 — two pricing systems on one screen, and the merchant unit is
-            条数, never money (D-109 / D-123). The counted sentence next to the
-            send button owns the numbers; this line now only carries what that
-            sentence cannot say (video is billed by finished seconds) and
-            otherwise just states that the price is settled.
-          */}
-          {currentQuoteView.billingNote ?? '本次用量已确认'}
-        </p>
-      ) : (
-        <ComposerQuoteStatusLine
-          onRetry={retryQuoteReadiness}
-          readiness={quoteReadiness}
-        />
-      )}
-
-      {submissionGroundingBlocked === 'store' ? (
-        <p
-          className="text-destructive text-sm"
-          data-testid="composer-grounding-blocker"
-          role="alert"
-        >
-          {workbench_grounding_store_required()}{' '}
-          <Link
-            className="font-medium underline underline-offset-4"
-            to="/dashboard/store"
-          >
-            {workbench_grounding_go_to_store()}
-          </Link>
-        </p>
-      ) : submissionGroundingBlocked === 'qualification' ? (
-        <p
-          className="text-destructive text-sm"
-          data-testid="composer-grounding-blocker"
-          role="alert"
-        >
-          {workbench_grounding_qualification_required()}{' '}
-          <Link
-            className="font-medium underline underline-offset-4"
-            hash="store-qualification"
-            to="/dashboard/store"
-          >
-            {workbench_grounding_qualification_action()}
-          </Link>
-        </p>
-      ) : submissionGroundingBlocked === 'source' ? (
-        <p
-          className="text-destructive text-sm"
-          data-testid="composer-grounding-blocker"
-          role="alert"
-        >
-          {workbench_grounding_source_required()}
-        </p>
-      ) : createWork.isError ? (
-        <p className="text-destructive text-sm" role="alert">
-          {workbench_operation_failed()}
-        </p>
-      ) : null}
-
-      {/* 额度：被动展示，不足才阻塞 (D-043 决定②). Always mounted — the passive
-          line is not a card and gates nothing; only a shortfall raises the
-          blocking card. */}
-      <QuotaBlockingCard
-        blocked={quotaBlocked}
-        passive={quotaPassive}
-        onRedeem={async ({ command, idempotencyKey }) => {
-          try {
-            await commandP1('redemptions', command, idempotencyKey);
-            // Both entitlement reads on this page: the projection behind the
-            // pre-check and the three-bucket balance card above it. Refreshing
-            // one and not the other leaves 创作余额 quoting the old numbers
-            // next to a card that just said it unlocked.
-            await Promise.all([
-              queryClient.invalidateQueries({
-                queryKey: p1QueryKeys.request('entitlements', 'projection'),
-              }),
-              queryClient.invalidateQueries({
-                queryKey: p1QueryKeys.request('entitlements', 'balance'),
-              }),
-            ]);
-            return { ok: true };
-          } catch (error) {
-            return {
-              ok: false,
-              message:
-                error instanceof Error ? error.message : '兑换失败，请重试',
-            };
-          }
-        }}
-        onUnlocked={() => setSubmissionQuotaBlocked(false)}
-      />
-
-      {surfaceQuery.data ? (
-        <RecipeCardsPanel
-          lensId={lensId}
-          lensState={lensState}
-          onLensStateChange={setLensState}
-          surface={surfaceQuery.data}
-          requestServerPreview={({ lensState: state, recipe }) =>
-            requestRecipePatchPreview({
-              recipeRevisionId: recipe.revisionId,
-              currentLens: state.lensId,
-              surfaceRevisionId: surfaceQuery.data.revisionId,
-              draft: composerDraftToRecipeFields(state),
-            })
-          }
-          onReuseRequested={() => {
-            // 旧内容换平台 is answered in the conversation, not in a panel.
+      <section data-testid="dashboard-section-proposal">
+        {/*
+         * 段① 提议位 — D-164①. The recommendation opens the workbench because the
+         * first question a shop owner has is "what should I post today", not
+         * "what shall I type". It used to sit below the whole Composer cluster:
+         * an empty panel above the axis was worse than no panel, so it was moved
+         * out of the way. D-164① settles the order the other way and the cold
+         * case is handled instead of avoided — a workspace with nothing in it
+         * shows the sample shops here, so the slot is never empty.
+         * Both CTAs prefill this same draft — never submit.
+         */}
+        <DashboardHomeSurface
+          loading={product.loading}
+          onPrefill={(intent) => {
+            // Same idiom as the landing handoff restore above: pick the lens the
+            // recommendation/sample is written for, then seed the draft. Leaving
+            // the lens unselected would make the merchant re-pick it before the
+            // draft can be submitted.
             setLensState((current) =>
-              updateUserText(
-                current,
-                current.draft.userText.trim() || COMPOSER_REUSE_CHIPS[0]!.intent
+              updateUserText(selectLens(current, 'copy'), intent)
+            );
+            // Not intentRef: PromptInput.TextArea spreads incoming props after
+            // its own ref, so handing it one silently replaces the ref its
+            // autosize depends on. Focus by testid instead.
+            focusComposerIntentInput();
+          }}
+          onRefresh={product.refresh}
+          onStart={() => focusComposerIntentInput()}
+          state={product.state}
+        />
+      </section>
+
+      {/* 段② 创作面 — the axis itself (D-139 lens + input + affordances). */}
+      <section
+        className="flex flex-col gap-6"
+        data-testid="dashboard-section-create"
+      >
+        {storeFactLedgerFailed ? (
+          <div
+            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3"
+            data-testid="progressive-fact-ledger-error"
+            role="alert"
+          >
+            <p className="text-sm text-destructive">
+              {workbench_operation_failed()}
+            </p>
+            <Button
+              data-testid="progressive-fact-ledger-retry"
+              onClick={() => {
+                void storeFacts.refetch();
+                if (needsServiceHistory) void serviceFactHistory.refetch();
+                if (needsPriceHistory) void priceFactHistory.refetch();
+              }}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {account_usage_retry()}
+            </Button>
+          </div>
+        ) : null}
+
+        {showProgressiveFact ? (
+          <ProgressiveFactCard
+            activeFacts={product.state?.store ? (storeFacts.data ?? []) : []}
+            factHeads={product.state?.store ? storeFactHeads : []}
+            key={`progressive-fact:${product.state?.workspaceId}:${product.state?.store?.revision ?? 0}:${storeFactHeadRevisionKey}`}
+            onConfirm={async (request, idempotencyKey) => {
+              await commandP1('asset-memory', request, idempotencyKey);
+              setSubmissionGroundingBlocked(null);
+              await Promise.all([product.refresh(), storeFacts.refetch()]);
+            }}
+            pending={product.pending}
+            regulatedDefault={
+              complianceDefaults.data?.['compliance.regulated_mode.default']
+            }
+            store={product.state?.store}
+            workspaceId={product.state?.workspaceId ?? ''}
+          />
+        ) : null}
+
+        {/* Layer ① — the conversation. Stage announcements, the 引导补问卡 and the
+            streaming candidate all land here; nothing navigates away. */}
+        <ComposerConversation
+          identitySlot={
+            <ComposerIdentityCard
+              defaultPending={defaultIdentityDecision.isPending}
+              onRemember={(identityId) =>
+                defaultIdentityDecision.mutate(identityId)
+              }
+              onRetry={() => void identitiesQuery.refetch()}
+              onSelect={(identityId) =>
+                sessionIdentityDecision.mutate(identityId)
+              }
+              selectionPending={sessionIdentityDecision.isPending}
+              selection={identitySelection}
+            />
+          }
+          onOpenDelivery={openDelivery}
+          onRecover={recoverFromReport}
+          questionSlot={
+            pendingQuestion ? (
+              <ComposerQuestionCard
+                disabled={createWork.isPending}
+                // D-116 safety edge ②: quota or an external effect means D-112
+                // wants an explicit confirmation, so the card stops releasing
+                // itself. v1's composer only signs export / assisted_handoff, so
+                // the external branch is not reachable from here yet.
+                hold={composerQuestionHold({
+                  externalEffect: Boolean(
+                    destination?.distributionTarget.startsWith('publish:')
+                  ),
+                  quotaBlocked,
+                })}
+                // Returned, not voided: the card awaits this and rolls its
+                // settlement back if the post never reaches the ledger.
+                onDecide={answerQuestion}
+                pending={questionPending}
+                question={pendingQuestion}
+                resolutionSource={questionResolutionSource}
+                timeoutSeconds={questionTimeoutSeconds}
+              />
+            ) : null
+          }
+          session={session}
+          stream={tokenStream}
+        />
+
+        {preferencesQuery.isError ? (
+          <div
+            className="rounded-2xl border border-danger/30 bg-danger/5 px-4 py-3 text-sm"
+            data-testid="composer-model-preferences-error"
+            role="alert"
+          >
+            <p>暂时没能读取你的模型偏好，当前不会提交创作任务。</p>
+            <button
+              className="mt-2 font-medium underline underline-offset-4"
+              onClick={() => void preferencesQuery.refetch()}
+              type="button"
+            >
+              重新读取
+            </button>
+          </div>
+        ) : null}
+
+        <ComposerPromptBar
+          ariaLabel={creation_entry_intent_aria()}
+          // DESIGN.md 白瓷 Composer 大卡 — pinned by the product shell contract.
+          className="meiye-composer meiye-entry-card rounded-3xl p-4 sm:p-5"
+          attachmentSlot={
+            <div data-testid="composer-source-picker">
+              {explicitImageOperation ? (
+                <ComposerImageOperationPicker
+                  disabled={
+                    createWork.isPending || lensState.phase === 'frozen'
+                  }
+                  onChange={setImageOperation}
+                  value={explicitImageOperation}
+                />
+              ) : null}
+              <ComposerImageInput
+                focusRef={sourcePickerRef}
+                onAssetAdded={addSource}
+                onAssetRemoved={removeSource}
+                onAuthorize={authorizeComposerImage}
+                onQueueChange={(uploads) =>
+                  setUploadsReady(
+                    uploads.every((upload) => upload.status === 'ready')
+                  )
+                }
+                onUpload={uploadComposerImage}
+              >
+                <p className="text-muted text-xs">
+                  {explicitImageOperation
+                    ? imageOperationAttachmentHint(explicitImageOperation)
+                    : '可选：上传门店图片、顾客案例或价目素材'}
+                </p>
+              </ComposerImageInput>
+              {imageCardinality.message ? (
+                <p
+                  className="mt-2 text-destructive text-xs"
+                  data-testid="composer-image-cardinality"
+                  role="alert"
+                >
+                  {imageCardinality.message}
+                </p>
+              ) : null}
+            </div>
+          }
+          creationMode={creationMode}
+          destination={lensState.draft.delivery.platform ?? null}
+          destinationCapability={
+            destination
+              ? composerDestinationCapability(destination.distributionTarget)
+              : null
+          }
+          disabled={createWork.isPending || lensState.phase === 'frozen'}
+          submitDisabled={
+            createWork.isPending ||
+            briefPending ||
+            destinationMapPending ||
+            !uploadsReady ||
+            !imageCardinality.valid ||
+            lensState.phase === 'frozen' ||
+            quotaBlocked ||
+            // Every state without a current price disables the button, except the
+            // one that means 「we have not asked yet」: pressing send there ends
+            // the settle window and asks now. Disabling it would make the click
+            // that resolves the wait the one click the merchant cannot make.
+            (lensId != null && !currentQuoteView && !quoteSettling)
+          }
+          lensSlot={
+            <>
+              <LensRadiogroup
+                value={lensId}
+                onChange={handleLensChange}
+                showRequiredHint={showRequiredHint}
+                disabled={createWork.isPending || lensState.phase === 'frozen'}
+              />
+              <LensSwitchPreviewPanel
+                state={lensState}
+                onChange={setLensState}
+              />
+            </>
+          }
+          onCreationModeChange={setCreationMode}
+          onDestinationChange={(platform) => {
+            const next = composerDestinationContract(platform);
+            setDestinationPreflight(null);
+            if (!next) return;
+            setLensState((current) =>
+              updateDeliverySuggestion(current, {
+                distributionTarget: next.distributionTarget,
+                platform: next.contentPackagePlatform,
+              })
+            );
+          }}
+          onReuseChip={(chip) => {
+            const next = composerDestinationContract(chip.id);
+            setDestinationPreflight(null);
+            // 旧内容换平台 becomes one sentence in the merchant's own draft.
+            setLensState((current) =>
+              updateDeliverySuggestion(
+                updateUserText(
+                  current,
+                  current.draft.userText.trim()
+                    ? `${current.draft.userText.trim()}\n${chip.intent}`
+                    : chip.intent
+                ),
+                {
+                  distributionTarget: next?.distributionTarget ?? null,
+                  platform: next?.contentPackagePlatform ?? chip.id,
+                }
               )
             );
             focusComposerIntentInput();
           }}
-          singleColumn={singleColumn}
-          useBottomSheet={viewportKind === 'mobile'}
+          modelChannelReadiness={selectedModel?.channelReadiness ?? null}
+          onSubmit={() => void attemptSubmit()}
+          onValueChange={handleIntentChange}
+          placeholder={creation_entry_intent_placeholder()}
+          reuseChips={COMPOSER_REUSE_CHIPS}
+          running={session.phase === 'running'}
+          signedPreview={signedPreview}
+          submitHint={submitIntent.hint}
+          submitLabel={submitIntent.label}
+          intentError={submitBlockedMessage}
+          value={userText}
         />
-      ) : (
-        <output
-          className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground"
-          data-testid="composer-surface-status"
-        >
-          {surfaceQuery.isError
-            ? '创作模板暂时不可用，请稍后重试'
-            : '正在读取创作模板…'}
-        </output>
-      )}
 
-      <ComposerToolsStrip
-        viewport={viewportKind}
-        proStudioStatus={proStudioEntitlement.projection.state}
-        {...(proStudioEntitlement.reason
-          ? { proStudioLockReason: proStudioEntitlement.reason }
-          : {})}
-        surfaceRevisionId={surfaceQuery.data?.revisionId}
-        onOpenTool={(href) => {
-          if (typeof window !== 'undefined') {
-            window.location.assign(href);
-          }
-        }}
-        onViewAll={(href) => {
-          void navigate({ to: href as '/dashboard/catalog' });
-        }}
-      />
+        {destinationPreflight?.intent === userText.trim() &&
+        destinationPreflight.result.status === 'needs_clarification' ? (
+          <div
+            className="rounded-2xl border border-default-200 bg-content1/80 p-3"
+            data-testid="composer-destination-clarification"
+            role="alert"
+            tabIndex={-1}
+          >
+            <p className="text-sm">{destinationPreflight.result.question}</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {destinationPreflight.result.options.map((option) => (
+                <button
+                  className="rounded-full border border-default-300 px-3 py-1.5 text-sm"
+                  key={`${option.contentPackagePlatform}:${option.distributionTarget}`}
+                  onClick={() => {
+                    setDestinationPreflight(null);
+                    setLensState((current) =>
+                      updateDeliverySuggestion(current, {
+                        distributionTarget: option.distributionTarget,
+                        platform: option.contentPackagePlatform,
+                      })
+                    );
+                  }}
+                  type="button"
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
-      {briefView ? (
-        <BriefSurface
-          view={briefView}
-          onConfirm={handleBriefConfirm}
-          onCancel={() => {
-            setBriefState(cancelBriefSurface(briefState).state);
-            // Cancelling abandons this attempt, so the transcript goes back to
-            // empty rather than keeping a turn that never ran.
-            setSession(createComposerSession(sessionIdRef.current));
+        {currentQuoteView ? (
+          <p
+            className="text-muted text-xs"
+            data-quote-revision={quoteQuery.data?.revision}
+            data-submission-contract-hash={
+              quoteQuery.data?.submissionContractHash
+            }
+            data-testid="composer-quote-line"
+          >
+            {/*
+              `预计消耗 0.06` used to print here: a bare float in an invisible
+              unit, one line above 「本次用 1 条文案额度和 3 张图片额度 · 文案还剩
+              5 条」 — two pricing systems on one screen, and the merchant unit is
+              条数, never money (D-109 / D-123). The counted sentence next to the
+              send button owns the numbers; this line now only carries what that
+              sentence cannot say (video is billed by finished seconds) and
+              otherwise just states that the price is settled.
+            */}
+            {currentQuoteView.billingNote ?? '本次用量已确认'}
+          </p>
+        ) : (
+          <ComposerQuoteStatusLine
+            onRetry={retryQuoteReadiness}
+            readiness={quoteReadiness}
+          />
+        )}
+
+        {submissionGroundingBlocked === 'store' ? (
+          <p
+            className="text-destructive text-sm"
+            data-testid="composer-grounding-blocker"
+            role="alert"
+          >
+            {workbench_grounding_store_required()}{' '}
+            <Link
+              className="font-medium underline underline-offset-4"
+              to="/dashboard/store"
+            >
+              {workbench_grounding_go_to_store()}
+            </Link>
+          </p>
+        ) : submissionGroundingBlocked === 'qualification' ? (
+          <p
+            className="text-destructive text-sm"
+            data-testid="composer-grounding-blocker"
+            role="alert"
+          >
+            {workbench_grounding_qualification_required()}{' '}
+            <Link
+              className="font-medium underline underline-offset-4"
+              hash="store-qualification"
+              to="/dashboard/store"
+            >
+              {workbench_grounding_qualification_action()}
+            </Link>
+          </p>
+        ) : submissionGroundingBlocked === 'source' ? (
+          <p
+            className="text-destructive text-sm"
+            data-testid="composer-grounding-blocker"
+            role="alert"
+          >
+            {workbench_grounding_source_required()}
+          </p>
+        ) : createWork.isError ? (
+          <p className="text-destructive text-sm" role="alert">
+            {workbench_operation_failed()}
+          </p>
+        ) : null}
+
+        {/* 额度：被动展示，不足才阻塞 (D-043 决定②). Always mounted — the passive
+            line is not a card and gates nothing; only a shortfall raises the
+            blocking card. */}
+        <QuotaBlockingCard
+          blocked={quotaBlocked}
+          passive={quotaPassive}
+          onRedeem={async ({ command, idempotencyKey }) => {
+            try {
+              await commandP1('redemptions', command, idempotencyKey);
+              // Both entitlement reads on this page: the projection behind the
+              // pre-check and the three-bucket balance card above it. Refreshing
+              // one and not the other leaves 创作余额 quoting the old numbers
+              // next to a card that just said it unlocked.
+              await Promise.all([
+                queryClient.invalidateQueries({
+                  queryKey: p1QueryKeys.request('entitlements', 'projection'),
+                }),
+                queryClient.invalidateQueries({
+                  queryKey: p1QueryKeys.request('entitlements', 'balance'),
+                }),
+              ]);
+              return { ok: true };
+            } catch (error) {
+              return {
+                ok: false,
+                message:
+                  error instanceof Error ? error.message : '兑换失败，请重试',
+              };
+            }
           }}
-          disabled={createWork.isPending}
+          onUnlocked={() => setSubmissionQuotaBlocked(false)}
         />
-      ) : null}
 
-      {/*
-       * D-126 hot/cold home. Both CTAs prefill this same draft — never submit.
-       * This sits after the whole Composer cluster (prompt bar, preflight,
-       * quote, quota, tools, brief) rather than between the prompt bar and its
-       * own affordances: splitting the axis in half competes with it just as
-       * much as sitting above it did. On a cold workspace the recommendation
-       * reads「还没有基于本店事实的推荐」, and an empty panel above the axis was
-       * the worst of both readings.
-       */}
-      <DashboardHomeSurface
-        loading={product.loading}
-        onPrefill={(intent) => {
-          // Same idiom as the landing handoff restore above: pick the lens the
-          // recommendation/sample is written for, then seed the draft. Leaving
-          // the lens unselected would make the merchant re-pick it before the
-          // draft can be submitted.
-          setLensState((current) =>
-            updateUserText(selectLens(current, 'copy'), intent)
-          );
-          // Not intentRef: PromptInput.TextArea spreads incoming props after
-          // its own ref, so handing it one silently replaces the ref its
-          // autosize depends on. Focus by testid instead.
-          focusComposerIntentInput();
-        }}
-        onRefresh={product.refresh}
-        onStart={() => focusComposerIntentInput()}
-        state={product.state}
-      />
+        {surfaceQuery.data ? (
+          <RecipeCardsPanel
+            lensId={lensId}
+            lensState={lensState}
+            onLensStateChange={setLensState}
+            surface={surfaceQuery.data}
+            requestServerPreview={({ lensState: state, recipe }) =>
+              requestRecipePatchPreview({
+                recipeRevisionId: recipe.revisionId,
+                currentLens: state.lensId,
+                surfaceRevisionId: surfaceQuery.data.revisionId,
+                draft: composerDraftToRecipeFields(state),
+              })
+            }
+            onReuseRequested={() => {
+              // 旧内容换平台 is answered in the conversation, not in a panel.
+              setLensState((current) =>
+                updateUserText(
+                  current,
+                  current.draft.userText.trim() ||
+                    COMPOSER_REUSE_CHIPS[0]!.intent
+                )
+              );
+              focusComposerIntentInput();
+            }}
+            singleColumn={singleColumn}
+            useBottomSheet={viewportKind === 'mobile'}
+          />
+        ) : (
+          <output
+            className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground"
+            data-testid="composer-surface-status"
+          >
+            {surfaceQuery.isError
+              ? '创作模板暂时不可用，请稍后重试'
+              : '正在读取创作模板…'}
+          </output>
+        )}
+
+        <ComposerToolsStrip
+          viewport={viewportKind}
+          proStudioStatus={proStudioEntitlement.projection.state}
+          {...(proStudioEntitlement.reason
+            ? { proStudioLockReason: proStudioEntitlement.reason }
+            : {})}
+          surfaceRevisionId={surfaceQuery.data?.revisionId}
+          onOpenTool={(href) => {
+            if (typeof window !== 'undefined') {
+              window.location.assign(href);
+            }
+          }}
+          onViewAll={(href) => {
+            void navigate({ to: href as '/dashboard/catalog' });
+          }}
+        />
+
+        {briefView ? (
+          <BriefSurface
+            view={briefView}
+            onConfirm={handleBriefConfirm}
+            onCancel={() => {
+              setBriefState(cancelBriefSurface(briefState).state);
+              // Cancelling abandons this attempt, so the transcript goes back to
+              // empty rather than keeping a turn that never ran.
+              setSession(createComposerSession(sessionIdRef.current));
+            }}
+            disabled={createWork.isPending}
+          />
+        ) : null}
+      </section>
+
+      {/* 段③ 继续上次工作 — D-164① / D-126. */}
+      <DashboardContinueSection />
     </div>
   );
 }
