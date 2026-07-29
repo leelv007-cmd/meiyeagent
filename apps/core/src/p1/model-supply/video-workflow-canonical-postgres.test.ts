@@ -404,6 +404,7 @@ describe(
         clipAssets: [candidateAsset],
         composedAsset,
         confirmed: true,
+        subtitleText: '历史字幕只读',
         shots: [
           {
             candidates: [
@@ -452,7 +453,11 @@ describe(
         {
           actorId: 'owner-video',
           correlationId: 'corr-pg-edit',
-          edit: { kind: 'set_subtitle', text: '精致从每一处细节开始' },
+          edit: {
+            kind: 'select_candidate',
+            shotId: 'opening',
+            candidateIndex: 0,
+          },
           expectedRevision: 0,
           workflowId: runId,
           workspaceId,
@@ -460,11 +465,12 @@ describe(
         '2026-07-20T08:30:00.000Z',
       );
       assert.equal(edited.job.revision, 1);
-      assert.equal(edited.task.subtitleText, '精致从每一处细节开始');
+      assert.equal(edited.task.shots[0]?.selectedCandidateIndex, 0);
       const restarted = new PostgresCanonicalVideoRunStore(pool, workspaceId);
       const restored = (await restarted.getRun(runId)) as CanonicalVideoRun;
       assert.equal(restored.job.revision, 1);
-      assert.equal(restored.task.subtitleText, '精致从每一处细节开始');
+      assert.equal(restored.task.shots[0]?.selectedCandidateIndex, 0);
+      assert.equal(restored.task.subtitleText, '历史字幕只读');
       assert.deepEqual(Object.keys(restored.assets.byId).sort(), [
         candidateAsset.id,
         composedAsset.id,
@@ -482,7 +488,11 @@ describe(
           {
             actorId: 'owner-video',
             correlationId: 'corr-pg-stale',
-            edit: { kind: 'set_subtitle', text: '过期写入' },
+            edit: {
+              kind: 'select_candidate',
+              shotId: 'opening',
+              candidateIndex: 0,
+            },
             expectedRevision: 0,
             workflowId: runId,
             workspaceId,

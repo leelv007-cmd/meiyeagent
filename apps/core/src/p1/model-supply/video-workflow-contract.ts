@@ -158,8 +158,7 @@ export type EditVideoWorkflowInput = {
   expectedRevision: number;
   edit:
     | { kind: 'select_candidate'; shotId: string; candidateIndex: number }
-    | { kind: 'reorder_shots'; shotIds: string[] }
-    | { kind: 'set_subtitle'; text: string };
+    | { kind: 'reorder_shots'; shotIds: string[] };
 };
 
 /** A production adapter persists this serializable state beside the JobPort. */

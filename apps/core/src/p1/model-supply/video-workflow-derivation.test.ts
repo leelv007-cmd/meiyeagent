@@ -415,7 +415,7 @@ describe('VideoWorkflow derivation (#102)', () => {
     assert.equal(adapter.get('wf-shared-1')?.revision, viaCommand.revision);
   });
 
-  it('edits a reviewable workflow but rejects completed, cancelled, and failed terminal writes', async () => {
+  it('selects and orders a reviewable workflow but rejects terminal writes', async () => {
     const { runner, draftInput } = setupRunner();
     const draft = runner.createVideoWorkflow({
       ...draftInput,
@@ -460,29 +460,17 @@ describe('VideoWorkflow derivation (#102)', () => {
       [completed.clipAssets[1]!.id, completed.clipAssets[0]!.id],
     );
 
-    const subtitled = commands.edit(
-      {
-        actorId: 'actor-a',
-        correlationId: 'corr-subtitle',
-        edit: { kind: 'set_subtitle', text: '  今天也要好好爱自己  ' },
-        expectedRevision: reordered.revision,
-        workflowId: completed.id,
-        workspaceId: completed.workspaceId,
-      },
-      () => Date.parse('2026-07-20T08:00:02.000Z'),
-    );
-    assert.equal(subtitled.subtitleText, '今天也要好好爱自己');
-    assert.equal(
-      projectVideoWorkflowPublic(subtitled).subtitleText,
-      '今天也要好好爱自己',
-    );
     assert.throws(
       () =>
         commands.edit(
           {
             actorId: 'actor-a',
             correlationId: 'corr-stale',
-            edit: { kind: 'set_subtitle', text: '过期写入' },
+            edit: {
+              kind: 'select_candidate',
+              shotId: 'shot-1',
+              candidateIndex: 0,
+            },
             expectedRevision: base,
             workflowId: completed.id,
             workspaceId: completed.workspaceId,
@@ -506,14 +494,18 @@ describe('VideoWorkflow derivation (#102)', () => {
             {
               actorId: 'actor-a',
               correlationId: `corr-terminal-${status}`,
-              edit: { kind: 'set_subtitle', text: '不应写入' },
+              edit: {
+                kind: 'select_candidate',
+                shotId: 'shot-1',
+                candidateIndex: 0,
+              },
               expectedRevision: terminal.job.revision,
               workflowId: completed.id,
               workspaceId: completed.workspaceId,
             },
             () => Date.parse('2026-07-20T08:00:04.000Z'),
           ),
-        /terminal workflows require a derived regeneration task/,
+        /terminal workflows are read only/,
       );
     }
   });

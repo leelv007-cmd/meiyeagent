@@ -62,7 +62,6 @@ import {
   MediaActivationProbeExecutor,
   OwnedAssetReferenceResolver,
   PostgresCanonicalVideoWorkflowSchema,
-  PostgresVideoRegenerationRepository,
   PostgresModelSupplyRepository,
   ProductReferenceAssetPolicyResolver,
   ProductReferenceAssetResolver,
@@ -295,8 +294,6 @@ const productBillingRepository = new PostgresProductBillingRepository(pool);
 const billingLifecycle = new DurableProductBillingService(
   productBillingRepository,
 );
-const videoRegenerationRepository =
-  new PostgresVideoRegenerationRepository(pool);
 const canonicalVideoWorkflowSchema =
   new PostgresCanonicalVideoWorkflowSchema(pool);
 const storeFactLedger = new PostgresStoreFactLedger(pool);
@@ -364,7 +361,6 @@ await migratePostgresSchema(pool, [
   operationsRepository,
   productBillingRepository,
   canonicalVideoWorkflowSchema,
-  videoRegenerationRepository,
   storeFactLedger,
   dueDeliveryRepository,
   contextBundleRepository,

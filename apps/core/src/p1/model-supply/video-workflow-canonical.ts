@@ -687,7 +687,7 @@ export function applyCanonicalVideoEdit(
   }
   if (current.job.status !== 'awaiting_quality_review') {
     throw new Error(
-      'Only a reviewable video workflow can be edited; terminal workflows require a derived regeneration task.',
+      'Only a reviewable video workflow can be edited; terminal workflows are read only.',
     );
   }
   const edited = cloneRun(current);
@@ -740,12 +740,6 @@ export function applyCanonicalVideoEdit(
     }
     const byId = new Map(edited.task.shots.map((shot) => [shot.id, shot]));
     edited.task.shots = shotIds.map((shotId) => byId.get(shotId)!);
-  } else {
-    const text = edit.text.trim();
-    if (text.length > 5_000) {
-      throw new Error('Subtitle text must not exceed 5000 characters.');
-    }
-    edited.task.subtitleText = text;
   }
   edited.assets.clipAssetIds = edited.task.shots.flatMap((shot) => {
     const selected = edited.job.candidatesByShot[shot.id]?.find(

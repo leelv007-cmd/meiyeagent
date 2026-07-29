@@ -9,7 +9,7 @@ import {
   type DurableInitialVideoBilling,
 } from './video-workflow-billing.js';
 
-describe('video regeneration worker settlement', () => {
+describe('initial video generation worker settlement', () => {
   it('notifies real billing after retained ContentPackage reconciliation, including replay', async () => {
     const order: string[] = [];
     const reconciled = new Set<string>();
@@ -19,14 +19,14 @@ describe('video regeneration worker settlement', () => {
       aigcLabelEnabled: true,
       attempts: [],
       billingQuoteRevision: 'quote-r1',
-      billingTaskId: 'regen-task-1',
+      billingTaskId: 'video-task-1',
       catalogModelId: 'seedance-2',
       clipAssets: [],
       confirmed: true,
       createdAt: '2026-07-20T00:00:00.000Z',
       dataClass: [],
       failureCode: 'VIDEO_PROVIDER_FAILED',
-      id: 'regen-task-1',
+      id: 'video-task-1',
       revision: 2,
       shots: [],
       status: 'failed',

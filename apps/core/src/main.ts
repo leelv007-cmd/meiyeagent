@@ -149,11 +149,8 @@ import {
   PostgresCanonicalVideoWorkflowSchema,
   ProductCopyProviderBridge,
   PostgresModelSupplyRepository,
-  PostgresVideoRegenerationRepository,
   ProductReferenceAssetPolicyResolver,
   ProductReferenceAssetResolver,
-  VideoRegenerationApplicationService,
-  VideoRegenerationFoundationModule,
   createModelSupplyRuntime,
   modelMediaExecutionMode,
   projectDurableVideoWorkflow,
@@ -547,8 +544,6 @@ const providerCredentialSecretBroker = createProviderCredentialSecretBroker(
   integrationSecrets,
 );
 const modelSupplyRepository = new PostgresModelSupplyRepository(pool);
-const videoRegenerationRepository =
-  new PostgresVideoRegenerationRepository(pool);
 const canonicalVideoWorkflowSchema =
   new PostgresCanonicalVideoWorkflowSchema(pool);
 const cutoverExecution = new P1CutoverExecutionService(pool);
@@ -951,7 +946,6 @@ await migratePostgresSchema(pool, [
   contentPackageMigrationRuns,
   modelSupplyRepository,
   canonicalVideoWorkflowSchema,
-  videoRegenerationRepository,
   integrationRepository,
   skillRepository,
   cutoverExecution,
@@ -988,24 +982,6 @@ const packageRightsPropagation = new OperationsProductPackageRightsAdapter(
   () => operationsService
 );
 const canonicalVideoWorkflow = {
-  async adoptCandidate() {
-    throw new P1DomainError(
-      'INVALID_STATE',
-      '视频重生成能力升级中，本次未产生扣费。',
-    );
-  },
-  async confirmAndSubmit() {
-    throw new P1DomainError(
-      'INVALID_STATE',
-      '视频重生成能力升级中，本次未产生扣费。',
-    );
-  },
-  async createDraft() {
-    throw new P1DomainError(
-      'INVALID_STATE',
-      '视频重生成能力升级中，本次未产生扣费。',
-    );
-  },
   async edit(input: {
     actorId: string;
     correlationId: string;
@@ -1037,28 +1013,7 @@ const canonicalVideoWorkflow = {
     }
     return { workflow: projectDurableVideoWorkflow(run) };
   },
-  async recoverSupplierTask() {
-    throw new P1DomainError(
-      'INVALID_STATE',
-      '视频重生成能力升级中，本次未产生扣费。',
-    );
-  },
 };
-const videoRegeneration = new VideoRegenerationApplicationService({
-  approvalAuthority: {
-    async approve() {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        '视频重生成能力升级中，本次未产生扣费。',
-      );
-    },
-  },
-  billing: productQuoteService,
-  confirmUnavailableReason: '视频重生成能力升级中，本次未产生扣费。',
-  quoteAuthority: productQuoteAuthority,
-  repository: videoRegenerationRepository,
-  workflows: canonicalVideoWorkflow,
-});
 const videoWorkflowEventSource = new VideoWorkflowEventSource({
   async owns(workspaceId, workflowId) {
     const result = await pool.query(
@@ -1749,7 +1704,6 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       adminSupply: adminSupplyControlPlane,
       videoWorkflow: canonicalVideoWorkflow,
     }),
-    new VideoRegenerationFoundationModule(videoRegeneration),
     new MarketingIdentityFoundationModule(
       marketingIdentities,
       undefined,

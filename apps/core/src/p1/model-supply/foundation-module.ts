@@ -6363,15 +6363,6 @@ function videoWorkflowEdit(
       ),
     };
   }
-  if (kind === 'set_subtitle') {
-    if (typeof edit.text !== 'string') {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'subtitle text must be a string.',
-      );
-    }
-    return { kind, text: edit.text };
-  }
   throw new P1DomainError('INVALID_STATE', `Unknown video edit ${kind}.`);
 }
 
