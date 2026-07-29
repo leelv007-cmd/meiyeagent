@@ -121,12 +121,6 @@ test('canonical shell routes survive direct navigation and reload', async ({
     // T34 / #228 — 一级导航「内容」lands here; the old task inbox is a redirect shell.
     ['/dashboard/works', '内容'],
     ['/dashboard/assets', '资产库'],
-    // D-164①: `/dashboard?view=` no longer renders a history page in place of
-    // the workbench; it redirects to the route that owns each view. Asserting
-    // the destination's heading is what proves the old link still lands
-    // somewhere real.
-    ['/dashboard?view=recent', '最近活动'],
-    ['/dashboard?view=works', '内容'],
     // D-164④: 记忆 is a first-class destination now, so it has to survive a
     // typed URL and a reload like every other one.
     ['/dashboard/memory', '记忆'],
@@ -153,6 +147,38 @@ test('canonical shell routes survive direct navigation and reload', async ({
     await expect(
       page.getByRole('heading', { name: heading, level: 1 })
     ).toBeVisible();
+  }
+});
+
+/**
+ * D-164①: `/dashboard?view=` used to render a whole history page in place of
+ * the workbench, so「the dashboard」could be a page with no way to create
+ * anything on it. Both views own routes of their own; the parameter survives
+ * as a redirect for links already in the wild.
+ *
+ * Kept separate from the canonical-route sweep above on purpose: that one walks
+ * twenty routes, and an unrelated failure anywhere in the list would take this
+ * evidence down with it.
+ */
+test('a legacy ?view= link lands on the route that owns the view', async ({
+  page,
+  request,
+}) => {
+  const user = await registerE2EUser(request);
+  await loginByForm(page, user);
+
+  for (const [path, destination, heading] of [
+    ['/dashboard?view=recent', '/dashboard/recent', '最近活动'],
+    ['/dashboard?view=works', '/dashboard/works', '内容'],
+  ] as const) {
+    await page.goto(path);
+    await expect(page).toHaveURL(new RegExp(`${destination}$`, 'u'));
+    await expect(
+      page.getByRole('heading', { level: 1, name: heading })
+    ).toBeVisible();
+    // The workbench is not what a `?view=` link opens, and the redirect has to
+    // replace the entry rather than stack one — going back must not bounce.
+    await expect(page.getByTestId('composer-home')).toHaveCount(0);
   }
 });
 
