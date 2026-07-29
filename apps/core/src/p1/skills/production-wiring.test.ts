@@ -9,6 +9,7 @@ import {
 
 import { P1ApplicationService } from '../foundation/application-service.js';
 import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
+import { WIRING_NEGATIVE_CASE_IDS } from '../testing/wiring-negative-corpus.js';
 import {
   MemorySkillRepository,
   SkillFoundationModule,
@@ -21,17 +22,10 @@ const EXPECTED_SKILL_SCHEMA_REFS = [
   'skill-input.daily-industry@1',
   'skill-output.intent-decision@1',
 ] as const;
-const NEGATIVE_WIRING_CASES = [
-  'available-but-unbound',
-  'dynamic-not-in-inventory',
-  'inventory-blind-to-closure',
-  'invalid-shape-silently-inert',
-  'duplicate-authority-key',
-] as const;
 
 test('production Skill inventory matches the explicit contract snapshot', () => {
   assert.deepEqual(listSkillSchemaRefs(), EXPECTED_SKILL_SCHEMA_REFS);
-  assert.deepEqual(NEGATIVE_WIRING_CASES, [
+  assert.deepEqual(WIRING_NEGATIVE_CASE_IDS, [
     'available-but-unbound',
     'dynamic-not-in-inventory',
     'inventory-blind-to-closure',
