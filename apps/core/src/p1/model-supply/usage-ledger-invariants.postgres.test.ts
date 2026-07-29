@@ -343,7 +343,7 @@ test(
     );
 
     await t.test(
-      'a blocked primary and its retry still own one ProductUsage',
+      'a policy-blocked primary and its retry still own one ProductUsage',
       async (retryTest) => {
         const retryTaskId = `usage-invariant-retry-task-${suffix}`;
         const retryQuoteId = `usage-invariant-retry-quote-${suffix}`;
@@ -470,7 +470,7 @@ test(
         assert.deepEqual(selection.blockedCandidates, [
           {
             candidateId: 'c01',
-            gateIds: ['subject_asset_rights'],
+            gateIds: ['medical_claim'],
             alternativePath: ['换安全素材'],
           },
         ]);
@@ -534,7 +534,7 @@ class RetryStructuredExecutor implements StructuredObjectExecutor {
         body: this.calls === 1 ? '正文 A' : '正文 B',
         conversionHook: '私信预约',
         factClaims: [],
-        assetRefs: this.calls === 1 ? ['asset-withdrawn'] : [],
+        assetRefs: this.calls === 1 ? ['asset-medical'] : [],
         expressionIdentityRef: 'identity-owner-1',
       }),
       providerTaskRef: `usage-invariant-retry-provider-${this.calls}`,
@@ -549,15 +549,15 @@ class RetryStructuredExecutor implements StructuredObjectExecutor {
 
 class RetryOnceValidator implements CandidatePolicyValidator {
   validate(candidate: Parameters<CandidatePolicyValidator['validate']>[0]) {
-    if (!candidate.assetRefs.includes('asset-withdrawn')) {
+    if (!candidate.assetRefs.includes('asset-medical')) {
       return { passed: true, failures: [] };
     }
     return {
       passed: false,
       failures: [
         {
-          gateId: 'subject_asset_rights',
-          reason: '素材授权已撤回',
+          gateId: 'medical_claim',
+          reason: '文案包含未核验医疗宣称',
           alternativePath: ['换安全素材'],
         },
       ],
