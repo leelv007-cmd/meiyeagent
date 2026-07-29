@@ -41,7 +41,7 @@ export const modelCapabilityClaimBasisSchema = z.enum([
 const modelCapabilityClaimEvidenceSchema = z
   .object({
     basis: modelCapabilityClaimBasisSchema,
-    evidenceRef: z.string().min(1),
+    evidenceRef: z.string().trim().min(1),
   })
   .strict();
 
@@ -54,6 +54,7 @@ export const modelProtocolCapabilityClaimSchema =
 
 export const modelCapabilityMimeSchema = z
   .string()
+  .trim()
   .regex(
     /^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\/(?:[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*|\*)$/,
   );
@@ -67,7 +68,7 @@ export const modelModalityClaimSchema = modelCapabilityClaimEvidenceSchema
 
 export const modelBusinessTagClaimSchema = modelCapabilityClaimEvidenceSchema
   .extend({
-    tag: z.string().min(1),
+    tag: z.string().trim().min(1),
     supported: z.boolean(),
   })
   .strict();
@@ -76,7 +77,7 @@ export const modelModalityScopedCapabilityClaimSchema =
   modelCapabilityClaimEvidenceSchema
     .extend({
       modality: modelCapabilityMimeSchema,
-      capability: z.string().min(1),
+      capability: z.string().trim().min(1),
       supported: z.boolean(),
       channelBound: z.boolean(),
     })
@@ -86,7 +87,7 @@ export const modelCapabilityProfileSchema = z
   .object({
     vocabularyVersion: z.literal(MODEL_CAPABILITY_VOCABULARY_VERSION),
     protocolCapabilities: z.record(
-      z.string().min(1),
+      z.string().trim().min(1),
       modelProtocolCapabilityClaimSchema,
     ),
     modalities: z.array(modelModalityClaimSchema),
@@ -100,17 +101,17 @@ export const modelCapabilityProfileSchema = z
 const modelModalityScopedCapabilityRequirementSchema = z
   .object({
     modality: modelCapabilityMimeSchema,
-    capability: z.string().min(1),
+    capability: z.string().trim().min(1),
   })
   .strict();
 
 export const modelCapabilityRequirementAxisSchema = z
   .object({
-    axisId: z.string().min(1),
+    axisId: z.string().trim().min(1),
     vocabularyVersion: z.literal(MODEL_CAPABILITY_VOCABULARY_VERSION),
-    requiredProtocolCapabilities: z.array(z.string().min(1)),
+    requiredProtocolCapabilities: z.array(z.string().trim().min(1)),
     requiredModalities: z.array(modelCapabilityMimeSchema),
-    requiredBusinessTags: z.array(z.string().min(1)),
+    requiredBusinessTags: z.array(z.string().trim().min(1)),
     requiredModalityCapabilities: z.array(
       modelModalityScopedCapabilityRequirementSchema,
     ),

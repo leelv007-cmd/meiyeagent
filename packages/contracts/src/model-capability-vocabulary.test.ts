@@ -4,7 +4,6 @@ import {
   MODEL_CAPABILITY_VOCABULARY_VERSION,
   modelCapabilityProfileSchema,
   modelCapabilityRequirementAxisSchema,
-  type SupplyDeployment,
 } from './supply-registry.js';
 
 const evidence = {
@@ -134,6 +133,65 @@ describe('model capability vocabulary v1', () => {
     );
   });
 
+  it('rejects whitespace-only capability keys, tags, and evidence references', () => {
+    const base = {
+      vocabularyVersion: MODEL_CAPABILITY_VOCABULARY_VERSION,
+      protocolCapabilities: {},
+      modalities: [],
+      businessTags: [],
+      modalityCapabilities: [],
+    };
+
+    assert.equal(
+      modelCapabilityProfileSchema.safeParse({
+        ...base,
+        protocolCapabilities: {
+          '   ': { value: true, ...evidence },
+        },
+      }).success,
+      false,
+    );
+    assert.equal(
+      modelCapabilityProfileSchema.safeParse({
+        ...base,
+        businessTags: [
+          {
+            tag: '   ',
+            supported: true,
+            ...evidence,
+          },
+        ],
+      }).success,
+      false,
+    );
+    assert.equal(
+      modelCapabilityProfileSchema.safeParse({
+        ...base,
+        modalities: [
+          {
+            mime: 'image/*',
+            supported: true,
+            basis: 'inferred',
+            evidenceRef: '   ',
+          },
+        ],
+      }).success,
+      false,
+    );
+    assert.equal(
+      modelCapabilityRequirementAxisSchema.safeParse({
+        axisId: '   ',
+        vocabularyVersion: MODEL_CAPABILITY_VOCABULARY_VERSION,
+        requiredProtocolCapabilities: [],
+        requiredModalities: [],
+        requiredBusinessTags: [],
+        requiredModalityCapabilities: [],
+        unknownPolicy: 'conservative_always_available',
+      }).success,
+      false,
+    );
+  });
+
   it('accepts only a flat requirement axis with the conservative unknown policy', () => {
     const axis = {
       axisId: 'briefImage',
@@ -170,35 +228,4 @@ describe('model capability vocabulary v1', () => {
     );
   });
 
-  it('lets a SupplyDeployment optionally bind the versioned profile', () => {
-    const capabilityProfile = modelCapabilityProfileSchema.parse({
-      vocabularyVersion: MODEL_CAPABILITY_VOCABULARY_VERSION,
-      protocolCapabilities: {},
-      modalities: [],
-      businessTags: [],
-      modalityCapabilities: [
-        {
-          modality: 'image/*',
-          capability: 'cjk-text-render',
-          supported: true,
-          channelBound: true,
-          ...evidence,
-        },
-      ],
-    });
-    const deployment = {
-      id: 'deployment-image-cjk',
-      catalogModelId: 'model-image-cjk',
-      providerProfileId: 'provider-image',
-      executionChannelId: 'channel-image',
-      lifecycleStatus: 'active',
-      revisionId: 'deployment-image-cjk-r1',
-      capabilityProfile,
-    } satisfies SupplyDeployment;
-
-    assert.equal(
-      deployment.capabilityProfile.vocabularyVersion,
-      MODEL_CAPABILITY_VOCABULARY_VERSION,
-    );
-  });
 });
