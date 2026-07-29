@@ -37,17 +37,17 @@ async function fixture() {
       'export const skillRevision = true;\n',
       'feat(events): add flat event contract'
     ),
-    '261': await commit(
-      root,
-      'mkfast-template-main/src/dashboard.tsx',
-      'export const dashboardSections = 3;\n',
-      'feat(web): build dashboard sections'
-    ),
     '264FE': await commit(
       root,
       'mkfast-template-main/src/video.tsx',
       'export const videoBillableScopes = [];\n',
       'fix(web): retire video editing'
+    ),
+    '261': await commit(
+      root,
+      'mkfast-template-main/src/dashboard.tsx',
+      'export const dashboardSections = 3;\n',
+      'feat(web): build dashboard sections'
     ),
   };
   await commit(
@@ -229,4 +229,45 @@ test('an ancestor marker absent from the merge ledger fails closed', async () =>
   const result = check(data);
   assert.equal(result.status, 1);
   assert.match(JSON.parse(result.stdout).gaps.join('\n'), /merge ledger.*#261/i);
+});
+
+test('frontend markers merged in reverse order fail closed', async () => {
+  const data = await fixture();
+  const videoCommit = await commit(
+    data.root,
+    'mkfast-template-main/src/video-order.tsx',
+    'export const videoBillableScopes = [];\n',
+    'fix(web): retire video editing too late'
+  );
+  data.markers.dependencies['264FE'] = {
+    acceptanceCommands: ['node --test issue-264-fe.test.mjs'],
+    commit: videoCommit,
+    currentTreeChecks: [
+      {
+        notContains: ["'shot'"],
+        path: 'mkfast-template-main/src/video-order.tsx',
+      },
+    ],
+    ownedPaths: ['mkfast-template-main/src/video-order.tsx'],
+  };
+  await writeFile(data.markerPath, JSON.stringify(data.markers));
+  await commit(
+    data.root,
+    'docs/ops/merge-ledger.md',
+    [
+      '# Merge ledger',
+      '',
+      '| main sha | 票 | 内容 |',
+      '|---|---|---|',
+      `| ${data.commits['248'].slice(0, 8)} | #248 | observability |`,
+      `| ${data.commits['261'].slice(0, 8)} | #261 | dashboard |`,
+      `| ${videoCommit.slice(0, 8)} | #264 | frontend retirement |`,
+      '',
+    ].join('\n'),
+    'docs(ops): record reversed frontend merges'
+  );
+
+  const result = check(data);
+  assert.equal(result.status, 1);
+  assert.match(JSON.parse(result.stdout).gaps.join('\n'), /264FE.*before.*261/i);
 });

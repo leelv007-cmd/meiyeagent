@@ -245,6 +245,23 @@ function report(options) {
     gaps.push(...evidence.gaps.map((gap) => `${id}: ${gap}`));
     return { evidence, id, issue: issues[dependency.issue] };
   });
+  const byId = Object.fromEntries(results.map((result) => [result.id, result]));
+  const video = byId['264FE'].evidence;
+  const dashboard = byId['261'].evidence;
+  const frontendOrderCommand =
+    video.sha && dashboard.sha
+      ? `git merge-base --is-ancestor ${video.sha} ${dashboard.sha}`
+      : null;
+  if (
+    video.status === 'merged' &&
+    dashboard.status === 'merged' &&
+    git('merge-base', '--is-ancestor', video.sha, dashboard.sha).status !== 0
+  ) {
+    const gap = '264FE must be merged before 261';
+    dashboard.gaps.push(gap);
+    dashboard.status = 'order_mismatch';
+    gaps.push(`261: ${gap}`);
+  }
   return {
     dependencies: results,
     gaps,
@@ -258,7 +275,8 @@ function report(options) {
         .map(
           (result) =>
             `git merge-base --is-ancestor ${result.evidence.sha} ${mainSha}`
-        ),
+        )
+        .concat(frontendOrderCommand ? [frontendOrderCommand] : []),
     },
     target: '#253FE',
   };
