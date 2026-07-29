@@ -2595,6 +2595,7 @@ function project(id: string, name: string, price: number) {
     id,
     name,
     price,
+    priceValidUntil: null,
   };
 }
 

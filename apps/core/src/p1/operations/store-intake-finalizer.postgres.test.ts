@@ -204,6 +204,7 @@ test(
                     id: 'project-cat-eye',
                     name: '透亮猫眼',
                     price: 299,
+                    priceValidUntil: null,
                   },
                 ],
               },
