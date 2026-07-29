@@ -229,8 +229,9 @@ test('one price, one source: the landing and /pricing cannot disagree', () => {
   // this has no fixed point, and five rounds of tightening it returned less
   // each time. What a visitor actually reads is settled in a browser, by
   // tests/e2e/specs/public-plan-price-source.spec.ts: it takes the price text
-  // off both rendered pages, and moves the governed price to check both pages
-  // move with it. Trust that one; keep this one because it fails in a second.
+  // off both rendered pages, and moves the quoted display-price source to check
+  // both pages move with it. Trust that one; keep this one because it fails in
+  // a second.
   const home = read(HOME_PRICING);
   const pricing = read(PRICING);
   const pricePlan = read(PRICE_PLAN);

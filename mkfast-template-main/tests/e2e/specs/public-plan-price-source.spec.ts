@@ -78,7 +78,7 @@ test.describe('两页套餐价同源', () => {
     monitor.expectNoErrors('两页套餐价');
   });
 
-  test('moving the governed price moves both pages together', async ({
+  test('moving the quoted display-price source moves both pages together', async ({
     page,
   }) => {
     // A cold vite dev server plus two server-rendered pages on it.
@@ -100,14 +100,14 @@ test.describe('两页套餐价同源', () => {
         pricing: await readQuotedPrice(page, `${repriced.baseURL}/pricing`),
       };
 
-      // Both moved, both to the value operations set, and to each other.
+      // Both moved, both to the test-harness override, and to each other.
       expect(
         after.landing,
-        'the landing kept quoting its own price after the governed one moved'
+        'the landing kept quoting its own price after the display-price source moved'
       ).toBe(MOVED_MONTHLY_PRICE_LABEL);
       expect(
         after.pricing,
-        '/pricing kept quoting its own price after the governed one moved'
+        '/pricing kept quoting its own price after the display-price source moved'
       ).toBe(MOVED_MONTHLY_PRICE_LABEL);
       expect(after.landing).not.toBe(before.landing);
       expect(after.pricing).not.toBe(before.pricing);

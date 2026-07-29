@@ -24,14 +24,15 @@ import { setTimeout as delay } from 'node:timers/promises';
  */
 
 /**
- * The moved price. In cents, as the governed key expresses it.
+ * The moved display price, in cents, as the test-harness override expresses it.
  *
  * Not a plausible plan price: a plausible one could coincide with a literal
- * someone typed. This one cannot be produced by any path except reading the key.
+ * someone typed. This one cannot be produced by any path except reading the
+ * test-harness override.
  */
 export const MOVED_MONTHLY_AMOUNT_CENTS = 727_300;
 
-/** What both public pages must print once the key says the above. */
+/** What both public pages must print once the test override says the above. */
 export const MOVED_MONTHLY_PRICE_LABEL = `¥${MOVED_MONTHLY_AMOUNT_CENTS / 100}`;
 
 export interface RepricedWebApp {
