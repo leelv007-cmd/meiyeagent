@@ -10,10 +10,13 @@ import {
   createCreationExecutionSnapshot,
   OFFICIAL_NEUTRAL_IDENTITY,
 } from '../execution-spine/creation-execution-snapshot.js';
+import { ModelSupplyComposerRouteResolver } from '../execution-spine/composer-route-resolver.js';
 import { PostgresContentPackageRevisionWritePort } from '../execution-spine/content-package-revision-port.js';
-import type {
-  ModelSupplyResult,
-  ModelSupplySubmission,
+import { PostgresFoundationRepository } from '../foundation/postgres-repository.js';
+import {
+  ModelSupplyApplicationService,
+  type ModelSupplyResult,
+  type ProviderExecutionRequest,
 } from '../model-supply/index.js';
 import { buildContentPackage } from '../operations/content-package.js';
 import { MemoryContextBundleRepository } from '../operations/context-bundle-repository.js';
@@ -26,6 +29,7 @@ import {
 import { PostgresNoteMediaAdmissionCoordinator } from './note-media-admission.js';
 import { unconfiguredNotePlanEnhancementJudgeResolver } from './note-plan-structured-port.js';
 import { LedgerBackedHarnessContextPort } from './production-context-port.js';
+import { ProductionHarnessFrozenRouteSnapshotResolver } from './production-frozen-route.js';
 import { createProductionHarnessMediaAssembly } from './production-media-assembly.js';
 import { ProductionHarnessStagePorts } from './production-stage-ports.js';
 import { PostgresHarnessStore } from './postgres-store.js';
@@ -65,21 +69,54 @@ test(
     const suffix = randomUUID();
     const workflowId = `production-media-assembly-${suffix}`;
     const workspaceId = `workspace-production-media-assembly-${suffix}`;
-    const request = productionMediaRequest(workflowId, workspaceId);
+    const providerRequests: ProviderExecutionRequest[] = [];
+    const models = productionModelSupply(providerRequests);
+    const frozenRoute = await models.freezeFixedRouteForExecution({
+      catalogModelId: 'model-production-media',
+      dataClass: ['contains_face'],
+      operation: 'image.generate',
+      workspaceId,
+    });
+    const request = productionMediaRequest(
+      workflowId,
+      workspaceId,
+      frozenRoute,
+    );
     const snapshot = requireExecutionSnapshot(request);
+    assert.equal(snapshot.route.id.includes(workflowId), false);
     const runtimeId = harnessRuntimeId(workspaceId, workflowId);
     const pool = new Pool({ connectionString: databaseUrl });
     const harnessStore = new PostgresHarnessStore(pool);
     const contentPackages = new PostgresContentPackageRevisionWritePort(pool);
-    const mediaProviderSubmissions: ModelSupplySubmission[] = [];
+    const foundationRoutes = new PostgresFoundationRepository(pool);
+    const completedModelResults: ModelSupplyResult[] = [];
     const noteAdmission = new PostgresNoteMediaAdmissionCoordinator(pool);
     let dbosLaunched = false;
 
     try {
       await new PostgresOperationsRepository(pool).migrate();
+      await foundationRoutes.migrate();
       await harnessStore.applySchema();
       await contentPackages.applySchema();
       await noteAdmission.migrate();
+      await pool.query(
+        `INSERT INTO workspaces (id, name)
+         VALUES ($1, 'Production media assembly')`,
+        [workspaceId],
+      );
+      const composerRoute = await new ModelSupplyComposerRouteResolver(
+        models,
+        foundationRoutes,
+      ).resolve({
+        catalogModel: {
+          id: snapshot.catalogModel.id,
+          revision: snapshot.catalogModel.revision,
+        },
+        dataClass: ['contains_face'],
+        operation: snapshot.operation,
+        workspaceId,
+      });
+      assert.equal(composerRoute?.id, snapshot.route.id);
       await seedContentPackage(pool, request);
 
       const runners = {
@@ -115,8 +152,9 @@ test(
         copy,
         models: {
           async submit(input) {
-            mediaProviderSubmissions.push(structuredClone(input));
-            return completedImageResult(snapshot);
+            const result = await models.submit(input);
+            completedModelResults.push(structuredClone(result));
+            return result;
           },
         },
         noteAdmission,
@@ -154,6 +192,10 @@ test(
             };
           },
         },
+        new ProductionHarnessFrozenRouteSnapshotResolver(
+          foundationRoutes,
+          models,
+        ),
       );
 
       assert.deepEqual(
@@ -199,8 +241,17 @@ test(
         stopReason: null,
         triggeredLimit: null,
       });
-      assert.equal(mediaProviderSubmissions.length, 1);
-      const submission = mediaProviderSubmissions[0];
+      const durableRoute = frozen.rows[0]?.request.frozenRouteSnapshot;
+      assert.ok(durableRoute);
+      assert.equal(durableRoute.id, snapshot.route.id);
+      assert.equal(
+        durableRoute.catalogRevisionId,
+        snapshot.route.revision,
+      );
+      assert.equal(providerRequests.length, 1);
+      const providerRequest = providerRequests[0];
+      assert.ok(providerRequest);
+      const submission = providerRequest.submission;
       assert.ok(submission);
       assert.equal(submission.billingTaskId, snapshot.task.id);
       assert.equal(submission.billingQuoteRevision, snapshot.quote.revision);
@@ -215,13 +266,43 @@ test(
       );
       assert.equal(submission.operation, 'image.generate');
       assert.equal(submission.workspaceId, workspaceId);
+      assert.deepEqual(submission.dataClass, ['contains_face']);
+      assert.equal(providerRequest.model.id, snapshot.catalogModel.id);
+      assert.equal(
+        providerRequest.deployment.id,
+        frozenRoute.deploymentId,
+      );
+      assert.equal(providerRequest.routeSnapshot?.id, snapshot.route.id);
+      assert.equal(
+        providerRequest.routeSnapshot?.catalogRevisionId,
+        snapshot.catalogModel.revision,
+      );
+      assert.equal(
+        providerRequest.routeSnapshot?.catalogRevisionId,
+        snapshot.route.revision,
+      );
+      assert.equal(
+        providerRequest.routeSnapshot?.actualCatalogModelId,
+        snapshot.catalogModel.id,
+      );
+      assert.deepEqual(
+        providerRequest.routeSnapshot?.requestedSelection,
+        submission.selection,
+      );
+      assert.equal(
+        providerRequest.routeSnapshot?.allowedCandidates?.[0]?.deploymentId,
+        providerRequest.deployment.id,
+      );
+      assert.deepEqual(providerRequest.routeSnapshot, durableRoute);
 
-      const completed = completedImageResult(snapshot);
+      const completed = completedModelResults[0];
+      assert.ok(completed);
       assert.equal(completed.snapshot.id, snapshot.route.id);
       assert.equal(
         completed.snapshot.catalogRevisionId,
         snapshot.catalogModel.revision,
       );
+      assert.deepEqual(completed.snapshot.requestedSelection, submission.selection);
       await assertPersistedJoin(pool, request, runtimeId, completed);
       const effectsBeforeReplay = await DBOS.listWorkflowSteps(runtimeId);
       assert.ok(effectsBeforeReplay);
@@ -231,7 +312,8 @@ test(
         { workflowId, replayed: true },
       );
       await DBOS.retrieveWorkflow(runtimeId).getResult();
-      assert.equal(mediaProviderSubmissions.length, 1);
+      assert.equal(providerRequests.length, 1);
+      assert.equal(completedModelResults.length, 1);
       const effectsAfterReplay = await DBOS.listWorkflowSteps(runtimeId);
       assert.ok(effectsAfterReplay);
       assert.equal(effectsAfterReplay.length, effectsBeforeReplay.length);
@@ -241,11 +323,17 @@ test(
       );
       await assertPersistedJoin(pool, request, runtimeId, completed);
     } finally {
-      if (dbosLaunched) {
-        await DBOS.shutdown({ deregister: true });
+      try {
+        if (dbosLaunched) {
+          await DBOS.shutdown({ deregister: true });
+        }
+      } finally {
+        try {
+          await cleanup(pool, request, runtimeId);
+        } finally {
+          await pool.end();
+        }
       }
-      await cleanup(pool, request, runtimeId);
-      await pool.end();
     }
   },
 );
@@ -272,8 +360,6 @@ class ExternalModelCompletionFixture implements StructuredNodeRunner {
         blockingGap: null,
       };
     } else if (request.schemaName === 'harness_image_brief_v1') {
-      const assetId = this.snapshot.sources.assets[0]?.id;
-      assert.ok(assetId);
       output = {
         kind: 'image',
         intent: {
@@ -282,26 +368,16 @@ class ExternalModelCompletionFixture implements StructuredNodeRunner {
           subject: '夏日护理项目',
           scene: '真实门店护理区',
           composition: '竖版主视觉，主体清晰',
-          references: [
-            {
-              assetId,
-              assetRevision: 'asset-r1',
-              slot: 'style_ref',
-              mimeType: 'image/jpeg',
-              sizeBytes: 1024,
-              factRefs: [],
-              rightsRefs: [assetId],
-            },
-          ],
+          references: [],
           exactText: [],
           changes: [],
           invariants: [],
           factRefs: [],
-          rightsRefs: [assetId],
+          rightsRefs: [],
           outputPlan: { kind: 'single' },
         },
         prompt: '为夏日护理项目生成一张竖版活动海报，保留真实门店护理氛围。',
-        referenceAssetIds: [assetId],
+        referenceAssetIds: [],
         parameters: { ratio: '9:16', resolution: '1080p' },
         constraints: ['不得编造价格或护理效果'],
       };
@@ -321,6 +397,7 @@ class ExternalModelCompletionFixture implements StructuredNodeRunner {
 function productionMediaRequest(
   workflowId: string,
   workspaceId: string,
+  route: { id: string; catalogRevisionId: string },
 ): HarnessWorkflowInput {
   const snapshot = createCreationExecutionSnapshot(
     {
@@ -375,7 +452,7 @@ function productionMediaRequest(
         revision: 'model-r1',
       },
       quote: { id: `quote-${workflowId}`, revision: 'quote-r1' },
-      route: { id: `route-${workflowId}`, revision: 'route-r1' },
+      route: { id: route.id, revision: route.catalogRevisionId },
       briefContext: { id: `brief-${workflowId}`, revision: 1 },
       contentModules: ['social_cover'],
     },
@@ -395,60 +472,79 @@ function productionMediaRequest(
         intent: snapshot.intent.text,
         sourceSummaries: [],
       },
-      assetReferences: [`source-asset-${workflowId}`],
+      assetReferences: snapshot.sources.assets.map(({ id }) => id),
     },
     executionSnapshot: snapshot,
   };
 }
 
-function completedImageResult(
-  snapshot: NonNullable<HarnessWorkflowInput['executionSnapshot']>,
-): ModelSupplyResult {
-  const suffix = snapshot.task.id.replace('production-media-assembly-', '');
-  const attempt = {
-    acceptance: 'accepted' as const,
-    catalogModelId: snapshot.catalogModel.id,
-    createdAt: now,
-    deploymentId: 'deployment-production-media',
-    id: `attempt-${suffix}`,
-    jobId: `job-${suffix}`,
-    providerTaskRef: `provider-task-${suffix}`,
-    status: 'completed' as const,
-  };
-  const providerCost = {
-    amount: 1,
-    currency: 'CNY' as const,
-    id: `cost-${suffix}`,
-    status: 'observed' as const,
-    usage: { mediaUnits: 1 },
-  };
-  return {
-    jobId: attempt.jobId,
-    status: 'completed',
-    snapshot: {
-      actualCatalogModelId: snapshot.catalogModel.id,
-      catalogRevisionId: snapshot.catalogModel.revision,
-      deploymentId: attempt.deploymentId,
-      id: snapshot.route.id,
-    } as ModelSupplyResult['snapshot'],
-    attempt,
-    attempts: [attempt],
-    asset: {
-      contentType: 'image/png',
-      id: `image-asset-${suffix}`,
-      objectKey: `owned/image-asset-${suffix}`,
-      sha256: 'b'.repeat(64),
-      sizeBytes: 1024,
-      sourceTaskRef: attempt.providerTaskRef,
+function productionModelSupply(providerRequests: ProviderExecutionRequest[]) {
+  return new ModelSupplyApplicationService({
+    catalogRevisionId: 'model-r1',
+    models: [
+      {
+        id: 'model-production-media',
+        modality: 'image',
+        operations: ['image.generate'],
+        displayName: 'Production media fixture',
+        qualityRank: 100,
+        manufacturer: 'fixture',
+        stableModelName: 'production-media-fixture',
+        version: '1',
+        capabilities: ['image.generate'],
+      },
+    ],
+    deployments: [
+      {
+        id: 'deployment-production-media',
+        catalogModelId: 'model-production-media',
+        providerProfileId: 'provider-profile-production-media',
+        executionChannelId: 'channel-production-media',
+        accountIdentity: 'account-production-media',
+        endpointFingerprint: 'endpoint-production-media',
+        providerModel: 'provider-model-production-media',
+        endpointRevision: 'endpoint-r1',
+        apiCounterparty: 'fixture-provider',
+        credentialOwner: 'platform',
+        lifecycleRevision: 'deployment-r1',
+        apiFamily: 'image',
+        channel: 'direct',
+        region: 'domestic',
+        status: 'active',
+        allowedDataClasses: ['contains_face'],
+        policyRevision: 'policy-r1',
+        priceRevision: 'price-r1',
+        credentialMode: 'platform',
+        credentialVersion: 'credential-r1',
+        unitPrice: {
+          amountMicros: 1_000_000,
+          currency: 'CNY',
+          unit: 'image',
+        },
+        activationEvidence: {
+          status: 'recorded',
+          verifiedAt: now,
+          evidenceRef: 'fixture-provider',
+          configurationRevision: 'configuration-r1',
+        },
+      },
+    ],
+    execution: {
+      async execute(request) {
+        providerRequests.push(structuredClone(request));
+        return {
+          kind: 'completed',
+          assetBytes: Buffer.from(`production-media:${request.jobId}`),
+          contentType: 'image/png',
+          providerCost: {
+            amount: 1,
+            currency: 'CNY',
+            usage: { mediaUnits: 1 },
+          },
+        };
+      },
     },
-    usage: {
-      id: `usage-${suffix}`,
-      quantity: 0,
-      status: 'committed',
-    },
-    providerCost,
-    providerCosts: [providerCost],
-  };
+  });
 }
 
 async function seedContentPackage(
@@ -614,6 +710,13 @@ async function cleanup(
     'DELETE FROM p1_content_packages WHERE workspace_id=$1 AND id=$2',
     [request.workspaceId, request.packageId],
   );
+  await pool.query(
+    'DELETE FROM p1_route_snapshots WHERE workspace_id=$1 AND id=$2',
+    [request.workspaceId, requireExecutionSnapshot(request).route.id],
+  );
+  await pool.query('DELETE FROM workspaces WHERE id=$1', [
+    request.workspaceId,
+  ]);
 }
 
 function requireExecutionSnapshot(request: HarnessWorkflowInput) {

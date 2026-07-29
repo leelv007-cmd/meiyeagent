@@ -1311,6 +1311,14 @@ function mediaSubmission(
 	orchestrationWorkflowId?: string,
 ): ModelSupplySubmission {
 	const snapshot = requireSnapshot(request);
+	const frozenRoute = request.frozenRouteSnapshot;
+	if (!frozenRoute) {
+		throw new HarnessMediaExecutionError(
+			"MEDIA_SELECTION_MISSING",
+			"Media Harness execution requires a frozen route snapshot.",
+			409,
+		);
+	}
 	if (snapshot.modelPolicy.mode !== "fixed") {
 		throw new HarnessMediaExecutionError(
 			"MEDIA_SELECTION_MISSING",
@@ -1329,7 +1337,7 @@ function mediaSubmission(
 			: { billingTaskId: snapshot.task.id }),
 		billingQuoteRevision: snapshot.quote.revision,
 		correlationId: orchestrationWorkflowId ?? workflowId,
-		dataClass: [],
+		dataClass: [...frozenRoute.dataClass],
 		idempotencyKey:
 			attempt === "primary"
 				? `harness-media:${workflowId}:${brief.kind}`
@@ -1351,6 +1359,7 @@ function mediaSubmission(
 				? compiledImage!.operation
 				: "video.generate",
 		productUsageQuantity: 0,
+		frozenRouteSnapshot: structuredClone(frozenRoute),
 		prompt:
 			brief.kind === "image"
 				? [

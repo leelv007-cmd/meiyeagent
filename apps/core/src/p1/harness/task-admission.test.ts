@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { BoundedExecutionLimits } from '@meiye/contracts';
+import type { RouteSnapshot } from '../model-supply/index.js';
 
 import {
   HarnessAdmissionError,
@@ -9,6 +10,7 @@ import {
   HarnessTaskAdmissionService,
   harnessTaskRequestSchema,
   type HarnessExecutionBoundsResolver,
+  type HarnessFrozenRouteSnapshotResolver,
   type HarnessTaskRequestRegistry,
   type HarnessWorkflowStarter,
 } from './task-admission.js';
@@ -200,6 +202,71 @@ test('accepted task replay reads the frozen request before prompt resolution', a
   assert.deepEqual(replay, { workflowId: 'task-35', replayed: true });
   assert.equal(resolver.calls, 1);
   assert.equal(starter.requests[1]?.prompts?.intentNaming.version, '7');
+});
+
+test('media admission freezes one server route and replay reads the durable copy', async () => {
+  const registry = new MemoryRequestRegistry();
+  const starter = new RecordingStarter();
+  const snapshot = mediaComposerSnapshot();
+  const frozenRoute = mediaRoute(snapshot);
+  const resolver: HarnessFrozenRouteSnapshotResolver & { calls: number } = {
+    calls: 0,
+    async resolve(input) {
+      this.calls += 1;
+      assert.deepEqual(input, snapshot);
+      return structuredClone(frozenRoute);
+    },
+  };
+  const service = new HarnessTaskAdmissionService(
+    registry,
+    starter,
+    undefined,
+    undefined,
+    undefined,
+    resolver,
+  );
+
+  await service.submit(snapshotTaskRequest(snapshot));
+  await service.submit(snapshotTaskRequest(snapshot));
+
+  assert.equal(resolver.calls, 1);
+  assert.deepEqual(starter.requests[0]?.frozenRouteSnapshot, frozenRoute);
+  assert.deepEqual(starter.requests[1]?.frozenRouteSnapshot, frozenRoute);
+});
+
+test('media admission rejects a caller-provided frozen route', async () => {
+  const registry = new MemoryRequestRegistry();
+  const snapshot = mediaComposerSnapshot();
+  const service = new HarnessTaskAdmissionService(
+    registry,
+    new RecordingStarter(),
+  );
+
+  await assert.rejects(
+    service.submit({
+      ...snapshotTaskRequest(snapshot),
+      frozenRouteSnapshot: mediaRoute(snapshot),
+    } as Parameters<HarnessTaskAdmissionService['submit']>[0]),
+  );
+  assert.equal(registry.claims.length, 0);
+});
+
+test('media admission rejects a missing production route resolver before claim', async () => {
+  const registry = new MemoryRequestRegistry();
+  const snapshot = mediaComposerSnapshot();
+  const service = new HarnessTaskAdmissionService(
+    registry,
+    new RecordingStarter(),
+  );
+
+  await assert.rejects(
+    service.submit(snapshotTaskRequest(snapshot)),
+    (error: unknown) =>
+      error instanceof HarnessAdmissionError &&
+      error.code === 'FROZEN_ROUTE_MISMATCH' &&
+      error.status === 409,
+  );
+  assert.equal(registry.claims.length, 0);
 });
 
 test('accepted task replay fails closed when the registry omits its frozen request', async () => {
@@ -563,6 +630,79 @@ function composerSnapshot() {
     },
     '2026-07-22T09:00:00.000Z',
   );
+}
+
+function mediaComposerSnapshot() {
+  return createCreationExecutionSnapshot(
+    {
+      actorId: 'owner-1',
+      workspaceId: 'workspace-1',
+      idempotencyKey: 'composer-media-key-1',
+      taskId: 'task-media-1',
+      workId: 'work-media-1',
+      contentPackageId: 'package-media-1',
+      expectedContentPackageRevision: 0,
+      creationMode: 'customized',
+      intent: '制作夏日护理项目图片',
+      surface: { id: 'surface-1', revision: 'surface-r1' },
+      recipe: { id: 'recipe-1', revision: 'recipe-r1' },
+      lens: 'image' as const,
+      operation: 'image.generate' as const,
+      platform: { id: 'xiaohongshu' as const },
+      contentPackagePlatform: 'xiaohongshu' as const,
+      distributionTarget: 'export' as const,
+      deliverable: {
+        kind: 'image_set' as const,
+        quantity: 1,
+        aspectRatio: '9:16' as const,
+      },
+      deliverables: [
+        {
+          id: 'image-primary',
+          kind: 'image' as const,
+          quantity: 1,
+          order: 0,
+          aspectRatio: '9:16' as const,
+        },
+      ],
+      sources: { assets: [] },
+      rights: { revision: 'rights-r1', summary: 'authorized' },
+      identity: { id: 'identity-1', revision: 'identity-r1' },
+      modelPolicy: {
+        id: 'policy-1',
+        revision: 'policy-r1',
+        mode: 'fixed' as const,
+      },
+      catalogModel: { id: 'model-1', revision: 'model-r1' },
+      quote: { id: 'quote-1', revision: 'quote-r1' },
+      route: { id: 'route-media-1', revision: 'model-r1' },
+      briefContext: { id: 'brief-context-1', revision: 1 },
+      contentModules: ['social_cover' as const],
+    },
+    '2026-07-29T09:00:00.000Z',
+  );
+}
+
+function mediaRoute(snapshot: ReturnType<typeof mediaComposerSnapshot>) {
+  return {
+    id: snapshot.route.id,
+    catalogRevisionId: snapshot.route.revision,
+    requestedSelection: {
+      mode: 'fixed',
+      catalogModelId: snapshot.catalogModel.id,
+    },
+    candidateCatalogModelIds: [snapshot.catalogModel.id],
+    actualCatalogModelId: snapshot.catalogModel.id,
+    deploymentId: 'deployment-media-1',
+    policyRevision: snapshot.modelPolicy.revision,
+    priceRevision: 'price-r1',
+    credentialMode: 'platform',
+    credentialVersion: 'credential-r1',
+    fallbackConsent: false,
+    reason: 'fixed_selection',
+    dataClass: [],
+    createdAt: '2026-07-29T09:00:00.000Z',
+  } satisfies RouteSnapshot;
 }
 
 function snapshotTaskRequest(snapshot: ReturnType<typeof composerSnapshot>) {

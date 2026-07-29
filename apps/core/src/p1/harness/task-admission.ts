@@ -20,6 +20,7 @@ import {
 } from '../execution-spine/creation-execution-snapshot.js';
 import type { CreationSubmissionRecord } from '../execution-spine/submission-coordinator.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
+import type { RouteSnapshot } from '../model-supply/index.js';
 import {
   promptRevisionReferences,
   promptTraceReference,
@@ -53,6 +54,8 @@ export interface HarnessWorkflowInput {
   usageReservation?: CreationSubmissionRecord['usageReservation'];
   /** Missing only from durable requests admitted before bounded execution was introduced. */
   boundedExecution?: BoundedExecutionSnapshot;
+  /** Server-owned media route frozen at admission; callers cannot provide it. */
+  frozenRouteSnapshot?: RouteSnapshot;
   prompts?: HarnessFrozenPrompts;
   /** Explicit prompt lineage copied into the durable task request snapshot. */
   promptRevisionRefs?: Record<string, HarnessPromptRevisionReference>;
@@ -61,15 +64,19 @@ export interface HarnessWorkflowInput {
 export interface HarnessTaskRequest
   extends Omit<
     HarnessWorkflowInput,
-    'boundedExecution' | 'prompts' | 'promptRevisionRefs'
+    'boundedExecution' | 'frozenRouteSnapshot' | 'prompts' | 'promptRevisionRefs'
   > {
   taskId: string;
 }
 
 type HarnessWorkflowInputBeforeBounds = Omit<
   HarnessWorkflowInput,
-  'boundedExecution' | 'prompts' | 'promptRevisionRefs'
+  'boundedExecution' | 'frozenRouteSnapshot' | 'prompts' | 'promptRevisionRefs'
 >;
+
+export interface HarnessFrozenRouteSnapshotResolver {
+  resolve(snapshot: CreationExecutionSnapshot): Promise<RouteSnapshot>;
+}
 
 export const harnessTaskRequestSchema = harnessTaskSubmissionSchema
   .extend({
@@ -155,6 +162,7 @@ export class HarnessAdmissionError extends Error {
   constructor(
     readonly code:
       | 'EXECUTION_SNAPSHOT_MISMATCH'
+      | 'FROZEN_ROUTE_MISMATCH'
       | 'FROZEN_REQUEST_MISSING'
       | 'REQUEST_FINGERPRINT_CONFLICT',
     message: string,
@@ -194,6 +202,7 @@ export class HarnessTaskAdmissionService {
     private readonly promptFallbackAudits?: HarnessPromptFallbackAuditPort,
     private readonly executionBounds: HarnessExecutionBoundsResolver =
       DEFAULT_EXECUTION_BOUNDS_RESOLVER,
+    private readonly frozenRoutes?: HarnessFrozenRouteSnapshotResolver,
   ) {}
 
   async submit(input: HarnessTaskRequest) {
@@ -231,6 +240,23 @@ export class HarnessTaskAdmissionService {
       ...normalized,
       boundedExecution,
     };
+    if (
+      normalized.executionSnapshot &&
+      normalized.executionSnapshot.lens !== 'copy'
+    ) {
+      if (!this.frozenRoutes) {
+        throw new HarnessAdmissionError(
+          'FROZEN_ROUTE_MISMATCH',
+          'Media admission requires the production frozen-route resolver.',
+        );
+      }
+      request = {
+        ...request,
+        frozenRouteSnapshot: await this.frozenRoutes.resolve(
+          normalized.executionSnapshot,
+        ),
+      };
+    }
     if (this.prompts) {
       const prompts = await this.prompts.resolve();
       request = {

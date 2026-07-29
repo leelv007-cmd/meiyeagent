@@ -218,6 +218,7 @@ import {
   LedgerBackedHarnessContextPort,
 } from './p1/harness/production-context-port.js';
 import { createProductionHarnessMediaAssembly } from './p1/harness/production-media-assembly.js';
+import { ProductionHarnessFrozenRouteSnapshotResolver } from './p1/harness/production-frozen-route.js';
 import { ProductionHarnessStagePorts } from './p1/harness/production-stage-ports.js';
 import { IMAGE_MODEL_RECIPE_PROFILE } from './p1/harness/image-intent-compiler.js';
 import {
@@ -1916,6 +1917,11 @@ if (harnessRuntimeConfig) {
       new DbosHarnessWorkflowStarter(harnessWorkflow),
       harnessPromptResolver,
       harnessStore,
+      undefined,
+      new ProductionHarnessFrozenRouteSnapshotResolver(
+        foundationRepository,
+        p1ModelSupplyService,
+      ),
     ),
     harnessDecisions,
     harnessStore,

@@ -136,6 +136,7 @@ test("image and video use the existing Model Supply path with stable submission 
 				billingTaskId: `task-${kind}`,
 				correlationId: `workflow-${kind}`,
 				dataClass: [],
+				frozenRouteSnapshot: request.frozenRouteSnapshot,
 				idempotencyKey: `harness-media:workflow-${kind}:${kind}`,
 				input:
 					kind === "image"
@@ -214,6 +215,69 @@ test("media queue submission stops before the provider when durable rights are w
 			error.gateIds.includes("subject_asset_rights"),
 	);
 	assert.equal(submissions, 0);
+});
+
+test("media execution copies the frozen route data classes into the submission", async () => {
+	const submissions: ModelSupplySubmission[] = [];
+	const adapter = new ModelSupplyHarnessMediaExecutionPort({
+		async submit(input) {
+			submissions.push(structuredClone(input));
+			return completedResult("image");
+		},
+	});
+	const request = harnessInput(
+		"image",
+		"package-frozen-data-class",
+		"image.generate",
+		0,
+	);
+	const snapshot = request.executionSnapshot;
+	assert.ok(snapshot);
+	request.frozenRouteSnapshot = {
+		...frozenMediaRoute(snapshot),
+		dataClass: ["contains_face"],
+	};
+
+	await adapter.execute({
+		brief: imageBriefFor("image.generate", 0),
+		context: contextSnapshot(),
+		request,
+		workflowId: "task-image",
+	});
+
+	assert.deepEqual(submissions[0]?.dataClass, ["contains_face"]);
+	assert.deepEqual(
+		submissions[0]?.frozenRouteSnapshot,
+		request.frozenRouteSnapshot,
+	);
+});
+
+test("media execution rejects a request without its frozen route", async () => {
+	const adapter = new ModelSupplyHarnessMediaExecutionPort({
+		async submit() {
+			throw new Error("A request without its route must not reach Model Supply.");
+		},
+	});
+	const request = harnessInput(
+		"image",
+		"package-missing-frozen-route",
+		"image.generate",
+		0,
+	);
+	delete request.frozenRouteSnapshot;
+
+	await assert.rejects(
+		adapter.execute({
+			brief: imageBriefFor("image.generate", 0),
+			context: contextSnapshot(),
+			request,
+			workflowId: "task-image",
+		}),
+		(error: unknown) =>
+			error instanceof HarnessMediaExecutionError &&
+			error.code === "MEDIA_SELECTION_MISSING" &&
+			error.status === 409,
+	);
 });
 
 test("three canonical image operations map to the two existing provider operations", async () => {
@@ -1872,6 +1936,26 @@ function harnessInput(
 			assetReferences: sourceAssets.map(({ id }) => id),
 		},
 		executionSnapshot: snapshot,
+		frozenRouteSnapshot: frozenMediaRoute(snapshot),
+	};
+}
+
+function frozenMediaRoute(
+	snapshot: NonNullable<HarnessWorkflowInput["executionSnapshot"]>,
+): NonNullable<HarnessWorkflowInput["frozenRouteSnapshot"]> {
+	return {
+		id: snapshot.route.id,
+		catalogRevisionId: snapshot.route.revision,
+		requestedSelection: {
+			mode: "fixed",
+			catalogModelId: snapshot.catalogModel.id,
+		},
+		candidateCatalogModelIds: [snapshot.catalogModel.id],
+		actualCatalogModelId: snapshot.catalogModel.id,
+		deploymentId: `deployment-${snapshot.lens}-1`,
+		reason: "fixed_selection",
+		dataClass: [],
+		createdAt: "2026-07-22T09:00:00.000Z",
 	};
 }
 
