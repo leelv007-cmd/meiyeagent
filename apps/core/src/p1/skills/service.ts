@@ -291,7 +291,7 @@ export class SkillService {
       captured.contentHash !== normalized.contentHash ||
       sha256(captured.content) !== normalized.contentHash
     ) {
-      failPrewrite(
+      fail(
         'Skill prompt snapshot does not match its pinned reference.',
       );
     }
@@ -299,7 +299,7 @@ export class SkillService {
       captured.isFallback &&
       !captured.fallbackReason?.trim()
     ) {
-      failPrewrite('Skill prompt fallback requires a reason.');
+      fail('Skill prompt fallback requires a reason.');
     }
     return {
       ...normalized,

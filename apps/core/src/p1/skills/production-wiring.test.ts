@@ -87,7 +87,7 @@ test('the real Foundation entry admits a revision only through registered schema
   );
 });
 
-test('the application entry releases a rejected prompt claim for deterministic retry without writes', async () => {
+test('the application entry retains a rejected prompt claim after capture without writes', async () => {
   let promptCaptures = 0;
   const harness = applicationSkillHarness(
     'rejected-prompt-retry',
@@ -105,19 +105,26 @@ test('the application entry releases a rejected prompt claim for deterministic r
     },
   );
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    await assert.rejects(
-      harness.application.executeModule(
-        harness.context,
-        'skills',
-        harness.input,
-        'rejected-prompt-retry',
-      ),
-      /does not match its pinned reference/u,
-    );
-  }
+  await assert.rejects(
+    harness.application.executeModule(
+      harness.context,
+      'skills',
+      harness.input,
+      'rejected-prompt-retry',
+    ),
+    /does not match its pinned reference/u,
+  );
+  await assert.rejects(
+    harness.application.executeModule(
+      harness.context,
+      'skills',
+      harness.input,
+      'rejected-prompt-retry',
+    ),
+    /still in progress/u,
+  );
 
-  assert.equal(promptCaptures, 2);
+  assert.equal(promptCaptures, 1);
   await assertRejectedSkillUnwritten(harness);
 });
 
