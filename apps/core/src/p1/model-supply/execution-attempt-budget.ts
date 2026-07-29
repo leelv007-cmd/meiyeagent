@@ -1,12 +1,15 @@
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { StructuredNodeRunner } from './structured-node-runner.js';
+
+export const structuredExecutionRequestFingerprintSchema = z
+  .string()
+  .regex(/^[a-f0-9]{64}$/u);
 
 export const structuredExecutionContinuationSchema = z
   .object({
     kind: z.literal('schema_repair'),
-    // Provider invalid-output text only. Prompts, instructions and credentials
-    // are never copied into this bounded durable continuation.
-    invalidText: z.string().max(8_000),
+    requestFingerprint: structuredExecutionRequestFingerprintSchema,
     usage: z
       .object({
         inputTokens: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
@@ -20,11 +23,61 @@ export type StructuredExecutionContinuation = z.infer<
   typeof structuredExecutionContinuationSchema
 >;
 
+export interface ObservedExecutionProviderCost {
+  amount: number;
+  currency: 'CNY' | 'USD';
+  usage: { inputTokens: number; outputTokens: number };
+}
+
 export function parseRecoveredStructuredExecutionContinuation(input: unknown) {
   const parsed = structuredExecutionContinuationSchema.safeParse(input);
   if (!parsed.success) {
     throw new TypeError(
       'Recovered structured execution continuation is invalid.',
+    );
+  }
+  return parsed.data;
+}
+
+export function structuredExecutionRequestFingerprint(input: {
+  actorId: string;
+  dataClass: unknown;
+  instructions: string;
+  operation: string;
+  prompt: string;
+  schema: unknown;
+  schemaName: string;
+  schemaRevision: string;
+  selection: unknown;
+  streaming: boolean;
+  workspaceId: string;
+}) {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        actorId: input.actorId,
+        dataClass: input.dataClass,
+        instructions: input.instructions,
+        operation: input.operation,
+        prompt: input.prompt,
+        schema: input.schema,
+        schemaName: input.schemaName,
+        schemaRevision: input.schemaRevision,
+        selection: input.selection,
+        streaming: input.streaming,
+        workspaceId: input.workspaceId,
+      }),
+    )
+    .digest('hex');
+}
+
+export function parseRecoveredStructuredExecutionRequestFingerprint(
+  input: unknown,
+) {
+  const parsed = structuredExecutionRequestFingerprintSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new TypeError(
+      'Recovered attempt-budget request fingerprint is invalid.',
     );
   }
   return parsed.data;
@@ -39,6 +92,7 @@ export class ExecutionAttemptBudgetExceeded extends Error {
     readonly consumedAttempts: number,
     readonly completedAttemptsInRun?: number,
     readonly structuredContinuation?: StructuredExecutionContinuation,
+    readonly observedProviderCost?: ObservedExecutionProviderCost,
   ) {
     super(
       `Execution attempt budget exhausted after ${consumedAttempts} of ${maxAttempts} attempts.`,
@@ -104,6 +158,7 @@ export function withExecutionAttemptBudget(
                 error.consumedAttempts,
                 budget.consumedAttempts - consumedBefore,
                 error.structuredContinuation,
+                error.observedProviderCost,
               );
             }
             throw error;

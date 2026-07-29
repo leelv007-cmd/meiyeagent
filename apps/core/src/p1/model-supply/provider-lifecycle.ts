@@ -74,14 +74,22 @@ export class StructuredObjectGenerationError extends Error {
   constructor(
     readonly usage: { inputTokens: number; outputTokens: number },
     readonly measurement: StructuredObjectMeasurement,
-    options: { cause: unknown },
+    options: {
+      cause: unknown;
+      providerUsage?: { inputTokens: number; outputTokens: number };
+    },
   ) {
     super(
       'Structured output failed after its bounded repair attempt.',
       options,
     );
     this.name = 'StructuredObjectGenerationError';
+    this.providerUsage = options.providerUsage;
   }
+
+  readonly providerUsage:
+    | { inputTokens: number; outputTokens: number }
+    | undefined;
 }
 
 export interface ProviderExecutionRequest {
@@ -115,6 +123,10 @@ export type ProviderExecutionResponse =
       text?: string;
       structuredOutput?: unknown;
       structuredMeasurement?: StructuredObjectMeasurement;
+      structuredCumulativeUsage?: {
+        inputTokens: number;
+        outputTokens: number;
+      };
       assetBytes?: Uint8Array;
       contentType?: OwnedAsset['contentType'];
       providerCost: Omit<ProviderCost, 'id' | 'status'>;
@@ -127,6 +139,10 @@ export type ProviderExecutionResponse =
       retryable?: boolean;
       message: string;
       structuredMeasurement?: StructuredObjectMeasurement;
+      structuredCumulativeUsage?: {
+        inputTokens: number;
+        outputTokens: number;
+      };
       providerCost: Omit<ProviderCost, 'id' | 'status'>;
     };
 
@@ -151,10 +167,12 @@ export interface StructuredObjectExecutor {
     schema: ZodType<Output>;
     schemaName: string;
     structuredContinuation?: StructuredExecutionContinuation;
+    structuredRequestFingerprint?: string;
   }): Promise<{
     output: Output;
     providerTaskRef: string;
     usage: { inputTokens: number; outputTokens: number };
+    providerUsage?: { inputTokens: number; outputTokens: number };
     measurement?: StructuredObjectMeasurement;
   }>;
   providerCost(usage: { inputTokens: number; outputTokens: number }): {

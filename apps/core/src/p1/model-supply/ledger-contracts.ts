@@ -86,6 +86,11 @@ export interface ModelSupplyResult {
   text?: string;
   structuredOutput?: unknown;
   structuredMeasurement?: StructuredObjectMeasurement;
+  structuredCumulativeUsage?: {
+    inputTokens: number;
+    outputTokens: number;
+  };
+  attemptBudgetRequestFingerprint?: string;
   structuredContinuation?: StructuredExecutionContinuation;
   usage: ProductUsage;
   providerCost: ProviderCost;

@@ -180,10 +180,12 @@ export class ModelSupplyStructuredNodeRunner implements StructuredNodeRunner {
         result.attempts.length +
         Math.max(0, (measurement?.providerAttempts ?? 1) - 1),
       providerTaskRef: result.attempt.providerTaskRef ?? result.attempt.id,
-      usage: {
-        inputTokens: result.providerCost.usage.inputTokens ?? 0,
-        outputTokens: result.providerCost.usage.outputTokens ?? 0,
-      },
+      usage:
+        result.structuredCumulativeUsage ??
+        {
+          inputTokens: result.providerCost.usage.inputTokens ?? 0,
+          outputTokens: result.providerCost.usage.outputTokens ?? 0,
+        },
       ...(measurement
         ? {
             firstPassSchemaValid: measurement.firstPassSchemaValid,
@@ -238,11 +240,15 @@ function providerAttemptFencedExecutor(
       schema: ZodType<Output>;
       schemaName: string;
       structuredContinuation?: StructuredExecutionContinuation;
+      structuredRequestFingerprint?: string;
     }) {
-      if (!input.structuredContinuation) {
-        await beforeProviderAttempt();
-      }
-      return executor.generate({ ...input, beforeProviderAttempt });
+      await beforeProviderAttempt();
+      return executor.generate({
+        ...input,
+        beforeProviderAttempt: input.structuredContinuation
+          ? undefined
+          : beforeProviderAttempt,
+      });
     },
     providerCost(usage) {
       return executor.providerCost(usage);

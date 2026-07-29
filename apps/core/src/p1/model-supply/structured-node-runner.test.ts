@@ -13,6 +13,7 @@ import {
   AiSdkStructuredObjectExecutor,
   ModelSupplyStructuredNodeRunner,
   StructuredNodeRunError,
+  type StructuredNodeRunner,
   type StructuredObjectExecutor,
 } from './structured-node-runner.js';
 import {
@@ -218,7 +219,15 @@ test('a raised attempt limit resumes durable schema repair without repeating the
   const repository = new MemoryFoundationRepository();
   repository.grantOwner('workspace-1', 'user-1');
   const foundation = new P1ApplicationService(repository);
-  const ledger = new FoundationModelSupplyLedger(foundation);
+  const durableLedger = new FoundationModelSupplyLedger(foundation);
+  const settlements: ModelSupplyResult[] = [];
+  const ledger: ModelSupplyLedgerPort = {
+    checkpointAttempt: (input) => durableLedger.checkpointAttempt(input),
+    async settleAttempt(input) {
+      settlements.push(structuredClone(input.result));
+      await durableLedger.settleAttempt(input);
+    },
+  };
   const responses = [
     { normalized: '提高上限后继续' },
     { normalized: '提高上限后继续', taskType: 'copy' },
@@ -259,6 +268,13 @@ test('a raised attempt limit resumes durable schema repair without repeating the
     ExecutionAttemptBudgetExceeded,
   );
   assert.equal(providerCalls, 1);
+  assert.deepEqual(settlements[0]?.providerCost, {
+    id: settlements[0]?.providerCost.id,
+    status: 'observed',
+    amount: 0.000034,
+    currency: 'USD',
+    usage: { inputTokens: 8, outputTokens: 13 },
+  });
 
   await assert.rejects(
     withExecutionAttemptBudget(
@@ -298,6 +314,20 @@ test('a raised attempt limit resumes durable schema repair without repeating the
   assert.equal(resumed.replayed, false);
   assert.deepEqual(replayed.output, resumed.output);
   assert.equal(providerCalls, 2);
+  assert.deepEqual(
+    settlements.map((result) => result.providerCost.usage),
+    [
+      { inputTokens: 8, outputTokens: 13 },
+      { inputTokens: 8, outputTokens: 13 },
+    ],
+  );
+  assert.deepEqual(
+    settlements[1]?.providerCosts.map((cost) => cost.usage),
+    [
+      { inputTokens: 8, outputTokens: 13 },
+      { inputTokens: 8, outputTokens: 13 },
+    ],
+  );
 });
 
 test('a raised attempt limit resumes a durable zero-attempt suspension with one provider effect', async () => {
@@ -347,6 +377,47 @@ test('a raised attempt limit resumes a durable zero-attempt suspension with one 
   assert.deepEqual(resumed.output, { normalized: '零次暂停后继续' });
   assert.deepEqual(replayed.output, resumed.output);
   assert.equal(executor.calls, 1);
+});
+
+test('a durable zero-attempt suspension rejects cold-restart prompt drift before provider execution', async () => {
+  const repository = new MemoryFoundationRepository();
+  repository.grantOwner('workspace-1', 'user-1');
+  const foundation = new P1ApplicationService(repository);
+  const ledger = new FoundationModelSupplyLedger(foundation);
+  const executor = new CountingStructuredExecutor({
+    normalized: 'must stay fenced',
+  });
+  const request = {
+    effectIdempotencyKey: 'wf:workflow-zero-budget-drift:s1:intent:0',
+    schemaName: 'intent_naming_v1',
+    schemaRevision: 'intent-naming-v1',
+    instructions: 'Return the normalized intent.',
+    prompt: '{"intent":"原始请求"}',
+    schema: z.object({ normalized: z.string() }).strict(),
+  };
+
+  await assert.rejects(
+    withExecutionAttemptBudget(
+      createRunner(ledger, executor, false),
+      new ExecutionAttemptBudget({
+        maxAttempts: 0,
+        consumedAttempts: 0,
+      }),
+    ).run(request),
+    ExecutionAttemptBudgetExceeded,
+  );
+  await assert.rejects(
+    withExecutionAttemptBudget(
+      createRunner(ledger, executor, false),
+      new ExecutionAttemptBudget({
+        maxAttempts: 1,
+        consumedAttempts: 0,
+      }),
+    ).run({ ...request, prompt: '{"intent":"漂移请求"}' }),
+    /Recovered attempt-budget request fingerprint does not match/u,
+  );
+
+  assert.equal(executor.calls, 0);
 });
 
 test('durable schema repair rejects a malformed recovered continuation before provider execution', async () => {
@@ -421,6 +492,193 @@ test('durable schema repair rejects a malformed recovered continuation before pr
   assert.equal(providerCalls, 1);
 });
 
+test('a durable budget suspension records observed cost without persisting sensitive invalid output', async () => {
+  const repository = new MemoryFoundationRepository();
+  repository.grantOwner('workspace-1', 'user-1');
+  const foundation = new P1ApplicationService(repository);
+  const durableLedger = new FoundationModelSupplyLedger(foundation);
+  let settled: ModelSupplyResult | undefined;
+  const ledger: ModelSupplyLedgerPort = {
+    checkpointAttempt: (input) => durableLedger.checkpointAttempt(input),
+    async settleAttempt(input) {
+      settled = structuredClone(input.result);
+      await durableLedger.settleAttempt(input);
+    },
+  };
+  let providerCalls = 0;
+  const executor = new AiSdkStructuredObjectExecutor({
+    apiKey: 'test-key',
+    baseUrl: 'https://provider.example/v1',
+    catalogModelId: 'llm-harness',
+    fetch: (async () => {
+      providerCalls += 1;
+      return openAiStructuredResponse('chatcmpl-sensitive-invalid-output', {
+        normalized: '联系电话 13800138000',
+      });
+    }) as typeof fetch,
+    inputCostPerMillion: 1,
+    model: 'provider-model',
+    outputCostPerMillion: 2,
+  });
+  const request = {
+    effectIdempotencyKey: 'wf:workflow-sensitive-suspension:s1:intent:0',
+    schemaName: 'intent_naming_v1',
+    schemaRevision: 'intent-naming-v1',
+    instructions: 'Return the normalized intent.',
+    prompt: '{"intent":"验证安全 continuation"}',
+    schema: z
+      .object({ normalized: z.string(), taskType: z.string() })
+      .strict(),
+  };
+
+  await assert.rejects(
+    withExecutionAttemptBudget(
+      createRunner(ledger, executor, false),
+      new ExecutionAttemptBudget({
+        maxAttempts: 1,
+        consumedAttempts: 0,
+      }),
+    ).run(request),
+    ExecutionAttemptBudgetExceeded,
+  );
+
+  assert.equal(providerCalls, 1);
+  assert.equal(JSON.stringify(settled).includes('13800138000'), false);
+  assert.equal(JSON.stringify(settled).includes('invalidText'), false);
+  assert.deepEqual(settled?.providerCost, {
+    id: settled?.providerCost.id,
+    status: 'observed',
+    amount: 0.000034,
+    currency: 'USD',
+    usage: { inputTokens: 8, outputTokens: 13 },
+  });
+  const persisted = await foundation.getGenerationJob(
+    {
+      workspaceId: 'workspace-1',
+      userId: 'user-1',
+      correlationId: request.effectIdempotencyKey,
+    },
+    settled!.jobId,
+  );
+  assert.equal(JSON.stringify(persisted.result).includes('13800138000'), false);
+});
+
+test('durable schema repair rejects cold-restart structured request drift before provider execution', async () => {
+  const driftCases = [
+    {
+      name: 'prompt',
+      mutate: (request: DurableStructuredRequest) => ({
+        ...request,
+        prompt: '{"intent":"漂移后的 prompt"}',
+      }),
+    },
+    {
+      name: 'instructions',
+      mutate: (request: DurableStructuredRequest) => ({
+        ...request,
+        instructions: 'Return a different object.',
+      }),
+    },
+    {
+      name: 'schemaName',
+      mutate: (request: DurableStructuredRequest) => ({
+        ...request,
+        schemaName: 'different_intent_naming_v1',
+      }),
+    },
+    {
+      name: 'schemaRevision',
+      mutate: (request: DurableStructuredRequest) => ({
+        ...request,
+        schemaRevision: 'intent-naming-v2',
+      }),
+    },
+    {
+      name: 'schema',
+      mutate: (request: DurableStructuredRequest) => ({
+        ...request,
+        schema: z
+          .object({
+            normalized: z.string(),
+            taskType: z.string(),
+            extraField: z.string().optional(),
+          })
+          .strict(),
+      }),
+    },
+    {
+      name: 'streaming',
+      mutate: (request: DurableStructuredRequest) => ({
+        ...request,
+        onPartialOutput: () => undefined,
+      }),
+    },
+  ];
+
+  for (const driftCase of driftCases) {
+    const fixture = createDurableStructuredSuspension(
+      `wf:workflow-request-drift-${driftCase.name}:s1:intent:0`,
+    );
+    await assert.rejects(
+      withExecutionAttemptBudget(
+        fixture.runner(),
+        new ExecutionAttemptBudget({
+          maxAttempts: 1,
+          consumedAttempts: 0,
+        }),
+      ).run(fixture.request),
+      ExecutionAttemptBudgetExceeded,
+    );
+    assert.equal(fixture.providerCalls(), 1);
+
+    await assert.rejects(
+      withExecutionAttemptBudget(
+        fixture.runner(),
+        new ExecutionAttemptBudget({
+          maxAttempts: 2,
+          consumedAttempts: 1,
+        }),
+      ).run(driftCase.mutate(fixture.request)),
+      /Recovered structured execution request fingerprint does not match/u,
+    );
+    assert.equal(
+      fixture.providerCalls(),
+      1,
+      `${driftCase.name} drift must not reach the provider`,
+    );
+  }
+});
+
+test('an exhausted resumed continuation is fenced before an executor that ignores callbacks', async () => {
+  const fixture = createDurableStructuredSuspension(
+    'wf:workflow-ignoring-executor:s1:intent:0',
+  );
+  await assert.rejects(
+    withExecutionAttemptBudget(
+      fixture.runner(),
+      new ExecutionAttemptBudget({
+        maxAttempts: 1,
+        consumedAttempts: 0,
+      }),
+    ).run(fixture.request),
+    ExecutionAttemptBudgetExceeded,
+  );
+  const ignoringExecutor = new IgnoringFenceStructuredExecutor();
+
+  await assert.rejects(
+    withExecutionAttemptBudget(
+      createRunner(fixture.ledger, ignoringExecutor, false),
+      new ExecutionAttemptBudget({
+        maxAttempts: 1,
+        consumedAttempts: 1,
+      }),
+    ).run(fixture.request),
+    ExecutionAttemptBudgetExceeded,
+  );
+
+  assert.equal(ignoringExecutor.calls, 0);
+});
+
 test('a raised attempt limit resumes durable route fallback at the next model without repeating the rejected model', async () => {
   const repository = new MemoryFoundationRepository();
   repository.grantOwner('workspace-1', 'user-1');
@@ -469,6 +727,121 @@ test('a raised attempt limit resumes durable route fallback at the next model wi
     'llm-primary',
     'llm-fallback',
   ]);
+});
+
+test('a durable route-fallback suspension rejects cold-restart prompt drift before the fallback model', async () => {
+  const repository = new MemoryFoundationRepository();
+  repository.grantOwner('workspace-1', 'user-1');
+  const foundation = new P1ApplicationService(repository);
+  const ledger = new FoundationModelSupplyLedger(foundation);
+  const executor = new RouteTrackingFallbackStructuredExecutor();
+  const request = {
+    effectIdempotencyKey: 'wf:workflow-budget-route-drift:s3:brief:0',
+    schemaName: 'copy_brief_v1',
+    schemaRevision: 'copy-brief-v1',
+    instructions: 'Return a Copy Brief.',
+    prompt: '{"intent":"原始请求"}',
+    schema: z.object({ normalized: z.string() }).strict(),
+  };
+
+  await assert.rejects(
+    withExecutionAttemptBudget(
+      createAutoRunner(ledger, executor, false),
+      new ExecutionAttemptBudget({
+        maxAttempts: 1,
+        consumedAttempts: 0,
+      }),
+    ).run(request),
+    ExecutionAttemptBudgetExceeded,
+  );
+  await assert.rejects(
+    withExecutionAttemptBudget(
+      createAutoRunner(ledger, executor, false),
+      new ExecutionAttemptBudget({
+        maxAttempts: 2,
+        consumedAttempts: 1,
+      }),
+    ).run({ ...request, prompt: '{"intent":"漂移请求"}' }),
+    /Recovered attempt-budget request fingerprint does not match/u,
+  );
+
+  assert.deepEqual(executor.invokedCatalogModels, ['llm-primary']);
+});
+
+test('a raised durable schema repair failure appends only repair-attempt cost', async () => {
+  const repository = new MemoryFoundationRepository();
+  repository.grantOwner('workspace-1', 'user-1');
+  const foundation = new P1ApplicationService(repository);
+  const durableLedger = new FoundationModelSupplyLedger(foundation);
+  const settlements: ModelSupplyResult[] = [];
+  const ledger: ModelSupplyLedgerPort = {
+    checkpointAttempt: (input) => durableLedger.checkpointAttempt(input),
+    async settleAttempt(input) {
+      settlements.push(structuredClone(input.result));
+      await durableLedger.settleAttempt(input);
+    },
+  };
+  let providerCalls = 0;
+  const executor = new AiSdkStructuredObjectExecutor({
+    apiKey: 'test-key',
+    baseUrl: 'https://provider.example/v1',
+    catalogModelId: 'llm-harness',
+    fetch: (async () => {
+      providerCalls += 1;
+      return openAiStructuredResponse(
+        `chatcmpl-durable-repair-failure-${providerCalls}`,
+        { normalized: 'still missing taskType' },
+      );
+    }) as typeof fetch,
+    inputCostPerMillion: 1,
+    model: 'provider-model',
+    outputCostPerMillion: 2,
+  });
+  const request = {
+    effectIdempotencyKey: 'wf:workflow-durable-repair-failure:s1:intent:0',
+    schemaName: 'intent_naming_v1',
+    schemaRevision: 'intent-naming-v1',
+    instructions: 'Return the normalized intent.',
+    prompt: '{"intent":"验证 repair failure cost"}',
+    schema: z
+      .object({ normalized: z.string(), taskType: z.string() })
+      .strict(),
+  };
+
+  await assert.rejects(
+    withExecutionAttemptBudget(
+      createRunner(ledger, executor, false),
+      new ExecutionAttemptBudget({
+        maxAttempts: 1,
+        consumedAttempts: 0,
+      }),
+    ).run(request),
+    ExecutionAttemptBudgetExceeded,
+  );
+  await assert.rejects(
+    withExecutionAttemptBudget(
+      createRunner(ledger, executor, false),
+      new ExecutionAttemptBudget({
+        maxAttempts: 2,
+        consumedAttempts: 1,
+      }),
+    ).run(request),
+    (error: unknown) => {
+      assert.ok(error instanceof StructuredNodeRunError);
+      assert.equal(error.attempts, 2);
+      assert.equal(error.measurement?.providerAttempts, 2);
+      return true;
+    },
+  );
+
+  assert.equal(providerCalls, 2);
+  assert.deepEqual(
+    settlements[1]?.providerCosts.map((cost) => cost.usage),
+    [
+      { inputTokens: 8, outputTokens: 13 },
+      { inputTokens: 8, outputTokens: 13 },
+    ],
+  );
 });
 
 test('D-035 counts a call when both the first pass and bounded repair fail', async () => {
@@ -1024,6 +1397,70 @@ class RouteTrackingFallbackStructuredExecutor
     return {
       output: input.schema.parse({ normalized: 'fallback output' }),
       providerTaskRef: 'provider-structured-fallback',
+      usage: { inputTokens: 8, outputTokens: 13 },
+    };
+  }
+
+  providerCost(usage: { inputTokens: number; outputTokens: number }) {
+    return { amount: 0.000034, currency: 'CNY' as const, usage };
+  }
+}
+
+type DurableStructuredRequest = Parameters<StructuredNodeRunner['run']>[0];
+
+function createDurableStructuredSuspension(effectIdempotencyKey: string) {
+  const repository = new MemoryFoundationRepository();
+  repository.grantOwner('workspace-1', 'user-1');
+  const foundation = new P1ApplicationService(repository);
+  const ledger = new FoundationModelSupplyLedger(foundation);
+  let calls = 0;
+  const executor = new AiSdkStructuredObjectExecutor({
+    apiKey: 'test-key',
+    baseUrl: 'https://provider.example/v1',
+    catalogModelId: 'llm-harness',
+    fetch: (async () => {
+      calls += 1;
+      return openAiStructuredResponse(`chatcmpl-durable-${calls}`, {
+        normalized: 'missing taskType',
+      });
+    }) as typeof fetch,
+    inputCostPerMillion: 1,
+    model: 'provider-model',
+    outputCostPerMillion: 2,
+  });
+  const request: DurableStructuredRequest = {
+    effectIdempotencyKey,
+    schemaName: 'intent_naming_v1',
+    schemaRevision: 'intent-naming-v1',
+    instructions: 'Return the normalized intent.',
+    prompt: '{"intent":"验证 durable request"}',
+    schema: z
+      .object({ normalized: z.string(), taskType: z.string() })
+      .strict(),
+  };
+  return {
+    ledger,
+    providerCalls: () => calls,
+    request,
+    runner: () => createRunner(ledger, executor, false),
+  };
+}
+
+class IgnoringFenceStructuredExecutor implements StructuredObjectExecutor {
+  calls = 0;
+
+  supportsCatalogModel() {
+    return true;
+  }
+
+  async generate<Output>(input: { schema: z.ZodType<Output> }) {
+    this.calls += 1;
+    return {
+      output: input.schema.parse({
+        normalized: 'must stay fenced',
+        taskType: 'copy',
+      }),
+      providerTaskRef: 'provider-ignoring-fence',
       usage: { inputTokens: 8, outputTokens: 13 },
     };
   }

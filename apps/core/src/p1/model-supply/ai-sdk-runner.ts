@@ -25,6 +25,7 @@ import { z, type ZodType } from 'zod';
 import type { StructuredObjectExecutor } from './index.js';
 import {
   ExecutionAttemptBudgetExceeded,
+  structuredExecutionRequestFingerprint,
   structuredExecutionContinuationSchema,
   type StructuredExecutionContinuation,
 } from './execution-attempt-budget.js';
@@ -253,9 +254,14 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     schema: ZodType<StructuredOutput>;
     schemaName: string;
     structuredContinuation?: StructuredExecutionContinuation;
+    structuredRequestFingerprint?: string;
   }) {
     if (input.structuredContinuation?.kind === 'schema_repair') {
-      return this.repairStructured(input, input.structuredContinuation);
+      return this.repairStructured(input, {
+        continuation: input.structuredContinuation,
+        invalidText: '',
+        resumed: true,
+      });
     }
     if (input.onPartialOutput) {
       try {
@@ -289,7 +295,7 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
         };
       } catch (error) {
         if (!NoObjectGeneratedError.isInstance(error)) throw error;
-        return this.repairStructured(input, structuredRepairSeed(error));
+        return this.repairStructured(input, structuredRepairSeed(error, input));
       }
     }
     try {
@@ -297,7 +303,7 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
       return structuredAttemptResult(input.schema, result);
     } catch (error) {
       if (!NoObjectGeneratedError.isInstance(error)) throw error;
-      return this.repairStructured(input, structuredRepairSeed(error));
+      return this.repairStructured(input, structuredRepairSeed(error, input));
     }
   }
 
@@ -310,7 +316,7 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
       schema: ZodType<StructuredOutput>;
       schemaName: string;
     },
-    continuation: StructuredExecutionContinuation,
+    seed: StructuredRepairSeed,
   ) {
     try {
       await input.beforeProviderAttempt?.();
@@ -320,7 +326,8 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
           error.maxAttempts,
           error.consumedAttempts,
           error.completedAttemptsInRun,
-          continuation,
+          seed.continuation,
+          error.observedProviderCost,
         );
       }
       throw error;
@@ -332,17 +339,17 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
         instructions:
           `${input.instructions}\n\n` +
           'The previous response failed schema validation. Return one corrected object that matches the schema exactly.',
-        prompt: structuredRepairPrompt(input.prompt, continuation.invalidText),
+        prompt: structuredRepairPrompt(input.prompt, seed.invalidText),
       });
     } catch (repairError) {
       if (!NoObjectGeneratedError.isInstance(repairError)) throw repairError;
       throw new StructuredObjectGenerationError(
         {
           inputTokens:
-            continuation.usage.inputTokens +
+            seed.continuation.usage.inputTokens +
             (repairError.usage?.inputTokens ?? 0),
           outputTokens:
-            continuation.usage.outputTokens +
+            seed.continuation.usage.outputTokens +
             (repairError.usage?.outputTokens ?? 0),
         },
         {
@@ -351,7 +358,17 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
           repairReasons: ['schema_validation'],
           providerAttempts: 2,
         },
-        { cause: repairError },
+        {
+          cause: repairError,
+          ...(seed.resumed
+            ? {
+                providerUsage: {
+                  inputTokens: repairError.usage?.inputTokens ?? 0,
+                  outputTokens: repairError.usage?.outputTokens ?? 0,
+                },
+              }
+            : {}),
+        },
       );
     }
     const result = structuredAttemptResult(input.schema, repaired);
@@ -359,10 +376,11 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
       ...result,
       usage: {
         inputTokens:
-          continuation.usage.inputTokens + result.usage.inputTokens,
+          seed.continuation.usage.inputTokens + result.usage.inputTokens,
         outputTokens:
-          continuation.usage.outputTokens + result.usage.outputTokens,
+          seed.continuation.usage.outputTokens + result.usage.outputTokens,
       },
+      ...(seed.resumed ? { providerUsage: result.usage } : {}),
       measurement: {
         firstPassSchemaValid: false,
         repairCount: 1,
@@ -528,15 +546,48 @@ function structuredRepairPrompt(prompt: string, invalidText: string) {
 
 function structuredRepairSeed(
   error: NoObjectGeneratedError,
-): StructuredExecutionContinuation {
-  return structuredExecutionContinuationSchema.parse({
-    kind: 'schema_repair',
+  input: {
+    instructions: string;
+    onPartialOutput?: (partial: unknown) => Promise<void> | void;
+    prompt: string;
+    schema: ZodType;
+    schemaName: string;
+    structuredRequestFingerprint?: string;
+  },
+): StructuredRepairSeed {
+  return {
+    continuation: structuredExecutionContinuationSchema.parse({
+      kind: 'schema_repair',
+      requestFingerprint:
+        input.structuredRequestFingerprint ??
+        structuredExecutionRequestFingerprint({
+          actorId: '',
+          dataClass: [],
+          instructions: input.instructions,
+          operation: 'text.respond',
+          prompt: input.prompt,
+          schema: z.toJSONSchema(input.schema),
+          schemaName: input.schemaName,
+          schemaRevision: '',
+          selection: null,
+          streaming: Boolean(input.onPartialOutput),
+          workspaceId: '',
+        }),
+      usage: {
+        inputTokens: error.usage?.inputTokens ?? 0,
+        outputTokens: error.usage?.outputTokens ?? 0,
+      },
+    }),
+    // Ephemeral only: this provider response is never copied into ModelSupplyResult.
     invalidText: (error.text ?? '').slice(0, 8_000),
-    usage: {
-      inputTokens: error.usage?.inputTokens ?? 0,
-      outputTokens: error.usage?.outputTokens ?? 0,
-    },
-  });
+    resumed: false,
+  };
+}
+
+interface StructuredRepairSeed {
+  continuation: StructuredExecutionContinuation;
+  invalidText: string;
+  resumed: boolean;
 }
 
 export class FixtureAiStreamingRunner implements AiStreamingRunner {

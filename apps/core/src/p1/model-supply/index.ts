@@ -5,7 +5,7 @@ import type {
   HealthOverlayPort,
   VideoCompositionEvidence,
 } from '@meiye/contracts';
-import type { ZodType } from 'zod';
+import { toJSONSchema, type ZodType } from 'zod';
 import { recordedH264Video } from './recorded-media-adapters.js';
 import type { AiStreamingRunner } from './ai-sdk-runner.js';
 import type {
@@ -15,6 +15,8 @@ import type {
 import {
   ExecutionAttemptBudgetExceeded,
   parseRecoveredStructuredExecutionContinuation,
+  parseRecoveredStructuredExecutionRequestFingerprint,
+  structuredExecutionRequestFingerprint,
   type StructuredExecutionContinuation,
 } from './execution-attempt-budget.js';
 import {
@@ -1530,6 +1532,20 @@ export class ModelSupplyApplicationService {
     if (submission.operation !== 'text.respond') {
       throw new Error('Structured node execution requires text.respond.');
     }
+    const structuredRequestFingerprint =
+      structuredExecutionRequestFingerprint({
+        actorId: submission.actorId,
+        dataClass: submission.dataClass,
+        instructions: input.instructions,
+        operation: submission.operation,
+        prompt: input.prompt,
+        schema: toJSONSchema(input.schema),
+        schemaName: input.schemaName,
+        schemaRevision: submission.promptRevision ?? '',
+        selection: submission.selection,
+        streaming: Boolean(input.onPartialOutput),
+        workspaceId: submission.workspaceId,
+      });
     return this.executeSubmission(submission, {
       execute: async (request) => {
         if (
@@ -1564,6 +1580,7 @@ export class ModelSupplyApplicationService {
         try {
           const generated = await executor.generate({
             ...input,
+            structuredRequestFingerprint,
             ...(request.structuredContinuation
               ? {
                   structuredContinuation:
@@ -1578,11 +1595,22 @@ export class ModelSupplyApplicationService {
             ...(generated.measurement
               ? { structuredMeasurement: generated.measurement }
               : {}),
-            providerCost: executor.providerCost(generated.usage),
+            structuredCumulativeUsage: generated.usage,
+            providerCost: executor.providerCost(
+              generated.providerUsage ?? generated.usage,
+            ),
           };
         } catch (error) {
           if (error instanceof ExecutionAttemptBudgetExceeded) {
-            throw error;
+            throw new ExecutionAttemptBudgetExceeded(
+              error.maxAttempts,
+              error.consumedAttempts,
+              error.completedAttemptsInRun,
+              error.structuredContinuation,
+              error.structuredContinuation
+                ? executor.providerCost(error.structuredContinuation.usage)
+                : error.observedProviderCost,
+            );
           }
           if (error instanceof StructuredObjectGenerationError) {
             return {
@@ -1592,7 +1620,10 @@ export class ModelSupplyApplicationService {
               retryable: false,
               message: error.message,
               structuredMeasurement: error.measurement,
-              providerCost: executor.providerCost(error.usage),
+              structuredCumulativeUsage: error.usage,
+              providerCost: executor.providerCost(
+                error.providerUsage ?? error.usage,
+              ),
             };
           }
           return {
@@ -1610,6 +1641,8 @@ export class ModelSupplyApplicationService {
           };
         }
       },
+    }, {
+      structuredRequestFingerprint,
     });
   }
 
@@ -2342,6 +2375,7 @@ export class ModelSupplyApplicationService {
       deferResultPersistence?: boolean;
       effectIdempotencyKey?: string;
       reconcileProviderReceipt?: boolean;
+      structuredRequestFingerprint?: string;
     } = {},
   ): Promise<ModelSupplyResult> {
     const submission = await withServerDerivedReferenceDataClass(
@@ -2541,14 +2575,53 @@ export class ModelSupplyApplicationService {
           : undefined;
       if (
         recoveredBudgetSuspension &&
+        options.structuredRequestFingerprint !== undefined
+      ) {
+        try {
+          const recoveredRequestFingerprint =
+            parseRecoveredStructuredExecutionRequestFingerprint(
+              recoveredBudgetSuspension.attemptBudgetRequestFingerprint,
+            );
+          if (
+            recoveredRequestFingerprint !==
+            options.structuredRequestFingerprint
+          ) {
+            throw new TypeError(
+              recoveredBudgetSuspension.structuredContinuation !== undefined
+                ? 'Recovered structured execution request fingerprint does not match.'
+                : 'Recovered attempt-budget request fingerprint does not match.',
+            );
+          }
+        } catch (error) {
+          if (admission?.status === 'admitted') {
+            await this.providerAdmission?.release(admission.leaseId);
+          }
+          throw error;
+        }
+      }
+      if (
+        recoveredBudgetSuspension &&
         recoveredBudgetSuspension.attempt.id === attemptId
       ) {
+        providerCostChain.splice(
+          0,
+          providerCostChain.length,
+          ...structuredClone(recoveredBudgetSuspension.providerCosts),
+        );
         if (recoveredBudgetSuspension.structuredContinuation !== undefined) {
           try {
             structuredContinuation =
               parseRecoveredStructuredExecutionContinuation(
                 recoveredBudgetSuspension.structuredContinuation,
               );
+            if (
+              structuredContinuation.requestFingerprint !==
+              options.structuredRequestFingerprint
+            ) {
+              throw new TypeError(
+                'Recovered structured execution request fingerprint does not match.',
+              );
+            }
           } catch (error) {
             if (admission?.status === 'admitted') {
               await this.providerAdmission?.release(admission.leaseId);
@@ -2832,12 +2905,18 @@ export class ModelSupplyApplicationService {
             createdAt: now(),
           };
           const providerCost: ProviderCost = {
-            id: `provider-cost-${hash(`${attemptId}:budget-suspended`).slice(0, 24)}`,
-            status: 'estimated',
-            amount: 0,
-            currency:
-              candidate.deployment.region === 'domestic' ? 'CNY' : 'USD',
-            usage: {},
+            id: `provider-cost-${hash(
+              `${attemptId}:budget-suspended:${
+                error.observedProviderCost ? 'observed' : 'estimated'
+              }`,
+            ).slice(0, 24)}`,
+            status: error.observedProviderCost ? 'observed' : 'estimated',
+            ...(error.observedProviderCost ?? {
+              amount: 0,
+              currency:
+                candidate.deployment.region === 'domestic' ? 'CNY' : 'USD',
+              usage: {},
+            }),
           };
           await this.ledger?.settleAttempt({
             submission: attemptSubmission,
@@ -2860,6 +2939,18 @@ export class ModelSupplyApplicationService {
               },
               providerCost,
               providerCosts: [...providerCostChain, providerCost],
+              ...(options.structuredRequestFingerprint
+                ? {
+                    attemptBudgetRequestFingerprint:
+                      options.structuredRequestFingerprint,
+                  }
+                : {}),
+              ...(error.structuredContinuation
+                ? {
+                    structuredCumulativeUsage:
+                      error.structuredContinuation.usage,
+                  }
+                : {}),
               ...(error.structuredContinuation
                 ? {
                     structuredContinuation:
@@ -2954,7 +3045,8 @@ export class ModelSupplyApplicationService {
         status:
           response.kind === 'completed'
             ? 'completed'
-            : response.errorCode === 'EMPTY_TEXT_DELIVERABLE'
+            : response.errorCode === 'EMPTY_TEXT_DELIVERABLE' ||
+                response.errorCode === 'STRUCTURED_SCHEMA_REPAIR_FAILED'
               ? 'failed'
             : response.acceptance === 'rejected_before_accept'
               ? 'failed'
@@ -2971,7 +3063,8 @@ export class ModelSupplyApplicationService {
         status:
           response.kind === 'completed'
             ? 'committed'
-            : response.errorCode === 'EMPTY_TEXT_DELIVERABLE'
+            : response.errorCode === 'EMPTY_TEXT_DELIVERABLE' ||
+                response.errorCode === 'STRUCTURED_SCHEMA_REPAIR_FAILED'
               ? 'refunded'
               // Td-2: a partial copy-provider interrupt (acceptance_unknown
               // after partial output) refunds the reservation; other modalities
@@ -2989,11 +3082,14 @@ export class ModelSupplyApplicationService {
                 : 'refunded',
         quantity: productUsageQuantity,
       };
+      const providerCostObserved =
+        response.kind === 'completed' ||
+        response.errorCode === 'STRUCTURED_SCHEMA_REPAIR_FAILED';
       const providerCost: ProviderCost = {
         id: `provider-cost-${hash(
-          `${attemptId}:${response.kind === 'completed' ? 'observed' : 'estimated'}`
+          `${attemptId}:${providerCostObserved ? 'observed' : 'estimated'}`
         ).slice(0, 24)}`,
-        status: response.kind === 'completed' ? 'observed' : 'estimated',
+        status: providerCostObserved ? 'observed' : 'estimated',
         ...response.providerCost,
       };
       providerCostChain.push(providerCost);
@@ -3010,6 +3106,12 @@ export class ModelSupplyApplicationService {
           ...(response.errorCode ? { failureCode: response.errorCode } : {}),
           ...(response.structuredMeasurement
             ? { structuredMeasurement: response.structuredMeasurement }
+            : {}),
+          ...(response.structuredCumulativeUsage
+            ? {
+                structuredCumulativeUsage:
+                  response.structuredCumulativeUsage,
+              }
             : {}),
 			...(response.retryable === true ? { retryable: true } : {}),
           snapshot,
@@ -3082,6 +3184,12 @@ export class ModelSupplyApplicationService {
           : {}),
         ...(response.structuredMeasurement
           ? { structuredMeasurement: response.structuredMeasurement }
+          : {}),
+        ...(response.structuredCumulativeUsage
+          ? {
+              structuredCumulativeUsage:
+                response.structuredCumulativeUsage,
+            }
           : {}),
         usage,
         providerCost,
