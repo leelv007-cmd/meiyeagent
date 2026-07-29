@@ -84,6 +84,7 @@ import {
   type ExecutionCostFeedback,
 } from './execution-cost-feedback';
 import { ExecutionCostFeedbackLine } from './execution-cost-feedback-line';
+import { emitDeliveryRatingEvent } from './delivery-rating-event';
 import {
   DashboardHomeGreeting,
   DashboardHomeSurface,
@@ -2519,7 +2520,32 @@ export function ComposerHome({
               selection={identitySelection}
             />
           }
+          deliveryAspectRatio={submissionAspectRatio ?? undefined}
+          deliveryLensId={lensState.lensId ?? undefined}
+          onDeliveryFollowUp={(seed) => {
+            // D-164⑤: a chip prefills, never submits. The merchant reads the
+            // sentence in her own box and decides — the same contract the
+            // recommendation card's CTA already keeps.
+            setLensState((current) => updateUserText(current, seed.intent));
+            focusComposerIntentInput();
+          }}
           onOpenDelivery={openDelivery}
+          onRateDelivery={({ action, revision }) => {
+            if (action === 'copy') {
+              void navigator.clipboard?.writeText(
+                session.deliveryStatement ?? ''
+              );
+              return;
+            }
+            // 三轴的值来自 Task 快照 (#262)，main 上还取不到。这里如实传
+            // undefined —— 适配层会拒发并留一条 drop 事件，那是负向证据；
+            // 补一个空串才是把「没有信号」伪装成「有信号」。
+            emitDeliveryRatingEvent({
+              axes: undefined,
+              delivery: revision,
+              verdict: action,
+            });
+          }}
           onRecover={recoverFromReport}
           questionSlot={
             pendingQuestion ? (

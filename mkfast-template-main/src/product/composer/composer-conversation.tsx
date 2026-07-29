@@ -13,6 +13,10 @@
  * authority.
  */
 
+import type {
+  ContentPackageRevisionDelivery,
+  CreationLensId,
+} from '@meiye/contracts';
 import { domAnimation, LazyMotion } from 'motion/react';
 import * as m from 'motion/react-m';
 import type { CSSProperties } from 'react';
@@ -40,6 +44,8 @@ import {
   ComposerDeliveryCard,
   type ComposerDeliveryOpenInput,
 } from './composer-delivery-card';
+import type { DeliveryRatingAction } from './composer-delivery-rating-bar';
+import type { DeliveryFollowUpSeed } from './delivery-followup-seeds';
 import { ComposerProgressCard } from './composer-progress-card';
 import {
   ComposerReportCard,
@@ -205,6 +211,18 @@ export type ComposerConversationProps = {
   questionSlot?: React.ReactNode;
   /** Opens the Result Center for a finished run — the only navigation. */
   onOpenDelivery: (input: ComposerDeliveryOpenInput) => void;
+  /**
+   * D-164⑤ 评价条与后续动作 chip 的出口。两者都跟着出口渲染 —— 不传就不出，
+   * 一个点了没有去处的按钮比没有按钮更糟。
+   */
+  onRateDelivery?: (input: {
+    action: DeliveryRatingAction;
+    revision: ContentPackageRevisionDelivery;
+  }) => void;
+  onDeliveryFollowUp?: (seed: DeliveryFollowUpSeed) => void;
+  /** 交付物自己的创作类型与画幅 — chip 集合按它取，横版上不再问要不要横版。 */
+  deliveryLensId?: CreationLensId;
+  deliveryAspectRatio?: string;
   /** 失败/partial 申报卡 recovery entry (W03). */
   onRecover?: (input: ComposerRecoveryInput) => void;
 };
@@ -250,6 +268,10 @@ export function ComposerConversation({
   identitySlot,
   questionSlot,
   onOpenDelivery,
+  onRateDelivery,
+  onDeliveryFollowUp,
+  deliveryLensId,
+  deliveryAspectRatio,
   onRecover,
 }: ComposerConversationProps) {
   const turnCount = session.turns.length;
@@ -297,13 +319,22 @@ export function ComposerConversation({
       case 'delivery':
         return (
           <ComposerDeliveryCard
+            aspectRatio={deliveryAspectRatio}
             excerpt={
               stream.primary
                 ? { body: stream.primary.body, title: stream.primary.title }
                 : undefined
             }
             key={turn.id}
+            lensId={deliveryLensId}
+            onFollowUp={onDeliveryFollowUp}
             onOpen={onOpenDelivery}
+            onRate={
+              onRateDelivery && turn.revision
+                ? (action) =>
+                    onRateDelivery({ action, revision: turn.revision! })
+                : undefined
+            }
             revision={turn.revision}
             statement={session.deliveryStatement}
             taskId={turn.taskId}
