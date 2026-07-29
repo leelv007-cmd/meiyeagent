@@ -84,14 +84,14 @@ test('L2 technical dependencies and evidence drilldowns are present', () => {
 });
 
 test('seven-page regroup maps every drilldown under a capability domain', () => {
-  assert.equal(ADMIN_DRILLDOWN_PAGES.length, 7);
+  assert.equal(ADMIN_DRILLDOWN_PAGES.length, 8);
   assert.deepEqual(
     ADMIN_DRILLDOWN_PAGE_IDS.slice().sort(),
     ADMIN_DRILLDOWN_PAGES.map((p) => p.pageId).sort()
   );
 
   const reachability = listDrilldownReachability();
-  assert.equal(reachability.length, 7);
+  assert.equal(reachability.length, 8);
 
   const expectedPaths = [
     '/admin/users',
@@ -172,7 +172,7 @@ test('D-048: ops path ban list + redacted handoff is not one-click repair', () =
   assert.ok(!('secret' in handoff.redactedContext));
 });
 
-test('getDrilldownPage resolves all seven page ids', () => {
+test('getDrilldownPage resolves all eight page ids', () => {
   for (const pageId of ADMIN_DRILLDOWN_PAGE_IDS) {
     const page = getDrilldownPage(pageId);
     assert.ok(page, pageId);
