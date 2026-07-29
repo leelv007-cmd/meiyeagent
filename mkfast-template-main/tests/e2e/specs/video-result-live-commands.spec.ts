@@ -326,6 +326,9 @@ test.describe('video Result canonical live commands', () => {
     const selectResponse = await selectResponsePromise;
     expect(selectResponse.ok(), await selectResponse.text()).toBeTruthy();
     await page.reload();
+    await expect(page.getByTestId('video-worksurface')).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(
       page.getByTestId('video-shot-candidate').nth(candidatePosition)
     ).toHaveAttribute('aria-pressed', 'true');
@@ -343,6 +346,9 @@ test.describe('video Result canonical live commands', () => {
     const reorderResponse = await reorderResponsePromise;
     expect(reorderResponse.ok(), await reorderResponse.text()).toBeTruthy();
     await page.reload();
+    await expect(page.getByTestId('video-worksurface')).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page.getByTestId('video-shot').first()).not.toHaveText(
       firstShotBefore
     );
