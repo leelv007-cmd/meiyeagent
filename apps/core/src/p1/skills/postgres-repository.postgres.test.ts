@@ -92,7 +92,7 @@ test(
         contentHash: createHash('sha256')
           .update('Use the declared fact scope.')
           .digest('hex'),
-        fallbackContent: 'Use the declared fact scope.',
+        content: 'Use the declared fact scope.',
         isFallback: false,
         label: 'production',
         name: 'skills/postgres',
@@ -395,7 +395,7 @@ test(
         contentHash: createHash('sha256')
           .update(v2Fallback)
           .digest('hex'),
-        fallbackContent: v2Fallback,
+        content: v2Fallback,
         isFallback: false,
         label: 'production',
         name: 'skills/v2',
@@ -436,8 +436,8 @@ test(
       assert.deepEqual(legacy?.governance.workflowRevisionRefs, [
         'workflow.legacy@1',
       ]);
-      assert.equal(legacy?.prompt.fallbackContent, legacyContent);
-      assert.equal(Object.hasOwn(legacy?.prompt ?? {}, 'content'), false);
+      assert.equal(legacy?.prompt.content, legacyContent);
+      assert.equal(Object.hasOwn(legacy?.prompt ?? {}, 'fallbackContent'), false);
       const transitional = await repository.getRevision(
         transitionalRevisionRef,
       );
@@ -448,7 +448,7 @@ test(
       );
       assert.deepEqual(transitional?.manifest, transitionalPayload.manifest);
       assert.equal(
-        transitional?.prompt.fallbackContent,
+        transitional?.prompt.content,
         legacyContent,
       );
       assert.ok(transitional);
@@ -661,7 +661,7 @@ test(
       assert.deepEqual(migrated?.governance.workflowRevisionRefs, [
         'workflow.authentic-v1@1',
       ]);
-      assert.equal(migrated?.prompt.fallbackContent, promptContent);
+      assert.equal(migrated?.prompt.content, promptContent);
     } finally {
       await pool.end();
       await adminPool.query(`DROP SCHEMA "${schema}" CASCADE`);
@@ -798,7 +798,7 @@ test(
         },
         prompt: {
           contentHash: 'b'.repeat(64),
-          fallbackContent: 'Validate output before any side effect.',
+          content: 'Validate output before any side effect.',
           isFallback: false,
           label: 'production',
           name: 'skills/invalid-output',

@@ -65,7 +65,7 @@ export interface SkillPromptReference {
 }
 
 export interface SkillPromptSnapshot extends SkillPromptReference {
-  readonly fallbackContent: string;
+  readonly content: string;
   label: string;
   source: 'langfuse' | 'builtin';
   isFallback: boolean;

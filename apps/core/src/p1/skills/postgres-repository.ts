@@ -60,7 +60,7 @@ const revisionPayloadV2Schema = z
 const persistedPromptSchema = z
   .object({
     contentHash: z.string().trim().min(1),
-    fallbackContent: z.string(),
+    content: z.string(),
     isFallback: z.boolean(),
     label: z.string().trim().min(1),
     name: z.string().trim().min(1),
@@ -354,7 +354,7 @@ export class PostgresSkillRepository implements SkillRepository {
           revision.prompt.source,
           revision.prompt.isFallback,
           revision.prompt.fallbackReason ?? null,
-          revision.prompt.fallbackContent,
+          revision.prompt.content,
           JSON.stringify(revisionPayloadV2(revision)),
           revision.createdAt,
         ],
@@ -764,7 +764,7 @@ function revisionPayloadV1(revision: SkillRevision) {
   return {
     ...payload,
     prompt: {
-      content: prompt.fallbackContent,
+      content: prompt.content,
       contentHash: prompt.contentHash,
       isFallback: prompt.isFallback,
       label: prompt.label,
@@ -810,7 +810,7 @@ function cloneRevisionRow(row: RevisionRow): SkillRevision {
         governance,
         prompt: persistedPromptSchema.parse({
           contentHash: row.prompt_content_hash,
-          fallbackContent: row.prompt_fallback_content,
+          content: row.prompt_fallback_content,
           isFallback: row.prompt_is_fallback,
           label: row.prompt_label,
           name: row.prompt_name,
@@ -861,7 +861,7 @@ function normalizeLegacyRevision(
       (legacyManifest as unknown as LegacySkillRevisionManifest),
     prompt: {
       contentHash: legacy.prompt.contentHash,
-      fallbackContent: promptContent,
+      content: promptContent,
       isFallback: legacy.prompt.isFallback,
       label: legacy.prompt.label,
       name: legacy.prompt.name,

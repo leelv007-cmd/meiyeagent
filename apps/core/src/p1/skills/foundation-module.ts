@@ -96,10 +96,12 @@ function onlyKeys(
 function publicRevision(revision: SkillRevision) {
   const { instruction: _instruction, ...publicFields } = revision;
   const {
-    fallbackContent: _fallbackContent,
-    content: _legacyContent,
+    content: _content,
+    fallbackContent: _legacyFallbackContent,
     ...prompt
-  } = revision.prompt as SkillRevision['prompt'] & { content?: string };
+  } = revision.prompt as SkillRevision['prompt'] & {
+    fallbackContent?: string;
+  };
   return revision.formatVersion === 1
     ? { ...publicFields, prompt }
     : { ...publicFields, instruction: revision.instruction, prompt };

@@ -1870,7 +1870,7 @@ function smokeSkillRevision(
     },
     prompt: {
       contentHash: `prompt-hash-${revision}`,
-      fallbackContent: instruction,
+      content: instruction,
       isFallback: false,
       label: 'production',
       name: 'skills/f21-smoke',

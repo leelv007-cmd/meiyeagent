@@ -212,7 +212,7 @@ export class SkillService {
     }
     return {
       ...normalized,
-      fallbackContent: captured.content,
+      content: captured.content,
       label: captured.label,
       source: captured.source,
       isFallback: captured.isFallback,
@@ -917,11 +917,11 @@ export class SkillService {
         return captured;
       }
     }
-    if (sha256(revision.prompt.fallbackContent) !== revision.prompt.contentHash) {
+    if (sha256(revision.prompt.content) !== revision.prompt.contentHash) {
       fail('Frozen Skill prompt fallback does not match its pinned hash.');
     }
     return {
-      content: revision.prompt.fallbackContent,
+      content: revision.prompt.content,
       contentHash: revision.prompt.contentHash,
       fallbackReason,
       isFallback: true as const,

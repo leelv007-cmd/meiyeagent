@@ -53,7 +53,7 @@ function revision(): SkillRevision {
     },
     prompt: {
       contentHash: createHash('sha256').update(INSTRUCTION).digest('hex'),
-      fallbackContent: INSTRUCTION,
+      content: INSTRUCTION,
       isFallback: false,
       label: 'production',
       name: PROMPT_NAME,

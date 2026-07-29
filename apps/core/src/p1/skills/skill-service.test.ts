@@ -1557,7 +1557,11 @@ test('skill_define separates frontmatter, governance, and trusted prompt fallbac
     ...governance(),
     allowedTools: ['read_context', 'check'],
   });
-  assert.equal(stored?.prompt.fallbackContent, promptContent);
+  assert.equal(stored?.prompt.content, promptContent);
+  assert.equal(
+    Object.hasOwn(stored?.prompt ?? {}, 'fallbackContent'),
+    false,
+  );
 });
 
 test('skill revision rejects divergent frontmatter and sidecar tool permissions', async () => {
@@ -1812,7 +1816,7 @@ test('frozen prompt fallback fails closed when its content no longer matches the
       packagePaths: ['SKILL.md'],
       prompt: {
         contentHash: sha256('Expected frozen prompt content.'),
-        fallbackContent: 'Drifted frozen prompt content.',
+        content: 'Drifted frozen prompt content.',
         isFallback: false,
         label: 'production',
         name: 'harness/intent-naming',
@@ -1854,7 +1858,7 @@ test('prompt materialization replays receipts written before prompt lineage ente
     packagePaths: ['SKILL.md'],
     prompt: {
       contentHash: sha256(promptContent),
-      fallbackContent: promptContent,
+      content: promptContent,
       isFallback: false,
       label: 'production',
       name: 'harness/intent-naming',
