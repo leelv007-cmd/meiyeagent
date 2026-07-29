@@ -164,6 +164,7 @@ export default defineConfig({
           `DATABASE_URL='${databaseURL}'`,
           `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE='${databaseURL}'`,
           'PARAGLIDE_PRECOMPILED=true',
+          "NODE_OPTIONS='--import=./scripts/e2e/contain-disconnected-socket.mjs'",
           `node scripts/e2e/run-service.mjs pnpm exec vite dev --port ${port} --mode e2e`,
         ].join(' '),
       ].join(' && '),

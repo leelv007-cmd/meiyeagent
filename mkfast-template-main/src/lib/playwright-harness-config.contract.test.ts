@@ -43,6 +43,54 @@ test('Playwright provisions an isolated DBOS database and enables the real Harne
   );
   assert.equal(config.match(/scripts\/e2e\/run-service\.mjs/gu)?.length, 5);
   assert.equal(config.match(/gracefulShutdown:/gu)?.length, 5);
+  assert.match(
+    config,
+    /NODE_OPTIONS='--import=\.\/scripts\/e2e\/contain-disconnected-socket\.mjs'/u,
+    'the E2E Web process must contain benign client disconnects without changing production runtime'
+  );
+});
+
+test('E2E Web socket guard contains only disconnected reads', async () => {
+  const guard = resolve(
+    process.cwd(),
+    'scripts/e2e/contain-disconnected-socket.mjs'
+  );
+  const runFixture = (code: string) =>
+    new Promise<{ code: number | null; stderr: string }>((resolveExit) => {
+      const fixture = spawn(process.execPath, ['--import', guard, '-e', code], {
+        stdio: ['ignore', 'ignore', 'pipe'],
+      });
+      let stderr = '';
+      fixture.stderr.setEncoding('utf8');
+      fixture.stderr.on('data', (chunk) => {
+        stderr += chunk;
+      });
+      fixture.once('exit', (exitCode) => {
+        resolveExit({ code: exitCode, stderr });
+      });
+    });
+  const emitError = (error: string) =>
+    [
+      "const { EventEmitter } = require('node:events');",
+      'setTimeout(() => process.exit(0), 20);',
+      `new EventEmitter().emit('error', ${error});`,
+    ].join('');
+
+  const disconnected = await runFixture(
+    emitError(
+      "Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET', syscall: 'read' })"
+    )
+  );
+  assert.equal(disconnected.code, 0);
+  assert.match(disconnected.stderr, /contained disconnected Web socket/u);
+
+  const programmingError = await runFixture(
+    emitError(
+      "Object.assign(new Error('broken invariant'), { code: 'EINVAL' })"
+    )
+  );
+  assert.notEqual(programmingError.code, 0);
+  assert.match(programmingError.stderr, /broken invariant/u);
 });
 
 test('Playwright service wrapper terminates the complete child process group', async () => {
