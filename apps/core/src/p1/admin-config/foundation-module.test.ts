@@ -9,6 +9,7 @@ import { P1ApplicationService } from '../foundation/application-service.js';
 import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
 import type { PermissionAuthorizerPort } from '../capability-permission/port.js';
 import { createDefaultDeployments } from '../model-supply/catalog.js';
+import { BOUNDED_EXECUTION_LIMITS_CONFIG_KEY } from './bounded-execution-limits.js';
 import {
   AdminConfigFoundationModule,
   DUE_DELIVERY_RETENTION_DAYS_CONFIG_KEY,
@@ -129,6 +130,7 @@ describe('Admin config application seam', () => {
         'compliance.watermark.default',
         'douyin.adapter.assembly',
         DUE_DELIVERY_RETENTION_DAYS_CONFIG_KEY,
+        BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
         HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
         HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
         NOTE_STYLE_CONFIG_KEY,
