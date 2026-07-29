@@ -94,7 +94,6 @@ export default defineConfig({
         'FEISHU_MCP_MODE=recorded',
         'INTEGRATION_SECRET_STORE_MODE=recorded',
         `INTEGRATION_SECRET_STORE_KEY=${integrationSecretStoreKey}`,
-        'LANGFUSE_PROMPT_POLICY=pilot',
         'MODEL_EXECUTION_MODE=fixture',
         // The e2e stack boots without Langfuse credentials; strict (the
         // default) refuses to start, so pin the audited builtin-fallback mode.
@@ -136,7 +135,6 @@ export default defineConfig({
         'FEISHU_MCP_MODE=recorded',
         'INTEGRATION_SECRET_STORE_MODE=recorded',
         `INTEGRATION_SECRET_STORE_KEY=${integrationSecretStoreKey}`,
-        'LANGFUSE_PROMPT_POLICY=pilot',
         'MODEL_EXECUTION_MODE=fixture',
         'LANGFUSE_PROMPT_POLICY=pilot',
         // Keep the worker on the same E2E-only 10,000 ms first-copy-chunk hold.
