@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: Recorded fact-satisfaction semantics through the production seam
+
+prompts:
+  - '{{caseId}}'
+
+providers:
+  - id: file://apps/core/src/evals/fact-satisfaction/promptfoo-provider.ts
+    label: recorded-fact-satisfaction-production-seam
+
+tests:
+  - file://apps/core/src/evals/fact-satisfaction/cases.ts
+
+evaluateOptions:
+  maxConcurrency: 1

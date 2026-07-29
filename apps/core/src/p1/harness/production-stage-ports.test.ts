@@ -296,6 +296,10 @@ test('production Recipe fact satisfaction gates the facts visible to the Copy Br
     action: 'execute',
     factRefs: ['store_fact:service-1:1'],
   });
+  assert.equal(
+    runner.requests[0]?.instructions,
+    'frozen production fact satisfaction',
+  );
   const prompt = JSON.parse(runner.requests[1]?.prompt ?? '{}');
   assert.deepEqual(
     Object.keys(prompt.bundle.dimensions.store_facts_assets),
@@ -2314,6 +2318,18 @@ function factContribution(
       effectiveFrom: '2026-07-18T00:00:00.000Z',
       expiresAt: null,
     },
+  };
+}
+
+function frozenPrompt(name: string, content: string) {
+  return {
+    name: `harness/${name}`,
+    version: 'test-1',
+    content,
+    contentHash: `hash-${name}`,
+    label: 'test',
+    source: 'builtin' as const,
+    isFallback: false,
   };
 }
 

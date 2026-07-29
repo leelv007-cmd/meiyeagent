@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: Control proving exact fact-satisfaction semantics reject a valid wrong outcome
+
+prompts:
+  - '{{caseId}}'
+
+providers:
+  - id: file://apps/core/src/evals/fact-satisfaction/promptfoo-provider.ts
+    label: recorded-fact-satisfaction-production-seam
+
+tests:
+  - file://apps/core/src/evals/fact-satisfaction/assertion-control-case.ts
+
+evaluateOptions:
+  maxConcurrency: 1

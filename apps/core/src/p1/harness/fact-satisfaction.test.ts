@@ -150,6 +150,34 @@ test('partial optional facts continue with an explicit result notice', async () 
   assertNoStoreFactKindLiteral(result.resultNotice);
 });
 
+test('frozen fact prompts reach both production model calls', async () => {
+  const runner = new QueueRunner([
+    {
+      status: 'partial',
+      matchedFactRefs: ['store_fact:fact-service:1'],
+      missingFactTypes: ['price'],
+    },
+    { criticality: 'critical' },
+  ]);
+
+  await assessRecipeFactSatisfaction(
+    {
+      ...request(['service', 'price']),
+      prompts: {
+        factSatisfaction: { content: 'frozen satisfaction instructions' },
+        factCriticality: { content: 'frozen criticality instructions' },
+      },
+    },
+    runner,
+    authorizedRights,
+  );
+
+  assert.deepEqual(
+    runner.requests.map(({ instructions }) => instructions),
+    ['frozen satisfaction instructions', 'frozen criticality instructions'],
+  );
+});
+
 function assertNoStoreFactKindLiteral(value: string) {
   for (const kind of STORE_FACT_KINDS) {
     assert.equal(value.includes(kind), false, `must not expose ${kind}`);
@@ -275,33 +303,37 @@ test('fact satisfaction never treats a non-current_fact contribution as a fact',
   assert.deepEqual(JSON.parse(runner.requests[0]!.prompt).facts, []);
 });
 
-test('fixed fact satisfaction goldens keep outcomes and model facts aligned', async () => {
-  for (const golden of FACT_SATISFACTION_GOLDENS) {
-    const runner = new QueueRunner([...golden.outputs]);
+test('recorded post-processing fixtures keep outcomes and model facts aligned', async () => {
+  for (const fixture of FACT_SATISFACTION_POST_PROCESSING_FIXTURES) {
+    const runner = new QueueRunner([...fixture.outputs]);
     const result = await assessRecipeFactSatisfaction(
-      golden.input,
+      fixture.input,
       runner,
-      golden.rights,
+      fixture.rights,
     );
     const satisfactionRequest = runner.requests.find(
       (request) => request.schemaName === 'harness_fact_satisfaction_v1',
     );
 
-    assert.ok(satisfactionRequest, golden.name);
+    assert.ok(satisfactionRequest, fixture.name);
     assert.deepEqual(
       JSON.parse(satisfactionRequest.prompt).facts,
-      golden.expectedFacts,
-      golden.name,
+      fixture.expectedFacts,
+      fixture.name,
     );
-    assert.equal(result.status, golden.expected.status, golden.name);
-    assert.equal(result.action, golden.expected.action, golden.name);
-    assert.deepEqual(result.factRefs, golden.expected.factRefs, golden.name);
+    assert.equal(result.status, fixture.expected.status, fixture.name);
+    assert.equal(result.action, fixture.expected.action, fixture.name);
+    assert.deepEqual(result.factRefs, fixture.expected.factRefs, fixture.name);
     assert.deepEqual(
       'missingFactTypes' in result ? result.missingFactTypes : [],
-      golden.expected.missingFactTypes,
-      golden.name,
+      fixture.expected.missingFactTypes,
+      fixture.name,
     );
-    assert.equal(runner.requests.length, golden.expected.requestCount, golden.name);
+    assert.equal(
+      runner.requests.length,
+      fixture.expected.requestCount,
+      fixture.name,
+    );
   }
 });
 
@@ -337,7 +369,7 @@ const unauthorizedRights: FactRightsAuthorizationPort = {
   },
 };
 
-const FACT_SATISFACTION_GOLDENS = [
+const FACT_SATISFACTION_POST_PROCESSING_FIXTURES = [
   {
     name: 'satisfied current service and price facts',
     input: {

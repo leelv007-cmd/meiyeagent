@@ -22,6 +22,7 @@
     "eval:redlines": "node --import tsx --test --test-concurrency=1 src/evals/redlines/parity.test.ts src/evals/redlines/promptfoo-provider.test.ts src/evals/redlines/redline-artifact.test.ts src/evals/skills/skill-eval.test.ts",
     "eval:redlines:artifact": "node --import tsx src/evals/redlines/write-recorded-artifact.ts",
     "eval:preference-memory": "node --import tsx --test --test-concurrency=1 src/evals/preference-memory/beauty-preference-memory.test.ts",
+    "eval:fact-satisfaction": "node --import tsx --test --test-concurrency=1 src/p1/harness/fact-satisfaction.test.ts src/evals/fact-satisfaction/promptfoo-provider.test.ts",
     "eval:preference-memory:artifact": "node --import tsx src/evals/preference-memory/write-recorded-artifact.ts",
     "eval:import": "node --import tsx src/p1/harness/langfuse-evalrun-importer-cli.ts",
     "langfuse:prompts:push": "node --import tsx src/p1/harness/langfuse-prompt-push-cli.ts",
