@@ -42,10 +42,167 @@ const ADMIN_ROUTES = [
   ['/admin/cloudflare', 'Cloudflare 资源'],
 ] as const;
 
+const ELIGIBLE_SKILL_PROMPT = {
+  contentHash:
+    '18766ea9d01f41c3f0127bd960e1e29aa34da1fa0e5a7f915e941eff811b7838',
+  eligibleForAcceptance: true,
+  isFallback: false,
+  label: 'production',
+  name: 'harness/intent-naming',
+  source: 'langfuse',
+  version: '42',
+} as const;
+
+interface CapturedSkillRequest {
+  action: string;
+  payload: Record<string, unknown>;
+}
+
 async function setTheme(page: Page, theme: 'light' | 'dark') {
   await page.evaluate((next) => {
     document.documentElement.classList.toggle('dark', next === 'dark');
   }, theme);
+}
+
+async function submitSkillAction(
+  page: Page,
+  action:
+    | 'skill_define'
+    | 'skill_accept'
+    | 'skill_bind'
+    | 'skill_rollback'
+    | 'skill_deployment',
+  values: Record<string, string>
+) {
+  await page.locator('#skills-action').selectOption(action);
+  for (const [key, value] of Object.entries(values)) {
+    const field = page.locator(`#skills-field-${key}`);
+    await expect(field, `${action}.${key}`).toBeVisible();
+    if ((await field.evaluate((node) => node.tagName)) === 'SELECT') {
+      await field.selectOption(value);
+    } else {
+      await field.fill(value);
+    }
+  }
+  const submit = page.getByRole('button', { name: '提交受控命令' });
+  await expect(submit).toBeEnabled({ timeout: 30_000 });
+  const responsePromise = page.waitForResponse((response) => {
+    if (
+      response.request().method() !== 'POST' ||
+      !response.url().includes('/api/core/p1/commands')
+    ) {
+      return false;
+    }
+    const body = response.request().postDataJSON() as
+      | { action?: string; module?: string }
+      | undefined;
+    return body?.module === 'skills' && body.action === action;
+  });
+  await submit.click();
+  const response = await responsePromise;
+  const body = (await response.json()) as {
+    error?: { code?: string; message?: string };
+  };
+  await expect(
+    page.getByTestId('skills-operation-result').or(page.getByRole('alert'))
+  ).toBeVisible({ timeout: 30_000 });
+  return {
+    accepted: response.ok(),
+    action,
+    errorCode: body.error?.code ?? null,
+    errorMessage: body.error?.message ?? null,
+    status: response.status(),
+  };
+}
+
+async function installSkillDispatchMocks(page: Page) {
+  const commands: CapturedSkillRequest[] = [];
+  const queries: CapturedSkillRequest[] = [];
+
+  await page.route('**/api/core/p1/query', async (route) => {
+    const request = route.request();
+    const body = request.postDataJSON() as
+      | {
+          action?: string;
+          module?: string;
+          payload?: Record<string, unknown>;
+        }
+      | undefined;
+    if (body?.module !== 'skills' || !body.action) {
+      await route.continue();
+      return;
+    }
+    queries.push({
+      action: body.action,
+      payload: body.payload ?? {},
+    });
+    if (body.action === 'skill_prompt_reference') {
+      await route.fulfill({
+        contentType: 'application/json',
+        status: 200,
+        body: JSON.stringify({ data: ELIGIBLE_SKILL_PROMPT }),
+      });
+      return;
+    }
+    if (body.action === 'skill_catalog_list') {
+      await route.fulfill({
+        contentType: 'application/json',
+        status: 200,
+        body: JSON.stringify({
+          data: {
+            items: [],
+            stats: {
+              industryTierCorroborated: 0,
+              industryTierTotal: 0,
+              total: 0,
+            },
+          },
+        }),
+      });
+      return;
+    }
+    await route.fulfill({
+      contentType: 'application/json',
+      status: 400,
+      body: JSON.stringify({
+        error: {
+          code: 'UNEXPECTED_SKILL_QUERY',
+          message: `Unexpected Skill query: ${body.action}`,
+        },
+      }),
+    });
+  });
+
+  await page.route('**/api/core/p1/commands', async (route) => {
+    const request = route.request();
+    const body = request.postDataJSON() as
+      | {
+          action?: string;
+          module?: string;
+          payload?: Record<string, unknown>;
+        }
+      | undefined;
+    if (body?.module !== 'skills' || !body.action) {
+      await route.continue();
+      return;
+    }
+    commands.push({
+      action: body.action,
+      payload: body.payload ?? {},
+    });
+    await route.fulfill({
+      contentType: 'application/json',
+      status: 200,
+      body: JSON.stringify({
+        data: {
+          accepted: true,
+          action: body.action,
+        },
+      }),
+    });
+  });
+
+  return { commands, queries };
 }
 
 test('every admin page renders the template-dashboard shell in both themes', async ({
@@ -104,100 +261,139 @@ test('every admin page renders the template-dashboard shell in both themes', asy
   }
 });
 
-test('admin Skill editor uses the reference-only v2 contract and rejects inline prompt content', async ({
+test('admin Skill catalog dispatches the five structured lifecycle commands', async ({
   page,
   request,
 }) => {
+  test.setTimeout(120_000);
   const admin = await registerE2EUser(request, { role: 'admin' });
-  let skillCommandRequests = 0;
-  page.on('request', (outgoing) => {
-    if (
-      outgoing.method() === 'POST' &&
-      outgoing.url().includes('/api/core/p1/commands') &&
-      outgoing.postData()?.includes('"module":"skills"')
-    ) {
-      skillCommandRequests += 1;
-    }
-  });
+  const commandOutcomes: Array<{
+    accepted: boolean;
+    action: string;
+    errorCode: string | null;
+    errorMessage: string | null;
+    status: number;
+  }> = [];
   try {
     await loginByForm(page, admin);
+    const dispatch = await installSkillDispatchMocks(page);
     await page.goto('/admin/skills');
-    const payloadEditor = page.locator('#skills-payload');
-    await expect(payloadEditor).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('heading', { name: 'Skill 目录' })).toBeVisible(
+      {
+        timeout: 30_000,
+      }
+    );
+    await expect(page.locator('#skills-payload')).toHaveCount(0);
+    await expect(page.locator('[data-ops-control="raw-json"]')).toHaveCount(0);
+    await expect(
+      page.getByTestId('capability-drilldown-banner')
+    ).toHaveAttribute('data-page-id', 'skills');
 
-    const payload = JSON.parse(await payloadEditor.inputValue()) as {
-      frontmatter?: unknown;
-      governance?: unknown;
-      packagePaths?: unknown;
-      promptReference?: Record<string, unknown>;
-    };
-    expect(payload.frontmatter).toBeTruthy();
-    expect(payload.governance).toBeTruthy();
-    expect(payload.packagePaths).toEqual(['SKILL.md']);
-    expect(payload.promptReference).toMatchObject({
-      name: 'harness/intent-naming',
-    });
-    expect(payload.promptReference).not.toHaveProperty('content');
+    const suffix = Date.now().toString();
+    const skillId = `skill.browser-${suffix}`;
+    const packageName = `browser-${suffix}`;
+    const skillRevisionRef = `${skillId}@1`;
+    const workflowRevisionRef = 'workflow.copy@1';
+    const bindingId = `binding-browser-${suffix}`;
 
-    await page.locator('#skills-action').selectOption('skill_bind');
-    const bindingPayload = JSON.parse(await payloadEditor.inputValue()) as {
-      triggerCondition?: unknown;
-    };
-    expect(bindingPayload.triggerCondition).toEqual({
-      harnessStage: 'intent_naming',
-      industryCategory: null,
-      tenantId: null,
-    });
-    await page.locator('#skills-action').selectOption('skill_define');
-    const definePayload = JSON.parse(await payloadEditor.inputValue()) as {
-      promptReference?: Record<string, unknown>;
-      skillId?: string;
-    };
-    expect(definePayload.promptReference).toMatchObject({
-      contentHash: /^[a-f0-9]{64}$/u,
-      name: 'harness/intent-naming',
-      version: 'builtin-v1',
-    });
-    await payloadEditor.fill(
-      JSON.stringify({
-        ...definePayload,
-        promptReference: {
-          contentHash: '<sha256>',
-          name: 'harness/intent-naming',
-          version: '<pinned-version>',
-        },
+    commandOutcomes.push(
+      await submitSkillAction(page, 'skill_define', {
+        description: '第一版结构化浏览器验收做法。',
+        expectedRevision: '',
+        instruction: '只使用已确认的门店事实。',
+        name: `浏览器验收 ${suffix}`,
+        packageName,
+        presentationPolicy: 'explainable',
+        skillId,
+        sourceKind: 'authored',
+        tier: 'platform',
       })
     );
-    await page.getByRole('button', { name: '提交受控命令' }).click();
-    await expect(page.getByRole('alert')).toContainText('固定引用');
-    expect(skillCommandRequests).toBe(0);
-
-    const successfulPayload = {
-      ...definePayload,
-      skillId: `skill.browser-reference-${Date.now()}`,
-    };
-    await payloadEditor.fill(JSON.stringify(successfulPayload));
-    await page.getByRole('button', { name: '提交受控命令' }).click();
-    await expect(page.locator('pre')).toContainText(successfulPayload.skillId, {
-      timeout: 30_000,
-    });
-    expect(skillCommandRequests).toBe(1);
-
-    await payloadEditor.fill(
-      JSON.stringify({
-        ...successfulPayload,
-        promptReference: {
-          ...successfulPayload.promptReference,
-          content: 'caller-controlled prompt',
-        },
+    commandOutcomes.push(
+      await submitSkillAction(page, 'skill_accept', {
+        evalRunId: `eval-browser-${suffix}`,
+        skillRevisionRef,
       })
     );
-    await page.getByRole('button', { name: '提交受控命令' }).click();
-
-    await expect(page.getByRole('alert')).toContainText(
-      'Skill 命令不能包含 content'
+    commandOutcomes.push(
+      await submitSkillAction(page, 'skill_bind', {
+        bindingId,
+        harnessStage: 'intent_naming',
+        mode: 'required',
+        skillRevisionRef,
+        workflowRevisionRef,
+      })
     );
-    expect(skillCommandRequests).toBe(1);
+    commandOutcomes.push(
+      await submitSkillAction(page, 'skill_rollback', {
+        bindingId: `binding-browser-${suffix}-rollback`,
+        sourceBindingId: bindingId,
+        targetSkillRevisionRef: skillRevisionRef,
+        workflowRevisionRef,
+      })
+    );
+    commandOutcomes.push(
+      await submitSkillAction(page, 'skill_deployment', {
+        channel: 'prompt-materialization',
+        deploymentId: `deployment-browser-${suffix}`,
+        nativeSkillId: `native-browser-${suffix}`,
+        nativeVersion: '2',
+        provider: 'core-harness',
+        skillRevisionRef,
+      })
+    );
+
+    const promptQuery = dispatch.queries.find(
+      (query) => query.action === 'skill_prompt_reference'
+    );
+    expect(promptQuery?.payload).toEqual({ slot: 'intentNaming' });
+
+    const definition = dispatch.commands.find(
+      (command) => command.action === 'skill_define'
+    );
+    expect(definition?.payload.promptReference).toEqual({
+      contentHash: ELIGIBLE_SKILL_PROMPT.contentHash,
+      name: ELIGIBLE_SKILL_PROMPT.name,
+      version: ELIGIBLE_SKILL_PROMPT.version,
+    });
+
+    const acceptance = dispatch.commands.find(
+      (command) => command.action === 'skill_accept'
+    );
+    expect(acceptance?.payload).toEqual({
+      evalRunId: `eval-browser-${suffix}`,
+      skillRevisionRef,
+    });
+    expect(acceptance?.payload).not.toHaveProperty('evalRun');
+    expect(acceptance?.payload).not.toHaveProperty('passed');
+    expect(acceptance?.payload).not.toHaveProperty('results');
+    expect(acceptance?.payload).not.toHaveProperty('scorerRevision');
+
+    const commandActions = dispatch.commands.map((command) => command.action);
+    const queryActions = dispatch.queries.map((query) => query.action);
+    for (const action of [
+      'skill_define',
+      'skill_accept',
+      'skill_bind',
+      'skill_rollback',
+      'skill_deployment',
+    ]) {
+      expect(
+        commandActions.filter((candidate) => candidate === action).length
+      ).toBeGreaterThanOrEqual(1);
+    }
+    expect(queryActions).toContain('skill_catalog_list');
+    expect(queryActions).toContain('skill_prompt_reference');
+    expect(queryActions).not.toContain('skill_eval_run_fetch');
+    expect(
+      commandActions.some((action) => /export|download/u.test(action))
+    ).toBe(false);
+    expect(queryActions.some((action) => /export|download/u.test(action))).toBe(
+      false
+    );
+    await expect(page.locator('[download]')).toHaveCount(0);
+    expect(commandOutcomes).toHaveLength(5);
+    expect(commandOutcomes.every((outcome) => outcome.accepted)).toBe(true);
   } finally {
     await cleanupE2EUsers(request);
   }

@@ -2,7 +2,7 @@
  * Capability catalog two-level IA (J3 / D-051 · D-054 · D-048).
  *
  * L1 = operator-facing capability domains (no workspaceId / infra keys).
- * L2 = technical dependency + evidence drilldowns (existing seven admin routes).
+ * L2 = technical dependency + evidence drilldowns (existing eight admin routes).
  *
  * Pure projection only — shared wiring (routes/sidebar/locales/routeTree)
  * stays for Z2-WIRING batch B.
@@ -32,7 +32,7 @@ export const CAPABILITY_CATALOG_L1_ORDER = [
 export type CapabilityCatalogL1Id =
   (typeof CAPABILITY_CATALOG_L1_ORDER)[number];
 
-/** Stable ids for the seven existing admin drilldown routes. */
+/** Stable ids for the eight existing admin drilldown routes. */
 export const ADMIN_DRILLDOWN_PAGE_IDS = [
   'users',
   'plans',
@@ -103,7 +103,7 @@ export const DOMAIN_OPERATOR_COPY: Record<
 };
 
 /**
- * Seven-page regroup: existing admin routes as L2 evidence drilldowns
+ * Eight-page regroup: existing admin routes as L2 evidence drilldowns
  * under capability domains (D-048 / D-051). Health = audit page block.
  */
 export interface AdminDrilldownPage {
@@ -288,7 +288,7 @@ export interface CapabilityCatalogView {
   capturedAt: string;
   /** Ordered L1 sections. */
   domains: CapabilityCatalogL1Section[];
-  /** Flat seven-page registry for reachability checks. */
+  /** Flat eight-page registry for reachability checks. */
   drilldownPages: readonly AdminDrilldownPage[];
   /** Explicit: workspaceId is not an L1 IA key. */
   l1ExcludesWorkspaceId: true;
@@ -416,7 +416,7 @@ export function getDrilldownPageByPath(
   return ADMIN_DRILLDOWN_PAGES.find((page) => page.path === path);
 }
 
-/** Domain context for a seven-page drilldown route. */
+/** Domain context for an eight-page drilldown route. */
 export function getDrilldownDomainContext(pageId: AdminDrilldownPageId): {
   page: AdminDrilldownPage;
   domain: CapabilityDomainOperatorCopy;

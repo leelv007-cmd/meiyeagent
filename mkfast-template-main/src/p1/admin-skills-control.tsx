@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Table,
   TableBody,
@@ -48,13 +49,41 @@ export interface SkillCatalogRow {
   name: string;
   description: string;
   sourceKind: SourceKind;
+  sourceRef?: {
+    externalUrl?: string;
+    harvestedAt?: string;
+  } | null;
   tier: Tier;
   presentationPolicy: string;
   activeRevisionRef: string | null;
   updatedAt: string;
 }
 
-type FieldKind = 'text' | 'select';
+interface SkillCatalogPage {
+  items: SkillCatalogRow[];
+  stats: {
+    total: number;
+    industryTierTotal: number;
+    industryTierCorroborated: number;
+  };
+}
+
+interface CurrentSkillPromptReference {
+  contentHash: string;
+  eligibleForAcceptance: boolean;
+  isFallback: boolean;
+  label: string;
+  name: string;
+  reasonCode?: string;
+  source: 'langfuse' | 'builtin';
+  version: string;
+}
+
+interface SkillCommandAuthorities {
+  promptReference?: CurrentSkillPromptReference;
+}
+
+type FieldKind = 'text' | 'select' | 'textarea';
 
 interface FieldSpec {
   key: string;
@@ -75,7 +104,18 @@ const COMMAND_FORMS = {
     fields: [
       { key: 'skillId', label: 'Skill 标识', kind: 'text' },
       { key: 'name', label: '名称', kind: 'text' },
+      { key: 'packageName', label: '标准包名', kind: 'text' },
       { key: 'description', label: '一句话说明', kind: 'text' },
+      {
+        key: 'instruction',
+        label: '受控做法正文',
+        kind: 'textarea',
+      },
+      {
+        key: 'expectedRevision',
+        label: '当前版本号（首版留空）',
+        kind: 'text',
+      },
       {
         key: 'sourceKind',
         label: '来源',
@@ -93,8 +133,17 @@ const COMMAND_FORMS = {
         options: [
           { value: 'platform', label: '平台层' },
           { value: 'industry', label: '行业层' },
-          { value: 'store', label: '门店层' },
         ],
+      },
+      {
+        key: 'sourceExternalUrl',
+        label: '收割来源链接（仅收割转译）',
+        kind: 'text',
+      },
+      {
+        key: 'sourceHarvestedAt',
+        label: '收割时间（ISO 8601，仅收割转译）',
+        kind: 'text',
       },
       {
         key: 'presentationPolicy',
@@ -180,15 +229,80 @@ const ACTION_ORDER = [
   'skill_deployment',
 ] as const satisfies readonly SkillAction[];
 
+const ADMIN_SKILL_GOVERNANCE = {
+  budget: {
+    maxChildEffects: 0,
+    maxCostCents: 0,
+    timeoutMs: 10_000,
+  },
+  contextScopes: [],
+  executionMode: 'prompt_materialized',
+  fallback: 'fail_closed',
+  inputSchemaRef: 'skill-input.daily-industry@1',
+  outputSchemaRef: 'skill-output.intent-decision@1',
+  requiredModelCapabilities: ['structured_output'],
+  sideEffectClass: 'none',
+  workflowRevisionRefs: ['workflow.copy@1'],
+} as const;
+
 /**
  * Assembles the nested command payload from flat form values. Shapes the
  * caller should not have to know (trigger conditions, execution mode) are
  * derived here rather than typed by hand.
  */
-function buildPayload(
+export function buildSkillCommandPayload(
   action: SkillAction,
-  values: Record<string, string>
+  values: Record<string, string>,
+  authorities: SkillCommandAuthorities = {}
 ): Record<string, unknown> {
+  if (action === 'skill_define') {
+    const promptReference = authorities.promptReference;
+    if (!promptReference?.eligibleForAcceptance) {
+      throw new Error('当前 production prompt 引用尚未就绪。');
+    }
+    const expectedRevision = values.expectedRevision?.trim();
+    if (
+      expectedRevision &&
+      (!/^\d+$/u.test(expectedRevision) || Number(expectedRevision) < 1)
+    ) {
+      throw new Error('当前版本号必须是正整数；首版请留空。');
+    }
+    return {
+      description: values.description,
+      expectedRevision: expectedRevision ? Number(expectedRevision) : null,
+      frontmatter: {
+        description: values.description,
+        name: values.packageName,
+      },
+      governance: ADMIN_SKILL_GOVERNANCE,
+      instruction: values.instruction,
+      name: values.name,
+      packagePaths: ['SKILL.md'],
+      presentationPolicy: values.presentationPolicy,
+      promptReference: {
+        contentHash: promptReference.contentHash,
+        name: promptReference.name,
+        version: promptReference.version,
+      },
+      skillId: values.skillId,
+      sourceKind: values.sourceKind,
+      ...(values.sourceKind === 'harvested'
+        ? {
+            sourceRef: {
+              externalUrl: values.sourceExternalUrl,
+              harvestedAt: values.sourceHarvestedAt,
+            },
+          }
+        : {}),
+      tier: values.tier,
+    };
+  }
+  if (action === 'skill_accept') {
+    return {
+      evalRunId: values.evalRunId,
+      skillRevisionRef: values.skillRevisionRef,
+    };
+  }
   if (action === 'skill_bind') {
     return {
       bindingId: values.bindingId,
@@ -219,6 +333,7 @@ export function AdminSkillsControl() {
   const [action, setAction] = useState<SkillAction>('skill_define');
   const [values, setValues] = useState<Record<string, string>>({});
   const [tierFilter, setTierFilter] = useState('');
+  const [historySkillId, setHistorySkillId] = useState('');
   const [result, setResult] = useState<unknown>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -228,7 +343,7 @@ export function AdminSkillsControl() {
       tier: tierFilter,
     }),
     queryFn: ({ signal }) =>
-      queryP1<SkillCatalogRow[]>(
+      queryP1<SkillCatalogPage>(
         'skills',
         {
           action: 'skill_catalog_list',
@@ -237,14 +352,53 @@ export function AdminSkillsControl() {
         signal
       ),
   });
-
+  const historyQuery = useQuery({
+    enabled: Boolean(historySkillId),
+    queryKey: p1QueryKeys.request('skills', 'skill_revision_history', {
+      skillId: historySkillId,
+    }),
+    queryFn: ({ signal }) =>
+      queryP1<
+        Array<{
+          skillRevisionRef: string;
+          status: string;
+          createdAt: string;
+        }>
+      >(
+        'skills',
+        {
+          action: 'skill_revision_history',
+          payload: { skillId: historySkillId },
+        },
+        signal
+      ),
+  });
+  const promptReferenceQuery = useQuery({
+    queryKey: p1QueryKeys.request('skills', 'skill_prompt_reference', {
+      slot: 'intentNaming',
+    }),
+    queryFn: ({ signal }) =>
+      queryP1<CurrentSkillPromptReference>(
+        'skills',
+        {
+          action: 'skill_prompt_reference',
+          payload: { slot: 'intentNaming' },
+        },
+        signal
+      ),
+  });
   const form = COMMAND_FORMS[action];
+  const authorityUnavailable =
+    !promptReferenceQuery.data?.eligibleForAcceptance;
 
   const submit = async () => {
     setBusy(true);
     setError('');
+    setResult(null);
     try {
-      const payload = buildPayload(action, values);
+      const payload = buildSkillCommandPayload(action, values, {
+        promptReference: promptReferenceQuery.data,
+      });
       assertReferenceOnlySkillPayload(payload);
       setResult(
         redactSkillCommandResult(
@@ -267,15 +421,16 @@ export function AdminSkillsControl() {
     }
   };
 
-  const rows = catalogQuery.data ?? [];
-  const industry = rows.filter((row) => row.tier === 'industry');
-  const corroborated = industry.filter((row) => row.sourceKind === 'induced');
+  const rows = catalogQuery.data?.items ?? [];
+  const stats = catalogQuery.data?.stats;
 
   return (
     <div className="space-y-6" data-testid="admin-skills-control">
       <AdminPanel>
         <AdminPanelHeader>
-          <AdminPanelTitle>Skill 目录</AdminPanelTitle>
+          <h2 className="widget__title" data-slot="widget-title">
+            Skill 目录
+          </h2>
           <AdminPanelDescription>
             平台层、行业层与门店层的场景配方与行业话术。「来源」列区分收割转译、手写与归纳。
           </AdminPanelDescription>
@@ -294,14 +449,16 @@ export function AdminSkillsControl() {
                 <option value="">全部</option>
                 <option value="platform">平台层</option>
                 <option value="industry">行业层</option>
-                <option value="store">门店层</option>
               </select>
             </div>
-            {industry.length ? (
+            {stats?.industryTierTotal ? (
               <p className="pb-2 text-sm text-muted-foreground">
                 行业层第二来源交叉验证占比：
-                {Math.round((corroborated.length / industry.length) * 100)}%（
-                {corroborated.length}/{industry.length}）
+                {Math.round(
+                  (stats.industryTierCorroborated / stats.industryTierTotal) *
+                    100
+                )}
+                %（{stats.industryTierCorroborated}/{stats.industryTierTotal}）
               </p>
             ) : null}
           </div>
@@ -325,6 +482,7 @@ export function AdminSkillsControl() {
                   <TableHead>层级</TableHead>
                   <TableHead>当前版本</TableHead>
                   <TableHead>更新时间</TableHead>
+                  <TableHead>版本记录</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -338,6 +496,16 @@ export function AdminSkillsControl() {
                       <AdminStatusChip variant="secondary">
                         {SOURCE_LABELS[row.sourceKind] ?? row.sourceKind}
                       </AdminStatusChip>
+                      {row.sourceRef?.externalUrl ? (
+                        <a
+                          className="ml-2 text-xs underline"
+                          href={row.sourceRef.externalUrl}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          查看出处
+                        </a>
+                      ) : null}
                     </TableCell>
                     <TableCell>{TIER_LABELS[row.tier] ?? row.tier}</TableCell>
                     <TableCell className="font-mono text-xs">
@@ -346,10 +514,37 @@ export function AdminSkillsControl() {
                     <TableCell className="text-xs text-muted-foreground">
                       {row.updatedAt}
                     </TableCell>
+                    <TableCell>
+                      <Button
+                        data-ops-control="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setHistorySkillId(row.skillId)}
+                      >
+                        查看版本
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
+          ) : null}
+          {historySkillId ? (
+            <div className="space-y-2" data-testid="skills-revision-history">
+              <p className="font-medium text-sm">{historySkillId} 的版本记录</p>
+              {historyQuery.isLoading ? (
+                <p className="text-muted-foreground text-sm">读取中…</p>
+              ) : null}
+              {historyQuery.data?.map((revision) => (
+                <div
+                  className="flex justify-between rounded-md border px-3 py-2 text-sm"
+                  key={revision.skillRevisionRef}
+                >
+                  <span>{revision.skillRevisionRef}</span>
+                  <span>{revision.status}</span>
+                </div>
+              ))}
+            </div>
           ) : null}
         </AdminPanelContent>
       </AdminPanel>
@@ -374,6 +569,7 @@ export function AdminSkillsControl() {
                 setAction(event.target.value as SkillAction);
                 setValues({});
                 setError('');
+                setResult(null);
               }}
             >
               {ACTION_ORDER.map((value) => (
@@ -409,9 +605,22 @@ export function AdminSkillsControl() {
                       </option>
                     ))}
                   </select>
+                ) : field.kind === 'textarea' ? (
+                  <Textarea
+                    id={`skills-field-${field.key}`}
+                    data-ops-control="text"
+                    value={values[field.key] ?? ''}
+                    onChange={(event) =>
+                      setValues((current) => ({
+                        ...current,
+                        [field.key]: event.target.value,
+                      }))
+                    }
+                  />
                 ) : (
                   <Input
                     id={`skills-field-${field.key}`}
+                    data-ops-control="text"
                     value={values[field.key] ?? ''}
                     onChange={(event) =>
                       setValues((current) => ({
@@ -424,7 +633,32 @@ export function AdminSkillsControl() {
               </div>
             ))}
           </div>
-          <Button disabled={busy} onClick={() => void submit()}>
+          {promptReferenceQuery.data ? (
+            <p
+              className="text-muted-foreground text-sm"
+              data-testid="skills-current-prompt-reference"
+            >
+              当前 prompt：
+              {promptReferenceQuery.data.name}@
+              {promptReferenceQuery.data.version} ·{' '}
+              {promptReferenceQuery.data.source} ·{' '}
+              {promptReferenceQuery.data.label} · fallback=
+              {String(promptReferenceQuery.data.isFallback)} · eligible=
+              {String(promptReferenceQuery.data.eligibleForAcceptance)}
+            </p>
+          ) : null}
+          {promptReferenceQuery.isError ||
+          (promptReferenceQuery.data &&
+            !promptReferenceQuery.data.eligibleForAcceptance) ? (
+            <p role="alert" className="text-sm text-destructive">
+              当前 production prompt 引用不可用，生命周期操作已禁用。
+            </p>
+          ) : null}
+          <Button
+            data-ops-control="button"
+            disabled={busy || authorityUnavailable}
+            onClick={() => void submit()}
+          >
             {busy ? '提交中…' : '提交受控命令'}
           </Button>
           {error ? (
@@ -433,9 +667,12 @@ export function AdminSkillsControl() {
             </p>
           ) : null}
           {result ? (
-            <pre className="max-h-72 overflow-auto rounded-lg border p-3 text-xs">
-              {JSON.stringify(result, null, 2)}
-            </pre>
+            <div
+              className="rounded-lg border p-3 text-sm"
+              data-testid="skills-operation-result"
+            >
+              操作已完成：{action}
+            </div>
           ) : null}
         </AdminPanelContent>
       </AdminPanel>

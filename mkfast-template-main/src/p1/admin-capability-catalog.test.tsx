@@ -42,7 +42,7 @@ test('SSR catalog renders six L1 domains with operator language', () => {
   }
 });
 
-test('SSR catalog lists inventory capabilities and seven evidence drilldowns', () => {
+test('SSR catalog lists inventory capabilities and eight evidence drilldowns', () => {
   const html = renderToStaticMarkup(<AdminCapabilityCatalog />);
 
   for (const item of CAPABILITY_INVENTORY.items) {
@@ -59,6 +59,7 @@ test('SSR catalog lists inventory capabilities and seven evidence drilldowns', (
     'redemptions',
     'models',
     'templates',
+    'skills',
     'integrations',
     'audit',
   ]) {
@@ -89,13 +90,14 @@ test('SSR daily ops catalog path has zero D-048 banned controls', () => {
   assert.doesNotMatch(html, /data-ops-control="(code|sql|env|raw-json|cli)"/);
 });
 
-test('SSR drilldown banners expose domain regroup for all seven pages', () => {
+test('SSR drilldown banners expose domain regroup for all eight pages', () => {
   const pageIds = [
     'users',
     'plans',
     'redemptions',
     'models',
     'templates',
+    'skills',
     'integrations',
     'audit',
   ] as const;

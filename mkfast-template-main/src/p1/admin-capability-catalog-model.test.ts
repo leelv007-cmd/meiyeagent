@@ -83,7 +83,7 @@ test('L2 technical dependencies and evidence drilldowns are present', () => {
   );
 });
 
-test('seven-page regroup maps every drilldown under a capability domain', () => {
+test('eight-page regroup maps every drilldown under a capability domain', () => {
   assert.equal(ADMIN_DRILLDOWN_PAGES.length, 8);
   assert.deepEqual(
     ADMIN_DRILLDOWN_PAGE_IDS.slice().sort(),
@@ -99,6 +99,7 @@ test('seven-page regroup maps every drilldown under a capability domain', () => 
     '/admin/redemptions',
     '/admin/models',
     '/admin/templates',
+    '/admin/skills',
     '/admin/integrations',
     '/admin/audit',
   ];

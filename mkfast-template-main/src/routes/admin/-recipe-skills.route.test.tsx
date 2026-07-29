@@ -21,15 +21,41 @@ const skillsRoute = await import('./skills');
 const { AdminRecipeStudioControl } = await import(
   '@/p1/admin-recipe-studio-control'
 );
-const { AdminSkillsControl } = await import('@/p1/admin-skills-control');
+const { AdminSkillsControl, buildSkillCommandPayload } = await import(
+  '@/p1/admin-skills-control'
+);
 const { p1QueryKeys } = await import('@/p1/query-keys');
 
 /** Renders the control with a seeded catalog so the table has rows to show. */
 function renderSkillsControl(rows: Record<string, unknown>[] = []) {
   const queryClient = new QueryClient();
   queryClient.setQueryData(
+    p1QueryKeys.request('skills', 'skill_prompt_reference', {
+      slot: 'intentNaming',
+    }),
+    {
+      contentHash:
+        '18766ea9d01f41c3f0127bd960e1e29aa34da1fa0e5a7f915e941eff811b7838',
+      eligibleForAcceptance: true,
+      isFallback: false,
+      label: 'production',
+      name: 'harness/intent-naming',
+      source: 'langfuse',
+      version: '42',
+    }
+  );
+  queryClient.setQueryData(
     p1QueryKeys.request('skills', 'skill_catalog_list', { tier: '' }),
-    rows
+    {
+      items: rows,
+      stats: {
+        industryTierCorroborated: rows.filter(
+          (row) => row.tier === 'industry' && row.sourceKind === 'induced'
+        ).length,
+        industryTierTotal: rows.filter((row) => row.tier === 'industry').length,
+        total: rows.length,
+      },
+    }
   );
   return renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
@@ -51,11 +77,12 @@ test('Recipe Studio admin route exposes the complete four-gate production chain'
   assert.match(html, /回滚 production/);
 });
 
-test('Skills admin route dispatches all five lifecycle commands', () => {
+test('Skills admin route exposes all five structured lifecycle commands', () => {
   assert.equal(typeof skillsRoute.Route.options.component, 'function');
   const html = renderSkillsControl();
 
   assert.match(html, /data-testid="admin-skills-control"/);
+  assert.match(html, /<h2[^>]*>Skill 目录<\/h2>/);
   for (const label of [
     '新建做法',
     '受理并冻结',
@@ -65,6 +92,167 @@ test('Skills admin route dispatches all five lifecycle commands', () => {
   ]) {
     assert.ok(html.includes(label), `missing lifecycle command: ${label}`);
   }
+  assert.doesNotMatch(html, /skills-payload/);
+  assert.doesNotMatch(html, /data-ops-control="raw-json"/);
+  assert.doesNotMatch(html, /<pre/);
+  assert.doesNotMatch(html, /<option value="store"/);
+  assert.doesNotMatch(html, /maxChildEffects|redlinePolicy/);
+});
+
+test('structured Skill forms build the revision and acceptance contracts', () => {
+  const promptReference = {
+    contentHash:
+      '18766ea9d01f41c3f0127bd960e1e29aa34da1fa0e5a7f915e941eff811b7838',
+    eligibleForAcceptance: true,
+    isFallback: false,
+    label: 'production',
+    name: 'harness/intent-naming',
+    source: 'langfuse',
+    version: '42',
+  } as const;
+  const definition = buildSkillCommandPayload(
+    'skill_define',
+    {
+      description: 'A controlled description.',
+      expectedRevision: '',
+      instruction: 'Use only confirmed facts.',
+      name: 'Controlled Skill',
+      packageName: 'controlled-skill',
+      presentationPolicy: 'explainable',
+      skillId: 'skill.controlled',
+      sourceKind: 'authored',
+      tier: 'platform',
+    },
+    { promptReference }
+  );
+  assert.deepEqual(definition, {
+    description: 'A controlled description.',
+    expectedRevision: null,
+    frontmatter: {
+      description: 'A controlled description.',
+      name: 'controlled-skill',
+    },
+    governance: {
+      budget: {
+        maxChildEffects: 0,
+        maxCostCents: 0,
+        timeoutMs: 10_000,
+      },
+      contextScopes: [],
+      executionMode: 'prompt_materialized',
+      fallback: 'fail_closed',
+      inputSchemaRef: 'skill-input.daily-industry@1',
+      outputSchemaRef: 'skill-output.intent-decision@1',
+      requiredModelCapabilities: ['structured_output'],
+      sideEffectClass: 'none',
+      workflowRevisionRefs: ['workflow.copy@1'],
+    },
+    instruction: 'Use only confirmed facts.',
+    name: 'Controlled Skill',
+    packagePaths: ['SKILL.md'],
+    presentationPolicy: 'explainable',
+    promptReference: {
+      contentHash:
+        '18766ea9d01f41c3f0127bd960e1e29aa34da1fa0e5a7f915e941eff811b7838',
+      name: 'harness/intent-naming',
+      version: '42',
+    },
+    skillId: 'skill.controlled',
+    sourceKind: 'authored',
+    tier: 'platform',
+  });
+
+  const acceptance = buildSkillCommandPayload(
+    'skill_accept',
+    {
+      evalRunId: 'eval-controlled-1',
+      skillRevisionRef: 'skill.controlled@1',
+    },
+    {}
+  );
+  assert.deepEqual(acceptance, {
+    evalRunId: 'eval-controlled-1',
+    skillRevisionRef: 'skill.controlled@1',
+  });
+  assert.doesNotMatch(JSON.stringify(acceptance), /recorded_fixture|passed/u);
+  assert.throws(
+    () =>
+      buildSkillCommandPayload('skill_define', {
+        description: 'Missing authority.',
+        expectedRevision: '',
+        instruction: 'Must not be sent.',
+        name: 'Missing authority',
+        packageName: 'missing-authority',
+        presentationPolicy: 'backend_only',
+        skillId: 'skill.missing-authority',
+        sourceKind: 'authored',
+        tier: 'platform',
+      }),
+    /production prompt 引用尚未就绪/u
+  );
+  assert.throws(
+    () =>
+      buildSkillCommandPayload(
+        'skill_define',
+        {
+          description: 'Fallback authority.',
+          expectedRevision: '',
+          instruction: 'Must not be sent.',
+          name: 'Fallback authority',
+          packageName: 'fallback-authority',
+          presentationPolicy: 'backend_only',
+          skillId: 'skill.fallback-authority',
+          sourceKind: 'authored',
+          tier: 'platform',
+        },
+        {
+          promptReference: {
+            ...promptReference,
+            eligibleForAcceptance: false,
+            isFallback: true,
+            source: 'builtin',
+          },
+        }
+      ),
+    /production prompt 引用尚未就绪/u
+  );
+});
+
+test('fallback prompt authority disables the Skill lifecycle', () => {
+  const queryClient = new QueryClient();
+  queryClient.setQueryData(
+    p1QueryKeys.request('skills', 'skill_catalog_list', { tier: '' }),
+    {
+      items: [],
+      stats: {
+        industryTierCorroborated: 0,
+        industryTierTotal: 0,
+        total: 0,
+      },
+    }
+  );
+  queryClient.setQueryData(
+    p1QueryKeys.request('skills', 'skill_prompt_reference', {
+      slot: 'intentNaming',
+    }),
+    {
+      contentHash: '0'.repeat(64),
+      eligibleForAcceptance: false,
+      isFallback: true,
+      label: 'builtin',
+      name: 'harness/intent-naming',
+      reasonCode: 'fallback_prompt',
+      source: 'builtin',
+      version: 'builtin-v1',
+    }
+  );
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={queryClient}>
+      <AdminSkillsControl />
+    </QueryClientProvider>
+  );
+  assert.match(html, /生命周期操作已禁用/);
+  assert.match(html, /<button[^>]*disabled=""/);
 });
 
 test('Skills catalog renders the source column and its description', () => {

@@ -1,5 +1,5 @@
 /**
- * Seven-page drilldown reachability + D-048 ops-path ban (J3).
+ * Eight-page drilldown reachability + D-048 ops-path ban (J3 / #259).
  * Memory-router / pure SSR style (no RTL); shared wiring untouched.
  */
 import assert from 'node:assert/strict';
@@ -39,14 +39,14 @@ function resolveAdminP1Redirect(tab: unknown): string {
   return '/admin/models';
 }
 
-test('seven drilldown pages are reachable from catalog projection', () => {
+test('eight drilldown pages are reachable from catalog projection', () => {
   const view = buildCapabilityCatalog();
   const fromCatalog = view.domains.flatMap((section) =>
     section.evidenceDrilldowns.map((d) => d.pageId)
   );
   const reachability = listDrilldownReachability();
 
-  assert.equal(reachability.length, 7);
+  assert.equal(reachability.length, 8);
   for (const page of ADMIN_DRILLDOWN_PAGES) {
     assert.ok(
       fromCatalog.includes(page.pageId) || page.domain === 'task_orchestration',
@@ -60,7 +60,7 @@ test('seven drilldown pages are reachable from catalog projection', () => {
     );
   }
 
-  // Every non-empty domain evidence link is one of the seven.
+  // Every non-empty domain evidence link is one of the eight.
   for (const pageId of fromCatalog) {
     assert.ok(
       ADMIN_DRILLDOWN_PAGES.some((page) => page.pageId === pageId),
@@ -69,7 +69,7 @@ test('seven drilldown pages are reachable from catalog projection', () => {
   }
 });
 
-test('SSR catalog evidence anchors cover all seven admin paths', () => {
+test('SSR catalog evidence anchors cover all eight admin paths', () => {
   const html = renderToStaticMarkup(
     <CapabilityCatalogPanel view={buildCapabilityCatalog()} />
   );
@@ -94,6 +94,7 @@ test('SSR drilldown banners are domain-tagged for memory-router page bodies', ()
     redemptions: 'account_and_commerce',
     models: 'ai_supply_and_generation',
     templates: 'content_and_assets',
+    skills: 'content_and_assets',
     integrations: 'external_integrations',
     audit: 'runtime_and_governance',
   };
@@ -113,7 +114,7 @@ test('SSR drilldown banners are domain-tagged for memory-router page bodies', ()
   }
 });
 
-test('p1.tsx compat redirect targets remain among seven regrouped pages', () => {
+test('p1.tsx compat redirect targets remain among eight regrouped pages', () => {
   assert.equal(resolveAdminP1Redirect(undefined), '/admin/models');
   assert.equal(resolveAdminP1Redirect('models'), '/admin/models');
   assert.equal(resolveAdminP1Redirect('templates'), '/admin/templates');

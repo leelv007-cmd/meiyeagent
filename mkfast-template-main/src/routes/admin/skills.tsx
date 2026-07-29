@@ -1,3 +1,4 @@
+import { CapabilityDrilldownBanner } from '@/components/admin/capability/capability-drilldown-banner';
 import { AdminRoutePage } from '@/components/admin/admin-route-page';
 import { AdminSkillsControl } from '@/p1/admin-skills-control';
 import { createFileRoute } from '@tanstack/react-router';
@@ -12,7 +13,10 @@ function SkillsPage() {
       title="Skills"
       description="定义、受理冻结、绑定与回滚产品 Skill 版本。"
     >
-      <AdminSkillsControl />
+      <div className="space-y-4">
+        <CapabilityDrilldownBanner pageId="skills" />
+        <AdminSkillsControl />
+      </div>
     </AdminRoutePage>
   );
 }
