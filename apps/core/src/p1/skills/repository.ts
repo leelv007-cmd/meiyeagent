@@ -10,6 +10,7 @@ import type {
   SkillCatalog,
   SkillChildEffect,
   SkillDeployment,
+  SkillGovernanceRun,
   SkillInvocationReceipt,
   SkillRevision,
   SkillSourceKind,
@@ -42,6 +43,13 @@ export interface SkillRepository extends EvalRunRegistryPort {
   getRevision(skillRevisionRef: string): Promise<SkillRevision | null>;
   getRevisionHead(skillId: string): Promise<SkillRevision | null>;
   listRevisions(skillId: string, limit: number): Promise<SkillRevision[]>;
+  applyGovernanceDraft(input: {
+    run: SkillGovernanceRun;
+    draft: SkillRevision | null;
+    expectedHeadRevision: number;
+    casConflictRun: SkillGovernanceRun;
+  }): Promise<SkillGovernanceRun>;
+  getGovernanceRun(runId: string): Promise<SkillGovernanceRun | null>;
   putBinding(binding: SkillBinding): Promise<SkillBinding>;
   supersedeBinding(
     sourceBindingId: string,
@@ -91,6 +99,7 @@ function putOnce<T>(
 export class MemorySkillRepository implements SkillRepository {
   private readonly catalogs = new Map<string, SkillCatalog>();
   private readonly revisions = new Map<string, SkillRevision>();
+  private readonly governanceRuns = new Map<string, SkillGovernanceRun>();
   private readonly evalRuns = new Map<string, EvalRun>();
   private readonly bindings = new Map<string, AuditedSkillBinding>();
   private readonly deployments = new Map<string, SkillDeployment>();
@@ -177,6 +186,10 @@ export class MemorySkillRepository implements SkillRepository {
   }
 
   async getRevisionHead(skillId: string) {
+    return this.revisionHead(skillId);
+  }
+
+  private revisionHead(skillId: string) {
     const values = [...this.revisions.values()]
       .filter((revision) => revision.skillId === skillId)
       .sort((left, right) => right.revision - left.revision);
@@ -189,6 +202,53 @@ export class MemorySkillRepository implements SkillRepository {
       .sort((left, right) => right.revision - left.revision)
       .slice(0, limit)
       .map(clone);
+  }
+
+  async applyGovernanceDraft(input: {
+    run: SkillGovernanceRun;
+    draft: SkillRevision | null;
+    expectedHeadRevision: number;
+    casConflictRun: SkillGovernanceRun;
+  }) {
+    const existing = this.governanceRuns.get(input.run.runId);
+    if (existing) {
+      if (existing.inputFingerprint !== input.run.inputFingerprint) {
+        throw new P1DomainError(
+          'IDEMPOTENCY_CONFLICT',
+          'Skill governance run is already bound to different facts.',
+        );
+      }
+      return clone(existing);
+    }
+    if (!input.draft) {
+      this.governanceRuns.set(input.run.runId, clone(input.run));
+      return clone(input.run);
+    }
+    const head = this.revisionHead(input.draft.skillId);
+    if (
+      head?.revision !== input.expectedHeadRevision ||
+      input.draft.revision !== input.expectedHeadRevision + 1
+    ) {
+      this.governanceRuns.set(
+        input.casConflictRun.runId,
+        clone(input.casConflictRun),
+      );
+      return clone(input.casConflictRun);
+    }
+    if (this.revisions.has(input.draft.skillRevisionRef)) {
+      throw new P1DomainError(
+        'IDEMPOTENCY_CONFLICT',
+        'Skill governance draft revision already exists.',
+      );
+    }
+    this.revisions.set(input.draft.skillRevisionRef, clone(input.draft));
+    this.governanceRuns.set(input.run.runId, clone(input.run));
+    return clone(input.run);
+  }
+
+  async getGovernanceRun(runId: string) {
+    const value = this.governanceRuns.get(runId);
+    return value ? clone(value) : null;
   }
 
   async putImmutable(runId: string, input: EvalRun) {

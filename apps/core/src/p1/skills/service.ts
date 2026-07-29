@@ -32,7 +32,11 @@ import {
   type SkillChildEffect,
   type SkillDeployment,
   type SkillExecutionMode,
+  type SkillGovernanceAuditEntry,
+  type SkillGovernanceResult,
+  type SkillGovernanceRun,
   type SkillGovernanceSidecar,
+  type SkillGovernanceValidationResult,
   type SkillInvocationExecution,
   type SkillInvocationExecutor,
   type SkillInvocationReceipt,
@@ -98,6 +102,97 @@ function required(value: string, label: string) {
   const normalized = value?.trim();
   if (!normalized) fail(`${label} is required.`);
   return normalized;
+}
+
+const SKILL_GOVERNANCE_PATCH_FIELDS = new Set([
+  'acceptedAt',
+  'acceptedBy',
+  'activeRevisionRef',
+  'contentHash',
+  'createdAt',
+  'createdBy',
+  'evalRunId',
+  'governance.budget.maxChildEffects',
+  'governance.budget.maxCostCents',
+  'governance.budget.timeoutMs',
+  'governance.contextScopes',
+  'governance.executionMode',
+  'governance.fallback',
+  'governance.inputSchemaRef',
+  'governance.outputSchemaRef',
+  'governance.requiredModelCapabilities',
+  'governance.sideEffectClass',
+  'governance.workflowRevisionRefs',
+  'instruction',
+  'manifest.allowed-tools',
+  'manifest.compatibility',
+  'manifest.description',
+  'manifest.license',
+  'manifest.metadata',
+  'manifest.name',
+  'packagePaths',
+  'prompt.content',
+  'prompt.contentHash',
+  'prompt.fallbackReason',
+  'prompt.isFallback',
+  'prompt.label',
+  'prompt.name',
+  'prompt.source',
+  'prompt.version',
+  'revision',
+  'skillId',
+  'skillRevisionRef',
+  'sourceKind',
+  'status',
+  'tier',
+]);
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.getPrototypeOf(value) === Object.prototype
+  );
+}
+
+function governanceRun(input: {
+  actorId: string;
+  at: string;
+  baseSkillRevisionRef: string;
+  draftSkillRevisionRef: string | null;
+  inputFingerprint: string;
+  result: SkillGovernanceResult;
+  runId: string;
+  skillId: string;
+  workspaceId: string;
+}): SkillGovernanceRun {
+  const auditEntries: SkillGovernanceAuditEntry[] =
+    input.result.validationResults.map((result) => ({
+      actorId: input.actorId,
+      createdAt: input.at,
+      fieldPath: result.fieldPath,
+      reasonCode: result.reasonCode,
+      runId: input.runId,
+      skillId: input.skillId,
+      status: result.status,
+      targetSkillRevisionRef: input.baseSkillRevisionRef,
+      workspaceId: input.workspaceId,
+    }));
+  return {
+    actorId: input.actorId,
+    auditEntries,
+    baseSkillRevisionRef: input.baseSkillRevisionRef,
+    completedAt: input.at,
+    createdAt: input.at,
+    draftSkillRevisionRef: input.draftSkillRevisionRef,
+    inputFingerprint: input.inputFingerprint,
+    result: input.result,
+    runId: input.runId,
+    skillId: input.skillId,
+    status: 'completed',
+    workspaceId: input.workspaceId,
+  };
 }
 
 // The catalog metric is a ratio over these enums, so an unrecognised value
@@ -302,6 +397,197 @@ export class SkillService {
       throw new P1DomainError('NOT_FOUND', 'Skill 目录项不存在。');
     }
     return this.persistSkillDraft(input, catalog, prepared);
+  }
+
+  async applyGovernanceRevision(input: {
+    runId: string;
+    workspaceId: string;
+    actorId: string;
+    baseSkillRevisionRef: string;
+    expectedHeadRevision: number;
+    patch: Record<string, unknown>;
+  }): Promise<SkillGovernanceResult> {
+    const runId = required(input.runId, 'Governance run ID');
+    const workspaceId = required(input.workspaceId, 'Workspace ID');
+    const actorId = required(input.actorId, 'Actor ID');
+    const baseSkillRevisionRef = required(
+      input.baseSkillRevisionRef,
+      'Base Skill revision ref',
+    );
+    if (
+      !Number.isInteger(input.expectedHeadRevision) ||
+      input.expectedHeadRevision < 1
+    ) {
+      fail('Expected Skill revision head must be a positive integer.');
+    }
+    if (!isPlainRecord(input.patch) || Object.keys(input.patch).length === 0) {
+      fail('Skill governance patch must be a non-empty mapping.');
+    }
+    const unknownFields = Object.keys(input.patch).filter(
+      (fieldPath) => !SKILL_GOVERNANCE_PATCH_FIELDS.has(fieldPath),
+    );
+    if (unknownFields.length > 0) {
+      fail(`Unknown Skill governance field: ${unknownFields.sort()[0]}.`);
+    }
+
+    const base = await this.repository.getRevision(baseSkillRevisionRef);
+    if (!base) {
+      throw new P1DomainError(
+        'NOT_FOUND',
+        'Base Skill revision does not exist.',
+      );
+    }
+    if (
+      base.formatVersion !== 2 ||
+      base.revision !== input.expectedHeadRevision
+    ) {
+      fail(
+        'Skill governance changes require the expected v2 revision head as their base.',
+      );
+    }
+
+    let instruction = base.instruction;
+    const manifest = structuredClone(base.manifest);
+    const validationResults: SkillGovernanceValidationResult[] = [];
+    for (const [fieldPath, value] of Object.entries(input.patch).sort(
+      ([left], [right]) => left.localeCompare(right),
+    )) {
+      if (
+        fieldPath !== 'instruction' &&
+        fieldPath !== 'manifest.description'
+      ) {
+        validationResults.push({
+          fieldPath,
+          reasonCode: 'field_not_editable',
+          status: 'stripped',
+        });
+        continue;
+      }
+      if (typeof value !== 'string' || !value.trim()) {
+        validationResults.push({
+          fieldPath,
+          reasonCode: 'invalid_value',
+          status: 'not_applied',
+        });
+        continue;
+      }
+      const normalized = value.trim();
+      const current =
+        fieldPath === 'instruction' ? instruction : manifest.description;
+      if (current === normalized) {
+        validationResults.push({
+          fieldPath,
+          reasonCode: 'unchanged',
+          status: 'not_applied',
+        });
+        continue;
+      }
+      if (fieldPath === 'instruction') {
+        instruction = normalized;
+      } else {
+        manifest.description = normalized;
+      }
+      validationResults.push({
+        fieldPath,
+        reasonCode: 'field_applied',
+        status: 'applied',
+      });
+    }
+    validateSkillFrontmatter(manifest);
+
+    const at = this.now();
+    const hasAppliedField = validationResults.some(
+      (result) => result.status === 'applied',
+    );
+    const nextRevision = input.expectedHeadRevision + 1;
+    const nextRevisionRef = skillRevisionRef(base.skillId, nextRevision);
+    const draft: SkillRevision = {
+      ...structuredClone(base),
+      revision: nextRevision,
+      skillRevisionRef: nextRevisionRef,
+      contentHash: sha256(
+        canonicalJson({
+          instruction,
+          manifest,
+          governance: base.governance,
+          packagePaths: base.packagePaths,
+          prompt: base.prompt,
+        }),
+      ),
+      instruction,
+      manifest,
+      status: 'draft',
+      createdAt: at,
+      createdBy: actorId,
+      acceptedAt: null,
+      acceptedBy: null,
+      evalRunId: null,
+    };
+    const inputFingerprint = sha256(
+      canonicalJson({
+        actorId,
+        baseSkillRevisionRef,
+        expectedHeadRevision: input.expectedHeadRevision,
+        patch: input.patch,
+        workspaceId,
+      }),
+    );
+    const appliedResult: SkillGovernanceResult = {
+      runId,
+      success: true,
+      applied: hasAppliedField,
+      validationResults,
+    };
+    const run = governanceRun({
+      actorId,
+      at,
+      baseSkillRevisionRef,
+      draftSkillRevisionRef: hasAppliedField ? nextRevisionRef : null,
+      inputFingerprint,
+      result: appliedResult,
+      runId,
+      skillId: base.skillId,
+      workspaceId,
+    });
+    const casValidationResults = validationResults.map((result) =>
+      result.status === 'applied'
+        ? {
+            ...result,
+            reasonCode: 'cas_conflict' as const,
+            status: 'not_applied' as const,
+          }
+        : result,
+    );
+    const casConflictRun = governanceRun({
+      actorId,
+      at,
+      baseSkillRevisionRef,
+      draftSkillRevisionRef: null,
+      inputFingerprint,
+      result: {
+        runId,
+        success: true,
+        applied: false,
+        validationResults: casValidationResults,
+      },
+      runId,
+      skillId: base.skillId,
+      workspaceId,
+    });
+    return (
+      await this.repository.applyGovernanceDraft({
+        run,
+        draft: hasAppliedField ? draft : null,
+        expectedHeadRevision: input.expectedHeadRevision,
+        casConflictRun,
+      })
+    ).result;
+  }
+
+  async inspectGovernanceRun(runId: string) {
+    return this.repository.getGovernanceRun(
+      required(runId, 'Governance run ID'),
+    );
   }
 
   private async prepareSkillDraft(

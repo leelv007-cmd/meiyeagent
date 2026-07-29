@@ -65,6 +65,59 @@ export interface SkillCatalog {
   actorId: string;
 }
 
+export const SKILL_OPERATOR_EDITABLE_FIELDS = [
+  'instruction',
+  'manifest.description',
+] as const;
+
+export type SkillOperatorEditableField =
+  (typeof SKILL_OPERATOR_EDITABLE_FIELDS)[number];
+
+export type SkillGovernanceValidationResult = {
+  fieldPath: string;
+  status: 'applied' | 'stripped' | 'not_applied';
+  reasonCode:
+    | 'field_applied'
+    | 'field_not_editable'
+    | 'invalid_value'
+    | 'unchanged'
+    | 'cas_conflict';
+};
+
+export type SkillGovernanceResult = {
+  runId: string;
+  success: true;
+  applied: boolean;
+  validationResults: SkillGovernanceValidationResult[];
+};
+
+export type SkillGovernanceAuditEntry = {
+  runId: string;
+  skillId: string;
+  targetSkillRevisionRef: string;
+  workspaceId: string;
+  actorId: string;
+  fieldPath: string;
+  status: SkillGovernanceValidationResult['status'];
+  reasonCode: SkillGovernanceValidationResult['reasonCode'];
+  createdAt: string;
+};
+
+export type SkillGovernanceRun = {
+  runId: string;
+  inputFingerprint: string;
+  skillId: string;
+  baseSkillRevisionRef: string;
+  draftSkillRevisionRef: string | null;
+  workspaceId: string;
+  actorId: string;
+  status: 'completed';
+  result: SkillGovernanceResult;
+  auditEntries: SkillGovernanceAuditEntry[];
+  createdAt: string;
+  completedAt: string;
+};
+
 export type SkillRevisionManifest = SkillFrontmatter;
 
 export interface LegacySkillGovernanceSidecar

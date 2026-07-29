@@ -18,6 +18,7 @@ import type {
   SkillCatalog,
   SkillChildEffect,
   SkillDeployment,
+  SkillGovernanceRun,
   SkillInvocationReceipt,
   SkillRevision,
   SkillSourceKind,
@@ -144,6 +145,12 @@ export class PostgresSkillRepository implements SkillRepository {
         payload jsonb NOT NULL,
         created_at timestamptz NOT NULL,
         PRIMARY KEY (skill_id, revision)
+      );
+      CREATE TABLE IF NOT EXISTS p1_skill_governance_runs (
+        run_id text PRIMARY KEY,
+        input_fingerprint text NOT NULL,
+        payload jsonb NOT NULL,
+        created_at timestamptz NOT NULL
       );
       ALTER TABLE p1_skill_revisions
         ADD COLUMN IF NOT EXISTS format_version smallint NOT NULL DEFAULT 1,
@@ -557,6 +564,132 @@ export class PostgresSkillRepository implements SkillRepository {
     return result.rows.map(cloneRevisionRow);
   }
 
+  async applyGovernanceDraft(input: {
+    run: SkillGovernanceRun;
+    draft: SkillRevision | null;
+    expectedHeadRevision: number;
+    casConflictRun: SkillGovernanceRun;
+  }) {
+    if (input.draft && input.draft.formatVersion !== 2) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Governance writes require storage format v2.',
+      );
+    }
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [input.run.runId],
+      );
+      const existing = await client.query<
+        PayloadRow<SkillGovernanceRun> & {
+          input_fingerprint: string;
+        }
+      >(
+        `SELECT input_fingerprint, payload
+           FROM p1_skill_governance_runs
+          WHERE run_id = $1`,
+        [input.run.runId],
+      );
+      const persisted = existing.rows[0];
+      if (persisted) {
+        if (persisted.input_fingerprint !== input.run.inputFingerprint) {
+          throw new P1DomainError(
+            'IDEMPOTENCY_CONFLICT',
+            'Skill governance run is already bound to different facts.',
+          );
+        }
+        await client.query('COMMIT');
+        return cloneRow(persisted);
+      }
+      if (!input.draft) {
+        await insertGovernanceRun(client, input.run);
+        await client.query('COMMIT');
+        return structuredClone(input.run);
+      }
+
+      await client.query(
+        `INSERT INTO p1_skill_revision_heads (skill_id, revision)
+         VALUES ($1, 0)
+         ON CONFLICT (skill_id) DO NOTHING`,
+        [input.draft.skillId],
+      );
+      const head = await client.query<{ revision: string }>(
+        `SELECT revision::text AS revision
+           FROM p1_skill_revision_heads
+          WHERE skill_id = $1
+          FOR UPDATE`,
+        [input.draft.skillId],
+      );
+      const current = Number(head.rows[0]?.revision ?? 0);
+      if (
+        current !== input.expectedHeadRevision ||
+        input.draft.revision !== input.expectedHeadRevision + 1
+      ) {
+        await insertGovernanceRun(client, input.casConflictRun);
+        await client.query('COMMIT');
+        return structuredClone(input.casConflictRun);
+      }
+
+      await client.query(
+        `INSERT INTO p1_skill_revisions
+           (skill_id, revision, skill_revision_ref, status, content_hash,
+            format_version, frontmatter, governance_sidecar,
+            prompt_name, prompt_version, prompt_content_hash, prompt_label,
+            prompt_source, prompt_is_fallback, prompt_fallback_reason,
+            prompt_fallback_content, payload, created_at)
+         VALUES (
+           $1, $2, $3, $4, $5, 2, $6::jsonb, $7::jsonb,
+           $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb,
+           $17::timestamptz
+         )`,
+        [
+          input.draft.skillId,
+          input.draft.revision,
+          input.draft.skillRevisionRef,
+          input.draft.status,
+          input.draft.contentHash,
+          JSON.stringify(input.draft.manifest),
+          JSON.stringify(input.draft.governance),
+          input.draft.prompt.name,
+          input.draft.prompt.version,
+          input.draft.prompt.contentHash,
+          input.draft.prompt.label,
+          input.draft.prompt.source,
+          input.draft.prompt.isFallback,
+          input.draft.prompt.fallbackReason ?? null,
+          input.draft.prompt.content,
+          JSON.stringify(revisionPayloadV2(input.draft)),
+          input.draft.createdAt,
+        ],
+      );
+      await client.query(
+        `UPDATE p1_skill_revision_heads SET revision = $2 WHERE skill_id = $1`,
+        [input.draft.skillId, input.draft.revision],
+      );
+      await insertGovernanceRun(client, input.run);
+      await client.query('COMMIT');
+      return structuredClone(input.run);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getGovernanceRun(runId: string) {
+    const result = await this.pool.query<PayloadRow<SkillGovernanceRun>>(
+      `SELECT payload
+         FROM p1_skill_governance_runs
+        WHERE run_id = $1`,
+      [runId],
+    );
+    return result.rows[0] ? cloneRow(result.rows[0]) : null;
+  }
+
   async putBinding(binding: SkillBinding) {
     const canonical = normalizeBindingCondition(binding) as SkillBinding;
     const result = await this.pool.query<PayloadRow<SkillBinding>>(
@@ -915,6 +1048,23 @@ function revisionPayloadV2(revision: SkillRevision) {
     ...payload
   } = revision;
   return payload;
+}
+
+async function insertGovernanceRun(
+  client: PoolClient,
+  run: SkillGovernanceRun,
+) {
+  await client.query(
+    `INSERT INTO p1_skill_governance_runs
+       (run_id, input_fingerprint, payload, created_at)
+     VALUES ($1, $2, $3::jsonb, $4::timestamptz)`,
+    [
+      run.runId,
+      run.inputFingerprint,
+      JSON.stringify(run),
+      run.createdAt,
+    ],
+  );
 }
 
 function revisionPayloadV1(revision: SkillRevision) {
