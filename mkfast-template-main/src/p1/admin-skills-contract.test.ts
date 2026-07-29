@@ -4,7 +4,7 @@ import test from 'node:test';
 import {
   assertReferenceOnlySkillPayload,
   redactSkillCommandResult,
-} from './admin-skills-contract';
+} from '@/p1/admin-skills-contract';
 
 test('admin Skill writes reject content only in prompt DTOs', () => {
   assert.throws(

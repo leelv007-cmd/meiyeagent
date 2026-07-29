@@ -189,7 +189,7 @@ export class SkillService {
     try {
       governance = parseSkillGovernance(input.governance);
     } catch (error) {
-      fail(
+      failPrewrite(
         `Skill governance sidecar is invalid: ${
           error instanceof Error ? error.message : 'unknown error'
         }`,

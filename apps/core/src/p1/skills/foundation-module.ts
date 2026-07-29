@@ -17,7 +17,7 @@ import type {
 import { SkillService } from './service.js';
 
 function fail(message: string): never {
-  throw new P1DomainError('INVALID_STATE', message);
+  throw new PrewriteDeterministicRejectionError(message);
 }
 
 function parsePrewritePromptReference(value: Record<string, unknown>) {

@@ -213,6 +213,69 @@ test('the application entry releases an invalid package path claim before dispat
   await assertRejectedSkillUnwritten(harness);
 });
 
+test('the application entry releases a Foundation payload rejection before dispatching the resolver', async () => {
+  let promptCaptures = 0;
+  const harness = applicationSkillHarness(
+    'invalid-foundation-payload-retry',
+    async (reference) => {
+      promptCaptures += 1;
+      return frozenPrompt(reference.name);
+    },
+    {},
+    {
+      unknown: 'not allowed',
+    },
+  );
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await assert.rejects(
+      harness.application.executeModule(
+        harness.context,
+        'skills',
+        harness.input,
+        'invalid-foundation-payload-retry',
+      ),
+      /Skill 定义命令 不支持字段 unknown/u,
+    );
+  }
+
+  assert.equal(promptCaptures, 0);
+  await assertRejectedSkillUnwritten(harness);
+});
+
+test('the application entry releases an invalid governance claim before dispatching the resolver', async () => {
+  let promptCaptures = 0;
+  const harness = applicationSkillHarness(
+    'invalid-governance-retry',
+    async (reference) => {
+      promptCaptures += 1;
+      return frozenPrompt(reference.name);
+    },
+    {},
+    {
+      governance: {
+        ...governance(),
+        unknown: 'not allowed',
+      },
+    },
+  );
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await assert.rejects(
+      harness.application.executeModule(
+        harness.context,
+        'skills',
+        harness.input,
+        'invalid-governance-retry',
+      ),
+      /Skill governance sidecar is invalid/u,
+    );
+  }
+
+  assert.equal(promptCaptures, 0);
+  await assertRejectedSkillUnwritten(harness);
+});
+
 test('the application keeps the claim when prompt capture records an effect before invalid state', async () => {
   let promptCaptures = 0;
   const harness = applicationSkillHarness(
