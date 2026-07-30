@@ -259,7 +259,7 @@ export async function assessRecipeFactSatisfaction(
             field: 'store_facts',
             reason: '补充当前任务所需的权威事实',
           },
-          unattended: 'continue',
+          unattended: 'hold',
           scope: 'current_task',
         });
     } catch (error) {

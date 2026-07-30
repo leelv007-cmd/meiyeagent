@@ -1099,7 +1099,7 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 		confirmation.blockingQuestion?.response.field,
 		"note_plan_confirmation",
 	);
-	assert.equal(confirmation.blockingQuestion?.unattended, "continue");
+	assert.equal(confirmation.blockingQuestion?.unattended, "hold");
 
 	const brief = await ports.compileNoteBrief({
 		workflowId: snapshot.task.id,
