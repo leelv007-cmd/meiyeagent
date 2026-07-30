@@ -576,8 +576,20 @@ test('renderer and editing signals carry the exact durable request identity', ()
     harnessInteractionEditingSchema.parse({
       ...acknowledgement,
       editing: true,
+      editingSessionId: 'editing-session-1',
     }),
-    { ...acknowledgement, editing: true },
+    {
+      ...acknowledgement,
+      editing: true,
+      editingSessionId: 'editing-session-1',
+    },
+  );
+  assert.equal(
+    harnessInteractionEditingSchema.safeParse({
+      ...acknowledgement,
+      editing: true,
+    }).success,
+    false,
   );
   assert.equal(
     harnessInteractionRendererAckSchema.safeParse({
@@ -590,6 +602,7 @@ test('renderer and editing signals carry the exact durable request identity', ()
     harnessInteractionEditingSchema.safeParse({
       ...acknowledgement,
       editing: true,
+      editingSessionId: 'editing-session-1',
       runId: 'forged-run',
     }).success,
     false,

@@ -596,6 +596,7 @@ test('editing signals are a no-op for interactions without a semantic timer', as
     step: request.step,
     carrier: 'conversation',
     editing: true,
+    editingSessionId: 'editing-session-a',
   });
   assert.equal(store.editing, false);
 });
@@ -645,6 +646,7 @@ test('semantic timeout defers merchant questions but pauses while the merchant e
     step: request.step,
     carrier: 'conversation',
     editing: true,
+    editingSessionId: 'editing-session-a',
   });
   now += 20_000;
   await service.setEditing('workspace-a', request.runId, {
@@ -653,8 +655,24 @@ test('semantic timeout defers merchant questions but pauses while the merchant e
     step: request.step,
     carrier: 'conversation',
     editing: true,
+    editingSessionId: 'editing-session-a',
   });
   now += 20_000;
+  assert.deepEqual(
+    await service.submitSystemDefault('workspace-a', request.runId),
+    { kind: 'held', reason: 'editing' },
+  );
+  await assert.rejects(
+    service.setEditing('workspace-a', request.runId, {
+      requestId: request.requestId,
+      revision: request.revision,
+      step: request.step,
+      carrier: 'conversation',
+      editing: false,
+      editingSessionId: 'editing-session-stale',
+    }),
+    /no longer pending/u,
+  );
   assert.deepEqual(
     await service.submitSystemDefault('workspace-a', request.runId),
     { kind: 'held', reason: 'editing' },
@@ -665,6 +683,7 @@ test('semantic timeout defers merchant questions but pauses while the merchant e
     step: request.step,
     carrier: 'conversation',
     editing: false,
+    editingSessionId: 'editing-session-a',
   });
   now += 19_999;
   assert.deepEqual(
@@ -713,6 +732,7 @@ test('an abandoned editing lease expires without holding the run forever', async
     step: request.step,
     carrier: 'conversation',
     editing: true,
+    editingSessionId: 'editing-session-abandoned',
   });
 
   now += 60_000;
@@ -744,15 +764,6 @@ test('an unavailable renderer holds an otherwise eligible expired default', asyn
   assert.deepEqual(
     await service.submitSystemDefault('workspace-a', request.runId),
     { kind: 'held', reason: 'renderer' },
-  );
-  await service.setRendererCapability(
-    'workspace-a',
-    request.runId,
-    'available',
-  );
-  assert.deepEqual(
-    await service.submitSystemDefault('workspace-a', request.runId),
-    { kind: 'resumed', replayed: false },
   );
 });
 
@@ -963,6 +974,7 @@ test('legacy interaction projections require a fresh renderer acknowledgement', 
     deadlineAt: '2026-07-30T00:00:30.000Z',
     editingStartedAt: null,
     editingLeaseExpiresAt: null,
+    editingSessionId: null,
   });
 });
 
@@ -1092,6 +1104,7 @@ class MemoryInteractionStore implements HarnessInteractionStore {
         ).toISOString();
         this.projection.timer.editingStartedAt = null;
         this.projection.timer.editingLeaseExpiresAt = null;
+        this.projection.timer.editingSessionId = null;
       }
       if (
         Date.parse(input.resolvedAt) <
@@ -1190,11 +1203,24 @@ class MemoryInteractionStore implements HarnessInteractionStore {
           Date.parse(leaseExpiresAt) <= Date.parse(at))
       ) {
         this.projection.timer.editingStartedAt = at;
+        this.projection.timer.editingSessionId =
+          input.editingSessionId;
+      } else if (
+        this.projection.timer.editingSessionId !==
+        input.editingSessionId
+      ) {
+        return 'stale' as const;
       }
       this.projection.timer.editingLeaseExpiresAt = new Date(
         Date.parse(at) + 30_000,
       ).toISOString();
     } else {
+      if (
+        this.projection.timer.editingSessionId !==
+        input.editingSessionId
+      ) {
+        return 'stale' as const;
+      }
       const leaseExpiresAt =
         this.projection.timer.editingLeaseExpiresAt ?? at;
       const pauseEndedAt = Math.min(
@@ -1208,20 +1234,10 @@ class MemoryInteractionStore implements HarnessInteractionStore {
       ).toISOString();
       this.projection.timer.editingStartedAt = null;
       this.projection.timer.editingLeaseExpiresAt = null;
+      this.projection.timer.editingSessionId = null;
     }
     this.editing = input.editing;
     return 'updated' as const;
-  }
-
-  async setInteractionRendererCapability(
-    _workspaceId: string,
-    _runId: string,
-    capability: 'available' | 'unavailable' | 'unknown',
-  ) {
-    if (!this.pending) return false;
-    if (!this.projection) return false;
-    this.projection.rendererCapability = capability;
-    return true;
   }
 
   async ackInteractionRenderer(

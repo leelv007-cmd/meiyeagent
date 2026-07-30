@@ -243,6 +243,7 @@ test('exact interaction mutations never fall back to identityless legacy writes'
       setHarnessInteractionEditing('task-legacy-rollout', {
         ...acknowledgement,
         editing: true,
+        editingSessionId: 'editing-session-rollout',
       })
     );
 

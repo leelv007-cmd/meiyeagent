@@ -724,6 +724,7 @@ test(
         step: timeoutRequest.step,
         carrier: 'conversation',
         editing: true,
+        editingSessionId: 'editing-session-timeout',
       });
       now += 90_000;
       const restartedTimeoutService = createPgInteractionService(
@@ -744,6 +745,7 @@ test(
         step: timeoutRequest.step,
         carrier: 'conversation',
         editing: false,
+        editingSessionId: 'editing-session-timeout',
       });
       now += 19_999;
       assert.deepEqual(
@@ -1329,6 +1331,7 @@ test(
         step: execution.step,
         carrier: 'conversation',
         editing: true,
+        editingSessionId: 'editing-session-execution',
       });
       assert.deepEqual(
         (
@@ -1508,6 +1511,7 @@ test(
           service.setEditing(workspaceId, runId, {
             ...forged,
             editing: true,
+            editingSessionId: 'editing-session-forged',
           }),
           /no longer pending/u,
         );
@@ -1527,7 +1531,31 @@ test(
       await service.setEditing(workspaceId, runId, {
         ...acknowledgement,
         editing: true,
+        editingSessionId: 'editing-session-current',
       });
+      await assert.rejects(
+        service.setEditing(workspaceId, runId, {
+          ...acknowledgement,
+          editing: false,
+          editingSessionId: 'editing-session-stale',
+        }),
+        /no longer pending/u,
+      );
+      assert.equal(
+        (
+          (
+            await pool.query<{ pending_projection: unknown }>(
+              `select pending_projection
+                 from harness_runtime.pending_questions
+                where task_id=$1`,
+              [runtimeId],
+            )
+          ).rows[0]!.pending_projection as {
+            timer: { editingSessionId: string | null };
+          }
+        ).timer.editingSessionId,
+        'editing-session-current',
+      );
       await pool.query(
         `update harness_runtime.pending_questions
             set pending_projection=jsonb_set(

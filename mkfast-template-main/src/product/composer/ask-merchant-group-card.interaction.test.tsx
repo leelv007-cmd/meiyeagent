@@ -78,8 +78,19 @@ it('renders every item but submits labels without descriptions', async () => {
   await user.tab();
   await user.click(screen.getByRole('button', { name: '提交回答' }));
 
-  expect(onEditingChange).toHaveBeenNthCalledWith(1, REQUEST, true);
-  expect(onEditingChange).toHaveBeenLastCalledWith(REQUEST, false);
+  const editingSessionId = onEditingChange.mock.calls[0]?.[2];
+  expect(editingSessionId).toEqual(expect.any(String));
+  expect(onEditingChange).toHaveBeenNthCalledWith(
+    1,
+    REQUEST,
+    true,
+    editingSessionId
+  );
+  expect(onEditingChange).toHaveBeenLastCalledWith(
+    REQUEST,
+    false,
+    editingSessionId
+  );
   expect(onSubmit).toHaveBeenCalledWith({
     kind: 'answer',
     items: [
@@ -205,11 +216,13 @@ it('bounds renderer retries while Core remains unavailable', async () => {
 
 it('renews the editing lease while parent polling keeps rerendering', async () => {
   vi.useFakeTimers();
-  const editingCalls: Array<[AskMerchantQuestionRequest, boolean]> = [];
+  const editingCalls: Array<
+    [AskMerchantQuestionRequest, boolean, string]
+  > = [];
   const view = render(
     <AskMerchantGroupCard
-      onEditingChange={async (request, editing) => {
-        editingCalls.push([request, editing]);
+      onEditingChange={async (request, editing, editingSessionId) => {
+        editingCalls.push([request, editing, editingSessionId]);
       }}
       onRendererReady={async () => undefined}
       onSubmit={async () => undefined}
@@ -220,14 +233,17 @@ it('renews the editing lease while parent polling keeps rerendering', async () =
   fireEvent.focus(
     screen.getByRole('textbox', { name: '活动到哪天结束？' })
   );
-  expect(editingCalls).toEqual([[REQUEST, true]]);
+  expect(editingCalls).toHaveLength(1);
+  const editingSessionId = editingCalls[0]?.[2];
+  expect(editingSessionId).toEqual(expect.any(String));
+  expect(editingCalls[0]).toEqual([REQUEST, true, editingSessionId]);
 
   for (let elapsed = 0; elapsed < 32_000; elapsed += 2_000) {
     await vi.advanceTimersByTimeAsync(2_000);
     view.rerender(
       <AskMerchantGroupCard
-        onEditingChange={async (request, editing) => {
-          editingCalls.push([request, editing]);
+        onEditingChange={async (request, editing, nextEditingSessionId) => {
+          editingCalls.push([request, editing, nextEditingSessionId]);
         }}
         onRendererReady={async () => undefined}
         onSubmit={async () => undefined}
@@ -237,5 +253,9 @@ it('renews the editing lease while parent polling keeps rerendering', async () =
   }
 
   expect(editingCalls).toHaveLength(3);
-  expect(editingCalls.at(-1)).toEqual([REQUEST, true]);
+  expect(editingCalls.at(-1)).toEqual([
+    REQUEST,
+    true,
+    editingSessionId,
+  ]);
 });

@@ -430,6 +430,7 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
         step: 'context_injection',
         carrier: 'conversation',
         editing: true,
+        editingSessionId: 'editing-session-http-1',
       }),
     },
   );
@@ -503,6 +504,7 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
         step: 'context_injection',
         carrier: 'conversation',
         editing: true,
+        editingSessionId: 'editing-session-http-1',
       },
     ],
     ['read-message', 'workspace-1', 'task-http-1', 'conversation'],

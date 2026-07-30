@@ -38,6 +38,7 @@ const currentInteractionTimerSchema = z.discriminatedUnion('kind', [
       deadlineAt: z.iso.datetime(),
       editingStartedAt: z.iso.datetime().nullable(),
       editingLeaseExpiresAt: z.iso.datetime().nullable(),
+      editingSessionId: z.string().trim().min(1).nullable().optional(),
     })
     .strict(),
 ]);
@@ -50,6 +51,7 @@ const legacyInteractionTimerSchema = z.discriminatedUnion('kind', [
       deadlineAt: z.iso.datetime(),
       editingStartedAt: z.iso.datetime().nullable(),
       editingLeaseExpiresAt: z.iso.datetime().nullable().optional(),
+      editingSessionId: z.string().trim().min(1).nullable().optional(),
     })
     .strict(),
 ]);
@@ -110,7 +112,19 @@ export const harnessInteractionPendingProjectionSchema = z
     legacyHarnessInteractionPendingProjectionSchema,
   ])
   .transform((projection) => {
-    if (projection.version === 2) return projection;
+    if (projection.version === 2) {
+      return {
+        ...projection,
+        timer:
+          projection.timer.kind === 'hold'
+            ? projection.timer
+            : {
+                ...projection.timer,
+                editingSessionId:
+                  projection.timer.editingSessionId ?? null,
+              },
+      };
+    }
     return {
       ...projection,
       version: 2 as const,
@@ -123,6 +137,7 @@ export const harnessInteractionPendingProjectionSchema = z
               ...projection.timer,
               editingStartedAt: null,
               editingLeaseExpiresAt: null,
+              editingSessionId: null,
             },
     };
   });
@@ -204,6 +219,7 @@ export function createHarnessInteractionPendingProjection(
             ).toISOString(),
             editingStartedAt: null,
             editingLeaseExpiresAt: null,
+            editingSessionId: null,
           }
         : { kind: 'hold' },
   });
@@ -329,11 +345,6 @@ export interface HarnessInteractionStore {
     runId: string,
     input: HarnessInteractionEditing,
   ): Promise<'updated' | 'replayed' | 'stale' | 'unknown_state'>;
-  setInteractionRendererCapability(
-    workspaceId: string,
-    runId: string,
-    capability: HarnessInteractionPendingProjection['rendererCapability'],
-  ): Promise<boolean>;
   ackInteractionRenderer(
     workspaceId: string,
     runId: string,
@@ -680,25 +691,6 @@ export class HarnessInteractionService {
       );
     }
     if (outcome === 'stale') {
-      throw new HarnessInteractionError(
-        'STALE_INTERACTION_REQUEST',
-        'The interaction request is no longer pending.',
-      );
-    }
-  }
-
-  async setRendererCapability(
-    workspaceId: string,
-    runId: string,
-    capability: HarnessInteractionPendingProjection['rendererCapability'],
-  ) {
-    if (
-      !(await this.store.setInteractionRendererCapability(
-        workspaceId,
-        runId,
-        interactionRendererCapabilitySchema.parse(capability),
-      ))
-    ) {
       throw new HarnessInteractionError(
         'STALE_INTERACTION_REQUEST',
         'The interaction request is no longer pending.',

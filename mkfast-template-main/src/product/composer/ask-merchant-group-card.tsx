@@ -26,7 +26,8 @@ export function AskMerchantGroupCard({
 }: {
   onEditingChange: (
     request: AskMerchantQuestionRequest,
-    editing: boolean
+    editing: boolean,
+    editingSessionId: string
   ) => Promise<void>;
   onRendererReady: (request: AskMerchantQuestionRequest) => Promise<void>;
   onRendererRejected?: (
@@ -38,6 +39,10 @@ export function AskMerchantGroupCard({
 }) {
   const [results, setResults] = useState<Record<string, ItemResult>>({});
   const [editing, setEditing] = useState(false);
+  const editingSessionId = useMemo(
+    () => globalThis.crypto.randomUUID(),
+    [request.requestId, request.revision]
+  );
   const editingSignalRef = useRef({ onEditingChange, request });
   editingSignalRef.current = { onEditingChange, request };
 
@@ -76,10 +81,12 @@ export function AskMerchantGroupCard({
     if (!editing) return;
     const leaseRenewal = setInterval(() => {
       const signal = editingSignalRef.current;
-      void signal.onEditingChange(signal.request, true).catch(() => undefined);
+      void signal
+        .onEditingChange(signal.request, true, editingSessionId)
+        .catch(() => undefined);
     }, 15_000);
     return () => clearInterval(leaseRenewal);
-  }, [editing, request.requestId, request.revision]);
+  }, [editing, editingSessionId, request.requestId, request.revision]);
 
   const complete = useMemo(
     () =>
@@ -142,7 +149,11 @@ export function AskMerchantGroupCard({
                   disabled={pending}
                   onBlur={() => {
                     setEditing(false);
-                    void onEditingChange(request, false).catch(() => undefined);
+                    void onEditingChange(
+                      request,
+                      false,
+                      editingSessionId
+                    ).catch(() => undefined);
                   }}
                   onChange={(event) => {
                     const value = event.target.value;
@@ -155,7 +166,11 @@ export function AskMerchantGroupCard({
                   }}
                   onFocus={() => {
                     setEditing(true);
-                    void onEditingChange(request, true).catch(() => undefined);
+                    void onEditingChange(
+                      request,
+                      true,
+                      editingSessionId
+                    ).catch(() => undefined);
                   }}
                   placeholder={
                     question.freeText?.placeholder ?? '也可以直接告诉我'

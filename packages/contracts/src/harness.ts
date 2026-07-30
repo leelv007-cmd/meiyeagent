@@ -409,6 +409,7 @@ export const harnessInteractionRendererAckSchema = z
 export const harnessInteractionEditingSchema =
   harnessInteractionRendererAckSchema.extend({
     editing: z.boolean(),
+    editingSessionId: harnessIdSchema,
   });
 
 export const harnessInteractionMerchantMessageSchema = z

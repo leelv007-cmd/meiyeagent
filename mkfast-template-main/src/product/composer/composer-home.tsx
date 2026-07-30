@@ -2728,13 +2728,14 @@ export function ComposerHome({
           questionSlot={
             pendingAskRequest ? (
               <AskMerchantGroupCard
-                onEditingChange={(request, editing) =>
+                onEditingChange={(request, editing, editingSessionId) =>
                   setHarnessInteractionEditing(taskId, {
                     requestId: request.requestId,
                     revision: request.revision,
                     step: request.step,
                     carrier: 'conversation',
                     editing,
+                    editingSessionId,
                   })
                 }
                 onRendererReady={acknowledgeAskMerchantRenderer}
