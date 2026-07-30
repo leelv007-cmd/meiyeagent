@@ -4,11 +4,29 @@ import test from 'node:test';
 
 import { Pool } from 'pg';
 
+import type { EvalRun } from '@meiye/contracts';
+
+import { PostgresCreationExperienceCatalogRepository } from '../creation-experience/postgres-repository.js';
+import { P1ApplicationService } from '../foundation/application-service.js';
+import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
+import {
+  executeCopySelection,
+  type CopySelectionInput,
+} from '../harness/execution-selection.js';
+import {
+  HARNESS_BUILTIN_PROMPTS,
+  HARNESS_PROMPT_SITES,
+  type HarnessFrozenPrompts,
+} from '../harness/langfuse-prompts.js';
+import type { StructuredNodeRunnerRequest } from '../model-supply/structured-node-runner.js';
 import {
   createDurableSkillRuntime,
   PostgresSkillRepository,
+  SkillFoundationModule,
   SkillService,
+  skillPromptSnapshotPortFromHarness,
 } from './index.js';
+import { DurableSkillInstructionResolver } from './runtime.js';
 
 function promptReference(prompt: {
   contentHash: string;
@@ -35,6 +53,260 @@ import type {
 } from './types.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
+
+const COPYWRITING_INSTRUCTION = [
+  'Write one directly usable primary recommendation before optional alternatives.',
+  'Prefer customer benefits and concrete confirmed facts over feature lists or vague claims.',
+  'Use customer language, one claim per paragraph, and one confirmed conversion action.',
+  'Never invent prices, results, qualifications, reviews, scarcity, statistics, or authorization.',
+  'Keep the title, body, and CTA aligned to the same marketing objective.',
+].join(' ');
+
+const SKILL_CREATOR_INSTRUCTION = [
+  'Use this recipe when the merchant says phrases such as "以后都这么做", "记住这个流程", or "下次照这个来".',
+  'Read the current conversation first and extract the tools used, ordered steps, merchant corrections, and observed input/output formats.',
+  'Ask once for only the missing fields; the group and every field must allow an explicit unknown or skipped answer.',
+  'Create only a proposal with source-conversation evidence. Record an immutable store recipe only after an authenticated merchant confirmation.',
+].join(' ');
+
+test(
+  'copywriting crosses the public lifecycle and changes the production generation request after a PostgreSQL restart',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const suffix = randomUUID();
+    const workspaceId = `workspace-copywriting-${suffix}`;
+    const workflowRevision = 260;
+    const workflowRevisionRef = `workflow.copy@${workflowRevision}`;
+    const copywritingSkillId = `skill.beauty-copywriting.${suffix}`;
+    const creatorSkillId = `skill.capture-store-workflow.${suffix}`;
+    const skillIds = [copywritingSkillId, creatorSkillId];
+    const evalRunIds = [
+      `eval-copywriting-v1-${suffix}`,
+      `eval-copywriting-v2-${suffix}`,
+      `eval-skill-creator-${suffix}`,
+    ];
+    const firstPool = new Pool({ connectionString });
+    const prompts = frozenHarnessPrompts();
+    let restartedPool: Pool | undefined;
+
+    try {
+      const runtime = await createIssue260SkillRuntime(firstPool, prompts);
+      const foundation = new MemoryFoundationRepository();
+      const context = {
+        actor: 'admin' as const,
+        correlationId: `corr-copywriting-${suffix}`,
+        userId: `operator-copywriting-${suffix}`,
+        workspaceId,
+      };
+      foundation.grantOwner(workspaceId, context.userId);
+      const application = new P1ApplicationService(foundation, {
+        operations: [runtime.foundationModule],
+      });
+      const command = (
+        action: string,
+        payload: Record<string, unknown>,
+      ) => application.executeModule(
+        context,
+        'skills',
+        { action, payload },
+        `${action}:${String(payload.runId ?? payload.skillRevisionRef ?? payload.bindingId ?? payload.skillId)}:${String(payload.expectedRevision ?? '')}`,
+      );
+
+      const copyPrompt = prompts.copyCandidate;
+      assert.deepEqual(
+        await application.queryModule(context, 'skills', {
+          action: 'skill_prompt_reference',
+          payload: { slot: 'copyCandidate' },
+        }),
+        {
+          contentHash: copyPrompt.contentHash,
+          eligibleForAcceptance: true,
+          isFallback: false,
+          label: 'production',
+          name: copyPrompt.name,
+          source: 'langfuse',
+          version: copyPrompt.version,
+        },
+      );
+
+      const copyV1 = await command('skill_define', copywritingDefinition({
+        expectedRevision: null,
+        instruction: COPYWRITING_INSTRUCTION,
+        prompt: copyPrompt,
+        skillId: copywritingSkillId,
+        workflowRevisionRef,
+      })) as { revision: { skillRevisionRef: string } };
+      await storePassingEval(
+        runtime.repository,
+        evalRunIds[0]!,
+        copyV1.revision.skillRevisionRef,
+        copyPrompt,
+      );
+      await command('skill_accept', {
+        evalRunId: evalRunIds[0],
+        skillRevisionRef: copyV1.revision.skillRevisionRef,
+      });
+
+      const copyV2 = await command('skill_define', copywritingDefinition({
+        expectedRevision: 1,
+        instruction: `${COPYWRITING_INSTRUCTION} Prefer two alternatives by default.`,
+        prompt: copyPrompt,
+        skillId: copywritingSkillId,
+        workflowRevisionRef,
+      })) as { revision: { skillRevisionRef: string } };
+      await storePassingEval(
+        runtime.repository,
+        evalRunIds[1]!,
+        copyV2.revision.skillRevisionRef,
+        copyPrompt,
+      );
+      await command('skill_accept', {
+        evalRunId: evalRunIds[1],
+        skillRevisionRef: copyV2.revision.skillRevisionRef,
+      });
+      await command('skill_bind', {
+        bindingId: `binding-copywriting-v2-${suffix}`,
+        mode: 'required',
+        skillRevisionRef: copyV2.revision.skillRevisionRef,
+        triggerCondition: { harnessStage: 'execution_selection' },
+        workflowRevisionRef,
+      });
+      await command('skill_rollback', {
+        bindingId: `binding-copywriting-v1-${suffix}`,
+        sourceBindingId: `binding-copywriting-v2-${suffix}`,
+        targetSkillRevisionRef: copyV1.revision.skillRevisionRef,
+        workflowRevisionRef,
+      });
+      await command('skill_deployment', {
+        channel: 'prompt-materialization',
+        deploymentId: `deployment-copywriting-${suffix}`,
+        executionMode: 'prompt_materialized',
+        nativeSkillId: 'beauty-copywriting',
+        nativeVersion: '1',
+        packagePaths: ['SKILL.md'],
+        provider: 'core-harness',
+        skillRevisionRef: copyV1.revision.skillRevisionRef,
+      });
+      await command('skill_publish', {
+        expectedPublicationGeneration: 0,
+        expectedPublishedRevisionRef: null,
+        runId: `publish-copywriting-${suffix}`,
+        skillId: copywritingSkillId,
+        targetSkillRevisionRef: copyV1.revision.skillRevisionRef,
+      });
+
+      const creatorPrompt = prompts.intentNaming;
+      const creator = await command('skill_define', skillCreatorDefinition({
+        prompt: creatorPrompt,
+        skillId: creatorSkillId,
+        workflowRevisionRef,
+      })) as { revision: { skillRevisionRef: string } };
+      await storePassingEval(
+        runtime.repository,
+        evalRunIds[2]!,
+        creator.revision.skillRevisionRef,
+        creatorPrompt,
+      );
+      await command('skill_accept', {
+        evalRunId: evalRunIds[2],
+        skillRevisionRef: creator.revision.skillRevisionRef,
+      });
+      await command('skill_publish', {
+        expectedPublicationGeneration: 0,
+        expectedPublishedRevisionRef: null,
+        runId: `publish-skill-creator-${suffix}`,
+        skillId: creatorSkillId,
+        targetSkillRevisionRef: creator.revision.skillRevisionRef,
+      });
+
+      await firstPool.end();
+      restartedPool = new Pool({ connectionString });
+      const restarted = await createIssue260SkillRuntime(
+        restartedPool,
+        prompts,
+      );
+      assert.equal(
+        (await restarted.repository.getCatalog(copywritingSkillId))
+          ?.activeRevisionRef,
+        `${copywritingSkillId}@1`,
+      );
+      assert.equal(
+        (await restarted.repository.getCatalog(creatorSkillId))
+          ?.activeRevisionRef,
+        `${creatorSkillId}@1`,
+      );
+      assert.deepEqual(
+        await restarted.repository.listBindings(workflowRevisionRef, {
+          harnessStage: 'intent_naming',
+          industryCategory: null,
+          tenantId: workspaceId,
+        }),
+        [],
+        'The recipe stays unavailable until the ordinary-session proposal/confirm consumer lands.',
+      );
+
+      const resolved = await restarted.instructionResolver.resolve({
+        stage: 'execution_selection',
+        workflowId: `task-copywriting-${suffix}`,
+        workflowRevision,
+        workspaceId,
+      });
+      assert.deepEqual(
+        resolved.instructions.map(({ skillRevisionRef }) => skillRevisionRef),
+        [`${copywritingSkillId}@1`],
+      );
+      assert.deepEqual(
+        resolved.receipts.map(({ prompt, skillRevisionRef }) => ({
+          prompt,
+          skillRevisionRef,
+        })),
+        [{
+          prompt: {
+            contentHash: copyPrompt.contentHash,
+            isFallback: false,
+            name: copyPrompt.name,
+            version: copyPrompt.version,
+          },
+          skillRevisionRef: `${copywritingSkillId}@1`,
+        }],
+      );
+
+      const withoutSkill = new CopywritingRunner();
+      const withSkill = new CopywritingRunner();
+      const baseline = await executeCopySelection(
+        copySelectionInput(workspaceId, `baseline-${suffix}`),
+        { runner: withoutSkill, validator: passingCopyValidator },
+      );
+      const treatment = await executeCopySelection(
+        {
+          ...copySelectionInput(workspaceId, `treatment-${suffix}`),
+          skillInstructions: resolved.instructions,
+        },
+        { runner: withSkill, validator: passingCopyValidator },
+      );
+      assert.notEqual(baseline.winner.body, treatment.winner.body);
+      assert.doesNotMatch(
+        withoutSkill.requests[0]?.instructions ?? '',
+        /customer benefits and concrete confirmed facts/u,
+      );
+      assert.match(
+        withSkill.requests[0]?.instructions ?? '',
+        new RegExp(
+          `\\[${escapeRegExp(`${copywritingSkillId}@1`)}\\] ${escapeRegExp(COPYWRITING_INSTRUCTION)}`,
+          'u',
+        ),
+      );
+    } finally {
+      if (restartedPool) {
+        await cleanIssue260Skills(restartedPool, skillIds, evalRunIds);
+        await restartedPool.end();
+      } else {
+        await cleanIssue260Skills(firstPool, skillIds, evalRunIds);
+        await firstPool.end().catch(() => undefined);
+      }
+    }
+  },
+);
 
 test(
   'concurrent Skill repository migrations serialize into one valid schema',
@@ -592,6 +864,277 @@ test(
     }
   },
 );
+
+function frozenHarnessPrompts(): HarnessFrozenPrompts {
+  return Object.fromEntries(
+    Object.entries(HARNESS_PROMPT_SITES).map(([key, site]) => {
+      const content = HARNESS_BUILTIN_PROMPTS[
+        key as keyof typeof HARNESS_BUILTIN_PROMPTS
+      ];
+      return [
+        key,
+        {
+          content,
+          contentHash: createHash('sha256').update(content).digest('hex'),
+          isFallback: false,
+          label: 'production',
+          name: site.name,
+          source: 'langfuse',
+          version: '260',
+        },
+      ];
+    }),
+  ) as HarnessFrozenPrompts;
+}
+
+function copywritingDefinition(input: {
+  expectedRevision: number | null;
+  instruction: string;
+  prompt: HarnessFrozenPrompts['copyCandidate'];
+  skillId: string;
+  workflowRevisionRef: string;
+}) {
+  return {
+    expectedRevision: input.expectedRevision,
+    frontmatter: {
+      description:
+        'Writes grounded beauty-business copy with one usable primary recommendation.',
+      license: 'MIT',
+      metadata: {
+        author: 'Corey Haines',
+        'source-commit': '7868cb9251fad80a73d26e488a5ad5f6c4a9f335',
+        'source-path': 'skills/copywriting/SKILL.md',
+      },
+      name: 'beauty-copywriting',
+    },
+    governance: {
+      budget: {
+        maxChildEffects: 0,
+        maxCostCents: 0,
+        timeoutMs: 10_000,
+      },
+      contextScopes: [],
+      executionMode: 'prompt_materialized',
+      fallback: 'fail_closed',
+      inputSchemaRef: 'skill-input.daily-industry@1',
+      outputSchemaRef: 'skill-output.intent-decision@1',
+      requiredModelCapabilities: ['structured_output'],
+      sideEffectClass: 'none',
+      workflowRevisionRefs: [input.workflowRevisionRef],
+    },
+    instruction: input.instruction,
+    name: 'Beauty copywriting',
+    packagePaths: ['SKILL.md'],
+    presentationPolicy: 'backend_only',
+    promptReference: promptReference(input.prompt),
+    skillId: input.skillId,
+    sourceKind: 'harvested',
+    sourceRef: {
+      externalUrl:
+        'https://github.com/coreyhaines31/marketingskills/blob/7868cb9251fad80a73d26e488a5ad5f6c4a9f335/skills/copywriting/SKILL.md',
+      harvestedAt: '2026-07-30T00:00:00.000Z',
+    },
+    tier: 'platform',
+  };
+}
+
+function skillCreatorDefinition(input: {
+  prompt: HarnessFrozenPrompts['intentNaming'];
+  skillId: string;
+  workflowRevisionRef: string;
+}) {
+  return {
+    expectedRevision: null,
+    frontmatter: {
+      'allowed-tools': 'read_context ask_merchant record',
+      compatibility:
+        'Requires an ordinary-session proposal and authenticated confirmation consumer before binding.',
+      description:
+        'Captures a merchant-approved conversation workflow as an immutable store recipe.',
+      license: 'Apache-2.0',
+      metadata: {
+        author: 'Anthropic',
+        'source-commit': 'b29e7cf65e5cb78a5ac33d582270551bc74a14eb',
+        'source-path': 'skills/skill-creator/SKILL.md',
+      },
+      name: 'capture-store-workflow',
+    },
+    governance: {
+      budget: {
+        maxChildEffects: 3,
+        maxCostCents: 0,
+        timeoutMs: 30_000,
+      },
+      contextScopes: ['conversation', 'merchant_confirmation'],
+      executionMode: 'harness_native',
+      fallback: 'fail_closed',
+      inputSchemaRef: 'skill-input.daily-industry@1',
+      outputSchemaRef: 'skill-output.intent-decision@1',
+      requiredModelCapabilities: ['tool_calling'],
+      sideEffectClass: 'bounded_write',
+      workflowRevisionRefs: [input.workflowRevisionRef],
+    },
+    instruction: SKILL_CREATOR_INSTRUCTION,
+    name: 'Capture store workflow',
+    packagePaths: ['SKILL.md'],
+    presentationPolicy: 'backend_only',
+    promptReference: promptReference(input.prompt),
+    skillId: input.skillId,
+    sourceKind: 'harvested',
+    sourceRef: {
+      externalUrl:
+        'https://github.com/anthropics/skills/blob/b29e7cf65e5cb78a5ac33d582270551bc74a14eb/skills/skill-creator/SKILL.md',
+      harvestedAt: '2026-07-30T00:00:00.000Z',
+    },
+    tier: 'platform',
+  };
+}
+
+async function storePassingEval(
+  repository: PostgresSkillRepository,
+  runId: string,
+  skillRevisionRef: string,
+  prompt: HarnessFrozenPrompts[keyof HarnessFrozenPrompts],
+) {
+  const run: EvalRun = {
+    createdAt: '2026-07-30T00:00:00.000Z',
+    mode: 'recorded_fixture',
+    passed: true,
+    results: [
+      {
+        caseId: `accept-${skillRevisionRef}`,
+        gateId: 'skill_revision_acceptance',
+        memoryDiff: null,
+        passed: true,
+        promptRevision: `${prompt.name}@${prompt.version}`,
+        reason: 'The recorded fixture passed the frozen Skill revision gate.',
+        scorerRevision: 'skill-routing-scorer@1',
+        skillRevisionRef,
+      },
+    ],
+    runId,
+    schemaVersion: 'eval-run/v1',
+    suiteId: 'issue-260-skill-recipes',
+    suiteRevision: 'issue-260-skill-recipes@1',
+  };
+  await repository.putImmutable(runId, run);
+}
+
+async function createIssue260SkillRuntime(
+  pool: Pool,
+  prompts: HarnessFrozenPrompts,
+) {
+  const repository = new PostgresSkillRepository(pool);
+  await repository.migrate();
+  const service = new SkillService(
+    repository,
+    undefined,
+    skillPromptSnapshotPortFromHarness({
+      async resolve() {
+        return prompts;
+      },
+    }),
+  );
+  return {
+    foundationModule: new SkillFoundationModule(service),
+    instructionResolver: new DurableSkillInstructionResolver(
+      service,
+      new PostgresCreationExperienceCatalogRepository(pool),
+    ),
+    repository,
+  };
+}
+
+class CopywritingRunner implements StructuredNodeRunner {
+  readonly requests: StructuredNodeRunnerRequest<unknown>[] = [];
+
+  async run<Output>(request: StructuredNodeRunnerRequest<Output>) {
+    this.requests.push(request as StructuredNodeRunnerRequest<unknown>);
+    const usesCopywriting = request.instructions.includes(
+      COPYWRITING_INSTRUCTION,
+    );
+    return {
+      attempts: 1,
+      output: request.schema.parse({
+        assetRefs: [],
+        body: usesCopywriting
+          ? '从已确认的护理体验出发，给顾客一个清楚、可核对的到店理由。'
+          : '欢迎体验我们的护理项目。',
+        conversionHook: '私信预约',
+        expressionIdentityRef: 'identity-owner-260',
+        factClaims: [],
+        title: usesCopywriting ? '今天，给自己一次认真护理' : '护理项目推荐',
+      }),
+      providerTaskRef: `issue-260-copy-${this.requests.length}`,
+      replayed: false,
+      usage: { inputTokens: 10, outputTokens: 20 },
+    };
+  }
+}
+
+const passingCopyValidator = {
+  validate() {
+    return { failures: [], passed: true };
+  },
+};
+
+function copySelectionInput(
+  workspaceId: string,
+  workflowId: string,
+): CopySelectionInput {
+  return {
+    brief: {
+      assetRefs: [],
+      constraints: ['不得编造事实'],
+      cta: '私信预约',
+      factRefs: [],
+      identityRefs: ['identity-owner-260'],
+      instructions: '基于已确认事实写一条护理项目曝光文案。',
+      kind: 'copy',
+      platform: 'xiaohongshu',
+    },
+    generationContext: {
+      bundle: { revision: 1, workspaceId },
+      identityRefs: [{ id: 'identity-owner-260', status: 'registered' }],
+      rightsRefs: [],
+      sourceRefs: [],
+    },
+    intendedUse: 'public_content',
+    unitId: 'copy-primary',
+    workflowId,
+    workspaceId,
+  };
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+}
+
+async function cleanIssue260Skills(
+  pool: Pool,
+  skillIds: string[],
+  evalRunIds: string[],
+) {
+  const skillPatterns = skillIds.map((skillId) => `${skillId}@%`);
+  await pool.query(
+    `DELETE FROM p1_skill_reference_edges
+      WHERE target_skill_revision_ref LIKE ANY($1::text[])
+         OR (consumer_kind = 'eval_run' AND consumer_id = ANY($2::text[]))`,
+    [skillPatterns, evalRunIds],
+  );
+  for (const [table, predicate, values] of [
+    ['p1_skill_governance_runs', "payload->>'skillId' = ANY($1::text[])", skillIds],
+    ['p1_skill_governance_reservations', "payload->>'skillId' = ANY($1::text[])", skillIds],
+    ['p1_skill_deployments', 'skill_revision_ref LIKE ANY($1::text[])', skillPatterns],
+    ['p1_skill_bindings', 'skill_id = ANY($1::text[])', skillIds],
+    ['p1_skill_eval_runs', 'run_id = ANY($1::text[])', evalRunIds],
+    ['p1_skill_revisions', 'skill_id = ANY($1::text[])', skillIds],
+    ['p1_skill_revision_heads', 'skill_id = ANY($1::text[])', skillIds],
+    ['p1_skill_catalogs', 'skill_id = ANY($1::text[])', skillIds],
+  ] as const) {
+    await pool.query(`DELETE FROM ${table} WHERE ${predicate}`, [values]);
+  }
+}
 
 test(
   'migration backfills the #258 catalog shape before #259 list reads',
