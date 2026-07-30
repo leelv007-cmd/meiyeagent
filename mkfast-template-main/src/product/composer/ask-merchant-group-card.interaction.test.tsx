@@ -1,5 +1,5 @@
 import type { AskMerchantQuestionRequest } from '@meiye/contracts';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 
@@ -128,4 +128,41 @@ it('retries the exact renderer acknowledgement after a transient failure', async
   await vi.advanceTimersByTimeAsync(1_000);
   expect(onRendererReady).toHaveBeenCalledTimes(2);
   expect(onRendererReady).toHaveBeenLastCalledWith(REQUEST);
+});
+
+it('renews the editing lease while parent polling keeps rerendering', async () => {
+  vi.useFakeTimers();
+  const editingCalls: Array<[AskMerchantQuestionRequest, boolean]> = [];
+  const view = render(
+    <AskMerchantGroupCard
+      onEditingChange={async (request, editing) => {
+        editingCalls.push([request, editing]);
+      }}
+      onRendererReady={async () => undefined}
+      onSubmit={async () => undefined}
+      request={REQUEST}
+    />
+  );
+
+  fireEvent.focus(
+    screen.getByRole('textbox', { name: '活动到哪天结束？' })
+  );
+  expect(editingCalls).toEqual([[REQUEST, true]]);
+
+  for (let elapsed = 0; elapsed < 32_000; elapsed += 2_000) {
+    await vi.advanceTimersByTimeAsync(2_000);
+    view.rerender(
+      <AskMerchantGroupCard
+        onEditingChange={async (request, editing) => {
+          editingCalls.push([request, editing]);
+        }}
+        onRendererReady={async () => undefined}
+        onSubmit={async () => undefined}
+        request={{ ...REQUEST }}
+      />
+    );
+  }
+
+  expect(editingCalls).toHaveLength(3);
+  expect(editingCalls.at(-1)).toEqual([REQUEST, true]);
 });

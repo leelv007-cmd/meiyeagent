@@ -2,7 +2,7 @@ import type {
   AskMerchantAnswer,
   AskMerchantQuestionRequest,
 } from '@meiye/contracts';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,6 +30,8 @@ export function AskMerchantGroupCard({
 }) {
   const [results, setResults] = useState<Record<string, ItemResult>>({});
   const [editing, setEditing] = useState(false);
+  const editingSignalRef = useRef({ onEditingChange, request });
+  editingSignalRef.current = { onEditingChange, request };
 
   useEffect(() => {
     setResults({});
@@ -52,10 +54,11 @@ export function AskMerchantGroupCard({
   useEffect(() => {
     if (!editing) return;
     const leaseRenewal = setInterval(() => {
-      void onEditingChange(request, true).catch(() => undefined);
+      const signal = editingSignalRef.current;
+      void signal.onEditingChange(signal.request, true).catch(() => undefined);
     }, 15_000);
     return () => clearInterval(leaseRenewal);
-  }, [editing, onEditingChange, request, request.requestId, request.revision]);
+  }, [editing, request.requestId, request.revision]);
 
   const complete = useMemo(
     () =>
