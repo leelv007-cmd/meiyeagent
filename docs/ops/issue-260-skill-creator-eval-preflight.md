@@ -1,6 +1,7 @@
 # Issue #260 美业版 skill-creator 与 A/B 评测预案
 
-> 状态：`preflight`。基线 `main@cc04918ddb11f5cd5013ee085a369047538e218c`。
+> 状态：`preflight`。只读复核基线
+> `main@d8c1508190cb822f8bd75a999eeffc1ada3735f2`。
 > 本文只定义零 rebase 面的行为合同；未建 Skill、未写管线、未跑 promptfoo，
 > 不能作为 #260 验收证据。
 
@@ -130,15 +131,18 @@ merchant trigger
 - 若无可检测差异，判为死库存并删除，不把“管线跑完”改写成“Skill 有效”；
 - 任何 scorer/golden 变更必须形成下一版 eval revision，禁止覆盖首跑结果。
 
-## 6. 待回填证据
+## 6. 当前依赖与待回填证据
 
-| 门 | 当前 |
-| --- | --- |
-| #256/#250 原语与 ask 契约 | 未合入 |
-| #258 sidecar/frontmatter | 未合入 |
-| #259 五命令/目录面 | 未合入 |
-| #248/#262 三轴事件与快照 | 未合入 |
-| #242-L1 正负控/golden | 未核销 |
-| skill-creator 真实会话 | 未运行 |
-| copywriting paired EvalRun | 未运行 |
-| D-139 浏览器目录旅程 | 前端语义锁未释放 |
+| 门 | 当前 main 证据 | #260 边界 |
+| --- | --- | --- |
+| #256 六原语 | 已合入并接通 `read_context`、`ask_merchant`、`record` 生产装配 | 不新增原语；`record` 仍只是 proposal port |
+| #250 ask_merchant 基础切片 | 已闭合 durable hold、renderer ack、自由文本、reask 与 waiting 专属卡；grouped answer 在单问题 consumer 仍显式拒绝 | Capture Intent 所需的一次性分组补问仍等 grouped workflow consumer，不得把基础切片写成三态整组合同已完成 |
+| #251 proposal/confirm 管道 | 未合入 | 没有该权威管道前，不得宣称一次真实沉淀已走完 `propose_* → confirm_*` |
+| #258 sidecar/frontmatter | 已合入官方格式 import/export、manifest sidecar 与 PG repository | #260 只消费现有格式，不重开 schema |
+| #259/#254 五命令与目录面 | #259 基础面及 #254 W4 代码已合入；严格 checker 仍因缺精确 `#254 关票` 回执返回 exit 10 | 门未开前只做零 rebase 预备；五命令仍须在 #260 自身旅程按公开派发口真跑 |
+| #248/#262 三轴事件与快照 | 已合入 task-root/execution-child 三轴载体与生产 sender | #260 必须证明自身两次执行的精确 skill/prompt/catalog 轴，不以通用上游测试替代 |
+| #242-L1 正负控/golden | 已合入 11-case recorded seam、exact scorer、Promptfoo 正门与 assertion control | 属 recorded 证据，不冒充 live provider；copywriting paired EvalRun 仍须新建 |
+| #247 有界执行 | 已合入 D-167 signed-unbounded/provisional seed/触顶续跑；生产默认仍 fail closed | 浏览器旅程须在 e2e 显式 seed 下运行，不把 e2e 配置写进生产 |
+| skill-creator 真实会话 | 未运行 | 必须包含触发、补问或无补问、proposal、商家确认、PG 重读与目录可见 |
+| copywriting paired EvalRun | 未运行 | 唯一变量必须是 `beauty-copywriting` binding，改善/持平/变差原样记录 |
+| D-139 浏览器目录旅程 | 前端仍缺 #253FE，语义锁未释放 | 前端 gate 满足前不改配方卡入口；满足后与 D lane 最新形态适配 |
