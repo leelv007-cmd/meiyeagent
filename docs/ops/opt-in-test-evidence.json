@@ -48,8 +48,8 @@
     },
     "apps/core/src/p1/execution-spine/postgres-creation-submission-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "4517e11a0bb901ca96c43db535f2cf1b23179a35",
-      "note": "#242 orphan triage picks: 10/0/0 fresh pair, provisioned first"
+      "verifiedAt": "aecb1fb93fa7a66e38e59b2e77964aeaf85fe203",
+      "note": "#242 orphan batch 2 (5eab9138+01064fcf+aecb1fb9): 10/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/foundation/workspace-provision.postgres.test.ts": {
       "status": "green",
@@ -58,73 +58,73 @@
     },
     "apps/core/src/p1/harness/canonical-observability-emitters.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "52c20b180a7e9c5a06fcd555ae343921556ee3ec",
-      "note": "#250 bounded continuation guard: 1/0/0 on an independent fresh pair, provisioned first"
+      "verifiedAt": "aecb1fb93fa7a66e38e59b2e77964aeaf85fe203",
+      "note": "#242 orphan batch 2 (5eab9138+01064fcf+aecb1fb9): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/dbos-registration.smoke.test.ts": {
       "status": "green",
-      "verifiedAt": "83601672c07f91c84369e610b284a70c126c5823",
-      "note": "#250 merge coordinator sample: 15/0/0 fresh pair, provisioned first, run from apps/core (documented tsx/cwd artifact)"
+      "verifiedAt": "aecb1fb93fa7a66e38e59b2e77964aeaf85fe203",
+      "note": "#242 orphan batch 2 (5eab9138+01064fcf+aecb1fb9): 15/0/0 fresh pair, provisioned first, run from apps/core (documented tsx/cwd artifact); an earlier 13/2 read came from sweeping concurrently with an in-progress cherry-pick in the same tree — invocation artifact, rerun clean"
     },
     "apps/core/src/p1/harness/delivery.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "83601672c07f91c84369e610b284a70c126c5823",
-      "note": "#250 merge coordinator sample: 5/0/0 fresh pair, provisioned first"
+      "verifiedAt": "aecb1fb93fa7a66e38e59b2e77964aeaf85fe203",
+      "note": "#242 orphan batch 2 (5eab9138+01064fcf+aecb1fb9): 5/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/fixture-fact-fidelity.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "52c20b180a7e9c5a06fcd555ae343921556ee3ec",
-      "note": "#250 bounded continuation guard: 1/0/0 on an independent fresh pair, provisioned first"
+      "verifiedAt": "aecb1fb93fa7a66e38e59b2e77964aeaf85fe203",
+      "note": "#242 orphan batch 2 (5eab9138+01064fcf+aecb1fb9): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/interaction-service.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "83601672c07f91c84369e610b284a70c126c5823",
-      "note": "#250 merge coordinator sample: 5/0/0 fresh pair, provisioned first"
+      "verifiedAt": "aecb1fb93fa7a66e38e59b2e77964aeaf85fe203",
+      "note": "#242 orphan batch 2 (5eab9138+01064fcf+aecb1fb9): 5/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/issue-255-live-collector.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "52c20b180a7e9c5a06fcd555ae343921556ee3ec",
-      "note": "#250 bounded continuation guard: 1/0/0 on an independent fresh pair, provisioned first"
+      "verifiedAt": "aecb1fb93fa7a66e38e59b2e77964aeaf85fe203",
+      "note": "#242 orphan batch 2 (5eab9138+01064fcf+aecb1fb9): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/issue-255-postgres-live-receipt.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "52c20b180a7e9c5a06fcd555ae343921556ee3ec",
-      "note": "#250 bounded continuation guard: 15/0/0 on an independent fresh pair, provisioned first"
+      "verifiedAt": "aecb1fb93fa7a66e38e59b2e77964aeaf85fe203",
+      "note": "#242 orphan batch 2 (5eab9138+01064fcf+aecb1fb9): 15/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "52c20b180a7e9c5a06fcd555ae343921556ee3ec",
-      "note": "#250 bounded continuation guard: independent fresh pair provisioned first; 0 fail and 3 self-skipped behind the suite's separate destructive-reset opt-in"
+      "verifiedAt": "aecb1fb93fa7a66e38e59b2e77964aeaf85fe203",
+      "note": "#242 orphan batch 2 (5eab9138+01064fcf+aecb1fb9): 0 fail, 3 self-skipped: suite additionally gates on its own destructive-reset env which the coordinator does not set; no red observed"
     },
     "apps/core/src/p1/harness/langfuse-outbox-ops.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "52c20b180a7e9c5a06fcd555ae343921556ee3ec",
-      "note": "#250 bounded continuation guard: 1/0/0 on an independent fresh pair, provisioned first"
+      "verifiedAt": "aecb1fb93fa7a66e38e59b2e77964aeaf85fe203",
+      "note": "#242 orphan batch 2 (5eab9138+01064fcf+aecb1fb9): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/note-media-admission.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "52c20b180a7e9c5a06fcd555ae343921556ee3ec",
-      "note": "#250 bounded continuation guard: 2/0/0 on an independent fresh pair, provisioned first"
+      "verifiedAt": "aecb1fb93fa7a66e38e59b2e77964aeaf85fe203",
+      "note": "#242 orphan batch 2 (5eab9138+01064fcf+aecb1fb9): 2/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/observability-health.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "52c20b180a7e9c5a06fcd555ae343921556ee3ec",
-      "note": "#250 bounded continuation guard: 3/0/0 on an independent fresh pair, provisioned first"
+      "verifiedAt": "aecb1fb93fa7a66e38e59b2e77964aeaf85fe203",
+      "note": "#242 orphan batch 2 (5eab9138+01064fcf+aecb1fb9): 3/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/postgres-billing-compensation-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "52c20b180a7e9c5a06fcd555ae343921556ee3ec",
-      "note": "#250 bounded continuation guard: 1/0/0 on an independent fresh pair, provisioned first"
+      "verifiedAt": "aecb1fb93fa7a66e38e59b2e77964aeaf85fe203",
+      "note": "#242 orphan batch 2 (5eab9138+01064fcf+aecb1fb9): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/postgres-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "52c20b180a7e9c5a06fcd555ae343921556ee3ec",
-      "note": "#250 bounded continuation guard: isolated fresh pair reproduced the known 7/4 missing-relation setup artifact; a separate provisioned fresh pair ran the Core full suite and this file passed 11/11. The only full-suite red was the unrelated clock-sensitive #269 case"
+      "verifiedAt": "aecb1fb93fa7a66e38e59b2e77964aeaf85fe203",
+      "note": "#242 orphan batch 2 (5eab9138+01064fcf+aecb1fb9): 7 pass / 4 fail solo on a fresh pair: the documented cross-file-setup artifact (relation-missing class), same count and shape as the recorded full-suite-green basis; not caused by this batch"
     },
     "apps/core/src/p1/harness/production-media-assembly.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "52c20b180a7e9c5a06fcd555ae343921556ee3ec",
-      "note": "#250 bounded continuation guard: 1/0/0 on an independent fresh pair, provisioned first"
+      "verifiedAt": "aecb1fb93fa7a66e38e59b2e77964aeaf85fe203",
+      "note": "#242 orphan batch 2 (5eab9138+01064fcf+aecb1fb9): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/integrations/douyin-oauth-lifecycle.postgres.test.ts": {
       "status": "unverified",
@@ -213,8 +213,8 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "52c20b180a7e9c5a06fcd555ae343921556ee3ec",
-      "note": "#250 bounded continuation guard: 2/0/0 on an independent fresh pair, provisioned first"
+      "verifiedAt": "aecb1fb93fa7a66e38e59b2e77964aeaf85fe203",
+      "note": "#242 orphan batch 2 (5eab9138+01064fcf+aecb1fb9): 2/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "unverified",
@@ -222,14 +222,14 @@
       "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
     },
     "apps/core/src/p1/result-delivery/assisted-canonical-repository.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "aecb1fb93fa7a66e38e59b2e77964aeaf85fe203",
+      "note": "#242 orphan batch 2 (5eab9138+01064fcf+aecb1fb9): 1 fail solo on a bare provisioned pair (relation p1_content_packages missing — provision script does not create it); running the operations suites that create the table first on the same database turns it 1/0/0 — ordering artifact, proven not analogized"
     },
     "apps/core/src/p1/result-delivery/assisted-receipt-repository.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "aecb1fb93fa7a66e38e59b2e77964aeaf85fe203",
+      "note": "#242 orphan batch 2 (5eab9138+01064fcf+aecb1fb9): 2/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/skills/dbos-governance-workflow.postgres.test.ts": {
       "status": "unverified",
@@ -318,8 +318,8 @@
     },
     "apps/core/src/p1/harness/media-bounded-continuation.dbos.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "83601672c07f91c84369e610b284a70c126c5823",
-      "note": "#250 merge coordinator sample: 1/0/0 fresh pair, provisioned first"
+      "verifiedAt": "aecb1fb93fa7a66e38e59b2e77964aeaf85fe203",
+      "note": "#242 orphan batch 2 (5eab9138+01064fcf+aecb1fb9): 1/0/0 fresh pair, provisioned first"
     }
   }
 }
