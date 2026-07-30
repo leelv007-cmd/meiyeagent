@@ -113,14 +113,14 @@ test('production Skill inventory matches the explicit contract snapshot', () => 
   ]);
 });
 
-test('the Skill operator can pin the copy-generation prompt authority', async () => {
+test('the Skill operator can pin the copy-candidate prompt authority', async () => {
   const content = 'Generate grounded copy from the accepted brief.';
   const prompt = {
     content,
     contentHash: createHash('sha256').update(content).digest('hex'),
     isFallback: false,
     label: 'production',
-    name: 'harness/copy-generation',
+    name: 'harness/copy-candidate',
     source: 'langfuse' as const,
     version: '17',
   };
@@ -132,7 +132,7 @@ test('the Skill operator can pin the copy-generation prompt authority', async ()
         return prompt;
       },
       async reference(slot) {
-        assert.equal(slot, 'copyGeneration');
+        assert.equal(slot, 'copyCandidate');
         return prompt;
       },
     },
@@ -141,13 +141,13 @@ test('the Skill operator can pin the copy-generation prompt authority', async ()
   const result = await new SkillFoundationModule(service).query({
     context: {
       actor: 'admin',
-      correlationId: 'corr-copy-generation-prompt',
-      userId: 'operator-copy-generation-prompt',
-      workspaceId: 'workspace-copy-generation-prompt',
+      correlationId: 'corr-copy-candidate-prompt',
+      userId: 'operator-copy-candidate-prompt',
+      workspaceId: 'workspace-copy-candidate-prompt',
     },
     input: {
       action: 'skill_prompt_reference',
-      payload: { slot: 'copyGeneration' },
+      payload: { slot: 'copyCandidate' },
     },
   });
 
@@ -156,7 +156,7 @@ test('the Skill operator can pin the copy-generation prompt authority', async ()
     eligibleForAcceptance: true,
     isFallback: false,
     label: 'production',
-    name: 'harness/copy-generation',
+    name: 'harness/copy-candidate',
     source: 'langfuse',
     version: '17',
   });

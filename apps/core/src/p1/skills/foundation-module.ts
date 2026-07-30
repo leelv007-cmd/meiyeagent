@@ -318,11 +318,11 @@ export class SkillFoundationModule implements P1OperationModule {
       case 'skill_prompt_reference': {
         onlyKeys(value, ['slot'], 'Skill prompt 引用查询');
         const slot = text(value, 'slot');
-        if (!['intentNaming', 'copyGeneration'].includes(slot)) {
+        if (!['intentNaming', 'copyCandidate'].includes(slot)) {
           fail('Skill prompt slot 不受支持。');
         }
         return this.service.promptReference(
-          slot as 'intentNaming' | 'copyGeneration',
+          slot as 'intentNaming' | 'copyCandidate',
         );
       }
       case 'skill_reverse_dependencies': {
