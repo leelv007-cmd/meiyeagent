@@ -38,15 +38,14 @@
       "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
     },
     "apps/core/src/p1/entitlement-pools/default-runtime-supply-pool.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "5aa820e8e6e5a40ffa2d3e8704acf44d72b76b17",
+      "note": "Issue 270 fresh database, provisioned first: 1/0"
     },
     "apps/core/src/p1/entitlement-pools/postgres-repository.postgres.test.ts": {
-      "status": "known_red",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "ticket": "#270",
-      "note": "3 failures: SupplyRequestFreeze requires an explicit execution channel and pricing tier. Message introduced by da5ac8f0 (#252)."
+      "status": "green",
+      "verifiedAt": "5aa820e8e6e5a40ffa2d3e8704acf44d72b76b17",
+      "note": "Issue 270 fresh database, provisioned first: 10/0"
     },
     "apps/core/src/p1/execution-spine/postgres-creation-submission-store.postgres.test.ts": {
       "status": "unverified",
@@ -145,29 +144,28 @@
     },
     "apps/core/src/p1/model-supply/foundation-ledger.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
-      "note": "Fresh database, provisioned first: 1/0"
+      "verifiedAt": "5aa820e8e6e5a40ffa2d3e8704acf44d72b76b17",
+      "note": "Issue 270 fresh database, provisioned first: 1/0"
     },
     "apps/core/src/p1/model-supply/postgres-owned-asset-cleanup-claim.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
-      "note": "Fresh database, provisioned first: 1/0"
+      "verifiedAt": "5aa820e8e6e5a40ffa2d3e8704acf44d72b76b17",
+      "note": "Issue 270 fresh database, provisioned first: 1/0"
     },
     "apps/core/src/p1/model-supply/reference-asset-dispatch.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
-      "note": "Fresh database, provisioned first: 3/0"
+      "verifiedAt": "5aa820e8e6e5a40ffa2d3e8704acf44d72b76b17",
+      "note": "Issue 270 fresh database, provisioned first: 3/0"
     },
     "apps/core/src/p1/model-supply/retired-video-editing-schema.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
-      "note": "Fresh database, provisioned first: 1/0"
+      "verifiedAt": "5aa820e8e6e5a40ffa2d3e8704acf44d72b76b17",
+      "note": "Issue 270 fresh database, provisioned first: 1/0"
     },
     "apps/core/src/p1/model-supply/usage-ledger-invariants.postgres.test.ts": {
-      "status": "known_red",
-      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
-      "ticket": "#270",
-      "note": "Re-confirmed on a fresh database at the issue 247 tip: still 0 pass / 1 fail with the same SupplyRequestFreeze contract error, so issue 247 neither caused nor changed it."
+      "status": "green",
+      "verifiedAt": "5aa820e8e6e5a40ffa2d3e8704acf44d72b76b17",
+      "note": "Issue 270 fresh database, provisioned first: 2/0"
     },
     "apps/core/src/p1/operations/content-package-migration-cli.postgres.test.ts": {
       "status": "unverified",
@@ -216,8 +214,8 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
-      "note": "Fresh database, provisioned first: 2/0"
+      "verifiedAt": "5aa820e8e6e5a40ffa2d3e8704acf44d72b76b17",
+      "note": "Issue 270 fresh database, provisioned first: 2/0"
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "unverified",
