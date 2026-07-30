@@ -1,8 +1,9 @@
 # Issue #260 美业版 skill-creator 与 A/B 评测预案
 
-> 状态：平台配方与 recorded paired-fixture 后端切片已验证。设计基线
+> 状态：平台配方生产 provisioning、门店会话沉淀后端通路与 recorded
+> 单变量 A/B 已验证。设计基线
 > `main@d8c1508190cb822f8bd75a999eeffc1ada3735f2`；实现与证据基线
-> `issue-260` 当前分支。真实单变量 A/B、沉淀会话与前台入口仍受下表依赖约束。
+> `issue-260` 当前分支。浏览器入口仍由主控 FE 波统一验证。
 
 ## 1. 固定来源
 
@@ -136,14 +137,14 @@ merchant trigger
 | --- | --- | --- |
 | #256 六原语 | 已合入并接通 `read_context`、`ask_merchant`、`record` 生产装配 | 不新增原语；`record` 仍只是 proposal port |
 | #250 ask_merchant 基础切片 | 已闭合 durable hold、renderer ack、自由文本、reask 与 waiting 专属卡；grouped answer 在单问题 consumer 仍显式拒绝 | Capture Intent 所需的一次性分组补问仍等 grouped workflow consumer，不得把基础切片写成三态整组合同已完成 |
-| #251 proposal/confirm 管道 | 未见完整权威合入 | 没有该权威管道前不得绑定 skill-creator，也不得宣称真实沉淀已走完 `propose_* → confirm_*` |
+| #251 proposal/confirm 管道 | 已合入 | 本票复用六原语 `record` proposal 边界，并新增商家 confirm 后才写不可变门店 revision 的 consumer |
 | #258 sidecar/frontmatter | 已合入官方格式 import/export、manifest sidecar 与 PG repository | #260 只消费现有格式，不重开 schema |
 | #259/#254 五命令与目录面 | 已合入且 #260 ledger-only gate 为 `backend=ready` | #260 已按公开 Foundation 派发口在 fresh PG 跑通并重启重读 |
 | #248/#262 三轴事件与快照 | 已合入 task-root/execution-child 三轴载体与生产 sender | #260 必须证明自身两次执行的精确 skill/prompt/catalog 轴，不以通用上游测试替代 |
-| #242-L1 正负控/golden | 已合入 11-case recorded seam、exact scorer、Promptfoo 正门与 assertion control | 属 recorded 证据，不冒充 live provider；copywriting paired EvalRun 仍须新建 |
+| #242-L1 正负控/golden | 已合入 11-case recorded seam、exact scorer、Promptfoo 正门与 assertion control | 属 recorded 证据，不冒充 live provider；copywriting 单变量 EvalRun 独立留证 |
 | #247 有界执行 | 已合入 D-167 signed-unbounded/provisional seed/触顶续跑；生产默认仍 fail closed | 浏览器旅程须在 e2e 显式 seed 下运行，不把 e2e 配置写进生产 |
-| skill-creator 平台配方 | 后端已过 | 正式定义、accept/publish、PG 重启重读已过；因 #251 保持 unbound，未冒充真实沉淀 |
-| skill-creator 真实会话 | 受阻 | 等 #251 权威 proposal/confirm consumer 与前台 gate；之后必须补触发、补问、确认、PG 重读、目录可见 |
-| copywriting paired promptfoo | recorded 接缝证据已过 | 正门 1/0/0；control 0/1/0、exit 100；两臂同时改变 `skillInstructions` 与预制输出，fixture 的 improved/delta +3 只验证接缝和 scorer，不能归因于 Skill |
-| copywriting 真实单变量 A/B | 受阻 | 等创作旅程解除 #251 fixture capability blocker，并用同一真实 provider/model 只切换 binding 生成两臂 |
-| D-139 浏览器目录旅程 | 前端仍缺 #253FE，语义锁未释放 | 前端 gate 满足前不改配方卡入口；满足后与 D lane 最新形态适配 |
+| skill-creator 平台配方 | 后端已过 | 两条 factory 已由生产 runtime provisioning caller 消费并完成 define/accept/publish/bind/deploy |
+| skill-creator 真实会话 | 后端已过 | `read_context → ask_merchant → propose → merchant confirm → immutable revision → catalog` 已由普通 Foundation 接口与 fresh PG 行为测试覆盖；未确认、伪造 confirm、跨 workspace 均有负控 |
+| copywriting 单变量 promptfoo | recorded 接缝证据已过 | 两臂共享同一 output fixture，唯一变量为 treatment `skillInstructions`；观测结论 `unchanged`，不冒充 live provider 效果 |
+| copywriting live provider A/B | 未执行 | 不属于本次“fixture 输出不变”的单变量接缝实验；若后续要判断质量增益，仍须同一真实 provider/model 生成两臂 |
+| D-139 浏览器目录旅程 | 交由主控 FE 波 | 本 worktree 以生产接线与 PG 行为测试覆盖后端；浏览器 E2E 不重复扩面 |

@@ -1,12 +1,12 @@
 # yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
-description: Recorded paired copywriting fixtures through the production generation seam
+description: Recorded single-variable copywriting A/B through the production generation seam
 
 prompts:
   - '{{caseId}}'
 
 providers:
   - id: file://apps/core/src/evals/copywriting/promptfoo-provider.ts
-    label: recorded-copywriting-paired-production-seam
+    label: recorded-copywriting-single-variable-production-seam
 
 tests:
   - file://apps/core/src/evals/copywriting/cases.ts

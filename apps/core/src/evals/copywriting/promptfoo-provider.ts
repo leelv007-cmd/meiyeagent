@@ -14,7 +14,7 @@ import { scoreCopywritingCandidate } from './quality.js';
 
 export default class CopywritingPromptfooProvider {
   id() {
-    return 'meiye:recorded-copywriting-paired-production-seam';
+    return 'meiye:recorded-copywriting-single-variable-production-seam';
   }
 
   async callApi(
@@ -26,7 +26,7 @@ export default class CopywritingPromptfooProvider {
     }
     const vars = context.vars;
     const baselineRunner = new RecordedCopyRunner(vars.baselineOutputJson);
-    const treatmentRunner = new RecordedCopyRunner(vars.treatmentOutputJson);
+    const treatmentRunner = new RecordedCopyRunner(vars.baselineOutputJson);
     const input = copySelectionInput(vars.caseId);
     const prompt = {
       content: 'Generate one grounded copy candidate from the accepted brief.',
@@ -88,8 +88,9 @@ export default class CopywritingPromptfooProvider {
       }),
       metadata: {
         evidenceKind: 'recorded_model_output',
-        comparisonInputs: ['skillInstructions', 'recordedOutputFixture'],
+        comparisonInputs: ['skillInstructions'],
         causalAttribution: false,
+        fixtureOutputPolicy: 'shared_between_arms',
         productionSeam: 'executeCopySelection',
       },
     };
@@ -108,7 +109,7 @@ class RecordedCopyRunner implements StructuredNodeRunner {
       output: request.schema.parse(
         JSON.parse(this.outputJson) as CopywritingCandidateFixture
       ),
-      providerTaskRef: 'recorded-copywriting-paired-eval',
+      providerTaskRef: 'recorded-copywriting-single-variable-eval',
       replayed: false,
       usage: { inputTokens: 0, outputTokens: 0 },
     };

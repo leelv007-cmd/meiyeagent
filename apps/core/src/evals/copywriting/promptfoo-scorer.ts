@@ -1,16 +1,21 @@
+import { isDeepStrictEqual } from 'node:util';
+
 import { BEAUTY_COPYWRITING_INSTRUCTION } from '../../p1/skills/platform-recipes.js';
-import type { CopywritingPromptfooVars } from './cases.js';
+import type {
+  CopywritingCandidateFixture,
+  CopywritingPromptfooVars,
+} from './cases.js';
 
 interface Observation {
   baseline: {
-    output: { body: string; title: string };
+    output: CopywritingCandidateFixture;
     quality: { failures: string[]; score: number };
     requestInstructions: string;
   };
   conclusion: 'improved' | 'unchanged' | 'regressed';
   delta: number;
   treatment: {
-    output: { body: string; title: string };
+    output: CopywritingCandidateFixture;
     quality: { failures: string[]; score: number };
     requestInstructions: string;
   };
@@ -37,11 +42,12 @@ export function scoreCopywritingOutput(
     ...(observation.treatment.requestInstructions.includes(marker)
       ? []
       : ['Treatment did not materialize the Skill instruction.']),
-    ...(observation.baseline.output.body ===
-      observation.treatment.output.body &&
-    observation.baseline.output.title === observation.treatment.output.title
-      ? ['The paired outputs are identical.']
-      : []),
+    ...(isDeepStrictEqual(
+      observation.baseline.output,
+      observation.treatment.output,
+    )
+      ? []
+      : ['The recorded output fixture changed between A/B arms.']),
     ...observation.baseline.quality.failures,
     ...observation.treatment.quality.failures,
     ...(observation.conclusion === context.vars.expectedConclusion
@@ -54,7 +60,7 @@ export function scoreCopywritingOutput(
   return {
     pass: true,
     score: 1,
-    reason: `Recorded paired fixture is ${observation.conclusion} (delta ${observation.delta}); no causal attribution.`,
+    reason: `Recorded single-variable fixture is ${observation.conclusion} (delta ${observation.delta}); no live-model attribution.`,
   };
 }
 

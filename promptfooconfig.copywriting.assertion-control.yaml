@@ -1,12 +1,12 @@
 # yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
-description: Control proving the recorded paired scorer rejects a wrong conclusion
+description: Control proving the recorded single-variable scorer rejects a wrong conclusion
 
 prompts:
   - '{{caseId}}'
 
 providers:
   - id: file://apps/core/src/evals/copywriting/promptfoo-provider.ts
-    label: recorded-copywriting-paired-production-seam
+    label: recorded-copywriting-single-variable-production-seam
 
 tests:
   - file://apps/core/src/evals/copywriting/assertion-control-case.ts
