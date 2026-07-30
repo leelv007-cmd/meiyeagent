@@ -16,6 +16,13 @@ type FenceIdentity = {
 };
 
 export interface Issue255ReceiptFence {
+  bindAcceptedProviderTask(input: {
+    runNonce: string;
+    modality: 'copy' | 'image_text' | 'video';
+    effectId: string;
+    requestFingerprint: string;
+    providerTaskId: string;
+  }): Promise<unknown>;
   claimGenerationPost(
     input: FenceIdentity & {
       adapter: 'direct-copy' | 'tuzi-image' | 'tuzi-video';

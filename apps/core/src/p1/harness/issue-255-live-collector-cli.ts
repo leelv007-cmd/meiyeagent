@@ -19,8 +19,8 @@ import {
 import { reconcileIssue255LiveRun } from './issue-255-live-reconciliation.js';
 import { PostgresIssue255LiveReceiptRepository } from './issue-255-postgres-live-receipt.js';
 
-const coordinatorV4RunNonce =
-  'issue-255-live-anchors-2026-07-30-v4';
+const coordinatorV5RunNonce =
+  'issue-255-live-anchors-2026-07-30-v5';
 
 export function assertIssue255LiveModesMutuallyExclusive(
   env: NodeJS.ProcessEnv,
@@ -194,11 +194,11 @@ export function resolveIssue255LiveEnvelope(
     return { runNonce: argvRunNonce, modality: 'all' as const };
   }
   if (
-    runNonceOverride !== coordinatorV4RunNonce ||
+    runNonceOverride !== coordinatorV5RunNonce ||
     modalityOverride !== 'video'
   ) {
     throw new Error(
-      'Issue 255 live envelope override only permits the coordinator v4 single video retry.',
+      'Issue 255 live envelope override only permits the coordinator v5 single video retry.',
     );
   }
   return { runNonce: runNonceOverride, modality: 'video' as const };

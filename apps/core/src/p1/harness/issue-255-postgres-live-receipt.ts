@@ -30,8 +30,8 @@ const coordinatorV3 = {
   providerCostEventId:
     'issue-255-cost-9f5146a3fd01dd7c869569359677',
 } as const;
-const coordinatorV4RunNonce =
-  'issue-255-live-anchors-2026-07-30-v4';
+const coordinatorV5RunNonce =
+  'issue-255-live-anchors-2026-07-30-v5';
 const legacyImageEffectId =
   'd2ccabe63b58ece3404bd27a36e8b811c5b6bf19c80e5f57b005bf7f5351f98e';
 const legacyImageRequestFingerprint =
@@ -46,8 +46,8 @@ const modalityCapMicros = {
   image_text: 500_000,
   video: 1_620_000,
 } as const;
-// v4 envelope by coordinator 2026-07-30.
-const GLOBAL_BILLABLE_AUTHORIZATION_CAP = 5;
+// v5 envelope by coordinator 2026-07-31.
+const GLOBAL_BILLABLE_AUTHORIZATION_CAP = 6;
 
 const claimInputSchema = z
   .object({
@@ -81,6 +81,7 @@ export interface Issue255LiveReceipt {
   deploymentId: string;
   providerIdempotencyKey: string;
   providerJobId: string;
+  providerTaskId: string | null;
   providerAttemptId: string;
   providerCostEventId: string;
   recordedMatrixDigest: string;
@@ -119,6 +120,7 @@ interface ReceiptRow extends QueryResultRow {
   deployment_id: string;
   provider_idempotency_key: string;
   provider_job_id: string;
+  provider_task_id: string | null;
   provider_attempt_id: string;
   provider_cost_event_id: string;
   recorded_matrix_digest: string;
@@ -314,6 +316,7 @@ export class PostgresIssue255LiveReceiptRepository {
         deployment_id text NOT NULL,
         provider_idempotency_key text NOT NULL,
         provider_job_id text NOT NULL,
+        provider_task_id text,
         provider_attempt_id text NOT NULL,
         provider_cost_event_id text NOT NULL,
         recorded_matrix_digest text NOT NULL,
@@ -362,6 +365,7 @@ export class PostgresIssue255LiveReceiptRepository {
       ALTER TABLE issue255_live_generation_receipts
         ADD COLUMN IF NOT EXISTS workspace_id text,
         ADD COLUMN IF NOT EXISTS provider_job_id text,
+        ADD COLUMN IF NOT EXISTS provider_task_id text,
         ADD COLUMN IF NOT EXISTS provider_attempt_id text,
         ADD COLUMN IF NOT EXISTS provider_cost_event_id text,
         ADD COLUMN IF NOT EXISTS provider_http_request_count integer NOT NULL DEFAULT 0
@@ -609,7 +613,7 @@ export class PostgresIssue255LiveReceiptRepository {
     return this.locked(
       'issue255-live-run-owner-v1',
       async (client): Promise<'fresh' | 'resumed'> => {
-        const isCoordinatorV4Retry = parsedRunNonce === coordinatorV4RunNonce;
+        const isCoordinatorV5Retry = parsedRunNonce === coordinatorV5RunNonce;
         const existingOwner = await client.query<{ run_nonce: string }>(
           `SELECT run_nonce
              FROM issue255_live_run_owners
@@ -618,7 +622,7 @@ export class PostgresIssue255LiveReceiptRepository {
         );
         if (existingOwner.rows[0]) {
           if (existingOwner.rows[0].run_nonce !== parsedRunNonce) {
-            if (!isCoordinatorV4Retry) {
+            if (!isCoordinatorV5Retry) {
               throw new Error('Issue 255 live run owner is already durably claimed.');
             }
             await client.query(
@@ -630,7 +634,7 @@ export class PostgresIssue255LiveReceiptRepository {
             );
             return 'fresh';
           }
-          if (isCoordinatorV4Retry) return 'resumed';
+          if (isCoordinatorV5Retry) return 'resumed';
           const foreignHistory = await client.query<{ count: string }>(
             `SELECT (
                (SELECT COUNT(*)
@@ -664,7 +668,7 @@ export class PostgresIssue255LiveReceiptRepository {
                WHERE status <> 'failed_before_billing')::bigint AS active_receipt_count`,
         );
         if (
-          !isCoordinatorV4Retry &&
+          !isCoordinatorV5Retry &&
           (Number(result.rows[0]?.billable_count ?? 0) !== 0 ||
             Number(result.rows[0]?.active_receipt_count ?? 0) !== 0)
         ) {
@@ -944,6 +948,59 @@ export class PostgresIssue255LiveReceiptRepository {
     });
   }
 
+  async bindAcceptedProviderTask(input: {
+    runNonce: string;
+    modality: (typeof modalities)[number];
+    effectId: string;
+    requestFingerprint: string;
+    providerTaskId: string;
+  }) {
+    const parsed = z
+      .object({
+        runNonce: z.string().trim().min(1),
+        modality: z.enum(modalities),
+        effectId: z.string().regex(/^[a-f0-9]{64}$/u),
+        requestFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
+        providerTaskId: z
+          .string()
+          .trim()
+          .min(1)
+          .max(512)
+          .regex(/^[^\u0000-\u001f\u007f]+$/u),
+      })
+      .strict()
+      .parse(input);
+    return this.locked(parsed.runNonce, async (client) => {
+      const updated = await client.query<ReceiptRow>(
+        `UPDATE issue255_live_generation_receipts
+            SET provider_task_id = $5,
+                updated_at = now()
+          WHERE run_nonce = $1
+            AND modality = $2
+            AND effect_id = $3
+            AND request_fingerprint = $4
+            AND status = 'claimed'
+            AND generation_submit_count = 1
+            AND (provider_task_id IS NULL OR provider_task_id = $5)
+        RETURNING *`,
+        [
+          parsed.runNonce,
+          parsed.modality,
+          parsed.effectId,
+          parsed.requestFingerprint,
+          parsed.providerTaskId,
+        ],
+      );
+      const row = updated.rows[0];
+      if (!row) {
+        throw new Error(
+          'Issue 255 accepted provider task id is immutable or its submitted receipt is unavailable.',
+        );
+      }
+      return receiptFromRow(row);
+    });
+  }
+
   async claimGenerationPost(input: {
     adapter: 'direct-copy' | 'tuzi-image' | 'tuzi-video';
     deploymentId: string;
@@ -984,7 +1041,7 @@ export class PostgresIssue255LiveReceiptRepository {
         GLOBAL_BILLABLE_AUTHORIZATION_CAP
       ) {
         throw new Error(
-          'Issue 255 permits exactly five billable generation POSTs globally.',
+          'Issue 255 permits exactly six billable generation POSTs globally.',
         );
       }
       if (Number(submissionCounts.rows[0]?.run_count ?? 0) >= 3) {
@@ -1978,7 +2035,7 @@ export class PostgresIssue255LiveReceiptRepository {
       GLOBAL_BILLABLE_AUTHORIZATION_CAP
     ) {
       throw new Error(
-        'Issue 255 permits exactly five billable generation POSTs globally.',
+        'Issue 255 permits exactly six billable generation POSTs globally.',
       );
     }
     const runBudget = await client.query<{ amount_micros: string }>(
@@ -2371,6 +2428,7 @@ function receiptFromRow(row: ReceiptRow): Issue255LiveReceipt {
     deploymentId: row.deployment_id,
     providerIdempotencyKey: row.provider_idempotency_key,
     providerJobId: row.provider_job_id,
+    providerTaskId: row.provider_task_id,
     providerAttemptId: row.provider_attempt_id,
     providerCostEventId: row.provider_cost_event_id,
     recordedMatrixDigest: row.recorded_matrix_digest,

@@ -54,6 +54,9 @@ type ProviderTerminal = {
     mediaUnits?: number;
   };
   usageEvidenceKind: ProviderUsageEvidenceKind;
+  statusSequence?: Array<
+    'queued' | 'running' | 'completed' | 'failed' | 'unknown'
+  >;
 };
 
 class Issue255ProviderExecutionError extends Error {
@@ -137,6 +140,19 @@ const manifestSchema = z
             actualAmountMicros: z.number().int().positive(),
             generationSubmitCount: z.literal(1),
             providerHttpRequestCount: z.number().int().positive(),
+            statusSequence: z
+              .array(
+                z.enum([
+                  'queued',
+                  'running',
+                  'completed',
+                  'failed',
+                  'unknown',
+                ]),
+              )
+              .min(1)
+              .max(60)
+              .optional(),
             wallClockMs: z.number().int().positive(),
             usage: z
               .object({
@@ -368,6 +384,7 @@ export async function collectIssue255LiveAnchors(input: {
         executor,
         receipt,
         Math.max(1, Math.ceil(performance.now() - startedAt)),
+        terminal.statusSequence,
       ),
     );
   }
@@ -885,6 +902,21 @@ export function issue255TuziExecutor(input: {
             `Issue 255 ${input.modality} provider did not accept the fixed sample.`,
         );
       }
+      if (!isImage) {
+        if (!submitted.providerTaskId) {
+          throw new Issue255ProviderExecutionError(
+            'provider_task_id_missing',
+            'Issue 255 video provider accepted without returning its task id.',
+          );
+        }
+        await input.receipts.bindAcceptedProviderTask({
+          runNonce: identity.runNonce,
+          modality: input.modality,
+          effectId: identity.effectId,
+          requestFingerprint: identity.requestFingerprint,
+          providerTaskId: submitted.providerTaskId,
+        });
+      }
       if (isImage) {
         if (
           submitted.providerCost.currency !== 'CNY' ||
@@ -913,11 +945,13 @@ export function issue255TuziExecutor(input: {
           usageEvidenceKind: submitted.usageEvidenceKind,
         };
       }
+      const statusSequence: NonNullable<ProviderTerminal['statusSequence']> = [];
       for (let poll = 0; poll < 60; poll += 1) {
         const terminal = await port.poll({
           ...request,
           taskRef: submitted.taskRef,
         });
+        statusSequence.push(terminal.status);
         if (terminal.status === 'completed') {
           if (
             terminal.usageEvidenceKind !== 'provider_reported' ||
@@ -927,6 +961,10 @@ export function issue255TuziExecutor(input: {
               'Issue 255 video terminal uses estimated rather than provider-reported usage.',
             );
           }
+          await port.download({
+            ...request,
+            taskRef: submitted.taskRef,
+          });
           return {
             providerTaskRef: submitted.taskRef,
             amountMicros: proratedPriceMicros(
@@ -943,6 +981,7 @@ export function issue255TuziExecutor(input: {
             ),
             usage: terminal.providerCost.usage,
             usageEvidenceKind: 'provider_reported',
+            statusSequence,
           };
         }
         if (terminal.status === 'failed' || terminal.status === 'unknown') {
@@ -1257,6 +1296,7 @@ function manifestSample(
   executor: Issue255LiveExecutor,
   receipt: Issue255LiveReceipt,
   wallClockMs: number,
+  statusSequence?: ProviderTerminal['statusSequence'],
 ): Issue255LiveManifest['samples'][number] {
   const terminal = receipt.terminalLineage;
   if (
@@ -1312,6 +1352,7 @@ function manifestSample(
     actualAmountMicros: receipt.actualAmountMicros,
     generationSubmitCount: 1,
     providerHttpRequestCount: receipt.providerHttpRequestCount,
+    ...(statusSequence ? { statusSequence } : {}),
     wallClockMs,
     usage: terminal.providerCost.usage,
   };

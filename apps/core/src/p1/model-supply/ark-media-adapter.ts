@@ -28,6 +28,7 @@ import type {
 type ImageCatalogModelId = 'gpt-image-2' | 'seedream-4-5' | 'seedream-5-pro';
 const MAX_PROVIDER_IMAGE_BYTES = 25 * 1024 * 1024;
 const MAX_PROVIDER_VIDEO_BYTES = 250 * 1024 * 1024;
+const MAX_PROVIDER_ERROR_EVIDENCE_LENGTH = 2_048;
 
 export type ProviderAssetFetchPort = ReferenceAssetDeliveryPort;
 
@@ -863,6 +864,7 @@ export class ArkMediaExecutionPort<
     }
     return {
       acceptance: 'accepted',
+      providerTaskId: body.id,
       taskRef: this.encodeTaskRef({
         version: 1,
         kind: 'video',
@@ -893,7 +895,7 @@ export class ArkMediaExecutionPort<
       throw new ArkAdapterError(
         'invalid_response',
         false,
-        'Ark video task polling returned an invalid response.',
+        `Ark video task polling returned an invalid response. provider_evidence=${safeProviderEvidence(value)}`,
       );
     }
     return value as unknown as ArkVideoTask;
@@ -1259,6 +1261,37 @@ export class ArkMediaExecutionPort<
       ...(input.endsAt ? { endsAt: input.endsAt } : {}),
     };
   }
+}
+
+function safeProviderEvidence(value: unknown) {
+  const sensitiveKey =
+    /^(?:api[_-]?key|authorization|credential|password|secret|token)$/iu;
+  const seen = new WeakSet<object>();
+  const sanitize = (candidate: unknown): unknown => {
+    if (typeof candidate === 'string') {
+      return candidate
+        .replace(/https?:\/\/\S+/giu, '[REDACTED_URL]')
+        .replace(/\bbearer\s+\S+/giu, 'Bearer [REDACTED]')
+        .replace(/\b[a-z0-9+/_=-]{24,}\b/giu, '[REDACTED_TOKEN]');
+    }
+    if (Array.isArray(candidate)) return candidate.map(sanitize);
+    if (!isRecord(candidate)) return candidate;
+    if (seen.has(candidate)) return '[CIRCULAR]';
+    seen.add(candidate);
+    return Object.fromEntries(
+      Object.entries(candidate).map(([key, entry]) => [
+        key,
+        sensitiveKey.test(key) ? '[REDACTED]' : sanitize(entry),
+      ]),
+    );
+  };
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(sanitize(value));
+  } catch {
+    serialized = 'unserializable';
+  }
+  return serialized.slice(0, MAX_PROVIDER_ERROR_EVIDENCE_LENGTH);
 }
 
 function isMissingFile(error: unknown) {

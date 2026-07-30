@@ -203,6 +203,7 @@ export interface MediaProviderEffectRequest extends ProviderExecutionRequest {
 export interface MediaProviderSubmissionReceipt {
   acceptance: 'accepted' | 'acceptance_unknown' | 'rejected_before_accept';
   taskRef?: string;
+  providerTaskId?: string;
   sourceExpiresAt?: string;
   providerCost: Omit<ProviderCost, 'id' | 'status'>;
   usageEvidenceKind?: 'provider_reported' | 'response_derived' | 'estimated';

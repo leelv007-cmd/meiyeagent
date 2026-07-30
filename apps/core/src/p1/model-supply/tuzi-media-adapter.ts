@@ -31,6 +31,12 @@ const MAX_TOTAL_REFERENCE_BYTES = 30 * 1024 * 1024;
 /** docs/_private/tuzi-api/images-edits.openapi.yaml: PNG, square, < 4MB. */
 const MAX_EDIT_REFERENCE_BYTES = 4 * 1024 * 1024;
 const EDIT_REFERENCE_SIDES = [1024, 768, 512, 256] as const;
+const TUZI_VIDEO_STATUS = {
+  queued: 'queued',
+  in_progress: 'running',
+  completed: 'succeeded',
+  failed: 'failed',
+} as const;
 
 function ownedReference(
   value: string,
@@ -232,11 +238,8 @@ async function normalizeVideoResponse(response: Response, url: string) {
     return response;
   }
   const status =
-    body.status === 'in_progress'
-      ? 'running'
-      : body.status === 'completed'
-        ? 'succeeded'
-        : body.status;
+    TUZI_VIDEO_STATUS[body.status as keyof typeof TUZI_VIDEO_STATUS] ??
+    body.status;
   const headers = new Headers(response.headers);
   headers.delete('content-length');
   return Response.json(
