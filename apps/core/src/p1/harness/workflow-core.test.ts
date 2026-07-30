@@ -654,6 +654,9 @@ test('media bounded suspension resumes from the same checkpoint and carries cons
         },
       };
     },
+    async inspectBoundedExecutionContinuation() {
+      return { kind: 'available' as const };
+    },
     async resumeBoundedExecution(input) {
       return {
         ...input.request,
@@ -787,6 +790,9 @@ test('media bounded suspension without a canonical emitter does not claim event 
         },
       };
     },
+    async inspectBoundedExecutionContinuation() {
+      return { kind: 'available' as const };
+    },
     async resumeBoundedExecution(input) {
       return {
         ...input.request,
@@ -896,6 +902,9 @@ test('media bounded suspension keys separate context-fence executions and replay
           value: question.options[0]!.label,
         },
       };
+    },
+    async inspectBoundedExecutionContinuation() {
+      return { kind: 'available' as const };
     },
     async resumeBoundedExecution(input) {
       return {
@@ -2650,12 +2659,15 @@ test('bounded selection suspends outside the durable step with a current-best co
       },
       async progress() {},
       async token() {},
+      async inspectBoundedExecutionContinuation() {
+        return { kind: 'available' as const };
+      },
       async awaitDecision(question) {
         assert.equal(insideStep, false);
         decisions += 1;
         assert.equal(
           question.questionId,
-          'task-35:execution-selection:bounded',
+          'task-35:execution-selection:bounded:r1:a1',
         );
         assert.match(question.question, /当前最好结果/u);
         assert.match(question.question, /当前最好版本/u);
@@ -2692,6 +2704,392 @@ test('bounded selection suspends outside the durable step with a current-best co
         'boundedExecution' in payload,
     ),
   );
+});
+
+test('copy bounded execution keeps its hold when the merchant does not explicitly continue', async () => {
+  const request: HarnessWorkflowInput = {
+    ...taskInput(),
+    boundedExecution: boundedExecutionSnapshot(0, 1),
+  };
+  const stages = fixtureStages();
+  let selections = 0;
+  let resumptions = 0;
+  let decisions = 0;
+  stages.executeAndSelectBounded = async () => {
+    selections += 1;
+    return {
+      state: 'suspended',
+      snapshot: {
+        ...request.boundedExecution!,
+        consumption: {
+          ...request.boundedExecution!.consumption,
+          iterations: 1,
+        },
+        stopReason: 'limit_reached',
+        triggeredLimit: 'maxIterations',
+      },
+      currentBest: {
+        candidate: { candidateId: 'c01', title: '当前最好版本' },
+        deliverable: false,
+      },
+      unmetExplanation: '还需一次修正',
+      resumable: true,
+    };
+  };
+
+  await assert.rejects(
+    runHarnessWorkflow('task-copy-deferred', request, stages, {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision(question) {
+        decisions += 1;
+        if (decisions > 1) throw new Error('copy hold retained');
+        return {
+          idempotencyKey: 'copy-deferred',
+          questionId: question.questionId,
+          workflowRevision: question.workflowRevision,
+          patch: {
+            field: question.response.field,
+            value: '暂未确定',
+            reason: question.response.reason,
+          },
+          decision: { state: 'ignored', value: '暂未确定' },
+        };
+      },
+      async inspectBoundedExecutionContinuation() {
+        return { kind: 'available' as const };
+      },
+      async resumeBoundedExecution() {
+        resumptions += 1;
+        throw new Error('unauthorized copy resume');
+      },
+      async recordTrace() {},
+    }),
+    /copy hold retained/u,
+  );
+
+  assert.equal(selections, 1);
+  assert.equal(resumptions, 0);
+});
+
+test('media bounded execution keeps its hold on a deferred item without another provider effect', async () => {
+  const request = mediaTaskInput('image');
+  request.boundedExecution = boundedExecutionSnapshot(0, 1);
+  const stages = mediaStages('image');
+  let providerEffects = 0;
+  let resumptions = 0;
+  let decisions = 0;
+  stages.executeMediaAndSelectBounded = async () => {
+    providerEffects += 1;
+    return {
+      state: 'suspended',
+      snapshot: {
+        ...request.boundedExecution!,
+        consumption: {
+          ...request.boundedExecution!.consumption,
+          iterations: 1,
+        },
+        stopReason: 'limit_reached',
+        triggeredLimit: 'maxIterations',
+      },
+      currentBest: mediaBoundedCheckpoint(1),
+      unmetExplanation: '媒体生成已达本轮上限',
+      resumable: true,
+    };
+  };
+
+  await assert.rejects(
+    runHarnessWorkflow('task-media-deferred', request, stages, {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision(question) {
+        decisions += 1;
+        if (decisions > 1) throw new Error('media hold retained');
+        return {
+          idempotencyKey: 'media-deferred',
+          questionId: question.questionId,
+          workflowRevision: question.workflowRevision,
+          patch: {
+            field: question.response.field,
+            value: '暂未确定',
+            reason: question.response.reason,
+          },
+          decision: { state: 'ignored', value: '暂未确定' },
+        };
+      },
+      async inspectBoundedExecutionContinuation() {
+        return { kind: 'available' as const };
+      },
+      async resumeBoundedExecution() {
+        resumptions += 1;
+        throw new Error('unauthorized media resume');
+      },
+      async recordTrace() {},
+    }),
+    /media hold retained/u,
+  );
+
+  assert.equal(providerEffects, 1);
+  assert.equal(resumptions, 0);
+});
+
+test('repeated bounded skips stay held until durable expiry cancels without more resource use', async () => {
+  const request: HarnessWorkflowInput = {
+    ...taskInput(),
+    boundedExecution: boundedExecutionSnapshot(0, 1),
+  };
+  const stages = fixtureStages();
+  let selections = 0;
+  let resumptions = 0;
+  let decisions = 0;
+  stages.executeAndSelectBounded = async () => {
+    selections += 1;
+    return {
+      state: 'suspended',
+      snapshot: {
+        ...request.boundedExecution!,
+        consumption: {
+          ...request.boundedExecution!.consumption,
+          iterations: 1,
+        },
+        stopReason: 'limit_reached',
+        triggeredLimit: 'maxIterations',
+      },
+      currentBest: {
+        candidate: { candidateId: 'c01', title: '当前最好版本' },
+        deliverable: false,
+      },
+      unmetExplanation: '还需一次修正',
+      resumable: true,
+    };
+  };
+
+  await assert.rejects(
+    runHarnessWorkflow('task-repeated-bounded-skip', request, stages, {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision(question) {
+        decisions += 1;
+        if (decisions === 3) {
+          return {
+            cancelled: true,
+            merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+            resolutionSource: 'core_hold_expired' as const,
+          };
+        }
+        return {
+          idempotencyKey: `bounded-skip-${decisions}`,
+          questionId: question.questionId,
+          workflowRevision: question.workflowRevision,
+          patch: {
+            field: question.response.field,
+            value: '暂未确定',
+            reason: question.response.reason,
+          },
+          decision: { state: 'ignored', value: '暂未确定' },
+        };
+      },
+      async inspectBoundedExecutionContinuation() {
+        return { kind: 'available' as const };
+      },
+      async resumeBoundedExecution() {
+        resumptions += 1;
+        throw new Error('A skipped bounded card must not consume resources.');
+      },
+      async recordTrace() {},
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof HarnessWorkflowCancellation);
+      assert.equal(
+        error.message,
+        '超时未选择，本次任务已取消，额度已退回',
+      );
+      return true;
+    },
+  );
+
+  assert.equal(decisions, 3);
+  assert.equal(selections, 1);
+  assert.equal(resumptions, 0);
+});
+
+test('bounded continuation rounds reject a previous round card before raising again', async () => {
+  const request: HarnessWorkflowInput = {
+    ...taskInput(),
+    boundedExecution: boundedExecutionSnapshot(0, 1),
+  };
+  const stages = fixtureStages();
+  const completedSelection = stages.executeAndSelect.bind(stages);
+  const questions: string[] = [];
+  let selections = 0;
+  let resumptions = 0;
+  let firstCommand: Awaited<
+    ReturnType<HarnessWorkflowRuntime['awaitDecision']>
+  >;
+  stages.executeAndSelectBounded = async (input) => {
+    selections += 1;
+    if (selections === 3) return completedSelection(input);
+    return {
+      state: 'suspended',
+      snapshot: {
+        ...input.request.boundedExecution!,
+        consumption: {
+          ...input.request.boundedExecution!.consumption,
+          iterations: selections,
+        },
+        stopReason: 'limit_reached',
+        triggeredLimit: 'maxIterations',
+      },
+      currentBest: {
+        candidate: { candidateId: `c0${selections}`, title: '当前最好版本' },
+        deliverable: false,
+      },
+      unmetExplanation: '还需修正',
+      resumable: true,
+    };
+  };
+
+  const result = await runHarnessWorkflow('task-stale-bounded', request, stages, {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision(question) {
+      questions.push(question.questionId);
+      if (questions.length === 2) return firstCommand!;
+      const command = {
+        idempotencyKey: `bounded-${questions.length}`,
+        questionId: question.questionId,
+        workflowRevision: question.workflowRevision,
+        patch: {
+          field: question.response.field,
+          value: question.options[0]!.label,
+          reason: question.response.reason,
+        },
+        decision: {
+          state: 'accepted' as const,
+          value: question.options[0]!.label,
+        },
+      };
+      firstCommand ??= command;
+      return command;
+    },
+    async inspectBoundedExecutionContinuation() {
+      return { kind: 'available' as const };
+    },
+    async resumeBoundedExecution(input) {
+      resumptions += 1;
+      return {
+        ...input.request,
+        boundedExecution: resumeWithRaisedServerLimit(
+          input.suspension.snapshot,
+          { limit: 'maxIterations', value: resumptions + 1 },
+        ),
+      };
+    },
+    async recordTrace() {},
+  });
+
+  assert.ok(result.delivery);
+  assert.equal(resumptions, 2);
+  assert.equal(questions.length, 3);
+  assert.notEqual(questions[0], questions[1]);
+  assert.notEqual(questions[1], questions[2]);
+});
+
+test('hard cap offers an explicit end action and never calls the continuation resolver', async () => {
+  const request: HarnessWorkflowInput = {
+    ...taskInput(),
+    boundedExecution: boundedExecutionSnapshot(0, 1),
+  };
+  const stages = fixtureStages();
+  let resumptions = 0;
+  let deliveries = 0;
+  stages.executeAndSelectBounded = async () => ({
+    state: 'suspended',
+    snapshot: {
+      ...request.boundedExecution!,
+      consumption: {
+        ...request.boundedExecution!.consumption,
+        iterations: 1,
+      },
+      stopReason: 'limit_reached',
+      triggeredLimit: 'maxIterations',
+    },
+    currentBest: {
+      candidate: { candidateId: 'c01', title: '当前最好版本' },
+      deliverable: false,
+    },
+    unmetExplanation: '已达可提高的最高上限',
+    resumable: true,
+  });
+  stages.assembleAndDeliver = async () => {
+    deliveries += 1;
+    throw new Error('A hard-capped run must not deliver again.');
+  };
+  const runtime = {
+    async runStep(_key: string, operation: () => Promise<unknown>) {
+      return operation();
+    },
+    async progress() {},
+    async token() {},
+    async inspectBoundedExecutionContinuation() {
+      return {
+        kind: 'unavailable' as const,
+        reason: 'hard_cap' as const,
+      };
+    },
+    async awaitDecision(question: Parameters<HarnessWorkflowRuntime['awaitDecision']>[0]) {
+      assert.match(question.question, /最高上限/u);
+      assert.equal(question.options[0]?.label, '结束本次任务');
+      return {
+        idempotencyKey: 'hard-cap-stop',
+        questionId: question.questionId,
+        workflowRevision: question.workflowRevision,
+        patch: {
+          field: question.response.field,
+          value: question.options[0]!.label,
+          reason: question.response.reason,
+        },
+        decision: {
+          state: 'accepted' as const,
+          value: question.options[0]!.label,
+        },
+      };
+    },
+    async resumeBoundedExecution() {
+      resumptions += 1;
+      throw new Error('Hard cap must not call the continuation resolver.');
+    },
+    async recordTrace() {},
+  } as HarnessWorkflowRuntime & {
+    inspectBoundedExecutionContinuation(): Promise<{
+      kind: 'unavailable';
+      reason: 'hard_cap';
+    }>;
+  };
+
+  await assert.rejects(
+    runHarnessWorkflow('task-hard-cap', request, stages, runtime),
+    (error: unknown) => {
+      assert.ok(error instanceof HarnessWorkflowCancellation);
+      assert.match(error.message, /最高上限/u);
+      assert.equal(error.result.resolutionSource, 'decision');
+      return true;
+    },
+  );
+  assert.equal(resumptions, 0);
+  assert.equal(deliveries, 0);
 });
 
 test('configured bounded execution fails closed when the stage port is unavailable', async () => {
@@ -2824,6 +3222,9 @@ test('server-raised limit resumes bounded selection from its checkpoint and deli
         },
       };
     },
+    async inspectBoundedExecutionContinuation() {
+      return { kind: 'available' as const };
+    },
     async resumeBoundedExecution(input) {
       resumptions += 1;
       return {
@@ -2945,6 +3346,9 @@ test('repeated non-iteration suspensions keep distinct durable trace identities'
         },
       };
     },
+    async inspectBoundedExecutionContinuation() {
+      return { kind: 'available' as const };
+    },
     async resumeBoundedExecution(input) {
       return {
         ...input.request,
@@ -3055,6 +3459,9 @@ for (const [limit, consumptionKey] of NON_ITERATION_BOUNDS) {
               value: question.options[0]!.label,
             },
           };
+        },
+        async inspectBoundedExecutionContinuation() {
+          return { kind: 'available' as const };
         },
         async resumeBoundedExecution(input) {
           resumptions += 1;

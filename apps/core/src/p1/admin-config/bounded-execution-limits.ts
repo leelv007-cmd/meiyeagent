@@ -6,6 +6,7 @@ import {
 import { z } from 'zod';
 
 import type { HarnessBoundedExecutionContinuationResolver } from '../harness/dbos-workflow.js';
+import { assertBoundedExecutionContinuationAuthorization } from '../harness/workflow-core.js';
 import type { HarnessExecutionBoundsResolver } from '../harness/task-admission.js';
 import type { AdminConfigRepository } from './foundation-module.js';
 
@@ -221,9 +222,51 @@ export class AdminConfigBoundedExecutionContinuationResolver
 {
   constructor(private readonly source: AdminConfigBoundedExecutionLimitsSource) {}
 
+  async capability(
+    input: Parameters<
+      HarnessBoundedExecutionContinuationResolver['capability']
+    >[0],
+  ) {
+    const snapshot = boundedExecutionSnapshotSchema.safeParse(
+      input.suspension.snapshot,
+    );
+    if (
+      !snapshot.success ||
+      snapshot.data.stopReason !== 'limit_reached' ||
+      snapshot.data.triggeredLimit === null
+    ) {
+      return {
+        kind: 'unavailable' as const,
+        reason: 'config_unavailable' as const,
+      };
+    }
+    const configured = await this.source.read();
+    if (configured.source !== 'admin_config') {
+      return {
+        kind: 'unavailable' as const,
+        reason: 'config_unavailable' as const,
+      };
+    }
+    const limit = snapshot.data.triggeredLimit;
+    const axis = configured.config[limit];
+    const previous = snapshot.data[limit];
+    if (
+      axis.default === 'unset' ||
+      axis.hardCap === 'unset' ||
+      previous === 'unset'
+    ) {
+      return { kind: 'unavailable' as const, reason: 'unset' as const };
+    }
+    if (previous >= axis.hardCap) {
+      return { kind: 'unavailable' as const, reason: 'hard_cap' as const };
+    }
+    return { kind: 'available' as const };
+  }
+
   async resolve(
     input: Parameters<HarnessBoundedExecutionContinuationResolver['resolve']>[0],
   ) {
+    assertBoundedExecutionContinuationAuthorization(input);
     const snapshot = boundedExecutionSnapshotSchema.parse(
       input.suspension.snapshot,
     );

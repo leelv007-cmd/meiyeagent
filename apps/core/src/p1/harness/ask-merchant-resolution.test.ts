@@ -110,6 +110,61 @@ test('one skipped response resumes the whole question group', () => {
   });
 });
 
+test('bounded execution skip and deferred answers reask instead of resuming resource use', () => {
+  const request = askMerchantQuestionRequestSchema.parse({
+    requestId: 'bounded-run:execution-selection:bounded:r1:a1',
+    runId: 'bounded-run',
+    step: 'execution_selection',
+    revision: 1,
+    kind: 'ask_merchant',
+    questions: [
+      {
+        itemId: 'bounded_execution_continuation',
+        question: '已保留当前最好结果，是否提高上限后继续？',
+        options: [{ label: '提高上限后继续' }],
+        freeText: { enabled: false },
+        fallback: { kind: 'deferred' },
+      },
+    ],
+    groupSkip: true,
+    presentation: {
+      carriers: ['conversation'],
+      blocking: 'none',
+      notification: 'none',
+      renderer: 'ask_merchant_group',
+    },
+  });
+  const answerBase = {
+    requestId: request.requestId,
+    revision: request.revision,
+    resume: { runId: request.runId, step: request.step },
+  };
+
+  const skipped = resolveAskMerchantAnswer(request, {
+    ...answerBase,
+    idempotencyKey: 'bounded-skip',
+    response: { kind: 'skipped' },
+  });
+  const deferred = resolveAskMerchantAnswer(request, {
+    ...answerBase,
+    idempotencyKey: 'bounded-deferred',
+    response: {
+      kind: 'answer',
+      items: [
+        {
+          itemId: 'bounded_execution_continuation',
+          result: { kind: 'deferred' },
+        },
+      ],
+    },
+  });
+
+  assert.equal(skipped.kind, 'reask');
+  assert.equal(deferred.kind, 'reask');
+  if (skipped.kind === 'reask') assert.equal(skipped.request.revision, 2);
+  if (deferred.kind === 'reask') assert.equal(deferred.request.revision, 2);
+});
+
 test('malformed answers become a new question revision without throwing', () => {
   const request = askMerchantQuestionRequestSchema.parse({
     requestId: 'request-3',

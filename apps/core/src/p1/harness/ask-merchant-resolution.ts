@@ -35,7 +35,11 @@ export function resolveAskMerchantAnswer(
   ) {
     return { kind: 'stale' };
   }
+  const requiresExplicitResourceAction =
+    request.questions.length === 1 &&
+    request.questions[0]?.itemId === 'bounded_execution_continuation';
   if (answer.response.kind === 'skipped') {
+    if (requiresExplicitResourceAction) return reask(request);
     return {
       kind: 'resume',
       runId: request.runId,
@@ -57,6 +61,9 @@ export function resolveAskMerchantAnswer(
     const item = answers.get(question.itemId);
     if (!item) return reask(request);
     const result = item.result;
+    if (requiresExplicitResourceAction && result.kind !== 'answer') {
+      return reask(request);
+    }
     if (
       result.kind === 'answer' &&
       question.options &&

@@ -93,6 +93,9 @@ export function AskMerchantGroupCard({
       ),
     [request.questions, results]
   );
+  const requiresExplicitResourceAction =
+    request.questions.length === 1 &&
+    request.questions[0]?.itemId === 'bounded_execution_continuation';
 
   return (
     <section
@@ -180,21 +183,23 @@ export function AskMerchantGroupCard({
                   value={selected?.kind === 'answer' ? selected.value : ''}
                 />
               ) : null}
-              <Button
-                aria-pressed={selected?.kind === 'deferred'}
-                disabled={pending}
-                onClick={() =>
-                  setResults((current) => ({
-                    ...current,
-                    [question.itemId]: { kind: 'deferred' },
-                  }))
-                }
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
-                暂未确定
-              </Button>
+              {requiresExplicitResourceAction ? null : (
+                <Button
+                  aria-pressed={selected?.kind === 'deferred'}
+                  disabled={pending}
+                  onClick={() =>
+                    setResults((current) => ({
+                      ...current,
+                      [question.itemId]: { kind: 'deferred' },
+                    }))
+                  }
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  暂未确定
+                </Button>
+              )}
             </fieldset>
           );
         })}
@@ -215,14 +220,16 @@ export function AskMerchantGroupCard({
         >
           提交回答
         </Button>
-        <Button
-          disabled={pending}
-          onClick={() => void onSubmit({ kind: 'skipped' })}
-          type="button"
-          variant="secondary"
-        >
-          整组暂不确定
-        </Button>
+        {requiresExplicitResourceAction ? null : (
+          <Button
+            disabled={pending}
+            onClick={() => void onSubmit({ kind: 'skipped' })}
+            type="button"
+            variant="secondary"
+          >
+            整组暂不确定
+          </Button>
+        )}
       </div>
     </section>
   );

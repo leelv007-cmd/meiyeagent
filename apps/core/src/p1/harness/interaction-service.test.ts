@@ -254,6 +254,76 @@ test('invalid offered labels become a durable follow-up revision without resumin
   );
 });
 
+test('bounded skips only advance the durable reask until an exact explicit continue', async () => {
+  const resumed: unknown[] = [];
+  const store = new MemoryInteractionStore([]);
+  const request = askRequest({
+    requestId: 'bounded-run:execution-selection:bounded:r1:a1',
+    runId: 'bounded-run',
+    step: 'execution_selection',
+    questions: [
+      {
+        itemId: 'bounded_execution_continuation',
+        question: '已保留当前最好结果，是否提高上限后继续？',
+        options: [{ label: '提高上限后继续' }],
+        freeText: { enabled: false },
+        fallback: { kind: 'deferred' },
+      },
+    ],
+  });
+  await store.seed(request);
+  const service = new HarnessInteractionService(store, {
+    async resume(input) {
+      resumed.push(input.resumeData);
+      store.markResumed(input.eventId);
+    },
+  });
+
+  let revision = request.revision;
+  for (const idempotencyKey of ['bounded-skip-1', 'bounded-skip-2']) {
+    const result = await service.submit('workspace-a', {
+      requestId: request.requestId,
+      revision,
+      idempotencyKey,
+      resume: { runId: request.runId, step: request.step },
+      response: { kind: 'skipped' },
+    });
+    assert.equal(result.kind, 'reask');
+    revision += 1;
+    assert.equal(result.request.revision, revision);
+    assert.deepEqual(resumed, []);
+  }
+
+  const explicit = await service.submit('workspace-a', {
+    requestId: request.requestId,
+    revision,
+    idempotencyKey: 'bounded-explicit-continue',
+    resume: { runId: request.runId, step: request.step },
+    response: {
+      kind: 'answer',
+      items: [
+        {
+          itemId: 'bounded_execution_continuation',
+          result: { kind: 'answer', value: '提高上限后继续' },
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(explicit, { kind: 'resumed', replayed: false });
+  assert.deepEqual(resumed, [
+    {
+      kind: 'answer',
+      items: [
+        {
+          itemId: 'bounded_execution_continuation',
+          result: { kind: 'answer', value: '提高上限后继续' },
+        },
+      ],
+    },
+  ]);
+});
+
 test('malformed ask answers reask after identity validation while forged identities fail closed', async () => {
   const store = new MemoryInteractionStore([]);
   const request = askRequest();

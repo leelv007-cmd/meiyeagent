@@ -159,6 +159,39 @@ it('submits one explicit group skip', async () => {
   expect(onSubmit).toHaveBeenCalledWith({ kind: 'skipped' });
 });
 
+it('requires an explicit resource action without deferred or group-skip controls', () => {
+  render(
+    <AskMerchantGroupCard
+      onEditingChange={async () => undefined}
+      onRendererReady={async () => undefined}
+      onSubmit={async () => undefined}
+      request={{
+        ...REQUEST,
+        step: 'execution_selection',
+        questions: [
+          {
+            itemId: 'bounded_execution_continuation',
+            question: '已保留当前最好结果，是否提高上限后继续？',
+            options: [{ label: '提高上限后继续' }],
+            freeText: { enabled: false },
+            fallback: { kind: 'deferred' },
+          },
+        ],
+      }}
+    />
+  );
+
+  expect(
+    screen.getByRole('button', { name: '提高上限后继续' })
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: '暂未确定' })
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: '整组暂不确定' })
+  ).not.toBeInTheDocument();
+});
+
 it('retries the exact renderer acknowledgement after a transient failure', async () => {
   vi.useFakeTimers();
   const onRendererReady = vi

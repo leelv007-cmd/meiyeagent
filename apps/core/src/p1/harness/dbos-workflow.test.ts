@@ -295,7 +295,7 @@ test('a grouped interaction answer fails closed at the single-question DBOS cons
   );
 });
 
-test('bounded continuation applies only the server-resolved raised limit', async () => {
+test('bounded continuation rejects a forged capability result before resolving a raised limit', async () => {
   const request = {
     workspaceId: 'workspace-1',
     boundedExecution: {
@@ -324,34 +324,45 @@ test('bounded continuation applies only the server-resolved raised limit', async
   };
   const command: StructuredDecisionInput = {
     idempotencyKey: 'decision-bounded-1',
-    questionId: 'workflow-1:execution-selection:bounded',
+    questionId: 'workflow-1:execution-selection:bounded:r1:a1',
     workflowRevision: 1,
     patch: {
       field: 'bounded_execution_continuation',
       reason: '请求服务端为本次有界执行生成后继钉扎',
-      value: '999',
+      value: '提高上限后继续',
     },
-    decision: { state: 'accepted', value: '999' },
+    decision: { state: 'accepted', value: '提高上限后继续' },
   };
+  let resolverCalls = 0;
 
-  const resumed = await resolveHarnessBoundedExecutionContinuation(
-    {
-      workflowId: 'workflow-1',
-      request,
-      suspension,
-      command,
-    },
-    {
-      async resolve(input) {
-        assert.equal(input.command.decision.value, '999');
-        return { limit: 'maxIterations', value: 2 };
+  await assert.rejects(
+    resolveHarnessBoundedExecutionContinuation(
+      {
+        workflowId: 'workflow-1',
+        request,
+        suspension,
+        command,
+        authorization: {
+          kind: 'explicit_bounded_continue',
+          questionId: command.questionId,
+          workflowRevision: command.workflowRevision,
+          field: command.patch.field,
+          value: command.patch.value,
+        } as never,
       },
-    },
+      {
+        async capability() {
+          throw new Error('Capability must be checked before this seam.');
+        },
+        async resolve() {
+          resolverCalls += 1;
+          return { limit: 'maxIterations', value: 2 };
+        },
+      },
+    ) as Promise<unknown>,
+    /explicit workflow authorization seam/u,
   );
-
-  assert.equal(resumed.boundedExecution?.maxIterations, 2);
-  assert.equal(resumed.boundedExecution?.consumption.iterations, 1);
-  assert.equal(resumed.boundedExecution?.stopReason, null);
+  assert.equal(resolverCalls, 0);
 });
 
 test('confirmation-card hold and continuation waits read admin-config', async () => {
@@ -1110,6 +1121,35 @@ test('hold expiry reports a pending refund when durable compensation owns it', a
   });
 
   assert.equal(result.merchantMessage, '超时未选择，本次任务已取消，额度退款处理中');
+});
+
+test('an explicit hard-cap stop keeps its decision reason while refund is pending', async () => {
+  const request = {
+    workspaceId: settlement.workspaceId,
+    executionSnapshot: {
+      quote: { id: settlement.quoteId, revision: settlement.quoteRevision },
+    },
+    usageReservation: { id: 'usage-reservation-hard-cap', units: [] },
+  } as unknown as HarnessWorkflowInput;
+  const result = await settleHarnessCancellation({
+    billing: {
+      async commit() {},
+      async refund() {
+        throw new Error('billing unavailable');
+      },
+      async scheduleCompensation() {},
+    },
+    cancellation: new HarnessWorkflowCancellation(
+      '已达本次任务可提高的最高上限，本次任务已结束',
+      'decision',
+    ),
+    request,
+    runStep: async (_name, operation) => operation(),
+    workflowId: settlement.taskId,
+  });
+
+  assert.equal(result.resolutionSource, 'decision');
+  assert.equal(result.merchantMessage, '本次任务已结束，额度退款处理中');
 });
 
 test('hold expiry never claims a refund after both settlement writes fail', async () => {

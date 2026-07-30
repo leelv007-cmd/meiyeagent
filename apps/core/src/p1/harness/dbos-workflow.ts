@@ -14,9 +14,11 @@ import {
 } from '@meiye/contracts';
 
 import {
+  assertBoundedExecutionContinuationAuthorization,
   HarnessWorkflowCancellation,
   runHarnessWorkflow,
   harnessMediaJobTopic,
+  type BoundedExecutionContinuationCapability,
   type HarnessStagePorts,
   type HarnessWorkflowRuntime,
 } from './workflow-core.js';
@@ -123,6 +125,14 @@ type HarnessBoundedExecutionContinuationInput = Parameters<
 >[0];
 
 export interface HarnessBoundedExecutionContinuationResolver {
+  capability(
+    input: Omit<
+      HarnessBoundedExecutionContinuationInput,
+      'authorization' | 'command'
+    > & {
+      workspaceId: string;
+    },
+  ): Promise<BoundedExecutionContinuationCapability>;
   resolve(
     input: HarnessBoundedExecutionContinuationInput & {
       workspaceId: string;
@@ -137,6 +147,7 @@ export async function resolveHarnessBoundedExecutionContinuation(
   input: HarnessBoundedExecutionContinuationInput,
   resolver: HarnessBoundedExecutionContinuationResolver,
 ) {
+  assertBoundedExecutionContinuationAuthorization(input);
   const raise = await resolver.resolve({
     ...input,
     workspaceId: input.request.workspaceId,
@@ -671,6 +682,20 @@ export function registerHarnessDbosWorkflow(
         : {}),
       ...(boundedContinuations
         ? {
+            inspectBoundedExecutionContinuation(input) {
+              return DBOS.runStep(
+                () =>
+                  boundedContinuations.capability({
+                    ...input,
+                    workspaceId: input.request.workspaceId,
+                  }),
+                {
+                  name:
+                    'inspect-bounded-continuation-' +
+                    input.suspension.snapshot.triggeredLimit,
+                },
+              );
+            },
             resumeBoundedExecution(input) {
               return DBOS.runStep(
                 () =>
@@ -960,7 +985,10 @@ export async function settleHarnessCancellation(input: {
     if (outcome !== 'refunded') {
       return {
         ...input.cancellation.result,
-        merchantMessage: '超时未选择，本次任务已取消，额度退款处理中',
+        merchantMessage:
+          input.cancellation.result.resolutionSource === 'decision'
+            ? '本次任务已结束，额度退款处理中'
+            : '超时未选择，本次任务已取消，额度退款处理中',
       };
     }
   }

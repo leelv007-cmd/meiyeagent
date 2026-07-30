@@ -269,7 +269,7 @@ test('platform admin applies calibrated bounds through the existing CAS and audi
   );
 });
 
-test('DBOS bounded continuation raises only the triggered axis by one calibrated default up to its hard cap', async () => {
+test('DBOS bounded continuation capability is read-only and direct resolve stays guarded', async () => {
   const repository = new MemoryAdminConfigRepository();
   await repository.apply({
     actorId: 'admin-1',
@@ -306,22 +306,19 @@ test('DBOS bounded continuation raises only the triggered axis by one calibrated
   });
 
   assert.deepEqual(
-    await resolver.resolve({
+    await resolver.capability({
       workspaceId: 'workspace-1',
       workflowId: 'workflow-1',
       request: {
         workspaceId: 'workspace-1',
       },
       suspension: { snapshot: suspended },
-      command: {
-        idempotencyKey: 'continue-1',
-      },
     } as never),
-    { limit: 'maxIterations', value: 4 },
+    { kind: 'available' },
   );
 
-  await assert.rejects(
-    resolver.resolve({
+  assert.deepEqual(
+    await resolver.capability({
       workspaceId: 'workspace-1',
       workflowId: 'workflow-1',
       request: {
@@ -334,11 +331,21 @@ test('DBOS bounded continuation raises only the triggered axis by one calibrated
           consumption: { ...suspended.consumption, iterations: 4 },
         },
       },
+    } as never),
+    { kind: 'unavailable', reason: 'hard_cap' },
+  );
+
+  await assert.rejects(
+    resolver.resolve({
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      request: { workspaceId: 'workspace-1' },
+      suspension: { snapshot: suspended },
       command: {
         idempotencyKey: 'continue-2',
       },
     } as never),
-    /hard cap/u,
+    /explicit workflow authorization seam/u,
   );
 });
 

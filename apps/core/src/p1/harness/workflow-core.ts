@@ -422,7 +422,13 @@ export interface HarnessWorkflowRuntime {
     request: HarnessWorkflowInput;
     suspension: BoundedExecutionSuspension<unknown>;
     command: StructuredDecisionInput;
+    authorization: BoundedExecutionContinuationAuthorization;
   }): Promise<HarnessWorkflowInput>;
+  inspectBoundedExecutionContinuation?(input: {
+    workflowId: string;
+    request: HarnessWorkflowInput;
+    suspension: BoundedExecutionSuspension<unknown>;
+  }): Promise<BoundedExecutionContinuationCapability>;
   recordTrace(input: {
     id: string;
     taskId: string;
@@ -434,6 +440,47 @@ export interface HarnessWorkflowRuntime {
       | 'assembly_delivery';
     payload: unknown;
   }, afterPersist?: () => Promise<void>): Promise<void>;
+}
+
+export type BoundedExecutionContinuationCapability =
+  | { kind: 'available' }
+  | {
+      kind: 'unavailable';
+      reason: 'hard_cap' | 'unset' | 'config_unavailable';
+    };
+
+const boundedExecutionContinuationAuthorization = Symbol(
+  'boundedExecutionContinuationAuthorization',
+);
+
+export type BoundedExecutionContinuationAuthorization = {
+  kind: 'explicit_bounded_continue';
+  questionId: string;
+  workflowRevision: number;
+  field: string;
+  value: string;
+  readonly [boundedExecutionContinuationAuthorization]: true;
+};
+
+export function assertBoundedExecutionContinuationAuthorization(input: {
+  authorization: BoundedExecutionContinuationAuthorization;
+  command: StructuredDecisionInput;
+}) {
+  const { authorization, command } = input;
+  if (
+    !authorization ||
+    authorization[boundedExecutionContinuationAuthorization] !== true ||
+    authorization.questionId !== command.questionId ||
+    authorization.workflowRevision !== command.workflowRevision ||
+    authorization.field !== command.patch.field ||
+    authorization.value !== command.patch.value ||
+    command.decision.state !== 'accepted' ||
+    command.decision.value !== authorization.value
+  ) {
+    throw new BoundedExecutionResumeError(
+      'Bounded execution continuation requires the explicit workflow authorization seam.',
+    );
+  }
 }
 
 export class HarnessSnapshotDecisionError extends Error {
@@ -847,17 +894,20 @@ export class HarnessWorkflowCancellation extends Error {
     delivery: null;
     merchantMessage: string;
     outcome: 'cancelled';
-    resolutionSource: 'core_hold_expired';
+    resolutionSource: 'decision' | 'core_hold_expired';
   };
 
-  constructor(merchantMessage: string) {
+  constructor(
+    merchantMessage: string,
+    resolutionSource: 'decision' | 'core_hold_expired' = 'core_hold_expired',
+  ) {
     super(merchantMessage);
     this.name = 'HarnessWorkflowCancellation';
     this.result = {
       delivery: null,
       merchantMessage,
       outcome: 'cancelled',
-      resolutionSource: 'core_hold_expired',
+      resolutionSource,
     };
   }
 }
@@ -973,10 +1023,21 @@ export async function runHarnessWorkflow(
     let continuation = 0;
     while (isBoundedExecutionSuspension(outcome)) {
       const suspension = outcome;
+      const capability = await inspectBoundedExecutionContinuation({
+        workflowId,
+        request: activeRequest,
+        runtime,
+        suspension,
+      });
       await reportProgress({
         stage: 'execution_selection',
         state: 'suspended',
-        message: `已保留当前最好结果；${outcome.unmetExplanation}。还可以继续。`,
+        message:
+          capability.kind === 'available'
+            ? `已保留当前最好结果；${outcome.unmetExplanation}。还可以继续。`
+            : `已保留当前最好结果；${boundedContinuationUnavailableMessage(
+                capability.reason,
+              )}。`,
       });
       await trace(
         runtime,
@@ -1019,11 +1080,21 @@ export async function runHarnessWorkflow(
             }
           : undefined,
       );
-      const command = await awaitResolvedDecision(
+      const action = await awaitBoundedExecutionAction({
+        capability,
+        continuation,
+        request: activeRequest,
         runtime,
-        boundedExecutionQuestion(workflowId, activeRequest, outcome),
-        'execution_selection',
-      );
+        stage: 'execution_selection',
+        suspension,
+        workflowId,
+      });
+      if (capability.kind === 'unavailable') {
+        throw new HarnessWorkflowCancellation(
+          `${boundedContinuationUnavailableMessage(capability.reason)}，本次任务已结束`,
+          'decision',
+        );
+      }
       if (!runtime.resumeBoundedExecution) {
         throw new BoundedExecutionResumeError(
           'A server-side raised-limit continuation resolver is required.',
@@ -1033,7 +1104,8 @@ export async function runHarnessWorkflow(
         workflowId,
         request: activeRequest,
         suspension: outcome,
-        command,
+        command: action.command,
+        authorization: action.authorization,
       });
       if (!activeRequest.boundedExecution) {
         throw new BoundedExecutionResumeError(
@@ -1052,7 +1124,7 @@ export async function runHarnessWorkflow(
         ports.recordObservabilityEvent
           ? () => {
               const idempotencyKey =
-                `bounded:${workflowId}:${command.idempotencyKey}:resumed`;
+                `bounded:${workflowId}:${action.command.idempotencyKey}:resumed`;
               return ports.recordObservabilityEvent!({
                 workflowId,
                 request: activeRequest,
@@ -1062,7 +1134,7 @@ export async function runHarnessWorkflow(
                   payload: {
                     previousSnapshot: suspension.snapshot,
                     snapshot: activeRequest.boundedExecution!,
-                    decisionId: command.idempotencyKey,
+                    decisionId: action.command.idempotencyKey,
                   },
                 },
                 promptKey: 'copyCandidate',
@@ -2078,10 +2150,21 @@ async function runMediaHarnessWorkflow(
     );
     while (isBoundedExecutionSuspension(outcome)) {
       const suspension = outcome;
+      const capability = await inspectBoundedExecutionContinuation({
+        workflowId,
+        request: activeRequest,
+        runtime,
+        suspension,
+      });
       await reportProgress({
         stage: 'execution_selection',
         state: 'suspended',
-        message: `已保留当前最好结果；${outcome.unmetExplanation}。还可以继续。`,
+        message:
+          capability.kind === 'available'
+            ? `已保留当前最好结果；${outcome.unmetExplanation}。还可以继续。`
+            : `已保留当前最好结果；${boundedContinuationUnavailableMessage(
+                capability.reason,
+              )}。`,
       });
       await trace(
         runtime,
@@ -2125,11 +2208,21 @@ async function runMediaHarnessWorkflow(
             }
           : undefined,
       );
-      const command = await awaitResolvedDecision(
+      const action = await awaitBoundedExecutionAction({
+        capability,
+        continuation,
+        request: activeRequest,
         runtime,
-        boundedExecutionQuestion(workflowId, activeRequest, outcome),
-        'execution_selection',
-      );
+        stage: 'execution_selection',
+        suspension,
+        workflowId,
+      });
+      if (capability.kind === 'unavailable') {
+        throw new HarnessWorkflowCancellation(
+          `${boundedContinuationUnavailableMessage(capability.reason)}，本次任务已结束`,
+          'decision',
+        );
+      }
       if (!runtime.resumeBoundedExecution) {
         throw new BoundedExecutionResumeError(
           'A server-side raised-limit continuation resolver is required.',
@@ -2139,7 +2232,8 @@ async function runMediaHarnessWorkflow(
         workflowId,
         request: activeRequest,
         suspension: outcome,
-        command,
+        command: action.command,
+        authorization: action.authorization,
       });
       if (!activeRequest.boundedExecution) {
         throw new BoundedExecutionResumeError(
@@ -2148,7 +2242,7 @@ async function runMediaHarnessWorkflow(
       }
       if (ports.recordObservabilityEvent) {
         const idempotencyKey =
-          `bounded:${workflowId}:${command.idempotencyKey}:resumed`;
+          `bounded:${workflowId}:${action.command.idempotencyKey}:resumed`;
         await runtime.runStep(idempotencyKey, () =>
           ports.recordObservabilityEvent!({
             workflowId,
@@ -2159,7 +2253,7 @@ async function runMediaHarnessWorkflow(
               payload: {
                 previousSnapshot: suspension.snapshot,
                 snapshot: activeRequest.boundedExecution!,
-                decisionId: command.idempotencyKey,
+                decisionId: action.command.idempotencyKey,
               },
             },
           }),
@@ -2525,20 +2619,31 @@ function boundedExecutionQuestion(
   workflowId: string,
   request: HarnessWorkflowInput,
   suspension: BoundedExecutionSuspension<unknown>,
+  continuation: number,
+  attempt: number,
+  capability: BoundedExecutionContinuationCapability,
 ): QuestionCard {
   const currentBest = boundedCurrentBestSummary(suspension.currentBest);
+  const canContinue = capability.kind === 'available';
   return {
-    questionId: `${workflowId}:execution-selection:bounded`,
+    questionId:
+      `${workflowId}:execution-selection:bounded:` +
+      `r${continuation + 1}:a${attempt + 1}`,
     workflowId,
     workflowRevision: request.workflowRevision,
     question:
-      `已保留当前最好结果${currentBest}；${suspension.unmetExplanation}。` +
-      '提高本次任务上限后可以继续。',
+      canContinue
+        ? `已保留当前最好结果${currentBest}；${suspension.unmetExplanation}。` +
+          '提高本次任务上限后可以继续。'
+        : `已保留当前最好结果${currentBest}；` +
+          `${boundedContinuationUnavailableMessage(capability.reason)}。`,
     options: [
       {
-        id: 'continue',
-        label: '提高上限后继续',
-        description: '具体上限由服务端策略决定，不接受前台传入数值。',
+        id: canContinue ? 'continue' : 'stop',
+        label: canContinue ? '提高上限后继续' : '结束本次任务',
+        description: canContinue
+          ? '具体上限由服务端策略决定，不接受前台传入数值。'
+          : '当前最好结果会保留，不再产生新的资源消耗。',
       },
     ],
     freeText: { enabled: false },
@@ -2549,6 +2654,86 @@ function boundedExecutionQuestion(
     unattended: 'hold',
     scope: 'current_task',
   };
+}
+
+async function awaitBoundedExecutionAction(input: {
+  capability: BoundedExecutionContinuationCapability;
+  continuation: number;
+  request: HarnessWorkflowInput;
+  runtime: HarnessWorkflowRuntime;
+  stage: HarnessStage;
+  suspension: BoundedExecutionSuspension<unknown>;
+  workflowId: string;
+}) {
+  for (let attempt = 0; ; attempt += 1) {
+    const question = boundedExecutionQuestion(
+      input.workflowId,
+      input.request,
+      input.suspension,
+      input.continuation,
+      attempt,
+      input.capability,
+    );
+    const command = await awaitResolvedDecision(
+      input.runtime,
+      question,
+      input.stage,
+    );
+    const expectedValue = question.options[0]?.label;
+    if (
+      expectedValue &&
+      command.questionId === question.questionId &&
+      command.workflowRevision === question.workflowRevision &&
+      command.patch.field === question.response.field &&
+      command.patch.value === expectedValue &&
+      command.decision.state === 'accepted' &&
+      command.decision.value === expectedValue
+    ) {
+      return {
+        command,
+        authorization: {
+          kind: 'explicit_bounded_continue' as const,
+          questionId: question.questionId,
+          workflowRevision: question.workflowRevision,
+          field: question.response.field,
+          value: expectedValue,
+          [boundedExecutionContinuationAuthorization]: true as const,
+        },
+      };
+    }
+  }
+}
+
+async function inspectBoundedExecutionContinuation(input: {
+  request: HarnessWorkflowInput;
+  runtime: HarnessWorkflowRuntime;
+  suspension: BoundedExecutionSuspension<unknown>;
+  workflowId: string;
+}): Promise<BoundedExecutionContinuationCapability> {
+  if (!input.runtime.inspectBoundedExecutionContinuation) {
+    return { kind: 'unavailable', reason: 'config_unavailable' };
+  }
+  return input.runtime.inspectBoundedExecutionContinuation({
+    workflowId: input.workflowId,
+    request: input.request,
+    suspension: input.suspension,
+  });
+}
+
+function boundedContinuationUnavailableMessage(
+  reason: Extract<
+    BoundedExecutionContinuationCapability,
+    { kind: 'unavailable' }
+  >['reason'],
+) {
+  switch (reason) {
+    case 'hard_cap':
+      return '已达本次任务可提高的最高上限';
+    case 'unset':
+      return '本次任务没有可用的后续上限';
+    case 'config_unavailable':
+      return '暂时无法安全提高本次任务上限';
+  }
 }
 
 function boundedCurrentBestSummary(input: unknown) {
