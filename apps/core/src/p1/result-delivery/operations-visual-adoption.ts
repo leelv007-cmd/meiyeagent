@@ -303,13 +303,6 @@ export class OperationsResultCommandPort {
         }
         const sourceOperation =
           sourceJob?.contract.operation ?? frozen?.snapshot.operation;
-        if (sourceOperation === 'video.generate') {
-          throw new OperationsError(
-            'RESULT_ADJUST_OPERATION_UNSUPPORTED',
-            'This Result operation does not support quoted adjustment.',
-            409,
-          );
-        }
         if (
           sourceOperation !== 'copy.generate' &&
           sourceOperation !== 'image.generate'

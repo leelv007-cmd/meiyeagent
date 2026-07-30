@@ -280,29 +280,27 @@ test('delivery exposes only the safe AI-generation rights summary', () => {
   );
 });
 
-test('platform checklists keep image and video publishing instructions separate', () => {
-  for (const platform of ['douyin', 'video_account', 'xiaohongshu'] as const) {
-    const imageChecklist = buildPlatformChecklistMarkdown({
+test('video checklist retirement leaves image checklist wording unchanged', () => {
+  assert.match(
+    buildPlatformChecklistMarkdown({
       kind: 'image_text',
-      platform,
-    });
-    const videoChecklist = buildPlatformChecklistMarkdown({
-      kind: 'video',
-      platform,
-    });
-
-    assert.match(imageChecklist, /images\//);
-    assert.doesNotMatch(imageChecklist, /video\.mp4/);
-    assert.match(videoChecklist, /video\.mp4/);
-    assert.doesNotMatch(videoChecklist, /同一 revision|上传 video\.mp4 与封面/);
-  }
-
+      platform: 'douyin',
+    }),
+    /上传 video\.mp4 与封面[\s\S]*如有字幕轨，确认平台字幕开关/,
+  );
+  assert.match(
+    buildPlatformChecklistMarkdown({
+      kind: 'image_text',
+      platform: 'video_account',
+    }),
+    /上传 video\.mp4 与封面[\s\S]*确认视频号发布可见范围/,
+  );
   assert.match(
     buildPlatformChecklistMarkdown({
       kind: 'image_text',
       platform: 'xiaohongshu',
     }),
-    /确认封面为第 1 张图/,
+    /按 images\/ 编号顺序上传图片[\s\S]*确认封面为第 1 张图/,
   );
 });
 
