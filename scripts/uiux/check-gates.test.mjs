@@ -19,6 +19,7 @@ test('root check defines all required gates in order', () => {
       'works canonical projection guard',
       'retired old-IA route mount guard',
       'brand exposure',
+      'opt-in test evidence',
     ]
   );
 });
