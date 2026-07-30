@@ -101,16 +101,25 @@ check_all() {
   # ---- G3b · #262 三轴钉扎进 Task 快照 ----------------------------------
   # #261 的评价事件要带三轴值，但值本身由 #262 钉扎进 Task 快照才取得到。
   # 票面未列这条依赖 —— 只定了键名（#248）不等于运行时读得到值。
-  # 判据必须避开既有的 `skillRevisionRefs`（creation-experience 的数组字段，
-  # 与三轴钉扎无关）—— 只认 #262 票面点名的钉扎载体与降级留痕字段同现。
+  #
+  # 判据修正（2026-07-30，本票第五次同类探针错）：原探针要 assemblyRef /
+  # pinnedAxes / fallbackReason 三中二，前两个键**全仓从未存在过** —— 是照票面
+  # 措辞猜的名字，不是 #262 交付的载体，于是恒定只中 fallbackReason 一个而永远
+  # 判假。J11 的教训在这里重演：判据必须指向该票真正交付的那个面。
+  #
+  # #262 落的真载体是 executionAssembly.rootAxes（准入时冻结进 Task 快照）。三轴
+  # 要在运行时取得到，写、读、用三点必须同时在，缺任一点事件都拿不到真值：
+  #   写 apps/core/src/p1/harness/task-admission.ts   rootAxes 三轴装配
+  #   读 apps/core/src/p1/harness/postgres-store.ts   readTaskRootAxes
+  #   用 creation-experience/foundation-module.ts     event_append 绑轴
   local pin_axes=0
-  for key in assemblyRef pinnedAxes fallbackReason; do
-    git -C "$REPO" grep -q "$key" "$REF" -- 'apps/core/src/p1/harness' 'apps/core/src/p1/model-supply' 2>/dev/null && pin_axes=$((pin_axes + 1))
-  done
-  if [ "$pin_axes" -ge 2 ]; then
-    report "G3b #262 三轴钉扎 Task 快照" ok "快照钉扎载体 + 降级留痕已在" "-"
+  git -C "$REPO" grep -q "rootAxes" "$REF" -- 'apps/core/src/p1/harness/task-admission.ts' 2>/dev/null && pin_axes=$((pin_axes + 1))
+  git -C "$REPO" grep -q "readTaskRootAxes" "$REF" -- 'apps/core/src/p1/harness/postgres-store.ts' 2>/dev/null && pin_axes=$((pin_axes + 1))
+  git -C "$REPO" grep -q "readTaskRootAxes" "$REF" -- 'apps/core/src/p1/creation-experience/foundation-module.ts' 2>/dev/null && pin_axes=$((pin_axes + 1))
+  if [ "$pin_axes" -eq 3 ]; then
+    report "G3b #262 三轴钉扎 Task 快照" ok "rootAxes 写/读/用三点齐（#262 2c979709）" "-"
   else
-    report "G3b #262 三轴钉扎 Task 快照" no "三轴无运行时取数点，事件发不出真值" "#262"
+    report "G3b #262 三轴钉扎 Task 快照" no "三轴取数链缺 $((3 - pin_axes)) 点，事件发不出真值" "#262"
   fi
 
   # ---- G4 · #264 FE 半合入（D lane 串行前序） ---------------------------
