@@ -202,21 +202,25 @@ export class HarnessApplicationService {
   async setInteractionEditing(
     workspaceId: string,
     taskId: string,
-    editing: boolean,
+    input: unknown,
   ) {
     await this.requireTask(workspaceId, taskId);
     if (!this.interactions) {
       throw new Error('Harness interactions are unavailable.');
     }
-    return this.interactions.setEditing(workspaceId, taskId, editing);
+    return this.interactions.setEditing(workspaceId, taskId, input);
   }
 
-  async ackInteractionRenderer(workspaceId: string, taskId: string) {
+  async ackInteractionRenderer(
+    workspaceId: string,
+    taskId: string,
+    input: unknown,
+  ) {
     await this.requireTask(workspaceId, taskId);
     if (!this.interactions) {
       throw new Error('Harness interactions are unavailable.');
     }
-    return this.interactions.ackRenderer(workspaceId, taskId);
+    return this.interactions.ackRenderer(workspaceId, taskId, input);
   }
 
   async submitInteractionMerchantMessage(

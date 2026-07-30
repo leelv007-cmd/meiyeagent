@@ -1157,12 +1157,34 @@ export class PostgresHarnessStore
           and pending.pending_projection->>'waitingState'='answer'
           and pending.pending_projection->>'rendererCapability'='available'
           and pending.pending_projection#>>'{timer,kind}'='armed'
-          and pending.pending_projection#>>'{timer,editingStartedAt}' is null
-          and pending.pending_projection#>>'{timer,deadlineAt}'
-                <= to_char(
-                  clock_timestamp() at time zone 'UTC',
-                  'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
-                )
+          and (
+            pending.pending_projection#>>'{timer,editingStartedAt}' is null
+            or (
+              pending.pending_projection#>>'{timer,editingLeaseExpiresAt}'
+                is not null
+              and (
+                pending.pending_projection#>>'{timer,editingLeaseExpiresAt}'
+              )::timestamptz <= clock_timestamp()
+            )
+          )
+          and (
+            case
+              when pending.pending_projection#>>'{timer,editingStartedAt}'
+                is null
+              then (
+                pending.pending_projection#>>'{timer,deadlineAt}'
+              )::timestamptz
+              else (
+                pending.pending_projection#>>'{timer,deadlineAt}'
+              )::timestamptz + (
+                (
+                  pending.pending_projection#>>'{timer,editingLeaseExpiresAt}'
+                )::timestamptz - (
+                  pending.pending_projection#>>'{timer,editingStartedAt}'
+                )::timestamptz
+              )
+            end
+          ) <= clock_timestamp()
           and coalesce(requests.request->>'workspaceId', '') <> ''
         order by pending.updated_at, pending.task_id
         limit $1`,
@@ -1278,12 +1300,43 @@ export class PostgresHarnessStore
             resumeRequired: false,
           };
         }
+        const databaseNow = (
+          await client.query<{ current_time: Date }>(
+            'select clock_timestamp() as current_time',
+          )
+        ).rows[0]!.current_time;
         if (projection.data.timer.editingStartedAt !== null) {
-          await client.query('rollback');
-          return { outcome: 'editing', resumeRequired: false };
+          const leaseExpiresAt =
+            projection.data.timer.editingLeaseExpiresAt ?? null;
+          if (
+            leaseExpiresAt === null ||
+            databaseNow.getTime() < Date.parse(leaseExpiresAt)
+          ) {
+            await client.query('rollback');
+            return { outcome: 'editing', resumeRequired: false };
+          }
+          const pausedFor =
+            Date.parse(leaseExpiresAt) -
+            Date.parse(projection.data.timer.editingStartedAt);
+          if (!Number.isFinite(pausedFor) || pausedFor < 0) {
+            await client.query('rollback');
+            return { outcome: 'unknown_state', resumeRequired: false };
+          }
+          projection.data.timer.deadlineAt = new Date(
+            Date.parse(projection.data.timer.deadlineAt) + pausedFor,
+          ).toISOString();
+          projection.data.timer.editingStartedAt = null;
+          projection.data.timer.editingLeaseExpiresAt = null;
+          await client.query(
+            `update harness_runtime.pending_questions
+                set pending_projection=$2::jsonb,
+                    updated_at=now()
+              where task_id=$1 and status='pending'`,
+            [runtimeTaskId, JSON.stringify(projection.data)],
+          );
         }
         if (
-          Date.parse(input.resolvedAt) <
+          databaseNow.getTime() <
           Date.parse(projection.data.timer.deadlineAt)
         ) {
           await client.query('rollback');
@@ -1391,8 +1444,9 @@ export class PostgresHarnessStore
   async transitionInteractionEditing(
     workspaceId: string,
     runId: string,
-    editing: boolean,
-    at: string,
+    input: Parameters<
+      HarnessInteractionStore['transitionInteractionEditing']
+    >[2],
   ): ReturnType<HarnessInteractionStore['transitionInteractionEditing']> {
     const runtimeTaskId = await this.workflowRuntimeId(workspaceId, runId);
     if (!runtimeTaskId) return 'stale';
@@ -1413,35 +1467,72 @@ export class PostgresHarnessStore
         await client.query('rollback');
         return result.rows[0] ? 'unknown_state' : 'stale';
       }
+      if (
+        projection.data.request.requestId !== input.requestId ||
+        projection.data.request.revision !== input.revision ||
+        projection.data.request.step !== input.step ||
+        !(projection.data.request.presentation.carriers as readonly string[]).includes(
+          input.carrier,
+        )
+      ) {
+        await client.query('rollback');
+        return 'stale';
+      }
       const current = projection.data.timer.editingStartedAt;
-      if ((editing && current !== null) || (!editing && current === null)) {
+      if (!input.editing && current === null) {
         await client.query('commit');
         return 'replayed';
       }
-      const transitionAt = Date.parse(at);
-      if (!Number.isFinite(transitionAt)) {
-        await client.query('rollback');
-        return 'unknown_state';
-      }
-      if (editing) {
-        projection.data.timer.editingStartedAt = new Date(
-          transitionAt,
+      const transitionAt = (
+        await client.query<{ transition_at: Date }>(
+          'select clock_timestamp() as transition_at',
+        )
+      ).rows[0]!.transition_at.getTime();
+      const leaseExpiresAt =
+        projection.data.timer.editingLeaseExpiresAt === undefined ||
+        projection.data.timer.editingLeaseExpiresAt === null
+          ? null
+          : Date.parse(projection.data.timer.editingLeaseExpiresAt);
+      if (input.editing) {
+        if (
+          current === null ||
+          leaseExpiresAt === null ||
+          leaseExpiresAt <= transitionAt
+        ) {
+          if (current !== null && leaseExpiresAt !== null) {
+            projection.data.timer.deadlineAt = new Date(
+              Date.parse(projection.data.timer.deadlineAt) +
+                leaseExpiresAt -
+                Date.parse(current),
+            ).toISOString();
+          }
+          projection.data.timer.editingStartedAt = new Date(
+            transitionAt,
+          ).toISOString();
+        }
+        projection.data.timer.editingLeaseExpiresAt = new Date(
+          transitionAt + 30_000,
         ).toISOString();
       } else {
         const editingStartedAt = Date.parse(current!);
         const deadlineAt = Date.parse(projection.data.timer.deadlineAt);
+        const pauseEndedAt =
+          leaseExpiresAt === null
+            ? transitionAt
+            : Math.min(transitionAt, leaseExpiresAt);
         if (
           !Number.isFinite(editingStartedAt) ||
           !Number.isFinite(deadlineAt) ||
-          transitionAt < editingStartedAt
+          pauseEndedAt < editingStartedAt
         ) {
           await client.query('rollback');
           return 'unknown_state';
         }
         projection.data.timer.deadlineAt = new Date(
-          deadlineAt + transitionAt - editingStartedAt,
+          deadlineAt + pauseEndedAt - editingStartedAt,
         ).toISOString();
         projection.data.timer.editingStartedAt = null;
+        projection.data.timer.editingLeaseExpiresAt = null;
       }
       await client.query(
         `update harness_runtime.pending_questions
@@ -1485,7 +1576,9 @@ export class PostgresHarnessStore
   async ackInteractionRenderer(
     workspaceId: string,
     runId: string,
-    at: string,
+    acknowledgement: Parameters<
+      HarnessInteractionStore['ackInteractionRenderer']
+    >[2],
   ) {
     const runtimeTaskId = await this.workflowRuntimeId(workspaceId, runId);
     if (!runtimeTaskId) return 'stale' as const;
@@ -1513,6 +1606,17 @@ export class PostgresHarnessStore
         await client.query('rollback');
         return 'unknown_state' as const;
       }
+      if (
+        projection.data.request.requestId !== acknowledgement.requestId ||
+        projection.data.request.revision !== acknowledgement.revision ||
+        projection.data.request.step !== acknowledgement.step ||
+        !(projection.data.request.presentation.carriers as readonly string[]).includes(
+          acknowledgement.carrier,
+        )
+      ) {
+        await client.query('rollback');
+        return 'stale' as const;
+      }
       if (projection.data.rendererCapability === 'available') {
         await client.query('commit');
         return 'replayed' as const;
@@ -1523,9 +1627,22 @@ export class PostgresHarnessStore
       }
       projection.data.rendererCapability = 'available';
       if (projection.data.timer.kind === 'armed') {
+        const acknowledgedAt = (
+          await client.query<{ acknowledged_at: Date }>(
+            'select clock_timestamp() as acknowledged_at',
+          )
+        ).rows[0]!.acknowledged_at;
         projection.data.timer.deadlineAt = new Date(
-          Date.parse(at) + projection.data.timer.timeoutSeconds * 1_000,
+          acknowledgedAt.getTime() +
+            projection.data.timer.timeoutSeconds * 1_000,
         ).toISOString();
+        if (projection.data.timer.editingStartedAt !== null) {
+          projection.data.timer.editingStartedAt =
+            acknowledgedAt.toISOString();
+          projection.data.timer.editingLeaseExpiresAt = new Date(
+            acknowledgedAt.getTime() + 30_000,
+          ).toISOString();
+        }
       }
       await client.query(
         `update harness_runtime.pending_questions

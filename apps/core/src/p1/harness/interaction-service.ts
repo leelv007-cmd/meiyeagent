@@ -3,11 +3,15 @@ import {
   askMerchantAnswerSchema,
   executionConfirmationRequestSchema,
   executionConfirmationAnswerSchema,
+  harnessInteractionEditingSchema,
   harnessInteractionMerchantMessageSchema,
+  harnessInteractionRendererAckSchema,
   harnessInteractionRequestSchema,
   type AskMerchantQuestionRequest,
   type HarnessStage,
   type HarnessInteractionAnswer,
+  type HarnessInteractionEditing,
+  type HarnessInteractionRendererAck,
   type HarnessInteractionRequest,
   type QuestionCard,
 } from '@meiye/contracts';
@@ -55,6 +59,7 @@ export const harnessInteractionPendingProjectionSchema = z
           timeoutSeconds: z.number().int().min(1).max(3_600),
           deadlineAt: z.iso.datetime(),
           editingStartedAt: z.iso.datetime().nullable(),
+          editingLeaseExpiresAt: z.iso.datetime().nullable().optional(),
         })
         .strict(),
     ]),
@@ -127,6 +132,7 @@ export function createHarnessInteractionPendingProjection(
               registeredAt.getTime() + policy.timeoutSeconds * 1_000,
             ).toISOString(),
             editingStartedAt: null,
+            editingLeaseExpiresAt: null,
           }
         : { kind: 'hold' },
   });
@@ -249,8 +255,7 @@ export interface HarnessInteractionStore {
   transitionInteractionEditing(
     workspaceId: string,
     runId: string,
-    editing: boolean,
-    at: string,
+    input: HarnessInteractionEditing,
   ): Promise<'updated' | 'replayed' | 'stale' | 'unknown_state'>;
   setInteractionRendererCapability(
     workspaceId: string,
@@ -260,7 +265,7 @@ export interface HarnessInteractionStore {
   ackInteractionRenderer(
     workspaceId: string,
     runId: string,
-    at: string,
+    acknowledgement: HarnessInteractionRendererAck,
   ): Promise<'acked' | 'replayed' | 'stale' | 'unknown_state'>;
 }
 
@@ -364,11 +369,11 @@ export class HarnessInteractionService {
     return request;
   }
 
-  async ackRenderer(workspaceId: string, runId: string) {
+  async ackRenderer(workspaceId: string, runId: string, input: unknown) {
     const outcome = await this.store.ackInteractionRenderer(
       workspaceId,
       runId,
-      this.now().toISOString(),
+      harnessInteractionRendererAckSchema.parse(input),
     );
     if (outcome === 'stale') {
       throw new HarnessInteractionError(
@@ -542,12 +547,11 @@ export class HarnessInteractionService {
       : null;
   }
 
-  async setEditing(workspaceId: string, runId: string, editing: boolean) {
+  async setEditing(workspaceId: string, runId: string, input: unknown) {
     const outcome = await this.store.transitionInteractionEditing(
       workspaceId,
       runId,
-      editing,
-      this.now().toISOString(),
+      harnessInteractionEditingSchema.parse(input),
     );
     if (outcome === 'unknown_state') {
       throw new HarnessInteractionError(

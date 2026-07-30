@@ -11,7 +11,9 @@ import {
   firstUsableDraftMetricSchema,
   harnessDecisionSnapshotSchema,
   harnessDecisionSubmitResultSchema,
+  harnessInteractionEditingSchema,
   harnessInteractionMerchantMessageSchema,
+  harnessInteractionRendererAckSchema,
   harnessInteractionRequestSchema,
   harnessStageSchema,
   harnessTaskSubmissionSchema,
@@ -546,6 +548,41 @@ test('merchant continuation messages are strict typed interaction input', () => 
       idempotencyKey: 'merchant-message-1',
       message: '请换成更稳妥的方案',
       runId: 'forged-path-authority',
+    }).success,
+    false,
+  );
+});
+
+test('renderer and editing signals carry the exact durable request identity', () => {
+  const acknowledgement = {
+    requestId: 'request-1',
+    revision: 2,
+    step: 'context_injection',
+    carrier: 'conversation',
+  } as const;
+  assert.deepEqual(
+    harnessInteractionRendererAckSchema.parse(acknowledgement),
+    acknowledgement,
+  );
+  assert.deepEqual(
+    harnessInteractionEditingSchema.parse({
+      ...acknowledgement,
+      editing: true,
+    }),
+    { ...acknowledgement, editing: true },
+  );
+  assert.equal(
+    harnessInteractionRendererAckSchema.safeParse({
+      ...acknowledgement,
+      revision: '2',
+    }).success,
+    false,
+  );
+  assert.equal(
+    harnessInteractionEditingSchema.safeParse({
+      ...acknowledgement,
+      editing: true,
+      runId: 'forged-run',
     }).success,
     false,
   );

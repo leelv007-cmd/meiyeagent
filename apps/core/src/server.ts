@@ -8,8 +8,9 @@ import {
   p1ModuleRequestSchema,
   assistantStreamRequestSchema,
   firstUsableDraftMetricSchema,
-  harnessInteractionAnswerSchema,
+  harnessInteractionEditingSchema,
   harnessInteractionMerchantMessageSchema,
+  harnessInteractionRendererAckSchema,
   structuredDecisionInputSchema,
   hasProductCapability,
   productCommandSchema,
@@ -1780,7 +1781,11 @@ export function createCoreServer({
         const taskId = decodeURIComponent(harnessInteractionRendererMatch[2]!);
         const context = p1Identity(request, workspaceId, requestCorrelationId);
         authorizeContentCreation(context);
-        await harnessService.ackInteractionRenderer(workspaceId, taskId);
+        await harnessService.ackInteractionRenderer(
+          workspaceId,
+          taskId,
+          harnessInteractionRendererAckSchema.parse(await readJson(request))
+        );
         response.writeHead(204, {
           'x-correlation-id': requestCorrelationId,
         });
@@ -1811,10 +1816,9 @@ export function createCoreServer({
         const taskId = decodeURIComponent(harnessInteractionEditingMatch[2]!);
         const context = p1Identity(request, workspaceId, requestCorrelationId);
         authorizeContentCreation(context);
-        const { editing } = z
-          .object({ editing: z.boolean() })
-          .strict()
-          .parse(await readJson(request));
+        const editing = harnessInteractionEditingSchema.parse(
+          await readJson(request)
+        );
         await harnessService.setInteractionEditing(
           workspaceId,
           taskId,

@@ -494,8 +494,8 @@ test('the next merchant message resumes a rejected execution exactly once', asyn
 
 test('semantic timeout defers merchant questions but pauses while the merchant edits', async () => {
   const resumes: Array<{ resolutionSource: string; resumeData: unknown }> = [];
-  const store = new MemoryInteractionStore([]);
   let now = Date.parse('2026-07-30T00:00:00.000Z');
+  const store = new MemoryInteractionStore([], () => new Date(now));
   const request = askRequest({
     timeoutPolicy: {
       kind: 'semantic_default',
@@ -531,13 +531,33 @@ test('semantic timeout defers merchant questions but pauses while the merchant e
     { kind: 'held', reason: 'deadline' },
   );
   now += 10_000;
-  await service.setEditing('workspace-a', request.runId, true);
-  now += 90_000;
+  await service.setEditing('workspace-a', request.runId, {
+    requestId: request.requestId,
+    revision: request.revision,
+    step: request.step,
+    carrier: 'conversation',
+    editing: true,
+  });
+  now += 20_000;
+  await service.setEditing('workspace-a', request.runId, {
+    requestId: request.requestId,
+    revision: request.revision,
+    step: request.step,
+    carrier: 'conversation',
+    editing: true,
+  });
+  now += 20_000;
   assert.deepEqual(
     await service.submitSystemDefault('workspace-a', request.runId),
     { kind: 'held', reason: 'editing' },
   );
-  await service.setEditing('workspace-a', request.runId, false);
+  await service.setEditing('workspace-a', request.runId, {
+    requestId: request.requestId,
+    revision: request.revision,
+    step: request.step,
+    carrier: 'conversation',
+    editing: false,
+  });
   now += 19_999;
   assert.deepEqual(
     await service.submitSystemDefault('workspace-a', request.runId),
@@ -561,6 +581,38 @@ test('semantic timeout defers merchant questions but pauses while the merchant e
     },
   ]);
   assert.equal(store.lastResolutionSource, 'system_default');
+});
+
+test('an abandoned editing lease expires without holding the run forever', async () => {
+  let now = Date.parse('2026-07-30T00:00:00.000Z');
+  const store = new MemoryInteractionStore([], () => new Date(now));
+  const request = askRequest({
+    timeoutPolicy: {
+      kind: 'semantic_default',
+      timeoutSeconds: 30,
+      eligibility: semanticDefaultEligibility(['window']),
+    },
+  });
+  await store.seed(request, 'available', new Date(now));
+  const service = new HarnessInteractionService(
+    store,
+    { async resume() {} },
+    () => new Date(now),
+  );
+  await service.setEditing('workspace-a', request.runId, {
+    requestId: request.requestId,
+    revision: request.revision,
+    step: request.step,
+    carrier: 'conversation',
+    editing: true,
+  });
+
+  now += 60_000;
+
+  assert.deepEqual(
+    await service.submitSystemDefault('workspace-a', request.runId),
+    { kind: 'resumed', replayed: false },
+  );
 });
 
 test('an unavailable renderer holds an otherwise eligible expired default', async () => {
@@ -597,8 +649,8 @@ test('an unavailable renderer holds an otherwise eligible expired default', asyn
 });
 
 test('carrier reads do not self-ack and the first renderer ack starts the timeout window', async () => {
-  const store = new MemoryInteractionStore([]);
   let now = Date.parse('2026-07-30T00:01:00.000Z');
+  const store = new MemoryInteractionStore([], () => new Date(now));
   const request = askRequest({
     timeoutPolicy: {
       kind: 'semantic_default',
@@ -628,26 +680,60 @@ test('carrier reads do not self-ack and the first renderer ack starts the timeou
     { kind: 'held', reason: 'renderer' },
   );
 
-  await (
-    service as HarnessInteractionService & {
-      ackRenderer(workspaceId: string, runId: string): Promise<void>;
-    }
-  ).ackRenderer('workspace-a', request.runId);
+  await service.ackRenderer('workspace-a', request.runId, {
+    requestId: request.requestId,
+    revision: request.revision,
+    step: request.step,
+    carrier: 'conversation',
+  });
   assert.equal(store.rendererCapability, 'available');
   assert.equal(
     store.deadlineAt,
     '2026-07-30T00:01:30.000Z',
   );
   now += 10_000;
-  await (
-    service as HarnessInteractionService & {
-      ackRenderer(workspaceId: string, runId: string): Promise<void>;
-    }
-  ).ackRenderer('workspace-a', request.runId);
+  await service.ackRenderer('workspace-a', request.runId, {
+    requestId: request.requestId,
+    revision: request.revision,
+    step: request.step,
+    carrier: 'conversation',
+  });
   assert.equal(
     store.deadlineAt,
     '2026-07-30T00:01:30.000Z',
   );
+});
+
+test('a stale renderer acknowledgement cannot arm a newer request revision', async () => {
+  const store = new MemoryInteractionStore([]);
+  const first = askRequest({
+    timeoutPolicy: {
+      kind: 'semantic_default',
+      timeoutSeconds: 30,
+      eligibility: semanticDefaultEligibility(['window']),
+    },
+  });
+  await store.seed(first);
+  const second = askRequest({
+    ...first,
+    revision: first.revision + 1,
+  });
+  assert.deepEqual(
+    await store.advanceInteraction('workspace-a', second),
+    { outcome: 'advanced' },
+  );
+  const service = new HarnessInteractionService(store, { async resume() {} });
+
+  await assert.rejects(
+    service.ackRenderer('workspace-a', second.runId, {
+      requestId: first.requestId,
+      revision: first.revision,
+      step: first.step,
+      carrier: 'conversation',
+    }),
+    /no longer pending/u,
+  );
+  assert.equal(store.rendererCapability, 'unknown');
 });
 
 test('the production default producer retries a due interaction after its durable timer unblocks', async () => {
@@ -726,7 +812,10 @@ class MemoryInteractionStore implements HarnessInteractionStore {
       : undefined;
   }
 
-  constructor(private readonly order: string[]) {}
+  constructor(
+    private readonly order: string[],
+    private readonly now: () => Date = () => new Date(),
+  ) {}
 
   async seed(
     request: Parameters<HarnessInteractionStore['advanceInteraction']>[1],
@@ -800,7 +889,22 @@ class MemoryInteractionStore implements HarnessInteractionStore {
         };
       }
       if (this.projection.timer.editingStartedAt !== null) {
-        return { outcome: 'editing' as const, resumeRequired: false };
+        const leaseExpiresAt =
+          this.projection.timer.editingLeaseExpiresAt ?? null;
+        if (
+          leaseExpiresAt === null ||
+          Date.parse(input.resolvedAt) < Date.parse(leaseExpiresAt)
+        ) {
+          return { outcome: 'editing' as const, resumeRequired: false };
+        }
+        const pausedFor =
+          Date.parse(leaseExpiresAt) -
+          Date.parse(this.projection.timer.editingStartedAt);
+        this.projection.timer.deadlineAt = new Date(
+          Date.parse(this.projection.timer.deadlineAt) + pausedFor,
+        ).toISOString();
+        this.projection.timer.editingStartedAt = null;
+        this.projection.timer.editingLeaseExpiresAt = null;
       }
       if (
         Date.parse(input.resolvedAt) <
@@ -846,27 +950,69 @@ class MemoryInteractionStore implements HarnessInteractionStore {
   async transitionInteractionEditing(
     _workspaceId: string,
     _runId: string,
-    editing: boolean,
-    at: string,
+    input: Parameters<
+      HarnessInteractionStore['transitionInteractionEditing']
+    >[2],
   ) {
     if (!this.pending) return 'stale' as const;
     if (!this.projection || this.projection.timer.kind !== 'armed') {
       return 'unknown_state' as const;
     }
+    if (
+      this.pending.requestId !== input.requestId ||
+      this.pending.revision !== input.revision ||
+      this.pending.step !== input.step ||
+      !(this.pending.presentation.carriers as readonly string[]).includes(
+        input.carrier,
+      )
+    ) {
+      return 'stale' as const;
+    }
+    const at = this.now().toISOString();
     const current = this.projection.timer.editingStartedAt;
-    if ((editing && current !== null) || (!editing && current === null)) {
+    if (!input.editing && current === null) {
       return 'replayed' as const;
     }
-    if (editing) {
-      this.projection.timer.editingStartedAt = at;
+    if (input.editing) {
+      const leaseExpiresAt =
+        this.projection.timer.editingLeaseExpiresAt ?? null;
+      if (
+        current !== null &&
+        leaseExpiresAt !== null &&
+        Date.parse(leaseExpiresAt) <= Date.parse(at)
+      ) {
+        this.projection.timer.deadlineAt = new Date(
+          Date.parse(this.projection.timer.deadlineAt) +
+            Date.parse(leaseExpiresAt) -
+            Date.parse(current),
+        ).toISOString();
+      }
+      if (
+        current === null ||
+        (leaseExpiresAt !== null &&
+          Date.parse(leaseExpiresAt) <= Date.parse(at))
+      ) {
+        this.projection.timer.editingStartedAt = at;
+      }
+      this.projection.timer.editingLeaseExpiresAt = new Date(
+        Date.parse(at) + 30_000,
+      ).toISOString();
     } else {
-      const pausedFor = Date.parse(at) - Date.parse(current!);
+      const leaseExpiresAt =
+        this.projection.timer.editingLeaseExpiresAt ?? at;
+      const pauseEndedAt = Math.min(
+        Date.parse(at),
+        Date.parse(leaseExpiresAt),
+      );
+      const pausedFor = pauseEndedAt - Date.parse(current!);
+      if (pausedFor < 0) return 'unknown_state' as const;
       this.projection.timer.deadlineAt = new Date(
         Date.parse(this.projection.timer.deadlineAt) + pausedFor,
       ).toISOString();
       this.projection.timer.editingStartedAt = null;
+      this.projection.timer.editingLeaseExpiresAt = null;
     }
-    this.editing = editing;
+    this.editing = input.editing;
     return 'updated' as const;
   }
 
@@ -884,9 +1030,21 @@ class MemoryInteractionStore implements HarnessInteractionStore {
   async ackInteractionRenderer(
     _workspaceId: string,
     _runId: string,
-    at: string,
+    acknowledgement: Parameters<
+      HarnessInteractionStore['ackInteractionRenderer']
+    >[2],
   ) {
     if (!this.pending || !this.projection) return 'stale' as const;
+    if (
+      this.pending.requestId !== acknowledgement.requestId ||
+      this.pending.revision !== acknowledgement.revision ||
+      this.pending.step !== acknowledgement.step ||
+      !(this.pending.presentation.carriers as readonly string[]).includes(
+        acknowledgement.carrier,
+      )
+    ) {
+      return 'stale' as const;
+    }
     if (this.projection.rendererCapability === 'available') {
       return 'replayed' as const;
     }
@@ -895,9 +1053,17 @@ class MemoryInteractionStore implements HarnessInteractionStore {
     }
     this.projection.rendererCapability = 'available';
     if (this.projection.timer.kind === 'armed') {
+      const acknowledgedAt = this.now();
       this.projection.timer.deadlineAt = new Date(
-        Date.parse(at) + this.projection.timer.timeoutSeconds * 1_000,
+        acknowledgedAt.getTime() +
+          this.projection.timer.timeoutSeconds * 1_000,
       ).toISOString();
+      if (this.projection.timer.editingStartedAt !== null) {
+        this.projection.timer.editingStartedAt = acknowledgedAt.toISOString();
+        this.projection.timer.editingLeaseExpiresAt = new Date(
+          acknowledgedAt.getTime() + 30_000,
+        ).toISOString();
+      }
     }
     return 'acked' as const;
   }

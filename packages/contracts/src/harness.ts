@@ -397,6 +397,20 @@ export const harnessInteractionAnswerSchema = z.union([
   executionConfirmationAnswerSchema,
 ]);
 
+export const harnessInteractionRendererAckSchema = z
+  .object({
+    requestId: harnessIdSchema,
+    revision: workflowRevisionSchema,
+    step: harnessIdSchema,
+    carrier: z.enum(['conversation', 'store_page', 'task_card']),
+  })
+  .strict();
+
+export const harnessInteractionEditingSchema =
+  harnessInteractionRendererAckSchema.extend({
+    editing: z.boolean(),
+  });
+
 export const harnessInteractionMerchantMessageSchema = z
   .object({
     idempotencyKey: harnessIdSchema,
@@ -643,6 +657,12 @@ export type HarnessInteractionRequest = z.infer<
 >;
 export type HarnessInteractionAnswer = z.infer<
   typeof harnessInteractionAnswerSchema
+>;
+export type HarnessInteractionRendererAck = z.infer<
+  typeof harnessInteractionRendererAckSchema
+>;
+export type HarnessInteractionEditing = z.infer<
+  typeof harnessInteractionEditingSchema
 >;
 export type HarnessInteractionMerchantMessage = z.infer<
   typeof harnessInteractionMerchantMessageSchema
