@@ -58,7 +58,7 @@ import type {
 const connectionString = process.env.TEST_DATABASE_URL;
 
 test(
-  'copywriting crosses the public lifecycle and changes the production generation request after a PostgreSQL restart',
+  'copywriting and skill-creator platform recipes cross their allowed lifecycles and copy injection survives a PostgreSQL restart',
   { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
   async () => {
     const suffix = randomUUID();

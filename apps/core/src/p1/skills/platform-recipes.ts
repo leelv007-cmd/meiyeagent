@@ -30,7 +30,7 @@ export function beautyCopywritingDefinition(
     expectedRevision: input.expectedRevision,
     frontmatter: {
       description:
-        'Writes grounded beauty-business copy with one usable primary recommendation.',
+        'Use when a beauty merchant asks to write, rewrite, or improve publishable copy for a project, campaign, social post, title, or booking CTA. Produces one grounded primary recommendation from confirmed facts without inventing prices, results, qualifications, reviews, scarcity, or authorization.',
       license: 'MIT',
       metadata: {
         author: 'Corey Haines',
@@ -80,7 +80,7 @@ export function captureStoreWorkflowDefinition(
       compatibility:
         'Requires an ordinary-session proposal and authenticated confirmation consumer before binding.',
       description:
-        'Captures a merchant-approved conversation workflow as an immutable store recipe.',
+        'Use when a beauty merchant says "以后都这么做", "记住这个流程", or "下次照这个来". Captures the conversation workflow as a proposal, asks once for missing fields, and records an immutable store recipe only after authenticated merchant confirmation.',
       license: 'Apache-2.0',
       metadata: {
         author: 'Anthropic',

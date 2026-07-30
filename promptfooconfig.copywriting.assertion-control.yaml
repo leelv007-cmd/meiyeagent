@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
-description: Control proving copywriting A/B rejects a wrong comparison conclusion
+description: Control proving the recorded paired scorer rejects a wrong conclusion
 
 prompts:
   - '{{caseId}}'

@@ -88,8 +88,9 @@ export default class CopywritingPromptfooProvider {
       }),
       metadata: {
         evidenceKind: 'recorded_model_output',
+        comparisonInputs: ['skillInstructions', 'recordedOutputFixture'],
+        causalAttribution: false,
         productionSeam: 'executeCopySelection',
-        singleVariable: 'skillInstructions',
       },
     };
   }

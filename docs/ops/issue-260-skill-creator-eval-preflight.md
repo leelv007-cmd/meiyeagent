@@ -1,8 +1,8 @@
 # Issue #260 美业版 skill-creator 与 A/B 评测预案
 
-> 状态：平台配方与 recorded A/B 后端切片已验证。设计基线
+> 状态：平台配方与 recorded paired-fixture 后端切片已验证。设计基线
 > `main@d8c1508190cb822f8bd75a999eeffc1ada3735f2`；实现与证据基线
-> `issue-260@65b281ce`。真实沉淀会话与前台入口仍受下表依赖约束。
+> `issue-260` 当前分支。真实单变量 A/B、沉淀会话与前台入口仍受下表依赖约束。
 
 ## 1. 固定来源
 
@@ -144,5 +144,6 @@ merchant trigger
 | #247 有界执行 | 已合入 D-167 signed-unbounded/provisional seed/触顶续跑；生产默认仍 fail closed | 浏览器旅程须在 e2e 显式 seed 下运行，不把 e2e 配置写进生产 |
 | skill-creator 平台配方 | 后端已过 | 正式定义、accept/publish、PG 重启重读已过；因 #251 保持 unbound，未冒充真实沉淀 |
 | skill-creator 真实会话 | 受阻 | 等 #251 权威 proposal/confirm consumer 与前台 gate；之后必须补触发、补问、确认、PG 重读、目录可见 |
-| copywriting paired promptfoo | recorded 已过 | 正门 1/0/0；control 0/1/0、exit 100；唯一变量 `skillInstructions`，fixture 结论 improved、delta +3 |
+| copywriting paired promptfoo | recorded 接缝证据已过 | 正门 1/0/0；control 0/1/0、exit 100；两臂同时改变 `skillInstructions` 与预制输出，fixture 的 improved/delta +3 只验证接缝和 scorer，不能归因于 Skill |
+| copywriting 真实单变量 A/B | 受阻 | 等创作旅程解除 #251 fixture capability blocker，并用同一真实 provider/model 只切换 binding 生成两臂 |
 | D-139 浏览器目录旅程 | 前端仍缺 #253FE，语义锁未释放 | 前端 gate 满足前不改配方卡入口；满足后与 D lane 最新形态适配 |

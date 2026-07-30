@@ -38,7 +38,7 @@ export interface CopywritingPromptfooCase {
 export const COPYWRITING_CASES: CopywritingPromptfooCase[] = [
   {
     description:
-      'The frozen copywriting recipe improves grounded specificity through the production generation seam',
+      'Recorded paired fixtures exercise Skill injection and grounded-copy scoring through the production generation seam',
     assert: [{ type: 'javascript', value: EXACT_SCORER }],
     vars: {
       allowedFactRefsJson: JSON.stringify(['store_fact:service-hydration:1']),

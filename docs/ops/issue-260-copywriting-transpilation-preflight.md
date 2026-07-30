@@ -2,7 +2,8 @@
 
 > 状态：后端切片已验证。人工蒸馏基线
 > `main@cc04918ddb11f5cd5013ee085a369047538e218c`；实现与证据基线
-> `issue-260@65b281ce`。recorded 证据不冒充 live provider 或前台验收。
+> `issue-260` 当前分支。recorded 证据不冒充 live provider、真实单变量 A/B
+> 或前台验收。
 
 ## 1. 固定来源与许可
 
@@ -111,5 +112,5 @@
 | 确定性触发 | 后端已过 | `execution_selection` 命中 rollback 后 revision；skill-creator 在 #251 前保持 unbound |
 | D-139 商家入口 | 阻塞 | frontend gate 仍缺 #253FE；本票未越界改前台 |
 | 生成注入 | recorded 已过 | resolver receipt 与模型请求均含精确 Skill revision/hash/materialized instruction；非 live provider |
-| promptfoo A/B | recorded 已过 | 正门 1/0/0；control 0/1/0、exit 100；唯一变量为 `skillInstructions`，本条 fixture delta = +3 |
-| 保留/删除判断 | 暂留候选 | recorded fixture 可测改善不能证明 live 价值；待真实前台/provider 样本后裁定 |
+| promptfoo paired fixture | recorded 已过 | 正门 1/0/0；control 0/1/0、exit 100；处理臂同时改变 `skillInstructions` 与预制输出，delta = +3 只证明注入接缝和评分器，不支持因果归因 |
+| 真实 A/B 与保留/删除判断 | 阻塞 | 必须让同一真实 provider/model 在只切换 binding 的条件下生成两臂；recorded fixture 不能证明 Skill 改善或 live 价值 |

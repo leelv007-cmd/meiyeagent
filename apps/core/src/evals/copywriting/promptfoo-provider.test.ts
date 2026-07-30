@@ -6,7 +6,7 @@ import { COPYWRITING_CASES } from './cases.js';
 import CopywritingPromptfooProvider from './promptfoo-provider.js';
 import { scoreCopywritingOutput } from './promptfoo-scorer.js';
 
-test('copywriting paired eval changes the production request and measures improvement', async () => {
+test('copywriting recorded fixtures prove Skill injection and exercise the scorer without causal attribution', async () => {
   const evaluationCase = COPYWRITING_CASES[0]!;
   const response = await new CopywritingPromptfooProvider().callApi(
     evaluationCase.vars.caseId,
@@ -15,7 +15,11 @@ test('copywriting paired eval changes the production request and measures improv
   const observation = JSON.parse(response.output);
 
   assert.equal(response.metadata.productionSeam, 'executeCopySelection');
-  assert.equal(response.metadata.singleVariable, 'skillInstructions');
+  assert.deepEqual(response.metadata.comparisonInputs, [
+    'skillInstructions',
+    'recordedOutputFixture',
+  ]);
+  assert.equal(response.metadata.causalAttribution, false);
   assert.equal(observation.conclusion, 'improved');
   assert.ok(observation.delta > 0);
   assert.deepEqual(
@@ -23,7 +27,7 @@ test('copywriting paired eval changes the production request and measures improv
     {
       pass: true,
       score: 1,
-      reason: `Paired production-seam output is improved (delta ${observation.delta}).`,
+      reason: `Recorded paired fixture is improved (delta ${observation.delta}); no causal attribution.`,
     }
   );
 });

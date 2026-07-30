@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
-description: Recorded copywriting A/B through the production generation seam
+description: Recorded paired copywriting fixtures through the production generation seam
 
 prompts:
   - '{{caseId}}'

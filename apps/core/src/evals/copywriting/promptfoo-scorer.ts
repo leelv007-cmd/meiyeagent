@@ -54,7 +54,7 @@ export function scoreCopywritingOutput(
   return {
     pass: true,
     score: 1,
-    reason: `Paired production-seam output is ${observation.conclusion} (delta ${observation.delta}).`,
+    reason: `Recorded paired fixture is ${observation.conclusion} (delta ${observation.delta}); no causal attribution.`,
   };
 }
 
