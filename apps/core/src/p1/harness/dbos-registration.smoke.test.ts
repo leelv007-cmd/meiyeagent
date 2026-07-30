@@ -1264,7 +1264,7 @@ test(
 );
 
 test(
-  'a reserved hold with a pre-floor frozen value expires through the durable decision path',
+  'a pre-be bounded hold input exits its old unbounded branch after cold recovery',
   { skip: !systemDatabaseUrl },
   async () => {
     const workflowId = `harness-unattended-hold-${randomUUID()}`;
@@ -1275,7 +1275,7 @@ test(
     await createHoldLayoutFixture(
       workflowId,
       applicationVersion,
-      'expiring',
+      'pre_be_bounded_input',
     );
     const skills = await createSmokeSkills(workflowId);
     const ports = smokePorts(workflowId, skills.service, []);
@@ -2211,7 +2211,7 @@ function createPendingLayoutFixture(
 function createHoldLayoutFixture(
   workflowId: string,
   applicationVersion: string,
-  replayMode: 'expiring' | 'legacy',
+  replayMode: 'expiring' | 'legacy' | 'pre_be_bounded_input',
 ) {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(

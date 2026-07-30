@@ -26,8 +26,14 @@ if (!systemDatabaseUrl || !workflowId || !applicationVersion) {
     'C1 hold replay fixture requires DBOS URL, workflow ID and app version.',
   );
 }
-if (replayMode !== 'legacy' && replayMode !== 'expiring') {
-  throw new Error('C1 hold replay fixture mode must be legacy or expiring.');
+if (
+  replayMode !== 'legacy' &&
+  replayMode !== 'expiring' &&
+  replayMode !== 'pre_be_bounded_input'
+) {
+  throw new Error(
+    'C1 hold replay fixture mode must be legacy, expiring, or pre_be_bounded_input.',
+  );
 }
 
 const workspaceId = 'workspace-hold-replay';
@@ -88,11 +94,27 @@ const workflow = DBOS.registerWorkflow(
         await DBOS.runStep(
           async () => ({
             timeoutSeconds: null,
-            ...(replayMode === 'expiring' ? { holdTimeoutSeconds: 1 } : {}),
+            ...(replayMode === 'expiring' ||
+            replayMode === 'pre_be_bounded_input'
+              ? { holdTimeoutSeconds: 1 }
+              : {}),
           }),
           { name: `persist-pending-${question.questionId}` },
         );
         await DBOS.setEvent('pending-structured-decision', question);
+        if (replayMode === 'pre_be_bounded_input') {
+          for (;;) {
+            const decision = await DBOS.recv<StructuredDecisionInput>(
+              `structured-decision:${question.questionId}`,
+            );
+            if (decision) {
+              return {
+                command: decision,
+                resolutionSource: 'decision' as const,
+              };
+            }
+          }
+        }
         if (replayMode === 'expiring') {
           const decision = await DBOS.recv<StructuredDecisionInput>(
             `structured-decision:${question.questionId}`,
@@ -132,7 +154,7 @@ const workflow = DBOS.registerWorkflow(
   { name: 'beautyMarketingHarnessWorkflow' },
 );
 await DBOS.launch();
-await DBOS.startWorkflow(workflow, {
+const handle = await DBOS.startWorkflow(workflow, {
   workflowID: runtimeWorkflowId,
 })({
   workflowId,
@@ -195,6 +217,16 @@ await DBOS.startWorkflow(workflow, {
 await DBOS.getEvent(runtimeWorkflowId, 'pending-structured-decision', {
   timeoutSeconds: 5,
 });
+if (replayMode === 'pre_be_bounded_input') {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if ((await handle.getStatus())?.status === 'PENDING') {
+      process.stdout.write('HOLD_PENDING_READY\n');
+      process.exit(0);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error('Pre-be bounded hold input did not enter pending state.');
+}
 for (let attempt = 0; attempt < 200; attempt += 1) {
   const steps = await DBOS.listWorkflowSteps(runtimeWorkflowId);
   const readyFunctionId = replayMode === 'expiring' ? 7 : 9;
