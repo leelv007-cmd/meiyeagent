@@ -29,7 +29,7 @@
     "apps/core/src/p1/due-delivery/postgres-repository.postgres.test.ts": {
       "status": "known_red",
       "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "ticket": "TBD-due-delivery",
+      "ticket": "#269",
       "note": "One enqueued row yields claimed:2/delivered:2 after a repository restart. Reproduces isolated on a pristine database under UTC and Asia/Shanghai. Red since aec25cdc introduced the scanner."
     },
     "apps/core/src/p1/due-delivery/task-recall-producer.postgres.test.ts": {
@@ -45,7 +45,7 @@
     "apps/core/src/p1/entitlement-pools/postgres-repository.postgres.test.ts": {
       "status": "known_red",
       "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "ticket": "TBD-supply-freeze",
+      "ticket": "#270",
       "note": "3 failures: SupplyRequestFreeze requires an explicit execution channel and pricing tier. Message introduced by da5ac8f0 (#252)."
     },
     "apps/core/src/p1/execution-spine/postgres-creation-submission-store.postgres.test.ts": {
@@ -166,7 +166,7 @@
     "apps/core/src/p1/model-supply/usage-ledger-invariants.postgres.test.ts": {
       "status": "known_red",
       "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "ticket": "TBD-supply-freeze",
+      "ticket": "#270",
       "note": "Same SupplyRequestFreeze contract failure as entitlement-pools."
     },
     "apps/core/src/p1/operations/content-package-migration-cli.postgres.test.ts": {
