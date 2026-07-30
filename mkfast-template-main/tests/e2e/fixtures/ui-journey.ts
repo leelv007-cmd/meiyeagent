@@ -292,7 +292,9 @@ export async function submitComposerJourney(
 
   await options.onRunStreaming?.();
 
-  const deliveryCard = page.getByTestId('composer-delivery-card');
+  const deliveryCard = page.locator(
+    `[data-testid="composer-delivery-card"][data-work-id="${submittedWorkId}"]`
+  );
   await expect(deliveryCard).toBeVisible({ timeout: 120_000 });
   await expect(page).toHaveURL(/\/dashboard(?:\?|$)/u);
 

@@ -453,7 +453,6 @@ const storeIntakeFinalizations =
   new PostgresStoreIntakeFinalizationRepository(pool);
 const parseRepository = new PostgresParseRepository(pool);
 const reuseMemoryRepository = new PostgresReuseMemoryRepository(pool);
-await reuseMemoryRepository.migrate();
 const contentPackageWriteOwnership = new PostgresContentPackageWriteOwnership(
   pool
 );
@@ -967,7 +966,9 @@ await migratePostgresSchema(pool, [
   operationalTelemetryStore,
   notifier,
 ]);
-await initializeWorkspaceCatalog(PLATFORM_SUPPLY_SCOPE_ID);
+if (modelRuntime.mode === 'fixture') {
+  await initializeWorkspaceCatalog(PLATFORM_SUPPLY_SCOPE_ID);
+}
 await migrateProStudioSchema(pool);
 await migrateProStudioWorkspaceState(pool);
 const tracerJobs = new TracerJobApplicationService(tracerJobRepository);

@@ -444,8 +444,10 @@ describe('the transcript is a card flow', () => {
       />
     );
 
+    const deliveryCard = screen.getByTestId('composer-delivery-card');
+    expect(deliveryCard).toHaveAttribute('data-work-id', 'work-1');
     expect(onOpenDelivery).not.toHaveBeenCalled();
-    await user.click(screen.getByTestId('composer-delivery-card'));
+    await user.click(deliveryCard);
     expect(onOpenDelivery).toHaveBeenCalledWith({
       workId: 'work-1',
       taskId: 'task-1',

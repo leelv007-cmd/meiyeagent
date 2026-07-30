@@ -1007,7 +1007,7 @@ function executionChildLifecycleInput(
     request,
     stage,
     primitiveId: node.schemaName,
-    baseIdempotencyKey: node.effectIdempotencyKey,
+    baseIdempotencyKey: `${node.effectIdempotencyKey}:structured-node`,
     ...(promptKey ? { promptKey } : {}),
   });
 }

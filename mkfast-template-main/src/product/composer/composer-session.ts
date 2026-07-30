@@ -390,7 +390,8 @@ export function applyComposerWorkflowState(
   }
   const revision = delivery ?? null;
   const existing = session.turns.find(
-    (turn): turn is ComposerDeliveryTurn => turn.kind === 'delivery'
+    (turn): turn is ComposerDeliveryTurn =>
+      turn.kind === 'delivery' && turn.taskId === task.taskId
   );
   if (existing) {
     // A late state frame may be the one that carries the revision — bind it,
@@ -403,7 +404,9 @@ export function applyComposerWorkflowState(
         ...session,
         phase: 'delivered',
         turns: session.turns.map((turn) =>
-          turn.kind === 'delivery' ? { ...turn, revision } : turn
+          turn.kind === 'delivery' && turn.taskId === task.taskId
+            ? { ...turn, revision }
+            : turn
         ),
       },
       report

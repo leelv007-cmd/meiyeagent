@@ -30,6 +30,7 @@ import type {
   MemoryEntryProjection,
 } from '@meiye/contracts';
 
+import { formatLocaleDate } from '@/lib/locale';
 import { Routes } from '@/lib/routes';
 import {
   memory_domain_campaigns_description,
@@ -59,6 +60,7 @@ import {
   memory_unbuilt_note,
 } from '@/locale/paraglide/messages';
 import { commandP1, queryP1 } from '@/p1/client';
+import { p1QueryKeys } from '@/p1/query-keys';
 import { marketingIdentityProjectionQuery } from './marketing-identity-queries';
 
 function MemorySection({
@@ -101,7 +103,7 @@ export function MemoryVaultPage() {
   const queryClient = useQueryClient();
   const identityQuery = useQuery(marketingIdentityProjectionQuery);
   const entriesQuery = useQuery({
-    queryKey: ['p1', 'memory', 'entries-page', 20],
+    queryKey: p1QueryKeys.request('memory', 'entries_page', { limit: 20 }),
     queryFn: ({ signal }) =>
       queryP1<MemoryEntriesPage>(
         'memory',
@@ -137,7 +139,7 @@ export function MemoryVaultPage() {
       ),
     onSuccess: () =>
       queryClient.invalidateQueries({
-        queryKey: ['p1', 'memory', 'entries-page'],
+        queryKey: p1QueryKeys.module('memory'),
       }),
   });
   const projection: MarketingIdentityProjection | undefined =
@@ -244,8 +246,13 @@ function MemoryEntryCard({
   ) => void;
 }) {
   const source =
-    entry.source?.status === 'available' && entry.source.preview
-      ? memory_entry_source_available({ preview: entry.source.preview })
+    entry.source?.status === 'available' &&
+    entry.source.preview &&
+    entry.source.observedAt
+      ? memory_entry_source_available({
+          date: formatLocaleDate(entry.source.observedAt),
+          preview: entry.source.preview,
+        })
       : entry.source?.status === 'deleted'
         ? memory_entry_source_deleted()
         : memory_entry_source_unavailable();
@@ -261,7 +268,11 @@ function MemoryEntryCard({
       data-testid={`memory-entry-${entry.entryId}`}
     >
       <div className="flex items-start justify-between gap-3">
-        <p>{String(entry.value)}</p>
+        <p>
+          {typeof entry.value === 'string'
+            ? entry.value
+            : JSON.stringify(entry.value)}
+        </p>
         <span className="meiye-type-aux shrink-0">{status}</span>
       </div>
       <p className="meiye-type-aux mt-1" data-testid="memory-entry-provenance">

@@ -2620,6 +2620,124 @@ test('an additive primitive check violation blocks the selected candidate', asyn
   assert.equal(runner.requests.length, 1);
 });
 
+test('copy selection keeps primitive and structured-node lifecycle events distinct', async () => {
+  const runner = new QueueRunner([candidate('门店护理建议')]);
+  const audit = new MemoryObservabilityEventAudit();
+  const observer = new AgentPrimitiveObservabilityAdapter(audit, {
+    resolve() {
+      return { kind: 'not_billed' };
+    },
+  });
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => runner },
+    {
+      async compileAndFreeze() {
+        return contextSnapshot();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-18T00:01:00.000Z',
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { create: () => observer },
+    undefined,
+    {
+      wrap(input) {
+        return {
+          async run(request) {
+            const lifecycle = {
+              context: {
+                actor: 'worker' as const,
+                correlationId: request.effectIdempotencyKey,
+                userId: 'primitive-worker',
+                workspaceId: input.workspaceId,
+              },
+              taskId: input.taskId,
+              primitiveId: 'generate',
+              baseIdempotencyKey: request.effectIdempotencyKey,
+              axes: input.observability,
+            };
+            await observer.append({ ...lifecycle, phase: 'invoked' });
+            const result = await input.runner.run(request);
+            await observer.append({ ...lifecycle, phase: 'succeeded' });
+            return result;
+          },
+        };
+      },
+    },
+  );
+  const workflowId = 'task-nested-candidate-observability';
+  const request = taskInputWithExecutionAssembly(workflowId);
+  request.boundedExecution = {
+    schemaVersion: 'bounded-execution-snapshot/v1',
+    maxIterations: 1,
+    maxCostCents: 'unset',
+    maxWallClockMs: 'unset',
+    maxDelegations: 'unset',
+    requiredLimits: ['maxIterations'],
+    consumption: {
+      iterations: 0,
+      costCents: 0,
+      wallClockMs: 0,
+      delegations: 0,
+    },
+    stopReason: null,
+    triggeredLimit: null,
+  };
+  const context = contextSnapshot();
+  context.policyReferences.identityRefs = [
+    {
+      id: 'marketing_identity:identity-1:identity-r1',
+      workspaceId: request.workspaceId,
+      status: 'registered',
+    },
+  ];
+
+  const result = await ports.executeAndSelectBounded({
+    workflowId,
+    request,
+    context,
+    brief: {
+      kind: 'copy',
+      instructions: 'x'.repeat(80),
+      platform: 'xiaohongshu',
+      cta: '私信预约',
+      factRefs: [],
+      assetRefs: [],
+      identityRefs: ['marketing_identity:identity-1:identity-r1'],
+      constraints: [],
+    },
+  });
+
+  assert.equal('state' in result, false);
+  assert.equal(
+    runner.requests[0]?.effectIdempotencyKey,
+    `wf:${workflowId}:s4:copy-primary:c01`,
+  );
+  assert.deepEqual(
+    audit.list(request.workspaceId).map((event) => {
+      assert.equal(event.eventType, 'agent_primitive.lifecycle');
+      if (event.eventType !== 'agent_primitive.lifecycle') {
+        throw new Error('Expected agent primitive lifecycle event.');
+      }
+      return [event.payload.primitiveId, event.payload.phase];
+    }),
+    [
+      ['generate', 'invoked'],
+      ['harness_copy_candidate_v1', 'invoked'],
+      ['harness_copy_candidate_v1', 'succeeded'],
+      ['generate', 'succeeded'],
+    ],
+  );
+});
+
 test('copy self-correction uses the injected primitive candidate runner', async () => {
   const runner = new QueueRunner([
     candidate('99元护理体验'),

@@ -2363,7 +2363,7 @@
   "memory_entry_empty": "还没有待确认的门店偏好。完成创作后，系统会把值得长期记住的内容放到这里。",
   "memory_entry_reject": "不是我的偏好",
   "memory_entry_reject_reason": "这条不代表我的长期偏好",
-  "memory_entry_source_available": "来自对话：{preview}",
+  "memory_entry_source_available": "因为你 {date} 说过：{preview}",
   "memory_entry_source_deleted": "来源对话已删除",
   "memory_entry_source_unavailable": "来源对话暂不可查看",
   "memory_entry_status_confirmed": "已确认",

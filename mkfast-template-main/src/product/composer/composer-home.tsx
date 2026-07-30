@@ -570,6 +570,10 @@ export function ComposerHome({
   const [destinationMapPending, setDestinationMapPending] = useState(false);
   const destinationMapPendingRef = useRef(false);
   const destinationAutoSubmitIntentRef = useRef<string | null>(null);
+  // A controlled input can emit more than one change before React commits the
+  // completed-attempt handoff. Guard that burst so it still mints exactly one
+  // session identity.
+  const reopeningCompletedAttemptRef = useRef(false);
   // 「再生成一次」thaws the lens first, so the actual submit has to wait for the
   // reopened state to land (attemptSubmit reads lensState from the closure).
   const [retryAfterReport, setRetryAfterReport] = useState(false);
@@ -1960,18 +1964,39 @@ export function ComposerHome({
     setSubmitBlockedMessage(null);
     destinationAutoSubmitIntentRef.current = null;
     setDestinationPreflight(null);
+    if (
+      (lensState.phase === 'frozen' || session.phase === 'delivered') &&
+      !reopeningCompletedAttemptRef.current
+    ) {
+      reopeningCompletedAttemptRef.current = true;
+      sessionIdRef.current = newComposerSessionId();
+      setSessionEpoch((current) => current + 1);
+      briefContextRevisionRef.current = null;
+      briefInputRef.current = null;
+      restoredFromServerRef.current = true;
+      setSession((current) =>
+        rebindComposerSession(current, sessionIdRef.current)
+      );
+    }
     setLensState((current) => {
+      const editable = reopenComposer(current);
       const withoutSystemDestination =
-        current.draft.fieldMeta.deliveryPlatform?.ownership === 'system'
+        editable.draft.fieldMeta.deliveryPlatform?.ownership === 'system'
           ? updateDeliverySuggestion(
-              current,
+              editable,
               { distributionTarget: null, platform: null },
               'system'
             )
-          : current;
+          : editable;
       return updateUserText(withoutSystemDestination, value);
     });
   };
+
+  useEffect(() => {
+    if (lensState.phase !== 'frozen' && session.phase !== 'delivered') {
+      reopeningCompletedAttemptRef.current = false;
+    }
+  }, [lensState.phase, session.phase]);
 
   /**
    * The delivery card is the only navigation out of the conversation

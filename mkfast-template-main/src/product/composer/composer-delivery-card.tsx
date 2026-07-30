@@ -150,6 +150,7 @@ export function ComposerDeliveryCard({
         // The container spec opens the Result Center by clicking the card
         // itself; that affordance keeps this id.
         data-testid="composer-delivery-card"
+        data-work-id={workId}
         onClick={() => onOpen({ action: 'open', revision, taskId, workId })}
         type="button"
       >

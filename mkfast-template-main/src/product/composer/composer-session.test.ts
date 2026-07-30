@@ -183,6 +183,41 @@ test('success promotes the run into a delivery card instead of navigating', () =
   assert.equal(session.phase, delivered.phase);
 });
 
+test('a second successful attempt keeps the previous delivery and adds its own', () => {
+  const first = applyComposerWorkflowState(runningSession(), 'success', {
+    packageId: 'package-1',
+    versionId: 'version-1',
+    revision: 1,
+  });
+  const secondTask = {
+    taskId: 'task-2',
+    workId: 'work-2',
+    packageId: 'package-2',
+  };
+  const second = applyComposerWorkflowState(
+    bindComposerTask(
+      openComposerTurn(
+        rebindComposerSession(first, 'session-2'),
+        '再写一条周末预约文案'
+      ),
+      secondTask
+    ),
+    'success',
+    {
+      packageId: 'package-2',
+      versionId: 'version-2',
+      revision: 1,
+    }
+  );
+
+  const deliveries = second.turns.filter((turn) => turn.kind === 'delivery');
+  assert.equal(second.phase, 'delivered');
+  assert.deepEqual(
+    deliveries.map((turn) => turn.workId),
+    ['work-1', 'work-2']
+  );
+});
+
 test('the 任务总结 lands on the delivery card, not in the progress rail', () => {
   // D-116 names 任务总结 as its own delivery-language output: 策略依据/版本定位/
   // 使用建议 describe the deliverable, so the card that carries the deliverable

@@ -176,7 +176,7 @@ describe('memory vault', () => {
 
     expect(
       await screen.findByTestId('memory-entry-provenance')
-    ).toHaveTextContent('来自对话：以后文案要克制，像熟客分享。');
+    ).toHaveTextContent('因为你 2026/7/30 说过：以后文案要克制，像熟客分享。');
     fireEvent.click(screen.getByRole('button', { name: '确认记住' }));
     await waitFor(() =>
       expect(p1.commandP1).toHaveBeenCalledWith(
@@ -188,5 +188,38 @@ describe('memory vault', () => {
         'memory:confirm_candidate:candidate-tone'
       )
     );
+  });
+
+  it('renders a structured memory value as readable JSON', async () => {
+    p1.queryP1.mockImplementation(
+      (module: string, input: { action: string }) =>
+        module === 'memory' && input.action === 'entries_page'
+          ? Promise.resolve({
+              items: [
+                {
+                  entryId: 'candidate-palette',
+                  semanticKey: 'palette.default',
+                  value: { primary: 'warm-white', accent: 'tea-brown' },
+                  status: 'pending',
+                  proposedAt: '2026-07-30T06:00:00.000Z',
+                  source: null,
+                },
+              ],
+              nextCursor: null,
+            })
+          : Promise.resolve({
+              identities: [],
+              defaultDecision: null,
+              defaultIdentity: null,
+              decisionRevision: 0,
+            })
+    );
+
+    renderPage();
+
+    expect(
+      await screen.findByText('{"primary":"warm-white","accent":"tea-brown"}')
+    ).toBeInTheDocument();
+    expect(screen.queryByText('[object Object]')).not.toBeInTheDocument();
   });
 });

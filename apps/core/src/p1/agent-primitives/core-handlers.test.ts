@@ -377,6 +377,11 @@ test('record accepts a future kind when the port resolves it to a proposal and p
   });
 
   assert.deepEqual(received, {
+    execution: {
+      actorId: 'worker-agent-primitives',
+      correlationId: 'correlation-1',
+      taskId: 'task-1',
+    },
     idempotencyKey: 'record-call-1',
     kind: 'propose_future_memory_candidate',
     payload,

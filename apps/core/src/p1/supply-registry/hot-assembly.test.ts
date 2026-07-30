@@ -36,6 +36,51 @@ import {
   type RuntimeCapabilityRevision,
 } from './hot-assembly.js';
 
+test('capability identity survives PostgreSQL jsonb key reordering', () => {
+  const runtimeDeployment = deployment({
+    id: 'fixture-copy-direct',
+    capabilityProfile: {
+      vocabularyVersion: 'model-capability-v1',
+      protocolCapabilities: {
+        'structured-output': {
+          value: true,
+          basis: 'inferred',
+          evidenceRef: 'local-fixture:copy:structured-output',
+        },
+      },
+      modalities: [
+        {
+          mime: 'text/plain',
+          supported: true,
+          basis: 'inferred',
+          evidenceRef: 'local-fixture:copy:text',
+        },
+      ],
+      businessTags: [],
+      modalityCapabilities: [],
+    },
+  });
+  const persistedEntry = {
+    ...entryFrom(runtimeDeployment),
+    capabilityProfile: {
+      modalities: runtimeDeployment.capabilityProfile!.modalities,
+      businessTags: runtimeDeployment.capabilityProfile!.businessTags,
+      vocabularyVersion:
+        runtimeDeployment.capabilityProfile!.vocabularyVersion,
+      modalityCapabilities:
+        runtimeDeployment.capabilityProfile!.modalityCapabilities,
+      protocolCapabilities:
+        runtimeDeployment.capabilityProfile!.protocolCapabilities,
+    },
+  };
+  const registry = new CapabilityHotAssemblyRegistry();
+  registry.applyCapabilityRevision(
+    revision('cap-jsonb-round-trip', 1, [persistedEntry]),
+  );
+
+  assert.equal(registry.supportsDeployment(runtimeDeployment), true);
+});
+
 test('capability matching honors explicit overrides and audits unknown fallback', () => {
   const requirement: ModelCapabilityRequirementAxis = {
     axisId: 'briefImage',

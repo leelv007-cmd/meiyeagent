@@ -592,6 +592,14 @@ short-circuits are never treated as #161 pass evidence. Evidence and residuals:
 - Rights withdrawal → pending replace → safe replace → re-delivery browser journey.
 - #147 P0 staging RC and live Provider remain out of band.
 
+## 36. Memory Sedimentation And Governance
+
+**File:** `specs/memory-vault-governance.spec.ts` | **Priority:** P0 | **Ticket:** #251
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | Composer proposes a governed memory that the next ContextBundle consumes | Complete one real Composer copy run with an explicit durable preference, verify the pending memory and its source pointer, confirm it in the Memory UI, complete a second Composer run, verify its production ContextBundle consumes the confirmed preference, then delete the source conversation and verify the memory remains with a deleted-source marker. |
+
 ## Deferred Coverage
 
 These flows should be added after their dependencies are made deterministic:
