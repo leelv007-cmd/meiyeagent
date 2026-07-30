@@ -1,6 +1,10 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import {
+  MODEL_CAPABILITY_VOCABULARY_VERSION,
+  type ModelCapabilityProfile,
+} from '@meiye/contracts';
+import {
   createModelExecutionRuntime,
   type ModelExecutionRuntime,
   type ModelExecutionRuntimeMode,
@@ -60,6 +64,34 @@ export interface ModelRuntimeAssembly {
   runtime: ModelExecutionRuntime;
   runtimeCapabilities: ModelRuntimeCapability[];
   warnings: ModelRuntimeAssemblyWarning[];
+}
+
+function fixtureLlmCapabilityProfile(
+  model: CatalogModel,
+): ModelCapabilityProfile | undefined {
+  if (model.modality !== 'llm') return undefined;
+
+  const evidencePrefix = `local-fixture:${model.id}`;
+  return {
+    vocabularyVersion: MODEL_CAPABILITY_VOCABULARY_VERSION,
+    protocolCapabilities: {
+      'structured-output': {
+        value: true,
+        basis: 'inferred',
+        evidenceRef: `${evidencePrefix}:protocol:structured-output`,
+      },
+    },
+    modalities: [
+      {
+        mime: 'text/plain',
+        supported: true,
+        basis: 'inferred',
+        evidenceRef: `${evidencePrefix}:modality:text/plain`,
+      },
+    ],
+    businessTags: [],
+    modalityCapabilities: [],
+  };
 }
 
 export function modelMediaExecutionMode(
@@ -345,6 +377,17 @@ export function modelRuntimeAssemblyFromEnv(
       ? { deploymentPricingById }
       : {}),
   }).map((deployment) => {
+    if (mode === 'fixture' && deployment.status === 'active') {
+      const model = models.find(
+        (candidate) => candidate.id === deployment.catalogModelId,
+      );
+      const capabilityProfile = model
+        ? fixtureLlmCapabilityProfile(model)
+        : undefined;
+      if (capabilityProfile) {
+        return { ...deployment, capabilityProfile };
+      }
+    }
     if (
       mode === 'direct' &&
       direct &&

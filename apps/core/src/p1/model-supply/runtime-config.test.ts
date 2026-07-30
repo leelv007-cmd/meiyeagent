@@ -15,6 +15,11 @@ import {
   tuziMediaConfigurationRevisionsFromEnv,
   volcengineTtsConfigurationRevisionFromEnv,
 } from './runtime-config.js';
+import {
+  HARNESS_PROMPT_SITES,
+  harnessPromptCapabilityRequirement,
+} from '../harness/langfuse-prompts.js';
+import { matchRuntimeCapabilityRequirement } from '../supply-registry/hot-assembly.js';
 
 test('runtime env assembly exposes honest disabled, recorded, and gateway modes', async () => {
   const disabled = modelRuntimeAssemblyFromEnv({
@@ -221,6 +226,53 @@ test('runtime env assembly exposes honest disabled, recorded, and gateway modes'
     gateway.deployments
       .filter((deployment) => deployment.catalogModelId === 'gpt-image-2')
       .every((deployment) => deployment.channel !== 'litellm')
+  );
+});
+
+test('fixture LLM deployments exactly satisfy the registered Harness copy axes', () => {
+  const fixture = modelRuntimeAssemblyFromEnv({
+    APP_ENV: 'e2e',
+    MODEL_EXECUTION_MODE: 'fixture',
+  });
+  const copyDeployments = fixture.deployments.filter((deployment) =>
+    fixture.models
+      .find((model) => model.id === deployment.catalogModelId)
+      ?.operations.includes('copy.generate'),
+  );
+
+  assert.ok(copyDeployments.length > 0);
+  for (const deployment of copyDeployments) {
+    assert.deepEqual(
+      fixture.runtimeCapabilities.find(
+        (capability) => capability.id === deployment.id,
+      )?.capabilityProfile,
+      deployment.capabilityProfile,
+    );
+    for (const key of Object.keys(HARNESS_PROMPT_SITES) as Array<
+      keyof typeof HARNESS_PROMPT_SITES
+    >) {
+      assert.equal(
+        matchRuntimeCapabilityRequirement(
+          deployment,
+          harnessPromptCapabilityRequirement(key),
+        ).outcome,
+        'eligible',
+        `${deployment.id} must satisfy fixture axis ${key}`,
+      );
+    }
+  }
+
+  const recorded = modelRuntimeAssemblyFromEnv({
+    MODEL_EXECUTION_MODE: 'recorded',
+  });
+  assert.ok(
+    recorded.deployments
+      .filter((deployment) =>
+        recorded.models
+          .find((model) => model.id === deployment.catalogModelId)
+          ?.operations.includes('copy.generate'),
+      )
+      .every((deployment) => deployment.capabilityProfile === undefined),
   );
 });
 

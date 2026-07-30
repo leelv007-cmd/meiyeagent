@@ -14,6 +14,10 @@ import {
 } from './foundation-module.js';
 import { MemoryHealthOverlayPort } from '../supply-registry/health-overlay.js';
 import type { RankingCandidateInput } from '../supply-registry/three-layer-ranking.js';
+import {
+  HARNESS_PROMPT_SITES,
+  harnessPromptCapabilityRequirement,
+} from '../harness/langfuse-prompts.js';
 import { createModelSupplyRuntime } from './runtime-assembly.js';
 import {
   modelRuntimeAssemblyFromEnv,
@@ -148,6 +152,33 @@ test('runtime assembly gives every process the complete fallback catalog', async
     adminView.catalog.routes.length,
     createDefaultRouteRevisions().length,
   );
+});
+
+test('fixture copy routing freezes all Harness axes without conservative fallback', async () => {
+  const catalog = modelRuntimeAssemblyFromEnv({
+    APP_ENV: 'e2e',
+    MODEL_EXECUTION_MODE: 'fixture',
+  });
+  const runtime = assemble(catalog);
+  const capabilityRequirements = (
+    Object.keys(HARNESS_PROMPT_SITES) as Array<
+      keyof typeof HARNESS_PROMPT_SITES
+    >
+  ).map((key) => harnessPromptCapabilityRequirement(key));
+
+  const route = await runtime.application.freezeFixedRouteForExecution({
+    workspaceId: 'workspace-fixture-copy-capabilities',
+    operation: 'copy.generate',
+    catalogModelId: 'deepseek-v4-pro',
+    dataClass: [],
+    capabilityRequirements,
+  });
+
+  assert.equal(route.capabilityMatches?.length, capabilityRequirements.length);
+  assert.ok(
+    route.capabilityMatches?.every((match) => match.outcome === 'eligible'),
+  );
+  assert.equal(route.capabilityFallbackFacts, undefined);
 });
 
 test('runtime assembly derives activation probe deployments from the runtime catalog', () => {
