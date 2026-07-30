@@ -256,6 +256,16 @@ test('issue 255 recovery CLIs require explicit non-live recovery authorization',
   );
 });
 
+test('issue 255 v5 CLI awaits recovery before closing its database pool', async () => {
+  const source = await import('node:fs/promises').then(({ readFile }) =>
+    readFile(new URL('./issue-255-live-collector-cli.ts', import.meta.url), 'utf8'),
+  );
+  assert.match(
+    source,
+    /return await recoverIssue255CoordinatorVideoV5\(/u,
+  );
+});
+
 test('issue 255 v3 reconciliation uses the failed-before-billing proof path', async () => {
   let providerLedgerReconciliations = 0;
   let providerRejectionPreparations = 0;
@@ -300,6 +310,8 @@ test('issue 255 v5 recovery is GET-only through completed content retrieval and 
     generationSubmitCount: 1,
     providerHttpRequestCount: 2,
     providerTaskId: 'cgt-recovered-v5',
+    failureErrorMessage:
+      'provider_evidence={"object":"video","status":"unknown","created_at":1785428824}',
     effectId: 'a'.repeat(64),
     requestFingerprint: 'b'.repeat(64),
     deploymentId: 'seedance-1-5-pro-tuzi-relay',
@@ -368,9 +380,10 @@ test('issue 255 v5 recovery is GET-only through completed content retrieval and 
         {
           ...closeoutSample('video', 'tuzi-video'),
           recovery: {
+            reason: 'relay_completed_without_per_task_usage',
             providerStatusSequence: ['unknown', 'completed'],
             normalizedStatusSequence: ['queued', 'completed'],
-            taskDetailGetCount: 2,
+            taskDetailGetCount: 4,
             contentRetrievalGetCount: 1,
             contentType: 'video/mp4',
             contentByteCount: 3,

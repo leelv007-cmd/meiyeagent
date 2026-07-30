@@ -398,7 +398,7 @@ export async function runIssue255LiveReconciliationCli(input: {
         ],
         maxRedirects: 0,
       });
-      return recoverIssue255CoordinatorVideoV5({
+      return await recoverIssue255CoordinatorVideoV5({
         receipts,
         options: { ...preflight.tuzi, assetFetch },
         manifestPath: resolve(manifestPath),

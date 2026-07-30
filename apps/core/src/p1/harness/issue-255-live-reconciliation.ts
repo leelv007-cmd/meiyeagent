@@ -49,6 +49,7 @@ export const issue255LiveAnchorsV5ManifestSchema = z
           modality: z.literal('video'),
           recovery: z
             .object({
+              reason: z.literal('relay_completed_without_per_task_usage'),
               providerStatusSequence: z.tuple([
                 z.literal('unknown'),
                 z.literal('completed'),
@@ -57,7 +58,7 @@ export const issue255LiveAnchorsV5ManifestSchema = z
                 z.literal('queued'),
                 z.literal('completed'),
               ]),
-              taskDetailGetCount: z.literal(2),
+              taskDetailGetCount: z.number().int().positive(),
               contentRetrievalGetCount: z.literal(1),
               contentType: z.literal('video/mp4'),
               contentByteCount: z.number().int().positive(),
@@ -159,6 +160,9 @@ export async function recoverIssue255CoordinatorVideoV5(input: {
       'Issue 255 v5 GET-only recovery requires its single durable unknown video receipt.',
     );
   }
+  const providerCreatedAtEpochSeconds = providerCreatedAtFromDurableFailure(
+    candidate.failureErrorMessage,
+  );
   const providerFetch = input.options.fetch ?? globalThis.fetch;
   const getOnlyFetch: typeof globalThis.fetch = (request, init) => {
     const method = (
@@ -217,7 +221,6 @@ export async function recoverIssue255CoordinatorVideoV5(input: {
   }
   if (
     !terminal ||
-    terminal.providerCreatedAtEpochSeconds === undefined ||
     !terminal.providerSignedUrlTimestamp
   ) {
     throw new Error(
@@ -226,7 +229,7 @@ export async function recoverIssue255CoordinatorVideoV5(input: {
   }
   const signedAt = parseTosTimestamp(terminal.providerSignedUrlTimestamp);
   const createdAt = new Date(
-    terminal.providerCreatedAtEpochSeconds * 1_000,
+    providerCreatedAtEpochSeconds * 1_000,
   );
   const wallClockUpperBoundMs = signedAt.getTime() - createdAt.getTime();
   if (wallClockUpperBoundMs <= 0 || wallClockUpperBoundMs > 86_400_000) {
@@ -244,7 +247,7 @@ export async function recoverIssue255CoordinatorVideoV5(input: {
     providerTaskRef: taskRef,
     providerStatusSequence: ['unknown', 'completed'],
     normalizedStatusSequence: ['queued', 'completed'],
-    providerCreatedAtEpochSeconds: terminal.providerCreatedAtEpochSeconds,
+    providerCreatedAtEpochSeconds,
     providerSignedUrlTimestamp: terminal.providerSignedUrlTimestamp,
     wallClockUpperBoundMs,
     contentType: downloaded.contentType as 'video/mp4',
@@ -310,7 +313,7 @@ export async function writeIssue255LiveAnchorsV5Manifest(input: {
         ...sample(video, 'price_card_reconciled'),
         recovery: {
           ...recovery,
-          taskDetailGetCount: 2,
+          taskDetailGetCount: video.providerHttpRequestCount - 2,
           contentRetrievalGetCount: 1,
           providerCreatedAtIso: new Date(
             recovery.providerCreatedAtEpochSeconds * 1_000,
@@ -361,6 +364,22 @@ function parseTosTimestamp(value: string) {
   return new Date(
     `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}.000Z`,
   );
+}
+
+function providerCreatedAtFromDurableFailure(value: string | null) {
+  const matches = value?.match(/"created_at":(\d{10})/gu) ?? [];
+  if (matches.length !== 1) {
+    throw new Error(
+      'Issue 255 v5 recovery requires one durable provider submission timestamp.',
+    );
+  }
+  const parsed = Number(matches[0]!.slice('"created_at":'.length));
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(
+      'Issue 255 v5 durable provider submission timestamp is invalid.',
+    );
+  }
+  return parsed;
 }
 
 function hash(value: string) {
