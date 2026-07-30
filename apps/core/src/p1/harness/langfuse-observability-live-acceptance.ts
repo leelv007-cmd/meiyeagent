@@ -2,13 +2,17 @@ import { LangfuseHttpSender, langfuseTraceId } from './langfuse-sender.js';
 import { harnessRuntimeId } from './workspace-scope.js';
 
 export const LANGFUSE_OBSERVABILITY_FILTER_AXES = [
-  'axisScope',
+  'skillRevision',
   'catalogRevision',
   'promptVersion',
   'scene',
 ] as const;
 
 type FilterAxis = (typeof LANGFUSE_OBSERVABILITY_FILTER_AXES)[number];
+type Sleep = (milliseconds: number) => Promise<void>;
+
+const MIN_POLL_INTERVAL_MS = 5_000;
+const DEFAULT_CONSISTENCY_TIMEOUT_MS = 120_000;
 
 export interface LangfuseObservabilityLiveAcceptanceOptions {
   baseUrl: string;
@@ -19,6 +23,7 @@ export interface LangfuseObservabilityLiveAcceptanceOptions {
   requestTimeoutMs?: number;
   consistencyTimeoutMs?: number;
   pollIntervalMs?: number;
+  sleep?: Sleep;
 }
 
 export interface LangfuseObservabilityLiveAcceptanceResult {
@@ -42,7 +47,7 @@ export async function runLangfuseObservabilityLiveAcceptance(
   const workflowId = harnessRuntimeId('issue-248-live', taskId);
   const traceId = langfuseTraceId(workflowId);
   const axes = {
-    axisScope: 'task_root',
+    skillRevision: `issue-248-observability@${options.runId}`,
     catalogRevision: `issue-248-catalog-${options.runId}`,
     promptVersion: `issue-248-prompt@${options.runId}`,
     scene: `issue-248-scene-${options.runId}`,
@@ -68,8 +73,8 @@ export async function runLangfuseObservabilityLiveAcceptance(
       actorId: `ref:${'2'.repeat(64)}`,
       actorKind: 'worker',
       idempotencyKey: `issue-248-live-${options.runId}`,
+      axisScope: 'task_root',
       ...axes,
-      skillRevision: `issue-248-observability@${options.runId}`,
       payload: {
         primitiveId: 'harness-assembly:task_pin',
         phase: 'succeeded',
@@ -83,27 +88,25 @@ export async function runLangfuseObservabilityLiveAcceptance(
 
   const positiveMatches = {} as Record<FilterAxis, number>;
   const negativeMatches = {} as Record<FilterAxis, 0>;
-  let observationId: string | undefined;
+  const observation = await waitForTaskRootObservation({
+    ...options,
+    fetch,
+    traceId,
+    axes,
+  });
   for (const axis of LANGFUSE_OBSERVABILITY_FILTER_AXES) {
-    const positive = await waitForExactObservationMatch({
+    await waitForExactTraceMatch({
       ...options,
       fetch,
       traceId,
       axis,
       value: axes[axis],
     });
-    observationId ??= positive.id;
-    if (positive.id !== observationId) {
-      throw new Error(
-        `Langfuse observability ${axis} filter returned a different observation.`,
-      );
-    }
     positiveMatches[axis] = 1;
 
-    const negative = await queryObservations({
+    const negative = await waitForTraceQuery({
       ...options,
       fetch,
-      traceId,
       axis,
       value: `${axes[axis]}-negative-control`,
     });
@@ -115,13 +118,10 @@ export async function runLangfuseObservabilityLiveAcceptance(
     negativeMatches[axis] = 0;
   }
 
-  if (!observationId) {
-    throw new Error('Langfuse observability acceptance returned no observation ID.');
-  }
   return {
     runId: options.runId,
     traceId,
-    observationId,
+    observationId: observation.id,
     positiveMatches,
     negativeMatches,
     matched: true,
@@ -147,7 +147,7 @@ export function assertLangfuseObservabilityLiveConfig(
   return { baseUrl, publicKey, secretKey };
 }
 
-async function waitForExactObservationMatch(
+async function waitForExactTraceMatch(
   options: LangfuseObservabilityLiveAcceptanceOptions & {
     fetch: typeof globalThis.fetch;
     traceId: string;
@@ -155,54 +155,103 @@ async function waitForExactObservationMatch(
     value: string;
   },
 ) {
-  const deadline = Date.now() + (options.consistencyTimeoutMs ?? 30_000);
-  do {
-    const matches = await queryObservations(options);
-    if (matches.length === 1) {
-      const [match] = matches;
+  const deadline = consistencyDeadline(options);
+  while (true) {
+    const result = await queryTraces(options);
+    if (!result.rateLimited && result.data.length === 1) {
+      const match = result.data[0]!;
       if (
-        match?.traceId !== options.traceId ||
+        match?.id !== options.traceId ||
         match.metadata?.[options.axis] !== options.value
       ) {
         throw new Error(
-          `Langfuse observability ${options.axis} filter returned invalid metadata.`,
+          `Langfuse observability ${options.axis} trace filter returned invalid metadata.`,
         );
       }
       return match;
     }
-    if (matches.length > 1) {
+    if (!result.rateLimited && result.data.length > 1) {
       throw new Error(
-        `Langfuse observability ${options.axis} filter returned multiple observations.`,
+        `Langfuse observability ${options.axis} filter returned multiple traces.`,
       );
     }
-    await delay(options.pollIntervalMs ?? 500);
-  } while (Date.now() < deadline);
-  throw new Error(
-    `Langfuse observability ${options.axis} filter did not return the live observation before timeout.`,
-  );
+    await waitForRetry(
+      options,
+      deadline,
+      `Langfuse observability ${options.axis} filter did not return the live trace before timeout.`,
+    );
+  }
 }
 
-async function queryObservations(
+async function waitForTraceQuery(
+  options: LangfuseObservabilityLiveAcceptanceOptions & {
+    fetch: typeof globalThis.fetch;
+    axis: FilterAxis;
+    value: string;
+  },
+) {
+  const deadline = consistencyDeadline(options);
+  while (true) {
+    const result = await queryTraces(options);
+    if (!result.rateLimited) return result.data;
+    await waitForRetry(
+      options,
+      deadline,
+      `Langfuse observability ${options.axis} filter remained rate limited before timeout.`,
+    );
+  }
+}
+
+async function waitForTaskRootObservation(
   options: LangfuseObservabilityLiveAcceptanceOptions & {
     fetch: typeof globalThis.fetch;
     traceId: string;
+    axes: Record<FilterAxis, string>;
+  },
+) {
+  const deadline = consistencyDeadline(options);
+  while (true) {
+    const result = await queryObservations(options);
+    if (!result.rateLimited && result.data.length === 1) {
+      const observation = result.data[0]!;
+      if (
+        observation.metadata.axisScope !== 'task_root' ||
+        LANGFUSE_OBSERVABILITY_FILTER_AXES.some(
+          (axis) => observation.metadata[axis] !== options.axes[axis],
+        )
+      ) {
+        throw new Error(
+          'Langfuse observability Task-root observation returned invalid metadata.',
+        );
+      }
+      return observation;
+    }
+    if (!result.rateLimited && result.data.length > 1) {
+      throw new Error(
+        'Langfuse observability trace returned multiple Task-root observations.',
+      );
+    }
+    await waitForRetry(
+      options,
+      deadline,
+      'Langfuse observability Task-root observation did not become visible before timeout.',
+    );
+  }
+}
+
+async function queryTraces(
+  options: LangfuseObservabilityLiveAcceptanceOptions & {
+    fetch: typeof globalThis.fetch;
     axis: FilterAxis;
     value: string;
   },
 ) {
   const baseUrl = options.baseUrl.replace(/\/$/u, '');
-  const url = new URL(`${baseUrl}/api/public/v2/observations`);
-  url.searchParams.set('fields', 'core,metadata');
+  const url = new URL(`${baseUrl}/api/public/traces`);
   url.searchParams.set('limit', '10');
   url.searchParams.set(
     'filter',
     JSON.stringify([
-      {
-        type: 'string',
-        column: 'traceId',
-        operator: '=',
-        value: options.traceId,
-      },
       {
         type: 'stringObject',
         column: 'metadata',
@@ -212,6 +261,58 @@ async function queryObservations(
       },
     ]),
   );
+  const response = await getLangfuseResponse(options, url, 'filter');
+  if (response.status === 429) return { rateLimited: true as const };
+  if (!response.ok) {
+    throw new Error(
+      `Langfuse observability filter failed with HTTP ${response.status}.`,
+    );
+  }
+  const body = await response.json().catch(() => undefined);
+  if (!isRecord(body) || !Array.isArray(body.data)) {
+    throw new Error('Langfuse observability filter response is invalid.');
+  }
+  return {
+    rateLimited: false as const,
+    data: body.data.map((item) => parseMetadataItem(item, 'trace')),
+  };
+}
+
+async function queryObservations(
+  options: LangfuseObservabilityLiveAcceptanceOptions & {
+    fetch: typeof globalThis.fetch;
+    traceId: string;
+  },
+) {
+  const baseUrl = options.baseUrl.replace(/\/$/u, '');
+  const url = new URL(`${baseUrl}/api/public/observations`);
+  url.searchParams.set('traceId', options.traceId);
+  const response = await getLangfuseResponse(options, url, 'observation readback');
+  if (response.status === 429) return { rateLimited: true as const };
+  if (!response.ok) {
+    throw new Error(
+      `Langfuse observability observation readback failed with HTTP ${response.status}.`,
+    );
+  }
+  const body = await response.json().catch(() => undefined);
+  if (!isRecord(body) || !Array.isArray(body.data)) {
+    throw new Error(
+      'Langfuse observability observation readback response is invalid.',
+    );
+  }
+  return {
+    rateLimited: false as const,
+    data: body.data.map((item) => parseMetadataItem(item, 'observation')),
+  };
+}
+
+async function getLangfuseResponse(
+  options: LangfuseObservabilityLiveAcceptanceOptions & {
+    fetch: typeof globalThis.fetch;
+  },
+  url: URL,
+  operation: string,
+) {
   const authorization = `Basic ${Buffer.from(
     `${options.publicKey}:${options.secretKey}`,
   ).toString('base64')}`;
@@ -222,32 +323,39 @@ async function queryObservations(
       signal: AbortSignal.timeout(options.requestTimeoutMs ?? 10_000),
     });
   } catch {
-    throw new Error('Langfuse observability filter request failed.');
+    throw new Error(`Langfuse observability ${operation} request failed.`);
   }
-  if (!response.ok) {
-    throw new Error(
-      `Langfuse observability filter failed with HTTP ${response.status}.`,
-    );
+  return response;
+}
+
+function parseMetadataItem(value: unknown, resource: 'trace' | 'observation') {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== 'string' ||
+    !isRecord(value.metadata)
+  ) {
+    throw new Error(`Langfuse observability ${resource} item is invalid.`);
   }
-  const body = await response.json().catch(() => undefined);
-  if (!isRecord(body) || !Array.isArray(body.data)) {
-    throw new Error('Langfuse observability filter response is invalid.');
-  }
-  return body.data.map((item) => {
-    if (
-      !isRecord(item) ||
-      typeof item.id !== 'string' ||
-      typeof item.traceId !== 'string' ||
-      !isRecord(item.metadata)
-    ) {
-      throw new Error('Langfuse observability filter item is invalid.');
-    }
-    return {
-      id: item.id,
-      traceId: item.traceId,
-      metadata: item.metadata,
-    };
-  });
+  return { id: value.id, metadata: value.metadata };
+}
+
+function consistencyDeadline(options: LangfuseObservabilityLiveAcceptanceOptions) {
+  return Date.now() +
+    (options.consistencyTimeoutMs ?? DEFAULT_CONSISTENCY_TIMEOUT_MS);
+}
+
+async function waitForRetry(
+  options: LangfuseObservabilityLiveAcceptanceOptions,
+  deadline: number,
+  timeoutMessage: string,
+) {
+  if (Date.now() >= deadline) throw new Error(timeoutMessage);
+  const pollIntervalMs = Math.max(
+    options.pollIntervalMs ?? MIN_POLL_INTERVAL_MS,
+    MIN_POLL_INTERVAL_MS,
+  );
+  await (options.sleep ?? delay)(pollIntervalMs);
+  if (Date.now() >= deadline) throw new Error(timeoutMessage);
 }
 
 function delay(milliseconds: number) {

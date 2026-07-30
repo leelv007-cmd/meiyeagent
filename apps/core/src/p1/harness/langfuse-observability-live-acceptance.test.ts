@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { createServer, type Server } from 'node:http';
 import test from 'node:test';
 
 import {
@@ -8,115 +7,100 @@ import {
   runLangfuseObservabilityLiveAcceptance,
 } from './langfuse-observability-live-acceptance.js';
 
-test('live observability acceptance sends production metadata and proves every remote filter', async (t) => {
-  const queries: Array<Array<Record<string, unknown>>> = [];
-  let traceId: string | undefined;
-  let metadata: Record<string, unknown> | undefined;
-  const server = createServer(async (request, response) => {
-    if (request.method === 'POST' && request.url === '/api/public/ingestion') {
-      const body = (await readJson(request)) as {
-        batch: Array<{ type: string; body: Record<string, unknown> }>;
-      };
-      const trace = body.batch.find(({ type }) => type === 'trace-create');
-      const span = body.batch.find(({ type }) => type === 'span-create');
-      traceId = String(trace?.body.id);
-      metadata = span?.body.metadata as Record<string, unknown>;
-      sendJson(response, 200, { successes: body.batch });
-      return;
-    }
-    const url = new URL(request.url ?? '/', 'http://fixture.local');
-    if (request.method === 'GET' && url.pathname === '/api/public/v2/observations') {
-      const filter = JSON.parse(url.searchParams.get('filter') ?? '[]') as Array<
-        Record<string, unknown>
-      >;
-      queries.push(filter);
-      const axisFilter = filter.find(({ column }) => column === 'metadata');
-      const axis = String(axisFilter?.key);
-      const expected = metadata?.[axis];
-      const matches = axisFilter?.value === expected;
-      sendJson(response, 200, {
-        data: matches
-          ? [{ id: 'observation-live-248', traceId, metadata }]
-          : [],
-        meta: { cursor: null },
-      });
-      return;
-    }
-    sendJson(response, 404, {});
-  });
+test('live observability acceptance proves trace filters and the v1 Task-root observation', async () => {
+  const fixture = createLangfuseFixture();
 
   const result = await runLangfuseObservabilityLiveAcceptance({
-    baseUrl: await listen(t, server),
+    baseUrl: 'https://langfuse.fixture',
     publicKey: 'pk-live-test',
     secretKey: 'sk-live-test',
     runId: 'run-248',
-    pollIntervalMs: 1,
-    consistencyTimeoutMs: 50,
+    fetch: fixture.fetch,
+    sleep: async () => {},
+    consistencyTimeoutMs: 500,
   });
 
   assert.equal(result.observationId, 'observation-live-248');
   assert.equal(result.matched, true);
   assert.deepEqual(result.positiveMatches, {
-    axisScope: 1,
+    skillRevision: 1,
     catalogRevision: 1,
     promptVersion: 1,
     scene: 1,
   });
   assert.deepEqual(result.negativeMatches, {
-    axisScope: 0,
+    skillRevision: 0,
     catalogRevision: 0,
     promptVersion: 0,
     scene: 0,
   });
+  assert.deepEqual(fixture.observationTraceIds, [result.traceId]);
   assert.deepEqual(
     LANGFUSE_OBSERVABILITY_FILTER_AXES.map((axis, index) => ({
       axis,
-      positiveKey: queries[index * 2]?.[1]?.key,
-      negativeKey: queries[index * 2 + 1]?.[1]?.key,
-      traceColumn: queries[index * 2]?.[0]?.column,
+      positive: fixture.filters[index * 2],
+      negative: fixture.filters[index * 2 + 1],
     })),
     LANGFUSE_OBSERVABILITY_FILTER_AXES.map((axis) => ({
       axis,
-      positiveKey: axis,
-      negativeKey: axis,
-      traceColumn: 'traceId',
+      positive: {
+        type: 'stringObject',
+        column: 'metadata',
+        key: axis,
+        operator: '=',
+        value: fixture.traceMetadata[axis],
+      },
+      negative: {
+        type: 'stringObject',
+        column: 'metadata',
+        key: axis,
+        operator: '=',
+        value: `${fixture.traceMetadata[axis]}-negative-control`,
+      },
     })),
   );
+  assert.equal(fixture.spanMetadata.axisScope, 'task_root');
+  for (const axis of LANGFUSE_OBSERVABILITY_FILTER_AXES) {
+    assert.equal(fixture.spanMetadata[axis], fixture.traceMetadata[axis]);
+  }
 });
 
-test('live observability acceptance fails closed when a negative filter matches', async (t) => {
-  let traceId = '';
-  let metadata: Record<string, unknown> = {};
-  const server = createServer(async (request, response) => {
-    if (request.method === 'POST') {
-      const body = (await readJson(request)) as {
-        batch: Array<{ type: string; body: Record<string, unknown> }>;
-      };
-      traceId = String(
-        body.batch.find(({ type }) => type === 'trace-create')?.body.id,
-      );
-      metadata = body.batch.find(({ type }) => type === 'span-create')?.body
-        .metadata as Record<string, unknown>;
-      sendJson(response, 200, { successes: body.batch });
-      return;
-    }
-    sendJson(response, 200, {
-      data: [{ id: 'false-positive', traceId, metadata }],
-      meta: { cursor: null },
-    });
-  });
+test('live observability acceptance fails closed when a trace negative filter matches', async () => {
+  const fixture = createLangfuseFixture({ negativeControlMatches: true });
 
   await assert.rejects(
     runLangfuseObservabilityLiveAcceptance({
-      baseUrl: await listen(t, server),
+      baseUrl: 'https://langfuse.fixture',
       publicKey: 'pk-live-test',
       secretKey: 'sk-live-test',
       runId: 'negative-248',
-      pollIntervalMs: 1,
-      consistencyTimeoutMs: 50,
+      fetch: fixture.fetch,
+      sleep: async () => {},
+      consistencyTimeoutMs: 500,
     }),
     /filter matched its negative control/u,
   );
+});
+
+test('live observability acceptance retries HTTP 429 with a five-second minimum backoff', async () => {
+  const fixture = createLangfuseFixture({ rateLimitOnce: true });
+  const sleeps: number[] = [];
+
+  const result = await runLangfuseObservabilityLiveAcceptance({
+    baseUrl: 'https://langfuse.fixture',
+    publicKey: 'pk-live-test',
+    secretKey: 'sk-live-test',
+    runId: 'rate-limit-248',
+    fetch: fixture.fetch,
+    pollIntervalMs: 1,
+    sleep: async (milliseconds) => {
+      sleeps.push(milliseconds);
+    },
+    consistencyTimeoutMs: 500,
+  });
+
+  assert.equal(result.matched, true);
+  assert.deepEqual(sleeps, [5_000, 5_000, 5_000]);
 });
 
 test('live observability configuration requires opt-in and credentials', () => {
@@ -133,32 +117,89 @@ test('live observability configuration requires opt-in and credentials', () => {
   );
 });
 
-async function listen(t: test.TestContext, server: Server) {
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  t.after(
-    () =>
-      new Promise<void>((resolve, reject) => {
-        server.close((error) => (error ? reject(error) : resolve()));
-      }),
-  );
-  const address = server.address();
-  if (!address || typeof address === 'string') {
-    throw new Error('Expected fixture server to expose a TCP address.');
-  }
-  return `http://127.0.0.1:${address.port}`;
-}
-
-async function readJson(request: NodeJS.ReadableStream) {
-  const chunks: Buffer[] = [];
-  for await (const chunk of request) chunks.push(Buffer.from(chunk));
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-}
-
-function sendJson(
-  response: import('node:http').ServerResponse,
-  status: number,
-  body: unknown,
+function createLangfuseFixture(
+  options: {
+    negativeControlMatches?: boolean;
+    rateLimitOnce?: boolean;
+  } = {},
 ) {
-  response.writeHead(status, { 'content-type': 'application/json' });
-  response.end(JSON.stringify(body));
+  let traceId = '';
+  const traceMetadata: Record<string, unknown> = {};
+  const spanMetadata: Record<string, unknown> = {};
+  const filters: Array<Record<string, unknown>> = [];
+  const observationTraceIds: string[] = [];
+  const rateLimitedRequests = new Set<string>();
+
+  const fetch: typeof globalThis.fetch = async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : input.toString());
+    if (init?.method === 'POST' && url.pathname === '/api/public/ingestion') {
+      const body = JSON.parse(String(init.body)) as {
+        batch: Array<{ type: string; body: Record<string, unknown> }>;
+      };
+      const trace = body.batch.find(({ type }) => type === 'trace-create');
+      const span = body.batch.find(({ type }) => type === 'span-create');
+      traceId = String(trace?.body.id);
+      Object.assign(traceMetadata, trace?.body.metadata);
+      Object.assign(spanMetadata, span?.body.metadata);
+      return jsonResponse(200, { successes: body.batch });
+    }
+    if (url.pathname === '/api/public/observations') {
+      observationTraceIds.push(url.searchParams.get('traceId') ?? '');
+      if (shouldRateLimit('observation')) return jsonResponse(429, {});
+      return jsonResponse(200, {
+        data: [
+          {
+            id: 'observation-live-248',
+            traceId,
+            metadata: spanMetadata,
+          },
+        ],
+      });
+    }
+    if (url.pathname === '/api/public/traces') {
+      const filter = JSON.parse(
+        url.searchParams.get('filter') ?? '[]',
+      ) as Array<Record<string, unknown>>;
+      assert.equal(filter.length, 1);
+      const [axisFilter] = filter;
+      filters.push(axisFilter!);
+      const axis = String(axisFilter?.key);
+      const value = String(axisFilter?.value);
+      const negativeControl = value.endsWith('-negative-control');
+      if (
+        shouldRateLimit(
+          negativeControl ? 'trace-negative' : 'trace-positive',
+        )
+      ) {
+        return jsonResponse(429, {});
+      }
+      const matches =
+        options.negativeControlMatches || value === traceMetadata[axis];
+      return jsonResponse(200, {
+        data: matches ? [{ id: traceId, metadata: traceMetadata }] : [],
+      });
+    }
+    return jsonResponse(404, {});
+  };
+
+  function shouldRateLimit(request: string) {
+    if (!options.rateLimitOnce || rateLimitedRequests.has(request)) return false;
+    rateLimitedRequests.add(request);
+    return true;
+  }
+
+  return {
+    fetch,
+    filters,
+    observationTraceIds,
+    traceMetadata,
+    spanMetadata,
+  };
+}
+
+function jsonResponse(status: number, body: unknown) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
 }
