@@ -736,6 +736,15 @@ test('a Composer Copy snapshot rejects a foreign brief asset before provider exe
 test('a frozen Composer Copy snapshot uses the single revision writer', async () => {
   const legacyDelivery = new RecordingDelivery();
   const executionDelivery = new RecordingRevisionWriter();
+  let memoryCompletions = 0;
+  let releaseMemoryCompletion!: () => void;
+  let markMemoryStarted!: () => void;
+  const memoryCompletion = new Promise<void>((resolve) => {
+    releaseMemoryCompletion = resolve;
+  });
+  const memoryStarted = new Promise<void>((resolve) => {
+    markMemoryStarted = resolve;
+  });
   const ports = new ProductionHarnessStagePorts(
     { create: () => new QueueRunner([]) },
     {
@@ -750,6 +759,21 @@ test('a frozen Composer Copy snapshot uses the single revision writer', async ()
     () => '2026-07-22T10:00:00.000Z',
     undefined,
     executionDelivery,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      async complete() {
+        markMemoryStarted();
+        await memoryCompletion;
+        memoryCompletions += 1;
+      },
+    },
   );
   const snapshot = composerSnapshot();
   const context = contextSnapshot();
@@ -785,7 +809,7 @@ test('a frozen Composer Copy snapshot uses the single revision writer', async ()
     },
   ];
 
-  const delivery = await ports.assembleAndDeliver({
+  const deliveryPromise = ports.assembleAndDeliver({
     workflowId: snapshot.task.id,
     request: {
       ...taskInput(),
@@ -842,6 +866,19 @@ test('a frozen Composer Copy snapshot uses the single revision writer', async ()
       trace: {} as never,
     },
   });
+  await memoryStarted;
+  let deliverySettled = false;
+  void deliveryPromise.then(() => {
+    deliverySettled = true;
+  });
+  await Promise.resolve();
+  assert.equal(
+    deliverySettled,
+    false,
+    'the DBOS-owned delivery step must wait for durable memory completion',
+  );
+  releaseMemoryCompletion();
+  const delivery = await deliveryPromise;
 
   assert.deepEqual(delivery, {
     packageId: 'package-1',
@@ -850,6 +887,7 @@ test('a frozen Composer Copy snapshot uses the single revision writer', async ()
   });
   assert.equal(legacyDelivery.inputs.length, 0);
   assert.equal(executionDelivery.inputs.length, 1);
+  assert.equal(memoryCompletions, 1);
   assert.equal(
     executionDelivery.inputs[0]?.occurredAt,
     '2026-07-22T10:00:00.000Z',

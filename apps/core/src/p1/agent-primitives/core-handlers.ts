@@ -144,6 +144,11 @@ export interface RecordProposalPort {
     provenance: RecordInput['provenance'];
     workspaceId: string;
     idempotencyKey: string;
+    execution: {
+      actorId: string;
+      correlationId: string;
+      taskId: string;
+    };
   }): Promise<RecordProposalOutcome>;
 }
 
@@ -163,6 +168,11 @@ export function createRecordHandler(
       provenance: input.provenance,
       workspaceId: serverContext.workspaceId,
       idempotencyKey: serverContext.idempotencyKey,
+      execution: {
+        actorId: serverContext.actorId,
+        correlationId: serverContext.correlationId,
+        taskId: serverContext.taskId,
+      },
     });
     if (
       outcome.status !== 'proposed' ||

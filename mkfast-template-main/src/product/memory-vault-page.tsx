@@ -21,10 +21,14 @@
  * a second long-stay workspace over one record is exactly what the dashboard
  * convergence work exists to remove.
  */
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
-import type { MarketingIdentityProjection } from '@meiye/contracts';
+import type {
+  MarketingIdentityProjection,
+  MemoryEntriesPage,
+  MemoryEntryProjection,
+} from '@meiye/contracts';
 
 import { Routes } from '@/lib/routes';
 import {
@@ -39,9 +43,22 @@ import {
   memory_domain_workflows_action,
   memory_domain_workflows_description,
   memory_domain_workflows_title,
+  memory_entry_confirm,
+  memory_entry_delete,
+  memory_entry_delete_source,
+  memory_entry_empty,
+  memory_entry_reject,
+  memory_entry_reject_reason,
+  memory_entry_source_available,
+  memory_entry_source_deleted,
+  memory_entry_source_unavailable,
+  memory_entry_status_confirmed,
+  memory_entry_status_pending,
+  memory_entry_status_rejected,
   memory_page_description,
   memory_unbuilt_note,
 } from '@/locale/paraglide/messages';
+import { commandP1, queryP1 } from '@/p1/client';
 import { marketingIdentityProjectionQuery } from './marketing-identity-queries';
 
 function MemorySection({
@@ -81,7 +98,48 @@ function UnbuiltNote() {
 }
 
 export function MemoryVaultPage() {
+  const queryClient = useQueryClient();
   const identityQuery = useQuery(marketingIdentityProjectionQuery);
+  const entriesQuery = useQuery({
+    queryKey: ['p1', 'memory', 'entries-page', 20],
+    queryFn: ({ signal }) =>
+      queryP1<MemoryEntriesPage>(
+        'memory',
+        { action: 'entries_page', payload: { limit: 20 } },
+        signal
+      ),
+  });
+  const decide = useMutation({
+    mutationFn: (input: {
+      action:
+        | 'confirm_candidate'
+        | 'reject_candidate'
+        | 'delete_entry'
+        | 'delete_source_conversation';
+      entryId: string;
+      conversationId?: string;
+    }) =>
+      commandP1(
+        'memory',
+        {
+          action: input.action,
+          payload:
+            input.action === 'reject_candidate'
+              ? {
+                  entryId: input.entryId,
+                  reason: memory_entry_reject_reason(),
+                }
+              : input.action === 'delete_source_conversation'
+                ? { conversationId: input.conversationId }
+                : { entryId: input.entryId },
+        },
+        `memory:${input.action}:${input.entryId}`
+      ),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: ['p1', 'memory', 'entries-page'],
+      }),
+  });
   const projection: MarketingIdentityProjection | undefined =
     identityQuery.data;
   const defaultIdentityId = projection?.defaultIdentity?.identityId;
@@ -100,6 +158,28 @@ export function MemoryVaultPage() {
         description={memory_domain_identity_description()}
         testId="memory-domain-identity"
       >
+        <div className="space-y-3" data-testid="memory-entries">
+          {entriesQuery.data?.items?.length ? (
+            entriesQuery.data.items.map((entry) => (
+              <MemoryEntryCard
+                entry={entry}
+                key={entry.entryId}
+                pending={decide.isPending}
+                onAction={(action) =>
+                  decide.mutate({
+                    action,
+                    entryId: entry.entryId,
+                    conversationId: entry.source?.conversationId,
+                  })
+                }
+              />
+            ))
+          ) : (
+            <p className="meiye-type-aux" data-testid="memory-entry-empty">
+              {memory_entry_empty()}
+            </p>
+          )}
+        </div>
         {defaultIdentity ? (
           <p data-testid="memory-identity-name">
             {defaultIdentity.displayName}
@@ -145,5 +225,84 @@ export function MemoryVaultPage() {
         <UnbuiltNote />
       </MemorySection>
     </div>
+  );
+}
+
+function MemoryEntryCard({
+  entry,
+  pending,
+  onAction,
+}: {
+  entry: MemoryEntryProjection;
+  pending: boolean;
+  onAction: (
+    action:
+      | 'confirm_candidate'
+      | 'reject_candidate'
+      | 'delete_entry'
+      | 'delete_source_conversation'
+  ) => void;
+}) {
+  const source =
+    entry.source?.status === 'available' && entry.source.preview
+      ? memory_entry_source_available({ preview: entry.source.preview })
+      : entry.source?.status === 'deleted'
+        ? memory_entry_source_deleted()
+        : memory_entry_source_unavailable();
+  const status =
+    entry.status === 'confirmed'
+      ? memory_entry_status_confirmed()
+      : entry.status === 'rejected'
+        ? memory_entry_status_rejected()
+        : memory_entry_status_pending();
+  return (
+    <article
+      className="rounded-xl border border-foreground/10 p-3"
+      data-testid={`memory-entry-${entry.entryId}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <p>{String(entry.value)}</p>
+        <span className="meiye-type-aux shrink-0">{status}</span>
+      </div>
+      <p className="meiye-type-aux mt-1" data-testid="memory-entry-provenance">
+        {source}
+      </p>
+      <div className="mt-2 flex flex-wrap gap-3">
+        {entry.status === 'pending' ? (
+          <>
+            <button
+              disabled={pending}
+              onClick={() => onAction('confirm_candidate')}
+              type="button"
+            >
+              {memory_entry_confirm()}
+            </button>
+            <button
+              disabled={pending}
+              onClick={() => onAction('reject_candidate')}
+              type="button"
+            >
+              {memory_entry_reject()}
+            </button>
+          </>
+        ) : null}
+        <button
+          disabled={pending}
+          onClick={() => onAction('delete_entry')}
+          type="button"
+        >
+          {memory_entry_delete()}
+        </button>
+        {entry.source?.status === 'available' ? (
+          <button
+            disabled={pending}
+            onClick={() => onAction('delete_source_conversation')}
+            type="button"
+          >
+            {memory_entry_delete_source()}
+          </button>
+        ) : null}
+      </div>
+    </article>
   );
 }

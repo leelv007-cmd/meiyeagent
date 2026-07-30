@@ -1088,6 +1088,37 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
         seriesAnchors: null,
       };
     }
+    case 'memory_sedimentation_candidates_v1': {
+      const messages = Array.isArray(payload.messages)
+        ? payload.messages.map(fixtureRecord)
+        : [];
+      const merchantMessage = messages.find(
+        (message) => message.index === 0 && message.role === 'merchant',
+      );
+      const text =
+        typeof merchantMessage?.text === 'string'
+          ? merchantMessage.text.trim()
+          : '';
+      if (!/(?:以后|今后|长期记住|每次)/u.test(text)) {
+        return { items: [] };
+      }
+      return {
+        items: [
+          {
+            itemId: 'merchant-preference-1',
+            decision: {
+              state: 'allow',
+              reason: 'explicit_future_preference',
+            },
+            candidate: {
+              semanticKey: 'style.copy.long_term',
+              proposedValue: text,
+              messageRange: { start: 0, end: 0 },
+            },
+          },
+        ],
+      };
+    }
     case 'harness_intent_naming_v1': {
       const context = fixtureRecord(payload.context);
       const intent = typeof context.intent === 'string' ? context.intent : '';

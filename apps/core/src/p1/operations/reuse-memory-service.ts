@@ -1,5 +1,7 @@
 import {
   assetRevisionSchema,
+  memoryEntriesPageQuerySchema,
+  memoryEntriesPageSchema,
   preferenceCandidateSchema,
   preferenceSignalSchema,
   preferenceSchema,
@@ -10,6 +12,8 @@ import {
   type Preference,
   type PreferenceCandidate,
   type PreferenceSignal,
+  type MemoryEntriesPage,
+  type MemoryEntriesPageQuery,
   type ReusableAssetCandidate,
   type ReusableAssetLifecycleEvent,
   type ReusableAssetScope,
@@ -53,6 +57,8 @@ export interface AppendAssetLifecycleInput {
 
 export interface CommitPreferenceInput {
   preference: Preference;
+  decision?: MemoryCandidateDecision;
+  approvalReceipt?: MemoryApprovalReceipt;
   expectedRevision: number;
   idempotencyKey: string;
   fingerprint: string;
@@ -106,6 +112,103 @@ export interface ReuseMemoryRepository {
   ): Promise<Preference[]>;
   listPreferenceCandidates(workspaceId: string): Promise<PreferenceCandidate[]>;
   listPreferenceHeads(workspaceId: string): Promise<Preference[]>;
+  saveMemoryWorkLog(log: MemoryWorkLog): Promise<MemoryWorkLog>;
+  saveMemorySourceConversation(
+    conversation: MemorySourceConversation,
+  ): Promise<MemorySourceConversation>;
+  getMemoryWorkLog(
+    workspaceId: string,
+    turnId: string,
+  ): Promise<MemoryWorkLog | null>;
+  hasMemorySourceConversation(
+    workspaceId: string,
+    conversationId: string,
+  ): Promise<boolean>;
+  appendMemorySedimentationAudit(
+    event: MemorySedimentationAudit,
+  ): Promise<MemorySedimentationAudit>;
+  listMemorySedimentationAudits(
+    workspaceId: string,
+  ): Promise<MemorySedimentationAudit[]>;
+  appendMemoryCandidateDecision(
+    decision: MemoryCandidateDecision,
+  ): Promise<MemoryCandidateDecision>;
+  listMemoryCandidateDecisions(
+    workspaceId: string,
+  ): Promise<MemoryCandidateDecision[]>;
+  listMemoryApprovalReceipts(
+    workspaceId: string,
+  ): Promise<MemoryApprovalReceipt[]>;
+  rejectMemoryCandidate(
+    decision: MemoryCandidateDecision,
+  ): Promise<'rejected'>;
+  listMemoryEntriesPage(
+    workspaceId: string,
+    query: MemoryEntriesPageQuery,
+  ): Promise<MemoryEntriesPage>;
+  markMemorySourceDeleted(
+    workspaceId: string,
+    conversationId: string,
+    deletedAt: string,
+  ): Promise<void>;
+  deleteMemoryEntry(input: {
+    workspaceId: string;
+    entryId: string;
+    deletedAt: string;
+    deletedBy: string;
+  }): Promise<'deleted' | 'not_found'>;
+  isMemoryEntryDeleted(
+    workspaceId: string,
+    entryId: string,
+  ): Promise<boolean>;
+}
+
+export interface MemoryWorkLog {
+  workspaceId: string;
+  conversationId: string;
+  turnId: string;
+  observedAt: string;
+  messages: Array<{ index: number; text: string }>;
+}
+
+export type MemorySourceConversation = MemoryWorkLog;
+
+export interface MemorySedimentationAudit {
+  auditId: string;
+  workspaceId: string;
+  conversationId: string;
+  itemId: string;
+  outcome: 'persisted' | 'aborted' | 'failed';
+  decision:
+    | 'allow'
+    | 'rewrite'
+    | 'discard'
+    | 'to_pending_confirmation'
+    | 'parse_failed'
+    | 'item_failed'
+    | 'redline_aborted';
+  reason: string;
+  occurredAt: string;
+}
+
+export interface MemoryCandidateDecision {
+  decisionId: string;
+  workspaceId: string;
+  candidateId: string;
+  action: 'confirmed' | 'rejected';
+  reason: string;
+  decidedBy: string;
+  decidedAt: string;
+}
+
+export interface MemoryApprovalReceipt {
+  receiptId: string;
+  workspaceId: string;
+  candidateId: string;
+  decisionId: string;
+  status: 'approved';
+  approvedBy: string;
+  approvedAt: string;
 }
 
 export interface ReusableAssetSourceVerifier {
@@ -152,6 +255,16 @@ export class MemoryReuseMemoryRepository implements ReuseMemoryRepository {
     Receipt<Preference>
   >();
   private readonly preferenceCandidatePromotions = new Map<string, string>();
+  private readonly memoryWorkLogs = new Map<string, MemoryWorkLog>();
+  private readonly memorySourceConversations = new Map<
+    string,
+    MemorySourceConversation
+  >();
+  private readonly memoryAudits: MemorySedimentationAudit[] = [];
+  private readonly memoryCandidateDecisions: MemoryCandidateDecision[] = [];
+  private readonly memoryApprovalReceipts: MemoryApprovalReceipt[] = [];
+  private readonly sourceTombstones = new Map<string, string>();
+  private readonly entryTombstones = new Set<string>();
 
   async saveReusableCandidate(input: ReusableAssetCandidate) {
     const candidate = reusableAssetCandidateSchema.parse(input);
@@ -360,6 +473,19 @@ export class MemoryReuseMemoryRepository implements ReuseMemoryRepository {
       promotionIdentity,
     );
     if (
+      this.memoryCandidateDecisions.some(
+        (decision) =>
+          decision.workspaceId === preference.workspaceId &&
+          decision.candidateId === preference.candidateId &&
+          decision.action === 'rejected',
+      )
+    ) {
+      throw new ReuseMemoryError(
+        'INVALID_STATE',
+        'A rejected candidate cannot be confirmed.',
+      );
+    }
+    if (
       (input.expectedRevision === 0 && promotedPreferenceId) ||
       (input.expectedRevision > 0 &&
         promotedPreferenceId !== preference.preferenceId)
@@ -376,6 +502,15 @@ export class MemoryReuseMemoryRepository implements ReuseMemoryRepository {
     if (preference.revision !== input.expectedRevision + 1) {
       throw new ReuseMemoryError('INVALID_STATE', 'Invalid Preference revision.');
     }
+    if (
+      input.expectedRevision === 0 &&
+      (!input.decision || !input.approvalReceipt)
+    ) {
+      throw new ReuseMemoryError(
+        'INVALID_STATE',
+        'Preference confirmation requires a decision and approval receipt.',
+      );
+    }
     this.preferences.set(preferenceIdentity, [...history, preference]);
     this.preferenceCandidatePromotions.set(
       promotionIdentity,
@@ -385,6 +520,30 @@ export class MemoryReuseMemoryRepository implements ReuseMemoryRepository {
       fingerprint: input.fingerprint,
       result: preference,
     });
+    if (input.expectedRevision === 0) {
+      if (!input.decision || !input.approvalReceipt) {
+        throw new ReuseMemoryError(
+          'INVALID_STATE',
+          'Preference confirmation requires a decision and approval receipt.',
+        );
+      }
+      await this.appendMemoryCandidateDecision(input.decision);
+      const approval = this.memoryApprovalReceipts.find(
+        (item) =>
+          item.workspaceId === input.approvalReceipt!.workspaceId &&
+          item.receiptId === input.approvalReceipt!.receiptId,
+      );
+      ensureSameOrConflict(
+        approval,
+        input.approvalReceipt,
+        `Memory approval ${input.approvalReceipt.receiptId}`,
+      );
+      if (!approval) {
+        this.memoryApprovalReceipts.push(
+          structuredClone(input.approvalReceipt),
+        );
+      }
+    }
     return structuredClone(preference);
   }
 
@@ -435,6 +594,265 @@ export class MemoryReuseMemoryRepository implements ReuseMemoryRepository {
         left.preferenceId.localeCompare(right.preferenceId),
       ),
     );
+  }
+
+  async saveMemoryWorkLog(input: MemoryWorkLog) {
+    if (
+      this.sourceTombstones.has(
+        key(input.workspaceId, input.conversationId),
+      )
+    ) {
+      throw new ReuseMemoryError(
+        'INVALID_STATE',
+        `Conversation ${input.conversationId} was deleted.`,
+      );
+    }
+    const identity = key(input.workspaceId, input.turnId);
+    const current = this.memoryWorkLogs.get(identity);
+    ensureSameOrConflict(current, input, `Work log ${input.turnId}`);
+    if (!current) this.memoryWorkLogs.set(identity, structuredClone(input));
+    return structuredClone(current ?? input);
+  }
+
+  async saveMemorySourceConversation(input: MemorySourceConversation) {
+    const identity = key(input.workspaceId, input.conversationId);
+    const current = this.memorySourceConversations.get(identity);
+    ensureSameOrConflict(
+      current,
+      input,
+      `Source conversation ${input.conversationId}`,
+    );
+    if (!current) {
+      this.memorySourceConversations.set(identity, structuredClone(input));
+    }
+    return structuredClone(current ?? input);
+  }
+
+  async getMemoryWorkLog(workspaceId: string, turnId: string) {
+    const log = this.memoryWorkLogs.get(key(workspaceId, turnId));
+    return log ? structuredClone(log) : null;
+  }
+
+  async hasMemorySourceConversation(
+    workspaceId: string,
+    conversationId: string,
+  ) {
+    return this.memorySourceConversations.has(
+      key(workspaceId, conversationId),
+    );
+  }
+
+  async appendMemorySedimentationAudit(input: MemorySedimentationAudit) {
+    const current = this.memoryAudits.find(
+      (event) =>
+        event.workspaceId === input.workspaceId && event.auditId === input.auditId,
+    );
+    ensureSameOrConflict(current, input, `Sedimentation audit ${input.auditId}`);
+    if (!current) this.memoryAudits.push(structuredClone(input));
+    return structuredClone(current ?? input);
+  }
+
+  async listMemorySedimentationAudits(workspaceId: string) {
+    return structuredClone(
+      this.memoryAudits.filter((event) => event.workspaceId === workspaceId),
+    );
+  }
+
+  async appendMemoryCandidateDecision(input: MemoryCandidateDecision) {
+    const current = this.memoryCandidateDecisions.find(
+      (event) =>
+        event.workspaceId === input.workspaceId &&
+        event.decisionId === input.decisionId,
+    );
+    ensureSameOrConflict(current, input, `Memory decision ${input.decisionId}`);
+    if (!current) {
+      this.memoryCandidateDecisions.push(structuredClone(input));
+    }
+    return structuredClone(current ?? input);
+  }
+
+  async listMemoryCandidateDecisions(workspaceId: string) {
+    return structuredClone(
+      this.memoryCandidateDecisions.filter(
+        (event) => event.workspaceId === workspaceId,
+      ),
+    );
+  }
+
+  async listMemoryApprovalReceipts(workspaceId: string) {
+    return structuredClone(
+      this.memoryApprovalReceipts.filter(
+        (receipt) => receipt.workspaceId === workspaceId,
+      ),
+    );
+  }
+
+  async rejectMemoryCandidate(input: MemoryCandidateDecision) {
+    if (
+      this.preferenceCandidatePromotions.has(
+        key(input.workspaceId, input.candidateId),
+      )
+    ) {
+      throw new ReuseMemoryError(
+        'INVALID_STATE',
+        'A confirmed candidate cannot be rejected.',
+      );
+    }
+    await this.appendMemoryCandidateDecision(input);
+    return 'rejected' as const;
+  }
+
+  async listMemoryEntriesPage(
+    workspaceId: string,
+    query: MemoryEntriesPageQuery,
+  ): Promise<MemoryEntriesPage> {
+    const ordered = [...this.preferenceCandidates.values()]
+      .filter(
+        (candidate) =>
+          candidate.workspaceId === workspaceId &&
+          !this.entryTombstones.has(key(workspaceId, candidate.candidateId)),
+      )
+      .sort(
+        (left, right) =>
+          right.proposedAt.localeCompare(left.proposedAt) ||
+          right.candidateId.localeCompare(left.candidateId),
+      );
+    const cursor = query.cursor
+      ? (JSON.parse(
+          Buffer.from(query.cursor, 'base64url').toString('utf8'),
+        ) as [string, string])
+      : null;
+    const after = cursor
+      ? ordered.filter(
+          (candidate) =>
+            candidate.proposedAt < cursor[0] ||
+            (candidate.proposedAt === cursor[0] &&
+              candidate.candidateId < cursor[1]),
+        )
+      : ordered;
+    const selected = after.slice(0, query.limit + 1);
+    const pageItems = selected.slice(0, query.limit);
+    return {
+      items: pageItems.map((candidate) => {
+        const source = candidate.source;
+        const log = source
+          ? this.memorySourceConversations.get(
+              key(workspaceId, source.conversationId),
+            )
+          : null;
+        const preview = log?.messages
+          .filter(
+            (message) =>
+              message.index >= (source?.messageRange.start ?? 0) &&
+              message.index <= (source?.messageRange.end ?? -1),
+          )
+          .map((message) => message.text)
+          .join(' ')
+          .trim();
+        return {
+          entryId: candidate.candidateId,
+          semanticKey: candidate.semanticKey,
+          value: candidate.proposedValue,
+          status: this.preferenceCandidatePromotions.has(
+            key(workspaceId, candidate.candidateId),
+          )
+            ? ('confirmed' as const)
+            : this.memoryCandidateDecisions.some(
+                  (decision) =>
+                    decision.workspaceId === workspaceId &&
+                    decision.candidateId === candidate.candidateId &&
+                    decision.action === 'rejected',
+                )
+              ? ('rejected' as const)
+              : ('pending' as const),
+          proposedAt: candidate.proposedAt,
+          source:
+            source
+              ? {
+                  conversationId: source.conversationId,
+                  sourceTurnId: source.sourceTurnId,
+                  messageRange: source.messageRange,
+                  status: this.sourceTombstones.has(
+                    key(workspaceId, source.conversationId),
+                  )
+                    ? ('deleted' as const)
+                    : log && preview
+                      ? ('available' as const)
+                      : ('unavailable' as const),
+                  observedAt: log?.observedAt ?? null,
+                  preview:
+                    this.sourceTombstones.has(
+                      key(workspaceId, source.conversationId),
+                    ) || !preview
+                      ? null
+                      : preview.slice(0, 500),
+                  deletedAt:
+                    this.sourceTombstones.get(
+                      key(workspaceId, source.conversationId),
+                    ) ?? null,
+                }
+              : null,
+        };
+      }),
+      nextCursor:
+        selected.length > query.limit && pageItems.at(-1)
+          ? Buffer.from(
+              JSON.stringify([
+                pageItems.at(-1)?.proposedAt,
+                pageItems.at(-1)?.candidateId,
+              ]),
+            ).toString('base64url')
+          : null,
+    };
+  }
+
+  async markMemorySourceDeleted(
+    workspaceId: string,
+    conversationId: string,
+    deletedAt: string,
+  ) {
+    this.sourceTombstones.set(key(workspaceId, conversationId), deletedAt);
+    this.memorySourceConversations.delete(key(workspaceId, conversationId));
+    for (const [identity, log] of this.memoryWorkLogs) {
+      if (
+        log.workspaceId === workspaceId &&
+        log.conversationId === conversationId
+      ) {
+        this.memoryWorkLogs.delete(identity);
+      }
+    }
+  }
+
+  async deleteMemoryEntry(input: {
+    workspaceId: string;
+    entryId: string;
+    deletedAt: string;
+    deletedBy: string;
+  }) {
+    const identity = key(input.workspaceId, input.entryId);
+    if (this.entryTombstones.has(identity)) return 'deleted' as const;
+    const candidate = this.preferenceCandidates.get(identity);
+    if (!candidate) return 'not_found' as const;
+    const preferenceId = this.preferenceCandidatePromotions.get(identity);
+    if (preferenceId) {
+      this.preferences.delete(key(input.workspaceId, preferenceId));
+      this.preferenceCandidatePromotions.delete(identity);
+      for (const [receiptIdentity, receipt] of this.preferenceReceipts) {
+        if (
+          receipt.result.workspaceId === input.workspaceId &&
+          receipt.result.candidateId === input.entryId
+        ) {
+          this.preferenceReceipts.delete(receiptIdentity);
+        }
+      }
+    }
+    this.preferenceCandidates.delete(identity);
+    this.entryTombstones.add(identity);
+    return 'deleted' as const;
+  }
+
+  async isMemoryEntryDeleted(workspaceId: string, entryId: string) {
+    return this.entryTombstones.has(key(workspaceId, entryId));
   }
 }
 
@@ -888,6 +1306,14 @@ export class ReuseMemoryService {
       idempotencyKey: string;
     },
   ) {
+    if (
+      await this.repository.isMemoryEntryDeleted(
+        context.workspaceId,
+        input.candidateId,
+      )
+    ) {
+      throw new ReuseMemoryError('NOT_FOUND', 'Candidate was deleted.');
+    }
     if (input.expectedRevision !== 0) {
       throw new ReuseMemoryError(
         'INVALID_STATE',
@@ -945,11 +1371,64 @@ export class ReuseMemoryService {
       changedAt: decidedAt,
       changeReason: 'candidate_confirmed',
     });
+    const decision: MemoryCandidateDecision = {
+      decisionId: `memory:confirmed:${input.idempotencyKey}`,
+      workspaceId: context.workspaceId,
+      candidateId: input.candidateId,
+      action: 'confirmed',
+      reason: 'candidate_confirmed',
+      decidedBy: context.userId,
+      decidedAt,
+    };
     return this.repository.commitPreference({
       preference,
+      decision,
+      approvalReceipt: {
+        receiptId: `memory-approval:${input.idempotencyKey}`,
+        workspaceId: context.workspaceId,
+        candidateId: input.candidateId,
+        decisionId: decision.decisionId,
+        status: 'approved',
+        approvedBy: context.userId,
+        approvedAt: decidedAt,
+      },
       expectedRevision: input.expectedRevision,
       idempotencyKey: input.idempotencyKey,
       fingerprint: commitFingerprint,
+    });
+  }
+
+  async rejectPreferenceCandidate(
+    context: { workspaceId: string; userId: string },
+    input: {
+      candidateId: string;
+      reason: string;
+      idempotencyKey: string;
+    },
+  ) {
+    if (
+      await this.repository.isMemoryEntryDeleted(
+        context.workspaceId,
+        input.candidateId,
+      )
+    ) {
+      throw new ReuseMemoryError('NOT_FOUND', 'Candidate was deleted.');
+    }
+    const candidate = await this.repository.getPreferenceCandidate(
+      context.workspaceId,
+      input.candidateId,
+    );
+    if (!candidate) {
+      throw new ReuseMemoryError('NOT_FOUND', 'Candidate not found.');
+    }
+    return this.repository.rejectMemoryCandidate({
+      decisionId: `memory:rejected:${input.idempotencyKey}`,
+      workspaceId: context.workspaceId,
+      candidateId: input.candidateId,
+      action: 'rejected',
+      reason: input.reason,
+      decidedBy: context.userId,
+      decidedAt: this.now(),
     });
   }
 
@@ -1020,5 +1499,138 @@ export class ReuseMemoryService {
       })),
       preferences,
     };
+  }
+
+  async memoryEntriesPage(
+    workspaceId: string,
+    input: MemoryEntriesPageQuery,
+  ) {
+    const query = memoryEntriesPageQuerySchema.parse(input);
+    try {
+      return memoryEntriesPageSchema.parse(
+        await this.repository.listMemoryEntriesPage(workspaceId, query),
+      );
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new ReuseMemoryError('INVALID_STATE', 'Invalid memory page cursor.');
+      }
+      throw error;
+    }
+  }
+
+  async listConfirmedPreferences(workspaceId: string) {
+    const current = (await this.repository.listPreferenceHeads(workspaceId))
+      .filter((preference) => preference.recordState === 'current')
+      .sort(
+        (left, right) =>
+          right.confirmedAt.localeCompare(left.confirmedAt) ||
+          right.preferenceId.localeCompare(left.preferenceId),
+      );
+    const latest = new Map<string, Preference>();
+    for (const preference of current) {
+      const semanticScope = JSON.stringify([
+        preference.semanticKey,
+        preference.finalScope,
+      ]);
+      if (!latest.has(semanticScope)) {
+        latest.set(semanticScope, preference);
+      }
+    }
+    return [...latest.values()].sort((left, right) =>
+      left.preferenceId.localeCompare(right.preferenceId),
+    );
+  }
+
+  async preferenceContextRevision(workspaceId: string) {
+    const preferences = await this.listConfirmedPreferences(workspaceId);
+    if (preferences.length === 0) return 0;
+    return createHash('sha256')
+      .update(
+        JSON.stringify(
+          preferences
+            .map((preference) => ({
+              preferenceId: preference.preferenceId,
+              revision: preference.revision,
+              recordState: preference.recordState,
+            }))
+            .sort((left, right) =>
+              left.preferenceId.localeCompare(right.preferenceId),
+            ),
+        ),
+      )
+      .digest('hex');
+  }
+
+  async preferenceContextSnapshot(workspaceId: string) {
+    const preferences = await this.listConfirmedPreferences(workspaceId);
+    const revision =
+      preferences.length === 0
+        ? 0
+        : createHash('sha256')
+            .update(
+              JSON.stringify(
+                preferences.map((preference) => ({
+                  preferenceId: preference.preferenceId,
+                  revision: preference.revision,
+                  recordState: preference.recordState,
+                })),
+              ),
+            )
+            .digest('hex');
+    return { preferences, revision };
+  }
+
+  async markMemorySourceDeleted(
+    workspaceId: string,
+    conversationId: string,
+  ) {
+    await this.repository.markMemorySourceDeleted(
+      workspaceId,
+      conversationId,
+      this.now(),
+    );
+  }
+
+  async saveMemoryWorkLog(input: MemoryWorkLog) {
+    return this.repository.saveMemoryWorkLog(input);
+  }
+
+  async saveMemorySourceConversation(input: MemorySourceConversation) {
+    return this.repository.saveMemorySourceConversation(input);
+  }
+
+  async deleteMemorySourceConversation(
+    context: { workspaceId: string },
+    conversationId: string,
+  ) {
+    if (
+      !(await this.repository.hasMemorySourceConversation(
+        context.workspaceId,
+        conversationId,
+      ))
+    ) {
+      throw new ReuseMemoryError(
+        'NOT_FOUND',
+        'Source conversation was not found.',
+      );
+    }
+    await this.repository.markMemorySourceDeleted(
+      context.workspaceId,
+      conversationId,
+      this.now(),
+    );
+    return 'deleted' as const;
+  }
+
+  async deleteMemoryEntry(
+    context: { workspaceId: string; userId: string },
+    entryId: string,
+  ) {
+    return this.repository.deleteMemoryEntry({
+      workspaceId: context.workspaceId,
+      entryId,
+      deletedAt: this.now(),
+      deletedBy: context.userId,
+    });
   }
 }

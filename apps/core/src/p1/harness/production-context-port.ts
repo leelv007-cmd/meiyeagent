@@ -5,6 +5,7 @@ import {
   type ContextContribution,
   type ContextSourceRevisions,
   type MarketingIdentityAsset,
+  type Preference,
   type ReuseTaskSeed,
 } from '@meiye/contracts';
 
@@ -113,6 +114,12 @@ export class LedgerBackedHarnessContextPort
       ): Promise<MarketingIdentityAsset[]>;
     },
     private readonly sourceContentPackages?: ExecutionSourceContentPackageResolverPort,
+    private readonly preferences?: {
+      preferenceContextSnapshot(workspaceId: string): Promise<{
+        preferences: Preference[];
+        revision: number | string;
+      }>;
+    },
   ) {}
 
   async compileAndFreeze(
@@ -149,10 +156,14 @@ export class LedgerBackedHarnessContextPort
             at,
           })
         : [];
+    const preferenceSnapshot = await this.preferenceSnapshot(
+      input.request.workspaceId,
+    );
     const currentRevisions = await this.currentSourceRevisions(
       input.request.workspaceId,
       activeFacts,
       input.request,
+      preferenceSnapshot.revision,
     );
     const frozenSourceRefs = new Set(
       Object.values(input.context.bundle.dimensions)
@@ -205,12 +216,22 @@ export class LedgerBackedHarnessContextPort
           })
         : [];
     const directAssetIds = [...new Set(input.request.intent.assetReferences)];
-    const [sourceRevisions, rawReuseRevision, activeIdentities, sourceContentPackage] =
+    const preferenceSnapshot = await this.preferenceSnapshot(
+      input.request.workspaceId,
+    );
+    const [
+      sourceRevisions,
+      rawReuseRevision,
+      activeIdentities,
+      sourceContentPackage,
+      confirmedPreferences,
+    ] =
       await Promise.all([
         this.currentSourceRevisions(
           input.request.workspaceId,
           activeFacts,
           input.request,
+          preferenceSnapshot.revision,
         ),
         input.request.reuseSeed
           ? this.requireReuseTasks().verifyReuseTaskSeed(
@@ -220,6 +241,7 @@ export class LedgerBackedHarnessContextPort
           : Promise.resolve(undefined),
         this.activeIdentitiesForRouting(input, at),
         this.resolveSourceContentPackage(input.request),
+        Promise.resolve(preferenceSnapshot.preferences),
       ]);
     const assetIds = assetIdsForRequest(directAssetIds, sourceContentPackage);
     const requestedAssetRights =
@@ -298,6 +320,11 @@ export class LedgerBackedHarnessContextPort
         ),
       ) ?? []),
       ...activeIdentities.map(identityContribution),
+      ...confirmedPreferences
+        .filter((preference) =>
+          preferenceAppliesToRequest(preference, input.request),
+        )
+        .map(preferenceContribution),
       ...activeFacts.map((fact) => ({
         dimension: 'store_facts_assets' as const,
         key: fact.key,
@@ -547,6 +574,7 @@ export class LedgerBackedHarnessContextPort
     workspaceId: string,
     activeFacts: Awaited<ReturnType<StoreFactLedger['listActive']>>,
     request: HarnessWorkflowInput,
+    preferenceRevision: number | string = 0,
   ): Promise<ContextSourceRevisions> {
     const revisions = this.sourceRevisionHeads
       ? await this.sourceRevisionHeads.current(workspaceId)
@@ -574,7 +602,17 @@ export class LedgerBackedHarnessContextPort
       ...(this.recipeRevision
         ? { recipe: await this.recipeRevision(workspaceId) }
         : {}),
+      preferences: preferenceRevision,
     };
+  }
+
+  private preferenceSnapshot(workspaceId: string) {
+    return this.preferences
+      ? this.preferences.preferenceContextSnapshot(workspaceId)
+      : Promise.resolve({
+          preferences: [] as Preference[],
+          revision: 0 as number | string,
+        });
   }
 }
 
@@ -681,6 +719,50 @@ function contribution(
     pool: 'current_signal',
     sourceRef,
   };
+}
+
+function preferenceContribution(preference: Preference): ContextContribution {
+  const key = `preference_${preference.semanticKey.replace(
+    /[^a-zA-Z0-9_]+/gu,
+    '_',
+  )}`;
+  return {
+    dimension: /^(tone|voice|style)(?:\.|$)/u.test(preference.semanticKey)
+      ? 'expression_identity'
+      : 'promotion_task',
+    key,
+    value: preference.value,
+    layer: 'confirmed_preference',
+    pool: 'store_personal',
+    sourceRef: `preference:${preference.preferenceId}:r${preference.revision}`,
+  };
+}
+
+function preferenceAppliesToRequest(
+  preference: Preference,
+  request: HarnessWorkflowInput,
+) {
+  const scope = factScope(request);
+  if (preference.finalScope.storeId !== scope.storeId) return false;
+  if (
+    preference.finalScope.scene &&
+    preference.finalScope.scene !== request.intent.context.scene
+  ) {
+    return false;
+  }
+  if (
+    preference.finalScope.platform &&
+    preference.finalScope.platform !== request.executionSnapshot?.platform.id
+  ) {
+    return false;
+  }
+  if (
+    preference.finalScope.personaId &&
+    preference.finalScope.personaId !== request.executionSnapshot?.identity.id
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function identityContribution(

@@ -2,11 +2,54 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   assetRevisionSchema,
+  confirmMemoryCandidateCommandSchema,
+  deleteMemoryEntryCommandSchema,
+  memoryEntriesPageQuerySchema,
   preferenceCandidateSchema,
   preferenceSignalSchema,
   preferenceSchema,
+  rejectMemoryCandidateCommandSchema,
   reuseTaskSeedSchema,
+  sourcedPreferenceCandidateSchema,
 } from './reuse-memory.js';
+
+test('memory entry queries are strictly bounded and have no all-items semantic', () => {
+  assert.deepEqual(memoryEntriesPageQuerySchema.parse({}), { limit: 20 });
+  assert.deepEqual(memoryEntriesPageQuerySchema.parse({ limit: 50 }), {
+    limit: 50,
+  });
+  for (const input of [
+    { limit: 0 },
+    { limit: 51 },
+    { all: true },
+    { includeAll: true },
+    { cursor: '' },
+    { cursor: 'x'.repeat(513) },
+  ]) {
+    assert.throws(() => memoryEntriesPageQuerySchema.parse(input));
+  }
+  assert.deepEqual(deleteMemoryEntryCommandSchema.parse({ entryId: 'entry-a' }), {
+    entryId: 'entry-a',
+  });
+  assert.throws(() =>
+    deleteMemoryEntryCommandSchema.parse({ entryId: 'entry-a', all: true }),
+  );
+  assert.deepEqual(
+    confirmMemoryCandidateCommandSchema.parse({ entryId: 'entry-a' }),
+    {
+      entryId: 'entry-a',
+      positiveExamples: [],
+      negativeExamples: [],
+    },
+  );
+  assert.deepEqual(
+    rejectMemoryCandidateCommandSchema.parse({
+      entryId: 'entry-a',
+      reason: 'Not representative.',
+    }),
+    { entryId: 'entry-a', reason: 'Not representative.' },
+  );
+});
 
 test('reuse task seeds carry provenance and structure but reject copied deliverable content', () => {
   const seed = {
@@ -200,8 +243,14 @@ test('preference confirmation can only create an inactive_stage2 record', () => 
     trigger: 'repeated_signal',
     status: 'pending',
     proposedAt: '2026-07-18T03:00:00.000Z',
+    source: {
+      conversationId: 'conversation-a',
+      sourceTurnId: 'turn-a',
+      messageRange: { start: 12, end: 19 },
+    },
   });
   assert.equal(candidate.status, 'pending');
+  assert.deepEqual(candidate.source?.messageRange, { start: 12, end: 19 });
 
   const preference = {
     preferenceId: 'preference-a',
@@ -234,6 +283,42 @@ test('preference confirmation can only create an inactive_stage2 record', () => 
   assert.deepEqual(preferenceSchema.parse(preference), preference);
   assert.throws(() =>
     preferenceSchema.parse({ ...preference, status: 'enabled' }),
+  );
+});
+
+test('production preference proposals require a complete conversation pointer', () => {
+  const candidate = {
+    candidateId: 'candidate-a',
+    workspaceId: 'workspace-a',
+    semanticKey: 'tone.default',
+    proposedValue: '克制',
+    defaultScope: { storeId: 'store-a' },
+    evidenceDecisionIds: ['decision-a'],
+    evidenceTaskIds: ['task-a'],
+    trigger: 'explicit_long_term_intent',
+    status: 'pending',
+    proposedAt: '2026-07-30T03:50:00.000Z',
+  } as const;
+  assert.throws(() => sourcedPreferenceCandidateSchema.parse(candidate));
+  assert.throws(() =>
+    sourcedPreferenceCandidateSchema.parse({
+      ...candidate,
+      source: {
+        conversationId: 'conversation-a',
+        sourceTurnId: 'turn-a',
+      },
+    }),
+  );
+  assert.deepEqual(
+    sourcedPreferenceCandidateSchema.parse({
+      ...candidate,
+      source: {
+        conversationId: 'conversation-a',
+        sourceTurnId: 'turn-a',
+        messageRange: { start: 2, end: 4 },
+      },
+    }).source.messageRange,
+    { start: 2, end: 4 },
   );
 });
 

@@ -161,6 +161,12 @@ export interface HarnessCopyDeliveryPort {
   }): Promise<ContentPackageRevisionDelivery>;
 }
 
+export interface HarnessMemorySedimentationPort {
+  complete(
+    input: Parameters<HarnessStagePorts['assembleAndDeliver']>[0],
+  ): Promise<void>;
+}
+
 export interface HarnessStructuredNodeRunnerFactory {
   create(input: {
     workspaceId: string;
@@ -355,6 +361,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     private readonly primitiveCheck?: HarnessPrimitiveCheckPort,
     private readonly candidatePrimitiveRunner?: HarnessCandidatePrimitiveRunnerFactory,
     private readonly observabilityEvents?: ObservabilityEventAuditPort,
+    private readonly memorySedimentation?: HarnessMemorySedimentationPort,
   ) {}
 
   async recordObservabilityEvent(
@@ -856,7 +863,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         input,
         occurredAt,
       );
-      return this.executionDelivery.write(
+      const delivery = await this.executionDelivery.write(
         copyContentPackageRevisionWriteInput(
           input,
           occurredAt,
@@ -864,6 +871,10 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
           claimExtraction,
         ),
       );
+      await this.memorySedimentation?.complete(input).catch((error) => {
+        console.error('Memory sedimentation failed after delivery.', error);
+      });
+      return delivery;
     }
     const marketing = createMarketingPackageEvidence({
       declaration: input.declaration,
@@ -876,7 +887,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       input,
       occurredAt,
     );
-    return this.delivery.deliverCopyRevision({
+    const delivery = await this.delivery.deliverCopyRevision({
       workflowId: input.workflowId,
       workspaceId: input.request.workspaceId,
       packageId: input.request.packageId,
@@ -903,6 +914,10 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         complianceStatus: 'seven_gates_passed',
       },
     });
+    await this.memorySedimentation?.complete(input).catch((error) => {
+      console.error('Memory sedimentation failed after delivery.', error);
+    });
+    return delivery;
   }
 
   private runner(request: HarnessWorkflowInput) {

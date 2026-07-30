@@ -10,6 +10,10 @@ import { MemoryContextBundleRepository } from '../operations/context-bundle-repo
 import { MemoryContextSourceRevisionRepository } from '../operations/context-source-revisions.js';
 import { MemoryMarketingIdentityRepository } from '../operations/marketing-identity.js';
 import {
+  MemoryReuseMemoryRepository,
+  ReuseMemoryService,
+} from '../operations/reuse-memory-service.js';
+import {
   type AppendStoreFactInput,
   MemoryStoreFactLedger,
 } from '../operations/store-fact-ledger.js';
@@ -202,6 +206,177 @@ test('production context port freezes the real #32 bundle and fact references', 
   assert.deepEqual(recompiled.bundle.referencedFactRevisions, [
     { factId: 'price-1', revision: 2 },
   ]);
+});
+
+test('a confirmed merchant preference is consumed by the next context bundle', async () => {
+  const memory = new ReuseMemoryService(
+    new MemoryReuseMemoryRepository(),
+    { async verifyCandidate() {}, async verifyRevision() {} },
+    () => '2026-07-30T06:30:00.000Z',
+  );
+  await memory.proposePreference({
+    candidateId: 'candidate-tone',
+    workspaceId: 'workspace-1',
+    semanticKey: 'tone.default',
+    proposedValue: '克制、像熟客分享',
+    defaultScope: { storeId: 'workspace-1' },
+    evidenceDecisionIds: ['decision-tone'],
+    evidenceTaskIds: ['task-tone'],
+    trigger: 'explicit_long_term_intent',
+    status: 'pending',
+    proposedAt: '2026-07-30T06:20:00.000Z',
+    source: {
+      conversationId: 'conversation-tone',
+      sourceTurnId: 'turn-tone',
+      messageRange: { start: 0, end: 1 },
+    },
+  });
+  await memory.confirmPreference(
+    { workspaceId: 'workspace-1', userId: 'owner-1' },
+    {
+      candidateId: 'candidate-tone',
+      preferenceId: 'preference-tone',
+      expectedRevision: 0,
+      positiveExamples: [],
+      negativeExamples: [],
+      idempotencyKey: 'confirm-tone',
+    },
+  );
+  await memory.proposePreference({
+    candidateId: 'candidate-tone-latest',
+    workspaceId: 'workspace-1',
+    semanticKey: 'tone.default',
+    proposedValue: '更克制、避免夸张',
+    defaultScope: { storeId: 'workspace-1' },
+    evidenceDecisionIds: ['decision-tone-latest'],
+    evidenceTaskIds: ['task-tone-latest'],
+    trigger: 'explicit_long_term_intent',
+    status: 'pending',
+    proposedAt: '2026-07-30T06:22:00.000Z',
+    source: {
+      conversationId: 'conversation-tone',
+      sourceTurnId: 'turn-tone',
+      messageRange: { start: 0, end: 1 },
+    },
+  });
+  await memory.confirmPreference(
+    { workspaceId: 'workspace-1', userId: 'owner-1' },
+    {
+      candidateId: 'candidate-tone-latest',
+      preferenceId: 'preference-tone-z',
+      expectedRevision: 0,
+      positiveExamples: [],
+      negativeExamples: [],
+      idempotencyKey: 'confirm-tone-latest',
+    },
+  );
+  for (const candidate of [
+    {
+      candidateId: 'candidate-rejected',
+      semanticKey: 'voice.rejected',
+      proposedValue: '夸张',
+      storeId: 'workspace-1',
+    },
+    {
+      candidateId: 'candidate-deleted',
+      semanticKey: 'voice.deleted',
+      proposedValue: '已删除',
+      storeId: 'workspace-1',
+    },
+    {
+      candidateId: 'candidate-other-store',
+      semanticKey: 'voice.other_store',
+      proposedValue: '其他门店',
+      storeId: 'workspace-other',
+    },
+  ]) {
+    await memory.proposePreference({
+      candidateId: candidate.candidateId,
+      workspaceId: 'workspace-1',
+      semanticKey: candidate.semanticKey,
+      proposedValue: candidate.proposedValue,
+      defaultScope: { storeId: candidate.storeId },
+      evidenceDecisionIds: [`decision-${candidate.candidateId}`],
+      evidenceTaskIds: [`task-${candidate.candidateId}`],
+      trigger: 'explicit_long_term_intent',
+      status: 'pending',
+      proposedAt: '2026-07-30T06:21:00.000Z',
+      source: {
+        conversationId: 'conversation-tone',
+        sourceTurnId: 'turn-tone',
+        messageRange: { start: 0, end: 1 },
+      },
+    });
+  }
+  await memory.rejectPreferenceCandidate(
+    { workspaceId: 'workspace-1', userId: 'owner-1' },
+    {
+      candidateId: 'candidate-rejected',
+      reason: 'Not representative.',
+      idempotencyKey: 'reject-candidate',
+    },
+  );
+  for (const candidateId of [
+    'candidate-deleted',
+    'candidate-other-store',
+  ]) {
+    await memory.confirmPreference(
+      { workspaceId: 'workspace-1', userId: 'owner-1' },
+      {
+        candidateId,
+        preferenceId: `preference-${candidateId}`,
+        expectedRevision: 0,
+        positiveExamples: [],
+        negativeExamples: [],
+        idempotencyKey: `confirm-${candidateId}`,
+      },
+    );
+  }
+  await memory.deleteMemoryEntry(
+    { workspaceId: 'workspace-1', userId: 'owner-1' },
+    'candidate-deleted',
+  );
+  const port = new LedgerBackedHarnessContextPort(
+    new MemoryStoreFactLedger(),
+    new MemoryContextBundleRepository(),
+    () => '2026-07-30T06:31:00.000Z',
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    memory,
+  );
+
+  const context = await port.compileAndFreeze({
+    workflowId: 'task-after-confirmation',
+    request: taskInput(),
+    declaration: customizedDeclaration('brand_personal_ip'),
+  });
+
+  assert.deepEqual(
+    context.bundle.dimensions.expression_identity.preference_tone_default,
+    {
+      value: '更克制、避免夸张',
+      layer: 'confirmed_preference',
+      pool: 'store_personal',
+      sourceRef: 'preference:preference-tone-z:r1',
+    },
+  );
+  assert.notEqual(context.bundle.sourceRevisions.preferences, 0);
+  assert.equal(
+    context.bundle.dimensions.expression_identity.preference_voice_rejected,
+    undefined,
+  );
+  assert.equal(
+    context.bundle.dimensions.expression_identity.preference_voice_deleted,
+    undefined,
+  );
+  assert.equal(
+    context.bundle.dimensions.expression_identity.preference_voice_other_store,
+    undefined,
+  );
 });
 
 test('production context fence recompiles when the applied recipe revision changes', async () => {

@@ -295,6 +295,85 @@ export const preferenceSignalSchema = z
   })
   .strict();
 
+export const memoryCandidateSourceSchema = z
+  .object({
+    conversationId: idSchema,
+    sourceTurnId: idSchema,
+    messageRange: z
+      .object({
+        start: z.number().int().nonnegative(),
+        end: z.number().int().nonnegative(),
+      })
+      .strict()
+      .refine(({ start, end }) => start <= end, {
+        message: 'Message range start must not exceed its end.',
+      }),
+  })
+  .strict();
+
+export const memoryEntriesPageQuerySchema = z
+  .object({
+    limit: z.number().int().positive().max(50).default(20),
+    cursor: z.string().trim().min(1).max(512).optional(),
+  })
+  .strict();
+
+export const deleteMemoryEntryCommandSchema = z
+  .object({
+    entryId: idSchema,
+  })
+  .strict();
+
+export const deleteMemorySourceConversationCommandSchema = z
+  .object({
+    conversationId: idSchema,
+  })
+  .strict();
+
+export const confirmMemoryCandidateCommandSchema = z
+  .object({
+    entryId: idSchema,
+    positiveExamples: z.array(z.string().trim().min(1)).max(20).default([]),
+    negativeExamples: z.array(z.string().trim().min(1)).max(20).default([]),
+  })
+  .strict();
+
+export const rejectMemoryCandidateCommandSchema = z
+  .object({
+    entryId: idSchema,
+    reason: z.string().trim().min(1).max(500),
+  })
+  .strict();
+
+export const memoryEntryProjectionSchema = z
+  .object({
+    entryId: idSchema,
+    semanticKey: idSchema,
+    value: z.json(),
+    status: z.enum(['pending', 'confirmed', 'rejected']),
+    proposedAt: timestampSchema,
+    source: z
+      .object({
+        conversationId: idSchema,
+        sourceTurnId: idSchema,
+        messageRange: memoryCandidateSourceSchema.shape.messageRange,
+        status: z.enum(['available', 'deleted', 'unavailable']),
+        observedAt: timestampSchema.nullable(),
+        preview: z.string().trim().min(1).max(500).nullable(),
+        deletedAt: timestampSchema.nullable(),
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+
+export const memoryEntriesPageSchema = z
+  .object({
+    items: z.array(memoryEntryProjectionSchema),
+    nextCursor: z.string().trim().min(1).max(512).nullable(),
+  })
+  .strict();
+
 export const preferenceCandidateSchema = z
   .object({
     candidateId: idSchema,
@@ -307,8 +386,13 @@ export const preferenceCandidateSchema = z
     trigger: z.enum(['explicit_long_term_intent', 'repeated_signal']),
     status: z.enum(['pending', 'confirmed', 'rejected']),
     proposedAt: timestampSchema,
+    source: memoryCandidateSourceSchema.optional(),
   })
   .strict();
+
+export const sourcedPreferenceCandidateSchema = preferenceCandidateSchema.extend({
+  source: memoryCandidateSourceSchema,
+});
 
 export const preferenceSchema = z
   .object({
@@ -356,5 +440,18 @@ export type ReusableAssetLifecycleEvent = z.infer<
 >;
 export type ReuseTaskSeed = z.infer<typeof reuseTaskSeedSchema>;
 export type PreferenceSignal = z.infer<typeof preferenceSignalSchema>;
+export type MemoryCandidateSource = z.infer<
+  typeof memoryCandidateSourceSchema
+>;
 export type PreferenceCandidate = z.infer<typeof preferenceCandidateSchema>;
+export type SourcedPreferenceCandidate = z.infer<
+  typeof sourcedPreferenceCandidateSchema
+>;
+export type MemoryEntriesPageQuery = z.infer<
+  typeof memoryEntriesPageQuerySchema
+>;
+export type MemoryEntryProjection = z.infer<
+  typeof memoryEntryProjectionSchema
+>;
+export type MemoryEntriesPage = z.infer<typeof memoryEntriesPageSchema>;
 export type Preference = z.infer<typeof preferenceSchema>;

@@ -280,6 +280,8 @@ import {
   ModelSupplyImageGenerationAdapter,
   MediaCustodyStorageAdapter,
   MarketingIdentityFoundationModule,
+  MemoryFoundationModule,
+  ProductionMemorySedimentationCoordinator,
   StructuredMarketingIdentityDrafter,
   AdminConfigAssetIntakeGuidanceSource,
   documentParseProviderFromEnv,
@@ -292,6 +294,8 @@ import {
   ProductContentPackageRightsResolver,
   OperationsReusableAssetSourceVerifier,
   ReuseMemoryService,
+  ReuseMemoryRecordProposalPort,
+  CanonicalMemoryProposalRedline,
   ContentPackageMigrationService,
   ContentPackageDeliveryService,
   createContextInvalidationRuntime,
@@ -449,6 +453,7 @@ const storeIntakeFinalizations =
   new PostgresStoreIntakeFinalizationRepository(pool);
 const parseRepository = new PostgresParseRepository(pool);
 const reuseMemoryRepository = new PostgresReuseMemoryRepository(pool);
+await reuseMemoryRepository.migrate();
 const contentPackageWriteOwnership = new PostgresContentPackageWriteOwnership(
   pool
 );
@@ -962,6 +967,7 @@ await migratePostgresSchema(pool, [
   operationalTelemetryStore,
   notifier,
 ]);
+await initializeWorkspaceCatalog(PLATFORM_SUPPLY_SCOPE_ID);
 await migrateProStudioSchema(pool);
 await migrateProStudioWorkspaceState(pool);
 const tracerJobs = new TracerJobApplicationService(tracerJobRepository);
@@ -1440,6 +1446,40 @@ const creationExperienceRuntime =
 const harnessCheckTargetScope = new HarnessCheckTargetScope();
 const harnessCandidatePrimitiveScope =
   new P1HarnessCandidateRunnerScope('harness-copy-primitive-worker');
+const memoryProposalRedline = new CanonicalMemoryProposalRedline(
+  {
+    async resolve(input) {
+      const active = harnessCheckTargetScope.activeTarget();
+      if (active.policyInput.bundle.workspaceId !== input.workspaceId) {
+        throw new Error(
+          'Active Harness policy does not belong to the memory workspace.',
+        );
+      }
+      return active.policyInput;
+    },
+  },
+  {
+    async append(input) {
+      const active = harnessCheckTargetScope.activeTarget();
+      if (!active.taskId) {
+        throw new Error(
+          'Memory redline audit requires an active Harness task.',
+        );
+      }
+      await promptAuditStore.recordStageTrace({
+        workspaceId: input.workspaceId,
+        id: `${active.taskId}:memory-redline:${input.candidateId}:${input.gateId}`,
+        taskId: active.taskId,
+        stage: 'execution_selection',
+        payload: {
+          candidateId: input.candidateId,
+          gateId: input.gateId,
+          reason: input.reason,
+        },
+      });
+    },
+  },
+);
 const agentPrimitiveAssembly = createProductionAgentPrimitiveAssembly({
   audit: harnessObservabilityEvents,
   askMerchant: new HarnessQuestionRequestPort(),
@@ -1498,11 +1538,10 @@ const agentPrimitiveAssembly = createProductionAgentPrimitiveAssembly({
       };
     },
   },
-  recordProposal: {
-    async propose() {
-      return { status: 'unavailable' };
-    },
-  },
+  recordProposal: new ReuseMemoryRecordProposalPort(
+    reuseMemoryService,
+    memoryProposalRedline,
+  ),
   revise: harnessCandidatePrimitiveScope,
   reviseTarget: harnessCandidatePrimitiveScope,
 });
@@ -1754,6 +1793,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       storeIntakeFinalizer,
       storeProfileImportPreparer
     ),
+    new MemoryFoundationModule(reuseMemoryService),
     new OperationsFoundationModule(operationsService, {
       adminActorIds: modelAdminActorIds,
       delivery: contentPackageDelivery,
@@ -1954,6 +1994,39 @@ if (harnessRuntimeConfig) {
       );
     },
   };
+  const harnessMemorySedimentation =
+    new ProductionMemorySedimentationCoordinator(
+      reuseMemoryRepository,
+      structuredNodeRunnerFactory,
+      ({ request, proposal }) =>
+        p1ApplicationService.executeModule<
+          Record<string, unknown>,
+          { proposalRef?: string; status: string }
+        >(
+          {
+            actor: 'worker',
+            correlationId: proposal.execution.correlationId,
+            userId: proposal.execution.actorId,
+            workspaceId: proposal.workspaceId,
+          },
+          'agent-primitives',
+          {
+            action: 'execute',
+            payload: {
+              primitiveId: 'record',
+              modelInput: {
+                kind: proposal.kind,
+                payload: proposal.payload,
+                provenance: proposal.provenance,
+              },
+              observability: request.executionAssembly?.rootAxes,
+              taskId: proposal.execution.taskId,
+            },
+          },
+          proposal.idempotencyKey,
+        ),
+      harnessCheckTargetScope,
+    );
   const copyHarnessStages = new ProductionHarnessStagePorts(
     structuredNodeRunnerFactory,
     new LedgerBackedHarnessContextPort(
@@ -1972,7 +2045,8 @@ if (harnessRuntimeConfig) {
       reuseMemoryService,
       contentPackageRightsResolver,
       marketingIdentities,
-      sourceContentPackages
+      sourceContentPackages,
+      reuseMemoryService
     ),
     harnessStore,
     () => new Date().toISOString(),
@@ -1990,6 +2064,7 @@ if (harnessRuntimeConfig) {
     p1HarnessCheckInvoker,
     p1HarnessCandidateRunner,
     harnessObservabilityEvents,
+    harnessMemorySedimentation,
   );
   // Single wiring owner: wrap copy ports so image/video share the same
   // Coordinator → StagePort → Harness path (#139/#140).

@@ -573,6 +573,56 @@ test('fixture copy candidate streams a trace of the frozen merchant intent', asy
   );
 });
 
+test('fixture memory sedimentation extracts only an explicit future preference from the merchant message', async () => {
+  const executor = new FixtureAiStructuredObjectExecutor();
+  const schema = z
+    .object({
+      items: z.array(
+        z
+          .object({
+            itemId: z.string(),
+            decision: z.unknown(),
+            candidate: z.unknown(),
+          })
+          .strict(),
+      ),
+    })
+    .strict();
+  const generate = (merchantText: string) =>
+    executor.generate({
+      instructions: 'Extract durable merchant preferences.',
+      prompt: JSON.stringify({
+        messages: [
+          { index: 0, role: 'merchant', text: merchantText },
+          { index: 1, role: 'assistant', text: '生成结果' },
+        ],
+      }),
+      schema,
+      schemaName: 'memory_sedimentation_candidates_v1',
+    });
+
+  const ordinary = await generate('写一条周末皮肤护理到店预约文案');
+  assert.deepEqual(ordinary.output.items, []);
+
+  const durable = await generate(
+    '以后每次文案都保持克制、像熟客分享，请长期记住',
+  );
+  assert.deepEqual(durable.output.items, [
+    {
+      itemId: 'merchant-preference-1',
+      decision: {
+        state: 'allow',
+        reason: 'explicit_future_preference',
+      },
+      candidate: {
+        semanticKey: 'style.copy.long_term',
+        proposedValue: '以后每次文案都保持克制、像熟客分享，请长期记住',
+        messageRange: { start: 0, end: 0 },
+      },
+    },
+  ]);
+});
+
 test('fixture image edit brief derives work-case fact references from its prompt', async () => {
   const executor = new FixtureAiStructuredObjectExecutor();
   const generated = await executor.generate({

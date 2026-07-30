@@ -113,6 +113,7 @@ export type P1Module =
   | 'integrations'
   | 'job-runtime'
   | 'marketing-identity'
+  | 'memory'
   | 'model-supply'
   | 'operations'
   | 'product-billing'
@@ -277,6 +278,13 @@ const assetMemoryCreateActions = new Set([
   'prepare_store_profile_import',
 ]);
 const assetMemoryQueryActions = new Set(['asset_intake_experience']);
+const memoryCreateActions = new Set([
+  'confirm_candidate',
+  'delete_source_conversation',
+  'reject_candidate',
+  'delete_entry',
+]);
+const memoryQueryActions = new Set(['entries_page']);
 /**
  * Channel/deployment lifecycle actions (isolate/drain/recover).
  * Pre-registered for supply-control tickets; unregistered elsewhere → deny.
@@ -486,6 +494,15 @@ export function requiredP1Capability(
     if (action === 'confirm_asset_intake_fact') return null;
     if (assetMemoryCreateActions.has(action)) return 'content.create';
     return null;
+  }
+
+  if (module === 'memory') {
+    if (kind === 'query') {
+      return memoryQueryActions.has(action) ? 'workspace.read' : null;
+    }
+    return memoryCreateActions.has(action)
+      ? 'personal.preferences.manage'
+      : null;
   }
 
   if (module === 'context') {

@@ -6,6 +6,8 @@ import {
   reusableAssetCandidateSchema,
   reusableAssetLifecycleEventSchema,
   type AssetRevision,
+  type MemoryEntriesPage,
+  type MemoryEntriesPageQuery,
   type PreferenceCandidate,
   type PreferenceSignal,
   type ReusableAssetCandidate,
@@ -17,6 +19,11 @@ import {
   type AppendAssetLifecycleInput,
   type CommitAssetRevisionInput,
   type CommitPreferenceInput,
+  type MemoryCandidateDecision,
+  type MemoryApprovalReceipt,
+  type MemorySourceConversation,
+  type MemorySedimentationAudit,
+  type MemoryWorkLog,
   type ReuseMemoryRepository,
 } from './reuse-memory-service.js';
 
@@ -150,6 +157,65 @@ export class PostgresReuseMemoryRepository
         payload jsonb NOT NULL,
         created_at timestamptz NOT NULL DEFAULT now(),
         PRIMARY KEY (workspace_id, idempotency_key)
+      );
+      CREATE TABLE IF NOT EXISTS p1_memory_work_logs (
+        workspace_id text NOT NULL,
+        conversation_id text NOT NULL,
+        turn_id text NOT NULL,
+        payload jsonb NOT NULL,
+        observed_at timestamptz NOT NULL,
+        PRIMARY KEY (workspace_id, turn_id)
+      );
+      CREATE TABLE IF NOT EXISTS p1_memory_source_conversations (
+        workspace_id text NOT NULL,
+        conversation_id text NOT NULL,
+        payload jsonb NOT NULL,
+        observed_at timestamptz NOT NULL,
+        PRIMARY KEY (workspace_id, conversation_id)
+      );
+      CREATE TABLE IF NOT EXISTS p1_memory_sedimentation_audits (
+        workspace_id text NOT NULL,
+        audit_id text NOT NULL,
+        payload jsonb NOT NULL,
+        occurred_at timestamptz NOT NULL,
+        PRIMARY KEY (workspace_id, audit_id)
+      );
+      CREATE TABLE IF NOT EXISTS p1_memory_candidate_decisions (
+        workspace_id text NOT NULL,
+        decision_id text NOT NULL,
+        candidate_id text NOT NULL,
+        payload jsonb NOT NULL,
+        decided_at timestamptz NOT NULL,
+        PRIMARY KEY (workspace_id, decision_id)
+      );
+      CREATE INDEX IF NOT EXISTS p1_memory_candidate_decisions_candidate_idx
+        ON p1_memory_candidate_decisions (
+          workspace_id,
+          candidate_id,
+          decided_at DESC,
+          decision_id DESC
+        );
+      CREATE TABLE IF NOT EXISTS p1_memory_approval_receipts (
+        workspace_id text NOT NULL,
+        receipt_id text NOT NULL,
+        candidate_id text NOT NULL,
+        payload jsonb NOT NULL,
+        approved_at timestamptz NOT NULL,
+        PRIMARY KEY (workspace_id, receipt_id)
+      );
+      CREATE TABLE IF NOT EXISTS p1_memory_source_tombstones (
+        workspace_id text NOT NULL,
+        conversation_id text NOT NULL,
+        deleted_at timestamptz NOT NULL,
+        PRIMARY KEY (workspace_id, conversation_id)
+      );
+      CREATE TABLE IF NOT EXISTS p1_memory_entry_tombstones (
+        workspace_id text NOT NULL,
+        entry_id text NOT NULL,
+        deleted_at timestamptz NOT NULL,
+        deleted_by text NOT NULL,
+        source_ref jsonb,
+        PRIMARY KEY (workspace_id, entry_id)
       );
       CREATE OR REPLACE FUNCTION p1_reject_reuse_memory_update()
       RETURNS trigger AS $$
@@ -680,6 +746,9 @@ export class PostgresReuseMemoryRepository
         `${preference.workspaceId}:preference-receipt:${input.idempotencyKey}`,
       ]);
       await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        `${preference.workspaceId}:memory-candidate:${preference.candidateId}`,
+      ]);
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
         `${preference.workspaceId}:preference:${preference.preferenceId}`,
       ]);
       const receipt = await client.query<ReceiptRow>(
@@ -693,6 +762,20 @@ export class PostgresReuseMemoryRepository
         }
         await client.query('COMMIT');
         return preferenceSchema.parse(receipt.rows[0].payload);
+      }
+      const rejected = await client.query(
+        `SELECT 1 FROM p1_memory_candidate_decisions
+          WHERE workspace_id = $1
+            AND candidate_id = $2
+            AND payload->>'action' = 'rejected'
+          LIMIT 1`,
+        [preference.workspaceId, preference.candidateId],
+      );
+      if (rejected.rowCount) {
+        throw new ReuseMemoryError(
+          'INVALID_STATE',
+          'A rejected candidate cannot be confirmed.',
+        );
       }
       await client.query(
         `INSERT INTO p1_preference_heads (
@@ -789,6 +872,38 @@ export class PostgresReuseMemoryRepository
           preference,
         ],
       );
+      if (input.expectedRevision === 0) {
+        if (!input.decision || !input.approvalReceipt) {
+          throw new ReuseMemoryError(
+            'INVALID_STATE',
+            'Preference confirmation requires a decision and approval receipt.',
+          );
+        }
+        await client.query(
+          `INSERT INTO p1_memory_candidate_decisions (
+           workspace_id, decision_id, candidate_id, payload, decided_at
+         ) VALUES ($1, $2, $3, $4::jsonb, $5)`,
+          [
+            input.decision.workspaceId,
+            input.decision.decisionId,
+            input.decision.candidateId,
+            input.decision,
+            input.decision.decidedAt,
+          ],
+        );
+        await client.query(
+          `INSERT INTO p1_memory_approval_receipts (
+           workspace_id, receipt_id, candidate_id, payload, approved_at
+         ) VALUES ($1, $2, $3, $4::jsonb, $5)`,
+          [
+            input.approvalReceipt.workspaceId,
+            input.approvalReceipt.receiptId,
+            input.approvalReceipt.candidateId,
+            input.approvalReceipt,
+            input.approvalReceipt.approvedAt,
+          ],
+        );
+      }
       await client.query('COMMIT');
       return preference;
     } catch (error) {
@@ -836,9 +951,558 @@ export class PostgresReuseMemoryRepository
     return result.rows.map((row) => preferenceSchema.parse(row.payload));
   }
 
+  async saveMemoryWorkLog(input: MemoryWorkLog) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        `${input.workspaceId}:memory-source:${input.conversationId}`,
+      ]);
+      const tombstone = await client.query(
+        `SELECT 1 FROM p1_memory_source_tombstones
+          WHERE workspace_id = $1 AND conversation_id = $2`,
+        [input.workspaceId, input.conversationId],
+      );
+      if (tombstone.rowCount) {
+        throw new ReuseMemoryError(
+          'INVALID_STATE',
+          `Conversation ${input.conversationId} was deleted.`,
+        );
+      }
+      const inserted = await client.query<PayloadRow>(
+        `INSERT INTO p1_memory_work_logs (
+           workspace_id, conversation_id, turn_id, payload, observed_at
+         ) VALUES ($1, $2, $3, $4::jsonb, $5)
+         ON CONFLICT (workspace_id, turn_id) DO NOTHING
+         RETURNING payload`,
+        [
+          input.workspaceId,
+          input.conversationId,
+          input.turnId,
+          input,
+          input.observedAt,
+        ],
+      );
+      const row =
+        inserted.rows[0] ??
+        (
+          await client.query<PayloadRow>(
+            `SELECT payload FROM p1_memory_work_logs
+              WHERE workspace_id = $1 AND turn_id = $2`,
+            [input.workspaceId, input.turnId],
+          )
+        ).rows[0];
+      if (!row || !isDeepStrictEqual(row.payload, input)) {
+        throw new ReuseMemoryError(
+          'CONFLICT',
+          `Work log ${input.turnId} already has another payload.`,
+        );
+      }
+      await client.query('COMMIT');
+      return structuredClone(input);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async saveMemorySourceConversation(input: MemorySourceConversation) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        `${input.workspaceId}:memory-source:${input.conversationId}`,
+      ]);
+      const tombstone = await client.query(
+        `SELECT 1 FROM p1_memory_source_tombstones
+          WHERE workspace_id = $1 AND conversation_id = $2`,
+        [input.workspaceId, input.conversationId],
+      );
+      if (tombstone.rowCount) {
+        throw new ReuseMemoryError(
+          'INVALID_STATE',
+          `Conversation ${input.conversationId} was deleted.`,
+        );
+      }
+      const inserted = await client.query<PayloadRow>(
+        `INSERT INTO p1_memory_source_conversations (
+           workspace_id, conversation_id, payload, observed_at
+         ) VALUES ($1, $2, $3::jsonb, $4)
+         ON CONFLICT (workspace_id, conversation_id) DO NOTHING
+         RETURNING payload`,
+        [
+          input.workspaceId,
+          input.conversationId,
+          input,
+          input.observedAt,
+        ],
+      );
+      const row =
+        inserted.rows[0] ??
+        (
+          await client.query<PayloadRow>(
+            `SELECT payload FROM p1_memory_source_conversations
+              WHERE workspace_id = $1 AND conversation_id = $2`,
+            [input.workspaceId, input.conversationId],
+          )
+        ).rows[0];
+      if (!row || !isDeepStrictEqual(row.payload, input)) {
+        throw new ReuseMemoryError(
+          'CONFLICT',
+          `Source conversation ${input.conversationId} already has another payload.`,
+        );
+      }
+      await client.query('COMMIT');
+      return structuredClone(input);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getMemoryWorkLog(workspaceId: string, turnId: string) {
+    const result = await this.pool.query<PayloadRow>(
+      `SELECT payload FROM p1_memory_work_logs
+        WHERE workspace_id = $1 AND turn_id = $2`,
+      [workspaceId, turnId],
+    );
+    return (result.rows[0]?.payload as MemoryWorkLog | undefined) ?? null;
+  }
+
+  async hasMemorySourceConversation(
+    workspaceId: string,
+    conversationId: string,
+  ) {
+    const result = await this.pool.query(
+      `SELECT 1 FROM p1_memory_source_conversations
+        WHERE workspace_id = $1 AND conversation_id = $2
+        LIMIT 1`,
+      [workspaceId, conversationId],
+    );
+    return Boolean(result.rowCount);
+  }
+
+  async appendMemorySedimentationAudit(input: MemorySedimentationAudit) {
+    const inserted = await this.pool.query<PayloadRow>(
+      `INSERT INTO p1_memory_sedimentation_audits (
+         workspace_id, audit_id, payload, occurred_at
+       ) VALUES ($1, $2, $3::jsonb, $4)
+       ON CONFLICT (workspace_id, audit_id) DO NOTHING
+       RETURNING payload`,
+      [input.workspaceId, input.auditId, input, input.occurredAt],
+    );
+    const row =
+      inserted.rows[0] ??
+      (
+        await this.pool.query<PayloadRow>(
+          `SELECT payload FROM p1_memory_sedimentation_audits
+            WHERE workspace_id = $1 AND audit_id = $2`,
+          [input.workspaceId, input.auditId],
+        )
+      ).rows[0];
+    if (!row || !isDeepStrictEqual(row.payload, input)) {
+      throw new ReuseMemoryError('CONFLICT', 'Sedimentation audit identity reused.');
+    }
+    return structuredClone(input);
+  }
+
+  async listMemorySedimentationAudits(workspaceId: string) {
+    const result = await this.pool.query<PayloadRow>(
+      `SELECT payload FROM p1_memory_sedimentation_audits
+        WHERE workspace_id = $1
+        ORDER BY occurred_at ASC, audit_id ASC`,
+      [workspaceId],
+    );
+    return result.rows.map((row) => row.payload as MemorySedimentationAudit);
+  }
+
+  async appendMemoryCandidateDecision(input: MemoryCandidateDecision) {
+    const inserted = await this.pool.query<PayloadRow>(
+      `INSERT INTO p1_memory_candidate_decisions (
+         workspace_id, decision_id, candidate_id, payload, decided_at
+       ) VALUES ($1, $2, $3, $4::jsonb, $5)
+       ON CONFLICT (workspace_id, decision_id) DO NOTHING
+       RETURNING payload`,
+      [
+        input.workspaceId,
+        input.decisionId,
+        input.candidateId,
+        input,
+        input.decidedAt,
+      ],
+    );
+    const row =
+      inserted.rows[0] ??
+      (
+        await this.pool.query<PayloadRow>(
+          `SELECT payload FROM p1_memory_candidate_decisions
+            WHERE workspace_id = $1 AND decision_id = $2`,
+          [input.workspaceId, input.decisionId],
+        )
+      ).rows[0];
+    if (!row || !isDeepStrictEqual(row.payload, input)) {
+      throw new ReuseMemoryError(
+        'CONFLICT',
+        `Memory decision ${input.decisionId} already has another payload.`,
+      );
+    }
+    return structuredClone(input);
+  }
+
+  async listMemoryCandidateDecisions(workspaceId: string) {
+    const result = await this.pool.query<PayloadRow>(
+      `SELECT payload FROM p1_memory_candidate_decisions
+        WHERE workspace_id = $1
+        ORDER BY decided_at ASC, decision_id ASC`,
+      [workspaceId],
+    );
+    return result.rows.map((row) => row.payload as MemoryCandidateDecision);
+  }
+
+  async listMemoryApprovalReceipts(workspaceId: string) {
+    const result = await this.pool.query<PayloadRow>(
+      `SELECT payload FROM p1_memory_approval_receipts
+        WHERE workspace_id = $1
+        ORDER BY approved_at ASC, receipt_id ASC`,
+      [workspaceId],
+    );
+    return result.rows.map((row) => row.payload as MemoryApprovalReceipt);
+  }
+
+  async rejectMemoryCandidate(input: MemoryCandidateDecision) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        `${input.workspaceId}:memory-candidate:${input.candidateId}`,
+      ]);
+      const promotion = await client.query(
+        `SELECT 1 FROM p1_preference_promotions
+          WHERE workspace_id = $1 AND candidate_id = $2`,
+        [input.workspaceId, input.candidateId],
+      );
+      if (promotion.rowCount) {
+        throw new ReuseMemoryError(
+          'INVALID_STATE',
+          'A confirmed candidate cannot be rejected.',
+        );
+      }
+      const inserted = await client.query<PayloadRow>(
+        `INSERT INTO p1_memory_candidate_decisions (
+           workspace_id, decision_id, candidate_id, payload, decided_at
+         ) VALUES ($1, $2, $3, $4::jsonb, $5)
+         ON CONFLICT (workspace_id, decision_id) DO NOTHING
+         RETURNING payload`,
+        [
+          input.workspaceId,
+          input.decisionId,
+          input.candidateId,
+          input,
+          input.decidedAt,
+        ],
+      );
+      const row =
+        inserted.rows[0] ??
+        (
+          await client.query<PayloadRow>(
+            `SELECT payload FROM p1_memory_candidate_decisions
+              WHERE workspace_id = $1 AND decision_id = $2`,
+            [input.workspaceId, input.decisionId],
+          )
+        ).rows[0];
+      if (!row || !isDeepStrictEqual(row.payload, input)) {
+        throw new ReuseMemoryError(
+          'CONFLICT',
+          `Memory decision ${input.decisionId} already has another payload.`,
+        );
+      }
+      await client.query('COMMIT');
+      return 'rejected' as const;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async listMemoryEntriesPage(
+    workspaceId: string,
+    query: MemoryEntriesPageQuery,
+  ): Promise<MemoryEntriesPage> {
+    let cursor: [string, string] | null = null;
+    if (query.cursor) {
+      const decoded = JSON.parse(
+        Buffer.from(query.cursor, 'base64url').toString('utf8'),
+      ) as unknown;
+      if (
+        !Array.isArray(decoded) ||
+        decoded.length !== 2 ||
+        decoded.some((value) => typeof value !== 'string')
+      ) {
+        throw new SyntaxError('Invalid memory page cursor.');
+      }
+      cursor = decoded as [string, string];
+    }
+    const result = await this.pool.query<{
+      payload: unknown;
+      work_log: unknown | null;
+      source_deleted_at: string | null;
+      confirmed: boolean;
+      rejected: boolean;
+    }>(
+      `SELECT candidates.payload,
+              work_logs.payload AS work_log,
+              tombstones.deleted_at::text AS source_deleted_at,
+              (promotions.candidate_id IS NOT NULL) AS confirmed,
+              EXISTS (
+                SELECT 1
+                  FROM p1_memory_candidate_decisions decisions
+                 WHERE decisions.workspace_id = candidates.workspace_id
+                   AND decisions.candidate_id = candidates.candidate_id
+                   AND decisions.payload->>'action' = 'rejected'
+              ) AS rejected
+         FROM p1_preference_candidates candidates
+         LEFT JOIN p1_preference_promotions promotions
+           ON promotions.workspace_id = candidates.workspace_id
+          AND promotions.candidate_id = candidates.candidate_id
+         LEFT JOIN p1_memory_source_conversations work_logs
+           ON work_logs.workspace_id = candidates.workspace_id
+          AND work_logs.conversation_id =
+              candidates.payload #>> '{source,conversationId}'
+         LEFT JOIN p1_memory_source_tombstones tombstones
+           ON tombstones.workspace_id = candidates.workspace_id
+          AND tombstones.conversation_id =
+              candidates.payload #>> '{source,conversationId}'
+         LEFT JOIN p1_memory_entry_tombstones entry_tombstones
+           ON entry_tombstones.workspace_id = candidates.workspace_id
+          AND entry_tombstones.entry_id = candidates.candidate_id
+        WHERE candidates.workspace_id = $1
+          AND entry_tombstones.entry_id IS NULL
+          AND (
+            $2::timestamptz IS NULL
+            OR (candidates.proposed_at, candidates.candidate_id) <
+               ($2::timestamptz, $3::text)
+          )
+        ORDER BY candidates.proposed_at DESC, candidates.candidate_id DESC
+        LIMIT $4`,
+      [workspaceId, cursor?.[0] ?? null, cursor?.[1] ?? null, query.limit + 1],
+    );
+    const selected = result.rows.slice(0, query.limit);
+    const candidates = selected.map((row) => ({
+      row,
+      candidate: preferenceCandidateSchema.parse(row.payload),
+      log: row.work_log as MemoryWorkLog | null,
+    }));
+    return {
+      items: candidates.map(({ row, candidate, log }) => {
+        const source = candidate.source;
+        const preview =
+          source && log
+            ? log.messages
+                .filter(
+                  (message) =>
+                    message.index >= source.messageRange.start &&
+                    message.index <= source.messageRange.end,
+                )
+                .map((message) => message.text)
+                .join(' ')
+                .trim()
+            : '';
+        return {
+          entryId: candidate.candidateId,
+          semanticKey: candidate.semanticKey,
+          value: candidate.proposedValue,
+          status: row.confirmed
+            ? ('confirmed' as const)
+            : row.rejected
+              ? ('rejected' as const)
+              : ('pending' as const),
+          proposedAt: candidate.proposedAt,
+          source:
+            source
+              ? {
+                  conversationId: source.conversationId,
+                  sourceTurnId: source.sourceTurnId,
+                  messageRange: source.messageRange,
+                  status: row.source_deleted_at
+                    ? ('deleted' as const)
+                    : log && preview
+                      ? ('available' as const)
+                      : ('unavailable' as const),
+                  observedAt: log?.observedAt ?? null,
+                  preview: row.source_deleted_at
+                    ? null
+                    : preview
+                      ? preview.slice(0, 500)
+                      : null,
+                  deletedAt: row.source_deleted_at
+                    ? new Date(row.source_deleted_at).toISOString()
+                    : null,
+                }
+              : null,
+        };
+      }),
+      nextCursor:
+        result.rows.length > query.limit && candidates.at(-1)
+          ? Buffer.from(
+              JSON.stringify([
+                candidates.at(-1)?.candidate.proposedAt,
+                candidates.at(-1)?.candidate.candidateId,
+              ]),
+            ).toString('base64url')
+          : null,
+    };
+  }
+
+  async markMemorySourceDeleted(
+    workspaceId: string,
+    conversationId: string,
+    deletedAt: string,
+  ) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        `${workspaceId}:memory-source:${conversationId}`,
+      ]);
+      await client.query(
+        `INSERT INTO p1_memory_source_tombstones (
+           workspace_id, conversation_id, deleted_at
+         ) VALUES ($1, $2, $3)
+         ON CONFLICT (workspace_id, conversation_id) DO NOTHING`,
+        [workspaceId, conversationId, deletedAt],
+      );
+      await client.query(
+        `DELETE FROM p1_memory_source_conversations
+          WHERE workspace_id = $1 AND conversation_id = $2`,
+        [workspaceId, conversationId],
+      );
+      await client.query(
+        `DELETE FROM p1_memory_work_logs
+          WHERE workspace_id = $1 AND conversation_id = $2`,
+        [workspaceId, conversationId],
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async deleteMemoryEntry(input: {
+    workspaceId: string;
+    entryId: string;
+    deletedAt: string;
+    deletedBy: string;
+  }) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        `${input.workspaceId}:memory-entry:${input.entryId}`,
+      ]);
+      const tombstone = await client.query(
+        `SELECT 1 FROM p1_memory_entry_tombstones
+          WHERE workspace_id = $1 AND entry_id = $2`,
+        [input.workspaceId, input.entryId],
+      );
+      if (tombstone.rowCount) {
+        await client.query('COMMIT');
+        return 'deleted' as const;
+      }
+      const candidate = await client.query<PayloadRow>(
+        `SELECT payload FROM p1_preference_candidates
+          WHERE workspace_id = $1 AND candidate_id = $2
+          FOR UPDATE`,
+        [input.workspaceId, input.entryId],
+      );
+      if (!candidate.rows[0]) {
+        await client.query('COMMIT');
+        return 'not_found' as const;
+      }
+      const sourceRef = preferenceCandidateSchema.parse(
+        candidate.rows[0].payload,
+      ).source;
+      const promotions = await client.query<{ preference_id: string }>(
+        `SELECT preference_id FROM p1_preference_promotions
+          WHERE workspace_id = $1 AND candidate_id = $2`,
+        [input.workspaceId, input.entryId],
+      );
+      await client.query(
+        `DELETE FROM p1_preference_receipts
+          WHERE workspace_id = $1 AND payload->>'candidateId' = $2`,
+        [input.workspaceId, input.entryId],
+      );
+      for (const { preference_id: preferenceId } of promotions.rows) {
+        await client.query(
+          `DELETE FROM p1_preference_revisions
+            WHERE workspace_id = $1 AND preference_id = $2`,
+          [input.workspaceId, preferenceId],
+        );
+        await client.query(
+          `DELETE FROM p1_preference_heads
+            WHERE workspace_id = $1 AND preference_id = $2`,
+          [input.workspaceId, preferenceId],
+        );
+      }
+      await client.query(
+        `DELETE FROM p1_preference_promotions
+          WHERE workspace_id = $1 AND candidate_id = $2`,
+        [input.workspaceId, input.entryId],
+      );
+      await client.query(
+        `DELETE FROM p1_preference_candidates
+          WHERE workspace_id = $1 AND candidate_id = $2`,
+        [input.workspaceId, input.entryId],
+      );
+      await client.query(
+        `INSERT INTO p1_memory_entry_tombstones (
+           workspace_id, entry_id, deleted_at, deleted_by, source_ref
+         ) VALUES ($1, $2, $3, $4, $5::jsonb)`,
+        [
+          input.workspaceId,
+          input.entryId,
+          input.deletedAt,
+          input.deletedBy,
+          sourceRef ?? null,
+        ],
+      );
+      await client.query('COMMIT');
+      return 'deleted' as const;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async isMemoryEntryDeleted(workspaceId: string, entryId: string) {
+    const result = await this.pool.query(
+      `SELECT 1 FROM p1_memory_entry_tombstones
+        WHERE workspace_id = $1 AND entry_id = $2`,
+      [workspaceId, entryId],
+    );
+    return Boolean(result.rowCount);
+  }
+
   async deleteWorkspaceForTest(workspaceId: string) {
     for (const table of [
       'p1_preference_receipts',
+      'p1_memory_entry_tombstones',
+      'p1_memory_source_tombstones',
+      'p1_memory_candidate_decisions',
+      'p1_memory_approval_receipts',
+      'p1_memory_sedimentation_audits',
+      'p1_memory_source_conversations',
+      'p1_memory_work_logs',
       'p1_preference_revisions',
       'p1_preference_heads',
       'p1_preference_promotions',

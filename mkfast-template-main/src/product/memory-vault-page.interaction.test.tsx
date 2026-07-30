@@ -7,13 +7,25 @@
  * facts, and only one of them is the merchant's fault to fix.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const p1 = vi.hoisted(() => ({ queryP1: vi.fn() }));
+const p1 = vi.hoisted(() => ({
+  commandP1: vi.fn(),
+  queryP1: vi.fn(),
+}));
 
-vi.mock('@/p1/client', () => ({ queryP1: p1.queryP1 }));
+vi.mock('@/p1/client', () => ({
+  commandP1: p1.commandP1,
+  queryP1: p1.queryP1,
+}));
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, to }: { children: ReactNode; to: string }) => (
     <a href={to}>{children}</a>
@@ -124,5 +136,57 @@ describe('memory vault', () => {
     expect(
       screen.getByTestId('memory-domain-identity').textContent
     ).not.toMatch(/还在建/u);
+  });
+
+  it('shows human provenance and confirms a pending candidate through the memory seam', async () => {
+    p1.queryP1.mockImplementation(
+      (module: string, input: { action: string }) =>
+        module === 'memory' && input.action === 'entries_page'
+          ? Promise.resolve({
+              items: [
+                {
+                  entryId: 'candidate-tone',
+                  semanticKey: 'tone.default',
+                  value: '克制、像熟客分享',
+                  status: 'pending',
+                  proposedAt: '2026-07-30T06:00:00.000Z',
+                  source: {
+                    conversationId: 'conversation-a',
+                    sourceTurnId: 'turn-a',
+                    messageRange: { start: 0, end: 1 },
+                    status: 'available',
+                    observedAt: '2026-07-30T05:59:00.000Z',
+                    preview: '以后文案要克制，像熟客分享。',
+                    deletedAt: null,
+                  },
+                },
+              ],
+              nextCursor: null,
+            })
+          : Promise.resolve({
+              identities: [],
+              defaultDecision: null,
+              defaultIdentity: null,
+              decisionRevision: 0,
+            })
+    );
+    p1.commandP1.mockResolvedValue({ candidateId: 'candidate-tone' });
+
+    renderPage();
+
+    expect(
+      await screen.findByTestId('memory-entry-provenance')
+    ).toHaveTextContent('来自对话：以后文案要克制，像熟客分享。');
+    fireEvent.click(screen.getByRole('button', { name: '确认记住' }));
+    await waitFor(() =>
+      expect(p1.commandP1).toHaveBeenCalledWith(
+        'memory',
+        {
+          action: 'confirm_candidate',
+          payload: { entryId: 'candidate-tone' },
+        },
+        'memory:confirm_candidate:candidate-tone'
+      )
+    );
   });
 });

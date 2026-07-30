@@ -26,6 +26,7 @@ export const p1ModuleRequestSchema = z.object({
     'integrations',
     'job-runtime',
     'marketing-identity',
+    'memory',
     'model-supply',
     'product-billing',
     'redemptions',
