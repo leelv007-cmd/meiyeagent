@@ -223,8 +223,8 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
-      "note": "Issue 251 final source; fresh isolated database pair provisioned first: 2 pass / 0 fail / 0 skip."
+      "verifiedAt": "97efbfeceb6d4a957e6a6dea0a66c4db959e9548",
+      "note": "Issue 264 residual close; fresh isolated database pair provisioned first: 2 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "unverified",
@@ -233,13 +233,13 @@
     },
     "apps/core/src/p1/result-delivery/assisted-canonical-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "aecb1fb93fa7a66e38e59b2e77964aeaf85fe203",
-      "note": "#242 orphan batch 2 (5eab9138+01064fcf+aecb1fb9): 1 fail solo on a bare provisioned pair (relation p1_content_packages missing — provision script does not create it); running the operations suites that create the table first on the same database turns it 1/0/0 — ordering artifact, proven not analogized"
+      "verifiedAt": "97efbfeceb6d4a957e6a6dea0a66c4db959e9548",
+      "note": "Issue 264 residual close; fresh isolated database pair provisioned first, with the pending-actions schema owner run first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/result-delivery/assisted-receipt-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "aecb1fb93fa7a66e38e59b2e77964aeaf85fe203",
-      "note": "#242 orphan batch 2 (5eab9138+01064fcf+aecb1fb9): 2/0/0 fresh pair, provisioned first"
+      "verifiedAt": "97efbfeceb6d4a957e6a6dea0a66c4db959e9548",
+      "note": "Issue 264 residual close; fresh isolated database pair provisioned first: 2 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/skills/dbos-governance-workflow.postgres.test.ts": {
       "status": "unverified",
