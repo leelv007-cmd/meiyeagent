@@ -129,9 +129,11 @@ test('settles one initial video through the production ledger across a fresh app
     channel: 'managed',
     credentialMode: 'platform',
     credentialVersion: 'credential-video-1',
+    executionChannelId: 'channel-video-managed',
     id: 'seedance-2-managed',
     policyRevision: 'policy-video-v1',
     priceRevision: 'price-video-v1',
+    pricingTier: 'standard',
     region: 'domestic',
     status: 'active',
     unitPrice: {
