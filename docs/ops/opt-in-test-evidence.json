@@ -39,12 +39,12 @@
     },
     "apps/core/src/p1/entitlement-pools/default-runtime-supply-pool.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5aa820e8e6e5a40ffa2d3e8704acf44d72b76b17",
+      "verifiedAt": "bde25598db17983ac1882cad5e2b04a74875add9",
       "note": "Issue 270 fresh database, provisioned first: 1/0"
     },
     "apps/core/src/p1/entitlement-pools/postgres-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5aa820e8e6e5a40ffa2d3e8704acf44d72b76b17",
+      "verifiedAt": "bde25598db17983ac1882cad5e2b04a74875add9",
       "note": "Issue 270 fresh database, provisioned first: 10/0"
     },
     "apps/core/src/p1/execution-spine/postgres-creation-submission-store.postgres.test.ts": {
@@ -144,27 +144,27 @@
     },
     "apps/core/src/p1/model-supply/foundation-ledger.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5aa820e8e6e5a40ffa2d3e8704acf44d72b76b17",
+      "verifiedAt": "bde25598db17983ac1882cad5e2b04a74875add9",
       "note": "Issue 270 fresh database, provisioned first: 1/0"
     },
     "apps/core/src/p1/model-supply/postgres-owned-asset-cleanup-claim.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5aa820e8e6e5a40ffa2d3e8704acf44d72b76b17",
+      "verifiedAt": "bde25598db17983ac1882cad5e2b04a74875add9",
       "note": "Issue 270 fresh database, provisioned first: 1/0"
     },
     "apps/core/src/p1/model-supply/reference-asset-dispatch.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5aa820e8e6e5a40ffa2d3e8704acf44d72b76b17",
+      "verifiedAt": "bde25598db17983ac1882cad5e2b04a74875add9",
       "note": "Issue 270 fresh database, provisioned first: 3/0"
     },
     "apps/core/src/p1/model-supply/retired-video-editing-schema.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5aa820e8e6e5a40ffa2d3e8704acf44d72b76b17",
+      "verifiedAt": "bde25598db17983ac1882cad5e2b04a74875add9",
       "note": "Issue 270 fresh database, provisioned first: 1/0"
     },
     "apps/core/src/p1/model-supply/usage-ledger-invariants.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5aa820e8e6e5a40ffa2d3e8704acf44d72b76b17",
+      "verifiedAt": "bde25598db17983ac1882cad5e2b04a74875add9",
       "note": "Issue 270 fresh database, provisioned first: 2/0"
     },
     "apps/core/src/p1/operations/content-package-migration-cli.postgres.test.ts": {
@@ -214,7 +214,7 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5aa820e8e6e5a40ffa2d3e8704acf44d72b76b17",
+      "verifiedAt": "bde25598db17983ac1882cad5e2b04a74875add9",
       "note": "Issue 270 fresh database, provisioned first: 2/0"
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
