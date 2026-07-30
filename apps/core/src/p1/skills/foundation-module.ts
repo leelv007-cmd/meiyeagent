@@ -22,8 +22,11 @@ import type {
   SkillTier,
 } from './types.js';
 import { SkillService } from './service.js';
+import type { StoreWorkflowCapturePort } from './store-workflow-capture.js';
 
 export const SKILL_QUERY_ACTIONS = [
+  'store_workflow_capture_get',
+  'store_workflow_catalog',
   'skill_catalog_list',
   'skill_governance_run_get',
   'skill_revision_history',
@@ -32,6 +35,10 @@ export const SKILL_QUERY_ACTIONS = [
 ] as const;
 
 export const SKILL_COMMAND_ACTIONS = [
+  'store_workflow_capture_answer',
+  'store_workflow_capture_confirm',
+  'store_workflow_capture_reject',
+  'store_workflow_capture_start',
   'skill_accept',
   'skill_bind',
   'skill_define',
@@ -268,7 +275,12 @@ export class SkillFoundationModule implements P1OperationModule {
   constructor(
     private readonly service: SkillService,
     private readonly governanceRuntime?: SkillGovernanceRuntimePort,
+    private captureWorkflow?: StoreWorkflowCapturePort,
   ) {}
+
+  attachCaptureWorkflow(captureWorkflow: StoreWorkflowCapturePort) {
+    this.captureWorkflow = captureWorkflow;
+  }
 
   /**
    * Read face for the operator catalog. Until now the module was
@@ -287,6 +299,11 @@ export class SkillFoundationModule implements P1OperationModule {
       );
     }
     switch (name) {
+      case 'store_workflow_capture_get':
+        return this.requireCaptureWorkflow().get(args.context.workspaceId, value);
+      case 'store_workflow_catalog':
+        onlyKeys(value, [], 'Store workflow catalog query');
+        return this.requireCaptureWorkflow().catalog(args.context.workspaceId);
       case 'skill_catalog_list': {
         onlyKeys(value, ['limit', 'sourceKind', 'tier'], 'Skill 目录查询');
         return this.service.listCatalog({
@@ -352,6 +369,14 @@ export class SkillFoundationModule implements P1OperationModule {
       fail(`未知的 Skill 运营命令：“${name}”。`);
     }
     switch (name) {
+      case 'store_workflow_capture_start':
+        return this.requireCaptureWorkflow().start(args.context, value);
+      case 'store_workflow_capture_answer':
+        return this.requireCaptureWorkflow().answer(args.context, value);
+      case 'store_workflow_capture_confirm':
+        return this.requireCaptureWorkflow().confirm(args.context, value);
+      case 'store_workflow_capture_reject':
+        return this.requireCaptureWorkflow().reject(args.context, value);
       case 'skill_define': {
         onlyKeys(
           value,
@@ -668,5 +693,12 @@ export class SkillFoundationModule implements P1OperationModule {
       );
     }
     return this.governanceRuntime;
+  }
+
+  private requireCaptureWorkflow() {
+    if (!this.captureWorkflow) {
+      throw new P1DomainError('INVALID_STATE', 'Store workflow capture is not configured.');
+    }
+    return this.captureWorkflow;
   }
 }

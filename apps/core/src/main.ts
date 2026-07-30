@@ -360,8 +360,12 @@ import { P1HarnessCandidateRunnerScope } from './p1/agent-primitives/p1-harness-
 import { P1HarnessCheckInvoker } from './p1/agent-primitives/p1-harness-check-invoker.js';
 import { createProductionAgentPrimitiveAssembly } from './p1/agent-primitives/production-assembly.js';
 import {
+  CompositeRecordProposalPort,
   createDurableSkillRuntime,
   PostgresSkillRepository,
+  PostgresStoreWorkflowCaptureRepository,
+  StoreWorkflowCaptureService,
+  StoreWorkflowRecordProposalPort,
 } from './p1/skills/index.js';
 import {
   CatalogProductQuoteAuthority,
@@ -504,6 +508,8 @@ const cloudflareInventory = new CloudflareInventoryAdapter({
 });
 const integrationRepository = new PostgresIntegrationRepository(pool);
 const skillRepository = new PostgresSkillRepository(pool);
+const storeWorkflowCaptureRepository =
+  new PostgresStoreWorkflowCaptureRepository(pool);
 const supplyControlRepository = new PostgresSupplyControlPlaneRepository(pool);
 const supplyPlanningControlPlane = new PostgresSupplyPlanningControlPlane(
   pool,
@@ -520,6 +526,7 @@ await migratePostgresSchema(pool, [
   integrationRepository,
   promptAuditStore,
   skillRepository,
+  storeWorkflowCaptureRepository,
   supplyControlRepository,
   new PostgresCapabilityHotAssemblyMigration(),
   new PostgresSupplyPlanningMigration(),
@@ -962,6 +969,7 @@ await migratePostgresSchema(pool, [
   canonicalVideoWorkflowSchema,
   integrationRepository,
   skillRepository,
+  storeWorkflowCaptureRepository,
   cutoverExecution,
   tracerJobRepository,
   operationalTelemetryStore,
@@ -1517,7 +1525,11 @@ const agentPrimitiveAssembly = createProductionAgentPrimitiveAssembly({
   generate: harnessCandidatePrimitiveScope,
   readContext: {
     async read(input) {
-      if (input.scope !== 'workspace' && input.scope !== 'store.current') {
+      if (
+        input.scope !== 'workspace' &&
+        input.scope !== 'store.current' &&
+        input.scope !== 'conversation.current'
+      ) {
         throw new Error(
           `Unsupported production context scope: ${input.scope}`,
         );
@@ -1544,13 +1556,23 @@ const agentPrimitiveAssembly = createProductionAgentPrimitiveAssembly({
       };
     },
   },
-  recordProposal: new ReuseMemoryRecordProposalPort(
-    reuseMemoryService,
-    memoryProposalRedline,
+  recordProposal: new CompositeRecordProposalPort(
+    new ReuseMemoryRecordProposalPort(
+      reuseMemoryService,
+      memoryProposalRedline,
+    ),
+    new StoreWorkflowRecordProposalPort(storeWorkflowCaptureRepository),
   ),
   revise: harnessCandidatePrimitiveScope,
   reviseTarget: harnessCandidatePrimitiveScope,
 });
+skillRuntime.foundationModule.attachCaptureWorkflow(
+  new StoreWorkflowCaptureService(
+    storeWorkflowCaptureRepository,
+    agentPrimitiveAssembly.runtime,
+    skillRepository,
+  ),
+);
 operationsService.attachBriefSubmissionGate(
   creationExperienceRuntime.briefSubmissionGate,
 );

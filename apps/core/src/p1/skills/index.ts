@@ -42,6 +42,18 @@ export {
   PLATFORM_COPY_WORKFLOW_REVISION_REF,
   provisionPlatformRecipes,
 } from './platform-provisioning.js';
+export {
+  CompositeRecordProposalPort,
+  PostgresStoreWorkflowCaptureRepository,
+  StoreWorkflowCaptureService,
+  StoreWorkflowRecordProposalPort,
+  type StoreWorkflowCapturePort,
+  type StoreWorkflowCaptureRepository,
+  type StoreWorkflowCaptureSession,
+  type StoreWorkflowCaptureTrace,
+  type StoreWorkflowProposal,
+  type StoreWorkflowRecipe,
+} from './store-workflow-capture.js';
 export { RegistrySkillOutputValidator } from './schema-validator.js';
 export {
   StaticSkillToolExecutionAuthorizer,

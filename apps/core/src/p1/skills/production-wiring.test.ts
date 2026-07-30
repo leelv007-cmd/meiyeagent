@@ -36,6 +36,10 @@ const EXPECTED_SKILL_SCHEMA_REFS = [
 // the action registry grows, rather than trusting that nobody adds one.
 test('the Skill action registry exposes no export or download verb', () => {
   assert.deepEqual(SKILL_COMMAND_ACTIONS, [
+    'store_workflow_capture_answer',
+    'store_workflow_capture_confirm',
+    'store_workflow_capture_reject',
+    'store_workflow_capture_start',
     'skill_accept',
     'skill_bind',
     'skill_define',
@@ -50,6 +54,8 @@ test('the Skill action registry exposes no export or download verb', () => {
     'skill_rollback',
   ]);
   assert.deepEqual(SKILL_QUERY_ACTIONS, [
+    'store_workflow_capture_get',
+    'store_workflow_catalog',
     'skill_catalog_list',
     'skill_governance_run_get',
     'skill_revision_history',
@@ -71,18 +77,34 @@ test('the Skill action registry exposes no export or download verb', () => {
 
   // Every registered action must resolve to a capability; an unregistered one
   // is denied by default, so a silent typo would look like "no export" too.
-  for (const action of SKILL_COMMAND_ACTIONS) {
+  for (const action of SKILL_COMMAND_ACTIONS.filter(
+    (candidate) => !candidate.startsWith('store_workflow_'),
+  )) {
     assert.equal(
       requiredP1Capability('command', 'skills', action),
       'config.publish',
       `${action} must stay behind config.publish`,
     );
   }
-  for (const action of ['skill_catalog_list', 'skill_revision_history']) {
+  for (const action of [
+    'store_workflow_capture_get',
+    'store_workflow_catalog',
+    'skill_catalog_list',
+    'skill_revision_history',
+  ]) {
     assert.equal(
       requiredP1Capability('query', 'skills', action),
       'workspace.read',
       `${action} must stay a plain read`,
+    );
+  }
+  for (const action of SKILL_COMMAND_ACTIONS.filter((candidate) =>
+    candidate.startsWith('store_workflow_'),
+  )) {
+    assert.equal(
+      requiredP1Capability('command', 'skills', action),
+      'content.create',
+      `${action} must stay on the merchant content path`,
     );
   }
   assert.equal(

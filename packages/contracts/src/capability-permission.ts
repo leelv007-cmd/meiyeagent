@@ -385,6 +385,8 @@ export function requiredP1Capability(
       // Reading the catalog must not cost a config.publish step-up — an
       // operator who only wants to look would be re-authenticated on arrival.
       return new Set([
+        'store_workflow_capture_get',
+        'store_workflow_catalog',
         'skill_catalog_list',
         'skill_revision_history',
       ]).has(action)
@@ -393,6 +395,13 @@ export function requiredP1Capability(
     }
     return kind === 'command' &&
       new Set([
+        'store_workflow_capture_answer',
+        'store_workflow_capture_confirm',
+        'store_workflow_capture_reject',
+        'store_workflow_capture_start',
+      ]).has(action)
+      ? 'content.create'
+      : new Set([
         'skill_define',
         'skill_accept',
         'skill_bind',
