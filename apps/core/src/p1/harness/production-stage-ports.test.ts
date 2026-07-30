@@ -768,6 +768,9 @@ test('a frozen Composer Copy snapshot uses the single revision writer', async ()
     undefined,
     undefined,
     {
+      async summarize() {
+        return [];
+      },
       async complete() {
         markMemoryStarted();
         await memoryCompletion;

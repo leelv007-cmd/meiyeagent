@@ -162,6 +162,11 @@ export interface HarnessCopyDeliveryPort {
 }
 
 export interface HarnessMemorySedimentationPort {
+  summarize(
+    input: Parameters<HarnessStagePorts['assembleAndDeliver']>[0],
+  ): Promise<
+    Array<{ itemId: string; candidate: unknown; decision: unknown }>
+  >;
   complete(
     input: Parameters<HarnessStagePorts['assembleAndDeliver']>[0],
   ): Promise<void>;

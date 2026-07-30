@@ -119,6 +119,66 @@ test('production sedimentation records a durable failure without rejecting deliv
   );
 });
 
+test('production summarize returns candidates without memory or proposal side effects', async () => {
+  let repositoryCalls = 0;
+  let proposalCalls = 0;
+  const repository = new Proxy(new MemoryReuseMemoryRepository(), {
+    get(target, property, receiver) {
+      if (property !== 'constructor') repositoryCalls += 1;
+      return Reflect.get(target, property, receiver);
+    },
+  });
+  const coordinator = new ProductionMemorySedimentationCoordinator(
+    repository,
+    {
+      create() {
+        return {
+          async run(request) {
+            return {
+              output: request.schema.parse({
+                items: [item('candidate-a', 'allow', 'restrained')],
+              }),
+              attempts: 1,
+              providerTaskRef: 'memory-model',
+              replayed: false,
+              usage: { inputTokens: 1, outputTokens: 1 },
+            };
+          },
+        };
+      },
+    },
+    async () => {
+      proposalCalls += 1;
+      return { status: 'proposed' };
+    },
+    new HarnessCheckTargetScope(),
+  );
+
+  assert.deepEqual(await coordinator.summarize(productionInput()), [
+    {
+      itemId: 'candidate-a',
+      decision: {
+        state: 'allow',
+        reason: 'allow_reason',
+      },
+      candidate: {
+        semanticKey: 'tone.candidate-a',
+        proposedValue: 'restrained',
+        defaultScope: {
+          storeId: 'store-a',
+          platform: 'douyin',
+        },
+        decisionEventId:
+          'memory:task-memory-production:candidate-a',
+        taskId: 'task-memory-production',
+        messageRange: { start: 0, end: 0 },
+      },
+    },
+  ]);
+  assert.equal(repositoryCalls, 0);
+  assert.equal(proposalCalls, 0);
+});
+
 function item(
   itemId: string,
   state: 'allow' | 'rewrite' | 'discard' | 'to_pending_confirmation',
