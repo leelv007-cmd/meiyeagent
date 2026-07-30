@@ -258,28 +258,28 @@
     },
     "apps/core/src/p1/skills/dbos-governance-workflow.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "8a7c264cb0d80620c75dadea502d540171252b0e",
-      "note": "Issue 260 own fresh business and DBOS databases, provisioned first: 1/0"
+      "verifiedAt": "65b281ceb4862e8b8d45d9a843dd65d55791a438",
+      "note": "Issue 260 post-rebase fresh business and DBOS databases, provisioned first: 1/0"
     },
     "apps/core/src/p1/skills/postgres-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "8a7c264cb0d80620c75dadea502d540171252b0e",
-      "note": "Issue 260 fresh business and DBOS databases, provisioned first: 10/0"
+      "verifiedAt": "65b281ceb4862e8b8d45d9a843dd65d55791a438",
+      "note": "Issue 260 post-rebase fresh business and DBOS databases, provisioned first: 10/0"
     },
     "apps/core/src/p1/skills/skill-governance.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "8a7c264cb0d80620c75dadea502d540171252b0e",
-      "note": "Issue 260 own fresh business and DBOS databases, provisioned first: 1/0"
+      "verifiedAt": "65b281ceb4862e8b8d45d9a843dd65d55791a438",
+      "note": "Issue 260 post-rebase fresh business and DBOS databases, provisioned first: 1/0"
     },
     "apps/core/src/p1/skills/skill-published-traffic.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "8a7c264cb0d80620c75dadea502d540171252b0e",
-      "note": "Issue 260 own fresh business and DBOS databases, provisioned first: 1/0"
+      "verifiedAt": "65b281ceb4862e8b8d45d9a843dd65d55791a438",
+      "note": "Issue 260 post-rebase fresh business and DBOS databases, provisioned first: 1/0"
     },
     "apps/core/src/p1/skills/skill-reverse-dependencies.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "8a7c264cb0d80620c75dadea502d540171252b0e",
-      "note": "Issue 260 own fresh business and DBOS databases, provisioned first: 3/0"
+      "verifiedAt": "65b281ceb4862e8b8d45d9a843dd65d55791a438",
+      "note": "Issue 260 post-rebase fresh business and DBOS databases, provisioned first: 3/0"
     },
     "apps/core/src/p1/supply-registry/postgres-admin-supply-runtime.postgres.test.ts": {
       "status": "green",

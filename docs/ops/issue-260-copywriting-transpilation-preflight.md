@@ -2,7 +2,7 @@
 
 > 状态：后端切片已验证。人工蒸馏基线
 > `main@cc04918ddb11f5cd5013ee085a369047538e218c`；实现与证据基线
-> `issue-260@d3b4ae24`。recorded 证据不冒充 live provider 或前台验收。
+> `issue-260@65b281ce`。recorded 证据不冒充 live provider 或前台验收。
 
 ## 1. 固定来源与许可
 
