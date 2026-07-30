@@ -8,6 +8,7 @@ import {
 import { measureContrast } from '../fixtures/contrast';
 import { seedConfirmedStore } from '../fixtures/product';
 import { setTheme } from '../fixtures/page-health';
+import { chooseImageTextDirection } from '../fixtures/ui-journey';
 import { installWorksBrowserFixtures } from '../fixtures/works';
 
 /**
@@ -116,6 +117,15 @@ async function startRun(
     error?: { message?: string };
   };
   expect(response.ok(), envelope.error?.message).toBeTruthy();
+  if (lens === 'image_text') {
+    const missingFacts = page.getByTestId('ask-merchant-group-card').filter({
+      hasText: '请确认本次创作要用的优惠、履约信息',
+    });
+    await expect(missingFacts).toBeVisible({ timeout: 60_000 });
+    await missingFacts.getByRole('button', { name: '整组暂不确定' }).click();
+    await expect(missingFacts).toBeHidden({ timeout: 30_000 });
+    await chooseImageTextDirection(page);
+  }
   return {
     taskId: envelope.data?.task?.id ?? '',
     workId: envelope.data?.work?.id ?? '',

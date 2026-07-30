@@ -114,32 +114,45 @@ export async function assertThreeModalDiscovery(page: Page) {
  * `unattended: 'hold'` (`apps/core/src/p1/harness/workflow-core.ts`
  * `noteStyleQuestion`) — it carries no default, so nothing releases it but a
  * merchant choice, and the run stays suspended until one lands. Answering it is
- * part of the 图文 mainline, not a test convenience, and it is the third
- * activation this modality's contract budgets.
+ * part of the 图文 mainline, not a test convenience, and remains the third
+ * semantic activation in this modality's contract.
  *
- * The plan-confirmation card that precedes it is *not* answered here: it does
- * carry a default, so D-116 releases it on the countdown, which is exactly what
- * a merchant who does nothing experiences.
+ * The typed-interaction renderer requires an explicit submit for both the
+ * page-plan default and the later style choice, so this helper consumes both
+ * visible cards in the same order a merchant does. The M-04 gate counts those
+ * extra renderer clicks independently, so a C6 regression remains visible.
  */
 export async function chooseImageTextDirection(page: Page) {
-  const card = page.getByTestId('composer-question-card');
+  const planCard = page.getByTestId('ask-merchant-group-card').filter({
+    hasText: '我会先整理整篇页级计划',
+  });
   await expect(
-    card,
-    'the 图文 run must reach its direction question'
+    planCard,
+    'the 图文 run must reach its page-plan confirmation'
   ).toBeVisible({ timeout: 180_000 });
-  // Both mid-run cards render under this testid and both say 两种图文方向: the
-  // plan card asks 「再给你两种图文方向选择…可以吗?」 and carries a default, so
-  // D-116 releases it on its own. Wait for the direction card's own sentence,
-  // not the substring they share.
-  await expect(card).toContainText('两种图文方向都已准备好', {
+  await planCard.getByRole('button', { name: /按建议继续/u }).click();
+  await planCard.getByRole('button', { name: '提交回答' }).click();
+  await expect(planCard).toBeHidden({ timeout: 30_000 });
+
+  const directionCard = page.getByTestId('ask-merchant-group-card').filter({
+    hasText: '两种图文方向都已准备好',
+  });
+  await expect(
+    directionCard,
+    'the 图文 run must reach its direction question'
+  ).toBeVisible({
     timeout: 180_000,
   });
-  const directions = card.locator('[data-testid^="composer-question-option-"]');
+  const directions = directionCard
+    .locator('fieldset')
+    .getByRole('button')
+    .filter({ hasNotText: '暂未确定' });
   await expect(
     directions,
     'the card says 两种图文方向 — it must offer exactly that many'
   ).toHaveCount(2);
   await directions.first().click();
+  await directionCard.getByRole('button', { name: '提交回答' }).click();
   await expect(
     page
       .getByTestId('composer-stage-line')
@@ -235,6 +248,9 @@ export async function submitComposerJourney(
     const confirm = brief.getByTestId('composer-brief-confirm');
     await expect(confirm).toBeEnabled();
     await confirm.click();
+    const executionConfirm = page.getByTestId('execution-confirm-accept');
+    await expect(executionConfirm).toBeVisible({ timeout: 30_000 });
+    await executionConfirm.click();
   }
 
   const submissionResponse = await submissionResponsePromise;
