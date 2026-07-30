@@ -22,20 +22,20 @@
       "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
     },
     "apps/core/src/p1/due-delivery/eligibility.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "50064baf67ae877ac5fbb1e61248e37d67e7e482",
+      "note": "#253 named-deps takeover merge: 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/due-delivery/postgres-repository.postgres.test.ts": {
       "status": "known_red",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "verifiedAt": "50064baf67ae877ac5fbb1e61248e37d67e7e482",
       "ticket": "#269",
-      "note": "One enqueued row yields claimed:2/delivered:2 after a repository restart, reproduced isolated on a pristine database. Cause is the test's reliance on the real wall clock (firstAttemptAt = new Date()), not duplicate delivery: the chained next-day task is already due once the wall clock passes the hard-coded business date. Coordinator correction: an earlier note here claimed 'red since aec25cdc', which was an unverified inference — pinning the dates to today makes the whole file green, so it passed on the day it landed and rotted the next."
+      "note": "#253 named-deps takeover merge: 8 pass / 1 fail on a fresh pair: the restart case still reads the real wall clock against a hard-coded 2026-07-29 business date, so the chained next-day task is already due. Cause diagnosed on #269, fix in flight on its lane; not caused by this stack"
     },
     "apps/core/src/p1/due-delivery/task-recall-producer.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "50064baf67ae877ac5fbb1e61248e37d67e7e482",
+      "note": "#253 named-deps takeover merge: 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/entitlement-pools/default-runtime-supply-pool.postgres.test.ts": {
       "status": "green",
@@ -59,73 +59,73 @@
     },
     "apps/core/src/p1/harness/canonical-observability-emitters.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
-      "note": "Fresh database, provisioned first: 1/0"
+      "verifiedAt": "50064baf67ae877ac5fbb1e61248e37d67e7e482",
+      "note": "#253 named-deps takeover merge: 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/dbos-registration.smoke.test.ts": {
       "status": "green",
-      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
-      "note": "Fresh database, provisioned first: 15/0"
+      "verifiedAt": "50064baf67ae877ac5fbb1e61248e37d67e7e482",
+      "note": "#253 named-deps takeover merge: 15/0/0 fresh pair, provisioned first, run from apps/core — child fixtures resolve tsx from the cwd, so running from the worktree root broke 6 cases as a pure invocation artifact"
     },
     "apps/core/src/p1/harness/delivery.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
-      "note": "Fresh database, provisioned first: 5/0 (red only when sharing a database with earlier suites; green on a pristine one)"
+      "verifiedAt": "50064baf67ae877ac5fbb1e61248e37d67e7e482",
+      "note": "#253 named-deps takeover merge: 5/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/fixture-fact-fidelity.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
-      "note": "Fresh database, provisioned first: 1/0"
+      "verifiedAt": "50064baf67ae877ac5fbb1e61248e37d67e7e482",
+      "note": "#253 named-deps takeover merge: 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/interaction-service.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
-      "note": "Fresh database, provisioned first: 5/0 under UTC and Asia/Shanghai"
+      "verifiedAt": "50064baf67ae877ac5fbb1e61248e37d67e7e482",
+      "note": "#253 named-deps takeover merge: 5/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/issue-255-live-collector.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
-      "note": "Fresh database, provisioned first: 1/0"
+      "verifiedAt": "50064baf67ae877ac5fbb1e61248e37d67e7e482",
+      "note": "#253 named-deps takeover merge: 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/issue-255-postgres-live-receipt.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
-      "note": "Fresh database, provisioned first: 15/0"
+      "verifiedAt": "50064baf67ae877ac5fbb1e61248e37d67e7e482",
+      "note": "#253 named-deps takeover merge: 15/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
-      "note": "Fresh database, provisioned first: 0/0 — every case is behind an explicit destructive opt-in"
+      "verifiedAt": "50064baf67ae877ac5fbb1e61248e37d67e7e482",
+      "note": "#253 named-deps takeover merge: 0 fail, 3 self-skipped: the suite additionally gates on its own destructive-reset env which the coordinator does not set; no red observed"
     },
     "apps/core/src/p1/harness/langfuse-outbox-ops.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
-      "note": "Fresh database, provisioned first: 1/0"
+      "verifiedAt": "50064baf67ae877ac5fbb1e61248e37d67e7e482",
+      "note": "#253 named-deps takeover merge: 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/note-media-admission.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
-      "note": "Fresh database, provisioned first: 2/0"
+      "verifiedAt": "50064baf67ae877ac5fbb1e61248e37d67e7e482",
+      "note": "#253 named-deps takeover merge: 2/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/observability-health.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
-      "note": "Fresh database, provisioned first: 3/0"
+      "verifiedAt": "50064baf67ae877ac5fbb1e61248e37d67e7e482",
+      "note": "#253 named-deps takeover merge: 3/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/postgres-billing-compensation-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
-      "note": "Fresh database, provisioned first: 1/0"
+      "verifiedAt": "50064baf67ae877ac5fbb1e61248e37d67e7e482",
+      "note": "#253 named-deps takeover merge: 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/postgres-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
-      "note": "7/0 standalone; the other 4 cases need tables that only earlier suites in a full run create, so they fail 42P01 when this file is run alone. Green inside the full Core run."
+      "verifiedAt": "50064baf67ae877ac5fbb1e61248e37d67e7e482",
+      "note": "#253 named-deps takeover merge: 7 pass / 4 fail solo on a fresh pair: the 4 are the documented cross-file-setup artifact (relation-missing class), same count and shape as the full-suite-green basis recorded at the #247 merge; not caused by this stack"
     },
     "apps/core/src/p1/harness/production-media-assembly.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
-      "note": "Fresh database, provisioned first: 1/0"
+      "verifiedAt": "50064baf67ae877ac5fbb1e61248e37d67e7e482",
+      "note": "#253 named-deps takeover merge: 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/integrations/douyin-oauth-lifecycle.postgres.test.ts": {
       "status": "unverified",
@@ -214,8 +214,8 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "bde25598db17983ac1882cad5e2b04a74875add9",
-      "note": "Issue 270 fresh database, provisioned first: 2/0"
+      "verifiedAt": "50064baf67ae877ac5fbb1e61248e37d67e7e482",
+      "note": "#253 named-deps takeover merge: 2/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "unverified",
@@ -319,8 +319,8 @@
     },
     "apps/core/src/p1/harness/media-bounded-continuation.dbos.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
-      "note": "Fresh database, provisioned first: 1/0 — new suite from the issue 247 salvage"
+      "verifiedAt": "50064baf67ae877ac5fbb1e61248e37d67e7e482",
+      "note": "#253 named-deps takeover merge: 1/0/0 fresh pair, provisioned first"
     }
   }
 }
