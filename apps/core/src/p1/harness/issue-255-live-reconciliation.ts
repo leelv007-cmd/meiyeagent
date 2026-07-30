@@ -8,10 +8,15 @@ import { recordedRequest } from '../model-supply/adapters.js';
 import type { TuziMediaExecutionOptions } from '../model-supply/tuzi-media-adapter.js';
 import { assertIssue255SanitizedManifest } from './issue-255-live-collector.js';
 import { createIssue255TuziMediaPort } from './issue-255-provider-attempt-fence.js';
-import type { PostgresIssue255LiveReceiptRepository } from './issue-255-postgres-live-receipt.js';
+import type {
+  Issue255LiveReceipt,
+  PostgresIssue255LiveReceiptRepository,
+} from './issue-255-postgres-live-receipt.js';
 
 const coordinatorV5RunNonce =
   'issue-255-live-anchors-2026-07-30-v5';
+const coordinatorV6RunNonce =
+  'issue-255-live-anchors-2026-07-31-v6';
 const coordinatorV2RunNonce =
   'issue-255-live-anchors-2026-07-30-v2';
 
@@ -37,6 +42,36 @@ const closeoutSampleSchema = z
   })
   .strict();
 
+const videoRecoverySchema = z
+  .object({
+    reason: z.literal('relay_completed_without_per_task_usage'),
+    providerStatusSequence: z.tuple([
+      z.literal('unknown'),
+      z.literal('completed'),
+    ]),
+    normalizedStatusSequence: z.tuple([
+      z.literal('queued'),
+      z.literal('completed'),
+    ]),
+    taskDetailGetCount: z.number().int().positive(),
+    contentRetrievalGetCount: z.literal(1),
+    contentType: z.literal('video/mp4'),
+    contentByteCount: z.number().int().positive(),
+    contentSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+    providerCreatedAtEpochSeconds: z.number().int().nonnegative(),
+    providerCreatedAtIso: z.string().datetime(),
+    providerSignedUrlTimestamp: z.string().regex(/^\d{8}T\d{6}Z$/u),
+    providerSignedUrlTimestampIso: z.string().datetime(),
+    wallClockUpperBoundMs: z.number().int().positive(),
+    wallClockDerivation: z.literal(
+      'provider_signed_url_timestamp - provider_created_at',
+    ),
+    billingNote: z.literal(
+      'relay_completed_without_per_task_usage; frozen_price_card_reconciled',
+    ),
+  })
+  .strict();
+
 export const issue255LiveAnchorsV5ManifestSchema = z
   .object({
     schemaVersion: z.literal(2),
@@ -47,35 +82,73 @@ export const issue255LiveAnchorsV5ManifestSchema = z
       closeoutSampleSchema
         .extend({
           modality: z.literal('video'),
-          recovery: z
-            .object({
-              reason: z.literal('relay_completed_without_per_task_usage'),
-              providerStatusSequence: z.tuple([
-                z.literal('unknown'),
-                z.literal('completed'),
-              ]),
-              normalizedStatusSequence: z.tuple([
-                z.literal('queued'),
-                z.literal('completed'),
-              ]),
-              taskDetailGetCount: z.number().int().positive(),
-              contentRetrievalGetCount: z.literal(1),
-              contentType: z.literal('video/mp4'),
-              contentByteCount: z.number().int().positive(),
-              contentSha256: z.string().regex(/^[a-f0-9]{64}$/u),
-              providerCreatedAtEpochSeconds: z.number().int().nonnegative(),
-              providerCreatedAtIso: z.string().datetime(),
-              providerSignedUrlTimestamp: z.string().regex(/^\d{8}T\d{6}Z$/u),
-              providerSignedUrlTimestampIso: z.string().datetime(),
-              wallClockUpperBoundMs: z.number().int().positive(),
-              wallClockDerivation: z.literal(
-                'provider_signed_url_timestamp - provider_created_at',
-              ),
-              billingNote: z.literal(
-                'relay_completed_without_per_task_usage; frozen_price_card_reconciled',
-              ),
-            })
-            .strict(),
+          recovery: videoRecoverySchema,
+        })
+        .strict(),
+    ]),
+    totalActualAmountMicros: z.number().int().positive(),
+    currency: z.literal('CNY'),
+  })
+  .strict();
+
+const wallClockEvidenceSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('durable_receipt_timestamp_delta'),
+      wallClockMs: z.number().int().positive(),
+      startedAtIso: z.string().datetime(),
+      finishedAtIso: z.string().datetime(),
+      derivation: z.literal('receipt.updated_at - receipt.created_at'),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('provider_http_timing'),
+      wallClockMs: z.number().int().positive(),
+      requestStartedAtIso: z.string().datetime(),
+      responseFinishedAtIso: z.string().datetime(),
+      derivation: z.literal(
+        'provider_response_finished_at - provider_request_started_at',
+      ),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('provider_signed_url_upper_bound'),
+      wallClockMs: z.number().int().positive(),
+      providerCreatedAtEpochSeconds: z.number().int().nonnegative(),
+      providerCreatedAtIso: z.string().datetime(),
+      providerSignedUrlTimestamp: z.string().regex(/^\d{8}T\d{6}Z$/u),
+      providerSignedUrlTimestampIso: z.string().datetime(),
+      derivation: z.literal(
+        'provider_signed_url_timestamp - provider_created_at',
+      ),
+    })
+    .strict(),
+]);
+
+const v6CloseoutSampleSchema = closeoutSampleSchema
+  .extend({
+    wallClockEvidence: wallClockEvidenceSchema,
+  })
+  .strict();
+
+export const issue255LiveAnchorsV6ManifestSchema = z
+  .object({
+    schemaVersion: z.literal(3),
+    issue: z.literal(255),
+    supersedes: z.literal(
+      'references/evidence/issue-255/live-anchors-v5.json',
+    ),
+    samples: z.tuple([
+      v6CloseoutSampleSchema.extend({ modality: z.literal('copy') }).strict(),
+      v6CloseoutSampleSchema
+        .extend({ modality: z.literal('image_text') })
+        .strict(),
+      v6CloseoutSampleSchema
+        .extend({
+          modality: z.literal('video'),
+          recovery: videoRecoverySchema,
         })
         .strict(),
     ]),
@@ -356,6 +429,212 @@ export async function writeIssue255LiveAnchorsV5Manifest(input: {
   await link(pendingPath, input.manifestPath);
   await unlink(pendingPath);
   return manifest;
+}
+
+export async function writeIssue255LiveAnchorsV6Manifest(input: {
+  receipts: PostgresIssue255LiveReceiptRepository;
+  manifestPath: string;
+}) {
+  const v2 = await input.receipts.listRun(coordinatorV2RunNonce);
+  const v5 = await input.receipts.listRun(coordinatorV5RunNonce);
+  const v6 = await input.receipts.listRun(coordinatorV6RunNonce);
+  const copy = v2.find((receipt) => receipt.modality === 'copy');
+  const image = v6.find((receipt) => receipt.modality === 'image_text');
+  const video = v5.find((receipt) => receipt.modality === 'video');
+  if (
+    !copy ||
+    copy.status !== 'completed' ||
+    !image ||
+    image.status !== 'completed' ||
+    !video ||
+    video.status !== 'completed' ||
+    !video.terminalLineage ||
+    !('recovery' in video.terminalLineage)
+  ) {
+    throw new Error(
+      'Issue 255 v6 manifest requires completed copy, v6 image, and video receipts.',
+    );
+  }
+
+  const imageProviderTaskRefHash = providerTaskRefHash(image);
+  if (!imageProviderTaskRefHash) {
+    throw new Error(
+      'Issue 255 v6 image manifest requires the durable provider task reference.',
+    );
+  }
+  if (
+    !image.providerRequestStartedAt ||
+    !image.providerResponseFinishedAt ||
+    image.providerWallClockMs === null
+  ) {
+    throw new Error(
+      'Issue 255 v6 image manifest requires durable provider HTTP timing.',
+    );
+  }
+
+  const sample = (
+    receipt: Issue255LiveReceipt,
+    usageEvidenceKind:
+      | 'provider_reported'
+      | 'response_derived'
+      | 'price_card_reconciled',
+  ) => {
+    if (receipt.status !== 'completed' || receipt.actualAmountMicros === null) {
+      throw new Error('Issue 255 manifest sample requires a completed receipt.');
+    }
+    return {
+      modality: receipt.modality,
+      sourceRunNonceHash: hash(receipt.runNonce),
+      effectId: receipt.effectId,
+      requestFingerprint: receipt.requestFingerprint,
+      adapter: receipt.adapter,
+      deploymentId: receipt.deploymentId,
+      amountMicros: receipt.actualAmountMicros,
+      usageEvidenceKind,
+      receiptEvidenceRef: `live://issue-255/receipt/${receipt.effectId}`,
+      generationSubmitCount: receipt.generationSubmitCount,
+      providerHttpRequestCount: receipt.providerHttpRequestCount,
+      status: receipt.status,
+      providerTaskRefHash: providerTaskRefHash(receipt),
+    };
+  };
+
+  const recovery = video.terminalLineage.recovery;
+  const manifest = issue255LiveAnchorsV6ManifestSchema.parse({
+    schemaVersion: 3,
+    issue: 255,
+    supersedes: 'references/evidence/issue-255/live-anchors-v5.json',
+    samples: [
+      {
+        ...sample(copy, 'provider_reported'),
+        wallClockEvidence: {
+          kind: 'durable_receipt_timestamp_delta',
+          wallClockMs: receiptTimestampDeltaMs(copy),
+          startedAtIso: copy.createdAt,
+          finishedAtIso: copy.updatedAt,
+          derivation: 'receipt.updated_at - receipt.created_at',
+        },
+      },
+      {
+        ...sample(image, terminalUsageEvidenceKind(image)),
+        providerTaskRefHash: imageProviderTaskRefHash,
+        wallClockEvidence: {
+          kind: 'provider_http_timing',
+          wallClockMs: image.providerWallClockMs,
+          requestStartedAtIso: image.providerRequestStartedAt,
+          responseFinishedAtIso: image.providerResponseFinishedAt,
+          derivation:
+            'provider_response_finished_at - provider_request_started_at',
+        },
+      },
+      {
+        ...sample(video, 'price_card_reconciled'),
+        recovery: {
+          ...recovery,
+          taskDetailGetCount: video.providerHttpRequestCount - 2,
+          contentRetrievalGetCount: 1,
+          providerCreatedAtIso: new Date(
+            recovery.providerCreatedAtEpochSeconds * 1_000,
+          ).toISOString(),
+          providerSignedUrlTimestampIso: parseTosTimestamp(
+            recovery.providerSignedUrlTimestamp,
+          ).toISOString(),
+          wallClockDerivation:
+            'provider_signed_url_timestamp - provider_created_at',
+          billingNote:
+            'relay_completed_without_per_task_usage; frozen_price_card_reconciled',
+        },
+        wallClockEvidence: {
+          kind: 'provider_signed_url_upper_bound',
+          wallClockMs: recovery.wallClockUpperBoundMs,
+          providerCreatedAtEpochSeconds:
+            recovery.providerCreatedAtEpochSeconds,
+          providerCreatedAtIso: new Date(
+            recovery.providerCreatedAtEpochSeconds * 1_000,
+          ).toISOString(),
+          providerSignedUrlTimestamp: recovery.providerSignedUrlTimestamp,
+          providerSignedUrlTimestampIso: parseTosTimestamp(
+            recovery.providerSignedUrlTimestamp,
+          ).toISOString(),
+          derivation:
+            'provider_signed_url_timestamp - provider_created_at',
+        },
+      },
+    ],
+    totalActualAmountMicros:
+      copy.actualAmountMicros! +
+      image.actualAmountMicros! +
+      video.actualAmountMicros!,
+    currency: 'CNY',
+  });
+  const pendingPath = `${input.manifestPath}.pending`;
+  try {
+    const pending = await lstat(pendingPath);
+    if (pending.size !== 0) {
+      throw new Error('Issue 255 v6 non-empty pending manifest must be preserved.');
+    }
+    await unlink(pendingPath);
+  } catch (error) {
+    if (!isMissingFile(error)) throw error;
+  }
+  try {
+    await lstat(input.manifestPath);
+    throw new Error('Issue 255 v6 final manifest already exists.');
+  } catch (error) {
+    if (!isMissingFile(error)) throw error;
+  }
+  const serialized = `${JSON.stringify(manifest, null, 2)}\n`;
+  assertIssue255SanitizedManifest(serialized);
+  await writeFile(pendingPath, serialized, { flag: 'wx', mode: 0o600 });
+  await link(pendingPath, input.manifestPath);
+  await unlink(pendingPath);
+  return manifest;
+}
+
+function providerTaskRefHash(receipt: Issue255LiveReceipt) {
+  const terminal = receipt.terminalLineage;
+  if (terminal && 'attempt' in terminal) {
+    if ('providerTaskRef' in terminal.attempt) {
+      return hash(terminal.attempt.providerTaskRef);
+    }
+    if (
+      'providerTaskRefMissing' in terminal.attempt &&
+      terminal.attempt.providerTaskRefMissing
+    ) {
+      return null;
+    }
+  }
+  throw new Error(
+    'Issue 255 manifest receipt has no trusted provider task reference state.',
+  );
+}
+
+function terminalUsageEvidenceKind(receipt: Issue255LiveReceipt) {
+  const terminal = receipt.terminalLineage;
+  if (
+    terminal &&
+    'providerCost' in terminal &&
+    'usageEvidenceKind' in terminal.providerCost
+  ) {
+    return terminal.providerCost.usageEvidenceKind;
+  }
+  throw new Error(
+    'Issue 255 manifest receipt has no trusted provider usage evidence kind.',
+  );
+}
+
+function receiptTimestampDeltaMs(receipt: Issue255LiveReceipt) {
+  const startedAt = new Date(receipt.createdAt).getTime();
+  const finishedAt = new Date(receipt.updatedAt).getTime();
+  const wallClockMs = Math.ceil(finishedAt - startedAt);
+  if (
+    !Number.isSafeInteger(wallClockMs) ||
+    wallClockMs <= 0 ||
+    wallClockMs > 86_400_000
+  ) {
+    throw new Error('Issue 255 receipt timestamp wall-clock evidence is invalid.');
+  }
+  return wallClockMs;
 }
 
 function parseTosTimestamp(value: string) {

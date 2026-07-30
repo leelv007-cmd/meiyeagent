@@ -32,6 +32,8 @@ const coordinatorV3 = {
 } as const;
 const coordinatorV5RunNonce =
   'issue-255-live-anchors-2026-07-30-v5';
+const coordinatorV6RunNonce =
+  'issue-255-live-anchors-2026-07-31-v6';
 const legacyImageEffectId =
   'd2ccabe63b58ece3404bd27a36e8b811c5b6bf19c80e5f57b005bf7f5351f98e';
 const legacyImageRequestFingerprint =
@@ -43,11 +45,11 @@ const legacyImageCommentId = 5130611933;
 const legacyImageAmountMicros = 50_000;
 const modalityCapMicros = {
   copy: 100_000,
-  image_text: 500_000,
+  image_text: 50_000,
   video: 1_620_000,
 } as const;
-// v5 envelope by coordinator 2026-07-31.
-const GLOBAL_BILLABLE_AUTHORIZATION_CAP = 6;
+// v6 envelope by coordinator 2026-07-31.
+const GLOBAL_BILLABLE_AUTHORIZATION_CAP = 7;
 
 const claimInputSchema = z
   .object({
@@ -91,6 +93,9 @@ export interface Issue255LiveReceipt {
   status: 'claimed' | 'unknown' | 'completed' | 'failed_before_billing';
   generationSubmitCount: number;
   providerHttpRequestCount: number;
+  providerRequestStartedAt: string | null;
+  providerResponseFinishedAt: string | null;
+  providerWallClockMs: number | null;
   actualAmountMicros: number | null;
   failureErrorCode: string | null;
   failureErrorMessage: string | null;
@@ -131,6 +136,9 @@ interface ReceiptRow extends QueryResultRow {
   status: 'claimed' | 'unknown' | 'completed' | 'failed_before_billing';
   generation_submit_count: number;
   provider_http_request_count: number;
+  provider_request_started_at: Date | null;
+  provider_response_finished_at: Date | null;
+  provider_wall_clock_ms: number | null;
   actual_amount_micros: string | null;
   failure_error_code: string | null;
   failure_error_message: string | null;
@@ -169,7 +177,11 @@ const durableTerminalLineageSchema = z
         exchangeRevision: z.literal('native-cny-v1'),
         stage: z.enum(['observed', 'reconciled']),
         usageEvidenceKind: z
-          .enum(['provider_reported', 'response_derived'])
+          .enum([
+            'provider_reported',
+            'response_derived',
+            'price_card_reconciled',
+          ])
           .default('provider_reported'),
         usage: z
           .object({
@@ -389,6 +401,10 @@ export class PostgresIssue255LiveReceiptRepository {
           CHECK (generation_submit_count BETWEEN 0 AND 1),
         provider_http_request_count integer NOT NULL DEFAULT 0
           CHECK (provider_http_request_count >= 0),
+        provider_request_started_at timestamptz,
+        provider_response_finished_at timestamptz,
+        provider_wall_clock_ms integer
+          CHECK (provider_wall_clock_ms > 0),
         actual_amount_micros bigint,
         failure_error_code text,
         failure_error_message text,
@@ -406,13 +422,24 @@ export class PostgresIssue255LiveReceiptRepository {
         ADD COLUMN IF NOT EXISTS reconciliation_reason text,
         ADD COLUMN IF NOT EXISTS failure_error_code text,
         ADD COLUMN IF NOT EXISTS failure_error_message text,
-        ADD COLUMN IF NOT EXISTS provider_http_status integer
+        ADD COLUMN IF NOT EXISTS provider_http_status integer,
+        ADD COLUMN IF NOT EXISTS provider_request_started_at timestamptz,
+        ADD COLUMN IF NOT EXISTS provider_response_finished_at timestamptz,
+        ADD COLUMN IF NOT EXISTS provider_wall_clock_ms integer
       `);
       await client.query(`
       ALTER TABLE issue255_live_generation_receipts
         DROP CONSTRAINT IF EXISTS issue255_live_generation_receipts_provider_http_status_check,
         ADD CONSTRAINT issue255_live_generation_receipts_provider_http_status_check
           CHECK (provider_http_status BETWEEN 100 AND 599)
+      `);
+      await client.query(`
+      ALTER TABLE issue255_live_generation_receipts
+        DROP CONSTRAINT IF EXISTS issue255_live_generation_receipts_provider_wall_clock_check,
+        ADD CONSTRAINT issue255_live_generation_receipts_provider_wall_clock_check
+          CHECK (
+            provider_wall_clock_ms IS NULL OR provider_wall_clock_ms > 0
+          )
       `);
       await client.query(`
       ALTER TABLE issue255_live_generation_receipts
@@ -427,7 +454,10 @@ export class PostgresIssue255LiveReceiptRepository {
         ADD COLUMN IF NOT EXISTS provider_task_id text,
         ADD COLUMN IF NOT EXISTS provider_attempt_id text,
         ADD COLUMN IF NOT EXISTS provider_cost_event_id text,
-        ADD COLUMN IF NOT EXISTS provider_http_request_count integer NOT NULL DEFAULT 0
+        ADD COLUMN IF NOT EXISTS provider_http_request_count integer NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS provider_request_started_at timestamptz,
+        ADD COLUMN IF NOT EXISTS provider_response_finished_at timestamptz,
+        ADD COLUMN IF NOT EXISTS provider_wall_clock_ms integer
       `);
       await client.query(`
       DO $issue255$
@@ -673,6 +703,9 @@ export class PostgresIssue255LiveReceiptRepository {
       'issue255-live-run-owner-v1',
       async (client): Promise<'fresh' | 'resumed'> => {
         const isCoordinatorV5Retry = parsedRunNonce === coordinatorV5RunNonce;
+        const isCoordinatorV6Retry = parsedRunNonce === coordinatorV6RunNonce;
+        const isCoordinatorApprovedRetry =
+          isCoordinatorV5Retry || isCoordinatorV6Retry;
         const existingOwner = await client.query<{ run_nonce: string }>(
           `SELECT run_nonce
              FROM issue255_live_run_owners
@@ -681,7 +714,7 @@ export class PostgresIssue255LiveReceiptRepository {
         );
         if (existingOwner.rows[0]) {
           if (existingOwner.rows[0].run_nonce !== parsedRunNonce) {
-            if (!isCoordinatorV5Retry) {
+            if (!isCoordinatorApprovedRetry) {
               throw new Error('Issue 255 live run owner is already durably claimed.');
             }
             await client.query(
@@ -693,7 +726,7 @@ export class PostgresIssue255LiveReceiptRepository {
             );
             return 'fresh';
           }
-          if (isCoordinatorV5Retry) return 'resumed';
+          if (isCoordinatorApprovedRetry) return 'resumed';
           const foreignHistory = await client.query<{ count: string }>(
             `SELECT (
                (SELECT COUNT(*)
@@ -727,7 +760,7 @@ export class PostgresIssue255LiveReceiptRepository {
                WHERE status <> 'failed_before_billing')::bigint AS active_receipt_count`,
         );
         if (
-          !isCoordinatorV5Retry &&
+          !isCoordinatorApprovedRetry &&
           (Number(result.rows[0]?.billable_count ?? 0) !== 0 ||
             Number(result.rows[0]?.active_receipt_count ?? 0) !== 0)
         ) {
@@ -1100,7 +1133,7 @@ export class PostgresIssue255LiveReceiptRepository {
         GLOBAL_BILLABLE_AUTHORIZATION_CAP
       ) {
         throw new Error(
-          'Issue 255 permits exactly six billable generation POSTs globally.',
+          'Issue 255 permits exactly seven billable generation POSTs globally.',
         );
       }
       if (Number(submissionCounts.rows[0]?.run_count ?? 0) >= 3) {
@@ -1190,6 +1223,7 @@ export class PostgresIssue255LiveReceiptRepository {
     effectId: string;
     providerIdempotencyKey: string;
     requestFingerprint: string;
+    observedAt?: Date;
   }) {
     const parsed = z
       .object({
@@ -1200,13 +1234,17 @@ export class PostgresIssue255LiveReceiptRepository {
         effectId: z.string().regex(/^[a-f0-9]{64}$/u),
         providerIdempotencyKey: z.string().trim().min(1),
         requestFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
+        observedAt: z.date().optional(),
       })
       .strict()
       .parse(input);
+    const observedAt = parsed.observedAt ?? new Date();
     return this.locked(parsed.runNonce, async (client) => {
       const updated = await client.query<ReceiptRow>(
         `UPDATE issue255_live_generation_receipts
             SET provider_http_request_count = provider_http_request_count + 1,
+                provider_request_started_at =
+                  COALESCE(provider_request_started_at, $8::timestamptz),
                 updated_at = now()
           WHERE run_nonce = $1
             AND modality = $2
@@ -1226,6 +1264,7 @@ export class PostgresIssue255LiveReceiptRepository {
           parsed.adapter,
           parsed.deploymentId,
           parsed.providerIdempotencyKey,
+          observedAt.toISOString(),
         ],
       );
       const row = updated.rows[0];
@@ -1247,6 +1286,7 @@ export class PostgresIssue255LiveReceiptRepository {
     providerIdempotencyKey: string;
     requestFingerprint: string;
     httpStatus: number;
+    observedAt?: Date;
   }) {
     const parsed = z
       .object({
@@ -1258,13 +1298,28 @@ export class PostgresIssue255LiveReceiptRepository {
         providerIdempotencyKey: z.string().trim().min(1),
         requestFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
         httpStatus: z.number().int().min(100).max(599),
+        observedAt: z.date().optional(),
       })
       .strict()
       .parse(input);
+    const observedAt = parsed.observedAt ?? new Date();
     return this.locked(parsed.runNonce, async (client) => {
       const updated = await client.query<ReceiptRow>(
         `UPDATE issue255_live_generation_receipts
             SET provider_http_status = $8,
+                provider_response_finished_at = $9::timestamptz,
+                provider_wall_clock_ms =
+                  CASE
+                    WHEN provider_request_started_at IS NULL THEN NULL
+                    ELSE GREATEST(
+                      1,
+                      CEIL(
+                        EXTRACT(EPOCH FROM (
+                          $9::timestamptz - provider_request_started_at
+                        )) * 1000
+                      )::integer
+                    )
+                  END,
                 updated_at = now()
           WHERE run_nonce = $1
             AND modality = $2
@@ -1285,6 +1340,7 @@ export class PostgresIssue255LiveReceiptRepository {
           parsed.deploymentId,
           parsed.providerIdempotencyKey,
           parsed.httpStatus,
+          observedAt.toISOString(),
         ],
       );
       const row = updated.rows[0];
@@ -2334,7 +2390,7 @@ export class PostgresIssue255LiveReceiptRepository {
       GLOBAL_BILLABLE_AUTHORIZATION_CAP
     ) {
       throw new Error(
-        'Issue 255 permits exactly six billable generation POSTs globally.',
+        'Issue 255 permits exactly seven billable generation POSTs globally.',
       );
     }
     const runBudget = await client.query<{ amount_micros: string }>(
@@ -2486,11 +2542,15 @@ async function readDurableTerminalLineage(
       providerCost: z
         .object({
           id: z.string().trim().min(1),
-          status: z.literal('observed'),
+          status: z.enum(['observed', 'reconciled']),
           amountMicros: z.number().int().positive(),
           currency: z.literal('CNY'),
           usageEvidenceKind: z
-            .enum(['provider_reported', 'response_derived'])
+            .enum([
+              'provider_reported',
+              'response_derived',
+              'price_card_reconciled',
+            ])
             .default('provider_reported'),
           usage: z
             .object({
@@ -2737,6 +2797,11 @@ function receiptFromRow(row: ReceiptRow): Issue255LiveReceipt {
     status: row.status,
     generationSubmitCount: row.generation_submit_count,
     providerHttpRequestCount: row.provider_http_request_count,
+    providerRequestStartedAt:
+      row.provider_request_started_at?.toISOString() ?? null,
+    providerResponseFinishedAt:
+      row.provider_response_finished_at?.toISOString() ?? null,
+    providerWallClockMs: row.provider_wall_clock_ms,
     actualAmountMicros:
       row.actual_amount_micros === null
         ? null

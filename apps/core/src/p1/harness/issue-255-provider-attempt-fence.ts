@@ -31,12 +31,14 @@ export interface Issue255ReceiptFence {
   recordProviderHttpRequest(
     input: FenceIdentity & {
       adapter: 'direct-copy' | 'tuzi-image' | 'tuzi-video';
+      observedAt?: Date;
     },
   ): Promise<unknown>;
   recordProviderHttpResponse(
     input: FenceIdentity & {
       adapter: 'direct-copy' | 'tuzi-image' | 'tuzi-video';
       httpStatus: number;
+      observedAt?: Date;
     },
   ): Promise<unknown>;
 }
@@ -78,18 +80,22 @@ export function createIssue255ProviderFetchFence(input: {
         adapter: input.adapter,
       });
     }
+    const requestStartedAt = new Date();
     await input.receipts.recordProviderHttpRequest({
       ...input.identity,
       adapter: input.adapter,
+      observedAt: requestStartedAt,
     });
     const response = await input.fetch(
       request,
       requestInit,
     );
+    const responseFinishedAt = new Date();
     await input.receipts.recordProviderHttpResponse({
       ...input.identity,
       adapter: input.adapter,
       httpStatus: response.status,
+      observedAt: responseFinishedAt,
     });
     return response;
   };

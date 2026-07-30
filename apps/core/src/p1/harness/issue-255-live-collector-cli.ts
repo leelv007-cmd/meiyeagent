@@ -11,6 +11,7 @@ import { modelRuntimeAssemblyFromEnv } from '../model-supply/runtime-config.js';
 import {
   assertIssue255PositiveFrozenPrice,
   collectIssue255LiveAnchors,
+  collectIssue255LiveImageV6,
   issue255DirectCopyExecutor,
   issue255TuziExecutor,
   issue255VideoQuote,
@@ -19,11 +20,14 @@ import {
 import {
   reconcileIssue255LiveRun,
   recoverIssue255CoordinatorVideoV5,
+  writeIssue255LiveAnchorsV6Manifest,
 } from './issue-255-live-reconciliation.js';
 import { PostgresIssue255LiveReceiptRepository } from './issue-255-postgres-live-receipt.js';
 
 const coordinatorV5RunNonce =
   'issue-255-live-anchors-2026-07-30-v5';
+const coordinatorV6RunNonce =
+  'issue-255-live-anchors-2026-07-31-v6';
 
 export function assertIssue255LiveModesMutuallyExclusive(
   env: NodeJS.ProcessEnv,
@@ -197,14 +201,20 @@ export function resolveIssue255LiveEnvelope(
     return { runNonce: argvRunNonce, modality: 'all' as const };
   }
   if (
-    runNonceOverride !== coordinatorV5RunNonce ||
-    modalityOverride !== 'video'
+    runNonceOverride === coordinatorV5RunNonce &&
+    modalityOverride === 'video'
   ) {
-    throw new Error(
-      'Issue 255 live envelope override only permits the coordinator v5 single video retry.',
-    );
+    return { runNonce: runNonceOverride, modality: 'video' as const };
   }
-  return { runNonce: runNonceOverride, modality: 'video' as const };
+  if (
+    runNonceOverride === coordinatorV6RunNonce &&
+    modalityOverride === 'image'
+  ) {
+    return { runNonce: runNonceOverride, modality: 'image_text' as const };
+  }
+  throw new Error(
+    'Issue 255 live envelope override only permits an approved coordinator retry.',
+  );
 }
 
 function positiveInteger(value: string | undefined, label: string) {
@@ -336,10 +346,23 @@ export async function runIssue255LiveCollectorCli(input: {
         receipts,
       }),
     ] as const;
+    if (envelope.modality === 'image_text') {
+      return await collectIssue255LiveImageV6({
+        database: business,
+        executor: executors[1]!,
+        foundation,
+        providerCapMicros: launch.providerCapMicros,
+        recordedSamples,
+        receipts,
+        runNonce,
+      });
+    }
     return await collectIssue255LiveAnchors({
       database: business,
       executors:
-        envelope.modality === 'video' ? [executors[2]] : executors,
+        envelope.modality === 'video'
+          ? [executors[2]]
+          : executors,
       foundation,
       manifestPath: resolve(effectiveManifestPath),
       providerCapMicros: launch.providerCapMicros,
@@ -401,6 +424,17 @@ export async function runIssue255LiveReconciliationCli(input: {
       return await recoverIssue255CoordinatorVideoV5({
         receipts,
         options: { ...preflight.tuzi, assetFetch },
+        manifestPath: resolve(manifestPath),
+      });
+    }
+    if (runNonce === coordinatorV6RunNonce) {
+      if (!manifestPath) {
+        throw new Error(
+          'Issue 255 v6 manifest closeout requires its final manifest path.',
+        );
+      }
+      return await writeIssue255LiveAnchorsV6Manifest({
+        receipts,
         manifestPath: resolve(manifestPath),
       });
     }

@@ -35,7 +35,7 @@ import {
 const modalities = ['copy', 'image_text', 'video'] as const;
 const approvedQuoteMicros = {
   copy: 100_000,
-  image_text: 500_000,
+  image_text: 50_000,
   video: 1_620_000,
 } as const;
 const COPY_GENERATION_REQUEST_BYTE_LIMIT = 4_096;
@@ -43,7 +43,10 @@ const COPY_INSTRUCTIONS =
   'Return exactly 3 materially distinct beauty-business copy candidates. Every candidate must include a non-empty title, body, and conversionHook.';
 
 type Modality = (typeof modalities)[number];
-type ProviderUsageEvidenceKind = 'provider_reported' | 'response_derived';
+type ProviderUsageEvidenceKind =
+  | 'provider_reported'
+  | 'response_derived'
+  | 'price_card_reconciled';
 
 type ProviderTerminal = {
   providerTaskRef: string;
@@ -611,6 +614,167 @@ export async function recoverIssue255LiveManifest(input: {
   return manifest;
 }
 
+export async function collectIssue255LiveImageV6(input: {
+  database: Pool;
+  executor: Issue255LiveExecutor;
+  foundation: FoundationStore;
+  providerCapMicros: number;
+  recordedSamples: unknown;
+  receipts: PostgresIssue255LiveReceiptRepository;
+  runNonce: string;
+}) {
+  const runNonce = z
+    .literal('issue-255-live-anchors-2026-07-31-v6')
+    .parse(input.runNonce);
+  const recordedMatrixDigest = canonicalRecordedMatrixDigest(
+    assertIssue255RecordedMatrix(input.recordedSamples),
+  );
+  const providerCapMicros = z
+    .number()
+    .int()
+    .positive()
+    .max(5_000_000)
+    .parse(input.providerCapMicros);
+  const executor = validateExecutors(
+    [input.executor],
+    Math.min(3_600_000, 5_000_000, providerCapMicros),
+  )[0]!;
+  if (
+    executor.modality !== 'image_text' ||
+    executor.adapter !== 'tuzi-image' ||
+    executor.quoteAmountMicros !== approvedQuoteMicros.image_text
+  ) {
+    throw new Error(
+      'Issue 255 v6 live image collector requires the frozen single image executor.',
+    );
+  }
+  await input.receipts.claimOrResumeLiveRunOwner(runNonce);
+  const workspaceId =
+    `issue-255-live-${hash(runNonce).slice(0, 24)}`;
+  const effectId = hash(`issue255/v1\0${runNonce}\0image_text`);
+  const requestFingerprint = hash(
+    JSON.stringify({
+      adapter: executor.adapter,
+      catalogModelId: executor.catalogModelId,
+      configurationRevision: executor.configurationRevision,
+      credentialRevision: executor.credentialRevision,
+      deploymentId: executor.deploymentId,
+      effectId,
+      modality: executor.modality,
+      priceRevision: executor.priceRevision,
+      promptHash: executor.promptHash,
+      quoteAmountMicros: executor.quoteAmountMicros,
+      quoteBasis: executor.quoteBasis,
+      recordedMatrixDigest,
+    }),
+  );
+  const providerJobId = `issue-255-job-${effectId.slice(0, 32)}`;
+  const providerAttemptId = `issue-255-attempt-${effectId.slice(0, 28)}`;
+  const providerCostEventId = `issue-255-cost-${effectId.slice(0, 28)}`;
+  const existing = (await input.receipts.listRun(runNonce))[0];
+  if (existing) {
+    assertResumableReceipt({
+      executor,
+      receipt: existing,
+      workspaceId,
+      effectId,
+      requestFingerprint,
+      providerJobId,
+      providerAttemptId,
+      providerCostEventId,
+      recordedMatrixDigest,
+    });
+    return existing;
+  }
+  await input.receipts.claim({
+    workspaceId,
+    runNonce,
+    modality: executor.modality,
+    effectId,
+    requestFingerprint,
+    adapter: executor.adapter,
+    deploymentId: executor.deploymentId,
+    providerIdempotencyKey: effectId,
+    providerJobId,
+    providerAttemptId,
+    providerCostEventId,
+    recordedMatrixDigest,
+    reservedAmountMicros: executor.quoteAmountMicros,
+    priceRevision: executor.priceRevision,
+    exchangeRevision: 'native-cny-v1',
+  });
+  await prepareProviderLedger({
+    database: input.database,
+    deploymentId: executor.deploymentId,
+    foundation: input.foundation,
+    jobId: providerJobId,
+    modality: executor.modality,
+    priceRevision: executor.priceRevision,
+    providerAttemptId,
+    workspaceId,
+  });
+  let terminal: ProviderTerminal;
+  try {
+    terminal = await executor.execute({
+      effectId,
+      requestFingerprint,
+      runNonce,
+    });
+  } catch (error) {
+    await input.receipts.recordExecutionFailure({
+      runNonce,
+      modality: executor.modality,
+      effectId,
+      requestFingerprint,
+      ...providerFailureDetails(error),
+    });
+    throw error;
+  }
+  if (
+    terminal.amountMicros <= 0 ||
+    terminal.amountMicros > executor.quoteAmountMicros ||
+    !hasTrustedTerminalUsage(executor, terminal)
+  ) {
+    await input.receipts.recordExecutionFailure({
+      runNonce,
+      modality: executor.modality,
+      effectId,
+      requestFingerprint,
+      errorCode: 'terminal_cost_or_usage_invalid',
+      errorMessage: 'Provider terminal cost or usage was not trustworthy.',
+    });
+    throw new Error(
+      'Issue 255 image v6 terminal cost or usage is not trustworthy.',
+    );
+  }
+  await settleProviderLedger({
+    amountMicros: terminal.amountMicros,
+    adapter: executor.adapter,
+    deploymentId: executor.deploymentId,
+    effectId,
+    foundation: input.foundation,
+    jobId: providerJobId,
+    priceRevision: executor.priceRevision,
+    providerIdempotencyKey: effectId,
+    providerAttemptId,
+    providerCostEventId,
+    providerTaskRef: terminal.providerTaskRef,
+    requestFingerprint,
+    usage: terminal.usage,
+    usageEvidenceKind: terminal.usageEvidenceKind,
+    workspaceId,
+  });
+  return input.receipts.completeFromProviderLedger(
+    {
+      runNonce,
+      modality: executor.modality,
+      effectId,
+      requestFingerprint,
+    },
+    input.foundation,
+  );
+}
+
 async function reserveManifestPaths(
   manifestPath: string,
   pendingPath: string,
@@ -918,31 +1082,22 @@ export function issue255TuziExecutor(input: {
         });
       }
       if (isImage) {
-        if (
-          submitted.providerCost.currency !== 'CNY' ||
-          (submitted.usageEvidenceKind !== 'provider_reported' &&
-            submitted.usageEvidenceKind !== 'response_derived')
-        ) {
+        if (submitted.providerCost.currency !== 'CNY') {
           throw new Error(
-            'Issue 255 image terminal lacks trusted per-image usage.',
+            'Issue 255 image terminal returned an unexpected currency.',
           );
         }
+        const hasProviderUsage =
+          submitted.usageEvidenceKind === 'provider_reported';
         return {
           providerTaskRef: submitted.taskRef,
-          amountMicros: proratedPriceMicros(
-            [
-              [
-                priceMicros,
-                requiredUsageQuantity(
-                  submitted.providerCost.usage.mediaUnits,
-                  'Tuzi image media units',
-                ),
-              ],
-            ],
-            1,
-          ),
-          usage: submitted.providerCost.usage,
-          usageEvidenceKind: submitted.usageEvidenceKind,
+          amountMicros: quoteAmountMicros,
+          usage: hasProviderUsage
+            ? submitted.providerCost.usage
+            : { mediaUnits: 1 },
+          usageEvidenceKind: hasProviderUsage
+            ? 'provider_reported'
+            : 'price_card_reconciled',
         };
       }
       const statusSequence: NonNullable<ProviderTerminal['statusSequence']> = [];
@@ -1046,12 +1201,14 @@ function validateExecutors(
     .parse(input);
   if (
     (parsed.length !== 1 && parsed.length !== 3) ||
-    (parsed.length === 1 && parsed[0]?.modality !== 'video') ||
+    (parsed.length === 1 &&
+      parsed[0]?.modality !== 'video' &&
+      parsed[0]?.modality !== 'image_text') ||
     (parsed.length === 3 &&
       modalities.some((modality, index) => parsed[index]?.modality !== modality))
   ) {
     throw new Error(
-      'Issue 255 live executors must be the complete fixed matrix or one video retry.',
+      'Issue 255 live executors must be the complete fixed matrix or one approved single-modality retry.',
     );
   }
   const seenModalities = new Set<Modality>();
@@ -1116,6 +1273,14 @@ function hasTrustedTerminalUsage(
   terminal: ProviderTerminal,
 ) {
   if (terminal.usageEvidenceKind === 'provider_reported') return true;
+  if (
+    executor.modality === 'image_text' &&
+    terminal.usageEvidenceKind === 'price_card_reconciled' &&
+    terminal.usage.mediaUnits === 1 &&
+    terminal.amountMicros === executor.quoteAmountMicros
+  ) {
+    return true;
+  }
   return (
     executor.modality === 'image_text' &&
     terminal.usageEvidenceKind === 'response_derived' &&
@@ -1236,14 +1401,19 @@ async function settleProviderLedger(input: {
     id: input.providerCostEventId,
     workspaceId: input.workspaceId,
     attemptId: input.providerAttemptId,
-    stage: 'observed',
+    stage:
+      input.usageEvidenceKind === 'price_card_reconciled'
+        ? 'reconciled'
+        : 'observed',
     amountMicros: input.amountMicros,
     currency: 'CNY',
     unit: 'issue255_live_sample',
     evidence:
       input.usageEvidenceKind === 'provider_reported'
         ? 'issue255_provider_reported_terminal'
-        : 'issue255_response_derived_image_terminal',
+        : input.usageEvidenceKind === 'price_card_reconciled'
+          ? 'issue255_tuzi_image_price_card_reconciliation'
+          : 'issue255_response_derived_image_terminal',
     payer: 'platform',
     billingStatus: 'known',
     actorId: 'issue-255-live-collector',
@@ -1273,7 +1443,10 @@ async function settleProviderLedger(input: {
       },
       providerCost: {
         id: input.providerCostEventId,
-        status: 'observed',
+        status:
+          input.usageEvidenceKind === 'price_card_reconciled'
+            ? 'reconciled'
+            : 'observed',
         amountMicros: input.amountMicros,
         currency: 'CNY',
         usage: input.usage,
@@ -1340,11 +1513,10 @@ function manifestSample(
     usageEvidenceKind: terminal.providerCost.usageEvidenceKind,
     ...(terminal.providerCost.usageEvidenceKind === 'response_derived'
       ? { evidenceGap: 'tuzi_image_response_omits_usage' as const }
-      : terminal.providerCost.usageEvidenceKind === 'price_card_reconciled'
-        ? {
-            evidenceGap:
-              'tuzi_image_usage_missing_and_task_ref_not_persisted' as const,
-          }
+      : executor.modality === 'image_text' &&
+          terminal.providerCost.usageEvidenceKind ===
+            'price_card_reconciled'
+        ? { evidenceGap: 'tuzi_image_response_omits_usage' as const }
       : {}),
     configurationRevision: executor.configurationRevision,
     priceRevision: receipt.priceRevision,

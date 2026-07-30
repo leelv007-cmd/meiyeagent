@@ -19,7 +19,7 @@ const scenarioBands = ['low', 'typical', 'boundary'] as const;
 const seeds = [1, 2, 3] as const;
 const modalityCapMicros = {
   copy: 100_000,
-  image_text: 500_000,
+  image_text: 50_000,
   video: 1_620_000,
 } as const;
 
