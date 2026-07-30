@@ -264,7 +264,8 @@ async function videoFormData(
 ) {
   // Authority: docs/_private/tuzi-api/videos.openapi.yaml
   // - first_frame / last_frame / input_reference are mutually exclusive
-  // - seconds currently buggy upstream — do not send
+  // - seconds is documented as >=4 and <15; v3 live proved that omission
+  //   defaults to unsupported duration=4 for Seedance 1.5 Pro
   // - 1.5 pro does not accept input_reference
   const form = new FormData();
   form.set('model', source.model);
@@ -272,7 +273,10 @@ async function videoFormData(
     'prompt',
     source.content.find((item) => typeof item.text === 'string')?.text ?? ''
   );
-  void source.duration; // keep duration in type for Ark JSON; never map to seconds yet
+  if (source.duration !== 5 && source.duration !== 10) {
+    throw new Error('Tuzi video duration must be 5 or 10 seconds.');
+  }
+  form.set('seconds', String(source.duration));
   const referenceUrls = source.content.flatMap((item) =>
     [item.image_url?.url, item.video_url?.url].filter(
       (url): url is string => typeof url === 'string' && Boolean(url)

@@ -19,6 +19,13 @@ export async function reconcileIssue255LiveRun(input: {
   if (runNonce === 'issue-255-live-anchors-2026-07-30-v2') {
     return [await input.receipts.reconcileLegacyAcceptedImageWithoutTaskRefV2()];
   }
+  if (runNonce === 'issue-255-live-anchors-2026-07-30-v3') {
+    await input.receipts.prepareCoordinatorVideoV3FailedBeforeBilling();
+    return input.receipts.confirmFailedBeforeBilling(
+      runNonce,
+      input.foundation,
+    );
+  }
   const unknown = (await input.receipts.listRun(runNonce)).filter(
     ({ status }) => status === 'unknown',
   );

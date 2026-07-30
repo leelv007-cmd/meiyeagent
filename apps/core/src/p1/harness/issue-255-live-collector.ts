@@ -832,6 +832,7 @@ export function issue255TuziExecutor(input: {
     : {
         durationSeconds: videoQuote!.durationSeconds,
         estimatedTokensPerSecond: videoQuote!.estimatedTokensPerSecond,
+        seconds: videoQuote!.durationSeconds,
       };
   const quoteAmountMicros = isImage
     ? proratedPriceMicros([[priceMicros, 1]], 1)

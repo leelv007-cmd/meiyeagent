@@ -17,8 +17,21 @@ const legacyRejectedWorkspaceId =
 const legacyRejectedEvidenceCommit =
   '695489fe441178431394bb320ad779b28cb9f654';
 const legacyImageRunNonce = 'issue-255-live-anchors-2026-07-30-v2';
-const coordinatorV3RunNonce =
-  'issue-255-live-anchors-2026-07-30-v3';
+const coordinatorV3 = {
+  runNonce: 'issue-255-live-anchors-2026-07-30-v3',
+  workspaceId: 'issue-255-live-0e36ff28fe9e880c0ecaf7b9',
+  effectId:
+    '9f5146a3fd01dd7c869569359677c74b7ac3700e8ad76e2fea729adf340425a1',
+  requestFingerprint:
+    '2e188777d687cf14e893a66e8d4f5476ea6858ee024b13ea0d2f27a5d75cf444',
+  providerJobId: 'issue-255-job-9f5146a3fd01dd7c869569359677c74b',
+  providerAttemptId:
+    'issue-255-attempt-9f5146a3fd01dd7c869569359677',
+  providerCostEventId:
+    'issue-255-cost-9f5146a3fd01dd7c869569359677',
+} as const;
+const coordinatorV4RunNonce =
+  'issue-255-live-anchors-2026-07-30-v4';
 const legacyImageEffectId =
   'd2ccabe63b58ece3404bd27a36e8b811c5b6bf19c80e5f57b005bf7f5351f98e';
 const legacyImageRequestFingerprint =
@@ -33,8 +46,8 @@ const modalityCapMicros = {
   image_text: 500_000,
   video: 1_620_000,
 } as const;
-// v3 envelope by coordinator 2026-07-30.
-const GLOBAL_BILLABLE_AUTHORIZATION_CAP = 4;
+// v4 envelope by coordinator 2026-07-30.
+const GLOBAL_BILLABLE_AUTHORIZATION_CAP = 5;
 
 const claimInputSchema = z
   .object({
@@ -223,6 +236,24 @@ export type Issue255PriceCardReconciledImageLineage = z.infer<
   typeof priceCardReconciledImageLineageSchema
 >;
 
+const failedBeforeBillingProvenanceSchema = z.union([
+  z
+    .object({
+      kind: z.literal('merge_ledger'),
+      commitSha: z.literal(legacyRejectedEvidenceCommit),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('durable_provider_http'),
+      httpStatus: z.literal(451),
+      upstreamStatus: z.literal(400),
+      errorCode: z.literal('invalid_request'),
+      messageSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+    })
+    .strict(),
+]);
+
 const failedBeforeBillingLineageSchema = z
   .object({
     workspaceId: z.string().trim().min(1),
@@ -244,12 +275,7 @@ const failedBeforeBillingLineageSchema = z
       .object({
         reason: z.literal('provider_rejected_before_accept'),
         source: z.literal('provider_execution_terminal'),
-        provenance: z
-          .object({
-            kind: z.literal('merge_ledger'),
-            commitSha: z.literal(legacyRejectedEvidenceCommit),
-          })
-          .strict(),
+        provenance: failedBeforeBillingProvenanceSchema,
       })
       .strict(),
     providerCost: z
@@ -583,7 +609,7 @@ export class PostgresIssue255LiveReceiptRepository {
     return this.locked(
       'issue255-live-run-owner-v1',
       async (client): Promise<'fresh' | 'resumed'> => {
-        const isCoordinatorV3Retry = parsedRunNonce === coordinatorV3RunNonce;
+        const isCoordinatorV4Retry = parsedRunNonce === coordinatorV4RunNonce;
         const existingOwner = await client.query<{ run_nonce: string }>(
           `SELECT run_nonce
              FROM issue255_live_run_owners
@@ -592,7 +618,7 @@ export class PostgresIssue255LiveReceiptRepository {
         );
         if (existingOwner.rows[0]) {
           if (existingOwner.rows[0].run_nonce !== parsedRunNonce) {
-            if (!isCoordinatorV3Retry) {
+            if (!isCoordinatorV4Retry) {
               throw new Error('Issue 255 live run owner is already durably claimed.');
             }
             await client.query(
@@ -604,7 +630,7 @@ export class PostgresIssue255LiveReceiptRepository {
             );
             return 'fresh';
           }
-          if (isCoordinatorV3Retry) return 'resumed';
+          if (isCoordinatorV4Retry) return 'resumed';
           const foreignHistory = await client.query<{ count: string }>(
             `SELECT (
                (SELECT COUNT(*)
@@ -638,7 +664,7 @@ export class PostgresIssue255LiveReceiptRepository {
                WHERE status <> 'failed_before_billing')::bigint AS active_receipt_count`,
         );
         if (
-          !isCoordinatorV3Retry &&
+          !isCoordinatorV4Retry &&
           (Number(result.rows[0]?.billable_count ?? 0) !== 0 ||
             Number(result.rows[0]?.active_receipt_count ?? 0) !== 0)
         ) {
@@ -958,7 +984,7 @@ export class PostgresIssue255LiveReceiptRepository {
         GLOBAL_BILLABLE_AUTHORIZATION_CAP
       ) {
         throw new Error(
-          'Issue 255 permits exactly four billable generation POSTs globally.',
+          'Issue 255 permits exactly five billable generation POSTs globally.',
         );
       }
       if (Number(submissionCounts.rows[0]?.run_count ?? 0) >= 3) {
@@ -1513,6 +1539,141 @@ export class PostgresIssue255LiveReceiptRepository {
     });
   }
 
+  async prepareCoordinatorVideoV3FailedBeforeBilling() {
+    return this.locked(coordinatorV3.runNonce, async (client) => {
+      const selected = await client.query<ReceiptRow>(
+        `SELECT *
+           FROM issue255_live_generation_receipts
+          WHERE run_nonce = $1
+            AND modality = 'video'
+            AND workspace_id = $2
+            AND effect_id = $3
+            AND request_fingerprint = $4
+            AND adapter = 'tuzi-video'
+            AND deployment_id = 'seedance-1-5-pro-tuzi-relay'
+            AND provider_idempotency_key = $3
+            AND provider_job_id = $5
+            AND provider_attempt_id = $6
+            AND provider_cost_event_id = $7
+            AND status = 'unknown'
+            AND generation_submit_count = 1
+            AND provider_http_request_count = 1
+            AND provider_http_status = 451
+            AND failure_error_code = 'invalid_request'
+            AND reconciliation_reason = 'provider_failure_recorded'
+          FOR UPDATE`,
+        [
+          coordinatorV3.runNonce,
+          coordinatorV3.workspaceId,
+          coordinatorV3.effectId,
+          coordinatorV3.requestFingerprint,
+          coordinatorV3.providerJobId,
+          coordinatorV3.providerAttemptId,
+          coordinatorV3.providerCostEventId,
+        ],
+      );
+      const receipt = selected.rows[0];
+      if (!receipt) {
+        throw new Error(
+          'Issue 255 v3 reconciliation does not match its frozen durable receipt.',
+        );
+      }
+      const failureMessage = receipt.failure_error_message ?? '';
+      if (
+        !failureMessage.includes('InvalidParameter') ||
+        !failureMessage.includes('specified duration is not supported') ||
+        !failureMessage.includes('doubao-seedance-1-5-pro') ||
+        !failureMessage.includes('"code":400')
+      ) {
+        throw new Error(
+          'Issue 255 v3 reconciliation requires the trusted duration rejection.',
+        );
+      }
+      const costs = await client.query<{ count: string }>(
+        `SELECT COUNT(*)::bigint AS count
+           FROM p1_provider_cost_events
+          WHERE workspace_id = $1
+            AND attempt_id = $2`,
+        [receipt.workspace_id, receipt.provider_attempt_id],
+      );
+      if (Number(costs.rows[0]?.count ?? 0) !== 0) {
+        throw new Error(
+          'Issue 255 v3 reconciliation requires zero durable ProviderCost events.',
+        );
+      }
+      const result = {
+        status: 'failed',
+        issue255: {
+          workspaceId: receipt.workspace_id,
+          effectId: receipt.effect_id,
+          requestFingerprint: receipt.request_fingerprint,
+          adapter: receipt.adapter,
+          deploymentId: receipt.deployment_id,
+          providerIdempotencyKey: receipt.provider_idempotency_key,
+          providerJobId: receipt.provider_job_id,
+          providerAttemptId: receipt.provider_attempt_id,
+          providerCostEventId: receipt.provider_cost_event_id,
+        },
+        failure: {
+          acceptance: 'rejected_before_accept',
+          reason: 'provider_rejected_before_accept',
+          source: 'provider_execution_terminal',
+          provenance: {
+            kind: 'durable_provider_http',
+            httpStatus: 451,
+            upstreamStatus: 400,
+            errorCode: 'invalid_request',
+            messageSha256: createHash('sha256')
+              .update(failureMessage)
+              .digest('hex'),
+          },
+        },
+      } as const;
+      const attempt = await client.query<{ id: string }>(
+        `UPDATE p1_provider_attempts
+            SET acceptance = 'rejected_before_accept',
+                status = 'failed',
+                updated_at = now()
+          WHERE workspace_id = $1
+            AND id = $2
+            AND job_id = $3
+            AND deployment_id = $4
+            AND acceptance = 'pending'
+            AND status = 'pending'
+            AND provider_task_ref IS NULL
+        RETURNING id`,
+        [
+          receipt.workspace_id,
+          receipt.provider_attempt_id,
+          receipt.provider_job_id,
+          receipt.deployment_id,
+        ],
+      );
+      const job = await client.query<{ id: string }>(
+        `UPDATE p1_generation_jobs
+            SET status = 'failed',
+                result = $3::jsonb,
+                updated_at = now()
+          WHERE workspace_id = $1
+            AND id = $2
+            AND status = 'running'
+            AND result IS NULL
+        RETURNING id`,
+        [
+          receipt.workspace_id,
+          receipt.provider_job_id,
+          JSON.stringify(result),
+        ],
+      );
+      if (!attempt.rows[0] || !job.rows[0]) {
+        throw new Error(
+          'Issue 255 v3 reconciliation requires its untouched pending provider lineage.',
+        );
+      }
+      return result;
+    });
+  }
+
   async confirmFailedBeforeBilling(
     runNonce: string,
     providerLedger: Issue255ProviderLedgerReader,
@@ -1817,7 +1978,7 @@ export class PostgresIssue255LiveReceiptRepository {
       GLOBAL_BILLABLE_AUTHORIZATION_CAP
     ) {
       throw new Error(
-        'Issue 255 permits exactly four billable generation POSTs globally.',
+        'Issue 255 permits exactly five billable generation POSTs globally.',
       );
     }
     const runBudget = await client.query<{ amount_micros: string }>(
@@ -2137,12 +2298,7 @@ async function readFailedBeforeBillingLineage(
           acceptance: z.literal('rejected_before_accept'),
           reason: z.literal('provider_rejected_before_accept'),
           source: z.literal('provider_execution_terminal'),
-          provenance: z
-            .object({
-              kind: z.literal('merge_ledger'),
-              commitSha: z.literal(legacyRejectedEvidenceCommit),
-            })
-            .strict(),
+          provenance: failedBeforeBillingProvenanceSchema,
         })
         .strict(),
     })
