@@ -1,8 +1,8 @@
 # Issue #260 `copywriting` 转译开荒预案
 
-> 状态：`preflight`。基线 `main@cc04918ddb11f5cd5013ee085a369047538e218c`。
-> 本文只完成零 rebase 面的人工蒸馏设计；未写 PG、未建 Skill、未绑定
-> Recipe、未运行真实生成，不能作为 #260 验收证据。
+> 状态：后端切片已验证。人工蒸馏基线
+> `main@cc04918ddb11f5cd5013ee085a369047538e218c`；实现与证据基线
+> `issue-260@d3b4ae24`。recorded 证据不冒充 live provider 或前台验收。
 
 ## 1. 固定来源与许可
 
@@ -62,20 +62,20 @@
 - `natural-transitions.md` 只保留自然转折、前置重点和 AI 腔禁用项，
   不常驻完整短语词典。
 
-## 4. 目标产物草案
+## 4. 后端产物
 
 - `name`：`beauty-copywriting`
 - 层级：平台层；行业层首批保持空
-- `description` 草案：
+- `description`：
 
   > 为美业门店写作、重写或改善可直接发布的营销文案。商家提出“写一条小红书
   > 文案”“给团购活动写朋友圈”“标题不够抓人”“把这段说得更像顾客会说的”
   > “换一个更能引导预约的版本”时使用。先用已确认的门店事实、素材、表达身份
   > 与转化动作；信息不足时一次性补问，绝不编造价格、效果、资质、评价或授权。
 
-- `instruction`：仅装上节七条方法论、载体差异和诚实写作边界；
-- 标准 frontmatter 与治理 sidecar：等待 #258 的实际 schema 后适配，不按当前
-  `SKILL_STAGES` / `evalSuiteRef` 旧形态预写；
+- `instruction`：仅装上节七条方法论、载体差异和诚实写作边界，定义在
+  `apps/core/src/p1/skills/platform-recipes.ts`；
+- 标准 frontmatter 与治理 sidecar：已适配 #258 的 v2 形态；
 - prompt：仅引用 Langfuse 位点；不得把基础 prompt 正文写进 Skill；
 - 模型：只声明能力，不写模型 ID、部署名或供应商；
 - 来源/许可：使用第 1 节固定值；
@@ -83,7 +83,7 @@
 
 ## 5. 第一条 Skill 开荒顺序
 
-正式前置合入后，按以下顺序逐步留证：
+按以下顺序逐步留证；本轮完成 1–3、6–7 的后端部分，4–5 等前台锁释放：
 
 1. 选一张已发布的 `copy` Recipe 宿主，记录非缺省
    `workflowRevisionRef`、Recipe revision 与 Surface revision；
@@ -101,15 +101,15 @@
 8. 质量改善、无改善或变差均如实记录。若输出无可检测差异，删除死库存，不为
    证明有效修改 scorer 或 golden。
 
-## 6. 待回填的行为证据
+## 6. 行为证据与剩余边界
 
 | 门 | 当前 | 正式证据 |
 | --- | --- | --- |
-| #266、#242-L1、#256、#258、#259 合入 | 阻塞 | 合入 SHA + 上游关票断言实跑 |
-| 生命周期五命令 | 未跑 | 生产入口日志 + PG 状态 + 重启重读，5/5 |
-| 平台层存储 | 未写 | catalog/revision/sidecar 查询；行业层 0 条 |
-| 确定性触发双落位 | 未写 | bound 正控、unbound 负控、Recipe validate |
-| D-139 商家入口 | 前端语义锁 | 真浏览器点卡、提交、交付 |
-| 真实注入 | 未跑 | refs/hash/receipt + materialized instruction + 真实输出 |
-| promptfoo A/B | #242-L1 阻塞 | 同三轴、单变量 paired EvalRun |
-| 保留/删除判断 | 未判 | 原始分数、人工双盲记录、结论 |
+| #266、#242-L1、#256、#258、#259、#254、#262 | 已满足 | ledger-only gate：`backend=ready` |
+| 生命周期五命令 | 后端已过 | fresh PG：define/accept/bind/rollback/deployment，重启重读；repository 套件 10/0 |
+| 平台层存储 | 后端已过 | copywriting 与 skill-creator 均写平台层 catalog/revision；行业层未写 |
+| 确定性触发 | 后端已过 | `execution_selection` 命中 rollback 后 revision；skill-creator 在 #251 前保持 unbound |
+| D-139 商家入口 | 阻塞 | frontend gate 仍缺 #253FE；本票未越界改前台 |
+| 生成注入 | recorded 已过 | resolver receipt 与模型请求均含精确 Skill revision/hash/materialized instruction；非 live provider |
+| promptfoo A/B | recorded 已过 | 正门 1/0/0；control 0/1/0、exit 100；唯一变量为 `skillInstructions`，本条 fixture delta = +3 |
+| 保留/删除判断 | 暂留候选 | recorded fixture 可测改善不能证明 live 价值；待真实前台/provider 样本后裁定 |
