@@ -44,13 +44,31 @@ test(
 
     try {
       await repository.migrate();
-      const proposed = await service.start(context, {
+      const waiting = await service.start(context, {
         catalogRevision: 'catalog.copy@3',
         dbosWorkflowId: taskId,
         sessionId,
         sourceConversationId: `conversation-${suffix}`,
         taskId,
         workflowRevision: 7,
+      }) as StoreWorkflowCaptureSession;
+      assert.equal(waiting.status, 'awaiting_merchant');
+
+      const proposed = await service.answer(context, {
+        items: [
+          {
+            field: 'corrections',
+            result: { state: 'answer', values: ['去掉夸张承诺'] },
+          },
+          {
+            field: 'inputOutputFormats',
+            result: {
+              state: 'answer',
+              values: ['已确认事实到小红书短文'],
+            },
+          },
+        ],
+        sessionId,
       }) as StoreWorkflowCaptureSession;
       assert.equal(proposed.status, 'proposed');
       assert.ok(proposed.proposalRef);
@@ -98,7 +116,13 @@ test(
       );
       assert.deepEqual(
         traces.rows.map(({ event_type }) => event_type),
-        ['read_context', 'proposed', 'merchant_confirmed', 'recorded'],
+        [
+          'read_context',
+          'ask_merchant',
+          'proposed',
+          'merchant_confirmed',
+          'recorded',
+        ],
       );
       for (const trace of traces.rows) {
         assert.equal(trace.task_id, taskId);
@@ -136,12 +160,13 @@ class PostgresCapturePrimitivePort implements AgentPrimitiveExecutionPort {
     if (input.primitiveId === 'read_context') {
       return {
         workflowCapture: {
-          corrections: ['去掉夸张承诺'],
-          inputOutputFormats: ['已确认事实到小红书短文'],
           steps: ['读取事实', '写一个主推荐', '检查红线'],
           tools: ['read_context', 'generate', 'check'],
         },
       };
+    }
+    if (input.primitiveId === 'ask_merchant') {
+      return { requestRef: `${input.serverContext.taskId}:question` };
     }
     if (input.primitiveId === 'record') {
       const modelInput = input.modelInput as Pick<

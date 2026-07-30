@@ -153,6 +153,16 @@ test('missing capture fields are asked once and non-merchants or mismatched DBOS
   await execute(module, CONTEXT, 'store_workflow_capture_confirm', {
     sessionId: START.sessionId,
   });
+  assert.deepEqual(
+    repository.traces.map(({ eventType }) => eventType),
+    [
+      'read_context',
+      'ask_merchant',
+      'proposed',
+      'merchant_confirmed',
+      'recorded',
+    ],
+  );
   assert.equal(
     (await query(
       module,
