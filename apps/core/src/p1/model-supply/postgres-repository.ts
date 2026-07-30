@@ -70,6 +70,32 @@ interface PersistedJobReadRow {
   latency_ms: number | string | null;
 }
 
+function assertPublishedCatalogExecutionFacts(revision: CatalogRevision) {
+  const missing = new Set<string>();
+  for (const deployment of revision.payload.deployments) {
+    if (!deployment.executionChannelId?.trim()) {
+      missing.add('deployment.executionChannelId');
+    }
+    if (!deployment.pricingTier) {
+      missing.add('deployment.pricingTier');
+    }
+  }
+  for (const price of revision.payload.prices) {
+    if (!price.executionChannelId?.trim()) {
+      missing.add('price.executionChannelId');
+    }
+    if (!price.pricingTier) {
+      missing.add('price.pricingTier');
+    }
+  }
+  if (missing.size > 0) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      `Published catalog revision ${revision.id} is missing required execution facts: ${[...missing].join(', ')}.`,
+    );
+  }
+}
+
 function terminalJobTiming(result: ModelSupplyResult): {
   endedAt: string | null;
   latencyMs: number | null;
@@ -407,7 +433,9 @@ export class PostgresModelSupplyRepository {
         WHERE heads.workspace_id = $1 AND revisions.stage = 'published'`,
       [workspaceId]
     );
-    return result.rows[0]?.revision ?? null;
+    const revision = result.rows[0]?.revision ?? null;
+    if (revision) assertPublishedCatalogExecutionFacts(revision);
+    return revision;
   }
 
   async setCurrentPublishedCatalogRevision(

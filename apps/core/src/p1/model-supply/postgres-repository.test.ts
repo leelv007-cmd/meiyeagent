@@ -511,6 +511,9 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
         prices: [
           {
             id: `catalog-cas-price-${revision}`,
+            catalogModelId: 'llm-openai',
+            executionChannelId: 'channel-openai-direct',
+            pricingTier: 'standard',
             currency: 'CNY',
             amount: revision,
             revision,
@@ -782,6 +785,9 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
         prices: [
           {
             id: `copy-price-v${priceRevision}`,
+            catalogModelId: 'llm-openai',
+            executionChannelId: 'channel-openai-direct',
+            pricingTier: 'standard',
             currency: 'CNY',
             amount: priceRevision,
             revision: priceRevision,
