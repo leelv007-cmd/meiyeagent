@@ -30,7 +30,7 @@
       "status": "known_red",
       "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
       "ticket": "#269",
-      "note": "One enqueued row yields claimed:2/delivered:2 after a repository restart. Reproduces isolated on a pristine database under UTC and Asia/Shanghai. Red since aec25cdc introduced the scanner."
+      "note": "One enqueued row yields claimed:2/delivered:2 after a repository restart, reproduced isolated on a pristine database. Cause is the test's reliance on the real wall clock (firstAttemptAt = new Date()), not duplicate delivery: the chained next-day task is already due once the wall clock passes the hard-coded business date. Coordinator correction: an earlier note here claimed 'red since aec25cdc', which was an unverified inference — pinning the dates to today makes the whole file green, so it passed on the day it landed and rotted the next."
     },
     "apps/core/src/p1/due-delivery/task-recall-producer.postgres.test.ts": {
       "status": "unverified",
