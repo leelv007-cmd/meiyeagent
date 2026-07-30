@@ -1,6 +1,9 @@
 import type { HarnessStage } from '@meiye/contracts';
 
-import type { HarnessFrozenPrompt } from '../harness/langfuse-prompts.js';
+import type {
+  HarnessFrozenPrompt,
+  HarnessPromptKey,
+} from '../harness/langfuse-prompts.js';
 import type { SkillFrontmatter } from './skill-format.js';
 
 export const SKILL_BINDING_MODES = [
@@ -224,7 +227,7 @@ export interface SkillPromptSnapshot extends SkillPromptReference {
 
 export interface SkillPromptSnapshotPort {
   capture(reference: SkillPromptReference): Promise<HarnessFrozenPrompt>;
-  reference?(slot: 'intentNaming'): Promise<HarnessFrozenPrompt>;
+  reference?(slot: HarnessPromptKey): Promise<HarnessFrozenPrompt>;
 }
 
 export class SkillPromptAuthorityUnavailableError extends Error {

@@ -380,7 +380,7 @@ export class SkillService {
     };
   }
 
-  async promptReference(slot: 'intentNaming') {
+  async promptReference(slot: 'intentNaming' | 'copyGeneration') {
     if (!this.promptSnapshots?.reference) {
       throw new P1DomainError(
         'INVALID_STATE',

@@ -113,6 +113,55 @@ test('production Skill inventory matches the explicit contract snapshot', () => 
   ]);
 });
 
+test('the Skill operator can pin the copy-generation prompt authority', async () => {
+  const content = 'Generate grounded copy from the accepted brief.';
+  const prompt = {
+    content,
+    contentHash: createHash('sha256').update(content).digest('hex'),
+    isFallback: false,
+    label: 'production',
+    name: 'harness/copy-generation',
+    source: 'langfuse' as const,
+    version: '17',
+  };
+  const service = new SkillService(
+    new MemorySkillRepository(),
+    () => NOW,
+    {
+      async capture() {
+        return prompt;
+      },
+      async reference(slot) {
+        assert.equal(slot, 'copyGeneration');
+        return prompt;
+      },
+    },
+  );
+
+  const result = await new SkillFoundationModule(service).query({
+    context: {
+      actor: 'admin',
+      correlationId: 'corr-copy-generation-prompt',
+      userId: 'operator-copy-generation-prompt',
+      workspaceId: 'workspace-copy-generation-prompt',
+    },
+    input: {
+      action: 'skill_prompt_reference',
+      payload: { slot: 'copyGeneration' },
+    },
+  });
+
+  assert.deepEqual(result, {
+    contentHash: prompt.contentHash,
+    eligibleForAcceptance: true,
+    isFallback: false,
+    label: 'production',
+    name: 'harness/copy-generation',
+    source: 'langfuse',
+    version: '17',
+  });
+});
+
 test('the real Foundation entry admits a revision only through registered schemas', async () => {
   const repository = new MemorySkillRepository();
   const instruction = 'Use grounded daily-industry context.';
