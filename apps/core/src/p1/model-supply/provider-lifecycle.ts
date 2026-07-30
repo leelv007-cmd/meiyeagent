@@ -250,10 +250,13 @@ export interface MediaProviderLifecyclePort {
   poll(request: MediaProviderEffectRequest & { taskRef: string }): Promise<{
     status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown';
     providerCost: Omit<ProviderCost, 'id' | 'status'>;
+    usageEvidenceKind?: 'provider_reported' | 'response_derived' | 'estimated';
     errorCode?: string;
     retryable?: boolean;
     error?: string;
     sourceExpiresAt?: string;
+    providerCreatedAtEpochSeconds?: number;
+    providerSignedUrlTimestamp?: string;
   }>;
   download(request: MediaProviderEffectRequest & { taskRef: string }): Promise<{
     bytes: Uint8Array;

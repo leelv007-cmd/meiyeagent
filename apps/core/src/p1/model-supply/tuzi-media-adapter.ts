@@ -36,6 +36,7 @@ const TUZI_VIDEO_STATUS = {
   in_progress: 'running',
   completed: 'succeeded',
   failed: 'failed',
+  unknown: 'queued',
 } as const;
 
 function ownedReference(
@@ -240,12 +241,35 @@ async function normalizeVideoResponse(response: Response, url: string) {
   const status =
     TUZI_VIDEO_STATUS[body.status as keyof typeof TUZI_VIDEO_STATUS] ??
     body.status;
+  const providerCreatedAt =
+    typeof body.created_at === 'number' &&
+    Number.isSafeInteger(body.created_at) &&
+    body.created_at >= 0
+      ? body.created_at
+      : undefined;
+  let providerSignedUrlTimestamp: string | undefined;
+  if (status === 'succeeded' && typeof body.video_url === 'string') {
+    try {
+      const candidate = new URL(body.video_url).searchParams.get('X-Tos-Date');
+      if (candidate && /^\d{8}T\d{6}Z$/u.test(candidate)) {
+        providerSignedUrlTimestamp = candidate;
+      }
+    } catch {
+      // The Ark layer still rejects a completed task without usable content.
+    }
+  }
   const headers = new Headers(response.headers);
   headers.delete('content-length');
   return Response.json(
     {
       ...body,
       status,
+      ...(providerCreatedAt !== undefined
+        ? { provider_created_at: providerCreatedAt }
+        : {}),
+      ...(providerSignedUrlTimestamp
+        ? { provider_signed_url_timestamp: providerSignedUrlTimestamp }
+        : {}),
       ...(status === 'succeeded'
         ? { content: { video_url: `${url}/content` } }
         : {}),

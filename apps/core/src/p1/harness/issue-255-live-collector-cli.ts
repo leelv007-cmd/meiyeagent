@@ -16,7 +16,10 @@ import {
   issue255VideoQuote,
   recoverIssue255LiveManifest,
 } from './issue-255-live-collector.js';
-import { reconcileIssue255LiveRun } from './issue-255-live-reconciliation.js';
+import {
+  reconcileIssue255LiveRun,
+  recoverIssue255CoordinatorVideoV5,
+} from './issue-255-live-reconciliation.js';
 import { PostgresIssue255LiveReceiptRepository } from './issue-255-postgres-live-receipt.js';
 
 const coordinatorV5RunNonce =
@@ -358,7 +361,7 @@ export async function runIssue255LiveReconciliationCli(input: {
       'Issue 255 reconciliation remains disabled without explicit recovery authorization.',
     );
   }
-  const [runNonce] = input.argv;
+  const [runNonce, manifestPath] = input.argv;
   if (!runNonce?.trim()) {
     throw new Error(
       'Usage: issue-255-live-reconciliation <run-nonce>',
@@ -376,6 +379,31 @@ export async function runIssue255LiveReconciliationCli(input: {
     const receipts = new PostgresIssue255LiveReceiptRepository(business);
     await foundation.migrate();
     await receipts.migrate();
+    if (runNonce === coordinatorV5RunNonce) {
+      if (!manifestPath) {
+        throw new Error(
+          'Issue 255 v5 reconciliation requires its final manifest path.',
+        );
+      }
+      if (!isIssue255SharedE2eLockHeld()) {
+        throw new Error(
+          'Issue 255 v5 GET-only recovery requires the shared e2e lock.',
+        );
+      }
+      const preflight = preflightIssue255LiveRuntime(input.env);
+      const assetFetch = new ProviderSafeFetch({
+        allowedHosts: [
+          new URL(preflight.tuzi.baseUrl).hostname,
+          ...(preflight.tuzi.assetSourceHosts ?? []),
+        ],
+        maxRedirects: 0,
+      });
+      return recoverIssue255CoordinatorVideoV5({
+        receipts,
+        options: { ...preflight.tuzi, assetFetch },
+        manifestPath: resolve(manifestPath),
+      });
+    }
     return await reconcileIssue255LiveRun({
       foundation,
       receipts,

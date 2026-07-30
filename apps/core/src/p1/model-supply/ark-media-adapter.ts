@@ -79,6 +79,8 @@ interface ArkVideoTask {
   usage?: { completion_tokens?: number; output_tokens?: number };
   error?: { code?: string; message?: string };
   updated_at?: number | string;
+  provider_created_at?: number;
+  provider_signed_url_timestamp?: string;
 }
 
 interface ArkTaskReference {
@@ -507,7 +509,9 @@ export class ArkMediaExecutionPort<
     return this.drainMode;
   }
 
-  async poll(request: MediaProviderEffectRequest & { taskRef: string }) {
+  async poll(
+    request: MediaProviderEffectRequest & { taskRef: string },
+  ): Promise<Awaited<ReturnType<MediaProviderLifecyclePort['poll']>>> {
     try {
       this.assertCompatible(request);
       const reference = this.decodeTaskRef(request.taskRef, request);
@@ -544,6 +548,12 @@ export class ArkMediaExecutionPort<
           providerCost,
           usageEvidenceKind,
           sourceExpiresAt: this.taskSourceExpiresAt(task),
+          ...(task.provider_created_at !== undefined
+            ? { providerCreatedAtEpochSeconds: task.provider_created_at }
+            : {}),
+          ...(task.provider_signed_url_timestamp
+            ? { providerSignedUrlTimestamp: task.provider_signed_url_timestamp }
+            : {}),
         };
       }
       if (task.status === 'failed' || task.status === 'cancelled') {
@@ -563,6 +573,40 @@ export class ArkMediaExecutionPort<
     } catch (error) {
       return this.unknownPoll(request, error);
     }
+  }
+
+  recoverVideoTaskRef(
+    request: MediaProviderEffectRequest,
+    providerTaskId: string,
+  ) {
+    this.assertCompatible(request);
+    if (request.submission.operation !== 'video.generate') {
+      throw new ArkAdapterError(
+        'unsupported_operation',
+        false,
+        'Ark video task recovery requires a video generation request.',
+      );
+    }
+    if (
+      !providerTaskId.trim() ||
+      providerTaskId.length > 256 ||
+      Array.from(providerTaskId).some((character) => {
+        const code = character.charCodeAt(0);
+        return code <= 31 || code === 127;
+      })
+    ) {
+      throw new ArkAdapterError(
+        'invalid_task_reference',
+        false,
+        'Ark video task recovery requires a valid provider task id.',
+      );
+    }
+    return this.encodeTaskRef({
+      version: 1,
+      kind: 'video',
+      scope: this.scope(request),
+      providerTaskId,
+    });
   }
 
   async download(request: MediaProviderEffectRequest & { taskRef: string }) {

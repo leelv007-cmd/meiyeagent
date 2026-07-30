@@ -986,8 +986,9 @@ export function issue255TuziExecutor(input: {
         }
         if (terminal.status === 'failed' || terminal.status === 'unknown') {
           throw new Issue255ProviderExecutionError(
-            terminal.errorCode,
-            terminal.error,
+            terminal.errorCode ?? 'provider_terminal_failure',
+            terminal.error ??
+              `Issue 255 video provider ended as ${terminal.status}.`,
           );
         }
         await (input.wait ?? defaultWait)(2_000);

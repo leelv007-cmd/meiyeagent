@@ -98,6 +98,7 @@ export interface Issue255LiveReceipt {
   terminalLineage:
     | Issue255DurableTerminalLineage
     | Issue255PriceCardReconciledImageLineage
+    | Issue255PriceCardReconciledVideoLineage
     | Issue255FailedBeforeBillingLineage
     | null;
   reconciliationReason: string | null;
@@ -236,6 +237,64 @@ const priceCardReconciledImageLineageSchema = z
 
 export type Issue255PriceCardReconciledImageLineage = z.infer<
   typeof priceCardReconciledImageLineageSchema
+>;
+
+const priceCardReconciledVideoLineageSchema = z
+  .object({
+    workspaceId: z.string().trim().min(1),
+    effectId: z.string().regex(/^[a-f0-9]{64}$/u),
+    requestFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
+    adapter: z.literal('tuzi-video'),
+    deploymentId: z.literal('seedance-1-5-pro-tuzi-relay'),
+    providerIdempotencyKey: z.string().trim().min(1),
+    providerTaskIdHash: z.string().regex(/^[a-f0-9]{64}$/u),
+    attempt: z
+      .object({
+        id: z.string().trim().min(1),
+        jobId: z.string().trim().min(1),
+        deploymentId: z.literal('seedance-1-5-pro-tuzi-relay'),
+        providerTaskRef: z.string().trim().min(1),
+        acceptance: z.literal('accepted'),
+        status: z.literal('completed'),
+      })
+      .strict(),
+    providerCost: z
+      .object({
+        id: z.string().trim().min(1),
+        attemptId: z.string().trim().min(1),
+        amountMicros: z.literal(1_620_000),
+        currency: z.literal('CNY'),
+        priceRevision: z.string().trim().min(1),
+        exchangeRevision: z.literal('native-cny-v1'),
+        stage: z.literal('reconciled'),
+        usageEvidenceKind: z.literal('price_card_reconciled'),
+        usage: z.object({ mediaUnits: z.literal(1) }).strict(),
+      })
+      .strict(),
+    recovery: z
+      .object({
+        reason: z.literal('relay_completed_without_per_task_usage'),
+        providerStatusSequence: z.tuple([
+          z.literal('unknown'),
+          z.literal('completed'),
+        ]),
+        normalizedStatusSequence: z.tuple([
+          z.literal('queued'),
+          z.literal('completed'),
+        ]),
+        providerCreatedAtEpochSeconds: z.number().int().nonnegative(),
+        providerSignedUrlTimestamp: z.string().regex(/^\d{8}T\d{6}Z$/u),
+        wallClockUpperBoundMs: z.number().int().positive(),
+        contentType: z.literal('video/mp4'),
+        contentByteCount: z.number().int().positive(),
+        contentSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type Issue255PriceCardReconciledVideoLineage = z.infer<
+  typeof priceCardReconciledVideoLineageSchema
 >;
 
 const failedBeforeBillingProvenanceSchema = z.union([
@@ -1156,7 +1215,7 @@ export class PostgresIssue255LiveReceiptRepository {
             AND adapter = $5
             AND deployment_id = $6
             AND provider_idempotency_key = $7
-            AND status = 'claimed'
+            AND status IN ('claimed', 'unknown')
             AND generation_submit_count = 1
         RETURNING *`,
         [
@@ -1214,7 +1273,7 @@ export class PostgresIssue255LiveReceiptRepository {
             AND adapter = $5
             AND deployment_id = $6
             AND provider_idempotency_key = $7
-            AND status = 'claimed'
+            AND status IN ('claimed', 'unknown')
             AND generation_submit_count = 1
         RETURNING *`,
         [
@@ -1593,6 +1652,246 @@ export class PostgresIssue255LiveReceiptRepository {
         );
       }
       return receiptFromRow(completed);
+    });
+  }
+
+  async reconcileCoordinatorVideoV5FromPriceCard(input: {
+    runNonce: string;
+    effectId: string;
+    requestFingerprint: string;
+    providerTaskId: string;
+    providerTaskRef: string;
+    providerStatusSequence: ['unknown', 'completed'];
+    normalizedStatusSequence: ['queued', 'completed'];
+    providerCreatedAtEpochSeconds: number;
+    providerSignedUrlTimestamp: string;
+    wallClockUpperBoundMs: number;
+    contentType: 'video/mp4';
+    contentByteCount: number;
+    contentSha256: string;
+  }) {
+    const parsed = z
+      .object({
+        runNonce: z.literal(coordinatorV5RunNonce),
+        effectId: z.string().regex(/^[a-f0-9]{64}$/u),
+        requestFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
+        providerTaskId: z.string().trim().min(1).max(256),
+        providerTaskRef: z.string().trim().min(1),
+        providerStatusSequence: z.tuple([
+          z.literal('unknown'),
+          z.literal('completed'),
+        ]),
+        normalizedStatusSequence: z.tuple([
+          z.literal('queued'),
+          z.literal('completed'),
+        ]),
+        providerCreatedAtEpochSeconds: z.number().int().nonnegative(),
+        providerSignedUrlTimestamp: z.string().regex(/^\d{8}T\d{6}Z$/u),
+        wallClockUpperBoundMs: z.number().int().positive(),
+        contentType: z.literal('video/mp4'),
+        contentByteCount: z.number().int().positive(),
+        contentSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+      })
+      .strict()
+      .parse(input);
+    return this.locked(parsed.runNonce, async (client) => {
+      const selected = await client.query<ReceiptRow>(
+        `SELECT *
+           FROM issue255_live_generation_receipts
+          WHERE run_nonce = $1
+            AND modality = 'video'
+            AND effect_id = $2
+            AND request_fingerprint = $3
+            AND adapter = 'tuzi-video'
+            AND deployment_id = 'seedance-1-5-pro-tuzi-relay'
+            AND provider_idempotency_key = $2
+            AND provider_task_id = $4
+            AND reserved_amount_micros = 1620000
+            AND exchange_revision = 'native-cny-v1'
+            AND status = 'unknown'
+            AND generation_submit_count = 1
+            AND provider_http_request_count >= 2
+            AND actual_amount_micros IS NULL
+            AND terminal_lineage IS NULL
+            AND reconciliation_reason = 'provider_failure_recorded'
+          FOR UPDATE`,
+        [
+          parsed.runNonce,
+          parsed.effectId,
+          parsed.requestFingerprint,
+          parsed.providerTaskId,
+        ],
+      );
+      const receipt = selected.rows[0];
+      if (!receipt) {
+        throw new Error(
+          'Issue 255 v5 recovery does not match its frozen durable receipt.',
+        );
+      }
+      const costs = await client.query<{ count: string }>(
+        `SELECT COUNT(*)::bigint AS count
+           FROM p1_provider_cost_events
+          WHERE workspace_id = $1
+            AND attempt_id = $2`,
+        [receipt.workspace_id, receipt.provider_attempt_id],
+      );
+      if (Number(costs.rows[0]?.count ?? 0) !== 0) {
+        throw new Error(
+          'Issue 255 v5 price-card recovery requires zero prior ProviderCost events.',
+        );
+      }
+      const terminal = priceCardReconciledVideoLineageSchema.parse({
+        workspaceId: receipt.workspace_id,
+        effectId: receipt.effect_id,
+        requestFingerprint: receipt.request_fingerprint,
+        adapter: receipt.adapter,
+        deploymentId: receipt.deployment_id,
+        providerIdempotencyKey: receipt.provider_idempotency_key,
+        providerTaskIdHash: createHash('sha256')
+          .update(parsed.providerTaskId)
+          .digest('hex'),
+        attempt: {
+          id: receipt.provider_attempt_id,
+          jobId: receipt.provider_job_id,
+          deploymentId: receipt.deployment_id,
+          providerTaskRef: parsed.providerTaskRef,
+          acceptance: 'accepted',
+          status: 'completed',
+        },
+        providerCost: {
+          id: receipt.provider_cost_event_id,
+          attemptId: receipt.provider_attempt_id,
+          amountMicros: 1_620_000,
+          currency: 'CNY',
+          priceRevision: receipt.price_revision,
+          exchangeRevision: receipt.exchange_revision,
+          stage: 'reconciled',
+          usageEvidenceKind: 'price_card_reconciled',
+          usage: { mediaUnits: 1 },
+        },
+        recovery: {
+          reason: 'relay_completed_without_per_task_usage',
+          providerStatusSequence: parsed.providerStatusSequence,
+          normalizedStatusSequence: parsed.normalizedStatusSequence,
+          providerCreatedAtEpochSeconds: parsed.providerCreatedAtEpochSeconds,
+          providerSignedUrlTimestamp: parsed.providerSignedUrlTimestamp,
+          wallClockUpperBoundMs: parsed.wallClockUpperBoundMs,
+          contentType: parsed.contentType,
+          contentByteCount: parsed.contentByteCount,
+          contentSha256: parsed.contentSha256,
+        },
+      });
+      const result = {
+        status: 'completed',
+        issue255: {
+          workspaceId: receipt.workspace_id,
+          effectId: receipt.effect_id,
+          requestFingerprint: receipt.request_fingerprint,
+          adapter: receipt.adapter,
+          deploymentId: receipt.deployment_id,
+          providerIdempotencyKey: receipt.provider_idempotency_key,
+          providerJobId: receipt.provider_job_id,
+          providerAttemptId: receipt.provider_attempt_id,
+          providerCostEventId: receipt.provider_cost_event_id,
+        },
+        attempt: terminal.attempt,
+        providerCost: {
+          id: receipt.provider_cost_event_id,
+          status: 'reconciled',
+          amountMicros: 1_620_000,
+          currency: 'CNY',
+          usageEvidenceKind: 'price_card_reconciled',
+          usage: { mediaUnits: 1 },
+        },
+        reconciliation: terminal.recovery,
+        snapshot: {
+          priceRevision: receipt.price_revision,
+          allowedCandidates: [
+            {
+              deploymentId: receipt.deployment_id,
+              priceRevision: receipt.price_revision,
+            },
+          ],
+        },
+      };
+      const attempt = await client.query<{ id: string }>(
+        `UPDATE p1_provider_attempts
+            SET acceptance = 'accepted',
+                status = 'completed',
+                provider_task_ref = $5,
+                updated_at = now()
+          WHERE workspace_id = $1
+            AND id = $2
+            AND job_id = $3
+            AND deployment_id = $4
+            AND acceptance = 'pending'
+            AND status = 'pending'
+            AND provider_task_ref IS NULL
+        RETURNING id`,
+        [
+          receipt.workspace_id,
+          receipt.provider_attempt_id,
+          receipt.provider_job_id,
+          receipt.deployment_id,
+          parsed.providerTaskRef,
+        ],
+      );
+      const job = await client.query<{ id: string }>(
+        `UPDATE p1_generation_jobs
+            SET status = 'completed',
+                result = $3::jsonb,
+                updated_at = now()
+          WHERE workspace_id = $1
+            AND id = $2
+            AND status = 'running'
+            AND result IS NULL
+        RETURNING id`,
+        [receipt.workspace_id, receipt.provider_job_id, JSON.stringify(result)],
+      );
+      const cost = await client.query<{ id: string }>(
+        `INSERT INTO p1_provider_cost_events (
+           workspace_id, id, attempt_id, stage, amount_micros, currency, unit,
+           evidence, payer, billing_status, actor_id, correlation_id, created_at
+         ) VALUES (
+           $1, $2, $3, 'reconciled', 1620000, 'CNY', 'issue255_live_sample',
+           'issue255_tuzi_video_price_card_reconciliation', 'platform', 'known',
+           'issue-255-live-reconciliation', $4, now()
+         )
+         RETURNING id`,
+        [
+          receipt.workspace_id,
+          receipt.provider_cost_event_id,
+          receipt.provider_attempt_id,
+          `${receipt.provider_job_id}:correlation`,
+        ],
+      );
+      const updated = await client.query<ReceiptRow>(
+        `UPDATE issue255_live_generation_receipts
+            SET status = 'completed',
+                actual_amount_micros = 1620000,
+                terminal_lineage = $4::jsonb,
+                reconciliation_reason = 'tuzi_video_price_card_reconciled',
+                updated_at = now()
+          WHERE run_nonce = $1
+            AND effect_id = $2
+            AND request_fingerprint = $3
+            AND status = 'unknown'
+            AND actual_amount_micros IS NULL
+            AND terminal_lineage IS NULL
+        RETURNING *`,
+        [
+          parsed.runNonce,
+          parsed.effectId,
+          parsed.requestFingerprint,
+          JSON.stringify(terminal),
+        ],
+      );
+      if (!attempt.rows[0] || !job.rows[0] || !cost.rows[0] || !updated.rows[0]) {
+        throw new Error(
+          'Issue 255 v5 recovery lost its frozen durable lineage.',
+        );
+      }
+      return receiptFromRow(updated.rows[0]);
     });
   }
 
@@ -2455,6 +2754,11 @@ function receiptFromRow(row: ReceiptRow): Issue255LiveReceipt {
             ? priceCardReconciledImageLineageSchema.parse(
                 row.terminal_lineage,
               )
+            : row.reconciliation_reason ===
+                'tuzi_video_price_card_reconciled'
+              ? priceCardReconciledVideoLineageSchema.parse(
+                  row.terminal_lineage,
+                )
             : durableTerminalLineageSchema.parse(row.terminal_lineage),
     reconciliationReason: row.reconciliation_reason,
     createdAt: row.created_at.toISOString(),

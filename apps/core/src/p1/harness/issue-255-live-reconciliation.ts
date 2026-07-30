@@ -1,7 +1,87 @@
+import { createHash } from 'node:crypto';
+import { link, lstat, unlink, writeFile } from 'node:fs/promises';
+
 import { z } from 'zod';
 
 import type { FoundationStore } from '../foundation/ports.js';
+import { recordedRequest } from '../model-supply/adapters.js';
+import type { TuziMediaExecutionOptions } from '../model-supply/tuzi-media-adapter.js';
+import { assertIssue255SanitizedManifest } from './issue-255-live-collector.js';
+import { createIssue255TuziMediaPort } from './issue-255-provider-attempt-fence.js';
 import type { PostgresIssue255LiveReceiptRepository } from './issue-255-postgres-live-receipt.js';
+
+const coordinatorV5RunNonce =
+  'issue-255-live-anchors-2026-07-30-v5';
+const coordinatorV2RunNonce =
+  'issue-255-live-anchors-2026-07-30-v2';
+
+const closeoutSampleSchema = z
+  .object({
+    modality: z.enum(['copy', 'image_text', 'video']),
+    sourceRunNonceHash: z.string().regex(/^[a-f0-9]{64}$/u),
+    effectId: z.string().regex(/^[a-f0-9]{64}$/u),
+    requestFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
+    adapter: z.enum(['direct-copy', 'tuzi-image', 'tuzi-video']),
+    deploymentId: z.string().trim().min(1),
+    amountMicros: z.number().int().positive(),
+    usageEvidenceKind: z.enum([
+      'provider_reported',
+      'response_derived',
+      'price_card_reconciled',
+    ]),
+    receiptEvidenceRef: z.string().startsWith('live://issue-255/receipt/'),
+    generationSubmitCount: z.literal(1),
+    providerHttpRequestCount: z.number().int().positive(),
+    status: z.literal('completed'),
+    providerTaskRefHash: z.string().regex(/^[a-f0-9]{64}$/u).nullable(),
+  })
+  .strict();
+
+export const issue255LiveAnchorsV5ManifestSchema = z
+  .object({
+    schemaVersion: z.literal(2),
+    issue: z.literal(255),
+    samples: z.tuple([
+      closeoutSampleSchema.extend({ modality: z.literal('copy') }).strict(),
+      closeoutSampleSchema.extend({ modality: z.literal('image_text') }).strict(),
+      closeoutSampleSchema
+        .extend({
+          modality: z.literal('video'),
+          recovery: z
+            .object({
+              providerStatusSequence: z.tuple([
+                z.literal('unknown'),
+                z.literal('completed'),
+              ]),
+              normalizedStatusSequence: z.tuple([
+                z.literal('queued'),
+                z.literal('completed'),
+              ]),
+              taskDetailGetCount: z.literal(2),
+              contentRetrievalGetCount: z.literal(1),
+              contentType: z.literal('video/mp4'),
+              contentByteCount: z.number().int().positive(),
+              contentSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+              providerCreatedAtEpochSeconds: z.number().int().nonnegative(),
+              providerCreatedAtIso: z.string().datetime(),
+              providerSignedUrlTimestamp: z.string().regex(/^\d{8}T\d{6}Z$/u),
+              providerSignedUrlTimestampIso: z.string().datetime(),
+              wallClockUpperBoundMs: z.number().int().positive(),
+              wallClockDerivation: z.literal(
+                'provider_signed_url_timestamp - provider_created_at',
+              ),
+              billingNote: z.literal(
+                'relay_completed_without_per_task_usage; frozen_price_card_reconciled',
+              ),
+            })
+            .strict(),
+        })
+        .strict(),
+    ]),
+    totalActualAmountMicros: z.number().int().positive(),
+    currency: z.literal('CNY'),
+  })
+  .strict();
 
 export async function reconcileIssue255LiveRun(input: {
   foundation: FoundationStore;
@@ -49,4 +129,252 @@ export async function reconcileIssue255LiveRun(input: {
     );
   }
   return reconciled;
+}
+
+export async function recoverIssue255CoordinatorVideoV5(input: {
+  receipts: PostgresIssue255LiveReceiptRepository;
+  options: TuziMediaExecutionOptions;
+  manifestPath: string;
+  wait?: (milliseconds: number) => Promise<void>;
+}) {
+  const [candidate] = await input.receipts.listRun(coordinatorV5RunNonce);
+  if (candidate?.status === 'completed') {
+    return {
+      completed: candidate,
+      manifest: await writeIssue255LiveAnchorsV5Manifest({
+        receipts: input.receipts,
+        manifestPath: input.manifestPath,
+      }),
+      normalizedStatusSequence: ['queued', 'completed'] as const,
+    };
+  }
+  if (
+    !candidate ||
+    candidate.modality !== 'video' ||
+    candidate.status !== 'unknown' ||
+    candidate.generationSubmitCount !== 1 ||
+    !candidate.providerTaskId
+  ) {
+    throw new Error(
+      'Issue 255 v5 GET-only recovery requires its single durable unknown video receipt.',
+    );
+  }
+  const providerFetch = input.options.fetch ?? globalThis.fetch;
+  const getOnlyFetch: typeof globalThis.fetch = (request, init) => {
+    const method = (
+      init?.method ?? (request instanceof Request ? request.method : 'GET')
+    ).toUpperCase();
+    if (method !== 'GET') {
+      throw new Error('Issue 255 v5 recovery forbids every non-GET provider request.');
+    }
+    return providerFetch(request, init);
+  };
+  const port = createIssue255TuziMediaPort({
+    identity: {
+      runNonce: candidate.runNonce,
+      modality: 'video',
+      effectId: candidate.effectId,
+      requestFingerprint: candidate.requestFingerprint,
+      deploymentId: candidate.deploymentId,
+      providerIdempotencyKey: candidate.providerIdempotencyKey,
+    },
+    options: { ...input.options, fetch: getOnlyFetch },
+    receipts: input.receipts,
+  });
+  const request = {
+    ...recordedRequest(
+      input.options.video.catalogModelId,
+      'video.generate',
+      { durationSeconds: 5 },
+    ),
+    effectIdempotencyKey: candidate.effectId,
+  };
+  request.submission.idempotencyKey = candidate.effectId;
+  request.jobId = candidate.effectId;
+  request.submission.prompt =
+    '生成一段不含人物肖像和文字的中性美业护理氛围视频。';
+  const taskRef = port.recoverVideoTaskRef(
+    request,
+    candidate.providerTaskId,
+  );
+  let terminal: Awaited<ReturnType<typeof port.poll>> | undefined;
+  const normalizedStatusSequence: Array<
+    'queued' | 'running' | 'completed'
+  > = ['queued'];
+  for (let poll = 0; poll < 60; poll += 1) {
+    const state = await port.poll({ ...request, taskRef });
+    if (state.status === 'failed' || state.status === 'unknown') {
+      throw new Error(
+        `Issue 255 v5 GET-only recovery ended as ${state.status}: ${state.errorCode ?? 'provider_failure'}.`,
+      );
+    }
+    normalizedStatusSequence.push(state.status);
+    if (state.status === 'completed') {
+      terminal = state;
+      break;
+    }
+    await (input.wait ?? defaultWait)(2_000);
+  }
+  if (
+    !terminal ||
+    terminal.providerCreatedAtEpochSeconds === undefined ||
+    !terminal.providerSignedUrlTimestamp
+  ) {
+    throw new Error(
+      'Issue 255 v5 GET-only recovery lacks completed provider timing evidence.',
+    );
+  }
+  const signedAt = parseTosTimestamp(terminal.providerSignedUrlTimestamp);
+  const createdAt = new Date(
+    terminal.providerCreatedAtEpochSeconds * 1_000,
+  );
+  const wallClockUpperBoundMs = signedAt.getTime() - createdAt.getTime();
+  if (wallClockUpperBoundMs <= 0 || wallClockUpperBoundMs > 86_400_000) {
+    throw new Error('Issue 255 v5 provider timing evidence is inconsistent.');
+  }
+  const downloaded = await port.download({ ...request, taskRef });
+  const contentSha256 = createHash('sha256')
+    .update(downloaded.bytes)
+    .digest('hex');
+  const completed = await input.receipts.reconcileCoordinatorVideoV5FromPriceCard({
+    runNonce: candidate.runNonce,
+    effectId: candidate.effectId,
+    requestFingerprint: candidate.requestFingerprint,
+    providerTaskId: candidate.providerTaskId,
+    providerTaskRef: taskRef,
+    providerStatusSequence: ['unknown', 'completed'],
+    normalizedStatusSequence: ['queued', 'completed'],
+    providerCreatedAtEpochSeconds: terminal.providerCreatedAtEpochSeconds,
+    providerSignedUrlTimestamp: terminal.providerSignedUrlTimestamp,
+    wallClockUpperBoundMs,
+    contentType: downloaded.contentType as 'video/mp4',
+    contentByteCount: downloaded.bytes.byteLength,
+    contentSha256,
+  });
+  const manifest = await writeIssue255LiveAnchorsV5Manifest({
+    receipts: input.receipts,
+    manifestPath: input.manifestPath,
+  });
+  return { completed, manifest, normalizedStatusSequence };
+}
+
+export async function writeIssue255LiveAnchorsV5Manifest(input: {
+  receipts: PostgresIssue255LiveReceiptRepository;
+  manifestPath: string;
+}) {
+  const v2 = await input.receipts.listRun(coordinatorV2RunNonce);
+  const v5 = await input.receipts.listRun(coordinatorV5RunNonce);
+  const copy = v2.find((receipt) => receipt.modality === 'copy');
+  const image = v2.find((receipt) => receipt.modality === 'image_text');
+  const video = v5.find((receipt) => receipt.modality === 'video');
+  if (
+    !copy || copy.status !== 'completed' ||
+    !image || image.status !== 'completed' ||
+    !video || video.status !== 'completed' ||
+    !video.terminalLineage ||
+    !('recovery' in video.terminalLineage)
+  ) {
+    throw new Error('Issue 255 v5 closeout requires completed copy, image, and video receipts.');
+  }
+  const sample = (
+    receipt: typeof copy,
+    usageEvidenceKind: 'provider_reported' | 'response_derived' | 'price_card_reconciled',
+  ) => ({
+    modality: receipt.modality,
+    sourceRunNonceHash: hash(receipt.runNonce),
+    effectId: receipt.effectId,
+    requestFingerprint: receipt.requestFingerprint,
+    adapter: receipt.adapter,
+    deploymentId: receipt.deploymentId,
+    amountMicros: receipt.actualAmountMicros,
+    usageEvidenceKind,
+    receiptEvidenceRef: `live://issue-255/receipt/${receipt.effectId}`,
+    generationSubmitCount: receipt.generationSubmitCount,
+    providerHttpRequestCount: receipt.providerHttpRequestCount,
+    status: receipt.status,
+    providerTaskRefHash:
+      receipt.terminalLineage &&
+      'attempt' in receipt.terminalLineage &&
+      'providerTaskRef' in receipt.terminalLineage.attempt
+        ? hash(receipt.terminalLineage.attempt.providerTaskRef)
+        : null,
+  });
+  const recovery = video.terminalLineage.recovery;
+  const manifest = issue255LiveAnchorsV5ManifestSchema.parse({
+    schemaVersion: 2,
+    issue: 255,
+    samples: [
+      sample(copy, 'provider_reported'),
+      sample(image, 'price_card_reconciled'),
+      {
+        ...sample(video, 'price_card_reconciled'),
+        recovery: {
+          ...recovery,
+          taskDetailGetCount: 2,
+          contentRetrievalGetCount: 1,
+          providerCreatedAtIso: new Date(
+            recovery.providerCreatedAtEpochSeconds * 1_000,
+          ).toISOString(),
+          providerSignedUrlTimestampIso: parseTosTimestamp(
+            recovery.providerSignedUrlTimestamp,
+          ).toISOString(),
+          wallClockDerivation:
+            'provider_signed_url_timestamp - provider_created_at',
+          billingNote:
+            'relay_completed_without_per_task_usage; frozen_price_card_reconciled',
+        },
+      },
+    ],
+    totalActualAmountMicros:
+      copy.actualAmountMicros! +
+      image.actualAmountMicros! +
+      video.actualAmountMicros!,
+    currency: 'CNY',
+  });
+  const pendingPath = `${input.manifestPath}.pending`;
+  try {
+    const pending = await lstat(pendingPath);
+    if (pending.size !== 0) {
+      throw new Error('Issue 255 v5 non-empty pending manifest must be preserved.');
+    }
+    await unlink(pendingPath);
+  } catch (error) {
+    if (!isMissingFile(error)) throw error;
+  }
+  try {
+    await lstat(input.manifestPath);
+    throw new Error('Issue 255 v5 final manifest already exists.');
+  } catch (error) {
+    if (!isMissingFile(error)) throw error;
+  }
+  const serialized = `${JSON.stringify(manifest, null, 2)}\n`;
+  assertIssue255SanitizedManifest(serialized);
+  await writeFile(pendingPath, serialized, { flag: 'wx', mode: 0o600 });
+  await link(pendingPath, input.manifestPath);
+  await unlink(pendingPath);
+  return manifest;
+}
+
+function parseTosTimestamp(value: string) {
+  const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/u.exec(value);
+  if (!match) throw new Error('Issue 255 v5 signed URL timestamp is invalid.');
+  return new Date(
+    `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}.000Z`,
+  );
+}
+
+function hash(value: string) {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function defaultWait(milliseconds: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function isMissingFile(error: unknown) {
+  return (
+    error instanceof Error &&
+    'code' in error &&
+    (error as NodeJS.ErrnoException).code === 'ENOENT'
+  );
 }
