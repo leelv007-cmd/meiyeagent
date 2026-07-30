@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: Recorded copywriting A/B through the production generation seam
+
+prompts:
+  - '{{caseId}}'
+
+providers:
+  - id: file://apps/core/src/evals/copywriting/promptfoo-provider.ts
+    label: recorded-copywriting-paired-production-seam
+
+tests:
+  - file://apps/core/src/evals/copywriting/cases.ts
+
+evaluateOptions:
+  maxConcurrency: 1

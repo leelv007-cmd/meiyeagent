@@ -30,6 +30,12 @@ export {
   type DurableSkillRuntime,
 } from './runtime.js';
 export { materializeSkillInstructions } from './stage-injection.js';
+export {
+  BEAUTY_COPYWRITING_INSTRUCTION,
+  CAPTURE_STORE_WORKFLOW_INSTRUCTION,
+  beautyCopywritingDefinition,
+  captureStoreWorkflowDefinition,
+} from './platform-recipes.js';
 export { RegistrySkillOutputValidator } from './schema-validator.js';
 export {
   StaticSkillToolExecutionAuthorizer,

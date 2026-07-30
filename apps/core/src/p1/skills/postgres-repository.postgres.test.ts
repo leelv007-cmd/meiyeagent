@@ -20,6 +20,9 @@ import {
 } from '../harness/langfuse-prompts.js';
 import type { StructuredNodeRunnerRequest } from '../model-supply/structured-node-runner.js';
 import {
+  BEAUTY_COPYWRITING_INSTRUCTION,
+  beautyCopywritingDefinition,
+  captureStoreWorkflowDefinition,
   createDurableSkillRuntime,
   PostgresSkillRepository,
   SkillFoundationModule,
@@ -53,21 +56,6 @@ import type {
 } from './types.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
-
-const COPYWRITING_INSTRUCTION = [
-  'Write one directly usable primary recommendation before optional alternatives.',
-  'Prefer customer benefits and concrete confirmed facts over feature lists or vague claims.',
-  'Use customer language, one claim per paragraph, and one confirmed conversion action.',
-  'Never invent prices, results, qualifications, reviews, scarcity, statistics, or authorization.',
-  'Keep the title, body, and CTA aligned to the same marketing objective.',
-].join(' ');
-
-const SKILL_CREATOR_INSTRUCTION = [
-  'Use this recipe when the merchant says phrases such as "以后都这么做", "记住这个流程", or "下次照这个来".',
-  'Read the current conversation first and extract the tools used, ordered steps, merchant corrections, and observed input/output formats.',
-  'Ask once for only the missing fields; the group and every field must allow an explicit unknown or skipped answer.',
-  'Create only a proposal with source-conversation evidence. Record an immutable store recipe only after an authenticated merchant confirmation.',
-].join(' ');
 
 test(
   'copywriting crosses the public lifecycle and changes the production generation request after a PostgreSQL restart',
@@ -129,9 +117,8 @@ test(
         },
       );
 
-      const copyV1 = await command('skill_define', copywritingDefinition({
+      const copyV1 = await command('skill_define', beautyCopywritingDefinition({
         expectedRevision: null,
-        instruction: COPYWRITING_INSTRUCTION,
         prompt: copyPrompt,
         skillId: copywritingSkillId,
         workflowRevisionRef,
@@ -147,9 +134,9 @@ test(
         skillRevisionRef: copyV1.revision.skillRevisionRef,
       });
 
-      const copyV2 = await command('skill_define', copywritingDefinition({
+      const copyV2 = await command('skill_define', beautyCopywritingDefinition({
         expectedRevision: 1,
-        instruction: `${COPYWRITING_INSTRUCTION} Prefer two alternatives by default.`,
+        instruction: `${BEAUTY_COPYWRITING_INSTRUCTION} Prefer two alternatives by default.`,
         prompt: copyPrompt,
         skillId: copywritingSkillId,
         workflowRevisionRef,
@@ -196,7 +183,8 @@ test(
       });
 
       const creatorPrompt = prompts.intentNaming;
-      const creator = await command('skill_define', skillCreatorDefinition({
+      const creator = await command('skill_define', captureStoreWorkflowDefinition({
+        expectedRevision: null,
         prompt: creatorPrompt,
         skillId: creatorSkillId,
         workflowRevisionRef,
@@ -292,7 +280,7 @@ test(
       assert.match(
         withSkill.requests[0]?.instructions ?? '',
         new RegExp(
-          `\\[${escapeRegExp(`${copywritingSkillId}@1`)}\\] ${escapeRegExp(COPYWRITING_INSTRUCTION)}`,
+          `\\[${escapeRegExp(`${copywritingSkillId}@1`)}\\] ${escapeRegExp(BEAUTY_COPYWRITING_INSTRUCTION)}`,
           'u',
         ),
       );
@@ -887,109 +875,6 @@ function frozenHarnessPrompts(): HarnessFrozenPrompts {
   ) as HarnessFrozenPrompts;
 }
 
-function copywritingDefinition(input: {
-  expectedRevision: number | null;
-  instruction: string;
-  prompt: HarnessFrozenPrompts['copyCandidate'];
-  skillId: string;
-  workflowRevisionRef: string;
-}) {
-  return {
-    expectedRevision: input.expectedRevision,
-    frontmatter: {
-      description:
-        'Writes grounded beauty-business copy with one usable primary recommendation.',
-      license: 'MIT',
-      metadata: {
-        author: 'Corey Haines',
-        'source-commit': '7868cb9251fad80a73d26e488a5ad5f6c4a9f335',
-        'source-path': 'skills/copywriting/SKILL.md',
-      },
-      name: 'beauty-copywriting',
-    },
-    governance: {
-      budget: {
-        maxChildEffects: 0,
-        maxCostCents: 0,
-        timeoutMs: 10_000,
-      },
-      contextScopes: [],
-      executionMode: 'prompt_materialized',
-      fallback: 'fail_closed',
-      inputSchemaRef: 'skill-input.daily-industry@1',
-      outputSchemaRef: 'skill-output.intent-decision@1',
-      requiredModelCapabilities: ['structured_output'],
-      sideEffectClass: 'none',
-      workflowRevisionRefs: [input.workflowRevisionRef],
-    },
-    instruction: input.instruction,
-    name: 'Beauty copywriting',
-    packagePaths: ['SKILL.md'],
-    presentationPolicy: 'backend_only',
-    promptReference: promptReference(input.prompt),
-    skillId: input.skillId,
-    sourceKind: 'harvested',
-    sourceRef: {
-      externalUrl:
-        'https://github.com/coreyhaines31/marketingskills/blob/7868cb9251fad80a73d26e488a5ad5f6c4a9f335/skills/copywriting/SKILL.md',
-      harvestedAt: '2026-07-30T00:00:00.000Z',
-    },
-    tier: 'platform',
-  };
-}
-
-function skillCreatorDefinition(input: {
-  prompt: HarnessFrozenPrompts['intentNaming'];
-  skillId: string;
-  workflowRevisionRef: string;
-}) {
-  return {
-    expectedRevision: null,
-    frontmatter: {
-      'allowed-tools': 'read_context ask_merchant record',
-      compatibility:
-        'Requires an ordinary-session proposal and authenticated confirmation consumer before binding.',
-      description:
-        'Captures a merchant-approved conversation workflow as an immutable store recipe.',
-      license: 'Apache-2.0',
-      metadata: {
-        author: 'Anthropic',
-        'source-commit': 'b29e7cf65e5cb78a5ac33d582270551bc74a14eb',
-        'source-path': 'skills/skill-creator/SKILL.md',
-      },
-      name: 'capture-store-workflow',
-    },
-    governance: {
-      budget: {
-        maxChildEffects: 3,
-        maxCostCents: 0,
-        timeoutMs: 30_000,
-      },
-      contextScopes: ['conversation', 'merchant_confirmation'],
-      executionMode: 'harness_native',
-      fallback: 'fail_closed',
-      inputSchemaRef: 'skill-input.daily-industry@1',
-      outputSchemaRef: 'skill-output.intent-decision@1',
-      requiredModelCapabilities: ['tool_calling'],
-      sideEffectClass: 'bounded_write',
-      workflowRevisionRefs: [input.workflowRevisionRef],
-    },
-    instruction: SKILL_CREATOR_INSTRUCTION,
-    name: 'Capture store workflow',
-    packagePaths: ['SKILL.md'],
-    presentationPolicy: 'backend_only',
-    promptReference: promptReference(input.prompt),
-    skillId: input.skillId,
-    sourceKind: 'harvested',
-    sourceRef: {
-      externalUrl:
-        'https://github.com/anthropics/skills/blob/b29e7cf65e5cb78a5ac33d582270551bc74a14eb/skills/skill-creator/SKILL.md',
-      harvestedAt: '2026-07-30T00:00:00.000Z',
-    },
-    tier: 'platform',
-  };
-}
-
 async function storePassingEval(
   repository: PostgresSkillRepository,
   runId: string,
@@ -1051,7 +936,7 @@ class CopywritingRunner implements StructuredNodeRunner {
   async run<Output>(request: StructuredNodeRunnerRequest<Output>) {
     this.requests.push(request as StructuredNodeRunnerRequest<unknown>);
     const usesCopywriting = request.instructions.includes(
-      COPYWRITING_INSTRUCTION,
+      BEAUTY_COPYWRITING_INSTRUCTION,
     );
     return {
       attempts: 1,

@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: Control proving copywriting A/B rejects a wrong comparison conclusion
+
+prompts:
+  - '{{caseId}}'
+
+providers:
+  - id: file://apps/core/src/evals/copywriting/promptfoo-provider.ts
+    label: recorded-copywriting-paired-production-seam
+
+tests:
+  - file://apps/core/src/evals/copywriting/assertion-control-case.ts
+
+evaluateOptions:
+  maxConcurrency: 1

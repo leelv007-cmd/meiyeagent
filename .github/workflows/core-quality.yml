@@ -30,6 +30,24 @@ jobs:
         run: pnpm eval:redlines
       - name: Run recorded fact-satisfaction production-seam tests
         run: pnpm eval:fact-satisfaction
+      - name: Run recorded copywriting paired production-seam tests
+        run: pnpm eval:copywriting
+      - name: Run pinned copywriting promptfoo gate
+        env:
+          PROMPTFOO_DISABLE_REMOTE_GENERATION: true
+        run: pnpm eval:copywriting:promptfoo
+      - name: Prove copywriting comparison rejects a wrong conclusion
+        env:
+          PROMPTFOO_DISABLE_REMOTE_GENERATION: true
+        run: |
+          set +e
+          pnpm eval:copywriting:promptfoo:control
+          control_exit=$?
+          set -e
+          if [ "$control_exit" -ne 100 ]; then
+            echo "Copywriting assertion control expected exit 100, received $control_exit." >&2
+            exit 1
+          fi
       - name: Run pinned fact-satisfaction promptfoo gate
         env:
           PROMPTFOO_DISABLE_REMOTE_GENERATION: true
