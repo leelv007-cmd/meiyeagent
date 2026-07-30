@@ -6,6 +6,7 @@ import test from 'node:test';
 import {
   HARNESS_BUILTIN_PROMPTS,
   HARNESS_PROMPT_SITES,
+  LangfuseHarnessPromptResolver,
   type HarnessFrozenPrompts,
 } from '../harness/langfuse-prompts.js';
 import { MemorySkillRepository } from './repository.js';
@@ -85,6 +86,99 @@ test('production provisioning consumes both platform factories idempotently', as
     )?.executionMode,
     'harness_native',
   );
+});
+
+test('unconfigured prompt supply provisions builtin platform recipes with explicit fallback provenance', async () => {
+  const promptResolver = new LangfuseHarnessPromptResolver({
+    policy: 'pilot',
+    warn() {},
+  });
+  const prompts = await promptResolver.resolve();
+  const repository = new MemorySkillRepository();
+  const service = new SkillService(
+    repository,
+    () => '2026-07-30T00:00:00.000Z',
+    skillPromptSnapshotPortFromHarness(promptResolver),
+  );
+
+  const { revisions } = await provisionPlatformRecipes({
+    prompts,
+    repository,
+    service,
+  });
+
+  assert.equal(revisions.length, 2);
+  for (const revision of revisions) {
+    const stored = await repository.getRevision(revision.skillRevisionRef);
+    assert.equal(stored?.status, 'accepted_frozen');
+    assert.deepEqual(
+      {
+        fallbackReason: stored?.prompt.fallbackReason,
+        isFallback: stored?.prompt.isFallback,
+        source: stored?.prompt.source,
+        version: stored?.prompt.version,
+      },
+      {
+        fallbackReason: 'unconfigured',
+        isFallback: true,
+        source: 'builtin',
+        version: 'builtin-v1',
+      },
+    );
+    assert.equal(
+      (await repository.getCatalog(revision.skillId))?.activeRevisionRef,
+      revision.skillRevisionRef,
+    );
+  }
+  assert.ok(
+    await repository.getBinding('binding.platform.beauty-copywriting@1'),
+  );
+  assert.ok(
+    await repository.getBinding('binding.platform.capture-store-workflow@1'),
+  );
+  assert.ok(
+    await repository.getDeployment(
+      'deployment.platform.beauty-copywriting@1',
+    ),
+  );
+  assert.ok(
+    await repository.getDeployment(
+      'deployment.platform.capture-store-workflow@1',
+    ),
+  );
+});
+
+test('configured prompt supply still requires frozen Langfuse production revisions', async () => {
+  let requests = 0;
+  const promptResolver = new LangfuseHarnessPromptResolver({
+    baseUrl: 'https://langfuse.fixture',
+    fetch: async () => {
+      requests += 1;
+      return Response.json({});
+    },
+    policy: 'pilot',
+    publicKey: 'fixture-public',
+    secretKey: 'fixture-secret',
+    versions: {
+      copyCandidate: 1,
+      intentNaming: 1,
+    },
+    warn() {},
+  });
+  const prompts = await promptResolver.resolve();
+  const repository = new MemorySkillRepository();
+  const service = new SkillService(
+    repository,
+    () => '2026-07-30T00:00:00.000Z',
+    skillPromptSnapshotPortFromHarness(promptResolver),
+  );
+
+  assert.equal(prompts.copyCandidate.fallbackReason, 'invalid_response');
+  await assert.rejects(
+    provisionPlatformRecipes({ prompts, repository, service }),
+    /requires a frozen Langfuse production revision/u,
+  );
+  assert.ok(requests > 0);
 });
 
 test('main enables platform recipe provisioning in the production runtime', async () => {

@@ -1910,11 +1910,15 @@ export function skillAcceptanceGateFailure(
   ) {
     return 'Skill revision must pass its exact prompt and Skill eval gate.';
   }
-  if (
-    revision.prompt.source !== 'langfuse' ||
-    revision.prompt.isFallback ||
-    revision.prompt.label !== 'production'
-  ) {
+  const isFrozenLangfuseProduction =
+    revision.prompt.source === 'langfuse' &&
+    !revision.prompt.isFallback &&
+    revision.prompt.label === 'production';
+  const isUnconfiguredBuiltinFallback =
+    revision.prompt.source === 'builtin' &&
+    revision.prompt.isFallback &&
+    revision.prompt.fallbackReason === 'unconfigured';
+  if (!isFrozenLangfuseProduction && !isUnconfiguredBuiltinFallback) {
     return 'Prompt Skill acceptance requires a frozen Langfuse production revision.';
   }
   return null;
