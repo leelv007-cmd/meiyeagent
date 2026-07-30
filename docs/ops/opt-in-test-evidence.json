@@ -148,28 +148,38 @@
     },
     "apps/core/src/p1/model-supply/foundation-ledger.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
-      "note": "Issue 251 final source; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
+      "verifiedAt": "6599b6c53cfdaa617c2b74e904bea1dfed962765",
+      "note": "Issue 252 legacy catalog read audit; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/model-supply/postgres-owned-asset-cleanup-claim.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
-      "note": "Issue 251 final source; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
+      "verifiedAt": "6599b6c53cfdaa617c2b74e904bea1dfed962765",
+      "note": "Issue 252 legacy catalog read audit; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
+    },
+    "apps/core/src/p1/model-supply/postgres-repository.test.ts": {
+      "status": "green",
+      "verifiedAt": "6599b6c53cfdaa617c2b74e904bea1dfed962765",
+      "note": "Issue 252 legacy catalog read audit; historical PG suite name, fresh isolated database pair provisioned first: 17 pass / 0 fail / 0 skip."
+    },
+    "apps/core/src/p1/model-supply/published-catalog-read.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "6599b6c53cfdaa617c2b74e904bea1dfed962765",
+      "note": "Issue 252 legacy catalog read audit; direct-inserted pre-contract published revision fails closed before hot assembly and route freeze on a fresh isolated database pair: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/model-supply/reference-asset-dispatch.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
-      "note": "Issue 251 final source; fresh isolated database pair provisioned first: 3 pass / 0 fail / 0 skip."
+      "verifiedAt": "6599b6c53cfdaa617c2b74e904bea1dfed962765",
+      "note": "Issue 252 legacy catalog read audit; fresh isolated database pair provisioned first: 3 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/model-supply/retired-video-editing-schema.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
-      "note": "Issue 251 final source; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
+      "verifiedAt": "6599b6c53cfdaa617c2b74e904bea1dfed962765",
+      "note": "Issue 252 legacy catalog read audit; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/model-supply/usage-ledger-invariants.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
-      "note": "Issue 251 final source; fresh isolated database pair provisioned first: 2 pass / 0 fail / 0 skip."
+      "verifiedAt": "6599b6c53cfdaa617c2b74e904bea1dfed962765",
+      "note": "Issue 252 legacy catalog read audit; fresh isolated database pair provisioned first: 2 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/operations/composer-conversation-deletion.postgres.test.ts": {
       "status": "green",
@@ -228,8 +238,8 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2018d65418c5346965a15189998e47203e0d9189",
-      "note": "Issue 271 final code; fresh isolated database pair provisioned first: 2 pass / 0 fail / 0 skip."
+      "verifiedAt": "6599b6c53cfdaa617c2b74e904bea1dfed962765",
+      "note": "Issue 252 legacy catalog read audit; fresh isolated database pair provisioned first: 2 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "unverified",
