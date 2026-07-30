@@ -164,8 +164,7 @@ export class PostgresStoreWorkflowCaptureRepository
         revision bigint NOT NULL CHECK (revision = 1),
         payload jsonb NOT NULL,
         created_at timestamptz NOT NULL,
-        PRIMARY KEY (workspace_id, recipe_id, revision),
-        UNIQUE (workspace_id, (payload->>'sourceProposalRef'))
+        PRIMARY KEY (workspace_id, recipe_id, revision)
       );
       CREATE TABLE IF NOT EXISTS p1_store_workflow_capture_events (
         workspace_id text NOT NULL,
@@ -179,6 +178,8 @@ export class PostgresStoreWorkflowCaptureRepository
       );
       CREATE INDEX IF NOT EXISTS p1_store_workflow_recipe_catalog_idx
         ON p1_store_workflow_recipe_revisions (workspace_id, created_at DESC, recipe_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS p1_store_workflow_recipe_proposal_idx
+        ON p1_store_workflow_recipe_revisions (workspace_id, (payload->>'sourceProposalRef'));
       CREATE INDEX IF NOT EXISTS p1_store_workflow_capture_trace_idx
         ON p1_store_workflow_capture_events (workspace_id, task_id, occurred_at, event_id);
     `);
