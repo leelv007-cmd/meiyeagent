@@ -15,17 +15,25 @@ test('Langfuse tracing requires all three configured values', () => {
   );
   assert.deepEqual(
     langfuseTracingConfigFromEnv({
-      APP_ENV: ' test ',
       LANGFUSE_BASE_URL: ' https://example.langfuse.test ',
       LANGFUSE_PUBLIC_KEY: ' pk-test ',
       LANGFUSE_SECRET_KEY: ' sk-test ',
     }),
     {
       baseUrl: 'https://example.langfuse.test',
-      environment: 'test',
+      environment: 'development',
       publicKey: 'pk-test',
       secretKey: 'sk-test',
     },
+  );
+  assert.equal(
+    langfuseTracingConfigFromEnv({
+      APP_ENV: ' test ',
+      LANGFUSE_BASE_URL: 'https://example.langfuse.test',
+      LANGFUSE_PUBLIC_KEY: 'pk-test',
+      LANGFUSE_SECRET_KEY: 'sk-test',
+    })?.environment,
+    'test',
   );
   assert.equal(
     langfuseTracingConfigFromEnv({

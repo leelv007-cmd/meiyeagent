@@ -11,7 +11,7 @@ const config = langfuseTracingConfigFromEnv(process.env);
 
 export const langfuseTracingEnabled = Boolean(config);
 
-export const langfuseSpanProcessor =
+const langfuseSpanProcessor =
   config
     ? new LangfuseSpanProcessor({
         baseUrl: config.baseUrl,
@@ -22,14 +22,21 @@ export const langfuseSpanProcessor =
       })
     : undefined;
 
-if (langfuseSpanProcessor) {
-  const sdk = new NodeSDK({
-    spanProcessors: [langfuseSpanProcessor],
-  });
-  sdk.start();
+const langfuseSdk = langfuseSpanProcessor
+  ? new NodeSDK({
+      spanProcessors: [langfuseSpanProcessor],
+    })
+  : undefined;
+
+if (langfuseSdk) {
+  langfuseSdk.start();
   registerTelemetry(new LangfuseVercelAiSdkIntegration());
 }
 
 export async function flushLangfuseTracing() {
   await langfuseSpanProcessor?.forceFlush();
+}
+
+export async function shutdownLangfuseTracing() {
+  await langfuseSdk?.shutdown();
 }

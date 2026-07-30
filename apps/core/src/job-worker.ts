@@ -1,4 +1,4 @@
-import './instrumentation.js';
+import { shutdownLangfuseTracing } from './instrumentation.js';
 
 import { hostname } from 'node:os';
 import { DBOS } from '@dbos-inc/dbos-sdk';
@@ -811,10 +811,14 @@ const shutdown = async () => {
   try {
     await worker.stop();
   } finally {
-    await workerTelemetry.stop();
-    await jobRuntime.stop({ graceful: true });
-    if (harnessRuntimeConfig) await DBOS.shutdown();
-    await pool.end();
+    try {
+      await workerTelemetry.stop();
+      await jobRuntime.stop({ graceful: true });
+      if (harnessRuntimeConfig) await DBOS.shutdown();
+      await pool.end();
+    } finally {
+      await shutdownLangfuseTracing();
+    }
     process.exit(0);
   }
 };

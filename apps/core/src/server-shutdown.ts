@@ -18,6 +18,7 @@ export async function closeHttpServerWithDeadline(
 export async function shutdownCoreRuntime(input: {
   closeHttp(): Promise<void>;
   shutdownDbos(): Promise<void>;
+  shutdownTracing(): Promise<void>;
   stopJobs(): Promise<void>;
   closePool(): Promise<void>;
 }) {
@@ -28,6 +29,11 @@ export async function shutdownCoreRuntime(input: {
   ]);
   try {
     await input.closePool();
+  } catch (error) {
+    settled.push({ status: 'rejected', reason: error });
+  }
+  try {
+    await input.shutdownTracing();
   } catch (error) {
     settled.push({ status: 'rejected', reason: error });
   }

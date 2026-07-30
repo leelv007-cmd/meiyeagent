@@ -1,6 +1,6 @@
 export interface LangfuseTracingConfig {
   baseUrl: string;
-  environment?: string;
+  environment: string;
   publicKey: string;
   secretKey: string;
 }
@@ -12,11 +12,14 @@ export function langfuseTracingConfigFromEnv(
   const secretKey = env.LANGFUSE_SECRET_KEY?.trim();
   const baseUrl = env.LANGFUSE_BASE_URL?.trim();
   const environment =
-    env.LANGFUSE_TRACING_ENVIRONMENT?.trim() ?? env.APP_ENV?.trim();
+    env.LANGFUSE_TRACING_ENVIRONMENT?.trim() ||
+    env.APP_ENV?.trim() ||
+    env.NODE_ENV?.trim() ||
+    'development';
   return publicKey && secretKey && baseUrl
     ? {
         baseUrl,
-        ...(environment ? { environment } : {}),
+        environment,
         publicKey,
         secretKey,
       }

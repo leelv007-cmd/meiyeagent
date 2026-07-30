@@ -37,6 +37,9 @@ test('runtime shutdown attempts every dependency and reports failures', async ()
       async shutdownDbos() {
         completed.push('dbos');
       },
+      async shutdownTracing() {
+        completed.push('tracing');
+      },
       async stopJobs() {
         completed.push('jobs');
       },
@@ -47,5 +50,11 @@ test('runtime shutdown attempts every dependency and reports failures', async ()
     AggregateError,
   );
 
-  assert.deepEqual(completed.sort(), ['dbos', 'http', 'jobs', 'pool']);
+  assert.deepEqual(completed.sort(), [
+    'dbos',
+    'http',
+    'jobs',
+    'pool',
+    'tracing',
+  ]);
 });

@@ -1,4 +1,4 @@
-import './instrumentation.js';
+import { shutdownLangfuseTracing } from './instrumentation.js';
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import {
@@ -2610,6 +2610,7 @@ const shutdown = () => {
     closeHttp: () => closeHttpServerWithDeadline(server, 5_000),
     shutdownDbos: () =>
       harnessRuntimeConfig ? DBOS.shutdown() : Promise.resolve(),
+    shutdownTracing: shutdownLangfuseTracing,
     stopJobs: () => jobRuntime.stop({ graceful: true }),
     closePool: async () => {
       await pool.end();
