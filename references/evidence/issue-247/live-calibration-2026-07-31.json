@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "issue-255-live-calibration/v1",
+  "anchors": {
+    "copy": {
+      "evidenceKind": "live",
+      "actualAmountMicros": 12551,
+      "wallClockMs": 33106,
+      "costEvidenceRef": "references/evidence/issue-255/live-anchors-v6.json#copy",
+      "wallClockEvidenceRef": "references/evidence/issue-255/live-anchors-v6.json#copy.wallClockEvidence"
+    },
+    "image": {
+      "evidenceKind": "live",
+      "actualAmountMicros": 50000,
+      "wallClockMs": 10871,
+      "costEvidenceRef": "references/evidence/issue-255/live-anchors-v6.json#image_text",
+      "wallClockEvidenceRef": "references/evidence/issue-255/live-anchors-v6.json#image_text.wallClockEvidence"
+    },
+    "video": {
+      "evidenceKind": "live",
+      "actualAmountMicros": 1620000,
+      "wallClockMs": 35000,
+      "costEvidenceRef": "references/evidence/issue-255/live-anchors-v6.json#video",
+      "wallClockEvidenceRef": "references/evidence/issue-255/live-anchors-v6.json#video.wallClockEvidence"
+    }
+  },
+  "policy": {
+    "expectedCalls": { "copy": 1, "image": 1, "video": 1 },
+    "observedMaxIterations": 1,
+    "iterationsEvidenceRef": "references/evidence/issue-255/live-anchors-v6.json#generationSubmitCount (all completed live receipts generation_submit_count=1, table issue255_live_generation_receipts)",
+    "iterations": { "defaultBps": 20000, "hardCapBps": 40000 },
+    "cost": { "defaultBps": 20000, "hardCapBps": 40000 },
+    "wallClock": { "defaultBps": 15000, "hardCapBps": 30000 }
+  }
+}
