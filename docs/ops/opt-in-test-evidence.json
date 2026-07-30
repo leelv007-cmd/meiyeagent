@@ -58,8 +58,8 @@
     },
     "apps/core/src/p1/harness/canonical-observability-emitters.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
-      "note": "Issue 251 final source; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
+      "verifiedAt": "ac325f8b775149a40be7a7b665e3d8c36d93fc2a",
+      "note": "Issue 248 closeout; own fresh isolated business and DBOS database pair provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/harness/dbos-registration.smoke.test.ts": {
       "status": "green",
@@ -113,8 +113,8 @@
     },
     "apps/core/src/p1/harness/observability-health.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
-      "note": "Issue 251 final source; fresh isolated database pair provisioned first: 3 pass / 0 fail / 0 skip."
+      "verifiedAt": "ac325f8b775149a40be7a7b665e3d8c36d93fc2a",
+      "note": "Issue 248 closeout; own fresh isolated business and DBOS database pair provisioned first: 3 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/harness/postgres-billing-compensation-store.postgres.test.ts": {
       "status": "green",
@@ -129,7 +129,7 @@
     "apps/core/src/p1/harness/production-media-assembly.postgres.test.ts": {
       "status": "green",
       "verifiedAt": "ac325f8b775149a40be7a7b665e3d8c36d93fc2a",
-      "note": "Issue 240 revalidation; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
+      "note": "Issues 240 and 248 revalidation; each run used its own fresh isolated business and DBOS database pair provisioned first. Latest Issue 248 closeout run: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/integrations/douyin-oauth-lifecycle.postgres.test.ts": {
       "status": "unverified",
