@@ -637,6 +637,9 @@ test(
         async readPending() {
           return null;
         },
+        async readPendingInteraction() {
+          return interactionRequest ?? null;
+        },
         async recordStageTrace() {},
         async recordTerminalFailure() {},
       },
@@ -1014,6 +1017,12 @@ test(
         'conversation',
       );
       assert.equal(second?.revision, 2);
+      await interactions.ackRenderer(workspaceId, workflowId, {
+        requestId: second!.requestId,
+        revision: second!.revision,
+        step: second!.step,
+        carrier: 'conversation',
+      });
       const result = await handle.getResult();
       assert.ok(result.delivery);
       assert.equal(await waitForWorkflowStatus(handle, 'SUCCESS'), 'SUCCESS');
