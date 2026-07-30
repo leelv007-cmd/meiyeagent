@@ -17,7 +17,7 @@ const context: P1Context = {
   workspaceId: 'workspace-a',
 };
 
-test('memory exposes bounded pages and merchant candidate decisions without reviving asset-memory', async () => {
+test('memory exposes bounded pages, candidate decisions, and memory-owned provenance tombstones', async () => {
   const service = new ReuseMemoryService(
     new MemoryReuseMemoryRepository(),
     { async verifyCandidate() {}, async verifyRevision() {} },

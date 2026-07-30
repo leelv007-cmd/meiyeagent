@@ -598,7 +598,7 @@ short-circuits are never treated as #161 pass evidence. Evidence and residuals:
 
 | # | Test name | Flow |
 |---|---|---|
-| 1 | Composer proposes a governed memory that the next ContextBundle consumes | Complete one real Composer copy run with an explicit durable preference, verify the pending memory and its source pointer, confirm it in the Memory UI, complete a second Composer run, verify its production ContextBundle consumes the confirmed preference, then delete the source conversation and verify the memory remains with a deleted-source marker. |
+| 1 | Composer proposes a governed memory that the next ContextBundle consumes | Complete one real Composer copy run with an explicit durable preference, verify the pending memory and its source pointer, confirm it in the Memory UI, complete a second Composer run, verify its production ContextBundle consumes the confirmed preference, then tombstone the memory-owned provenance snapshot and verify the memory remains with a deleted-source marker. Deleting the canonical Composer conversation is deferred to #271. |
 
 ## Deferred Coverage
 
