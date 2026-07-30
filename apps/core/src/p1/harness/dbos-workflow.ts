@@ -389,19 +389,6 @@ export function registerHarnessDbosWorkflow(
           { name: `persist-pending-${question.questionId}` },
         );
         await DBOS.setEvent('pending-structured-decision', question);
-        if (
-          pendingProjection?.timeoutSeconds === null ||
-          (!pendingProjection && !request.usageReservation)
-        ) {
-          return {
-            command: await waitForDecisionWithoutTimeout(
-              question,
-              persistence,
-              request.workspaceId,
-            ),
-            resolutionSource: 'decision' as const,
-          };
-        }
         if (question.unattended !== 'continue') {
           const holdTimeoutSeconds = pendingProjection?.holdTimeoutSeconds;
           if (holdTimeoutSeconds == null) {
@@ -460,6 +447,19 @@ export function registerHarnessDbosWorkflow(
             cancelled: true as const,
             merchantMessage: '超时未选择，本次任务已取消，额度已退回',
             resolutionSource: 'core_hold_expired' as const,
+          };
+        }
+        if (
+          pendingProjection?.timeoutSeconds === null ||
+          (!pendingProjection && !request.usageReservation)
+        ) {
+          return {
+            command: await waitForDecisionWithoutTimeout(
+              question,
+              persistence,
+              request.workspaceId,
+            ),
+            resolutionSource: 'decision' as const,
           };
         }
         // Pre-projection workflow records return no value from function ID 4.
