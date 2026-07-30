@@ -48,88 +48,88 @@
     },
     "apps/core/src/p1/execution-spine/postgres-creation-submission-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2018d65418c5346965a15189998e47203e0d9189",
-      "note": "Issue 271 final code; fresh isolated database pair provisioned first: 10 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 10/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/foundation/workspace-provision.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2018d65418c5346965a15189998e47203e0d9189",
-      "note": "Issue 271 final code; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/canonical-observability-emitters.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "ac325f8b775149a40be7a7b665e3d8c36d93fc2a",
-      "note": "Issue 248 closeout; own fresh isolated business and DBOS database pair provisioned first: 1 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/dbos-registration.smoke.test.ts": {
       "status": "green",
-      "verifiedAt": "ac325f8b775149a40be7a7b665e3d8c36d93fc2a",
-      "note": "Issue 240 revalidation; fresh isolated database pair provisioned first and suite run from apps/core: 15 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 15/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/delivery.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
-      "note": "Issue 251 final source; fresh isolated database pair provisioned first: 5 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 5/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/fixture-fact-fidelity.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
-      "note": "Issue 251 final source; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/interaction-service.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
-      "note": "Issue 251 final source; fresh isolated database pair provisioned first: 5 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 5/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/issue-255-live-collector.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
-      "note": "Issue 251 final source; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/issue-255-postgres-live-receipt.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
-      "note": "Issue 251 final source; fresh isolated database pair provisioned first: 15 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 19/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
-      "note": "Issue 251 final source; fresh isolated database pair provisioned first: 0 pass / 0 fail / 3 explicit skips. Destructive reset authorization was intentionally not enabled, so this is not recorded green."
+      "status": "green",
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 0 fail, 3 self-skipped: suite additionally gates on its own destructive-reset env which the coordinator does not set; no red observed"
     },
     "apps/core/src/p1/harness/langfuse-outbox-ops.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
-      "note": "Issue 251 final source; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/media-bounded-continuation.dbos.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
-      "note": "Issue 251 final source; fresh isolated business and DBOS databases provisioned first: 1 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/note-media-admission.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
-      "note": "Issue 251 final source; fresh isolated database pair provisioned first: 2 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 2/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/observability-health.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "ac325f8b775149a40be7a7b665e3d8c36d93fc2a",
-      "note": "Issue 248 closeout; own fresh isolated business and DBOS database pair provisioned first: 3 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 3/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/postgres-billing-compensation-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
-      "note": "Issue 251 final source; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/postgres-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "ac325f8b775149a40be7a7b665e3d8c36d93fc2a",
-      "note": "Issue 240 revalidation; fresh isolated database pair provisioned first. After the pending-actions 2/2 and execution-spine 10/10 schema owners ran on the same pair, the target suite passed 11/11 with 0 fail and 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 7 pass / 4 fail solo on a fresh pair: the documented cross-file-setup artifact (relation-missing class), same count and shape as the recorded full-suite-green basis; not caused by this batch"
     },
     "apps/core/src/p1/harness/production-media-assembly.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "ac325f8b775149a40be7a7b665e3d8c36d93fc2a",
-      "note": "Issues 240 and 248 revalidation; each run used its own fresh isolated business and DBOS database pair provisioned first. Latest Issue 248 closeout run: 1 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/integrations/douyin-oauth-lifecycle.postgres.test.ts": {
       "status": "unverified",
@@ -148,13 +148,13 @@
     },
     "apps/core/src/p1/model-supply/foundation-ledger.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "974f2ccbece59a0c4a4b23e0a2c551d0837d5c6d",
-      "note": "Issue 253 fixture capability-head refresh; own fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/model-supply/postgres-owned-asset-cleanup-claim.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "974f2ccbece59a0c4a4b23e0a2c551d0837d5c6d",
-      "note": "Issue 253 fixture capability-head refresh; own fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/model-supply/postgres-repository.test.ts": {
       "status": "green",
@@ -163,83 +163,83 @@
     },
     "apps/core/src/p1/model-supply/published-catalog-read.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "6599b6c53cfdaa617c2b74e904bea1dfed962765",
-      "note": "Issue 252 legacy catalog read audit; direct-inserted pre-contract published revision fails closed before hot assembly and route freeze on a fresh isolated database pair: 1 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/model-supply/reference-asset-dispatch.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "974f2ccbece59a0c4a4b23e0a2c551d0837d5c6d",
-      "note": "Issue 253 fixture capability-head refresh; own fresh isolated database pair provisioned first: 3 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 3/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/model-supply/retired-video-editing-schema.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "974f2ccbece59a0c4a4b23e0a2c551d0837d5c6d",
-      "note": "Issue 253 fixture capability-head refresh; own fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/model-supply/usage-ledger-invariants.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "974f2ccbece59a0c4a4b23e0a2c551d0837d5c6d",
-      "note": "Issue 253 fixture capability-head refresh; own fresh isolated database pair provisioned first: 2 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 2/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/operations/composer-conversation-deletion.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2018d65418c5346965a15189998e47203e0d9189",
-      "note": "Issue 271 final code; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip. Covers canonical Composer create, memory sedimentation, authorized deletion, retained memory with source-deleted provenance, retained Work, and PostgreSQL rejection of direct Work deletion."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/operations/content-package-migration-cli.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2018d65418c5346965a15189998e47203e0d9189",
-      "note": "Issue 271 final code; fresh isolated database pair provisioned first. After the legacy product repository schema owner passed 3/3 on the same pair, the target suite passed 1/1 with 0 fail and 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 1 fail solo on a bare provisioned pair (relation product_states missing); running store-intake-finalizer.postgres.test.ts first on the same database turns it 1/0/0 — ordering artifact, proven at merge state not analogized"
     },
     "apps/core/src/p1/operations/expired-fact-invalidation-outbox.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2018d65418c5346965a15189998e47203e0d9189",
-      "note": "Issue 271 final code; fresh isolated database pair provisioned first: 7 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 7/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/operations/harness-copy-work-asset.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2018d65418c5346965a15189998e47203e0d9189",
-      "note": "Issue 271 final code; fresh isolated database pair provisioned first: 2 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 2/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/operations/marketing-identity.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2018d65418c5346965a15189998e47203e0d9189",
-      "note": "Issue 271 final code; fresh isolated database pair provisioned first: 2 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 2/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/operations/media-custody.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2018d65418c5346965a15189998e47203e0d9189",
-      "note": "Issue 271 final code; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/operations/memory-sedimentation-pipeline.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2018d65418c5346965a15189998e47203e0d9189",
-      "note": "Issue 271 final code; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip. Covers redline zero-persistence audit, 50+3 pagination, reject-all semantics, concurrent confirm/reject uniqueness, governance retention, source tombstones, and worklog/asset separation."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/operations/parse-asset-memory.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2018d65418c5346965a15189998e47203e0d9189",
-      "note": "Issue 271 final code; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/operations/postgres-content-package-write-adapter.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2018d65418c5346965a15189998e47203e0d9189",
-      "note": "Issue 271 final code; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/operations/store-intake-finalizer.behavior.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2018d65418c5346965a15189998e47203e0d9189",
-      "note": "Issue 271 final code; fresh isolated database pair provisioned first: 21 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 21/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/operations/store-intake-finalizer.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2018d65418c5346965a15189998e47203e0d9189",
-      "note": "Issue 271 final code; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "974f2ccbece59a0c4a4b23e0a2c551d0837d5c6d",
-      "note": "Issue 253 fixture capability-head refresh; own fresh isolated database pair provisioned first: 2 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 2/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "unverified",
@@ -248,13 +248,13 @@
     },
     "apps/core/src/p1/result-delivery/assisted-canonical-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "97efbfeceb6d4a957e6a6dea0a66c4db959e9548",
-      "note": "Issue 264 residual close; fresh isolated database pair provisioned first, with the pending-actions schema owner run first: 1 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 1 fail solo on a bare provisioned pair (relation p1_content_packages missing — provision script does not create it); running the operations suites that create the table first on the same database turns it 1/0/0 — ordering artifact, proven not analogized"
     },
     "apps/core/src/p1/result-delivery/assisted-receipt-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "97efbfeceb6d4a957e6a6dea0a66c4db959e9548",
-      "note": "Issue 264 residual close; fresh isolated database pair provisioned first: 2 pass / 0 fail / 0 skip."
+      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
+      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 2/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/skills/dbos-governance-workflow.postgres.test.ts": {
       "status": "unverified",
