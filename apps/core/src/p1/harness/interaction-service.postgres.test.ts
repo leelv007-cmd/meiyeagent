@@ -2014,3 +2014,137 @@ test(
     }
   },
 );
+
+test(
+  'Postgres expires one exact unacknowledged renderer and fences a late acknowledgement',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresHarnessStore(pool);
+    await store.applySchema();
+    const suffix = randomUUID();
+    const workspaceId = `interaction-expiry-workspace-${suffix}`;
+    const runId = `interaction-expiry-run-${suffix}`;
+    const runtimeId = harnessRuntimeId(workspaceId, runId);
+    const request = askMerchantQuestionRequestSchema.parse({
+      requestId: `interaction-expiry-request-${suffix}`,
+      runId,
+      step: 'context_injection',
+      revision: 1,
+      kind: 'ask_merchant',
+      questions: [
+        {
+          itemId: 'window',
+          question: '活动到哪天结束？',
+          fallback: { kind: 'deferred' },
+        },
+      ],
+      groupSkip: true,
+      timeoutPolicy: {
+        kind: 'semantic_default',
+        timeoutSeconds: 30,
+        eligibility: semanticDefaultEligibility(
+          ['window'],
+          `interaction-expiry-request-${suffix}:r1`,
+        ),
+      },
+      presentation: {
+        carriers: ['conversation'],
+        blocking: 'none',
+        notification: 'none',
+      },
+    });
+    const service = new HarnessInteractionService(store, {
+      async resume() {
+        throw new Error('Renderer expiry must not resume the workflow.');
+      },
+    });
+    const identity = {
+      requestId: request.requestId,
+      revision: request.revision,
+      step: request.step,
+    };
+
+    try {
+      await pool.query(
+        `insert into harness_runtime.task_requests
+           (task_id, workflow_id, runtime_id, fingerprint, request)
+         values ($1,$2,$1,$3,$4::jsonb)`,
+        [
+          runtimeId,
+          runId,
+          fingerprintValue({ workspaceId, runId }),
+          JSON.stringify({ workspaceId }),
+        ],
+      );
+      await registerTypedPending(store, workspaceId, request);
+
+      assert.equal(
+        await service.expireUnrendered(workspaceId, runId),
+        'expired',
+      );
+      assert.equal(
+        await service.expireUnrendered(workspaceId, runId),
+        'replayed',
+      );
+      assert.equal(
+        await store.ackInteractionRenderer(workspaceId, runId, {
+          ...identity,
+          carrier: 'conversation',
+        }),
+        'stale',
+      );
+      assert.equal(
+        await store.readPendingInteraction(workspaceId, runId),
+        null,
+      );
+
+      const projection = (
+        await pool.query<{
+          pending_projection: {
+            rendererCapability: string;
+            rendererAckedAt: string | null;
+          };
+          status: string;
+        }>(
+          `select pending_projection, status
+             from harness_runtime.pending_questions
+            where task_id=$1`,
+          [runtimeId],
+        )
+      ).rows[0]!;
+      assert.equal(projection.status, 'resolved');
+      assert.equal(
+        projection.pending_projection.rendererCapability,
+        'unavailable',
+      );
+      assert.equal(projection.pending_projection.rendererAckedAt, null);
+    } finally {
+      await pool.query(
+        `delete from harness_runtime.langfuse_outbox
+          where audit_id in (
+            select id
+              from harness_runtime.audit_events
+             where workflow_id=$1
+          )`,
+        [runtimeId],
+      );
+      await pool.query(
+        'delete from harness_runtime.audit_events where workflow_id=$1',
+        [runtimeId],
+      );
+      for (const table of [
+        'decision_traces',
+        'decision_events',
+        'pending_questions',
+        'task_requests',
+      ]) {
+        await pool.query(
+          `delete from harness_runtime.${table} where task_id=$1`,
+          [runtimeId],
+        );
+      }
+      await pool.end();
+    }
+  },
+);

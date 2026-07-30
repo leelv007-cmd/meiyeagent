@@ -756,6 +756,47 @@ test('an unavailable renderer holds an otherwise eligible expired default', asyn
   );
 });
 
+test('an unacknowledged renderer expires through one exact durable owner', async () => {
+  const store = new MemoryInteractionStore([]);
+  let now = Date.parse('2026-07-30T00:00:00.000Z');
+  const request = askRequest({
+    timeoutPolicy: {
+      kind: 'semantic_default',
+      timeoutSeconds: 30,
+      eligibility: semanticDefaultEligibility(['window']),
+    },
+  });
+  const service = new HarnessInteractionService(
+    store,
+    { async resume() {} },
+    () => new Date(now),
+  );
+  await store.seed(request, 'unknown', new Date(now));
+  now += 30_000;
+
+  assert.deepEqual(
+    await service.submitSystemDefault('workspace-a', request.runId),
+    { kind: 'held', reason: 'renderer' },
+  );
+  assert.equal(
+    await service.expireUnrendered('workspace-a', request.runId),
+    'expired',
+  );
+  assert.equal(
+    await service.expireUnrendered('workspace-a', request.runId),
+    'replayed',
+  );
+  await assert.rejects(
+    service.ackRenderer('workspace-a', request.runId, {
+      requestId: request.requestId,
+      revision: request.revision,
+      step: request.step,
+      carrier: 'conversation',
+    }),
+    /no longer pending/u,
+  );
+});
+
 test('carrier reads do not self-ack and the first renderer ack starts the timeout window', async () => {
   let now = Date.parse('2026-07-30T00:01:00.000Z');
   const store = new MemoryInteractionStore([], () => new Date(now));
@@ -937,6 +978,7 @@ class MemoryInteractionStore implements HarnessInteractionStore {
   >();
   private lastEventKey: string | undefined;
   private waitingForMerchantMessage = false;
+  private rendererExpired = false;
   private projection: HarnessInteractionPendingProjection | null = null;
   editing = false;
   lastResolutionSource: string | undefined;
@@ -996,7 +1038,10 @@ class MemoryInteractionStore implements HarnessInteractionStore {
     _runId: string,
     options?: { includeResolved?: boolean },
   ) {
-    if (this.waitingForMerchantMessage && !options?.includeResolved) {
+    if (
+      (this.waitingForMerchantMessage || this.rendererExpired) &&
+      !options?.includeResolved
+    ) {
       return null;
     }
     return this.pending;
@@ -1186,7 +1231,9 @@ class MemoryInteractionStore implements HarnessInteractionStore {
       HarnessInteractionStore['ackInteractionRenderer']
     >[2],
   ) {
-    if (!this.pending || !this.projection) return 'stale' as const;
+    if (this.rendererExpired || !this.pending || !this.projection) {
+      return 'stale' as const;
+    }
     if (
       this.pending.requestId !== acknowledgement.requestId ||
       this.pending.revision !== acknowledgement.revision ||
@@ -1218,6 +1265,36 @@ class MemoryInteractionStore implements HarnessInteractionStore {
       }
     }
     return 'acked' as const;
+  }
+
+  async expireUnrenderedInteraction(
+    _workspaceId: string,
+    _runId: string,
+    identity: {
+      requestId: string;
+      revision: number;
+      step: string;
+    },
+  ) {
+    if (
+      !this.pending ||
+      !this.projection ||
+      this.pending.requestId !== identity.requestId ||
+      this.pending.revision !== identity.revision ||
+      this.pending.step !== identity.step
+    ) {
+      return 'stale' as const;
+    }
+    if (this.rendererExpired) return 'replayed' as const;
+    if (this.projection.rendererCapability === 'available') {
+      return 'available' as const;
+    }
+    if (this.projection.rendererCapability !== 'unknown') {
+      return 'unknown_state' as const;
+    }
+    this.projection.rendererCapability = 'unavailable';
+    this.rendererExpired = true;
+    return 'expired' as const;
   }
 }
 

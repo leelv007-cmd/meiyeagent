@@ -268,7 +268,10 @@ export function registerHarnessDbosWorkflow(
   boundedContinuations?: HarnessBoundedExecutionContinuationResolver,
   taskRecallDue?: TaskRecallDuePort,
   askMerchant?: HarnessAskMerchantPrimitivePort,
-  interactions?: Pick<HarnessInteractionService, 'submitSystemDefault'>,
+  interactions?: Pick<
+    HarnessInteractionService,
+    'expireUnrendered' | 'submitSystemDefault'
+  >,
 ) {
   const workflow = async (input: HarnessDbosWorkflowInput) => {
     const runtimeWorkflowId = DBOS.workflowID;
@@ -488,7 +491,7 @@ export function registerHarnessDbosWorkflow(
                 'Typed interaction system-default persistence is unavailable.',
               );
             }
-            await DBOS.runStep(
+            const systemDefault = await DBOS.runStep(
               () =>
                 interactions.submitSystemDefault(
                   request.workspaceId,
@@ -498,6 +501,30 @@ export function registerHarnessDbosWorkflow(
                 name: `persist-system-default-${question.questionId}`,
               },
             );
+            if (
+              systemDefault.kind === 'held' &&
+              systemDefault.reason === 'renderer'
+            ) {
+              const expiry = await DBOS.runStep(
+                () =>
+                  interactions.expireUnrendered(
+                    request.workspaceId,
+                    workflowId,
+                  ),
+                {
+                  name: `persist-renderer-unavailable-${question.questionId}`,
+                },
+              );
+              if (expiry === 'expired' || expiry === 'replayed') {
+                return {
+                  cancelled: true as const,
+                  merchantMessage: request.usageReservation
+                    ? '超时未选择，本次任务已取消，额度已退回'
+                    : '超时未选择，本次任务已取消',
+                  resolutionSource: 'core_hold_expired' as const,
+                };
+              }
+            }
             return waitForDecisionWithResolutionSource(
               question,
               persistence,

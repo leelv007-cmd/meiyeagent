@@ -1681,6 +1681,98 @@ export class PostgresHarnessStore
     }
   }
 
+  async expireUnrenderedInteraction(
+    workspaceId: string,
+    runId: string,
+    identity: Parameters<
+      HarnessInteractionStore['expireUnrenderedInteraction']
+    >[2],
+  ) {
+    const runtimeTaskId = await this.workflowRuntimeId(workspaceId, runId);
+    if (!runtimeTaskId) return 'stale' as const;
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      const current = await client.query<{
+        pending_projection: unknown;
+        status: 'pending' | 'resolved';
+      }>(
+        `select pending_projection, status
+           from harness_runtime.pending_questions
+          where task_id=$1
+          for update`,
+        [runtimeTaskId],
+      );
+      const row = current.rows[0];
+      if (!row) {
+        await client.query('rollback');
+        return 'stale' as const;
+      }
+      const projection = harnessInteractionPendingProjectionSchema.safeParse(
+        row.pending_projection,
+      );
+      if (!projection.success) {
+        await client.query('rollback');
+        return 'unknown_state' as const;
+      }
+      if (
+        projection.data.request.requestId !== identity.requestId ||
+        projection.data.request.revision !== identity.revision ||
+        projection.data.request.step !== identity.step
+      ) {
+        await client.query('rollback');
+        return 'stale' as const;
+      }
+      if (row.status === 'resolved') {
+        await client.query('commit');
+        return projection.data.rendererCapability === 'unavailable'
+          ? ('replayed' as const)
+          : ('stale' as const);
+      }
+      if (projection.data.rendererCapability === 'available') {
+        await client.query('commit');
+        return 'available' as const;
+      }
+      if (projection.data.rendererCapability !== 'unknown') {
+        await client.query('rollback');
+        return 'unknown_state' as const;
+      }
+
+      projection.data.rendererCapability = 'unavailable';
+      projection.data.rendererAckedAt = null;
+      await client.query(
+        `update harness_runtime.pending_questions
+            set status='resolved',
+                pending_projection=$2::jsonb,
+                updated_at=now()
+          where task_id=$1 and status='pending'`,
+        [runtimeTaskId, JSON.stringify(projection.data)],
+      );
+      await this.writeAuditAndOutbox(
+        client,
+        {
+          workspaceId,
+          id: `audit-${identity.requestId}-renderer-expired-r${identity.revision}`,
+          workflowId: runId,
+          stage: identity.step,
+          eventType: 'harness_interaction_renderer_expired',
+          payload: {
+            requestId: identity.requestId,
+            revision: identity.revision,
+          },
+        },
+        runtimeTaskId,
+      );
+      await client.query('commit');
+      return 'expired' as const;
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async readPending(
     workspaceId: string,
     taskId: string,

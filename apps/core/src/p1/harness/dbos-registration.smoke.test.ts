@@ -672,6 +672,9 @@ test(
       undefined,
       undefined,
       {
+        async expireUnrendered() {
+          throw new Error('An acknowledged renderer must not expire.');
+        },
         async submitSystemDefault(targetWorkspaceId, runId) {
           const request = interactionRequest;
           if (
@@ -848,6 +851,179 @@ test(
       assert.equal(await waitForWorkflowStatus(handle, 'SUCCESS'), 'SUCCESS');
     } finally {
       await DBOS.shutdown({ deregister: true });
+    }
+  },
+);
+
+test(
+  'an unacknowledged renderer expires and refunds after DBOS cold recovery',
+  { skip: !systemDatabaseUrl },
+  async () => {
+    const workflowId = `harness-renderer-expiry-${randomUUID()}`;
+    const workspaceId = `workspace-renderer-expiry-${randomUUID()}`;
+    const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
+    const skills = await createSmokeSkills(workflowId);
+    const ports = smokePorts(workflowId, skills.service, []);
+    ports.nameIntent = async () => ({
+      declaration: {
+        normalizedIntent: '推广本店团购',
+        taskType: 'promotion_groupbuy_conversion',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['promotion_activity'],
+        usedAssetCategories: [],
+        route: 'guidance',
+        routingSource: 'model',
+        implicitConstraints: [],
+      },
+      blockingQuestion: {
+        questionId: `${workflowId}:offer-price`,
+        workflowId,
+        workflowRevision: 1,
+        question: '当前团购价是多少？',
+        options: [],
+        freeText: { enabled: true },
+        response: {
+          field: 'offer_price',
+          reason: '补充当前任务所需的权威事实',
+        },
+        unattended: 'continue',
+        semanticDefaultAuthority: {
+          kind: 'non_resource_no_effect',
+          source: 'intent_gap',
+          revision: 'intent-gap/v1',
+        },
+        scope: 'current_task',
+      },
+    });
+    let interactionRequest: HarnessInteractionRequest | undefined;
+    let defaultAttempts = 0;
+    let expiries = 0;
+    let refunds = 0;
+    DBOS.setConfig({
+      name: 'beauty-marketing-harness-renderer-expiry',
+      systemDatabaseUrl: systemDatabaseUrl!,
+      applicationVersion: `harness-renderer-expiry-${workflowId}`,
+    });
+    const workflow = registerHarnessDbosWorkflow(
+      ports,
+      {
+        async registerPending(_workspaceId, _question, projection) {
+          interactionRequest = projection?.interactionRequest;
+          return projection;
+        },
+        async readPending() {
+          return null;
+        },
+        async readPendingInteraction() {
+          return interactionRequest ?? null;
+        },
+        async recordStageTrace() {},
+        async recordTerminalFailure() {},
+      },
+      undefined,
+      {
+        async commit() {
+          throw new Error('A renderer expiry must not commit usage.');
+        },
+        async refund() {
+          refunds += 1;
+        },
+        async scheduleCompensation() {
+          throw new Error('The renderer-expiry refund succeeds.');
+        },
+      },
+      {
+        async get() {
+          return {
+            actorId: 'platform-admin',
+            correlationId: `renderer-expiry-${workflowId}`,
+            createdAt: '2026-07-30T09:00:00.000Z',
+            key: 'harness.confirmation_card.timeout_seconds',
+            reason: 'Exercise renderer expiry after recovery',
+            revision: 1,
+            rolledBackToRevision: null,
+            scope: 'global',
+            status: 'applied',
+            value: 2,
+            workspaceId: '__global__',
+          };
+        },
+      },
+      {
+        async submitCoreTimeout() {
+          throw new Error('A typed timeout must not use core_timeout.');
+        },
+      },
+      undefined,
+      undefined,
+      undefined,
+      {
+        async expireUnrendered() {
+          expiries += 1;
+          return 'expired' as const;
+        },
+        async submitSystemDefault() {
+          defaultAttempts += 1;
+          return { kind: 'held' as const, reason: 'renderer' as const };
+        },
+      },
+    );
+
+    let launched = false;
+    try {
+      await DBOS.launch();
+      launched = true;
+      const request = snapshotTimeoutRequest(workflowId, workspaceId);
+      await DBOS.startWorkflow(workflow, {
+        workflowID: runtimeWorkflowId,
+      })({
+        workflowId,
+        request: {
+          ...request,
+          usageReservation: {
+            id: `usage-reservation-${workflowId}`,
+            units: [{ resource: 'copy', quantity: 1 }],
+          },
+        },
+      });
+      await DBOS.getEvent(
+        runtimeWorkflowId,
+        'pending-structured-decision',
+        { timeoutSeconds: 5 },
+      );
+      await DBOS.shutdown();
+      launched = false;
+
+      await DBOS.launch();
+      launched = true;
+      const recovered = DBOS.retrieveWorkflow<{
+        delivery: null;
+        merchantMessage: string;
+        outcome: 'cancelled';
+        resolutionSource: 'core_hold_expired';
+      }>(runtimeWorkflowId);
+      assert.deepEqual(await recovered.getResult(), {
+        delivery: null,
+        merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+        outcome: 'cancelled',
+        resolutionSource: 'core_hold_expired',
+      });
+      assert.equal(await waitForWorkflowStatus(recovered, 'SUCCESS'), 'SUCCESS');
+      assert.equal(defaultAttempts, 1);
+      assert.equal(expiries, 1);
+      assert.equal(refunds, 1);
+      assert.deepEqual(
+        (await DBOS.listWorkflowSteps(runtimeWorkflowId))
+          ?.filter((step) => step.functionID >= 8 && step.functionID <= 10)
+          .map((step) => step.name),
+        [
+          `persist-system-default-${workflowId}:offer-price`,
+          `persist-renderer-unavailable-${workflowId}:offer-price`,
+          'refund-product-usage',
+        ],
+      );
+    } finally {
+      if (launched) await DBOS.shutdown({ deregister: true });
     }
   },
 );

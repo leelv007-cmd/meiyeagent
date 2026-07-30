@@ -339,6 +339,15 @@ export interface HarnessInteractionStore {
     runId: string,
     acknowledgement: HarnessInteractionRendererAck,
   ): Promise<'acked' | 'replayed' | 'stale' | 'unknown_state'>;
+  expireUnrenderedInteraction(
+    workspaceId: string,
+    runId: string,
+    identity: {
+      requestId: string;
+      revision: number;
+      step: string;
+    },
+  ): Promise<'available' | 'expired' | 'replayed' | 'stale' | 'unknown_state'>;
 }
 
 export interface HarnessInteractionResumer {
@@ -459,6 +468,31 @@ export class HarnessInteractionService {
         'The interaction renderer cannot acknowledge this pending state.',
       );
     }
+  }
+
+  async expireUnrendered(workspaceId: string, runId: string) {
+    const request = await this.store.readPendingInteraction(
+      workspaceId,
+      runId,
+      { includeResolved: true },
+    );
+    if (!request) return 'stale' as const;
+    const outcome = await this.store.expireUnrenderedInteraction(
+      workspaceId,
+      runId,
+      {
+        requestId: request.requestId,
+        revision: request.revision,
+        step: request.step,
+      },
+    );
+    if (outcome === 'unknown_state') {
+      throw new HarnessInteractionError(
+        'INTERACTION_KIND_MISMATCH',
+        'The interaction renderer state cannot be expired.',
+      );
+    }
+    return outcome;
   }
 
   async submit(

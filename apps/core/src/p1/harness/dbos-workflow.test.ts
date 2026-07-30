@@ -407,6 +407,14 @@ test('typed timeout persistence uses the production system-default owner', () =>
     workflowSource,
     /persist-system-default-/u,
   );
+  assert.match(
+    workflowSource,
+    /interactions\.expireUnrendered/u,
+  );
+  assert.match(
+    workflowSource,
+    /persist-renderer-unavailable-/u,
+  );
   const mainSource = readFileSync(
     new URL('../../main.ts', import.meta.url),
     'utf8',
