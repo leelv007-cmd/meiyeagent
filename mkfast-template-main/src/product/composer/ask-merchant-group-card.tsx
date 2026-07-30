@@ -114,7 +114,8 @@ export function AskMerchantGroupCard({
                     </Button>
                   ))}
                 </div>
-              ) : (
+              ) : null}
+              {!question.options || question.freeText?.enabled ? (
                 <Input
                   aria-label={question.question}
                   disabled={pending}
@@ -135,10 +136,12 @@ export function AskMerchantGroupCard({
                     setEditing(true);
                     void onEditingChange(request, true).catch(() => undefined);
                   }}
-                  placeholder="也可以直接告诉我"
+                  placeholder={
+                    question.freeText?.placeholder ?? '也可以直接告诉我'
+                  }
                   value={selected?.kind === 'answer' ? selected.value : ''}
                 />
-              )}
+              ) : null}
               <Button
                 aria-pressed={selected?.kind === 'deferred'}
                 disabled={pending}

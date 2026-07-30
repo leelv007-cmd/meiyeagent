@@ -60,6 +60,7 @@ export function resolveAskMerchantAnswer(
     if (
       result.kind === 'answer' &&
       question.options &&
+      question.freeText?.enabled !== true &&
       !question.options.some((option) => option.label === result.value)
     ) {
       return reask(request);

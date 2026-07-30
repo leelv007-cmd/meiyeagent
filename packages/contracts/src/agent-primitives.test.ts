@@ -242,6 +242,10 @@ test('merchant question requests group free-text items under one durable resume 
       {
         itemId: 'service',
         question: '这次主推哪个项目？',
+        freeText: {
+          enabled: true,
+          placeholder: '也可以直接告诉我',
+        },
         fallback: { kind: 'deferred' },
       },
     ],

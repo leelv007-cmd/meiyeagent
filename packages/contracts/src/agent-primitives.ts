@@ -81,9 +81,25 @@ export const askMerchantQuestionSchema = z
       .min(1)
       .max(12)
       .optional(),
+    freeText: z
+      .object({
+        enabled: z.boolean(),
+        placeholder: z.string().trim().min(1).max(500).optional(),
+      })
+      .strict()
+      .optional(),
     fallback: z.object({ kind: z.literal('deferred') }).strict(),
   })
-  .strict();
+  .strict()
+  .superRefine((question, context) => {
+    if (question.freeText?.enabled === false && question.freeText.placeholder) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Disabled free-text input cannot have a placeholder.',
+        path: ['freeText', 'placeholder'],
+      });
+    }
+  });
 
 export const askMerchantSemanticDefaultResponseSchema = z
   .object({

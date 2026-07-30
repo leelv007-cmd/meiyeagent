@@ -9,6 +9,7 @@ import {
 } from '@meiye/contracts';
 
 import {
+  askMerchantInteractionRequestFromQuestion,
   buildAskMerchantSemanticDefaultTimeoutPolicy,
   createHarnessInteractionPendingProjection,
   executionConfirmationInteractionRequestFromQuestion,
@@ -20,6 +21,38 @@ import {
   type HarnessInteractionStore,
 } from './interaction-service.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
+
+test('merchant questions preserve free text and normalize duplicate labels before persistence', () => {
+  const request = askMerchantInteractionRequestFromQuestion({
+    question: {
+      questionId: 'question-options-free-text',
+      workflowId: 'run-options-free-text',
+      workflowRevision: 1,
+      question: '这次主推什么？',
+      options: [
+        { id: 'option-1', label: '头皮护理' },
+        { id: 'option-2', label: '头皮护理' },
+        { id: 'option-3', label: '染发' },
+      ],
+      freeText: { enabled: true, placeholder: '也可以直接告诉我' },
+      response: {
+        field: 'service',
+        reason: '需要商家确认主推项目',
+      },
+      unattended: 'hold',
+      scope: 'current_task',
+    },
+    stage: 'intent_naming',
+  });
+
+  assert.deepEqual(request.questions[0], {
+    itemId: 'service',
+    question: '这次主推什么？',
+    options: [{ label: '头皮护理' }, { label: '染发' }],
+    freeText: { enabled: true, placeholder: '也可以直接告诉我' },
+    fallback: { kind: 'deferred' },
+  });
+});
 
 test('semantic defaults require independent server-owned safety authority', () => {
   const question = {

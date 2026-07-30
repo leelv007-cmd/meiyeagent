@@ -246,6 +246,53 @@ test('free text and per-item deferred results resume together', () => {
   });
 });
 
+test('free text remains valid when the same question also offers labels', () => {
+  const request = askMerchantQuestionRequestSchema.parse({
+    requestId: 'request-options-free-text',
+    runId: 'run-options-free-text',
+    step: 'intent_naming',
+    revision: 1,
+    kind: 'ask_merchant',
+    questions: [
+      {
+        itemId: 'service',
+        question: '这次主推哪个项目？',
+        options: [{ label: '头皮护理' }],
+        freeText: { enabled: true },
+        fallback: { kind: 'deferred' },
+      },
+    ],
+    groupSkip: true,
+    presentation: {
+      carriers: ['conversation'],
+      blocking: 'none',
+      notification: 'none',
+    },
+  });
+  const answer = {
+    requestId: request.requestId,
+    revision: request.revision,
+    idempotencyKey: 'answer-options-free-text',
+    resume: { runId: request.runId, step: request.step },
+    response: {
+      kind: 'answer',
+      items: [
+        {
+          itemId: 'service',
+          result: { kind: 'answer', value: '直播预告' },
+        },
+      ],
+    },
+  } as const;
+
+  assert.deepEqual(resolveAskMerchantAnswer(request, answer), {
+    kind: 'resume',
+    runId: request.runId,
+    step: request.step,
+    resumeData: answer.response,
+  });
+});
+
 test('invalid offered labels reask while stale resume identities fail closed', () => {
   const request = askMerchantQuestionRequestSchema.parse({
     requestId: 'request-5',

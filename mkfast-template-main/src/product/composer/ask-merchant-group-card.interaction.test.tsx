@@ -26,6 +26,10 @@ const REQUEST: AskMerchantQuestionRequest = {
           description: '说明只给商家看',
         },
       ],
+      freeText: {
+        enabled: true,
+        placeholder: '也可以直接告诉我',
+      },
       fallback: { kind: 'deferred' },
     },
     {
@@ -89,6 +93,35 @@ it('renders every item but submits labels without descriptions', async () => {
     ],
   });
   expect(JSON.stringify(onSubmit.mock.calls)).not.toContain('说明只给商家看');
+});
+
+it('accepts custom text beside offered labels', async () => {
+  const user = userEvent.setup();
+  const onSubmit = vi.fn(async () => undefined);
+  render(
+    <AskMerchantGroupCard
+      onEditingChange={async () => undefined}
+      onRendererReady={async () => undefined}
+      onSubmit={onSubmit}
+      request={{ ...REQUEST, questions: [REQUEST.questions[0]!] }}
+    />
+  );
+
+  const freeText = screen.getByRole('textbox', {
+    name: '这次主推哪个项目？',
+  });
+  await user.type(freeText, '直播预告');
+  await user.click(screen.getByRole('button', { name: '提交回答' }));
+
+  expect(onSubmit).toHaveBeenCalledWith({
+    kind: 'answer',
+    items: [
+      {
+        itemId: 'service',
+        result: { kind: 'answer', value: '直播预告' },
+      },
+    ],
+  });
 });
 
 it('submits one explicit group skip', async () => {

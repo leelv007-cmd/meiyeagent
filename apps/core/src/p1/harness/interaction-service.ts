@@ -149,12 +149,20 @@ export function askMerchantInteractionRequestFromQuestion(input: {
         question: question.question,
         ...(question.options.length > 0
           ? {
-              options: question.options.map(({ description, label }) => ({
-                ...(description ? { description } : {}),
-                label,
-              })),
+              options: question.options
+                .filter(
+                  (option, index, options) =>
+                    options.findIndex(
+                      (candidate) => candidate.label === option.label,
+                    ) === index,
+                )
+                .map(({ description, label }) => ({
+                  ...(description ? { description } : {}),
+                  label,
+                })),
             }
           : {}),
+        freeText: question.freeText,
         fallback: { kind: 'deferred' },
       },
     ],
