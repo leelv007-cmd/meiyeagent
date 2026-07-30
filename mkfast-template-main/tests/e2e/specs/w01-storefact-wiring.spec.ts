@@ -12,7 +12,6 @@ import {
   seedComposerInlineAuthorize,
 } from '../fixtures/product';
 import {
-  chooseImageTextDirection,
   JOURNEY_CONTRACTS,
   submitComposerJourney,
   waitForResultJourney,
@@ -409,12 +408,22 @@ test.describe('W01 store intake fact wiring', () => {
             const deliveryTurn = imageTextPage.getByTestId(
               'composer-delivery-turn'
             );
-            await expect(
-              directionCard.or(deliveryTurn).first()
-            ).toBeVisible({ timeout: 180_000 });
-            if (await directionCard.isVisible()) {
-              await chooseImageTextDirection(imageTextPage);
-            }
+            await expect(async () => {
+              if (await deliveryTurn.isVisible()) return;
+              if (await directionCard.isVisible()) {
+                const directions = directionCard
+                  .locator('fieldset')
+                  .getByRole('button')
+                  .filter({ hasNotText: '暂未确定' });
+                try {
+                  await directions.first().click({ timeout: 2_000 });
+                } catch {
+                  // The frozen route answered the card between the visibility
+                  // check and the click; delivery is still the exit.
+                }
+              }
+              expect(await deliveryTurn.isVisible()).toBeTruthy();
+            }).toPass({ timeout: 300_000 });
           },
         }
       );
