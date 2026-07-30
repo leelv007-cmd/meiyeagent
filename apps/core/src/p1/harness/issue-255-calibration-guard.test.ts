@@ -21,7 +21,7 @@ const bands = ['low', 'typical', 'boundary'] as const;
 const seeds = [1, 2, 3] as const;
 const approvedMicros = {
   copy: 100_000,
-  image_text: 500_000,
+  image_text: 50_000,
   video: 1_620_000,
 } as const;
 
@@ -151,7 +151,7 @@ class TrustedBoundary
       effect.modality === 'copy'
         ? 80_000
         : effect.modality === 'image_text'
-          ? 400_000
+          ? 50_000
           : 1_500_000;
     const attemptId = `attempt-${effect.modality}-1`;
     return {

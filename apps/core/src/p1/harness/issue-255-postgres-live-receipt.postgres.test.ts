@@ -770,7 +770,10 @@ describe(
               'provider_cost_event_id',
               'failure_error_code',
               'failure_error_message',
-              'provider_http_status'
+              'provider_http_status',
+              'provider_request_started_at',
+              'provider_response_finished_at',
+              'provider_wall_clock_ms'
             )
           ORDER BY column_name`,
       );
@@ -783,6 +786,9 @@ describe(
           { column_name: 'provider_cost_event_id', is_nullable: 'NO' },
           { column_name: 'provider_http_status', is_nullable: 'YES' },
           { column_name: 'provider_job_id', is_nullable: 'NO' },
+          { column_name: 'provider_request_started_at', is_nullable: 'YES' },
+          { column_name: 'provider_response_finished_at', is_nullable: 'YES' },
+          { column_name: 'provider_wall_clock_ms', is_nullable: 'YES' },
           { column_name: 'workspace_id', is_nullable: 'NO' },
         ],
       );
@@ -835,7 +841,7 @@ describe(
       );
     });
 
-    it('backfills three legacy submitted receipts, permits through the sixth, and rejects a seventh claim', async () => {
+    it('backfills three legacy submitted receipts, permits through the seventh, and rejects an eighth claim', async () => {
       const legacyRunPrefix =
         `issue-255-pg-${suiteNonce}-legacy-three`;
       await firstPool.query(
@@ -889,9 +895,21 @@ describe(
         requestFingerprint: sixthClaim.requestFingerprint,
       });
       const seventhRunNonce = `${legacyRunPrefix}-7`;
+      const seventhClaim = copyClaim(seventhRunNonce);
+      await first.claim(seventhClaim);
+      await first.claimGenerationPost({
+        adapter: seventhClaim.adapter,
+        deploymentId: seventhClaim.deploymentId,
+        runNonce: seventhClaim.runNonce,
+        modality: seventhClaim.modality,
+        effectId: seventhClaim.effectId,
+        providerIdempotencyKey: seventhClaim.providerIdempotencyKey,
+        requestFingerprint: seventhClaim.requestFingerprint,
+      });
+      const eighthRunNonce = `${legacyRunPrefix}-8`;
       await assert.rejects(
-        first.claim(copyClaim(seventhRunNonce)),
-        /exactly six billable generation POSTs/u,
+        first.claim(copyClaim(eighthRunNonce)),
+        /exactly seven billable generation POSTs/u,
       );
       const history = await firstPool.query<{ count: number }>(
         `SELECT COUNT(*)::int AS count
@@ -899,7 +917,7 @@ describe(
           WHERE run_nonce LIKE $1`,
         [`${legacyRunPrefix}-%`],
       );
-      assert.equal(history.rows[0]?.count, 6);
+      assert.equal(history.rows[0]?.count, 7);
     });
 
     it('hands the durable live owner from v4 to the coordinator v5 retry', async () => {
@@ -1114,7 +1132,7 @@ describe(
 
       const results = await Promise.allSettled([
         first.claim(claim('copy', 100_000)),
-        second.claim(claim('image_text', 500_000)),
+        second.claim(claim('image_text', 50_000)),
       ]);
       const receipts = await first.listRun(runNonce);
 
@@ -1126,7 +1144,7 @@ describe(
       assert.equal(receipts[0]?.status, 'claimed');
       assert.equal(
         receipts[0]?.reservedAmountMicros,
-        receipts[0]?.modality === 'copy' ? 100_000 : 500_000,
+        receipts[0]?.modality === 'copy' ? 100_000 : 50_000,
       );
     });
 
@@ -1229,7 +1247,7 @@ describe(
           adapter: 'tuzi-image',
           deploymentId: 'gpt-image-2-tuzi-relay',
           requestFingerprint: '2'.repeat(64),
-          reservedAmountMicros: 500_000,
+          reservedAmountMicros: 50_000,
           priceRevision: 'tuzi-image-price-v1',
         }),
         /unknown.*reconciliation/u,
@@ -1426,6 +1444,53 @@ describe(
         }),
         /provider task id.*immutable/u,
       );
+    });
+
+    it('persists provider request and response timing as durable wall-clock evidence', async () => {
+      const runNonce = `issue-255-pg-${suiteNonce}-provider-timing`;
+      const claim = copyClaim(runNonce);
+      await first.claim(claim);
+      await first.claimGenerationPost({
+        adapter: 'direct-copy',
+        deploymentId: claim.deploymentId,
+        runNonce,
+        modality: 'copy',
+        effectId: claim.effectId,
+        providerIdempotencyKey: claim.providerIdempotencyKey,
+        requestFingerprint: claim.requestFingerprint,
+      });
+      const requestStartedAt = new Date('2026-07-31T00:00:00.125Z');
+      const responseFinishedAt = new Date('2026-07-31T00:00:02.900Z');
+
+      await first.recordProviderHttpRequest({
+        adapter: 'direct-copy',
+        deploymentId: claim.deploymentId,
+        runNonce,
+        modality: 'copy',
+        effectId: claim.effectId,
+        providerIdempotencyKey: claim.providerIdempotencyKey,
+        requestFingerprint: claim.requestFingerprint,
+        observedAt: requestStartedAt,
+      });
+      await first.recordProviderHttpResponse({
+        adapter: 'direct-copy',
+        deploymentId: claim.deploymentId,
+        runNonce,
+        modality: 'copy',
+        effectId: claim.effectId,
+        providerIdempotencyKey: claim.providerIdempotencyKey,
+        requestFingerprint: claim.requestFingerprint,
+        httpStatus: 200,
+        observedAt: responseFinishedAt,
+      });
+
+      const [receipt] = await first.listRun(runNonce);
+      assert.equal(receipt?.providerRequestStartedAt, requestStartedAt.toISOString());
+      assert.equal(
+        receipt?.providerResponseFinishedAt,
+        responseFinishedAt.toISOString(),
+      );
+      assert.equal(receipt?.providerWallClockMs, 2775);
     });
 
     it('persists bounded redacted provider response evidence for polling failures', async () => {
@@ -1853,9 +1918,22 @@ describe(
       });
       const seventhRunNonce =
         `issue-255-pg-${suiteNonce}-failed-before-billing-seventh`;
+      const seventhClaim = copyClaim(seventhRunNonce);
+      await first.claim(seventhClaim);
+      await first.claimGenerationPost({
+        adapter: seventhClaim.adapter,
+        deploymentId: seventhClaim.deploymentId,
+        runNonce: seventhClaim.runNonce,
+        modality: seventhClaim.modality,
+        effectId: seventhClaim.effectId,
+        providerIdempotencyKey: seventhClaim.providerIdempotencyKey,
+        requestFingerprint: seventhClaim.requestFingerprint,
+      });
+      const eighthRunNonce =
+        `issue-255-pg-${suiteNonce}-failed-before-billing-eighth`;
       await assert.rejects(
-        first.claim(copyClaim(seventhRunNonce)),
-        /six billable generation POSTs globally/u,
+        first.claim(copyClaim(eighthRunNonce)),
+        /seven billable generation POSTs globally/u,
       );
     });
 
@@ -1908,8 +1986,8 @@ describe(
       );
     });
 
-    it('rejects a seventh billable generation POST globally before provider fetch', async () => {
-      for (const index of [1, 2, 3, 4, 5, 6]) {
+    it('rejects an eighth billable generation POST globally before provider fetch', async () => {
+      for (const index of [1, 2, 3, 4, 5, 6, 7]) {
         const runNonce = `issue-255-pg-${suiteNonce}-global-${index}`;
         const effectId = createHash('sha256')
           .update(`issue255/v1\0${runNonce}\0copy`)
@@ -1942,38 +2020,38 @@ describe(
           requestFingerprint,
         });
       }
-      const seventhRunNonce = `issue-255-pg-${suiteNonce}-global-7`;
-      const seventhEffectId = createHash('sha256')
-        .update(`issue255/v1\0${seventhRunNonce}\0copy`)
+      const eighthRunNonce = `issue-255-pg-${suiteNonce}-global-8`;
+      const eighthEffectId = createHash('sha256')
+        .update(`issue255/v1\0${eighthRunNonce}\0copy`)
         .digest('hex');
       await assert.rejects(
         first.claim({
           workspaceId: receiptWorkspaceId,
-          runNonce: seventhRunNonce,
+          runNonce: eighthRunNonce,
           modality: 'copy',
           adapter: 'direct-copy',
           deploymentId: 'deepseek-v4-pro-direct',
-          effectId: seventhEffectId,
-          providerIdempotencyKey: seventhEffectId,
-          providerJobId: `${seventhEffectId}:job`,
-          providerAttemptId: `${seventhEffectId}:attempt`,
-          providerCostEventId: `${seventhEffectId}:cost`,
+          effectId: eighthEffectId,
+          providerIdempotencyKey: eighthEffectId,
+          providerJobId: `${eighthEffectId}:job`,
+          providerAttemptId: `${eighthEffectId}:attempt`,
+          providerCostEventId: `${eighthEffectId}:cost`,
           requestFingerprint: '9'.repeat(64),
           recordedMatrixDigest: '8'.repeat(64),
           reservedAmountMicros: 100_000,
           priceRevision: 'direct-copy-price-v1',
           exchangeRevision: 'native-cny-v1',
         }),
-        /exactly six billable generation POSTs/u,
+        /exactly seven billable generation POSTs/u,
       );
-      assert.equal((await first.listRun(seventhRunNonce)).length, 0);
+      assert.equal((await first.listRun(eighthRunNonce)).length, 0);
       const history = await firstPool.query<{ count: number }>(
         `SELECT COUNT(*)::int AS count
            FROM issue255_live_generation_authorizations
           WHERE run_nonce LIKE $1`,
         [`issue-255-pg-${suiteNonce}-global-%`],
       );
-      assert.equal(history.rows[0]?.count, 6);
+      assert.equal(history.rows[0]?.count, 7);
     });
 
     it('accepts only known integer-micro-CNY terminal cost truth', async () => {

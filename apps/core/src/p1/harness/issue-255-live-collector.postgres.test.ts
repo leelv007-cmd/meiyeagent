@@ -321,7 +321,7 @@ test(
         },
         image: {
           catalogModelId: 'gpt-image-2' as const,
-          costPerImage: 0.5,
+          costPerImage: 0.05,
           model: 'gpt-image-2',
         },
         sourceUrlTtlSeconds: 3_600,
@@ -399,7 +399,7 @@ test(
             configurationRevision: 'tuzi-image-config-v1',
             credentialRevision: 'tuzi-credential-v1',
             deploymentId: 'gpt-image-2-tuzi-relay',
-            frozenPriceCny: '0.5',
+            frozenPriceCny: '0.05',
             modality: 'image_text',
             options: tuziOptions,
             priceRevision: 'tuzi-image-price-v1',
@@ -435,8 +435,12 @@ test(
       );
       assert.deepEqual(
         manifest.samples.map((sample) => sample.usageEvidenceKind),
-        ['provider_reported', 'response_derived', 'provider_reported'],
+        ['provider_reported', 'price_card_reconciled', 'provider_reported'],
       );
+      assert.equal(manifest.samples[1]?.reservedAmountMicros, 50_000);
+      assert.equal(manifest.samples[1]?.actualAmountMicros, 50_000);
+      assert.equal(manifest.samples[1]?.providerTaskRefHash?.length, 64);
+      assert.equal(manifest.samples[1]?.wallClockMs > 0, true);
       assert.deepEqual(manifest.samples[2]?.statusSequence, [
         'queued',
         'running',
@@ -635,7 +639,7 @@ function collisionGuardExecutors(
       modality: 'image_text',
       priceRevision: 'collision-image-price-v1',
       promptHash: '2'.repeat(64),
-      quoteAmountMicros: 500_000,
+      quoteAmountMicros: 50_000,
       quoteBasis: { outputCount: 1 },
       async execute() {
         onExecute();

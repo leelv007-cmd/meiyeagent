@@ -36,7 +36,7 @@ const issue255LiveRuntimeEnv = (
   TUZI_MEDIA_CREDENTIAL_VERSION: 'tuzi-key-v1',
   TUZI_MEDIA_ENDPOINT_REVISION: 'tuzi-endpoint-v1',
   TUZI_MEDIA_SOURCE_URL_TTL_SECONDS: '3600',
-  TUZI_GPT_IMAGE_2_COST_PER_IMAGE_CNY: '0.5',
+  TUZI_GPT_IMAGE_2_COST_PER_IMAGE_CNY: '0.05',
   TUZI_GPT_IMAGE_2_MODEL: 'gpt-image-2',
   TUZI_SEEDANCE_COST_PER_MILLION_TOKENS_CNY: '15',
   TUZI_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND: '21600',
@@ -108,7 +108,7 @@ test('issue 255 Tuzi cancellation launch rejects the live collector flag in reve
   );
 });
 
-test('issue 255 v5 envelope permits only the coordinator video retry', () => {
+test('issue 255 envelope override permits only approved coordinator retries', () => {
   assert.deepEqual(resolveIssue255LiveEnvelope({}, 'original-run'), {
     runNonce: 'original-run',
     modality: 'all',
@@ -127,6 +127,20 @@ test('issue 255 v5 envelope permits only the coordinator video retry', () => {
       modality: 'video',
     },
   );
+  assert.deepEqual(
+    resolveIssue255LiveEnvelope(
+      {
+        ISSUE_255_LIVE_RUN_NONCE:
+          'issue-255-live-anchors-2026-07-31-v6',
+        ISSUE_255_LIVE_MODALITY: 'image',
+      },
+      'ignored-run',
+    ),
+    {
+      runNonce: 'issue-255-live-anchors-2026-07-31-v6',
+      modality: 'image_text',
+    },
+  );
   for (const env of [
     {
       ISSUE_255_LIVE_RUN_NONCE:
@@ -138,10 +152,20 @@ test('issue 255 v5 envelope permits only the coordinator video retry', () => {
         'issue-255-live-anchors-2026-07-30-v5',
       ISSUE_255_LIVE_MODALITY: 'copy',
     },
+    {
+      ISSUE_255_LIVE_RUN_NONCE:
+        'issue-255-live-anchors-2026-07-31-v6',
+      ISSUE_255_LIVE_MODALITY: 'video',
+    },
+    {
+      ISSUE_255_LIVE_RUN_NONCE:
+        'issue-255-live-anchors-2026-07-31-v6',
+      ISSUE_255_LIVE_MODALITY: 'image_text',
+    },
   ]) {
     assert.throws(
       () => resolveIssue255LiveEnvelope(env, 'ignored-run'),
-      /coordinator v5 single video retry/u,
+      /approved coordinator retry/u,
     );
   }
 });
@@ -164,7 +188,7 @@ test('issue 255 live runtime preflight freezes all three approved deployments an
   assert.deepEqual(preflight.frozenPrices, {
     directInputCostPerMillionCny: '3.2',
     directOutputCostPerMillionCny: '6.3',
-    imageCostCny: '0.5',
+    imageCostCny: '0.05',
     videoCostPerMillionTokensCny: '15',
   });
   assert.deepEqual(preflight.videoQuote, {

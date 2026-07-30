@@ -392,7 +392,7 @@ function tuziOptions(fetch: typeof globalThis.fetch) {
     fetch,
     image: {
       catalogModelId: 'gpt-image-2' as const,
-      costPerImage: 0.5,
+      costPerImage: 0.05,
       model: 'gpt-image-2',
     },
     sourceUrlTtlSeconds: 3_600,
