@@ -63,13 +63,13 @@
     },
     "apps/core/src/p1/harness/dbos-registration.smoke.test.ts": {
       "status": "green",
-      "verifiedAt": "52c20b180a7e9c5a06fcd555ae343921556ee3ec",
-      "note": "#250 bounded continuation guard: 15/0/0 on an independent fresh pair, provisioned first and run from apps/core"
+      "verifiedAt": "83601672c07f91c84369e610b284a70c126c5823",
+      "note": "#250 merge coordinator sample: 15/0/0 fresh pair, provisioned first, run from apps/core (documented tsx/cwd artifact)"
     },
     "apps/core/src/p1/harness/delivery.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "52c20b180a7e9c5a06fcd555ae343921556ee3ec",
-      "note": "#250 bounded continuation guard: 5/0/0 on an independent fresh pair, provisioned first"
+      "verifiedAt": "83601672c07f91c84369e610b284a70c126c5823",
+      "note": "#250 merge coordinator sample: 5/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/fixture-fact-fidelity.postgres.test.ts": {
       "status": "green",
@@ -78,8 +78,8 @@
     },
     "apps/core/src/p1/harness/interaction-service.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "52c20b180a7e9c5a06fcd555ae343921556ee3ec",
-      "note": "#250 bounded continuation guard: 5/0/0 on an independent fresh pair, provisioned first"
+      "verifiedAt": "83601672c07f91c84369e610b284a70c126c5823",
+      "note": "#250 merge coordinator sample: 5/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/harness/issue-255-live-collector.postgres.test.ts": {
       "status": "green",
@@ -318,8 +318,8 @@
     },
     "apps/core/src/p1/harness/media-bounded-continuation.dbos.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "52c20b180a7e9c5a06fcd555ae343921556ee3ec",
-      "note": "#250 bounded continuation guard: 1/0/0 on an independent fresh pair, provisioned first"
+      "verifiedAt": "83601672c07f91c84369e610b284a70c126c5823",
+      "note": "#250 merge coordinator sample: 1/0/0 fresh pair, provisioned first"
     }
   }
 }
