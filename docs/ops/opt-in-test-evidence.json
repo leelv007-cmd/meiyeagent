@@ -143,28 +143,28 @@
     },
     "apps/core/src/p1/model-supply/foundation-ledger.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "4517e11a0bb901ca96c43db535f2cf1b23179a35",
-      "note": "#242 orphan triage picks: 1/0/0 fresh pair, provisioned first"
+      "verifiedAt": "695489fe441178431394bb320ad779b28cb9f654",
+      "note": "deepseek json_object contract fix (695489fe): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/model-supply/postgres-owned-asset-cleanup-claim.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "4517e11a0bb901ca96c43db535f2cf1b23179a35",
-      "note": "#242 orphan triage picks: 1/0/0 fresh pair, provisioned first"
+      "verifiedAt": "695489fe441178431394bb320ad779b28cb9f654",
+      "note": "deepseek json_object contract fix (695489fe): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/model-supply/reference-asset-dispatch.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "4517e11a0bb901ca96c43db535f2cf1b23179a35",
-      "note": "#242 orphan triage picks: 3/0/0 fresh pair, provisioned first"
+      "verifiedAt": "695489fe441178431394bb320ad779b28cb9f654",
+      "note": "deepseek json_object contract fix (695489fe): 3/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/model-supply/retired-video-editing-schema.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "4517e11a0bb901ca96c43db535f2cf1b23179a35",
-      "note": "#242 orphan triage picks: 1/0/0 fresh pair, provisioned first"
+      "verifiedAt": "695489fe441178431394bb320ad779b28cb9f654",
+      "note": "deepseek json_object contract fix (695489fe): 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/model-supply/usage-ledger-invariants.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "4517e11a0bb901ca96c43db535f2cf1b23179a35",
-      "note": "#242 orphan triage picks: 2/0/0 fresh pair, provisioned first"
+      "verifiedAt": "695489fe441178431394bb320ad779b28cb9f654",
+      "note": "deepseek json_object contract fix (695489fe): 2/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/operations/content-package-migration-cli.postgres.test.ts": {
       "status": "unverified",
@@ -213,8 +213,8 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "aecb1fb93fa7a66e38e59b2e77964aeaf85fe203",
-      "note": "#242 orphan batch 2 (5eab9138+01064fcf+aecb1fb9): 2/0/0 fresh pair, provisioned first"
+      "verifiedAt": "695489fe441178431394bb320ad779b28cb9f654",
+      "note": "deepseek json_object contract fix (695489fe): 2/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "unverified",
