@@ -1,3 +1,5 @@
+import './instrumentation.js';
+
 import { hostname } from 'node:os';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Pool } from 'pg';

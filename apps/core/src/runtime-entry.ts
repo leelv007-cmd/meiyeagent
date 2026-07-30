@@ -9,6 +9,8 @@
  * A future emit step may replace the TypeScript loader with plain `node dist/…`
  * without changing the dual-command contract.
  */
+import './instrumentation.js';
+
 const role = (process.argv[2] ?? 'api').trim().toLowerCase();
 
 if (role === 'worker' || role === 'start:worker') {

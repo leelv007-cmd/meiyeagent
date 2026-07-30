@@ -346,7 +346,18 @@ export class AiSdkStructuredObjectExecutor
     const runner = providerRequest?.submission.frozenRouteSnapshot
       ? this.pinnedRunner(providerRequest)
       : this.runner;
-    const generated = await runner.generateStructured(structuredInput);
+    const generated = await runner.generateStructured({
+      ...structuredInput,
+      telemetryContext: providerRequest
+        ? {
+            actorId: providerRequest.submission.actorId,
+            modality: providerRequest.model.modality,
+            operation: providerRequest.submission.operation,
+            taskId: providerRequest.submission.billingTaskId,
+            workspaceId: providerRequest.submission.workspaceId,
+          }
+        : undefined,
+    });
     const providerUsage =
       'providerUsage' in generated
         ? generated.providerUsage

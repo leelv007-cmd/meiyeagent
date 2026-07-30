@@ -1,3 +1,5 @@
+import './instrumentation.js';
+
 export const CORE_SERVICE_NAME = 'meiye-core';
 export { createCoreServer } from './server.js';
 export type { DiagnosticRepository } from './diagnostics/repository.js';

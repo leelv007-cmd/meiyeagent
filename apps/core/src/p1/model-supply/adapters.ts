@@ -374,12 +374,14 @@ export class OpenAiCompatibleLlmExecutionPort implements ProviderExecutionPort {
         this.options,
         this.runner,
       );
+      const telemetryContext = aiSdkTelemetryContext(request);
       const result =
         request.submission.operation === 'copy.adapt'
           ? await runner.adaptPlatformVariants(
               request.submission.prompt,
               undefined,
               request.submission.promptBinding?.content,
+              telemetryContext,
             )
           : request.submission.operation === 'text.respond'
             ? await runner.respondText(
@@ -390,12 +392,14 @@ export class OpenAiCompatibleLlmExecutionPort implements ProviderExecutionPort {
                   [],
                 undefined,
                 request.submission.promptBinding?.content,
+                telemetryContext,
               )
             : await runner.generateCopy(
                 request.submission.prompt,
                 undefined,
                 request.submission.copyCandidateCount,
                 request.submission.promptBinding?.content,
+                telemetryContext,
               );
       const inputTokens = result.usage.inputTokens;
       const outputTokens = result.usage.outputTokens;
@@ -424,6 +428,16 @@ export class OpenAiCompatibleLlmExecutionPort implements ProviderExecutionPort {
       );
     }
   }
+}
+
+function aiSdkTelemetryContext(request: ProviderExecutionRequest) {
+  return {
+    actorId: request.submission.actorId,
+    modality: request.model.modality,
+    operation: request.submission.operation,
+    taskId: request.submission.billingTaskId,
+    workspaceId: request.submission.workspaceId,
+  };
 }
 
 class PublishedAdapterBindingError extends Error {

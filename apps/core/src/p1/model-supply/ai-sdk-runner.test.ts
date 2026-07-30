@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readUIMessageStream, type UIMessage, type UIMessageChunk } from 'ai';
 import { z } from 'zod';
+import { flushLangfuseTracing } from '../../instrumentation.js';
 import {
   FixtureAiStreamingRunner,
   FixtureAiStructuredObjectExecutor,
@@ -173,6 +174,13 @@ test('formal non-streaming copy generation uses one structured object request', 
     undefined,
     1,
     'frozen:copy-generation',
+    {
+      actorId: 'fixture-actor-272',
+      modality: 'llm',
+      operation: 'copy.generate',
+      taskId: 'fixture-task-272',
+      workspaceId: 'fixture-workspace-272',
+    },
   );
 
   assert.equal(requests.length, 1);
@@ -191,6 +199,7 @@ test('formal non-streaming copy generation uses one structured object request', 
     (requests[0]?.messages as Array<{ content?: string }>)[0]?.content,
     'frozen:copy-generation',
   );
+  await flushLangfuseTracing();
 });
 
 test('provider 5xx is attempted once because SDK retry is disabled', async () => {

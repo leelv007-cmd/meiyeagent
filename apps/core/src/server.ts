@@ -2133,7 +2133,13 @@ export function createCoreServer({
                 intent: work.intent,
               },
             },
-            abortController.signal
+            abortController.signal,
+            {
+              actorId: context.userId,
+              modality: 'llm',
+              operation: 'assistant.stream',
+              workspaceId: context.workspaceId,
+            },
           ),
           response,
           requestCorrelationId

@@ -1,3 +1,4 @@
+import { langfuseTracingEnabled } from '../../instrumentation.js';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
@@ -21,6 +22,7 @@ import {
   toUIMessageStream,
   tool,
 } from 'ai';
+import { propagateAttributes } from '@langfuse/tracing';
 import { z, type ZodType } from 'zod';
 import type { StructuredObjectExecutor } from './index.js';
 import {
@@ -35,6 +37,14 @@ import type { ResolvedReferenceAsset } from './reference-asset-resolver.js';
 const FIXTURE_STREAM_CHUNK_INTERVAL_MS = 200;
 const FIXTURE_ASSISTANT_CHUNK_INTERVAL_MS = 120;
 const FIXTURE_STRUCTURED_CHUNK_INTERVAL_MS = 40;
+
+export interface AiSdkTelemetryContext {
+  actorId?: string;
+  taskId?: string;
+  workspaceId?: string;
+  modality?: string;
+  operation?: string;
+}
 
 export function fixtureStructuredFirstChunkHoldMs(
   env: Readonly<Record<string, string | undefined>> = process.env,
@@ -113,10 +123,12 @@ export interface AiStreamingRunner {
     abortSignal?: AbortSignal,
     candidateCount?: 1 | 3,
     instructions?: string,
+    telemetryContext?: AiSdkTelemetryContext,
   ): Promise<GeneratedCopyResult>;
   streamAssistant(
     request: AssistantStreamRequest,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    telemetryContext?: AiSdkTelemetryContext,
   ): Response;
   startCanvasTextStream?(
     request: {
@@ -124,6 +136,7 @@ export interface AiStreamingRunner {
       prompt: string;
       referenceAssets?: ResolvedReferenceAsset[];
       instructions?: string;
+      telemetryContext?: AiSdkTelemetryContext;
     },
     abortSignal?: AbortSignal,
   ): CanvasTextStream;
@@ -158,23 +171,30 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     abortSignal?: AbortSignal,
     candidateCount: 1 | 3 = DEFAULT_COPY_CANDIDATE_COUNT,
     instructions?: string,
+    telemetryContext?: AiSdkTelemetryContext,
   ) {
     const schema = copyCandidatesSchemaFor(candidateCount);
-    const result = await generateText({
-      abortSignal,
-      ...languageModelCallSettings(this.options),
-      instructions: this.jsonModeInstructions(
-        instructions ??
-          `Return exactly ${candidateCount} materially distinct beauty-business copy ${candidateCount === 1 ? 'candidate' : 'candidates'}. Every candidate must include a non-empty title, body, and conversionHook.`,
-      ),
-      maxRetries: 0,
-      model: this.model,
-      output: Output.object({
-        name: 'beauty_copy_candidates',
-        schema,
-      }),
-      prompt,
-    });
+    const result = await withAiSdkTelemetry(
+      'copy-generate',
+      telemetryContext,
+      () =>
+        generateText({
+          abortSignal,
+          ...languageModelCallSettings(this.options),
+          instructions: this.jsonModeInstructions(
+            instructions ??
+              `Return exactly ${candidateCount} materially distinct beauty-business copy ${candidateCount === 1 ? 'candidate' : 'candidates'}. Every candidate must include a non-empty title, body, and conversionHook.`,
+          ),
+          maxRetries: 0,
+          model: this.model,
+          output: Output.object({
+            name: 'beauty_copy_candidates',
+            schema,
+          }),
+          prompt,
+          telemetry: { functionId: 'copy-generate' },
+        }),
+    );
     const output = schema.parse(result.output);
     assertDistinctBodies(output);
     return {
@@ -192,31 +212,38 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     referenceAssets: ResolvedReferenceAsset[] = [],
     abortSignal?: AbortSignal,
     instructions?: string,
+    telemetryContext?: AiSdkTelemetryContext,
   ) {
-    const result = await generateText({
-      abortSignal,
-      ...languageModelCallSettings(this.options),
-      instructions:
-        instructions ??
-        'Return one plain-text response for the requested canvas task. Do not return candidate arrays or provider protocol fields.',
-      maxRetries: 0,
-      model: this.model,
-      ...(referenceAssets.length === 0
-        ? { prompt }
-        : {
-            messages: [{
-              role: 'user' as const,
-              content: [
-                { type: 'text' as const, text: prompt },
-                ...referenceAssets.map((asset) => ({
-                  type: 'image' as const,
-                  image: asset.bytes,
-                  mediaType: asset.contentType,
-                })),
-              ],
-            }],
-          }),
-    });
+    const result = await withAiSdkTelemetry(
+      'respond-text',
+      telemetryContext,
+      () =>
+        generateText({
+          abortSignal,
+          ...languageModelCallSettings(this.options),
+          instructions:
+            instructions ??
+            'Return one plain-text response for the requested canvas task. Do not return candidate arrays or provider protocol fields.',
+          maxRetries: 0,
+          model: this.model,
+          ...(referenceAssets.length === 0
+            ? { prompt }
+            : {
+                messages: [{
+                  role: 'user' as const,
+                  content: [
+                    { type: 'text' as const, text: prompt },
+                    ...referenceAssets.map((asset) => ({
+                      type: 'image' as const,
+                      image: asset.bytes,
+                      mediaType: asset.contentType,
+                    })),
+                  ],
+                }],
+              }),
+          telemetry: { functionId: 'respond-text' },
+        }),
+    );
     return {
       providerTaskRef: result.finalStep.response.id,
       text: result.text,
@@ -231,22 +258,29 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     prompt: string,
     abortSignal?: AbortSignal,
     instructions?: string,
+    telemetryContext?: AiSdkTelemetryContext,
   ) {
-    const result = await generateText({
-      abortSignal,
-      ...languageModelCallSettings(this.options),
-      instructions: this.jsonModeInstructions(
-        instructions ??
-          'Adapt the supplied canonical beauty-business content into exactly three complete platform variants: xiaohongshu, douyin, and video_account. Preserve facts, make the three bodies materially different, and include a non-empty title, body, conversionHook, and topics for each platform.',
-      ),
-      maxRetries: 0,
-      model: this.model,
-      output: Output.object({
-        name: 'beauty_platform_variants',
-        schema: generatedPlatformVariantsSchema,
-      }),
-      prompt,
-    });
+    const result = await withAiSdkTelemetry(
+      'platform-adapt',
+      telemetryContext,
+      () =>
+        generateText({
+          abortSignal,
+          ...languageModelCallSettings(this.options),
+          instructions: this.jsonModeInstructions(
+            instructions ??
+              'Adapt the supplied canonical beauty-business content into exactly three complete platform variants: xiaohongshu, douyin, and video_account. Preserve facts, make the three bodies materially different, and include a non-empty title, body, conversionHook, and topics for each platform.',
+          ),
+          maxRetries: 0,
+          model: this.model,
+          output: Output.object({
+            name: 'beauty_platform_variants',
+            schema: generatedPlatformVariantsSchema,
+          }),
+          prompt,
+          telemetry: { functionId: 'platform-adapt' },
+        }),
+    );
     const platformVariants = generatedPlatformVariantsSchema.parse(
       result.output,
     );
@@ -269,6 +303,7 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     prompt: string;
     schema: ZodType<StructuredOutput>;
     schemaName: string;
+    telemetryContext?: AiSdkTelemetryContext;
     structuredContinuation?: StructuredExecutionContinuation;
     structuredRequestFingerprint?: string;
   }) {
@@ -285,18 +320,24 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     }
     if (input.onPartialOutput) {
       try {
-        const result = streamText({
-          abortSignal: input.abortSignal,
-          ...languageModelCallSettings(this.options),
-          instructions: input.instructions,
-          maxRetries: 0,
-          model: this.model,
-          output: Output.object({
-            name: input.schemaName,
-            schema: input.schema,
-          }),
-          prompt: input.prompt,
-        });
+        const result = withAiSdkTelemetry(
+          'structured-brief',
+          input.telemetryContext,
+          () =>
+            streamText({
+              abortSignal: input.abortSignal,
+              ...languageModelCallSettings(this.options),
+              instructions: input.instructions,
+              maxRetries: 0,
+              model: this.model,
+              output: Output.object({
+                name: input.schemaName,
+                schema: input.schema,
+              }),
+              prompt: input.prompt,
+              telemetry: { functionId: 'structured-brief' },
+            }),
+        );
         for await (const partial of result.partialOutputStream) {
           await input.onPartialOutput(partial);
         }
@@ -335,6 +376,7 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
       prompt: string;
       schema: ZodType<StructuredOutput>;
       schemaName: string;
+      telemetryContext?: AiSdkTelemetryContext;
     },
     seed: StructuredRepairSeed,
   ) {
@@ -416,19 +458,26 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     prompt: string;
     schema: ZodType<StructuredOutput>;
     schemaName: string;
+    telemetryContext?: AiSdkTelemetryContext;
   }) {
-    return generateText({
-      abortSignal: input.abortSignal,
-      ...languageModelCallSettings(this.options),
-      instructions: input.instructions,
-      maxRetries: 0,
-      model: this.model,
-      output: Output.object({
-        name: input.schemaName,
-        schema: input.schema,
-      }),
-      prompt: input.prompt,
-    });
+    return withAiSdkTelemetry(
+      'structured-brief',
+      input.telemetryContext,
+      () =>
+        generateText({
+          abortSignal: input.abortSignal,
+          ...languageModelCallSettings(this.options),
+          instructions: input.instructions,
+          maxRetries: 0,
+          model: this.model,
+          output: Output.object({
+            name: input.schemaName,
+            schema: input.schema,
+          }),
+          prompt: input.prompt,
+          telemetry: { functionId: 'structured-brief' },
+        }),
+    );
   }
 
   supportsCatalogModel(catalogModelId: string) {
@@ -446,31 +495,41 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     };
   }
 
-  streamAssistant(request: AssistantStreamRequest, abortSignal?: AbortSignal) {
+  streamAssistant(
+    request: AssistantStreamRequest,
+    abortSignal?: AbortSignal,
+    telemetryContext?: AiSdkTelemetryContext,
+  ) {
     this.assertFixedModel(request.catalogModelId);
-    const result = streamText({
-      abortSignal,
-      ...languageModelCallSettings(this.options),
-      instructions:
-        'You are the assistant inside one beauty-content Work. Use tools only to read the supplied context or propose an inspectable field patch. Never submit generation, change models, or overwrite user input.',
-      maxRetries: 0,
-      messages: request.messages,
-      model: this.model,
-      stopWhen: isStepCount(3),
-      tools: {
-        readCurrentContext: tool({
-          description: 'Read the current structured Work context.',
-          inputSchema: z.object({}),
-          execute: async () => request.context,
+    const result = withAiSdkTelemetry(
+      'assistant-stream',
+      telemetryContext,
+      () =>
+        streamText({
+          abortSignal,
+          ...languageModelCallSettings(this.options),
+          instructions:
+            'You are the assistant inside one beauty-content Work. Use tools only to read the supplied context or propose an inspectable field patch. Never submit generation, change models, or overwrite user input.',
+          maxRetries: 0,
+          messages: request.messages,
+          model: this.model,
+          stopWhen: isStepCount(3),
+          telemetry: { functionId: 'assistant-stream' },
+          tools: {
+            readCurrentContext: tool({
+              description: 'Read the current structured Work context.',
+              inputSchema: z.object({}),
+              execute: async () => request.context,
+            }),
+            proposeFieldPatch: tool({
+              description:
+                'Propose one inspectable field patch. The merchant must still accept, edit, or ignore it.',
+              inputSchema: assistantFieldPatchSchema,
+              execute: async (patch) => ({ ...patch, applied: false as const }),
+            }),
+          },
         }),
-        proposeFieldPatch: tool({
-          description:
-            'Propose one inspectable field patch. The merchant must still accept, edit, or ignore it.',
-          inputSchema: assistantFieldPatchSchema,
-          execute: async (patch) => ({ ...patch, applied: false as const }),
-        }),
-      },
-    });
+    );
     return createUIMessageStreamResponse({
       headers: streamHeaders('ai-sdk-ui-message-v1', this.catalogModelId),
       stream: toUIMessageStream({
@@ -486,35 +545,42 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
       prompt: string;
       referenceAssets?: ResolvedReferenceAsset[];
       instructions?: string;
+      telemetryContext?: AiSdkTelemetryContext;
     },
     abortSignal?: AbortSignal,
   ): CanvasTextStream {
     this.assertFixedModel(request.catalogModelId);
     const referenceAssets = request.referenceAssets ?? [];
-    const result = streamText({
-      abortSignal,
-      ...languageModelCallSettings(this.options),
-      instructions:
-        request.instructions ??
-        'Return one plain-text response for the requested canvas task. Do not return candidate arrays or provider protocol fields.',
-      maxRetries: 0,
-      model: this.model,
-      ...(referenceAssets.length === 0
-        ? { prompt: request.prompt }
-        : {
-            messages: [{
-              role: 'user' as const,
-              content: [
-                { type: 'text' as const, text: request.prompt },
-                ...referenceAssets.map((asset) => ({
-                  type: 'image' as const,
-                  image: asset.bytes,
-                  mediaType: asset.contentType,
-                })),
-              ],
-            }],
-          }),
-    });
+    const result = withAiSdkTelemetry(
+      'canvas-stream',
+      request.telemetryContext,
+      () =>
+        streamText({
+          abortSignal,
+          ...languageModelCallSettings(this.options),
+          instructions:
+            request.instructions ??
+            'Return one plain-text response for the requested canvas task. Do not return candidate arrays or provider protocol fields.',
+          maxRetries: 0,
+          model: this.model,
+          ...(referenceAssets.length === 0
+            ? { prompt: request.prompt }
+            : {
+                messages: [{
+                  role: 'user' as const,
+                  content: [
+                    { type: 'text' as const, text: request.prompt },
+                    ...referenceAssets.map((asset) => ({
+                      type: 'image' as const,
+                      image: asset.bytes,
+                      mediaType: asset.contentType,
+                    })),
+                  ],
+                }],
+              }),
+          telemetry: { functionId: 'canvas-stream' },
+        }),
+    );
     return {
       deltas: result.textStream,
       result: Promise.all([
@@ -553,6 +619,29 @@ function structuredAttemptResult<StructuredOutput>(
       outputTokens: result.usage.outputTokens ?? 0,
     },
   };
+}
+
+function withAiSdkTelemetry<T>(
+  functionId: string,
+  context: AiSdkTelemetryContext | undefined,
+  operation: () => T,
+): T {
+  if (!langfuseTracingEnabled) return operation();
+  const tags = [context?.modality, context?.operation].filter(
+    (value): value is string => Boolean(value),
+  );
+  return propagateAttributes(
+    {
+      ...(context?.actorId ? { userId: context.actorId } : {}),
+      ...(context?.taskId ? { sessionId: context.taskId } : {}),
+      ...(context?.workspaceId
+        ? { metadata: { workspaceId: context.workspaceId } }
+        : {}),
+      ...(tags.length > 0 ? { tags } : {}),
+      traceName: functionId,
+    },
+    operation,
+  );
 }
 
 function structuredRepairPrompt(prompt: string, invalidText: string) {

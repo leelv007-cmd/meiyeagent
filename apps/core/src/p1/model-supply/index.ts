@@ -1782,6 +1782,13 @@ export class ModelSupplyApplicationService {
                   request.resolvedInputAssets
                     ?.filter((asset) => asset.role === 'reference_image') ??
                   request.resolvedReferenceAssets,
+                telemetryContext: {
+                  actorId: request.submission.actorId,
+                  modality: request.model.modality,
+                  operation: request.submission.operation,
+                  taskId: request.submission.billingTaskId,
+                  workspaceId: request.submission.workspaceId,
+                },
               },
               input.abortSignal,
             );

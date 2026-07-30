@@ -1,3 +1,5 @@
+import './instrumentation.js';
+
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import {
   ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
