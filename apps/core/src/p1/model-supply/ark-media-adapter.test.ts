@@ -182,6 +182,64 @@ test('Ark Seedream submit normalizes the synchronous image API into a restart-sa
   assert.equal(calls.length, 2);
 });
 
+test('Ark Seedream derives per-image usage from the returned response when usage is omitted', async () => {
+  let requests = 0;
+  const fetchMock: typeof globalThis.fetch = async () => {
+    requests += 1;
+    return Response.json({
+      created: 1_786_400_000,
+      data: [
+        { url: 'https://media.example.test/generated-a.jpg' },
+        { url: 'https://media.example.test/generated-b.jpg' },
+      ],
+    });
+  };
+  const provider = adapter(fetchMock);
+  const request = effectRequest('seedream-5-pro');
+
+  const receipt = await provider.submit(request);
+
+  assert.equal(receipt.usageEvidenceKind, 'response_derived');
+  assert.equal(receipt.providerCost.usage.mediaUnits, 2);
+  assert.equal(receipt.providerCost.amount, 0.44);
+  assert.equal(requests, 1);
+
+  const terminal = await provider.poll({
+    ...request,
+    taskRef: receipt.taskRef!,
+  });
+  assert.equal(terminal.status, 'completed');
+  assert.equal(terminal.usageEvidenceKind, 'response_derived');
+  assert.equal(terminal.providerCost.usage.mediaUnits, 2);
+  assert.equal(terminal.providerCost.amount, 0.44);
+  assert.equal(requests, 1);
+});
+
+test('Ark Seedream still rejects an image response without a usable source URL', async () => {
+  const provider = adapter(async () =>
+    Response.json({
+      data: [{ url: '' }],
+    }),
+  );
+
+  const receipt = await provider.submit(effectRequest('seedream-5-pro'));
+
+  assert.equal(receipt.acceptance, 'acceptance_unknown');
+  assert.match(
+    receipt.error ?? '',
+    /returned no source URL/u,
+  );
+});
+
+test('Ark Seedream still rejects an image response without returned images', async () => {
+  const provider = adapter(async () => Response.json({ data: [] }));
+
+  const receipt = await provider.submit(effectRequest('seedream-5-pro'));
+
+  assert.equal(receipt.acceptance, 'acceptance_unknown');
+  assert.match(receipt.error ?? '', /returned no source URL/u);
+});
+
 test('Ark Seedream sends resolved reference images through the official image field', async () => {
   const fetchMock: typeof globalThis.fetch = async (input, init) => {
     assert.match(String(input), /\/images\/generations$/);

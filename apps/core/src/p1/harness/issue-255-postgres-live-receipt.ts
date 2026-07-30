@@ -6,6 +6,26 @@ import { z } from 'zod';
 import type { FoundationStore } from '../foundation/ports.js';
 
 const modalities = ['copy', 'image_text', 'video'] as const;
+const legacyRejectedRunNonce =
+  'issue-255-live-anchors-2026-07-30-v1';
+const legacyRejectedEffectId =
+  'f59700fea85015b990436228219b997beea48d9bbee040c29691f2406a4b3ed3';
+const legacyRejectedRequestFingerprint =
+  '5a6b64ab43bf5fcc8ac2f2a466d8e04bc86af5f779a17210c6a448c07e6c46ed';
+const legacyRejectedWorkspaceId =
+  'issue-255-live-fd117da50a1e2d3d15ac5976';
+const legacyRejectedEvidenceCommit =
+  '695489fe441178431394bb320ad779b28cb9f654';
+const legacyImageRunNonce = 'issue-255-live-anchors-2026-07-30-v2';
+const legacyImageEffectId =
+  'd2ccabe63b58ece3404bd27a36e8b811c5b6bf19c80e5f57b005bf7f5351f98e';
+const legacyImageRequestFingerprint =
+  '55a81ab1ca94a0a041de4a273c45adcdab861c690d7a40b3481e03019e9c6c17';
+const legacyImageWorkspaceId = 'issue-255-live-1165ded3ff521938de15da91';
+const legacyImagePriceRevision =
+  'seedream-4-5:channel-tuzi-seedream-4-5-relay:standard:price-v1';
+const legacyImageCommentId = 5130611933;
+const legacyImageAmountMicros = 50_000;
 const modalityCapMicros = {
   copy: 100_000,
   image_text: 500_000,
@@ -50,11 +70,15 @@ export interface Issue255LiveReceipt {
   reservedAmountMicros: number;
   priceRevision: string;
   exchangeRevision: string;
-  status: 'claimed' | 'unknown' | 'completed';
+  status: 'claimed' | 'unknown' | 'completed' | 'failed_before_billing';
   generationSubmitCount: number;
   providerHttpRequestCount: number;
   actualAmountMicros: number | null;
-  terminalLineage: Issue255DurableTerminalLineage | null;
+  terminalLineage:
+    | Issue255DurableTerminalLineage
+    | Issue255PriceCardReconciledImageLineage
+    | Issue255FailedBeforeBillingLineage
+    | null;
   reconciliationReason: string | null;
   createdAt: string;
   updatedAt: string;
@@ -81,7 +105,7 @@ interface ReceiptRow extends QueryResultRow {
   reserved_amount_micros: string;
   price_revision: string;
   exchange_revision: string;
-  status: 'claimed' | 'unknown' | 'completed';
+  status: 'claimed' | 'unknown' | 'completed' | 'failed_before_billing';
   generation_submit_count: number;
   provider_http_request_count: number;
   actual_amount_micros: string | null;
@@ -118,6 +142,9 @@ const durableTerminalLineageSchema = z
         priceRevision: z.string().trim().min(1),
         exchangeRevision: z.literal('native-cny-v1'),
         stage: z.enum(['observed', 'reconciled']),
+        usageEvidenceKind: z
+          .enum(['provider_reported', 'response_derived'])
+          .default('provider_reported'),
         usage: z
           .object({
             inputTokens: z.number().int().nonnegative().optional(),
@@ -135,6 +162,98 @@ const durableTerminalLineageSchema = z
 
 export type Issue255DurableTerminalLineage = z.infer<
   typeof durableTerminalLineageSchema
+>;
+
+const priceCardReconciledImageLineageSchema = z
+  .object({
+    workspaceId: z.literal(legacyImageWorkspaceId),
+    effectId: z.literal(legacyImageEffectId),
+    requestFingerprint: z.literal(legacyImageRequestFingerprint),
+    adapter: z.literal('tuzi-image'),
+    deploymentId: z.literal('seedream-4-5-tuzi-relay'),
+    providerIdempotencyKey: z.literal(legacyImageEffectId),
+    attempt: z
+      .object({
+        id: z.literal(`issue-255-attempt-${legacyImageEffectId.slice(0, 28)}`),
+        jobId: z.literal(`issue-255-job-${legacyImageEffectId.slice(0, 32)}`),
+        deploymentId: z.literal('seedream-4-5-tuzi-relay'),
+        acceptance: z.literal('accepted'),
+        status: z.literal('completed'),
+        providerTaskRefMissing: z.literal(true),
+      })
+      .strict(),
+    providerCost: z
+      .object({
+        id: z.literal(`issue-255-cost-${legacyImageEffectId.slice(0, 28)}`),
+        attemptId: z.literal(
+          `issue-255-attempt-${legacyImageEffectId.slice(0, 28)}`,
+        ),
+        amountMicros: z.literal(legacyImageAmountMicros),
+        currency: z.literal('CNY'),
+        priceRevision: z.literal(legacyImagePriceRevision),
+        exchangeRevision: z.literal('native-cny-v1'),
+        stage: z.literal('reconciled'),
+        usageEvidenceKind: z.literal('price_card_reconciled'),
+        usage: z.object({ mediaUnits: z.literal(1) }).strict(),
+      })
+      .strict(),
+    reconciliation: z
+      .object({
+        kind: z.literal('controller_issue_comment'),
+        issue: z.literal(255),
+        commentId: z.literal(legacyImageCommentId),
+        reason: z.literal('accepted_image_task_ref_not_persisted'),
+      })
+      .strict(),
+    observedWallClockMs: z.number().int().positive(),
+  })
+  .strict();
+
+export type Issue255PriceCardReconciledImageLineage = z.infer<
+  typeof priceCardReconciledImageLineageSchema
+>;
+
+const failedBeforeBillingLineageSchema = z
+  .object({
+    workspaceId: z.string().trim().min(1),
+    effectId: z.string().regex(/^[a-f0-9]{64}$/u),
+    requestFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
+    adapter: z.enum(['direct-copy', 'tuzi-image', 'tuzi-video']),
+    deploymentId: z.string().trim().min(1),
+    providerIdempotencyKey: z.string().trim().min(1),
+    attempt: z
+      .object({
+        id: z.string().trim().min(1),
+        jobId: z.string().trim().min(1),
+        deploymentId: z.string().trim().min(1),
+        acceptance: z.literal('rejected_before_accept'),
+        status: z.literal('failed'),
+      })
+      .strict(),
+    failure: z
+      .object({
+        reason: z.literal('provider_rejected_before_accept'),
+        source: z.literal('provider_execution_terminal'),
+        provenance: z
+          .object({
+            kind: z.literal('merge_ledger'),
+            commitSha: z.literal(legacyRejectedEvidenceCommit),
+          })
+          .strict(),
+      })
+      .strict(),
+    providerCost: z
+      .object({
+        eventCount: z.number().int().nonnegative(),
+        amountMicros: z.literal(0),
+        currency: z.literal('CNY'),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type Issue255FailedBeforeBillingLineage = z.infer<
+  typeof failedBeforeBillingLineageSchema
 >;
 
 type Issue255ProviderLedgerReader = Pick<
@@ -167,7 +286,7 @@ export class PostgresIssue255LiveReceiptRepository {
         price_revision text NOT NULL,
         exchange_revision text NOT NULL,
         status text NOT NULL
-          CHECK (status IN ('claimed', 'unknown', 'completed')),
+          CHECK (status IN ('claimed', 'unknown', 'completed', 'failed_before_billing')),
         generation_submit_count integer NOT NULL DEFAULT 0
           CHECK (generation_submit_count BETWEEN 0 AND 1),
         provider_http_request_count integer NOT NULL DEFAULT 0
@@ -183,6 +302,12 @@ export class PostgresIssue255LiveReceiptRepository {
       await client.query(`
       ALTER TABLE issue255_live_generation_receipts
       ADD COLUMN IF NOT EXISTS reconciliation_reason text
+      `);
+      await client.query(`
+      ALTER TABLE issue255_live_generation_receipts
+        DROP CONSTRAINT IF EXISTS issue255_live_generation_receipts_status_check,
+        ADD CONSTRAINT issue255_live_generation_receipts_status_check
+          CHECK (status IN ('claimed', 'unknown', 'completed', 'failed_before_billing'))
       `);
       await client.query(`
       ALTER TABLE issue255_live_generation_receipts
@@ -247,6 +372,10 @@ export class PostgresIssue255LiveReceiptRepository {
             CHECK (reserved_amount_micros > 0),
           price_revision text NOT NULL,
           exchange_revision text NOT NULL,
+          status text NOT NULL DEFAULT 'billable'
+            CHECK (status IN ('billable', 'failed_before_billing')),
+          disposition_reason text,
+          terminal_lineage jsonb,
           evidence_sample_digest text,
           evidence_envelope_digest text,
           created_at timestamptz NOT NULL DEFAULT now(),
@@ -255,8 +384,26 @@ export class PostgresIssue255LiveReceiptRepository {
       `);
       await client.query(`
         ALTER TABLE issue255_live_generation_authorizations
+          ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'billable',
+          ADD COLUMN IF NOT EXISTS disposition_reason text,
+          ADD COLUMN IF NOT EXISTS terminal_lineage jsonb,
           ADD COLUMN IF NOT EXISTS evidence_sample_digest text,
           ADD COLUMN IF NOT EXISTS evidence_envelope_digest text
+      `);
+      await client.query(`
+        ALTER TABLE issue255_live_generation_authorizations
+          DROP CONSTRAINT IF EXISTS issue255_live_generation_authorizations_status_check,
+          ADD CONSTRAINT issue255_live_generation_authorizations_status_check
+            CHECK (status IN ('billable', 'failed_before_billing')),
+          DROP CONSTRAINT IF EXISTS issue255_live_generation_authorizations_disposition_check,
+          ADD CONSTRAINT issue255_live_generation_authorizations_disposition_check
+            CHECK (
+              (status = 'billable' AND disposition_reason IS NULL AND terminal_lineage IS NULL)
+              OR
+              (status = 'failed_before_billing'
+                AND disposition_reason = 'provider_rejected_before_accept'
+                AND terminal_lineage IS NOT NULL)
+            )
       `);
       await client.query(`
         CREATE TABLE IF NOT EXISTS issue255_live_run_owners (
@@ -367,13 +514,24 @@ export class PostgresIssue255LiveReceiptRepository {
     return this.locked(
       'issue255-live-run-owner-v1',
       async (client) => {
-        const result = await client.query<{ count: string }>(
-          `SELECT COUNT(*)::bigint AS count
-             FROM issue255_live_generation_authorizations`,
+        const result = await client.query<{
+          active_receipt_count: string;
+          billable_count: string;
+        }>(
+          `SELECT
+             (SELECT COUNT(*)
+                FROM issue255_live_generation_authorizations
+               WHERE status <> 'failed_before_billing')::bigint AS billable_count,
+             (SELECT COUNT(*)
+                FROM issue255_live_generation_receipts
+               WHERE status <> 'failed_before_billing')::bigint AS active_receipt_count`,
         );
-        if (Number(result.rows[0]?.count ?? 0) !== 0) {
+        if (
+          Number(result.rows[0]?.billable_count ?? 0) !== 0 ||
+          Number(result.rows[0]?.active_receipt_count ?? 0) !== 0
+        ) {
           throw new Error(
-            'Issue 255 live collector requires empty authorization history before starting.',
+            'Issue 255 live collector requires no unresolved billable history before starting.',
           );
         }
         const owner = await client.query(
@@ -382,7 +540,9 @@ export class PostgresIssue255LiveReceiptRepository {
              run_nonce
            )
            VALUES (true, $1)
-           ON CONFLICT DO NOTHING
+           ON CONFLICT (singleton_key) DO UPDATE
+             SET run_nonce = EXCLUDED.run_nonce,
+                 created_at = now()
            RETURNING run_nonce`,
           [parsedRunNonce],
         );
@@ -391,6 +551,78 @@ export class PostgresIssue255LiveReceiptRepository {
             'Issue 255 live run owner is already durably claimed.',
           );
         }
+      },
+    );
+  }
+
+  async claimOrResumeLiveRunOwner(runNonce: string) {
+    const parsedRunNonce = z.string().trim().min(1).parse(runNonce);
+    return this.locked(
+      'issue255-live-run-owner-v1',
+      async (client): Promise<'fresh' | 'resumed'> => {
+        const existingOwner = await client.query<{ run_nonce: string }>(
+          `SELECT run_nonce
+             FROM issue255_live_run_owners
+            WHERE singleton_key = true
+            FOR UPDATE`,
+        );
+        if (existingOwner.rows[0]) {
+          if (existingOwner.rows[0].run_nonce !== parsedRunNonce) {
+            throw new Error('Issue 255 live run owner is already durably claimed.');
+          }
+          const foreignHistory = await client.query<{ count: string }>(
+            `SELECT (
+               (SELECT COUNT(*)
+                  FROM issue255_live_generation_authorizations
+                 WHERE run_nonce <> $1
+                   AND status <> 'failed_before_billing') +
+               (SELECT COUNT(*)
+                  FROM issue255_live_generation_receipts
+                 WHERE run_nonce <> $1
+                   AND status <> 'failed_before_billing')
+             )::bigint AS count`,
+            [parsedRunNonce],
+          );
+          if (Number(foreignHistory.rows[0]?.count ?? 0) !== 0) {
+            throw new Error(
+              'Issue 255 live collector cannot resume beside other billable history.',
+            );
+          }
+          return 'resumed';
+        }
+        const result = await client.query<{
+          active_receipt_count: string;
+          billable_count: string;
+        }>(
+          `SELECT
+             (SELECT COUNT(*)
+                FROM issue255_live_generation_authorizations
+               WHERE status <> 'failed_before_billing')::bigint AS billable_count,
+             (SELECT COUNT(*)
+                FROM issue255_live_generation_receipts
+               WHERE status <> 'failed_before_billing')::bigint AS active_receipt_count`,
+        );
+        if (
+          Number(result.rows[0]?.billable_count ?? 0) !== 0 ||
+          Number(result.rows[0]?.active_receipt_count ?? 0) !== 0
+        ) {
+          throw new Error(
+            'Issue 255 live collector requires no unresolved billable history before starting.',
+          );
+        }
+        const owner = await client.query<{ run_nonce: string }>(
+          `INSERT INTO issue255_live_run_owners (
+             singleton_key,
+             run_nonce
+           ) VALUES (true, $1)
+           ON CONFLICT (singleton_key) DO NOTHING
+           RETURNING run_nonce`,
+          [parsedRunNonce],
+        );
+        if (!owner.rows[0]) {
+          throw new Error('Issue 255 live run owner is already durably claimed.');
+        }
+        return 'fresh';
       },
     );
   }
@@ -656,8 +888,11 @@ export class PostgresIssue255LiveReceiptRepository {
         run_count: string;
       }>(
         `SELECT
-           COUNT(*)::bigint AS global_count,
-           COUNT(*) FILTER (WHERE run_nonce = $1)::bigint AS run_count
+           COUNT(*) FILTER (WHERE status <> 'failed_before_billing')::bigint
+             AS global_count,
+           COUNT(*) FILTER (
+             WHERE run_nonce = $1 AND status <> 'failed_before_billing'
+           )::bigint AS run_count
          FROM issue255_live_generation_authorizations`,
         [parsed.runNonce],
       );
@@ -821,6 +1056,429 @@ export class PostgresIssue255LiveReceiptRepository {
     providerLedger: Issue255ProviderLedgerReader,
   ) {
     return this.completeOrReconcile(input, providerLedger, true);
+  }
+
+  async migrateLegacyRejectedBeforeBillingV1() {
+    return this.locked(legacyRejectedRunNonce, async (client) => {
+      const selected = await client.query<ReceiptRow>(
+        `SELECT *
+           FROM issue255_live_generation_receipts
+          WHERE run_nonce = $1
+            AND modality = 'copy'
+            AND effect_id = $2
+            AND request_fingerprint = $3
+            AND workspace_id = $4
+            AND adapter = 'direct-copy'
+            AND deployment_id = 'deepseek-v4-pro-direct'
+            AND provider_idempotency_key = $2
+            AND provider_job_id = $5
+            AND provider_attempt_id = $6
+            AND provider_cost_event_id = $7
+            AND status = 'unknown'
+            AND generation_submit_count = 1
+            AND provider_http_request_count = 1
+          FOR UPDATE`,
+        [
+          legacyRejectedRunNonce,
+          legacyRejectedEffectId,
+          legacyRejectedRequestFingerprint,
+          legacyRejectedWorkspaceId,
+          `issue-255-job-${legacyRejectedEffectId.slice(0, 32)}`,
+          `issue-255-attempt-${legacyRejectedEffectId.slice(0, 28)}`,
+          `issue-255-cost-${legacyRejectedEffectId.slice(0, 28)}`,
+        ],
+      );
+      const receipt = selected.rows[0];
+      if (!receipt) {
+        throw new Error(
+          'Issue 255 legacy rejection migration does not match the frozen v1 lineage.',
+        );
+      }
+      const costs = await client.query<{ count: string }>(
+        `SELECT COUNT(*)::bigint AS count
+           FROM p1_provider_cost_events
+          WHERE workspace_id = $1
+            AND attempt_id = $2`,
+        [receipt.workspace_id, receipt.provider_attempt_id],
+      );
+      if (Number(costs.rows[0]?.count ?? 0) !== 0) {
+        throw new Error(
+          'Issue 255 legacy rejection migration requires zero durable provider cost.',
+        );
+      }
+      const attempt = await client.query<{
+        id: string;
+      }>(
+        `UPDATE p1_provider_attempts
+            SET acceptance = 'rejected_before_accept',
+                status = 'failed',
+                updated_at = now()
+          WHERE workspace_id = $1
+            AND id = $2
+            AND job_id = $3
+            AND deployment_id = $4
+            AND acceptance = 'pending'
+            AND status = 'pending'
+        RETURNING id`,
+        [
+          receipt.workspace_id,
+          receipt.provider_attempt_id,
+          receipt.provider_job_id,
+          receipt.deployment_id,
+        ],
+      );
+      const result = {
+        status: 'failed',
+        issue255: {
+          workspaceId: receipt.workspace_id,
+          effectId: receipt.effect_id,
+          requestFingerprint: receipt.request_fingerprint,
+          adapter: receipt.adapter,
+          deploymentId: receipt.deployment_id,
+          providerIdempotencyKey: receipt.provider_idempotency_key,
+          providerJobId: receipt.provider_job_id,
+          providerAttemptId: receipt.provider_attempt_id,
+          providerCostEventId: receipt.provider_cost_event_id,
+        },
+        failure: {
+          acceptance: 'rejected_before_accept',
+          reason: 'provider_rejected_before_accept',
+          source: 'provider_execution_terminal',
+          provenance: {
+            kind: 'merge_ledger',
+            commitSha: legacyRejectedEvidenceCommit,
+          },
+        },
+      } as const;
+      const job = await client.query<{ id: string }>(
+        `UPDATE p1_generation_jobs
+            SET status = 'failed',
+                result = $3::jsonb,
+                updated_at = now()
+          WHERE workspace_id = $1
+            AND id = $2
+            AND status = 'running'
+            AND result IS NULL
+        RETURNING id`,
+        [
+          receipt.workspace_id,
+          receipt.provider_job_id,
+          JSON.stringify(result),
+        ],
+      );
+      if (!attempt.rows[0] || !job.rows[0]) {
+        throw new Error(
+          'Issue 255 legacy rejection migration requires the untouched pending v1 provider lineage.',
+        );
+      }
+      return result;
+    });
+  }
+
+  async reconcileLegacyAcceptedImageWithoutTaskRefV2() {
+    return this.locked(legacyImageRunNonce, async (client) => {
+      const selected = await client.query<ReceiptRow>(
+        `SELECT *
+           FROM issue255_live_generation_receipts
+          WHERE run_nonce = $1
+            AND modality = 'image_text'
+            AND effect_id = $2
+            AND request_fingerprint = $3
+            AND workspace_id = $4
+            AND adapter = 'tuzi-image'
+            AND deployment_id = 'seedream-4-5-tuzi-relay'
+            AND provider_idempotency_key = $2
+            AND provider_job_id = $5
+            AND provider_attempt_id = $6
+            AND provider_cost_event_id = $7
+            AND recorded_matrix_digest = $8
+            AND reserved_amount_micros = $9
+            AND price_revision = $10
+            AND exchange_revision = 'native-cny-v1'
+            AND status = 'unknown'
+            AND generation_submit_count = 1
+            AND provider_http_request_count = 1
+            AND actual_amount_micros IS NULL
+            AND terminal_lineage IS NULL
+            AND reconciliation_reason = 'provider_acceptance_unknown'
+          FOR UPDATE`,
+        [
+          legacyImageRunNonce,
+          legacyImageEffectId,
+          legacyImageRequestFingerprint,
+          legacyImageWorkspaceId,
+          `issue-255-job-${legacyImageEffectId.slice(0, 32)}`,
+          `issue-255-attempt-${legacyImageEffectId.slice(0, 28)}`,
+          `issue-255-cost-${legacyImageEffectId.slice(0, 28)}`,
+          'a3b601d062a543b07c14783eea674bf7a21807f5e20cdb393936b87750f8cf76',
+          legacyImageAmountMicros,
+          legacyImagePriceRevision,
+        ],
+      );
+      const receipt = selected.rows[0];
+      if (!receipt) {
+        throw new Error(
+          'Issue 255 legacy image reconciliation does not match the frozen v2 lineage.',
+        );
+      }
+      const costs = await client.query<{ count: string }>(
+        `SELECT COUNT(*)::bigint AS count
+           FROM p1_provider_cost_events
+          WHERE workspace_id = $1
+            AND attempt_id = $2`,
+        [receipt.workspace_id, receipt.provider_attempt_id],
+      );
+      if (Number(costs.rows[0]?.count ?? 0) !== 0) {
+        throw new Error(
+          'Issue 255 legacy image reconciliation requires no durable provider cost.',
+        );
+      }
+      const attempt = await client.query<{ id: string }>(
+        `UPDATE p1_provider_attempts
+            SET acceptance = 'accepted',
+                status = 'completed',
+                updated_at = now()
+          WHERE workspace_id = $1
+            AND id = $2
+            AND job_id = $3
+            AND deployment_id = $4
+            AND acceptance = 'pending'
+            AND status = 'pending'
+            AND provider_task_ref IS NULL
+        RETURNING id`,
+        [
+          receipt.workspace_id,
+          receipt.provider_attempt_id,
+          receipt.provider_job_id,
+          receipt.deployment_id,
+        ],
+      );
+      if (!attempt.rows[0]) {
+        throw new Error(
+          'Issue 255 legacy image reconciliation does not match the frozen v2 lineage.',
+        );
+      }
+      const observedWallClockMs = Math.max(
+        1,
+        Math.ceil(receipt.updated_at.getTime() - receipt.created_at.getTime()),
+      );
+      const terminal = priceCardReconciledImageLineageSchema.parse({
+        workspaceId: receipt.workspace_id,
+        effectId: receipt.effect_id,
+        requestFingerprint: receipt.request_fingerprint,
+        adapter: receipt.adapter,
+        deploymentId: receipt.deployment_id,
+        providerIdempotencyKey: receipt.provider_idempotency_key,
+        attempt: {
+          id: receipt.provider_attempt_id,
+          jobId: receipt.provider_job_id,
+          deploymentId: receipt.deployment_id,
+          acceptance: 'accepted',
+          status: 'completed',
+          providerTaskRefMissing: true,
+        },
+        providerCost: {
+          id: receipt.provider_cost_event_id,
+          attemptId: receipt.provider_attempt_id,
+          amountMicros: legacyImageAmountMicros,
+          currency: 'CNY',
+          priceRevision: receipt.price_revision,
+          exchangeRevision: receipt.exchange_revision,
+          stage: 'reconciled',
+          usageEvidenceKind: 'price_card_reconciled',
+          usage: { mediaUnits: 1 },
+        },
+        reconciliation: {
+          kind: 'controller_issue_comment',
+          issue: 255,
+          commentId: legacyImageCommentId,
+          reason: 'accepted_image_task_ref_not_persisted',
+        },
+        observedWallClockMs,
+      });
+      const result = {
+        status: 'completed',
+        issue255: {
+          workspaceId: receipt.workspace_id,
+          effectId: receipt.effect_id,
+          requestFingerprint: receipt.request_fingerprint,
+          adapter: receipt.adapter,
+          deploymentId: receipt.deployment_id,
+          providerIdempotencyKey: receipt.provider_idempotency_key,
+          providerJobId: receipt.provider_job_id,
+          providerAttemptId: receipt.provider_attempt_id,
+          providerCostEventId: receipt.provider_cost_event_id,
+        },
+        attempt: terminal.attempt,
+        providerCost: {
+          id: receipt.provider_cost_event_id,
+          status: 'reconciled',
+          amountMicros: legacyImageAmountMicros,
+          currency: 'CNY',
+          usageEvidenceKind: 'price_card_reconciled',
+          usage: { mediaUnits: 1 },
+        },
+        reconciliation: terminal.reconciliation,
+        snapshot: {
+          priceRevision: receipt.price_revision,
+          allowedCandidates: [
+            {
+              deploymentId: receipt.deployment_id,
+              priceRevision: receipt.price_revision,
+            },
+          ],
+        },
+      };
+      const job = await client.query<{ id: string }>(
+        `UPDATE p1_generation_jobs
+            SET status = 'completed',
+                result = $3::jsonb,
+                updated_at = now()
+          WHERE workspace_id = $1
+            AND id = $2
+            AND status = 'running'
+            AND result IS NULL
+        RETURNING id`,
+        [receipt.workspace_id, receipt.provider_job_id, JSON.stringify(result)],
+      );
+      const cost = await client.query<{ id: string }>(
+        `INSERT INTO p1_provider_cost_events (
+           workspace_id, id, attempt_id, stage, amount_micros, currency, unit,
+           evidence, payer, billing_status, actor_id, correlation_id, created_at
+         ) VALUES (
+           $1, $2, $3, 'reconciled', $4, 'CNY', 'issue255_live_sample',
+           'issue255_tuzi_image_price_card_reconciliation', 'platform', 'known',
+           'issue-255-live-reconciliation', $5, now()
+         )
+         RETURNING id`,
+        [
+          receipt.workspace_id,
+          receipt.provider_cost_event_id,
+          receipt.provider_attempt_id,
+          legacyImageAmountMicros,
+          `${receipt.provider_job_id}:correlation`,
+        ],
+      );
+      const updated = await client.query<ReceiptRow>(
+        `UPDATE issue255_live_generation_receipts
+            SET status = 'completed',
+                actual_amount_micros = $4,
+                terminal_lineage = $5::jsonb,
+                reconciliation_reason = 'tuzi_image_price_card_reconciled',
+                updated_at = now()
+          WHERE run_nonce = $1
+            AND modality = 'image_text'
+            AND effect_id = $2
+            AND request_fingerprint = $3
+            AND status = 'unknown'
+            AND actual_amount_micros IS NULL
+            AND terminal_lineage IS NULL
+        RETURNING *`,
+        [
+          legacyImageRunNonce,
+          legacyImageEffectId,
+          legacyImageRequestFingerprint,
+          legacyImageAmountMicros,
+          JSON.stringify(terminal),
+        ],
+      );
+      const completed = updated.rows[0];
+      if (!job.rows[0] || !cost.rows[0] || !completed) {
+        throw new Error(
+          'Issue 255 legacy image reconciliation lost its frozen durable lineage.',
+        );
+      }
+      return receiptFromRow(completed);
+    });
+  }
+
+  async confirmFailedBeforeBilling(
+    runNonce: string,
+    providerLedger: Issue255ProviderLedgerReader,
+  ) {
+    const parsedRunNonce = z.string().trim().min(1).parse(runNonce);
+    const receipts = (await this.listRun(parsedRunNonce)).filter(
+      ({ status }) => status === 'unknown',
+    );
+    if (receipts.length === 0) {
+      throw new Error(
+        'Issue 255 failed-before-billing reconciliation requires an unknown receipt.',
+      );
+    }
+    const confirmed = [];
+    for (const receipt of receipts) {
+      confirmed.push(
+        await this.locked(parsedRunNonce, async (client) => {
+          const selected = await client.query<ReceiptRow>(
+            `SELECT *
+               FROM issue255_live_generation_receipts
+              WHERE run_nonce = $1
+                AND modality = $2
+                AND effect_id = $3
+                AND request_fingerprint = $4
+                AND status = 'unknown'
+              FOR UPDATE`,
+            [
+              parsedRunNonce,
+              receipt.modality,
+              receipt.effectId,
+              receipt.requestFingerprint,
+            ],
+          );
+          const row = selected.rows[0];
+          if (!row || row.generation_submit_count !== 1) {
+            throw new Error(
+              'Issue 255 failed-before-billing requires exactly one durable generation POST.',
+            );
+          }
+          const terminal = await readFailedBeforeBillingLineage(
+            row,
+            providerLedger,
+          );
+          const serialized = JSON.stringify(terminal);
+          const updatedReceipt = await client.query<ReceiptRow>(
+            `UPDATE issue255_live_generation_receipts
+                SET status = 'failed_before_billing',
+                    actual_amount_micros = 0,
+                    terminal_lineage = $5::jsonb,
+                    reconciliation_reason = 'provider_rejected_before_accept',
+                    updated_at = now()
+              WHERE run_nonce = $1
+                AND modality = $2
+                AND effect_id = $3
+                AND request_fingerprint = $4
+                AND status = 'unknown'
+                AND generation_submit_count = 1
+            RETURNING *`,
+            [
+              parsedRunNonce,
+              receipt.modality,
+              receipt.effectId,
+              receipt.requestFingerprint,
+              serialized,
+            ],
+          );
+          const updatedAuthorization = await client.query(
+            `UPDATE issue255_live_generation_authorizations
+                SET status = 'failed_before_billing',
+                    disposition_reason = 'provider_rejected_before_accept',
+                    terminal_lineage = $2::jsonb
+              WHERE effect_id = $1
+                AND status = 'billable'
+            RETURNING effect_id`,
+            [receipt.effectId, serialized],
+          );
+          const rowAfter = updatedReceipt.rows[0];
+          if (!rowAfter || !updatedAuthorization.rows[0]) {
+            throw new Error(
+              'Issue 255 failed-before-billing disposition lost its append-only authorization.',
+            );
+          }
+          return receiptFromRow(rowAfter);
+        }),
+      );
+    }
+    return confirmed;
   }
 
   async claim(input: Issue255LiveReceiptClaimInput): Promise<Issue255LiveReceiptClaim> {
@@ -1030,7 +1688,8 @@ export class PostgresIssue255LiveReceiptRepository {
   ) {
     const authorizationCount = await client.query<{ count: string }>(
       `SELECT COUNT(*)::bigint AS count
-         FROM issue255_live_generation_authorizations`,
+         FROM issue255_live_generation_authorizations
+        WHERE status <> 'failed_before_billing'`,
     );
     if (Number(authorizationCount.rows[0]?.count ?? 0) >= 3) {
       throw new Error(
@@ -1043,6 +1702,7 @@ export class PostgresIssue255LiveReceiptRepository {
            SELECT SUM(reserved_amount_micros)
              FROM issue255_live_generation_authorizations
             WHERE run_nonce = $1
+              AND status <> 'failed_before_billing'
          ), 0) +
          COALESCE((
            SELECT SUM(receipt.reserved_amount_micros)
@@ -1062,6 +1722,7 @@ export class PostgresIssue255LiveReceiptRepository {
          COALESCE((
            SELECT SUM(reserved_amount_micros)
              FROM issue255_live_generation_authorizations
+            WHERE status <> 'failed_before_billing'
          ), 0) +
          COALESCE((
            SELECT SUM(receipt.reserved_amount_micros)
@@ -1187,6 +1848,9 @@ async function readDurableTerminalLineage(
           status: z.literal('observed'),
           amountMicros: z.number().int().positive(),
           currency: z.literal('CNY'),
+          usageEvidenceKind: z
+            .enum(['provider_reported', 'response_derived'])
+            .default('provider_reported'),
           usage: z
             .object({
               inputTokens: z.number().int().nonnegative().optional(),
@@ -1284,11 +1948,123 @@ async function readDurableTerminalLineage(
       id: cost.id,
       attemptId: cost.attemptId,
       amountMicros: actualAmountMicros,
-      currency: cost.currency,
-      priceRevision,
-      exchangeRevision: receipt.exchange_revision,
-      stage: cost.stage,
-      usage: result.providerCost.usage,
+        currency: cost.currency,
+        priceRevision,
+        exchangeRevision: receipt.exchange_revision,
+        stage: cost.stage,
+        usageEvidenceKind: result.providerCost.usageEvidenceKind,
+        usage: result.providerCost.usage,
+    },
+  });
+}
+
+async function readFailedBeforeBillingLineage(
+  receipt: ReceiptRow,
+  providerLedger: Issue255ProviderLedgerReader,
+): Promise<Issue255FailedBeforeBillingLineage> {
+  const [attempt, job, costs] = await Promise.all([
+    providerLedger.getProviderAttempt(
+      receipt.workspace_id,
+      receipt.provider_attempt_id,
+    ),
+    providerLedger.getGenerationJob(
+      receipt.workspace_id,
+      receipt.provider_job_id,
+    ),
+    providerLedger.listProviderCosts(
+      receipt.workspace_id,
+      receipt.provider_attempt_id,
+    ),
+  ]);
+  if (
+    !attempt ||
+    attempt.jobId !== receipt.provider_job_id ||
+    attempt.deploymentId !== receipt.deployment_id ||
+    attempt.acceptance !== 'rejected_before_accept' ||
+    attempt.status !== 'failed'
+  ) {
+    throw new Error(
+      'Issue 255 failed-before-billing requires a durable rejected-before-accept terminal.',
+    );
+  }
+  if (costs.some(({ amountMicros }) => amountMicros !== 0)) {
+    throw new Error(
+      'Issue 255 failed-before-billing requires zero durable provider cost.',
+    );
+  }
+  const result = z
+    .object({
+      status: z.literal('failed'),
+      issue255: z
+        .object({
+          workspaceId: z.string().trim().min(1),
+          effectId: z.string().regex(/^[a-f0-9]{64}$/u),
+          requestFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
+          adapter: z.enum(['direct-copy', 'tuzi-image', 'tuzi-video']),
+          deploymentId: z.string().trim().min(1),
+          providerIdempotencyKey: z.string().trim().min(1),
+          providerJobId: z.string().trim().min(1),
+          providerAttemptId: z.string().trim().min(1),
+          providerCostEventId: z.string().trim().min(1),
+        })
+        .strict(),
+      failure: z
+        .object({
+          acceptance: z.literal('rejected_before_accept'),
+          reason: z.literal('provider_rejected_before_accept'),
+          source: z.literal('provider_execution_terminal'),
+          provenance: z
+            .object({
+              kind: z.literal('merge_ledger'),
+              commitSha: z.literal(legacyRejectedEvidenceCommit),
+            })
+            .strict(),
+        })
+        .strict(),
+    })
+    .strict()
+    .parse(job?.result);
+  if (
+    !job ||
+    job.status !== 'failed' ||
+    result.issue255.workspaceId !== receipt.workspace_id ||
+    result.issue255.effectId !== receipt.effect_id ||
+    result.issue255.requestFingerprint !== receipt.request_fingerprint ||
+    result.issue255.adapter !== receipt.adapter ||
+    result.issue255.deploymentId !== receipt.deployment_id ||
+    result.issue255.providerIdempotencyKey !==
+      receipt.provider_idempotency_key ||
+    result.issue255.providerJobId !== receipt.provider_job_id ||
+    result.issue255.providerAttemptId !== receipt.provider_attempt_id ||
+    result.issue255.providerCostEventId !== receipt.provider_cost_event_id
+  ) {
+    throw new Error(
+      'Issue 255 rejected-before-accept terminal does not bind the frozen receipt lineage.',
+    );
+  }
+  return failedBeforeBillingLineageSchema.parse({
+    workspaceId: receipt.workspace_id,
+    effectId: receipt.effect_id,
+    requestFingerprint: receipt.request_fingerprint,
+    adapter: receipt.adapter,
+    deploymentId: receipt.deployment_id,
+    providerIdempotencyKey: receipt.provider_idempotency_key,
+    attempt: {
+      id: attempt.id,
+      jobId: attempt.jobId,
+      deploymentId: attempt.deploymentId,
+      acceptance: attempt.acceptance,
+      status: attempt.status,
+    },
+    failure: {
+      reason: result.failure.reason,
+      source: result.failure.source,
+      provenance: result.failure.provenance,
+    },
+    providerCost: {
+      eventCount: costs.length,
+      amountMicros: 0,
+      currency: 'CNY',
     },
   });
 }
@@ -1331,7 +2107,14 @@ function receiptFromRow(row: ReceiptRow): Issue255LiveReceipt {
     terminalLineage:
       row.terminal_lineage === null
         ? null
-        : durableTerminalLineageSchema.parse(row.terminal_lineage),
+        : row.status === 'failed_before_billing'
+          ? failedBeforeBillingLineageSchema.parse(row.terminal_lineage)
+          : row.reconciliation_reason ===
+              'tuzi_image_price_card_reconciled'
+            ? priceCardReconciledImageLineageSchema.parse(
+                row.terminal_lineage,
+              )
+            : durableTerminalLineageSchema.parse(row.terminal_lineage),
     reconciliationReason: row.reconciliation_reason,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),

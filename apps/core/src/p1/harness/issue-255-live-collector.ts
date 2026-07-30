@@ -43,6 +43,7 @@ const COPY_INSTRUCTIONS =
   'Return exactly 3 materially distinct beauty-business copy candidates. Every candidate must include a non-empty title, body, and conversionHook.';
 
 type Modality = (typeof modalities)[number];
+type ProviderUsageEvidenceKind = 'provider_reported' | 'response_derived';
 
 type ProviderTerminal = {
   providerTaskRef: string;
@@ -52,7 +53,7 @@ type ProviderTerminal = {
     outputTokens?: number;
     mediaUnits?: number;
   };
-  usageEvidenceKind: 'provider_reported';
+  usageEvidenceKind: ProviderUsageEvidenceKind;
 };
 
 export type Issue255LiveExecutor = {
@@ -104,7 +105,21 @@ const manifestSchema = z
             artifactRef: z.string().startsWith('live://issue-255/'),
             effectId: z.string().regex(/^[a-f0-9]{64}$/u),
             requestFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
-            providerTaskRefHash: z.string().regex(/^[a-f0-9]{64}$/u),
+            providerTaskRefHash: z
+              .string()
+              .regex(/^[a-f0-9]{64}$/u)
+              .nullable(),
+            usageEvidenceKind: z.enum([
+              'provider_reported',
+              'response_derived',
+              'price_card_reconciled',
+            ]),
+            evidenceGap: z
+              .enum([
+                'tuzi_image_response_omits_usage',
+                'tuzi_image_usage_missing_and_task_ref_not_persisted',
+              ])
+              .optional(),
             configurationRevision: z.string().trim().min(1),
             priceRevision: z.string().trim().min(1),
             exchangeRevision: z.literal('native-cny-v1'),
@@ -170,16 +185,27 @@ export async function collectIssue255LiveAnchors(input: {
     effectiveCapMicros,
   );
   const pendingPath = `${input.manifestPath}.pending`;
-  await reserveManifestPaths(input.manifestPath, pendingPath);
+  const existingReceipts = await input.receipts.listRun(runNonce);
+  const pendingCreated = await reserveManifestPaths(
+    input.manifestPath,
+    pendingPath,
+    existingReceipts.length > 0,
+  );
   try {
-    await input.receipts.claimFreshLiveRunOwner(runNonce);
+    await input.receipts.claimOrResumeLiveRunOwner(runNonce);
   } catch (error) {
-    await unlink(pendingPath);
+    if (pendingCreated) await unlink(pendingPath);
     throw error;
   }
   const workspaceId =
     `issue-255-live-${hash(runNonce).slice(0, 24)}`;
   const manifestSamples: Issue255LiveManifest['samples'] = [];
+  const existingByModality = new Map(
+    existingReceipts.map((receipt) => [receipt.modality, receipt]),
+  );
+  if (existingByModality.size !== existingReceipts.length) {
+    throw new Error('Issue 255 live resume has duplicate durable modalities.');
+  }
 
   for (const executor of executors) {
     const effectId = hash(
@@ -207,6 +233,24 @@ export async function collectIssue255LiveAnchors(input: {
       `issue-255-attempt-${effectId.slice(0, 28)}`;
     const providerCostEventId =
       `issue-255-cost-${effectId.slice(0, 28)}`;
+    const existing = existingByModality.get(executor.modality);
+    if (existing) {
+      assertResumableReceipt({
+        executor,
+        receipt: existing,
+        workspaceId,
+        effectId,
+        requestFingerprint,
+        providerJobId,
+        providerAttemptId,
+        providerCostEventId,
+        recordedMatrixDigest,
+      });
+      manifestSamples.push(
+        manifestSample(executor, existing, receiptWallClockMs(existing)),
+      );
+      continue;
+    }
     await input.receipts.claim({
       workspaceId,
       runNonce,
@@ -261,7 +305,7 @@ export async function collectIssue255LiveAnchors(input: {
     if (
       terminal.amountMicros <= 0 ||
       terminal.amountMicros > executor.quoteAmountMicros ||
-      terminal.usageEvidenceKind !== 'provider_reported'
+      !hasTrustedTerminalUsage(executor, terminal)
     ) {
       await input.receipts.recordExecutionFailure({
         runNonce,
@@ -287,6 +331,7 @@ export async function collectIssue255LiveAnchors(input: {
       providerTaskRef: terminal.providerTaskRef,
       requestFingerprint,
       usage: terminal.usage,
+      usageEvidenceKind: terminal.usageEvidenceKind,
       workspaceId,
     });
     const receipt = await input.receipts.completeFromProviderLedger(
@@ -532,6 +577,7 @@ export async function recoverIssue255LiveManifest(input: {
 async function reserveManifestPaths(
   manifestPath: string,
   pendingPath: string,
+  allowExistingPending: boolean,
 ) {
   await mkdir(dirname(manifestPath), {
     mode: 0o700,
@@ -541,6 +587,17 @@ async function reserveManifestPaths(
     await writeFile(pendingPath, '', { flag: 'wx', mode: 0o600 });
   } catch (error) {
     if (isFileSystemError(error, 'EEXIST')) {
+      if (allowExistingPending) {
+        const pending = await lstat(pendingPath);
+        if (pending.isFile() && pending.size === 0) {
+          try {
+            await lstat(manifestPath);
+          } catch (manifestError) {
+            if (isFileSystemError(manifestError, 'ENOENT')) return false;
+            throw manifestError;
+          }
+        }
+      }
       throw new Error(
         'Issue 255 pending manifest already exists and requires recovery.',
       );
@@ -550,7 +607,7 @@ async function reserveManifestPaths(
   try {
     await lstat(manifestPath);
   } catch (error) {
-    if (isFileSystemError(error, 'ENOENT')) return;
+    if (isFileSystemError(error, 'ENOENT')) return true;
     throw error;
   }
   await unlink(pendingPath);
@@ -809,11 +866,12 @@ export function issue255TuziExecutor(input: {
       }
       if (isImage) {
         if (
-          submitted.usageEvidenceKind !== 'provider_reported' ||
-          submitted.providerCost.currency !== 'CNY'
+          submitted.providerCost.currency !== 'CNY' ||
+          (submitted.usageEvidenceKind !== 'provider_reported' &&
+            submitted.usageEvidenceKind !== 'response_derived')
         ) {
           throw new Error(
-            'Issue 255 image terminal lacks provider-reported usage.',
+            'Issue 255 image terminal lacks trusted per-image usage.',
           );
         }
         return {
@@ -831,7 +889,7 @@ export function issue255TuziExecutor(input: {
             1,
           ),
           usage: submitted.providerCost.usage,
-          usageEvidenceKind: 'provider_reported',
+          usageEvidenceKind: submitted.usageEvidenceKind,
         };
       }
       for (let poll = 0; poll < 60; poll += 1) {
@@ -940,6 +998,15 @@ function validateExecutors(
         'Issue 255 live executors must be fixed copy, image_text, video with approved quotes.',
       );
     }
+    if (
+      modality === 'image_text' &&
+      (Object.keys(executor.quoteBasis).length !== 1 ||
+        executor.quoteBasis.outputCount !== 1)
+    ) {
+      throw new Error(
+        'Issue 255 image response-derived usage requires a per-image quote basis.',
+      );
+    }
   }
   const totalQuoteMicros = parsed.reduce(
     (total, executor) => total + executor.quoteAmountMicros,
@@ -951,6 +1018,19 @@ function validateExecutors(
     );
   }
   return parsed;
+}
+
+function hasTrustedTerminalUsage(
+  executor: Issue255LiveExecutor,
+  terminal: ProviderTerminal,
+) {
+  if (terminal.usageEvidenceKind === 'provider_reported') return true;
+  return (
+    executor.modality === 'image_text' &&
+    terminal.usageEvidenceKind === 'response_derived' &&
+    Number.isSafeInteger(terminal.usage.mediaUnits) &&
+    (terminal.usage.mediaUnits ?? 0) > 0
+  );
 }
 
 async function prepareProviderLedger(input: {
@@ -1039,6 +1119,7 @@ async function settleProviderLedger(input: {
   providerTaskRef: string;
   requestFingerprint: string;
   usage: ProviderTerminal['usage'];
+  usageEvidenceKind: ProviderUsageEvidenceKind;
   workspaceId: string;
 }) {
   const now = new Date().toISOString();
@@ -1068,7 +1149,10 @@ async function settleProviderLedger(input: {
     amountMicros: input.amountMicros,
     currency: 'CNY',
     unit: 'issue255_live_sample',
-    evidence: 'issue255_provider_reported_terminal',
+    evidence:
+      input.usageEvidenceKind === 'provider_reported'
+        ? 'issue255_provider_reported_terminal'
+        : 'issue255_response_derived_image_terminal',
     payer: 'platform',
     billingStatus: 'known',
     actorId: 'issue-255-live-collector',
@@ -1102,6 +1186,7 @@ async function settleProviderLedger(input: {
         amountMicros: input.amountMicros,
         currency: 'CNY',
         usage: input.usage,
+        usageEvidenceKind: input.usageEvidenceKind,
       },
       snapshot: {
         priceRevision: input.priceRevision,
@@ -1127,12 +1212,24 @@ function manifestSample(
     receipt.status !== 'completed' ||
     receipt.generationSubmitCount !== 1 ||
     receipt.actualAmountMicros === null ||
-    !terminal
+    !terminal ||
+    !('usage' in terminal.providerCost)
   ) {
     throw new Error(
       'Issue 255 manifest requires a completed durable receipt.',
     );
   }
+  const providerTaskRefHash =
+    'providerTaskRef' in terminal.attempt
+      ? hash(terminal.attempt.providerTaskRef)
+      : 'providerTaskRefMissing' in terminal.attempt &&
+          terminal.attempt.providerTaskRefMissing
+        ? null
+        : (() => {
+            throw new Error(
+              'Issue 255 manifest receipt has no trusted provider task reference state.',
+            );
+          })();
   return {
     modality: executor.modality,
     adapter: executor.adapter,
@@ -1147,7 +1244,16 @@ function manifestSample(
       `live://issue-255/${executor.modality}/${receipt.effectId}`,
     effectId: receipt.effectId,
     requestFingerprint: receipt.requestFingerprint,
-    providerTaskRefHash: hash(terminal.attempt.providerTaskRef),
+    providerTaskRefHash,
+    usageEvidenceKind: terminal.providerCost.usageEvidenceKind,
+    ...(terminal.providerCost.usageEvidenceKind === 'response_derived'
+      ? { evidenceGap: 'tuzi_image_response_omits_usage' as const }
+      : terminal.providerCost.usageEvidenceKind === 'price_card_reconciled'
+        ? {
+            evidenceGap:
+              'tuzi_image_usage_missing_and_task_ref_not_persisted' as const,
+          }
+      : {}),
     configurationRevision: executor.configurationRevision,
     priceRevision: receipt.priceRevision,
     exchangeRevision: 'native-cny-v1',
@@ -1158,6 +1264,49 @@ function manifestSample(
     wallClockMs,
     usage: terminal.providerCost.usage,
   };
+}
+
+function assertResumableReceipt(input: {
+  executor: Issue255LiveExecutor;
+  receipt: Issue255LiveReceipt;
+  workspaceId: string;
+  effectId: string;
+  requestFingerprint: string;
+  providerJobId: string;
+  providerAttemptId: string;
+  providerCostEventId: string;
+  recordedMatrixDigest: string;
+}) {
+  const { executor, receipt } = input;
+  if (
+    receipt.status !== 'completed' ||
+    receipt.workspaceId !== input.workspaceId ||
+    receipt.effectId !== input.effectId ||
+    receipt.requestFingerprint !== input.requestFingerprint ||
+    receipt.adapter !== executor.adapter ||
+    receipt.deploymentId !== executor.deploymentId ||
+    receipt.providerIdempotencyKey !== input.effectId ||
+    receipt.providerJobId !== input.providerJobId ||
+    receipt.providerAttemptId !== input.providerAttemptId ||
+    receipt.providerCostEventId !== input.providerCostEventId ||
+    receipt.recordedMatrixDigest !== input.recordedMatrixDigest ||
+    receipt.reservedAmountMicros !== executor.quoteAmountMicros ||
+    receipt.priceRevision !== executor.priceRevision ||
+    receipt.exchangeRevision !== 'native-cny-v1'
+  ) {
+    throw new Error(
+      `Issue 255 ${executor.modality} durable receipt cannot be resumed with this frozen executor identity.`,
+    );
+  }
+}
+
+function receiptWallClockMs(receipt: Issue255LiveReceipt) {
+  const terminal = receipt.terminalLineage;
+  if (terminal && 'observedWallClockMs' in terminal) {
+    return terminal.observedWallClockMs;
+  }
+  const elapsed = Date.parse(receipt.updatedAt) - Date.parse(receipt.createdAt);
+  return Number.isFinite(elapsed) ? Math.max(1, Math.ceil(elapsed)) : 1;
 }
 
 function manifestEvidenceDigests(manifest: Issue255LiveManifest) {
@@ -1227,7 +1376,7 @@ function requiredUsageQuantity(
 ) {
   if (!Number.isSafeInteger(quantity) || (quantity ?? 0) <= 0) {
     throw new Error(
-      `Issue 255 ${label} is not trusted provider-reported usage.`,
+      `Issue 255 ${label} is not trusted usage.`,
     );
   }
   return quantity!;

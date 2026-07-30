@@ -91,7 +91,7 @@ interface ArkTaskReference {
     mediaUnits?: number;
     outputTokens?: number;
   };
-  usageEvidenceKind?: 'provider_reported' | 'estimated';
+  usageEvidenceKind?: 'provider_reported' | 'response_derived' | 'estimated';
 }
 
 interface ClassifiedError {
@@ -761,7 +761,7 @@ export class ArkMediaExecutionPort<
     );
     const parsed = this.parseImage(body);
     const usage = {
-      mediaUnits: parsed.usage?.generated_images ?? 1,
+      mediaUnits: parsed.usage?.generated_images ?? parsed.data.length,
       ...(typeof parsed.usage?.output_tokens === 'number'
         ? { outputTokens: parsed.usage.output_tokens }
         : typeof parsed.usage?.total_tokens === 'number'
@@ -771,7 +771,7 @@ export class ArkMediaExecutionPort<
     const usageEvidenceKind =
       parsed.usage?.generated_images !== undefined
         ? ('provider_reported' as const)
-        : ('estimated' as const);
+        : ('response_derived' as const);
     const sourceExpiresAt = this.sourceExpiresAt(parsed.created);
     return {
       acceptance: 'accepted',

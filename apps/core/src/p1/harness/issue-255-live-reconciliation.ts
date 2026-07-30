@@ -9,6 +9,16 @@ export async function reconcileIssue255LiveRun(input: {
   runNonce: string;
 }) {
   const runNonce = z.string().trim().min(1).parse(input.runNonce);
+  if (runNonce === 'issue-255-live-anchors-2026-07-30-v1') {
+    await input.receipts.migrateLegacyRejectedBeforeBillingV1();
+    return input.receipts.confirmFailedBeforeBilling(
+      runNonce,
+      input.foundation,
+    );
+  }
+  if (runNonce === 'issue-255-live-anchors-2026-07-30-v2') {
+    return [await input.receipts.reconcileLegacyAcceptedImageWithoutTaskRefV2()];
+  }
   const unknown = (await input.receipts.listRun(runNonce)).filter(
     ({ status }) => status === 'unknown',
   );

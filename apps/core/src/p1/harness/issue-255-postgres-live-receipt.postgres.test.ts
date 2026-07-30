@@ -32,6 +32,21 @@ describe(
         priceRevision: 'video-price-v1',
       },
     } as const;
+    const legacyImage = {
+      runNonce: 'issue-255-live-anchors-2026-07-30-v2',
+      effectId:
+        'd2ccabe63b58ece3404bd27a36e8b811c5b6bf19c80e5f57b005bf7f5351f98e',
+      requestFingerprint:
+        '55a81ab1ca94a0a041de4a273c45adcdab861c690d7a40b3481e03019e9c6c17',
+      workspaceId: 'issue-255-live-1165ded3ff521938de15da91',
+      adapter: 'tuzi-image',
+      deploymentId: 'seedream-4-5-tuzi-relay',
+      priceRevision:
+        'seedream-4-5:channel-tuzi-seedream-4-5-relay:standard:price-v1',
+      recordedMatrixDigest:
+        'a3b601d062a543b07c14783eea674bf7a21807f5e20cdb393936b87750f8cf76',
+      reservedAmountMicros: 50_000,
+    } as const;
     const insertLegacyReceipt = async (input: {
       runNonce: string;
       modality: keyof typeof providerIdentity;
@@ -98,12 +113,303 @@ describe(
         exchangeRevision: 'native-cny-v1',
       };
     };
+    const failedBeforeBillingCandidate = async (input: {
+      acceptance?: 'accepted' | 'pending' | 'rejected_before_accept';
+      amountMicros?: number;
+      pending?: boolean;
+      runNonce?: string;
+      requestFingerprint?: string;
+      suffix: string;
+    }) => {
+      const runNonce =
+        input.runNonce ??
+        `issue-255-pg-${suiteNonce}-failed-before-billing-${input.suffix}`;
+      const workspaceId =
+        input.runNonce
+          ? 'issue-255-live-fd117da50a1e2d3d15ac5976'
+          : `issue-255-workspace-${suiteNonce}-failed-before-billing-${input.suffix}`;
+      const claim = {
+        ...copyClaim(runNonce),
+        workspaceId,
+        ...(input.requestFingerprint
+          ? { requestFingerprint: input.requestFingerprint }
+          : {}),
+        ...(input.runNonce
+          ? {
+              providerJobId:
+                'issue-255-job-f59700fea85015b990436228219b997b',
+              providerAttemptId:
+                'issue-255-attempt-f59700fea85015b990436228219b',
+              providerCostEventId:
+                'issue-255-cost-f59700fea85015b990436228219b',
+            }
+          : {}),
+      };
+      await firstPool.query(
+        `INSERT INTO workspaces (id, name)
+         VALUES ($1, 'Issue 255 failed-before-billing test')`,
+        [workspaceId],
+      );
+      await firstPool.query(
+        `INSERT INTO p1_route_snapshots (
+           workspace_id, id, catalog_revision, policy_revision, price_revision,
+           requested_catalog_model_id, selection_mode, data_class, data_classes,
+           fallback_consent, allowed_candidates, created_at
+         ) VALUES (
+           $1, $2, 'issue-255-live-v1', 'issue-255-no-fallback-v1', $3, $4,
+           'fixed', 'public', '["public"]'::jsonb, false, $5::jsonb, now()
+         )`,
+        [
+          workspaceId,
+          `${claim.providerJobId}:route`,
+          claim.priceRevision,
+          claim.deploymentId,
+          JSON.stringify([
+            {
+              deploymentId: claim.deploymentId,
+              priceRevision: claim.priceRevision,
+            },
+          ]),
+        ],
+      );
+      await firstPool.query(
+        `INSERT INTO p1_generation_jobs (
+           workspace_id, id, operation, route_snapshot_id, usage_reservation_id,
+           status, created_by, correlation_id, result, created_at, updated_at
+         ) VALUES (
+           $1, $2, 'copy', $3, $4, $6, 'issue-255-test', $5,
+           $7::jsonb, now(), now()
+         )`,
+        [
+          workspaceId,
+          claim.providerJobId,
+          `${claim.providerJobId}:route`,
+          `${claim.providerJobId}:usage`,
+          `${claim.providerJobId}:correlation`,
+          input.pending ? 'running' : 'failed',
+          input.pending
+            ? null
+            : JSON.stringify({
+                status: 'failed',
+                issue255: {
+                  workspaceId,
+                  effectId: claim.effectId,
+                  requestFingerprint: claim.requestFingerprint,
+                  adapter: claim.adapter,
+                  deploymentId: claim.deploymentId,
+                  providerIdempotencyKey: claim.effectId,
+                  providerJobId: claim.providerJobId,
+                  providerAttemptId: claim.providerAttemptId,
+                  providerCostEventId: claim.providerCostEventId,
+                },
+                failure: {
+                  acceptance:
+                    input.acceptance ?? 'rejected_before_accept',
+                  reason: 'provider_rejected_before_accept',
+                  source: 'provider_execution_terminal',
+                  provenance: {
+                    kind: 'merge_ledger',
+                    commitSha:
+                      '695489fe441178431394bb320ad779b28cb9f654',
+                  },
+                },
+              }),
+        ],
+      );
+      await firstPool.query(
+        `INSERT INTO p1_provider_attempts (
+           workspace_id, id, job_id, ordinal, deployment_id, acceptance,
+           status, created_at, updated_at
+         ) VALUES ($1, $2, $3, 1, $4, $5, $6, now(), now())`,
+        [
+          workspaceId,
+          claim.providerAttemptId,
+          claim.providerJobId,
+          claim.deploymentId,
+          input.pending
+            ? 'pending'
+            : input.acceptance ?? 'rejected_before_accept',
+          input.pending ? 'pending' : 'failed',
+        ],
+      );
+      if (input.amountMicros !== undefined) {
+        await firstPool.query(
+          `INSERT INTO p1_provider_cost_events (
+             workspace_id, id, attempt_id, stage, amount_micros, currency, unit,
+             evidence, payer, billing_status, actor_id, correlation_id, created_at
+           ) VALUES (
+             $1, $2, $3, 'observed', $4, 'CNY', 'issue255_live_sample',
+             'issue255_provider_reported_terminal', 'platform', 'known',
+             'issue-255-test', $5, now()
+           )`,
+          [
+            workspaceId,
+            claim.providerCostEventId,
+            claim.providerAttemptId,
+            input.amountMicros,
+            `${claim.providerJobId}:correlation`,
+          ],
+        );
+      }
+      await first.claim(claim);
+      await first.claimGenerationPost({
+        adapter: 'direct-copy',
+        deploymentId: claim.deploymentId,
+        runNonce,
+        modality: 'copy',
+        effectId: claim.effectId,
+        providerIdempotencyKey: claim.effectId,
+        requestFingerprint: claim.requestFingerprint,
+      });
+      await first.recordProviderHttpRequest({
+        adapter: 'direct-copy',
+        deploymentId: claim.deploymentId,
+        runNonce,
+        modality: 'copy',
+        effectId: claim.effectId,
+        providerIdempotencyKey: claim.effectId,
+        requestFingerprint: claim.requestFingerprint,
+      });
+      await first.markUnknown({
+        runNonce,
+        modality: 'copy',
+        effectId: claim.effectId,
+        requestFingerprint: claim.requestFingerprint,
+        reason: 'provider_acceptance_unknown',
+      });
+      return { claim, runNonce, workspaceId };
+    };
+    const legacyImageCandidate = async () => {
+      const claim = {
+        workspaceId: legacyImage.workspaceId,
+        runNonce: legacyImage.runNonce,
+        modality: 'image_text' as const,
+        effectId: legacyImage.effectId,
+        requestFingerprint: legacyImage.requestFingerprint,
+        adapter: legacyImage.adapter,
+        deploymentId: legacyImage.deploymentId,
+        providerIdempotencyKey: legacyImage.effectId,
+        providerJobId: `issue-255-job-${legacyImage.effectId.slice(0, 32)}`,
+        providerAttemptId: `issue-255-attempt-${legacyImage.effectId.slice(0, 28)}`,
+        providerCostEventId: `issue-255-cost-${legacyImage.effectId.slice(0, 28)}`,
+        recordedMatrixDigest: legacyImage.recordedMatrixDigest,
+        reservedAmountMicros: legacyImage.reservedAmountMicros,
+        priceRevision: legacyImage.priceRevision,
+        exchangeRevision: 'native-cny-v1',
+      };
+      await firstPool.query(
+        `INSERT INTO workspaces (id, name)
+         VALUES ($1, 'Issue 255 legacy image reconciliation test')`,
+        [claim.workspaceId],
+      );
+      await firstPool.query(
+        `INSERT INTO p1_route_snapshots (
+           workspace_id, id, catalog_revision, policy_revision, price_revision,
+           requested_catalog_model_id, selection_mode, data_class, data_classes,
+           fallback_consent, allowed_candidates, created_at
+         ) VALUES (
+           $1, $2, 'issue-255-live-v2', 'issue-255-no-fallback-v1', $3, $4,
+           'fixed', 'public', '["public"]'::jsonb, false, $5::jsonb, now()
+         )`,
+        [
+          claim.workspaceId,
+          `${claim.providerJobId}:route`,
+          claim.priceRevision,
+          claim.deploymentId,
+          JSON.stringify([
+            {
+              deploymentId: claim.deploymentId,
+              priceRevision: claim.priceRevision,
+            },
+          ]),
+        ],
+      );
+      await firstPool.query(
+        `INSERT INTO p1_generation_jobs (
+           workspace_id, id, operation, route_snapshot_id, usage_reservation_id,
+           status, created_by, correlation_id, created_at, updated_at
+         ) VALUES (
+           $1, $2, 'image', $3, $4, 'running', 'issue-255-test', $5, now(), now()
+         )`,
+        [
+          claim.workspaceId,
+          claim.providerJobId,
+          `${claim.providerJobId}:route`,
+          `${claim.providerJobId}:usage`,
+          `${claim.providerJobId}:correlation`,
+        ],
+      );
+      await firstPool.query(
+        `INSERT INTO p1_provider_attempts (
+           workspace_id, id, job_id, ordinal, deployment_id, acceptance,
+           status, created_at, updated_at
+         ) VALUES ($1, $2, $3, 1, $4, 'pending', 'pending', now(), now())`,
+        [
+          claim.workspaceId,
+          claim.providerAttemptId,
+          claim.providerJobId,
+          claim.deploymentId,
+        ],
+      );
+      await first.claim(claim);
+      await first.claimGenerationPost({
+        adapter: claim.adapter,
+        deploymentId: claim.deploymentId,
+        runNonce: claim.runNonce,
+        modality: claim.modality,
+        effectId: claim.effectId,
+        providerIdempotencyKey: claim.effectId,
+        requestFingerprint: claim.requestFingerprint,
+      });
+      await first.recordProviderHttpRequest({
+        adapter: claim.adapter,
+        deploymentId: claim.deploymentId,
+        runNonce: claim.runNonce,
+        modality: claim.modality,
+        effectId: claim.effectId,
+        providerIdempotencyKey: claim.effectId,
+        requestFingerprint: claim.requestFingerprint,
+      });
+      await first.markUnknown({
+        runNonce: claim.runNonce,
+        modality: claim.modality,
+        effectId: claim.effectId,
+        requestFingerprint: claim.requestFingerprint,
+        reason: 'provider_acceptance_unknown',
+      });
+      return claim;
+    };
 
     before(async () => {
+      await new PostgresFoundationRepository(firstPool).migrate();
       await first.migrate();
     });
 
     beforeEach(async () => {
+      await firstPool.query(
+        `DELETE FROM issue255_live_generation_receipts
+          WHERE run_nonce = 'issue-255-live-anchors-2026-07-30-v2'`,
+      );
+      await firstPool.query(
+        `DELETE FROM issue255_live_generation_authorizations
+          WHERE run_nonce = 'issue-255-live-anchors-2026-07-30-v2'`,
+      );
+      await firstPool.query(
+        `DELETE FROM workspaces
+          WHERE id = 'issue-255-live-1165ded3ff521938de15da91'`,
+      );
+      await firstPool.query(
+        `DELETE FROM issue255_live_generation_receipts
+          WHERE run_nonce = 'issue-255-live-anchors-2026-07-30-v1'`,
+      );
+      await firstPool.query(
+        `DELETE FROM issue255_live_generation_authorizations
+          WHERE run_nonce = 'issue-255-live-anchors-2026-07-30-v1'`,
+      );
+      await firstPool.query(
+        `DELETE FROM workspaces
+          WHERE id = 'issue-255-live-fd117da50a1e2d3d15ac5976'`,
+      );
       await firstPool.query(
         'DELETE FROM issue255_live_generation_receipts WHERE run_nonce LIKE $1',
         [`issue-255-pg-${suiteNonce}-%`],
@@ -119,6 +425,30 @@ describe(
     });
 
     after(async () => {
+      await firstPool.query(
+        `DELETE FROM issue255_live_generation_receipts
+          WHERE run_nonce = 'issue-255-live-anchors-2026-07-30-v2'`,
+      );
+      await firstPool.query(
+        `DELETE FROM issue255_live_generation_authorizations
+          WHERE run_nonce = 'issue-255-live-anchors-2026-07-30-v2'`,
+      );
+      await firstPool.query(
+        `DELETE FROM workspaces
+          WHERE id = 'issue-255-live-1165ded3ff521938de15da91'`,
+      );
+      await firstPool.query(
+        `DELETE FROM issue255_live_generation_receipts
+          WHERE run_nonce = 'issue-255-live-anchors-2026-07-30-v1'`,
+      );
+      await firstPool.query(
+        `DELETE FROM issue255_live_generation_authorizations
+          WHERE run_nonce = 'issue-255-live-anchors-2026-07-30-v1'`,
+      );
+      await firstPool.query(
+        `DELETE FROM workspaces
+          WHERE id = 'issue-255-live-fd117da50a1e2d3d15ac5976'`,
+      );
       await firstPool.query(
         'DELETE FROM issue255_live_generation_receipts WHERE run_nonce LIKE $1',
         [`issue-255-pg-${suiteNonce}-%`],
@@ -689,6 +1019,215 @@ describe(
       assert.equal((await first.listRun(unknown.runNonce))[0]?.status, 'unknown');
     });
 
+    it('preserves and reclassifies a durably proven rejected-before-accept submission', async () => {
+      const foundation = new PostgresFoundationRepository(firstPool);
+      const candidate = await failedBeforeBillingCandidate({
+        pending: true,
+        requestFingerprint:
+          '5a6b64ab43bf5fcc8ac2f2a466d8e04bc86af5f779a17210c6a448c07e6c46ed',
+        runNonce: 'issue-255-live-anchors-2026-07-30-v1',
+        suffix: 'confirmed',
+      });
+
+      const [receipt] = await reconcileIssue255LiveRun({
+        foundation,
+        receipts: first,
+        runNonce: candidate.runNonce,
+      });
+
+      assert.equal(receipt?.status, 'failed_before_billing');
+      assert.equal(receipt?.actualAmountMicros, 0);
+      assert.equal(
+        receipt?.reconciliationReason,
+        'provider_rejected_before_accept',
+      );
+      assert.deepEqual(receipt?.terminalLineage, {
+        workspaceId: candidate.workspaceId,
+        effectId: candidate.claim.effectId,
+        requestFingerprint: candidate.claim.requestFingerprint,
+        adapter: candidate.claim.adapter,
+        deploymentId: candidate.claim.deploymentId,
+        providerIdempotencyKey: candidate.claim.effectId,
+        attempt: {
+          id: candidate.claim.providerAttemptId,
+          jobId: candidate.claim.providerJobId,
+          deploymentId: candidate.claim.deploymentId,
+          acceptance: 'rejected_before_accept',
+          status: 'failed',
+        },
+        failure: {
+          reason: 'provider_rejected_before_accept',
+          source: 'provider_execution_terminal',
+          provenance: {
+            kind: 'merge_ledger',
+            commitSha:
+              '695489fe441178431394bb320ad779b28cb9f654',
+          },
+        },
+        providerCost: {
+          eventCount: 0,
+          amountMicros: 0,
+          currency: 'CNY',
+        },
+      });
+      const durable = await firstPool.query<{
+        authorizations: number;
+        receipts: number;
+      }>(
+        `SELECT
+           (SELECT COUNT(*) FROM issue255_live_generation_authorizations
+             WHERE run_nonce = $1)::int AS authorizations,
+           (SELECT COUNT(*) FROM issue255_live_generation_receipts
+             WHERE run_nonce = $1)::int AS receipts`,
+        [candidate.runNonce],
+      );
+      assert.deepEqual(durable.rows[0], { authorizations: 1, receipts: 1 });
+      assert.equal(
+        (
+          await foundation.getProviderAttempt(
+            candidate.workspaceId,
+            candidate.claim.providerAttemptId,
+          )
+        )?.acceptance,
+        'rejected_before_accept',
+      );
+      assert.equal(
+        (
+          await foundation.getGenerationJob(
+            candidate.workspaceId,
+            candidate.claim.providerJobId,
+          )
+        )?.status,
+        'failed',
+      );
+    });
+
+    it('reconciles only the fixed v2 accepted image lineage without inventing a provider task ref', async () => {
+      const foundation = new PostgresFoundationRepository(firstPool);
+      const claim = await legacyImageCandidate();
+
+      const [receipt] = await reconcileIssue255LiveRun({
+        foundation,
+        receipts: first,
+        runNonce: claim.runNonce,
+      });
+
+      assert.equal(receipt?.status, 'completed');
+      assert.equal(receipt?.actualAmountMicros, 50_000);
+      assert.equal(
+        receipt?.reconciliationReason,
+        'tuzi_image_price_card_reconciled',
+      );
+      assert.deepEqual(receipt?.terminalLineage?.attempt, {
+        id: claim.providerAttemptId,
+        jobId: claim.providerJobId,
+        deploymentId: claim.deploymentId,
+        acceptance: 'accepted',
+        status: 'completed',
+        providerTaskRefMissing: true,
+      });
+      assert.deepEqual(receipt?.terminalLineage?.providerCost, {
+        id: claim.providerCostEventId,
+        attemptId: claim.providerAttemptId,
+        amountMicros: 50_000,
+        currency: 'CNY',
+        priceRevision: claim.priceRevision,
+        exchangeRevision: 'native-cny-v1',
+        stage: 'reconciled',
+        usageEvidenceKind: 'price_card_reconciled',
+        usage: { mediaUnits: 1 },
+      });
+      assert.ok(
+        receipt?.terminalLineage &&
+          'reconciliation' in receipt.terminalLineage,
+      );
+      assert.deepEqual(receipt.terminalLineage.reconciliation, {
+        kind: 'controller_issue_comment',
+        issue: 255,
+        commentId: 5130611933,
+        reason: 'accepted_image_task_ref_not_persisted',
+      });
+      const attempt = await foundation.getProviderAttempt(
+        claim.workspaceId,
+        claim.providerAttemptId,
+      );
+      assert.equal(attempt?.acceptance, 'accepted');
+      assert.equal(attempt?.status, 'completed');
+      assert.equal(attempt?.providerTaskRef, null);
+      const costs = await foundation.listProviderCosts(
+        claim.workspaceId,
+        claim.providerAttemptId,
+      );
+      assert.deepEqual(
+        costs.map((cost) => [cost.stage, cost.amountMicros, cost.currency]),
+        [['reconciled', 50_000, 'CNY']],
+      );
+    });
+
+    it('refuses the fixed v2 image reconciliation when a durable task ref exists', async () => {
+      const foundation = new PostgresFoundationRepository(firstPool);
+      const claim = await legacyImageCandidate();
+      await firstPool.query(
+        `UPDATE p1_provider_attempts
+            SET provider_task_ref = 'durable-image-task-ref'
+          WHERE workspace_id = $1 AND id = $2`,
+        [claim.workspaceId, claim.providerAttemptId],
+      );
+
+      await assert.rejects(
+        reconcileIssue255LiveRun({
+          foundation,
+          receipts: first,
+          runNonce: claim.runNonce,
+        }),
+        /frozen v2 lineage/u,
+      );
+      assert.equal((await first.listRun(claim.runNonce))[0]?.status, 'unknown');
+    });
+
+    it('refuses failed-before-billing reclassification for billed, accepted, or untrusted terminals', async () => {
+      const foundation = new PostgresFoundationRepository(firstPool);
+      const billed = await failedBeforeBillingCandidate({
+        suffix: 'billed',
+        amountMicros: 1,
+      });
+      await assert.rejects(
+        first.confirmFailedBeforeBilling(billed.runNonce, foundation),
+        /zero durable provider cost/u,
+      );
+
+      const accepted = await failedBeforeBillingCandidate({
+        suffix: 'accepted',
+        acceptance: 'accepted',
+      });
+      await assert.rejects(
+        first.confirmFailedBeforeBilling(accepted.runNonce, foundation),
+        /rejected-before-accept terminal/u,
+      );
+
+      const untrusted = await failedBeforeBillingCandidate({
+        suffix: 'untrusted',
+        acceptance: 'pending',
+      });
+      await assert.rejects(
+        first.confirmFailedBeforeBilling(untrusted.runNonce, foundation),
+        /rejected-before-accept terminal/u,
+      );
+
+      for (const candidate of [billed, accepted, untrusted]) {
+        assert.equal(
+          (await first.listRun(candidate.runNonce))[0]?.status,
+          'unknown',
+        );
+      }
+      const fourthRunNonce =
+        `issue-255-pg-${suiteNonce}-failed-before-billing-fourth`;
+      await assert.rejects(
+        first.claim(copyClaim(fourthRunNonce)),
+        /three billable generation POSTs globally/u,
+      );
+    });
+
     it('rejects caller adapter, deployment, and idempotency identity that differs from the receipt', async () => {
       const runNonce = `issue-255-pg-${suiteNonce}-identity-conflict`;
       const effectId = createHash('sha256')
@@ -1129,7 +1668,11 @@ describe(
       assert.equal(completed.status, 'completed');
       assert.equal(completed.actualAmountMicros, 100_000);
       assert.equal(completed.providerHttpRequestCount, 1);
-      assert.deepEqual(completed.terminalLineage?.providerCost.usage, {
+      assert.ok(
+        completed.terminalLineage &&
+          'usage' in completed.terminalLineage.providerCost,
+      );
+      assert.deepEqual(completed.terminalLineage.providerCost.usage, {
         inputTokens: 12,
         outputTokens: 34,
       });

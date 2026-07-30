@@ -148,6 +148,29 @@ test(
       );
       assert.equal(blockedExecutorCalls, 0);
 
+      const [copyExecutor, imageExecutor, videoExecutor] = blockedExecutors;
+      await assert.rejects(
+        collectIssue255LiveAnchors({
+          database: pool,
+          executors: [
+            copyExecutor!,
+            {
+              ...imageExecutor!,
+              quoteBasis: { estimatedOutputTokens: 1 },
+            },
+            videoExecutor!,
+          ],
+          foundation,
+          manifestPath: join(directory, 'non-per-image.json'),
+          providerCapMicros: 5_000_000,
+          recordedSamples,
+          receipts,
+          runNonce: `${runNonce}-non-per-image`,
+        }),
+        /per-image quote basis/u,
+      );
+      assert.equal(blockedExecutorCalls, 0);
+
       const partialRunNonce = `${runNonce}-partial-history`;
       const partialEffectId = hash(
         `issue255/v1\0${partialRunNonce}\0copy`,
@@ -191,7 +214,7 @@ test(
           receipts,
           runNonce: `${runNonce}-after-partial`,
         }),
-        /empty authorization history/u,
+        /unresolved billable history/u,
       );
       assert.equal(blockedExecutorCalls, 0);
       await pool.query(
@@ -258,7 +281,6 @@ test(
               data: [
                 { url: 'https://media.example.test/generated.png' },
               ],
-              usage: { generated_images: 1 },
             });
           }
           if (target.endsWith('/videos')) {
@@ -393,6 +415,14 @@ test(
         manifest.samples.map((sample) => sample.generationSubmitCount),
         [1, 1, 1],
       );
+      assert.deepEqual(
+        manifest.samples.map((sample) => sample.usageEvidenceKind),
+        ['provider_reported', 'response_derived', 'provider_reported'],
+      );
+      assert.equal(
+        manifest.samples[1]?.evidenceGap,
+        'tuzi_image_response_omits_usage',
+      );
       assert.equal(
         manifest.samples.every(
           (sample) => sample.providerHttpRequestCount > 0,
@@ -504,7 +534,7 @@ test(
           receipts,
           runNonce: rerunNonce,
         }),
-        /empty authorization history/u,
+        /live run owner is already durably claimed/u,
       );
       assert.equal(blockedExecutorCalls, 0);
 

@@ -205,7 +205,7 @@ export interface MediaProviderSubmissionReceipt {
   taskRef?: string;
   sourceExpiresAt?: string;
   providerCost: Omit<ProviderCost, 'id' | 'status'>;
-  usageEvidenceKind?: 'provider_reported' | 'estimated';
+  usageEvidenceKind?: 'provider_reported' | 'response_derived' | 'estimated';
   errorCode?: string;
   retryable?: boolean;
   error?: string;
