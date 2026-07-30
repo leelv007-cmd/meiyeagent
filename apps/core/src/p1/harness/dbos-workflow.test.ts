@@ -661,16 +661,17 @@ test('a pre-a9 replay stops before settlement, terminal writes, or later DBOS op
         sideEffects.push('terminal-failure');
       },
     },
-    undefined,
     {
-      async commit() {
-        sideEffects.push('commit');
-      },
-      async refund() {
-        sideEffects.push('refund');
-      },
-      async scheduleCompensation() {
-        sideEffects.push('schedule-compensation');
+      billing: {
+        async commit() {
+          sideEffects.push('commit');
+        },
+        async refund() {
+          sideEffects.push('refund');
+        },
+        async scheduleCompensation() {
+          sideEffects.push('schedule-compensation');
+        },
       },
     },
   );

@@ -641,68 +641,65 @@ test(
         async recordStageTrace() {},
         async recordTerminalFailure() {},
       },
-      undefined,
-      undefined,
       {
-        async get() {
-          return {
-            actorId: 'platform-admin',
-            correlationId: 'system-default-smoke-config',
-            createdAt: '2026-07-30T09:00:00.000Z',
-            key: 'harness.confirmation_card.timeout_seconds',
-            reason: 'Exercise typed durable timeout',
-            revision: 1,
-            rolledBackToRevision: null,
-            scope: 'global',
-            status: 'applied',
-            value: 1,
-            workspaceId: '__global__',
-          };
+        config: {
+          async get() {
+            return {
+              actorId: 'platform-admin',
+              correlationId: 'system-default-smoke-config',
+              createdAt: '2026-07-30T09:00:00.000Z',
+              key: 'harness.confirmation_card.timeout_seconds',
+              reason: 'Exercise typed durable timeout',
+              revision: 1,
+              rolledBackToRevision: null,
+              scope: 'global',
+              status: 'applied',
+              value: 1,
+              workspaceId: '__global__',
+            };
+          },
         },
-      },
-      {
-        async submitCoreTimeout(_workspaceId, _taskId, command) {
-          forbiddenCoreTimeouts.push(command.idempotencyKey);
-          throw new Error('Typed timeout must not use core_timeout.');
+        decisions: {
+          async submitCoreTimeout(_workspaceId, _taskId, command) {
+            forbiddenCoreTimeouts.push(command.idempotencyKey);
+            throw new Error('Typed timeout must not use core_timeout.');
+          },
         },
-      },
-      undefined,
-      undefined,
-      undefined,
-      {
-        async expireUnrendered() {
-          throw new Error('An acknowledged renderer must not expire.');
-        },
-        async submitSystemDefault(targetWorkspaceId, runId) {
-          const request = interactionRequest;
-          if (
-            !request ||
-            request.kind !== 'ask_merchant' ||
-            request.timeoutPolicy?.kind !== 'semantic_default'
-          ) {
-            throw new Error('Typed system-default request is unavailable.');
-          }
-          const idempotencyKey =
-            `${request.requestId}:r${request.revision}:system_default`;
-          persistedDefaults.push(idempotencyKey);
-          await resumeHarnessDbosInteractionWorkflow(
-            targetWorkspaceId,
-            runId,
-            {
-              kind: 'harness_interaction_resume',
-              schemaVersion: 'v1',
-              idempotencyKey,
-              interactionKind: request.kind,
-              requestId: request.requestId,
-              revision: request.revision,
-              runId: request.runId,
-              step: request.step,
-              resumeData:
-                request.timeoutPolicy.eligibility.defaultResponse,
-              resolutionSource: 'system_default',
-            },
-          );
-          return { kind: 'resumed' as const, replayed: false };
+        interactions: {
+          async expireUnrendered() {
+            throw new Error('An acknowledged renderer must not expire.');
+          },
+          async submitSystemDefault(targetWorkspaceId, runId) {
+            const request = interactionRequest;
+            if (
+              !request ||
+              request.kind !== 'ask_merchant' ||
+              request.timeoutPolicy?.kind !== 'semantic_default'
+            ) {
+              throw new Error('Typed system-default request is unavailable.');
+            }
+            const idempotencyKey =
+              `${request.requestId}:r${request.revision}:system_default`;
+            persistedDefaults.push(idempotencyKey);
+            await resumeHarnessDbosInteractionWorkflow(
+              targetWorkspaceId,
+              runId,
+              {
+                kind: 'harness_interaction_resume',
+                schemaVersion: 'v1',
+                idempotencyKey,
+                interactionKind: request.kind,
+                requestId: request.requestId,
+                revision: request.revision,
+                runId: request.runId,
+                step: request.step,
+                resumeData:
+                  request.timeoutPolicy.eligibility.defaultResponse,
+                resolutionSource: 'system_default',
+              },
+            );
+            return { kind: 'resumed' as const, replayed: false };
+          },
         },
       },
     );
@@ -918,51 +915,49 @@ test(
         async recordStageTrace() {},
         async recordTerminalFailure() {},
       },
-      undefined,
       {
-        async commit() {
-          throw new Error('A renderer expiry must not commit usage.');
+        billing: {
+          async commit() {
+            throw new Error('A renderer expiry must not commit usage.');
+          },
+          async refund() {
+            refunds += 1;
+          },
+          async scheduleCompensation() {
+            throw new Error('The renderer-expiry refund succeeds.');
+          },
         },
-        async refund() {
-          refunds += 1;
+        config: {
+          async get() {
+            return {
+              actorId: 'platform-admin',
+              correlationId: `renderer-expiry-${workflowId}`,
+              createdAt: '2026-07-30T09:00:00.000Z',
+              key: 'harness.confirmation_card.timeout_seconds',
+              reason: 'Exercise renderer expiry after recovery',
+              revision: 1,
+              rolledBackToRevision: null,
+              scope: 'global',
+              status: 'applied',
+              value: 2,
+              workspaceId: '__global__',
+            };
+          },
         },
-        async scheduleCompensation() {
-          throw new Error('The renderer-expiry refund succeeds.');
+        decisions: {
+          async submitCoreTimeout() {
+            throw new Error('A typed timeout must not use core_timeout.');
+          },
         },
-      },
-      {
-        async get() {
-          return {
-            actorId: 'platform-admin',
-            correlationId: `renderer-expiry-${workflowId}`,
-            createdAt: '2026-07-30T09:00:00.000Z',
-            key: 'harness.confirmation_card.timeout_seconds',
-            reason: 'Exercise renderer expiry after recovery',
-            revision: 1,
-            rolledBackToRevision: null,
-            scope: 'global',
-            status: 'applied',
-            value: 2,
-            workspaceId: '__global__',
-          };
-        },
-      },
-      {
-        async submitCoreTimeout() {
-          throw new Error('A typed timeout must not use core_timeout.');
-        },
-      },
-      undefined,
-      undefined,
-      undefined,
-      {
-        async expireUnrendered() {
-          expiries += 1;
-          return 'expired' as const;
-        },
-        async submitSystemDefault() {
-          defaultAttempts += 1;
-          return { kind: 'held' as const, reason: 'renderer' as const };
+        interactions: {
+          async expireUnrendered() {
+            expiries += 1;
+            return 'expired' as const;
+          },
+          async submitSystemDefault() {
+            defaultAttempts += 1;
+            return { kind: 'held' as const, reason: 'renderer' as const };
+          },
         },
       },
     );
@@ -1126,30 +1121,26 @@ test(
     const workflow = registerHarnessDbosWorkflow(
       ports,
       store,
-      undefined,
-      undefined,
       {
-        async get() {
-          return {
-            actorId: 'platform-admin',
-            correlationId: `reask-timeout-${suffix}`,
-            createdAt: '2026-07-30T09:00:00.000Z',
-            key: 'harness.confirmation_card.timeout_seconds',
-            reason: 'Exercise durable r2 system default',
-            revision: 1,
-            rolledBackToRevision: null,
-            scope: 'global',
-            status: 'applied',
-            value: 2,
-            workspaceId: '__global__',
-          };
+        config: {
+          async get() {
+            return {
+              actorId: 'platform-admin',
+              correlationId: `reask-timeout-${suffix}`,
+              createdAt: '2026-07-30T09:00:00.000Z',
+              key: 'harness.confirmation_card.timeout_seconds',
+              reason: 'Exercise durable r2 system default',
+              revision: 1,
+              rolledBackToRevision: null,
+              scope: 'global',
+              status: 'applied',
+              value: 2,
+              workspaceId: '__global__',
+            };
+          },
         },
+        interactions,
       },
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      interactions,
     );
 
     try {
