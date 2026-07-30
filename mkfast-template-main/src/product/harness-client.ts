@@ -13,6 +13,8 @@ import {
   type FirstUsableDraftMetric,
   type HarnessDecisionSnapshot as HarnessDecisionReadModel,
   type HarnessInteractionAnswer,
+  type HarnessInteractionEditing,
+  type HarnessInteractionRendererAck,
   type StructuredDecisionInput,
 } from '@meiye/contracts';
 import { z } from 'zod';
@@ -191,12 +193,12 @@ export async function submitHarnessInteractionMerchantMessage(
 
 export async function setHarnessInteractionEditing(
   taskId: string,
-  editing: boolean
+  input: HarnessInteractionEditing
 ) {
   const response = await telemetryFetch(
     `/api/core/p1/harness/tasks/${encodeURIComponent(taskId)}/interaction/editing`,
     {
-      body: JSON.stringify({ editing }),
+      body: JSON.stringify(input),
       credentials: 'same-origin',
       headers: { 'content-type': 'application/json' },
       method: 'POST',
@@ -207,11 +209,16 @@ export async function setHarnessInteractionEditing(
   }
 }
 
-export async function acknowledgeHarnessInteractionRenderer(taskId: string) {
+export async function acknowledgeHarnessInteractionRenderer(
+  taskId: string,
+  acknowledgement: HarnessInteractionRendererAck
+) {
   const response = await telemetryFetch(
     `/api/core/p1/harness/tasks/${encodeURIComponent(taskId)}/interaction/renderer`,
     {
+      body: JSON.stringify(acknowledgement),
       credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
       method: 'POST',
     }
   );

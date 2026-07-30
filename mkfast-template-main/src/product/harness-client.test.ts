@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  acknowledgeHarnessInteractionRenderer,
   readPendingHarnessInteractionMessage,
   readHarnessDecisionSnapshot,
   readHarnessSubmitResult,
@@ -159,6 +160,35 @@ test('reads and consumes the durable merchant-message interaction boundary', asy
       requests[1]?.headers.get('idempotency-key'),
       'merchant-message-1'
     );
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test('acknowledges the exact durable renderer request identity', async () => {
+  const previousFetch = globalThis.fetch;
+  let request: Request | undefined;
+  globalThis.fetch = async (input, init) => {
+    request = new Request(new URL(String(input), 'http://localhost'), init);
+    return new Response(null, { status: 204 });
+  };
+  try {
+    await acknowledgeHarnessInteractionRenderer('task-1', {
+      requestId: 'request-1',
+      revision: 2,
+      step: 'context_injection',
+      carrier: 'conversation',
+    });
+    assert.equal(
+      request?.url,
+      'http://localhost/api/core/p1/harness/tasks/task-1/interaction/renderer'
+    );
+    assert.deepEqual(await request?.json(), {
+      requestId: 'request-1',
+      revision: 2,
+      step: 'context_injection',
+      carrier: 'conversation',
+    });
   } finally {
     globalThis.fetch = previousFetch;
   }

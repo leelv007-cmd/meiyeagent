@@ -12,7 +12,7 @@ export function ExecutionConfirmationInteractionCard({
   pending = false,
   request,
 }: {
-  onRendererReady: () => Promise<void>;
+  onRendererReady: (request: ExecutionConfirmationRequest) => Promise<void>;
   onSubmit: (
     response: ExecutionConfirmationAnswer['response']
   ) => Promise<void>;
@@ -20,7 +20,18 @@ export function ExecutionConfirmationInteractionCard({
   request: ExecutionConfirmationRequest;
 }) {
   useEffect(() => {
-    void onRendererReady();
+    let cancelled = false;
+    let retryId: ReturnType<typeof setTimeout> | undefined;
+    const acknowledge = () => {
+      void onRendererReady(request).catch(() => {
+        if (!cancelled) retryId = setTimeout(acknowledge, 1_000);
+      });
+    };
+    acknowledge();
+    return () => {
+      cancelled = true;
+      if (retryId) clearTimeout(retryId);
+    };
   }, [onRendererReady, request.requestId, request.revision]);
 
   return (

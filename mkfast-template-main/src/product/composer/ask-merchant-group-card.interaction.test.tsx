@@ -5,7 +5,10 @@ import { afterEach, expect, it, vi } from 'vitest';
 
 import { AskMerchantGroupCard } from './ask-merchant-group-card';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 const REQUEST: AskMerchantQuestionRequest = {
   requestId: 'request-1',
@@ -70,8 +73,8 @@ it('renders every item but submits labels without descriptions', async () => {
   await user.tab();
   await user.click(screen.getByRole('button', { name: '提交回答' }));
 
-  expect(onEditingChange).toHaveBeenNthCalledWith(1, true);
-  expect(onEditingChange).toHaveBeenLastCalledWith(false);
+  expect(onEditingChange).toHaveBeenNthCalledWith(1, REQUEST, true);
+  expect(onEditingChange).toHaveBeenLastCalledWith(REQUEST, false);
   expect(onSubmit).toHaveBeenCalledWith({
     kind: 'answer',
     items: [
@@ -103,4 +106,26 @@ it('submits one explicit group skip', async () => {
   await user.click(screen.getByRole('button', { name: '整组暂不确定' }));
   expect(onSubmit).toHaveBeenCalledOnce();
   expect(onSubmit).toHaveBeenCalledWith({ kind: 'skipped' });
+});
+
+it('retries the exact renderer acknowledgement after a transient failure', async () => {
+  vi.useFakeTimers();
+  const onRendererReady = vi
+    .fn<(request: AskMerchantQuestionRequest) => Promise<void>>()
+    .mockRejectedValueOnce(new Error('temporary network failure'))
+    .mockResolvedValue(undefined);
+
+  render(
+    <AskMerchantGroupCard
+      onEditingChange={async () => undefined}
+      onRendererReady={onRendererReady}
+      onSubmit={async () => undefined}
+      request={REQUEST}
+    />
+  );
+
+  expect(onRendererReady).toHaveBeenCalledWith(REQUEST);
+  await vi.advanceTimersByTimeAsync(1_000);
+  expect(onRendererReady).toHaveBeenCalledTimes(2);
+  expect(onRendererReady).toHaveBeenLastCalledWith(REQUEST);
 });

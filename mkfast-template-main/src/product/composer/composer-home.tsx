@@ -54,6 +54,7 @@ import type {
   BrowserRecipeProjection,
   CreationLensId,
   ExecutionConfirmationAnswer,
+  HarnessInteractionRequest,
   MarketingIdentityAsset,
   ProductQuoteSnapshot,
   QuestionCard,
@@ -1533,7 +1534,13 @@ export function ComposerHome({
     [interactionQuery, pendingExecutionConfirmation, taskId]
   );
   const acknowledgeAskMerchantRenderer = useCallback(
-    async () => acknowledgeHarnessInteractionRenderer(taskId),
+    async (request: HarnessInteractionRequest) =>
+      acknowledgeHarnessInteractionRenderer(taskId, {
+        requestId: request.requestId,
+        revision: request.revision,
+        step: request.step,
+        carrier: 'conversation',
+      }),
     [taskId]
   );
 
@@ -2707,8 +2714,14 @@ export function ComposerHome({
           questionSlot={
             pendingAskRequest ? (
               <AskMerchantGroupCard
-                onEditingChange={(editing) =>
-                  setHarnessInteractionEditing(taskId, editing)
+                onEditingChange={(request, editing) =>
+                  setHarnessInteractionEditing(taskId, {
+                    requestId: request.requestId,
+                    revision: request.revision,
+                    step: request.step,
+                    carrier: 'conversation',
+                    editing,
+                  })
                 }
                 onRendererReady={acknowledgeAskMerchantRenderer}
                 onSubmit={answerAskMerchant}

@@ -19,18 +19,43 @@ export function AskMerchantGroupCard({
   pending = false,
   request,
 }: {
-  onEditingChange: (editing: boolean) => Promise<void>;
-  onRendererReady: () => Promise<void>;
+  onEditingChange: (
+    request: AskMerchantQuestionRequest,
+    editing: boolean
+  ) => Promise<void>;
+  onRendererReady: (request: AskMerchantQuestionRequest) => Promise<void>;
   onSubmit: (response: AskMerchantAnswer['response']) => Promise<void>;
   pending?: boolean;
   request: AskMerchantQuestionRequest;
 }) {
   const [results, setResults] = useState<Record<string, ItemResult>>({});
+  const [editing, setEditing] = useState(false);
 
-  useEffect(() => setResults({}), [request.requestId, request.revision]);
   useEffect(() => {
-    void onRendererReady();
+    setResults({});
+    setEditing(false);
+  }, [request.requestId, request.revision]);
+  useEffect(() => {
+    let cancelled = false;
+    let retryId: ReturnType<typeof setTimeout> | undefined;
+    const acknowledge = () => {
+      void onRendererReady(request).catch(() => {
+        if (!cancelled) retryId = setTimeout(acknowledge, 1_000);
+      });
+    };
+    acknowledge();
+    return () => {
+      cancelled = true;
+      if (retryId) clearTimeout(retryId);
+    };
   }, [onRendererReady, request.requestId, request.revision]);
+  useEffect(() => {
+    if (!editing) return;
+    const leaseRenewal = setInterval(() => {
+      void onEditingChange(request, true).catch(() => undefined);
+    }, 15_000);
+    return () => clearInterval(leaseRenewal);
+  }, [editing, onEditingChange, request, request.requestId, request.revision]);
 
   const complete = useMemo(
     () =>
@@ -90,7 +115,10 @@ export function AskMerchantGroupCard({
                 <Input
                   aria-label={question.question}
                   disabled={pending}
-                  onBlur={() => void onEditingChange(false)}
+                  onBlur={() => {
+                    setEditing(false);
+                    void onEditingChange(request, false).catch(() => undefined);
+                  }}
                   onChange={(event) => {
                     const value = event.target.value;
                     setResults((current) => ({
@@ -100,7 +128,10 @@ export function AskMerchantGroupCard({
                         : { kind: 'deferred' },
                     }));
                   }}
-                  onFocus={() => void onEditingChange(true)}
+                  onFocus={() => {
+                    setEditing(true);
+                    void onEditingChange(request, true).catch(() => undefined);
+                  }}
                   placeholder="也可以直接告诉我"
                   value={selected?.kind === 'answer' ? selected.value : ''}
                 />
