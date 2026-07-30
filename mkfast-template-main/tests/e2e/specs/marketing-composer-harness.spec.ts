@@ -192,6 +192,10 @@ test.describe('marketing Composer and Harness question', () => {
     ]);
     if (admission === 'brief') {
       await page.getByTestId('composer-brief-confirm').click();
+      // D-164③: brief confirmation now opens the execution confirm card
+      // (cost preview) before any submission fires, so the journey has to
+      // consume that step instead of racing straight to the submission count.
+      await page.getByTestId('execution-confirm-accept').click();
     }
 
     await expect.poll(() => composerSubmissionCount).toBe(1);
