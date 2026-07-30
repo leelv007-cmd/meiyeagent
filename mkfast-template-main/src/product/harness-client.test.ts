@@ -147,10 +147,7 @@ test('reads and consumes the durable merchant-message interaction boundary', asy
       message: '请换成更稳妥的模型',
     } as const;
     assert.deepEqual(
-      await submitHarnessInteractionMerchantMessage(
-        'task-1',
-        merchantMessage
-      ),
+      await submitHarnessInteractionMerchantMessage('task-1', merchantMessage),
       { kind: 'resumed', replayed: false }
     );
     assert.deepEqual(

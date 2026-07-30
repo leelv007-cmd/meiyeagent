@@ -55,7 +55,13 @@ const REQUEST: AskMerchantQuestionRequest = {
 
 it('renders every item but submits labels without descriptions', async () => {
   const user = userEvent.setup();
-  const onEditingChange = vi.fn(async () => undefined);
+  const onEditingChange = vi.fn(
+    async (
+      _request: AskMerchantQuestionRequest,
+      _editing: boolean,
+      _editingSessionId: string
+    ) => undefined
+  );
   const onRendererReady = vi.fn(async () => undefined);
   const onSubmit = vi.fn(async () => undefined);
   render(
@@ -178,7 +184,12 @@ it('retries the exact renderer acknowledgement after a transient failure', async
 it('stops retrying a stale renderer and requests the current interaction', async () => {
   vi.useFakeTimers();
   const onRendererReady = vi.fn(async () => {
-    throw new P1RequestError('stale', 'STALE_INTERACTION_REQUEST', undefined, 409);
+    throw new P1RequestError(
+      'stale',
+      'STALE_INTERACTION_REQUEST',
+      undefined,
+      409
+    );
   });
   const onRendererRejected = vi.fn(async () => undefined);
   render(
@@ -216,9 +227,7 @@ it('bounds renderer retries while Core remains unavailable', async () => {
 
 it('renews the editing lease while parent polling keeps rerendering', async () => {
   vi.useFakeTimers();
-  const editingCalls: Array<
-    [AskMerchantQuestionRequest, boolean, string]
-  > = [];
+  const editingCalls: Array<[AskMerchantQuestionRequest, boolean, string]> = [];
   const view = render(
     <AskMerchantGroupCard
       onEditingChange={async (request, editing, editingSessionId) => {
@@ -230,9 +239,7 @@ it('renews the editing lease while parent polling keeps rerendering', async () =
     />
   );
 
-  fireEvent.focus(
-    screen.getByRole('textbox', { name: '活动到哪天结束？' })
-  );
+  fireEvent.focus(screen.getByRole('textbox', { name: '活动到哪天结束？' }));
   expect(editingCalls).toHaveLength(1);
   const editingSessionId = editingCalls[0]?.[2];
   expect(editingSessionId).toEqual(expect.any(String));
@@ -253,9 +260,5 @@ it('renews the editing lease while parent polling keeps rerendering', async () =
   }
 
   expect(editingCalls).toHaveLength(3);
-  expect(editingCalls.at(-1)).toEqual([
-    REQUEST,
-    true,
-    editingSessionId,
-  ]);
+  expect(editingCalls.at(-1)).toEqual([REQUEST, true, editingSessionId]);
 });

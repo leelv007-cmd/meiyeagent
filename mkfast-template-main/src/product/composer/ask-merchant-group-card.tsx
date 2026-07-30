@@ -30,9 +30,7 @@ export function AskMerchantGroupCard({
     editingSessionId: string
   ) => Promise<void>;
   onRendererReady: (request: AskMerchantQuestionRequest) => Promise<void>;
-  onRendererRejected?: (
-    request: AskMerchantQuestionRequest
-  ) => Promise<void>;
+  onRendererRejected?: (request: AskMerchantQuestionRequest) => Promise<void>;
   onSubmit: (response: AskMerchantAnswer['response']) => Promise<void>;
   pending?: boolean;
   request: AskMerchantQuestionRequest;
@@ -166,11 +164,9 @@ export function AskMerchantGroupCard({
                   }}
                   onFocus={() => {
                     setEditing(true);
-                    void onEditingChange(
-                      request,
-                      true,
-                      editingSessionId
-                    ).catch(() => undefined);
+                    void onEditingChange(request, true, editingSessionId).catch(
+                      () => undefined
+                    );
                   }}
                   placeholder={
                     question.freeText?.placeholder ?? '也可以直接告诉我'

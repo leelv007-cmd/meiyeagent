@@ -2739,9 +2739,7 @@ export function ComposerHome({
                   })
                 }
                 onRendererReady={acknowledgeAskMerchantRenderer}
-                onRendererRejected={
-                  refreshInteractionAfterRendererRejection
-                }
+                onRendererRejected={refreshInteractionAfterRendererRejection}
                 onSubmit={answerAskMerchant}
                 pending={questionPending}
                 request={pendingAskRequest}
@@ -2749,9 +2747,7 @@ export function ComposerHome({
             ) : pendingExecutionConfirmation ? (
               <ExecutionConfirmationInteractionCard
                 onRendererReady={acknowledgeAskMerchantRenderer}
-                onRendererRejected={
-                  refreshInteractionAfterRendererRejection
-                }
+                onRendererRejected={refreshInteractionAfterRendererRejection}
                 onSubmit={answerExecutionConfirmation}
                 pending={questionPending}
                 request={pendingExecutionConfirmation}

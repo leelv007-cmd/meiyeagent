@@ -18,9 +18,7 @@ export function ExecutionConfirmationInteractionCard({
   request,
 }: {
   onRendererReady: (request: ExecutionConfirmationRequest) => Promise<void>;
-  onRendererRejected?: (
-    request: ExecutionConfirmationRequest
-  ) => Promise<void>;
+  onRendererRejected?: (request: ExecutionConfirmationRequest) => Promise<void>;
   onSubmit: (
     response: ExecutionConfirmationAnswer['response']
   ) => Promise<void>;
