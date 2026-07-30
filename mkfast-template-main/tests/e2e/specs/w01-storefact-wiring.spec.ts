@@ -398,11 +398,23 @@ test.describe('W01 store intake fact wiring', () => {
               recipe: { id: 'recipe.case_to_xhs_note' },
             });
             // recipe.case_to_xhs_note declares no factTypes, so no
-            // fact-gap hold exists on this run.
-            // The retired page-plan confirmation no longer adds a merchant
-            // activation; the one real decision is the note direction, which
-            // submits in its option click (D-164 three-activation contract).
-            await chooseImageTextDirection(imageTextPage);
+            // fact-gap hold exists on this run. The note direction is the one
+            // merchant decision, but a frozen route can pre-answer it and run
+            // straight to delivery — both endings are correct here; activation
+            // counting belongs to ui-journey-three-modal, and this spec only
+            // proves fact wiring.
+            const directionCard = imageTextPage
+              .getByTestId('ask-merchant-group-card')
+              .filter({ hasText: '两种图文方向都已准备好' });
+            const deliveryTurn = imageTextPage.getByTestId(
+              'composer-delivery-turn'
+            );
+            await expect(
+              directionCard.or(deliveryTurn).first()
+            ).toBeVisible({ timeout: 180_000 });
+            if (await directionCard.isVisible()) {
+              await chooseImageTextDirection(imageTextPage);
+            }
           },
         }
       );
