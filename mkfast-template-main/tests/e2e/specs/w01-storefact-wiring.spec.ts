@@ -12,6 +12,7 @@ import {
   seedComposerInlineAuthorize,
 } from '../fixtures/product';
 import {
+  chooseImageTextDirection,
   JOURNEY_CONTRACTS,
   submitComposerJourney,
   waitForResultJourney,
@@ -396,17 +397,10 @@ test.describe('W01 store intake fact wiring', () => {
             expect((await imageTextSubmission).postDataJSON()).toMatchObject({
               recipe: { id: 'recipe.case_to_xhs_note' },
             });
-            const planConfirmation = imageTextPage.getByTestId(
-              'ask-merchant-group-card'
-            );
-            await expect(planConfirmation).toBeVisible({ timeout: 60_000 });
-            await planConfirmation
-              .getByRole('button', { name: /^\u6309\u5efa\u8bae\u7ee7\u7eed/u })
-              .click();
-            await planConfirmation
-              .getByRole('button', { name: '\u63d0\u4ea4\u56de\u7b54' })
-              .click();
-            await expect(planConfirmation).toBeHidden({ timeout: 60_000 });
+            // The retired page-plan confirmation no longer adds a merchant
+            // activation; the one real decision is the note direction, which
+            // submits in its option click (D-164 three-activation contract).
+            await chooseImageTextDirection(imageTextPage);
           },
         }
       );
