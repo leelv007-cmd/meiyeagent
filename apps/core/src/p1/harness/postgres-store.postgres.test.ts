@@ -133,7 +133,9 @@ test(
           },
           phase: 'succeeded',
         }),
-        /idempotency conflict/i,
+        (error: unknown) =>
+          error instanceof Error &&
+          error.name === 'TaskRootObservabilityConflictError',
       );
       const input = {
         context: {
