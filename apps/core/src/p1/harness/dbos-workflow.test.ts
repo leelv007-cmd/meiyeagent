@@ -459,6 +459,18 @@ test('typed timeout persistence uses the production system-default owner', () =>
   );
   assert.match(
     workflowSource,
+    /interactionRequest\.revision/u,
+  );
+  assert.match(
+    workflowSource,
+    /waitForTypedInteractionAfterTimeout/u,
+  );
+  assert.match(
+    workflowSource,
+    /DBOS\.recv<unknown>\([\s\S]*timeoutSeconds: input\.timeoutSeconds/u,
+  );
+  assert.match(
+    workflowSource,
     /persist-renderer-unavailable-/u,
   );
   const mainSource = readFileSync(

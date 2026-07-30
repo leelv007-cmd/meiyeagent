@@ -321,10 +321,10 @@ test('an execution-shaped response to an exact ask identity advances one durable
   );
 });
 
-test('reask keeps the original durable deadline and renderer capability', async () => {
+test('reask requires a fresh renderer acknowledgement and restarts its deadline', async () => {
   const resumes: unknown[] = [];
-  const store = new MemoryInteractionStore([]);
   let now = Date.parse('2026-07-30T00:00:00.000Z');
+  const store = new MemoryInteractionStore([], () => new Date(now));
   const request = askRequest({
     timeoutPolicy: {
       kind: 'semantic_default',
@@ -368,6 +368,23 @@ test('reask keeps the original durable deadline and renderer capability', async 
   });
   assert.equal(reask.kind, 'reask');
   now += 30_000;
+  assert.deepEqual(
+    await service.submitSystemDefault('workspace-a', request.runId),
+    { kind: 'held', reason: 'renderer' },
+  );
+  assert.deepEqual(resumes, []);
+  await service.ackRenderer('workspace-a', request.runId, {
+    requestId: request.requestId,
+    revision: request.revision + 1,
+    step: request.step,
+    carrier: 'conversation',
+  });
+  now += 29_999;
+  assert.deepEqual(
+    await service.submitSystemDefault('workspace-a', request.runId),
+    { kind: 'held', reason: 'deadline' },
+  );
+  now += 1;
   assert.deepEqual(
     await service.submitSystemDefault('workspace-a', request.runId),
     { kind: 'resumed', replayed: false },
@@ -808,6 +825,68 @@ test('an unacknowledged renderer expires through one exact durable owner', async
   );
 });
 
+test('an old renderer timeout cannot expire a reasked revision', async () => {
+  const store = new MemoryInteractionStore([]);
+  const request = askRequest({
+    questions: [
+      {
+        itemId: 'window',
+        question: '活动到哪天结束？',
+        options: [{ label: '本周日' }],
+        fallback: { kind: 'deferred' },
+      },
+    ],
+    timeoutPolicy: {
+      kind: 'semantic_default',
+      timeoutSeconds: 30,
+      eligibility: semanticDefaultEligibility(['window']),
+    },
+  });
+  const service = new HarnessInteractionService(store, {
+    async resume() {},
+  });
+  await store.seed(request, 'available');
+
+  const reask = await service.submit('workspace-a', {
+    requestId: request.requestId,
+    revision: request.revision,
+    idempotencyKey: 'reask-before-old-renderer-timeout',
+    resume: { runId: request.runId, step: request.step },
+    response: {
+      kind: 'answer',
+      items: [
+        {
+          itemId: 'window',
+          result: { kind: 'answer', value: '伪造选项' },
+        },
+      ],
+    },
+  });
+  assert.equal(reask.kind, 'reask');
+
+  assert.equal(
+    await service.expireUnrendered('workspace-a', request.runId, {
+      requestId: request.requestId,
+      revision: request.revision,
+      step: request.step,
+    }),
+    'stale',
+  );
+  assert.equal(
+    (await store.readPendingInteraction('workspace-a', request.runId))
+      ?.revision,
+    request.revision + 1,
+  );
+  assert.equal(
+    await service.expireUnrendered('workspace-a', request.runId, {
+      requestId: request.requestId,
+      revision: request.revision + 1,
+      step: request.step,
+    }),
+    'expired',
+  );
+});
+
 test('carrier reads do not self-ack and the first renderer ack starts the timeout window', async () => {
   let now = Date.parse('2026-07-30T00:01:00.000Z');
   const store = new MemoryInteractionStore([], () => new Date(now));
@@ -1041,7 +1120,11 @@ class MemoryInteractionStore implements HarnessInteractionStore {
       return { outcome: 'conflict' as const };
     }
     this.pending = request;
-    this.projection.request = request;
+    this.projection = createHarnessInteractionPendingProjection(
+      request,
+      'unknown',
+      this.now(),
+    );
     return { outcome: 'advanced' as const };
   }
 
@@ -1185,7 +1268,10 @@ class MemoryInteractionStore implements HarnessInteractionStore {
     }
     if (input.editing) {
       const leaseExpiresAt =
-        this.projection.timer.editingLeaseExpiresAt ?? null;
+        this.projection.timer.editingLeaseExpiresAt ??
+        (current === null
+          ? null
+          : new Date(Date.parse(current) + 30_000).toISOString());
       if (
         current !== null &&
         leaseExpiresAt !== null &&

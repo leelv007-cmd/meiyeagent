@@ -481,20 +481,28 @@ export class HarnessInteractionService {
     }
   }
 
-  async expireUnrendered(workspaceId: string, runId: string) {
-    const request = await this.store.readPendingInteraction(
-      workspaceId,
-      runId,
-      { includeResolved: true },
-    );
-    if (!request) return 'stale' as const;
+  async expireUnrendered(
+    workspaceId: string,
+    runId: string,
+    expectedIdentity?: {
+      requestId: string;
+      revision: number;
+      step: string;
+    },
+  ) {
+    const identity =
+      expectedIdentity ??
+      (await this.store.readPendingInteraction(workspaceId, runId, {
+        includeResolved: true,
+      }));
+    if (!identity) return 'stale' as const;
     const outcome = await this.store.expireUnrenderedInteraction(
       workspaceId,
       runId,
       {
-        requestId: request.requestId,
-        revision: request.revision,
-        step: request.step,
+        requestId: identity.requestId,
+        revision: identity.revision,
+        step: identity.step,
       },
     );
     if (outcome === 'unknown_state') {

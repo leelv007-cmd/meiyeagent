@@ -1193,6 +1193,12 @@ test(
         ],
       );
       await registerTypedPending(store, workspaceId, request);
+      await service.ackRenderer(workspaceId, runId, {
+        requestId: request.requestId,
+        revision: request.revision,
+        step: request.step,
+        carrier: 'conversation',
+      });
       const before = (
         await pool.query<{ pending_projection: unknown }>(
           `select pending_projection
@@ -1201,10 +1207,18 @@ test(
           [runtimeId],
         )
       ).rows[0]!.pending_projection as {
+        rendererAckedAt: string | null;
         rendererCapability: string;
-        timer: unknown;
+        timer: { deadlineAt: string };
         waitingState: string;
       };
+      assert.equal(before.rendererCapability, 'available');
+      assert.ok(before.rendererAckedAt);
+      const databaseBeforeReask = (
+        await pool.query<{ currentTime: Date }>(
+          'select clock_timestamp() as "currentTime"',
+        )
+      ).rows[0]!.currentTime;
       const malformedResults = await Promise.allSettled(
         ['a', 'b'].map((key) =>
           service.submit(workspaceId, {
@@ -1228,6 +1242,11 @@ test(
       }
       const reasked = await store.readPendingInteraction(workspaceId, runId);
       assert.equal(reasked?.revision, 2);
+      const databaseAfterReask = (
+        await pool.query<{ currentTime: Date }>(
+          'select clock_timestamp() as "currentTime"',
+        )
+      ).rows[0]!.currentTime;
       const after = (
         await pool.query<{ pending_projection: unknown }>(
           `select pending_projection
@@ -1236,13 +1255,30 @@ test(
           [runtimeId],
         )
       ).rows[0]!.pending_projection as {
+        rendererAckedAt: string | null;
         rendererCapability: string;
-        timer: unknown;
+        timer: {
+          deadlineAt: string;
+          editingLeaseExpiresAt: string | null;
+          editingSessionId: string | null;
+          editingStartedAt: string | null;
+        };
         waitingState: string;
       };
-      assert.deepEqual(after.timer, before.timer);
-      assert.equal(after.rendererCapability, before.rendererCapability);
-      assert.equal(after.waitingState, before.waitingState);
+      assert.equal(after.rendererCapability, 'unknown');
+      assert.equal(after.rendererAckedAt, null);
+      assert.equal(after.waitingState, 'answer');
+      assert.equal(after.timer.editingStartedAt, null);
+      assert.equal(after.timer.editingLeaseExpiresAt, null);
+      assert.equal(after.timer.editingSessionId, null);
+      assert.ok(
+        Date.parse(after.timer.deadlineAt) >=
+          databaseBeforeReask.getTime() + 30_000,
+      );
+      assert.ok(
+        Date.parse(after.timer.deadlineAt) <=
+          databaseAfterReask.getTime() + 30_000,
+      );
       for (const field of ['requestId', 'revision', 'runId', 'step'] as const) {
         const malformed = {
           requestId: reasked!.requestId,
@@ -1477,6 +1513,95 @@ test(
         ),
         deadlineAt,
       );
+
+      await pool.query(
+        `update harness_runtime.pending_questions
+            set pending_projection=(
+              jsonb_set(
+                jsonb_set(
+                  pending_projection,
+                  '{timer,editingStartedAt}',
+                  to_jsonb(to_char(
+                    clock_timestamp() - interval '10 seconds',
+                    'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+                  )),
+                  true
+                ),
+                '{timer,editingLeaseExpiresAt}',
+                'null'::jsonb,
+                true
+              ) #- '{timer,editingSessionId}'
+            )
+          where task_id=$1`,
+        [runtimeId],
+      );
+      await assert.rejects(
+        service.setEditing(workspaceId, runId, {
+          ...acknowledgement,
+          editing: true,
+          editingSessionId: 'editing-session-legacy-takeover',
+        }),
+        /no longer pending/u,
+      );
+      await pool.query(
+        `update harness_runtime.pending_questions
+            set pending_projection=(
+              jsonb_set(
+                jsonb_set(
+                  pending_projection,
+                  '{timer,editingStartedAt}',
+                  to_jsonb(to_char(
+                    clock_timestamp() - interval '31 seconds',
+                    'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+                  )),
+                  true
+                ),
+                '{timer,editingLeaseExpiresAt}',
+                'null'::jsonb,
+                true
+              ) #- '{timer,editingSessionId}'
+            )
+          where task_id=$1`,
+        [runtimeId],
+      );
+      const legacyProjection = (
+        await pool.query<{ pending_projection: unknown }>(
+          `select pending_projection
+             from harness_runtime.pending_questions
+            where task_id=$1`,
+          [runtimeId],
+        )
+      ).rows[0]!.pending_projection as {
+        timer: { deadlineAt: string; editingStartedAt: string };
+      };
+      await service.setEditing(workspaceId, runId, {
+        ...acknowledgement,
+        editing: true,
+        editingSessionId: 'editing-session-legacy-takeover',
+      });
+      const takeoverProjection = (
+        await pool.query<{ pending_projection: unknown }>(
+          `select pending_projection
+             from harness_runtime.pending_questions
+            where task_id=$1`,
+          [runtimeId],
+        )
+      ).rows[0]!.pending_projection as {
+        timer: { deadlineAt: string; editingSessionId: string | null };
+      };
+      assert.equal(
+        Date.parse(takeoverProjection.timer.deadlineAt),
+        Date.parse(legacyProjection.timer.deadlineAt) + 30_000,
+      );
+      assert.equal(
+        takeoverProjection.timer.editingSessionId,
+        'editing-session-legacy-takeover',
+      );
+      await service.setEditing(workspaceId, runId, {
+        ...acknowledgement,
+        editing: false,
+        editingSessionId: 'editing-session-legacy-takeover',
+      });
 
       const beforeForgedSignals = (
         await pool.query<{ pending_projection: unknown }>(

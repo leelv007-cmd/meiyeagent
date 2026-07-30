@@ -6,6 +6,7 @@ import {
   workflowProgressEnvelopeSchema,
   workflowTokenEnvelopeSchema,
   type BoundedExecutionLimitName,
+  type HarnessInteractionRequest,
   type HarnessStage,
   type ProductUsageUnit,
   type QuestionCard,
@@ -486,6 +487,7 @@ export function registerHarnessDbosWorkflow(
         );
         if (!decision) {
           if (pendingProjection?.interactionRequest) {
+            const interactionRequest = pendingProjection.interactionRequest;
             if (!interactions) {
               throw new Error(
                 'Typed interaction system-default persistence is unavailable.',
@@ -501,6 +503,7 @@ export function registerHarnessDbosWorkflow(
                 name: `persist-system-default-${question.questionId}`,
               },
             );
+            let refreshIdentity = false;
             if (
               systemDefault.kind === 'held' &&
               systemDefault.reason === 'renderer'
@@ -510,6 +513,11 @@ export function registerHarnessDbosWorkflow(
                   interactions.expireUnrendered(
                     request.workspaceId,
                     workflowId,
+                    {
+                      requestId: interactionRequest.requestId,
+                      revision: interactionRequest.revision,
+                      step: interactionRequest.step,
+                    },
                   ),
                 {
                   name: `persist-renderer-unavailable-${question.questionId}`,
@@ -524,12 +532,31 @@ export function registerHarnessDbosWorkflow(
                   resolutionSource: 'core_hold_expired' as const,
                 };
               }
+              refreshIdentity = expiry === 'stale';
             }
-            return waitForDecisionWithResolutionSource(
-              question,
+            const followup = await waitForTypedInteractionAfterTimeout({
+              identity: {
+                requestId: interactionRequest.requestId,
+                revision: interactionRequest.revision,
+                step: interactionRequest.step,
+              },
+              interactions,
               persistence,
-              request.workspaceId,
-            );
+              question,
+              refreshIdentity,
+              timeoutSeconds,
+              workspaceId: request.workspaceId,
+            });
+            if (followup === 'expired') {
+              return {
+                cancelled: true as const,
+                merchantMessage: request.usageReservation
+                  ? '超时未选择，本次任务已取消，额度已退回'
+                  : '超时未选择，本次任务已取消',
+                resolutionSource: 'core_hold_expired' as const,
+              };
+            }
+            return followup;
           }
           if (!decisions) {
             throw new Error('Core timeout decision persistence is unavailable.');
@@ -1337,6 +1364,131 @@ async function waitForDecisionWithResolutionSource(
         : ('decision' as const),
     };
   }
+}
+
+type HarnessInteractionIdentity = Pick<
+  HarnessInteractionRequest,
+  'requestId' | 'revision' | 'step'
+>;
+
+async function waitForTypedInteractionAfterTimeout(input: {
+  identity: HarnessInteractionIdentity;
+  interactions: Pick<
+    HarnessInteractionService,
+    'expireUnrendered' | 'submitSystemDefault'
+  >;
+  persistence: HarnessWorkflowPersistence;
+  question: QuestionCard;
+  refreshIdentity: boolean;
+  timeoutSeconds: number;
+  workspaceId: string;
+}) {
+  let identity = input.refreshIdentity
+    ? await readReaskedInteractionIdentity(
+        input.persistence,
+        input.workspaceId,
+        input.question,
+        input.identity,
+      )
+    : input.identity;
+  for (;;) {
+    const decision = await DBOS.recv<unknown>(
+      decisionTopic(input.question.questionId),
+      { timeoutSeconds: input.timeoutSeconds },
+    );
+    if (decision) {
+      const interaction =
+        harnessInteractionResumeSignalSchema.safeParse(decision);
+      return {
+        command: confirmationCardDecision(
+          input.question,
+          decision,
+          await currentDurableInteractionRevision(
+            input.question,
+            decision,
+            input.persistence,
+            input.workspaceId,
+          ),
+        ),
+        resolutionSource: interaction.success
+          ? interaction.data.resolutionSource
+          : ('decision' as const),
+      };
+    }
+    const systemDefault = await DBOS.runStep(
+      () =>
+        input.interactions.submitSystemDefault(
+          input.workspaceId,
+          input.question.workflowId,
+        ),
+      {
+        name: `persist-system-default-${input.question.questionId}-r${identity.revision}`,
+      },
+    );
+    if (
+      systemDefault.kind !== 'held' ||
+      systemDefault.reason !== 'renderer'
+    ) {
+      continue;
+    }
+    const expiry = await DBOS.runStep(
+      () =>
+        input.interactions.expireUnrendered(
+          input.workspaceId,
+          input.question.workflowId,
+          identity,
+        ),
+      {
+        name: `persist-renderer-unavailable-${input.question.questionId}-r${identity.revision}`,
+      },
+    );
+    if (expiry === 'expired' || expiry === 'replayed') {
+      return 'expired' as const;
+    }
+    if (expiry === 'stale') {
+      identity = await readReaskedInteractionIdentity(
+        input.persistence,
+        input.workspaceId,
+        input.question,
+        identity,
+      );
+    }
+  }
+}
+
+async function readReaskedInteractionIdentity(
+  persistence: HarnessWorkflowPersistence,
+  workspaceId: string,
+  question: QuestionCard,
+  staleIdentity: HarnessInteractionIdentity,
+) {
+  if (!persistence.readPendingInteraction) {
+    throw new Error('Typed interaction replay state is unavailable.');
+  }
+  const current = await DBOS.runStep(
+    () =>
+      persistence.readPendingInteraction!(
+        workspaceId,
+        question.workflowId,
+        { includeResolved: true },
+      ),
+    {
+      name: `read-reasked-interaction-${question.questionId}-after-r${staleIdentity.revision}`,
+    },
+  );
+  if (
+    !current ||
+    current.requestId !== staleIdentity.requestId ||
+    current.revision <= staleIdentity.revision ||
+    current.step !== staleIdentity.step
+  ) {
+    throw new Error('Current reasked interaction identity is unavailable.');
+  }
+  return {
+    requestId: current.requestId,
+    revision: current.revision,
+    step: current.step,
+  };
 }
 
 async function currentDurableInteractionRevision(

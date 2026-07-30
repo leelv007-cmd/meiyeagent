@@ -1073,18 +1073,27 @@ export class PostgresHarnessStore
         await client.query('rollback');
         return { outcome: 'conflict' };
       }
+      const advancedAt = (
+        await client.query<{ advanced_at: Date }>(
+          'select clock_timestamp() as advanced_at',
+        )
+      ).rows[0]!.advanced_at;
+      const advancedProjection = createHarnessInteractionPendingProjection(
+        parsed,
+        'unknown',
+        advancedAt,
+      );
       await client.query(
         `update harness_runtime.pending_questions
             set workflow_revision=$2,
-                pending_projection=jsonb_set(
-                  pending_projection,
-                  '{request}',
-                  $3::jsonb,
-                  false
-                ),
+                pending_projection=$3::jsonb,
                 updated_at=now()
           where task_id=$1 and status='pending'`,
-        [runtimeTaskId, parsed.revision, JSON.stringify(parsed)],
+        [
+          runtimeTaskId,
+          parsed.revision,
+          JSON.stringify(advancedProjection),
+        ],
       );
       await client.query('commit');
       return { outcome: 'advanced' };
@@ -1521,10 +1530,14 @@ export class PostgresHarnessStore
           'select clock_timestamp() as transition_at',
         )
       ).rows[0]!.transition_at.getTime();
+      const editingStartedAt =
+        current === null ? null : Date.parse(current);
       const leaseExpiresAt =
         projection.data.timer.editingLeaseExpiresAt === undefined ||
         projection.data.timer.editingLeaseExpiresAt === null
-          ? null
+          ? editingStartedAt === null || !Number.isFinite(editingStartedAt)
+            ? null
+            : editingStartedAt + 30_000
           : Date.parse(projection.data.timer.editingLeaseExpiresAt);
       if (input.editing) {
         if (
@@ -1541,11 +1554,15 @@ export class PostgresHarnessStore
           leaseExpiresAt === null ||
           leaseExpiresAt <= transitionAt
         ) {
-          if (current !== null && leaseExpiresAt !== null) {
+          if (
+            current !== null &&
+            editingStartedAt !== null &&
+            leaseExpiresAt !== null
+          ) {
             projection.data.timer.deadlineAt = new Date(
               Date.parse(projection.data.timer.deadlineAt) +
                 leaseExpiresAt -
-                Date.parse(current),
+                editingStartedAt,
             ).toISOString();
           }
           projection.data.timer.editingStartedAt = new Date(
