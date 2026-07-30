@@ -22,7 +22,7 @@ const seeds = [1, 2, 3] as const;
 const approvedMicros = {
   copy: 100_000,
   image_text: 500_000,
-  video: 3_000_000,
+  video: 1_620_000,
 } as const;
 
 function recordedMatrix(): BoundedExecutionCalibrationSample[] {
@@ -152,7 +152,7 @@ class TrustedBoundary
         ? 80_000
         : effect.modality === 'image_text'
           ? 400_000
-          : 2_500_000;
+          : 1_500_000;
     const attemptId = `attempt-${effect.modality}-1`;
     return {
       effectId: effect.effectId,

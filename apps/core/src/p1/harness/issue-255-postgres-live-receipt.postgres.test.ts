@@ -504,15 +504,21 @@ describe(
               'workspace_id',
               'provider_job_id',
               'provider_attempt_id',
-              'provider_cost_event_id'
+              'provider_cost_event_id',
+              'failure_error_code',
+              'failure_error_message',
+              'provider_http_status'
             )
           ORDER BY column_name`,
       );
       assert.deepEqual(
         columns.rows,
         [
+          { column_name: 'failure_error_code', is_nullable: 'YES' },
+          { column_name: 'failure_error_message', is_nullable: 'YES' },
           { column_name: 'provider_attempt_id', is_nullable: 'NO' },
           { column_name: 'provider_cost_event_id', is_nullable: 'NO' },
+          { column_name: 'provider_http_status', is_nullable: 'YES' },
           { column_name: 'provider_job_id', is_nullable: 'NO' },
           { column_name: 'workspace_id', is_nullable: 'NO' },
         ],
@@ -566,7 +572,7 @@ describe(
       );
     });
 
-    it('backfills three legacy submitted receipts before rejecting a fourth claim', async () => {
+    it('backfills three legacy submitted receipts, permits a fourth, and rejects a fifth claim', async () => {
       const legacyRunPrefix =
         `issue-255-pg-${suiteNonce}-legacy-three`;
       await firstPool.query(
@@ -584,9 +590,21 @@ describe(
       await first.migrate();
 
       const fourthRunNonce = `${legacyRunPrefix}-4`;
+      const fourthClaim = copyClaim(fourthRunNonce);
+      await first.claim(fourthClaim);
+      await first.claimGenerationPost({
+        adapter: fourthClaim.adapter,
+        deploymentId: fourthClaim.deploymentId,
+        runNonce: fourthClaim.runNonce,
+        modality: fourthClaim.modality,
+        effectId: fourthClaim.effectId,
+        providerIdempotencyKey: fourthClaim.providerIdempotencyKey,
+        requestFingerprint: fourthClaim.requestFingerprint,
+      });
+      const fifthRunNonce = `${legacyRunPrefix}-5`;
       await assert.rejects(
-        first.claim(copyClaim(fourthRunNonce)),
-        /exactly three billable generation POSTs/u,
+        first.claim(copyClaim(fifthRunNonce)),
+        /exactly four billable generation POSTs/u,
       );
       const history = await firstPool.query<{ count: number }>(
         `SELECT COUNT(*)::int AS count
@@ -594,7 +612,7 @@ describe(
           WHERE run_nonce LIKE $1`,
         [`${legacyRunPrefix}-%`],
       );
-      assert.equal(history.rows[0]?.count, 3);
+      assert.equal(history.rows[0]?.count, 4);
     });
 
     it('migrates only submitted legacy receipts idempotently without double-counting budget', async () => {
@@ -998,6 +1016,8 @@ describe(
         await first.recordExecutionFailure({
           ...rejected,
           modality: 'copy',
+          errorCode: 'collector_execution_error',
+          errorMessage: 'Provider execution failed before network.',
         }),
         { kind: 'rejected_before_accept' },
       );
@@ -1014,9 +1034,48 @@ describe(
       const classified = await first.recordExecutionFailure({
         ...unknown,
         modality: 'copy',
+        errorCode: 'collector_execution_error',
+        errorMessage: 'Provider connection ended without a response.',
       });
       assert.equal(classified.kind, 'provider_acceptance_unknown');
-      assert.equal((await first.listRun(unknown.runNonce))[0]?.status, 'unknown');
+      const [unknownReceipt] = await first.listRun(unknown.runNonce);
+      assert.equal(unknownReceipt?.status, 'unknown');
+      assert.equal(
+        unknownReceipt?.reconciliationReason,
+        'provider_acceptance_unknown',
+      );
+
+      const providerFailure = await claim('provider', '7'.repeat(64));
+      const providerIdentity = {
+        adapter: 'direct-copy' as const,
+        deploymentId: 'deepseek-v4-pro-direct',
+        ...providerFailure,
+        modality: 'copy' as const,
+        providerIdempotencyKey: providerFailure.effectId,
+      };
+      await first.claimGenerationPost(providerIdentity);
+      await first.recordProviderHttpResponse({
+        ...providerIdentity,
+        httpStatus: 422,
+      });
+      const recorded = await first.recordExecutionFailure({
+        ...providerFailure,
+        modality: 'copy',
+        errorCode: 'INVALID SECONDS',
+        errorMessage:
+          'Rejected request api_key=secret-value Bearer secret-token https://provider.example/private',
+      });
+      assert.equal(recorded.kind, 'provider_failure_recorded');
+      const [failedReceipt] = await first.listRun(providerFailure.runNonce);
+      assert.equal(failedReceipt?.status, 'unknown');
+      assert.equal(failedReceipt?.providerHttpStatus, 422);
+      assert.equal(failedReceipt?.failureErrorCode, 'invalid_seconds');
+      assert.equal(
+        failedReceipt?.reconciliationReason,
+        'provider_failure_recorded',
+      );
+      assert.equal(failedReceipt?.failureErrorMessage?.includes('secret'), false);
+      assert.match(failedReceipt?.failureErrorMessage ?? '', /\[redacted/u);
     });
 
     it('preserves and reclassifies a durably proven rejected-before-accept submission', async () => {
@@ -1222,9 +1281,22 @@ describe(
       }
       const fourthRunNonce =
         `issue-255-pg-${suiteNonce}-failed-before-billing-fourth`;
+      const fourthClaim = copyClaim(fourthRunNonce);
+      await first.claim(fourthClaim);
+      await first.claimGenerationPost({
+        adapter: fourthClaim.adapter,
+        deploymentId: fourthClaim.deploymentId,
+        runNonce: fourthClaim.runNonce,
+        modality: fourthClaim.modality,
+        effectId: fourthClaim.effectId,
+        providerIdempotencyKey: fourthClaim.providerIdempotencyKey,
+        requestFingerprint: fourthClaim.requestFingerprint,
+      });
+      const fifthRunNonce =
+        `issue-255-pg-${suiteNonce}-failed-before-billing-fifth`;
       await assert.rejects(
-        first.claim(copyClaim(fourthRunNonce)),
-        /three billable generation POSTs globally/u,
+        first.claim(copyClaim(fifthRunNonce)),
+        /four billable generation POSTs globally/u,
       );
     });
 
@@ -1277,8 +1349,8 @@ describe(
       );
     });
 
-    it('rejects a fourth billable generation POST globally before provider fetch', async () => {
-      for (const index of [1, 2, 3]) {
+    it('rejects a fifth billable generation POST globally before provider fetch', async () => {
+      for (const index of [1, 2, 3, 4]) {
         const runNonce = `issue-255-pg-${suiteNonce}-global-${index}`;
         const effectId = createHash('sha256')
           .update(`issue255/v1\0${runNonce}\0copy`)
@@ -1311,38 +1383,38 @@ describe(
           requestFingerprint,
         });
       }
-      const fourthRunNonce = `issue-255-pg-${suiteNonce}-global-4`;
-      const fourthEffectId = createHash('sha256')
-        .update(`issue255/v1\0${fourthRunNonce}\0copy`)
+      const fifthRunNonce = `issue-255-pg-${suiteNonce}-global-5`;
+      const fifthEffectId = createHash('sha256')
+        .update(`issue255/v1\0${fifthRunNonce}\0copy`)
         .digest('hex');
       await assert.rejects(
         first.claim({
           workspaceId: receiptWorkspaceId,
-          runNonce: fourthRunNonce,
+          runNonce: fifthRunNonce,
           modality: 'copy',
           adapter: 'direct-copy',
           deploymentId: 'deepseek-v4-pro-direct',
-          effectId: fourthEffectId,
-          providerIdempotencyKey: fourthEffectId,
-          providerJobId: `${fourthEffectId}:job`,
-          providerAttemptId: `${fourthEffectId}:attempt`,
-          providerCostEventId: `${fourthEffectId}:cost`,
+          effectId: fifthEffectId,
+          providerIdempotencyKey: fifthEffectId,
+          providerJobId: `${fifthEffectId}:job`,
+          providerAttemptId: `${fifthEffectId}:attempt`,
+          providerCostEventId: `${fifthEffectId}:cost`,
           requestFingerprint: '9'.repeat(64),
           recordedMatrixDigest: '8'.repeat(64),
           reservedAmountMicros: 100_000,
           priceRevision: 'direct-copy-price-v1',
           exchangeRevision: 'native-cny-v1',
         }),
-        /exactly three billable generation POSTs/u,
+        /exactly four billable generation POSTs/u,
       );
-      assert.equal((await first.listRun(fourthRunNonce)).length, 0);
+      assert.equal((await first.listRun(fifthRunNonce)).length, 0);
       const history = await firstPool.query<{ count: number }>(
         `SELECT COUNT(*)::int AS count
            FROM issue255_live_generation_authorizations
           WHERE run_nonce LIKE $1`,
         [`issue-255-pg-${suiteNonce}-global-%`],
       );
-      assert.equal(history.rows[0]?.count, 3);
+      assert.equal(history.rows[0]?.count, 4);
     });
 
     it('accepts only known integer-micro-CNY terminal cost truth', async () => {

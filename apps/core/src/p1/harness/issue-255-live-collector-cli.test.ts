@@ -10,6 +10,7 @@ import {
   assertIssue255LiveCollectorLaunch,
   assertIssue255LiveModesMutuallyExclusive,
   preflightIssue255LiveRuntime,
+  resolveIssue255LiveEnvelope,
   runIssue255LiveManifestRecoveryCli,
   runIssue255LiveReconciliationCli,
 } from './issue-255-live-collector-cli.js';
@@ -102,6 +103,44 @@ test('issue 255 Tuzi cancellation launch rejects the live collector flag in reve
   );
 });
 
+test('issue 255 v3 envelope permits only the coordinator video retry', () => {
+  assert.deepEqual(resolveIssue255LiveEnvelope({}, 'original-run'), {
+    runNonce: 'original-run',
+    modality: 'all',
+  });
+  assert.deepEqual(
+    resolveIssue255LiveEnvelope(
+      {
+        ISSUE_255_LIVE_RUN_NONCE:
+          'issue-255-live-anchors-2026-07-30-v3',
+        ISSUE_255_LIVE_MODALITY: 'video',
+      },
+      'ignored-run',
+    ),
+    {
+      runNonce: 'issue-255-live-anchors-2026-07-30-v3',
+      modality: 'video',
+    },
+  );
+  for (const env of [
+    {
+      ISSUE_255_LIVE_RUN_NONCE:
+        'issue-255-live-anchors-2026-07-30-v3',
+    },
+    { ISSUE_255_LIVE_MODALITY: 'video' },
+    {
+      ISSUE_255_LIVE_RUN_NONCE:
+        'issue-255-live-anchors-2026-07-30-v3',
+      ISSUE_255_LIVE_MODALITY: 'copy',
+    },
+  ]) {
+    assert.throws(
+      () => resolveIssue255LiveEnvelope(env, 'ignored-run'),
+      /coordinator v3 single video retry/u,
+    );
+  }
+});
+
 test('issue 255 live runtime preflight freezes all three approved deployments and positive prices', () => {
   const preflight = preflightIssue255LiveRuntime(issue255LiveRuntimeEnv());
 
@@ -124,9 +163,9 @@ test('issue 255 live runtime preflight freezes all three approved deployments an
     videoCostPerMillionTokensCny: '15',
   });
   assert.deepEqual(preflight.videoQuote, {
-    durationSeconds: 1,
+    durationSeconds: 5,
     estimatedTokensPerSecond: 21_600,
-    amountMicros: 324_000,
+    amountMicros: 1_620_000,
   });
 
   assert.throws(
@@ -271,6 +310,7 @@ test('issue 255 collector derives integer micros upward from frozen price and pr
     receipts: {
       async claimGenerationPost() {},
       async recordProviderHttpRequest() {},
+      async recordProviderHttpResponse() {},
     },
   });
   assert.equal(executor.quoteAmountMicros, 1);
@@ -323,6 +363,7 @@ test('issue 255 live quotes reject zero prices before provider network', () => {
         receipts: {
           async claimGenerationPost() {},
           async recordProviderHttpRequest() {},
+          async recordProviderHttpResponse() {},
         },
       }),
     /positive frozen price/u,

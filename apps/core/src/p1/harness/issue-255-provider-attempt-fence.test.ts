@@ -10,6 +10,7 @@ import {
 class ReceiptFence {
   generationSubmitCount = 0;
   providerHttpRequestCount = 0;
+  providerHttpStatuses: number[] = [];
   lastGenerationIdentity: unknown;
 
   async claimGenerationPost(input: unknown) {
@@ -22,6 +23,10 @@ class ReceiptFence {
 
   async recordProviderHttpRequest() {
     this.providerHttpRequestCount += 1;
+  }
+
+  async recordProviderHttpResponse(input: { httpStatus: number }) {
+    this.providerHttpStatuses.push(input.httpStatus);
   }
 }
 
@@ -91,6 +96,7 @@ test('issue 255 direct copy adapter crosses the durable generation fence before 
   assert.equal((await port.execute(request)).kind, 'completed');
   assert.equal(receipts.generationSubmitCount, 1);
   assert.equal(receipts.providerHttpRequestCount, 1);
+  assert.deepEqual(receipts.providerHttpStatuses, [200]);
   assert.equal(providerCalls, 1);
   assert.deepEqual(receipts.lastGenerationIdentity, {
     adapter: 'direct-copy',
@@ -259,11 +265,10 @@ test('issue 255 Tuzi image adapter crosses the generation fence at the rewritten
   assert.equal(providerCalls, 1);
 });
 
-test('issue 255 Tuzi video adapter counts poll HTTP separately without claiming a second generation', async () => {
+test('issue 255 Tuzi video adapter omits seconds and counts poll HTTP separately without claiming a second generation', async () => {
   const receipts = new ReceiptFence();
   let providerCalls = 0;
   const port = createIssue255TuziMediaPort({
-    generationDurationSeconds: 1,
     identity: {
       ...identity,
       deploymentId: 'seedance-1-5-pro-tuzi-relay',
@@ -281,7 +286,7 @@ test('issue 255 Tuzi video adapter counts poll HTTP separately without claiming 
         });
       }
       assert.equal(target, 'https://api.tu-zi.example/v1/videos');
-      assert.equal((init?.body as FormData).get('seconds'), '1');
+      assert.equal((init?.body as FormData).has('seconds'), false);
       return Response.json({
         id: 'issue-255-video-task',
         object: 'video',
@@ -292,7 +297,7 @@ test('issue 255 Tuzi video adapter counts poll HTTP separately without claiming 
   });
   const request = {
     ...recordedRequest('seedance-1-5-pro', 'video.generate', {
-      durationSeconds: 1,
+      durationSeconds: 5,
     }),
     effectIdempotencyKey: identity.effectId,
   };
@@ -303,6 +308,7 @@ test('issue 255 Tuzi video adapter counts poll HTTP separately without claiming 
 
   assert.equal(receipts.generationSubmitCount, 1);
   assert.equal(receipts.providerHttpRequestCount, 2);
+  assert.deepEqual(receipts.providerHttpStatuses, [200, 200]);
   assert.equal(providerCalls, 2);
 });
 

@@ -296,7 +296,7 @@ test(
               object: 'video',
               progress: 100,
               status: 'completed',
-              usage: { completion_tokens: 1_000_000 },
+              usage: { completion_tokens: 108_000 },
             });
           }
           throw new Error('Unexpected issue 255 Tuzi test request.');
@@ -310,7 +310,7 @@ test(
         video: {
           catalogModelId: 'seedance-1-5-pro' as const,
           costPerMillionTokens: 3,
-          estimatedTokensPerSecond: 1_000_000,
+          estimatedTokensPerSecond: 21_600,
           model: 'seedance-1-5-pro',
         },
       };
@@ -391,7 +391,7 @@ test(
             configurationRevision: 'tuzi-video-config-v1',
             credentialRevision: 'tuzi-credential-v1',
             deploymentId: 'seedance-1-5-pro-tuzi-relay',
-            frozenPriceCny: '3',
+            frozenPriceCny: '15',
             modality: 'video',
             options: tuziOptions,
             priceRevision: 'tuzi-video-price-v1',
@@ -627,10 +627,10 @@ function collisionGuardExecutors(
       modality: 'video',
       priceRevision: 'collision-video-price-v1',
       promptHash: '3'.repeat(64),
-      quoteAmountMicros: 3_000_000,
+      quoteAmountMicros: 1_620_000,
       quoteBasis: {
-        durationSeconds: 1,
-        estimatedTokensPerSecond: 1_000_000,
+        durationSeconds: 5,
+        estimatedTokensPerSecond: 21_600,
       },
       async execute() {
         onExecute();
