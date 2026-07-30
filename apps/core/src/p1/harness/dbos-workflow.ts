@@ -1197,6 +1197,11 @@ function interactionConfirmationCardDecision(
       state = 'ignored';
       value = '暂未确定';
     } else {
+      if (answer.response.items.length !== 1) {
+        throw new Error(
+          'Grouped merchant answers require a grouped workflow consumer.',
+        );
+      }
       const item =
         answer.response.items.find(
           (candidate) => candidate.itemId === question.response.field,

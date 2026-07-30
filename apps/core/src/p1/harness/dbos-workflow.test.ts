@@ -242,6 +242,52 @@ test('only the current durable reask revision resumes the original DBOS question
   );
 });
 
+test('a grouped interaction answer fails closed at the single-question DBOS consumer', () => {
+  const question = questionCardSchema.parse({
+    questionId: 'question-single-consumer',
+    workflowId: 'task-single-consumer',
+    workflowRevision: 1,
+    question: '活动到哪天结束？',
+    options: [],
+    freeText: { enabled: true },
+    response: {
+      field: 'window',
+      reason: '需要商家补充活动期限',
+    },
+    unattended: 'continue',
+    scope: 'current_task',
+  });
+
+  assert.throws(
+    () =>
+      confirmationCardDecision(question, {
+        kind: 'harness_interaction_resume',
+        schemaVersion: 'v1',
+        idempotencyKey: 'answer-grouped',
+        interactionKind: 'ask_merchant',
+        requestId: question.questionId,
+        revision: question.workflowRevision,
+        runId: question.workflowId,
+        step: 'context_injection',
+        resumeData: {
+          kind: 'answer',
+          items: [
+            {
+              itemId: 'window',
+              result: { kind: 'answer', value: '2026-08-31' },
+            },
+            {
+              itemId: 'offer_price',
+              result: { kind: 'answer', value: '398 元' },
+            },
+          ],
+        },
+        resolutionSource: 'decision',
+      }),
+    /grouped workflow consumer/u,
+  );
+});
+
 test('bounded continuation applies only the server-resolved raised limit', async () => {
   const request = {
     workspaceId: 'workspace-1',
