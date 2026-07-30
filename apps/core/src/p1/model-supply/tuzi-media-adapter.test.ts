@@ -436,10 +436,84 @@ test('Tuzi videos use multipart input_reference and normalize poll and download'
 
   assert.equal(receipt.acceptance, 'accepted');
   assert.ok(receipt.taskRef);
+  assert.equal(receipt.providerTaskId, 'tuzi-video-task-1');
   const taskRef = receipt.taskRef!;
   const polled = await adapter.poll({ ...videoRequest, taskRef });
   assert.equal(polled.status, 'completed');
   const downloaded = await adapter.download({ ...videoRequest, taskRef });
   assert.equal(downloaded.contentType, 'video/mp4');
   assert.deepEqual(downloaded.bytes, Uint8Array.from([4, 5, 6]));
+});
+
+test('Tuzi maps every documented video status into the Ark lifecycle vocabulary', async () => {
+  const providerStatuses = ['queued', 'in_progress', 'completed', 'failed'] as const;
+  const expectedStatuses = ['queued', 'running', 'completed', 'failed'] as const;
+  let pollIndex = 0;
+  const fetchMock: typeof globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/videos/tuzi-video-status-task')) {
+      const status = providerStatuses[pollIndex++]!;
+      return Response.json({
+        id: 'tuzi-video-status-task',
+        object: 'video',
+        status,
+        ...(status === 'failed'
+          ? { error: { code: 'provider_failed', message: 'failed' } }
+          : {}),
+      });
+    }
+    return Response.json({
+      id: 'tuzi-video-status-task',
+      object: 'video',
+      status: 'queued',
+    });
+  };
+  const adapter = provider(fetchMock);
+  const videoRequest = request('seedance-2');
+  const submitted = await adapter.submit(videoRequest);
+  assert.ok(submitted.taskRef);
+
+  for (const expected of expectedStatuses) {
+    const polled = await adapter.poll({
+      ...videoRequest,
+      taskRef: submitted.taskRef!,
+    });
+    assert.equal(polled.status, expected);
+  }
+});
+
+test('Tuzi rejects an unknown video status with bounded redacted provider evidence', async () => {
+  const fetchMock: typeof globalThis.fetch = async (input) => {
+    if (String(input).endsWith('/videos/tuzi-video-invalid-task')) {
+      return Response.json({
+        id: 'tuzi-video-invalid-task',
+        object: 'video',
+        status: 'mystery',
+        api_key: 'provider-secret-value',
+        authorization: 'Bearer provider-secret-token',
+        detail: 'x'.repeat(8_000),
+      });
+    }
+    return Response.json({
+      id: 'tuzi-video-invalid-task',
+      object: 'video',
+      status: 'queued',
+    });
+  };
+  const adapter = provider(fetchMock);
+  const videoRequest = request('seedance-2');
+  const submitted = await adapter.submit(videoRequest);
+  assert.ok(submitted.taskRef);
+
+  const polled = await adapter.poll({
+    ...videoRequest,
+    taskRef: submitted.taskRef!,
+  });
+
+  assert.equal(polled.status, 'unknown');
+  assert.equal(polled.errorCode, 'invalid_response');
+  assert.match(polled.error ?? '', /"status":"mystery"/u);
+  assert.match(polled.error ?? '', /\[REDACTED\]/u);
+  assert.doesNotMatch(polled.error ?? '', /provider-secret/u);
+  assert.ok((polled.error?.length ?? 0) <= 2_500);
 });

@@ -104,7 +104,7 @@ test('issue 255 Tuzi cancellation launch rejects the live collector flag in reve
   );
 });
 
-test('issue 255 v4 envelope permits only the coordinator video retry', () => {
+test('issue 255 v5 envelope permits only the coordinator video retry', () => {
   assert.deepEqual(resolveIssue255LiveEnvelope({}, 'original-run'), {
     runNonce: 'original-run',
     modality: 'all',
@@ -113,31 +113,31 @@ test('issue 255 v4 envelope permits only the coordinator video retry', () => {
     resolveIssue255LiveEnvelope(
       {
         ISSUE_255_LIVE_RUN_NONCE:
-          'issue-255-live-anchors-2026-07-30-v4',
+          'issue-255-live-anchors-2026-07-30-v5',
         ISSUE_255_LIVE_MODALITY: 'video',
       },
       'ignored-run',
     ),
     {
-      runNonce: 'issue-255-live-anchors-2026-07-30-v4',
+      runNonce: 'issue-255-live-anchors-2026-07-30-v5',
       modality: 'video',
     },
   );
   for (const env of [
     {
       ISSUE_255_LIVE_RUN_NONCE:
-        'issue-255-live-anchors-2026-07-30-v4',
+        'issue-255-live-anchors-2026-07-30-v5',
     },
     { ISSUE_255_LIVE_MODALITY: 'video' },
     {
       ISSUE_255_LIVE_RUN_NONCE:
-        'issue-255-live-anchors-2026-07-30-v4',
+        'issue-255-live-anchors-2026-07-30-v5',
       ISSUE_255_LIVE_MODALITY: 'copy',
     },
   ]) {
     assert.throws(
       () => resolveIssue255LiveEnvelope(env, 'ignored-run'),
-      /coordinator v4 single video retry/u,
+      /coordinator v5 single video retry/u,
     );
   }
 });
@@ -342,6 +342,7 @@ test('issue 255 collector derives integer micros upward from frozen price and pr
     },
     priceRevision: 'direct-price-v1',
     receipts: {
+      async bindAcceptedProviderTask() {},
       async claimGenerationPost() {},
       async recordProviderHttpRequest() {},
       async recordProviderHttpResponse() {},
@@ -395,6 +396,7 @@ test('issue 255 live quotes reject zero prices before provider network', () => {
         },
         priceRevision: 'tuzi-price-v1',
         receipts: {
+          async bindAcceptedProviderTask() {},
           async claimGenerationPost() {},
           async recordProviderHttpRequest() {},
           async recordProviderHttpResponse() {},

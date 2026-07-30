@@ -259,14 +259,24 @@ test(
       await pool.query('DELETE FROM issue255_live_run_owners');
       blockedExecutorCalls = 0;
 
+      let videoContentDownloads = 0;
+      const videoPollStatuses = [
+        'queued',
+        'in_progress',
+        'completed',
+        'completed',
+      ] as const;
+      let videoPollIndex = 0;
       const tuziOptions = {
         apiKey: 'test-key',
         assetFetch: {
           async get(target: string) {
+            assert.match(target, /\/videos\/issue-255-video-task\/content$/u);
+            videoContentDownloads += 1;
             return {
               bytes: Uint8Array.from([1, 2, 3]),
               finalUrl: target,
-              mimeType: 'application/octet-stream',
+              mimeType: 'video/mp4',
             };
           },
         },
@@ -291,11 +301,19 @@ test(
             });
           }
           if (target.endsWith('/videos/issue-255-video-task')) {
+            const videoReceipt = (await receipts.listRun(runNonce)).find(
+              (receipt) => receipt.modality === 'video',
+            );
+            assert.equal(
+              videoReceipt?.providerTaskId,
+              'issue-255-video-task',
+              'accepted provider task id must be durable before first poll',
+            );
             return Response.json({
               id: 'issue-255-video-task',
               object: 'video',
               progress: 100,
-              status: 'completed',
+              status: videoPollStatuses[videoPollIndex++]!,
               usage: { completion_tokens: 108_000 },
             });
           }
@@ -419,10 +437,16 @@ test(
         manifest.samples.map((sample) => sample.usageEvidenceKind),
         ['provider_reported', 'response_derived', 'provider_reported'],
       );
+      assert.deepEqual(manifest.samples[2]?.statusSequence, [
+        'queued',
+        'running',
+        'completed',
+      ]);
       assert.equal(
         manifest.samples[1]?.evidenceGap,
         'tuzi_image_response_omits_usage',
       );
+      assert.equal(videoContentDownloads, 1);
       assert.equal(
         manifest.samples.every(
           (sample) => sample.providerHttpRequestCount > 0,

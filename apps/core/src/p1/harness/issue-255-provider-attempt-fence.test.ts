@@ -13,6 +13,8 @@ class ReceiptFence {
   providerHttpStatuses: number[] = [];
   lastGenerationIdentity: unknown;
 
+  async bindAcceptedProviderTask() {}
+
   async claimGenerationPost(input: unknown) {
     if (this.generationSubmitCount !== 0) {
       throw new Error('generation POST already fenced');
@@ -287,6 +289,11 @@ test('issue 255 Tuzi video adapter sends the frozen quote seconds and counts pol
       }
       assert.equal(target, 'https://api.tu-zi.example/v1/videos');
       assert.ok(init?.body instanceof FormData);
+      assert.deepEqual([...init.body.keys()].sort(), [
+        'model',
+        'prompt',
+        'seconds',
+      ]);
       assert.equal(init.body.get('seconds'), '5');
       return Response.json({
         id: 'issue-255-video-task',
