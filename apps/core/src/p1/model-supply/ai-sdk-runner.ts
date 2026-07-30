@@ -1607,7 +1607,10 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
           .filter((kind): kind is string => typeof kind === 'string'),
       );
       const missingFactTypes = requested.filter((kind) => !available.has(kind));
-      const requestedKinds = new Set(requested);
+      // The payload's facts are already eligible and rights-authorized for
+      // this run, and factTypes is the recipe's requirement floor, not an
+      // authorization ceiling (fact-satisfaction.ts): matched kinds outside
+      // factTypes stay authorized, so the fixture matches every supplied fact.
       return {
         status:
           missingFactTypes.length === 0
@@ -1616,11 +1619,7 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
               ? 'unsatisfied'
               : 'partial',
         matchedFactRefs: facts
-          .filter(
-            (fact) =>
-              typeof fact.kind === 'string' &&
-              requestedKinds.has(fact.kind),
-          )
+          .filter((fact) => typeof fact.kind === 'string')
           .map((fact) => fact.sourceRef)
           .filter((reference): reference is string => typeof reference === 'string'),
         missingFactTypes,

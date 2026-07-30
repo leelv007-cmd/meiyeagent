@@ -95,10 +95,10 @@ test('fixture structured execution compiles the frozen video delivery into one s
   });
 });
 
-test('fixture fact satisfaction excludes fact kinds the recipe did not request', async () => {
+test('fixture fact satisfaction matches every authorized fact beyond the requested floor', async () => {
   const executor = new FixtureAiStructuredObjectExecutor();
   const result = await executor.generate({
-    instructions: 'Assess only the requested fact kinds.',
+    instructions: 'Assess the requested fact kinds.',
     prompt: JSON.stringify({
       factTypes: ['price', 'discount'],
       facts: [
@@ -114,8 +114,11 @@ test('fixture fact satisfaction excludes fact kinds the recipe did not request',
     schemaName: 'harness_fact_satisfaction_v1',
   });
 
+  // factTypes is the recipe's requirement floor, not an authorization
+  // ceiling: the already-authorized service fact stays matched while
+  // missing/status still track the requested kinds.
   assert.deepEqual(result.output, {
-    matchedFactRefs: ['store_fact:price:1'],
+    matchedFactRefs: ['store_fact:service:1', 'store_fact:price:1'],
     missingFactTypes: ['discount'],
     status: 'partial',
   });
