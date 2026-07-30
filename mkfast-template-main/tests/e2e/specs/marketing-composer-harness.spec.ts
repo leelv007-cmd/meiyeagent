@@ -2,7 +2,6 @@ import { expect, test } from '@playwright/test';
 import type {
   HarnessInteractionAnswer,
   HarnessInteractionMerchantMessage,
-  StructuredDecisionInput,
 } from '@meiye/contracts';
 
 import {
@@ -25,10 +24,13 @@ test.describe('marketing Composer and Harness question', () => {
     page,
     request,
   }) => {
-    let submitted: StructuredDecisionInput | undefined;
+    let submitted: HarnessInteractionAnswer | undefined;
     let submittedComposer: Record<string, unknown> | undefined;
     let composerSubmissionCount = 0;
     let directHarnessAdmissionCount = 0;
+    let interactionReads = 0;
+    let legacyDecisionSubmissions = 0;
+    const rendererAcknowledgements: Array<Record<string, unknown>> = [];
     let resolved = false;
     const taskId = 'e2e-composer-question-task';
 
@@ -61,6 +63,10 @@ test.describe('marketing Composer and Harness question', () => {
             replayed: false,
             snapshot: {
               id: 'e2e-composer-question-snapshot',
+              identity: {
+                id: 'e2e-composer-question-identity',
+                revision: '1',
+              },
               schemaVersion: 'creation-execution-snapshot/v1',
             },
             task: { id: taskId },
@@ -88,19 +94,50 @@ test.describe('marketing Composer and Harness question', () => {
       await route.continue();
     });
 
+    await page.route('**/api/core/p1/harness/tasks/*/decision', (route) => {
+      if (route.request().method() === 'POST') {
+        legacyDecisionSubmissions += 1;
+      }
+      return route.fulfill({
+        json: {
+          data: {
+            question: null,
+            resolutionSource: null,
+            status: 'absent',
+            timeoutSeconds: null,
+          },
+        },
+        status: 200,
+      });
+    });
     await page.route(
-      '**/api/core/p1/harness/tasks/*/decision',
+      '**/api/core/p1/harness/tasks/*/interaction/message',
+      (route) => route.fulfill({ json: { data: null }, status: 200 })
+    );
+    await page.route(
+      '**/api/core/p1/harness/tasks/*/interaction/v2/renderer',
+      (route) => {
+        rendererAcknowledgements.push(
+          route.request().postDataJSON() as Record<string, unknown>
+        );
+        return route.fulfill({ json: { data: { acknowledged: true } } });
+      }
+    );
+    await page.route(
+      '**/api/core/p1/harness/tasks/*/interaction',
       async (route) => {
         const requestedTaskId = decodeURIComponent(
           new URL(route.request().url()).pathname.split('/').at(-2) ?? ''
         );
         if (route.request().method() === 'POST') {
-          submitted = route.request().postDataJSON() as StructuredDecisionInput;
+          submitted = route
+            .request()
+            .postDataJSON() as HarnessInteractionAnswer;
           resolved = true;
           await route.fulfill({
             json: {
               data: {
-                eventId: `${requestedTaskId}:decision:1`,
+                eventId: `${requestedTaskId}:interaction:1`,
                 replayed: false,
               },
             },
@@ -108,31 +145,39 @@ test.describe('marketing Composer and Harness question', () => {
           });
           return;
         }
+        interactionReads += 1;
         await route.fulfill({
           json: {
-            data: {
-              question: resolved
-                ? null
-                : {
-                    questionId: `${requestedTaskId}:s1:offer_price`,
-                    workflowId: requestedTaskId,
-                    workflowRevision: 3,
-                    question: '这次团购价按哪个金额写？',
-                    options: [
-                      { id: 'price-398', label: '¥398' },
-                      { id: 'price-498', label: '¥498' },
-                    ],
-                    freeText: { enabled: true },
-                    response: {
-                      field: 'offer_price',
-                      reason: '补充当前任务所需的权威事实',
+            data: resolved
+              ? null
+              : {
+                  requestId: `${requestedTaskId}:s1:offer_price`,
+                  runId: requestedTaskId,
+                  step: 'intent_naming',
+                  revision: 3,
+                  kind: 'ask_merchant',
+                  questions: [
+                    {
+                      itemId: 'offer_price',
+                      question: '这次团购价按哪个金额写？',
+                      options: [{ label: '¥398' }, { label: '¥498' }],
+                      freeText: { enabled: true },
+                      fallback: { kind: 'deferred' },
                     },
-                    scope: 'current_task',
+                  ],
+                  groupSkip: true,
+                  timeoutPolicy: {
+                    kind: 'hold',
+                    reason: 'unknown',
+                    serverEvaluated: true,
                   },
-              resolutionSource: resolved ? 'decision' : null,
-              status: resolved ? 'resolved' : 'pending',
-              timeoutSeconds: null,
-            },
+                  presentation: {
+                    carriers: ['conversation'],
+                    blocking: 'none',
+                    notification: 'none',
+                    renderer: 'ask_merchant_group',
+                  },
+                },
           },
           status: 200,
         });
@@ -213,13 +258,15 @@ test.describe('marketing Composer and Harness question', () => {
     await expect(page.getByTestId('composer-turn-merchant')).toContainText(
       '把新团购做一套能发的'
     );
-    await expect(page.getByTestId('composer-question-card')).toBeVisible();
+    const questionCard = page.getByTestId('ask-merchant-group-card');
+    await expect.poll(() => interactionReads).toBeGreaterThan(0);
+    await expect(questionCard).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText('这次团购价按哪个金额写？')).toBeVisible();
-    await expect(page.getByText('补充当前任务所需的权威事实')).toBeVisible();
     await expect(page.getByText('等你确认当前团购价')).toBeVisible();
 
-    await page.getByRole('button', { name: '¥398' }).click();
-    await expect(page.getByTestId('composer-question-card')).toBeHidden();
+    await questionCard.getByRole('button', { name: '¥398' }).click();
+    await questionCard.getByRole('button', { name: '提交回答' }).click();
+    await expect(questionCard).toBeHidden();
     await expect(work).toBeVisible();
     await expect(page.getByTestId('composer-turn-merchant')).toContainText(
       '把新团购做一套能发的'
@@ -227,16 +274,31 @@ test.describe('marketing Composer and Harness question', () => {
     await expect(page).toHaveURL(workUrl);
 
     expect(submitted).toMatchObject({
-      questionId: expect.stringMatching(/:s1:offer_price$/u),
-      workflowRevision: 3,
-      patch: {
-        field: 'offer_price',
-        value: '¥398',
-        reason: '补充当前任务所需的权威事实',
+      requestId: expect.stringMatching(/:s1:offer_price$/u),
+      revision: 3,
+      idempotencyKey: expect.any(String),
+      resume: {
+        runId: taskId,
+        step: 'intent_naming',
       },
-      decision: { state: 'accepted', value: '¥398' },
+      response: {
+        kind: 'answer',
+        items: [
+          {
+            itemId: 'offer_price',
+            result: { kind: 'answer', value: '¥398' },
+          },
+        ],
+      },
     });
-    expect(submitted?.idempotencyKey).toBeTruthy();
+    expect(legacyDecisionSubmissions).toBe(0);
+    expect(rendererAcknowledgements).toContainEqual(
+      expect.objectContaining({
+        requestId: `${taskId}:s1:offer_price`,
+        revision: 3,
+        step: 'intent_naming',
+      })
+    );
   });
 
   test('resumed durable interactions render and submit through Composer', async ({
