@@ -54,79 +54,79 @@
       "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
     },
     "apps/core/src/p1/foundation/workspace-provision.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
+      "note": "Fresh database, provisioned first: 1/0"
     },
     "apps/core/src/p1/harness/canonical-observability-emitters.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
+      "note": "Fresh database, provisioned first: 1/0"
     },
     "apps/core/src/p1/harness/dbos-registration.smoke.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
+      "note": "Fresh database, provisioned first: 15/0"
     },
     "apps/core/src/p1/harness/delivery.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
+      "note": "Fresh database, provisioned first: 5/0 (red only when sharing a database with earlier suites; green on a pristine one)"
     },
     "apps/core/src/p1/harness/fixture-fact-fidelity.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
+      "note": "Fresh database, provisioned first: 1/0"
     },
     "apps/core/src/p1/harness/interaction-service.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "5/5 under both UTC and Asia/Shanghai after the UTC timestamp fix (91acd6b6)."
+      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
+      "note": "Fresh database, provisioned first: 5/0 under UTC and Asia/Shanghai"
     },
     "apps/core/src/p1/harness/issue-255-live-collector.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
+      "note": "Fresh database, provisioned first: 1/0"
     },
     "apps/core/src/p1/harness/issue-255-postgres-live-receipt.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
+      "note": "Fresh database, provisioned first: 15/0"
     },
     "apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
+      "note": "Fresh database, provisioned first: 0/0 — every case is behind an explicit destructive opt-in"
     },
     "apps/core/src/p1/harness/langfuse-outbox-ops.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
+      "note": "Fresh database, provisioned first: 1/0"
     },
     "apps/core/src/p1/harness/note-media-admission.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
+      "note": "Fresh database, provisioned first: 2/0"
     },
     "apps/core/src/p1/harness/observability-health.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
+      "note": "Fresh database, provisioned first: 3/0"
     },
     "apps/core/src/p1/harness/postgres-billing-compensation-store.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
+      "note": "Fresh database, provisioned first: 1/0"
     },
     "apps/core/src/p1/harness/postgres-store.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
+      "note": "7/0 standalone; the other 4 cases need tables that only earlier suites in a full run create, so they fail 42P01 when this file is run alone. Green inside the full Core run."
     },
     "apps/core/src/p1/harness/production-media-assembly.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
+      "note": "Fresh database, provisioned first: 1/0"
     },
     "apps/core/src/p1/integrations/douyin-oauth-lifecycle.postgres.test.ts": {
       "status": "unverified",
@@ -144,30 +144,30 @@
       "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
     },
     "apps/core/src/p1/model-supply/foundation-ledger.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
+      "note": "Fresh database, provisioned first: 1/0"
     },
     "apps/core/src/p1/model-supply/postgres-owned-asset-cleanup-claim.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
+      "note": "Fresh database, provisioned first: 1/0"
     },
     "apps/core/src/p1/model-supply/reference-asset-dispatch.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
+      "note": "Fresh database, provisioned first: 3/0"
     },
     "apps/core/src/p1/model-supply/retired-video-editing-schema.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
+      "note": "Fresh database, provisioned first: 1/0"
     },
     "apps/core/src/p1/model-supply/usage-ledger-invariants.postgres.test.ts": {
       "status": "known_red",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
       "ticket": "#270",
-      "note": "Same SupplyRequestFreeze contract failure as entitlement-pools."
+      "note": "Re-confirmed on a fresh database at the issue 247 tip: still 0 pass / 1 fail with the same SupplyRequestFreeze contract error, so issue 247 neither caused nor changed it."
     },
     "apps/core/src/p1/operations/content-package-migration-cli.postgres.test.ts": {
       "status": "unverified",
@@ -215,9 +215,9 @@
       "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
+      "note": "Fresh database, provisioned first: 2/0"
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "unverified",
@@ -318,6 +318,11 @@
       "status": "unverified",
       "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
       "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/harness/media-bounded-continuation.dbos.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "337d3f783697465a535fb212578b323d8cfd49c9",
+      "note": "Fresh database, provisioned first: 1/0 — new suite from the issue 247 salvage"
     }
   }
 }
