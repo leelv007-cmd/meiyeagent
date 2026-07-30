@@ -9,6 +9,7 @@ import { PostgresFoundationRepository } from '../foundation/postgres-repository.
 import { ProviderSafeFetch } from '../model-supply/reference-asset-delivery.js';
 import { modelRuntimeAssemblyFromEnv } from '../model-supply/runtime-config.js';
 import {
+  assertIssue255PositiveFrozenPrice,
   collectIssue255LiveAnchors,
   issue255DirectCopyExecutor,
   issue255TuziExecutor,
@@ -110,26 +111,8 @@ export function isIssue255SharedE2eLockHeld() {
   return false;
 }
 
-export async function runIssue255LiveCollectorCli(input: {
-  argv: readonly string[];
-  env: NodeJS.ProcessEnv;
-}) {
-  const launch = assertIssue255LiveCollectorLaunch(input.env);
-  const [recordedSamplesPath, manifestPath, runNonce] = input.argv;
-  if (!recordedSamplesPath || !manifestPath || !runNonce?.trim()) {
-    throw new Error(
-      'Usage: issue-255-live-collector <recorded-samples.json> <manifest.json> <run-nonce>',
-    );
-  }
-  const businessUrl = isolatedDatabaseUrl(
-    input.env.TEST_DATABASE_URL,
-    'meiye_issue255',
-  );
-  const dbosUrl = isolatedDatabaseUrl(
-    input.env.TEST_DBOS_SYSTEM_DATABASE_URL,
-    'meiye_issue255_dbos',
-  );
-  const assembly = modelRuntimeAssemblyFromEnv(input.env);
+export function preflightIssue255LiveRuntime(env: NodeJS.ProcessEnv) {
+  const assembly = modelRuntimeAssemblyFromEnv(env);
   const direct = assembly.runtime.direct;
   const tuzi = assembly.runtime.tuziMedia;
   if (!direct || !tuzi) {
@@ -152,6 +135,69 @@ export async function runIssue255LiveCollectorCli(input: {
     tuzi.video.catalogModelId,
     '-tuzi-relay',
   );
+  const positivePrice = (value: string | undefined, label: string) =>
+    assertIssue255PositiveFrozenPrice(
+      requiredDeploymentText(value, label),
+      label,
+    );
+
+  return {
+    assembly,
+    direct,
+    directDeployment,
+    frozenPrices: {
+      directInputCostPerMillionCny: positivePrice(
+        env.MODEL_DIRECT_INPUT_COST_PER_MILLION,
+        'direct input frozen price',
+      ),
+      directOutputCostPerMillionCny: positivePrice(
+        env.MODEL_DIRECT_OUTPUT_COST_PER_MILLION,
+        'direct output frozen price',
+      ),
+      imageCostCny: positivePrice(
+        env.TUZI_GPT_IMAGE_2_COST_PER_IMAGE_CNY,
+        'Tuzi image frozen price',
+      ),
+      videoCostPerMillionTokensCny: positivePrice(
+        env.TUZI_SEEDANCE_COST_PER_MILLION_TOKENS_CNY,
+        'Tuzi video frozen price',
+      ),
+    },
+    imageDeployment,
+    tuzi,
+    videoDeployment,
+  };
+}
+
+export async function runIssue255LiveCollectorCli(input: {
+  argv: readonly string[];
+  env: NodeJS.ProcessEnv;
+}) {
+  const launch = assertIssue255LiveCollectorLaunch(input.env);
+  const [recordedSamplesPath, manifestPath, runNonce] = input.argv;
+  if (!recordedSamplesPath || !manifestPath || !runNonce?.trim()) {
+    throw new Error(
+      'Usage: issue-255-live-collector <recorded-samples.json> <manifest.json> <run-nonce>',
+    );
+  }
+  const preflight = preflightIssue255LiveRuntime(input.env);
+  const businessUrl = isolatedDatabaseUrl(
+    input.env.TEST_DATABASE_URL,
+    'meiye_issue255',
+  );
+  const dbosUrl = isolatedDatabaseUrl(
+    input.env.TEST_DBOS_SYSTEM_DATABASE_URL,
+    'meiye_issue255_dbos',
+  );
+  const {
+    assembly,
+    direct,
+    directDeployment,
+    frozenPrices,
+    imageDeployment,
+    tuzi,
+    videoDeployment,
+  } = preflight;
   const assetFetch = new ProviderSafeFetch({
     allowedHosts: [
       new URL(tuzi.baseUrl).hostname,
@@ -188,14 +234,10 @@ export async function runIssue255LiveCollectorCli(input: {
           ),
           deploymentId: directDeployment.id,
           frozenPrices: {
-            inputCostPerMillionCny: requiredDeploymentText(
-              input.env.MODEL_DIRECT_INPUT_COST_PER_MILLION,
-              'direct input frozen price',
-            ),
-            outputCostPerMillionCny: requiredDeploymentText(
-              input.env.MODEL_DIRECT_OUTPUT_COST_PER_MILLION,
-              'direct output frozen price',
-            ),
+            inputCostPerMillionCny:
+              frozenPrices.directInputCostPerMillionCny,
+            outputCostPerMillionCny:
+              frozenPrices.directOutputCostPerMillionCny,
           },
           options: direct,
           priceRevision: requiredDeploymentText(
@@ -214,10 +256,7 @@ export async function runIssue255LiveCollectorCli(input: {
             'Tuzi image credential revision',
           ),
           deploymentId: imageDeployment.id,
-          frozenPriceCny: requiredDeploymentText(
-            input.env.TUZI_GPT_IMAGE_2_COST_PER_IMAGE_CNY,
-            'Tuzi image frozen price',
-          ),
+          frozenPriceCny: frozenPrices.imageCostCny,
           modality: 'image_text',
           options: countedTuzi,
           priceRevision: requiredDeploymentText(
@@ -236,10 +275,7 @@ export async function runIssue255LiveCollectorCli(input: {
             'Tuzi video credential revision',
           ),
           deploymentId: videoDeployment.id,
-          frozenPriceCny: requiredDeploymentText(
-            input.env.TUZI_SEEDANCE_COST_PER_MILLION_TOKENS_CNY,
-            'Tuzi video frozen price',
-          ),
+          frozenPriceCny: frozenPrices.videoCostPerMillionTokensCny,
           modality: 'video',
           options: countedTuzi,
           priceRevision: requiredDeploymentText(

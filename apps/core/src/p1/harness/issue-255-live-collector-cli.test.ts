@@ -9,9 +9,34 @@ import {
 import {
   assertIssue255LiveCollectorLaunch,
   assertIssue255LiveModesMutuallyExclusive,
+  preflightIssue255LiveRuntime,
   runIssue255LiveManifestRecoveryCli,
   runIssue255LiveReconciliationCli,
 } from './issue-255-live-collector-cli.js';
+
+const issue255LiveRuntimeEnv = (
+  overrides: NodeJS.ProcessEnv = {},
+): NodeJS.ProcessEnv => ({
+  MODEL_EXECUTION_MODE: 'direct',
+  MODEL_MEDIA_EXECUTION_MODE: 'tuzi',
+  DEEPSEEK_API_KEY: 'test-deepseek-key',
+  MODEL_DIRECT_CATALOG_MODEL_ID: 'deepseek-v4-pro',
+  MODEL_DIRECT_CREDENTIAL_VERSION: 'deepseek-key-v1',
+  MODEL_DIRECT_ENDPOINT_REVISION: 'deepseek-endpoint-v1',
+  MODEL_DIRECT_INPUT_COST_PER_MILLION: '3.2',
+  MODEL_DIRECT_OUTPUT_COST_PER_MILLION: '6.3',
+  TUZI_MEDIA_API_KEY: 'test-tuzi-key',
+  TUZI_MEDIA_BASE_URL: 'https://api.tu-zi.example/v1',
+  TUZI_MEDIA_CREDENTIAL_VERSION: 'tuzi-key-v1',
+  TUZI_MEDIA_ENDPOINT_REVISION: 'tuzi-endpoint-v1',
+  TUZI_MEDIA_SOURCE_URL_TTL_SECONDS: '3600',
+  TUZI_GPT_IMAGE_2_COST_PER_IMAGE_CNY: '0.5',
+  TUZI_GPT_IMAGE_2_MODEL: 'gpt-image-2',
+  TUZI_SEEDANCE_COST_PER_MILLION_TOKENS_CNY: '3',
+  TUZI_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND: '1000000',
+  TUZI_SEEDANCE_MODEL: 'doubao-seedance-1-5-pro_720p',
+  ...overrides,
+});
 
 test('issue 255 live collector CLI stays fail-closed without explicit live GO', () => {
   assert.throws(
@@ -75,6 +100,72 @@ test('issue 255 Tuzi cancellation launch rejects the live collector flag in reve
       }),
     /mutually exclusive/u,
   );
+});
+
+test('issue 255 live runtime preflight freezes all three approved deployments and positive prices', () => {
+  const preflight = preflightIssue255LiveRuntime(issue255LiveRuntimeEnv());
+
+  assert.deepEqual(
+    [
+      preflight.directDeployment.id,
+      preflight.imageDeployment.id,
+      preflight.videoDeployment.id,
+    ],
+    [
+      'deepseek-v4-pro-direct',
+      'gpt-image-2-tuzi-relay',
+      'seedance-1-5-pro-tuzi-relay',
+    ],
+  );
+  assert.deepEqual(preflight.frozenPrices, {
+    directInputCostPerMillionCny: '3.2',
+    directOutputCostPerMillionCny: '6.3',
+    imageCostCny: '0.5',
+    videoCostPerMillionTokensCny: '3',
+  });
+
+  assert.throws(
+    () =>
+      preflightIssue255LiveRuntime(
+        issue255LiveRuntimeEnv({
+          MODEL_DIRECT_CATALOG_MODEL_ID: 'llm-openai',
+          MODEL_DIRECT_API_KEY: 'test-openai-key',
+          MODEL_DIRECT_BASE_URL: 'https://copy.example.test/v1',
+          MODEL_DIRECT_MODEL: 'openai-model',
+        }),
+      ),
+    /could not freeze its approved deployment/u,
+  );
+
+  for (const [name, value] of [
+    ['MODEL_DIRECT_INPUT_COST_PER_MILLION', '0'],
+    ['MODEL_DIRECT_OUTPUT_COST_PER_MILLION', '0'],
+    ['TUZI_GPT_IMAGE_2_COST_PER_IMAGE_CNY', '0'],
+    ['TUZI_SEEDANCE_COST_PER_MILLION_TOKENS_CNY', '0'],
+  ] as const) {
+    assert.throws(
+      () =>
+        preflightIssue255LiveRuntime(
+          issue255LiveRuntimeEnv({ [name]: value }),
+        ),
+      /positive frozen price/u,
+    );
+  }
+
+  for (const name of [
+    'MODEL_DIRECT_INPUT_COST_PER_MILLION',
+    'MODEL_DIRECT_OUTPUT_COST_PER_MILLION',
+    'TUZI_GPT_IMAGE_2_COST_PER_IMAGE_CNY',
+    'TUZI_SEEDANCE_COST_PER_MILLION_TOKENS_CNY',
+  ] as const) {
+    assert.throws(
+      () =>
+        preflightIssue255LiveRuntime(
+          issue255LiveRuntimeEnv({ [name]: undefined }),
+        ),
+      /non-negative number/u,
+    );
+  }
 });
 
 test('issue 255 recovery CLIs require explicit non-live recovery authorization', async () => {

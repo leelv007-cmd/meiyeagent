@@ -1186,6 +1186,14 @@ function frozenPriceMicros(amount: string, label: string) {
   return Number(roundedMicros);
 }
 
+export function assertIssue255PositiveFrozenPrice(
+  amount: string,
+  label: string,
+) {
+  frozenPriceMicros(amount, label);
+  return amount.trim();
+}
+
 function requiredUsageQuantity(
   quantity: number | undefined,
   label: string,
