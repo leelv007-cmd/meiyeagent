@@ -148,13 +148,13 @@
     },
     "apps/core/src/p1/model-supply/foundation-ledger.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "6599b6c53cfdaa617c2b74e904bea1dfed962765",
-      "note": "Issue 252 legacy catalog read audit; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
+      "verifiedAt": "974f2ccbece59a0c4a4b23e0a2c551d0837d5c6d",
+      "note": "Issue 253 fixture capability-head refresh; own fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/model-supply/postgres-owned-asset-cleanup-claim.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "6599b6c53cfdaa617c2b74e904bea1dfed962765",
-      "note": "Issue 252 legacy catalog read audit; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
+      "verifiedAt": "974f2ccbece59a0c4a4b23e0a2c551d0837d5c6d",
+      "note": "Issue 253 fixture capability-head refresh; own fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/model-supply/postgres-repository.test.ts": {
       "status": "green",
@@ -168,18 +168,18 @@
     },
     "apps/core/src/p1/model-supply/reference-asset-dispatch.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "6599b6c53cfdaa617c2b74e904bea1dfed962765",
-      "note": "Issue 252 legacy catalog read audit; fresh isolated database pair provisioned first: 3 pass / 0 fail / 0 skip."
+      "verifiedAt": "974f2ccbece59a0c4a4b23e0a2c551d0837d5c6d",
+      "note": "Issue 253 fixture capability-head refresh; own fresh isolated database pair provisioned first: 3 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/model-supply/retired-video-editing-schema.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "6599b6c53cfdaa617c2b74e904bea1dfed962765",
-      "note": "Issue 252 legacy catalog read audit; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
+      "verifiedAt": "974f2ccbece59a0c4a4b23e0a2c551d0837d5c6d",
+      "note": "Issue 253 fixture capability-head refresh; own fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/model-supply/usage-ledger-invariants.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "6599b6c53cfdaa617c2b74e904bea1dfed962765",
-      "note": "Issue 252 legacy catalog read audit; fresh isolated database pair provisioned first: 2 pass / 0 fail / 0 skip."
+      "verifiedAt": "974f2ccbece59a0c4a4b23e0a2c551d0837d5c6d",
+      "note": "Issue 253 fixture capability-head refresh; own fresh isolated database pair provisioned first: 2 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/operations/composer-conversation-deletion.postgres.test.ts": {
       "status": "green",
