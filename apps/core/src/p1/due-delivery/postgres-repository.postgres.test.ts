@@ -723,7 +723,9 @@ test(
     const firstRepository = new PostgresDueDeliveryRepository(pool);
     const suffix = randomUUID();
     const workspaceId = `due-restart-${suffix}`;
-    const taskId = `daily-rec_${workspaceId}_2026-07-29`;
+    const firstAttemptAt = new Date(Date.now() + 60_000);
+    const businessDate = firstAttemptAt.toISOString().slice(0, 10);
+    const taskId = `daily-rec_${workspaceId}_${businessDate}`;
 
     t.after(async () => {
       await pool.query(
@@ -739,10 +741,10 @@ test(
 
     await firstRepository.migrate();
     await firstRepository.enqueue({
-      businessDate: '2026-07-29',
-      dueAt: '2026-07-29T00:00:00.000Z',
+      businessDate,
+      dueAt: `${businessDate}T00:00:00.000Z`,
       payload: {
-        businessDate: '2026-07-29',
+        businessDate,
         schemaVersion: 'daily-recommendation/v1',
       },
       taskId,
@@ -776,7 +778,6 @@ test(
         return { isRestDay: false, workspaceActive: true };
       },
     };
-    const firstAttemptAt = new Date();
     const firstWorker = new DueDeliveryWorker(
       observeClaims(firstRepository, observedClaims),
       eligibility,
@@ -788,7 +789,7 @@ test(
       },
     );
     assert.equal((await firstWorker.runOnce('worker-before')).retried, 1);
-    assert.equal(observedClaims[0]?.businessDate, '2026-07-29');
+    assert.equal(observedClaims[0]?.businessDate, businessDate);
 
     const restartedRepository = new PostgresDueDeliveryRepository(pool);
     const restartedWorker = new DueDeliveryWorker(
