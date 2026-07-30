@@ -238,8 +238,8 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
-      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 2/0/0 fresh pair, provisioned first"
+      "verifiedAt": "4a2c75f8a46eac9448f905293c04f18f0dcfd2ec",
+      "note": "Issue 260 fresh business and DBOS database pair, provisioned first: 2 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "unverified",
@@ -258,28 +258,28 @@
     },
     "apps/core/src/p1/skills/dbos-governance-workflow.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "65b281ceb4862e8b8d45d9a843dd65d55791a438",
-      "note": "Issue 260 post-rebase fresh business and DBOS databases, provisioned first: 1/0"
+      "verifiedAt": "4a2c75f8a46eac9448f905293c04f18f0dcfd2ec",
+      "note": "Issue 260 fresh business and DBOS database pair, provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/skills/postgres-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "65b281ceb4862e8b8d45d9a843dd65d55791a438",
-      "note": "Issue 260 post-rebase fresh business and DBOS databases, provisioned first: 10/0"
+      "verifiedAt": "4a2c75f8a46eac9448f905293c04f18f0dcfd2ec",
+      "note": "Issue 260 fresh business and DBOS database pair, provisioned first: 10 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/skills/skill-governance.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "65b281ceb4862e8b8d45d9a843dd65d55791a438",
-      "note": "Issue 260 post-rebase fresh business and DBOS databases, provisioned first: 1/0"
+      "verifiedAt": "4a2c75f8a46eac9448f905293c04f18f0dcfd2ec",
+      "note": "Issue 260 fresh business and DBOS database pair, provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/skills/skill-published-traffic.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "65b281ceb4862e8b8d45d9a843dd65d55791a438",
-      "note": "Issue 260 post-rebase fresh business and DBOS databases, provisioned first: 1/0"
+      "verifiedAt": "4a2c75f8a46eac9448f905293c04f18f0dcfd2ec",
+      "note": "Issue 260 fresh business and DBOS database pair, provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/skills/skill-reverse-dependencies.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "65b281ceb4862e8b8d45d9a843dd65d55791a438",
-      "note": "Issue 260 post-rebase fresh business and DBOS databases, provisioned first: 3/0"
+      "verifiedAt": "4a2c75f8a46eac9448f905293c04f18f0dcfd2ec",
+      "note": "Issue 260 fresh business and DBOS database pair, provisioned first: 3 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/supply-registry/postgres-admin-supply-runtime.postgres.test.ts": {
       "status": "green",
