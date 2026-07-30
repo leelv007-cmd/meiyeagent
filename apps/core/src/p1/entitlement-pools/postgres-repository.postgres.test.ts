@@ -1017,8 +1017,10 @@ test(
         channel: 'direct' as const,
         region: 'domestic' as const,
         status: 'active' as const,
+        executionChannelId: 'channel-runtime-direct',
         credentialVersion: 'credential-runtime-v1',
         priceRevision: 'supplier-price-runtime-r1',
+        pricingTier: 'standard' as const,
         unitPrice: {
           amountMicros: 1_200,
           currency: 'CNY' as const,
@@ -1091,6 +1093,14 @@ test(
       assert.equal(persistedFreeze?.productUsageTaskId, undefined);
       assert.equal(persistedFreeze?.providerCostAttemptId, result.attempt.id);
       assert.equal(persistedFreeze?.supplyPoolId, 'pool-shared');
+      assert.equal(
+        persistedFreeze?.supplierPriceRevision.executionChannelId,
+        'channel-runtime-direct',
+      );
+      assert.equal(
+        persistedFreeze?.supplierPriceRevision.pricingTier,
+        'standard',
+      );
     });
 
     await t.test('reserved Postgres ProductUsage links to a freeze readable and replayable by a new ledger', async () => {
@@ -1155,8 +1165,10 @@ test(
         channel: 'managed' as const,
         region: 'domestic' as const,
         status: 'active' as const,
+        executionChannelId: 'channel-billing-image-managed',
         credentialVersion: 'credential-billing-v1',
         priceRevision: 'supplier-price-billing-r1',
+        pricingTier: 'standard' as const,
         unitPrice: {
           amountMicros: 1_000,
           currency: 'CNY' as const,
@@ -1209,6 +1221,14 @@ test(
       );
       assert.equal(persisted?.productUsageTaskId, billingTaskId);
       assert.equal(persisted?.providerCostAttemptId, result.attempt.id);
+      assert.equal(
+        persisted?.supplierPriceRevision.executionChannelId,
+        'channel-billing-image-managed',
+      );
+      assert.equal(
+        persisted?.supplierPriceRevision.pricingTier,
+        'standard',
+      );
       assert.deepEqual(
         await restartedLedger.freezeAttempt({
           attemptId: result.attempt.id,

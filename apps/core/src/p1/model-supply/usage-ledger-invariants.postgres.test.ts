@@ -197,8 +197,10 @@ test(
       channel: 'direct',
       region: 'domestic',
       status: 'active',
+      executionChannelId: 'channel-usage-invariant-direct',
       credentialVersion: 'usage-invariant-credential-v1',
       priceRevision: 'usage-invariant-price',
+      pricingTier: 'standard',
       unitPrice: {
         amountMicros: 1,
         currency: 'CNY',
@@ -298,10 +300,20 @@ test(
     );
     const taskSupplyFreezes = await supplyPool.query<{
       count: number;
+      execution_channel_count: number;
+      pricing_tier_count: number;
       provider_attempt_count: number;
       supplier_request_count: number;
     }>(
       `SELECT count(*)::integer AS count,
+              count(*) FILTER (
+                WHERE payload #>> '{supplierPriceRevision,executionChannelId}' =
+                  'channel-usage-invariant-direct'
+              )::integer AS execution_channel_count,
+              count(*) FILTER (
+                WHERE payload #>> '{supplierPriceRevision,pricingTier}' =
+                  'standard'
+              )::integer AS pricing_tier_count,
               count(DISTINCT provider_cost_attempt_id)::integer
                 AS provider_attempt_count,
               count(DISTINCT supplier_request_task_id)::integer
@@ -333,6 +345,8 @@ test(
         supplyCosts: 8,
         supplyFreezes: {
           count: 8,
+          execution_channel_count: 8,
+          pricing_tier_count: 8,
           provider_attempt_count: 8,
           supplier_request_count: 8,
         },
