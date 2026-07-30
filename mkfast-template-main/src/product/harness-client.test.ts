@@ -7,6 +7,7 @@ import {
   readHarnessDecisionSnapshot,
   readHarnessSubmitResult,
   readTodayRecommendation,
+  setHarnessInteractionEditing,
   submitHarnessInteractionMerchantMessage,
   submitHarnessTask,
 } from '@/product/harness-client';
@@ -136,11 +137,19 @@ test('reads and consumes the durable merchant-message interaction boundary', asy
       await readPendingHarnessInteractionMessage('task-1'),
       waiting
     );
+    const merchantMessage = {
+      requestId: waiting.requestId,
+      revision: waiting.revision,
+      step: 'execution_selection',
+      carrier: 'conversation',
+      idempotencyKey: 'merchant-message-1',
+      message: '请换成更稳妥的模型',
+    } as const;
     assert.deepEqual(
-      await submitHarnessInteractionMerchantMessage('task-1', {
-        idempotencyKey: 'merchant-message-1',
-        message: '请换成更稳妥的模型',
-      }),
+      await submitHarnessInteractionMerchantMessage(
+        'task-1',
+        merchantMessage
+      ),
       { kind: 'resumed', replayed: false }
     );
     assert.deepEqual(
@@ -160,6 +169,7 @@ test('reads and consumes the durable merchant-message interaction boundary', asy
       requests[1]?.headers.get('idempotency-key'),
       'merchant-message-1'
     );
+    assert.deepEqual(await requests[1]?.json(), merchantMessage);
   } finally {
     globalThis.fetch = previousFetch;
   }
@@ -181,7 +191,7 @@ test('acknowledges the exact durable renderer request identity', async () => {
     });
     assert.equal(
       request?.url,
-      'http://localhost/api/core/p1/harness/tasks/task-1/interaction/renderer'
+      'http://localhost/api/core/p1/harness/tasks/task-1/interaction/renderer?interaction-version=2'
     );
     assert.deepEqual(await request?.json(), {
       requestId: 'request-1',
@@ -189,6 +199,52 @@ test('acknowledges the exact durable renderer request identity', async () => {
       step: 'context_injection',
       carrier: 'conversation',
     });
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test('falls back to legacy renderer signals while Core rolls behind Web', async () => {
+  const previousFetch = globalThis.fetch;
+  const requests: Request[] = [];
+  globalThis.fetch = async (input, init) => {
+    const request = new Request(
+      new URL(String(input), 'http://localhost'),
+      init
+    );
+    requests.push(request);
+    if (request.url.includes('interaction-version=2')) {
+      return Response.json({ error: 'old core' }, { status: 400 });
+    }
+    return new Response(null, { status: 204 });
+  };
+  const acknowledgement = {
+    requestId: 'request-legacy-rollout',
+    revision: 1,
+    step: 'context_injection',
+    carrier: 'conversation',
+  } as const;
+  try {
+    await acknowledgeHarnessInteractionRenderer(
+      'task-legacy-rollout',
+      acknowledgement
+    );
+    await setHarnessInteractionEditing('task-legacy-rollout', {
+      ...acknowledgement,
+      editing: true,
+    });
+
+    assert.deepEqual(
+      requests.map((request) => request.url),
+      [
+        'http://localhost/api/core/p1/harness/tasks/task-legacy-rollout/interaction/renderer?interaction-version=2',
+        'http://localhost/api/core/p1/harness/tasks/task-legacy-rollout/interaction/renderer',
+        'http://localhost/api/core/p1/harness/tasks/task-legacy-rollout/interaction/editing?interaction-version=2',
+        'http://localhost/api/core/p1/harness/tasks/task-legacy-rollout/interaction/editing',
+      ]
+    );
+    assert.equal(await requests[1]?.text(), '');
+    assert.deepEqual(await requests[3]?.json(), { editing: true });
   } finally {
     globalThis.fetch = previousFetch;
   }

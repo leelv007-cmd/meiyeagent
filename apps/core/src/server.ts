@@ -1781,6 +1781,18 @@ export function createCoreServer({
         const taskId = decodeURIComponent(harnessInteractionRendererMatch[2]!);
         const context = p1Identity(request, workspaceId, requestCorrelationId);
         authorizeContentCreation(context);
+        if (url.searchParams.get('interaction-version') !== '2') {
+          sendJson(
+            response,
+            426,
+            {
+              code: 'HARNESS_INTERACTION_VERSION_REQUIRED',
+              requiredVersion: 2,
+            },
+            requestCorrelationId
+          );
+          return;
+        }
         await harnessService.ackInteractionRenderer(
           workspaceId,
           taskId,
@@ -1816,6 +1828,18 @@ export function createCoreServer({
         const taskId = decodeURIComponent(harnessInteractionEditingMatch[2]!);
         const context = p1Identity(request, workspaceId, requestCorrelationId);
         authorizeContentCreation(context);
+        if (url.searchParams.get('interaction-version') !== '2') {
+          sendJson(
+            response,
+            426,
+            {
+              code: 'HARNESS_INTERACTION_VERSION_REQUIRED',
+              requiredVersion: 2,
+            },
+            requestCorrelationId
+          );
+          return;
+        }
         const editing = harnessInteractionEditingSchema.parse(
           await readJson(request)
         );

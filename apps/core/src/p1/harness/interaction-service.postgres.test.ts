@@ -20,6 +20,7 @@ import { createCoreServer } from '../../server.js';
 import { WorkflowEventApplicationService } from '../workflow-events.js';
 import { HarnessApplicationService } from './application-service.js';
 import {
+  HarnessInteractionError,
   HarnessInteractionService,
   HarnessSystemDefaultProducer,
 } from './interaction-service.js';
@@ -514,6 +515,10 @@ test(
       );
       assert.deepEqual(legacyResumes, []);
       const messageInput = {
+        requestId: executionRequest.requestId,
+        revision: executionRequest.revision,
+        step: executionRequest.step,
+        carrier: 'conversation' as const,
         idempotencyKey: `execution-message-${suffix}`,
         message: '请换成更稳妥的模型再继续',
       };
@@ -549,6 +554,86 @@ test(
           feedback: messageInput.message,
         },
       );
+
+      const nextExecutionRequest = executionConfirmationRequestSchema.parse({
+        ...executionRequest,
+        requestId: `interaction-execution-next-${suffix}`,
+        revision: executionRequest.revision + 1,
+      });
+      await restartedStore.registerPending(
+        workspaceId,
+        questionCardSchema.parse({
+          questionId: nextExecutionRequest.requestId,
+          workflowId: runId,
+          workflowRevision: nextExecutionRequest.revision,
+          question: '是否按下一版方案执行？',
+          options: [
+            { id: 'approved', label: '确认执行' },
+            { id: 'rejected', label: '暂不执行' },
+          ],
+          freeText: { enabled: true },
+          response: {
+            field: 'execution_confirmation',
+            reason: '下一版执行前需要商家确认',
+          },
+          scope: 'current_task',
+        }),
+        {
+          timeoutSeconds: null,
+          interactionRequest: nextExecutionRequest,
+        },
+      );
+      await executionService.submit(workspaceId, {
+        requestId: nextExecutionRequest.requestId,
+        revision: nextExecutionRequest.revision,
+        idempotencyKey: `execution-next-waiting-${suffix}`,
+        resume: { runId, step: nextExecutionRequest.step },
+        response: { kind: 'rejected' },
+      });
+      const beforeStaleMessage = Number(
+        (
+          await pool.query<{ count: string }>(
+            `select count(*)::text as count
+               from harness_runtime.decision_events
+              where task_id=$1`,
+            [runtimeId],
+          )
+        ).rows[0]!.count,
+      );
+      await assert.rejects(
+        executionService.submitMerchantMessage(workspaceId, runId, {
+          ...messageInput,
+          idempotencyKey: `execution-stale-message-${suffix}`,
+        }),
+        (error: unknown) =>
+          error instanceof HarnessInteractionError &&
+          error.code === 'STALE_INTERACTION_REVISION',
+      );
+      assert.equal(
+        Number(
+          (
+            await pool.query<{ count: string }>(
+              `select count(*)::text as count
+                 from harness_runtime.decision_events
+                where task_id=$1`,
+              [runtimeId],
+            )
+          ).rows[0]!.count,
+        ),
+        beforeStaleMessage,
+      );
+      assert.deepEqual(
+        await executionService.submitMerchantMessage(workspaceId, runId, {
+          requestId: nextExecutionRequest.requestId,
+          revision: nextExecutionRequest.revision,
+          step: nextExecutionRequest.step,
+          carrier: 'conversation',
+          idempotencyKey: `execution-next-message-${suffix}`,
+          message: '请按下一版再缩减图片数量',
+        }),
+        { kind: 'resumed', replayed: false },
+      );
+      assert.equal(executionResumes.length, 2);
 
       const timeoutRequest = askMerchantQuestionRequestSchema.parse({
         ...request,
@@ -1177,22 +1262,6 @@ test(
         (await store.readPendingInteraction(workspaceId, runId))?.revision,
         2,
       );
-      assert.deepEqual(
-        (
-          await pool.query<{ event_count: string; audit_count: string }>(
-            `select
-               (select count(*)::text
-                  from harness_runtime.decision_events
-                 where task_id=$1) as event_count,
-               (select count(*)::text
-                  from harness_runtime.audit_events
-                 where workflow_id=$1) as audit_count`,
-            [runtimeId],
-          )
-        ).rows[0],
-        { event_count: '0', audit_count: '0' },
-      );
-      assert.deepEqual(resumes, []);
 
       const execution = executionConfirmationRequestSchema.parse({
         requestId: reasked!.requestId,
@@ -1246,6 +1315,32 @@ test(
         (await store.readPendingInteraction(workspaceId, runId))?.revision,
         execution.revision,
       );
+      const heldProjection = (
+        await pool.query<{ pending_projection: unknown }>(
+          `select pending_projection
+             from harness_runtime.pending_questions
+            where task_id=$1`,
+          [runtimeId],
+        )
+      ).rows[0]!.pending_projection;
+      await service.setEditing(workspaceId, runId, {
+        requestId: execution.requestId,
+        revision: execution.revision,
+        step: execution.step,
+        carrier: 'conversation',
+        editing: true,
+      });
+      assert.deepEqual(
+        (
+          await pool.query<{ pending_projection: unknown }>(
+            `select pending_projection
+               from harness_runtime.pending_questions
+              where task_id=$1`,
+            [runtimeId],
+          )
+        ).rows[0]!.pending_projection,
+        heldProjection,
+      );
 
       const timed = askMerchantQuestionRequestSchema.parse({
         ...request,
@@ -1262,6 +1357,38 @@ test(
       assert.deepEqual(await store.advanceInteraction(workspaceId, timed), {
         outcome: 'advanced',
       });
+      await pool.query(
+        `update harness_runtime.pending_questions
+            set pending_projection=(
+              jsonb_set(
+                jsonb_set(
+                  jsonb_set(
+                    pending_projection - 'rendererAckedAt',
+                    '{version}',
+                    '1'::jsonb,
+                    true
+                  ),
+                  '{rendererCapability}',
+                  '"available"'::jsonb,
+                  true
+                ),
+                '{timer,editingStartedAt}',
+                to_jsonb(to_char(
+                  clock_timestamp() - interval '60 seconds',
+                  'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+                )),
+                true
+              ) #- '{timer,editingLeaseExpiresAt}'
+            ),
+            updated_at=now()
+          where task_id=$1`,
+        [runtimeId],
+      );
+      assert.deepEqual(await store.listSystemDefaultCandidates(20), []);
+      assert.equal(
+        (await store.readPendingInteraction(workspaceId, runId))?.revision,
+        timed.revision,
+      );
       await assert.rejects(
         service.ackRenderer(workspaceId, runId, {
           requestId: execution.requestId,
@@ -1308,8 +1435,15 @@ test(
           [runtimeId],
         )
       ).rows[0]!.pending_projection as {
-        timer: { deadlineAt: string };
+        version: number;
+        rendererAckedAt: string | null;
+        rendererCapability: string;
+        timer: { deadlineAt: string; editingStartedAt: string | null };
       };
+      assert.equal(acknowledgedProjection.version, 2);
+      assert.equal(acknowledgedProjection.rendererCapability, 'available');
+      assert.ok(acknowledgedProjection.rendererAckedAt);
+      assert.equal(acknowledgedProjection.timer.editingStartedAt, null);
       const deadlineAt = Date.parse(
         acknowledgedProjection.timer.deadlineAt,
       );
@@ -1339,6 +1473,55 @@ test(
           ).timer.deadlineAt,
         ),
         deadlineAt,
+      );
+
+      const beforeForgedSignals = (
+        await pool.query<{ pending_projection: unknown }>(
+          `select pending_projection
+             from harness_runtime.pending_questions
+            where task_id=$1`,
+          [runtimeId],
+        )
+      ).rows[0]!.pending_projection;
+      for (const field of [
+        'requestId',
+        'revision',
+        'step',
+        'carrier',
+      ] as const) {
+        const forged: {
+          requestId: string;
+          revision: number;
+          step: string;
+          carrier: 'conversation' | 'task_card';
+        } = { ...acknowledgement };
+        if (field === 'requestId') forged.requestId = 'forged-request';
+        if (field === 'revision') forged.revision += 1;
+        if (field === 'step') forged.step = 'forged-step';
+        if (field === 'carrier') forged.carrier = 'task_card';
+        assert.equal(
+          await store.ackInteractionRenderer(workspaceId, runId, forged),
+          'stale',
+          field,
+        );
+        await assert.rejects(
+          service.setEditing(workspaceId, runId, {
+            ...forged,
+            editing: true,
+          }),
+          /no longer pending/u,
+        );
+      }
+      assert.deepEqual(
+        (
+          await pool.query<{ pending_projection: unknown }>(
+            `select pending_projection
+               from harness_runtime.pending_questions
+              where task_id=$1`,
+            [runtimeId],
+          )
+        ).rows[0]!.pending_projection,
+        beforeForgedSignals,
       );
 
       await service.setEditing(workspaceId, runId, {
@@ -1517,20 +1700,138 @@ test(
         (await store.readPendingInteraction(workspaceId, runId))?.revision,
         2,
       );
+      const headers = {
+        'content-type': 'application/json',
+        'x-service-token': 'interaction-http-token',
+        'x-user-id': 'owner-1',
+        'x-workspace-id': workspaceId,
+        'x-workspace-role': 'owner',
+      };
+      const interactionUrl =
+        `http://127.0.0.1:${port}/v1/workspaces/${workspaceId}` +
+        `/p1/harness/tasks/${runId}/interaction`;
+      const currentRequest = (await store.readPendingInteraction(
+        workspaceId,
+        runId,
+      ))!;
+      for (const field of [
+        'requestId',
+        'revision',
+        'runId',
+        'step',
+      ] as const) {
+        const forged = {
+          requestId: currentRequest.requestId,
+          revision: currentRequest.revision,
+          idempotencyKey: `interaction-http-forged-${field}-${suffix}`,
+          resume: { runId: currentRequest.runId, step: currentRequest.step },
+          response: { kind: 'approved' },
+        };
+        if (field === 'requestId') forged.requestId = 'forged-request';
+        if (field === 'revision') forged.revision += 1;
+        if (field === 'runId') forged.resume.runId = 'forged-run';
+        if (field === 'step') forged.resume.step = 'forged-step';
+        const forgedResponse = await fetch(interactionUrl, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(forged),
+        });
+        assert.equal(forgedResponse.status, 409, field);
+        assert.equal(
+          (await store.readPendingInteraction(workspaceId, runId))?.revision,
+          currentRequest.revision,
+          field,
+        );
+      }
+
+      const executionRequest = executionConfirmationRequestSchema.parse({
+        requestId: currentRequest.requestId,
+        runId,
+        step: 'execution_selection',
+        revision: currentRequest.revision + 1,
+        kind: 'execution_confirmation',
+        frozen: {
+          executionSnapshotRef: { id: `snapshot-http-${suffix}`, revision: 1 },
+          quoteRevision: `quote-http-${suffix}`,
+          params: [],
+          debitPreview: [],
+          condition: {
+            kind: 'external_action',
+            required: true,
+            serverEvaluated: true,
+          },
+          timeoutPolicy: {
+            kind: 'hold',
+            reason: 'external_action',
+            serverEvaluated: true,
+          },
+        },
+        presentation: {
+          carriers: ['conversation'],
+          notification: 'none',
+          renderer: 'execution_confirmation',
+        },
+      });
+      assert.deepEqual(
+        await store.advanceInteraction(workspaceId, executionRequest),
+        { outcome: 'advanced' },
+      );
+      const malformedExecutionResponse = await fetch(interactionUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          requestId: executionRequest.requestId,
+          revision: executionRequest.revision,
+          idempotencyKey: `interaction-http-execution-malformed-${suffix}`,
+          resume: { runId, step: executionRequest.step },
+          response: {
+            kind: 'answer',
+            items: [
+              {
+                itemId: 'window',
+                result: { kind: 'deferred' },
+              },
+            ],
+          },
+        }),
+      });
+      assert.equal(malformedExecutionResponse.status, 400);
+      assert.equal(
+        (await store.readPendingInteraction(workspaceId, runId))?.revision,
+        executionRequest.revision,
+      );
       assert.deepEqual(
         (
-          await pool.query<{ event_count: string; audit_count: string }>(
+          await pool.query<{
+            event_count: string;
+            audit_count: string;
+            outbox_count: string;
+            pending_count: string;
+          }>(
             `select
                (select count(*)::text
                   from harness_runtime.decision_events
                  where task_id=$1) as event_count,
                (select count(*)::text
                   from harness_runtime.audit_events
-                 where workflow_id=$1) as audit_count`,
+                 where workflow_id=$1) as audit_count,
+               (select count(*)::text
+                  from harness_runtime.langfuse_outbox outbox
+                  join harness_runtime.audit_events audit
+                    on audit.id=outbox.audit_id
+                 where audit.workflow_id=$1) as outbox_count,
+               (select count(*)::text
+                  from harness_runtime.pending_questions
+                 where task_id=$1) as pending_count`,
             [runtimeId],
           )
         ).rows[0],
-        { event_count: '0', audit_count: '0' },
+        {
+          event_count: '0',
+          audit_count: '0',
+          outbox_count: '0',
+          pending_count: '1',
+        },
       );
     } finally {
       if (server.listening) {
@@ -1558,6 +1859,156 @@ test(
           `delete from harness_runtime.${table} where task_id=$1`,
           [runtimeId],
         );
+      }
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'Postgres serializes renderer acknowledgement and answer resolution in both lock orders',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresHarnessStore(pool);
+    await store.applySchema();
+    const runtimeIds: string[] = [];
+
+    try {
+      for (const first of ['ack', 'resolve'] as const) {
+        const suffix = randomUUID();
+        const workspaceId = `interaction-lock-workspace-${suffix}`;
+        const runId = `interaction-lock-run-${suffix}`;
+        const runtimeId = harnessRuntimeId(workspaceId, runId);
+        runtimeIds.push(runtimeId);
+        const request = askMerchantQuestionRequestSchema.parse({
+          requestId: `interaction-lock-request-${suffix}`,
+          runId,
+          step: 'context_injection',
+          revision: 1,
+          kind: 'ask_merchant',
+          questions: [
+            {
+              itemId: 'window',
+              question: '活动到哪天结束？',
+              fallback: { kind: 'deferred' },
+            },
+          ],
+          groupSkip: true,
+          presentation: {
+            carriers: ['conversation'],
+            blocking: 'none',
+            notification: 'none',
+          },
+        });
+        const resumes: unknown[] = [];
+        const service = new HarnessInteractionService(store, {
+          async resume(input) {
+            resumes.push(input);
+          },
+        });
+        await pool.query(
+          `insert into harness_runtime.task_requests
+             (task_id, workflow_id, runtime_id, fingerprint, request)
+           values ($1,$2,$1,$3,$4::jsonb)`,
+          [
+            runtimeId,
+            runId,
+            fingerprintValue({ workspaceId, runId }),
+            JSON.stringify({ workspaceId }),
+          ],
+        );
+        await registerTypedPending(store, workspaceId, request);
+        const acknowledgement = {
+          requestId: request.requestId,
+          revision: request.revision,
+          step: request.step,
+          carrier: 'conversation' as const,
+        };
+        const answer = {
+          requestId: request.requestId,
+          revision: request.revision,
+          idempotencyKey: `interaction-lock-answer-${suffix}`,
+          resume: { runId, step: request.step },
+          response: {
+            kind: 'answer' as const,
+            items: [
+              {
+                itemId: 'window',
+                result: { kind: 'deferred' as const },
+              },
+            ],
+          },
+        };
+        const blocker = await pool.connect();
+        await blocker.query('begin');
+        await blocker.query(
+          `select pending_projection
+             from harness_runtime.pending_questions
+            where task_id=$1
+            for update`,
+          [runtimeId],
+        );
+        const operations = {
+          ack: () =>
+            store.ackInteractionRenderer(
+              workspaceId,
+              runId,
+              acknowledgement,
+            ),
+          resolve: () => service.submit(workspaceId, answer),
+        };
+        const firstPromise = operations[first]();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        const second = first === 'ack' ? 'resolve' : 'ack';
+        const secondPromise = operations[second]();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        await blocker.query('commit');
+        blocker.release();
+        const firstResult = await firstPromise;
+        const secondResult = await secondPromise;
+
+        if (first === 'ack') {
+          assert.equal(firstResult, 'acked');
+          assert.deepEqual(secondResult, {
+            kind: 'resumed',
+            replayed: false,
+          });
+        } else {
+          assert.deepEqual(firstResult, {
+            kind: 'resumed',
+            replayed: false,
+          });
+          assert.equal(secondResult, 'stale');
+        }
+        assert.equal(resumes.length, 1);
+      }
+    } finally {
+      for (const runtimeId of runtimeIds) {
+        await pool.query(
+          `delete from harness_runtime.langfuse_outbox
+            where audit_id in (
+              select id
+                from harness_runtime.audit_events
+               where workflow_id=$1
+            )`,
+          [runtimeId],
+        );
+        await pool.query(
+          'delete from harness_runtime.audit_events where workflow_id=$1',
+          [runtimeId],
+        );
+        for (const table of [
+          'decision_traces',
+          'decision_events',
+          'pending_questions',
+          'task_requests',
+        ]) {
+          await pool.query(
+            `delete from harness_runtime.${table} where task_id=$1`,
+            [runtimeId],
+          );
+        }
       }
       await pool.end();
     }

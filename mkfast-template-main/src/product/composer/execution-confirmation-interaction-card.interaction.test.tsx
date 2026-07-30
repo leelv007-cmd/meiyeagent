@@ -5,7 +5,10 @@ import { afterEach, expect, it, vi } from 'vitest';
 
 import { ExecutionConfirmationInteractionCard } from './execution-confirmation-interaction-card';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 const REQUEST: ExecutionConfirmationRequest = {
   requestId: 'execution-request-1',
@@ -68,4 +71,43 @@ it('rejects without inventing feedback inside the frozen card', async () => {
 
   await user.click(screen.getByRole('button', { name: '暂不执行' }));
   expect(onSubmit).toHaveBeenCalledWith({ kind: 'rejected' });
+});
+
+it('retries the exact renderer acknowledgement after a transient failure', async () => {
+  vi.useFakeTimers();
+  const onRendererReady = vi
+    .fn<(request: ExecutionConfirmationRequest) => Promise<void>>()
+    .mockRejectedValueOnce(new Error('temporary network failure'))
+    .mockResolvedValue(undefined);
+  render(
+    <ExecutionConfirmationInteractionCard
+      onRendererReady={onRendererReady}
+      onSubmit={async () => undefined}
+      request={REQUEST}
+    />
+  );
+
+  expect(onRendererReady).toHaveBeenCalledWith(REQUEST);
+  await vi.advanceTimersByTimeAsync(1_000);
+  expect(onRendererReady).toHaveBeenCalledTimes(2);
+  expect(onRendererReady).toHaveBeenLastCalledWith(REQUEST);
+});
+
+it('does not retry a failed acknowledgement after the card unmounts', async () => {
+  vi.useFakeTimers();
+  const onRendererReady = vi
+    .fn<(request: ExecutionConfirmationRequest) => Promise<void>>()
+    .mockRejectedValue(new Error('renderer unavailable'));
+  const view = render(
+    <ExecutionConfirmationInteractionCard
+      onRendererReady={onRendererReady}
+      onSubmit={async () => undefined}
+      request={REQUEST}
+    />
+  );
+  await vi.advanceTimersByTimeAsync(0);
+  view.unmount();
+  await vi.advanceTimersByTimeAsync(1_000);
+
+  expect(onRendererReady).toHaveBeenCalledOnce();
 });

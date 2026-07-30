@@ -533,21 +533,29 @@ test('execution confirmation freezes server conditions and all three merchant ou
 });
 
 test('merchant continuation messages are strict typed interaction input', () => {
+  const message = {
+    requestId: 'execution-request-1',
+    revision: 2,
+    step: 'execution_selection',
+    carrier: 'conversation',
+    idempotencyKey: 'merchant-message-1',
+    message: '请换成更稳妥的方案',
+  } as const;
   assert.deepEqual(
-    harnessInteractionMerchantMessageSchema.parse({
-      idempotencyKey: 'merchant-message-1',
-      message: '请换成更稳妥的方案',
-    }),
-    {
-      idempotencyKey: 'merchant-message-1',
-      message: '请换成更稳妥的方案',
-    },
+    harnessInteractionMerchantMessageSchema.parse(message),
+    message,
   );
   assert.equal(
     harnessInteractionMerchantMessageSchema.safeParse({
-      idempotencyKey: 'merchant-message-1',
-      message: '请换成更稳妥的方案',
+      ...message,
       runId: 'forged-path-authority',
+    }).success,
+    false,
+  );
+  assert.equal(
+    harnessInteractionMerchantMessageSchema.safeParse({
+      idempotencyKey: message.idempotencyKey,
+      message: message.message,
     }).success,
     false,
   );

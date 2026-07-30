@@ -12,6 +12,8 @@ import {
   buildAskMerchantSemanticDefaultTimeoutPolicy,
   createHarnessInteractionPendingProjection,
   executionConfirmationInteractionRequestFromQuestion,
+  HarnessInteractionError,
+  harnessInteractionPendingProjectionSchema,
   HarnessInteractionService,
   HarnessSystemDefaultProducer,
   type HarnessInteractionPendingProjection,
@@ -469,6 +471,10 @@ test('the next merchant message resumes a rejected execution exactly once', asyn
     'workspace-a',
     request.runId,
     {
+      requestId: request.requestId,
+      revision: request.revision,
+      step: request.step,
+      carrier: 'conversation',
       idempotencyKey: 'execution-rejected-message',
       message: '请改用更稳妥的模型并减少图片数量',
     },
@@ -477,6 +483,10 @@ test('the next merchant message resumes a rejected execution exactly once', asyn
     'workspace-a',
     request.runId,
     {
+      requestId: request.requestId,
+      revision: request.revision,
+      step: request.step,
+      carrier: 'conversation',
       idempotencyKey: 'execution-rejected-message',
       message: '请改用更稳妥的模型并减少图片数量',
     },
@@ -490,6 +500,71 @@ test('the next merchant message resumes a rejected execution exactly once', asyn
       feedback: '请改用更稳妥的模型并减少图片数量',
     },
   ]);
+});
+
+test('a stale merchant message cannot bind itself to the next waiting request', async () => {
+  const resumes: unknown[] = [];
+  const store = new MemoryInteractionStore([]);
+  const request = executionRequest(true);
+  await store.seed(request);
+  const service = new HarnessInteractionService(store, {
+    async resume(input) {
+      resumes.push(input.resumeData);
+      store.markResumed(input.eventId);
+    },
+  });
+
+  await service.submit('workspace-a', {
+    requestId: request.requestId,
+    revision: request.revision,
+    idempotencyKey: 'execution-rejected-before-stale-message',
+    resume: { runId: request.runId, step: request.step },
+    response: { kind: 'rejected' },
+  });
+
+  await assert.rejects(
+    service.submitMerchantMessage('workspace-a', request.runId, {
+      requestId: 'previous-execution-request',
+      revision: request.revision,
+      step: request.step,
+      carrier: 'conversation',
+      idempotencyKey: 'stale-execution-message',
+      message: '这是上一张卡的迟到消息',
+    }),
+    (error: unknown) =>
+      error instanceof HarnessInteractionError &&
+      error.code === 'STALE_INTERACTION_REVISION',
+  );
+  assert.deepEqual(resumes, []);
+
+  assert.deepEqual(
+    await service.submitMerchantMessage('workspace-a', request.runId, {
+      requestId: request.requestId,
+      revision: request.revision,
+      step: request.step,
+      carrier: 'conversation',
+      idempotencyKey: 'current-execution-message',
+      message: '请换成更稳妥的模型',
+    }),
+    { kind: 'resumed', replayed: false },
+  );
+  assert.equal(resumes.length, 1);
+});
+
+test('editing signals are a no-op for interactions without a semantic timer', async () => {
+  const store = new MemoryInteractionStore([]);
+  const request = askRequest();
+  await store.seed(request);
+  const service = new HarnessInteractionService(store, { async resume() {} });
+
+  await service.setEditing('workspace-a', request.runId, {
+    requestId: request.requestId,
+    revision: request.revision,
+    step: request.step,
+    carrier: 'conversation',
+    editing: true,
+  });
+  assert.equal(store.editing, false);
 });
 
 test('semantic timeout defers merchant questions but pauses while the merchant edits', async () => {
@@ -783,6 +858,40 @@ test('external execution effects hold forever and an unsupported carrier cannot 
   );
 });
 
+test('legacy interaction projections require a fresh renderer acknowledgement', () => {
+  const request = askRequest({
+    timeoutPolicy: {
+      kind: 'semantic_default',
+      timeoutSeconds: 30,
+      eligibility: semanticDefaultEligibility(['window']),
+    },
+  });
+  const projection = harnessInteractionPendingProjectionSchema.parse({
+    kind: 'harness_interaction',
+    version: 1,
+    request,
+    rendererCapability: 'available',
+    waitingState: 'answer',
+    timer: {
+      kind: 'armed',
+      timeoutSeconds: 30,
+      deadlineAt: '2026-07-30T00:00:30.000Z',
+      editingStartedAt: '2026-07-30T00:00:10.000Z',
+    },
+  });
+
+  assert.equal(projection.version, 2);
+  assert.equal(projection.rendererCapability, 'unknown');
+  assert.equal(projection.rendererAckedAt, null);
+  assert.deepEqual(projection.timer, {
+    kind: 'armed',
+    timeoutSeconds: 30,
+    deadlineAt: '2026-07-30T00:00:30.000Z',
+    editingStartedAt: null,
+    editingLeaseExpiresAt: null,
+  });
+});
+
 class MemoryInteractionStore implements HarnessInteractionStore {
   private pending: Parameters<HarnessInteractionStore['advanceInteraction']>[1]
     | null = null;
@@ -955,7 +1064,7 @@ class MemoryInteractionStore implements HarnessInteractionStore {
     >[2],
   ) {
     if (!this.pending) return 'stale' as const;
-    if (!this.projection || this.projection.timer.kind !== 'armed') {
+    if (!this.projection) {
       return 'unknown_state' as const;
     }
     if (
@@ -967,6 +1076,16 @@ class MemoryInteractionStore implements HarnessInteractionStore {
       )
     ) {
       return 'stale' as const;
+    }
+    const timeoutPolicy =
+      this.pending.kind === 'ask_merchant'
+        ? this.pending.timeoutPolicy
+        : this.pending.frozen.timeoutPolicy;
+    if (timeoutPolicy?.kind !== 'semantic_default') {
+      return 'replayed' as const;
+    }
+    if (this.projection.timer.kind !== 'armed') {
+      return 'unknown_state' as const;
     }
     const at = this.now().toISOString();
     const current = this.projection.timer.editingStartedAt;

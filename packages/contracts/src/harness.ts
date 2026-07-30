@@ -413,6 +413,10 @@ export const harnessInteractionEditingSchema =
 
 export const harnessInteractionMerchantMessageSchema = z
   .object({
+    requestId: harnessIdSchema,
+    revision: workflowRevisionSchema,
+    step: z.literal('execution_selection'),
+    carrier: z.enum(['conversation', 'store_page', 'task_card']),
     idempotencyKey: harnessIdSchema,
     message: z.string().trim().min(1).max(2_000),
   })

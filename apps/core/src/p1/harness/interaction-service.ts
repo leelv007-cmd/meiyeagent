@@ -29,6 +29,30 @@ const interactionRendererCapabilitySchema = z.enum([
   'unavailable',
   'unknown',
 ]);
+const currentInteractionTimerSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('hold') }).strict(),
+  z
+    .object({
+      kind: z.literal('armed'),
+      timeoutSeconds: z.number().int().min(1).max(3_600),
+      deadlineAt: z.iso.datetime(),
+      editingStartedAt: z.iso.datetime().nullable(),
+      editingLeaseExpiresAt: z.iso.datetime().nullable(),
+    })
+    .strict(),
+]);
+const legacyInteractionTimerSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('hold') }).strict(),
+  z
+    .object({
+      kind: z.literal('armed'),
+      timeoutSeconds: z.number().int().min(1).max(3_600),
+      deadlineAt: z.iso.datetime(),
+      editingStartedAt: z.iso.datetime().nullable(),
+      editingLeaseExpiresAt: z.iso.datetime().nullable().optional(),
+    })
+    .strict(),
+]);
 
 const interactionAnswerIdentitySchema = z
   .object({
@@ -44,27 +68,64 @@ const interactionAnswerIdentitySchema = z
   })
   .passthrough();
 
-export const harnessInteractionPendingProjectionSchema = z
+const currentHarnessInteractionPendingProjectionSchema = z
+  .object({
+    kind: z.literal('harness_interaction'),
+    version: z.literal(2),
+    request: harnessInteractionRequestSchema,
+    rendererCapability: interactionRendererCapabilitySchema,
+    rendererAckedAt: z.iso.datetime().nullable(),
+    waitingState: z.enum(['answer', 'merchant_message']),
+    timer: currentInteractionTimerSchema,
+  })
+  .strict()
+  .superRefine((projection, context) => {
+    if (
+      (projection.rendererCapability === 'available') !==
+      (projection.rendererAckedAt !== null)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'Renderer availability must be backed by a durable acknowledgement.',
+        path: ['rendererAckedAt'],
+      });
+    }
+  });
+
+const legacyHarnessInteractionPendingProjectionSchema = z
   .object({
     kind: z.literal('harness_interaction'),
     version: z.literal(1),
     request: harnessInteractionRequestSchema,
     rendererCapability: interactionRendererCapabilitySchema,
     waitingState: z.enum(['answer', 'merchant_message']),
-    timer: z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('hold') }).strict(),
-      z
-        .object({
-          kind: z.literal('armed'),
-          timeoutSeconds: z.number().int().min(1).max(3_600),
-          deadlineAt: z.iso.datetime(),
-          editingStartedAt: z.iso.datetime().nullable(),
-          editingLeaseExpiresAt: z.iso.datetime().nullable().optional(),
-        })
-        .strict(),
-    ]),
+    timer: legacyInteractionTimerSchema,
   })
   .strict();
+
+export const harnessInteractionPendingProjectionSchema = z
+  .union([
+    currentHarnessInteractionPendingProjectionSchema,
+    legacyHarnessInteractionPendingProjectionSchema,
+  ])
+  .transform((projection) => {
+    if (projection.version === 2) return projection;
+    return {
+      ...projection,
+      version: 2 as const,
+      rendererCapability: 'unknown' as const,
+      rendererAckedAt: null,
+      timer:
+        projection.timer.kind === 'hold'
+          ? projection.timer
+          : {
+              ...projection.timer,
+              editingStartedAt: null,
+              editingLeaseExpiresAt: null,
+            },
+    };
+  });
 
 export type HarnessInteractionPendingProjection = z.infer<
   typeof harnessInteractionPendingProjectionSchema
@@ -119,9 +180,11 @@ export function createHarnessInteractionPendingProjection(
       : request.frozen.timeoutPolicy;
   return harnessInteractionPendingProjectionSchema.parse({
     kind: 'harness_interaction',
-    version: 1,
+    version: 2,
     request,
     rendererCapability,
+    rendererAckedAt:
+      rendererCapability === 'available' ? registeredAt.toISOString() : null,
     waitingState: 'answer',
     timer:
       policy?.kind === 'semantic_default'
@@ -237,6 +300,7 @@ export interface HarnessInteractionStore {
     resumeData: HarnessInteractionAnswer['response'];
     resolvedAt: string;
     trigger: 'merchant' | 'merchant_message' | 'system_default';
+    carrier?: 'conversation' | 'store_page' | 'task_card';
   }): Promise<{
     outcome:
       | 'created'
@@ -515,14 +579,28 @@ export class HarnessInteractionService {
         'The pending interaction is not waiting for an execution message.',
       );
     }
+    if (
+      request.requestId !== message.requestId ||
+      request.revision !== message.revision ||
+      request.step !== message.step ||
+      !(request.presentation.carriers as readonly string[]).includes(
+        message.carrier,
+      )
+    ) {
+      throw new HarnessInteractionError(
+        'STALE_INTERACTION_REVISION',
+        'The merchant message targets a stale interaction revision.',
+      );
+    }
     return this.persistAndResume({
       answer: {
-        requestId: request.requestId,
-        revision: request.revision,
+        requestId: message.requestId,
+        revision: message.revision,
         idempotencyKey: message.idempotencyKey,
-        resume: { runId: request.runId, step: request.step },
+        resume: { runId: request.runId, step: message.step },
         response: { kind: 'rejected', feedback: message.message },
       },
+      carrier: message.carrier,
       request,
       resolutionSource: 'decision',
       resumeData: { kind: 'rejected', feedback: message.message },
@@ -688,6 +766,7 @@ export class HarnessInteractionService {
 
   private async persistAndResume(input: {
     answer: HarnessInteractionAnswer;
+    carrier?: 'conversation' | 'store_page' | 'task_card';
     request: HarnessInteractionRequest;
     resolutionSource: 'decision' | 'system_default';
     resumeDisposition?: 'resume' | 'wait';
@@ -721,6 +800,7 @@ export class HarnessInteractionService {
         (input.resolutionSource === 'system_default'
           ? 'system_default'
           : 'merchant'),
+      ...(input.carrier ? { carrier: input.carrier } : {}),
     });
     if (
       persisted.outcome === 'editing' ||

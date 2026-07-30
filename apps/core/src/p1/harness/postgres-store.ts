@@ -1154,6 +1154,7 @@ export class PostgresHarnessStore
            on requests.runtime_id=pending.task_id
         where pending.status='pending'
           and pending.pending_projection->>'kind'='harness_interaction'
+          and pending.pending_projection->>'version'='2'
           and pending.pending_projection->>'waitingState'='answer'
           and pending.pending_projection->>'rendererCapability'='available'
           and pending.pending_projection#>>'{timer,kind}'='armed'
@@ -1351,7 +1352,13 @@ export class PostgresHarnessStore
         input.trigger === 'merchant_message' &&
         (!typedProjection.success ||
           typedProjection.data.waitingState !== 'merchant_message' ||
-          typedProjection.data.request.kind !== 'execution_confirmation')
+          typedProjection.data.request.kind !== 'execution_confirmation' ||
+          typedProjection.data.request.requestId !== input.answer.requestId ||
+          typedProjection.data.request.revision !== input.answer.revision ||
+          typedProjection.data.request.step !== input.answer.resume.step ||
+          input.carrier === undefined ||
+          !(typedProjection.data.request.presentation
+            .carriers as readonly string[]).includes(input.carrier))
       ) {
         await client.query('rollback');
         return { outcome: 'unknown_state', resumeRequired: false };
@@ -1463,7 +1470,7 @@ export class PostgresHarnessStore
       const projection = harnessInteractionPendingProjectionSchema.safeParse(
         result.rows[0]?.pending_projection,
       );
-      if (!projection.success || projection.data.timer.kind !== 'armed') {
+      if (!projection.success) {
         await client.query('rollback');
         return result.rows[0] ? 'unknown_state' : 'stale';
       }
@@ -1477,6 +1484,18 @@ export class PostgresHarnessStore
       ) {
         await client.query('rollback');
         return 'stale';
+      }
+      const timeoutPolicy =
+        projection.data.request.kind === 'ask_merchant'
+          ? projection.data.request.timeoutPolicy
+          : projection.data.request.frozen.timeoutPolicy;
+      if (timeoutPolicy?.kind !== 'semantic_default') {
+        await client.query('commit');
+        return 'replayed';
+      }
+      if (projection.data.timer.kind !== 'armed') {
+        await client.query('rollback');
+        return 'unknown_state';
       }
       const current = projection.data.timer.editingStartedAt;
       if (!input.editing && current === null) {
@@ -1625,13 +1644,14 @@ export class PostgresHarnessStore
         await client.query('rollback');
         return 'unknown_state' as const;
       }
+      const acknowledgedAt = (
+        await client.query<{ acknowledged_at: Date }>(
+          'select clock_timestamp() as acknowledged_at',
+        )
+      ).rows[0]!.acknowledged_at;
       projection.data.rendererCapability = 'available';
+      projection.data.rendererAckedAt = acknowledgedAt.toISOString();
       if (projection.data.timer.kind === 'armed') {
-        const acknowledgedAt = (
-          await client.query<{ acknowledged_at: Date }>(
-            'select clock_timestamp() as acknowledged_at',
-          )
-        ).rows[0]!.acknowledged_at;
         projection.data.timer.deadlineAt = new Date(
           acknowledgedAt.getTime() +
             projection.data.timer.timeoutSeconds * 1_000,

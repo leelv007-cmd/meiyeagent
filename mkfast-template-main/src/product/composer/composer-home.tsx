@@ -2044,6 +2044,10 @@ export function ComposerHome({
       setSession((current) => openComposerTurn(current, message));
       try {
         await submitHarnessInteractionMerchantMessage(taskId, {
+          requestId: waitingMessage.requestId,
+          revision: waitingMessage.revision,
+          step: waitingMessage.step,
+          carrier: 'conversation',
           idempotencyKey:
             `composer-interaction:${waitingMessage.requestId}:` +
             `r${waitingMessage.revision}:merchant-message`,

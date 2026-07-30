@@ -406,7 +406,7 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
     replayed: false,
   });
   const renderer = await fetch(
-    `${base}/task-http-1/interaction/renderer`,
+    `${base}/task-http-1/interaction/renderer?interaction-version=2`,
     {
       method: 'POST',
       headers,
@@ -419,19 +419,43 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
     },
   );
   assert.equal(renderer.status, 204);
-  const editing = await fetch(`${base}/task-http-1/interaction/editing`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      requestId: 'interaction-http-1',
-      revision: 2,
-      step: 'context_injection',
-      carrier: 'conversation',
-      editing: true,
-    }),
-  });
+  const editing = await fetch(
+    `${base}/task-http-1/interaction/editing?interaction-version=2`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        requestId: 'interaction-http-1',
+        revision: 2,
+        step: 'context_injection',
+        carrier: 'conversation',
+        editing: true,
+      }),
+    },
+  );
   assert.equal(editing.status, 204);
+  const legacyRenderer = await fetch(
+    `${base}/task-http-1/interaction/renderer`,
+    {
+      method: 'POST',
+      headers,
+    },
+  );
+  assert.equal(legacyRenderer.status, 426);
+  const legacyEditing = await fetch(
+    `${base}/task-http-1/interaction/editing`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ editing: true }),
+    },
+  );
+  assert.equal(legacyEditing.status, 426);
   const merchantMessage = {
+    requestId: 'interaction-http-1',
+    revision: 2,
+    step: 'execution_selection',
+    carrier: 'conversation',
     idempotencyKey: 'interaction-http-message-1',
     message: '请换成更稳妥的方案',
   };
