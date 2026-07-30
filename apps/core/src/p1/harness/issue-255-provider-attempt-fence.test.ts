@@ -265,7 +265,7 @@ test('issue 255 Tuzi image adapter crosses the generation fence at the rewritten
   assert.equal(providerCalls, 1);
 });
 
-test('issue 255 Tuzi video adapter omits seconds and counts poll HTTP separately without claiming a second generation', async () => {
+test('issue 255 Tuzi video adapter sends the frozen quote seconds and counts poll HTTP separately without claiming a second generation', async () => {
   const receipts = new ReceiptFence();
   let providerCalls = 0;
   const port = createIssue255TuziMediaPort({
@@ -286,7 +286,8 @@ test('issue 255 Tuzi video adapter omits seconds and counts poll HTTP separately
         });
       }
       assert.equal(target, 'https://api.tu-zi.example/v1/videos');
-      assert.equal((init?.body as FormData).has('seconds'), false);
+      assert.ok(init?.body instanceof FormData);
+      assert.equal(init.body.get('seconds'), '5');
       return Response.json({
         id: 'issue-255-video-task',
         object: 'video',
@@ -310,6 +311,37 @@ test('issue 255 Tuzi video adapter omits seconds and counts poll HTTP separately
   assert.equal(receipts.providerHttpRequestCount, 2);
   assert.deepEqual(receipts.providerHttpStatuses, [200, 200]);
   assert.equal(providerCalls, 2);
+});
+
+test('issue 255 Tuzi video adapter rejects unsupported quote duration before HTTP', async () => {
+  const receipts = new ReceiptFence();
+  let providerCalls = 0;
+  const port = createIssue255TuziMediaPort({
+    identity: {
+      ...identity,
+      deploymentId: 'seedance-1-5-pro-tuzi-relay',
+      modality: 'video',
+    },
+    options: tuziOptions(async () => {
+      providerCalls += 1;
+      return Response.json({ id: 'unexpected-task', status: 'queued' });
+    }),
+    receipts,
+  });
+  const request = {
+    ...recordedRequest('seedance-1-5-pro', 'video.generate', {
+      durationSeconds: 1,
+    }),
+    effectIdempotencyKey: identity.effectId,
+  };
+
+  const submitted = await port.submit(request);
+
+  assert.equal(submitted.acceptance, 'rejected_before_accept');
+  assert.match(submitted.error ?? '', /5 or 10 seconds/u);
+  assert.equal(receipts.generationSubmitCount, 0);
+  assert.equal(receipts.providerHttpRequestCount, 0);
+  assert.equal(providerCalls, 0);
 });
 
 test('issue 255 Tuzi adapter rejects an uncounted default asset downloader before network', () => {

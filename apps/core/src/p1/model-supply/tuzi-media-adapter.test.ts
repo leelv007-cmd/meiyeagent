@@ -54,7 +54,10 @@ function request(
     ...recordedRequest(
       catalogModelId,
       catalogModelId === 'seedream-5-pro' ? 'image.edit' : 'video.generate',
-      { referenceAssetIds: ['store-image'] }
+      {
+        referenceAssetIds: ['store-image'],
+        ...(catalogModelId === 'seedance-2' ? { durationSeconds: 5 } : {}),
+      }
     ),
     effectIdempotencyKey: `tuzi-${catalogModelId}`,
     resolvedReferenceAssets: [
@@ -413,6 +416,7 @@ test('Tuzi videos use multipart input_reference and normalize poll and download'
     assert.equal(url, 'https://api.tu-zi.example/v1/videos');
     assert.ok(init?.body instanceof FormData);
     assert.equal(init.body.get('model'), 'tuzi-video-model');
+    assert.equal(init.body.get('seconds'), '5');
     assert.match(
       String(init.body.get('prompt')),
       /seedance-2 recorded request/

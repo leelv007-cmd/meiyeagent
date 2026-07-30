@@ -631,6 +631,7 @@ function collisionGuardExecutors(
       quoteBasis: {
         durationSeconds: 5,
         estimatedTokensPerSecond: 21_600,
+        seconds: 5,
       },
       async execute() {
         onExecute();

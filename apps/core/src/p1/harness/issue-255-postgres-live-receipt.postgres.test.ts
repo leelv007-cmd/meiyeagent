@@ -47,6 +47,23 @@ describe(
         'a3b601d062a543b07c14783eea674bf7a21807f5e20cdb393936b87750f8cf76',
       reservedAmountMicros: 50_000,
     } as const;
+    const coordinatorV3 = {
+      runNonce: 'issue-255-live-anchors-2026-07-30-v3',
+      workspaceId: 'issue-255-live-0e36ff28fe9e880c0ecaf7b9',
+      effectId:
+        '9f5146a3fd01dd7c869569359677c74b7ac3700e8ad76e2fea729adf340425a1',
+      requestFingerprint:
+        '2e188777d687cf14e893a66e8d4f5476ea6858ee024b13ea0d2f27a5d75cf444',
+      providerJobId: 'issue-255-job-9f5146a3fd01dd7c869569359677c74b',
+      providerAttemptId:
+        'issue-255-attempt-9f5146a3fd01dd7c869569359677',
+      providerCostEventId:
+        'issue-255-cost-9f5146a3fd01dd7c869569359677',
+      recordedMatrixDigest:
+        'a3b601d062a543b07c14783eea674bf7a21807f5e20cdb393936b87750f8cf76',
+      priceRevision:
+        'seedance-1-5-pro:channel-tuzi-seedance-relay:standard:price-v1',
+    } as const;
     const insertLegacyReceipt = async (input: {
       runNonce: string;
       modality: keyof typeof providerIdentity;
@@ -279,6 +296,101 @@ describe(
       });
       return { claim, runNonce, workspaceId };
     };
+    const coordinatorV3Candidate = async (failureErrorMessage: string) => {
+      const claim = {
+        workspaceId: coordinatorV3.workspaceId,
+        runNonce: coordinatorV3.runNonce,
+        modality: 'video' as const,
+        effectId: coordinatorV3.effectId,
+        requestFingerprint: coordinatorV3.requestFingerprint,
+        adapter: 'tuzi-video',
+        deploymentId: 'seedance-1-5-pro-tuzi-relay',
+        providerIdempotencyKey: coordinatorV3.effectId,
+        providerJobId: coordinatorV3.providerJobId,
+        providerAttemptId: coordinatorV3.providerAttemptId,
+        providerCostEventId: coordinatorV3.providerCostEventId,
+        recordedMatrixDigest: coordinatorV3.recordedMatrixDigest,
+        reservedAmountMicros: 1_620_000,
+        priceRevision: coordinatorV3.priceRevision,
+        exchangeRevision: 'native-cny-v1',
+      } as const;
+      await firstPool.query(
+        `INSERT INTO workspaces (id, name)
+         VALUES ($1, 'Issue 255 coordinator v3 reconciliation test')`,
+        [claim.workspaceId],
+      );
+      await firstPool.query(
+        `INSERT INTO p1_route_snapshots (
+           workspace_id, id, catalog_revision, policy_revision, price_revision,
+           requested_catalog_model_id, selection_mode, data_class, data_classes,
+           fallback_consent, allowed_candidates, created_at
+         ) VALUES (
+           $1, $2, 'issue-255-live-v3', 'issue-255-no-fallback-v1', $3,
+           'seedance-1-5-pro', 'fixed', 'public', '["public"]'::jsonb,
+           false, $4::jsonb, now()
+         )`,
+        [
+          claim.workspaceId,
+          `${claim.providerJobId}:route`,
+          claim.priceRevision,
+          JSON.stringify([
+            {
+              deploymentId: claim.deploymentId,
+              priceRevision: claim.priceRevision,
+            },
+          ]),
+        ],
+      );
+      await firstPool.query(
+        `INSERT INTO p1_generation_jobs (
+           workspace_id, id, operation, route_snapshot_id, usage_reservation_id,
+           status, created_by, correlation_id, created_at, updated_at
+         ) VALUES (
+           $1, $2, 'video', $3, $4, 'running', 'issue-255-test', $5, now(), now()
+         )`,
+        [
+          claim.workspaceId,
+          claim.providerJobId,
+          `${claim.providerJobId}:route`,
+          `${claim.providerJobId}:usage`,
+          `${claim.providerJobId}:correlation`,
+        ],
+      );
+      await firstPool.query(
+        `INSERT INTO p1_provider_attempts (
+           workspace_id, id, job_id, ordinal, deployment_id, acceptance,
+           status, created_at, updated_at
+         ) VALUES ($1, $2, $3, 1, $4, 'pending', 'pending', now(), now())`,
+        [
+          claim.workspaceId,
+          claim.providerAttemptId,
+          claim.providerJobId,
+          claim.deploymentId,
+        ],
+      );
+      await first.claim(claim);
+      const identity = {
+        adapter: claim.adapter,
+        deploymentId: claim.deploymentId,
+        runNonce: claim.runNonce,
+        modality: claim.modality,
+        effectId: claim.effectId,
+        providerIdempotencyKey: claim.providerIdempotencyKey,
+        requestFingerprint: claim.requestFingerprint,
+      } as const;
+      await first.claimGenerationPost(identity);
+      await first.recordProviderHttpRequest(identity);
+      await first.recordProviderHttpResponse({ ...identity, httpStatus: 451 });
+      await first.recordExecutionFailure({
+        runNonce: claim.runNonce,
+        modality: claim.modality,
+        effectId: claim.effectId,
+        requestFingerprint: claim.requestFingerprint,
+        errorCode: 'invalid_request',
+        errorMessage: failureErrorMessage,
+      });
+      return claim;
+    };
     const legacyImageCandidate = async () => {
       const claim = {
         workspaceId: legacyImage.workspaceId,
@@ -409,6 +521,18 @@ describe(
       await firstPool.query(
         `DELETE FROM workspaces
           WHERE id = 'issue-255-live-fd117da50a1e2d3d15ac5976'`,
+      );
+      await firstPool.query(
+        `DELETE FROM issue255_live_generation_receipts
+          WHERE run_nonce = 'issue-255-live-anchors-2026-07-30-v3'`,
+      );
+      await firstPool.query(
+        `DELETE FROM issue255_live_generation_authorizations
+          WHERE run_nonce = 'issue-255-live-anchors-2026-07-30-v3'`,
+      );
+      await firstPool.query(
+        `DELETE FROM workspaces
+          WHERE id = 'issue-255-live-0e36ff28fe9e880c0ecaf7b9'`,
       );
       await firstPool.query(
         'DELETE FROM issue255_live_generation_receipts WHERE run_nonce LIKE $1',
@@ -572,7 +696,7 @@ describe(
       );
     });
 
-    it('backfills three legacy submitted receipts, permits a fourth, and rejects a fifth claim', async () => {
+    it('backfills three legacy submitted receipts, permits a fourth and fifth, and rejects a sixth claim', async () => {
       const legacyRunPrefix =
         `issue-255-pg-${suiteNonce}-legacy-three`;
       await firstPool.query(
@@ -602,9 +726,21 @@ describe(
         requestFingerprint: fourthClaim.requestFingerprint,
       });
       const fifthRunNonce = `${legacyRunPrefix}-5`;
+      const fifthClaim = copyClaim(fifthRunNonce);
+      await first.claim(fifthClaim);
+      await first.claimGenerationPost({
+        adapter: fifthClaim.adapter,
+        deploymentId: fifthClaim.deploymentId,
+        runNonce: fifthClaim.runNonce,
+        modality: fifthClaim.modality,
+        effectId: fifthClaim.effectId,
+        providerIdempotencyKey: fifthClaim.providerIdempotencyKey,
+        requestFingerprint: fifthClaim.requestFingerprint,
+      });
+      const sixthRunNonce = `${legacyRunPrefix}-6`;
       await assert.rejects(
-        first.claim(copyClaim(fifthRunNonce)),
-        /exactly four billable generation POSTs/u,
+        first.claim(copyClaim(sixthRunNonce)),
+        /exactly five billable generation POSTs/u,
       );
       const history = await firstPool.query<{ count: number }>(
         `SELECT COUNT(*)::int AS count
@@ -612,7 +748,26 @@ describe(
           WHERE run_nonce LIKE $1`,
         [`${legacyRunPrefix}-%`],
       );
-      assert.equal(history.rows[0]?.count, 4);
+      assert.equal(history.rows[0]?.count, 5);
+    });
+
+    it('hands the durable live owner from v3 to the coordinator v4 retry', async () => {
+      const v3RunNonce = 'issue-255-live-anchors-2026-07-30-v3';
+      const v4RunNonce = 'issue-255-live-anchors-2026-07-30-v4';
+      await firstPool.query(
+        `INSERT INTO issue255_live_run_owners (singleton_key, run_nonce)
+         VALUES (true, $1)`,
+        [v3RunNonce],
+      );
+
+      assert.equal(await first.claimOrResumeLiveRunOwner(v4RunNonce), 'fresh');
+      assert.equal(await first.claimOrResumeLiveRunOwner(v4RunNonce), 'resumed');
+      const owner = await firstPool.query<{ run_nonce: string }>(
+        `SELECT run_nonce
+           FROM issue255_live_run_owners
+          WHERE singleton_key = true`,
+      );
+      assert.equal(owner.rows[0]?.run_nonce, v4RunNonce);
     });
 
     it('migrates only submitted legacy receipts idempotently without double-counting budget', async () => {
@@ -1161,6 +1316,79 @@ describe(
       );
     });
 
+    it('reconciles the frozen v3 duration rejection as failed before billing', async () => {
+      const foundation = new PostgresFoundationRepository(firstPool);
+      const claim = await coordinatorV3Candidate(
+        '{"message":"{\\"error\\":{\\"code\\":\\"InvalidParameter\\",\\"message\\":\\"The parameter `contents[0].***.duration` specified in the request is not valid: the specified duration is not supported for model doubao-seedance-1-5-pro.\\",\\"param\\":\\"contents[0].***.duration\\",\\"type\\":\\"BadRequest\\"}}","data":{"code":400}}',
+      );
+
+      const [receipt] = await reconcileIssue255LiveRun({
+        foundation,
+        receipts: first,
+        runNonce: claim.runNonce,
+      });
+
+      assert.equal(receipt?.status, 'failed_before_billing');
+      assert.equal(receipt?.generationSubmitCount, 1);
+      assert.equal(receipt?.providerHttpRequestCount, 1);
+      assert.equal(receipt?.providerHttpStatus, 451);
+      assert.equal(receipt?.actualAmountMicros, 0);
+      const lineage = receipt?.terminalLineage;
+      assert.ok(lineage && 'failure' in lineage);
+      assert.equal(lineage.providerCost.eventCount, 0);
+      assert.deepEqual(lineage.failure.provenance, {
+        kind: 'durable_provider_http',
+        httpStatus: 451,
+        upstreamStatus: 400,
+        errorCode: 'invalid_request',
+        messageSha256: createHash('sha256')
+          .update(receipt.failureErrorMessage!)
+          .digest('hex'),
+      });
+      const attempt = await foundation.getProviderAttempt(
+        claim.workspaceId,
+        claim.providerAttemptId,
+      );
+      assert.equal(attempt?.acceptance, 'rejected_before_accept');
+      assert.equal(attempt?.status, 'failed');
+      assert.equal(
+        (await foundation.getGenerationJob(claim.workspaceId, claim.providerJobId))
+          ?.status,
+        'failed',
+      );
+      const authorization = await firstPool.query<{ status: string }>(
+        `SELECT status
+           FROM issue255_live_generation_authorizations
+          WHERE effect_id = $1`,
+        [claim.effectId],
+      );
+      assert.equal(authorization.rows[0]?.status, 'failed_before_billing');
+    });
+
+    it('refuses v3 reconciliation without the frozen upstream duration rejection', async () => {
+      const foundation = new PostgresFoundationRepository(firstPool);
+      const claim = await coordinatorV3Candidate(
+        '{"message":"upstream temporarily unavailable","data":{"code":400}}',
+      );
+
+      await assert.rejects(
+        reconcileIssue255LiveRun({
+          foundation,
+          receipts: first,
+          runNonce: claim.runNonce,
+        }),
+        /trusted duration rejection/u,
+      );
+
+      assert.equal((await first.listRun(claim.runNonce))[0]?.status, 'unknown');
+      const attempt = await foundation.getProviderAttempt(
+        claim.workspaceId,
+        claim.providerAttemptId,
+      );
+      assert.equal(attempt?.acceptance, 'pending');
+      assert.equal(attempt?.status, 'pending');
+    });
+
     it('reconciles only the fixed v2 accepted image lineage without inventing a provider task ref', async () => {
       const foundation = new PostgresFoundationRepository(firstPool);
       const claim = await legacyImageCandidate();
@@ -1294,9 +1522,22 @@ describe(
       });
       const fifthRunNonce =
         `issue-255-pg-${suiteNonce}-failed-before-billing-fifth`;
+      const fifthClaim = copyClaim(fifthRunNonce);
+      await first.claim(fifthClaim);
+      await first.claimGenerationPost({
+        adapter: fifthClaim.adapter,
+        deploymentId: fifthClaim.deploymentId,
+        runNonce: fifthClaim.runNonce,
+        modality: fifthClaim.modality,
+        effectId: fifthClaim.effectId,
+        providerIdempotencyKey: fifthClaim.providerIdempotencyKey,
+        requestFingerprint: fifthClaim.requestFingerprint,
+      });
+      const sixthRunNonce =
+        `issue-255-pg-${suiteNonce}-failed-before-billing-sixth`;
       await assert.rejects(
-        first.claim(copyClaim(fifthRunNonce)),
-        /four billable generation POSTs globally/u,
+        first.claim(copyClaim(sixthRunNonce)),
+        /five billable generation POSTs globally/u,
       );
     });
 
@@ -1349,8 +1590,8 @@ describe(
       );
     });
 
-    it('rejects a fifth billable generation POST globally before provider fetch', async () => {
-      for (const index of [1, 2, 3, 4]) {
+    it('rejects a sixth billable generation POST globally before provider fetch', async () => {
+      for (const index of [1, 2, 3, 4, 5]) {
         const runNonce = `issue-255-pg-${suiteNonce}-global-${index}`;
         const effectId = createHash('sha256')
           .update(`issue255/v1\0${runNonce}\0copy`)
@@ -1383,38 +1624,38 @@ describe(
           requestFingerprint,
         });
       }
-      const fifthRunNonce = `issue-255-pg-${suiteNonce}-global-5`;
-      const fifthEffectId = createHash('sha256')
-        .update(`issue255/v1\0${fifthRunNonce}\0copy`)
+      const sixthRunNonce = `issue-255-pg-${suiteNonce}-global-6`;
+      const sixthEffectId = createHash('sha256')
+        .update(`issue255/v1\0${sixthRunNonce}\0copy`)
         .digest('hex');
       await assert.rejects(
         first.claim({
           workspaceId: receiptWorkspaceId,
-          runNonce: fifthRunNonce,
+          runNonce: sixthRunNonce,
           modality: 'copy',
           adapter: 'direct-copy',
           deploymentId: 'deepseek-v4-pro-direct',
-          effectId: fifthEffectId,
-          providerIdempotencyKey: fifthEffectId,
-          providerJobId: `${fifthEffectId}:job`,
-          providerAttemptId: `${fifthEffectId}:attempt`,
-          providerCostEventId: `${fifthEffectId}:cost`,
+          effectId: sixthEffectId,
+          providerIdempotencyKey: sixthEffectId,
+          providerJobId: `${sixthEffectId}:job`,
+          providerAttemptId: `${sixthEffectId}:attempt`,
+          providerCostEventId: `${sixthEffectId}:cost`,
           requestFingerprint: '9'.repeat(64),
           recordedMatrixDigest: '8'.repeat(64),
           reservedAmountMicros: 100_000,
           priceRevision: 'direct-copy-price-v1',
           exchangeRevision: 'native-cny-v1',
         }),
-        /exactly four billable generation POSTs/u,
+        /exactly five billable generation POSTs/u,
       );
-      assert.equal((await first.listRun(fifthRunNonce)).length, 0);
+      assert.equal((await first.listRun(sixthRunNonce)).length, 0);
       const history = await firstPool.query<{ count: number }>(
         `SELECT COUNT(*)::int AS count
            FROM issue255_live_generation_authorizations
           WHERE run_nonce LIKE $1`,
         [`issue-255-pg-${suiteNonce}-global-%`],
       );
-      assert.equal(history.rows[0]?.count, 4);
+      assert.equal(history.rows[0]?.count, 5);
     });
 
     it('accepts only known integer-micro-CNY terminal cost truth', async () => {

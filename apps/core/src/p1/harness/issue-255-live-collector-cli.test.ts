@@ -14,6 +14,7 @@ import {
   runIssue255LiveManifestRecoveryCli,
   runIssue255LiveReconciliationCli,
 } from './issue-255-live-collector-cli.js';
+import { reconcileIssue255LiveRun } from './issue-255-live-reconciliation.js';
 
 const issue255LiveRuntimeEnv = (
   overrides: NodeJS.ProcessEnv = {},
@@ -103,7 +104,7 @@ test('issue 255 Tuzi cancellation launch rejects the live collector flag in reve
   );
 });
 
-test('issue 255 v3 envelope permits only the coordinator video retry', () => {
+test('issue 255 v4 envelope permits only the coordinator video retry', () => {
   assert.deepEqual(resolveIssue255LiveEnvelope({}, 'original-run'), {
     runNonce: 'original-run',
     modality: 'all',
@@ -112,31 +113,31 @@ test('issue 255 v3 envelope permits only the coordinator video retry', () => {
     resolveIssue255LiveEnvelope(
       {
         ISSUE_255_LIVE_RUN_NONCE:
-          'issue-255-live-anchors-2026-07-30-v3',
+          'issue-255-live-anchors-2026-07-30-v4',
         ISSUE_255_LIVE_MODALITY: 'video',
       },
       'ignored-run',
     ),
     {
-      runNonce: 'issue-255-live-anchors-2026-07-30-v3',
+      runNonce: 'issue-255-live-anchors-2026-07-30-v4',
       modality: 'video',
     },
   );
   for (const env of [
     {
       ISSUE_255_LIVE_RUN_NONCE:
-        'issue-255-live-anchors-2026-07-30-v3',
+        'issue-255-live-anchors-2026-07-30-v4',
     },
     { ISSUE_255_LIVE_MODALITY: 'video' },
     {
       ISSUE_255_LIVE_RUN_NONCE:
-        'issue-255-live-anchors-2026-07-30-v3',
+        'issue-255-live-anchors-2026-07-30-v4',
       ISSUE_255_LIVE_MODALITY: 'copy',
     },
   ]) {
     assert.throws(
       () => resolveIssue255LiveEnvelope(env, 'ignored-run'),
-      /coordinator v3 single video retry/u,
+      /coordinator v4 single video retry/u,
     );
   }
 });
@@ -249,6 +250,39 @@ test('issue 255 recovery CLIs require explicit non-live recovery authorization',
     }),
     /recovery authorization/u,
   );
+});
+
+test('issue 255 v3 reconciliation uses the failed-before-billing proof path', async () => {
+  let providerLedgerReconciliations = 0;
+  let providerRejectionPreparations = 0;
+  const expected = [{ status: 'failed_before_billing' as const }];
+  const result = await reconcileIssue255LiveRun({
+    foundation: {} as never,
+    receipts: {
+      async prepareCoordinatorVideoV3FailedBeforeBilling() {
+        providerRejectionPreparations += 1;
+      },
+      async confirmFailedBeforeBilling(runNonce: string) {
+        assert.equal(
+          runNonce,
+          'issue-255-live-anchors-2026-07-30-v3',
+        );
+        return expected;
+      },
+      async listRun() {
+        throw new Error('v3 must not use generic receipt reconciliation');
+      },
+      async reconcileFromProviderLedger() {
+        providerLedgerReconciliations += 1;
+        throw new Error('v3 must not require ProviderCost reconciliation');
+      },
+    } as never,
+    runNonce: 'issue-255-live-anchors-2026-07-30-v3',
+  });
+
+  assert.equal(result, expected);
+  assert.equal(providerRejectionPreparations, 1);
+  assert.equal(providerLedgerReconciliations, 0);
 });
 
 test('issue 255 collector derives integer micros upward from frozen price and provider usage', async () => {
