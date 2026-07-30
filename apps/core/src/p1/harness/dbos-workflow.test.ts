@@ -486,7 +486,7 @@ test('typed timeout persistence uses the production system-default owner', () =>
   );
   assert.match(
     mainSource,
-    /p1HarnessAskInvoker,\s*harnessInteractions/u,
+    /askMerchant:\s*p1HarnessAskInvoker,\s*interactions:\s*harnessInteractions/u,
   );
 });
 
