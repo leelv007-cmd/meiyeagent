@@ -755,7 +755,7 @@ test(
       now += 1;
       const databaseDueAt = (
         await pool.query<{ deadline_at: Date }>(
-          `select clock_timestamp() - interval '1 second' as deadline_at`,
+          `select (clock_timestamp() - interval '1 seconds') at time zone 'UTC' as deadline_at`,
         )
       ).rows[0]!.deadline_at.toISOString();
       await pool.query(
@@ -923,7 +923,7 @@ test(
               pending_projection,
               '{timer,deadlineAt}',
               to_jsonb(to_char(
-                clock_timestamp() - interval '1 second',
+                (clock_timestamp() - interval '1 seconds') at time zone 'UTC',
                 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
               )),
               false
@@ -1413,7 +1413,7 @@ test(
                 ),
                 '{timer,editingStartedAt}',
                 to_jsonb(to_char(
-                  clock_timestamp() - interval '60 seconds',
+                  (clock_timestamp() - interval '60 seconds') at time zone 'UTC',
                   'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
                 )),
                 true
@@ -1522,7 +1522,7 @@ test(
                   pending_projection,
                   '{timer,editingStartedAt}',
                   to_jsonb(to_char(
-                    clock_timestamp() - interval '10 seconds',
+                    (clock_timestamp() - interval '10 seconds') at time zone 'UTC',
                     'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
                   )),
                   true
@@ -1551,7 +1551,7 @@ test(
                   pending_projection,
                   '{timer,editingStartedAt}',
                   to_jsonb(to_char(
-                    clock_timestamp() - interval '31 seconds',
+                    (clock_timestamp() - interval '31 seconds') at time zone 'UTC',
                     'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
                   )),
                   true
@@ -1689,21 +1689,21 @@ test(
                   pending_projection,
                   '{timer,editingStartedAt}',
                   to_jsonb(to_char(
-                    clock_timestamp() - interval '60 seconds',
+                    (clock_timestamp() - interval '60 seconds') at time zone 'UTC',
                     'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
                   )),
                   true
                 ),
                 '{timer,editingLeaseExpiresAt}',
                 to_jsonb(to_char(
-                  clock_timestamp() - interval '30 seconds',
+                  (clock_timestamp() - interval '30 seconds') at time zone 'UTC',
                   'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
                 )),
                 true
               ),
               '{timer,deadlineAt}',
               to_jsonb(to_char(
-                clock_timestamp() - interval '60 seconds',
+                (clock_timestamp() - interval '60 seconds') at time zone 'UTC',
                 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
               )),
               true
