@@ -15,14 +15,8 @@ test('Playwright provisions an isolated DBOS database and enables the real Harne
 
   assert.match(config, /_playwright_\$\{corePort\}_\$\{process\.pid\}/u);
   assert.match(config, /scripts\/ci\/provision-test-db\.sh/u);
-  assert.match(
-    config,
-    /RUN_ISSUE_247_E2E_PROVISIONAL_BOUNDS_SEED=true/u
-  );
-  assert.match(
-    provisioner,
-    /seed-issue-247-e2e-provisional-bounds\.mts/u
-  );
+  assert.match(config, /RUN_ISSUE_247_E2E_PROVISIONAL_BOUNDS_SEED=true/u);
+  assert.match(provisioner, /seed-issue-247-e2e-provisional-bounds\.mts/u);
   assert.doesNotMatch(
     config,
     /pnpm db:migrate:local/u,
