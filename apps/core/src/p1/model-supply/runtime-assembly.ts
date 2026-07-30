@@ -63,7 +63,7 @@ export interface ProcessCapabilityHotAssembly {
   report(processKind: 'http' | 'job-worker'): EffectiveRevisionReport;
 }
 
-export const CAPABILITY_BOOT_CATALOG_EPOCH = 2;
+export const CAPABILITY_BOOT_CATALOG_EPOCH = 3;
 
 /**
  * Seed G3 capability hot assembly from a ModelRuntimeAssembly boot snapshot.

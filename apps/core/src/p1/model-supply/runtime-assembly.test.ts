@@ -18,7 +18,10 @@ import {
   HARNESS_PROMPT_SITES,
   harnessPromptCapabilityRequirement,
 } from '../harness/langfuse-prompts.js';
-import { createModelSupplyRuntime } from './runtime-assembly.js';
+import {
+  CAPABILITY_BOOT_CATALOG_EPOCH,
+  createModelSupplyRuntime,
+} from './runtime-assembly.js';
 import {
   modelRuntimeAssemblyFromEnv,
   type ModelRuntimeAssembly,
@@ -160,11 +163,19 @@ test('fixture copy routing freezes all Harness axes without conservative fallbac
     MODEL_EXECUTION_MODE: 'fixture',
   });
   const runtime = assemble(catalog);
+  const bootRevision =
+    await runtime.capabilityHotAssembly.getEffectiveRevision();
+  const copyEntry = bootRevision?.entries.find(
+    (entry) => entry.deploymentId === 'deepseek-v4-pro-direct',
+  );
   const capabilityRequirements = (
     Object.keys(HARNESS_PROMPT_SITES) as Array<
       keyof typeof HARNESS_PROMPT_SITES
     >
   ).map((key) => harnessPromptCapabilityRequirement(key));
+
+  assert.equal(bootRevision?.bootCatalogEpoch, CAPABILITY_BOOT_CATALOG_EPOCH);
+  assert.ok(copyEntry?.capabilityProfile);
 
   const route = await runtime.application.freezeFixedRouteForExecution({
     workspaceId: 'workspace-fixture-copy-capabilities',
