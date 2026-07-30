@@ -174,36 +174,41 @@ export function buildPlatformChecklistMarkdown(input: {
     '- [ ] 预览全部媒体清晰度与顺序',
     '- [ ] 确认 AIGC / 品牌水印展示符合平台规则',
   ];
-  const platformLines: Record<DeliveryPackagePlatform, string[]> = {
-    douyin:
-      input.kind === 'video'
-        ? [
-            '- [ ] 上传 video.mp4',
-            '- [ ] 粘贴 caption 文案与话题',
-            '- [ ] 封面与字幕可在抖音发布页自选/自动生成',
-          ]
-        : [
-            '- [ ] 上传 video.mp4 与封面',
-            '- [ ] 粘贴 caption 文案与话题',
-            '- [ ] 如有字幕轨，确认平台字幕开关',
-          ],
-    video_account:
-      input.kind === 'video'
-        ? [
-            '- [ ] 上传 video.mp4',
-            '- [ ] 粘贴 caption 文案',
-            '- [ ] 确认视频号发布可见范围',
-          ]
-        : [
-            '- [ ] 上传 video.mp4 与封面',
-            '- [ ] 粘贴 caption 文案',
-            '- [ ] 确认视频号发布可见范围',
-          ],
-    xiaohongshu: [
-      '- [ ] 按 images/ 编号顺序上传图片',
-      '- [ ] 粘贴标题、正文与话题',
-      '- [ ] 确认封面为第 1 张图',
-    ],
+  const xiaohongshuLines = [
+    '- [ ] 按 images/ 编号顺序上传图片',
+    '- [ ] 粘贴标题、正文与话题',
+    '- [ ] 确认封面为第 1 张图',
+  ];
+  const platformLines: Record<
+    DeliveryPackageKind,
+    Record<DeliveryPackagePlatform, string[]>
+  > = {
+    image_text: {
+      douyin: [
+        '- [ ] 上传 video.mp4 与封面',
+        '- [ ] 粘贴 caption 文案与话题',
+        '- [ ] 如有字幕轨，确认平台字幕开关',
+      ],
+      video_account: [
+        '- [ ] 上传 video.mp4 与封面',
+        '- [ ] 粘贴 caption 文案',
+        '- [ ] 确认视频号发布可见范围',
+      ],
+      xiaohongshu: xiaohongshuLines,
+    },
+    video: {
+      douyin: [
+        '- [ ] 上传 video.mp4',
+        '- [ ] 粘贴 caption 文案与话题',
+        '- [ ] 封面与字幕可在抖音发布页自选/自动生成',
+      ],
+      video_account: [
+        '- [ ] 上传 video.mp4',
+        '- [ ] 粘贴 caption 文案',
+        '- [ ] 确认视频号发布可见范围',
+      ],
+      xiaohongshu: xiaohongshuLines,
+    },
   };
   const kindLine =
     input.kind === 'video'
@@ -214,7 +219,7 @@ export function buildPlatformChecklistMarkdown(input: {
     '',
     ...common,
     kindLine,
-    ...platformLines[input.platform],
+    ...platformLines[input.kind][input.platform],
     '',
   ].join('\n');
 }
