@@ -396,34 +396,9 @@ test.describe('W01 store intake fact wiring', () => {
             expect((await imageTextSubmission).postDataJSON()).toMatchObject({
               recipe: { id: 'recipe.case_to_xhs_note' },
             });
-            // recipe.case_to_xhs_note declares no factTypes, so no
-            // fact-gap hold exists on this run. The note direction is the one
-            // merchant decision, but a frozen route can pre-answer it and run
-            // straight to delivery — both endings are correct here; activation
-            // counting belongs to ui-journey-three-modal, and this spec only
-            // proves fact wiring.
-            const directionCard = imageTextPage
-              .getByTestId('ask-merchant-group-card')
-              .filter({ hasText: '两种图文方向都已准备好' });
-            const deliveryTurn = imageTextPage.getByTestId(
-              'composer-delivery-turn'
-            );
-            await expect(async () => {
-              if (await deliveryTurn.isVisible()) return;
-              if (await directionCard.isVisible()) {
-                const directions = directionCard
-                  .locator('fieldset')
-                  .getByRole('button')
-                  .filter({ hasNotText: '暂未确定' });
-                try {
-                  await directions.first().click({ timeout: 2_000 });
-                } catch {
-                  // The frozen route answered the card between the visibility
-                  // check and the click; delivery is still the exit.
-                }
-              }
-              expect(await deliveryTurn.isVisible()).toBeTruthy();
-            }).toPass({ timeout: 300_000 });
+            // The note direction (click or frozen-route pre-answer) is
+            // handled inside submitComposerJourney via
+            // chooseImageTextDirection; this spec only proves fact wiring.
           },
         }
       );

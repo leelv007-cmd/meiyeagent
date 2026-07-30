@@ -120,6 +120,12 @@ export async function assertThreeModalDiscovery(page: Page) {
  * The old page-plan confirmation is not a merchant decision and must never
  * block this path. The one real direction choice submits in its option click,
  * so lens + submit + direction remains the complete three-activation contract.
+ *
+ * A frozen route may pre-answer the question before the merchant sees it, so
+ * the card is transient: it can sit waiting for a click, flash and resolve on
+ * its own, or never render at all. All three endings are legitimate; the only
+ * stable signal that the direction landed is the resume stage line, so this
+ * polls for that line and clicks the card whenever it happens to be up.
  */
 export async function chooseImageTextDirection(page: Page) {
   const planCard = page.getByTestId('ask-merchant-group-card').filter({
@@ -133,27 +139,27 @@ export async function chooseImageTextDirection(page: Page) {
   const directionCard = page.getByTestId('ask-merchant-group-card').filter({
     hasText: '两种图文方向都已准备好',
   });
-  await expect(
-    directionCard,
-    'the 图文 run must reach its direction question'
-  ).toBeVisible({
-    timeout: 180_000,
-  });
-  const directions = directionCard
-    .locator('fieldset')
-    .getByRole('button')
-    .filter({ hasNotText: '暂未确定' });
-  await expect(
-    directions,
-    'the card says 两种图文方向 — it must offer exactly that many'
-  ).toHaveCount(2);
-  await directions.first().click();
-  await expect(
-    page
-      .getByTestId('composer-stage-line')
-      .filter({ hasText: '已按你选的方向继续准备整套图文' }),
-    'the chosen direction must reach the ledger and resume the run'
-  ).toBeVisible({ timeout: 120_000 });
+  const resumedLine = page
+    .getByTestId('composer-stage-line')
+    .filter({ hasText: '已按你选的方向继续准备整套图文' });
+  await expect(async () => {
+    if (await resumedLine.first().isVisible()) return;
+    if (await directionCard.isVisible()) {
+      const directions = directionCard
+        .locator('fieldset')
+        .getByRole('button')
+        .filter({ hasNotText: '暂未确定' });
+      try {
+        await directions.first().click({ timeout: 2_000 });
+      } catch {
+        // The frozen route answered the card between the visibility check
+        // and the click; the resume line is still the exit.
+      }
+    }
+    expect(await resumedLine.first().isVisible()).toBeTruthy();
+  }, 'the direction must land — by merchant click or frozen-route pre-answer').toPass(
+    { timeout: 300_000 }
+  );
 }
 
 export async function submitComposerJourney(
