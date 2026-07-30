@@ -4,6 +4,9 @@
 
 **主控合入纪律**：每次 ff 合入后、写台账行前，跑一次根 `node scripts/uiux/check-gates.mjs`。切片级证据（单测／eval／包内 tsc）看不见根级门——2026-07-30 的 #242 诊断切片带红了 secret scan 门（负控里的 AWS 示例键），直到当晚体检才发现。合入面越窄，越容易只验窄面。
 
+**opt-in 测试等于不存在（2026-07-30 增补，因主控自身失误而立）**：env 门控的测试（PG-backed／DBOS／live／destructive opt-in）在不带对应 env 的证据面里是 **skip**，既不红也不绿——**skip 混在「0 fail」里，读起来和通过一模一样**。#248（`84d1af91`）引入命名错误类 `TaskRootObservabilityConflictError` 却没同步 `postgres-store.postgres.test.ts:124` 的文案断言，主控合入时只看了不带 `TEST_DATABASE_URL` 的证据，假绿在 main 上滞留约一天，最后由 #250 交验时报出（修复 `7eabb985`）。
+**改约**：合入面若触及某目录下存在 `*.postgres.test.ts`／`*.smoke.test.ts` 的实现文件，**主控须在合入态以 fresh 库（先 `scripts/ci/provision-test-db.sh` 后跑）实跑该目录的 opt-in 测试**，或在台账「备注」列明写「本次未跑 opt-in 测试，风险自担」。不得以 lane 侧的 skip 数字充当已验。定向跑出现 `relation ... does not exist` 属缺 full-suite 跨文件 setup 的环境产物，须与产品红分开计。
+
 **表格纪律**：正文内的 `|` 必须转义或改用全角，否则该行被 Markdown 拆成多格，严格解析的 lane gate 会正确判定台账 invalid（2026-07-30 实证）。
 
 | main sha | 票 | 内容 | 亲验 | 备注 |
