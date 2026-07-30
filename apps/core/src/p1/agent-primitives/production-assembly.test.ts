@@ -158,6 +158,6 @@ test('main registers the production module and all three Harness callers', () =>
   );
   assert.match(
     source,
-    /new TaskRecallDueProducer\(dueDeliveryRepository\),\s*p1HarnessAskInvoker,/u,
+    /taskRecallDue:\s*new TaskRecallDueProducer\(dueDeliveryRepository\),\s*askMerchant:\s*p1HarnessAskInvoker,/u,
   );
 });
