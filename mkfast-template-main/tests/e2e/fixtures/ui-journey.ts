@@ -117,10 +117,9 @@ export async function assertThreeModalDiscovery(page: Page) {
  * part of the 图文 mainline, not a test convenience, and remains the third
  * semantic activation in this modality's contract.
  *
- * The typed-interaction renderer requires an explicit submit for both the
- * page-plan default and the later style choice, so this helper consumes both
- * visible cards in the same order a merchant does. The M-04 gate counts those
- * extra renderer clicks independently, so a C6 regression remains visible.
+ * The old page-plan confirmation is not a merchant decision and must never
+ * block this path. The one real direction choice submits in its option click,
+ * so lens + submit + direction remains the complete three-activation contract.
  */
 export async function chooseImageTextDirection(page: Page) {
   const planCard = page.getByTestId('ask-merchant-group-card').filter({
@@ -128,11 +127,8 @@ export async function chooseImageTextDirection(page: Page) {
   });
   await expect(
     planCard,
-    'the 图文 run must reach its page-plan confirmation'
-  ).toBeVisible({ timeout: 180_000 });
-  await planCard.getByRole('button', { name: /按建议继续/u }).click();
-  await planCard.getByRole('button', { name: '提交回答' }).click();
-  await expect(planCard).toBeHidden({ timeout: 30_000 });
+    'the retired page-plan confirmation must not add a merchant activation'
+  ).toHaveCount(0);
 
   const directionCard = page.getByTestId('ask-merchant-group-card').filter({
     hasText: '两种图文方向都已准备好',
@@ -152,7 +148,6 @@ export async function chooseImageTextDirection(page: Page) {
     'the card says 两种图文方向 — it must offer exactly that many'
   ).toHaveCount(2);
   await directions.first().click();
-  await directionCard.getByRole('button', { name: '提交回答' }).click();
   await expect(
     page
       .getByTestId('composer-stage-line')
@@ -248,9 +243,10 @@ export async function submitComposerJourney(
     const confirm = brief.getByTestId('composer-brief-confirm');
     await expect(confirm).toBeEnabled();
     await confirm.click();
-    const executionConfirm = page.getByTestId('execution-confirm-accept');
-    await expect(executionConfirm).toBeVisible({ timeout: 30_000 });
-    await executionConfirm.click();
+    await expect(
+      page.getByTestId('execution-confirm-accept'),
+      'the completed Brief confirmation must not stack another activation'
+    ).toHaveCount(0);
   }
 
   const submissionResponse = await submissionResponsePromise;

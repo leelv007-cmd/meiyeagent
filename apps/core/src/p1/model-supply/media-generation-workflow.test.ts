@@ -43,7 +43,7 @@ class RecoveringLedger implements ModelSupplyLedgerPort {
     deploymentId: string;
   }> = [];
 
-  async checkpointAttempt() {
+  async checkpointAttempt(_input: ModelSupplyLedgerCheckpointInput) {
     this.checkpointCalls += 1;
     return this.result
       ? { replayed: true, recoveredResult: structuredClone(this.result) }
@@ -68,6 +68,23 @@ class RecoveringLedger implements ModelSupplyLedgerPort {
   async recordCancelledProviderTerminal(input: { result: ModelSupplyResult }) {
     this.lateTerminalCalls += 1;
     this.result = structuredClone(input.result);
+  }
+}
+
+class CheckpointRequiredLedger extends RecoveringLedger {
+  private readonly checkpointedAttemptIds = new Set<string>();
+
+  override async checkpointAttempt(input: ModelSupplyLedgerCheckpointInput) {
+    this.checkpointedAttemptIds.add(input.attemptId);
+    return super.checkpointAttempt(input);
+  }
+
+  override async settleAttempt(input: { result: ModelSupplyResult }) {
+    assert.ok(
+      this.checkpointedAttemptIds.has(input.result.attempt.id),
+      `Attempt ${input.result.attempt.id} must be checkpointed before settlement.`,
+    );
+    return super.settleAttempt(input);
   }
 }
 
@@ -2544,6 +2561,138 @@ describe('durable media generation', () => {
     assert.equal(failed.result.usage.status, 'refunded');
     assert.equal(providerCalls, 0);
     assert.equal((await worker.handle(envelope(record))).status, 'dead_letter');
+    assert.equal(providerCalls, 0);
+  });
+
+  it('checkpoints a pre-dispatch reference failure before settling its durable result', async () => {
+    let providerCalls = 0;
+    const provider: MediaProviderLifecyclePort = {
+      async submit() {
+        providerCalls += 1;
+        throw new Error('must not submit');
+      },
+      async recover() {
+        return null;
+      },
+      async poll() {
+        throw new Error('must not poll');
+      },
+      async download() {
+        throw new Error('must not download');
+      },
+      async cancel() {},
+    };
+    const ledger = new CheckpointRequiredLedger();
+    const models = createModels(
+      ledger,
+      new MemoryModelAssetStorage(),
+      undefined,
+      undefined,
+      authorizedSubmissionReferences,
+    );
+    const repository = new MemoryTracerJobRepository(new MemoryJobPort());
+    const jobs = new TracerJobApplicationService(repository);
+    const runtime = new DurableMediaGenerationApplicationService({ jobs, models });
+    models.attachDurableMediaRuntime(runtime);
+    const queued = await models.submit({
+      actorId: 'owner-a',
+      dataClass: [],
+      idempotencyKey: 'reference-checkpointed-before-settlement-image-a',
+      input: { referenceAssetIds: ['asset-store-a'] },
+      operation: 'image.generate',
+      prompt: '基于门店照片生成',
+      selection: { catalogModelId: 'gpt-image-2', mode: 'fixed' },
+      workspaceId: 'workspace-a',
+    });
+    const record = await jobs.get('workspace-a', queued.jobId);
+    const worker = new DurableTracerWorker(
+      repository,
+      new ModelMediaGenerationEffect({
+        models,
+        provider,
+        referenceAssets: {
+          async inspect() {
+            throw new Error('submission inspection belongs to operations');
+          },
+          async resolve() {
+            return [
+              {
+                assetId: 'asset-store-a',
+                kind: 'failure',
+                reason: 'authorization_withdrawn',
+              },
+            ];
+          },
+        },
+      }),
+    );
+
+    assert.equal((await worker.handle(envelope(record))).status, 'dead_letter');
+    const failed = await runtime.get('workspace-a', queued.jobId);
+    assert.equal(failed.result.failureCode, 'reference_asset_resolution_required');
+    assert.equal(failed.result.usage.status, 'refunded');
+    assert.equal(ledger.checkpointCalls, 1);
+    assert.equal(providerCalls, 0);
+  });
+
+  it('checkpoints a rejected supply admission before settling its durable result', async () => {
+    let providerCalls = 0;
+    const ledger = new CheckpointRequiredLedger();
+    const models = createModels(
+      ledger,
+      new MemoryModelAssetStorage(),
+      {
+        async admit() {
+          return {
+            status: 'rejected',
+            errorCode: 'supply_pool_unavailable',
+            message: 'The media supply pool is unavailable.',
+          };
+        },
+        async release() {},
+      },
+    );
+    const repository = new MemoryTracerJobRepository(new MemoryJobPort());
+    const jobs = new TracerJobApplicationService(repository);
+    const runtime = new DurableMediaGenerationApplicationService({ jobs, models });
+    models.attachDurableMediaRuntime(runtime);
+    const queued = await models.submit({
+      actorId: 'owner-a',
+      dataClass: [],
+      idempotencyKey: 'supply-admission-checkpointed-before-settlement-image-a',
+      operation: 'image.generate',
+      prompt: '生成门店项目图',
+      selection: { catalogModelId: 'gpt-image-2', mode: 'fixed' },
+      workspaceId: 'workspace-a',
+    });
+    const record = await jobs.get('workspace-a', queued.jobId);
+    const worker = new DurableTracerWorker(
+      repository,
+      new ModelMediaGenerationEffect({
+        models,
+        provider: {
+          async submit() {
+            providerCalls += 1;
+            throw new Error('must not submit');
+          },
+          async recover() {
+            return null;
+          },
+          async poll() {
+            throw new Error('must not poll');
+          },
+          async download() {
+            throw new Error('must not download');
+          },
+          async cancel() {},
+        },
+      }),
+    );
+
+    assert.equal((await worker.handle(envelope(record))).status, 'retry');
+    assert.equal(ledger.result?.failureCode, 'supply_pool_unavailable');
+    assert.equal(ledger.result?.usage.status, 'refunded');
+    assert.equal(ledger.checkpointCalls, 1);
     assert.equal(providerCalls, 0);
   });
 });

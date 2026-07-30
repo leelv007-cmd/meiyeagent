@@ -20,7 +20,10 @@ import {
 	MemoryContentPackageRevisionWritePort,
 	type ContentPackageRevisionWriteInput,
 } from "../execution-spine/content-package-revision-port.js";
-import { fingerprintValue } from "../job-runtime/job-contracts.js";
+import {
+	fingerprintValue,
+	JobRuntimeError,
+} from "../job-runtime/job-contracts.js";
 import {
 	createDefaultCatalogModels,
 	createDefaultDeployments,
@@ -1522,6 +1525,10 @@ test("image execution validates the selected recipe profile and preserves slot-n
 
 test("image-text note page generation uses the existing image executor without changing pure image semantics", async () => {
 	const submissions: ModelSupplySubmission[] = [];
+	const noteRequest = {
+		...harnessInput("image_text_note", "package-note"),
+		boundedExecution: boundedExecutionSnapshot(0, 1),
+	};
 	const adapter = new ModelSupplyHarnessMediaExecutionPort(
 		{
 			async submit(input) {
@@ -1536,7 +1543,7 @@ test("image-text note page generation uses the existing image executor without c
 	const noteSelection = await adapter.execute({
 		brief: imageBriefFor("image.generate", 0),
 		context: contextSnapshot(),
-		request: harnessInput("image_text_note", "package-note"),
+		request: noteRequest,
 		workflowId: "workflow-note:page-1",
 	});
 	const imageSelection = await adapter.execute({
@@ -1548,6 +1555,12 @@ test("image-text note page generation uses the existing image executor without c
 
 	assert.equal(noteSelection.kind, "image");
 	assert.equal(submissions[0]?.operation, "image.generate");
+	assert.deepEqual(submissions[0]?.mediaBoundedExecution, {
+		schemaVersion: "media-bounded-execution/v1",
+		snapshot: noteRequest.boundedExecution,
+		countedAttemptIds: [],
+		countedProviderCostIds: [],
+	});
 	assert.equal(Object.hasOwn(submissions[0] ?? {}, "billingTaskId"), false);
 	assert.equal(submissions[0]?.productUsageQuantity, 0);
 	assert.equal(
@@ -1988,10 +2001,10 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 		request,
 	});
 	assert.equal(
-		confirmation.blockingQuestion?.response.field,
-		"note_plan_confirmation",
+		confirmation.blockingQuestion,
+		null,
+		"image-text planning must proceed to the one real direction choice without a page-plan confirmation",
 	);
-	assert.equal(confirmation.blockingQuestion?.unattended, "hold");
 	const resumed = await ports.nameIntent({
 		workflowId: snapshot.task.id,
 		request: {
@@ -2807,6 +2820,54 @@ test("an unknown media result reconciles the same durable job without resubmissi
 	});
 
 	assert.equal(selection.asset.id, "image-asset-1");
+});
+
+test("a replayed note admission repairs its missing durable media job through the same submission", async () => {
+	const completed = completedResult("image");
+	let submissions = 0;
+	let durableReads = 0;
+	const adapter = new ModelSupplyHarnessMediaExecutionPort(
+		{
+			async submit() {
+				submissions += 1;
+				return completed;
+			},
+			async getDurableMediaJob(_workspaceId, jobId) {
+				durableReads += 1;
+				assert.equal(jobId, completed.jobId);
+				throw new JobRuntimeError("NOT_FOUND", "Tracer job was not found.");
+			},
+		},
+		undefined,
+		{
+			async claim(input) {
+				return {
+					...input,
+					generation: 1,
+					jobId: completed.jobId,
+				};
+			},
+			async markRunning(_token, jobId) {
+				assert.equal(jobId, completed.jobId);
+				return true;
+			},
+			async markTerminal(_token, status) {
+				assert.equal(status, "completed");
+				return true;
+			},
+		},
+	);
+
+	const selection = await adapter.execute({
+		brief: imageBriefFor("image.generate", 0),
+		context: contextSnapshot(),
+		request: harnessInput("image_text_note", "package-note-repair"),
+		workflowId: "workflow-note:replayed-admission",
+	});
+
+	assert.equal(selection.asset.id, completed.asset?.id);
+	assert.equal(durableReads, 1);
+	assert.equal(submissions, 1);
 });
 
 test("note pages keep durable admission single-flight while compiler branches remain parallel", async () => {

@@ -63,8 +63,8 @@
     },
     "apps/core/src/p1/harness/dbos-registration.smoke.test.ts": {
       "status": "green",
-      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
-      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 15/0/0 fresh pair, provisioned first"
+      "verifiedAt": "c6f786d01bca337dfbc4bca833c827b9c3e0e1f0",
+      "note": "Issue 273 durable media recovery; fresh isolated business and DBOS database pair provisioned first: 15 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/harness/delivery.postgres.test.ts": {
       "status": "green",
@@ -108,8 +108,8 @@
     },
     "apps/core/src/p1/harness/note-media-admission.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
-      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 2/0/0 fresh pair, provisioned first"
+      "verifiedAt": "c6f786d01bca337dfbc4bca833c827b9c3e0e1f0",
+      "note": "Issue 273 durable media recovery; fresh isolated business and DBOS database pair provisioned first: 2 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/harness/observability-health.postgres.test.ts": {
       "status": "green",

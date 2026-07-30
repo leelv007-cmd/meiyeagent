@@ -142,6 +142,47 @@ it('accepts custom text beside offered labels', async () => {
   });
 });
 
+it('submits the image-text direction in the option click', async () => {
+  const user = userEvent.setup();
+  const onSubmit = vi.fn(async () => undefined);
+  render(
+    <AskMerchantGroupCard
+      onEditingChange={async () => undefined}
+      onRendererReady={async () => undefined}
+      onSubmit={onSubmit}
+      request={{
+        ...REQUEST,
+        step: 'brief_compilation',
+        questions: [
+          {
+            itemId: 'note_style',
+            question: '两种图文方向都已准备好，这次想用哪一种？',
+            options: [{ label: '干货科普版' }, { label: '故事氛围版' }],
+            freeText: { enabled: false },
+            fallback: { kind: 'deferred' },
+          },
+        ],
+      }}
+    />
+  );
+
+  await user.click(screen.getByRole('button', { name: '干货科普版' }));
+
+  expect(onSubmit).toHaveBeenCalledOnce();
+  expect(onSubmit).toHaveBeenCalledWith({
+    kind: 'answer',
+    items: [
+      {
+        itemId: 'note_style',
+        result: { kind: 'answer', value: '干货科普版' },
+      },
+    ],
+  });
+  expect(
+    screen.queryByRole('button', { name: '提交回答' })
+  ).not.toBeInTheDocument();
+});
+
 it('submits one explicit group skip', async () => {
   const user = userEvent.setup();
   const onSubmit = vi.fn(async () => undefined);

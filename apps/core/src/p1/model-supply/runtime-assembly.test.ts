@@ -110,8 +110,16 @@ test('runtime assembly gives every process the complete fallback catalog', async
     createDefaultExecutionChannels(),
   );
   assert.deepEqual(
-    runtime.fallbackCatalog.payload.prices,
-    createDefaultPriceRevisions(),
+    runtime.fallbackCatalog.payload.prices.map((price) => ({
+      catalogModelId: price.catalogModelId,
+      executionChannelId: price.executionChannelId,
+      pricingTier: price.pricingTier,
+    })),
+    createDefaultPriceRevisions().map((price) => ({
+      catalogModelId: price.catalogModelId,
+      executionChannelId: price.executionChannelId,
+      pricingTier: price.pricingTier,
+    })),
   );
   assert.deepEqual(
     runtime.fallbackCatalog.payload.providerProfiles,
@@ -154,6 +162,29 @@ test('runtime assembly gives every process the complete fallback catalog', async
   assert.equal(
     adminView.catalog.routes.length,
     createDefaultRouteRevisions().length,
+  );
+});
+
+test('fixture runtime freezes the CNY media price after workspace catalog initialization', async () => {
+  const catalog = modelRuntimeAssemblyFromEnv({
+    APP_ENV: 'e2e',
+    MODEL_EXECUTION_MODE: 'fixture',
+  });
+  const runtime = assemble(catalog);
+  const workspaceId = 'workspace-fixture-media-price';
+
+  await runtime.controlPlane.initialize(workspaceId);
+  const snapshot = runtime.application.freezeFixedRoute({
+    workspaceId,
+    operation: 'image.generate',
+    catalogModelId: 'nano-banana-2',
+    dataClass: [],
+  });
+
+  assert.equal(snapshot.allowedCandidates?.[0]?.currency, 'CNY');
+  assert.match(
+    snapshot.allowedCandidates?.[0]?.priceRevision ?? '',
+    /:fixture-cny$/u,
   );
 });
 

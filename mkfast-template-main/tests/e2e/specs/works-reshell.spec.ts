@@ -8,7 +8,6 @@ import {
 import { measureContrast } from '../fixtures/contrast';
 import { seedConfirmedStore } from '../fixtures/product';
 import { setTheme } from '../fixtures/page-health';
-import { chooseImageTextDirection } from '../fixtures/ui-journey';
 import { installWorksBrowserFixtures } from '../fixtures/works';
 
 /**
@@ -124,7 +123,6 @@ async function startRun(
     await expect(missingFacts).toBeVisible({ timeout: 60_000 });
     await missingFacts.getByRole('button', { name: '整组暂不确定' }).click();
     await expect(missingFacts).toBeHidden({ timeout: 30_000 });
-    await chooseImageTextDirection(page);
   }
   return {
     taskId: envelope.data?.task?.id ?? '',
@@ -141,6 +139,14 @@ async function deliverOnce(
   const run = await startRun(page, intent, lens);
   const deliveryTurn = page.getByTestId('composer-delivery-turn');
   await expect(deliveryTurn).toBeVisible({ timeout: 300_000 });
+  if (lens === 'image_text') {
+    await expect(
+      page.getByTestId('ask-merchant-group-card').filter({
+        hasText: '两种图文方向都已准备好',
+      }),
+      'the single-image poster recipe must not ask for a note-page direction'
+    ).toHaveCount(0);
+  }
   const packageId = await deliveryTurn.getAttribute('data-package-id');
   const versionId = await deliveryTurn.getAttribute('data-version-id');
   const revision = await deliveryTurn.getAttribute('data-revision');

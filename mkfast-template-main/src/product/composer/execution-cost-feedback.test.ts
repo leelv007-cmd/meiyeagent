@@ -91,13 +91,21 @@ test('a deterministic edit is never gated, in any trigger mode', () => {
   }
 });
 
-test('v1 adds no interception point of its own (D2)', () => {
+test('v1 does not stack a second confirmation after an existing gate (D2)', () => {
   assert.equal(EXECUTION_CONFIRM_TRIGGER_MODE, 'existing_gates');
-  // Where the app already stops, the card appears; where it submits in one
-  // tap, it still submits in one tap. That is the whole ruling.
   assert.equal(
     shouldOpenExecutionConfirm({ existingGate: true, generative: true }),
     true
+  );
+  // The existing Brief confirmation carries the decision once completed.
+  // Adding another card after it would turn one gate into two activations.
+  assert.equal(
+    shouldOpenExecutionConfirm({
+      existingGate: true,
+      existingGateSatisfied: true,
+      generative: true,
+    }),
+    false
   );
   assert.equal(
     shouldOpenExecutionConfirm({ existingGate: false, generative: true }),

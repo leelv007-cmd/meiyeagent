@@ -290,6 +290,7 @@ test('image revision assembly rejects each missing required part', () => {
   const missingRights = {
     ...complete,
     marketing: { ...complete.marketing, rightsRefs: [] },
+    sourceAssetIds: ['asset-source-1'],
   };
   const missingAsset = {
     ...complete,
@@ -309,6 +310,40 @@ test('image revision assembly rejects each missing required part', () => {
   ]) {
     assert.throws(() => assertImageRevisionAssemblyComplete(incomplete));
   }
+});
+
+test('source-free image assembly does not invent an input rights requirement', () => {
+  const version = {
+    body: '夏日护理活动主视觉',
+    conversionHook: '私信预约',
+    createdAt: '2026-07-25T00:00:00.000Z',
+    id: 'image-version-source-free',
+    orderedAssetIds: ['asset-generated-1'],
+    source: 'ai_generated' as const,
+    title: '夏日护理活动',
+    topics: [],
+  };
+
+  assert.doesNotThrow(() =>
+    assertImageRevisionAssemblyComplete({
+      marketing: {
+        contextBundle: {
+          bundleId: 'bundle-1',
+          hash: 'a'.repeat(64),
+          revision: 1,
+        },
+        factRefs: [],
+        rightsRefs: [],
+      },
+      sourceAssetIds: [],
+      variants: buildImagePlatformVariants({
+        currentVersionId: version.id,
+        packageId: 'package-image-source-free',
+        versions: [version],
+      }),
+      version,
+    })
+  );
 });
 
 test('copy assembly prepares one non-empty version for every v1 platform', () => {
