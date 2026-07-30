@@ -49,6 +49,11 @@ export const CHECK_GATES = [
     command: 'node',
     args: ['scripts/ops/brand-exposure-scan.mjs', '--check'],
   },
+  {
+    name: 'opt-in test evidence',
+    command: 'node',
+    args: ['scripts/uiux/opt-in-test-evidence-guard.mjs'],
+  },
 ];
 
 export function runGates(

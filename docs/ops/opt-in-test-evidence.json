@@ -1,0 +1,323 @@
+{
+  "schemaVersion": "opt-in-test-evidence/v1",
+  "suites": {
+    "apps/canvas/src/server/postgres-pro-studio-billing-verifier.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/creation-experience/brief-operations-atomicity.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/creation-experience/postgres-repository.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/cutover/execution-service.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/due-delivery/eligibility.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/due-delivery/postgres-repository.postgres.test.ts": {
+      "status": "known_red",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "ticket": "TBD-due-delivery",
+      "note": "One enqueued row yields claimed:2/delivered:2 after a repository restart. Reproduces isolated on a pristine database under UTC and Asia/Shanghai. Red since aec25cdc introduced the scanner."
+    },
+    "apps/core/src/p1/due-delivery/task-recall-producer.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/entitlement-pools/default-runtime-supply-pool.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/entitlement-pools/postgres-repository.postgres.test.ts": {
+      "status": "known_red",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "ticket": "TBD-supply-freeze",
+      "note": "3 failures: SupplyRequestFreeze requires an explicit execution channel and pricing tier. Message introduced by da5ac8f0 (#252)."
+    },
+    "apps/core/src/p1/execution-spine/postgres-creation-submission-store.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/foundation/workspace-provision.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/harness/canonical-observability-emitters.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/harness/dbos-registration.smoke.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/harness/delivery.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/harness/fixture-fact-fidelity.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/harness/interaction-service.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "5/5 under both UTC and Asia/Shanghai after the UTC timestamp fix (91acd6b6)."
+    },
+    "apps/core/src/p1/harness/issue-255-live-collector.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/harness/issue-255-postgres-live-receipt.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/harness/langfuse-outbox-ops.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/harness/note-media-admission.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/harness/observability-health.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/harness/postgres-billing-compensation-store.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/harness/postgres-store.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/harness/production-media-assembly.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/integrations/douyin-oauth-lifecycle.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/integrations/feishu-tool-lifecycle.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/integrations/provider-credential-runtime.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/model-supply/foundation-ledger.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/model-supply/postgres-owned-asset-cleanup-claim.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/model-supply/reference-asset-dispatch.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/model-supply/retired-video-editing-schema.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/model-supply/usage-ledger-invariants.postgres.test.ts": {
+      "status": "known_red",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "ticket": "TBD-supply-freeze",
+      "note": "Same SupplyRequestFreeze contract failure as entitlement-pools."
+    },
+    "apps/core/src/p1/operations/content-package-migration-cli.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/operations/expired-fact-invalidation-outbox.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/operations/harness-copy-work-asset.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/operations/marketing-identity.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/operations/media-custody.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/operations/parse-asset-memory.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/operations/postgres-content-package-write-adapter.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/operations/store-intake-finalizer.behavior.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/operations/store-intake-finalizer.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/result-delivery/assisted-canonical-repository.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/result-delivery/assisted-receipt-repository.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/skills/dbos-governance-workflow.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/skills/postgres-repository.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/skills/skill-governance.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/skills/skill-published-traffic.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/skills/skill-reverse-dependencies.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/supply-registry/postgres-admin-supply-runtime.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/supply-registry/postgres-hot-assembly.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/supply-registry/postgres-planning-control-plane.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/p1/supply-registry/postgres-planning-submit.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/pro-studio-runtime/postgres-adoption-service.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/pro-studio-runtime/postgres-canvas-agent.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/pro-studio-runtime/postgres-workspace-state.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "apps/core/src/product/notifier.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "mkfast-template-main/src/lib/auth/workspace-provisioning.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "mkfast-template-main/src/payment/plan-checkout-bindings.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "mkfast-template-main/src/payment/postgres-pro-studio-commerce.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    },
+    "mkfast-template-main/src/payment/postgres-webhook-settlement.postgres.test.ts": {
+      "status": "unverified",
+      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
+      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+    }
+  }
+}
