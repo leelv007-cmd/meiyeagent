@@ -119,7 +119,6 @@ describe(
 				"p1_creative_contents",
 				"p1_creative_assets",
 				"p1_creative_jobs",
-				"p1_creative_works",
 				"p1_canvas_image_jobs",
 				"p1_export_receipts",
 				"p1_template_shortcuts",
