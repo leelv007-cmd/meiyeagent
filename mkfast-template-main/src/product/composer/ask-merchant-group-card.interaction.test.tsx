@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 
 import { P1RequestError } from '@/p1/client';
-import { AskMerchantGroupCard } from './ask-merchant-group-card';
+import { AskMerchantGroupCard } from '@/product/composer/ask-merchant-group-card';
 
 afterEach(() => {
   cleanup();

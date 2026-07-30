@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import {
   rendererAckNeedsRefetch,
   rendererAckRetryDelay,
-} from './interaction-renderer-retry';
+} from '@/product/composer/interaction-renderer-retry';
 
 export function ExecutionConfirmationInteractionCard({
   onRendererReady,

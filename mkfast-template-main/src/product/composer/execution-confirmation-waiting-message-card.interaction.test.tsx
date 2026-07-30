@@ -3,7 +3,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 
-import { ExecutionConfirmationWaitingMessageCard } from './execution-confirmation-waiting-message-card';
+import { ExecutionConfirmationWaitingMessageCard } from '@/product/composer/execution-confirmation-waiting-message-card';
 
 afterEach(cleanup);
 

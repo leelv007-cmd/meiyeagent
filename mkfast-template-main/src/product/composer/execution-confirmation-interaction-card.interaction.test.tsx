@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 
 import { P1RequestError } from '@/p1/client';
-import { ExecutionConfirmationInteractionCard } from './execution-confirmation-interaction-card';
+import { ExecutionConfirmationInteractionCard } from '@/product/composer/execution-confirmation-interaction-card';
 
 afterEach(() => {
   cleanup();

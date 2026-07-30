@@ -108,6 +108,9 @@ import {
   submitHarnessInteractionMerchantMessage,
   submitHarnessDecision,
 } from '@/product/harness-client';
+import { AskMerchantGroupCard } from '@/product/composer/ask-merchant-group-card';
+import { ExecutionConfirmationInteractionCard } from '@/product/composer/execution-confirmation-interaction-card';
+import { ExecutionConfirmationWaitingMessageCard } from '@/product/composer/execution-confirmation-waiting-message-card';
 import { navigateAfterSubmitSuccess } from '@/product/results/result-center-navigation';
 import { projectResultTokenStream } from '@/product/results/result-token-stream';
 import { useWorkflowEventStream } from '@/product/use-workflow-event-stream';
@@ -117,9 +120,6 @@ import {
 } from '@/product/marketing-identity-queries';
 
 import { BriefSurface } from './brief-surface-panel';
-import { AskMerchantGroupCard } from './ask-merchant-group-card';
-import { ExecutionConfirmationInteractionCard } from './execution-confirmation-interaction-card';
-import { ExecutionConfirmationWaitingMessageCard } from './execution-confirmation-waiting-message-card';
 import { applyCatalogRecipeSelection } from './catalog-selection';
 import { ProgressiveFactCard } from './progressive-fact-card';
 import {
@@ -1412,13 +1412,19 @@ export function ComposerHome({
       ? decisionQuery.data.resolutionSource
       : null;
   const questionTimeoutSeconds = decisionQuery.data?.timeoutSeconds ?? null;
+  const pendingQuestionTurnId =
+    pendingAskRequest?.requestId ??
+    pendingExecutionConfirmation?.requestId ??
+    pendingExecutionWaitingMessage?.requestId ??
+    pendingQuestion?.questionId ??
+    null;
 
   useEffect(() => {
     setSession((current) =>
-      applyComposerQuestion(current, pendingQuestion?.questionId ?? null)
+      applyComposerQuestion(current, pendingQuestionTurnId)
     );
   }, [
-    pendingQuestion?.questionId,
+    pendingQuestionTurnId,
     questionResolutionSource,
     workflowStream.workflowState,
   ]);
@@ -1588,7 +1594,7 @@ export function ComposerHome({
       interactionQuery.refetch(),
       interactionMessageQuery.refetch(),
     ]);
-  }, [interactionMessageQuery, interactionQuery]);
+  }, [interactionMessageQuery.refetch, interactionQuery.refetch]);
 
   const addSource = (assetId: string) => {
     const facts = sourceFactsRef.current.get(assetId);

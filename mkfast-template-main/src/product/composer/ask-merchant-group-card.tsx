@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import {
   rendererAckNeedsRefetch,
   rendererAckRetryDelay,
-} from './interaction-renderer-retry';
+} from '@/product/composer/interaction-renderer-retry';
 
 type ItemResult = Extract<
   AskMerchantAnswer['response'],
