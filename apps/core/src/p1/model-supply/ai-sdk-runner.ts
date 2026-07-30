@@ -139,6 +139,20 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     this.model = createNativeLanguageModel(options);
   }
 
+  // DeepSeek runs structured output through json_object response_format and
+  // rejects any request whose messages never mention "json" (HTTP 400
+  // invalid_request_error). This is a transport-level format directive like
+  // response_format itself, so it is appended outside the caller's prompt
+  // binding.
+  private jsonModeInstructions(instructions: string): string {
+    if (!this.options.catalogModelId.startsWith('deepseek-v4-')) {
+      return instructions;
+    }
+    return /json/iu.test(instructions)
+      ? instructions
+      : `${instructions}\nRespond with a single valid JSON object.`;
+  }
+
   async generateCopy(
     prompt: string,
     abortSignal?: AbortSignal,
@@ -149,9 +163,10 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     const result = await generateText({
       abortSignal,
       ...languageModelCallSettings(this.options),
-      instructions:
+      instructions: this.jsonModeInstructions(
         instructions ??
-        `Return exactly ${candidateCount} materially distinct beauty-business copy ${candidateCount === 1 ? 'candidate' : 'candidates'}. Every candidate must include a non-empty title, body, and conversionHook.`,
+          `Return exactly ${candidateCount} materially distinct beauty-business copy ${candidateCount === 1 ? 'candidate' : 'candidates'}. Every candidate must include a non-empty title, body, and conversionHook.`,
+      ),
       maxRetries: 0,
       model: this.model,
       output: Output.object({
@@ -220,9 +235,10 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     const result = await generateText({
       abortSignal,
       ...languageModelCallSettings(this.options),
-      instructions:
+      instructions: this.jsonModeInstructions(
         instructions ??
-        'Adapt the supplied canonical beauty-business content into exactly three complete platform variants: xiaohongshu, douyin, and video_account. Preserve facts, make the three bodies materially different, and include a non-empty title, body, conversionHook, and topics for each platform.',
+          'Adapt the supplied canonical beauty-business content into exactly three complete platform variants: xiaohongshu, douyin, and video_account. Preserve facts, make the three bodies materially different, and include a non-empty title, body, conversionHook, and topics for each platform.',
+      ),
       maxRetries: 0,
       model: this.model,
       output: Output.object({
@@ -256,6 +272,10 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     structuredContinuation?: StructuredExecutionContinuation;
     structuredRequestFingerprint?: string;
   }) {
+    input = {
+      ...input,
+      instructions: this.jsonModeInstructions(input.instructions),
+    };
     if (input.structuredContinuation?.kind === 'schema_repair') {
       return this.repairStructured(input, {
         continuation: input.structuredContinuation,

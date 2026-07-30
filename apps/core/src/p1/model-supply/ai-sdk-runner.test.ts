@@ -286,6 +286,52 @@ test('DeepSeek V4 sends the mirrored thinking and long-output parameters', async
   assert.deepEqual(requestBody.thinking, { type: 'enabled' });
 });
 
+test('DeepSeek json_object requests always mention json in their messages', async () => {
+  const capturedBodies: Array<Record<string, unknown>> = [];
+  const deepSeekRunner = (fetchImpl: typeof fetch, catalogModelId = 'deepseek-v4-pro') =>
+    new OpenAiCompatibleAiSdkRunner({
+      apiKey: 'deepseek-test-key',
+      baseUrl: 'https://api.deepseek.com',
+      catalogModelId,
+      fetch: fetchImpl,
+      inputCostPerMillion: 1,
+      maxOutputTokens: 384_000,
+      model: catalogModelId,
+      outputCostPerMillion: 2,
+    });
+  const capture = (async (_input, init) => {
+    capturedBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+    throw new Error('captured: no network');
+  }) as typeof fetch;
+
+  // DeepSeek returns HTTP 400 for response_format json_object unless some
+  // message mentions "json"; the runner must append the directive itself.
+  await assert.rejects(
+    deepSeekRunner(capture).generateCopy(
+      '基于门店已确认事实写三条合规文案。',
+      undefined,
+      3,
+      'Return exactly 3 materially distinct candidates.',
+    ),
+  );
+  const messagesText = JSON.stringify(capturedBodies[0]?.messages);
+  assert.match(messagesText, /json/iu);
+  assert.match(messagesText, /Return exactly 3 materially distinct candidates\./u);
+
+  // Instructions that already satisfy the contract are sent untouched.
+  await assert.rejects(
+    deepSeekRunner(capture).generateCopy(
+      '基于门店已确认事实写三条合规文案。',
+      undefined,
+      3,
+      'Return a JSON object with exactly 3 candidates.',
+    ),
+  );
+  const untouched = JSON.stringify(capturedBodies[1]?.messages);
+  assert.match(untouched, /Return a JSON object with exactly 3 candidates\./u);
+  assert.doesNotMatch(untouched, /Respond with a single valid JSON object\./u);
+});
+
 test('formal platform adaptation returns all three distinct variants in one request', async () => {
   let requestCount = 0;
   let requestBody: Record<string, unknown> = {};
