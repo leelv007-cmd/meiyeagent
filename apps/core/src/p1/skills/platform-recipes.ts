@@ -1,4 +1,10 @@
 import type { HarnessFrozenPrompt } from '../harness/langfuse-prompts.js';
+import type {
+  SkillGovernanceSidecar,
+  SkillPromptReference,
+  SkillRevisionManifest,
+  SkillSourceRef,
+} from './types.js';
 
 export const BEAUTY_COPYWRITING_INSTRUCTION = [
   'Write one directly usable primary recommendation before optional alternatives.',
@@ -15,7 +21,7 @@ export const CAPTURE_STORE_WORKFLOW_INSTRUCTION = [
   'Create only a proposal with source-conversation evidence. Record an immutable store recipe only after an authenticated merchant confirmation.',
 ].join(' ');
 
-interface PlatformRecipeDefinitionInput {
+export interface PlatformRecipeDefinitionInput {
   expectedRevision: number | null;
   instruction?: string;
   prompt: HarnessFrozenPrompt;
@@ -23,9 +29,24 @@ interface PlatformRecipeDefinitionInput {
   workflowRevisionRef: string;
 }
 
+export interface PlatformRecipeDefinition extends Record<string, unknown> {
+  expectedRevision: number | null;
+  frontmatter: SkillRevisionManifest;
+  governance: SkillGovernanceSidecar;
+  instruction: string;
+  name: string;
+  packagePaths: string[];
+  presentationPolicy: 'backend_only' | 'explainable' | 'user_selectable';
+  promptReference: SkillPromptReference;
+  skillId: string;
+  sourceKind: 'harvested' | 'authored' | 'induced';
+  sourceRef?: SkillSourceRef;
+  tier: 'platform' | 'industry' | 'store';
+}
+
 export function beautyCopywritingDefinition(
   input: PlatformRecipeDefinitionInput
-) {
+): PlatformRecipeDefinition {
   return {
     expectedRevision: input.expectedRevision,
     frontmatter: {
@@ -72,7 +93,7 @@ export function beautyCopywritingDefinition(
 
 export function captureStoreWorkflowDefinition(
   input: PlatformRecipeDefinitionInput
-) {
+): PlatformRecipeDefinition {
   return {
     expectedRevision: input.expectedRevision,
     frontmatter: {

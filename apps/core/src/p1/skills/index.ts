@@ -36,6 +36,12 @@ export {
   beautyCopywritingDefinition,
   captureStoreWorkflowDefinition,
 } from './platform-recipes.js';
+export {
+  PLATFORM_BEAUTY_COPYWRITING_SKILL_ID,
+  PLATFORM_CAPTURE_STORE_WORKFLOW_SKILL_ID,
+  PLATFORM_COPY_WORKFLOW_REVISION_REF,
+  provisionPlatformRecipes,
+} from './platform-provisioning.js';
 export { RegistrySkillOutputValidator } from './schema-validator.js';
 export {
   StaticSkillToolExecutionAuthorizer,

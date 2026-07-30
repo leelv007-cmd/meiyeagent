@@ -15,6 +15,7 @@ import { SkillService } from './service.js';
 import { SkillInvocationToolAdapter } from './tool-adapter.js';
 import { StaticSkillToolExecutionAuthorizer } from './tool-authorization.js';
 import { SkillPromptAuthorityUnavailableError } from './types.js';
+import { provisionPlatformRecipes } from './platform-provisioning.js';
 import type {
   SkillInvocationExecutor,
   SkillInvocationResultPublisher,
@@ -131,6 +132,7 @@ export async function createDurableSkillRuntime(input: {
     caller: string;
     toolId: string;
   }[];
+  provisionPlatformRecipes?: boolean;
 }) {
   const repository =
     input.repository ?? new PostgresSkillRepository(input.pool);
@@ -145,6 +147,18 @@ export async function createDurableSkillRuntime(input: {
       input.toolExecutionAllowlist ?? [],
     ),
   );
+  if (input.provisionPlatformRecipes) {
+    if (!input.promptResolver) {
+      throw new Error(
+        'Platform Skill provisioning requires the Harness prompt resolver.',
+      );
+    }
+    await provisionPlatformRecipes({
+      prompts: await input.promptResolver.resolve(),
+      repository,
+      service,
+    });
+  }
   const recipes = new PostgresCreationExperienceCatalogRepository(input.pool);
   const instructionResolver = new DurableSkillInstructionResolver(
     service,

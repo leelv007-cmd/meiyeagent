@@ -1434,6 +1434,7 @@ await operationsService.seedOfficialTemplateFamilies({
 const skillRuntime = await createDurableSkillRuntime({
   pool,
   promptResolver: harnessPromptResolver,
+  provisionPlatformRecipes: true,
   repository: skillRepository,
 });
 const harnessObservabilityEvents = new HarnessObservabilityEventAudit(
