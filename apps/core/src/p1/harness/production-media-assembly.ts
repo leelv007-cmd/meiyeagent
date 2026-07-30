@@ -2,6 +2,7 @@ import type { ImageModelRecipeProfile } from '@meiye/contracts';
 
 import type { ContentPackageRevisionWritePort } from '../execution-spine/content-package-revision-port.js';
 import type {
+  MediaBoundedExecutionAuthorization,
   ModelSupplyResult,
   ModelSupplySubmission,
 } from '../model-supply/index.js';
@@ -29,7 +30,15 @@ export function createProductionHarnessMediaAssembly(input: {
     getDurableMediaJob?(
       workspaceId: string,
       jobId: string,
-    ): Promise<{ result: ModelSupplyResult }>;
+    ): Promise<{
+      result: ModelSupplyResult;
+      providerLifecycleLatencyMs?: number;
+    }>;
+    resumeBoundedMediaJob?(input: {
+      workspaceId: string;
+      jobId: string;
+      authorization: MediaBoundedExecutionAuthorization;
+    }): Promise<{ result: ModelSupplyResult }>;
   };
   noteAdmission: NoteMediaAdmissionPort;
   noteEnhancementJudge: NotePlanEnhancementJudgeResolver;

@@ -12,6 +12,7 @@ import {
   RecordedAdapterRouter,
   createDefaultCatalogModels,
   createDefaultDeployments,
+  type MediaBoundedExecutionAuthorization,
   type MediaProviderLifecyclePort,
   type ModelSupplyLedgerCheckpointInput,
   type ModelSupplyLedgerPort,
@@ -35,6 +36,7 @@ class RecoveringLedger implements ModelSupplyLedgerPort {
   lateTerminalCalls = 0;
   freezeCalls = 0;
   checkpointCalls = 0;
+  readonly settledAttemptIds: string[] = [];
   readonly frozenAttempts: Array<{
     attemptId: string;
     ordinal: number;
@@ -49,6 +51,7 @@ class RecoveringLedger implements ModelSupplyLedgerPort {
   }
 
   async settleAttempt(input: { result: ModelSupplyResult }) {
+    this.settledAttemptIds.push(input.result.attempt.id);
     this.result = structuredClone(input.result);
   }
 
@@ -161,6 +164,103 @@ function createModels(
     ...(planningControlPlane ? { planningControlPlane } : {}),
     ...(referenceAssets ? { referenceAssets } : {}),
   });
+}
+
+function createBoundedFallbackModels(ledger: ModelSupplyLedgerPort) {
+  const primaryId = 'gpt-image-2-managed';
+  const fallbackId = 'gpt-image-2-tuzi-relay';
+  const deployments = createDefaultDeployments({
+    activatedDeploymentIds: [primaryId, fallbackId],
+    activationEvidenceStatus: 'recorded',
+    deploymentPricingById: {
+      [primaryId]: {
+        priceRevision: 'bounded-primary-cny-v1',
+        unitPrice: {
+          amountMicros: 10_000,
+          currency: 'CNY',
+          unit: 'image',
+        },
+      },
+      [fallbackId]: {
+        priceRevision: 'bounded-fallback-cny-v1',
+        unitPrice: {
+          amountMicros: 10_000,
+          currency: 'CNY',
+          unit: 'image',
+        },
+      },
+    },
+  }).map((deployment) =>
+    deployment.id === primaryId
+      ? {
+          ...deployment,
+          accountIdentity: 'bounded-primary-account',
+          endpointFingerprint: 'bounded-primary-endpoint',
+        }
+      : deployment.id === fallbackId
+        ? {
+            ...deployment,
+            accountIdentity: 'bounded-fallback-account',
+            endpointFingerprint: 'bounded-fallback-endpoint',
+          }
+        : deployment,
+  );
+  return {
+    fallbackId,
+    models: new ModelSupplyApplicationService({
+      assetStorage: new MemoryModelAssetStorage(),
+      deployments,
+      execution: new RecordedAdapterRouter(),
+      ledger,
+      models: createDefaultCatalogModels(),
+      planningControlPlane: {
+        async readPlanningState() {
+          return {
+            routePolicyRevisionId: 'route-policy:bounded-media:r1',
+            routePolicy: {
+              operation: 'image.generate',
+              qualityTier: 'quality',
+              hardConstraints: ['deployment_active', 'data_class'],
+              candidateDeploymentIds: [primaryId, fallbackId],
+              maxAttempts: 2,
+              fallbackAuthorized: true,
+            },
+          };
+        },
+      },
+    }),
+    primaryId,
+  };
+}
+
+function mediaBoundedExecution(
+  maxIterations: number,
+): MediaBoundedExecutionAuthorization {
+  return {
+    schemaVersion: 'media-bounded-execution/v1',
+    snapshot: {
+      schemaVersion: 'bounded-execution-snapshot/v1',
+      maxIterations,
+      maxCostCents: 100,
+      maxWallClockMs: 60_000,
+      maxDelegations: 'unset',
+      requiredLimits: [
+        'maxIterations',
+        'maxCostCents',
+        'maxWallClockMs',
+      ],
+      consumption: {
+        iterations: 0,
+        costCents: 0,
+        wallClockMs: 0,
+        delegations: 0,
+      },
+      stopReason: null,
+      triggeredLimit: null,
+    },
+    countedAttemptIds: [],
+    countedProviderCostIds: [],
+  };
 }
 
 const authorizedSubmissionReferences = {
@@ -861,6 +961,233 @@ describe('durable media generation', () => {
     }
   });
 
+  it('keeps a counted bounded media attempt in reconciliation without durable fallback', async () => {
+    const ledger = new RecoveringLedger();
+    const { models } = createBoundedFallbackModels(ledger);
+    const baseSubmission = {
+      actorId: 'owner-a',
+      dataClass: [],
+      idempotencyKey: 'bounded-counted-attempt',
+      mediaBoundedExecution: mediaBoundedExecution(2),
+      operation: 'image.generate' as const,
+      prompt: '已计数的接单状态只能恢复',
+      selection: {
+        catalogModelId: 'gpt-image-2',
+        fallbackConsent: true,
+        mode: 'fixed' as const,
+      },
+      workspaceId: 'workspace-bounded-counted',
+    };
+    const preview = await models.prepareMediaSubmission(baseSubmission);
+    const submission = {
+      ...baseSubmission,
+      frozenRouteSnapshot: preview.snapshot,
+      mediaBoundedExecution: {
+        ...baseSubmission.mediaBoundedExecution,
+        countedAttemptIds: [preview.attempt.id],
+      },
+    };
+    let providerCalls = 0;
+    const provider: MediaProviderLifecyclePort = {
+      async submit() {
+        providerCalls += 1;
+        throw new Error('a counted attempt must not submit');
+      },
+      async recover() {
+        return null;
+      },
+      async poll() {
+        throw new Error('an unresolved counted attempt must not poll');
+      },
+      async download() {
+        throw new Error('an unresolved counted attempt must not download');
+      },
+      async cancel() {},
+    };
+    const repository = new MemoryTracerJobRepository(new MemoryJobPort());
+    const jobs = new TracerJobApplicationService(repository);
+    const runtime = new DurableMediaGenerationApplicationService({
+      jobs,
+      models,
+    });
+    models.attachDurableMediaRuntime(runtime);
+    const queued = await models.submit(submission);
+    const record = await jobs.get(submission.workspaceId, queued.jobId);
+    const worker = new DurableTracerWorker(
+      repository,
+      new ModelMediaGenerationEffect({ models, provider }),
+    );
+
+    assert.equal((await worker.handle(envelope(record))).status, 'deferred');
+    assert.equal(providerCalls, 0);
+    const unresolved = await jobs.get(submission.workspaceId, queued.jobId);
+    assert.equal(unresolved.acceptance, 'acceptance_unknown');
+    assert.equal(
+      (await runtime.get(submission.workspaceId, queued.jobId)).result.attempts
+        .length,
+      1,
+    );
+  });
+
+  it('resumes the same bounded media job at fallback without resubmitting its recovered primary', async () => {
+    const ledger = new RecoveringLedger();
+    const { fallbackId, models, primaryId } =
+      createBoundedFallbackModels(ledger);
+    const submitted: string[] = [];
+    const provider: MediaProviderLifecyclePort = {
+      async submit(request) {
+        submitted.push(request.deployment.id);
+        return request.deployment.id === primaryId
+          ? {
+              acceptance: 'rejected_before_accept',
+              errorCode: 'primary_pre_accept_failure',
+              retryable: true,
+              error: 'primary rejected before acceptance',
+              providerCost: { amount: 0, currency: 'CNY', usage: {} },
+            }
+          : {
+              acceptance: 'accepted',
+              taskRef: 'bounded-fallback-task',
+              providerCost: {
+                amount: 0.01,
+                currency: 'CNY',
+                usage: { mediaUnits: 1 },
+              },
+            };
+      },
+      async recover() {
+        throw new Error('a rejected primary has no provider task to recover');
+      },
+      async poll(request) {
+        assert.equal(request.deployment.id, fallbackId);
+        assert.equal(request.taskRef, 'bounded-fallback-task');
+        return {
+          status: 'completed',
+          providerCost: {
+            amount: 0.01,
+            currency: 'CNY',
+            usage: { mediaUnits: 1 },
+          },
+        };
+      },
+      async download(request) {
+        assert.equal(request.deployment.id, fallbackId);
+        assert.equal(request.taskRef, 'bounded-fallback-task');
+        return {
+          bytes: png,
+          contentType: 'image/png',
+        };
+      },
+      async cancel() {},
+    };
+    const repository = new MemoryTracerJobRepository(new MemoryJobPort());
+    const jobs = new TracerJobApplicationService(repository);
+    const runtime = new DurableMediaGenerationApplicationService({
+      jobs,
+      models,
+    });
+    models.attachDurableMediaRuntime(runtime);
+    const queued = await models.submit({
+      actorId: 'owner-a',
+      dataClass: [],
+      idempotencyKey: 'bounded-fallback-attempt-budget',
+      mediaBoundedExecution: mediaBoundedExecution(1),
+      operation: 'image.generate',
+      prompt: '第二候选也必须消费同一个迭代预算',
+      selection: {
+        catalogModelId: 'gpt-image-2',
+        fallbackConsent: true,
+        mode: 'fixed',
+      },
+      workspaceId: 'workspace-bounded-fallback',
+    });
+    const record = await jobs.get('workspace-bounded-fallback', queued.jobId);
+    const worker = new DurableTracerWorker(
+      repository,
+      new ModelMediaGenerationEffect({ models, provider }),
+    );
+
+    assert.equal((await worker.handle(envelope(record))).status, 'dead_letter');
+    assert.deepEqual(submitted, [primaryId]);
+    assert.equal(ledger.frozenAttempts.length, 1);
+    const suspended = await runtime.get(
+      'workspace-bounded-fallback',
+      queued.jobId,
+    );
+    assert.equal(
+      suspended.result.failureCode,
+      'MEDIA_BOUNDED_ITERATION_EXCEEDED',
+    );
+    assert.equal(suspended.result.status, 'failed');
+    assert.equal(
+      suspended.result.boundedExecution?.triggeredLimit,
+      'maxIterations',
+    );
+    assert.deepEqual(suspended.result.boundedExecution?.consumption, {
+      iterations: 1,
+      costCents: 0,
+      wallClockMs: 0,
+      delegations: 0,
+    });
+    assert.deepEqual(suspended.result.boundedExecution?.consumedAttemptIds, [
+      suspended.result.attempt.id,
+    ]);
+    assert.equal(suspended.result.attempt.deploymentId, primaryId);
+    assert.equal(suspended.result.attempts.length, 1);
+    assert.ok(
+      ledger.settledAttemptIds.every(
+        (attemptId) => attemptId === suspended.result.attempt.id,
+      ),
+      'the blocked fallback must not create or settle a synthetic attempt',
+    );
+
+    const raisedAuthorization = mediaBoundedExecution(2);
+    raisedAuthorization.snapshot.consumption =
+      suspended.result.boundedExecution!.consumption;
+    raisedAuthorization.countedAttemptIds =
+      suspended.result.boundedExecution!.consumedAttemptIds;
+    const resumed = await runtime.resumeBoundedMediaJob({
+      workspaceId: 'workspace-bounded-fallback',
+      jobId: queued.jobId,
+      authorization: raisedAuthorization,
+    });
+    assert.equal(resumed.jobId, queued.jobId);
+    assert.equal(resumed.status, 'queued');
+
+    const resumedRecord = await jobs.get(
+      'workspace-bounded-fallback',
+      queued.jobId,
+    );
+    assert.equal(
+      (await worker.handle(envelope(resumedRecord))).status,
+      'deferred',
+    );
+    assert.equal(
+      (await worker.handle(envelope(resumedRecord))).status,
+      'completed',
+    );
+    const completed = await runtime.get(
+      'workspace-bounded-fallback',
+      queued.jobId,
+    );
+    assert.equal(completed.result.status, 'completed');
+    assert.equal(completed.result.attempt.deploymentId, fallbackId);
+    assert.deepEqual(
+      completed.result.attempts.map((attempt) => attempt.deploymentId),
+      [primaryId, fallbackId],
+    );
+    assert.deepEqual(submitted, [primaryId, fallbackId]);
+    assert.deepEqual(
+      ledger.frozenAttempts.map((attempt) => attempt.deploymentId),
+      [primaryId, fallbackId],
+    );
+    assert.equal(
+      (await worker.handle(envelope(resumedRecord))).status,
+      'completed',
+    );
+    assert.deepEqual(submitted, [primaryId, fallbackId]);
+  });
+
   it('refuses a frozen media fallback that shares the primary fault domain', async () => {
     const primaryId = 'gpt-image-2-managed';
     const fallbackId = 'gpt-image-2-tuzi-relay';
@@ -1014,15 +1341,72 @@ describe('durable media generation', () => {
     assert.equal(provider.pollCalls, 1);
     assert.equal(admittedAttempts.length, 1);
     assert.equal(renewCalls, 3);
+    const recovered = await jobs.get('workspace-a', queued.jobId);
     assert.equal(
-      (await jobs.get('workspace-a', queued.jobId)).providerTaskRef,
+      recovered.providerTaskRef,
       'provider-task-stable',
     );
+    assert.equal(recovered.activeExecutionMs, 60_000);
+    const observed = await runtime.get('workspace-a', queued.jobId);
+    assert.equal(observed.providerLifecycleLatencyMs, 60_000);
     assert.equal(
-      (await runtime.get('workspace-a', queued.jobId))
-        .providerLifecycleLatencyMs,
-      61_000,
+      observed.providerLifecycleLatencyMs,
+      recovered.activeExecutionMs,
     );
+  });
+
+  it('keeps an unknown provider submission in reconciliation when recovery has no receipt', async () => {
+    const ledger = new RecoveringLedger();
+    const models = createModels(ledger, new MemoryModelAssetStorage());
+    const repository = new MemoryTracerJobRepository(new MemoryJobPort());
+    const jobs = new TracerJobApplicationService(repository);
+    const runtime = new DurableMediaGenerationApplicationService({ jobs, models });
+    models.attachDurableMediaRuntime(runtime);
+    let submitCalls = 0;
+    let recoverCalls = 0;
+    const provider: MediaProviderLifecyclePort = {
+      async submit() {
+        submitCalls += 1;
+        return {
+          acceptance: 'acceptance_unknown',
+          providerCost: {
+            amount: 0,
+            currency: 'USD',
+            usage: {},
+          },
+        };
+      },
+      async recover() {
+        recoverCalls += 1;
+        return null;
+      },
+      async poll() {
+        throw new Error('an unresolved submission must not be polled');
+      },
+      async download() {
+        throw new Error('an unresolved submission must not be downloaded');
+      },
+      async cancel() {},
+    };
+    const queued = await models.submit({
+      actorId: 'owner-a',
+      dataClass: [],
+      idempotencyKey: 'unknown-without-receipt',
+      operation: 'image.generate',
+      prompt: '接单状态未知时只恢复',
+      selection: { catalogModelId: 'gpt-image-2', mode: 'fixed' },
+      workspaceId: 'workspace-a',
+    });
+    const record = await jobs.get('workspace-a', queued.jobId);
+    const worker = new DurableTracerWorker(
+      repository,
+      new ModelMediaGenerationEffect({ models, provider }),
+    );
+
+    assert.equal((await worker.handle(envelope(record))).status, 'deferred');
+    assert.equal((await worker.handle(envelope(record))).status, 'deferred');
+    assert.equal(submitCalls, 1);
+    assert.equal(recoverCalls, 1);
   });
 
   it('recovers the same provider task after restart and completes only after storage receipt', async () => {

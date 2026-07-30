@@ -145,6 +145,24 @@ export class GraphileWorkerJobPort implements JobPort {
     await this.enqueueInternal(input, client);
   }
 
+  async resume(input: DurableJobInput, sequence: number) {
+    await this.enqueueResumeInternal(input, sequence);
+  }
+
+  async resumeInTransaction(
+    input: DurableJobInput,
+    sequence: number,
+    client: PoolClient,
+  ) {
+    if (!this.boundary.enqueueWithClient) {
+      throw new JobRuntimeError(
+        'RUNTIME_NOT_STARTED',
+        'This Graphile boundary cannot resume in a caller transaction.',
+      );
+    }
+    await this.enqueueResumeInternal(input, sequence, client);
+  }
+
   async cancel(workspaceId: string, jobId: string) {
     await this.start();
     const jobs = await this.findLogicalJobs(workspaceId, jobId);
@@ -381,6 +399,62 @@ export class GraphileWorkerJobPort implements JobPort {
     }
     if (!inserted) throw new JobRuntimeError('INVALID_JOB', 'Graphile Worker did not persist the requested job.');
     assertSameJobFingerprint(parseDurableJobEnvelope(inserted.payload), envelope);
+  }
+
+  private async enqueueResumeInternal(
+    input: DurableJobInput,
+    sequence: number,
+    client?: PoolClient,
+  ) {
+    validateDurableJobInput(input);
+    const normalizedSequence = positiveInteger(sequence, 'sequence');
+    await this.start();
+    const key = `${this.logicalKey(input.workspaceId, input.jobId)}:continuation:${normalizedSequence}`;
+    const envelope: DurableJobEnvelope = {
+      ...makeDurableJobEnvelope(input, this.clock()),
+      sequence: normalizedSequence,
+    };
+    const existing = await this.boundary.findByKey(key);
+    if (existing) {
+      assertSameJobFingerprint(
+        parseDurableJobEnvelope(existing.payload),
+        envelope,
+      );
+      return;
+    }
+    const spec: TaskSpec = {
+      runAt: input.runAt ? new Date(input.runAt) : undefined,
+      maxAttempts: this.maxAttempts,
+      jobKey: key,
+      jobKeyMode: 'unsafe_dedupe',
+      priority: input.scheduling?.queuePriority,
+    };
+    let inserted: GraphileStoredJob | null;
+    if (client) {
+      inserted = await this.boundary.enqueueWithClient!(
+        client,
+        this.taskIdentifier,
+        envelope,
+        spec,
+      );
+    } else {
+      await this.boundary.addJob(this.taskIdentifier, envelope, spec);
+      inserted = await this.boundary.findByKey(key);
+    }
+    if (!inserted) {
+      throw new JobRuntimeError(
+        'INVALID_JOB',
+        'Graphile Worker did not persist the resumed job.',
+      );
+    }
+    const persisted = parseDurableJobEnvelope(inserted.payload);
+    assertSameJobFingerprint(persisted, envelope);
+    if (persisted.sequence !== normalizedSequence) {
+      throw new JobRuntimeError(
+        'IDEMPOTENCY_CONFLICT',
+        'Graphile resume sequence was reused by another transport.',
+      );
+    }
   }
 }
 

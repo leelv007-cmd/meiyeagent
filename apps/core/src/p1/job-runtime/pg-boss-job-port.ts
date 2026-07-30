@@ -188,6 +188,22 @@ export class PgBossJobPort implements JobPort {
     await this.enqueueInternal(input, new PgClientDatabase(client));
   }
 
+  async resume(input: DurableJobInput, sequence: number) {
+    await this.enqueueResumeInternal(input, sequence);
+  }
+
+  async resumeInTransaction(
+    input: DurableJobInput,
+    sequence: number,
+    client: PoolClient,
+  ) {
+    await this.enqueueResumeInternal(
+      input,
+      sequence,
+      new PgClientDatabase(client),
+    );
+  }
+
   async cancel(workspaceId: string, jobId: string) {
     await this.start();
     const [mainJobs, deadJobs] = await Promise.all([
@@ -449,6 +465,70 @@ export class PgBossJobPort implements JobPort {
     const raced = await this.boss.findJobs<DurableJobEnvelope>(this.queueName, { id, db });
     if (!raced[0]) throw new JobRuntimeError('INVALID_JOB', 'pg-boss did not persist the requested job.');
     assertSameJobFingerprint(raced[0].data, envelope);
+  }
+
+  private async enqueueResumeInternal(
+    input: DurableJobInput,
+    sequence: number,
+    db?: Db,
+  ) {
+    validateDurableJobInput(input);
+    const normalizedSequence = positiveInteger(sequence, 'sequence');
+    await this.start();
+    const id = continuationTransportId(
+      input.workspaceId,
+      input.jobId,
+      normalizedSequence,
+    );
+    const envelope: DurableJobEnvelope = {
+      ...makeDurableJobEnvelope(input, this.clock()),
+      sequence: normalizedSequence,
+    };
+    const existing = await this.boss.findJobs<DurableJobEnvelope>(
+      this.queueName,
+      { id, db },
+    );
+    if (existing[0]) {
+      assertSameJobFingerprint(existing[0].data, envelope);
+      if (existing[0].data.sequence !== normalizedSequence) {
+        throw new JobRuntimeError(
+          'IDEMPOTENCY_CONFLICT',
+          'pg-boss resume sequence was reused by another transport.',
+        );
+      }
+      return;
+    }
+    const inserted = await this.boss.send(this.queueName, envelope, {
+      id,
+      startAfter: input.runAt,
+      db,
+      retryLimit: this.retryLimit,
+      retryDelay: this.retryDelaySeconds,
+      retryBackoff: true,
+      retryDelayMax: this.retryDelayMaxSeconds,
+      expireInSeconds: this.expireInSeconds,
+      heartbeatSeconds: this.heartbeatSeconds,
+      deadLetter: this.deadLetterQueueName,
+      ...schedulingOptions(envelope),
+    });
+    if (inserted) return;
+    const raced = await this.boss.findJobs<DurableJobEnvelope>(
+      this.queueName,
+      { id, db },
+    );
+    if (!raced[0]) {
+      throw new JobRuntimeError(
+        'INVALID_JOB',
+        'pg-boss did not persist the resumed job.',
+      );
+    }
+    assertSameJobFingerprint(raced[0].data, envelope);
+    if (raced[0].data.sequence !== normalizedSequence) {
+      throw new JobRuntimeError(
+        'IDEMPOTENCY_CONFLICT',
+        'pg-boss resume sequence was reused by another transport.',
+      );
+    }
   }
 
   private async enqueueContinuation(envelope: DurableJobEnvelope, deferForSeconds = this.retryDelaySeconds) {

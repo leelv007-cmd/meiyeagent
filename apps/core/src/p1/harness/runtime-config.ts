@@ -6,6 +6,11 @@ export interface HarnessRuntimeConfig {
   dbos: DBOSConfig;
 }
 
+export interface JobWorkerHarnessDbosRuntime {
+  setConfig(config: DBOSConfig): void;
+  launch(): Promise<void>;
+}
+
 /**
  * One store-intake finalize holds three business connections at its peak: the
  * finalization advisory-lock client, the pinned fact-head client, and the
@@ -29,6 +34,31 @@ export function assertPendingActionsShareDatabase(input: {
   }
 }
 
+export function readJobWorkerHarnessRuntimeConfig(
+  env: Record<string, string | undefined> = process.env,
+  warn: (message: string) => void = (message) => console.warn(message),
+): HarnessRuntimeConfig | undefined {
+  if (!env.HARNESS_DBOS_SYSTEM_DATABASE_URL) {
+    warn(
+      '[harness-media] HARNESS_DBOS_SYSTEM_DATABASE_URL is not configured; DBOS terminal signaling for model.media-generation jobs is disabled.',
+    );
+    return undefined;
+  }
+  return readHarnessRuntimeConfig(env);
+}
+
+export async function initializeJobWorkerHarnessRuntime(
+  env: Record<string, string | undefined>,
+  dbos: JobWorkerHarnessDbosRuntime,
+  warn: (message: string) => void = (message) => console.warn(message),
+): Promise<HarnessRuntimeConfig | undefined> {
+  const config = readJobWorkerHarnessRuntimeConfig(env, warn);
+  if (!config) return undefined;
+  dbos.setConfig(config.dbos);
+  await dbos.launch();
+  return config;
+}
+
 export function readHarnessRuntimeConfig(
   env: Record<string, string | undefined> = process.env,
 ): HarnessRuntimeConfig {
@@ -38,8 +68,14 @@ export function readHarnessRuntimeConfig(
     'HARNESS_DBOS_SYSTEM_DATABASE_URL',
   );
   if (
-    postgresDatabaseIdentity(businessDatabaseUrl) ===
-    postgresDatabaseIdentity(systemDatabaseUrl)
+    postgresDatabaseIdentity(
+      businessDatabaseUrl,
+      env.PGUSER ?? env.USER,
+    ) ===
+    postgresDatabaseIdentity(
+      systemDatabaseUrl,
+      env.PGUSER ?? env.USER,
+    )
   ) {
     throw new Error('Harness DBOS system storage must use a separate database.');
   }
@@ -84,9 +120,22 @@ function atLeastFinalizePeak(value: number) {
   return MINIMUM_BUSINESS_POOL_MAX;
 }
 
-function postgresDatabaseIdentity(value: string) {
+function postgresDatabaseIdentity(
+  value: string,
+  defaultDatabaseName = process.env.PGUSER ?? process.env.USER,
+) {
   const url = new URL(value);
   const protocol = url.protocol === 'postgresql:' ? 'postgres:' : url.protocol;
   const port = url.port || '5432';
-  return `${protocol}//${url.hostname.toLowerCase()}:${port}${url.pathname}`;
+  const encodedDatabaseName =
+    url.pathname === '' || url.pathname === '/'
+      ? url.username || defaultDatabaseName
+      : url.pathname.slice(1);
+  if (!encodedDatabaseName?.trim()) {
+    throw new Error(
+      'A PostgreSQL URL without a database requires an explicit user default.',
+    );
+  }
+  const databaseName = decodeURIComponent(encodedDatabaseName);
+  return `${protocol}//${url.hostname.toLowerCase()}:${port}/${databaseName}`;
 }

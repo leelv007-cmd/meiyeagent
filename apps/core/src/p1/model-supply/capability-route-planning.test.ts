@@ -12,6 +12,7 @@ import {
 } from './index.js';
 import {
   CapabilityHotAssemblyRegistry,
+  matchRuntimeCapabilityRequirement,
   projectCapabilityRevision,
   toRuntimeCapabilityEntry,
 } from '../supply-registry/hot-assembly.js';
@@ -77,6 +78,69 @@ const requirement: ModelCapabilityRequirementAxis = {
   ],
   unknownPolicy: 'conservative_always_available',
 };
+
+const exactTextReferenceImageRequirement: ModelCapabilityRequirementAxis = {
+  axisId: 'textResponse',
+  vocabularyVersion: 'model-capability-v1',
+  requiredProtocolCapabilities: [],
+  requiredModalities: ['text/plain', 'image/*'],
+  requiredBusinessTags: [],
+  requiredModalityCapabilities: [],
+  unknownPolicy: 'conservative_always_available',
+};
+
+function textModel(id: string, qualityRank: number): CatalogModel {
+  return {
+    id,
+    modality: 'llm',
+    operations: ['text.respond'],
+    displayName: id,
+    qualityRank,
+  };
+}
+
+function textDeployment(input: {
+  id: string;
+  catalogModelId: string;
+  supportsReferenceImage: boolean;
+}): ModelDeployment {
+  return {
+    id: input.id,
+    catalogModelId: input.catalogModelId,
+    apiFamily: 'openai',
+    channel: 'managed',
+    region: 'domestic',
+    status: 'active',
+    executionChannelId: `channel-${input.id}`,
+    credentialVersion: `credential-${input.id}`,
+    priceRevision: `price-${input.id}`,
+    unitPrice: {
+      amountMicros: 100_000,
+      currency: 'CNY',
+      unit: 'request',
+    },
+    capabilityProfile: {
+      vocabularyVersion: 'model-capability-v1',
+      protocolCapabilities: {},
+      modalities: [
+        {
+          mime: 'text/plain',
+          supported: true,
+          basis: 'explicit_override',
+          evidenceRef: `test:${input.id}:text`,
+        },
+        {
+          mime: 'image/*',
+          supported: input.supportsReferenceImage,
+          basis: 'explicit_override',
+          evidenceRef: `test:${input.id}:reference-image`,
+        },
+      ],
+      businessTags: [],
+      modalityCapabilities: [],
+    },
+  };
+}
 
 test('fixed-route planning selects the deployment that satisfies the required capability axis', async () => {
   const application = new ModelSupplyApplicationService({
@@ -177,6 +241,192 @@ test('the frozen capability revision changes route identity even without require
   assert.equal(first.capabilityRevisionId, 'capability-r1');
   assert.equal(second.capabilityRevisionId, 'capability-r2');
   assert.notEqual(second.id, first.id);
+});
+
+test('exact-text route identity pins the capability revision before snapshot creation', async () => {
+  const visionModel = textModel('vision-text', 90);
+  const visionDeployment = textDeployment({
+    id: 'vision-text-direct',
+    catalogModelId: visionModel.id,
+    supportsReferenceImage: true,
+  });
+  const hotAssembly = new CapabilityHotAssemblyRegistry();
+  const applyRevision = (
+    revisionId: string,
+    number: number,
+    previousRevisionId?: string,
+  ) =>
+    hotAssembly.applyCapabilityRevision(
+      projectCapabilityRevision({
+        revisionId,
+        number,
+        entries: [toRuntimeCapabilityEntry(visionDeployment)],
+        publishedAt: `2026-07-30T00:01:0${number}.000Z`,
+        ...(previousRevisionId ? { previousRevisionId } : {}),
+      }),
+    );
+  applyRevision('exact-text-capability-r1', 1);
+  const application = new ModelSupplyApplicationService({
+    models: [visionModel],
+    deployments: [visionDeployment],
+    execution: new RecordedProviderExecutionPort(),
+    capabilityHotAssembly: hotAssembly,
+  });
+
+  const first = await application.freezeAutoTextRouteForExecution({
+    workspaceId: 'workspace-exact-text-revision',
+    dataClass: [],
+  });
+  applyRevision(
+    'exact-text-capability-r2',
+    2,
+    'exact-text-capability-r1',
+  );
+  const second = await application.freezeAutoTextRouteForExecution({
+    workspaceId: 'workspace-exact-text-revision',
+    dataClass: [],
+  });
+
+  assert.equal(first.capabilityRevisionId, 'exact-text-capability-r1');
+  assert.equal(second.capabilityRevisionId, 'exact-text-capability-r2');
+  assert.notEqual(second.id, first.id);
+});
+
+test('exact-text planning selects a reference-image capable deployment over a higher-ranked text-only deployment', async () => {
+  const textOnlyModel = textModel('quality-text-only', 100);
+  const visionModel = textModel('quality-vision', 90);
+  const textOnlyDeployment = textDeployment({
+    id: 'quality-text-only-direct',
+    catalogModelId: textOnlyModel.id,
+    supportsReferenceImage: false,
+  });
+  const visionDeployment = textDeployment({
+    id: 'quality-vision-direct',
+    catalogModelId: visionModel.id,
+    supportsReferenceImage: true,
+  });
+  const hotAssembly = new CapabilityHotAssemblyRegistry();
+  hotAssembly.applyCapabilityRevision(
+    projectCapabilityRevision({
+      revisionId: 'exact-text-vision-r1',
+      number: 1,
+      entries: [
+        toRuntimeCapabilityEntry(textOnlyDeployment),
+        toRuntimeCapabilityEntry(visionDeployment),
+      ],
+      publishedAt: '2026-07-30T00:02:00.000Z',
+    }),
+  );
+  const application = new ModelSupplyApplicationService({
+    models: [textOnlyModel, visionModel],
+    deployments: [textOnlyDeployment, visionDeployment],
+    execution: new RecordedProviderExecutionPort(),
+    capabilityHotAssembly: hotAssembly,
+  });
+
+  const route = await application.freezeAutoTextRouteForExecution({
+    workspaceId: 'workspace-exact-text-vision',
+    dataClass: [],
+  });
+
+  assert.equal(route.actualCatalogModelId, visionModel.id);
+  assert.equal(route.deploymentId, visionDeployment.id);
+  assert.deepEqual(
+    route.capabilityRequirements,
+    [exactTextReferenceImageRequirement],
+  );
+  assert.equal(route.capabilityMatches?.[0]?.outcome, 'eligible');
+});
+
+test('exact-text planning fails closed before provider I/O when no deployment supports reference images', async () => {
+  const textOnlyModel = textModel('text-only', 100);
+  const textOnlyDeployment = textDeployment({
+    id: 'text-only-direct',
+    catalogModelId: textOnlyModel.id,
+    supportsReferenceImage: false,
+  });
+  const hotAssembly = new CapabilityHotAssemblyRegistry();
+  hotAssembly.applyCapabilityRevision(
+    projectCapabilityRevision({
+      revisionId: 'exact-text-no-vision-r1',
+      number: 1,
+      entries: [toRuntimeCapabilityEntry(textOnlyDeployment)],
+      publishedAt: '2026-07-30T00:03:00.000Z',
+    }),
+  );
+  let providerCalls = 0;
+  const application = new ModelSupplyApplicationService({
+    models: [textOnlyModel],
+    deployments: [textOnlyDeployment],
+    execution: {
+      async execute() {
+        providerCalls += 1;
+        throw new Error('Provider I/O must not run.');
+      },
+    },
+    capabilityHotAssembly: hotAssembly,
+  });
+
+  await assert.rejects(
+    application.freezeAutoTextRouteForExecution({
+      workspaceId: 'workspace-exact-text-no-vision',
+      dataClass: [],
+    }),
+    /No compliant text\.respond deployment/u,
+  );
+  assert.equal(providerCalls, 0);
+});
+
+test('exact-text planning does not freeze an unknown capability as reference-image capable', async () => {
+  const unknownModel = textModel('unknown-text', 100);
+  const unknownDeployment: ModelDeployment = {
+    ...textDeployment({
+      id: 'unknown-text-direct',
+      catalogModelId: unknownModel.id,
+      supportsReferenceImage: true,
+    }),
+    capabilityProfile: undefined,
+  };
+  const unknownMatch = matchRuntimeCapabilityRequirement(
+    unknownDeployment,
+    exactTextReferenceImageRequirement,
+  );
+  assert.equal(unknownMatch.outcome, 'conservative_fallback');
+  assert.deepEqual(unknownMatch.reasons, [
+    'capability_unknown:modality:text/plain',
+    'capability_unknown:modality:image/*',
+  ]);
+
+  const hotAssembly = new CapabilityHotAssemblyRegistry();
+  hotAssembly.applyCapabilityRevision(
+    projectCapabilityRevision({
+      revisionId: 'exact-text-unknown-r1',
+      number: 1,
+      entries: [toRuntimeCapabilityEntry(unknownDeployment)],
+      publishedAt: '2026-07-30T00:04:00.000Z',
+    }),
+  );
+  let providerCalls = 0;
+  const application = new ModelSupplyApplicationService({
+    models: [unknownModel],
+    deployments: [unknownDeployment],
+    execution: {
+      async execute() {
+        providerCalls += 1;
+        throw new Error('Provider I/O must not run.');
+      },
+    },
+    capabilityHotAssembly: hotAssembly,
+  });
+
+  await assert.rejects(
+    application.freezeAutoTextRouteForExecution({
+      workspaceId: 'workspace-exact-text-unknown',
+      dataClass: [],
+    }),
+    /No confirmed reference-image capable text\.respond deployment/u,
+  );
+  assert.equal(providerCalls, 0);
 });
 
 test('fixed unknown capability stays primary instead of becoming an authorized model substitution', async () => {

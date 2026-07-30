@@ -7,6 +7,8 @@ import { EntitlementAwareJobPort } from './entitlement-job-port.js';
 class RecordedRuntime {
   enqueued?: DurableJobInput;
   transactional?: DurableJobInput;
+  resumed?: { input: DurableJobInput; sequence: number };
+  transactionalResume?: { input: DurableJobInput; sequence: number };
   recurring?: RecurringJobInput;
 
   async start() {}
@@ -17,6 +19,18 @@ class RecordedRuntime {
 
   async enqueueInTransaction(input: DurableJobInput, _client: PoolClient) {
     this.transactional = input;
+  }
+
+  async resume(input: DurableJobInput, sequence: number) {
+    this.resumed = { input, sequence };
+  }
+
+  async resumeInTransaction(
+    input: DurableJobInput,
+    sequence: number,
+    _client: PoolClient,
+  ) {
+    this.transactionalResume = { input, sequence };
   }
 
   async cancel() {}
@@ -76,6 +90,8 @@ test('entitlement-aware jobs carry queue priority and workspace concurrency into
 
   await jobs.enqueue(input);
   await jobs.enqueueInTransaction(input, {} as PoolClient);
+  await jobs.resume(input, 2);
+  await jobs.resumeInTransaction(input, 3, {} as PoolClient);
   await jobs.scheduleRecurring({
     cron: '0 9 * * 1',
     kind: 'operations.trigger',
@@ -99,5 +115,13 @@ test('entitlement-aware jobs carry queue priority and workspace concurrency into
   };
   assert.deepEqual(runtime.enqueued?.scheduling, expected);
   assert.deepEqual(runtime.transactional?.scheduling, expected);
+  assert.deepEqual(runtime.resumed, {
+    input: { ...input, scheduling: expected },
+    sequence: 2,
+  });
+  assert.deepEqual(runtime.transactionalResume, {
+    input: { ...input, scheduling: expected },
+    sequence: 3,
+  });
   assert.deepEqual(runtime.recurring?.scheduling, expected);
 });

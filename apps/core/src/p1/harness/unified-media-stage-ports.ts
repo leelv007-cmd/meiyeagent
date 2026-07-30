@@ -6,13 +6,19 @@ import type {
 	ImageModelRecipeProfile,
 	NotePlan,
 } from "@meiye/contracts";
-import { questionCardSchema } from "@meiye/contracts";
+import {
+	boundedExecutionSnapshotSchema,
+	questionCardSchema,
+} from "@meiye/contracts";
 import { z } from "zod";
 
 import type {
+	MediaBoundedExecutionAuthorization,
 	ModelSupplyResult,
 	ModelSupplySubmission,
+	RouteSnapshot,
 } from "../model-supply/index.js";
+import type { ResolvedSkillInstruction } from "../skills/types.js";
 import { isOfficialNeutralIdentity } from "../execution-spine/creation-execution-snapshot.js";
 import type { ContentPackageRevisionWritePort } from "../execution-spine/content-package-revision-port.js";
 import {
@@ -46,6 +52,7 @@ import {
 import type { HarnessWorkflowInput } from "./task-admission.js";
 import { assertHarnessExecutionAssemblyPinned } from "./task-admission.js";
 import {
+	assessImageExactText,
 	executeImageSelection,
 	HarnessSelectionError,
 	type ImageExactTextObservation,
@@ -86,6 +93,35 @@ import {
 	type NotePlanEnhancementJudgeResolver,
 	ModelSupplyNotePlanStructuredPort,
 } from "./note-plan-structured-port.js";
+import {
+	BoundedExecutionResumeError,
+	evaluateBoundedExecution,
+	type BoundedExecutionSuspension,
+} from "./bounded-execution-controller.js";
+import {
+	type MediaBoundedCurrentBest,
+	mediaBoundedCurrentBestSchema,
+	mediaBoundedRequestFingerprint,
+	parseMediaBoundedResume,
+} from "./media-bounded-execution.js";
+
+const mediaBoundedRouteResultSchema = z
+	.object({
+		schemaVersion: z.literal("media-bounded-execution-result/v1"),
+		snapshot: boundedExecutionSnapshotSchema,
+		triggeredLimit: z.literal("maxIterations"),
+		consumption: z
+			.object({
+				iterations: z.number().int().nonnegative().safe(),
+				costCents: z.number().int().nonnegative().safe(),
+				wallClockMs: z.number().int().nonnegative().safe(),
+				delegations: z.number().int().nonnegative().safe(),
+			})
+			.strict(),
+		consumedAttemptIds: z.array(z.string().trim().min(1)),
+		consumedProviderCostIds: z.array(z.string().trim().min(1)),
+	})
+	.strict();
 
 type MediaBrief = Exclude<ExecutionBrief, { kind: "copy" }>;
 
@@ -104,6 +140,21 @@ export interface HarnessMediaExecutionPort {
 		awaitSignal?: HarnessSignalReceiver;
 		runStep?: HarnessEffectRunner;
 	}): Promise<HarnessMediaSelectionResult>;
+	executeBounded?(input: {
+		brief: MediaBrief;
+		context: HarnessContextSnapshot;
+		request: HarnessWorkflowInput;
+		workflowId: string;
+		orchestrationWorkflowId?: string;
+		skillInstructions?: readonly ResolvedSkillInstruction[];
+		awaitSignal?: HarnessSignalReceiver;
+		runStep?: HarnessEffectRunner;
+		boundedResume?: BoundedExecutionSuspension<unknown>;
+		boundedCheckpoint?: unknown;
+	}): Promise<
+		HarnessMediaSelectionResult |
+			BoundedExecutionSuspension<MediaBoundedCurrentBest>
+	>;
 }
 
 /**
@@ -281,6 +332,31 @@ export class UnifiedHarnessStagePorts
 			},
 			() =>
 				this.media.execute({
+					...input,
+					orchestrationWorkflowId: input.workflowId,
+				}),
+		);
+	}
+
+	async executeMediaAndSelectBounded(
+		input: Parameters<
+			NonNullable<HarnessMediaStagePorts["executeMediaAndSelectBounded"]>
+		>[0],
+	) {
+		if (!this.media.executeBounded) {
+			throw new Error(
+				"Configured bounded execution requires a bounded media selection port.",
+			);
+		}
+		return this.observeModelExecution(
+			{
+				request: input.request,
+				stage: "execution_selection",
+				primitiveId: `harness-media:${input.brief.kind}`,
+				baseIdempotencyKey: `harness-media:${input.workflowId}:${input.brief.kind}`,
+			},
+			() =>
+				this.media.executeBounded!({
 					...input,
 					orchestrationWorkflowId: input.workflowId,
 				}),
@@ -917,12 +993,32 @@ function mediaPlatform(
 }
 
 export interface ImageExactTextVerifier {
+	preauthorize?(input: {
+		assetId: string;
+		expected: string[];
+		request: HarnessWorkflowInput;
+		route: RouteSnapshot;
+		workflowId: string;
+	}):
+		| {
+				iterations: number;
+				costCents: number;
+		  }
+		| Promise<{
+				iterations: number;
+				costCents: number;
+		  }>;
 	observe(input: {
 		assetId: string;
 		expected: string[];
 		request: HarnessWorkflowInput;
+		route?: RouteSnapshot;
 		workflowId: string;
-	}): Promise<ImageExactTextObservation>;
+	}): Promise<
+		ImageExactTextObservation & {
+			modelResult?: ModelSupplyResult;
+		}
+	>;
 }
 
 const exactTextObservationSchema = z
@@ -932,21 +1028,43 @@ const exactTextObservationSchema = z
 	})
 	.strict();
 
+const exactTextPreauthorizationSchema = z
+	.object({
+		iterations: z.number().int().nonnegative().safe(),
+		costCents: z.number().int().nonnegative().safe(),
+	})
+	.strict();
+
 export class ModelSupplyImageExactTextVerifier
 	implements ImageExactTextVerifier
 {
 	constructor(
-		private readonly models: Pick<
-			{ submit(input: ModelSupplySubmission): Promise<ModelSupplyResult> },
-			"submit"
-		>,
+		private readonly models: {
+			submit(input: ModelSupplySubmission): Promise<ModelSupplyResult>;
+			freezeAutoTextRouteForExecution?(input: {
+				workspaceId: string;
+				dataClass: ModelSupplySubmission["dataClass"];
+				promptRevision?: string;
+			}): Promise<RouteSnapshot>;
+		},
 		private readonly executionChildObservability?: HarnessExecutionChildObservabilityFactory,
 	) {}
+
+	preauthorize(input: {
+		assetId: string;
+		expected: string[];
+		request: HarnessWorkflowInput;
+		route: RouteSnapshot;
+		workflowId: string;
+	}) {
+		return exactTextFrozenRoutePreauthorization(input.route);
+	}
 
 	async observe(input: {
 		assetId: string;
 		expected: string[];
 		request: HarnessWorkflowInput;
+		route?: RouteSnapshot;
 		workflowId: string;
 	}) {
 		if (input.expected.length === 0) {
@@ -957,13 +1075,15 @@ export class ModelSupplyImageExactTextVerifier
 			};
 		}
 		const idempotencyKey = `harness-media:${input.workflowId}:image:exact-text:${input.assetId}`;
+		const frozenRouteSnapshot =
+			input.route ?? (await this.freezeExactTextRoute(input.request));
 		const submit = () =>
 			this.models.submit({
 				actorId: input.request.actorId,
 				billingTaskId: input.workflowId,
 				billingQuoteRevision: requireSnapshot(input.request).quote.revision,
 				correlationId: input.workflowId,
-				dataClass: [],
+				dataClass: [...frozenRouteSnapshot.dataClass],
 				idempotencyKey,
 				input: {
 					inputAssets: [{ assetId: input.assetId, role: "reference_image" }],
@@ -982,17 +1102,18 @@ export class ModelSupplyImageExactTextVerifier
 						],
 					},
 				}),
-				selection: {
-					mode: "auto",
-					profile: "quality",
-					fallbackConsent: false,
-				},
+				selection: structuredClone(frozenRouteSnapshot.requestedSelection),
 				productUsageQuantity: 0,
 				workspaceId: input.request.workspaceId,
+				frozenRouteSnapshot: structuredClone(frozenRouteSnapshot),
 			});
 		assertHarnessExecutionAssemblyPinned(input.request);
 		if (!input.request.executionAssembly) {
-			return exactTextObservationFromResult(await submit(), input.expected);
+			const result = await submit();
+			return {
+				...exactTextObservationFromResult(result, input.expected),
+				modelResult: result,
+			};
 		}
 		if (!this.executionChildObservability) {
 			throw new Error("Exact-text verification requires child observability.");
@@ -1019,8 +1140,77 @@ export class ModelSupplyImageExactTextVerifier
 		}
 		const observation = exactTextObservationFromResult(result, input.expected);
 		await observer.append({ ...lifecycle, phase: "succeeded" });
-		return observation;
+		return { ...observation, modelResult: result };
 	}
+
+	private async freezeExactTextRoute(request: HarnessWorkflowInput) {
+		if (!this.models.freezeAutoTextRouteForExecution) {
+			throw new Error(
+				"Exact-text verification requires an independently frozen text.respond route.",
+			);
+		}
+		return this.models.freezeAutoTextRouteForExecution({
+			workspaceId: request.workspaceId,
+			dataClass: [...(request.frozenRouteSnapshot?.dataClass ?? [])],
+		});
+	}
+}
+
+function exactTextFrozenRoutePreauthorization(route: RouteSnapshot) {
+	if (
+		route.requestedSelection.mode !== "fixed" ||
+		!route.requestedSelection.catalogModelId ||
+		route.requestedSelection.catalogModelId !== route.actualCatalogModelId ||
+		route.requestedSelection.fallbackConsent !== false ||
+		route.candidateCatalogModelIds.length !== 1 ||
+		route.candidateCatalogModelIds[0] !== route.actualCatalogModelId ||
+		route.maxAttempts !== 1 ||
+		route.fallbackAuthorized !== false ||
+		route.fallbackConsent !== false ||
+		route.allowedCandidates?.length !== 1
+	) {
+		throw new Error(
+			"Bounded exact-text verification requires one fixed frozen text.respond route without fallback.",
+		);
+	}
+	const selected = route?.allowedCandidates?.find(
+		(candidate) =>
+			candidate.deploymentId === route.deploymentId &&
+			candidate.catalogModelId === route.actualCatalogModelId &&
+			candidate.modelOperations.includes("text.respond"),
+	);
+	if (!selected) {
+		throw new Error(
+			"Bounded exact-text verification requires a frozen text.respond route.",
+		);
+	}
+	if (
+		selected.pricingStatus === "unknown" ||
+		!selected.priceRevision.trim() ||
+		!Number.isSafeInteger(selected.unitPriceMicros) ||
+		selected.unitPriceMicros <= 0
+	) {
+		throw new Error(
+			"Bounded exact-text verification requires a positive frozen route price.",
+		);
+	}
+	if (selected.currency !== "CNY") {
+		throw new Error(
+			"Bounded exact-text verification requires a frozen CNY route price.",
+		);
+	}
+	if (selected.unit !== "request") {
+		throw new Error(
+			"Bounded exact-text verification cannot authorize a non-request price unit.",
+		);
+	}
+	const cents = (BigInt(selected.unitPriceMicros) + 9_999n) / 10_000n;
+	if (cents > BigInt(Number.MAX_SAFE_INTEGER)) {
+		throw new Error(
+			"Bounded exact-text frozen route price exceeds the safe CNY-cent range.",
+		);
+	}
+	return { iterations: 1, costCents: Number(cents) };
 }
 
 function exactTextObservationFromResult(
@@ -1048,6 +1238,10 @@ function exactTextObservationFromResult(
 }
 
 export class FixtureImageExactTextVerifier implements ImageExactTextVerifier {
+	preauthorize() {
+		return { iterations: 0, costCents: 0 };
+	}
+
 	async observe(input: { expected: string[] }) {
 		return {
 			expected: [...input.expected],
@@ -1055,6 +1249,22 @@ export class FixtureImageExactTextVerifier implements ImageExactTextVerifier {
 			conflictingText: [],
 		};
 	}
+}
+
+interface DurableMediaJobResult {
+	result: ModelSupplyResult;
+	providerLifecycleLatencyMs?: number;
+}
+
+function withObservedProviderLifecycle(
+	durable: DurableMediaJobResult,
+): ModelSupplyResult {
+	return durable.providerLifecycleLatencyMs === undefined
+		? durable.result
+		: {
+				...durable.result,
+				latencyMs: durable.providerLifecycleLatencyMs,
+			};
 }
 
 /** Narrow adapter over the existing Model Supply durable media path. */
@@ -1068,9 +1278,22 @@ export class ModelSupplyHarnessMediaExecutionPort
 				getDurableMediaJob?(
 					workspaceId: string,
 					jobId: string,
-				): Promise<{ result: ModelSupplyResult }>;
+				): Promise<DurableMediaJobResult>;
+				resumeBoundedMediaJob?(input: {
+					workspaceId: string;
+					jobId: string;
+					authorization: MediaBoundedExecutionAuthorization;
+				}): Promise<{ result: ModelSupplyResult }>;
+				freezeAutoTextRouteForExecution?(input: {
+					workspaceId: string;
+					dataClass: ModelSupplySubmission["dataClass"];
+					promptRevision?: string;
+				}): Promise<RouteSnapshot>;
 			},
-			"submit" | "getDurableMediaJob"
+			| "submit"
+			| "getDurableMediaJob"
+			| "resumeBoundedMediaJob"
+			| "freezeAutoTextRouteForExecution"
 		>,
 		private readonly exactText?: ImageExactTextVerifier,
 		private readonly noteAdmission?: NoteMediaAdmissionPort,
@@ -1083,50 +1306,13 @@ export class ModelSupplyHarnessMediaExecutionPort
 		request: HarnessWorkflowInput;
 		workflowId: string;
 		orchestrationWorkflowId?: string;
+		skillInstructions?: readonly ResolvedSkillInstruction[];
 		awaitSignal?: HarnessSignalReceiver;
 		runStep?: HarnessEffectRunner;
 	}): Promise<HarnessMediaSelectionResult> {
-		authorizeHarnessAction({
-			actionId: HARNESS_ACTION_CARRIERS.mediaQueueSubmit,
-			caller: "server",
-		});
+		this.assertExecutionPolicy(input);
 		const executionAssemblyRequired = Boolean(input.request.executionAssembly);
 		const snapshot = requireSnapshot(input.request);
-		assertBriefMatchesSnapshot(input.brief, snapshot);
-		const expressionIdentityRef = isOfficialNeutralIdentity(snapshot.identity)
-			? undefined
-			: `marketing_identity:${snapshot.identity.id}:${snapshot.identity.revision}`;
-		const preflight = validateHarnessPolicy({
-			phase: "execution",
-			bundle: {
-				workspaceId: input.context.bundle.workspaceId,
-				revision: input.context.bundle.revision,
-			},
-			brief: structuredClone(input.brief),
-			candidate: {
-				assetRefs: [...input.brief.referenceAssetIds],
-				candidateId: `${input.workflowId}:media-policy-preflight`,
-				factClaims: [],
-				intendedUse: "public_content",
-				...(expressionIdentityRef ? { expressionIdentityRef } : {}),
-				workspaceId: input.request.workspaceId,
-			},
-			...input.context.policyReferences,
-		});
-		if (!preflight.passed) {
-			throw new HarnessSelectionError(
-				[...new Set(preflight.failures.map(({ gateId }) => gateId))],
-				preflight.failures[0]?.reason,
-				[],
-				[
-					...new Set(
-						preflight.failures.flatMap(
-							({ alternativePath }) => alternativePath,
-						),
-					),
-				],
-			);
-		}
 		const noteAdmissionInput =
 			snapshot.lens === "image_text_note"
 				? {
@@ -1163,6 +1349,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 							exactTextFailure?.reason,
 							this.imageProfile,
 							input.orchestrationWorkflowId,
+							input.context.bundle.revision,
 						),
 						input.request,
 						executionAssemblyRequired,
@@ -1210,6 +1397,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 				undefined,
 				this.imageProfile,
 				input.orchestrationWorkflowId,
+				input.context.bundle.revision,
 			),
 			input.request,
 			executionAssemblyRequired,
@@ -1219,6 +1407,807 @@ export class ModelSupplyHarnessMediaExecutionPort
 		);
 		const completed = requireCompletedMediaResult(result, input.brief.kind);
 		return mediaSelection(completed, input.brief.kind, [completed], []);
+	}
+
+	async executeBounded(input: {
+		brief: MediaBrief;
+		context: HarnessContextSnapshot;
+		request: HarnessWorkflowInput;
+		workflowId: string;
+		orchestrationWorkflowId?: string;
+		skillInstructions?: readonly ResolvedSkillInstruction[];
+		awaitSignal?: HarnessSignalReceiver;
+		runStep?: HarnessEffectRunner;
+		boundedResume?: BoundedExecutionSuspension<unknown>;
+		boundedCheckpoint?: unknown;
+	}): Promise<
+		HarnessMediaSelectionResult |
+			BoundedExecutionSuspension<MediaBoundedCurrentBest>
+	> {
+		const startedAt = performance.now();
+		let durableWaitMs = 0;
+		let observedActiveMs = 0;
+		const snapshot = input.request.boundedExecution;
+		if (!snapshot) {
+			throw new Error(
+				"Bounded media execution requires a bounded execution snapshot.",
+			);
+		}
+		if (
+			typeof snapshot.maxIterations !== "number" ||
+			typeof snapshot.maxCostCents !== "number" ||
+			typeof snapshot.maxWallClockMs !== "number"
+		) {
+			throw new Error(
+				"Bounded media execution requires explicit iteration, cost, and wall-clock limits.",
+			);
+		}
+		this.assertExecutionPolicy(input);
+		const fingerprint = mediaBoundedRequestFingerprint({
+			workflowId: input.workflowId,
+			workspaceId: input.request.workspaceId,
+			actorId: input.request.actorId,
+			workflowRevision: input.request.workflowRevision,
+			executionSnapshot: input.request.executionSnapshot,
+			frozenRouteSnapshot: input.request.frozenRouteSnapshot,
+			prompts: input.request.prompts,
+			promptRevisionRefs: input.request.promptRevisionRefs,
+			executionAssembly: input.request.executionAssembly,
+			skillInstructions: input.skillInstructions,
+			contextRevision: input.context.bundle.revision,
+			contextHash: input.context.bundle.hash,
+			brief: input.brief,
+		});
+		const executionRootFingerprint = mediaBoundedRequestFingerprint({
+			workflowId: input.workflowId,
+			workspaceId: input.request.workspaceId,
+			actorId: input.request.actorId,
+			workflowRevision: input.request.workflowRevision,
+			executionSnapshot: input.request.executionSnapshot,
+			frozenRouteSnapshot: input.request.frozenRouteSnapshot,
+			prompts: input.request.prompts,
+			promptRevisionRefs: input.request.promptRevisionRefs,
+			executionAssembly: input.request.executionAssembly,
+			skillInstructions: input.skillInstructions,
+		});
+		const expectedExactText =
+			input.brief.kind === "image"
+				? input.brief.intent.exactText
+						.filter(({ treatment }) => treatment === "exact")
+						.map(({ text }) => text)
+				: [];
+		if (expectedExactText.length > 0 && !this.exactText) {
+			throw new HarnessMediaExecutionError(
+				"MEDIA_EXACT_TEXT_VERIFIER_UNAVAILABLE",
+				"Image text verification is unavailable.",
+				502,
+				undefined,
+				undefined,
+				merchantExactTextVerificationUnavailable(),
+			);
+		}
+		let checkpoint = input.boundedResume
+			? parseMediaBoundedResume(
+					input.boundedResume,
+					snapshot,
+					fingerprint,
+					executionRootFingerprint,
+					input.brief.kind,
+				)
+			: input.boundedCheckpoint !== undefined
+				? nextMediaEffectCheckpoint(
+						input.boundedCheckpoint,
+						fingerprint,
+						executionRootFingerprint,
+						input.brief.kind,
+					)
+				: mediaBoundedCurrentBestSchema.parse({
+					schemaVersion: "harness-media-current-best/v1",
+					requestFingerprint: fingerprint,
+					executionRootFingerprint,
+					kind: input.brief.kind,
+					phase: "before_submit",
+					attempts: [],
+					countedAttemptIds: [],
+					countedProviderCostIds: [],
+					attemptReceiptDigests: [],
+					providerCostReceiptDigests: [],
+				});
+		let activeSnapshot = snapshot;
+		const beforeSubmit = evaluateBoundedExecution(activeSnapshot, {
+			consumption: activeSnapshot.consumption,
+			currentBest: checkpoint,
+			unmetExplanation: "媒体生成已达到本轮上限",
+		});
+		if (beforeSubmit.state === "suspended") {
+			return beforeSubmit;
+		}
+		activeSnapshot = beforeSubmit.snapshot;
+
+		const loadDurable = async (current: MediaBoundedCurrentBest) => {
+			const finalAttempt = current.attempts.at(-1);
+			if (!finalAttempt || !this.models.getDurableMediaJob) {
+				throw new HarnessMediaExecutionError(
+					"MEDIA_RECONCILIATION_PENDING",
+					"Bounded media recovery requires the same durable provider job.",
+					202,
+					finalAttempt?.jobId,
+				);
+			}
+			const results = await Promise.all(
+				current.attempts.map(async (attempt) => {
+					const durable = await this.models.getDurableMediaJob!(
+						input.request.workspaceId,
+						attempt.jobId,
+					);
+					const completed = requireCompletedMediaResult(
+						withObservedProviderLifecycle(durable),
+						input.brief.kind,
+					);
+					if (completed.jobId !== attempt.jobId) {
+						throw new HarnessMediaExecutionError(
+							"MEDIA_SNAPSHOT_MISMATCH",
+							"The durable media job does not match the bounded checkpoint.",
+							409,
+							attempt.jobId,
+						);
+					}
+					observeBoundedMediaReceipts(
+						activeSnapshot,
+						current,
+						completed,
+						0,
+					);
+					return completed;
+				}),
+			);
+			const completed = results.at(-1)!;
+			if (
+				completed.asset?.id !== current.asset?.id ||
+				completed.asset?.sha256 !== current.asset?.sha256
+			) {
+				throw new HarnessMediaExecutionError(
+					"MEDIA_SNAPSHOT_MISMATCH",
+					"The durable media result does not match the bounded checkpoint.",
+					409,
+					finalAttempt.jobId,
+				);
+			}
+			return results;
+		};
+		let primary: ModelSupplyResult | undefined;
+		let recoveredRetry: ModelSupplyResult | undefined;
+		let primaryExactTextFailure: string | undefined;
+		if (
+			checkpoint.phase === "ready" ||
+			checkpoint.phase === "verify_primary" ||
+			checkpoint.phase === "exact_text_retry" ||
+			checkpoint.phase === "verify_retry" ||
+			checkpoint.phase === "exact_text_failed"
+		) {
+			const durableResults = await loadDurable(checkpoint);
+			primary = durableResults[0];
+			if (checkpoint.phase === "ready") {
+				return {
+					...mediaSelection(
+						durableResults.at(-1)!,
+						input.brief.kind,
+						durableResults,
+						durableResults.length === 2
+							? [
+									{
+										candidateId: durableResults[0]!.asset!.id,
+										gateIds: ["image_exact_text"],
+									},
+								]
+							: [],
+					),
+					boundedCurrentBest: checkpoint,
+					boundedExecution: activeSnapshot,
+				};
+			}
+			if (checkpoint.phase === "exact_text_failed") {
+				throw new HarnessSelectionError(
+					["image_exact_text"],
+					merchantExactTextMismatch({
+						expected: expectedExactText,
+						observed: [],
+					}),
+				);
+			}
+			primaryExactTextFailure = checkpoint.exactTextFailure;
+			if (checkpoint.phase === "verify_retry") {
+				recoveredRetry = durableResults.at(-1)!;
+			}
+		}
+
+		const submitAttempt = async (
+			role: "primary" | "exact_text_retry",
+			exactTextFailure?: string,
+		) => {
+			const authorization: MediaBoundedExecutionAuthorization = {
+				schemaVersion: "media-bounded-execution/v1",
+				snapshot: activeSnapshot,
+				countedAttemptIds: checkpoint.countedAttemptIds,
+				countedProviderCostIds: checkpoint.countedProviderCostIds,
+			};
+			let result: ModelSupplyResult;
+			if (
+				role === "primary" &&
+				checkpoint.phase === "provider_route_suspended"
+			) {
+				if (
+					!checkpoint.providerRoute ||
+					!this.models.getDurableMediaJob ||
+					!this.models.resumeBoundedMediaJob
+				) {
+					throw new BoundedExecutionResumeError(
+						"Bounded media route resume requires the same durable provider job.",
+					);
+				}
+				const durableBeforeResume = await this.runEffect(
+					`verify-resume:${checkpoint.providerRoute.jobId}`,
+					() =>
+						this.models.getDurableMediaJob!(
+							input.request.workspaceId,
+							checkpoint.providerRoute!.jobId,
+						),
+					input.runStep,
+				);
+				if (
+					durableBeforeResume.result.jobId !==
+						checkpoint.providerRoute.jobId ||
+					durableBeforeResume.providerLifecycleLatencyMs !==
+						checkpoint.providerRoute.lifecycleBaselineMs ||
+					mediaRouteDurableResultDigest(
+						durableBeforeResume.result,
+						durableBeforeResume.providerLifecycleLatencyMs,
+					) !== checkpoint.providerRoute.resultDigest
+				) {
+					throw new BoundedExecutionResumeError(
+						"Bounded media route resume checkpoint digest does not match the durable provider result.",
+					);
+				}
+				const resumed = await this.runEffect(
+					`resume:${checkpoint.providerRoute.jobId}`,
+					() =>
+						this.models.resumeBoundedMediaJob!({
+							workspaceId: input.request.workspaceId,
+							jobId: checkpoint.providerRoute!.jobId,
+							authorization,
+						}),
+					input.runStep,
+				);
+				result = resumed.result;
+				if (
+					result.status === "unknown" &&
+					this.models.getDurableMediaJob
+				) {
+					if (input.awaitSignal) {
+						const waitStartedAt = performance.now();
+						await input.awaitSignal(
+							harnessMediaJobTopic(checkpoint.providerRoute.jobId),
+							{ timeoutSeconds: MEDIA_JOB_WAIT_TIMEOUT_SECONDS },
+						);
+						durableWaitMs += Math.max(
+							0,
+							performance.now() - waitStartedAt,
+						);
+					}
+					const durable = await this.runEffect(
+						`reconcile:${checkpoint.providerRoute.jobId}`,
+						() =>
+							this.models.getDurableMediaJob!(
+								input.request.workspaceId,
+								checkpoint.providerRoute!.jobId,
+						),
+						input.runStep,
+					);
+					result = withObservedProviderLifecycle(durable);
+				}
+			} else {
+				result = await this.submitAndAwait(
+					mediaBoundedSubmission(
+						input.workflowId,
+						input.request,
+						input.brief,
+						role === "primary" ? "primary" : "retry",
+						exactTextFailure,
+						this.imageProfile,
+						input.orchestrationWorkflowId,
+						input.context.bundle.revision,
+						authorization,
+					),
+					input.request,
+					Boolean(input.request.executionAssembly),
+					undefined,
+					input.awaitSignal,
+					input.runStep,
+					(waitedMs) => {
+						durableWaitMs += waitedMs;
+					},
+				);
+			}
+			const routeActiveMs = Math.max(
+				0,
+				Math.ceil(performance.now() - startedAt - durableWaitMs),
+			);
+			const routeSuspension = mediaRouteBoundedSuspension(
+				activeSnapshot,
+				checkpoint,
+				result,
+				Math.max(0, routeActiveMs - observedActiveMs),
+			);
+			if (routeSuspension) {
+				observedActiveMs = routeActiveMs;
+				checkpoint = routeSuspension.currentBest;
+				activeSnapshot = routeSuspension.snapshot;
+				return { suspension: routeSuspension };
+			}
+			const completed = requireCompletedMediaResult(
+				result,
+				input.brief.kind,
+			);
+			const activeMs = Math.max(
+				0,
+				Math.ceil(performance.now() - startedAt - durableWaitMs),
+			);
+			const observed = observeBoundedMediaReceipts(
+				activeSnapshot,
+				checkpoint,
+				completed,
+				Math.max(0, activeMs - observedActiveMs),
+				checkpoint.providerRoute?.lifecycleBaselineMs ?? 0,
+			);
+			observedActiveMs = activeMs;
+			const {
+				exactTextFailure: _discardedExactTextFailure,
+				providerRoute: _discardedProviderRoute,
+				...checkpointWithoutFailure
+			} = checkpoint;
+			checkpoint = mediaBoundedCurrentBestSchema.parse({
+				...checkpointWithoutFailure,
+				phase: "ready",
+				attempts: [
+					...checkpoint.attempts,
+					{ role, jobId: completed.jobId, status: "completed" },
+				],
+				asset: {
+					id: completed.asset!.id,
+					sha256: completed.asset!.sha256,
+				},
+				countedAttemptIds: observed.countedAttemptIds,
+				countedProviderCostIds: observed.countedProviderCostIds,
+				attemptReceiptDigests: observed.attemptReceiptDigests,
+				providerCostReceiptDigests:
+					observed.providerCostReceiptDigests,
+			});
+			const decision = evaluateBoundedExecution(activeSnapshot, {
+				consumption: observed.consumption,
+				currentBest: checkpoint,
+				unmetExplanation: "媒体生成已达到本轮上限",
+			});
+			activeSnapshot = decision.snapshot;
+			return { completed, decision };
+		};
+		const checkpointActiveWall = () => {
+			const activeMs = Math.max(
+				0,
+				Math.ceil(performance.now() - startedAt - durableWaitMs),
+			);
+			const decision = evaluateBoundedExecution(activeSnapshot, {
+				consumption: {
+					wallClockMs:
+						activeSnapshot.consumption.wallClockMs +
+						Math.max(0, activeMs - observedActiveMs),
+				},
+				currentBest: checkpoint,
+				unmetExplanation: "媒体生成已达到本轮上限",
+			});
+			observedActiveMs = activeMs;
+			activeSnapshot = decision.snapshot;
+			return decision;
+		};
+		const accountExactTextResult = (
+			result: ModelSupplyResult | undefined,
+		) => {
+			if (!result) return undefined;
+			const activeMs = Math.max(
+				0,
+				Math.ceil(performance.now() - startedAt - durableWaitMs),
+			);
+			const observed = observeBoundedMediaReceipts(
+				activeSnapshot,
+				checkpoint,
+				result,
+				Math.max(0, activeMs - observedActiveMs),
+			);
+			observedActiveMs = activeMs;
+			checkpoint = mediaBoundedCurrentBestSchema.parse({
+				...checkpoint,
+				countedAttemptIds: observed.countedAttemptIds,
+				countedProviderCostIds: observed.countedProviderCostIds,
+				attemptReceiptDigests: observed.attemptReceiptDigests,
+				providerCostReceiptDigests:
+					observed.providerCostReceiptDigests,
+			});
+			const decision = evaluateBoundedExecution(activeSnapshot, {
+				consumption: observed.consumption,
+				currentBest: checkpoint,
+				unmetExplanation: "媒体文字核验已达到本轮上限",
+			});
+			activeSnapshot = decision.snapshot;
+			return decision;
+		};
+		const pinExactTextRoute = async () => {
+			if (checkpoint.exactTextRoute) {
+				return structuredClone(checkpoint.exactTextRoute.snapshot);
+			}
+			if (!this.models.freezeAutoTextRouteForExecution) {
+				throw new Error(
+					"Bounded exact-text verification requires an independent frozen text.respond route.",
+				);
+			}
+			const frozenRoute = await this.runEffect(
+				`freeze-exact-text-route:${input.workflowId}`,
+				() =>
+					this.models.freezeAutoTextRouteForExecution!({
+						workspaceId: input.request.workspaceId,
+						dataClass: [
+							...(input.request.frozenRouteSnapshot?.dataClass ?? []),
+						],
+					}),
+				input.runStep,
+			);
+			checkpoint = mediaBoundedCurrentBestSchema.parse({
+				...checkpoint,
+				exactTextRoute: {
+					snapshot: structuredClone(frozenRoute),
+					digest: mediaBoundedRequestFingerprint(frozenRoute),
+				},
+			});
+			return structuredClone(checkpoint.exactTextRoute!.snapshot);
+		};
+		const preauthorizeExactText = async (assetId: string) => {
+			const wallDecision = checkpointActiveWall();
+			if (wallDecision.state === "suspended") {
+				return wallDecision;
+			}
+			const route = await pinExactTextRoute();
+			if (!this.exactText?.preauthorize) {
+				throw new Error(
+					"Bounded exact-text verification requires frozen-route preauthorization.",
+				);
+			}
+			const projection = exactTextPreauthorizationSchema.parse(
+				await this.exactText.preauthorize({
+					assetId,
+					expected: expectedExactText,
+					request: input.request,
+					route,
+					workflowId: input.workflowId,
+				}),
+			);
+			const maxIterations = activeSnapshot.maxIterations;
+			const maxCostCents = activeSnapshot.maxCostCents;
+			if (
+				typeof maxIterations !== "number" ||
+				typeof maxCostCents !== "number"
+			) {
+				throw new Error(
+					"Bounded exact-text verification requires numeric iteration and cost limits.",
+				);
+			}
+			if (
+				activeSnapshot.consumption.iterations + projection.iterations >
+				maxIterations
+			) {
+				throw new HarnessMediaExecutionError(
+					"MEDIA_EXACT_TEXT_BUDGET_UNAVAILABLE",
+					"Exact-text verification has insufficient remaining bounded iterations.",
+					409,
+				);
+			}
+			if (
+				activeSnapshot.consumption.costCents + projection.costCents >
+				maxCostCents
+			) {
+				throw new HarnessMediaExecutionError(
+					"MEDIA_EXACT_TEXT_BUDGET_UNAVAILABLE",
+					"Exact-text verification has insufficient remaining bounded cost.",
+					409,
+				);
+			}
+			return { route };
+		};
+
+		if (!primary) {
+			const submitted = await submitAttempt("primary");
+			if ("suspension" in submitted && submitted.suspension) {
+				return submitted.suspension;
+			}
+			primary = submitted.completed;
+			if (submitted.decision.state === "suspended") {
+				if (expectedExactText.length > 0) {
+					checkpoint = mediaBoundedCurrentBestSchema.parse({
+						...checkpoint,
+						phase: "verify_primary",
+					});
+				}
+				return {
+					...submitted.decision,
+					currentBest: checkpoint,
+				};
+			}
+		}
+		if (input.brief.kind !== "image") {
+			return {
+				...mediaSelection(primary, input.brief.kind, [primary], []),
+				boundedCurrentBest: checkpoint,
+				boundedExecution: activeSnapshot,
+			};
+		}
+		if (expectedExactText.length === 0) {
+			return {
+				...mediaSelection(primary, "image", [primary], []),
+				boundedCurrentBest: checkpoint,
+				boundedExecution: activeSnapshot,
+			};
+		}
+		if (!primaryExactTextFailure) {
+			const verificationPreflight = await preauthorizeExactText(
+				primary.asset!.id,
+			);
+			if ("state" in verificationPreflight) return verificationPreflight;
+			const verification = await this.runEffect(
+				`verify:${primary.asset!.id}`,
+				() =>
+					this.exactText!.observe({
+						assetId: primary.asset!.id,
+						expected: expectedExactText,
+						request: input.request,
+						route: verificationPreflight.route,
+						workflowId: input.workflowId,
+					}),
+				input.runStep,
+			);
+			const assessment = assessImageExactText(verification);
+			if (!assessment.passed) {
+				primaryExactTextFailure = assessment.reason;
+				checkpoint = mediaBoundedCurrentBestSchema.parse({
+					...checkpoint,
+					phase: "exact_text_retry",
+					exactTextFailure: assessment.reason,
+				});
+			}
+			const verificationDecision = accountExactTextResult(
+				verification.modelResult,
+			);
+			if (verificationDecision?.state === "suspended") {
+				return {
+					...verificationDecision,
+					currentBest: checkpoint,
+				};
+			}
+		}
+		if (recoveredRetry) {
+			const verificationPreflight = await preauthorizeExactText(
+				recoveredRetry.asset!.id,
+			);
+			if ("state" in verificationPreflight) return verificationPreflight;
+			const verification = await this.runEffect(
+				`verify:${recoveredRetry.asset!.id}`,
+				() =>
+					this.exactText!.observe({
+						assetId: recoveredRetry!.asset!.id,
+						expected: expectedExactText,
+						request: input.request,
+						route: verificationPreflight.route,
+						workflowId: input.workflowId,
+					}),
+				input.runStep,
+			);
+			const retryAssessment = assessImageExactText(verification);
+			if (!retryAssessment.passed) {
+				checkpoint = mediaBoundedCurrentBestSchema.parse({
+					...checkpoint,
+					phase: "exact_text_failed",
+					exactTextFailure: retryAssessment.reason,
+				});
+				const verificationDecision = accountExactTextResult(
+					verification.modelResult,
+				);
+				if (verificationDecision?.state === "suspended") {
+					return {
+						...verificationDecision,
+						currentBest: checkpoint,
+					};
+				}
+				throw new HarnessSelectionError(
+					["image_exact_text"],
+					merchantExactTextMismatch(retryAssessment),
+				);
+			}
+			const verificationDecision = accountExactTextResult(
+				verification.modelResult,
+			);
+			if (verificationDecision?.state === "suspended") {
+				return {
+					...verificationDecision,
+					currentBest: checkpoint,
+				};
+			}
+			const finalWall = checkpointActiveWall();
+			if (finalWall.state === "suspended") {
+				return finalWall;
+			}
+			return {
+				...mediaSelection(
+					recoveredRetry,
+					"image",
+					[primary, recoveredRetry],
+					[
+						{
+							candidateId: primary.asset!.id,
+							gateIds: ["image_exact_text"],
+						},
+					],
+				),
+				boundedCurrentBest: checkpoint,
+				boundedExecution: activeSnapshot,
+			};
+		}
+		if (!primaryExactTextFailure) {
+			const finalWall = checkpointActiveWall();
+			if (finalWall.state === "suspended") {
+				return finalWall;
+			}
+			return {
+				...mediaSelection(primary, "image", [primary], []),
+				boundedCurrentBest: checkpoint,
+				boundedExecution: activeSnapshot,
+			};
+		}
+		checkpoint = mediaBoundedCurrentBestSchema.parse({
+			...checkpoint,
+			phase: "exact_text_retry",
+			exactTextFailure: primaryExactTextFailure,
+		});
+		const retryAdmission = checkpointActiveWall();
+		if (retryAdmission.state === "suspended") {
+			return retryAdmission;
+		}
+		const retry = await submitAttempt(
+			"exact_text_retry",
+			primaryExactTextFailure,
+		);
+		if ("suspension" in retry && retry.suspension) {
+			return retry.suspension;
+		}
+		if (retry.decision.state === "suspended") {
+			checkpoint = mediaBoundedCurrentBestSchema.parse({
+				...checkpoint,
+				phase: "verify_retry",
+				exactTextFailure: primaryExactTextFailure,
+			});
+			return {
+				...retry.decision,
+				currentBest: checkpoint,
+			};
+		}
+		const verificationPreflight = await preauthorizeExactText(
+			retry.completed.asset!.id,
+		);
+		if ("state" in verificationPreflight) return verificationPreflight;
+		const verification = await this.runEffect(
+			`verify:${retry.completed.asset!.id}`,
+			() =>
+				this.exactText!.observe({
+					assetId: retry.completed.asset!.id,
+					expected: expectedExactText,
+					request: input.request,
+					route: verificationPreflight.route,
+					workflowId: input.workflowId,
+				}),
+			input.runStep,
+		);
+		const retryAssessment = assessImageExactText(verification);
+		if (!retryAssessment.passed) {
+			checkpoint = mediaBoundedCurrentBestSchema.parse({
+				...checkpoint,
+				phase: "exact_text_failed",
+				exactTextFailure: retryAssessment.reason,
+			});
+			const verificationDecision = accountExactTextResult(
+				verification.modelResult,
+			);
+			if (verificationDecision?.state === "suspended") {
+				return {
+					...verificationDecision,
+					currentBest: checkpoint,
+				};
+			}
+			throw new HarnessSelectionError(
+				["image_exact_text"],
+				merchantExactTextMismatch(retryAssessment),
+			);
+		}
+		const verificationDecision = accountExactTextResult(
+			verification.modelResult,
+		);
+		if (verificationDecision?.state === "suspended") {
+			return {
+				...verificationDecision,
+				currentBest: checkpoint,
+			};
+		}
+		const finalWall = checkpointActiveWall();
+		if (finalWall.state === "suspended") {
+			return finalWall;
+		}
+		return {
+			...mediaSelection(
+				retry.completed,
+				"image",
+				[primary, retry.completed],
+				[
+					{
+						candidateId: primary.asset!.id,
+						gateIds: ["image_exact_text"],
+					},
+				],
+			),
+			boundedCurrentBest: checkpoint,
+			boundedExecution: activeSnapshot,
+		};
+	}
+
+	private assertExecutionPolicy(input: {
+		brief: MediaBrief;
+		context: HarnessContextSnapshot;
+		request: HarnessWorkflowInput;
+		workflowId: string;
+	}) {
+		authorizeHarnessAction({
+			actionId: HARNESS_ACTION_CARRIERS.mediaQueueSubmit,
+			caller: "server",
+		});
+		const snapshot = requireSnapshot(input.request);
+		assertBriefMatchesSnapshot(input.brief, snapshot);
+		const expressionIdentityRef = isOfficialNeutralIdentity(snapshot.identity)
+			? undefined
+			: `marketing_identity:${snapshot.identity.id}:${snapshot.identity.revision}`;
+		const preflight = validateHarnessPolicy({
+			phase: "execution",
+			bundle: {
+				workspaceId: input.context.bundle.workspaceId,
+				revision: input.context.bundle.revision,
+			},
+			brief: structuredClone(input.brief),
+			candidate: {
+				assetRefs: [...input.brief.referenceAssetIds],
+				candidateId: `${input.workflowId}:media-policy-preflight`,
+				factClaims: [],
+				intendedUse: "public_content",
+				...(expressionIdentityRef ? { expressionIdentityRef } : {}),
+				workspaceId: input.request.workspaceId,
+			},
+			...input.context.policyReferences,
+		});
+		if (!preflight.passed) {
+			throw new HarnessSelectionError(
+				[...new Set(preflight.failures.map(({ gateId }) => gateId))],
+				preflight.failures[0]?.reason,
+				[],
+				[
+					...new Set(
+						preflight.failures.flatMap(
+							({ alternativePath }) => alternativePath,
+						),
+					),
+				],
+			);
+		}
 	}
 
 	private async submitAndAwait(
@@ -1232,6 +2221,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 		},
 		awaitSignal?: HarnessSignalReceiver,
 		runStep?: HarnessEffectRunner,
+		onDurableWait?: (waitedMs: number) => void,
 	) {
 		const admissionToken = noteAdmissionInput
 			? await this.runEffect(
@@ -1246,9 +2236,9 @@ export class ModelSupplyHarnessMediaExecutionPort
 				? await this.runEffect(
 						`admission-reconcile:${admittedJobId}`,
 						async () => {
-							const { result: durableResult } = await this.models
+							const durable = await this.models
 								.getDurableMediaJob!(submission.workspaceId, admittedJobId);
-							return durableResult;
+							return withObservedProviderLifecycle(durable);
 						},
 						runStep,
 					)
@@ -1274,17 +2264,21 @@ export class ModelSupplyHarnessMediaExecutionPort
 		}
 		if (result.status === "unknown" && this.models.getDurableMediaJob) {
 			if (awaitSignal) {
+				const waitStartedAt = performance.now();
 				await awaitSignal(harnessMediaJobTopic(result.jobId), {
 					timeoutSeconds: MEDIA_JOB_WAIT_TIMEOUT_SECONDS,
 				});
+				onDurableWait?.(
+					Math.max(0, performance.now() - waitStartedAt),
+				);
 			}
 			const jobId = result.jobId;
 			result = await this.runEffect(
 				`reconcile:${jobId}`,
 				async () => {
-					const { result: durableResult } = await this.models
+					const durable = await this.models
 						.getDurableMediaJob!(submission.workspaceId, jobId);
-					return durableResult;
+					return withObservedProviderLifecycle(durable);
 				},
 				runStep,
 			);
@@ -1404,6 +2398,7 @@ export class HarnessMediaExecutionError extends Error {
 	constructor(
 		readonly code:
 			| "MEDIA_BRIEF_KIND_MISMATCH"
+			| "MEDIA_EXACT_TEXT_BUDGET_UNAVAILABLE"
 			| "MEDIA_EXACT_TEXT_VERIFICATION_FAILED"
 			| "MEDIA_EXACT_TEXT_VERIFIER_UNAVAILABLE"
 			| "MEDIA_GENERATION_FAILED"
@@ -1460,6 +2455,451 @@ function mediaKind(request: HarnessWorkflowInput): MediaBrief["kind"] {
 	);
 }
 
+function nextMediaEffectCheckpoint(
+	input: unknown,
+	requestFingerprint: string,
+	executionRootFingerprint: string,
+	kind: MediaBrief["kind"],
+) {
+	const previous = mediaBoundedCurrentBestSchema.parse(input);
+	if (
+		previous.kind !== kind ||
+		previous.executionRootFingerprint !== executionRootFingerprint
+	) {
+		throw new Error(
+			"Bounded media checkpoint execution root cannot change across a context fence.",
+		);
+	}
+	return mediaBoundedCurrentBestSchema.parse({
+		schemaVersion: "harness-media-current-best/v1",
+		requestFingerprint,
+		executionRootFingerprint,
+		kind,
+		phase: "next_effect",
+		attempts: [],
+		countedAttemptIds: previous.countedAttemptIds,
+		countedProviderCostIds: previous.countedProviderCostIds,
+		attemptReceiptDigests: previous.attemptReceiptDigests,
+		providerCostReceiptDigests: previous.providerCostReceiptDigests,
+	});
+}
+
+function mediaRouteBoundedSuspension(
+	activeSnapshot: NonNullable<HarnessWorkflowInput["boundedExecution"]>,
+	checkpoint: MediaBoundedCurrentBest,
+	result: ModelSupplyResult,
+	activeWallClockMs = 0,
+): BoundedExecutionSuspension<MediaBoundedCurrentBest> | undefined {
+	const raw = (
+		result as ModelSupplyResult & {
+			boundedExecution?: unknown;
+		}
+	).boundedExecution;
+	if (raw === undefined) return undefined;
+	if (
+		result.status !== "failed" ||
+		result.failureCode !== "MEDIA_BOUNDED_ITERATION_EXCEEDED"
+	) {
+		throw new Error(
+			"A bounded media route suspension requires the canonical iteration failure.",
+		);
+	}
+	const bounded = mediaBoundedRouteResultSchema.parse(raw);
+	if (
+		bounded.snapshot.stopReason !== "limit_reached" ||
+		bounded.snapshot.triggeredLimit !== bounded.triggeredLimit ||
+		JSON.stringify(bounded.snapshot.consumption) !==
+			JSON.stringify(bounded.consumption) ||
+		bounded.snapshot.maxIterations !== activeSnapshot.maxIterations ||
+		bounded.snapshot.maxCostCents !== activeSnapshot.maxCostCents ||
+		bounded.snapshot.maxWallClockMs !== activeSnapshot.maxWallClockMs ||
+		bounded.snapshot.maxDelegations !== activeSnapshot.maxDelegations ||
+		JSON.stringify(bounded.snapshot.requiredLimits) !==
+			JSON.stringify(activeSnapshot.requiredLimits)
+	) {
+		throw new Error(
+			"The durable media route suspension does not match its bounded authorization.",
+		);
+	}
+	const attemptsById = uniqueReceiptMap(
+		result.attempts,
+		"provider attempt",
+	);
+	const consumedAttemptIds = new Set(bounded.consumedAttemptIds);
+	if (
+		consumedAttemptIds.size !== bounded.consumedAttemptIds.length ||
+		bounded.consumedAttemptIds.some((id) => !attemptsById.has(id))
+	) {
+		throw new Error(
+			"The durable media route suspension has invalid consumed attempts.",
+		);
+	}
+	const newAttemptIds = bounded.consumedAttemptIds.filter(
+		(id) => !checkpoint.countedAttemptIds.includes(id),
+	);
+	if (
+		bounded.consumption.iterations !==
+		activeSnapshot.consumption.iterations + newAttemptIds.length
+	) {
+		throw new Error(
+			"The durable media route suspension iteration consumption is inconsistent.",
+		);
+	}
+	const costsById = uniqueReceiptMap(
+		result.providerCosts,
+		"provider cost",
+	);
+	const consumedProviderCostIds = new Set(
+		bounded.consumedProviderCostIds,
+	);
+	if (
+		consumedProviderCostIds.size !==
+			bounded.consumedProviderCostIds.length ||
+		bounded.consumedProviderCostIds.some((id) => !costsById.has(id))
+	) {
+		throw new Error(
+			"The durable media route suspension has invalid consumed costs.",
+		);
+	}
+	let addedCostCents = 0;
+	for (const id of bounded.consumedProviderCostIds) {
+		if (checkpoint.countedProviderCostIds.includes(id)) continue;
+		const cost = costsById.get(id)!;
+		if (
+			cost.status !== "observed" ||
+			cost.currency !== "CNY" ||
+			Object.keys(cost.usage).length === 0
+		) {
+			throw new Error(
+				"A durable media route suspension can count only observed CNY costs.",
+			);
+		}
+		addedCostCents += cnyAmountToCents(cost.amount);
+	}
+	if (
+		bounded.consumption.costCents !==
+		activeSnapshot.consumption.costCents + addedCostCents
+	) {
+		throw new Error(
+			"The durable media route suspension cost consumption is inconsistent.",
+		);
+	}
+	const attemptReceiptDigests = new Map(
+		checkpoint.attemptReceiptDigests.map(({ id, digest }) => [id, digest]),
+	);
+	verifyAndRememberReceiptDigests(
+		attemptReceiptDigests,
+		bounded.consumedAttemptIds.map((id) => attemptsById.get(id)!),
+	);
+	const providerCostReceiptDigests = new Map(
+		checkpoint.providerCostReceiptDigests.map(({ id, digest }) => [
+			id,
+			digest,
+		]),
+	);
+	verifyAndRememberReceiptDigests(
+		providerCostReceiptDigests,
+		bounded.consumedProviderCostIds.map((id) => costsById.get(id)!),
+	);
+	const lifecycleBaselineMs =
+		checkpoint.providerRoute?.lifecycleBaselineMs ?? 0;
+	const cumulativeLifecycleMs = observedLifecycleMilliseconds(result);
+	if (cumulativeLifecycleMs < lifecycleBaselineMs) {
+		throw new Error(
+			"The durable media provider lifecycle cannot move behind its pinned baseline.",
+		);
+	}
+	const currentBest = mediaBoundedCurrentBestSchema.parse({
+		...checkpoint,
+		phase: "provider_route_suspended",
+		providerRoute: {
+			jobId: result.jobId,
+			resultDigest: mediaRouteDurableResultDigest(
+				result,
+				cumulativeLifecycleMs,
+			),
+			lifecycleBaselineMs: cumulativeLifecycleMs,
+		},
+		countedAttemptIds: [
+			...new Set([
+				...checkpoint.countedAttemptIds,
+				...bounded.consumedAttemptIds,
+			]),
+		],
+		countedProviderCostIds: [
+			...new Set([
+				...checkpoint.countedProviderCostIds,
+				...bounded.consumedProviderCostIds,
+			]),
+		],
+		attemptReceiptDigests: [...attemptReceiptDigests].map(
+			([id, digest]) => ({ id, digest }),
+		),
+		providerCostReceiptDigests: [...providerCostReceiptDigests].map(
+			([id, digest]) => ({ id, digest }),
+		),
+	});
+	const snapshot = boundedExecutionSnapshotSchema.parse({
+		...bounded.snapshot,
+		consumption: {
+			...bounded.consumption,
+			wallClockMs:
+				activeSnapshot.consumption.wallClockMs +
+				Math.max(
+					activeWallClockMs,
+					cumulativeLifecycleMs - lifecycleBaselineMs,
+				),
+		},
+	});
+	return {
+		state: "suspended",
+		snapshot,
+		currentBest,
+		unmetExplanation: "媒体生成需要更多执行次数",
+		resumable: true,
+	};
+}
+
+function observeBoundedMediaReceipts(
+	snapshot: NonNullable<HarnessWorkflowInput["boundedExecution"]>,
+	checkpoint: MediaBoundedCurrentBest,
+	result: ModelSupplyResult,
+	activeWallClockMs: number,
+	lifecycleBaselineMs = 0,
+) {
+	const countedAttemptIds = new Set(checkpoint.countedAttemptIds);
+	const attemptsById = uniqueReceiptMap(
+		[result.attempt, ...result.attempts],
+		"provider attempt",
+	);
+	const attemptReceiptDigests = new Map(
+		checkpoint.attemptReceiptDigests.map((receipt) => [
+			receipt.id,
+			receipt.digest,
+		]),
+	);
+	verifyAndRememberReceiptDigests(attemptReceiptDigests, attemptsById.values());
+	const newAttemptIds = [...attemptsById.keys()].filter(
+		(id) => !countedAttemptIds.has(id),
+	);
+	const cumulativeLifecycleMs = observedLifecycleMilliseconds(result);
+	if (cumulativeLifecycleMs < lifecycleBaselineMs) {
+		throw new Error(
+			"The durable media provider lifecycle cannot move behind its pinned baseline.",
+		);
+	}
+	const countedProviderCostIds = new Set(
+		checkpoint.countedProviderCostIds,
+	);
+	const costsById = uniqueReceiptMap(
+		[result.providerCost, ...result.providerCosts],
+		"provider cost",
+	);
+	const providerCostReceiptDigests = new Map(
+		checkpoint.providerCostReceiptDigests.map((receipt) => [
+			receipt.id,
+			receipt.digest,
+		]),
+	);
+	const observedCosts = [...costsById.values()].filter(
+		(cost) => cost.status === "observed",
+	);
+	verifyAndRememberReceiptDigests(
+		providerCostReceiptDigests,
+		observedCosts,
+	);
+	const newCosts = observedCosts.filter(
+		(cost) => !countedProviderCostIds.has(cost.id),
+	);
+	if (
+		newAttemptIds.length > 0 &&
+		(!Number.isFinite(result.latencyMs) ||
+			!Number.isSafeInteger(Math.ceil(result.latencyMs!)) ||
+			result.latencyMs! < 0)
+	) {
+		throw new Error(
+			"Bounded media execution requires observed provider lifecycle latency.",
+		);
+	}
+	const newBillableAttemptCount = newAttemptIds.filter(
+		(id) => attemptsById.get(id)?.acceptance !== "rejected_before_accept",
+	).length;
+	if (newCosts.length < newBillableAttemptCount) {
+		throw new Error(
+			"Bounded media execution requires an observed provider cost receipt for every new attempt.",
+		);
+	}
+	let addedCostCents = 0;
+	for (const cost of newCosts) {
+		if (
+			cost.status !== "observed" ||
+			cost.currency !== "CNY" ||
+			!Number.isFinite(cost.amount) ||
+			cost.amount < 0 ||
+			Object.keys(cost.usage).length === 0
+		) {
+			throw new Error(
+				"Bounded media execution requires observed provider cost in CNY with usage.",
+			);
+		}
+		const cents = cnyAmountToCents(cost.amount);
+		addedCostCents += cents;
+		if (!Number.isSafeInteger(addedCostCents)) {
+			throw new Error(
+				"Bounded media accumulated provider cost exceeds the safe CNY-cent range.",
+			);
+		}
+	}
+	for (const id of newAttemptIds) countedAttemptIds.add(id);
+	for (const cost of newCosts) countedProviderCostIds.add(cost.id);
+	return {
+		consumption: {
+			iterations: snapshot.consumption.iterations + newAttemptIds.length,
+			costCents: snapshot.consumption.costCents + addedCostCents,
+			wallClockMs:
+				snapshot.consumption.wallClockMs +
+				(newAttemptIds.length > 0
+					? Math.max(
+							activeWallClockMs,
+							cumulativeLifecycleMs - lifecycleBaselineMs,
+						)
+					: 0),
+			delegations: snapshot.consumption.delegations,
+		},
+		countedAttemptIds: [...countedAttemptIds],
+		countedProviderCostIds: [...countedProviderCostIds],
+		attemptReceiptDigests: [...attemptReceiptDigests].map(
+			([id, digest]) => ({ id, digest }),
+		),
+		providerCostReceiptDigests: [...providerCostReceiptDigests].map(
+			([id, digest]) => ({ id, digest }),
+		),
+	};
+}
+
+function observedLifecycleMilliseconds(result: ModelSupplyResult) {
+	const milliseconds = Math.ceil(result.latencyMs ?? 0);
+	if (
+		!Number.isFinite(milliseconds) ||
+		!Number.isSafeInteger(milliseconds) ||
+		milliseconds < 0
+	) {
+		throw new Error(
+			"Bounded media execution requires observed provider lifecycle latency.",
+		);
+	}
+	return milliseconds;
+}
+
+function mediaRouteDurableResultDigest(
+	result: ModelSupplyResult,
+	lifecycleBaselineMs = observedLifecycleMilliseconds(result),
+) {
+	const {
+		endedAt: _durableTerminalTime,
+		latencyMs: _providerLifecycleLatency,
+		...canonical
+	} = result;
+	return mediaBoundedRequestFingerprint({
+		result: canonical,
+		lifecycleBaselineMs,
+	});
+}
+
+function cnyAmountToCents(amount: number) {
+	if (!Number.isFinite(amount) || amount < 0) {
+		throw new Error(
+			"Bounded media provider cost exceeds the safe CNY-cent range.",
+		);
+	}
+	const [coefficient, exponentText = "0"] = amount
+		.toString()
+		.toLowerCase()
+		.split("e");
+	const exponent = Number(exponentText);
+	const [whole, fraction = ""] = coefficient!.split(".");
+	const digits = BigInt(`${whole}${fraction}`);
+	const decimalPlaces = fraction.length - exponent;
+	const scaled =
+		decimalPlaces <= 0
+			? digits * 100n * 10n ** BigInt(-decimalPlaces)
+			: (() => {
+					const divisor = 10n ** BigInt(decimalPlaces);
+					const numerator = digits * 100n;
+					return (numerator + divisor - 1n) / divisor;
+				})();
+	if (scaled > BigInt(Number.MAX_SAFE_INTEGER)) {
+		throw new Error(
+			"Bounded media provider cost exceeds the safe CNY-cent range.",
+		);
+	}
+	return Number(scaled);
+}
+
+function verifyAndRememberReceiptDigests<Receipt extends { id: string }>(
+	known: Map<string, string>,
+	receipts: Iterable<Receipt>,
+) {
+	for (const receipt of receipts) {
+		const digest = mediaBoundedRequestFingerprint(receipt);
+		const previous = known.get(receipt.id);
+		if (previous && previous !== digest) {
+			throw new Error(
+				"Bounded media receipt facts cannot change for a counted identifier.",
+			);
+		}
+		known.set(receipt.id, digest);
+	}
+}
+
+function uniqueReceiptMap<Receipt extends { id: string }>(
+	receipts: Receipt[],
+	label: string,
+) {
+	const byId = new Map<string, Receipt>();
+	for (const receipt of receipts) {
+		const previous = byId.get(receipt.id);
+		if (
+			previous &&
+			JSON.stringify(previous) !== JSON.stringify(receipt)
+		) {
+			throw new Error(
+				`Bounded media ${label} receipt identifiers cannot conflict.`,
+			);
+		}
+		byId.set(receipt.id, receipt);
+	}
+	return byId;
+}
+
+function mediaBoundedSubmission(
+	workflowId: string,
+	request: HarnessWorkflowInput,
+	brief: MediaBrief,
+	attempt: "primary" | "retry",
+	exactTextFailure: string | undefined,
+	imageProfile: ImageModelRecipeProfile,
+	orchestrationWorkflowId: string | undefined,
+	contextRevision: number,
+	mediaBoundedExecution: MediaBoundedExecutionAuthorization,
+): ModelSupplySubmission & {
+	mediaBoundedExecution: MediaBoundedExecutionAuthorization;
+} {
+	return {
+		...mediaSubmission(
+			workflowId,
+			request,
+			brief,
+			attempt,
+			exactTextFailure,
+			imageProfile,
+			orchestrationWorkflowId,
+			contextRevision,
+		),
+		mediaBoundedExecution,
+	};
+}
+
 function mediaSubmission(
 	workflowId: string,
 	request: HarnessWorkflowInput,
@@ -1468,6 +2908,7 @@ function mediaSubmission(
 	exactTextFailure?: string,
 	imageProfile: ImageModelRecipeProfile = IMAGE_MODEL_RECIPE_PROFILE,
 	orchestrationWorkflowId?: string,
+	contextRevision = 1,
 ): ModelSupplySubmission {
 	const snapshot = requireSnapshot(request);
 	const frozenRoute = request.frozenRouteSnapshot;
@@ -1499,8 +2940,8 @@ function mediaSubmission(
 		dataClass: [...frozenRoute.dataClass],
 		idempotencyKey:
 			attempt === "primary"
-				? `harness-media:${workflowId}:${brief.kind}`
-				: `harness-media:${workflowId}:${brief.kind}:exact-text-retry`,
+				? `harness-media:${workflowId}:${brief.kind}${contextRevision > 1 ? `:r${contextRevision}` : ""}`
+				: `harness-media:${workflowId}:${brief.kind}${contextRevision > 1 ? `:r${contextRevision}` : ""}:exact-text-retry`,
 		input:
 			brief.kind === "image"
 				? {

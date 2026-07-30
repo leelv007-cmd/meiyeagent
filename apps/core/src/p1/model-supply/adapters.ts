@@ -578,6 +578,7 @@ export {
   type RecordedMediaErrorContract,
   RecordedMediaAdapterError,
   type RecordedMediaAdapterContract,
+  type RecordedMediaRouterOptions,
   RECORDED_MEDIA_ADAPTER_CONTRACTS,
   GptImage2RecordedAdapter,
   NanoBanana2RecordedAdapter,
@@ -602,6 +603,7 @@ import {
   defaultRecordedMediaAdapters,
   FalManagedMediaAdapter,
   RecordedAdapterRouter as RecordedMediaAdapterRouter,
+  type RecordedMediaRouterOptions,
 } from './recorded-media-adapters.js';
 
 export function defaultRecordedAdapters(): ProviderExecutionPort[] {
@@ -618,8 +620,11 @@ export function defaultRecordedAdapters(): ProviderExecutionPort[] {
 
 /** Full recorded router (LLM + media). Media-only base lives in recorded-media-adapters. */
 export class RecordedAdapterRouter extends RecordedMediaAdapterRouter {
-  constructor(adapters: ProviderExecutionPort[] = defaultRecordedAdapters()) {
-    super(adapters);
+  constructor(
+    adapters: ProviderExecutionPort[] = defaultRecordedAdapters(),
+    options: RecordedMediaRouterOptions = {},
+  ) {
+    super(adapters, options);
   }
 }
 
@@ -1004,12 +1009,17 @@ export function createModelExecutionRuntime(
     );
   }
   if (options.mode === 'fixture') {
-    const fixture = new RecordedAdapterRouter([
-      new FixtureCanvasAgentRecordedAdapter(),
-      ...defaultRecordedAdapters().filter(
-        (adapter) => !(adapter instanceof DeepSeekProDirectRecordedAdapter),
-      ),
-    ]);
+    const fixture = new RecordedAdapterRouter(
+      [
+        new FixtureCanvasAgentRecordedAdapter(),
+        ...defaultRecordedAdapters().filter(
+          (adapter) => !(adapter instanceof DeepSeekProDirectRecordedAdapter),
+        ),
+      ],
+      {
+        costCurrencyOverride: 'CNY',
+      },
+    );
     return withConfiguredMedia(
       {
         mode: options.mode,

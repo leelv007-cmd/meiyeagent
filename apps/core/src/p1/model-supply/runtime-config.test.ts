@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import sharp from 'sharp';
-import { RecordedAdapterRouter, recordedRequest } from './adapters.js';
+import {
+  createModelExecutionRuntime,
+  RecordedAdapterRouter,
+  recordedRequest,
+} from './adapters.js';
 import { ModelSupplyApplicationService } from './index.js';
 import {
   arkMediaConfigurationRevisionsFromEnv,
@@ -78,6 +82,21 @@ test('runtime env assembly exposes honest disabled, recorded, and gateway modes'
   });
   assert.equal(fixture.runtime.activation, 'local_fixture_verified');
   assert.equal(modelMediaExecutionMode(fixture.runtime), 'fixture');
+  assert.ok(
+    fixture.deployments
+      .filter(
+        (deployment) =>
+          deployment.status === 'active' &&
+          (deployment.apiFamily === 'image' ||
+            deployment.apiFamily === 'media'),
+      )
+      .every(
+        (deployment) =>
+          deployment.unitPrice?.currency === 'CNY' &&
+          deployment.unitPrice.amountMicros > 0 &&
+          deployment.priceRevision?.endsWith(':fixture-cny') === true,
+      ),
+  );
   assert.ok(
     fixture.deployments
       .filter(
@@ -203,6 +222,49 @@ test('runtime env assembly exposes honest disabled, recorded, and gateway modes'
       .filter((deployment) => deployment.catalogModelId === 'gpt-image-2')
       .every((deployment) => deployment.channel !== 'litellm')
   );
+});
+
+test('fixture media lifecycle reports CNY cost without changing recorded or direct currencies', async () => {
+  const mediaRequest = {
+    ...recordedRequest('seedance-2', 'video.generate', {
+      durationSeconds: 1,
+    }),
+    effectIdempotencyKey: 'fixture-media-currency',
+  };
+  const fixture = createModelExecutionRuntime({ mode: 'fixture' });
+  assert.ok(fixture.media);
+  const fixtureReceipt = await fixture.media.submit(mediaRequest);
+  assert.equal(fixtureReceipt.providerCost.currency, 'CNY');
+  const fixtureState = await fixture.media.poll({
+    ...mediaRequest,
+    taskRef: fixtureReceipt.taskRef ?? '',
+  });
+  assert.equal(fixtureState.providerCost.currency, 'CNY');
+
+  const recorded = createModelExecutionRuntime({ mode: 'recorded' });
+  assert.ok(recorded.media);
+  const recordedReceipt = await recorded.media.submit({
+    ...structuredClone(mediaRequest),
+    jobId: 'recorded-media-currency-job',
+    effectIdempotencyKey: 'recorded-media-currency',
+  });
+  assert.equal(recordedReceipt.providerCost.currency, 'USD');
+
+  const direct = createModelExecutionRuntime({
+    mode: 'direct',
+    direct: {
+      apiKey: 'fixture-direct-key',
+      baseUrl: 'https://direct.example.test/v1',
+      catalogModelId: 'llm-openai',
+      currency: 'USD',
+      inputCostPerMillion: 1,
+      model: 'provider-copy-model',
+      outputCostPerMillion: 2,
+    },
+  });
+  const incompatibleMedia = await direct.execution.execute(mediaRequest);
+  assert.equal(incompatibleMedia.kind, 'failure');
+  assert.equal(incompatibleMedia.providerCost.currency, 'USD');
 });
 
 test('gateway mode routes only LLM through the gateway and keeps recorded media functional', async () => {

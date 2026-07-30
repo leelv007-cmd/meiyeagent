@@ -493,10 +493,14 @@ export const RECORDED_MEDIA_ADAPTER_CONTRACTS = {
   },
 } as const satisfies Record<string, RecordedMediaAdapterContract>;
 
-function recordedMediaCost(contract: RecordedMediaAdapterContract, units = 1) {
+function recordedMediaCost(
+  contract: RecordedMediaAdapterContract,
+  units = 1,
+  currencyOverride?: 'CNY' | 'USD',
+) {
   return {
     amount: units === 0 ? 0 : contract.cost.amount * units,
-    currency: contract.cost.currency,
+    currency: currencyOverride ?? contract.cost.currency,
     usage: { mediaUnits: units },
   };
 }
@@ -1323,6 +1327,10 @@ export function defaultRecordedMediaAdapters(): ProviderExecutionPort[] {
   ];
 }
 
+export interface RecordedMediaRouterOptions {
+  costCurrencyOverride?: 'CNY' | 'USD';
+}
+
 export class RecordedAdapterRouter
   implements ProviderExecutionPort, MediaProviderLifecyclePort
 {
@@ -1346,6 +1354,7 @@ export class RecordedAdapterRouter
 
   constructor(
     adapters: ProviderExecutionPort[] = defaultRecordedMediaAdapters(),
+    private readonly options: RecordedMediaRouterOptions = {},
   ) {
     for (const adapter of adapters) {
       if (
@@ -1383,7 +1392,11 @@ export class RecordedAdapterRouter
     if (this.drainMode === 'draining') {
       return {
         acceptance: 'rejected_before_accept',
-        providerCost: mediaCost(request, 0),
+        providerCost: mediaCost(
+          request,
+          0,
+          this.options.costCurrencyOverride,
+        ),
         errorCode: 'channel_draining',
         retryable: false,
         error:
@@ -1392,7 +1405,11 @@ export class RecordedAdapterRouter
     }
     try {
       const task = await adapter.submit(request);
-      const providerCost = mediaCost(request);
+      const providerCost = mediaCost(
+        request,
+        undefined,
+        this.options.costCurrencyOverride,
+      );
       this.acceptedReceipts.set(recoveryRef, {
         taskRef: task.taskRef,
         sourceExpiresAt: task.expiresAt,
@@ -1425,7 +1442,8 @@ export class RecordedAdapterRouter
           acceptance: error.contract.acceptance,
           providerCost: recordedMediaCost(
             adapter.contract,
-            error.contract.billable ? 1 : 0
+            error.contract.billable ? 1 : 0,
+            this.options.costCurrencyOverride,
           ),
           errorCode: error.code,
           retryable: error.contract.retryable,
@@ -1434,7 +1452,11 @@ export class RecordedAdapterRouter
       }
       return {
         acceptance: 'rejected_before_accept',
-        providerCost: mediaCost(request, 0),
+        providerCost: mediaCost(
+          request,
+          0,
+          this.options.costCurrencyOverride,
+        ),
         error: error instanceof Error ? error.message : String(error),
       };
     }
@@ -1448,7 +1470,11 @@ export class RecordedAdapterRouter
       acceptance: 'accepted' as const,
       taskRef,
       sourceExpiresAt: task.expiresAt,
-      providerCost: mediaCost(request),
+      providerCost: mediaCost(
+        request,
+        undefined,
+        this.options.costCurrencyOverride,
+      ),
     };
   }
 
@@ -1460,7 +1486,11 @@ export class RecordedAdapterRouter
     return {
       status:
         task.status === 'cancel_requested' ? ('failed' as const) : task.status,
-      providerCost: mediaCost(request),
+      providerCost: mediaCost(
+        request,
+        undefined,
+        this.options.costCurrencyOverride,
+      ),
       sourceExpiresAt: task.expiresAt,
       ...(task.errorCode ? { errorCode: task.errorCode } : {}),
       ...(task.retryable === undefined ? {} : { retryable: task.retryable }),
@@ -1581,17 +1611,25 @@ function recoveredTask(
   };
 }
 
-function mediaCost(request: ProviderExecutionRequest, amount?: number) {
+function mediaCost(
+  request: ProviderExecutionRequest,
+  amount?: number,
+  currencyOverride?: 'CNY' | 'USD',
+) {
   const contract =
     RECORDED_MEDIA_ADAPTER_CONTRACTS[
       request.model.id as keyof typeof RECORDED_MEDIA_ADAPTER_CONTRACTS
     ];
   if (contract) {
-    return recordedMediaCost(contract, amount === 0 ? 0 : 1);
+    return recordedMediaCost(
+      contract,
+      amount === 0 ? 0 : 1,
+      currencyOverride,
+    );
   }
   return {
     amount: amount ?? (request.model.modality === 'video' ? 0.5 : 0.1),
-    currency: 'USD' as const,
+    currency: currencyOverride ?? ('USD' as const),
     usage: { mediaUnits: amount === 0 ? 0 : 1 },
   };
 }

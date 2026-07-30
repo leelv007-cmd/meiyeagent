@@ -296,26 +296,53 @@ export function modelRuntimeAssemblyFromEnv(
     explicitActivationEvidence['seed-tts-2-volcengine-direct'] =
       volcengineTtsEvidence;
   }
+  const fixtureMediaPricing =
+    mode === 'fixture'
+      ? Object.fromEntries(
+          documented.flatMap((deployment) =>
+            (deployment.apiFamily === 'image' ||
+              deployment.apiFamily === 'media') &&
+            deployment.unitPrice
+              ? [
+                  [
+                    deployment.id,
+                    {
+                      priceRevision: `${deployment.priceRevision}:fixture-cny`,
+                      unitPrice: {
+                        ...deployment.unitPrice,
+                        currency: 'CNY' as const,
+                      },
+                    },
+                  ] as const,
+                ]
+              : [],
+          ),
+        )
+      : {};
+  const deploymentPricingById = {
+    ...fixtureMediaPricing,
+    ...(volcengineTts
+      ? {
+          'seed-tts-2-volcengine-direct': {
+            priceRevision: volcengineTts.priceRevision,
+            unitPrice: {
+              amountMicros: Math.round(
+                volcengineTts.approvedPricePerTextWordCny * 1_000_000,
+              ),
+              currency: 'CNY' as const,
+              unit: 'text_word',
+            },
+          },
+        }
+      : {}),
+  };
   const deployments = createDefaultDeployments({
     activatedDeploymentIds: [...activeDeploymentIds],
     ...(Object.keys(explicitActivationEvidence).length > 0
       ? { activationEvidenceByDeploymentId: explicitActivationEvidence }
       : { activationEvidenceStatus: 'recorded' as const }),
-    ...(volcengineTts
-      ? {
-          deploymentPricingById: {
-            'seed-tts-2-volcengine-direct': {
-              priceRevision: volcengineTts.priceRevision,
-              unitPrice: {
-                amountMicros: Math.round(
-                  volcengineTts.approvedPricePerTextWordCny * 1_000_000,
-                ),
-                currency: 'CNY' as const,
-                unit: 'text_word',
-              },
-            },
-          },
-        }
+    ...(Object.keys(deploymentPricingById).length > 0
+      ? { deploymentPricingById }
       : {}),
   }).map((deployment) => {
     if (

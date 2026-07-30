@@ -512,6 +512,533 @@ test('image and video snapshots use the same five Harness stages with modality-s
   }
 });
 
+test('configured media bounds fail closed when the bounded media port is unavailable', async () => {
+  const request = mediaTaskInput('image');
+  request.boundedExecution = boundedExecutionSnapshot(0, 1);
+  const stages = mediaStages('image');
+  let ordinarySelections = 0;
+  stages.executeMediaAndSelect = async () => {
+    ordinarySelections += 1;
+    throw new Error('Configured bounds must not use ordinary media selection.');
+  };
+
+  await assert.rejects(
+    runHarnessWorkflow('task-image-bounded-missing', request, stages, {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision() {
+        throw new Error('A missing bounded media port must fail before HITL.');
+      },
+      async recordTrace() {},
+    }),
+    /Configured bounded execution requires a bounded media selection port/u,
+  );
+  assert.equal(ordinarySelections, 0);
+});
+
+test('a bounded media port cannot deliver without its cumulative snapshot and strict checkpoint', async () => {
+  const request = mediaTaskInput('image');
+  request.boundedExecution = boundedExecutionSnapshot(0, 2);
+  const stages = mediaStages('image');
+  const ordinarySelection = stages.executeMediaAndSelect.bind(stages);
+  stages.executeMediaAndSelectBounded = ordinarySelection;
+
+  await assert.rejects(
+    runHarnessWorkflow('task-image-bounded-bypass', request, stages, {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision() {
+        throw new Error('An incomplete bounded success must not enter HITL.');
+      },
+      async recordTrace() {},
+    }),
+    /must return its cumulative snapshot and checkpoint/u,
+  );
+});
+
+test('media bounded suspension resumes from the same checkpoint and carries consumption to delivery', async () => {
+  const request = mediaTaskInput('image');
+  request.boundedExecution = boundedExecutionSnapshot(0, 1);
+  const stages = mediaStages('image');
+  const ordinarySelection = stages.executeMediaAndSelect.bind(stages);
+  const observabilityEvents: Array<
+    Parameters<NonNullable<HarnessStagePorts['recordObservabilityEvent']>>[0]
+  > = [];
+  let boundedCalls = 0;
+  let deliveredSnapshot: HarnessWorkflowInput['boundedExecution'];
+  const executionCheckCalls: number[] = [];
+  stages.recordObservabilityEvent = async (event) => {
+    observabilityEvents.push(event);
+  };
+  stages.recordExecutionAssemblyStep = async ({ step }) => {
+    if (step === 'execution_check') {
+      executionCheckCalls.push(boundedCalls);
+    }
+  };
+  stages.executeMediaAndSelectBounded = async (input) => {
+    boundedCalls += 1;
+    if (!input.boundedResume) {
+      return {
+        state: 'suspended',
+        snapshot: {
+          ...input.request.boundedExecution!,
+          consumption: {
+            ...input.request.boundedExecution!.consumption,
+            iterations: 1,
+          },
+          stopReason: 'limit_reached',
+          triggeredLimit: 'maxIterations',
+        },
+        currentBest: mediaBoundedCheckpoint(1),
+        unmetExplanation: '媒体生成已达到本轮上限',
+        resumable: true,
+      };
+    }
+    assert.equal(
+      input.boundedResume.currentBest &&
+        typeof input.boundedResume.currentBest === 'object' &&
+        'attempts' in input.boundedResume.currentBest &&
+        Array.isArray(input.boundedResume.currentBest.attempts)
+        ? input.boundedResume.currentBest.attempts[0]?.jobId
+        : undefined,
+      'job-image-1',
+    );
+    const selection = await ordinarySelection(input);
+    return {
+      ...selection,
+      boundedCurrentBest: input.boundedResume.currentBest,
+      boundedExecution: input.request.boundedExecution,
+    };
+  };
+  stages.assembleMediaAndDeliver = async (input) => {
+    deliveredSnapshot = input.request.boundedExecution;
+    return {
+      packageId: 'package-1',
+      versionId: 'image-version-1',
+      revision: 3,
+    };
+  };
+  const stepResults = new Map<string, Promise<unknown>>();
+  const persistedTraceIds = new Set<string>();
+  const runtime: HarnessWorkflowRuntime = {
+    async runStep(key, operation) {
+      const replayed = stepResults.get(key);
+      if (replayed) {
+        return replayed as ReturnType<typeof operation>;
+      }
+      const result = operation();
+      stepResults.set(key, result);
+      return result;
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision(question) {
+      return {
+        idempotencyKey: 'raise-image-bound-1',
+        questionId: question.questionId,
+        workflowRevision: question.workflowRevision,
+        patch: {
+          field: question.response.field,
+          value: question.options[0]!.label,
+          reason: question.response.reason,
+        },
+        decision: {
+          state: 'accepted',
+          value: question.options[0]!.label,
+        },
+      };
+    },
+    async resumeBoundedExecution(input) {
+      return {
+        ...input.request,
+        boundedExecution: resumeWithRaisedServerLimit(
+          input.suspension.snapshot,
+          { limit: 'maxIterations', value: 2 },
+        ),
+      };
+    },
+    async recordTrace(trace, afterPersist) {
+      if (persistedTraceIds.has(trace.id)) {
+        return;
+      }
+      persistedTraceIds.add(trace.id);
+      await afterPersist?.();
+    },
+  };
+
+  const result = await runHarnessWorkflow(
+    'task-image-bounded',
+    request,
+    stages,
+    runtime,
+  );
+  await runHarnessWorkflow('task-image-bounded', request, stages, runtime);
+
+  assert.equal(boundedCalls, 2);
+  assert.deepEqual(executionCheckCalls, [2, 2]);
+  assert.equal(deliveredSnapshot?.consumption.iterations, 1);
+  assert.equal(deliveredSnapshot?.maxIterations, 2);
+  assert.equal(result.delivery.packageId, 'package-1');
+  assert.deepEqual(
+    observabilityEvents.map(
+      ({ workflowId, request: eventRequest, idempotencyKey, event, promptKey }) => ({
+        workflowId,
+        workspaceId: eventRequest.workspaceId,
+        idempotencyKey,
+        event,
+        promptKey,
+      }),
+    ),
+    [
+      {
+        workflowId: 'task-image-bounded',
+        workspaceId: 'workspace-1',
+        idempotencyKey: 'bounded:task-image-bounded:image:0:suspended',
+        event: {
+          eventType: 'bounded_execution.suspended',
+          payload: {
+            snapshot: {
+              ...boundedExecutionSnapshot(1, 1),
+              stopReason: 'limit_reached',
+              triggeredLimit: 'maxIterations',
+            },
+            currentBest: mediaBoundedCheckpoint(1),
+            unmetExplanation: '媒体生成已达到本轮上限',
+            resumable: true,
+          },
+        },
+        promptKey: undefined,
+      },
+      {
+        workflowId: 'task-image-bounded',
+        workspaceId: 'workspace-1',
+        idempotencyKey:
+          'bounded:task-image-bounded:raise-image-bound-1:resumed',
+        event: {
+          eventType: 'bounded_execution.resumed',
+          payload: {
+            previousSnapshot: {
+              ...boundedExecutionSnapshot(1, 1),
+              stopReason: 'limit_reached',
+              triggeredLimit: 'maxIterations',
+            },
+            snapshot: boundedExecutionSnapshot(1, 2),
+            decisionId: 'raise-image-bound-1',
+          },
+        },
+        promptKey: undefined,
+      },
+    ],
+  );
+});
+
+test('media bounded suspension without a canonical emitter does not claim event persistence', async () => {
+  const request = mediaTaskInput('image');
+  request.boundedExecution = boundedExecutionSnapshot(0, 1);
+  const stages = mediaStages('image');
+  const ordinarySelection = stages.executeMediaAndSelect.bind(stages);
+  const boundedTraceCallbacks: boolean[] = [];
+  stages.executeMediaAndSelectBounded = async (input) => {
+    if (!input.boundedResume) {
+      return {
+        state: 'suspended',
+        snapshot: {
+          ...boundedExecutionSnapshot(1, 1),
+          stopReason: 'limit_reached',
+          triggeredLimit: 'maxIterations',
+        },
+        currentBest: mediaBoundedCheckpoint(1),
+        unmetExplanation: '媒体生成已达到本轮上限',
+        resumable: true,
+      };
+    }
+    return {
+      ...(await ordinarySelection(input)),
+      boundedCurrentBest: input.boundedResume.currentBest,
+      boundedExecution: input.request.boundedExecution,
+    };
+  };
+
+  await runHarnessWorkflow('task-image-bounded-no-emitter', request, stages, {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision(question) {
+      return {
+        idempotencyKey: 'raise-image-bound-no-emitter',
+        questionId: question.questionId,
+        workflowRevision: question.workflowRevision,
+        patch: {
+          field: question.response.field,
+          value: question.options[0]!.label,
+          reason: question.response.reason,
+        },
+        decision: {
+          state: 'accepted',
+          value: question.options[0]!.label,
+        },
+      };
+    },
+    async resumeBoundedExecution(input) {
+      return {
+        ...input.request,
+        boundedExecution: resumeWithRaisedServerLimit(
+          input.suspension.snapshot,
+          { limit: 'maxIterations', value: 2 },
+        ),
+      };
+    },
+    async recordTrace(trace, afterPersist) {
+      if (trace.id.includes('media-bounded')) {
+        boundedTraceCallbacks.push(afterPersist !== undefined);
+      }
+      await afterPersist?.();
+    },
+  });
+
+  assert.deepEqual(boundedTraceCallbacks, [false]);
+});
+
+test('media bounded suspension keys separate context-fence executions and replay without duplicates', async () => {
+  const request = mediaTaskInput('image');
+  request.boundedExecution = boundedExecutionSnapshot(0, 1);
+  const stages = mediaStages('image');
+  const ordinarySelection = stages.executeMediaAndSelect.bind(stages);
+  const persistedEvents = new Map<
+    string,
+    Parameters<NonNullable<HarnessStagePorts['recordObservabilityEvent']>>[0]
+  >();
+  const emitterCalls: string[] = [];
+  stages.recordObservabilityEvent = async (input) => {
+    emitterCalls.push(input.idempotencyKey);
+    const existing = persistedEvents.get(input.idempotencyKey);
+    if (
+      existing &&
+      JSON.stringify(existing.event) !== JSON.stringify(input.event)
+    ) {
+      throw new Error(
+        `Canonical observability idempotency conflict: ${input.idempotencyKey}`,
+      );
+    }
+    persistedEvents.set(input.idempotencyKey, input);
+  };
+  stages.executeMediaAndSelectBounded = async (input) => {
+    const revision = input.context.bundle.revision;
+    if (!input.boundedResume) {
+      return {
+        state: 'suspended',
+        snapshot: {
+          ...input.request.boundedExecution!,
+          consumption: {
+            ...input.request.boundedExecution!.consumption,
+            iterations: revision,
+          },
+          stopReason: 'limit_reached',
+          triggeredLimit: 'maxIterations',
+        },
+        currentBest: mediaBoundedCheckpoint(revision),
+        unmetExplanation: `媒体生成 revision ${revision} 已达到本轮上限`,
+        resumable: true,
+      };
+    }
+    return {
+      ...(await ordinarySelection(input)),
+      boundedCurrentBest: input.boundedResume.currentBest,
+      boundedExecution: input.request.boundedExecution,
+    };
+  };
+  stages.fenceContext = async (input) => ({
+    ...input.context,
+    bundle: {
+      ...input.context.bundle,
+      revision: 2,
+      hash: 'b'.repeat(64),
+      previousRevision: input.context.bundle.revision,
+    },
+  });
+  const stepResults = new Map<string, Promise<unknown>>();
+  const persistedTraceIds = new Set<string>();
+  let decisionInvocation = 0;
+  const runtime: HarnessWorkflowRuntime = {
+    async runStep(key, operation) {
+      const replayed = stepResults.get(key);
+      if (replayed) {
+        return replayed as ReturnType<typeof operation>;
+      }
+      const result = operation();
+      stepResults.set(key, result);
+      return result;
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision(question) {
+      const round = (decisionInvocation % 2) + 1;
+      decisionInvocation += 1;
+      return {
+        idempotencyKey: `raise-image-fence-${round}`,
+        questionId: question.questionId,
+        workflowRevision: question.workflowRevision,
+        patch: {
+          field: question.response.field,
+          value: question.options[0]!.label,
+          reason: question.response.reason,
+        },
+        decision: {
+          state: 'accepted',
+          value: question.options[0]!.label,
+        },
+      };
+    },
+    async resumeBoundedExecution(input) {
+      return {
+        ...input.request,
+        boundedExecution: resumeWithRaisedServerLimit(
+          input.suspension.snapshot,
+          {
+            limit: 'maxIterations',
+            value:
+              typeof input.suspension.snapshot.maxIterations === 'number'
+                ? input.suspension.snapshot.maxIterations + 1
+                : 1,
+          },
+        ),
+      };
+    },
+    async recordTrace(trace, afterPersist) {
+      if (persistedTraceIds.has(trace.id)) {
+        return;
+      }
+      persistedTraceIds.add(trace.id);
+      await afterPersist?.();
+    },
+  };
+
+  await runHarnessWorkflow(
+    'task-image-bounded-fence-events',
+    request,
+    stages,
+    runtime,
+  );
+  await runHarnessWorkflow(
+    'task-image-bounded-fence-events',
+    request,
+    stages,
+    runtime,
+  );
+
+  assert.deepEqual(emitterCalls, [
+    'bounded:task-image-bounded-fence-events:image:0:suspended',
+    'bounded:task-image-bounded-fence-events:raise-image-fence-1:resumed',
+    'bounded:task-image-bounded-fence-events:image-r2:0:suspended',
+    'bounded:task-image-bounded-fence-events:raise-image-fence-2:resumed',
+  ]);
+  assert.deepEqual(
+    [...persistedEvents.values()].map(
+      ({ idempotencyKey, event }) => [
+        idempotencyKey,
+        event.eventType,
+      ],
+    ),
+    [
+      [
+        'bounded:task-image-bounded-fence-events:image:0:suspended',
+        'bounded_execution.suspended',
+      ],
+      [
+        'bounded:task-image-bounded-fence-events:raise-image-fence-1:resumed',
+        'bounded_execution.resumed',
+      ],
+      [
+        'bounded:task-image-bounded-fence-events:image-r2:0:suspended',
+        'bounded_execution.suspended',
+      ],
+      [
+        'bounded:task-image-bounded-fence-events:raise-image-fence-2:resumed',
+        'bounded_execution.resumed',
+      ],
+    ],
+  );
+});
+
+test('media context fence keeps bounded consumption while recompiling the provider effect', async () => {
+  const request = mediaTaskInput('image');
+  request.boundedExecution = boundedExecutionSnapshot(0, 5);
+  const stages = mediaStages('image');
+  const ordinarySelection = stages.executeMediaAndSelect.bind(stages);
+  let boundedCalls = 0;
+  let deliveredIterations = -1;
+  stages.executeMediaAndSelectBounded = async (input) => {
+    boundedCalls += 1;
+    assert.equal(
+      input.request.boundedExecution?.consumption.iterations,
+      boundedCalls - 1,
+    );
+    if (boundedCalls === 2) {
+      assert.deepEqual(
+        input.boundedCheckpoint &&
+          typeof input.boundedCheckpoint === 'object' &&
+          'countedProviderCostIds' in input.boundedCheckpoint
+          ? input.boundedCheckpoint.countedProviderCostIds
+          : undefined,
+        ['cost-image-1'],
+      );
+    }
+    const selection = await ordinarySelection(input);
+    return {
+      ...selection,
+      boundedCurrentBest: mediaBoundedCheckpoint(boundedCalls),
+      boundedExecution: {
+        ...input.request.boundedExecution!,
+        consumption: {
+          ...input.request.boundedExecution!.consumption,
+          iterations: boundedCalls,
+        },
+      },
+    };
+  };
+  stages.fenceContext = async (input) => ({
+    ...input.context,
+    bundle: {
+      ...input.context.bundle,
+      revision: 2,
+      hash: 'b'.repeat(64),
+      previousRevision: input.context.bundle.revision,
+    },
+  });
+  stages.assembleMediaAndDeliver = async (input) => {
+    deliveredIterations =
+      input.request.boundedExecution?.consumption.iterations ?? -1;
+    return {
+      packageId: 'package-1',
+      versionId: 'image-version-fenced',
+      revision: 3,
+    };
+  };
+
+  await runHarnessWorkflow('task-image-bounded-fence', request, stages, {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision() {
+      throw new Error('A continuing media bound should not enter HITL.');
+    },
+    async recordTrace() {},
+  });
+
+  assert.equal(boundedCalls, 2);
+  assert.equal(deliveredIterations, 2);
+});
+
 test('image-text note uses the fourth Harness fork and waits for style choice before page generation', async () => {
   const keys: string[] = [];
   const progress: string[] = [];
@@ -2897,6 +3424,54 @@ function mediaTaskInput(
     '2026-07-22T09:00:00.000Z'
   );
   return { ...taskInput(), executionSnapshot: snapshot };
+}
+
+function boundedExecutionSnapshot(iterations: number, maxIterations: number) {
+  return {
+    schemaVersion: 'bounded-execution-snapshot/v1' as const,
+    maxIterations,
+    maxCostCents: 'unset' as const,
+    maxWallClockMs: 'unset' as const,
+    maxDelegations: 'unset' as const,
+    requiredLimits: ['maxIterations' as const],
+    consumption: {
+      iterations,
+      costCents: 0,
+      wallClockMs: 0,
+      delegations: 0,
+    },
+    stopReason: null,
+    triggeredLimit: null,
+  };
+}
+
+function mediaBoundedCheckpoint(suffix: number) {
+  return {
+    schemaVersion: 'harness-media-current-best/v1' as const,
+    requestFingerprint: 'a'.repeat(64),
+    executionRootFingerprint: 'b'.repeat(64),
+    kind: 'image' as const,
+    phase: 'ready' as const,
+    attempts: [
+      {
+        role: 'primary' as const,
+        jobId: `job-image-${suffix}`,
+        status: 'completed' as const,
+      },
+    ],
+    asset: {
+      id: `image-asset-${suffix}`,
+      sha256: `image-sha-${suffix}`,
+    },
+    countedAttemptIds: [`attempt-image-${suffix}`],
+    countedProviderCostIds: [`cost-image-${suffix}`],
+    attemptReceiptDigests: [
+      { id: `attempt-image-${suffix}`, digest: 'c'.repeat(64) },
+    ],
+    providerCostReceiptDigests: [
+      { id: `cost-image-${suffix}`, digest: 'd'.repeat(64) },
+    ],
+  };
 }
 
 function noteStages(

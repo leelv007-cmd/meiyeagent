@@ -119,6 +119,25 @@ export interface JobPort {
       workspaceConcurrencyLimit: number;
     };
   }): Promise<void>;
+  /**
+   * Enqueues a new transport for an existing logical job after an explicit
+   * failed-job resume. Implementations must not relax normal enqueue
+   * idempotency to provide this capability.
+   */
+  resume?(
+    input: {
+      jobId: string;
+      workspaceId: string;
+      kind: string;
+      runAt?: string;
+      payload: Record<string, unknown>;
+      scheduling?: {
+        queuePriority: number;
+        workspaceConcurrencyLimit: number;
+      };
+    },
+    sequence: number
+  ): Promise<void>;
   cancel(workspaceId: string, jobId: string): Promise<void>;
 }
 

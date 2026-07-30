@@ -8,6 +8,7 @@ import {
   AdminConfigBoundedExecutionLimitsResolver,
   AdminConfigBoundedExecutionLimitsSource,
   BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
+  ISSUE_247_RECORDED_PROVISIONAL_LIMITS,
   ISSUE_255_RECORDED_CALIBRATION_LIMITS,
   boundedExecutionLimitsConfigSchema,
 } from './bounded-execution-limits.js';
@@ -15,6 +16,12 @@ import {
   AdminConfigFoundationModule,
   MemoryAdminConfigRepository,
 } from './foundation-module.js';
+import {
+  HarnessExecutionBoundsAdmissionError,
+  HarnessTaskAdmissionService,
+  type HarnessTaskRequestRegistry,
+  type HarnessWorkflowStarter,
+} from '../harness/task-admission.js';
 
 const configuredLimits = ISSUE_255_RECORDED_CALIBRATION_LIMITS;
 
@@ -80,6 +87,144 @@ test('bounded-execution config rejects defaults above hard caps and half-unset a
     }).success,
     false,
   );
+});
+
+test('issue 247 provisional bounds preserve their recorded provenance outside the bounded snapshot', async () => {
+  const repository = new MemoryAdminConfigRepository();
+  await repository.apply({
+    actorId: 'e2e-provisioner',
+    correlationId: 'issue-247-e2e-bounds',
+    expectedRevision: null,
+    key: BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
+    scope: 'global',
+    reason: 'Seed Issue 247 provisional E2E bounds',
+    value: ISSUE_247_RECORDED_PROVISIONAL_LIMITS,
+    workspaceId: '__global__',
+  });
+  const source = new AdminConfigBoundedExecutionLimitsSource(repository);
+  const resolver = new AdminConfigBoundedExecutionLimitsResolver(source);
+
+  assert.deepEqual((await source.read()).config, {
+    maxIterations: {
+      default: 2,
+      hardCap: 4,
+      provenance: 'recorded_provisional',
+    },
+    maxCostCents: {
+      default: 100,
+      hardCap: 200,
+      provenance: 'recorded_provisional',
+    },
+    maxWallClockMs: {
+      default: 60_000,
+      hardCap: 150_000,
+      provenance: 'recorded_provisional',
+    },
+    maxDelegations: {
+      default: 'unset',
+      hardCap: 'unset',
+      provenance: 'unset',
+    },
+  });
+  assert.deepEqual(await resolver.resolve(), {
+    maxIterations: 2,
+    maxCostCents: 100,
+    maxWallClockMs: 60_000,
+    maxDelegations: 'unset',
+    requiredLimits: [
+      'maxIterations',
+      'maxCostCents',
+      'maxWallClockMs',
+    ],
+  });
+});
+
+test('production admission starts once with the provisional CAS values while missing and issue 255 config remain fail-closed', async () => {
+  const configuredRepository = new MemoryAdminConfigRepository();
+  await configuredRepository.apply({
+    actorId: 'e2e-provisioner',
+    correlationId: 'issue-247-e2e-bounds',
+    expectedRevision: null,
+    key: BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
+    scope: 'global',
+    reason: 'Seed Issue 247 provisional E2E bounds',
+    value: ISSUE_247_RECORDED_PROVISIONAL_LIMITS,
+    workspaceId: '__global__',
+  });
+  const configuredStarter = new RecordingHarnessStarter();
+  const configuredService = new HarnessTaskAdmissionService(
+    new CreatingHarnessRegistry(),
+    configuredStarter,
+    undefined,
+    undefined,
+    new AdminConfigBoundedExecutionLimitsResolver(
+      new AdminConfigBoundedExecutionLimitsSource(configuredRepository),
+    ),
+  );
+
+  assert.deepEqual(await configuredService.submit(harnessTaskRequest()), {
+    workflowId: 'task-issue-247',
+    replayed: false,
+  });
+  assert.equal(configuredStarter.requests.length, 1);
+  assert.deepEqual(configuredStarter.requests[0]?.boundedExecution, {
+    schemaVersion: 'bounded-execution-snapshot/v1',
+    maxIterations: 2,
+    maxCostCents: 100,
+    maxWallClockMs: 60_000,
+    maxDelegations: 'unset',
+    requiredLimits: [
+      'maxIterations',
+      'maxCostCents',
+      'maxWallClockMs',
+    ],
+    consumption: {
+      iterations: 0,
+      costCents: 0,
+      wallClockMs: 0,
+      delegations: 0,
+    },
+    stopReason: null,
+    triggeredLimit: null,
+  });
+  assert.equal(
+    'provenance' in configuredStarter.requests[0]!.boundedExecution!,
+    false,
+  );
+
+  for (const value of [null, ISSUE_255_RECORDED_CALIBRATION_LIMITS]) {
+    const repository = new MemoryAdminConfigRepository();
+    if (value) {
+      await repository.apply({
+        actorId: 'admin-1',
+        correlationId: 'issue-255-bounds',
+        expectedRevision: null,
+        key: BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
+        scope: 'global',
+        reason: 'Apply Issue 255 recorded calibration',
+        value,
+        workspaceId: '__global__',
+      });
+    }
+    const starter = new RecordingHarnessStarter();
+    const service = new HarnessTaskAdmissionService(
+      new CreatingHarnessRegistry(),
+      starter,
+      undefined,
+      undefined,
+      new AdminConfigBoundedExecutionLimitsResolver(
+        new AdminConfigBoundedExecutionLimitsSource(repository),
+      ),
+    );
+
+    await assert.rejects(
+      service.submit(harnessTaskRequest()),
+      (error: unknown) =>
+        error instanceof HarnessExecutionBoundsAdmissionError &&
+        error.code === 'REQUIRED_EXECUTION_LIMIT_UNSET',
+    );
+    assert.equal(starter.requests.length, 0);
+  }
 });
 
 test('platform admin applies calibrated bounds through the existing CAS and audit seam', async () => {
@@ -196,3 +341,41 @@ test('DBOS bounded continuation raises only the triggered axis by one calibrated
     /hard cap/u,
   );
 });
+
+class CreatingHarnessRegistry implements HarnessTaskRequestRegistry {
+  async claim() {
+    return { kind: 'created' as const };
+  }
+}
+
+class RecordingHarnessStarter implements HarnessWorkflowStarter {
+  readonly requests: Array<
+    Parameters<HarnessWorkflowStarter['start']>[0]['request']
+  > = [];
+
+  async start(input: Parameters<HarnessWorkflowStarter['start']>[0]) {
+    this.requests.push(structuredClone(input.request));
+    return { workflowId: input.workflowId };
+  }
+}
+
+function harnessTaskRequest() {
+  return {
+    taskId: 'task-issue-247',
+    actorId: 'owner-1',
+    workspaceId: 'workspace-1',
+    packageId: 'package-1',
+    expectedRevision: 0,
+    workflowRevision: 1,
+    creationMode: 'customized' as const,
+    rawInput: '生成一条门店活动文案',
+    intent: {
+      context: {
+        workId: 'work-1',
+        intent: '生成一条门店活动文案',
+        sourceSummaries: [],
+      },
+      assetReferences: [],
+    },
+  };
+}

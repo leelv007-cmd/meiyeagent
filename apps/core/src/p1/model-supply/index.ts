@@ -38,6 +38,18 @@ import type { PriceRevision } from './catalog.js';
 const EXECUTION_ATTEMPT_BUDGET_SUSPENSION_CODE =
   'EXECUTION_ATTEMPT_BUDGET_SUSPENDED_BEFORE_PROVIDER';
 
+const EXACT_TEXT_REFERENCE_IMAGE_CAPABILITY_REQUIREMENTS = [
+  {
+    axisId: 'textResponse',
+    vocabularyVersion: MODEL_CAPABILITY_VOCABULARY_VERSION,
+    requiredProtocolCapabilities: [],
+    requiredModalities: ['text/plain', 'image/*'],
+    requiredBusinessTags: [],
+    requiredModalityCapabilities: [],
+    unknownPolicy: 'conservative_always_available',
+  },
+] satisfies ModelCapabilityRequirementAxis[];
+
 // S2a: behavior-preserving extracts (re-export for existing import paths)
 export {
   MODEL_MODALITIES,
@@ -77,6 +89,8 @@ export {
   type ModelSupplyPromptFallbackAuditEvent,
   type ModelSupplyPromptReference,
   type ModelSupplyPromptResolver,
+  mediaBoundedExecutionAuthorizationSchema,
+  type MediaBoundedExecutionAuthorization,
   type ModelSupplySubmission,
   type RouteSimulationFailureScenario,
   type RouteCandidateExclusionReason,
@@ -152,6 +166,7 @@ import {
   assertModelSupplyPromptBinding,
   LANGUAGE_MODEL_PROMPT_KEY_BY_OPERATION,
   LANGUAGE_MODEL_PROMPT_NAME_BY_OPERATION,
+  mediaBoundedExecutionAuthorizationSchema,
   promptFallbackAuditId,
 } from './route-contracts.js';
 import {
@@ -448,6 +463,219 @@ function sumRouteCosts(
       : 'catalog',
     unit: first.unit,
   };
+}
+
+function assertMediaProviderSubmitAuthorized(input: {
+  submission: ModelSupplySubmission;
+  snapshot: RouteSnapshot;
+  deployment: ModelDeployment;
+  attemptId: string;
+  previousAttempts: readonly ProviderAttempt[];
+}): 'submit' | 'reconcile' {
+  const { submission } = input;
+  if (submission.mediaBoundedExecution === undefined) {
+    if (submission.idempotencyKey.startsWith('harness-media:')) {
+      throw new ModelSupplyProviderAdmissionError(
+        'MEDIA_BOUNDED_AUTHORIZATION_REQUIRED',
+        'Harness media requires a bounded execution authorization.',
+        false,
+      );
+    }
+    return 'submit';
+  }
+  const parsedAuthorization =
+    mediaBoundedExecutionAuthorizationSchema.safeParse(
+      submission.mediaBoundedExecution,
+    );
+  if (!parsedAuthorization.success) {
+    throw new ModelSupplyProviderAdmissionError(
+      'MEDIA_BOUNDED_AUTHORIZATION_INVALID',
+      'Media bounded execution authorization is invalid.',
+      false,
+    );
+  }
+  const authorization = parsedAuthorization.data;
+  const { snapshot } = authorization;
+  const requiredLimitPolicy = {
+    maxIterations: {
+      errorCode: 'MEDIA_BOUNDED_ITERATION_UNSET',
+      label: 'iteration',
+    },
+    maxCostCents: {
+      errorCode: 'MEDIA_BOUNDED_COST_UNSET',
+      label: 'cost',
+    },
+    maxWallClockMs: {
+      errorCode: 'MEDIA_BOUNDED_WALL_CLOCK_UNSET',
+      label: 'wall-clock',
+    },
+    maxDelegations: {
+      errorCode: 'MEDIA_BOUNDED_DELEGATION_UNSET',
+      label: 'delegation',
+    },
+  } as const;
+  for (const requiredLimit of snapshot.requiredLimits) {
+    if (snapshot[requiredLimit] !== 'unset') continue;
+    const policy = requiredLimitPolicy[requiredLimit];
+    throw new ModelSupplyProviderAdmissionError(
+      policy.errorCode,
+      `Media bounded execution requires an explicit ${policy.label} limit.`,
+      false,
+    );
+  }
+  if (snapshot.stopReason !== null) {
+    throw new ModelSupplyProviderAdmissionError(
+      'MEDIA_BOUNDED_EXECUTION_SUSPENDED',
+      'Suspended media bounded execution must be resumed before provider submission.',
+      false,
+    );
+  }
+  if (snapshot.maxIterations === 'unset') {
+    throw new ModelSupplyProviderAdmissionError(
+      'MEDIA_BOUNDED_ITERATION_UNSET',
+      'Media bounded execution requires an explicit iteration limit.',
+      false,
+    );
+  }
+  if (snapshot.consumption.iterations >= snapshot.maxIterations) {
+    throw new ModelSupplyProviderAdmissionError(
+      'MEDIA_BOUNDED_ITERATION_REACHED',
+      'Media bounded execution iteration limit is already reached.',
+      false,
+    );
+  }
+  if (snapshot.maxCostCents === 'unset') {
+    throw new ModelSupplyProviderAdmissionError(
+      'MEDIA_BOUNDED_COST_UNSET',
+      'Media bounded execution requires an explicit cost limit.',
+      false,
+    );
+  }
+  if (snapshot.maxWallClockMs === 'unset') {
+    throw new ModelSupplyProviderAdmissionError(
+      'MEDIA_BOUNDED_WALL_CLOCK_UNSET',
+      'Media bounded execution requires an explicit wall-clock limit.',
+      false,
+    );
+  }
+  if (snapshot.consumption.wallClockMs >= snapshot.maxWallClockMs) {
+    throw new ModelSupplyProviderAdmissionError(
+      'MEDIA_BOUNDED_WALL_CLOCK_REACHED',
+      'Media bounded execution wall-clock limit is already reached.',
+      false,
+    );
+  }
+  if (authorization.countedAttemptIds.includes(input.attemptId)) {
+    return 'reconcile';
+  }
+  if (
+    input.previousAttempts.some(
+      (attempt) => attempt.acceptance !== 'rejected_before_accept',
+    )
+  ) {
+    throw new ModelSupplyProviderAdmissionError(
+      'MEDIA_BOUNDED_PREVIOUS_ATTEMPT_UNRESOLVED',
+      'An accepted or unknown media provider attempt must reconcile before another submission.',
+      false,
+      'reconcile_without_resubmit',
+    );
+  }
+  const uncountedAttemptIds = new Set(
+    [...input.previousAttempts.map((attempt) => attempt.id), input.attemptId]
+      .filter(
+        (attemptId) =>
+          !authorization.countedAttemptIds.includes(attemptId),
+      ),
+  );
+  const projectedIterations =
+    snapshot.consumption.iterations + uncountedAttemptIds.size;
+  if (projectedIterations > snapshot.maxIterations) {
+    throw new ModelSupplyProviderAdmissionError(
+      'MEDIA_BOUNDED_ITERATION_EXCEEDED',
+      'Media bounded execution has no remaining iteration for another provider attempt.',
+      false,
+    );
+  }
+  const candidate = input.snapshot.allowedCandidates?.find(
+    (entry) => entry.deploymentId === input.deployment.id,
+  );
+  if (
+    !candidate ||
+    candidate.pricingStatus === 'unknown' ||
+    !candidate.priceRevision.trim() ||
+    !Number.isSafeInteger(candidate.unitPriceMicros) ||
+    candidate.unitPriceMicros <= 0
+  ) {
+    throw new ModelSupplyProviderAdmissionError(
+      'MEDIA_BOUNDED_PRICE_UNAVAILABLE',
+      'Media bounded execution requires a positive frozen price revision.',
+      false,
+    );
+  }
+  const quantity = mediaProviderPriceQuantity(candidate.unit, submission);
+  const pricedMicros = BigInt(candidate.unitPriceMicros) * BigInt(quantity);
+  let authorizedCostCents: bigint;
+  if (candidate.currency === 'CNY') {
+    authorizedCostCents = ceilPositiveDivision(pricedMicros, 10_000n);
+  } else {
+    const fx = authorization.fx;
+    if (!fx) {
+      throw new ModelSupplyProviderAdmissionError(
+        'MEDIA_BOUNDED_FX_UNAVAILABLE',
+        'USD media pricing requires a frozen CNY exchange-rate revision.',
+        false,
+      );
+    }
+    authorizedCostCents = ceilPositiveDivision(
+      pricedMicros * BigInt(fx.cnyPerUsdMicros),
+      10_000_000_000n,
+    );
+  }
+  const projectedCostCents =
+    BigInt(snapshot.consumption.costCents) + authorizedCostCents;
+  if (
+    projectedCostCents > BigInt(snapshot.maxCostCents) ||
+    projectedCostCents > BigInt(Number.MAX_SAFE_INTEGER)
+  ) {
+    throw new ModelSupplyProviderAdmissionError(
+      'MEDIA_BOUNDED_COST_EXCEEDED',
+      'Frozen media provider cost exceeds the remaining bounded execution cost.',
+      false,
+    );
+  }
+  return 'submit';
+}
+
+function mediaProviderPriceQuantity(
+  unit: string,
+  submission: ModelSupplySubmission,
+): number {
+  if (
+    unit === 'image' ||
+    unit === 'request' ||
+    unit === 'requests' ||
+    unit === 'recorded_media_unit'
+  ) {
+    return 1;
+  }
+  const durationSeconds = submission.input?.durationSeconds;
+  if (
+    unit === 'second' &&
+    Number.isSafeInteger(durationSeconds) &&
+    durationSeconds !== undefined &&
+    durationSeconds > 0
+  ) {
+    return durationSeconds;
+  }
+  throw new ModelSupplyProviderAdmissionError(
+    'MEDIA_BOUNDED_PRICE_UNIT_UNKNOWN',
+    `Media bounded execution cannot authorize frozen price unit ${unit}.`,
+    false,
+  );
+}
+
+function ceilPositiveDivision(value: bigint, divisor: bigint): bigint {
+  return (value + divisor - 1n) / divisor;
 }
 
 function canonical(submission: ModelSupplySubmission) {
@@ -848,8 +1076,18 @@ export class ModelSupplyProviderAdmissionError extends Error {
   constructor(
     readonly errorCode: string,
     message: string,
+    readonly retryable = true,
+    readonly disposition:
+      | 'reject_before_accept'
+      | 'reconcile_without_resubmit' = 'reject_before_accept',
   ) {
     super(message);
+  }
+}
+
+class ModelSupplyRecoveredMediaAttemptError extends Error {
+  constructor(readonly result: ModelSupplyResult) {
+    super('A counted media provider attempt was recovered without resubmission.');
   }
 }
 
@@ -956,6 +1194,19 @@ export class ModelSupplyApplicationService {
       throw new Error('Durable media runtime is not configured.');
     }
     return this.mediaRuntime.get(workspaceId, jobId);
+  }
+
+  resumeBoundedMediaJob(input: {
+    workspaceId: string;
+    jobId: string;
+    authorization: NonNullable<ModelSupplySubmission['mediaBoundedExecution']>;
+  }) {
+    if (!this.mediaRuntime?.resumeBoundedMediaJob) {
+      throw new Error(
+        'Durable bounded media continuation is not configured.',
+      );
+    }
+    return this.mediaRuntime.resumeBoundedMediaJob(input);
   }
 
   cancelDurableMediaJob(input: {
@@ -1198,6 +1449,99 @@ export class ModelSupplyApplicationService {
     if (capabilityRevision) {
       snapshot.capabilityRevisionId = capabilityRevision.revisionId;
     }
+    return snapshot;
+  }
+
+  async freezeAutoTextRouteForExecution(input: {
+    workspaceId: string;
+    dataClass: DataClass[];
+    promptRevision?: string;
+  }): Promise<RouteSnapshot> {
+    const planningSubmission: ModelSupplySubmission = {
+      workspaceId: input.workspaceId,
+      actorId: 'workflow-gate',
+      idempotencyKey: 'text-route-preview-only',
+      operation: 'text.respond',
+      selection: {
+        mode: 'auto',
+        profile: 'quality',
+        fallbackConsent: false,
+      },
+      dataClass: [...input.dataClass],
+      prompt: '',
+      ...(input.promptRevision ? { promptRevision: input.promptRevision } : {}),
+    };
+    const storedCatalog = this.workspaceCatalogs.get(input.workspaceId) ?? {
+      revisionId: this.catalogRevisionId,
+      modelById: this.modelById,
+      deployments: this.deployments,
+    };
+    const capabilityRevision =
+      await this.capabilityHotAssembly?.getEffectiveRevision();
+    if (this.capabilityHotAssembly && !capabilityRevision) {
+      throw new Error(
+        'No published capability revision can be frozen for this workflow.',
+      );
+    }
+    const catalog = {
+      ...storedCatalog,
+      deployments: capabilityRevision
+        ? constrainDeploymentsToCapability(
+            capabilityRevision.entries,
+            storedCatalog.deployments,
+          )
+        : await this.constrainRuntimeDeploymentsForRequest(
+            storedCatalog.deployments,
+          ),
+    };
+    const planning = await this.planSubmissionCandidates(
+      planningSubmission,
+      catalog,
+      EXACT_TEXT_REFERENCE_IMAGE_CAPABILITY_REQUIREMENTS,
+    );
+    if (capabilityRevision) {
+      planning.capabilityRevisionId = capabilityRevision.revisionId;
+    }
+    const selected = planning.candidates[0];
+    if (!selected) {
+      throw new Error(
+        'No compliant text.respond deployment can be frozen under the published route and data policy.',
+      );
+    }
+    const hasConfirmedReferenceImageCapability =
+      EXACT_TEXT_REFERENCE_IMAGE_CAPABILITY_REQUIREMENTS.every(
+        (requirement) =>
+          planning.capabilityMatches?.some(
+            (match) =>
+              match.axisId === requirement.axisId &&
+              match.outcome === 'eligible' &&
+              match.evidenceRefs.length > 0,
+          ) === true,
+      );
+    if (!hasConfirmedReferenceImageCapability) {
+      throw new Error(
+        'No confirmed reference-image capable text.respond deployment can be frozen.',
+      );
+    }
+    const fixedSubmission: ModelSupplySubmission = {
+      ...planningSubmission,
+      selection: {
+        mode: 'fixed',
+        catalogModelId: selected.model.id,
+        fallbackConsent: false,
+      },
+    };
+    const snapshot = this.snapshotFor(
+      fixedSubmission,
+      [selected],
+      selected,
+      catalog.revisionId,
+      undefined,
+      planning,
+    );
+    snapshot.maxAttempts = 1;
+    snapshot.fallbackAuthorized = false;
+    snapshot.fallbackConsent = false;
     return snapshot;
   }
 
@@ -2187,6 +2531,44 @@ export class ModelSupplyApplicationService {
     const attemptOrdinal = input.attemptOrdinal ?? 1;
     const model = input.model ?? request.model;
     const deployment = input.deployment ?? request.deployment;
+    const boundedDisposition =
+      input.stage === 'submit'
+        ? assertMediaProviderSubmitAuthorized({
+        submission: input.submission,
+        snapshot,
+        deployment,
+        attemptId,
+        previousAttempts: input.previousAttempts ?? [],
+          })
+        : 'submit';
+    if (boundedDisposition === 'reconcile') {
+      const checkpoint = await this.ledger?.checkpointAttempt({
+        submission: input.submission,
+        jobId: preview.jobId,
+        attemptId,
+        ordinal: attemptOrdinal,
+        snapshot,
+        model,
+        deployment,
+        previousAttempts: structuredClone(input.previousAttempts ?? []),
+        previousProviderCosts: structuredClone(
+          input.previousProviderCosts ?? [],
+        ),
+      });
+      const recovered = checkpoint?.recoveredResult;
+      if (
+        !recovered ||
+        !recovered.attempts.some((attempt) => attempt.id === attemptId)
+      ) {
+        throw new ModelSupplyProviderAdmissionError(
+          'MEDIA_BOUNDED_ATTEMPT_REPLAY',
+          'A counted media provider attempt has no durable result to reconcile.',
+          false,
+          'reconcile_without_resubmit',
+        );
+      }
+      throw new ModelSupplyRecoveredMediaAttemptError(recovered);
+    }
     const leaseId = `capacity:${attemptId}`;
     const channelId =
       deployment.executionChannelId ?? deployment.id;
@@ -3028,6 +3410,50 @@ export class ModelSupplyApplicationService {
           }
         }
       } catch (error) {
+        if (error instanceof ModelSupplyRecoveredMediaAttemptError) {
+          const recoveredAttemptIndex = error.result.attempts.findIndex(
+            (attempt) => attempt.id === attemptId,
+          );
+          const recoveredAttempt =
+            error.result.attempts[recoveredAttemptIndex];
+          if (
+            !recoveredAttempt ||
+            recoveredAttempt.acceptance !== 'rejected_before_accept' ||
+            recoveredAttemptIndex < 0 ||
+            snapshot.fallbackConsent !== true ||
+            !fallbackAuthorized ||
+            candidateIndex >= candidates.length - 1
+          ) {
+            throw error;
+          }
+          const recoveredAttempts = error.result.attempts.slice(
+            0,
+            recoveredAttemptIndex + 1,
+          );
+          const recoveredProviderCosts = error.result.providerCosts.slice(
+            0,
+            recoveredAttemptIndex + 1,
+          );
+          attemptChain.splice(
+            0,
+            attemptChain.length,
+            ...structuredClone(recoveredAttempts),
+          );
+          providerCostChain.splice(
+            0,
+            providerCostChain.length,
+            ...structuredClone(recoveredProviderCosts),
+          );
+          for (const attempt of recoveredAttempts) {
+            if (
+              !this.storedAttempts.some((stored) => stored.id === attempt.id)
+            ) {
+              this.storedAttempts.push(structuredClone(attempt));
+            }
+          }
+          lastFailure = error.result;
+          continue;
+        }
         if (error instanceof ExecutionAttemptBudgetExceeded) {
           if (recoveredBudgetSuspension?.attempt.id === attemptId) {
             throw error;
@@ -3184,6 +3610,76 @@ export class ModelSupplyApplicationService {
           message: 'The provider completed without a non-empty text deliverable.',
           providerCost: response.providerCost,
         };
+      }
+      if (
+        response.kind === 'failure' &&
+        response.errorCode === 'MEDIA_BOUNDED_ITERATION_EXCEEDED' &&
+        lastFailure &&
+        attemptChain.length > 0 &&
+        attemptSubmission.mediaBoundedExecution
+      ) {
+        const authorization = mediaBoundedExecutionAuthorizationSchema.parse(
+          attemptSubmission.mediaBoundedExecution,
+        );
+        const consumedAttemptIds = [
+          ...new Set([
+            ...authorization.countedAttemptIds,
+            ...attemptChain.map((attempt) => attempt.id),
+          ]),
+        ];
+        const newlyConsumedAttempts = consumedAttemptIds.filter(
+          (attemptId) =>
+            !authorization.countedAttemptIds.includes(attemptId),
+        ).length;
+        const consumption = {
+          ...authorization.snapshot.consumption,
+          iterations:
+            authorization.snapshot.consumption.iterations +
+            newlyConsumedAttempts,
+        };
+        const boundedSnapshot = {
+          ...authorization.snapshot,
+          consumption,
+          stopReason: 'limit_reached' as const,
+          triggeredLimit: 'maxIterations' as const,
+        };
+        const consumedProviderCostIds = [
+          ...new Set([
+            ...authorization.countedProviderCostIds,
+            ...providerCostChain
+              .filter((cost) => cost.status === 'observed')
+              .map((cost) => cost.id),
+          ]),
+        ];
+        const suspended: ModelSupplyResult = {
+          ...lastFailure,
+          status: 'failed',
+          failureCode: 'MEDIA_BOUNDED_ITERATION_EXCEEDED',
+          retryable: false,
+          attempts: structuredClone(attemptChain),
+          providerCosts: structuredClone(providerCostChain),
+          boundedExecution: {
+            schemaVersion: 'media-bounded-execution-result/v1',
+            snapshot: boundedSnapshot,
+            triggeredLimit: 'maxIterations',
+            consumption,
+            consumedAttemptIds,
+            consumedProviderCostIds,
+          },
+        };
+        applyActualRouteDecisionExplanation(suspended);
+        await this.ledger?.settleAttempt({
+          submission,
+          result: suspended,
+          evidence: 'media_bounded_iteration_exhausted_before_fallback',
+        });
+        if (!options.deferResultPersistence) {
+          await this.resultSink?.saveResult(
+            submission.workspaceId,
+            suspended,
+          );
+        }
+        return suspended;
       }
       const attempt: ProviderAttempt = {
         id: attemptId,
@@ -4261,6 +4757,9 @@ export class ModelSupplyApplicationService {
         `${canonical(submission)}:${catalogRevisionId}:${selected.deployment.id}:${fallback ?? 'primary'}${capabilityIdentity ? `:${capabilityIdentity}` : ''}`
       ).slice(0, 28)}`,
       catalogRevisionId,
+      ...(planning?.capabilityRevisionId
+        ? { capabilityRevisionId: planning.capabilityRevisionId }
+        : {}),
       ...(planning?.capabilityRequirements?.length
         ? {
             capabilityRequirements: structuredClone(

@@ -112,4 +112,14 @@ if [[ "${canvas_table}" != "advanced_canvas_projects" ]]; then
   exit 67
 fi
 
+if [[ "${RUN_ISSUE_247_E2E_PROVISIONAL_BOUNDS_SEED:-}" == "true" ]]; then
+  echo "Seeding Issue 247 provisional E2E bounded-execution limits through admin-config CAS."
+  (
+    cd "${repo_root}"
+    DATABASE_URL="${business_url}" \
+      pnpm --filter @meiye/core exec tsx \
+      "${repo_root}/scripts/ci/seed-issue-247-e2e-provisional-bounds.mts"
+  )
+fi
+
 echo "Business schema is ready and DBOS system storage is separate."

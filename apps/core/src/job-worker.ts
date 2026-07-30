@@ -159,7 +159,7 @@ import {
   ProductStateEntitlementPolicy,
 } from './product/p1-model-policy.js';
 import { migratePostgresSchema } from './postgres-schema-migration.js';
-import { readHarnessRuntimeConfig } from './p1/harness/runtime-config.js';
+import { initializeJobWorkerHarnessRuntime } from './p1/harness/runtime-config.js';
 import { sendHarnessMediaJobTerminal } from './p1/harness/dbos-workflow.js';
 import {
   assertLangfusePromptRuntimePolicy,
@@ -187,13 +187,13 @@ const modelSupplyPromptResolver =
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required.');
-const harnessRuntimeConfig = process.env.HARNESS_DBOS_SYSTEM_DATABASE_URL
-  ? readHarnessRuntimeConfig(process.env)
-  : undefined;
-if (harnessRuntimeConfig) {
-  DBOS.setConfig(harnessRuntimeConfig.dbos);
-  await DBOS.launch();
-}
+const harnessRuntimeConfig = await initializeJobWorkerHarnessRuntime(
+  process.env,
+  {
+    setConfig: (config) => DBOS.setConfig(config),
+    launch: () => DBOS.launch(),
+  },
+);
 const serviceToken = process.env.CORE_SERVICE_TOKEN;
 assertStrongSecret('CORE_SERVICE_TOKEN', serviceToken);
 const notificationWebhook =

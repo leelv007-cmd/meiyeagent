@@ -247,6 +247,45 @@ describe('PgBossJobPort', () => {
     assert.equal(schedules[0]?.timezone, 'Asia/Shanghai');
   });
 
+  it('enqueues a transaction-scoped resume as a new continuation transport', async () => {
+    const client = new RecordedPgBossClient();
+    const port = new PgBossJobPort(client, { queuePrefix: 'p1' });
+    const transactionClient = {
+      async query() {
+        return { rows: [] };
+      },
+    } as unknown as PoolClient;
+    const input = {
+      jobId: 'job-resume',
+      workspaceId: 'ws-1',
+      kind: 'generate_copy',
+      payload: { limit: 1 },
+    };
+
+    await port.enqueueInTransaction(input, transactionClient);
+    const original = [...client.jobs.values()][0];
+    assert.ok(original);
+
+    const resumedInput = { ...input, payload: { limit: 2 } };
+    await port.resumeInTransaction(resumedInput, 1, transactionClient);
+    await port.resumeInTransaction(resumedInput, 1, transactionClient);
+
+    assert.equal(client.jobs.size, 2);
+    assert.deepEqual(original.data.payload, { limit: 1 });
+    const continuation = [...client.jobs.values()].find(
+      (job) => job.id !== original.id,
+    );
+    assert.equal(continuation?.data.workspaceId, input.workspaceId);
+    assert.equal(continuation?.data.jobId, input.jobId);
+    assert.equal(continuation?.data.sequence, 1);
+    assert.deepEqual(continuation?.data.payload, { limit: 2 });
+    assert.ok(client.lastSendDb);
+    await assert.rejects(
+      () => port.enqueue({ ...input, payload: { limit: 3 } }),
+      /different payload/,
+    );
+  });
+
   it('maps Product priority and workspace concurrency to pg-boss native scheduling', async () => {
     const client = new RecordedPgBossClient();
     const port = new PgBossJobPort(client, {

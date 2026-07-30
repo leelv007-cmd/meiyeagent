@@ -29,6 +29,13 @@ export interface TracerJobInput {
   payload: Record<string, unknown>;
 }
 
+export interface ResumeFailedTracerJobInput {
+  workspaceId: string;
+  jobId: string;
+  expectedPayloadHash: string;
+  payload: Record<string, unknown>;
+}
+
 export interface TracerJobRecord extends TracerJobInput {
   status: TracerJobStatus;
   acceptance: TracerAcceptance | null;
@@ -38,6 +45,8 @@ export interface TracerJobRecord extends TracerJobInput {
   output: Record<string, unknown> | null;
   error: string | null;
   attempts: number;
+  /** Wall time accumulated only while a fenced worker lease is active. */
+  activeExecutionMs: number;
   payloadHash: string;
   createdAt: string;
   updatedAt: string;
@@ -91,6 +100,7 @@ export interface TracerExternalEffect {
 
 export interface TracerJobRepository {
   submit(input: TracerJobInput): Promise<TracerJobRecord>;
+  resumeFailed(input: ResumeFailedTracerJobInput): Promise<TracerJobRecord>;
   get(workspaceId: string, jobId: string): Promise<TracerJobRecord | null>;
   requestCancel(workspaceId: string, jobId: string): Promise<TracerJobRecord>;
   reserve(workspaceId: string, jobId: string): Promise<TracerReservation>;
@@ -152,6 +162,11 @@ export interface TracerJobRepository {
 export interface TransactionalJobPort extends JobPort {
   start?(): Promise<unknown>;
   enqueueInTransaction(input: DurableJobInput, client: PoolClient): Promise<void>;
+  resumeInTransaction?(
+    input: DurableJobInput,
+    sequence: number,
+    client: PoolClient,
+  ): Promise<void>;
 }
 
 export class TracerJobApplicationService {
@@ -160,6 +175,10 @@ export class TracerJobApplicationService {
   submit(input: TracerJobInput) {
     validateDurableJobInput(input);
     return this.repository.submit(input);
+  }
+
+  resumeFailed(input: ResumeFailedTracerJobInput) {
+    return this.repository.resumeFailed(input);
   }
 
   async get(workspaceId: string, jobId: string) {
@@ -397,9 +416,10 @@ export class MemoryTracerJobRepository implements TracerJobRepository {
   private readonly records = new Map<string, TracerJobRecord>();
   private readonly leases = new Map<
     string,
-    { token: string; expiresAt: string }
+    { token: string; startedAt: string; expiresAt: string }
   >();
   private readonly leaseDurationMs: number;
+  private mutationTail: Promise<void> = Promise.resolve();
   mutationActive = false;
 
   constructor(
@@ -435,12 +455,57 @@ export class MemoryTracerJobRepository implements TracerJobRepository {
         output: null,
         error: null,
         attempts: 0,
+        activeExecutionMs: 0,
         payloadHash: hash,
         createdAt: now,
         updatedAt: now,
       };
       this.records.set(key, record);
       await this.queue.enqueue(toDurableInput(input));
+      return cloneRecord(record);
+    });
+  }
+
+  async resumeFailed(input: ResumeFailedTracerJobInput) {
+    return this.mutate(async () => {
+      const key = recordKey(input.workspaceId, input.jobId);
+      const record = this.requireRecord(input.workspaceId, input.jobId);
+      assertPayloadHash(record.payloadHash, input.expectedPayloadHash);
+      assertFailedResumeTarget(record);
+      if (!this.queue.resume) {
+        throw new JobRuntimeError(
+          'RUNTIME_NOT_STARTED',
+          'The configured job transport cannot enqueue a failed-job resume.',
+        );
+      }
+      const resumedInput: TracerJobInput = {
+        workspaceId: record.workspaceId,
+        jobId: record.jobId,
+        kind: record.kind,
+        runAt: record.runAt,
+        payload: structuredClone(input.payload),
+      };
+      validateDurableJobInput(resumedInput);
+      const previous = cloneRecord(record);
+      record.payload = resumedInput.payload;
+      record.payloadHash = payloadHash(resumedInput);
+      record.status = 'queued';
+      record.acceptance = null;
+      record.providerTaskRef = null;
+      record.output = null;
+      record.error = null;
+      record.leaseExpiresAt = null;
+      record.updatedAt = this.clock().toISOString();
+      this.leases.delete(key);
+      try {
+        await this.queue.resume(
+          toDurableInput(resumedInput),
+          failedResumeSequence(record),
+        );
+      } catch (error) {
+        this.records.set(key, previous);
+        throw error;
+      }
       return cloneRecord(record);
     });
   }
@@ -477,15 +542,24 @@ export class MemoryTracerJobRepository implements TracerJobRepository {
       }
       const key = recordKey(workspaceId, jobId);
       const activeLease = this.leases.get(key);
+      const now = this.clock();
       if (
         activeLease &&
-        Date.parse(activeLease.expiresAt) > this.clock().getTime()
+        Date.parse(activeLease.expiresAt) > now.getTime()
       ) {
         return {
           decision: 'in_progress',
           record: cloneRecord(record),
           leaseToken: null,
         } as const;
+      }
+      if (activeLease) {
+        record.activeExecutionMs += elapsedMilliseconds(
+          activeLease.startedAt,
+          new Date(
+            Math.min(now.getTime(), Date.parse(activeLease.expiresAt)),
+          ),
+        );
       }
       const decision =
         record.status === 'queued'
@@ -495,13 +569,17 @@ export class MemoryTracerJobRepository implements TracerJobRepository {
             : 'reconcile';
       const leaseToken = randomUUID();
       const leaseExpiresAt = new Date(
-        this.clock().getTime() + this.leaseDurationMs,
+        now.getTime() + this.leaseDurationMs,
       ).toISOString();
-      this.leases.set(key, { token: leaseToken, expiresAt: leaseExpiresAt });
+      this.leases.set(key, {
+        token: leaseToken,
+        startedAt: now.toISOString(),
+        expiresAt: leaseExpiresAt,
+      });
       record.leaseExpiresAt = leaseExpiresAt;
       record.status = decision === 'execute' ? 'running' : record.status;
       record.attempts += 1;
-      record.updatedAt = this.clock().toISOString();
+      record.updatedAt = now.toISOString();
       return { decision, record: cloneRecord(record), leaseToken } as TracerReservation;
     });
   }
@@ -653,7 +731,12 @@ export class MemoryTracerJobRepository implements TracerJobRepository {
         throw new JobRuntimeError('STALE_LEASE', 'Tracer result belongs to a stale worker lease.');
       }
       updater(record);
-      record.updatedAt = this.clock().toISOString();
+      const now = this.clock();
+      const lease = this.leases.get(key);
+      record.activeExecutionMs += lease
+        ? elapsedMilliseconds(lease.startedAt, now)
+        : 0;
+      record.updatedAt = now.toISOString();
       record.leaseExpiresAt = null;
       this.leases.delete(key);
       return cloneRecord(record);
@@ -667,12 +750,18 @@ export class MemoryTracerJobRepository implements TracerJobRepository {
   }
 
   private async mutate<T>(action: () => Promise<T>) {
-    if (this.mutationActive) throw new Error('Nested memory transaction is not supported.');
+    const previous = this.mutationTail;
+    let release!: () => void;
+    this.mutationTail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
     this.mutationActive = true;
     try {
       return await action();
     } finally {
       this.mutationActive = false;
+      release();
     }
   }
 }
@@ -722,7 +811,9 @@ export class PostgresTracerJobRepository implements TracerJobRepository {
              output jsonb,
              error text,
              attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+             active_execution_ms bigint NOT NULL DEFAULT 0 CHECK (active_execution_ms >= 0),
              lease_token text,
+             lease_started_at timestamptz,
              lease_expires_at timestamptz,
              effect_idempotency_key text NOT NULL,
              created_at timestamptz NOT NULL,
@@ -730,7 +821,9 @@ export class PostgresTracerJobRepository implements TracerJobRepository {
              PRIMARY KEY (workspace_id, job_id)
            );
            ALTER TABLE ${this.qualifiedTable} ADD COLUMN IF NOT EXISTS lease_token text;
+           ALTER TABLE ${this.qualifiedTable} ADD COLUMN IF NOT EXISTS lease_started_at timestamptz;
            ALTER TABLE ${this.qualifiedTable} ADD COLUMN IF NOT EXISTS lease_expires_at timestamptz;
+           ALTER TABLE ${this.qualifiedTable} ADD COLUMN IF NOT EXISTS active_execution_ms bigint NOT NULL DEFAULT 0;
            ALTER TABLE ${this.qualifiedTable} ADD COLUMN IF NOT EXISTS effect_idempotency_key text;
            UPDATE ${this.qualifiedTable}
               SET effect_idempotency_key = 'provider-effect:v1:' || length(workspace_id)::text || ':' || workspace_id || ':' || job_id
@@ -793,6 +886,85 @@ export class PostgresTracerJobRepository implements TracerJobRepository {
       client.release();
     }
     return this.require(input.workspaceId, input.jobId);
+  }
+
+  async resumeFailed(input: ResumeFailedTracerJobInput) {
+    await this.migrate();
+    await this.queue.start?.();
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const record = await this.select(
+        client,
+        input.workspaceId,
+        input.jobId,
+        true,
+      );
+      if (!record) {
+        throw new JobRuntimeError('NOT_FOUND', 'Tracer job was not found.');
+      }
+      assertPayloadHash(record.payloadHash, input.expectedPayloadHash);
+      assertFailedResumeTarget(record);
+      if (!this.queue.resumeInTransaction) {
+        throw new JobRuntimeError(
+          'RUNTIME_NOT_STARTED',
+          'The configured job transport cannot resume inside the tracer transaction.',
+        );
+      }
+      const resumedInput: TracerJobInput = {
+        workspaceId: record.workspaceId,
+        jobId: record.jobId,
+        kind: record.kind,
+        runAt: record.runAt,
+        payload: structuredClone(input.payload),
+      };
+      validateDurableJobInput(resumedInput);
+      const result = await client.query<TracerRow>(
+        `UPDATE ${this.qualifiedTable}
+         SET payload = $3::jsonb,
+             payload_hash = $4,
+             status = 'queued',
+             acceptance = NULL,
+             provider_task_ref = NULL,
+             output = NULL,
+             error = NULL,
+             lease_token = NULL,
+             lease_started_at = NULL,
+             lease_expires_at = NULL,
+             updated_at = $5
+         WHERE workspace_id = $1 AND job_id = $2
+           AND status = 'failed'
+           AND payload_hash = $6
+           AND provider_task_ref IS NULL
+         RETURNING *`,
+        [
+          input.workspaceId,
+          input.jobId,
+          JSON.stringify(resumedInput.payload),
+          payloadHash(resumedInput),
+          this.clock(),
+          input.expectedPayloadHash,
+        ],
+      );
+      if (!result.rows[0]) {
+        throw new JobRuntimeError(
+          'IDEMPOTENCY_CONFLICT',
+          'Failed tracer resume no longer matches its expected terminal state.',
+        );
+      }
+      await this.queue.resumeInTransaction(
+        toDurableInput(resumedInput),
+        failedResumeSequence(record),
+        client,
+      );
+      await client.query('COMMIT');
+      return mapRow(result.rows[0]);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async get(workspaceId: string, jobId: string) {
@@ -862,8 +1034,26 @@ export class PostgresTracerJobRepository implements TracerJobRepository {
         `UPDATE ${this.qualifiedTable}
          SET status = CASE WHEN $3 = 'execute' THEN 'running' ELSE status END,
              attempts = attempts + 1,
+             active_execution_ms = active_execution_ms + CASE
+               WHEN lease_started_at IS NOT NULL
+                 AND lease_expires_at IS NOT NULL
+                 AND lease_expires_at <= $4
+               THEN GREATEST(
+                 0,
+                 FLOOR(
+                   EXTRACT(
+                     EPOCH FROM (
+                       LEAST($4::timestamptz, lease_expires_at) -
+                       lease_started_at
+                     )
+                   ) * 1000
+                 )
+               )::bigint
+               ELSE 0
+             END,
              updated_at = $4,
              lease_token = $5,
+             lease_started_at = $4,
              lease_expires_at = $6
          WHERE workspace_id = $1 AND job_id = $2
          RETURNING *`,
@@ -1050,6 +1240,7 @@ export class PostgresTracerJobRepository implements TracerJobRepository {
     }
   ) {
     await this.migrate();
+    const now = this.clock();
     const result = await this.pool.query<TracerRow>(
       `UPDATE ${this.qualifiedTable}
        SET status = CASE
@@ -1063,7 +1254,15 @@ export class PostgresTracerJobRepository implements TracerJobRepository {
            output = COALESCE($6::jsonb, output),
            error = $7,
            updated_at = $8,
+           active_execution_ms = active_execution_ms + COALESCE(
+             GREATEST(
+               0,
+               FLOOR(EXTRACT(EPOCH FROM ($8 - lease_started_at)) * 1000)
+             )::bigint,
+             0
+           ),
            lease_token = NULL,
+           lease_started_at = NULL,
            lease_expires_at = NULL
        WHERE workspace_id = $1 AND job_id = $2
          AND lease_token = $9
@@ -1078,7 +1277,7 @@ export class PostgresTracerJobRepository implements TracerJobRepository {
         patch.providerTaskRef ?? null,
         patch.output ? JSON.stringify(patch.output) : null,
         patch.error ?? null,
-        this.clock(),
+        now,
         patch.leaseToken,
         patch.requiredCurrentStatus ?? null,
       ]
@@ -1130,6 +1329,7 @@ interface TracerRow extends QueryResultRow {
   status: TracerJobStatus;
   acceptance: TracerAcceptance | null;
   effect_idempotency_key: string;
+  active_execution_ms: string | number;
   lease_expires_at: Date | null;
   provider_task_ref: string | null;
   output: Record<string, unknown> | null;
@@ -1155,6 +1355,7 @@ function mapRow(row: TracerRow): TracerJobRecord {
     output: row.output ? structuredClone(row.output) : null,
     error: row.error,
     attempts: Number(row.attempts),
+    activeExecutionMs: Number(row.active_execution_ms),
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
   };
@@ -1184,6 +1385,31 @@ function assertPayloadHash(existing: string, requested: string) {
   if (existing !== requested) {
     throw new JobRuntimeError('IDEMPOTENCY_CONFLICT', 'Tracer job id was reused with a different payload.');
   }
+}
+
+function assertFailedResumeTarget(record: TracerJobRecord) {
+  if (record.status !== 'failed') {
+    throw new JobRuntimeError(
+      'INVALID_JOB',
+      'Only a failed tracer job can be resumed.',
+    );
+  }
+  if (record.providerTaskRef) {
+    throw new JobRuntimeError(
+      'INVALID_JOB',
+      'A failed tracer job with an active provider task cannot be resumed.',
+    );
+  }
+}
+
+function failedResumeSequence(record: TracerJobRecord) {
+  if (!Number.isInteger(record.attempts) || record.attempts < 1) {
+    throw new JobRuntimeError(
+      'INVALID_JOB',
+      'A failed tracer job must record an attempt before it can resume.',
+    );
+  }
+  return record.attempts;
 }
 
 function cancelledReconciliationKey(
@@ -1238,6 +1464,10 @@ function positiveDuration(value: number, label: string) {
     throw new JobRuntimeError('INVALID_JOB', `${label} must be positive.`);
   }
   return value;
+}
+
+function elapsedMilliseconds(startedAt: string, endedAt: Date) {
+  return Math.max(0, endedAt.getTime() - Date.parse(startedAt));
 }
 
 function secondsUntil(value: string | null) {

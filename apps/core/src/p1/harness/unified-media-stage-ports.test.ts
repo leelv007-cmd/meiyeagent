@@ -3,7 +3,10 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { IMAGE_INTENT_SLOT_KINDS } from "@meiye/contracts";
+import {
+	IMAGE_INTENT_SLOT_KINDS,
+	type ModelCapabilityProfile,
+} from "@meiye/contracts";
 
 import {
 	createCreationExecutionSnapshot,
@@ -18,10 +21,21 @@ import {
 	type ContentPackageRevisionWriteInput,
 } from "../execution-spine/content-package-revision-port.js";
 import { fingerprintValue } from "../job-runtime/job-contracts.js";
-import type {
-	ModelSupplyResult,
-	ModelSupplySubmission,
+import {
+	createDefaultCatalogModels,
+	createDefaultDeployments,
+	MemoryModelAssetStorage,
+	ModelSupplyApplicationService,
+	RecordedAdapterRouter,
+	type ModelSupplyResult,
+	type ModelSupplySubmission,
+	type RouteSnapshot,
 } from "../model-supply/index.js";
+import {
+	CapabilityHotAssemblyRegistry,
+	projectCapabilityRevision,
+	toRuntimeCapabilityEntry,
+} from "../supply-registry/hot-assembly.js";
 import { buildContentPackage } from "../operations/content-package.js";
 import { ContentPackageRightsBasisResolver } from "../operations/content-package-rights-basis.js";
 import type { HarnessStructuredNodeRunnerFactory } from "./production-stage-ports.js";
@@ -56,6 +70,11 @@ import {
 	type HarnessFrozenPrompts,
 } from "./langfuse-prompts.js";
 import { unconfiguredNotePlanEnhancementJudgeResolver } from "./note-plan-structured-port.js";
+import { resumeWithRaisedServerLimit } from "./bounded-execution-controller.js";
+import {
+	mediaBoundedCurrentBestSchema,
+	mediaBoundedRequestFingerprint,
+} from "./media-bounded-execution.js";
 
 test("unified stages forward bounded copy selection to the production copy port", async () => {
 	const copy = unsupportedCopyPorts();
@@ -114,6 +133,879 @@ test("unified stages forward bounded copy selection to the production copy port"
 
 	assert.equal(forwarded, input);
 	assert.equal(forwardedSkillInput, skillInput);
+});
+
+test("bounded media submits once with the same authorization and resumes through the durable job", async () => {
+	const submissions: ModelSupplySubmission[] = [];
+	const result = completedResult("image");
+	const { latencyMs: _latencyMs, ...resultWithoutLatency } = result;
+	let durableReads = 0;
+	const adapter = new ModelSupplyHarnessMediaExecutionPort({
+		async submit(input) {
+			submissions.push(structuredClone(input));
+			return {
+				...resultWithoutLatency,
+				status: "unknown",
+				asset: undefined,
+			};
+		},
+		async getDurableMediaJob(workspaceId, jobId) {
+			assert.equal(workspaceId, "workspace-1");
+			assert.equal(jobId, result.jobId);
+			durableReads += 1;
+			return {
+				result: resultWithoutLatency,
+				providerLifecycleLatencyMs: 25,
+			};
+		},
+	});
+	const request = {
+		...harnessInput("image", "package-image-bounded"),
+		boundedExecution: boundedExecutionSnapshot(0, 1),
+	};
+	const first = await adapter.executeBounded({
+		brief: mediaBrief("image"),
+		context: contextSnapshot(),
+		request,
+		workflowId: "workflow-image-bounded",
+	});
+	if (!("state" in first)) {
+		assert.fail("The first bounded media attempt should suspend.");
+	}
+	assert.equal(first.state, "suspended");
+	assert.equal(submissions.length, 1);
+	assert.deepEqual(submissions[0]?.mediaBoundedExecution, {
+		schemaVersion: "media-bounded-execution/v1",
+		snapshot: request.boundedExecution,
+		countedAttemptIds: [],
+		countedProviderCostIds: [],
+	});
+	const raised = resumeWithRaisedServerLimit(first.snapshot, {
+		limit: "maxIterations",
+		value: 2,
+	});
+	const resumed = await adapter.executeBounded({
+		brief: mediaBrief("image"),
+		context: contextSnapshot(),
+		request: { ...request, boundedExecution: raised },
+		workflowId: "workflow-image-bounded",
+		boundedResume: first,
+	});
+	assert.equal("state" in resumed, false);
+	assert.equal(submissions.length, 1);
+	assert.equal(durableReads, 2);
+	if ("state" in resumed) {
+		assert.fail("Raised media bound should deliver the durable result.");
+	}
+	assert.equal(resumed.boundedExecution?.consumption.iterations, 1);
+	assert.equal(resumed.boundedExecution?.consumption.costCents, 120);
+	assert.ok(
+		(resumed.boundedExecution?.consumption.wallClockMs ?? -1) >= 25,
+	);
+	assert.equal(resumed.boundedExecution?.consumption.delegations, 0);
+	assert.equal(resumed.asset.id, "image-asset-1");
+});
+
+test("bounded media rejects a forged checkpoint before durable provider I/O", async () => {
+	let submissions = 0;
+	let durableReads = 0;
+	const completed = completedResult("image");
+	const adapter = new ModelSupplyHarnessMediaExecutionPort({
+		async submit() {
+			submissions += 1;
+			return completed;
+		},
+		async getDurableMediaJob() {
+			durableReads += 1;
+			return { result: completed };
+		},
+	});
+	const request = {
+		...harnessInput("image", "package-image-forged-checkpoint"),
+		boundedExecution: boundedExecutionSnapshot(0, 1),
+	};
+	const first = await adapter.executeBounded({
+		brief: mediaBrief("image"),
+		context: contextSnapshot(),
+		request,
+		workflowId: "workflow-image-forged-checkpoint",
+	});
+	if (!("state" in first)) assert.fail("Primary attempt should suspend.");
+	const raised = resumeWithRaisedServerLimit(first.snapshot, {
+		limit: "maxIterations",
+		value: 2,
+	});
+	await assert.rejects(
+		adapter.executeBounded({
+			brief: mediaBrief("image"),
+			context: contextSnapshot(),
+			request: { ...request, boundedExecution: raised },
+			workflowId: "workflow-image-forged-checkpoint",
+			boundedResume: {
+				...first,
+				currentBest: {
+					...first.currentBest,
+					requestFingerprint: "f".repeat(64),
+				},
+			},
+		}),
+		/does not match the frozen request/u,
+	);
+	await assert.rejects(
+		adapter.executeBounded({
+			brief: mediaBrief("image"),
+			context: contextSnapshot(),
+			request: { ...request, boundedExecution: raised },
+			workflowId: "workflow-image-forged-checkpoint",
+			boundedResume: {
+				...first,
+				currentBest: {
+					...first.currentBest,
+					kind: "video",
+				},
+			},
+		}),
+		/kind does not match the frozen request/u,
+	);
+	assert.equal(submissions, 1);
+	assert.equal(durableReads, 0);
+});
+
+test("a bounded context-fence effect keeps receipt digests and uses a revision-stable key", async () => {
+	const submissions: ModelSupplySubmission[] = [];
+	const completed = completedResult("image");
+	const adapter = new ModelSupplyHarnessMediaExecutionPort({
+		async submit(input) {
+			submissions.push(structuredClone(input));
+			if (submissions.length === 3) {
+				const changedCost = { ...completed.providerCost, amount: 2.4 };
+				return {
+					...completed,
+					providerCost: changedCost,
+					providerCosts: [changedCost],
+				};
+			}
+			return completed;
+		},
+	});
+	const request = {
+		...harnessInput("image", "package-image-bounded-fence"),
+		boundedExecution: boundedExecutionSnapshot(0, 5),
+	};
+	const first = await adapter.executeBounded({
+		brief: mediaBrief("image"),
+		context: contextSnapshot(),
+		request,
+		workflowId: "workflow-image-bounded-fence",
+	});
+	if ("state" in first) assert.fail("The first effect should continue.");
+	const fencedContext = contextSnapshot();
+	fencedContext.bundle = {
+		...fencedContext.bundle,
+		revision: 2,
+		hash: "b".repeat(64),
+		previousRevision: 1,
+	};
+	const second = await adapter.executeBounded({
+		brief: mediaBrief("image"),
+		context: fencedContext,
+		request: {
+			...request,
+			boundedExecution: first.boundedExecution,
+		},
+		workflowId: "workflow-image-bounded-fence",
+		boundedCheckpoint: first.boundedCurrentBest,
+	});
+	if ("state" in second) assert.fail("The fenced effect should continue.");
+	assert.deepEqual(
+		submissions.map(({ idempotencyKey }) => idempotencyKey),
+		[
+			"harness-media:workflow-image-bounded-fence:image",
+			"harness-media:workflow-image-bounded-fence:image:r2",
+		],
+	);
+	assert.equal(second.boundedExecution?.consumption.iterations, 1);
+	assert.equal(second.boundedExecution?.consumption.costCents, 120);
+	assert.deepEqual(
+		submissions[1]?.mediaBoundedExecution?.countedProviderCostIds,
+		["cost-image-1"],
+	);
+	const changedContext = {
+		...fencedContext,
+		bundle: {
+			...fencedContext.bundle,
+			revision: 3,
+			hash: "c".repeat(64),
+			previousRevision: 2,
+		},
+	};
+	await assert.rejects(
+		adapter.executeBounded({
+			brief: mediaBrief("image"),
+			context: changedContext,
+			request: {
+				...request,
+				boundedExecution: second.boundedExecution,
+			},
+			workflowId: "workflow-image-bounded-fence",
+			boundedCheckpoint: second.boundedCurrentBest,
+		}),
+		/receipt facts cannot change/u,
+	);
+});
+
+test("an exhausted media bound suspends before the first provider submit", async () => {
+	let submissions = 0;
+	const adapter = new ModelSupplyHarnessMediaExecutionPort({
+		async submit() {
+			submissions += 1;
+			return completedResult("video");
+		},
+	});
+	const request = {
+		...harnessInput("video", "package-video-exhausted"),
+		boundedExecution: boundedExecutionSnapshot(0, 0),
+	};
+	const result = await adapter.executeBounded({
+		brief: mediaBrief("video"),
+		context: contextSnapshot(),
+		request,
+		workflowId: "workflow-video-exhausted",
+	});
+	if (!("state" in result)) {
+		assert.fail("An exhausted media bound should suspend.");
+	}
+	assert.equal(result.state, "suspended");
+	assert.equal(result.currentBest.phase, "before_submit");
+	assert.equal(submissions, 0);
+});
+
+test("top-level bounded media execution turns Model Supply fallback exhaustion into a resumable checkpoint", async () => {
+	let submissions = 0;
+	let durableReads = 0;
+	let resumes = 0;
+	const completed = completedResult("image");
+	const rejectedAttempt = {
+		...completed.attempt,
+		acceptance: "rejected_before_accept" as const,
+		status: "failed" as const,
+	};
+	const estimatedCost = {
+		...completed.providerCost,
+		id: `${completed.providerCost.id}-estimated`,
+		status: "estimated" as const,
+		amount: 0,
+		usage: {},
+	};
+	const suspendedResult: ModelSupplyResult & {
+		boundedExecution: unknown;
+	} = {
+		...completed,
+		asset: undefined,
+		attempt: rejectedAttempt,
+		attempts: [rejectedAttempt],
+		boundedExecution: {
+			schemaVersion: "media-bounded-execution-result/v1",
+			snapshot: {
+				...boundedExecutionSnapshot(1, 1),
+				consumption: {
+					iterations: 1,
+					costCents: 0,
+					wallClockMs: 0,
+					delegations: 0,
+				},
+				stopReason: "limit_reached",
+				triggeredLimit: "maxIterations",
+			},
+			triggeredLimit: "maxIterations",
+			consumption: {
+				iterations: 1,
+				costCents: 0,
+				wallClockMs: 0,
+				delegations: 0,
+			},
+			consumedAttemptIds: [rejectedAttempt.id],
+			consumedProviderCostIds: [],
+		},
+		failureCode: "MEDIA_BOUNDED_ITERATION_EXCEEDED",
+		providerCost: estimatedCost,
+		providerCosts: [estimatedCost],
+		status: "failed",
+	};
+	const fallback = completedResult("image", "fallback");
+	const completedAfterRaise = {
+		...fallback,
+		jobId: suspendedResult.jobId,
+		latencyMs: 40,
+		attempts: [rejectedAttempt, fallback.attempt],
+		providerCosts: [estimatedCost, fallback.providerCost],
+	};
+	const {
+		latencyMs: _providerLifecycleLatency,
+		...durableSuspendedResult
+	} = suspendedResult;
+	let durableResult = durableSuspendedResult;
+	const adapter = new ModelSupplyHarnessMediaExecutionPort({
+		async submit() {
+			submissions += 1;
+			return {
+				...suspendedResult,
+				asset: undefined,
+				status: "unknown" as const,
+			};
+		},
+		async getDurableMediaJob(workspaceId, jobId) {
+			assert.equal(workspaceId, "workspace-1");
+			assert.equal(jobId, suspendedResult.jobId);
+			durableReads += 1;
+			return {
+				result: durableResult,
+				providerLifecycleLatencyMs: 25,
+			};
+		},
+		async resumeBoundedMediaJob(input) {
+			assert.equal(input.jobId, suspendedResult.jobId);
+			assert.equal(input.authorization.snapshot.maxIterations, 3);
+			assert.deepEqual(input.authorization.countedAttemptIds, [
+				rejectedAttempt.id,
+			]);
+			resumes += 1;
+			return { result: completedAfterRaise };
+		},
+	});
+	const request = {
+		...harnessInput("image", "package-image-fallback-bound"),
+		boundedExecution: boundedExecutionSnapshot(0, 1),
+	};
+	const first = await adapter.executeBounded({
+		brief: mediaBrief("image"),
+		context: contextSnapshot(),
+		request,
+		workflowId: "workflow-image-fallback-bound",
+	});
+	if (!("state" in first)) {
+		assert.fail("Model Supply fallback exhaustion must suspend.");
+	}
+	assert.equal(first.state, "suspended");
+	assert.equal(first.currentBest.phase, "provider_route_suspended");
+	assert.equal(first.currentBest.providerRoute?.jobId, suspendedResult.jobId);
+	assert.equal(first.currentBest.providerRoute?.lifecycleBaselineMs, 25);
+	assert.equal(first.snapshot.triggeredLimit, "maxIterations");
+	assert.equal(first.snapshot.consumption.iterations, 1);
+	assert.equal(first.snapshot.consumption.wallClockMs, 25);
+	assert.equal(submissions, 1);
+	assert.equal(durableReads, 1);
+
+	const raised = resumeWithRaisedServerLimit(first.snapshot, {
+		limit: "maxIterations",
+		value: 3,
+	});
+	const tamperedCheckpoint = {
+		...first,
+		currentBest: {
+			...first.currentBest,
+			providerRoute: {
+				...first.currentBest.providerRoute!,
+				resultDigest: "0".repeat(64),
+			},
+		},
+	};
+	await assert.rejects(
+		adapter.executeBounded({
+			brief: mediaBrief("image"),
+			context: contextSnapshot(),
+			request: { ...request, boundedExecution: raised },
+			workflowId: "workflow-image-fallback-bound",
+			boundedResume: tamperedCheckpoint,
+		}),
+		/digest|checkpoint/iu,
+	);
+	assert.equal(resumes, 0);
+
+	const {
+		endedAt: _forgedTerminalTime,
+		...forgedCanonicalResult
+	} = durableSuspendedResult;
+	const forgedBaselineCheckpoint = {
+		...first,
+		currentBest: {
+			...first.currentBest,
+			providerRoute: {
+				...first.currentBest.providerRoute!,
+				lifecycleBaselineMs: 24,
+				resultDigest: mediaBoundedRequestFingerprint({
+					result: forgedCanonicalResult,
+					lifecycleBaselineMs: 24,
+				}),
+			},
+		},
+	};
+	await assert.rejects(
+		adapter.executeBounded({
+			brief: mediaBrief("image"),
+			context: contextSnapshot(),
+			request: { ...request, boundedExecution: raised },
+			workflowId: "workflow-image-fallback-bound",
+			boundedResume: forgedBaselineCheckpoint,
+		}),
+		/lifecycle|checkpoint/iu,
+	);
+	assert.equal(resumes, 0);
+
+	durableResult = {
+		...durableSuspendedResult,
+		retryable: true,
+	};
+	await assert.rejects(
+		adapter.executeBounded({
+			brief: mediaBrief("image"),
+			context: contextSnapshot(),
+			request: { ...request, boundedExecution: raised },
+			workflowId: "workflow-image-fallback-bound",
+			boundedResume: first,
+		}),
+		/digest|checkpoint/iu,
+	);
+	assert.equal(resumes, 0);
+	durableResult = durableSuspendedResult;
+
+	const resumed = await adapter.executeBounded({
+		brief: mediaBrief("image"),
+		context: contextSnapshot(),
+		request: { ...request, boundedExecution: raised },
+		workflowId: "workflow-image-fallback-bound",
+		boundedResume: first,
+	});
+	if ("state" in resumed) assert.fail("The raised route should complete.");
+	assert.equal(resumed.asset.id, fallback.asset?.id);
+	assert.equal(resumed.boundedExecution?.consumption.iterations, 2);
+	assert.equal(resumed.boundedExecution?.consumption.wallClockMs, 40);
+	assert.equal(submissions, 1);
+	assert.equal(resumes, 1);
+	assert.equal(durableReads, 5);
+});
+
+test("bounded media rejects unobserved, non-CNY, and missing-usage cost before another submit", async () => {
+	for (const invalidCost of [
+		{ status: "estimated" as const },
+		{ currency: "USD" as const },
+		{ usage: {} },
+	]) {
+		let submissions = 0;
+		const adapter = new ModelSupplyHarnessMediaExecutionPort({
+			async submit() {
+				submissions += 1;
+				const completed = completedResult("image");
+				const providerCost = {
+					...completed.providerCost,
+					...invalidCost,
+				};
+				return {
+					...completed,
+					providerCost,
+					providerCosts: [providerCost],
+				} as ModelSupplyResult;
+			},
+		});
+		const request = {
+			...harnessInput("image", "package-image-invalid-cost"),
+			boundedExecution: boundedExecutionSnapshot(0, 2),
+		};
+		await assert.rejects(
+			adapter.executeBounded({
+				brief: mediaBrief("image"),
+				context: contextSnapshot(),
+				request,
+				workflowId: "workflow-image-invalid-cost",
+			}),
+			/observed provider cost(?: receipt for every new attempt| in CNY with usage)/u,
+		);
+		assert.equal(submissions, 1);
+	}
+});
+
+test("bounded media ignores provisional estimates and converts observed CNY decimals exactly", async () => {
+	for (const [amount, expectedCents] of [
+		[0.07, 7],
+		[1.1, 110],
+	] as const) {
+		const completed = completedResult("video");
+		const estimated = {
+			...completed.providerCost,
+			id: `${completed.providerCost.id}-estimated`,
+			status: "estimated" as const,
+			amount: 0,
+			usage: {},
+		};
+		const observed = {
+			...completed.providerCost,
+			id: `${completed.providerCost.id}-observed`,
+			amount,
+		};
+		const adapter = new ModelSupplyHarnessMediaExecutionPort({
+			async submit() {
+				return {
+					...completed,
+					providerCost: observed,
+					providerCosts: [estimated, observed],
+				};
+			},
+		});
+		const selected = await adapter.executeBounded({
+			brief: mediaBrief("video"),
+			context: contextSnapshot(),
+			request: {
+				...harnessInput("video", `package-video-cost-${expectedCents}`),
+				boundedExecution: {
+					...boundedExecutionSnapshot(0, 2),
+					maxCostCents: expectedCents + 1,
+				},
+			},
+			workflowId: `workflow-video-cost-${expectedCents}`,
+		});
+
+		assert.equal("state" in selected, false);
+		if ("state" in selected) assert.fail("Observed cost remains below the bound.");
+		assert.equal(selected.boundedExecution?.consumption.costCents, expectedCents);
+		assert.equal(
+			mediaBoundedCurrentBestSchema.parse(selected.boundedCurrentBest)
+				.countedProviderCostIds.length,
+			1,
+		);
+	}
+});
+
+test("bounded media counts a model-backed exact-text verification and replays it without another call", async () => {
+	const primary = completedResult("image", "primary");
+	const verifierResult = {
+		...completedResult("image", "verifier"),
+		asset: undefined,
+		operation: "text.respond" as const,
+		text: JSON.stringify({
+			observedText: ["价格 398"],
+			conflictingText: [],
+		}),
+	};
+	let submissions = 0;
+	let routeFreezes = 0;
+	let verifications = 0;
+	const adapter = new ModelSupplyHarnessMediaExecutionPort(
+		{
+			async submit() {
+				submissions += 1;
+				return primary;
+			},
+			async getDurableMediaJob() {
+				return { result: primary };
+			},
+			async freezeAutoTextRouteForExecution() {
+				routeFreezes += 1;
+				return approvedExactTextRoute();
+			},
+		},
+		{
+			preauthorize() {
+				return { iterations: 1, costCents: 120 };
+			},
+			async observe(input) {
+				verifications += 1;
+				return {
+					expected: input.expected,
+					observed: ["价格 398"],
+					conflictingText: [],
+					modelResult: verifierResult,
+				};
+			},
+		},
+	);
+	const request = {
+		...harnessInput("image", "package-image-bounded-verifier"),
+		boundedExecution: boundedExecutionSnapshot(0, 2),
+	};
+	const first = await adapter.executeBounded({
+		brief: imageBriefWithExactText("价格 398"),
+		context: contextSnapshot(),
+		request,
+		workflowId: "workflow-image-bounded-verifier",
+	});
+	if (!("state" in first)) {
+		assert.fail("The verifier should consume the second bounded iteration.");
+	}
+	assert.equal(first.currentBest.phase, "ready");
+	assert.equal(first.snapshot.consumption.iterations, 2);
+	assert.deepEqual(
+		first.currentBest.exactTextRoute?.snapshot,
+		approvedExactTextRoute(),
+	);
+	assert.deepEqual(first.currentBest.countedAttemptIds, [
+		"attempt-image-primary",
+		"attempt-image-verifier",
+	]);
+
+	const raised = resumeWithRaisedServerLimit(first.snapshot, {
+		limit: "maxIterations",
+		value: 3,
+	});
+	await assert.rejects(
+		adapter.executeBounded({
+			brief: imageBriefWithExactText("价格 398"),
+			context: contextSnapshot(),
+			request: { ...request, boundedExecution: raised },
+			workflowId: "workflow-image-bounded-verifier",
+			boundedResume: {
+				...first,
+				currentBest: {
+					...first.currentBest,
+					exactTextRoute: {
+						...first.currentBest.exactTextRoute!,
+						snapshot: {
+							...first.currentBest.exactTextRoute!.snapshot,
+							createdAt: "2026-07-29T00:00:01.000Z",
+						},
+					},
+				},
+			},
+		}),
+		/route digest does not match/u,
+	);
+	const resumed = await adapter.executeBounded({
+		brief: imageBriefWithExactText("价格 398"),
+		context: contextSnapshot(),
+		request: { ...request, boundedExecution: raised },
+		workflowId: "workflow-image-bounded-verifier",
+		boundedResume: first,
+	});
+	if ("state" in resumed) assert.fail("The ready checkpoint should replay.");
+	assert.equal(submissions, 1);
+	assert.equal(routeFreezes, 1);
+	assert.equal(verifications, 1);
+	assert.equal(resumed.boundedExecution?.consumption.iterations, 2);
+});
+
+test("bounded media rejects an unaffordable exact-text verification before text.respond", async () => {
+	const primary = completedResult("image", "primary-cost-gate");
+	let routeFreezes = 0;
+	let verifications = 0;
+	const exactText = {
+		preauthorize() {
+			return {
+				iterations: 1,
+				costCents: 120,
+			};
+		},
+		async observe(input: { expected: string[] }) {
+			verifications += 1;
+			return {
+				expected: input.expected,
+				observed: [...input.expected],
+				conflictingText: [],
+			};
+		},
+	};
+	const adapter = new ModelSupplyHarnessMediaExecutionPort(
+		{
+			async submit() {
+				return primary;
+			},
+			async freezeAutoTextRouteForExecution() {
+				routeFreezes += 1;
+				return approvedExactTextRoute();
+			},
+		},
+		exactText,
+	);
+
+	await assert.rejects(
+		adapter.executeBounded({
+			brief: imageBriefWithExactText("价格 398"),
+			context: contextSnapshot(),
+			request: {
+				...harnessInput("image", "package-image-exact-text-cost-gate"),
+				boundedExecution: {
+					...boundedExecutionSnapshot(0, 3),
+					maxCostCents: 200,
+				},
+			},
+			workflowId: "workflow-image-exact-text-cost-gate",
+		}),
+		(error: unknown) =>
+			error instanceof HarnessMediaExecutionError &&
+			error.code === "MEDIA_EXACT_TEXT_BUDGET_UNAVAILABLE" &&
+			/remaining bounded cost/u.test(error.message),
+	);
+	assert.equal(routeFreezes, 1);
+	assert.equal(verifications, 0);
+});
+
+test("bounded exact-text retry keeps its stable key and never resubmits the primary job", async () => {
+	const submissions: ModelSupplySubmission[] = [];
+	const results = [completedResult("image", "1"), completedResult("image", "2")];
+	const durable = new Map(results.map((result) => [result.jobId, result]));
+	let verification = 0;
+	const adapter = new ModelSupplyHarnessMediaExecutionPort(
+		{
+			async submit(input) {
+				submissions.push(structuredClone(input));
+				return results[submissions.length - 1]!;
+			},
+			async getDurableMediaJob(_workspaceId, jobId) {
+				return { result: durable.get(jobId)! };
+			},
+			async freezeAutoTextRouteForExecution() {
+				return approvedExactTextRoute();
+			},
+		},
+		{
+			preauthorize() {
+				return { iterations: 0, costCents: 0 };
+			},
+			async observe(input) {
+				verification += 1;
+				return verification === 1
+					? {
+							expected: input.expected,
+							observed: ["价格 389"],
+							conflictingText: [],
+						}
+					: {
+							expected: input.expected,
+							observed: ["价格 398"],
+							conflictingText: [],
+						};
+			},
+		},
+	);
+	const request = {
+		...harnessInput("image", "package-image-bounded-exact"),
+		boundedExecution: boundedExecutionSnapshot(0, 1),
+	};
+	const first = await adapter.executeBounded({
+		brief: imageBriefWithExactText("价格 398"),
+		context: contextSnapshot(),
+		request,
+		workflowId: "workflow-image-bounded-exact",
+	});
+	if (!("state" in first)) assert.fail("Primary attempt should suspend.");
+	assert.equal(first.currentBest.phase, "verify_primary");
+
+	const secondSnapshot = resumeWithRaisedServerLimit(first.snapshot, {
+		limit: "maxIterations",
+		value: 2,
+	});
+	const second = await adapter.executeBounded({
+		brief: imageBriefWithExactText("价格 398"),
+		context: contextSnapshot(),
+		request: { ...request, boundedExecution: secondSnapshot },
+		workflowId: "workflow-image-bounded-exact",
+		boundedResume: first,
+	});
+	if (!("state" in second)) assert.fail("Exact-text retry should suspend.");
+	assert.deepEqual(
+		submissions.map(({ idempotencyKey }) => idempotencyKey),
+		[
+			"harness-media:workflow-image-bounded-exact:image",
+			"harness-media:workflow-image-bounded-exact:image:exact-text-retry",
+		],
+	);
+	assert.deepEqual(submissions[1]?.mediaBoundedExecution?.countedAttemptIds, [
+		"attempt-image-1",
+	]);
+	assert.deepEqual(
+		submissions[1]?.mediaBoundedExecution?.countedProviderCostIds,
+		["cost-image-1"],
+	);
+
+	const finalSnapshot = resumeWithRaisedServerLimit(second.snapshot, {
+		limit: "maxIterations",
+		value: 3,
+	});
+	const final = await adapter.executeBounded({
+		brief: imageBriefWithExactText("价格 398"),
+		context: contextSnapshot(),
+		request: { ...request, boundedExecution: finalSnapshot },
+		workflowId: "workflow-image-bounded-exact",
+		boundedResume: second,
+	});
+	if ("state" in final) assert.fail("Raised retry bound should deliver.");
+	assert.equal(submissions.length, 2);
+	assert.equal(final.asset.id, "image-asset-2");
+	assert.equal(final.childRun.providerAttempts?.length, 2);
+	assert.equal(final.childRun.providerCosts?.length, 2);
+});
+
+test("bounded exact-text retry must pass verification before a limit suspension can become ready", async () => {
+	const results = [completedResult("image", "1"), completedResult("image", "2")];
+	let submissions = 0;
+	const adapter = new ModelSupplyHarnessMediaExecutionPort(
+		{
+			async submit() {
+				const result = results[submissions]!;
+				submissions += 1;
+				return result;
+			},
+			async getDurableMediaJob(_workspaceId, jobId) {
+				return { result: results.find((result) => result.jobId === jobId)! };
+			},
+			async freezeAutoTextRouteForExecution() {
+				return approvedExactTextRoute();
+			},
+		},
+		{
+			preauthorize() {
+				return { iterations: 0, costCents: 0 };
+			},
+			async observe(input) {
+				return {
+					expected: input.expected,
+					observed: ["价格 389"],
+					conflictingText: [],
+				};
+			},
+		},
+	);
+	const request = {
+		...harnessInput("image", "package-image-bounded-exact-fail"),
+		boundedExecution: boundedExecutionSnapshot(0, 1),
+	};
+	const first = await adapter.executeBounded({
+		brief: imageBriefWithExactText("价格 398"),
+		context: contextSnapshot(),
+		request,
+		workflowId: "workflow-image-bounded-exact-fail",
+	});
+	if (!("state" in first)) assert.fail("Primary attempt should suspend.");
+	const raised = resumeWithRaisedServerLimit(first.snapshot, {
+		limit: "maxIterations",
+		value: 2,
+	});
+	const second = await adapter.executeBounded({
+		brief: imageBriefWithExactText("价格 398"),
+		context: contextSnapshot(),
+		request: { ...request, boundedExecution: raised },
+		workflowId: "workflow-image-bounded-exact-fail",
+		boundedResume: first,
+	});
+	if (!("state" in second)) {
+		assert.fail("A limit reached by the retry must suspend before its gate.");
+	}
+	assert.equal(second.currentBest.phase, "verify_retry");
+	const finalSnapshot = resumeWithRaisedServerLimit(second.snapshot, {
+		limit: "maxIterations",
+		value: 3,
+	});
+	await assert.rejects(
+		adapter.executeBounded({
+			brief: imageBriefWithExactText("价格 398"),
+			context: contextSnapshot(),
+			request: { ...request, boundedExecution: finalSnapshot },
+			workflowId: "workflow-image-bounded-exact-fail",
+			boundedResume: second,
+		}),
+		(error: unknown) =>
+			error instanceof HarnessSelectionError &&
+			error.gateIds.includes("image_exact_text"),
+	);
+	assert.equal(submissions, 2);
 });
 
 test("image and video use the existing Model Supply path with stable submission facts", async () => {
@@ -2236,19 +3128,31 @@ test("the production exact-text verifier reuses multimodal text.respond without 
 		...harnessInputWithExecutionAssembly("image", "package-image"),
 		prompts: frozenPromptBundle(),
 	};
+	const frozenTextRoute = approvedExactTextRoute();
+	const preauthorization = await verifier.preauthorize({
+		assetId: "image-asset-1",
+		expected: ["价格 398"],
+		request,
+		route: frozenTextRoute,
+		workflowId: "task-image",
+	});
 	const observation = await verifier.observe({
 		assetId: "image-asset-1",
 		expected: ["价格 398"],
 		request,
+		route: frozenTextRoute,
 		workflowId: "task-image",
 	});
 	const assessment = assessImageExactText(observation);
 
 	assert.equal(assessment.passed, true);
+	assert.deepEqual(preauthorization, { iterations: 1, costCents: 2 });
+	assert.equal(submissions.length, 1);
 	assert.equal(submissions[0]?.operation, "text.respond");
+	assert.deepEqual(submissions[0]?.frozenRouteSnapshot, frozenTextRoute);
 	assert.deepEqual(submissions[0]?.selection, {
-		mode: "auto",
-		profile: "quality",
+		mode: "fixed",
+		catalogModelId: "model-text-1",
 		fallbackConsent: false,
 	});
 	assert.deepEqual(submissions[0]?.input?.inputAssets, [
@@ -2259,6 +3163,116 @@ test("the production exact-text verifier reuses multimodal text.respond without 
 		submissions[0]?.productUsageQuantity,
 		0,
 	);
+});
+
+test("the production exact-text verifier fails closed without a frozen text.respond price", async () => {
+	let submissions = 0;
+	const verifier = new ModelSupplyImageExactTextVerifier({
+		async submit() {
+			submissions += 1;
+			return {
+				...completedResult("image"),
+				asset: undefined,
+				operation: "text.respond",
+				text: "{}",
+			};
+		},
+	});
+	const request = harnessInputWithExecutionAssembly(
+		"image",
+		"package-image-missing-text-price",
+	);
+
+	assert.throws(
+		() =>
+			verifier.preauthorize({
+				assetId: "image-asset-1",
+				expected: ["价格 398"],
+				request,
+				route: approvedExactTextRoute("recorded_request"),
+				workflowId: "task-image-missing-text-price",
+			}),
+		/non-request price unit/u,
+	);
+	assert.equal(submissions, 0);
+});
+
+test("the default recorded text price cannot authorize exact-text provider I/O", async () => {
+	const exactTextCapabilityProfile: ModelCapabilityProfile = {
+		vocabularyVersion: "model-capability-v1",
+		protocolCapabilities: {},
+		modalities: [
+			{
+				mime: "text/plain",
+				supported: true,
+				basis: "explicit_override",
+				evidenceRef: "test:default-recorded-text:text",
+			},
+			{
+				mime: "image/*",
+				supported: true,
+				basis: "explicit_override",
+				evidenceRef: "test:default-recorded-text:reference-image",
+			},
+		],
+		businessTags: [],
+		modalityCapabilities: [],
+	};
+	const deployments = createDefaultDeployments({
+		activatedDeploymentIds: ["deepseek-v4-pro-direct"],
+		activationEvidenceStatus: "recorded",
+	}).map((deployment) =>
+		deployment.id === "deepseek-v4-pro-direct"
+			? {
+					...deployment,
+					capabilityProfile: exactTextCapabilityProfile,
+				}
+			: deployment,
+	);
+	const capabilityHotAssembly = new CapabilityHotAssemblyRegistry();
+	capabilityHotAssembly.applyCapabilityRevision(
+		projectCapabilityRevision({
+			revisionId: "test-default-recorded-text-capability-r1",
+			number: 1,
+			entries: deployments.map(toRuntimeCapabilityEntry),
+			publishedAt: "2026-07-30T00:05:00.000Z",
+		}),
+	);
+	const defaultModels = new ModelSupplyApplicationService({
+		assetStorage: new MemoryModelAssetStorage(),
+		deployments,
+		execution: new RecordedAdapterRouter(),
+		models: createDefaultCatalogModels(),
+		capabilityHotAssembly,
+	});
+	const route = await defaultModels.freezeAutoTextRouteForExecution({
+		workspaceId: "workspace-default-recorded-text",
+		dataClass: [],
+	});
+	assert.equal(route.allowedCandidates?.[0]?.unit, "recorded_request");
+	let providerCalls = 0;
+	const verifier = new ModelSupplyImageExactTextVerifier({
+		async submit(input) {
+			providerCalls += 1;
+			return defaultModels.submit(input);
+		},
+	});
+
+	assert.throws(
+		() =>
+			verifier.preauthorize({
+				assetId: "image-asset-default-recorded-text",
+				expected: ["价格 398"],
+				request: harnessInputWithExecutionAssembly(
+					"image",
+					"package-default-recorded-text",
+				),
+				route,
+				workflowId: "task-default-recorded-text",
+			}),
+		/non-request price unit/u,
+	);
+	assert.equal(providerCalls, 0);
 });
 
 test("a legacy request without execution assembly cannot submit exact-text verification", async () => {
@@ -2284,6 +3298,7 @@ test("a legacy request without execution assembly cannot submit exact-text verif
 				assetId: "image-asset-legacy",
 				expected: ["价格 398"],
 				request: harnessInput("image", "package-legacy-exact-text"),
+				route: approvedExactTextRoute(),
 				workflowId: "task-legacy-exact-text",
 			}),
 		/execution assembly is required before provider execution/i,
@@ -2339,6 +3354,7 @@ test("a succeeded audit failure does not rewrite successful exact-text verificat
 					"image",
 					"package-exact-text-audit-failure",
 				),
+				route: approvedExactTextRoute(),
 				workflowId: "task-image",
 			}),
 		/terminal exact-text audit unavailable/u,
@@ -2371,6 +3387,7 @@ test("a failed exact-text provider result does not write a successful or rejecte
 					"image",
 					"package-exact-text-failed-observation",
 				),
+				route: approvedExactTextRoute(),
 				workflowId: "task-image",
 			}),
 		(error: unknown) =>
@@ -2407,6 +3424,7 @@ test("an invalid exact-text observation does not write a successful or rejected 
 				"image",
 				"package-exact-text-invalid-observation",
 			),
+			route: approvedExactTextRoute(),
 			workflowId: "task-image",
 		}),
 	);
@@ -2434,6 +3452,7 @@ test("the production exact-text verifier rejects a conflicting value even when t
 		assetId: "image-asset-1",
 		expected: ["价格 398"],
 		request: harnessInputWithExecutionAssembly("image", "package-image"),
+		route: approvedExactTextRoute(),
 		workflowId: "task-image-conflict",
 	});
 	const assessment = assessImageExactText(observation);
@@ -2549,6 +3568,29 @@ function harnessInput(
 	};
 }
 
+function boundedExecutionSnapshot(iterations: number, maxIterations: number) {
+	return {
+		schemaVersion: "bounded-execution-snapshot/v1" as const,
+		maxIterations,
+		maxCostCents: 500,
+		maxWallClockMs: 60_000,
+		maxDelegations: "unset" as const,
+		requiredLimits: [
+			"maxIterations" as const,
+			"maxCostCents" as const,
+			"maxWallClockMs" as const,
+		],
+		consumption: {
+			iterations,
+			costCents: 0,
+			wallClockMs: 0,
+			delegations: 0,
+		},
+		stopReason: null,
+		triggeredLimit: null,
+	};
+}
+
 function harnessInputWithExecutionAssembly(
 	kind: "image" | "image_text_note" | "video",
 	packageId: string,
@@ -2648,6 +3690,57 @@ function frozenMediaRoute(
 		reason: "fixed_selection",
 		dataClass: [],
 		createdAt: "2026-07-22T09:00:00.000Z",
+	};
+}
+
+function approvedExactTextRoute(
+	unit = "request",
+	unitPriceMicros = 20_000,
+): RouteSnapshot {
+	return {
+		id: "route-exact-text-1",
+		catalogRevisionId: "catalog-text-r1",
+		requestedSelection: {
+			mode: "fixed",
+			catalogModelId: "model-text-1",
+			fallbackConsent: false,
+		},
+		candidateCatalogModelIds: ["model-text-1"],
+		actualCatalogModelId: "model-text-1",
+		deploymentId: "deployment-text-1",
+		fallbackConsent: false,
+		maxAttempts: 1,
+		fallbackAuthorized: false,
+		allowedCandidates: [
+			{
+				catalogModelId: "model-text-1",
+				deploymentId: "deployment-text-1",
+				modelModality: "llm",
+				modelOperations: ["text.respond"],
+				modelDisplayName: "Text verifier",
+				modelQualityRank: 100,
+				modelManufacturer: "Recorded",
+				modelCapabilities: ["text.respond"],
+				apiFamily: "openai",
+				channel: "direct",
+				region: "domestic",
+				deploymentStatus: "active",
+				allowedDataClasses: null,
+				stableModelName: "model-text-1",
+				modelVersion: "v1",
+				credentialMode: "platform",
+				credentialVersion: "credential-v1",
+				policyRevision: "policy-v1",
+				priceRevision: "approved-text-price-r1",
+				unitPriceMicros,
+				currency: "CNY",
+				unit,
+				fallbackRank: 1,
+			},
+		],
+		reason: "fixed_selection",
+		dataClass: [],
+		createdAt: "2026-07-29T00:00:00.000Z",
 	};
 }
 
@@ -2771,6 +3864,7 @@ function completedResult(
 	};
 	return {
 		jobId: `job-${kind}-${suffix}`,
+		latencyMs: 25,
 		status: "completed",
 		snapshot: {
 			actualCatalogModelId: `model-${kind}-1`,

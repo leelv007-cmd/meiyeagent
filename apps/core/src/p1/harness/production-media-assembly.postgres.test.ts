@@ -308,9 +308,14 @@ test(
               providerStartedResolve();
               await releaseProvider;
             }
+            const providerStartedAt = performance.now();
             const result = await models.submit(input);
-            completedModelResults.push(structuredClone(result));
-            return result;
+            const observedResult = {
+              ...result,
+              latencyMs: Math.max(0, performance.now() - providerStartedAt),
+            };
+            completedModelResults.push(structuredClone(observedResult));
+            return observedResult;
           },
         },
         noteAdmission,
@@ -347,10 +352,14 @@ test(
           async resolve() {
             return {
               maxIterations: 4,
-              maxCostCents: 'unset' as const,
-              maxWallClockMs: 'unset' as const,
+              maxCostCents: 200,
+              maxWallClockMs: 60_000,
               maxDelegations: 'unset' as const,
-              requiredLimits: ['maxIterations'] as const,
+              requiredLimits: [
+                'maxIterations',
+                'maxCostCents',
+                'maxWallClockMs',
+              ] as const,
             };
           },
         },
@@ -479,10 +488,14 @@ test(
       assert.deepEqual(frozen.rows[0]?.request.boundedExecution, {
         schemaVersion: 'bounded-execution-snapshot/v1',
         maxIterations: 4,
-        maxCostCents: 'unset',
-        maxWallClockMs: 'unset',
+        maxCostCents: 200,
+        maxWallClockMs: 60_000,
         maxDelegations: 'unset',
-        requiredLimits: ['maxIterations'],
+        requiredLimits: [
+          'maxIterations',
+          'maxCostCents',
+          'maxWallClockMs',
+        ],
         consumption: {
           iterations: 0,
           costCents: 0,

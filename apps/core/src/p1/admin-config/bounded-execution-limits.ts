@@ -23,6 +23,7 @@ const configuredLimitSchema = z
   .object({
     default: boundedExecutionLimitsSchema.shape.maxIterations,
     hardCap: boundedExecutionLimitsSchema.shape.maxIterations,
+    provenance: z.enum(['recorded_provisional', 'unset']).optional(),
   })
   .strict()
   .superRefine((axis, context) => {
@@ -47,6 +48,26 @@ const configuredLimitSchema = z
         path: ['default'],
       });
     }
+    if (
+      axis.provenance === 'recorded_provisional' &&
+      axis.default === 'unset'
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A provisional bounded execution axis must be configured.',
+        path: ['provenance'],
+      });
+    }
+    if (
+      axis.provenance === 'unset' &&
+      axis.default !== 'unset'
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'An unset bounded execution axis cannot carry a value.',
+        path: ['provenance'],
+      });
+    }
   });
 
 export const boundedExecutionLimitsConfigSchema = z
@@ -68,6 +89,30 @@ export const ISSUE_255_RECORDED_CALIBRATION_LIMITS =
     maxCostCents: { default: 'unset', hardCap: 'unset' },
     maxWallClockMs: { default: 'unset', hardCap: 'unset' },
     maxDelegations: { default: 'unset', hardCap: 'unset' },
+  });
+
+export const ISSUE_247_RECORDED_PROVISIONAL_LIMITS =
+  boundedExecutionLimitsConfigSchema.parse({
+    maxIterations: {
+      default: 2,
+      hardCap: 4,
+      provenance: 'recorded_provisional',
+    },
+    maxCostCents: {
+      default: 100,
+      hardCap: 200,
+      provenance: 'recorded_provisional',
+    },
+    maxWallClockMs: {
+      default: 60_000,
+      hardCap: 150_000,
+      provenance: 'recorded_provisional',
+    },
+    maxDelegations: {
+      default: 'unset',
+      hardCap: 'unset',
+      provenance: 'unset',
+    },
   });
 
 export class AdminConfigBoundedExecutionLimitsSource {

@@ -2,11 +2,13 @@
  * S2a behavior-preserving extract: route / simulation contracts.
  */
 import { createHash } from 'node:crypto';
+import { boundedExecutionSnapshotSchema } from '@meiye/contracts';
 import type {
   ModelCapabilityProfile,
   ModelCapabilityRequirementAxis,
   SupplierPricingTier,
 } from '@meiye/contracts';
+import { z } from 'zod';
 import type {
 	Acceptance,
 	AdvancedCanvasGenerationOrigin,
@@ -130,6 +132,37 @@ export interface ModelSupplyPromptAuditPort {
   appendPromptAudit(event: ModelSupplyPromptFallbackAuditEvent): Promise<void>;
 }
 
+const uniqueBoundedExecutionIdsSchema = z
+  .array(z.string().trim().min(1))
+  .superRefine((ids, context) => {
+    if (new Set(ids).size !== ids.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Bounded execution identifiers must be unique.',
+      });
+    }
+  });
+
+export const mediaBoundedExecutionAuthorizationSchema = z
+  .object({
+    schemaVersion: z.literal('media-bounded-execution/v1'),
+    snapshot: boundedExecutionSnapshotSchema,
+    countedAttemptIds: uniqueBoundedExecutionIdsSchema,
+    countedProviderCostIds: uniqueBoundedExecutionIdsSchema,
+    fx: z
+      .object({
+        revision: z.string().trim().min(1),
+        cnyPerUsdMicros: z.number().int().positive().safe(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export type MediaBoundedExecutionAuthorization = z.infer<
+  typeof mediaBoundedExecutionAuthorizationSchema
+>;
+
 export interface ModelSupplySubmission {
   workspaceId: string;
   actorId: string;
@@ -183,6 +216,11 @@ export interface ModelSupplySubmission {
     tone?: string;
     voice?: string;
   };
+  /**
+   * Server-derived media authorization frozen into the durable submission.
+   * Legacy non-Harness media omits it until its owner adopts bounded execution.
+   */
+  mediaBoundedExecution?: MediaBoundedExecutionAuthorization;
   frozenRouteSnapshot?: RouteSnapshot;
 }
 

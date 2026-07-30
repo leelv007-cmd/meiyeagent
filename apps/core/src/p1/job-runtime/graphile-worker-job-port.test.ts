@@ -216,4 +216,65 @@ describe('GraphileWorkerJobPort', () => {
     const continuation = [...boundary.jobs.values()].find((candidate) => candidate.id !== job.id);
     assert.equal((continuation?.payload as { sequence?: number }).sequence, 1);
   });
+
+  it('enqueues a transaction-scoped resume as a new continuation transport', async () => {
+    const boundary = new RecordedGraphileWorker();
+    const port = new GraphileWorkerJobPort(boundary, {
+      taskIdentifier: 'p1_job',
+    });
+    const transactionClient = {} as PoolClient;
+    const input = {
+      jobId: 'job-resume',
+      workspaceId: 'ws-1',
+      kind: 'generate_copy',
+      payload: { limit: 1 },
+    };
+
+    await port.enqueueInTransaction(input, transactionClient);
+    const original = await boundary.findByKey(
+      port.logicalKey(input.workspaceId, input.jobId),
+    );
+    assert.ok(original);
+
+    const resumedInput = { ...input, payload: { limit: 2 } };
+    await port.resumeInTransaction(resumedInput, 1, transactionClient);
+    await port.resumeInTransaction(resumedInput, 1, transactionClient);
+
+    assert.equal(boundary.jobs.size, 2);
+    assert.deepEqual(
+      (
+        (await boundary.findById(original.id))?.payload as {
+          payload?: unknown;
+        }
+      ).payload,
+      { limit: 1 },
+    );
+    const continuation = [...boundary.jobs.values()].find(
+      (job) => job.id !== original.id,
+    );
+    assert.equal(
+      (continuation?.payload as { workspaceId?: string }).workspaceId,
+      input.workspaceId,
+    );
+    assert.equal(
+      (continuation?.payload as { jobId?: string }).jobId,
+      input.jobId,
+    );
+    assert.equal(
+      (continuation?.payload as { sequence?: number }).sequence,
+      1,
+    );
+    assert.deepEqual(
+      (continuation?.payload as { payload?: unknown }).payload,
+      { limit: 2 },
+    );
+    await assert.rejects(
+      () =>
+        port.enqueue({
+          ...input,
+          payload: { limit: 3 },
+        }),
+      /different payload/,
+    );
+  });
 });

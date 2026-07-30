@@ -3,6 +3,7 @@
  * ProductUsage remains here pending #92 replacement; re-exported for compatibility.
  */
 import type {
+  BoundedExecutionSnapshot,
   GeneratedCopyCandidateContent,
   GeneratedPlatformVariants,
   ProviderFailoverAvailabilityEvent,
@@ -101,6 +102,14 @@ export interface ModelSupplyResult {
   providerCosts: ProviderCost[];
   /** Availability event stream for actual fallback transitions. */
   failoverAvailabilityEvents?: ProviderFailoverAvailabilityEvent[];
+  boundedExecution?: {
+    schemaVersion: 'media-bounded-execution-result/v1';
+    snapshot: BoundedExecutionSnapshot;
+    triggeredLimit: 'maxIterations';
+    consumption: BoundedExecutionSnapshot['consumption'];
+    consumedAttemptIds: string[];
+    consumedProviderCostIds: string[];
+  };
   cancelledProviderTerminal?: CancelledMediaProviderTerminalReconciliation;
 }
 
@@ -138,6 +147,11 @@ export type CancelledMediaProviderTerminalOutcome =
 
 export interface DurableMediaGenerationRuntimePort {
   submit(submission: ModelSupplySubmission): Promise<ModelSupplyResult>;
+  resumeBoundedMediaJob?(input: {
+    workspaceId: string;
+    jobId: string;
+    authorization: NonNullable<ModelSupplySubmission['mediaBoundedExecution']>;
+  }): Promise<DurableMediaGenerationJobView>;
   get(
     workspaceId: string,
     jobId: string

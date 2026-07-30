@@ -55,6 +55,7 @@ import {
   merchantTaskSummary,
 } from './merchant-delivery-language.js';
 import type { RecipeFactSatisfaction } from './fact-satisfaction.js';
+import { mediaBoundedCurrentBestSchema } from './media-bounded-execution.js';
 
 type CopyBrief = Extract<ExecutionBrief, { kind: 'copy' }>;
 type MediaBrief = Exclude<ExecutionBrief, { kind: 'copy' }>;
@@ -90,6 +91,8 @@ export interface HarnessSelectionResult {
 
 export interface HarnessMediaSelectionResult {
   asset: NonNullable<ContentPackage['generated']['ownedAssets']>[number];
+  boundedCurrentBest?: unknown;
+  boundedExecution?: BoundedExecutionSnapshot;
   childRun: ContentPackage['generated']['childRuns'][number];
   kind: MediaBrief['kind'];
   measuredDurationSeconds?: number;
@@ -294,6 +297,19 @@ export interface HarnessMediaStagePorts extends HarnessStagePorts {
     awaitSignal?: HarnessSignalReceiver;
     runStep?: HarnessEffectRunner;
   }): Promise<HarnessMediaSelectionResult>;
+  executeMediaAndSelectBounded?(input: {
+    workflowId: string;
+    request: HarnessWorkflowInput;
+    brief: MediaBrief;
+    context: HarnessContextSnapshot;
+    skillInstructions?: readonly ResolvedSkillInstruction[];
+    awaitSignal?: HarnessSignalReceiver;
+    runStep?: HarnessEffectRunner;
+    boundedResume?: BoundedExecutionSuspension<unknown>;
+    boundedCheckpoint?: unknown;
+  }): Promise<
+    HarnessMediaSelectionResult | BoundedExecutionSuspension<unknown>
+  >;
   assembleMediaAndDeliver(input: {
     workflowId: string;
     request: HarnessWorkflowInput;
@@ -2031,6 +2047,158 @@ async function runMediaHarnessWorkflow(
     reportProgress,
   });
   const executionSkills = stageSkills.execution_selection;
+  const executeMediaSelectionToCompletion = async (
+    unitId: string,
+    initialInput: Parameters<
+      NonNullable<HarnessMediaStagePorts['executeMediaAndSelectBounded']>
+    >[0],
+  ): Promise<HarnessMediaSelectionResult> => {
+    const bounded = hasConfiguredBoundedExecution(
+      initialInput.request.boundedExecution,
+    );
+    if (bounded && !ports.executeMediaAndSelectBounded) {
+      throw new Error(
+        'Configured bounded execution requires a bounded media selection port.',
+      );
+    }
+    let input = initialInput;
+    let continuation = 0;
+    let outcome = await runSelectionStage(
+      runtime,
+      workflowId,
+      unitId,
+      executionSkills.instructions,
+      input,
+      async (selectionInput) =>
+        (
+          bounded
+            ? ports.executeMediaAndSelectBounded!.bind(ports)
+            : ports.executeMediaAndSelect.bind(ports)
+        )(selectionInput),
+    );
+    while (isBoundedExecutionSuspension(outcome)) {
+      const suspension = outcome;
+      await reportProgress({
+        stage: 'execution_selection',
+        state: 'suspended',
+        message: `已保留当前最好结果；${outcome.unmetExplanation}。还可以继续。`,
+      });
+      await trace(
+        runtime,
+        workflowId,
+        'execution_selection',
+        {
+          executionRoot: mediaExecutionRoot(activeRequest),
+          boundedExecution: outcome.snapshot,
+          currentBest: outcome.currentBest,
+          unmetExplanation: outcome.unmetExplanation,
+          resumable: true,
+          ...skillTraceLineage(executionSkills),
+        },
+        [
+          'media-bounded',
+          outcome.snapshot.triggeredLimit,
+          outcome.snapshot.consumption.iterations,
+          outcome.snapshot.consumption.costCents,
+          outcome.snapshot.consumption.wallClockMs,
+          outcome.snapshot.consumption.delegations,
+          continuation,
+        ].join('-'),
+        ports.recordObservabilityEvent
+          ? () => {
+              const idempotencyKey =
+                `bounded:${workflowId}:${unitId}:${continuation}:suspended`;
+              return ports.recordObservabilityEvent!({
+                workflowId,
+                request: activeRequest,
+                idempotencyKey,
+                event: {
+                  eventType: 'bounded_execution.suspended',
+                  payload: {
+                    snapshot: suspension.snapshot,
+                    currentBest: suspension.currentBest,
+                    unmetExplanation: suspension.unmetExplanation,
+                    resumable: true,
+                  },
+                },
+              });
+            }
+          : undefined,
+      );
+      const command = await awaitResolvedDecision(
+        runtime,
+        boundedExecutionQuestion(workflowId, activeRequest, outcome),
+        'execution_selection',
+      );
+      if (!runtime.resumeBoundedExecution) {
+        throw new BoundedExecutionResumeError(
+          'A server-side raised-limit continuation resolver is required.',
+        );
+      }
+      activeRequest = await runtime.resumeBoundedExecution({
+        workflowId,
+        request: activeRequest,
+        suspension: outcome,
+        command,
+      });
+      if (!activeRequest.boundedExecution) {
+        throw new BoundedExecutionResumeError(
+          'A resumed execution requires the raised bounded snapshot.',
+        );
+      }
+      if (ports.recordObservabilityEvent) {
+        const idempotencyKey =
+          `bounded:${workflowId}:${command.idempotencyKey}:resumed`;
+        await runtime.runStep(idempotencyKey, () =>
+          ports.recordObservabilityEvent!({
+            workflowId,
+            request: activeRequest,
+            idempotencyKey,
+            event: {
+              eventType: 'bounded_execution.resumed',
+              payload: {
+                previousSnapshot: suspension.snapshot,
+                snapshot: activeRequest.boundedExecution!,
+                decisionId: command.idempotencyKey,
+              },
+            },
+          }),
+        );
+      }
+      continuation += 1;
+      input = {
+        ...input,
+        request: activeRequest,
+        boundedResume: outcome,
+      };
+      outcome = await runSelectionStage(
+        runtime,
+        workflowId,
+        `${unitId}-bounded-resume-${continuation}`,
+        executionSkills.instructions,
+        input,
+        async (selectionInput) =>
+          ports.executeMediaAndSelectBounded!(selectionInput),
+      );
+    }
+    if (bounded) {
+      if (
+        outcome.boundedExecution === undefined ||
+        outcome.boundedCurrentBest === undefined
+      ) {
+        throw new Error(
+          'Bounded media selection must return its cumulative snapshot and checkpoint.',
+        );
+      }
+      mediaBoundedCurrentBestSchema.parse(outcome.boundedCurrentBest);
+    }
+    await ports.recordExecutionAssemblyStep?.({
+      workflowId,
+      request: input.request,
+      step: 'execution_check',
+    });
+    return outcome;
+  };
   const mediaSelectionInput = {
     workflowId,
     request: activeRequest,
@@ -2051,25 +2219,23 @@ async function runMediaHarnessWorkflow(
         }
       : {}),
   };
-  let selection = await runSelectionStage(
-    runtime,
-    workflowId,
+  let selection = await executeMediaSelectionToCompletion(
     kind,
-    executionSkills.instructions,
     mediaSelectionInput,
-    async (input) => {
-      const selected = await ports.executeMediaAndSelect(input);
-      await ports.recordExecutionAssemblyStep?.({
-        workflowId,
-        request: input.request,
-        step: 'execution_check',
-      });
-      return selected;
-    },
   );
+  let boundedCheckpoint = selection.boundedCurrentBest;
+  if (selection.boundedExecution) {
+    activeRequest = {
+      ...activeRequest,
+      boundedExecution: selection.boundedExecution,
+    };
+  }
   await trace(runtime, workflowId, 'execution_selection', {
     executionRoot: mediaExecutionRoot(request),
     ...selection.trace,
+    ...(selection.boundedExecution
+      ? { boundedExecution: selection.boundedExecution }
+      : {}),
     ...skillTraceLineage(executionSkills),
   }, `r${bundle.bundle.revision}`);
   await reportProgress({
@@ -2169,26 +2335,25 @@ async function runMediaHarnessWorkflow(
             ),
           }
         : {}),
+      ...(boundedCheckpoint !== undefined ? { boundedCheckpoint } : {}),
     };
-    selection = await runSelectionStage(
-      runtime,
-      workflowId,
+    selection = await executeMediaSelectionToCompletion(
       `${kind}-r${bundle.bundle.revision}`,
-      executionSkills.instructions,
       recompiledMediaSelectionInput,
-      async (input) => {
-        const selected = await ports.executeMediaAndSelect(input);
-        await ports.recordExecutionAssemblyStep?.({
-          workflowId,
-          request: input.request,
-          step: 'execution_check',
-        });
-        return selected;
-      },
     );
+    if (selection.boundedExecution) {
+      activeRequest = {
+        ...activeRequest,
+        boundedExecution: selection.boundedExecution,
+      };
+    }
+    boundedCheckpoint = selection.boundedCurrentBest;
     await trace(runtime, workflowId, 'execution_selection', {
       executionRoot: mediaExecutionRoot(request),
       ...selection.trace,
+      ...(selection.boundedExecution
+        ? { boundedExecution: selection.boundedExecution }
+        : {}),
       ...skillTraceLineage(executionSkills),
     }, `r${bundle.bundle.revision}`);
     await reportProgress({

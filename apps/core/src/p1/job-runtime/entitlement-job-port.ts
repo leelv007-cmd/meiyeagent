@@ -3,10 +3,11 @@ import {
   normalizeProductEntitlementPolicy,
   type ProductEntitlementPolicyPort,
 } from '../foundation/entitlement-policy.js';
-import type {
-  DurableJobInput,
-  QueueRuntimeMetrics,
-  RecurringJobInput,
+import {
+  JobRuntimeError,
+  type DurableJobInput,
+  type QueueRuntimeMetrics,
+  type RecurringJobInput,
 } from './job-contracts.js';
 import type { TransactionalJobPort } from './tracer-worker.js';
 
@@ -37,6 +38,34 @@ export class EntitlementAwareJobPort implements EntitlementJobRuntimePort {
 
   async enqueueInTransaction(input: DurableJobInput, client: PoolClient) {
     await this.runtime.enqueueInTransaction(await this.withPolicy(input), client);
+  }
+
+  async resume(input: DurableJobInput, sequence: number) {
+    if (!this.runtime.resume) {
+      throw new JobRuntimeError(
+        'RUNTIME_NOT_STARTED',
+        'The configured job runtime cannot enqueue a failed-job resume.',
+      );
+    }
+    await this.runtime.resume(await this.withPolicy(input), sequence);
+  }
+
+  async resumeInTransaction(
+    input: DurableJobInput,
+    sequence: number,
+    client: PoolClient,
+  ) {
+    if (!this.runtime.resumeInTransaction) {
+      throw new JobRuntimeError(
+        'RUNTIME_NOT_STARTED',
+        'The configured job runtime cannot resume in a caller transaction.',
+      );
+    }
+    await this.runtime.resumeInTransaction(
+      await this.withPolicy(input),
+      sequence,
+      client,
+    );
   }
 
   cancel(workspaceId: string, jobId: string) {

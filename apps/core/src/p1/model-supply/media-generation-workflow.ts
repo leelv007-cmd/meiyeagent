@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import type { JobRuntimeHandler } from '../job-runtime/job-contracts.js';
 import type {
   TracerExternalEffect,
@@ -14,6 +15,7 @@ import {
 import {
   applyActualRouteDecisionExplanation,
   mediaSubmissionFingerprint,
+  mediaBoundedExecutionAuthorizationSchema,
   ModelSupplyProviderAdmissionError,
   type CancelledMediaProviderTerminalOutcome,
   type CancelledMediaProviderTerminalReconciliation,
@@ -23,6 +25,7 @@ import {
   type MediaProviderEffectRequest,
   type MediaProviderLifecyclePort,
   type MediaProviderSubmissionReceipt,
+  type MediaBoundedExecutionAuthorization,
   type ModelSupplyApplicationService,
   type ModelSupplyResult,
   type ModelSupplySubmission,
@@ -42,6 +45,12 @@ export interface MediaGenerationJobApplicationPort {
   find(workspaceId: string, jobId: string): Promise<TracerJobRecord | null>;
   get(workspaceId: string, jobId: string): Promise<TracerJobRecord>;
   cancel(workspaceId: string, jobId: string): Promise<TracerJobRecord>;
+  resumeFailed?(input: {
+    workspaceId: string;
+    jobId: string;
+    expectedPayloadHash: string;
+    payload: Record<string, unknown>;
+  }): Promise<TracerJobRecord>;
   recordCancelledReconciliation(
     workspaceId: string,
     jobId: string,
@@ -108,6 +117,51 @@ export class DurableMediaGenerationApplicationService
     return this.view(
       await this.dependencies.jobs.cancel(input.workspaceId, input.jobId)
     );
+  }
+
+  async resumeBoundedMediaJob(input: {
+    workspaceId: string;
+    jobId: string;
+    authorization: MediaBoundedExecutionAuthorization;
+  }) {
+    const record = await this.dependencies.jobs.get(
+      input.workspaceId,
+      input.jobId
+    );
+    const result = resultFromOutput(record.output);
+    if (
+      record.status !== 'failed' ||
+      result?.status !== 'failed' ||
+      result.failureCode !== 'MEDIA_BOUNDED_ITERATION_EXCEEDED' ||
+      !result.boundedExecution
+    ) {
+      throw new Error(
+        'Only a durably suspended bounded media job can be resumed.'
+      );
+    }
+    const authorization = mediaBoundedExecutionAuthorizationSchema.parse(
+      input.authorization
+    );
+    assertBoundedMediaRaise(result.boundedExecution, authorization);
+    if (!this.dependencies.jobs.resumeFailed) {
+      throw new Error(
+        'The durable media job runtime cannot resume failed jobs.'
+      );
+    }
+    const submission = submissionFromPayload(record.payload);
+    const resumed = await this.dependencies.jobs.resumeFailed({
+      workspaceId: input.workspaceId,
+      jobId: input.jobId,
+      expectedPayloadHash: record.payloadHash,
+      payload: {
+        ...structuredClone(record.payload),
+        submission: {
+          ...submission,
+          mediaBoundedExecution: authorization,
+        },
+      },
+    });
+    return this.view(resumed);
   }
 
   async reconcileCancelledProviderTerminal(input: {
@@ -200,10 +254,7 @@ export class DurableMediaGenerationApplicationService
       ...(record.providerTaskRef
         ? { providerTaskRef: record.providerTaskRef }
         : {}),
-      providerLifecycleLatencyMs: Math.max(
-        0,
-        Date.parse(record.updatedAt) - Date.parse(record.createdAt)
-      ),
+      providerLifecycleLatencyMs: record.activeExecutionMs,
       ...(result.cancelledProviderTerminal
         ? {
             cancelledProviderTerminal: structuredClone(
@@ -590,6 +641,23 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
                 'recover',
                 () => this.dependencies.provider.recover(resolution.request)
               );
+              if (!receipt) {
+                receipt = {
+                  acceptance: 'acceptance_unknown',
+                  errorCode: 'provider_receipt_unresolved',
+                  retryable: false,
+                  error:
+                    'Provider acceptance remains unknown; recovery found no receipt and must not resubmit.',
+                  providerCost: {
+                    amount: 0,
+                    currency:
+                      resolution.request.deployment.region === 'domestic'
+                        ? 'CNY'
+                        : 'USD',
+                    usage: {},
+                  },
+                };
+              }
             }
             if (!receipt) {
               receipt = await this.submitProvider(
@@ -767,10 +835,13 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
     } catch (error) {
       if (!(error instanceof ModelSupplyProviderAdmissionError)) throw error;
       return {
-        acceptance: 'rejected_before_accept',
+        acceptance:
+          error.disposition === 'reconcile_without_resubmit'
+            ? 'acceptance_unknown'
+            : 'rejected_before_accept',
         errorCode: error.errorCode,
         error: error.message,
-        retryable: true,
+        retryable: error.retryable,
         providerCost: {
           amount: 0,
           currency: request.deployment.region === 'domestic' ? 'CNY' : 'USD',
@@ -1139,6 +1210,45 @@ function assertRequestFingerprint(
   if (record.payload.requestFingerprint !== requestFingerprint) {
     throw new Error(
       'Media generation idempotency key conflicts with another request.'
+    );
+  }
+}
+
+function assertBoundedMediaRaise(
+  previous: NonNullable<ModelSupplyResult['boundedExecution']>,
+  next: MediaBoundedExecutionAuthorization
+) {
+  const previousSnapshot = previous.snapshot;
+  const nextSnapshot = next.snapshot;
+  if (
+    previous.triggeredLimit !== 'maxIterations' ||
+    previousSnapshot.stopReason !== 'limit_reached' ||
+    previousSnapshot.triggeredLimit !== 'maxIterations' ||
+    nextSnapshot.stopReason !== null ||
+    nextSnapshot.triggeredLimit !== null ||
+    typeof previousSnapshot.maxIterations !== 'number' ||
+    typeof nextSnapshot.maxIterations !== 'number' ||
+    nextSnapshot.maxIterations <= previousSnapshot.maxIterations ||
+    nextSnapshot.maxIterations <= nextSnapshot.consumption.iterations ||
+    !isDeepStrictEqual(nextSnapshot.consumption, previous.consumption) ||
+    !isDeepStrictEqual(
+      nextSnapshot.requiredLimits,
+      previousSnapshot.requiredLimits,
+    ) ||
+    nextSnapshot.maxCostCents !== previousSnapshot.maxCostCents ||
+    nextSnapshot.maxWallClockMs !== previousSnapshot.maxWallClockMs ||
+    nextSnapshot.maxDelegations !== previousSnapshot.maxDelegations ||
+    !isDeepStrictEqual(
+      next.countedAttemptIds,
+      previous.consumedAttemptIds,
+    ) ||
+    !isDeepStrictEqual(
+      next.countedProviderCostIds,
+      previous.consumedProviderCostIds,
+    )
+  ) {
+    throw new Error(
+      'Bounded media resume requires the exact consumed checkpoint and a strictly raised iteration limit.'
     );
   }
 }
