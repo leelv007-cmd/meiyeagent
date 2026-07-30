@@ -26,6 +26,11 @@ import {
   modelRuntimeAssemblyFromEnv,
   type ModelRuntimeAssembly,
 } from './runtime-config.js';
+import {
+  expandCatalogRevisionPayload,
+  resolvePlatformDefaultBindings,
+  validateDualRead,
+} from '../supply-registry/index.js';
 
 function assemble(
   catalog: ModelRuntimeAssembly,
@@ -185,6 +190,67 @@ test('fixture runtime freezes the CNY media price after workspace catalog initia
   assert.match(
     snapshot.allowedCandidates?.[0]?.priceRevision ?? '',
     /:fixture-cny$/u,
+  );
+});
+
+test('fixture initialization publishes an active live-verified copy platform default', async () => {
+  const catalog = modelRuntimeAssemblyFromEnv({
+    APP_ENV: 'e2e',
+    MODEL_EXECUTION_MODE: 'fixture',
+  });
+  const repository = new MemoryModelSupplyControlPlaneRepository();
+  let registry: ReturnType<typeof expandCatalogRevisionPayload> | null = null;
+  const runtime = createModelSupplyRuntime({
+    application: {
+      execution: catalog.runtime.execution,
+      resultSink: repository,
+    },
+    catalog,
+    controlPlane: {
+      repository,
+      supplyRegistry: {
+        async getCurrentRegistryRevision() {
+          return registry;
+        },
+        async setCurrentRegistryRevision(_workspaceId, snapshot) {
+          registry = snapshot;
+        },
+      },
+    },
+  });
+  registry = expandCatalogRevisionPayload(runtime.fallbackCatalog.payload, {
+    catalogRevisionId: runtime.fallbackCatalog.revisionId,
+    catalogRevisionNumber: 0,
+  });
+
+  await runtime.controlPlane.initialize('__platform_supply__');
+  assert.ok(registry);
+  assert.notEqual(
+    registry.catalogRevisionId,
+    runtime.fallbackCatalog.revisionId,
+  );
+  const { bindings, errors } = resolvePlatformDefaultBindings(registry, {
+    copy: 'deepseek-v4-pro',
+  });
+  const binding = bindings.find(
+    (candidate) => candidate.operation === 'copy.generate',
+  );
+  const deployment = registry.deployments.find(
+    (candidate) => candidate.id === binding?.deploymentId,
+  );
+
+  assert.deepEqual(errors, []);
+  assert.equal(binding?.activationEvidenceStatus, 'live_verified');
+  assert.equal(deployment?.lifecycleStatus, 'active');
+  assert.equal(
+    validateDualRead(
+      {
+        ...runtime.fallbackCatalog.payload,
+        deployments: registry.source.publishedDeployments,
+      },
+      registry,
+    ).ok,
+    true,
   );
 });
 

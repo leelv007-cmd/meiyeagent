@@ -102,6 +102,7 @@ const recordedDeployments = createDefaultDeployments({
 });
 
 export const RECORDED_CATALOG_REVISION_ID = 'recorded-default-v1';
+const LOCAL_FIXTURE_REGISTRY_REVISION_SUFFIX = ':fixture-live-verified-v1';
 const LOCAL_ZERO_USAGE_CATALOG_MODEL_IDS = new Set([
   'audio-speech-fixture',
   'audio-sfx-fixture',
@@ -2321,9 +2322,32 @@ export class ModelSupplyControlPlaneService {
     if (!this.supplyRegistry) return;
     const current =
       await this.supplyRegistry.getCurrentRegistryRevision(workspaceId);
-    if (current?.catalogRevisionId === source.revisionId) return;
-    const snapshot = expandCatalogRevisionPayload(source.payload, {
-      catalogRevisionId: source.revisionId,
+    const registryRevisionId = this.allowRecordedExecution
+      ? `${source.revisionId}${LOCAL_FIXTURE_REGISTRY_REVISION_SUFFIX}`
+      : source.revisionId;
+    if (current?.catalogRevisionId === registryRevisionId) return;
+    const registryPayload = this.allowRecordedExecution
+      ? {
+          ...source.payload,
+          deployments: source.payload.deployments.map((deployment) =>
+            deployment.status === 'active'
+              ? {
+                  ...deployment,
+                  activationEvidence: {
+                    configurationRevision: `fixture:${
+                      deployment.lifecycleRevision ?? deployment.id
+                    }`,
+                    evidenceRef: `fixture://activation/${deployment.id}`,
+                    status: 'live_verified' as const,
+                    verifiedAt: '2026-07-16T00:00:00.000Z',
+                  },
+                }
+              : deployment,
+          ),
+        }
+      : source.payload;
+    const snapshot = expandCatalogRevisionPayload(registryPayload, {
+      catalogRevisionId: registryRevisionId,
       catalogRevisionNumber,
     });
     if (this.allowRecordedExecution) {
