@@ -329,6 +329,7 @@ function workspaceState(
   return {
     auditEvents: [],
     commandReceipts: [],
+    composerConversations: [],
     contentPackages: [contentPackage],
     creationEvents: [],
     creativeAssets: [],

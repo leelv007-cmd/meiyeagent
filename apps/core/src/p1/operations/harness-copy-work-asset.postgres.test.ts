@@ -214,9 +214,6 @@ test("Harness Copy delivery lands one deterministic winner text asset atomically
 		await pool.query("DELETE FROM p1_creative_assets WHERE workspace_id=$1", [
 			workspaceId,
 		]);
-		await pool.query("DELETE FROM p1_creative_works WHERE workspace_id=$1", [
-			workspaceId,
-		]);
 		await pool.query("DELETE FROM p1_content_packages WHERE workspace_id=$1", [
 			workspaceId,
 		]);

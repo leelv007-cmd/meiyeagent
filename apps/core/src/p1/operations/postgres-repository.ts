@@ -29,6 +29,7 @@ interface PostgresCapabilities {
 const WORKSPACE_TABLES = {
 	auditEvents: "p1_operations_audit_events",
 	commandReceipts: "p1_operations_command_receipts",
+	composerConversations: "p1_composer_conversations",
 	creationEvents: "p1_creation_events",
 	contentPackages: "p1_content_packages",
 	creativeGenerationApprovalReceipts:
@@ -54,6 +55,7 @@ const WORKSPACE_TABLES = {
 
 const MUTABLE_COLLECTIONS = new Set<keyof typeof WORKSPACE_TABLES>([
 	"commandReceipts",
+	"composerConversations",
 	"contentPackages",
 	"creativeGenerationApprovalReceipts",
 	"creativeContents",
@@ -297,6 +299,40 @@ export class PostgresOperationsRepository implements OperationsRepository {
       CREATE INDEX IF NOT EXISTS p1_creative_works_session_updated_idx
         ON p1_creative_works
         (workspace_id, ((payload->>'sessionId')), updated_at DESC);
+      CREATE TABLE IF NOT EXISTS p1_composer_conversations (
+        workspace_id text NOT NULL,
+        id text NOT NULL,
+        payload jsonb NOT NULL,
+        updated_at timestamptz NOT NULL,
+        PRIMARY KEY (workspace_id, id)
+      );
+      INSERT INTO p1_composer_conversations (workspace_id, id, payload, updated_at)
+      SELECT
+        workspace_id,
+        payload->>'sessionId',
+        jsonb_build_object(
+          'id', payload->>'sessionId',
+          'workspaceId', workspace_id,
+          'createdAt', min(payload->>'createdAt'),
+          'createdBy', 'historical-migration',
+          'updatedAt', max(payload->>'updatedAt')
+        ),
+        max(updated_at)
+      FROM p1_creative_works
+      WHERE payload->>'sessionId' IS NOT NULL
+      GROUP BY workspace_id, payload->>'sessionId'
+      ON CONFLICT (workspace_id, id) DO NOTHING;
+      CREATE OR REPLACE FUNCTION reject_p1_creative_work_delete()
+      RETURNS trigger AS $guard$
+      BEGIN
+        RAISE EXCEPTION 'p1_creative_works are retained; delete Composer conversations through the Operations port.'
+          USING ERRCODE = '42501';
+      END;
+      $guard$ LANGUAGE plpgsql;
+      DROP TRIGGER IF EXISTS p1_creative_works_reject_delete ON p1_creative_works;
+      CREATE TRIGGER p1_creative_works_reject_delete
+        BEFORE DELETE ON p1_creative_works
+        FOR EACH ROW EXECUTE FUNCTION reject_p1_creative_work_delete();
       CREATE TABLE IF NOT EXISTS p1_creative_jobs (
         workspace_id text NOT NULL,
         id text NOT NULL,

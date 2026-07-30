@@ -1596,8 +1596,5 @@ async function cleanup(
   await pool.query("DELETE FROM p1_content_tasks WHERE workspace_id = $1", [
     workspaceId,
   ]);
-  await pool.query("DELETE FROM p1_creative_works WHERE workspace_id = $1", [
-    workspaceId,
-  ]);
   void submission;
 }

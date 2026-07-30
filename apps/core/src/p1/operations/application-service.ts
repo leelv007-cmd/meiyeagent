@@ -70,6 +70,8 @@ import type {
   CanvasExportPort,
   CanvasImageJob,
   CanvasWork,
+  ComposerConversationDeletedFact,
+  ComposerConversationDeletionNotificationPort,
   ContentTask,
   ContentTaskStatus,
   ContentPackageExportPort,
@@ -698,6 +700,7 @@ function initialWorkspace(workspaceId: string): OperationsWorkspaceState {
     templateShortcuts: [],
     exportReceipts: [],
     imageJobs: [],
+    composerConversations: [],
     creativeWorks: [],
     creativeGenerationApprovalReceipts: [],
     creativeJobs: [],
@@ -863,6 +866,7 @@ export class OperationsApplicationService {
     payloadHash: string;
     replayed: boolean;
   }>();
+  private composerConversationDeletionNotifier?: ComposerConversationDeletionNotificationPort;
 
   constructor(
     private readonly repository: OperationsRepository,
@@ -876,6 +880,12 @@ export class OperationsApplicationService {
     gate: import('../creation-experience/brief-submission-gate.js').BriefSubmissionGate,
   ) {
     this.dependencies.briefSubmissionGate = gate;
+  }
+
+  attachComposerConversationDeletionNotifier(
+    notifier: ComposerConversationDeletionNotificationPort,
+  ) {
+    this.composerConversationDeletionNotifier = notifier;
   }
 
   private timestamp() {
@@ -5156,36 +5166,6 @@ export class OperationsApplicationService {
       );
     }
     const state = await this.read(context);
-    const sessions = new Map<
-      string,
-      {
-        createdAt: string;
-        id: string;
-        updatedAt: string;
-        workIds: string[];
-      }
-    >();
-    for (const work of state.creativeWorks) {
-      const session = sessions.get(work.sessionId);
-      if (session) {
-        session.createdAt =
-          work.createdAt < session.createdAt
-            ? work.createdAt
-            : session.createdAt;
-        session.updatedAt =
-          work.updatedAt > session.updatedAt
-            ? work.updatedAt
-            : session.updatedAt;
-        session.workIds.push(work.id);
-      } else {
-        sessions.set(work.sessionId, {
-          createdAt: work.createdAt,
-          id: work.sessionId,
-          updatedAt: work.updatedAt,
-          workIds: [work.id],
-        });
-      }
-    }
     const recent = <T>(items: T[], timestamp: (item: T) => string) =>
       [...items]
         .sort((left, right) => timestamp(right).localeCompare(timestamp(left)))
@@ -5196,7 +5176,16 @@ export class OperationsApplicationService {
         structuredClone(revision)
       ),
     }));
-    const sessionList = [...sessions.values()];
+    const sessionList = state.composerConversations
+      .filter(({ deletedAt }) => !deletedAt)
+      .map((conversation) => ({
+        createdAt: conversation.createdAt,
+        id: conversation.id,
+        updatedAt: conversation.updatedAt,
+        workIds: state.creativeWorks
+          .filter(({ sessionId }) => sessionId === conversation.id)
+          .map(({ id }) => id),
+      }));
     const totals = {
       assets: state.creativeAssets.length,
       canvasWorks: canvasWorks.length,
@@ -5318,6 +5307,27 @@ export class OperationsApplicationService {
         );
       }
       const timestamp = this.timestamp();
+      const conversation = state.composerConversations.find(
+        ({ id }) => id === input.sessionId,
+      );
+      if (conversation?.deletedAt) {
+        throw new OperationsError(
+          'COMPOSER_CONVERSATION_DELETED',
+          'A deleted Composer conversation cannot accept new Works.',
+          409,
+        );
+      }
+      if (conversation) {
+        conversation.updatedAt = timestamp;
+      } else {
+        state.composerConversations.push({
+          createdAt: timestamp,
+          createdBy: context.userId,
+          id: input.sessionId,
+          updatedAt: timestamp,
+          workspaceId: context.workspaceId,
+        });
+      }
       const work: CreativeWork = {
         contentModules,
         createdAt: timestamp,
@@ -5424,6 +5434,94 @@ export class OperationsApplicationService {
       );
       return work;
     });
+  }
+
+  async deleteComposerConversation(
+    context: OperationContext,
+    conversationId: string,
+  ): Promise<ComposerConversationDeletedFact> {
+    if (!/^[A-Za-z0-9._:-]{1,160}$/.test(conversationId)) {
+      throw new OperationsError(
+        'INVALID_CREATIVE_SESSION',
+        'A stable creative session identifier is required.',
+      );
+    }
+    const notifier = this.composerConversationDeletionNotifier;
+    if (!notifier) {
+      throw new OperationsError(
+        'COMPOSER_DELETION_NOTIFIER_UNAVAILABLE',
+        'Composer conversation deletion is unavailable.',
+        503,
+      );
+    }
+    const fact: ComposerConversationDeletedFact = await this.mutate(
+      context,
+      (state) => {
+        const conversation = state.composerConversations.find(
+          ({ id }) => id === conversationId,
+        );
+        if (!conversation) {
+          throw new OperationsError(
+            'COMPOSER_CONVERSATION_NOT_FOUND',
+            'The Composer conversation was not found.',
+            404,
+          );
+        }
+        if (conversation.deletedAt && conversation.deletionAuditEventId) {
+          const event = state.auditEvents.find(
+            ({ id }) => id === conversation.deletionAuditEventId,
+          );
+          if (!event) {
+            throw new OperationsError(
+              'COMPOSER_CONVERSATION_AUDIT_MISSING',
+              'The Composer conversation deletion audit fact is missing.',
+              409,
+            );
+          }
+          return {
+            action: 'composer_conversation.deleted',
+            actorId: event.actorId,
+            auditId: event.id,
+            conversationId,
+            correlationId: event.correlationId,
+            deletedAt: event.createdAt,
+            workspaceId: context.workspaceId,
+          };
+        }
+
+        const deletedAt = this.timestamp();
+        const auditId = this.id();
+        const retainedWorkIds = state.creativeWorks
+          .filter(({ sessionId }) => sessionId === conversationId)
+          .map(({ id }) => id);
+        conversation.deletedAt = deletedAt;
+        conversation.deletedBy = context.userId;
+        conversation.deletionAuditEventId = auditId;
+        conversation.updatedAt = deletedAt;
+        state.auditEvents.push({
+          action: 'composer_conversation.deleted',
+          actorId: context.userId,
+          correlationId: context.correlationId,
+          createdAt: deletedAt,
+          details: { retainedWorkIds },
+          entityId: conversationId,
+          entityType: 'composer_conversation',
+          id: auditId,
+          workspaceId: context.workspaceId,
+        });
+        return {
+          action: 'composer_conversation.deleted',
+          actorId: context.userId,
+          auditId,
+          conversationId,
+          correlationId: context.correlationId,
+          deletedAt,
+          workspaceId: context.workspaceId,
+        };
+      },
+    );
+    await notifier.notify(fact);
+    return fact;
   }
 
   async updateCreativeWorkDraft(

@@ -669,6 +669,31 @@ export interface CreativeWork {
   updatedAt: string;
 }
 
+export interface ComposerConversation {
+  id: string;
+  workspaceId: string;
+  createdAt: string;
+  createdBy: string;
+  updatedAt: string;
+  deletedAt?: string;
+  deletedBy?: string;
+  deletionAuditEventId?: string;
+}
+
+export interface ComposerConversationDeletedFact {
+  action: 'composer_conversation.deleted';
+  actorId: string;
+  auditId: string;
+  conversationId: string;
+  correlationId: string;
+  deletedAt: string;
+  workspaceId: string;
+}
+
+export interface ComposerConversationDeletionNotificationPort {
+  notify(fact: ComposerConversationDeletedFact): Promise<void>;
+}
+
 export interface CreativeJob {
   id: string;
   workspaceId: string;
@@ -1265,6 +1290,7 @@ export interface OperationsWorkspaceState {
   templateShortcuts: TemplateShortcut[];
   exportReceipts: ExportReceipt[];
   imageJobs: CanvasImageJob[];
+  composerConversations: ComposerConversation[];
   creativeWorks: CreativeWork[];
   creativeGenerationApprovalReceipts?: CreativeGenerationApprovalReceipt[];
   creativeJobs: CreativeJob[];

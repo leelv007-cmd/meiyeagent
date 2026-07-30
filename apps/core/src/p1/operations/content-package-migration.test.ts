@@ -27,6 +27,7 @@ function workspace(workspaceId: string): OperationsWorkspaceState {
   return {
     auditEvents: [],
     commandReceipts: [],
+    composerConversations: [],
     contentPackages: [],
     creationEvents: [],
     creativeAssets: [],

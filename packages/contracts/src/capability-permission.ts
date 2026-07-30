@@ -236,6 +236,7 @@ const operationsContentCreateActions = new Set([
   'copy_template_version_to_work',
   'create_work_from_content_package',
   'deliver_content_package',
+  'delete_composer_conversation',
   'derive_creative_work',
   'edit_content_package_version',
   'export_work',

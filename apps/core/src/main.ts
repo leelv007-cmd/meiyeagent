@@ -294,6 +294,7 @@ import {
   ProductContentPackageRightsResolver,
   OperationsReusableAssetSourceVerifier,
   ReuseMemoryService,
+  ReuseMemoryComposerConversationDeletionNotifier,
   ReuseMemoryRecordProposalPort,
   CanonicalMemoryProposalRedline,
   ContentPackageMigrationService,
@@ -1347,6 +1348,9 @@ const reuseMemoryService = new ReuseMemoryService(
     contentPackageRightsResolver,
     contextBundleRepository
   )
+);
+operationsService.attachComposerConversationDeletionNotifier(
+  new ReuseMemoryComposerConversationDeletionNotifier(reuseMemoryService)
 );
 let harnessService: HarnessApplicationService | undefined;
 let composerDestinationMapper: ComposerDestinationMappingPort | undefined;

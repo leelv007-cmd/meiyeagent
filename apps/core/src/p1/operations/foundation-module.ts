@@ -509,6 +509,11 @@ export class OperationsFoundationModule implements P1OperationModule {
           )
         );
       }
+      case 'delete_composer_conversation':
+        return this.operations.deleteComposerConversation(
+          context,
+          requiredString(payload, 'conversationId')
+        );
       case 'derive_creative_work': {
         const contentModules = creativeContentModules(payload.contentModules);
         const briefDrafts = creativeBriefDrafts(payload.briefDrafts);

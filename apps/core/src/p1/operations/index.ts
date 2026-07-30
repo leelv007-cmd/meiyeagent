@@ -35,6 +35,7 @@ export * from './product-package-rights-adapter.js';
 export * from './product-search-projection.js';
 export * from './repository.js';
 export * from './reuse-memory-service.js';
+export * from './reuse-memory-composer-deletion-notifier.js';
 export * from './record-proposal-port.js';
 export * from './memory-sedimentation-pipeline.js';
 export * from './production-memory-sedimentation.js';
