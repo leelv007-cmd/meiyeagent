@@ -185,12 +185,12 @@ export function buildPlatformChecklistMarkdown(input: {
   > = {
     image_text: {
       douyin: [
-        '- [ ] 上传 video.mp4 与封面',
+        '- [ ] 上传 video.mp4',
         '- [ ] 粘贴 caption 文案与话题',
-        '- [ ] 如有字幕轨，确认平台字幕开关',
+        '- [ ] 封面可在抖音发布页自选或自动生成',
       ],
       video_account: [
-        '- [ ] 上传 video.mp4 与封面',
+        '- [ ] 上传 video.mp4',
         '- [ ] 粘贴 caption 文案',
         '- [ ] 确认视频号发布可见范围',
       ],

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
+import { unzipSync } from 'fflate';
 
 import {
   BEAUTY_DELIVERY_MANIFEST_SCHEMA,
@@ -19,6 +20,12 @@ import {
 
 function sha(bytes: Uint8Array) {
   return createHash('sha256').update(bytes).digest('hex');
+}
+
+function checklistFromZip(zipBytes: Uint8Array): string {
+  const checklist = unzipSync(zipBytes)['platform-checklist.md'];
+  assert.ok(checklist);
+  return new TextDecoder().decode(checklist);
 }
 
 test('beauty-delivery-manifest/v1 schema accepts a complete document', () => {
@@ -280,21 +287,39 @@ test('delivery exposes only the safe AI-generation rights summary', () => {
   );
 });
 
-test('video checklist retirement leaves image checklist wording unchanged', () => {
-  assert.match(
-    buildPlatformChecklistMarkdown({
-      kind: 'image_text',
-      platform: 'douyin',
-    }),
-    /上传 video\.mp4 与封面[\s\S]*如有字幕轨，确认平台字幕开关/,
-  );
-  assert.match(
-    buildPlatformChecklistMarkdown({
-      kind: 'image_text',
-      platform: 'video_account',
-    }),
-    /上传 video\.mp4 与封面[\s\S]*确认视频号发布可见范围/,
-  );
+test('image_text delivery ZIP checklists avoid cover upload and engineering instructions', () => {
+  const input = {
+    caption: { body: '正文', title: '标题', topics: ['同城'] },
+    compliance: { aigcLabelEnabled: true, watermarkEnabled: false },
+    contentPackageRevision: 1,
+    generatedAt: '2026-07-30T08:00:00.000Z',
+    images: [
+      {
+        bytes: Uint8Array.from([255, 216, 255, 224]),
+        mimeType: 'image/jpeg' as const,
+        path: 'images/01.jpg',
+      },
+    ],
+    packageId: 'pkg-checklist',
+    storeName: '门店A',
+    variantVersionId: 'ver-checklist',
+  };
+  const douyin = buildImageTextDeliveryPackage({
+    ...input,
+    platform: 'douyin',
+  });
+  const douyinChecklist = checklistFromZip(douyin.zipBytes);
+  assert.match(douyinChecklist, /封面可在抖音发布页自选或自动生成/);
+  assert.doesNotMatch(douyinChecklist, /上传 video\.mp4 与封面|revision/);
+
+  const videoAccount = buildImageTextDeliveryPackage({
+    ...input,
+    platform: 'video_account',
+  });
+  const videoAccountChecklist = checklistFromZip(videoAccount.zipBytes);
+  assert.match(videoAccountChecklist, /上传 video\.mp4/);
+  assert.doesNotMatch(videoAccountChecklist, /上传 video\.mp4 与封面|revision/);
+
   assert.match(
     buildPlatformChecklistMarkdown({
       kind: 'image_text',
