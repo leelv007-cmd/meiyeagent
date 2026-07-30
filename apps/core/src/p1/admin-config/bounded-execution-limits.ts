@@ -23,7 +23,22 @@ const configuredLimitSchema = z
   .object({
     default: boundedExecutionLimitsSchema.shape.maxIterations,
     hardCap: boundedExecutionLimitsSchema.shape.maxIterations,
-    provenance: z.enum(['recorded_provisional', 'unset']).optional(),
+    // 'unset' means the axis was never calibrated, so admission must fail
+    // closed. 'deliberately_unbounded' means someone decided this axis carries
+    // no ceiling and signed for it; the runtime meaning of the value is the
+    // same (the controller never triggers an 'unset' axis), but admission stops
+    // treating the axis as a missing calibration. D-167 (2026-07-30).
+    provenance: z
+      .enum(['recorded_provisional', 'deliberately_unbounded', 'unset'])
+      .optional(),
+    authorization: z
+      .object({
+        owner: z.string().trim().min(1).max(200),
+        reason: z.string().trim().min(1).max(500),
+        recordedAt: z.string().datetime(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .superRefine((axis, context) => {
@@ -66,6 +81,27 @@ const configuredLimitSchema = z
         code: 'custom',
         message: 'An unset bounded execution axis cannot carry a value.',
         path: ['provenance'],
+      });
+    }
+    if (
+      axis.provenance === 'deliberately_unbounded' &&
+      axis.default !== 'unset'
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A deliberately unbounded axis cannot carry a ceiling.',
+        path: ['provenance'],
+      });
+    }
+    if (
+      (axis.provenance === 'deliberately_unbounded') !==
+      (axis.authorization !== undefined)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'A deliberately unbounded axis needs an accountable authorization, and only that provenance may carry one.',
+        path: ['authorization'],
       });
     }
   });
@@ -158,9 +194,24 @@ export class AdminConfigBoundedExecutionLimitsResolver
             maxWallClockMs: 'unset',
             maxDelegations: 'unset',
           };
+    // An axis whose absent ceiling was decided and signed for is no longer a
+    // missing calibration, so it drops out of the required set. Everything
+    // else stays required and keeps failing admission closed.
+    const deliberatelyUnbounded =
+      configured.source === 'admin_config'
+        ? new Set(
+            Object.entries(configured.config)
+              .filter(
+                ([, axis]) => axis.provenance === 'deliberately_unbounded',
+              )
+              .map(([limit]) => limit),
+          )
+        : new Set<string>();
     return boundedExecutionLimitsSchema.parse({
       ...defaults,
-      requiredLimits: [...REQUIRED_PRODUCTION_LIMITS],
+      requiredLimits: REQUIRED_PRODUCTION_LIMITS.filter(
+        (limit) => !deliberatelyUnbounded.has(limit),
+      ),
     });
   }
 }

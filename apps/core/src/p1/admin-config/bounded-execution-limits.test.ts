@@ -379,3 +379,116 @@ function harnessTaskRequest() {
     },
   };
 }
+
+test('a deliberately unbounded axis leaves the required set while an uncalibrated one keeps failing admission closed', async () => {
+  const repository = new MemoryAdminConfigRepository();
+  const source = new AdminConfigBoundedExecutionLimitsSource(repository);
+  const resolver = new AdminConfigBoundedExecutionLimitsResolver(source);
+
+  // Cost is signed off as having no ceiling; wall clock is simply not
+  // calibrated yet. Both resolve to 'unset', so only provenance tells them
+  // apart — which is exactly what this axis was added for.
+  await repository.apply({
+    actorId: 'admin-1',
+    correlationId: 'bounds-unbounded-1',
+    expectedRevision: null,
+    key: BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
+    scope: 'global',
+    reason: 'Record the pre-live cost policy',
+    value: {
+      maxIterations: { default: 2, hardCap: 4 },
+      maxCostCents: {
+        default: 'unset',
+        hardCap: 'unset',
+        provenance: 'deliberately_unbounded',
+        authorization: {
+          owner: 'product-owner',
+          reason:
+            'The approved live envelope guards spend in the receipt path, not here.',
+          recordedAt: '2026-07-30T00:00:00.000Z',
+        },
+      },
+      maxWallClockMs: { default: 'unset', hardCap: 'unset' },
+      maxDelegations: { default: 'unset', hardCap: 'unset' },
+    },
+    workspaceId: '__global__',
+  });
+
+  assert.deepEqual(await resolver.resolve(), {
+    maxIterations: 2,
+    maxCostCents: 'unset',
+    maxWallClockMs: 'unset',
+    maxDelegations: 'unset',
+    requiredLimits: ['maxIterations', 'maxWallClockMs'],
+  });
+
+  const starter = new RecordingHarnessStarter();
+  const service = new HarnessTaskAdmissionService(
+    new CreatingHarnessRegistry(),
+    starter,
+    undefined,
+    undefined,
+    resolver
+  );
+  await assert.rejects(
+    service.submit(harnessTaskRequest()),
+    (error: unknown) =>
+      error instanceof HarnessExecutionBoundsAdmissionError &&
+      error.code === 'REQUIRED_EXECUTION_LIMIT_UNSET' &&
+      error.limit === 'maxWallClockMs'
+  );
+  assert.equal(starter.requests.length, 0);
+});
+
+test('bounded-execution config keeps an unbounded authorization exact and exclusive', () => {
+  const authorization = {
+    owner: 'product-owner',
+    reason: 'Signed pre-live policy',
+    recordedAt: '2026-07-30T00:00:00.000Z',
+  };
+
+  // A ceiling and a declaration of "no ceiling" cannot both be true.
+  assert.throws(() =>
+    boundedExecutionLimitsConfigSchema.parse({
+      maxIterations: {
+        default: 2,
+        hardCap: 4,
+        provenance: 'deliberately_unbounded',
+        authorization,
+      },
+      maxCostCents: { default: 'unset', hardCap: 'unset' },
+      maxWallClockMs: { default: 'unset', hardCap: 'unset' },
+      maxDelegations: { default: 'unset', hardCap: 'unset' },
+    })
+  );
+
+  // Unbounded without a signature is just an uncalibrated axis wearing a label.
+  assert.throws(() =>
+    boundedExecutionLimitsConfigSchema.parse({
+      maxIterations: { default: 2, hardCap: 4 },
+      maxCostCents: {
+        default: 'unset',
+        hardCap: 'unset',
+        provenance: 'deliberately_unbounded',
+      },
+      maxWallClockMs: { default: 'unset', hardCap: 'unset' },
+      maxDelegations: { default: 'unset', hardCap: 'unset' },
+    })
+  );
+
+  // A signature cannot be attached to anything else, so it never reads as
+  // authorising a ceiling somebody merely guessed.
+  assert.throws(() =>
+    boundedExecutionLimitsConfigSchema.parse({
+      maxIterations: {
+        default: 2,
+        hardCap: 4,
+        provenance: 'recorded_provisional',
+        authorization,
+      },
+      maxCostCents: { default: 'unset', hardCap: 'unset' },
+      maxWallClockMs: { default: 'unset', hardCap: 'unset' },
+      maxDelegations: { default: 'unset', hardCap: 'unset' },
+    })
+  );
+});
