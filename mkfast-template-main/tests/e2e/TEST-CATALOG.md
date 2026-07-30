@@ -338,6 +338,7 @@ evidence.
 | # | Test name | Flow |
 |---|---|---|
 | 1 | One inline confirmation reaches the customized delivery context without erasing the store profile | Create one legacy StoreProfile with two accounts and two confirmed projects, prove its public active-fact ledger is empty, then use the visible ProgressiveFactCard to explicitly reconfirm the first project name, change its price, and answer how long that price runs (#244 — the confirm button does not appear until it is answered). Require exactly one `asset-memory.finalize_store_intake` request, two revision-1 merchant-confirmed facts, and preservation of the second project, accounts, compliance flag, prohibitions, and all untouched profile fields. Submit a customized copy journey, read the resulting ContentPackage and its exact public ContextBundle revision, and prove the service and price revisions are frozen as `current_fact` / `store_personal` with matching source, expiry, references, and package fact evidence. |
+| 2 | A fact-free image-text recipe completes with confirmed facts in the ledger | After the preceding W01 journey has publicly confirmed and read back the service and price facts, open a fresh Composer page in the same signed-in browser context. Explicitly select `recipe.case_to_xhs_note`, whose `factTypes` contract is empty, authorize its source image, and require the real fixture-backed image-text journey to reach a usable result without referencing the ledger facts outside its empty authorization set. |
 
 ## 24c. W02 Five-Step Store Intake
 

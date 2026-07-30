@@ -6,7 +6,11 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
-import { productCommand, productState } from '../fixtures/product';
+import {
+  productCommand,
+  productState,
+  seedComposerInlineAuthorize,
+} from '../fixtures/product';
 import {
   JOURNEY_CONTRACTS,
   submitComposerJourney,
@@ -110,10 +114,11 @@ test.describe('W01 store intake fact wiring', () => {
   });
 
   test('one inline confirmation reaches the customized delivery context without erasing the store profile', async ({
+    context,
     page,
     request,
   }) => {
-    test.setTimeout(360_000);
+    test.setTimeout(600_000);
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
 
@@ -336,5 +341,99 @@ test.describe('W01 store intake fact wiring', () => {
       expectedFactReferences
     );
     expect(finalizationRequests).toHaveLength(1);
+
+    const imageTextPage = await context.newPage();
+    try {
+      await imageTextPage.goto('/dashboard');
+      await imageTextPage
+        .getByTestId('composer-lens-option-image_text')
+        .click();
+      const authorized = await seedComposerInlineAuthorize(imageTextPage, {
+        fileName: 'confirmed-facts-case.png',
+      });
+      await imageTextPage.reload();
+      await imageTextPage
+        .getByTestId('composer-lens-option-image_text')
+        .click();
+      await imageTextPage
+        .getByTestId('composer-recipe-card-recipe.case_to_xhs_note')
+        .click();
+      const applyRecipe = imageTextPage.getByRole('button', {
+        name: '套用并更新设置',
+      });
+      const recipeApplied = imageTextPage.getByTestId(
+        'composer-recipe-apply-undo'
+      );
+      await expect(recipeApplied.or(applyRecipe)).toBeVisible();
+      if (await applyRecipe.isVisible()) await applyRecipe.click();
+      await expect(recipeApplied).toBeVisible();
+      await seedComposerInlineAuthorize(imageTextPage, {
+        expectedAssetId: authorized.id,
+        fileName: 'confirmed-facts-case.png',
+      });
+
+      const imageTextSubmission = imageTextPage.waitForRequest(
+        (outgoing) =>
+          outgoing.method() === 'POST' &&
+          outgoing.url().includes('/api/core/p1/composer/submissions'),
+        { timeout: 60_000 }
+      );
+      const imageTextSubmissionResponse = imageTextPage.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          response.url().includes('/api/core/p1/composer/submissions'),
+        { timeout: 60_000 }
+      );
+      const imageTextContract = JOURNEY_CONTRACTS.find(
+        (contract) => contract.modality === 'image_text'
+      )!;
+      const imageTextWorkId = await submitComposerJourney(
+        imageTextPage,
+        imageTextContract,
+        '把已授权的护理案例做成一条真实克制的小红书图文笔记',
+        {
+          onSubmissionAccepted: async () => {
+            expect((await imageTextSubmission).postDataJSON()).toMatchObject({
+              recipe: { id: 'recipe.case_to_xhs_note' },
+            });
+            const planConfirmation = imageTextPage.getByTestId(
+              'ask-merchant-group-card'
+            );
+            await expect(planConfirmation).toBeVisible({ timeout: 60_000 });
+            await planConfirmation
+              .getByRole('button', { name: /^\u6309\u5efa\u8bae\u7ee7\u7eed/u })
+              .click();
+            await planConfirmation
+              .getByRole('button', { name: '\u63d0\u4ea4\u56de\u7b54' })
+              .click();
+            await expect(planConfirmation).toBeHidden({ timeout: 60_000 });
+          },
+        }
+      );
+      const imageTextSubmittedResponse = await imageTextSubmissionResponse;
+      const imageTextSubmittedEnvelope =
+        (await imageTextSubmittedResponse.json()) as {
+          data?: { contentPackage?: { id?: string } };
+        };
+      const imageTextPackageId =
+        imageTextSubmittedEnvelope.data?.contentPackage?.id;
+      expect(imageTextPackageId).toBeTruthy();
+      await waitForResultJourney(
+        imageTextPage,
+        imageTextContract,
+        imageTextWorkId
+      );
+      await expect
+        .poll(
+          async () =>
+            (await contentPackages(imageTextPage)).find(
+              (candidate) => candidate.id === imageTextPackageId
+            )?.marketing?.factRefs,
+          { timeout: 60_000 }
+        )
+        .toEqual([]);
+    } finally {
+      await imageTextPage.close();
+    }
   });
 });
