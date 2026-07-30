@@ -53,82 +53,82 @@
     },
     "apps/core/src/p1/foundation/workspace-provision.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/harness/canonical-observability-emitters.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/harness/dbos-registration.smoke.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first and suite run from apps/core: 15 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/harness/delivery.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first: 5 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/harness/fixture-fact-fidelity.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/harness/interaction-service.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first: 5 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/harness/issue-255-live-collector.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/harness/issue-255-postgres-live-receipt.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first: 15 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts": {
       "status": "unverified",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first: 0 pass / 0 fail / 3 explicit skips. Destructive reset authorization was intentionally not enabled, so this is not recorded green."
     },
     "apps/core/src/p1/harness/langfuse-outbox-ops.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/harness/media-bounded-continuation.dbos.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated business and DBOS databases provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/harness/note-media-admission.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first: 2 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/harness/observability-health.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first: 3 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/harness/postgres-billing-compensation-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/harness/postgres-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first. After the pending-actions 2/2 and execution-spine 10/10 schema owners ran on the same pair, the target suite passed 11/11 with 0 fail and 0 skip."
     },
     "apps/core/src/p1/harness/production-media-assembly.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/integrations/douyin-oauth-lifecycle.postgres.test.ts": {
@@ -148,83 +148,83 @@
     },
     "apps/core/src/p1/model-supply/foundation-ledger.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "695489fe441178431394bb320ad779b28cb9f654",
-      "note": "deepseek json_object contract fix (695489fe): 1/0/0 fresh pair, provisioned first"
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
+      "note": "Issue 251 final source; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/model-supply/postgres-owned-asset-cleanup-claim.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "695489fe441178431394bb320ad779b28cb9f654",
-      "note": "deepseek json_object contract fix (695489fe): 1/0/0 fresh pair, provisioned first"
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
+      "note": "Issue 251 final source; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/model-supply/reference-asset-dispatch.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "695489fe441178431394bb320ad779b28cb9f654",
-      "note": "deepseek json_object contract fix (695489fe): 3/0/0 fresh pair, provisioned first"
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
+      "note": "Issue 251 final source; fresh isolated database pair provisioned first: 3 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/model-supply/retired-video-editing-schema.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "695489fe441178431394bb320ad779b28cb9f654",
-      "note": "deepseek json_object contract fix (695489fe): 1/0/0 fresh pair, provisioned first"
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
+      "note": "Issue 251 final source; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/model-supply/usage-ledger-invariants.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "695489fe441178431394bb320ad779b28cb9f654",
-      "note": "deepseek json_object contract fix (695489fe): 2/0/0 fresh pair, provisioned first"
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
+      "note": "Issue 251 final source; fresh isolated database pair provisioned first: 2 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/operations/content-package-migration-cli.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first. After the legacy product repository schema owner passed 3/3 on the same pair, the target suite passed 1/1 with 0 fail and 0 skip."
     },
     "apps/core/src/p1/operations/expired-fact-invalidation-outbox.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first: 7 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/operations/harness-copy-work-asset.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first: 2 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/operations/marketing-identity.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first: 2 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/operations/media-custody.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/operations/memory-sedimentation-pipeline.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final rebased source on a fresh isolated database, provisioned first: 1 pass / 0 fail / 0 skip. Covers redline zero-persistence audit, 50+3 pagination, reject-all semantics, concurrent confirm/reject uniqueness, governance retention, source tombstones, and worklog/asset separation."
     },
     "apps/core/src/p1/operations/parse-asset-memory.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/operations/postgres-content-package-write-adapter.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/operations/store-intake-finalizer.behavior.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first: 21 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/operations/store-intake-finalizer.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "695489fe441178431394bb320ad779b28cb9f654",
-      "note": "deepseek json_object contract fix (695489fe): 2/0/0 fresh pair, provisioned first"
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
+      "note": "Issue 251 final source; fresh isolated database pair provisioned first: 2 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "unverified",
@@ -268,22 +268,22 @@
     },
     "apps/core/src/p1/supply-registry/postgres-admin-supply-runtime.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first. After provider-credential-runtime passed 1/1 as the schema owner on the same pair, the target suite passed 17/17 with 0 fail and 0 skip."
     },
     "apps/core/src/p1/supply-registry/postgres-hot-assembly.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first: 7 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/supply-registry/postgres-planning-control-plane.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first: 5 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/supply-registry/postgres-planning-submit.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7c28dc2b6704247c35bbdb4132698bd65b8f7a40",
+      "verifiedAt": "580f8cd4a675f35b0d726f09bef36de8b6490669",
       "note": "Issue 251 final source; fresh isolated database pair provisioned first: 2 pass / 0 fail / 0 skip."
     },
     "apps/core/src/pro-studio-runtime/postgres-adoption-service.postgres.test.ts": {
