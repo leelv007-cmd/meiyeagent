@@ -8,7 +8,6 @@ import type {
 } from "@meiye/contracts";
 import {
 	boundedExecutionSnapshotSchema,
-	questionCardSchema,
 } from "@meiye/contracts";
 import { z } from "zod";
 
@@ -21,6 +20,7 @@ import type {
 import type { ResolvedSkillInstruction } from "../skills/types.js";
 import { isOfficialNeutralIdentity } from "../execution-spine/creation-execution-snapshot.js";
 import type { ContentPackageRevisionWritePort } from "../execution-spine/content-package-revision-port.js";
+import { JobRuntimeError } from "../job-runtime/job-contracts.js";
 import {
 	compileExecutionBrief,
 	InMemoryStructuredNodeMetrics,
@@ -66,7 +66,6 @@ import {
 	merchantExactTextMismatch,
 	merchantExactTextVerificationUnavailable,
 	merchantImageGenerationFailure,
-	merchantNoteConfirmationCard,
 	merchantNotePartialPageMarker,
 	merchantNoteSelectionReason,
 	merchantVideoGenerationFailure,
@@ -213,31 +212,7 @@ export class UnifiedHarnessStagePorts
 	}
 
 	async nameIntent(input: Parameters<HarnessStagePorts["nameIntent"]>[0]) {
-		const result = await this.copy.nameIntent(input);
-		if (
-			input.request.executionSnapshot?.lens !== "image_text_note" ||
-			input.request.decisionReferences?.some(
-				({ field }) =>
-					field === "note_plan_confirmation" || field === "note_style",
-			)
-		) {
-			return result;
-		}
-		const language = merchantNoteConfirmationCard();
-		return {
-			...result,
-			blockingQuestion: questionCardSchema.parse({
-				questionId: `${input.workflowId}:note-confirmation`,
-				workflowId: input.workflowId,
-				workflowRevision: input.request.workflowRevision,
-				question: language.question,
-				options: language.options,
-				freeText: language.freeText,
-				response: language.response,
-				unattended: "hold",
-				scope: "current_task",
-			}),
-		};
+		return this.copy.nameIntent(input);
 	}
 
 	injectContext(input: Parameters<HarnessStagePorts["injectContext"]>[0]) {
@@ -427,7 +402,10 @@ export class UnifiedHarnessStagePorts
 				workflowRevision: input.request.workflowRevision,
 				workspaceId: input.request.workspaceId,
 			};
-			assertImageRevisionAssemblyComplete(revision);
+			assertImageRevisionAssemblyComplete({
+				...revision,
+				sourceAssetIds: [...input.brief.referenceAssetIds],
+			});
 			return this.contentPackages.write(revision);
 		}
 		const marketing = createMarketingPackageEvidence({
@@ -2237,9 +2215,21 @@ export class ModelSupplyHarnessMediaExecutionPort
 				? await this.runEffect(
 						`admission-reconcile:${admittedJobId}`,
 						async () => {
-							const durable = await this.models
-								.getDurableMediaJob!(submission.workspaceId, admittedJobId);
-							return withObservedProviderLifecycle(durable);
+							try {
+								const durable = await this.models.getDurableMediaJob!(
+									submission.workspaceId,
+									admittedJobId,
+								);
+								return withObservedProviderLifecycle(durable);
+							} catch (error) {
+								if (!(error instanceof JobRuntimeError) || error.code !== "NOT_FOUND") {
+									throw error;
+								}
+								if (executionAssemblyRequired) {
+									assertHarnessExecutionAssemblyPinned(request);
+								}
+								return this.models.submit(submission);
+							}
 						},
 						runStep,
 					)
@@ -2959,6 +2949,16 @@ function mediaSubmission(
 			brief.kind === "image" ? compiledImage!.operation : "video.generate",
 		productUsageQuantity: 0,
 		frozenRouteSnapshot: structuredClone(frozenRoute),
+		...(request.boundedExecution
+			? {
+					mediaBoundedExecution: {
+						schemaVersion: "media-bounded-execution/v1" as const,
+						snapshot: structuredClone(request.boundedExecution),
+						countedAttemptIds: [],
+						countedProviderCostIds: [],
+					},
+				}
+			: {}),
 		prompt:
 			brief.kind === "image"
 				? [

@@ -2683,6 +2683,19 @@ export class ModelSupplyApplicationService {
       await this.ensureActiveProviderLease(leaseId);
       return releaseChannelOnTerminal(await input.execute());
     }
+    const checkpointInput: ModelSupplyLedgerCheckpointInput = {
+      submission: input.submission,
+      jobId: preview.jobId,
+      attemptId,
+      ordinal: attemptOrdinal,
+      snapshot,
+      model,
+      deployment,
+      previousAttempts: structuredClone(input.previousAttempts ?? []),
+      previousProviderCosts: structuredClone(
+        input.previousProviderCosts ?? [],
+      ),
+    };
     const admission = await this.providerAdmission.admit({
       submission: input.submission,
       jobId: preview.jobId,
@@ -2693,11 +2706,15 @@ export class ModelSupplyApplicationService {
       lifecycleLease: true,
     });
     if (admission.status === 'rejected') {
-      if (acquiredChannelSubmission) {
-        await this.capabilityHotAssembly?.releaseChannelSubmission(
-          channelId,
-          attemptId,
-        );
+      try {
+        await this.ledger?.checkpointAttempt(checkpointInput);
+      } finally {
+        if (acquiredChannelSubmission) {
+          await this.capabilityHotAssembly?.releaseChannelSubmission(
+            channelId,
+            attemptId,
+          );
+        }
       }
       throw new ModelSupplyProviderAdmissionError(
         admission.errorCode,
@@ -2719,19 +2736,6 @@ export class ModelSupplyApplicationService {
     }
 
     try {
-      const checkpointInput: ModelSupplyLedgerCheckpointInput = {
-        submission: input.submission,
-        jobId: preview.jobId,
-        attemptId,
-        ordinal: attemptOrdinal,
-        snapshot,
-        model,
-        deployment,
-        previousAttempts: structuredClone(input.previousAttempts ?? []),
-        previousProviderCosts: structuredClone(
-          input.previousProviderCosts ?? [],
-        ),
-      };
       await this.freezeAdmittedAttempt(checkpointInput);
       await this.ledger?.checkpointAttempt(checkpointInput);
     } catch (error) {

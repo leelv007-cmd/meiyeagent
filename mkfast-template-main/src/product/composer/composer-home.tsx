@@ -1088,12 +1088,19 @@ export function ComposerHome({
    */
   const openExecutionConfirmFor = (run: {
     lensId: CreationLensId;
+    existingGateSatisfied?: boolean;
     videoConfirmAccepted?: boolean;
     briefConfirmationId?: string;
   }) => {
     // Single decision point (D2). Call sites must not write their own `if`,
     // so switching the trigger 口径 stays one edit.
-    if (!shouldOpenExecutionConfirm({ existingGate: true, generative: true })) {
+    if (
+      !shouldOpenExecutionConfirm({
+        existingGate: true,
+        existingGateSatisfied: run.existingGateSatisfied,
+        generative: true,
+      })
+    ) {
       runCreate(run.lensId, run.videoConfirmAccepted, run.briefConfirmationId);
       return;
     }
@@ -2522,12 +2529,9 @@ export function ComposerHome({
         throw new Error('Brief confirmation was invalidated before submit.');
       }
       setBriefState(result.state);
-      // D-164③ / §7.2: 安全确认 → 花费确认. Brief answers「这次跑有没有风险」;
-      // the confirm card answers「这次跑要花多少」. Two questions, two cards,
-      // still no new interception point — this is the gate that already
-      // existed, now saying what the run costs before it starts.
       openExecutionConfirmFor({
         briefConfirmationId: confirmationId,
+        existingGateSatisfied: true,
         lensId: lensState.lensId,
         videoConfirmAccepted: result.state.videoConfirmAccepted,
       });

@@ -96,6 +96,10 @@ export function AskMerchantGroupCard({
   const requiresExplicitResourceAction =
     request.questions.length === 1 &&
     request.questions[0]?.itemId === 'bounded_execution_continuation';
+  const submitsOptionImmediately =
+    request.questions.length === 1 &&
+    request.questions[0]?.itemId === 'note_style' &&
+    request.questions[0].freeText?.enabled === false;
 
   return (
     <section
@@ -121,15 +125,22 @@ export function AskMerchantGroupCard({
                       }
                       disabled={pending}
                       key={option.label}
-                      onClick={() =>
+                      onClick={() => {
+                        const result = {
+                          kind: 'answer' as const,
+                          value: option.label,
+                        };
                         setResults((current) => ({
                           ...current,
-                          [question.itemId]: {
+                          [question.itemId]: result,
+                        }));
+                        if (submitsOptionImmediately) {
+                          void onSubmit({
                             kind: 'answer',
-                            value: option.label,
-                          },
-                        }))
-                      }
+                            items: [{ itemId: question.itemId, result }],
+                          });
+                        }
+                      }}
                       size="sm"
                       type="button"
                       variant="secondary"
@@ -205,21 +216,23 @@ export function AskMerchantGroupCard({
         })}
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
-        <Button
-          disabled={pending || !complete}
-          onClick={() =>
-            void onSubmit({
-              kind: 'answer',
-              items: request.questions.map((question) => ({
-                itemId: question.itemId,
-                result: results[question.itemId]!,
-              })),
-            })
-          }
-          type="button"
-        >
-          提交回答
-        </Button>
+        {submitsOptionImmediately ? null : (
+          <Button
+            disabled={pending || !complete}
+            onClick={() =>
+              void onSubmit({
+                kind: 'answer',
+                items: request.questions.map((question) => ({
+                  itemId: question.itemId,
+                  result: results[question.itemId]!,
+                })),
+              })
+            }
+            type="button"
+          >
+            提交回答
+          </Button>
+        )}
         {requiresExplicitResourceAction ? null : (
           <Button
             disabled={pending}

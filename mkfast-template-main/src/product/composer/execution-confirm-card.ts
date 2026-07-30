@@ -64,6 +64,8 @@ export type ExecutionConfirmTriggerInput = {
   readonly generative: boolean;
   /** True when the host was already going to stop here (brief / video / adjust). */
   readonly existingGate: boolean;
+  /** True when the merchant has just completed that existing confirmation. */
+  readonly existingGateSatisfied?: boolean;
   /**
    * Server-side verdict that this quote crosses the extra-confirmation
    * threshold. Read only in 'cost_threshold' mode, and supplied by the quote —
@@ -83,6 +85,7 @@ export function shouldOpenExecutionConfirm(
   // D-164⑥ 决定 A: a deterministic edit calls no model, so it is never gated
   // and never carries a cost notice.
   if (!input.generative) return false;
+  if (input.existingGateSatisfied) return false;
   switch (input.mode ?? EXECUTION_CONFIRM_TRIGGER_MODE) {
     case 'all_generative':
       return true;

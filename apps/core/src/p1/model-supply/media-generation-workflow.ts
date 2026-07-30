@@ -605,6 +605,49 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
                 supplyRequest.effectIdempotencyKey ??
                 tracerRequest.effectIdempotencyKey,
             };
+            if (!recoverFirst) {
+              const checkpointRequest = await this.providerRequest(
+                supplyRequest.submission,
+                attemptRequest,
+                undefined,
+                undefined,
+                supplyRequest
+              );
+              finalReceipt = await this.submitProvider(
+                supplyRequest.submission,
+                checkpointRequest,
+                async () => {
+                  const resolution = await this.resolveProviderRequest(
+                    supplyRequest.submission,
+                    attemptRequest,
+                    supplyRequest
+                  );
+                  if (resolution.kind === 'failure') {
+                    const message = `Reference asset resolution required: ${resolution.failures
+                      .map((failure) => `${failure.assetId} (${failure.reason})`)
+                      .join(', ')}.`;
+                    return {
+                      acceptance: 'rejected_before_accept',
+                      errorCode: 'reference_asset_resolution_required',
+                      retryable: false,
+                      error: message,
+                      providerCost: { amount: 0, currency: 'USD', usage: {} },
+                    };
+                  }
+                  if (resolution.kind === 'policy_failure') {
+                    return {
+                      acceptance: 'rejected_before_accept',
+                      errorCode: resolution.error.code,
+                      retryable: false,
+                      error: resolution.error.message,
+                      providerCost: { amount: 0, currency: 'USD', usage: {} },
+                    };
+                  }
+                  return this.dependencies.provider.submit(resolution.request);
+                }
+              );
+              return this.providerResponseForReceipt(finalReceipt);
+            }
             const resolution = await this.resolveProviderRequest(
               supplyRequest.submission,
               attemptRequest,
@@ -826,12 +869,12 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
 
   private async submitProvider(
     submission: ModelSupplySubmission,
-    request: MediaProviderEffectRequest
+    request: MediaProviderEffectRequest,
+    execute: () => Promise<MediaProviderSubmissionReceipt> = () =>
+      this.dependencies.provider.submit(request)
   ): Promise<MediaProviderSubmissionReceipt> {
     try {
-      return await this.providerEffect(submission, request, 'submit', () =>
-        this.dependencies.provider.submit(request)
-      );
+      return await this.providerEffect(submission, request, 'submit', execute);
     } catch (error) {
       if (!(error instanceof ModelSupplyProviderAdmissionError)) throw error;
       return {

@@ -179,6 +179,7 @@ export function createModelSupplyRuntime(
   input: ModelSupplyRuntimeAssemblyInput,
 ) {
   const { deployments, models, runtime, runtimeCapabilities } = input.catalog;
+  const prices = runtimePriceRevisions(deployments);
   const allowRecordedExecution =
     runtime.activation === 'local_fixture_verified';
   const capabilityHotAssembly =
@@ -189,7 +190,7 @@ export function createModelSupplyRuntime(
     catalogRevisionId: RECORDED_CATALOG_REVISION_ID,
     deployments,
     models,
-    prices: createDefaultPriceRevisions(),
+    prices,
     capabilityHotAssembly,
     inferFixtureMediaCapabilityProfiles:
       runtime.activation === 'local_fixture_verified',
@@ -202,7 +203,7 @@ export function createModelSupplyRuntime(
       deployments,
       executionChannels: createDefaultExecutionChannels(),
       models,
-      prices: createDefaultPriceRevisions(),
+      prices,
       providerProfiles: createDefaultProviderProfiles(),
       routes: createDefaultRouteRevisions(),
     },
@@ -249,4 +250,39 @@ export function createModelSupplyRuntime(
     controlPlane,
     fallbackCatalog,
   };
+}
+
+function runtimePriceRevisions(
+  deployments: ModelRuntimeAssembly['deployments'],
+) {
+  const prices = createDefaultPriceRevisions();
+  for (const deployment of deployments) {
+    if (
+      !deployment.executionChannelId ||
+      !deployment.priceRevision ||
+      !deployment.unitPrice
+    ) {
+      continue;
+    }
+    const pricingTier = deployment.pricingTier ?? 'standard';
+    const index = prices.findIndex(
+      (price) =>
+        price.catalogModelId === deployment.catalogModelId &&
+        price.executionChannelId === deployment.executionChannelId &&
+        (price.pricingTier ?? 'standard') === pricingTier,
+    );
+    const price = {
+      id: deployment.priceRevision,
+      catalogModelId: deployment.catalogModelId,
+      executionChannelId: deployment.executionChannelId,
+      pricingTier,
+      currency: deployment.unitPrice.currency,
+      amount: deployment.unitPrice.amountMicros / 1_000_000,
+      revision: 1,
+      unit: deployment.unitPrice.unit,
+    };
+    if (index === -1) prices.push(price);
+    else prices[index] = price;
+  }
+  return prices;
 }

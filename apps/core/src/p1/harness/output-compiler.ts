@@ -211,6 +211,7 @@ export function assertImageRevisionAssemblyComplete(input: {
     factRefs?: string[];
     rightsRefs?: string[];
   };
+  sourceAssetIds?: string[];
   variants?: ContentPackage['variants'];
   version: Pick<
     ContentPackageVersion,
@@ -230,7 +231,8 @@ export function assertImageRevisionAssemblyComplete(input: {
   }
   if (
     !Array.isArray(input.marketing.rightsRefs) ||
-    input.marketing.rightsRefs.length === 0
+    ((input.sourceAssetIds?.length ?? 0) > 0 &&
+      input.marketing.rightsRefs.length === 0)
   ) {
     throw new Error('Image revision assembly requires rights references.');
   }
