@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { P1RequestError } from '@/p1/client';
 import {
   acknowledgeHarnessInteractionRenderer,
   readPendingHarnessInteractionMessage,
@@ -191,7 +192,7 @@ test('acknowledges the exact durable renderer request identity', async () => {
     });
     assert.equal(
       request?.url,
-      'http://localhost/api/core/p1/harness/tasks/task-1/interaction/renderer?interaction-version=2'
+      'http://localhost/api/core/p1/harness/tasks/task-1/interaction/v2/renderer'
     );
     assert.deepEqual(await request?.json(), {
       requestId: 'request-1',
@@ -204,7 +205,7 @@ test('acknowledges the exact durable renderer request identity', async () => {
   }
 });
 
-test('falls back to legacy renderer signals while Core rolls behind Web', async () => {
+test('exact interaction mutations never fall back to identityless legacy writes', async () => {
   const previousFetch = globalThis.fetch;
   const requests: Request[] = [];
   globalThis.fetch = async (input, init) => {
@@ -213,10 +214,15 @@ test('falls back to legacy renderer signals while Core rolls behind Web', async 
       init
     );
     requests.push(request);
-    if (request.url.includes('interaction-version=2')) {
-      return Response.json({ error: 'old core' }, { status: 400 });
-    }
-    return new Response(null, { status: 204 });
+    return Response.json(
+      {
+        error: {
+          code: 'HARNESS_INTERACTION_VERSION_REQUIRED',
+          message: 'Exact interaction identity is required.',
+        },
+      },
+      { status: 426 }
+    );
   };
   const acknowledgement = {
     requestId: 'request-legacy-rollout',
@@ -225,26 +231,28 @@ test('falls back to legacy renderer signals while Core rolls behind Web', async 
     carrier: 'conversation',
   } as const;
   try {
-    await acknowledgeHarnessInteractionRenderer(
-      'task-legacy-rollout',
-      acknowledgement
+    await assert.rejects(
+      acknowledgeHarnessInteractionRenderer(
+        'task-legacy-rollout',
+        acknowledgement
+      ),
+      (error: unknown) =>
+        error instanceof P1RequestError && error.status === 426
     );
-    await setHarnessInteractionEditing('task-legacy-rollout', {
-      ...acknowledgement,
-      editing: true,
-    });
+    await assert.rejects(
+      setHarnessInteractionEditing('task-legacy-rollout', {
+        ...acknowledgement,
+        editing: true,
+      })
+    );
 
     assert.deepEqual(
       requests.map((request) => request.url),
       [
-        'http://localhost/api/core/p1/harness/tasks/task-legacy-rollout/interaction/renderer?interaction-version=2',
-        'http://localhost/api/core/p1/harness/tasks/task-legacy-rollout/interaction/renderer',
-        'http://localhost/api/core/p1/harness/tasks/task-legacy-rollout/interaction/editing?interaction-version=2',
-        'http://localhost/api/core/p1/harness/tasks/task-legacy-rollout/interaction/editing',
+        'http://localhost/api/core/p1/harness/tasks/task-legacy-rollout/interaction/v2/renderer',
+        'http://localhost/api/core/p1/harness/tasks/task-legacy-rollout/interaction/v2/editing',
       ]
     );
-    assert.equal(await requests[1]?.text(), '');
-    assert.deepEqual(await requests[3]?.json(), { editing: true });
   } finally {
     globalThis.fetch = previousFetch;
   }

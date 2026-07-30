@@ -119,6 +119,7 @@ import {
 import { BriefSurface } from './brief-surface-panel';
 import { AskMerchantGroupCard } from './ask-merchant-group-card';
 import { ExecutionConfirmationInteractionCard } from './execution-confirmation-interaction-card';
+import { ExecutionConfirmationWaitingMessageCard } from './execution-confirmation-waiting-message-card';
 import { applyCatalogRecipeSelection } from './catalog-selection';
 import { ProgressiveFactCard } from './progressive-fact-card';
 import {
@@ -1399,6 +1400,10 @@ export function ComposerHome({
     interactionQuery.data?.kind === 'execution_confirmation'
       ? interactionQuery.data
       : null;
+  const pendingExecutionWaitingMessage =
+    interactionMessageQuery.data?.kind === 'execution_confirmation'
+      ? interactionMessageQuery.data
+      : null;
   const pendingQuestion: QuestionCard | null =
     decisionQuery.data?.question ?? null;
   const questionResolutionSource =
@@ -1533,6 +1538,41 @@ export function ComposerHome({
     },
     [interactionQuery, pendingExecutionConfirmation, taskId]
   );
+  const answerExecutionWaitingMessage = useCallback(
+    async (
+      request: Extract<
+        HarnessInteractionRequest,
+        { kind: 'execution_confirmation' }
+      >,
+      message: string
+    ) => {
+      if (!taskId || request.runId !== taskId) return;
+      setQuestionPending(true);
+      try {
+        await submitHarnessInteractionMerchantMessage(taskId, {
+          requestId: request.requestId,
+          revision: request.revision,
+          step: request.step,
+          carrier: 'conversation',
+          idempotencyKey:
+            `composer-interaction:${request.requestId}:` +
+            `r${request.revision}:merchant-message`,
+          message,
+        });
+        await Promise.all([
+          interactionMessageQuery.refetch(),
+          interactionQuery.refetch(),
+          decisionQuery.refetch(),
+        ]);
+      } catch {
+        toast.error(workbench_operation_failed());
+        throw new Error('The merchant continuation could not be submitted.');
+      } finally {
+        setQuestionPending(false);
+      }
+    },
+    [decisionQuery, interactionMessageQuery, interactionQuery, taskId]
+  );
   const acknowledgeAskMerchantRenderer = useCallback(
     async (request: HarnessInteractionRequest) =>
       acknowledgeHarnessInteractionRenderer(taskId, {
@@ -1543,6 +1583,12 @@ export function ComposerHome({
       }),
     [taskId]
   );
+  const refreshInteractionAfterRendererRejection = useCallback(async () => {
+    await Promise.all([
+      interactionQuery.refetch(),
+      interactionMessageQuery.refetch(),
+    ]);
+  }, [interactionMessageQuery, interactionQuery]);
 
   const addSource = (assetId: string) => {
     const facts = sourceFactsRef.current.get(assetId);
@@ -2029,42 +2075,6 @@ export function ComposerHome({
 
   const attemptSubmit = async () => {
     setSubmitBlockedMessage(null);
-    const waitingMessage = interactionMessageQuery.data;
-    if (
-      waitingMessage?.kind === 'execution_confirmation' &&
-      waitingMessage.runId === taskId
-    ) {
-      const message = lensState.draft.userText.trim();
-      if (!message) {
-        setShowRequiredHint(true);
-        focusComposerIntentInput();
-        return;
-      }
-      setQuestionPending(true);
-      setSession((current) => openComposerTurn(current, message));
-      try {
-        await submitHarnessInteractionMerchantMessage(taskId, {
-          requestId: waitingMessage.requestId,
-          revision: waitingMessage.revision,
-          step: waitingMessage.step,
-          carrier: 'conversation',
-          idempotencyKey:
-            `composer-interaction:${waitingMessage.requestId}:` +
-            `r${waitingMessage.revision}:merchant-message`,
-          message,
-        });
-        await Promise.all([
-          interactionMessageQuery.refetch(),
-          interactionQuery.refetch(),
-          decisionQuery.refetch(),
-        ]);
-      } catch {
-        toast.error(workbench_operation_failed());
-      } finally {
-        setQuestionPending(false);
-      }
-      return;
-    }
     if (!imageCardinality.valid) {
       document
         .querySelector<HTMLElement>(
@@ -2728,6 +2738,9 @@ export function ComposerHome({
                   })
                 }
                 onRendererReady={acknowledgeAskMerchantRenderer}
+                onRendererRejected={
+                  refreshInteractionAfterRendererRejection
+                }
                 onSubmit={answerAskMerchant}
                 pending={questionPending}
                 request={pendingAskRequest}
@@ -2735,9 +2748,18 @@ export function ComposerHome({
             ) : pendingExecutionConfirmation ? (
               <ExecutionConfirmationInteractionCard
                 onRendererReady={acknowledgeAskMerchantRenderer}
+                onRendererRejected={
+                  refreshInteractionAfterRendererRejection
+                }
                 onSubmit={answerExecutionConfirmation}
                 pending={questionPending}
                 request={pendingExecutionConfirmation}
+              />
+            ) : pendingExecutionWaitingMessage ? (
+              <ExecutionConfirmationWaitingMessageCard
+                onSubmit={answerExecutionWaitingMessage}
+                pending={questionPending}
+                request={pendingExecutionWaitingMessage}
               />
             ) : pendingQuestion ? (
               <ComposerQuestionCard

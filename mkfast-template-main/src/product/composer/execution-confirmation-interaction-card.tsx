@@ -5,14 +5,22 @@ import type {
 import { useEffect } from 'react';
 
 import { Button } from '@/components/ui/button';
+import {
+  rendererAckNeedsRefetch,
+  rendererAckRetryDelay,
+} from './interaction-renderer-retry';
 
 export function ExecutionConfirmationInteractionCard({
   onRendererReady,
+  onRendererRejected,
   onSubmit,
   pending = false,
   request,
 }: {
   onRendererReady: (request: ExecutionConfirmationRequest) => Promise<void>;
+  onRendererRejected?: (
+    request: ExecutionConfirmationRequest
+  ) => Promise<void>;
   onSubmit: (
     response: ExecutionConfirmationAnswer['response']
   ) => Promise<void>;
@@ -22,9 +30,17 @@ export function ExecutionConfirmationInteractionCard({
   useEffect(() => {
     let cancelled = false;
     let retryId: ReturnType<typeof setTimeout> | undefined;
+    let attempts = 0;
     const acknowledge = () => {
-      void onRendererReady(request).catch(() => {
-        if (!cancelled) retryId = setTimeout(acknowledge, 1_000);
+      attempts += 1;
+      void onRendererReady(request).catch((error: unknown) => {
+        if (cancelled) return;
+        const retryDelay = rendererAckRetryDelay(error, attempts);
+        if (retryDelay !== null) {
+          retryId = setTimeout(acknowledge, retryDelay);
+        } else if (rendererAckNeedsRefetch(error)) {
+          void onRendererRejected?.(request);
+        }
       });
     };
     acknowledge();
@@ -32,7 +48,12 @@ export function ExecutionConfirmationInteractionCard({
       cancelled = true;
       if (retryId) clearTimeout(retryId);
     };
-  }, [onRendererReady, request.requestId, request.revision]);
+  }, [
+    onRendererReady,
+    onRendererRejected,
+    request.requestId,
+    request.revision,
+  ]);
 
   return (
     <section

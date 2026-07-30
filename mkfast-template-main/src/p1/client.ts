@@ -30,7 +30,8 @@ export class P1RequestError extends Error {
   constructor(
     message: string,
     readonly code?: string,
-    readonly details?: Record<string, unknown>
+    readonly details?: Record<string, unknown>,
+    readonly status?: number
   ) {
     super(message);
     this.name = 'P1RequestError';

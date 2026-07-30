@@ -193,24 +193,13 @@ export async function setHarnessInteractionEditing(
 ) {
   const endpoint =
     `/api/core/p1/harness/tasks/${encodeURIComponent(taskId)}` +
-    '/interaction/editing';
-  let response = await telemetryFetch(
-    `${endpoint}?interaction-version=2`,
-    {
-      body: JSON.stringify(input),
-      credentials: 'same-origin',
-      headers: { 'content-type': 'application/json' },
-      method: 'POST',
-    }
-  );
-  if ([400, 404, 405].includes(response.status)) {
-    response = await telemetryFetch(endpoint, {
-      body: JSON.stringify({ editing: input.editing }),
-      credentials: 'same-origin',
-      headers: { 'content-type': 'application/json' },
-      method: 'POST',
-    });
-  }
+    '/interaction/v2/editing';
+  const response = await telemetryFetch(endpoint, {
+    body: JSON.stringify(input),
+    credentials: 'same-origin',
+    headers: { 'content-type': 'application/json' },
+    method: 'POST',
+  });
   if (!response.ok) {
     await readEnvelope<unknown>(response);
   }
@@ -222,22 +211,13 @@ export async function acknowledgeHarnessInteractionRenderer(
 ) {
   const endpoint =
     `/api/core/p1/harness/tasks/${encodeURIComponent(taskId)}` +
-    '/interaction/renderer';
-  let response = await telemetryFetch(
-    `${endpoint}?interaction-version=2`,
-    {
-      body: JSON.stringify(acknowledgement),
-      credentials: 'same-origin',
-      headers: { 'content-type': 'application/json' },
-      method: 'POST',
-    }
-  );
-  if ([400, 404, 405].includes(response.status)) {
-    response = await telemetryFetch(endpoint, {
-      credentials: 'same-origin',
-      method: 'POST',
-    });
-  }
+    '/interaction/v2/renderer';
+  const response = await telemetryFetch(endpoint, {
+    body: JSON.stringify(acknowledgement),
+    credentials: 'same-origin',
+    headers: { 'content-type': 'application/json' },
+    method: 'POST',
+  });
   if (!response.ok) {
     await readEnvelope<unknown>(response);
   }
@@ -282,7 +262,8 @@ async function readEnvelope<T>(response: Response): Promise<T> {
     throw new P1RequestError(
       error?.message ?? 'Harness request failed.',
       error?.code,
-      error?.details
+      error?.details,
+      response.status
     );
   }
   return envelope.data;

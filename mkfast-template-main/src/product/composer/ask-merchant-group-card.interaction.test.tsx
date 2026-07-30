@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 
+import { P1RequestError } from '@/p1/client';
 import { AskMerchantGroupCard } from './ask-merchant-group-card';
 
 afterEach(() => {
@@ -161,6 +162,45 @@ it('retries the exact renderer acknowledgement after a transient failure', async
   await vi.advanceTimersByTimeAsync(1_000);
   expect(onRendererReady).toHaveBeenCalledTimes(2);
   expect(onRendererReady).toHaveBeenLastCalledWith(REQUEST);
+});
+
+it('stops retrying a stale renderer and requests the current interaction', async () => {
+  vi.useFakeTimers();
+  const onRendererReady = vi.fn(async () => {
+    throw new P1RequestError('stale', 'STALE_INTERACTION_REQUEST', undefined, 409);
+  });
+  const onRendererRejected = vi.fn(async () => undefined);
+  render(
+    <AskMerchantGroupCard
+      onEditingChange={async () => undefined}
+      onRendererReady={onRendererReady}
+      onRendererRejected={onRendererRejected}
+      onSubmit={async () => undefined}
+      request={REQUEST}
+    />
+  );
+
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(onRendererReady).toHaveBeenCalledOnce();
+  expect(onRendererRejected).toHaveBeenCalledWith(REQUEST);
+});
+
+it('bounds renderer retries while Core remains unavailable', async () => {
+  vi.useFakeTimers();
+  const onRendererReady = vi.fn(async () => {
+    throw new TypeError('network unavailable');
+  });
+  render(
+    <AskMerchantGroupCard
+      onEditingChange={async () => undefined}
+      onRendererReady={onRendererReady}
+      onSubmit={async () => undefined}
+      request={REQUEST}
+    />
+  );
+
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(onRendererReady).toHaveBeenCalledTimes(5);
 });
 
 it('renews the editing lease while parent polling keeps rerendering', async () => {

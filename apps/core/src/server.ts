@@ -1569,13 +1569,13 @@ export function createCoreServer({
       /^\/v1\/workspaces\/([^/]+)\/p1\/harness\/tasks\/([^/]+)\/interaction$/
     );
     const harnessInteractionEditingMatch = url.pathname.match(
-      /^\/v1\/workspaces\/([^/]+)\/p1\/harness\/tasks\/([^/]+)\/interaction\/editing$/
+      /^\/v1\/workspaces\/([^/]+)\/p1\/harness\/tasks\/([^/]+)\/interaction\/(?:v2\/)?editing$/
     );
     const harnessInteractionMessageMatch = url.pathname.match(
       /^\/v1\/workspaces\/([^/]+)\/p1\/harness\/tasks\/([^/]+)\/interaction\/message$/
     );
     const harnessInteractionRendererMatch = url.pathname.match(
-      /^\/v1\/workspaces\/([^/]+)\/p1\/harness\/tasks\/([^/]+)\/interaction\/renderer$/
+      /^\/v1\/workspaces\/([^/]+)\/p1\/harness\/tasks\/([^/]+)\/interaction\/(?:v2\/)?renderer$/
     );
     if (
       harnessService &&
@@ -1781,7 +1781,7 @@ export function createCoreServer({
         const taskId = decodeURIComponent(harnessInteractionRendererMatch[2]!);
         const context = p1Identity(request, workspaceId, requestCorrelationId);
         authorizeContentCreation(context);
-        if (url.searchParams.get('interaction-version') !== '2') {
+        if (!url.pathname.endsWith('/interaction/v2/renderer')) {
           sendJson(
             response,
             426,
@@ -1828,7 +1828,7 @@ export function createCoreServer({
         const taskId = decodeURIComponent(harnessInteractionEditingMatch[2]!);
         const context = p1Identity(request, workspaceId, requestCorrelationId);
         authorizeContentCreation(context);
-        if (url.searchParams.get('interaction-version') !== '2') {
+        if (!url.pathname.endsWith('/interaction/v2/editing')) {
           sendJson(
             response,
             426,

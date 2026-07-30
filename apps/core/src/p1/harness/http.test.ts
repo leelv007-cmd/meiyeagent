@@ -406,7 +406,7 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
     replayed: false,
   });
   const renderer = await fetch(
-    `${base}/task-http-1/interaction/renderer?interaction-version=2`,
+    `${base}/task-http-1/interaction/v2/renderer`,
     {
       method: 'POST',
       headers,
@@ -420,7 +420,7 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
   );
   assert.equal(renderer.status, 204);
   const editing = await fetch(
-    `${base}/task-http-1/interaction/editing?interaction-version=2`,
+    `${base}/task-http-1/interaction/v2/editing`,
     {
       method: 'POST',
       headers,

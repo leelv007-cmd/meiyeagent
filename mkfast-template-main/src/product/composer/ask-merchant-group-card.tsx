@@ -6,6 +6,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  rendererAckNeedsRefetch,
+  rendererAckRetryDelay,
+} from './interaction-renderer-retry';
 
 type ItemResult = Extract<
   AskMerchantAnswer['response'],
@@ -15,6 +19,7 @@ type ItemResult = Extract<
 export function AskMerchantGroupCard({
   onEditingChange,
   onRendererReady,
+  onRendererRejected,
   onSubmit,
   pending = false,
   request,
@@ -24,6 +29,9 @@ export function AskMerchantGroupCard({
     editing: boolean
   ) => Promise<void>;
   onRendererReady: (request: AskMerchantQuestionRequest) => Promise<void>;
+  onRendererRejected?: (
+    request: AskMerchantQuestionRequest
+  ) => Promise<void>;
   onSubmit: (response: AskMerchantAnswer['response']) => Promise<void>;
   pending?: boolean;
   request: AskMerchantQuestionRequest;
@@ -40,9 +48,17 @@ export function AskMerchantGroupCard({
   useEffect(() => {
     let cancelled = false;
     let retryId: ReturnType<typeof setTimeout> | undefined;
+    let attempts = 0;
     const acknowledge = () => {
-      void onRendererReady(request).catch(() => {
-        if (!cancelled) retryId = setTimeout(acknowledge, 1_000);
+      attempts += 1;
+      void onRendererReady(request).catch((error: unknown) => {
+        if (cancelled) return;
+        const retryDelay = rendererAckRetryDelay(error, attempts);
+        if (retryDelay !== null) {
+          retryId = setTimeout(acknowledge, retryDelay);
+        } else if (rendererAckNeedsRefetch(error)) {
+          void onRendererRejected?.(request);
+        }
       });
     };
     acknowledge();
@@ -50,7 +66,12 @@ export function AskMerchantGroupCard({
       cancelled = true;
       if (retryId) clearTimeout(retryId);
     };
-  }, [onRendererReady, request.requestId, request.revision]);
+  }, [
+    onRendererReady,
+    onRendererRejected,
+    request.requestId,
+    request.revision,
+  ]);
   useEffect(() => {
     if (!editing) return;
     const leaseRenewal = setInterval(() => {

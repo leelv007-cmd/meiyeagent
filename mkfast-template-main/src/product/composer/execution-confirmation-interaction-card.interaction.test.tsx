@@ -3,6 +3,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 
+import { P1RequestError } from '@/p1/client';
 import { ExecutionConfirmationInteractionCard } from './execution-confirmation-interaction-card';
 
 afterEach(() => {
@@ -110,4 +111,29 @@ it('does not retry a failed acknowledgement after the card unmounts', async () =
   await vi.advanceTimersByTimeAsync(1_000);
 
   expect(onRendererReady).toHaveBeenCalledOnce();
+});
+
+it('stops retrying a version rejection and refreshes the interaction', async () => {
+  vi.useFakeTimers();
+  const onRendererReady = vi.fn(async () => {
+    throw new P1RequestError(
+      'version required',
+      'HARNESS_INTERACTION_VERSION_REQUIRED',
+      undefined,
+      426
+    );
+  });
+  const onRendererRejected = vi.fn(async () => undefined);
+  render(
+    <ExecutionConfirmationInteractionCard
+      onRendererReady={onRendererReady}
+      onRendererRejected={onRendererRejected}
+      onSubmit={async () => undefined}
+      request={REQUEST}
+    />
+  );
+
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(onRendererReady).toHaveBeenCalledOnce();
+  expect(onRendererRejected).toHaveBeenCalledWith(REQUEST);
 });

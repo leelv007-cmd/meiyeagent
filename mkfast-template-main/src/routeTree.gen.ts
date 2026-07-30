@@ -118,6 +118,8 @@ import { Route as ApiCoreP1HarnessTasksTaskIdDecisionRouteImport } from './route
 import { Route as ApiCoreP1HarnessTasksTaskIdInteractionRendererRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction/renderer'
 import { Route as ApiCoreP1HarnessTasksTaskIdInteractionMessageRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction/message'
 import { Route as ApiCoreP1HarnessTasksTaskIdInteractionEditingRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction/editing'
+import { Route as ApiCoreP1HarnessTasksTaskIdInteractionV2RendererRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction/v2/renderer'
+import { Route as ApiCoreP1HarnessTasksTaskIdInteractionV2EditingRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction/v2/editing'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -680,6 +682,18 @@ const ApiCoreP1HarnessTasksTaskIdInteractionEditingRoute =
     path: '/editing',
     getParentRoute: () => ApiCoreP1HarnessTasksTaskIdInteractionRoute,
   } as any)
+const ApiCoreP1HarnessTasksTaskIdInteractionV2RendererRoute =
+  ApiCoreP1HarnessTasksTaskIdInteractionV2RendererRouteImport.update({
+    id: '/v2/renderer',
+    path: '/v2/renderer',
+    getParentRoute: () => ApiCoreP1HarnessTasksTaskIdInteractionRoute,
+  } as any)
+const ApiCoreP1HarnessTasksTaskIdInteractionV2EditingRoute =
+  ApiCoreP1HarnessTasksTaskIdInteractionV2EditingRouteImport.update({
+    id: '/v2/editing',
+    path: '/v2/editing',
+    getParentRoute: () => ApiCoreP1HarnessTasksTaskIdInteractionRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -791,6 +805,8 @@ export interface FileRoutesByFullPath {
   '/api/core/p1/harness/tasks/$taskId/interaction/editing': typeof ApiCoreP1HarnessTasksTaskIdInteractionEditingRoute
   '/api/core/p1/harness/tasks/$taskId/interaction/message': typeof ApiCoreP1HarnessTasksTaskIdInteractionMessageRoute
   '/api/core/p1/harness/tasks/$taskId/interaction/renderer': typeof ApiCoreP1HarnessTasksTaskIdInteractionRendererRoute
+  '/api/core/p1/harness/tasks/$taskId/interaction/v2/editing': typeof ApiCoreP1HarnessTasksTaskIdInteractionV2EditingRoute
+  '/api/core/p1/harness/tasks/$taskId/interaction/v2/renderer': typeof ApiCoreP1HarnessTasksTaskIdInteractionV2RendererRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -898,6 +914,8 @@ export interface FileRoutesByTo {
   '/api/core/p1/harness/tasks/$taskId/interaction/editing': typeof ApiCoreP1HarnessTasksTaskIdInteractionEditingRoute
   '/api/core/p1/harness/tasks/$taskId/interaction/message': typeof ApiCoreP1HarnessTasksTaskIdInteractionMessageRoute
   '/api/core/p1/harness/tasks/$taskId/interaction/renderer': typeof ApiCoreP1HarnessTasksTaskIdInteractionRendererRoute
+  '/api/core/p1/harness/tasks/$taskId/interaction/v2/editing': typeof ApiCoreP1HarnessTasksTaskIdInteractionV2EditingRoute
+  '/api/core/p1/harness/tasks/$taskId/interaction/v2/renderer': typeof ApiCoreP1HarnessTasksTaskIdInteractionV2RendererRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -1010,6 +1028,8 @@ export interface FileRoutesById {
   '/api/core/p1/harness/tasks/$taskId/interaction/editing': typeof ApiCoreP1HarnessTasksTaskIdInteractionEditingRoute
   '/api/core/p1/harness/tasks/$taskId/interaction/message': typeof ApiCoreP1HarnessTasksTaskIdInteractionMessageRoute
   '/api/core/p1/harness/tasks/$taskId/interaction/renderer': typeof ApiCoreP1HarnessTasksTaskIdInteractionRendererRoute
+  '/api/core/p1/harness/tasks/$taskId/interaction/v2/editing': typeof ApiCoreP1HarnessTasksTaskIdInteractionV2EditingRoute
+  '/api/core/p1/harness/tasks/$taskId/interaction/v2/renderer': typeof ApiCoreP1HarnessTasksTaskIdInteractionV2RendererRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -1123,6 +1143,8 @@ export interface FileRouteTypes {
     | '/api/core/p1/harness/tasks/$taskId/interaction/editing'
     | '/api/core/p1/harness/tasks/$taskId/interaction/message'
     | '/api/core/p1/harness/tasks/$taskId/interaction/renderer'
+    | '/api/core/p1/harness/tasks/$taskId/interaction/v2/editing'
+    | '/api/core/p1/harness/tasks/$taskId/interaction/v2/renderer'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -1230,6 +1252,8 @@ export interface FileRouteTypes {
     | '/api/core/p1/harness/tasks/$taskId/interaction/editing'
     | '/api/core/p1/harness/tasks/$taskId/interaction/message'
     | '/api/core/p1/harness/tasks/$taskId/interaction/renderer'
+    | '/api/core/p1/harness/tasks/$taskId/interaction/v2/editing'
+    | '/api/core/p1/harness/tasks/$taskId/interaction/v2/renderer'
   id:
     | '__root__'
     | '/'
@@ -1341,6 +1365,8 @@ export interface FileRouteTypes {
     | '/api/core/p1/harness/tasks/$taskId/interaction/editing'
     | '/api/core/p1/harness/tasks/$taskId/interaction/message'
     | '/api/core/p1/harness/tasks/$taskId/interaction/renderer'
+    | '/api/core/p1/harness/tasks/$taskId/interaction/v2/editing'
+    | '/api/core/p1/harness/tasks/$taskId/interaction/v2/renderer'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -2152,6 +2178,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionEditingRouteImport
       parentRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionRoute
     }
+    '/api/core/p1/harness/tasks/$taskId/interaction/v2/renderer': {
+      id: '/api/core/p1/harness/tasks/$taskId/interaction/v2/renderer'
+      path: '/v2/renderer'
+      fullPath: '/api/core/p1/harness/tasks/$taskId/interaction/v2/renderer'
+      preLoaderRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionV2RendererRouteImport
+      parentRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionRoute
+    }
+    '/api/core/p1/harness/tasks/$taskId/interaction/v2/editing': {
+      id: '/api/core/p1/harness/tasks/$taskId/interaction/v2/editing'
+      path: '/v2/editing'
+      fullPath: '/api/core/p1/harness/tasks/$taskId/interaction/v2/editing'
+      preLoaderRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionV2EditingRouteImport
+      parentRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionRoute
+    }
   }
 }
 
@@ -2348,6 +2388,8 @@ interface ApiCoreP1HarnessTasksTaskIdInteractionRouteChildren {
   ApiCoreP1HarnessTasksTaskIdInteractionEditingRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionEditingRoute
   ApiCoreP1HarnessTasksTaskIdInteractionMessageRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionMessageRoute
   ApiCoreP1HarnessTasksTaskIdInteractionRendererRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionRendererRoute
+  ApiCoreP1HarnessTasksTaskIdInteractionV2EditingRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionV2EditingRoute
+  ApiCoreP1HarnessTasksTaskIdInteractionV2RendererRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionV2RendererRoute
 }
 
 const ApiCoreP1HarnessTasksTaskIdInteractionRouteChildren: ApiCoreP1HarnessTasksTaskIdInteractionRouteChildren =
@@ -2358,6 +2400,10 @@ const ApiCoreP1HarnessTasksTaskIdInteractionRouteChildren: ApiCoreP1HarnessTasks
       ApiCoreP1HarnessTasksTaskIdInteractionMessageRoute,
     ApiCoreP1HarnessTasksTaskIdInteractionRendererRoute:
       ApiCoreP1HarnessTasksTaskIdInteractionRendererRoute,
+    ApiCoreP1HarnessTasksTaskIdInteractionV2EditingRoute:
+      ApiCoreP1HarnessTasksTaskIdInteractionV2EditingRoute,
+    ApiCoreP1HarnessTasksTaskIdInteractionV2RendererRoute:
+      ApiCoreP1HarnessTasksTaskIdInteractionV2RendererRoute,
   }
 
 const ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren =
