@@ -23,19 +23,18 @@
     },
     "apps/core/src/p1/due-delivery/eligibility.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "50064baf67ae877ac5fbb1e61248e37d67e7e482",
-      "note": "#253 named-deps takeover merge: 1/0/0 fresh pair, provisioned first"
+      "verifiedAt": "992fc48be9c79520fe72d9e9cc76121d6b122546",
+      "note": "1/1 against its own freshly provisioned business and DBOS database pair for #269."
     },
     "apps/core/src/p1/due-delivery/postgres-repository.postgres.test.ts": {
-      "status": "known_red",
-      "verifiedAt": "50064baf67ae877ac5fbb1e61248e37d67e7e482",
-      "ticket": "#269",
-      "note": "#253 named-deps takeover merge: 8 pass / 1 fail on a fresh pair: the restart case still reads the real wall clock against a hard-coded 2026-07-29 business date, so the chained next-day task is already due. Cause diagnosed on #269, fix in flight on its lane; not caused by this stack"
+      "status": "green",
+      "verifiedAt": "992fc48be9c79520fe72d9e9cc76121d6b122546",
+      "note": "11/11 against its own freshly provisioned business and DBOS database pair after #269 pinned the restart clock and covered one-day and multi-day stale catch-up suppression."
     },
     "apps/core/src/p1/due-delivery/task-recall-producer.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "50064baf67ae877ac5fbb1e61248e37d67e7e482",
-      "note": "#253 named-deps takeover merge: 1/0/0 fresh pair, provisioned first"
+      "verifiedAt": "992fc48be9c79520fe72d9e9cc76121d6b122546",
+      "note": "1/1 against its own freshly provisioned business and DBOS database pair for #269."
     },
     "apps/core/src/p1/entitlement-pools/default-runtime-supply-pool.postgres.test.ts": {
       "status": "green",
@@ -214,8 +213,8 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "4517e11a0bb901ca96c43db535f2cf1b23179a35",
-      "note": "#242 orphan triage picks: 2/0/0 fresh pair, provisioned first"
+      "verifiedAt": "992fc48be9c79520fe72d9e9cc76121d6b122546",
+      "note": "2/2 against its own freshly provisioned business and DBOS database pair after the #269 p1 change."
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "unverified",
