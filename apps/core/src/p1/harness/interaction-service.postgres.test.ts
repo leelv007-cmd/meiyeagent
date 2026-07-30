@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 import { randomUUID } from 'node:crypto';
 
@@ -8,10 +10,15 @@ import {
   executionConfirmationRequestSchema,
   questionCardSchema,
   type AskMerchantQuestionRequest,
+  type DiagnosticRun,
 } from '@meiye/contracts';
 import { Pool } from 'pg';
 
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
+import type { DiagnosticRepository } from '../../diagnostics/repository.js';
+import { createCoreServer } from '../../server.js';
+import { WorkflowEventApplicationService } from '../workflow-events.js';
+import { HarnessApplicationService } from './application-service.js';
 import {
   HarnessInteractionService,
   HarnessSystemDefaultProducer,
@@ -27,8 +34,21 @@ import {
   type HarnessResumeWorkflow,
 } from './resume-reconciler.js';
 import { harnessRuntimeId } from './workspace-scope.js';
+import { HarnessTaskAdmissionService } from './task-admission.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
+
+const diagnostics: DiagnosticRepository = {
+  async create(run: DiagnosticRun) {
+    return run;
+  },
+  async get() {
+    return null;
+  },
+  async save(run: DiagnosticRun) {
+    return run;
+  },
+};
 
 function semanticDefaultEligibility(
   itemIds: string[],
@@ -597,7 +617,12 @@ test(
           ?.requestId,
         timeoutRequest.requestId,
       );
-      await timeoutService.ackRenderer(workspaceId, runId);
+      await timeoutService.ackRenderer(workspaceId, runId, {
+        requestId: timeoutRequest.requestId,
+        revision: timeoutRequest.revision,
+        step: timeoutRequest.step,
+        carrier: 'conversation',
+      });
       assert.equal(
         (await new PostgresHarnessStore(pool).readPending(workspaceId, runId))
           ?.questionId,
@@ -608,7 +633,13 @@ test(
         { kind: 'held', reason: 'deadline' },
       );
       now += 10_000;
-      await timeoutService.setEditing(workspaceId, runId, true);
+      await timeoutService.setEditing(workspaceId, runId, {
+        requestId: timeoutRequest.requestId,
+        revision: timeoutRequest.revision,
+        step: timeoutRequest.step,
+        carrier: 'conversation',
+        editing: true,
+      });
       now += 90_000;
       const restartedTimeoutService = createPgInteractionService(
         pool,
@@ -622,7 +653,13 @@ test(
         await restartedTimeoutService.submitSystemDefault(workspaceId, runId),
         { kind: 'held', reason: 'editing' },
       );
-      await restartedTimeoutService.setEditing(workspaceId, runId, false);
+      await restartedTimeoutService.setEditing(workspaceId, runId, {
+        requestId: timeoutRequest.requestId,
+        revision: timeoutRequest.revision,
+        step: timeoutRequest.step,
+        carrier: 'conversation',
+        editing: false,
+      });
       now += 19_999;
       assert.deepEqual(
         await restartedTimeoutService.submitSystemDefault(workspaceId, runId),
@@ -786,8 +823,27 @@ test(
         runId,
         'conversation',
       );
-      await casCarrierService.ackRenderer(workspaceId, runId);
+      await casCarrierService.ackRenderer(workspaceId, runId, {
+        requestId: casRequest.requestId,
+        revision: casRequest.revision,
+        step: casRequest.step,
+        carrier: 'conversation',
+      });
       casNow += 30_000;
+      await pool.query(
+        `update harness_runtime.pending_questions
+            set pending_projection=jsonb_set(
+              pending_projection,
+              '{timer,deadlineAt}',
+              to_jsonb(to_char(
+                clock_timestamp() - interval '1 second',
+                'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+              )),
+              false
+            )
+          where task_id=$1`,
+        [runtimeId],
+      );
       const merchantCasKey = `interaction-cas-merchant-${suffix}`;
       const casResults = await Promise.allSettled([
         createCasService().submitSystemDefault(workspaceId, runId),
@@ -964,6 +1020,523 @@ test(
         'delete from harness_runtime.decision_events where id=$1',
         [orphanEventId],
       );
+      await pool.query(
+        `delete from harness_runtime.langfuse_outbox
+          where audit_id in (
+            select id from harness_runtime.audit_events where workflow_id=$1
+          )`,
+        [runtimeId],
+      );
+      await pool.query(
+        'delete from harness_runtime.audit_events where workflow_id=$1',
+        [runtimeId],
+      );
+      for (const table of [
+        'decision_traces',
+        'decision_events',
+        'pending_questions',
+        'task_requests',
+      ]) {
+        await pool.query(
+          `delete from harness_runtime.${table} where task_id=$1`,
+          [runtimeId],
+        );
+      }
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'Postgres rejects malformed identities and binds renderer and editing leases to the current revision',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresHarnessStore(pool);
+    await store.applySchema();
+    const suffix = randomUUID();
+    const workspaceId = `interaction-identity-workspace-${suffix}`;
+    const runId = `interaction-identity-run-${suffix}`;
+    const runtimeId = harnessRuntimeId(workspaceId, runId);
+    const request = askMerchantQuestionRequestSchema.parse({
+      requestId: `interaction-identity-request-${suffix}`,
+      runId,
+      step: 'execution_selection',
+      revision: 1,
+      kind: 'ask_merchant',
+      questions: [
+        {
+          itemId: 'window',
+          question: '活动到哪天结束？',
+          fallback: { kind: 'deferred' },
+        },
+      ],
+      groupSkip: true,
+      timeoutPolicy: {
+        kind: 'semantic_default',
+        timeoutSeconds: 30,
+        eligibility: semanticDefaultEligibility(
+          ['window'],
+          `interaction-identity-request-${suffix}:r1`,
+        ),
+      },
+      presentation: {
+        carriers: ['conversation'],
+        blocking: 'none',
+        notification: 'none',
+      },
+    });
+    const resumes: unknown[] = [];
+    const service = new HarnessInteractionService(store, {
+      async resume(input) {
+        resumes.push(input);
+      },
+    });
+
+    try {
+      await pool.query(
+        `insert into harness_runtime.task_requests
+           (task_id, workflow_id, runtime_id, fingerprint, request)
+         values ($1,$2,$1,$3,$4::jsonb)`,
+        [
+          runtimeId,
+          runId,
+          fingerprintValue({ workspaceId, runId }),
+          JSON.stringify({ workspaceId }),
+        ],
+      );
+      await registerTypedPending(store, workspaceId, request);
+      const before = (
+        await pool.query<{ pending_projection: unknown }>(
+          `select pending_projection
+             from harness_runtime.pending_questions
+            where task_id=$1`,
+          [runtimeId],
+        )
+      ).rows[0]!.pending_projection as {
+        rendererCapability: string;
+        timer: unknown;
+        waitingState: string;
+      };
+      const malformedResults = await Promise.allSettled(
+        ['a', 'b'].map((key) =>
+          service.submit(workspaceId, {
+            requestId: request.requestId,
+            revision: request.revision,
+            idempotencyKey: `malformed-${key}-${suffix}`,
+            resume: { runId, step: request.step },
+            response: { kind: 'approved' },
+          }),
+        ),
+      );
+      const fulfilledMalformed = malformedResults.filter(
+        (result) => result.status === 'fulfilled',
+      );
+      assert.ok(fulfilledMalformed.length >= 1);
+      for (const result of fulfilledMalformed) {
+        assert.equal(result.value.kind, 'reask');
+        if (result.value.kind === 'reask') {
+          assert.equal(result.value.request.revision, 2);
+        }
+      }
+      const reasked = await store.readPendingInteraction(workspaceId, runId);
+      assert.equal(reasked?.revision, 2);
+      const after = (
+        await pool.query<{ pending_projection: unknown }>(
+          `select pending_projection
+             from harness_runtime.pending_questions
+            where task_id=$1`,
+          [runtimeId],
+        )
+      ).rows[0]!.pending_projection as {
+        rendererCapability: string;
+        timer: unknown;
+        waitingState: string;
+      };
+      assert.deepEqual(after.timer, before.timer);
+      assert.equal(after.rendererCapability, before.rendererCapability);
+      assert.equal(after.waitingState, before.waitingState);
+      for (const field of ['requestId', 'revision', 'runId', 'step'] as const) {
+        const malformed = {
+          requestId: reasked!.requestId,
+          revision: reasked!.revision,
+          idempotencyKey: `forged-${field}-${suffix}`,
+          resume: { runId: reasked!.runId, step: reasked!.step },
+          response: { kind: 'approved' },
+        };
+        if (field === 'requestId') malformed.requestId = 'forged-request';
+        if (field === 'revision') malformed.revision += 1;
+        if (field === 'runId') malformed.resume.runId = 'forged-run';
+        if (field === 'step') malformed.resume.step = 'forged-step';
+        await assert.rejects(
+          service.submit(workspaceId, malformed),
+          /no longer pending/u,
+        );
+      }
+      assert.equal(
+        (await store.readPendingInteraction(workspaceId, runId))?.revision,
+        2,
+      );
+      assert.deepEqual(
+        (
+          await pool.query<{ event_count: string; audit_count: string }>(
+            `select
+               (select count(*)::text
+                  from harness_runtime.decision_events
+                 where task_id=$1) as event_count,
+               (select count(*)::text
+                  from harness_runtime.audit_events
+                 where workflow_id=$1) as audit_count`,
+            [runtimeId],
+          )
+        ).rows[0],
+        { event_count: '0', audit_count: '0' },
+      );
+      assert.deepEqual(resumes, []);
+
+      const execution = executionConfirmationRequestSchema.parse({
+        requestId: reasked!.requestId,
+        runId,
+        step: 'execution_selection',
+        revision: 3,
+        kind: 'execution_confirmation',
+        frozen: {
+          executionSnapshotRef: { id: `snapshot-${suffix}`, revision: 1 },
+          quoteRevision: `quote-${suffix}`,
+          params: [],
+          debitPreview: [],
+          condition: {
+            kind: 'external_action',
+            required: true,
+            serverEvaluated: true,
+          },
+          timeoutPolicy: {
+            kind: 'hold',
+            reason: 'external_action',
+            serverEvaluated: true,
+          },
+        },
+        presentation: {
+          carriers: ['conversation'],
+          notification: 'none',
+          renderer: 'execution_confirmation',
+        },
+      });
+      assert.deepEqual(await store.advanceInteraction(workspaceId, execution), {
+        outcome: 'advanced',
+      });
+      await assert.rejects(
+        service.submit(workspaceId, {
+          requestId: execution.requestId,
+          revision: execution.revision,
+          idempotencyKey: `execution-malformed-${suffix}`,
+          resume: { runId, step: execution.step },
+          response: {
+            kind: 'answer',
+            items: [
+              {
+                itemId: 'window',
+                result: { kind: 'deferred' },
+              },
+            ],
+          },
+        }),
+      );
+      assert.equal(
+        (await store.readPendingInteraction(workspaceId, runId))?.revision,
+        execution.revision,
+      );
+
+      const timed = askMerchantQuestionRequestSchema.parse({
+        ...request,
+        revision: 4,
+        timeoutPolicy: {
+          kind: 'semantic_default',
+          timeoutSeconds: 30,
+          eligibility: semanticDefaultEligibility(
+            ['window'],
+            `${request.requestId}:r4`,
+          ),
+        },
+      });
+      assert.deepEqual(await store.advanceInteraction(workspaceId, timed), {
+        outcome: 'advanced',
+      });
+      await assert.rejects(
+        service.ackRenderer(workspaceId, runId, {
+          requestId: execution.requestId,
+          revision: execution.revision,
+          step: execution.step,
+          carrier: 'conversation',
+        }),
+        /no longer pending/u,
+      );
+      const databaseBefore = (
+        await pool.query<{ current_time: Date }>(
+          'select clock_timestamp() as current_time',
+        )
+      ).rows[0]!.current_time;
+      const acknowledgement = {
+        requestId: timed.requestId,
+        revision: timed.revision,
+        step: timed.step,
+        carrier: 'conversation' as const,
+      };
+      const ackResults = await Promise.all([
+        new PostgresHarnessStore(pool).ackInteractionRenderer(
+          workspaceId,
+          runId,
+          acknowledgement,
+        ),
+        new PostgresHarnessStore(pool).ackInteractionRenderer(
+          workspaceId,
+          runId,
+          acknowledgement,
+        ),
+      ]);
+      assert.deepEqual(ackResults.sort(), ['acked', 'replayed']);
+      const databaseAfter = (
+        await pool.query<{ current_time: Date }>(
+          'select clock_timestamp() as current_time',
+        )
+      ).rows[0]!.current_time;
+      const acknowledgedProjection = (
+        await pool.query<{ pending_projection: unknown }>(
+          `select pending_projection
+             from harness_runtime.pending_questions
+            where task_id=$1`,
+          [runtimeId],
+        )
+      ).rows[0]!.pending_projection as {
+        timer: { deadlineAt: string };
+      };
+      const deadlineAt = Date.parse(
+        acknowledgedProjection.timer.deadlineAt,
+      );
+      assert.ok(deadlineAt >= databaseBefore.getTime() + 30_000);
+      assert.ok(deadlineAt <= databaseAfter.getTime() + 30_000);
+      assert.equal(
+        await store.ackInteractionRenderer(
+          workspaceId,
+          runId,
+          acknowledgement,
+        ),
+        'replayed',
+      );
+      assert.equal(
+        Date.parse(
+          (
+            (
+              await pool.query<{ pending_projection: unknown }>(
+                `select pending_projection
+                   from harness_runtime.pending_questions
+                  where task_id=$1`,
+                [runtimeId],
+              )
+            ).rows[0]!.pending_projection as {
+              timer: { deadlineAt: string };
+            }
+          ).timer.deadlineAt,
+        ),
+        deadlineAt,
+      );
+
+      await service.setEditing(workspaceId, runId, {
+        ...acknowledgement,
+        editing: true,
+      });
+      await pool.query(
+        `update harness_runtime.pending_questions
+            set pending_projection=jsonb_set(
+              jsonb_set(
+                jsonb_set(
+                  pending_projection,
+                  '{timer,editingStartedAt}',
+                  to_jsonb(to_char(
+                    clock_timestamp() - interval '60 seconds',
+                    'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+                  )),
+                  true
+                ),
+                '{timer,editingLeaseExpiresAt}',
+                to_jsonb(to_char(
+                  clock_timestamp() - interval '30 seconds',
+                  'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+                )),
+                true
+              ),
+              '{timer,deadlineAt}',
+              to_jsonb(to_char(
+                clock_timestamp() - interval '60 seconds',
+                'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+              )),
+              true
+            )
+          where task_id=$1`,
+        [runtimeId],
+      );
+      assert.deepEqual(await store.listSystemDefaultCandidates(20), [
+        { workspaceId, runId },
+      ]);
+      assert.deepEqual(
+        await service.submitSystemDefault(workspaceId, runId),
+        { kind: 'resumed', replayed: false },
+      );
+      assert.equal(resumes.length, 1);
+    } finally {
+      await pool.query(
+        `delete from harness_runtime.langfuse_outbox
+          where audit_id in (
+            select id from harness_runtime.audit_events where workflow_id=$1
+          )`,
+        [runtimeId],
+      );
+      await pool.query(
+        'delete from harness_runtime.audit_events where workflow_id=$1',
+        [runtimeId],
+      );
+      for (const table of [
+        'decision_traces',
+        'decision_events',
+        'pending_questions',
+        'task_requests',
+      ]) {
+        await pool.query(
+          `delete from harness_runtime.${table} where task_id=$1`,
+          [runtimeId],
+        );
+      }
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'HTTP routes an exact malformed ask answer through the durable Postgres application service',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresHarnessStore(pool);
+    await store.applySchema();
+    const suffix = randomUUID();
+    const workspaceId = `interaction-http-workspace-${suffix}`;
+    const runId = `interaction-http-run-${suffix}`;
+    const runtimeId = harnessRuntimeId(workspaceId, runId);
+    const request = askMerchantQuestionRequestSchema.parse({
+      requestId: `interaction-http-request-${suffix}`,
+      runId,
+      step: 'execution_selection',
+      revision: 1,
+      kind: 'ask_merchant',
+      questions: [
+        {
+          itemId: 'window',
+          question: '活动到哪天结束？',
+          fallback: { kind: 'deferred' },
+        },
+      ],
+      groupSkip: true,
+      presentation: {
+        carriers: ['conversation'],
+        blocking: 'none',
+        notification: 'none',
+      },
+    });
+    const interactionService = new HarnessInteractionService(store, {
+      async resume() {
+        throw new Error('A malformed ask answer must not resume.');
+      },
+    });
+    const harnessService = new HarnessApplicationService(
+      new HarnessTaskAdmissionService(store, {
+        async start({ workflowId }) {
+          return { workflowId };
+        },
+      }),
+      new HarnessDecisionService(store, {
+        async resume() {
+          throw new Error('The typed interaction must not use legacy resume.');
+        },
+      }),
+      store,
+      undefined,
+      undefined,
+      undefined,
+      interactionService,
+    );
+    const server = createCoreServer({
+      diagnosticRepository: diagnostics,
+      harnessService,
+      serviceToken: 'interaction-http-token',
+      workflowEvents: new WorkflowEventApplicationService([]),
+    });
+
+    try {
+      await pool.query(
+        `insert into harness_runtime.task_requests
+           (task_id, workflow_id, runtime_id, fingerprint, request)
+         values ($1,$2,$1,$3,$4::jsonb)`,
+        [
+          runtimeId,
+          runId,
+          fingerprintValue({ workspaceId, runId }),
+          JSON.stringify({ workspaceId }),
+        ],
+      );
+      await registerTypedPending(store, workspaceId, request);
+      server.listen(0, '127.0.0.1');
+      await once(server, 'listening');
+      const { port } = server.address() as AddressInfo;
+      const response = await fetch(
+        `http://127.0.0.1:${port}/v1/workspaces/${workspaceId}/p1/harness/tasks/${runId}/interaction`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-service-token': 'interaction-http-token',
+            'x-user-id': 'owner-1',
+            'x-workspace-id': workspaceId,
+            'x-workspace-role': 'owner',
+          },
+          body: JSON.stringify({
+            requestId: request.requestId,
+            revision: request.revision,
+            idempotencyKey: `interaction-http-malformed-${suffix}`,
+            resume: { runId, step: request.step },
+            response: { kind: 'approved' },
+          }),
+        },
+      );
+      assert.equal(response.status, 200);
+      const envelope = (await response.json()) as {
+        data: { kind: string; request: { revision: number } };
+      };
+      assert.equal(envelope.data.kind, 'reask');
+      assert.equal(envelope.data.request.revision, 2);
+      assert.equal(
+        (await store.readPendingInteraction(workspaceId, runId))?.revision,
+        2,
+      );
+      assert.deepEqual(
+        (
+          await pool.query<{ event_count: string; audit_count: string }>(
+            `select
+               (select count(*)::text
+                  from harness_runtime.decision_events
+                 where task_id=$1) as event_count,
+               (select count(*)::text
+                  from harness_runtime.audit_events
+                 where workflow_id=$1) as audit_count`,
+            [runtimeId],
+          )
+        ).rows[0],
+        { event_count: '0', audit_count: '0' },
+      );
+    } finally {
+      if (server.listening) {
+        server.close();
+        await once(server, 'close');
+      }
       await pool.query(
         `delete from harness_runtime.langfuse_outbox
           where audit_id in (

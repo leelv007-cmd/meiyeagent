@@ -114,11 +114,16 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
           },
         };
       },
-      async ackRenderer(workspaceId, taskId) {
-        interactionCalls.push(['renderer', workspaceId, taskId]);
+      async ackRenderer(workspaceId, taskId, acknowledgement) {
+        interactionCalls.push([
+          'renderer',
+          workspaceId,
+          taskId,
+          acknowledgement,
+        ]);
       },
-      async setEditing(workspaceId, taskId, editing) {
-        interactionCalls.push(['editing', workspaceId, taskId, editing]);
+      async setEditing(workspaceId, taskId, input) {
+        interactionCalls.push(['editing', workspaceId, taskId, input]);
       },
       async submit(workspaceId, answer) {
         interactionCalls.push(['submit', workspaceId, answer]);
@@ -364,19 +369,6 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
       ],
     },
   };
-  const interactionAnswered = await fetch(
-    `${base}/task-http-1/interaction`,
-    {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(interactionAnswer),
-    },
-  );
-  assert.equal(interactionAnswered.status, 200);
-  assert.deepEqual((await interactionAnswered.json()).data, {
-    kind: 'resumed',
-    replayed: false,
-  });
   const malformedInteractionAnswer = {
     ...interactionAnswer,
     idempotencyKey: 'interaction-http-malformed-1',
@@ -395,18 +387,48 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
     (await malformedInteraction.json()).data.request.revision,
     2,
   );
+  const interactionAnswerR2 = {
+    ...interactionAnswer,
+    revision: 2,
+    idempotencyKey: 'interaction-http-answer-2',
+  };
+  const interactionAnswered = await fetch(
+    `${base}/task-http-1/interaction`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(interactionAnswerR2),
+    },
+  );
+  assert.equal(interactionAnswered.status, 200);
+  assert.deepEqual((await interactionAnswered.json()).data, {
+    kind: 'resumed',
+    replayed: false,
+  });
   const renderer = await fetch(
     `${base}/task-http-1/interaction/renderer`,
     {
       method: 'POST',
       headers,
+      body: JSON.stringify({
+        requestId: 'interaction-http-1',
+        revision: 2,
+        step: 'context_injection',
+        carrier: 'conversation',
+      }),
     },
   );
   assert.equal(renderer.status, 204);
   const editing = await fetch(`${base}/task-http-1/interaction/editing`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ editing: true }),
+    body: JSON.stringify({
+      requestId: 'interaction-http-1',
+      revision: 2,
+      step: 'context_injection',
+      carrier: 'conversation',
+      editing: true,
+    }),
   });
   assert.equal(editing.status, 204);
   const merchantMessage = {
@@ -434,10 +456,31 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
   });
   assert.deepEqual(interactionCalls, [
     ['read', 'workspace-1', 'task-http-1', 'conversation'],
-    ['submit', 'workspace-1', interactionAnswer],
     ['submit', 'workspace-1', malformedInteractionAnswer],
-    ['renderer', 'workspace-1', 'task-http-1'],
-    ['editing', 'workspace-1', 'task-http-1', true],
+    ['submit', 'workspace-1', interactionAnswerR2],
+    [
+      'renderer',
+      'workspace-1',
+      'task-http-1',
+      {
+        requestId: 'interaction-http-1',
+        revision: 2,
+        step: 'context_injection',
+        carrier: 'conversation',
+      },
+    ],
+    [
+      'editing',
+      'workspace-1',
+      'task-http-1',
+      {
+        requestId: 'interaction-http-1',
+        revision: 2,
+        step: 'context_injection',
+        carrier: 'conversation',
+        editing: true,
+      },
+    ],
     ['read-message', 'workspace-1', 'task-http-1', 'conversation'],
     ['message', 'workspace-1', 'task-http-1', merchantMessage],
   ]);
