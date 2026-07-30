@@ -14,7 +14,11 @@ import {
   runIssue255LiveManifestRecoveryCli,
   runIssue255LiveReconciliationCli,
 } from './issue-255-live-collector-cli.js';
-import { reconcileIssue255LiveRun } from './issue-255-live-reconciliation.js';
+import {
+  issue255LiveAnchorsV5ManifestSchema,
+  reconcileIssue255LiveRun,
+  recoverIssue255CoordinatorVideoV5,
+} from './issue-255-live-reconciliation.js';
 
 const issue255LiveRuntimeEnv = (
   overrides: NodeJS.ProcessEnv = {},
@@ -284,6 +288,132 @@ test('issue 255 v3 reconciliation uses the failed-before-billing proof path', as
   assert.equal(providerRejectionPreparations, 1);
   assert.equal(providerLedgerReconciliations, 0);
 });
+
+test('issue 255 v5 recovery is GET-only through completed content retrieval and price-card closeout', async () => {
+  const providerMethods: string[] = [];
+  const assetTargets: string[] = [];
+  let reconciledInput: Record<string, unknown> | undefined;
+  const receipt = {
+    runNonce: 'issue-255-live-anchors-2026-07-30-v5',
+    modality: 'video' as const,
+    status: 'unknown' as const,
+    generationSubmitCount: 1,
+    providerHttpRequestCount: 2,
+    providerTaskId: 'cgt-recovered-v5',
+    effectId: 'a'.repeat(64),
+    requestFingerprint: 'b'.repeat(64),
+    deploymentId: 'seedance-1-5-pro-tuzi-relay',
+    providerIdempotencyKey: 'a'.repeat(64),
+  };
+  await assert.rejects(
+    recoverIssue255CoordinatorVideoV5({
+      receipts: {
+        async listRun() {
+          return [receipt];
+        },
+        async recordProviderHttpRequest() {},
+        async recordProviderHttpResponse() {},
+        async reconcileCoordinatorVideoV5FromPriceCard(input: Record<string, unknown>) {
+          reconciledInput = input;
+          throw new Error('stop after reconciliation input');
+        },
+      } as never,
+      options: {
+        ...preflightIssue255LiveRuntime(issue255LiveRuntimeEnv()).tuzi,
+        assetFetch: {
+          async get(target) {
+            assetTargets.push(target);
+            return {
+              bytes: Uint8Array.from([1, 2, 3]),
+              finalUrl: target,
+              mimeType: 'video/mp4',
+            };
+          },
+        },
+        fetch: async (input, init) => {
+          providerMethods.push(init?.method ?? 'GET');
+          assert.equal(
+            String(input),
+            'https://api.tu-zi.example/v1/videos/cgt-recovered-v5',
+          );
+          return Response.json({
+            id: 'cgt-recovered-v5',
+            status: 'completed',
+            created_at: 1_785_428_824,
+            video_url:
+              'https://tos.example.test/video.mp4?X-Tos-Date=20260730T162739Z&X-Tos-Signature=secret',
+          });
+        },
+      },
+      manifestPath: '/not-reached/live-anchors-v5.json',
+      wait: async () => {},
+    }),
+    /stop after reconciliation input/u,
+  );
+
+  assert.deepEqual(providerMethods, ['GET', 'GET']);
+  assert.deepEqual(assetTargets, [
+    'https://api.tu-zi.example/v1/videos/cgt-recovered-v5/content',
+  ]);
+  assert.equal(reconciledInput?.wallClockUpperBoundMs, 35_000);
+  assert.equal(reconciledInput?.providerSignedUrlTimestamp, '20260730T162739Z');
+  assert.equal(reconciledInput?.contentByteCount, 3);
+  assert.doesNotThrow(() =>
+    issue255LiveAnchorsV5ManifestSchema.parse({
+      schemaVersion: 2,
+      issue: 255,
+      samples: [
+        closeoutSample('copy', 'direct-copy'),
+        closeoutSample('image_text', 'tuzi-image'),
+        {
+          ...closeoutSample('video', 'tuzi-video'),
+          recovery: {
+            providerStatusSequence: ['unknown', 'completed'],
+            normalizedStatusSequence: ['queued', 'completed'],
+            taskDetailGetCount: 2,
+            contentRetrievalGetCount: 1,
+            contentType: 'video/mp4',
+            contentByteCount: 3,
+            contentSha256: 'e'.repeat(64),
+            providerCreatedAtEpochSeconds: 1_785_428_824,
+            providerCreatedAtIso: '2026-07-30T16:27:04.000Z',
+            providerSignedUrlTimestamp: '20260730T162739Z',
+            providerSignedUrlTimestampIso: '2026-07-30T16:27:39.000Z',
+            wallClockUpperBoundMs: 35_000,
+            wallClockDerivation:
+              'provider_signed_url_timestamp - provider_created_at',
+            billingNote:
+              'relay_completed_without_per_task_usage; frozen_price_card_reconciled',
+          },
+        },
+      ],
+      totalActualAmountMicros: 1_682_551,
+      currency: 'CNY',
+    }),
+  );
+});
+
+function closeoutSample(
+  modality: 'copy' | 'image_text' | 'video',
+  adapter: 'direct-copy' | 'tuzi-image' | 'tuzi-video',
+) {
+  return {
+    modality,
+    sourceRunNonceHash: 'a'.repeat(64),
+    effectId: 'b'.repeat(64),
+    requestFingerprint: 'c'.repeat(64),
+    adapter,
+    deploymentId: `${adapter}-deployment`,
+    amountMicros: 1,
+    usageEvidenceKind:
+      modality === 'copy' ? 'provider_reported' : 'price_card_reconciled',
+    receiptEvidenceRef: `live://issue-255/receipt/${'b'.repeat(64)}`,
+    generationSubmitCount: 1,
+    providerHttpRequestCount: 1,
+    status: 'completed',
+    providerTaskRefHash: null,
+  } as const;
+}
 
 test('issue 255 collector derives integer micros upward from frozen price and provider usage', async () => {
   const executor = issue255DirectCopyExecutor({

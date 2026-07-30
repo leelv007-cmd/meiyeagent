@@ -73,8 +73,11 @@ function request(
   };
 }
 
-function provider(fetch: typeof globalThis.fetch) {
-  const assetFetch: ProviderAssetFetchPort = {
+function provider(
+  fetch: typeof globalThis.fetch,
+  assetFetchOverride?: ProviderAssetFetchPort,
+) {
+  const assetFetch: ProviderAssetFetchPort = assetFetchOverride ?? {
     async get(target, constraints) {
       const response = await fetch(target, {
         headers: constraints.authorization
@@ -482,7 +485,84 @@ test('Tuzi maps every documented video status into the Ark lifecycle vocabulary'
   }
 });
 
-test('Tuzi rejects an unknown video status with bounded redacted provider evidence', async () => {
+test('Tuzi treats the relay unknown video status as pending', async () => {
+  const fetchMock: typeof globalThis.fetch = async (input) => {
+    if (String(input).endsWith('/videos/tuzi-video-invalid-task')) {
+      return Response.json({
+        id: 'tuzi-video-invalid-task',
+        object: 'video',
+        status: 'unknown',
+      });
+    }
+    return Response.json({
+      id: 'tuzi-video-invalid-task',
+      object: 'video',
+      status: 'queued',
+    });
+  };
+  const adapter = provider(fetchMock);
+  const videoRequest = request('seedance-2');
+  const submitted = await adapter.submit(videoRequest);
+  assert.ok(submitted.taskRef);
+
+  const polled = await adapter.poll({
+    ...videoRequest,
+    taskRef: submitted.taskRef!,
+  });
+
+  assert.equal(polled.status, 'queued');
+  assert.equal(polled.errorCode, undefined);
+  assert.equal(polled.error, undefined);
+});
+
+test('Tuzi recovers a durable video task with GET-only polling and content retrieval', async () => {
+  const methods: string[] = [];
+  const contentTargets: string[] = [];
+  const fetchMock: typeof globalThis.fetch = async (input, init) => {
+    methods.push(init?.method ?? 'GET');
+    assert.equal(
+      String(input),
+      'https://api.tu-zi.example/v1/videos/cgt-recovered-task',
+    );
+    return Response.json({
+      id: 'cgt-recovered-task',
+      object: 'video',
+      status: 'completed',
+      created_at: 1_785_428_824,
+      video_url:
+        'https://tos.example.test/output.mp4?X-Tos-Date=20260730T162739Z&X-Tos-Signature=secret',
+    });
+  };
+  const adapter = provider(fetchMock, {
+    async get(target) {
+      contentTargets.push(target);
+      return {
+        bytes: Uint8Array.from([7, 8, 9]),
+        finalUrl: target,
+        mimeType: 'video/mp4',
+      };
+    },
+  });
+  const videoRequest = request('seedance-2');
+  const taskRef = adapter.recoverVideoTaskRef(
+    videoRequest,
+    'cgt-recovered-task',
+  );
+
+  const polled = await adapter.poll({ ...videoRequest, taskRef });
+  assert.equal(polled.status, 'completed');
+  assert.equal(polled.providerCreatedAtEpochSeconds, 1_785_428_824);
+  assert.equal(polled.providerSignedUrlTimestamp, '20260730T162739Z');
+  const downloaded = await adapter.download({ ...videoRequest, taskRef });
+
+  assert.deepEqual(methods, ['GET', 'GET']);
+  assert.deepEqual(contentTargets, [
+    'https://api.tu-zi.example/v1/videos/cgt-recovered-task/content',
+  ]);
+  assert.equal(downloaded.contentType, 'video/mp4');
+});
+
+test('Tuzi rejects an unrecognized video status with bounded redacted provider evidence', async () => {
   const fetchMock: typeof globalThis.fetch = async (input) => {
     if (String(input).endsWith('/videos/tuzi-video-invalid-task')) {
       return Response.json({

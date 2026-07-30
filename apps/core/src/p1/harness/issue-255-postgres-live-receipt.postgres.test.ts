@@ -64,6 +64,21 @@ describe(
       priceRevision:
         'seedance-1-5-pro:channel-tuzi-seedance-relay:standard:price-v1',
     } as const;
+    const coordinatorV5 = (() => {
+      const runNonce = 'issue-255-live-anchors-2026-07-30-v5';
+      const effectId = createHash('sha256')
+        .update(`issue255/v1\0${runNonce}\0video`)
+        .digest('hex');
+      return {
+        runNonce,
+        effectId,
+        workspaceId: `issue-255-live-${createHash('sha256').update(runNonce).digest('hex').slice(0, 24)}`,
+        requestFingerprint: 'c'.repeat(64),
+        providerJobId: `issue-255-job-${effectId.slice(0, 32)}`,
+        providerAttemptId: `issue-255-attempt-${effectId.slice(0, 28)}`,
+        providerCostEventId: `issue-255-cost-${effectId.slice(0, 28)}`,
+      };
+    })();
     const insertLegacyReceipt = async (input: {
       runNonce: string;
       modality: keyof typeof providerIdentity;
@@ -391,6 +406,106 @@ describe(
       });
       return claim;
     };
+    const coordinatorV5Candidate = async () => {
+      const claim = {
+        ...coordinatorV5,
+        modality: 'video' as const,
+        adapter: 'tuzi-video' as const,
+        deploymentId: 'seedance-1-5-pro-tuzi-relay',
+        providerIdempotencyKey: coordinatorV5.effectId,
+        recordedMatrixDigest: 'a'.repeat(64),
+        reservedAmountMicros: 1_620_000,
+        priceRevision:
+          'seedance-1-5-pro:channel-tuzi-seedance-relay:standard:price-v1',
+        exchangeRevision: 'native-cny-v1',
+      } as const;
+      await firstPool.query(
+        `INSERT INTO workspaces (id, name)
+         VALUES ($1, 'Issue 255 coordinator v5 recovery test')`,
+        [claim.workspaceId],
+      );
+      await firstPool.query(
+        `INSERT INTO p1_route_snapshots (
+           workspace_id, id, catalog_revision, policy_revision, price_revision,
+           requested_catalog_model_id, selection_mode, data_class, data_classes,
+           fallback_consent, allowed_candidates, created_at
+         ) VALUES (
+           $1, $2, 'issue-255-live-v5', 'issue-255-no-fallback-v1', $3,
+           'seedance-1-5-pro', 'fixed', 'public', '["public"]'::jsonb,
+           false, $4::jsonb, now()
+         )`,
+        [
+          claim.workspaceId,
+          `${claim.providerJobId}:route`,
+          claim.priceRevision,
+          JSON.stringify([
+            {
+              deploymentId: claim.deploymentId,
+              priceRevision: claim.priceRevision,
+            },
+          ]),
+        ],
+      );
+      await firstPool.query(
+        `INSERT INTO p1_generation_jobs (
+           workspace_id, id, operation, route_snapshot_id, usage_reservation_id,
+           status, created_by, correlation_id, created_at, updated_at
+         ) VALUES (
+           $1, $2, 'video', $3, $4, 'running', 'issue-255-test', $5, now(), now()
+         )`,
+        [
+          claim.workspaceId,
+          claim.providerJobId,
+          `${claim.providerJobId}:route`,
+          `${claim.providerJobId}:usage`,
+          `${claim.providerJobId}:correlation`,
+        ],
+      );
+      await firstPool.query(
+        `INSERT INTO p1_provider_attempts (
+           workspace_id, id, job_id, ordinal, deployment_id, acceptance,
+           status, created_at, updated_at
+         ) VALUES ($1, $2, $3, 1, $4, 'pending', 'pending', now(), now())`,
+        [
+          claim.workspaceId,
+          claim.providerAttemptId,
+          claim.providerJobId,
+          claim.deploymentId,
+        ],
+      );
+      await first.claim(claim);
+      const identity = {
+        adapter: claim.adapter,
+        deploymentId: claim.deploymentId,
+        runNonce: claim.runNonce,
+        modality: claim.modality,
+        effectId: claim.effectId,
+        providerIdempotencyKey: claim.providerIdempotencyKey,
+        requestFingerprint: claim.requestFingerprint,
+      };
+      await first.claimGenerationPost(identity);
+      await first.recordProviderHttpRequest(identity);
+      await first.recordProviderHttpResponse({ ...identity, httpStatus: 200 });
+      await first.bindAcceptedProviderTask({
+        runNonce: claim.runNonce,
+        modality: claim.modality,
+        effectId: claim.effectId,
+        requestFingerprint: claim.requestFingerprint,
+        providerTaskId: 'cgt-v5-recovery-task',
+      });
+      await first.recordProviderHttpRequest(identity);
+      await first.recordProviderHttpResponse({ ...identity, httpStatus: 200 });
+      await first.recordExecutionFailure({
+        runNonce: claim.runNonce,
+        modality: claim.modality,
+        effectId: claim.effectId,
+        requestFingerprint: claim.requestFingerprint,
+        errorCode: 'invalid_response',
+        errorMessage:
+          'Ark video task polling returned an invalid response. provider_evidence={"status":"unknown"}',
+      });
+      return { claim, identity };
+    };
     const legacyImageCandidate = async () => {
       const claim = {
         workspaceId: legacyImage.workspaceId,
@@ -500,6 +615,18 @@ describe(
     beforeEach(async () => {
       await firstPool.query(
         `DELETE FROM issue255_live_generation_receipts
+          WHERE run_nonce = 'issue-255-live-anchors-2026-07-30-v5'`,
+      );
+      await firstPool.query(
+        `DELETE FROM issue255_live_generation_authorizations
+          WHERE run_nonce = 'issue-255-live-anchors-2026-07-30-v5'`,
+      );
+      await firstPool.query(
+        'DELETE FROM workspaces WHERE id = $1',
+        [coordinatorV5.workspaceId],
+      );
+      await firstPool.query(
+        `DELETE FROM issue255_live_generation_receipts
           WHERE run_nonce = 'issue-255-live-anchors-2026-07-30-v2'`,
       );
       await firstPool.query(
@@ -549,6 +676,18 @@ describe(
     });
 
     after(async () => {
+      await firstPool.query(
+        `DELETE FROM issue255_live_generation_receipts
+          WHERE run_nonce = 'issue-255-live-anchors-2026-07-30-v5'`,
+      );
+      await firstPool.query(
+        `DELETE FROM issue255_live_generation_authorizations
+          WHERE run_nonce = 'issue-255-live-anchors-2026-07-30-v5'`,
+      );
+      await firstPool.query(
+        'DELETE FROM workspaces WHERE id = $1',
+        [coordinatorV5.workspaceId],
+      );
       await firstPool.query(
         `DELETE FROM issue255_live_generation_receipts
           WHERE run_nonce = 'issue-255-live-anchors-2026-07-30-v2'`,
@@ -1475,6 +1614,84 @@ describe(
       );
       assert.equal(attempt?.acceptance, 'pending');
       assert.equal(attempt?.status, 'pending');
+    });
+
+    it('reconciles the frozen v5 completed video from its durable task and price card', async () => {
+      const foundation = new PostgresFoundationRepository(firstPool);
+      const { claim, identity } = await coordinatorV5Candidate();
+
+      await first.recordProviderHttpRequest(identity);
+      await first.recordProviderHttpResponse({ ...identity, httpStatus: 200 });
+      const receipt = await first.reconcileCoordinatorVideoV5FromPriceCard({
+        runNonce: claim.runNonce,
+        effectId: claim.effectId,
+        requestFingerprint: claim.requestFingerprint,
+        providerTaskId: 'cgt-v5-recovery-task',
+        providerTaskRef: 'ark-media-v1.recovered.encrypted.reference',
+        providerStatusSequence: ['unknown', 'completed'],
+        normalizedStatusSequence: ['queued', 'completed'],
+        providerCreatedAtEpochSeconds: 1_785_428_824,
+        providerSignedUrlTimestamp: '20260730T162739Z',
+        wallClockUpperBoundMs: 35_000,
+        contentType: 'video/mp4',
+        contentByteCount: 3,
+        contentSha256: createHash('sha256')
+          .update(Uint8Array.from([1, 2, 3]))
+          .digest('hex'),
+      });
+
+      assert.equal(receipt.status, 'completed');
+      assert.equal(receipt.generationSubmitCount, 1);
+      assert.equal(receipt.providerHttpRequestCount, 3);
+      assert.equal(receipt.actualAmountMicros, 1_620_000);
+      assert.equal(
+        receipt.reconciliationReason,
+        'tuzi_video_price_card_reconciled',
+      );
+      const lineage = receipt.terminalLineage;
+      assert.ok(lineage && 'recovery' in lineage);
+      assert.equal(lineage.providerCost.usageEvidenceKind, 'price_card_reconciled');
+      assert.deepEqual(lineage.providerCost.usage, { mediaUnits: 1 });
+      assert.equal(lineage.recovery.wallClockUpperBoundMs, 35_000);
+      assert.equal(
+        lineage.attempt.providerTaskRef,
+        'ark-media-v1.recovered.encrypted.reference',
+      );
+      assert.equal(
+        (await foundation.getProviderAttempt(claim.workspaceId, claim.providerAttemptId))
+          ?.status,
+        'completed',
+      );
+      assert.equal(
+        (await foundation.getGenerationJob(claim.workspaceId, claim.providerJobId))
+          ?.status,
+        'completed',
+      );
+      const costs = await foundation.listProviderCosts(
+        claim.workspaceId,
+        claim.providerAttemptId,
+      );
+      assert.equal(costs.length, 1);
+      assert.equal(costs[0]?.stage, 'reconciled');
+      assert.equal(costs[0]?.amountMicros, 1_620_000);
+      await assert.rejects(
+        first.reconcileCoordinatorVideoV5FromPriceCard({
+          runNonce: claim.runNonce,
+          effectId: claim.effectId,
+          requestFingerprint: claim.requestFingerprint,
+          providerTaskId: 'cgt-v5-recovery-task',
+          providerTaskRef: 'ark-media-v1.recovered.encrypted.reference',
+          providerStatusSequence: ['unknown', 'completed'],
+          normalizedStatusSequence: ['queued', 'completed'],
+          providerCreatedAtEpochSeconds: 1_785_428_824,
+          providerSignedUrlTimestamp: '20260730T162739Z',
+          wallClockUpperBoundMs: 35_000,
+          contentType: 'video/mp4',
+          contentByteCount: 3,
+          contentSha256: createHash('sha256').update('content').digest('hex'),
+        }),
+        /frozen durable receipt/u,
+      );
     });
 
     it('reconciles only the fixed v2 accepted image lineage without inventing a provider task ref', async () => {
