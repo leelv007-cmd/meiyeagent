@@ -22,7 +22,9 @@ import type {
   CloudflareSelfProbeResult,
 } from '../cloudflare-read/index.js';
 import {
+  BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,
   BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
+  boundedExecutionLiveCalibrationConfigSchema,
   boundedExecutionLimitsConfigSchema,
 } from './bounded-execution-limits.js';
 
@@ -374,6 +376,13 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
     scope: 'global',
     description: 'Terminal due-delivery item and run retention in days.',
     valueSchema: dueDeliveryRetentionDaysConfigSchema,
+  },
+  {
+    key: BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,
+    scope: 'global',
+    description:
+      'Issue 255 live anchors and adjustable derivation policy for bounded Harness execution.',
+    valueSchema: boundedExecutionLiveCalibrationConfigSchema,
   },
   {
     key: BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,

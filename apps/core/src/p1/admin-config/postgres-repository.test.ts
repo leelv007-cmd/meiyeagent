@@ -3,6 +3,13 @@ import { randomUUID } from 'node:crypto';
 import { after, before, describe, it } from 'node:test';
 import { Pool } from 'pg';
 import { P1DomainError } from '../foundation/domain.js';
+import {
+  AdminConfigBoundedExecutionLimitsResolver,
+  AdminConfigBoundedExecutionLimitsSource,
+  BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,
+  ISSUE_255_LIVE_CALIBRATION_TEMPLATE,
+} from './bounded-execution-limits.js';
+import { AdminConfigFoundationModule } from './foundation-module.js';
 import { PostgresAdminConfigRepository } from './postgres-repository.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -19,7 +26,67 @@ describe(
 
     after(async () => {
       await repository.deleteScopeForTest('workspace', workspaceId);
+      await repository.deleteScopeForTest('global', '__global__');
       await pool.end();
+    });
+
+    it('persists live calibration for hot-read bounded admission', async () => {
+      const module = new AdminConfigFoundationModule(repository);
+      await module.execute({
+        context: {
+          actor: 'admin',
+          correlationId: 'issue-255-live-calibration-pg',
+          userId: 'platform-admin',
+          workspaceId: '__global__',
+        },
+        input: {
+          action: 'config_apply',
+          payload: {
+            expectedRevision: null,
+            key: BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,
+            reason: 'Apply the durable Issue 255 decision',
+            value: {
+              ...ISSUE_255_LIVE_CALIBRATION_TEMPLATE,
+              anchors: {
+                copy: {
+                  ...ISSUE_255_LIVE_CALIBRATION_TEMPLATE.anchors.copy,
+                  wallClockMs: 10_000,
+                  wallClockEvidenceRef: 'live://issue-255/copy/test-decision',
+                },
+                image: {
+                  ...ISSUE_255_LIVE_CALIBRATION_TEMPLATE.anchors.image,
+                  wallClockMs: 20_000,
+                  wallClockEvidenceRef: 'live://issue-255/image/test-decision',
+                },
+                video: {
+                  ...ISSUE_255_LIVE_CALIBRATION_TEMPLATE.anchors.video,
+                  actualAmountMicros: 1_000_000,
+                  wallClockMs: 30_000,
+                  costEvidenceRef: 'live://issue-255/video/test-decision',
+                  wallClockEvidenceRef: 'live://issue-255/video/test-decision',
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const resolver = new AdminConfigBoundedExecutionLimitsResolver(
+        new AdminConfigBoundedExecutionLimitsSource(
+          new PostgresAdminConfigRepository(pool),
+        ),
+      );
+      assert.deepEqual(await resolver.resolve(), {
+        maxIterations: 2,
+        maxCostCents: 213,
+        maxWallClockMs: 90_000,
+        maxDelegations: 'unset',
+        requiredLimits: [
+          'maxIterations',
+          'maxCostCents',
+          'maxWallClockMs',
+        ],
+      });
     });
 
     it('restores the value, version and audit after the repository is recreated', async () => {

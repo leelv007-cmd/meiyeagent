@@ -19,6 +19,160 @@ const REQUIRED_PRODUCTION_LIMITS = [
 
 export const BOUNDED_EXECUTION_LIMITS_CONFIG_KEY =
   'harness.bounded_execution.limits';
+export const BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY =
+  'harness.bounded_execution.live_calibration';
+
+const liveCalibrationValueSchema = z.union([
+  z.number().int().positive().safe(),
+  z.literal('unset'),
+]);
+const unboundedAuthorizationSchema = z
+  .object({
+    owner: z.string().trim().min(1).max(200),
+    reason: z.string().trim().min(1).max(500),
+    recordedAt: z.string().datetime(),
+  })
+  .strict();
+const liveCalibrationAnchorSchema = z
+  .object({
+    evidenceKind: z.literal('live'),
+    actualAmountMicros: liveCalibrationValueSchema,
+    wallClockMs: liveCalibrationValueSchema,
+    costEvidenceRef: z.string().trim().min(1).max(500).optional(),
+    wallClockEvidenceRef: z.string().trim().min(1).max(500).optional(),
+  })
+  .strict()
+  .superRefine((anchor, context) => {
+    if (anchor.actualAmountMicros !== 'unset' && !anchor.costEvidenceRef) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A live cost anchor requires a durable evidence reference.',
+        path: ['costEvidenceRef'],
+      });
+    }
+    if (anchor.wallClockMs !== 'unset' && !anchor.wallClockEvidenceRef) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A live wall-clock anchor requires a durable evidence reference.',
+        path: ['wallClockEvidenceRef'],
+      });
+    }
+  });
+const safetyFactorsSchema = z
+  .object({
+    defaultBps: z.number().int().positive().max(100_000),
+    hardCapBps: z.number().int().positive().max(100_000),
+  })
+  .strict()
+  .refine((factors) => factors.defaultBps <= factors.hardCapBps, {
+    message: 'A calibration default safety factor cannot exceed its hard cap.',
+  });
+const calibrationAxisPolicySchema = z.union([
+  safetyFactorsSchema,
+  z
+    .object({
+      mode: z.literal('deliberately_unbounded'),
+      authorization: unboundedAuthorizationSchema,
+    })
+    .strict(),
+]);
+
+export const boundedExecutionLiveCalibrationConfigSchema = z
+  .object({
+    schemaVersion: z.literal('issue-255-live-calibration/v1'),
+    anchors: z
+      .object({
+        copy: liveCalibrationAnchorSchema,
+        image: liveCalibrationAnchorSchema,
+        video: liveCalibrationAnchorSchema,
+      })
+      .strict(),
+    policy: z
+      .object({
+        expectedCalls: z
+          .object({
+            copy: z.number().int().nonnegative().max(100),
+            image: z.number().int().nonnegative().max(100),
+            video: z.number().int().nonnegative().max(100),
+          })
+          .strict()
+          .refine((calls) => calls.copy + calls.image + calls.video > 0, {
+            message: 'Live calibration must cover at least one expected call.',
+          }),
+        observedMaxIterations: liveCalibrationValueSchema,
+        iterationsEvidenceRef: z.string().trim().min(1).max(500).optional(),
+        iterations: calibrationAxisPolicySchema,
+        cost: calibrationAxisPolicySchema,
+        wallClock: calibrationAxisPolicySchema,
+      })
+      .strict()
+      .superRefine((policy, context) => {
+        if (
+          policy.observedMaxIterations !== 'unset' &&
+          !policy.iterationsEvidenceRef
+        ) {
+          context.addIssue({
+            code: 'custom',
+            message:
+              'A live iteration anchor requires a durable evidence reference.',
+            path: ['iterationsEvidenceRef'],
+          });
+        }
+      }),
+  })
+  .strict()
+  .superRefine((config, context) => {
+    if (config.anchors.copy.actualAmountMicros !== 12_551) {
+      context.addIssue({
+        code: 'custom',
+        message: 'The finalized Issue 255 copy anchor must be CNY 0.012551.',
+        path: ['anchors', 'copy', 'actualAmountMicros'],
+      });
+    }
+    if (config.anchors.image.actualAmountMicros !== 50_000) {
+      context.addIssue({
+        code: 'custom',
+        message: 'The finalized Issue 255 image anchor must be CNY 0.05.',
+        path: ['anchors', 'image', 'actualAmountMicros'],
+      });
+    }
+  });
+
+export type BoundedExecutionLiveCalibrationConfig = z.infer<
+  typeof boundedExecutionLiveCalibrationConfigSchema
+>;
+
+export const ISSUE_255_LIVE_CALIBRATION_TEMPLATE =
+  boundedExecutionLiveCalibrationConfigSchema.parse({
+    schemaVersion: 'issue-255-live-calibration/v1',
+    anchors: {
+      copy: {
+        evidenceKind: 'live',
+        actualAmountMicros: 12_551,
+        wallClockMs: 'unset',
+        costEvidenceRef: 'docs/ops/merge-ledger.md#561ab568',
+      },
+      image: {
+        evidenceKind: 'live',
+        actualAmountMicros: 50_000,
+        wallClockMs: 'unset',
+        costEvidenceRef: 'docs/ops/merge-ledger.md#561ab568',
+      },
+      video: {
+        evidenceKind: 'live',
+        actualAmountMicros: 'unset',
+        wallClockMs: 'unset',
+      },
+    },
+    policy: {
+      expectedCalls: { copy: 1, image: 1, video: 1 },
+      observedMaxIterations: 1,
+      iterationsEvidenceRef: 'docs/ops/merge-ledger.md#561ab568',
+      iterations: { defaultBps: 20_000, hardCapBps: 40_000 },
+      cost: { defaultBps: 20_000, hardCapBps: 40_000 },
+      wallClock: { defaultBps: 15_000, hardCapBps: 30_000 },
+    },
+  });
 
 const configuredLimitSchema = z
   .object({
@@ -32,14 +186,7 @@ const configuredLimitSchema = z
     provenance: z
       .enum(['recorded_provisional', 'deliberately_unbounded', 'unset'])
       .optional(),
-    authorization: z
-      .object({
-        owner: z.string().trim().min(1).max(200),
-        reason: z.string().trim().min(1).max(500),
-        recordedAt: z.string().datetime(),
-      })
-      .strict()
-      .optional(),
+    authorization: unboundedAuthorizationSchema.optional(),
   })
   .strict()
   .superRefine((axis, context) => {
@@ -158,11 +305,25 @@ export class AdminConfigBoundedExecutionLimitsSource {
   ) {}
 
   async read() {
-    const revision = await this.repository.get(
-      'global',
-      GLOBAL_WORKSPACE_ID,
-      BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
-    );
+    const [revision, calibrationRevision] = await Promise.all([
+      this.repository.get(
+        'global',
+        GLOBAL_WORKSPACE_ID,
+        BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
+      ),
+      this.repository.get(
+        'global',
+        GLOBAL_WORKSPACE_ID,
+        BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,
+      ),
+    ]);
+    if (calibrationRevision) {
+      return {
+        source: 'admin_config' as const,
+        revision: calibrationRevision.revision,
+        config: deriveLiveCalibrationLimits(calibrationRevision.value),
+      };
+    }
     if (!revision) {
       return { source: 'missing' as const };
     }
@@ -172,6 +333,73 @@ export class AdminConfigBoundedExecutionLimitsSource {
       config: boundedExecutionLimitsConfigSchema.parse(revision.value),
     };
   }
+}
+
+export function deriveLiveCalibrationLimits(input: unknown) {
+  const calibration = boundedExecutionLiveCalibrationConfigSchema.parse(input);
+  const modalities = ['copy', 'image', 'video'] as const;
+  const aggregate = (field: 'actualAmountMicros' | 'wallClockMs') => {
+    let total = 0n;
+    for (const modality of modalities) {
+      const calls = calibration.policy.expectedCalls[modality];
+      const value = calibration.anchors[modality][field];
+      if (calls > 0 && value === 'unset') return 'unset' as const;
+      if (value !== 'unset') total += BigInt(value) * BigInt(calls);
+    }
+    return total;
+  };
+  const iterations = calibration.policy.observedMaxIterations;
+  const costMicros = aggregate('actualAmountMicros');
+  const wallClockMs = aggregate('wallClockMs');
+  const axis = (
+    value: number | bigint | 'unset',
+    policy: z.infer<typeof calibrationAxisPolicySchema>,
+    divisor: number,
+  ) => {
+    if ('mode' in policy) {
+      return {
+        default: 'unset' as const,
+        hardCap: 'unset' as const,
+        provenance: 'deliberately_unbounded' as const,
+        authorization: policy.authorization,
+      };
+    }
+    return value === 'unset'
+      ? {
+          default: 'unset' as const,
+          hardCap: 'unset' as const,
+          provenance: 'unset' as const,
+        }
+      : {
+          default: ceilScaled(value, policy.defaultBps, divisor),
+          hardCap: ceilScaled(value, policy.hardCapBps, divisor),
+        };
+  };
+  return boundedExecutionLimitsConfigSchema.parse({
+    maxIterations: axis(iterations, calibration.policy.iterations, 10_000),
+    maxCostCents: axis(costMicros, calibration.policy.cost, 100_000_000),
+    maxWallClockMs: axis(wallClockMs, calibration.policy.wallClock, 10_000),
+    maxDelegations: {
+      default: 'unset',
+      hardCap: 'unset',
+      provenance: 'unset',
+    },
+  });
+}
+
+function ceilScaled(
+  value: number | bigint,
+  multiplier: number,
+  divisor: number,
+) {
+  const exactValue = BigInt(value);
+  const result =
+    (exactValue * BigInt(multiplier) + BigInt(divisor) - 1n) /
+    BigInt(divisor);
+  if (result > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error('Derived bounded execution limit exceeds a safe integer.');
+  }
+  return Number(result);
 }
 
 export class AdminConfigBoundedExecutionLimitsResolver

@@ -56,6 +56,7 @@ import {
   AdminConfigBoundedExecutionLimitsSource,
   AdminConfigEntitlementCatalogSource,
   AdminConfigNotePlanSettingsSource,
+  BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,
   BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
   DEFAULT_HARNESS_LANGFUSE_OUTBOX_CONFIG,
   DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
@@ -1639,6 +1640,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY,
         HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
         HARNESS_WOZ_RECIPE_CONFIG_KEY,
+        BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,
         BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
         // 笔记风格集合每次编译都现读（AdminConfigNotePlanSettingsSource.read），
         // 不登记的话后台会告诉运营「重启后生效」——与事实相反（D-116）。
@@ -1664,6 +1666,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY,
         HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
         HARNESS_WOZ_RECIPE_CONFIG_KEY,
+        BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,
         BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
         NOTE_STYLE_CONFIG_KEY,
         'byok.adapter.assembly',
