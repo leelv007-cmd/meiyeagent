@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 2,
+  "issue": 255,
+  "samples": [
+    {
+      "modality": "copy",
+      "sourceRunNonceHash": "1165ded3ff521938de15da911556ca84dde6f8c3a9aba6258d3c9b8791a2ae3f",
+      "effectId": "d0450e72d26ea4c5a49f10d6e785b0d3764252ef97550829ba3c95b8027479c8",
+      "requestFingerprint": "47cd8af6de3a1eb8a70fbda3f9b4a31badd43359243d5ce1a500d5dabc1feba1",
+      "adapter": "direct-copy",
+      "deploymentId": "deepseek-v4-pro-direct",
+      "amountMicros": 12551,
+      "usageEvidenceKind": "provider_reported",
+      "receiptEvidenceRef": "live://issue-255/receipt/d0450e72d26ea4c5a49f10d6e785b0d3764252ef97550829ba3c95b8027479c8",
+      "generationSubmitCount": 1,
+      "providerHttpRequestCount": 1,
+      "status": "completed",
+      "providerTaskRefHash": "86705541fd8c5553d6faf709a955ba25b7c3c6866c4243258df81b0b98a3b26f"
+    },
+    {
+      "modality": "image_text",
+      "sourceRunNonceHash": "1165ded3ff521938de15da911556ca84dde6f8c3a9aba6258d3c9b8791a2ae3f",
+      "effectId": "d2ccabe63b58ece3404bd27a36e8b811c5b6bf19c80e5f57b005bf7f5351f98e",
+      "requestFingerprint": "55a81ab1ca94a0a041de4a273c45adcdab861c690d7a40b3481e03019e9c6c17",
+      "adapter": "tuzi-image",
+      "deploymentId": "seedream-4-5-tuzi-relay",
+      "amountMicros": 50000,
+      "usageEvidenceKind": "price_card_reconciled",
+      "receiptEvidenceRef": "live://issue-255/receipt/d2ccabe63b58ece3404bd27a36e8b811c5b6bf19c80e5f57b005bf7f5351f98e",
+      "generationSubmitCount": 1,
+      "providerHttpRequestCount": 1,
+      "status": "completed",
+      "providerTaskRefHash": null
+    },
+    {
+      "modality": "video",
+      "sourceRunNonceHash": "e0247761492b25bb760f68ddaa84c07b7ab5114135ea1c77aea058899fb12319",
+      "effectId": "54473fa4d6b29a2c1dd34d45d69fc3011940c2d77aa883bbde513a06eb9816ac",
+      "requestFingerprint": "76baccab5bbb9b21813df51fd0f87380559b8ebfad46b03ecf2642d7dffc0dd1",
+      "adapter": "tuzi-video",
+      "deploymentId": "seedance-1-5-pro-tuzi-relay",
+      "amountMicros": 1620000,
+      "usageEvidenceKind": "price_card_reconciled",
+      "receiptEvidenceRef": "live://issue-255/receipt/54473fa4d6b29a2c1dd34d45d69fc3011940c2d77aa883bbde513a06eb9816ac",
+      "generationSubmitCount": 1,
+      "providerHttpRequestCount": 6,
+      "status": "completed",
+      "providerTaskRefHash": "f4ac492b1829e7e1bdf73f0cc5c9311c363f1441282b64937b3cd6c47e0cb52d",
+      "recovery": {
+        "reason": "relay_completed_without_per_task_usage",
+        "providerStatusSequence": [
+          "unknown",
+          "completed"
+        ],
+        "normalizedStatusSequence": [
+          "queued",
+          "completed"
+        ],
+        "taskDetailGetCount": 4,
+        "contentRetrievalGetCount": 1,
+        "contentType": "video/mp4",
+        "contentByteCount": 4497123,
+        "contentSha256": "2bc04873a0c0807e180f87db3c0da450ec2d983e377a9071a503ca848209af7c",
+        "providerCreatedAtEpochSeconds": 1785428824,
+        "providerCreatedAtIso": "2026-07-30T16:27:04.000Z",
+        "providerSignedUrlTimestamp": "20260730T162739Z",
+        "providerSignedUrlTimestampIso": "2026-07-30T16:27:39.000Z",
+        "wallClockUpperBoundMs": 35000,
+        "wallClockDerivation": "provider_signed_url_timestamp - provider_created_at",
+        "billingNote": "relay_completed_without_per_task_usage; frozen_price_card_reconciled"
+      }
+    }
+  ],
+  "totalActualAmountMicros": 1682551,
+  "currency": "CNY"
+}
