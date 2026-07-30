@@ -925,3 +925,17 @@ Its two Day-0 recommendation/example-store cases remain active (§25).
 journey outright: its only mechanism was holding a retired command, and its
 second half addressed `/dashboard/tasks`, which T34 retired. Relanding belongs
 to T38.
+
+## Composer 会话删除入口（#271 / D-168②）
+
+**File:** `specs/composer-conversation-deletion.spec.ts` | **Priority:** P1
+
+在 `/dashboard/recent` 的真实页面壳内锁定会话删除入口，只允许
+`operations:delete_composer_conversation` 这一条写路径。确认文案必须如实说明
+记忆保留并标注「来源已删除」；取消不发命令，成功即时移除会话，403 则保留
+原记录并显示可见反馈。
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | recent activity confirms, cancels, then deletes through the canonical Operations command | Open Recent, verify the delete entry exists only on the conversation record, open the confirmation and read the retained-memory policy, cancel without a command, then confirm and require `module=operations`, `action=delete_composer_conversation`, and `payload={ conversationId }` before the conversation disappears immediately. |
+| 2 | a forbidden deletion stays visible and reports the failure | Inject a 403 for the same canonical command, confirm deletion, require a visible merchant-facing failure, close the confirmation, and verify the conversation remains available. |

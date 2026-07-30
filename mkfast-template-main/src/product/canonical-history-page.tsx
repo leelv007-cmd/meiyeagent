@@ -8,6 +8,16 @@ import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   canonical_asset_detail_description,
   canonical_asset_detail_title,
   canonical_asset_generation_relation,
@@ -36,6 +46,13 @@ import {
   canonical_history_assets_empty_store_action,
   canonical_history_assets_empty_title,
   canonical_history_assets_empty_upload_action,
+  canonical_history_conversation_delete_action,
+  canonical_history_conversation_delete_cancel,
+  canonical_history_conversation_delete_confirm,
+  canonical_history_conversation_delete_description,
+  canonical_history_conversation_delete_error,
+  canonical_history_conversation_delete_pending,
+  canonical_history_conversation_delete_title,
   canonical_history_empty_description,
   canonical_history_empty_title,
   canonical_history_error_description,
@@ -89,13 +106,13 @@ import {
 import { getLocale, localeConfig } from '@/lib/locale';
 import { Routes } from '@/lib/routes';
 import { getPathWithLocale } from '@/lib/urls';
-import { operationsQuery } from '@/p1/client';
+import { operationsCommand, operationsQuery } from '@/p1/client';
 import { templateViews } from '@/p1/operations-view-model';
 import { p1QueryKeys } from '@/p1/query-keys';
 import { useProductState } from '@/product/client';
 import { TrustedReturnAnchor } from '@/product/trusted-return';
 import { useQuery } from '@tanstack/react-query';
-import { IconPhoto } from '@tabler/icons-react';
+import { IconPhoto, IconTrash } from '@tabler/icons-react';
 import { type ReactNode, useMemo, useState } from 'react';
 import {
   canonicalAssetItems,
@@ -270,7 +287,41 @@ export function CanonicalHistoryList({
   hasStore: boolean;
   history: RawCanonicalHistory;
 }) {
-  if (items.length === 0) {
+  const [conversationToDelete, setConversationToDelete] = useState<
+    string | null
+  >(null);
+  const [deletedConversationIds, setDeletedConversationIds] = useState(
+    () => new Set<string>()
+  );
+  const [deletePending, setDeletePending] = useState(false);
+  const [deleteError, setDeleteError] = useState(false);
+  const visibleItems = items.filter(
+    (item) => item.kind !== 'session' || !deletedConversationIds.has(item.id)
+  );
+
+  const confirmConversationDelete = async () => {
+    if (!conversationToDelete || deletePending) return;
+    const conversationId = conversationToDelete;
+    setDeletePending(true);
+    setDeleteError(false);
+    try {
+      await operationsCommand('delete_composer_conversation', {
+        conversationId,
+      });
+      setDeletedConversationIds((current) => {
+        const next = new Set(current);
+        next.add(conversationId);
+        return next;
+      });
+      setConversationToDelete(null);
+    } catch {
+      setDeleteError(true);
+    } finally {
+      setDeletePending(false);
+    }
+  };
+
+  if (visibleItems.length === 0) {
     if (mode === 'assets') {
       return (
         <WarmEmptyState
@@ -319,7 +370,7 @@ export function CanonicalHistoryList({
   }
   return (
     <ol className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {items.map((item) => {
+      {visibleItems.map((item) => {
         const projection = historyItemProjectionState(
           item,
           history,
@@ -377,19 +428,75 @@ export function CanonicalHistoryList({
                   </time>
                 </div>
                 <p className="text-sm text-muted-foreground">{detail}</p>
-                <a
-                  className="mt-auto inline-flex min-h-touch-target items-center font-medium text-primary underline-offset-4 hover:underline"
-                  href={getPathWithLocale(href)}
-                >
-                  {projection?.kind === 'content_package'
-                    ? legacy_projection_open_package()
-                    : canonical_history_open_object()}
-                </a>
+                <div className="mt-auto flex items-center justify-between gap-2">
+                  <a
+                    className="inline-flex min-h-touch-target items-center font-medium text-primary underline-offset-4 hover:underline"
+                    href={getPathWithLocale(href)}
+                  >
+                    {projection?.kind === 'content_package'
+                      ? legacy_projection_open_package()
+                      : canonical_history_open_object()}
+                  </a>
+                  {mode === 'recent' && item.kind === 'session' ? (
+                    <Button
+                      aria-label={canonical_history_conversation_delete_action()}
+                      onClick={() => {
+                        setDeleteError(false);
+                        setConversationToDelete(item.id);
+                      }}
+                      size="icon-sm"
+                      title={canonical_history_conversation_delete_action()}
+                      type="button"
+                      variant="ghost"
+                    >
+                      <IconTrash aria-hidden="true" />
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             </article>
           </li>
         );
       })}
+      <AlertDialog
+        onOpenChange={(open) => {
+          if (!open && !deletePending) {
+            setConversationToDelete(null);
+            setDeleteError(false);
+          }
+        }}
+        open={Boolean(conversationToDelete)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {canonical_history_conversation_delete_title()}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {canonical_history_conversation_delete_description()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {deleteError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {canonical_history_conversation_delete_error()}
+            </p>
+          ) : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletePending}>
+              {canonical_history_conversation_delete_cancel()}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deletePending}
+              onClick={() => void confirmConversationDelete()}
+              variant="destructive"
+            >
+              {deletePending
+                ? canonical_history_conversation_delete_pending()
+                : canonical_history_conversation_delete_confirm()}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </ol>
   );
 }
