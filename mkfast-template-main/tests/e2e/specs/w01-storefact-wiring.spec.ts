@@ -397,6 +397,17 @@ test.describe('W01 store intake fact wiring', () => {
             expect((await imageTextSubmission).postDataJSON()).toMatchObject({
               recipe: { id: 'recipe.case_to_xhs_note' },
             });
+            // The fact-gap hold comes first: this recipe asks about the
+            // 优惠/履约 kinds the store never recorded, and the merchant
+            // declines the whole group, the same step works-reshell proves.
+            const missingFacts = imageTextPage
+              .getByTestId('ask-merchant-group-card')
+              .filter({ hasText: '请确认本次创作要用的优惠、履约信息' });
+            await expect(missingFacts).toBeVisible({ timeout: 60_000 });
+            await missingFacts
+              .getByRole('button', { name: '整组暂不确定' })
+              .click();
+            await expect(missingFacts).toBeHidden({ timeout: 30_000 });
             // The retired page-plan confirmation no longer adds a merchant
             // activation; the one real decision is the note direction, which
             // submits in its option click (D-164 three-activation contract).
