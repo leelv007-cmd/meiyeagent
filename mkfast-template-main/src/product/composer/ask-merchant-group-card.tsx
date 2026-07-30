@@ -37,16 +37,14 @@ export function AskMerchantGroupCard({
 }) {
   const [results, setResults] = useState<Record<string, ItemResult>>({});
   const [editing, setEditing] = useState(false);
-  const editingSessionId = useMemo(
-    () => globalThis.crypto.randomUUID(),
-    [request.requestId, request.revision]
-  );
+  const editingSessionIdRef = useRef<string | null>(null);
   const editingSignalRef = useRef({ onEditingChange, request });
   editingSignalRef.current = { onEditingChange, request };
 
   useEffect(() => {
     setResults({});
     setEditing(false);
+    editingSessionIdRef.current = null;
   }, [request.requestId, request.revision]);
   useEffect(() => {
     let cancelled = false;
@@ -79,12 +77,14 @@ export function AskMerchantGroupCard({
     if (!editing) return;
     const leaseRenewal = setInterval(() => {
       const signal = editingSignalRef.current;
+      const editingSessionId = editingSessionIdRef.current;
+      if (!editingSessionId) return;
       void signal
         .onEditingChange(signal.request, true, editingSessionId)
         .catch(() => undefined);
     }, 15_000);
     return () => clearInterval(leaseRenewal);
-  }, [editing, editingSessionId, request.requestId, request.revision]);
+  }, [editing, request.requestId, request.revision]);
 
   const complete = useMemo(
     () =>
@@ -146,12 +146,16 @@ export function AskMerchantGroupCard({
                   aria-label={question.question}
                   disabled={pending}
                   onBlur={() => {
+                    const editingSessionId = editingSessionIdRef.current;
+                    editingSessionIdRef.current = null;
                     setEditing(false);
-                    void onEditingChange(
-                      request,
-                      false,
-                      editingSessionId
-                    ).catch(() => undefined);
+                    if (editingSessionId) {
+                      void onEditingChange(
+                        request,
+                        false,
+                        editingSessionId
+                      ).catch(() => undefined);
+                    }
                   }}
                   onChange={(event) => {
                     const value = event.target.value;
@@ -163,6 +167,8 @@ export function AskMerchantGroupCard({
                     }));
                   }}
                   onFocus={() => {
+                    const editingSessionId = globalThis.crypto.randomUUID();
+                    editingSessionIdRef.current = editingSessionId;
                     setEditing(true);
                     void onEditingChange(request, true, editingSessionId).catch(
                       () => undefined

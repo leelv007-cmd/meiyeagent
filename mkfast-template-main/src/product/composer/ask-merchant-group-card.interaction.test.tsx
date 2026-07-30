@@ -262,3 +262,31 @@ it('renews the editing lease while parent polling keeps rerendering', async () =
   expect(editingCalls).toHaveLength(3);
   expect(editingCalls.at(-1)).toEqual([REQUEST, true, editingSessionId]);
 });
+
+it('uses a new editing owner after blur so a stale release cannot end it', () => {
+  const editingCalls: Array<[boolean, string]> = [];
+  render(
+    <AskMerchantGroupCard
+      onEditingChange={async (_request, editing, editingSessionId) => {
+        editingCalls.push([editing, editingSessionId]);
+      }}
+      onRendererReady={async () => undefined}
+      onSubmit={async () => undefined}
+      request={REQUEST}
+    />
+  );
+  const input = screen.getByRole('textbox', {
+    name: '活动到哪天结束？',
+  });
+
+  fireEvent.focus(input);
+  fireEvent.blur(input);
+  fireEvent.focus(input);
+
+  expect(editingCalls).toHaveLength(3);
+  const firstSessionId = editingCalls[0]?.[1];
+  const secondSessionId = editingCalls[2]?.[1];
+  expect(editingCalls[1]).toEqual([false, firstSessionId]);
+  expect(editingCalls[2]).toEqual([true, secondSessionId]);
+  expect(secondSessionId).not.toBe(firstSessionId);
+});
