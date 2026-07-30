@@ -97,7 +97,9 @@ export class DurableSkillInstructionResolver
       taskId: input.workflowId,
       workflowRevisionRef,
       stage: input.stage,
-      instructions,
+      instructions: instructions.filter(
+        ({ executionMode }) => executionMode === 'prompt_materialized',
+      ),
     });
     return { instructions, receipts };
   }

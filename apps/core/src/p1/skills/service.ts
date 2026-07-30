@@ -1784,6 +1784,8 @@ export class SkillService {
       prompt.isFallback,
       prompt.fallbackReason,
       prompt.content,
+      prompt.source,
+      prompt.label,
     );
   }
 
@@ -1875,6 +1877,8 @@ function resolvedInstruction(
   isFallback: boolean,
   fallbackReason?: string,
   promptContent?: string,
+  promptSource?: SkillPromptSnapshot['source'],
+  promptLabel?: string,
 ): ResolvedSkillInstruction {
   return {
     skillRevisionRef: revision.skillRevisionRef,
@@ -1890,6 +1894,8 @@ function resolvedInstruction(
       name: revision.prompt.name,
       version: revision.prompt.version,
       ...(fallbackReason ? { fallbackReason } : {}),
+      ...(promptSource ? { source: promptSource } : {}),
+      ...(promptLabel ? { label: promptLabel } : {}),
     },
     ...(promptContent ? { promptContent } : {}),
   };

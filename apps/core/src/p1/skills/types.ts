@@ -360,6 +360,8 @@ export interface ResolvedSkillInstruction {
   prompt?: SkillPromptReference & {
     isFallback: boolean;
     fallbackReason?: string;
+    label?: string;
+    source?: SkillPromptSnapshot['source'];
   };
   /** Internal execution material; never expose through admin or audit responses. */
   promptContent?: string;
@@ -381,6 +383,8 @@ export interface SkillInvocationReceipt {
   prompt?: SkillPromptReference & {
     isFallback: boolean;
     fallbackReason?: string;
+    label?: string;
+    source?: SkillPromptSnapshot['source'];
   };
   output?: SkillInvocationResult;
 }

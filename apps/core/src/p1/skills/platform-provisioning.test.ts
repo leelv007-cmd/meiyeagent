@@ -130,6 +130,25 @@ test('unconfigured prompt supply provisions builtin platform recipes with explic
       revision.skillRevisionRef,
     );
   }
+  const resolved = await service.resolveFrozenRevisions(
+    revisions.map(({ skillRevisionRef }) => skillRevisionRef),
+  );
+  for (const instruction of resolved) {
+    assert.equal(instruction.prompt?.source, 'builtin');
+    assert.equal(instruction.prompt?.fallbackReason, 'unconfigured');
+  }
+  const receipts = await service.recordPromptMaterializationReceipts({
+    instructions: resolved.filter(
+      ({ executionMode }) => executionMode === 'prompt_materialized',
+    ),
+    stage: 'execution_selection',
+    taskId: 'task-unconfigured-platform-recipe',
+    workflowRevisionRef: 'workflow.copy@1',
+    workspaceId: 'workspace-unconfigured-platform-recipe',
+  });
+  assert.equal(receipts.length, 1);
+  assert.equal(receipts[0]?.prompt?.source, 'builtin');
+  assert.equal(receipts[0]?.prompt?.fallbackReason, 'unconfigured');
   assert.ok(
     await repository.getBinding('binding.platform.beauty-copywriting@1'),
   );
