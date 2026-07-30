@@ -148,13 +148,13 @@
     },
     "apps/core/src/p1/model-supply/foundation-ledger.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
-      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 1/0/0 fresh pair, provisioned first"
+      "verifiedAt": "e2e1c25793432a9ca1f7d8fc3489a974a8273ff5",
+      "note": "Issue 272 tracing; own fresh isolated business and DBOS database pair provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/model-supply/postgres-owned-asset-cleanup-claim.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
-      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 1/0/0 fresh pair, provisioned first"
+      "verifiedAt": "e2e1c25793432a9ca1f7d8fc3489a974a8273ff5",
+      "note": "Issue 272 tracing; own fresh isolated business and DBOS database pair provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/model-supply/postgres-repository.test.ts": {
       "status": "green",
@@ -168,18 +168,18 @@
     },
     "apps/core/src/p1/model-supply/reference-asset-dispatch.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
-      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 3/0/0 fresh pair, provisioned first"
+      "verifiedAt": "e2e1c25793432a9ca1f7d8fc3489a974a8273ff5",
+      "note": "Issue 272 tracing; own fresh isolated business and DBOS database pair provisioned first: 3 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/model-supply/retired-video-editing-schema.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
-      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 1/0/0 fresh pair, provisioned first"
+      "verifiedAt": "e2e1c25793432a9ca1f7d8fc3489a974a8273ff5",
+      "note": "Issue 272 tracing; own fresh isolated business and DBOS database pair provisioned first: 1 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/model-supply/usage-ledger-invariants.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
-      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 2/0/0 fresh pair, provisioned first"
+      "verifiedAt": "e2e1c25793432a9ca1f7d8fc3489a974a8273ff5",
+      "note": "Issue 272 tracing; own fresh isolated business and DBOS database pair provisioned first: 2 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/operations/composer-conversation-deletion.postgres.test.ts": {
       "status": "green",
@@ -238,8 +238,8 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2be2ca6cf290d1b8c994543031f1ddcb797e3d7c",
-      "note": "Issue 260 final capture and eval paths; own fresh isolated business and DBOS database pair provisioned first: 2 pass / 0 fail / 0 skip."
+      "verifiedAt": "e2e1c25793432a9ca1f7d8fc3489a974a8273ff5",
+      "note": "Issue 272 tracing; own fresh isolated business and DBOS database pair provisioned first: 2 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "unverified",
@@ -248,13 +248,13 @@
     },
     "apps/core/src/p1/result-delivery/assisted-canonical-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
-      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 1 fail solo on a bare provisioned pair (relation p1_content_packages missing — provision script does not create it); running the operations suites that create the table first on the same database turns it 1/0/0 — ordering artifact, proven not analogized"
+      "verifiedAt": "e2e1c25793432a9ca1f7d8fc3489a974a8273ff5",
+      "note": "Issue 272 tracing; own fresh isolated business and DBOS database pair provisioned first. The first target run reported missing p1_content_packages; after the operations repository schema owner passed 14/14 on the same pair, the target passed 1/1 with 0 fail and 0 skip."
     },
     "apps/core/src/p1/result-delivery/assisted-receipt-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "2bb79271ea3488eabf6479da3da8935a1e5e80be",
-      "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 2/0/0 fresh pair, provisioned first"
+      "verifiedAt": "e2e1c25793432a9ca1f7d8fc3489a974a8273ff5",
+      "note": "Issue 272 tracing; own fresh isolated business and DBOS database pair provisioned first: 2 pass / 0 fail / 0 skip."
     },
     "apps/core/src/p1/skills/dbos-governance-workflow.postgres.test.ts": {
       "status": "green",
