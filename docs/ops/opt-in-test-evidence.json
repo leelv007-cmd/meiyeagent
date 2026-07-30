@@ -48,9 +48,9 @@
       "note": "Issue 270 fresh database, provisioned first: 10/0"
     },
     "apps/core/src/p1/execution-spine/postgres-creation-submission-store.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "4517e11a0bb901ca96c43db535f2cf1b23179a35",
+      "note": "#242 orphan triage picks: 10/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/foundation/workspace-provision.postgres.test.ts": {
       "status": "green",
@@ -144,28 +144,28 @@
     },
     "apps/core/src/p1/model-supply/foundation-ledger.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "bde25598db17983ac1882cad5e2b04a74875add9",
-      "note": "Issue 270 fresh database, provisioned first: 1/0"
+      "verifiedAt": "4517e11a0bb901ca96c43db535f2cf1b23179a35",
+      "note": "#242 orphan triage picks: 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/model-supply/postgres-owned-asset-cleanup-claim.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "bde25598db17983ac1882cad5e2b04a74875add9",
-      "note": "Issue 270 fresh database, provisioned first: 1/0"
+      "verifiedAt": "4517e11a0bb901ca96c43db535f2cf1b23179a35",
+      "note": "#242 orphan triage picks: 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/model-supply/reference-asset-dispatch.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "bde25598db17983ac1882cad5e2b04a74875add9",
-      "note": "Issue 270 fresh database, provisioned first: 3/0"
+      "verifiedAt": "4517e11a0bb901ca96c43db535f2cf1b23179a35",
+      "note": "#242 orphan triage picks: 3/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/model-supply/retired-video-editing-schema.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "bde25598db17983ac1882cad5e2b04a74875add9",
-      "note": "Issue 270 fresh database, provisioned first: 1/0"
+      "verifiedAt": "4517e11a0bb901ca96c43db535f2cf1b23179a35",
+      "note": "#242 orphan triage picks: 1/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/model-supply/usage-ledger-invariants.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "bde25598db17983ac1882cad5e2b04a74875add9",
-      "note": "Issue 270 fresh database, provisioned first: 2/0"
+      "verifiedAt": "4517e11a0bb901ca96c43db535f2cf1b23179a35",
+      "note": "#242 orphan triage picks: 2/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/operations/content-package-migration-cli.postgres.test.ts": {
       "status": "unverified",
@@ -214,8 +214,8 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "50064baf67ae877ac5fbb1e61248e37d67e7e482",
-      "note": "#253 named-deps takeover merge: 2/0/0 fresh pair, provisioned first"
+      "verifiedAt": "4517e11a0bb901ca96c43db535f2cf1b23179a35",
+      "note": "#242 orphan triage picks: 2/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "unverified",
@@ -258,24 +258,24 @@
       "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
     },
     "apps/core/src/p1/supply-registry/postgres-admin-supply-runtime.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "4517e11a0bb901ca96c43db535f2cf1b23179a35",
+      "note": "#242 orphan triage picks: 17/0/0 when integrations/provider-credential-runtime runs first on the same database (it creates p1_admin_supply_idempotency); solo on a bare provisioned pair the 5 idempotency cases red out on the missing relation — ordering artifact, proven not analogized"
     },
     "apps/core/src/p1/supply-registry/postgres-hot-assembly.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "4517e11a0bb901ca96c43db535f2cf1b23179a35",
+      "note": "#242 orphan triage picks: 7/0/0 fresh pair, provisioned first (includes the two new stale-boot-head refresh cases)"
     },
     "apps/core/src/p1/supply-registry/postgres-planning-control-plane.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "4517e11a0bb901ca96c43db535f2cf1b23179a35",
+      "note": "#242 orphan triage picks: 5/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/supply-registry/postgres-planning-submit.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "4517e11a0bb901ca96c43db535f2cf1b23179a35",
+      "note": "#242 orphan triage picks: 2/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/pro-studio-runtime/postgres-adoption-service.postgres.test.ts": {
       "status": "unverified",
