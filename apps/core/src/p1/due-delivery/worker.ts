@@ -2,6 +2,11 @@ import { randomUUID } from 'node:crypto';
 
 export type DueDeliveryType = 'daily_recommendation' | 'task_recall';
 
+export type DueDeliverySuppressionReason =
+  | 'rest_day'
+  | 'stale_business_date'
+  | 'workspace_inactive';
+
 export interface DailyRecommendationPayload {
   schemaVersion: 'daily-recommendation/v1';
   businessDate: string;
@@ -65,7 +70,7 @@ export interface DueDeliveryRepository {
   settleSuppressed(input: {
     identity: DueDeliveryClaimIdentity;
     nextDue?: NextDailyRecommendationDue;
-    reason: 'rest_day' | 'workspace_inactive';
+    reason: DueDeliverySuppressionReason;
     suppressedAt: Date;
   }): Promise<boolean>;
   settleFailed(input: {
@@ -164,16 +169,27 @@ export class DueDeliveryWorker {
       let runId: string | undefined;
       try {
         const eligibility = await this.eligibility.evaluate(item);
-        if (!eligibility.workspaceActive || eligibility.isRestDay) {
+        const evaluatedAt = this.clock();
+        const staleBusinessDate = isStaleDailyRecommendation(
+          item,
+          evaluatedAt,
+        );
+        if (
+          !eligibility.workspaceActive ||
+          staleBusinessDate ||
+          eligibility.isRestDay
+        ) {
           const settled = await this.repository.settleSuppressed({
             identity,
             ...(!eligibility.workspaceActive
               ? {}
               : { nextDue: nextDailyRecommendation(item) }),
-            reason: eligibility.workspaceActive
-              ? 'rest_day'
-              : 'workspace_inactive',
-            suppressedAt: this.clock(),
+            reason: !eligibility.workspaceActive
+              ? 'workspace_inactive'
+              : staleBusinessDate
+                ? 'stale_business_date'
+                : 'rest_day',
+            suppressedAt: evaluatedAt,
           });
           settled ? (summary.suppressed += 1) : (summary.lost += 1);
           continue;
@@ -236,6 +252,36 @@ export class DueDeliveryWorker {
 function nextDailyRecommendation(
   claim: DueDeliveryClaim,
 ): NextDailyRecommendationDue | undefined {
+  const current = dailyRecommendationBusinessDate(claim);
+  if (current === undefined) {
+    return undefined;
+  }
+  const businessDate = new Date(current + 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+  return {
+    businessDate,
+    dueAt: `${businessDate}T00:00:00.000Z`,
+    payload: {
+      businessDate,
+      schemaVersion: 'daily-recommendation/v1',
+    },
+    taskId: `daily-rec_${claim.workspaceId}_${businessDate}`,
+  };
+}
+
+function isStaleDailyRecommendation(claim: DueDeliveryClaim, now: Date) {
+  const businessDate = dailyRecommendationBusinessDate(claim);
+  return (
+    businessDate !== undefined &&
+    businessDate <
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  );
+}
+
+function dailyRecommendationBusinessDate(
+  claim: DueDeliveryClaim,
+): number | undefined {
   if (claim.type !== 'daily_recommendation') {
     return undefined;
   }
@@ -250,16 +296,5 @@ function nextDailyRecommendation(
   if (!Number.isFinite(current)) {
     throw new Error('Daily recommendation businessDate is invalid.');
   }
-  const businessDate = new Date(current + 86_400_000)
-    .toISOString()
-    .slice(0, 10);
-  return {
-    businessDate,
-    dueAt: `${businessDate}T00:00:00.000Z`,
-    payload: {
-      businessDate,
-      schemaVersion: 'daily-recommendation/v1',
-    },
-    taskId: `daily-rec_${claim.workspaceId}_${businessDate}`,
-  };
+  return current;
 }

@@ -63,6 +63,7 @@ test('claims and processes multiple due items one at a time until the queue is e
     },
     {
       claimToken: () => `claim-${++tokenSequence}`,
+      clock: () => new Date('2026-07-29T09:00:00.000Z'),
     },
   );
 
@@ -241,7 +242,10 @@ test('suppresses a rest-day recommendation before delivery and still chains the 
         return { output: {} };
       },
     },
-    { claimToken: () => claim.claimToken },
+    {
+      claimToken: () => claim.claimToken,
+      clock: () => new Date('2026-07-29T09:00:00.000Z'),
+    },
   );
 
   const result = await worker.runOnce('worker-1');
@@ -271,6 +275,63 @@ test('suppresses a rest-day recommendation before delivery and still chains the 
   ]);
 });
 
+test('suppresses a stale recommendation and still chains the next business day', async () => {
+  const claim = dailyRecommendationClaim();
+  const suppressed: Array<
+    Parameters<DueDeliveryRepository['settleSuppressed']>[0]
+  > = [];
+  let delivered = 0;
+  const worker = new DueDeliveryWorker(
+    singleClaimRepository(claim, {
+      async settleSuppressed(input) {
+        suppressed.push(input);
+        return true;
+      },
+    }),
+    {
+      async evaluate() {
+        return { workspaceActive: true, isRestDay: false };
+      },
+    },
+    {
+      async deliver() {
+        delivered += 1;
+        return { output: {} };
+      },
+    },
+    {
+      claimToken: () => claim.claimToken,
+      clock: () => new Date('2026-07-30T09:00:00.000Z'),
+    },
+  );
+
+  const result = await worker.runOnce('worker-1');
+
+  assert.equal(result.suppressed, 1);
+  assert.equal(result.delivered, 0);
+  assert.equal(delivered, 0);
+  assert.deepEqual(suppressed, [
+    {
+      identity: {
+        claimToken: 'claim-1',
+        dueId: claim.id,
+        workspaceId: claim.workspaceId,
+      },
+      nextDue: {
+        businessDate: '2026-07-30',
+        dueAt: '2026-07-30T00:00:00.000Z',
+        payload: {
+          businessDate: '2026-07-30',
+          schemaVersion: 'daily-recommendation/v1',
+        },
+        taskId: 'daily-rec_workspace-1_2026-07-30',
+      },
+      reason: 'stale_business_date',
+      suppressedAt: new Date('2026-07-30T09:00:00.000Z'),
+    },
+  ]);
+});
+
 test('stops a daily chain when the workspace is inactive', async () => {
   const claim = dailyRecommendationClaim();
   const suppressed: Array<
@@ -293,7 +354,10 @@ test('stops a daily chain when the workspace is inactive', async () => {
         throw new Error('inactive workspaces must not be delivered');
       },
     },
-    { claimToken: () => claim.claimToken },
+    {
+      claimToken: () => claim.claimToken,
+      clock: () => new Date('2026-07-29T09:00:00.000Z'),
+    },
   );
 
   await worker.runOnce('worker-1');

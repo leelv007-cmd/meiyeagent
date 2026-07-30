@@ -13,6 +13,7 @@ import type {
   DueDeliveryClaimIdentity,
   DueDeliveryPayload,
   DueDeliveryRepository,
+  DueDeliverySuppressionReason,
   DueDeliveryType,
   NextDailyRecommendationDue,
 } from './worker.js';
@@ -440,7 +441,7 @@ export class PostgresDueDeliveryRepository
   async settleSuppressed(input: {
     identity: DueDeliveryClaimIdentity;
     nextDue?: NextDailyRecommendationDue;
-    reason: 'rest_day' | 'workspace_inactive';
+    reason: DueDeliverySuppressionReason;
     suppressedAt: Date;
   }) {
     const retentionDays = await this.readTerminalRetentionDays();

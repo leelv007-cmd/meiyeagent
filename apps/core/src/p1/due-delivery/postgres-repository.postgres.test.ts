@@ -715,102 +715,156 @@ test(
   },
 );
 
-test(
-  'PostgreSQL runOnce catches up each due business day once and leaves the next day queued',
-  { skip: !connectionString },
-  async (t) => {
-    const pool = new Pool({ connectionString });
-    const repository = new PostgresDueDeliveryRepository(pool);
-    const suffix = randomUUID();
-    const workspaceId = `due-catch-up-${suffix}`;
-
-    t.after(async () => {
-      await pool.query(
-        'DELETE FROM p1_due_delivery_runs WHERE workspace_id = $1',
-        [workspaceId],
-      );
-      await pool.query(
-        'DELETE FROM p1_due_delivery_items WHERE workspace_id = $1',
-        [workspaceId],
-      );
-      await pool.end();
-    });
-
-    await repository.migrate();
-    await repository.enqueue({
-      businessDate: '2100-07-27',
-      dueAt: '2100-07-27T00:00:00.000Z',
-      payload: {
-        businessDate: '2100-07-27',
-        schemaVersion: 'daily-recommendation/v1',
-      },
-      taskId: `daily-rec_${workspaceId}_2100-07-27`,
-      type: 'daily_recommendation',
-      workspaceId,
-    });
-
-    const deliveries: Array<{
-      businessDate: string | undefined;
-      idempotencyKey: string;
-      runId: string;
-      taskId: string;
-    }> = [];
-    const worker = new DueDeliveryWorker(
-      repository,
-      {
-        async evaluate() {
-          return { isRestDay: false, workspaceActive: true };
-        },
-      },
-      {
-        async deliver(input) {
-          deliveries.push({
-            businessDate: input.businessDate,
-            idempotencyKey: input.idempotencyKey,
-            runId: input.runId,
-            taskId: input.taskId,
-          });
-          return { output: {} };
-        },
-      },
-      {
-        claimToken: () => randomUUID(),
-        clock: () => new Date('2100-07-29T09:00:00.000Z'),
-      },
-    );
-
-    assert.deepEqual(await worker.runOnce('catch-up-worker'), {
-      claimed: 3,
-      deadLettered: 0,
-      delivered: 3,
-      lost: 0,
-      retried: 0,
-      suppressed: 0,
-    });
-    assert.deepEqual(
-      deliveries,
-      ['2100-07-27', '2100-07-28', '2100-07-29'].map((businessDate) => {
-        const taskId = `daily-rec_${workspaceId}_${businessDate}`;
-        const runId = `delivery-run:${taskId}`;
-        return { businessDate, idempotencyKey: runId, runId, taskId };
-      }),
-    );
-
-    const nextClaims = await repository.claimBatch({
-      claimToken: 'claim-next-day',
-      leaseMs: 60_000,
-      limit: 10,
-      now: new Date('2100-07-30T00:01:00.000Z'),
-      workerId: 'next-day-worker',
-    });
-    assert.equal(nextClaims.length, 1);
-    assert.equal(nextClaims[0]?.businessDate, '2100-07-30');
-    assert.equal(
-      nextClaims[0]?.taskId,
-      `daily-rec_${workspaceId}_2100-07-30`,
-    );
+for (const catchUp of [
+  {
+    currentBusinessDate: '2100-07-31',
+    initialBusinessDate: '2100-07-30',
+    label: 'one-day catch-up',
+    nextBusinessDate: '2100-08-01',
+    staleBusinessDates: ['2100-07-30'],
   },
-);
+  {
+    currentBusinessDate: '2100-07-31',
+    initialBusinessDate: '2100-07-29',
+    label: 'multi-day catch-up',
+    nextBusinessDate: '2100-08-01',
+    staleBusinessDates: ['2100-07-29', '2100-07-30'],
+  },
+] as const) {
+  test(
+    `PostgreSQL ${catchUp.label} suppresses stale business days and delivers only the latest day`,
+    { skip: !connectionString },
+    async (t) => {
+      const pool = new Pool({ connectionString });
+      const repository = new PostgresDueDeliveryRepository(pool);
+      const suffix = randomUUID();
+      const workspaceId = `due-catch-up-${suffix}`;
+      const deliveredTaskId = `daily-rec_${workspaceId}_${catchUp.currentBusinessDate}`;
+      const deliveredRunId = `delivery-run:${deliveredTaskId}`;
+
+      t.after(async () => {
+        await pool.query(
+          'DELETE FROM p1_due_delivery_runs WHERE workspace_id = $1',
+          [workspaceId],
+        );
+        await pool.query(
+          'DELETE FROM p1_due_delivery_items WHERE workspace_id = $1',
+          [workspaceId],
+        );
+        await pool.end();
+      });
+
+      await repository.migrate();
+      await repository.enqueue({
+        businessDate: catchUp.initialBusinessDate,
+        dueAt: `${catchUp.initialBusinessDate}T00:00:00.000Z`,
+        payload: {
+          businessDate: catchUp.initialBusinessDate,
+          schemaVersion: 'daily-recommendation/v1',
+        },
+        taskId: `daily-rec_${workspaceId}_${catchUp.initialBusinessDate}`,
+        type: 'daily_recommendation',
+        workspaceId,
+      });
+
+      const deliveries: Array<{
+        businessDate: string | undefined;
+        idempotencyKey: string;
+        runId: string;
+        taskId: string;
+      }> = [];
+      const worker = new DueDeliveryWorker(
+        repository,
+        {
+          async evaluate() {
+            return { isRestDay: false, workspaceActive: true };
+          },
+        },
+        {
+          async deliver(input) {
+            deliveries.push({
+              businessDate: input.businessDate,
+              idempotencyKey: input.idempotencyKey,
+              runId: input.runId,
+              taskId: input.taskId,
+            });
+            return { output: {} };
+          },
+        },
+        {
+          claimToken: () => randomUUID(),
+          clock: () =>
+            new Date(`${catchUp.currentBusinessDate}T09:00:00.000Z`),
+        },
+      );
+
+      assert.deepEqual(await worker.runOnce('catch-up-worker'), {
+        claimed: catchUp.staleBusinessDates.length + 1,
+        deadLettered: 0,
+        delivered: 1,
+        lost: 0,
+        retried: 0,
+        suppressed: catchUp.staleBusinessDates.length,
+      });
+      assert.deepEqual(deliveries, [
+        {
+          businessDate: catchUp.currentBusinessDate,
+          idempotencyKey: deliveredRunId,
+          runId: deliveredRunId,
+          taskId: deliveredTaskId,
+        },
+      ]);
+      assert.deepEqual(
+        (
+          await pool.query<{
+            business_date: string;
+            last_error: string | null;
+            status: string;
+            task_id: string;
+          }>(
+            `SELECT business_date::text, last_error, status, task_id
+               FROM p1_due_delivery_items
+              WHERE workspace_id = $1
+              ORDER BY business_date`,
+            [workspaceId],
+          )
+        ).rows,
+        [
+          ...catchUp.staleBusinessDates.map((businessDate) => ({
+            business_date: businessDate,
+            last_error: 'stale_business_date',
+            status: 'suppressed',
+            task_id: `daily-rec_${workspaceId}_${businessDate}`,
+          })),
+          {
+            business_date: catchUp.currentBusinessDate,
+            last_error: null,
+            status: 'delivered',
+            task_id: deliveredTaskId,
+          },
+          {
+            business_date: catchUp.nextBusinessDate,
+            last_error: null,
+            status: 'pending',
+            task_id: `daily-rec_${workspaceId}_${catchUp.nextBusinessDate}`,
+          },
+        ],
+      );
+      assert.deepEqual(
+        (
+          await pool.query<{ status: string; task_id: string }>(
+            `SELECT status, task_id
+               FROM p1_due_delivery_runs
+              WHERE workspace_id = $1
+              ORDER BY task_id`,
+            [workspaceId],
+          )
+        ).rows,
+        [{ status: 'delivered', task_id: deliveredTaskId }],
+      );
+    },
+  );
+}
 
 test(
   'PostgreSQL retry survives a repository restart and reuses one idempotent delivery run',
