@@ -17,6 +17,8 @@ const legacyRejectedWorkspaceId =
 const legacyRejectedEvidenceCommit =
   '695489fe441178431394bb320ad779b28cb9f654';
 const legacyImageRunNonce = 'issue-255-live-anchors-2026-07-30-v2';
+const coordinatorV3RunNonce =
+  'issue-255-live-anchors-2026-07-30-v3';
 const legacyImageEffectId =
   'd2ccabe63b58ece3404bd27a36e8b811c5b6bf19c80e5f57b005bf7f5351f98e';
 const legacyImageRequestFingerprint =
@@ -29,8 +31,10 @@ const legacyImageAmountMicros = 50_000;
 const modalityCapMicros = {
   copy: 100_000,
   image_text: 500_000,
-  video: 3_000_000,
+  video: 1_620_000,
 } as const;
+// v3 envelope by coordinator 2026-07-30.
+const GLOBAL_BILLABLE_AUTHORIZATION_CAP = 4;
 
 const claimInputSchema = z
   .object({
@@ -74,6 +78,9 @@ export interface Issue255LiveReceipt {
   generationSubmitCount: number;
   providerHttpRequestCount: number;
   actualAmountMicros: number | null;
+  failureErrorCode: string | null;
+  failureErrorMessage: string | null;
+  providerHttpStatus: number | null;
   terminalLineage:
     | Issue255DurableTerminalLineage
     | Issue255PriceCardReconciledImageLineage
@@ -109,6 +116,9 @@ interface ReceiptRow extends QueryResultRow {
   generation_submit_count: number;
   provider_http_request_count: number;
   actual_amount_micros: string | null;
+  failure_error_code: string | null;
+  failure_error_message: string | null;
+  provider_http_status: number | null;
   terminal_lineage: unknown;
   reconciliation_reason: string | null;
   created_at: Date;
@@ -292,6 +302,10 @@ export class PostgresIssue255LiveReceiptRepository {
         provider_http_request_count integer NOT NULL DEFAULT 0
           CHECK (provider_http_request_count >= 0),
         actual_amount_micros bigint,
+        failure_error_code text,
+        failure_error_message text,
+        provider_http_status integer
+          CHECK (provider_http_status BETWEEN 100 AND 599),
         terminal_lineage jsonb,
         reconciliation_reason text,
         created_at timestamptz NOT NULL DEFAULT now(),
@@ -301,7 +315,16 @@ export class PostgresIssue255LiveReceiptRepository {
       `);
       await client.query(`
       ALTER TABLE issue255_live_generation_receipts
-      ADD COLUMN IF NOT EXISTS reconciliation_reason text
+        ADD COLUMN IF NOT EXISTS reconciliation_reason text,
+        ADD COLUMN IF NOT EXISTS failure_error_code text,
+        ADD COLUMN IF NOT EXISTS failure_error_message text,
+        ADD COLUMN IF NOT EXISTS provider_http_status integer
+      `);
+      await client.query(`
+      ALTER TABLE issue255_live_generation_receipts
+        DROP CONSTRAINT IF EXISTS issue255_live_generation_receipts_provider_http_status_check,
+        ADD CONSTRAINT issue255_live_generation_receipts_provider_http_status_check
+          CHECK (provider_http_status BETWEEN 100 AND 599)
       `);
       await client.query(`
       ALTER TABLE issue255_live_generation_receipts
@@ -560,6 +583,7 @@ export class PostgresIssue255LiveReceiptRepository {
     return this.locked(
       'issue255-live-run-owner-v1',
       async (client): Promise<'fresh' | 'resumed'> => {
+        const isCoordinatorV3Retry = parsedRunNonce === coordinatorV3RunNonce;
         const existingOwner = await client.query<{ run_nonce: string }>(
           `SELECT run_nonce
              FROM issue255_live_run_owners
@@ -568,8 +592,19 @@ export class PostgresIssue255LiveReceiptRepository {
         );
         if (existingOwner.rows[0]) {
           if (existingOwner.rows[0].run_nonce !== parsedRunNonce) {
-            throw new Error('Issue 255 live run owner is already durably claimed.');
+            if (!isCoordinatorV3Retry) {
+              throw new Error('Issue 255 live run owner is already durably claimed.');
+            }
+            await client.query(
+              `UPDATE issue255_live_run_owners
+                  SET run_nonce = $1,
+                      created_at = now()
+                WHERE singleton_key = true`,
+              [parsedRunNonce],
+            );
+            return 'fresh';
           }
+          if (isCoordinatorV3Retry) return 'resumed';
           const foreignHistory = await client.query<{ count: string }>(
             `SELECT (
                (SELECT COUNT(*)
@@ -603,8 +638,9 @@ export class PostgresIssue255LiveReceiptRepository {
                WHERE status <> 'failed_before_billing')::bigint AS active_receipt_count`,
         );
         if (
-          Number(result.rows[0]?.billable_count ?? 0) !== 0 ||
-          Number(result.rows[0]?.active_receipt_count ?? 0) !== 0
+          !isCoordinatorV3Retry &&
+          (Number(result.rows[0]?.billable_count ?? 0) !== 0 ||
+            Number(result.rows[0]?.active_receipt_count ?? 0) !== 0)
         ) {
           throw new Error(
             'Issue 255 live collector requires no unresolved billable history before starting.',
@@ -648,11 +684,13 @@ export class PostgresIssue255LiveReceiptRepository {
               })
               .strict(),
           )
-          .length(3)
+          .min(1)
+          .max(3)
           .refine(
             (samples) =>
-              new Set(samples.map(({ effectId }) => effectId)).size === 3,
-            'Issue 255 manifest evidence requires three unique effects.',
+              new Set(samples.map(({ effectId }) => effectId)).size ===
+              samples.length,
+            'Issue 255 manifest evidence requires unique effects.',
           ),
       })
       .strict()
@@ -675,7 +713,7 @@ export class PostgresIssue255LiveReceiptRepository {
         [parsed.runNonce],
       );
       if (
-        completed.rows.length !== 3 ||
+        completed.rows.length !== parsed.samples.length ||
         parsed.samples.some(
           (sample) =>
             !completed.rows.some(
@@ -684,7 +722,7 @@ export class PostgresIssue255LiveReceiptRepository {
         )
       ) {
         throw new Error(
-          'Issue 255 manifest evidence requires three completed durable receipts.',
+          'Issue 255 manifest evidence requires every completed durable receipt.',
         );
       }
       for (const sample of parsed.samples) {
@@ -741,6 +779,9 @@ export class PostgresIssue255LiveReceiptRepository {
         `UPDATE issue255_live_generation_receipts
             SET status = 'unknown',
                 reconciliation_reason = $5,
+                failure_error_code = 'provider_acceptance_unknown',
+                failure_error_message =
+                  'Provider acceptance remains unknown.',
                 updated_at = now()
           WHERE run_nonce = $1
             AND modality = $2
@@ -772,10 +813,12 @@ export class PostgresIssue255LiveReceiptRepository {
     modality: (typeof modalities)[number];
     effectId: string;
     requestFingerprint: string;
+    errorCode: string;
+    errorMessage: string;
   }): Promise<
     | { kind: 'rejected_before_accept' }
     | {
-        kind: 'provider_acceptance_unknown';
+        kind: 'provider_acceptance_unknown' | 'provider_failure_recorded';
         receipt: Issue255LiveReceipt;
       }
   > {
@@ -785,6 +828,8 @@ export class PostgresIssue255LiveReceiptRepository {
         modality: z.enum(modalities),
         effectId: z.string().regex(/^[a-f0-9]{64}$/u),
         requestFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
+        errorCode: z.string().trim().min(1),
+        errorMessage: z.string().trim().min(1),
       })
       .strict()
       .parse(input);
@@ -829,10 +874,19 @@ export class PostgresIssue255LiveReceiptRepository {
         );
         return { kind: 'rejected_before_accept' };
       }
+      const errorCode = sanitizeFailureCode(parsed.errorCode);
+      const errorMessage = sanitizeFailureMessage(parsed.errorMessage);
+      const failureKind =
+        row.provider_http_status !== null ||
+        errorCode !== 'collector_execution_error'
+          ? 'provider_failure_recorded'
+          : 'provider_acceptance_unknown';
       const updated = await client.query<ReceiptRow>(
         `UPDATE issue255_live_generation_receipts
             SET status = 'unknown',
-                reconciliation_reason = 'provider_acceptance_unknown',
+                reconciliation_reason = $5,
+                failure_error_code = $6,
+                failure_error_message = $7,
                 updated_at = now()
           WHERE run_nonce = $1
             AND modality = $2
@@ -846,6 +900,9 @@ export class PostgresIssue255LiveReceiptRepository {
           parsed.modality,
           parsed.effectId,
           parsed.requestFingerprint,
+          failureKind,
+          errorCode,
+          errorMessage,
         ],
       );
       const unknown = updated.rows[0];
@@ -855,7 +912,7 @@ export class PostgresIssue255LiveReceiptRepository {
         );
       }
       return {
-        kind: 'provider_acceptance_unknown',
+        kind: failureKind,
         receipt: receiptFromRow(unknown),
       };
     });
@@ -897,11 +954,16 @@ export class PostgresIssue255LiveReceiptRepository {
         [parsed.runNonce],
       );
       if (
-        Number(submissionCounts.rows[0]?.global_count ?? 0) >= 3 ||
-        Number(submissionCounts.rows[0]?.run_count ?? 0) >= 3
+        Number(submissionCounts.rows[0]?.global_count ?? 0) >=
+        GLOBAL_BILLABLE_AUTHORIZATION_CAP
       ) {
         throw new Error(
-          'Issue 255 permits exactly three billable generation POSTs globally.',
+          'Issue 255 permits exactly four billable generation POSTs globally.',
+        );
+      }
+      if (Number(submissionCounts.rows[0]?.run_count ?? 0) >= 3) {
+        throw new Error(
+          'Issue 255 permits exactly three billable generation POSTs per run.',
         );
       }
       const updated = await client.query<ReceiptRow>(
@@ -1028,6 +1090,65 @@ export class PostgresIssue255LiveReceiptRepository {
       if (!row) {
         throw new Error(
           'Issue 255 provider HTTP request is outside its claimed generation effect.',
+        );
+      }
+      return receiptFromRow(row);
+    });
+  }
+
+  async recordProviderHttpResponse(input: {
+    adapter: 'direct-copy' | 'tuzi-image' | 'tuzi-video';
+    deploymentId: string;
+    runNonce: string;
+    modality: (typeof modalities)[number];
+    effectId: string;
+    providerIdempotencyKey: string;
+    requestFingerprint: string;
+    httpStatus: number;
+  }) {
+    const parsed = z
+      .object({
+        adapter: z.enum(['direct-copy', 'tuzi-image', 'tuzi-video']),
+        deploymentId: z.string().trim().min(1),
+        runNonce: z.string().trim().min(1),
+        modality: z.enum(modalities),
+        effectId: z.string().regex(/^[a-f0-9]{64}$/u),
+        providerIdempotencyKey: z.string().trim().min(1),
+        requestFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
+        httpStatus: z.number().int().min(100).max(599),
+      })
+      .strict()
+      .parse(input);
+    return this.locked(parsed.runNonce, async (client) => {
+      const updated = await client.query<ReceiptRow>(
+        `UPDATE issue255_live_generation_receipts
+            SET provider_http_status = $8,
+                updated_at = now()
+          WHERE run_nonce = $1
+            AND modality = $2
+            AND effect_id = $3
+            AND request_fingerprint = $4
+            AND adapter = $5
+            AND deployment_id = $6
+            AND provider_idempotency_key = $7
+            AND status = 'claimed'
+            AND generation_submit_count = 1
+        RETURNING *`,
+        [
+          parsed.runNonce,
+          parsed.modality,
+          parsed.effectId,
+          parsed.requestFingerprint,
+          parsed.adapter,
+          parsed.deploymentId,
+          parsed.providerIdempotencyKey,
+          parsed.httpStatus,
+        ],
+      );
+      const row = updated.rows[0];
+      if (!row) {
+        throw new Error(
+          'Issue 255 provider HTTP response is outside its claimed generation effect.',
         );
       }
       return receiptFromRow(row);
@@ -1691,9 +1812,12 @@ export class PostgresIssue255LiveReceiptRepository {
          FROM issue255_live_generation_authorizations
         WHERE status <> 'failed_before_billing'`,
     );
-    if (Number(authorizationCount.rows[0]?.count ?? 0) >= 3) {
+    if (
+      Number(authorizationCount.rows[0]?.count ?? 0) >=
+      GLOBAL_BILLABLE_AUTHORIZATION_CAP
+    ) {
       throw new Error(
-        'Issue 255 permits exactly three billable generation POSTs globally.',
+        'Issue 255 permits exactly four billable generation POSTs globally.',
       );
     }
     const runBudget = await client.query<{ amount_micros: string }>(
@@ -2104,6 +2228,9 @@ function receiptFromRow(row: ReceiptRow): Issue255LiveReceipt {
       row.actual_amount_micros === null
         ? null
         : Number(row.actual_amount_micros),
+    failureErrorCode: row.failure_error_code,
+    failureErrorMessage: row.failure_error_message,
+    providerHttpStatus: row.provider_http_status,
     terminalLineage:
       row.terminal_lineage === null
         ? null
@@ -2119,4 +2246,42 @@ function receiptFromRow(row: ReceiptRow): Issue255LiveReceipt {
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
   };
+}
+
+function sanitizeFailureCode(value: string) {
+  if (
+    /\b(api[_-]?key|authorization|bearer|credential|password|token)\b/iu.test(
+      value,
+    ) ||
+    /^[a-z0-9+/=-]{24,}$/iu.test(value.trim())
+  ) {
+    return 'provider_error';
+  }
+  const sanitized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_.:-]+/gu, '_')
+    .slice(0, 96);
+  return sanitized || 'provider_error';
+}
+
+function sanitizeFailureMessage(value: string) {
+  const sanitized = value
+    .replace(
+      /\b(payload|response|body)\s*[:=]\s*[\[{].*$/giu,
+      '$1=[redacted-payload]',
+    )
+    .replace(/postgres(?:ql)?:\/\/\S+/giu, '[redacted-database-url]')
+    .replace(/https?:\/\/\S+/giu, '[redacted-url]')
+    .replace(/\bbearer\s+\S+/giu, 'Bearer [redacted]')
+    .replace(
+      /\b(api[_-]?key|authorization|credential|password|token)\s*[:=]\s*\S+/giu,
+      '$1=[redacted]',
+    )
+    .replace(/\b[a-z0-9+/_=-]{24,}\b/giu, '[redacted-token]')
+    .replace(/[\u0000-\u001f\u007f]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .slice(0, 500);
+  return sanitized || 'Provider execution failed.';
 }

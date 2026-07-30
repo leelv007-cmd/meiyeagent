@@ -19,6 +19,9 @@ import {
 import { reconcileIssue255LiveRun } from './issue-255-live-reconciliation.js';
 import { PostgresIssue255LiveReceiptRepository } from './issue-255-postgres-live-receipt.js';
 
+const coordinatorV3RunNonce =
+  'issue-255-live-anchors-2026-07-30-v3';
+
 export function assertIssue255LiveModesMutuallyExclusive(
   env: NodeJS.ProcessEnv,
 ) {
@@ -181,6 +184,26 @@ export function preflightIssue255LiveRuntime(env: NodeJS.ProcessEnv) {
   };
 }
 
+export function resolveIssue255LiveEnvelope(
+  env: NodeJS.ProcessEnv,
+  argvRunNonce: string,
+) {
+  const runNonceOverride = env.ISSUE_255_LIVE_RUN_NONCE?.trim();
+  const modalityOverride = env.ISSUE_255_LIVE_MODALITY?.trim();
+  if (!runNonceOverride && !modalityOverride) {
+    return { runNonce: argvRunNonce, modality: 'all' as const };
+  }
+  if (
+    runNonceOverride !== coordinatorV3RunNonce ||
+    modalityOverride !== 'video'
+  ) {
+    throw new Error(
+      'Issue 255 live envelope override only permits the coordinator v3 single video retry.',
+    );
+  }
+  return { runNonce: runNonceOverride, modality: 'video' as const };
+}
+
 function positiveInteger(value: string | undefined, label: string) {
   if (!value || !/^[1-9]\d*$/u.test(value)) {
     throw new Error(`Issue 255 ${label} must be a positive integer.`);
@@ -197,12 +220,16 @@ export async function runIssue255LiveCollectorCli(input: {
   env: NodeJS.ProcessEnv;
 }) {
   const launch = assertIssue255LiveCollectorLaunch(input.env);
-  const [recordedSamplesPath, manifestPath, runNonce] = input.argv;
-  if (!recordedSamplesPath || !manifestPath || !runNonce?.trim()) {
+  const [recordedSamplesPath, manifestPath, argvRunNonce] = input.argv;
+  if (!recordedSamplesPath || !manifestPath || !argvRunNonce?.trim()) {
     throw new Error(
       'Usage: issue-255-live-collector <recorded-samples.json> <manifest.json> <run-nonce>',
     );
   }
+  const envelope = resolveIssue255LiveEnvelope(input.env, argvRunNonce);
+  const runNonce = envelope.runNonce;
+  const effectiveManifestPath =
+    input.env.ISSUE_255_LIVE_MANIFEST_PATH?.trim() || manifestPath;
   const preflight = preflightIssue255LiveRuntime(input.env);
   const businessUrl = isolatedDatabaseUrl(
     input.env.TEST_DATABASE_URL,
@@ -243,73 +270,75 @@ export async function runIssue255LiveCollectorCli(input: {
     const recordedSamples = JSON.parse(
       await readFile(resolve(recordedSamplesPath), 'utf8'),
     ) as unknown;
+    const executors = [
+      issue255DirectCopyExecutor({
+        configurationRevision: configurationRevision(
+          assembly.configurationRevisions,
+          directDeployment.id,
+        ),
+        credentialRevision: requiredDeploymentText(
+          directDeployment.credentialVersion,
+          'direct credential revision',
+        ),
+        deploymentId: directDeployment.id,
+        frozenPrices: {
+          inputCostPerMillionCny:
+            frozenPrices.directInputCostPerMillionCny,
+          outputCostPerMillionCny:
+            frozenPrices.directOutputCostPerMillionCny,
+        },
+        options: direct,
+        priceRevision: requiredDeploymentText(
+          directDeployment.priceRevision,
+          'direct price revision',
+        ),
+        receipts,
+      }),
+      issue255TuziExecutor({
+        configurationRevision: configurationRevision(
+          assembly.configurationRevisions,
+          imageDeployment.id,
+        ),
+        credentialRevision: requiredDeploymentText(
+          imageDeployment.credentialVersion,
+          'Tuzi image credential revision',
+        ),
+        deploymentId: imageDeployment.id,
+        frozenPriceCny: frozenPrices.imageCostCny,
+        modality: 'image_text',
+        options: countedTuzi,
+        priceRevision: requiredDeploymentText(
+          imageDeployment.priceRevision,
+          'Tuzi image price revision',
+        ),
+        receipts,
+      }),
+      issue255TuziExecutor({
+        configurationRevision: configurationRevision(
+          assembly.configurationRevisions,
+          videoDeployment.id,
+        ),
+        credentialRevision: requiredDeploymentText(
+          videoDeployment.credentialVersion,
+          'Tuzi video credential revision',
+        ),
+        deploymentId: videoDeployment.id,
+        frozenPriceCny: frozenPrices.videoCostPerMillionTokensCny,
+        modality: 'video',
+        options: countedTuzi,
+        priceRevision: requiredDeploymentText(
+          videoDeployment.priceRevision,
+          'Tuzi video price revision',
+        ),
+        receipts,
+      }),
+    ] as const;
     return await collectIssue255LiveAnchors({
       database: business,
-      executors: [
-        issue255DirectCopyExecutor({
-          configurationRevision: configurationRevision(
-            assembly.configurationRevisions,
-            directDeployment.id,
-          ),
-          credentialRevision: requiredDeploymentText(
-            directDeployment.credentialVersion,
-            'direct credential revision',
-          ),
-          deploymentId: directDeployment.id,
-          frozenPrices: {
-            inputCostPerMillionCny:
-              frozenPrices.directInputCostPerMillionCny,
-            outputCostPerMillionCny:
-              frozenPrices.directOutputCostPerMillionCny,
-          },
-          options: direct,
-          priceRevision: requiredDeploymentText(
-            directDeployment.priceRevision,
-            'direct price revision',
-          ),
-          receipts,
-        }),
-        issue255TuziExecutor({
-          configurationRevision: configurationRevision(
-            assembly.configurationRevisions,
-            imageDeployment.id,
-          ),
-          credentialRevision: requiredDeploymentText(
-            imageDeployment.credentialVersion,
-            'Tuzi image credential revision',
-          ),
-          deploymentId: imageDeployment.id,
-          frozenPriceCny: frozenPrices.imageCostCny,
-          modality: 'image_text',
-          options: countedTuzi,
-          priceRevision: requiredDeploymentText(
-            imageDeployment.priceRevision,
-            'Tuzi image price revision',
-          ),
-          receipts,
-        }),
-        issue255TuziExecutor({
-          configurationRevision: configurationRevision(
-            assembly.configurationRevisions,
-            videoDeployment.id,
-          ),
-          credentialRevision: requiredDeploymentText(
-            videoDeployment.credentialVersion,
-            'Tuzi video credential revision',
-          ),
-          deploymentId: videoDeployment.id,
-          frozenPriceCny: frozenPrices.videoCostPerMillionTokensCny,
-          modality: 'video',
-          options: countedTuzi,
-          priceRevision: requiredDeploymentText(
-            videoDeployment.priceRevision,
-            'Tuzi video price revision',
-          ),
-          receipts,
-        }),
-      ],
+      executors:
+        envelope.modality === 'video' ? [executors[2]] : executors,
       foundation,
-      manifestPath: resolve(manifestPath),
+      manifestPath: resolve(effectiveManifestPath),
       providerCapMicros: launch.providerCapMicros,
       recordedSamples,
       receipts,

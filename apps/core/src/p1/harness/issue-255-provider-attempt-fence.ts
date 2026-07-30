@@ -26,12 +26,17 @@ export interface Issue255ReceiptFence {
       adapter: 'direct-copy' | 'tuzi-image' | 'tuzi-video';
     },
   ): Promise<unknown>;
+  recordProviderHttpResponse(
+    input: FenceIdentity & {
+      adapter: 'direct-copy' | 'tuzi-image' | 'tuzi-video';
+      httpStatus: number;
+    },
+  ): Promise<unknown>;
 }
 
 export function createIssue255ProviderFetchFence(input: {
   adapter: 'direct-copy' | 'tuzi-image' | 'tuzi-video';
   fetch: typeof globalThis.fetch;
-  generationDurationSeconds?: number;
   identity: FenceIdentity;
   maxGenerationRequestBytes?: number;
   receipts: Issue255ReceiptFence;
@@ -43,7 +48,6 @@ export function createIssue255ProviderFetchFence(input: {
       ? generationRequestInit(
           input.adapter,
           input.identity.providerIdempotencyKey,
-          input.generationDurationSeconds,
           init,
         )
       : init;
@@ -71,10 +75,16 @@ export function createIssue255ProviderFetchFence(input: {
       ...input.identity,
       adapter: input.adapter,
     });
-    return input.fetch(
+    const response = await input.fetch(
       request,
       requestInit,
     );
+    await input.receipts.recordProviderHttpResponse({
+      ...input.identity,
+      adapter: input.adapter,
+      httpStatus: response.status,
+    });
+    return response;
   };
 }
 
@@ -106,22 +116,12 @@ export function createIssue255DirectCopyPort(input: {
 }
 
 export function createIssue255TuziMediaPort(input: {
-  generationDurationSeconds?: number;
   identity:
     | (FenceIdentity & { modality: 'image_text' })
     | (FenceIdentity & { modality: 'video' });
   options: TuziMediaExecutionOptions;
   receipts: Issue255ReceiptFence;
 }) {
-  if (
-    input.identity.modality === 'video' &&
-    (!Number.isSafeInteger(input.generationDurationSeconds) ||
-      (input.generationDurationSeconds ?? 0) <= 0)
-  ) {
-    throw new Error(
-      'Issue 255 Tuzi video requires a positive provider duration ceiling.',
-    );
-  }
   const assetFetch = input.options.assetFetch;
   if (!assetFetch) {
     throw new Error(
@@ -134,9 +134,6 @@ export function createIssue255TuziMediaPort(input: {
         ? 'tuzi-image'
         : 'tuzi-video',
     fetch: input.options.fetch ?? globalThis.fetch,
-    ...(input.identity.modality === 'video'
-      ? { generationDurationSeconds: input.generationDurationSeconds }
-      : {}),
     identity: input.identity,
     receipts: input.receipts,
   });
@@ -189,20 +186,16 @@ function isGenerationPost(
 function generationRequestInit(
   adapter: 'direct-copy' | 'tuzi-image' | 'tuzi-video',
   effectId: string,
-  generationDurationSeconds: number | undefined,
   init: RequestInit | undefined,
 ): RequestInit {
   const headers = new Headers(init?.headers);
   if (adapter === 'direct-copy') {
     headers.set('idempotency-key', effectId);
   }
-  if (adapter === 'tuzi-video') {
-    if (!(init?.body instanceof FormData)) {
-      throw new Error(
-        'Issue 255 Tuzi video requires a provable multipart generation request.',
-      );
-    }
-    init.body.set('seconds', String(generationDurationSeconds));
+  if (adapter === 'tuzi-video' && !(init?.body instanceof FormData)) {
+    throw new Error(
+      'Issue 255 Tuzi video requires a provable multipart generation request.',
+    );
   }
   return {
     ...init,

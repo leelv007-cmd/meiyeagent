@@ -20,7 +20,7 @@ const seeds = [1, 2, 3] as const;
 const modalityCapMicros = {
   copy: 100_000,
   image_text: 500_000,
-  video: 3_000_000,
+  video: 1_620_000,
 } as const;
 
 const liveGenerationRequestSchema = z.discriminatedUnion('modality', [

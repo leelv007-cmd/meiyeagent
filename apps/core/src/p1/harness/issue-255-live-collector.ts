@@ -36,7 +36,7 @@ const modalities = ['copy', 'image_text', 'video'] as const;
 const approvedQuoteMicros = {
   copy: 100_000,
   image_text: 500_000,
-  video: 3_000_000,
+  video: 1_620_000,
 } as const;
 const COPY_GENERATION_REQUEST_BYTE_LIMIT = 4_096;
 const COPY_INSTRUCTIONS =
@@ -55,6 +55,16 @@ type ProviderTerminal = {
   };
   usageEvidenceKind: ProviderUsageEvidenceKind;
 };
+
+class Issue255ProviderExecutionError extends Error {
+  constructor(
+    readonly errorCode: string,
+    readonly errorMessage: string,
+  ) {
+    super(errorMessage);
+    this.name = 'Issue255ProviderExecutionError';
+  }
+}
 
 export type Issue255LiveExecutor = {
   adapter: 'direct-copy' | 'tuzi-image' | 'tuzi-video';
@@ -81,7 +91,7 @@ const manifestSchema = z
     recordedMatrixDigest: z.string().regex(/^[a-f0-9]{64}$/u),
     authorization: z
       .object({
-        generationSubmitCap: z.literal(3),
+        generationSubmitCap: z.union([z.literal(1), z.literal(3)]),
         probeCapMicros: z.literal(3_600_000),
         globalCapMicros: z.literal(5_000_000),
         configuredProviderCapMicros: z.number().int().positive().max(5_000_000),
@@ -139,7 +149,14 @@ const manifestSchema = z
           })
           .strict(),
       )
-      .length(3),
+      .min(1)
+      .max(3)
+      .refine(
+        (samples) =>
+          new Set(samples.map((sample) => sample.modality)).size ===
+          samples.length,
+        'Issue 255 manifest samples must have unique modalities.',
+      ),
     totalActualAmountMicros: z.number().int().positive().max(3_600_000),
     cleanup: z
       .object({
@@ -293,6 +310,7 @@ export async function collectIssue255LiveAnchors(input: {
         modality: executor.modality,
         effectId,
         requestFingerprint,
+        ...providerFailureDetails(error),
       });
       if (failure.kind === 'rejected_before_accept') {
         await input.database.query(
@@ -312,6 +330,8 @@ export async function collectIssue255LiveAnchors(input: {
         modality: executor.modality,
         effectId,
         requestFingerprint,
+        errorCode: 'terminal_cost_or_usage_invalid',
+        errorMessage: 'Provider terminal cost or usage was not trustworthy.',
       });
       throw new Error(
         `Issue 255 ${executor.modality} terminal cost or usage is not trustworthy.`,
@@ -357,7 +377,7 @@ export async function collectIssue255LiveAnchors(input: {
     runNonceHash: hash(runNonce),
     recordedMatrixDigest,
     authorization: {
-      generationSubmitCap: 3,
+      generationSubmitCap: executors.length as 1 | 3,
       probeCapMicros: 3_600_000,
       globalCapMicros: 5_000_000,
       configuredProviderCapMicros: providerCapMicros,
@@ -418,9 +438,9 @@ export async function collectIssue255LiveAnchors(input: {
   if (cleanup.rows[0]?.operational_count !== 0) {
     throw new Error('Issue 255 live collector cleanup left database residue.');
   }
-  if (cleanup.rows[0]?.authorization_count !== 3) {
+  if (cleanup.rows[0]?.authorization_count !== executors.length) {
     throw new Error(
-      'Issue 255 live collector did not preserve three durable authorizations.',
+      'Issue 255 live collector did not preserve all durable authorizations.',
     );
   }
   try {
@@ -488,7 +508,7 @@ export async function recoverIssue255LiveManifest(input: {
       WHERE effect_id = ANY($1::text[])`,
     [effectIds],
   );
-  if (authorizations.rows.length !== 3) {
+  if (authorizations.rows.length !== manifest.samples.length) {
     throw new Error(
       'Issue 255 pending manifest has no complete durable authorization history.',
     );
@@ -731,12 +751,13 @@ export function issue255DirectCopyExecutor(input: {
         (result.providerCost.usage.inputTokens ?? 0) <= 0 ||
         (result.providerCost.usage.outputTokens ?? 0) <= 0
       ) {
-        const detail =
+        throw new Issue255ProviderExecutionError(
           result.kind === 'failure'
-            ? `${result.acceptance}:${result.message}`
-            : 'terminal_cost_or_usage_invalid';
-        throw new Error(
-          `Issue 255 direct copy provider did not return a trusted terminal: ${detail}.`,
+            ? `direct_${result.acceptance}`
+            : 'terminal_cost_or_usage_invalid',
+          result.kind === 'failure'
+            ? result.message
+            : 'Issue 255 direct copy provider did not return a trusted terminal.',
         );
       }
       const inputTokens = requiredUsageQuantity(
@@ -791,7 +812,7 @@ export function issue255TuziExecutor(input: {
   const isImage = input.modality === 'image_text';
   const prompt = isImage
     ? '生成一张不含文字、不含人物肖像的中性美业护理氛围图。'
-    : '生成一段一秒钟、不含人物肖像和文字的中性美业护理氛围视频。';
+    : '生成一段不含人物肖像和文字的中性美业护理氛围视频。';
   const catalogModelId = isImage
     ? input.options.image.catalogModelId
     : input.options.video.catalogModelId;
@@ -833,9 +854,6 @@ export function issue255TuziExecutor(input: {
     quoteBasis,
     async execute(identity) {
       const port = createIssue255TuziMediaPort({
-        ...(isImage
-          ? {}
-          : { generationDurationSeconds: videoQuote!.durationSeconds }),
         identity: {
           ...identity,
           deploymentId: input.deploymentId,
@@ -860,8 +878,10 @@ export function issue255TuziExecutor(input: {
       request.submission.prompt = prompt;
       const submitted = await port.submit(request);
       if (submitted.acceptance !== 'accepted' || !submitted.taskRef) {
-        throw new Error(
-          `Issue 255 ${input.modality} provider did not accept the fixed sample.`,
+        throw new Issue255ProviderExecutionError(
+          submitted.errorCode ?? submitted.acceptance,
+          submitted.error ??
+            `Issue 255 ${input.modality} provider did not accept the fixed sample.`,
         );
       }
       if (isImage) {
@@ -925,13 +945,17 @@ export function issue255TuziExecutor(input: {
           };
         }
         if (terminal.status === 'failed' || terminal.status === 'unknown') {
-          throw new Error(
-            `Issue 255 video provider ended as ${terminal.status}.`,
+          throw new Issue255ProviderExecutionError(
+            terminal.errorCode,
+            terminal.error,
           );
         }
         await (input.wait ?? defaultWait)(2_000);
       }
-      throw new Error('Issue 255 video provider polling timed out.');
+      throw new Issue255ProviderExecutionError(
+        'video_poll_timeout',
+        'Issue 255 video provider polling timed out.',
+      );
     },
   };
 }
@@ -948,7 +972,7 @@ export function issue255VideoQuote(input: {
       'Issue 255 video estimated tokens per second must be a positive integer.',
     );
   }
-  const durationSeconds = 1;
+  const durationSeconds = 5;
   const amountMicros = proratedPriceMicros(
     [
       [
@@ -976,13 +1000,24 @@ function validateExecutors(
 ) {
   const parsed = z
     .array(z.custom<Issue255LiveExecutor>())
-    .length(3)
+    .min(1)
+    .max(3)
     .parse(input);
-  for (const [index, modality] of modalities.entries()) {
-    const executor = parsed[index];
+  if (
+    (parsed.length !== 1 && parsed.length !== 3) ||
+    (parsed.length === 1 && parsed[0]?.modality !== 'video') ||
+    (parsed.length === 3 &&
+      modalities.some((modality, index) => parsed[index]?.modality !== modality))
+  ) {
+    throw new Error(
+      'Issue 255 live executors must be the complete fixed matrix or one video retry.',
+    );
+  }
+  const seenModalities = new Set<Modality>();
+  for (const executor of parsed) {
+    const modality = executor.modality;
     if (
-      !executor ||
-      executor.modality !== modality ||
+      seenModalities.has(modality) ||
       executor.adapter !==
         (modality === 'copy'
           ? 'direct-copy'
@@ -998,6 +1033,7 @@ function validateExecutors(
         'Issue 255 live executors must be fixed copy, image_text, video with approved quotes.',
       );
     }
+    seenModalities.add(modality);
     if (
       modality === 'image_text' &&
       (Object.keys(executor.quoteBasis).length !== 1 ||
@@ -1018,6 +1054,20 @@ function validateExecutors(
     );
   }
   return parsed;
+}
+
+function providerFailureDetails(error: unknown) {
+  if (error instanceof Issue255ProviderExecutionError) {
+    return {
+      errorCode: error.errorCode,
+      errorMessage: error.errorMessage,
+    };
+  }
+  return {
+    errorCode: 'collector_execution_error',
+    errorMessage:
+      error instanceof Error ? error.message : 'Provider execution failed.',
+  };
 }
 
 function hasTrustedTerminalUsage(
