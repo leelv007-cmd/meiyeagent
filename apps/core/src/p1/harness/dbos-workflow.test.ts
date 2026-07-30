@@ -9,6 +9,7 @@ import {
 
 import {
   commitHarnessBillingOrSchedule,
+  assertHarnessInteractionContinuationLayout,
   confirmationCardDecision,
   failHarnessWorkflowPreservingExecutionError,
   harnessBillingSettlementInput,
@@ -16,12 +17,15 @@ import {
   readConfirmationCardHoldTimeoutSeconds,
   readConfirmationCardTimeoutSeconds,
   refundHarnessBillingPreservingFailure,
+  registerHarnessDbosWorkflow,
   resolveHarnessBoundedExecutionContinuation,
   resumeHarnessDbosInteractionWorkflow,
   resumeHarnessDbosWorkflow,
   suspensionQuestionFailOpen,
   settleHarnessCancellation,
   settleHarnessTerminalSuccess,
+  HarnessInteractionLayoutResetRequiredError,
+  HARNESS_INTERACTION_CONTINUATION_LAYOUT,
   type HarnessAskMerchantPrimitivePort,
   type HarnessBillingSettlementPort,
 } from './dbos-workflow.js';
@@ -31,7 +35,10 @@ import {
 } from './billing-compensation.js';
 import type { AdminConfigRepository } from '../admin-config/foundation-module.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
-import { HarnessWorkflowCancellation } from './workflow-core.js';
+import {
+  HarnessWorkflowCancellation,
+  type HarnessStagePorts,
+} from './workflow-core.js';
 
 const settlement = {
   workspaceId: 'workspace-billing-failure',
@@ -480,6 +487,216 @@ test('typed timeout persistence uses the production system-default owner', () =>
   assert.match(
     mainSource,
     /p1HarnessAskInvoker,\s*harnessInteractions/u,
+  );
+});
+
+test('typed interaction continuation layouts fail closed unless the frozen marker is current', () => {
+  const typedProjection = {
+    timeoutSeconds: 30,
+    interactionRequest: { requestId: 'request-layout' },
+  };
+
+  for (const projection of [
+    typedProjection,
+    {
+      ...typedProjection,
+      interactionContinuationLayout: 'future_layout_v2',
+    },
+  ]) {
+    assert.throws(
+      () => assertHarnessInteractionContinuationLayout(projection),
+      (error: unknown) =>
+        error instanceof HarnessInteractionLayoutResetRequiredError &&
+        error.code === 'HARNESS_INTERACTION_LAYOUT_RESET_REQUIRED',
+    );
+  }
+  assert.doesNotThrow(() =>
+    assertHarnessInteractionContinuationLayout({
+      ...typedProjection,
+      interactionContinuationLayout:
+        HARNESS_INTERACTION_CONTINUATION_LAYOUT,
+    }),
+  );
+  assert.doesNotThrow(() =>
+    assertHarnessInteractionContinuationLayout({ timeoutSeconds: null }),
+  );
+});
+
+test('the typed layout marker is frozen before the no-step replay gate', () => {
+  const workflowSource = readFileSync(
+    new URL('./dbos-workflow.ts', import.meta.url),
+    'utf8',
+  );
+  const pendingStepStart = workflowSource.indexOf(
+    'const pendingProjection = await DBOS.runStep(',
+  );
+  const pendingStepEnd = workflowSource.indexOf(
+    "await DBOS.setEvent('pending-structured-decision'",
+    pendingStepStart,
+  );
+  const pendingStep = workflowSource.slice(pendingStepStart, pendingStepEnd);
+
+  assert.match(
+    pendingStep,
+    /interactionContinuationLayout:\s*HARNESS_INTERACTION_CONTINUATION_LAYOUT/u,
+  );
+  assert.match(
+    pendingStep,
+    /assertHarnessInteractionContinuationLayout\(pendingProjection\)/u,
+  );
+  assert.doesNotMatch(
+    pendingStep,
+    /interactionContinuationLayout\s*\?\?/u,
+  );
+  assert.ok(
+    pendingStep.indexOf('assertHarnessInteractionContinuationLayout(') >
+      pendingStep.lastIndexOf('DBOS.runStep('),
+  );
+});
+
+test('a pre-a9 replay stops before settlement, terminal writes, or later DBOS operations', async (t) => {
+  const workflowId = 'workflow-pre-a9-layout';
+  const workspaceId = 'workspace-pre-a9-layout';
+  const question = questionCardSchema.parse({
+    questionId: `${workflowId}:offer-price`,
+    workflowId,
+    workflowRevision: 1,
+    question: '当前团购价是多少？',
+    options: [],
+    freeText: { enabled: true },
+    response: {
+      field: 'offer_price',
+      reason: '补充当前任务所需的权威事实',
+    },
+    unattended: 'continue',
+    semanticDefaultAuthority: {
+      kind: 'non_resource_no_effect',
+      source: 'intent_gap',
+      revision: 'intent-gap/v1',
+    },
+    scope: 'current_task',
+  });
+  const stepNames: string[] = [];
+  const sideEffects: string[] = [];
+  const workflowIdDescriptor = Object.getOwnPropertyDescriptor(
+    DBOS,
+    'workflowID',
+  );
+  Object.defineProperty(DBOS, 'workflowID', {
+    configurable: true,
+    get: () => workflowId,
+  });
+  t.after(() => {
+    if (workflowIdDescriptor) {
+      Object.defineProperty(DBOS, 'workflowID', workflowIdDescriptor);
+    }
+  });
+  t.mock.method(
+    DBOS,
+    'registerWorkflow',
+    ((workflow: unknown) => workflow) as typeof DBOS.registerWorkflow,
+  );
+  t.mock.method(
+    DBOS,
+    'runStep',
+    async <T>(
+      operation: () => Promise<T>,
+      options?: { name?: string },
+    ): Promise<T> => {
+      stepNames.push(options?.name ?? 'unnamed');
+      if (options?.name === `persist-pending-${question.questionId}`) {
+        return {
+          timeoutSeconds: 30,
+          holdTimeoutSeconds: null,
+          interactionRequest: { requestId: question.questionId },
+        } as T;
+      }
+      return operation();
+    },
+  );
+  t.mock.method(DBOS, 'now', async () => Date.now());
+  t.mock.method(DBOS, 'writeStream', async () => {});
+  t.mock.method(DBOS, 'setEvent', async () => {
+    sideEffects.push('set-event');
+  });
+  t.mock.method(DBOS, 'closeStream', async () => {
+    sideEffects.push('close-stream');
+  });
+  const unreachableStage = async (): Promise<never> => {
+    throw new Error('The layout gate must run before later Harness stages.');
+  };
+  const stages: HarnessStagePorts = {
+    async nameIntent() {
+      return {
+        declaration: {
+          normalizedIntent: '推广本店团购',
+          taskType: 'promotion_groupbuy_conversion',
+          deliveryLayer: 'copy',
+          relevantAssetCategories: ['promotion_activity'],
+          usedAssetCategories: [],
+          route: 'guidance',
+          routingSource: 'model',
+          implicitConstraints: [],
+        },
+        blockingQuestion: question,
+      };
+    },
+    injectContext: unreachableStage,
+    fenceContext: unreachableStage,
+    compileBrief: unreachableStage,
+    executeAndSelect: unreachableStage,
+    assembleAndDeliver: unreachableStage,
+  };
+  const workflow = registerHarnessDbosWorkflow(
+    stages,
+    {
+      async registerPending() {
+        throw new Error('A replayed pending step must not execute its closure.');
+      },
+      async readPending() {
+        return question;
+      },
+      async recordStageTrace() {},
+      async recordTerminalFailure() {
+        sideEffects.push('terminal-failure');
+      },
+    },
+    undefined,
+    {
+      async commit() {
+        sideEffects.push('commit');
+      },
+      async refund() {
+        sideEffects.push('refund');
+      },
+      async scheduleCompensation() {
+        sideEffects.push('schedule-compensation');
+      },
+    },
+  );
+  const request = {
+    workspaceId,
+    workflowRevision: 1,
+    usageReservation: {
+      id: `usage-reservation-${workflowId}`,
+      units: [{ resource: 'copy', quantity: 1 }],
+    },
+  } as HarnessWorkflowInput;
+
+  await assert.rejects(
+    workflow({ workflowId, request }),
+    (error: unknown) =>
+      error instanceof HarnessInteractionLayoutResetRequiredError &&
+      error.code === 'HARNESS_INTERACTION_LAYOUT_RESET_REQUIRED',
+  );
+  assert.deepEqual(sideEffects, []);
+  assert.equal(
+    stepNames.some((name) =>
+      /terminal|commit|refund|compensation|system-default|renderer/u.test(
+        name,
+      ),
+    ),
+    false,
   );
 });
 

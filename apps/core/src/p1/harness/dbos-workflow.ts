@@ -64,6 +64,35 @@ import {
 } from '../admin-config/foundation-module.js';
 import type { TaskRecallDueInput } from '../due-delivery/task-recall-producer.js';
 
+export const HARNESS_INTERACTION_CONTINUATION_LAYOUT =
+  'bounded_followup_v1' as const;
+
+export class HarnessInteractionLayoutResetRequiredError extends Error {
+  readonly code = 'HARNESS_INTERACTION_LAYOUT_RESET_REQUIRED';
+  readonly status = 409;
+
+  constructor() {
+    super(
+      'This durable interaction layout is unsupported and requires an environment reset.',
+    );
+    this.name = 'HarnessInteractionLayoutResetRequiredError';
+  }
+}
+
+export function assertHarnessInteractionContinuationLayout(
+  projection: unknown,
+) {
+  if (!projection || typeof projection !== 'object') return;
+  const value = projection as Record<string, unknown>;
+  if (
+    value.interactionRequest &&
+    value.interactionContinuationLayout !==
+      HARNESS_INTERACTION_CONTINUATION_LAYOUT
+  ) {
+    throw new HarnessInteractionLayoutResetRequiredError();
+  }
+}
+
 export interface HarnessWorkflowPersistence {
   registerPending: HarnessDecisionStore['registerPending'];
   readPending: HarnessDecisionStore['readPending'];
@@ -388,10 +417,17 @@ export function registerHarnessDbosWorkflow(
             return {
               ...(registered ?? { timeoutSeconds }),
               holdTimeoutSeconds,
+              ...(interactionRequest
+                ? {
+                    interactionContinuationLayout:
+                      HARNESS_INTERACTION_CONTINUATION_LAYOUT,
+                  }
+                : {}),
             };
           },
           { name: `persist-pending-${question.questionId}` },
         );
+        assertHarnessInteractionContinuationLayout(pendingProjection);
         await DBOS.setEvent('pending-structured-decision', question);
         if (question.unattended !== 'continue') {
           const holdTimeoutSeconds = pendingProjection?.holdTimeoutSeconds;
@@ -650,11 +686,16 @@ export function registerHarnessDbosWorkflow(
         );
       },
     };
+    let closeProgressStream = true;
     try {
       let result;
       try {
         result = await runHarnessWorkflow(workflowId, request, ports, runtime);
       } catch (error) {
+        if (error instanceof HarnessInteractionLayoutResetRequiredError) {
+          closeProgressStream = false;
+          throw error;
+        }
         if (error instanceof HarnessWorkflowCancellation) {
           return settleHarnessCancellation({
             billing,
@@ -725,7 +766,9 @@ export function registerHarnessDbosWorkflow(
       });
       return result;
     } finally {
-      await DBOS.closeStream(PROGRESS_STREAM);
+      if (closeProgressStream) {
+        await DBOS.closeStream(PROGRESS_STREAM);
+      }
     }
   };
   return DBOS.registerWorkflow(workflow, {
