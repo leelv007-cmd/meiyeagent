@@ -257,29 +257,29 @@
       "note": "coordinator consolidated sweep at batch merge (#271/#252/#255/#253): 2/0/0 fresh pair, provisioned first"
     },
     "apps/core/src/p1/skills/dbos-governance-workflow.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "8a7c264cb0d80620c75dadea502d540171252b0e",
+      "note": "Issue 260 own fresh business and DBOS databases, provisioned first: 1/0"
     },
     "apps/core/src/p1/skills/postgres-repository.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "8a7c264cb0d80620c75dadea502d540171252b0e",
+      "note": "Issue 260 fresh business and DBOS databases, provisioned first: 10/0"
     },
     "apps/core/src/p1/skills/skill-governance.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "8a7c264cb0d80620c75dadea502d540171252b0e",
+      "note": "Issue 260 own fresh business and DBOS databases, provisioned first: 1/0"
     },
     "apps/core/src/p1/skills/skill-published-traffic.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "8a7c264cb0d80620c75dadea502d540171252b0e",
+      "note": "Issue 260 own fresh business and DBOS databases, provisioned first: 1/0"
     },
     "apps/core/src/p1/skills/skill-reverse-dependencies.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "8a7c264cb0d80620c75dadea502d540171252b0e",
+      "note": "Issue 260 own fresh business and DBOS databases, provisioned first: 3/0"
     },
     "apps/core/src/p1/supply-registry/postgres-admin-supply-runtime.postgres.test.ts": {
       "status": "green",
