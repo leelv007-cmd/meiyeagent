@@ -13,6 +13,7 @@ import {
   collectIssue255LiveAnchors,
   issue255DirectCopyExecutor,
   issue255TuziExecutor,
+  issue255VideoQuote,
   recoverIssue255LiveManifest,
 } from './issue-255-live-collector.js';
 import { reconcileIssue255LiveRun } from './issue-255-live-reconciliation.js';
@@ -112,6 +113,10 @@ export function isIssue255SharedE2eLockHeld() {
 }
 
 export function preflightIssue255LiveRuntime(env: NodeJS.ProcessEnv) {
+  const estimatedTokensPerSecond = positiveInteger(
+    env.TUZI_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND,
+    'video estimated tokens per second',
+  );
   const assembly = modelRuntimeAssemblyFromEnv(env);
   const direct = assembly.runtime.direct;
   const tuzi = assembly.runtime.tuziMedia;
@@ -141,32 +146,50 @@ export function preflightIssue255LiveRuntime(env: NodeJS.ProcessEnv) {
       label,
     );
 
+  const frozenPrices = {
+    directInputCostPerMillionCny: positivePrice(
+      env.MODEL_DIRECT_INPUT_COST_PER_MILLION,
+      'direct input frozen price',
+    ),
+    directOutputCostPerMillionCny: positivePrice(
+      env.MODEL_DIRECT_OUTPUT_COST_PER_MILLION,
+      'direct output frozen price',
+    ),
+    imageCostCny: positivePrice(
+      env.TUZI_GPT_IMAGE_2_COST_PER_IMAGE_CNY,
+      'Tuzi image frozen price',
+    ),
+    videoCostPerMillionTokensCny: positivePrice(
+      env.TUZI_SEEDANCE_COST_PER_MILLION_TOKENS_CNY,
+      'Tuzi video frozen price',
+    ),
+  };
+  const videoQuote = issue255VideoQuote({
+    estimatedTokensPerSecond,
+    frozenPriceCny: frozenPrices.videoCostPerMillionTokensCny,
+  });
+
   return {
     assembly,
     direct,
     directDeployment,
-    frozenPrices: {
-      directInputCostPerMillionCny: positivePrice(
-        env.MODEL_DIRECT_INPUT_COST_PER_MILLION,
-        'direct input frozen price',
-      ),
-      directOutputCostPerMillionCny: positivePrice(
-        env.MODEL_DIRECT_OUTPUT_COST_PER_MILLION,
-        'direct output frozen price',
-      ),
-      imageCostCny: positivePrice(
-        env.TUZI_GPT_IMAGE_2_COST_PER_IMAGE_CNY,
-        'Tuzi image frozen price',
-      ),
-      videoCostPerMillionTokensCny: positivePrice(
-        env.TUZI_SEEDANCE_COST_PER_MILLION_TOKENS_CNY,
-        'Tuzi video frozen price',
-      ),
-    },
+    frozenPrices,
     imageDeployment,
     tuzi,
+    videoQuote,
     videoDeployment,
   };
+}
+
+function positiveInteger(value: string | undefined, label: string) {
+  if (!value || !/^[1-9]\d*$/u.test(value)) {
+    throw new Error(`Issue 255 ${label} must be a positive integer.`);
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`Issue 255 ${label} must be a positive integer.`);
+  }
+  return parsed;
 }
 
 export async function runIssue255LiveCollectorCli(input: {

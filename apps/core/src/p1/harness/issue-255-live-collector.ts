@@ -742,31 +742,22 @@ export function issue255TuziExecutor(input: {
     input.frozenPriceCny,
     isImage ? 'Tuzi image price' : 'Tuzi video price',
   );
-  const durationSeconds = 1;
-  const estimatedTokensPerSecond = isImage
+  const videoQuote = isImage
     ? null
-    : z
-        .number()
-        .int()
-        .positive()
-        .parse(input.options.video.estimatedTokensPerSecond);
+    : issue255VideoQuote({
+        estimatedTokensPerSecond:
+          input.options.video.estimatedTokensPerSecond,
+        frozenPriceCny: input.frozenPriceCny,
+      });
   const quoteBasis: Readonly<Record<string, number>> = isImage
     ? { outputCount: 1 }
     : {
-        durationSeconds,
-        estimatedTokensPerSecond: estimatedTokensPerSecond!,
+        durationSeconds: videoQuote!.durationSeconds,
+        estimatedTokensPerSecond: videoQuote!.estimatedTokensPerSecond,
       };
   const quoteAmountMicros = isImage
     ? proratedPriceMicros([[priceMicros, 1]], 1)
-    : proratedPriceMicros(
-        [
-          [
-            priceMicros,
-            durationSeconds * estimatedTokensPerSecond!,
-          ],
-        ],
-        1_000_000,
-      );
+    : videoQuote!.amountMicros;
   if (quoteAmountMicros > approvedQuoteMicros[input.modality]) {
     throw new Error(
       `Issue 255 ${input.modality} worst-case quote exceeds its approved cap.`,
@@ -785,7 +776,9 @@ export function issue255TuziExecutor(input: {
     quoteBasis,
     async execute(identity) {
       const port = createIssue255TuziMediaPort({
-        ...(isImage ? {} : { generationDurationSeconds: durationSeconds }),
+        ...(isImage
+          ? {}
+          : { generationDurationSeconds: videoQuote!.durationSeconds }),
         identity: {
           ...identity,
           deploymentId: input.deploymentId,
@@ -801,7 +794,7 @@ export function issue255TuziExecutor(input: {
           isImage ? 'image.generate' : 'video.generate',
           isImage
             ? { height: 2048, width: 2048 }
-            : { durationSeconds },
+            : { durationSeconds: videoQuote!.durationSeconds },
         ),
         effectIdempotencyKey: identity.effectId,
       };
@@ -882,6 +875,40 @@ export function issue255TuziExecutor(input: {
       }
       throw new Error('Issue 255 video provider polling timed out.');
     },
+  };
+}
+
+export function issue255VideoQuote(input: {
+  estimatedTokensPerSecond: number;
+  frozenPriceCny: string;
+}) {
+  if (
+    !Number.isSafeInteger(input.estimatedTokensPerSecond) ||
+    input.estimatedTokensPerSecond <= 0
+  ) {
+    throw new Error(
+      'Issue 255 video estimated tokens per second must be a positive integer.',
+    );
+  }
+  const durationSeconds = 1;
+  const amountMicros = proratedPriceMicros(
+    [
+      [
+        frozenPriceMicros(input.frozenPriceCny, 'Tuzi video price'),
+        durationSeconds * input.estimatedTokensPerSecond,
+      ],
+    ],
+    1_000_000,
+  );
+  if (amountMicros > approvedQuoteMicros.video) {
+    throw new Error(
+      'Issue 255 video worst-case quote exceeds its approved cap.',
+    );
+  }
+  return {
+    durationSeconds,
+    estimatedTokensPerSecond: input.estimatedTokensPerSecond,
+    amountMicros,
   };
 }
 

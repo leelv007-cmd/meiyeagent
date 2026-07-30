@@ -32,8 +32,8 @@ const issue255LiveRuntimeEnv = (
   TUZI_MEDIA_SOURCE_URL_TTL_SECONDS: '3600',
   TUZI_GPT_IMAGE_2_COST_PER_IMAGE_CNY: '0.5',
   TUZI_GPT_IMAGE_2_MODEL: 'gpt-image-2',
-  TUZI_SEEDANCE_COST_PER_MILLION_TOKENS_CNY: '3',
-  TUZI_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND: '1000000',
+  TUZI_SEEDANCE_COST_PER_MILLION_TOKENS_CNY: '15',
+  TUZI_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND: '21600',
   TUZI_SEEDANCE_MODEL: 'doubao-seedance-1-5-pro_720p',
   ...overrides,
 });
@@ -121,7 +121,12 @@ test('issue 255 live runtime preflight freezes all three approved deployments an
     directInputCostPerMillionCny: '3.2',
     directOutputCostPerMillionCny: '6.3',
     imageCostCny: '0.5',
-    videoCostPerMillionTokensCny: '3',
+    videoCostPerMillionTokensCny: '15',
+  });
+  assert.deepEqual(preflight.videoQuote, {
+    durationSeconds: 1,
+    estimatedTokensPerSecond: 21_600,
+    amountMicros: 324_000,
   });
 
   assert.throws(
@@ -166,6 +171,28 @@ test('issue 255 live runtime preflight freezes all three approved deployments an
       /non-negative number/u,
     );
   }
+
+  for (const value of [undefined, '0', '1.5']) {
+    assert.throws(
+      () =>
+        preflightIssue255LiveRuntime(
+          issue255LiveRuntimeEnv({
+            TUZI_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND: value,
+          }),
+        ),
+      /positive integer/u,
+    );
+  }
+
+  assert.throws(
+    () =>
+      preflightIssue255LiveRuntime(
+        issue255LiveRuntimeEnv({
+          TUZI_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND: '200001',
+        }),
+      ),
+    /video worst-case quote exceeds its approved cap/u,
+  );
 });
 
 test('issue 255 recovery CLIs require explicit non-live recovery authorization', async () => {
