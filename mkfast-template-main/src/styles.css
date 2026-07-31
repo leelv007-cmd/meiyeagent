@@ -643,7 +643,6 @@
   .meiye-auth-shell button.bg-primary:hover {
     background: oklch(0.32 0 0);
   }
-
 }
 
 @media (prefers-reduced-motion: reduce) {

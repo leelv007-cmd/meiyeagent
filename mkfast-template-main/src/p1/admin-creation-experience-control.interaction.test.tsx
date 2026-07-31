@@ -180,7 +180,9 @@ describe('Recipe / Surface visual lifecycle editor', () => {
     );
     await user.type(within(editor).getByLabelText('变更原因'), '上线首页入口');
     expect(within(editor).queryByText('批量去背景')).not.toBeInTheDocument();
-    expect(within(editor).queryByText('Pro Studio 无限画布')).not.toBeInTheDocument();
+    expect(
+      within(editor).queryByText('Pro Studio 无限画布')
+    ).not.toBeInTheDocument();
     expect(
       within(editor).queryByLabelText('展示 Pro Studio')
     ).not.toBeInTheDocument();
