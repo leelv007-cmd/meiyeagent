@@ -518,9 +518,11 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
     ).toHaveCount(0);
 
     await briefConfirmButton(page).click();
-    const questionCard = page.getByTestId('composer-question-card');
-    await expect(questionCard).toBeVisible({ timeout: 60_000 });
-    await questionCard.getByTestId('composer-question-continue').click();
+    // Z1 retired composer-question-card. The only remaining merchant question
+    // renderer is AskMerchantInteractionSlot; this fixture may continue from
+    // its semantic default, so the durable contract is that the retired card
+    // never blocks the post-Brief run.
+    await expect(page.getByTestId('composer-question-card')).toHaveCount(0);
     await assertResultFirstToken(page, 'copy');
   });
 });

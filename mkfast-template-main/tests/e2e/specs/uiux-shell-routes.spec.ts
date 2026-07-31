@@ -139,9 +139,6 @@ test('canonical shell routes survive direct navigation and reload', async ({
     // D-164④: 记忆 is a first-class destination now, so it has to survive a
     // typed URL and a reload like every other one.
     ['/dashboard/memory', '记忆'],
-    ['/dashboard/sessions/session-proof', '创作记录'],
-    ['/dashboard/works/work-proof', '作品详情'],
-    ['/dashboard/jobs/job-proof', '执行详情'],
     ['/settings/account', '账户'],
     ['/settings/models', '模型'],
     ['/settings/connections', '连接'],
@@ -163,6 +160,18 @@ test('canonical shell routes survive direct navigation and reload', async ({
       page.getByRole('heading', { name: heading, level: 1 })
     ).toBeVisible();
   }
+});
+
+test('unknown content detail shows the canonical missing state after reload', async ({
+  page,
+  request,
+}) => {
+  const user = await registerE2EUser(request);
+  await loginByForm(page, user);
+  await page.goto('/dashboard/works/work-proof');
+  await expect(page.getByTestId('works-detail-missing')).toBeVisible();
+  await page.reload();
+  await expect(page.getByTestId('works-detail-missing')).toBeVisible();
 });
 
 /**

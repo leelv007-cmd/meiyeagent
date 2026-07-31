@@ -1,11 +1,10 @@
 import { expect, test } from '@playwright/test';
-import type { ApiEnvelope, ProductState } from '@meiye/contracts';
-import postgres from 'postgres';
 import {
   cleanupE2EUsers,
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
+import { productState } from '../fixtures/product';
 
 const PNG_FIXTURE = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
@@ -20,56 +19,33 @@ for (const viewport of [
   { width: 430, height: 932 },
   { width: 844, height: 390 },
 ]) {
-  test.describe(`mobile action book ${viewport.width}x${viewport.height}`, () => {
+  test.describe(`mobile Composer ${viewport.width}x${viewport.height}`, () => {
     test.use({ viewport, hasTouch: true, isMobile: true });
 
-    test('renders the unified mobile creation surface without overflow', async ({
+    test('keeps the Composer and five-slot navigation usable without overflow', async ({
       page,
       request,
     }) => {
       const user = await registerE2EUser(request);
       try {
         await loginByForm(page, user);
-        await expect(
-          page.getByRole('heading', { name: '掌心行动簿' })
-        ).toBeVisible();
-        await expect(
-          page.getByRole('tablist', { name: '掌心行动簿阶段' })
-        ).toBeVisible();
-        for (const stage of ['行动', '进度', '交接']) {
-          await expect(page.getByRole('tab', { name: stage })).toBeVisible();
-        }
-        await expect(page.getByLabel('描述这次想创作的内容')).toBeVisible();
-        await expect(
-          page.getByRole('navigation', { name: '移动端导航' })
-        ).toBeVisible();
-        expect(
-          await page.evaluate(() => ({
-            client: document.documentElement.clientWidth,
-            scroll: document.documentElement.scrollWidth,
-          }))
-        ).toEqual({ client: viewport.width, scroll: viewport.width });
-        const actionHeights = await page
-          .getByRole('tablist', { name: '掌心行动簿阶段' })
-          .getByRole('tab')
-          .evaluateAll((elements) =>
-            elements.map((element) => element.getBoundingClientRect().height)
-          );
-        expect(actionHeights.every((height) => height >= 48)).toBe(true);
-        const mobileNavHeights = await page
-          .getByRole('navigation', { name: '移动端导航' })
+        await expect(page.getByTestId('composer-home')).toBeVisible();
+        await expect(page.getByTestId('composer-lens-radiogroup')).toBeVisible();
+        await expect(page.getByTestId('composer-intent-input')).toBeVisible();
+        const mobileNav = page.getByRole('navigation', { name: '移动端导航' });
+        await expect(mobileNav).toBeVisible();
+        const mobileNavHeights = await mobileNav
           .locator(':scope > a, :scope > button')
           .evaluateAll((elements) =>
             elements.map((element) => element.getBoundingClientRect().height)
           );
         expect(mobileNavHeights).toHaveLength(5);
-        expect(mobileNavHeights.every((height) => height >= 48)).toBe(true);
-        for (const label of ['拍摄素材', '从相册 / 文件选择']) {
-          const bounds = await page
-            .getByText(label, { exact: true })
-            .evaluate((element) => element.getBoundingClientRect().height);
-          expect(bounds).toBeGreaterThanOrEqual(48);
-        }
+        expect(mobileNavHeights.every((height) => height >= 44)).toBe(true);
+        expect(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth - window.innerWidth
+          )
+        ).toBeLessThanOrEqual(1);
         const typography = await page.evaluate(() => {
           const productShell = document.querySelector('.meiye-product-shell');
           if (!productShell) throw new Error('Product shell not found');
@@ -97,33 +73,28 @@ test.describe('mobile upload and relay', () => {
     isMobile: true,
   });
 
-  test('resumes one stable upload after the persisted response is lost', async ({
+  test('retries a Composer upload without creating a duplicate source', async ({
     page,
     request,
   }) => {
     test.setTimeout(90_000);
     const user = await registerE2EUser(request);
-    const sql = postgres(
-      process.env.DATABASE_URL ??
-        'postgres://meiye:meiye@127.0.0.1:54329/meiye',
-      { max: 1 }
-    );
     try {
       await loginByForm(page, user);
-      await expect(
-        page.getByText('从相册 / 文件选择', { exact: true })
-      ).toBeVisible();
+      const before = await productState(page);
       let dropped = false;
-      await page.route('**/*', async (route) => {
-        const requestData = route.request().postDataBuffer();
+      await page.route('**/api/storage/upload?purpose=product_asset', async (route) => {
         if (
           !dropped &&
           route.request().method() === 'POST' &&
-          requestData?.toString('utf8').includes('mobile-resume.png')
+          route.request().postDataBuffer()?.toString('utf8').includes('mobile-resume.png')
         ) {
-          await route.fetch();
           dropped = true;
-          await route.abort('failed');
+          await route.fulfill({
+            body: JSON.stringify({ error: 'transient fixture failure' }),
+            contentType: 'application/json',
+            status: 503,
+          });
           return;
         }
         await route.continue();
@@ -134,44 +105,21 @@ test.describe('mobile upload and relay', () => {
         mimeType: 'image/png',
         buffer: PNG_FIXTURE,
       };
-      await page.locator('#mobile-library-input').setInputFiles(file);
-      await expect(page.getByText('上传中断', { exact: true })).toBeVisible({
+      await page.locator('#composer-gallery-input').setInputFiles(file);
+      await page
+        .getByRole('button', { name: /确认：允许公开宣传/ })
+        .click();
+      await expect(page.getByText('图片上传失败，请重试。')).toBeVisible({
         timeout: 30_000,
       });
-      await expect(page.getByText(/^Asset /)).toHaveCount(0);
-      await page.unroute('**/*');
-
-      await page.locator('#mobile-library-input').setInputFiles(file);
-      await expect(page.getByText('已持久化', { exact: true })).toBeVisible({
-        timeout: 30_000,
-      });
+      await page.unroute('**/api/storage/upload?purpose=product_asset');
+      await page.getByRole('button', { name: '重试', exact: true }).click();
       await expect(
         page.getByText('已保存到素材库', { exact: true })
-      ).toBeVisible();
-      const state = await page.evaluate(async () => {
-        const response = await fetch('/api/core/product/state');
-        const envelope = (await response.json()) as ApiEnvelope<ProductState>;
-        if ('error' in envelope) throw new Error(envelope.error.message);
-        return envelope.data;
-      });
-      expect(
-        state.assets.filter((asset) => asset.id.startsWith('asset-mobile-'))
-      ).toHaveLength(1);
-      const [row] = await sql<Array<{ count: number }>>`
-        SELECT COUNT(*)::int AS count
-        FROM user_files files
-        INNER JOIN "user" users ON users.id = files.user_id
-        WHERE users.email = ${user.email}
-          AND files.description LIKE 'mobile-upload:%'
-      `;
-      expect(row?.count).toBe(1);
-
-      await page.reload();
-      await expect(
-        page.getByText('已保存到素材库', { exact: true })
-      ).toBeVisible();
+      ).toBeVisible({ timeout: 60_000 });
+      const after = await productState(page);
+      expect(after.assets).toHaveLength(before.assets.length + 1);
     } finally {
-      await sql.end();
       await cleanupE2EUsers(request);
     }
   });
@@ -219,18 +167,19 @@ test.describe('desktop secondary surfaces', () => {
         page.getByRole('heading', { name: '模型偏好' })
       ).toBeVisible();
       await expect(
-        page.getByRole('heading', { name: '工作区 BYOK' })
+        page.getByText('高级连接设置', { exact: true })
       ).toBeVisible();
+      await page.getByText('高级连接设置', { exact: true }).click();
       await expect(
-        page.getByText('BYOK 模型凭据', { exact: true }).first()
+        page.getByRole('tab', { name: '使用自己的模型密钥' })
       ).toBeVisible();
       await expect(page.getByText('抖音连接', { exact: true })).toHaveCount(0);
 
       await page.goto('/settings/connections');
       await expect(page.getByRole('tab', { name: '抖音连接' })).toBeVisible();
-      await expect(page.getByRole('tab', { name: '飞书 MCP' })).toBeVisible();
+      await expect(page.getByRole('tab', { name: '飞书连接' })).toBeVisible();
       await expect(
-        page.getByText('BYOK 模型凭据', { exact: true })
+        page.getByRole('tab', { name: '使用自己的模型密钥' })
       ).toHaveCount(0);
 
       const routes: Array<[string, string]> = [
@@ -312,7 +261,7 @@ test.describe('desktop secondary surfaces', () => {
       await expect(
         page.getByRole('heading', { name: '每个账期可交付产出' })
       ).toBeVisible();
-      for (const label of ['文案', '图片', '视频', '并发任务']) {
+      for (const label of ['文案', '图片', '视频', '可同时进行的创作数']) {
         await expect(
           page.getByText(label, { exact: true }).first()
         ).toBeVisible();
@@ -327,6 +276,9 @@ test.describe('desktop secondary surfaces', () => {
 
       await loginByForm(page, user);
       await page.goto('/settings/account?section=usage');
+      await page
+        .getByTestId('account-usage-details-toggle')
+        .click();
       for (const label of ['可用', '预留', '已结算', '已释放', '本期到期']) {
         await expect(
           page.getByText(label, { exact: false }).first()

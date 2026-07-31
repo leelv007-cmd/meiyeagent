@@ -903,19 +903,20 @@ spec is in the required set, that no browser test listens for the retired
 spec is marked in place and stays out of the required set, and that no spec
 writes a screenshot into the tracked `docs/evidence/` tree.
 
-### Demoted old UI specs
+### Relanded UI contracts
 
-The Z1 cutover removed the unified creation workbench from `src`, so specs that
-reach the product through 「建立创作记录」/「快速起步预设」/`execute-tool-action`
-cannot pass. They are demoted (`test.describe.fixme` plus an `M-04 DEMOTED`
-header naming what replaced them), not deleted — no disposition batch approves
-deleting them, and the contracts underneath still need relanding:
+The Z1 cutover removed the unified creation workbench from `src`. #277 relanded
+the remaining UI/UX Upgrade B contracts on the shipped Composer and Result
+Center rather than retaining `fixme` coverage of retired controls:
 
-- `specs/uiux-upgrade-b-composer.spec.ts` — pre-submit contracts (whole file).
-- `specs/uiux-upgrade-b-results.spec.ts` — result contracts (whole file).
-- `specs/uiux-upgrade-b-async.spec.ts` — asynchronous Job contracts (whole file).
-- `specs/uiux-upgrade-b-i18n-motion.spec.ts` — the reduced-motion case only; the
-  locale and mobile cases in that file still run.
+- `specs/uiux-upgrade-b-composer.spec.ts` — cold lens, quote readiness, and no
+  implicit Product write before submit.
+- `specs/uiux-upgrade-b-async.spec.ts` — in-flight Composer refresh recovery
+  without a second submission.
+- `specs/uiux-upgrade-b-results.spec.ts` — Composer to ContentPackage adoption,
+  delivery download, and Result Center restoration.
+- `specs/uiux-upgrade-b-i18n-motion.spec.ts` — locale URL preservation, reduced
+  motion through a ContentPackage delivery, and the current five-slot mobile nav.
 
 `specs/uiux-creation-loop.spec.ts` no longer carries its six retired-workbench
 cases: #242 removed them after recording their current contract owners in §12.

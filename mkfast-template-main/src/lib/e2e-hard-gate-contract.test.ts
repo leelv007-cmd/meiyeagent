@@ -66,10 +66,6 @@ const SPECS_WITH_DEMOTED_CASES = [
   // cases were deleted under the approved #242 IA disposition (TEST-CATALOG
   // records each contract owner) and the two surviving journeys are active.
   'specs/uiux-day0-contract.spec.ts',
-  'specs/uiux-upgrade-b-async.spec.ts',
-  'specs/uiux-upgrade-b-composer.spec.ts',
-  'specs/uiux-upgrade-b-i18n-motion.spec.ts',
-  'specs/uiux-upgrade-b-results.spec.ts',
 ] as const;
 
 function e2eFiles(): string[] {

@@ -4,54 +4,47 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
+import { seedConfirmedStore } from '../fixtures/product';
 
 test.afterEach(async ({ request }) => {
   await cleanupE2EUsers(request);
 });
 
-test('keyboard completes the core creation journey and announces Job status', async ({
+test('keyboard submits the Composer and announces the streamed candidate', async ({
   page,
   request,
 }) => {
+  test.setTimeout(180_000);
   const user = await registerE2EUser(request);
   await loginByForm(page, user);
+  await seedConfirmedStore(page);
+  await page.goto('/dashboard');
 
-  const intent = page.getByLabel('描述这次想创作的内容');
+  const lens = page.getByTestId('composer-lens-option-copy');
+  await lens.focus();
+  await page.keyboard.press('Space');
+  await expect(lens).toBeChecked();
+
+  const intent = page.getByTestId('composer-intent-input');
   await intent.focus();
   await page.keyboard.insertText('键盘完成的真实到店内容');
-  const create = page.getByRole('button', { name: '建立创作记录' });
-  await create.focus();
-  await page.keyboard.press('Enter');
-  await expect(page.getByLabel('Agent 创作记录')).toBeVisible();
-
-  const quote = page.getByRole('checkbox', {
-    name: /接受本次执行合同/,
+  await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+    timeout: 60_000,
   });
-  await quote.focus();
-  await page.keyboard.press('Space');
-  await expect(quote).toBeChecked();
-  const submit = page.getByRole('button', { name: '提交生成任务' });
-  await expect(submit).toBeEnabled();
-  await submit.focus();
-  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('composer-submit')).toBeEnabled();
+  await intent.press(
+    process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter'
+  );
 
-  const announcedStatus = page
-    .locator('[aria-live="polite"]')
-    .filter({ hasText: /进行中|结果待核验|已完成/ })
-    .last();
-  await expect(announcedStatus).toBeVisible({ timeout: 60_000 });
-  const candidate = page.getByRole('radio', { name: /^候选 A：/ });
-  await expect(candidate).toBeVisible({ timeout: 60_000 });
-  await candidate.focus();
-  await page.keyboard.press('Space');
-  await expect(candidate).toBeChecked();
-  const accept = page.getByRole('button', { name: '采用所选文案' });
-  await expect(accept).toBeEnabled();
-  await accept.focus();
-  await page.keyboard.press('Enter');
-  await expect(
-    page.getByText('本批已采用 1 条文案', { exact: true })
-  ).toBeVisible();
+  await expect(page.getByTestId('composer-conversation')).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(page.getByTestId('composer-stage-line').first()).toBeVisible({
+    timeout: 90_000,
+  });
+  await expect(page.getByTestId('composer-candidate-primary')).toBeVisible({
+    timeout: 120_000,
+  });
 });
 
 test('Impact Dialog traps focus and returns it to the keyboard trigger', async ({
