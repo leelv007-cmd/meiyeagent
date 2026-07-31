@@ -29,6 +29,7 @@ import {
   HarnessDecisionService,
 } from './decision-service.js';
 import { PostgresHarnessResumeReconcilerStore } from './postgres-resume-reconciler-store.js';
+import { PostgresProductBillingRepository } from '../product-billing/postgres-repository.js';
 import { PostgresHarnessStore } from './postgres-store.js';
 import {
   HarnessResumeReconciler,
@@ -150,6 +151,7 @@ test(
     const pool = new Pool({ connectionString });
     const firstStore = new PostgresHarnessStore(pool);
     await firstStore.applySchema();
+    await new PostgresProductBillingRepository(pool).migrate();
     await pool.query(
       `create table if not exists p1_content_packages (
          workspace_id text not null,
@@ -1141,6 +1143,7 @@ test(
     const pool = new Pool({ connectionString });
     const store = new PostgresHarnessStore(pool);
     await store.applySchema();
+    await new PostgresProductBillingRepository(pool).migrate();
     const suffix = randomUUID();
     const workspaceId = `interaction-identity-workspace-${suffix}`;
     const runId = `interaction-identity-run-${suffix}`;
@@ -1754,6 +1757,7 @@ test(
     const pool = new Pool({ connectionString });
     const store = new PostgresHarnessStore(pool);
     await store.applySchema();
+    await new PostgresProductBillingRepository(pool).migrate();
     const suffix = randomUUID();
     const workspaceId = `interaction-http-workspace-${suffix}`;
     const runId = `interaction-http-run-${suffix}`;
@@ -2025,6 +2029,7 @@ test(
     const pool = new Pool({ connectionString });
     const store = new PostgresHarnessStore(pool);
     await store.applySchema();
+    await new PostgresProductBillingRepository(pool).migrate();
     const runtimeIds: string[] = [];
 
     try {
@@ -2175,6 +2180,7 @@ test(
     const pool = new Pool({ connectionString });
     const store = new PostgresHarnessStore(pool);
     await store.applySchema();
+    await new PostgresProductBillingRepository(pool).migrate();
     const suffix = randomUUID();
     const workspaceId = `interaction-expiry-workspace-${suffix}`;
     const runId = `interaction-expiry-run-${suffix}`;

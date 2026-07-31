@@ -29,6 +29,7 @@ import {
 } from './dbos-workflow.js';
 import { harnessRuntimeId } from './workspace-scope.js';
 import { PostgresNoteMediaAdmissionCoordinator } from './note-media-admission.js';
+import { PostgresProductBillingRepository } from '../product-billing/postgres-repository.js';
 import { PostgresHarnessStore } from './postgres-store.js';
 import { HarnessInteractionService } from './interaction-service.js';
 import { PostgresHarnessResumeReconcilerStore } from './postgres-resume-reconciler-store.js';
@@ -1012,6 +1013,7 @@ test(
     const pool = new Pool({ connectionString: databaseUrl });
     const store = new PostgresHarnessStore(pool);
     await store.applySchema();
+    await new PostgresProductBillingRepository(pool).migrate();
     await pool.query(
       `create table if not exists p1_content_packages (
          workspace_id text not null,
