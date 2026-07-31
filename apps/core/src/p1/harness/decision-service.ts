@@ -174,19 +174,8 @@ export class HarnessDecisionService {
     return this.store.readPending(workspaceId, taskId);
   }
 
-  async readDecisionTarget(workspaceId: string, taskId: string) {
-    const target = await this.readTarget(workspaceId, taskId);
-    if (target) return target;
-    const question = await this.store.readPending(workspaceId, taskId);
-    return question
-      ? {
-          question,
-          request: undefined,
-          resolutionSource: null,
-          status: 'pending' as const,
-          timeoutSeconds: undefined,
-        }
-      : null;
+  readDecisionTarget(workspaceId: string, taskId: string) {
+    return this.readTarget(workspaceId, taskId);
   }
 
   async submit(

@@ -2001,26 +2001,11 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 		request,
 	});
 	assert.equal(
-		confirmation.blockingQuestion?.response.field,
-		"note_plan_confirmation",
+		confirmation.blockingQuestion,
+		null,
+		"image-text planning must proceed to the one real direction choice without a page-plan confirmation",
 	);
-	assert.equal(confirmation.blockingQuestion?.unattended, "hold");
-	const confirmedPlan = await ports.nameIntent({
-		workflowId: snapshot.task.id,
-		request: {
-			...request,
-			decisionReferences: [
-				{
-					field: "note_plan_confirmation",
-					id: "decision-note-confirmation",
-					revision: snapshot.revision,
-					value: "use-default",
-				},
-			],
-		},
-	});
-	assert.equal(confirmedPlan.blockingQuestion, null);
-	const selectedStyle = await ports.nameIntent({
+	const resumed = await ports.nameIntent({
 		workflowId: snapshot.task.id,
 		request: {
 			...request,
@@ -2034,7 +2019,7 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 			],
 		},
 	});
-	assert.equal(selectedStyle.blockingQuestion, null);
+	assert.equal(resumed.blockingQuestion, null);
 
 	const brief = await ports.compileNoteBrief({
 		workflowId: snapshot.task.id,

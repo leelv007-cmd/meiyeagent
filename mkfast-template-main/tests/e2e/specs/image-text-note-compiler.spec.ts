@@ -465,23 +465,6 @@ test.describe
           async () =>
             (await readPendingQuestion(page, submission.taskId))?.response
               .field,
-          { timeout: 30_000 }
-        )
-        .toBe('note_plan_confirmation');
-      const confirmation = await readPendingQuestion(page, submission.taskId);
-      expect(confirmation?.options.map(({ id }) => id)).toContain(
-        'continue_default'
-      );
-      await expect(page.getByTestId('composer-question-card')).toBeVisible();
-      await page
-        .getByTestId('composer-question-option-continue_default')
-        .click();
-
-      await expect
-        .poll(
-          async () =>
-            (await readPendingQuestion(page, submission.taskId))?.response
-              .field,
           { timeout: 90_000 }
         )
         .toBe('note_style');
