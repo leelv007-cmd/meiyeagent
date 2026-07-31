@@ -48,5 +48,5 @@ apps/core/src/p1/integrations/postgres-repository.ts  （deleteWorkspaceFacts）
 ## 运维备注
 
 - 若某套环境确定不再需要这些历史行（例如合规要求彻底清除），DROP 由运维单独执行并单独留痕，**不要**把它写进 `migrate()`——`migrate()` 会对所有环境生效，包含还需要留档的那些。
-- 取回代发代码时，`migrate()` 会自动把五张表在新库补建齐（`IF NOT EXISTS`），旧库直接复用既有表。取回步骤见取回 runbook「取回后必须自己补的偏移」第 1 条。
+- 取回代发代码时，`migrate()` 会自动把五张表在新库补建齐（`IF NOT EXISTS`），旧库直接复用既有表。取回步骤见取回记录「取回时会踩的三个坑」第 1 条。
 - 四张共用表（`integration_connections`／`integration_credential_bindings`／`integration_credential_versions`／`integration_external_events`）中存有 `provider = 'douyin'` 的历史行。表结构与数据均未改动；`IntegrationProvider` 类型也特意保留了 `'douyin'` 枚举项，使这些行仍能被正常读出（活性核查表 §5 存疑②）。已无任何代码路径能**新建**抖音连接。

@@ -3,7 +3,7 @@
 - 日期：2026-07-31
 - 锚点：main `b7a426cae21c16a8e164bd4b36eac3ae3e55ee4d`
 - 判据：**生产调用链**——从 `apps/core/src/main.ts`、`job-worker.ts`、`server.ts` 的装配与路由逐层追 import，不是 grep 命中
-- 归档位置：`references/frozen-publish-face-2026-07-31/`（取回 runbook：`docs/ops/frozen-publish-face-retrieval-runbook-2026-07-31.md`）
+- 归档位置：`references/frozen-publish-face-2026-07-31/`（取回记录：`docs/ops/frozen-publish-face-retrieval-runbook-2026-07-31.md`）
 
 ## 0. 结论先说：票面「整块归档」的前提不成立
 
@@ -123,7 +123,7 @@ D-155＋D-161④ 明列不受冻结约束的四项，逐条确认未受影响：
 | web test | 绿 |
 | web test:interaction | 47 文件 / 288 用例全绿 |
 | biome check | 本轮改动文件全绿（`uiux-upgrade-b-*` 三条既有格式化欠债未动） |
-| 取回演练 | `restore.patch` 在临时分支 `restore-drill/publish-face` 干跑＋实打，恢复后 `git diff --cached b7a426ca -- apps packages mkfast-template-main` **输出为空**（与锚点逐字节一致），core typecheck 绿；演练后分支已删除，工作树复原 |
+| 取回演练 | **按主控 2026-07-31 批复豁免**（用户判断取回概率很小，runbook 降为最简记录）。批复前已顺带跑过一次并通过：`restore.patch` 干跑＋实打后 `git diff --cached b7a426ca -- apps packages mkfast-template-main` 输出为空（与锚点逐字节一致）、core typecheck 绿，演练分支已删、工作树复原。 |
 
 ### e2e 复核集（冷库 `meiye_263_gate`，走 e2e-lock）
 
