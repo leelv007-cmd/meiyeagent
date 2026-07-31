@@ -1,5 +1,4 @@
 import { expect, test, type Page } from '@playwright/test';
-import type { QuestionCard } from '@meiye/contracts';
 import { resolve } from 'node:path';
 
 import {
@@ -240,25 +239,6 @@ async function submitNoteJourney(
   };
 }
 
-async function readPendingQuestion(page: Page, taskId: string) {
-  return page.evaluate(async (currentTaskId) => {
-    const response = await fetch(
-      `/api/core/p1/harness/tasks/${encodeURIComponent(currentTaskId)}/decision`,
-      { credentials: 'same-origin' }
-    );
-    const envelope = (await response.json()) as {
-      data?: { question?: QuestionCard | null };
-      error?: { message?: string };
-    };
-    if (!response.ok) {
-      throw new Error(
-        envelope.error?.message ?? 'Pending question read failed'
-      );
-    }
-    return envelope.data?.question ?? null;
-  }, taskId);
-}
-
 async function collectWorkflowSse(page: Page, taskId: string) {
   return page.evaluate(
     (currentTaskId) =>
@@ -460,23 +440,19 @@ test.describe
       const submission = await submitNoteJourney(page);
       const streamPromise = collectWorkflowSse(page, submission.taskId);
 
-      await expect
-        .poll(
-          async () =>
-            (await readPendingQuestion(page, submission.taskId))?.response
-              .field,
-          { timeout: 90_000 }
-        )
-        .toBe('note_style');
-      const styleQuestion = await readPendingQuestion(page, submission.taskId);
-      expect(styleQuestion?.options).toHaveLength(2);
-      expect(styleQuestion?.options.map(({ id }) => id)).toEqual([
-        'practical_guide',
-        'story_recommendation',
-      ]);
-      await page
-        .getByTestId('composer-question-option-story_recommendation')
-        .click();
+      // The note_style question rides the interaction channel; the retired
+      // decision endpoint deliberately returns null for it, and the grouped
+      // interaction card renders options by label (the projection carries no
+      // option ids), so the merchant answers by label like a real journey.
+      const practicalOption = page.getByRole('button', {
+        name: /干货科普版/,
+      });
+      const storyOption = page.getByRole('button', {
+        name: /种草叙事版/,
+      });
+      await expect(practicalOption).toBeVisible({ timeout: 90_000 });
+      await expect(storyOption).toBeVisible();
+      await storyOption.click();
 
       const stream = await streamPromise;
       expect(stream.status).toBe('success');
