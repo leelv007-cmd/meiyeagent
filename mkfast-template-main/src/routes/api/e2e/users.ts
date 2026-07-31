@@ -255,11 +255,22 @@ export const Route = createFileRoute('/api/e2e/users')({
         await db.delete(payment).where(inArray(payment.userId, userIds));
         await db.delete(userFiles).where(inArray(userFiles.userId, userIds));
         if (workspaceIds.length > 0) {
+          // D-170: advanced_canvas_* is no longer created. Guard cleanup for legacy DBs only.
+          const advancedCanvasTable = await db.execute<{
+            present: boolean;
+          }>(sql`
+            SELECT to_regclass('public.advanced_canvas_revisions') IS NOT NULL AS present
+          `);
+          const hasAdvancedCanvasRevisions =
+            advancedCanvasTable[0]?.present === true;
+
           for (const workspaceId of workspaceIds) {
-            await db.execute(sql`
-              DELETE FROM advanced_canvas_revisions
-              WHERE workspace_id = ${workspaceId}
-            `);
+            if (hasAdvancedCanvasRevisions) {
+              await db.execute(sql`
+                DELETE FROM advanced_canvas_revisions
+                WHERE workspace_id = ${workspaceId}
+              `);
+            }
             await db.execute(sql`
               DELETE FROM p1_redemption_codes
               WHERE redeemed_workspace_id = ${workspaceId}
