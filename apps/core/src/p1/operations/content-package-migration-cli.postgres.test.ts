@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Pool } from 'pg';
 import { PostgresModelSupplyRepository } from '../model-supply/postgres-repository.js';
+import { PostgresProductRepository } from '../../product/postgres-repository.js';
 import { PostgresOperationsRepository } from './postgres-repository.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
@@ -35,6 +36,9 @@ test(
     );
     await new PostgresOperationsRepository(pool).migrate();
     await new PostgresModelSupplyRepository(pool).migrate();
+    // The CLI reads legacy product_states; app boot owns this table, so a
+    // provisioned-but-never-booted database does not have it.
+    await new PostgresProductRepository(pool).migrate();
     await pool.query(
       `INSERT INTO p1_creative_contents (workspace_id, id, payload, updated_at)
        VALUES ($1, 'legacy-creative', $2::jsonb, now())`,

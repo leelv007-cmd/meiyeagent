@@ -9,7 +9,14 @@ import { Pool } from 'pg';
 
 import { AgentPrimitiveDurableTracePort } from '../agent-primitives/durable-trace-port.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
+import { PostgresGrantLotLedger } from '../foundation/postgres-grant-lot.js';
+import {
+  PostgresCreationSubmissionPersistence,
+  PostgresCreationSubmissionStore,
+  PostgresProductBillingUsageReservation,
+} from '../execution-spine/postgres-creation-submission-store.js';
 import { PostgresOperationsRepository } from '../operations/postgres-repository.js';
+import { PostgresProductBillingRepository } from '../product-billing/postgres-repository.js';
 import {
   AgentPrimitiveObservabilityAdapter,
   HarnessObservabilityEventAudit,
@@ -29,6 +36,29 @@ import {
 } from './langfuse-prompts.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
+
+// registerPending writes into operations-owned p1_content_packages and the
+// compensation store joins execution_spine.creation_submissions; app boot owns
+// both migrations, so a provisioned-but-never-booted database lacks them.
+test.before(async () => {
+  if (!connectionString) return;
+  const pool = new Pool({ connectionString });
+  try {
+    await new PostgresOperationsRepository(pool).migrate();
+    await new PostgresProductBillingRepository(pool).migrate();
+    await new PostgresCreationSubmissionStore(
+      pool,
+      new PostgresCreationSubmissionPersistence(
+        new PostgresProductBillingUsageReservation(
+          pool,
+          new PostgresGrantLotLedger(pool),
+        ),
+      ),
+    ).migrate();
+  } finally {
+    await pool.end();
+  }
+});
 
 test(
   'Postgres harness schema backfills legacy failed dead letters',

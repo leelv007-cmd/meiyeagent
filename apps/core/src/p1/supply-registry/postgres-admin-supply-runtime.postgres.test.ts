@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { describe, it } from 'node:test';
+import { before, describe, it } from 'node:test';
 import { Pool } from 'pg';
 import type { RoutePolicyRevision } from '@meiye/contracts';
 import { createPermissionAuthorizer } from '../capability-permission/authorizer.js';
@@ -787,6 +787,24 @@ describe('ProductionAdminSupplyDomain RoutePolicy candidate save', () => {
 });
 
 describe('PostgresAdminSupplyStore', { skip: !databaseUrl }, () => {
+  // Hoist one migrate ahead of the tests: their per-test migrate calls race
+  // each other on a database that has never booted the app, and the losers
+  // observe "relation does not exist" mid-create.
+  before(async () => {
+    const pool = new Pool({ connectionString: databaseUrl });
+    try {
+      const client = await pool.connect();
+      try {
+        await new PostgresSupplyControlPlaneRepository(pool).migrate(client);
+        await new PostgresAdminSupplyMigration().migrate(client);
+      } finally {
+        client.release();
+      }
+    } finally {
+      await pool.end();
+    }
+  });
+
   it('persists terminal success/rejection and never re-executes the same identity', async () => {
     const pool = new Pool({ connectionString: databaseUrl });
     const workspaceId = `admin-supply-${randomUUID()}`;
