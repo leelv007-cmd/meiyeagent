@@ -24,6 +24,7 @@ import {
   beautyCopywritingDefinition,
   captureStoreWorkflowDefinition,
   createDurableSkillRuntime,
+  MemorySkillRepository,
   PostgresSkillRepository,
   SkillFoundationModule,
   SkillService,
@@ -252,12 +253,34 @@ test(
           prompt: {
             contentHash: copyPrompt.contentHash,
             isFallback: false,
+            label: 'production',
             name: copyPrompt.name,
+            source: 'langfuse',
             version: copyPrompt.version,
           },
           skillRevisionRef: `${copywritingSkillId}@1`,
         }],
       );
+      const persistedRevision = await restarted.repository.getRevision(
+        `${copywritingSkillId}@1`,
+      );
+      assert.ok(persistedRevision);
+      assert.ok(resolved.receipts[0]);
+      const memoryRepository = new MemorySkillRepository();
+      await memoryRepository.putRevision(persistedRevision, null);
+      const memoryService = new SkillService(
+        memoryRepository,
+        () => resolved.receipts[0]!.createdAt,
+      );
+      const memoryReceipts =
+        await memoryService.recordPromptMaterializationReceipts({
+          instructions: resolved.instructions,
+          stage: 'execution_selection',
+          taskId: `task-copywriting-${suffix}`,
+          workflowRevisionRef,
+          workspaceId,
+        });
+      assert.deepEqual(memoryReceipts, resolved.receipts);
 
       const withoutSkill = new CopywritingRunner();
       const withSkill = new CopywritingRunner();
