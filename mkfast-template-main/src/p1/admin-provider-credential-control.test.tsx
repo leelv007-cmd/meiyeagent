@@ -136,18 +136,6 @@ test('shows boot-time credential sources and flags env fallback', () => {
         },
         updatedAt: '2026-07-15T10:00:00.000Z',
       },
-      {
-        effectiveSource: 'env',
-        id: 'platform:douyin.platform',
-        status: 'available',
-        credential: {
-          mask: '••••••••',
-          scope: ['provider.connect'],
-          status: 'active',
-          version: 1,
-        },
-        updatedAt: '2026-07-15T10:00:00.000Z',
-      },
     ]
   );
 
@@ -158,7 +146,6 @@ test('shows boot-time credential sources and flags env fallback', () => {
   );
 
   assert.match(html, /当前生效来源：保险箱/);
-  assert.match(html, /当前生效来源：环境变量/);
   assert.match(html, /环境变量回退（保险箱未接管）/);
 });
 
@@ -175,10 +162,6 @@ test('shows boot-time sources while all vault slots are empty', () => {
         effectiveSource: 'env_fallback',
         id: 'platform:ark.media',
       },
-      {
-        effectiveSource: 'env',
-        id: 'platform:douyin.platform',
-      },
     ]
   );
 
@@ -189,8 +172,8 @@ test('shows boot-time sources while all vault slots are empty', () => {
   );
 
   assert.equal((html.match(/环境变量回退（保险箱未接管）/g) ?? []).length, 2);
-  assert.equal((html.match(/当前生效来源：环境变量(?!回退)/g) ?? []).length, 1);
-  assert.equal((html.match(/(?:未保存|Not stored)/g) ?? []).length, 3);
+  assert.equal((html.match(/当前生效来源：环境变量(?!回退)/g) ?? []).length, 0);
+  assert.equal((html.match(/(?:未保存|Not stored)/g) ?? []).length, 2);
   assert.doesNotMatch(html, /••••••••/);
 });
 

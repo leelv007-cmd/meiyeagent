@@ -37,7 +37,6 @@ test('admin models route renders execution mode and adapter assembly controls', 
       ['model.execution.mode', 'recorded'],
       ['model.media.execution.mode', 'disabled'],
       ['byok.adapter.assembly', 'recorded'],
-      ['douyin.adapter.assembly', 'recorded'],
       ['platform.defaultModel.copy', 'llm-copy-live'],
       ['platform.defaultModel.image', 'image-live'],
       ['platform.defaultModel.video', 'video-live'],
@@ -82,10 +81,8 @@ test('admin models route renders execution mode and adapter assembly controls', 
   assert.match(html, /模型执行模式/);
   assert.match(html, /媒体执行模式/);
   assert.match(html, /BYOK 适配器装配/);
-  assert.match(html, /抖音适配器装配/);
   assert.match(html, /platform\.defaultModel\.copy/);
   assert.match(html, /platform\.defaultModel\.image/);
   assert.match(html, /platform\.defaultModel\.video/);
   assert.match(html, /platform\.defaultModel\.audio/);
-  assert.match(html, /未接入（pilot 前）/);
 });

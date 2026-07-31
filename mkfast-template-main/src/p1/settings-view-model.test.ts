@@ -6,12 +6,8 @@ import {
 } from './model-current-selection';
 import {
   canReconcileFeishuIntent,
-  eligibleDouyinPublishAnchorKinds,
   normalizeCatalog,
   normalizeConnections,
-  normalizeDouyinContentSnapshots,
-  normalizeDouyinIntegrationStatus,
-  normalizeDouyinOperationsSnapshot,
   normalizeFeishuActivity,
   normalizeFeishuRecoveryIntents,
   normalizeFeishuShortcuts,
@@ -22,33 +18,6 @@ import {
 } from './settings-view-model';
 
 describe('P1 settings view models', () => {
-  it('normalizes the runtime Douyin integration status without inventing live capability', () => {
-    assert.deepEqual(
-      normalizeDouyinIntegrationStatus({
-        provider: 'douyin',
-        integrated: false,
-        executionMode: 'recorded',
-      }),
-      {
-        provider: 'douyin',
-        integrated: false,
-        executionMode: 'recorded',
-      }
-    );
-    assert.deepEqual(
-      normalizeDouyinIntegrationStatus({
-        provider: 'douyin',
-        integrated: true,
-        executionMode: 'live',
-      }),
-      {
-        provider: 'douyin',
-        integrated: true,
-        executionMode: 'live',
-      }
-    );
-  });
-
   it('keeps the current generation override separate in session storage', () => {
     const values = new Map<string, string>();
     const storage = {
@@ -349,31 +318,27 @@ describe('P1 settings view models', () => {
   it('returns write-only connection projections without secret references', () => {
     const connections = normalizeConnections([
       {
-        id: 'douyin-main',
-        provider: 'douyin',
-        identityMode: 'oauth_user',
-        requestedCapabilities: ['publish', 'observe', 'publish.poi'],
-        grantedCapabilities: ['publish', 'observe', 'publish.poi'],
+        id: 'feishu-main',
+        provider: 'feishu',
+        identityMode: 'service',
+        requestedCapabilities: ['mcp.tools', 'docx:document:readonly'],
+        grantedCapabilities: ['mcp.tools', 'docx:document:readonly'],
         capabilityEvidence: {
-          observe: {
+          'mcp.tools': {
             endpoint: 'https://private.example.test',
             revision: '2026-07',
             verifiedAt: '2026-07-11T00:00:00.000Z',
           },
-          'publish.poi': {
-            qualified: true,
-            revision: '2026-07-poi',
-            verifiedAt: '2026-07-11T00:00:00.000Z',
-          },
         },
-        degradedCapabilities: { publish: 'permission_missing' },
-        refreshReauthorizationReminder: true,
+        degradedCapabilities: {
+          'docx:document:readonly': 'permission_missing',
+        },
         status: 'degraded',
         subject: '@beauty',
         secretRef: 'secret://must-not-leak',
         credential: {
           mask: '••••••••',
-          scope: ['publish', 'observe'],
+          scope: ['mcp.tools'],
           status: 'active',
           version: 2,
         },
@@ -381,52 +346,39 @@ describe('P1 settings view models', () => {
     ]);
 
     assert.deepEqual(connections[0], {
-      activeCapabilities: ['observe', 'publish.poi'],
+      activeCapabilities: ['mcp.tools'],
       credential: {
         mask: '••••••••',
-        scope: ['publish', 'observe'],
+        scope: ['mcp.tools'],
         status: 'active',
         version: 2,
       },
-      degradedCapabilities: { publish: 'permission_missing' },
-      grantedCapabilities: ['publish', 'observe', 'publish.poi'],
-      id: 'douyin-main',
-      identityMode: 'oauth_user',
-      provider: 'douyin',
-      refreshReauthorizationReminder: true,
-      qualifiedCapabilities: ['publish.poi'],
-      requestedCapabilities: ['publish', 'observe', 'publish.poi'],
+      degradedCapabilities: { 'docx:document:readonly': 'permission_missing' },
+      grantedCapabilities: ['mcp.tools', 'docx:document:readonly'],
+      id: 'feishu-main',
+      identityMode: 'service',
+      provider: 'feishu',
+      requestedCapabilities: ['mcp.tools', 'docx:document:readonly'],
       status: 'degraded',
       subject: '@beauty',
     });
     assert.equal(JSON.stringify(connections).includes('secret'), false);
     assert.equal(JSON.stringify(connections).includes('endpoint'), false);
-    assert.deepEqual(eligibleDouyinPublishAnchorKinds(connections[0]!), [
-      'poi',
-    ]);
-    assert.deepEqual(
-      eligibleDouyinPublishAnchorKinds({
-        ...connections[0]!,
-        grantedCapabilities: ['publish', 'observe'],
-      }),
-      []
-    );
 
     const stopped = normalizeConnections([
       {
-        id: 'douyin-stopped',
-        provider: 'douyin',
-        identityMode: 'oauth_user',
-        requestedCapabilities: ['observe'],
-        grantedCapabilities: ['observe'],
-        capabilityEvidence: { observe: { revision: 'provider-v1' } },
-        degradedCapabilities: { observe: 'disabled_by_owner' },
+        id: 'feishu-stopped',
+        provider: 'feishu',
+        identityMode: 'service',
+        requestedCapabilities: ['mcp.tools'],
+        grantedCapabilities: ['mcp.tools'],
+        capabilityEvidence: { 'mcp.tools': { revision: 'provider-v1' } },
+        degradedCapabilities: { 'mcp.tools': 'disabled_by_owner' },
         status: 'degraded',
-        credential: { scope: ['observe'], status: 'active', version: 1 },
+        credential: { scope: ['mcp.tools'], status: 'active', version: 1 },
       },
     ]);
     assert.deepEqual(stopped[0]?.activeCapabilities, []);
-    assert.deepEqual(stopped[0]?.qualifiedCapabilities, []);
   });
 
   it('projects BYOK audit evidence without exposing secret-bearing details', () => {
@@ -556,43 +508,7 @@ describe('P1 settings view models', () => {
     assert.equal(activities[1]?.externalUrl, undefined);
   });
 
-  it('normalizes Douyin reconciliation snapshots and Feishu recovery without private payloads', () => {
-    const douyin = normalizeDouyinOperationsSnapshot({
-      connectionId: 'douyin-a',
-      observeSnapshots: [
-        {
-          evidenceRevision: 'observe-r1',
-          externalId: 'item-a',
-          fields: { privateMetric: 99 },
-          missingReasons: { comments: 'not_granted' },
-          observedAt: '2026-07-11T02:00:00.000Z',
-          platformTime: '2026-07-11T01:00:00.000Z',
-          source: 'product',
-        },
-      ],
-      observeState: {
-        connectionId: 'douyin-a',
-        evidenceRevision: 'observe-r1',
-        lastAttemptAt: '2026-07-11T02:00:00.000Z',
-        nextSyncAt: '2026-07-11T03:00:00.000Z',
-        reason: 'rate_limited',
-        status: 'unknown',
-        workspaceId: 'must-not-surface',
-      },
-      publishJobs: [
-        {
-          acceptance: 'acceptance_unknown',
-          confirmationId: 'confirmation-a',
-          effectState: 'reconciliation_required',
-          id: 'job-a',
-          lastErrorCode: 'transport_unknown',
-          payloadHash: 'must-not-surface',
-          status: 'unknown',
-          updatedAt: '2026-07-11T02:00:00.000Z',
-        },
-      ],
-      refreshedAt: '2026-07-11T02:01:00.000Z',
-    });
+  it('normalizes Feishu recovery intents without private payloads', () => {
     const feishu = normalizeFeishuRecoveryIntents([
       {
         argumentHash: 'must-not-surface',
@@ -609,17 +525,6 @@ describe('P1 settings view models', () => {
       },
     ]);
 
-    assert.equal(douyin.publishJobs[0]?.status, 'unknown');
-    assert.equal(douyin.observeSnapshots[0]?.missingFieldCount, 1);
-    assert.deepEqual(douyin.observeState, {
-      evidenceRevision: 'observe-r1',
-      lastAttemptAt: '2026-07-11T02:00:00.000Z',
-      nextSyncAt: '2026-07-11T03:00:00.000Z',
-      reason: 'rate_limited',
-      status: 'unknown',
-    });
-    assert.equal(JSON.stringify(douyin).includes('privateMetric'), false);
-    assert.equal(JSON.stringify(douyin).includes('payloadHash'), false);
     assert.equal(feishu[0]?.effectState, 'reconciliation_required');
     assert.equal(canReconcileFeishuIntent(feishu[0]!), true);
     assert.equal(
@@ -629,37 +534,6 @@ describe('P1 settings view models', () => {
     assert.equal(feishu[0]?.reconciliationAttempts, 2);
     assert.equal(feishu[0]?.nextReconcileAt, '2026-07-11T02:10:00.000Z');
     assert.equal(JSON.stringify(feishu).includes('argumentHash'), false);
-  });
-
-  it('normalizes only selectable Product-backed Douyin content snapshots', () => {
-    const snapshots = normalizeDouyinContentSnapshots([
-      {
-        artifactId: 'artifact-a',
-        body: 'must-not-surface',
-        contentId: 'content-a',
-        contentVersionId: 'version-a',
-        createdAt: '2026-07-11T00:00:00.000Z',
-        id: 'handoff-a',
-        platform: 'douyin',
-        revision: 'revision-a',
-        source: 'product_handoff',
-        title: '真实门店视频',
-      },
-      { id: 'missing-product-fields' },
-    ]);
-
-    assert.deepEqual(snapshots, [
-      {
-        artifactId: 'artifact-a',
-        contentId: 'content-a',
-        contentVersionId: 'version-a',
-        createdAt: '2026-07-11T00:00:00.000Z',
-        id: 'handoff-a',
-        revision: 'revision-a',
-        title: '真实门店视频',
-      },
-    ]);
-    assert.equal(JSON.stringify(snapshots).includes('must-not-surface'), false);
   });
 
   it('preserves the Core channel-readiness claim for merchant model cards', () => {

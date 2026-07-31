@@ -61,9 +61,6 @@ import {
   admin_runtime_assembly_byok_live_description,
   admin_runtime_assembly_byok_recorded_description,
   admin_runtime_assembly_byok_title,
-  admin_runtime_assembly_douyin_live_unavailable,
-  admin_runtime_assembly_douyin_recorded_description,
-  admin_runtime_assembly_douyin_title,
   admin_runtime_assembly_live_label,
   admin_runtime_assembly_recorded_label,
   admin_runtime_mode_ark_description,
@@ -276,9 +273,6 @@ const assemblyMessages = {
   admin_runtime_assembly_byok_live_description,
   admin_runtime_assembly_byok_recorded_description,
   admin_runtime_assembly_byok_title,
-  admin_runtime_assembly_douyin_live_unavailable,
-  admin_runtime_assembly_douyin_recorded_description,
-  admin_runtime_assembly_douyin_title,
   admin_runtime_assembly_live_label,
   admin_runtime_assembly_recorded_label,
 } satisfies Record<string, (() => string) | undefined>;
@@ -324,8 +318,6 @@ const SHORT_TEXT_SEGMENTS = new Set(['id', 'name']);
 const KEY_LABELS: Record<string, () => string> = {
   'byok.adapter.assembly': () =>
     assemblyMessage('admin_runtime_assembly_byok_title', 'BYOK 适配器装配'),
-  'douyin.adapter.assembly': () =>
-    assemblyMessage('admin_runtime_assembly_douyin_title', '抖音适配器装配'),
   'model.execution.mode': admin_runtime_mode_model_title,
   'model.media.execution.mode': admin_runtime_mode_media_title,
   'compliance.aigc_label.default': admin_config_key_aigc_label_default,
@@ -402,17 +394,6 @@ const OPTION_COPY: Record<
         assemblyMessage('admin_runtime_assembly_recorded_label', 'Recorded'),
     },
   },
-  'douyin.adapter.assembly': {
-    recorded: {
-      description: () =>
-        assemblyMessage(
-          'admin_runtime_assembly_douyin_recorded_description',
-          '仅提供录制契约，不代表已接入抖音官方能力。'
-        ),
-      label: () =>
-        assemblyMessage('admin_runtime_assembly_recorded_label', 'Recorded'),
-    },
-  },
   'model.execution.mode': {
     direct: {
       description: admin_runtime_mode_direct_description,
@@ -455,30 +436,6 @@ const OPTION_COPY: Record<
   },
 };
 
-/**
- * 契约不接受、但产品必须如实说明「还没接」的选项。
- *
- * 抖音只允许 `recorded`；把 Live 藏起来会让运营以为平台压根没这个方向，
- * 所以它以**禁用**的形态留在选项里，并写明原因。它永远不会被提交——
- * 契约会拒，禁用态也点不动。
- */
-const UNAVAILABLE_OPTIONS: Record<
-  string,
-  { label: () => string; reason: () => string; value: string }[]
-> = {
-  'douyin.adapter.assembly': [
-    {
-      label: () => assemblyMessage('admin_runtime_assembly_live_label', 'Live'),
-      reason: () =>
-        assemblyMessage(
-          'admin_runtime_assembly_douyin_live_unavailable',
-          '未接入（pilot 前）'
-        ),
-      value: 'live',
-    },
-  ],
-};
-
 /** 配置项本身的说法；没有登记的键退回键名，测试会盯住这条不许出现。 */
 export function adminConfigKeyLabel(key: string) {
   return KEY_LABELS[key]?.() ?? key;
@@ -496,28 +453,14 @@ function optionLabel(value: string) {
 /** 枚举值来自契约；这里只给它配上说法和解释。 */
 function enumOptions(
   key: string,
-  values: readonly string[],
-  path: AdminConfigFieldPath
+  values: readonly string[]
 ): AdminConfigFieldOption[] {
   const copy = OPTION_COPY[key];
-  const options = values.map((value) => ({
+  return values.map((value) => ({
     description: copy?.[value]?.description(),
     label: copy?.[value]?.label() ?? optionLabel(value),
     value,
   }));
-  // 「还没接」的选项只在配置项本身就是这个枚举时展示（行内格子放不下解释）。
-  if (path.length > 0) return options;
-  const unavailable = UNAVAILABLE_OPTIONS[key] ?? [];
-  return [
-    ...options,
-    ...unavailable.map((entry) => ({
-      description: entry.reason(),
-      disabled: true,
-      disabledReason: entry.reason(),
-      label: entry.label(),
-      value: entry.value,
-    })),
-  ];
 }
 
 /**
@@ -582,7 +525,7 @@ function buildField(
     return {
       ...base,
       kind: 'enum',
-      options: enumOptions(key, values, path),
+      options: enumOptions(key, values),
       // 整个配置项就是一个枚举时，每个选项都要解释自己，摊成单选卡片；
       // 嵌在表单或行内格子里的枚举收成下拉。
       presentation: path.length === 0 ? 'radio' : 'select',

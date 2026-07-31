@@ -75,7 +75,7 @@ export interface ModelPreferencesView {
   recent: string[];
 }
 
-export type IntegrationProvider = 'model' | 'douyin' | 'feishu';
+export type IntegrationProvider = 'model' | 'feishu';
 
 export interface IntegrationConnectionView {
   id: string;
@@ -84,11 +84,9 @@ export interface IntegrationConnectionView {
   requestedCapabilities: string[];
   grantedCapabilities: string[];
   activeCapabilities: string[];
-  qualifiedCapabilities: string[];
   degradedCapabilities: Record<string, string>;
   status: string;
   subject?: string;
-  refreshReauthorizationReminder?: boolean;
   credential: {
     mask: '••••••••';
     scope: string[];
@@ -98,30 +96,6 @@ export interface IntegrationConnectionView {
     refreshExpiresAt?: string;
     lastUsedAt?: string;
   };
-}
-
-export interface DouyinIntegrationStatusView {
-  provider: 'douyin';
-  integrated: boolean;
-  executionMode: 'recorded' | 'live';
-}
-
-export type DouyinPublishAnchorKind = 'poi' | 'mini_program';
-
-export function eligibleDouyinPublishAnchorKinds(
-  connection: IntegrationConnectionView
-): DouyinPublishAnchorKind[] {
-  const candidates = [
-    ['publish.poi', 'poi'],
-    ['publish.mini_program', 'mini_program'],
-  ] as const;
-  return candidates.flatMap(([capability, kind]) =>
-    connection.grantedCapabilities.includes(capability) &&
-    connection.activeCapabilities.includes(capability) &&
-    connection.qualifiedCapabilities.includes(capability)
-      ? [kind]
-      : []
-  );
 }
 
 export interface IntegrationAuditView {
@@ -190,67 +164,6 @@ export function canReconcileFeishuIntent(intent: FeishuRecoveryIntentView) {
     intent.status === 'unknown' &&
     intent.effectState === 'reconciliation_required'
   );
-}
-
-export interface DouyinPublishJobView {
-  id: string;
-  confirmationId: string;
-  status:
-    | 'submitting'
-    | 'submitted'
-    | 'reviewing'
-    | 'published'
-    | 'failed'
-    | 'unknown'
-    | 'manual_required';
-  effectState?: 'claimed' | 'settled' | 'reconciliation_required';
-  acceptance?: 'rejected_before_accept' | 'accepted' | 'acceptance_unknown';
-  itemId?: string;
-  videoId?: string;
-  lastErrorCode?: string;
-  nextPollAt?: string;
-  pollAttempts?: number;
-  pollDeadlineAt?: string;
-  pollingState?: 'scheduled' | 'exhausted' | 'completed';
-  pollLimit?: number;
-  updatedAt: string;
-}
-
-export interface DouyinObserveSnapshotView {
-  externalId: string;
-  platformTime: string;
-  source: 'product' | 'external';
-  observedAt: string;
-  evidenceRevision: string;
-  missingFieldCount: number;
-}
-
-export interface DouyinObserveStateView {
-  status: 'available' | 'empty' | 'unavailable' | 'unknown';
-  reason?: string;
-  evidenceRevision: string;
-  lastAttemptAt: string;
-  lastSuccessfulAt?: string;
-  nextSyncAt?: string;
-}
-
-export interface DouyinContentSnapshotView {
-  id: string;
-  revision: string;
-  contentId: string;
-  contentVersionId: string;
-  artifactId: string;
-  title: string;
-  createdAt: string;
-}
-
-export interface DouyinOperationsSnapshotView {
-  connectionId: string;
-  contentSnapshots: DouyinContentSnapshotView[];
-  publishJobs: DouyinPublishJobView[];
-  observeSnapshots: DouyinObserveSnapshotView[];
-  observeState?: DouyinObserveStateView;
-  refreshedAt: string;
 }
 
 const MODEL_NAMES: Record<string, () => string> = {
@@ -509,9 +422,7 @@ export function normalizePreferences(value: unknown): ModelPreferencesView {
 }
 
 function provider(value: unknown): IntegrationProvider | undefined {
-  return value === 'model' || value === 'douyin' || value === 'feishu'
-    ? value
-    : undefined;
+  return value === 'model' || value === 'feishu' ? value : undefined;
 }
 
 export function normalizeConnections(
@@ -554,15 +465,9 @@ export function normalizeConnections(
           requestedCapabilities: stringArray(connection.requestedCapabilities),
           grantedCapabilities,
           activeCapabilities,
-          qualifiedCapabilities: activeCapabilities.filter(
-            (capability) => record(evidence[capability]).qualified === true
-          ),
           degradedCapabilities,
           status: string(connection.status, 'disabled'),
           ...(subject ? { subject } : {}),
-          ...(connection.refreshReauthorizationReminder === true
-            ? { refreshReauthorizationReminder: true }
-            : {}),
           credential: {
             mask: '••••••••' as const,
             scope: stringArray(credential.scope),
@@ -577,21 +482,6 @@ export function normalizeConnections(
       ];
     })
     .filter((connection) => connection.id.length > 0);
-}
-
-export function normalizeDouyinIntegrationStatus(
-  value: unknown
-): DouyinIntegrationStatusView {
-  const payload = record(value);
-  const executionMode =
-    payload.executionMode === 'live'
-      ? ('live' as const)
-      : ('recorded' as const);
-  return {
-    provider: 'douyin',
-    integrated: executionMode === 'live' && payload.integrated === true,
-    executionMode,
-  };
 }
 
 export function normalizeIntegrationAudit(
@@ -822,169 +712,4 @@ export function normalizeFeishuRecoveryIntents(
       },
     ];
   });
-}
-
-export function normalizeDouyinOperationsSnapshot(
-  value: unknown
-): DouyinOperationsSnapshotView {
-  const payload = record(value);
-  const publishJobs = (
-    Array.isArray(payload.publishJobs) ? payload.publishJobs : []
-  )
-    .map(record)
-    .flatMap((job): DouyinPublishJobView[] => {
-      const id = string(job.id);
-      const confirmationId = string(job.confirmationId);
-      const status = job.status;
-      if (
-        !id ||
-        !confirmationId ||
-        ![
-          'submitting',
-          'submitted',
-          'reviewing',
-          'published',
-          'failed',
-          'unknown',
-          'manual_required',
-        ].includes(String(status))
-      ) {
-        return [];
-      }
-      const effectState = job.effectState;
-      const acceptance = job.acceptance;
-      const itemId = string(job.itemId);
-      const videoId = string(job.videoId);
-      const lastErrorCode = string(job.lastErrorCode);
-      const pollingState = job.pollingState;
-      return [
-        {
-          ...(acceptance === 'rejected_before_accept' ||
-          acceptance === 'accepted' ||
-          acceptance === 'acceptance_unknown'
-            ? { acceptance }
-            : {}),
-          confirmationId,
-          ...(effectState === 'claimed' ||
-          effectState === 'settled' ||
-          effectState === 'reconciliation_required'
-            ? { effectState }
-            : {}),
-          id,
-          ...(itemId ? { itemId } : {}),
-          ...(lastErrorCode ? { lastErrorCode } : {}),
-          ...(string(job.nextPollAt)
-            ? { nextPollAt: string(job.nextPollAt) }
-            : {}),
-          ...(typeof job.pollAttempts === 'number'
-            ? { pollAttempts: job.pollAttempts }
-            : {}),
-          ...(string(job.pollDeadlineAt)
-            ? { pollDeadlineAt: string(job.pollDeadlineAt) }
-            : {}),
-          ...(pollingState === 'scheduled' ||
-          pollingState === 'exhausted' ||
-          pollingState === 'completed'
-            ? { pollingState }
-            : {}),
-          ...(typeof job.pollLimit === 'number'
-            ? { pollLimit: job.pollLimit }
-            : {}),
-          status: status as DouyinPublishJobView['status'],
-          updatedAt: string(job.updatedAt),
-          ...(videoId ? { videoId } : {}),
-        },
-      ];
-    });
-  const observeSnapshots = (
-    Array.isArray(payload.observeSnapshots) ? payload.observeSnapshots : []
-  )
-    .map(record)
-    .flatMap((snapshot): DouyinObserveSnapshotView[] => {
-      const externalId = string(snapshot.externalId);
-      const source = snapshot.source;
-      if (!externalId || (source !== 'product' && source !== 'external')) {
-        return [];
-      }
-      return [
-        {
-          evidenceRevision: string(snapshot.evidenceRevision),
-          externalId,
-          missingFieldCount: Object.keys(record(snapshot.missingReasons))
-            .length,
-          observedAt: string(snapshot.observedAt),
-          platformTime: string(snapshot.platformTime),
-          source,
-        },
-      ];
-    });
-  const rawObserveState = record(payload.observeState);
-  const observeStatus = rawObserveState.status;
-  const observeState = [
-    'available',
-    'empty',
-    'unavailable',
-    'unknown',
-  ].includes(String(observeStatus))
-    ? {
-        evidenceRevision: string(rawObserveState.evidenceRevision),
-        lastAttemptAt: string(rawObserveState.lastAttemptAt),
-        ...(string(rawObserveState.lastSuccessfulAt)
-          ? { lastSuccessfulAt: string(rawObserveState.lastSuccessfulAt) }
-          : {}),
-        ...(string(rawObserveState.nextSyncAt)
-          ? { nextSyncAt: string(rawObserveState.nextSyncAt) }
-          : {}),
-        ...(string(rawObserveState.reason)
-          ? { reason: string(rawObserveState.reason) }
-          : {}),
-        status: observeStatus as DouyinObserveStateView['status'],
-      }
-    : undefined;
-  return {
-    connectionId: string(payload.connectionId),
-    contentSnapshots: [],
-    observeSnapshots,
-    ...(observeState ? { observeState } : {}),
-    publishJobs,
-    refreshedAt: string(payload.refreshedAt),
-  };
-}
-
-export function normalizeDouyinContentSnapshots(
-  value: unknown
-): DouyinContentSnapshotView[] {
-  return (Array.isArray(value) ? value : [])
-    .map(record)
-    .flatMap((snapshot): DouyinContentSnapshotView[] => {
-      const id = string(snapshot.id);
-      const revision = string(snapshot.revision);
-      const contentId = string(snapshot.contentId);
-      const contentVersionId = string(snapshot.contentVersionId);
-      const artifactId = string(snapshot.artifactId);
-      const title = string(snapshot.title);
-      const createdAt = string(snapshot.createdAt);
-      if (
-        !id ||
-        !revision ||
-        !contentId ||
-        !contentVersionId ||
-        !artifactId ||
-        !title ||
-        !createdAt
-      ) {
-        return [];
-      }
-      return [
-        {
-          artifactId,
-          contentId,
-          contentVersionId,
-          createdAt,
-          id,
-          revision,
-          title,
-        },
-      ];
-    });
 }

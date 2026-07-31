@@ -6,16 +6,12 @@ import { commandP1, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import {
   normalizeConnections,
-  normalizeDouyinContentSnapshots,
-  normalizeDouyinIntegrationStatus,
-  normalizeDouyinOperationsSnapshot,
   normalizeFeishuActivity,
   normalizeFeishuPendingIntents,
   normalizeFeishuRecoveryIntents,
   normalizeFeishuShortcuts,
   normalizeFeishuTools,
   normalizeIntegrationAudit,
-  type DouyinOperationsSnapshotView,
   type FeishuActivityView,
   type FeishuPendingIntentView,
   type FeishuRecoveryIntentView,
@@ -101,33 +97,6 @@ async function loadFeishuProducts(
   );
   return Object.fromEntries(entries) as Record<string, FeishuProductState>;
 }
-
-async function loadDouyinProducts(
-  connections: IntegrationConnectionView[],
-  signal: AbortSignal
-) {
-  const entries = await Promise.all(
-    connections.map(async (connection) => {
-      const snapshot = await queryP1<unknown>(
-        'integrations',
-        {
-          action: 'douyin_operations_snapshot',
-          payload: { connectionId: connection.id },
-        },
-        signal
-      );
-      return [
-        connection.id,
-        normalizeDouyinOperationsSnapshot(snapshot),
-      ] as const;
-    })
-  );
-  return Object.fromEntries(entries) as Record<
-    string,
-    DouyinOperationsSnapshotView
-  >;
-}
-
 export function useIntegrationSettings(enabled = true) {
   const queryClient = useQueryClient();
   const connectionsQuery = useQuery({
@@ -152,17 +121,6 @@ export function useIntegrationSettings(enabled = true) {
       ),
     select: normalizeIntegrationAudit,
   });
-  const douyinIntegrationStatusQuery = useQuery({
-    enabled,
-    queryKey: p1QueryKeys.request('integrations', 'douyin_integration_status'),
-    queryFn: ({ signal }) =>
-      queryP1<unknown>(
-        'integrations',
-        { action: 'douyin_integration_status', payload: {} },
-        signal
-      ),
-    select: normalizeDouyinIntegrationStatus,
-  });
   const connections = connectionsQuery.data ?? [];
   const feishuConnections = useMemo(
     () =>
@@ -172,38 +130,12 @@ export function useIntegrationSettings(enabled = true) {
       ),
     [connections]
   );
-  const douyinConnections = useMemo(
-    () =>
-      connections.filter(
-        (connection) =>
-          connection.provider === 'douyin' && connection.status !== 'revoked'
-      ),
-    [connections]
-  );
   const feishuProductsQuery = useQuery({
     enabled: feishuConnections.length > 0,
     queryKey: p1QueryKeys.request('integrations', 'feishu_products', {
       connectionIds: feishuConnections.map((connection) => connection.id),
     }),
     queryFn: ({ signal }) => loadFeishuProducts(feishuConnections, signal),
-  });
-  const douyinProductsQuery = useQuery({
-    enabled: douyinConnections.length > 0,
-    queryKey: p1QueryKeys.request('integrations', 'douyin_products', {
-      connectionIds: douyinConnections.map((connection) => connection.id),
-    }),
-    queryFn: ({ signal }) => loadDouyinProducts(douyinConnections, signal),
-  });
-  const douyinContentSnapshotsQuery = useQuery({
-    enabled: douyinConnections.length > 0,
-    queryKey: p1QueryKeys.request('integrations', 'douyin_content_snapshots'),
-    queryFn: ({ signal }) =>
-      queryP1<unknown>(
-        'integrations',
-        { action: 'douyin_content_snapshots', payload: {} },
-        signal
-      ),
-    select: normalizeDouyinContentSnapshots,
   });
   const commandMutation = useMutation({
     mutationFn: (request: IntegrationCommandRequest) =>
@@ -217,30 +149,16 @@ export function useIntegrationSettings(enabled = true) {
         queryKey: p1QueryKeys.module('integrations'),
       }),
   });
-  const douyinProducts = useMemo(() => {
-    const contentSnapshots = douyinContentSnapshotsQuery.data ?? [];
-    return Object.fromEntries(
-      Object.entries(douyinProductsQuery.data ?? {}).map(([id, product]) => [
-        id,
-        { ...product, contentSnapshots },
-      ])
-    ) as Record<string, DouyinOperationsSnapshotView>;
-  }, [douyinContentSnapshotsQuery.data, douyinProductsQuery.data]);
   const errorCause = [
     connectionsQuery.error,
     auditQuery.error,
-    douyinIntegrationStatusQuery.error,
     feishuProductsQuery.error,
-    douyinProductsQuery.error,
-    douyinContentSnapshotsQuery.error,
   ].find(Boolean);
 
   return {
     audit: auditQuery.data ?? [],
     busy: commandMutation.isPending,
     connections,
-    douyinProducts,
-    douyinIntegrationStatus: douyinIntegrationStatusQuery.data,
     error: errorCause ? integration_load_error() : undefined,
     executeCommand: <T>(request: IntegrationCommandRequest) =>
       commandMutation.mutateAsync(request) as Promise<T>,
@@ -248,11 +166,7 @@ export function useIntegrationSettings(enabled = true) {
     loading:
       connectionsQuery.isPending ||
       auditQuery.isPending ||
-      douyinIntegrationStatusQuery.isPending ||
-      (feishuConnections.length > 0 && feishuProductsQuery.isPending) ||
-      (douyinConnections.length > 0 &&
-        (douyinProductsQuery.isPending ||
-          douyinContentSnapshotsQuery.isPending)),
+      (feishuConnections.length > 0 && feishuProductsQuery.isPending),
     refresh: () =>
       queryClient.refetchQueries({
         queryKey: p1QueryKeys.module('integrations'),
@@ -260,9 +174,6 @@ export function useIntegrationSettings(enabled = true) {
     refreshing:
       connectionsQuery.isFetching ||
       auditQuery.isFetching ||
-      douyinIntegrationStatusQuery.isFetching ||
-      feishuProductsQuery.isFetching ||
-      douyinProductsQuery.isFetching ||
-      douyinContentSnapshotsQuery.isFetching,
+      feishuProductsQuery.isFetching,
   };
 }

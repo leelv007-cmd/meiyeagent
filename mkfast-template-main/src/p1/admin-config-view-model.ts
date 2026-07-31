@@ -29,7 +29,6 @@ const configSchemas = {
   'compliance.aigc_label.default': z.boolean(),
   'compliance.regulated_mode.default': z.boolean(),
   'compliance.watermark.default': z.boolean(),
-  'douyin.adapter.assembly': z.literal('recorded'),
   // 图文笔记的风格集合：编译器按这份有序集合出候选，运营在后台直接改
   // （U05 / D-107；契约与 Core 同一份，来自 @meiye/contracts）。
   [NOTE_STYLE_CONFIG_KEY]: noteStyleConfigSchema,

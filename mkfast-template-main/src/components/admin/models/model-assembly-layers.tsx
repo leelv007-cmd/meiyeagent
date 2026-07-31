@@ -47,7 +47,6 @@ const CHANNEL_LAYER_KEYS = [
   'model.execution.mode',
   'model.media.execution.mode',
   'byok.adapter.assembly',
-  'douyin.adapter.assembly',
 ] as const;
 
 function LayerBody({

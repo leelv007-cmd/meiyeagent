@@ -57,7 +57,7 @@ test('the note style key explains itself in note terms, not in checkout terms', 
 });
 
 test('every admin config key reaches the schema renderer through the production control', () => {
-  assert.equal(ADMIN_CONFIG_KEYS.length, 20);
+  assert.equal(ADMIN_CONFIG_KEYS.length, 19);
   for (const key of ADMIN_CONFIG_KEYS) {
     const html = renderControlForKey(key);
     assert.match(
@@ -88,13 +88,12 @@ test('the merchant hold control is editable and described as hot-read', () => {
   assert.match(html, /热加载已生效/);
 });
 
-/** 四个执行模式/装配键必须常驻展开，而不是被塞进「先选一项」的下拉里。 */
+/** 三个执行模式/装配键必须常驻展开，而不是被塞进「先选一项」的下拉里。 */
 test('mode and assembly keys stay expanded instead of hiding behind the key picker', () => {
   for (const key of [
     'model.execution.mode',
     'model.media.execution.mode',
     'byok.adapter.assembly',
-    'douyin.adapter.assembly',
   ]) {
     const html = renderControlForKey(key);
     assert.match(
@@ -240,7 +239,7 @@ test('shows dedicated selectable controls for model and media execution modes', 
   assert.equal((html.match(/role="radio"/g) ?? []).length, 9);
 });
 
-test('shows selectable adapter assembly controls and keeps Douyin live unavailable before pilot', () => {
+test('shows selectable adapter assembly controls', () => {
   const queryClient = new QueryClient();
   queryClient.setQueryData(p1QueryKeys.request('admin-config', 'config_list'), [
     {
@@ -258,38 +257,18 @@ test('shows selectable adapter assembly controls and keeps Douyin live unavailab
       storedValue: 'recorded',
       wired: true,
     },
-    {
-      activationEvidenceStatus: 'recorded_only',
-      actorId: 'platform-admin',
-      correlationId: 'douyin-assembly-1',
-      createdAt: '2026-07-15T10:03:00.000Z',
-      effectiveValue: 'recorded',
-      key: 'douyin.adapter.assembly',
-      reason: 'pilot not started',
-      revision: 1,
-      rolledBackToRevision: null,
-      scope: 'global',
-      status: 'applied',
-      storedValue: 'recorded',
-      wired: true,
-    },
   ]);
 
   const html = renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
-      <AdminRuntimeConfigControl
-        keys={['byok.adapter.assembly', 'douyin.adapter.assembly']}
-      />
+      <AdminRuntimeConfigControl keys={['byok.adapter.assembly']} />
     </QueryClientProvider>
   );
 
   assert.match(html, /BYOK 适配器装配/);
-  assert.match(html, /抖音适配器装配/);
-  assert.match(html, /未接入（pilot 前）/);
-  assert.match(html, /id="douyin\.adapter\.assembly-live"[^>]*disabled/);
   assert.doesNotMatch(html, /id="byok\.adapter\.assembly-live"[^>]*disabled/);
   assert.doesNotMatch(html, /<textarea/);
-  assert.equal((html.match(/role="radio"/g) ?? []).length, 4);
+  assert.equal((html.match(/role="radio"/g) ?? []).length, 2);
 });
 
 test('submits Tuzi and mixed radio values through the audited config apply contract', () => {

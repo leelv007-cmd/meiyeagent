@@ -451,9 +451,6 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
                 <option value="export">导出成品</option>
                 <option value="manual_copy">手动复制发布</option>
                 <option value="assisted_handoff">辅助交接</option>
-                <option value="publish:xiaohongshu">发布到小红书</option>
-                <option value="publish:douyin">发布到抖音</option>
-                <option value="publish:video_account">发布到视频号</option>
               </select>
             </div>
             <div className="space-y-2">

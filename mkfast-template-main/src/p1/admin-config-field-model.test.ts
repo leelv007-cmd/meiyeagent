@@ -16,7 +16,7 @@ import {
 
 /** 后台能改的每个配置项都必须有表单件，一个都不许退回手敲文本。 */
 test('every admin config key maps onto typed form fields', () => {
-  assert.equal(ADMIN_CONFIG_KEYS.length, 20);
+  assert.equal(ADMIN_CONFIG_KEYS.length, 19);
   for (const key of ADMIN_CONFIG_KEYS) {
     const fields = buildAdminConfigFields(key);
     assert.ok(fields.length > 0, `${key} produced no fields`);

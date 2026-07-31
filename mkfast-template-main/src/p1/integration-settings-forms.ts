@@ -1,13 +1,8 @@
 import { z } from 'zod';
 
 import {
-  integration_form_anchor_id_required,
-  integration_form_anchor_id_too_long,
-  integration_form_content_snapshot_required,
   integration_form_json_object_required,
   integration_form_json_required,
-  integration_form_publish_time_invalid,
-  integration_form_publish_time_required,
   integration_form_scopes_required,
   integration_form_secret_required,
   integration_form_secret_too_long,
@@ -33,15 +28,6 @@ const scopeList = z
     integration_form_scopes_required()
   );
 
-const douyinScheduledAtSchema = z
-  .string()
-  .trim()
-  .min(1, integration_form_publish_time_required())
-  .refine(
-    (value) => !Number.isNaN(new Date(value).getTime()),
-    integration_form_publish_time_invalid()
-  );
-
 function isJsonObject(value: string) {
   try {
     const parsed = JSON.parse(value) as unknown;
@@ -55,7 +41,7 @@ function isJsonObject(value: string) {
 
 export const createIntegrationConnectionSchema = z.object({
   capabilities: z.array(z.string().trim().min(1)),
-  provider: z.enum(['model', 'douyin', 'feishu']),
+  provider: z.enum(['model', 'feishu']),
   scopes: scopeList,
   secret: nonEmptySecret,
   subject: z.string().trim().max(256, integration_form_subject_too_long()),
@@ -64,26 +50,6 @@ export const createIntegrationConnectionSchema = z.object({
 export const rotateIntegrationCredentialSchema = z.object({
   secret: nonEmptySecret,
 });
-
-export const douyinPublishFormSchema = z
-  .object({
-    anchorId: z.string().trim().max(256, integration_form_anchor_id_too_long()),
-    anchorKind: z.enum(['none', 'poi', 'mini_program']),
-    contentSnapshotId: z
-      .string()
-      .trim()
-      .min(1, integration_form_content_snapshot_required()),
-    scheduledAt: douyinScheduledAtSchema,
-  })
-  .superRefine((value, context) => {
-    if (value.anchorKind !== 'none' && !value.anchorId) {
-      context.addIssue({
-        code: 'custom',
-        message: integration_form_anchor_id_required(),
-        path: ['anchorId'],
-      });
-    }
-  });
 
 export const feishuArgumentsFormSchema = z.object({
   rawArguments: z
@@ -99,7 +65,6 @@ export type CreateIntegrationConnectionInput = z.infer<
 export type RotateIntegrationCredentialInput = z.infer<
   typeof rotateIntegrationCredentialSchema
 >;
-export type DouyinPublishFormInput = z.infer<typeof douyinPublishFormSchema>;
 export type FeishuArgumentsFormInput = z.infer<
   typeof feishuArgumentsFormSchema
 >;
@@ -116,11 +81,6 @@ export function feishuArguments(value: string) {
   const parsed = feishuArgumentsFormSchema.parse({ rawArguments: value });
   return JSON.parse(parsed.rawArguments) as Record<string, unknown>;
 }
-
-export function douyinScheduledAt(value: string) {
-  return new Date(douyinScheduledAtSchema.parse(value)).toISOString();
-}
-
 export interface ConnectionCreationAttempt {
   connectionId: string;
   idempotencyKey: string;

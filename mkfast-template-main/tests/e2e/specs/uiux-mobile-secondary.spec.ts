@@ -30,7 +30,9 @@ for (const viewport of [
       try {
         await loginByForm(page, user);
         await expect(page.getByTestId('composer-home')).toBeVisible();
-        await expect(page.getByTestId('composer-lens-radiogroup')).toBeVisible();
+        await expect(
+          page.getByTestId('composer-lens-radiogroup')
+        ).toBeVisible();
         await expect(page.getByTestId('composer-intent-input')).toBeVisible();
         const mobileNav = page.getByRole('navigation', { name: '移动端导航' });
         await expect(mobileNav).toBeVisible();
@@ -83,22 +85,29 @@ test.describe('mobile upload and relay', () => {
       await loginByForm(page, user);
       const before = await productState(page);
       let dropped = false;
-      await page.route('**/api/storage/upload?purpose=product_asset', async (route) => {
-        if (
-          !dropped &&
-          route.request().method() === 'POST' &&
-          route.request().postDataBuffer()?.toString('utf8').includes('mobile-resume.png')
-        ) {
-          dropped = true;
-          await route.fulfill({
-            body: JSON.stringify({ error: 'transient fixture failure' }),
-            contentType: 'application/json',
-            status: 503,
-          });
-          return;
+      await page.route(
+        '**/api/storage/upload?purpose=product_asset',
+        async (route) => {
+          if (
+            !dropped &&
+            route.request().method() === 'POST' &&
+            route
+              .request()
+              .postDataBuffer()
+              ?.toString('utf8')
+              .includes('mobile-resume.png')
+          ) {
+            dropped = true;
+            await route.fulfill({
+              body: JSON.stringify({ error: 'transient fixture failure' }),
+              contentType: 'application/json',
+              status: 503,
+            });
+            return;
+          }
+          await route.continue();
         }
-        await route.continue();
-      });
+      );
 
       const file = {
         name: 'mobile-resume.png',
@@ -106,9 +115,7 @@ test.describe('mobile upload and relay', () => {
         buffer: PNG_FIXTURE,
       };
       await page.locator('#composer-gallery-input').setInputFiles(file);
-      await page
-        .getByRole('button', { name: /确认：允许公开宣传/ })
-        .click();
+      await page.getByRole('button', { name: /确认：允许公开宣传/ }).click();
       await expect(page.getByText('图片上传失败，请重试。')).toBeVisible({
         timeout: 30_000,
       });
@@ -176,8 +183,8 @@ test.describe('desktop secondary surfaces', () => {
       await expect(page.getByText('抖音连接', { exact: true })).toHaveCount(0);
 
       await page.goto('/settings/connections');
-      await expect(page.getByRole('tab', { name: '抖音连接' })).toBeVisible();
       await expect(page.getByRole('tab', { name: '飞书连接' })).toBeVisible();
+      await expect(page.getByRole('tab', { name: '抖音连接' })).toHaveCount(0);
       await expect(
         page.getByRole('tab', { name: '使用自己的模型密钥' })
       ).toHaveCount(0);
@@ -276,9 +283,7 @@ test.describe('desktop secondary surfaces', () => {
 
       await loginByForm(page, user);
       await page.goto('/settings/account?section=usage');
-      await page
-        .getByTestId('account-usage-details-toggle')
-        .click();
+      await page.getByTestId('account-usage-details-toggle').click();
       for (const label of ['可用', '预留', '已结算', '已释放', '本期到期']) {
         await expect(
           page.getByText(label, { exact: false }).first()

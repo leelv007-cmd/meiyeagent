@@ -101,10 +101,6 @@ describe('admin config form values', () => {
       /selected config key/i
     );
     assert.throws(
-      () => parseAdminConfigDraft('douyin.adapter.assembly', '"live"'),
-      /selected config key/i
-    );
-    assert.throws(
       () =>
         parseAdminConfigDraft(
           'plan.allowances.starter',

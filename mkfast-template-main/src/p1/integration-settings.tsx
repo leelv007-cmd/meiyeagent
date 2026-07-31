@@ -1,6 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
-  IconBrandTiktok,
   IconBuilding,
   IconChevronDown,
   IconCloudLock,
@@ -12,8 +11,8 @@ import {
   IconShieldLock,
   IconUnlink,
 } from '@tabler/icons-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { useMemo, useRef, useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -35,23 +34,11 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import {
-  integration_anchor_authorized_id,
-  integration_anchor_id_placeholder,
-  integration_anchor_kind_mini_program,
-  integration_anchor_none,
-  integration_anchor_optional,
   integration_audit_action_connection_created,
   integration_audit_action_connection_disconnected,
   integration_audit_action_credential_rotated,
@@ -63,10 +50,7 @@ import {
   integration_available,
   integration_capabilities,
   integration_capability_active,
-  integration_capability_aria,
   integration_capability_degraded,
-  integration_capability_disabled_success,
-  integration_capability_enabled_success,
   integration_capability_granted,
   integration_capability_not_granted,
   integration_capability_not_granted_description,
@@ -84,41 +68,6 @@ import {
   integration_create_connection,
   integration_create_description,
   integration_disconnect_aria,
-  integration_douyin_account_missing,
-  integration_douyin_anchor_stale,
-  integration_douyin_confirm_failed,
-  integration_douyin_confirm_success,
-  integration_douyin_confirmation,
-  integration_douyin_description,
-  integration_douyin_job_empty,
-  integration_douyin_job_item_missing,
-  integration_douyin_job_polling,
-  integration_douyin_job_polling_next,
-  integration_douyin_job_query,
-  integration_douyin_job_summary,
-  integration_douyin_jobs,
-  integration_douyin_not_integrated_badge,
-  integration_douyin_not_integrated_description,
-  integration_douyin_not_integrated_title,
-  integration_douyin_observe_empty,
-  integration_douyin_observe_last_attempt,
-  integration_douyin_observe_next_sync,
-  integration_douyin_observe_record,
-  integration_douyin_observe_snapshots,
-  integration_douyin_publish_description,
-  integration_douyin_publish_job_submitted,
-  integration_douyin_publish_snapshot_confirm,
-  integration_douyin_publish_snapshot_submit,
-  integration_douyin_publish_title,
-  integration_douyin_publishable_empty,
-  integration_douyin_publishable_label,
-  integration_douyin_publishable_placeholder,
-  integration_douyin_scheduled_at,
-  integration_douyin_snapshot_stale,
-  integration_douyin_sync,
-  integration_douyin_sync_success,
-  integration_douyin_sync_updated,
-  integration_douyin_title,
   integration_error_action_failed,
   integration_feishu_activity_empty,
   integration_feishu_activity_open,
@@ -172,18 +121,7 @@ import {
   integration_not_connected,
   integration_not_marked,
   integration_not_yet_created,
-  integration_observe_status_available,
-  integration_observe_status_empty,
-  integration_observe_status_unavailable,
-  integration_observe_status_unknown,
   integration_pending_configuration,
-  integration_provider_douyin_capability_mini_program,
-  integration_provider_douyin_capability_observe,
-  integration_provider_douyin_capability_poi,
-  integration_provider_douyin_capability_publish,
-  integration_provider_douyin_oauth_credential,
-  integration_provider_douyin_oauth_placeholder,
-  integration_provider_douyin_subject,
   integration_provider_feishu_capability_tools,
   integration_provider_feishu_description,
   integration_provider_feishu_secret,
@@ -199,8 +137,6 @@ import {
   integration_read_only_description_external,
   integration_read_only_description_model,
   integration_read_only_title,
-  integration_reauthorize_description,
-  integration_reauthorize_title,
   integration_refresh,
   integration_request_capabilities,
   integration_request_capabilities_hint,
@@ -212,8 +148,6 @@ import {
   integration_rotate_placeholder,
   integration_rotate_success,
   integration_secret_write_only,
-  integration_source_external,
-  integration_source_product,
   integration_status_active,
   integration_status_authorized,
   integration_status_available,
@@ -265,8 +199,6 @@ import {
 import { formatLocaleDateTime } from '@/lib/locale';
 import {
   createIntegrationConnectionSchema,
-  douyinPublishFormSchema,
-  douyinScheduledAt,
   feishuArguments,
   feishuArgumentsFormSchema,
   integrationScopes,
@@ -276,15 +208,11 @@ import {
   type ConnectionCreationAttempt,
   type CredentialRotationAttempt,
   type CreateIntegrationConnectionInput,
-  type DouyinPublishFormInput,
   type FeishuArgumentsFormInput,
   type RotateIntegrationCredentialInput,
 } from '@/p1/integration-settings-forms';
 import {
   canReconcileFeishuIntent,
-  eligibleDouyinPublishAnchorKinds,
-  type DouyinOperationsSnapshotView,
-  type DouyinPublishJobView,
   type FeishuPendingIntentView,
   type FeishuRecoveryIntentView,
   type FeishuToolView,
@@ -325,34 +253,6 @@ const PROVIDERS: ProviderDefinition[] = [
       },
     ],
     icon: IconCloudLock,
-  },
-  {
-    provider: 'douyin',
-    title: integration_douyin_title,
-    description: integration_douyin_description,
-    identityMode: 'oauth_user',
-    subjectLabel: integration_provider_douyin_subject,
-    secretLabel: integration_provider_douyin_oauth_credential,
-    secretPlaceholder: integration_provider_douyin_oauth_placeholder,
-    capabilities: [
-      {
-        id: 'publish',
-        label: integration_provider_douyin_capability_publish,
-      },
-      {
-        id: 'observe',
-        label: integration_provider_douyin_capability_observe,
-      },
-      {
-        id: 'publish.poi',
-        label: integration_provider_douyin_capability_poi,
-      },
-      {
-        id: 'publish.mini_program',
-        label: integration_provider_douyin_capability_mini_program,
-      },
-    ],
-    icon: IconBrandTiktok,
   },
   {
     provider: 'feishu',
@@ -542,13 +442,7 @@ interface ConnectionCardProps {
   busy: boolean;
   canManage: boolean;
   connection: IntegrationConnectionView;
-  douyinIntegrated?: boolean;
   rotateConnectionId?: string;
-  onCapabilityChange: (
-    connection: IntegrationConnectionView,
-    capability: string,
-    active: boolean
-  ) => Promise<void>;
   onDisconnect: (connection: IntegrationConnectionView) => Promise<void>;
   onRotate: (
     connection: IntegrationConnectionView,
@@ -563,9 +457,7 @@ function ConnectionCard({
   busy,
   canManage,
   connection,
-  douyinIntegrated,
   rotateConnectionId,
-  onCapabilityChange,
   onDisconnect,
   onRotate,
   onRotateConnectionChange,
@@ -576,11 +468,7 @@ function ConnectionCard({
   const connectionEnabled = !['disabled', 'revoked'].includes(
     connection.status
   );
-  const canSync =
-    connectionEnabled &&
-    (connection.provider === 'feishu' ||
-      (connection.provider === 'douyin' &&
-        connection.activeCapabilities.includes('observe')));
+  const canSync = connectionEnabled && connection.provider === 'feishu';
   const rotating = rotateConnectionId === connection.id;
   const rotateForm = useForm<RotateIntegrationCredentialInput>({
     defaultValues: { secret: '' },
@@ -637,14 +525,6 @@ function ConnectionCard({
         ) : null}
       </CardHeader>
       <CardContent className="space-y-4">
-        {connection.provider === 'douyin' && douyinIntegrated === false ? (
-          <Alert>
-            <AlertTitle>{integration_douyin_not_integrated_title()}</AlertTitle>
-            <AlertDescription>
-              {integration_douyin_not_integrated_description()}
-            </AlertDescription>
-          </Alert>
-        ) : null}
         <dl className="grid gap-3 text-sm sm:grid-cols-2">
           <div>
             <dt className="text-muted-foreground">
@@ -664,16 +544,6 @@ function ConnectionCard({
           </div>
         </dl>
 
-        {connection.provider === 'douyin' &&
-        connection.refreshReauthorizationReminder ? (
-          <Alert>
-            <AlertTitle>{integration_reauthorize_title()}</AlertTitle>
-            <AlertDescription>
-              {integration_reauthorize_description()}
-            </AlertDescription>
-          </Alert>
-        ) : null}
-
         <Separator />
 
         <div className="space-y-3">
@@ -686,7 +556,6 @@ function ConnectionCard({
               capability.id
             );
             const degraded = connection.degradedCapabilities[capability.id];
-            const controllable = connection.provider === 'douyin';
             return (
               <div
                 className="flex items-start justify-between gap-4 border-b border-divider p-3 last:border-b-0"
@@ -704,28 +573,11 @@ function ConnectionCard({
                           : integration_capability_pending_owner()}
                   </p>
                 </div>
-                {controllable && canManage ? (
-                  <Switch
-                    aria-label={integration_capability_aria({
-                      capability: capability.label(),
-                    })}
-                    checked={active}
-                    disabled={busy || !connectionEnabled || !granted}
-                    onCheckedChange={(checked) =>
-                      void onCapabilityChange(
-                        connection,
-                        capability.id,
-                        checked
-                      )
-                    }
-                  />
-                ) : (
-                  <Badge variant={granted ? 'secondary' : 'outline'}>
-                    {granted
-                      ? integration_capability_granted()
-                      : integration_capability_not_granted()}
-                  </Badge>
-                )}
+                <Badge variant={granted ? 'secondary' : 'outline'}>
+                  {granted
+                    ? integration_capability_granted()
+                    : integration_capability_not_granted()}
+                </Badge>
               </div>
             );
           })}
@@ -739,9 +591,7 @@ function ConnectionCard({
               variant="outline"
             >
               <IconRefresh />
-              {connection.provider === 'feishu'
-                ? integration_feishu_verify()
-                : integration_douyin_sync()}
+              {integration_feishu_verify()}
             </Button>
           ) : null}
           {canManage ? (
@@ -795,457 +645,6 @@ function ConnectionCard({
             </div>
           </form>
         ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-function DouyinOperationsPanel({
-  busy,
-  connection,
-  integrated,
-  snapshot,
-  onConfirm,
-  onRefreshJob,
-  onSubmit,
-  onSync,
-}: {
-  busy: boolean;
-  connection: IntegrationConnectionView;
-  integrated?: boolean;
-  snapshot: DouyinOperationsSnapshotView;
-  onConfirm: (
-    connection: IntegrationConnectionView,
-    contentSnapshotId: string,
-    scheduledAt: string,
-    anchor?: { id: string; kind: 'poi' | 'mini_program' }
-  ) => Promise<string | undefined>;
-  onRefreshJob: (job: DouyinPublishJobView) => Promise<void>;
-  onSubmit: (
-    confirmationId: string,
-    contentSnapshotId: string,
-    scheduledAt: string
-  ) => Promise<void>;
-  onSync: (connection: IntegrationConnectionView) => Promise<void>;
-}) {
-  const [confirmationId, setConfirmationId] = useState('');
-  const [confirmedSnapshotRevision, setConfirmedSnapshotRevision] =
-    useState('');
-  const publishForm = useForm<DouyinPublishFormInput>({
-    defaultValues: {
-      anchorId: '',
-      anchorKind: 'none',
-      contentSnapshotId: '',
-      scheduledAt: '',
-    },
-    resolver: zodResolver(douyinPublishFormSchema),
-  });
-  const contentSnapshotId = publishForm.watch('contentSnapshotId');
-  const anchorKind = publishForm.watch('anchorKind');
-  const eligibleAnchors = eligibleDouyinPublishAnchorKinds(connection).map(
-    (kind) => ({
-      kind,
-      label: kind === 'poi' ? 'POI' : integration_anchor_kind_mini_program(),
-    })
-  );
-  const selectedSnapshot = snapshot.contentSnapshots.find(
-    (candidate) => candidate.id === contentSnapshotId
-  );
-  const confirmationIsCurrent = Boolean(
-    confirmationId &&
-      selectedSnapshot &&
-      confirmedSnapshotRevision === selectedSnapshot.revision
-  );
-
-  useEffect(() => {
-    if (contentSnapshotId && !selectedSnapshot) {
-      publishForm.setValue('contentSnapshotId', '');
-      setConfirmationId('');
-      setConfirmedSnapshotRevision('');
-    }
-  }, [contentSnapshotId, publishForm, selectedSnapshot]);
-
-  useEffect(() => {
-    if (
-      anchorKind !== 'none' &&
-      !eligibleAnchors.some((anchor) => anchor.kind === anchorKind)
-    ) {
-      publishForm.setValue('anchorKind', 'none');
-      publishForm.setValue('anchorId', '');
-      setConfirmationId('');
-      setConfirmedSnapshotRevision('');
-    }
-  }, [anchorKind, eligibleAnchors, publishForm]);
-
-  const clearConfirmation = () => {
-    setConfirmationId('');
-    setConfirmedSnapshotRevision('');
-  };
-
-  const confirm = publishForm.handleSubmit(async (values) => {
-    const currentSnapshot = snapshot.contentSnapshots.find(
-      (candidate) => candidate.id === values.contentSnapshotId
-    );
-    if (!currentSnapshot) {
-      toast.error(integration_douyin_snapshot_stale());
-      return;
-    }
-    const id = await onConfirm(
-      connection,
-      currentSnapshot.id,
-      values.scheduledAt,
-      values.anchorKind === 'none'
-        ? undefined
-        : { id: values.anchorId, kind: values.anchorKind }
-    );
-    if (!id) return;
-    setConfirmationId(id);
-    setConfirmedSnapshotRevision(currentSnapshot.revision);
-  });
-
-  const submit = publishForm.handleSubmit(async (values) => {
-    const currentSnapshot = snapshot.contentSnapshots.find(
-      (candidate) => candidate.id === values.contentSnapshotId
-    );
-    if (
-      !currentSnapshot ||
-      !confirmationId ||
-      confirmedSnapshotRevision !== currentSnapshot.revision
-    ) {
-      toast.error(integration_douyin_anchor_stale());
-      return;
-    }
-    await onSubmit(confirmationId, currentSnapshot.id, values.scheduledAt);
-  });
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{integration_douyin_publish_title()}</CardTitle>
-        <CardDescription>
-          {integration_douyin_publish_description({
-            identity: connectionPublicName(connection),
-          })}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-5">
-        {integrated === false ? (
-          <Alert>
-            <AlertTitle>{integration_douyin_not_integrated_title()}</AlertTitle>
-            <AlertDescription>
-              {integration_douyin_not_integrated_description()}
-            </AlertDescription>
-          </Alert>
-        ) : null}
-        <form className="space-y-3" onSubmit={confirm}>
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor={`douyin-snapshot-${connection.id}`}>
-                {integration_douyin_publishable_label()}
-              </Label>
-              <Controller
-                control={publishForm.control}
-                name="contentSnapshotId"
-                render={({ field }) => (
-                  <Select
-                    disabled={snapshot.contentSnapshots.length === 0}
-                    onValueChange={(value) => {
-                      field.onChange(value ?? '');
-                      clearConfirmation();
-                    }}
-                    value={field.value || null}
-                  >
-                    <SelectTrigger
-                      className="w-full"
-                      id={`douyin-snapshot-${connection.id}`}
-                    >
-                      <SelectValue
-                        placeholder={integration_douyin_publishable_placeholder()}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {snapshot.contentSnapshots.map((candidate) => (
-                        <SelectItem key={candidate.id} value={candidate.id}>
-                          {candidate.title} ·{' '}
-                          {dateTimeLabel(candidate.createdAt)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-              {publishForm.formState.errors.contentSnapshotId ? (
-                <p className="text-xs text-destructive">
-                  {publishForm.formState.errors.contentSnapshotId.message}
-                </p>
-              ) : null}
-              {snapshot.contentSnapshots.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  {integration_douyin_publishable_empty()}
-                </p>
-              ) : null}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor={`douyin-schedule-${connection.id}`}>
-                {integration_douyin_scheduled_at()}
-              </Label>
-              <Controller
-                control={publishForm.control}
-                name="scheduledAt"
-                render={({ field }) => (
-                  <Input
-                    id={`douyin-schedule-${connection.id}`}
-                    onBlur={field.onBlur}
-                    onChange={(event) => {
-                      field.onChange(event);
-                      clearConfirmation();
-                    }}
-                    ref={field.ref}
-                    type="datetime-local"
-                    value={field.value}
-                  />
-                )}
-              />
-              {publishForm.formState.errors.scheduledAt ? (
-                <p className="text-xs text-destructive">
-                  {publishForm.formState.errors.scheduledAt.message}
-                </p>
-              ) : null}
-            </div>
-          </div>
-          {eligibleAnchors.length > 0 ? (
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor={`douyin-anchor-kind-${connection.id}`}>
-                  {integration_anchor_optional()}
-                </Label>
-                <Controller
-                  control={publishForm.control}
-                  name="anchorKind"
-                  render={({ field }) => (
-                    <Select
-                      onValueChange={(value) => {
-                        field.onChange(value ?? 'none');
-                        publishForm.setValue('anchorId', '');
-                        clearConfirmation();
-                      }}
-                      value={field.value}
-                    >
-                      <SelectTrigger
-                        className="w-full"
-                        id={`douyin-anchor-kind-${connection.id}`}
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">
-                          {integration_anchor_none()}
-                        </SelectItem>
-                        {eligibleAnchors.map((anchor) => (
-                          <SelectItem key={anchor.kind} value={anchor.kind}>
-                            {anchor.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-              </div>
-              {anchorKind !== 'none' ? (
-                <div className="space-y-2">
-                  <Label htmlFor={`douyin-anchor-id-${connection.id}`}>
-                    {integration_anchor_authorized_id()}
-                  </Label>
-                  <Controller
-                    control={publishForm.control}
-                    name="anchorId"
-                    render={({ field }) => (
-                      <Input
-                        id={`douyin-anchor-id-${connection.id}`}
-                        onBlur={field.onBlur}
-                        onChange={(event) => {
-                          field.onChange(event);
-                          clearConfirmation();
-                        }}
-                        placeholder={integration_anchor_id_placeholder()}
-                        ref={field.ref}
-                        value={field.value}
-                      />
-                    )}
-                  />
-                  {publishForm.formState.errors.anchorId ? (
-                    <p className="text-xs text-destructive">
-                      {publishForm.formState.errors.anchorId.message}
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-          <div className="flex flex-wrap gap-2">
-            <Button
-              disabled={busy || !connection.subject}
-              type="submit"
-              variant="outline"
-            >
-              {integration_douyin_publish_snapshot_confirm()}
-            </Button>
-            <Button
-              disabled={busy || !confirmationIsCurrent || !selectedSnapshot}
-              onClick={() => void submit()}
-              type="button"
-              variant="outline"
-            >
-              <IconPlayerPlay />
-              {integration_douyin_publish_snapshot_submit()}
-            </Button>
-            <Button
-              disabled={
-                busy || !connection.activeCapabilities.includes('observe')
-              }
-              onClick={() => void onSync(connection)}
-              type="button"
-              variant="outline"
-            >
-              <IconRefresh />
-              {integration_douyin_sync()}
-            </Button>
-          </div>
-        </form>
-        {confirmationIsCurrent ? (
-          <p className="text-xs text-muted-foreground">
-            {integration_douyin_confirmation({ confirmationId })}
-          </p>
-        ) : confirmationId ? (
-          <p className="text-xs text-destructive">
-            {integration_douyin_anchor_stale()}
-          </p>
-        ) : null}
-
-        <Separator />
-
-        <div className="space-y-3">
-          <h3 className="font-medium">{integration_douyin_jobs()}</h3>
-          {snapshot.publishJobs.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {integration_douyin_job_empty()}
-            </p>
-          ) : (
-            snapshot.publishJobs.map((job) => (
-              <div
-                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
-                key={job.id}
-              >
-                <div>
-                  <p className="font-medium">{statusLabel(job.status)}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {integration_douyin_job_summary({
-                      effect: job.effectState
-                        ? statusLabel(job.effectState)
-                        : integration_not_marked(),
-                      item: job.itemId ?? integration_douyin_job_item_missing(),
-                      updatedAt: dateTimeLabel(job.updatedAt),
-                    })}
-                  </p>
-                  {job.pollingState ? (
-                    <p className="text-xs text-muted-foreground">
-                      {job.nextPollAt
-                        ? integration_douyin_job_polling_next({
-                            nextAt: dateTimeLabel(job.nextPollAt),
-                            summary: integration_douyin_job_polling({
-                              attempts: job.pollAttempts ?? 0,
-                              limit: job.pollLimit ?? '-',
-                              polling: statusLabel(job.pollingState),
-                            }),
-                          })
-                        : integration_douyin_job_polling({
-                            attempts: job.pollAttempts ?? 0,
-                            limit: job.pollLimit ?? '-',
-                            polling: statusLabel(job.pollingState),
-                          })}
-                    </p>
-                  ) : null}
-                  {job.lastErrorCode ? (
-                    <p className="text-xs text-destructive">
-                      {integration_error_action_failed()}
-                    </p>
-                  ) : null}
-                </div>
-                {!['published', 'failed', 'manual_required'].includes(
-                  job.status
-                ) ? (
-                  <Button
-                    disabled={busy}
-                    onClick={() => void onRefreshJob(job)}
-                    size="sm"
-                    variant="outline"
-                  >
-                    {integration_douyin_job_query()}
-                  </Button>
-                ) : null}
-              </div>
-            ))
-          )}
-        </div>
-
-        <div className="space-y-3">
-          <h3 className="font-medium">
-            {integration_douyin_observe_snapshots()}
-          </h3>
-          {snapshot.observeState ? (
-            <div className="rounded-lg border p-3 text-sm">
-              <p className="font-medium">
-                {snapshot.observeState.status === 'available'
-                  ? integration_observe_status_available()
-                  : snapshot.observeState.status === 'empty'
-                    ? integration_observe_status_empty()
-                    : snapshot.observeState.status === 'unavailable'
-                      ? integration_observe_status_unavailable()
-                      : integration_observe_status_unknown()}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {snapshot.observeState.nextSyncAt
-                  ? integration_douyin_observe_next_sync({
-                      nextSync: dateTimeLabel(snapshot.observeState.nextSyncAt),
-                      summary: integration_douyin_observe_last_attempt({
-                        lastAttempt: dateTimeLabel(
-                          snapshot.observeState.lastAttemptAt
-                        ),
-                      }),
-                    })
-                  : integration_douyin_observe_last_attempt({
-                      lastAttempt: dateTimeLabel(
-                        snapshot.observeState.lastAttemptAt
-                      ),
-                    })}
-              </p>
-            </div>
-          ) : null}
-          {snapshot.observeSnapshots.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {integration_douyin_observe_empty()}
-            </p>
-          ) : (
-            snapshot.observeSnapshots.slice(0, 10).map((item) => (
-              <div
-                className="rounded-lg border p-3 text-sm"
-                key={item.externalId}
-              >
-                <p className="font-medium">{item.externalId}</p>
-                <p className="text-xs text-muted-foreground">
-                  {integration_douyin_observe_record({
-                    missingCount: item.missingFieldCount,
-                    observedAt: dateTimeLabel(item.observedAt),
-                    source:
-                      item.source === 'product'
-                        ? integration_source_product()
-                        : integration_source_external(),
-                  })}
-                </p>
-              </div>
-            ))
-          )}
-        </div>
       </CardContent>
     </Card>
   );
@@ -1663,8 +1062,6 @@ export function IntegrationSettings({
     audit,
     busy,
     connections,
-    douyinIntegrationStatus,
-    douyinProducts,
     error,
     executeCommand,
     feishuProducts,
@@ -1826,87 +1223,11 @@ export function IntegrationSettings({
     return rotated;
   };
 
-  const changeCapability = async (
-    connection: IntegrationConnectionView,
-    capability: string,
-    active: boolean
-  ) => {
-    await execute(
-      active ? 'activate_douyin_capability' : 'deactivate_douyin_capability',
-      active
-        ? {
-            connectionId: connection.id,
-            capability,
-          }
-        : { connectionId: connection.id, capability },
-      active
-        ? integration_capability_enabled_success()
-        : integration_capability_disabled_success()
-    );
-  };
-
   const syncConnection = async (connection: IntegrationConnectionView) => {
     await execute(
-      connection.provider === 'feishu'
-        ? 'verify_feishu_connection'
-        : 'sync_douyin_observe',
+      'verify_feishu_connection',
       { connectionId: connection.id },
-      connection.provider === 'feishu'
-        ? integration_feishu_verify_success()
-        : integration_douyin_sync_success()
-    );
-  };
-
-  const confirmDouyinPublish = async (
-    connection: IntegrationConnectionView,
-    contentSnapshotId: string,
-    localScheduledAt: string,
-    anchor?: { id: string; kind: 'poi' | 'mini_program' }
-  ) => {
-    if (!connection.subject) {
-      toast.error(integration_douyin_account_missing());
-      return undefined;
-    }
-    try {
-      const result = await executeCommand<{ id: string }>({
-        action: 'confirm_douyin_publish',
-        payload: {
-          accountSubject: connection.subject,
-          ...(anchor ? { anchor } : {}),
-          connectionId: connection.id,
-          contentSnapshotId: contentSnapshotId.trim(),
-          scheduledAt: douyinScheduledAt(localScheduledAt),
-        },
-      });
-      toast.success(integration_douyin_confirm_success());
-      return result.id;
-    } catch {
-      toast.error(integration_douyin_confirm_failed());
-      return undefined;
-    }
-  };
-
-  const submitDouyinPublish = async (
-    confirmationId: string,
-    contentSnapshotId: string,
-    localScheduledAt: string
-  ) => {
-    await execute(
-      'submit_douyin_publish',
-      {
-        confirmationId,
-        contentSnapshotId: contentSnapshotId.trim(),
-        scheduledAt: douyinScheduledAt(localScheduledAt),
-      },
-      integration_douyin_publish_job_submitted()
-    );
-  };
-
-  const refreshDouyinPublish = async (job: DouyinPublishJobView) => {
-    await execute(
-      'refresh_douyin_publish',
-      { jobId: job.id },
-      integration_douyin_sync_updated()
+      integration_feishu_verify_success()
     );
   };
 
@@ -2077,12 +1398,6 @@ export function IntegrationSettings({
                 <CardTitle className="flex items-center gap-2">
                   <Icon className="size-5" />
                   {item.title()}
-                  {item.provider === 'douyin' &&
-                  douyinIntegrationStatus?.integrated === false ? (
-                    <Badge variant="outline">
-                      {integration_douyin_not_integrated_badge()}
-                    </Badge>
-                  ) : null}
                 </CardTitle>
                 <CardDescription>{item.description()}</CardDescription>
               </CardHeader>
@@ -2132,30 +1447,11 @@ export function IntegrationSettings({
                     </TabsTrigger>
                   ))}
                 </TabsList>
-                {provider === 'douyin' &&
-                douyinIntegrationStatus?.integrated === false ? (
-                  <Alert className="my-4">
-                    <AlertTitle>
-                      {integration_douyin_not_integrated_title()}
-                    </AlertTitle>
-                    <AlertDescription>
-                      {integration_douyin_not_integrated_description()}
-                    </AlertDescription>
-                  </Alert>
-                ) : null}
                 {visibleProviders.map((item) => (
                   <TabsContent key={item.provider} value={item.provider}>
-                    {/*
-                      When the 未接入 alert above is showing it already says
-                      everything this line said — printing both put the same
-                      disclaimer on screen twice in a row.
-                    */}
-                    {item.provider === 'douyin' &&
-                    douyinIntegrationStatus?.integrated === false ? null : (
-                      <p className="mb-4 text-sm text-muted-foreground">
-                        {item.description()}
-                      </p>
-                    )}
+                    <p className="mb-4 text-sm text-muted-foreground">
+                      {item.description()}
+                    </p>
                   </TabsContent>
                 ))}
                 <div className="grid gap-4 md:grid-cols-2">
@@ -2292,9 +1588,7 @@ export function IntegrationSettings({
                 busy={busy}
                 canManage={canManage}
                 connection={connection}
-                douyinIntegrated={douyinIntegrationStatus?.integrated}
                 key={connection.id}
-                onCapabilityChange={changeCapability}
                 onDisconnect={async (candidate) => {
                   await execute(
                     'disconnect',
@@ -2311,36 +1605,6 @@ export function IntegrationSettings({
           </div>
         )}
       </section>
-
-      {scope === 'external'
-        ? connections
-            .filter(
-              (connection) =>
-                connection.provider === 'douyin' &&
-                connection.status !== 'revoked'
-            )
-            .map((connection) => (
-              <DouyinOperationsPanel
-                busy={busy}
-                connection={connection}
-                integrated={douyinIntegrationStatus?.integrated}
-                key={`douyin-operations:${connection.id}`}
-                onConfirm={confirmDouyinPublish}
-                onRefreshJob={refreshDouyinPublish}
-                onSubmit={submitDouyinPublish}
-                onSync={syncConnection}
-                snapshot={
-                  douyinProducts[connection.id] ?? {
-                    connectionId: connection.id,
-                    contentSnapshots: [],
-                    observeSnapshots: [],
-                    publishJobs: [],
-                    refreshedAt: '',
-                  }
-                }
-              />
-            ))
-        : null}
 
       {scope === 'external'
         ? connections

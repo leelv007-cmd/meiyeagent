@@ -3,8 +3,6 @@ import test from 'node:test';
 
 import {
   createIntegrationConnectionSchema,
-  douyinPublishFormSchema,
-  douyinScheduledAt,
   feishuArguments,
   feishuArgumentsFormSchema,
   integrationScopes,
@@ -16,9 +14,9 @@ import {
 test('connection and credential schemas keep secrets required in form memory', () => {
   assert.equal(
     createIntegrationConnectionSchema.safeParse({
-      capabilities: ['publish'],
-      provider: 'douyin',
-      scopes: 'publish, observe',
+      capabilities: ['mcp.tools'],
+      provider: 'feishu',
+      scopes: 'mcp.tools, docx:document:readonly',
       secret: '',
       subject: 'account-a',
     }).success,
@@ -34,38 +32,6 @@ test('connection and credential schemas keep secrets required in form memory', (
     'observe',
     'publish',
   ]);
-});
-
-test('douyin publish schema rejects missing snapshots and invalid timestamps', () => {
-  assert.equal(
-    douyinPublishFormSchema.safeParse({
-      contentSnapshotId: '',
-      scheduledAt: 'not-a-date',
-    }).success,
-    false
-  );
-  assert.equal(
-    douyinScheduledAt('2026-07-11T12:30').startsWith('2026-07-11T'),
-    true
-  );
-  assert.equal(
-    douyinPublishFormSchema.safeParse({
-      anchorId: '',
-      anchorKind: 'poi',
-      contentSnapshotId: 'snapshot-a',
-      scheduledAt: '2026-07-11T12:30',
-    }).success,
-    false
-  );
-  assert.equal(
-    douyinPublishFormSchema.safeParse({
-      anchorId: 'poi-100',
-      anchorKind: 'poi',
-      contentSnapshotId: 'snapshot-a',
-      scheduledAt: '2026-07-11T12:30',
-    }).success,
-    true
-  );
 });
 
 test('feishu argument schema accepts objects and rejects arrays or invalid JSON', () => {

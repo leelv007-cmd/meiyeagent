@@ -13,7 +13,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   admin_provider_credential_activation_note,
-  admin_provider_credential_douyin_recorded,
   admin_provider_credential_empty,
   admin_provider_credential_restart_effective,
   admin_provider_credential_revoke,
@@ -40,7 +39,7 @@ import {
 import { commandP1, queryP1 } from './client';
 import { p1QueryKeys } from './query-keys';
 
-type ProviderSlot = 'model.direct' | 'ark.media' | 'douyin.platform';
+type ProviderSlot = 'model.direct' | 'ark.media';
 
 /** J5: map legacy slot status onto CredentialAccount 3-state trunk. */
 type CredentialAccountTrunkStatus = 'pending' | 'active' | 'retired';
@@ -59,12 +58,7 @@ interface ProviderCredential {
     status: string;
     scope: string[];
     testedAt?: string;
-    testStatus?:
-      | 'passed'
-      | 'unauthorized'
-      | 'network_failed'
-      | 'unknown'
-      | 'not_wired';
+    testStatus?: 'passed' | 'unauthorized' | 'network_failed' | 'unknown';
     testErrorCode?: string;
   };
   updatedAt?: string;
@@ -102,11 +96,7 @@ function activationGateSatisfied(
   return credential?.testStatus === 'passed' && Boolean(credential.testedAt);
 }
 
-const slots: readonly ProviderSlot[] = [
-  'model.direct',
-  'ark.media',
-  'douyin.platform',
-];
+const slots: readonly ProviderSlot[] = ['model.direct', 'ark.media'];
 
 export function AdminProviderCredentialControl() {
   const queryClient = useQueryClient();
@@ -171,7 +161,7 @@ export function AdminProviderCredentialControl() {
           {admin_provider_credentials_description()}
         </AdminPanelDescription>
       </AdminPanelHeader>
-      <AdminPanelContent className="grid gap-4 lg:grid-cols-3">
+      <AdminPanelContent className="grid gap-4 lg:grid-cols-2">
         {slots.map((slot) => {
           const credential = query.data?.find(
             (item) => item.id === `platform:${slot}`
@@ -327,8 +317,6 @@ function providerTestStatus(
       return admin_provider_credential_test_network_failed();
     case 'unknown':
       return admin_provider_credential_test_unknown();
-    case 'not_wired':
-      return admin_provider_credential_douyin_recorded();
     default:
       return admin_provider_credential_test_pending();
   }
