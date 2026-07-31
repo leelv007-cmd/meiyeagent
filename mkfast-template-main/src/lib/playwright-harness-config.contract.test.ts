@@ -41,8 +41,9 @@ test('Playwright provisions an isolated DBOS database and enables the real Harne
     config.match(/JOB_QUEUE_PREFIX=\$\{jobQueuePrefix\}/gu)?.length,
     3
   );
-  assert.equal(config.match(/scripts\/e2e\/run-service\.mjs/gu)?.length, 5);
-  assert.equal(config.match(/gracefulShutdown:/gu)?.length, 5);
+  // Four services after Pro Studio / Canvas retirement (no canvas webServer).
+  assert.equal(config.match(/scripts\/e2e\/run-service\.mjs/gu)?.length, 4);
+  assert.equal(config.match(/gracefulShutdown:/gu)?.length, 4);
 });
 
 test('Playwright service wrapper terminates the complete child process group', async () => {

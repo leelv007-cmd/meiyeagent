@@ -16,7 +16,7 @@ tracker_issue: https://github.com/leelv007-cmd/meiyeweb-agent/issues/129
 
 > 本规格把 2026-07-22 全面差距复核中的 P0 项转成可开发、可迁移、可验收的执行合同。这里的 `P0` 表示当前最高整改优先级，不表示重启历史“P0 保 8”产品阶段，也不推翻已经接受的 ContentPackage、DBOS、Provider Registry、ProductQuote、Usage/Cost ledger、SSE 与权利审计架构。
 >
-> **两线边界**：本规格所称“统一提交主干”“所有新创作 Task”均指 Composer 发起的主线营销创作，不把 Pro Studio 的 `AdvancedCanvasProject + revision`、节点级 GenerationJob 或探索式画布强行改造成 Recipe/Surface/Lens 驱动的营销 Task。两线共享 Product Core 的身份与工作区隔离、CatalogModel、报价与路由、ProviderAttempt、Usage/Cost ledger、OwnedAsset、Capability、审计和 ContentPackage revision port；Pro Studio 只有在用户显式 adoption 时才写 ContentPackage。
+> **创作主线边界（D-170 修订）**：本规格所称“统一提交主干”“所有新创作 Task”均指 Composer 发起的主线营销创作（定制创作 + 自由创作薄路径）。**Pro Studio 两线/画布并行为历史表述，已全量退役（D-170）**——见 `docs/specs/pro-studio-retirement-spec-2026-08-01.md`。共享 Product Core（身份与工作区隔离、CatalogModel、报价与路由、ProviderAttempt、Usage/Cost ledger、OwnedAsset、Capability、审计和 ContentPackage revision port）仍生效；禁止新 advancedCanvas adoption 写 ContentPackage；历史血缘只读。
 
 ## Problem Statement
 
@@ -36,10 +36,10 @@ tracker_issue: https://github.com/leelv007-cmd/meiyeweb-agent/issues/129
 
 - Composer 在提交前完成 Recipe、Surface、Lens、目标平台、交付物、来源素材、权利摘要、表达身份、模型策略、目录版本、报价、路由和 Brief 确认的服务端校验。
 - 主线 Composer 唯一调用 `CreationSubmissionCoordinator`；Coordinator 在同一个幂等命令中冻结 `CreationExecutionSnapshot`，创建或关联 Work 与 ContentPackage shell，确认额度预占，并启动 DBOS 五阶段 Harness。
-- 由 Composer 发起的文案、图片、视频全部实现同一 Harness StagePort 合同；Operations/Model Supply 只作为主线领域能力端口，不再承载第二条主线顶层工作流。Pro Studio 节点生成继续由其 BackendPort/Application Service 承载，但不得复制共享账本、资产、供应或审计事实。
+- 由 Composer 发起的文案、图片、视频全部实现同一 Harness StagePort 合同；Operations/Model Supply 只作为主线领域能力端口，不再承载第二条主线顶层工作流。历史 Pro Studio 节点生成路径已退役（D-170），不得再复制或续命共享账本/资产/供应/审计旁路。
 - 所有 ContentPackage revision 只经过一个业务写入端口，继续使用 OCC、不可变 revision、来源血缘和权威审计。
 - staging/production 统一使用 S3-compatible 对象存储；本地文件系统仅允许开发和测试。Core API、Worker 和 Web 读取同一 OwnedAsset receipt。
-- 根级 CI 把干净安装、类型检查、构建、测试、持久化、静态检查、密钥扫描、包体预算、Web/Canvas 和主旅程 E2E 合成同一 required gate。
+- 根级 CI 把干净安装、类型检查、构建、测试、持久化、静态检查、密钥扫描、包体预算、Web 和主旅程 E2E 合成同一 required gate（Canvas 已退役，不再是 required unit）。
 - 关闭三个已知高风险安全问题，并用攻击场景回归测试证明修复，而不是只修改分支判断。
 - 把运行真相投影为商家语言：商家页面不再显示 UUID、内部枚举或供应商模型 slug；所有可见 CTA 必须有真实完成路径，否则隐藏或明确不可用。
 - 用 `/health/live`、`/health/ready`、`/capabilities` 区分进程存活、环境可交付和商家可用能力；recorded 证据不得被投影为 live verified。
@@ -133,23 +133,23 @@ tracker_issue: https://github.com/leelv007-cmd/meiyeweb-agent/issues/129
 
 ### 1. Priority and authority
 
-- 本规格是 2026-07-22 审计产生的 P0 整改增量，不覆盖历史 P0/P1 产品规格；冲突时以 D-072~D-099、ADR-0010~0012 和本规格的整改边界为准。
+- 本规格是 2026-07-22 审计产生的 P0 整改增量，不覆盖历史 P0/P1 产品规格；冲突时以 D-072~D-099、ADR-0010~0011、**D-170（Pro Studio 退役）** 和本规格的整改边界为准。
 - 保留当前 Workers/BFF、Node Core、DBOS、PostgreSQL、ContentPackage、Provider Registry、双账、SSE 和审计结构；禁止以整改为由替换整个运行时或新增第二聚合。
 - 现有全量功能父项、Provider live gate 和同一增量验收项继续作为依赖证据源；本规格只补齐当前审计确认的未闭环合同，不重复实现已关闭票据。
-- ADR-0012 与 D-099 拥有 Pro Studio 专属边界：画布工程是独立过程事实，节点级生成不是 Composer Task，且只有显式 adoption 才进入 ContentPackage。本规格的共享平台不变量仍对 Pro Studio 生效，但不得据此引入第二套 Catalog、Quote、Route、Usage、Cost、Asset、Capability 或审计事实。
+- **Pro Studio 两线表为历史口径（D-170 RETIRE）**：画布工程/节点生成/过程 ZIP 不再作为现行产品面。共享平台不变量仍禁止第二套 Catalog、Quote、Route、Usage、Cost、Asset、Capability 或审计事实。退役实施见 `docs/specs/pro-studio-retirement-spec-2026-08-01.md`。
 
-| 关注点 | Composer 主线 | Pro Studio | 唯一共享属主 |
+| 关注点 | Composer 主线（现行） | Pro Studio（历史/已退役） | 唯一共享属主 |
 | --- | --- | --- | --- |
-| 执行输入 | `CreationExecutionSnapshot` | `AdvancedCanvasProjectRevision + GenerationCheckpoint` | 各自应用层；引用同一 actor/workspace/catalog/quote/route 事实 |
-| 顶层编排 | DBOS 五阶段 Harness | Canvas BackendPort → Product Core Application Service | Provider/ledger/storage 等领域端口 |
-| 计费单位 | 一 Task 一 reservation | 一 GenerationJob/item 一 reservation；batch 仅聚合确认 | Product Usage ledger |
-| 媒体事实 | OwnedAsset | OwnedAsset | Asset Storage Port / receipt |
-| 成品写入 | Harness/确定性手改等调用 revision port | 仅显式 adoption 调用 revision port | Product Core ContentPackage revision port |
-| ZIP | 成品交付 manifest | `pro-studio-canvas-export/v1` 过程资产 manifest | 可共用确定性打包纯函数，不共用业务 manifest |
+| 执行输入 | `CreationExecutionSnapshot` | 历史：`AdvancedCanvasProjectRevision + GenerationCheckpoint` | 主线应用层；引用同一 actor/workspace/catalog/quote/route 事实 |
+| 顶层编排 | DBOS 五阶段 Harness | 历史：Canvas BackendPort（已退役） | Provider/ledger/storage 等领域端口 |
+| 计费单位 | 一 Task 一 reservation | 历史：一 GenerationJob/item 一 reservation | Product Usage ledger |
+| 媒体事实 | OwnedAsset | OwnedAsset（历史画布来源只读血缘） | Asset Storage Port / receipt |
+| 成品写入 | Harness/确定性手改等调用 revision port | 禁止新 adoption；历史 advancedCanvas 血缘只读 | Product Core ContentPackage revision port |
+| ZIP | 成品交付 manifest | 历史过程资产 manifest（不再交付） | 确定性打包纯函数可保留 |
 
 ### 2. `CreationExecutionSnapshot` is the execution root
 
-- 新增不可变 `CreationExecutionSnapshot` 作为一次由 Composer 发起的付费或可交付营销创作执行的根事实。它在正式启动 Harness 前由服务端一次创建；任何会改变执行语义的修改必须创建新 Task 或新 snapshot revision，不能原地覆盖。Pro Studio 节点级生成以不可变 project revision/checkpoint 为输入根，不伪造 Recipe、Surface、Lens 或平台字段。
+- 新增不可变 `CreationExecutionSnapshot` 作为一次由 Composer 发起的付费或可交付营销创作执行的根事实。它在正式启动 Harness 前由服务端一次创建；任何会改变执行语义的修改必须创建新 Task 或新 snapshot revision，不能原地覆盖。自由创作薄路径不伪造完整 Recipe/Surface 营销字段；历史画布节点 checkpoint 路径已退役（D-170）。
 - Snapshot 至少引用：workspace 与 actor、Surface revision、Recipe revision、显式 Lens、原始意图、来源对象与 revision、权利摘要 revision、平台目标、有序交付物合同、content modules、表达身份 revision、模型策略、CatalogModel revision、ProductQuoteSnapshot、RouteSnapshot、Brief confirmation revision、创建时间与 schema version。
 - Snapshot 只保存稳定标识、revision 和必要摘要，不复制素材二进制、密钥、完整供应商响应或可变前端草稿。
 - ContextBundle 是 Harness 上下文编译结果，RouteSnapshot 是供应路由事实，ContentPackage 是成品聚合；三者都引用同一 CreationExecutionSnapshot，但不互相取代。
@@ -171,7 +171,7 @@ tracker_issue: https://github.com/leelv007-cmd/meiyeweb-agent/issues/129
 
 ### 5. One DBOS Harness for copy, image and video
 
-- 五阶段 Harness 是所有由 Composer 新建的营销创作 Task 的唯一顶层编排器。Operations/Model Supply、视频 durable workflow、ffmpeg 和 Provider Adapter 均降为 StagePort 或能力端口。Pro Studio 的节点级 GenerationJob 不属于此处的营销 Task，但必须复用共享 Provider、ledger、storage、capability 与审计端口。
+- 五阶段 Harness 是所有由 Composer 新建的营销创作 Task 的唯一顶层编排器。Operations/Model Supply、视频 durable workflow、ffmpeg 和 Provider Adapter 均降为 StagePort 或能力端口。历史 Pro Studio 节点级 GenerationJob 不属于此处的营销 Task（路径已退役，D-170）。
 - Copy、Image、Video StagePort 共享输入 envelope、稳定 effect key、progress/token/state/question/revision 事件语义、恢复与 terminal failure 合同。
 - 视频逐镜头 checkpoint 与合成可以保留内部子状态，但必须向 Harness 投影同一个 Task/Work/ContentPackage；不得创建第三套商家结果状态。
 - 已受理或 `acceptance_unknown` 的 ProviderAttempt 禁止跨供应商盲重投。恢复只执行查询、回调核验、下载、对象入库或后续合成；确认未受理后才可按原冻结策略重试。
@@ -180,7 +180,7 @@ tracker_issue: https://github.com/leelv007-cmd/meiyeweb-agent/issues/129
 ### 6. One ContentPackage revision port
 
 - Product Core 保持 ContentPackage 唯一物理写入所有者。Harness 第五阶段、确定性手改、采用、视频合成和交付动作都调用同一个 revision port。
-- Pro Studio 的节点、候选、检查点和工程 ZIP 不自动产生 ContentPackage revision；只有用户显式 adoption 才调用该 revision port，并携带 `advancedCanvas` 来源引用与 expected revision。
+- 历史 Pro Studio 节点/候选/检查点/工程 ZIP 不自动产生 ContentPackage revision；**禁止新 adoption** 调用 revision port（D-170）；既有 `advancedCanvas` 血缘只读。
 - Port 强制 workspace 隔离、expected revision、幂等键、derived-from、snapshot reference、来源血缘、rights/compliance state 和审计事务。
 - 历史 CreativeContent、ContentItem 和独立视频结果继续只读迁移，不恢复双写。
 - Result、Content 和 Assets 只读取公共投影；Provider、成本和内部路由字段在公共 DTO 转换时移除。
@@ -189,7 +189,7 @@ tracker_issue: https://github.com/leelv007-cmd/meiyeweb-agent/issues/129
 
 - ProductQuoteSnapshot 与 RouteSnapshot 在提交前有效，Coordinator 绑定后不可静默替换；任何超出报价上限或候选集合的改动要求新报价和新确认。
 - 一个 Composer Task 只有一个 Product Usage reservation，terminal commit/release/expire 互斥且幂等；attempt 级 Provider Cost 独立记录。前端可以把 `release` 解释为“额度退回/退款”，但不得另造 ledger `refund` 终态。
-- Pro Studio batch 是一次 UI 聚合确认，不是一个带 N 个 reservation 的 Task。每个 batch item 必须映射为独立 GenerationJob、冻结 quote item、idempotency key 与一个 reservation；聚合报价只汇总这些不可变行项。
+- 历史 Pro Studio batch 计费语义（一 item 一 reservation）仅作账本对账参考；现行产品无画布 batch 入口（D-170）。
 - 恢复、轮询、重复下载、确定性采用和同一供应任务的对象回存不产生第二次产品费用。
 - 同一 snapshot 必须能关联最终 result revision、usage receipt、provider cost evidence 与 delivery receipt。
 
@@ -198,7 +198,7 @@ tracker_issue: https://github.com/leelv007-cmd/meiyeweb-agent/issues/129
 - 保留现有 Asset Storage Port，新增并启用 S3-compatible adapter；Cloudflare R2 是 Web 所在环境的默认实现，契约保持可兼容其他 S3 服务。
 - development/test 可以显式使用 filesystem；staging/production 未配置共享对象存储时启动失败。
 - 对象键包含 workspace 隔离前缀和不可变内容身份；receipt 至少包含 object key、content type、byte size、hash、storage revision 与创建时间。
-- 生成制品先写入确定性对象键并完成大小/hash 校验，再在业务事务中登记 Asset receipt。只有主线交付物形成、确定性成品修改或 Pro Studio 显式 adoption 时，才另外通过唯一 revision port 写 ContentPackage；数据库不得先暴露尚不存在的对象。
+- 生成制品先写入确定性对象键并完成大小/hash 校验，再在业务事务中登记 Asset receipt。只有主线交付物形成或确定性成品修改时，才另外通过唯一 revision port 写 ContentPackage（Pro Studio adoption 写口已退役，D-170）；数据库不得先暴露尚不存在的对象。
 - 对象成功而数据库失败时写入可重放清理账本；定期清理只删除超过安全窗口且没有任何 receipt 引用的对象。
 - ffmpeg 使用进程级临时目录物化输入与输出，完成上传或失败后清理；不得把临时路径写成业务事实。
 - 契约测试使用 S3-compatible 本地服务，覆盖 API 与 Worker 跨进程读取、重复写、失败恢复和孤儿清理。
@@ -253,7 +253,7 @@ tracker_issue: https://github.com/leelv007-cmd/meiyeweb-agent/issues/129
 
 ### Contract tests
 
-- Composer Snapshot schema 拒绝缺失 Recipe/Surface/Lens/platform/deliverables/identity/quote/route/rights revision 的付费提交；该断言不得用于拒绝合法的 Pro Studio GenerationCheckpoint。
+- Composer Snapshot schema 拒绝缺失 Recipe/Surface/Lens/platform/deliverables/identity/quote/route/rights revision 的付费提交；自由创作薄路径字段合同单独约束（不恢复画布 GenerationCheckpoint 旁路）。
 - 同一 canonical payload 的字段顺序变化不改变 payload hash；实际语义变化必须产生 conflict 或新 snapshot。
 - 自由文本包含不同平台词时，结构化平台选择仍决定输出平台。
 - Recipe revision 更新后，在途 snapshot、Brief、报价和结果保持旧 revision。
@@ -309,7 +309,7 @@ tracker_issue: https://github.com/leelv007-cmd/meiyeweb-agent/issues/129
 - 不重做视觉品牌、不新建第四个一级导航、不增加 Result 实体或第二内容聚合。
 - 不建设统一内容日历、拖拽排程、评论私信 Inbox、多层团队审批、多门店或 Agency 管理。
 - 不新增平台自动发布连接器；未通过 live gate 的能力继续使用 verified/assisted/unavailable 三态。
-- 不建设完整 Canva/CapCut 级编辑器；Pro Studio D-099 独立重做线不在本规格内。
+- 不建设完整 Canva/CapCut 级编辑器；Pro Studio 已全量退役（D-170），不在本规格内恢复画布或 parity 重做。
 - 不引入新的 Agent/workflow 框架，不以 Mastra、Inngest、Redis 或服务拆分替代当前 DBOS 主干。
 - 不扩大到 CRM、预约、收银、库存、会员、排班、财务或自动 ROI 归因。
 - 除三个明确 P1 安全问题及与共享存储/CI 直接相交的项外，不在本规格中顺带修完独立代码审查的全部 P2/P3。

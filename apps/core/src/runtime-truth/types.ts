@@ -41,8 +41,7 @@ export type ReadinessCheckName =
   | 'workerFreshness'
   | 'providerMode'
   | 'providerLive'
-  | 'outbox'
-  | 'canvas';
+  | 'outbox';
 
 export interface ReadinessCheckResult {
   detail?: string;
@@ -57,7 +56,7 @@ export interface ReleaseIdentity {
 }
 
 export interface ReleaseUnitIdentity extends ReleaseIdentity {
-  unit: 'web' | 'core' | 'worker' | 'canvas';
+  unit: 'web' | 'core' | 'worker';
 }
 
 export interface ReleaseManifest {

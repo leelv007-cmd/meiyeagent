@@ -50,11 +50,10 @@ import { pathToFileURL } from 'node:url';
 import { validateReleaseManifestArtifact } from './assert-release-candidate-evidence.mjs';
 
 const COMMIT_SHA_PATTERN = /^[a-f0-9]{40}$/u;
-export const RELEASE_UNITS = ['web', 'core', 'worker', 'canvas'];
+export const RELEASE_UNITS = ['web', 'core', 'worker'];
 
 /** Default artifact locations per release unit. */
 export const DEFAULT_UNIT_ARTIFACT_DIRS = {
-  canvas: 'apps/canvas/.next/standalone',
   // Core and Worker are the same package started two ways and run from source
   // through tsx, so the deployed artifact is the package source tree.
   core: 'apps/core/src',

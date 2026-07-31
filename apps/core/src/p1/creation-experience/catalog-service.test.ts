@@ -152,7 +152,7 @@ describe('Creation Experience Catalog aggregate', () => {
         ],
         toolEntryRefs: [
           {
-            toolEntryId: 'tool.pro_studio',
+            toolEntryId: 'tool.batch_bg_remove',
             order: 0,
             visible: true,
           },

@@ -268,7 +268,9 @@ test('env reader inventory ignores prose and requires a rooted property access',
 
 test('every declared server env key has a reader, or is named as enforcement-only', () => {
   const declared = declaredKeys(join(here, 'server.ts'));
-  assert.ok(declared.length >= 20, `failed to parse server.ts (${declared})`);
+  // Floor lowered after Pro Studio / Canvas product-surface retirement
+  // (D-170): CANVAS_* and PRO_STUDIO_* no longer declared on web.
+  assert.ok(declared.length >= 15, `failed to parse server.ts (${declared})`);
 
   const readers = envKeyReaders(productionSourceUnits());
 
@@ -313,14 +315,12 @@ test('web .env.example exactly mirrors web schemas and tool-owned keys', () => {
 
 test('root .env.example owns the web keys needed by the monorepo stack', () => {
   const rootExample = new Set(exampleKeys(join(rootRepo, '.env.example')));
+  // Canvas / Pro Studio seams retired with product surface (D-170).
   const rootStackWebKeys = [
     'DATABASE_URL',
     'INTERNAL_SERVICE_TRANSPORT',
     'CORE_SERVICE_URL',
     'CORE_SERVICE_TOKEN',
-    'CANVAS_SERVICE_URL',
-    'CANVAS_SERVICE_TOKEN',
-    'CANVAS_ORIGIN',
   ];
 
   assert.deepEqual(

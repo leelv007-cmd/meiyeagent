@@ -96,22 +96,6 @@ if [[ "${session_table}" != "session" ]]; then
   exit 66
 fi
 
-echo "Applying Pro Studio / advanced canvas schema to the business test database."
-(
-  cd "${repo_root}"
-  # tsx comes from @meiye/core; apply-pro-studio-schema.mts resolves pg via apps/core.
-  DATABASE_URL="${business_url}" pnpm --filter @meiye/core exec tsx "${repo_root}/scripts/ci/apply-pro-studio-schema.mts"
-)
-
-canvas_table="$(
-  psql "${business_url}" -X -v ON_ERROR_STOP=1 -Atqc \
-    "SELECT COALESCE(to_regclass('public.advanced_canvas_projects')::text, '')"
-)"
-if [[ "${canvas_table}" != "advanced_canvas_projects" ]]; then
-  echo "Pro Studio provisioning did not create public.advanced_canvas_projects." >&2
-  exit 67
-fi
-
 if [[ "${RUN_ISSUE_247_E2E_PROVISIONAL_BOUNDS_SEED:-}" == "true" ]]; then
   echo "Seeding Issue 247 provisional E2E bounded-execution limits through admin-config CAS."
   (

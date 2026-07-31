@@ -20,8 +20,6 @@ const SCAN_ROOTS = ['apps/', 'packages/', 'mkfast-template-main/'];
 const BASELINE_INTERNAL_COST_FILES = new Set([
   'apps/core/src/product/product-service.test.ts',
   'apps/core/src/product/publish-content-snapshot.test.ts',
-  'apps/core/src/pro-studio-runtime/engineering-ticket-journeys.test.ts',
-  'apps/core/src/pro-studio-runtime/generation-runtime.test.ts',
   'apps/core/src/video/product-renderer.ts',
 ]);
 const FORBIDDEN = [

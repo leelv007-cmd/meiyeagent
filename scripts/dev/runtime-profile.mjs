@@ -15,7 +15,6 @@ export function createDevelopmentRuntimeProfile(input) {
 
   const webPort = '3000';
   const corePort = input.PLAYWRIGHT_CORE_PORT || input.CORE_PORT || '4100';
-  const canvasPort = '4200';
   const dbosUrl =
     input.HARNESS_DBOS_SYSTEM_DATABASE_URL ||
     derivedDbosUrl(input.DATABASE_URL);
@@ -30,9 +29,6 @@ export function createDevelopmentRuntimeProfile(input) {
     APP_BASE_URL: `http://localhost:${webPort}`,
     APP_ENV: 'e2e',
     BYOK_EXECUTION_MODE: 'recorded',
-    CANVAS_ORIGIN: `http://localhost:${canvasPort}`,
-    CANVAS_PORT: canvasPort,
-    CANVAS_SERVICE_URL: `http://127.0.0.1:${canvasPort}`,
     CORE_PORT: corePort,
     CORE_SERVICE_URL: `http://127.0.0.1:${corePort}`,
     E2E_PLATFORM_DEFAULT_MODEL_AUDIO:

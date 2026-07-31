@@ -33,11 +33,9 @@ import {
 import { createCoreServer } from './server.js';
 import {
   assembleCapabilitiesFromEnv,
-  canvasReachabilityProbe,
   composeRuntimeTruth,
   dbosSystemDbProbe,
   isProtectedAppEnv,
-  objectStorageReadWriteRoundTrip,
   objectStorageProbe,
   outboxBacklogProbe,
   postgresqlProbe,
@@ -142,6 +140,7 @@ import {
   MediaActivationProbeExecutor,
   ModelSupplyFoundationModule,
   isLiveVerifiedActivationEvidence,
+  foundationOwnedReferenceAssetRepository,
   OwnedAssetReferenceResolver,
   OpenAiCompatibleAiSdkRunner,
   PostgresCanonicalVideoRunStore,
@@ -328,22 +327,12 @@ import {
   PersistentCanvasExportAdapter,
   ParseService,
 } from './p1/operations/index.js';
-import { LOCAL_FIXTURE_PROVIDER_REFERENCE_POLICY } from './pro-studio-runtime/provider-reference-policy.js';
+import { LOCAL_FIXTURE_PROVIDER_REFERENCE_POLICY } from './p1/model-supply/reference-asset-delivery.js';
 import {
   PostgresStoreIntakeFinalizationRepository,
   StoreIntakeFinalizer,
 } from './p1/operations/store-intake-finalizer.js';
 import { StoreProfileImportPreparer } from './p1/operations/store-profile-import.js';
-import {
-  migrateProStudioSchema,
-  PostgresAdvancedCanvasProjectRepository,
-  PostgresCanvasAssetRepository,
-} from './pro-studio/index.js';
-import {
-  AdvancedCanvasAdoptionFoundationModule,
-  migrateProStudioWorkspaceState,
-  PostgresAdvancedCanvasAdoptionService,
-} from './pro-studio-runtime/index.js';
 import { migratePostgresSchema } from './postgres-schema-migration.js';
 import {
   HarnessWorkflowEventSource,
@@ -408,16 +397,15 @@ const pool = new Pool({
     ? { max: harnessRuntimeConfig.businessPoolMax }
     : {}),
 });
-const canvasProjects = new PostgresAdvancedCanvasProjectRepository(pool);
 const diagnosticRepository = new PostgresDiagnosticRepository(pool);
 const productRepository = new PostgresProductRepository(pool);
 const relationalProductRepository = new PostgresRelationalProductRepository(
   pool
 );
 const assetStorage = modelAssetStorageFromEnv(process.env);
-const canvasAssetRepository = new PostgresCanvasAssetRepository(pool);
+const foundationRepository = new PostgresFoundationRepository(pool);
 const ownedReferenceAssets = new OwnedAssetReferenceResolver(
-  canvasAssetRepository,
+  foundationOwnedReferenceAssetRepository(foundationRepository),
   {
     async head(objectKey) {
       return assetStorage.head(objectKey);
@@ -443,7 +431,6 @@ const referenceAssets = new CompositeReferenceAssetResolver([
   ownedReferenceAssets,
   productReferenceAssets,
 ]);
-const foundationRepository = new PostgresFoundationRepository(pool);
 const grantLotLedger = new PostgresGrantLotLedger(pool);
 const redemptionStore = new PostgresRedemptionStore(pool);
 const operationsRepository = new PostgresOperationsRepository(pool);
@@ -805,7 +792,6 @@ const p1ModelSupplyRuntime = createModelSupplyRuntime({
           ),
         }
       : {}),
-    canvasProjects,
     durationSamples: foundationRepository,
     planningControlPlane: supplyPlanningControlPlane,
     platformDefaultModels: platformDefaultModelSource,
@@ -978,8 +964,6 @@ await migratePostgresSchema(pool, [
 if (modelRuntime.mode === 'fixture') {
   await initializeWorkspaceCatalog(PLATFORM_SUPPLY_SCOPE_ID);
 }
-await migrateProStudioSchema(pool);
-await migrateProStudioWorkspaceState(pool);
 const tracerJobs = new TracerJobApplicationService(tracerJobRepository);
 const parseService = new ParseService(
   parseRepository,
@@ -1190,7 +1174,6 @@ const contentPackageExportAssets = new OperationsContentPackageExportAssetReader
   referenceAssets
 );
 const canvasExportAssetAccess = new OperationsCanvasExportAssetAccessService({
-  canvasAssets: canvasAssetRepository,
   contentPackageAssets: contentPackageExportAssets,
   contentPackageRights: contentPackageRightsResolver,
   generationJobs: foundationRepository,
@@ -1570,9 +1553,6 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
   authorizer: permissionAuthorizer,
   operations: [
     agentPrimitiveAssembly.foundationModule,
-    new AdvancedCanvasAdoptionFoundationModule(
-      new PostgresAdvancedCanvasAdoptionService(pool)
-    ),
     creationExperienceRuntime.foundationModule,
     skillRuntime.foundationModule,
     new ProductBillingFoundationModule(
@@ -2462,35 +2442,38 @@ const READINESS_PROBE_BYTES = Buffer.from(
   'base64',
 );
 
-const probeObjectStorageReadWrite = objectStorageReadWriteRoundTrip({
-  bytes: READINESS_PROBE_BYTES,
-  createObjectKey: () =>
-    `${READINESS_PROBE_WORKSPACE_ID}/canvas/assets/readiness-probe-${randomUUID()}.png`,
-  async deleteObject(objectKey) {
-    await assetStorage.deleteCanvasAsset({
-      objectKey,
-      workspaceId: READINESS_PROBE_WORKSPACE_ID,
-    });
-  },
-  async putObject(objectKey, bytes) {
-    await assetStorage.putCanvasAsset({
-      bytes,
-      objectKey,
-      workspaceId: READINESS_PROBE_WORKSPACE_ID,
-    });
-  },
-  async readObject(objectKey) {
-    return (await assetStorage.read(objectKey)).bytes;
-  },
-});
+const probeObjectStorageReadWrite = async () => {
+  if (!assetStorage.persistOwnedAsset) {
+    throw new Error('Owned asset storage is unavailable for readiness probe.');
+  }
+  const persisted = await assetStorage.persistOwnedAsset({
+    bytes: READINESS_PROBE_BYTES,
+    contentType: 'image/png',
+    workspaceId: READINESS_PROBE_WORKSPACE_ID,
+  });
+  try {
+    const stored = await assetStorage.read(persisted.objectKey);
+    if (
+      stored.bytes.byteLength !== READINESS_PROBE_BYTES.byteLength ||
+      stored.bytes.some(
+        (byte, index) => byte !== READINESS_PROBE_BYTES[index],
+      )
+    ) {
+      throw new Error(
+        'Object storage returned different bytes than were written.',
+      );
+    }
+  } finally {
+    const deleteCached = (
+      assetStorage as { deleteCachedAsset?: (objectKey: string) => Promise<void> }
+    ).deleteCachedAsset;
+    if (deleteCached) {
+      await deleteCached.call(assetStorage, persisted.objectKey);
+    }
+  }
+};
 
 const readinessProbes = {
-  canvas: canvasReachabilityProbe({
-    baseUrl: process.env.CANVAS_SERVICE_URL ?? '',
-    ...(process.env.CANVAS_SERVICE_TOKEN
-      ? { serviceToken: process.env.CANVAS_SERVICE_TOKEN }
-      : {}),
-  }),
   dbos: dbosSystemPool
     ? dbosSystemDbProbe(dbosSystemPool)
     : () => ({
@@ -2560,7 +2543,6 @@ const runtimeTruth = {
 
 const server = createCoreServer({
   aiStreamingRunner,
-  canvasTextStreams: modelControlPlane,
   executionModeGate: streamingModeGate,
   assetReader: assetStorage,
   composerDestinationMapper,

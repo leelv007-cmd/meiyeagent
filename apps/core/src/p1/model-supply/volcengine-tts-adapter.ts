@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { AUDIO_ASSET_LIMITS } from '../../pro-studio-runtime/audio-asset-pipeline.js';
+import { AUDIO_ASSET_LIMITS } from './audio-asset-pipeline.js';
 import {
   decodeVolcengineTtsFrame,
   encodeVolcengineTtsFrame,

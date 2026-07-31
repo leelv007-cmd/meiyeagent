@@ -7,9 +7,7 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = join(here, '../../../../..');
 
-const FROZEN_CONTENT_PACKAGE_WRITE_BYPASSES = [
-  'apps/core/src/pro-studio-runtime/postgres-adoption-service.ts',
-] as const;
+const FROZEN_CONTENT_PACKAGE_WRITE_BYPASSES = [] as const;
 
 function childSourceRoots(parent: string): string[] {
   return readdirSync(parent, { withFileTypes: true })
@@ -55,9 +53,7 @@ test('ContentPackage SQL writes stay in the canonical adapter plus the fixed FRE
     'apps/core/src/p1/operations/postgres-content-package-write-adapter.ts',
     ...FROZEN_CONTENT_PACKAGE_WRITE_BYPASSES,
   ]);
-  assert.deepEqual(FROZEN_CONTENT_PACKAGE_WRITE_BYPASSES, [
-    'apps/core/src/pro-studio-runtime/postgres-adoption-service.ts',
-  ]);
+  assert.deepEqual(FROZEN_CONTENT_PACKAGE_WRITE_BYPASSES, []);
 });
 
 test('StoreFact SQL and semantic appends have one controlled path', () => {

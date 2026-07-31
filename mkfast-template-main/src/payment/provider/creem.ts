@@ -2,11 +2,7 @@ import { getDb } from '@/db';
 import { payment } from '@/db/app.schema';
 import { user } from '@/db/auth.schema';
 import { sendPaymentNotification } from '@/notification';
-import {
-  findPlanByPlanId,
-  findPlanByPriceId,
-  findPriceInPlan,
-} from '@/lib/price-plan';
+import { findPlanByPlanId, findPriceInPlan } from '@/lib/price-plan';
 import { requireSellableCheckoutPrice } from '@/payment/checkout-policy';
 import {
   PostgresPaymentRecordEffectStore,
@@ -34,10 +30,8 @@ import type {
   PlanInterval,
   PortalResult,
   Price,
-  ServerCatalogOffer,
 } from '../types';
 import { PaymentScenes, PaymentTypes, PlanIntervals } from '../types';
-import { assertCreemServerCatalogOffer } from './server-catalog-validation';
 import { normalizeCreemVerifiedPaymentEvent } from '../verified-webhook-event';
 
 // ─── Creem Webhook Types ──────────────────────────────────────
@@ -153,11 +147,6 @@ export class CreemProvider implements PaymentProvider {
     return 'creem';
   }
 
-  async validateServerCatalogOffer(offer: ServerCatalogOffer) {
-    const product = await this.client.products.get(offer.price.priceId);
-    assertCreemServerCatalogOffer(offer, product);
-  }
-
   // ─── Checkout ─────────────────────────────────────────────
 
   /**
@@ -170,37 +159,15 @@ export class CreemProvider implements PaymentProvider {
   public async createCheckout(
     params: CreateCheckoutParams
   ): Promise<CheckoutResult> {
-    const {
-      priceId,
-      customerEmail,
-      successUrl,
-      metadata,
-      planId,
-      serverCatalogOffer,
-    } = params;
+    const { priceId, customerEmail, successUrl, metadata, planId } = params;
 
     try {
-      let canonicalPrice: Price;
-      if (serverCatalogOffer) {
-        if (
-          serverCatalogOffer.kind !== 'pro_studio_add_on' ||
-          serverCatalogOffer.offerId !== planId ||
-          serverCatalogOffer.price.priceId !== priceId ||
-          findPlanByPriceId(priceId)
-        ) {
-          throw new Error('Invalid server-owned add-on offer');
-        }
-        const product = await this.client.products.get(priceId);
-        assertCreemServerCatalogOffer(serverCatalogOffer, product);
-        canonicalPrice = serverCatalogOffer.price;
-      } else {
-        canonicalPrice = requireSellableCheckoutPrice(
-          { planId, priceId },
-          { findPlanByPlanId, findPriceInPlan }
-        ).price;
-        const product = await this.client.products.get(canonicalPrice.priceId);
-        assertCreemCheckoutProduct(canonicalPrice, product);
-      }
+      const canonicalPrice = requireSellableCheckoutPrice(
+        { planId, priceId },
+        { findPlanByPlanId, findPriceInPlan }
+      ).price;
+      const product = await this.client.products.get(canonicalPrice.priceId);
+      assertCreemCheckoutProduct(canonicalPrice, product);
       const checkout: CheckoutEntity = await this.client.checkouts.create({
         productId: canonicalPrice.priceId,
         successUrl: successUrl ?? '',

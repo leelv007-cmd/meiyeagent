@@ -67,36 +67,6 @@ const config = defineConfig(({ command, mode }) => ({
                 ...(process.env.CORE_SERVICE_TOKEN
                   ? { CORE_SERVICE_TOKEN: process.env.CORE_SERVICE_TOKEN }
                   : {}),
-                ...(process.env.CANVAS_SERVICE_URL
-                  ? { CANVAS_SERVICE_URL: process.env.CANVAS_SERVICE_URL }
-                  : {}),
-                ...(process.env.CANVAS_SERVICE_TOKEN
-                  ? { CANVAS_SERVICE_TOKEN: process.env.CANVAS_SERVICE_TOKEN }
-                  : {}),
-                ...(process.env.CANVAS_ORIGIN
-                  ? { CANVAS_ORIGIN: process.env.CANVAS_ORIGIN }
-                  : {}),
-                ...(process.env.PRO_STUDIO_OFFER_ID
-                  ? { PRO_STUDIO_OFFER_ID: process.env.PRO_STUDIO_OFFER_ID }
-                  : {}),
-                ...(process.env.PRO_STUDIO_PRICE_ID
-                  ? { PRO_STUDIO_PRICE_ID: process.env.PRO_STUDIO_PRICE_ID }
-                  : {}),
-                ...(process.env.PRO_STUDIO_AMOUNT_CENTS
-                  ? {
-                      PRO_STUDIO_AMOUNT_CENTS:
-                        process.env.PRO_STUDIO_AMOUNT_CENTS,
-                    }
-                  : {}),
-                ...(process.env.PRO_STUDIO_CURRENCY
-                  ? { PRO_STUDIO_CURRENCY: process.env.PRO_STUDIO_CURRENCY }
-                  : {}),
-                ...(process.env.PRO_STUDIO_PAYMENT_TYPE
-                  ? {
-                      PRO_STUDIO_PAYMENT_TYPE:
-                        process.env.PRO_STUDIO_PAYMENT_TYPE,
-                    }
-                  : {}),
                 ...(process.env.STRIPE_SECRET_KEY
                   ? { STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY }
                   : {}),

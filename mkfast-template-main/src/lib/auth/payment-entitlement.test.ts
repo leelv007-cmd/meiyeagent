@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
-  configuredGrowthPriceIds,
   configuredProPriceIds,
   resolvePaidPlanTier,
   resolvePaymentEntitlement,
@@ -10,16 +9,6 @@ import {
 const now = new Date('2026-07-10T00:00:00.000Z');
 
 describe('payment entitlement resolution', () => {
-  it('keeps the dedicated Pro Studio price outside the Growth catalog', () => {
-    const configured = configuredGrowthPriceIds({
-      PRO_STUDIO_PRICE_ID: 'price-pro-studio',
-      VITE_STRIPE_PRICE_PRO_MONTHLY: 'price-growth',
-    } as unknown as NodeJS.ProcessEnv);
-
-    assert.deepEqual([...configured], ['price-growth']);
-    assert.equal(configured.has('price-pro-studio'), false);
-  });
-
   it('maps lifetime price ids to pro, not growth', () => {
     const pro = configuredProPriceIds({
       VITE_STRIPE_PRICE_LIFETIME: 'price-life',

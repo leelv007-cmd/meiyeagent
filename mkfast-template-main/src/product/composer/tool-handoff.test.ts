@@ -18,17 +18,13 @@ import {
   serializeToolHandoffToSearchParams,
 } from './tool-handoff';
 import { COMPOSER_TOOL_ENTRY_SEEDS } from './tool-entry-seeds';
-import {
-  assertProStudioCanonicalHref,
-  openComposerTool,
-} from './composer-tools';
 
-test('four standalone tool seeds match D-092 ids', () => {
+test('standalone tool seeds match registered ids (Pro Studio retired)', () => {
   assert.deepEqual(
     COMPOSER_TOOL_ENTRY_SEEDS.map((t) => t.id),
     [...STANDALONE_TOOL_ENTRY_IDS]
   );
-  assert.equal(COMPOSER_TOOL_ENTRY_SEEDS.length, 4);
+  assert.equal(COMPOSER_TOOL_ENTRY_SEEDS.length, 3);
 });
 
 test('projectToolHandoff accepts whitelist fields only', () => {
@@ -142,18 +138,6 @@ test('open/return produce zero business writes', () => {
   assert.deepEqual(returned.sideEffects, []);
   assert.equal(returned.returnToDraftKey, 'd1');
   assert.equal(returned.focusKey, 'f1');
-});
-
-test('Pro Studio always uses canonical /pro-studio gate (no Canvas deep link)', () => {
-  const opened = openComposerTool('tool.pro_studio', {
-    sourceId: 'cp_2',
-    sourceKind: 'content_package',
-    returnToDraftKey: 'draft-ps',
-  });
-  assertProStudioCanonicalHref(opened.href);
-  assert.ok(opened.href.startsWith('/pro-studio'));
-  assert.ok(!/canvas/i.test(opened.href));
-  assert.deepEqual(opened.sideEffects, []);
 });
 
 test('buildToolOpenHref for ordinary tool keeps id path + allowlisted query', () => {

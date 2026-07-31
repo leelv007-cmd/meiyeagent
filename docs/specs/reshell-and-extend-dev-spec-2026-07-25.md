@@ -43,9 +43,9 @@
 10. 作为店主，执行中我可以介入修正（改方向、换素材、调文案），流程接受修正后继续前进而非推倒重来。
 11. 作为店主，我提交时确认的平台、交付物与模型设置就是最终执行的设置（服务端签名冻结，无静默覆盖），这样所见即所得。
 
-**自由创作与 Pro Studio**
+**自由创作（Pro Studio 已退役）**
 12. 作为熟手店主，我可以走自由主线直接下指令生成，不被定制流程绑架。
-13. 作为高阶店主，我能看到 Pro Studio 入口（自由创作高阶版定位），当前冻结状态下不误导我可用。
+13. ~~作为高阶店主，我能看到 Pro Studio 入口…~~ **RETIRED（D-170）**：产品无 Pro Studio 入口、加购或画布工作区；自由创作＝模型原生薄路径。退役实施见 `docs/specs/pro-studio-retirement-spec-2026-08-01.md`。
 
 **四类输出——文案**
 14. 作为店主，我要一句话产出平台适配的文案（轻输出走五段退化执行），候选以 token 流式即时开始呈现（不设固定数值 SLA；各类超时秒数＝运营参数）。
@@ -123,7 +123,7 @@
 ## Implementation Decisions
 
 **路线与批次**
-1. 开发路线＝原地换壳保核（D-127）：KEEP_EXTEND 156 行保留扩展；RETIRE 48 行真删（git rm，分四批：1A 立即删≈36 行/12,764 行代码已批准；1B 迁移完成后删；1C 模型原生视频切换后删；1D 换壳完成后删）；FREEZE 7 行原地运行不投入（Pro Studio 全冻结仅留入口）；REBUILD 10 行沿 Composer 主干换壳；NEW 8 项纵切净新建。每票动工前查归桶矩阵，禁止在 RETIRE 桶续命、在 REBUILD 桶打补丁。FREEZE 唯一例外动作＝audio 管线先抽共享校验到 model-supply 再冻结画布部分（矩阵 §2）。条件删除批机器可判谓词：1B＝迁移票双读零差异、1C＝原生视频链 live_verified＋旧链零流量＋全量基线绿、1D＝换壳票组全部合入＋旧页零路由引用；各批唯一前置票在票包显式声明。
+1. 开发路线＝原地换壳保核（D-127）：KEEP_EXTEND 156 行保留扩展；RETIRE 48 行真删（git rm，分四批：1A 立即删≈36 行/12,764 行代码已批准；1B 迁移完成后删；1C 模型原生视频切换后删；1D 换壳完成后删）；**原 FREEZE 7 行（Pro Studio 系）由 D-170 升格为 RETIRE/真删**——先迁 KEEP audio 能力，再按 `docs/specs/pro-studio-retirement-spec-2026-08-01.md` 阶段删除，不得再「只留入口」；REBUILD 10 行沿 Composer 主干换壳；NEW 8 项纵切净新建。每票动工前查归桶矩阵，禁止在 RETIRE 桶续命、在 REBUILD 桶打补丁。条件删除批机器可判谓词：1B＝迁移票双读零差异、1C＝原生视频链 live_verified＋旧链零流量＋全量基线绿、1D＝换壳票组全部合入＋旧页零路由引用；各批唯一前置票在票包显式声明。
 2. 执行序列（D-110）：装配门（第 0 步 required 旅程：注册→默认栈→首次出活；**M-06 并入本批**——开发启动与 Harness 激活单一口径：单一 dev runtime profile、四服务启动 smoke、默认 DBOS system DB、能力缺失显式状态）→ M-01～M-05 → R-01～R-08 → E-01。修复即建设：M/R 级修复直接按 **D-101～D-131 当前裁决形态**实施（D-110 元原则后条覆盖前条，如 R-01 按 D-116/D-118 形态）；每项动工前对照校准。
 3. god module（model-supply/operations）触碰时拆，不开专项重构票（D-127）。
 
@@ -158,7 +158,7 @@
 23. R-05：canonical 写路径唯一——adoption/adjust/delivery 全部经统一 semantic mutation policy，DB 角色禁旁路直写，OCC/outbox/幂等为验收面（ADR-0011）。
 24. R-06：usage 账本不变量——ProductUsage 仅由 Coordinator 创建、ModelJob 只计供应成本、子 job 共享 billing lineage、N 候选一次扣点、故障重放不双记。
 25. R-07：安全收口——auth cookie plugin 顺序修正、敏感管理操作 recent-auth/step-up、邮件日志禁记收件人明文与 token HTML。
-26. R-08：Pro Studio entitlement——`unknown|locked|active` 三态 canonical projection 唯一真值，冷启动/查询失败/gate 一致性有测试，冻结入口按真值呈现不误导。
+26. R-08（历史）：Pro Studio entitlement 三态投影——**D-170 后改为 fail-closed 下线**：无商业/launch 入口、产品面 STOP-READ 专属表；不再以「冻结入口按真值呈现」为验收目标。
 27. E-01 发布工程门（**仓库内范围**）：同一 SHA 四单元 release manifest、readiness/probe、Wrangler 实配、恢复演练工具、分支保护；外部账号资源动作（支付/短信/生产云账号开通）不在本门、见 Out of Scope。
 
 ## Testing Decisions
@@ -176,7 +176,7 @@
 ## Out of Scope
 
 - **E 门业务批（外部资源与商业闭环）**：支付真实通道接入、删除匿名化、取消退款补单、手机号短信登录、部署中国化、MinerU 自托管、平台代发真实账号（`publish:*` 能力门）——触发点到达时另开批次（凭证届时按 D-132 §D 同批索取）。注意：**E-01 发布工程门的仓库内工程（决策 27）在本 spec 范围内**，不随本条排除。
-- Pro Studio 解锁与接入形态（冻结仅留入口；已确认决策完成后视情况解锁；entitlement 真值合同＝决策 26，在范围内）。
+- Pro Studio 解锁/接入/新画布（**D-170 已闭合为全量退役**；实施跟退役规格，不在本 spec 再开「解锁」项）。
 - Landing 阶段二精细优化；产品命名**定稿本身**（属主＝用户+运营，R 门收口前完成，票包以 R 门 checklist 依赖项跟踪，不设工程票）。
 - 运营/合规执行阶段整体置后（D-040）：预登记、进场仪式、WOZ 人肉运营；结构性护栏（硬失败门/权利门/审计双写/红线 CI）随功能建不置后。
 - god module 专项大重构；多店多人协作；**新增** CRM/店务经营能力（库存/预约等；既有线索台账仅换壳保留、不扩功能，见 story 60）。

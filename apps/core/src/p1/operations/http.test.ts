@@ -4,7 +4,6 @@ import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 import type { DiagnosticRun } from '@meiye/contracts';
 import type { DiagnosticRepository } from '../../diagnostics/repository.js';
-import { AdvancedCanvasAdoptionError } from '../../pro-studio-runtime/adoption-rules.js';
 import { createCoreServer } from '../../server.js';
 import {
   MemoryFoundationRepository,
@@ -377,57 +376,6 @@ test('P1 HTTP boundary returns the current ContentPackage revision on conflict',
   });
 });
 
-test('P1 HTTP boundary preserves Pro Studio ContentPackage conflict details', async (t) => {
-  const p1ApplicationService = {
-    async executeModule() {
-      throw new AdvancedCanvasAdoptionError(
-        'CONTENT_PACKAGE_REVISION_CONFLICT',
-        'ContentPackage revision changed. Refresh and retry.',
-        { currentRevision: 5, expectedRevision: 4, packageId: 'package-1' },
-      );
-    },
-  } as unknown as P1ApplicationService;
-  const server = createCoreServer({
-    diagnosticRepository: emptyDiagnostics,
-    p1ApplicationService,
-    serviceToken: 'test-service-token',
-  });
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  t.after(() => server.close());
-  const { port } = server.address() as AddressInfo;
-  const response = await fetch(
-    `http://127.0.0.1:${port}/v1/workspaces/workspace-a/p1/commands`,
-    {
-      body: JSON.stringify({
-        action: 'adopt',
-        module: 'advanced-canvas',
-        payload: {},
-      }),
-      headers: {
-        'content-type': 'application/json',
-        'idempotency-key': 'pro-studio-conflict',
-        'x-correlation-id': 'corr-pro-studio-conflict',
-        'x-service-token': 'test-service-token',
-        'x-user-id': 'owner-a',
-        'x-workspace-id': 'workspace-a',
-        'x-workspace-role': 'owner',
-      },
-      method: 'POST',
-    },
-  );
-
-  assert.equal(response.status, 409);
-  const payload = (await response.json()) as {
-    error: { code: string; details: Record<string, unknown> };
-  };
-  assert.equal(payload.error.code, 'CONTENT_PACKAGE_REVISION_CONFLICT');
-  assert.deepEqual(payload.error.details, {
-    currentRevision: 5,
-    expectedRevision: 4,
-    packageId: 'package-1',
-  });
-});
 
 test('P1 HTTP boundary preserves approval and delivery error codes and statuses', async (t) => {
   const failures = [

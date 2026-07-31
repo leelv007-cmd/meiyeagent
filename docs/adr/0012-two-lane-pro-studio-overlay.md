@@ -1,10 +1,12 @@
 # ADR-0012: Composer 与 Pro Studio 两线产品边界
 
-Status: accepted (2026-07-16)
+Status: **superseded** (2026-08-01 by **D-170** + `docs/specs/pro-studio-retirement-spec-2026-08-01.md`)
 
+> **SUPERSEDED（D-170）**：Pro Studio 全量退役（RETIRE）。本文不再是产品权威；定制创作 + 自由创作薄路径双主线与 ContentPackage 唯一写口继续有效。历史正文保留追溯。
+>
 > 2026-07-24 修订（per D-103/D-110）：两条产品主线现为**定制创作＋自由创作**（D-103）；Pro Studio 降为自由创作下属的高级画布/交互面，不构成独立/第三条产品主线，并按 D-110 ③「移出首发投入焦点」——代码与 entitlement 付费墙保留不删，验证后按 D-103 收编。本文「Pro Studio 工程可以并行开发」及独立 Release boundary 口径不再作为首发投入依据，实施以 D-103/D-110 为准。
 >
-> D-127 补充（2026-07-24）：**Pro Studio 全部功能冻结，只保留入口**——入口在现有框架内定位＝自由创作模式的高阶版；具体接入形态与功能**悬置未判**，实施 Agent 不得自行设计画布接入、不得恢复画布投入；解锁＝已确认决策（D-111～D-127 票包）完成后视情况评估，不预设触发点。冻结期不投入、不删除（D-127 FREEZE 桶）。
+> D-127 补充（2026-07-24）：**Pro Studio 全部功能冻结，只保留入口**——（该 FREEZE 口径已由 D-170 RETIRE 取代）。
 
 ## Decision
 

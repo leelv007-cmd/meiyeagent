@@ -12,7 +12,7 @@ import { resolveFfmpegPath } from './media-tool-paths.js';
 import {
   parseAudioSfxContract,
   parseAudioSpeechContract,
-} from '../../pro-studio-runtime/audio-contracts.js';
+} from './audio-contracts.js';
 import type {
   MediaProviderDrainMode,
   MediaProviderEffectRequest,

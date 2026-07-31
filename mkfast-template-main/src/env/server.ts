@@ -1,9 +1,6 @@
 import { createEnv } from '@t3-oss/env-core';
 import * as z from 'zod';
-import {
-  canvasOriginSchema,
-  internalServiceTransportSchema,
-} from './internal-service-boundary';
+import { internalServiceTransportSchema } from './internal-service-boundary';
 import {
   allowsDevSecretDefaults,
   isWeakSecretValue,
@@ -46,22 +43,6 @@ export const serverEnv = createEnv({
       'CORE_SERVICE_TOKEN',
       'local-core-service-token'
     ),
-
-    // Internal Canvas service
-    CANVAS_SERVICE_URL: z.url().default('http://127.0.0.1:4200'),
-    CANVAS_SERVICE_TOKEN: serviceSecretSchema(
-      'CANVAS_SERVICE_TOKEN',
-      'local-canvas-service-token'
-    ),
-    CANVAS_ORIGIN: canvasOriginSchema(),
-
-    // Dedicated Pro Studio add-on catalog. Its price must not exist in the
-    // free/pro/lifetime catalog; missing values keep checkout disabled.
-    PRO_STUDIO_OFFER_ID: z.string().optional(),
-    PRO_STUDIO_PRICE_ID: z.string().optional(),
-    PRO_STUDIO_AMOUNT_CENTS: z.string().optional(),
-    PRO_STUDIO_CURRENCY: z.string().optional(),
-    PRO_STUDIO_PAYMENT_TYPE: z.string().optional(),
 
     // Mail and Newsletter (Resend)
     RESEND_API_KEY: z.string().optional(),

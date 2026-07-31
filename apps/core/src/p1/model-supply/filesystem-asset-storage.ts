@@ -11,7 +11,7 @@ import type {
   OwnedAsset,
 } from './index.js';
 import { resolveFfprobePath } from './media-tool-paths.js';
-import { validateGeneratedAudio } from '../../pro-studio-runtime/audio-asset-pipeline.js';
+import { validateGeneratedAudio } from './audio-asset-pipeline.js';
 
 const execFileAsync = promisify(execFile);
 const corePackageDirectory = fileURLToPath(

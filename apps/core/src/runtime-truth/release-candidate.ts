@@ -44,7 +44,7 @@ export function evaluateReleaseCandidateAcceptance(
   const releaseManifest = input.releaseManifest;
   if (!releaseManifest) {
     errors.push(
-      'Staging release manifest (four units: web/core/worker/canvas) is required.',
+      'Staging release manifest (three units: web/core/worker) is required.',
     );
   } else {
     try {

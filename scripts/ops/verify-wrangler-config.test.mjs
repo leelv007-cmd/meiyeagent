@@ -41,9 +41,9 @@ test('placeholders are reported, and only become failures under --require-real-r
   assert.deepEqual(strict.structureIssues, []);
 });
 
-test('core, worker, and canvas are never reported for missing wrangler configs', () => {
+test('core and worker are never reported for missing wrangler configs', () => {
   const result = verifyWranglerConfigs({ root: repositoryRoot });
-  assert.deepEqual(result.nonWorkerUnits, ['core', 'worker', 'canvas']);
+  assert.deepEqual(result.nonWorkerUnits, ['core', 'worker']);
   const found = findWranglerConfigs(repositoryRoot);
   assert.ok(found.every((path) => path.startsWith('mkfast-template-main/')));
   const blob = JSON.stringify(result);

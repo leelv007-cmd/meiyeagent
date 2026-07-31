@@ -335,47 +335,32 @@ describe('catalog search gate + return restore', () => {
   });
 });
 
-describe('tools strip caps + Pro Studio banner', () => {
-  it('mobile hides unverified ordinary tools and shows Pro Studio banner', () => {
+describe('tools strip caps', () => {
+  it('mobile hides unverified ordinary tools and has no Pro Studio banner', () => {
     const opens: string[] = [];
     render(
       <ComposerToolsStrip
         viewport="mobile"
-        proStudioStatus="active"
         onOpenTool={(href) => opens.push(href)}
       />
     );
     const strip = screen.getByTestId('composer-tools-strip');
     expect(strip).toHaveAttribute('data-ordinary-cap', '2');
     expect(strip).toHaveAttribute('data-ordinary-count', '0');
-
-    const banner = screen.getByTestId('composer-pro-studio-banner');
-    expect(banner).toHaveAttribute('data-status', 'active');
-    expect(banner).toHaveAttribute('data-href', '/pro-studio');
+    expect(
+      screen.queryByTestId('composer-pro-studio-banner')
+    ).not.toBeInTheDocument();
   });
 
-  it('desktop shows ≤3 ordinary tools', () => {
-    render(<ComposerToolsStrip viewport="desktop" proStudioStatus="locked" />);
+  it('desktop shows ≤3 ordinary tools and no Pro Studio banner', () => {
+    render(<ComposerToolsStrip viewport="desktop" />);
     const strip = screen.getByTestId('composer-tools-strip');
     expect(strip).toHaveAttribute('data-ordinary-cap', '3');
     expect(
       Number(strip.getAttribute('data-ordinary-count'))
     ).toBeLessThanOrEqual(3);
-    expect(screen.getByTestId('composer-pro-studio-banner')).toHaveAttribute(
-      'data-status',
-      'locked'
-    );
-  });
-
-  // R-08 / #211: the rendered banner — not just the view model — refuses to
-  // promise entry while the canonical projection has no answer.
-  it('an unknown entitlement renders an entry that promises nothing', () => {
-    render(<ComposerToolsStrip viewport="desktop" proStudioStatus="unknown" />);
-    const banner = screen.getByTestId('composer-pro-studio-banner');
-    expect(banner).toHaveAttribute('data-status', 'unknown');
-    expect(banner).toHaveAttribute('data-can-enter', 'false');
-    expect(banner).not.toHaveTextContent('进入专业工作区');
-    // The frozen entry still stands, and still only via the canonical gate.
-    expect(banner).toHaveAttribute('data-href', '/pro-studio');
+    expect(
+      screen.queryByTestId('composer-pro-studio-banner')
+    ).not.toBeInTheDocument();
   });
 });

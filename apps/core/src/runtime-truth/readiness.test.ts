@@ -12,7 +12,6 @@ import {
   providerModeReadinessFromEnv,
 } from './readiness.js';
 import {
-  canvasReachabilityProbe,
   objectStorageReadWriteRoundTrip,
   outboxBacklogProbe,
   workerFreshnessProbe,
@@ -68,7 +67,6 @@ test('evaluateReadiness requires all probes to pass in protected environments', 
       providerMode: () => ({ name: 'providerMode', status: 'pass' }),
       providerLive: () => ({ name: 'providerLive', status: 'pass' }),
       outbox: () => ({ name: 'outbox', status: 'pass' }),
-      canvas: () => ({ name: 'canvas', status: 'pass' }),
     },
     release: { commitSha: 'abc123' },
   });
@@ -149,7 +147,7 @@ test('concurrent object storage round trips use isolated object keys', async () 
   assert.equal(objects.size, 0);
 });
 
-test('outbox backlog and canvas reachability probes report honestly', async () => {
+test('outbox backlog probe reports honestly', async () => {
   const okOutbox = await outboxBacklogProbe({
     criticalBacklog: async () => 3,
     maxBacklog: 10,
@@ -161,29 +159,9 @@ test('outbox backlog and canvas reachability probes report honestly', async () =
     maxBacklog: 10,
   })();
   assert.equal(fullOutbox.status, 'fail');
-
-  const canvasOk = await canvasReachabilityProbe({
-    baseUrl: 'http://canvas.test',
-    serviceToken: 'token',
-    fetcher: async (input, init) => {
-      assert.equal(String(input), 'http://canvas.test/api/internal/health');
-      assert.equal(
-        (init?.headers as Record<string, string>)['x-canvas-service-token'],
-        'token',
-      );
-      return new Response(JSON.stringify({ status: 'ok' }), { status: 200 });
-    },
-  })();
-  assert.equal(canvasOk.status, 'pass');
-
-  const canvasDown = await canvasReachabilityProbe({
-    baseUrl: 'http://canvas.test',
-    fetcher: async () => new Response('nope', { status: 503 }),
-  })();
-  assert.equal(canvasDown.status, 'fail');
 });
 
-test('release identity and coherent four-unit manifest', () => {
+test('release identity and coherent three-unit manifest', () => {
   const identity = releaseIdentityFromEnv({
     RELEASE_COMMIT_SHA: 'deadbeef',
     RELEASE_ARTIFACT_DIGEST: 'sha256:1',
@@ -200,9 +178,8 @@ test('release identity and coherent four-unit manifest', () => {
     units: [
       { unit: 'web', commitSha: 'deadbeef', artifactDigest: 'sha256:1' },
       { unit: 'core', commitSha: 'deadbeef', artifactDigest: 'sha256:1' },
-      { unit: 'worker', commitSha: 'deadbeef', artifactDigest: 'sha256:1' },
       {
-        unit: 'canvas',
+        unit: 'worker',
         commitSha: 'deadbeef',
         artifactDigest: 'sha256:1',
         configRevision: 'cfg-9',
@@ -218,7 +195,6 @@ test('release identity and coherent four-unit manifest', () => {
             { unit: 'web', commitSha: 'a' },
             { unit: 'core', commitSha: 'b' },
             { unit: 'worker', commitSha: 'a' },
-            { unit: 'canvas', commitSha: 'a' },
           ],
         }),
       ),
@@ -246,7 +222,6 @@ test('composeRuntimeTruth fail-closes production recorded mode without inventing
       schema: () => ({ name: 'schema', status: 'pass' }),
       workerFreshness: () => ({ name: 'workerFreshness', status: 'pass' }),
       outbox: () => ({ name: 'outbox', status: 'pass' }),
-      canvas: () => ({ name: 'canvas', status: 'pass' }),
     },
   });
 

@@ -28,7 +28,6 @@ const REQUIRED_UNITS: ReleaseUnitIdentity['unit'][] = [
   'web',
   'core',
   'worker',
-  'canvas',
 ];
 const COMMIT_SHA_PATTERN = /^[a-f0-9]{40}$/u;
 
@@ -83,12 +82,12 @@ export function buildReleaseManifest(input: {
   };
 }
 
-/** All four deploy units must share one commit for a coherent release candidate. */
+/** Deploy units must share one commit for a coherent release candidate. */
 export function assertReleaseManifestCoherent(manifest: ReleaseManifest) {
   const present = new Set(manifest.units.map((unit) => unit.unit));
   if (manifest.units.length !== REQUIRED_UNITS.length) {
     throw new Error(
-      'Release manifest must contain exactly web, core, worker, and canvas.',
+      'Release manifest must contain exactly web, core, and worker.',
     );
   }
   if (present.size !== manifest.units.length) {

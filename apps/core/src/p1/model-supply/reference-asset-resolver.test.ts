@@ -5,20 +5,29 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import type { ProductState } from '@meiye/contracts';
-import type { Pool } from 'pg';
-import {
-  CanvasAssetFacade,
-  createCanvasOwnedAssetExportPolicy,
-  MemoryCanvasAssetRepository,
-  MemoryCanvasObjectStorage,
-} from '../../pro-studio/canvas-asset-facade.js';
-import { PostgresCanvasAssetRepository } from '../../pro-studio/postgres-canvas-asset-repository.js';
 import { FileSystemAssetStorage } from './filesystem-asset-storage.js';
 import {
   CompositeReferenceAssetResolver,
   OwnedAssetReferenceResolver,
   ProductReferenceAssetResolver,
 } from './reference-asset-resolver.js';
+
+function createCanvasOwnedAssetExportPolicy(input: {
+  ownerId: string;
+  updatedAt: string;
+  workspaceId: string;
+}) {
+  return {
+    exportAllowed: true,
+    expiresAt: null as string | null,
+    ownerId: input.ownerId,
+    privateRetrievalAllowed: true,
+    revokedAt: null as string | null,
+    updatedAt: input.updatedAt,
+    version: 1,
+    workspaceId: input.workspaceId,
+  };
+}
 
 const referenceSha256 =
   '52367a6622b19f08825e915fad80c542ad4f4c34dbcebad9f5007994b3e39208';
@@ -497,60 +506,87 @@ test('reference asset resolution rejects missing, withdrawn, incomplete-rights a
   assert.equal(fetchCalls, 1);
 });
 
-test('a Canvas-owned import resolves at the provider seam only inside its workspace', async () => {
-  const assets = new MemoryCanvasAssetRepository();
-  const storage = new MemoryCanvasObjectStorage();
-  const facade = new CanvasAssetFacade({
-    nextId: () => 'canvas-owned-1',
-    repository: assets,
-    storage,
-  });
+function memoryOwnedAssets(
+  rows: Array<{
+    contentType: string;
+    exportPolicy?: ReturnType<typeof exportPolicy>;
+    id: string;
+    objectKey: string;
+    sha256: string;
+    sizeBytes: number;
+    source?: { kind: 'local_import' } | { kind: 'product_asset'; sourceAssetId: string };
+    workspaceId: string;
+  }>,
+) {
+  const byKey = new Map(
+    rows.map((row) => [`${row.workspaceId}:${row.id}`, row] as const),
+  );
+  return {
+    async get(workspaceId: string, assetId: string) {
+      const row = byKey.get(`${workspaceId}:${assetId}`);
+      if (!row) return null;
+      return {
+        contentType: row.contentType,
+        exportPolicy: row.exportPolicy ?? exportPolicy(),
+        objectKey: row.objectKey,
+        sha256: row.sha256,
+        sizeBytes: row.sizeBytes,
+        source: row.source ?? { kind: 'local_import' as const },
+      };
+    },
+  };
+}
+
+test('a workspace-owned import resolves at the provider seam only inside its workspace', async () => {
   const bytes = Uint8Array.from([
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3,
   ]);
-  const owned = await facade.persistLocalCanvasArtifact(
-    { userId: 'user-a', workspaceId: 'workspace-a' },
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  const objectKey = 'workspace-a/owned/reference.png';
+  const assets = memoryOwnedAssets([
     {
-      bytes,
       contentType: 'image/png',
-      derivation: 'retouch',
-      fileName: 'reference.png',
+      id: 'owned-1',
+      objectKey,
+      sha256,
+      sizeBytes: bytes.byteLength,
+      workspaceId: 'workspace-a',
     },
-  );
+  ]);
+  const storage = {
+    async read(key: string) {
+      return key === objectKey ? bytes : null;
+    },
+  };
   const resolver = new OwnedAssetReferenceResolver(assets, storage);
 
-  const [resolved] = await resolver.resolve('workspace-a', [owned.id]);
+  const [resolved] = await resolver.resolve('workspace-a', ['owned-1']);
   assert.equal(resolved?.kind, 'resolved');
   if (!resolved || resolved.kind !== 'resolved') return;
-  assert.equal(resolved.objectKey, owned.objectKey);
+  assert.equal(resolved.objectKey, objectKey);
   assert.equal(
     resolved.providerReadableUrl,
     `data:image/png;base64,${Buffer.from(bytes).toString('base64')}`,
   );
-  assert.deepEqual(await resolver.resolve('workspace-b', [owned.id]), [
-    { assetId: owned.id, kind: 'failure', reason: 'not_found' },
+  assert.deepEqual(await resolver.resolve('workspace-b', ['owned-1']), [
+    { assetId: 'owned-1', kind: 'failure', reason: 'not_found' },
   ]);
 });
 
 test('owned asset inspection uses metadata head without reading or materializing provider data', async () => {
-  const assets = new MemoryCanvasAssetRepository();
   const sizeBytes = 10 * 1024 * 1024;
   const sha256 =
     '4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a';
-  for (let index = 0; index < 20; index += 1) {
-    await assets.insert({
+  const assets = memoryOwnedAssets(
+    Array.from({ length: 20 }, (_, index) => ({
       contentType: 'image/png',
-      createdAt: '2026-07-19T00:00:00.000Z',
-      exportPolicy: exportPolicy(),
-      fileName: `asset-${index}.png`,
       id: `asset-${index}`,
-      objectKey: `workspace-a/canvas/assets/asset-${index}.png`,
+      objectKey: `workspace-a/owned/asset-${index}.png`,
       sha256,
       sizeBytes,
-      source: { kind: 'local_import' },
       workspaceId: 'workspace-a',
-    });
-  }
+    })),
+  );
   let headCalls = 0;
   let readCalls = 0;
   const storage = {
@@ -605,10 +641,11 @@ test('composite resolution falls back only for unknown assets', async () => {
     },
   };
   const resolver = new CompositeReferenceAssetResolver([
-    new OwnedAssetReferenceResolver(
-      new MemoryCanvasAssetRepository(),
-      new MemoryCanvasObjectStorage(),
-    ),
+    new OwnedAssetReferenceResolver(memoryOwnedAssets([]), {
+      async read() {
+        return null;
+      },
+    }),
     fallback,
   ]);
 
@@ -618,53 +655,35 @@ test('composite resolution falls back only for unknown assets', async () => {
   );
 });
 
-test('production repository and shared filesystem storage resolve the same owned receipt', async () => {
+test('shared filesystem storage resolves an owned receipt from an inline repository', async () => {
   const rootDirectory = await mkdtemp(join(tmpdir(), 'owned-resolver-test-'));
   try {
     const bytes = Uint8Array.from([
       0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3,
     ]);
     const objectKey = 'workspace-a/canvas/assets/asset-pg-1.png';
-    const sha256 =
-      '7f47b756761a46e6d4a4d96f0d8a4448f8449235009d1f3ad1493f5c773c19e8';
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
     const storage = new FileSystemAssetStorage({ rootDirectory });
     await storage.putCanvasAsset({
       bytes,
       objectKey,
       workspaceId: 'workspace-a',
     });
-    const pool = {
-      async query(_sql: string, parameters: unknown[]) {
-        return {
-          rows:
-            parameters[0] === 'workspace-a' && parameters[1] === 'asset-pg-1'
-              ? [
-                  {
-                    contentType: 'image/png',
-                    createdAt: '2026-07-19T00:00:00.000Z',
-                    exportPolicy: exportPolicy(),
-                    fileName: 'asset.png',
-                    id: 'asset-pg-1',
-                    legacyStorageKey: null,
-                    objectKey,
-                    sha256,
-                    sizeBytes: bytes.byteLength,
-                    source: { kind: 'local_import' },
-                    workspaceId: 'workspace-a',
-                  },
-                ]
-              : [],
-        };
-      },
-    } as unknown as Pool;
-    const resolver = new OwnedAssetReferenceResolver(
-      new PostgresCanvasAssetRepository(pool),
+    const assets = memoryOwnedAssets([
       {
-        async read(key) {
-          return (await storage.read(key)).bytes;
-        },
+        contentType: 'image/png',
+        id: 'asset-pg-1',
+        objectKey,
+        sha256,
+        sizeBytes: bytes.byteLength,
+        workspaceId: 'workspace-a',
       },
-    );
+    ]);
+    const resolver = new OwnedAssetReferenceResolver(assets, {
+      async read(key) {
+        return (await storage.read(key)).bytes;
+      },
+    });
 
     assert.equal(
       (await resolver.resolve('workspace-a', ['asset-pg-1']))[0]?.kind,

@@ -2,6 +2,6 @@
   "$schema": "https://biomejs.dev/schemas/2.3.12/schema.json",
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!apps/canvas/src/vendor/vozeb"]
+    "includes": ["**"]
   }
 }

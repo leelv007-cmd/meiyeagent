@@ -116,41 +116,6 @@ export function runIssue255SafeProvision({
     );
   }
 
-  process.stdout.write(
-    'Applying Pro Studio schema to the isolated issue 255 business database.\n',
-  );
-  run(
-    inheritedEnvironment,
-    'Pro Studio schema migration',
-    'pnpm',
-    [
-      '--filter',
-      '@meiye/core',
-      'exec',
-      'tsx',
-      `${repoPath}/scripts/ci/apply-pro-studio-schema.mts`,
-    ],
-    {
-      cwd: repoPath,
-      env: {
-        ...inheritedEnvironment,
-        DATABASE_URL: businessUrl.toString(),
-      },
-    },
-  );
-
-  if (
-    queryScalar(
-      context,
-      businessUrl,
-      "SELECT COALESCE(to_regclass('public.advanced_canvas_projects')::text, '')",
-    ) !== 'advanced_canvas_projects'
-  ) {
-    fail(
-      'Issue 255 Pro Studio migration did not create the expected schema.',
-    );
-  }
-
   queryScalar(context, dbosUrl, 'SELECT 1');
   process.stdout.write(
     'Issue 255 isolated PostgreSQL databases are ready.\n',

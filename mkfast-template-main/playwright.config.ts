@@ -2,12 +2,10 @@ import { defineConfig, devices } from '@playwright/test';
 
 const port = Number(process.env.PORT ?? 3000);
 const corePort = Number(process.env.PLAYWRIGHT_CORE_PORT ?? 4100);
-const canvasPort = Number(process.env.PLAYWRIGHT_CANVAS_PORT ?? 4200);
 const productionCandidate =
   process.env.PLAYWRIGHT_PRODUCTION_CANDIDATE === 'true';
 const localURL = `http://localhost:${port}`;
 const coreURL = `http://127.0.0.1:${corePort}`;
-const canvasURL = `http://localhost:${canvasPort}`;
 const candidateURL = `http://localhost:${Number(
   process.env.PLAYWRIGHT_CANDIDATE_PORT ?? 3010
 )}`;
@@ -35,32 +33,16 @@ const paymentServerEnvironment = providerFree
   : [
       'VITE_PAYMENT_PROVIDER=stripe',
       'VITE_PUBLIC_PAID_LAUNCH_ENABLED=true',
-      'PRO_STUDIO_OFFER_ID=pro-studio-e2e',
-      'PRO_STUDIO_PRICE_ID=price-pro-studio-e2e',
-      'PRO_STUDIO_AMOUNT_CENTS=29900',
-      'PRO_STUDIO_CURRENCY=CNY',
-      'PRO_STUDIO_PAYMENT_TYPE=one_time',
-      'STRIPE_SECRET_KEY=sk_test_pro_studio_e2e',
-      'STRIPE_WEBHOOK_SECRET=whsec_pro_studio_e2e',
-    ];
-const canvasOfferEnvironment = providerFree
-  ? []
-  : [
-      'PRO_STUDIO_OFFER_ID=pro-studio-e2e',
-      'PRO_STUDIO_PRICE_ID=price-pro-studio-e2e',
+      'STRIPE_SECRET_KEY=sk_test_plan_e2e',
+      'STRIPE_WEBHOOK_SECRET=whsec_plan_e2e',
     ];
 const paymentWorkerVariables = providerFree
   ? []
   : [
       '--var VITE_PAYMENT_PROVIDER:stripe',
       '--var VITE_PUBLIC_PAID_LAUNCH_ENABLED:true',
-      '--var PRO_STUDIO_OFFER_ID:pro-studio-e2e',
-      '--var PRO_STUDIO_PRICE_ID:price-pro-studio-e2e',
-      '--var PRO_STUDIO_AMOUNT_CENTS:29900',
-      '--var PRO_STUDIO_CURRENCY:CNY',
-      '--var PRO_STUDIO_PAYMENT_TYPE:one_time',
-      '--var STRIPE_SECRET_KEY:sk_test_pro_studio_e2e',
-      '--var STRIPE_WEBHOOK_SECRET:whsec_pro_studio_e2e',
+      '--var STRIPE_SECRET_KEY:sk_test_plan_e2e',
+      '--var STRIPE_WEBHOOK_SECRET:whsec_plan_e2e',
     ];
 
 export default defineConfig({
@@ -153,9 +135,6 @@ export default defineConfig({
           'BETTER_AUTH_SECRET=e2e-better-auth-secret',
           `CORE_SERVICE_URL=${coreURL}`,
           'CORE_SERVICE_TOKEN=local-core-service-token',
-          `CANVAS_SERVICE_URL=${canvasURL}`,
-          'CANVAS_SERVICE_TOKEN=local-canvas-service-token',
-          `CANVAS_ORIGIN=${canvasURL}`,
           `JOB_QUEUE_PREFIX=${jobQueuePrefix}`,
           `DATABASE_URL='${databaseURL}'`,
           `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE='${databaseURL}'`,
@@ -165,24 +144,6 @@ export default defineConfig({
       ].join(' && '),
       gracefulShutdown: { signal: 'SIGTERM', timeout: 10_000 },
       url: authBaseURL,
-      reuseExistingServer: !process.env.CI,
-      timeout: 120_000,
-    },
-    {
-      name: 'Canvas',
-      command: [
-        `DATABASE_URL='${databaseURL}'`,
-        `CORE_SERVICE_URL=${coreURL}`,
-        'CORE_SERVICE_TOKEN=local-core-service-token',
-        'CANVAS_SERVICE_TOKEN=local-canvas-service-token',
-        `CANVAS_ORIGIN=${canvasURL}`,
-        `MAIN_APP_ORIGIN=${authBaseURL}`,
-        ...canvasOfferEnvironment,
-        `PORT=${canvasPort}`,
-        `node scripts/e2e/run-service.mjs pnpm --dir .. --filter @meiye/canvas exec next dev --webpack --port ${canvasPort}`,
-      ].join(' '),
-      gracefulShutdown: { signal: 'SIGTERM', timeout: 10_000 },
-      url: canvasURL,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },
@@ -197,9 +158,6 @@ export default defineConfig({
               'BETTER_AUTH_SECRET=e2e-better-auth-secret',
               `CORE_SERVICE_URL=${coreURL}`,
               'CORE_SERVICE_TOKEN=local-core-service-token',
-              `CANVAS_SERVICE_URL=${canvasURL}`,
-              'CANVAS_SERVICE_TOKEN=local-canvas-service-token',
-              `CANVAS_ORIGIN=${canvasURL}`,
               `DATABASE_URL='${databaseURL}'`,
               `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE='${databaseURL}'`,
               'PARAGLIDE_PRECOMPILED=true',
@@ -216,9 +174,6 @@ export default defineConfig({
               '--var BETTER_AUTH_SECRET:e2e-better-auth-secret',
               `--var CORE_SERVICE_URL:${coreURL}`,
               '--var CORE_SERVICE_TOKEN:local-core-service-token',
-              `--var CANVAS_SERVICE_URL:${canvasURL}`,
-              '--var CANVAS_SERVICE_TOKEN:local-canvas-service-token',
-              `--var CANVAS_ORIGIN:${canvasURL}`,
               ...paymentWorkerVariables,
               `--var DATABASE_URL:${databaseURL}`,
               '--show-interactive-dev-session=false',

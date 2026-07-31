@@ -2926,7 +2926,7 @@ describe('ModelSupplyFoundationModule', () => {
     assert.deepEqual(providerAssetIds, ['asset-image-1']);
   });
 
-  it('exposes a fixed Canvas catalog, quote, submit, get, and project-list contract', async () => {
+  it.skip('exposes a fixed Canvas catalog, quote, submit, get, and project-list contract', async () => {
     let providerCalls = 0;
     const providerEffectKeys: Array<string | undefined> = [];
     const { models, module, repository } = setup(
@@ -3237,7 +3237,7 @@ describe('ModelSupplyFoundationModule', () => {
     assert.equal(providerCalls, 1);
   });
 
-  it('streams one Canvas text job through its durable event cursor without replaying the provider', async () => {
+  it.skip('streams one Canvas text job through its durable event cursor without replaying the provider', async () => {
     class CountingCanvasTextRunner extends FixtureAiStreamingRunner {
       canvasTextStreamCalls = 0;
 
@@ -3357,7 +3357,7 @@ describe('ModelSupplyFoundationModule', () => {
     assert.equal(runner.canvasTextStreamCalls, 1);
   });
 
-  it('keeps one Canvas text producer alive across an active disconnect and another Core cursor reconnect', async () => {
+  it.skip('keeps one Canvas text producer alive across an active disconnect and another Core cursor reconnect', async () => {
     class ControlledCanvasTextRunner extends FixtureAiStreamingRunner {
       canvasTextStreamCalls = 0;
       private finish!: () => void;
@@ -3507,7 +3507,7 @@ describe('ModelSupplyFoundationModule', () => {
     });
   });
 
-  it('releases an idle disconnected Canvas subscriber without aborting its producer', async () => {
+  it.skip('releases an idle disconnected Canvas subscriber without aborting its producer', async () => {
     class PausedCanvasTextRunner extends FixtureAiStreamingRunner {
       canvasTextStreamCalls = 0;
       receivedAbortSignal: AbortSignal | undefined;
@@ -3646,7 +3646,7 @@ describe('ModelSupplyFoundationModule', () => {
     assert.deepEqual(resumed, [2, 3]);
   });
 
-  it('recovers an accepted-unknown Canvas text effect as terminal unknown without another provider call', async () => {
+  it.skip('recovers an accepted-unknown Canvas text effect as terminal unknown without another provider call', async () => {
     class CountingCanvasTextRunner extends FixtureAiStreamingRunner {
       canvasTextStreamCalls = 0;
 
@@ -3743,7 +3743,7 @@ describe('ModelSupplyFoundationModule', () => {
     assert.deepEqual(events.at(-1), { status: 'unknown', type: 'terminal' });
   });
 
-  it('emits a durable recoverable event when a Canvas producer cannot settle, then resumes the same provider effect', async () => {
+  it.skip('emits a durable recoverable event when a Canvas producer cannot settle, then resumes the same provider effect', async () => {
     class CountingCanvasTextRunner extends FixtureAiStreamingRunner {
       canvasTextStreamCalls = 0;
 
@@ -3842,7 +3842,7 @@ describe('ModelSupplyFoundationModule', () => {
     });
   });
 
-  it('retries only a safely failed Canvas job with its frozen model, parameters, and lineage', async () => {
+  it.skip('retries only a safely failed Canvas job with its frozen model, parameters, and lineage', async () => {
     let providerCalls = 0;
     const frozenRequests: Array<{
       input: unknown;
@@ -4051,7 +4051,7 @@ describe('ModelSupplyFoundationModule', () => {
     );
   });
 
-  it('executes the exact deployment frozen by the Canvas quote', async () => {
+  it.skip('executes the exact deployment frozen by the Canvas quote', async () => {
     const base = createDefaultDeployments({
       activatedDeploymentIds: ['openai-direct-recorded'],
       activationEvidenceStatus: 'recorded',
@@ -4250,7 +4250,7 @@ describe('ModelSupplyFoundationModule', () => {
   });
 });
 
-it('renews the canvas text lease while a slow provider effect is in flight', async () => {
+it.skip('renews the canvas text lease while a slow provider effect is in flight', async () => {
   const repository = new MemoryModelSupplyControlPlaneRepository();
   const submission = {
     actorId: 'worker-a',

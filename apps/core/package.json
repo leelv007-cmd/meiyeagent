@@ -5,8 +5,6 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./pro-studio": "./src/pro-studio/index.ts",
-    "./pro-studio-runtime": "./src/pro-studio-runtime/index.ts",
     "./security": "./src/security/secret-hardening.ts"
   },
   "scripts": {

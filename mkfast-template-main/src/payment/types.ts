@@ -123,14 +123,6 @@ export interface CreateCheckoutParams {
   cancelUrl?: string;
   metadata?: Record<string, string>;
   locale?: string;
-  /** Server-only catalog fact; browser-facing checkout never accepts this. */
-  serverCatalogOffer?: ServerCatalogOffer;
-}
-
-export interface ServerCatalogOffer {
-  kind: 'pro_studio_add_on';
-  offerId: string;
-  price: Price;
 }
 
 /**
@@ -176,9 +168,6 @@ export interface PaymentProvider {
    */
   createCheckout(params: CreateCheckoutParams): Promise<CheckoutResult>;
 
-  /** Verify the remote provider catalog before binding a dedicated add-on. */
-  validateServerCatalogOffer(offer: ServerCatalogOffer): Promise<void>;
-  
   /**
    * Create a customer portal session
    */

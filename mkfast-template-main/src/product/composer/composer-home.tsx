@@ -21,7 +21,6 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { useProStudioEntitlement } from '@/hooks/use-pro-studio-entitlement';
 import { emitTelemetry } from '@/lib/product-telemetry';
 import {
   account_usage_retry,
@@ -611,8 +610,6 @@ export function ComposerHome({
     }),
     queryFn: ({ signal }) => fetchComposerSurface(signal),
   });
-  // R-08 / #211: the Pro Studio entry states what the gate will decide.
-  const proStudioEntitlement = useProStudioEntitlement();
   const identitiesQuery = useQuery(marketingIdentityProjectionQuery);
   const identitySelection = useMemo(
     () =>
@@ -3149,10 +3146,6 @@ export function ComposerHome({
 
         <ComposerToolsStrip
           viewport={viewportKind}
-          proStudioStatus={proStudioEntitlement.projection.state}
-          {...(proStudioEntitlement.reason
-            ? { proStudioLockReason: proStudioEntitlement.reason }
-            : {})}
           surfaceRevisionId={surfaceQuery.data?.revisionId}
           onOpenTool={(href) => {
             if (typeof window !== 'undefined') {

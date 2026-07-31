@@ -70,7 +70,7 @@ test('deployment manifest verification accepts only the expected live SHA', asyn
           video: 'staging:journey:video:1',
         },
       },
-      units: ['web', 'core', 'worker', 'canvas'].map((unit) => ({
+      units: ['web', 'core', 'worker'].map((unit) => ({
         unit,
         commitSha: commit,
         artifactDigest: `sha256:${unit}-immutable`,

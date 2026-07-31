@@ -1,11 +1,10 @@
 import { createHash } from 'node:crypto';
 import type { ContentPackage } from '@meiye/contracts';
 import type {
-  CanvasAssetRepository,
-  CanvasOwnedAsset,
-  CanvasOwnedAssetExportPolicy,
-} from '../../pro-studio/canvas-asset-facade.js';
-import type { ReferenceAssetResolverPort } from '../model-supply/reference-asset-resolver.js';
+  OwnedReferenceAsset,
+  OwnedReferenceAssetRepository,
+  ReferenceAssetResolverPort,
+} from '../model-supply/reference-asset-resolver.js';
 import {
   assertContentPackageExportAllowed,
   ContentPackageTransitionError,
@@ -16,6 +15,30 @@ import type {
   ContentPackageAssetExportPolicyPort,
   ContentPackageRightsResolverPort,
 } from './types.js';
+
+/** Local export-policy shape (historically CanvasOwnedAssetExportPolicy). */
+type CanvasOwnedAssetExportPolicy = NonNullable<
+  OwnedReferenceAsset['exportPolicy']
+> & {
+  ownerId?: string;
+  updatedAt?: string;
+  version?: number;
+};
+
+/** Full receipt shape for optional legacy canvas export path. */
+type CanvasOwnedAsset = OwnedReferenceAsset & {
+  fileName: string;
+  id: string;
+  workspaceId: string;
+  exportPolicy?: CanvasOwnedAssetExportPolicy;
+};
+
+type CanvasAssetGetPort = {
+  get(
+    workspaceId: string,
+    assetId: string,
+  ): Promise<CanvasOwnedAsset | null>;
+};
 
 export type CanvasExportAssetUnavailableCode =
   | 'ASSET_ACCESS_DENIED'
@@ -74,7 +97,8 @@ interface OwnedAssetStorage {
 }
 
 interface OperationsCanvasExportAssetAccessOptions {
-  canvasAssets: Pick<CanvasAssetRepository, 'get'>;
+  /** Optional; Pro Studio canvas assets retired — omit for fail-closed on PS assets. */
+  canvasAssets?: CanvasAssetGetPort;
   clock?: () => Date;
   contentPackageAssets: ContentPackageExportAssetReader;
   contentPackageRights: ContentPackageRightsResolverPort;
@@ -123,10 +147,9 @@ export class OperationsCanvasExportAssetAccessService
       return this.readContentPackageAsset(input);
     }
 
-    const canvasAsset = await this.options.canvasAssets.get(
-      input.workspaceId,
-      input.assetId
-    );
+    const canvasAsset = this.options.canvasAssets
+      ? await this.options.canvasAssets.get(input.workspaceId, input.assetId)
+      : null;
     if (canvasAsset) {
       const canvasPolicy = await this.canvasOwnedAssetPolicy(
         input.workspaceId,
@@ -212,10 +235,12 @@ export class OperationsCanvasExportAssetAccessService
     const ownPolicy = this.currentOwnedAssetPolicy(workspaceId, asset);
     if (ownPolicy) return ownPolicy;
     if (asset.source.kind === 'local_canvas_derivative') {
-      const parent = await this.options.canvasAssets.get(
-        workspaceId,
-        asset.source.parentAssetId
-      );
+      const parent = this.options.canvasAssets
+        ? await this.options.canvasAssets.get(
+            workspaceId,
+            asset.source.parentAssetId,
+          )
+        : null;
       if (!parent) return unavailable('ASSET_ACCESS_DENIED');
       return this.canvasOwnedAssetPolicy(workspaceId, parent, seen);
     }
@@ -233,10 +258,9 @@ export class OperationsCanvasExportAssetAccessService
       const inputAssetIds = generationInputAssetIds(job);
       if (!inputAssetIds) return unavailable('ASSET_ACCESS_DENIED');
       for (const inputAssetId of inputAssetIds) {
-        const parent = await this.options.canvasAssets.get(
-          workspaceId,
-          inputAssetId,
-        );
+        const parent = this.options.canvasAssets
+          ? await this.options.canvasAssets.get(workspaceId, inputAssetId)
+          : null;
         const parentPolicy = parent
           ? await this.canvasOwnedAssetPolicy(
               workspaceId,
@@ -510,6 +534,7 @@ function validOwnedAssetPolicy(
     !policy.ownerId.trim() ||
     typeof policy.exportAllowed !== 'boolean' ||
     typeof policy.privateRetrievalAllowed !== 'boolean' ||
+    typeof policy.version !== 'number' ||
     !Number.isSafeInteger(policy.version) ||
     policy.version < 1 ||
     !validPolicyTimestamp(policy.updatedAt)

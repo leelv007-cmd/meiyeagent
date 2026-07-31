@@ -95,7 +95,7 @@ export class PostgresPlanCheckoutBindingStore {
 
   /**
    * Resolve plan binding facts for a verified webhook event.
-   * Returns null when the event is not a plan payment (e.g. Pro Studio add-on).
+   * Returns null when the event is not a plan payment.
    */
   async resolveBinding(
     event: VerifiedPaymentWebhookEvent

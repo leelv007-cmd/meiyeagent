@@ -1,11 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { link, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { validateGeneratedAudio } from '../../pro-studio-runtime/audio-asset-pipeline.js';
+import { validateGeneratedAudio } from './audio-asset-pipeline.js';
 import {
   parseAudioSpeechContract,
   type AudioSpeechContract,
-} from '../../pro-studio-runtime/audio-contracts.js';
+} from './audio-contracts.js';
 import type {
   AdapterRuntimeConfig,
   MediaProviderEffectRequest,

@@ -4,6 +4,8 @@
  * Mirror of core `static-seeds` TOOL_ENTRY_SEEDS — browser must not import core.
  * Registry metadata for planned tools. Only entries whose complete execution
  * chain has been verified may set `capabilityPublished` to true.
+ *
+ * Pro Studio (`tool.pro_studio`) retired — D-170 / P1 fail-closed.
  */
 
 import type { CreativeToolContainer, CreativeToolKind } from '@meiye/contracts';
@@ -16,7 +18,6 @@ export const TOOL_CATALOG_CATEGORIES = [
   'image',
   'video',
   'publish',
-  'pro',
 ] as const;
 
 export type ToolCatalogCategory = (typeof TOOL_CATALOG_CATEGORIES)[number];
@@ -27,10 +28,9 @@ export const TOOL_CATALOG_CATEGORY_LABELS: Record<ToolCatalogCategory, string> =
     image: '图片处理',
     video: '视频处理',
     publish: '发布与适配',
-    pro: '专业工作区',
   };
 
-type ComposerToolEntrySeedBase = {
+export type ComposerToolEntrySeed = {
   id: (typeof STANDALONE_TOOL_ENTRY_IDS)[number];
   label: string;
   summary: string;
@@ -44,32 +44,14 @@ type ComposerToolEntrySeedBase = {
    * hidden from published-visible counts (D-093).
    */
   capabilityPublished: boolean;
-};
-
-export type OrdinaryToolEntrySeed = ComposerToolEntrySeedBase & {
-  isProStudioBanner: false;
   /** Entitlement lock (visible with reason when capability is published). */
   entitlementLocked: boolean;
   lockReason?: string;
 };
 
 /**
- * Pro Studio surfaces as a full-width banner, not an ordinary tool chip
- * (D-078/D-092), and carries **no** entitlement verdict: R-08 traced the
- * "先扬后抑" entry to a seed default that read as active. Its state comes only
- * from the canonical entitlement projection (`lib/pro-studio-entitlement`).
- */
-export type ProStudioBannerEntrySeed = ComposerToolEntrySeedBase & {
-  isProStudioBanner: true;
-};
-
-export type ComposerToolEntrySeed =
-  | OrdinaryToolEntrySeed
-  | ProStudioBannerEntrySeed;
-
-/**
- * Planned standalone tools. The three ordinary tools remain unpublished until
- * input, preview, submit, task and billing are all wired and acceptance-tested.
+ * Planned standalone tools. Remain unpublished until input, preview, submit,
+ * task and billing are all wired and acceptance-tested.
  */
 export const COMPOSER_TOOL_ENTRY_SEEDS: readonly ComposerToolEntrySeed[] = [
   {
@@ -80,7 +62,6 @@ export const COMPOSER_TOOL_ENTRY_SEEDS: readonly ComposerToolEntrySeed[] = [
     container: 'dialog',
     order: 1,
     categories: ['image', 'publish'],
-    isProStudioBanner: false,
     capabilityPublished: false,
     entitlementLocked: false,
   },
@@ -92,7 +73,6 @@ export const COMPOSER_TOOL_ENTRY_SEEDS: readonly ComposerToolEntrySeed[] = [
     container: 'dialog',
     order: 2,
     categories: ['image'],
-    isProStudioBanner: false,
     capabilityPublished: false,
     entitlementLocked: false,
   },
@@ -104,20 +84,8 @@ export const COMPOSER_TOOL_ENTRY_SEEDS: readonly ComposerToolEntrySeed[] = [
     container: 'route',
     order: 3,
     categories: ['video'],
-    isProStudioBanner: false,
     capabilityPublished: false,
     entitlementLocked: false,
-  },
-  {
-    id: 'tool.pro_studio',
-    label: 'Pro Studio 无限画布',
-    summary: '进入专业工作区精修多素材编排',
-    kind: 'standalone_tool',
-    container: 'workspace',
-    order: 10,
-    categories: ['pro'],
-    isProStudioBanner: true,
-    capabilityPublished: true,
   },
 ];
 

@@ -1,12 +1,14 @@
 # 归桶判定矩阵（D-127 拆票前置｜2026-07-25 终裁版）
 
-> **用途与纪律**：本矩阵是 D-127「原地换壳保核」的执行地基，拆票前置产物。**每张开发票动工前先查表**：目标代码在哪个桶，就按该桶纪律施工——禁止在 RETIRE 桶续命、在 REBUILD 桶打补丁、碰 FREEZE 桶功能面；KEEP 桶按票注的触碰时拆/清理种子执行。前端相关票归 frontend lane（D-131，执行 Agent=Opus）。
+> **用途与纪律**：本矩阵是 D-127「原地换壳保核」的执行地基，拆票前置产物。**每张开发票动工前先查表**：目标代码在哪个桶，就按该桶纪律施工——禁止在 RETIRE 桶续命、在 REBUILD 桶打补丁；KEEP 桶按票注的触碰时拆/清理种子执行。前端相关票归 frontend lane（D-131，执行 Agent=Opus）。
+>
+> **2026-08-01 D-170 覆盖**：原 **FREEZE 7 行（Pro Studio 系）全部升格为 RETIRE/真删**（先迁 KEEP audio，再删树/入口/加购）。实施权威＝`docs/specs/pro-studio-retirement-spec-2026-08-01.md` + D-170。下文 §2 表头保留历史行作追溯，**现行纪律＝RETIRE，不得再按 freeze-leave-running 施工**。
 >
 > **生产流水线**：确定性盘点（48 子模块/52.5 万行）→ 7 路 opus 初判（146 行+40 争点，70.5 万 token）→ 7 路 Codex 并发复核（1 全局+6 分片，逐行代码实证）→ 1 路 opus 补扫（web product 根级 79 行，填 30,563 行覆盖缺口）→ 主控终裁合并（45+ 处改判）。证据全文在 `.scratch/bucket-matrix-2026-07-25/`。
 >
-> **矩阵规模**：223 行判定，标注行数合计 ≈468,192；KEEP_EXTEND 156（另 mount-pending 2）／RETIRE 48／REBUILD 10／FREEZE 7／UNCERTAIN 0。
+> **矩阵规模**：223 行判定，标注行数合计 ≈468,192；KEEP_EXTEND 156（另 mount-pending 2）／RETIRE 48＋**D-170 并入原 FREEZE 7**／REBUILD 10／FREEZE 现行 0／UNCERTAIN 0。
 >
-> **终审状态**：RETIRE 四批清单经用户终审**批准**（2026-07-25）——1A 立即删 36 行获准开退役票；1B/1C/1D 归类确认，动手时点挂各自条件门。
+> **终审状态**：RETIRE 四批清单经用户终审**批准**（2026-07-25）——1A 立即删 36 行获准开退役票；1B/1C/1D 归类确认，动手时点挂各自条件门。Pro Studio 系见退役规格 P0–P6。
 
 ## 0. 生命周期词表（sub_disposition）
 
@@ -14,7 +16,7 @@
 - **delete-after-cutover**：数据/双轨迁移全量完成后删（product 旧轨、migration 桥接）。
 - **delete-after-native-video-cutover**：模型原生视频链切换验收后删（composition 链——当前 main/job-worker LIVE 注入且 .env 默认 ffmpeg 模式，**直接删=生产崩**；D-110 条件批）。
 - **delete-after-reshell**：对应面换壳完成后删（旧 IA 页）。
-- **freeze-leave-running / freeze-entry-keep-running / freeze-after-boundary-cut**：原地运行、不投入、不删除（Pro Studio 系；boundary-cut=先抽共享件再冻结）。
+- **freeze-leave-running / freeze-entry-keep-running / freeze-after-boundary-cut**（历史词）：原 Pro Studio FREEZE；**D-170 后一律按 RETIRE/delete 解释**（audio 先 boundary-cut 迁 KEEP 再删树）。
 - **keep-as-is / reshell-on-touch / touch-split / relocate / mount-pending**：KEEP 桶细则——原样保留／触碰时换 HeroUI（D-130）／触碰时拆 god file／迁址出错误目录／已建待装配（禁删）。
 
 ## 1. RETIRE 清单（48 行，≈23,317 行代码）——**用户终审对象**
@@ -89,17 +91,20 @@
 
 
 
-## 2. FREEZE 清单（7 行，≈14,744 行）——原地运行、不投入、不删除
+## 2. 原 FREEZE 清单 → **RETIRE（D-170）**（7 行，≈14,744 行）——真删 / 去产品面；禁止「只留入口」
 
-| 模块 | 行数 | 处置细则 | 依据 | 理由与票注 |
+> 历史表体保留行路径供实施对照；**现行处置一律 RETIRE**（见退役规格 §3）。audio-contracts / audio-asset-pipeline **能力 KEEP**，须先迁出 pro-studio 路径再删树。
+
+| 模块 | 行数 | 现行处置（D-170） | 依据 | 理由与票注 |
 |---|---|---|---|---|
-| `apps/core/src/p1/operations/canvas-export-asset-access.ts` | 497 | freeze-leave-running | D-127 KEEP=交付/导出面（live-wired） ADR-0012 Pro Studio FREEZE（此为… | 内容包导出对 canvas 资产的访问决策（rights/access/expiry）。live-wired：被 application-service.ts 直接 import 使用，处于活跃导出路径。但唯一职责是让 content-package 导出访问 Pro Studio canvas 资产，import 自 ../../pro-studio/canvas-asset-facade（FREEZE 模块）。归 KEEP_EXTEND 而非 FREEZE：不能冻结一个被 KEEP 核心（application-service）活跃调用的文件（会使核心不可改，逻辑矛盾）。存在张力见 uncertainties。 ⟦票注⟧若冻结期 canvas 停止产出新资产，此导出… |
-| `apps/core/src/pro-studio` | 5770 | freeze-keep-entry | D-127 补充 ADR-0012 | Pro Studio 画布持久化/资产门面/导出回执/launch-code/画布安全审计，D-127 补充/ADR-0012 全部功能冻结、只保留入口、不投入不删除。 ⟦票注⟧canvas-export-receipt/canvas-asset-facade 是 KEEP(p1) 仍读取的‘入口’，冻结保留勿删。 |
-| `apps/core/src/pro-studio-runtime (画布/adoption/生成内核)` | 6948 | freeze-keep-entry | D-127 补充 ADR-0012 | Pro Studio 运行时内核——canvas-agent/生成运行时/adoption 规则/画布仓储/entitlement，D-127 补充/ADR-0012 全冻结只留入口。main.ts 以 AdvancedCanvasAdoptionFoundationModule 等作为挂载入口。 |
-| `apps/core/src/pro-studio-runtime/audio-asset-pipeline.ts` | 409 | freeze-after-boundary-cut（先抽共享校验，画布部分原地冻结） | ADR-0012(FREEZE 目录) D-119(audio 保留) D-105/D-118(video ffmpe… | 三重纠缠无法净判：①居 FREEZE 目录(pro-studio-runtime)②被 KEEP p1/model-supply TTS 消费③依赖 RETIRE 的 video/media-tools(runMediaCommand=ffmpeg)。归任一桶都与另两条决策冲突。 ⟦票注⟧拍板前置：(a) D-105 video-ffmpeg 退役后音频链是否仍用 ffmpeg，(b) 是否迁出 FREEZE 目录至 model-supply。此文件命运锁定 video/media-tools 能否删。 ⟦终裁⟧终裁：audio 不在 v1 主链(capability-inventory:75-83/harness 仅收 image／video)；边界切割=AUDIO_… |
-| `mkfast-template-main/src/payment/{pro-studio-commerce.ts,postgres-pro-studio-commerce.ts}` | 600 | entry-support commerce, frozen | D-127 ADR-0012 D-099 | ProStudioAddOn offer/checkout/settlement backing the frozen Pro Studio entry. Pro Studio scope = FREEZE per ADR-0012/D-127. ⟦票注⟧Same fuzzy boundary as api/pro-studio: supports the kept entry's purchase flow; leave running, no new work. ⟦终裁⟧P6 补：payment/index.ts:123-156 通用结算里的 Pro Studio 激活段=冻结接缝，通用 Billing 扩展时不得动该段 |
-| `mkfast-template-main/src/routes/api/pro-studio + api/e2e/pro-studio-payment` | 300 | entry-support commerce, frozen (don't extend) | D-127 ADR-0012 D-099 | Pro Studio checkout/entry/launch/entry-offer handlers backing the frozen Pro Studio entry page. ADR-0012/D-127: Pro Studio 全冻结仅留入口; the入口 offers purchase so these support it, but must not be extended. ⟦票注⟧Boundary is fuzzy: entry purchase flow needs these live. FREEZE=leave running, no new work. Depends on payment/pro-studio-commerce. ⟦终… |
-| `mkfast-template-main/src/routes/pro-studio.tsx` | 220 | freeze-entry-keep-running | D-127 ADR-0012 D-099 | Pro Studio entry/offer page (高阶画布 upsell + launch). This IS the 只留入口 that FREEZE preserves. D-127 补充/ADR-0012: 全部功能冻结、只保留入口、不投入不删除. ⟦票注⟧⟦终裁⟧终裁口径统一：入口页归 FREEZE 桶的 entry-keep-running 行（保运行、含购买 offer、不投入不扩展）；holistic 的 KEEP_EXTEND 主张按「不投入」语义并入 |
+| `apps/core/src/p1/operations/canvas-export-asset-access.ts` | 497 | RETIRE 或随 facade 去引用后删 | D-170 退役规格 | 历史：content-package 导出访问 canvas 资产。canvas 停写后此路径应 fail-closed 或删除。 |
+| `apps/core/src/pro-studio` | 5770 | **RETIRE/delete**（先迁 KEEP 缝） | D-170 | 历史 FREEZE keep-entry → 真删：画布持久化/资产门面/导出回执/launch-code/审计。 |
+| `apps/core/src/pro-studio-runtime (画布/adoption/生成内核)` | 6948 | **RETIRE/delete**（先迁 audio） | D-170 | 历史 FREEZE keep-entry → 真删：canvas-agent/生成/adoption 写/仓储/entitlement。 |
+| `apps/core/src/pro-studio-runtime/audio-asset-pipeline.ts` | 409 | **KEEP 能力 → 先迁后删树** | D-170 §3.2 | 主线 TTS KEEP；迁至非 pro-studio 路径（建议 model-supply 或同级）后再删原树。 |
+| `mkfast-template-main/src/payment/{pro-studio-commerce.ts,postgres-pro-studio-commerce.ts}` | 600 | **RETIRE/delete** 加购路径 | D-170 | 历史 entry-support frozen → 去 pro_studio_add_on 商业路径。 |
+| `mkfast-template-main/src/routes/api/pro-studio + api/e2e/pro-studio-payment` | 300 | **RETIRE/delete** | D-170 | 历史 checkout/launch API → 产品 fail-closed 后删除。 |
+| `mkfast-template-main/src/routes/pro-studio.tsx` | 220 | **RETIRE/delete** | D-170 | 历史「只留入口」页 → 无可达 `/pro-studio` 商业或画布路径。 |
+| （实施补充）`apps/canvas/**` | — | **RETIRE/delete** | D-170 §3.1 | Canvas 包不在原 FREEZE 七行内，但属同批退役真删目标。 |
 
 ## 3. REBUILD 清单（10 行，≈21,652 行）——沿 Composer 主干换壳（D-130 HeroUI Pro V3 Glass；D-131 frontend lane）
 
@@ -300,7 +305,7 @@
 10. **D-031 违规位三处登记**：①composer reuse_panel 三段选择表单（source/form/carrier）＝delete-after-reshell；②BYOK strict 执行四字段表单＝delete-after-reshell；③execution-spine composer-submission-gate:538-565 required-source-slot 硬拒绝门＝与 M-01 同域修复票（非删除，改意图满足判断）。
 11. **mount-pending 两行禁删**：TodayRecommendationCard/ExampleStorePreview＝D-126 装配票对象（后端全链 LIVE，卡片 CTA 需改预填 Composer 口径）。双复核+补扫三方一致。
 12. **D-123「3/6/9」＝条/月纠错**：初判 13 号争点误读为秒数时长并担忧「9s 需拼接」——ADR-0016 拍板数为每月条数，模型原生单调用直出成立，无级联器需求，composed-video 整链条件删不受影响。
-13. **pro-studio 入口＝freeze-entry-keep-running**：入口页含购买 offer 保持可运行（entry API=入口支撑；checkout/launch=功能链冻结；e2e payment=冻结夹具）；「不投入」语义优先于改 KEEP 的主张。
+13. **pro-studio 入口＝RETIRE（D-170 supersedes freeze-entry-keep-running）**：不再保留可运行入口；产品 fail-closed，代码真删，表 STOP-IO 不强制 DROP。
 14. **退休语义清理种子登记**：video-regeneration full_compose 防线、results/video burned_in 分支、provider-conformance burn-in 用例、op-telemetry composed-video 指标、s3/filesystem CompositionAssetStoragePort——全部内嵌于 KEEP 大文件，随对应删除批/触碰时清，不可 git rm。
 
 ## 7. 复核对账摘要

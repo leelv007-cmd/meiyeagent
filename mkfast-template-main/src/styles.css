@@ -644,18 +644,6 @@
     background: oklch(0.32 0 0);
   }
 
-  /* Pro Studio：独立深色影棚，只共享圆角/字体/火花语义 */
-  .meiye-pro-studio {
-    --spark: oklch(0.72 0.11 18);
-    --spark-wash: oklch(0.3 0.045 18);
-    --spark-deep: oklch(0.88 0.05 18);
-    min-height: 100svh;
-    background: oklch(0.16 0.01 260);
-    color: oklch(0.95 0.01 90);
-    font-family:
-      Inter, "HarmonyOS Sans", MiSans, "PingFang SC", "Microsoft YaHei",
-      ui-sans-serif, system-ui, sans-serif;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
