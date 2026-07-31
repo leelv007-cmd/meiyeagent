@@ -2016,23 +2016,23 @@ test('a snapshot-backed semantic answer resubmits the same task and work before 
   assert.ok(progress.includes('已收到，继续为你生成。'));
 });
 
-test('a paid generation snapshot waits for execution confirmation before selection', async () => {
+test('a paid media snapshot waits for execution confirmation before selection', async () => {
   const request: HarnessWorkflowInput = {
-    ...snapshotTaskInput(),
+    ...mediaTaskInput('image'),
     usageReservation: {
       id: 'usage-reservation-paid-generation',
-      units: [{ resource: 'copy' as const, quantity: 1 }],
+      units: [{ resource: 'image' as const, quantity: 1 }],
     },
   };
-  const stages = fixtureStages();
-  const executeAndSelect = stages.executeAndSelect!;
+  const stages = mediaStages('image');
+  const executeMediaAndSelect = stages.executeMediaAndSelect.bind(stages);
   const order: string[] = [];
-  stages.executeAndSelect = async (input) => {
+  stages.executeMediaAndSelect = async (input) => {
     order.push('selection');
-    return executeAndSelect(input);
+    return executeMediaAndSelect(input);
   };
 
-  await runHarnessWorkflow('task-copy', request, stages, {
+  await runHarnessWorkflow('task-image', request, stages, {
     async runStep(_key, operation) {
       return operation();
     },
@@ -2053,10 +2053,45 @@ test('a paid generation snapshot waits for execution confirmation before selecti
     async recordTrace() {},
   });
 
-  assert.deepEqual(order, ['confirmation', 'selection']);
+  assert.equal(order[0], 'confirmation');
+  assert.ok(order.includes('selection'));
 });
 
-test('a snapshot without usage reservation does not wait for execution confirmation', async () => {
+test('a media snapshot without usage reservation does not wait for execution confirmation', async () => {
+  const stages = mediaStages('image');
+  const executeMediaAndSelect = stages.executeMediaAndSelect.bind(stages);
+  let selectionCalls = 0;
+  stages.executeMediaAndSelect = async (input) => {
+    selectionCalls += 1;
+    return executeMediaAndSelect(input);
+  };
+
+  await runHarnessWorkflow('task-image', mediaTaskInput('image'), stages, {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision() {
+      throw new Error('Unpaid snapshot paths must not wait for confirmation.');
+    },
+    async recordTrace() {},
+  });
+
+  assert.ok(selectionCalls >= 1);
+});
+
+test('a paid copy snapshot delivers without a pre-run confirmation hold', async () => {
+  // Current journey-family contract (composer-card-family T31): the copy main
+  // path has no pre-run cost confirmation. Extending D-164③ confirmation to
+  // copy/note is deliberate product work with its own spec migration.
+  const request: HarnessWorkflowInput = {
+    ...snapshotTaskInput(),
+    usageReservation: {
+      id: 'usage-reservation-paid-copy',
+      units: [{ resource: 'copy' as const, quantity: 1 }],
+    },
+  };
   const stages = fixtureStages();
   const executeAndSelect = stages.executeAndSelect!;
   let selectionCalls = 0;
@@ -2065,14 +2100,17 @@ test('a snapshot without usage reservation does not wait for execution confirmat
     return executeAndSelect(input);
   };
 
-  await runHarnessWorkflow('task-copy', snapshotTaskInput(), stages, {
+  await runHarnessWorkflow('task-copy', request, stages, {
     async runStep(_key, operation) {
       return operation();
     },
     async progress() {},
     async token() {},
-    async awaitDecision() {
-      throw new Error('Unpaid snapshot paths must not wait for confirmation.');
+    async awaitDecision(question) {
+      if (question.response.field === 'execution_confirmation') {
+        throw new Error('Copy paths must not hold on paid confirmation.');
+      }
+      throw new Error(`Unexpected question: ${question.questionId}`);
     },
     async recordTrace() {},
   });

@@ -1300,12 +1300,6 @@ export async function runHarnessWorkflow(
       : merchantProgressMessage('brief_compilation'),
   });
 
-  activeRequest = await confirmPaidGenerationExecution({
-    workflowId,
-    request: activeRequest,
-    runtime,
-    reportProgress,
-  });
   const executionSkills = stageSkills.execution_selection;
   let selection: HarnessSelectionResult =
     await executeSelectionToCompletion(
@@ -1763,12 +1757,6 @@ async function runNoteHarnessWorkflow(
     }, `r${context.bundle.revision}`);
   }
 
-  activeRequest = await confirmPaidGenerationExecution({
-    workflowId,
-    request: activeRequest,
-    runtime,
-    reportProgress,
-  });
   const executionSkills = stageSkills.execution_selection;
   const noteSelectionInput = {
     workflowId,
@@ -2984,6 +2972,12 @@ async function applyCurrentTaskDecision(
  * Trigger: frozen executionSnapshot with a quote AND a billing usageReservation
  * (Composer admission freeze). This is generation-point cost confirmation, not
  * D-013 class-7 external publish approval.
+ *
+ * Scope: the media workflow path only. That matches the contract the journey
+ * spec family encodes today (the card appears in video/image journeys; copy
+ * journeys deliver without a pre-run hold, see composer-card-family T31).
+ * Extending confirmation to copy/note paths is deliberate product work with
+ * its own spec-family migration, not part of the publish:* retirement.
  *
  * Wire kind stays `external_action` so the existing interaction renderer gate
  * (`executionConfirmationInteractionRequestFromQuestion`) and e2e fixtures keep
