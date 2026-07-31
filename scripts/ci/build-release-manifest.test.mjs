@@ -58,6 +58,10 @@ async function stagedRoot({ stubCommitSha = commit } = {}) {
 /** Minimal green provider-live report; fixture input, never a provider claim. */
 function providerLiveReport() {
   const operations = ['copy.generate', 'image.generate', 'video.generate'];
+  const capturedAt = Date.now();
+  const startedAt = new Date(capturedAt - 120_000).toISOString();
+  const completedAt = new Date(capturedAt - 60_000).toISOString();
+  const expiresAt = new Date(capturedAt + 24 * 60 * 60 * 1000).toISOString();
   return {
     acceptanceMode: 'primary_connectivity',
     runNonce: 'rc-generator-test',
@@ -65,9 +69,9 @@ function providerLiveReport() {
     environment: 'provider-live',
     configurationRevision: 'cfg-1',
     effectiveConfigurationSha256: 'e'.repeat(64),
-    startedAt: '2026-07-27T11:00:00.000Z',
-    completedAt: '2026-07-27T11:05:00.000Z',
-    expiresAt: '2026-07-28T11:05:00.000Z',
+    startedAt,
+    completedAt,
+    expiresAt,
     blockedChecks: [],
     skippedOperations: [],
     activationEvidence: operations.map((operation) => ({
@@ -80,7 +84,7 @@ function providerLiveReport() {
       catalogModelId: `catalog-${operation}`,
       providerProfileId: 'provider-profile-1',
       evidenceRef: `provider-live:${operation}`,
-      verifiedAt: '2026-07-27T11:05:00.000Z',
+      verifiedAt: completedAt,
     })),
     probes: operations.map((operation) => ({
       operation,
