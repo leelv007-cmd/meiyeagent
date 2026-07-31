@@ -187,15 +187,16 @@ test.describe('registration and redemption chain (#219)', () => {
     const assistedBody = (await assistedResponse.json()) as {
       user?: {
         createdAt?: string;
-        provisionedByUserId?: string | null;
+        provisionedByUserId?: unknown;
       };
     };
-    expect(assistedBody.user?.provisionedByUserId).toBe(adminActor);
+    expect(assistedBody.user).not.toHaveProperty('provisionedByUserId');
     expect(Date.parse(assistedBody.user?.createdAt ?? '')).not.toBeNaN();
     const assistedRow = page
       .getByRole('row')
       .filter({ hasText: assisted.email });
-    await expect(assistedRow).toContainText(adminActor!);
+    await expect(assistedRow).toContainText(admin.name);
+    await expect(assistedRow).not.toContainText(adminActor!);
 
     await signOut(page);
     await loginByForm(page, assisted);
@@ -256,10 +257,10 @@ test.describe('registration and redemption chain (#219)', () => {
     const registrationBody = (await registrationResponse.json()) as {
       user?: {
         id?: string;
-        provisionedByUserId?: string | null;
+        provisionedByUserId?: unknown;
       };
     };
-    expect(registrationBody.user?.provisionedByUserId ?? null).toBeNull();
+    expect(registrationBody.user).not.toHaveProperty('provisionedByUserId');
     expect(registrationBody.user?.id).toBeTruthy();
 
     const naturalShape = await provisioningShape(page);
@@ -289,7 +290,7 @@ test.describe('registration and redemption chain (#219)', () => {
           listBody: (await listResponse.json()) as {
             users?: Array<{
               email?: string;
-              provisionedByUserId?: string | null;
+              provisionedByUserId?: unknown;
             }>;
           },
           listOk: listResponse.ok,
@@ -307,11 +308,11 @@ test.describe('registration and redemption chain (#219)', () => {
       true
     );
     expect(attributionForgery.listOk).toBe(true);
-    expect(
-      attributionForgery.listBody.users?.find(
-        (user) => user.email === merchant.email
-      )?.provisionedByUserId ?? null
-    ).toBeNull();
+    const listedMerchant = attributionForgery.listBody.users?.find(
+      (user) => user.email === merchant.email
+    );
+    expect(listedMerchant).toBeDefined();
+    expect(listedMerchant).not.toHaveProperty('provisionedByUserId');
 
     await signOut(page);
     await loginByForm(page, merchant);

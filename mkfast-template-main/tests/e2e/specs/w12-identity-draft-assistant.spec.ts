@@ -401,6 +401,13 @@ test('one line and a reference become a draft the merchant still has to校对', 
     await factCard.getByTestId('progressive-fact-continue').click();
     await expect(factInput).toHaveValue('199');
     await factCard.getByTestId('progressive-fact-continue').click();
+    await expect(
+      factCard.getByTestId('progressive-fact-price-validity')
+    ).toBeVisible();
+    await factCard
+      .getByTestId('progressive-fact-price-validity-long-term')
+      .click();
+    await factCard.getByTestId('progressive-fact-continue').click();
     const factFinalizationResponse = page.waitForResponse(
       (response) =>
         response.request().method() === 'POST' &&

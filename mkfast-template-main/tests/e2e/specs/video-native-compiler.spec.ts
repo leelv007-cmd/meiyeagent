@@ -156,6 +156,12 @@ async function submitVideoJourney(page: Page) {
   expect(envelope.data?.contentPackage?.id).toBeTruthy();
   expect(envelope.data?.task?.id).toBeTruthy();
   expect(envelope.data?.work?.id).toBeTruthy();
+  const confirmation = page.getByTestId(
+    'execution-confirmation-interaction-card'
+  );
+  await expect(confirmation).toBeVisible({ timeout: 60_000 });
+  await confirmation.getByRole('button', { name: '确认执行' }).click();
+  await expect(confirmation).toBeHidden({ timeout: 60_000 });
   return {
     packageId: envelope.data!.contentPackage!.id!,
     taskId: envelope.data!.task!.id!,

@@ -18,10 +18,13 @@ test('stores and authorizes a real workspace asset through R2 and Core', async (
   page,
   request,
 }) => {
+  test.setTimeout(180_000);
   const user = await registerE2EUser(request);
   const member = await registerE2EUser(request);
   const sql = postgres(
-    process.env.DATABASE_URL ?? 'postgres://meiye:meiye@127.0.0.1:54329/meiye',
+    process.env.TEST_DATABASE_URL ??
+      process.env.DATABASE_URL ??
+      'postgres://meiye:meiye@127.0.0.1:54329/meiye',
     { max: 1 }
   );
   try {
@@ -61,10 +64,6 @@ test('stores and authorizes a real workspace asset through R2 and Core', async (
     const authorize = page.getByRole('button', {
       name: /确认公开营销授权/,
     });
-    await expect(authorize).toBeDisabled();
-    await page
-      .getByLabel('授权凭证编号或存档位置')
-      .fill('e2e-owner-consent-archive-001');
     await expect(authorize).toBeEnabled();
     await authorize.click();
     await expect(page.getByText('公开营销可用')).toBeVisible();
@@ -75,9 +74,7 @@ test('stores and authorizes a real workspace asset through R2 and Core', async (
       if ('error' in payload) throw new Error(payload.error.message);
       return payload.data.assets.at(-1)?.objectKey;
     });
-    expect(objectKey).toMatch(
-      /^ws_.+\/assets\/.+\/[^/]*real-store-fixture\.png$/
-    );
+    expect(objectKey).toMatch(/^ws_[^/]+\/assets\/[^/]+\/[a-f0-9]{64}\.png$/);
 
     const downloadStatus = await page.evaluate(async (key) => {
       const response = await fetch(

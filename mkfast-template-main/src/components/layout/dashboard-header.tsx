@@ -99,7 +99,7 @@ export function DashboardHeader({
           </BreadcrumbList>
         </Breadcrumb>
 
-        <div className="meiye-topbar-capsule ml-auto flex shrink-0 items-center gap-2">
+        <div className="meiye-topbar-capsule ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
           {actions}
           {/*
             「我还剩多少」was reachable only by typing the URL: the pricing CTA
