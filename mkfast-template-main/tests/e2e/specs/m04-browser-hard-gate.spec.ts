@@ -569,7 +569,6 @@ test.describe('M-04 required browser hard gate', () => {
     await expect(
       resultPage.getByText(authoritativeMarker, { exact: false })
     ).toHaveCount(0);
-    await installLineageObservation(resultPage);
     const eventRequests: string[] = [];
     const captureEventRequest = (request: Request) => {
       if (request.url().includes('/events')) {
@@ -590,6 +589,9 @@ test.describe('M-04 required browser hard gate', () => {
             `/dashboard/results/${authoritative.workId}?taskId=${wrong!.taskId}`,
             documentIdentity
           );
+          // Install after leaving the works list so residual LINEAGE_B text from
+          // the prior wrong submission is not recorded as a stream leak.
+          await installLineageObservation(resultPage);
         },
         async onRunStreaming() {
           await assertRunningLineageToken(resultPage, authoritativeMarker);

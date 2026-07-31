@@ -17,7 +17,7 @@ describe('email verification policy', () => {
     );
     assert.deepEqual(
       resolveEmailVerificationPolicy({
-        appEnv: 'e2e',
+        appEnv: 'staging',
         isDev: false,
         mode: 'production',
       }),
@@ -28,10 +28,12 @@ describe('email verification policy', () => {
     );
   });
 
-  it('auto-verifies new users only in local development and e2e modes', () => {
+  it('auto-verifies new users in local development and the e2e quality stack', () => {
     for (const environment of [
       { appEnv: 'development', isDev: true, mode: 'development' },
       { appEnv: 'e2e', isDev: true, mode: 'e2e' },
+      // Production-candidate wrangler build: APP_ENV=e2e, isDev=false.
+      { appEnv: 'e2e', isDev: false, mode: 'production' },
     ]) {
       assert.deepEqual(resolveEmailVerificationPolicy(environment), {
         autoVerifyNewUsers: true,
@@ -40,19 +42,31 @@ describe('email verification policy', () => {
     }
   });
 
-  it('keeps local-looking modes safe outside a development build', () => {
-    for (const environmentName of ['development', 'e2e']) {
-      assert.deepEqual(
-        resolveEmailVerificationPolicy({
-          appEnv: environmentName,
-          isDev: false,
-          mode: environmentName,
-        }),
-        {
-          autoVerifyNewUsers: false,
-          requireEmailVerification: true,
-        }
-      );
-    }
+  it('keeps development mode safe outside a development build', () => {
+    assert.deepEqual(
+      resolveEmailVerificationPolicy({
+        appEnv: 'development',
+        isDev: false,
+        mode: 'development',
+      }),
+      {
+        autoVerifyNewUsers: false,
+        requireEmailVerification: true,
+      }
+    );
+  });
+
+  it('does not treat build mode alone as an e2e quality stack', () => {
+    assert.deepEqual(
+      resolveEmailVerificationPolicy({
+        appEnv: 'production',
+        isDev: false,
+        mode: 'e2e',
+      }),
+      {
+        autoVerifyNewUsers: false,
+        requireEmailVerification: true,
+      }
+    );
   });
 });
