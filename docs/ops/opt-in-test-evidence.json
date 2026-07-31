@@ -158,8 +158,8 @@
     },
     "apps/core/src/p1/model-supply/postgres-repository.test.ts": {
       "status": "green",
-      "verifiedAt": "6599b6c53cfdaa617c2b74e904bea1dfed962765",
-      "note": "Issue 252 legacy catalog read audit; historical PG suite name, fresh isolated database pair provisioned first: 17 pass / 0 fail / 0 skip."
+      "verifiedAt": "3c7942ea6d4bcfe383ba1b6664c82c77b4099264",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone; previous anchor was an orphaned pre-rebase SHA unreachable from origin (CI shallow/full clones both fail-close on it)."
     },
     "apps/core/src/p1/model-supply/published-catalog-read.postgres.test.ts": {
       "status": "green",
@@ -248,13 +248,13 @@
     },
     "apps/core/src/p1/result-delivery/assisted-canonical-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "e2e1c25793432a9ca1f7d8fc3489a974a8273ff5",
-      "note": "Issue 272 tracing; own fresh isolated business and DBOS database pair provisioned first. The first target run reported missing p1_content_packages; after the operations repository schema owner passed 14/14 on the same pair, the target passed 1/1 with 0 fail and 0 skip."
+      "verifiedAt": "3c7942ea6d4bcfe383ba1b6664c82c77b4099264",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone; previous anchor was an orphaned pre-rebase SHA unreachable from origin (CI shallow/full clones both fail-close on it)."
     },
     "apps/core/src/p1/result-delivery/assisted-receipt-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "e2e1c25793432a9ca1f7d8fc3489a974a8273ff5",
-      "note": "Issue 272 tracing; own fresh isolated business and DBOS database pair provisioned first: 2 pass / 0 fail / 0 skip."
+      "verifiedAt": "3c7942ea6d4bcfe383ba1b6664c82c77b4099264",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone; previous anchor was an orphaned pre-rebase SHA unreachable from origin (CI shallow/full clones both fail-close on it)."
     },
     "apps/core/src/p1/skills/dbos-governance-workflow.postgres.test.ts": {
       "status": "green",
