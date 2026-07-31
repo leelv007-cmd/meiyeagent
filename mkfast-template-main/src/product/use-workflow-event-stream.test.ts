@@ -110,8 +110,11 @@ test('accepts only frames from the subscribed workflow', () => {
     'video-a',
     {
       data: {
-        ...progress,
+        candidateId: 'candidate-b',
+        channel: 'copy.body',
+        delta: 'foreign token',
         eventId: 'task-b:token:999',
+        occurredAt: '2026-07-18T08:00:03.000Z',
         sequence: 999,
         workflowId: 'task-b',
       },

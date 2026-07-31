@@ -18,7 +18,8 @@ const copyContract = JOURNEY_CONTRACTS.find(
   ({ modality }) => modality === 'copy'
 );
 
-if (!copyContract) throw new Error('Copy Composer journey contract is required');
+if (!copyContract)
+  throw new Error('Copy Composer journey contract is required');
 
 async function expectNoHorizontalOverflow(page: Page) {
   const overflow = await page.evaluate(
@@ -51,7 +52,9 @@ test('language switching preserves an authenticated route, query, and hash', asy
   });
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
   await page.reload();
-  await expect(page).toHaveURL(/\/en\/dashboard\/assets\?from=uiux-277#gallery$/u);
+  await expect(page).toHaveURL(
+    /\/en\/dashboard\/assets\?from=uiux-277#gallery$/u
+  );
   await page.getByRole('button', { name: /language/iu }).click();
   await page.getByRole('menuitem', { name: /中文$/u }).click();
   await expect(page).toHaveURL(/\/dashboard\/assets\?from=uiux-277#gallery$/u);
@@ -115,7 +118,13 @@ for (const viewport of [
     await expect(page.locator('html')).toHaveAttribute('lang', 'en');
     const enNav = page.getByRole('navigation', { name: 'Mobile navigation' });
     await expect(enNav).toBeVisible();
-    for (const label of ['Create', 'Voices & assets', 'Content', 'Store', 'Memory']) {
+    for (const label of [
+      'Create',
+      'Voices & assets',
+      'Content',
+      'Store',
+      'Memory',
+    ]) {
       await expect(enNav.getByText(label, { exact: true })).toBeVisible();
     }
     await expect(page.getByTestId('composer-home')).toBeVisible();

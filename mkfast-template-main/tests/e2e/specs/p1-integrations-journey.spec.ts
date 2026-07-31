@@ -30,9 +30,9 @@ test.describe('P1 integration product journeys', () => {
     // from the merchant surface, so granting is an explicit switch.
     await page.getByRole('switch', { name: '模型生成权限请求能力' }).click();
     await page.getByRole('button', { name: '创建连接' }).click();
-    await expect(
-      page.getByText('连接已创建，待完成授权验证')
-    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText('连接已创建，待完成授权验证')).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page.getByLabel('模型密钥（API Key）')).toHaveValue('');
   });
 });

@@ -20,7 +20,8 @@ const copyContract = JOURNEY_CONTRACTS.find(
   ({ modality }) => modality === 'copy'
 );
 
-if (!copyContract) throw new Error('Copy Composer journey contract is required');
+if (!copyContract)
+  throw new Error('Copy Composer journey contract is required');
 
 test.afterEach(async ({ request }) => {
   await cleanupE2EUsers(request);

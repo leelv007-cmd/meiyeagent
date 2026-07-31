@@ -16,7 +16,8 @@ const copyContract = JOURNEY_CONTRACTS.find(
   ({ modality }) => modality === 'copy'
 );
 
-if (!copyContract) throw new Error('Copy Composer journey contract is required');
+if (!copyContract)
+  throw new Error('Copy Composer journey contract is required');
 
 test.afterEach(async ({ request }) => {
   await cleanupE2EUsers(request);
@@ -46,9 +47,11 @@ test('a running Composer task restores after refresh without a second submission
   const workId = await submitComposerJourney(page, copyContract, intent, {
     async onRunStreaming() {
       await expect(page.getByTestId('composer-conversation')).toBeVisible();
-      await expect(page.getByTestId('composer-stage-line').first()).toBeVisible({
-        timeout: 120_000,
-      });
+      await expect(page.getByTestId('composer-stage-line').first()).toBeVisible(
+        {
+          timeout: 120_000,
+        }
+      );
       await page.reload();
       await expect(page.getByTestId('composer-turn-merchant')).toContainText(
         intent,
