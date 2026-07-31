@@ -59,6 +59,7 @@ import type {
   HarnessReservationSweep,
   HarnessReservationSweepStore,
 } from './reservation-sweeper.js';
+import { MAX_RESERVATION_SWEEP_ATTEMPTS } from './reservation-sweeper.js';
 import {
   DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
   HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
@@ -210,23 +211,41 @@ export class PostgresHarnessStore
         reason text not null
           check (reason in ('hold_reservation_ttl_elapsed')),
         status text not null
-          check (status in ('processing', 'failed', 'completed')),
+          check (status in
+            ('processing', 'failed', 'completed', 'dead_letter')),
         attempts integer not null default 1,
+        next_attempt_at timestamptz not null default now(),
         last_error text,
         completed_at timestamptz,
+        dead_lettered_at timestamptz,
         created_at timestamptz not null default now(),
         updated_at timestamptz not null default now(),
         primary key (workspace_id, task_id)
       );
 
-      create index if not exists harness_reservation_sweeps_status_idx
+      alter table harness_runtime.reservation_sweeps
+        add column if not exists next_attempt_at timestamptz not null
+          default now();
+      alter table harness_runtime.reservation_sweeps
+        add column if not exists dead_lettered_at timestamptz;
+      drop index if exists harness_runtime.harness_reservation_sweeps_status_idx;
+      create index harness_reservation_sweeps_status_idx
         on harness_runtime.reservation_sweeps
-          (status, updated_at, held_since);
+          (status, next_attempt_at, updated_at, held_since);
       alter table harness_runtime.reservation_sweeps
         drop constraint if exists reservation_sweeps_status_check;
       alter table harness_runtime.reservation_sweeps
         add constraint reservation_sweeps_status_check
-        check (status in ('processing', 'failed', 'completed'));
+        check (status in
+          ('processing', 'failed', 'completed', 'dead_letter'));
+
+      create table if not exists p1_operations_audit_events (
+        workspace_id text not null,
+        id text not null,
+        payload jsonb not null,
+        updated_at timestamptz not null,
+        primary key (workspace_id, id)
+      );
 
       create table if not exists harness_runtime.langfuse_outbox (
         audit_id text primary key references harness_runtime.audit_events(id)
@@ -1929,12 +1948,24 @@ export class PostgresHarnessStore
               questions.pending_projection,
               questions.status,
               requests.request,
-              exists (
-                select 1
-                  from harness_runtime.reservation_sweeps sweeps
-                 where sweeps.workspace_id=$2
-                   and sweeps.task_id=requests.workflow_id
-                   and sweeps.status='completed'
+              (
+                exists (
+                  select 1
+                    from harness_runtime.reservation_sweeps sweeps
+                   where sweeps.workspace_id=$2
+                     and sweeps.task_id=requests.workflow_id
+                     and sweeps.status='completed'
+                )
+                -- Post-refund crash window: billing already left 'reserved'
+                -- but the sweep row has not reached 'completed' yet. The
+                -- resume fence must match the reconciler's derivation.
+                or exists (
+                  select 1
+                    from p1_product_billing_usage usage
+                   where usage.workspace_id=$2
+                     and usage.task_id=requests.workflow_id
+                     and usage.status<>'reserved'
+                )
               ) as reservation_released,
               (
                 select events.resolution_source
@@ -2068,7 +2099,8 @@ export class PostgresHarnessStore
               sweeps.task_id is null
               or (
                 sweeps.status='failed'
-                and sweeps.updated_at < now() - interval '1 minute'
+                and sweeps.attempts < $3
+                and sweeps.next_attempt_at <= now()
               )
             )
           order by questions.updated_at, requests.workflow_id
@@ -2104,14 +2136,24 @@ export class PostgresHarnessStore
                last_error=null,
                updated_at=now()
          where harness_runtime.reservation_sweeps.status in ('processing','failed')
-           and harness_runtime.reservation_sweeps.updated_at
-             < now() - interval '1 minute'
+           and (
+             (
+               harness_runtime.reservation_sweeps.status='processing'
+               and harness_runtime.reservation_sweeps.updated_at
+                 < now() - interval '1 minute'
+             )
+             or (
+               harness_runtime.reservation_sweeps.status='failed'
+               and harness_runtime.reservation_sweeps.attempts < $3
+               and harness_runtime.reservation_sweeps.next_attempt_at <= now()
+             )
+           )
          returning workspace_id, task_id, question_id, quote_id,
                    quote_revision, usage_reservation_id, reserved_units,
                    held_since, attempts
        )
        select * from claimed order by held_since, task_id`,
-      [input.expiresBefore, input.limit],
+      [input.expiresBefore, input.limit, MAX_RESERVATION_SWEEP_ATTEMPTS],
     );
     return result.rows.map((row) => ({
       workspaceId: row.workspace_id,
@@ -2171,6 +2213,39 @@ export class PostgresHarnessStore
         },
         runtimeId,
       );
+      const operationsAuditId = `product_usage.reservation_released:${input.taskId}`;
+      const occurredAt = new Date().toISOString();
+      await client.query(
+        `insert into p1_operations_audit_events
+           (workspace_id, id, payload, updated_at)
+         values ($1,$2,$3::jsonb,$4::timestamptz)
+         on conflict (workspace_id, id) do nothing`,
+        [
+          input.workspaceId,
+          operationsAuditId,
+          JSON.stringify({
+            action: 'product_usage.reservation_released',
+            actorId: 'reservation-sweeper',
+            correlationId: `reservation-sweep:${input.taskId}`,
+            createdAt: occurredAt,
+            details: {
+              attempts: input.attempts,
+              heldSince: input.heldSince,
+              holdStillPending: true,
+              questionId: input.questionId,
+              quoteId: input.quoteId,
+              reason: input.reason,
+              reservedUnits: input.reservedUnits,
+              usageReservationId: input.usageReservationId,
+            },
+            entityId: input.taskId,
+            entityType: 'product_usage_reservation',
+            id: operationsAuditId,
+            workspaceId: input.workspaceId,
+          }),
+          occurredAt,
+        ],
+      );
       await client.query('commit');
     } catch (error) {
       await client.query('rollback');
@@ -2185,29 +2260,119 @@ export class PostgresHarnessStore
     error: string,
     phase: 'completion' | 'refund',
   ) {
-    await this.pool.query(
-      `update harness_runtime.reservation_sweeps
-          set status=case
-                when $4='refund'
-                 and exists (
-                   select 1
-                     from p1_product_billing_usage usage
-                     join p1_product_billing_quotes quotes
-                       on quotes.workspace_id=usage.workspace_id
-                      and quotes.quote_id=usage.quote_id
-                    where usage.workspace_id=$1
-                      and usage.task_id=$2
-                      and usage.status='reserved'
-                      and quotes.lifecycle_status='reserved'
-                 )
-                then 'failed'
-                else 'processing'
-              end,
-              last_error=$3,
-              updated_at=now()
-        where workspace_id=$1 and task_id=$2 and status='processing'`,
-      [input.workspaceId, input.taskId, error.slice(0, 2_000), phase],
-    );
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      const updated = await client.query<{ status: string }>(
+        `update harness_runtime.reservation_sweeps
+            set status=case
+                  when $4='refund'
+                   and exists (
+                     select 1
+                       from p1_product_billing_usage usage
+                       join p1_product_billing_quotes quotes
+                         on quotes.workspace_id=usage.workspace_id
+                        and quotes.quote_id=usage.quote_id
+                      where usage.workspace_id=$1
+                        and usage.task_id=$2
+                        and usage.status='reserved'
+                        and quotes.lifecycle_status='reserved'
+                   )
+                  then case
+                    when attempts >= $5 then 'dead_letter'
+                    else 'failed'
+                  end
+                  else 'processing'
+                end,
+                next_attempt_at=case
+                  when $4='refund'
+                   and attempts < $5
+                   and exists (
+                     select 1
+                       from p1_product_billing_usage usage
+                       join p1_product_billing_quotes quotes
+                         on quotes.workspace_id=usage.workspace_id
+                        and quotes.quote_id=usage.quote_id
+                      where usage.workspace_id=$1
+                        and usage.task_id=$2
+                        and usage.status='reserved'
+                        and quotes.lifecycle_status='reserved'
+                   )
+                  then now() + (
+                    least(3600, 60 * power(2, greatest(attempts - 1, 0)))
+                    * interval '1 second'
+                  )
+                  else next_attempt_at
+                end,
+                dead_lettered_at=case
+                  when $4='refund'
+                   and attempts >= $5
+                   and exists (
+                     select 1
+                       from p1_product_billing_usage usage
+                       join p1_product_billing_quotes quotes
+                         on quotes.workspace_id=usage.workspace_id
+                        and quotes.quote_id=usage.quote_id
+                      where usage.workspace_id=$1
+                        and usage.task_id=$2
+                        and usage.status='reserved'
+                        and quotes.lifecycle_status='reserved'
+                   )
+                  then coalesce(dead_lettered_at, now())
+                  else dead_lettered_at
+                end,
+                last_error=$3,
+                updated_at=now()
+          where workspace_id=$1 and task_id=$2 and status='processing'
+          returning status`,
+        [
+          input.workspaceId,
+          input.taskId,
+          error.slice(0, 2_000),
+          phase,
+          MAX_RESERVATION_SWEEP_ATTEMPTS,
+        ],
+      );
+      if (updated.rows[0]?.status === 'dead_letter') {
+        const operationsAuditId = `product_usage.reservation_release_dead_letter:${input.taskId}`;
+        const occurredAt = new Date().toISOString();
+        await client.query(
+          `insert into p1_operations_audit_events
+             (workspace_id, id, payload, updated_at)
+           values ($1,$2,$3::jsonb,$4::timestamptz)
+           on conflict (workspace_id, id) do nothing`,
+          [
+            input.workspaceId,
+            operationsAuditId,
+            JSON.stringify({
+              action: 'product_usage.reservation_release_dead_letter',
+              actorId: 'reservation-sweeper',
+              correlationId: `reservation-sweep:${input.taskId}`,
+              createdAt: occurredAt,
+              details: {
+                attempts: input.attempts,
+                error: error.slice(0, 2_000),
+                phase,
+                questionId: input.questionId,
+                quoteId: input.quoteId,
+                usageReservationId: input.usageReservationId,
+              },
+              entityId: input.taskId,
+              entityType: 'product_usage_reservation',
+              id: operationsAuditId,
+              workspaceId: input.workspaceId,
+            }),
+            occurredAt,
+          ],
+        );
+      }
+      await client.query('commit');
+    } catch (failure) {
+      await client.query('rollback');
+      throw failure;
+    } finally {
+      client.release();
+    }
   }
 
   async submit(
