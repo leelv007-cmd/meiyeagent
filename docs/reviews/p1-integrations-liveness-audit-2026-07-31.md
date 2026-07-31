@@ -105,7 +105,7 @@ D-155＋D-161④ 明列不受冻结约束的四项，逐条确认未受影响：
 
 | # | 事项 | 本轮处理 | 为何不自行决定 |
 |---|---|---|---|
-| ① | 目录是否改名 | **不改**，切除后 `p1/integrations/` 原地保留 20 个活代码文件 | 票面任务 2 写的是「非发布活代码迁出该目录」，其前提是目录以冻结面为主；实测反了（68% 是活代码）。把 7,000 行活代码换址属于纯 churn，且会与在飞 lane 抢 `main.ts` 等装配面。若主控仍要改名（例如 `p1/provider-integrations/`），是独立一次机械改名，随时可做。 |
+| ① | 目录是否改名 | **不改**，切除后 `p1/integrations/` 原地保留 16 个活代码生产文件（连测试共 32 个） | 票面任务 2 写的是「非发布活代码迁出该目录」，其前提是目录以冻结面为主；实测反了（68% 是活代码）。把 7,000 行活代码换址属于纯 churn，且会与在飞 lane 抢 `main.ts` 等装配面。若主控仍要改名（例如 `p1/provider-integrations/`），是独立一次机械改名，随时可做。 |
 | ② | `IntegrationProvider` 仍保留 `'douyin'` 枚举项（`contracts.ts:1`） | **保留** | 库里存量连接行的 `provider` 列仍写着 `'douyin'`，删掉枚举会让历史行读出来即类型不合。已无任何代码能**新建**抖音连接（`createConnectionInput` 的 provider 枚举已收窄为 `feishu`/`model`）。 |
 | ③ | `CapabilityActivationEvidence` 的 `endpoint`/`fields`/`frequency`/`qualified` 四个可选字段 | **保留** | 只被抖音观测消费，现已无读方；但它们是共用类型上的可选字段，且对应 jsonb 存量数据。删除收益为零、风险非零。 |
 | ④ | `publish:*` 三个 `distributionTarget` 枚举值（`packages/contracts/src/composer-submission.ts:29-31`） | **保留枚举，只撤回文案** | D-155 冻结面确实包含这三个目标，但它们贯穿 composer／execution-spine／harness（7 个 core 测试文件引用），属 D-155 的**另一半**（Composer 侧），不在 #263 的 `p1/integrations` 票面内。本轮已做的：撤回商家可见承诺（`composer-signed-preview` 三句改为「由你发布」）＋ 关掉运营新配置入口（admin 三个 `<option>` 删除）。**建议另开票删除枚举本身。** |
