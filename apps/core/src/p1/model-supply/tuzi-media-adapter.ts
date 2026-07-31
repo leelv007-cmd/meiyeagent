@@ -484,4 +484,8 @@ export class TuziMediaExecutionPort extends ArkMediaExecutionPort<
     }
     return receipt;
   }
+
+  protected override videoSubmitBodySupportsDuration() {
+    return true;
+  }
 }

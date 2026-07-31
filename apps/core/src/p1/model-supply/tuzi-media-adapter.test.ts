@@ -9,6 +9,7 @@ import {
   tuziEditOutputSize,
   tuziGenerationOutputSize,
   TuziMediaExecutionPort,
+  type TuziMediaExecutionOptions,
 } from './tuzi-media-adapter.js';
 
 async function sampleImageDataUrl(options: {
@@ -37,7 +38,7 @@ async function sampleImageDataUrl(options: {
 }
 
 function request(
-  catalogModelId: 'seedream-5-pro' | 'seedance-2',
+  catalogModelId: 'seedream-5-pro' | 'seedance-1-5-pro' | 'seedance-2',
   reference?: {
     bytes: Uint8Array;
     contentType: string;
@@ -56,7 +57,9 @@ function request(
       catalogModelId === 'seedream-5-pro' ? 'image.edit' : 'video.generate',
       {
         referenceAssetIds: ['store-image'],
-        ...(catalogModelId === 'seedance-2' ? { durationSeconds: 5 } : {}),
+        ...(catalogModelId.startsWith('seedance')
+          ? { durationSeconds: 5 }
+          : {}),
       }
     ),
     effectIdempotencyKey: `tuzi-${catalogModelId}`,
@@ -76,6 +79,10 @@ function request(
 function provider(
   fetch: typeof globalThis.fetch,
   assetFetchOverride?: ProviderAssetFetchPort,
+  video: Pick<TuziMediaExecutionOptions['video'], 'catalogModelId' | 'model'> = {
+    catalogModelId: 'seedance-2' as const,
+    model: 'tuzi-video-model',
+  },
 ) {
   const assetFetch: ProviderAssetFetchPort = assetFetchOverride ?? {
     async get(target, constraints) {
@@ -105,10 +112,10 @@ function provider(
     },
     sourceUrlTtlSeconds: 3_600,
     video: {
-      catalogModelId: 'seedance-2',
+      catalogModelId: video.catalogModelId,
       costPerMillionTokens: 20,
       estimatedTokensPerSecond: 10_000,
-      model: 'tuzi-video-model',
+      model: video.model,
     },
   });
 }
@@ -392,6 +399,28 @@ test('Tuzi rejects video submissions with multiple references before provider ac
   assert.match(receipt.error ?? '', /supports only one reference/i);
   assert.equal(receipt.retryable, false);
   assert.equal(providerCalled, false);
+});
+
+test('Tuzi Seedance 1.5 retains durationSeconds for its multipart seconds field', async () => {
+  const fetchMock: typeof globalThis.fetch = async (input, init) => {
+    assert.equal(String(input), 'https://api.tu-zi.example/v1/videos');
+    assert.ok(init?.body instanceof FormData);
+    assert.equal(init.body.get('model'), 'tuzi-seedance-1-5-pro');
+    assert.equal(init.body.get('seconds'), '5');
+    return Response.json({
+      id: 'tuzi-seedance-1-5-pro-task-1',
+      object: 'video',
+      status: 'queued',
+    });
+  };
+
+  const receipt = await provider(fetchMock, undefined, {
+    catalogModelId: 'seedance-1-5-pro',
+    model: 'tuzi-seedance-1-5-pro',
+  }).submit(request('seedance-1-5-pro'));
+
+  assert.equal(receipt.acceptance, 'accepted', receipt.error);
+  assert.equal(receipt.providerTaskId, 'tuzi-seedance-1-5-pro-task-1');
 });
 
 test('Tuzi videos use multipart input_reference and normalize poll and download', async () => {

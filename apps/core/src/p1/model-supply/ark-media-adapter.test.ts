@@ -432,6 +432,35 @@ test('Ark Seedance supports async submit, poll, download and cancel with observe
   );
 });
 
+test('Ark Seedance 1.5 Pro omits the duration rejected by the recorded Ark response', async () => {
+  let requests = 0;
+  const provider = adapter(
+    async (_input, init) => {
+      requests += 1;
+      const body = JSON.parse(String(init?.body)) as { duration?: number };
+      if (body.duration !== undefined) {
+        return Response.json(
+          {
+            message:
+              '{"error":{"code":"InvalidParameter","message":"The parameter `contents[0].***.duration` specified in the request is not valid: the specified duration is not supported for model doubao-seedance-1-5-pro.","param":"contents[0].***.duration","type":"BadRequest"}}',
+            data: { code: 400 },
+          },
+          { status: 451 },
+        );
+      }
+      return Response.json({ id: 'cgt-seedance-1-5-pro-1' });
+    },
+    undefined,
+    'doubao-seedance-1-5-pro',
+  );
+
+  const receipt = await provider.submit(effectRequest('seedance-2'));
+
+  assert.equal(receipt.acceptance, 'accepted', receipt.error);
+  assert.equal(receipt.providerTaskId, 'cgt-seedance-1-5-pro-1');
+  assert.equal(requests, 1);
+});
+
 test('Ark Seedance maps only model-supported resolution tiers before provider access', async () => {
   async function submittedResolution(
     width: number,

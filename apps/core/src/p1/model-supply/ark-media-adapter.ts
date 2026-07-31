@@ -895,7 +895,8 @@ export class ArkMediaExecutionPort<
                   },
             ),
           ],
-          ...(request.submission.input?.durationSeconds
+          ...(request.submission.input?.durationSeconds &&
+          this.videoSubmitBodySupportsDuration()
             ? { duration: request.submission.input.durationSeconds }
             : {}),
           ...(resolution ? { resolution } : {}),
@@ -1199,6 +1200,12 @@ export class ArkMediaExecutionPort<
       'unsupported_resolution',
       false,
       `Ark video model ${this.options.video.model} does not support the requested resolution.`,
+    );
+  }
+
+  protected videoSubmitBodySupportsDuration() {
+    return !/^doubao-seedance-1-5-pro(?:[-_.]|$)/iu.test(
+      this.options.video.model.trim(),
     );
   }
 
