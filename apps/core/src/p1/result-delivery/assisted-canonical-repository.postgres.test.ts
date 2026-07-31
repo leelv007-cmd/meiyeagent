@@ -9,6 +9,7 @@ import {
 } from '@meiye/contracts';
 import { Pool } from 'pg';
 
+import { PostgresOperationsRepository } from '../operations/postgres-repository.js';
 import { AssistedReceiptService } from './assisted-receipt-service.js';
 import {
   PostgresCanonicalAssistedReceiptRepository,
@@ -146,6 +147,9 @@ test(
 
     try {
       await repository.migrate();
+      // p1_content_packages is owned by the operations migration; app boot
+      // creates it, a provisioned-but-never-booted database does not.
+      await new PostgresOperationsRepository(pool).migrate();
       await pool.query(
         `INSERT INTO p1_content_packages
            (workspace_id, id, payload, revision, updated_at)
