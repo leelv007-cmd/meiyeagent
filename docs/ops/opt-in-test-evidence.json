@@ -238,8 +238,8 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "0359b62cc7913f8f5ddaf9d68fc1642392efd24c",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) at the suite-fix commit; watch dir is all of p1/."
+      "verifiedAt": "3c7942ea6d4bcfe383ba1b6664c82c77b4099264",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone; watch dir is all of p1/, so any p1 commit requires a re-run."
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "unverified",
