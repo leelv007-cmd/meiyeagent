@@ -25,7 +25,6 @@ import {
   ModelSupplyProductCopyProvider,
   resolveCanonicalCopySelection,
 } from './product/model-supply-copy-provider.js';
-import { ProductPublishContentSnapshotPort } from './product/publish-content-snapshot.js';
 import {
   ProductAssetDataClassResolver,
   ProductCreativeGroundingResolver,
@@ -109,7 +108,6 @@ import {
   IntegrationsFoundationModule,
   IntegrationApplicationService,
   PostgresIntegrationRepository,
-  RecordedDouyinAdapter,
   FoundationStrictByokLedger,
   OperationsConfirmationTaskAdapter,
   byokExecutionRuntimeFromEnv,
@@ -120,9 +118,6 @@ import {
   ProviderCredentialAccountProvisioner,
   providerConnectivityProbeFromEnv,
   providerCredentialEnvFromVault,
-  registerDouyinOAuthLifecycleSchedule,
-  registerDouyinObserveSyncSchedule,
-  registerDouyinPublishPollingSchedule,
   registerFeishuIntentReconciliationSchedule,
   registerFeishuToolLifecycleSchedule,
 } from './p1/integrations/index.js';
@@ -393,15 +388,10 @@ const modelSupplyPromptResolver =
 
 const databaseUrl = process.env.DATABASE_URL;
 const serviceToken = process.env.CORE_SERVICE_TOKEN;
-const douyinCallbackToken = process.env.DOUYIN_CALLBACK_TOKEN;
 const recordedCommerceEnabled =
   process.env.P1_RECORDED_COMMERCE_ENABLED === '1';
 if (!databaseUrl) throw new Error('DATABASE_URL is required.');
 assertStrongSecret('CORE_SERVICE_TOKEN', serviceToken);
-assertStrongSecret('DOUYIN_CALLBACK_TOKEN', douyinCallbackToken);
-if (douyinCallbackToken === serviceToken) {
-  throw new Error('DOUYIN_CALLBACK_TOKEN must differ from CORE_SERVICE_TOKEN.');
-}
 
 const harnessRuntimeConfig = process.env.HARNESS_DBOS_SYSTEM_DATABASE_URL
   ? readHarnessRuntimeConfig(process.env)
@@ -716,7 +706,6 @@ const adminConfigRuntime = {
   'compliance.aigc_label.default': true,
   'compliance.regulated_mode.default': false,
   'compliance.watermark.default': false,
-  'douyin.adapter.assembly': 'recorded',
   'model.execution.mode': modelRuntime.mode,
   'model.media.execution.mode': mediaExecutionMode,
   [HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY]:
@@ -1064,10 +1053,6 @@ const integrationService = new IntegrationApplicationService({
     foundationLedgerService,
     executionEntitlementPolicy
   ),
-  contentSnapshots: new ProductPublishContentSnapshotPort(
-    relationalProductRepository
-  ),
-  douyin: new RecordedDouyinAdapter(),
   endpointProfiles: [
     {
       apiFamily: 'openai-compatible',
@@ -1104,30 +1089,6 @@ await registerFeishuIntentReconciliationSchedule(jobRuntime, {
     : {}),
   ...(process.env.FEISHU_INTENT_RECONCILIATION_TIMEZONE
     ? { timezone: process.env.FEISHU_INTENT_RECONCILIATION_TIMEZONE }
-    : {}),
-});
-await registerDouyinOAuthLifecycleSchedule(jobRuntime, {
-  ...(process.env.DOUYIN_OAUTH_LIFECYCLE_CRON
-    ? { cron: process.env.DOUYIN_OAUTH_LIFECYCLE_CRON }
-    : {}),
-  ...(process.env.DOUYIN_OAUTH_LIFECYCLE_TIMEZONE
-    ? { timezone: process.env.DOUYIN_OAUTH_LIFECYCLE_TIMEZONE }
-    : {}),
-});
-await registerDouyinObserveSyncSchedule(jobRuntime, {
-  ...(process.env.DOUYIN_OBSERVE_SYNC_CRON
-    ? { cron: process.env.DOUYIN_OBSERVE_SYNC_CRON }
-    : {}),
-  ...(process.env.DOUYIN_OBSERVE_SYNC_TIMEZONE
-    ? { timezone: process.env.DOUYIN_OBSERVE_SYNC_TIMEZONE }
-    : {}),
-});
-await registerDouyinPublishPollingSchedule(jobRuntime, {
-  ...(process.env.DOUYIN_PUBLISH_POLLING_CRON
-    ? { cron: process.env.DOUYIN_PUBLISH_POLLING_CRON }
-    : {}),
-  ...(process.env.DOUYIN_PUBLISH_POLLING_TIMEZONE
-    ? { timezone: process.env.DOUYIN_PUBLISH_POLLING_TIMEZONE }
     : {}),
 });
 const createCopyProviders = (bridge: ProductCopyProviderBridge) => ({
@@ -1670,7 +1631,6 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
         NOTE_STYLE_CONFIG_KEY,
         'byok.adapter.assembly',
-        'douyin.adapter.assembly',
         'model.execution.mode',
         'model.media.execution.mode',
         'plan.addons',
@@ -2579,7 +2539,6 @@ const server = createCoreServer({
     },
   },
   diagnosticRepository,
-  douyinCallbackToken,
   integrationService,
   harnessService,
   pendingActions,

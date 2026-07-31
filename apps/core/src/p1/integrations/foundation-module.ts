@@ -4,8 +4,6 @@ import type { IntegrationApplicationService } from './application-service.js';
 import {
   IntegrationError,
   type CreateConnectionInput,
-  type DouyinCapability,
-  type DouyinPublishAnchor,
   type FeishuToolShortcut,
   type IntegrationContext,
   type SubmitStrictByokInput,
@@ -21,7 +19,6 @@ type ProviderCredentialEffectiveSource = 'vault' | 'env_fallback' | 'env';
 const PROVIDER_CREDENTIAL_SLOTS = [
   'model.direct',
   'ark.media',
-  'douyin.platform',
 ] as const;
 
 interface IntegrationsFoundationModuleOptions {
@@ -159,7 +156,6 @@ function createConnectionInput(
   const input: CreateConnectionInput = {
     id: string(payload, 'id'),
     provider: oneOf(payload, 'provider', [
-      'douyin',
       'feishu',
       'model',
     ] as const),
@@ -186,27 +182,6 @@ function strictByokInput(
     catalogModelId: string(payload, 'catalogModelId'),
     prompt: string(payload, 'prompt'),
     idempotencyKey,
-  };
-}
-
-function douyinCapabilityInput(payload: Record<string, unknown>) {
-  return {
-    connectionId: string(payload, 'connectionId'),
-    capability: oneOf(payload, 'capability', [
-      'publish',
-      'observe',
-      'publish.poi',
-      'publish.mini_program',
-    ] as const) satisfies DouyinCapability,
-  };
-}
-
-function douyinPublishAnchor(value: unknown): DouyinPublishAnchor | undefined {
-  if (value === undefined) return undefined;
-  const input = objectField({ anchor: value }, 'anchor');
-  return {
-    id: string(input, 'id'),
-    kind: oneOf(input, 'kind', ['poi', 'mini_program'] as const),
   };
 }
 
@@ -257,31 +232,6 @@ function publicConnection<
   return view;
 }
 
-function publicDouyinPublishJob(
-  job: Awaited<
-    ReturnType<IntegrationApplicationService['getDouyinOperationsSnapshot']>
-  >['publishJobs'][number]
-) {
-  return {
-    acceptance: job.acceptance,
-    confirmationId: job.confirmationId,
-    createdAt: job.createdAt,
-    effectState: job.effectState,
-    anchor: job.anchor,
-    id: job.id,
-    itemId: job.itemId,
-    lastErrorCode: job.lastErrorCode,
-    nextPollAt: job.nextPollAt,
-    pollAttempts: job.pollAttempts,
-    pollDeadlineAt: job.pollDeadlineAt,
-    pollingState: job.pollingState,
-    pollLimit: job.pollLimit,
-    status: job.status,
-    updatedAt: job.updatedAt,
-    videoId: job.videoId,
-  };
-}
-
 export class IntegrationsFoundationModule implements P1OperationModule {
   readonly name = 'integrations';
   private readonly adminActorIds: Set<string>;
@@ -319,7 +269,6 @@ export class IntegrationsFoundationModule implements P1OperationModule {
     const slot = oneOf(payload, 'slot', [
       'model.direct',
       'ark.media',
-      'douyin.platform',
     ] as const);
     return { id: `platform:${slot}`, slot };
   }
@@ -353,7 +302,7 @@ export class IntegrationsFoundationModule implements P1OperationModule {
           this.platformCredentialContext(args.context),
           {
             id,
-            provider: slot === 'douyin.platform' ? 'douyin' : 'model',
+            provider: 'model',
             identityMode: 'service',
             requestedCapabilities: [slot],
             grantedCapabilities: [slot],
@@ -431,53 +380,6 @@ export class IntegrationsFoundationModule implements P1OperationModule {
         return this.integrations.submitStrictByok(
           context,
           strictByokInput(payload, args.idempotencyKey)
-        );
-      case 'activate_douyin_capability':
-        return publicConnection(
-          await this.integrations.activateDouyinCapability(
-            context,
-            douyinCapabilityInput(payload)
-          )
-        );
-      case 'deactivate_douyin_capability':
-        return publicConnection(
-          await this.integrations.deactivateDouyinCapability(
-            context,
-            douyinCapabilityInput(payload)
-          )
-        );
-      case 'refresh_douyin_oauth':
-        return publicConnection(
-          await this.integrations.refreshDouyinOAuth(
-            context,
-            string(payload, 'connectionId'),
-            args.idempotencyKey
-          )
-        );
-      case 'confirm_douyin_publish':
-        return this.integrations.confirmDouyinPublish(context, {
-          accountSubject: string(payload, 'accountSubject'),
-          anchor: douyinPublishAnchor(payload.anchor),
-          connectionId: string(payload, 'connectionId'),
-          contentSnapshotId: string(payload, 'contentSnapshotId'),
-          scheduledAt: timestamp(payload, 'scheduledAt'),
-        });
-      case 'submit_douyin_publish':
-        return this.integrations.submitDouyinPublish(context, {
-          confirmationId: string(payload, 'confirmationId'),
-          contentSnapshotId: string(payload, 'contentSnapshotId'),
-          idempotencyKey: args.idempotencyKey,
-          scheduledAt: timestamp(payload, 'scheduledAt'),
-        });
-      case 'refresh_douyin_publish':
-        return this.integrations.refreshDouyinPublishStatus(
-          context,
-          string(payload, 'jobId')
-        );
-      case 'sync_douyin_observe':
-        return this.integrations.syncDouyinObserve(
-          context,
-          string(payload, 'connectionId')
         );
       case 'sync_feishu_tools':
         return this.integrations.syncFeishuToolCatalog(
@@ -638,31 +540,10 @@ export class IntegrationsFoundationModule implements P1OperationModule {
         return (await this.integrations.listConnections(context)).map(
           publicConnection
         );
-      case 'douyin_integration_status':
-        return this.integrations.getDouyinIntegrationStatus(context);
       case 'audit':
         return this.integrations.listIntegrationAudit(context);
-      case 'douyin_projection':
-        return publicConnection(
-          await this.integrations.getDouyinConnectionProjection(
-            context,
-            string(payload, 'connectionId')
-          )
-        );
       case 'strict_byok_options':
         return this.integrations.getStrictByokOptions(context);
-      case 'douyin_operations_snapshot': {
-        const snapshot = await this.integrations.getDouyinOperationsSnapshot(
-          context,
-          string(payload, 'connectionId')
-        );
-        return {
-          ...snapshot,
-          publishJobs: snapshot.publishJobs.map(publicDouyinPublishJob),
-        };
-      }
-      case 'douyin_content_snapshots':
-        return this.integrations.listDouyinContentSnapshots(context);
       case 'feishu_activity':
         return (
           await this.integrations.listFeishuActivity(

@@ -166,10 +166,6 @@ export interface SearchPort {
   search(workspaceId: string, query: string): Promise<Array<{ id: string; score: number }>>;
 }
 
-export interface DouyinPort {
-  submit(workspaceId: string, payload: Record<string, unknown>): Promise<{ externalId?: string; status: string }>;
-}
-
 export interface McpPort {
   call(workspaceId: string, toolId: string, input: Record<string, unknown>): Promise<unknown>;
 }

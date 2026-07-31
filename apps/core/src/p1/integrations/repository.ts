@@ -1,11 +1,5 @@
 import type {
   ConnectionCreateOperation,
-  DouyinPublishConfirmation,
-  DouyinPublishJob,
-  DouyinObserveSnapshot,
-  DouyinObserveState,
-  DouyinOAuthLifecycleTarget,
-  DouyinOAuthRefreshOperation,
   IntegrationAuditEvent,
   IntegrationConnection,
   ExternalActionIntent,
@@ -14,12 +8,6 @@ import type {
   FeishuToolRevision,
   FeishuToolShortcut,
 } from './contracts.js';
-
-function oauthRefreshPhaseRank(
-  phase: DouyinOAuthRefreshOperation['phase']
-) {
-  return { claimed: 0, credential_stored: 1, completed: 2 }[phase];
-}
 
 function connectionCreatePhaseRank(
   phase: ConnectionCreateOperation['phase']
@@ -41,45 +29,9 @@ export interface IntegrationRepository {
     id: string
   ): Promise<IntegrationConnection | undefined>;
   listConnections(workspaceId: string): Promise<IntegrationConnection[]>;
-  listDouyinOAuthLifecycleTargets(): Promise<DouyinOAuthLifecycleTarget[]>;
   listFeishuLifecycleTargets(): Promise<FeishuToolLifecycleTarget[]>;
   appendAudit(event: IntegrationAuditEvent): Promise<void>;
   listAudits(workspaceId: string): Promise<IntegrationAuditEvent[]>;
-  saveDouyinConfirmation(
-    confirmation: DouyinPublishConfirmation
-  ): Promise<void>;
-  getDouyinConfirmation(
-    workspaceId: string,
-    id: string
-  ): Promise<DouyinPublishConfirmation | undefined>;
-  saveDouyinPublishJob(job: DouyinPublishJob): Promise<void>;
-  claimDouyinPublishJob(
-    job: DouyinPublishJob
-  ): Promise<{ claimed: boolean; job: DouyinPublishJob }>;
-  settleDouyinPublishJob(
-    job: DouyinPublishJob,
-    expectedStatus: DouyinPublishJob['status']
-  ): Promise<{ settled: boolean; job: DouyinPublishJob }>;
-  reconcileDouyinPublishJob(
-    job: DouyinPublishJob,
-    expectedUpdatedAt: string
-  ): Promise<{ reconciled: boolean; job: DouyinPublishJob }>;
-  getDouyinPublishJob(
-    workspaceId: string,
-    jobId: string
-  ): Promise<DouyinPublishJob | undefined>;
-  findDouyinPublishJobByItem(
-    workspaceId: string,
-    itemId: string
-  ): Promise<DouyinPublishJob | undefined>;
-  listDouyinPublishJobs(
-    workspaceId: string,
-    connectionId: string
-  ): Promise<DouyinPublishJob[]>;
-  listDouyinPublishPollingTargets(
-    at: string,
-    limit?: number
-  ): Promise<Array<{ workspaceId: string; jobId: string }>>;
   getIdempotent<T>(
     workspaceId: string,
     key: string,
@@ -101,39 +53,6 @@ export interface IntegrationRepository {
     workspaceId: string,
     id: string
   ): Promise<ConnectionCreateOperation | undefined>;
-  claimDouyinOAuthRefresh(
-    operation: DouyinOAuthRefreshOperation
-  ): Promise<{ claimed: boolean; operation: DouyinOAuthRefreshOperation }>;
-  advanceDouyinOAuthRefresh(
-    operation: DouyinOAuthRefreshOperation
-  ): Promise<DouyinOAuthRefreshOperation>;
-  getDouyinOAuthRefresh(
-    workspaceId: string,
-    id: string
-  ): Promise<DouyinOAuthRefreshOperation | undefined>;
-  getActiveDouyinOAuthRefresh(
-    workspaceId: string,
-    connectionId: string
-  ): Promise<DouyinOAuthRefreshOperation | undefined>;
-  saveDouyinObserveSnapshot(snapshot: DouyinObserveSnapshot): Promise<void>;
-  listDouyinObserveSnapshots(
-    workspaceId: string,
-    connectionId: string
-  ): Promise<DouyinObserveSnapshot[]>;
-  saveDouyinObserveState(state: DouyinObserveState): Promise<void>;
-  getDouyinObserveState(
-    workspaceId: string,
-    connectionId: string
-  ): Promise<DouyinObserveState | undefined>;
-  listDouyinObserveSyncTargets(
-    at: string,
-    limit?: number
-  ): Promise<Array<{ workspaceId: string; connectionId: string }>>;
-  hasProductPublishItem(workspaceId: string, itemId: string): Promise<boolean>;
-  clearDouyinObserveSnapshots(
-    workspaceId: string,
-    connectionId: string
-  ): Promise<void>;
   saveToolRevision(revision: FeishuToolRevision): Promise<void>;
   getToolRevision(
     toolId: string,
@@ -185,8 +104,6 @@ export interface IntegrationRepository {
 export class MemoryIntegrationRepository implements IntegrationRepository {
   private readonly connections = new Map<string, IntegrationConnection>();
   private readonly audits: IntegrationAuditEvent[] = [];
-  private readonly confirmations = new Map<string, DouyinPublishConfirmation>();
-  private readonly publishJobs = new Map<string, DouyinPublishJob>();
   private readonly idempotency = new Map<
     string,
     { payload: string; value: unknown }
@@ -195,12 +112,6 @@ export class MemoryIntegrationRepository implements IntegrationRepository {
     string,
     ConnectionCreateOperation
   >();
-  private readonly oauthRefreshOperations = new Map<
-    string,
-    DouyinOAuthRefreshOperation
-  >();
-  private readonly observeSnapshots = new Map<string, DouyinObserveSnapshot>();
-  private readonly observeStates = new Map<string, DouyinObserveState>();
   private readonly toolRevisions = new Map<string, FeishuToolRevision>();
   private readonly intents = new Map<string, ExternalActionIntent>();
   private readonly activities: FeishuToolActivity[] = [];
@@ -253,47 +164,6 @@ export class MemoryIntegrationRepository implements IntegrationRepository {
       .map((connection) => structuredClone(connection));
   }
 
-  async listDouyinOAuthLifecycleTargets() {
-    return [...this.connections.values()]
-      .filter((connection) => {
-        const hasActiveOperation = [...this.oauthRefreshOperations.values()].some(
-          (operation) =>
-            operation.workspaceId === connection.workspaceId &&
-            operation.connectionId === connection.id &&
-            operation.phase !== 'completed'
-        );
-        const normalCandidate =
-          connection.credential.status === 'active' &&
-          typeof connection.credential.expiresAt === 'string' &&
-          Number.isFinite(Date.parse(connection.credential.expiresAt));
-        return (
-          connection.provider === 'douyin' &&
-          connection.identityMode === 'oauth_user' &&
-          Boolean(connection.subject) &&
-          connection.status !== 'revoked' &&
-          (hasActiveOperation ||
-            (connection.status !== 'disabled' &&
-              connection.status !== 'reauthorize_required' &&
-              normalCandidate))
-        );
-      })
-      .map((connection) => ({
-        connectionId: connection.id,
-        credentialVersion: connection.credential.version,
-        ...(connection.credential.expiresAt
-          ? { expiresAt: connection.credential.expiresAt }
-          : {}),
-        ...(connection.credential.refreshExpiresAt
-          ? { refreshExpiresAt: connection.credential.refreshExpiresAt }
-          : {}),
-        workspaceId: connection.workspaceId,
-      }))
-      .sort((left, right) =>
-        left.workspaceId === right.workspaceId
-          ? left.connectionId.localeCompare(right.connectionId)
-          : left.workspaceId.localeCompare(right.workspaceId)
-      );
-  }
 
   async listFeishuLifecycleTargets() {
     return [...this.connections.values()]
@@ -335,98 +205,6 @@ export class MemoryIntegrationRepository implements IntegrationRepository {
       .map((event) => structuredClone(event));
   }
 
-  async saveDouyinConfirmation(confirmation: DouyinPublishConfirmation) {
-    this.confirmations.set(
-      `${confirmation.workspaceId}:${confirmation.id}`,
-      structuredClone(confirmation)
-    );
-  }
-
-  async getDouyinConfirmation(workspaceId: string, id: string) {
-    const value = this.confirmations.get(`${workspaceId}:${id}`);
-    return value ? structuredClone(value) : undefined;
-  }
-
-  async saveDouyinPublishJob(job: DouyinPublishJob) {
-    this.publishJobs.set(`${job.workspaceId}:${job.id}`, structuredClone(job));
-  }
-
-  async claimDouyinPublishJob(job: DouyinPublishJob) {
-    const key = `${job.workspaceId}:${job.id}`;
-    const existing = this.publishJobs.get(key);
-    if (existing) {
-      return { claimed: false, job: structuredClone(existing) };
-    }
-    this.publishJobs.set(key, structuredClone(job));
-    return { claimed: true, job: structuredClone(job) };
-  }
-
-  async settleDouyinPublishJob(
-    job: DouyinPublishJob,
-    expectedStatus: DouyinPublishJob['status']
-  ) {
-    const key = `${job.workspaceId}:${job.id}`;
-    const current = this.publishJobs.get(key);
-    if (!current || current.status !== expectedStatus) {
-      return {
-        settled: false,
-        job: structuredClone(current ?? job),
-      };
-    }
-    this.publishJobs.set(key, structuredClone(job));
-    return { settled: true, job: structuredClone(job) };
-  }
-
-  async reconcileDouyinPublishJob(
-    job: DouyinPublishJob,
-    expectedUpdatedAt: string
-  ) {
-    const key = `${job.workspaceId}:${job.id}`;
-    const current = this.publishJobs.get(key);
-    if (!current || current.updatedAt !== expectedUpdatedAt) {
-      return {
-        reconciled: false,
-        job: structuredClone(current ?? job),
-      };
-    }
-    this.publishJobs.set(key, structuredClone(job));
-    return { reconciled: true, job: structuredClone(job) };
-  }
-
-  async getDouyinPublishJob(workspaceId: string, jobId: string) {
-    const value = this.publishJobs.get(`${workspaceId}:${jobId}`);
-    return value ? structuredClone(value) : undefined;
-  }
-
-  async findDouyinPublishJobByItem(workspaceId: string, itemId: string) {
-    const value = [...this.publishJobs.values()].find(
-      (job) => job.workspaceId === workspaceId && job.itemId === itemId
-    );
-    return value ? structuredClone(value) : undefined;
-  }
-
-  async listDouyinPublishJobs(workspaceId: string, connectionId: string) {
-    return [...this.publishJobs.values()]
-      .filter(
-        (job) =>
-          job.workspaceId === workspaceId && job.connectionId === connectionId
-      )
-      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-      .map((job) => structuredClone(job));
-  }
-
-  async listDouyinPublishPollingTargets(at: string, limit = 100) {
-    return [...this.publishJobs.values()]
-      .filter(
-        (job) =>
-          job.pollingState === 'scheduled' &&
-          Boolean(job.nextPollAt) &&
-          Date.parse(job.nextPollAt!) <= Date.parse(at)
-      )
-      .sort((left, right) => left.nextPollAt!.localeCompare(right.nextPollAt!))
-      .slice(0, limit)
-      .map((job) => ({ jobId: job.id, workspaceId: job.workspaceId }));
-  }
 
   async getIdempotent<T>(workspaceId: string, key: string, payload: string) {
     const value = this.idempotency.get(`${workspaceId}:${key}`);
@@ -490,144 +268,8 @@ export class MemoryIntegrationRepository implements IntegrationRepository {
     return operation ? structuredClone(operation) : undefined;
   }
 
-  async claimDouyinOAuthRefresh(operation: DouyinOAuthRefreshOperation) {
-    const key = `${operation.workspaceId}:${operation.id}`;
-    const existing = this.oauthRefreshOperations.get(key);
-    if (existing) {
-      return { claimed: false, operation: structuredClone(existing) };
-    }
-    const active = [...this.oauthRefreshOperations.values()].find(
-      (candidate) =>
-        candidate.workspaceId === operation.workspaceId &&
-        candidate.connectionId === operation.connectionId &&
-        candidate.phase !== 'completed'
-    );
-    if (active) {
-      return { claimed: false, operation: structuredClone(active) };
-    }
-    this.oauthRefreshOperations.set(key, structuredClone(operation));
-    return { claimed: true, operation: structuredClone(operation) };
-  }
 
-  async advanceDouyinOAuthRefresh(operation: DouyinOAuthRefreshOperation) {
-    const key = `${operation.workspaceId}:${operation.id}`;
-    const existing = this.oauthRefreshOperations.get(key);
-    if (
-      existing &&
-      oauthRefreshPhaseRank(existing.phase) > oauthRefreshPhaseRank(operation.phase)
-    ) {
-      return structuredClone(existing);
-    }
-    this.oauthRefreshOperations.set(key, structuredClone(operation));
-    return structuredClone(operation);
-  }
 
-  async getDouyinOAuthRefresh(workspaceId: string, id: string) {
-    const operation = this.oauthRefreshOperations.get(`${workspaceId}:${id}`);
-    return operation ? structuredClone(operation) : undefined;
-  }
-
-  async getActiveDouyinOAuthRefresh(
-    workspaceId: string,
-    connectionId: string
-  ) {
-    const operation = [...this.oauthRefreshOperations.values()].find(
-      (candidate) =>
-        candidate.workspaceId === workspaceId &&
-        candidate.connectionId === connectionId &&
-        candidate.phase !== 'completed'
-    );
-    return operation ? structuredClone(operation) : undefined;
-  }
-
-  async saveDouyinObserveSnapshot(snapshot: DouyinObserveSnapshot) {
-    const key = `${snapshot.workspaceId}:${snapshot.connectionId}:${snapshot.externalId}`;
-    const current = this.observeSnapshots.get(key);
-    if (!current || current.observedAt < snapshot.observedAt) {
-      this.observeSnapshots.set(key, structuredClone(snapshot));
-    }
-  }
-
-  async listDouyinObserveSnapshots(workspaceId: string, connectionId: string) {
-    return [...this.observeSnapshots.values()]
-      .filter(
-        (snapshot) =>
-          snapshot.workspaceId === workspaceId &&
-          snapshot.connectionId === connectionId
-      )
-      .sort((left, right) => left.externalId.localeCompare(right.externalId))
-      .map((snapshot) => structuredClone(snapshot));
-  }
-
-  async saveDouyinObserveState(state: DouyinObserveState) {
-    const key = `${state.workspaceId}:${state.connectionId}`;
-    const current = this.observeStates.get(key);
-    if (!current || current.lastAttemptAt <= state.lastAttemptAt) {
-      this.observeStates.set(key, structuredClone(state));
-    }
-  }
-
-  async getDouyinObserveState(workspaceId: string, connectionId: string) {
-    const state = this.observeStates.get(`${workspaceId}:${connectionId}`);
-    return state ? structuredClone(state) : undefined;
-  }
-
-  async listDouyinObserveSyncTargets(at: string, limit = 100) {
-    const atMs = Date.parse(at);
-    return [...this.connections.values()]
-      .filter((connection) => {
-        if (
-          connection.provider !== 'douyin' ||
-          !['available', 'degraded', 'rate_limited'].includes(
-            connection.status
-          ) ||
-          connection.credential.status !== 'active' ||
-          !connection.grantedCapabilities.includes('observe') ||
-          !connection.capabilityEvidence.observe?.endpoint
-        ) {
-          return false;
-        }
-        const degraded = connection.degradedCapabilities.observe;
-        if (
-          degraded &&
-          !['rate_limited', 'failed'].includes(degraded)
-        ) {
-          return false;
-        }
-        const state = this.observeStates.get(
-          `${connection.workspaceId}:${connection.id}`
-        );
-        return !state?.nextSyncAt || Date.parse(state.nextSyncAt) <= atMs;
-      })
-      .sort((left, right) =>
-        `${left.workspaceId}:${left.id}`.localeCompare(
-          `${right.workspaceId}:${right.id}`
-        )
-      )
-      .slice(0, limit)
-      .map((connection) => ({
-        connectionId: connection.id,
-        workspaceId: connection.workspaceId,
-      }));
-  }
-
-  async hasProductPublishItem(workspaceId: string, itemId: string) {
-    return [...this.publishJobs.values()].some(
-      (job) => job.workspaceId === workspaceId && job.itemId === itemId
-    );
-  }
-
-  async clearDouyinObserveSnapshots(workspaceId: string, connectionId: string) {
-    for (const [key, snapshot] of this.observeSnapshots) {
-      if (
-        snapshot.workspaceId === workspaceId &&
-        snapshot.connectionId === connectionId
-      ) {
-        this.observeSnapshots.delete(key);
-      }
-    }
-    this.observeStates.delete(`${workspaceId}:${connectionId}`);
-  }
 
   async saveToolRevision(revision: FeishuToolRevision) {
     this.toolRevisions.set(

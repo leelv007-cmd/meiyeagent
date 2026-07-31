@@ -440,12 +440,6 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
     valueSchema: z.boolean(),
   },
   {
-    key: 'douyin.adapter.assembly',
-    scope: 'global',
-    description: 'Douyin adapter assembly selected by platform administration.',
-    valueSchema: z.literal('recorded'),
-  },
-  {
     key: 'model.execution.mode',
     scope: 'global',
     description: 'LLM execution mode recorded by platform administration.',

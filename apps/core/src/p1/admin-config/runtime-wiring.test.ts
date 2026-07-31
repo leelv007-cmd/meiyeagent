@@ -150,7 +150,6 @@ test('adapter assembly uses the stored BYOK mode while Douyin remains recorded-o
 
   assert.equal(result.env.BYOK_EXECUTION_MODE, 'live');
   assert.deepEqual(result.byokSource, { source: 'db_revision', revision: 1 });
-  assert.equal(result.douyinMode, 'recorded');
 });
 
 test('records independent HTTP and worker effective runtime snapshots', async () => {

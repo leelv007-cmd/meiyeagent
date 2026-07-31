@@ -170,12 +170,9 @@ const modelWorkspaceReadQueries = new Set([
   'video_workflows',
 ]);
 const integrationUseActions = new Set([
-  'confirm_douyin_publish',
   'confirm_feishu_intent',
   'execute_feishu_intent',
   'reconcile_feishu_intent',
-  'refresh_douyin_publish',
-  'submit_douyin_publish',
 ]);
 const platformIntegrationActions = new Set([
   'publish_feishu_tool',
@@ -190,22 +187,14 @@ const credentialGovernActions = new Set([
   'admin_test_provider_connection',
 ]);
 const integrationConnectionCommands = new Set([
-  'activate_douyin_capability',
   'create_connection',
-  'deactivate_douyin_capability',
   'disconnect',
-  'refresh_douyin_oauth',
   'rotate_credential',
-  'sync_douyin_observe',
   'verify_feishu_connection',
 ]);
 const integrationWorkspaceQueries = new Set([
   'connection',
   'connections',
-  'douyin_content_snapshots',
-  'douyin_integration_status',
-  'douyin_operations_snapshot',
-  'douyin_projection',
   'feishu_activity',
   'feishu_intent_recovery',
   'feishu_pending_intents',

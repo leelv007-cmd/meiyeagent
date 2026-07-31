@@ -121,7 +121,7 @@ export function projectEnvFallbackRisk(
 }
 
 /**
- * Build monitor view for the three fixed platform slots (or any provided map).
+ * Build monitor view for the fixed platform slots (or any provided map).
  */
 export function buildEnvFallbackMonitorView(
   assemblies: Partial<
@@ -134,10 +134,7 @@ export function buildEnvFallbackMonitorView(
   const projections = FIXED_CREDENTIAL_SLOTS.map((slot) => {
     const entry = assemblies[slot];
     const assembly: CredentialSlotRuntimeAssembly =
-      entry?.assembly ??
-      (slot === 'douyin.platform'
-        ? { kind: 'not_wired', reason: 'recorded_adapter' }
-        : { kind: 'env' });
+      entry?.assembly ?? { kind: 'env' };
     return projectEnvFallbackRisk(slot, assembly, {
       runtimeBound: entry?.runtimeBound,
     });

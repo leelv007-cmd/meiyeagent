@@ -657,14 +657,11 @@ test('bare env is projected as monitored env_fallback with migration entry', () 
   const view = buildEnvFallbackMonitorView({
     'model.direct': { assembly: { kind: 'env' } },
     'ark.media': { assembly: { kind: 'env_fallback' } },
-    'douyin.platform': {
-      assembly: { kind: 'not_wired', reason: 'recorded_adapter' },
-    },
   });
   assert.equal(view.workerSecretsAreNotRegistryTruth, true);
   assert.equal(view.bareEnvCount, 1);
   assert.equal(view.monitoredFallbackCount, 1);
-  assert.equal(view.notWiredCount, 1);
+  assert.equal(view.notWiredCount, 0);
   assert.deepEqual(view.migrationRequiredSlots, ['model.direct', 'ark.media']);
 
   const classified = classifyBootCredentialSource({ source: 'env' });

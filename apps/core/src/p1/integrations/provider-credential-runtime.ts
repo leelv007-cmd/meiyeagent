@@ -134,22 +134,14 @@ const ARK_ACTIVATION_KEYS = [
   'ARK_SEEDREAM_ACTIVATION_VERIFIED_AT',
 ] as const;
 
-const SLOT_PROVIDER_PROFILE: Record<
-  'model.direct' | 'ark.media' | 'douyin.platform',
-  string
-> = {
+const SLOT_PROVIDER_PROFILE: Record<'model.direct' | 'ark.media', string> = {
   'model.direct': 'provider-tu-zi',
   'ark.media': 'provider-bytedance-volcengine',
-  'douyin.platform': 'provider-douyin-platform',
 };
 
-const SLOT_LABEL: Record<
-  'model.direct' | 'ark.media' | 'douyin.platform',
-  string
-> = {
+const SLOT_LABEL: Record<'model.direct' | 'ark.media', string> = {
   'model.direct': 'Platform model.direct',
   'ark.media': 'Platform ark.media',
-  'douyin.platform': 'Platform douyin.platform',
 };
 
 export async function providerCredentialEnvFromVault(
@@ -395,8 +387,7 @@ function credentialAccountFromProviderConnection(
 ): CredentialAccount {
   const slot =
     connection.subject === 'model.direct' ||
-    connection.subject === 'ark.media' ||
-    connection.subject === 'douyin.platform'
+    connection.subject === 'ark.media'
       ? connection.subject
       : null;
   return specializeCredentialAccount({
@@ -417,11 +408,7 @@ export async function migrateProviderCredentialAccountsFromIntegrations(
   repository: ProviderCredentialAccountRepository,
   workspaceId: string = GLOBAL_WORKSPACE_ID
 ): Promise<void> {
-  for (const slot of [
-    'model.direct',
-    'ark.media',
-    'douyin.platform',
-  ] as const) {
+  for (const slot of ['model.direct', 'ark.media'] as const) {
     const connection = await integrations.getConnection(
       workspaceId,
       `platform:${slot}`
@@ -517,10 +504,6 @@ export function projectProviderCredentialEnvFallbackMonitor(
     'ark.media': {
       assembly: arkMedia.assembly,
       runtimeBound: true,
-    },
-    'douyin.platform': {
-      assembly: { kind: 'not_wired', reason: 'recorded_adapter' },
-      runtimeBound: false,
     },
   };
   return buildEnvFallbackMonitorView(assemblies);

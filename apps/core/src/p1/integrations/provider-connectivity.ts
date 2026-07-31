@@ -1,7 +1,4 @@
-export type ProviderCredentialSlot =
-  | 'model.direct'
-  | 'ark.media'
-  | 'douyin.platform';
+export type ProviderCredentialSlot = 'model.direct' | 'ark.media';
 
 export type ProviderConnectivityStatus =
   | 'passed'
@@ -29,9 +26,7 @@ export class HttpProviderConnectivityProbe
   implements ProviderConnectivityProbePort
 {
   constructor(
-    private readonly endpoints: Partial<
-      Record<Exclude<ProviderCredentialSlot, 'douyin.platform'>, string>
-    >,
+    private readonly endpoints: Partial<Record<ProviderCredentialSlot, string>>,
     private readonly request: ProviderFetch = fetch,
   ) {}
 
@@ -42,9 +37,6 @@ export class HttpProviderConnectivityProbe
     status: ProviderConnectivityStatus;
     errorCode?: string;
   }> {
-    if (input.slot === 'douyin.platform') {
-      return { errorCode: 'recorded_adapter', status: 'not_wired' };
-    }
     const endpoint = this.endpoints[input.slot]?.trim();
     if (!endpoint) {
       return { errorCode: 'endpoint_not_configured', status: 'unknown' };

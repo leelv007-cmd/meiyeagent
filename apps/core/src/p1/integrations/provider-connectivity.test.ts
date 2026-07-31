@@ -77,13 +77,6 @@ test('provider connectivity probe returns safe five-way classifications', async 
     ).probe({ credential: 'secret', slot: 'model.direct' }),
     { errorCode: 'network_error', status: 'network_failed' },
   );
-  assert.deepEqual(
-    await responseForStatus(200).probe({
-      credential: 'unused',
-      slot: 'douyin.platform',
-    }),
-    { errorCode: 'recorded_adapter', status: 'not_wired' },
-  );
 });
 
 test('provider connectivity runtime uses configured direct and Ark endpoints', async () => {

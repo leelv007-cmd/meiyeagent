@@ -277,7 +277,7 @@ test('pre-P1 historical payload without provider/channel arrays expands safely',
 // Fixed credential slots → CredentialAccount
 // ---------------------------------------------------------------------------
 
-test('migrates three fixed slots with metadata vs runtime assembly asserted separately', () => {
+test('migrates the fixed slots with metadata vs runtime assembly asserted separately', () => {
   const view = migrateFixedCredentialSlots({
     runtimeSources: {
       modelDirect: { source: 'vault', credentialVersion: 2 },
@@ -286,12 +286,12 @@ test('migrates three fixed slots with metadata vs runtime assembly asserted sepa
   });
 
   assertFixedSlotMigrationBaseline(view);
-  assert.equal(view.metadataCount, 3);
+  assert.equal(view.metadataCount, 2);
   assert.equal(view.runtimeBoundCount, 2);
-  assert.deepEqual(view.notWiredSlots, ['douyin.platform']);
+  assert.deepEqual(view.notWiredSlots, []);
 
   const metadata = projectCredentialAccountMetadata(view);
-  assert.equal(metadata.length, 3);
+  assert.equal(metadata.length, 2);
   assert.ok(metadata.every((m) => m.scope === 'platform'));
   assert.ok(metadata.every((m) => m.secretReference.startsWith('secret-ref:')));
   // Secret values never appear on metadata.
@@ -306,19 +306,9 @@ test('migrates three fixed slots with metadata vs runtime assembly asserted sepa
   assert.equal(bySlot['ark.media']?.runtimeAssembly.kind, 'env_fallback');
   assert.equal(bySlot['ark.media']?.runtimeBound, true);
   assert.equal(bySlot['ark.media']?.metadata.source, 'env_fallback');
-
-  assert.equal(bySlot['douyin.platform']?.runtimeAssembly.kind, 'not_wired');
-  assert.equal(bySlot['douyin.platform']?.runtimeBound, false);
-  assert.equal(
-    (bySlot['douyin.platform']?.runtimeAssembly as { reason: string }).reason,
-    'recorded_adapter',
-  );
-  // Metadata still present for douyin even though not wired.
-  assert.equal(bySlot['douyin.platform']?.metadata.id, 'credential-account:douyin.platform');
-  assert.equal(bySlot['douyin.platform']?.metadata.status, 'pending');
 });
 
-test('empty vault still yields three metadata records and does not claim douyin is assembled', () => {
+test('empty vault still yields metadata records for every fixed slot', () => {
   const view = migrateFixedCredentialSlots({
     runtimeSources: {
       modelDirect: { source: 'env_fallback' },
@@ -326,11 +316,7 @@ test('empty vault still yields three metadata records and does not claim douyin 
     },
   });
   assertFixedSlotMigrationBaseline(view);
-  assert.ok(
-    view.slots.every((s) =>
-      s.slot === 'douyin.platform' ? !s.runtimeBound : s.runtimeBound,
-    ),
-  );
+  assert.ok(view.slots.every((s) => s.runtimeBound));
 });
 
 // ---------------------------------------------------------------------------
@@ -570,13 +556,6 @@ test('five association views expose forward and reverse projections', () => {
   const credRev = views.credential.reverse('provider-bytedance-volcengine');
   assert.ok(credRev.credentials.some((c) => c.type === 'ark.media'));
 
-  const douyinMeta = credentials.find((c) => c.type === 'douyin.platform')!;
-  const douyinSlot = credentialView.slots.find(
-    (s) => s.slot === 'douyin.platform',
-  );
-  const douyinFwd = views.credential.forward(douyinMeta, douyinSlot);
-  assert.equal(douyinFwd.runtimeBound, false);
-  assert.equal(douyinFwd.runtimeAssemblyKind, 'not_wired');
 
   // 5. Route forward/reverse
   const policies: RoutePolicyRevision[] = [

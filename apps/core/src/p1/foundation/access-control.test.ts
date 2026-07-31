@@ -367,7 +367,7 @@ test('P1 module actions resolve to the same role capabilities used by the UI', (
   );
   // #83 consumer surface — publication.handoff stays registered.
   assert.equal(
-    requiredP1Capability('command', 'integrations', 'submit_douyin_publish'),
+    requiredP1Capability('command', 'integrations', 'execute_feishu_intent'),
     'publication.handoff',
   );
   assert.equal(hasProductCapability('operator', 'publication.handoff'), true);

@@ -155,7 +155,6 @@ export async function integrationAdapterEnvFromSources(
     return {
       env: { ...env, BYOK_EXECUTION_MODE: 'recorded' },
       byokSource: { source: 'env_fallback' } as const,
-      douyinMode: 'recorded' as const,
     };
   }
   try {
@@ -171,13 +170,11 @@ export async function integrationAdapterEnvFromSources(
       byokSource: byok
         ? ({ source: 'db_revision', revision: byok.revision } as const)
         : ({ source: 'env_fallback' } as const),
-      douyinMode: 'recorded' as const,
     };
   } catch {
     return {
       env,
       byokSource: { source: 'env_fallback' } as const,
-      douyinMode: 'recorded' as const,
     };
   }
 }

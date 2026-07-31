@@ -87,7 +87,6 @@ interface CoreServerDependencies {
     }>;
   };
   diagnosticRepository: DiagnosticRepository;
-  douyinCallbackToken?: string;
   productService?: ProductApplicationService;
   p1ApplicationService?: P1ApplicationService;
   integrationService?: IntegrationApplicationService;
@@ -160,20 +159,6 @@ interface CoreServerDependencies {
   serviceToken: string;
   workflowEvents?: WorkflowEventApplicationService;
   workflowHeartbeatMs?: number;
-}
-
-function trustedCallbackToken(
-  request: IncomingMessage,
-  expectedToken: string | undefined
-) {
-  const provided = request.headers['x-douyin-callback-token'];
-  if (typeof provided !== 'string' || !expectedToken) return false;
-  const providedBytes = Buffer.from(provided);
-  const expectedBytes = Buffer.from(expectedToken);
-  return (
-    providedBytes.byteLength === expectedBytes.byteLength &&
-    timingSafeEqual(providedBytes, expectedBytes)
-  );
 }
 
 /** Constant-time service token compare (length-check first to avoid throw). */
@@ -425,20 +410,6 @@ function workspaceComposerContentPackageRoute(pathname: string) {
   } catch {
     return null;
   }
-}
-
-function douyinAuthorizationEventRoute(pathname: string) {
-  const match = pathname.match(
-    /^\/v1\/workspaces\/([^/]+)\/integrations\/douyin\/authorization-events$/
-  );
-  return match?.[1] ?? null;
-}
-
-function douyinPublishEventRoute(pathname: string) {
-  const match = pathname.match(
-    /^\/v1\/workspaces\/([^/]+)\/integrations\/douyin\/publish-events$/
-  );
-  return match?.[1] ?? null;
 }
 
 function diagnosticIdentity(
@@ -934,7 +905,6 @@ export function createCoreServer({
   executionModeGate,
   assetReader,
   diagnosticRepository,
-  douyinCallbackToken,
   productService,
   p1ApplicationService,
   integrationService,
@@ -1068,92 +1038,6 @@ export function createCoreServer({
               error instanceof Error
                 ? error.message
                 : 'Capabilities projection failed.',
-          },
-          requestCorrelationId
-        );
-      }
-      return;
-    }
-
-    const douyinEventWorkspaceId = douyinAuthorizationEventRoute(url.pathname);
-    const douyinPublishWorkspaceId = douyinPublishEventRoute(url.pathname);
-    if (
-      request.method === 'POST' &&
-      (douyinEventWorkspaceId || douyinPublishWorkspaceId)
-    ) {
-      if (
-        !integrationService ||
-        !trustedCallbackToken(request, douyinCallbackToken)
-      ) {
-        sendError(
-          response,
-          401,
-          {
-            code: 'DOUYIN_CALLBACK_UNAUTHORIZED',
-            message: 'Invalid Douyin callback identity.',
-          },
-          requestCorrelationId
-        );
-        return;
-      }
-      const workspaceId = douyinEventWorkspaceId ?? douyinPublishWorkspaceId!;
-      const callbackContext = {
-        correlationId: requestCorrelationId,
-        role: 'owner' as const,
-        userId: 'douyin-callback',
-        workspaceId,
-      };
-      try {
-        const body = await readJson(request);
-        if (douyinEventWorkspaceId) {
-          const connection =
-            await integrationService.handleDouyinAuthorizationEvent(
-              callbackContext,
-              body as unknown as Parameters<
-                IntegrationApplicationService['handleDouyinAuthorizationEvent']
-              >[1]
-            );
-          const {
-            credentialTransition: _credentialTransition,
-            secretRef: _secretRef,
-            ...view
-          } = connection;
-          sendJson(response, 200, view, requestCorrelationId);
-        } else {
-          const job = await integrationService.handleDouyinPublishStatusEvent(
-            callbackContext,
-            body as unknown as Parameters<
-              IntegrationApplicationService['handleDouyinPublishStatusEvent']
-            >[1]
-          );
-          sendJson(response, 200, job, requestCorrelationId);
-        }
-      } catch (error) {
-        const status =
-          typeof error === 'object' &&
-          error &&
-          'status' in error &&
-          typeof error.status === 'number'
-            ? error.status
-            : 400;
-        const code =
-          typeof error === 'object' &&
-          error &&
-          'code' in error &&
-          typeof error.code === 'string'
-            ? error.code
-            : douyinEventWorkspaceId
-              ? 'DOUYIN_AUTHORIZATION_EVENT_INVALID'
-              : 'DOUYIN_PUBLISH_EVENT_INVALID';
-        sendError(
-          response,
-          status,
-          {
-            code,
-            message:
-              error instanceof Error
-                ? error.message
-                : 'Douyin callback event could not be processed.',
           },
           requestCorrelationId
         );

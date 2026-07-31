@@ -131,7 +131,6 @@ describe('Admin config application seam', () => {
         'compliance.aigc_label.default',
         'compliance.regulated_mode.default',
         'compliance.watermark.default',
-        'douyin.adapter.assembly',
         DUE_DELIVERY_RETENTION_DAYS_CONFIG_KEY,
         BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
         BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,

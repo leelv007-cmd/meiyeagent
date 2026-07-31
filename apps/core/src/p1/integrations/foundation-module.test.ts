@@ -10,7 +10,6 @@ import { IntegrationsFoundationModule } from './foundation-module.js';
 import { MemoryIntegrationRepository } from './repository.js';
 import { RecordedFeishuMcpAdapter } from './feishu.js';
 import { FakeKmsSecretStore } from './secret-store.js';
-import { RecordedDouyinAdapter } from './douyin.js';
 import { createCredentialAccount } from '../supply-registry/credential-account.js';
 
 const context = {
@@ -161,7 +160,6 @@ test('platform admin credential query reports each boot-time effective source', 
   for (const slot of [
     'model.direct',
     'ark.media',
-    'douyin.platform',
   ] as const) {
     await module.execute({
       context: adminContext,
@@ -187,7 +185,6 @@ test('platform admin credential query reports each boot-time effective source', 
     ),
     {
       'platform:ark.media': 'env_fallback',
-      'platform:douyin.platform': 'env',
       'platform:model.direct': 'vault',
     },
   );
@@ -225,10 +222,6 @@ test('platform admin credential query reports boot-time sources for empty vault 
     {
       effectiveSource: 'env_fallback',
       id: 'platform:ark.media',
-    },
-    {
-      effectiveSource: 'env',
-      id: 'platform:douyin.platform',
     },
   ]);
 });
@@ -469,80 +462,6 @@ test('provider credential rotation stages a secure-write receipt without echoing
   assert.equal(JSON.stringify(rotated).includes('new-secret'), false);
 });
 
-test('integration module exposes the runtime Douyin integration status', async () => {
-  const module = new IntegrationsFoundationModule(
-    new IntegrationApplicationService({
-      repository: new MemoryIntegrationRepository(),
-      secrets: new FakeKmsSecretStore(),
-      douyin: new RecordedDouyinAdapter(),
-    }),
-  );
-
-  assert.deepEqual(
-    await module.query({
-      context,
-      input: { action: 'douyin_integration_status', payload: {} },
-    }),
-    {
-      provider: 'douyin',
-      integrated: false,
-      executionMode: 'recorded',
-    },
-  );
-});
-
-test('public OAuth commands cannot self-grant Douyin capabilities or evidence', async () => {
-  const module = new IntegrationsFoundationModule(
-    new IntegrationApplicationService({
-      repository: new MemoryIntegrationRepository(),
-      secrets: new FakeKmsSecretStore(),
-    })
-  );
-  const created = (await module.execute({
-    context,
-    idempotencyKey: 'create-douyin-unverified',
-    input: {
-      action: 'create_connection',
-      payload: {
-        credential: {
-          scope: ['video.create.bind'],
-          status: 'active',
-          value: 'unverified-oauth-token',
-        },
-        grantedCapabilities: ['publish'],
-        id: 'douyin-unverified',
-        identityMode: 'oauth_user',
-        provider: 'douyin',
-        requestedCapabilities: ['publish'],
-      },
-    },
-  })) as { grantedCapabilities: string[]; credential: { status: string } };
-
-  assert.deepEqual(created.grantedCapabilities, []);
-  assert.equal(created.credential.status, 'unverified');
-  await assert.rejects(
-    module.execute({
-      context,
-      idempotencyKey: 'activate-with-browser-evidence',
-      input: {
-        action: 'activate_douyin_capability',
-        payload: {
-          capability: 'publish',
-          connectionId: 'douyin-unverified',
-          evidence: {
-            revision: 'browser-forged',
-            scopes: ['video.create.bind'],
-            verifiedAt: '2026-07-11T00:00:00.000Z',
-          },
-        },
-      },
-    }),
-    (error) =>
-      error instanceof IntegrationError &&
-      error.code === 'CAPABILITY_NOT_GRANTED'
-  );
-});
-
 test('Feishu activity query exposes only safe product fields and HTTPS links', async () => {
   const repository = new MemoryIntegrationRepository();
   const module = new IntegrationsFoundationModule(
@@ -596,96 +515,6 @@ test('Feishu activity query exposes only safe product fields and HTTPS links', a
   ]);
 });
 
-test('Douyin operations query omits internal claim and callback identifiers', async () => {
-  const repository = new MemoryIntegrationRepository();
-  const module = new IntegrationsFoundationModule(
-    new IntegrationApplicationService({
-      contentSnapshots: {
-        async list() {
-          return [
-            {
-              artifactId: 'artifact-safe-view',
-              contentId: 'content-safe-view',
-              contentVersionId: 'content-version-safe-view',
-              createdAt: '2026-07-11T00:00:00.000Z',
-              id: 'snapshot-safe-view',
-              platform: 'douyin',
-              revision: 'snapshot-revision-safe-view',
-              source: 'product_handoff',
-              title: '真实门店视频',
-            },
-          ];
-        },
-        async resolve() {
-          return undefined;
-        },
-      },
-      repository,
-      secrets: new FakeKmsSecretStore(),
-    })
-  );
-  await module.execute({
-    context,
-    idempotencyKey: 'create-douyin-operations-view',
-    input: {
-      action: 'create_connection',
-      payload: {
-        credential: { scope: ['video.create.bind'], value: 'oauth-secret' },
-        id: 'douyin-operations-view',
-        identityMode: 'oauth_user',
-        provider: 'douyin',
-        requestedCapabilities: ['publish'],
-      },
-    },
-  });
-  await repository.saveDouyinPublishJob({
-    acceptance: 'accepted',
-    confirmationId: 'confirmation-safe-view',
-    connectionId: 'douyin-operations-view',
-    createdAt: '2026-07-11T00:00:00.000Z',
-    effectState: 'settled',
-    id: 'job-safe-view',
-    itemId: 'item-safe-view',
-    payloadHash: 'private-claim-hash',
-    providerEventId: 'private-provider-event',
-    providerOccurredAt: '2026-07-11T00:30:00.000Z',
-    status: 'published',
-    updatedAt: '2026-07-11T01:00:00.000Z',
-    workspaceId: context.workspaceId,
-  });
-
-  const snapshot = (await module.query({
-    context,
-    input: {
-      action: 'douyin_operations_snapshot',
-      payload: { connectionId: 'douyin-operations-view' },
-    },
-  })) as { publishJobs: Array<Record<string, unknown>> };
-
-  assert.equal(snapshot.publishJobs[0]?.payloadHash, undefined);
-  assert.equal(snapshot.publishJobs[0]?.providerEventId, undefined);
-  assert.equal(snapshot.publishJobs[0]?.providerOccurredAt, undefined);
-  assert.equal(snapshot.publishJobs[0]?.status, 'published');
-
-  const contentSnapshots = (await module.query({
-    context,
-    input: { action: 'douyin_content_snapshots', payload: {} },
-  })) as Array<Record<string, unknown>>;
-  assert.deepEqual(contentSnapshots, [
-    {
-      artifactId: 'artifact-safe-view',
-      contentId: 'content-safe-view',
-      contentVersionId: 'content-version-safe-view',
-      createdAt: '2026-07-11T00:00:00.000Z',
-      id: 'snapshot-safe-view',
-      platform: 'douyin',
-      revision: 'snapshot-revision-safe-view',
-      source: 'product_handoff',
-      title: '真实门店视频',
-    },
-  ]);
-});
-
 test('integration side-effect commands reject malformed boundary payloads', async () => {
   const module = new IntegrationsFoundationModule(
     new IntegrationApplicationService({
@@ -694,20 +523,6 @@ test('integration side-effect commands reject malformed boundary payloads', asyn
     })
   );
 
-  await assert.rejects(
-    module.execute({
-      context,
-      idempotencyKey: 'malformed-douyin-submit',
-      input: {
-        action: 'submit_douyin_publish',
-        payload: {
-          confirmationId: 'confirmation-a',
-          contentSnapshotId: 'snapshot-a',
-        },
-      },
-    }),
-    /scheduledAt is required/
-  );
   await assert.rejects(
     module.execute({
       context,
@@ -859,23 +674,6 @@ test('nested integration command payloads are validated before secret or provide
     /prompt is required/
   );
   assert.equal(secrets.uses, 0);
-
-  for (const action of [
-    'activate_douyin_capability',
-    'deactivate_douyin_capability',
-  ]) {
-    await rejectsInvalidInput(
-      module.execute({
-        context,
-        idempotencyKey: `invalid-${action}`,
-        input: {
-          action,
-          payload: { capability: 'delete', connectionId: 'douyin-a' },
-        },
-      }),
-      /capability is invalid/
-    );
-  }
 
   const invalidShortcutLists: Array<{
     message: RegExp;

@@ -19,21 +19,11 @@ import {
   PostgresGrantLotLedger,
 } from './p1/foundation/index.js';
 import {
-  DOUYIN_OAUTH_LIFECYCLE_JOB_KIND,
-  DOUYIN_OBSERVE_SYNC_JOB_KIND,
-  DOUYIN_PUBLISH_POLLING_JOB_KIND,
   FEISHU_INTENT_RECONCILIATION_JOB_KIND,
-  DouyinOAuthLifecycleBatchRunner,
-  DouyinObserveSyncBatchRunner,
-  DouyinPublishPollingBatchRunner,
   FeishuIntentReconciliationBatchRunner,
   FEISHU_TOOL_LIFECYCLE_JOB_KIND,
   IntegrationApplicationService,
   PostgresIntegrationRepository,
-  RecordedDouyinAdapter,
-  createDouyinOAuthLifecycleJobHandler,
-  createDouyinObserveSyncJobHandler,
-  createDouyinPublishPollingJobHandler,
   createFeishuIntentReconciliationJobHandler,
   createFeishuToolLifecycleJobHandler,
   feishuMcpAdapterFromEnv,
@@ -523,7 +513,6 @@ const modelControlPlane = modelSupplyRuntime.controlPlane;
   );
 }
 const integrationService = new IntegrationApplicationService({
-  douyin: new RecordedDouyinAdapter(),
   feishu: feishuMcpAdapterFromEnv(process.env),
   providerConnectivity,
   repository: integrationRepository,
@@ -726,26 +715,6 @@ const worker = new P1JobWorkerEntrypoint(
       dueDeliveryScanner,
       workerId
     ),
-    [DOUYIN_OAUTH_LIFECYCLE_JOB_KIND]:
-      createDouyinOAuthLifecycleJobHandler(
-        new DouyinOAuthLifecycleBatchRunner(
-          integrationRepository,
-          integrationService
-        )
-      ),
-    [DOUYIN_OBSERVE_SYNC_JOB_KIND]: createDouyinObserveSyncJobHandler(
-      new DouyinObserveSyncBatchRunner(
-        integrationRepository,
-        integrationService
-      )
-    ),
-    [DOUYIN_PUBLISH_POLLING_JOB_KIND]:
-      createDouyinPublishPollingJobHandler(
-        new DouyinPublishPollingBatchRunner(
-          integrationRepository,
-          integrationService
-        )
-      ),
     [FEISHU_TOOL_LIFECYCLE_JOB_KIND]:
       createFeishuToolLifecycleJobHandler(integrationService),
     [FEISHU_INTENT_RECONCILIATION_JOB_KIND]:

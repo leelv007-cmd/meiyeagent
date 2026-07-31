@@ -1,25 +1,23 @@
 /**
- * Three fixed credential slots → CredentialAccount metadata registry migration
+ * Fixed credential slots → CredentialAccount metadata registry migration
  * (D-060 / G1).
  *
  * Reality baseline (must not be papered over):
- *  - 3 slot metadata records always exist (model.direct / ark.media / douyin.platform)
+ *  - 2 slot metadata records always exist (model.direct / ark.media)
  *  - 2 runtime vault bindings exist (model.direct / ark.media)
- *  - douyin.platform is explicitly not_wired for runtime assembly
+ *
+ * The douyin.platform slot was archived with the 代发 face (D-155); see
+ * references/frozen-publish-face-2026-07-31/.
  *
  * Migration acceptance asserts metadata and real assembly separately — never
- * treat "three slots visible" as "three slots hot-assembled".
+ * treat "slot visible" as "slot hot-assembled".
  */
 import type {
   CredentialAccountLifecycle,
   CredentialAccountMetadata,
 } from '@meiye/contracts';
 
-export const FIXED_CREDENTIAL_SLOTS = [
-  'model.direct',
-  'ark.media',
-  'douyin.platform',
-] as const;
+export const FIXED_CREDENTIAL_SLOTS = ['model.direct', 'ark.media'] as const;
 
 export type FixedCredentialSlot = (typeof FIXED_CREDENTIAL_SLOTS)[number];
 
@@ -56,25 +54,17 @@ export interface FixedSlotRuntimeSources {
 const SLOT_PROVIDER_PROFILE: Record<FixedCredentialSlot, string> = {
   'model.direct': 'provider-tu-zi',
   'ark.media': 'provider-bytedance-volcengine',
-  'douyin.platform': 'provider-douyin-platform',
 };
 
 const SLOT_LABEL: Record<FixedCredentialSlot, string> = {
   'model.direct': 'Platform model.direct',
   'ark.media': 'Platform ark.media',
-  'douyin.platform': 'Platform douyin.platform',
 };
 
 function assemblyForSlot(
   slot: FixedCredentialSlot,
   sources: FixedSlotRuntimeSources | undefined,
 ): CredentialSlotRuntimeAssembly {
-  if (slot === 'douyin.platform') {
-    return {
-      kind: 'not_wired',
-      reason: 'recorded_adapter',
-    };
-  }
   if (slot === 'model.direct') {
     const source = sources?.modelDirect;
     if (source?.source === 'vault' && typeof source.credentialVersion === 'number') {
@@ -157,21 +147,10 @@ export function migrateFixedCredentialSlots(options: {
         connectionId,
         metadata,
         runtimeAssembly,
-        runtimeBound: isRuntimeBound(runtimeAssembly) && slot !== 'douyin.platform',
+        runtimeBound: isRuntimeBound(runtimeAssembly),
       };
     },
   );
-
-  // Explicit assembly rule: douyin is never runtime-bound in this migration.
-  for (const record of slots) {
-    if (record.slot === 'douyin.platform') {
-      record.runtimeBound = false;
-      record.runtimeAssembly = {
-        kind: 'not_wired',
-        reason: 'recorded_adapter',
-      };
-    }
-  }
 
   return {
     slots,
@@ -194,15 +173,15 @@ export function projectCredentialAccountMetadata(
 }
 
 /**
- * Assert migration shape matches baseline: 3 metadata / 2 runtime-bound /
- * douyin not_wired. Throws on mismatch (used by dual-read style tests).
+ * Assert migration shape matches baseline: 2 metadata / 2 runtime-bound / no
+ * not_wired slot. Throws on mismatch (used by dual-read style tests).
  */
 export function assertFixedSlotMigrationBaseline(
   view: CredentialSlotMigrationView,
 ): void {
-  if (view.metadataCount !== 3) {
+  if (view.metadataCount !== 2) {
     throw new Error(
-      `Expected 3 credential slot metadata records, got ${view.metadataCount}.`,
+      `Expected 2 credential slot metadata records, got ${view.metadataCount}.`,
     );
   }
   if (view.runtimeBoundCount !== 2) {
@@ -210,12 +189,9 @@ export function assertFixedSlotMigrationBaseline(
       `Expected 2 runtime-bound credential slots, got ${view.runtimeBoundCount}.`,
     );
   }
-  if (
-    view.notWiredSlots.length !== 1 ||
-    view.notWiredSlots[0] !== 'douyin.platform'
-  ) {
+  if (view.notWiredSlots.length !== 0) {
     throw new Error(
-      `Expected douyin.platform as the sole not_wired slot, got ${view.notWiredSlots.join(',')}.`,
+      `Expected no not_wired credential slot, got ${view.notWiredSlots.join(',')}.`,
     );
   }
   const bySlot = new Map(view.slots.map((s) => [s.slot, s]));
@@ -223,12 +199,5 @@ export function assertFixedSlotMigrationBaseline(
     if (!bySlot.has(slot)) {
       throw new Error(`Missing credential slot metadata for ${slot}.`);
     }
-  }
-  const douyin = bySlot.get('douyin.platform')!;
-  if (douyin.runtimeBound) {
-    throw new Error('douyin.platform must not report runtimeBound=true.');
-  }
-  if (douyin.runtimeAssembly.kind !== 'not_wired') {
-    throw new Error('douyin.platform runtime assembly must be not_wired.');
   }
 }

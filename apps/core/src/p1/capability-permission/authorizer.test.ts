@@ -147,7 +147,7 @@ test('authorizer preserves publication.handoff for operators (#83 consumer)', ()
     actor: 'operator',
     kind: 'command',
     module: 'integrations',
-    action: 'submit_douyin_publish',
+    action: 'execute_feishu_intent',
   });
   assert.equal(decision.allow, true);
   assert.equal(decision.required, 'publication.handoff');
