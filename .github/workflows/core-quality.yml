@@ -365,17 +365,16 @@ jobs:
           REQUIRED_REDLINE_EVALS_RESULT: ${{ needs.redline-evals.result }}
           REQUIRED_ROOT_QUALITY_RESULT: ${{ needs.root-quality.result }}
 
+  # Release variables are not configured; enable this only during release preparation.
   # Mints the four-unit, same-SHA staging release manifest the release-candidate
   # gate has always required. The manifest is uploaded as an artifact and the RC
   # job below downloads it, so acceptance reads one immutable document produced by
   # a build of this exact commit.
   release-manifest:
     if: >-
-      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
-      (contains(github.event.pull_request.labels.*.name, 'release-candidate') ||
-      contains(github.event.pull_request.labels.*.name, 'run-e2e')))
+      contains(github.event.pull_request.labels.*.name, 'release-candidate'))
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:

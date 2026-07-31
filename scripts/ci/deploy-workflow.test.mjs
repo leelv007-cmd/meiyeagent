@@ -25,7 +25,7 @@ test('main deployment is bound to a successful same-SHA Core quality run', async
   assert.match(workflow, /verify-wrangler-config\.mjs --require-real-resources/);
 });
 
-test('main push mints and consumes release-candidate evidence', async () => {
+test('release-candidate evidence runs only when explicitly requested', async () => {
   const workflow = await readFile(
     resolve(repositoryRoot, '.github/workflows/core-quality.yml'),
     'utf8',
@@ -34,9 +34,14 @@ test('main push mints and consumes release-candidate evidence', async () => {
   const pushConditionCount = workflow.match(
     /github\.event_name == 'push'/g,
   )?.length;
-  assert.ok(
-    (pushConditionCount ?? 0) >= 2,
-    'release-manifest and e2e must both run on main push',
+  assert.equal(
+    pushConditionCount,
+    1,
+    'release-manifest must not run on every main push',
+  );
+  assert.match(
+    workflow,
+    /release-manifest:[\s\S]*github\.event_name == 'workflow_dispatch'[\s\S]*release-candidate/,
   );
 });
 
