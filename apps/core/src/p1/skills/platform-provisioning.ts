@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 
 import type { EvalRun } from '@meiye/contracts';
@@ -156,18 +157,20 @@ async function provisionRecipeOnce(
       })
     ).revision;
   }
-  assertProvisionedRevision(revision, definition);
+  assertProvisionedRevision(revision, recipe);
 
-  const evalRunId = `eval.platform.${definition.frontmatter.name}@1`;
+  const evalRunId = platformProvisioningRunId(recipe);
   await input.repository.putImmutable(
     evalRunId,
     platformAcceptanceRun(evalRunId, revision.skillRevisionRef, recipe.prompt),
   );
-  revision = await input.service.acceptAndFreezeRevision({
-    actorId: PLATFORM_RECIPE_ACTOR_ID,
-    evalRunId,
-    skillRevisionRef: revision.skillRevisionRef,
-  });
+  if (revision.status !== 'accepted_frozen') {
+    revision = await input.service.acceptAndFreezeRevision({
+      actorId: PLATFORM_RECIPE_ACTOR_ID,
+      evalRunId,
+      skillRevisionRef: revision.skillRevisionRef,
+    });
+  }
 
   let catalog = await input.repository.getCatalog(definition.skillId);
   if (!catalog) {
@@ -252,23 +255,52 @@ async function provisionRecipeOnce(
 
 function assertProvisionedRevision(
   revision: SkillRevision,
-  definition: PlatformRecipeDefinition,
+  recipe: ProvisioningRecipe,
 ) {
-  const matches =
+  const definition = recipe.definition;
+  const staticRecipeMatches =
     revision.revision === 1 &&
     revision.instruction === definition.instruction &&
     isDeepStrictEqual(revision.manifest, definition.frontmatter) &&
     isDeepStrictEqual(revision.governance, definition.governance) &&
-    isDeepStrictEqual(revision.packagePaths, definition.packagePaths) &&
+    isDeepStrictEqual(revision.packagePaths, definition.packagePaths);
+  const promptMatches =
     revision.prompt.name === definition.promptReference.name &&
     revision.prompt.version === definition.promptReference.version &&
     revision.prompt.contentHash === definition.promptReference.contentHash;
+  const authorityChanged =
+    revision.prompt.source !== recipe.prompt.source ||
+    revision.prompt.isFallback !== recipe.prompt.isFallback;
+  const matches =
+    staticRecipeMatches &&
+    (promptMatches ||
+      (revision.status === 'accepted_frozen' && authorityChanged));
   if (!matches) {
     throw new P1DomainError(
       'IDEMPOTENCY_CONFLICT',
       `Platform Skill ${definition.skillId} is already provisioned with different facts.`,
     );
   }
+}
+
+function platformProvisioningRunId(recipe: ProvisioningRecipe) {
+  return `eval.platform.${recipe.definition.frontmatter.name}@1:${promptAuthorityFingerprint(recipe.prompt)}`;
+}
+
+function promptAuthorityFingerprint(prompt: HarnessFrozenPrompt) {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        contentHash: prompt.contentHash,
+        fallbackReason: prompt.fallbackReason ?? null,
+        isFallback: prompt.isFallback,
+        name: prompt.name,
+        source: prompt.source,
+        version: prompt.version,
+      }),
+    )
+    .digest('hex')
+    .slice(0, 16);
 }
 
 function platformAcceptanceRun(

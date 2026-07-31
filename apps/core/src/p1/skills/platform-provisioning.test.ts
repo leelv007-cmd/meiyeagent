@@ -3,6 +3,9 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
+import type { EvalRun } from '@meiye/contracts';
+import { Pool } from 'pg';
+
 import {
   HARNESS_BUILTIN_PROMPTS,
   HARNESS_PROMPT_SITES,
@@ -10,6 +13,7 @@ import {
   type HarnessFrozenPrompts,
 } from '../harness/langfuse-prompts.js';
 import { MemorySkillRepository } from './repository.js';
+import { PostgresSkillRepository } from './postgres-repository.js';
 import { SkillService } from './service.js';
 import { skillPromptSnapshotPortFromHarness } from './runtime.js';
 import {
@@ -87,6 +91,161 @@ test('production provisioning consumes both platform factories idempotently', as
     'harness_native',
   );
 });
+
+test('platform provisioning records strict and pilot authorities under distinct boot keys', async () => {
+  const strictResolver = strictPromptResolver();
+  const pilotResolver = new LangfuseHarnessPromptResolver({
+    policy: 'pilot',
+    warn() {},
+  });
+  const strictPrompts = await strictResolver.resolve();
+  const pilotPrompts = await pilotResolver.resolve();
+  const repository = new RecordingSkillRepository();
+  const strictService = new SkillService(
+    repository,
+    () => '2026-07-30T00:00:00.000Z',
+    skillPromptSnapshotPortFromHarness(strictResolver),
+  );
+  const pilotService = new SkillService(
+    repository,
+    () => '2026-07-30T00:00:00.000Z',
+    skillPromptSnapshotPortFromHarness(pilotResolver),
+  );
+
+  await provisionPlatformRecipes({
+    prompts: strictPrompts,
+    repository,
+    service: strictService,
+  });
+  const strictRunIds = [...repository.createdImmutableRunIds];
+  const strictRuns = await Promise.all(
+    strictRunIds.map((runId) => repository.get(runId)),
+  );
+
+  await provisionPlatformRecipes({
+    prompts: pilotPrompts,
+    repository,
+    service: pilotService,
+  });
+  const pilotRunIds = repository.createdImmutableRunIds.slice(
+    strictRunIds.length,
+  );
+  const pilotRuns = await Promise.all(
+    pilotRunIds.map((runId) => repository.get(runId)),
+  );
+
+  assert.equal(strictRunIds.length, 2);
+  assert.equal(pilotRunIds.length, 2);
+  assert.equal(
+    strictRunIds.every((runId) => !pilotRunIds.includes(runId)),
+    true,
+  );
+  assert.deepEqual(
+    strictRuns.map((run) => run?.results[0]?.promptRevision).sort(),
+    ['harness/copy-candidate@1', 'harness/intent-naming@1'],
+  );
+  assert.equal(pilotRuns.every((run) => run !== null), true);
+  assert.deepEqual(
+    pilotRuns.map((run) => run?.results[0]?.promptRevision).sort(),
+    ['harness/copy-candidate@builtin-v1', 'harness/intent-naming@builtin-v1'],
+  );
+
+  await provisionPlatformRecipes({
+    prompts: pilotPrompts,
+    repository,
+    service: pilotService,
+  });
+  assert.equal(repository.createdImmutableRunIds.length, 4);
+  assert.deepEqual(
+    repository.immutableWriteRunIds.slice(
+      strictRunIds.length + pilotRunIds.length,
+    ),
+    pilotRunIds,
+  );
+});
+
+const connectionString = process.env.TEST_DATABASE_URL;
+
+test(
+  'platform provisioning records strict and pilot authorities in PostgreSQL',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const strictResolver = strictPromptResolver();
+    const pilotResolver = new LangfuseHarnessPromptResolver({
+      policy: 'pilot',
+      warn() {},
+    });
+    const strictPrompts = await strictResolver.resolve();
+    const pilotPrompts = await pilotResolver.resolve();
+    const pool = new Pool({ connectionString });
+    const repository = new PostgresSkillRepository(pool);
+    const strictService = new SkillService(
+      repository,
+      () => '2026-07-30T00:00:00.000Z',
+      skillPromptSnapshotPortFromHarness(strictResolver),
+    );
+    const pilotService = new SkillService(
+      repository,
+      () => '2026-07-30T00:00:00.000Z',
+      skillPromptSnapshotPortFromHarness(pilotResolver),
+    );
+
+    try {
+      await repository.migrate();
+      await provisionPlatformRecipes({
+        prompts: strictPrompts,
+        repository,
+        service: strictService,
+      });
+      await provisionPlatformRecipes({
+        prompts: pilotPrompts,
+        repository,
+        service: pilotService,
+      });
+
+      const runIds = (await pool.query<{ run_id: string }>(
+        `SELECT run_id
+           FROM p1_skill_eval_runs
+          WHERE run_id LIKE 'eval.platform.%'
+          ORDER BY run_id`,
+      )).rows.map(({ run_id }) => run_id);
+      const authorityRuns = await Promise.all(
+        runIds.map((runId) => repository.get(runId)),
+      );
+      const expectedPromptRevisions = [
+        'harness/copy-candidate@1',
+        'harness/copy-candidate@builtin-v1',
+        'harness/intent-naming@1',
+        'harness/intent-naming@builtin-v1',
+      ];
+      const authorityRunsForPrompts = authorityRuns.filter((run) =>
+        expectedPromptRevisions.includes(run?.results[0]?.promptRevision ?? ''),
+      );
+      assert.equal(authorityRunsForPrompts.length, 4);
+      assert.deepEqual(
+        authorityRunsForPrompts
+          .map((run) => run?.results[0]?.promptRevision)
+          .sort(),
+        expectedPromptRevisions,
+      );
+
+      await provisionPlatformRecipes({
+        prompts: pilotPrompts,
+        repository,
+        service: pilotService,
+      });
+      const replayedRunIds = (await pool.query<{ run_id: string }>(
+        `SELECT run_id
+           FROM p1_skill_eval_runs
+          WHERE run_id LIKE 'eval.platform.%'
+          ORDER BY run_id`,
+      )).rows.map(({ run_id }) => run_id);
+      assert.deepEqual(replayedRunIds, runIds);
+    } finally {
+      await pool.end();
+    }
+  },
+);
 
 test('unconfigured prompt supply provisions builtin platform recipes with explicit fallback provenance', async () => {
   const promptResolver = new LangfuseHarnessPromptResolver({
@@ -228,4 +387,44 @@ function frozenPrompts(): HarnessFrozenPrompts {
       ];
     }),
   ) as HarnessFrozenPrompts;
+}
+
+function strictPromptResolver() {
+  return new LangfuseHarnessPromptResolver({
+    baseUrl: 'https://langfuse.fixture',
+    fetch: async (request) => {
+      const name = decodeURIComponent(
+        new URL(String(request)).pathname.split('/').pop()!,
+      );
+      const key = Object.entries(HARNESS_PROMPT_SITES).find(
+        ([, site]) => site.name === name,
+      )?.[0] as keyof typeof HARNESS_BUILTIN_PROMPTS | undefined;
+      if (!key) return new Response(null, { status: 404 });
+      return Response.json({
+        prompt: `Strict Langfuse pin: ${HARNESS_BUILTIN_PROMPTS[key]}`,
+        type: 'text',
+        version: 1,
+      });
+    },
+    policy: 'strict',
+    publicKey: 'fixture-public',
+    secretKey: 'fixture-secret',
+    versions: Object.fromEntries(
+      Object.keys(HARNESS_PROMPT_SITES).map((key) => [key, 1]),
+    ),
+    warn() {},
+  });
+}
+
+class RecordingSkillRepository extends MemorySkillRepository {
+  readonly createdImmutableRunIds: string[] = [];
+  readonly immutableWriteRunIds: string[] = [];
+
+  override async putImmutable(runId: string, input: EvalRun) {
+    const existing = await this.get(runId);
+    this.immutableWriteRunIds.push(runId);
+    const run = await super.putImmutable(runId, input);
+    if (!existing) this.createdImmutableRunIds.push(runId);
+    return run;
+  }
 }
