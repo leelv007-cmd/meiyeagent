@@ -8,6 +8,7 @@ import type {
 } from "@meiye/contracts";
 import {
 	boundedExecutionSnapshotSchema,
+	questionCardSchema,
 } from "@meiye/contracts";
 import { z } from "zod";
 
@@ -66,6 +67,7 @@ import {
 	merchantExactTextMismatch,
 	merchantExactTextVerificationUnavailable,
 	merchantImageGenerationFailure,
+	merchantNoteConfirmationCard,
 	merchantNotePartialPageMarker,
 	merchantNoteSelectionReason,
 	merchantVideoGenerationFailure,
@@ -212,7 +214,31 @@ export class UnifiedHarnessStagePorts
 	}
 
 	async nameIntent(input: Parameters<HarnessStagePorts["nameIntent"]>[0]) {
-		return this.copy.nameIntent(input);
+		const result = await this.copy.nameIntent(input);
+		if (
+			input.request.executionSnapshot?.lens !== "image_text_note" ||
+			input.request.decisionReferences?.some(
+				({ field }) =>
+					field === "note_plan_confirmation" || field === "note_style",
+			)
+		) {
+			return result;
+		}
+		const language = merchantNoteConfirmationCard();
+		return {
+			...result,
+			blockingQuestion: questionCardSchema.parse({
+				questionId: `${input.workflowId}:note-confirmation`,
+				workflowId: input.workflowId,
+				workflowRevision: input.request.workflowRevision,
+				question: language.question,
+				options: language.options,
+				freeText: language.freeText,
+				response: language.response,
+				unattended: "hold",
+				scope: "current_task",
+			}),
+		};
 	}
 
 	injectContext(input: Parameters<HarnessStagePorts["injectContext"]>[0]) {

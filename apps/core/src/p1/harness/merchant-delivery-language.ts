@@ -59,6 +59,28 @@ export function merchantNeutralIndustryContinuationNotice() {
   return '这次先按通用方式继续生成，不需要补充行业信息。';
 }
 
+export function merchantNoteConfirmationCard() {
+  return {
+    question:
+      '我会先整理整篇页级计划，再给你两种图文方向选择；先按建议补齐并继续，可以吗？',
+    options: [
+      {
+        id: 'continue_default',
+        label: '按建议继续',
+        description: '使用当前资料整理页级计划',
+      },
+    ],
+    freeText: {
+      enabled: true,
+      placeholder: '也可以在这里补充想强调的重点',
+    },
+    response: {
+      field: 'note_plan_confirmation',
+      reason: '确认本次图文计划的补充信息',
+    },
+  } as const;
+}
+
 export function merchantNoteStyleQuestion() {
   return {
     question: '两种图文方向都已准备好，这次想用哪一种？',

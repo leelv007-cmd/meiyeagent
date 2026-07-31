@@ -124,6 +124,28 @@ test('fixture fact satisfaction matches every authorized fact beyond the request
   });
 });
 
+test('fixture fact criticality only blocks promotional facts when the intent claims them', async () => {
+  const executor = new FixtureAiStructuredObjectExecutor();
+  const generate = (intent: string) =>
+    executor.generate({
+      instructions: 'Classify whether missing facts block truthful execution.',
+      prompt: JSON.stringify({
+        intent,
+        missingFactTypes: ['discount', 'fulfillment'],
+      }),
+      schema: z.object({
+        criticality: z.enum(['critical', 'optional']),
+      }),
+      schemaName: 'harness_fact_criticality_v1',
+    });
+
+  const ordinaryPoster = await generate('生成一张门店夏日护理海报');
+  const promotionalPoster = await generate('生成一张门店夏日护理优惠海报');
+
+  assert.equal(ordinaryPoster.output.criticality, 'optional');
+  assert.equal(promotionalPoster.output.criticality, 'critical');
+});
+
 test('fixture NotePlan varies page composition with merchant semantics', async () => {
   const executor = new FixtureAiStructuredObjectExecutor();
   const generate = (intent: string) =>

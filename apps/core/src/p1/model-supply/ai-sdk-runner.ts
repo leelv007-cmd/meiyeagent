@@ -1642,10 +1642,27 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
       const missing = Array.isArray(payload.missingFactTypes)
         ? payload.missingFactTypes
         : [];
+      const intent = typeof payload.intent === 'string' ? payload.intent : '';
+      const claimsPromotion =
+        /价格|价钱|价目|售价|费用|收费|多少钱|\d+\s*元|优惠|折扣|团购|套餐|活动价|特价|促销|秒杀|满.{0,12}减/u.test(
+          intent,
+        );
+      const claimsFulfillment =
+        claimsPromotion ||
+        /预约|到店|核销|有效期|使用(?:方式|规则)|门店地址|营业时间|履约/u.test(
+          intent,
+        );
+      const claimsQualification = /资质|认证|持证|证书/u.test(intent);
       return {
-        criticality: missing.some((kind) =>
-          ['price', 'discount', 'group_buy', 'qualification'].includes(String(kind)),
-        )
+        criticality: missing.some((kind) => {
+          const factKind = String(kind);
+          return (
+            (['price', 'discount', 'group_buy'].includes(factKind) &&
+              claimsPromotion) ||
+            (factKind === 'fulfillment' && claimsFulfillment) ||
+            (factKind === 'qualification' && claimsQualification)
+          );
+        })
           ? 'critical'
           : 'optional',
       };
