@@ -3,7 +3,6 @@ import type {
   ApprovalReceipt,
   ContentPackage,
   PendingAction,
-  QuestionCard,
 } from '@meiye/contracts';
 
 import {
@@ -158,71 +157,44 @@ async function submitComposerTask(page: Page): Promise<ComposerTask> {
   return result;
 }
 
-async function pendingQuestion(page: Page, taskId: string) {
-  return page.evaluate(async (currentTaskId) => {
-    const response = await fetch(
-      `/api/core/p1/harness/tasks/${encodeURIComponent(currentTaskId)}/decision`,
-      { credentials: 'same-origin' }
-    );
-    const envelope = (await response.json()) as {
-      data?: { question: QuestionCard | null };
-      error?: { message: string };
-    };
-    if (!response.ok || !envelope.data?.question) {
-      throw new Error(envelope.error?.message ?? 'Pending question was absent');
-    }
-    return envelope.data.question;
-  }, taskId);
-}
-
-async function answerHarnessQuestion(page: Page, taskId: string) {
-  const question = await pendingQuestion(page, taskId);
-  await page.evaluate(
-    async ({ currentTaskId, currentQuestion }) => {
-      const value = '299 元';
-      const response = await fetch(
-        `/api/core/p1/harness/tasks/${encodeURIComponent(currentTaskId)}/decision`,
-        {
-          body: JSON.stringify({
-            idempotencyKey: `pending-actions-seed:${currentQuestion.questionId}`,
-            questionId: currentQuestion.questionId,
-            workflowRevision: currentQuestion.workflowRevision,
-            patch: {
-              field: currentQuestion.response.field,
-              value,
-              reason: currentQuestion.response.reason,
-            },
-            decision: { state: 'accepted', value },
-          }),
-          credentials: 'same-origin',
-          headers: {
-            'content-type': 'application/json',
-            'idempotency-key': `pending-actions-seed:${currentQuestion.questionId}`,
-          },
-          method: 'POST',
-        }
-      );
-      if (!response.ok) {
-        const envelope = (await response.json()) as {
-          error?: { message: string };
-        };
-        throw new Error(envelope.error?.message ?? 'Harness answer failed');
-      }
-    },
-    { currentQuestion: question, currentTaskId: taskId }
-  );
-}
-
 async function waitForTaskQuestion(page: Page, taskId: string) {
   await expect
     .poll(
       async () =>
-        (await pendingActions(page)).some(
-          (action) => action.taskId === taskId && action.kind === 'question'
-        ),
+        page.evaluate(async (currentTaskId) => {
+          const response = await fetch(
+            `/api/core/p1/harness/tasks/${encodeURIComponent(currentTaskId)}/interaction?view=snapshot`,
+            { credentials: 'same-origin' }
+          );
+          if (!response.ok) return false;
+          const envelope = (await response.json()) as {
+            data?: {
+              request?: { kind?: string } | null;
+              status?: string;
+            };
+          };
+          return (
+            envelope.data?.status === 'pending' &&
+            envelope.data.request?.kind === 'ask_merchant'
+          );
+        }, taskId),
       { timeout: 60_000 }
     )
     .toBe(true);
+}
+
+async function answerHarnessQuestion(page: Page, taskId: string) {
+  await page.goto(`/dashboard?taskId=${encodeURIComponent(taskId)}`);
+  const questionCard = page.getByTestId('ask-merchant-group-card');
+  await expect(questionCard).toBeVisible({ timeout: 60_000 });
+  const textbox = questionCard.getByRole('textbox');
+  if (await textbox.count()) {
+    await textbox.fill('299 元');
+    await questionCard.getByRole('button', { name: '提交回答' }).click();
+  } else {
+    await questionCard.getByRole('button', { name: '整组暂不确定' }).click();
+  }
+  await expect(questionCard).toBeHidden({ timeout: 30_000 });
 }
 
 test.describe('pending action inbox', () => {
@@ -315,20 +287,20 @@ test.describe('pending action inbox', () => {
       .poll(async () => (await pendingActions(page)).length, {
         timeout: 60_000,
       })
-      .toBe(3);
+      .toBe(1);
     const initial = await pendingActions(page);
     expect(initial.filter((action) => action.kind === 'approval')).toHaveLength(
       1
     );
     expect(initial.filter((action) => action.kind === 'question')).toHaveLength(
-      2
+      0
     );
 
-    const trigger = page.getByRole('button', { exact: true, name: '3 项' });
+    const trigger = page.getByRole('button', { exact: true, name: '1 项' });
     await expect(trigger).toBeVisible();
     await trigger.click();
     const inbox = page.getByTestId('pending-actions');
-    await expect(inbox.locator('[data-pending-action-ref]')).toHaveCount(3);
+    await expect(inbox.locator('[data-pending-action-ref]')).toHaveCount(1);
     await expect(inbox.locator('[data-current="true"]')).toHaveCount(1);
     const stableCurrentRef = await inbox
       .locator('[data-current="true"]')
@@ -336,11 +308,11 @@ test.describe('pending action inbox', () => {
     expect(stableCurrentRef).toBe(initial[0]?.questionOrApprovalRef);
 
     await page.reload();
-    await page.getByRole('button', { exact: true, name: '3 项' }).click();
+    await page.getByRole('button', { exact: true, name: '1 项' }).click();
     const reloadedInbox = page.getByTestId('pending-actions');
     await expect(
       reloadedInbox.locator('[data-pending-action-ref]')
-    ).toHaveCount(3);
+    ).toHaveCount(1);
     await expect(
       reloadedInbox.locator('[data-current="true"]')
     ).toHaveAttribute('data-pending-action-ref', stableCurrentRef!);
@@ -377,7 +349,7 @@ test.describe('pending action inbox', () => {
       .poll(async () => (await pendingActions(page)).length, {
         timeout: 30_000,
       })
-      .toBe(2);
+      .toBe(0);
     await expect
       .poll(async () => {
         const contentPackage = (await contentPackages(page)).find(
@@ -390,36 +362,16 @@ test.describe('pending action inbox', () => {
       })
       .toEqual({ approval: 'approved', request: 'consumed' });
 
-    await page.reload();
-    await page.getByRole('button', { exact: true, name: '2 项' }).click();
-    const questionInbox = page.getByTestId('pending-actions');
+    await expect(page.getByTestId('pending-actions-badge')).toBeHidden();
 
-    for (let remaining = 2; remaining > 0; remaining -= 1) {
-      const currentAction = (await pendingActions(page))[0];
-      expect(currentAction).toMatchObject({ kind: 'question' });
-      const currentItem = questionInbox.locator('[data-current="true"]');
-      await currentItem
-        .locator('input[placeholder="输入这次任务的答案"]')
-        .fill('299 元');
-      await currentItem.getByRole('button', { name: '确认并继续' }).click();
-      await expect
-        .poll(
-          async () =>
-            (await pendingActions(page)).some(
-              (action) => action.taskId === currentAction!.taskId
-            ),
-          { timeout: 30_000 }
-        )
-        .toBe(false);
-      const matchingTask = tasks.find(
-        (candidate) => candidate.taskId === currentAction!.taskId
-      );
-      expect(matchingTask).toBeTruthy();
+    for (const task of tasks.slice(1)) {
+      await waitForTaskQuestion(page, task.taskId);
+      await answerHarnessQuestion(page, task.taskId);
       await expect
         .poll(
           async () =>
             (await contentPackages(page)).find(
-              (contentPackage) => contentPackage.id === matchingTask!.packageId
+              (contentPackage) => contentPackage.id === task.packageId
             )?.status,
           { timeout: 60_000 }
         )
@@ -427,7 +379,6 @@ test.describe('pending action inbox', () => {
     }
 
     await expect.poll(async () => (await pendingActions(page)).length).toBe(0);
-    await expect(questionInbox).toBeHidden();
     await expect(page.getByTestId('pending-actions-badge')).toBeHidden();
 
     const approvedTask = tasks[0]!;

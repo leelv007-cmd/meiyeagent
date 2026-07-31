@@ -1,10 +1,108 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+import type { ContentPackage } from '@meiye/contracts';
 
 import {
   cleanupE2EUsers,
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
+import { seedConfirmedStore } from '../fixtures/product';
+
+type ComposerSubmission = {
+  packageId: string;
+  workId: string;
+};
+
+async function contentPackage(page: Page, packageId: string) {
+  return page.evaluate(async (id) => {
+    const response = await fetch('/api/core/p1/query', {
+      body: JSON.stringify({
+        action: 'content_packages',
+        module: 'operations',
+        payload: {},
+      }),
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    });
+    const envelope = (await response.json()) as {
+      data?: ContentPackage[];
+      error?: { message?: string };
+    };
+    if (!response.ok || !envelope.data) {
+      throw new Error(
+        envelope.error?.message ?? 'Content package query failed'
+      );
+    }
+    return envelope.data.find((candidate) => candidate.id === id);
+  }, packageId);
+}
+
+async function submitComposerImageText(
+  page: Page,
+  intent: string
+): Promise<ComposerSubmission> {
+  await page.goto('/dashboard');
+  await page.getByTestId('composer-lens-option-image_text').click();
+  await page
+    .getByTestId('composer-recipe-card-recipe.promotion_poster')
+    .click();
+  const patchPreview = page.getByTestId('composer-recipe-patch-preview');
+  const applied = page.getByTestId('composer-recipe-apply-undo');
+  await expect(patchPreview.or(applied).first()).toBeVisible({
+    timeout: 30_000,
+  });
+  if (await patchPreview.isVisible()) {
+    await page.getByTestId('composer-patch-confirm').click();
+  }
+  await expect(applied).toBeVisible({ timeout: 30_000 });
+
+  await page.getByTestId('composer-intent-input').fill(intent);
+  const destination = page.getByTestId(
+    'composer-destination-option-xiaohongshu'
+  );
+  if ((await destination.getAttribute('aria-pressed')) !== 'true') {
+    await destination.click();
+  }
+  await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+    timeout: 60_000,
+  });
+
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      response.url().includes('/api/core/p1/composer/submissions'),
+    { timeout: 120_000 }
+  );
+  await page.getByTestId('composer-submit').click();
+  const brief = page.getByTestId('composer-brief-surface');
+  const next = await Promise.race([
+    responsePromise.then(() => 'submission' as const),
+    brief
+      .waitFor({ state: 'visible', timeout: 60_000 })
+      .then(() => 'brief' as const),
+  ]);
+  if (next === 'brief') {
+    await page.getByTestId('composer-brief-confirm').click();
+  }
+
+  const response = await responsePromise;
+  const envelope = (await response.json()) as {
+    data?: {
+      contentPackage?: { id?: string };
+      work?: { id?: string };
+    };
+    error?: { message?: string };
+  };
+  expect(response.status(), envelope.error?.message).toBe(202);
+  const submission = {
+    packageId: envelope.data?.contentPackage?.id ?? '',
+    workId: envelope.data?.work?.id ?? '',
+  };
+  expect(submission.packageId).toBeTruthy();
+  expect(submission.workId).toBeTruthy();
+  return submission;
+}
 
 test.describe('P1 canonical-provider journey', () => {
   test.beforeAll(async ({ request }) => {
@@ -15,101 +113,58 @@ test.describe('P1 canonical-provider journey', () => {
     await cleanupE2EUsers(request);
   });
 
-  test('persists a selected model through generation, derivation, canvas, and search', async ({
+  test('runs an available image model through Composer, work recovery, and search', async ({
     page,
     request,
   }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(360_000);
     const user = await registerE2EUser(request, { role: 'admin' });
     await loginByForm(page, user);
 
     await page.goto('/settings/models');
     await page.getByRole('tab', { name: '图片模型' }).click();
-    const modelButton = page.getByRole('button', { name: '本次使用' }).first();
-    await expect(modelButton).toBeEnabled();
-    await modelButton.click();
-    await expect(page.getByRole('button', { name: '已选中' })).toBeVisible();
-
-    const intent = 'P1 已选模型的可恢复图文旅程';
-    await page.goto('/dashboard');
-    await page.getByLabel('描述这次想创作的内容').fill(intent);
-    await page.getByRole('button', { name: '建立创作记录' }).click();
-    const record = page.getByLabel('Agent 创作记录');
-    await expect(record).toBeVisible();
-    await record
-      .getByRole('group', { name: '快速起步预设' })
-      .getByRole('button', { name: /^图片生成/ })
-      .click();
-    await record.getByRole('button', { name: /^调整专业参数/ }).click();
-    const selectedModel = record
-      .getByRole('radiogroup', { name: '执行模型' })
-      .getByRole('radio', { checked: true });
-    await expect(selectedModel).toHaveCount(1);
-    const selectedModelInput = selectedModel.locator(
+    const modelGroup = page.getByRole('radiogroup', { name: '本次使用' });
+    const modelRadios = modelGroup.getByRole('radio');
+    await expect.poll(() => modelRadios.count()).toBeGreaterThan(1);
+    const selectedRadio = modelRadios.nth(1);
+    const selectedModelInput = selectedRadio.locator(
       'xpath=following-sibling::input[@type="radio"]'
     );
+    await selectedRadio.click();
     await expect(selectedModelInput).toBeChecked();
-    const selectedModelId = await selectedModelInput.inputValue();
-    await page.getByRole('checkbox', { name: /接受本次执行合同/ }).check();
-    await page.getByRole('button', { name: '提交生成任务' }).click();
+    await expect(
+      page.getByText('已记录本次模型选择', { exact: true })
+    ).toBeVisible();
 
-    await expect(async () => {
-      const accept = page.getByRole('button', { name: '采纳为内容' }).first();
-      if (await accept.isVisible()) return;
-      const verify = page.getByRole('button', { name: '重新检查进度' });
-      await expect(verify).toBeVisible();
-      await verify.click();
-      await expect(accept).toBeVisible({ timeout: 2_000 });
-    }).toPass({ intervals: [500, 1_000], timeout: 60_000 });
-    await page.getByRole('button', { name: '采纳为内容' }).first().click();
-    await expect(page.getByText('已采纳为内容', { exact: true })).toBeVisible();
+    const intent = 'P1 已选模型的可恢复图文旅程';
+    await seedConfirmedStore(page);
+    const submission = await submitComposerImageText(page, intent);
+    await page.goto(
+      `/dashboard/results/${encodeURIComponent(submission.workId)}`
+    );
+    const accept = page.getByTestId('result-primary-action');
+    await expect(accept).toHaveText('采用这组', { timeout: 240_000 });
+    await accept.click();
+    await expect
+      .poll(
+        async () => (await contentPackage(page, submission.packageId))?.status,
+        { timeout: 60_000 }
+      )
+      .toBe('accepted');
 
-    const projection = await page.evaluate(async () => {
-      const response = await fetch('/api/core/p1/query', {
-        body: JSON.stringify({
-          action: 'creative_workbench',
-          module: 'operations',
-          payload: {},
-        }),
-        credentials: 'same-origin',
-        headers: { 'content-type': 'application/json' },
-        method: 'POST',
-      });
-      const envelope = (await response.json()) as {
-        data?: {
-          contents: unknown[];
-          jobs: Array<{ contract: { catalogModelId: string }; status: string }>;
-          works: Array<{ id: string }>;
-        };
-        error?: { message: string };
-      };
-      if (!response.ok || !envelope.data) {
-        throw new Error(envelope.error?.message ?? 'Projection failed');
-      }
-      return envelope.data;
-    });
-    expect(projection.jobs).toHaveLength(1);
-    expect(projection.jobs[0]).toMatchObject({
-      contract: { catalogModelId: selectedModelId },
-      status: 'completed',
-    });
-    expect(projection.contents).toHaveLength(1);
-    expect(projection.works).toHaveLength(1);
-
-    await page.getByRole('button', { name: '调整条件并另存为新创作' }).click();
-    await expect(page.getByText('基于上一版调整')).toBeVisible();
-    await page.getByRole('button', { name: '展开目录' }).click();
-    await page.getByRole('button', { name: '新建空白画布' }).click();
+    await page.goto('/dashboard');
+    const continueSection = page.getByTestId('dashboard-section-continue');
+    await expect(continueSection).toBeVisible({ timeout: 30_000 });
+    const continuation = continueSection.getByRole('link', { name: intent });
+    await expect(continuation).toHaveAttribute('href', /\/dashboard\/works\//);
+    await continuation.click();
     await expect(page).toHaveURL(/\/dashboard\/works\//);
-    await expect(page.getByLabel('自由画布')).toBeVisible({
-      timeout: 30_000,
-    });
 
     await page.goto('/dashboard/search');
-    await page.getByLabel('搜索 canonical 对象').fill(intent);
+    await page.getByLabel('搜索内容历史').fill(intent);
     await expect(page).toHaveURL(/q=/);
     await page.reload();
-    await expect(page.getByLabel('搜索 canonical 对象')).toHaveValue(intent);
+    await expect(page.getByLabel('搜索内容历史')).toHaveValue(intent);
     await expect(page.getByText(intent).first()).toBeVisible();
   });
 });

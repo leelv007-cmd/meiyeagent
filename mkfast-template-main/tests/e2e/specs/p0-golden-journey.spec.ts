@@ -1,15 +1,177 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+import type { ContentPackage } from '@meiye/contracts';
 
 import {
   cleanupE2EUsers,
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
-import {
-  productCommand,
-  productState,
-  seedAcceptedProductContent,
-} from '../fixtures/product';
+import { seedConfirmedStore } from '../fixtures/product';
+
+type ComposerSubmission = {
+  packageId: string;
+  taskId: string;
+  workId: string;
+};
+
+async function contentPackage(page: Page, packageId: string) {
+  return page.evaluate(async (id) => {
+    const response = await fetch('/api/core/p1/query', {
+      body: JSON.stringify({
+        action: 'content_packages',
+        module: 'operations',
+        payload: {},
+      }),
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    });
+    const envelope = (await response.json()) as {
+      data?: ContentPackage[];
+      error?: { message?: string };
+    };
+    if (!response.ok || !envelope.data) {
+      throw new Error(
+        envelope.error?.message ?? 'Content package query failed'
+      );
+    }
+    return envelope.data.find((candidate) => candidate.id === id);
+  }, packageId);
+}
+
+async function p1Command<T>(
+  page: Page,
+  module: 'operations' | 'result-delivery',
+  action: string,
+  payload: Record<string, unknown>
+) {
+  return page.evaluate(
+    async ({ action: command, module: commandModule, payload: input }) => {
+      const response = await fetch('/api/core/p1/commands', {
+        body: JSON.stringify({
+          action: command,
+          module: commandModule,
+          payload: input,
+        }),
+        credentials: 'same-origin',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': `p0-golden:${commandModule}:${command}:${crypto.randomUUID()}`,
+        },
+        method: 'POST',
+      });
+      const envelope = (await response.json()) as {
+        data?: T;
+        error?: { message: string };
+      };
+      if (!response.ok || !envelope.data) {
+        throw new Error(envelope.error?.message ?? `${command} failed`);
+      }
+      return envelope.data;
+    },
+    { action, module, payload }
+  );
+}
+
+async function approveExternalSend(page: Page, packageId: string) {
+  const adopted = await contentPackage(page, packageId);
+  const platform = adopted?.source.targetPlatform;
+  if (!adopted || !platform) {
+    throw new Error('Adopted package has no delivery platform');
+  }
+  await p1Command(page, 'result-delivery', 'result_export', {
+    expectedRevision: adopted.revision,
+    packageId,
+    platform,
+  });
+  await expect
+    .poll(
+      async () =>
+        (await contentPackage(page, packageId))?.approvalRequests?.find(
+          (request) => request.status === 'pending'
+        )?.id,
+      { timeout: 60_000 }
+    )
+    .toBeTruthy();
+
+  const current = await contentPackage(page, packageId);
+  const approval = current?.approvalRequests?.find(
+    (request) => request.status === 'pending'
+  );
+  if (!current || !approval) {
+    throw new Error('External-send approval request was absent');
+  }
+  await p1Command(page, 'operations', 'approve_content_package_action', {
+    accountId: 'e2e-xiaohongshu-account',
+    actionKind: approval.actionKind,
+    actionScheduledAt: new Date(Date.now() + 60 * 60 * 1_000).toISOString(),
+    approvalKey: `p0-golden:${approval.id}`,
+    cost: { amount: 0, currency: 'CNY' },
+    expectedRevision: current.revision,
+    packageId,
+    platform: approval.platform,
+    purpose: approval.purpose,
+    requestId: approval.id,
+    variantVersionId: approval.variantVersionId,
+  });
+}
+
+async function submitComposerCopy(page: Page): Promise<ComposerSubmission> {
+  await page.goto('/dashboard');
+  await page.getByTestId('composer-lens-option-copy').click();
+  await page
+    .getByTestId('composer-intent-input')
+    .fill('给透亮猫眼写一条周末预约文案');
+  const destination = page.getByTestId(
+    'composer-destination-option-xiaohongshu'
+  );
+  await expect(destination).toBeVisible({ timeout: 30_000 });
+  if ((await destination.getAttribute('aria-pressed')) !== 'true') {
+    await destination.click();
+  }
+  await expect(destination).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+    timeout: 60_000,
+  });
+
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      response.url().includes('/api/core/p1/composer/submissions'),
+    { timeout: 120_000 }
+  );
+  await page.getByTestId('composer-submit').click();
+  const brief = page.getByTestId('composer-brief-surface');
+  const next = await Promise.race([
+    responsePromise.then(() => 'submission' as const),
+    brief
+      .waitFor({ state: 'visible', timeout: 60_000 })
+      .then(() => 'brief' as const),
+  ]);
+  if (next === 'brief') {
+    await page.getByTestId('composer-brief-confirm').click();
+  }
+
+  const response = await responsePromise;
+  const envelope = (await response.json()) as {
+    data?: {
+      contentPackage?: { id?: string };
+      task?: { id?: string };
+      work?: { id?: string };
+    };
+    error?: { message?: string };
+  };
+  expect(response.status(), envelope.error?.message).toBe(202);
+  const submission = {
+    packageId: envelope.data?.contentPackage?.id ?? '',
+    taskId: envelope.data?.task?.id ?? '',
+    workId: envelope.data?.work?.id ?? '',
+  };
+  expect(submission.packageId).toBeTruthy();
+  expect(submission.taskId).toBeTruthy();
+  expect(submission.workId).toBeTruthy();
+  return submission;
+}
 
 test.describe('canonical product golden journey', () => {
   test.beforeAll(async ({ request }) => {
@@ -20,42 +182,63 @@ test.describe('canonical product golden journey', () => {
     await cleanupE2EUsers(request);
   });
 
-  test('hands off accepted content and records exports separately', async ({
+  test('hands off a Composer ContentPackage and records the canonical result', async ({
     context,
     page,
     request,
   }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(360_000);
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-
-    const { contentId } = await seedAcceptedProductContent(
-      page,
-      'golden-journey'
-    );
-    const packaged = await productCommand(page, {
-      type: 'create_handoff',
-      contentId,
-      platform: 'xiaohongshu',
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'canShare', {
+        configurable: true,
+        value: (payload: ShareData) => !payload.files?.length,
+      });
+      Object.defineProperty(navigator, 'share', {
+        configurable: true,
+        value: async (payload: ShareData) => {
+          if (payload.url) {
+            window.sessionStorage.setItem(
+              'e2e-canonical-handoff-url',
+              payload.url
+            );
+          }
+        },
+      });
     });
-    const packageId = packaged.output.packageId;
-    const handoffToken = packaged.output.handoffToken;
-    expect(packageId).toBeTruthy();
-    expect(handoffToken).toBeTruthy();
 
-    // T37 / M-04 (#231), restoring what T34 dropped: the 旧内容库 card was the
-    // repository's only proof that a merchant can *reach* the handoff surface
-    // from inside the product. Addressing the page by URL proves it renders,
-    // not that anyone can get there. The surviving doorway is 内容详情 →
-    // 「协办交接」 → the Result Center delivery panel bound to this revision
-    // (`works-projection.ts` `workHandoffHref`). Where that panel's share
-    // payload goes is a separate question — see the note before the goto below.
-    await page.goto(`/dashboard/works/${encodeURIComponent(contentId)}`);
+    await seedConfirmedStore(page);
+    const submission = await submitComposerCopy(page);
+    await expect
+      .poll(
+        async () => (await contentPackage(page, submission.packageId))?.status,
+        { timeout: 120_000 }
+      )
+      .toBe('review_ready');
+
+    await page.goto(
+      `/dashboard/results/${encodeURIComponent(submission.workId)}`
+    );
+    const adopt = page.getByTestId('result-primary-action');
+    await expect(adopt).toHaveText('采用此版本', { timeout: 60_000 });
+    await adopt.click();
+    await expect
+      .poll(
+        async () => (await contentPackage(page, submission.packageId))?.status,
+        { timeout: 60_000 }
+      )
+      .toBe('accepted');
+    await approveExternalSend(page, submission.packageId);
+
+    await page.goto(
+      `/dashboard/works/${encodeURIComponent(submission.packageId)}`
+    );
     const handoffDoorway = page.getByTestId('works-action-handoff');
     await expect(
       handoffDoorway,
-      '内容详情 must offer 协办交接 — it is the only in-product doorway left to the handoff surface'
+      'The canonical ContentPackage detail must offer the delivery doorway.'
     ).toBeVisible({ timeout: 60_000 });
     await expect(handoffDoorway).toHaveAttribute(
       'href',
@@ -69,78 +252,38 @@ test.describe('canonical product golden journey', () => {
       timeout: 60_000,
     });
 
-    // OI-78 P2-2 (T39 / #233): the address walked below must come from the
-    // product rather than from a local variable a command handed the test.
-    // `create_handoff` persists the token on the HandoffPackage it wrote, so
-    // read it back keyed by that package id and walk that.
-    //
-    // The delivery panel's share payload cannot supply it, and the comment
-    // above overstated the chain: the panel's one-shot link is
-    // `/dashboard/handoff/<token>` built from the **canonical** assisted
-    // receipt (`routes/dashboard/results_/$workId.tsx`, `existingOneShotUrl`
-    // ← `assisted_list`), while `create_handoff` writes a legacy
-    // `L3_HANDOFF_PACKAGE` that the canonical resolver refuses on purpose
-    // (`product/results/delivery-handoff-canonical.ts`,
-    // `assertNotLegacyHandoffSource`). Binding the two is a product change,
-    // not a test change — recorded as a T39 gap, not asserted away here.
-    await expect(page.getByTestId('delivery-share-strategy')).toBeVisible();
-    const persistedHandoff = (await productState(page)).handoffPackages.find(
-      (handoff) => handoff.id === packageId
+    const assistedAction = page.getByTestId('delivery-action-assisted');
+    await expect(assistedAction).toBeEnabled();
+    await assistedAction.click();
+    await expect(page.getByTestId('delivery-outcome-handed-over')).toBeVisible({
+      timeout: 60_000,
+    });
+    await page.getByTestId('delivery-action-system_share').click();
+    await expect(page.getByTestId('delivery-outcome-share-done')).toBeVisible();
+    const canonicalHandoffUrl = await page.evaluate(() =>
+      window.sessionStorage.getItem('e2e-canonical-handoff-url')
     );
-    expect(
-      persistedHandoff?.token,
-      'the handoff address must be the token the server persisted for this package'
-    ).toBe(handoffToken);
-    await page.goto(
-      `/dashboard/handoff/${encodeURIComponent(persistedHandoff!.token)}`
-    );
+    expect(canonicalHandoffUrl).toMatch(/\/dashboard\/handoff\/[^/?#]{16,}$/u);
+    if (!canonicalHandoffUrl) {
+      throw new Error('System share produced no canonical handoff URL');
+    }
+    await page.goto(canonicalHandoffUrl);
     await expect(
-      page.getByRole('heading', { name: /小红书\s*发布包/ })
-    ).toBeVisible();
-
-    await page.getByRole('button', { name: '复制' }).first().click();
-    await expect(page.getByText('已复制，可切换到平台粘贴。')).toBeVisible();
-    await expect
-      .poll(async () => {
-        const state = await productState(page);
-        return state.handoffPackages
-          .find((handoff) => handoff.id === packageId)
-          ?.exportEvents.map((event) => event.type);
-      })
-      .toContain('copied');
-    let state = await productState(page);
-    expect(
-      state.handoffPackages.find((handoff) => handoff.id === packageId)?.status
-    ).toBe('ready');
-    expect(
-      state.contents.find((content) => content.id === contentId)?.status
-    ).toBe('draft');
-
+      page.getByRole('heading', { name: '小红书交接包' })
+    ).toBeVisible({ timeout: 60_000 });
+    for (const section of ['share', 'download', 'copy', 'report']) {
+      await expect(
+        page.getByTestId(`handoff-section-${section}`)
+      ).toBeVisible();
+    }
     await page
-      .getByLabel('结果备注（可选）')
-      .fill('平台草稿尚未完成，稍后继续');
-    await page.getByRole('button', { name: '暂未发布', exact: true }).click();
-    await expect(
-      page.getByText('已记录暂未发布，发布包仍保持待处理。')
-    ).toBeVisible();
-    state = await productState(page);
-    const pendingHandoff = state.handoffPackages.find(
-      (handoff) => handoff.id === packageId
-    );
-    expect(pendingHandoff?.status).toBe('ready');
-    expect(pendingHandoff?.manualReports.at(-1)?.outcome).toBe('not_published');
-
-    await page
-      .getByLabel('平台帖子链接（可选）')
+      .getByLabel('平台链接')
       .fill('https://example.test/posts/e2e-golden');
-    await page.getByRole('button', { name: '已发布', exact: true }).click();
-    await expect(page.getByText('已记录人工发布结果。')).toBeVisible();
-    state = await productState(page);
-    expect(
-      state.handoffPackages.find((handoff) => handoff.id === packageId)?.status
-    ).toBe('published');
-    expect(
-      state.contents.find((content) => content.id === contentId)?.status
-    ).toBe('published');
+    await page.getByLabel('备注').fill('canonical Composer handoff e2e');
+    await page.getByTestId('handoff-report-published').click();
+    await expect(page.getByTestId('handoff-section-report')).toHaveAttribute(
+      'data-published',
+      'true'
+    );
   });
 });

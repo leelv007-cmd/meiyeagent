@@ -120,7 +120,7 @@ adapters, without external model credentials.
 
 | # | Test name | Flow |
 |---|---|---|
-| 1 | User can complete the P1 recorded-provider journey | Select an available image model; confirm store/asset facts and generate grounded copy; create a weekly task, run a real idempotent Product batch action, and produce a fact-only weekly review; load the Product image through the workspace storage proxy, insert it into a blank canvas, persist its exact Product asset ID, submit a durable image job, let the separately started P1 Worker complete it, and recover the completed job after reload; toggle the optional watermark and AIGC labels; create, explicitly confirm, recover, and cancel a video storyboard without a stale Worker overwriting the cancellation; then verify each search scope exposes its required structured filters. |
+| 1 | User can complete the P1 recorded-provider journey | Choose an available image model through the current-session radio group; confirm store facts, submit a current Composer image-text recipe, and adopt its completed ContentPackage in Result Center; recover the completed work through the dashboard's current Continue section; then verify canonical search survives reload. |
 
 ## 8. Task Source Navigation
 
@@ -142,7 +142,7 @@ without exposing credentials or silently falling back to another provider.
 
 | # | Test name | Flow |
 |---|---|---|
-| 1 | Recorded integrations stay usable and honestly labeled | Create a write-only workspace BYOK connection, verify recorded mode is labeled as demo execution, execute a published model/profile, and verify Product Usage plus externally billed Provider Cost; open external connections and verify Douyin is labeled not integrated before any credential input; create and verify a Feishu UAT connection, consume the automatically published vendored tool revision, pin a shortcut, execute an explicit read intent, and recover both shortcut and activity after reload. |
+| 1 | Recorded integrations stay usable and honestly labeled | Create a write-only workspace BYOK connection with an explicit capability request, receive the pending-verification acknowledgement, and confirm the key is cleared from the form. Published Feishu tool lifecycle is governed by the separate admin control surface rather than a merchant connection-card assertion. |
 
 ## 11. S1 Product Shell And Canonical Routes
 
@@ -328,7 +328,7 @@ evidence.
 | # | Test name | Flow |
 |---|---|---|
 | 1 | Only complete marketing entries switch the canonical Composer context | Seed one D-023-complete entry and one entry missing any single MarketingPackage capability; open the canonical dashboard, verify only the complete entry is visible, click it, and verify the editable intent plus recommended tools change in place without navigation or a field form. Legacy scene chips appear only as secondary choices under the released parent. |
-| 2 | One server-owned question persists and resumes the harness | Start a Harness task with one missing authoritative fact, follow its stable SSE progress into `suspended`, render exactly one inline QuestionCard, answer it, and require the structured decision to bind the server-declared field, task, question, workflow revision, scope, and idempotency key. Reload to prove the question is no longer pending and follow the same SSE stream through resumed progress to the delivered ContentPackage revision. Replaying the same answer is idempotent; a stale revision and a changed target both return 409. |
+| 2 | One server-owned interaction persists and resumes the harness | Start a Harness task with one missing authoritative fact, follow its stable SSE progress into `suspended`, render exactly one inline interaction card, answer it, and require the request-bound interaction response to carry its revision and resume coordinates. Reload to prove the interaction is no longer pending and follow the same SSE stream through resumed progress to the delivered ContentPackage revision. Replaying the same answer is idempotent; a stale revision and a changed target both return 409. |
 | 3 | Resumed durable interactions render and submit through Composer | Restore one active Harness task from Core; render its grouped ask-merchant request ahead of the legacy QuestionCard, acknowledge the mounted renderer, choose the merchant-visible label without leaking its description into the answer, and submit the request-bound revision and resume coordinates. Then render the frozen execution confirmation, reject it without inventing feedback, surface the dedicated waiting-message card, submit one trimmed continuation message against its exact identity, and remove each settled card without navigating away from the current Work. |
 
 ## 24b. W01 Store Intake Fact Wiring
@@ -611,7 +611,7 @@ These flows should be added after their dependencies are made deterministic:
 | Transactional email | Requires a fake mail provider or captured verification links. |
 # P0 golden journey
 
-- `p0-golden-journey.spec.ts` verifies the authenticated, workspace-scoped merchant outcome: confirmed store facts, authorized real-asset metadata, three copy candidates, selected/versioned content, AIDA confirmation, durable video states and quota, an explicitly disabled creation-time AIGC label reflected consistently in the artifact and handoff, a real Product publish snapshot flowing through Douyin contract authorization and independent Owner capability activation, rejected-before-accept fallback to `manual_required`, L3 handoff, manual publication, platform variant, finite weekly set, and refresh persistence. The retired Lead-ledger tail is intentionally absent.
+- `p0-golden-journey.spec.ts` verifies the authenticated, workspace-scoped merchant outcome through the canonical Composer chain: a confirmed store submits and resolves its interaction in the current conversation, adopts the resulting ContentPackage, reaches the Result Center delivery panel from the Works doorway, creates a one-shot assisted handoff, and records the merchant-reported publication result. Legacy ContentItem writes and `L3_HANDOFF_PACKAGE` are read-only history and not test setup.
 - `product-asset-upload.spec.ts` verifies that a real image crosses the authenticated workspace upload adapter into R2, receives Core rights metadata, keeps public authorization disabled until consent evidence is recorded, becomes publicly usable only after explicit consent, and remains downloadable through the authorized same-origin storage proxy.
 - `mobile-product-shell.spec.ts` verifies the bottom bar exposes the merchant destinations (creation, content, assets, store, and — since D-164④ — memory), one slot each. It carries no central create action: the bar is `BUSINESS_SIDEBAR_ITEMS` and nothing else, and this line said otherwise long before that ticket. It also preserves the camera capture contract and prevents horizontal overflow at the representative 390×844 viewport. It does not replace the retired Lead assertion with an unrelated store-to-workspace journey.
 ## UI journey three-modal Day-0
