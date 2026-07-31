@@ -26,6 +26,7 @@ import {
   locales,
 } from '@/lib/locale';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { ServiceWorkerBoot } from '@/pwa/service-worker-boot';
 import { lazy } from 'react';
 
 const DevTools =
@@ -184,6 +185,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <ThemeProvider>
           <TooltipProvider>
             {children}
+            <ServiceWorkerBoot />
             <Toaster richColors position="top-right" offset={64} />
           </TooltipProvider>
         </ThemeProvider>

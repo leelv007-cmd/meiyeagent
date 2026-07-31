@@ -9,6 +9,7 @@ export const paraglideCompilerOptions = {
     { match: '/robots.txt', exclude: true },
     { match: '/sitemap.xml', exclude: true },
     { match: '/manifest.json', exclude: true },
+    { match: '/sw.js', exclude: true },
   ],
   emitTsDeclarations: true,
   isServer: 'import.meta.env?.SSR === true',

@@ -11,11 +11,13 @@ import {
   settings_account_description,
   settings_account_jump_label,
   settings_account_profile_heading,
+  settings_account_pwa_heading,
   settings_account_security_heading,
   settings_account_usage_heading,
   settings_navigation_account,
   settings_title,
 } from '@/locale/paraglide/messages';
+import { InstallPrompt } from '@/pwa/install-prompt';
 
 interface AccountSearch {
   section?: 'profile' | 'security' | 'usage';
@@ -102,6 +104,12 @@ function AccountPage() {
         <AccountUsagePanel />
         <RedemptionCard />
         <BillingCard />
+      </section>
+      <section className="scroll-mt-16 space-y-4" id="pwa-install">
+        <h2 className="text-lg font-semibold">
+          {settings_account_pwa_heading()}
+        </h2>
+        <InstallPrompt variant="settings" />
       </section>
     </DashboardLayout>
   );
