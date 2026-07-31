@@ -308,6 +308,18 @@ export async function submitComposerJourney(
     await chooseImageTextDirection(page);
   }
 
+  if (contract.modality === 'video') {
+    // D-164③: paid media generation holds on the execution confirmation card
+    // (quote + usage reservation); the run only starts after 确认执行. Copy and
+    // image_text (note path) deliver without a pre-run hold.
+    const confirmation = page.getByTestId(
+      'execution-confirmation-interaction-card'
+    );
+    await expect(confirmation).toBeVisible({ timeout: 60_000 });
+    await confirmation.getByRole('button', { name: '确认执行' }).click();
+    await expect(confirmation).toBeHidden({ timeout: 60_000 });
+  }
+
   await options.onRunStreaming?.();
 
   const deliveryCard = page.locator(
