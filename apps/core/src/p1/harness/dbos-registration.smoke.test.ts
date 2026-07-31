@@ -740,7 +740,7 @@ test(
 );
 
 test(
-  'external publish confirmation persists through the production DBOS owner before execution',
+  'manual platform handoff does not persist an external execution confirmation',
   { skip: !systemDatabaseUrl },
   async () => {
     const workflowId = `harness-execution-confirmation-${randomUUID()}`;
@@ -761,27 +761,22 @@ test(
       },
       blockingQuestion: null,
     });
-    let interactionRequest: HarnessInteractionRequest | undefined;
-    let signalPendingRegistered = () => {};
-    const pendingRegistered = new Promise<void>((resolve) => {
-      signalPendingRegistered = resolve;
-    });
     DBOS.setConfig({
-      name: 'beauty-marketing-harness-execution-confirmation-smoke',
+      name: 'beauty-marketing-harness-manual-handoff-smoke',
       systemDatabaseUrl: systemDatabaseUrl!,
-      applicationVersion: 'harness-execution-confirmation-smoke-v1',
+      applicationVersion: 'harness-manual-handoff-smoke-v1',
     });
     const workflow = registerHarnessDbosWorkflow(ports, {
-      async registerPending(_workspaceId, _question, projection) {
-        interactionRequest = projection?.interactionRequest;
-        signalPendingRegistered();
-        return projection;
+      async registerPending() {
+        throw new Error(
+          'Manual delivery must not create an external execution confirmation.',
+        );
       },
       async readPending() {
         return null;
       },
       async readPendingInteraction() {
-        return interactionRequest ?? null;
+        return null;
       },
       async recordStageTrace() {},
       async recordTerminalFailure() {},
@@ -792,55 +787,11 @@ test(
       const request = snapshotTimeoutRequest(
         workflowId,
         workspaceId,
-        'publish:xiaohongshu',
+        'manual_copy',
       );
       const handle = await DBOS.startWorkflow(workflow, {
         workflowID: runtimeWorkflowId,
       })({ workflowId, request });
-      let pendingTimeout: NodeJS.Timeout | undefined;
-      try {
-        await Promise.race([
-          pendingRegistered,
-          new Promise<never>((_resolve, reject) => {
-            pendingTimeout = setTimeout(
-              () =>
-                reject(
-                  new Error(
-                    'DBOS workflow did not persist execution confirmation.',
-                  ),
-                ),
-              15_000,
-            );
-          }),
-        ]);
-      } finally {
-        if (pendingTimeout) clearTimeout(pendingTimeout);
-      }
-      const pending = interactionRequest;
-      assert.equal(pending?.kind, 'execution_confirmation');
-      assert.equal(
-        pending?.requestId,
-        `execution-confirmation:${request.executionSnapshot.id}`,
-      );
-      assert.equal(pending?.step, 'execution_selection');
-      assert.equal(
-        pending?.kind === 'execution_confirmation'
-          ? pending.frozen.timeoutPolicy.kind
-          : null,
-        'hold',
-      );
-      await resumeHarnessDbosInteractionWorkflow(workspaceId, workflowId, {
-        kind: 'harness_interaction_resume',
-        schemaVersion: 'v1',
-        idempotencyKey: `${pending?.requestId}:approved`,
-        interactionKind: 'execution_confirmation',
-        requestId: pending?.requestId,
-        revision: pending?.revision,
-        runId: pending?.runId,
-        step: 'execution_selection',
-        resumeData: { kind: 'approved' },
-        resolutionSource: 'decision',
-      });
       const result = await handle.getResult();
       assert.ok(result.delivery);
       assert.equal(await waitForWorkflowStatus(handle, 'SUCCESS'), 'SUCCESS');
@@ -2110,10 +2061,7 @@ function snapshotTimeoutRequest(
   distributionTarget:
     | 'export'
     | 'manual_copy'
-    | 'assisted_handoff'
-    | 'publish:xiaohongshu'
-    | 'publish:douyin'
-    | 'publish:video_account' = 'export',
+    | 'assisted_handoff' = 'export',
 ) {
   return {
     ...legacyTimeoutRequest(workflowId, workspaceId),

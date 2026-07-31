@@ -26,9 +26,6 @@ export const composerDistributionTargetIds = [
   'export',
   'manual_copy',
   'assisted_handoff',
-  'publish:xiaohongshu',
-  'publish:douyin',
-  'publish:video_account',
 ] as const;
 
 export const composerDistributionTargetSchema = z.enum(

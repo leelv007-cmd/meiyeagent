@@ -134,7 +134,7 @@ test('external execution authority freezes a hold-only confirmation request', ()
         operation: 'copy.generate',
         catalogModel: { id: 'model-1', revision: 'model-r1' },
         deliverable: { kind: 'copy_document' },
-        distributionTarget: 'publish:xiaohongshu',
+        distributionTarget: 'manual_copy',
       },
     },
   });

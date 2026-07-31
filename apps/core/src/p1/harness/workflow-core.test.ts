@@ -2013,54 +2013,6 @@ test('a snapshot-backed semantic answer resubmits the same task and work before 
   assert.ok(progress.includes('已收到，继续为你生成。'));
 });
 
-test('an external publish snapshot waits for its frozen execution confirmation before selection', async () => {
-  const base = snapshotTaskInput();
-  const request: HarnessWorkflowInput = {
-    ...base,
-    executionSnapshot: {
-      ...base.executionSnapshot!,
-      distributionTarget: 'publish:xiaohongshu',
-    },
-  };
-  const stages = fixtureStages();
-  const executeAndSelect = stages.executeAndSelect!;
-  const order: string[] = [];
-  stages.executeAndSelect = async (input) => {
-    order.push('selection');
-    return executeAndSelect(input);
-  };
-
-  await runHarnessWorkflow('task-copy', request, stages, {
-    async runStep(_key, operation) {
-      return operation();
-    },
-    async progress() {},
-    async token() {},
-    async awaitDecision(question, stage) {
-      order.push('confirmation');
-      assert.equal(stage, 'execution_selection');
-      assert.deepEqual(question.executionConfirmationAuthority, {
-        kind: 'external_action',
-        revision: 'execution-external-action/v1',
-      });
-      return {
-        idempotencyKey: 'approve-external-execution',
-        questionId: question.questionId,
-        workflowRevision: question.workflowRevision,
-        patch: {
-          field: question.response.field,
-          value: 'approved',
-          reason: question.response.reason,
-        },
-        decision: { state: 'accepted', value: 'approved' },
-      };
-    },
-    async recordTrace() {},
-  });
-
-  assert.deepEqual(order, ['confirmation', 'selection']);
-});
-
 test('semantic resubmission rejects a forged workspace before persistence', () => {
   const original = snapshotTaskInput();
   const request = {

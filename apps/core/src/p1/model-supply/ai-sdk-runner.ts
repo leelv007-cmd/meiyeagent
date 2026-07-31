@@ -1128,12 +1128,7 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
         ? 'assisted_handoff'
         : /导出|下载|文件|export/iu.test(destination)
           ? 'export'
-          : /直接发布|自动发布|publish/iu.test(destination) &&
-              (contentPackagePlatform === 'xiaohongshu' ||
-                contentPackagePlatform === 'douyin' ||
-                contentPackagePlatform === 'video_account')
-            ? `publish:${contentPackagePlatform}`
-            : 'manual_copy';
+          : 'manual_copy';
       return {
         contentPackagePlatform,
         distributionTarget,

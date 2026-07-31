@@ -1297,12 +1297,6 @@ export async function runHarnessWorkflow(
       : merchantProgressMessage('brief_compilation'),
   });
 
-  activeRequest = await confirmExternalExecution({
-    workflowId,
-    request: activeRequest,
-    runtime,
-    reportProgress,
-  });
   const executionSkills = stageSkills.execution_selection;
   let selection: HarnessSelectionResult =
     await executeSelectionToCompletion(
@@ -1760,12 +1754,6 @@ async function runNoteHarnessWorkflow(
     }, `r${context.bundle.revision}`);
   }
 
-  activeRequest = await confirmExternalExecution({
-    workflowId,
-    request: activeRequest,
-    runtime,
-    reportProgress,
-  });
   const executionSkills = stageSkills.execution_selection;
   const noteSelectionInput = {
     workflowId,
@@ -2117,12 +2105,6 @@ async function runMediaHarnessWorkflow(
     message: merchantProgressMessage('brief_compilation'),
   });
 
-  activeRequest = await confirmExternalExecution({
-    workflowId,
-    request: activeRequest,
-    runtime,
-    reportProgress,
-  });
   const executionSkills = stageSkills.execution_selection;
   const executeMediaSelectionToCompletion = async (
     unitId: string,
@@ -2973,74 +2955,6 @@ async function applyCurrentTaskDecision(
       },
     ],
   };
-}
-
-async function confirmExternalExecution(input: {
-  workflowId: string;
-  request: HarnessWorkflowInput;
-  runtime: HarnessWorkflowRuntime;
-  reportProgress: (
-    event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
-  ) => Promise<void>;
-}) {
-  let request = input.request;
-  for (;;) {
-    const snapshot = request.executionSnapshot;
-    if (
-      !snapshot ||
-      !snapshot.distributionTarget.startsWith('publish:')
-    ) {
-      return request;
-    }
-    const question = questionCardSchema.parse({
-      questionId: `execution-confirmation:${snapshot.id}`,
-      workflowId: input.workflowId,
-      workflowRevision: request.workflowRevision,
-      question: '是否按当前冻结方案执行外部发布？',
-      options: [
-        { id: 'approved', label: '确认执行' },
-        { id: 'rejected', label: '暂不执行' },
-      ],
-      freeText: { enabled: false },
-      response: {
-        field: 'execution_confirmation',
-        reason: '外部发布前需要商家确认冻结方案',
-      },
-      unattended: 'hold',
-      executionConfirmationAuthority: {
-        kind: 'external_action',
-        revision: 'execution-external-action/v1',
-      },
-      scope: 'current_task',
-    });
-    await input.reportProgress({
-      stage: 'execution_selection',
-      state: 'suspended',
-      message: question.question,
-    });
-    const command = await awaitResolvedDecision(
-      input.runtime,
-      question,
-      'execution_selection',
-    );
-    if (
-      command.decision.state === 'accepted' &&
-      command.decision.value === 'approved'
-    ) {
-      await input.reportProgress({
-        stage: 'execution_selection',
-        state: 'success',
-        message: '已确认冻结方案，继续执行。',
-      });
-      return request;
-    }
-    request = await applyCurrentTaskDecision(
-      input.workflowId,
-      request,
-      command,
-      input.runtime,
-    );
-  }
 }
 
 async function resolveFactSatisfaction(input: {

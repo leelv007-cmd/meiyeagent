@@ -28,19 +28,7 @@ const mappedDestinationSchema = z
     distributionTarget: composerDistributionTargetSchema,
     status: z.literal('mapped'),
   })
-  .strict()
-  .superRefine((result, context) => {
-    if (!result.distributionTarget.startsWith('publish:')) return;
-    const publishedPlatform = result.distributionTarget.slice('publish:'.length);
-    if (publishedPlatform !== result.contentPackagePlatform) {
-      context.addIssue({
-        code: 'custom',
-        message:
-          'A publish target must match its content package variant platform.',
-        path: ['distributionTarget'],
-      });
-    }
-  });
+  .strict();
 
 const clarificationSchema = z
   .object({
@@ -163,9 +151,8 @@ export class StructuredComposerDestinationMapper
         'Map one merchant answer about where content will be used and how it will be delivered.',
         'Return mapped only when both fields are unambiguous; otherwise return one focused clarification question with safe options.',
         'Allowed contentPackagePlatform values: xiaohongshu, douyin, video_account, wechat_moments, offline_material, generic.',
-        'Allowed distributionTarget values: export, manual_copy, assisted_handoff, publish:xiaohongshu, publish:douyin, publish:video_account.',
-        'wechat_moments is a delivery destination, not a platform variant, and must never be represented as a publish target.',
-        'A publish target must exactly match xiaohongshu, douyin, or video_account.',
+        'Allowed distributionTarget values: export, manual_copy, assisted_handoff.',
+        'Every platform delivery is completed by the merchant or an assistant; never select an automatic platform delivery target.',
         'Do not infer a platform from unrelated merchant facts.',
       ].join(' ');
 

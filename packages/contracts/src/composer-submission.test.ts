@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  composerDistributionTargetSchema,
   composerSubmissionSignedFieldsSchema,
   isComposerVariantPlatform,
   pickComposerSubmissionSignedFields,
@@ -74,6 +75,13 @@ test('free image operation is signed while customized and non-image submissions 
 test('wechat_moments is a delivery target but not a variant platform', () => {
   assert.equal(isComposerVariantPlatform('wechat_moments'), false);
   assert.equal(isComposerVariantPlatform('xiaohongshu'), true);
+});
+
+test('distribution targets do not admit platform publishing', () => {
+  assert.equal(
+    composerDistributionTargetSchema.safeParse('publish:xiaohongshu').success,
+    false,
+  );
 });
 
 test('image-text note page bound is signed only inside the deliverable', () => {

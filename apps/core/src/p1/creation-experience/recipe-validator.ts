@@ -4,7 +4,6 @@ import {
   type ComposerSubmissionSignedFields,
   composerSubmissionSignedFieldsSchema,
   creativeContentModuleIds,
-  isComposerVariantPlatform,
 } from '@meiye/contracts';
 
 import type { ServerRecipeRecord } from './types.js';
@@ -110,17 +109,6 @@ export function validateRecipeForComposer(
 
   const { contentPackagePlatform, distributionTarget, deliverable } =
     parsed.data;
-  if (distributionTarget.startsWith('publish:')) {
-    const publishPlatform = distributionTarget.slice('publish:'.length);
-    if (
-      !isComposerVariantPlatform(contentPackagePlatform) ||
-      publishPlatform !== contentPackagePlatform
-    ) {
-      errors.push(
-        'publish distribution requires the matching supported variant platform',
-      );
-    }
-  }
   if (
     contentPackagePlatform === 'wechat_moments' &&
     distributionTarget !== 'export' &&
@@ -128,13 +116,6 @@ export function validateRecipeForComposer(
     distributionTarget !== 'assisted_handoff'
   ) {
     errors.push('wechat_moments supports export or assisted delivery only');
-  }
-  if (
-    (contentPackagePlatform === 'offline_material' ||
-      contentPackagePlatform === 'generic') &&
-    distributionTarget.startsWith('publish:')
-  ) {
-    errors.push('offline_material and generic cannot use publish delivery');
   }
   if (lens && deliverableLens(deliverable.kind) !== lens) {
     errors.push('deliverable.kind must match the Recipe modality');

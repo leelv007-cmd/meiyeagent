@@ -174,6 +174,11 @@ test('fixture Day-0 mappings cover Moments handoff and offline export without tr
     distributionTarget: 'export',
     status: 'mapped',
   });
+  assert.deepEqual(await mapper.map({ destination: '直接发布到小红书' }), {
+    contentPackagePlatform: 'xiaohongshu',
+    distributionTarget: 'manual_copy',
+    status: 'mapped',
+  });
 });
 
 test('conflicting Day-0 input returns a focused clarification instead of guessing', async () => {
@@ -195,7 +200,7 @@ test('conflicting Day-0 input returns a focused clarification instead of guessin
 test('empty input and invalid model output fail closed to guidance rather than a hard error', async () => {
   const executor = new RecordingExecutor({
     contentPackagePlatform: 'wechat_moments',
-    distributionTarget: 'publish:xiaohongshu',
+    distributionTarget: 'automatic_publish',
     status: 'mapped',
   });
   const mapper = new StructuredComposerDestinationMapper(executor);
