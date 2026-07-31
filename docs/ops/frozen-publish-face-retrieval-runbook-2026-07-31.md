@@ -3,8 +3,8 @@
 > 取回演练按主控 2026-07-31 批复豁免（用户判断取回概率很小），本文按最简记录保留。
 
 - **归档位置**：`references/frozen-publish-face-2026-07-31/`
-  - `snapshot/` —— 59 个被改/被删文件在锚点时的完整原件
-  - `restore.patch` —— 「当前 → 锚点」反向补丁，覆盖 `apps/`、`packages/`、`mkfast-template-main/`
+  - `restore.patch` —— 「当前 → 锚点」反向补丁，覆盖 `apps/`、`packages/`、`mkfast-template-main/`（演练已证实打后与锚点逐字节一致）
+  - `snapshot/` 59 个原件副本已按用户裁决删除（2026-07-31）——与 restore.patch＋git 历史（锚点 `b7a426ca`）双重冗余；原件仍可从锚点 `git checkout`/`git show` 取回
 - **归档锚点 SHA**：`b7a426cae21c16a8e164bd4b36eac3ae3e55ee4d`
 - **删除提交**：`30b8ea37`（core）、`f7a38e96`（web）
 - **活性核查表**：`docs/reviews/p1-integrations-liveness-audit-2026-07-31.md`
