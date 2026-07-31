@@ -253,6 +253,37 @@ test('an active late-answer lease does not claim that its successor exists', asy
   assert.deepEqual(successorStarts, []);
 });
 
+test('typed pending questions remain readable without reopening legacy decision submission', async () => {
+  const store = new MemoryDecisionStore([]);
+  store.pending = {
+    ...question(),
+    response: {
+      field: 'note_plan_confirmation',
+      reason: '需要商家确认后继续',
+    },
+  };
+  store.hideDecisionTarget = true;
+  const resumes: unknown[] = [];
+  const service = new HarnessDecisionService(store, {
+    async resume(_workspaceId, _taskId, command) {
+      resumes.push(command);
+    },
+  });
+
+  assert.equal(
+    (await service.readDecisionTarget('workspace-1', 'task-35'))?.question
+      .response.field,
+    'note_plan_confirmation',
+  );
+  await assert.rejects(
+    service.submit('workspace-1', 'task-35', decisionInput()),
+    (error: unknown) =>
+      error instanceof HarnessDecisionError &&
+      error.code === 'STALE_QUESTION',
+  );
+  assert.deepEqual(resumes, []);
+});
+
 class MemoryDecisionStore implements HarnessDecisionStore {
   readonly events: Array<{ id: string }> = [];
   readonly traces: Array<{ id: string }> = [];
@@ -271,11 +302,19 @@ class MemoryDecisionStore implements HarnessDecisionStore {
     | 'late_answer'
     | null = null;
   targetStatus: 'pending' | 'resolved' = 'pending';
+  hideDecisionTarget = false;
   resumeClaimAvailable = true;
 
   constructor(private readonly order: string[]) {}
 
   async submit(input: Parameters<HarnessDecisionStore['submit']>[0]) {
+    if (this.hideDecisionTarget) {
+      return {
+        outcome: 'stale_question' as const,
+        command: input.command,
+        resumeRequired: false,
+      };
+    }
     const outcome = this.nextOutcome;
     if (outcome === 'created') {
       this.events.push(input.event);
@@ -331,6 +370,7 @@ class MemoryDecisionStore implements HarnessDecisionStore {
   }
 
   async readDecisionTarget() {
+    if (this.hideDecisionTarget) return null;
     return this.pending
       ? {
           question: this.pending,

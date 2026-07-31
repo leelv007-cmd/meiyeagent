@@ -19,6 +19,9 @@ export type PlatformDefaultModelOperation =
   | 'image.generate'
   | 'video.generate'
   | 'audio.speech';
+export type PlatformDefaultModelResolvedOperation =
+  | PlatformDefaultModelOperation
+  | 'image.edit';
 
 /**
  * Canonical platform-default-model vocabulary (#240①).
@@ -51,12 +54,16 @@ export const PLATFORM_DEFAULT_MODEL_OPERATION_BY_CONFIG_KEY =
   >;
 
 export const PLATFORM_DEFAULT_MODEL_CONFIG_KEY_BY_OPERATION =
-  Object.fromEntries(
-    PLATFORM_DEFAULT_MODEL_DEFINITIONS.map(([configKey, operation]) => [
+  Object.fromEntries([
+    ...PLATFORM_DEFAULT_MODEL_DEFINITIONS.map(([configKey, operation]) => [
       operation,
       configKey,
     ]),
-  ) as Record<PlatformDefaultModelOperation, PlatformDefaultModelConfigKey>;
+    ['image.edit', 'image'],
+  ]) as Record<
+    PlatformDefaultModelResolvedOperation,
+    PlatformDefaultModelConfigKey
+  >;
 
 /** The single admin-config key spelling for a platform default model. */
 export function platformDefaultModelConfigName(
@@ -74,9 +81,11 @@ export function platformDefaultModelConfigName(
 export function platformDefaultModelConfigKeyForOperation(
   operation: string,
 ): PlatformDefaultModelConfigKey | undefined {
-  return PLATFORM_DEFAULT_MODEL_CONFIG_KEY_BY_OPERATION[
-    operation as PlatformDefaultModelOperation
-  ];
+  return (
+    PLATFORM_DEFAULT_MODEL_CONFIG_KEY_BY_OPERATION as Partial<
+      Record<string, PlatformDefaultModelConfigKey>
+    >
+  )[operation];
 }
 
 /** Source of the platform-configured default model ids (admin config in prod). */

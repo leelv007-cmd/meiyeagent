@@ -2258,6 +2258,7 @@ if (harnessRuntimeConfig) {
             const { bindings, errors } = resolvePlatformDefaultBindings(
               registry,
               defaults,
+              { operation },
             );
             if (errors.length > 0) {
               throw new Error(errors.join(' '));

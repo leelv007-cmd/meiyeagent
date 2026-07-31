@@ -28,6 +28,7 @@ import {
 } from './runtime-config.js';
 import {
   expandCatalogRevisionPayload,
+  platformDefaultsForOperation,
   resolvePlatformDefaultBindings,
   validateDualRead,
 } from '../supply-registry/index.js';
@@ -252,6 +253,60 @@ test('fixture initialization publishes an active live-verified copy platform def
     ).ok,
     true,
   );
+});
+
+test('fixture initialization publishes an active live-verified image.edit platform default', async () => {
+  const catalog = modelRuntimeAssemblyFromEnv({
+    APP_ENV: 'e2e',
+    MODEL_EXECUTION_MODE: 'fixture',
+  });
+  const repository = new MemoryModelSupplyControlPlaneRepository();
+  let registry: ReturnType<typeof expandCatalogRevisionPayload> | null = null;
+  const runtime = createModelSupplyRuntime({
+    application: {
+      execution: catalog.runtime.execution,
+      resultSink: repository,
+    },
+    catalog,
+    controlPlane: {
+      repository,
+      supplyRegistry: {
+        async getCurrentRegistryRevision() {
+          return registry;
+        },
+        async setCurrentRegistryRevision(_workspaceId, snapshot) {
+          registry = snapshot;
+        },
+      },
+    },
+  });
+  registry = expandCatalogRevisionPayload(runtime.fallbackCatalog.payload, {
+    catalogRevisionId: runtime.fallbackCatalog.revisionId,
+    catalogRevisionNumber: 0,
+  });
+
+  await runtime.controlPlane.initialize('__platform_supply__');
+  assert.ok(registry);
+  const defaults = platformDefaultsForOperation(
+    { image: 'nano-banana-2' },
+    'image.edit',
+  );
+  const { bindings, errors } = resolvePlatformDefaultBindings(
+    registry,
+    defaults,
+    { operation: 'image.edit' },
+  );
+  const binding = bindings.find(
+    (candidate) => candidate.operation === 'image.edit',
+  );
+  const deployment = registry.deployments.find(
+    (candidate) => candidate.id === binding?.deploymentId,
+  );
+
+  assert.deepEqual(errors, []);
+  assert.equal(binding?.catalogModelId, 'nano-banana-2');
+  assert.equal(binding?.activationEvidenceStatus, 'live_verified');
+  assert.equal(deployment?.lifecycleStatus, 'active');
 });
 
 test('fixture copy routing freezes all Harness axes without conservative fallback', async () => {

@@ -13,6 +13,7 @@ import {
   type PlatformDefaultModelConfigKey,
   type PlatformDefaultModelOperation,
   type PlatformDefaultModelPort,
+  type PlatformDefaultModelResolvedOperation,
 } from '../foundation/workspace-provision.js';
 import type { ExpandedSupplyRegistrySnapshot } from './expand.js';
 
@@ -20,7 +21,7 @@ export type CredentialScope = 'platform' | 'workspace_byok';
 
 export interface PlatformDefaultBinding {
   configKey: PlatformDefaultModelConfigKey;
-  operation: PlatformDefaultModelOperation;
+  operation: PlatformDefaultModelResolvedOperation;
   catalogModelId: string;
   deploymentId: string;
   activationEvidenceStatus: ActivationEvidenceStatus;
@@ -73,6 +74,7 @@ export function platformDefaultsForOperation(
 export function resolvePlatformDefaultBindings(
   snapshot: ExpandedSupplyRegistrySnapshot,
   defaults: Partial<Record<PlatformDefaultModelConfigKey, string>>,
+  options?: { operation?: string },
 ): {
   bindings: PlatformDefaultBinding[];
   errors: string[];
@@ -89,11 +91,28 @@ export function resolvePlatformDefaultBindings(
   const channelById = new Map(
     snapshot.executionChannels.map((c) => [c.id, c]),
   );
+  const isFixtureRegistryProjection =
+    snapshot.catalogRevisionId?.endsWith(':fixture-live-verified-v1') ?? false;
 
   for (const configKey of Object.keys(defaults) as PlatformDefaultModelConfigKey[]) {
     const catalogModelId = defaults[configKey]?.trim();
     if (!catalogModelId) continue;
-    const operation = OPERATION_BY_CONFIG_KEY[configKey];
+    const requestedConfigKey = options?.operation
+      ? (
+          CONFIG_KEY_BY_OPERATION as Partial<
+            Record<string, PlatformDefaultModelConfigKey>
+          >
+        )[options.operation]
+      : undefined;
+    if (options?.operation && requestedConfigKey !== configKey) {
+      errors.push(
+        `Platform default ${configKey} does not apply to ${options.operation}.`,
+      );
+      continue;
+    }
+    const operation = options?.operation
+      ? (options.operation as PlatformDefaultModelResolvedOperation)
+      : OPERATION_BY_CONFIG_KEY[configKey];
     const model = modelById.get(catalogModelId);
     if (!model) {
       errors.push(
@@ -110,8 +129,18 @@ export function resolvePlatformDefaultBindings(
     const candidates = (deploymentsByModel.get(catalogModelId) ?? []).filter(
       (deployment) => {
         const channel = channelById.get(deployment.executionChannelId);
+        // Fixture registry projections carry synthetic activation evidence for
+        // provider-managed recorded channels. They are local test credentials,
+        // not a production platform binding, but must exercise the same
+        // platform-default route as the fixture's platform-owned deployments.
+        const fixturePlatformEvidence =
+          isFixtureRegistryProjection &&
+          (deployment.activationEvidence?.evidenceRef?.startsWith(
+            'fixture://',
+          ) ?? false);
         return (
-          channel?.accountOwnership === 'platform' &&
+          (channel?.accountOwnership === 'platform' ||
+            fixturePlatformEvidence) &&
           Boolean(deployment.activationEvidence)
         );
       },
