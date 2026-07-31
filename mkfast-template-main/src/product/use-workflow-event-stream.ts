@@ -48,6 +48,24 @@ export function parseWorkflowEventFrame(
   return workflowStateFrameSchema.parse(raw);
 }
 
+export function workflowEventFrameBelongsTo(
+  frame: WorkflowEventFrame,
+  workflowId: string
+) {
+  return frame.data.workflowId === workflowId;
+}
+
+export function advanceWorkflowEventCursorForWorkflow(
+  current: WorkflowEventCursor | undefined,
+  workflowId: string,
+  frame: WorkflowEventFrame
+) {
+  if (!workflowEventFrameBelongsTo(frame, workflowId)) {
+    return { accepted: false, cursor: current ?? {} };
+  }
+  return advanceWorkflowEventCursor(current, frame);
+}
+
 export function advanceWorkflowEventCursor(
   current: WorkflowEventCursor | undefined,
   frame: WorkflowEventFrame
@@ -235,7 +253,11 @@ export function useWorkflowEventStream(input: {
           event.type as WorkflowEventFrame['event'],
           event.data
         );
-        const next = advanceWorkflowEventCursor(cursor.current, frame);
+        const next = advanceWorkflowEventCursorForWorkflow(
+          cursor.current,
+          input.workflowId,
+          frame
+        );
         if (!next.accepted) return;
         cursor.current = next.cursor;
         if (frame.event === 'workflow.progress') {

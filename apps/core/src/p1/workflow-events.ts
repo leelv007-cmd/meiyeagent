@@ -70,6 +70,7 @@ export class HarnessWorkflowEventSource implements WorkflowEventSource {
             data: workflowProgressEnvelopeSchema.parse(raw),
             event: 'workflow.progress',
           });
+      if (frame.data.workflowId !== input.workflowId) continue;
       const eventId = frame.data.eventId;
       if (!cursorReached) {
         cursorReached = eventId === input.lastEventId;
@@ -85,6 +86,7 @@ export class HarnessWorkflowEventSource implements WorkflowEventSource {
         input.signal,
       )
     );
+    if (data.workflowId !== input.workflowId) return;
     yield workflowStateFrameSchema.parse({ data, event: 'workflow.state' });
   }
 }

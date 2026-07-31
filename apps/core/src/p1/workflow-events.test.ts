@@ -47,6 +47,13 @@ const terminalState: WorkflowStateEnvelope = {
   status: 'success',
   workflowId: 'task-a',
 };
+const foreignToken: WorkflowTokenEnvelope = {
+  ...firstToken,
+  delta: '来自另一个任务的内容',
+  eventId: 'task-b:token:999',
+  sequence: 999,
+  workflowId: 'task-b',
+};
 
 test('harness replay resumes after the stable event id and reads state after progress closes', async () => {
   const calls: string[] = [];
@@ -58,6 +65,7 @@ test('harness replay resumes after the stable event id and reads state after pro
     async *readEvents(_workspaceId, workflowId) {
       calls.push(`progress:${workflowId}`);
       yield firstProgress;
+      yield foreignToken;
       yield firstToken;
       yield secondProgress;
     },
@@ -91,6 +99,35 @@ test('harness replay resumes after the stable event id and reads state after pro
     'progress:task-a',
     'state:task-a',
   ]);
+});
+
+test('harness source never projects foreign workflow frames or state', async () => {
+  const source = new HarnessWorkflowEventSource({
+    async owns() {
+      return true;
+    },
+    async *readEvents() {
+      yield firstProgress;
+      yield foreignToken;
+    },
+    async readState() {
+      return { ...terminalState, workflowId: 'task-b' };
+    },
+  });
+
+  const frames = await collect(
+    source.stream({
+      signal: new AbortController().signal,
+      workflowId: 'task-a',
+      workspaceId: 'workspace-a',
+    })
+  );
+
+  assert.deepEqual(
+    frames.map((frame) => frame.data.workflowId),
+    ['task-a']
+  );
+  assert.equal(frames[0]?.event, 'workflow.progress');
 });
 
 test('video source emits a stable authoritative state snapshot and stops at terminal state', async () => {

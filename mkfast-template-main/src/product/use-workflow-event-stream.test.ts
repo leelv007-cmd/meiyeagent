@@ -7,11 +7,13 @@ import type {
 
 import {
   advanceWorkflowEventCursor,
+  advanceWorkflowEventCursorForWorkflow,
   harnessCancellationFromState,
   harnessDeliveryFromState,
   parseWorkflowEventFrame,
   reduceWorkflowCopyTokens,
   videoWorkflowEnvelopeFromState,
+  workflowEventFrameBelongsTo,
 } from '@/product/use-workflow-event-stream';
 
 const progress: WorkflowProgressEnvelope = {
@@ -96,6 +98,55 @@ test('deduplicates replayed progress sequences and state revisions', () => {
   assert.equal(replay.accepted, false);
   assert.equal(newerState.accepted, true);
   assert.equal(newerState.cursor.sourceRevision, 4);
+});
+
+test('accepts only frames from the subscribed workflow', () => {
+  const first = advanceWorkflowEventCursorForWorkflow(undefined, 'video-a', {
+    data: progress,
+    event: 'workflow.progress',
+  });
+  const foreign = advanceWorkflowEventCursorForWorkflow(
+    first.cursor,
+    'video-a',
+    {
+      data: {
+        ...progress,
+        eventId: 'task-b:token:999',
+        sequence: 999,
+        workflowId: 'task-b',
+      },
+      event: 'workflow.token',
+    }
+  );
+  const next = advanceWorkflowEventCursorForWorkflow(
+    foreign.cursor,
+    'video-a',
+    {
+      data: { ...progress, eventId: 'video-a:2', sequence: 2 },
+      event: 'workflow.progress',
+    }
+  );
+
+  assert.equal(first.accepted, true);
+  assert.equal(foreign.accepted, false);
+  assert.equal(next.accepted, true);
+  assert.equal(next.cursor.sequence, 2);
+  assert.equal(
+    workflowEventFrameBelongsTo(
+      {
+        data: {
+          occurredAt: '2026-07-18T08:00:02.000Z',
+          snapshot: {},
+          sourceRevision: 4,
+          status: 'success',
+          workflowId: 'task-b',
+        },
+        event: 'workflow.state',
+      },
+      'video-a'
+    ),
+    false
+  );
 });
 
 test('token sequences share the replay cursor and reduce into isolated copy fields', () => {
