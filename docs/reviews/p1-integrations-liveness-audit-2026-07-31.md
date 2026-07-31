@@ -114,4 +114,30 @@ D-155＋D-161④ 明列不受冻结约束的四项，逐条确认未受影响：
 
 ## 6. 验证跑数
 
-见票下交底评论与 `docs/ops/frozen-publish-face-table-disposition-2026-07-31.md`。
+| 项 | 结果 |
+|---|---|
+| `git ls-files 'apps/core/src/p1/integrations/*'` | 32 个文件，**零个 douyin 文件**；剩余的 douyin 字样只在 §5 已记录的保守残留处（`contracts.ts:1` 枚举项、退役表清理名单、测试夹具的历史 provider 值） |
+| core typecheck | 绿 |
+| core test（全量 `src/**/*.test.ts`） | 绿 |
+| web typecheck | 绿（仅剩 2 条既有报错：`src/lib/pages.ts` 的 `content-collections` 未生成、`uiux-upgrade-b-results.spec.ts` 未用 `expect`；两文件本分支未触碰） |
+| web test | 绿 |
+| web test:interaction | 47 文件 / 288 用例全绿 |
+| biome check | 本轮改动文件全绿（`uiux-upgrade-b-*` 三条既有格式化欠债未动） |
+| 取回演练 | `restore.patch` 在临时分支 `restore-drill/publish-face` 干跑＋实打，恢复后 `git diff --cached b7a426ca -- apps packages mkfast-template-main` **输出为空**（与锚点逐字节一致），core typecheck 绿；演练后分支已删除，工作树复原 |
+
+### e2e 复核集（冷库 `meiye_263_gate`，走 e2e-lock）
+
+- `pending-actions-inbox`、`p0-golden-journey`：**多轮全绿**（冻结边界未受影响的直接行为证据）
+- `p1-integrations-journey`：**判定为既有 flake，非本轮回归**。取证过程：
+
+| 跑法 | 锚点 `b7a426ca` | 本分支 |
+|---|---|---|
+| 单独跑该 spec | 通过 | 通过 ×2 |
+| 三 spec 一起跑 | 通过 ×1，**失败 ×1** | 失败 ×2 |
+| 把该断言超时放到 45s | — | 通过 |
+
+失败点恒为 `p1-integrations-journey.spec.ts:33` 的 `expect(getByText('连接已创建，待完成授权验证')).toBeVisible()`，默认 5s 超时，失败耗时恒为 8.1s。**锚点在同样的三 spec 负载下同样失败**（第二次采样，同一 locator、同一耗时），故不是 #263 引入。
+
+判红纪律逐条走过：①`git diff` 未命中该代码路径——`createConnection`（`integration-settings.tsx:1167`）与 `execute`（:1122）不在本分支任一 diff hunk 内，`application-service.ts` 的 `createConnection`（原 316–445 行）未被切割；②单文件隔离重跑通过；③锚点对照跑同样失败。该 spec 于 `38f2bb7c` 刚迁移，5s 的 toast 断言在三 spec 负载下本就临界。
+
+**该 spec 的归属**：它测的是 **BYOK 模型密钥连接创建**，属活代码面，**不在归档面内**，因此留在原处、内容未改（诊断时临时加长的超时已还原，`git diff` 为空）。建议由 spec 属主放宽该断言超时，本票不擅自改他人 spec。
