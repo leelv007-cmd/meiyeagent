@@ -43,9 +43,6 @@ const DISTRIBUTION_LABELS: Record<ComposerDistributionTarget, string> = {
   export: '生成后导出',
   manual_copy: '生成后手动复制',
   assisted_handoff: '生成后协办交接',
-  'publish:xiaohongshu': '生成后由你发布到小红书',
-  'publish:douyin': '生成后由你发布到抖音',
-  'publish:video_account': '生成后由你发布到视频号',
 };
 
 export type ComposerSignedPreviewRow = {

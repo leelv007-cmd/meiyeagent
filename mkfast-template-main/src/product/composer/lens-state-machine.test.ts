@@ -275,7 +275,7 @@ test('system destination mapping cannot overwrite a user-confirmed pair', () => 
     state,
     {
       platform: 'xiaohongshu',
-      distributionTarget: 'publish:xiaohongshu',
+      distributionTarget: 'assisted_handoff',
     },
     'system'
   );
