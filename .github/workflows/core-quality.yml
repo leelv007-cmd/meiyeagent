@@ -197,6 +197,11 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The opt-in test evidence guard runs `git log <verifiedAt>..HEAD`;
+          # a shallow clone cannot reach the recorded baselines and the guard
+          # fail-closes every suite as stale.
+          fetch-depth: 0
       - name: Initialize root quality evidence
         run: mkdir -p output/ci/root-required-quality && touch output/ci/root-required-quality/job-started.log
       - uses: pnpm/action-setup@v4
