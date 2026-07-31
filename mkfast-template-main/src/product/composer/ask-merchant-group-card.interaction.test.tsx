@@ -1,5 +1,12 @@
 import type { AskMerchantQuestionRequest } from '@meiye/contracts';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 
@@ -8,6 +15,7 @@ import {
   AskMerchantGroupCard,
   AskMerchantResolutionNotice,
 } from '@/product/composer/ask-merchant-group-card';
+import { AskMerchantInteractionSlot } from '@/product/composer/ask-merchant-interaction-slot';
 
 afterEach(() => {
   cleanup();
@@ -109,6 +117,63 @@ it('projects the durable system default in merchant language', () => {
     '系统已按通用模式继续，你仍可回答并生成精修版本。'
   );
 });
+
+it('switches a delivered group question to its durable settled projection', async () => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const snapshots = [
+    {
+      request: SEMANTIC_DEFAULT_REQUEST,
+      resolutionSource: null,
+      status: 'pending' as const,
+    },
+    {
+      request: SEMANTIC_DEFAULT_REQUEST,
+      resolutionSource: null,
+      status: 'pending' as const,
+    },
+    {
+      request: SEMANTIC_DEFAULT_REQUEST,
+      resolutionSource: 'system_default' as const,
+      status: 'resolved' as const,
+    },
+  ];
+  const readSnapshot = vi.fn(async () => snapshots.shift() ?? snapshots[0]);
+  const props = {
+    onEditingChange: async () => undefined,
+    onRendererReady: async () => undefined,
+    onSubmit: async () => undefined,
+    pending: false,
+    pendingRequest: SEMANTIC_DEFAULT_REQUEST,
+    readSnapshot,
+    taskId: 'run-1',
+  };
+  const view = render(
+    <QueryClientProvider client={queryClient}>
+      <AskMerchantInteractionSlot delivered={false} {...props} />
+    </QueryClientProvider>
+  );
+
+  expect(screen.getByTestId('ask-merchant-group-card')).toBeInTheDocument();
+  await waitFor(() => expect(readSnapshot).toHaveBeenCalledTimes(1));
+  view.rerender(
+    <QueryClientProvider client={queryClient}>
+      <AskMerchantInteractionSlot delivered {...props} />
+    </QueryClientProvider>
+  );
+
+  await waitFor(
+    () => {
+      expect(readSnapshot).toHaveBeenCalledTimes(3);
+      expect(
+        screen.getByTestId('composer-question-settled')
+      ).toBeInTheDocument();
+    },
+    { timeout: 5_000 }
+  );
+  expect(screen.queryByTestId('ask-merchant-group-card')).toBeNull();
+}, 6_000);
 
 it('renders every item but submits labels without descriptions', async () => {
   const user = userEvent.setup();

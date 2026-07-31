@@ -100,7 +100,6 @@ import {
 import {
   acknowledgeHarnessInteractionRenderer,
   readActiveHarnessTasks,
-  readHarnessInteractionSnapshot,
   readPendingHarnessInteraction,
   readPendingHarnessInteractionMessage,
   readPendingHarnessDecision,
@@ -109,10 +108,7 @@ import {
   submitHarnessInteractionMerchantMessage,
   submitHarnessDecision,
 } from '@/product/harness-client';
-import {
-  AskMerchantGroupCard,
-  AskMerchantResolutionNotice,
-} from '@/product/composer/ask-merchant-group-card';
+import { AskMerchantInteractionSlot } from '@/product/composer/ask-merchant-interaction-slot';
 import { ExecutionConfirmationInteractionCard } from '@/product/composer/execution-confirmation-interaction-card';
 import { ExecutionConfirmationWaitingMessageCard } from '@/product/composer/execution-confirmation-waiting-message-card';
 import { navigateAfterSubmitSuccess } from '@/product/results/result-center-navigation';
@@ -1343,10 +1339,6 @@ export function ComposerHome({
     () => ['harness', 'interaction', taskId] as const,
     [taskId]
   );
-  const interactionSnapshotQueryKey = useMemo(
-    () => ['harness', 'interaction-snapshot', taskId] as const,
-    [taskId]
-  );
   const workflowStream = useWorkflowEventStream({
     enabled: Boolean(taskId),
     workflowId: taskId,
@@ -1405,12 +1397,6 @@ export function ComposerHome({
     queryFn: ({ signal }) => readPendingHarnessInteraction(taskId, signal),
     refetchInterval: session.phase === 'delivered' ? false : 2_000,
   });
-  const interactionSnapshotQuery = useQuery({
-    enabled: Boolean(taskId),
-    queryKey: interactionSnapshotQueryKey,
-    queryFn: ({ signal }) => readHarnessInteractionSnapshot(taskId, signal),
-    refetchInterval: session.phase === 'delivered' ? false : 2_000,
-  });
   const interactionMessageQuery = useQuery({
     enabled: Boolean(taskId) && session.phase !== 'delivered',
     queryKey: ['harness', 'interaction-message', taskId],
@@ -1418,19 +1404,9 @@ export function ComposerHome({
       readPendingHarnessInteractionMessage(taskId, signal),
     refetchInterval: session.phase === 'delivered' ? false : 2_000,
   });
-  useEffect(() => {
-    if (workflowStream.workflowState !== 'success') return;
-    void interactionSnapshotQuery.refetch();
-  }, [interactionSnapshotQuery.refetch, workflowStream.workflowState]);
   const pendingAskRequest =
     interactionQuery.data?.kind === 'ask_merchant'
       ? interactionQuery.data
-      : null;
-  const resolvedAskRequest =
-    interactionSnapshotQuery.data?.status === 'resolved' &&
-    interactionSnapshotQuery.data.resolutionSource === 'system_default' &&
-    interactionSnapshotQuery.data.request?.kind === 'ask_merchant'
-      ? interactionSnapshotQuery.data.request
       : null;
   const pendingExecutionConfirmation =
     interactionQuery.data?.kind === 'execution_confirmation'
@@ -2802,62 +2778,65 @@ export function ComposerHome({
           }}
           onRecover={recoverFromReport}
           questionSlot={
-            resolvedAskRequest ? (
-              <AskMerchantResolutionNotice />
-            ) : pendingAskRequest ? (
-              <AskMerchantGroupCard
-                onEditingChange={(request, editing, editingSessionId) =>
-                  setHarnessInteractionEditing(taskId, {
-                    requestId: request.requestId,
-                    revision: request.revision,
-                    step: request.step,
-                    carrier: 'conversation',
-                    editing,
-                    editingSessionId,
-                  })
-                }
-                onRendererReady={acknowledgeAskMerchantRenderer}
-                onRendererRejected={refreshInteractionAfterRendererRejection}
-                onSubmit={answerAskMerchant}
-                pending={questionPending}
-                request={pendingAskRequest}
-              />
-            ) : pendingExecutionConfirmation ? (
-              <ExecutionConfirmationInteractionCard
-                onRendererReady={acknowledgeAskMerchantRenderer}
-                onRendererRejected={refreshInteractionAfterRendererRejection}
-                onSubmit={answerExecutionConfirmation}
-                pending={questionPending}
-                request={pendingExecutionConfirmation}
-              />
-            ) : pendingExecutionWaitingMessage ? (
-              <ExecutionConfirmationWaitingMessageCard
-                onSubmit={answerExecutionWaitingMessage}
-                pending={questionPending}
-                request={pendingExecutionWaitingMessage}
-              />
-            ) : pendingQuestion ? (
-              <ComposerQuestionCard
-                disabled={createWork.isPending}
-                // D-116 safety edge ②: quota or an external effect means D-112
-                // wants an explicit confirmation, so the card stops releasing
-                // itself. v1's composer only signs export / assisted_handoff, so
-                // the external branch is not reachable from here yet.
-                hold={composerQuestionHold({
-                  externalEffect: Boolean(
-                    destination?.distributionTarget.startsWith('publish:')
-                  ),
-                  quotaBlocked,
-                })}
-                // Returned, not voided: the card awaits this and rolls its
-                // settlement back if the post never reaches the ledger.
-                onDecide={answerQuestion}
-                pending={questionPending}
-                question={pendingQuestion}
-                resolutionSource={questionResolutionSource}
-                timeoutSeconds={questionTimeoutSeconds}
-              />
-            ) : null
+            <AskMerchantInteractionSlot
+              delivered={session.phase === 'delivered'}
+              fallback={
+                pendingExecutionConfirmation ? (
+                  <ExecutionConfirmationInteractionCard
+                    onRendererReady={acknowledgeAskMerchantRenderer}
+                    onRendererRejected={
+                      refreshInteractionAfterRendererRejection
+                    }
+                    onSubmit={answerExecutionConfirmation}
+                    pending={questionPending}
+                    request={pendingExecutionConfirmation}
+                  />
+                ) : pendingExecutionWaitingMessage ? (
+                  <ExecutionConfirmationWaitingMessageCard
+                    onSubmit={answerExecutionWaitingMessage}
+                    pending={questionPending}
+                    request={pendingExecutionWaitingMessage}
+                  />
+                ) : pendingQuestion ? (
+                  <ComposerQuestionCard
+                    disabled={createWork.isPending}
+                    // D-116 safety edge ②: quota or an external effect means D-112
+                    // wants an explicit confirmation, so the card stops releasing
+                    // itself. v1's composer only signs export / assisted_handoff, so
+                    // the external branch is not reachable from here yet.
+                    hold={composerQuestionHold({
+                      externalEffect: Boolean(
+                        destination?.distributionTarget.startsWith('publish:')
+                      ),
+                      quotaBlocked,
+                    })}
+                    // Returned, not voided: the card awaits this and rolls its
+                    // settlement back if the post never reaches the ledger.
+                    onDecide={answerQuestion}
+                    pending={questionPending}
+                    question={pendingQuestion}
+                    resolutionSource={questionResolutionSource}
+                    timeoutSeconds={questionTimeoutSeconds}
+                  />
+                ) : null
+              }
+              onEditingChange={(request, editing, editingSessionId) =>
+                setHarnessInteractionEditing(taskId, {
+                  requestId: request.requestId,
+                  revision: request.revision,
+                  step: request.step,
+                  carrier: 'conversation',
+                  editing,
+                  editingSessionId,
+                })
+              }
+              onRendererReady={acknowledgeAskMerchantRenderer}
+              onRendererRejected={refreshInteractionAfterRendererRejection}
+              onSubmit={answerAskMerchant}
+              pending={questionPending}
+              pendingRequest={pendingAskRequest}
+              taskId={taskId}
+            />
           }
           session={session}
           stream={tokenStream}
