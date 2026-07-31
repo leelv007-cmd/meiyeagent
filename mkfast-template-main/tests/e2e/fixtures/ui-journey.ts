@@ -13,7 +13,7 @@ export type JourneyContract = {
   deliveryTarget: 'wechat_moments' | 'xiaohongshu' | 'douyin' | 'video_account';
   modality: JourneyModality;
   workspace: 'copy' | 'image' | 'video';
-  expectedActivations: 2 | 3;
+  expectedActivations: 2 | 3 | 4;
   packageFormat: 'text' | 'zip';
   packageButtonName: RegExp;
   packageFileName: RegExp;
@@ -52,7 +52,9 @@ export const JOURNEY_CONTRACTS: readonly JourneyContract[] = [
     deliveryTarget: 'douyin',
     modality: 'video',
     workspace: 'video',
-    expectedActivations: 3,
+    // 镜头 + 提交 + D-164③ 付费生成确认（确认执行）. The paid media hold adds one
+    // deliberate activation at the generation point.
+    expectedActivations: 4,
     packageFormat: 'zip',
     packageButtonName: /完整发布包（抖音）/u,
     packageFileName: /(?:抖音|douyin|[a-f0-9]{32,}).*\.zip$/iu,
@@ -62,7 +64,8 @@ export const JOURNEY_CONTRACTS: readonly JourneyContract[] = [
     deliveryTarget: 'video_account',
     modality: 'video',
     workspace: 'video',
-    expectedActivations: 3,
+    // 镜头 + 提交 + D-164③ 付费生成确认（确认执行）.
+    expectedActivations: 4,
     packageFormat: 'zip',
     packageButtonName: /完整发布包（视频号）/u,
     packageFileName:
