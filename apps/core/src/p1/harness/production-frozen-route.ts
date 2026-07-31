@@ -155,8 +155,7 @@ export class ProductionHarnessFrozenRouteSnapshotResolver
             platformDefault.catalogModelId ||
           !sameDataClass(refrozen.dataClass, dataClass) ||
           !fallbackCandidate ||
-          !isCompleteExecutionCandidate(fallbackCandidate) ||
-          fallbackCandidate.activationStatus !== 'live_verified'
+          !isCompleteExecutionCandidate(fallbackCandidate)
         ) {
           throw frozenRouteMismatch(
             'The conservative platform default could not be frozen for execution.',

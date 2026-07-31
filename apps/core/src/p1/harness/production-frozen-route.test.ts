@@ -364,6 +364,55 @@ test('unknown capability refreezes a different live platform default as the fina
   ]);
 });
 
+test('platform registry evidence authorizes a fixture fallback route', async () => {
+  const snapshot = mediaSnapshot();
+  const original = modelSupplyRoute(snapshot);
+  const fallback = platformDefaultRoute(snapshot);
+  const fallbackCandidate = fallback.allowedCandidates?.[0];
+  assert.ok(fallbackCandidate);
+  fallbackCandidate.activationStatus = 'recorded';
+  const resolver = new ProductionHarnessFrozenRouteSnapshotResolver(
+    {
+      async getRouteSnapshot() {
+        return foundationRoute(snapshot);
+      },
+    },
+    {
+      async freezeFixedRouteForExecution(input) {
+        return structuredClone(
+          input.deploymentId === fallback.deploymentId ? fallback : original,
+        );
+      },
+    },
+    {
+      async resolve() {
+        return {
+          catalogModelId: fallback.actualCatalogModelId,
+          deploymentId: fallback.deploymentId,
+          activationEvidenceStatus: 'live_verified',
+        };
+      },
+    },
+  );
+
+  const result = await resolver.resolve(snapshot, {
+    requirements: [
+      {
+        axisId: 'imagePrimary',
+        vocabularyVersion: 'model-capability-v1',
+        requiredProtocolCapabilities: [],
+        requiredModalities: ['image/*'],
+        requiredBusinessTags: [],
+        requiredModalityCapabilities: [],
+        unknownPolicy: 'conservative_always_available',
+      },
+    ],
+  });
+
+  assert.equal(result.deploymentId, fallback.deploymentId);
+  assert.equal(result.capabilityFallbackFacts?.[0]?.axisId, 'imagePrimary');
+});
+
 function platformDefaultRoute(
   snapshot: ReturnType<typeof mediaSnapshot>,
 ): RouteSnapshot {
