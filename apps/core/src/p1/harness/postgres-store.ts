@@ -13,6 +13,7 @@ import {
   type MarketingPackageEvidence,
   type ObservabilityDropEvent,
   type ObservabilityAxisBinding,
+  type ProductUsageUnit,
   type QuestionCard,
   type ReuseTaskSeed,
 } from '@meiye/contracts';

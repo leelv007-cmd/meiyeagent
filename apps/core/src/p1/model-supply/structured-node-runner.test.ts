@@ -2081,32 +2081,6 @@ function openAiStructuredResponse(id: string, output: unknown) {
   );
 }
 
-function openAiStructuredResponse(id: string, output: unknown) {
-  return new Response(
-    JSON.stringify({
-      choices: [
-        {
-          finish_reason: 'stop',
-          index: 0,
-          message: {
-            content: JSON.stringify(output),
-            role: 'assistant',
-          },
-        },
-      ],
-      created: 1,
-      id,
-      model: 'provider-model',
-      object: 'chat.completion',
-      usage: {
-        completion_tokens: 13,
-        prompt_tokens: 8,
-        total_tokens: 21,
-      },
-    }),
-    { headers: { 'content-type': 'application/json' } },
-  );
-}
 
 function rejectedBeforeAcceptance(message: string) {
   return Object.assign(new Error(message), {

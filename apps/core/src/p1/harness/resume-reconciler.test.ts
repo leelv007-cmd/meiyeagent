@@ -247,6 +247,7 @@ function pendingResume(): Extract<
     claimId: 'resume-claim-1',
     eventId: 'decision-event-1',
     kind: 'structured_decision',
+    reservationReleased: false,
     workspaceId: 'workspace-a',
     taskId: 'task-35',
     resolutionSource: 'decision',
