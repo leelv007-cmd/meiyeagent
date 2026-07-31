@@ -174,23 +174,29 @@ test('validates forwarded request IDs at the Web boundary', () => {
 
 test('applies a total deadline to ordinary Core calls', async () => {
   let observedSignal: AbortSignal | null = null;
-  await assert.rejects(
-    coreFetch(
-      async (_input, init) => {
-        observedSignal = init?.signal ?? null;
-        return await new Promise<Response>((_resolve, reject) => {
-          observedSignal?.addEventListener(
-            'abort',
-            () => reject(observedSignal?.reason),
-            { once: true }
-          );
-        });
-      },
-      'http://core.test/v1/query',
-      {},
-      { timeoutMs: 10 }
-    )
-  );
+  // Keep Node 22's test runner alive until its unref'ed deadline fires.
+  const keepAlive = setTimeout(() => undefined, 60_000);
+  try {
+    await assert.rejects(
+      coreFetch(
+        async (_input, init) => {
+          observedSignal = init?.signal ?? null;
+          return await new Promise<Response>((_resolve, reject) => {
+            observedSignal?.addEventListener(
+              'abort',
+              () => reject(observedSignal?.reason),
+              { once: true }
+            );
+          });
+        },
+        'http://core.test/v1/query',
+        {},
+        { timeoutMs: 10 }
+      )
+    );
+  } finally {
+    clearTimeout(keepAlive);
+  }
   assert.equal((observedSignal as AbortSignal | null)?.aborted, true);
 });
 
