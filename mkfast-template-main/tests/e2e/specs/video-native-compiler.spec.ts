@@ -360,10 +360,16 @@ test.describe
       const submission = await submitVideoJourney(page);
       const stream = await collectWorkflowSse(page, submission.taskId);
       expect(stream.status).toBe('success');
+      // D-164③ re-enters execution_selection on confirm; image journeys already
+      // collapse success stages by stage id. Keep the same contract here.
       expect(
-        stream.progress
-          .filter(({ state }) => state === 'success')
-          .map(({ stage }) => stage)
+        Array.from(
+          new Set(
+            stream.progress
+              .filter(({ state }) => state === 'success')
+              .map(({ stage }) => stage)
+          )
+        )
       ).toEqual(EXPECTED_STAGES);
 
       const contentPackage = await queryOperations<ContentPackageProjection>(
