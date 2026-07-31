@@ -7,14 +7,14 @@
       "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
     },
     "apps/core/src/p1/creation-experience/brief-operations-atomicity.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv)."
     },
     "apps/core/src/p1/creation-experience/postgres-repository.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv)."
     },
     "apps/core/src/p1/cutover/execution-service.postgres.test.ts": {
       "status": "unverified",
@@ -48,8 +48,8 @@
     },
     "apps/core/src/p1/execution-spine/postgres-creation-submission-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "74074fcf341911acda78d37bf74ad04afa0a0e21",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) during the opt-in evidence sweep."
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv)."
     },
     "apps/core/src/p1/foundation/workspace-provision.postgres.test.ts": {
       "status": "green",
@@ -58,78 +58,78 @@
     },
     "apps/core/src/p1/harness/canonical-observability-emitters.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "0359b62cc7913f8f5ddaf9d68fc1642392efd24c",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) at the suite-fix commit; see merge ledger."
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv)."
     },
     "apps/core/src/p1/harness/dbos-registration.smoke.test.ts": {
       "status": "green",
-      "verifiedAt": "0359b62cc7913f8f5ddaf9d68fc1642392efd24c",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) at the suite-fix commit; see merge ledger."
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv)."
     },
     "apps/core/src/p1/harness/delivery.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "0359b62cc7913f8f5ddaf9d68fc1642392efd24c",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) at the suite-fix commit; see merge ledger."
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv)."
     },
     "apps/core/src/p1/harness/fixture-fact-fidelity.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "0359b62cc7913f8f5ddaf9d68fc1642392efd24c",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) at the suite-fix commit; see merge ledger."
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv)."
     },
     "apps/core/src/p1/harness/interaction-service.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "0359b62cc7913f8f5ddaf9d68fc1642392efd24c",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) at the suite-fix commit; see merge ledger."
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv)."
     },
     "apps/core/src/p1/harness/issue-255-live-collector.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "0359b62cc7913f8f5ddaf9d68fc1642392efd24c",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) at the suite-fix commit; see merge ledger."
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv)."
     },
     "apps/core/src/p1/harness/issue-255-postgres-live-receipt.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "0359b62cc7913f8f5ddaf9d68fc1642392efd24c",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) at the suite-fix commit; see merge ledger."
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv)."
     },
     "apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "0359b62cc7913f8f5ddaf9d68fc1642392efd24c",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) at the suite-fix commit; see merge ledger."
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv). Suite reports pass=0/skip=3 by design: its cases are live-supply gated and RUN_LIVE_* stays unset outside authorized rounds."
     },
     "apps/core/src/p1/harness/langfuse-outbox-ops.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "0359b62cc7913f8f5ddaf9d68fc1642392efd24c",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) at the suite-fix commit; see merge ledger."
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv)."
     },
     "apps/core/src/p1/harness/media-bounded-continuation.dbos.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "0359b62cc7913f8f5ddaf9d68fc1642392efd24c",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) at the suite-fix commit; see merge ledger."
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv)."
     },
     "apps/core/src/p1/harness/note-media-admission.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "0359b62cc7913f8f5ddaf9d68fc1642392efd24c",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) at the suite-fix commit; see merge ledger."
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv)."
     },
     "apps/core/src/p1/harness/observability-health.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "0359b62cc7913f8f5ddaf9d68fc1642392efd24c",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) at the suite-fix commit; see merge ledger."
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv)."
     },
     "apps/core/src/p1/harness/postgres-billing-compensation-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "0359b62cc7913f8f5ddaf9d68fc1642392efd24c",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) at the suite-fix commit; see merge ledger."
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv)."
     },
     "apps/core/src/p1/harness/postgres-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "0359b62cc7913f8f5ddaf9d68fc1642392efd24c",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) at the suite-fix commit; see merge ledger."
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv)."
     },
     "apps/core/src/p1/harness/production-media-assembly.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "0359b62cc7913f8f5ddaf9d68fc1642392efd24c",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) at the suite-fix commit; see merge ledger."
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv)."
     },
     "apps/core/src/p1/integrations/douyin-oauth-lifecycle.postgres.test.ts": {
       "status": "unverified",
@@ -148,13 +148,13 @@
     },
     "apps/core/src/p1/model-supply/foundation-ledger.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "74074fcf341911acda78d37bf74ad04afa0a0e21",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) during the opt-in evidence sweep."
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv)."
     },
     "apps/core/src/p1/model-supply/postgres-owned-asset-cleanup-claim.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "74074fcf341911acda78d37bf74ad04afa0a0e21",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) during the opt-in evidence sweep."
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv)."
     },
     "apps/core/src/p1/model-supply/postgres-repository.test.ts": {
       "status": "green",
@@ -163,23 +163,23 @@
     },
     "apps/core/src/p1/model-supply/published-catalog-read.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "74074fcf341911acda78d37bf74ad04afa0a0e21",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) during the opt-in evidence sweep."
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv)."
     },
     "apps/core/src/p1/model-supply/reference-asset-dispatch.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "74074fcf341911acda78d37bf74ad04afa0a0e21",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) during the opt-in evidence sweep."
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv)."
     },
     "apps/core/src/p1/model-supply/retired-video-editing-schema.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "74074fcf341911acda78d37bf74ad04afa0a0e21",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) during the opt-in evidence sweep."
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv)."
     },
     "apps/core/src/p1/model-supply/usage-ledger-invariants.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "74074fcf341911acda78d37bf74ad04afa0a0e21",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) during the opt-in evidence sweep."
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv)."
     },
     "apps/core/src/p1/operations/composer-conversation-deletion.postgres.test.ts": {
       "status": "green",
@@ -238,8 +238,8 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3c7942ea6d4bcfe383ba1b6664c82c77b4099264",
-      "note": "Re-verified 2026-08-01 against a fresh golden-template clone; watch dir is all of p1/, so any p1 commit requires a re-run."
+      "verifiedAt": "addddbc9c59f65d2d07744626bfed4731c94fc27",
+      "note": "Re-verified 2026-08-01 against a fresh golden-template clone after the #281 + assembly-gate merges (grok batch, coordinator-audited tsv)."
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "unverified",
