@@ -145,9 +145,11 @@ test('one blocking question at a time, cleared when it is answered or skipped', 
 
   session = applyComposerQuestion(session, null);
   assert.equal(session.phase, 'running');
+  // The cleared question keeps its turn: it anchors the interaction slot,
+  // which shows the settled notice when the system answered by default.
   assert.equal(
-    session.turns.some((turn) => turn.kind === 'question'),
-    false
+    session.turns.filter((turn) => turn.kind === 'question').length,
+    1
   );
 });
 
@@ -168,10 +170,11 @@ test('success promotes the run into a delivery card instead of navigating', () =
     // No 成品版本 frame in this fold, so the card gets no revision to bind to.
     revision: null,
   });
-  // A stale question never survives delivery.
+  // The question turn survives delivery as the settled-notice anchor; the
+  // interaction slot renders the notice or nothing there, never a stale card.
   assert.equal(
-    session.turns.some((turn) => turn.kind === 'question'),
-    false
+    session.turns.filter((turn) => turn.kind === 'question').length,
+    1
   );
   // Replayed terminal frames stay idempotent.
   const delivered = session;

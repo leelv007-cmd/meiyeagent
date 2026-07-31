@@ -311,10 +311,12 @@ export function applyComposerQuestion(
   );
   if (!questionId) {
     if (!existing) return session;
+    // The cleared question keeps its turn: it anchors the interaction slot,
+    // which reads the durable snapshot and shows the settled notice when the
+    // system answered by default — erasing the turn would erase that trace.
     return {
       ...session,
       phase: session.phase === 'awaiting_answer' ? 'running' : session.phase,
-      turns: session.turns.filter((turn) => turn.kind !== 'question'),
     };
   }
   if (existing?.questionId === questionId) return session;
@@ -416,8 +418,10 @@ export function applyComposerWorkflowState(
     {
       ...session,
       phase: 'delivered',
+      // The question turn stays through delivery: it anchors the interaction
+      // slot that reports how the question settled (see applyComposerQuestion).
       turns: [
-        ...session.turns.filter((turn) => turn.kind !== 'question'),
+        ...session.turns,
         {
           kind: 'delivery',
           id: `delivery:${task.workId}`,
