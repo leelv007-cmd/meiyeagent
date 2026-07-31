@@ -8,10 +8,12 @@ import {
 import { seedConfirmedStore } from '../fixtures/product';
 import { installUserActivationCounter } from '../fixtures/user-activation';
 
-type QuestionCard = {
-  questionId: string;
-  workflowRevision: number;
-  response: { field: string; reason: string };
+type AskMerchantPending = {
+  requestId: string;
+  revision: number;
+  runId: string;
+  step: string;
+  firstItemId: string;
 };
 
 async function submitCustomizedCopy(page: Page, intent = '写一条周末预约文案') {
@@ -51,22 +53,53 @@ async function submitCustomizedCopy(page: Page, intent = '写一条周末预约�
   };
 }
 
+// The semantic ask rides the interaction channel; the retired structured-
+// decision seam deliberately reports null for it, so the spec syncs on the
+// typed interaction snapshot instead.
 async function waitForQuestion(page: Page, taskId: string) {
-  let question: QuestionCard | null = null;
+  let question: AskMerchantPending | null = null;
   await expect
     .poll(
       async () => {
         question = await page.evaluate(async (id) => {
           const response = await fetch(
-            `/api/core/p1/harness/tasks/${encodeURIComponent(id)}/decision`
+            `/api/core/p1/harness/tasks/${encodeURIComponent(id)}/interaction?view=snapshot`
           );
           if (!response.ok) return null;
           const envelope = (await response.json()) as {
-            data?: { question?: QuestionCard | null };
+            data?: {
+              request?: {
+                kind?: string;
+                requestId?: string;
+                revision?: number;
+                runId?: string;
+                step?: string;
+                questions?: Array<{ itemId?: string }>;
+              } | null;
+              status?: string;
+            };
           };
-          return envelope.data?.question ?? null;
+          const request = envelope.data?.request;
+          if (
+            envelope.data?.status !== 'pending' ||
+            request?.kind !== 'ask_merchant' ||
+            !request.requestId ||
+            typeof request.revision !== 'number' ||
+            !request.runId ||
+            !request.step ||
+            !request.questions?.[0]?.itemId
+          ) {
+            return null;
+          }
+          return {
+            requestId: request.requestId,
+            revision: request.revision,
+            runId: request.runId,
+            step: request.step,
+            firstItemId: request.questions[0].itemId,
+          };
         }, taskId);
-        return question?.questionId ?? null;
+        return question?.requestId ?? null;
       },
       { timeout: 60_000 }
     )
@@ -76,7 +109,7 @@ async function waitForQuestion(page: Page, taskId: string) {
 
 async function ignoreThroughHttpAndCollectSse(
   page: Page,
-  input: { question: QuestionCard; taskId: string }
+  input: { question: AskMerchantPending; taskId: string }
 ) {
   return page.evaluate(
     ({ currentQuestion, currentTaskId }) =>
@@ -112,9 +145,9 @@ async function ignoreThroughHttpAndCollectSse(
           }
         };
         stream.onopen = () => {
-          const idempotencyKey = `skip-${currentQuestion.questionId}`;
+          const idempotencyKey = `skip-${currentQuestion.requestId}`;
           void fetch(
-            `/api/core/p1/harness/tasks/${encodeURIComponent(currentTaskId)}/decision`,
+            `/api/core/p1/harness/tasks/${encodeURIComponent(currentTaskId)}/interaction`,
             {
               method: 'POST',
               credentials: 'same-origin',
@@ -123,22 +156,21 @@ async function ignoreThroughHttpAndCollectSse(
                 'idempotency-key': idempotencyKey,
               },
               body: JSON.stringify({
+                requestId: currentQuestion.requestId,
+                revision: currentQuestion.revision,
                 idempotencyKey,
-                questionId: currentQuestion.questionId,
-                workflowRevision: currentQuestion.workflowRevision,
-                patch: {
-                  field: currentQuestion.response.field,
-                  value: '这次先跳过',
-                  reason: currentQuestion.response.reason,
+                resume: {
+                  runId: currentQuestion.runId,
+                  step: currentQuestion.step,
                 },
-                decision: { state: 'ignored', value: '这次先跳过' },
+                response: { kind: 'skipped' },
               }),
             }
           )
             .then(async (response) => {
               if (!response.ok) {
                 throw new Error(
-                  `Decision HTTP failed: ${await response.text()}`
+                  `Interaction HTTP failed: ${await response.text()}`
                 );
               }
             })
@@ -188,23 +220,23 @@ test.describe('D-111 intent routing over real HTTP and SSE', () => {
         () =>
           page.evaluate(async (taskId) => {
             const response = await fetch(
-              `/api/core/p1/harness/tasks/${encodeURIComponent(taskId)}/decision`
+              `/api/core/p1/harness/tasks/${encodeURIComponent(taskId)}/interaction?view=snapshot`
             );
             if (!response.ok) return 'request-failed';
             const envelope = (await response.json()) as {
-              data?: { question?: QuestionCard | null };
+              data?: { status?: string };
             };
-            return envelope.data?.question ?? null;
+            return envelope.data?.status ?? 'absent';
           }, submission.taskId),
         { timeout: 30_000 }
       )
-      .toBeNull();
+      .toBe('absent');
     await expect(page.getByTestId('composer-route-notice')).not.toContainText(
       /industry_category|intent|snapshot|route|schema|asset|workflow|revision|id/iu
     );
   });
 
-  test('answering the inbox semantic question keeps the same task moving forward', async ({
+  test('answering the conversation semantic question keeps the same task moving forward', async ({
     page,
     request,
   }) => {
@@ -216,7 +248,7 @@ test.describe('D-111 intent routing over real HTTP and SSE', () => {
       '给护理套餐写一条推广文案'
     );
     const question = await waitForQuestion(page, submission.taskId);
-    expect(question.response.field).toBe('promotion_details');
+    expect(question.firstItemId).toBe('promotion_details');
 
     const streamPromise = page.evaluate(
       (taskId) =>
@@ -259,26 +291,19 @@ test.describe('D-111 intent routing over real HTTP and SSE', () => {
       submission.taskId
     );
 
-    const trigger = page.getByRole('button', { name: /^1 项$/u });
-    await expect(trigger).toBeVisible({ timeout: 30_000 });
-    await trigger.click();
-    const inbox = page.getByTestId('pending-actions');
-    const current = inbox.locator('[data-current="true"]');
-    await expect(current).toBeVisible();
-    await expect(current).toHaveAttribute(
-      'data-pending-action-ref',
-      question.questionId
-    );
-    await current
-      .locator('input[placeholder="输入这次任务的答案"]')
-      .fill('透亮猫眼 398 元');
-    await current.getByRole('button', { name: '确认并继续' }).click();
+    // ask_merchant presentation pins notification to 'none' (contract
+    // literal), so the question never rides the pending-actions inbox: the
+    // merchant answers on the conversation card.
+    const questionCard = page.getByTestId('ask-merchant-group-card');
+    await expect(questionCard).toBeVisible({ timeout: 30_000 });
+    await questionCard.getByRole('textbox').fill('透亮猫眼 398 元');
+    await questionCard.getByRole('button', { name: '提交回答' }).click();
 
     const stream = await streamPromise;
     expect(stream.status).toBe('success');
     expect(stream.messages).toContain('已收到，继续为你生成。');
     expect(stream.messages.join('\n')).not.toMatch(/生成失败|支持编号/u);
-    expect(submission.taskId).toBe(question.questionId.split(':s1:')[0]);
+    expect(submission.taskId).toBe(question.requestId.split(':s1:')[0]);
     expect(submission.workId).toBeTruthy();
   });
 
@@ -294,7 +319,7 @@ test.describe('D-111 intent routing over real HTTP and SSE', () => {
       '给护理套餐写一条推广文案'
     );
     const question = await waitForQuestion(page, submission.taskId);
-    expect(question.response.field).toBe('promotion_details');
+    expect(question.firstItemId).toBe('promotion_details');
 
     const stream = await ignoreThroughHttpAndCollectSse(page, {
       question,
@@ -303,6 +328,6 @@ test.describe('D-111 intent routing over real HTTP and SSE', () => {
 
     expect(stream.status).toBe('success');
     expect(stream.messages.join('\n')).not.toMatch(/生成失败|支持编号/u);
-    expect(submission.taskId).toBe(question.questionId.split(':s1:')[0]);
+    expect(submission.taskId).toBe(question.requestId.split(':s1:')[0]);
   });
 });
