@@ -1966,6 +1966,9 @@ test('a snapshot-backed semantic answer resubmits the same task and work before 
     },
     async token() {},
     async awaitDecision(question) {
+      if (question.executionConfirmationAuthority) {
+        return approvePaidGenerationConfirmation(question);
+      }
       return {
         idempotencyKey: 'decision-industry-1',
         questionId: question.questionId,
@@ -2011,6 +2014,70 @@ test('a snapshot-backed semantic answer resubmits the same task and work before 
   );
   assert.deepEqual(originalRequest.executionSnapshot, originalSnapshot);
   assert.ok(progress.includes('已收到，继续为你生成。'));
+});
+
+test('a paid generation snapshot waits for execution confirmation before selection', async () => {
+  const request: HarnessWorkflowInput = {
+    ...snapshotTaskInput(),
+    usageReservation: {
+      id: 'usage-reservation-paid-generation',
+      units: [{ resource: 'copy' as const, quantity: 1 }],
+    },
+  };
+  const stages = fixtureStages();
+  const executeAndSelect = stages.executeAndSelect!;
+  const order: string[] = [];
+  stages.executeAndSelect = async (input) => {
+    order.push('selection');
+    return executeAndSelect(input);
+  };
+
+  await runHarnessWorkflow('task-copy', request, stages, {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision(question, stage) {
+      order.push('confirmation');
+      assert.equal(stage, 'execution_selection');
+      assert.match(question.question, /开始生成/);
+      assert.equal(question.response.field, 'execution_confirmation');
+      assert.doesNotMatch(question.question, /外部发布/);
+      assert.deepEqual(question.executionConfirmationAuthority, {
+        kind: 'external_action',
+        revision: 'execution-external-action/v1',
+      });
+      return approvePaidGenerationConfirmation(question);
+    },
+    async recordTrace() {},
+  });
+
+  assert.deepEqual(order, ['confirmation', 'selection']);
+});
+
+test('a snapshot without usage reservation does not wait for execution confirmation', async () => {
+  const stages = fixtureStages();
+  const executeAndSelect = stages.executeAndSelect!;
+  let selectionCalls = 0;
+  stages.executeAndSelect = async (input) => {
+    selectionCalls += 1;
+    return executeAndSelect(input);
+  };
+
+  await runHarnessWorkflow('task-copy', snapshotTaskInput(), stages, {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision() {
+      throw new Error('Unpaid snapshot paths must not wait for confirmation.');
+    },
+    async recordTrace() {},
+  });
+
+  assert.equal(selectionCalls, 1);
 });
 
 test('semantic resubmission rejects a forged workspace before persistence', () => {
@@ -3648,6 +3715,22 @@ function fixtureStages(): HarnessStagePorts {
         revision: 3,
       };
     },
+  };
+}
+
+function approvePaidGenerationConfirmation(
+  question: Parameters<HarnessWorkflowRuntime['awaitDecision']>[0],
+) {
+  return {
+    idempotencyKey: `approve-paid-generation:${question.questionId}`,
+    questionId: question.questionId,
+    workflowRevision: question.workflowRevision,
+    patch: {
+      field: question.response.field,
+      value: 'approved',
+      reason: question.response.reason,
+    },
+    decision: { state: 'accepted' as const, value: 'approved' },
   };
 }
 

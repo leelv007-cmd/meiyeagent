@@ -51,6 +51,9 @@ import {
   merchantBriefFallbackNotice,
   merchantPartialFailure,
   merchantPartialDeliveryReport,
+  merchantPaidGenerationConfirmationAccepted,
+  merchantPaidGenerationConfirmationQuestion,
+  merchantPaidGenerationConfirmationReason,
   merchantProgressMessage,
   merchantTaskSummary,
 } from './merchant-delivery-language.js';
@@ -1297,6 +1300,12 @@ export async function runHarnessWorkflow(
       : merchantProgressMessage('brief_compilation'),
   });
 
+  activeRequest = await confirmPaidGenerationExecution({
+    workflowId,
+    request: activeRequest,
+    runtime,
+    reportProgress,
+  });
   const executionSkills = stageSkills.execution_selection;
   let selection: HarnessSelectionResult =
     await executeSelectionToCompletion(
@@ -1754,6 +1763,12 @@ async function runNoteHarnessWorkflow(
     }, `r${context.bundle.revision}`);
   }
 
+  activeRequest = await confirmPaidGenerationExecution({
+    workflowId,
+    request: activeRequest,
+    runtime,
+    reportProgress,
+  });
   const executionSkills = stageSkills.execution_selection;
   const noteSelectionInput = {
     workflowId,
@@ -2105,6 +2120,12 @@ async function runMediaHarnessWorkflow(
     message: merchantProgressMessage('brief_compilation'),
   });
 
+  activeRequest = await confirmPaidGenerationExecution({
+    workflowId,
+    request: activeRequest,
+    runtime,
+    reportProgress,
+  });
   const executionSkills = stageSkills.execution_selection;
   const executeMediaSelectionToCompletion = async (
     unitId: string,
@@ -2955,6 +2976,83 @@ async function applyCurrentTaskDecision(
       },
     ],
   };
+}
+
+/**
+ * D-164③ paid-generation execution confirmation.
+ *
+ * Trigger: frozen executionSnapshot with a quote AND a billing usageReservation
+ * (Composer admission freeze). This is generation-point cost confirmation, not
+ * D-013 class-7 external publish approval.
+ *
+ * Wire kind stays `external_action` so the existing interaction renderer gate
+ * (`executionConfirmationInteractionRequestFromQuestion`) and e2e fixtures keep
+ * working. That kind is the execution-confirmation surface marker, not the
+ * class-7 `external_action_approval` ruleset (which still only covers publish).
+ */
+async function confirmPaidGenerationExecution(input: {
+  workflowId: string;
+  request: HarnessWorkflowInput;
+  runtime: HarnessWorkflowRuntime;
+  reportProgress: (
+    event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
+  ) => Promise<void>;
+}) {
+  let request = input.request;
+  for (;;) {
+    const snapshot = request.executionSnapshot;
+    if (!snapshot?.quote || !request.usageReservation) {
+      return request;
+    }
+    const question = questionCardSchema.parse({
+      questionId: `execution-confirmation:${snapshot.id}`,
+      workflowId: input.workflowId,
+      workflowRevision: request.workflowRevision,
+      question: merchantPaidGenerationConfirmationQuestion(),
+      options: [
+        { id: 'approved', label: '确认执行' },
+        { id: 'rejected', label: '暂不执行' },
+      ],
+      freeText: { enabled: false },
+      response: {
+        field: 'execution_confirmation',
+        reason: merchantPaidGenerationConfirmationReason(),
+      },
+      unattended: 'hold',
+      executionConfirmationAuthority: {
+        kind: 'external_action',
+        revision: 'execution-external-action/v1',
+      },
+      scope: 'current_task',
+    });
+    await input.reportProgress({
+      stage: 'execution_selection',
+      state: 'suspended',
+      message: question.question,
+    });
+    const command = await awaitResolvedDecision(
+      input.runtime,
+      question,
+      'execution_selection',
+    );
+    if (
+      command.decision.state === 'accepted' &&
+      command.decision.value === 'approved'
+    ) {
+      await input.reportProgress({
+        stage: 'execution_selection',
+        state: 'success',
+        message: merchantPaidGenerationConfirmationAccepted(),
+      });
+      return request;
+    }
+    request = await applyCurrentTaskDecision(
+      input.workflowId,
+      request,
+      command,
+      input.runtime,
+    );
+  }
 }
 
 async function resolveFactSatisfaction(input: {

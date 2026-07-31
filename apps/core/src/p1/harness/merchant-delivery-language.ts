@@ -47,6 +47,19 @@ export function merchantConfirmationQuestion(question: string) {
   return `为了让成品更贴合你的想法，想确认一下：${question}`;
 }
 
+/** D-164③: paid generation confirmation (not D-013 class-7 external publish). */
+export function merchantPaidGenerationConfirmationQuestion() {
+  return '是否按当前方案开始生成？将按展示的参数与费用执行。';
+}
+
+export function merchantPaidGenerationConfirmationReason() {
+  return '生成前需要商家确认本次执行参数与费用';
+}
+
+export function merchantPaidGenerationConfirmationAccepted() {
+  return '已确认执行方案，开始生成。';
+}
+
 export function merchantGenericModeNotice() {
   return '这次先按通用模式生成；以后补充门店、项目或风格资料，内容会更像你的店。';
 }

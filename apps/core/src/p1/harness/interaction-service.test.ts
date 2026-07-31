@@ -109,7 +109,7 @@ test('external execution authority freezes a hold-only confirmation request', ()
       questionId: 'execution-confirmation:snapshot-1',
       workflowId: 'run-1',
       workflowRevision: 1,
-      question: '是否按当前冻结方案执行外部发布？',
+      question: '是否按当前方案开始生成？将按展示的参数与费用执行。',
       options: [
         { id: 'approved', label: '确认执行' },
         { id: 'rejected', label: '暂不执行' },
@@ -117,7 +117,7 @@ test('external execution authority freezes a hold-only confirmation request', ()
       freeText: { enabled: false },
       response: {
         field: 'execution_confirmation',
-        reason: '外部发布前需要商家确认冻结方案',
+        reason: '生成前需要商家确认本次执行参数与费用',
       },
       unattended: 'hold',
       executionConfirmationAuthority: {

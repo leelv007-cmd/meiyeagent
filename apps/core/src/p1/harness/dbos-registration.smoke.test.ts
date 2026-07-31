@@ -457,6 +457,15 @@ test(
       ports,
       {
         async registerPending(_workspaceId, question, projection) {
+          if (
+            autoApprovePaidGenerationConfirmation(
+              'workspace-timeout',
+              workflowId,
+              question,
+            )
+          ) {
+            return;
+          }
           pendingQuestionId = question.questionId;
           pendingTimeoutSeconds = projection?.timeoutSeconds;
         },
@@ -628,7 +637,16 @@ test(
     const workflow = registerHarnessDbosWorkflow(
       ports,
       {
-        async registerPending(_workspaceId, _question, projection) {
+        async registerPending(_workspaceId, question, projection) {
+          if (
+            autoApprovePaidGenerationConfirmation(
+              workspaceId,
+              workflowId,
+              question,
+            )
+          ) {
+            return;
+          }
           interactionRequest = projection?.interactionRequest;
           return projection;
         },
@@ -740,7 +758,7 @@ test(
 );
 
 test(
-  'manual platform handoff does not persist an external execution confirmation',
+  'snapshot without usage reservation does not persist a paid generation confirmation',
   { skip: !systemDatabaseUrl },
   async () => {
     const workflowId = `harness-execution-confirmation-${randomUUID()}`;
@@ -769,7 +787,7 @@ test(
     const workflow = registerHarnessDbosWorkflow(ports, {
       async registerPending() {
         throw new Error(
-          'Manual delivery must not create an external execution confirmation.',
+          'Unreserved snapshot paths must not create a paid generation confirmation.',
         );
       },
       async readPending() {
@@ -784,6 +802,8 @@ test(
 
     try {
       await DBOS.launch();
+      // D-164③: confirmation requires usageReservation (paid freeze). Snapshot
+      // alone with manual_copy / export is not enough.
       const request = snapshotTimeoutRequest(
         workflowId,
         workspaceId,
@@ -853,7 +873,16 @@ test(
     const workflow = registerHarnessDbosWorkflow(
       ports,
       {
-        async registerPending(_workspaceId, _question, projection) {
+        async registerPending(_workspaceId, question, projection) {
+          if (
+            autoApprovePaidGenerationConfirmation(
+              workspaceId,
+              workflowId,
+              question,
+            )
+          ) {
+            return;
+          }
           interactionRequest = projection?.interactionRequest;
           return projection;
         },
@@ -1386,7 +1415,13 @@ test(
     const workflow = registerHarnessDbosWorkflow(
       ports,
       {
-        async registerPending() {},
+        async registerPending(_workspaceId, question) {
+          autoApprovePaidGenerationConfirmation(
+            workspaceId,
+            workflowId,
+            question,
+          );
+        },
         async readPending() {
           return null;
         },
@@ -2303,6 +2338,31 @@ async function waitForWorkflowStatus(
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   return (await handle.getStatus())?.status;
+}
+
+/** D-164③: auto-approve paid generation confirmation so later assertions stay focused. */
+function autoApprovePaidGenerationConfirmation(
+  workspaceId: string,
+  workflowId: string,
+  question: QuestionCard,
+) {
+  if (!question.executionConfirmationAuthority) {
+    return false;
+  }
+  queueMicrotask(() => {
+    void resumeHarnessDbosWorkflow(workspaceId, workflowId, {
+      idempotencyKey: `auto-approve-paid-generation:${question.questionId}`,
+      questionId: question.questionId,
+      workflowRevision: question.workflowRevision,
+      patch: {
+        field: question.response.field,
+        value: 'approved',
+        reason: question.response.reason,
+      },
+      decision: { state: 'accepted', value: 'approved' },
+    });
+  });
+  return true;
 }
 
 const SMOKE_PRIVATE_INSTRUCTION =
