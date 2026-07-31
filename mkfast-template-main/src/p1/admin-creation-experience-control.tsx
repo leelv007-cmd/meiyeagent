@@ -5,7 +5,7 @@ import type {
   RecipeModelPolicyMode,
   SurfaceRecipeRef,
 } from '@meiye/contracts';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import {
   AdminPanel,
@@ -66,6 +66,16 @@ type RecipeRecord = {
   rolledBackToRevision?: number | null;
 };
 
+type RecipeDelivery = {
+  contentPackagePlatform: string;
+  distributionTarget: string;
+  deliverableKind: 'copy_document' | 'note' | 'video_package';
+  quantity: number;
+  aspectRatio?: string;
+  notePageBound?: number;
+  durationSeconds?: number;
+};
+
 type SurfaceRecord = {
   surfaceId: string;
   revision: number;
@@ -85,6 +95,35 @@ const lensLabels: Record<CreationLensId, string> = {
   image_text: '图文',
   video: '视频',
 };
+
+function defaultRecipeDelivery(lensId: CreationLensId): RecipeDelivery {
+  if (lensId === 'copy') {
+    return {
+      contentPackagePlatform: 'wechat_moments',
+      distributionTarget: 'export',
+      deliverableKind: 'copy_document',
+      quantity: 1,
+    };
+  }
+  if (lensId === 'video') {
+    return {
+      contentPackagePlatform: 'douyin',
+      distributionTarget: 'export',
+      deliverableKind: 'video_package',
+      quantity: 1,
+      aspectRatio: '9:16',
+      durationSeconds: 15,
+    };
+  }
+  return {
+    contentPackagePlatform: 'xiaohongshu',
+    distributionTarget: 'export',
+    deliverableKind: 'note',
+    quantity: 1,
+    aspectRatio: '3:4',
+    notePageBound: 3,
+  };
+}
 
 function idempotencyKey(action: string, id: string) {
   return `${action}:${id}:${crypto.randomUUID()}`;
@@ -154,12 +193,16 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
   const [promptRevisionRef, setPromptRevisionRef] = useState('');
   const [modelMode, setModelMode] = useState<RecipeModelPolicyMode>('auto');
   const [catalogModelId, setCatalogModelId] = useState('');
+  const [delivery, setDelivery] = useState<RecipeDelivery>(() =>
+    defaultRecipeDelivery('image_text')
+  );
   const [reason, setReason] = useState('');
   const [head, setHead] = useState<RecipeRecord | null>(null);
   const [history, setHistory] = useState<RecipeRecord[]>([]);
   const [rollbackRevision, setRollbackRevision] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const operationInFlight = useRef(false);
 
   const hydrate = (record: RecipeRecord) => {
     setLensId(record.lensId);
@@ -168,6 +211,10 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
     setPromptRevisionRef(record.promptRevisionRef);
     setModelMode(record.modelPolicy.mode);
     setCatalogModelId(record.modelPolicy.catalogModelId ?? '');
+    setDelivery({
+      ...defaultRecipeDelivery(record.lensId),
+      ...(record.delivery as Partial<RecipeDelivery>),
+    });
   };
 
   const refreshHistory = async () => {
@@ -195,25 +242,35 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
     }
   };
 
-  const execute = async (action: string, payload: AdminPayload) => {
+  const runOperation = async (operation: () => Promise<void>) => {
+    if (operationInFlight.current) return;
+    operationInFlight.current = true;
     setBusy(true);
     setError('');
     try {
-      const result = await api.command(
-        action,
-        payload,
-        idempotencyKey(action, recipeId)
-      );
-      const record = asRecipeRecord(result);
-      setHead(record);
-      if (record) hydrate(record);
-      await refreshHistory();
+      await operation();
     } catch (commandError) {
       setError(messageOf(commandError));
     } finally {
+      operationInFlight.current = false;
       setBusy(false);
     }
   };
+
+  const executeCommand = async (action: string, payload: AdminPayload) => {
+    const result = await api.command(
+      action,
+      payload,
+      idempotencyKey(action, recipeId)
+    );
+    const record = asRecipeRecord(result);
+    setHead(record);
+    if (record) hydrate(record);
+    await refreshHistory();
+  };
+
+  const execute = (action: string, payload: AdminPayload) =>
+    runOperation(() => executeCommand(action, payload));
 
   const validate = async () => {
     const result = (await api.query('recipe_validate', {
@@ -259,7 +316,7 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
             ? { previewAssetRef: head.presentation.previewAssetRef }
             : {}),
         },
-        delivery: head?.delivery ?? {},
+        delivery,
         contextPatches: head?.contextPatches ?? {},
         sourceRequirements: head?.sourceRequirements ?? [],
         modelPolicy: {
@@ -285,11 +342,14 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
   };
 
   const transition = async (action: 'recipe_preview' | 'recipe_publish') => {
-    if (!head || !reason.trim() || !(await validate())) return;
-    await execute(action, {
-      recipeId,
-      expectedRevision: head.revision,
-      reason: reason.trim(),
+    if (!head || !reason.trim()) return;
+    await runOperation(async () => {
+      if (action === 'recipe_publish' && !(await validate())) return;
+      await executeCommand(action, {
+        recipeId,
+        expectedRevision: head.revision,
+        reason: reason.trim(),
+      });
     });
   };
 
@@ -342,14 +402,124 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
               id="recipe-lens"
               className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               value={lensId}
-              onChange={(event) =>
-                setLensId(event.target.value as CreationLensId)
-              }
+              onChange={(event) => {
+                const nextLens = event.target.value as CreationLensId;
+                setLensId(nextLens);
+                setDelivery(defaultRecipeDelivery(nextLens));
+              }}
             >
               <option value="copy">文案</option>
               <option value="image_text">图文</option>
               <option value="video">视频</option>
             </select>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="recipe-delivery-platform">交付平台</Label>
+              <select
+                id="recipe-delivery-platform"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={delivery.contentPackagePlatform}
+                onChange={(event) =>
+                  setDelivery((current) => ({
+                    ...current,
+                    contentPackagePlatform: event.target.value,
+                  }))
+                }
+              >
+                <option value="xiaohongshu">小红书</option>
+                <option value="douyin">抖音</option>
+                <option value="video_account">视频号</option>
+                <option value="wechat_moments">朋友圈</option>
+                <option value="offline_material">线下物料</option>
+                <option value="generic">通用</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="recipe-distribution-target">交付方式</Label>
+              <select
+                id="recipe-distribution-target"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={delivery.distributionTarget}
+                onChange={(event) =>
+                  setDelivery((current) => ({
+                    ...current,
+                    distributionTarget: event.target.value,
+                  }))
+                }
+              >
+                <option value="export">导出成品</option>
+                <option value="manual_copy">手动复制发布</option>
+                <option value="assisted_handoff">辅助交接</option>
+                <option value="publish:xiaohongshu">发布到小红书</option>
+                <option value="publish:douyin">发布到抖音</option>
+                <option value="publish:video_account">发布到视频号</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="recipe-delivery-quantity">成品数量</Label>
+              <Input
+                id="recipe-delivery-quantity"
+                type="number"
+                min={1}
+                value={delivery.quantity}
+                onChange={(event) =>
+                  setDelivery((current) => ({
+                    ...current,
+                    quantity: Number(event.target.value),
+                  }))
+                }
+              />
+            </div>
+            {lensId !== 'copy' ? (
+              <div className="space-y-2">
+                <Label htmlFor="recipe-aspect-ratio">画面比例</Label>
+                <Input
+                  id="recipe-aspect-ratio"
+                  value={delivery.aspectRatio ?? ''}
+                  onChange={(event) =>
+                    setDelivery((current) => ({
+                      ...current,
+                      aspectRatio: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+            ) : null}
+            {lensId === 'image_text' ? (
+              <div className="space-y-2">
+                <Label htmlFor="recipe-note-page-bound">图文页数</Label>
+                <Input
+                  id="recipe-note-page-bound"
+                  type="number"
+                  min={1}
+                  value={delivery.notePageBound ?? 3}
+                  onChange={(event) =>
+                    setDelivery((current) => ({
+                      ...current,
+                      notePageBound: Number(event.target.value),
+                    }))
+                  }
+                />
+              </div>
+            ) : null}
+            {lensId === 'video' ? (
+              <div className="space-y-2">
+                <Label htmlFor="recipe-duration-seconds">视频时长（秒）</Label>
+                <Input
+                  id="recipe-duration-seconds"
+                  type="number"
+                  min={1}
+                  value={delivery.durationSeconds ?? 15}
+                  onChange={(event) =>
+                    setDelivery((current) => ({
+                      ...current,
+                      durationSeconds: Number(event.target.value),
+                    }))
+                  }
+                />
+              </div>
+            ) : null}
           </div>
           <div className="space-y-2">
             <Label htmlFor="recipe-title">标题</Label>
@@ -519,6 +689,7 @@ function SurfaceEditor({ api }: { api: CreationExperienceAdminApi }) {
   const [rollbackRevision, setRollbackRevision] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const operationInFlight = useRef(false);
 
   const hydrate = (record: SurfaceRecord) => {
     setRecipeRefs(
@@ -556,25 +727,35 @@ function SurfaceEditor({ api }: { api: CreationExperienceAdminApi }) {
     }
   };
 
-  const execute = async (action: string, payload: AdminPayload) => {
+  const runOperation = async (operation: () => Promise<void>) => {
+    if (operationInFlight.current) return;
+    operationInFlight.current = true;
     setBusy(true);
     setError('');
     try {
-      const result = await api.command(
-        action,
-        payload,
-        idempotencyKey(action, surfaceId)
-      );
-      const record = asSurfaceRecord(result);
-      setHead(record);
-      if (record) hydrate(record);
-      await refreshHistory();
+      await operation();
     } catch (commandError) {
       setError(messageOf(commandError));
     } finally {
+      operationInFlight.current = false;
       setBusy(false);
     }
   };
+
+  const executeCommand = async (action: string, payload: AdminPayload) => {
+    const result = await api.command(
+      action,
+      payload,
+      idempotencyKey(action, surfaceId)
+    );
+    const record = asSurfaceRecord(result);
+    setHead(record);
+    if (record) hydrate(record);
+    await refreshHistory();
+  };
+
+  const execute = (action: string, payload: AdminPayload) =>
+    runOperation(() => executeCommand(action, payload));
 
   const validate = async () => {
     const result = (await api.query('surface_validate', {
@@ -623,11 +804,14 @@ function SurfaceEditor({ api }: { api: CreationExperienceAdminApi }) {
   };
 
   const transition = async (action: 'surface_preview' | 'surface_publish') => {
-    if (!head || !reason.trim() || !(await validate())) return;
-    await execute(action, {
-      surfaceId,
-      expectedRevision: head.revision,
-      reason: reason.trim(),
+    if (!head || !reason.trim()) return;
+    await runOperation(async () => {
+      if (action === 'surface_publish' && !(await validate())) return;
+      await executeCommand(action, {
+        surfaceId,
+        expectedRevision: head.revision,
+        reason: reason.trim(),
+      });
     });
   };
 

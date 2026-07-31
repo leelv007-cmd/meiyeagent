@@ -51,9 +51,10 @@ test.describe('live creation catalog capability gate', () => {
 
     await page.goto('/dashboard/catalog?tab=tools');
     await expect(page.getByText('多尺寸适配', { exact: true })).toHaveCount(0);
-    await expect(page.getByTestId('composer-catalog-empty')).toContainText(
-      '暂无可用创作工具'
-    );
+    await expect(
+      page.getByRole('button', { name: /Pro Studio/u })
+    ).toBeVisible();
+    await expect(page.getByTestId('composer-catalog-empty')).toHaveCount(0);
 
     await page.goto('/dashboard/tools/tool.multi_size');
     await expect(page.getByRole('alert')).toContainText('该创作工具不可用');

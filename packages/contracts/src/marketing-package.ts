@@ -854,6 +854,7 @@ const marketingPackageEvidenceCurrentSchema = z
     factRefs: z.array(idSchema),
     rightsRefs: z.array(idSchema),
     identityRefs: z.array(idSchema),
+    identityFallback: z.enum(['none', 'brand_official']).default('none'),
   })
   .strict();
 
@@ -934,6 +935,7 @@ export const marketingPackageEvidenceSchema = z
       factRefs: evidence.factRefs,
       rightsRefs: evidence.rightsRefs,
       identityRefs: evidence.identityRefs,
+      identityFallback: evidence.identityFallback,
     };
   });
 

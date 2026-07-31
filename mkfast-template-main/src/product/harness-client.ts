@@ -31,6 +31,14 @@ const taskHandleSchema = z
   })
   .strict();
 
+const harnessInteractionSnapshotSchema = z
+  .object({
+    request: harnessInteractionRequestSchema.nullable(),
+    resolutionSource: z.enum(['decision', 'system_default']).nullable(),
+    status: z.enum(['absent', 'pending', 'resolved']),
+  })
+  .strict();
+
 export interface HarnessDecisionSnapshot extends HarnessDecisionReadModel {
   exists: boolean;
 }
@@ -132,6 +140,19 @@ export async function readPendingHarnessInteraction(
   return harnessInteractionRequestSchema
     .nullable()
     .parse(await readEnvelope<unknown>(response));
+}
+
+export async function readHarnessInteractionSnapshot(
+  taskId: string,
+  signal?: AbortSignal
+) {
+  const response = await telemetryFetch(
+    `/api/core/p1/harness/tasks/${encodeURIComponent(taskId)}/interaction?view=snapshot`,
+    { credentials: 'same-origin', signal }
+  );
+  return harnessInteractionSnapshotSchema.parse(
+    await readEnvelope<unknown>(response)
+  );
 }
 
 export async function submitHarnessInteraction(

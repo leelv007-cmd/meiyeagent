@@ -32,6 +32,11 @@ export function createMarketingPackageEvidence(input: {
     identityRefs: input.context.policyReferences.identityRefs
       .filter((reference) => reference.status === 'registered')
       .map((reference) => reference.id),
+    identityFallback: input.context.policyReferences.identityRefs.some(
+      (reference) => reference.status === 'registered',
+    )
+      ? 'none'
+      : 'brand_official',
   });
 }
 

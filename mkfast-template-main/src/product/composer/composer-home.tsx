@@ -100,6 +100,7 @@ import {
 import {
   acknowledgeHarnessInteractionRenderer,
   readActiveHarnessTasks,
+  readHarnessInteractionSnapshot,
   readPendingHarnessInteraction,
   readPendingHarnessInteractionMessage,
   readPendingHarnessDecision,
@@ -108,7 +109,10 @@ import {
   submitHarnessInteractionMerchantMessage,
   submitHarnessDecision,
 } from '@/product/harness-client';
-import { AskMerchantGroupCard } from '@/product/composer/ask-merchant-group-card';
+import {
+  AskMerchantGroupCard,
+  AskMerchantResolutionNotice,
+} from '@/product/composer/ask-merchant-group-card';
 import { ExecutionConfirmationInteractionCard } from '@/product/composer/execution-confirmation-interaction-card';
 import { ExecutionConfirmationWaitingMessageCard } from '@/product/composer/execution-confirmation-waiting-message-card';
 import { navigateAfterSubmitSuccess } from '@/product/results/result-center-navigation';
@@ -1339,6 +1343,10 @@ export function ComposerHome({
     () => ['harness', 'interaction', taskId] as const,
     [taskId]
   );
+  const interactionSnapshotQueryKey = useMemo(
+    () => ['harness', 'interaction-snapshot', taskId] as const,
+    [taskId]
+  );
   const workflowStream = useWorkflowEventStream({
     enabled: Boolean(taskId),
     workflowId: taskId,
@@ -1397,6 +1405,12 @@ export function ComposerHome({
     queryFn: ({ signal }) => readPendingHarnessInteraction(taskId, signal),
     refetchInterval: session.phase === 'delivered' ? false : 2_000,
   });
+  const interactionSnapshotQuery = useQuery({
+    enabled: Boolean(taskId),
+    queryKey: interactionSnapshotQueryKey,
+    queryFn: ({ signal }) => readHarnessInteractionSnapshot(taskId, signal),
+    refetchInterval: session.phase === 'delivered' ? false : 2_000,
+  });
   const interactionMessageQuery = useQuery({
     enabled: Boolean(taskId) && session.phase !== 'delivered',
     queryKey: ['harness', 'interaction-message', taskId],
@@ -1404,9 +1418,19 @@ export function ComposerHome({
       readPendingHarnessInteractionMessage(taskId, signal),
     refetchInterval: session.phase === 'delivered' ? false : 2_000,
   });
+  useEffect(() => {
+    if (workflowStream.workflowState !== 'success') return;
+    void interactionSnapshotQuery.refetch();
+  }, [interactionSnapshotQuery.refetch, workflowStream.workflowState]);
   const pendingAskRequest =
     interactionQuery.data?.kind === 'ask_merchant'
       ? interactionQuery.data
+      : null;
+  const resolvedAskRequest =
+    interactionSnapshotQuery.data?.status === 'resolved' &&
+    interactionSnapshotQuery.data.resolutionSource === 'system_default' &&
+    interactionSnapshotQuery.data.request?.kind === 'ask_merchant'
+      ? interactionSnapshotQuery.data.request
       : null;
   const pendingExecutionConfirmation =
     interactionQuery.data?.kind === 'execution_confirmation'
@@ -2778,7 +2802,9 @@ export function ComposerHome({
           }}
           onRecover={recoverFromReport}
           questionSlot={
-            pendingAskRequest ? (
+            resolvedAskRequest ? (
+              <AskMerchantResolutionNotice />
+            ) : pendingAskRequest ? (
               <AskMerchantGroupCard
                 onEditingChange={(request, editing, editingSessionId) =>
                   setHarnessInteractionEditing(taskId, {

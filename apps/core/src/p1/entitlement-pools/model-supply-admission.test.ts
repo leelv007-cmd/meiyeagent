@@ -277,6 +277,47 @@ test('effective concurrency acquires and releases a durable capacity lease', asy
   assert.deepEqual(harness.released, [harness.acquired[0]?.leaseId]);
 });
 
+test('capacity admission starts a fresh lease when a frozen route resumes after its interaction deadline', async () => {
+  const harness = admissionHarness([]);
+  const frozenAt = '2026-07-20T00:00:00.000Z';
+  const admissionStartedAt = Date.now();
+
+  const decision = await harness.admission.admit({
+    submission: {
+      workspaceId: 'workspace-a',
+      actorId: 'account-a',
+      idempotencyKey: 'resumed-after-interaction-deadline',
+      operation: 'copy.generate',
+      selection: { mode: 'fixed', catalogModelId: model.id },
+      dataClass: [],
+      prompt: 'Generate copy after the merchant question expires',
+    },
+    jobId: 'job-resumed-after-interaction-deadline',
+    attemptId: 'attempt-resumed-after-interaction-deadline',
+    snapshot: {
+      id: 'snapshot-resumed-after-interaction-deadline',
+      catalogRevisionId: 'catalog-r1',
+      requestedSelection: { mode: 'fixed', catalogModelId: model.id },
+      candidateCatalogModelIds: [model.id],
+      actualCatalogModelId: model.id,
+      deploymentId: deployment.id,
+      credentialAccountId: 'credential-shared',
+      fallbackConsent: false,
+      reason: 'fixed_selection',
+      dataClass: [],
+      createdAt: frozenAt,
+    },
+    model,
+    deployment,
+  });
+
+  assert.equal(decision.status, 'admitted');
+  assert.equal(harness.acquired.length, 1);
+  const acquiredAt = Date.parse(harness.acquired[0]?.acquiredAt ?? '');
+  assert.ok(acquiredAt >= admissionStartedAt);
+  assert.notEqual(harness.acquired[0]?.acquiredAt, frozenAt);
+});
+
 test('each provider candidate gets a distinct fair-queue and lease identity in the same pool', async () => {
   const secondDeployment = {
     ...deployment,

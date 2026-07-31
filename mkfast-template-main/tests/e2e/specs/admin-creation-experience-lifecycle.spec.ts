@@ -84,6 +84,7 @@ test('admin visually publishes and rolls back Recipe and Surface revisions', asy
     'published · r3'
   );
 
+  await surfaceEditor.getByLabel('Recipe revision ID').fill(`${recipeId}@3`);
   await surfaceEditor
     .getByRole('button', { name: '保存 Surface 草稿' })
     .click();
@@ -91,9 +92,26 @@ test('admin visually publishes and rolls back Recipe and Surface revisions', asy
     .getByRole('button', { name: '生成 Surface 预览' })
     .click();
   await surfaceEditor.getByRole('button', { name: '发布 Surface' }).click();
+  const surfaceStatus = page.getByTestId('surface-lifecycle-status');
+  await expect(surfaceStatus).toHaveText(/^published · r\d+$/);
+  await expect(page.getByTestId('surface-visual-preview')).toContainText(
+    `${recipeId}@3`
+  );
+  const surfaceRevisionBeforeRollback = Number(
+    (await surfaceStatus.textContent())?.match(/r(\d+)/)?.[1]
+  );
   await surfaceEditor.getByLabel('Surface 回滚版本').selectOption('3');
   await surfaceEditor.getByRole('button', { name: '回滚 Surface' }).click();
-  await expect(page.getByTestId('surface-lifecycle-status')).toHaveText(
-    'published · r7'
+  // D-078/D-082 require a new revision that restores the immutable target;
+  // the absolute head number is not part of the rollback contract.
+  await expect
+    .poll(async () =>
+      Number((await surfaceStatus.textContent())?.match(/r(\d+)/)?.[1])
+    )
+    .toBeGreaterThan(surfaceRevisionBeforeRollback);
+  await expect(surfaceStatus).toHaveText(/^published · r\d+$/);
+  await expect(surfaceEditor.getByText(/回滚自 r3/)).toBeVisible();
+  await expect(page.getByTestId('surface-visual-preview')).toContainText(
+    `${recipeId}@7`
   );
 });

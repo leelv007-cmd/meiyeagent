@@ -24,6 +24,7 @@ import {
   type CatalogModel,
   type ModelDeployment,
   type ModelSupplyLedgerPort,
+  type ModelSupplyProviderAdmissionPort,
   type ProviderExecutionPort,
 } from './index.js';
 
@@ -2049,5 +2050,109 @@ test('records a zero-product-usage generation without skipping provider or Found
     (await repository.getGenerationJob(context.workspaceId, result.jobId))
       ?.status,
     'completed',
+  );
+});
+
+test('persists and refunds a pre-provider rejection for a cold workspace', async () => {
+  const repository = new MemoryFoundationRepository();
+  const foundation = new P1ApplicationService(repository);
+  const grantLots = new MemoryGrantLotLedger();
+  grantLots.grant({
+    id: 'cold-workspace-copy-grant',
+    workspaceId: context.workspaceId,
+    resource: 'copy',
+    amount: 1,
+    expirationDate: null,
+    transactionType: 'REGISTER_GIFT',
+    createdAt: '2026-07-31T00:00:00.000Z',
+  });
+  let providerCalls = 0;
+  const execution: ProviderExecutionPort = {
+    async execute() {
+      providerCalls += 1;
+      throw new Error('provider must not be invoked');
+    },
+  };
+  const providerAdmission: ModelSupplyProviderAdmissionPort = {
+    async admit() {
+      return {
+        status: 'rejected',
+        errorCode: 'CAPACITY_EXHAUSTED',
+        message: 'Product-account concurrency exhausted.',
+      };
+    },
+    async release() {
+      throw new Error('rejected admission has no lease');
+    },
+  };
+  const copyModel: CatalogModel = {
+    id: 'cold-workspace-copy',
+    modality: 'llm',
+    operations: ['copy.generate'],
+    displayName: 'Cold workspace copy',
+    qualityRank: 100,
+  };
+  const copyDeployment: ModelDeployment = {
+    id: 'cold-workspace-copy-direct',
+    catalogModelId: copyModel.id,
+    apiFamily: 'openai',
+    channel: 'direct',
+    region: 'domestic',
+    status: 'active',
+  };
+  const submission = {
+    workspaceId: context.workspaceId,
+    actorId: context.userId,
+    correlationId: context.correlationId,
+    idempotencyKey: 'cold-workspace-admission-rejection',
+    operation: 'copy.generate' as const,
+    selection: { mode: 'fixed' as const, catalogModelId: copyModel.id },
+    dataClass: [],
+    prompt: '冷启动门店文案',
+  };
+  const createApplication = () =>
+    new ModelSupplyApplicationService({
+      models: [copyModel],
+      deployments: [copyDeployment],
+      execution,
+      providerAdmission,
+      ledger: new FoundationModelSupplyLedger(
+        foundation,
+        undefined,
+        grantLots,
+      ),
+    });
+
+  const first = await createApplication().submit(submission);
+  const replay = await createApplication().submit(submission);
+
+  assert.equal(providerCalls, 0);
+  assert.equal(first.status, 'failed');
+  assert.equal(first.failureCode, 'CAPACITY_EXHAUSTED');
+  assert.equal(first.attempt.acceptance, 'rejected_before_accept');
+  assert.equal(first.usage.status, 'refunded');
+  assert.equal(first.providerCost.amount, 0);
+  assert.deepEqual(replay, first);
+  assert.equal(
+    grantLots.listLots(context.workspaceId, 'copy')[0]?.remainingAmount,
+    1,
+  );
+  assert.deepEqual(
+    grantLots
+      .listTransactions(context.workspaceId)
+      .map((transaction) => transaction.transactionType),
+    ['REGISTER_GIFT', 'USAGE', 'REFUND'],
+  );
+  const job = await repository.getGenerationJob(
+    context.workspaceId,
+    first.jobId,
+  );
+  assert.equal(job?.status, 'failed');
+  assert.deepEqual(job?.result, first);
+  await assert.rejects(
+    foundation.getGenerationJob(context, first.jobId),
+    (error: unknown) =>
+      error instanceof P1DomainError &&
+      error.code === 'NOT_FOUND',
   );
 });

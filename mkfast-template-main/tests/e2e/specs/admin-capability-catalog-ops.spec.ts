@@ -107,9 +107,13 @@ test.describe('admin capability catalog ops path (#123 J3)', () => {
       'true'
     );
 
-    await expect(page.getByText('账号与商业化')).toBeVisible();
-    await expect(page.getByText('AI 供应与生成')).toBeVisible();
-    await expect(page.getByText('运行与治理')).toBeVisible();
+    for (const domain of ['账号与商业化', 'AI 供应与生成', '运行与治理']) {
+      const section = catalog
+        .getByTestId('catalog-l1-section')
+        .filter({ hasText: domain });
+      await expect(section).toHaveCount(1);
+      await expect(section.getByText(domain, { exact: true })).toBeVisible();
+    }
     await expect(page.getByText('不在运营界面伪装成一键修复')).toBeVisible();
 
     for (const path of [

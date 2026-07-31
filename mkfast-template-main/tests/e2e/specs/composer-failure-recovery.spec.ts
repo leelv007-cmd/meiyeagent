@@ -408,7 +408,7 @@ test.describe('S2 失败与恢复', () => {
     await expect(page.getByTestId('composer-progress-card')).toBeVisible({
       timeout: 240_000,
     });
-    await expect(page.getByTestId('composer-question-card')).toBeVisible({
+    await expect(page.getByTestId('ask-merchant-group-card')).toBeVisible({
       timeout: 240_000,
     });
     const stagesBefore = await page
@@ -442,7 +442,7 @@ test.describe('S2 失败与恢复', () => {
       .toBeGreaterThanOrEqual(stagesBefore);
     // 未决问题回到原位 — the question the run is held on is still there after
     // leaving, because Core kept it.
-    await expect(reopened.getByTestId('composer-question-card')).toBeVisible({
+    await expect(reopened.getByTestId('ask-merchant-group-card')).toBeVisible({
       timeout: 120_000,
     });
 
@@ -519,15 +519,20 @@ test.describe('S2 失败与恢复', () => {
       timeout: holdSeconds * 1_000 + 180_000,
     });
     // …and it is Core's fact, not this tab's memory. After leaving and coming
-    // back the same terminal resolution is still what the server reports — the
-    // card reads it from there, so a browser that invented the line could not
-    // reproduce this.
+    // back the typed interaction snapshot still reports the durable semantic
+    // default; the retired structured-decision seam does not own this request.
     await reopened.reload();
     const resolution = await reopened.request.get(
-      `/api/core/p1/harness/tasks/${encodeURIComponent(run.taskId)}/decision`
+      `/api/core/p1/harness/tasks/${encodeURIComponent(run.taskId)}/interaction?view=snapshot`
     );
     expect(resolution.ok(), await resolution.text()).toBeTruthy();
-    expect(await resolution.text()).toContain('core_timeout');
+    expect(await resolution.json()).toMatchObject({
+      data: {
+        request: { kind: 'ask_merchant' },
+        resolutionSource: 'system_default',
+        status: 'resolved',
+      },
+    });
 
     await reopened.close();
   });

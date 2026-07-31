@@ -20,11 +20,27 @@ test('new marketing evidence retains only structured declaration and eligible au
   assert.deepEqual(evidence.factRefs, ['store_fact:service-current:1']);
   assert.deepEqual(evidence.rightsRefs, ['asset-authorized-1']);
   assert.deepEqual(evidence.identityRefs, ['marketing_identity:brand-1:2']);
+  assert.equal(evidence.identityFallback, 'none');
   assert.deepEqual(evidence.declaration, declaration());
   assert.equal('capabilities' in evidence, false);
   assert.equal('promotionOffer' in evidence, false);
   assert.equal('opportunity' in evidence, false);
   assert.equal('materialSpecs' in evidence, false);
+});
+
+test('cold workspace marketing evidence records the official brand fallback', () => {
+  const coldContext = context();
+  coldContext.policyReferences.identityRefs = [];
+
+  const evidence = createMarketingPackageEvidence({
+    declaration: declaration(),
+    context: coldContext,
+    authorizedFactRefs: [],
+    at: '2026-07-27T12:00:00.000Z',
+  });
+
+  assert.deepEqual(evidence.identityRefs, []);
+  assert.equal(evidence.identityFallback, 'brand_official');
 });
 
 function declaration(): IntentDeclaration {

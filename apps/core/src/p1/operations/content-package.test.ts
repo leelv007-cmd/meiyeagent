@@ -1043,6 +1043,7 @@ describe('ContentPackage application service contract', () => {
       },
       factRefs: [],
       identityRefs: [],
+      identityFallback: 'brand_official',
       rightsRefs: ['source-video'],
     };
     seedDistinctPlatformVariants(stored);
@@ -1133,6 +1134,7 @@ describe('ContentPackage application service contract', () => {
       },
       factRefs: [],
       identityRefs: [],
+      identityFallback: 'brand_official',
       rightsRefs: [],
     };
     seedDistinctPlatformVariants(stored);

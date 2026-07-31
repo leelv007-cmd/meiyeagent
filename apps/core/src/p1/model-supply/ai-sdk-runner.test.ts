@@ -611,6 +611,36 @@ test('fixture copy candidate streams a trace of the frozen merchant intent', asy
   );
 });
 
+test('fixture failure drill rejects before provider acceptance from a cold fallback copy brief', async () => {
+  const executor = new FixtureAiStructuredObjectExecutor();
+  await assert.rejects(
+    executor.generate({
+      instructions: 'Generate one grounded copy candidate.',
+      prompt: JSON.stringify({
+        brief: {
+          instructions: '围绕「写一条皮肤护理到店体验文案（失败档）」写一条可以直接审核的门店内容。',
+          constraints: ['不得编造价格、效果或顾客案例'],
+        },
+        candidateId: 'c01',
+      }),
+      schema: z
+        .object({
+          assetRefs: z.array(z.string()),
+          body: z.string(),
+          conversionHook: z.string(),
+          factClaims: z.array(z.unknown()),
+          title: z.string(),
+        })
+        .strict(),
+      schemaName: 'harness_copy_candidate_v1',
+    }),
+    (error: unknown) =>
+      error instanceof Error &&
+      'acceptance' in error &&
+      error.acceptance === 'rejected_before_accept',
+  );
+});
+
 test('fixture memory sedimentation extracts only an explicit future preference from the merchant message', async () => {
   const executor = new FixtureAiStructuredObjectExecutor();
   const schema = z

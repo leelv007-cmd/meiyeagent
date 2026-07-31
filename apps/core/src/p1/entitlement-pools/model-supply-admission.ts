@@ -353,7 +353,7 @@ export class PostgresModelSupplyProviderAdmission
       }
     }
 
-    const acquiredAt = input.snapshot.createdAt;
+    const acquiredAt = now.toISOString();
     const expiresAt = new Date(now.getTime() + this.leaseTtlMs).toISOString();
     const supplyAccountId =
       input.snapshot.credentialAccountId ?? pool.credentialAccountIds[0];

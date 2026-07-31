@@ -16,6 +16,16 @@ type ItemResult = Extract<
   { kind: 'answer' }
 >['items'][number]['result'];
 
+export function AskMerchantResolutionNotice() {
+  return (
+    <section className="meiye-porcelain rounded-2xl p-4">
+      <p className="text-muted text-sm" data-testid="composer-question-settled">
+        系统已按通用模式继续，你仍可回答并生成精修版本。
+      </p>
+    </section>
+  );
+}
+
 export function AskMerchantGroupCard({
   onEditingChange,
   onRendererReady,
@@ -37,6 +47,14 @@ export function AskMerchantGroupCard({
 }) {
   const [results, setResults] = useState<Record<string, ItemResult>>({});
   const [editing, setEditing] = useState(false);
+  const semanticDefault =
+    request.timeoutPolicy?.kind === 'semantic_default'
+      ? request.timeoutPolicy
+      : null;
+  const autoContinue = semanticDefault !== null;
+  const [remainingSeconds, setRemainingSeconds] = useState(
+    semanticDefault?.timeoutSeconds ?? 0
+  );
   const editingSessionIdRef = useRef<string | null>(null);
   const editingSignalRef = useRef({ onEditingChange, request });
   editingSignalRef.current = { onEditingChange, request };
@@ -44,8 +62,17 @@ export function AskMerchantGroupCard({
   useEffect(() => {
     setResults({});
     setEditing(false);
+    setRemainingSeconds(semanticDefault?.timeoutSeconds ?? 0);
     editingSessionIdRef.current = null;
-  }, [request.requestId, request.revision]);
+  }, [request.requestId, request.revision, semanticDefault?.timeoutSeconds]);
+  useEffect(() => {
+    if (!autoContinue || editing || remainingSeconds <= 0) return;
+    const timer = setTimeout(
+      () => setRemainingSeconds((current) => Math.max(0, current - 1)),
+      1_000
+    );
+    return () => clearTimeout(timer);
+  }, [autoContinue, editing, remainingSeconds]);
   useEffect(() => {
     let cancelled = false;
     let retryId: ReturnType<typeof setTimeout> | undefined;
@@ -104,9 +131,18 @@ export function AskMerchantGroupCard({
   return (
     <section
       className="meiye-porcelain rounded-2xl p-4"
+      data-auto-continue={autoContinue ? 'true' : 'false'}
       data-request-id={request.requestId}
       data-testid="ask-merchant-group-card"
     >
+      {semanticDefault ? (
+        <div className="mb-3 space-y-1 text-muted text-xs">
+          <p data-testid="ask-merchant-default">默认：暂未确定</p>
+          <p aria-live="polite" data-testid="ask-merchant-countdown">
+            {remainingSeconds} 秒后按默认继续
+          </p>
+        </div>
+      ) : null}
       <div className="space-y-4">
         {request.questions.map((question) => {
           const selected = results[question.itemId];

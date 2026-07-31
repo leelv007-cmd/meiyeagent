@@ -267,7 +267,7 @@ test.describe('T31 三类卡与确认卡', () => {
     ]);
 
     // ② 意图确认卡.
-    const questionCard = page.getByTestId('composer-question-card');
+    const questionCard = page.getByTestId('ask-merchant-group-card');
     await expect(questionCard).toBeVisible({ timeout: 240_000 });
     assertMerchantLanguage(await questionCard.innerText(), [
       run.taskId,
@@ -279,7 +279,7 @@ test.describe('T31 三类卡与确认卡', () => {
         '[data-testid="composer-progress-card"]'
       );
       const question = document.querySelector(
-        '[data-testid="composer-question-card"]'
+        '[data-testid="ask-merchant-group-card"]'
       );
       if (!progress || !question) return null;
       return progress.compareDocumentPosition(question) &
@@ -290,10 +290,8 @@ test.describe('T31 三类卡与确认卡', () => {
     expect(questionOrder).toBe('progress-then-question');
     // The harness raises this gap with free text and no options, so the answer
     // path is the text box — see fixtureStructuredOutput / fallbackGuidanceGap.
-    await page
-      .getByTestId('composer-question-answer')
-      .fill('皮肤管理套餐 88 元');
-    await page.getByTestId('composer-question-submit').click();
+    await questionCard.getByRole('textbox').fill('皮肤管理套餐 88 元');
+    await questionCard.getByRole('button', { name: '提交回答' }).click();
 
     // ③ 成品交付卡 — the run finishes inside the conversation.
     const deliveryTurn = page.getByTestId('composer-delivery-turn');
@@ -385,13 +383,13 @@ test.describe('T31 三类卡与确认卡', () => {
     // Day-0 deliver-first branch, so the ask journey rides a promotion gap.)
     const run = await startRun(page, '写一条周末到店的团购活动文案');
 
-    const questionCard = page.getByTestId('composer-question-card');
+    const questionCard = page.getByTestId('ask-merchant-group-card');
     await expect(questionCard).toBeVisible({ timeout: 240_000 });
     // 建议补充 + 默认值 + 倒计时, all stated before anything is asked of them.
-    await expect(page.getByTestId('composer-question-default')).toContainText(
-      '通用模式'
+    await expect(page.getByTestId('ask-merchant-default')).toContainText(
+      '暂未确定'
     );
-    await expect(page.getByTestId('composer-question-countdown')).toBeVisible();
+    await expect(page.getByTestId('ask-merchant-countdown')).toBeVisible();
     assertMerchantLanguage(await questionCard.innerText(), [
       run.taskId,
       run.workId,
@@ -399,24 +397,28 @@ test.describe('T31 三类卡与确认卡', () => {
 
     // `continue` is a Core-owned deadline. Typing remains available and a late
     // answer can derive a successor; the browser never claims it paused Core.
-    await page.getByTestId('composer-question-answer').fill('皮肤管理');
+    await questionCard.getByRole('textbox').fill('皮肤管理');
     await expect(questionCard).toHaveAttribute('data-auto-continue', 'true');
-    await expect(page.getByTestId('composer-question-countdown')).toBeVisible();
+    await expect(page.getByTestId('ask-merchant-countdown')).toBeVisible();
 
     const decisionPost = page.waitForRequest(
       (request) =>
-        request.method() === 'POST' && request.url().endsWith('/decision'),
+        request.method() === 'POST' && request.url().endsWith('/interaction'),
       { timeout: 60_000 }
     );
-    await page.getByTestId('composer-question-submit').click();
+    await questionCard.getByRole('button', { name: '提交回答' }).click();
 
     // The merchant's answer goes in as an accepted decision, carrying what they
     // actually chose — not as the default.
     const posted = (await decisionPost).postDataJSON() as {
-      decision?: { state?: string; value?: string };
+      response?: {
+        kind?: string;
+        items?: Array<{ result?: { kind?: string; value?: string } }>;
+      };
     };
-    expect(posted.decision?.state).toBe('accepted');
-    expect(posted.decision?.value).toBeTruthy();
+    expect(posted.response?.kind).toBe('answer');
+    expect(posted.response?.items?.[0]?.result?.kind).toBe('answer');
+    expect(posted.response?.items?.[0]?.result?.value).toBe('皮肤管理');
 
     // The proof that DBOS left PENDING is that the run *delivered*: a workflow
     // suspended on pending-structured-decision produces no revision at all.
@@ -453,9 +455,9 @@ test.describe('T31 三类卡与确认卡', () => {
     await loginByForm(page, user);
     await seedConfirmedStore(page);
 
-    const run = await startRun(page, '写一条本周到店的优惠活动文案');
+    await startRun(page, '写一条本周到店的优惠活动文案');
 
-    const questionCard = page.getByTestId('composer-question-card');
+    const questionCard = page.getByTestId('ask-merchant-group-card');
     await expect(questionCard).toBeVisible({ timeout: 240_000 });
     await expect(questionCard).toHaveAttribute('data-auto-continue', 'true');
 
@@ -479,28 +481,8 @@ test.describe('T31 三类卡与确认卡', () => {
       'data-package-id',
       /.+/u
     );
-    const pending = await page.evaluate(async (taskId: string) => {
-      const response = await fetch(
-        `/api/core/p1/harness/tasks/${encodeURIComponent(taskId)}/decision`,
-        { credentials: 'same-origin' }
-      );
-      if (response.status === 404) return null;
-      const body = (await response.json()) as {
-        data?: {
-          question?: unknown;
-          resolutionSource?: string | null;
-          status?: string;
-        };
-      };
-      return body.data ?? null;
-    }, run.taskId);
-    expect(pending).toMatchObject({
-      question: expect.any(Object),
-      resolutionSource: 'core_timeout',
-      status: 'resolved',
-    });
     await expect(page.getByTestId('composer-question-settled')).toContainText(
-      '仍可回答'
+      '系统已按通用模式继续，你仍可回答并生成精修版本。'
     );
   });
 

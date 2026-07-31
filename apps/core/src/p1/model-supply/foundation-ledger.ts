@@ -303,6 +303,7 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
     evidence: string;
   }) {
     const context: P1Context = {
+      actor: 'worker',
       workspaceId: input.submission.workspaceId,
       userId: input.submission.actorId,
       correlationId:
@@ -832,6 +833,7 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
     reason: string;
   }) {
     const context: P1Context = {
+      actor: 'worker',
       workspaceId: input.workspaceId,
       userId: input.actorId,
       correlationId: input.correlationId ?? `outer-fail:${input.jobId}`,
@@ -857,6 +859,7 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
     evidence: string;
   }) {
     const context: P1Context = {
+      actor: 'worker',
       workspaceId: input.submission.workspaceId,
       userId: input.submission.actorId,
       correlationId:
@@ -986,6 +989,7 @@ function usageReservationIdFor(jobId: string, quantity = 1) {
 
 function contextFor(input: ModelSupplyLedgerCheckpointInput): P1Context {
   return {
+    actor: 'worker',
     workspaceId: input.submission.workspaceId,
     userId: input.submission.actorId,
     correlationId:

@@ -49,6 +49,7 @@ function historicalPackage(
       },
       factRefs: ['store_fact:project-1'],
       identityRefs: [],
+      identityFallback: 'brand_official',
       rightsRefs: [],
     },
     revision: 2,

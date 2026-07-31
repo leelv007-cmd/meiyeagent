@@ -146,6 +146,12 @@ export type HarnessInteractionPendingProjection = z.infer<
   typeof harnessInteractionPendingProjectionSchema
 >;
 
+export type HarnessInteractionSnapshot = {
+  request: HarnessInteractionRequest | null;
+  resolutionSource: 'decision' | 'system_default' | null;
+  status: 'absent' | 'pending' | 'resolved';
+};
+
 export function askMerchantInteractionRequestFromQuestion(input: {
   question: QuestionCard;
   stage: HarnessStage;
@@ -311,6 +317,10 @@ export interface HarnessInteractionStore {
     runId: string,
     options?: { includeResolved?: boolean },
   ): Promise<HarnessInteractionRequest | null>;
+  readInteractionSnapshot?(
+    workspaceId: string,
+    runId: string,
+  ): Promise<HarnessInteractionSnapshot>;
   readWaitingInteraction(
     workspaceId: string,
     runId: string,
@@ -459,6 +469,35 @@ export class HarnessInteractionService {
       return null;
     }
     return request;
+  }
+
+  async readSnapshotForCarrier(
+    workspaceId: string,
+    runId: string,
+    carrier: 'conversation' | 'store_page' | 'task_card',
+  ): Promise<HarnessInteractionSnapshot> {
+    const snapshot = this.store.readInteractionSnapshot
+      ? await this.store.readInteractionSnapshot(workspaceId, runId)
+      : await this.store
+          .readPendingInteraction(workspaceId, runId)
+          .then((request) => ({
+            request,
+            resolutionSource: null,
+            status: request ? ('pending' as const) : ('absent' as const),
+          }));
+    if (
+      !snapshot.request ||
+      !(snapshot.request.presentation.carriers as readonly string[]).includes(
+        carrier,
+      )
+    ) {
+      return {
+        request: null,
+        resolutionSource: null,
+        status: 'absent',
+      };
+    }
+    return snapshot;
   }
 
   async ackRenderer(workspaceId: string, runId: string, input: unknown) {

@@ -231,6 +231,14 @@ export class P1ApplicationService {
     }
   }
 
+  private async authorizeGenerationLedgerAccess(
+    store: FoundationStore,
+    context: P1Context,
+  ) {
+    if (context.actor === 'worker') return;
+    await this.authorizeOwner(store, context);
+  }
+
   private async authorizeWorkspaceMember(
     store: FoundationStore,
     context: P1Context
@@ -530,7 +538,7 @@ export class P1ApplicationService {
       idempotencyKey,
       payloadHash(input),
       async (store) => {
-        await this.authorizeOwner(store, context);
+        await this.authorizeGenerationLedgerAccess(store, context);
         validateRouteSnapshot(input.routeSnapshot);
         const usage = await store.listUsageEvents(context.workspaceId, input.operation);
         const reservation = usage.find(
@@ -582,7 +590,7 @@ export class P1ApplicationService {
       deploymentId: string;
     }
   ) {
-    await this.authorizeOwner(this.repository, context);
+    await this.authorizeGenerationLedgerAccess(this.repository, context);
     validateRouteSnapshot(input.routeSnapshot);
     if (
       !input.routeSnapshot.allowedCandidates.some(
@@ -618,7 +626,7 @@ export class P1ApplicationService {
       idempotencyKey,
       payloadHash(checkpointIdentity),
       async (store) => {
-        await this.authorizeOwner(store, context);
+        await this.authorizeGenerationLedgerAccess(store, context);
         validateRouteSnapshot(input.routeSnapshot);
         if (!Number.isInteger(input.usageAmount) || input.usageAmount < 0) {
           throw new P1DomainError(
@@ -784,7 +792,7 @@ export class P1ApplicationService {
       idempotencyKey,
       payloadHash(input),
       async (store) => {
-        await this.authorizeOwner(store, context);
+        await this.authorizeGenerationLedgerAccess(store, context);
         const job = await requireJob(store, context.workspaceId, input.jobId);
         if (job.status === 'completed' || job.status === 'cancelled' || job.status === 'failed') {
           throw new P1DomainError('INVALID_STATE', 'Generation job is terminal.');
@@ -838,7 +846,7 @@ export class P1ApplicationService {
       idempotencyKey,
       payloadHash(input),
       async (store) => {
-        await this.authorizeOwner(store, context);
+        await this.authorizeGenerationLedgerAccess(store, context);
         const attempt = await store.getProviderAttempt(context.workspaceId, input.attemptId);
         if (!attempt) throw new P1DomainError('NOT_FOUND', 'Provider attempt was not found.');
         if (attempt.acceptance !== 'pending') {
@@ -869,7 +877,7 @@ export class P1ApplicationService {
       idempotencyKey,
       payloadHash(input),
       async (store) => {
-        await this.authorizeOwner(store, context);
+        await this.authorizeGenerationLedgerAccess(store, context);
         if (!(await store.getProviderAttempt(context.workspaceId, input.attemptId))) {
           throw new P1DomainError('NOT_FOUND', 'Provider attempt was not found.');
         }
@@ -903,7 +911,7 @@ export class P1ApplicationService {
       idempotencyKey,
       payloadHash(input),
       async (store) => {
-        await this.authorizeOwner(store, context);
+        await this.authorizeGenerationLedgerAccess(store, context);
         const attempt = await store.getProviderAttempt(
           context.workspaceId,
           input.attemptId,
@@ -1064,7 +1072,7 @@ export class P1ApplicationService {
       idempotencyKey,
       payloadHash(input),
       async (store) => {
-        await this.authorizeOwner(store, context);
+        await this.authorizeGenerationLedgerAccess(store, context);
         const job = await requireJob(store, context.workspaceId, input.jobId);
         const attempt = await store.getProviderAttempt(context.workspaceId, input.attemptId);
         if (!attempt || attempt.jobId !== job.id || attempt.acceptance !== 'accepted') {
@@ -1129,7 +1137,7 @@ export class P1ApplicationService {
       idempotencyKey,
       payloadHash(input),
       async (store) => {
-        await this.authorizeOwner(store, context);
+        await this.authorizeGenerationLedgerAccess(store, context);
         const job = await requireJob(store, context.workspaceId, input.jobId);
         if (job.status === 'completed' || job.status === 'cancelled') {
           throw new P1DomainError('INVALID_STATE', 'A delivered or cancelled job cannot fail.');
@@ -1188,7 +1196,7 @@ export class P1ApplicationService {
       idempotencyKey,
       payloadHash(input),
       async (store) => {
-        await this.authorizeOwner(store, context);
+        await this.authorizeGenerationLedgerAccess(store, context);
         const job = await requireJob(store, context.workspaceId, input.jobId);
         const events = await store.listUsageEvents(
           context.workspaceId,
@@ -1309,17 +1317,17 @@ export class P1ApplicationService {
   }
 
   async getGenerationJob(context: P1Context, jobId: string) {
-    await this.authorizeOwner(this.repository, context);
+    await this.authorizeGenerationLedgerAccess(this.repository, context);
     return requireJob(this.repository, context.workspaceId, jobId);
   }
 
   async getRouteSnapshot(context: P1Context, snapshotId: string) {
-    await this.authorizeOwner(this.repository, context);
+    await this.authorizeGenerationLedgerAccess(this.repository, context);
     return requireSnapshot(this.repository, context.workspaceId, snapshotId);
   }
 
   async getProviderAttempt(context: P1Context, attemptId: string) {
-    await this.authorizeOwner(this.repository, context);
+    await this.authorizeGenerationLedgerAccess(this.repository, context);
     const attempt = await this.repository.getProviderAttempt(
       context.workspaceId,
       attemptId,
@@ -1331,7 +1339,7 @@ export class P1ApplicationService {
   }
 
   async getOwnedAsset(context: P1Context, assetId: string) {
-    await this.authorizeOwner(this.repository, context);
+    await this.authorizeGenerationLedgerAccess(this.repository, context);
     const asset = await this.repository.getOwnedAsset(
       context.workspaceId,
       assetId,
@@ -1341,7 +1349,7 @@ export class P1ApplicationService {
   }
 
   async listProviderCosts(context: P1Context, attemptId: string) {
-    await this.authorizeOwner(this.repository, context);
+    await this.authorizeGenerationLedgerAccess(this.repository, context);
     return this.repository.listProviderCosts(context.workspaceId, attemptId);
   }
 

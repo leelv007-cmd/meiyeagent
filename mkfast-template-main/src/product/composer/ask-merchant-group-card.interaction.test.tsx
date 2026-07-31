@@ -4,7 +4,10 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 
 import { P1RequestError } from '@/p1/client';
-import { AskMerchantGroupCard } from '@/product/composer/ask-merchant-group-card';
+import {
+  AskMerchantGroupCard,
+  AskMerchantResolutionNotice,
+} from '@/product/composer/ask-merchant-group-card';
 
 afterEach(() => {
   cleanup();
@@ -52,6 +55,60 @@ const REQUEST: AskMerchantQuestionRequest = {
     renderer: 'ask_merchant_group',
   },
 };
+
+const SEMANTIC_DEFAULT_REQUEST: AskMerchantQuestionRequest = {
+  ...REQUEST,
+  timeoutPolicy: {
+    kind: 'semantic_default',
+    timeoutSeconds: 30,
+    eligibility: {
+      kind: 'safe',
+      serverEvaluated: true,
+      effect: 'none',
+      quota: 'not_applicable',
+      defaultResponse: {
+        kind: 'answer',
+        items: REQUEST.questions.map((question) => ({
+          itemId: question.itemId,
+          result: { kind: 'deferred' as const },
+        })),
+      },
+      defaultResponseFingerprint: '0'.repeat(64),
+      policyRevision: 'ask-semantic-default/v1',
+      conditionRevision: 'request-1:r1',
+    },
+  },
+};
+
+it('states the safe semantic default and Core-owned countdown', () => {
+  render(
+    <AskMerchantGroupCard
+      onEditingChange={async () => undefined}
+      onRendererReady={async () => undefined}
+      onSubmit={async () => undefined}
+      request={SEMANTIC_DEFAULT_REQUEST}
+    />
+  );
+
+  expect(screen.getByTestId('ask-merchant-group-card')).toHaveAttribute(
+    'data-auto-continue',
+    'true'
+  );
+  expect(screen.getByTestId('ask-merchant-default')).toHaveTextContent(
+    '默认：暂未确定'
+  );
+  expect(screen.getByTestId('ask-merchant-countdown')).toHaveTextContent(
+    '30 秒后按默认继续'
+  );
+});
+
+it('projects the durable system default in merchant language', () => {
+  render(<AskMerchantResolutionNotice />);
+
+  expect(screen.getByTestId('composer-question-settled')).toHaveTextContent(
+    '系统已按通用模式继续，你仍可回答并生成精修版本。'
+  );
+});
 
 it('renders every item but submits labels without descriptions', async () => {
   const user = userEvent.setup();

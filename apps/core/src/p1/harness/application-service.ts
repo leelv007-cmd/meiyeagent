@@ -61,7 +61,8 @@ export type HarnessInteractionApplicationPort = Pick<
   | 'setEditing'
   | 'submit'
   | 'submitMerchantMessage'
->;
+> &
+  Partial<Pick<HarnessInteractionService, 'readSnapshotForCarrier'>>;
 
 export class HarnessAccessError extends Error {
   readonly code = 'HARNESS_TASK_NOT_FOUND';
@@ -178,6 +179,22 @@ export class HarnessApplicationService {
     await this.requireTask(workspaceId, taskId);
     if (!this.interactions) return null;
     return this.interactions.readForCarrier(
+      workspaceId,
+      taskId,
+      'conversation',
+    );
+  }
+
+  async readInteractionSnapshot(workspaceId: string, taskId: string) {
+    await this.requireTask(workspaceId, taskId);
+    if (!this.interactions?.readSnapshotForCarrier) {
+      return {
+        request: null,
+        resolutionSource: null,
+        status: 'absent' as const,
+      };
+    }
+    return this.interactions.readSnapshotForCarrier(
       workspaceId,
       taskId,
       'conversation',

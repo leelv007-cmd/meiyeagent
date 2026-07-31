@@ -43,6 +43,7 @@ import type {
 import {
   createHarnessInteractionPendingProjection,
   harnessInteractionPendingProjectionSchema,
+  type HarnessInteractionSnapshot,
   type HarnessInteractionPendingProjection,
   type HarnessInteractionStore,
 } from './interaction-service.js';
@@ -1132,6 +1133,61 @@ export class PostgresHarnessStore
       result.rows[0]?.pending_projection,
     );
     return parsed.success ? parsed.data.request : null;
+  }
+
+  async readInteractionSnapshot(
+    workspaceId: string,
+    runId: string,
+  ): Promise<HarnessInteractionSnapshot> {
+    const runtimeTaskId = await this.workflowRuntimeId(workspaceId, runId);
+    if (!runtimeTaskId) {
+      return {
+        request: null,
+        resolutionSource: null,
+        status: 'absent' as const,
+      };
+    }
+    const result = await this.pool.query<{
+      pending_projection: unknown;
+      resolution_source: string | null;
+      status: 'pending' | 'resolved';
+    }>(
+      `select questions.pending_projection,
+              questions.status,
+              (
+                select events.resolution_source
+                  from harness_runtime.decision_events events
+                 where events.task_id=questions.task_id
+                   and events.question_id=questions.question_id
+                   and events.resolution_source in ('decision','system_default')
+                 order by events.created_at, events.id
+                 limit 1
+              ) as resolution_source
+         from harness_runtime.pending_questions questions
+        where questions.task_id=$1`,
+      [runtimeTaskId],
+    );
+    const row = result.rows[0];
+    const parsed = harnessInteractionPendingProjectionSchema.safeParse(
+      row?.pending_projection,
+    );
+    if (!row || !parsed.success) {
+      return {
+        request: null,
+        resolutionSource: null,
+        status: 'absent' as const,
+      };
+    }
+    const resolutionSource =
+      row.resolution_source === 'decision' ||
+      row.resolution_source === 'system_default'
+        ? row.resolution_source
+        : null;
+    return {
+      request: parsed.data.request,
+      resolutionSource: row.status === 'resolved' ? resolutionSource : null,
+      status: row.status,
+    };
   }
 
   async readWaitingInteraction(workspaceId: string, runId: string) {

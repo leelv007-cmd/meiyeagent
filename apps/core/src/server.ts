@@ -1708,7 +1708,9 @@ export function createCoreServer({
         authorizeContentCreation(context);
         const result =
           request.method === 'GET'
-            ? await harnessService.readPendingInteraction(workspaceId, taskId)
+            ? url.searchParams.get('view') === 'snapshot'
+              ? await harnessService.readInteractionSnapshot(workspaceId, taskId)
+              : await harnessService.readPendingInteraction(workspaceId, taskId)
             : await harnessService.submitInteraction(
                 workspaceId,
                 taskId,

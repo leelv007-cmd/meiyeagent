@@ -1,4 +1,10 @@
-import { cleanup, render, screen, within } from '@testing-library/react';
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -77,6 +83,22 @@ describe('Recipe / Surface visual lifecycle editor', () => {
     expect(screen.getByTestId('recipe-visual-preview')).toHaveTextContent(
       '门店活动图文'
     );
+    expect(api.command).toHaveBeenCalledWith(
+      'recipe_draft',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          delivery: {
+            aspectRatio: '3:4',
+            contentPackagePlatform: 'xiaohongshu',
+            deliverableKind: 'note',
+            distributionTarget: 'export',
+            notePageBound: 3,
+            quantity: 1,
+          },
+        }),
+      }),
+      expect.any(String)
+    );
 
     await user.click(screen.getByRole('button', { name: '生成 Recipe 预览' }));
     expect(
@@ -101,6 +123,43 @@ describe('Recipe / Surface visual lifecycle editor', () => {
       'recipe_rollback',
       expect.objectContaining({ targetRevision: 3, expectedRevision: 6 }),
       expect.any(String)
+    );
+  });
+
+  it('enters Recipe preview before publish validation passes', async () => {
+    const user = userEvent.setup();
+    const api = createLifecycleApi();
+    const query = api.query as ReturnType<typeof vi.fn>;
+    query.mockImplementation(
+      async (action: string, _payload: Record<string, unknown>) => {
+        if (action === 'recipe_validate') {
+          return { ok: false, errors: ['publish contract is incomplete'] };
+        }
+        if (action.endsWith('_history')) return [];
+        return null;
+      }
+    );
+    render(<AdminCreationExperienceControl api={api} />);
+
+    await user.type(screen.getByLabelText('Recipe ID'), 'recipe.preview.first');
+    await user.type(screen.getByLabelText('标题'), '预览先行');
+    await user.type(screen.getByLabelText('摘要'), '发布前检查可以稍后完成');
+    await user.type(
+      screen.getByLabelText('Prompt revision'),
+      'prompt.preview@1'
+    );
+    await user.type(screen.getByLabelText('变更原因'), '验收预览顺序');
+    await user.click(screen.getByRole('button', { name: '保存 Recipe 草稿' }));
+    await user.click(screen.getByRole('button', { name: '生成 Recipe 预览' }));
+
+    expect(api.command).toHaveBeenCalledWith(
+      'recipe_preview',
+      expect.objectContaining({ expectedRevision: 1 }),
+      expect.any(String)
+    );
+    expect(api.query).not.toHaveBeenCalledWith(
+      'recipe_validate',
+      expect.anything()
     );
   });
 
@@ -153,5 +212,90 @@ describe('Recipe / Surface visual lifecycle editor', () => {
       }),
       expect.any(String)
     );
+  });
+
+  it('serializes Surface publish validation and rollback commands', async () => {
+    const user = userEvent.setup();
+    const api = createLifecycleApi();
+    render(<AdminCreationExperienceControl api={api} />);
+    await user.click(screen.getByRole('tab', { name: 'Surface 编辑' }));
+
+    const editor = screen.getByTestId('surface-editor');
+    await user.type(
+      within(editor).getByLabelText('Surface ID'),
+      'surface.admin.race'
+    );
+    await user.type(
+      within(editor).getByLabelText('Recipe revision ID'),
+      'recipe.admin.demo@3'
+    );
+    await user.type(
+      within(editor).getByLabelText('变更原因'),
+      '验证发布与回滚串行执行'
+    );
+
+    await user.click(
+      within(editor).getByRole('button', { name: '保存 Surface 草稿' })
+    );
+    await user.click(
+      within(editor).getByRole('button', { name: '生成 Surface 预览' })
+    );
+    await user.click(
+      within(editor).getByRole('button', { name: '发布 Surface' })
+    );
+    expect(
+      await screen.findByTestId('surface-lifecycle-status')
+    ).toHaveTextContent('published · r3');
+
+    await user.click(
+      within(editor).getByRole('button', { name: '保存 Surface 草稿' })
+    );
+    await user.click(
+      within(editor).getByRole('button', { name: '生成 Surface 预览' })
+    );
+
+    let releaseValidation: (() => void) | undefined;
+    const validationPending = new Promise<void>((resolve) => {
+      releaseValidation = resolve;
+    });
+    const query = api.query as ReturnType<typeof vi.fn>;
+    const queryImplementation =
+      query.getMockImplementation() as CreationExperienceAdminApi['query'];
+    query.mockImplementation(
+      async (action: string, payload: Record<string, unknown>) => {
+        if (action === 'surface_validate') {
+          await validationPending;
+          return { ok: true, errors: [] };
+        }
+        return queryImplementation(action, payload);
+      }
+    );
+
+    await user.click(
+      within(editor).getByRole('button', { name: '发布 Surface' })
+    );
+    await user.selectOptions(
+      within(editor).getByLabelText('Surface 回滚版本'),
+      '3'
+    );
+    expect(
+      within(editor).getByRole('button', { name: '回滚 Surface' })
+    ).toBeDisabled();
+
+    releaseValidation?.();
+    await waitFor(() =>
+      expect(screen.getByTestId('surface-lifecycle-status')).toHaveTextContent(
+        'published · r6'
+      )
+    );
+    await user.click(
+      within(editor).getByRole('button', { name: '回滚 Surface' })
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('surface-lifecycle-status')).toHaveTextContent(
+        'published · r7'
+      )
+    );
+    expect(within(editor).getByText(/回滚自 r3/)).toBeInTheDocument();
   });
 });
