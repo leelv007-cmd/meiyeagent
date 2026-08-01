@@ -11,6 +11,7 @@ import type { CreditBalanceProjection, CreditGrantLot, GrantCreditsInput } from 
 import {
   creditSubscriptionIntervalForCycle,
   creditSubscriptionTierForCycle,
+  currentCreditSubscriptionCycle,
   type CreditSubscription,
   type CreditSubscriptionInterval,
   type CreditSubscriptionStore,
@@ -132,11 +133,20 @@ export class CreditBillingService {
     const workspaceSubscriptions = await subscriptions.listForWorkspace(
       context.workspaceId,
     );
-    const active = subscriptionForPayment(
+    const requestedSubscription = subscriptionForPayment(
       workspaceSubscriptions,
       input.subscriptionId,
     );
-    const currentCycleIndex = Math.max(0, (active?.paidThroughCycle ?? 1) - 1);
+    const workspaceActive = workspaceSubscriptions.find(
+      (subscription) => subscription.status !== 'cancelled',
+    ) ?? null;
+    const active =
+      requestedSubscription ??
+      (input.lifecycle === 'activate' ? workspaceActive : null);
+    const currentCycleIndex = active
+      ? currentCreditSubscriptionCycle(active, now)?.cycleIndex ??
+        Math.max(0, active.paidThroughCycle - 1)
+      : 0;
     const currentTier = active
       ? creditSubscriptionTierForCycle(active, currentCycleIndex)
       : null;
@@ -162,16 +172,22 @@ export class CreditBillingService {
       return subscriptions.cancel(active.id, now);
     }
 
-    if (input.lifecycle === 'renew' || input.lifecycle === 'resume') {
+    if (input.lifecycle === 'resume') {
       if (!active) {
-        return this.openSubscription(context, subscriptions, {
-          id: subscriptionIdFor(input, context.workspaceId),
-          interval,
-          paidThroughCycle: paidCycleCoverage(interval),
-          tier,
-          anchorAt,
-          now,
-        });
+        throw new P1DomainError(
+          'NOT_FOUND',
+          'Credit subscription cannot resume before activation.',
+        );
+      }
+      return subscriptions.resume(active.id, now);
+    }
+
+    if (input.lifecycle === 'renew') {
+      if (!active) {
+        throw new P1DomainError(
+          'NOT_FOUND',
+          'Credit subscription cannot renew before activation.',
+        );
       }
       if (
         currentInterval === 'single_month' &&
@@ -182,11 +198,13 @@ export class CreditBillingService {
           'A single-month credit subscription has no renewable coverage.',
         );
       }
-      return subscriptions.recordPaidCoverage(
-        active.id,
-        active.paidThroughCycle + paidCycleCoverage(interval),
-        now,
-      );
+      assertText(input.periodStartsAt ?? '', 'periodStartsAt');
+      return subscriptions.recordPaidPeriod({
+        subscriptionId: active.id,
+        periodStartsAt: input.periodStartsAt!,
+        coverageCycles: paidCycleCoverage(interval),
+        at: now,
+      });
     }
 
     if (!active) {
@@ -200,8 +218,19 @@ export class CreditBillingService {
       });
     }
 
+    const requestedSubscriptionId = subscriptionIdFor(
+      input,
+      context.workspaceId,
+    );
     const comparison = planRank(tier) - planRank(currentTier!);
-    if (comparison > 0) {
+    const replacesSubscription = active.id !== requestedSubscriptionId;
+    if (replacesSubscription && comparison < 0) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'A replacement subscription cannot apply a downgrade before the next cycle.',
+      );
+    }
+    if (comparison > 0 || replacesSubscription) {
       await this.ledger.expireSubscriptionLots({
         workspaceId: context.workspaceId,
         subscriptionId: active.id,
@@ -211,12 +240,14 @@ export class CreditBillingService {
       });
       await subscriptions.cancel(active.id, now);
       return this.openSubscription(context, subscriptions, {
-        id: subscriptionIdFor(input, context.workspaceId),
+        id: requestedSubscriptionId,
         interval,
         paidThroughCycle: paidCycleCoverage(interval),
         tier,
         anchorAt,
-        grantCycleOffset: active.grantCycleOffset + active.paidThroughCycle,
+        grantCycleOffset: replacesSubscription
+          ? 0
+          : active.grantCycleOffset + active.paidThroughCycle,
         now,
       });
     }

@@ -68,6 +68,13 @@ export interface CreditSubscriptionStore {
     paidThroughCycle: number,
     at: string,
   ): Promise<CreditSubscription>;
+  recordPaidPeriod(input: {
+    subscriptionId: string;
+    periodStartsAt: string;
+    coverageCycles: number;
+    at: string;
+  }): Promise<CreditSubscription>;
+  resume(subscriptionId: string, at: string): Promise<CreditSubscription>;
   markPastDue(subscriptionId: string, at: string): Promise<CreditSubscription>;
   cancelPastDue(subscriptionId: string, at: string): Promise<CreditSubscription>;
   cancel(subscriptionId: string, at: string): Promise<CreditSubscription>;
@@ -143,6 +150,15 @@ export function dueCreditSubscriptionCycles(
     cycles.push(cycle);
   }
   return cycles;
+}
+
+export function currentCreditSubscriptionCycle(
+  subscription: CreditSubscription,
+  asOf: string,
+): CreditSubscriptionCycle | null {
+  const now = date(asOf, 'asOf').getTime();
+  const current = dueCreditSubscriptionCycles(subscription, asOf).at(-1);
+  return current && now < Date.parse(current.endsAt) ? current : null;
 }
 
 export function creditSubscriptionTierForCycle(
@@ -366,6 +382,7 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
     { payloadHash: string; result: CreditSubscription | null }
   >();
   private paymentEventTail: Promise<void> = Promise.resolve();
+  private readonly paidPeriods = new Map<string, number>();
 
   async get(subscriptionId: string) {
     const subscription = this.subscriptions.get(subscriptionId);
@@ -420,6 +437,48 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
       subscription.paidThroughCycle,
       paidThroughCycle,
     );
+    subscription.status = 'active';
+    subscription.pastDueAt = null;
+    subscription.updatedAt = iso(at);
+    return structuredClone(subscription);
+  }
+
+  async recordPaidPeriod(input: {
+    subscriptionId: string;
+    periodStartsAt: string;
+    coverageCycles: number;
+    at: string;
+  }) {
+    const subscription = this.require(input.subscriptionId);
+    const periodStartsAt = iso(input.periodStartsAt);
+    assertCoverageCycles(input.coverageCycles);
+    if (subscription.status === 'cancelled') {
+      throw new Error('Cancelled credit subscriptions cannot receive renewal coverage.');
+    }
+    const key = `${input.subscriptionId}\u0000${periodStartsAt}`;
+    const existingCoverage = this.paidPeriods.get(key);
+    if (existingCoverage !== undefined) {
+      if (existingCoverage !== input.coverageCycles) {
+        throw new P1DomainError(
+          'IDEMPOTENCY_CONFLICT',
+          'Credit subscription billing period has different coverage facts.',
+        );
+      }
+      return structuredClone(subscription);
+    }
+    this.paidPeriods.set(key, input.coverageCycles);
+    return this.recordPaidCoverage(
+      input.subscriptionId,
+      subscription.paidThroughCycle + input.coverageCycles,
+      input.at,
+    );
+  }
+
+  async resume(subscriptionId: string, at: string) {
+    const subscription = this.require(subscriptionId);
+    if (subscription.status === 'cancelled') {
+      throw new Error('Cancelled credit subscriptions cannot resume.');
+    }
     subscription.status = 'active';
     subscription.pastDueAt = null;
     subscription.updatedAt = iso(at);
@@ -597,6 +656,16 @@ export class PostgresCreditSubscriptionStore
       CREATE INDEX IF NOT EXISTS p1_credit_subscriptions_scheduler_idx
         ON p1_credit_subscriptions (status, anchor_at, id)
         WHERE status IN ('active', 'past_due');
+      CREATE UNIQUE INDEX IF NOT EXISTS p1_credit_subscriptions_one_active_workspace_idx
+        ON p1_credit_subscriptions (workspace_id)
+        WHERE status IN ('active', 'past_due');
+      CREATE TABLE IF NOT EXISTS p1_credit_subscription_paid_periods (
+        subscription_id text NOT NULL REFERENCES p1_credit_subscriptions(id) ON DELETE CASCADE,
+        period_starts_at timestamptz NOT NULL,
+        coverage_cycles integer NOT NULL CHECK (coverage_cycles > 0),
+        created_at timestamptz NOT NULL,
+        PRIMARY KEY (subscription_id, period_starts_at)
+      );
       CREATE TABLE IF NOT EXISTS p1_credit_payment_events (
         workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
         payment_event_id text NOT NULL,
@@ -695,6 +764,69 @@ export class PostgresCreditSubscriptionStore
       [subscriptionId, paidThroughCycle, iso(at)],
     );
     if (!result.rows[0]) throw new Error(`Credit subscription ${subscriptionId} was not found.`);
+    return subscriptionFromRow(result.rows[0]);
+  }
+
+  async recordPaidPeriod(input: {
+    subscriptionId: string;
+    periodStartsAt: string;
+    coverageCycles: number;
+    at: string;
+  }) {
+    assertCoverageCycles(input.coverageCycles);
+    const existing = await this.require(input.subscriptionId);
+    if (existing.status === 'cancelled') {
+      throw new Error('Cancelled credit subscriptions cannot receive renewal coverage.');
+    }
+    const periodStartsAt = iso(input.periodStartsAt);
+    const inserted = await this.database.query<{ coverage_cycles: number | string }>(
+      `INSERT INTO p1_credit_subscription_paid_periods
+        (subscription_id, period_starts_at, coverage_cycles, created_at)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (subscription_id, period_starts_at) DO NOTHING
+       RETURNING coverage_cycles`,
+      [input.subscriptionId, periodStartsAt, input.coverageCycles, iso(input.at)],
+    );
+    if (!inserted.rows[0]) {
+      const replay = await this.database.query<{ coverage_cycles: number | string }>(
+        `SELECT coverage_cycles
+           FROM p1_credit_subscription_paid_periods
+          WHERE subscription_id = $1 AND period_starts_at = $2`,
+        [input.subscriptionId, periodStartsAt],
+      );
+      if (Number(replay.rows[0]?.coverage_cycles) !== input.coverageCycles) {
+        throw new P1DomainError(
+          'IDEMPOTENCY_CONFLICT',
+          'Credit subscription billing period has different coverage facts.',
+        );
+      }
+      return this.require(input.subscriptionId);
+    }
+    const updated = await this.database.query<CreditSubscriptionRow>(
+      `UPDATE p1_credit_subscriptions
+          SET paid_through_cycle = paid_through_cycle + $2,
+              status = 'active', past_due_at = NULL, updated_at = $3
+        WHERE id = $1 AND status <> 'cancelled'
+        RETURNING *`,
+      [input.subscriptionId, input.coverageCycles, iso(input.at)],
+    );
+    if (!updated.rows[0]) {
+      throw new Error(`Credit subscription ${input.subscriptionId} was not found.`);
+    }
+    return subscriptionFromRow(updated.rows[0]);
+  }
+
+  async resume(subscriptionId: string, at: string) {
+    const result = await this.database.query<CreditSubscriptionRow>(
+      `UPDATE p1_credit_subscriptions
+          SET status = 'active', past_due_at = NULL, updated_at = $2
+        WHERE id = $1 AND status <> 'cancelled'
+        RETURNING *`,
+      [subscriptionId, iso(at)],
+    );
+    if (!result.rows[0]) {
+      throw new Error(`Credit subscription ${subscriptionId} was not found.`);
+    }
     return subscriptionFromRow(result.rows[0]);
   }
 
@@ -939,6 +1071,12 @@ function assertSubscriptionInput(input: CreditSubscriptionInput) {
 function assertPaidThroughCycle(value: number) {
   if (!Number.isInteger(value) || value < 0) {
     throw new Error('paidThroughCycle must be a non-negative integer.');
+  }
+}
+
+function assertCoverageCycles(value: number) {
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error('coverageCycles must be a positive integer.');
   }
 }
 

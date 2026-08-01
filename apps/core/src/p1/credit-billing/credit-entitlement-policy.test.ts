@@ -63,6 +63,26 @@ test('booster-only credits never restore paid non-credit entitlements', async ()
   );
 });
 
+test('an annual subscription resolves rights from its current month, not its final paid month', async () => {
+  const now = new Date('2026-01-15T08:30:00.000Z');
+  const subscriptions = new MemoryCreditSubscriptionStore();
+  await subscriptions.upsert({
+    anchorAt: now.toISOString(),
+    id: 'subscription-annual-pro',
+    interval: 'yearly',
+    paidThroughCycle: 12,
+    tier: 'pro',
+    workspaceId: 'workspace-annual-pro',
+  });
+  const policy = new CreditSubscriptionEntitlementPolicy(
+    subscriptions,
+    { async get() { return structuredClone(DEFAULT_CREDIT_PLAN_CATALOG); } },
+    () => now,
+  );
+
+  assert.equal((await policy.resolve('workspace-annual-pro'))?.tier, 'pro');
+});
+
 function defaultPolicy(
   tier: 'trial',
   revision: string,

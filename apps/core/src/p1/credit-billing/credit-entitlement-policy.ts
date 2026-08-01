@@ -5,7 +5,7 @@ import type {
 import type { CreditPlanCatalog } from './credit-plan-catalog.js';
 import {
   CREDIT_SUBSCRIPTION_GRACE_PERIOD_MS,
-  creditSubscriptionCycle,
+  currentCreditSubscriptionCycle,
   creditSubscriptionTierForCycle,
   type CreditSubscription,
   type CreditSubscriptionStore,
@@ -34,7 +34,12 @@ export class CreditSubscriptionEntitlementPolicy
     const tier = subscription
       ? creditSubscriptionTierForCycle(
           subscription,
-          Math.max(0, subscription.paidThroughCycle - 1),
+          subscription.status === 'past_due'
+            ? Math.max(0, subscription.paidThroughCycle - 1)
+            : currentCreditSubscriptionCycle(
+                subscription,
+                now.toISOString(),
+              )!.cycleIndex,
         )
       : 'trial';
     const plan = (await this.plans.get()).plans.find(
@@ -75,9 +80,5 @@ function hasCurrentPaidRights(subscription: CreditSubscription, now: Date) {
   if (subscription.status !== 'active' || subscription.paidThroughCycle < 1) {
     return false;
   }
-  const coverage = creditSubscriptionCycle(
-    subscription.anchorAt,
-    subscription.paidThroughCycle - 1,
-  );
-  return Date.parse(coverage.startsAt) <= nowMs && nowMs < Date.parse(coverage.endsAt);
+  return currentCreditSubscriptionCycle(subscription, now.toISOString()) !== null;
 }

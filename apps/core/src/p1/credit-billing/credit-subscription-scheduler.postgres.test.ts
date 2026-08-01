@@ -89,6 +89,40 @@ test(
         /different facts/i,
       );
 
+      for (const [paymentEventId, payloadHash] of [
+        ['payment-same-period-a', 'c'.repeat(64)],
+        ['payment-same-period-b', 'd'.repeat(64)],
+      ] as const) {
+        await store.withPaymentEvent(
+          {
+            workspaceId,
+            paymentEventId,
+            payloadHash,
+            createdAt: '2026-03-01T00:00:00.000Z',
+          },
+          (subscriptions) =>
+            subscriptions.recordPaidPeriod({
+              subscriptionId,
+              periodStartsAt: '2026-03-01T00:00:00.000Z',
+              coverageCycles: 1,
+              at: '2026-03-01T00:00:00.000Z',
+            }),
+        );
+      }
+      assert.equal((await store.get(subscriptionId))?.paidThroughCycle, 15);
+
+      await assert.rejects(
+        store.upsert({
+          anchorAt: '2026-03-01T00:00:00.000Z',
+          id: `${subscriptionId}-second`,
+          interval: 'monthly',
+          paidThroughCycle: 1,
+          tier: 'starter',
+          workspaceId,
+        }),
+        /one_active_per_workspace|unique/i,
+      );
+
       await store.markPastDue(subscriptionId, '2026-03-01T00:00:00.000Z');
       const cancelled = await store.cancelPastDue(
         subscriptionId,
@@ -97,7 +131,7 @@ test(
       assert.equal(cancelled.status, 'cancelled');
       assert.equal(cancelled.pastDueAt, null);
       await assert.rejects(
-        store.recordPaidCoverage(subscriptionId, 15, '2026-03-08T00:00:00.000Z'),
+        store.recordPaidCoverage(subscriptionId, 16, '2026-03-08T00:00:00.000Z'),
         /cancelled/i,
       );
     } finally {
