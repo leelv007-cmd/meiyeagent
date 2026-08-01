@@ -21,7 +21,6 @@ export function buildSensitiveCheckBar(input: {
   text: string;
   scan: SensitiveScanResult;
 }): SensitiveCheckBar {
-  const normalized = input.text.normalize('NFKC');
   if (input.scan.hitCount === 0) {
     return sensitiveCheckBarSchema.parse({
       schemaVersion: 'sensitive-check-bar/v1',
@@ -41,7 +40,7 @@ export function buildSensitiveCheckBar(input: {
       wordId: hit.wordId,
       word: hit.word,
       category: hit.category,
-      snippet: snippetAround(normalized, hit),
+      snippet: snippetAround(input.text, hit),
       replacements: [...hit.replacements],
     });
   }

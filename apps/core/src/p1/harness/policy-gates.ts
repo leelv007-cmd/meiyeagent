@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
-import type { SensitiveWordRecord } from '@meiye/contracts';
+import type {
+  SensitiveCheckBar,
+  SensitiveWordRecord,
+} from '@meiye/contracts';
 
-import {
-  collectCandidateScanText,
-  scanSensitiveText,
-} from '../sensitive-words/scan.js';
+import { runGenerationChainSensitiveCheck } from '../sensitive-words/generation-chain-check.js';
+import { collectCandidateScanText } from '../sensitive-words/scan.js';
 import { extractVisibleClaimPatternMatches } from './visible-claim-patterns.js';
 
 /** Re-export shared scanner so redlines + generation chain prove same source. */
@@ -101,6 +102,7 @@ export interface HarnessGateFailure {
   reason: string;
   alternativePath: string[];
   triggeredClaims?: VisibleClaimExtraction['claims'];
+  sensitiveCheckBar?: SensitiveCheckBar;
 }
 
 export interface HarnessPolicyResult {
@@ -305,23 +307,24 @@ function sensitiveWordsGate(
   if (lexicon.length === 0) return null;
   const text = collectCandidateScanText(input.candidate);
   if (!text.trim()) return null;
-  const scan = scanSensitiveText(text, lexicon);
-  if (scan.hitCount === 0) return null;
-  const uniqueWords = [...new Set(scan.hits.map((hit) => hit.word))];
+  const generationCheck = runGenerationChainSensitiveCheck({ text, lexicon });
+  if (generationCheck.passed) return null;
+  const uniqueWords = [
+    ...new Set(generationCheck.scan.hits.map((hit) => hit.word)),
+  ];
   const replacements = [
-    ...new Set(scan.hits.flatMap((hit) => hit.replacements)),
+    ...new Set(generationCheck.scan.hits.flatMap((hit) => hit.replacements)),
   ].slice(0, 8);
   const wordHints = uniqueWords.slice(0, 5);
-  return failure(
-    'sensitive_words',
-    '候选文案含有违禁词，已停止该候选。',
-    [
+  return {
+    ...failure('sensitive_words', '候选文案含有违禁词，已停止该候选。', [
       ...(replacements.length > 0
         ? replacements
         : ['改写违规表述', '删除违禁词后重试']),
       ...wordHints.map((word) => `命中：${word}`),
-    ],
-  );
+    ]),
+    sensitiveCheckBar: generationCheck.checkBar,
+  };
 }
 
 function externalRevisionGate(

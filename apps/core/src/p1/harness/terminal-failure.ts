@@ -30,5 +30,8 @@ export function normalizeHarnessTerminalFailure(
     ...(typeof value.merchantMessage === 'string'
       ? { merchantMessage: value.merchantMessage }
       : {}),
+    ...(Array.isArray(value.violations) && value.violations.length > 0
+      ? { violations: structuredClone(value.violations) }
+      : {}),
   };
 }

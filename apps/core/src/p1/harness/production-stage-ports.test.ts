@@ -2542,7 +2542,7 @@ test('copy selection awaits the additive primitive check with frozen child axes'
   });
 });
 
-test('an additive primitive check violation blocks the selected candidate', async () => {
+test('a sensitive-word primitive violation keeps structured matches and prevents delivery', async () => {
   const runner = new QueueRunner([candidate('门店护理建议')]);
   const observer = new AgentPrimitiveObservabilityAdapter(
     new MemoryObservabilityEventAudit(),
@@ -2552,6 +2552,26 @@ test('an additive primitive check violation blocks the selected candidate', asyn
       },
     },
   );
+  const delivery = new RecordingDelivery();
+  const sensitiveViolation = {
+    alternativePath: ['明显改善'],
+    gateId: 'sensitive_words' as const,
+    reason: '候选文案含有违禁词，已停止该候选。',
+    sensitiveCheckBar: {
+      schemaVersion: 'sensitive-check-bar/v1' as const,
+      status: 'hits' as const,
+      summary: '检出 1 处违禁词，请按建议替换后再交付。',
+      items: [
+        {
+          wordId: 'sw-extreme-001',
+          word: '根治',
+          category: 'extreme' as const,
+          snippet: '承诺根治色斑',
+          replacements: ['明显改善'],
+        },
+      ],
+    },
+  };
   const ports = new ProductionHarnessStagePorts(
     { create: () => runner },
     {
@@ -2562,7 +2582,7 @@ test('an additive primitive check violation blocks the selected candidate', asyn
         return input.context;
       },
     },
-    new RecordingDelivery(),
+    delivery,
     () => '2026-07-18T00:01:00.000Z',
     undefined,
     undefined,
@@ -2577,13 +2597,7 @@ test('an additive primitive check violation blocks the selected candidate', asyn
           allowed: false,
           status: 'blocked' as const,
           strategy: 'block' as const,
-          violations: [
-            {
-              alternativePath: ['重新核验当前门店事实'],
-              gateId: 'critical_fact_source' as const,
-              reason: '候选使用了未经核验的关键事实。',
-            },
-          ],
+          violations: [sensitiveViolation],
         };
       },
     },
@@ -2617,10 +2631,12 @@ test('an additive primitive check violation blocks the selected candidate', asyn
     }),
     (error: unknown) =>
       error instanceof HarnessSelectionError &&
-      error.gateIds[0] === 'critical_fact_source' &&
-      error.alternativePaths[0] === '重新核验当前门店事实',
+      error.gateIds[0] === 'sensitive_words' &&
+      error.alternativePaths[0] === '明显改善' &&
+      error.violations[0]?.sensitiveCheckBar?.items[0]?.word === '根治',
   );
   assert.equal(runner.requests.length, 1);
+  assert.equal(delivery.inputs.length, 0);
 });
 
 test('copy selection keeps primitive and structured-node lifecycle events distinct', async () => {

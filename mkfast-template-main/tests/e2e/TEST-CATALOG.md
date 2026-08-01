@@ -462,6 +462,18 @@ PostgreSQL, or DBOS evidence.
 |---|---|---|
 | 1 | An operator reshapes the note style set without ever touching JSON | Sign in as an administrator, open `/admin/templates`, require the editor region to contain zero `textarea.font-mono` and zero rich-text hosts, require the form to open on the style set that is actually live, then rename a style, rewrite its guide and switch a platform off using only labelled form controls; pass impact review with an audit reason and require the new name to survive a reload. Then require the CAS revision to advance, require a re-submit carrying the stale `expectedRevision` to be rejected with `IDEMPOTENCY_CONFLICT` and to leave the revision untouched, and require the reason plus a non-empty actor to land in `config_history` under the new revision. Restores the shared value through the same governed path in `finally`. |
 
+## 31d. Sensitive Words Operations And Delivery Guard (#320)
+
+**Files:** `specs/admin-sensitive-words.spec.ts`, `specs/p0-golden-journey.spec.ts` | **Priority:** P0 | **Ticket:** #320
+
+Locks both user-facing consumers of the shared sensitive-word lexicon without
+claiming the object-workspace inline replacement owned by #327.
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | Admin manages one sensitive word through the real stack | Sign in as an administrator, open `/admin/templates`, create one uniquely named medical sensitive word with two replacements, edit its word and replacements, disable it, delete it, and require zero browser console errors. |
+| 2 | Copy Result delivery waits for a clear sensitive-word check | Complete the canonical Composer copy journey, adopt the ContentPackage, and open its real delivery panel. Hold the real Core `check_bar` request at the browser boundary, require the check bar to remain `checking` and every delivery action to stay disabled, then release that same request, require `clear`, and only then continue with the enabled delivery actions. |
+
 ## 32. LIKEPAGE Marketing Landing Page
 
 **File:** `specs/landing-page.spec.ts` | **Priority:** P0

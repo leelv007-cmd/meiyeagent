@@ -73,3 +73,41 @@ test('scan + check-bar schemas accept fixture-shaped payloads', () => {
   });
   assert.equal(record.word, '根治');
 });
+
+test('scan schema rejects mismatched, overlapping, or out-of-bounds ranges', () => {
+  const hit = {
+    wordId: 'sw-1',
+    word: '根治',
+    category: 'extreme' as const,
+    replacements: ['明显改善'],
+    index: 0,
+    length: 2,
+  };
+  const result = (overrides: Record<string, unknown>) => ({
+    schemaVersion: 'sensitive-scan/v1',
+    textLength: 4,
+    hitCount: 1,
+    hits: [hit],
+    ...overrides,
+  });
+
+  assert.equal(
+    sensitiveScanResultSchema.safeParse(result({ hitCount: 0 })).success,
+    false
+  );
+  assert.equal(
+    sensitiveScanResultSchema.safeParse(
+      result({
+        hitCount: 2,
+        hits: [hit, { ...hit, wordId: 'sw-2', index: 1 }],
+      })
+    ).success,
+    false
+  );
+  assert.equal(
+    sensitiveScanResultSchema.safeParse(
+      result({ hits: [{ ...hit, index: 3 }] })
+    ).success,
+    false
+  );
+});

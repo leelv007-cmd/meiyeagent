@@ -2,7 +2,12 @@
  * Ops CRUD for platform sensitive_words lexicon (P2-08 / #320).
  * Bulk-import UI is deferred (see issue-320 handover); single-row CRUD only.
  */
-import { IconPlus, IconRefresh, IconTrash } from '@tabler/icons-react';
+import {
+  IconEdit,
+  IconPlus,
+  IconRefresh,
+  IconTrash,
+} from '@tabler/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
@@ -33,6 +38,7 @@ import type { SensitiveWordRecord } from '@meiye/contracts';
 import {
   ADMIN_SENSITIVE_WORD_CATEGORIES,
   categoryLabel,
+  draftFromRecord,
   emptySensitiveWordDraft,
   parseReplacementsText,
   validateSensitiveWordDraft,
@@ -47,8 +53,9 @@ type ListPayload = {
 export function AdminSensitiveWordsControl() {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<AdminSensitiveWordDraft>(
-    emptySensitiveWordDraft(),
+    emptySensitiveWordDraft()
   );
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
 
   const listQuery = useQuery({
@@ -64,9 +71,9 @@ export function AdminSensitiveWordsControl() {
   const sorted = useMemo(
     () =>
       [...items].sort(
-        (a, b) => b.word.length - a.word.length || a.word.localeCompare(b.word),
+        (a, b) => b.word.length - a.word.length || a.word.localeCompare(b.word)
       ),
-    [items],
+    [items]
   );
 
   const invalidate = async () => {
@@ -75,29 +82,43 @@ export function AdminSensitiveWordsControl() {
     });
   };
 
-  const createMutation = useMutation({
+  const saveMutation = useMutation({
     mutationFn: async () => {
       const error = validateSensitiveWordDraft(draft);
       if (error) throw new Error(error);
-      return commandP1('sensitive-words', {
-        action: 'create',
-        payload: {
-          word: draft.word.trim(),
-          category: draft.category,
-          replacements: parseReplacementsText(draft.replacementsText),
-          status: draft.status,
-        },
+      const payload = {
+        ...(editingId ? { id: editingId } : {}),
+        word: draft.word.trim(),
+        category: draft.category,
+        replacements: parseReplacementsText(draft.replacementsText),
+        status: draft.status,
+      };
+      await commandP1('sensitive-words', {
+        action: editingId ? 'update' : 'create',
+        payload,
       });
+      return editingId ? ('updated' as const) : ('created' as const);
     },
-    onSuccess: async () => {
-      toast.success('违禁词已创建');
+    onSuccess: async (result) => {
+      toast.success(result === 'updated' ? '违禁词已更新' : '违禁词已创建');
+      setEditingId(null);
       setDraft(emptySensitiveWordDraft());
       await invalidate();
     },
     onError: (error: Error) => {
-      toast.error(error.message || '创建失败');
+      toast.error(error.message || (editingId ? '更新失败' : '创建失败'));
     },
   });
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setDraft(emptySensitiveWordDraft());
+  };
+
+  const startEditing = (row: SensitiveWordRecord) => {
+    setEditingId(row.id);
+    setDraft(draftFromRecord(row));
+  };
 
   const toggleMutation = useMutation({
     mutationFn: async (row: SensitiveWordRecord) =>
@@ -138,8 +159,9 @@ export function AdminSensitiveWordsControl() {
         <div className="space-y-1">
           <AdminPanelTitle>违禁词库</AdminPanelTitle>
           <AdminPanelDescription>
-            美业专项词库（word / category / replacements / status）。生成链检查与红线门共库；批量导入 UI
-            本票不做，仅单条 CRUD。
+            美业专项词库（word / category / replacements /
+            status）。生成链检查与红线门共库；批量导入 UI 本票不做，仅单条
+            CRUD。
           </AdminPanelDescription>
         </div>
         <Button
@@ -159,16 +181,22 @@ export function AdminSensitiveWordsControl() {
           data-testid="admin-sensitive-words-create"
           onSubmit={(event) => {
             event.preventDefault();
-            createMutation.mutate();
+            saveMutation.mutate();
           }}
         >
+          <p className="text-sm font-medium md:col-span-2">
+            {editingId ? '编辑词条' : '新增词条'}
+          </p>
           <div className="space-y-1">
             <Label htmlFor="sw-word">词条</Label>
             <Input
               id="sw-word"
               value={draft.word}
               onChange={(event) =>
-                setDraft((current) => ({ ...current, word: event.target.value }))
+                setDraft((current) => ({
+                  ...current,
+                  word: event.target.value,
+                }))
               }
               placeholder="例如：根治"
               data-testid="admin-sensitive-words-word"
@@ -215,12 +243,26 @@ export function AdminSensitiveWordsControl() {
             <Button
               type="submit"
               size="sm"
-              disabled={createMutation.isPending}
+              disabled={saveMutation.isPending}
               data-testid="admin-sensitive-words-create-submit"
             >
-              <IconPlus className="size-4" />
-              新增
+              {editingId ? (
+                <IconEdit className="size-4" />
+              ) : (
+                <IconPlus className="size-4" />
+              )}
+              {editingId ? '保存修改' : '新增'}
             </Button>
+            {editingId ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={cancelEditing}
+              >
+                取消编辑
+              </Button>
+            ) : null}
           </div>
         </form>
 
@@ -277,6 +319,16 @@ export function AdminSensitiveWordsControl() {
                       type="button"
                       size="sm"
                       variant="outline"
+                      onClick={() => startEditing(row)}
+                      data-testid={`admin-sensitive-words-edit-${row.id}`}
+                    >
+                      <IconEdit className="size-4" aria-hidden="true" />
+                      编辑
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
                       onClick={() => toggleMutation.mutate(row)}
                       data-testid={`admin-sensitive-words-toggle-${row.id}`}
                     >
@@ -286,6 +338,7 @@ export function AdminSensitiveWordsControl() {
                       type="button"
                       size="sm"
                       variant="ghost"
+                      aria-label="删除"
                       onClick={() => {
                         if (
                           typeof window !== 'undefined' &&
@@ -297,7 +350,7 @@ export function AdminSensitiveWordsControl() {
                       }}
                       data-testid={`admin-sensitive-words-delete-${row.id}`}
                     >
-                      <IconTrash className="size-4" />
+                      <IconTrash className="size-4" aria-hidden="true" />
                     </Button>
                   </TableCell>
                 </TableRow>

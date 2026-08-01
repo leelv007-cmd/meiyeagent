@@ -64,8 +64,9 @@ import {
 } from './result-return-restore';
 import type { DeliveryActionId } from './delivery-capability-groups';
 import type { AssistedResponsibilityRole } from './delivery-b3-types';
+import { buildCaptionText } from './delivery-full-package';
 import type { DeliveryOutcome } from './delivery-outcomes-a11y';
-import { DeliveryPanel } from './delivery-panel';
+import { SensitiveWordsGuardedDeliveryPanel } from './sensitive-words-delivery-check';
 import {
   projectDeliveryPanel,
   type DeliveryPanelFacts,
@@ -836,7 +837,16 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
         ) : null}
 
         {shell.panel === 'delivery' && props.deliveryPanelFacts ? (
-          <DeliveryPanel
+          <SensitiveWordsGuardedDeliveryPanel
+            text={
+              props.deliveryPanelFacts.fullPackagePlan
+                ? buildCaptionText(
+                    props.deliveryPanelFacts.fullPackagePlan.caption
+                  )
+                : shell.workspaceKind === 'copy' && props.copyWorksurface
+                  ? buildCaptionText(props.copyWorksurface.document)
+                  : null
+            }
             view={projectDeliveryPanel(props.deliveryPanelFacts)}
             onAction={props.onDeliveryAction}
           />

@@ -39,7 +39,9 @@ export const sensitiveWordHitSchema = z
     word: z.string().trim().min(1),
     category: sensitiveWordCategorySchema,
     replacements: z.array(z.string().trim().min(1).max(100)),
+    /** UTF-16 code-unit offset into the exact, unnormalized query text. */
     index: z.number().int().nonnegative(),
+    /** UTF-16 code-unit length in the exact, unnormalized query text. */
     length: z.number().int().positive(),
   })
   .strict();
@@ -49,11 +51,41 @@ export type SensitiveWordHit = z.infer<typeof sensitiveWordHitSchema>;
 export const sensitiveScanResultSchema = z
   .object({
     schemaVersion: z.literal('sensitive-scan/v1'),
+    /** UTF-16 code-unit length of the exact, unnormalized query text. */
     textLength: z.number().int().nonnegative(),
     hitCount: z.number().int().nonnegative(),
+    /** Leftmost-longest, globally non-overlapping ranges in original text. */
     hits: z.array(sensitiveWordHitSchema),
   })
-  .strict();
+  .strict()
+  .superRefine((result, context) => {
+    if (result.hitCount !== result.hits.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'hitCount must equal hits.length.',
+        path: ['hitCount'],
+      });
+    }
+    let previousEnd = 0;
+    result.hits.forEach((hit, index) => {
+      const end = hit.index + hit.length;
+      if (hit.index < previousEnd) {
+        context.addIssue({
+          code: 'custom',
+          message: 'hits must be ordered and globally non-overlapping.',
+          path: ['hits', index, 'index'],
+        });
+      }
+      if (end > result.textLength) {
+        context.addIssue({
+          code: 'custom',
+          message: 'hit range must be within the original text length.',
+          path: ['hits', index, 'length'],
+        });
+      }
+      previousEnd = Math.max(previousEnd, end);
+    });
+  });
 
 export type SensitiveScanResult = z.infer<typeof sensitiveScanResultSchema>;
 

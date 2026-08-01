@@ -36,6 +36,43 @@ test('terminal failures retain only controlled workflow details', () => {
       gateIds: ['critical_fact_source'],
     },
   );
+  const sensitiveViolation = {
+    gateId: 'sensitive_words' as const,
+    reason: '候选文案含有违禁词，已停止该候选。',
+    alternativePath: ['明显改善'],
+    sensitiveCheckBar: {
+      schemaVersion: 'sensitive-check-bar/v1' as const,
+      status: 'hits' as const,
+      summary: '检出 1 处违禁词，请按建议替换后再交付。',
+      items: [
+        {
+          wordId: 'sw-extreme-001',
+          word: '根治',
+          category: 'extreme' as const,
+          snippet: '承诺根治色斑',
+          replacements: ['明显改善'],
+        },
+      ],
+    },
+  };
+  assert.deepEqual(
+    normalizeHarnessTerminalFailure(
+      new HarnessSelectionError(
+        ['sensitive_words'],
+        sensitiveViolation.reason,
+        [],
+        sensitiveViolation.alternativePath,
+        [sensitiveViolation],
+      ),
+    ),
+    {
+      code: 'HARNESS_ALL_CANDIDATES_BLOCKED',
+      status: 409,
+      gateIds: ['sensitive_words'],
+      merchantMessage: sensitiveViolation.reason,
+      violations: [sensitiveViolation],
+    },
+  );
   assert.deepEqual(
     normalizeHarnessTerminalFailure(
       new HarnessDeliveryError(

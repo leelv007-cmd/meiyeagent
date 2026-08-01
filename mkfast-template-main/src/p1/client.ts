@@ -94,12 +94,14 @@ export async function queryP1<T>(
   }
 }
 
-export interface P1CommandWait {
+export interface P1RequestWait {
   /** Caller cancellation — e.g. the TanStack Query signal for a stale key. */
   signal?: AbortSignal;
   /** Upper bound on the wait; omitted means wait as long as the fetch does. */
   timeoutMs?: number;
 }
+
+export type P1CommandWait = P1RequestWait;
 
 /**
  * A command that never returns leaves the caller with no state to render but
@@ -114,7 +116,7 @@ export interface P1CommandWait {
  * WebViews this product is opened from still ship engines that predate those
  * two statics — where they would throw on every command instead of bounding it.
  */
-function boundedCommandSignal(wait: P1CommandWait) {
+function boundedRequestSignal(wait: P1RequestWait) {
   if (wait.timeoutMs == null) {
     return {
       expired: () => false,
@@ -149,6 +151,36 @@ function boundedCommandSignal(wait: P1CommandWait) {
   };
 }
 
+export const P1_QUERY_TIMEOUT_CODE = 'P1_QUERY_TIMEOUT';
+
+/** Query seam with a caller-owned total deadline, including response-body read. */
+export async function boundedQueryP1<T>(
+  module: P1Module,
+  call: P1ModuleCall,
+  wait: P1RequestWait
+) {
+  const bounded = boundedRequestSignal(wait);
+  try {
+    try {
+      return await queryP1<T>(module, call, bounded.signal);
+    } catch (error) {
+      if (!bounded.expired()) throw error;
+      emitTelemetry('query_error', {
+        action: call.action,
+        errorCode: 'timeout',
+        module,
+      });
+      throw new P1RequestError(
+        `P1 query ${module}.${call.action} timed out.`,
+        P1_QUERY_TIMEOUT_CODE,
+        { timeoutMs: wait.timeoutMs }
+      );
+    }
+  } finally {
+    bounded.release();
+  }
+}
+
 export const P1_COMMAND_TIMEOUT_CODE = 'P1_COMMAND_TIMEOUT';
 
 export async function commandP1<T>(
@@ -159,7 +191,7 @@ export async function commandP1<T>(
 ) {
   const request = moduleRequest(module, call);
   const requestId = idempotencyKey ?? crypto.randomUUID();
-  const bounded = boundedCommandSignal(wait);
+  const bounded = boundedRequestSignal(wait);
   // Held open across the body read, not just the round trip: a server that
   // sends headers and then stalls its body would otherwise leave the caller
   // waiting forever on `response.json()` with the timer already cleared — the

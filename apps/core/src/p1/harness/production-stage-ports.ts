@@ -831,6 +831,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         checked.violations[0]?.reason,
         [],
         checked.violations.flatMap(({ alternativePath }) => alternativePath),
+        structuredClone(checked.violations),
       );
     }
     return selection;

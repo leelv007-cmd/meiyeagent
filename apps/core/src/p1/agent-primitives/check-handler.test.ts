@@ -6,6 +6,7 @@ import {
   type HarnessPolicyInput,
   validateHarnessPolicy,
 } from '../harness/policy-gates.js';
+import { BEAUTY_FIXTURE_SENSITIVE_LEXICON } from '../sensitive-words/beauty-fixture-lexicon.js';
 import type { AgentPrimitiveServerContext } from './runtime.js';
 import {
   CheckPrimitiveHandler,
@@ -194,6 +195,65 @@ test('check fails closed when trusted target resolution fails or resolves anothe
     /does not belong to the execution workspace/u,
   );
 });
+
+test('production check returns and audits structured sensitive-word matches', async () => {
+  const resolved = safeHarnessPolicyInput();
+  resolved.candidate.visibleText = [
+    { field: 'body', text: '本店承诺根治色斑，绝对安全。' },
+  ];
+  resolved.sensitiveLexicon = [...BEAUTY_FIXTURE_SENSITIVE_LEXICON];
+  const audits: Parameters<CheckViolationAuditPort['append']>[0][] = [];
+  const handler = new CheckPrimitiveHandler({
+    resolver: {
+      async resolve() {
+        return resolved;
+      },
+    },
+    violationAudit: {
+      async append(input) {
+        audits.push(structuredClone(input));
+      },
+    },
+  });
+
+  const result = await handler.execute({
+    input: { target_ref: 'candidate:sensitive-copy' },
+    serverContext,
+  });
+  const violation = result.violations.find(
+    ({ gateId }) => gateId === 'sensitive_words',
+  );
+  assert.equal(result.allowed, false);
+  assert.equal(violation?.sensitiveCheckBar?.status, 'hits');
+  assert.ok(
+    violation?.sensitiveCheckBar?.items.some(
+      ({ word, replacements }) =>
+        word.includes('根治') && replacements.includes('明显改善'),
+    ),
+  );
+  assert.deepEqual(
+    audits[0]?.violation.sensitiveCheckBar,
+    violation?.sensitiveCheckBar,
+  );
+});
+
+function safeHarnessPolicyInput(): HarnessPolicyInput {
+  return {
+    phase: 'execution',
+    bundle: { revision: 1, workspaceId: 'workspace-a' },
+    brief: {},
+    candidate: {
+      assetRefs: [],
+      candidateId: 'candidate-safe',
+      factClaims: [],
+      intendedUse: 'public_content',
+      workspaceId: 'workspace-a',
+    },
+    identityRefs: [],
+    rightsRefs: [],
+    sourceRefs: [],
+  };
+}
 
 function unsafeHarnessPolicyInput(): HarnessPolicyInput {
   return {

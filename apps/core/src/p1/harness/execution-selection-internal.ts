@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 
-import type {
-  BoundedExecutionSnapshot,
+import {
+  sensitiveCheckBarSchema,
+  type BoundedExecutionSnapshot,
 } from '@meiye/contracts';
 import {
   createHarnessCandidateValidator,
+  type HarnessGateFailure,
   type HarnessPolicyInput,
   type VisibleClaimExtraction,
 } from './policy-gates.js';
@@ -81,6 +83,7 @@ const candidatePolicyFailureSchema = z
     gateId: z.string().trim().min(1),
     reason: z.string().trim().min(1),
     alternativePath: z.array(z.string().trim().min(1)),
+    sensitiveCheckBar: sensitiveCheckBarSchema.optional(),
   })
   .strict();
 
@@ -224,6 +227,7 @@ export class HarnessSelectionError extends Error {
     readonly merchantMessage?: string,
     readonly triggeredClaims: VisibleClaimExtraction['claims'] = [],
     readonly alternativePaths: string[] = [],
+    readonly violations: HarnessGateFailure[] = [],
   ) {
     super('Every generated candidate was blocked by canonical policy.');
     this.name = 'HarnessSelectionError';

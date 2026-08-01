@@ -35,7 +35,9 @@ export function formatReplacements(replacements: readonly string[]): string {
   return replacements.join('，');
 }
 
-export function draftFromRecord(row: SensitiveWordRecord): AdminSensitiveWordDraft {
+export function draftFromRecord(
+  row: SensitiveWordRecord
+): AdminSensitiveWordDraft {
   return {
     word: row.word,
     category: row.category,
@@ -45,7 +47,7 @@ export function draftFromRecord(row: SensitiveWordRecord): AdminSensitiveWordDra
 }
 
 export function validateSensitiveWordDraft(
-  draft: AdminSensitiveWordDraft,
+  draft: AdminSensitiveWordDraft
 ): string | null {
   if (!draft.word.trim()) return '违禁词不能为空';
   if (draft.word.trim().length > 100) return '违禁词过长';

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import type { SensitiveWordRecord } from '@meiye/contracts';
+
 import {
   BEAUTY_FIXTURE_SENSITIVE_LEXICON,
   MemorySensitiveWordsRepository,
@@ -60,6 +62,46 @@ test('fixture lexicon sample copy yields hits and replacement suggestions', () =
   assert.ok(bar.items.some((item) => item.replacements.length > 0));
 });
 
+test('scan offsets remain UTF-16 ranges in the original text after NFKC matching', () => {
+  const originalHit = 'e\u0301ﬃ';
+  const text = `ﬃ前缀${originalHit}后缀`;
+  const now = '2026-08-02T00:00:00.000Z';
+  const lexicon: SensitiveWordRecord[] = [
+    {
+      id: 'unicode-compatibility-hit',
+      word: 'éffi',
+      category: 'other',
+      replacements: ['温和表述'],
+      status: 'enabled',
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 'unicode-overlapping-shorter-hit',
+      word: 'é',
+      category: 'other',
+      replacements: ['普通表述'],
+      status: 'enabled',
+      createdAt: now,
+      updatedAt: now,
+    },
+  ];
+
+  const scan = scanSensitiveText(text, lexicon);
+  assert.equal(scan.hitCount, 1);
+  assert.equal(scan.textLength, text.length);
+  const hit = scan.hits[0];
+  assert.ok(hit);
+  assert.equal(hit.index, text.indexOf(originalHit));
+  assert.equal(hit.length, originalHit.length);
+  assert.equal(hit.word, originalHit);
+  assert.equal(text.slice(hit.index, hit.index + hit.length), originalHit);
+
+  const bar = buildSensitiveCheckBar({ text, scan });
+  assert.equal(bar.items[0]?.word, originalHit);
+  assert.ok(bar.items[0]?.snippet.includes(originalHit));
+});
+
 test('generation-chain check and policy-gates share the same scanner + lexicon', () => {
   const lexicon = BEAUTY_FIXTURE_SENSITIVE_LEXICON;
   const chain = runGenerationChainSensitiveCheck({
@@ -78,6 +120,12 @@ test('generation-chain check and policy-gates share the same scanner + lexicon',
   assert.ok(sensitive);
   assert.equal(sensitive.reason, '候选文案含有违禁词，已停止该候选。');
   assert.ok(sensitive.alternativePath.length > 0);
+  assert.equal(sensitive.sensitiveCheckBar?.status, 'hits');
+  assert.ok(
+    sensitive.sensitiveCheckBar?.items.some(
+      (item) => item.word.includes('根治') && item.replacements.length > 0,
+    ),
+  );
 
   const scanWords = new Set(chain.scan.hits.map((hit) => hit.word.toLowerCase()));
   // Shared lexicon identity: policy alternatives are replacements and/or hit hints.

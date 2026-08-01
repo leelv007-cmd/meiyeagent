@@ -5,6 +5,16 @@
  * Projection-driven — facts come from projectDeliveryPanel.
  */
 
+import type { SensitiveCheckBar } from '@meiye/contracts';
+import {
+  IconCheck,
+  IconCopy,
+  IconDownload,
+  IconShare,
+  IconTransfer,
+} from '@tabler/icons-react';
+import { useState } from 'react';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,19 +24,16 @@ import {
   result_full_package_heading,
   result_full_package_hint,
 } from '@/locale/paraglide/messages';
-import {
-  IconCheck,
-  IconCopy,
-  IconDownload,
-  IconShare,
-  IconTransfer,
-} from '@tabler/icons-react';
+import type { AssistedResponsibilityRole } from './delivery-b3-types';
 import type { DeliveryActionId } from './delivery-capability-groups';
 import type { DeliveryPanelView } from './delivery-panel-model';
 import type { DeliveryOutcome } from './delivery-outcomes-a11y';
 import { projectDeliveryOutcome } from './delivery-outcomes-a11y';
-import { useState } from 'react';
-import type { AssistedResponsibilityRole } from './delivery-b3-types';
+
+export type DeliverySensitiveWordsCheckState =
+  | { kind: 'checking' }
+  | { kind: 'failed'; onRetry?: () => void }
+  | { kind: 'ready'; checkBar: SensitiveCheckBar };
 
 export type DeliveryPanelProps = {
   view: DeliveryPanelView;
@@ -39,7 +46,83 @@ export type DeliveryPanelProps = {
   ) => DeliveryOutcome | undefined | Promise<DeliveryOutcome | undefined>;
   /** Optional controlled outcome override for live region. */
   outcomeOverride?: DeliveryOutcome;
+  /** Read-only delivery guard; inline workspace replacement remains #327. */
+  sensitiveWordsCheck?: DeliverySensitiveWordsCheckState;
 };
+
+function SensitiveWordsCheckBar({
+  state,
+}: {
+  state: DeliverySensitiveWordsCheckState;
+}) {
+  if (state.kind === 'checking') {
+    return (
+      <output
+        className="block rounded-md border px-3 py-2 text-sm"
+        data-testid="delivery-sensitive-words-check"
+        data-status="checking"
+        aria-live="polite"
+      >
+        正在检查违禁词，交付操作暂不可用。
+      </output>
+    );
+  }
+  if (state.kind === 'failed') {
+    return (
+      <div
+        className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm"
+        data-testid="delivery-sensitive-words-check"
+        data-status="error"
+        role="alert"
+      >
+        <p>违禁词检查暂不可用，交付操作已暂停。</p>
+        {state.onRetry ? (
+          <Button
+            className="mt-2"
+            data-testid="delivery-sensitive-words-retry"
+            onClick={state.onRetry}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            重试检查
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
+
+  const { checkBar } = state;
+  return (
+    <section
+      className="space-y-2 rounded-md border px-3 py-2 text-sm"
+      data-testid="delivery-sensitive-words-check"
+      data-status={checkBar.status}
+      aria-label="违禁词交付检查"
+      {...(checkBar.status === 'hits' ? { role: 'alert' } : {})}
+    >
+      <p className="font-medium">违禁词检查</p>
+      <p className="text-muted-foreground">{checkBar.summary}</p>
+      {checkBar.items.length > 0 ? (
+        <ul className="space-y-2">
+          {checkBar.items.map((item, index) => (
+            <li
+              key={`${item.wordId}-${index}`}
+              className="rounded-md bg-muted p-2"
+            >
+              <p>
+                <strong>{item.word}</strong> · {item.snippet}
+              </p>
+              <p className="text-muted-foreground">
+                建议：{item.replacements.join('、') || '删除该表述后重试'}
+              </p>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
 
 function actionIcon(id: DeliveryActionId) {
   switch (id) {
@@ -61,6 +144,7 @@ export function DeliveryPanel({
   view,
   onAction,
   outcomeOverride,
+  sensitiveWordsCheck,
 }: DeliveryPanelProps) {
   const [completedOutcome, setCompletedOutcome] =
     useState<DeliveryOutcome | null>(null);
@@ -78,6 +162,10 @@ export function DeliveryPanel({
     : completedOutcome
       ? projectDeliveryOutcome(completedOutcome)
       : view.outcome;
+  const sensitiveWordsBlockDelivery =
+    sensitiveWordsCheck !== undefined &&
+    (sensitiveWordsCheck.kind !== 'ready' ||
+      sensitiveWordsCheck.checkBar.status !== 'clear');
 
   return (
     <section
@@ -101,6 +189,10 @@ export function DeliveryPanel({
           按设备与账号能力显示可用动作。复制、下载与交接不会被标成已发布。
         </p>
       </header>
+
+      {sensitiveWordsCheck ? (
+        <SensitiveWordsCheckBar state={sensitiveWordsCheck} />
+      ) : null}
 
       {/* Live region for four distinct outcomes */}
       <output
@@ -250,6 +342,7 @@ export function DeliveryPanel({
                   variant={action.id === 'full_package' ? 'default' : 'outline'}
                   disabled={
                     !action.enabled ||
+                    sensitiveWordsBlockDelivery ||
                     pendingAction !== null ||
                     (action.id === 'assisted' &&
                       responsibilityRole === 'external_owner' &&

@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  boundedQueryP1,
   commandP1,
   createOperationsCommandIntentRegistry,
   P1_COMMAND_TIMEOUT_CODE,
+  P1_QUERY_TIMEOUT_CODE,
   P1RequestError,
   p1ErrorCode,
 } from './client';
@@ -80,6 +82,49 @@ test('a command that never answers fails on its own deadline (#240)', async () =
     );
     // The point of the bound: it settles on the deadline, not on the fetch.
     assert.equal(Date.now() - startedAt < 5_000, true);
+  } finally {
+    restore();
+  }
+});
+
+test('a bounded query that never answers fails on its own deadline (#320)', async () => {
+  const restore = stubNeverAnsweringFetch();
+  try {
+    const startedAt = Date.now();
+    await assert.rejects(
+      boundedQueryP1(
+        'sensitive-words',
+        { action: 'check_bar', payload: { text: '温和护理' } },
+        { timeoutMs: 40 }
+      ),
+      (error: unknown) => {
+        assert.equal(error instanceof P1RequestError, true);
+        assert.equal(p1ErrorCode(error), P1_QUERY_TIMEOUT_CODE);
+        assert.deepEqual((error as P1RequestError).details, { timeoutMs: 40 });
+        return true;
+      }
+    );
+    assert.equal(Date.now() - startedAt < 5_000, true);
+  } finally {
+    restore();
+  }
+});
+
+test('a bounded query deadline also covers a stalled response body (#320)', async () => {
+  const restore = stubHeadersThenStalledBody();
+  try {
+    await assert.rejects(
+      boundedQueryP1(
+        'sensitive-words',
+        { action: 'check_bar', payload: { text: '温和护理' } },
+        { timeoutMs: 40 }
+      ),
+      (error: unknown) => {
+        assert.equal(p1ErrorCode(error), P1_QUERY_TIMEOUT_CODE);
+        assert.deepEqual((error as P1RequestError).details, { timeoutMs: 40 });
+        return true;
+      }
+    );
   } finally {
     restore();
   }

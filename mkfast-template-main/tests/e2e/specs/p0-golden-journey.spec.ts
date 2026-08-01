@@ -244,6 +244,28 @@ test.describe('canonical product golden journey', () => {
       'href',
       /\/dashboard\/results\/[^?#]+\?[^#]*panel=delivery/u
     );
+    let releaseSensitiveWordsCheck!: () => void;
+    const sensitiveWordsCheckRelease = new Promise<void>((resolve) => {
+      releaseSensitiveWordsCheck = resolve;
+    });
+    let markSensitiveWordsCheckStarted!: () => void;
+    const sensitiveWordsCheckStarted = new Promise<void>((resolve) => {
+      markSensitiveWordsCheckStarted = resolve;
+    });
+    let checkedDeliveryText = '';
+    await page.route('**/api/core/p1/query', async (route) => {
+      const body = route.request().postDataJSON() as {
+        action?: string;
+        module?: string;
+        payload?: { text?: string };
+      };
+      if (body.module === 'sensitive-words' && body.action === 'check_bar') {
+        checkedDeliveryText = body.payload?.text ?? '';
+        markSensitiveWordsCheckStarted();
+        await sensitiveWordsCheckRelease;
+      }
+      await route.continue();
+    });
     await handoffDoorway.click();
     await expect(page).toHaveURL(
       /\/dashboard\/results\/[^?#]+\?[^#]*panel=delivery/u
@@ -251,6 +273,28 @@ test.describe('canonical product golden journey', () => {
     await expect(page.getByTestId('delivery-panel')).toBeVisible({
       timeout: 60_000,
     });
+    const sensitiveWordsCheck = page.getByTestId(
+      'delivery-sensitive-words-check'
+    );
+    await sensitiveWordsCheckStarted;
+    await expect(sensitiveWordsCheck).toHaveAttribute(
+      'data-status',
+      'checking'
+    );
+    const deliveryActions = page.locator('[data-testid^="delivery-action-"]');
+    await expect(deliveryActions.first()).toBeVisible();
+    const deliveryActionCount = await deliveryActions.count();
+    expect(deliveryActionCount).toBeGreaterThan(0);
+    for (let index = 0; index < deliveryActionCount; index += 1) {
+      await expect(deliveryActions.nth(index)).toBeDisabled();
+    }
+    releaseSensitiveWordsCheck();
+    await expect(sensitiveWordsCheck).toHaveAttribute('data-status', 'clear', {
+      timeout: 60_000,
+    });
+    await expect(sensitiveWordsCheck).toContainText('未检出违禁词');
+    expect(checkedDeliveryText.trim()).not.toBe('');
+    await page.unroute('**/api/core/p1/query');
 
     const assistedAction = page.getByTestId('delivery-action-assisted');
     await expect(assistedAction).toBeEnabled();

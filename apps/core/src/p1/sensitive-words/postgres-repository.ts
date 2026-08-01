@@ -188,30 +188,44 @@ export class PostgresSensitiveWordsRepository
   }
 
   async ensurePlatformBaseline() {
-    const count = await this.pool.query<{ n: string }>(
-      `SELECT count(*)::text AS n FROM sensitive_words`,
-    );
-    if (Number(count.rows[0]?.n ?? 0) > 0) {
-      return { seeded: 0 };
-    }
-    let seeded = 0;
-    for (const row of BEAUTY_FIXTURE_SENSITIVE_LEXICON) {
-      await this.pool.query(
-        `INSERT INTO sensitive_words (id, word, category, replacements, status, created_at, updated_at)
-         VALUES ($1, $2, $3, $4::jsonb, $5, $6::timestamptz, $7::timestamptz)
-         ON CONFLICT (id) DO NOTHING`,
-        [
-          row.id,
-          row.word,
-          row.category,
-          JSON.stringify(row.replacements),
-          row.status,
-          row.createdAt,
-          row.updatedAt,
-        ],
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'LOCK TABLE sensitive_words IN SHARE ROW EXCLUSIVE MODE',
       );
-      seeded += 1;
+      const count = await client.query<{ n: string }>(
+        'SELECT count(*)::text AS n FROM sensitive_words',
+      );
+      if (Number(count.rows[0]?.n ?? 0) > 0) {
+        await client.query('COMMIT');
+        return { seeded: 0 };
+      }
+
+      let seeded = 0;
+      for (const row of BEAUTY_FIXTURE_SENSITIVE_LEXICON) {
+        const result = await client.query(
+          `INSERT INTO sensitive_words (id, word, category, replacements, status, created_at, updated_at)
+           VALUES ($1, $2, $3, $4::jsonb, $5, $6::timestamptz, $7::timestamptz)`,
+          [
+            row.id,
+            row.word,
+            row.category,
+            JSON.stringify(row.replacements),
+            row.status,
+            row.createdAt,
+            row.updatedAt,
+          ],
+        );
+        seeded += result.rowCount ?? 0;
+      }
+      await client.query('COMMIT');
+      return { seeded };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
-    return { seeded };
   }
 }
