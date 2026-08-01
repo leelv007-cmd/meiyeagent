@@ -302,6 +302,67 @@ describe('merchant Result Center truth', () => {
     expect(screen.queryAllByTestId('result-secondary-action')).toHaveLength(0);
   });
 
+  it('keeps image-text media and the note editor together in the production result', () => {
+    render(
+      <ResultCenterPage
+        workId={workId}
+        resolveOutcome={resolvedTarget()}
+        facts={{
+          target: { workId },
+          workspaceKind: 'image',
+          progressState: 'success',
+          hasUsableCandidate: true,
+        }}
+        imageWorksurface={{
+          workId,
+          baseRevisionId: 'version-note-1',
+          outputType: 'ordered_image_set',
+          slot: 'gallery',
+          lifecycle: 'candidate',
+          candidates: [
+            {
+              assetId: 'note-image-1',
+              persisted: true,
+              rightsOk: true,
+              generationOk: true,
+              recipeOrder: 1,
+            },
+          ],
+          hasContentPackage: true,
+          mediaVersionReady: true,
+        }}
+        copyWorksurface={{
+          workId,
+          baseRevisionId: 'version-note-1',
+          document: {
+            title: '春日护理笔记',
+            body: '先讲护理体验，再说明到店建议。',
+            conversionHook: '私信预约',
+            topics: ['护理'],
+            orderedAssetIds: ['note-image-1'],
+          },
+          factSources: [],
+          lifecycle: 'candidate',
+        }}
+        onAdjust={vi.fn()}
+      />
+    );
+
+    expect(screen.getByTestId('image-worksurface')).toBeInTheDocument();
+    expect(screen.getByTestId('object-workspace-shell')).toHaveAttribute(
+      'data-carrier',
+      'note'
+    );
+    expect(screen.getByTestId('copy-field-body')).toHaveTextContent(
+      '先讲护理体验，再说明到店建议。'
+    );
+    expect(
+      screen.getByTestId('object-workspace-selection-ai')
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('copy-adopt-action')).toBeNull();
+    expect(screen.getAllByTestId('result-adjust-prompt')).toHaveLength(1);
+  });
+
   it('renders Run Detail panel collapsed with merchant fee/stage language', () => {
     render(
       <ResultCenterPage

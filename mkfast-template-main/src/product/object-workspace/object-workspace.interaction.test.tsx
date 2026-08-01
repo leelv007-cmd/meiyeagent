@@ -3,6 +3,7 @@
  */
 import {
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -34,6 +35,23 @@ const facts = {
   lifecycle: 'candidate' as const,
   viewport: 'desktop' as const,
 };
+
+function supportTiptapSelectionGeometry() {
+  Object.defineProperty(document, 'elementFromPoint', {
+    configurable: true,
+    value: () => document.querySelector('[data-testid="copy-field-body"]'),
+  });
+  Object.defineProperties(Range.prototype, {
+    getBoundingClientRect: {
+      configurable: true,
+      value: () => new DOMRect(),
+    },
+    getClientRects: {
+      configurable: true,
+      value: () => [],
+    },
+  });
+}
 
 describe('object workspace shell + selection AI', () => {
   it('mounts the shared shell for the copy carrier', () => {
@@ -127,6 +145,90 @@ describe('object workspace shell + selection AI', () => {
 
     await user.click(screen.getByTestId('selection-ai-expand'));
     await waitFor(() => expect(onAdjust).toHaveBeenCalledTimes(2));
+  });
+
+  it('drops selection-dependent UI when the body is replaced', async () => {
+    const user = userEvent.setup();
+    const onAdjust = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = render(
+      <CopyImageTextWorksurface
+        facts={facts}
+        onAdjust={onAdjust}
+        onQuickEdit={vi.fn()}
+        onSelectionRewrite={vi.fn()}
+      />
+    );
+
+    supportTiptapSelectionGeometry();
+
+    const body = screen.getByTestId('copy-field-body');
+    body.focus();
+    await user.keyboard('{Control>}a{/Control}');
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('object-workspace-selection-ai-scope')
+      ).toHaveTextContent(/已选中 \d+ 个字/u)
+    );
+    fireEvent.click(screen.getByTestId('copy-rewrite-weaker_promo'));
+    expect(
+      screen.getByTestId('copy-selection-rewrite-preview')
+    ).toHaveAttribute('data-rewrite-scope', 'selection');
+
+    rerender(
+      <CopyImageTextWorksurface
+        facts={{
+          ...facts,
+          baseRevisionId: 'rev-2',
+          document: { ...facts.document, body: '全新护理正文。' },
+        }}
+        onAdjust={onAdjust}
+        onQuickEdit={vi.fn()}
+        onSelectionRewrite={vi.fn()}
+      />
+    );
+    await waitFor(() => expect(body).toHaveTextContent('全新护理正文。'));
+    expect(screen.queryByTestId('copy-selection-rewrite-preview')).toBeNull();
+    expect(
+      screen.getByTestId('object-workspace-selection-ai-scope')
+    ).toHaveTextContent('将改写整篇文案');
+
+    fireEvent.click(screen.getByTestId('selection-ai-rewrite'));
+    await waitFor(() => expect(onAdjust).toHaveBeenCalledTimes(1));
+    expect(onAdjust.mock.calls[0]?.[0]).toContain('全新护理正文。');
+  });
+
+  it('drops a selection preview when the merchant edits the body', async () => {
+    const user = userEvent.setup();
+    render(
+      <CopyImageTextWorksurface
+        facts={facts}
+        onAdjust={vi.fn()}
+        onQuickEdit={vi.fn()}
+        onSelectionRewrite={vi.fn()}
+      />
+    );
+    supportTiptapSelectionGeometry();
+
+    const body = screen.getByTestId('copy-field-body');
+    body.focus();
+    await user.keyboard('{Control>}a{/Control}');
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('object-workspace-selection-ai-scope')
+      ).toHaveTextContent(/已选中 \d+ 个字/u)
+    );
+    fireEvent.click(screen.getByTestId('copy-rewrite-weaker_promo'));
+    expect(
+      screen.getByTestId('copy-selection-rewrite-preview')
+    ).toBeInTheDocument();
+
+    await user.clear(body);
+    await user.type(body, '商家刚改过的新正文。');
+    await waitFor(() => expect(body).toHaveTextContent('商家刚改过的新正文。'));
+    expect(screen.queryByTestId('copy-selection-rewrite-preview')).toBeNull();
+    expect(
+      screen.getByTestId('copy-selection-rewrite-scope')
+    ).toHaveTextContent('将改写整篇文案');
   });
 
   it('reuses the same shell for the note carrier', () => {

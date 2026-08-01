@@ -46,6 +46,8 @@ import {
 
 export type CopyImageTextWorksurfaceProps = {
   facts: CopyImageTextWorksurfaceFacts;
+  /** Composite image-text results already render the media adjustment box. */
+  showAdjustPrompt?: boolean;
   onFieldChange?: (
     field: 'title' | 'body' | 'conversionHook',
     value: string
@@ -138,6 +140,11 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
     view.document.conversionHook,
     view.document.title,
   ]);
+  useEffect(() => {
+    setBodySelection(null);
+    setRewritePreview(null);
+    setSelectionConflict(null);
+  }, [props.facts.baseRevisionId, view.document.body]);
   const dirty =
     draft.body !== view.document.body ||
     draft.conversionHook !== view.document.conversionHook ||
@@ -307,6 +314,9 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
               data-testid="copy-field-body"
               value={draft.body}
               onChange={(value) => {
+                setBodySelection(null);
+                setRewritePreview(null);
+                setSelectionConflict(null);
                 setDraft((current) => ({
                   ...current,
                   body: value,
@@ -760,20 +770,22 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
           </section>
         ) : null}
 
-        <AdjustPrompt
-          onSubmit={props.onAdjust}
-          disabled={Boolean(props.adjustUnavailableReason)}
-          {...(props.adjustUnavailableReason
-            ? { unavailableReason: props.adjustUnavailableReason }
-            : {})}
-        />
+        {props.showAdjustPrompt !== false ? (
+          <AdjustPrompt
+            onSubmit={props.onAdjust}
+            disabled={Boolean(props.adjustUnavailableReason)}
+            {...(props.adjustUnavailableReason
+              ? { unavailableReason: props.adjustUnavailableReason }
+              : {})}
+          />
+        ) : null}
 
-        {props.facts.lifecycle === 'candidate' ? (
+        {props.facts.lifecycle === 'candidate' && props.onAdopt ? (
           <div className="space-y-2">
             <Button
               type="button"
               data-testid="copy-adopt-action"
-              disabled={!props.onAdopt || adopting}
+              disabled={adopting}
               onClick={async () => {
                 setAdopting(true);
                 setAdoptionError(undefined);

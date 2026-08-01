@@ -326,6 +326,29 @@ function WorkspaceBody(props: {
   /** Fallback document when copy worksurface facts are not yet wired. */
   fallbackCopy?: CopyImageTextWorksurfaceFacts;
 }) {
+  const copyFacts = props.copyWorksurface ?? props.fallbackCopy;
+  const renderCopyWorksurface = (compositeWithMedia = false) =>
+    copyFacts ? (
+      <CopyImageTextWorksurface
+        facts={{ ...copyFacts, viewport: props.viewport }}
+        onAdjust={props.onAdjust}
+        showAdjustPrompt={!compositeWithMedia}
+        {...(props.adjustUnavailableReason
+          ? { adjustUnavailableReason: props.adjustUnavailableReason }
+          : {})}
+        {...(!compositeWithMedia && props.onCopyAdopt
+          ? { onAdopt: props.onCopyAdopt }
+          : {})}
+        onGeneratePlatformVariants={props.onCopyGeneratePlatformVariants}
+        onHandEdit={props.onCopyHandEdit}
+        onSelectionRewrite={props.onCopySelectionRewrite}
+        onQuickEdit={props.onCopyQuickEdit}
+        {...(props.currentRevisionId
+          ? { currentRevisionId: props.currentRevisionId }
+          : {})}
+      />
+    ) : null;
+
   if (props.workspaceKind === 'video') {
     return props.videoWorksurface ? (
       <VideoWorksurface
@@ -346,7 +369,7 @@ function WorkspaceBody(props: {
   }
   if (props.workspaceKind === 'image') {
     if (props.imageWorksurface) {
-      return (
+      const mediaWorksurface = (
         <ImageWorksurface
           facts={{ ...props.imageWorksurface, viewport: props.viewport }}
           onAdjust={props.onAdjust}
@@ -356,6 +379,17 @@ function WorkspaceBody(props: {
           onCreateFromThis={props.onImageCreateFromThis}
         />
       );
+      if (copyFacts) {
+        return (
+          <div className="space-y-6" data-testid="result-image-text-workspace">
+            <section aria-label="图文媒资工作区">{mediaWorksurface}</section>
+            <section aria-label="笔记正文工作区">
+              {renderCopyWorksurface(true)}
+            </section>
+          </div>
+        );
+      }
+      return mediaWorksurface;
     }
     return (
       <div
@@ -368,25 +402,8 @@ function WorkspaceBody(props: {
     );
   }
   // copy / image_text
-  const copyFacts = props.copyWorksurface ?? props.fallbackCopy;
   if (copyFacts) {
-    return (
-      <CopyImageTextWorksurface
-        facts={{ ...copyFacts, viewport: props.viewport }}
-        onAdjust={props.onAdjust}
-        {...(props.adjustUnavailableReason
-          ? { adjustUnavailableReason: props.adjustUnavailableReason }
-          : {})}
-        onAdopt={props.onCopyAdopt}
-        onGeneratePlatformVariants={props.onCopyGeneratePlatformVariants}
-        onHandEdit={props.onCopyHandEdit}
-        onSelectionRewrite={props.onCopySelectionRewrite}
-        onQuickEdit={props.onCopyQuickEdit}
-        {...(props.currentRevisionId
-          ? { currentRevisionId: props.currentRevisionId }
-          : {})}
-      />
-    );
+    return renderCopyWorksurface();
   }
   return (
     <div

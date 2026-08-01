@@ -43,9 +43,7 @@ describe('copy / image_text worksurface', () => {
     expect(screen.getByTestId('copy-platform-preview')).toBeInTheDocument();
     expect(screen.getByTestId('result-adjust-prompt')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('还想怎么改？')).toBeInTheDocument();
-    expect(screen.getByTestId('copy-adopt-action')).toHaveTextContent(
-      '采用此版本'
-    );
+    expect(screen.queryByTestId('copy-adopt-action')).toBeNull();
   });
 
   it('submits free-text adjust', async () => {
@@ -198,7 +196,7 @@ describe('copy / image_text worksurface', () => {
     const user = userEvent.setup();
     const onAdjust = vi.fn();
     const onResolved = vi.fn();
-    render(
+    const { rerender } = render(
       <CopyImageTextWorksurface
         facts={facts}
         currentRevisionId="rev-stale-other"
@@ -215,6 +213,26 @@ describe('copy / image_text worksurface', () => {
     ).toBeInTheDocument();
     expect(screen.queryByTestId('copy-rewrite-conflict-compare')).toBeNull();
     expect(screen.queryByTestId('copy-rewrite-conflict-reapply')).toBeNull();
+
+    rerender(
+      <CopyImageTextWorksurface
+        facts={{
+          ...facts,
+          baseRevisionId: 'rev-2',
+          document: { ...facts.document, body: '服务升级后的正文。' },
+        }}
+        currentRevisionId="rev-stale-other"
+        onAdjust={onAdjust}
+        onSelectionRewriteResolved={onResolved}
+      />
+    );
+    await screen.findByText('服务升级后的正文。');
+    expect(screen.queryByTestId('copy-selection-rewrite-conflict')).toBeNull();
+
+    await user.click(screen.getByTestId('selection-ai-shorten'));
+    expect(
+      await screen.findByTestId('copy-selection-rewrite-conflict')
+    ).toBeInTheDocument();
     await user.click(screen.getByTestId('copy-rewrite-conflict-discard'));
     expect(screen.queryByTestId('copy-selection-rewrite-conflict')).toBeNull();
   });

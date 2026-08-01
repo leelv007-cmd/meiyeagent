@@ -394,6 +394,25 @@ test.describe('P1-F2 continuous acceptance (#161)', () => {
       `P1-F2 皮肤护理 小红书套图 image_text ${merchantRunSuffix()}`
     );
     await waitForResultJourney(page, contract, workId);
+    const imageTextWorkspace = page.getByTestId('result-image-text-workspace');
+    await expect(
+      imageTextWorkspace.getByTestId('image-worksurface')
+    ).toBeVisible();
+    await expect(
+      imageTextWorkspace.getByTestId('object-workspace-shell')
+    ).toHaveAttribute('data-carrier', 'note');
+    await expect(
+      imageTextWorkspace.getByTestId('copy-field-body')
+    ).toContainText(/\S/u);
+    await expect(
+      imageTextWorkspace.getByTestId('object-workspace-selection-ai')
+    ).toBeVisible();
+    await expect(
+      imageTextWorkspace.getByTestId('copy-adopt-action')
+    ).toHaveCount(0);
+    await expect(
+      imageTextWorkspace.getByTestId('result-adjust-prompt')
+    ).toHaveCount(1);
     await assertMerchantLanguage(page, 'Result (image_text ready)');
     await adoptResult(page, contract);
     await openDeliveryPanel(page, contract.modality);
