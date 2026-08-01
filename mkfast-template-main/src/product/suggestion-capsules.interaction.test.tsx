@@ -41,6 +41,16 @@ function renderCard(onUse = vi.fn(), onStart = vi.fn()) {
   };
 }
 
+function emptyWorkbench() {
+  return {
+    assets: [],
+    contents: [],
+    events: [],
+    jobs: [],
+    works: [],
+  };
+}
+
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
@@ -54,13 +64,7 @@ describe('suggestion capsules', () => {
       recommendation: null,
       stale: false,
     });
-    harness.operationsQuery.mockResolvedValue({
-      assets: [],
-      contents: [],
-      events: [],
-      jobs: [],
-      works: [],
-    });
+    harness.operationsQuery.mockResolvedValue(emptyWorkbench());
 
     renderCard();
 
@@ -76,7 +80,7 @@ describe('suggestion capsules', () => {
     );
   });
 
-  it('C3: recipe chips only prefill via onUse — never auto-submit', async () => {
+  it('C3: recipe chips only prefill via onUse — never call onStart/submit', async () => {
     const user = userEvent.setup();
     harness.readDashboardHomeRecommendation.mockResolvedValue({
       workspaceId: 'ws-1',
@@ -84,28 +88,105 @@ describe('suggestion capsules', () => {
       recommendation: null,
       stale: false,
     });
-    harness.operationsQuery.mockResolvedValue({
-      assets: [],
-      contents: [],
-      events: [],
-      jobs: [],
-      works: [],
-    });
+    harness.operationsQuery.mockResolvedValue(emptyWorkbench());
 
-    const { onUse } = renderCard();
+    const onSubmit = vi.fn();
+    const { onUse, onStart } = renderCard();
 
     await user.click(
       await screen.findByTestId('suggestion-chip-xhs_image_text')
     );
     expect(onUse).toHaveBeenCalledTimes(1);
-    expect(onUse.mock.calls[0]?.[0]).toMatchObject({
+    expect(onUse.mock.calls[0]?.[0]).toEqual({
+      intent: expect.stringMatching(/小红书图文/u),
       outputHint: 'image_text',
     });
-    expect(onUse.mock.calls[0]?.[0].intent).toMatch(/小红书图文/u);
+    expect(onStart).not.toHaveBeenCalled();
+    expect(onSubmit).not.toHaveBeenCalled();
 
     await user.click(screen.getByTestId('suggestion-chip-viral_adapt'));
     expect(onUse).toHaveBeenCalledTimes(2);
     expect(onUse.mock.calls[1]?.[0].intent).toMatch(/复刻|粘贴/u);
+    expect(onStart).not.toHaveBeenCalled();
+  });
+
+  it('cold vs pending chip labels stay honest and keep start CTA', async () => {
+    const user = userEvent.setup();
+    harness.readDashboardHomeRecommendation.mockResolvedValue({
+      workspaceId: 'ws-1',
+      currentFactsRevision: 0,
+      recommendation: null,
+      stale: false,
+    });
+    harness.operationsQuery.mockResolvedValue(emptyWorkbench());
+
+    const { onStart, rerender } = renderCard();
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('today-recommendation')).toHaveAttribute(
+        'data-recommendation-state',
+        'cold'
+      );
+    });
+    expect(screen.getByTestId('suggestion-chip-today')).toHaveTextContent(
+      /还没有基于本店事实的推荐/u
+    );
+    expect(
+      screen.getByRole('heading', {
+        level: 3,
+        name: '还没有基于本店事实的推荐',
+      })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: '开始下一次任务' })
+    ).toBeInTheDocument();
+
+    // Pending: workspace has produced work but no current recommendation.
+    harness.readDashboardHomeRecommendation.mockResolvedValue({
+      workspaceId: 'ws-1',
+      currentFactsRevision: 3,
+      recommendation: null,
+      stale: false,
+    });
+    harness.operationsQuery.mockResolvedValue({
+      ...emptyWorkbench(),
+      works: [{ status: 'completed' }],
+      assets: [{ kind: 'image' }],
+    });
+
+    cleanup();
+    render(
+      <QueryClientProvider client={client}>
+        <TodayRecommendationCard
+          onStart={onStart}
+          onUse={vi.fn()}
+          workspaceId="ws-1"
+        />
+      </QueryClientProvider>
+    );
+
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('today-recommendation')).toHaveAttribute(
+        'data-recommendation-state',
+        'pending'
+      );
+    });
+    expect(screen.getByTestId('suggestion-chip-today')).toHaveTextContent(
+      /今天的主推荐还没排出来/u
+    );
+    expect(
+      screen.getByRole('heading', {
+        level: 3,
+        name: '今天的主推荐还没排出来',
+      })
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '开始下一次任务' }));
+    expect(onStart).toHaveBeenCalled();
+    // silence unused
+    void rerender;
   });
 
   it('今日建议 highlight chip opens the three-element mini card; use only prefills', async () => {
@@ -124,16 +205,10 @@ describe('suggestion capsules', () => {
         opportunity: null,
       },
     });
-    harness.operationsQuery.mockResolvedValue({
-      assets: [],
-      contents: [],
-      events: [],
-      jobs: [],
-      works: [],
-    });
+    harness.operationsQuery.mockResolvedValue(emptyWorkbench());
     harness.queryP1.mockResolvedValue([]);
 
-    const { onUse } = renderCard();
+    const { onUse, onStart } = renderCard();
 
     // Wait for the harness query to land before asserting the highlight face.
     await vi.waitFor(() => {
@@ -161,5 +236,6 @@ describe('suggestion capsules', () => {
     await user.click(screen.getByTestId('today-recommendation-use'));
     expect(onUse).toHaveBeenCalledTimes(1);
     expect(onUse.mock.calls[0]?.[0].intent).toMatch(/换季头皮护理科普/u);
+    expect(onStart).not.toHaveBeenCalled();
   });
 });

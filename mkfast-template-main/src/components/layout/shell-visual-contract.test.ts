@@ -57,9 +57,14 @@ test('Composer and Result Center keep the product shell contract', () => {
   const recommendation = readSource(
     'src/product/today-recommendation-card.tsx'
   );
+  const workbenchShell = readSource(
+    'src/product/composer/workbench-shell-layout.tsx'
+  );
   const button = readSource('src/components/ui/button.tsx');
 
-  assert.match(composer, /data-testid="composer-home"/u);
+  // Shell host default testid moved to WorkbenchShellRoot (P1-01); home mounts it.
+  assert.match(composer, /WorkbenchShellRoot/u);
+  assert.match(workbenchShell, /testId = 'composer-home'/u);
   assert.match(resultCenter, /data-testid="result-center-shell"/u);
   assert.match(button, /outline:\s*"bg-surface-2/u);
   assert.match(
@@ -99,7 +104,11 @@ test('Composer and Result Center keep the product shell contract', () => {
     /\.meiye-type-display[^{}]*\{[^{}]*color:/u,
     '.meiye-type-display 的硬编码白字已删；Display 层压字色由 ambient 段统一给'
   );
-  assert.match(recommendation, /meiye-entry-card/u);
+  // D2 / #318: Idle recommendation is light capsules + porcelain mini card,
+  // not a heavy entry card competing with Composer. Composer still owns entry-card.
+  assert.match(recommendation, /data-suggestion-capsules/u);
+  assert.match(recommendation, /meiye-porcelain/u);
+  assert.doesNotMatch(recommendation, /meiye-entry-card/u);
   assert.match(composer, /meiye-entry-card/u);
   assert.match(
     styles,

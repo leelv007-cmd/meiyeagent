@@ -27,12 +27,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   today_recommendation_cold_description,
+  today_recommendation_cold_title,
   today_recommendation_customer_action,
   today_recommendation_facts,
   today_recommendation_facts_count,
   today_recommendation_pending_description,
   today_recommendation_pending_title,
   today_recommendation_source,
+  today_recommendation_start,
   today_recommendation_stale_description,
   today_recommendation_stale_title,
   today_recommendation_title,
@@ -275,6 +277,7 @@ export function TodayRecommendationCard({
             </span>
           </button>
         ) : (
+          // Empty chips focus the composer directly; honest title/CTA sit below.
           <button
             className={cn(
               CAPSULE_BASE,
@@ -315,23 +318,23 @@ export function TodayRecommendationCard({
         />
       ) : null}
 
+      {/*
+        Empty states always show honest h3 + start CTA (W04 hard gate). Only
+        the heavy *current* recommendation collapses behind the highlight chip.
+      */}
       {view.kind !== 'current' ? (
-        <p
-          className="meiye-type-aux text-muted-foreground"
-          data-testid="suggestion-chip-today-hint"
-        >
-          {emptyDescription(view.kind)}
-        </p>
+        <EmptyRecommendationPanel kind={view.kind} onStart={onStart} />
       ) : null}
     </div>
   );
 }
 
 function emptyChipLabel(kind: 'cold' | 'pending' | 'stale') {
+  // Honest state titles on the chip face (not the generic strip title).
   if (kind === 'stale') return today_recommendation_stale_title();
   return kind === 'pending'
     ? today_recommendation_pending_title()
-    : today_recommendation_title();
+    : today_recommendation_cold_title();
 }
 
 function emptyDescription(kind: 'cold' | 'pending' | 'stale') {
@@ -339,6 +342,41 @@ function emptyDescription(kind: 'cold' | 'pending' | 'stale') {
   return kind === 'pending'
     ? today_recommendation_pending_description()
     : today_recommendation_cold_description();
+}
+
+/**
+ * Expanded empty face: honest h3 title + start CTA (W04 / e2e contract).
+ * Keeps the action-oriented 「开始下一次任务」accessible name.
+ */
+function EmptyRecommendationPanel({
+  kind,
+  onStart,
+}: {
+  kind: 'cold' | 'pending' | 'stale';
+  onStart: () => void;
+}) {
+  return (
+    <div
+      className="meiye-porcelain space-y-2 rounded-2xl border border-border/60 p-4"
+      data-testid="today-recommendation-empty-panel"
+    >
+      <h3 className="text-base font-semibold leading-6">
+        {emptyChipLabel(kind)}
+      </h3>
+      <p className="text-sm leading-6 text-muted-foreground">
+        {emptyDescription(kind)}
+      </p>
+      <Button
+        data-testid="today-recommendation-start"
+        onClick={onStart}
+        size="sm"
+        type="button"
+        variant="outline"
+      >
+        {today_recommendation_start()}
+      </Button>
+    </div>
+  );
 }
 
 /**

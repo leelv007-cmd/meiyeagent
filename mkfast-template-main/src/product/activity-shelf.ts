@@ -2,7 +2,7 @@
  * Activity Shelf projection — xhs-spec §2.4 / D6 / P1-3 (#318).
  *
  * Idle 「接着上次」upgrades from plain links to ≤3 object cards:
- * thumbnail · status · next action. Unfinished first; pure (no React).
+ * thumbnail · status · next action. Needs-attention first; pure (no React).
  */
 
 import type {
@@ -11,19 +11,33 @@ import type {
   CreativeWorkbenchProjection,
 } from '@meiye/contracts';
 
+import {
+  activity_shelf_action_accepted,
+  activity_shelf_action_completed,
+  activity_shelf_action_draft,
+  activity_shelf_action_failed,
+  activity_shelf_action_running,
+  activity_shelf_status_accepted,
+  activity_shelf_status_completed,
+  activity_shelf_status_draft,
+  activity_shelf_status_failed,
+  activity_shelf_status_running,
+} from '@/locale/paraglide/messages';
+
 /** P1-3: shelf never becomes a content list. */
 export const ACTIVITY_SHELF_MAX_CARDS = 3;
 
-const UNFINISHED_STATUSES: ReadonlySet<CreativeWork['status']> = new Set([
-  'draft',
-  'running',
-]);
-
-/** Failed is terminal for ordering but still unfinished for the merchant. */
+/** Needs merchant attention: unfinished runs + failed (surface first). */
 const NEEDS_ATTENTION: ReadonlySet<CreativeWork['status']> = new Set([
   'draft',
   'running',
   'failed',
+]);
+
+/** Legacy unfinished set (draft/running only) — keep for continue-item marker tests. */
+const UNFINISHED_LEGACY: ReadonlySet<CreativeWork['status']> = new Set([
+  'draft',
+  'running',
 ]);
 
 export type ActivityShelfStatusKind =
@@ -43,7 +57,9 @@ export type ActivityShelfThumb = {
 
 export type ActivityShelfCard = {
   workId: string;
-  /** Merchant intent summary (truncated for the card face). */
+  /** Full merchant intent — used for accessible names (e2e / a11y). */
+  intent: string;
+  /** Truncated intent for the card face. */
   title: string;
   status: ActivityShelfStatusKind;
   /** Merchant-language status line (never internal enums alone). */
@@ -51,40 +67,31 @@ export type ActivityShelfCard = {
   /** Status-driven next-step label on the action entry. */
   nextActionLabel: string;
   thumb: ActivityShelfThumb;
+  /** draft/running/failed — needs merchant attention. */
+  needsAttention: boolean;
+  /** draft/running only — legacy continue-item-unfinished marker. */
   unfinished: boolean;
 };
 
-const STATUS_LABEL: Record<ActivityShelfStatusKind, string> = {
-  draft: '草稿',
-  running: '正在生成',
-  completed: '已完成',
-  accepted: '已采用',
-  failed: '未完成',
-};
-
-const NEXT_ACTION_LABEL: Record<ActivityShelfStatusKind, string> = {
-  draft: '继续编辑',
-  running: '查看进度',
-  completed: '继续调整',
-  accepted: '继续调整',
-  failed: '重新处理',
-};
-
 export function isUnfinished(work: CreativeWork) {
-  return UNFINISHED_STATUSES.has(work.status);
+  return UNFINISHED_LEGACY.has(work.status);
+}
+
+export function needsAttention(work: CreativeWork) {
+  return NEEDS_ATTENTION.has(work.status);
 }
 
 /**
- * Unfinished first, then the rest in projection order. Capped so the section
- * stays a nudge rather than becoming the content list it links to.
+ * Needs-attention first (draft/running/failed), then the rest in projection
+ * order. Capped so the section stays a nudge rather than a content list.
  */
 export function dashboardContinueItems(
   workbench: CreativeWorkbenchProjection | undefined
 ): CreativeWork[] {
   if (!workbench) return [];
-  const unfinished = workbench.works.filter(isUnfinished);
-  const rest = workbench.works.filter((work) => !isUnfinished(work));
-  return [...unfinished, ...rest].slice(0, ACTIVITY_SHELF_MAX_CARDS);
+  const attention = workbench.works.filter(needsAttention);
+  const rest = workbench.works.filter((work) => !needsAttention(work));
+  return [...attention, ...rest].slice(0, ACTIVITY_SHELF_MAX_CARDS);
 }
 
 export function activityShelfStatusKind(
@@ -96,13 +103,35 @@ export function activityShelfStatusKind(
 export function activityShelfStatusLabel(
   status: CreativeWork['status']
 ): string {
-  return STATUS_LABEL[activityShelfStatusKind(status)];
+  switch (activityShelfStatusKind(status)) {
+    case 'draft':
+      return activity_shelf_status_draft();
+    case 'running':
+      return activity_shelf_status_running();
+    case 'completed':
+      return activity_shelf_status_completed();
+    case 'accepted':
+      return activity_shelf_status_accepted();
+    case 'failed':
+      return activity_shelf_status_failed();
+  }
 }
 
 export function activityShelfNextActionLabel(
   status: CreativeWork['status']
 ): string {
-  return NEXT_ACTION_LABEL[activityShelfStatusKind(status)];
+  switch (activityShelfStatusKind(status)) {
+    case 'draft':
+      return activity_shelf_action_draft();
+    case 'running':
+      return activity_shelf_action_running();
+    case 'completed':
+      return activity_shelf_action_completed();
+    case 'accepted':
+      return activity_shelf_action_accepted();
+    case 'failed':
+      return activity_shelf_action_failed();
+  }
 }
 
 /**
@@ -163,7 +192,7 @@ function truncateTitle(intent: string, limit = 28): string {
 }
 
 /**
- * Project ≤3 Activity Shelf cards. Unfinished first (same order as continue).
+ * Project ≤3 Activity Shelf cards. Needs-attention first.
  */
 export function projectActivityShelfCards(
   workbench: CreativeWorkbenchProjection | undefined
@@ -172,14 +201,17 @@ export function projectActivityShelfCards(
   const assets = workbench?.assets ?? [];
   return works.map((work) => {
     const status = activityShelfStatusKind(work.status);
+    const intent = work.intent.replace(/\s+/gu, ' ').trim() || '未命名创作';
     return {
       workId: work.id,
-      title: truncateTitle(work.intent),
+      intent,
+      title: truncateTitle(intent),
       status,
       statusLabel: activityShelfStatusLabel(work.status),
       nextActionLabel: activityShelfNextActionLabel(work.status),
       thumb: activityShelfThumb(work, assets),
-      unfinished: NEEDS_ATTENTION.has(work.status),
+      needsAttention: needsAttention(work),
+      unfinished: isUnfinished(work),
     };
   });
 }

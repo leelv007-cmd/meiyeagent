@@ -2,7 +2,7 @@
  * 段③ Activity Shelf（完整版）— D-164① / D6 / P1-3 (#318).
  *
  * Was plain underline links; now ≤3 horizontal object cards:
- * thumbnail / status / next action, generous whitespace. Unfinished first.
+ * thumbnail / status / next action, generous whitespace. Needs-attention first.
  * Empty workspace stays silent (段① already shows samples). Load failure
  * stays honest instead of looking like a cold start.
  *
@@ -17,11 +17,14 @@ import {
   IconVideo,
 } from '@tabler/icons-react';
 import type { CreativeWorkbenchProjection } from '@meiye/contracts';
+import { useState } from 'react';
 
 import {
+  activity_shelf_action_aria,
   dashboard_continue_all,
   dashboard_continue_pending,
   dashboard_continue_title,
+  dashboard_continue_unfinished,
 } from '@/locale/paraglide/messages';
 import { operationsQuery } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
@@ -30,6 +33,7 @@ import {
   projectActivityShelfCards,
   type ActivityShelfCard,
   type ActivityShelfThumb,
+  type ActivityShelfThumbKind,
 } from './activity-shelf';
 import { workbenchHasWork } from './today-recommendation-card';
 
@@ -38,6 +42,7 @@ export {
   ACTIVITY_SHELF_MAX_CARDS,
   dashboardContinueItems,
   isUnfinished,
+  needsAttention,
   projectActivityShelfCards,
 } from './activity-shelf';
 
@@ -59,8 +64,8 @@ export function DashboardContinueSection() {
   if (workbench.isError) {
     return (
       <section
-        data-testid="dashboard-section-continue"
         data-activity-shelf="error"
+        data-testid="dashboard-section-continue"
       >
         <h2 className="meiye-type-aux">{dashboard_continue_title()}</h2>
         <p className="meiye-type-aux mt-1" data-testid="continue-pending">
@@ -107,6 +112,13 @@ export function DashboardContinueSection() {
 }
 
 function ActivityShelfObjectCard({ card }: { card: ActivityShelfCard }) {
+  // Accessible name keeps full intent so recorded journeys can resolve
+  // getByRole('link', { name: intent }) and completed cards stay distinct.
+  const actionAria = activity_shelf_action_aria({
+    action: card.nextActionLabel,
+    title: card.intent,
+  });
+
   return (
     <article
       className={cn(
@@ -124,24 +136,25 @@ function ActivityShelfObjectCard({ card }: { card: ActivityShelfCard }) {
         <p
           className="meiye-type-aux text-muted-foreground"
           data-testid="activity-shelf-status"
+          data-status-kind={card.status}
         >
           {card.statusLabel}
           {card.unfinished ? (
             <span className="sr-only" data-testid="continue-item-unfinished">
-              {/* Keep /未完成/ contract for legacy interaction tests. */}
-              未完成
+              {dashboard_continue_unfinished()}
             </span>
           ) : null}
         </p>
       </div>
       <Link
+        aria-label={actionAria}
         className="inline-flex min-h-touch-target items-center gap-1 text-sm font-medium text-foreground underline-offset-4 hover:underline"
-        data-testid="continue-item"
         data-next-action={card.nextActionLabel}
+        data-testid="continue-item"
         params={{ workId: card.workId }}
         to="/dashboard/works/$workId"
       >
-        {card.nextActionLabel}
+        <span aria-hidden="true">{card.nextActionLabel}</span>
         <IconArrowRight aria-hidden="true" className="size-3.5 shrink-0" />
       </Link>
     </article>
@@ -155,42 +168,75 @@ function ActivityShelfThumbFace({
   thumb: ActivityShelfThumb;
   title: string;
 }) {
-  if (thumb.src && (thumb.kind === 'image' || thumb.kind === 'video')) {
+  const [failed, setFailed] = useState(false);
+  const showMedia = Boolean(thumb.src) && !failed;
+
+  if (showMedia && thumb.src && thumb.kind === 'video') {
     return (
       <div
         className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-muted"
         data-testid="activity-shelf-thumb"
-        data-thumb-kind={thumb.kind}
+        data-thumb-kind="video"
       >
         {/* Decorative preview — title is already in the card body. */}
-        <img
-          alt=""
-          className="size-full object-cover"
-          loading="lazy"
+        <video
+          className="pointer-events-none size-full object-cover"
+          muted
+          onError={() => setFailed(true)}
+          playsInline
+          preload="metadata"
           src={thumb.src}
+          tabIndex={-1}
         />
-        {thumb.kind === 'video' ? (
-          <span className="absolute bottom-1.5 right-1.5 rounded-md bg-background/90 p-1">
-            <IconVideo aria-hidden="true" className="size-3.5" />
-          </span>
-        ) : null}
+        <span className="absolute bottom-1.5 right-1.5 rounded-md bg-background/90 p-1">
+          <IconVideo aria-hidden="true" className="size-3.5" />
+        </span>
       </div>
     );
   }
 
+  if (showMedia && thumb.src && thumb.kind === 'image') {
+    return (
+      <div
+        className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-muted"
+        data-testid="activity-shelf-thumb"
+        data-thumb-kind="image"
+      >
+        <img
+          alt=""
+          className="size-full object-cover"
+          loading="lazy"
+          onError={() => setFailed(true)}
+          src={thumb.src}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <ActivityShelfIconThumb
+      kind={failed ? 'unknown' : thumb.kind}
+      title={title}
+    />
+  );
+}
+
+function ActivityShelfIconThumb({
+  kind,
+  title,
+}: {
+  kind: ActivityShelfThumbKind;
+  title: string;
+}) {
   const Icon =
-    thumb.kind === 'video'
-      ? IconVideo
-      : thumb.kind === 'text'
-        ? IconFileText
-        : IconPhoto;
+    kind === 'video' ? IconVideo : kind === 'text' ? IconFileText : IconPhoto;
 
   return (
     <div
       aria-hidden="true"
       className="flex aspect-[4/3] w-full items-center justify-center rounded-xl bg-muted text-muted-foreground"
       data-testid="activity-shelf-thumb"
-      data-thumb-kind={thumb.kind}
+      data-thumb-kind={kind}
       title={title}
     >
       <Icon className="size-7 opacity-70" />

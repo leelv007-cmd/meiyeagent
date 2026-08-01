@@ -105,9 +105,12 @@ test.describe('Day-0 recommendation and example store', () => {
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
 
-    await expect(
-      page.getByRole('heading', { name: '今天值得发什么' })
-    ).toBeVisible();
+    // D2 light capsules: cold chip + honest empty panel (h3 + start).
+    await expect(page.getByTestId('today-recommendation')).toHaveAttribute(
+      'data-suggestion-capsules',
+      'true'
+    );
+    await expect(page.getByTestId('suggestion-chip-today')).toBeVisible();
     await expect(
       page.getByRole('heading', {
         level: 3,
@@ -333,6 +336,17 @@ test.describe('Day-0 recommendation and example store', () => {
       },
     };
     await page.reload();
+    // D2: current recommendation is a highlight chip; expand for three-element mini card.
+    const todayChip = page.getByTestId('suggestion-chip-today');
+    await expect(todayChip).toHaveAttribute('data-highlight', 'true');
+    await expect(todayChip).toContainText(/今日建议|本周猫眼项目推荐/u);
+    await expect(
+      page.getByTestId('today-recommendation-mini-card')
+    ).toHaveCount(0);
+    await todayChip.click();
+    await expect(
+      page.getByTestId('today-recommendation-mini-card')
+    ).toBeVisible();
     await expect(
       page.getByRole('heading', { level: 3, name: '本周猫眼项目推荐' })
     ).toBeVisible();

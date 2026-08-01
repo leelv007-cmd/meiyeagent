@@ -237,9 +237,12 @@ test.describe('D-126 dashboard home mount', () => {
     // --- Cold home ------------------------------------------------------
     await expect(page.getByTestId('dashboard-home-surface')).toBeVisible();
     await expect(page.getByTestId('dashboard-greeting')).toBeVisible();
-    await expect(
-      page.getByRole('heading', { name: '今天值得发什么' })
-    ).toBeVisible();
+    // D2: light capsules + honest empty panel (h3 cold title, not heavy entry card).
+    await expect(page.getByTestId('today-recommendation')).toHaveAttribute(
+      'data-suggestion-capsules',
+      'true'
+    );
+    await expect(page.getByTestId('suggestion-chip-today')).toBeVisible();
     await expect(
       page.getByRole('heading', {
         level: 3,
@@ -461,13 +464,11 @@ test.describe('D-126 dashboard home mount', () => {
     await page.goto('/dashboard');
     const card = page.getByTestId('today-recommendation');
     await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute('data-suggestion-capsules', 'true');
     await expect(card).toHaveAttribute(
       'data-recommendation-state',
       /^(?:pending|current)$/u
     );
-    await expect(
-      card.getByRole('heading', { level: 3, name: /\S/u })
-    ).toBeVisible();
     await expect(
       card.getByRole('heading', {
         level: 3,
@@ -478,6 +479,16 @@ test.describe('D-126 dashboard home mount', () => {
       'data-recommendation-state'
     );
     if (recommendationState === 'current') {
+      // D2: expand highlight chip before three-element mini card / use CTA.
+      const todayChip = card.getByTestId('suggestion-chip-today');
+      await expect(todayChip).toHaveAttribute('data-highlight', 'true');
+      await todayChip.click();
+      await expect(
+        card.getByTestId('today-recommendation-mini-card')
+      ).toBeVisible();
+      await expect(
+        card.getByRole('heading', { level: 3, name: /\S/u })
+      ).toBeVisible();
       await expect(card.getByText('为什么适合现在')).toBeVisible();
       await expect(card.getByText('用了本店什么')).toBeVisible();
       await expect(card.getByText('希望顾客做什么')).toBeVisible();

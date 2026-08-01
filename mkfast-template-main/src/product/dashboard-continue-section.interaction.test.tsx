@@ -7,6 +7,7 @@
  * first is the merchant's to fix.
  *
  * P1-3 adds object-card face: ≤3 cards, each with status + next action.
+ * Accessible name keeps full intent for recorded journeys.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen } from '@testing-library/react';
@@ -64,7 +65,7 @@ afterEach(() => {
 });
 
 describe('dashboardContinueItems', () => {
-  it('puts unfinished work first — it is the part she cannot reconstruct', () => {
+  it('puts needs-attention work first — it is the part she cannot reconstruct', () => {
     const items = dashboardContinueItems(
       projection([
         work('done-1', 'completed', 'finished one'),
@@ -138,14 +139,61 @@ describe('Activity Shelf (DashboardContinueSection)', () => {
       ).not.toBeNull();
     }
 
-    // Next-action entries (legacy continue-item = the action link).
+    // Next-action entries keep full intent in accessible name (recorded journey).
     const actions = screen.getAllByTestId('continue-item');
     expect(actions).toHaveLength(3);
-    expect(actions[0]?.textContent).toMatch(/查看进度|继续/u);
+    expect(actions[0]).toHaveAccessibleName(/母亲节朋友圈文案/u);
+    expect(actions[0]).toHaveAccessibleName(/查看进度|继续/u);
 
     const marks = screen.getAllByTestId('continue-item-unfinished');
     expect(marks).toHaveLength(1);
-    expect(marks[0]?.textContent).toMatch(/未完成/u);
+    expect(marks[0]?.textContent).toMatch(/未完成|Unfinished/u);
+  });
+
+  it('binds intent into action accessible name so completed cards stay distinct', async () => {
+    p1.operationsQuery.mockResolvedValue(
+      projection([
+        work('a', 'completed', '春季染发活动套图'),
+        work('b', 'completed', '抖音护理成片'),
+      ])
+    );
+
+    renderSection();
+    await screen.findByTestId('activity-shelf');
+
+    expect(
+      screen.getByRole('link', { name: /春季染发活动套图/u })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: /抖音护理成片/u })
+    ).toBeInTheDocument();
+  });
+
+  it('renders video thumbs with a video element, not img', async () => {
+    p1.operationsQuery.mockResolvedValue(
+      projection(
+        [work('v1', 'completed', '15秒护理成片')],
+        [
+          {
+            id: 'asset-v',
+            workspaceId: 'ws-1',
+            workId: 'v1',
+            jobId: 'j1',
+            kind: 'video',
+            title: '成片',
+            objectKey: 'ws-1/clip.mp4',
+            contentType: 'video/mp4',
+            createdAt: '2026-08-01T00:00:00.000Z',
+          },
+        ]
+      )
+    );
+
+    renderSection();
+    const thumb = await screen.findByTestId('activity-shelf-thumb');
+    expect(thumb).toHaveAttribute('data-thumb-kind', 'video');
+    expect(thumb.querySelector('video')).not.toBeNull();
+    expect(thumb.querySelector('img')).toBeNull();
   });
 
   it('says the work could not be loaded instead of looking like a new shop', async () => {

@@ -8,6 +8,7 @@ import {
   IDLE_FIRST_SCREEN_RECIPE_CHIPS,
   todaySuggestionChipLabel,
 } from './idle-suggestion-chips';
+import type { RecommendationHandoff } from './recommendation-handoff';
 
 test('first-screen recipe chips include 小红书图文 and 爆款复刻', () => {
   const labels = IDLE_FIRST_SCREEN_RECIPE_CHIPS.map((c) => c.label);
@@ -16,16 +17,13 @@ test('first-screen recipe chips include 小红书图文 and 爆款复刻', () =>
   assert.equal(IDLE_FIRST_SCREEN_RECIPE_CHIPS.length, 2);
 });
 
-test('C3: every recipe chip only carries a prefill handoff (no submit flag)', () => {
+test('C3: recipe handoff shape is only intent + optional outputHint', () => {
   for (const chip of IDLE_FIRST_SCREEN_RECIPE_CHIPS) {
-    assert.ok(chip.handoff.intent.length > 0);
-    // Typed lens when the recipe knows one — never hard-coded charge/submit.
-    assert.equal(chip.handoff.outputHint, 'image_text');
-    assert.equal(
-      'autoSubmit' in chip.handoff,
-      false,
-      'handoff must not auto-submit'
-    );
+    const handoff: RecommendationHandoff = chip.handoff;
+    assert.ok(handoff.intent.length > 0);
+    assert.equal(handoff.outputHint, 'image_text');
+    // Exact key set — no autoSubmit / charge / submit flags can sneak in.
+    assert.deepEqual(Object.keys(handoff).sort(), ['intent', 'outputHint']);
   }
 });
 
