@@ -75,6 +75,7 @@ function setup(
     }),
     execution,
     ...(referenceAssets ? { referenceAssets } : {}),
+    ...(merchantExecutionBilling ? { merchantExecutionBilling } : {}),
     resultSink: repository,
   });
   const controlPlane = new ModelSupplyControlPlaneService({
@@ -89,7 +90,6 @@ function setup(
       'seed-tts-2-volcengine-direct': 'c'.repeat(64),
     },
     canvasProjects: canvasProjectAuthority(),
-    ...(merchantExecutionBilling ? { merchantExecutionBilling } : {}),
     ...(planningControlPlane ? { planningControlPlane } : {}),
     repository,
   });
@@ -131,13 +131,21 @@ function merchantExecutionBillingStub(input: {
     operation: string;
     outputCount: number;
     quoteRevision: string;
+    submissionContractHash: string;
     targetSeconds?: number;
+    inputAssetsHash: string;
+    promptHash: string;
+    referenceAssetsHash: string;
   }) => JSON.stringify({
     catalogModelId: claim.catalogModelId,
     operation: claim.operation,
     outputCount: claim.outputCount,
     quoteRevision: claim.quoteRevision,
+    submissionContractHash: claim.submissionContractHash,
     targetSeconds: claim.targetSeconds ?? null,
+    inputAssetsHash: claim.inputAssetsHash,
+    promptHash: claim.promptHash,
+    referenceAssetsHash: claim.referenceAssetsHash,
   });
   return {
     async readMerchantExecutionContract(inputValue: {
@@ -167,6 +175,8 @@ function merchantExecutionBillingStub(input: {
         operation: quote.operation,
         outputCount,
         quoteRevision: quote.revision,
+        submissionContractHash:
+          quote.submissionContractHash ?? `snapshot:${quote.taskId}`,
         ...(quote.targetSeconds === undefined
           ? {}
           : { targetSeconds: quote.targetSeconds }),
@@ -178,7 +188,11 @@ function merchantExecutionBillingStub(input: {
       operation: string;
       outputCount: number;
       quoteRevision: string;
+      submissionContractHash: string;
       targetSeconds?: number;
+      inputAssetsHash: string;
+      promptHash: string;
+      referenceAssetsHash: string;
       taskId: string;
       workspaceId: string;
     }): Promise<
@@ -214,6 +228,8 @@ function merchantExecutionBillingStub(input: {
         quote.operation !== claim.operation ||
         quote.catalogModelId !== claim.catalogModelId ||
         quote.outputCount !== claim.outputCount ||
+        (quote.submissionContractHash ?? `snapshot:${quote.taskId}`) !==
+          claim.submissionContractHash ||
         (quote.targetSeconds ?? null) !== (claim.targetSeconds ?? null) ||
         usage.workspaceId !== claim.workspaceId ||
         usage.taskId !== claim.taskId ||
@@ -238,7 +254,11 @@ function merchantExecutionBillingStub(input: {
       outputCount: number;
       quoteRevision: string;
       result: T;
+      submissionContractHash: string;
       targetSeconds?: number;
+      inputAssetsHash: string;
+      promptHash: string;
+      referenceAssetsHash: string;
       taskId: string;
     }): Promise<T> {
       const existing = executions.get(claim.taskId);
@@ -3182,6 +3202,7 @@ describe('ModelSupplyFoundationModule', () => {
       outputCount: 3,
       quoteId: 'quote-shared-consumer',
       revision: 'quote-r1',
+      submissionContractHash: 'signed-snapshot-shared-consumer',
       taskId: 'credit-task-shared-consumer',
       workspaceId: owner.workspaceId,
     } as ProductQuoteSnapshot;
@@ -3195,7 +3216,7 @@ describe('ModelSupplyFoundationModule', () => {
           workspaceId: owner.workspaceId,
         }) as ProductUsageRecord,
     });
-    const { controlPlane } = setup(
+    const { controlPlane, models } = setup(
       {
         async execute(request) {
           providerCalls += 1;
@@ -3220,7 +3241,21 @@ describe('ModelSupplyFoundationModule', () => {
 
     const concurrent = await Promise.allSettled([
       controlPlane.submitGeneration(owner, input, 'operations-entry'),
-      controlPlane.submitGeneration(owner, input, 'harness-entry'),
+      models.submit({
+        ...input,
+        actorId: owner.userId,
+        idempotencyKey: 'operations-entry',
+        workspaceId: owner.workspaceId,
+      }),
+      models.submitWithProviderEffectKey(
+        {
+          ...input,
+          actorId: owner.userId,
+          idempotencyKey: 'harness-worker-entry',
+          workspaceId: owner.workspaceId,
+        },
+        'harness-worker-provider-effect',
+      ),
     ]);
     assert.equal(providerCalls, 1);
     assert.equal(
@@ -3234,12 +3269,23 @@ describe('ModelSupplyFoundationModule', () => {
     if (!fulfilled || fulfilled.status !== 'fulfilled') return;
     const operations = fulfilled.value;
     assert.equal(operations.copyCandidates?.length, quote.outputCount);
-    const replay = await controlPlane.submitGeneration(
-      owner,
-      input,
-      'harness-replay-entry',
-    );
+    const replay = await models.submit({
+      ...input,
+      actorId: owner.userId,
+      idempotencyKey: 'harness-replay-entry',
+      workspaceId: owner.workspaceId,
+    });
     assert.deepEqual(replay, operations);
+    await assert.rejects(
+      models.submit({
+        ...input,
+        actorId: owner.userId,
+        idempotencyKey: 'prompt-drift-entry',
+        prompt: 'Return a different campaign direction.',
+        workspaceId: owner.workspaceId,
+      }),
+      /another merchant execution|already claimed/i,
+    );
   });
 
   it('derives native image edit execution from a reference-transform quote', async () => {

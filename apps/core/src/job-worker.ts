@@ -468,6 +468,7 @@ const modelSupplyRuntime = createModelSupplyRuntime({
         supplyFreezes: supplyFreezeStore,
       },
     ),
+    merchantExecutionBilling: billingLifecycle,
     providerAdmission: modelSupplyProviderAdmission,
     promptAudits: promptAuditStore,
     promptResolver: modelSupplyPromptResolver,

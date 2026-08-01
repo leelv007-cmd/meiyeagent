@@ -34,6 +34,11 @@ import {
   usedModalityCapabilityIds,
 } from './failover-semantics.js';
 import type { PriceRevision } from './catalog.js';
+import { P1DomainError } from '../foundation/domain.js';
+import type {
+  ClaimMerchantExecutionInput,
+  MerchantExecutionBillingPort,
+} from '../product-billing/durable-service.js';
 
 const EXECUTION_ATTEMPT_BUDGET_SUSPENSION_CODE =
   'EXECUTION_ATTEMPT_BUDGET_SUSPENDED_BEFORE_PROVIDER';
@@ -144,6 +149,7 @@ export {
 } from './route-planning.js';
 
 import {
+  MODEL_OPERATIONS,
   QUALITY_NORTH_STAR_MIN_SAMPLE_SIZE,
   type Acceptance,
   type CatalogModel,
@@ -719,6 +725,63 @@ function isLanguageModelOperation(
   );
 }
 
+function merchantProviderOperation(operation: string): ModelOperation {
+  if (operation === 'image.reference_transform') return 'image.edit';
+  if (MODEL_OPERATIONS.includes(operation as ModelOperation)) {
+    return operation as ModelOperation;
+  }
+  throw new P1DomainError(
+    'INVALID_STATE',
+    'Reserved credit quote has an unsupported provider operation.',
+  );
+}
+
+function merchantCopyCandidateCount(
+  operation: ModelOperation,
+  outputCount: number,
+): 1 | 3 | undefined {
+  if (!Number.isSafeInteger(outputCount) || outputCount < 1) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Reserved credit quote has an invalid output count.',
+    );
+  }
+  if (operation === 'copy.generate' || operation === 'copy.adapt') {
+    if (outputCount === 1 || outputCount === 3) return outputCount;
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Copy reserved credit quotes support one or three outputs.',
+    );
+  }
+  if (outputCount !== 1) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'The provider execution does not support the reserved credit quote output count.',
+    );
+  }
+  return undefined;
+}
+
+function merchantExecutionInputHashes(submission: ModelSupplySubmission) {
+  const referenceAssetIds = [
+    ...(submission.input?.referenceAssetIds ?? []),
+  ].sort();
+  const inputAssets = [...(submission.input?.inputAssets ?? [])]
+    .map((asset) => ({ assetId: asset.assetId, role: asset.role }))
+    .sort((left, right) =>
+      JSON.stringify(left).localeCompare(JSON.stringify(right)),
+    );
+  return {
+    inputAssetsHash: merchantExecutionHash(inputAssets),
+    promptHash: merchantExecutionHash(submission.prompt),
+    referenceAssetsHash: merchantExecutionHash(referenceAssetIds),
+  };
+}
+
+function merchantExecutionHash(value: unknown) {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
 function assertPromptBinding(
   operation: LanguageModelOperation,
   binding: NonNullable<ModelSupplySubmission['promptBinding']>,
@@ -1142,6 +1205,7 @@ export class ModelSupplyApplicationService {
   private readonly providerAdmission?: ModelSupplyProviderAdmissionPort;
   private readonly promptResolver?: ModelSupplyPromptResolver;
   private readonly promptAudits?: ModelSupplyPromptAuditPort;
+  private merchantExecutionBilling?: MerchantExecutionBillingPort;
   private readonly inferFixtureMediaCapabilityProfiles: boolean;
   private readonly preparedPromptBindings = new Map<
     string,
@@ -1165,6 +1229,7 @@ export class ModelSupplyApplicationService {
     providerAdmission?: ModelSupplyProviderAdmissionPort;
     promptResolver?: ModelSupplyPromptResolver;
     promptAudits?: ModelSupplyPromptAuditPort;
+    merchantExecutionBilling?: MerchantExecutionBillingPort;
     inferFixtureMediaCapabilityProfiles?: boolean;
   }) {
     for (const model of options.models) this.modelById.set(model.id, model);
@@ -1190,6 +1255,7 @@ export class ModelSupplyApplicationService {
     this.providerAdmission = options.providerAdmission;
     this.promptResolver = options.promptResolver;
     this.promptAudits = options.promptAudits;
+    this.merchantExecutionBilling = options.merchantExecutionBilling;
     this.inferFixtureMediaCapabilityProfiles =
       options.inferFixtureMediaCapabilityProfiles ?? false;
   }
@@ -1203,6 +1269,19 @@ export class ModelSupplyApplicationService {
       throw new Error('Durable media runtime is already attached.');
     }
     this.mediaRuntime = runtime;
+  }
+
+  bindMerchantExecutionBilling(port: MerchantExecutionBillingPort) {
+    if (
+      this.merchantExecutionBilling &&
+      this.merchantExecutionBilling !== port
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Model Supply has already bound a different merchant execution billing port.',
+      );
+    }
+    this.merchantExecutionBilling = port;
   }
 
   getDurableMediaJob(workspaceId: string, jobId: string) {
@@ -1690,25 +1769,27 @@ export class ModelSupplyApplicationService {
   }
 
   async submit(submission: ModelSupplySubmission): Promise<ModelSupplyResult> {
-    if (
-      this.mediaRuntime &&
-      (submission.operation === 'image.generate' ||
-        submission.operation === 'image.edit' ||
-        submission.operation === 'video.generate' ||
-        submission.operation === 'audio.speech' ||
-        submission.operation === 'audio.sfx')
-    ) {
-      return this.mediaRuntime.submit(
-        await withServerDerivedReferenceDataClass(
-          submission,
-          this.referenceAssets,
-        ),
+    return this.executeMerchantSubmission(submission, async (bound) => {
+      if (
+        this.mediaRuntime &&
+        (bound.operation === 'image.generate' ||
+          bound.operation === 'image.edit' ||
+          bound.operation === 'video.generate' ||
+          bound.operation === 'audio.speech' ||
+          bound.operation === 'audio.sfx')
+      ) {
+        return this.mediaRuntime.submit(
+          await withServerDerivedReferenceDataClass(
+            bound,
+            this.referenceAssets,
+          ),
+        );
+      }
+      return this.executeSubmission(
+        await this.prepareSubmission(bound),
+        this.execution,
       );
-    }
-    return this.executeSubmission(
-      await this.prepareSubmission(submission),
-      this.execution,
-    );
+    });
   }
 
   async submitWithProviderEffectKey(
@@ -1722,12 +1803,14 @@ export class ModelSupplyApplicationService {
     ) {
       throw new Error('Canvas text outbox accepts only language generation.');
     }
-    return this.executeSubmission(
-      await this.prepareSubmission(submission),
-      this.execution,
-      {
-      effectIdempotencyKey,
-      },
+    return this.executeMerchantSubmission(submission, async (bound) =>
+      this.executeSubmission(
+        await this.prepareSubmission(bound),
+        this.execution,
+        {
+          effectIdempotencyKey,
+        },
+      ),
     );
   }
 
@@ -1747,8 +1830,9 @@ export class ModelSupplyApplicationService {
     ) {
       throw new Error('Canvas text streaming requires one fixed text model.');
     }
-    return this.executeSubmission(
-      await this.prepareSubmission(submission),
+    return this.executeMerchantSubmission(submission, async (bound) =>
+      this.executeSubmission(
+      await this.prepareSubmission(bound),
       {
         execute: async (request): Promise<ProviderExecutionResponse> => {
           const unavailable = (message: string, errorCode: string) => ({
@@ -1863,7 +1947,115 @@ export class ModelSupplyApplicationService {
         deferResultPersistence: true,
         effectIdempotencyKey: input.effectIdempotencyKey,
       },
+    ),
     );
+  }
+
+  private async executeMerchantSubmission(
+    submission: ModelSupplySubmission,
+    execute: (submission: ModelSupplySubmission) => Promise<ModelSupplyResult>,
+  ): Promise<ModelSupplyResult> {
+    const taskId = submission.billingTaskId;
+    const quoteRevision = submission.billingQuoteRevision;
+    // Harness sub-steps already run under the outer reserved task and carry
+    // zero merchant usage. Their durable workflow/effect records own retry;
+    // only a merchant-priced provider effect may take the task-level claim.
+    if (submission.productUsageQuantity === 0) return execute(submission);
+    if (!taskId && !quoteRevision) return execute(submission);
+    if (!taskId || !quoteRevision) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Merchant execution requires both a billing task and quote revision.',
+      );
+    }
+    if (!this.merchantExecutionBilling) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Merchant execution billing is unavailable for a billed provider effect.',
+      );
+    }
+
+    const reserved =
+      await this.merchantExecutionBilling.readMerchantExecutionContract({
+        taskId,
+        workspaceId: submission.workspaceId,
+      });
+    if (reserved.quoteRevision !== quoteRevision) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Merchant execution must use the exact reserved credit quote revision.',
+      );
+    }
+    const operation = merchantProviderOperation(reserved.operation);
+    if (submission.operation !== operation) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Merchant execution operation does not match the reserved credit quote.',
+      );
+    }
+    if (
+      submission.selection.mode !== 'fixed' ||
+      submission.selection.catalogModelId !== reserved.catalogModelId
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Merchant execution must use the exact quoted CatalogModel.',
+      );
+    }
+    if (
+      reserved.targetSeconds !== undefined &&
+      submission.input?.durationSeconds !== undefined &&
+      submission.input.durationSeconds !== reserved.targetSeconds
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Merchant execution duration does not match the reserved credit quote.',
+      );
+    }
+
+    const copyCandidateCount = merchantCopyCandidateCount(
+      operation,
+      reserved.outputCount,
+    );
+    const bound = {
+      ...submission,
+      ...(copyCandidateCount === undefined ? {} : { copyCandidateCount }),
+      input:
+        reserved.targetSeconds === undefined
+          ? submission.input
+          : {
+              ...submission.input,
+              durationSeconds: reserved.targetSeconds,
+            },
+      operation,
+      selection: {
+        catalogModelId: reserved.catalogModelId,
+        mode: 'fixed' as const,
+      },
+    } satisfies ModelSupplySubmission;
+    const claim: ClaimMerchantExecutionInput = {
+      ...reserved,
+      ...merchantExecutionInputHashes(bound),
+      idempotencyKey: `merchant-execution:${taskId}`,
+      taskId,
+      workspaceId: bound.workspaceId,
+    };
+    const decision =
+      await this.merchantExecutionBilling.claimMerchantExecution<ModelSupplyResult>(
+        claim,
+      );
+    if (decision.decision === 'replay') return decision.result;
+    if (decision.decision === 'in_progress') {
+      throw new P1DomainError(
+        'IDEMPOTENCY_CONFLICT',
+        'Merchant execution is already in progress for this reserved credit task.',
+      );
+    }
+    const result = await execute(bound);
+    return this.merchantExecutionBilling.completeMerchantExecution({
+      ...claim,
+      result,
+    });
   }
 
   async prepareSubmission(
@@ -1970,7 +2162,8 @@ export class ModelSupplyApplicationService {
         streaming: Boolean(input.onPartialOutput),
         workspaceId: submission.workspaceId,
       });
-    return this.executeSubmission(submission, {
+    return this.executeMerchantSubmission(submission, (bound) =>
+      this.executeSubmission(bound, {
       execute: async (request) => {
         if (
           this.submissionGate &&
@@ -2073,9 +2266,10 @@ export class ModelSupplyApplicationService {
           };
         }
       },
-    }, {
-      structuredRequestFingerprint,
-    });
+      }, {
+        structuredRequestFingerprint,
+      }),
+    );
   }
 
   /**

@@ -784,6 +784,7 @@ const p1ModelSupplyRuntime = createModelSupplyRuntime({
         supplyFreezes: supplyFreezeStore,
       },
     ),
+    merchantExecutionBilling: billingLifecycle,
     providerAdmission: modelSupplyProviderAdmission,
     promptAudits: promptAuditStore,
     promptResolver: modelSupplyPromptResolver,
@@ -804,7 +805,6 @@ const p1ModelSupplyRuntime = createModelSupplyRuntime({
         }
       : {}),
     durationSamples: foundationRepository,
-    merchantExecutionBilling: billingLifecycle,
     planningControlPlane: supplyPlanningControlPlane,
     platformDefaultModels: platformDefaultModelSource,
     repository: modelSupplyRepository,

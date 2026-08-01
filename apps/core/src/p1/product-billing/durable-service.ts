@@ -37,11 +37,15 @@ export interface MerchantExecutionContract {
   operation: string;
   outputCount: number;
   quoteRevision: string;
+  submissionContractHash: string;
   targetSeconds?: number;
 }
 
 export interface ClaimMerchantExecutionInput extends MerchantExecutionContract {
+  inputAssetsHash: string;
   idempotencyKey: string;
+  promptHash: string;
+  referenceAssetsHash: string;
   taskId: string;
   workspaceId: string;
 }
@@ -63,7 +67,7 @@ export interface MerchantExecutionBillingPort {
 }
 
 function merchantExecutionContractHash(
-  input: MerchantExecutionContract,
+  input: MerchantExecutionContract | ClaimMerchantExecutionInput,
 ): string {
   return createHash('sha256')
     .update(
@@ -72,7 +76,13 @@ function merchantExecutionContractHash(
         operation: input.operation,
         outputCount: input.outputCount,
         quoteRevision: input.quoteRevision,
+        submissionContractHash: input.submissionContractHash,
         targetSeconds: input.targetSeconds ?? null,
+        promptHash: 'promptHash' in input ? input.promptHash : null,
+        referenceAssetsHash:
+          'referenceAssetsHash' in input ? input.referenceAssetsHash : null,
+        inputAssetsHash:
+          'inputAssetsHash' in input ? input.inputAssetsHash : null,
       }),
     )
     .digest('hex');
@@ -265,6 +275,7 @@ export class DurableProductBillingService
       !quote.catalogModelId ||
       !quote.operation ||
       !quote.revision ||
+      !quote.submissionContractHash ||
       typeof outputCount !== 'number' ||
       !Number.isSafeInteger(outputCount) ||
       outputCount < 1
@@ -279,6 +290,7 @@ export class DurableProductBillingService
       operation: quote.operation,
       outputCount,
       quoteRevision: quote.revision,
+      submissionContractHash: quote.submissionContractHash,
       ...(quote.targetSeconds === undefined
         ? {}
         : { targetSeconds: quote.targetSeconds }),
@@ -340,6 +352,7 @@ export class DurableProductBillingService
             quote.operation !== input.operation ||
             quote.catalogModelId !== input.catalogModelId ||
             quote.outputCount !== input.outputCount ||
+            quote.submissionContractHash !== input.submissionContractHash ||
             (quote.targetSeconds ?? null) !== (input.targetSeconds ?? null) ||
             usage.workspaceId !== workspaceId ||
             usage.taskId !== input.taskId ||

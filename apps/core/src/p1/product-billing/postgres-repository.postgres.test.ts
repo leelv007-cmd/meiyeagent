@@ -57,6 +57,7 @@ describe(
         frozenCandidateDeploymentIds: ['deployment-a', 'deployment-b'],
         quoteId,
         quotePolicyRevision: 'product-policy-1',
+        submissionContractHash: `signed-snapshot:${quoteId}`,
         targetSeconds: 10,
         unitRate: 0.5,
         workspaceId,
@@ -446,7 +447,11 @@ describe(
         catalogModelId: 'video-model',
         operation: 'video.generate',
         outputCount: 1,
+        inputAssetsHash: 'input-assets-hash',
+        promptHash: 'prompt-hash',
         quoteRevision: quote.revision,
+        referenceAssetsHash: 'reference-assets-hash',
+        submissionContractHash: quote.submissionContractHash!,
         targetSeconds: 10,
         taskId: 'merchant-execution-task',
         workspaceId,
@@ -503,6 +508,14 @@ describe(
           ...contract,
           idempotencyKey: winner,
           outputCount: 2,
+        }),
+        /another merchant execution|exactly match/i,
+      );
+      await assert.rejects(
+        service.claimMerchantExecution({
+          ...contract,
+          idempotencyKey: winner,
+          promptHash: 'prompt-hash-drifted-before-replay',
         }),
         /another merchant execution|exactly match/i,
       );

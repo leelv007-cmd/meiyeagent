@@ -1951,7 +1951,6 @@ export class ModelSupplyControlPlaneService {
   private readonly supplyRegistry?: ModelSupplyRegistryPersistencePort;
   private readonly platformDefaultModels?: PlatformDefaultModelSourcePort;
   private readonly modelCatalogTenantAllowlist: ReadonlySet<string>;
-  private merchantExecutionBilling?: MerchantExecutionBillingPort;
   private readonly warn?: (message: string) => void;
   private readonly warnedDisallowedCatalogWorkspaces = new Set<string>();
   private readonly canvasTextProducers = new Map<string, CanvasTextStreamProducer>();
@@ -1968,7 +1967,6 @@ export class ModelSupplyControlPlaneService {
     configurationRevisions?: Readonly<Record<string, string>>;
     canvasProjects?: CanvasGenerationProjectAuthority;
     planningControlPlane?: ModelSupplyPlanningControlPlanePort;
-    merchantExecutionBilling?: MerchantExecutionBillingPort;
     supplyRegistry?: ModelSupplyRegistryPersistencePort;
     /**
      * The one platform-default-model source (#240①). Wired from admin config in
@@ -1995,7 +1993,6 @@ export class ModelSupplyControlPlaneService {
     this.configurationRevisions = options.configurationRevisions ?? {};
     this.canvasProjects = options.canvasProjects;
     this.planningControlPlane = options.planningControlPlane;
-    this.merchantExecutionBilling = options.merchantExecutionBilling;
     this.supplyRegistry = options.supplyRegistry;
     this.platformDefaultModels = options.platformDefaultModels;
     this.modelCatalogTenantAllowlist = new Set(
@@ -2008,16 +2005,7 @@ export class ModelSupplyControlPlaneService {
   }
 
   bindMerchantExecutionBilling(port: MerchantExecutionBillingPort) {
-    if (
-      this.merchantExecutionBilling &&
-      this.merchantExecutionBilling !== port
-    ) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'Model Supply has already bound a different merchant execution billing port.',
-      );
-    }
-    this.merchantExecutionBilling = port;
+    this.application.bindMerchantExecutionBilling(port);
   }
 
   private catalogSourceForWorkspace(
@@ -3579,102 +3567,11 @@ export class ModelSupplyControlPlaneService {
     idempotencyKey: string,
   ): Promise<ModelSupplyResult> {
     await this.initialize(context.workspaceId);
-    const submission = {
+    return this.application.submit({
       ...structuredClone(input),
       actorId: context.userId,
+      idempotencyKey,
       workspaceId: context.workspaceId,
-    };
-    const billingTaskId = submission.billingTaskId;
-    const billingQuoteRevision = submission.billingQuoteRevision;
-    if (!billingTaskId && !billingQuoteRevision) {
-      return this.application.submit({ ...submission, idempotencyKey });
-    }
-    if (!billingTaskId || !billingQuoteRevision) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'billingTaskId and billingQuoteRevision must be provided together.',
-      );
-    }
-    if (!this.merchantExecutionBilling) {
-      return this.application.submit({ ...submission, idempotencyKey });
-    }
-    const reserved = await this.merchantExecutionBilling.readMerchantExecutionContract({
-      taskId: billingTaskId,
-      workspaceId: context.workspaceId,
-    });
-    if (reserved.quoteRevision !== billingQuoteRevision) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'Merchant execution must use the exact reserved credit quote revision.',
-      );
-    }
-    const providerOperation = merchantProviderOperation(reserved.operation);
-    if (submission.operation !== providerOperation) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'Merchant execution operation does not match the reserved credit quote.',
-      );
-    }
-    if (
-      submission.selection.mode !== 'fixed' ||
-      submission.selection.catalogModelId !== reserved.catalogModelId
-    ) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'Merchant execution must use the exact quoted CatalogModel.',
-      );
-    }
-    if (
-      reserved.targetSeconds !== undefined &&
-      submission.input?.durationSeconds !== undefined &&
-      submission.input.durationSeconds !== reserved.targetSeconds
-    ) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'Merchant execution duration does not match the reserved credit quote.',
-      );
-    }
-    const copyCandidateCount = merchantCopyCandidateCount(
-      providerOperation,
-      reserved.outputCount,
-    );
-    const execution = {
-      ...reserved,
-      idempotencyKey: `merchant-execution:${billingTaskId}`,
-      taskId: billingTaskId,
-      workspaceId: context.workspaceId,
-    };
-    const claim =
-      await this.merchantExecutionBilling.claimMerchantExecution<ModelSupplyResult>(
-        execution,
-      );
-    if (claim.decision === 'replay') return claim.result;
-    if (claim.decision === 'in_progress') {
-      throw new P1DomainError(
-        'IDEMPOTENCY_CONFLICT',
-        'Merchant execution is already in progress for this reserved credit task.',
-      );
-    }
-    const result = await this.application.submit({
-      ...submission,
-      ...(copyCandidateCount === undefined ? {} : { copyCandidateCount }),
-      input:
-        reserved.targetSeconds === undefined
-          ? submission.input
-          : {
-              ...submission.input,
-              durationSeconds: reserved.targetSeconds,
-            },
-      idempotencyKey: execution.idempotencyKey,
-      operation: providerOperation,
-      selection: {
-        catalogModelId: reserved.catalogModelId,
-        mode: 'fixed',
-      },
-    });
-    return this.merchantExecutionBilling.completeMerchantExecution<ModelSupplyResult>({
-      ...execution,
-      result,
     });
   }
 
@@ -5980,43 +5877,6 @@ function productUsageQuantity(
     );
   }
   return value;
-}
-
-function merchantProviderOperation(operation: string): ModelOperation {
-  if (operation === 'image.reference_transform') return 'image.edit';
-  if (MODEL_OPERATIONS.includes(operation as ModelOperation)) {
-    return operation as ModelOperation;
-  }
-  throw new P1DomainError(
-    'INVALID_STATE',
-    'Reserved credit quote has an unsupported provider operation.',
-  );
-}
-
-function merchantCopyCandidateCount(
-  operation: ModelOperation,
-  outputCount: number,
-): 1 | 3 | undefined {
-  if (!Number.isSafeInteger(outputCount) || outputCount < 1) {
-    throw new P1DomainError(
-      'INVALID_STATE',
-      'Reserved credit quote has an invalid output count.',
-    );
-  }
-  if (operation === 'copy.generate' || operation === 'copy.adapt') {
-    if (outputCount === 1 || outputCount === 3) return outputCount;
-    throw new P1DomainError(
-      'INVALID_STATE',
-      'Copy reserved credit quotes support one or three outputs.',
-    );
-  }
-  if (outputCount !== 1) {
-    throw new P1DomainError(
-      'INVALID_STATE',
-      'The provider execution does not support the reserved credit quote output count.',
-    );
-  }
-  return undefined;
 }
 
 export class ModelSupplyFoundationModule implements P1OperationModule {
