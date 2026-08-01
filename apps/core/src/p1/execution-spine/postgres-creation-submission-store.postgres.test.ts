@@ -4,6 +4,7 @@ import test from "node:test";
 
 import type { ContentPackage } from "@meiye/contracts";
 import { Pool } from "pg";
+import type { ZodType } from "zod";
 
 import {
   DurableProductBillingService,
@@ -12,7 +13,22 @@ import {
 import { PostgresProductBillingRepository } from "../product-billing/postgres-repository.js";
 import { OperationsApplicationService } from "../operations/application-service.js";
 import { OperationsFoundationModule } from "../operations/foundation-module.js";
+import {
+  ModelSupplyCreationExecutor,
+  ModelSupplyCreationInputResolver,
+  modelSupplyCreationInputSnapshot,
+  type CreativeGroundingSnapshot,
+} from "../operations/index.js";
 import { PostgresOperationsRepository } from "../operations/postgres-repository.js";
+import {
+  createDefaultCatalogModels,
+  createDefaultDeployments,
+  ModelSupplyApplicationService,
+  RecordedProviderExecutionPort,
+  type StructuredObjectExecutor,
+} from "../model-supply/index.js";
+import type { ModelSupplyControlPlaneService } from "../model-supply/foundation-module.js";
+import { ModelSupplyStructuredNodeRunner } from "../model-supply/structured-node-runner.js";
 import {
   createCreationExecutionSnapshot,
   type ComposerSubmissionRequest,
@@ -31,7 +47,6 @@ import { toHarnessWorkflowInput } from "./creation-stage-port.js";
 import { buildSemanticDecisionResumption } from "../harness/semantic-decision-resumption.js";
 import {
   nameHarnessIntent,
-  type StructuredNodeRunnerRequest,
 } from "../harness/structured-nodes.js";
 import { PostgresGrantLotLedger } from "../foundation/postgres-grant-lot.js";
 import { GrantLotAwareProductEntitlementService } from "../foundation/grant-lot-entitlement-service.js";
@@ -1548,16 +1563,64 @@ test(
 );
 
 test(
-  "Postgres production assembly binds the signed root before auxiliary and final merchant effects",
+  "Postgres production assembly binds canonical provider input before auxiliary and final merchant effects",
   { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
   async () => {
     const pool = new Pool({ connectionString });
     const operations = new PostgresOperationsRepository(pool);
     const billingRepository = new PostgresProductBillingRepository(pool);
+    const groundingSnapshot: CreativeGroundingSnapshot = {
+      assets: [
+        {
+          authorizationStatus: "authorized",
+          category: "store",
+          consentScope: "public_marketing",
+          containsPerson: false,
+          containsSensitiveData: false,
+          id: "asset-1",
+          minorStatus: "none",
+          rightsEvidenceRecorded: true,
+          sourceType: "real",
+          tags: ["护理室"],
+        },
+      ],
+      capturedAt: "2026-07-22T09:00:00.000Z",
+      store: {
+        address: "88 号",
+        booking: "提前预约",
+        brandVoice: "真诚、不夸张",
+        city: "成都",
+        confirmedAt: "2026-07-22T08:00:00.000Z",
+        district: "锦江区",
+        name: "春日护理",
+        prohibitions: ["不虚构折扣"],
+        projects: [
+          {
+            durationMinutes: 60,
+            id: "project-1",
+            name: "夏日护理",
+            price: 168,
+          },
+        ],
+        regulated: false,
+      },
+    };
+    const merchantExecutionInput = new ModelSupplyCreationInputResolver({
+      async resolve(workspaceId, sourceAssetIds) {
+        assert.equal(workspaceId.startsWith("spine-assembly-binding-"), true);
+        assert.deepEqual(sourceAssetIds, ["asset-1"]);
+        return { snapshot: structuredClone(groundingSnapshot), status: "ready" };
+      },
+    });
     const store = new PostgresCreationSubmissionStore(
       pool,
       new PostgresCreationSubmissionPersistence(
-        new PostgresProductBillingUsageReservation(pool, noOpGrantLots),
+        new PostgresProductBillingUsageReservation(
+          pool,
+          noOpGrantLots,
+          undefined,
+          merchantExecutionInput,
+        ),
       ),
     );
     const suffix = randomUUID();
@@ -1572,7 +1635,7 @@ test(
       await store.applySchema();
       const quote = await billing.buildQuote({
         billingMode: "per_request",
-        catalogModelId: "copy-model-1",
+        catalogModelId: "deepseek-v4-pro",
         catalogModelRevision: "catalog-r1",
         operation: "copy.generate",
         outputCount: 1,
@@ -1588,31 +1651,112 @@ test(
         workspaceId,
       });
       submission.snapshot = createSnapshot({
+        catalogModelId: "deepseek-v4-pro",
         quoteId,
         quoteRevision: confirmed.revision,
         submission,
         workspaceId,
       });
-      const signedRoot = {
-        input: {
-          inputAssets: submission.snapshot.sources.assets.map((asset) => ({
-            assetId: asset.id,
-            role: asset.role,
-          })),
-          referenceAssetIds: submission.snapshot.sources.assets.map(
-            (asset) => asset.id,
-          ),
+      const canonicalProviderInput = modelSupplyCreationInputSnapshot({
+        contract: {
+          contentModules: submission.snapshot.contentModules,
         },
-        prompt: submission.snapshot.intent.text,
+        groundingSnapshot,
+        intent: submission.snapshot.intent.text,
+      });
+      let auxiliaryProviderIo = 0;
+      const modelSupply = new ModelSupplyApplicationService({
+        deployments: createDefaultDeployments({
+          activatedDeploymentIds: ["deepseek-v4-pro-direct"],
+          activationEvidenceStatus: "recorded",
+        }),
+        execution: new RecordedProviderExecutionPort(),
+        merchantExecutionBilling: billing,
+        models: createDefaultCatalogModels(),
+        referenceAssets: {
+          async inspect(_workspaceId, assetIds) {
+            return assetIds.map((assetId) => ({
+              assetId,
+              classificationSource: "server_fact" as const,
+              contentType: "image/png" as const,
+              dataClass: [],
+              kind: "resolved" as const,
+              rightsRevision: "rights-r1",
+              sha256: "0".repeat(64),
+            }));
+          },
+          async resolve() {
+            throw new Error("Copy execution does not resolve media bytes.");
+          },
+        },
+      });
+      const structuredExecutor: StructuredObjectExecutor = {
+        supportsCatalogModel(catalogModelId) {
+          return catalogModelId === "deepseek-v4-pro";
+        },
+        async generate<Output>(input: {
+          schema: ZodType<Output>;
+          schemaName: string;
+        }) {
+          auxiliaryProviderIo += 1;
+          return {
+            output: input.schema.parse({
+              blockingGap: null,
+              deliveryLayer: "copy",
+              implicitConstraints: [],
+              normalizedIntent: submission.snapshot.intent.text,
+              relevantAssetCategories: ["store"],
+              route: "customized",
+              taskType: "daily_service_exposure",
+              usedAssetCategories: ["store"],
+            }) as Output,
+            providerTaskRef: `provider-${submission.task.id}`,
+            usage: { inputTokens: 10, outputTokens: 20 },
+          };
+        },
+        providerCost(usage) {
+          return { amount: 0.01, currency: "CNY", usage };
+        },
       };
+      const createStructuredRunner = () =>
+        new ModelSupplyStructuredNodeRunner({
+          actorId: submission.snapshot.actorId,
+          application: modelSupply,
+          billingQuoteRevision: confirmed.revision,
+          billingTaskId: submission.task.id,
+          executor: structuredExecutor,
+          selection: {
+            catalogModelId: "deepseek-v4-pro",
+            mode: "fixed",
+          },
+          workspaceId,
+        });
+      const runNaming = (runner: ModelSupplyStructuredNodeRunner) =>
+        nameHarnessIntent(
+          {
+            workflowId: submission.task.id,
+            workflowRevision: submission.snapshot.revision,
+            creationMode: submission.snapshot.creationMode,
+            intent: {
+              assetReferences: submission.snapshot.sources.assets.map(
+                (asset) => asset.id,
+              ),
+              context: {
+                intent: submission.snapshot.intent.text,
+                sourceSummaries: [],
+                workId: submission.work.id,
+              },
+            },
+          },
+          runner,
+        );
 
       await assert.rejects(
-        billing.readMerchantExecutionContract({
-          taskId: submission.task.id,
-          workspaceId,
-        }),
+        runNaming(createStructuredRunner()),
         /complete reserved credit quote contract/u,
       );
+      assert.equal(auxiliaryProviderIo, 0);
+      assert.equal(modelSupply.attempts().length, 0);
       assert.equal(
         (
           await store.claim({
@@ -1629,7 +1773,7 @@ test(
         taskId: submission.task.id,
         workspaceId,
       });
-      const signedHashes = merchantExecutionInputHashes(signedRoot);
+      const signedHashes = merchantExecutionInputHashes(canonicalProviderInput);
       assert.deepEqual(
         {
           inputAssetsHash: contract.submissionInputAssetsHash,
@@ -1639,91 +1783,104 @@ test(
         signedHashes,
       );
 
-      const executionOrder: string[] = [];
-      const named = await nameHarnessIntent(
-        {
-          workflowId: submission.task.id,
-          workflowRevision: submission.snapshot.revision,
-          creationMode: submission.snapshot.creationMode,
-          intent: {
-            assetReferences: submission.snapshot.sources.assets.map(
-              (asset) => asset.id,
-            ),
-            context: {
-              intent: submission.snapshot.intent.text,
-              sourceSummaries: [],
-              workId: submission.work.id,
-            },
-          },
-        },
-        {
-          async run<Output>(request: StructuredNodeRunnerRequest<Output>) {
-            const inputSnapshot = { input: null, prompt: request.prompt };
-            const auxiliaryClaim = {
-              ...contract,
-              ...merchantExecutionInputHashes(inputSnapshot),
-              effectKey: `merchant-execution:${submission.task.id}:nameHarnessIntent`,
-              idempotencyKey: `merchant-execution:${submission.task.id}:nameHarnessIntent`,
-              inputSnapshot,
-              providerCatalogModelId: "controller-model-1",
-              providerOperation: "text.respond" as const,
-              taskId: submission.task.id,
-              workspaceId,
-            };
-            assert.equal(
-              (await billing.claimMerchantExecution(auxiliaryClaim)).decision,
-              "execute",
-            );
-            executionOrder.push(request.schemaName);
-            await billing.completeMerchantExecution({
-              ...auxiliaryClaim,
-              result: { status: "completed" },
-            });
-            return {
-              attempts: 1,
-              output: request.schema.parse({
-                blockingGap: null,
-                deliveryLayer: "copy",
-                implicitConstraints: [],
-                normalizedIntent: submission.snapshot.intent.text,
-                relevantAssetCategories: ["store"],
-                route: "customized",
-                taskType: "daily_service_exposure",
-                usedAssetCategories: ["store"],
-              }),
-              providerTaskRef: `provider-${submission.task.id}`,
-              replayed: false,
-              usage: { inputTokens: 10, outputTokens: 20 },
-            };
-          },
-        },
-      );
-      assert.equal(named.declaration.normalizedIntent, signedRoot.prompt);
-
-      const finalClaim = {
-        ...contract,
-        ...signedHashes,
-        effectKey: `merchant-execution:${submission.task.id}`,
-        idempotencyKey: `merchant-execution:${submission.task.id}`,
-        inputSnapshot: signedRoot,
-        providerCatalogModelId: contract.catalogModelId,
-        providerOperation: "copy.generate" as const,
-        taskId: submission.task.id,
-        workspaceId,
-      };
+      const named = await runNaming(createStructuredRunner());
       assert.equal(
-        (await billing.claimMerchantExecution(finalClaim)).decision,
-        "execute",
+        named.declaration.normalizedIntent,
+        submission.snapshot.intent.text,
       );
-      executionOrder.push("final-provider-effect");
-      await billing.completeMerchantExecution({
-        ...finalClaim,
-        result: { status: "completed" },
-      });
-      assert.deepEqual(executionOrder, [
-        "harness_intent_naming_v1",
-        "final-provider-effect",
-      ]);
+      assert.equal(auxiliaryProviderIo, 1);
+      assert.equal(modelSupply.attempts().length, 1);
+      const controlPlane = {
+        async getCatalog() {
+          return {
+            models: [
+              {
+                activationEvidence: { status: "live_verified" as const },
+                availability: "available" as const,
+                id: contract.catalogModelId,
+              },
+            ],
+            revisionId: "catalog-r1",
+          };
+        },
+        async getJob(_workspaceId: string, jobId: string) {
+          throw new Error(`Unexpected copy job lookup ${jobId}.`);
+        },
+        async submitGeneration(
+          context: Parameters<
+            ModelSupplyControlPlaneService["submitGeneration"]
+          >[0],
+          request: Parameters<
+            ModelSupplyControlPlaneService["submitGeneration"]
+          >[1],
+          idempotencyKey: Parameters<
+            ModelSupplyControlPlaneService["submitGeneration"]
+          >[2],
+        ) {
+          return modelSupply.submit({
+            ...request,
+            actorId: context.userId,
+            idempotencyKey,
+            workspaceId: context.workspaceId,
+          });
+        },
+      } as unknown as ModelSupplyControlPlaneService;
+      const creation = new ModelSupplyCreationExecutor(
+        controlPlane,
+        undefined,
+        billing,
+      );
+      const creationRequest = {
+        billingQuoteRevision: contract.quoteRevision,
+        billingTaskId: submission.task.id,
+        context: {
+          actor: "owner",
+          correlationId: `final-${suffix}`,
+          userId: "owner-1",
+          workspaceId,
+        },
+        contract: {
+          aigcLabelEnabled: true,
+          catalogModelId: contract.catalogModelId,
+          catalogRevision: "catalog-r1",
+          contentModules: submission.snapshot.contentModules,
+          currency: "CNY",
+          dataClass: [],
+          estimatedAmount: 1,
+          operation: "copy.generate",
+          outputCount: 1,
+          outputLabel: "1 条内容候选",
+          quoteAcceptedAt: "2026-07-22T09:00:00.000Z",
+          quoteRevision: contract.quoteRevision,
+          watermarkEnabled: false,
+        },
+        groundingSnapshot,
+        idempotencyKey: `final-${suffix}`,
+        intent: submission.snapshot.intent.text,
+        productUsageQuantity: 1,
+        workId: submission.work.id,
+      } satisfies Parameters<typeof creation.submit>[0];
+      await assert.rejects(
+        creation.submit({
+          ...creationRequest,
+          groundingSnapshot: {
+            ...structuredClone(groundingSnapshot),
+            assets: [
+              {
+                ...structuredClone(groundingSnapshot.assets[0]!),
+                id: "asset-mismatch",
+              },
+            ],
+          },
+          idempotencyKey: `final-mismatch-${suffix}`,
+        }),
+        /already bound to another submission/u,
+      );
+      assert.equal(modelSupply.attempts().length, 1);
+
+      const final = await creation.submit(creationRequest);
+      assert.equal(final.status, "completed");
+      assert.equal(modelSupply.attempts().length, 2);
     } finally {
       await pool
         .query(
@@ -1907,6 +2064,7 @@ async function seedUnconfirmedQuote(
 }
 
 function createSnapshot(input: {
+  catalogModelId?: string;
   contentPackagePlatform?: "douyin" | "wechat_moments";
   distributionTarget?: "export" | "manual_copy";
   lens?: "copy" | "image" | "video";
@@ -1925,7 +2083,10 @@ function createSnapshot(input: {
       actorId: "owner-1",
       briefConfirmation: { id: "brief-1", revision: "brief-r1" },
       briefContext: { id: "brief-context-1", revision: 1 },
-      catalogModel: { id: "copy-model-1", revision: "catalog-r1" },
+      catalogModel: {
+        id: input.catalogModelId ?? "copy-model-1",
+        revision: "catalog-r1",
+      },
       contentModules: ["social_cover"],
       contentPackageId: input.submission.contentPackage.id,
       deliverables: [

@@ -284,6 +284,7 @@ import {
   OperationsApplicationService,
   OperationsFoundationModule,
   ModelSupplyCreationExecutor,
+  ModelSupplyCreationInputResolver,
   ModelSupplyImageGenerationAdapter,
   MediaCustodyStorageAdapter,
   MarketingIdentityFoundationModule,
@@ -414,6 +415,9 @@ const diagnosticRepository = new PostgresDiagnosticRepository(pool);
 const productRepository = new PostgresProductRepository(pool);
 const relationalProductRepository = new PostgresRelationalProductRepository(
   pool
+);
+const creativeGroundingResolver = new ProductCreativeGroundingResolver(
+  relationalProductRepository,
 );
 const assetStorage = modelAssetStorageFromEnv(process.env);
 const foundationRepository = new PostgresFoundationRepository(pool);
@@ -1265,9 +1269,7 @@ operationsService = new OperationsApplicationService(operationsRepository, {
     referenceAssets,
     productQuoteService,
   ),
-  groundingResolver: new ProductCreativeGroundingResolver(
-    relationalProductRepository
-  ),
+  groundingResolver: creativeGroundingResolver,
   imageGenerator: new ModelSupplyImageGenerationAdapter(
     p1ModelSupplyService,
     initializeWorkspaceCatalog
@@ -1988,6 +1990,7 @@ if (harnessRuntimeConfig) {
         pool,
         grantLotLedger,
         creditLedger,
+        new ModelSupplyCreationInputResolver(creativeGroundingResolver),
       )
     )
   );

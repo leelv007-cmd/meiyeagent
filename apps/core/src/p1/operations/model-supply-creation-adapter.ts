@@ -6,7 +6,10 @@ import type {
   ModelSupplyResult,
   ReferenceAssetResolverPort,
 } from '../model-supply/index.js';
-import type { MerchantExecutionInputBindingPort } from '../product-billing/durable-service.js';
+import type {
+  MerchantExecutionInputBindingPort,
+  MerchantExecutionInputSnapshot,
+} from '../product-billing/durable-service.js';
 import { OperationsError } from './application-service.js';
 import { nativeSupplyOperation } from '../harness/image-intent-compiler.js';
 import type {
@@ -15,6 +18,7 @@ import type {
   CreationExecutorPort,
   CreativeBrief,
   CreativeExecutionContract,
+  CreativeGroundingResolverPort,
   CreativeGroundingSnapshot,
   CreativeInheritanceContext,
   CreativeInheritanceFact,
@@ -159,7 +163,7 @@ function structuredInheritanceContext(
 
 function structuredCreativeIntent(
   intent: string,
-  contract: CreativeExecutionContract,
+  contract: Pick<CreativeExecutionContract, 'contentModules'>,
   inheritanceContext?: CreativeInheritanceContext,
   briefSnapshot?: CreativeBrief,
   groundingSnapshot?: CreativeGroundingSnapshot
@@ -217,6 +221,94 @@ function structuredCreativeIntent(
   ]
     .filter((value): value is string => Boolean(value))
     .join('\n\n');
+}
+
+export interface ModelSupplyCreationInputResolverPort {
+  resolve(input: {
+    aspectRatio?: CreativeExecutionContract['aspectRatio'];
+    contentModules: CreativeExecutionContract['contentModules'];
+    durationSeconds?: number;
+    intent: string;
+    sourceAssetIds: string[];
+    workspaceId: string;
+  }): Promise<MerchantExecutionInputSnapshot>;
+}
+
+export function modelSupplyCreationInputSnapshot(input: {
+  briefSnapshot?: CreativeBrief;
+  contract: Pick<
+    CreativeExecutionContract,
+    'aspectRatio' | 'contentModules' | 'durationSeconds'
+  >;
+  groundingSnapshot?: CreativeGroundingSnapshot;
+  inheritanceContext?: CreativeInheritanceContext;
+  intent: string;
+}): MerchantExecutionInputSnapshot {
+  // Seedream (Tu-zi) enforces 3_686_400 ≤ pixels ≤ 16_777_216.
+  // Use documented common sizes that meet the floor (not 1024² = 1MP).
+  // docs/_private/tuzi-api/images-generations.openapi.yaml
+  const dimensions =
+    input.contract.aspectRatio === '1:1'
+      ? { height: 2048, width: 2048 }
+      : input.contract.aspectRatio === '3:4'
+        ? { height: 2048, width: 1536 }
+        : input.contract.aspectRatio === '9:16'
+          ? { height: 2048, width: 1152 }
+          : {};
+  const referenceAssetIds =
+    input.groundingSnapshot?.assets.map((asset) => asset.id) ?? [];
+  return {
+    input: {
+      ...dimensions,
+      ...(referenceAssetIds.length ? { referenceAssetIds } : {}),
+      ...(input.contract.durationSeconds
+        ? { durationSeconds: input.contract.durationSeconds }
+        : {}),
+    },
+    prompt: structuredCreativeIntent(
+      input.intent,
+      input.contract,
+      input.inheritanceContext,
+      input.briefSnapshot,
+      input.groundingSnapshot,
+    ),
+  };
+}
+
+export class ModelSupplyCreationInputResolver
+  implements ModelSupplyCreationInputResolverPort
+{
+  constructor(
+    private readonly groundingResolver: CreativeGroundingResolverPort,
+  ) {}
+
+  async resolve(
+    input: Parameters<ModelSupplyCreationInputResolverPort['resolve']>[0],
+  ) {
+    const grounding = await this.groundingResolver.resolve(
+      input.workspaceId,
+      input.sourceAssetIds,
+    );
+    if (grounding.status === 'missing') {
+      throw new OperationsError(
+        'CREATIVE_GROUNDING_INCOMPLETE',
+        `Confirmed Product grounding is incomplete: ${grounding.missing.join(', ')}.`,
+        409,
+        { missing: grounding.missing },
+      );
+    }
+    return modelSupplyCreationInputSnapshot({
+      contract: {
+        ...(input.aspectRatio ? { aspectRatio: input.aspectRatio } : {}),
+        contentModules: input.contentModules,
+        ...(input.durationSeconds
+          ? { durationSeconds: input.durationSeconds }
+          : {}),
+      },
+      groundingSnapshot: grounding.snapshot,
+      intent: input.intent,
+    });
+  }
 }
 
 export class ModelSupplyCreationExecutor implements CreationExecutorPort {
@@ -324,17 +416,6 @@ export class ModelSupplyCreationExecutor implements CreationExecutorPort {
       userId: input.context.userId,
       workspaceId: input.context.workspaceId,
     };
-    // Seedream (Tu-zi) enforces 3_686_400 ≤ pixels ≤ 16_777_216.
-    // Use documented common sizes that meet the floor (not 1024² = 1MP).
-    // docs/_private/tuzi-api/images-generations.openapi.yaml
-    const dimensions =
-      input.contract.aspectRatio === '1:1'
-        ? { height: 2048, width: 2048 }
-        : input.contract.aspectRatio === '3:4'
-          ? { height: 2048, width: 1536 }
-          : input.contract.aspectRatio === '9:16'
-            ? { height: 2048, width: 1152 }
-            : {};
     const referenceAssetIds = input.groundingSnapshot?.assets.map(
       (asset) => asset.id
     ) ?? [];
@@ -374,6 +455,13 @@ export class ModelSupplyCreationExecutor implements CreationExecutorPort {
         );
       }
     }
+    const providerInput = modelSupplyCreationInputSnapshot({
+      briefSnapshot: input.briefSnapshot,
+      contract: input.contract,
+      groundingSnapshot: input.groundingSnapshot,
+      inheritanceContext: input.inheritanceContext,
+      intent: input.intent,
+    });
     const submission = {
         ...(input.billingTaskId && input.billingQuoteRevision
           ? {
@@ -382,25 +470,9 @@ export class ModelSupplyCreationExecutor implements CreationExecutorPort {
             }
           : {}),
         dataClass: input.contract.dataClass,
-        input: {
-          ...dimensions,
-          ...(referenceAssetIds.length
-            ? {
-                referenceAssetIds,
-              }
-            : {}),
-          ...(input.contract.durationSeconds
-            ? { durationSeconds: input.contract.durationSeconds }
-            : {}),
-        },
+        input: structuredClone(providerInput.input ?? {}),
         operation: nativeSupplyOperation(input.contract.operation),
-        prompt: structuredCreativeIntent(
-          input.intent,
-          input.contract,
-          input.inheritanceContext,
-          input.briefSnapshot,
-          input.groundingSnapshot
-        ),
+        prompt: providerInput.prompt,
         promptRevision: CREATIVE_PROMPT_REVISION,
         exampleSetRevision: CREATIVE_EXAMPLE_SET_REVISION,
         productUsageQuantity: input.productUsageQuantity,
@@ -418,10 +490,7 @@ export class ModelSupplyCreationExecutor implements CreationExecutorPort {
         );
       }
       await this.merchantExecutionInputBinding.bindMerchantExecutionInput({
-        inputSnapshot: {
-          input: structuredClone(submission.input),
-          prompt: submission.prompt,
-        },
+        inputSnapshot: structuredClone(providerInput),
         quoteRevision: input.billingQuoteRevision,
         taskId: input.billingTaskId,
         workspaceId: input.context.workspaceId,
