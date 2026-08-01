@@ -14,6 +14,10 @@ import {
   AdminConfigFoundationModule,
   MemoryAdminConfigRepository,
 } from '../admin-config/index.js';
+import { CreditBillingService } from '../credit-billing/credit-billing-service.js';
+import { MemoryCreditLedger } from '../credit-billing/credit-ledger.js';
+import { DEFAULT_CREDIT_PLAN_CATALOG } from '../credit-billing/credit-plan-catalog.js';
+import { MemoryCreditSubscriptionStore } from '../credit-billing/credit-subscription-scheduler.js';
 
 const owner = {
   workspaceId: 'workspace-entitlement-module',
@@ -94,6 +98,86 @@ async function applyConfig(
 }
 
 describe('ProductEntitlementFoundationModule', () => {
+  it('keeps the legacy usage projection alongside authoritative credits during cutover', async () => {
+    const clock = () => new Date('2026-08-01T00:00:00.000Z');
+    const repository = new MemoryFoundationRepository();
+    repository.grantOwner(owner.workspaceId, owner.userId);
+    const entitlements = new ProductEntitlementApplicationService(
+      repository,
+      new RecordedAutoTopUpPaymentPort(),
+      clock,
+    );
+    const ledger = new MemoryCreditLedger();
+    const subscriptions = new MemoryCreditSubscriptionStore();
+    const creditBilling = new CreditBillingService(
+      ledger,
+      subscriptions,
+      { async get() { return structuredClone(DEFAULT_CREDIT_PLAN_CATALOG); } },
+      { async getPaymentMapping() { return null; } },
+      clock,
+    );
+    const service = new P1ApplicationService(repository, {
+      operations: [
+        new ProductEntitlementFoundationModule(entitlements, clock, {
+          creditBilling,
+        }),
+      ],
+    });
+
+    await service.executeModule(
+      { ...owner, actor: 'worker' as const },
+      'entitlements',
+      { action: 'register_gift', payload: {} },
+      'workspace-provision:trial:v1',
+    );
+
+    const projection = (await service.queryModule(owner, 'entitlements', {
+      action: 'projection',
+      payload: {},
+    })) as {
+      credits: { availableCredits: number };
+      plan: { tier: string };
+      usage: {
+        copy: { allowance: number; available: number };
+        image: { allowance: number; available: number };
+        video: { allowance: number; available: number };
+      };
+    };
+
+    assert.equal(projection.credits.availableCredits, 100);
+    assert.equal(projection.plan.tier, 'trial');
+    assert.deepEqual(
+      {
+        copy: projection.usage.copy,
+        image: projection.usage.image,
+        video: projection.usage.video,
+      },
+      {
+        copy: {
+          allowance: 5,
+          available: 5,
+          committed: 0,
+          released: 0,
+          reserved: 0,
+        },
+        image: {
+          allowance: 5,
+          available: 5,
+          committed: 0,
+          released: 0,
+          reserved: 0,
+        },
+        video: {
+          allowance: 1,
+          available: 1,
+          committed: 0,
+          released: 0,
+          reserved: 0,
+        },
+      },
+    );
+  });
+
   it('adds the canonical monthly output shape using the Shanghai merchant month', async () => {
     const clock = () => new Date('2026-07-31T16:01:00.000Z');
     const repository = new MemoryFoundationRepository();

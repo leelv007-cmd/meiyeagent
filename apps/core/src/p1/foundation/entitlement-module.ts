@@ -3,6 +3,7 @@ import {
   PUBLIC_PLAN_ALLOWANCE_SEED,
   publicBillingBalanceSchema,
   publicCreditBalanceSchema,
+  type PublicCreditBalance,
 } from '@meiye/contracts';
 import {
   P1DomainError,
@@ -56,6 +57,35 @@ export const WORKSPACE_PROVISION_MODEL_DEFAULT_KEY =
 
 export const DEFAULT_TRIAL_EXPIRE_DAYS = 7;
 const PERSISTENT_STARTER_PERIOD_END = '9999-12-31T23:59:59.999Z';
+
+/**
+ * Temporary read-only shape adapter for pre-#305 consumers. The credit
+ * balance remains the only billing authority; this never writes or derives a
+ * second ledger. Legacy consumers only need a defined usage shape while the
+ * credit UI takes ownership of this query.
+ */
+function legacyCreditUsageProjection(balance: PublicCreditBalance) {
+  const trial = DEFAULT_PLAN_OFFERS.find((plan) => plan.id === 'trial')!;
+  const bucket = (resource: UsageResource) => {
+    const allowance = trial.allowance[resource];
+    return {
+      allowance,
+      reserved: 0,
+      committed: 0,
+      released: 0,
+      available: Math.min(allowance, balance.availableCredits),
+    };
+  };
+  return {
+    plan: { tier: 'trial' as const },
+    usage: {
+      copy: bucket('copy'),
+      image: bucket('image'),
+      video: bucket('video'),
+      audio: bucket('audio'),
+    },
+  };
+}
 
 /** Everything about a sold tier that is not its D-123 allowance seed. */
 const SOLD_PLAN_TERMS: Record<
@@ -599,12 +629,14 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
     }
     if (action === 'projection') {
       if (this.options.creditBilling) {
-        return {
-          credits: publicCreditBalanceSchema.parse(
-            await this.options.creditBilling.balance(
-              args.context.workspaceId,
-            ),
+        const credits = publicCreditBalanceSchema.parse(
+          await this.options.creditBilling.balance(
+            args.context.workspaceId,
           ),
+        );
+        return {
+          ...legacyCreditUsageProjection(credits),
+          credits,
         };
       }
       const month =
