@@ -25,6 +25,7 @@ test('plan.credits is the only operator override source for plan and package cre
         return {
           value: {
             credits: 1_500,
+            storageMb: 5_120,
             concurrencyLimit: 4,
             queuePriority: 5,
             supportLabel: 'priority',
@@ -52,10 +53,10 @@ test('plan.credits is the only operator override source for plan and package cre
 
 test('credit plan seeds match the approved trial, subscription and seven-day package values', () => {
   assert.deepEqual(DEFAULT_CREDIT_PLAN_CATALOG.plans, [
-    { id: 'trial', credits: 100, concurrencyLimit: 1, queuePriority: 1, supportLabel: 'standard' },
-    { id: 'starter', credits: 500, concurrencyLimit: 1, queuePriority: 1, supportLabel: 'standard' },
-    { id: 'growth', credits: 1_300, concurrencyLimit: 4, queuePriority: 5, supportLabel: 'priority' },
-    { id: 'pro', credits: 2_800, concurrencyLimit: 8, queuePriority: 10, supportLabel: 'priority' },
+    { id: 'trial', credits: 100, storageMb: 512, concurrencyLimit: 1, queuePriority: 1, supportLabel: 'standard' },
+    { id: 'starter', credits: 500, storageMb: 1_024, concurrencyLimit: 1, queuePriority: 1, supportLabel: 'standard' },
+    { id: 'growth', credits: 1_300, storageMb: 5_120, concurrencyLimit: 4, queuePriority: 5, supportLabel: 'priority' },
+    { id: 'pro', credits: 2_800, storageMb: 20_480, concurrencyLimit: 8, queuePriority: 10, supportLabel: 'priority' },
   ]);
   assert.deepEqual(
     DEFAULT_CREDIT_PLAN_CATALOG.addOns.map((offer) => [offer.credits, offer.expireDays]),

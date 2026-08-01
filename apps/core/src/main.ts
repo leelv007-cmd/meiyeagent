@@ -1125,6 +1125,7 @@ const legacyProductService = new ProductService(
     contentWriteOwnership: contentPackageWriteOwnership,
     legacyBillingReadOnly: true,
     packageRightsPropagation,
+    storageEntitlements: executionEntitlementPolicy,
   }
 );
 const relationalProductService = new ProductService(
@@ -1141,6 +1142,7 @@ const relationalProductService = new ProductService(
     legacyBillingReadOnly: true,
     legacyVideoPath: 'disabled',
     packageRightsPropagation,
+    storageEntitlements: executionEntitlementPolicy,
     searchProjection: new OperationsProductSearchProjection(
       operationsRepository
     ),

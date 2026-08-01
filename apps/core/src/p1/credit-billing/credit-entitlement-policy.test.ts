@@ -50,6 +50,7 @@ test('booster-only credits never restore paid non-credit entitlements', async ()
   });
   assert.equal((await policy.resolve('workspace-booster'))?.tier, 'growth');
   assert.equal((await policy.resolve('workspace-booster'))?.concurrencyLimit, 4);
+  assert.equal((await policy.resolve('workspace-booster'))?.storageMb, 5_120);
 
   now = new Date('2026-09-01T00:00:00.000Z');
   await subscriptions.markPastDue('subscription-growth', now.toISOString());
@@ -78,6 +79,7 @@ function defaultPolicy(
     queuePriority: 1,
     revision,
     supportLabel: 'standard' as const,
+    storageMb: 512,
     tier,
   };
 }

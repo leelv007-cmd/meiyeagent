@@ -300,6 +300,7 @@ const trialPlanAllowanceSchema = planAllowanceSchema.extend({
 const creditPlanSchema = z
   .object({
     credits: z.number().int().positive().max(MAX_CREDIT_PLAN_AMOUNT),
+    storageMb: z.number().int().positive().max(MAX_PLAN_RESOURCE_ALLOWANCE),
     concurrencyLimit: z.number().int().positive().max(MAX_PLAN_CONCURRENCY),
     queuePriority: z.number().int().positive().max(MAX_QUEUE_PRIORITY),
     supportLabel: z.enum(['standard', 'priority']),

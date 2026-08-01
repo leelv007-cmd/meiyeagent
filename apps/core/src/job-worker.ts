@@ -561,7 +561,11 @@ const legacyProductService = new ProductService(
   undefined,
   legacyInFlightDecisions,
   'legacy',
-  { legacyBillingReadOnly: true, packageRightsPropagation }
+  {
+    legacyBillingReadOnly: true,
+    packageRightsPropagation,
+    storageEntitlements: executionEntitlementPolicy,
+  }
 );
 const relationalProductService = new ProductService(
   relationalProductRepository,
@@ -576,6 +580,7 @@ const relationalProductService = new ProductService(
     legacyBillingReadOnly: true,
     legacyVideoPath: 'disabled',
     packageRightsPropagation,
+    storageEntitlements: executionEntitlementPolicy,
     searchProjection: new OperationsProductSearchProjection(
       operationsRepository
     ),

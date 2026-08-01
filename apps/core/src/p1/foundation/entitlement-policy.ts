@@ -50,6 +50,8 @@ export interface ProductEntitlementPolicy
 {
   revision: string;
   tier: 'trial' | 'starter' | 'growth' | 'pro';
+  /** Non-metered workspace storage ceiling; credit balance never changes it. */
+  storageMb?: number;
   allowance: Record<UsageResource, number>;
   concurrencyLimit: number;
   queuePriority: number;

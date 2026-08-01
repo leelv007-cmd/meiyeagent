@@ -776,6 +776,10 @@ export interface ProductPackageRightsPropagationPort {
   ): Promise<{ revokedPackageIds: string[] }>;
 }
 
+export interface ProductStorageEntitlementPort {
+  resolve(workspaceId: string): Promise<{ storageMb?: number } | null>;
+}
+
 export interface ProductServiceOptions {
   copyExecutionClock?: () => Date;
   copyExecutionLeaseMs?: number;
@@ -785,6 +789,7 @@ export interface ProductServiceOptions {
   legacyVideoPath?: 'enabled' | 'disabled';
   searchProjection?: ProductSearchProjectionPort;
   packageRightsPropagation?: ProductPackageRightsPropagationPort;
+  storageEntitlements?: ProductStorageEntitlementPort;
   usageProjection?: ProductUsageProjectionPort;
   contentWriteOwnership?: {
     get(workspaceId: string): Promise<'legacy' | 'frozen' | 'contentpackage'>;
@@ -3107,9 +3112,20 @@ export class ProductService implements ProductApplicationService {
           );
         }
         const storageMb = Math.ceil(command.storage.fileSizeBytes / 1_048_576);
+        const governedStorageMb = this.options.legacyBillingReadOnly
+          ? (await this.options.storageEntitlements?.resolve(
+              context.workspaceId
+            ))?.storageMb ?? this.planConfig.trial.storageMb
+          : null;
+        const storedStorageMb = state.videoArtifacts.reduce(
+          (total, item) =>
+            total + Math.ceil(item.fileSizeBytes / 1_048_576),
+          0
+        );
         if (
-          !this.options.legacyBillingReadOnly &&
-          state.entitlement.storageMb.remaining < storageMb
+          (this.options.legacyBillingReadOnly
+            ? storedStorageMb + storageMb > governedStorageMb!
+            : state.entitlement.storageMb.remaining < storageMb)
         ) {
           throw new DomainError(
             'STORAGE_QUOTA_EXHAUSTED',

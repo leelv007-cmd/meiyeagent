@@ -56,6 +56,7 @@ export class CreditSubscriptionEntitlementPolicy
         ? `credit-entitlement:${subscription.id}:${subscription.updatedAt}`
         : `credit-entitlement:default:${workspaceId}`,
       supportLabel: plan.supportLabel,
+      storageMb: plan.storageMb,
       tier,
     };
   }

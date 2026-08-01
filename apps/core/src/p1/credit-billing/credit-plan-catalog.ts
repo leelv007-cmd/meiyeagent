@@ -12,6 +12,7 @@ export function creditPlanConcurrencyTiers() {
 export interface CreditPlanOffer {
   id: CreditPlanId;
   credits: number;
+  storageMb: number;
   concurrencyLimit: number;
   queuePriority: number;
   supportLabel: 'standard' | 'priority';
@@ -40,6 +41,7 @@ export const DEFAULT_CREDIT_PLAN_CATALOG: CreditPlanCatalog = {
     {
       id: 'trial',
       credits: 100,
+      storageMb: 512,
       concurrencyLimit: 1,
       queuePriority: 1,
       supportLabel: 'standard',
@@ -47,6 +49,7 @@ export const DEFAULT_CREDIT_PLAN_CATALOG: CreditPlanCatalog = {
     {
       id: 'starter',
       credits: 500,
+      storageMb: 1_024,
       concurrencyLimit: 1,
       queuePriority: 1,
       supportLabel: 'standard',
@@ -54,6 +57,7 @@ export const DEFAULT_CREDIT_PLAN_CATALOG: CreditPlanCatalog = {
     {
       id: 'growth',
       credits: 1_300,
+      storageMb: 5_120,
       concurrencyLimit: 4,
       queuePriority: 5,
       supportLabel: 'priority',
@@ -61,6 +65,7 @@ export const DEFAULT_CREDIT_PLAN_CATALOG: CreditPlanCatalog = {
     {
       id: 'pro',
       credits: 2_800,
+      storageMb: 20_480,
       concurrencyLimit: 8,
       queuePriority: 10,
       supportLabel: 'priority',

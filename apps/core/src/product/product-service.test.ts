@@ -1734,6 +1734,115 @@ describe('product golden journey', () => {
     );
   });
 
+  it('enforces governed storage without writing the retired storage bucket', async () => {
+    const repository = new MemoryProductRepository();
+    repository.grantMembership('user-a', 'workspace-a');
+    const service = new ProductService(
+      repository,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'legacy',
+      {
+        legacyBillingReadOnly: true,
+        storageEntitlements: {
+          async resolve() {
+            return { storageMb: 1 };
+          },
+        },
+      }
+    );
+    const state = await service.bootstrap(merchant);
+    state.videoJobs.push({
+      agentRunId: 'agent-storage',
+      artifactShellId: 'shell-storage',
+      committedSteps: [],
+      correlationId: 'corr-storage',
+      createdAt: '2026-07-11T00:00:00.000Z',
+      id: 'legacy-video-storage',
+      qualityRetryCount: 0,
+      reservationId: 'reservation-storage',
+      status: 'running',
+      step: '保存产物',
+      storyboardId: 'storyboard-storage',
+      updatedAt: '2026-07-11T00:00:00.000Z',
+    });
+    state.videoRenderEvidence.push({
+      aspectRatio: '9:16',
+      clipManifest: [],
+      composeManifest: {},
+      correlationId: 'corr-storage',
+      createdAt: '2026-07-11T00:00:00.000Z',
+      durationSeconds: 15,
+      fileSha256: 'b'.repeat(64),
+      fileSizeBytes: 1_048_576,
+      firstFrameManifest: {},
+      id: 'evidence-storage-new',
+      jobId: 'legacy-video-storage',
+      latencyMs: 1,
+      model: 'legacy-video-model',
+      provider: 'legacy-video-provider',
+      providerCostCents: 0,
+      sourceAssetId: 'asset-storage',
+      usableQuality: { reason: 'verified', usable: true },
+      workerId: 'legacy-worker',
+    });
+    state.videoArtifacts.push({
+      aspectRatio: '9:16',
+      compliancePassed: true,
+      contentType: 'video/mp4',
+      correlationId: 'corr-storage-existing',
+      createdAt: '2026-07-10T00:00:00.000Z',
+      durationSeconds: 15,
+      fileSha256: 'a'.repeat(64),
+      fileSizeBytes: 1_048_576,
+      id: 'artifact-storage-existing',
+      implicitMetadata: false,
+      jobId: 'legacy-video-storage-existing',
+      model: 'legacy-video-model',
+      objectKey: 'workspace-a/videos/existing.mp4',
+      provider: 'legacy-video-provider',
+      providerCostCents: 0,
+      renderEvidenceId: 'evidence-storage-existing',
+      reservationId: 'reservation-storage-existing',
+      status: 'completed',
+      storageEtag: 'etag-existing',
+      storageVerifiedAt: '2026-07-10T00:00:00.000Z',
+      storyboardVersion: 1,
+      visibleLabel: false,
+    });
+    await repository.save(state);
+
+    await assert.rejects(
+      service.execute(
+        worker,
+        {
+          jobId: 'legacy-video-storage',
+          renderEvidenceId: 'evidence-storage-new',
+          storage: {
+            contentType: 'video/mp4',
+            fileSha256: 'b'.repeat(64),
+            fileSizeBytes: 1_048_576,
+            objectKey: 'workspace-a/videos/new.mp4',
+            storageEtag: 'etag-new',
+            storageVerifiedAt: '2026-07-11T00:00:00.000Z',
+          },
+          type: 'complete_video',
+        },
+        'legacy-storage-governed'
+      ),
+      (error) =>
+        error instanceof DomainError &&
+        error.code === 'STORAGE_QUOTA_EXHAUSTED'
+    );
+    assert.equal(
+      (await service.bootstrap(merchant)).entitlement.storageMb.remaining,
+      state.entitlement.storageMb.remaining
+    );
+  });
+
   for (const cutover of [
     { code: 'CONTENT_COMMANDS_FROZEN', owner: 'frozen' },
     { code: 'LEGACY_CONTENT_READ_ONLY', owner: 'contentpackage' },

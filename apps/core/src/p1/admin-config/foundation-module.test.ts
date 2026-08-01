@@ -691,6 +691,16 @@ describe('Admin config application seam', () => {
     });
     const unsafeConfigs = [
       {
+        key: 'plan.credits.growth',
+        value: {
+          credits: 1_300,
+          storageMb: 1_000_001,
+          concurrencyLimit: 4,
+          queuePriority: 5,
+          supportLabel: 'priority',
+        },
+      },
+      {
         key: 'plan.allowances.growth',
         value: {
           allowance: { audio: 0, copy: 1_000_001, image: 40, video: 20 },
@@ -764,6 +774,28 @@ describe('Admin config application seam', () => {
       );
     }
 
+    await assert.doesNotReject(
+      service.executeModule(
+        context,
+        'admin-config',
+        {
+          action: 'config_apply',
+          payload: {
+            expectedRevision: null,
+            key: 'plan.credits.pro',
+            reason: 'Accept the governed credit plan boundary',
+            value: {
+              credits: 10_000_000,
+              storageMb: 1_000_000,
+              concurrencyLimit: 100,
+              queuePriority: 100,
+              supportLabel: 'priority',
+            },
+          },
+        },
+        'credit-plan-config-at-boundary',
+      ),
+    );
     await assert.doesNotReject(
       service.executeModule(
         context,
