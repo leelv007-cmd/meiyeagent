@@ -7,6 +7,12 @@ import useEmblaCarousel, {
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import {
+  common_carousel,
+  common_next_slide,
+  common_previous_slide,
+  common_slide,
+} from "@/locale/paraglide/messages";
 import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react"
 
 type CarouselApi = UseEmblaCarouselType[1]
@@ -122,7 +128,7 @@ function Carousel({
         onKeyDownCapture={handleKeyDown}
         className={cn("relative", className)}
         role="region"
-        aria-roledescription="carousel"
+        aria-roledescription={common_carousel()}
         data-slot="carousel"
         {...props}
       >
@@ -159,7 +165,7 @@ function CarouselItem({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       role="group"
-      aria-roledescription="slide"
+      aria-roledescription={common_slide()}
       data-slot="carousel-item"
       className={cn(
         "min-w-0 shrink-0 grow-0 basis-full",
@@ -187,7 +193,7 @@ function CarouselPrevious({
       className={cn(
         "absolute touch-manipulation rounded-full",
         orientation === "horizontal"
-          ? "inset-y-0 -left-12 my-auto"
+          ? "top-1/2 -left-12 -translate-y-1/2"
           : "-top-12 left-1/2 -translate-x-1/2 rotate-90",
         className
       )}
@@ -196,7 +202,7 @@ function CarouselPrevious({
       {...props}
     >
       <IconChevronLeft />
-      <span className="sr-only">Previous slide</span>
+      <span className="sr-only">{common_previous_slide()}</span>
     </Button>
   )
 }
@@ -217,7 +223,7 @@ function CarouselNext({
       className={cn(
         "absolute touch-manipulation rounded-full",
         orientation === "horizontal"
-          ? "inset-y-0 -right-12 my-auto"
+          ? "top-1/2 -right-12 -translate-y-1/2"
           : "-bottom-12 left-1/2 -translate-x-1/2 rotate-90",
         className
       )}
@@ -226,7 +232,7 @@ function CarouselNext({
       {...props}
     >
       <IconChevronRight />
-      <span className="sr-only">Next slide</span>
+      <span className="sr-only">{common_next_slide()}</span>
     </Button>
   )
 }
