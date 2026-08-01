@@ -3216,6 +3216,7 @@
   "pricing_output_video_count": "{count} 条",
   "pricing_output_video_label": "视频",
   "pricing_plan_concurrency_label": "可同时进行的创作数",
+  "pricing_plan_credits_per_month": "积分 / 月",
   "pricing_plan_login_to_subscribe": "登录后订阅",
   "pricing_plan_payment_not_open": "订阅通道即将开放",
   "pricing_plan_payment_not_open_hint": "现在可先免费体验，开通后第一时间通知你。",

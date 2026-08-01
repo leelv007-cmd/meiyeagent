@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { publicBillingBalanceSchema } from './billing-balance.js';
+import {
+  publicBillingBalanceSchema,
+  publicCreditBalanceSchema,
+} from './billing-balance.js';
 
 test('public billing balance is an exact copy/image/video projection', () => {
   const balance = publicBillingBalanceSchema.parse({
@@ -34,6 +37,28 @@ test('public billing balance is an exact copy/image/video projection', () => {
       ...balance,
       audio: balance.copy,
     }).success,
+    false,
+  );
+});
+
+test('public credit balance is a strict single-credit projection', () => {
+  const balance = publicCreditBalanceSchema.parse({
+    grantedCredits: 500,
+    usedCredits: 120,
+    refundedCredits: 20,
+    expiredCredits: 30,
+    availableCredits: 370,
+  });
+
+  assert.deepEqual(Object.keys(balance), [
+    'grantedCredits',
+    'usedCredits',
+    'refundedCredits',
+    'expiredCredits',
+    'availableCredits',
+  ]);
+  assert.equal(
+    publicCreditBalanceSchema.safeParse({ ...balance, copy: 1 }).success,
     false,
   );
 });

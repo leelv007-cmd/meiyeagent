@@ -3216,6 +3216,7 @@
   "pricing_output_video_count": "{count} videos",
   "pricing_output_video_label": "Videos",
   "pricing_plan_concurrency_label": "Creations at the same time",
+  "pricing_plan_credits_per_month": "credits / month",
   "pricing_plan_login_to_subscribe": "Log in to subscribe",
   "pricing_plan_payment_not_open": "Subscriptions opening soon",
   "pricing_plan_payment_not_open_hint": "Start free for now — we'll let you know the moment it opens.",

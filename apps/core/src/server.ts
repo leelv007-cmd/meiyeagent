@@ -109,17 +109,12 @@ interface CoreServerDependencies {
   };
   harnessService?: HarnessApplicationService;
   pendingActions?: Pick<PendingActionsService, 'list'>;
-  /**
-   * Read side of the entitlement catalogue for the public pricing page (D-143).
-   * Same `plan.allowances.*` admin-config source the workspace-scoped
-   * entitlements module reads, so what a visitor is quoted and what a merchant
-   * is granted cannot drift apart.
-   */
+  /** Read side of the merchant credit catalogue for the public pricing page. */
   planCatalog?: {
     get(): Promise<{
       plans: Array<{
         id: string;
-        allowance: { copy: number; image: number; video: number };
+        credits: number;
         concurrencyLimit: number;
       }>;
     }>;
@@ -1055,8 +1050,8 @@ export function createCoreServer({
       return;
     }
 
-    // D-143 单一商品目录：the public pricing page reads the same
-    // `plan.allowances.*` admin-config revision the entitlement grant reads.
+    // The public price page reads the same `plan.credits.*` revision as the
+    // subscription grant scheduler. Provider costs never enter this contract.
     // Service-token gated because the browser never talks to core directly —
     // the Web BFF fetches this for its /pricing loader.
     if (
@@ -1074,11 +1069,7 @@ export function createCoreServer({
               .filter((plan) => plan.id !== 'trial')
               .map((plan) => ({
                 id: plan.id,
-                allowance: {
-                  copy: plan.allowance.copy,
-                  image: plan.allowance.image,
-                  video: plan.allowance.video,
-                },
+                credits: plan.credits,
                 concurrencyLimit: plan.concurrencyLimit,
               })),
           }),

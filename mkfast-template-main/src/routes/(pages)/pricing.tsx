@@ -3,18 +3,13 @@ import {
   pricing_card_per_month,
   pricing_description,
   pricing_output_contact,
-  pricing_output_copy_count,
-  pricing_output_copy_label,
   pricing_output_description,
   pricing_output_heading,
-  pricing_output_image_count,
-  pricing_output_image_label,
   pricing_output_plan_growth,
   pricing_output_plan_pro,
   pricing_output_plan_starter,
-  pricing_output_video_count,
-  pricing_output_video_label,
   pricing_plan_concurrency_label,
+  pricing_plan_credits_per_month,
   pricing_plan_login_to_subscribe,
   pricing_plan_payment_not_open,
   pricing_plan_payment_not_open_hint,
@@ -222,16 +217,8 @@ function PlanPrice({ plan }: { plan: DisplayPlan }) {
 function PlanQuota({ quota }: { quota: PublicPlanOffer }) {
   const rows: Array<{ label: string; value: string }> = [
     {
-      label: pricing_output_copy_label(),
-      value: pricing_output_copy_count({ count: quota.allowance.copy }),
-    },
-    {
-      label: pricing_output_image_label(),
-      value: pricing_output_image_count({ count: quota.allowance.image }),
-    },
-    {
-      label: pricing_output_video_label(),
-      value: pricing_output_video_count({ count: quota.allowance.video }),
+      label: pricing_plan_credits_per_month(),
+      value: String(quota.credits),
     },
     {
       label: pricing_plan_concurrency_label(),

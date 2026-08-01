@@ -12,12 +12,7 @@ export const publicBillingBucketBalanceSchema = z
   })
   .strict();
 
-/**
- * Stable merchant-facing balance contract.
- *
- * Audio and provider-cost dimensions are intentionally absent: the launch
- * product exposes exactly the copy, image, and video entitlement buckets.
- */
+/** Legacy resource-bucket projection retained for cutover read paths only. */
 export const publicBillingBalanceSchema = z
   .object({
     copy: publicBillingBucketBalanceSchema,
@@ -26,8 +21,21 @@ export const publicBillingBalanceSchema = z
   })
   .strict();
 
-export type PublicBillingBalance = z.infer<
-  typeof publicBillingBalanceSchema
+export type PublicBillingBalance = z.infer<typeof publicBillingBalanceSchema>;
+
+/** Stable merchant-facing balance contract for the credit ledger. */
+export const publicCreditBalanceSchema = z
+  .object({
+    grantedCredits: z.number().int().nonnegative(),
+    usedCredits: z.number().int().nonnegative(),
+    refundedCredits: z.number().int().nonnegative(),
+    expiredCredits: z.number().int().nonnegative(),
+    availableCredits: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export type PublicCreditBalance = z.infer<
+  typeof publicCreditBalanceSchema
 >;
 
 export const publicPlanTierIds = ['starter', 'growth', 'pro'] as const;
@@ -43,13 +51,7 @@ export const publicPlanTierIds = ['starter', 'growth', 'pro'] as const;
 export const publicPlanOfferSchema = z
   .object({
     id: z.enum(publicPlanTierIds),
-    allowance: z
-      .object({
-        copy: z.number().int().nonnegative(),
-        image: z.number().int().nonnegative(),
-        video: z.number().int().nonnegative(),
-      })
-      .strict(),
+    credits: z.number().int().positive(),
     concurrencyLimit: z.number().int().positive(),
   })
   .strict();
@@ -62,18 +64,10 @@ export type PublicPlanOffer = z.infer<typeof publicPlanOfferSchema>;
 export type PublicPlanCatalog = z.infer<typeof publicPlanCatalogSchema>;
 
 /**
- * The D-123 seed for the three sold tiers, in one place.
- *
- * Running numbers live in the `plan.allowances.*` admin-config keys operations
- * fills in (D-123 数字＝运营参数); this is only what an unconfigured deployment
- * grants and what the pricing page states when the catalogue is unreachable.
- * It sits in the shared contract precisely so those two are not two literals —
- * three files disagreeing about the same plans is the defect D-143 closed.
- *
- * 视频 3/6/9 条/月 is the user's ruling; the 文案/图片 figures and the
- * concurrency limits are that decision's own reference table (初级/中级/高级).
+ * Cutover-only resource seed for the retired entitlement read path. Credit
+ * billing must not import or write this structure.
  */
-export const PUBLIC_PLAN_ALLOWANCE_SEED: readonly PublicPlanOffer[] = [
+export const PUBLIC_PLAN_ALLOWANCE_SEED = [
   {
     id: 'starter',
     allowance: { copy: 100, image: 40, video: 3 },
@@ -87,6 +81,30 @@ export const PUBLIC_PLAN_ALLOWANCE_SEED: readonly PublicPlanOffer[] = [
   {
     id: 'pro',
     allowance: { copy: 600, image: 180, video: 9 },
+    concurrencyLimit: 8,
+  },
+] as const;
+
+/**
+ * Public seed for the three sold credit tiers, in one place.
+ *
+ * Running numbers live in `plan.credits.*` admin-config keys. This only makes
+ * an unconfigured deployment and the public pricing fallback usable.
+ */
+export const PUBLIC_PLAN_CREDIT_SEED: readonly PublicPlanOffer[] = [
+  {
+    id: 'starter',
+    credits: 500,
+    concurrencyLimit: 1,
+  },
+  {
+    id: 'growth',
+    credits: 1_300,
+    concurrencyLimit: 4,
+  },
+  {
+    id: 'pro',
+    credits: 2_800,
     concurrencyLimit: 8,
   },
 ];

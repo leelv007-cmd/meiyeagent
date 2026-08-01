@@ -1,27 +1,17 @@
 /**
- * D-143 单一商品目录 — the public pricing page's read side.
- *
- * The 文案/图片/视频 numbers a visitor is quoted come from the same
- * `plan.allowances.*` admin-config revision that grants a merchant their
- * entitlements, so 后台改额度 → 公开页跟着变 is structural rather than a
- * discipline someone has to remember. Prices stay where they already live
- * (payment configuration): this endpoint carries entitlement counts only.
- *
- * The D-123 seed answers when core is unreachable — a pricing page that
- * renders nothing is worse than one stating the launch baseline, and the seed
- * is literally what an unconfigured deployment grants: it is the same shared
- * constant core builds its own default plan offers from.
+ * Merchant credit catalogue read side. Values come from the same revisioned
+ * `plan.credits.*` config consumed by the Core subscription scheduler.
  */
 import { serverEnv } from '@/env/server';
 import {
-  PUBLIC_PLAN_ALLOWANCE_SEED,
+  PUBLIC_PLAN_CREDIT_SEED,
   publicPlanCatalogSchema,
   type PublicPlanCatalog,
 } from '@meiye/contracts';
 import { createServerFn } from '@tanstack/react-start';
 
 export const PLAN_CATALOG_SEED: PublicPlanCatalog = {
-  plans: [...PUBLIC_PLAN_ALLOWANCE_SEED],
+  plans: [...PUBLIC_PLAN_CREDIT_SEED],
 };
 
 export const getPublicPlanCatalog = createServerFn({ method: 'GET' }).handler(
