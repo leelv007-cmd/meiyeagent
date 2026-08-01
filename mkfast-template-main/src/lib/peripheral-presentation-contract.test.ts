@@ -113,10 +113,10 @@ test('pricing stays readable without checkout and every public pricing CTA reach
   assert.match(pricingHtml, />初级</u);
   assert.match(pricingHtml, />中级</u);
   assert.match(pricingHtml, />高级</u);
-  // D-123 文案 seed per tier, straight off the catalogue projection.
-  assert.match(pricingHtml, />100 条</u);
-  assert.match(pricingHtml, />300 条</u);
-  assert.match(pricingHtml, />600 条</u);
+  // #298 credit grant per tier, straight off the catalogue projection.
+  assert.match(pricingHtml, />500</u);
+  assert.match(pricingHtml, />1300</u);
+  assert.match(pricingHtml, />2800</u);
 
   const rootRoute = createRootRoute({ component: Outlet });
   const publicPageRoute = createRoute({
