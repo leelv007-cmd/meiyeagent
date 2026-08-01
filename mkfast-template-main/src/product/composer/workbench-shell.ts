@@ -63,11 +63,16 @@ const DUAL_COLUMN_PHASES: ReadonlySet<ComposerSessionPhase> = new Set([
   'delivered',
 ]);
 
+/**
+ * Sticky only while the run is in flight / waiting on the merchant.
+ * `delivered` is intentionally non-sticky: 成品交付卡 must stay fully clickable
+ * above the prompt cluster. CI journey @cbcbe4da/d39804f0 showed sticky z-30
+ * covering the card even with clearance spacers (host is prompt+attachments tall).
+ */
 const STICKY_COMPOSER_PHASES: ReadonlySet<ComposerSessionPhase> = new Set([
   'submitting',
   'running',
   'awaiting_answer',
-  'delivered',
 ]);
 
 /**
@@ -84,7 +89,10 @@ export function isWorkbenchDualColumnEligible(
   );
 }
 
-/** Active (and Delivered) morph Composer to sticky bottom — P1-2. */
+/**
+ * In-flight morph Composer to sticky bottom — P1-2.
+ * Delivered is dual-column but non-sticky so 成品交付卡 stays clickable.
+ */
 export function isWorkbenchComposerSticky(
   phase: ComposerSessionPhase
 ): boolean {

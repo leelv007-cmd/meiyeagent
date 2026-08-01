@@ -118,6 +118,19 @@ describe('P1-01 workbench shell host layout', () => {
     expect(screen.getByTestId('composer-quote-line')).toBeInTheDocument();
   });
 
+  it('Delivered keeps dual column but unsticks Composer so 成品卡 is clickable', () => {
+    render(<ShellProbe phase="delivered" width={1240} />);
+    const home = screen.getByTestId('composer-home');
+    expect(home).toHaveAttribute('data-dual-column', 'true');
+    expect(home).toHaveAttribute('data-sticky-composer', 'false');
+    expect(
+      screen.getByTestId('workbench-sticky-composer-host')
+    ).toHaveAttribute('data-sticky', 'false');
+    expect(
+      screen.queryByTestId('workbench-sticky-composer-clearance')
+    ).toBeNull();
+  });
+
   it('keeps dual-column group + stream panel overflow visible (P1-2 residual)', () => {
     render(<ShellProbe phase="delivered" width={1400} />);
 
