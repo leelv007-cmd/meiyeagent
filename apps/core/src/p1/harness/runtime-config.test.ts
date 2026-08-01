@@ -48,6 +48,7 @@ test('job worker keeps configured DBOS storage on the strict runtime parser', ()
       businessPoolMax: 8,
       dbos: {
         name: 'beauty-marketing-harness',
+        runAdminServer: false,
         systemDatabaseUrl: 'postgres://localhost/meiye_dbos_sys',
         systemDatabasePoolSize: 4,
       },

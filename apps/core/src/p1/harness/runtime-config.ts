@@ -44,7 +44,14 @@ export function readJobWorkerHarnessRuntimeConfig(
     );
     return undefined;
   }
-  return readHarnessRuntimeConfig(env);
+  const config = readHarnessRuntimeConfig(env);
+  return {
+    ...config,
+    dbos: {
+      ...config.dbos,
+      runAdminServer: false,
+    },
+  };
 }
 
 export async function initializeJobWorkerHarnessRuntime(
