@@ -191,7 +191,6 @@ export type VerifiedPaymentEventType =
   | 'checkout.completed'
   | 'checkout.session.completed'
   | 'invoice.paid'
-  | 'invoice.payment_failed'
   | 'subscription.renewed'
   | 'customer.subscription.updated'
   | 'customer.subscription.resumed'

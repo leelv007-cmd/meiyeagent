@@ -157,6 +157,7 @@ export class CreditBillingService {
       : null;
     if (input.lifecycle === 'past_due') {
       assertExistingSubscription(active, input.lifecycle);
+      assertText(input.periodStartsAt ?? '', 'periodStartsAt');
       if (await staleTerminalPeriod(subscriptions, active.id, input)) {
         return active;
       }

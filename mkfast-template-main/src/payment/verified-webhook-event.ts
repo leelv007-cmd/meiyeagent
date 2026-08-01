@@ -49,10 +49,6 @@ const stripeInvoicePaidSchema = z
   })
   .passthrough();
 
-const stripeInvoicePaymentFailedSchema = stripeInvoicePaidSchema.extend({
-  type: z.literal('invoice.payment_failed'),
-});
-
 const stripeSubscriptionUpdatedSchema = z
   .object({
     id: z.string().min(1),
@@ -178,21 +174,6 @@ export function normalizeStripeVerifiedPaymentEvent(
         id: updated.data.data.object.id,
         kind: 'subscription',
       },
-    };
-  }
-
-  const paymentFailed = stripeInvoicePaymentFailedSchema.safeParse(input);
-  if (paymentFailed.success) {
-    const subscriptionId = expandableId(
-      paymentFailed.data.data.object.parent?.subscription_details
-        .subscription ?? paymentFailed.data.data.object.subscription
-    );
-    if (!subscriptionId) return null;
-    return {
-      eventType: 'invoice.payment_failed',
-      provider: 'stripe',
-      providerEventId: paymentFailed.data.id,
-      reference: { id: subscriptionId, kind: 'subscription' },
     };
   }
 

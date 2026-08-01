@@ -16,7 +16,6 @@ export type PlanSettlementLifecycle =
   | 'activate'
   | 'renew'
   | 'resume'
-  | 'past_due'
   | 'cancel_at_period_end'
   | 'expire';
 
@@ -146,8 +145,6 @@ function lifecycleFromEvent(
     case 'invoice.paid':
     case 'subscription.renewed':
       return 'renew';
-    case 'invoice.payment_failed':
-      return 'past_due';
     case 'customer.subscription.resumed':
       return 'resume';
     case 'customer.subscription.updated':

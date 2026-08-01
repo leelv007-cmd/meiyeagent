@@ -139,6 +139,7 @@ test('credit payment settlement preserves package lots across upgrades and appli
     lifecycle: 'past_due',
     paymentEventId: 'payment-failed',
     paymentProductId: 'starter',
+    periodStartsAt: now.toISOString(),
     subscriptionId: 'subscription-1',
   });
   assert.equal((await subscriptions.get('subscription-1'))?.status, 'past_due');
@@ -258,6 +259,7 @@ test('one paid billing period adds coverage once and resume adds no cycle', asyn
     lifecycle: 'past_due',
     paymentEventId: 'payment-period-past-due',
     paymentProductId: 'starter',
+    periodStartsAt: now.toISOString(),
     subscriptionId: 'subscription-period',
   });
   await service.settlePayment(context, {
@@ -604,6 +606,35 @@ test('a terminal event for an already-paid billing period cannot regress active 
   assert.equal((await subscriptions.get(subscriptionId))?.status, 'active');
 });
 
+test('past_due requires an explicit billing period instead of inferring one from checkout state', async () => {
+  const now = new Date('2026-01-01T00:00:00.000Z');
+  const ledger = new MemoryCreditLedger();
+  const subscriptions = new MemoryCreditSubscriptionStore();
+  const service = creditBillingService(ledger, subscriptions, () => now);
+  const subscriptionId = 'subscription-past-due-period-required';
+
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'activate',
+    paymentEventId: 'payment-past-due-period-activate',
+    paymentProductId: 'starter',
+    periodStartsAt: now.toISOString(),
+    subscriptionId,
+  });
+
+  await assert.rejects(
+    service.settlePayment(context, {
+      interval: 'month',
+      lifecycle: 'past_due',
+      paymentEventId: 'payment-past-due-period-missing',
+      paymentProductId: 'starter',
+      subscriptionId,
+    }),
+    /periodStartsAt is required/i,
+  );
+  assert.equal((await subscriptions.get(subscriptionId))?.status, 'active');
+});
+
 test('a future renewal does not complete its receipt before it can be retried', async () => {
   let now = new Date('2026-01-01T00:00:00.000Z');
   const ledger = new MemoryCreditLedger();
@@ -843,6 +874,9 @@ test('out-of-order terminal events remain retryable after subscription activatio
       lifecycle,
       paymentEventId: `payment-out-of-order-${lifecycle}`,
       paymentProductId: 'starter',
+      ...(lifecycle === 'past_due'
+        ? { periodStartsAt: '2026-02-01T00:00:00.000Z' }
+        : {}),
       subscriptionId,
     };
 
