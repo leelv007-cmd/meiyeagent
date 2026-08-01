@@ -179,7 +179,7 @@ export type ResultCenterPageProps = {
   onAdjust?: (
     instruction: string,
     scope?: ResultAdjustCommand['scope']
-  ) => void;
+  ) => void | Promise<void>;
   onBack?: () => void;
   /** Optional delivery panel facts when shell.panel === 'delivery'. */
   deliveryPanelFacts?: DeliveryPanelFacts;
@@ -322,7 +322,7 @@ function WorkspaceBody(props: {
   onAdjust?: (
     instruction: string,
     scope?: ResultAdjustCommand['scope']
-  ) => void;
+  ) => void | Promise<void>;
   /** Fallback document when copy worksurface facts are not yet wired. */
   fallbackCopy?: CopyImageTextWorksurfaceFacts;
 }) {

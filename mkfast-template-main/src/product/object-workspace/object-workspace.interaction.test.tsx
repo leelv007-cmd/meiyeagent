@@ -1,7 +1,13 @@
 /**
  * Object workspace shell + selection AI six actions (P2-10 / #322).
  */
-import { cleanup, render, screen } from '@testing-library/react';
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -51,70 +57,76 @@ describe('object workspace shell + selection AI', () => {
     );
   });
 
-  it('exposes at least three selection AI actions with measurable previews', async () => {
+  it('submits at least three selection AI actions through the model adjust seam', async () => {
     const user = userEvent.setup();
-    const onSelectionRewrite = vi.fn();
-    render(
-      <CopyImageTextWorksurface
-        facts={facts}
-        onSelectionRewrite={onSelectionRewrite}
-        onQuickEdit={vi.fn()}
-      />
-    );
+    const onAdjust = vi.fn().mockResolvedValue(undefined);
+    render(<CopyImageTextWorksurface facts={facts} onAdjust={onAdjust} />);
 
-    // 续写
-    await user.click(screen.getByTestId('copy-rewrite-continue'));
-    expect(onSelectionRewrite).toHaveBeenCalledWith(
-      'continue',
-      expect.anything()
-    );
-    let preview = await screen.findByTestId('copy-selection-rewrite-preview');
-    expect(preview).toHaveAttribute('data-rewrite-action', 'continue');
+    const toolbar = screen.getByRole('toolbar', { name: '选区 AI 六动作' });
+    expect(within(toolbar).getAllByRole('button')).toHaveLength(6);
     expect(
-      screen.getByTestId('copy-selection-rewrite-after')
-    ).toHaveTextContent('到店');
-    await user.click(screen.getByTestId('copy-selection-rewrite-cancel'));
+      within(toolbar).queryByTestId('copy-rewrite-weaker_promo')
+    ).toBeNull();
 
-    // 改写
-    await user.click(screen.getByTestId('copy-rewrite-rewrite'));
-    preview = await screen.findByTestId('copy-selection-rewrite-preview');
-    expect(preview).toHaveAttribute('data-rewrite-action', 'rewrite');
-    await user.click(screen.getByTestId('copy-selection-rewrite-cancel'));
+    await user.click(screen.getByTestId('selection-ai-continue'));
+    await waitFor(() => expect(onAdjust).toHaveBeenCalledTimes(1));
+    expect(onAdjust.mock.calls[0]?.[0]).toMatch(/\u81ea\u7136\u7eed\u5199/u);
 
-    // 精简
-    await user.click(screen.getByTestId('copy-rewrite-shorten'));
-    preview = await screen.findByTestId('copy-selection-rewrite-preview');
-    expect(preview).toHaveAttribute('data-rewrite-action', 'shorten');
-    const after = screen.getByTestId('copy-selection-rewrite-after')
-      .textContent;
-    const before = screen.getByTestId('copy-selection-rewrite-before')
-      .textContent;
-    expect((after ?? '').length).toBeLessThan((before ?? '').length);
+    await user.click(screen.getByTestId('selection-ai-rewrite'));
+    await waitFor(() => expect(onAdjust).toHaveBeenCalledTimes(2));
+    expect(onAdjust.mock.calls[1]?.[0]).toMatch(
+      /\u6539\u5199\u4ee5\u4e0b\u9009\u533a/u
+    );
+
+    await user.click(screen.getByTestId('selection-ai-shorten'));
+    await waitFor(() => expect(onAdjust).toHaveBeenCalledTimes(3));
+    expect(onAdjust.mock.calls[2]?.[0]).toMatch(
+      /\u7cbe\u7b80\u4ee5\u4e0b\u9009\u533a/u
+    );
+    for (const [instruction] of onAdjust.mock.calls) {
+      expect(instruction).toContain(facts.document.body);
+    }
+    expect(screen.queryByTestId('copy-selection-rewrite-preview')).toBeNull();
+    expect(
+      screen.getByTestId('object-workspace-selection-ai')
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('object-workspace-selection-ai-actions')).toBe(
+      toolbar
+    );
   });
 
   it('routes custom through an instruction step before preview', async () => {
     const user = userEvent.setup();
-    render(
-      <CopyImageTextWorksurface
-        facts={facts}
-        onSelectionRewrite={vi.fn()}
-        onQuickEdit={vi.fn()}
-      />
-    );
-    await user.click(screen.getByTestId('copy-rewrite-custom'));
+    const onAdjust = vi.fn().mockResolvedValue(undefined);
+    render(<CopyImageTextWorksurface facts={facts} onAdjust={onAdjust} />);
+    await user.click(screen.getByTestId('selection-ai-custom'));
     expect(
-      screen.getByTestId('selection-ai-instruction-panel')
+      screen.getByTestId('object-workspace-selection-ai-instruction')
     ).toBeInTheDocument();
     await user.type(
       screen.getByTestId('selection-ai-instruction-input'),
       '更口语'
     );
     await user.click(screen.getByTestId('selection-ai-instruction-confirm'));
-    const preview = await screen.findByTestId('copy-selection-rewrite-preview');
-    expect(preview).toHaveAttribute('data-rewrite-action', 'custom');
-    expect(
-      screen.getByTestId('copy-selection-rewrite-after')
-    ).toHaveTextContent('更口语');
+    await waitFor(() => expect(onAdjust).toHaveBeenCalledTimes(1));
+    expect(onAdjust.mock.calls[0]?.[0]).toContain('更口语');
+    expect(onAdjust.mock.calls[0]?.[0]).toContain(facts.document.body);
+  });
+
+  it('keeps a failed selection AI submission visible and retryable', async () => {
+    const user = userEvent.setup();
+    const onAdjust = vi.fn().mockRejectedValue(new Error('调整报价暂时不可用'));
+    render(<CopyImageTextWorksurface facts={facts} onAdjust={onAdjust} />);
+
+    await user.click(screen.getByTestId('selection-ai-expand'));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '调整报价暂时不可用'
+    );
+    expect(screen.getByTestId('selection-ai-expand')).toBeEnabled();
+
+    await user.click(screen.getByTestId('selection-ai-expand'));
+    await waitFor(() => expect(onAdjust).toHaveBeenCalledTimes(2));
   });
 
   it('reuses the same shell for the note carrier', () => {
@@ -135,7 +147,9 @@ describe('object workspace shell + selection AI', () => {
   it('selection AI toolbar alone exposes six primary actions', async () => {
     const user = userEvent.setup();
     const onAction = vi.fn();
-    render(<SelectionAiToolbar onAction={onAction} scopeKind="whole_document" />);
+    render(
+      <SelectionAiToolbar onAction={onAction} scopeKind="whole_document" />
+    );
     for (const action of [
       'continue',
       'rewrite',

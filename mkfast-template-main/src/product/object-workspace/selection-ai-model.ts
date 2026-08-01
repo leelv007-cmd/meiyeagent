@@ -2,8 +2,8 @@
  * Selection AI six actions for the object workspace (P2-10 / #322).
  *
  * Spec §3.5 / §4.4: 续写 / 改写 / 扩写 / 精简 / 语气 / 自定义.
- * Prompt path (实施时定): local beauty-context templates for fixture/preview;
- * production may later pin Langfuse sites without changing action ids.
+ * Production prompt path: local beauty-context templates submitted through
+ * the existing Result adjustment command boundary.
  *
  * Promo chips (weaker_promo / stronger_cta) stay on the worksurface as legacy
  * QuickEdit shortcuts — they are not part of the six-action selection bar.
@@ -48,7 +48,9 @@ export const SELECTION_AI_LOCAL_TEMPLATES: Record<SelectionAiAction, string> = {
 };
 
 /** Actions that need a free-text instruction before preview. */
-export function selectionAiNeedsInstruction(action: SelectionAiAction): boolean {
+export function selectionAiNeedsInstruction(
+  action: SelectionAiAction
+): boolean {
   return action === 'tone' || action === 'custom';
 }
 
@@ -58,7 +60,8 @@ export function buildSelectionAiPrompt(input: {
   instruction?: string;
 }): string {
   const template = SELECTION_AI_LOCAL_TEMPLATES[input.action];
-  const instruction = input.instruction?.trim() || defaultInstruction(input.action);
+  const instruction =
+    input.instruction?.trim() || defaultInstruction(input.action);
   return template
     .replaceAll('{selection}', input.selection)
     .replaceAll('{instruction}', instruction);
@@ -72,36 +75,6 @@ function defaultInstruction(action: SelectionAiAction): string {
       return '按美业宣发习惯优化';
     default:
       return '';
-  }
-}
-
-/**
- * Deterministic local preview for interaction tests / offline fixture.
- * Confirm still routes through derived Task / QuickEdit — display only.
- */
-export function applySelectionAiPreview(
-  before: string,
-  action: SelectionAiAction,
-  instruction?: string
-): string {
-  const note = instruction?.trim();
-  switch (action) {
-    case 'continue':
-      return `${before} 到店可再细聊适合你的护理方案。`;
-    case 'rewrite':
-      return note ? note : `改写：${before}`;
-    case 'expand':
-      return `${before}，结合本店真实项目说明，欢迎到店了解。`;
-    case 'shorten':
-      return before.slice(0, Math.max(1, Math.floor(before.length * 0.6)));
-    case 'tone':
-      return note ? `【${note}】${before}` : `换个说法：${before}`;
-    case 'custom':
-      return note ? `${note}：${before}` : `自定义调整：${before}`;
-    default: {
-      const _exhaustive: never = action;
-      return _exhaustive;
-    }
   }
 }
 

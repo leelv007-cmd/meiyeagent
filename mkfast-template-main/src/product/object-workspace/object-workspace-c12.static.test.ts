@@ -14,7 +14,8 @@ function readSource(relativePath: string): string {
 }
 
 const TIPTAP_IMPORT = /@tiptap\//u;
-const OBJECT_WORKSPACE_EDITOR = /ObjectWorkspaceEditor|object-workspace-editor/u;
+const OBJECT_WORKSPACE_EDITOR =
+  /ObjectWorkspaceEditor|object-workspace-editor/u;
 
 test('Composer main surfaces never import Tiptap or the object-workspace editor', () => {
   const composerFiles = [
@@ -57,7 +58,8 @@ test('object workspace is the only product mount for Tiptap', () => {
   );
   assert.match(worksurface, OBJECT_WORKSPACE_EDITOR);
   assert.match(worksurface, /ObjectWorkspaceShell/u);
-  assert.match(worksurface, /选区 AI/u);
+  assert.match(worksurface, /SelectionAiToolbar/u);
+  assert.match(worksurface, /buildSelectionAiPrompt/u);
 
   const shell = readSource(
     'src/product/object-workspace/object-workspace-shell.tsx'

@@ -4,7 +4,7 @@
  * The 13-action QuickEditIntent contract and its server lifecycle have existed
  * since `marketing-package.ts`; what never existed was a browser that builds
  * one. This module is that producer: it turns a worksurface gesture — a
- * selection rewrite the merchant just previewed, or 「做成海报」 — into the exact
+ * promotion shortcut the merchant just previewed, or 「做成海报」 — into the exact
  * intent `edit_content_package_version` accepts, frozen fact/rights refs and
  * all.
  *
@@ -95,11 +95,8 @@ export function quickEditText() {
 }
 
 /**
- * Map a selection-rewrite chip onto its QuickEditIntent action.
- *
- * 弱促销 / 加强 CTA are first-class contract actions; the open-ended chips
- * (改写 / 缩短 / 扩写 / 换语气) carry their instruction as `natural_language`,
- * which is exactly what that action exists for.
+ * Map a deterministic promotion chip onto its QuickEditIntent action.
+ * Open-ended selection AI uses the model-backed Result adjustment boundary.
  */
 export function quickEditActionForSelectionRewrite(
   action: SelectionRewriteAction
@@ -109,14 +106,6 @@ export function quickEditActionForSelectionRewrite(
       return 'promotion_weaker';
     case 'stronger_cta':
       return 'promotion_stronger';
-    case 'continue':
-    case 'rewrite':
-    case 'shorten':
-    case 'expand':
-    case 'tone':
-    case 'tone_shift':
-    case 'custom':
-      return 'natural_language';
     default: {
       const _exhaustive: never = action;
       return _exhaustive;

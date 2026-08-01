@@ -154,7 +154,6 @@ export {
   COPY_MOBILE_P0_ACTIONS,
   COPY_PREVIEW_CARRIER_LABELS,
   applyCopyFieldEdit,
-  SELECTION_AI_PRIMARY_ACTIONS,
   captureStableSelectionAnchor,
   createCopyDocumentDraft,
   hashSelectionAnchorParts,

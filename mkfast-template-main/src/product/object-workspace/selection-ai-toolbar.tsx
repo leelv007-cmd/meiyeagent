@@ -13,7 +13,10 @@ import {
 } from './selection-ai-model';
 
 export type SelectionAiToolbarProps = {
-  onAction: (action: SelectionAiAction, instruction?: string) => void;
+  onAction: (
+    action: SelectionAiAction,
+    instruction?: string
+  ) => void | Promise<void>;
   disabled?: boolean;
   /** Scope hint already resolved by the parent (selection vs whole doc). */
   scopeHint?: string;
@@ -25,19 +28,50 @@ export function SelectionAiToolbar(props: SelectionAiToolbarProps) {
     null
   );
   const [instruction, setInstruction] = useState('');
+  const [busyAction, setBusyAction] = useState<SelectionAiAction | null>(null);
+  const [error, setError] = useState<string | undefined>();
 
-  const run = (action: SelectionAiAction) => {
+  const submit = async (
+    action: SelectionAiAction,
+    actionInstruction?: string
+  ) => {
+    if (busyAction) return false;
+    setBusyAction(action);
+    setError(undefined);
+    try {
+      await (actionInstruction === undefined
+        ? props.onAction(action)
+        : props.onAction(action, actionInstruction));
+      return true;
+    } catch (submissionError) {
+      setError(
+        submissionError instanceof Error
+          ? submissionError.message
+          : '暂时无法提交调整，请重试。'
+      );
+      return false;
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const run = async (action: SelectionAiAction) => {
     if (selectionAiNeedsInstruction(action)) {
       setPendingAction(action);
       setInstruction('');
+      setError(undefined);
       return;
     }
-    props.onAction(action);
+    await submit(action);
   };
 
-  const confirmInstruction = () => {
+  const confirmInstruction = async () => {
     if (!pendingAction) return;
-    props.onAction(pendingAction, instruction.trim() || undefined);
+    const submitted = await submit(
+      pendingAction,
+      instruction.trim() || undefined
+    );
+    if (!submitted) return;
     setPendingAction(null);
     setInstruction('');
   };
@@ -69,10 +103,10 @@ export function SelectionAiToolbar(props: SelectionAiToolbarProps) {
             type="button"
             size="sm"
             variant="outline"
-            disabled={props.disabled}
+            disabled={props.disabled || busyAction !== null}
             data-testid={`selection-ai-${item.action}`}
             data-selection-ai-action={item.action}
-            onClick={() => run(item.action)}
+            onClick={() => void run(item.action)}
           >
             {item.label}
           </Button>
@@ -107,9 +141,10 @@ export function SelectionAiToolbar(props: SelectionAiToolbarProps) {
               type="button"
               size="sm"
               data-testid="selection-ai-instruction-confirm"
-              onClick={confirmInstruction}
+              disabled={busyAction !== null}
+              onClick={() => void confirmInstruction()}
             >
-              生成预览
+              {busyAction === pendingAction ? '准备中…' : '准备调整'}
             </Button>
             <Button
               type="button"
@@ -128,6 +163,15 @@ export function SelectionAiToolbar(props: SelectionAiToolbarProps) {
             当前动作：{SELECTION_AI_LABELS[pendingAction]}
           </p>
         </div>
+      ) : null}
+      {error ? (
+        <p
+          className="text-sm text-destructive"
+          data-testid="selection-ai-submit-error"
+          role="alert"
+        >
+          {error}
+        </p>
       ) : null}
     </section>
   );

@@ -27,23 +27,6 @@ describe('quick edit producer', () => {
     );
   });
 
-  it('carries open-ended selection AI chips as natural language', () => {
-    for (const action of [
-      'continue',
-      'rewrite',
-      'shorten',
-      'expand',
-      'tone',
-      'tone_shift',
-      'custom',
-    ] as const) {
-      assert.equal(
-        quickEditActionForSelectionRewrite(action),
-        'natural_language'
-      );
-    }
-  });
-
   it('builds a package-version intent that preserves frozen refs verbatim', () => {
     const intent = buildQuickEditIntent({
       action: 'promotion_weaker',

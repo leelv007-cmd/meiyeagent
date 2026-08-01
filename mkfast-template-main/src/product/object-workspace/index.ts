@@ -15,7 +15,6 @@ export {
   SELECTION_AI_ACTIONS,
   SELECTION_AI_LABELS,
   SELECTION_AI_LOCAL_TEMPLATES,
-  applySelectionAiPreview,
   buildSelectionAiPrompt,
   selectionAiNeedsInstruction,
   selectionAiToolbarItems,

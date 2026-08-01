@@ -38,10 +38,10 @@ test('document draft marks dirty on hand edit', () => {
   assert.equal(next.baseRevisionId, 'rev-1');
 });
 
-test('selection rewrite previews diff and routes to derived_task', () => {
+test('promotion QuickEdit previews a diff for the OCC package write', () => {
   const draft = createCopyDocumentDraft(doc, 'rev-1');
   const preview = previewSelectionRewrite(draft, {
-    action: 'shorten',
+    action: 'weaker_promo',
     field: 'body',
     start: 0,
     end: draft.body.length,
@@ -51,7 +51,7 @@ test('selection rewrite previews diff and routes to derived_task', () => {
     'invalid'
   );
   if (!('kind' in preview)) {
-    assert.equal(preview.execution, 'derived_task');
+    assert.equal(preview.execution, 'occ_derived_revision');
     assert.ok(preview.after.length < preview.before.length);
   }
 });
@@ -221,7 +221,7 @@ test('selection rewrite base drift returns conflict with compare options', () =>
   }
 });
 
-test('selection rewrite success binds derived_task command to base + anchor', () => {
+test('promotion QuickEdit success binds OCC command to base + anchor', () => {
   const body = '限时优惠，立即抢购本店美甲套餐。';
   const start = body.indexOf('限时优惠');
   const end = start + '限时优惠'.length;
@@ -239,10 +239,10 @@ test('selection rewrite success binds derived_task command to base + anchor', ()
   });
   assert.equal(ok.kind, 'ok');
   if (ok.kind === 'ok') {
-    assert.equal(ok.command.execution, 'derived_task');
+    assert.equal(ok.command.execution, 'occ_derived_revision');
     assert.equal(ok.command.baseRevisionId, 'rev-1');
     assert.equal(ok.command.anchor.anchorHash, anchor.anchorHash);
-    assert.equal(ok.preview.execution, 'derived_task');
+    assert.equal(ok.preview.execution, 'occ_derived_revision');
   }
 });
 
@@ -257,8 +257,7 @@ test('anchor not found after text rewrite returns conflict', () => {
     baseRevisionId: 'rev-1',
     currentRevisionId: 'rev-1',
     currentFieldText: '完全不同的正文，没有原选区。',
-    action: 'rewrite',
-    instruction: '改写',
+    action: 'weaker_promo',
     anchor,
   });
   assert.equal(missing.kind, 'conflict');

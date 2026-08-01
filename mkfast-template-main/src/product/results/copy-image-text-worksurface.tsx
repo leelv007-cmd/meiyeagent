@@ -13,7 +13,10 @@ import { Button } from '@/components/ui/button';
 import {
   ObjectWorkspaceEditor,
   ObjectWorkspaceShell,
+  SelectionAiToolbar,
+  buildSelectionAiPrompt,
   objectWorkspaceCarrierFromFacts,
+  type SelectionAiAction,
 } from '@/product/object-workspace';
 import { useEffect, useState } from 'react';
 
@@ -33,6 +36,7 @@ import {
   captureStableSelectionAnchor,
   projectCopyImageTextWorksurface,
   resolveSelectionRewrite,
+  validateStableSelection,
   type CopyImageTextWorksurfaceFacts,
   type CopyPreviewCarrier,
   type SelectionRewriteAction,
@@ -55,7 +59,7 @@ export type CopyImageTextWorksurfaceProps = {
   onSelectionRewriteResolved?: (result: SelectionRewriteResolveResult) => void;
   onCarrierChange?: (carrier: CopyPreviewCarrier) => void;
   onGeneratePlatformVariants?: () => Promise<void>;
-  onAdjust?: (instruction: string) => void;
+  onAdjust?: (instruction: string) => void | Promise<void>;
   /**
    * Why 「还想怎么改？」 is unavailable on this result, in merchant words.
    * Present means the box is disabled with the sentence shown — the old
@@ -89,6 +93,7 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
     title: view.document.title,
   }));
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | undefined>();
   const [generatingPlatformVariants, setGeneratingPlatformVariants] =
     useState(false);
   const [platformGenerationError, setPlatformGenerationError] = useState<
@@ -113,9 +118,6 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
     instruction: string;
     scope: 'selection' | 'whole_document';
   } | null>(null);
-  const [pendingInstructionAction, setPendingInstructionAction] =
-    useState<SelectionRewriteAction | null>(null);
-  const [instructionDraft, setInstructionDraft] = useState('');
   const [quickEditBusy, setQuickEditBusy] = useState<string | null>(null);
   const [quickEditError, setQuickEditError] = useState<string | undefined>();
   const quickEditCopy = quickEditText();
@@ -171,18 +173,39 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
           hint: '还没选中文字，将改写整篇文案；只想改一句的话，先在正文里选中它。',
         };
 
-  const runSelectionRewrite = (
-    action: SelectionRewriteAction,
-    instruction?: string
-  ) => {
-    // tone / custom need a free-text instruction before preview (selection AI).
-    const needsInstruction =
-      action === 'tone' || action === 'tone_shift' || action === 'custom';
-    if (needsInstruction && instruction === undefined) {
-      setPendingInstructionAction(action);
-      setInstructionDraft('');
+  const runSelectionAi = (action: SelectionAiAction, instruction?: string) => {
+    const start = bodySelection?.start ?? 0;
+    const end = bodySelection?.end ?? draft.body.length;
+    const anchor = captureStableSelectionAnchor(draft.body, 'body', start, end);
+    if ('kind' in anchor) {
+      throw new Error(anchor.message);
+    }
+    const validated = validateStableSelection({
+      anchor,
+      baseRevisionId: props.facts.baseRevisionId,
+      currentFieldText: draft.body,
+      currentRevisionId: props.currentRevisionId ?? props.facts.baseRevisionId,
+    });
+    if (validated.kind === 'conflict') {
+      setSelectionConflict(validated);
+      props.onSelectionRewriteResolved?.(validated);
       return;
     }
+    setSelectionConflict(null);
+    const selection = draft.body.slice(
+      validated.resolvedStart,
+      validated.resolvedEnd
+    );
+    return props.onAdjust?.(
+      buildSelectionAiPrompt({
+        action,
+        selection,
+        ...(instruction?.trim() ? { instruction: instruction.trim() } : {}),
+      })
+    );
+  };
+
+  const runSelectionRewrite = (action: SelectionRewriteAction) => {
     const start = bodySelection?.start ?? 0;
     const end = bodySelection?.end ?? draft.body.length;
     const anchor = captureStableSelectionAnchor(draft.body, 'body', start, end);
@@ -201,7 +224,6 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
       currentFieldText: draft.body,
       action,
       anchor,
-      ...(instruction?.trim() ? { instruction: instruction.trim() } : {}),
     });
     props.onSelectionRewriteResolved?.(resolved);
     if (resolved.kind === 'conflict') {
@@ -210,8 +232,6 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
       return;
     }
     setSelectionConflict(null);
-    setPendingInstructionAction(null);
-    setInstructionDraft('');
     if (resolved.kind === 'ok') {
       // The diff the merchant decides on. Nothing is written until 就用这版 —
       // that button is what turns this into a QuickEditIntent.
@@ -254,574 +274,537 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
       title={draft.title || '成品精修'}
       workId={props.facts.workId}
     >
-    <div className="space-y-4" data-testid="copy-image-text-worksurface">
-      <section
-        className="space-y-3 rounded-lg border p-4"
-        data-testid="copy-edit-panel"
-        data-document-face="primary"
-      >
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-medium">主推荐</h3>
-          <Badge variant="outline" data-testid="copy-primary-badge">
-            默认展开
-          </Badge>
-        </div>
-        <label className="block space-y-1 text-sm">
-          <span className="text-muted-foreground">标题</span>
-          <input
-            className="w-full rounded-md border bg-background px-3 py-2"
-            data-testid="copy-field-title"
-            value={draft.title}
-            onChange={(event) => {
-              setDraft((current) => ({
-                ...current,
-                title: event.target.value,
-              }));
-              props.onFieldChange?.('title', event.target.value);
-            }}
-          />
-        </label>
-        <div className="block space-y-1 text-sm">
-          <span className="text-muted-foreground">正文</span>
-          <ObjectWorkspaceEditor
-            data-testid="copy-field-body"
-            value={draft.body}
-            onChange={(value) => {
-              setDraft((current) => ({
-                ...current,
-                body: value,
-              }));
-              props.onFieldChange?.('body', value);
-            }}
-            onSelectionChange={(selection) => {
-              if (!selection || selection.end <= selection.start) {
-                setBodySelection(null);
-                return;
-              }
-              setBodySelection({
-                start: selection.start,
-                end: Math.min(selection.end, draft.body.length || selection.end),
-              });
-            }}
-          />
-        </div>
-        <label className="block space-y-1 text-sm">
-          <span className="text-muted-foreground">转化语 / CTA</span>
-          <input
-            className="w-full rounded-md border bg-background px-3 py-2"
-            data-testid="copy-field-hook"
-            value={draft.conversionHook}
-            onChange={(event) => {
-              setDraft((current) => ({
-                ...current,
-                conversionHook: event.target.value,
-              }));
-              props.onFieldChange?.('conversionHook', event.target.value);
-            }}
-          />
-        </label>
-        {view.document.topics.length > 0 ? (
-          <div className="flex flex-wrap gap-1" data-testid="copy-topics">
-            {view.document.topics.map((topic) => (
-              <Badge key={topic} variant="outline">
-                {topic}
-              </Badge>
-            ))}
-          </div>
-        ) : null}
-        <Button
-          type="button"
-          variant="outline"
-          data-testid="copy-save-hand-edit"
-          disabled={!dirty || saving || !props.onHandEdit}
-          onClick={async () => {
-            if (!props.onHandEdit) return;
-            setSaving(true);
-            try {
-              await props.onHandEdit(draft);
-            } finally {
-              setSaving(false);
-            }
-          }}
-        >
-          {saving ? '保存中…' : '保存修改'}
-        </Button>
-      </section>
-
-      {alternatives.length > 0 ? (
+      <div className="space-y-4" data-testid="copy-image-text-worksurface">
         <section
-          className="space-y-2 rounded-lg border p-4"
-          data-testid="copy-alternatives-panel"
+          className="space-y-3 rounded-lg border p-4"
+          data-testid="copy-edit-panel"
+          data-document-face="primary"
         >
-          <button
-            type="button"
-            className="flex w-full items-center justify-between text-sm font-medium"
-            data-testid="copy-alternatives-toggle"
-            aria-expanded={alternativesOpen}
-            onClick={() => setAlternativesOpen((open) => !open)}
-          >
-            <span>备选（{alternatives.length}）</span>
-            <span className="text-muted-foreground">
-              {alternativesOpen ? '收起' : '按需查看'}
-            </span>
-          </button>
-          {alternativesOpen ? (
-            <ul className="space-y-3" data-testid="copy-alternatives-list">
-              {alternatives.map((item) => (
-                <li
-                  key={item.candidateId}
-                  className="rounded-md border p-3 text-sm"
-                  data-testid="copy-alternative-item"
-                >
-                  <p className="font-medium">{item.title || '备选文案'}</p>
-                  <p className="mt-1 text-muted-foreground whitespace-pre-wrap">
-                    {item.body}
-                  </p>
-                </li>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-medium">主推荐</h3>
+            <Badge variant="outline" data-testid="copy-primary-badge">
+              默认展开
+            </Badge>
+          </div>
+          <label className="block space-y-1 text-sm">
+            <span className="text-muted-foreground">标题</span>
+            <input
+              className="w-full rounded-md border bg-background px-3 py-2"
+              data-testid="copy-field-title"
+              value={draft.title}
+              onChange={(event) => {
+                setDraft((current) => ({
+                  ...current,
+                  title: event.target.value,
+                }));
+                props.onFieldChange?.('title', event.target.value);
+              }}
+            />
+          </label>
+          <div className="block space-y-1 text-sm">
+            <span className="text-muted-foreground">正文</span>
+            <ObjectWorkspaceEditor
+              data-testid="copy-field-body"
+              value={draft.body}
+              onChange={(value) => {
+                setDraft((current) => ({
+                  ...current,
+                  body: value,
+                }));
+                props.onFieldChange?.('body', value);
+              }}
+              onSelectionChange={(selection) => {
+                if (!selection || selection.end <= selection.start) {
+                  setBodySelection(null);
+                  return;
+                }
+                setBodySelection({
+                  start: selection.start,
+                  end: Math.min(
+                    selection.end,
+                    draft.body.length || selection.end
+                  ),
+                });
+              }}
+            />
+          </div>
+          <label className="block space-y-1 text-sm">
+            <span className="text-muted-foreground">转化语 / CTA</span>
+            <input
+              className="w-full rounded-md border bg-background px-3 py-2"
+              data-testid="copy-field-hook"
+              value={draft.conversionHook}
+              onChange={(event) => {
+                setDraft((current) => ({
+                  ...current,
+                  conversionHook: event.target.value,
+                }));
+                props.onFieldChange?.('conversionHook', event.target.value);
+              }}
+            />
+          </label>
+          {view.document.topics.length > 0 ? (
+            <div className="flex flex-wrap gap-1" data-testid="copy-topics">
+              {view.document.topics.map((topic) => (
+                <Badge key={topic} variant="outline">
+                  {topic}
+                </Badge>
               ))}
-            </ul>
+            </div>
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            data-testid="copy-save-hand-edit"
+            disabled={!dirty || saving || !props.onHandEdit}
+            onClick={async () => {
+              if (!props.onHandEdit) return;
+              setSaving(true);
+              setSaveError(undefined);
+              try {
+                await props.onHandEdit(draft);
+              } catch (error) {
+                setSaveError(
+                  error instanceof Error
+                    ? error.message
+                    : '保存修改失败，请刷新后重试。'
+                );
+              } finally {
+                setSaving(false);
+              }
+            }}
+          >
+            {saving ? '保存中…' : '保存修改'}
+          </Button>
+          {saveError ? (
+            <p
+              className="text-sm text-destructive"
+              data-testid="copy-hand-edit-error"
+              role="alert"
+            >
+              {saveError}
+            </p>
           ) : null}
         </section>
-      ) : null}
 
-      {props.onSelectionRewrite ? (
-        <section
-          className="space-y-2 rounded-lg border p-4"
-          data-testid="copy-selection-rewrite"
-          data-object-workspace-selection-ai="true"
-          data-rewrite-scope={rewriteScope.kind}
-        >
-          <h3 className="text-sm font-medium">选区 AI</h3>
-          {/*
+        {alternatives.length > 0 ? (
+          <section
+            className="space-y-2 rounded-lg border p-4"
+            data-testid="copy-alternatives-panel"
+          >
+            <button
+              type="button"
+              className="flex w-full items-center justify-between text-sm font-medium"
+              data-testid="copy-alternatives-toggle"
+              aria-expanded={alternativesOpen}
+              onClick={() => setAlternativesOpen((open) => !open)}
+            >
+              <span>备选（{alternatives.length}）</span>
+              <span className="text-muted-foreground">
+                {alternativesOpen ? '收起' : '按需查看'}
+              </span>
+            </button>
+            {alternativesOpen ? (
+              <ul className="space-y-3" data-testid="copy-alternatives-list">
+                {alternatives.map((item) => (
+                  <li
+                    key={item.candidateId}
+                    className="rounded-md border p-3 text-sm"
+                    data-testid="copy-alternative-item"
+                  >
+                    <p className="font-medium">{item.title || '备选文案'}</p>
+                    <p className="mt-1 text-muted-foreground whitespace-pre-wrap">
+                      {item.body}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </section>
+        ) : null}
+
+        {props.onAdjust && !props.adjustUnavailableReason ? (
+          <SelectionAiToolbar
+            onAction={runSelectionAi}
+            scopeHint={rewriteScope.hint}
+            scopeKind={rewriteScope.kind}
+          />
+        ) : null}
+
+        {props.onSelectionRewrite && props.onQuickEdit ? (
+          <section
+            className="space-y-2 rounded-lg border p-4"
+            data-testid="copy-selection-rewrite"
+            data-rewrite-scope={rewriteScope.kind}
+          >
+            <h3 className="text-sm font-medium">快捷微调</h3>
+            {/*
             Without a selection the rewrite still runs — over the whole 正文.
             That is the useful default (「整篇再顺一遍」), and it is also the one
             the merchant can be surprised by, so the panel says which one it is
             before the click rather than after it (D-116).
           */}
-          <p
-            className="text-xs text-muted-foreground"
-            data-testid="copy-selection-rewrite-scope"
-          >
-            {rewriteScope.hint}
-          </p>
-          <div
-            className="flex flex-wrap gap-2"
-            data-testid="object-workspace-selection-ai-actions"
-            role="toolbar"
-            aria-label="选区 AI 六动作"
-          >
-            {view.selectionRewriteActions.map((item) => (
-              <Button
-                key={item.action}
-                type="button"
-                size="sm"
-                variant="outline"
-                data-testid={`copy-rewrite-${item.action}`}
-                data-selection-ai-action={item.action}
-                {...(item.action === 'continue' ||
-                item.action === 'rewrite' ||
-                item.action === 'expand' ||
-                item.action === 'shorten' ||
-                item.action === 'tone' ||
-                item.action === 'custom'
-                  ? { 'data-primary-selection-ai': 'true' }
-                  : {})}
-                onClick={() => runSelectionRewrite(item.action)}
-              >
-                {item.label}
-              </Button>
-            ))}
-          </div>
-          {pendingInstructionAction ? (
-            <div
-              className="space-y-2 rounded-md border p-3"
-              data-testid="selection-ai-instruction-panel"
-              data-pending-action={pendingInstructionAction}
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="copy-selection-rewrite-scope"
             >
-              <label className="block space-y-1 text-sm">
-                <span className="text-muted-foreground">
-                  {pendingInstructionAction === 'custom'
-                    ? '自定义要求'
-                    : '想要的语气'}
-                </span>
-                <input
-                  className="w-full rounded-md border bg-background px-3 py-2"
-                  data-testid="selection-ai-instruction-input"
-                  value={instructionDraft}
-                  onChange={(event) => setInstructionDraft(event.target.value)}
-                  placeholder={
-                    pendingInstructionAction === 'custom'
-                      ? '例如：更口语、少用感叹号'
-                      : '专业温和的美容顾问口吻'
-                  }
-                />
-              </label>
-              <div className="flex flex-wrap gap-2">
+              {rewriteScope.hint}
+            </p>
+            <div
+              className="flex flex-wrap gap-2"
+              data-testid="copy-quick-edit-rewrite-actions"
+              role="toolbar"
+              aria-label="文案快捷微调"
+            >
+              {view.selectionRewriteActions.map((item) => (
                 <Button
-                  type="button"
-                  size="sm"
-                  data-testid="selection-ai-instruction-confirm"
-                  onClick={() =>
-                    runSelectionRewrite(
-                      pendingInstructionAction,
-                      instructionDraft
-                    )
-                  }
-                >
-                  生成预览
-                </Button>
-                <Button
+                  key={item.action}
                   type="button"
                   size="sm"
                   variant="outline"
-                  data-testid="selection-ai-instruction-cancel"
-                  onClick={() => {
-                    setPendingInstructionAction(null);
-                    setInstructionDraft('');
-                  }}
+                  data-testid={`copy-rewrite-${item.action}`}
+                  data-quick-edit-action={item.action}
+                  onClick={() => runSelectionRewrite(item.action)}
                 >
-                  取消
+                  {item.label}
                 </Button>
-              </div>
+              ))}
             </div>
-          ) : null}
-          {rewritePreview ? (
-            <div
-              className="space-y-2 rounded-md border p-3"
-              data-testid="copy-selection-rewrite-preview"
-              data-rewrite-action={rewritePreview.action}
-              data-rewrite-scope={rewritePreview.scope}
-            >
-              <p className="text-sm font-medium">
-                {quickEditCopy.previewHeading}
-              </p>
-              <p
-                className="text-sm text-muted-foreground line-through"
-                data-testid="copy-selection-rewrite-before"
+            {rewritePreview ? (
+              <div
+                className="space-y-2 rounded-md border p-3"
+                data-testid="copy-selection-rewrite-preview"
+                data-rewrite-action={rewritePreview.action}
+                data-rewrite-scope={rewritePreview.scope}
               >
-                {quickEditCopy.previewBefore}：{rewritePreview.before}
-              </p>
-              <p className="text-sm" data-testid="copy-selection-rewrite-after">
-                {quickEditCopy.previewAfter}：{rewritePreview.after}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  data-testid="copy-selection-rewrite-adopt"
-                  disabled={!props.onQuickEdit || quickEditBusy !== null}
-                  onClick={() =>
-                    void sendQuickEdit(
-                      'selection',
-                      {
-                        action: quickEditActionForSelectionRewrite(
-                          rewritePreview.action
-                        ),
-                        instruction: rewritePreview.instruction,
-                        changes: {
-                          body: rewritePreview.fieldAfter,
-                          conversionHook: draft.conversionHook,
-                          title: draft.title,
-                        },
-                      },
-                      () => setRewritePreview(null)
-                    )
-                  }
+                <p className="text-sm font-medium">
+                  {quickEditCopy.previewHeading}
+                </p>
+                <p
+                  className="text-sm text-muted-foreground line-through"
+                  data-testid="copy-selection-rewrite-before"
                 >
-                  {quickEditBusy === 'selection'
-                    ? quickEditCopy.pending
-                    : quickEditCopy.adopt}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  data-testid="copy-selection-rewrite-cancel"
-                  onClick={() => setRewritePreview(null)}
+                  {quickEditCopy.previewBefore}：{rewritePreview.before}
+                </p>
+                <p
+                  className="text-sm"
+                  data-testid="copy-selection-rewrite-after"
                 >
-                  {quickEditCopy.discard}
-                </Button>
-              </div>
-            </div>
-          ) : null}
-          {selectionConflict ? (
-            <div
-              className="space-y-2 rounded-md border border-destructive/40 p-3"
-              data-testid="copy-selection-rewrite-conflict"
-              role="alert"
-            >
-              <p className="text-sm text-destructive">
-                {selectionConflict.message}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {selectionConflict.choices.map((choice) => (
+                  {quickEditCopy.previewAfter}：{rewritePreview.after}
+                </p>
+                <div className="flex flex-wrap gap-2">
                   <Button
-                    key={choice}
                     type="button"
                     size="sm"
-                    variant={choice === 'discard' ? 'outline' : 'default'}
-                    data-testid={`copy-rewrite-conflict-${choice}`}
-                    onClick={() => {
-                      if (choice === 'discard') {
-                        setSelectionConflict(null);
-                      }
-                    }}
+                    data-testid="copy-selection-rewrite-adopt"
+                    disabled={!props.onQuickEdit || quickEditBusy !== null}
+                    onClick={() =>
+                      void sendQuickEdit(
+                        'selection',
+                        {
+                          action: quickEditActionForSelectionRewrite(
+                            rewritePreview.action
+                          ),
+                          instruction: rewritePreview.instruction,
+                          changes: {
+                            body: rewritePreview.fieldAfter,
+                            conversionHook: draft.conversionHook,
+                            title: draft.title,
+                          },
+                        },
+                        () => setRewritePreview(null)
+                      )
+                    }
                   >
-                    {choice === 'compare'
-                      ? '比较版本'
-                      : choice === 'discard'
-                        ? '丢弃选区'
-                        : '重新应用'}
+                    {quickEditBusy === 'selection'
+                      ? quickEditCopy.pending
+                      : quickEditCopy.adopt}
                   </Button>
-                ))}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    data-testid="copy-selection-rewrite-cancel"
+                    onClick={() => setRewritePreview(null)}
+                  >
+                    {quickEditCopy.discard}
+                  </Button>
+                </div>
               </div>
-            </div>
-          ) : null}
-        </section>
-      ) : null}
+            ) : null}
+          </section>
+        ) : null}
 
-      <section
-        className="space-y-2 rounded-lg border p-4"
-        data-testid="copy-fact-sources"
-      >
-        <h3 className="text-sm font-medium">事实来源</h3>
-        {view.factSources.items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">暂无关联事实</p>
-        ) : (
-          <ul className="space-y-2">
-            {view.factSources.items.map((item) => (
-              <li
-                key={item.id}
-                className="flex flex-wrap items-center gap-2 text-sm"
-                data-testid="copy-fact-item"
-              >
-                <Badge variant="outline">
-                  {FACT_SOURCE_KIND_LABELS[item.kind]}
-                </Badge>
-                <span>{item.label}</span>
-                <span className="text-muted-foreground">{item.summary}</span>
-                {item.status === 'pending' ? (
-                  <Badge variant="destructive">待确认</Badge>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section
-        className="space-y-2 rounded-lg border p-4"
-        data-testid="copy-platform-preview"
-      >
-        <h3 className="text-sm font-medium">平台预览</h3>
-        <div className="flex flex-wrap gap-2">
-          {COPY_PREVIEW_PLATFORM_CARRIERS.map((carrier) => (
-            <Button
-              key={carrier}
-              type="button"
-              size="sm"
-              variant={selectedCarrier === carrier ? 'default' : 'outline'}
-              data-testid={`copy-carrier-${carrier}`}
-              data-active={selectedCarrier === carrier ? 'true' : 'false'}
-              onClick={() => {
-                setSelectedCarrier(carrier);
-                props.onCarrierChange?.(carrier);
-              }}
-            >
-              {COPY_PREVIEW_CARRIER_LABELS[carrier]}
-            </Button>
-          ))}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-muted-foreground">导出用途</span>
-          {COPY_PREVIEW_EXPORT_CARRIERS.map((carrier) => (
-            <Button
-              key={carrier}
-              type="button"
-              size="sm"
-              variant={selectedCarrier === carrier ? 'default' : 'outline'}
-              data-testid={`copy-carrier-${carrier}`}
-              data-active={selectedCarrier === carrier ? 'true' : 'false'}
-              onClick={() => {
-                setSelectedCarrier(carrier);
-                props.onCarrierChange?.(carrier);
-              }}
-            >
-              {COPY_PREVIEW_CARRIER_LABELS[carrier]}
-            </Button>
-          ))}
-        </div>
-        {generatingPlatformVariants ? (
-          <p
-            className="text-sm text-muted-foreground"
-            data-testid="copy-platform-preview-pending"
-          >
-            正在生成三平台正式版本…
-          </p>
-        ) : view.platformPreview?.kind === 'ready' ? (
+        {selectionConflict ? (
           <div
-            className="rounded-md bg-muted p-3 text-sm"
-            data-testid="copy-platform-preview-body"
+            className="space-y-2 rounded-md border border-destructive/40 p-3"
+            data-testid="copy-selection-rewrite-conflict"
+            role="alert"
           >
-            <p className="font-medium">{view.platformPreview.variant.title}</p>
-            <p className="mt-2 whitespace-pre-wrap">
-              {view.platformPreview.variant.body}
+            <p className="text-sm text-destructive">
+              {selectionConflict.message}
             </p>
-          </div>
-        ) : view.platformPreview?.kind === 'rejected' ? (
-          <p
-            className="text-sm text-destructive"
-            data-testid="copy-platform-preview-rejected"
-          >
-            {view.platformPreview.message}
-          </p>
-        ) : (
-          <p
-            className="text-sm text-muted-foreground"
-            data-testid="copy-platform-preview-pending"
-          >
-            {view.platformPreview?.kind === 'pending'
-              ? view.platformPreview.message
-              : '选择平台查看正式适配预览'}
-          </p>
-        )}
-        {props.facts.lifecycle === 'adopted' &&
-        !hasAllFormalPlatformVariants &&
-        props.onGeneratePlatformVariants ? (
-          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              本次不会提交调整，关闭提示后请在最新正文中重新选择。
+            </p>
             <Button
               type="button"
               size="sm"
               variant="outline"
-              data-testid="copy-generate-platform-variants"
-              disabled={generatingPlatformVariants}
-              onClick={async () => {
-                setGeneratingPlatformVariants(true);
-                setPlatformGenerationError(undefined);
-                try {
-                  await props.onGeneratePlatformVariants?.();
-                } catch (error) {
-                  setPlatformGenerationError(
-                    error instanceof Error
-                      ? error.message
-                      : '平台版本生成失败，请重试。'
-                  );
-                } finally {
-                  setGeneratingPlatformVariants(false);
-                }
-              }}
+              data-testid="copy-rewrite-conflict-discard"
+              onClick={() => setSelectionConflict(null)}
             >
-              生成正式平台版本
+              关闭提示
             </Button>
-            {platformGenerationError ? (
-              <p className="text-sm text-destructive" role="alert">
-                {platformGenerationError}
-              </p>
-            ) : null}
           </div>
         ) : null}
-      </section>
 
-      {/*
+        <section
+          className="space-y-2 rounded-lg border p-4"
+          data-testid="copy-fact-sources"
+        >
+          <h3 className="text-sm font-medium">事实来源</h3>
+          {view.factSources.items.length === 0 ? (
+            <p className="text-sm text-muted-foreground">暂无关联事实</p>
+          ) : (
+            <ul className="space-y-2">
+              {view.factSources.items.map((item) => (
+                <li
+                  key={item.id}
+                  className="flex flex-wrap items-center gap-2 text-sm"
+                  data-testid="copy-fact-item"
+                >
+                  <Badge variant="outline">
+                    {FACT_SOURCE_KIND_LABELS[item.kind]}
+                  </Badge>
+                  <span>{item.label}</span>
+                  <span className="text-muted-foreground">{item.summary}</span>
+                  {item.status === 'pending' ? (
+                    <Badge variant="destructive">待确认</Badge>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section
+          className="space-y-2 rounded-lg border p-4"
+          data-testid="copy-platform-preview"
+        >
+          <h3 className="text-sm font-medium">平台预览</h3>
+          <div className="flex flex-wrap gap-2">
+            {COPY_PREVIEW_PLATFORM_CARRIERS.map((carrier) => (
+              <Button
+                key={carrier}
+                type="button"
+                size="sm"
+                variant={selectedCarrier === carrier ? 'default' : 'outline'}
+                data-testid={`copy-carrier-${carrier}`}
+                data-active={selectedCarrier === carrier ? 'true' : 'false'}
+                onClick={() => {
+                  setSelectedCarrier(carrier);
+                  props.onCarrierChange?.(carrier);
+                }}
+              >
+                {COPY_PREVIEW_CARRIER_LABELS[carrier]}
+              </Button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">导出用途</span>
+            {COPY_PREVIEW_EXPORT_CARRIERS.map((carrier) => (
+              <Button
+                key={carrier}
+                type="button"
+                size="sm"
+                variant={selectedCarrier === carrier ? 'default' : 'outline'}
+                data-testid={`copy-carrier-${carrier}`}
+                data-active={selectedCarrier === carrier ? 'true' : 'false'}
+                onClick={() => {
+                  setSelectedCarrier(carrier);
+                  props.onCarrierChange?.(carrier);
+                }}
+              >
+                {COPY_PREVIEW_CARRIER_LABELS[carrier]}
+              </Button>
+            ))}
+          </div>
+          {generatingPlatformVariants ? (
+            <p
+              className="text-sm text-muted-foreground"
+              data-testid="copy-platform-preview-pending"
+            >
+              正在生成三平台正式版本…
+            </p>
+          ) : view.platformPreview?.kind === 'ready' ? (
+            <div
+              className="rounded-md bg-muted p-3 text-sm"
+              data-testid="copy-platform-preview-body"
+            >
+              <p className="font-medium">
+                {view.platformPreview.variant.title}
+              </p>
+              <p className="mt-2 whitespace-pre-wrap">
+                {view.platformPreview.variant.body}
+              </p>
+            </div>
+          ) : view.platformPreview?.kind === 'rejected' ? (
+            <p
+              className="text-sm text-destructive"
+              data-testid="copy-platform-preview-rejected"
+            >
+              {view.platformPreview.message}
+            </p>
+          ) : (
+            <p
+              className="text-sm text-muted-foreground"
+              data-testid="copy-platform-preview-pending"
+            >
+              {view.platformPreview?.kind === 'pending'
+                ? view.platformPreview.message
+                : '选择平台查看正式适配预览'}
+            </p>
+          )}
+          {props.facts.lifecycle === 'adopted' &&
+          !hasAllFormalPlatformVariants &&
+          props.onGeneratePlatformVariants ? (
+            <div className="space-y-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                data-testid="copy-generate-platform-variants"
+                disabled={generatingPlatformVariants}
+                onClick={async () => {
+                  setGeneratingPlatformVariants(true);
+                  setPlatformGenerationError(undefined);
+                  try {
+                    await props.onGeneratePlatformVariants?.();
+                  } catch (error) {
+                    setPlatformGenerationError(
+                      error instanceof Error
+                        ? error.message
+                        : '平台版本生成失败，请重试。'
+                    );
+                  } finally {
+                    setGeneratingPlatformVariants(false);
+                  }
+                }}
+              >
+                生成正式平台版本
+              </Button>
+              {platformGenerationError ? (
+                <p className="text-sm text-destructive" role="alert">
+                  {platformGenerationError}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </section>
+
+        {/*
         One place for a failed quick edit, whichever gesture started it — the
         export row is reachable without the selection-rewrite section, and an
         error rendered inside that section would have nowhere to appear.
       */}
-      {quickEditError ? (
-        <p
-          className="text-sm text-destructive"
-          data-testid="copy-quick-edit-error"
-          role="alert"
-        >
-          {quickEditError}
-        </p>
-      ) : null}
-
-      {props.onQuickEdit ? (
-        <section
-          className="space-y-2 rounded-lg border p-4"
-          data-testid="copy-export-use-actions"
-        >
-          <h3 className="text-sm font-medium">{quickEditCopy.exportHeading}</h3>
-          <p className="text-xs text-muted-foreground">
-            {quickEditCopy.exportHint}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {QUICK_EDIT_EXPORT_USE_ACTIONS.map((action) => {
-              const label = quickEditExportUseLabel(action);
-              return (
-                <Button
-                  key={action}
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  data-testid={`copy-export-use-${action}`}
-                  disabled={quickEditBusy !== null}
-                  onClick={() =>
-                    void sendQuickEdit(action, {
-                      action,
-                      instruction: label,
-                      changes: {
-                        body: draft.body,
-                        conversionHook: draft.conversionHook,
-                        title: draft.title,
-                      },
-                    })
-                  }
-                >
-                  {quickEditBusy === action ? quickEditCopy.pending : label}
-                </Button>
-              );
-            })}
-          </div>
-        </section>
-      ) : null}
-
-      <AdjustPrompt
-        onSubmit={props.onAdjust}
-        disabled={Boolean(props.adjustUnavailableReason)}
-        {...(props.adjustUnavailableReason
-          ? { unavailableReason: props.adjustUnavailableReason }
-          : {})}
-      />
-
-      {props.facts.lifecycle === 'candidate' ? (
-        <div className="space-y-2">
-          <Button
-            type="button"
-            data-testid="copy-adopt-action"
-            disabled={!props.onAdopt || adopting}
-            onClick={async () => {
-              setAdopting(true);
-              setAdoptionError(undefined);
-              try {
-                await props.onAdopt?.();
-              } catch (error) {
-                setAdoptionError(
-                  error instanceof Error
-                    ? error.message
-                    : '采用版本失败，请重试。'
-                );
-              } finally {
-                setAdopting(false);
-              }
-            }}
+        {quickEditError ? (
+          <p
+            className="text-sm text-destructive"
+            data-testid="copy-quick-edit-error"
+            role="alert"
           >
-            {adopting ? '采用中…' : '采用此版本'}
-          </Button>
-          {adoptionError ? (
-            <p className="text-sm text-destructive" role="alert">
-              {adoptionError}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
+            {quickEditError}
+          </p>
+        ) : null}
 
-      {/* Explicit: mobile never gates to desktop. */}
-      <span data-testid="copy-mobile-desktop-gate" hidden>
-        {view.mobileDesktopGate}
-      </span>
-    </div>
+        {props.onQuickEdit ? (
+          <section
+            className="space-y-2 rounded-lg border p-4"
+            data-testid="copy-export-use-actions"
+          >
+            <h3 className="text-sm font-medium">
+              {quickEditCopy.exportHeading}
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              {quickEditCopy.exportHint}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {QUICK_EDIT_EXPORT_USE_ACTIONS.map((action) => {
+                const label = quickEditExportUseLabel(action);
+                return (
+                  <Button
+                    key={action}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    data-testid={`copy-export-use-${action}`}
+                    disabled={quickEditBusy !== null}
+                    onClick={() =>
+                      void sendQuickEdit(action, {
+                        action,
+                        instruction: label,
+                        changes: {
+                          body: draft.body,
+                          conversionHook: draft.conversionHook,
+                          title: draft.title,
+                        },
+                      })
+                    }
+                  >
+                    {quickEditBusy === action ? quickEditCopy.pending : label}
+                  </Button>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
+
+        <AdjustPrompt
+          onSubmit={props.onAdjust}
+          disabled={Boolean(props.adjustUnavailableReason)}
+          {...(props.adjustUnavailableReason
+            ? { unavailableReason: props.adjustUnavailableReason }
+            : {})}
+        />
+
+        {props.facts.lifecycle === 'candidate' ? (
+          <div className="space-y-2">
+            <Button
+              type="button"
+              data-testid="copy-adopt-action"
+              disabled={!props.onAdopt || adopting}
+              onClick={async () => {
+                setAdopting(true);
+                setAdoptionError(undefined);
+                try {
+                  await props.onAdopt?.();
+                } catch (error) {
+                  setAdoptionError(
+                    error instanceof Error
+                      ? error.message
+                      : '采用版本失败，请重试。'
+                  );
+                } finally {
+                  setAdopting(false);
+                }
+              }}
+            >
+              {adopting ? '采用中…' : '采用此版本'}
+            </Button>
+            {adoptionError ? (
+              <p className="text-sm text-destructive" role="alert">
+                {adoptionError}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* Explicit: mobile never gates to desktop. */}
+        <span data-testid="copy-mobile-desktop-gate" hidden>
+          {view.mobileDesktopGate}
+        </span>
+      </div>
     </ObjectWorkspaceShell>
   );
 }

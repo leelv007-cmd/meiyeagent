@@ -117,7 +117,7 @@ async function assertFinishedPieceBeforeAdopt(page: Page) {
   // 成品是真写出来的，且是在任何一次采用点击之前：标题、正文、转化语三样都非空。
   const worksurface = page.getByTestId(COPY_CONTRACT.resultSurfaceTestId);
   await expect(worksurface.getByTestId('copy-field-title')).toHaveValue(/\S/u);
-  await expect(worksurface.getByTestId('copy-field-body')).toHaveValue(/\S/u);
+  await expect(worksurface.getByTestId('copy-field-body')).toContainText(/\S/u);
   await expect(worksurface.getByTestId('copy-field-hook')).toHaveValue(/\S/u);
 
   // 单主候选是既定口径，不是 T18 的临时行为：D-113「④段默认交付 1 个主候选，
@@ -133,6 +133,34 @@ async function assertFinishedPieceBeforeAdopt(page: Page) {
     0
   );
   await expect(worksurface.getByText(/备选（\d+）/u)).toHaveCount(0);
+}
+
+async function assertSelectionAiReachesModelAdjust(page: Page) {
+  const worksurface = page.getByTestId(COPY_CONTRACT.resultSurfaceTestId);
+  const body = worksurface.getByTestId('copy-field-body');
+  await body.click();
+  await page.keyboard.press(
+    process.platform === 'darwin' ? 'Meta+A' : 'Control+A'
+  );
+  await expect(
+    worksurface.getByTestId('object-workspace-selection-ai-scope')
+  ).toContainText(/已选中 \d+ 个字/u);
+
+  const toolbar = worksurface.getByRole('toolbar', {
+    name: '选区 AI 六动作',
+  });
+  await expect(toolbar.getByRole('button')).toHaveCount(6);
+
+  for (const action of ['rewrite', 'expand', 'shorten'] as const) {
+    await toolbar.getByTestId(`selection-ai-${action}`).click();
+    const confirmation = page.getByTestId('image-adjust-confirmation');
+    await expect(confirmation).toBeVisible({ timeout: 60_000 });
+    await expect(
+      confirmation.getByTestId('execution-confirm-card')
+    ).toBeVisible();
+    await confirmation.getByTestId('execution-confirm-reject').click();
+    await expect(confirmation).toBeHidden();
+  }
 }
 
 async function revealExampleStores(page: Page) {
@@ -380,6 +408,32 @@ test.describe('D-126 dashboard home mount', () => {
     expect(
       (await readFile(downloadPath!, 'utf8')).trim().length
     ).toBeGreaterThan(20);
+  });
+
+  test('selection AI reaches canonical adjustment from the production worksurface', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(360_000);
+    const user = await registerE2EUser(request);
+    await loginByForm(page, user);
+    await seedConfirmedStore(page);
+    await page
+      .getByTestId('composer-intent-input')
+      .fill('为周末护理项目写一条可以直接发布的预约文案');
+    const destination = page.getByTestId(
+      'composer-destination-option-xiaohongshu'
+    );
+    await expect(destination).toBeVisible({ timeout: 30_000 });
+    if ((await destination.getAttribute('aria-pressed')) !== 'true') {
+      await destination.click();
+    }
+    await expect(destination).toHaveAttribute('aria-pressed', 'true');
+
+    const { workId } = await submitPrefilledCopy(page);
+    await waitForResultJourney(page, COPY_CONTRACT, workId);
+    await assertFinishedPieceBeforeAdopt(page);
+    await assertSelectionAiReachesModelAdjust(page);
   });
 
   test('platform_sample material never reaches the merchant workspace', async ({

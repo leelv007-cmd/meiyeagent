@@ -117,19 +117,33 @@ describe('copy / image_text worksurface', () => {
     expect(onAdopt).toHaveBeenCalledTimes(1);
   });
 
-  it('shows a rewrite action only with a real handler', async () => {
+  it('surfaces hand-edit OCC failures without discarding the draft', async () => {
     const user = userEvent.setup();
-    const onSelectionRewrite = vi.fn();
-    render(
-      <CopyImageTextWorksurface
-        facts={facts}
-        onSelectionRewrite={onSelectionRewrite}
-      />
-    );
+    const onHandEdit = vi
+      .fn()
+      .mockRejectedValue(new Error('正文已有新版本，刷新后再试'));
+    render(<CopyImageTextWorksurface facts={facts} onHandEdit={onHandEdit} />);
 
-    await user.click(screen.getByTestId('copy-rewrite-rewrite'));
-    expect(onSelectionRewrite).toHaveBeenCalled();
-    expect(onSelectionRewrite.mock.calls[0]?.[0]).toBe('rewrite');
+    const title = screen.getByTestId('copy-field-title');
+    await user.clear(title);
+    await user.type(title, '夏日美甲新标题');
+    await user.click(screen.getByTestId('copy-save-hand-edit'));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '正文已有新版本'
+    );
+    expect(title).toHaveValue('夏日美甲新标题');
+    expect(screen.getByTestId('copy-save-hand-edit')).toBeEnabled();
+  });
+
+  it('shows selection AI only with the model adjust seam', async () => {
+    const user = userEvent.setup();
+    const onAdjust = vi.fn().mockResolvedValue(undefined);
+    render(<CopyImageTextWorksurface facts={facts} onAdjust={onAdjust} />);
+
+    await user.click(screen.getByTestId('selection-ai-rewrite'));
+    expect(onAdjust).toHaveBeenCalledTimes(1);
+    expect(onAdjust.mock.calls[0]?.[0]).toMatch(/改写以下选区/u);
   });
 
   it('says which text a rewrite will touch before the click', async () => {
@@ -137,24 +151,20 @@ describe('copy / image_text worksurface', () => {
     render(
       <CopyImageTextWorksurface
         facts={facts}
-        onSelectionRewrite={vi.fn()}
-        onSelectionRewriteResolved={vi.fn()}
+        onAdjust={vi.fn().mockResolvedValue(undefined)}
       />
     );
 
     // No selection: the rewrite runs over the whole 正文 and says so.
     // Body is Tiptap (object workspace); default scope is whole_document.
-    const panel = screen.getByTestId('copy-selection-rewrite');
+    const panel = screen.getByTestId('object-workspace-selection-ai');
     expect(panel).toHaveAttribute('data-rewrite-scope', 'whole_document');
     expect(
-      screen.getByTestId('copy-selection-rewrite-scope')
+      screen.getByTestId('object-workspace-selection-ai-scope')
     ).toHaveTextContent('将改写整篇文案');
 
-    // Whole-document path stays available and never blocks.
-    await user.click(screen.getByTestId('copy-rewrite-rewrite'));
-    expect(
-      screen.getByTestId('copy-selection-rewrite-preview')
-    ).toHaveAttribute('data-rewrite-scope', 'whole_document');
+    await user.click(screen.getByTestId('selection-ai-rewrite'));
+    expect(screen.queryByTestId('copy-selection-rewrite-preview')).toBeNull();
   });
 
   it('keeps alternatives collapsed by default and expands on demand', async () => {
@@ -184,25 +194,28 @@ describe('copy / image_text worksurface', () => {
     expect(screen.getByText('备选标题')).toBeInTheDocument();
   });
 
-  it('surfaces base-revision drift conflict for selection rewrite', async () => {
+  it('blocks selection AI when its base revision has drifted', async () => {
     const user = userEvent.setup();
+    const onAdjust = vi.fn();
     const onResolved = vi.fn();
     render(
       <CopyImageTextWorksurface
         facts={facts}
         currentRevisionId="rev-stale-other"
-        onSelectionRewrite={vi.fn()}
+        onAdjust={onAdjust}
         onSelectionRewriteResolved={onResolved}
       />
     );
-    await user.click(screen.getByTestId('copy-rewrite-shorten'));
+    await user.click(screen.getByTestId('selection-ai-shorten'));
     expect(onResolved).toHaveBeenCalled();
     expect(onResolved.mock.calls[0]?.[0]?.kind).toBe('conflict');
+    expect(onAdjust).not.toHaveBeenCalled();
     expect(
       await screen.findByTestId('copy-selection-rewrite-conflict')
     ).toBeInTheDocument();
-    expect(
-      screen.getByTestId('copy-rewrite-conflict-compare')
-    ).toBeInTheDocument();
+    expect(screen.queryByTestId('copy-rewrite-conflict-compare')).toBeNull();
+    expect(screen.queryByTestId('copy-rewrite-conflict-reapply')).toBeNull();
+    await user.click(screen.getByTestId('copy-rewrite-conflict-discard'));
+    expect(screen.queryByTestId('copy-selection-rewrite-conflict')).toBeNull();
   });
 });

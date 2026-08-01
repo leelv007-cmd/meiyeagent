@@ -3,9 +3,9 @@
  * (D-085 / D-046 / WT-D2 / #100 / P1-B2 / #151).
  *
  * Document-first primary recommendation · on-demand alternatives ·
- * edit · selection rewrite with stable anchors · fact sources ·
+ * edit · promotion QuickEdit with stable anchors · fact sources ·
  * platform preview. Persistent "还想怎么改？": model path → derived Task
- * (D-046); deterministic hand edit → OCC derived revision. Never
+ * (D-046); deterministic hand/QuickEdit → OCC derived revision. Never
  * client-concat platform variants (formal copy.adapt only).
  */
 
@@ -60,49 +60,17 @@ export function applyCopyFieldEdit(
 }
 
 // ---------------------------------------------------------------------------
-// Selection rewrite (stable anchor · base drift · derived Task)
+// Stable anchors shared by selection AI and deterministic promotion QuickEdit
 // ---------------------------------------------------------------------------
 
-/**
- * Selection rewrite / selection AI actions.
- *
- * P2-10 six-action bar: continue / rewrite / expand / shorten / tone / custom.
- * Legacy promo chips stay available for QuickEdit shortcuts.
- * `tone_shift` is an alias of `tone` kept for older call sites.
- */
-export type SelectionRewriteAction =
-  | 'continue'
-  | 'rewrite'
-  | 'shorten'
-  | 'expand'
-  | 'tone'
-  | 'tone_shift'
-  | 'custom'
-  | 'weaker_promo'
-  | 'stronger_cta';
+/** Deterministic legacy QuickEdit chips, separate from selection AI. */
+export type SelectionRewriteAction = 'weaker_promo' | 'stronger_cta';
 
 export const SELECTION_REWRITE_LABELS: Record<SelectionRewriteAction, string> =
   {
-    continue: '续写',
-    rewrite: '改写',
-    shorten: '精简',
-    expand: '扩写',
-    tone: '语气',
-    tone_shift: '语气',
-    custom: '自定义',
     weaker_promo: '弱促销',
     stronger_cta: '加强 CTA',
   };
-
-/** Primary selection-AI six (object workspace toolbar). */
-export const SELECTION_AI_PRIMARY_ACTIONS = [
-  'continue',
-  'rewrite',
-  'expand',
-  'shorten',
-  'tone',
-  'custom',
-] as const satisfies readonly SelectionRewriteAction[];
 
 export type SelectionRewriteRequest = {
   action: SelectionRewriteAction;
@@ -111,8 +79,6 @@ export type SelectionRewriteRequest = {
   /** Inclusive start / exclusive end into the field string. */
   start: number;
   end: number;
-  /** Optional free instruction for rewrite / tone_shift. */
-  instruction?: string;
 };
 
 /**
@@ -141,8 +107,8 @@ export type SelectionRewritePreview = {
   after: string;
   /** Full field after applying the preview patch. */
   fieldAfter: string;
-  /** Always model-path: derived Task on confirm. */
-  execution: 'derived_task';
+  /** Deterministic QuickEdit creates an OCC-derived package revision. */
+  execution: 'occ_derived_revision';
   anchor: StableSelectionAnchor;
   baseRevisionId: string;
 };
@@ -154,8 +120,7 @@ export type SelectionRewriteCommand = {
   action: SelectionRewriteAction;
   instruction: string;
   anchor: StableSelectionAnchor;
-  /** Always derived Task — never OCC hand-edit. */
-  execution: 'derived_task';
+  execution: 'occ_derived_revision';
 };
 
 export type SelectionRewriteResolveResult =
@@ -179,6 +144,10 @@ export type SelectionRewriteResolveResult =
       currentFieldText: string;
     }
   | { kind: 'invalid'; message: string };
+
+export type StableSelectionValidationResult =
+  | { kind: 'ok'; resolvedStart: number; resolvedEnd: number }
+  | Extract<SelectionRewriteResolveResult, { kind: 'conflict' }>;
 
 /** Lightweight stable hash (FNV-1a 32-bit) — no crypto dependency. */
 export function hashSelectionAnchorParts(
@@ -265,100 +234,18 @@ export function resolveSelectionAnchor(
   };
 }
 
-function applyRewriteAction(
-  before: string,
-  action: SelectionRewriteAction,
-  instruction?: string
-): string {
-  switch (action) {
-    case 'continue':
-      return `${before} 到店可再细聊适合你的护理方案。`;
-    case 'shorten':
-      return before.slice(0, Math.max(1, Math.floor(before.length * 0.6)));
-    case 'expand':
-      return `${before}，结合本店真实项目说明，欢迎到店了解。`;
-    case 'weaker_promo':
-      return (
-        before
-          .replace(/(?:限时|优惠|抢购|必买|冲|立即)/gu, '')
-          .replace(/\s{2,}/gu, ' ')
-          .trim() || before
-      );
-    case 'stronger_cta':
-      return `${before} 现在可预约到店咨询。`;
-    case 'tone':
-    case 'tone_shift':
-      return instruction?.trim()
-        ? `【${instruction.trim()}】${before}`
-        : `换个说法：${before}`;
-    case 'custom':
-      return instruction?.trim()
-        ? `${instruction.trim()}：${before}`
-        : `自定义调整：${before}`;
-    case 'rewrite':
-      return instruction?.trim() ? instruction.trim() : `改写：${before}`;
-    default: {
-      const _exhaustive: never = action;
-      return _exhaustive;
-    }
-  }
-}
-
-/**
- * Local deterministic preview for selection rewrite chips.
- * Confirm still routes through derived Task (D-046) — this is display only.
- */
-export function previewSelectionRewrite(
-  draft: CopyDocumentDraft,
-  request: SelectionRewriteRequest
-): SelectionRewritePreview | { kind: 'invalid'; message: string } {
-  const source = draft[request.field];
-  if (typeof source !== 'string') {
-    return { kind: 'invalid', message: '选区字段无效' };
-  }
-  const anchor = captureStableSelectionAnchor(
-    source,
-    request.field,
-    request.start,
-    request.end
-  );
-  if ('kind' in anchor) return anchor;
-  const before = anchor.selectedText;
-  const after = applyRewriteAction(before, request.action, request.instruction);
-  const fieldAfter =
-    source.slice(0, anchor.start) + after + source.slice(anchor.end);
-  return {
-    field: request.field,
-    before,
-    after,
-    fieldAfter,
-    execution: 'derived_task',
-    anchor,
-    baseRevisionId: draft.baseRevisionId,
-  };
-}
-
-/**
- * Build a selection-rewrite derived Task command bound to base revision +
- * stable anchor. Base drift or lost anchor returns conflict with compare.
- */
-export function resolveSelectionRewrite(input: {
-  workId: string;
-  /** Revision the selection was captured against. */
-  baseRevisionId: string;
-  /** Live canonical revision id. */
-  currentRevisionId: string;
-  /** Live field text for the anchor field. */
-  currentFieldText: string;
-  action: SelectionRewriteAction;
-  instruction?: string;
+/** Validate a captured anchor against the live revision before model dispatch. */
+export function validateStableSelection(input: {
   anchor: StableSelectionAnchor;
-}): SelectionRewriteResolveResult {
+  baseRevisionId: string;
+  currentFieldText: string;
+  currentRevisionId: string;
+}): StableSelectionValidationResult {
   if (input.baseRevisionId !== input.currentRevisionId) {
     return {
       kind: 'conflict',
       code: 'BASE_REVISION_DRIFT',
-      message: '正文已有新版本。请比较后再决定是否重新应用选区改写。',
+      message: '正文已有新版本。请刷新后重新选择文字再调整。',
       baseRevisionId: input.baseRevisionId,
       currentRevisionId: input.currentRevisionId,
       choices: ['compare', 'discard', 'reapply'],
@@ -379,15 +266,95 @@ export function resolveSelectionRewrite(input: {
       currentFieldText: input.currentFieldText,
     };
   }
-  const before = input.currentFieldText.slice(resolved.start, resolved.end);
-  const after = applyRewriteAction(before, input.action, input.instruction);
-  const instruction =
-    input.instruction?.trim() ||
-    `${SELECTION_REWRITE_LABELS[input.action]}：「${before}」`;
+  return {
+    kind: 'ok',
+    resolvedStart: resolved.start,
+    resolvedEnd: resolved.end,
+  };
+}
+
+function applyRewriteAction(
+  before: string,
+  action: SelectionRewriteAction
+): string {
+  switch (action) {
+    case 'weaker_promo':
+      return (
+        before
+          .replace(/(?:限时|优惠|抢购|必买|冲|立即)/gu, '')
+          .replace(/\s{2,}/gu, ' ')
+          .trim() || before
+      );
+    case 'stronger_cta':
+      return `${before} 现在可预约到店咨询。`;
+    default: {
+      const _exhaustive: never = action;
+      return _exhaustive;
+    }
+  }
+}
+
+/**
+ * Local deterministic preview for promotion QuickEdit chips.
+ * Confirm routes through the package OCC write seam.
+ */
+export function previewSelectionRewrite(
+  draft: CopyDocumentDraft,
+  request: SelectionRewriteRequest
+): SelectionRewritePreview | { kind: 'invalid'; message: string } {
+  const source = draft[request.field];
+  if (typeof source !== 'string') {
+    return { kind: 'invalid', message: '选区字段无效' };
+  }
+  const anchor = captureStableSelectionAnchor(
+    source,
+    request.field,
+    request.start,
+    request.end
+  );
+  if ('kind' in anchor) return anchor;
+  const before = anchor.selectedText;
+  const after = applyRewriteAction(before, request.action);
   const fieldAfter =
-    input.currentFieldText.slice(0, resolved.start) +
+    source.slice(0, anchor.start) + after + source.slice(anchor.end);
+  return {
+    field: request.field,
+    before,
+    after,
+    fieldAfter,
+    execution: 'occ_derived_revision',
+    anchor,
+    baseRevisionId: draft.baseRevisionId,
+  };
+}
+
+/**
+ * Build a promotion QuickEdit command bound to base revision + stable anchor.
+ * Base drift or a lost anchor returns a conflict before the OCC write.
+ */
+export function resolveSelectionRewrite(input: {
+  workId: string;
+  /** Revision the selection was captured against. */
+  baseRevisionId: string;
+  /** Live canonical revision id. */
+  currentRevisionId: string;
+  /** Live field text for the anchor field. */
+  currentFieldText: string;
+  action: SelectionRewriteAction;
+  anchor: StableSelectionAnchor;
+}): SelectionRewriteResolveResult {
+  const validated = validateStableSelection(input);
+  if (validated.kind === 'conflict') return validated;
+  const before = input.currentFieldText.slice(
+    validated.resolvedStart,
+    validated.resolvedEnd
+  );
+  const after = applyRewriteAction(before, input.action);
+  const instruction = `${SELECTION_REWRITE_LABELS[input.action]}：「${before}」`;
+  const fieldAfter =
+    input.currentFieldText.slice(0, validated.resolvedStart) +
     after +
-    input.currentFieldText.slice(resolved.end);
+    input.currentFieldText.slice(validated.resolvedEnd);
   const command: SelectionRewriteCommand = {
     kind: 'selection_rewrite',
     workId: input.workId,
@@ -395,7 +362,7 @@ export function resolveSelectionRewrite(input: {
     action: input.action,
     instruction,
     anchor: input.anchor,
-    execution: 'derived_task',
+    execution: 'occ_derived_revision',
   };
   return {
     kind: 'ok',
@@ -405,12 +372,12 @@ export function resolveSelectionRewrite(input: {
       before,
       after,
       fieldAfter,
-      execution: 'derived_task',
+      execution: 'occ_derived_revision',
       anchor: input.anchor,
       baseRevisionId: input.baseRevisionId,
     },
-    resolvedStart: resolved.start,
-    resolvedEnd: resolved.end,
+    resolvedStart: validated.resolvedStart,
+    resolvedEnd: validated.resolvedEnd,
   };
 }
 
@@ -695,7 +662,7 @@ export type AdjustExecutionPath =
  * Never client-concat for platform_variant.
  */
 export function routeAdjustExecution(input: {
-  kind: 'free_text' | 'hand_edit' | 'selection_rewrite' | 'platform_adapt';
+  kind: 'free_text' | 'hand_edit' | 'platform_adapt';
   workId: string;
   baseRevisionId: string;
   instruction?: string;
@@ -710,8 +677,7 @@ export function routeAdjustExecution(input: {
   };
 }): AdjustExecutionPath | { kind: 'rejected'; code: string; message: string } {
   switch (input.kind) {
-    case 'free_text':
-    case 'selection_rewrite': {
+    case 'free_text': {
       const instruction = input.instruction?.trim();
       if (!instruction) {
         return {
@@ -851,14 +817,10 @@ export function projectCopyImageTextWorksurface(
       submitLabel: ADJUST_PROMPT_SUBMIT_LABEL,
       persistent: true,
     },
-    // Primary six for the selection-AI bar; promo chips stay available as
-    // secondary QuickEdit shortcuts when the full rewrite panel is shown.
+    // AI actions come from the object-workspace toolbar. These two are the
+    // older deterministic QuickEdit shortcuts and stay visually separate.
     selectionRewriteActions: (
-      [
-        ...SELECTION_AI_PRIMARY_ACTIONS,
-        'weaker_promo',
-        'stronger_cta',
-      ] as SelectionRewriteAction[]
+      ['weaker_promo', 'stronger_cta'] as SelectionRewriteAction[]
     ).map((action) => ({
       action,
       label: SELECTION_REWRITE_LABELS[action],

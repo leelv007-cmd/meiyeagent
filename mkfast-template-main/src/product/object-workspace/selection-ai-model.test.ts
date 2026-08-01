@@ -7,7 +7,6 @@ import test from 'node:test';
 import {
   SELECTION_AI_ACTIONS,
   SELECTION_AI_LABELS,
-  applySelectionAiPreview,
   buildSelectionAiPrompt,
   selectionAiNeedsInstruction,
   selectionAiToolbarItems,
@@ -15,14 +14,10 @@ import {
 import { objectWorkspaceCarrierFromFacts } from './object-workspace-shell';
 
 test('selection AI freezes the six product actions', () => {
-  assert.deepEqual([...SELECTION_AI_ACTIONS], [
-    'continue',
-    'rewrite',
-    'expand',
-    'shorten',
-    'tone',
-    'custom',
-  ]);
+  assert.deepEqual(
+    [...SELECTION_AI_ACTIONS],
+    ['continue', 'rewrite', 'expand', 'shorten', 'tone', 'custom']
+  );
   assert.equal(SELECTION_AI_LABELS.continue, '续写');
   assert.equal(SELECTION_AI_LABELS.rewrite, '改写');
   assert.equal(SELECTION_AI_LABELS.expand, '扩写');
@@ -51,18 +46,26 @@ test('local templates are beauty-context and include the selection', () => {
   assert.doesNotMatch(prompt, /\{selection\}/);
 });
 
-test('deterministic previews cover at least three selection AI actions', () => {
+test('production prompts cover at least three selection AI actions', () => {
   const source = '限时优惠美甲套餐欢迎抢购';
-  const continued = applySelectionAiPreview(source, 'continue');
-  assert.ok(continued.startsWith(source));
-  assert.ok(continued.length > source.length);
-
-  const shortened = applySelectionAiPreview(source, 'shorten');
-  assert.ok(shortened.length < source.length);
-
-  const expanded = applySelectionAiPreview(source, 'expand');
-  assert.ok(expanded.length > source.length);
-  assert.match(expanded, /到店/);
+  const continued = buildSelectionAiPrompt({
+    action: 'continue',
+    selection: source,
+  });
+  const shortened = buildSelectionAiPrompt({
+    action: 'shorten',
+    selection: source,
+  });
+  const expanded = buildSelectionAiPrompt({
+    action: 'expand',
+    selection: source,
+  });
+  assert.match(continued, /自然续写/u);
+  assert.match(shortened, /精简/u);
+  assert.match(expanded, /扩写/u);
+  for (const prompt of [continued, shortened, expanded]) {
+    assert.match(prompt, /限时优惠美甲套餐欢迎抢购/u);
+  }
 });
 
 test('object workspace carrier maps copy / note / media', () => {
