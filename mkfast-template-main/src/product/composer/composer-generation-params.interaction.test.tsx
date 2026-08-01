@@ -89,7 +89,6 @@ describe('P2-09 submission injection', () => {
         },
       })
     ).toEqual({
-      beautyVoiceRole: 'owner',
       thinkingLevel: 'standard',
     });
   });
