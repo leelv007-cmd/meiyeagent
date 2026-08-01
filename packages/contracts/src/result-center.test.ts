@@ -103,6 +103,18 @@ test('canonical result commands keep adoption OCC and adjustment contract server
     resultAdjustCommandSchema.parse({
       expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
       instruction: '语气更亲切',
+      scope: {
+        end: 9,
+        field: 'body',
+        kind: 'text_selection',
+        packageId: 'package-1',
+        platform: 'douyin',
+        selectedText: '预约到店',
+        sourceTextSha256:
+          '53bb35f895648a58695272f4be5b28010ddaaf5ff8adc4934f3f2130c3b25477',
+        start: 5,
+        versionId: 'version-1',
+      },
       source: {
         kind: 'content_package_snapshot',
         expectedPackageRevision: 3,
@@ -111,13 +123,18 @@ test('canonical result commands keep adoption OCC and adjustment contract server
         workflowId: 'task-1',
       },
       workId: 'work-1',
-    }).source,
+    }).scope,
     {
-      kind: 'content_package_snapshot',
-      expectedPackageRevision: 3,
+      end: 9,
+      field: 'body',
+      kind: 'text_selection',
       packageId: 'package-1',
-      snapshotId: 'snapshot-task-1',
-      workflowId: 'task-1',
+      platform: 'douyin',
+      selectedText: '预约到店',
+      sourceTextSha256:
+        '53bb35f895648a58695272f4be5b28010ddaaf5ff8adc4934f3f2130c3b25477',
+      start: 5,
+      versionId: 'version-1',
     },
   );
   assert.equal(

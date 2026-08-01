@@ -24,6 +24,14 @@ test("runtime source resolver projects only the frozen reusable ContentPackage m
 
 	assert.deepEqual(resolved, {
 		reference: { id: "source-package-1", revision: "3" },
+		document: {
+			body: "限时团购 398元，旧活动仅限本周。",
+			conversionHook: "398元私信预约",
+			id: "source-version-1",
+			orderedAssetIds: ["selected-asset-1"],
+			title: "旧活动 398元",
+			topics: ["限时团购", "398元"],
+		},
 		structure: {
 			slots: ["headline", "body", "conversion_hook"],
 		},
@@ -33,10 +41,6 @@ test("runtime source resolver projects only the frozen reusable ContentPackage m
 			{ id: "selected-asset-1", role: "selected" },
 		],
 	});
-	assert.doesNotMatch(
-		JSON.stringify(resolved),
-		/398元|限时团购|旧活动/u,
-	);
 });
 
 for (const [name, mutate] of [
@@ -150,6 +154,62 @@ test("runtime source resolver accepts a package-owned selected asset without ext
 		{ id: "source-asset-1", role: "source" },
 		{ id: "selected-asset-1", role: "selected" },
 	]);
+});
+
+test("runtime source resolver binds an explicit platform variant without canonical fallback", async () => {
+	const source = sourcePackage();
+	source.variants = [
+		{
+			currentVersionId: "variant-version-1",
+			id: "source-package-1-douyin",
+			platform: "douyin",
+			versions: [
+				{
+					body: "抖音当前正文。",
+					conversionHook: "私信预约",
+					createdAt: "2026-07-22T09:30:00.000Z",
+					id: "variant-version-1",
+					orderedAssetIds: ["selected-asset-1"],
+					title: "抖音标题",
+					topics: ["抖音"],
+				},
+			],
+		},
+	];
+	const resolver = new ExecutionSourceContentPackageResolver(
+		{ async get() { return source; } },
+		authorizedAssetRights(),
+	);
+
+	const resolved = await resolver.resolve({
+		textSelection: {
+			contentPackagePlatform: "douyin",
+			platform: "douyin",
+		},
+		source: { id: "source-package-1", revision: "3" },
+		workspaceId: "workspace-1",
+	});
+	assert.deepEqual(resolved?.document, {
+		body: "抖音当前正文。",
+		conversionHook: "私信预约",
+		id: "variant-version-1",
+		orderedAssetIds: ["selected-asset-1"],
+		platform: "douyin",
+		title: "抖音标题",
+		topics: ["抖音"],
+	});
+
+	await assert.rejects(
+		resolver.resolve({
+			textSelection: {
+				contentPackagePlatform: "xiaohongshu",
+				platform: "xiaohongshu",
+			},
+			source: { id: "source-package-1", revision: "3" },
+			workspaceId: "workspace-1",
+		}),
+		SourceContentPackageUnavailableError,
+	);
 });
 
 function authorizedAssetRights() {

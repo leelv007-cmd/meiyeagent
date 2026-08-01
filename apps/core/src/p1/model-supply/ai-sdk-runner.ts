@@ -1614,6 +1614,7 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
         typeof payload.candidateId === 'string' ? payload.candidateId : 'c01';
       const index = Math.max(0, Number(candidateId.slice(1)) - 1);
       const brief = fixtureRecord(payload.brief);
+      const textSelectionContract = fixtureTextSelectionContract(brief);
       const frozenIntent =
         typeof brief.instructions === 'string'
           ? brief.instructions.split('本次需求：').at(-1)?.trim()
@@ -1637,6 +1638,11 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
       ] as const;
       return {
         ...(candidates[index] ?? candidates[0]),
+        ...(textSelectionContract
+          ? {
+              body: `${textSelectionContract.sourceBody.slice(0, textSelectionContract.start)}优化后的${textSelectionContract.sourceBody.slice(textSelectionContract.start, textSelectionContract.end)}${textSelectionContract.sourceBody.slice(textSelectionContract.end)}`,
+            }
+          : {}),
         ...(frozenIntent
           ? {
               title: `${frozenIntent.slice(0, 120)}｜${(candidates[index] ?? candidates[0]).title}`,
@@ -1739,6 +1745,41 @@ function fixtureRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function fixtureTextSelectionContract(brief: Record<string, unknown>) {
+  const encoded = Array.isArray(brief.constraints)
+    ? brief.constraints.find(
+        (candidate): candidate is string =>
+          typeof candidate === 'string' &&
+          candidate.startsWith('result_text_selection_v1:'),
+      )
+    : undefined;
+  if (!encoded) return undefined;
+  try {
+    const parsed = JSON.parse(
+      encoded.slice('result_text_selection_v1:'.length),
+    ) as Record<string, unknown>;
+    if (
+      typeof parsed.sourceBody !== 'string' ||
+      typeof parsed.start !== 'number' ||
+      !Number.isInteger(parsed.start) ||
+      typeof parsed.end !== 'number' ||
+      !Number.isInteger(parsed.end) ||
+      parsed.start < 0 ||
+      parsed.end <= parsed.start ||
+      parsed.end > parsed.sourceBody.length
+    ) {
+      return undefined;
+    }
+    return {
+      end: parsed.end,
+      sourceBody: parsed.sourceBody,
+      start: parsed.start,
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function fixturePromptFactRefs(payload: Record<string, unknown>) {

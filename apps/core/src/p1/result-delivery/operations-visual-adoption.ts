@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   contentPackageVisibleStatus,
   toPublicContentPackage,
@@ -5,6 +7,7 @@ import {
   type ResultAdjustCommand,
   type ResultAdjustConfirmCommand,
   type ResultAdjustSource,
+  type ResultAdjustTextSelectionScope,
   type ResultAdoptCommand,
   type ResultExportCommand,
   type ReviseContentPackageVisualsCommand,
@@ -12,6 +15,7 @@ import {
 
 import type { P1Context } from '../foundation/domain.js';
 import type { CreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
+import { resolveAuthoritativeContentPackageVersionPlatform } from '../execution-spine/source-content-package-resolver.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import {
   OperationsApplicationService,
@@ -42,6 +46,7 @@ export interface ResultAdjustComposerSubmissionPort {
     sourceNoteStyleId?: string;
     sourceSnapshot: CreationExecutionSnapshot;
     taskId: string;
+    textSelectionScope?: ResultAdjustTextSelectionScope;
     workId: string;
     workspaceId: string;
   }): Promise<{
@@ -96,11 +101,8 @@ function composerAdjustmentIds(input: {
 }
 
 function resultAdjustScopeAssetIds(scope: ResultAdjustCommand['scope']) {
-  return scope
-    ? scope.kind === 'asset'
-      ? [scope.assetId]
-      : scope.assetIds
-    : [];
+  if (!scope || scope.kind === 'text_selection') return [];
+  return scope.kind === 'asset' ? [scope.assetId] : scope.assetIds;
 }
 
 function resultAdjustInstruction(
@@ -108,9 +110,72 @@ function resultAdjustInstruction(
   scope: ResultAdjustCommand['scope'],
 ) {
   if (!scope) return instruction;
-  return scope.kind === 'asset'
-    ? `${instruction}\n调整范围：单张 ${scope.assetId}`
-    : `${instruction}\n调整范围：整组 ${scope.assetIds.join(', ')}`;
+  if (scope.kind === 'asset') {
+    return `${instruction}\n调整范围：单张 ${scope.assetId}`;
+  }
+  if (scope.kind === 'set') {
+    return `${instruction}\n调整范围：整组 ${scope.assetIds.join(', ')}`;
+  }
+  return `${instruction}\n调整范围：正文选区 ${scope.start}-${scope.end}\n选中文字：${scope.selectedText}\n候选 body 必须返回完整正文，且仅允许上述选区变化；选区外的前缀和后缀必须逐字保留。`;
+}
+
+function textSelectionVersion(
+  contentPackage: ContentPackage,
+  scope: ResultAdjustTextSelectionScope,
+) {
+  if (scope.platform) {
+    const variant = (contentPackage.variants ?? []).find(
+      (candidate) => candidate.platform === scope.platform,
+    );
+    return variant?.versions.find(
+      (candidate) => candidate.id === variant.currentVersionId,
+    );
+  }
+  return contentPackage.versions.find(
+    (candidate) => candidate.id === contentPackage.currentVersionId,
+  );
+}
+
+function assertTextSelectionScope(input: {
+  contentPackage?: ContentPackage;
+  operation?: CreationExecutionSnapshot['operation'];
+  scope: ResultAdjustCommand['scope'];
+  snapshot?: CreationExecutionSnapshot;
+}) {
+  const scope = input.scope;
+  if (scope?.kind !== 'text_selection') return;
+  const contentPackage = input.contentPackage;
+  const authoritativePlatform =
+    contentPackage && input.snapshot
+      ? resolveAuthoritativeContentPackageVersionPlatform(
+          contentPackage,
+          input.snapshot.contentPackagePlatform,
+        )
+      : undefined;
+  const version = contentPackage
+    ? textSelectionVersion(contentPackage, scope)
+    : undefined;
+  const digest = version
+    ? createHash('sha256').update(version.body).digest('hex')
+    : undefined;
+  if (
+    input.operation !== 'copy.generate' ||
+    !contentPackage ||
+    !input.snapshot ||
+    scope.platform !== authoritativePlatform ||
+    scope.packageId !== contentPackage.id ||
+    !version ||
+    scope.versionId !== version.id ||
+    scope.end > version.body.length ||
+    digest !== scope.sourceTextSha256 ||
+    version.body.slice(scope.start, scope.end) !== scope.selectedText
+  ) {
+    throw new OperationsError(
+      'RESULT_ADJUST_SCOPE_MISMATCH',
+      'The text selection no longer matches the frozen ContentPackage version.',
+      409,
+    );
+  }
 }
 
 type ComposerAdjustConfirmCommand = Extract<
@@ -324,11 +389,21 @@ export class OperationsResultCommandPort {
             409,
           );
         }
+        assertTextSelectionScope({
+          contentPackage: frozen?.contentPackage,
+          operation: sourceOperation,
+          scope: command.scope,
+          snapshot: frozen?.snapshot,
+        });
         const scopeAssetIds = resultAdjustScopeAssetIds(command.scope);
-        const currentPackageVersion = frozen?.contentPackage.versions.find(
-          (version) =>
-            version.id === frozen.contentPackage.currentVersionId,
-        );
+        const currentPackageVersion = frozen
+          ? command.scope?.kind === 'text_selection'
+            ? textSelectionVersion(frozen.contentPackage, command.scope)
+            : frozen.contentPackage.versions.find(
+                (version) =>
+                  version.id === frozen.contentPackage.currentVersionId,
+              )
+          : undefined;
         const sourceAssetIds = sourceJob
           ? new Set(
               workbench.assets
@@ -395,7 +470,9 @@ export class OperationsResultCommandPort {
               frozen!.snapshot.catalogModel.id,
             operation: sourceOperation,
             quantity:
-              scopeAssetIds.length > 0
+              command.scope?.kind === 'text_selection'
+                ? 1
+                : scopeAssetIds.length > 0
                 ? scopeAssetIds.length
                 : (sourceJob?.contract.outputCount ??
                   frozen!.snapshot.deliverable.quantity),
@@ -489,6 +566,12 @@ export class OperationsResultCommandPort {
             409,
           );
         }
+        assertTextSelectionScope({
+          contentPackage: frozen?.contentPackage,
+          operation: sourceOperation,
+          scope: composerCommand?.scope,
+          snapshot: frozen?.snapshot,
+        });
         const inheritedAssetIds = new Set(
           source.sourceReferences
             .filter((reference) => reference.kind === 'asset')
@@ -503,10 +586,17 @@ export class OperationsResultCommandPort {
                   !inheritedAssetIds.has(reference.id),
               )
               .map((reference) => reference.id);
-        const currentPackageVersion = frozen?.contentPackage.versions.find(
-          (version) =>
-            version.id === frozen.contentPackage.currentVersionId,
-        );
+        const currentPackageVersion = frozen
+          ? composerCommand?.scope?.kind === 'text_selection'
+            ? textSelectionVersion(
+                frozen.contentPackage,
+                composerCommand.scope,
+              )
+            : frozen.contentPackage.versions.find(
+                (version) =>
+                  version.id === frozen.contentPackage.currentVersionId,
+              )
+          : undefined;
         const sourceAssetIds = sourceJob
           ? new Set(
               workbench.assets
@@ -529,7 +619,9 @@ export class OperationsResultCommandPort {
         }
         const scopedAssetCount = scopedAssetIds.length;
         const expectedOutputCount =
-          scopedAssetCount > 0
+          composerCommand?.scope?.kind === 'text_selection'
+            ? 1
+            : scopedAssetCount > 0
             ? scopedAssetCount
             : (sourceJob?.contract.outputCount ??
               frozen!.snapshot.deliverable.quantity);
@@ -621,6 +713,9 @@ export class OperationsResultCommandPort {
             ...(sourceNoteStyleId ? { sourceNoteStyleId } : {}),
             sourceSnapshot: frozen.snapshot,
             taskId: composerCommand.derivedTaskId,
+            ...(composerCommand.scope?.kind === 'text_selection'
+              ? { textSelectionScope: composerCommand.scope }
+              : {}),
             workId: composerCommand.derivedWorkId,
             workspaceId: operation.workspaceId,
           });

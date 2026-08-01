@@ -270,6 +270,18 @@ export class HarnessSnapshotAssetReferenceError extends Error {
   }
 }
 
+export class HarnessTextSelectionConflictError extends Error {
+  readonly code = 'HARNESS_TEXT_SELECTION_CONFLICT';
+  readonly status = 409;
+
+  constructor() {
+    super(
+      'The frozen text selection no longer matches its source ContentPackage version.',
+    );
+    this.name = 'HarnessTextSelectionConflictError';
+  }
+}
+
 class SourceContentPackageGuardedRunner implements StructuredNodeRunner {
   constructor(
     private readonly runner: StructuredNodeRunner,
@@ -714,16 +726,23 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       input.request,
     );
     const snapshot = input.request.executionSnapshot;
+    const textSelectionSource = snapshot
+      ? resolveTextSelectionSource(snapshot, sourceContentPackage)
+      : undefined;
+    const executionBrief = bindTextSelectionCandidateBrief(
+      input.brief,
+      textSelectionSource,
+    );
     if (snapshot) {
       assertComposerSnapshotAssetBinding(
         snapshot,
-        input.brief.assetRefs,
+        executionBrief.assetRefs,
         sourceContentPackage?.assets,
       );
     }
     const hasAuthorizedOffer = hasAuthorizedOfferEvidence(
       input.context,
-      input.brief.factRefs,
+      executionBrief.factRefs,
     );
     const unboundedRunner = this.runnerWithSourceFence(
       input.request,
@@ -777,7 +796,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       {
         workflowId: input.workflowId,
         unitId: copyUnit(input.context.bundle.revision),
-        brief: input.brief,
+        brief: executionBrief,
         workspaceId: input.request.workspaceId,
         intendedUse: 'public_content',
         generationContext: {
@@ -797,7 +816,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
             workspaceId: input.request.workspaceId,
             revision: input.context.bundle.revision,
           },
-          brief: { ...input.brief },
+          brief: { ...executionBrief },
           ...input.context.policyReferences,
         },
       },
@@ -823,7 +842,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
           workspaceId: input.request.workspaceId,
           revision: input.context.bundle.revision,
         },
-        brief: structuredClone(input.brief),
+        brief: structuredClone(executionBrief),
         candidate: structuredClone(selection.winner),
         ...input.context.policyReferences,
       },
@@ -882,6 +901,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
           occurredAt,
           sourceContentPackage?.assets,
           claimExtraction,
+          sourceContentPackage,
         ),
       );
       await this.memorySedimentation?.complete(input).catch((error) => {
@@ -987,7 +1007,19 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     if (!this.sourceContentPackages) {
       throw new SourceContentPackageUnavailableError(source);
     }
+    const textSelection = request.executionSnapshot?.sources.textSelection;
     return this.sourceContentPackages.resolve({
+      ...(textSelection && request.executionSnapshot
+        ? {
+            textSelection: {
+              contentPackagePlatform:
+                request.executionSnapshot.contentPackagePlatform,
+              ...(textSelection.platform
+                ? { platform: textSelection.platform }
+                : {}),
+            },
+          }
+        : {}),
       workspaceId: request.workspaceId,
       source,
     });
@@ -1266,6 +1298,7 @@ export function copyContentPackageRevisionWriteInput(
   occurredAt: string,
   sourceAssets: ReadonlyArray<{ id: string; role: 'source' | 'selected' }> = [],
   claimExtraction?: VisibleClaimExtraction,
+  sourceContentPackage?: ResolvedSourceContentPackage,
 ): ContentPackageRevisionWriteInput {
   const snapshot = input.request.executionSnapshot;
   if (!snapshot) {
@@ -1282,23 +1315,38 @@ export function copyContentPackageRevisionWriteInput(
     authorizedFactRefs: input.allowedFactRefs ?? [],
     at: occurredAt,
   });
-  const versions = input.selection.candidates.map((candidate) => ({
-    id: copyRevisionVersionId(
-      input.workflowId,
-      input.request.packageId,
-      candidate,
-    ),
-    title: candidate.title,
-    body: candidate.body,
-    conversionHook: candidate.conversionHook,
-    harnessCandidateId: candidate.candidateId,
-    harnessScore: candidate.score,
-    orderedAssetIds: [...new Set(input.brief.assetRefs)],
-    topics: [],
-    createdAt: occurredAt,
-    createdBy: `harness-${input.workflowId}`,
-    source: 'ai_generated' as const,
-  }));
+  const textSelectionSource = resolveTextSelectionSource(
+    snapshot,
+    sourceContentPackage,
+  );
+  const versions = input.selection.candidates.map((candidate) => {
+    const sourceDocument = textSelectionSource?.document;
+    return {
+      id: copyRevisionVersionId(
+        input.workflowId,
+        input.request.packageId,
+        candidate,
+      ),
+      title: sourceDocument?.title ?? candidate.title,
+      body: textSelectionSource
+        ? assertTextSelectionCandidateBody(candidate.body, textSelectionSource)
+        : candidate.body,
+      ...(sourceDocument
+        ? sourceDocument.conversionHook
+          ? { conversionHook: sourceDocument.conversionHook }
+          : {}
+        : { conversionHook: candidate.conversionHook }),
+      harnessCandidateId: candidate.candidateId,
+      harnessScore: candidate.score,
+      orderedAssetIds: sourceDocument
+        ? [...sourceDocument.orderedAssetIds]
+        : [...new Set(input.brief.assetRefs)],
+      topics: sourceDocument ? [...sourceDocument.topics] : [],
+      createdAt: occurredAt,
+      createdBy: `harness-${input.workflowId}`,
+      source: 'ai_generated' as const,
+    };
+  });
   const winner = versions.find(
     (candidate) =>
       candidate.harnessCandidateId === input.selection.winner.candidateId,
@@ -1355,7 +1403,9 @@ export function copyContentPackageRevisionWriteInput(
     workAsset: {
       body: winner.body,
       candidateIndex: 0,
-      conversionHook: winner.conversionHook,
+      ...(winner.conversionHook
+        ? { conversionHook: winner.conversionHook }
+        : {}),
       createdAt: occurredAt,
       id: workAssetId,
       jobId: snapshot.task.id,
@@ -1371,6 +1421,80 @@ export function copyContentPackageRevisionWriteInput(
   };
   assertCopyRevisionAssemblyComplete(revision);
   return revision;
+}
+
+function resolveTextSelectionSource(
+  snapshot: NonNullable<HarnessWorkflowInput['executionSnapshot']>,
+  sourceContentPackage?: ResolvedSourceContentPackage,
+) {
+  const scope = snapshot.sources.textSelection;
+  if (!scope) return undefined;
+  const sourceReference = snapshot.sources.contentPackage;
+  const document = sourceContentPackage?.document;
+  const digest = document
+    ? createHash('sha256').update(document.body).digest('hex')
+    : undefined;
+  if (
+    !sourceReference ||
+    !sourceContentPackage ||
+    sourceReference.id !== scope.packageId ||
+    sourceContentPackage.reference.id !== sourceReference.id ||
+    sourceContentPackage.reference.revision !== sourceReference.revision ||
+    !document ||
+    document.platform !== scope.platform ||
+    document.id !== scope.versionId ||
+    scope.end > document.body.length ||
+    digest !== scope.sourceTextSha256 ||
+    document.body.slice(scope.start, scope.end) !== scope.selectedText
+  ) {
+    throw new HarnessTextSelectionConflictError();
+  }
+  return { document, end: scope.end, start: scope.start };
+}
+
+function assertTextSelectionCandidateBody(
+  candidateBody: string,
+  source: {
+    document: NonNullable<ResolvedSourceContentPackage['document']>;
+    end: number;
+    start: number;
+  },
+) {
+  const prefix = source.document.body.slice(0, source.start);
+  const suffix = source.document.body.slice(source.end);
+  if (
+    candidateBody.length < prefix.length + suffix.length ||
+    !candidateBody.startsWith(prefix) ||
+    !candidateBody.endsWith(suffix)
+  ) {
+    throw new HarnessTextSelectionConflictError();
+  }
+  return candidateBody;
+}
+
+function bindTextSelectionCandidateBrief(
+  brief: Extract<
+    Awaited<ReturnType<typeof compileExecutionBrief>>,
+    { kind: 'copy' }
+  >,
+  source?: {
+    document: NonNullable<ResolvedSourceContentPackage['document']>;
+    end: number;
+    start: number;
+  },
+) {
+  if (!source) return brief;
+  const selectedText = source.document.body.slice(source.start, source.end);
+  const machineContract = `result_text_selection_v1:${JSON.stringify({
+    end: source.end,
+    sourceBody: source.document.body,
+    start: source.start,
+  })}`;
+  return {
+    ...brief,
+    constraints: [...brief.constraints, machineContract],
+    instructions: `${brief.instructions}\n\n选区调整的生产合同（必须严格执行）：\n原始完整正文：${source.document.body}\n允许变更的区间：${source.start}-${source.end}\n选中文字：${selectedText}\ncandidate.body 必须返回完整正文，仅该区间可变；区间外的前缀和后缀必须逐字保留。`,
+  };
 }
 
 function copyRevisionVersionId(

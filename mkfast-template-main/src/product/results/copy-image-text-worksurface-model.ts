@@ -9,6 +9,8 @@
  * client-concat platform variants (formal copy.adapt only).
  */
 
+import type { ResultAdjustTextSelectionScope } from '@meiye/contracts';
+
 // ---------------------------------------------------------------------------
 // Document fields (P0 editable)
 // ---------------------------------------------------------------------------
@@ -188,6 +190,48 @@ export function captureStableSelectionAnchor(
     anchorHash: hashSelectionAnchorParts(field, prefix, selectedText, suffix),
     start,
     end,
+  };
+}
+
+/**
+ * Build the canonical Result-adjust scope for a real editor selection.
+ *
+ * This deliberately accepts offsets only after `captureStableSelectionAnchor`
+ * validates a non-empty range. The caller must never substitute the whole
+ * document when the editor has no selection.
+ */
+export async function buildTextSelectionAdjustScope(input: {
+  body: string;
+  end: number;
+  packageId: string;
+  platform?: ResultAdjustTextSelectionScope['platform'];
+  start: number;
+  versionId: string;
+}): Promise<ResultAdjustTextSelectionScope> {
+  const anchor = captureStableSelectionAnchor(
+    input.body,
+    'body',
+    input.start,
+    input.end
+  );
+  if ('kind' in anchor) throw new Error(anchor.message);
+  const digest = await globalThis.crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(input.body)
+  );
+  const sourceTextSha256 = [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+  return {
+    end: anchor.end,
+    field: 'body',
+    kind: 'text_selection',
+    packageId: input.packageId,
+    ...(input.platform ? { platform: input.platform } : {}),
+    selectedText: anchor.selectedText,
+    sourceTextSha256,
+    start: anchor.start,
+    versionId: input.versionId,
   };
 }
 
@@ -733,6 +777,10 @@ export function routeAdjustExecution(input: {
 export type CopyImageTextWorksurfaceFacts = {
   workId: string;
   baseRevisionId: string;
+  /** Canonical package owning `baseRevisionId`; required for Selection AI. */
+  packageId?: string;
+  /** Present when `baseRevisionId` belongs to this exact platform variant. */
+  sourcePlatform?: ResultAdjustTextSelectionScope['platform'];
   document: CopyDocumentFields;
   /** Optional alternative candidates (on-demand, not three technical cards). */
   alternativeCandidates?: readonly DocumentCandidate[];

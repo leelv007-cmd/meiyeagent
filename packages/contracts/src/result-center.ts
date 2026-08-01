@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { contentPackagePlatformSchema } from './content-package.js';
+
 /**
  * Result Center navigation / shell contract (S1 / #87, WT-D1 / #99).
  *
@@ -227,7 +229,46 @@ export const resultAdjustSourceSchema = z.discriminatedUnion('kind', [
   resultAdjustContentPackageSourceSchema,
 ]);
 
-const resultAdjustScopeSchema = z.discriminatedUnion('kind', [
+/**
+ * Exact body selection captured from one canonical ContentPackage version.
+ *
+ * The full-text digest binds offsets to the complete source snapshot; the
+ * selected text then independently binds the range. Core re-reads both before
+ * prepare and delivery, so equal-length edits and late confirmations fail
+ * closed instead of applying an offset to different copy.
+ */
+export const resultAdjustTextSelectionScopeSchema = z
+  .object({
+    end: z.number().int().positive(),
+    field: z.literal('body'),
+    kind: z.literal('text_selection'),
+    packageId: resultObjectIdSchema,
+    /** Present binds a platform variant; absent binds package currentVersion. */
+    platform: contentPackagePlatformSchema.optional(),
+    selectedText: z.string().min(1).max(4_000),
+    sourceTextSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    start: z.number().int().nonnegative(),
+    versionId: resultObjectIdSchema,
+  })
+  .strict()
+  .superRefine((scope, context) => {
+    if (scope.end <= scope.start) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Text selection end must be after start.',
+        path: ['end'],
+      });
+    }
+    if (scope.selectedText.length !== scope.end - scope.start) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Selected text must exactly match the captured range length.',
+        path: ['selectedText'],
+      });
+    }
+  });
+
+export const resultAdjustScopeSchema = z.discriminatedUnion('kind', [
   z
     .object({
       assetId: resultObjectIdSchema,
@@ -240,6 +281,7 @@ const resultAdjustScopeSchema = z.discriminatedUnion('kind', [
       kind: z.literal('set'),
     })
     .strict(),
+  resultAdjustTextSelectionScopeSchema,
 ]);
 
 /** Prepare an adjustment by freezing its source revision and explicit scope. */
@@ -251,7 +293,25 @@ export const resultAdjustCommandSchema = z
     source: resultAdjustSourceSchema,
     workId: resultObjectIdSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((command, context) => {
+    if (command.scope?.kind !== 'text_selection') return;
+    if (command.source.kind !== 'content_package_snapshot') {
+      context.addIssue({
+        code: 'custom',
+        message: 'Text selection adjustment requires a ContentPackage source.',
+        path: ['source'],
+      });
+      return;
+    }
+    if (command.scope.packageId !== command.source.packageId) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Text selection package must match the frozen source package.',
+        path: ['scope', 'packageId'],
+      });
+    }
+  });
 
 /**
  * Submit a prepared adjustment with a server-owned, already-confirmed quote.
@@ -274,7 +334,20 @@ export const resultAdjustConfirmCommandSchema = z.union([
       scope: resultAdjustScopeSchema.optional(),
       source: resultAdjustContentPackageSourceSchema,
     })
-    .strict(),
+    .strict()
+    .superRefine((command, context) => {
+      if (
+        command.scope?.kind === 'text_selection' &&
+        command.scope.packageId !== command.source.packageId
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message:
+            'Text selection package must match the frozen source package.',
+          path: ['scope', 'packageId'],
+        });
+      }
+    }),
 ]);
 
 export const resultExportCommandSchema = z
@@ -292,6 +365,9 @@ export type ResultAdjustConfirmCommand = z.infer<
   typeof resultAdjustConfirmCommandSchema
 >;
 export type ResultAdjustSource = z.infer<typeof resultAdjustSourceSchema>;
+export type ResultAdjustTextSelectionScope = z.infer<
+  typeof resultAdjustTextSelectionScopeSchema
+>;
 export type ResultExportCommand = z.infer<typeof resultExportCommandSchema>;
 
 /**

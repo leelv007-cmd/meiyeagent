@@ -23,6 +23,7 @@ afterEach(() => {
 
 const facts = {
   workId: 'work-copy-322',
+  packageId: 'package-322',
   baseRevisionId: 'rev-1',
   document: {
     title: '夏日美甲',
@@ -53,6 +54,32 @@ function supportTiptapSelectionGeometry() {
   });
 }
 
+async function selectBodyPrefix(
+  _user: ReturnType<typeof userEvent.setup>,
+  length = 4
+) {
+  supportTiptapSelectionGeometry();
+  const body = screen.getByTestId('copy-field-body');
+  body.focus();
+  const textNode = body.querySelector('p')?.firstChild;
+  if (!(textNode instanceof Text)) throw new Error('Missing editor text node');
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.collapse(textNode, 0);
+  fireEvent(document, new Event('selectionchange', { bubbles: true }));
+  const range = document.createRange();
+  range.setStart(textNode, 0);
+  range.setEnd(textNode, length);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+  fireEvent(document, new Event('selectionchange', { bubbles: true }));
+  await waitFor(() =>
+    expect(
+      screen.getByTestId('object-workspace-selection-ai-scope')
+    ).toHaveTextContent(`已选中 ${length} 个字`)
+  );
+}
+
 describe('object workspace shell + selection AI', () => {
   it('mounts the shared shell for the copy carrier', () => {
     render(<CopyImageTextWorksurface facts={facts} />);
@@ -79,6 +106,7 @@ describe('object workspace shell + selection AI', () => {
     const user = userEvent.setup();
     const onAdjust = vi.fn().mockResolvedValue(undefined);
     render(<CopyImageTextWorksurface facts={facts} onAdjust={onAdjust} />);
+    await selectBodyPrefix(user);
 
     const toolbar = screen.getByRole('toolbar', { name: '选区 AI 六动作' });
     expect(within(toolbar).getAllByRole('button')).toHaveLength(6);
@@ -101,8 +129,19 @@ describe('object workspace shell + selection AI', () => {
     expect(onAdjust.mock.calls[2]?.[0]).toMatch(
       /\u7cbe\u7b80\u4ee5\u4e0b\u9009\u533a/u
     );
-    for (const [instruction] of onAdjust.mock.calls) {
-      expect(instruction).toContain(facts.document.body);
+    for (const [instruction, scope] of onAdjust.mock.calls) {
+      expect(instruction).toContain('限时优惠');
+      expect(scope).toEqual({
+        end: 4,
+        field: 'body',
+        kind: 'text_selection',
+        packageId: facts.packageId,
+        selectedText: '限时优惠',
+        sourceTextSha256:
+          '237f8abaf25d335282eee72da5494eb427ceb23f7f8fb7f72ec01733f1ba4651',
+        start: 0,
+        versionId: facts.baseRevisionId,
+      });
     }
     expect(screen.queryByTestId('copy-selection-rewrite-preview')).toBeNull();
     expect(
@@ -117,6 +156,7 @@ describe('object workspace shell + selection AI', () => {
     const user = userEvent.setup();
     const onAdjust = vi.fn().mockResolvedValue(undefined);
     render(<CopyImageTextWorksurface facts={facts} onAdjust={onAdjust} />);
+    await selectBodyPrefix(user);
     await user.click(screen.getByTestId('selection-ai-custom'));
     expect(
       screen.getByTestId('object-workspace-selection-ai-instruction')
@@ -128,13 +168,14 @@ describe('object workspace shell + selection AI', () => {
     await user.click(screen.getByTestId('selection-ai-instruction-confirm'));
     await waitFor(() => expect(onAdjust).toHaveBeenCalledTimes(1));
     expect(onAdjust.mock.calls[0]?.[0]).toContain('更口语');
-    expect(onAdjust.mock.calls[0]?.[0]).toContain(facts.document.body);
+    expect(onAdjust.mock.calls[0]?.[0]).toContain('限时优惠');
   });
 
   it('keeps a failed selection AI submission visible and retryable', async () => {
     const user = userEvent.setup();
     const onAdjust = vi.fn().mockRejectedValue(new Error('调整报价暂时不可用'));
     render(<CopyImageTextWorksurface facts={facts} onAdjust={onAdjust} />);
+    await selectBodyPrefix(user);
 
     await user.click(screen.getByTestId('selection-ai-expand'));
 
@@ -159,16 +200,8 @@ describe('object workspace shell + selection AI', () => {
       />
     );
 
-    supportTiptapSelectionGeometry();
-
+    await selectBodyPrefix(user);
     const body = screen.getByTestId('copy-field-body');
-    body.focus();
-    await user.keyboard('{Control>}a{/Control}');
-    await waitFor(() =>
-      expect(
-        screen.getByTestId('object-workspace-selection-ai-scope')
-      ).toHaveTextContent(/已选中 \d+ 个字/u)
-    );
     fireEvent.click(screen.getByTestId('copy-rewrite-weaker_promo'));
     expect(
       screen.getByTestId('copy-selection-rewrite-preview')
@@ -190,11 +223,13 @@ describe('object workspace shell + selection AI', () => {
     expect(screen.queryByTestId('copy-selection-rewrite-preview')).toBeNull();
     expect(
       screen.getByTestId('object-workspace-selection-ai-scope')
-    ).toHaveTextContent('将改写整篇文案');
+    ).toHaveTextContent('先在正文里选中要调整的文字');
 
     fireEvent.click(screen.getByTestId('selection-ai-rewrite'));
-    await waitFor(() => expect(onAdjust).toHaveBeenCalledTimes(1));
-    expect(onAdjust.mock.calls[0]?.[0]).toContain('全新护理正文。');
+    expect(onAdjust).not.toHaveBeenCalled();
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '请先选择一段文字'
+    );
   });
 
   it('drops a selection preview when the merchant edits the body', async () => {
@@ -250,7 +285,7 @@ describe('object workspace shell + selection AI', () => {
     const user = userEvent.setup();
     const onAction = vi.fn();
     render(
-      <SelectionAiToolbar onAction={onAction} scopeKind="whole_document" />
+      <SelectionAiToolbar onAction={onAction} scopeKind="selection_required" />
     );
     for (const action of [
       'continue',

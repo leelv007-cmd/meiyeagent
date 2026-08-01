@@ -2,6 +2,7 @@ import {
 	type ContentPackage,
 	type ContentPackageKind,
 	type ContentPackagePlatform,
+	type ComposerContentPackagePlatform,
 } from "@meiye/contracts";
 
 import type { ContentPackageRightsResolverPort } from "../operations/types.js";
@@ -25,6 +26,16 @@ export interface SourceContentPackageReference {
 
 export interface ResolvedSourceContentPackage {
 	reference: SourceContentPackageReference;
+	/** Internal write-back source; never copied into provider context. */
+	document?: {
+		body: string;
+		conversionHook?: string;
+		id: string;
+		orderedAssetIds: string[];
+		platform?: ContentPackagePlatform;
+		title: string;
+		topics: string[];
+	};
 	structure: {
 		slots: Array<"headline" | "body" | "conversion_hook">;
 	};
@@ -40,6 +51,10 @@ export interface ResolvedSourceContentPackage {
 
 export interface ExecutionSourceContentPackageResolverPort {
 	resolve(input: {
+		textSelection?: {
+			contentPackagePlatform: ComposerContentPackagePlatform;
+			platform?: ContentPackagePlatform;
+		};
 		workspaceId: string;
 		source?: SourceContentPackageReference;
 	}): Promise<ResolvedSourceContentPackage | undefined>;
@@ -59,8 +74,9 @@ export class SourceContentPackageUnavailableError extends Error {
 
 /**
  * The only runtime projection of a source ContentPackage. It deliberately
- * exports content structure, source style and asset roles instead of provider
- * traces, URLs, or the package's mutable private internals.
+ * exports content structure, source style and asset roles plus one internal
+ * current-version document used only by exact-range delivery. Provider context
+ * projection deliberately omits that document.
  */
 export class ExecutionSourceContentPackageResolver
 	implements ExecutionSourceContentPackageResolverPort
@@ -71,6 +87,10 @@ export class ExecutionSourceContentPackageResolver
 	) {}
 
 	async resolve(input: {
+		textSelection?: {
+			contentPackagePlatform: ComposerContentPackagePlatform;
+			platform?: ContentPackagePlatform;
+		};
 		workspaceId: string;
 		source?: SourceContentPackageReference;
 	}) {
@@ -83,9 +103,27 @@ export class ExecutionSourceContentPackageResolver
 		if (!isAvailableSource(contentPackage, { ...input, source })) {
 			throw new SourceContentPackageUnavailableError(source);
 		}
-		const currentVersion = contentPackage.versions.find(
-			(version) => version.id === contentPackage.currentVersionId,
-		);
+		const platform = input.textSelection
+			? resolveAuthoritativeContentPackageVersionPlatform(
+					contentPackage,
+					input.textSelection.contentPackagePlatform,
+				)
+			: undefined;
+		if (input.textSelection && input.textSelection.platform !== platform) {
+			throw new SourceContentPackageUnavailableError(source);
+		}
+		const variant = platform
+			? contentPackage.variants.find(
+					(candidate) => candidate.platform === platform,
+				)
+			: undefined;
+		const currentVersion = platform
+			? variant?.versions.find(
+					(version) => version.id === variant.currentVersionId,
+				)
+			: contentPackage.versions.find(
+					(version) => version.id === contentPackage.currentVersionId,
+				);
 		if (!currentVersion) {
 			throw new SourceContentPackageUnavailableError(source);
 		}
@@ -94,7 +132,7 @@ export class ExecutionSourceContentPackageResolver
 			"body",
 		];
 		if (currentVersion.conversionHook) slots.push("conversion_hook");
-		const assets = sourceAssets(contentPackage);
+		const assets = sourceAssets(contentPackage, currentVersion);
 		await this.assertSelectedAssetsAvailable(
 			input.workspaceId,
 			assets,
@@ -105,12 +143,24 @@ export class ExecutionSourceContentPackageResolver
 		);
 		return {
 			reference: { ...source },
+			document: {
+				body: currentVersion.body,
+				...(currentVersion.conversionHook
+					? { conversionHook: currentVersion.conversionHook }
+					: {}),
+				id: currentVersion.id,
+				orderedAssetIds: [...currentVersion.orderedAssetIds],
+				...(platform ? { platform } : {}),
+				title: currentVersion.title,
+				topics: [...currentVersion.topics],
+			},
 			structure: {
 				slots,
 			},
 			style: {
 				kind: contentPackage.kind,
-				sourcePlatform: contentPackage.source.targetPlatform ?? null,
+				sourcePlatform:
+					platform ?? contentPackage.source.targetPlatform ?? null,
 			},
 			assets,
 		};
@@ -149,6 +199,27 @@ export class ExecutionSourceContentPackageResolver
 	}
 }
 
+export function resolveAuthoritativeContentPackageVersionPlatform(
+	contentPackage: ContentPackage,
+	contentPackagePlatform: ComposerContentPackagePlatform,
+): ContentPackagePlatform | undefined {
+	if (
+		contentPackagePlatform !== "xiaohongshu" &&
+		contentPackagePlatform !== "douyin" &&
+		contentPackagePlatform !== "video_account"
+	) {
+		return undefined;
+	}
+	const variant = contentPackage.variants.find(
+		(candidate) => candidate.platform === contentPackagePlatform,
+	);
+	return variant?.versions.some(
+		(version) => version.id === variant.currentVersionId,
+	)
+		? contentPackagePlatform
+		: undefined;
+}
+
 function isAvailableSource(
 	contentPackage: ContentPackage | null,
 	input: {
@@ -167,15 +238,15 @@ function isAvailableSource(
 	);
 }
 
-function sourceAssets(contentPackage: ContentPackage) {
+function sourceAssets(
+	contentPackage: ContentPackage,
+	currentVersion: ContentPackage['versions'][number],
+) {
 	const roles = new Map<string, "source" | "selected">();
 	for (const assetId of contentPackage.source.assetIds) {
 		roles.set(assetId, "source");
 	}
-	const currentVersion = contentPackage.versions.find(
-		(version) => version.id === contentPackage.currentVersionId,
-	);
-	for (const assetId of currentVersion?.orderedAssetIds ?? []) {
+	for (const assetId of currentVersion.orderedAssetIds) {
 		roles.set(assetId, "selected");
 	}
 	return [...roles].map(([id, role]) => ({ id, role }));

@@ -12,9 +12,24 @@ const context = {
   workspaceId: 'ws-1',
 } as const;
 
+const textSelectionScope = {
+  end: 9,
+  field: 'body',
+  kind: 'text_selection',
+  packageId: 'package-1',
+  selectedText: '预约到店',
+  sourceTextSha256:
+    '53bb35f895648a58695272f4be5b28010ddaaf5ff8adc4934f3f2130c3b25477',
+  start: 5,
+  versionId: 'version-1',
+} as const;
+
 function fixture(
   options: {
     noteSnapshot?: boolean;
+    packageBody?: string;
+    packageBodyAfterPrepare?: string;
+    packageVersionId?: string;
     packageWorkflowId?: string;
     packageRevision?: number;
     quoteStatus?: 'confirmed' | 'quoted';
@@ -24,11 +39,21 @@ function fixture(
     semanticSnapshot?: boolean;
     sourceOperation?: 'copy.generate' | 'image.generate' | 'video.generate';
     sourceSessionId?: string;
+    snapshotContentPackagePlatform?:
+      | 'douyin'
+      | 'generic'
+      | 'offline_material'
+      | 'video_account'
+      | 'wechat_moments'
+      | 'xiaohongshu';
+    variantBody?: string;
+    variantVersionId?: string;
   } = {},
 ) {
   const composerCalls: unknown[] = [];
   const deriveCalls: unknown[] = [];
   const submitCalls: unknown[][] = [];
+  let packageReadCount = 0;
   const operations = {
     async executeIdempotentModuleCommand(
       _context: unknown,
@@ -96,8 +121,9 @@ function fixture(
       };
     },
     async getContentPackage() {
+      packageReadCount += 1;
       return {
-        currentVersionId: 'version-1',
+        currentVersionId: options.packageVersionId ?? 'version-1',
         generated: {
           assetIds: ['asset-1', 'asset-2'],
           ownedAssets: [
@@ -132,10 +158,39 @@ function fixture(
                   },
                 }
               : {}),
-            id: 'version-1',
+            body:
+              packageReadCount > 1 && options.packageBodyAfterPrepare
+                ? options.packageBodyAfterPrepare
+                : (options.packageBody ?? '夏日护理，预约到店。'),
+            conversionHook: '私信预约',
+            createdAt: '2026-07-20T00:00:00.000Z',
+            id: options.packageVersionId ?? 'version-1',
             orderedAssetIds: ['asset-1', 'asset-2'],
+            title: '夏日护理',
+            topics: ['护理'],
           },
         ],
+        variants: options.variantBody
+          ? [
+              {
+                currentVersionId:
+                  options.variantVersionId ?? 'variant-version-1',
+                id: 'package-1-douyin',
+                platform: 'douyin',
+                versions: [
+                  {
+                    body: options.variantBody,
+                    conversionHook: '抖音私信预约',
+                    createdAt: '2026-07-20T00:00:00.000Z',
+                    id: options.variantVersionId ?? 'variant-version-1',
+                    orderedAssetIds: ['asset-2'],
+                    title: '抖音夏日护理',
+                    topics: ['抖音'],
+                  },
+                ],
+              },
+            ]
+          : [],
         workspaceId: 'ws-1',
       };
     },
@@ -167,7 +222,10 @@ function fixture(
     formula: { currency: 'CNY', expression: 'fresh', unitRate: 2 },
     lifecycleStatus: quoteStatus,
     outputCount: quoteOutputCount,
-    outputLabel: `${quoteOutputCount} 张 3:4 图片`,
+    outputLabel:
+      options.sourceOperation === 'copy.generate'
+        ? `${quoteOutputCount} 条内容候选`
+        : `${quoteOutputCount} 张 3:4 图片`,
     quoteId: 'quote-fresh',
     quotePolicyRevision: 'policy-fresh',
     revision: 'quote-revision-fresh',
@@ -189,12 +247,20 @@ function fixture(
       return {
         catalogModel: { id: 'image-model-old', revision: 'catalog-old' },
         contentModules: ['social_cover'] as ['social_cover'],
+        contentPackagePlatform:
+          options.snapshotContentPackagePlatform ?? 'xiaohongshu',
         contentPackage: { expectedRevision: 0, id: 'package-1' },
-        deliverable: {
-          aspectRatio: '3:4' as const,
-          kind: 'image_set' as const,
-          quantity: 2,
-        },
+        deliverable:
+          options.sourceOperation === 'copy.generate'
+            ? {
+                kind: 'copy' as const,
+                quantity: 2,
+              }
+            : {
+                aspectRatio: '3:4' as const,
+                kind: 'image_set' as const,
+                quantity: 2,
+              },
         id: options.semanticSnapshot
           ? 'snapshot-decision-note-style'
           : 'snapshot-task-1',
@@ -278,6 +344,235 @@ test('Composer snapshot adjustment prepares from frozen server facts', async () 
     operation: 'image.generate',
     quantity: 1,
   });
+});
+
+test('copy text selection adjustment binds the frozen range through confirmation', async () => {
+  const { composerCalls, port } = fixture({
+    quoteStatus: 'quoted',
+    sourceOperation: 'copy.generate',
+  });
+  const source = {
+    expectedPackageRevision: 3,
+    kind: 'content_package_snapshot' as const,
+    packageId: 'package-1',
+    snapshotId: 'snapshot-task-1',
+    workflowId: 'task-1',
+  };
+  const command = {
+    expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+    instruction: '语气更自然',
+    scope: textSelectionScope,
+    source,
+    workId: 'work-1',
+  };
+  const prepared = await port.prepareAdjust(
+    context,
+    command,
+    'adjust-text-selection-prepare',
+  );
+
+  assert.deepEqual(prepared.quoteIntent, {
+    catalogModelId: 'image-model-old',
+    operation: 'copy.generate',
+    quantity: 1,
+  });
+
+  await port.adjust(
+    context,
+    {
+      billingQuoteId: 'quote-fresh',
+      derivedTaskId: prepared.task.id,
+      derivedWorkId: prepared.work.id,
+      instruction: command.instruction,
+      scope: textSelectionScope,
+      source,
+    },
+    'adjust-text-selection-confirm',
+  );
+
+  assert.equal(composerCalls.length, 1);
+  assert.deepEqual(
+    (composerCalls[0] as { textSelectionScope?: unknown }).textSelectionScope,
+    textSelectionScope,
+  );
+  assert.match(
+    (composerCalls[0] as { instruction: string }).instruction,
+    /候选 body 必须返回完整正文/u,
+  );
+});
+
+test('copy text selection adjustment strictly binds the visible platform variant', async () => {
+  const variantScope = {
+    ...textSelectionScope,
+    platform: 'douyin' as const,
+    versionId: 'variant-version-1',
+  };
+  const source = {
+    expectedPackageRevision: 3,
+    kind: 'content_package_snapshot' as const,
+    packageId: 'package-1',
+    snapshotId: 'snapshot-task-1',
+    workflowId: 'task-1',
+  };
+  const { port } = fixture({
+    packageBody: '这是不同的主版本正文。',
+    snapshotContentPackagePlatform: 'douyin',
+    sourceOperation: 'copy.generate',
+    variantBody: '夏日护理，预约到店。',
+  });
+  const prepared = await port.prepareAdjust(
+    context,
+    {
+      expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+      instruction: '语气更自然',
+      scope: variantScope,
+      source,
+      workId: 'work-1',
+    },
+    'adjust-text-selection-variant',
+  );
+  assert.equal(prepared.quoteIntent.quantity, 1);
+
+  const missingVariant = fixture({ sourceOperation: 'copy.generate' });
+  await assert.rejects(
+    missingVariant.port.prepareAdjust(
+      context,
+      {
+        expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+        instruction: '语气更自然',
+        scope: variantScope,
+        source,
+        workId: 'work-1',
+      },
+      'adjust-text-selection-variant-missing',
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'RESULT_ADJUST_SCOPE_MISMATCH',
+  );
+
+  const crossPlatform = fixture({
+    snapshotContentPackagePlatform: 'xiaohongshu',
+    sourceOperation: 'copy.generate',
+    variantBody: '夏日护理，预约到店。',
+  });
+  await assert.rejects(
+    crossPlatform.port.prepareAdjust(
+      context,
+      {
+        expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+        instruction: '语气更自然',
+        scope: variantScope,
+        source,
+        workId: 'work-1',
+      },
+      'adjust-text-selection-cross-platform',
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'RESULT_ADJUST_SCOPE_MISMATCH',
+  );
+});
+
+test('copy text selection adjustment rejects version, digest, and selected-text drift', async () => {
+  const source = {
+    expectedPackageRevision: 3,
+    kind: 'content_package_snapshot' as const,
+    packageId: 'package-1',
+    snapshotId: 'snapshot-task-1',
+    workflowId: 'task-1',
+  };
+  const cases = [
+    {
+      fixtureOptions: {
+        packageBody: '夏日护理，预约到访。',
+        sourceOperation: 'copy.generate' as const,
+      },
+      scope: textSelectionScope,
+    },
+    {
+      fixtureOptions: {
+        packageVersionId: 'version-2',
+        sourceOperation: 'copy.generate' as const,
+      },
+      scope: textSelectionScope,
+    },
+    {
+      fixtureOptions: { sourceOperation: 'copy.generate' as const },
+      scope: { ...textSelectionScope, selectedText: '预约到访' },
+    },
+  ];
+
+  for (const [index, candidate] of cases.entries()) {
+    const { composerCalls, port } = fixture(candidate.fixtureOptions);
+    await assert.rejects(
+      port.prepareAdjust(
+        context,
+        {
+          expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+          instruction: '语气更自然',
+          scope: candidate.scope,
+          source,
+          workId: 'work-1',
+        },
+        `adjust-text-selection-drift-${index}`,
+      ),
+      (error: unknown) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'RESULT_ADJUST_SCOPE_MISMATCH',
+    );
+    assert.deepEqual(composerCalls, []);
+  }
+});
+
+test('copy text selection confirmation rejects equal-length late body drift', async () => {
+  const { composerCalls, port } = fixture({
+    packageBodyAfterPrepare: '夏日护理，预约到访。',
+    quoteStatus: 'quoted',
+    sourceOperation: 'copy.generate',
+  });
+  const source = {
+    expectedPackageRevision: 3,
+    kind: 'content_package_snapshot' as const,
+    packageId: 'package-1',
+    snapshotId: 'snapshot-task-1',
+    workflowId: 'task-1',
+  };
+  const command = {
+    expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+    instruction: '语气更自然',
+    scope: textSelectionScope,
+    source,
+    workId: 'work-1',
+  };
+  const prepared = await port.prepareAdjust(
+    context,
+    command,
+    'adjust-text-selection-late-prepare',
+  );
+
+  await assert.rejects(
+    port.adjust(
+      context,
+      {
+        billingQuoteId: 'quote-fresh',
+        derivedTaskId: prepared.task.id,
+        derivedWorkId: prepared.work.id,
+        instruction: command.instruction,
+        scope: textSelectionScope,
+        source,
+      },
+      'adjust-text-selection-late-confirm',
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'RESULT_ADJUST_SCOPE_MISMATCH',
+  );
+  assert.deepEqual(composerCalls, []);
 });
 
 test('Composer snapshot adjustment preparation does not create a legacy Work', async () => {

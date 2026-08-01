@@ -7,6 +7,7 @@ import test from 'node:test';
 import {
   ADJUST_PROMPT_PLACEHOLDER,
   applyCopyFieldEdit,
+  buildTextSelectionAdjustScope,
   captureStableSelectionAnchor,
   createCopyDocumentDraft,
   isClientConcatPlatformBody,
@@ -195,6 +196,30 @@ test('stable selection anchor binds text + context hash', () => {
       assert.equal(resolved.end, end);
     }
   }
+});
+
+test('selection AI scope binds package, version, full text digest and range', async () => {
+  const body = '夏日护理，预约到店。';
+  const scope = await buildTextSelectionAdjustScope({
+    body,
+    end: 9,
+    packageId: 'package-1',
+    platform: 'douyin',
+    start: 5,
+    versionId: 'version-1',
+  });
+  assert.deepEqual(scope, {
+    end: 9,
+    field: 'body',
+    kind: 'text_selection',
+    packageId: 'package-1',
+    platform: 'douyin',
+    selectedText: '预约到店',
+    sourceTextSha256:
+      '53bb35f895648a58695272f4be5b28010ddaaf5ff8adc4934f3f2130c3b25477',
+    start: 5,
+    versionId: 'version-1',
+  });
 });
 
 test('selection rewrite base drift returns conflict with compare options', () => {

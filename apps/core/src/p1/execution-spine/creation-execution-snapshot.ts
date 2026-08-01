@@ -11,6 +11,7 @@ import {
 	MAX_NOTE_PLAN_PAGE_COUNT,
 	MIN_NOTE_PLAN_PAGE_COUNT,
 	resolveComposerGenerationParams,
+	resultAdjustTextSelectionScopeSchema,
 	thinkingLevelSchema,
 } from "@meiye/contracts";
 import { z } from "zod";
@@ -69,8 +70,23 @@ const sourceReferencesSchema = z
 	.object({
 		assets: z.array(assetReferenceSchema).max(50),
 		contentPackage: revisionReferenceSchema.optional(),
+		textSelection: resultAdjustTextSelectionScopeSchema.optional(),
 	})
-	.strict();
+	.strict()
+	.superRefine((sources, context) => {
+		if (!sources.textSelection) return;
+		if (
+			!sources.contentPackage ||
+			sources.contentPackage.id !== sources.textSelection.packageId
+		) {
+			context.addIssue({
+				code: "custom",
+				message:
+					"Text selection source must match its ContentPackage reference.",
+				path: ["textSelection", "packageId"],
+			});
+		}
+	});
 
 const deliverableSchema = z
 	.object({

@@ -633,6 +633,38 @@ test('fixture copy candidate streams a trace of the frozen merchant intent', asy
   );
 });
 
+test('fixture copy candidate honors the production full-body text selection contract', async () => {
+  const executor = new FixtureAiStructuredObjectExecutor();
+  const generated = await executor.generate({
+    instructions: 'Generate one grounded copy candidate.',
+    prompt: JSON.stringify({
+      brief: {
+        constraints: [
+          `result_text_selection_v1:${JSON.stringify({
+            end: 9,
+            sourceBody: '夏日护理，预约到店。',
+            start: 5,
+          })}`,
+        ],
+        instructions: '只调整已选中文字。',
+      },
+      candidateId: 'c01',
+    }),
+    schema: z
+      .object({
+        assetRefs: z.array(z.string()),
+        body: z.string(),
+        conversionHook: z.string(),
+        factClaims: z.array(z.unknown()),
+        title: z.string(),
+      })
+      .strict(),
+    schemaName: 'harness_copy_candidate_v1',
+  });
+
+  assert.equal(generated.output.body, '夏日护理，优化后的预约到店。');
+});
+
 test('fixture failure drill rejects before provider acceptance from a cold fallback copy brief', async () => {
   const executor = new FixtureAiStructuredObjectExecutor();
   await assert.rejects(

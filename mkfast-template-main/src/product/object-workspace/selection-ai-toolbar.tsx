@@ -20,7 +20,7 @@ export type SelectionAiToolbarProps = {
   disabled?: boolean;
   /** Scope hint already resolved by the parent (selection vs whole doc). */
   scopeHint?: string;
-  scopeKind?: 'selection' | 'whole_document';
+  scopeKind?: 'selection' | 'selection_required';
 };
 
 export function SelectionAiToolbar(props: SelectionAiToolbarProps) {

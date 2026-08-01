@@ -55,7 +55,7 @@ test('projects only completed legacy or verifiable Composer adjustment sources',
   assert.deepEqual(
     resultAdjustSourceForResult({
       contentPackage: composerPackage,
-      job: null,
+      job: { id: 'legacy-job-also-present', status: 'completed' },
       workId: 'work-1',
     }),
     {
@@ -79,6 +79,18 @@ test('projects only completed legacy or verifiable Composer adjustment sources',
       workId: 'work-1',
     }),
     null
+  );
+
+  assert.deepEqual(
+    resultAdjustSourceForResult({
+      contentPackage: {
+        ...composerPackage,
+        source: { assetIds: [], workId: 'work-1' },
+      },
+      job: { id: 'legacy-fallback', status: 'completed' },
+      workId: 'work-1',
+    }),
+    { baseJobId: 'legacy-fallback', kind: 'legacy_job' }
   );
 });
 

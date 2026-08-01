@@ -540,7 +540,19 @@ export class LedgerBackedHarnessContextPort
     if (!this.sourceContentPackages) {
       throw new SourceContentPackageUnavailableError(source);
     }
+    const textSelection = request.executionSnapshot?.sources.textSelection;
     return this.sourceContentPackages.resolve({
+      ...(textSelection && request.executionSnapshot
+        ? {
+            textSelection: {
+              contentPackagePlatform:
+                request.executionSnapshot.contentPackagePlatform,
+              ...(textSelection.platform
+                ? { platform: textSelection.platform }
+                : {}),
+            },
+          }
+        : {}),
       workspaceId: request.workspaceId,
       source,
     });

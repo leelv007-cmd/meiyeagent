@@ -1,7 +1,13 @@
 /**
  * RTL: copy / image_text worksurface panels + adjust prompt.
  */
-import { cleanup, render, screen } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -13,6 +19,7 @@ afterEach(() => {
 
 const facts = {
   workId: 'work-copy',
+  packageId: 'package-1',
   baseRevisionId: 'rev-1',
   document: {
     title: '夏日美甲',
@@ -33,6 +40,45 @@ const facts = {
   lifecycle: 'candidate' as const,
   viewport: 'mobile' as const,
 };
+
+async function selectBodyPrefix(
+  _user: ReturnType<typeof userEvent.setup>,
+  length = 4
+) {
+  Object.defineProperty(document, 'elementFromPoint', {
+    configurable: true,
+    value: () => document.querySelector('[data-testid="copy-field-body"]'),
+  });
+  Object.defineProperties(Range.prototype, {
+    getBoundingClientRect: {
+      configurable: true,
+      value: () => new DOMRect(),
+    },
+    getClientRects: {
+      configurable: true,
+      value: () => [],
+    },
+  });
+  const body = screen.getByTestId('copy-field-body');
+  body.focus();
+  const textNode = body.querySelector('p')?.firstChild;
+  if (!(textNode instanceof Text)) throw new Error('Missing editor text node');
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.collapse(textNode, 0);
+  fireEvent(document, new Event('selectionchange', { bubbles: true }));
+  const range = document.createRange();
+  range.setStart(textNode, 0);
+  range.setEnd(textNode, length);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+  fireEvent(document, new Event('selectionchange', { bubbles: true }));
+  await waitFor(() =>
+    expect(
+      screen.getByTestId('object-workspace-selection-ai-scope')
+    ).toHaveTextContent(`已选中 ${length} 个字`)
+  );
+}
 
 describe('copy / image_text worksurface', () => {
   it('renders only supported result actions alongside editing and preview', () => {
@@ -138,31 +184,37 @@ describe('copy / image_text worksurface', () => {
     const user = userEvent.setup();
     const onAdjust = vi.fn().mockResolvedValue(undefined);
     render(<CopyImageTextWorksurface facts={facts} onAdjust={onAdjust} />);
+    await selectBodyPrefix(user);
 
     await user.click(screen.getByTestId('selection-ai-rewrite'));
     expect(onAdjust).toHaveBeenCalledTimes(1);
     expect(onAdjust.mock.calls[0]?.[0]).toMatch(/改写以下选区/u);
+    expect(onAdjust.mock.calls[0]?.[1]).toMatchObject({
+      end: 4,
+      kind: 'text_selection',
+      packageId: facts.packageId,
+      selectedText: '限时优惠',
+      start: 0,
+      versionId: facts.baseRevisionId,
+    });
   });
 
-  it('says which text a rewrite will touch before the click', async () => {
+  it('does not fabricate the whole document as a selection anchor', async () => {
     const user = userEvent.setup();
-    render(
-      <CopyImageTextWorksurface
-        facts={facts}
-        onAdjust={vi.fn().mockResolvedValue(undefined)}
-      />
-    );
+    const onAdjust = vi.fn().mockResolvedValue(undefined);
+    render(<CopyImageTextWorksurface facts={facts} onAdjust={onAdjust} />);
 
-    // No selection: the rewrite runs over the whole 正文 and says so.
-    // Body is Tiptap (object workspace); default scope is whole_document.
     const panel = screen.getByTestId('object-workspace-selection-ai');
-    expect(panel).toHaveAttribute('data-rewrite-scope', 'whole_document');
+    expect(panel).toHaveAttribute('data-rewrite-scope', 'selection_required');
     expect(
       screen.getByTestId('object-workspace-selection-ai-scope')
-    ).toHaveTextContent('将改写整篇文案');
+    ).toHaveTextContent('先在正文里选中要调整的文字');
 
     await user.click(screen.getByTestId('selection-ai-rewrite'));
-    expect(screen.queryByTestId('copy-selection-rewrite-preview')).toBeNull();
+    expect(onAdjust).not.toHaveBeenCalled();
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '请先选择一段文字'
+    );
   });
 
   it('keeps alternatives collapsed by default and expands on demand', async () => {
@@ -204,6 +256,7 @@ describe('copy / image_text worksurface', () => {
         onSelectionRewriteResolved={onResolved}
       />
     );
+    await selectBodyPrefix(user);
     await user.click(screen.getByTestId('selection-ai-shorten'));
     expect(onResolved).toHaveBeenCalled();
     expect(onResolved.mock.calls[0]?.[0]?.kind).toBe('conflict');
@@ -229,6 +282,7 @@ describe('copy / image_text worksurface', () => {
     await screen.findByText('服务升级后的正文。');
     expect(screen.queryByTestId('copy-selection-rewrite-conflict')).toBeNull();
 
+    await selectBodyPrefix(user);
     await user.click(screen.getByTestId('selection-ai-shorten'));
     expect(
       await screen.findByTestId('copy-selection-rewrite-conflict')

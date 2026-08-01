@@ -1191,6 +1191,17 @@ test("a Result adjustment starts one new-chain submission from the frozen source
 		sourceContentPackage: { id: source.contentPackage.id, revision: 3 },
 		sourceSnapshot,
 		taskId: "composer-task:result-adjust:1",
+		textSelectionScope: {
+			end: 9,
+			field: "body",
+			kind: "text_selection",
+			packageId: source.contentPackage.id,
+			selectedText: "预约到店",
+			sourceTextSha256:
+				"53bb35f895648a58695272f4be5b28010ddaaf5ff8adc4934f3f2130c3b25477",
+			start: 5,
+			versionId: "version-1",
+		},
 		workId: "work-result-adjust-1",
 		workspaceId: "workspace-1",
 	});
@@ -1204,6 +1215,17 @@ test("a Result adjustment starts one new-chain submission from the frozen source
 		source.contentPackage.id,
 	);
 	assert.equal(adjusted.snapshot.sources.contentPackage?.revision, "3");
+	assert.deepEqual(adjusted.snapshot.sources.textSelection, {
+		end: 9,
+		field: "body",
+		kind: "text_selection",
+		packageId: source.contentPackage.id,
+		selectedText: "预约到店",
+		sourceTextSha256:
+			"53bb35f895648a58695272f4be5b28010ddaaf5ff8adc4934f3f2130c3b25477",
+		start: 5,
+		versionId: "version-1",
+	});
 	assert.match(adjusted.snapshot.intent.text, /调整要求：语气更自然/u);
 	assert.equal(adjusted.snapshot.deliverable.quantity, 1);
 	assert.equal(adjusted.snapshot.deliverables[0]?.quantity, 1);

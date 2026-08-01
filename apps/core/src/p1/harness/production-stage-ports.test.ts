@@ -1292,6 +1292,204 @@ test('a source ContentPackage enters the Copy Brief and fails closed after revoc
   assert.equal(executionDelivery.inputs.length, 0);
 });
 
+test('text selection delivery accepts a full candidate only when text outside the range is unchanged', async () => {
+  const source = { id: 'source-package-1', revision: '3' };
+  const scope = {
+    end: 9,
+    field: 'body' as const,
+    kind: 'text_selection' as const,
+    packageId: source.id,
+    selectedText: '预约到店',
+    sourceTextSha256:
+      '53bb35f895648a58695272f4be5b28010ddaaf5ff8adc4934f3f2130c3b25477',
+    start: 5,
+    versionId: 'source-version-1',
+  };
+  const snapshot = composerSnapshot(source, scope);
+  const executionDelivery = new RecordingRevisionWriter();
+  const productionRunner = new QueueRunner([
+    candidate('模型不得覆盖的标题', {
+      assetRefs: ['selected-asset-1'],
+      body: '夏日护理，立即预约到店。',
+      conversionHook: '模型不得覆盖的 CTA',
+      expressionIdentityRef: 'marketing_identity:identity-1:identity-r1',
+    }),
+  ]);
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => productionRunner },
+    {
+      async compileAndFreeze() {
+        return contextWithSourcePackage();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-22T10:00:00.000Z',
+    undefined,
+    executionDelivery,
+    {
+      async resolve() {
+        return sourceContentPackageProjection();
+      },
+    },
+  );
+
+  const generatedSelection = await ports.executeAndSelect({
+    workflowId: snapshot.task.id,
+    request: composerRequest(snapshot),
+    context: contextWithSourcePackage(),
+    brief: {
+      kind: 'copy',
+      instructions: '只替换已选中的预约文字。'.repeat(5),
+      platform: 'douyin',
+      cta: '私信预约',
+      factRefs: [],
+      assetRefs: ['selected-asset-1'],
+      identityRefs: ['marketing_identity:identity-1:identity-r1'],
+      constraints: [],
+    },
+  });
+  assert.equal(productionRunner.requests[0]?.schemaName, 'harness_copy_candidate_v1');
+  const providerPrompt = JSON.parse(productionRunner.requests[0]?.prompt ?? '{}');
+  assert.match(
+    providerPrompt.brief.instructions,
+    /原始完整正文：夏日护理，预约到店。/u,
+  );
+  assert.match(
+    providerPrompt.brief.instructions,
+    /candidate\.body 必须返回完整正文/u,
+  );
+
+  const deliveryInput: Parameters<typeof ports.assembleAndDeliver>[0] = {
+    workflowId: snapshot.task.id,
+    request: composerRequest(snapshot),
+    declaration: {
+      normalizedIntent: '调整预约文案',
+      taskType: 'daily_service_exposure',
+      deliveryLayer: 'copy',
+      relevantAssetCategories: ['industry_category'],
+      usedAssetCategories: ['industry_category'],
+      route: 'customized',
+      routingSource: 'model',
+      implicitConstraints: [],
+    },
+    context: contextWithSourcePackage(),
+    brief: {
+      kind: 'copy',
+      instructions: '只替换已选中的预约文字。'.repeat(5),
+      platform: 'douyin',
+      cta: '私信预约',
+      factRefs: [],
+      assetRefs: ['selected-asset-1'],
+      identityRefs: ['marketing_identity:identity-1:identity-r1'],
+      constraints: [],
+    },
+    selection: generatedSelection,
+  };
+  await ports.assembleAndDeliver(deliveryInput);
+
+  assert.equal(executionDelivery.inputs.length, 1);
+  assert.deepEqual(
+    {
+      body: executionDelivery.inputs[0]?.version.body,
+      conversionHook: executionDelivery.inputs[0]?.version.conversionHook,
+      orderedAssetIds: executionDelivery.inputs[0]?.version.orderedAssetIds,
+      title: executionDelivery.inputs[0]?.version.title,
+      topics: executionDelivery.inputs[0]?.version.topics,
+      workAssetBody: executionDelivery.inputs[0]?.workAsset?.body,
+    },
+    {
+      body: '夏日护理，立即预约到店。',
+      conversionHook: '私信预约',
+      orderedAssetIds: ['selected-asset-1'],
+      title: '夏日护理',
+      topics: ['护理'],
+      workAssetBody: '夏日护理，立即预约到店。',
+    },
+  );
+  await assert.rejects(
+    ports.assembleAndDeliver({
+      ...deliveryInput,
+      selection: selectionFixture(),
+    }),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'HARNESS_TEXT_SELECTION_CONFLICT',
+  );
+  assert.equal(executionDelivery.inputs.length, 1);
+});
+
+test('text selection delivery rejects equal-length source drift before write', async () => {
+  const source = { id: 'source-package-1', revision: '3' };
+  const snapshot = composerSnapshot(source, {
+    end: 9,
+    field: 'body',
+    kind: 'text_selection',
+    packageId: source.id,
+    selectedText: '预约到店',
+    sourceTextSha256:
+      '53bb35f895648a58695272f4be5b28010ddaaf5ff8adc4934f3f2130c3b25477',
+    start: 5,
+    versionId: 'source-version-1',
+  });
+  const executionDelivery = new RecordingRevisionWriter();
+  const driftedSource = sourceContentPackageProjection();
+  driftedSource.document.body = '夏日护理，预约到访。';
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => new QueueRunner([]) },
+    {
+      async compileAndFreeze() {
+        return contextWithSourcePackage();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-22T10:00:00.000Z',
+    undefined,
+    executionDelivery,
+    { async resolve() { return driftedSource; } },
+  );
+
+  await assert.rejects(
+    ports.assembleAndDeliver({
+      workflowId: snapshot.task.id,
+      request: composerRequest(snapshot),
+      declaration: {
+        normalizedIntent: '调整预约文案',
+        taskType: 'daily_service_exposure',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['industry_category'],
+        usedAssetCategories: ['industry_category'],
+        route: 'customized',
+        routingSource: 'model',
+        implicitConstraints: [],
+      },
+      context: contextWithSourcePackage(),
+      brief: {
+        kind: 'copy',
+        instructions: '只替换已选中的预约文字。'.repeat(5),
+        platform: 'douyin',
+        cta: '私信预约',
+        factRefs: [],
+        assetRefs: ['selected-asset-1'],
+        identityRefs: [],
+        constraints: [],
+      },
+      selection: selectionFixture(),
+    }),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'HARNESS_TEXT_SELECTION_CONFLICT',
+  );
+  assert.equal(executionDelivery.inputs.length, 0);
+});
+
 test('only selected source-package assets can cross Brief, selection, and delivery', async () => {
   const source = { id: 'source-package-1', revision: '3' };
   const runner = new QueueRunner([
@@ -3299,6 +3497,7 @@ type CandidateFixture = {
   title: string;
   body: string;
   conversionHook: string;
+  expressionIdentityRef?: string;
   factClaims: Array<{
     kind: 'price' | 'benefit' | 'qualification' | 'offer' | 'other';
     value: string;
@@ -3640,6 +3839,14 @@ function contextWithSourcePackage(): HarnessContextSnapshot {
 function sourceContentPackageProjection() {
   return {
     reference: { id: 'source-package-1', revision: '3' },
+    document: {
+      body: '夏日护理，预约到店。',
+      conversionHook: '私信预约',
+      id: 'source-version-1',
+      orderedAssetIds: ['selected-asset-1'],
+      title: '夏日护理',
+      topics: ['护理'],
+    },
     structure: {
       slots: ['headline', 'body', 'conversion_hook'] as Array<
         'headline' | 'body' | 'conversion_hook'
@@ -3680,6 +3887,15 @@ function selectionFixture() {
 function composerSnapshot(sourceContentPackage?: {
   id: string;
   revision: string;
+}, textSelection?: {
+  end: number;
+  field: 'body';
+  kind: 'text_selection';
+  packageId: string;
+  selectedText: string;
+  sourceTextSha256: string;
+  start: number;
+  versionId: string;
 }) {
   return createCreationExecutionSnapshot(
     {
@@ -3704,6 +3920,7 @@ function composerSnapshot(sourceContentPackage?: {
         ...(sourceContentPackage
           ? { contentPackage: sourceContentPackage }
           : {}),
+        ...(textSelection ? { textSelection } : {}),
       },
       rights: { revision: 'rights-r1', summary: 'authorized source assets' },
       identity: { id: 'identity-1', revision: 'identity-r1' },

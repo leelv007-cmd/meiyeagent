@@ -10,6 +10,7 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import type { ResultAdjustCommand } from '@meiye/contracts';
 import {
   NoteObjectWorkspace,
   ObjectWorkspaceEditor,
@@ -35,6 +36,7 @@ import {
   COPY_PREVIEW_EXPORT_CARRIERS,
   COPY_PREVIEW_PLATFORM_CARRIERS,
   FACT_SOURCE_KIND_LABELS,
+  buildTextSelectionAdjustScope,
   captureStableSelectionAnchor,
   projectCopyImageTextWorksurface,
   resolveSelectionRewrite,
@@ -71,7 +73,10 @@ export type CopyImageTextWorksurfaceProps = {
   onSelectionRewriteResolved?: (result: SelectionRewriteResolveResult) => void;
   onCarrierChange?: (carrier: CopyPreviewCarrier) => void;
   onGeneratePlatformVariants?: () => Promise<void>;
-  onAdjust?: (instruction: string) => void | Promise<void>;
+  onAdjust?: (
+    instruction: string,
+    scope?: ResultAdjustCommand['scope']
+  ) => void | Promise<void>;
   /**
    * Why 「还想怎么改？」 is unavailable on this result, in merchant words.
    * Present means the box is disabled with the sentence shown — the old
@@ -183,7 +188,7 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
     bodySelection.end <= draft.body.length
       ? bodySelection.end - bodySelection.start
       : 0;
-  const rewriteScope =
+  const quickEditScope =
     selectedLength > 0
       ? {
           kind: 'selection' as const,
@@ -194,9 +199,32 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
           hint: '还没选中文字，将改写整篇文案；只想改一句的话，先在正文里选中它。',
         };
 
-  const runSelectionAi = (action: SelectionAiAction, instruction?: string) => {
-    const start = bodySelection?.start ?? 0;
-    const end = bodySelection?.end ?? draft.body.length;
+  const selectionAiScope =
+    selectedLength > 0
+      ? {
+          kind: 'selection' as const,
+          hint: `已选中 ${selectedLength} 个字，只改写选中部分。改写绑定当前版本与全文摘要。`,
+        }
+      : {
+          kind: 'selection_required' as const,
+          hint: '先在正文里选中要调整的文字；未选区时不会把整篇伪装成稳定锚点。',
+        };
+
+  const runSelectionAi = async (
+    action: SelectionAiAction,
+    instruction?: string
+  ) => {
+    if (!bodySelection || selectedLength === 0) {
+      throw new Error('请先选择一段文字');
+    }
+    if (!props.facts.packageId) {
+      throw new Error('当前成品缺少可写入的内容版本，请刷新后重试。');
+    }
+    if (draft.body !== view.document.body) {
+      throw new Error('请先保存正文修改，再对最新版本使用选区 AI。');
+    }
+    const start = bodySelection.start;
+    const end = bodySelection.end;
     const anchor = captureStableSelectionAnchor(draft.body, 'body', start, end);
     if ('kind' in anchor) {
       throw new Error(anchor.message);
@@ -217,12 +245,23 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
       validated.resolvedStart,
       validated.resolvedEnd
     );
+    const scope = await buildTextSelectionAdjustScope({
+      body: draft.body,
+      end: validated.resolvedEnd,
+      packageId: props.facts.packageId,
+      ...(props.facts.sourcePlatform
+        ? { platform: props.facts.sourcePlatform }
+        : {}),
+      start: validated.resolvedStart,
+      versionId: props.facts.baseRevisionId,
+    });
     return props.onAdjust?.(
       buildSelectionAiPrompt({
         action,
         selection,
         ...(instruction?.trim() ? { instruction: instruction.trim() } : {}),
-      })
+      }),
+      scope
     );
   };
 
@@ -263,7 +302,7 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
         after: resolved.preview.after,
         fieldAfter: resolved.preview.fieldAfter,
         instruction: resolved.command.instruction,
-        scope: rewriteScope.kind,
+        scope: quickEditScope.kind,
       });
     }
     props.onSelectionRewrite?.(action, anchor);
@@ -453,8 +492,8 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
         {props.onAdjust && !props.adjustUnavailableReason ? (
           <SelectionAiToolbar
             onAction={runSelectionAi}
-            scopeHint={rewriteScope.hint}
-            scopeKind={rewriteScope.kind}
+            scopeHint={selectionAiScope.hint}
+            scopeKind={selectionAiScope.kind}
           />
         ) : null}
 
@@ -462,7 +501,7 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
           <section
             className="space-y-2 rounded-lg border p-4"
             data-testid="copy-selection-rewrite"
-            data-rewrite-scope={rewriteScope.kind}
+            data-rewrite-scope={quickEditScope.kind}
           >
             <h3 className="text-sm font-medium">快捷微调</h3>
             {/*
@@ -475,7 +514,7 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
               className="text-xs text-muted-foreground"
               data-testid="copy-selection-rewrite-scope"
             >
-              {rewriteScope.hint}
+              {quickEditScope.hint}
             </p>
             <div
               className="flex flex-wrap gap-2"

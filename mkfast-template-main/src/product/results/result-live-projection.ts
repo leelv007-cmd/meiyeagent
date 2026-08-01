@@ -89,27 +89,26 @@ export function resultAdjustSourceForResult(input: {
   job: Pick<CreativeJob, 'id' | 'status'> | null | undefined;
   workId: string;
 }): ResultAdjustSource | null {
-  if (input.job?.status === 'completed') {
-    return { baseJobId: input.job.id, kind: 'legacy_job' };
-  }
   const snapshot = input.contentPackage?.source.creationExecutionSnapshot;
   const workflowId = input.contentPackage?.source.workflowId;
   if (
-    !input.contentPackage?.currentVersionId ||
-    input.contentPackage.source.workId !== input.workId ||
-    !workflowId ||
-    !snapshot ||
-    input.contentPackage.source.workflowRevision !== snapshot.revision
+    input.contentPackage?.currentVersionId &&
+    input.contentPackage.source.workId === input.workId &&
+    workflowId &&
+    snapshot &&
+    input.contentPackage.source.workflowRevision === snapshot.revision
   ) {
-    return null;
+    return {
+      expectedPackageRevision: input.contentPackage.revision,
+      kind: 'content_package_snapshot',
+      packageId: input.contentPackage.id,
+      snapshotId: snapshot.id,
+      workflowId,
+    };
   }
-  return {
-    expectedPackageRevision: input.contentPackage.revision,
-    kind: 'content_package_snapshot',
-    packageId: input.contentPackage.id,
-    snapshotId: snapshot.id,
-    workflowId,
-  };
+  return input.job?.status === 'completed'
+    ? { baseJobId: input.job.id, kind: 'legacy_job' }
+    : null;
 }
 
 export function resultHarnessStreamLifecycle(input: {

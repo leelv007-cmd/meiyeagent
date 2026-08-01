@@ -139,9 +139,33 @@ async function assertSelectionAiReachesModelAdjust(page: Page) {
   const worksurface = page.getByTestId(COPY_CONTRACT.resultSurfaceTestId);
   const body = worksurface.getByTestId('copy-field-body');
   await body.click();
-  await page.keyboard.press(
-    process.platform === 'darwin' ? 'Meta+A' : 'Control+A'
-  );
+  const selection = await body.evaluate((editor) => {
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+    const textNode = walker.nextNode();
+    if (!(textNode instanceof Text) || textNode.data.length < 8) {
+      throw new Error('Selection AI acceptance requires a non-trivial body.');
+    }
+    const start = 2;
+    const end = Math.min(start + 4, textNode.data.length - 1);
+    const range = document.createRange();
+    range.setStart(textNode, start);
+    range.setEnd(textNode, end);
+    const browserSelection = window.getSelection();
+    browserSelection?.removeAllRanges();
+    browserSelection?.addRange(range);
+    document.dispatchEvent(new Event('selectionchange', { bubbles: true }));
+    const fullText = editor.textContent ?? '';
+    return {
+      end,
+      fullText,
+      prefix: fullText.slice(0, start),
+      selectedText: textNode.data.slice(start, end),
+      start,
+      suffix: fullText.slice(end),
+    };
+  });
+  expect(selection.selectedText.length).toBeGreaterThan(0);
+  expect(selection.selectedText.length).toBeLessThan(selection.fullText.length);
   await expect(
     worksurface.getByTestId('object-workspace-selection-ai-scope')
   ).toContainText(/已选中 \d+ 个字/u);
@@ -151,15 +175,93 @@ async function assertSelectionAiReachesModelAdjust(page: Page) {
   });
   await expect(toolbar.getByRole('button')).toHaveCount(6);
 
-  for (const action of ['rewrite', 'expand', 'shorten'] as const) {
-    await toolbar.getByTestId(`selection-ai-${action}`).click();
-    const confirmation = page.getByTestId('image-adjust-confirmation');
-    await expect(confirmation).toBeVisible({ timeout: 60_000 });
-    await expect(
-      confirmation.getByTestId('execution-confirm-card')
-    ).toBeVisible();
-    await confirmation.getByTestId('execution-confirm-reject').click();
-    await expect(confirmation).toBeHidden();
+  const prepareResponsePromise = page.waitForResponse(
+    (response) => p1CommandAction(response, 'result_adjust_prepare'),
+    { timeout: 60_000 }
+  );
+  await toolbar.getByTestId('selection-ai-rewrite').click();
+  const prepareResponse = await prepareResponsePromise;
+  expect(prepareResponse.ok()).toBeTruthy();
+  const prepareRequest = prepareResponse.request().postDataJSON() as {
+    payload: {
+      scope?: {
+        end: number;
+        field: string;
+        kind: string;
+        packageId: string;
+        platform?: string;
+        selectedText: string;
+        sourceTextSha256: string;
+        start: number;
+        versionId: string;
+      };
+      source?: { kind?: string };
+    };
+  };
+  expect(prepareRequest.payload.source?.kind).toBe('content_package_snapshot');
+  expect(prepareRequest.payload.scope).toMatchObject({
+    end: selection.end,
+    field: 'body',
+    kind: 'text_selection',
+    selectedText: selection.selectedText,
+    start: selection.start,
+  });
+  expect(prepareRequest.payload.scope?.packageId).toBeTruthy();
+  expect(prepareRequest.payload.scope?.versionId).toBeTruthy();
+  expect(prepareRequest.payload.scope?.sourceTextSha256).toMatch(
+    /^[a-f0-9]{64}$/u
+  );
+
+  const confirmation = page.getByTestId('image-adjust-confirmation');
+  await expect(confirmation).toBeVisible({ timeout: 60_000 });
+  await expect(
+    confirmation.getByTestId('execution-confirm-card')
+  ).toBeVisible();
+  const confirmResponsePromise = page.waitForResponse(
+    (response) => p1CommandAction(response, 'result_adjust'),
+    { timeout: 60_000 }
+  );
+  await confirmation.getByTestId('execution-confirm-accept').click();
+  const confirmResponse = await confirmResponsePromise;
+  const confirmEnvelope = (await confirmResponse.json()) as {
+    data?: { work?: { id?: string } };
+    error?: { message?: string };
+  };
+  expect(
+    confirmResponse.ok(),
+    confirmEnvelope.error?.message ?? 'Selection AI confirmation failed'
+  ).toBeTruthy();
+  const adjustedWorkId = confirmEnvelope.data?.work?.id;
+  expect(adjustedWorkId).toBeTruthy();
+  await waitForResultJourney(page, COPY_CONTRACT, adjustedWorkId!);
+  const adjustedBody =
+    (await page
+      .getByTestId(COPY_CONTRACT.resultSurfaceTestId)
+      .getByTestId('copy-field-body')
+      .textContent()) ?? '';
+  expect(adjustedBody).toBe(
+    `${selection.prefix}优化后的${selection.selectedText}${selection.suffix}`
+  );
+}
+
+function p1CommandAction(
+  response: import('@playwright/test').Response,
+  action: string
+) {
+  if (
+    response.request().method() !== 'POST' ||
+    !response.url().includes('/api/core/p1/commands')
+  ) {
+    return false;
+  }
+  try {
+    const body = response.request().postDataJSON() as {
+      action?: string;
+      module?: string;
+    };
+    return body.module === 'result-delivery' && body.action === action;
+  } catch {
+    return false;
   }
 }
 

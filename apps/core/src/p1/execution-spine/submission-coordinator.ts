@@ -1,6 +1,7 @@
 import {
 	pickComposerSubmissionSignedFields,
 	structuredDecisionInputSchema,
+	type ResultAdjustTextSelectionScope,
 	type StructuredDecisionInput,
 } from "@meiye/contracts";
 
@@ -247,6 +248,7 @@ export class CreationSubmissionCoordinator {
 		sourceNoteStyleId?: string;
 		sourceSnapshot: CreationExecutionSnapshot;
 		taskId: string;
+		textSelectionScope?: ResultAdjustTextSelectionScope;
 		workId: string;
 		workspaceId: string;
 	}) {
@@ -312,6 +314,9 @@ export class CreationSubmissionCoordinator {
 					id: input.sourceContentPackage.id,
 					revision: String(input.sourceContentPackage.revision),
 				},
+				...(input.textSelectionScope
+					? { textSelection: input.textSelectionScope }
+					: {}),
 			},
 			surface: source.surface,
 			taskId: input.taskId,
@@ -356,6 +361,7 @@ export class CreationSubmissionCoordinator {
 				sourceContentPackage: input.sourceContentPackage,
 				sourceSnapshotId: source.id,
 				taskId: input.taskId,
+				textSelectionScope: input.textSelectionScope,
 				workId: input.workId,
 			}),
 			submission,
