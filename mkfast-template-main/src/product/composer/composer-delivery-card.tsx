@@ -31,7 +31,12 @@ import {
 } from './composer-delivery-rating-bar';
 import type { DeliveryFollowUpSeed } from './delivery-followup-seeds';
 
-/** Which Result Center panel an entry opens, bound to the delivered revision. */
+/**
+ * Which Result Center panel an entry opens, bound to the delivered revision.
+ *
+ * P1-07 / C7: `open` / primary card click = 进入对象工作区 gate.
+ * `export` label is 「导出/发布准备」placeholder — no distribution contract (§4.9).
+ */
 export type ComposerDeliveryAction = 'adopt' | 'adjust' | 'export';
 
 export type ComposerDeliveryOpenInput = {
@@ -51,7 +56,8 @@ export type DeliveryRatingTransition = {
 const ACTION_LABELS: Record<ComposerDeliveryAction, string> = {
   adopt: '采用这一版',
   adjust: '继续调整',
-  export: '导出使用',
+  /** §4.9: export/publish-prep placeholder — does not promise distribution. */
+  export: '导出/发布准备',
 };
 
 const ACTION_ORDER: ComposerDeliveryAction[] = ['adopt', 'adjust', 'export'];
@@ -164,7 +170,13 @@ export function ComposerDeliveryCard({
             {statement}
           </p>
         ) : null}
-        <p className="text-muted mt-2 text-xs">点开看完整成品</p>
+        {/* C7: 成品卡 = 进入对象工作区的门 — explicit gate copy on the card face. */}
+        <p
+          className="text-muted mt-2 text-xs"
+          data-testid="composer-delivery-object-workspace-gate"
+        >
+          进入对象工作区 · 点开看完整成品
+        </p>
       </button>
 
       {/*
@@ -194,6 +206,14 @@ export function ComposerDeliveryCard({
           className="mt-3 flex flex-wrap gap-2"
           data-testid="composer-delivery-actions"
         >
+          <button
+            className="meiye-glass-piece rounded-full px-3 py-1 text-xs font-medium"
+            data-testid="composer-delivery-action-object-workspace"
+            onClick={() => onOpen({ action: 'open', revision, taskId, workId })}
+            type="button"
+          >
+            进入对象工作区
+          </button>
           {ACTION_ORDER.map((action) => (
             <button
               className="meiye-glass-piece rounded-full px-3 py-1 text-xs"

@@ -39,7 +39,7 @@ test('every timeline turn kind (incl. stages fold) maps through the registry', (
   }
 });
 
-test('progressive mapping matches the P1-01 document-timeline grammar', () => {
+test('progressive mapping matches the P1-01/P1-07 document-timeline grammar', () => {
   const expected: Record<string, AgentFrameKind> = {
     merchant: 'narrative',
     route_notice: 'narrative',
@@ -48,6 +48,7 @@ test('progressive mapping matches the P1-01 document-timeline grammar', () => {
     report: 'narrative',
     question: 'decision',
     execution_confirm: 'decision',
+    note_plan: 'plan',
     candidate: 'result',
     delivery: 'result',
     terminal: 'task',
@@ -62,14 +63,16 @@ test('progressive mapping matches the P1-01 document-timeline grammar', () => {
   }
 });
 
-test('plan and memory families stay registered for progressive mapping', () => {
+test('plan family is claimed by note_plan; memory stays unclaimed', () => {
   assert.ok(AGENT_FRAME_KINDS.includes('plan'));
   assert.ok(AGENT_FRAME_KINDS.includes('memory'));
-  // No turn producer yet — ensure they are not accidentally claimed by a turn.
   const claimed = new Set(
     agentFrameRegistryEntries().map((entry) => entry.frameKind)
   );
-  assert.equal(claimed.has('plan'), false);
+  // P1-07: multi-page note outline maps onto plan.
+  assert.equal(claimed.has('plan'), true);
+  assert.equal(resolveAgentFrameKind('note_plan'), 'plan');
+  // memory proposals remain progressive (no turn producer yet).
   assert.equal(claimed.has('memory'), false);
 });
 
@@ -79,6 +82,6 @@ test('session turn kind list is exhaustive over ComposerTurn kind (compile + run
   for (const kind of COMPOSER_SESSION_TURN_KINDS) {
     assert.equal(typeof resolveAgentFrameKind(kind), 'string');
   }
-  // P1-05 added execution_confirm (was 8).
-  assert.equal(COMPOSER_SESSION_TURN_KINDS.length, 9);
+  // P1-05 execution_confirm + P1-07 note_plan.
+  assert.equal(COMPOSER_SESSION_TURN_KINDS.length, 10);
 });

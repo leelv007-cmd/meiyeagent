@@ -35,6 +35,11 @@ export const COMPOSER_TIMELINE_TURN_KINDS = [
   'question',
   /** P1-05: paid-media AG-UI interrupt (plan.ready → execution_confirm). */
   'execution_confirm',
+  /**
+   * P1-07 / #319: multi-page note outline timeline (editable pages + image
+   * status + per-page regenerate). Maps to AgentFrame plan family.
+   */
+  'note_plan',
   'candidate',
   'delivery',
   'report',
@@ -54,6 +59,7 @@ export const COMPOSER_SESSION_TURN_KINDS = [
   'stage',
   'question',
   'execution_confirm',
+  'note_plan',
   'candidate',
   'delivery',
   'report',
@@ -78,15 +84,15 @@ void _assertSessionTurnKindsExhaustive;
 /**
  * Resolve the AgentFrame family for a timeline turn kind.
  *
- * Mapping (progressive, P1-01 base + P1-05 interrupt):
+ * Mapping (progressive, P1-01 base + P1-05 interrupt + P1-07 note plan):
  * - merchant / route_notice / stage(s) / report → narrative
  * - question → decision (补问)
  * - execution_confirm → decision (付费媒体执行确认 interrupt；DecisionFrame 承载)
+ * - note_plan → plan (多页大纲 + 配图状态 + 逐页重生)
  * - candidate / delivery → result
  * - terminal → task (cancelled / leave-recover outcomes)
  *
- * plan / memory have no turn-kind producer yet; they stay registered for
- * future progressive mapping (NotePlan, memory proposals).
+ * memory stays registered for progressive mapping (memory proposals / P2).
  */
 export function resolveAgentFrameKind(
   turnKind: ComposerTimelineTurnKind
@@ -101,6 +107,8 @@ export function resolveAgentFrameKind(
     case 'question':
     case 'execution_confirm':
       return 'decision';
+    case 'note_plan':
+      return 'plan';
     case 'candidate':
     case 'delivery':
       return 'result';

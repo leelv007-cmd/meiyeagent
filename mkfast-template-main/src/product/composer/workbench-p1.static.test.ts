@@ -80,6 +80,9 @@ test('frame registry: conversation renders turns via AgentFrame host', () => {
   // P1-05: execution_confirm is an in-stream DecisionFrame, not sticky-only.
   assert.match(conversation, /execution_confirm/u);
   assert.match(conversation, /executionConfirmSlot/u);
+  // P1-07: multi-page note outline maps onto AgentFrame plan family.
+  assert.match(conversation, /note_plan/u);
+  assert.match(conversation, /NotePlanTimelineFrame/u);
   // Bubble stream retired for agent content (D1 document timeline).
   assert.doesNotMatch(conversation, /ChatMessage\.Assistant/u);
   assert.doesNotMatch(conversation, /ChatMessage\.User/u);
@@ -87,9 +90,32 @@ test('frame registry: conversation renders turns via AgentFrame host', () => {
   assert.match(registry, /AGENT_FRAME_KINDS/u);
   assert.match(registry, /COMPOSER_SESSION_TURN_KINDS/u);
   assert.match(registry, /execution_confirm/u);
+  assert.match(registry, /note_plan/u);
+  assert.match(registry, /case 'note_plan':\s*return 'plan'/u);
   const home = readSource('src/product/composer/composer-home.tsx');
   assert.match(home, /executionConfirmSlot/u);
   assert.match(home, /applyComposerPendingInterrupts/u);
+  assert.match(home, /applyComposerNotePlan/u);
   // Residual Brief-cancel feedback is not the paid-media confirm slot.
   assert.match(home, /execution-cost-feedback-slot/u);
+});
+
+test('P1-5 / #319: note plan timeline + C7 delivery gate are on the product surface', () => {
+  const timeline = readSource('src/product/composer/note-plan-timeline.ts');
+  assert.match(timeline, /editNotePlanPageOutline/u);
+  assert.match(timeline, /requestNotePlanPageRegenerate/u);
+  assert.match(timeline, /applyBatchImageStatusFromHarnessStage/u);
+  const frame = readSource('src/product/composer/note-plan-timeline-frame.tsx');
+  assert.match(frame, /note-plan-timeline-frame/u);
+  assert.match(frame, /note-plan-page-title-input/u);
+  assert.match(frame, /note-plan-page-image-status/u);
+  assert.match(frame, /note-plan-page-regenerate/u);
+  // C12: Composer outline uses plain inputs only (no rich-text editor package).
+  assert.doesNotMatch(frame, /@tiptap\//u);
+  assert.match(frame, /<input/u);
+  assert.match(frame, /<textarea/u);
+  const delivery = readSource('src/product/composer/composer-delivery-card.tsx');
+  assert.match(delivery, /composer-delivery-object-workspace-gate/u);
+  assert.match(delivery, /composer-delivery-action-object-workspace/u);
+  assert.match(delivery, /导出\/发布准备/u);
 });

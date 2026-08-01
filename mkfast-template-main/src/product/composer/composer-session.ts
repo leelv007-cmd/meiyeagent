@@ -21,6 +21,11 @@ import type {
   WorkflowProgressEnvelope,
 } from '@meiye/contracts';
 
+import type { NotePlanTimeline } from './note-plan-timeline';
+import {
+  applyBatchImageStatusFromHarnessStage,
+} from './note-plan-timeline';
+
 export const COMPOSER_SESSION_STORAGE_VERSION = 'composer-session/v1';
 export const COMPOSER_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -79,6 +84,17 @@ export type ComposerExecutionConfirmTurn = {
   confirmId: string;
 };
 
+/**
+ * P1-07 / #319: multi-page note outline on the document timeline.
+ * Carries the editable outline + per-page image status snapshot.
+ */
+export type ComposerNotePlanTurn = {
+  kind: 'note_plan';
+  id: string;
+  taskId: string;
+  timeline: NotePlanTimeline;
+};
+
 /** Streaming candidate area. Exactly one, appended when the task binds. */
 export type ComposerCandidateTurn = {
   kind: 'candidate';
@@ -133,6 +149,7 @@ export type ComposerTurn =
   | ComposerStageTurn
   | ComposerQuestionTurn
   | ComposerExecutionConfirmTurn
+  | ComposerNotePlanTurn
   | ComposerCandidateTurn
   | ComposerDeliveryTurn
   | ComposerReportTurn
@@ -296,20 +313,88 @@ export function applyComposerProgress(
     ...session,
     progressSequence: frame.sequence,
   };
-  if (!frame.message) return next;
+  // P1-07: when a multi-page plan is already on the timeline, batch image
+  // status follows harness stage (fixture/recorded path).
+  const withImageStatus = syncNotePlanImageStatusFromProgress(next, frame);
+  if (!frame.message) return withImageStatus;
   if (frame.stage === 'assembly_delivery' && frame.state === 'success') {
     // The 任务总结 belongs to the deliverable, not to the progress rail.
-    return { ...next, deliveryStatement: frame.message };
+    return { ...withImageStatus, deliveryStatement: frame.message };
   }
   const turn = progressTurn(frame, frame.message);
-  const candidateIndex = next.turns.findIndex(
+  const candidateIndex = withImageStatus.turns.findIndex(
     (item) => item.kind === 'candidate'
   );
-  const turns = [...next.turns];
+  const turns = [...withImageStatus.turns];
   // Stage announcements read above the candidate area they describe.
   if (candidateIndex === -1) turns.push(turn);
   else turns.splice(candidateIndex, 0, turn);
-  return { ...next, turns };
+  return { ...withImageStatus, turns };
+}
+
+function syncNotePlanImageStatusFromProgress(
+  session: ComposerSession,
+  frame: WorkflowProgressEnvelope
+): ComposerSession {
+  const notePlanIndex = session.turns.findIndex(
+    (turn): turn is ComposerNotePlanTurn => turn.kind === 'note_plan'
+  );
+  if (notePlanIndex === -1) return session;
+  const notePlan = session.turns[notePlanIndex] as ComposerNotePlanTurn;
+  const nextTimeline = applyBatchImageStatusFromHarnessStage(notePlan.timeline, {
+    stage: frame.stage,
+    state: frame.state,
+  });
+  if (nextTimeline === notePlan.timeline) return session;
+  const turns = session.turns.slice();
+  turns[notePlanIndex] = { ...notePlan, timeline: nextTimeline };
+  return { ...session, turns };
+}
+
+/**
+ * Mount or replace the multi-page note outline frame on the timeline (#319).
+ * Inserted above the candidate stream so outline edits read before drafting.
+ */
+export function applyComposerNotePlan(
+  session: ComposerSession,
+  timeline: NotePlanTimeline
+): ComposerSession {
+  const taskId = session.task?.taskId;
+  if (!taskId) return session;
+  const turn: ComposerNotePlanTurn = {
+    kind: 'note_plan',
+    id: `note_plan:${taskId}`,
+    taskId,
+    timeline,
+  };
+  const existingIndex = session.turns.findIndex(
+    (item) => item.kind === 'note_plan'
+  );
+  if (existingIndex !== -1) {
+    const turns = session.turns.slice();
+    turns[existingIndex] = turn;
+    return { ...session, turns };
+  }
+  const turns = [...session.turns];
+  const candidateIndex = turns.findIndex((item) => item.kind === 'candidate');
+  if (candidateIndex === -1) turns.push(turn);
+  else turns.splice(candidateIndex, 0, turn);
+  return { ...session, turns };
+}
+
+/** Patch the mounted note plan timeline (outline edit / regenerate / fixture). */
+export function updateComposerNotePlan(
+  session: ComposerSession,
+  timeline: NotePlanTimeline
+): ComposerSession {
+  const existingIndex = session.turns.findIndex(
+    (item) => item.kind === 'note_plan'
+  );
+  if (existingIndex === -1) return applyComposerNotePlan(session, timeline);
+  const existing = session.turns[existingIndex] as ComposerNotePlanTurn;
+  const turns = session.turns.slice();
+  turns[existingIndex] = { ...existing, timeline };
+  return { ...session, turns };
 }
 
 /**

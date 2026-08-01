@@ -191,14 +191,17 @@ describe('useWorkbenchViewportWidth (P1-1 live flip)', () => {
         ({
           matches: width >= 1240 && query.includes('1240'),
           media: query,
-          addEventListener: (_: string, cb: () => void) => listeners.add(cb),
-          removeEventListener: (_: string, cb: () => void) =>
-            listeners.delete(cb),
+          addEventListener: (_: string, cb: EventListener) => {
+            listeners.add(cb as () => void);
+          },
+          removeEventListener: (_: string, cb: EventListener) => {
+            listeners.delete(cb as () => void);
+          },
           addListener: () => {},
           removeListener: () => {},
           dispatchEvent: () => false,
           onchange: null,
-        }) as MediaQueryList
+        }) as unknown as MediaQueryList
     );
 
     render(<ViewportWidthProbe />);

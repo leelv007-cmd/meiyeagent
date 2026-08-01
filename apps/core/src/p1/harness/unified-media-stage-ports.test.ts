@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+	contentPackageCarrierOf,
 	IMAGE_INTENT_SLOT_KINDS,
 	type ModelCapabilityProfile,
 } from "@meiye/contracts";
@@ -2105,6 +2106,20 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 		({ harnessCandidateId }) => harnessCandidateId === "story",
 	);
 	assert.equal(selectedVersion?.note?.plan.pages.length, 2);
+	// #319 / P1-07 write path: ordered assets land ⇒ product carrier is note
+	// (wire kind stays image_text; layered mapping from #288).
+	assert.equal(contentPackage?.kind, "image_text");
+	assert.ok(
+		(selectedVersion?.orderedAssetIds.length ?? 0) > 0,
+		"selected note version must persist ordered media assets",
+	);
+	assert.equal(
+		contentPackageCarrierOf({
+			kind: contentPackage!.kind,
+			orderedAssetCount: selectedVersion!.orderedAssetIds.length,
+		}),
+		"note",
+	);
 	assert.deepEqual(
 		selectedVersion?.note?.plan.pages.map(({ imageAssetId }) => imageAssetId),
 		["image-asset-1", "image-asset-3"],

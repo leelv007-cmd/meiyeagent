@@ -62,6 +62,7 @@ import type {
   ComposerTurn,
 } from './composer-session';
 import type { ComposerSignedPreview } from './composer-signed-preview';
+import { NotePlanTimelineFrame } from './note-plan-timeline-frame';
 
 export type ComposerCreationMode = 'customized' | 'free';
 
@@ -309,6 +310,17 @@ export type ComposerConversationProps = {
    * Rendered as a DecisionFrame turn — not a sticky independent slot.
    */
   executionConfirmSlot?: React.ReactNode;
+  /**
+   * P1-07 / #319: outline edit on the multi-page note plan frame.
+   * Host owns persistence; timeline model stays pure.
+   */
+  onNotePlanOutlineEdit?: (input: {
+    pageId: string;
+    title: string;
+    body: string;
+  }) => void;
+  /** P1-07: per-page regenerate intent (fixture or merchant_request host). */
+  onNotePlanRegeneratePage?: (pageId: string) => void;
   /** Opens the Result Center for a finished run — the only navigation. */
   onOpenDelivery: (input: ComposerDeliveryOpenInput) => void;
   /**
@@ -369,6 +381,8 @@ export function ComposerConversation({
   identitySlot,
   questionSlot,
   executionConfirmSlot,
+  onNotePlanOutlineEdit,
+  onNotePlanRegeneratePage,
   onOpenDelivery,
   onRateDelivery,
   onDeliveryFollowUp,
@@ -443,6 +457,23 @@ export function ComposerConversation({
             {executionConfirmSlot}
           </AgentFrameHost>
         ) : null;
+      case 'note_plan':
+        // P1-07 / #319: multi-page outline + image status (AgentFrame plan).
+        return (
+          <AgentFrameHost
+            frameKind={resolveAgentFrameKind('note_plan')}
+            key={turn.id}
+            testId="composer-note-plan-turn"
+            turnKind="note_plan"
+          >
+            <NotePlanTimelineFrame
+              onEditOutline={onNotePlanOutlineEdit}
+              onRegeneratePage={onNotePlanRegeneratePage}
+              outlineReadOnly={session.phase === 'submitting'}
+              timeline={turn.timeline}
+            />
+          </AgentFrameHost>
+        );
       case 'candidate':
         // P0-3: after this run's delivery lands, collapse to a capsule;
         // drafting stays full. The single stream projection follows the

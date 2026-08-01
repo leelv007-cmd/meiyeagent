@@ -43,10 +43,11 @@ test("a run's own identifiers count as leaks even when the shape looks ordinary"
 test('the merchant sentences the card family actually ships are clean', () => {
   const shipped = [
     '成品已就绪 · 第 3 版',
-    '点开看完整成品',
+    '进入对象工作区 · 点开看完整成品',
+    '进入对象工作区',
     '采用这一版',
     '继续调整',
-    '导出使用',
+    '导出/发布准备',
     '第 3 版已经准备好。策略依据：周末到店高峰。版本定位：这是本次适合小红书的主推荐。使用建议：建议先核对内容和预约引导，确认后再发布。',
     '已听懂这次想表达的重点',
     '这次先按通用模式生成；以后补充门店、项目或风格资料，内容会更像你的店。',

@@ -36,7 +36,13 @@ import {
   workbench_work_create_failed,
   workbench_work_created,
 } from '@/locale/paraglide/messages';
-import { commandP1, P1RequestError, p1ErrorCode, queryP1 } from '@/p1/client';
+import {
+  commandP1,
+  operationsQuery,
+  P1RequestError,
+  p1ErrorCode,
+  queryP1,
+} from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import {
   normalizeCatalog,
@@ -239,6 +245,7 @@ import {
   type ComposerImageOperation,
 } from './image-operation-picker';
 import {
+  applyComposerNotePlan,
   applyComposerPendingInterrupts,
   applyComposerProgress,
   applyComposerWorkflowState,
@@ -252,9 +259,19 @@ import {
   restoreComposerSession,
   restoreComposerSessionFromActiveTask,
   serializeComposerSession,
+  updateComposerNotePlan,
   type ComposerSession,
 } from './composer-session';
 import type { ComposerRecoveryInput } from './composer-report-card';
+import {
+  editNotePlanPageOutline,
+  projectNotePlanTimelineFromVersion,
+  requestNotePlanPageRegenerate,
+} from './note-plan-timeline';
+import type {
+  ImageTextNoteVersion,
+  PublicContentPackage,
+} from '@meiye/contracts';
 
 /** Which Result Center panel each 成品交付卡 action opens (T31 / #225). */
 const DELIVERY_ACTION_PANELS: Record<
@@ -1397,6 +1414,50 @@ export function ComposerHome({
     });
     void usageQuery.refetch();
   }, [workflowStream.workflowState]);
+
+  // P1-07 / #319: after note delivery, hydrate multi-page outline onto the
+  // timeline from the ContentPackage version.note field (carrier note path).
+  const notePlanHydratedPackageRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (session.phase !== 'delivered') return;
+    const packageId = session.task?.packageId;
+    if (!packageId) return;
+    if (notePlanHydratedPackageRef.current === packageId) return;
+    if (lensState.lensId !== 'image_text') return;
+    let cancelled = false;
+    void operationsQuery<PublicContentPackage[]>('content_packages', {})
+      .then((packages) => {
+        if (cancelled) return;
+        const matched = packages.find((item) => item.id === packageId);
+        const version =
+          matched?.versions.find(
+            (entry) =>
+              entry.id === workflowStream.harnessDelivery?.versionId
+          ) ??
+          matched?.versions.find((entry) => entry.note) ??
+          matched?.versions[0];
+        const note = version?.note as ImageTextNoteVersion | undefined;
+        if (!note?.plan?.pages?.length) return;
+        notePlanHydratedPackageRef.current = packageId;
+        const timeline = projectNotePlanTimelineFromVersion(note, {
+          ...(version?.harnessCandidateId
+            ? { styleId: version.harnessCandidateId }
+            : {}),
+        });
+        setSession((current) => applyComposerNotePlan(current, timeline));
+      })
+      .catch(() => {
+        // Hydration is best-effort; delivery card still opens the object workspace.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    session.phase,
+    session.task?.packageId,
+    lensState.lensId,
+    workflowStream.harnessDelivery?.versionId,
+  ]);
 
   // 需要用户的一个问题 — the third inbound seam message. Polled while the run is
   // live so a suspended workflow surfaces its card without a page action.
@@ -2795,6 +2856,38 @@ export function ComposerHome({
                     updateUserText(current, seed.intent)
                   );
                   focusComposerIntentInput();
+                }}
+                onNotePlanOutlineEdit={({ pageId, title, body }) => {
+                  setSession((current) => {
+                    const existing = current.turns.find(
+                      (turn) => turn.kind === 'note_plan'
+                    );
+                    if (!existing || existing.kind !== 'note_plan') {
+                      return current;
+                    }
+                    return updateComposerNotePlan(
+                      current,
+                      editNotePlanPageOutline(existing.timeline, {
+                        pageId,
+                        title,
+                        body,
+                      })
+                    );
+                  });
+                }}
+                onNotePlanRegeneratePage={(pageId) => {
+                  setSession((current) => {
+                    const existing = current.turns.find(
+                      (turn) => turn.kind === 'note_plan'
+                    );
+                    if (!existing || existing.kind !== 'note_plan') {
+                      return current;
+                    }
+                    return updateComposerNotePlan(
+                      current,
+                      requestNotePlanPageRegenerate(existing.timeline, pageId)
+                    );
+                  });
                 }}
                 onOpenDelivery={openDelivery}
                 onRateDelivery={async ({
