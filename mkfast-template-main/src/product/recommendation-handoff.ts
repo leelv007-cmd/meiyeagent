@@ -33,12 +33,8 @@ export function buildRecommendationHandoff(
   >,
   outputHint?: CreationLensId
 ): RecommendationHandoff {
-  return outputHint
-    ? {
-        intent: todayRecommendationIntent(recommendation),
-        outputHint,
-      }
-    : { intent: todayRecommendationIntent(recommendation) };
+  const intent = todayRecommendationIntent(recommendation);
+  return outputHint ? { intent, outputHint } : { intent };
 }
 
 /** Apply handoff to the lens draft: text always; lens only when hint is present. */

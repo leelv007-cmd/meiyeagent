@@ -896,3 +896,21 @@ to T38.
 |---|---|---|
 | 1 | recent activity confirms, cancels, then deletes through the canonical Operations command | Open Recent, verify the delete entry exists only on the conversation record, open the confirmation and read the retained-memory policy, cancel without a command, then confirm and require `module=operations`, `action=delete_composer_conversation`, and `payload={ conversationId }` before the conversation disappears immediately. |
 | 2 | a forbidden deletion stays visible and reports the failure | Inject a 403 for the same canonical command, confirm deletion, require a visible merchant-facing failure, close the confirmation, and verify the conversation remains available. |
+
+## 工作台四态 P0 收敛（#286 / P0-A）
+
+**File:** 暂无独立 Playwright spec（见下）| **Priority:** P0
+
+规格 `docs/specs/xhs-vertical-integration-spec-2026-08-01.md` §2.2/§8.1（D2/D3/D7）。
+验收旅程以行为为证，当前 owner 是 interaction / 静态套件（先例：§12 的 Z1 记账方式）：
+
+| 验收 | 旅程 | 当前 owner |
+|---|---|---|
+| P0-1 | 任务进入 Active 后，段① 今日推荐与段③「继续上次工作」折叠，不与时间线抢首屏 | `src/product/composer/workbench-mode.test.ts` + `src/product/dashboard-home-contract.test.ts` |
+| P0-2 | 长对话只有页面这一条滚动主轴，无内层 70svh 双滚动 | `src/product/composer/workbench-p0.static.test.ts` + `composer-conversation.interaction.test.tsx` |
+| P0-3 | 候选完成后收为一行胶囊，交付卡不再重复贴正文；后续新一轮运行的流式候选保持全文 | `composer-conversation.interaction.test.tsx`（含 run-2 回归） |
+| P0-4 | 推荐→Composer 为类型化 handoff，不无条件预填 copy lens，有 outputHint 时尊重 | `src/product/recommendation-handoff.test.ts` |
+
+Playwright 旅程与四态形态的 P1 变更（双栏 / Composer 粘底 morph / 宽度合同
+800→1240）绑定：形态在 P1 仍会重排，先在 P1 落地时一并写 spec，避免为将被
+重排的 DOM 写一次性 e2e。本节先按 E2E Workflow 的 Spec 步骤记账旅程与 owner。

@@ -47,10 +47,6 @@ function renderCard(
   render(
     <form onSubmit={onSubmit}>
       <ComposerDeliveryCard
-        excerpt={{
-          body: '门店开业第一批体验名额已经开放。',
-          title: '开业笔记',
-        }}
         lensId="image_text"
         onFollowUp={onFollowUp}
         onOpen={onOpen}

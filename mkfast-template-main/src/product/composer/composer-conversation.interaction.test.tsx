@@ -639,7 +639,9 @@ describe('成品交付卡', () => {
     );
 
     // Capsule, not the full candidate stream body.
-    expect(screen.getByTestId('composer-candidate-summary')).toBeInTheDocument();
+    expect(
+      screen.getByTestId('composer-candidate-summary')
+    ).toBeInTheDocument();
     expect(
       screen.queryByTestId('composer-candidate-stream')
     ).not.toBeInTheDocument();
@@ -654,6 +656,41 @@ describe('成品交付卡', () => {
     // next to a second full excerpt (the dual-read failure F8 names).
     const summary = screen.getByTestId('composer-candidate-summary');
     expect(summary).toHaveAttribute('data-collapsed', 'true');
+  });
+
+  it('P0-3: a run after delivery streams in full; only its own delivery collapses it', () => {
+    // Run 1 delivered, then the merchant starts run 2 in the same session:
+    // the transcript now holds run 1's delivery card AND run 2's live stream.
+    const secondRun = bindComposerTask(
+      openComposerTurn(delivered(), '再写一条工作日午市文案'),
+      { taskId: 'task-2', workId: 'work-2', packageId: 'package-2' }
+    );
+    const liveStream = projectResultTokenStream({
+      workspaceKind: 'copy',
+      progressState: 'running',
+      partialCandidates: [
+        { candidateId: 'c2', title: '午市新客', body: '工作日午市新客立减。' },
+      ],
+    });
+
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={secondRun}
+        stream={liveStream}
+      />
+    );
+
+    // Run 2's streaming candidate stays a full stream — no premature capsule.
+    expect(screen.getByTestId('composer-candidate-primary')).toHaveTextContent(
+      '午市新客'
+    );
+    // Run 1's candidate stays collapsed and must not borrow run 2's stream.
+    const summary = screen.getByTestId('composer-candidate-summary');
+    expect(summary).toHaveTextContent('已生成候选');
+    expect(summary).not.toHaveTextContent('午市新客');
+    // Run 1's delivery card survives the new run (交付卡 stays).
+    expect(screen.getByTestId('composer-delivery-card')).toBeInTheDocument();
   });
 
   it('binds every action to the revision the server delivered', async () => {

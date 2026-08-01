@@ -1,8 +1,9 @@
 /**
  * 成品交付卡 — the third outbound seam message (T31 / #225).
  *
- * Carries what D-116 calls the 任务总结 (策略依据/版本定位/使用建议), an excerpt of
- * the delivered copy, and the three action entries. ADR-0014 keeps 提交后不跳转:
+ * Carries what D-116 calls the 任务总结 (策略依据/版本定位/使用建议) and the three
+ * action entries. The delivered copy itself stays on the candidate capsule
+ * (P0-3 / #286 retired the card's duplicate excerpt). ADR-0014 keeps 提交后不跳转:
  * the card is the doorway, so every action *opens the Result Center bound to
  * this revision* rather than mutating anything here — adoption, adjustment and
  * delivery all run through the canonical command path (R-05 唯一写路径), and a
@@ -61,8 +62,6 @@ export type ComposerDeliveryCardProps = {
   revision: ContentPackageRevisionDelivery | null;
   /** 任务总结 as core wrote it — never re-worded here. */
   statement: string | null;
-  /** 候选呈现 — an excerpt of what was delivered, so the card stands alone. */
-  excerpt?: { title?: string; body?: string };
   onOpen: (input: ComposerDeliveryOpenInput) => void;
   /** 交付物自己的创作类型 — 后续动作 chip 按它取固定集合。 */
   lensId?: CreationLensId;
@@ -83,7 +82,6 @@ export function ComposerDeliveryCard({
   taskId,
   revision,
   statement,
-  excerpt,
   onOpen,
   lensId,
   aspectRatio,
@@ -91,8 +89,6 @@ export function ComposerDeliveryCard({
   onFollowUp,
   className,
 }: ComposerDeliveryCardProps) {
-  const body = excerpt?.body?.trim() ?? '';
-  const preview = body.length > 120 ? `${body.slice(0, 120)}…` : body;
   const [verdict, setVerdict] = useState<DeliveryRatingVerdict | null>(null);
   const [ratingPending, setRatingPending] = useState(false);
   const ratingPendingRef = useRef(false);
@@ -167,16 +163,6 @@ export function ComposerDeliveryCard({
           >
             {statement}
           </p>
-        ) : null}
-        {preview ? (
-          <div className="mt-2" data-testid="composer-delivery-excerpt">
-            {excerpt?.title ? (
-              <p className="text-foreground text-xs font-medium">
-                {excerpt.title}
-              </p>
-            ) : null}
-            <p className="text-muted mt-0.5 text-xs">{preview}</p>
-          </div>
         ) : null}
         <p className="text-muted mt-2 text-xs">点开看完整成品</p>
       </button>

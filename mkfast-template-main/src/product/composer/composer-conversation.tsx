@@ -52,6 +52,7 @@ import {
   type ComposerRecoveryInput,
 } from './composer-report-card';
 import type {
+  ComposerCandidateTurn,
   ComposerSession,
   ComposerStageTurn,
   ComposerTurn,
@@ -138,22 +139,27 @@ function RouteNotice({ message }: { message: string }) {
 }
 
 /**
- * P0-3 / D7 / F8: once a delivery turn is on the transcript (Delivered),
- * collapse the full candidate body into a one-line capsule so the delivery
- * card is the summary face — not a second full-text copy. While still
- * drafting / settling, keep the full candidate readable.
+ * P0-3 / D7 / F8: once THIS candidate's run has delivered, collapse its full
+ * body into a one-line capsule so the delivery card is the summary face — not
+ * a second full-text copy. Matching by taskId keeps a newer run's live stream
+ * full even while an earlier run's delivery card is still on the transcript.
  */
-function candidateShouldCollapse(session: ComposerSession): boolean {
-  if (session.phase === 'delivered') return true;
-  return session.turns.some((turn) => turn.kind === 'delivery');
+function candidateShouldCollapse(
+  session: ComposerSession,
+  candidate: ComposerCandidateTurn
+): boolean {
+  return session.turns.some(
+    (turn) => turn.kind === 'delivery' && turn.taskId === candidate.taskId
+  );
 }
 
 function CandidateSummaryCapsule({
   stream,
 }: {
-  stream: ResultTokenStreamProjection;
+  /** Null when the capsule belongs to an earlier run than the live stream. */
+  stream: ResultTokenStreamProjection | null;
 }) {
-  const primary = stream.primary;
+  const primary = stream?.primary;
   const title = primary?.title?.trim() || '已生成候选';
   const body = primary?.body?.trim() ?? '';
   const snippet =
@@ -164,7 +170,7 @@ function CandidateSummaryCapsule({
       aria-live="polite"
       className="meiye-porcelain inline-flex max-w-full flex-wrap items-center gap-2 rounded-full px-3 py-1.5"
       data-collapsed="true"
-      data-has-token={stream.hasFirstToken ? 'true' : 'false'}
+      data-has-token={stream?.hasFirstToken ? 'true' : 'false'}
       data-testid="composer-candidate-summary"
     >
       <span
@@ -364,9 +370,15 @@ export function ComposerConversation({
           </div>
         ) : null;
       case 'candidate':
-        // P0-3: after delivery lands, collapse to a capsule; drafting stays full.
-        return candidateShouldCollapse(session) ? (
-          <CandidateSummaryCapsule key={turn.id} stream={stream} />
+        // P0-3: after this run's delivery lands, collapse to a capsule;
+        // drafting stays full. The single stream projection follows the
+        // current task, so a capsule left by an earlier run must not borrow
+        // the live run's content.
+        return candidateShouldCollapse(session, turn) ? (
+          <CandidateSummaryCapsule
+            key={turn.id}
+            stream={session.task?.taskId === turn.taskId ? stream : null}
+          />
         ) : (
           <CandidateStream key={turn.id} stream={stream} />
         );
@@ -420,11 +432,11 @@ export function ComposerConversation({
 
   return (
     /*
-      ChatConversation owns「跟住最新一条」and the scroll-to-latest control.
       P0-2 / F7: do not cap the pane with a nested max-height — that created a
-      second scroll axis fighting the page. The transcript grows with the page
-      so there is a single scroll main axis; follow-newest still works when the
-      pane itself overflows for other layout reasons.
+      second scroll axis fighting the page. The transcript grows with the page,
+      so the page is the single scroll main axis and ChatConversation's own
+      follow-newest / scroll-to-latest machinery stays dormant (the pane never
+      overflows itself). Following the newest turn is the page's job now.
 
       `aria-live="off"` on purpose: the component's `role="log"` would make the
       entire transcript one live region and re-announce whole cards. The

@@ -6,11 +6,11 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
-const read = (rel: string) =>
+const readSource = (rel: string) =>
   readFileSync(resolve(process.cwd(), rel), 'utf8');
 
 test('P0-2: conversation pane does not set nested max-height on the className', () => {
-  const source = read('src/product/composer/composer-conversation.tsx');
+  const source = readSource('src/product/composer/composer-conversation.tsx');
   // Class binding only — comments may still name the retired height cap.
   const classBindings = [
     ...source.matchAll(/className="([^"]*)"/gu),
@@ -24,22 +24,16 @@ test('P0-2: conversation pane does not set nested max-height on the className', 
 });
 
 test('P0-3: delivery case does not pass stream body as excerpt', () => {
-  const source = read('src/product/composer/composer-conversation.tsx');
+  const source = readSource('src/product/composer/composer-conversation.tsx');
   // The dual-read failure was: excerpt={{ body: stream.primary.body, ... }}
-  assert.doesNotMatch(
-    source,
-    /excerpt=\{\s*stream\.primary/u
-  );
+  assert.doesNotMatch(source, /excerpt=\{\s*stream\.primary/u);
   assert.match(source, /composer-candidate-summary/u);
   assert.match(source, /candidateShouldCollapse/u);
 });
 
 test('P0-4: TodayRecommendationCard onUse is typed handoff', () => {
-  const card = read('src/product/today-recommendation-card.tsx');
+  const card = readSource('src/product/today-recommendation-card.tsx');
   assert.match(card, /RecommendationHandoff/u);
   assert.match(card, /buildRecommendationHandoff/u);
-  assert.doesNotMatch(
-    card,
-    /onUse:\s*\(intent:\s*string\)\s*=>\s*void/u
-  );
+  assert.doesNotMatch(card, /onUse:\s*\(intent:\s*string\)\s*=>\s*void/u);
 });

@@ -40,8 +40,6 @@ import {
 } from '@/product/recommendation-handoff';
 import { HotTopicOpportunityCardView } from './hot-topic-opportunity-card';
 
-export type { RecommendationHandoff };
-
 /** Fact references are minted as `store_fact:<factId>:<revision>` (core production-context-port.ts:664). */
 const STORE_FACT_REFERENCE_PATTERN = /^store_fact:(.+):\d+$/u;
 /** Ledger keys, ids and slugs are never merchant language (D-116). */
