@@ -153,9 +153,7 @@ export function AdminRedemptionControl() {
       ),
     onSuccess: () => {
       toast.success(admin_redemption_void_success());
-      void queryClient.invalidateQueries({
-        queryKey: ['admin', 'redemptions', 'list'],
-      });
+      void refreshRedemptionList();
     },
     onError: () => {
       toast.error(admin_redemption_void_failed());
