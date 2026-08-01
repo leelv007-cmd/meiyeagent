@@ -179,7 +179,7 @@ function outputLabelFor(input: PublicProductQuoteIntent, quantity: number) {
     case 'copy.generate':
       return `${quantity} 条内容候选`;
     case 'copy.adapt':
-      return `${quantity} 组三平台版本`;
+      return '三平台版本';
     case 'image.generate':
       return `${quantity} 张 ${input.aspectRatio ?? '3:4'} 图片`;
     case 'image.edit':
