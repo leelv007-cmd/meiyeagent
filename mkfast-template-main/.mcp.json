@@ -3,6 +3,13 @@
     "shadcn": {
       "command": "npx",
       "args": ["shadcn@latest", "mcp"]
+    },
+    "reui": {
+      "type": "http",
+      "url": "https://proxy.collectui.pro/api/reui-mcp",
+      "headers": {
+        "Authorization": "Bearer ${REUI_LICENSE_KEY}"
+      }
     }
   }
 }

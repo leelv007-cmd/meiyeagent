@@ -33,6 +33,12 @@
       "headers": {
         "Authorization": "Bearer ${REACTBITS_LICENSE_KEY}"
       }
+    },
+    "@reui": {
+      "url": "https://proxy.collectui.pro/api/r/reui/{style}/{name}.json",
+      "headers": {
+        "Authorization": "Bearer ${REUI_LICENSE_KEY}"
+      }
     }
   }
 }
