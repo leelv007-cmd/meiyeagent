@@ -190,7 +190,7 @@ describe('memory vault', () => {
     );
   });
 
-  it('renders a structured memory value as readable JSON', async () => {
+  it('renders a structured memory value as human key/value, never raw JSON', async () => {
     p1.queryP1.mockImplementation(
       (module: string, input: { action: string }) =>
         module === 'memory' && input.action === 'entries_page'
@@ -217,9 +217,144 @@ describe('memory vault', () => {
 
     renderPage();
 
+    const value = await screen.findByTestId('memory-entry-value');
+    expect(value).toHaveTextContent(/primary/u);
+    expect(value).toHaveTextContent('warm-white');
+    expect(value).toHaveTextContent(/accent/u);
+    expect(value).toHaveTextContent('tea-brown');
+    // P0-5: raw JSON.stringify blob must not be the merchant-facing main text.
+    expect(value.textContent).not.toMatch(
+      /^\s*\{[\s\S]*"primary"\s*:\s*"warm-white"[\s\S]*\}\s*$/u
+    );
     expect(
-      await screen.findByText('{"primary":"warm-white","accent":"tea-brown"}')
-    ).toBeInTheDocument();
+      screen.queryByText('{"primary":"warm-white","accent":"tea-brown"}')
+    ).not.toBeInTheDocument();
     expect(screen.queryByText('[object Object]')).not.toBeInTheDocument();
+  });
+
+  it('lists array memory values instead of a JSON string', async () => {
+    p1.queryP1.mockImplementation(
+      (module: string, input: { action: string }) =>
+        module === 'memory' && input.action === 'entries_page'
+          ? Promise.resolve({
+              items: [
+                {
+                  entryId: 'candidate-tones',
+                  semanticKey: 'tone.list',
+                  value: ['克制', '像熟客分享'],
+                  status: 'pending',
+                  proposedAt: '2026-07-30T06:00:00.000Z',
+                  source: null,
+                },
+              ],
+              nextCursor: null,
+            })
+          : Promise.resolve({
+              identities: [],
+              defaultDecision: null,
+              defaultIdentity: null,
+              decisionRevision: 0,
+            })
+    );
+
+    renderPage();
+
+    const value = await screen.findByTestId('memory-entry-value');
+    expect(value.tagName).toBe('UL');
+    expect(value).toHaveTextContent('克制');
+    expect(value).toHaveTextContent('像熟客分享');
+    expect(value.textContent).not.toMatch(/^\s*\[/u);
+  });
+
+  it('puts pending entries above confirmed and rejected by default', async () => {
+    p1.queryP1.mockImplementation(
+      (module: string, input: { action: string }) =>
+        module === 'memory' && input.action === 'entries_page'
+          ? Promise.resolve({
+              items: [
+                {
+                  entryId: 'confirmed-old',
+                  semanticKey: 'tone.confirmed',
+                  value: '已确认偏旧',
+                  status: 'confirmed',
+                  proposedAt: '2026-07-31T08:00:00.000Z',
+                  source: null,
+                },
+                {
+                  entryId: 'rejected-mid',
+                  semanticKey: 'tone.rejected',
+                  value: '已拒绝',
+                  status: 'rejected',
+                  proposedAt: '2026-07-31T07:00:00.000Z',
+                  source: null,
+                },
+                {
+                  entryId: 'pending-new',
+                  semanticKey: 'tone.pending',
+                  value: '待确认偏新',
+                  status: 'pending',
+                  proposedAt: '2026-07-30T06:00:00.000Z',
+                  source: null,
+                },
+                {
+                  entryId: 'pending-older',
+                  semanticKey: 'tone.pending-old',
+                  value: '待确认偏旧',
+                  status: 'pending',
+                  proposedAt: '2026-07-29T06:00:00.000Z',
+                  source: null,
+                },
+              ],
+              nextCursor: null,
+            })
+          : Promise.resolve({
+              identities: [],
+              defaultDecision: null,
+              defaultIdentity: null,
+              decisionRevision: 0,
+            })
+    );
+
+    renderPage();
+
+    // Wait until entries resolve; the container mounts empty first.
+    await screen.findByTestId('memory-entry-pending-new');
+    const list = screen.getByTestId('memory-entries');
+    // Direct children only — nested value/provenance share the memory-entry- prefix.
+    expect(
+      [...list.children].map((node) => node.getAttribute('data-testid'))
+    ).toEqual([
+      'memory-entry-pending-new',
+      'memory-entry-pending-older',
+      'memory-entry-confirmed-old',
+      'memory-entry-rejected-mid',
+    ]);
+  });
+
+  it('shows an honest cold-start empty state when nothing has been learned', async () => {
+    p1.queryP1.mockImplementation(
+      (module: string, input: { action: string }) =>
+        module === 'memory' && input.action === 'entries_page'
+          ? Promise.resolve({ items: [], nextCursor: null })
+          : Promise.resolve({
+              identities: [],
+              defaultDecision: null,
+              defaultIdentity: null,
+              decisionRevision: 0,
+            })
+    );
+
+    renderPage();
+
+    const empty = await screen.findByTestId('memory-entry-empty');
+    // Scheme-one cold start: say nothing was learned — do not pretend mastery.
+    expect(empty.textContent).toMatch(/还没学到/u);
+    expect(empty.textContent).not.toMatch(/已经记住|越懂你/u);
+    // Unbuilt domains stay distinct from "you have no history".
+    const notes = screen.getAllByTestId('memory-unbuilt-note');
+    expect(notes).toHaveLength(3);
+    for (const note of notes) {
+      expect(note.textContent).toMatch(/还在建/u);
+    }
   });
 });

@@ -2296,7 +2296,7 @@
   "memory_entry_confirm": "确认记住",
   "memory_entry_delete": "删除记忆",
   "memory_entry_delete_source": "删除来源对话",
-  "memory_entry_empty": "还没有待确认的门店偏好。完成创作后，系统会把值得长期记住的内容放到这里。",
+  "memory_entry_empty": "还没学到关于你店的内容。用过几次创作后，值得长期记住的偏好会出现在这里。",
   "memory_entry_reject": "不是我的偏好",
   "memory_entry_reject_reason": "这条不代表我的长期偏好",
   "memory_entry_source_available": "因为你 {date} 说过：{preview}",

@@ -15,6 +15,10 @@
  * true one: "we haven't built this" must never be dressed up as "you haven't
  * done anything yet" (the cold-state discipline from D-126, applied here).
  *
+ * P0-B (#287): display honesty only — no raw JSON as merchant copy, pending
+ * entries first by default, cold-start empty copy that does not pretend the
+ * product has learned anything. Does not build producers or rename「经验」.
+ *
  * 门店偏好 reads the identity projection the identity workspace already
  * consumes — same query key, so one invalidation still covers both, and this
  * page adds no backend surface. It links there rather than editing in place:
@@ -62,6 +66,104 @@ import {
 import { commandP1, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import { marketingIdentityProjectionQuery } from './marketing-identity-queries';
+
+/** Pending first; within a status, newest proposedAt first. */
+export function sortMemoryEntries(
+  items: MemoryEntryProjection[]
+): MemoryEntryProjection[] {
+  const rank = (status: MemoryEntryProjection['status']) =>
+    status === 'pending' ? 0 : status === 'confirmed' ? 1 : 2;
+  return [...items].sort((a, b) => {
+    const byStatus = rank(a.status) - rank(b.status);
+    if (byStatus !== 0) return byStatus;
+    return b.proposedAt.localeCompare(a.proposedAt);
+  });
+}
+
+function isPrimitive(value: unknown): value is string | number | boolean {
+  return (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  );
+}
+
+function humanizeKey(key: string): string {
+  return key.replace(/[._]/g, ' ');
+}
+
+/**
+ * Merchant-facing value body. Non-string JSON must never appear as a raw
+ * stringify blob — use key/value rows, lists, or short primitive text.
+ */
+export function MemoryValueView({ value }: { value: unknown }) {
+  if (typeof value === 'string') {
+    return <p data-testid="memory-entry-value">{value}</p>;
+  }
+  if (isPrimitive(value)) {
+    return <p data-testid="memory-entry-value">{String(value)}</p>;
+  }
+  if (value === null || value === undefined) {
+    return (
+      <p className="meiye-type-aux" data-testid="memory-entry-value">
+        —
+      </p>
+    );
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return (
+        <p className="meiye-type-aux" data-testid="memory-entry-value">
+          —
+        </p>
+      );
+    }
+    return (
+      <ul className="list-disc space-y-1 pl-4" data-testid="memory-entry-value">
+        {value.map((item, index) => (
+          <li key={index}>
+            {isPrimitive(item) || item === null ? (
+              String(item)
+            ) : (
+              <MemoryValueView value={item} />
+            )}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length === 0) {
+      return (
+        <p className="meiye-type-aux" data-testid="memory-entry-value">
+          —
+        </p>
+      );
+    }
+    return (
+      <dl className="grid gap-2 text-sm" data-testid="memory-entry-value">
+        {entries.map(([key, nested]) => (
+          <div key={key}>
+            <dt className="meiye-type-aux">{humanizeKey(key)}</dt>
+            <dd className="mt-0.5">
+              {isPrimitive(nested) || nested === null ? (
+                String(nested)
+              ) : (
+                <MemoryValueView value={nested} />
+              )}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    );
+  }
+  return (
+    <p className="meiye-type-aux" data-testid="memory-entry-value">
+      —
+    </p>
+  );
+}
 
 function MemorySection({
   title,
@@ -150,6 +252,7 @@ export function MemoryVaultPage() {
         (identity) => identity.identityId === defaultIdentityId
       )
     : undefined;
+  const entries = sortMemoryEntries(entriesQuery.data?.items ?? []);
 
   return (
     <div className="flex flex-col gap-4">
@@ -161,8 +264,8 @@ export function MemoryVaultPage() {
         testId="memory-domain-identity"
       >
         <div className="space-y-3" data-testid="memory-entries">
-          {entriesQuery.data?.items?.length ? (
-            entriesQuery.data.items.map((entry) => (
+          {entries.length > 0 ? (
+            entries.map((entry) => (
               <MemoryEntryCard
                 entry={entry}
                 key={entry.entryId}
@@ -268,11 +371,9 @@ function MemoryEntryCard({
       data-testid={`memory-entry-${entry.entryId}`}
     >
       <div className="flex items-start justify-between gap-3">
-        <p>
-          {typeof entry.value === 'string'
-            ? entry.value
-            : JSON.stringify(entry.value)}
-        </p>
+        <div className="min-w-0 flex-1">
+          <MemoryValueView value={entry.value} />
+        </div>
         <span className="meiye-type-aux shrink-0">{status}</span>
       </div>
       <p className="meiye-type-aux mt-1" data-testid="memory-entry-provenance">

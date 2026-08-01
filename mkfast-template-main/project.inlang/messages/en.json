@@ -2296,7 +2296,7 @@
   "memory_entry_confirm": "Remember this",
   "memory_entry_delete": "Delete memory",
   "memory_entry_delete_source": "Delete source conversation",
-  "memory_entry_empty": "No shop preferences are waiting for review. After a creation, durable candidates will appear here.",
+  "memory_entry_empty": "Nothing learned about your shop yet. After a few creations, durable preferences will show up here.",
   "memory_entry_reject": "Not my preference",
   "memory_entry_reject_reason": "This does not represent my long-term preference",
   "memory_entry_source_available": "Because you said on {date}: {preview}",
