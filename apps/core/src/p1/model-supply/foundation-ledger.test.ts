@@ -116,7 +116,7 @@ function createStrictSupplyFreezeStore(
   return { freezes, supplyFreezes };
 }
 
-test('settles one initial video through the production ledger across a fresh application replay', async () => {
+test('a ProductUsage-reserved task never consumes the legacy grant-lot ledger', async () => {
   const videoModel: CatalogModel = {
     displayName: 'Seedance 2',
     id: 'seedance-2',
@@ -158,6 +158,16 @@ test('settles one initial video through the production ledger across a fresh app
     'single-ledger-video-entitlement',
   );
   const productUsage = new MemoryProductUsageLedger();
+  const grantLots = new MemoryGrantLotLedger();
+  grantLots.grant({
+    id: 'legacy-video-lot',
+    workspaceId: context.workspaceId,
+    resource: 'video',
+    amount: 2,
+    expirationDate: null,
+    transactionType: 'SUBSCRIPTION_RENEWAL',
+    createdAt: '2026-08-01T00:00:00.000Z',
+  });
   const quotes = new ProductQuoteService({ usageLedger: productUsage });
   const quote = quotes.buildQuote({
     billingMode: 'per_request',
@@ -197,7 +207,7 @@ test('settles one initial video through the production ledger across a fresh app
     const processLedger = new FoundationModelSupplyLedger(
       foundation,
       undefined,
-      undefined,
+      grantLots,
       {
         billingLifecycle,
         productUsage: durableProductUsage,
@@ -241,6 +251,13 @@ test('settles one initial video through the production ledger across a fresh app
     [replay.attempt.id],
   );
   assert.equal(settleAttempts, 2);
+  assert.equal(grantLots.listLots(context.workspaceId, 'video')[0]?.remainingAmount, 2);
+  assert.equal(
+    grantLots
+      .listTransactions(context.workspaceId)
+      .filter((transaction) => transaction.transactionType === 'USAGE').length,
+    0,
+  );
   const workerLedger = new FoundationModelSupplyLedger(
     foundation,
     undefined,

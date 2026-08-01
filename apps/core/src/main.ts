@@ -28,7 +28,6 @@ import {
 import {
   ProductAssetDataClassResolver,
   ProductCreativeGroundingResolver,
-  ProductStateEntitlementPolicy,
 } from './product/p1-model-policy.js';
 import { createCoreServer } from './server.js';
 import {
@@ -77,7 +76,6 @@ import {
   SensitiveWordsFoundationModule,
 } from './p1/sensitive-words/index.js';
 import {
-  CompositeProductEntitlementPolicy,
   DEFAULT_ADD_ON_OFFERS,
   DEFAULT_PLAN_OFFERS,
   GrantLotAwareProductEntitlementService,
@@ -377,6 +375,11 @@ import {
   PostgresProductBillingRepository,
   ProductBillingFoundationModule,
 } from './p1/product-billing/index.js';
+import { PostgresCreditLedger } from './p1/credit-billing/postgres-credit-ledger.js';
+import { PostgresCreditSubscriptionStore } from './p1/credit-billing/credit-subscription-scheduler.js';
+import { CreditBillingService } from './p1/credit-billing/credit-billing-service.js';
+import { CreditSubscriptionEntitlementPolicy } from './p1/credit-billing/credit-entitlement-policy.js';
+import { AdminConfigCreditPlanCatalogSource } from './p1/admin-config/credit-plan-catalog-source.js';
 import {
   createDurableResultDeliveryRuntime,
   ResultDeliveryFoundationModule,
@@ -443,6 +446,8 @@ const referenceAssets = new CompositeReferenceAssetResolver([
   productReferenceAssets,
 ]);
 const grantLotLedger = new PostgresGrantLotLedger(pool);
+const creditLedger = new PostgresCreditLedger(pool);
+const creditSubscriptionStore = new PostgresCreditSubscriptionStore(pool);
 const redemptionStore = new PostgresRedemptionStore(pool);
 const operationsRepository = new PostgresOperationsRepository(pool);
 const productBillingRepository = new PostgresProductBillingRepository(pool);
@@ -488,6 +493,15 @@ const contentPackageMigration = new ContentPackageMigrationService({
 });
 const adminConfigRepository = new PostgresAdminConfigRepository(pool);
 const sensitiveWordsRepository = new PostgresSensitiveWordsRepository(pool);
+const creditPlanCatalog = new AdminConfigCreditPlanCatalogSource(
+  adminConfigRepository,
+);
+const creditBilling = new CreditBillingService(
+  creditLedger,
+  creditSubscriptionStore,
+  creditPlanCatalog,
+  new AdminConfigEntitlementCatalogSource(adminConfigRepository),
+);
 const dueDeliveryRepository = new PostgresDueDeliveryRepository(
   pool,
   adminConfigRepository
@@ -745,10 +759,6 @@ const aiStreamingRunner =
       ? new OpenAiCompatibleAiSdkRunner(modelRuntime.direct)
       : undefined;
 const foundationLedgerService = new P1ApplicationService(foundationRepository);
-const productEntitlementPolicy = new ProductStateEntitlementPolicy(
-  relationalProductRepository,
-  productPlans
-);
 const productEntitlements = new GrantLotAwareProductEntitlementService(
   foundationRepository,
   grantLotLedger,
@@ -756,13 +766,9 @@ const productEntitlements = new GrantLotAwareProductEntitlementService(
   undefined,
   productQuoteService
 );
-const executionEntitlementPolicy = new CompositeProductEntitlementPolicy(
-  productEntitlementPolicy,
-  productEntitlements,
-  {
-    allowFoundationPlan: true,
-    allowFoundationSupplements: recordedCommerceEnabled,
-  }
+const executionEntitlementPolicy = new CreditSubscriptionEntitlementPolicy(
+  creditSubscriptionStore,
+  creditPlanCatalog,
 );
 const modelSupplyProviderAdmission =
   new PostgresModelSupplyProviderAdmission({
@@ -771,6 +777,7 @@ const modelSupplyProviderAdmission =
     accountAllocations: accountAllocationStore,
     supplyPools: supplyPoolStore,
     capacityLeases: capacityLeaseStore,
+    creditMeteringEnabled: true,
   });
 const p1ModelSupplyRuntime = createModelSupplyRuntime({
   application: {
@@ -779,7 +786,7 @@ const p1ModelSupplyRuntime = createModelSupplyRuntime({
     ledger: new FoundationModelSupplyLedger(
       foundationLedgerService,
       executionEntitlementPolicy,
-      grantLotLedger,
+      undefined,
       {
         billingLifecycle,
         defaultSupplyPoolId: 'pool-shared-default',
@@ -951,6 +958,8 @@ await migratePostgresSchema(pool, [
   relationalProductRepository,
   foundationRepository,
   grantLotLedger,
+  creditLedger,
+  creditSubscriptionStore,
   redemptionStore,
   adminConfigRepository,
   sensitiveWordsRepository,
@@ -1637,6 +1646,12 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         'plan.allowances.starter',
         'plan.allowances.growth',
         'plan.allowances.pro',
+        'plan.credits.trial',
+        'plan.credits.starter',
+        'plan.credits.growth',
+        'plan.credits.pro',
+        'plan.credits.addons',
+        'plan.credits.trial.enabled',
         ...PLATFORM_DEFAULT_MODEL_CONFIG_KEYS.map(
           platformDefaultModelConfigName,
         ),
@@ -1665,6 +1680,12 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         'plan.allowances.starter',
         'plan.allowances.growth',
         'plan.allowances.pro',
+        'plan.credits.trial',
+        'plan.credits.starter',
+        'plan.credits.growth',
+        'plan.credits.pro',
+        'plan.credits.addons',
+        'plan.credits.trial.enabled',
         ...PLATFORM_DEFAULT_MODEL_CONFIG_KEYS.map(
           platformDefaultModelConfigName,
         ),
@@ -1679,6 +1700,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       catalogSource: new AdminConfigEntitlementCatalogSource(
         adminConfigRepository,
       ),
+      creditBilling,
       monthlyOutput: productQuoteService,
       modelCatalogTenantAllowlist,
       warn: (message) => console.warn(message),
@@ -1959,7 +1981,11 @@ if (harnessRuntimeConfig) {
   const creationSubmissionStore = new PostgresCreationSubmissionStore(
     pool,
     new PostgresCreationSubmissionPersistence(
-      new PostgresProductBillingUsageReservation(pool, grantLotLedger)
+      new PostgresProductBillingUsageReservation(
+        pool,
+        grantLotLedger,
+        creditLedger,
+      )
     )
   );
   await creationSubmissionStore.migrate();
@@ -2125,6 +2151,7 @@ if (harnessRuntimeConfig) {
       events: harnessObservabilityEvents,
       context: harnessStore,
     },
+    creditLedger,
   );
   const billingCompensations =
     new PostgresHarnessBillingCompensationStore(pool);
@@ -2610,7 +2637,7 @@ const server = createCoreServer({
   harnessService,
   pendingActions,
   operationsService,
-  planCatalog: new AdminConfigEntitlementCatalogSource(adminConfigRepository),
+  planCatalog: creditPlanCatalog,
   productService,
   p1ApplicationService,
   runtimeTruth,

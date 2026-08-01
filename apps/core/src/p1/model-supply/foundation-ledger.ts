@@ -119,10 +119,12 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
     const context = contextFor(input);
     const resource = usageResource(input.submission.operation);
     const usageQuantity = input.submission.productUsageQuantity ?? 1;
-    // Once the grant-lot ledger is assembled it is the sole allowance
-    // authority. The generation job keeps a stable zero-value reservation
-    // identity without creating a second ProductUsage event stream.
-    const legacyUsageQuantity = this.grantLots ? 0 : usageQuantity;
+    const productUsageReserved = Boolean(input.submission.billingTaskId);
+    // A billingTaskId means ProductUsage and merchant credits were reserved by
+    // the submission transaction. Historical unbilled jobs keep their legacy
+    // allowance path, but a billed job must never debit it a second time.
+    const legacyUsageQuantity =
+      productUsageReserved || this.grantLots ? 0 : usageQuantity;
     const usageOperationId = usageReservationIdFor(input.jobId);
     const usageReservationId = usageReservationIdFor(
       input.jobId,
@@ -155,7 +157,7 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
               input.submission.workspaceId,
               resource,
             );
-        if (usageQuantity > 0 && this.grantLots) {
+        if (usageQuantity > 0 && this.grantLots && !productUsageReserved) {
           // The grant-aware entitlement policy performs the one-time legacy
           // balance migration before grant lots become the execution authority.
           await resolveGenerationOpeningEntitlement(

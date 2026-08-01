@@ -68,6 +68,8 @@ export interface PostgresModelSupplyProviderAdmissionOptions {
   defaultSupplyAccountConcurrency?: number;
   defaultSystemConcurrency?: number;
   capacityQueueWaitMs?: number;
+  /** Merchant usage is already reserved by the credit ledger transaction. */
+  creditMeteringEnabled?: boolean;
 }
 
 const DEFAULT_LEASE_TTL_MS = 15 * 60 * 1_000;
@@ -243,7 +245,10 @@ export class PostgresModelSupplyProviderAdmission
       );
     }
     const resource = resourceForOperation(input.submission.operation);
-    if (effective.allowance[resource] <= 0) {
+    if (
+      this.options.creditMeteringEnabled !== true &&
+      effective.allowance[resource] <= 0
+    ) {
       return reject(
         'RESOURCE_NOT_ENTITLED',
         `The effective entitlement does not allow ${resource} usage.`

@@ -12,8 +12,6 @@ import {
 import { assertStrongSecret } from './security/secret-hardening.js';
 import { PostgresLegacyInFlightDecisionPort } from './p1/cutover/index.js';
 import {
-  CompositeProductEntitlementPolicy,
-  GrantLotAwareProductEntitlementService,
   P1ApplicationService,
   PostgresFoundationRepository,
   PostgresGrantLotLedger,
@@ -99,6 +97,18 @@ import {
   DurableProductBillingService,
   PostgresProductBillingRepository,
 } from './p1/product-billing/index.js';
+import { PostgresCreditLedger } from './p1/credit-billing/postgres-credit-ledger.js';
+import { CreditSubscriptionEntitlementPolicy } from './p1/credit-billing/credit-entitlement-policy.js';
+import {
+  CREDIT_SUBSCRIPTION_CYCLE_JOB_KIND,
+  CREDIT_SUBSCRIPTION_RECONCILIATION_JOB_KIND,
+  CreditSubscriptionCycleScheduler,
+  PostgresCreditSubscriptionStore,
+  createCreditSubscriptionCycleJobHandler,
+  createCreditSubscriptionReconciliationJobHandler,
+  registerCreditSubscriptionSchedules,
+} from './p1/credit-billing/credit-subscription-scheduler.js';
+import { AdminConfigCreditPlanCatalogSource } from './p1/admin-config/credit-plan-catalog-source.js';
 import {
   ModelSupplyImageGenerationAdapter,
   AdminConfigAssetIntakeGuidanceSource,
@@ -144,7 +154,6 @@ import { productPlanConfigFromEnv } from './product/plans.js';
 import {
   ProductAssetDataClassResolver,
   ProductCreativeGroundingResolver,
-  ProductStateEntitlementPolicy,
 } from './product/p1-model-policy.js';
 import { migratePostgresSchema } from './postgres-schema-migration.js';
 import { initializeJobWorkerHarnessRuntime } from './p1/harness/runtime-config.js';
@@ -251,6 +260,11 @@ const referenceAssets = new CompositeReferenceAssetResolver([
   }),
 ]);
 const grantLotLedger = new PostgresGrantLotLedger(pool);
+const creditLedger = new PostgresCreditLedger(pool);
+const creditSubscriptionStore = new PostgresCreditSubscriptionStore(pool);
+const creditPlanCatalog = new AdminConfigCreditPlanCatalogSource(
+  adminConfigRepository,
+);
 const operationsRepository = new PostgresOperationsRepository(pool);
 const foundationAssetReferences = new FoundationOwnedAssetReferenceVerifier(
   foundationRepository,
@@ -304,26 +318,9 @@ const supplyPlanningControlPlane = new PostgresSupplyPlanningControlPlane(
   PLATFORM_SUPPLY_SCOPE_ID,
 );
 const legacyInFlightDecisions = new PostgresLegacyInFlightDecisionPort(pool);
-const productEntitlementPolicy = new ProductStateEntitlementPolicy(
-  relationalProductRepository,
-  productPlans
-);
-const foundationEntitlementPolicy = new GrantLotAwareProductEntitlementService(
-  foundationRepository,
-  grantLotLedger,
-  undefined,
-  undefined,
-  billingLifecycle
-);
-const recordedCommerceEnabled =
-  process.env.P1_RECORDED_COMMERCE_ENABLED === '1';
-const executionEntitlementPolicy = new CompositeProductEntitlementPolicy(
-  productEntitlementPolicy,
-  foundationEntitlementPolicy,
-  {
-    allowFoundationPlan: true,
-    allowFoundationSupplements: recordedCommerceEnabled,
-  }
+const executionEntitlementPolicy = new CreditSubscriptionEntitlementPolicy(
+  creditSubscriptionStore,
+  creditPlanCatalog,
 );
 const entitlementJobRuntime = new EntitlementAwareJobPort(
   jobRuntime,
@@ -344,6 +341,8 @@ await migratePostgresSchema(pool, [
   relationalProductRepository,
   foundationRepository,
   grantLotLedger,
+  creditLedger,
+  creditSubscriptionStore,
   adminConfigRepository,
   operationsRepository,
   productBillingRepository,
@@ -442,6 +441,7 @@ const modelSupplyProviderAdmission =
     accountAllocations: accountAllocationStore,
     supplyPools: supplyPoolStore,
     capacityLeases: capacityLeaseStore,
+    creditMeteringEnabled: true,
   });
 const mediaExecutionMode = modelMediaExecutionMode(modelRuntime);
 const gatedModelExecution = new ModeGateExecutionPort(
@@ -464,7 +464,7 @@ const modelSupplyRuntime = createModelSupplyRuntime({
     ledger: new FoundationModelSupplyLedger(
       foundation,
       executionEntitlementPolicy,
-      grantLotLedger,
+      undefined,
       {
         billingLifecycle,
         defaultSupplyPoolId: 'pool-shared-default',
@@ -655,6 +655,26 @@ const workerId = resolveWorkerId(
   process.env.P1_JOB_WORKER_ID,
   `${hostname()}:${process.pid}`
 );
+const creditSubscriptionScheduler = new CreditSubscriptionCycleScheduler(
+  creditSubscriptionStore,
+  creditLedger,
+  {
+    planFor: (tier) => creditPlanCatalog.planFor(tier),
+    alerts: {
+      async notify(alert) {
+        await notifier.notify({
+          workspaceId: alert.workspaceId,
+          jobId: `credit-subscription:${alert.subscriptionId}:${alert.cycleIndex}`,
+          status: 'needs_action',
+          message: 'Paid subscription cycle is missing its credit grant.',
+          deepLink: '/admin',
+          correlationId: `credit-subscription-reconcile:${alert.subscriptionId}:${alert.cycleIndex}`,
+          idempotencyKey: `credit-subscription-missing:${alert.subscriptionId}:${alert.cycleIndex}`,
+        });
+      },
+    },
+  },
+);
 const dueDeliveryScanner = new DueDeliveryScannerRunner(
   new DueDeliveryWorker(
     dueDeliveryRepository,
@@ -670,12 +690,19 @@ const dueDeliveryScanner = new DueDeliveryScannerRunner(
   dueDeliveryRepository
 );
 await registerDueDeliveryScannerSchedule(jobRuntime);
+await registerCreditSubscriptionSchedules(jobRuntime);
 if (assetRegistrationCleanup) {
   await registerS3AssetRegistrationCleanupSchedule(jobRuntime);
 }
 const worker = new P1JobWorkerEntrypoint(
   jobRuntime,
   {
+    [CREDIT_SUBSCRIPTION_CYCLE_JOB_KIND]:
+      createCreditSubscriptionCycleJobHandler(creditSubscriptionScheduler),
+    [CREDIT_SUBSCRIPTION_RECONCILIATION_JOB_KIND]:
+      createCreditSubscriptionReconciliationJobHandler(
+        creditSubscriptionScheduler,
+      ),
     [DUE_DELIVERY_SCANNER_JOB_KIND]: createDueDeliveryScannerJobHandler(
       dueDeliveryScanner,
       workerId

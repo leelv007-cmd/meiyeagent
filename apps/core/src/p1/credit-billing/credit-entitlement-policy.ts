@@ -1,0 +1,76 @@
+import type {
+  ProductEntitlementPolicy,
+  ProductEntitlementPolicyPort,
+} from '../foundation/entitlement-policy.js';
+import type { CreditPlanCatalog } from './credit-plan-catalog.js';
+import {
+  CREDIT_SUBSCRIPTION_GRACE_PERIOD_MS,
+  creditSubscriptionCycle,
+  type CreditSubscription,
+  type CreditSubscriptionStore,
+} from './credit-subscription-scheduler.js';
+
+/** Resolves only non-credit product rights from the current paid subscription. */
+export class CreditSubscriptionEntitlementPolicy
+  implements ProductEntitlementPolicyPort
+{
+  constructor(
+    private readonly subscriptions: Pick<
+      CreditSubscriptionStore,
+      'listForWorkspace'
+    >,
+    private readonly plans: { get(): Promise<CreditPlanCatalog> },
+    private readonly clock: () => Date = () => new Date(),
+  ) {}
+
+  async resolve(workspaceId: string): Promise<ProductEntitlementPolicy | null> {
+    const now = this.clock();
+    const subscription = (await this.subscriptions.listForWorkspace(workspaceId))
+      .filter((candidate) => hasCurrentPaidRights(candidate, now))
+      .sort((left, right) =>
+        right.updatedAt.localeCompare(left.updatedAt) || right.id.localeCompare(left.id)
+      )[0];
+    const tier = subscription?.tier ?? 'trial';
+    const plan = (await this.plans.get()).plans.find(
+      (candidate) => candidate.id === tier,
+    );
+    if (!plan) return null;
+
+    return {
+      addOns: [],
+      allowance: { audio: 0, copy: 0, image: 0, video: 0 },
+      autoTopUp: {
+        enabled: false,
+        monthlyCapMicros: 0,
+        spentThisMonthMicros: 0,
+      },
+      concurrencyLimit: plan.concurrencyLimit,
+      queuePriority: plan.queuePriority,
+      revision: subscription
+        ? `credit-entitlement:${subscription.id}:${subscription.updatedAt}`
+        : `credit-entitlement:default:${workspaceId}`,
+      supportLabel: plan.supportLabel,
+      tier,
+    };
+  }
+}
+
+function hasCurrentPaidRights(subscription: CreditSubscription, now: Date) {
+  const nowMs = now.getTime();
+  if (subscription.status === 'past_due') {
+    return Boolean(
+      subscription.pastDueAt &&
+        nowMs <
+          Date.parse(subscription.pastDueAt) +
+            CREDIT_SUBSCRIPTION_GRACE_PERIOD_MS,
+    );
+  }
+  if (subscription.status !== 'active' || subscription.paidThroughCycle < 1) {
+    return false;
+  }
+  const coverage = creditSubscriptionCycle(
+    subscription.anchorAt,
+    subscription.paidThroughCycle - 1,
+  );
+  return Date.parse(coverage.startsAt) <= nowMs && nowMs < Date.parse(coverage.endsAt);
+}
