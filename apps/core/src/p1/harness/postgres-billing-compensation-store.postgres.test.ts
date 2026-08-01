@@ -59,12 +59,13 @@ test(
     const suffix = randomUUID();
     const workspaceId = `billing-orphan-${suffix}`;
     const cases = [
-      { action: 'refund', fact: 'failure', taskId: `failed-${suffix}` },
-      { action: 'refund', fact: 'cancellation', taskId: `cancelled-${suffix}` },
-      { action: 'commit', fact: 'delivery', taskId: `delivered-${suffix}` },
+      { action: 'refund', fact: 'failure', forceCreditRefund: true, taskId: `failed-${suffix}` },
+      { action: 'refund', fact: 'cancellation', forceCreditRefund: true, taskId: `cancelled-${suffix}` },
+      { action: 'commit', fact: 'delivery', forceCreditRefund: false, taskId: `delivered-${suffix}` },
       {
         action: 'refund',
         fact: 'start_failure',
+        forceCreditRefund: false,
         taskId: `start-failed-${suffix}`,
       },
     ] as const;
@@ -257,6 +258,13 @@ test(
           .map(({ action, taskId }) => ({ action, taskId }))
           .sort((left, right) => left.taskId.localeCompare(right.taskId)),
       );
+      for (const item of cases) {
+        assert.equal(
+          claimed.find(({ taskId }) => taskId === item.taskId)
+            ?.forceCreditRefund === true,
+          item.forceCreditRefund,
+        );
+      }
       assert.deepEqual(
         claimed.find(({ action }) => action === 'commit')?.trustedUsage,
         {

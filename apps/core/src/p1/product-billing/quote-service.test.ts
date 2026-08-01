@@ -539,6 +539,27 @@ describe('ProductQuoteService lifecycle', () => {
     assert.equal(failed.usage.refundedQuantity, 6);
   });
 
+  it('forces system credit refunds while user failures follow model policy', () => {
+    const fail = (quoteId: string, forceCreditRefund: boolean) => {
+      const quotes = service();
+      quotes.buildQuote({
+        ...perRequestInput(quoteId),
+        creditCost: 5,
+        failureRefundsCredits: false,
+        unitRate: 5,
+      });
+      quotes.confirm({ quoteId, taskId: `task-${quoteId}` });
+      quotes.reserve({
+        quoteId,
+        units: [],
+      });
+      return quotes.failAndRefund({ quoteId, forceCreditRefund });
+    };
+
+    assert.equal(fail('quote-user-failure', false).usage.status, 'committed');
+    assert.equal(fail('quote-system-failure', true).usage.status, 'refunded');
+  });
+
   it('min charge and rounding affect quotedSeconds', () => {
     const quotes = service();
     const quoted = quotes.buildQuote({

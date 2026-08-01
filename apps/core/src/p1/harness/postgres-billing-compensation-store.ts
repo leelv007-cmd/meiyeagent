@@ -122,6 +122,22 @@ export class PostgresHarnessBillingCompensationStore
                   LIMIT 1
                 ) AS trusted_usage,
                 CASE
+                  WHEN EXISTS (
+                    SELECT 1
+                    FROM harness_runtime.decision_events decisions
+                    WHERE decisions.task_id=requests.runtime_id
+                      AND decisions.resolution_source='core_hold_expired'
+                  ) OR EXISTS (
+                    SELECT 1
+                    FROM harness_runtime.audit_events failures
+                    WHERE failures.workflow_id=requests.runtime_id
+                      AND failures.event_type IN (
+                        'workflow_failed', 'revision_conflict'
+                      )
+                  ) THEN true
+                  ELSE false
+                END AS force_credit_refund,
+                CASE
                   WHEN submissions.harness_state='failed' THEN 'refund'
                   WHEN EXISTS (
                     SELECT 1
@@ -188,6 +204,10 @@ export class PostgresHarnessBillingCompensationStore
                     THEN jsonb_build_object(
                       'trustedUsage', ready.trusted_usage
                     )
+                  ELSE '{}'::jsonb
+                END || CASE
+                  WHEN ready.force_credit_refund
+                    THEN jsonb_build_object('forceCreditRefund', true)
                   ELSE '{}'::jsonb
                 END
          FROM ready
