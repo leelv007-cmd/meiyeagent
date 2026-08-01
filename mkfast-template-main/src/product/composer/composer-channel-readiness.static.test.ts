@@ -21,9 +21,11 @@ const conversation = read('./composer-conversation.tsx');
 
 test('composer projects channel readiness for the model that will run', () => {
   // The readiness value reaches the surface from the resolved catalog model.
+  // Allow whitespace/newlines between `{` and the selectedModel access (P1 shell
+  // formatting); the binding must still be the catalog model that will run.
   assert.match(
     home,
-    /modelChannelReadiness=\{selectedModel\?\.channelReadiness/
+    /modelChannelReadiness=\{\s*selectedModel\?\.channelReadiness/u
   );
 
   assert.match(conversation, /composer-model-channel-readiness/);

@@ -132,10 +132,19 @@ test('Z1 removes legacy entries and keeps Composer + Result Center contracts', (
     new URL('../../product/composer/composer-home.tsx', import.meta.url),
     'utf8'
   );
+  const workbenchShell = readFileSync(
+    new URL(
+      '../../product/composer/workbench-shell-layout.tsx',
+      import.meta.url
+    ),
+    'utf8'
+  );
   const resultCenter = readFileSync(
     new URL('../../product/results/result-center-page.tsx', import.meta.url),
     'utf8'
   );
-  assert.match(composer, /data-testid="composer-home"/u);
+  // P1-01: shell host owns default testId='composer-home'; home mounts it.
+  assert.match(composer, /WorkbenchShellRoot/u);
+  assert.match(workbenchShell, /testId = 'composer-home'/u);
   assert.match(resultCenter, /data-testid="result-center-shell"/u);
 });
