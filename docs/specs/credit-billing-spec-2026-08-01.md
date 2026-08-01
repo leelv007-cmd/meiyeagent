@@ -1,7 +1,7 @@
 # 积分制计费规格（Credit Billing Spec）
 
 - 日期：2026-08-01
-- 状态：终稿（wayfinder 图 [#289](https://github.com/leelv007-cmd/meiyeweb-agent/issues/289) 终点交付物；经 Codex CLI 对抗复核一轮，11 条 findings（3 BLOCKER/8 MAJOR）全数吸收，复核记录在票 #295）
+- 状态：终稿（wayfinder 图 [#289](https://github.com/leelv007-cmd/meiyeweb-agent/issues/289) 终点交付物；经 Codex CLI 对抗复核一轮，11 条 findings（3 BLOCKER/8 MAJOR）全数吸收，复核记录在票 #295）。2026-08-01 增补 §11 开发纪律与提交合并规范（Codex 实施轮治理）。
 - 决策来源：图 #289 的 12 条开图决策 + 五张子票资解（#290 Waffo 接入调研、#291 条数额度全触点盘点、#292 降级退订语义、#293 初始数值口径、#294 价格页原型）。票面资解是各决策的唯一详情出处，本规格只收束不复述论证。
 - 实施方式：本规格锁死全部产品决策，实施另行集中开票（见 §10）。
 
@@ -249,3 +249,48 @@ refund 回到**原扣批次**；若退还发生时原批次已过效期，退还
 | L3 Waffo 通道 | provider/waffo + RSA 验签、加油包结算场景、Creem 退役 | L1 合同；§5.4 人工前置 |
 | L4 前台四面 | 价格页 A 结构、工作台三位、明细页、账单卡、i18n | L1 合同、L2 面板合同 |
 | L5 退役清扫与验收 | #291 退役清单收尾、文档 supersede 对照、§9 验收门全绿 | L1-L4 |
+
+## §11 开发纪律与提交合并规范（Codex 实施轮）
+
+实施票 = [#298](https://github.com/leelv007-cmd/meiyeweb-agent/issues/298)（L1）/ [#299](https://github.com/leelv007-cmd/meiyeweb-agent/issues/299)（L2）/ [#300](https://github.com/leelv007-cmd/meiyeweb-agent/issues/300)（L3）/ [#301](https://github.com/leelv007-cmd/meiyeweb-agent/issues/301)（L4）/ [#302](https://github.com/leelv007-cmd/meiyeweb-agent/issues/302)（L5）。通用纪律全文以 `docs/ops/agent-dispatch-runbook-2026-07-29.md` 为准（环境铁律／关票纪律／受阻轮询协议全部适用），本节只列本效力面的增量与收束，冲突时以手册为底、本节为特化。
+
+### 11.1 角色与主权
+
+- **开发 = Codex lane agent**：按 §10 领票，一票一 lane 一 worktree 一分支。票面即任务书，票下「主控裁决／依赖更新／主控合同增补」前缀评论覆盖票面原文。
+- **总控 = 主控会话**：验收、合入 main、关票、修订本 spec 的唯一主权方。lane **不 push、不关票、绝不移动 main**、绝不以「主控」前缀发评论；「已合入」唯一有效凭证 = `docs/ops/merge-ledger.md` 出现对应 sha 行。
+- **决策冲突序**：本 spec 终稿 > 各票资解（#290–#295）> 票面文字。发现冲突落票下评论并停下问主控，不得自行扩边界。
+
+### 11.2 开工与依赖
+
+- 开工顺序 = §10 硬依赖列，且以票上**原生 blocked-by 边**为机器判据：被阻塞票未解锁（阻塞票未关）不得开工，只准做零 rebase 面预备（schema 草案／只读盘点／设计稿）。
+- L1（#298）为唯一起点；L2/L3 于 L1 合入台账记账后解锁；L4 需 L1+L2；L5 需 L1–L4。
+- **凭据纪律**：Waffo 测试凭据只住 `docs/_private/waffo.env`（gitignored）。代码与测试一律经 env 注入读取；明文**永不**进代码、票面评论、commit、日志或任何脚本 argv（手册「秘密不进 argv」条适用）。
+
+### 11.3 分支与提交
+
+- worktree：`git worktree add ../lane-<票号> main`，分支名 `lane-<票号>`；主 checkout 只留主控复核合入。
+- commit message 英文、祈使句、小步提交，subject 引用票号，例：`feat(credit): converge grant-lot to single credits resource (#298)`。
+- 每日 rebase main、不回灌 merge；上游 lane 合入后的首次 rebase 附跑上游关票验收断言（rebase 六条照旧）。
+
+### 11.4 交验标准与 lane×验收门映射
+
+交验 = 票下评论逐条对应票面验收，附运行证据（file:line／命令输出／`git ls-files` 结果），且手册四门齐备：消费者证明（D-150）、可达性证明、出口证明（含未授权入边负向）、反向复核（D-157 双向）。
+
+主控亲验按下表对 §9 验收门验收；「半边」指该门跨 lane，先合入方交付自己半边的行为证据，后合入方补全门：
+
+| lane | 必绿门（§9 编号） |
+|---|---|
+| L1 #298 | 1 FEFO、2 预扣闭环、3 变更语义、7 并发不超扣、8 发分调度、11 trial 防重；9 的宽限语义账本半边 |
+| L2 #299 | 4 的后台半边（改价→偏离提示→采用建议值→确认发布） |
+| L3 #300 | 5 Waffo 真跑、10 退款落账幂等；9 的 past_due 事件半边 |
+| L4 #301 | 6 明细页自证；4 的前台半边（已发布数字更新＋仅供参考标注＋周期切换条换算） |
+| L5 #302 | §9 全 11 门回归全绿 + Creem 退役审计断言（`git ls-files` 空输出口径） |
+
+### 11.5 合入流程（主控亲验六步）
+
+1. lane 交验评论到位 → 主控在主 checkout diff `lane-<票号>` 分支，逐行溯票面范围，越界改动打回。
+2. 复跑该 lane 必绿门 + `typecheck` + 受影响测试面（locale:compile 冲突纪律照旧，不与在跑 dev 并发）。
+3. 反向复核双向跑：承诺→实现、实现→生产可达各一遍。
+4. 主控亲手 merge 入 main，`docs/ops/merge-ledger.md` 记 sha 行（该文件只由主控提交）。
+5. 主控前缀评论关票。
+6. 依赖它的后续 lane 以台账 sha 为解锁信号，首次 rebase 附跑上游验收断言。
