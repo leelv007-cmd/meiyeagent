@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import sharp from 'sharp';
+import { contentPackageCarrierOf } from '@meiye/contracts';
 import type {
   CustodyOwnedAssetContentType,
   ModelAssetStoragePort,
@@ -228,8 +229,15 @@ export class ContentPackageZipExportAdapter
   async export(
     input: Parameters<ContentPackageExportPort['export']>[0],
   ): Promise<ContentPackageExportArtifactWithName> {
-    if (input.kind === 'video') {
-      // B-01: video main export path is the full delivery ZIP (manifest/v1).
+    // xhs-spec §3.1: dispatch on the media/copy/note carrier口径. The wire kind
+    // stays two-valued; the carrier is derived (video ⇒ media, image_text
+    // without ordered media ⇒ copy, otherwise ⇒ note).
+    const carrier = contentPackageCarrierOf({
+      kind: input.kind,
+      orderedAssetCount: input.version.orderedAssetIds.length,
+    });
+    if (carrier === 'media') {
+      // B-01: media main export path is the full delivery ZIP (manifest/v1).
       return this.exportVideoFullPackage(input);
     }
 
@@ -293,7 +301,7 @@ export class ContentPackageZipExportAdapter
       variantVersionId: input.version.id,
     };
     const built =
-      images.length === 0
+      carrier === 'copy'
         ? buildCopyDeliveryPackage(packageInput)
         : buildImageTextDeliveryPackage({ ...packageInput, images });
 

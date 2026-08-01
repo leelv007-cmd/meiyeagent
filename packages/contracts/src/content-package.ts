@@ -15,39 +15,26 @@ const contentPackageIdSchema = z.string().trim().min(1);
 const contentPackageTimestampSchema = z.iso.datetime();
 
 /**
- * Canonical ContentPackage kinds (xhs-vertical-integration-spec §3.1).
- * - media: single media asset (image/video/…)
+ * ContentPackage wire/storage kind. Unchanged from v1 on purpose: every stored
+ * row, export manifest and byte-identical replay fixture keys off these two
+ * values, and the product口径 below is derived rather than persisted.
+ */
+export const contentPackageKindSchema = z.enum(['image_text', 'video']);
+
+/**
+ * Product carrier口径 (xhs-vertical-integration-spec §3.1 三枚举).
+ * - media: single media asset (图/视频等)
  * - copy: pure text deliverable
- * - note: image-text composite (page set + cover + body); XHS 图文成品
+ * - note: image-text composite (页组 + 封面 + 正文); XHS 图文成品即 note
+ *
+ * Landed as a derived classification over the unchanged wire kind (§3.1
+ * 「迁移方式实施时定」→ 分层映射起步，不做破坏性数据迁移). Deriving instead of
+ * widening `contentPackageKindSchema` keeps every `kind === 'video' ? … : …`
+ * dispatch downstream sound: no branch can receive a value it cannot handle.
  */
-export const contentPackageCanonicalKinds = ['media', 'copy', 'note'] as const;
-export type ContentPackageCanonicalKind =
-  (typeof contentPackageCanonicalKinds)[number];
-
-/**
- * Legacy wire/storage aliases kept for compatibility without DB rewrite.
- * Product semantics use the canonical map (new口径为准).
- */
-export const contentPackageLegacyKindAliasMap = {
-  /** Historical 图文 package → note (XHS 图文成品). */
-  image_text: 'note',
-  /** Historical video package → media (single-media carrier). */
-  video: 'media',
-} as const satisfies Record<string, ContentPackageCanonicalKind>;
-
-export const contentPackageLegacyKinds = ['image_text', 'video'] as const;
-
-/**
- * Wire schema accepts canonical kinds plus legacy aliases.
- * Call {@link normalizeContentPackageKind} when product logic needs media/copy/note.
- */
-export const contentPackageKindSchema = z.enum([
-  'media',
-  'copy',
-  'note',
-  'image_text',
-  'video',
-]);
+export const contentPackageCarriers = ['media', 'copy', 'note'] as const;
+export const contentPackageCarrierSchema = z.enum(contentPackageCarriers);
+export type ContentPackageCarrier = (typeof contentPackageCarriers)[number];
 
 export const contentPackagePlatformSchema = z.enum([
   'xiaohongshu',
@@ -186,20 +173,20 @@ export type ContentPackageStatusGroup = z.infer<
   typeof contentPackageStatusGroupSchema
 >;
 
-/** Map legacy aliases to the media/copy/note product口径. Idempotent for canonical values. */
-export function normalizeContentPackageKind(
-  kind: ContentPackageKind,
-): ContentPackageCanonicalKind {
-  if (kind === 'image_text' || kind === 'video') {
-    return contentPackageLegacyKindAliasMap[kind];
-  }
-  return kind;
-}
-
-export function isContentPackageCanonicalKind(
-  kind: string,
-): kind is ContentPackageCanonicalKind {
-  return (contentPackageCanonicalKinds as readonly string[]).includes(kind);
+/**
+ * Classify a ContentPackage version into the media/copy/note carrier口径.
+ *
+ * Total over the wire kinds and lossless: `video` is the single-media carrier,
+ * and ContentPackage v1 carries both Composer 纯文案 and 图文成品 under the same
+ * `image_text` kind — a copy revision is exactly the one without ordered media
+ * assets (see `delivery-package.ts` `buildCopyDeliveryPackage`).
+ */
+export function contentPackageCarrierOf(input: {
+  kind: ContentPackageKind;
+  orderedAssetCount: number;
+}): ContentPackageCarrier {
+  if (input.kind === 'video') return 'media';
+  return input.orderedAssetCount === 0 ? 'copy' : 'note';
 }
 
 const STATUS_GROUP_BY_STATUS = {
