@@ -771,6 +771,8 @@ export function registerHarnessDbosWorkflow(
         const settlement = harnessBillingSettlementInput(
           request,
           workflowId,
+          undefined,
+          true,
         );
         // Whether the reserved 额度 came back is part of what the merchant is
         // told (D-096 申报). It is known here and nowhere downstream, so it
@@ -994,6 +996,8 @@ export async function settleHarnessCancellation(input: {
   const settlement = harnessBillingSettlementInput(
     input.request,
     input.workflowId,
+    undefined,
+    true,
   );
   if (input.request.usageReservation && (!input.billing || !settlement)) {
     throw new Error(
@@ -1041,6 +1045,7 @@ export function harnessBillingSettlementInput(
   request: HarnessWorkflowInput,
   workflowId: string,
   result?: unknown,
+  forceCreditRefund = false,
 ): HarnessBillingSettlementInput | null {
   const snapshot = request.executionSnapshot;
   if (!snapshot) return null;
@@ -1051,6 +1056,7 @@ export function harnessBillingSettlementInput(
     quoteId: snapshot.quote.id,
     quoteRevision: snapshot.quote.revision,
     ...(trustedUsage ? { trustedUsage } : {}),
+    ...(forceCreditRefund ? { forceCreditRefund: true } : {}),
   };
 }
 

@@ -63,7 +63,7 @@ export class HarnessReservationSweeper {
     let failed = 0;
     for (const sweep of sweeps) {
       try {
-        await this.billing.refund(sweep);
+        await this.billing.refund({ ...sweep, forceCreditRefund: true });
       } catch (error) {
         await this.store.markFailed(
           sweep,

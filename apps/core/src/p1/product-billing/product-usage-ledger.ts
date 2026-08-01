@@ -298,16 +298,25 @@ export class MemoryProductUsageLedger implements ProductUsageLedger {
       refundedUnits,
       ...(existing.reservedCredits !== undefined
         ? {
-            settledCredits: Math.round(
-              (existing.reservedCredits * remaining) /
-                Math.max(1, existing.reservedQuantity),
-            ),
+            settledCredits:
+              existing.reservedQuantity === 0
+                ? remaining === 0
+                  ? 0
+                  : existing.reservedCredits
+                : Math.round(
+                    (existing.reservedCredits * remaining) /
+                      existing.reservedQuantity,
+                  ),
             refundedCredits:
-              existing.reservedCredits -
-              Math.round(
-                (existing.reservedCredits * remaining) /
-                  Math.max(1, existing.reservedQuantity),
-              ),
+              existing.reservedQuantity === 0
+                ? remaining === 0
+                  ? existing.reservedCredits
+                  : 0
+                : existing.reservedCredits -
+                  Math.round(
+                    (existing.reservedCredits * remaining) /
+                      existing.reservedQuantity,
+                  ),
           }
         : {}),
       settlementStatus:

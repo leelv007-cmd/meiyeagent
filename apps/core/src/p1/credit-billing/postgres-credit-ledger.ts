@@ -112,7 +112,7 @@ export class PostgresCreditLedger implements PostgresSchemaMigrator {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      await lockWorkspaceCredits(client, workspaceId);
+      await lockWorkspaceCreditsWithClient(client, workspaceId);
       const result = await work(client);
       await client.query('COMMIT');
       return result;
@@ -132,7 +132,7 @@ export class PostgresCreditLedger implements PostgresSchemaMigrator {
 
   async grantWithClient(client: PoolClient, input: GrantCreditsInput) {
     assertGrant(input);
-    await lockWorkspaceCredits(client, input.workspaceId);
+    await lockWorkspaceCreditsWithClient(client, input.workspaceId);
     const key = normalizeCreditGrantIdempotencyKey(
       input.id,
       input.grantIdempotencyKey,
@@ -219,7 +219,7 @@ export class PostgresCreditLedger implements PostgresSchemaMigrator {
   ) {
     assertPositiveCredits(input.credits, 'credits');
     assertTimestamp(input.createdAt, 'createdAt');
-    await lockWorkspaceCredits(client, input.workspaceId);
+    await lockWorkspaceCreditsWithClient(client, input.workspaceId);
     const operationId = normalizeCreditConsumeIdempotencyKey(input.transactionId);
     const replay = await client.query<CreditTransactionRow>(
       `SELECT * FROM p1_credit_lot_transactions
@@ -307,7 +307,7 @@ export class PostgresCreditLedger implements PostgresSchemaMigrator {
   ) {
     if (input.credits !== undefined) assertPositiveCredits(input.credits, 'credits');
     assertTimestamp(input.createdAt, 'createdAt');
-    await lockWorkspaceCredits(client, input.workspaceId);
+    await lockWorkspaceCreditsWithClient(client, input.workspaceId);
     const usageOperationId = normalizeCreditConsumeIdempotencyKey(input.usageOperationId);
     const usages = await client.query<CreditTransactionRow>(
       `SELECT * FROM p1_credit_lot_transactions
@@ -411,6 +411,48 @@ export class PostgresCreditLedger implements PostgresSchemaMigrator {
     };
   }
 
+  async expireSubscriptionLots(input: {
+    workspaceId: string;
+    subscriptionId: string;
+    actorId: string;
+    correlationId: string;
+    createdAt: string;
+  }) {
+    return this.withWorkspaceCreditLock(input.workspaceId, async (client) => {
+      const lots = await client.query<CreditLotRow>(
+        `SELECT * FROM p1_credit_grant_lots
+          WHERE workspace_id = $1
+            AND transaction_type = 'SUBSCRIPTION_RENEWAL'
+            AND source_ref = $2
+            AND remaining_credits > 0
+          ORDER BY expiration_date ASC NULLS LAST, created_at, id
+          FOR UPDATE`,
+        [input.workspaceId, input.subscriptionId],
+      );
+      for (const row of lots.rows) {
+        const lot = creditLotFromRow(row);
+        await client.query(
+          `UPDATE p1_credit_grant_lots
+              SET remaining_credits = 0, revision = revision + 1
+            WHERE workspace_id = $1 AND id = $2`,
+          [lot.workspaceId, lot.id],
+        );
+        await insertTransaction(client, {
+          id: `credit-expire-subscription:${lot.id}:${lot.revision + 1}`,
+          workspaceId: lot.workspaceId,
+          transactionType: 'EXPIRE',
+          credits: lot.remainingCredits,
+          lotId: lot.id,
+          operationId: `expire-subscription:${lot.id}:${lot.revision + 1}`,
+          actorId: input.actorId,
+          correlationId: input.correlationId,
+          createdAt: input.createdAt,
+          credited: false,
+        });
+      }
+    });
+  }
+
   private async listSpendableLotsForUpdate(
     client: PoolClient,
     workspaceId: string,
@@ -462,7 +504,15 @@ export class PostgresCreditLedger implements PostgresSchemaMigrator {
   }
 }
 
-async function lockWorkspaceCredits(client: Queryable, workspaceId: string) {
+/**
+ * Acquires the one merchant-credit lock for a workspace in the caller's
+ * transaction. ProductUsage reservation must take this before it writes its
+ * reservation, so its balance check and FEFO consumption are indivisible.
+ */
+export async function lockWorkspaceCreditsWithClient(
+  client: Queryable,
+  workspaceId: string,
+) {
   await client.query('SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))', [
     workspaceId,
     'merchant-credits',

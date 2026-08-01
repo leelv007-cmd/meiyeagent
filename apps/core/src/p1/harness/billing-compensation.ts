@@ -6,6 +6,8 @@ export interface HarnessBillingSettlementInput {
   quoteId: string;
   quoteRevision: string;
   trustedUsage?: TrustedUsageEvidence;
+  /** Platform failures and expired holds always refund merchant credits. */
+  forceCreditRefund?: boolean;
 }
 
 export interface HarnessBillingCompensationTask

@@ -4,6 +4,11 @@ import type { Pool, PoolClient } from "pg";
 
 import { P1DomainError } from "../foundation/domain.js";
 import { PostgresGrantLotLedger } from "../foundation/postgres-grant-lot.js";
+import { creditUsageOperationId } from "../credit-billing/credit-ledger.js";
+import {
+  lockWorkspaceCreditsWithClient,
+  PostgresCreditLedger,
+} from "../credit-billing/postgres-credit-ledger.js";
 import { buildContentPackage } from "../operations/content-package.js";
 import { insertContentPackageRow } from "../operations/postgres-content-package-write-adapter.js";
 import { DurableProductBillingService } from "../product-billing/durable-service.js";
@@ -58,11 +63,23 @@ export interface CreationUsageReservationPort {
 export class PostgresProductBillingUsageReservation implements CreationUsageReservationPort {
   constructor(
     private readonly pool: Pool,
-    private readonly grantLots: Pick<PostgresGrantLotLedger, 'consumeWithClient'>,
+    private readonly grantLots?: Pick<PostgresGrantLotLedger, 'consumeWithClient'>,
+    private readonly credits?: Pick<PostgresCreditLedger, 'consumeWithClient'>,
   ) {}
 
   async reserve(client: PoolClient, submission: CreationSubmissionRecord) {
     const snapshot = submission.snapshot;
+    const credits = storedUsageCredits(submission.usageReservation.credits);
+    const creditLedger = this.credits;
+    if (credits !== undefined) {
+      if (!creditLedger) {
+        throw new P1DomainError(
+          "INVALID_STATE",
+          "Merchant credit ledger is unavailable for a credit-priced submission.",
+        );
+      }
+      await lockWorkspaceCreditsWithClient(client, snapshot.workspaceId);
+    }
     await client.query(
       "SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))",
       [snapshot.workspaceId, `quote:${snapshot.quote.id}`],
@@ -103,7 +120,21 @@ export class PostgresProductBillingUsageReservation implements CreationUsageRese
         `Product quote ${quote.quoteId} is not bound to this submission task.`,
       );
     }
-    const units = storedUsageUnits(submission.usageReservation.units);
+    const units = storedUsageUnits(submission.usageReservation.units, {
+      allowEmpty: credits !== undefined,
+    });
+    if ((quote.creditCost !== undefined) !== (credits !== undefined)) {
+      throw new P1DomainError(
+        "INVALID_STATE",
+        "Submission credit reservation must match its frozen quote.",
+      );
+    }
+    if (credits !== undefined && quote.creditCost !== credits) {
+      throw new P1DomainError(
+        "INVALID_STATE",
+        "Submission credit reservation no longer matches the frozen quote.",
+      );
+    }
     const reserved = await billing.reserve({
       quoteId: quote.quoteId,
       units,
@@ -114,6 +145,23 @@ export class PostgresProductBillingUsageReservation implements CreationUsageRese
       throw new P1DomainError(
         "IDEMPOTENCY_CONFLICT",
         `Product usage for task ${submission.task.id} has a different reservation identity.`,
+      );
+    }
+    if (credits !== undefined && creditLedger) {
+      await creditLedger.consumeWithClient(client, {
+        workspaceId: snapshot.workspaceId,
+        credits,
+        transactionId: creditUsageOperationId(submission.task.id),
+        actorId: snapshot.actorId,
+        correlationId: `coordinator:${submission.task.id}`,
+        createdAt: snapshot.createdAt,
+      });
+      return;
+    }
+    if (!this.grantLots) {
+      throw new P1DomainError(
+        "INVALID_STATE",
+        "Legacy grant-lot ledger is unavailable for a historical submission.",
       );
     }
     const reservedUnits = reservedProductUsageUnits(reserved.usage);
@@ -793,7 +841,7 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
     decisionReferences?: unknown;
     snapshot?: unknown;
     task?: { id?: unknown };
-    usageReservation?: { id?: unknown; units?: unknown };
+    usageReservation?: { id?: unknown; credits?: unknown; units?: unknown };
     work?: { id?: unknown };
   };
   const snapshot = creationExecutionSnapshotSchema.parse(candidate.snapshot);
@@ -809,7 +857,10 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
     candidate.usageReservation?.id,
     "usageReservation.id",
   );
-  const usageUnits = storedUsageUnits(candidate.usageReservation?.units);
+  const credits = storedUsageCredits(candidate.usageReservation?.credits);
+  const usageUnits = storedUsageUnits(candidate.usageReservation?.units, {
+    allowEmpty: credits !== undefined,
+  });
   const workId = requiredId(candidate.work?.id, "work.id");
   if (
     typeof candidate.contentPackage?.expectedRevision !== "number" ||
@@ -831,6 +882,7 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
     usageReservation: {
       id: usageReservationId,
       units: usageUnits,
+      ...(credits !== undefined ? { credits } : {}),
     },
     work: { id: workId },
   };
@@ -889,8 +941,19 @@ function requiredId(value: unknown, field: string) {
   return value;
 }
 
-function storedUsageUnits(value: unknown): CreationSubmissionUsageUnit[] {
-  if (!Array.isArray(value) || value.length === 0) {
+function storedUsageCredits(value: unknown) {
+  if (value === undefined) return undefined;
+  if (!Number.isSafeInteger(value) || (value as number) < 1) {
+    throw new Error("Stored creation submission has invalid credit usage.");
+  }
+  return value as number;
+}
+
+function storedUsageUnits(
+  value: unknown,
+  options: { allowEmpty?: boolean } = {},
+): CreationSubmissionUsageUnit[] {
+  if (!Array.isArray(value) || (value.length === 0 && !options.allowEmpty)) {
     throw new Error(
       "Stored creation submission requires explicit product usage units.",
     );

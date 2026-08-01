@@ -27,7 +27,12 @@ export interface CreationSubmissionRecord {
 	task: { id: string };
 	contentPackage: { id: string; expectedRevision: number };
 	decisionReferences?: NonNullable<HarnessWorkflowInput["decisionReferences"]>;
-	usageReservation: { id: string; units: CreationSubmissionUsageUnit[] };
+	usageReservation: {
+		id: string;
+		credits?: number;
+		/** Historical per-resource reservation retained for read compatibility. */
+		units: CreationSubmissionUsageUnit[];
+	};
 }
 
 export interface CreationSubmissionUsageUnit {
@@ -134,6 +139,7 @@ export interface CreationSubmissionAdmissionPort {
 		route: { id: string; revision: string };
 		rights: { revision: string; summary: string };
 		taskId: string;
+		creditCost?: number;
 		usageUnits?: CreationSubmissionUsageUnit[];
 	}>;
 	prepareResultTextSelection?(input: {
@@ -248,7 +254,9 @@ export class CreationSubmissionCoordinator {
 			contentPackage: { ...snapshot.contentPackage },
 			usageReservation: {
 				id: `usage-reservation-${snapshot.task.id}`,
-				units: admitted.usageUnits ?? productUsageUnits(snapshot),
+				...(admitted.creditCost !== undefined
+					? { credits: admitted.creditCost, units: [] }
+					: { units: admitted.usageUnits ?? productUsageUnits(snapshot) }),
 			},
 		};
 		const claimed = await this.store.claim({
@@ -309,6 +317,10 @@ export class CreationSubmissionCoordinator {
 		if (isNoteTextSelection && !textSelectionAdmission) {
 			throw new Error("Result text-selection admission is unavailable.");
 		}
+		const adjustmentQuote = await this.successorQuotes?.getQuote(
+			input.quote.id,
+			input.workspaceId,
+		);
 		const intent = `${source.intent.text}\n\n调整要求：${input.instruction}`;
 		const deliverable = textSelectionAdmission
 			? ({ kind: "copy_document", quantity: input.outputCount } as const)
@@ -409,10 +421,14 @@ export class CreationSubmissionCoordinator {
 			task: { id: snapshot.task.id },
 			usageReservation: {
 				id: `usage-reservation-${snapshot.task.id}`,
-				units:
-					snapshot.lens === "image_text_note"
-						? [{ resource: "image", quantity: input.outputCount }]
-						: productUsageUnits(snapshot),
+				...(adjustmentQuote?.creditCost !== undefined
+					? { credits: adjustmentQuote.creditCost, units: [] }
+					: {
+							units:
+								snapshot.lens === "image_text_note"
+									? [{ resource: "image", quantity: input.outputCount }]
+									: productUsageUnits(snapshot),
+						}),
 			},
 			work: { id: snapshot.work.id },
 		};
@@ -474,6 +490,9 @@ export class CreationSubmissionCoordinator {
 			billingMode: sourceQuote.billingMode,
 			catalogModelId: source.catalogModel.id,
 			catalogModelRevision: source.catalogModel.revision,
+			...(sourceQuote.creditCost !== undefined
+				? { creditCost: sourceQuote.creditCost }
+				: {}),
 			...(sourceQuote.formula.currency
 				? { currency: sourceQuote.formula.currency }
 				: {}),
@@ -482,6 +501,9 @@ export class CreationSubmissionCoordinator {
 						frozenCandidateDeploymentIds:
 							sourceQuote.frozenCandidateDeploymentIds,
 					}
+				: {}),
+			...(sourceQuote.failureRefundsCredits !== undefined
+				? { failureRefundsCredits: sourceQuote.failureRefundsCredits }
 				: {}),
 			formulaExpression: sourceQuote.formula.expression,
 			...(sourceQuote.minChargeSeconds !== undefined
@@ -537,7 +559,9 @@ export class CreationSubmissionCoordinator {
 			task: { id: snapshot.task.id },
 			usageReservation: {
 				id: `usage-reservation-${snapshot.task.id}`,
-				units: productUsageUnits(snapshot),
+				...(confirmedQuote.creditCost !== undefined
+					? { credits: confirmedQuote.creditCost, units: [] }
+					: { units: productUsageUnits(snapshot) }),
 			},
 			work: { id: snapshot.work.id },
 		};

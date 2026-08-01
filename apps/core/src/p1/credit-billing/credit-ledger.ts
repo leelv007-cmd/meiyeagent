@@ -445,6 +445,42 @@ export class MemoryCreditLedger {
     return expired;
   }
 
+  expireSubscriptionLots(input: {
+    workspaceId: string;
+    subscriptionId: string;
+    actorId: string;
+    correlationId: string;
+    createdAt: string;
+  }) {
+    const expired: CreditLotTransaction[] = [];
+    for (const lot of this.lots.filter(
+      (candidate) =>
+        candidate.workspaceId === input.workspaceId &&
+        candidate.transactionType === 'SUBSCRIPTION_RENEWAL' &&
+        candidate.sourceRef === input.subscriptionId &&
+        candidate.remainingCredits > 0,
+    )) {
+      const credits = lot.remainingCredits;
+      lot.remainingCredits = 0;
+      lot.revision += 1;
+      const transaction: CreditLotTransaction = {
+        id: `credit-expire-subscription:${lot.id}:${lot.revision}`,
+        workspaceId: input.workspaceId,
+        transactionType: 'EXPIRE',
+        credits,
+        lotId: lot.id,
+        operationId: `expire-subscription:${lot.id}:${lot.revision}`,
+        actorId: input.actorId,
+        correlationId: input.correlationId,
+        createdAt: input.createdAt,
+        credited: false,
+      };
+      this.transactions.push(transaction);
+      expired.push(structuredClone(transaction));
+    }
+    return expired;
+  }
+
   project(workspaceId: string): CreditBalanceProjection {
     const transactions = this.transactions.filter(
       (transaction) => transaction.workspaceId === workspaceId,

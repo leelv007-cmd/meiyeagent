@@ -1160,6 +1160,64 @@ test("a terminal late answer starts one fresh quoted successor from the source s
 	);
 });
 
+test("a terminal late answer preserves the frozen merchant credit quote policy", async () => {
+	const submissions = new MemorySubmissionStore();
+	const starter = new RecordingHarnessStarter();
+	const quotes = new ProductQuoteService();
+	quotes.buildQuote({
+		billingMode: "per_request",
+		catalogModelId: "catalog-copy-1",
+		catalogModelRevision: "catalog-r4",
+		creditCost: 7,
+		failureRefundsCredits: false,
+		quoteId: "quote-1",
+		quotePolicyRevision: "quote.policy@1",
+		unitRate: 7,
+		workspaceId: "workspace-1",
+	});
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		starter,
+		fixedIds(),
+		fixedAdmission(),
+		quotes,
+	);
+	await coordinator.submit({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	const source = starter.starts[0]!;
+
+	await coordinator.submitSemanticSuccessor({
+		command: {
+			idempotencyKey: "question-credit:late_answer",
+			questionId: "question-credit",
+			workflowRevision: 1,
+			patch: {
+				field: "offer_price",
+				reason: "补充当前任务所需的权威事实",
+				value: "398 元",
+			},
+			decision: { state: "accepted", value: "398 元" },
+		},
+		request: toHarnessWorkflowInput(
+			source.snapshot,
+			source.usageReservation,
+		),
+		sourceTaskId: source.task.id,
+		workflowId: "task-credit-successor",
+		workspaceId: source.snapshot.workspaceId,
+	});
+
+	const successor = starter.starts[1]!;
+	assert.equal(successor.usageReservation.credits, 7);
+	assert.deepEqual(successor.usageReservation.units, []);
+	const successorQuote = quotes.getQuote(successor.snapshot.quote.id);
+	assert.equal(successorQuote?.creditCost, 7);
+	assert.equal(successorQuote?.failureRefundsCredits, false);
+});
+
 test("a Result adjustment starts one new-chain submission from the frozen source", async () => {
 	const submissions = new MemorySubmissionStore();
 	const starter = new RecordingHarnessStarter();
@@ -1231,6 +1289,104 @@ test("a Result adjustment starts one new-chain submission from the frozen source
 	assert.equal(adjusted.snapshot.deliverables[0]?.quantity, 1);
 	assert.deepEqual(
 		submissions.reservedUnits("workspace-1", "result-adjust-1"),
+		[{ resource: "copy", quantity: 1 }],
+	);
+});
+
+test("a Result adjustment reserves its fresh confirmed credit quote instead of the source price", async () => {
+	const submissions = new MemorySubmissionStore();
+	const starter = new RecordingHarnessStarter();
+	const quotes = new ProductQuoteService();
+	quotes.buildQuote({
+		billingMode: "per_request",
+		catalogModelId: "catalog-copy-1",
+		catalogModelRevision: "catalog-r4",
+		creditCost: 7,
+		quoteId: "quote-1",
+		quotePolicyRevision: "quote.policy@1",
+		unitRate: 7,
+		workspaceId: "workspace-1",
+	});
+	const adjustmentQuote = quotes.buildQuote({
+		billingMode: "per_request",
+		catalogModelId: "catalog-copy-1",
+		catalogModelRevision: "catalog-r4",
+		creditCost: 3,
+		quoteId: "quote-adjust-credit-1",
+		quotePolicyRevision: "quote.policy@1",
+		unitRate: 3,
+		workspaceId: "workspace-1",
+	});
+	const confirmedAdjustmentQuote = quotes.confirm({
+		quoteId: adjustmentQuote.quoteId,
+		taskId: "composer-task:result-adjust:credit-1",
+	});
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		starter,
+		fixedIds(),
+		fixedAdmission(),
+		quotes,
+	);
+	await coordinator.submit({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	const source = starter.starts[0]!;
+
+	await coordinator.submitResultAdjustment({
+		actorId: "owner-1",
+		idempotencyKey: "result-adjust-credit-1",
+		instruction: "改得更简洁",
+		outputCount: 1,
+		quote: {
+			id: confirmedAdjustmentQuote.quoteId,
+			revision: confirmedAdjustmentQuote.revision,
+		},
+		sourceContentPackage: { id: source.contentPackage.id, revision: 1 },
+		sourceSnapshot: source.snapshot,
+		taskId: "composer-task:result-adjust:credit-1",
+		workId: "work-result-adjust-credit-1",
+		workspaceId: "workspace-1",
+	});
+
+	const adjusted = starter.starts[1]!;
+	assert.equal(adjusted.usageReservation.credits, 3);
+	assert.deepEqual(adjusted.usageReservation.units, []);
+});
+
+test("a legacy Result adjustment does not require the successor quote service", async () => {
+	const submissions = new MemorySubmissionStore();
+	const starter = new RecordingHarnessStarter();
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		starter,
+		fixedIds(),
+		fixedAdmission(),
+	);
+	await coordinator.submit({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	const source = starter.starts[0]!;
+
+	await coordinator.submitResultAdjustment({
+		actorId: "owner-1",
+		idempotencyKey: "legacy-result-adjust-1",
+		instruction: "语气更自然",
+		outputCount: 1,
+		quote: { id: "quote-adjust-1", revision: "quote-adjust-r1" },
+		sourceContentPackage: { id: source.contentPackage.id, revision: 3 },
+		sourceSnapshot: source.snapshot,
+		taskId: "composer-task:legacy-result-adjust:1",
+		workId: "work-legacy-result-adjust-1",
+		workspaceId: "workspace-1",
+	});
+
+	assert.deepEqual(
+		submissions.reservedUnits("workspace-1", "legacy-result-adjust-1"),
 		[{ resource: "copy", quantity: 1 }],
 	);
 });

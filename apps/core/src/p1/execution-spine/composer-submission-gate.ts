@@ -698,6 +698,9 @@ export class ComposerSubmissionAdmissionGate
 				summary: `Server verified ${assetIds.length} source asset${assetIds.length === 1 ? "" : "s"} in workspace ${input.workspaceId}.`,
 			},
 			taskId,
+			...(confirmedQuote.creditCost !== undefined
+				? { creditCost: confirmedQuote.creditCost }
+				: {}),
 			...(usageUnits ? { usageUnits } : {}),
 		};
 	}

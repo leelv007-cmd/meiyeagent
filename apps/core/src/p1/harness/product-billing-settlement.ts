@@ -4,6 +4,8 @@ import type {
 } from '@meiye/contracts';
 
 import { P1DomainError } from '../foundation/domain.js';
+import { creditUsageOperationId } from '../credit-billing/credit-ledger.js';
+import type { PostgresCreditLedger } from '../credit-billing/postgres-credit-ledger.js';
 import type { PostgresGrantLotLedger } from '../foundation/postgres-grant-lot.js';
 import type { DurableProductBillingService } from '../product-billing/durable-service.js';
 import {
@@ -30,7 +32,7 @@ export class HarnessProductBillingSettlementExecutor
       DurableProductBillingService,
       'getQuote' | 'getUsage' | 'settleTask'
     >,
-    private readonly grantLots: Pick<
+    private readonly grantLots?: Pick<
       PostgresGrantLotLedger,
       'refundUsageOperation'
     >,
@@ -39,10 +41,14 @@ export class HarnessProductBillingSettlementExecutor
       events: ObservabilityEventAuditPort;
       context: Pick<TaskObservabilityContextPort, 'readTaskRootAxes'>;
     },
+    private readonly credits?: Pick<
+      PostgresCreditLedger,
+      'refundUsageOperation'
+    >,
   ) {}
 
   async commit(input: HarnessBillingSettlementInput) {
-    await this.assertQuoteRevision(input);
+    const quote = await this.assertQuoteRevision(input);
     await this.billing.settleTask({
       workspaceId: input.workspaceId,
       taskId: input.taskId,
@@ -53,37 +59,65 @@ export class HarnessProductBillingSettlementExecutor
     });
     const usage = await this.requireUsage(input);
     assertActionUsageTerminal(usage, 'completed');
-    const reservedUnits = reservedProductUsageUnits(usage);
-    for (const unit of refundedProductUsageUnits(usage)) {
-      await this.grantLots.refundUsageOperation({
-        workspaceId: input.workspaceId,
-        usageOperationId: grantLotUsageOperationId(
-          input.taskId,
-          unit.resource,
-          reservedUnits.length,
-        ),
-        refundOperationId:
-          `product-usage-reconcile:${input.taskId}:${unit.resource}`,
-        amount: unit.quantity,
-        actorId: 'system-harness',
-        correlationId: `harness:${input.taskId}`,
-        createdAt: this.clock().toISOString(),
-      });
-    }
-    await this.recordActionUsage(input, usage);
+    await this.reconcileRefund(input, quote, usage, 'reconcile');
+    await this.recordActionUsage(input, usage, 'completed');
   }
 
   async refund(input: HarnessBillingSettlementInput) {
-    await this.assertQuoteRevision(input);
+    const quote = await this.assertQuoteRevision(input);
     await this.billing.settleTask({
       workspaceId: input.workspaceId,
       taskId: input.taskId,
       attemptId: `harness-receipt:${input.taskId}`,
       deploymentId: 'coordinator',
       status: 'failed',
+      ...(input.forceCreditRefund ? { forceCreditRefund: true } : {}),
     });
     const usage = await this.requireUsage(input);
-    assertActionUsageTerminal(usage, 'rejected');
+    if (quote.creditCost === undefined) {
+      assertActionUsageTerminal(usage, 'rejected');
+    } else {
+      if (usage.status !== 'refunded' && usage.status !== 'committed') {
+        throw new Error(
+          `Credit terminal usage ${usage.status} cannot satisfy failed settlement.`,
+        );
+      }
+    }
+    await this.reconcileRefund(input, quote, usage, 'refund');
+    await this.recordActionUsage(input, usage, 'rejected');
+  }
+
+  private async reconcileRefund(
+    input: HarnessBillingSettlementInput,
+    quote: ProductQuoteSnapshot,
+    usage: ProductUsageRecord,
+    kind: 'reconcile' | 'refund',
+  ) {
+    if (quote.creditCost !== undefined) {
+      if (!usage.refundedCredits) return;
+      if (!this.credits) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'Merchant credit ledger is unavailable for a credit refund.',
+        );
+      }
+      await this.credits.refundUsageOperation({
+        workspaceId: input.workspaceId,
+        usageOperationId: creditUsageOperationId(input.taskId),
+        refundOperationId: `credit-${kind}:${input.taskId}`,
+        credits: usage.refundedCredits,
+        actorId: 'system-harness',
+        correlationId: `harness:${input.taskId}`,
+        createdAt: this.clock().toISOString(),
+      });
+      return;
+    }
+    if (!this.grantLots) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Legacy grant-lot ledger is unavailable for a historical refund.',
+      );
+    }
     const reservedUnits = reservedProductUsageUnits(usage);
     for (const unit of refundedProductUsageUnits(usage)) {
       await this.grantLots.refundUsageOperation({
@@ -93,20 +127,19 @@ export class HarnessProductBillingSettlementExecutor
           unit.resource,
           reservedUnits.length,
         ),
-        refundOperationId:
-          `product-usage-refund:${input.taskId}:${unit.resource}`,
+        refundOperationId: `product-usage-${kind}:${input.taskId}:${unit.resource}`,
         amount: unit.quantity,
         actorId: 'system-harness',
         correlationId: `harness:${input.taskId}`,
         createdAt: this.clock().toISOString(),
       });
     }
-    await this.recordActionUsage(input, usage);
   }
 
   private async recordActionUsage(
     input: HarnessBillingSettlementInput,
     usage: ProductUsageRecord,
+    status: 'completed' | 'rejected',
   ) {
     if (!this.observability) return;
     const binding = await this.observability.context.readTaskRootAxes(
@@ -116,10 +149,7 @@ export class HarnessProductBillingSettlementExecutor
     if (!binding) {
       throw new Error('Settled task observability axes are unavailable.');
     }
-    const actionUsage = projectActionUsage(
-      usage,
-      actionUsageStatus(usage),
-    );
+    const actionUsage = projectActionUsage(usage, status);
     if (!actionUsage) {
       throw new Error('Settled task usage is not terminal.');
     }
@@ -146,6 +176,7 @@ export class HarnessProductBillingSettlementExecutor
     }
     assertHarnessQuoteFacts(input, quote);
     assertHarnessSettlementLifecycle(quote);
+    return quote;
   }
 
   private async requireUsage(

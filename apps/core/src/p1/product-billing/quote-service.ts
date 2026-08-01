@@ -44,7 +44,7 @@ export type ConfirmQuoteInput = {
 
 export type ReserveQuoteInput = {
   quoteId: string;
-  /** Per-bucket product entitlement units, never the monetary quote ceiling. */
+  /** Legacy per-bucket units. Credit-priced quotes reserve an empty vector. */
   units: ProductUsageUnit[];
   usageId?: string;
 };
@@ -441,15 +441,24 @@ export class ProductQuoteService {
       );
     }
 
-    assertProductUsageUnits(input.units);
-    if (
-      quote.debitUnits &&
-      !sameProductUsageUnits(quote.debitUnits, input.units)
-    ) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        `Quote ${input.quoteId} reservation does not match the frozen debit preview.`,
-      );
+    if (quote.creditCost !== undefined) {
+      if (input.units.length !== 0) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          `Credit quote ${input.quoteId} must not reserve legacy product units.`,
+        );
+      }
+    } else {
+      assertProductUsageUnits(input.units);
+      if (
+        quote.debitUnits &&
+        !sameProductUsageUnits(quote.debitUnits, input.units)
+      ) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          `Quote ${input.quoteId} reservation does not match the frozen debit preview.`,
+        );
+      }
     }
     const usage = this.usage.reserve({
       id: input.usageId ?? usageIdFor(quote.taskId, quote.quoteId),
@@ -757,6 +766,8 @@ export class ProductQuoteService {
     quoteId: string;
     trustedUsage?: TrustedUsageEvidence;
     reason?: string;
+    /** Timeout and platform failures refund credits regardless of model policy. */
+    forceCreditRefund?: boolean;
   }): {
     quote: ProductQuoteSnapshot;
     usage: ProductUsageRecord;
@@ -798,6 +809,33 @@ export class ProductQuoteService {
     let remainingUnits: ProductUsageUnit[] = [];
     let billedSeconds: number | undefined;
     let settlementStatus: ProductSettlementStatus = 'reconciled';
+
+    if (quote.creditCost !== undefined) {
+      const refundCredits =
+        input.forceCreditRefund === true || quote.failureRefundsCredits === true;
+      const usage = refundCredits
+        ? this.usage.refund({
+            taskId: quote.taskId,
+            remainingUnits: [],
+            updatedAt: now,
+          })
+        : this.usage.settle({
+            taskId: quote.taskId,
+            settledUnits: [],
+            settlementStatus,
+            updatedAt: now,
+          });
+      const next: ProductQuoteSnapshot = {
+        ...quote,
+        lifecycleStatus: refundCredits ? 'refunded' : 'settled',
+        settlementStatus,
+        settledAmount: refundCredits ? 0 : ceiling,
+        refundedAmount: refundCredits ? ceiling : 0,
+        settledAt: now,
+      };
+      this.quotes.set(quote.quoteId, next);
+      return { quote: structuredClone(next), usage };
+    }
 
     if (input.trustedUsage?.kind === 'product_units') {
       assertProductUsageUnits(input.trustedUsage.units);
@@ -915,6 +953,7 @@ export function productUsageUnitsForQuote(
   quote: ProductQuoteSnapshot,
   legacyResource?: ProductUsageUnit['resource'],
 ) {
+  if (quote.creditCost !== undefined) return [];
   if (quote.debitUnits) {
     assertProductUsageUnits(quote.debitUnits);
     return structuredClone(quote.debitUnits);

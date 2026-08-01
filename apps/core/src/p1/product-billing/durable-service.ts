@@ -66,6 +66,7 @@ export interface ProductBillingApplicationPort {
     workspaceId?: string;
     trustedUsage?: TrustedUsageEvidence;
     reason?: string;
+    forceCreditRefund?: boolean;
   }): MaybePromise<{ quote: ProductQuoteSnapshot; usage: ProductUsageRecord }>;
   listProviderCosts(
     taskId: string,
@@ -171,6 +172,7 @@ export class DurableProductBillingService
       quoteId: string;
       trustedUsage?: TrustedUsageEvidence;
       reason?: string;
+      forceCreditRefund?: boolean;
     } & WorkspaceInput,
   ) {
     const workspaceId = this.workspace(input.workspaceId);
@@ -332,6 +334,7 @@ export class DurableProductBillingService
     status: 'completed' | 'failed';
     providerCost?: BillingAttemptCost;
     trustedUsage?: TrustedUsageEvidence;
+    forceCreditRefund?: boolean;
   }) {
     await this.mutateTask(input.workspaceId, input.taskId, (service, quote) => {
       if (quote.lifecycleStatus === 'settled' || quote.lifecycleStatus === 'refunded') {
@@ -364,6 +367,7 @@ export class DurableProductBillingService
         : service.failAndRefund({
             quoteId: quote.quoteId,
             ...(input.trustedUsage ? { trustedUsage: input.trustedUsage } : {}),
+            ...(input.forceCreditRefund ? { forceCreditRefund: true } : {}),
           });
     });
   }
