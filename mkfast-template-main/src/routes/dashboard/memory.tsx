@@ -7,8 +7,8 @@ import { MemoryVaultPage } from '@/product/memory-vault-page';
 import { createFileRoute } from '@tanstack/react-router';
 
 /**
- * 记忆 — D-164④. Thin wrapper; the surface lives in product/, same shape as
- * the identity route next door.
+ * 经验 (route /dashboard/memory) — D-164④ + P2-13 rename. Thin wrapper; the
+ * surface lives in product/, same shape as the identity route next door.
  */
 export const Route = createFileRoute('/dashboard/memory')({
   component: MemoryVaultRoute,

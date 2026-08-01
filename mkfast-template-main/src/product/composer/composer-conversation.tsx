@@ -17,7 +17,7 @@ import type {
   ContentPackageRevisionDelivery,
   CreationLensId,
 } from '@meiye/contracts';
-import { domAnimation, LazyMotion } from 'motion/react';
+import { domMax, LazyMotion } from 'motion/react';
 import * as m from 'motion/react-m';
 import type { CSSProperties } from 'react';
 import { useEffect } from 'react';
@@ -66,6 +66,21 @@ import type {
 } from './composer-session';
 import type { ComposerSignedPreview } from './composer-signed-preview';
 import { NotePlanTimelineFrame } from './note-plan-timeline-frame';
+import type {
+  ExperienceBasisProjection,
+  ExperienceCorrectionProjection,
+  ExperienceSedimentProjection,
+} from './task-experience';
+import {
+  shouldShowExperienceBasis,
+  shouldShowExperienceCorrection,
+  shouldShowExperienceSediment,
+} from './task-experience';
+import {
+  ExperienceBasisSurface,
+  ExperienceCorrectionSurface,
+  ExperienceSedimentSurface,
+} from './task-experience-surfaces';
 
 export type ComposerCreationMode = 'customized' | 'free';
 
@@ -195,6 +210,11 @@ function candidateShouldCollapse(
   return session.turns.some(
     (turn) => turn.kind === 'delivery' && turn.taskId === candidate.taskId
   );
+}
+
+/** Shared layout id for candidate → delivery morph (P2-13 / D7). */
+function resultMorphLayoutId(taskId: string): string {
+  return `composer-result-morph-${taskId}`;
 }
 
 function CandidateSummaryCapsule({
@@ -347,6 +367,15 @@ export type ComposerConversationProps = {
   deliveryAspectRatio?: string;
   /** 失败/partial 申报卡 recovery entry (W03). */
   onRecover?: (input: ComposerRecoveryInput) => void;
+  /**
+   * P2-13 task-in experience surfaces. Host projects from real producers;
+   * omit a slot (or pass null) to hide that surface entirely.
+   */
+  experienceBasis?: ExperienceBasisProjection | null;
+  experienceSediment?: ExperienceSedimentProjection | null;
+  experienceCorrection?: ExperienceCorrectionProjection | null;
+  onSedimentKeepLater?: (entryId: string) => void;
+  onSedimentThisTimeOnly?: (entryId: string) => void;
 };
 
 /**
@@ -403,6 +432,11 @@ export function ComposerConversation({
   deliveryLensId,
   deliveryAspectRatio,
   onRecover,
+  experienceBasis,
+  experienceSediment,
+  experienceCorrection,
+  onSedimentKeepLater,
+  onSedimentThisTimeOnly,
 }: ComposerConversationProps) {
   const turnCount = session.turns.length;
   const prefersReducedMotion = usePrefersReducedMotion();
@@ -442,6 +476,7 @@ export function ComposerConversation({
       behavior: prefersReducedMotion ? 'instant' : 'smooth',
     });
   }, [liveInterruptKind, liveInterruptTurnId, prefersReducedMotion]);
+  const morphEnabled = !prefersReducedMotion;
 
   if (turnCount === 0 && !identitySlot) return null;
 
@@ -530,58 +565,94 @@ export function ComposerConversation({
             />
           </AgentFrameHost>
         );
-      case 'candidate':
+      case 'candidate': {
         // P0-3: after this run's delivery lands, collapse to a capsule;
         // drafting stays full. The single stream projection follows the
         // current task, so a capsule left by an earlier run must not borrow
         // the live run's content.
+        //
+        // P2-13 / D7: layoutId moves from the full candidate onto the delivery
+        // card when collapse lands — shared-element morph. Capsule keeps no
+        // layoutId so it does not fight the delivery face. Reduced-motion
+        // drops layoutId entirely (instant swap).
+        const collapsed = candidateShouldCollapse(session, turn);
+        const morphId =
+          morphEnabled && !collapsed
+            ? resultMorphLayoutId(turn.taskId)
+            : undefined;
         return (
           <AgentFrameHost
             frameKind={resolveAgentFrameKind('candidate')}
             key={turn.id}
             turnKind="candidate"
           >
-            {candidateShouldCollapse(session, turn) ? (
-              <CandidateSummaryCapsule
-                stream={session.task?.taskId === turn.taskId ? stream : null}
-              />
-            ) : (
-              <CandidateStream stream={stream} />
-            )}
+            <m.div
+              data-morph-role={collapsed ? 'candidate-capsule' : 'candidate'}
+              data-testid={
+                collapsed
+                  ? 'composer-candidate-morph-capsule'
+                  : 'composer-candidate-morph'
+              }
+              layout={morphEnabled}
+              layoutId={morphId}
+              transition={{ duration: 0.22, ease: 'easeOut' }}
+            >
+              {collapsed ? (
+                <CandidateSummaryCapsule
+                  stream={session.task?.taskId === turn.taskId ? stream : null}
+                />
+              ) : (
+                <CandidateStream stream={stream} />
+              )}
+            </m.div>
           </AgentFrameHost>
         );
-      case 'delivery':
+      }
+      case 'delivery': {
         // P0-3 / F8: delivery is the summary face (statement + actions). Do not
         // re-paste the candidate body as a second full excerpt beside the stream.
+        // P2-13: inherits layoutId from the candidate when motion is allowed.
+        const morphId = morphEnabled
+          ? resultMorphLayoutId(turn.taskId)
+          : undefined;
         return (
           <AgentFrameHost
             frameKind={resolveAgentFrameKind('delivery')}
             key={turn.id}
             turnKind="delivery"
           >
-            <ComposerDeliveryCard
-              aspectRatio={deliveryAspectRatio}
-              lensId={deliveryLensId}
-              onAiCover={onDeliveryAiCover}
-              onFollowUp={onDeliveryFollowUp}
-              onOpen={onOpenDelivery}
-              onRate={
-                onRateDelivery && turn.revision
-                  ? (transition) =>
-                      onRateDelivery({
-                        transition,
-                        revision: turn.revision!,
-                        taskId: turn.taskId,
-                      })
-                  : undefined
-              }
-              revision={turn.revision}
-              statement={session.deliveryStatement}
-              taskId={turn.taskId}
-              workId={turn.workId}
-            />
+            <m.div
+              data-morph-role="delivery"
+              data-testid="composer-delivery-morph"
+              layout={morphEnabled}
+              layoutId={morphId}
+              transition={{ duration: 0.22, ease: 'easeOut' }}
+            >
+              <ComposerDeliveryCard
+                aspectRatio={deliveryAspectRatio}
+                lensId={deliveryLensId}
+                onAiCover={onDeliveryAiCover}
+                onFollowUp={onDeliveryFollowUp}
+                onOpen={onOpenDelivery}
+                onRate={
+                  onRateDelivery && turn.revision
+                    ? (transition) =>
+                        onRateDelivery({
+                          transition,
+                          revision: turn.revision!,
+                          taskId: turn.taskId,
+                        })
+                    : undefined
+                }
+                revision={turn.revision}
+                statement={session.deliveryStatement}
+                taskId={turn.taskId}
+                workId={turn.workId}
+              />
+            </m.div>
           </AgentFrameHost>
         );
+      }
       case 'report':
         return (
           <AgentFrameHost
@@ -642,10 +713,16 @@ export function ComposerConversation({
             before there is any transcript to fold. */}
         {identitySlot}
         {/*
-          `domAnimation` only — the product面 pays for the animation features it
-          actually uses, and this transcript uses opacity and transform.
+          `domMax` — transcript needs layout for candidate→delivery morph
+          (P2-13 / D7) plus the existing arrival transform. Reduced-motion
+          still opts out of both via `morphEnabled` / TurnArrival.animate.
         */}
-        <LazyMotion features={domAnimation} strict>
+        <LazyMotion features={domMax} strict>
+          {shouldShowExperienceBasis(session.phase) && experienceBasis ? (
+            <TurnArrival animate={!prefersReducedMotion} key="experience-basis">
+              <ExperienceBasisSurface projection={experienceBasis} />
+            </TurnArrival>
+          ) : null}
           {foldTurns(session.turns).map((turn) => {
             const rendered = renderTurn(turn);
             if (!rendered) return null;
@@ -658,6 +735,27 @@ export function ComposerConversation({
               </TurnArrival>
             );
           })}
+          {shouldShowExperienceSediment(session.phase) && experienceSediment ? (
+            <TurnArrival
+              animate={!prefersReducedMotion}
+              key="experience-sediment"
+            >
+              <ExperienceSedimentSurface
+                onKeepLater={onSedimentKeepLater}
+                onThisTimeOnly={onSedimentThisTimeOnly}
+                projection={experienceSediment}
+              />
+            </TurnArrival>
+          ) : null}
+          {shouldShowExperienceCorrection(session.phase) &&
+          experienceCorrection ? (
+            <TurnArrival
+              animate={!prefersReducedMotion}
+              key="experience-correction"
+            >
+              <ExperienceCorrectionSurface projection={experienceCorrection} />
+            </TurnArrival>
+          ) : null}
         </LazyMotion>
         <ChatConversation.ScrollAnchor />
       </ChatConversation.Content>

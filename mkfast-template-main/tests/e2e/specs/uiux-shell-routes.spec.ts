@@ -7,8 +7,8 @@ import {
 
 // Written out rather than imported from the app: this is the list a merchant
 // can actually see, and deriving it from the source would make the spec agree
-// with any change by construction. 记忆 joined it under D-164④.
-const businessNavigation = ['创作', '内容', '素材', '门店', '记忆'] as const;
+// with any change by construction. 经验 (was 记忆) joined under D-164④; P2-13 rename.
+const businessNavigation = ['创作', '内容', '素材', '门店', '经验'] as const;
 
 test.afterEach(async ({ request }) => {
   await cleanupE2EUsers(request);
@@ -136,9 +136,8 @@ test('canonical shell routes survive direct navigation and reload', async ({
     // h1 走 canonical-history-page.tsx:527 的 `page.title()`，assets 档取
     // product_navigation_assets（同文件 :148）＝「素材」，与侧栏标签同名。
     ['/dashboard/assets', '素材'],
-    // D-164④: 记忆 is a first-class destination now, so it has to survive a
-    // typed URL and a reload like every other one.
-    ['/dashboard/memory', '记忆'],
+    // D-164④ + P2-13: 经验 is a first-class destination (route still /memory).
+    ['/dashboard/memory', '经验'],
     ['/settings/account', '账户'],
     ['/settings/models', '模型'],
     ['/settings/connections', '连接'],

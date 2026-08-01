@@ -17,7 +17,7 @@
  *
  * P0-B (#287): display honesty only — no raw JSON as merchant copy, pending
  * entries first by default, cold-start empty copy that does not pretend the
- * product has learned anything. Does not build producers or rename「经验」.
+ * product has learned anything. Nav rename「经验」is P2-13 (route stays memory).
  *
  * P1-04 (#316 / D5): three-layer page IA —
  *   1. 待你确认 (default on top) — pending candidates only

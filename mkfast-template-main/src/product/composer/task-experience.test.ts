@@ -1,0 +1,110 @@
+/**
+ * Pure model tests for task-in experience surfaces (#325 / P2-13).
+ */
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import {
+  experienceEntryLabel,
+  projectExperienceBasis,
+  projectExperienceCorrection,
+  projectExperienceSediment,
+  shouldShowExperienceBasis,
+  shouldShowExperienceCorrection,
+  shouldShowExperienceSediment,
+} from './task-experience';
+
+test('experienceEntryLabel never stringifies objects as JSON blobs', () => {
+  assert.equal(experienceEntryLabel('主理人口吻', 'x'), '主理人口吻');
+  assert.equal(
+    experienceEntryLabel({ tone: '少促销感', hook: '先讲问题' }, 'x'),
+    '少促销感 · 先讲问题'
+  );
+  assert.equal(experienceEntryLabel(['a', 'b', { nested: true }], 'x'), 'a · b');
+  assert.equal(experienceEntryLabel({}, 'fallback'), 'fallback');
+});
+
+test('basis projects identity + confirmed chips when producer settled', () => {
+  const ready = projectExperienceBasis({
+    querySettled: true,
+    identityLabel: '主理人口吻',
+    confirmedEntries: [
+      { entryId: 'e1', value: '少促销感' },
+      { entryId: 'e2', value: '先讲问题再讲项目' },
+    ],
+  });
+  assert.equal(ready.state, 'ready');
+  assert.deepEqual(
+    ready.chips.map((c) => c.label),
+    ['主理人口吻', '少促销感', '先讲问题再讲项目']
+  );
+});
+
+test('basis is honest empty when producer settled with nothing', () => {
+  const empty = projectExperienceBasis({
+    querySettled: true,
+    identityLabel: null,
+    confirmedEntries: [],
+  });
+  assert.equal(empty.state, 'empty');
+  assert.deepEqual(empty.chips, []);
+});
+
+test('basis stays loading until the producer settles', () => {
+  const loading = projectExperienceBasis({
+    querySettled: false,
+    identityLabel: '主理人口吻',
+    confirmedEntries: [{ entryId: 'e1', value: 'x' }],
+  });
+  assert.equal(loading.state, 'loading');
+  assert.deepEqual(loading.chips, []);
+});
+
+test('sediment projects pending entries only after settle', () => {
+  assert.equal(
+    projectExperienceSediment({
+      querySettled: false,
+      pendingEntries: [{ entryId: 'p1', value: 'x' }],
+    }).state,
+    'loading'
+  );
+  assert.equal(
+    projectExperienceSediment({
+      querySettled: true,
+      pendingEntries: [],
+    }).state,
+    'empty'
+  );
+  const ready = projectExperienceSediment({
+    querySettled: true,
+    pendingEntries: [{ entryId: 'p1', value: '私信了解' }],
+  });
+  assert.equal(ready.state, 'ready');
+  assert.equal(ready.items[0]?.label, '私信了解');
+});
+
+test('correction is empty without a ready producer (no forged classification)', () => {
+  const empty = projectExperienceCorrection({
+    producerReady: false,
+    classification: { kind: 'fact', summary: '她是店长' },
+  });
+  assert.equal(empty.state, 'empty');
+  assert.equal(empty.kind, null);
+
+  const ready = projectExperienceCorrection({
+    producerReady: true,
+    classification: { kind: 'task_only', summary: '这次不要写价格' },
+  });
+  assert.equal(ready.state, 'ready');
+  assert.equal(ready.kind, 'task_only');
+  assert.equal(ready.summary, '这次不要写价格');
+});
+
+test('phase gates match pre-exec / post-delivery / non-idle correction', () => {
+  assert.equal(shouldShowExperienceBasis('running'), true);
+  assert.equal(shouldShowExperienceBasis('delivered'), false);
+  assert.equal(shouldShowExperienceSediment('delivered'), true);
+  assert.equal(shouldShowExperienceSediment('running'), false);
+  assert.equal(shouldShowExperienceCorrection('idle'), false);
+  assert.equal(shouldShowExperienceCorrection('running'), true);
+});

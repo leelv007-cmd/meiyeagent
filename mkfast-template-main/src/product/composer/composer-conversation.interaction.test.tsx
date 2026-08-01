@@ -5,6 +5,7 @@
  * the submit key contract the D-043 counter depends on, the default candidate
  * shape (one primary, alternatives folded), and the absence of any slot form.
  */
+import type { ReactNode } from 'react';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -24,6 +25,12 @@ import {
   type ComposerSession,
 } from './composer-session';
 import { projectResultTokenStream } from '@/product/results/result-token-stream';
+
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children, to }: { children: ReactNode; to: string }) => (
+    <a href={to}>{children}</a>
+  ),
+}));
 
 afterEach(cleanup);
 
@@ -656,6 +663,78 @@ describe('成品交付卡', () => {
     // next to a second full excerpt (the dual-read failure F8 names).
     const summary = screen.getByTestId('composer-candidate-summary');
     expect(summary).toHaveAttribute('data-collapsed', 'true');
+  });
+
+  it('P2-13: delivery morph face is present; reduced-motion drops layout morph id', () => {
+    const setReducedMotion = (reduce: boolean) => {
+      window.matchMedia = ((query: string) => ({
+        addEventListener: () => {},
+        addListener: () => {},
+        dispatchEvent: () => false,
+        matches: query.includes('prefers-reduced-motion') ? reduce : false,
+        media: query,
+        onchange: null,
+        removeEventListener: () => {},
+        removeListener: () => {},
+      })) as typeof window.matchMedia;
+    };
+
+    setReducedMotion(false);
+    const { unmount } = render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={delivered()}
+        stream={finishedStream}
+      />
+    );
+    const deliveryMorph = screen.getByTestId('composer-delivery-morph');
+    expect(deliveryMorph).toHaveAttribute('data-morph-role', 'delivery');
+    // Capsule keeps no shared layoutId — delivery owns the morph face.
+    expect(
+      screen.getByTestId('composer-candidate-morph-capsule')
+    ).toHaveAttribute('data-morph-role', 'candidate-capsule');
+    unmount();
+
+    setReducedMotion(true);
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={delivered()}
+        stream={finishedStream}
+      />
+    );
+    expect(screen.getByTestId('composer-conversation')).toHaveAttribute(
+      'data-motion',
+      'off'
+    );
+    // Reduced-motion alternative: faces still render; morph layoutId is off.
+    expect(screen.getByTestId('composer-delivery-morph')).toBeInTheDocument();
+    expect(screen.getByTestId('composer-candidate-summary')).toBeInTheDocument();
+  });
+
+  it('P2-13: task-in experience surfaces mount with honest empty when projected', () => {
+    render(
+      <ComposerConversation
+        experienceBasis={{ state: 'empty', chips: [] }}
+        experienceCorrection={{ state: 'empty', kind: null, summary: null }}
+        experienceSediment={{ state: 'empty', items: [] }}
+        onOpenDelivery={() => {}}
+        session={delivered()}
+        stream={finishedStream}
+      />
+    );
+    // Sediment + correction show in delivered; basis is pre-exec only.
+    expect(screen.queryByTestId('experience-basis-surface')).toBeNull();
+    expect(screen.getByTestId('experience-sediment-surface')).toBeInTheDocument();
+    expect(
+      screen.getByTestId('experience-sediment-empty')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId('experience-correction-surface')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId('experience-correction-empty')
+    ).toBeInTheDocument();
   });
 
   it('P0-3: a run after delivery streams in full; only its own delivery collapses it', () => {

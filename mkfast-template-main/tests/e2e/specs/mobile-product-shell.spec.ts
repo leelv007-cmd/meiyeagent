@@ -51,10 +51,10 @@ test('keeps identity, assets, and camera authorization reachable on mobile', asy
     await expect(
       mobileNav.getByTestId('mobile-identity-assets-entry')
     ).toHaveAttribute('href', /^\/dashboard\/assets(?:\?|$)/u);
-    // 记忆 joined the bar under D-164④; the grid widened to five with it.
+    // 经验 joined the bar under D-164④ (P2-13 rename); the grid is five-wide.
     // 「口吻与素材」是手机端独有的覆盖标签：product_navigation_identity_assets
     // (project.inlang/messages/zh.json:3279)，由 mobile-nav.tsx:32 挂到 assets 槽。
-    for (const label of ['创作', '口吻与素材', '内容', '门店', '记忆']) {
+    for (const label of ['创作', '口吻与素材', '内容', '门店', '经验']) {
       await expect(mobileNav.getByText(label, { exact: true })).toBeVisible();
     }
 

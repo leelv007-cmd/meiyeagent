@@ -24,12 +24,24 @@ test('merchant navigation exposes creation, content, assets, store and memory', 
       { href: '/dashboard/works', label: '内容' },
       { href: '/dashboard/assets', label: '素材' },
       { href: '/dashboard/store', label: '门店' },
-      // 记忆 joins as a first-class destination (D-164④, 2026-07-29). What the
-      // product has learned about the shop is its reason to keep her, and she
-      // cannot value what she cannot see.
-      { href: '/dashboard/memory', label: '记忆' },
+      // 经验 (nav label; route stays /dashboard/memory). D-164④ first-class
+      // destination + P2-13 / D5 rename from 记忆 → 经验.
+      { href: '/dashboard/memory', label: '经验' },
     ]
   );
+});
+
+test('P2-13 product copy: memory destination merchant label is 经验 / Experience', () => {
+  overwriteGetLocale(() => 'zh');
+  const memory = BUSINESS_NAVIGATION.find((item) => item.id === 'memory');
+  assert.ok(memory);
+  assert.equal(memory.label, '经验');
+  assert.equal(memory.href, '/dashboard/memory');
+
+  overwriteGetLocale(() => 'en');
+  assert.equal(memory.label, 'Experience');
+
+  overwriteGetLocale(() => 'zh');
 });
 
 test('the retired task inbox has no route constant left to point at', () => {

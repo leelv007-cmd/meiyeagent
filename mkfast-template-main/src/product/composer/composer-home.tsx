@@ -61,6 +61,7 @@ import type {
   ExecutionConfirmationAnswer,
   HarnessInteractionRequest,
   MarketingIdentityAsset,
+  MemoryEntriesPage,
   ProductQuoteSnapshot,
   QuestionCard,
   ResultPanel,
@@ -139,6 +140,11 @@ import {
 } from '@/product/marketing-identity-queries';
 
 import { BriefSurface } from './brief-surface-panel';
+import {
+  projectExperienceBasis,
+  projectExperienceCorrection,
+  projectExperienceSediment,
+} from './task-experience';
 import { applyCatalogRecipeSelection } from './catalog-selection';
 import {
   buildAiCoverActionSeed,
@@ -783,6 +789,22 @@ export function ComposerHome({
     );
   }, [lensState.draft.recipeRevisionId, surfaceQuery.data, userText]);
   const identitiesQuery = useQuery(marketingIdentityProjectionQuery);
+  /** P2-13: shared experience producer for task-in basis / sediment surfaces. */
+  const experienceEntriesQuery = useQuery({
+    queryKey: p1QueryKeys.request('memory', 'entries_page', {
+      limit: 20,
+      surface: 'composer-task-experience',
+    }),
+    queryFn: ({ signal }) =>
+      queryP1<MemoryEntriesPage>(
+        'memory',
+        {
+          action: 'entries_page',
+          payload: { limit: 20 },
+        },
+        signal
+      ),
+  });
   const identitySelection = useMemo(
     () =>
       projectIdentitySelection({
@@ -810,6 +832,53 @@ export function ComposerHome({
       identitiesQuery.isPending,
       sessionIdentityId,
     ]
+  );
+  const experienceBasis = useMemo(
+    () =>
+      projectExperienceBasis({
+        querySettled:
+          experienceEntriesQuery.isSuccess || experienceEntriesQuery.isError,
+        identityLabel: identitySelection.selected?.label ?? null,
+        confirmedEntries: (experienceEntriesQuery.data?.items ?? [])
+          .filter((entry) => entry.status === 'confirmed')
+          .map((entry) => ({
+            entryId: entry.entryId,
+            value: entry.value,
+          })),
+      }),
+    [
+      experienceEntriesQuery.data?.items,
+      experienceEntriesQuery.isError,
+      experienceEntriesQuery.isSuccess,
+      identitySelection.selected?.label,
+    ]
+  );
+  const experienceSediment = useMemo(
+    () =>
+      projectExperienceSediment({
+        querySettled:
+          experienceEntriesQuery.isSuccess || experienceEntriesQuery.isError,
+        pendingEntries: (experienceEntriesQuery.data?.items ?? [])
+          .filter((entry) => entry.status === 'pending')
+          .map((entry) => ({
+            entryId: entry.entryId,
+            value: entry.value,
+          })),
+      }),
+    [
+      experienceEntriesQuery.data?.items,
+      experienceEntriesQuery.isError,
+      experienceEntriesQuery.isSuccess,
+    ]
+  );
+  // Correction classifier producer is not ready in production — honest empty.
+  const experienceCorrection = useMemo(
+    () =>
+      projectExperienceCorrection({
+        producerReady: false,
+        classification: null,
+      }),
+    []
   );
   const sessionIdentityDecision = useMutation({
     mutationFn: (identityId: string | null) => {
@@ -3420,6 +3489,52 @@ export function ComposerHome({
                     selection={identitySelection}
                   />
                 }
+                experienceBasis={experienceBasis}
+                experienceCorrection={experienceCorrection}
+                experienceSediment={experienceSediment}
+                onSedimentKeepLater={(entryId) => {
+                  void commandP1(
+                    'memory',
+                    {
+                      action: 'confirm_candidate',
+                      payload: {
+                        entryId,
+                        positiveExamples: [],
+                        negativeExamples: [],
+                      },
+                    },
+                    `experience-sediment-confirm:${entryId}`
+                  )
+                    .then(() =>
+                      queryClient.invalidateQueries({
+                        queryKey: p1QueryKeys.module('memory'),
+                      })
+                    )
+                    .catch(() => {
+                      toast.error('确认经验未能记入，请到经验页重试。');
+                    });
+                }}
+                onSedimentThisTimeOnly={(entryId) => {
+                  void commandP1(
+                    'memory',
+                    {
+                      action: 'reject_candidate',
+                      payload: {
+                        entryId,
+                        reason: '仅本次任务，不作为长期经验',
+                      },
+                    },
+                    `experience-sediment-once:${entryId}`
+                  )
+                    .then(() =>
+                      queryClient.invalidateQueries({
+                        queryKey: p1QueryKeys.module('memory'),
+                      })
+                    )
+                    .catch(() => {
+                      toast.error('本次选择未能记入，请到经验页重试。');
+                    });
+                }}
                 deliveryAspectRatio={submissionAspectRatio ?? undefined}
                 deliveryLensId={lensState.lensId ?? undefined}
                 onDeliveryFollowUp={(seed) => {

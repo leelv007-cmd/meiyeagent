@@ -108,7 +108,7 @@ for (const viewport of [
 
     const zhNav = page.getByRole('navigation', { name: '移动端导航' });
     await expect(zhNav).toBeVisible();
-    for (const label of ['创作', '口吻与素材', '内容', '门店', '记忆']) {
+    for (const label of ['创作', '口吻与素材', '内容', '门店', '经验']) {
       await expect(zhNav.getByText(label, { exact: true })).toBeVisible();
     }
     await expect(page.getByTestId('composer-home')).toBeVisible();

@@ -37,7 +37,8 @@ export const Routes = {
   ContentWorkspace: '/dashboard/workspace',
   MarketingIdentity: '/dashboard/identity',
   /**
-   * 一级导航「记忆」(D-164④). What the product has learned about this shop is
+   * 一级导航「经验」(D-164④ + P2-13 / D5). Route id stays memory; merchant
+   * copy is 经验. What the product has learned about this shop is
    * the reason it gets better with use, so it has to be somewhere she can
    * look — a moat she cannot see gives her no reason to stay.
    */
