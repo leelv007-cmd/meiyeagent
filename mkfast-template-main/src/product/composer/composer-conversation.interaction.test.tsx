@@ -274,6 +274,21 @@ describe('the transcript is a card flow', () => {
     expect(conversation.className).toMatch(/meiye-conversation-pane/);
   });
 
+  it('P0-2: does not cap the transcript at 70svh (single page scroll axis)', () => {
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={running()}
+        stream={emptyStream}
+      />
+    );
+
+    const conversation = screen.getByTestId('composer-conversation');
+    // Nested max-height was the second scroll container fighting the page.
+    expect(conversation.className).not.toMatch(/70svh/);
+    expect(conversation.className).not.toMatch(/max-h-\[min\(/);
+  });
+
   it('answers prefers-reduced-motion in both directions (U07)', () => {
     const setReducedMotion = (reduce: boolean) => {
       window.matchMedia = ((query: string) => ({
@@ -328,7 +343,7 @@ describe('the transcript is a card flow', () => {
     }
   });
 
-  it('streams one primary candidate and folds alternatives away', () => {
+  it('streams one primary candidate and folds alternatives away while drafting', () => {
     const stream = projectResultTokenStream({
       workspaceKind: 'copy',
       progressState: 'running',
@@ -347,6 +362,10 @@ describe('the transcript is a card flow', () => {
 
     const area = screen.getByTestId('composer-candidate-stream');
     expect(area).toHaveAttribute('data-has-token', 'true');
+    // Drafting keeps the full body; collapse is only post-completion (P0-3).
+    expect(
+      screen.queryByTestId('composer-candidate-summary')
+    ).not.toBeInTheDocument();
     const primary = screen.getByTestId('composer-candidate-primary');
     expect(primary).toHaveTextContent('周末预约');
     // U03: the body is rendered by the supply-layer markdown unit — red if the
@@ -593,7 +612,7 @@ describe('成品交付卡', () => {
     ],
   });
 
-  it('states the 任务总结 and shows what was delivered', () => {
+  it('states the 任务总结 as the delivery summary face', () => {
     render(
       <ComposerConversation
         onOpenDelivery={() => {}}
@@ -608,9 +627,33 @@ describe('成品交付卡', () => {
     expect(screen.getByTestId('composer-delivery-statement')).toHaveTextContent(
       '策略依据'
     );
-    expect(screen.getByTestId('composer-delivery-excerpt')).toHaveTextContent(
-      '到店立减'
+  });
+
+  it('P0-3: completed candidate collapses to a capsule; delivery has no body excerpt', () => {
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={delivered()}
+        stream={finishedStream}
+      />
     );
+
+    // Capsule, not the full candidate stream body.
+    expect(screen.getByTestId('composer-candidate-summary')).toBeInTheDocument();
+    expect(
+      screen.queryByTestId('composer-candidate-stream')
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('composer-candidate-primary')
+    ).not.toBeInTheDocument();
+    // Delivery statement is the summary; do not re-paste the full excerpt body.
+    expect(
+      screen.queryByTestId('composer-delivery-excerpt')
+    ).not.toBeInTheDocument();
+    // Capsule may keep a short snippet, but not the full streamed primary body
+    // next to a second full excerpt (the dual-read failure F8 names).
+    const summary = screen.getByTestId('composer-candidate-summary');
+    expect(summary).toHaveAttribute('data-collapsed', 'true');
   });
 
   it('binds every action to the revision the server delivered', async () => {
