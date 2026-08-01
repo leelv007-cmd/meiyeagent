@@ -167,6 +167,59 @@ test(
   },
 );
 
+test(
+  'Postgres refunds cannot revive explicitly expired subscription lots',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const fixture = await createFixture();
+    const { creditLedger, workspaceId } = fixture;
+    const usageOperationId = creditUsageOperationId('task-explicit-expiry');
+    try {
+      await creditLedger.grant({
+        id: 'subscription-explicit-expiry',
+        workspaceId,
+        credits: 5,
+        expirationDate: null,
+        transactionType: 'SUBSCRIPTION_RENEWAL',
+        sourceRef: 'subscription-explicit-expiry',
+        createdAt: '2026-08-01T00:00:00.000Z',
+      });
+      await creditLedger.consume({
+        workspaceId,
+        credits: 3,
+        transactionId: usageOperationId,
+        actorId: 'owner',
+        correlationId: 'test',
+        createdAt: '2026-08-02T00:00:00.000Z',
+      });
+      await creditLedger.expireSubscriptionLots({
+        workspaceId,
+        subscriptionId: 'subscription-explicit-expiry',
+        actorId: 'system',
+        correlationId: 'upgrade',
+        createdAt: '2026-08-03T00:00:00.000Z',
+      });
+
+      const [refund] = await creditLedger.refundUsageOperation({
+        workspaceId,
+        usageOperationId,
+        refundOperationId: 'refund:task-explicit-expiry',
+        actorId: 'worker',
+        correlationId: 'test',
+        createdAt: '2026-08-04T00:00:00.000Z',
+      });
+
+      assert.equal(refund?.credited, false);
+      assert.equal(
+        (await creditLedger.project(workspaceId)).availableCredits,
+        0,
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
 async function createFixture() {
   const schema = `credit_pg_${randomUUID().replaceAll('-', '')}`;
   const pool = new Pool({

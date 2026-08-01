@@ -334,8 +334,17 @@ export class PostgresCreditLedger implements PostgresSchemaMigrator {
       );
       const lot = lotResult.rows[0] ? creditLotFromRow(lotResult.rows[0]) : null;
       if (!lot) throw new P1DomainError('NOT_FOUND', 'Credit source lot is missing.');
+      const explicitlyExpired = await client.query(
+        `SELECT 1 FROM p1_credit_lot_transactions
+          WHERE workspace_id = $1 AND lot_id = $2
+            AND transaction_type = 'EXPIRE'
+          LIMIT 1`,
+        [input.workspaceId, lot.id],
+      );
       const credited =
-        lot.expirationDate === null || Date.parse(lot.expirationDate) > Date.parse(input.createdAt);
+        explicitlyExpired.rowCount === 0 &&
+        (lot.expirationDate === null ||
+          Date.parse(lot.expirationDate) > Date.parse(input.createdAt));
       if (credited) {
         await client.query(
           `UPDATE p1_credit_grant_lots

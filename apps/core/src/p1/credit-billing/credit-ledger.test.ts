@@ -14,6 +14,7 @@ function grant(
     id: string;
     credits: number;
     expirationDate: string | null;
+    sourceRef?: string;
     transactionType?: 'SUBSCRIPTION_RENEWAL' | 'PURCHASE_PACKAGE';
   },
 ) {
@@ -115,6 +116,44 @@ test('a refund after source-lot expiry remains visible but cannot revive credits
     )?.credits,
     5,
   );
+});
+
+test('a refund cannot revive a subscription lot after explicit expiry', () => {
+  const ledger = new MemoryCreditLedger();
+  grant(ledger, {
+    id: 'subscription-explicit-expiry',
+    credits: 5,
+    expirationDate: null,
+    sourceRef: 'subscription-explicit-expiry',
+  });
+  const usageOperationId = creditUsageOperationId('task-explicit-expiry');
+  ledger.consume({
+    workspaceId: 'workspace-credit',
+    credits: 3,
+    transactionId: usageOperationId,
+    actorId: 'owner',
+    correlationId: 'test',
+    createdAt: '2026-08-02T00:00:00.000Z',
+  });
+  ledger.expireSubscriptionLots({
+    workspaceId: 'workspace-credit',
+    subscriptionId: 'subscription-explicit-expiry',
+    actorId: 'system',
+    correlationId: 'upgrade',
+    createdAt: '2026-08-03T00:00:00.000Z',
+  });
+
+  const [refund] = ledger.refundUsageOperation({
+    workspaceId: 'workspace-credit',
+    usageOperationId,
+    refundOperationId: 'refund:task-explicit-expiry',
+    actorId: 'worker',
+    correlationId: 'test',
+    createdAt: '2026-08-04T00:00:00.000Z',
+  });
+
+  assert.equal(refund?.credited, false);
+  assert.equal(ledger.project('workspace-credit').availableCredits, 0);
 });
 
 test('workspace lock prevents concurrent reservations from exceeding one balance', async () => {

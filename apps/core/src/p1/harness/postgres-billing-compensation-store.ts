@@ -282,5 +282,6 @@ function settlementPayload(
     quoteId: input.quoteId,
     quoteRevision: input.quoteRevision,
     ...(input.trustedUsage ? { trustedUsage: input.trustedUsage } : {}),
+    ...(input.forceCreditRefund ? { forceCreditRefund: true } : {}),
   };
 }

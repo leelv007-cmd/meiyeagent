@@ -379,9 +379,16 @@ export class MemoryCreditLedger {
           candidate.workspaceId === input.workspaceId && candidate.id === usage.lotId,
       );
       if (!lot) throw new Error('Credit lot for usage transaction is missing.');
+      const explicitlyExpired = this.transactions.some(
+        (transaction) =>
+          transaction.workspaceId === input.workspaceId &&
+          transaction.transactionType === 'EXPIRE' &&
+          transaction.lotId === lot.id,
+      );
       const active =
-        lot.expirationDate === null ||
-        Date.parse(lot.expirationDate) > Date.parse(input.createdAt);
+        !explicitlyExpired &&
+        (lot.expirationDate === null ||
+          Date.parse(lot.expirationDate) > Date.parse(input.createdAt));
       if (active) {
         lot.remainingCredits = Math.min(
           lot.originalCredits,

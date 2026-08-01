@@ -12,6 +12,40 @@ import { harnessRuntimeId } from './workspace-scope.js';
 const connectionString = process.env.TEST_DATABASE_URL;
 
 test(
+  'queued credit refunds preserve the forced-refund contract',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const compensations = new PostgresHarnessBillingCompensationStore(pool);
+    const suffix = randomUUID();
+    const task = {
+      action: 'refund' as const,
+      attempts: 0,
+      workspaceId: `forced-refund-${suffix}`,
+      taskId: `task-${suffix}`,
+      quoteId: `quote-${suffix}`,
+      quoteRevision: 'quote-revision-1',
+      forceCreditRefund: true,
+    };
+    try {
+      await pool.query('CREATE SCHEMA IF NOT EXISTS harness_runtime');
+      await compensations.migrate();
+      await compensations.enqueue(task);
+
+      const [claimed] = await compensations.claimBatch(1);
+      assert.equal(claimed?.forceCreditRefund, true);
+    } finally {
+      await pool.query(
+        `DELETE FROM harness_runtime.billing_compensations
+         WHERE workspace_id=$1 AND task_id=$2`,
+        [task.workspaceId, task.taskId],
+      );
+      await pool.end();
+    }
+  },
+);
+
+test(
   'terminal facts rebuild one missing owner for every reserved Harness usage',
   { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
   async () => {
