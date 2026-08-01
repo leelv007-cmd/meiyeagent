@@ -243,7 +243,7 @@ test('Creem normalizes checkout, renewal, and cancel/expire lifecycle', () => {
       id: 'evt_creem_past_due',
       object: { id: 'sub_past_due' },
     }),
-    null,
+    null
   );
   assert.deepEqual(
     normalizeCreemVerifiedPaymentEvent({

@@ -8,7 +8,7 @@ import { fetchPublicPlanCatalog } from './plan-catalog';
 test('public plan catalog fails closed on Core HTTP, schema, and transport failures', async () => {
   await assert.rejects(
     fetchPublicPlanCatalog(async () => new Response(null, { status: 503 })),
-    /503/u,
+    /503/u
   );
   await assert.rejects(
     fetchPublicPlanCatalog(
@@ -16,15 +16,15 @@ test('public plan catalog fails closed on Core HTTP, schema, and transport failu
         new Response(JSON.stringify({ data: { plans: [{ id: 'starter' }] } }), {
           headers: { 'content-type': 'application/json' },
           status: 200,
-        }),
+        })
     ),
-    /invalid|validation|parse/i,
+    /invalid|validation|parse/i
   );
   await assert.rejects(
     fetchPublicPlanCatalog(async () => {
       throw new Error('core offline');
     }),
-    /core offline/u,
+    /core offline/u
   );
 });
 
@@ -36,8 +36,8 @@ test('public plan catalog returns the ops-published credit revision', async () =
         new Response(JSON.stringify({ data: catalog }), {
           headers: { 'content-type': 'application/json' },
           status: 200,
-        }),
+        })
     ),
-    catalog,
+    catalog
   );
 });

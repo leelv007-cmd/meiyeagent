@@ -10,14 +10,14 @@ import {
 import { createServerFn } from '@tanstack/react-start';
 
 export async function fetchPublicPlanCatalog(
-  fetcher: typeof fetch = fetch,
+  fetcher: typeof fetch = fetch
 ): Promise<PublicPlanCatalog> {
   const response = await fetcher(
     `${serverEnv.CORE_SERVICE_URL}/public/plan-catalog`,
     {
       headers: { 'x-service-token': serverEnv.CORE_SERVICE_TOKEN },
       method: 'GET',
-    },
+    }
   );
   if (!response.ok) {
     throw new Error(`Core plan catalog returned ${response.status}.`);
@@ -31,5 +31,5 @@ export async function fetchPublicPlanCatalog(
 }
 
 export const getPublicPlanCatalog = createServerFn({ method: 'GET' }).handler(
-  async () => fetchPublicPlanCatalog(),
+  async () => fetchPublicPlanCatalog()
 );
