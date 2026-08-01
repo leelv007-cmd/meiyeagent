@@ -1,5 +1,6 @@
 /**
  * D-164④ — 记忆 as a first-class destination.
+ * P1-04 (#316) — three-layer IA: 待你确认 → 已记住（域）→ 证据抽屉.
  *
  * The assertion that matters most here is the last one: a domain with no
  * backend must not render the same thing a shop with no history renders.
@@ -13,6 +14,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -64,7 +66,82 @@ afterEach(() => {
 });
 
 describe('memory vault', () => {
-  it('shows all four domains D-164④ names', async () => {
+  it('P1-4: shows three-layer IA with pending layer on top by default', async () => {
+    p1.queryP1.mockImplementation(
+      (module: string, input: { action: string }) =>
+        module === 'memory' && input.action === 'entries_page'
+          ? Promise.resolve({
+              items: [
+                {
+                  entryId: 'confirmed-old',
+                  semanticKey: 'tone.confirmed',
+                  value: '已确认偏旧',
+                  status: 'confirmed',
+                  proposedAt: '2026-07-31T08:00:00.000Z',
+                  source: null,
+                },
+                {
+                  entryId: 'pending-new',
+                  semanticKey: 'tone.pending',
+                  value: '待确认偏新',
+                  status: 'pending',
+                  proposedAt: '2026-07-30T06:00:00.000Z',
+                  source: null,
+                },
+              ],
+              nextCursor: null,
+            })
+          : Promise.resolve({
+              identities: [identity],
+              defaultDecision: null,
+              defaultIdentity: { identityId: 'identity-1', version: 1 },
+              decisionRevision: 1,
+            })
+    );
+
+    renderPage();
+
+    // Wait until both layers have real entries (sections mount empty first).
+    await screen.findByTestId('memory-entry-pending-new');
+    await screen.findByTestId('memory-entry-confirmed-old');
+
+    const pendingLayer = screen.getByTestId('memory-layer-pending');
+    const rememberedLayer = screen.getByTestId('memory-layer-remembered');
+    expect(pendingLayer).toBeInTheDocument();
+    expect(rememberedLayer).toBeInTheDocument();
+
+    // Pending layer is above remembered in document order (default on top).
+    const position = pendingLayer.compareDocumentPosition(rememberedLayer);
+    expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // Layer titles are merchant language (zh messages in interaction suite).
+    expect(pendingLayer.textContent).toMatch(/待你确认/u);
+    expect(rememberedLayer.textContent).toMatch(/已记住/u);
+
+    // Pending entries only in layer 1; confirmed only under 已记住 domains.
+    expect(
+      within(pendingLayer).getByTestId('memory-entry-pending-new')
+    ).toBeInTheDocument();
+    expect(
+      within(pendingLayer).queryByTestId('memory-entry-confirmed-old')
+    ).not.toBeInTheDocument();
+    expect(
+      within(rememberedLayer).getByTestId('memory-entry-confirmed-old')
+    ).toBeInTheDocument();
+    expect(
+      within(rememberedLayer).queryByTestId('memory-entry-pending-new')
+    ).not.toBeInTheDocument();
+
+    // Layer 3: evidence drawer affordance is present on entries.
+    expect(
+      screen.getByTestId('memory-entry-evidence-open-pending-new')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId('memory-entry-evidence-open-confirmed-old')
+    ).toBeInTheDocument();
+  });
+
+  it('shows all four domains D-164④ names under the remembered layer', async () => {
     p1.queryP1.mockResolvedValue({
       identities: [],
       defaultDecision: null,
@@ -74,13 +151,14 @@ describe('memory vault', () => {
 
     renderPage();
 
+    const remembered = await screen.findByTestId('memory-layer-remembered');
     for (const testId of [
       'memory-domain-identity',
       'memory-domain-campaigns',
       'memory-domain-workflows',
       'memory-domain-corrections',
     ]) {
-      expect(await screen.findByTestId(testId)).toBeInTheDocument();
+      expect(within(remembered).getByTestId(testId)).toBeInTheDocument();
     }
   });
 
@@ -193,6 +271,59 @@ describe('memory vault', () => {
     );
   });
 
+  it('opens the evidence drawer with merchant-language basis fields', async () => {
+    p1.queryP1.mockImplementation(
+      (module: string, input: { action: string }) =>
+        module === 'memory' && input.action === 'entries_page'
+          ? Promise.resolve({
+              items: [
+                {
+                  entryId: 'candidate-tone',
+                  semanticKey: 'tone.default',
+                  value: '克制、像熟客分享',
+                  status: 'pending',
+                  proposedAt: '2026-07-30T06:00:00.000Z',
+                  source: {
+                    conversationId: 'conversation-a',
+                    sourceTurnId: 'turn-a',
+                    messageRange: { start: 0, end: 1 },
+                    status: 'available',
+                    observedAt: '2026-07-30T05:59:00.000Z',
+                    preview: '以后文案要克制，像熟客分享。',
+                    deletedAt: null,
+                  },
+                },
+              ],
+              nextCursor: null,
+            })
+          : Promise.resolve({
+              identities: [],
+              defaultDecision: null,
+              defaultIdentity: null,
+              decisionRevision: 0,
+            })
+    );
+
+    renderPage();
+
+    fireEvent.click(
+      await screen.findByTestId('memory-entry-evidence-open-candidate-tone')
+    );
+    const drawer = await screen.findByTestId('memory-evidence-drawer');
+    expect(drawer.textContent).toMatch(/这条记忆的依据/u);
+    expect(drawer.textContent).toMatch(/克制、像熟客分享/u);
+    expect(screen.getByTestId('memory-evidence-status').textContent).toMatch(
+      /待你确认/u
+    );
+    expect(screen.getByTestId('memory-evidence-source').textContent).toMatch(
+      /因为你 2026\/7\/30 说过/u
+    );
+    // Merchant language only: no internal object-model ids in the drawer.
+    expect(drawer.textContent).not.toMatch(
+      /conversation-a|turn-a|semanticKey/u
+    );
+  });
+
   it('renders a structured memory value as human key/value, never raw JSON', async () => {
     p1.queryP1.mockImplementation(
       (module: string, input: { action: string }) =>
@@ -269,7 +400,7 @@ describe('memory vault', () => {
     expect(value.textContent).not.toMatch(/^\s*\[/u);
   });
 
-  it('puts pending entries above confirmed and rejected by default', async () => {
+  it('puts pending entries above confirmed by layer (pending first by default)', async () => {
     p1.queryP1.mockImplementation(
       (module: string, input: { action: string }) =>
         module === 'memory' && input.action === 'entries_page'
@@ -322,16 +453,23 @@ describe('memory vault', () => {
 
     // Wait until entries resolve; the container mounts empty first.
     await screen.findByTestId('memory-entry-pending-new');
-    const list = screen.getByTestId('memory-entries');
+    const pendingList = screen.getByTestId('memory-entries-pending');
     // Direct children only — nested value/provenance share the memory-entry- prefix.
     expect(
-      [...list.children].map((node) => node.getAttribute('data-testid'))
-    ).toEqual([
-      'memory-entry-pending-new',
-      'memory-entry-pending-older',
-      'memory-entry-confirmed-old',
-      'memory-entry-rejected-mid',
-    ]);
+      [...pendingList.children].map((node) => node.getAttribute('data-testid'))
+    ).toEqual(['memory-entry-pending-new', 'memory-entry-pending-older']);
+
+    const confirmedList = screen.getByTestId('memory-entries-confirmed');
+    expect(
+      [...confirmedList.children].map((node) =>
+        node.getAttribute('data-testid')
+      )
+    ).toEqual(['memory-entry-confirmed-old']);
+
+    // Rejected leaves the merchant-facing page (not pending, not remembered).
+    expect(
+      screen.queryByTestId('memory-entry-rejected-mid')
+    ).not.toBeInTheDocument();
   });
 
   it('renders nested structures without a raw JSON blob or duplicate handles', async () => {
@@ -409,6 +547,9 @@ describe('memory vault', () => {
     for (const note of notes) {
       expect(note.textContent).toMatch(/还在建/u);
     }
+    // Three-layer shell still present on cold start (pending empty, remembered domains).
+    expect(screen.getByTestId('memory-layer-pending')).toBeInTheDocument();
+    expect(screen.getByTestId('memory-layer-remembered')).toBeInTheDocument();
   });
 
   it('does not call the shop cold when the memory read failed', async () => {

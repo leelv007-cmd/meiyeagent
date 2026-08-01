@@ -1,5 +1,5 @@
 /**
- * 记忆 — D-164④.
+ * 记忆 — D-164④ + P1-04 three-layer IA (#316).
  *
  * What the product has learned about this shop is the reason it gets better
  * with use. A moat the merchant cannot see gives her no reason to stay, so it
@@ -19,6 +19,11 @@
  * entries first by default, cold-start empty copy that does not pretend the
  * product has learned anything. Does not build producers or rename「经验」.
  *
+ * P1-04 (#316 / D5): three-layer page IA —
+ *   1. 待你确认 (default on top) — pending candidates only
+ *   2. 已记住 — confirmed entries grouped by domain
+ *   3. 证据抽屉 — per-entry basis drawer (source / status / when noticed)
+ *
  * 门店偏好 reads the identity projection the identity workspace already
  * consumes — same query key, so one invalidation still covers both, and this
  * page adds no backend surface. It links there rather than editing in place:
@@ -27,13 +32,20 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type {
   MarketingIdentityProjection,
   MemoryEntriesPage,
   MemoryEntryProjection,
 } from '@meiye/contracts';
 
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { formatLocaleDate } from '@/lib/locale';
 import { Routes } from '@/lib/routes';
 import {
@@ -66,24 +78,29 @@ import {
   memory_entry_status_confirmed,
   memory_entry_status_pending,
   memory_entry_status_rejected,
+  memory_entry_view_evidence,
+  memory_evidence_proposed_label,
+  memory_evidence_source_label,
+  memory_evidence_status_label,
+  memory_evidence_title,
+  memory_layer_pending_count,
+  memory_layer_pending_description,
+  memory_layer_pending_title,
+  memory_layer_remembered_description,
+  memory_layer_remembered_title,
   memory_page_description,
+  memory_remembered_identity_empty,
   memory_unbuilt_note,
 } from '@/locale/paraglide/messages';
 import { commandP1, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import { marketingIdentityProjectionQuery } from './marketing-identity-queries';
 
-/** Pending first; within a status, newest proposedAt first. */
-function sortMemoryEntries(
+/** Newest proposedAt first within a fixed status group. */
+function sortByProposedAtDesc(
   items: MemoryEntryProjection[]
 ): MemoryEntryProjection[] {
-  const rank = (status: MemoryEntryProjection['status']) =>
-    status === 'pending' ? 0 : status === 'confirmed' ? 1 : 2;
-  return [...items].sort((a, b) => {
-    const byStatus = rank(a.status) - rank(b.status);
-    if (byStatus !== 0) return byStatus;
-    return b.proposedAt.localeCompare(a.proposedAt);
-  });
+  return [...items].sort((a, b) => b.proposedAt.localeCompare(a.proposedAt));
 }
 
 function isPrimitive(value: unknown): value is string | number | boolean {
@@ -167,6 +184,27 @@ function MemoryValueView({
   return blank;
 }
 
+function formatEntrySource(entry: MemoryEntryProjection): string {
+  return entry.source?.status === 'available' &&
+    entry.source.preview &&
+    entry.source.observedAt
+    ? memory_entry_source_available({
+        date: formatLocaleDate(entry.source.observedAt),
+        preview: entry.source.preview,
+      })
+    : entry.source?.status === 'deleted'
+      ? memory_entry_source_deleted()
+      : memory_entry_source_unavailable();
+}
+
+function formatEntryStatus(status: MemoryEntryProjection['status']): string {
+  return status === 'confirmed'
+    ? memory_entry_status_confirmed()
+    : status === 'rejected'
+      ? memory_entry_status_rejected()
+      : memory_entry_status_pending();
+}
+
 /**
  * Cold start. The page's standing description promises the product knows this
  * shop better the longer she uses it — true eventually, a lie on day one. With
@@ -227,6 +265,12 @@ function UnbuiltNote() {
   );
 }
 
+type MemoryAction =
+  | 'confirm_candidate'
+  | 'reject_candidate'
+  | 'delete_entry'
+  | 'delete_source_conversation';
+
 export function MemoryVaultPage() {
   const queryClient = useQueryClient();
   const identityQuery = useQuery(marketingIdentityProjectionQuery);
@@ -241,11 +285,7 @@ export function MemoryVaultPage() {
   });
   const decide = useMutation({
     mutationFn: (input: {
-      action:
-        | 'confirm_candidate'
-        | 'reject_candidate'
-        | 'delete_entry'
-        | 'delete_source_conversation';
+      action: MemoryAction;
       entryId: string;
       conversationId?: string;
     }) =>
@@ -270,6 +310,8 @@ export function MemoryVaultPage() {
         queryKey: p1QueryKeys.module('memory'),
       }),
   });
+  const [evidenceEntryId, setEvidenceEntryId] = useState<string | null>(null);
+
   const projection: MarketingIdentityProjection | undefined =
     identityQuery.data;
   const defaultIdentityId = projection?.defaultIdentity?.identityId;
@@ -278,11 +320,22 @@ export function MemoryVaultPage() {
         (identity) => identity.identityId === defaultIdentityId
       )
     : undefined;
-  const entries = sortMemoryEntries(entriesQuery.data?.items ?? []);
+  const allEntries = entriesQuery.data?.items ?? [];
+  // Layer 1: only pending. Layer 2: confirmed only (rejected leave the page).
+  const pendingEntries = sortByProposedAtDesc(
+    allEntries.filter((entry) => entry.status === 'pending')
+  );
+  const confirmedEntries = sortByProposedAtDesc(
+    allEntries.filter((entry) => entry.status === 'confirmed')
+  );
   // Only claim coldness once both reads have actually answered — a pending or
   // failed query is not evidence that the shop has nothing sedimented.
   const settled = Boolean(entriesQuery.data) && Boolean(identityQuery.data);
-  const cold = settled && entries.length === 0 && !defaultIdentity;
+  const cold = settled && allEntries.length === 0 && !defaultIdentity;
+  const evidenceEntry =
+    evidenceEntryId == null
+      ? null
+      : (allEntries.find((entry) => entry.entryId === evidenceEntryId) ?? null);
 
   return (
     <div className="flex flex-col gap-4">
@@ -292,80 +345,168 @@ export function MemoryVaultPage() {
         <p className="meiye-type-aux">{memory_page_description()}</p>
       )}
 
+      {/* Layer 1 — 待你确认 (default on top, P1-4 / D5) */}
       <MemorySection
-        title={memory_domain_identity_title()}
-        description={memory_domain_identity_description()}
-        testId="memory-domain-identity"
+        title={memory_layer_pending_title()}
+        description={memory_layer_pending_description()}
+        testId="memory-layer-pending"
       >
-        <div className="space-y-3" data-testid="memory-entries">
-          {entries.length > 0 ? (
-            entries.map((entry) => (
-              <MemoryEntryCard
-                entry={entry}
-                key={entry.entryId}
-                pending={decide.isPending}
-                onAction={(action) =>
-                  decide.mutate({
-                    action,
-                    entryId: entry.entryId,
-                    conversationId: entry.source?.conversationId,
-                  })
-                }
-              />
-            ))
-          ) : cold ? null : (
-            // On a cold page the note above already says nothing was learned;
-            // repeating it per section is the four-empty-blocks screen the
-            // cold state exists to replace.
-            <p className="meiye-type-aux" data-testid="memory-entry-empty">
-              {memory_entry_empty()}
+        {pendingEntries.length > 0 ? (
+          <>
+            <p
+              className="meiye-type-aux mb-3"
+              data-testid="memory-layer-pending-count"
+            >
+              {memory_layer_pending_count({
+                count: pendingEntries.length,
+              })}
             </p>
-          )}
-        </div>
-        {defaultIdentity ? (
-          <p data-testid="memory-identity-name">
-            {defaultIdentity.displayName}
+            <div className="space-y-3" data-testid="memory-entries-pending">
+              {pendingEntries.map((entry) => (
+                <MemoryEntryCard
+                  entry={entry}
+                  key={entry.entryId}
+                  pending={decide.isPending}
+                  onAction={(action) =>
+                    decide.mutate({
+                      action,
+                      entryId: entry.entryId,
+                      conversationId: entry.source?.conversationId,
+                    })
+                  }
+                  onOpenEvidence={() => setEvidenceEntryId(entry.entryId)}
+                />
+              ))}
+            </div>
+          </>
+        ) : cold ? null : (
+          // On a cold page the note above already says nothing was learned;
+          // repeating it as a queue-empty is the four-empty-blocks screen the
+          // cold state exists to replace.
+          <p className="meiye-type-aux" data-testid="memory-entry-empty">
+            {memory_entry_empty()}
           </p>
-        ) : (
-          <p className="meiye-type-aux">{memory_domain_identity_empty()}</p>
         )}
-        <Link
-          className="mt-2 inline-block underline underline-offset-4"
-          to={Routes.MarketingIdentity}
-        >
-          {memory_domain_identity_action()}
-        </Link>
       </MemorySection>
 
+      {/* Layer 2 — 已记住, grouped by domain */}
       <MemorySection
-        title={memory_domain_campaigns_title()}
-        description={memory_domain_campaigns_description()}
-        testId="memory-domain-campaigns"
+        title={memory_layer_remembered_title()}
+        description={memory_layer_remembered_description()}
+        testId="memory-layer-remembered"
       >
-        <UnbuiltNote />
+        <div className="space-y-4">
+          <DomainGroup
+            title={memory_domain_identity_title()}
+            description={memory_domain_identity_description()}
+            testId="memory-domain-identity"
+          >
+            <div className="space-y-3" data-testid="memory-entries-confirmed">
+              {confirmedEntries.length > 0 ? (
+                confirmedEntries.map((entry) => (
+                  <MemoryEntryCard
+                    entry={entry}
+                    key={entry.entryId}
+                    pending={decide.isPending}
+                    onAction={(action) =>
+                      decide.mutate({
+                        action,
+                        entryId: entry.entryId,
+                        conversationId: entry.source?.conversationId,
+                      })
+                    }
+                    onOpenEvidence={() => setEvidenceEntryId(entry.entryId)}
+                  />
+                ))
+              ) : cold ? null : (
+                <p
+                  className="meiye-type-aux"
+                  data-testid="memory-remembered-identity-empty"
+                >
+                  {memory_remembered_identity_empty()}
+                </p>
+              )}
+            </div>
+            {defaultIdentity ? (
+              <p data-testid="memory-identity-name">
+                {defaultIdentity.displayName}
+              </p>
+            ) : (
+              <p className="meiye-type-aux">{memory_domain_identity_empty()}</p>
+            )}
+            <Link
+              className="mt-2 inline-block underline underline-offset-4"
+              to={Routes.MarketingIdentity}
+            >
+              {memory_domain_identity_action()}
+            </Link>
+          </DomainGroup>
+
+          <DomainGroup
+            title={memory_domain_campaigns_title()}
+            description={memory_domain_campaigns_description()}
+            testId="memory-domain-campaigns"
+          >
+            <UnbuiltNote />
+          </DomainGroup>
+
+          <DomainGroup
+            title={memory_domain_workflows_title()}
+            description={memory_domain_workflows_description()}
+            testId="memory-domain-workflows"
+          >
+            <UnbuiltNote />
+            <Link
+              className="mt-2 inline-block underline underline-offset-4"
+              to="/dashboard/catalog"
+            >
+              {memory_domain_workflows_action()}
+            </Link>
+          </DomainGroup>
+
+          <DomainGroup
+            title={memory_domain_corrections_title()}
+            description={memory_domain_corrections_description()}
+            testId="memory-domain-corrections"
+          >
+            <UnbuiltNote />
+          </DomainGroup>
+        </div>
       </MemorySection>
 
-      <MemorySection
-        title={memory_domain_workflows_title()}
-        description={memory_domain_workflows_description()}
-        testId="memory-domain-workflows"
-      >
-        <UnbuiltNote />
-        <Link
-          className="mt-2 inline-block underline underline-offset-4"
-          to="/dashboard/catalog"
-        >
-          {memory_domain_workflows_action()}
-        </Link>
-      </MemorySection>
+      {/* Layer 3 — 证据抽屉 (per-entry basis; not a third vertical stack) */}
+      <MemoryEvidenceDrawer
+        entry={evidenceEntry}
+        open={evidenceEntry != null}
+        onOpenChange={(open) => {
+          if (!open) setEvidenceEntryId(null);
+        }}
+      />
+    </div>
+  );
+}
 
-      <MemorySection
-        title={memory_domain_corrections_title()}
-        description={memory_domain_corrections_description()}
-        testId="memory-domain-corrections"
-      >
-        <UnbuiltNote />
-      </MemorySection>
+function DomainGroup({
+  title,
+  description,
+  testId,
+  children,
+}: {
+  title: string;
+  description: string;
+  testId: string;
+  children?: ReactNode;
+}) {
+  return (
+    <div
+      className="rounded-xl border border-foreground/10 p-4"
+      data-testid={testId}
+    >
+      <h3 className="text-sm font-semibold leading-6">{title}</h3>
+      <p className="meiye-type-aux mt-0.5">{description}</p>
+      {children ? (
+        <div className="mt-3 space-y-2 text-sm">{children}</div>
+      ) : null}
     </div>
   );
 }
@@ -374,34 +515,15 @@ function MemoryEntryCard({
   entry,
   pending,
   onAction,
+  onOpenEvidence,
 }: {
   entry: MemoryEntryProjection;
   pending: boolean;
-  onAction: (
-    action:
-      | 'confirm_candidate'
-      | 'reject_candidate'
-      | 'delete_entry'
-      | 'delete_source_conversation'
-  ) => void;
+  onAction: (action: MemoryAction) => void;
+  onOpenEvidence: () => void;
 }) {
-  const source =
-    entry.source?.status === 'available' &&
-    entry.source.preview &&
-    entry.source.observedAt
-      ? memory_entry_source_available({
-          date: formatLocaleDate(entry.source.observedAt),
-          preview: entry.source.preview,
-        })
-      : entry.source?.status === 'deleted'
-        ? memory_entry_source_deleted()
-        : memory_entry_source_unavailable();
-  const status =
-    entry.status === 'confirmed'
-      ? memory_entry_status_confirmed()
-      : entry.status === 'rejected'
-        ? memory_entry_status_rejected()
-        : memory_entry_status_pending();
+  const source = formatEntrySource(entry);
+  const status = formatEntryStatus(entry.status);
   return (
     <article
       className="rounded-xl border border-foreground/10 p-3"
@@ -436,6 +558,13 @@ function MemoryEntryCard({
           </>
         ) : null}
         <button
+          data-testid={`memory-entry-evidence-open-${entry.entryId}`}
+          onClick={onOpenEvidence}
+          type="button"
+        >
+          {memory_entry_view_evidence()}
+        </button>
+        <button
           disabled={pending}
           onClick={() => onAction('delete_entry')}
           type="button"
@@ -453,5 +582,65 @@ function MemoryEntryCard({
         ) : null}
       </div>
     </article>
+  );
+}
+
+function MemoryEvidenceDrawer({
+  entry,
+  open,
+  onOpenChange,
+}: {
+  entry: MemoryEntryProjection | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        className="w-full sm:max-w-md"
+        data-testid="memory-evidence-drawer"
+        side="right"
+      >
+        <SheetHeader>
+          <SheetTitle>{memory_evidence_title()}</SheetTitle>
+          <SheetDescription className="sr-only">
+            {memory_evidence_title()}
+          </SheetDescription>
+        </SheetHeader>
+        {entry ? (
+          <div className="flex flex-col gap-4 px-4 pb-6 text-sm">
+            <div data-testid="memory-evidence-value">
+              <MemoryValueView root={false} value={entry.value} />
+            </div>
+            <dl className="grid gap-3">
+              <div>
+                <dt className="meiye-type-aux">
+                  {memory_evidence_status_label()}
+                </dt>
+                <dd className="mt-0.5" data-testid="memory-evidence-status">
+                  {formatEntryStatus(entry.status)}
+                </dd>
+              </div>
+              <div>
+                <dt className="meiye-type-aux">
+                  {memory_evidence_proposed_label()}
+                </dt>
+                <dd className="mt-0.5" data-testid="memory-evidence-proposed">
+                  {formatLocaleDate(entry.proposedAt)}
+                </dd>
+              </div>
+              <div>
+                <dt className="meiye-type-aux">
+                  {memory_evidence_source_label()}
+                </dt>
+                <dd className="mt-0.5" data-testid="memory-evidence-source">
+                  {formatEntrySource(entry)}
+                </dd>
+              </div>
+            </dl>
+          </div>
+        ) : null}
+      </SheetContent>
+    </Sheet>
   );
 }
