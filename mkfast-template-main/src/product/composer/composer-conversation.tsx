@@ -162,7 +162,6 @@ function AgentFrameHost({
   );
 }
 
-
 /**
  * D-111 分流告知. Identified by the `intent_naming` success frame, so the
  * wording stays T11's to own. Never silently downgrades: the merchant is told
@@ -401,8 +400,7 @@ export function ComposerConversation({
   const scrollBehavior = prefersReducedMotion ? 'instant' : 'smooth';
   const liveInterruptTurnId =
     session.turns.find(
-      (turn) =>
-        turn.kind === 'question' || turn.kind === 'execution_confirm'
+      (turn) => turn.kind === 'question' || turn.kind === 'execution_confirm'
     )?.id ?? null;
 
   // Merchant must act on in-stream interrupts. Active sticky Composer (z-30)

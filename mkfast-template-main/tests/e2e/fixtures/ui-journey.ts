@@ -170,7 +170,13 @@ export async function chooseImageTextDirection(page: Page) {
     .getByTestId('composer-stage-line')
     .filter({ hasText: '已按你选的方向继续准备整套图文' });
   await expect(async () => {
-    if (await resumedLine.first().isVisible().catch(() => false)) return;
+    if (
+      await resumedLine
+        .first()
+        .isVisible()
+        .catch(() => false)
+    )
+      return;
 
     // Prefer scrolling the interrupt host above sticky Composer before click.
     const interruptHost = page.getByTestId('composer-question-turn');
@@ -203,10 +209,16 @@ export async function chooseImageTextDirection(page: Page) {
       }
     } else {
       // Still compiling, or styles_ready already flashed — keep polling.
-      void (await stylesReadyLine.first().isVisible().catch(() => false));
+      void (await stylesReadyLine
+        .first()
+        .isVisible()
+        .catch(() => false));
     }
     expect(
-      await resumedLine.first().isVisible().catch(() => false)
+      await resumedLine
+        .first()
+        .isVisible()
+        .catch(() => false)
     ).toBeTruthy();
   }, 'the direction must land — by merchant click or frozen-route pre-answer').toPass(
     { timeout: 300_000 }
