@@ -1,3 +1,4 @@
+import { BEAUTY_FIXTURE_SENSITIVE_LEXICON } from '../../p1/sensitive-words/beauty-fixture-lexicon.js';
 import type {
   HarnessGateId,
   HarnessPolicyInput,
@@ -160,6 +161,32 @@ export const REDLINE_CASES: RedlineCase[] = [
         },
       ];
       input.sourceRefs[0]!.status = 'withdrawn';
+    },
+  ),
+  recordedCase(
+    'sensitive-words-extreme-claim',
+    'sensitive_words',
+    'Blocks visible copy that hits the shared beauty sensitive lexicon',
+    (input) => {
+      input.phase = 'delivery';
+      input.candidate.factClaims = [];
+      input.candidate.visibleText = [
+        { field: 'body', text: '本店护理承诺根治色斑，绝对安全。' },
+      ];
+      input.sensitiveLexicon = [...BEAUTY_FIXTURE_SENSITIVE_LEXICON];
+    },
+  ),
+  recordedCase(
+    'sensitive-words-medical-claim',
+    'sensitive_words',
+    'Blocks a medical-beauty banned phrase from the shared lexicon',
+    (input) => {
+      input.phase = 'delivery';
+      input.candidate.factClaims = [];
+      input.candidate.visibleText = [
+        { field: 'title', text: '药效级美白，手术级效果' },
+      ];
+      input.sensitiveLexicon = [...BEAUTY_FIXTURE_SENSITIVE_LEXICON];
     },
   ),
   recordedCase(

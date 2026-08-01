@@ -98,6 +98,24 @@
       "memoryDiff": null
     },
     {
+      "caseId": "sensitive-words-extreme-claim",
+      "gateId": "sensitive_words",
+      "promptRevision": "redline-prompts-v2",
+      "scorerRevision": "visible-copy-redlines-v2",
+      "passed": true,
+      "reason": "候选文案含有违禁词，已停止该候选。",
+      "memoryDiff": null
+    },
+    {
+      "caseId": "sensitive-words-medical-claim",
+      "gateId": "sensitive_words",
+      "promptRevision": "redline-prompts-v2",
+      "scorerRevision": "visible-copy-redlines-v2",
+      "passed": true,
+      "reason": "候选文案含有违禁词，已停止该候选。",
+      "memoryDiff": null
+    },
+    {
       "caseId": "external-revision-stale-publish",
       "gateId": "external_revision",
       "promptRevision": "redline-prompts-v2",

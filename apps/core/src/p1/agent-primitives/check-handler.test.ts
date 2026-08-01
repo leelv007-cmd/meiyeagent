@@ -98,6 +98,7 @@ test('check resolves a trusted target and has parity with the canonical executio
     'subject_asset_rights',
     'expression_identity',
     'price_benefit_freshness',
+    'sensitive_words',
     'external_revision',
     'external_action_approval',
   ]);

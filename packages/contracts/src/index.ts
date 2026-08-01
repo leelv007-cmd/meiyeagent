@@ -35,6 +35,7 @@ export * from './note-page-regenerated.js';
 export * from './skill-schema-registry.js';
 export * from './bounded-execution.js';
 export * from './agent-primitives.js';
+export * from './sensitive-words.js';
 
 export interface ApiMeta {
   correlationId: string;

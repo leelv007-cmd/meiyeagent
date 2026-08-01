@@ -8,6 +8,7 @@ export const RECORDED_GATE_REASONS = {
   subject_asset_rights: '候选使用了未授权或用途不匹配的主体素材，已停止该候选。',
   expression_identity: '候选声称了未登记或已撤回的表达身份，不能冒用该身份。',
   price_benefit_freshness: '候选使用了已过期或撤回的价格、优惠或权益。',
+  sensitive_words: '候选文案含有违禁词，已停止该候选。',
   external_revision: '准备外发的不是当前权威版本，已阻止继续。',
   external_action_approval:
     '公开或付费动作缺少绑定当前版本、目标与用途的一次性批准。',

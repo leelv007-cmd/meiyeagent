@@ -119,6 +119,7 @@ export type P1Module =
   | 'product-billing'
   | 'redemptions'
   | 'result-delivery'
+  | 'sensitive-words'
   | 'skills';
 
 const personalModelActions = new Set([
@@ -650,6 +651,33 @@ export function requiredP1Capability(
       return action === 'submit' || action === 'cancel'
         ? 'content.create'
         : 'platform.manage';
+    }
+    return null;
+  }
+
+  if (module === 'sensitive-words') {
+    if (kind === 'query') {
+      if (
+        action === 'list' ||
+        action === 'get' ||
+        action === 'scan' ||
+        action === 'check_bar' ||
+        action === 'generation_chain_check'
+      ) {
+        return action === 'scan' ||
+          action === 'check_bar' ||
+          action === 'generation_chain_check'
+          ? 'workspace.read'
+          : 'config.publish';
+      }
+      return null;
+    }
+    if (
+      action === 'create' ||
+      action === 'update' ||
+      action === 'delete'
+    ) {
+      return 'config.publish';
     }
     return null;
   }

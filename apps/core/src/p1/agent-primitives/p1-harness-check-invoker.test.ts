@@ -224,6 +224,7 @@ test('Harness invokes canonical check through P1 once and awaits its violation a
     'subject_asset_rights',
     'expression_identity',
     'price_benefit_freshness',
+    'sensitive_words',
     'external_revision',
     'external_action_approval',
   ]);

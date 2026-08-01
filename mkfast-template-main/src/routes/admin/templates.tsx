@@ -3,6 +3,7 @@ import { AdminRoutePage } from '@/components/admin/admin-route-page';
 import { AdminTemplateControl } from '@/p1/admin-template-control';
 import { AdminCreationExperienceControl } from '@/p1/admin-creation-experience-control';
 import { AdminRuntimeConfigControl } from '@/p1/admin-runtime-config-control';
+import { AdminSensitiveWordsControl } from '@/p1/admin-sensitive-words-control';
 import { NOTE_STYLE_CONFIG_KEY } from '@meiye/contracts';
 import { createFileRoute } from '@tanstack/react-router';
 import {
@@ -40,6 +41,7 @@ function TemplatesPage() {
           </div>
           <AdminRuntimeConfigControl keys={[NOTE_STYLE_CONFIG_KEY]} />
         </section>
+        <AdminSensitiveWordsControl />
         <AdminTemplateControl />
       </div>
     </AdminRoutePage>

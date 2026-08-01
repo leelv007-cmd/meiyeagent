@@ -73,6 +73,10 @@ import {
   runtimeModeValidatorsFromProviderCredentials,
 } from './p1/admin-config/index.js';
 import {
+  PostgresSensitiveWordsRepository,
+  SensitiveWordsFoundationModule,
+} from './p1/sensitive-words/index.js';
+import {
   CompositeProductEntitlementPolicy,
   DEFAULT_ADD_ON_OFFERS,
   DEFAULT_PLAN_OFFERS,
@@ -479,6 +483,7 @@ const contentPackageMigration = new ContentPackageMigrationService({
   }),
 });
 const adminConfigRepository = new PostgresAdminConfigRepository(pool);
+const sensitiveWordsRepository = new PostgresSensitiveWordsRepository(pool);
 const dueDeliveryRepository = new PostgresDueDeliveryRepository(
   pool,
   adminConfigRepository
@@ -511,6 +516,7 @@ const promptAuditStore = new PostgresHarnessStore(
 );
 await migratePostgresSchema(pool, [
   adminConfigRepository,
+  sensitiveWordsRepository,
   dueDeliveryRepository,
   integrationRepository,
   promptAuditStore,
@@ -522,6 +528,7 @@ await migratePostgresSchema(pool, [
   new PostgresEntitlementPoolsMigration(),
   new PostgresAdminSupplyMigration(),
 ]);
+await sensitiveWordsRepository.ensurePlatformBaseline();
 await promptAuditStore.activateObservabilityReconciliationCutover();
 const integrationSecrets = integrationSecretStoreFromEnv(process.env);
 const credentialRotationReceipts = new PostgresCredentialRotationReceiptStore(
@@ -942,6 +949,7 @@ await migratePostgresSchema(pool, [
   grantLotLedger,
   redemptionStore,
   adminConfigRepository,
+  sensitiveWordsRepository,
   operationsRepository,
   productBillingRepository,
   storeFactLedger,
@@ -1416,6 +1424,19 @@ const creationExperienceRuntime =
     skillRevisionValidation: skillRuntime.revisionValidation,
   });
 const harnessCheckTargetScope = new HarnessCheckTargetScope();
+/** Production check path attaches the shared sensitive-words lexicon (P2-08 / #320). */
+const harnessCheckTargetWithSensitiveLexicon = {
+  async resolve(
+    input: Parameters<HarnessCheckTargetScope['resolve']>[0],
+  ) {
+    const base = await harnessCheckTargetScope.resolve(input);
+    const sensitiveLexicon = await sensitiveWordsRepository.listEnabled();
+    return {
+      ...base,
+      sensitiveLexicon,
+    };
+  },
+};
 const harnessCandidatePrimitiveScope =
   new P1HarnessCandidateRunnerScope('harness-copy-primitive-worker');
 const memoryProposalRedline = new CanonicalMemoryProposalRedline(
@@ -1455,7 +1476,7 @@ const memoryProposalRedline = new CanonicalMemoryProposalRedline(
 const agentPrimitiveAssembly = createProductionAgentPrimitiveAssembly({
   audit: harnessObservabilityEvents,
   askMerchant: new HarnessQuestionRequestPort(),
-  checkTarget: harnessCheckTargetScope,
+  checkTarget: harnessCheckTargetWithSensitiveLexicon,
   checkViolationAudit: {
     async append(input) {
       const active = harnessCheckTargetScope.activeTarget();
@@ -1738,6 +1759,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       adminSupply: adminSupplyControlPlane,
       videoWorkflow: canonicalVideoWorkflow,
     }),
+    new SensitiveWordsFoundationModule(sensitiveWordsRepository),
     new MarketingIdentityFoundationModule(
       marketingIdentities,
       undefined,

@@ -1,6 +1,14 @@
 import { createHash } from 'node:crypto';
+import type { SensitiveWordRecord } from '@meiye/contracts';
 
+import {
+  collectCandidateScanText,
+  scanSensitiveText,
+} from '../sensitive-words/scan.js';
 import { extractVisibleClaimPatternMatches } from './visible-claim-patterns.js';
+
+/** Re-export shared scanner so redlines + generation chain prove same source. */
+export { scanSensitiveText } from '../sensitive-words/scan.js';
 
 export const HARNESS_GATE_IDS = [
   'cross_workspace_lineage',
@@ -8,6 +16,7 @@ export const HARNESS_GATE_IDS = [
   'subject_asset_rights',
   'expression_identity',
   'price_benefit_freshness',
+  'sensitive_words',
   'external_revision',
   'external_action_approval',
 ] as const;
@@ -67,6 +76,12 @@ export interface HarnessPolicyInput {
     workspaceId: string;
     status: 'registered' | 'unregistered' | 'withdrawn';
   }>;
+  /**
+   * Enabled sensitive-words lexicon for the `sensitive_words` gate.
+   * Empty / omitted → gate no-ops (keeps legacy redline cases single-failure).
+   * Production / generation-chain supply the shared repository lexicon.
+   */
+  sensitiveLexicon?: readonly SensitiveWordRecord[];
   actionContext?: {
     kind: 'export' | 'publish' | 'paid_action';
     target: string;
@@ -104,7 +119,8 @@ export function createHarnessCandidateValidator(
   };
 }
 
-const CONTENT_PHASE_GATE_IDS = HARNESS_GATE_IDS.slice(0, 5);
+/** Content gates include lexical sensitive_words (index 5); externals follow. */
+const CONTENT_PHASE_GATE_IDS = HARNESS_GATE_IDS.slice(0, 6);
 
 export function validateHarnessPolicy(
   input: HarnessPolicyInput,
@@ -156,6 +172,8 @@ function contentGate(
       return expressionIdentityGate(input);
     case 'price_benefit_freshness':
       return priceBenefitFreshnessGate(input);
+    case 'sensitive_words':
+      return sensitiveWordsGate(input);
     default:
       return null;
   }
@@ -278,6 +296,32 @@ function priceBenefitFreshnessGate(
         ['补充当前有效事实', '移除过期价格或权益'],
       )
     : null;
+}
+
+function sensitiveWordsGate(
+  input: HarnessPolicyInput,
+): HarnessGateFailure | null {
+  const lexicon = input.sensitiveLexicon ?? [];
+  if (lexicon.length === 0) return null;
+  const text = collectCandidateScanText(input.candidate);
+  if (!text.trim()) return null;
+  const scan = scanSensitiveText(text, lexicon);
+  if (scan.hitCount === 0) return null;
+  const uniqueWords = [...new Set(scan.hits.map((hit) => hit.word))];
+  const replacements = [
+    ...new Set(scan.hits.flatMap((hit) => hit.replacements)),
+  ].slice(0, 8);
+  const wordHints = uniqueWords.slice(0, 5);
+  return failure(
+    'sensitive_words',
+    '候选文案含有违禁词，已停止该候选。',
+    [
+      ...(replacements.length > 0
+        ? replacements
+        : ['改写违规表述', '删除违禁词后重试']),
+      ...wordHints.map((word) => `命中：${word}`),
+    ],
+  );
 }
 
 function externalRevisionGate(
