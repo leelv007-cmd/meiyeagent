@@ -46,6 +46,24 @@ test('browser submission carries signed public fields without server truth', () 
   assert.equal(parsed.distributionTarget, 'export');
 });
 
+test('browser submission accepts P2-09 beauty voice and thinking level injection', () => {
+  const parsed = composerSubmissionBodySchema.parse({
+    ...submissionBody(),
+    creationMode: 'free',
+    beautyVoiceRole: 'beautician',
+    thinkingLevel: 'deep',
+  });
+  assert.equal(parsed.beautyVoiceRole, 'beautician');
+  assert.equal(parsed.thinkingLevel, 'deep');
+  assert.equal(
+    composerSubmissionBodySchema.safeParse({
+      ...submissionBody(),
+      beautyVoiceRole: 'blogger',
+    }).success,
+    false
+  );
+});
+
 test('browser submission preserves only a valid free-image operation', () => {
   const freeImage = {
     ...submissionBody(),

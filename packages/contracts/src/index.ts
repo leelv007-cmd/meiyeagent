@@ -23,6 +23,7 @@ export * from './creation-experience.js';
 export * from './product-quote.js';
 export * from './billing-balance.js';
 export * from './composer-submission.js';
+export * from './composer-generation-params.js';
 export * from './result-center.js';
 export * from './video-workflow.js';
 export * from './public-content-package.js';

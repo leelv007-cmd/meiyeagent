@@ -1,4 +1,5 @@
 import {
+	beautyVoiceRoleSchema,
 	composerContentPackagePlatformSchema,
 	composerDistributionTargetSchema,
 	composerSubmissionDeliverableSchema,
@@ -8,6 +9,8 @@ import {
 	creativeContentModuleIds,
 	MAX_NOTE_PLAN_PAGE_COUNT,
 	MIN_NOTE_PLAN_PAGE_COUNT,
+	resolveComposerGenerationParams,
+	thinkingLevelSchema,
 } from "@meiye/contracts";
 import { z } from "zod";
 
@@ -184,6 +187,10 @@ const creationSubmissionCommandBaseSchema = z
 		rights: rightsSummarySchema,
 		identity: revisionReferenceSchema,
 		identityDecision: identityDecisionReferenceSchema.optional(),
+		/** P2-09: beauty persona override (MarketingIdentity remains default). */
+		beautyVoiceRole: beautyVoiceRoleSchema.optional(),
+		/** P2-09: free-mode thinking level mapped to model tiers. */
+		thinkingLevel: thinkingLevelSchema.optional(),
 		modelPolicy: modelPolicySchema,
 		catalogModel: revisionReferenceSchema,
 		modelSelection: frozenModelSelectionSchema.optional(),
@@ -282,6 +289,9 @@ export const creationExecutionSnapshotSchema = z
 		rights: rightsSummarySchema,
 		identity: revisionReferenceSchema,
 		identityDecision: identityDecisionReferenceSchema.optional(),
+		/** P2-09 optional so historical snapshots remain readable. */
+		beautyVoiceRole: beautyVoiceRoleSchema.optional(),
+		thinkingLevel: thinkingLevelSchema.optional(),
 		modelPolicy: modelPolicySchema,
 		catalogModel: revisionReferenceSchema,
 		/**
@@ -361,6 +371,7 @@ export function createCreationExecutionSnapshot(
 			rights: command.rights,
 			identity: command.identity,
 			identityDecision: command.identityDecision,
+			...normalizedGenerationParams(command),
 			modelPolicy: command.modelPolicy,
 			catalogModel: command.catalogModel,
 			modelSelection:
@@ -384,6 +395,26 @@ function operationForLens(lens: z.infer<typeof creationLensSchema>) {
 		return "image.generate" as const;
 	}
 	return "video.generate" as const;
+}
+
+/**
+ * P2-09: normalize generation params by C5 rules before freezing the snapshot.
+ * Customized injects the owner default and always pins standard thinking;
+ * free keeps an unselected beauty role optional (MarketingIdentity default).
+ */
+export function normalizedGenerationParams(command: {
+	creationMode: "customized" | "free";
+	beautyVoiceRole?: z.infer<typeof beautyVoiceRoleSchema>;
+	thinkingLevel?: z.infer<typeof thinkingLevelSchema>;
+}): {
+	beautyVoiceRole?: z.infer<typeof beautyVoiceRoleSchema>;
+	thinkingLevel: z.infer<typeof thinkingLevelSchema>;
+} {
+	return resolveComposerGenerationParams({
+		creationMode: command.creationMode,
+		beautyVoiceRole: command.beautyVoiceRole,
+		thinkingLevel: command.thinkingLevel,
+	});
 }
 
 function validateSubmission(

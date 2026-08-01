@@ -1,0 +1,75 @@
+# Issue #321 P2-09 — 生成参数显露（tone/role 美业选择器 + 深度思考档位）交底
+
+| Field | Value |
+| --- | --- |
+| Issue | #321 |
+| Spec | `docs/specs/xhs-vertical-integration-spec-2026-08-01.md` §4.5 / §4.7 |
+| Date | 2026-08-01 |
+| Branch | `leelv007-cmd/lane-321` |
+| Baseline | `69cf06e1a6e18734fcefef8122a833e8a4b8e3a7` |
+
+## 1. 「实施时定」闭合
+
+### 1.1 与既有 `note_style` 合流（§4.5）
+
+**定案：双维并存，不合并枚举。**
+
+| 维 | 职责 | 挂点 | 词汇 |
+| --- | --- | --- | --- |
+| `note_style` | **结构/叙事骨架**（干货科普版 / 种草叙事版…） | 中途 `ask_merchant` 双候选；admin `NOTE_STYLE_CONFIG_KEY` | 既有 `DEFAULT_NOTE_STYLES` |
+| `beautyVoiceRole` | **美业生成口吻/角色**（美容师 / 店主 / 顾客） | Composer 参数选择器 → 提交体 → 快照 | 本票新枚举 |
+
+理由：
+
+- 审计 §3 的 `note_style` 是图文双风格**结构候选**，不是 xhswork 式 tone/role 前台选择器。
+- `xhsNoteGen` 占位符是 `{tone}` + `{roleBlock}`，与 note plan 风格 id 正交。
+- MarketingIdentity 继续是**品牌表达默认值**；选择器是**显式覆盖**（C5）。
+
+### 1.2 深度思考 → 模型档位映射（§4.7）
+
+**定案：UI 两档映射既有 route profile / provider thinking，不新建积分开关。**
+
+| `thinkingLevel` | `routeProfile` | provider thinking | `reasoningEffort` |
+| --- | --- | --- | --- |
+| `standard`（默认） | `balanced` | `{ type: 'disabled' }` | — |
+| `deep` | `quality` | `{ type: 'enabled' }` | `high` |
+
+约束：
+
+- **不**引入 `thinkingPointsCost` / 独立 entitlement bucket（「不另建开关」）。
+- 不支持 thinking 的模型可忽略 provider 字段；routeProfile 供未来 auto 路由消费。
+- **定制创作强制 `standard` 且隐藏控件**；**自由创作展开区显露**。
+
+### 1.3 美业口吻词汇
+
+| id | 标签 | tone → `{tone}` | roleBlock 摘要 |
+| --- | --- | --- | --- |
+| `beautician` | 美容师口吻 | 专业干货 | 资深美容师 |
+| `owner` | 店主口吻 | 温暖治愈 | 门店店主（定制默认注入） |
+| `customer` | 顾客口吻 | 闺蜜聊天 | 到店顾客 |
+
+## 2. 代码落点
+
+| 层 | 路径 |
+| --- | --- |
+| contracts | `packages/contracts/src/composer-generation-params.ts` |
+| core snapshot | `apps/core/src/p1/execution-spine/creation-execution-snapshot.ts`（`beautyVoiceRole` / `thinkingLevel` 可选冻结） |
+| web pure | `mkfast-template-main/src/product/composer/composer-generation-params.ts` |
+| web UI | `…/composer-generation-params-panel.tsx`；挂 `composer-home` free 展开区（attachment 槽） |
+| 提交注入 | `composer-home` → `buildSubmissionGenerationParams` → `composer-submission-client` body |
+
+**非本票：** 不重写 workbench 双栏壳、不接 Tiptap、不改 note 写方全链、不接 xhsNoteGen 运行时 pipeline（位点已在 #315；本票只保证参数进生成请求合同与快照）。
+
+## 3. 验收映射
+
+| 票面验收 | 证据 |
+| --- | --- |
+| 选择器选择注入生成请求（interaction + core 合同） | web interaction + `composer-submission-client` 合同；core snapshot freeze |
+| 深度思考定制隐藏 / 自由显露（interaction） | `composer-generation-params.interaction.test.tsx` |
+| 档位映射行为测试绿 | contracts + core `mapThinkingLevelToModelOptions` |
+
+## 4. 语义锁 / 边界
+
+- 只动 Composer 参数选择器与请求注入。
+- 不改 `docs/design` / `docs/adr` / `docs/specs`。
+- 不 push、不关票、不写 merge-ledger。
