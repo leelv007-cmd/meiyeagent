@@ -142,15 +142,24 @@ async function revealExampleStores(page: Page) {
   return showcase;
 }
 
-async function submitPrefilledCopy(page: Page, prefilled = false) {
+async function submitPrefilledCopy(page: Page, intentPrefilled = false) {
   const lens = page.getByTestId('composer-lens-option-copy');
-  if (prefilled) {
-    // The prefill already picked the copy lens — re-picking it is a click the
-    // merchant never has to make (D-043).
-    await expect(lens).toBeChecked();
-  } else {
-    await lens.click();
-    await expect(lens).toBeChecked();
+  const intent = page.getByTestId('composer-intent-input');
+  if (intentPrefilled) {
+    // The sample knows the reusable intent, but it carries no typed outputHint.
+    // P0-4 therefore forbids it from silently forcing any output lens.
+    await expect(intent).toHaveValue(/\S{10,}/u);
+    for (const lensId of ['copy', 'image_text', 'video']) {
+      await expect(
+        page.getByTestId(`composer-lens-option-${lensId}`)
+      ).not.toBeChecked();
+    }
+  }
+  const originalIntent = await intent.inputValue();
+  await lens.click();
+  await expect(lens).toBeChecked();
+  if (intentPrefilled) {
+    await expect(intent).toHaveValue(originalIntent);
   }
   await expect(page.getByTestId('composer-quote-line')).toBeVisible({
     timeout: 30_000,
@@ -463,6 +472,14 @@ test.describe('D-126 dashboard home mount', () => {
     // 若两条来源都排不出主推荐，诚实的说法是「今天这条没排出来」——降级态不许
     // 伪装成冷启动，且无论哪种态，下一步入口都必须留在卡里。
     await page.goto('/dashboard');
+    // The persisted run first replays its Active frames, then settles back to
+    // Delivered. Start shelf assertions only after that public phase signal;
+    // the proposal stays mounted while Active hides it, preserving disclosure.
+    await expect(page.getByTestId('composer-conversation')).toHaveAttribute(
+      'data-phase',
+      'delivered',
+      { timeout: 30_000 }
+    );
     const card = page.getByTestId('today-recommendation');
     await expect(card).toBeVisible();
     await expect(card).toHaveAttribute('data-suggestion-capsules', 'true');
@@ -529,7 +546,7 @@ test.describe('D-126 dashboard home mount', () => {
       .getByRole('button', {
         name: /开始下一次任务|用这条推荐开始创作/u,
       })
-      .click();
+      .click({ timeout: 10_000 });
     const intentInput = page.getByTestId('composer-intent-input');
     await expect(intentInput).toBeFocused();
     if (recommendationState === 'current') {

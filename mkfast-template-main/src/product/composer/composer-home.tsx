@@ -2949,8 +2949,8 @@ export function ComposerHome({
     storeFactsPending: showProgressiveFact,
   });
 
-  // P0-1 / F6: once a run is Active (or Delivered), collapse 段①/段③ so the
-  // transcript owns the first screen. Idle and recovery phases keep the shelf.
+  // P0-1 / F6: once a run is Active, collapse 段①/段③ so the transcript owns
+  // the first screen. Idle and terminal phases keep the shelf.
   const shelfCollapsed = isWorkbenchShelfCollapsed(session.phase);
   // P1-01 / §8.2: dual column at ≥1240 Active/Delivered; sticky Composer; 800/1240.
   const dualColumn = isWorkbenchDualColumnEligible(session.phase, width);
@@ -2984,41 +2984,39 @@ export function ComposerHome({
        */}
       <DashboardHomeGreeting state={product.state} />
 
-      {!shelfCollapsed ? (
-        <section data-testid="dashboard-section-proposal">
-          {/*
-           * 段① 提议位 — D-164①. The recommendation opens the workbench because the
-           * first question a shop owner has is "what should I post today", not
-           * "what shall I type". It used to sit below the whole Composer cluster:
-           * an empty panel above the axis was worse than no panel, so it was moved
-           * out of the way. D-164① settles the order the other way and the cold
-           * case is handled instead of avoided — a workspace with nothing in it
-           * shows the sample shops here, so the slot is never empty.
-           * Both CTAs prefill this same draft — never submit.
-           */}
-          <DashboardHomeSurface
-            loading={product.loading}
-            onPrefill={(handoff) => {
-              // P0-4 / F1: typed handoff. Respect outputHint when present;
-              // never hard-code copy lens when the recommendation has no hint.
-              focusIntentAfterPrefillRef.current = true;
-              setLensState((current) =>
-                applyRecommendationHandoff(current, handoff)
-              );
-            }}
-            onRefresh={product.refresh}
-            onStart={() => {
-              // A completed run can still be leaving its mutation state while the
-              // next-action card is already visible. Try now, then retry when that
-              // pending state clears so the merchant never lands on an enabled but
-              // unfocused prompt.
-              focusIntentAfterPrefillRef.current = true;
-              focusComposerIntentInput();
-            }}
-            state={product.state}
-          />
-        </section>
-      ) : null}
+      <section data-testid="dashboard-section-proposal" hidden={shelfCollapsed}>
+        {/*
+         * 段① 提议位 — D-164①. The recommendation opens the workbench because the
+         * first question a shop owner has is "what should I post today", not
+         * "what shall I type". It used to sit below the whole Composer cluster:
+         * an empty panel above the axis was worse than no panel, so it was moved
+         * out of the way. D-164① settles the order the other way and the cold
+         * case is handled instead of avoided — a workspace with nothing in it
+         * shows the sample shops here, so the slot is never empty.
+         * Both CTAs prefill this same draft — never submit.
+         */}
+        <DashboardHomeSurface
+          loading={product.loading}
+          onPrefill={(handoff) => {
+            // P0-4 / F1: typed handoff. Respect outputHint when present;
+            // never hard-code copy lens when the recommendation has no hint.
+            focusIntentAfterPrefillRef.current = true;
+            setLensState((current) =>
+              applyRecommendationHandoff(current, handoff)
+            );
+          }}
+          onRefresh={product.refresh}
+          onStart={() => {
+            // A completed run can still be leaving its mutation state while the
+            // next-action card is already visible. Try now, then retry when that
+            // pending state clears so the merchant never lands on an enabled but
+            // unfocused prompt.
+            focusIntentAfterPrefillRef.current = true;
+            focusComposerIntentInput();
+          }}
+          state={product.state}
+        />
+      </section>
 
       {/* 段② 创作面 — the axis itself (D-139 lens + input + affordances). */}
       <section

@@ -143,12 +143,22 @@ test('the workbench opens 问候语 → 提议 → 创作 → 继续', () => {
   );
 });
 
-test('P0-1: Active collapses 段① recommendation and 段③ continue via workbench mode', () => {
+test('P0-1: Active hides 段① without remounting it and collapses 段③', () => {
   const home = readSource('src/product/composer/composer-home.tsx');
   assert.match(home, /isWorkbenchShelfCollapsed/u);
   assert.match(home, /data-shelf-collapsed/u);
-  // Both shelf sections are gated — not always mounted.
-  assert.match(home, /!shelfCollapsed \? \([\s\S]*dashboard-section-proposal/u);
+  // A late Active replay may briefly collapse the shelf after Delivered. Keep
+  // the recommendation mounted so an expanded chip does not lose disclosure
+  // state; native hidden still removes the section from layout/accessibility.
+  assert.match(
+    home,
+    /<section[^>]*data-testid="dashboard-section-proposal"[^>]*hidden=\{shelfCollapsed\}[^>]*>/u
+  );
+  assert.doesNotMatch(
+    home,
+    /!shelfCollapsed \? \([\s\S]*dashboard-section-proposal/u
+  );
+  // Continue has no disclosure state and may remain mount-gated.
   assert.match(home, /!shelfCollapsed \? <DashboardContinueSection/u);
 });
 

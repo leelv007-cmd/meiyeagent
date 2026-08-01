@@ -4,17 +4,21 @@ import test from 'node:test';
 import type { ComposerSessionPhase } from './composer-session';
 import { isWorkbenchShelfCollapsed } from './workbench-mode';
 
-const ACTIVE_OR_DELIVERED: ComposerSessionPhase[] = [
+const ACTIVE: ComposerSessionPhase[] = [
   'submitting',
   'running',
   'awaiting_answer',
-  'delivered',
 ];
 
-const IDLE_LIKE: ComposerSessionPhase[] = ['idle', 'cancelled', 'failed'];
+const SHELF_VISIBLE: ComposerSessionPhase[] = [
+  'idle',
+  'delivered',
+  'cancelled',
+  'failed',
+];
 
-test('P0-1: Active/Delivered collapses the recommendation and continue shelf', () => {
-  for (const phase of ACTIVE_OR_DELIVERED) {
+test('P0-1: Active collapses the recommendation and continue shelf', () => {
+  for (const phase of ACTIVE) {
     assert.equal(
       isWorkbenchShelfCollapsed(phase),
       true,
@@ -23,8 +27,8 @@ test('P0-1: Active/Delivered collapses the recommendation and continue shelf', (
   }
 });
 
-test('P0-1: Idle / terminal recovery keeps the shelf visible', () => {
-  for (const phase of IDLE_LIKE) {
+test('P0-1: Idle and terminal phases keep the shelf visible', () => {
+  for (const phase of SHELF_VISIBLE) {
     assert.equal(
       isWorkbenchShelfCollapsed(phase),
       false,

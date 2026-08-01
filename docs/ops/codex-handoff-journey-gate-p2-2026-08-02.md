@@ -190,3 +190,65 @@ Worktree 根：`/Users/bin/orca/workspaces/美业内容2/lane-<N>`
 - 旧 118c 假红 run：https://github.com/leelv007-cmd/meiyeweb-agent/actions/runs/30705186695  
 - 规格：`docs/specs/xhs-vertical-integration-spec-2026-08-01.md`  
 - 派发手册：`docs/ops/agent-dispatch-runbook-2026-07-29.md`  
+
+---
+
+## 12. Codex 合入审核补充（2026-08-02 04:10 CST）
+
+> 本节是对上方历史交接快照的当前补充。上方 `3bf21723` / `in_progress` 等文字保留为当时事实，不再作为当前状态。
+
+### 12.1 当前边界
+
+| 项 | 当前事实 |
+| --- | --- |
+| `main` / `origin/main` | `5f456dfec152e2d836b6cf13c3e2964753fb4b48`（审核启动时一致） |
+| P1 #313–#319 | Issue 与原台账均已 CLOSED，原交付 commit 全部是 main 祖先；但本次行为审核发现合入后缺口，不能只凭 closed/ledger 判通过 |
+| P1 修复候选 | 独立集成分支 `audit/integrate-p1-p2-20260802`；Core 全量证据基线 `99f91995`，本节与浏览器补修待显式提交 |
+| P2 #320–#325 | 原 lane 都基于旧 `69cf06e1`；经双轴审核后均有 follow-up HEAD，尚未合入 main |
+| P2 #326–#327 | 尚未实现；必须等 #320–#325 基于新 P1 主线集成后串行开发 |
+| P2 #328 | 除 #324 依赖外还需要真人已登录小红书浏览器 / live 核销；fixture 不能冒充 HITL |
+
+### 12.2 严重超时的核查结论
+
+| run / attempt | 真实原因 | 修复 |
+| --- | --- | --- |
+| `30699271165` | 方向 helper 每次等待 300s，重试 3 次；方向没有真正落地 | 产品用可见 `aria-pressed=true` 与恢复文案证明落地；普通 click，不再用 `force` 制造假绿 |
+| `30705186695` attempt 1 | Core recovery/compensation 与 Worker migration 并发，PostgreSQL `40P01`；DBOS admin `:3001` 还制造 EADDRINUSE 噪音，测例未开跑 | migration key advisory lock 包住 recovery/compensation；Worker `runAdminServer:false` |
+| `30705186695` attempt 2 | `force` click 返回但 `aria-pressed=false`，无 interaction POST；随后 W12 cleanup `DELETE` 无总期限，卡到 90m | 去掉 `force`，补真实 settle 断言；cleanup 增加 15s 总 deadline，CI job 收紧为 60m |
+| `30709104009` / `30711498117` | 均已 settled 为 `cancelled`，不是 success；前者 journey 约 89m，后者由并行更新取消 | 不再把 cancelled/in-progress 当证据；新候选推送后只认 exact-tip `production-main-journey=success` |
+
+因此“严重超时”不是单一 sticky 几何问题，而是 **产品点击假绿 + 数据库迁移竞态 + 无界清理** 三项叠加；继续空等或只 rerun 不能闭环。
+
+### 12.3 P1 审核修复与实跑结果
+
+- #317：failed/cancelled 保持终态，迟到 progress/interrupt 不得复活；等待商家回答时 sticky Composer 与 interrupt 层级分离。
+- #318：Delivered 恢复 recommendation/activity shelf；proposal Active 时用原生 `hidden` 收起而不卸载，避免推荐小卡展开态在 replay 中丢失。
+- #286 / P0-4 回归：样例 handoff 无 `outputHint` 时不再静默强选 copy。
+- #319：canonical note outline OCC 持久化；未提交编辑跨页保护；每页重生成严格走 `prepare → quote → confirm → result_adjust`。
+- CI/基础设施：migration/recovery 互斥、关闭 Worker DBOS admin server、W12 cleanup 有界。
+- #315 Langfuse：远端已同步 **20/20 prompt sites**，仓库根本机 `.env`（gitignored）已固定 20 个版本；GitHub Actions 当前没有可更新的 secrets/variables，故不声称部署态凭证已更新。
+
+实跑证据：
+
+| 门 | 结果 |
+| --- | --- |
+| Contracts/Core/Web focused 与 typecheck | 全部 exit 0 |
+| Core 全量独立 PostgreSQL | `3007 total / 2986 pass / 0 fail / 21 explicit skip`；safe-provision 另跑 `3/3` |
+| UI/UX gates | `Overall PASS` |
+| Chromium 针对性热租户 | `1/1 pass`（23.9s；整轮 56.5s） |
+| Chromium 三文件最终门禁 | `15/15 pass / 0 fail / 0 skip`（3.0m） |
+
+上述浏览器证据使用 fixture structured model + 真实本机 PostgreSQL/Chromium；live provider / 生产部署 / #328 HITL 明确不在该证据内。
+
+### 12.4 P2 修订候选（仍未合入）
+
+| 票 | 审核后 HEAD | 状态摘要 |
+| --- | --- | --- |
+| #320 | `c73e61ba` | carrier 全覆盖、左最左最长、原始 UTF-16 offset、fail-closed recheck、10s deadline/retry、原子 seed、CRUD |
+| #321 | `3bb6abe3` | 生产消费者真正冻结 generation params / identity 默认值 / XHS scope |
+| #322 | `9b019358` | selection 清理与真实 image_text note/Tiptap/Selection AI 可达；合入基线后仍欠最终 Chromium Result 旅程 |
+| #323 | `7654a913` | 真实 Core model path + UI 可达的 AI 封面/风格分析 |
+| #324 | `0b3373ae` | 去假上传；真实 VLM reference；exact recipe；prompts materialized；fail closed |
+| #325 | `8b838141` | frozen experience basis、进度/终态、stale/foreign rejection |
+
+当前仍是 **候选已修、未合入**。下一硬门：提交 P1 修复 → ff/push main → 等该 exact-tip `production-main-journey` success；绿后才允许把 #320–#325 逐票集成复验并登记 ledger。

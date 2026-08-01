@@ -1,9 +1,11 @@
 # 主控 Handoff — P2 合入批 + journey 门禁（2026-08-01）
 
+> **状态覆盖说明（Codex 2026-08-02）**：§1–§5 是 2026-08-01 的历史快照，包含旧 baseline、旧 lane HEAD 与当时 pending 的 run；不得按旧 SHA 操作。当前权威状态与候选 HEAD 见 §6。
+
 | Field | Value |
 | --- | --- |
-| 状态 | **执行中**：合入前 journey 一次门禁进行中 |
-| main tip（合入基线） | `69cf06e1`（含 Composer delivered 去 sticky 修复） |
+| 状态 | **历史快照**：当时合入前 journey 门禁执行中；当前见 §6 |
+| main tip（历史合入基线） | `69cf06e1`（含 Composer delivered 去 sticky 修复） |
 | 规格 | `docs/specs/xhs-vertical-integration-spec-2026-08-01.md` §8.3–§8.4、§11 |
 | 通用纪律 | `docs/ops/agent-dispatch-runbook-2026-07-29.md` |
 | 用户裁决 | 同步先执行 P2 开发；**后续一起核验门禁**；**完整 journey 门禁在单票合入前跑一次即可** |
@@ -50,7 +52,7 @@
 
 ---
 
-## 2. P2 第 4 波成品（待合入，均未 push）
+## 2. P2 第 4 波成品（历史候选；不得按本节旧 HEAD 合入）
 
 基线均为 `69cf06e1`；各自 1 commit；票下有认领 + Verification。
 
@@ -124,3 +126,38 @@ git fetch origin main && git checkout main && git pull --ff-only
 git merge --ff-only leelv007-cmd/lane-320   # 或 cherry-pick 8394b848
 # 写 merge-ledger → commit → push → gh issue close 320
 ```
+
+---
+
+## 6. Codex 复核更新（2026-08-02，合入前）
+
+### 6.1 旧 journey 终态
+
+- `30705186695`：workflow `failure`；journey job attempt 2 最终 `cancelled`，required `failure`。
+- `30709104009`：workflow / journey `cancelled`，required `failure`。
+- `30711498117`（`5f456dfe`）：workflow / journey `cancelled`，required `failure`。
+
+上述都不是合入门 `success`。超时根因与修复详见 `codex-handoff-journey-gate-p2-2026-08-02.md` §12.2；新 P1 候选推送后必须重新等待 exact-tip journey。
+
+### 6.2 #320–#325 审核后候选
+
+| 票 | 原 handoff HEAD | 当前 HEAD | 复核终态 |
+| --- | --- | --- | --- |
+| #320 | `8394b848` | `c73e61ba` | focused/Core real-PG/Web/Chromium 均有实跑绿证，lane clean |
+| #321 | `486ebb7b` | `3bb6abe3` | focused/Chromium/typecheck/Biome 绿，lane clean |
+| #322 | `d00123c5` | `9b019358` | unit/interaction/static/typecheck/Biome 绿；最终 Result Chromium 须在新基线复跑 |
+| #323 | `481296b4` | `7654a913` | contracts/core/web focused 与 checks 绿，lane clean |
+| #324 | `973e0d92` | `0b3373ae` | Core/Web focused 与 checks 绿，lane clean |
+| #325 | `5e0c73d1` | `8b838141` | contracts/core/web/interaction 与 checks 绿，lane clean |
+
+六个 lane 仍从旧 `69cf06e1` 分叉，**不得把“lane clean / Issue closed”当成可直接 ff 的证明**。集成时基于新 P1 exact tip 按实际冲突面串行 cherry-pick/rebase，并在 base change 后重跑相应门禁。
+
+### 6.3 后续票边界
+
+| 票 | 当前状态 |
+| --- | --- |
+| #326 | 未实现；#322 真实 image_text 路径要求单一 NoteObjectWorkspace，组合媒资、Tiptap 与双预览；建议 #323 先进入集成基线 |
+| #327 | 未实现；依赖 #320 scanner + #322/#326 编辑器可达性，必须 bounded scan 与 decorations/replacements |
+| #328 | 未验收；依赖 #324 且需要真人已登录浏览器、真实小红书笔记 URL 与 live 核销，fixture 不得替代 |
+
+因此当前 checklist 是：P1 提交/推送 → exact-tip journey 绿 → 集成复验 #320–#325 → 实现 #326/#327 → #328 HITL。ledger 与 Issue 只在对应 commit 真正进入 main 且证据完成后更新。
