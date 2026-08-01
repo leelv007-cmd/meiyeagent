@@ -184,6 +184,62 @@ test('delivered copy without visual assets uses a compact text result', () => {
   );
 });
 
+test('compact copy result is carrier-gated: note (ordered media) and media (video) are not compact', () => {
+  // #314: image_text + orderedAssetCount > 0 ⇒ note carrier — not pure copy.
+  assert.equal(
+    compactDeliveredCopyResult({
+      currentVersionId: 'version-1',
+      generated: { assetIds: [] },
+      kind: 'image_text',
+      versions: [
+        {
+          id: 'version-1',
+          title: '图文笔记',
+          body: '页组 + 封面 + 正文',
+          orderedAssetIds: ['page-1', 'page-2'],
+        },
+      ],
+    }),
+    null,
+    'orderedAssetCount > 0 under image_text is the note carrier'
+  );
+  // media carrier (wire kind video) is never compact text.
+  assert.equal(
+    compactDeliveredCopyResult({
+      currentVersionId: 'version-1',
+      generated: { assetIds: [] },
+      kind: 'video',
+      versions: [
+        {
+          id: 'version-1',
+          title: '成片',
+          body: '15 秒到店',
+          orderedAssetIds: [],
+        },
+      ],
+    }),
+    null,
+    'video wire kind maps to media carrier, not copy'
+  );
+  // generated assets without ordered ids still block compact delivery.
+  assert.equal(
+    compactDeliveredCopyResult({
+      currentVersionId: 'version-1',
+      generated: { assetIds: ['asset-pending'] },
+      kind: 'image_text',
+      versions: [
+        {
+          id: 'version-1',
+          title: '待配图文案',
+          body: '正文已出，图还在跑',
+          orderedAssetIds: [],
+        },
+      ],
+    }),
+    null
+  );
+});
+
 test('Harness result keeps the scored winner primary and exposes alternatives', () => {
   const result = harnessCandidateResultModel({
     currentVersionId: 'version-c02',

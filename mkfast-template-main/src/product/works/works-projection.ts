@@ -19,7 +19,10 @@ import type {
   ContentPackageVersion,
   PublicContentPackage,
 } from '@meiye/contracts';
-import { contentPackageStatusLabel } from '@meiye/contracts';
+import {
+  contentPackageCarrierOf,
+  contentPackageStatusLabel,
+} from '@meiye/contracts';
 
 import { canvasName } from '@/p1/canvas-name';
 import type { RawCanvasWorkSummary } from '@/product/canonical-history-model';
@@ -172,18 +175,27 @@ export function deliveredMedia(
 }
 
 /**
- * 四形态判定. `kind: 'video'` is the only shape core states outright; the other
- * three are read off the delivered version — copy with no media is 文案, media
- * with no words is 图片, both together is 图文.
+ * 四形态判定. Carrier first (xhs-spec §3.1 media|copy|note via
+ * `contentPackageCarrierOf`); then refine the note carrier into the works-surface
+ * 四形态: empty body → 图片, body present → 图文, and a video asset under the
+ * note wire path still surfaces as 视频. Wire kind image_text|video is never
+ * branched on directly (#314 / #288 分层映射).
  */
 export function workOutputShape(
   contentPackage: PublicContentPackage
 ): WorkOutputShape {
-  if (contentPackage.kind === 'video') return 'video';
+  const version = currentVersion(contentPackage);
+  const carrier = contentPackageCarrierOf({
+    kind: contentPackage.kind,
+    orderedAssetCount: version?.orderedAssetIds.length ?? 0,
+  });
+  if (carrier === 'media') return 'video';
+  if (carrier === 'copy') return 'copy';
+
+  // note carrier: page-group composite; refine for 四形态.
   const media = deliveredMedia(contentPackage);
   if (media.some((item) => item.kind === 'video')) return 'video';
-  const body = currentVersion(contentPackage)?.body.trim() ?? '';
-  if (media.length === 0) return 'copy';
+  const body = version?.body.trim() ?? '';
   return body === '' ? 'image' : 'note';
 }
 

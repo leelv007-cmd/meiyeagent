@@ -1,3 +1,6 @@
+import type { ContentPackageKind } from '@meiye/contracts';
+import { contentPackageCarrierOf } from '@meiye/contracts';
+
 import type { ModelOperation } from '@/p1/settings-view-model';
 
 interface CreativeOperationState {
@@ -106,7 +109,8 @@ export function harnessCopyStreamPhase(
 interface CopyPackageResultInput {
   currentVersionId?: string;
   generated: { assetIds: string[] };
-  kind: string;
+  /** Wire/storage kind; product carrier is derived via contentPackageCarrierOf. */
+  kind: ContentPackageKind;
   versions: Array<{
     body: string;
     conversionHook?: string;
@@ -172,18 +176,28 @@ export function harnessCandidateResultModel(
   };
 }
 
+/**
+ * Compact text-only result panel for a pure-copy ContentPackage.
+ *
+ * xhs-spec §3.1 / #314: dispatch on the media|copy|note carrier口径 derived by
+ * `contentPackageCarrierOf` — do not branch on wire kind image_text|video.
+ * Only the copy carrier (image_text with no ordered media) is compact-eligible;
+ * generated assets that are not yet ordered still block compact delivery so an
+ * intermediate visual run cannot render as pure text.
+ */
 export function compactDeliveredCopyResult(
   contentPackage: CopyPackageResultInput
 ) {
-  if (contentPackage.kind !== 'image_text') return null;
   const currentVersion = contentPackage.versions.find(
     ({ id }) => id === contentPackage.currentVersionId
   );
-  if (
-    !currentVersion ||
-    currentVersion.orderedAssetIds.length > 0 ||
-    contentPackage.generated.assetIds.length > 0
-  ) {
+  if (!currentVersion) return null;
+
+  const carrier = contentPackageCarrierOf({
+    kind: contentPackage.kind,
+    orderedAssetCount: currentVersion.orderedAssetIds.length,
+  });
+  if (carrier !== 'copy' || contentPackage.generated.assetIds.length > 0) {
     return null;
   }
   return {

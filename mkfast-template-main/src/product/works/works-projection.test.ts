@@ -201,6 +201,21 @@ test('the four output shapes are read off what was delivered', () => {
   assert.equal(workOutputShape(videoPackage), 'video');
 });
 
+test('image_text with orderedAssetCount > 0 classifies as note carrier (not wire-kind binary)', () => {
+  // #314 / xhs-spec §3.1: carrier is derived — ordered media under image_text is note.
+  // Body present ⇒ works 四形态 "note"; empty body ⇒ "image" (still note carrier).
+  assert.equal(workOutputShape(notePackage), 'note');
+  assert.equal(
+    workOutputShape(imagePackage),
+    'image',
+    'note carrier with empty body is the 图片 shape'
+  );
+  // Pure copy remains image_text on the wire with zero ordered assets.
+  assert.equal(workOutputShape(copyPackage), 'copy');
+  // media carrier is wire video only today.
+  assert.equal(workOutputShape(videoPackage), 'video');
+});
+
 test('a package carrying a video asset is a 视频 even under the image_text kind', () => {
   const composed = packageFixture({
     generated: {
