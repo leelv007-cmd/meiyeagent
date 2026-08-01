@@ -39,3 +39,11 @@ Copy `.env.example` to `.env` for local overrides. Never commit credentials or p
 ## Commit & Pull Request Guidelines
 
 Use concise English Conventional Commit-style subjects such as `feat:`, `fix(scope):`, `test(scope):`, `refactor(scope):`, or `merge:`. PRs should explain scope and impact, link the issue/ticket, list validation commands and results, include UI screenshots, and call out required database, provider, or E2E setup.
+
+## XHS / Workbench Implementation Constraints (2026-08-01, D-171)
+
+- Zero new agent runtime: AG-UI / assistant-ui / CopilotKit are pattern references only; DBOS, Task, and ContentPackage remain the truth chain.
+- Tiptap (rich text) is allowed only inside the object workspace — never in the Composer.
+- XHS sourcing red lines: no anonymous scraping, no signature reverse-engineering, no account pools. Link ingestion only via the user's own logged-in session (OpenCLI channel, live-gated) or manual paste.
+- ContentPackage kind product vocabulary is `media|copy|note` (`image_text|video` are legacy aliases). Confirm-gate rule is paid-media-execution based; pure copy stays exempt (D-043). Note-path hold activates in P1 only.
+- Authority: `docs/specs/xhs-vertical-integration-spec-2026-08-01.md`.

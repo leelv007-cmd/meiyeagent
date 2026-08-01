@@ -263,3 +263,7 @@ Generation Job 运行时，Result Card 边缘出现玫瑰辉光呼吸（4s ease-
 
 前端组件优先取自 **HeroUI Pro V3**（用户专属授权，本地镜像 `references/repos/herouipro-v3/`，不入 git）。本文件仍是**唯一视觉权威**：HeroUI 组件（主题拍板＝Glass，作磨砂玻璃语言的底座；Brutalism/Mouve 不启用）一律经上述 token 适配后接入——玻璃有边法则、墨色梯度、一点胭脂法则、对比度硬要求对组件库产物同样强制，不得原样拖入。适用面＝换壳（REBUILD）与净新建（NEW）；存量组件不为换库专项迁移（触碰时换）。
 Landing 页例外：保持现状仅改文案与前后链接，不套用组件基准（专项优化随 D-125 阶段二）。
+
+## 工作台形态与 UI 基线（D-171，2026-08-01）
+
+四态工作台（Idle/Active/Waiting/Delivered）与创作入口 IA 的形态权威＝`docs/specs/xhs-vertical-integration-spec-2026-08-01.md` §2。本节只记视觉相关合同：对话区＝文档时间线（商家轻气泡靠右、Agent 阶段全宽带 rail），不做全套聊天气泡；宽度合同＝对话 800／媒体展开 1240，告别全程 max-w-3xl；Idle 层级＝大标题问候 → 定制/自由分段器 → 单一大 Composer（控件收进底栏图标胶囊）→ 轻胶囊建议行 → Activity Shelf 横排卡，图标＋胶囊分主次、大留白呼吸感；UI 组件基线＝HeroUI Pro AI showcase 模板族＋assistant-ui 示例（抄模式与拷贝片段，不引入其 runtime）；Tiptap 富文本只进对象工作区。「门店橱窗」（玻璃壳＋白瓷内容＋玫瑰金克制）仍为唯一视觉权威，本节不改色彩与材质合同。

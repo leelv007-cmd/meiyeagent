@@ -3511,6 +3511,20 @@ Skill 选中
   - **ADR-0012** 作为现行法（升单并行工程 / FREEZE 只留入口）
 - 不废：定制创作 + 自由创作薄路径、ContentPackage 唯一写口、Product Core、历史 evidence 事实、D-103 非画布部分。
 
+## D-171 XHS 图文专项融合与全局 Agent 化工作台升级定案
+
+- 日期：2026-08-01
+- 状态：`accepted`（2026-08-01，wayfinder 地图九票全关后用户终审闭合）
+- 决定：以 `docs/specs/xhs-vertical-integration-spec-2026-08-01.md` 为唯一实施入口，定案七件：① **工作台四态**（Idle/Active/Waiting/Delivered）＋文档时间线对话（AgentFrame 六族作实现注册表）＋宽度合同（对话 800／媒体 1240）＋轻胶囊建议行＋Activity Shelf；② **ContentPackage kind 产品口径三枚举** `media|copy|note`（note=图文复合：页组+封面+正文；旧 `image_text→note`、`video→media` 为兼容别名，起步不做破坏性迁移）；③ **执行确认判定升级为「操作是否触发付费媒体执行」**（D-164③ 实现口径由「仅 media 工作流路径」升级；纯 copy 免确认继承 D-043 不动；**note 过卡在 P1 激活**，与流内 AG-UI interrupt 呈现、e2e 合同同步一体落地）；④ **xhswork 九功能 8 adopt/adapt＋1 reject**（扫码发布出范围）；对象工作区三件套＝Tiptap 编辑器（选区 AI＋违禁词内联替换）＋手机样式嵌套笔记预览＋小红书 App 瀑布流样式嵌套封面预览；违禁词＝美业自建词库与红线门合流共库；⑤ **爆款复刻取材双轨**＝OpenCLI 用户自有登录态（live 门：真实账号跑通 note+download 一次核销）＋手动粘贴兜底；红线＝匿名抓取／逆向签名／账号池；⑥ **UI 实现基线**＝HeroUI Pro AI showcase 模板族＋assistant-ui 示例；零新 agent runtime（AG-UI/assistant-ui/CopilotKit 只抄协议与模式，DBOS/Task/ContentPackage 真相链不换）；Tiptap 只进对象工作区；⑦ **记忆产品化三步走**：P0 去 JSON＋待确认优先＋诚实空态、P1 三层页、P2 改名「经验」＋任务内三处露出。分期 P0/P1/P2 与验收门以规格 §8 为准。
+- 原因：#281 有意遗留的 copy/note 集中开票、两版 codex UI/UX 方案对撞合流、xhswork 参考项目九功能盘点三线在同一张 wayfinder 地图收敛；两版方案对现状的事实断言经代码逐条核对基本属实（推荐卡硬编码 copy／双滚动／交付重复等）。
+- 影响：P0 实施票 **#286/#287/#288** 已开（工作台收敛／记忆诚实／kind 合同起步）；文档同步＝本条＋CONTEXT 批次段＋PRODUCT/DESIGN 指针＋merge-ledger #281 行备注＋两版方案 supersede banner＋双 AGENTS 约束块；prompt 资产（xhswork 六文件美业化改写）挂 Langfuse 版本化（D-036）。
+- 证据边界：wayfinder `.wayfinder/map-xhs-vertical-integration.md`（九票＋两丢弃式原型）；研究报告 `references/analysis/xhswork-integration-2026-08-01/01~03-*.md`；两版方案原稿 `docs/meiyeweb-agent-UI-UX-Agent化调整建议0801.md`、`docs/美业宣发经营Agent-UI-UX调整建议-完整版0801.md`（已挂 banner）。
+- 待验证：OpenCLI live 门核销；P0-P2 各期验收门（规格 §8.1-8.3）；kind 全链读侧收敛与 image_text 迁移方式（实施时定）。
+- Supersedes（产品权威，**不改写旧 D 正文**）：
+  - **D-164③ 实现口径**「确认卡只挂 media 工作流路径」（#281 主控收窄裁决）→ 按分期升级为付费媒体执行操作判定（copy 免确认结论继承不废）
+  - 两版 codex 方案 md 作为独立建议文档的地位 → 对撞结论以规格＋「锁定工作台 Agent 化目标形态」票为准
+- 不废：D-043 copy 主路径免确认、D-164 单路由三段与执行确认卡统一边界、D-113 一主候选、D-114 对话流主容器、D-130 HeroUI Pro 供给基准（本条将其 AI 模板族升格为工作台 UI 基线）、D-126 首页轻推荐（形态演进为胶囊建议行）。
+
 ## 待拍板（2026-07-17 合并评审识别，逐一讨论后按模板转正式决策）
 
 已拍板转正：视频成片首发地位 → D-027；文案/成片两层交付 → D-028；Day-0 零资产首屏 → D-029；定位边界 → D-030；前台无槽位填表、结构化输入融入对话流 → D-031；Agent Workflow 编排总纲（收编原「阻塞作用域」「沉淀检测」两项为推论一/二）→ D-032；Task 统一交互单元与 Harness 五段式 → D-033（均 2026-07-17）；Harness 实现选型四题 + 工程约束（11 号简报全案采纳，提示词承载 = Langfuse 先行）→ D-034~D-038（2026-07-17 深夜，证据 = 10 份调研 + 9 路 Codex 对抗交叉验证（r08 三次容量失败未产出，Dify 在 D-037 中仅为战术搁置项，见其证据边界与 08 号报告头部横幅），`references/analysis/harness-research-2026-07-17/`）；09 合规章义务清单去向（2026-07-18 一致性复核 escalate 项）= 并入 Week 0 预登记文档 → D-039（2026-07-18）。

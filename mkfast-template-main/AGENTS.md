@@ -113,3 +113,10 @@ Enforced by Biome (`biome.json`):
 
 ### Cloudflare Workers Constraint
 Avoid Node.js-specific APIs — this runs on Cloudflare Workers runtime, not Node.js.
+
+## XHS / Workbench Implementation Constraints (2026-08-01, D-171)
+
+- Workbench form authority: `docs/specs/xhs-vertical-integration-spec-2026-08-01.md` (four states, document-timeline conversation, width contract 800/1240).
+- UI baseline: HeroUI Pro AI showcase template family + assistant-ui examples — copy patterns/fragments, never their runtime.
+- Tiptap only inside the object workspace, never in the Composer.
+- No anonymous XHS scraping anywhere in the web app; sourcing is user-session (OpenCLI) or manual paste only.
