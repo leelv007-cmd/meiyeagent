@@ -2304,6 +2304,27 @@ describe('ModelSupplyFoundationModule', () => {
     );
   });
 
+  it('rejects a catalog model that omits a governed operation credit price', async () => {
+    const { module } = setup();
+    const models = createDefaultCatalogModels();
+    const copy = models.find((model) => model.id === 'deepseek-v4-pro');
+    assert.ok(copy?.creditPricing);
+    delete copy.creditPricing['copy.generate'];
+
+    await assert.rejects(
+      command(module, admin, 'catalog_create_draft', {
+        catalog: {
+          capabilities: [],
+          deployments: createDefaultDeployments(),
+          models,
+          prices: [],
+          routes: [],
+        },
+      }),
+      /missing credit pricing for copy\.generate/i,
+    );
+  });
+
   it('returns workspace-scoped jobs and an honest quality dashboard', async () => {
     const { models, module } = setup();
     const generated = await models.submit({

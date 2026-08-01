@@ -33,6 +33,7 @@ import {
   type CatalogModel,
   type CreditPricing,
   CREDIT_PRICING_OPERATIONS,
+  type CreditPricingOperation,
   type CanvasGenerationInputAsset,
   type CanvasGenerationParameterName,
   type AdvancedCanvasGenerationOriginRef,
@@ -4450,6 +4451,24 @@ function validateCatalogPayload(payload: CatalogRevisionPayload) {
       )
     ) {
       throw new P1DomainError('INVALID_STATE', `CatalogModel ${model.id} has an unknown capability.`);
+    }
+    const requiredCreditPricing: CreditPricingOperation[] = [];
+    for (const operation of model.operations) {
+      if (CREDIT_PRICING_OPERATIONS.includes(operation as never)) {
+        requiredCreditPricing.push(operation as CreditPricingOperation);
+      }
+    }
+    if (model.operations.includes('image.edit')) {
+      requiredCreditPricing.push('image.reference_transform');
+    }
+    const missingCreditPricing = requiredCreditPricing.find(
+      (operation) => !model.creditPricing?.[operation],
+    );
+    if (missingCreditPricing) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `CatalogModel ${model.id} is missing credit pricing for ${missingCreditPricing}.`,
+      );
     }
     for (const [operation, pricing] of Object.entries(
       model.creditPricing ?? {},
