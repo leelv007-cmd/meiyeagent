@@ -6,6 +6,8 @@
  * continue-creation in place — no navigation to settings.
  */
 
+import type { AccountUsageProjection } from '../account-usage';
+
 export const QUOTA_BLOCK_TITLE = '额度不足';
 export const QUOTA_BLOCK_DESCRIPTION =
   '当前额度不足，无法继续创作。可在此输入兑换码立即解锁。';
@@ -206,6 +208,28 @@ const QUOTA_UNITS = {
 } as const;
 
 export type ComposerQuotaResource = keyof typeof QUOTA_UNITS;
+
+/**
+ * Read the legacy balance only for the retired resource-bucket path. Credit
+ * billing deliberately returns an optional `credits` projection: once present,
+ * server quote + reservation own admission and this passive bucket check must
+ * stay silent instead of guessing a credits-to-output conversion.
+ */
+export function composerQuotaAvailability(
+  projection:
+    | Pick<AccountUsageProjection, 'usage' | 'credits'>
+    | null
+    | undefined
+): Partial<Record<ComposerQuotaResource, number | null>> {
+  if (!projection || projection.credits) {
+    return { copy: null, image: null, video: null };
+  }
+  return {
+    copy: projection.usage.copy.available,
+    image: projection.usage.image.available,
+    video: projection.usage.video.available,
+  };
+}
 
 /** One bucket this run will debit, in that bucket's own unit. */
 export type QuotaRequirement = {

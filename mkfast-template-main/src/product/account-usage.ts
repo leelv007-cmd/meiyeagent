@@ -1,3 +1,5 @@
+import type { PublicCreditBalance } from '@meiye/contracts';
+
 export type AccountUsageResource = 'copy' | 'image' | 'video' | 'audio';
 
 interface AccountUsageBucket {
@@ -14,6 +16,8 @@ export interface AccountUsageProjection {
     periodEndsAt?: string;
   } | null;
   usage: Record<AccountUsageResource, AccountUsageBucket>;
+  /** Credit balance is authoritative; usage remains a cutover read shape. */
+  credits?: PublicCreditBalance;
 }
 
 export function projectAccountUsage(projection: AccountUsageProjection) {

@@ -30,6 +30,7 @@ import {
   CreditBillingService,
   type CreditPaymentLifecycle,
 } from '../credit-billing/credit-billing-service.js';
+import type { ProductEntitlementPolicyPort } from './entitlement-policy.js';
 
 export interface PlanOffer {
   id: ProductPlanTier;
@@ -64,10 +65,15 @@ const PERSISTENT_STARTER_PERIOD_END = '9999-12-31T23:59:59.999Z';
  * second ledger. Legacy consumers only need a defined usage shape while the
  * credit UI takes ownership of this query.
  */
-function legacyCreditUsageProjection(balance: PublicCreditBalance) {
-  const trial = DEFAULT_PLAN_OFFERS.find((plan) => plan.id === 'trial')!;
+function legacyCreditUsageProjection(
+  balance: PublicCreditBalance,
+  tier: ProductPlanTier,
+) {
+  const plan =
+    DEFAULT_PLAN_OFFERS.find((candidate) => candidate.id === tier) ??
+    DEFAULT_PLAN_OFFERS.find((candidate) => candidate.id === 'trial')!;
   const bucket = (resource: UsageResource) => {
-    const allowance = trial.allowance[resource];
+    const allowance = plan.allowance[resource];
     return {
       allowance,
       reserved: 0,
@@ -77,7 +83,7 @@ function legacyCreditUsageProjection(balance: PublicCreditBalance) {
     };
   };
   return {
-    plan: { tier: 'trial' as const },
+    plan: { tier: plan.id },
     usage: {
       copy: bucket('copy'),
       image: bucket('image'),
@@ -333,6 +339,8 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
       modelDefaults?: PlatformDefaultModelPort;
       /** Production commerce writes only the credit ledger and subscription store. */
       creditBilling?: CreditBillingService;
+      /** Read-only paid tier source for the legacy projection bridge. */
+      creditEntitlements?: ProductEntitlementPolicyPort;
       modelCatalogTenantAllowlist?: readonly string[];
       warn?: (message: string) => void;
     } = {},
@@ -634,8 +642,11 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
             args.context.workspaceId,
           ),
         );
+        const legacyPlan = await this.options.creditEntitlements?.resolve(
+          args.context.workspaceId,
+        );
         return {
-          ...legacyCreditUsageProjection(credits),
+          ...legacyCreditUsageProjection(credits, legacyPlan?.tier ?? 'trial'),
           credits,
         };
       }

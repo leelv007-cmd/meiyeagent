@@ -15,6 +15,7 @@ import {
   MemoryAdminConfigRepository,
 } from '../admin-config/index.js';
 import { CreditBillingService } from '../credit-billing/credit-billing-service.js';
+import { CreditSubscriptionEntitlementPolicy } from '../credit-billing/credit-entitlement-policy.js';
 import { MemoryCreditLedger } from '../credit-billing/credit-ledger.js';
 import { DEFAULT_CREDIT_PLAN_CATALOG } from '../credit-billing/credit-plan-catalog.js';
 import { MemoryCreditSubscriptionStore } from '../credit-billing/credit-subscription-scheduler.js';
@@ -176,6 +177,68 @@ describe('ProductEntitlementFoundationModule', () => {
         },
       },
     );
+  });
+
+  it('projects the active paid tier instead of disguising it as trial', async () => {
+    const clock = () => new Date('2026-08-01T00:00:00.000Z');
+    const repository = new MemoryFoundationRepository();
+    repository.grantOwner(owner.workspaceId, owner.userId);
+    const entitlements = new ProductEntitlementApplicationService(
+      repository,
+      new RecordedAutoTopUpPaymentPort(),
+      clock,
+    );
+    const ledger = new MemoryCreditLedger();
+    const subscriptions = new MemoryCreditSubscriptionStore();
+    const planSource = {
+      async get() {
+        return structuredClone(DEFAULT_CREDIT_PLAN_CATALOG);
+      },
+    };
+    const creditBilling = new CreditBillingService(
+      ledger,
+      subscriptions,
+      planSource,
+      {
+        async getPaymentMapping() {
+          return {
+            mappings: [
+              { interval: 'month' as const, paymentProductId: 'growth', tier: 'growth' as const },
+            ],
+          };
+        },
+      },
+      clock,
+    );
+    const service = new P1ApplicationService(repository, {
+      operations: [
+        new ProductEntitlementFoundationModule(entitlements, clock, {
+          creditBilling,
+          creditEntitlements: new CreditSubscriptionEntitlementPolicy(
+            subscriptions,
+            planSource,
+            clock,
+          ),
+        }),
+      ],
+    });
+
+    await creditBilling.settlePayment(owner, {
+      lifecycle: 'activate',
+      paymentEventId: 'paid-growth-cutover',
+      paymentProductId: 'growth',
+      interval: 'month',
+      periodStartsAt: clock().toISOString(),
+      subscriptionId: 'subscription-growth-cutover',
+    });
+
+    const projection = (await service.queryModule(owner, 'entitlements', {
+      action: 'projection',
+      payload: {},
+    })) as { plan: { tier: string }; credits: { availableCredits: number } };
+
+    assert.equal(projection.plan.tier, 'growth');
+    assert.equal(projection.credits.availableCredits, 0);
   });
 
   it('adds the canonical monthly output shape using the Shanghai merchant month', async () => {

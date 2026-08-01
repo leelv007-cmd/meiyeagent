@@ -9,6 +9,7 @@ import {
   buildQuotaRedeemCommand,
   completeQuotaRedeem,
   composerQuotaRequirements,
+  composerQuotaAvailability,
   createQuotaBlockingState,
   isQuotaRedeemCodeValid,
   projectQuotaBlockingView,
@@ -16,6 +17,32 @@ import {
   setQuotaRedeemCode,
   showQuotaBlocking,
 } from './quota-blocking';
+
+function creditProjection(availableCredits: number) {
+  const bucket = (allowance: number) => ({
+    allowance,
+    available: allowance,
+    committed: 0,
+    released: 0,
+    reserved: 0,
+  });
+  return {
+    credits: {
+      grantedCredits: availableCredits,
+      usedCredits: 0,
+      refundedCredits: 0,
+      expiredCredits: 0,
+      availableCredits,
+    },
+    plan: { tier: 'trial' as const },
+    usage: {
+      copy: bucket(5),
+      image: bucket(5),
+      video: bucket(1),
+      audio: bucket(0),
+    },
+  };
+}
 
 describe('GL-23 quota blocking model', () => {
   it('starts hidden / not unlocked', () => {
@@ -85,6 +112,24 @@ describe('GL-23 quota blocking model', () => {
 });
 
 describe('W05 图文双桶预检 (P0-5)', () => {
+  it('does not let the retired 5/5/1 buckets block a credit-priced image request', () => {
+    const view = projectQuotaPassiveView({
+      requirements: [{ resource: 'image', cost: 6 }],
+      available: composerQuotaAvailability(creditProjection(100)),
+    });
+    assert.equal(view.visible, false);
+    assert.equal(view.short, false);
+  });
+
+  it('does not let the retired video bucket claim a 50-credit clip is available', () => {
+    const view = projectQuotaPassiveView({
+      requirements: [{ resource: 'video', cost: 1 }],
+      available: composerQuotaAvailability(creditProjection(40)),
+    });
+    assert.equal(view.visible, false);
+    assert.equal(view.short, false);
+  });
+
   it('mirrors the server: an image-text note debits copy AND image', () => {
     assert.deepEqual(
       composerQuotaRequirements({

@@ -261,6 +261,7 @@ import {
 import { RecipeCardsPanel } from './recipe-cards-panel';
 import { QuotaBlockingCard } from './quota-blocking-card';
 import {
+  composerQuotaAvailability,
   composerQuotaRequirements,
   projectQuotaPassiveView,
 } from './quota-blocking';
@@ -1527,11 +1528,7 @@ export function ComposerHome({
     () =>
       projectQuotaPassiveView({
         requirements: quotaRequirements,
-        available: {
-          copy: usageQuery.data?.usage.copy.available ?? null,
-          image: usageQuery.data?.usage.image.available ?? null,
-          video: usageQuery.data?.usage.video.available ?? null,
-        },
+        available: composerQuotaAvailability(usageQuery.data),
       }),
     [quotaRequirements, usageQuery.data]
   );
@@ -1577,9 +1574,7 @@ export function ComposerHome({
         },
         cost: projectExecutionCost({
           available: {
-            copy: usageQuery.data?.usage.copy.available ?? null,
-            image: usageQuery.data?.usage.image.available ?? null,
-            video: usageQuery.data?.usage.video.available ?? null,
+            ...composerQuotaAvailability(usageQuery.data),
           },
           billingNote: currentQuoteView?.billingNote ?? null,
           requirements: quotaRequirements,
