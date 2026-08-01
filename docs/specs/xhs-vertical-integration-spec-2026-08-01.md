@@ -697,4 +697,27 @@ xhswork 按操作扣分（大纲 / 配图 / 正文 / 封面各自 `consume*`，`
 
 ---
 
+## §11 开发纪律与留痕（实施批 #313–#328）
+
+实施票：P1 = [#313](https://github.com/leelv007-cmd/meiyeweb-agent/issues/313)–[#319](https://github.com/leelv007-cmd/meiyeweb-agent/issues/319)，P2 = [#320](https://github.com/leelv007-cmd/meiyeweb-agent/issues/320)–[#328](https://github.com/leelv007-cmd/meiyeweb-agent/issues/328)（编号即开发顺序；票上原生 blocked-by 边为机器判据）。通用纪律全文以 `docs/ops/agent-dispatch-runbook-2026-07-29.md` 为准（环境铁律／关票纪律／受阻轮询协议全部适用），与 `docs/specs/credit-billing-spec-2026-08-01.md` §11 同构；本节只列本效力面的收束，冲突时以手册为底、本节为特化。
+
+### 11.1 角色与主权
+
+- **开发 = lane agent**：一票一 lane 一 worktree 一分支（`git worktree add ../lane-<票号> main`）。票面即任务书，票下「主控裁决／依赖更新／主控合同增补」前缀评论覆盖票面原文。
+- **总控 = 主控会话**：验收、合入 main、关票、修订本规格的唯一主权方。lane **不 push、不关票、绝不移动 main**、绝不以「主控」前缀发评论；「已合入」唯一有效凭证 = `docs/ops/merge-ledger.md` 出现对应 sha 行。
+- **决策冲突序**：本规格终稿 > wayfinder 票 Resolution > 票面文字。发现冲突落票下评论并停下问主控，不得自行扩边界。
+
+### 11.2 开工与依赖
+
+- 开工顺序 = §8.4 硬序 + 票上 blocked-by 边：P0 收口（#286/#287/#288，PR #296 合入 main）为全批总前置；P2 票（#320–#328）合入不得先于 P1 验收门（P1-1 至 P1-8）齐验。
+- 被阻塞票未解锁（阻塞票未关）不得开工，只准做零 rebase 面预备（schema 草案／只读盘点／设计稿）。
+
+### 11.3 留痕（多 Agent 交接防信息丢失）
+
+- **认领即留痕**：领票评论注明 worktree 路径、分支名、开工基线 sha；关键节点（方案定案、受阻、交底文档落点）逐条评论，不得只留在 agent 会话内。
+- **「实施时定」项（§10.3）定案必须评论留痕**并写入交底文档；只写会话不算数。
+- **交验 = 票下评论逐条对应票面验收断言**，附运行证据（file:line／命令输出／测试真实计数）；四门齐备：消费者证明（D-150）／可达性证明／出口证明（含负向）／反向复核（D-157 双向）。
+
+---
+
 **本规格为「XHS 图文专项融合 + 全局 Agent 化 UI/UX 升级」地图 Destination 的权威闭合文档。** 九票决议、合规双轨、工作台四态、载体三枚举与分期绿集均已写入；实施另开 lane，不以本文件代替代码变更。规格正文至此完整收束。
