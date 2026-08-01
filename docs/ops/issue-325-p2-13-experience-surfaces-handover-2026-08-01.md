@@ -1,8 +1,10 @@
 # #325 P2-13 经验化收官 — 交底
 
-**分支**：`leelv007-cmd/lane-325`  
-**开工基线**：`69cf06e1a6e18734fcefef8122a833e8a4b8e3a7`  
-**规格**：`docs/specs/xhs-vertical-integration-spec-2026-08-01.md` §8.3 / P2-1 / D5 / D7  
+**分支**：`leelv007-cmd/lane-325`
+
+**开工基线**：`69cf06e1a6e18734fcefef8122a833e8a4b8e3a7`
+
+**规格**：`docs/specs/xhs-vertical-integration-spec-2026-08-01.md` §8.3 / P2-1 / D5 / D7
 **边界**：导航「经验」文案 + 任务内三处记忆露出 + candidate→delivery morph。不重做 #316 三层页 IA、不扩一级导航项。不 push / 不关票 / 不移动 main。
 
 ---
@@ -95,6 +97,6 @@ e2e 全量留给主控。
 
 ## 6. 非本票
 
-- 不 push / 不关票 / 不合入 main  
-- 不新增 agent runtime / 不把 Tiptap 塞进 Composer  
+- 不 push / 不关票 / 不合入 main
+- 不新增 agent runtime / 不把 Tiptap 塞进 Composer
 - e2e 全量 / P1 齐验门 由主控
