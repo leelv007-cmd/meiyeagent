@@ -33,8 +33,8 @@
 | 第一次 attempt | step11 挂至 job **timeout 90m** → job **`cancelled`**；全 run `cancelled`，`required=failure` |
 | 首 attempt 真因（证据包） | artifact `production-main-journey-evidence`：M-04 **`image_text → xiaohongshu`** 在 `chooseImageTextDirection`（`ui-journey.ts:181`）**稳定失败**——`the direction must land — by merchant click or frozen-route pre-answer`，**300s × 3 retries**；resume 行「已按你选的方向继续准备整套图文」始终未可见。**不是** sticky delivery-card 点击拦截（`69cf06e1` 已修那条）。3×5min 重试叠其他用例 → 逼近 90m 被 cancel |
 | 处置 | `gh run rerun 30699271165 --failed`（2026-08-01T13:45Z 起第二 attempt）——用于确认是否复现 |
-| 当前 | 第二 attempt **已 cancel**（改修方向卡后换 tip 重跑） |
-| 终态（填） | _pending on new tip after direction-card fix_ |
+| 当前 | tip `118c3528` run `30705186695`：首 attempt **webServer 起不来**（EADDRINUSE :3001 + PG deadlock migrate/compensation，**测例未开跑**）→ `--failed` re-run |
+| 终态（填） | _pending re-run after infra flake_ |
 
 ### 1.3 方向卡修复（2026-08-01 主控直修）
 
@@ -44,6 +44,7 @@
 - `composer-conversation.tsx`：`question` / `execution_confirm` 帧挂 `WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS`；interrupt 出现时 `scrollIntoView({ block: 'end' })`
 - `ui-journey.ts`：`chooseImageTextDirection` 支持 legacy `composer-question-card`、scrollIntoView + **force click**、放宽「两种图文方向」匹配
 - static：`workbench-p1.static.test.ts` 钉 scroll-margin / scrollIntoView
+- 双审 follow-up：scroll effect deps 收窄为 `liveInterruptTurnId`/`kind`（不跟整表 `turns`）；优先滚 **最新** interrupt；去掉 e2e 空 `stylesReady` 分支
 
 **合入窗开启条件**：本 fix 合入 main 后，对该 tip 再跑 **一次** `production-main-journey` 且 `success`。
 

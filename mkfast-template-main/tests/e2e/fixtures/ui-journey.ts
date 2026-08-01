@@ -163,9 +163,6 @@ export async function chooseImageTextDirection(page: Page) {
     .getByTestId('ask-merchant-group-card')
     .or(page.getByTestId('composer-question-card'))
     .filter({ hasText: /两种图文方向/u });
-  const stylesReadyLine = page
-    .getByTestId('composer-stage-line')
-    .filter({ hasText: /两种图文方向已经整理好|两种图文方向都已准备好/u });
   const resumedLine = page
     .getByTestId('composer-stage-line')
     .filter({ hasText: '已按你选的方向继续准备整套图文' });
@@ -180,7 +177,7 @@ export async function chooseImageTextDirection(page: Page) {
 
     // Prefer scrolling the interrupt host above sticky Composer before click.
     const interruptHost = page.getByTestId('composer-question-turn');
-    if (await interruptHost.count()) {
+    if ((await interruptHost.count()) > 0) {
       await interruptHost
         .first()
         .scrollIntoViewIfNeeded()
@@ -201,19 +198,15 @@ export async function chooseImageTextDirection(page: Page) {
         .getByRole('button')
         .filter({ hasNotText: /暂未确定|继续|这次先跳过/u });
       try {
-        // force: Active sticky Composer (z-30) can intercept a pure geometric
-        // click even after scroll-margin; force lands the merchant act.
+        // force: Active sticky Composer (z-30) can still intercept a pure
+        // geometric click after scroll-margin; product path is scroll-margin +
+        // scrollIntoView — force is the e2e last resort for the same class.
         await directions.first().click({ timeout: 3_000, force: true });
       } catch {
         // Frozen route may pre-answer between visibility check and click.
       }
-    } else {
-      // Still compiling, or styles_ready already flashed — keep polling.
-      void (await stylesReadyLine
-        .first()
-        .isVisible()
-        .catch(() => false));
     }
+    // Not visible yet: keep toPass polling (workflow still compiling styles).
     expect(
       await resumedLine
         .first()

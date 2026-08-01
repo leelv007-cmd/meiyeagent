@@ -398,19 +398,27 @@ export function ComposerConversation({
   // that styles.css forces under prefers-reduced-motion, so the transcript
   // has to answer the preference itself.
   const scrollBehavior = prefersReducedMotion ? 'instant' : 'smooth';
-  const liveInterruptTurnId =
-    session.turns.find(
-      (turn) => turn.kind === 'question' || turn.kind === 'execution_confirm'
-    )?.id ?? null;
+  // Prefer the *latest* interrupt: execution_confirm often arrives after
+  // note_style, and stage progress must not re-fire scroll (deps stay narrow).
+  const liveInterrupt = (() => {
+    for (let index = session.turns.length - 1; index >= 0; index -= 1) {
+      const turn = session.turns[index]!;
+      if (turn.kind === 'question' || turn.kind === 'execution_confirm') {
+        return turn;
+      }
+    }
+    return null;
+  })();
+  const liveInterruptTurnId = liveInterrupt?.id ?? null;
+  const liveInterruptKind = liveInterrupt?.kind ?? null;
 
   // Merchant must act on in-stream interrupts. Active sticky Composer (z-30)
   // covers the bottom of the timeline — bring the interrupt above the scrim
   // when it appears (same failure class as 成品交付卡 / M-04 direction card).
   useEffect(() => {
-    if (!liveInterruptTurnId) return;
+    if (!liveInterruptTurnId || !liveInterruptKind) return;
     const testId =
-      session.turns.find((turn) => turn.id === liveInterruptTurnId)?.kind ===
-      'execution_confirm'
+      liveInterruptKind === 'execution_confirm'
         ? 'composer-execution-confirm-turn'
         : 'composer-question-turn';
     const node = document.querySelector<HTMLElement>(
@@ -421,7 +429,7 @@ export function ComposerConversation({
       block: 'end',
       behavior: prefersReducedMotion ? 'instant' : 'smooth',
     });
-  }, [liveInterruptTurnId, prefersReducedMotion, session.turns]);
+  }, [liveInterruptKind, liveInterruptTurnId, prefersReducedMotion]);
 
   if (turnCount === 0 && !identitySlot) return null;
 
