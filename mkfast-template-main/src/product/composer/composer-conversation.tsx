@@ -47,7 +47,7 @@ import {
 } from './composer-delivery-card';
 import type { DeliveryFollowUpSeed } from './delivery-followup-seeds';
 import { ComposerProgressCard } from './composer-progress-card';
-import { WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS } from './workbench-shell';
+import { WORKBENCH_STICKY_COMPOSER_INTERRUPT_CLASS } from './workbench-shell';
 import {
   ComposerReportCard,
   type ComposerRecoveryInput,
@@ -471,7 +471,7 @@ export function ComposerConversation({
         return questionSlot ? (
           <AgentFrameHost
             // Clear Active sticky Composer (z-30) so 图文方向 / 补问 clicks land.
-            className={WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS}
+            className={WORKBENCH_STICKY_COMPOSER_INTERRUPT_CLASS}
             frameKind={resolveAgentFrameKind('question')}
             key={turn.id}
             testId="composer-question-turn"
@@ -485,7 +485,7 @@ export function ComposerConversation({
         // independent sticky execution-confirm-slot mount from D-164.
         return executionConfirmSlot ? (
           <AgentFrameHost
-            className={WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS}
+            className={WORKBENCH_STICKY_COMPOSER_INTERRUPT_CLASS}
             frameKind={resolveAgentFrameKind('execution_confirm')}
             key={turn.id}
             testId="composer-execution-confirm-turn"

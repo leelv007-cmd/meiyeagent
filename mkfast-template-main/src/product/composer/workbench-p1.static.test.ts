@@ -80,7 +80,7 @@ test('P1-2: Active sticky Composer clears mobile-nav (4.25rem family)', () => {
   );
   assert.match(
     conversationSticky,
-    /WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS/u
+    /WORKBENCH_STICKY_COMPOSER_INTERRUPT_CLASS/u
   );
   assert.match(conversationSticky, /composer-question-turn/u);
   assert.match(conversationSticky, /scrollIntoView/u);

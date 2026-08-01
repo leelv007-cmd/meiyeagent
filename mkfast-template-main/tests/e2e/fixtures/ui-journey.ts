@@ -7,6 +7,8 @@ import {
 import { readFile } from 'node:fs/promises';
 import { unzipSync } from 'fflate';
 
+import { directionSettlementProof } from './direction-settlement';
+
 export type JourneyModality = 'copy' | 'image_text' | 'video';
 
 /**
@@ -171,14 +173,8 @@ export async function chooseImageTextDirection(page: Page) {
     .getByTestId('composer-stage-line')
     .filter({ hasText: '已按你选的方向继续准备整套图文' });
   await expect(async () => {
-    const resumed = await resumedLine
-      .first()
-      .isVisible()
-      .catch(() => false);
-    const cardVisible = await directionCard
-      .first()
-      .isVisible()
-      .catch(() => false);
+    const resumed = await resumedLine.first().isVisible();
+    const cardVisible = await directionCard.first().isVisible();
     expect(resumed || cardVisible).toBeTruthy();
   }, 'the direction card or frozen-route answer must become visible').toPass({
     timeout: 300_000,
@@ -223,14 +219,10 @@ export async function chooseImageTextDirection(page: Page) {
       throw error;
     }
   }
-  if (productionRenderer) {
-    await expect(direction).toHaveAttribute('aria-pressed', 'true');
-  } else {
-    await expect(activeDirectionCard).toHaveAttribute(
-      'data-settlement',
-      'answered'
-    );
-  }
+  const settlementProof = directionSettlementProof(productionRenderer);
+  await expect(
+    settlementProof.target === 'direction' ? direction : activeDirectionCard
+  ).toHaveAttribute(settlementProof.attribute, settlementProof.value);
   await expect(
     resumedLine.first(),
     'the direction must land after the merchant click'

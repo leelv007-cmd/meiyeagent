@@ -9,6 +9,7 @@ import { ComposerConversation } from './composer-conversation';
 import {
   applyComposerExecutionConfirm,
   applyComposerProgress,
+  applyComposerQuestion,
   bindComposerTask,
   createComposerSession,
   openComposerTurn,
@@ -127,8 +128,30 @@ describe('AgentFrame registry document timeline', () => {
     const frame = screen.getByTestId('composer-execution-confirm-turn');
     expect(frame).toHaveAttribute('data-agent-frame', 'decision');
     expect(frame).toHaveAttribute('data-turn-kind', 'execution_confirm');
+    expect(frame.className).toMatch(/relative/);
+    expect(frame.className).toMatch(/z-40/);
     expect(
       screen.getByTestId('execution-confirmation-interaction-card')
     ).toBeTruthy();
+  });
+
+  it('keeps question controls above the Active sticky Composer', () => {
+    const session = applyComposerQuestion(
+      bindComposerTask(withMerchant(), TASK),
+      'question-1'
+    );
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        questionSlot={<button type="button">answer</button>}
+        session={session}
+        stream={emptyStream}
+      />
+    );
+
+    const frame = screen.getByTestId('composer-question-turn');
+    expect(frame).toHaveAttribute('data-agent-frame', 'decision');
+    expect(frame.className).toMatch(/relative/);
+    expect(frame.className).toMatch(/z-40/);
   });
 });

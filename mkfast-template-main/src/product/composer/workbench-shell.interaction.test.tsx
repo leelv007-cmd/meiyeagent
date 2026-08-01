@@ -9,6 +9,7 @@
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import type { ComposerSessionPhase } from './composer-session';
 import {
   isWorkbenchComposerSticky,
   isWorkbenchDualColumnEligible,
@@ -45,7 +46,7 @@ function ShellProbe({
   phase,
   width,
 }: {
-  phase: 'idle' | 'running' | 'delivered';
+  phase: ComposerSessionPhase;
   width: number;
 }) {
   const dualColumn = isWorkbenchDualColumnEligible(phase, width);
@@ -129,6 +130,18 @@ describe('P1-01 workbench shell host layout', () => {
     expect(
       screen.queryByTestId('workbench-sticky-composer-clearance')
     ).toBeNull();
+  });
+
+  it('keeps the Composer sticky while Active waits for a merchant answer', () => {
+    render(<ShellProbe phase="awaiting_answer" width={1240} />);
+
+    expect(screen.getByTestId('composer-home')).toHaveAttribute(
+      'data-sticky-composer',
+      'true'
+    );
+    expect(
+      screen.getByTestId('workbench-sticky-composer-host')
+    ).toHaveAttribute('data-sticky', 'true');
   });
 
   it('keeps dual-column group + stream panel overflow visible (P1-2 residual)', () => {

@@ -56,6 +56,9 @@ export const WORKBENCH_STICKY_COMPOSER_CLEARANCE_CLASS =
 export const WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS =
   'scroll-mb-[calc(16rem+env(safe-area-inset-bottom))] md:scroll-mb-64';
 
+/** Keep in-stream merchant decisions clickable above the sticky Composer. */
+export const WORKBENCH_STICKY_COMPOSER_INTERRUPT_CLASS = `${WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS} relative z-40`;
+
 const DUAL_COLUMN_PHASES: ReadonlySet<ComposerSessionPhase> = new Set([
   'submitting',
   'running',
@@ -64,9 +67,9 @@ const DUAL_COLUMN_PHASES: ReadonlySet<ComposerSessionPhase> = new Set([
 ]);
 
 /**
- * Sticky only while the run is in flight and not waiting on the merchant.
- * `awaiting_answer` is intentionally non-sticky: interrupt options must receive
- * real pointer events instead of sitting below the Composer scrim.
+ * Sticky while the run is active, including merchant-answer interrupts.
+ * Interrupt frames sit at z-40 above this z-30 host so P1-2 remains true while
+ * their controls still receive real pointer events.
  * `delivered` is intentionally non-sticky: 成品交付卡 must stay fully clickable
  * above the prompt cluster. CI journey @cbcbe4da/d39804f0 showed sticky z-30
  * covering the card even with clearance spacers (host is prompt+attachments tall).
@@ -74,6 +77,7 @@ const DUAL_COLUMN_PHASES: ReadonlySet<ComposerSessionPhase> = new Set([
 const STICKY_COMPOSER_PHASES: ReadonlySet<ComposerSessionPhase> = new Set([
   'submitting',
   'running',
+  'awaiting_answer',
 ]);
 
 /**
