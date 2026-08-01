@@ -191,13 +191,13 @@
  */
 .meiye-workbench-dual-column,
 .meiye-workbench-dual-column-group,
-[data-slot='resizable-panel-group']:has(.meiye-workbench-stream-panel) {
+[data-slot="resizable-panel-group"]:has(.meiye-workbench-stream-panel) {
   overflow: visible !important;
 }
 .meiye-workbench-stream-panel {
   overflow: visible !important;
 }
-[data-slot='resizable-panel']:has(> .meiye-workbench-stream-panel) {
+[data-slot="resizable-panel"]:has(> .meiye-workbench-stream-panel) {
   overflow: visible !important;
 }
 
