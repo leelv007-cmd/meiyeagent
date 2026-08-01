@@ -23,6 +23,7 @@ export interface MerchantExecutionRecord {
   result?: unknown;
   status: 'claimed' | 'completed';
   taskId: string;
+  updatedAt?: string;
   workspaceId: string;
 }
 
@@ -222,8 +223,9 @@ export class PostgresProductBillingRepository
       idempotency_key: string;
       result: unknown;
       status: MerchantExecutionRecord['status'];
+      updated_at: string;
     }>(
-      `SELECT idempotency_key, contract_hash, status, result
+      `SELECT idempotency_key, contract_hash, status, result, updated_at
          FROM p1_product_billing_merchant_executions
         WHERE workspace_id = $1 AND task_id = $2`,
       [workspaceId, taskId],
@@ -238,6 +240,7 @@ export class PostgresProductBillingRepository
             : {}),
           status: row.status,
           taskId,
+          updatedAt: row.updated_at,
           workspaceId,
         }
       : null;

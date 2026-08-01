@@ -469,6 +469,22 @@ describe(
       const winner = claims[0]?.status === 'fulfilled'
         ? 'merchant-command-a'
         : 'merchant-command-b';
+      const inProgress = await service.claimMerchantExecution({
+        ...contract,
+        idempotencyKey: winner,
+      });
+      assert.deepEqual(inProgress, { decision: 'in_progress' });
+      await pool.query(
+        `UPDATE p1_product_billing_merchant_executions
+            SET updated_at = now() - interval '2 minutes'
+          WHERE workspace_id = $1 AND task_id = $2`,
+        [workspaceId, contract.taskId],
+      );
+      const recoveredClaim = await service.claimMerchantExecution({
+        ...contract,
+        idempotencyKey: winner,
+      });
+      assert.deepEqual(recoveredClaim, { decision: 'execute' });
       const original = { jobId: 'job-durable', status: 'completed' };
       await service.completeMerchantExecution({
         ...contract,

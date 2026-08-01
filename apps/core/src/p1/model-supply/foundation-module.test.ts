@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { ProductQuoteSnapshot, ProductUsageRecord } from '@meiye/contracts';
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
+import type { MerchantExecutionBillingPort } from '../product-billing/durable-service.js';
 import {
   CatalogRevisionRegistry,
   createDefaultCatalogModels,
@@ -63,6 +64,7 @@ function setup(
   activationEvidenceConfig: Pick<AdminConfigRepository, 'apply' | 'get'> =
     new MemoryAdminConfigRepository(),
   planningControlPlane?: ModelSupplyPlanningControlPlanePort,
+  merchantExecutionBilling?: MerchantExecutionBillingPort,
 ) {
   const repository = new MemoryModelSupplyControlPlaneRepository();
   const models = new ModelSupplyApplicationService({
@@ -87,6 +89,7 @@ function setup(
       'seed-tts-2-volcengine-direct': 'c'.repeat(64),
     },
     canvasProjects: canvasProjectAuthority(),
+    ...(merchantExecutionBilling ? { merchantExecutionBilling } : {}),
     ...(planningControlPlane ? { planningControlPlane } : {}),
     repository,
   });
@@ -178,7 +181,11 @@ function merchantExecutionBillingStub(input: {
       targetSeconds?: number;
       taskId: string;
       workspaceId: string;
-    }): Promise<{ decision: 'execute' } | { decision: 'replay'; result: T }> {
+    }): Promise<
+      | { decision: 'execute' }
+      | { decision: 'in_progress' }
+      | { decision: 'replay'; result: T }
+    > {
       const contract = contractFor(claim);
       const existing = executions.get(claim.taskId);
       if (existing) {
@@ -193,7 +200,7 @@ function merchantExecutionBillingStub(input: {
         }
         return 'result' in existing
           ? { decision: 'replay', result: existing.result as T }
-          : { decision: 'execute' };
+          : { decision: 'in_progress' };
       }
       const quote = input.getQuote(claim.taskId);
       const usage = input.getUsage(claim.taskId);
@@ -3164,6 +3171,203 @@ describe('ModelSupplyFoundationModule', () => {
       results.filter((result) => result.status === 'fulfilled').length,
       1,
     );
+  });
+
+  it('shares the reserved quote claim with direct control-plane consumers', async () => {
+    let providerCalls = 0;
+    const quote = {
+      catalogModelId: 'llm-openai',
+      lifecycleStatus: 'reserved',
+      operation: 'copy.generate',
+      outputCount: 3,
+      quoteId: 'quote-shared-consumer',
+      revision: 'quote-r1',
+      taskId: 'credit-task-shared-consumer',
+      workspaceId: owner.workspaceId,
+    } as ProductQuoteSnapshot;
+    const reservedBilling = merchantExecutionBillingStub({
+      getQuote: () => quote,
+      getUsage: () =>
+        ({
+          quoteId: quote.quoteId,
+          status: 'reserved',
+          taskId: quote.taskId,
+          workspaceId: owner.workspaceId,
+        }) as ProductUsageRecord,
+    });
+    const { controlPlane } = setup(
+      {
+        async execute(request) {
+          providerCalls += 1;
+          return new RecordedProviderExecutionPort().execute(request);
+        },
+      },
+      [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      reservedBilling,
+    );
+    const input = {
+      billingQuoteRevision: quote.revision,
+      billingTaskId: quote.taskId,
+      dataClass: [],
+      operation: 'copy.generate' as const,
+      prompt: 'Return three campaign directions.',
+      selection: { catalogModelId: quote.catalogModelId, mode: 'fixed' as const },
+    };
+
+    const concurrent = await Promise.allSettled([
+      controlPlane.submitGeneration(owner, input, 'operations-entry'),
+      controlPlane.submitGeneration(owner, input, 'harness-entry'),
+    ]);
+    assert.equal(providerCalls, 1);
+    assert.equal(
+      concurrent.filter((result) => result.status === 'fulfilled').length,
+      1,
+    );
+    const fulfilled = concurrent.find(
+      (result) => result.status === 'fulfilled',
+    );
+    assert.ok(fulfilled && fulfilled.status === 'fulfilled');
+    if (!fulfilled || fulfilled.status !== 'fulfilled') return;
+    const operations = fulfilled.value;
+    assert.equal(operations.copyCandidates?.length, quote.outputCount);
+    const replay = await controlPlane.submitGeneration(
+      owner,
+      input,
+      'harness-replay-entry',
+    );
+    assert.deepEqual(replay, operations);
+  });
+
+  it('derives native image edit execution from a reference-transform quote', async () => {
+    let providerCalls = 0;
+    let providerOperation: string | undefined;
+    const quote = {
+      catalogModelId: 'seedream-5-pro',
+      lifecycleStatus: 'reserved',
+      operation: 'image.reference_transform',
+      outputCount: 1,
+      quoteId: 'quote-reference-transform',
+      revision: 'quote-r1',
+      taskId: 'credit-task-reference-transform',
+      workspaceId: owner.workspaceId,
+    } as ProductQuoteSnapshot;
+    const reservedBilling = merchantExecutionBillingStub({
+      getQuote: () => quote,
+      getUsage: () =>
+        ({
+          quoteId: quote.quoteId,
+          status: 'reserved',
+          taskId: quote.taskId,
+          workspaceId: owner.workspaceId,
+        }) as ProductUsageRecord,
+    });
+    const { controlPlane } = setup(
+      {
+        async execute(request) {
+          providerCalls += 1;
+          providerOperation = request.submission.operation;
+          return new RecordedProviderExecutionPort().execute(request);
+        },
+      },
+      [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      reservedBilling,
+    );
+    const input = {
+      billingQuoteRevision: quote.revision,
+      billingTaskId: quote.taskId,
+      dataClass: [],
+      operation: 'image.edit' as const,
+      prompt: 'Convert the supplied reference into a campaign poster.',
+      selection: { catalogModelId: quote.catalogModelId, mode: 'fixed' as const },
+    };
+
+    await assert.rejects(
+      controlPlane.submitGeneration(
+        owner,
+        { ...input, operation: 'image.generate' },
+        'reference-transform-drift',
+      ),
+      /operation does not match/i,
+    );
+    const result = await controlPlane.submitGeneration(
+      owner,
+      input,
+      'reference-transform-execute',
+    );
+
+    assert.equal(result.status, 'completed');
+    assert.equal(providerOperation, 'image.edit');
+    assert.equal(providerCalls, 1);
+  });
+
+  it('derives video duration from the reserved quote before provider execution', async () => {
+    let providerCalls = 0;
+    let providerDuration: number | undefined;
+    const quote = {
+      catalogModelId: 'seedance-2',
+      lifecycleStatus: 'reserved',
+      operation: 'video.generate',
+      outputCount: 1,
+      quoteId: 'quote-video-duration',
+      revision: 'quote-r1',
+      targetSeconds: 15,
+      taskId: 'credit-task-video-duration',
+      workspaceId: owner.workspaceId,
+    } as ProductQuoteSnapshot;
+    const reservedBilling = merchantExecutionBillingStub({
+      getQuote: () => quote,
+      getUsage: () =>
+        ({
+          quoteId: quote.quoteId,
+          status: 'reserved',
+          taskId: quote.taskId,
+          workspaceId: owner.workspaceId,
+        }) as ProductUsageRecord,
+    });
+    const { controlPlane } = setup(
+      {
+        async execute(request) {
+          providerCalls += 1;
+          providerDuration = request.submission.input?.durationSeconds;
+          return new RecordedProviderExecutionPort().execute(request);
+        },
+      },
+      [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      reservedBilling,
+    );
+    const input = {
+      billingQuoteRevision: quote.revision,
+      billingTaskId: quote.taskId,
+      dataClass: [],
+      operation: 'video.generate' as const,
+      prompt: 'Produce the confirmed treatment introduction clip.',
+      selection: { catalogModelId: quote.catalogModelId, mode: 'fixed' as const },
+    };
+
+    await assert.rejects(
+      controlPlane.submitGeneration(
+        owner,
+        { ...input, input: { durationSeconds: 60 } },
+        'video-duration-drift',
+      ),
+      /duration does not match/i,
+    );
+    await controlPlane.submitGeneration(owner, input, 'video-duration-execute');
+
+    assert.equal(providerCalls, 1);
+    assert.equal(providerDuration, quote.targetSeconds);
   });
 
   it('replays a completed merchant execution before terminal quote rejection', async () => {

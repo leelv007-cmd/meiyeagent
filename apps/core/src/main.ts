@@ -804,6 +804,7 @@ const p1ModelSupplyRuntime = createModelSupplyRuntime({
         }
       : {}),
     durationSamples: foundationRepository,
+    merchantExecutionBilling: billingLifecycle,
     planningControlPlane: supplyPlanningControlPlane,
     platformDefaultModels: platformDefaultModelSource,
     repository: modelSupplyRepository,

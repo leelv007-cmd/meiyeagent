@@ -30,6 +30,7 @@ import {
 
 type MaybePromise<T> = T | Promise<T>;
 type WorkspaceInput = { workspaceId?: string };
+const MERCHANT_EXECUTION_CLAIM_LEASE_MS = 60_000;
 
 export interface MerchantExecutionContract {
   catalogModelId: string;
@@ -53,6 +54,7 @@ export interface MerchantExecutionBillingPort {
     input: ClaimMerchantExecutionInput,
   ): MaybePromise<
     | { decision: 'execute' }
+    | { decision: 'in_progress' }
     | { decision: 'replay'; result: T }
   >;
   completeMerchantExecution<T>(
@@ -74,6 +76,17 @@ function merchantExecutionContractHash(
       }),
     )
     .digest('hex');
+}
+
+function merchantExecutionClaimExpired(
+  updatedAt: string | undefined,
+  now: Date,
+) {
+  const claimedAt = updatedAt ? Date.parse(updatedAt) : Number.NaN;
+  return (
+    Number.isFinite(claimedAt) &&
+    now.getTime() - claimedAt >= MERCHANT_EXECUTION_CLAIM_LEASE_MS
+  );
 }
 
 export interface ProductBillingApplicationPort {
@@ -274,7 +287,11 @@ export class DurableProductBillingService
 
   async claimMerchantExecution<T = unknown>(
     input: ClaimMerchantExecutionInput,
-  ): Promise<{ decision: 'execute' } | { decision: 'replay'; result: T }> {
+  ): Promise<
+    | { decision: 'execute' }
+    | { decision: 'in_progress' }
+    | { decision: 'replay'; result: T }
+  > {
     const workspaceId = this.workspace(input.workspaceId);
     const contractHash = merchantExecutionContractHash(input);
     return this.run(() =>
@@ -296,9 +313,17 @@ export class DurableProductBillingService
                 `Billing task ${input.taskId} is already bound to another merchant execution.`,
               );
             }
-            return existing.status === 'completed'
-              ? { decision: 'replay' as const, result: existing.result as T }
-              : { decision: 'execute' as const };
+            if (existing.status === 'completed') {
+              return { decision: 'replay' as const, result: existing.result as T };
+            }
+            if (!merchantExecutionClaimExpired(existing.updatedAt, this.clock())) {
+              return { decision: 'in_progress' as const };
+            }
+            await transaction.saveMerchantExecution({
+              ...existing,
+              status: 'claimed',
+            });
+            return { decision: 'execute' as const };
           }
 
           const [quote, usage] = await Promise.all([
