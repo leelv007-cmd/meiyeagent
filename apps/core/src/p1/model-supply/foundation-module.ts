@@ -96,6 +96,7 @@ import {
   type AdminSupplyGovernedActionDispatchRequest,
   type AdminSupplyGovernedActionRequest,
 } from '../supply-registry/admin-control-plane.js';
+import type { ProductBillingApplicationPort } from '../product-billing/durable-service.js';
 
 const recordedModels = createDefaultCatalogModels();
 const recordedDeploymentIds = createDefaultDeployments().map((deployment) => deployment.id);
@@ -5887,6 +5888,10 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
   >;
   private readonly videoWorkflow?: VideoWorkflowReadEditPort;
   private readonly requireReservedBilling: boolean;
+  private readonly reservedBilling?: Pick<
+    ProductBillingApplicationPort,
+    'getQuoteByTask' | 'getUsage'
+  >;
 
   constructor(
     private readonly controlPlane: ModelSupplyControlPlaneService,
@@ -5902,12 +5907,17 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
       >;
       videoWorkflow?: VideoWorkflowReadEditPort;
       requireReservedBilling?: boolean;
+      reservedBilling?: Pick<
+        ProductBillingApplicationPort,
+        'getQuoteByTask' | 'getUsage'
+      >;
     } = {},
   ) {
     this.adminActorIds = new Set(options.adminActorIds ?? []);
     this.adminSupply = options.adminSupply;
     this.videoWorkflow = options.videoWorkflow;
     this.requireReservedBilling = options.requireReservedBilling === true;
+    this.reservedBilling = options.reservedBilling;
   }
 
   async execute(args: {
@@ -5995,6 +6005,13 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
           throw new P1DomainError(
             'INVALID_STATE',
             'billingTaskId and billingQuoteRevision must be provided together.',
+          );
+        }
+        if (this.requireReservedBilling) {
+          await this.assertReservedBilling(
+            args.context.workspaceId,
+            billingTaskId!,
+            billingQuoteRevision!,
           );
         }
         const requestedInput =
@@ -6178,6 +6195,40 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
         );
       default:
         throw new P1DomainError('INVALID_STATE', `Unknown model-supply command ${action}.`);
+    }
+  }
+
+  private async assertReservedBilling(
+    workspaceId: string,
+    taskId: string,
+    quoteRevision: string,
+  ) {
+    if (!this.reservedBilling) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Reserved credit billing verification is unavailable.',
+      );
+    }
+    const [quote, usage] = await Promise.all([
+      this.reservedBilling.getQuoteByTask(taskId, workspaceId),
+      this.reservedBilling.getUsage(taskId, workspaceId),
+    ]);
+    if (
+      !quote ||
+      !usage ||
+      quote.workspaceId !== workspaceId ||
+      quote.taskId !== taskId ||
+      quote.revision !== quoteRevision ||
+      quote.lifecycleStatus !== 'reserved' ||
+      usage.workspaceId !== workspaceId ||
+      usage.taskId !== taskId ||
+      usage.quoteId !== quote.quoteId ||
+      usage.status !== 'reserved'
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Merchant generation requires the exact reserved credit billing task and quote revision.',
+      );
     }
   }
 

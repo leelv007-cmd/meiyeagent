@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import type { ProductQuoteSnapshot, ProductUsageRecord } from '@meiye/contracts';
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
 import {
   CatalogRevisionRegistry,
@@ -2813,10 +2814,83 @@ describe('ModelSupplyFoundationModule', () => {
     );
   });
 
-  it('requires a reserved credit billing task on the production command seam', async () => {
-    const { controlPlane } = setup();
+  it('requires exact reserved billing facts before the provider effect', async () => {
+    let providerCalls = 0;
+    const { controlPlane } = setup({
+      async execute(request) {
+        providerCalls += 1;
+        return new RecordedProviderExecutionPort().execute(request);
+      },
+    });
+    const quoteByTask = new Map<string, ProductQuoteSnapshot>([
+      [
+        'credit-task-valid',
+        {
+          lifecycleStatus: 'reserved',
+          quoteId: 'quote-valid',
+          revision: 'quote-r1',
+          taskId: 'credit-task-valid',
+          workspaceId: owner.workspaceId,
+        } as ProductQuoteSnapshot,
+      ],
+      [
+        'credit-task-cross-workspace',
+        {
+          lifecycleStatus: 'reserved',
+          quoteId: 'quote-cross-workspace',
+          revision: 'quote-r1',
+          taskId: 'credit-task-cross-workspace',
+          workspaceId: 'workspace-b',
+        } as ProductQuoteSnapshot,
+      ],
+      [
+        'credit-task-confirmed',
+        {
+          lifecycleStatus: 'confirmed',
+          quoteId: 'quote-confirmed',
+          revision: 'quote-r1',
+          taskId: 'credit-task-confirmed',
+          workspaceId: owner.workspaceId,
+        } as ProductQuoteSnapshot,
+      ],
+      [
+        'credit-task-terminal',
+        {
+          lifecycleStatus: 'settled',
+          quoteId: 'quote-terminal',
+          revision: 'quote-r1',
+          taskId: 'credit-task-terminal',
+          workspaceId: owner.workspaceId,
+        } as ProductQuoteSnapshot,
+      ],
+    ]);
+    const reservedBilling = {
+      async getQuoteByTask(taskId: string) {
+        return quoteByTask.get(taskId) ?? null;
+      },
+      async getUsage(taskId: string) {
+        if (taskId === 'credit-task-valid') {
+          return {
+            quoteId: 'quote-valid',
+            status: 'reserved',
+            taskId,
+            workspaceId: owner.workspaceId,
+          } as ProductUsageRecord;
+        }
+        if (taskId === 'credit-task-terminal') {
+          return {
+            quoteId: 'quote-terminal',
+            status: 'committed',
+            taskId,
+            workspaceId: owner.workspaceId,
+          } as ProductUsageRecord;
+        }
+        return null;
+      },
+    };
     const module = new ModelSupplyFoundationModule(controlPlane, {
       requireReservedBilling: true,
+      reservedBilling,
     });
     const payload = {
       dataClass: [],
@@ -2829,12 +2903,41 @@ describe('ModelSupplyFoundationModule', () => {
       command(module, owner, 'submit_generation', payload),
       /reserved credit billing task/i,
     );
+    for (const invalid of [
+      {
+        billingTaskId: 'credit-task-missing',
+        billingQuoteRevision: 'quote-r1',
+      },
+      {
+        billingTaskId: 'credit-task-cross-workspace',
+        billingQuoteRevision: 'quote-r1',
+      },
+      {
+        billingTaskId: 'credit-task-valid',
+        billingQuoteRevision: 'quote-stale',
+      },
+      {
+        billingTaskId: 'credit-task-confirmed',
+        billingQuoteRevision: 'quote-r1',
+      },
+      {
+        billingTaskId: 'credit-task-terminal',
+        billingQuoteRevision: 'quote-r1',
+      },
+    ]) {
+      await assert.rejects(
+        command(module, owner, 'submit_generation', { ...payload, ...invalid }),
+        /reserved credit billing task/i,
+      );
+    }
+    assert.equal(providerCalls, 0);
     const result = (await command(module, owner, 'submit_generation', {
       ...payload,
-      billingTaskId: 'credit-task-1',
+      billingTaskId: 'credit-task-valid',
       billingQuoteRevision: 'quote-r1',
     })) as { status: string };
     assert.equal(result.status, 'completed');
+    assert.equal(providerCalls, 1);
   });
 
   it('submits fixed or automatic text.respond as one plain-text deliverable instead of copy candidates', async () => {

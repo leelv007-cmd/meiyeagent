@@ -1777,6 +1777,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       adminActorIds: modelAdminActorIds,
       adminSupply: adminSupplyControlPlane,
       requireReservedBilling: true,
+      reservedBilling: billingLifecycle,
       videoWorkflow: canonicalVideoWorkflow,
     }),
     new SensitiveWordsFoundationModule(sensitiveWordsRepository),
