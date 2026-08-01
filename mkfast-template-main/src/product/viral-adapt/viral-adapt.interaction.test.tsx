@@ -25,22 +25,15 @@ function ViralAdaptHarness({
   evidencePresent?: boolean;
 }) {
   const [state, setState] = useState<ViralAdaptJourneyState>(() =>
-    startViralAdaptJourney(
-      createViralAdaptJourneyState({ evidencePresent })
-    )
+    startViralAdaptJourney(createViralAdaptJourneyState({ evidencePresent }))
   );
   const [readyIntent, setReadyIntent] = useState<string | null>(null);
+  const [uploadRequests, setUploadRequests] = useState(0);
 
   return (
     <div>
       <ViralAdaptPanel
-        onAddImageLabel={(label) =>
-          setState((current) =>
-            updateViralPasteDraft(current, {
-              imageLabels: [...current.draft.imageLabels, label],
-            })
-          )
-        }
+        onRequestImageUpload={() => setUploadRequests((count) => count + 1)}
         onConfirm={() => {
           setState((current) => {
             const next = confirmViralAdaptJourney(current);
@@ -71,6 +64,22 @@ function ViralAdaptHarness({
         }
         state={state}
       />
+      <output data-testid="viral-adapt-upload-requests">
+        {uploadRequests}
+      </output>
+      <button
+        data-testid="viral-adapt-host-asset-attached"
+        onClick={() =>
+          setState((current) =>
+            updateViralPasteDraft(current, {
+              imageAssetIds: ['asset-reference-1'],
+            })
+          )
+        }
+        type="button"
+      >
+        host asset attached
+      </button>
       {readyIntent ? (
         <pre data-testid="viral-adapt-ready-intent">{readyIntent}</pre>
       ) : null}
@@ -88,25 +97,34 @@ describe('viral adapt paste-track journey', () => {
     expect(screen.getByTestId('viral-adapt-opencli-status')).toHaveTextContent(
       /暂不可用|未核销/
     );
-    expect(
-      screen.getByTestId('viral-adapt-opencli-action')
-    ).toBeDisabled();
+    expect(screen.getByTestId('viral-adapt-opencli-action')).toBeDisabled();
     expect(screen.getByTestId('viral-adapt-opencli-action')).toHaveTextContent(
       /暂不可用/
     );
     // Never claim available.
-    expect(screen.getByTestId('viral-adapt-opencli-status').textContent).not.toMatch(
-      /已可用/
-    );
+    expect(
+      screen.getByTestId('viral-adapt-opencli-status').textContent
+    ).not.toMatch(/已可用/);
   });
 
-  it('confirm card explicitly shows sourcing method then yields note intent', () => {
+  it('upload CTA delegates to the real host seam and never invents an asset', () => {
     render(<ViralAdaptHarness />);
 
     fireEvent.change(screen.getByTestId('viral-adapt-paste-text'), {
       target: { value: '姐妹们！清爽护理三步走\n到店可体验' },
     });
     fireEvent.click(screen.getByTestId('viral-adapt-add-image'));
+    expect(screen.getByTestId('viral-adapt-upload-requests')).toHaveTextContent(
+      '1'
+    );
+    expect(screen.getByTestId('viral-adapt-track-images')).toHaveTextContent(
+      /尚未.*参考图/
+    );
+    expect(
+      screen.getByTestId('viral-adapt-track-images')
+    ).not.toHaveTextContent('参考图 1');
+
+    fireEvent.click(screen.getByTestId('viral-adapt-host-asset-attached'));
     fireEvent.click(screen.getByTestId('viral-adapt-sourcing-continue'));
 
     expect(screen.getByTestId('viral-adapt-confirm-card')).toBeInTheDocument();
@@ -128,13 +146,12 @@ describe('viral adapt paste-track journey', () => {
     expect(intent).toHaveTextContent(/\[viral_adapt_source:paste\]/);
     expect(intent).toHaveTextContent(/清爽护理/);
     expect(intent).toHaveTextContent(/商家粘贴/);
+    expect(intent).toHaveTextContent(/参考图资产：asset-reference-1/);
   });
 
   it('continue stays disabled until paste text is present', () => {
     render(<ViralAdaptHarness />);
-    expect(
-      screen.getByTestId('viral-adapt-sourcing-continue')
-    ).toBeDisabled();
+    expect(screen.getByTestId('viral-adapt-sourcing-continue')).toBeDisabled();
     fireEvent.change(screen.getByTestId('viral-adapt-paste-text'), {
       target: { value: '有正文' },
     });

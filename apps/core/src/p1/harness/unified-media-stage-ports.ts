@@ -12,7 +12,9 @@ import {
 	mapThinkingLevelToModelOptions,
 } from "@meiye/contracts";
 import { z } from "zod";
-
+import type { ContentPackageRevisionWritePort } from "../execution-spine/content-package-revision-port.js";
+import { isOfficialNeutralIdentity } from "../execution-spine/creation-execution-snapshot.js";
+import { JobRuntimeError } from "../job-runtime/job-contracts.js";
 import type {
 	MediaBoundedExecutionAuthorization,
 	ModelSupplyResult,
@@ -20,39 +22,13 @@ import type {
 	RouteSnapshot,
 } from "../model-supply/index.js";
 import type { ResolvedSkillInstruction } from "../skills/types.js";
-import { isOfficialNeutralIdentity } from "../execution-spine/creation-execution-snapshot.js";
-import type { ContentPackageRevisionWritePort } from "../execution-spine/content-package-revision-port.js";
-import { JobRuntimeError } from "../job-runtime/job-contracts.js";
-import {
-	compileExecutionBrief,
-	InMemoryStructuredNodeMetrics,
-	type ExecutionBrief,
-} from "./structured-nodes.js";
-import {
-	type HarnessExecutionChildObservabilityFactory,
-	type HarnessStructuredNodeRunnerFactory,
-	harnessExecutionChildLifecycleInput,
-	observeHarnessStructuredNodeRunner,
-	validateHarnessVisibleDelivery,
-} from "./production-stage-ports.js";
-import { validateHarnessPolicy } from "./policy-gates.js";
-import { authorizeHarnessAction } from "./action-registry.js";
 import { HARNESS_ACTION_CARRIERS } from "./action-carriers.js";
+import { authorizeHarnessAction } from "./action-registry.js";
 import {
-	harnessMediaJobTopic,
-	requireMeasuredVideoDuration,
-	type HarnessContextSnapshot,
-	type HarnessEffectRunner,
-	type HarnessMediaSelectionResult,
-	type HarnessMediaStagePorts,
-	type HarnessNoteBrief,
-	type HarnessNoteSelectionResult,
-	type HarnessNoteStagePorts,
-	type HarnessSignalReceiver,
-	type HarnessStagePorts,
-} from "./workflow-core.js";
-import type { HarnessWorkflowInput } from "./task-admission.js";
-import { assertHarnessExecutionAssemblyPinned } from "./task-admission.js";
+	BoundedExecutionResumeError,
+	type BoundedExecutionSuspension,
+	evaluateBoundedExecution,
+} from "./bounded-execution-controller.js";
 import {
 	assessImageExactText,
 	executeImageSelection,
@@ -65,6 +41,12 @@ import {
 } from "./image-intent-compiler.js";
 import { createMarketingPackageEvidence } from "./marketing-package-evidence.js";
 import {
+	type MediaBoundedCurrentBest,
+	mediaBoundedCurrentBestSchema,
+	mediaBoundedRequestFingerprint,
+	parseMediaBoundedResume,
+} from "./media-bounded-execution.js";
+import {
 	merchantExactTextMismatch,
 	merchantExactTextVerificationUnavailable,
 	merchantImageGenerationFailure,
@@ -72,6 +54,20 @@ import {
 	merchantNoteSelectionReason,
 	merchantVideoGenerationFailure,
 } from "./merchant-delivery-language.js";
+import type {
+	NoteMediaAdmissionPort,
+	NoteMediaAdmissionToken,
+} from "./note-media-admission.js";
+import {
+	NotePlanCompiler,
+	type NotePlanEnhancementJudgeState,
+	type NotePlanSettingsSource,
+} from "./note-plan-compiler.js";
+import {
+	configuredNotePlanEnhancementJudgeResolver,
+	ModelSupplyNotePlanStructuredPort,
+	type NotePlanEnhancementJudgeResolver,
+} from "./note-plan-structured-port.js";
 import {
 	assertImageRevisionAssemblyComplete,
 	assertImageTextNoteRevisionAssemblyComplete,
@@ -80,31 +76,41 @@ import {
 	buildImageTextNotePlatformVariants,
 	buildVideoPlatformVariants,
 } from "./output-compiler.js";
+import { validateHarnessPolicy } from "./policy-gates.js";
 import {
-	type NotePlanEnhancementJudgeState,
-	NotePlanCompiler,
-	type NotePlanSettingsSource,
-} from "./note-plan-compiler.js";
-import type {
-	NoteMediaAdmissionPort,
-	NoteMediaAdmissionToken,
-} from "./note-media-admission.js";
+	type HarnessExecutionChildObservabilityFactory,
+	type HarnessStructuredNodeRunnerFactory,
+	harnessExecutionChildLifecycleInput,
+	observeHarnessStructuredNodeRunner,
+	validateHarnessVisibleDelivery,
+} from "./production-stage-ports.js";
 import {
-	configuredNotePlanEnhancementJudgeResolver,
-	type NotePlanEnhancementJudgeResolver,
-	ModelSupplyNotePlanStructuredPort,
-} from "./note-plan-structured-port.js";
+	compileExecutionBrief,
+	type ExecutionBrief,
+	InMemoryStructuredNodeMetrics,
+} from "./structured-nodes.js";
+import type { HarnessWorkflowInput } from "./task-admission.js";
+import { assertHarnessExecutionAssemblyPinned } from "./task-admission.js";
 import {
-	BoundedExecutionResumeError,
-	evaluateBoundedExecution,
-	type BoundedExecutionSuspension,
-} from "./bounded-execution-controller.js";
+	materializeViralImageVisionPrompt,
+	parseViralAdaptPasteSource,
+	type ViralAdaptPlanContext,
+	type ViralImageVisionResult,
+	viralImageVisionResultSchema,
+} from "./viral-adapt.js";
 import {
-	type MediaBoundedCurrentBest,
-	mediaBoundedCurrentBestSchema,
-	mediaBoundedRequestFingerprint,
-	parseMediaBoundedResume,
-} from "./media-bounded-execution.js";
+	type HarnessContextSnapshot,
+	type HarnessEffectRunner,
+	type HarnessMediaSelectionResult,
+	type HarnessMediaStagePorts,
+	type HarnessNoteBrief,
+	type HarnessNoteSelectionResult,
+	type HarnessNoteStagePorts,
+	type HarnessSignalReceiver,
+	type HarnessStagePorts,
+	harnessMediaJobTopic,
+	requireMeasuredVideoDuration,
+} from "./workflow-core.js";
 
 const mediaBoundedRouteResultSchema = z
 	.object({
@@ -141,6 +147,12 @@ export interface HarnessMediaExecutionPort {
 		awaitSignal?: HarnessSignalReceiver;
 		runStep?: HarnessEffectRunner;
 	}): Promise<HarnessMediaSelectionResult>;
+	analyzeViralReferenceImages?(input: {
+		assetIds: readonly string[];
+		request: HarnessWorkflowInput;
+		shopContext: string;
+		workflowId: string;
+	}): Promise<ViralImageVisionResult>;
 	executeBounded?(input: {
 		brief: MediaBrief;
 		context: HarnessContextSnapshot;
@@ -153,8 +165,8 @@ export interface HarnessMediaExecutionPort {
 		boundedResume?: BoundedExecutionSuspension<unknown>;
 		boundedCheckpoint?: unknown;
 	}): Promise<
-		HarnessMediaSelectionResult |
-			BoundedExecutionSuspension<MediaBoundedCurrentBest>
+		| HarnessMediaSelectionResult
+		| BoundedExecutionSuspension<MediaBoundedCurrentBest>
 	>;
 }
 
@@ -195,9 +207,7 @@ export class UnifiedHarnessStagePorts
 		>[0],
 	) {
 		if (!this.copy.recordObservabilityEvent) {
-			throw new Error(
-				"Unified Harness requires canonical observability.",
-			);
+			throw new Error("Unified Harness requires canonical observability.");
 		}
 		return this.copy.recordObservabilityEvent(input);
 	}
@@ -495,7 +505,8 @@ export class UnifiedHarnessStagePorts
 	): Promise<HarnessNoteBrief> {
 		const settings = await this.requireNoteSettings().read();
 		const notePageBound = requireNotePageBound(input.request);
-		const compiler = this.noteCompiler(input);
+		const viralContext = await this.resolveViralAdaptPlanContext(input);
+		const compiler = this.noteCompiler(input, undefined, viralContext);
 		return {
 			kind: "image_text_note",
 			candidates: await compiler.compileDrafts({
@@ -722,6 +733,78 @@ export class UnifiedHarnessStagePorts
 		return this.noteSettings;
 	}
 
+	private async resolveViralAdaptPlanContext(
+		input: Parameters<HarnessNoteStagePorts["compileNoteBrief"]>[0],
+	): Promise<ViralAdaptPlanContext | undefined> {
+		const snapshot = requireSnapshot(input.request);
+		const source = parseViralAdaptPasteSource(input.request.rawInput);
+		const usesViralRecipe = snapshot.recipe.id === "recipe.viral_adapt";
+		if (!usesViralRecipe && !source) return undefined;
+		if (!usesViralRecipe || !source) {
+			throw new HarnessMediaExecutionError(
+				"VIRAL_ADAPT_RECIPE_MISMATCH",
+				"Viral adapt requires both the formal recipe.viral_adapt revision and a merchant paste source.",
+				409,
+			);
+		}
+		const frozenAssetIds = new Set(snapshot.sources.assets.map(({ id }) => id));
+		const authorizedAssetIds = new Set(
+			input.context.policyReferences.rightsRefs
+				.filter(
+					(reference) =>
+						reference.status === "authorized" &&
+						reference.allowedUses.includes("public_content"),
+				)
+				.map(({ assetId }) => assetId),
+		);
+		if (
+			source.imageAssetIds.some(
+				(assetId) =>
+					!frozenAssetIds.has(assetId) || !authorizedAssetIds.has(assetId),
+			)
+		) {
+			throw new HarnessMediaExecutionError(
+				"VIRAL_ADAPT_SOURCE_MISMATCH",
+				"Viral adapt reference images must belong to the frozen, authorized Composer source set.",
+				409,
+			);
+		}
+		const shopContext = viralAdaptShopContext({
+			allowedFactRefs: input.allowedFactRefs ?? [],
+			context: input.context,
+			intent: input.declaration.normalizedIntent,
+		});
+		if (source.imageAssetIds.length === 0) {
+			return { source, shopContext };
+		}
+		const analyzeViralReferenceImages =
+			this.media.analyzeViralReferenceImages?.bind(this.media);
+		if (!analyzeViralReferenceImages) {
+			throw new HarnessMediaExecutionError(
+				"VIRAL_IMAGE_VISION_UNAVAILABLE",
+				"Viral adapt reference-image analysis is unavailable.",
+				502,
+			);
+		}
+		const imageVision = await this.observeModelExecution(
+			{
+				request: input.request,
+				stage: "brief_compilation",
+				primitiveId: "harness-text-response:viral-image-vision",
+				baseIdempotencyKey: `harness-text-response:${input.workflowId}:viral-image-vision`,
+				promptKey: "xhsViralImageVision",
+			},
+			() =>
+				analyzeViralReferenceImages({
+					assetIds: source.imageAssetIds,
+					request: input.request,
+					shopContext,
+					workflowId: input.workflowId,
+				}),
+		);
+		return { source, shopContext, imageVision };
+	}
+
 	private noteCompiler(
 		input: {
 			workflowId: string;
@@ -731,6 +814,7 @@ export class UnifiedHarnessStagePorts
 			runStep?: HarnessEffectRunner;
 		},
 		enhancementJudge?: NotePlanEnhancementJudgeState,
+		viralContext?: ViralAdaptPlanContext,
 	) {
 		const snapshot = requireSnapshot(input.request);
 		const isXhsNote = snapshot.contentPackagePlatform === "xiaohongshu";
@@ -743,18 +827,15 @@ export class UnifiedHarnessStagePorts
 			isXhsNote && !snapshot.beautyVoiceRole
 				? frozenMarketingIdentityContext(input.context, snapshot)
 				: undefined;
-		const xhsGenerationParams =
-			isXhsNote
-				? {
-						...(snapshot.beautyVoiceRole
-							? { beautyVoiceRole: snapshot.beautyVoiceRole }
-							: {}),
-						...(marketingIdentityContext
-							? { marketingIdentityContext }
-							: {}),
-						topic: snapshot.intent.text,
-					}
-				: undefined;
+		const xhsGenerationParams = isXhsNote
+			? {
+					...(snapshot.beautyVoiceRole
+						? { beautyVoiceRole: snapshot.beautyVoiceRole }
+						: {}),
+					...(marketingIdentityContext ? { marketingIdentityContext } : {}),
+					topic: snapshot.intent.text,
+				}
+			: undefined;
 		return new NotePlanCompiler(
 			new ModelSupplyNotePlanStructuredPort(
 				runner,
@@ -780,8 +861,9 @@ export class UnifiedHarnessStagePorts
 								? { xhsViralRewrite: input.request.prompts.xhsViralRewrite }
 								: {}),
 						}
-						: undefined,
+					: undefined,
 				xhsGenerationParams,
+				viralContext,
 			),
 			{
 				generate: async ({ page, reason, evaluationReason }) => {
@@ -926,8 +1008,7 @@ function frozenMarketingIdentityContext(
 	snapshot: ReturnType<typeof requireSnapshot>,
 ) {
 	if (isOfficialNeutralIdentity(snapshot.identity)) return undefined;
-	const sourceRef =
-		`marketing_identity:${snapshot.identity.id}:${snapshot.identity.revision}`;
+	const sourceRef = `marketing_identity:${snapshot.identity.id}:${snapshot.identity.revision}`;
 	const registered = context.policyReferences.identityRefs.some(
 		(reference) =>
 			reference.id === sourceRef &&
@@ -1038,6 +1119,26 @@ function mediaPlatform(
 		return platform;
 	}
 	throw new Error(`Platform ${platform} does not support media delivery.`);
+}
+
+function viralAdaptShopContext(input: {
+	allowedFactRefs: readonly string[];
+	context: HarnessContextSnapshot;
+	intent: string;
+}) {
+	const allowed = new Set(input.allowedFactRefs);
+	const facts = (input.context.activeFacts ?? [])
+		.filter((fact) => allowed.has(fact.sourceRef) || allowed.has(fact.key))
+		.map((fact) => `${fact.key}: ${JSON.stringify(fact.value)}`);
+	const lines = [
+		`当前创作意图：${input.intent}`,
+		...(facts.length > 0
+			? facts
+			: input.allowedFactRefs.length > 0
+				? [`已授权事实引用：${input.allowedFactRefs.join(", ")}`]
+				: ["未提供可用门店事实；不得自行编造。"]),
+	];
+	return lines.join("\n").slice(0, 4_000);
 }
 
 export interface ImageExactTextVerifier {
@@ -1285,6 +1386,33 @@ function exactTextObservationFromResult(
 	};
 }
 
+function viralImageVisionFromResult(
+	result: ModelSupplyResult,
+): ViralImageVisionResult {
+	if (result.status !== "completed" || !result.text?.trim()) {
+		throw new HarnessMediaExecutionError(
+			"VIRAL_IMAGE_VISION_FAILED",
+			"Viral reference-image analysis did not return a structured observation.",
+			502,
+			result.jobId,
+			result.attempt.acceptance,
+		);
+	}
+	try {
+		return viralImageVisionResultSchema.parse(
+			JSON.parse(jsonObject(result.text)),
+		);
+	} catch (error) {
+		throw new HarnessMediaExecutionError(
+			"VIRAL_IMAGE_VISION_FAILED",
+			`Viral reference-image analysis returned invalid JSON: ${error instanceof Error ? error.message : "unknown error"}`,
+			502,
+			result.jobId,
+			result.attempt.acceptance,
+		);
+	}
+}
+
 export class FixtureImageExactTextVerifier implements ImageExactTextVerifier {
 	preauthorize() {
 		return { iterations: 0, costCents: 0 };
@@ -1347,6 +1475,82 @@ export class ModelSupplyHarnessMediaExecutionPort
 		private readonly noteAdmission?: NoteMediaAdmissionPort,
 		private readonly imageProfile: ImageModelRecipeProfile = IMAGE_MODEL_RECIPE_PROFILE,
 	) {}
+
+	async analyzeViralReferenceImages(input: {
+		assetIds: readonly string[];
+		request: HarnessWorkflowInput;
+		shopContext: string;
+		workflowId: string;
+	}): Promise<ViralImageVisionResult> {
+		assertHarnessExecutionAssemblyPinned(input.request);
+		const assetIds = [...new Set(input.assetIds.map((id) => id.trim()))].filter(
+			Boolean,
+		);
+		if (assetIds.length === 0) {
+			throw new HarnessMediaExecutionError(
+				"VIRAL_ADAPT_SOURCE_MISMATCH",
+				"Viral image vision requires at least one attached source asset.",
+				409,
+			);
+		}
+		const frozenAssetIds = new Set(
+			requireSnapshot(input.request).sources.assets.map(({ id }) => id),
+		);
+		if (assetIds.some((assetId) => !frozenAssetIds.has(assetId))) {
+			throw new HarnessMediaExecutionError(
+				"VIRAL_ADAPT_SOURCE_MISMATCH",
+				"Viral image vision cannot read an asset outside the frozen source set.",
+				409,
+			);
+		}
+		if (!this.models.freezeAutoTextRouteForExecution) {
+			throw new HarnessMediaExecutionError(
+				"VIRAL_IMAGE_VISION_UNAVAILABLE",
+				"Viral image vision requires an independently frozen text.respond route.",
+				502,
+			);
+		}
+		const promptBinding = input.request.prompts?.xhsViralImageVision;
+		if (!promptBinding) {
+			throw new HarnessMediaExecutionError(
+				"VIRAL_IMAGE_VISION_UNAVAILABLE",
+				"Viral image vision requires the frozen xhsViralImageVision prompt.",
+				502,
+			);
+		}
+		const frozenRouteSnapshot =
+			await this.models.freezeAutoTextRouteForExecution({
+				workspaceId: input.request.workspaceId,
+				dataClass: [...(input.request.frozenRouteSnapshot?.dataClass ?? [])],
+				promptRevision: promptBinding.version,
+			});
+		const result = await this.models.submit({
+			actorId: input.request.actorId,
+			billingTaskId: requireSnapshot(input.request).task.id,
+			billingQuoteRevision: requireSnapshot(input.request).quote.revision,
+			correlationId: input.workflowId,
+			dataClass: [...frozenRouteSnapshot.dataClass],
+			idempotencyKey: `harness-text-response:${input.workflowId}:viral-image-vision`,
+			input: {
+				inputAssets: assetIds.map((assetId) => ({
+					assetId,
+					role: "reference_image" as const,
+				})),
+			},
+			operation: "text.respond",
+			promptBinding,
+			prompt: materializeViralImageVisionPrompt({
+				assetIds,
+				shopContext: input.shopContext,
+				template: promptBinding.content,
+			}),
+			selection: structuredClone(frozenRouteSnapshot.requestedSelection),
+			productUsageQuantity: 0,
+			workspaceId: input.request.workspaceId,
+			frozenRouteSnapshot: structuredClone(frozenRouteSnapshot),
+		});
+		return viralImageVisionFromResult(result);
+	}
 
 	async execute(input: {
 		brief: MediaBrief;
@@ -1469,8 +1673,8 @@ export class ModelSupplyHarnessMediaExecutionPort
 		boundedResume?: BoundedExecutionSuspension<unknown>;
 		boundedCheckpoint?: unknown;
 	}): Promise<
-		HarnessMediaSelectionResult |
-			BoundedExecutionSuspension<MediaBoundedCurrentBest>
+		| HarnessMediaSelectionResult
+		| BoundedExecutionSuspension<MediaBoundedCurrentBest>
 	> {
 		const startedAt = performance.now();
 		let durableWaitMs = 0;
@@ -1550,17 +1754,17 @@ export class ModelSupplyHarnessMediaExecutionPort
 						input.brief.kind,
 					)
 				: mediaBoundedCurrentBestSchema.parse({
-					schemaVersion: "harness-media-current-best/v1",
-					requestFingerprint: fingerprint,
-					executionRootFingerprint,
-					kind: input.brief.kind,
-					phase: "before_submit",
-					attempts: [],
-					countedAttemptIds: [],
-					countedProviderCostIds: [],
-					attemptReceiptDigests: [],
-					providerCostReceiptDigests: [],
-				});
+						schemaVersion: "harness-media-current-best/v1",
+						requestFingerprint: fingerprint,
+						executionRootFingerprint,
+						kind: input.brief.kind,
+						phase: "before_submit",
+						attempts: [],
+						countedAttemptIds: [],
+						countedProviderCostIds: [],
+						attemptReceiptDigests: [],
+						providerCostReceiptDigests: [],
+					});
 		let activeSnapshot = snapshot;
 		const beforeSubmit = evaluateBoundedExecution(activeSnapshot, {
 			consumption: activeSnapshot.consumption,
@@ -1600,12 +1804,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 							attempt.jobId,
 						);
 					}
-					observeBoundedMediaReceipts(
-						activeSnapshot,
-						current,
-						completed,
-						0,
-					);
+					observeBoundedMediaReceipts(activeSnapshot, current, completed, 0);
 					return completed;
 				}),
 			);
@@ -1703,8 +1902,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 					input.runStep,
 				);
 				if (
-					durableBeforeResume.result.jobId !==
-						checkpoint.providerRoute.jobId ||
+					durableBeforeResume.result.jobId !== checkpoint.providerRoute.jobId ||
 					durableBeforeResume.providerLifecycleLatencyMs !==
 						checkpoint.providerRoute.lifecycleBaselineMs ||
 					mediaRouteDurableResultDigest(
@@ -1727,20 +1925,14 @@ export class ModelSupplyHarnessMediaExecutionPort
 					input.runStep,
 				);
 				result = resumed.result;
-				if (
-					result.status === "unknown" &&
-					this.models.getDurableMediaJob
-				) {
+				if (result.status === "unknown" && this.models.getDurableMediaJob) {
 					if (input.awaitSignal) {
 						const waitStartedAt = performance.now();
 						await input.awaitSignal(
 							harnessMediaJobTopic(checkpoint.providerRoute.jobId),
 							{ timeoutSeconds: MEDIA_JOB_WAIT_TIMEOUT_SECONDS },
 						);
-						durableWaitMs += Math.max(
-							0,
-							performance.now() - waitStartedAt,
-						);
+						durableWaitMs += Math.max(0, performance.now() - waitStartedAt);
 					}
 					const durable = await this.runEffect(
 						`reconcile:${checkpoint.providerRoute.jobId}`,
@@ -1748,7 +1940,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 							this.models.getDurableMediaJob!(
 								input.request.workspaceId,
 								checkpoint.providerRoute!.jobId,
-						),
+							),
 						input.runStep,
 					);
 					result = withObservedProviderLifecycle(durable);
@@ -1792,10 +1984,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 				activeSnapshot = routeSuspension.snapshot;
 				return { suspension: routeSuspension };
 			}
-			const completed = requireCompletedMediaResult(
-				result,
-				input.brief.kind,
-			);
+			const completed = requireCompletedMediaResult(result, input.brief.kind);
 			const activeMs = Math.max(
 				0,
 				Math.ceil(performance.now() - startedAt - durableWaitMs),
@@ -1827,8 +2016,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 				countedAttemptIds: observed.countedAttemptIds,
 				countedProviderCostIds: observed.countedProviderCostIds,
 				attemptReceiptDigests: observed.attemptReceiptDigests,
-				providerCostReceiptDigests:
-					observed.providerCostReceiptDigests,
+				providerCostReceiptDigests: observed.providerCostReceiptDigests,
 			});
 			const decision = evaluateBoundedExecution(activeSnapshot, {
 				consumption: observed.consumption,
@@ -1856,9 +2044,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 			activeSnapshot = decision.snapshot;
 			return decision;
 		};
-		const accountExactTextResult = (
-			result: ModelSupplyResult | undefined,
-		) => {
+		const accountExactTextResult = (result: ModelSupplyResult | undefined) => {
 			if (!result) return undefined;
 			const activeMs = Math.max(
 				0,
@@ -1876,8 +2062,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 				countedAttemptIds: observed.countedAttemptIds,
 				countedProviderCostIds: observed.countedProviderCostIds,
 				attemptReceiptDigests: observed.attemptReceiptDigests,
-				providerCostReceiptDigests:
-					observed.providerCostReceiptDigests,
+				providerCostReceiptDigests: observed.providerCostReceiptDigests,
 			});
 			const decision = evaluateBoundedExecution(activeSnapshot, {
 				consumption: observed.consumption,
@@ -2291,7 +2476,10 @@ export class ModelSupplyHarnessMediaExecutionPort
 								);
 								return withObservedProviderLifecycle(durable);
 							} catch (error) {
-								if (!(error instanceof JobRuntimeError) || error.code !== "NOT_FOUND") {
+								if (
+									!(error instanceof JobRuntimeError) ||
+									error.code !== "NOT_FOUND"
+								) {
 									throw error;
 								}
 								if (executionAssemblyRequired) {
@@ -2328,16 +2516,16 @@ export class ModelSupplyHarnessMediaExecutionPort
 				await awaitSignal(harnessMediaJobTopic(result.jobId), {
 					timeoutSeconds: MEDIA_JOB_WAIT_TIMEOUT_SECONDS,
 				});
-				onDurableWait?.(
-					Math.max(0, performance.now() - waitStartedAt),
-				);
+				onDurableWait?.(Math.max(0, performance.now() - waitStartedAt));
 			}
 			const jobId = result.jobId;
 			result = await this.runEffect(
 				`reconcile:${jobId}`,
 				async () => {
-					const durable = await this.models
-						.getDurableMediaJob!(submission.workspaceId, jobId);
+					const durable = await this.models.getDurableMediaJob!(
+						submission.workspaceId,
+						jobId,
+					);
 					return withObservedProviderLifecycle(durable);
 				},
 				runStep,
@@ -2464,7 +2652,11 @@ export class HarnessMediaExecutionError extends Error {
 			| "MEDIA_GENERATION_FAILED"
 			| "MEDIA_RECONCILIATION_PENDING"
 			| "MEDIA_SELECTION_MISSING"
-			| "MEDIA_SNAPSHOT_MISMATCH",
+			| "MEDIA_SNAPSHOT_MISMATCH"
+			| "VIRAL_ADAPT_RECIPE_MISMATCH"
+			| "VIRAL_ADAPT_SOURCE_MISMATCH"
+			| "VIRAL_IMAGE_VISION_FAILED"
+			| "VIRAL_IMAGE_VISION_UNAVAILABLE",
 		message: string,
 		readonly status: 202 | 409 | 502,
 		readonly jobId?: string,
@@ -2581,10 +2773,7 @@ function mediaRouteBoundedSuspension(
 			"The durable media route suspension does not match its bounded authorization.",
 		);
 	}
-	const attemptsById = uniqueReceiptMap(
-		result.attempts,
-		"provider attempt",
-	);
+	const attemptsById = uniqueReceiptMap(result.attempts, "provider attempt");
 	const consumedAttemptIds = new Set(bounded.consumedAttemptIds);
 	if (
 		consumedAttemptIds.size !== bounded.consumedAttemptIds.length ||
@@ -2605,16 +2794,10 @@ function mediaRouteBoundedSuspension(
 			"The durable media route suspension iteration consumption is inconsistent.",
 		);
 	}
-	const costsById = uniqueReceiptMap(
-		result.providerCosts,
-		"provider cost",
-	);
-	const consumedProviderCostIds = new Set(
-		bounded.consumedProviderCostIds,
-	);
+	const costsById = uniqueReceiptMap(result.providerCosts, "provider cost");
+	const consumedProviderCostIds = new Set(bounded.consumedProviderCostIds);
 	if (
-		consumedProviderCostIds.size !==
-			bounded.consumedProviderCostIds.length ||
+		consumedProviderCostIds.size !== bounded.consumedProviderCostIds.length ||
 		bounded.consumedProviderCostIds.some((id) => !costsById.has(id))
 	) {
 		throw new Error(
@@ -2652,10 +2835,7 @@ function mediaRouteBoundedSuspension(
 		bounded.consumedAttemptIds.map((id) => attemptsById.get(id)!),
 	);
 	const providerCostReceiptDigests = new Map(
-		checkpoint.providerCostReceiptDigests.map(({ id, digest }) => [
-			id,
-			digest,
-		]),
+		checkpoint.providerCostReceiptDigests.map(({ id, digest }) => [id, digest]),
 	);
 	verifyAndRememberReceiptDigests(
 		providerCostReceiptDigests,
@@ -2692,9 +2872,10 @@ function mediaRouteBoundedSuspension(
 				...bounded.consumedProviderCostIds,
 			]),
 		],
-		attemptReceiptDigests: [...attemptReceiptDigests].map(
-			([id, digest]) => ({ id, digest }),
-		),
+		attemptReceiptDigests: [...attemptReceiptDigests].map(([id, digest]) => ({
+			id,
+			digest,
+		})),
 		providerCostReceiptDigests: [...providerCostReceiptDigests].map(
 			([id, digest]) => ({ id, digest }),
 		),
@@ -2748,9 +2929,7 @@ function observeBoundedMediaReceipts(
 			"The durable media provider lifecycle cannot move behind its pinned baseline.",
 		);
 	}
-	const countedProviderCostIds = new Set(
-		checkpoint.countedProviderCostIds,
-	);
+	const countedProviderCostIds = new Set(checkpoint.countedProviderCostIds);
 	const costsById = uniqueReceiptMap(
 		[result.providerCost, ...result.providerCosts],
 		"provider cost",
@@ -2764,10 +2943,7 @@ function observeBoundedMediaReceipts(
 	const observedCosts = [...costsById.values()].filter(
 		(cost) => cost.status === "observed",
 	);
-	verifyAndRememberReceiptDigests(
-		providerCostReceiptDigests,
-		observedCosts,
-	);
+	verifyAndRememberReceiptDigests(providerCostReceiptDigests, observedCosts);
 	const newCosts = observedCosts.filter(
 		(cost) => !countedProviderCostIds.has(cost.id),
 	);
@@ -2828,9 +3004,10 @@ function observeBoundedMediaReceipts(
 		},
 		countedAttemptIds: [...countedAttemptIds],
 		countedProviderCostIds: [...countedProviderCostIds],
-		attemptReceiptDigests: [...attemptReceiptDigests].map(
-			([id, digest]) => ({ id, digest }),
-		),
+		attemptReceiptDigests: [...attemptReceiptDigests].map(([id, digest]) => ({
+			id,
+			digest,
+		})),
 		providerCostReceiptDigests: [...providerCostReceiptDigests].map(
 			([id, digest]) => ({ id, digest }),
 		),
@@ -2919,10 +3096,7 @@ function uniqueReceiptMap<Receipt extends { id: string }>(
 	const byId = new Map<string, Receipt>();
 	for (const receipt of receipts) {
 		const previous = byId.get(receipt.id);
-		if (
-			previous &&
-			JSON.stringify(previous) !== JSON.stringify(receipt)
-		) {
+		if (previous && JSON.stringify(previous) !== JSON.stringify(receipt)) {
 			throw new Error(
 				`Bounded media ${label} receipt identifiers cannot conflict.`,
 			);

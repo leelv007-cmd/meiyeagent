@@ -19,8 +19,8 @@ export type ViralOpenCliLiveGateView = {
 
 export type ViralPasteDraft = {
   noteText: string;
-  /** Local file names or asset ids the merchant attached (upload track). */
-  imageLabels: readonly string[];
+  /** Real Composer asset ids that completed upload + rights attachment. */
+  imageAssetIds: readonly string[];
 };
 
 export type ViralAdaptConfirmView = {
@@ -68,7 +68,7 @@ export function createViralAdaptJourneyState(input?: {
 }): ViralAdaptJourneyState {
   return {
     phase: 'idle',
-    draft: { noteText: '', imageLabels: [] },
+    draft: { noteText: '', imageAssetIds: [] },
     liveGate: defaultViralOpenCliLiveGate(input?.evidencePresent === true),
     confirm: null,
     submitIntent: null,
@@ -100,10 +100,10 @@ export function updateViralPasteDraft(
     draft: {
       noteText:
         patch.noteText !== undefined ? patch.noteText : state.draft.noteText,
-      imageLabels:
-        patch.imageLabels !== undefined
-          ? patch.imageLabels
-          : state.draft.imageLabels,
+      imageAssetIds:
+        patch.imageAssetIds !== undefined
+          ? [...new Set(patch.imageAssetIds.filter(Boolean))]
+          : state.draft.imageAssetIds,
     },
     confirm: null,
     submitIntent: null,
@@ -128,7 +128,7 @@ export function projectViralAdaptConfirmView(input: {
   aspectRatio?: string;
 }): ViralAdaptConfirmView {
   const noteText = input.draft.noteText.trim();
-  const imageCount = input.draft.imageLabels.length;
+  const imageCount = input.draft.imageAssetIds.length;
   const hasImages = imageCount > 0;
   const sourceLabel = hasImages ? '粘贴笔记文字 + 上传图片' : '粘贴笔记文字';
   return {
@@ -185,8 +185,8 @@ export function advanceViralSourcingToConfirm(
 export function composeViralAdaptSubmitIntent(draft: ViralPasteDraft): string {
   const noteText = draft.noteText.replace(/\r\n/gu, '\n').trim();
   const images =
-    draft.imageLabels.length > 0
-      ? `\n参考图：${draft.imageLabels.join(', ')}`
+    draft.imageAssetIds.length > 0
+      ? `\n参考图资产：${draft.imageAssetIds.join(', ')}`
       : '';
   return [
     VIRAL_ADAPT_SOURCE_MARKER,

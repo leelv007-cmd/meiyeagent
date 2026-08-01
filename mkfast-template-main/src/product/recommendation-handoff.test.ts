@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import type { BrowserSurfaceProjection } from '@meiye/contracts';
+
 import {
   applyRecommendationHandoff,
+  applyRecommendationHandoffWithRecipe,
   buildRecommendationHandoff,
 } from './recommendation-handoff';
 import { createComposerLensState } from './composer/lens-state-machine';
@@ -38,4 +41,103 @@ test('P0-4: video outputHint is respected', () => {
   const handoff = buildRecommendationHandoff(REC, 'video');
   const next = applyRecommendationHandoff(createComposerLensState(), handoff);
   assert.equal(next.lensId, 'video');
+});
+
+const viralSurface = {
+  surfaceId: 'surface.home.launch',
+  revision: 9,
+  revisionId: 'surface.home.launch@9',
+  status: 'published',
+  recipeRefs: [
+    {
+      recipeRevisionId: 'recipe.default_note@4',
+      lensId: 'image_text',
+      order: 1,
+      featured: true,
+      visible: true,
+    },
+    {
+      recipeRevisionId: 'recipe.viral_adapt@2',
+      lensId: 'image_text',
+      order: 2,
+      featured: false,
+      visible: true,
+    },
+  ],
+  toolEntryRefs: [],
+  contentHash: 'surface-hash',
+  recipes: [
+    {
+      recipeId: 'recipe.default_note',
+      revisionId: 'recipe.default_note@4',
+      lensId: 'image_text',
+      status: 'published',
+      presentation: { title: '默认图文', summary: '默认路径' },
+      delivery: {},
+      contextPatches: {},
+      sourceRequirements: [],
+      modelPolicy: { mode: 'auto' },
+      settingsPatches: {},
+      promptRevisionRef: 'prompt.default@4',
+      targetWorkspaceKind: 'image_text',
+      contentHash: 'default-hash',
+      revision: 4,
+    },
+    {
+      recipeId: 'recipe.viral_adapt',
+      revisionId: 'recipe.viral_adapt@2',
+      lensId: 'image_text',
+      status: 'published',
+      presentation: { title: '爆款复刻', summary: '粘贴轨' },
+      delivery: {
+        contentPackagePlatform: 'xiaohongshu',
+        distributionTarget: 'export',
+        deliverableKind: 'note',
+      },
+      contextPatches: {},
+      sourceRequirements: [],
+      modelPolicy: { mode: 'auto' },
+      settingsPatches: { variantKey: 'viral_adapt' },
+      promptRevisionRef: 'prompt.viral_adapt@2',
+      targetWorkspaceKind: 'image_text',
+      contentHash: 'viral-hash',
+      revision: 2,
+    },
+  ],
+} satisfies BrowserSurfaceProjection;
+
+test('viral recommendation binds the exact visible formal recipe, never the first note recipe', () => {
+  const outcome = applyRecommendationHandoffWithRecipe({
+    state: createComposerLensState(),
+    handoff: {
+      intent: '爆款复刻粘贴轨',
+      outputHint: 'image_text',
+      recipeChipId: 'viral_adapt',
+    },
+    surface: viralSurface,
+  });
+
+  assert.equal(outcome.kind, 'recipe_bound');
+  assert.equal(outcome.state.draft.recipeRevisionId, 'recipe.viral_adapt@2');
+  assert.equal(outcome.state.draft.userText, '爆款复刻粘贴轨');
+});
+
+test('viral recommendation fails closed when the formal recipe is not visible', () => {
+  const outcome = applyRecommendationHandoffWithRecipe({
+    state: createComposerLensState(),
+    handoff: {
+      intent: '爆款复刻粘贴轨',
+      outputHint: 'image_text',
+      recipeChipId: 'viral_adapt',
+    },
+    surface: {
+      ...viralSurface,
+      recipeRefs: viralSurface.recipeRefs.filter(
+        ({ recipeRevisionId }) => recipeRevisionId !== 'recipe.viral_adapt@2'
+      ),
+    },
+  });
+
+  assert.equal(outcome.kind, 'recipe_unavailable');
+  assert.equal(outcome.state.draft.recipeRevisionId, null);
 });

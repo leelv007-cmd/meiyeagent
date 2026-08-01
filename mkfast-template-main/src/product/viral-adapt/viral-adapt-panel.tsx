@@ -16,7 +16,7 @@ export type ViralAdaptPanelProps = {
   onSourcingCancel: () => void;
   onConfirm: () => void;
   onConfirmBack: () => void;
-  onAddImageLabel?: (label: string) => void;
+  onRequestImageUpload?: () => void;
   busy?: boolean;
 };
 
@@ -27,17 +27,17 @@ export function ViralAdaptPanel({
   onSourcingCancel,
   onConfirm,
   onConfirmBack,
-  onAddImageLabel,
+  onRequestImageUpload,
   busy = false,
 }: ViralAdaptPanelProps) {
   if (state.phase === 'sourcing') {
     return (
       <ViralAdaptSourcingCard
         busy={busy}
-        onAddImageLabel={onAddImageLabel}
         onCancel={onSourcingCancel}
         onContinue={onSourcingContinue}
         onDraftChange={onDraftChange}
+        onRequestImageUpload={onRequestImageUpload}
         state={state}
       />
     );

@@ -6,7 +6,11 @@
  * (must not hardcode `copy`).
  */
 
-import type { CreationLensId, TodayRecommendation } from '@meiye/contracts';
+import type {
+  BrowserSurfaceProjection,
+  CreationLensId,
+  TodayRecommendation,
+} from '@meiye/contracts';
 
 import { todayRecommendationIntent } from '@/product/creation-entry-model';
 import {
@@ -14,6 +18,8 @@ import {
   updateUserText,
   type ComposerLensState,
 } from '@/product/composer/lens-state-machine';
+import { browserRecipeToTarget } from '@/product/composer/launch-card-seeds';
+import { applyRecipeToLensState } from '@/product/composer/recipe-apply';
 
 export type RecommendationHandoff = {
   intent: string;
@@ -51,4 +57,44 @@ export function applyRecommendationHandoff(
     ? selectLens(state, handoff.outputHint)
     : state;
   return updateUserText(withLens, handoff.intent);
+}
+
+export type RecommendationRecipeHandoffOutcome =
+  | { kind: 'prefilled'; state: ComposerLensState }
+  | { kind: 'recipe_bound'; state: ComposerLensState }
+  | { kind: 'recipe_unavailable'; state: ComposerLensState };
+
+/**
+ * Bind structured chips to their exact visible, published server Recipe.
+ * Missing catalog state fails closed; it must never drift to the first recipe
+ * sharing the same lens.
+ */
+export function applyRecommendationHandoffWithRecipe(input: {
+  state: ComposerLensState;
+  handoff: RecommendationHandoff;
+  surface?: BrowserSurfaceProjection;
+}): RecommendationRecipeHandoffOutcome {
+  const prefilled = applyRecommendationHandoff(input.state, input.handoff);
+  if (input.handoff.recipeChipId !== 'viral_adapt') {
+    return { kind: 'prefilled', state: prefilled };
+  }
+  const surface = input.surface;
+  if (!surface) return { kind: 'recipe_unavailable', state: prefilled };
+  const visibleRevisions = new Set(
+    surface.recipeRefs
+      .filter((reference) => reference.visible)
+      .map((reference) => reference.recipeRevisionId)
+  );
+  const recipe = surface.recipes.find(
+    (candidate) =>
+      candidate.recipeId === 'recipe.viral_adapt' &&
+      candidate.lensId === 'image_text' &&
+      candidate.status === 'published' &&
+      visibleRevisions.has(candidate.revisionId)
+  );
+  if (!recipe) return { kind: 'recipe_unavailable', state: prefilled };
+  return {
+    kind: 'recipe_bound',
+    state: applyRecipeToLensState(prefilled, browserRecipeToTarget(recipe)),
+  };
 }

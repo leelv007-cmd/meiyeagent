@@ -1,21 +1,21 @@
-import { createHash } from 'node:crypto';
+import { createHash } from "node:crypto";
 import {
-  MODEL_CAPABILITY_VOCABULARY_VERSION,
-  type ModelCapabilityRequirementAxis,
-} from '@meiye/contracts';
+	MODEL_CAPABILITY_VOCABULARY_VERSION,
+	type ModelCapabilityRequirementAxis,
+} from "@meiye/contracts";
 import type {
-  LanguageModelOperation,
-  ModelSupplyPromptResolver,
-} from '../model-supply/index.js';
+	LanguageModelOperation,
+	ModelSupplyPromptResolver,
+} from "../model-supply/index.js";
 
 const STRUCTURED_TEXT_REQUIREMENT = {
-  requiredProtocolCapabilities: ['structured-output'],
-  requiredModalities: ['text/plain'],
+	requiredProtocolCapabilities: ["structured-output"],
+	requiredModalities: ["text/plain"],
 } as const;
 
 const PLAIN_TEXT_REQUIREMENT = {
-  requiredProtocolCapabilities: [],
-  requiredModalities: ['text/plain'],
+	requiredProtocolCapabilities: [],
+	requiredModalities: ["text/plain"],
 } as const;
 
 /**
@@ -33,141 +33,141 @@ const PLAIN_TEXT_REQUIREMENT = {
  *   requires every key; pilot still falls back to builtin-v1.
  */
 export const HARNESS_PROMPT_SITES = {
-  intentNaming: {
-    name: 'harness/intent-naming',
-    operation: 'text.respond',
-    requirement: STRUCTURED_TEXT_REQUIREMENT,
-  },
-  briefCompilation: {
-    name: 'harness/brief-copy',
-    operation: 'text.respond',
-    requirement: STRUCTURED_TEXT_REQUIREMENT,
-  },
-  briefImage: {
-    name: 'harness/brief-image',
-    operation: 'text.respond',
-    requirement: STRUCTURED_TEXT_REQUIREMENT,
-  },
-  briefVideo: {
-    name: 'harness/brief-video',
-    operation: 'text.respond',
-    requirement: STRUCTURED_TEXT_REQUIREMENT,
-  },
-  factSatisfaction: {
-    name: 'harness/fact-satisfaction',
-    operation: 'text.respond',
-    requirement: STRUCTURED_TEXT_REQUIREMENT,
-  },
-  factCriticality: {
-    name: 'harness/fact-criticality',
-    operation: 'text.respond',
-    requirement: STRUCTURED_TEXT_REQUIREMENT,
-  },
-  copyCandidate: {
-    name: 'harness/copy-candidate',
-    operation: 'text.respond',
-    requirement: STRUCTURED_TEXT_REQUIREMENT,
-  },
-  notePlan: {
-    name: 'harness/note-plan',
-    operation: 'text.respond',
-    requirement: STRUCTURED_TEXT_REQUIREMENT,
-  },
-  noteTextBlock: {
-    name: 'harness/note-text-block',
-    operation: 'text.respond',
-    requirement: STRUCTURED_TEXT_REQUIREMENT,
-  },
-  noteConsistency: {
-    name: 'harness/note-consistency',
-    operation: 'text.respond',
-    requirement: STRUCTURED_TEXT_REQUIREMENT,
-  },
-  destinationMapping: {
-    name: 'harness/destination-mapping',
-    operation: 'text.respond',
-    requirement: STRUCTURED_TEXT_REQUIREMENT,
-  },
-  copyGeneration: {
-    name: 'harness/copy-generation',
-    operation: 'copy.generate',
-    requirement: STRUCTURED_TEXT_REQUIREMENT,
-  },
-  platformAdaptation: {
-    name: 'harness/platform-adaptation',
-    operation: 'copy.adapt',
-    requirement: STRUCTURED_TEXT_REQUIREMENT,
-  },
-  textResponse: {
-    name: 'harness/text-response',
-    operation: 'text.respond',
-    requirement: PLAIN_TEXT_REQUIREMENT,
-  },
-  // --- XHS vertical (beauty-rewritten asset transplant; issue #315) ---
-  xhsOutline: {
-    name: 'harness/xhs-outline',
-    operation: 'text.respond',
-    requirement: STRUCTURED_TEXT_REQUIREMENT,
-  },
-  xhsContent: {
-    name: 'harness/xhs-content',
-    operation: 'text.respond',
-    requirement: STRUCTURED_TEXT_REQUIREMENT,
-  },
-  xhsNoteGen: {
-    name: 'harness/xhs-note-gen',
-    operation: 'text.respond',
-    requirement: STRUCTURED_TEXT_REQUIREMENT,
-  },
-  xhsImagePrompt: {
-    name: 'harness/xhs-image-prompt',
-    operation: 'text.respond',
-    requirement: STRUCTURED_TEXT_REQUIREMENT,
-  },
-  xhsCoverPrompt: {
-    name: 'harness/xhs-cover-prompt',
-    operation: 'text.respond',
-    requirement: STRUCTURED_TEXT_REQUIREMENT,
-  },
-  xhsStyleAnalysis: {
-    name: 'harness/xhs-style-analysis',
-    operation: 'text.respond',
-    // Base pin stays text/plain. Callers that pass reference images add
-    // image/* via harnessPromptCapabilityRequirement(key, { referenceImage: true }).
-    requirement: STRUCTURED_TEXT_REQUIREMENT,
-  },
-  // P2-12 / #324 — viral adapt (paste-track first). Names locked by #315 §3.
-  xhsViralRewrite: {
-    name: 'harness/xhs-viral-rewrite',
-    operation: 'text.respond',
-    requirement: STRUCTURED_TEXT_REQUIREMENT,
-  },
-  xhsViralImageVision: {
-    name: 'harness/xhs-viral-image-vision',
-    operation: 'text.respond',
-    // Base pin text/plain; callers with reference images add image/* dynamically.
-    requirement: STRUCTURED_TEXT_REQUIREMENT,
-  },
+	intentNaming: {
+		name: "harness/intent-naming",
+		operation: "text.respond",
+		requirement: STRUCTURED_TEXT_REQUIREMENT,
+	},
+	briefCompilation: {
+		name: "harness/brief-copy",
+		operation: "text.respond",
+		requirement: STRUCTURED_TEXT_REQUIREMENT,
+	},
+	briefImage: {
+		name: "harness/brief-image",
+		operation: "text.respond",
+		requirement: STRUCTURED_TEXT_REQUIREMENT,
+	},
+	briefVideo: {
+		name: "harness/brief-video",
+		operation: "text.respond",
+		requirement: STRUCTURED_TEXT_REQUIREMENT,
+	},
+	factSatisfaction: {
+		name: "harness/fact-satisfaction",
+		operation: "text.respond",
+		requirement: STRUCTURED_TEXT_REQUIREMENT,
+	},
+	factCriticality: {
+		name: "harness/fact-criticality",
+		operation: "text.respond",
+		requirement: STRUCTURED_TEXT_REQUIREMENT,
+	},
+	copyCandidate: {
+		name: "harness/copy-candidate",
+		operation: "text.respond",
+		requirement: STRUCTURED_TEXT_REQUIREMENT,
+	},
+	notePlan: {
+		name: "harness/note-plan",
+		operation: "text.respond",
+		requirement: STRUCTURED_TEXT_REQUIREMENT,
+	},
+	noteTextBlock: {
+		name: "harness/note-text-block",
+		operation: "text.respond",
+		requirement: STRUCTURED_TEXT_REQUIREMENT,
+	},
+	noteConsistency: {
+		name: "harness/note-consistency",
+		operation: "text.respond",
+		requirement: STRUCTURED_TEXT_REQUIREMENT,
+	},
+	destinationMapping: {
+		name: "harness/destination-mapping",
+		operation: "text.respond",
+		requirement: STRUCTURED_TEXT_REQUIREMENT,
+	},
+	copyGeneration: {
+		name: "harness/copy-generation",
+		operation: "copy.generate",
+		requirement: STRUCTURED_TEXT_REQUIREMENT,
+	},
+	platformAdaptation: {
+		name: "harness/platform-adaptation",
+		operation: "copy.adapt",
+		requirement: STRUCTURED_TEXT_REQUIREMENT,
+	},
+	textResponse: {
+		name: "harness/text-response",
+		operation: "text.respond",
+		requirement: PLAIN_TEXT_REQUIREMENT,
+	},
+	// --- XHS vertical (beauty-rewritten asset transplant; issue #315) ---
+	xhsOutline: {
+		name: "harness/xhs-outline",
+		operation: "text.respond",
+		requirement: STRUCTURED_TEXT_REQUIREMENT,
+	},
+	xhsContent: {
+		name: "harness/xhs-content",
+		operation: "text.respond",
+		requirement: STRUCTURED_TEXT_REQUIREMENT,
+	},
+	xhsNoteGen: {
+		name: "harness/xhs-note-gen",
+		operation: "text.respond",
+		requirement: STRUCTURED_TEXT_REQUIREMENT,
+	},
+	xhsImagePrompt: {
+		name: "harness/xhs-image-prompt",
+		operation: "text.respond",
+		requirement: STRUCTURED_TEXT_REQUIREMENT,
+	},
+	xhsCoverPrompt: {
+		name: "harness/xhs-cover-prompt",
+		operation: "text.respond",
+		requirement: STRUCTURED_TEXT_REQUIREMENT,
+	},
+	xhsStyleAnalysis: {
+		name: "harness/xhs-style-analysis",
+		operation: "text.respond",
+		// Base pin stays text/plain. Callers that pass reference images add
+		// image/* via harnessPromptCapabilityRequirement(key, { referenceImage: true }).
+		requirement: STRUCTURED_TEXT_REQUIREMENT,
+	},
+	// P2-12 / #324 — viral adapt (paste-track first). Names locked by #315 §3.
+	xhsViralRewrite: {
+		name: "harness/xhs-viral-rewrite",
+		operation: "text.respond",
+		requirement: STRUCTURED_TEXT_REQUIREMENT,
+	},
+	xhsViralImageVision: {
+		name: "harness/xhs-viral-image-vision",
+		operation: "text.respond",
+		// Base pin text/plain; callers with reference images add image/* dynamically.
+		requirement: STRUCTURED_TEXT_REQUIREMENT,
+	},
 } as const;
 
 export type HarnessPromptKey = keyof typeof HARNESS_PROMPT_SITES;
 
 /** Historical D-149 core pipeline sites (immutable key set for docs/ops). */
 export const HARNESS_CORE_PROMPT_KEYS = [
-  'intentNaming',
-  'briefCompilation',
-  'briefImage',
-  'briefVideo',
-  'factSatisfaction',
-  'factCriticality',
-  'copyCandidate',
-  'notePlan',
-  'noteTextBlock',
-  'noteConsistency',
-  'destinationMapping',
-  'copyGeneration',
-  'platformAdaptation',
-  'textResponse',
+	"intentNaming",
+	"briefCompilation",
+	"briefImage",
+	"briefVideo",
+	"factSatisfaction",
+	"factCriticality",
+	"copyCandidate",
+	"notePlan",
+	"noteTextBlock",
+	"noteConsistency",
+	"destinationMapping",
+	"copyGeneration",
+	"platformAdaptation",
+	"textResponse",
 ] as const satisfies readonly HarnessPromptKey[];
 
 /**
@@ -175,80 +175,80 @@ export const HARNESS_CORE_PROMPT_KEYS = [
  * (Empty-key registration was deferred in #315 until a consumer existed.)
  */
 export const XHS_VERTICAL_PROMPT_KEYS = [
-  'xhsOutline',
-  'xhsContent',
-  'xhsNoteGen',
-  'xhsImagePrompt',
-  'xhsCoverPrompt',
-  'xhsStyleAnalysis',
-  'xhsViralRewrite',
-  'xhsViralImageVision',
+	"xhsOutline",
+	"xhsContent",
+	"xhsNoteGen",
+	"xhsImagePrompt",
+	"xhsCoverPrompt",
+	"xhsStyleAnalysis",
+	"xhsViralRewrite",
+	"xhsViralImageVision",
 ] as const satisfies readonly HarnessPromptKey[];
 
 export const HARNESS_PROMPT_SITE_COUNT =
-  HARNESS_CORE_PROMPT_KEYS.length + XHS_VERTICAL_PROMPT_KEYS.length;
+	HARNESS_CORE_PROMPT_KEYS.length + XHS_VERTICAL_PROMPT_KEYS.length;
 
 export const HARNESS_LANGFUSE_PROMPT_NAMES = Object.fromEntries(
-  Object.entries(HARNESS_PROMPT_SITES).map(([key, site]) => [key, site.name]),
+	Object.entries(HARNESS_PROMPT_SITES).map(([key, site]) => [key, site.name]),
 ) as {
-  [Key in HarnessPromptKey]: (typeof HARNESS_PROMPT_SITES)[Key]['name'];
+	[Key in HarnessPromptKey]: (typeof HARNESS_PROMPT_SITES)[Key]["name"];
 };
 
 export function harnessPromptCapabilityRequirement(
-  key: HarnessPromptKey,
-  dynamic: { referenceImage?: boolean } = {},
+	key: HarnessPromptKey,
+	dynamic: { referenceImage?: boolean } = {},
 ): ModelCapabilityRequirementAxis {
-  const site = HARNESS_PROMPT_SITES[key];
-  return {
-    axisId: key,
-    vocabularyVersion: MODEL_CAPABILITY_VOCABULARY_VERSION,
-    requiredProtocolCapabilities: [
-      ...site.requirement.requiredProtocolCapabilities,
-    ],
-    requiredModalities: [
-      ...site.requirement.requiredModalities,
-      ...(dynamic.referenceImage ? (['image/*'] as const) : []),
-    ],
-    requiredBusinessTags: [],
-    requiredModalityCapabilities: [],
-    unknownPolicy: 'conservative_always_available',
-  };
+	const site = HARNESS_PROMPT_SITES[key];
+	return {
+		axisId: key,
+		vocabularyVersion: MODEL_CAPABILITY_VOCABULARY_VERSION,
+		requiredProtocolCapabilities: [
+			...site.requirement.requiredProtocolCapabilities,
+		],
+		requiredModalities: [
+			...site.requirement.requiredModalities,
+			...(dynamic.referenceImage ? (["image/*"] as const) : []),
+		],
+		requiredBusinessTags: [],
+		requiredModalityCapabilities: [],
+		unknownPolicy: "conservative_always_available",
+	};
 }
 
-export type LangfusePromptPolicy = 'pilot' | 'strict';
+export type LangfusePromptPolicy = "pilot" | "strict";
 
 export const HARNESS_BUILTIN_PROMPTS = {
-  intentNaming:
-    'Restate the merchant request as a clear creative intent, classify one supported marketing task and delivery layer, and identify which operating asset categories are relevant and genuinely useful for this request. Route to customized only when at least one relevant category has a real benefit; an inferred industry category is the minimum useful unit. Otherwise route to guidance and ask one conversational question covering at most two related details. Never route directly to free, never invent merchant facts, and extract only grounded constraints.',
-  briefCompilation:
-    'Compile a complete professional copy brief. Ground every factual claim in supplied fact references, keep rights references explicit, and include a concrete CTA and platform. Only source refs beginning with marketing_identity: are registered identity refs; tone instructions are not identities. When none exists, use a neutral official brand voice and return an empty identityRefs array.',
-  briefImage:
-    'Compile a production-ready image execution brief with an actionable visual prompt, authorized references, output parameters, and explicit safety constraints.',
-  briefVideo:
-    'Compile a production-ready video execution brief with ordered shots, timing, first-frame direction, authorized references, and explicit safety constraints.',
-  factSatisfaction:
-    'Assess whether the authorized current facts satisfy every fact requirement for this intent. Return only grounded matched references and the missing fact kinds.',
-  factCriticality:
-    'Classify whether missing facts block truthful execution for this intent. Return critical only when executing without the facts would make a material claim unsafe.',
-  copyCandidate:
-    'Generate a materially distinct beauty-business copy candidate grounded in the frozen brief and authorized facts.',
-  notePlan:
-    'Create a semantic NotePlan before page generation. Follow the merchant intent, include one image intent and one text block per page, and preserve dependencies.',
-  noteTextBlock:
-    'Finalize one NotePlan page in the configured style. Preserve the theme and prior-page dependency, returning title, body, and exact text only.',
-  noteConsistency:
-    'Evaluate NotePlan theme continuity, visual consistency, non-repetition, role coverage, and image-text cross-reference. Return only pages needing regeneration.',
-  destinationMapping:
-    'Map the merchant destination answer only when platform and delivery are unambiguous; otherwise ask one focused clarification question with safe options.',
-  copyGeneration:
-    'Return complete beauty-business copy candidates with grounded facts, a clear conversion hook, and materially different bodies.',
-  platformAdaptation:
-    'Adapt canonical beauty-business content into complete xiaohongshu, douyin, and video_account variants without changing facts.',
-  textResponse:
-    'Return one plain-text response for the requested creative task without provider protocol fields or unsupported claims.',
-  // XHS vertical builtins: beauty-rewritten from xhswork server/prompts/* (issue #315).
-  // Placeholders stay for future pipeline consumers; do not paste unrewritten generic copy.
-  xhsOutline: `你是一位美业门店小红书图文策划师，擅长把医美/美妆/美容/美发/轻医美门店的经营主题拆成可转化的系列信息图大纲。
+	intentNaming:
+		"Restate the merchant request as a clear creative intent, classify one supported marketing task and delivery layer, and identify which operating asset categories are relevant and genuinely useful for this request. Route to customized only when at least one relevant category has a real benefit; an inferred industry category is the minimum useful unit. Otherwise route to guidance and ask one conversational question covering at most two related details. Never route directly to free, never invent merchant facts, and extract only grounded constraints.",
+	briefCompilation:
+		"Compile a complete professional copy brief. Ground every factual claim in supplied fact references, keep rights references explicit, and include a concrete CTA and platform. Only source refs beginning with marketing_identity: are registered identity refs; tone instructions are not identities. When none exists, use a neutral official brand voice and return an empty identityRefs array.",
+	briefImage:
+		"Compile a production-ready image execution brief with an actionable visual prompt, authorized references, output parameters, and explicit safety constraints.",
+	briefVideo:
+		"Compile a production-ready video execution brief with ordered shots, timing, first-frame direction, authorized references, and explicit safety constraints.",
+	factSatisfaction:
+		"Assess whether the authorized current facts satisfy every fact requirement for this intent. Return only grounded matched references and the missing fact kinds.",
+	factCriticality:
+		"Classify whether missing facts block truthful execution for this intent. Return critical only when executing without the facts would make a material claim unsafe.",
+	copyCandidate:
+		"Generate a materially distinct beauty-business copy candidate grounded in the frozen brief and authorized facts.",
+	notePlan:
+		"Create a semantic NotePlan before page generation. Follow the merchant intent, include one image intent and one text block per page, and preserve dependencies.",
+	noteTextBlock:
+		"Finalize one NotePlan page in the configured style. Preserve the theme and prior-page dependency, returning title, body, and exact text only.",
+	noteConsistency:
+		"Evaluate NotePlan theme continuity, visual consistency, non-repetition, role coverage, and image-text cross-reference. Return only pages needing regeneration.",
+	destinationMapping:
+		"Map the merchant destination answer only when platform and delivery are unambiguous; otherwise ask one focused clarification question with safe options.",
+	copyGeneration:
+		"Return complete beauty-business copy candidates with grounded facts, a clear conversion hook, and materially different bodies.",
+	platformAdaptation:
+		"Adapt canonical beauty-business content into complete xiaohongshu, douyin, and video_account variants without changing facts.",
+	textResponse:
+		"Return one plain-text response for the requested creative task without provider protocol fields or unsupported claims.",
+	// XHS vertical builtins: beauty-rewritten from xhswork server/prompts/* (issue #315).
+	// Placeholders stay for future pipeline consumers; do not paste unrewritten generic copy.
+	xhsOutline: `你是一位美业门店小红书图文策划师，擅长把医美/美妆/美容/美发/轻医美门店的经营主题拆成可转化的系列信息图大纲。
 
 用户信息：
 - 分类：{category}
@@ -345,7 +345,7 @@ export const HARNESS_BUILTIN_PROMPTS = {
 配图建议：温暖收尾；预约 CTA 大字；轻量爱心/勾选装饰；无手机边框水印。
 
 直接给出大纲，从[封面]开始，不要多余说明。`,
-  xhsContent: `你是美业门店小红书内容专家。请根据大纲生成完整笔记文案（医美/美妆/美容/美发门店转化语境）。
+	xhsContent: `你是美业门店小红书内容专家。请根据大纲生成完整笔记文案（医美/美妆/美容/美发门店转化语境）。
 
 用户信息：
 - 分类：{category}
@@ -384,7 +384,7 @@ export const HARNESS_BUILTIN_PROMPTS = {
 3. 不加 #，空格分隔
 
 直接输出；第一行【标题】，最后一行【标签】。`,
-  xhsNoteGen: `你是美业门店小红书笔记创作专家。请根据信息生成完整笔记（美容师/店主/顾客口吻可切换）。
+	xhsNoteGen: `你是美业门店小红书笔记创作专家。请根据信息生成完整笔记（美容师/店主/顾客口吻可切换）。
 
 内容主题：{topic}
 语气风格：{tone}
@@ -405,7 +405,7 @@ export const HARNESS_BUILTIN_PROMPTS = {
 4. 禁止 markdown（不要 **、# 标题、* 列表、> 引用）；纯文本+emoji
 5. 禁止医疗极限承诺、虚假疗效与未授权病例细节
 6. 若 role 为顾客口吻，保持真实体验感但仍可核对的事实边界`,
-  xhsImagePrompt: `你是美业门店小红书视觉设计总监，擅长为医美/美妆/美容门店图文页生成高质量英文文生图 prompt。
+	xhsImagePrompt: `你是美业门店小红书视觉设计总监，擅长为医美/美妆/美容门店图文页生成高质量英文文生图 prompt。
 
 请根据以下信息生成完整英文图片 prompt。
 
@@ -452,7 +452,7 @@ Negative prompt：
 photorealistic bloody surgery, dark messy clutter, realistic medical wound, English text on image, phone frame, watermark
 
 直接输出英文 prompt（图上文字中文），不要前缀说明。`,
-  xhsCoverPrompt: `你是美业门店小红书封面 prompt 专家。请根据描述生成详细文生图 prompt（美业预设，非泛生活模板）。
+	xhsCoverPrompt: `你是美业门店小红书封面 prompt 专家。请根据描述生成详细文生图 prompt（美业预设，非泛生活模板）。
 
 用户描述：{userPrompt}
 风格预设：{style}
@@ -475,7 +475,7 @@ photorealistic bloody surgery, dark messy clutter, realistic medical wound, Engl
 7. 技术要求：{size} 比例、高清竖屏、文字完整清晰、无手机边框、无 logo/水印、无血腥医疗实景
 
 直接输出 prompt，不要前缀解释。`,
-  xhsStyleAnalysis: `你是美业视觉风格分析师，擅长从参考图提取可复用的小红书图文视觉特征，供门店批量配图保持风格一致。
+	xhsStyleAnalysis: `你是美业视觉风格分析师，擅长从参考图提取可复用的小红书图文视觉特征，供门店批量配图保持风格一致。
 
 请分析用户上传的参考图片，从以下七维输出（每维必填）：
 
@@ -498,7 +498,7 @@ photorealistic bloody surgery, dark messy clutter, realistic medical wound, Engl
 整体调性：xxx
 
 直接输出分析结果，不要前缀说明。若图含人物面部，只描述光线/构图/美业场景属性，不输出可识别隐私细节。`,
-  xhsViralRewrite: `你是美业门店小红书爆款仿写专家。输入是商家**自行粘贴**的参考笔记文字（及可选参考图说明），不是系统抓取结果。请按本店项目改写成可发笔记。
+	xhsViralRewrite: `你是美业门店小红书爆款仿写专家。输入是商家**自行粘贴**的参考笔记文字（及可选参考图说明），不是系统抓取结果。请把可复用的结构钩子和节奏落到当前 NotePlan 页组。
 
 参考笔记原文：
 {sourceNote}
@@ -510,25 +510,12 @@ photorealistic bloody surgery, dark messy clutter, realistic medical wound, Engl
 - 材料仅来自商家粘贴/上传；禁止假设存在未授权远程读取或代登接口
 - 不得编造未提供的门店资质、疗效数据、病例细节
 
-请输出严格 JSON（不要 markdown 围栏）：
-{
-  "title": "15-25字吸引标题",
-  "body": "200-500字正文，短段落+emoji，小红书风格",
-  "tags": ["标签1", "标签2", "标签3", "标签4", "标签5"],
-  "pageHints": [
-    { "role": "cover", "outline": "封面要点" },
-    { "role": "content", "outline": "内容页要点" },
-    { "role": "cta", "outline": "收尾行动号召" }
-  ],
-  "sourceTrack": "paste"
-}
-
 要求：
 1. 保留参考笔记的结构钩子与节奏，但事实与项目换成门店语境
-2. 标签不加 #，5-8 个，偏美业项目/肤质/场景
+2. 标题、正文、图上字分别落入 NotePlan page.textBlock 与 page.imageIntent
 3. 禁止极限医疗承诺与虚假前后对比
-4. sourceTrack 固定为 "paste"`,
-  xhsViralImageVision: `你是美业门店视觉复刻分析师。输入是商家**自行上传**的参考图片（非系统抓取）。请输出可指导文生图的英文 prompt 与中文图上字建议。
+4. 只输出下游指定的 note-plan/v1 严格 JSON，不要额外输出 title/body/tags/sourceTrack 根对象`,
+	xhsViralImageVision: `你是美业门店视觉复刻分析师。输入是商家**自行上传**的参考图片（非系统抓取）。请输出可指导文生图的英文 prompt 与中文图上字建议。
 
 参考图说明/商家备注：
 {imageNotes}
@@ -554,387 +541,389 @@ photorealistic bloody surgery, dark messy clutter, realistic medical wound, Engl
 } as const;
 
 export interface HarnessFrozenPrompt {
-  name: string;
-  version: string;
-  content: string;
-  contentHash: string;
-  label: string;
-  source: 'langfuse' | 'builtin';
-  isFallback: boolean;
-  fallbackReason?: string;
+	name: string;
+	version: string;
+	content: string;
+	contentHash: string;
+	label: string;
+	source: "langfuse" | "builtin";
+	isFallback: boolean;
+	fallbackReason?: string;
 }
 
 export type HarnessFrozenPrompts = Record<
-  HarnessPromptKey,
-  HarnessFrozenPrompt
+	HarnessPromptKey,
+	HarnessFrozenPrompt
 >;
 
 export type HarnessPromptRevisionReference = ReturnType<
-  typeof promptTraceReference
+	typeof promptTraceReference
 >;
 
 export interface HarnessPromptResolver {
-  resolve(): Promise<HarnessFrozenPrompts>;
+	resolve(): Promise<HarnessFrozenPrompts>;
 }
 
 export class HarnessPromptAuthorityUnavailableError extends Error {
-  constructor(readonly reason: string, message: string) {
-    super(message);
-    this.name = 'HarnessPromptAuthorityUnavailableError';
-  }
+	constructor(
+		readonly reason: string,
+		message: string,
+	) {
+		super(message);
+		this.name = "HarnessPromptAuthorityUnavailableError";
+	}
 }
 
 export function requireHarnessFrozenPrompt(
-  prompts: HarnessFrozenPrompts,
-  key: HarnessPromptKey,
+	prompts: HarnessFrozenPrompts,
+	key: HarnessPromptKey,
 ) {
-  const prompt = prompts[key];
-  if (!prompt) {
-    throw new Error(`Resolved prompt bundle is missing ${key}.`);
-  }
-  return prompt;
+	const prompt = prompts[key];
+	if (!prompt) {
+		throw new Error(`Resolved prompt bundle is missing ${key}.`);
+	}
+	return prompt;
 }
 
 const MODEL_SUPPLY_PROMPT_KEY_BY_OPERATION = {
-  'copy.generate': 'copyGeneration',
-  'copy.adapt': 'platformAdaptation',
-  'text.respond': 'textResponse',
+	"copy.generate": "copyGeneration",
+	"copy.adapt": "platformAdaptation",
+	"text.respond": "textResponse",
 } as const satisfies Record<LanguageModelOperation, HarnessPromptKey>;
 
 export function modelSupplyPromptResolverFromHarness(
-  resolver: HarnessPromptResolver,
+	resolver: HarnessPromptResolver,
 ): ModelSupplyPromptResolver {
-  return {
-    async resolve({ operation }) {
-      const prompts = await resolver.resolve();
-      return structuredClone(
-        requireHarnessFrozenPrompt(
-          prompts,
-          MODEL_SUPPLY_PROMPT_KEY_BY_OPERATION[operation],
-        ),
-      );
-    },
-  };
+	return {
+		async resolve({ operation }) {
+			const prompts = await resolver.resolve();
+			return structuredClone(
+				requireHarnessFrozenPrompt(
+					prompts,
+					MODEL_SUPPLY_PROMPT_KEY_BY_OPERATION[operation],
+				),
+			);
+		},
+	};
 }
 
 export interface LangfuseHarnessPromptResolverOptions {
-  baseUrl?: string;
-  publicKey?: string;
-  secretKey?: string;
-  label?: string;
-  policy?: LangfusePromptPolicy;
-  versions?: Partial<Record<HarnessPromptKey, number>>;
-  fetch?: typeof globalThis.fetch;
-  timeoutMs?: number;
-  warn?: (input: { name: string; reason: string; version?: number }) => void;
+	baseUrl?: string;
+	publicKey?: string;
+	secretKey?: string;
+	label?: string;
+	policy?: LangfusePromptPolicy;
+	versions?: Partial<Record<HarnessPromptKey, number>>;
+	fetch?: typeof globalThis.fetch;
+	timeoutMs?: number;
+	warn?: (input: { name: string; reason: string; version?: number }) => void;
 }
 
 export class LangfuseHarnessPromptResolver implements HarnessPromptResolver {
-  private readonly fetch: typeof globalThis.fetch;
+	private readonly fetch: typeof globalThis.fetch;
 
-  constructor(private readonly options: LangfuseHarnessPromptResolverOptions) {
-    this.fetch = options.fetch ?? globalThis.fetch;
-  }
+	constructor(private readonly options: LangfuseHarnessPromptResolverOptions) {
+		this.fetch = options.fetch ?? globalThis.fetch;
+	}
 
-  async resolve(): Promise<HarnessFrozenPrompts> {
-    const entries = Object.entries(HARNESS_LANGFUSE_PROMPT_NAMES) as Array<
-      [HarnessPromptKey, string]
-    >;
-    if ((this.options.policy ?? 'strict') === 'strict') {
-      const missing = entries
-        .filter(([key]) => this.options.versions?.[key] === undefined)
-        .map(([key]) => key);
-      if (missing.length > 0) {
-        throw new Error(
-          `Strict Langfuse prompt resolution is missing pinned prompts: ${missing.join(', ')}.`,
-        );
-      }
-    }
-    const resolved = await Promise.all(
-      entries.map(async ([key, name]) => [
-        key,
-        await this.resolveOne(
-          key,
-          name,
-          HARNESS_BUILTIN_PROMPTS[key],
-        ),
-      ] as const),
-    );
-    return Object.fromEntries(resolved) as HarnessFrozenPrompts;
-  }
+	async resolve(): Promise<HarnessFrozenPrompts> {
+		const entries = Object.entries(HARNESS_LANGFUSE_PROMPT_NAMES) as Array<
+			[HarnessPromptKey, string]
+		>;
+		if ((this.options.policy ?? "strict") === "strict") {
+			const missing = entries
+				.filter(([key]) => this.options.versions?.[key] === undefined)
+				.map(([key]) => key);
+			if (missing.length > 0) {
+				throw new Error(
+					`Strict Langfuse prompt resolution is missing pinned prompts: ${missing.join(", ")}.`,
+				);
+			}
+		}
+		const resolved = await Promise.all(
+			entries.map(
+				async ([key, name]) =>
+					[
+						key,
+						await this.resolveOne(key, name, HARNESS_BUILTIN_PROMPTS[key]),
+					] as const,
+			),
+		);
+		return Object.fromEntries(resolved) as HarnessFrozenPrompts;
+	}
 
-  private async resolveOne(
-    key: HarnessPromptKey,
-    name: string,
-    builtin: string,
-  ) {
-    const label = this.options.label ?? 'production';
-    const version = this.options.versions?.[key];
-    if (
-      !this.options.baseUrl?.trim() ||
-      !this.options.publicKey?.trim() ||
-      !this.options.secretKey?.trim()
-    ) {
-      return this.fallback(name, builtin, label, 'unconfigured', version);
-    }
-    if (version === undefined) {
-      return this.fallback(name, builtin, label, 'unpinned');
-    }
-    const url = `${this.options.baseUrl.replace(/\/$/u, '')}/api/public/v2/prompts/${encodeURIComponent(name)}?version=${encodeURIComponent(String(version))}`;
-    let response: Response;
-    try {
-      response = await this.fetch(url, {
-        headers: {
-          authorization: `Basic ${Buffer.from(
-            `${this.options.publicKey}:${this.options.secretKey}`,
-          ).toString('base64')}`,
-        },
-        signal: AbortSignal.timeout(this.options.timeoutMs ?? 10_000),
-      });
-    } catch {
-      return this.fallback(name, builtin, label, 'request_failed', version);
-    }
-    if (!response.ok) {
-      return this.fallback(
-        name,
-        builtin,
-        label,
-        `http_${response.status}`,
-        version,
-      );
-    }
-    const body = await response.json().catch(() => undefined);
-    if (
-      !isRecord(body) ||
-      body.type !== 'text' ||
-      typeof body.prompt !== 'string' ||
-      body.prompt.trim().length === 0 ||
-      !validVersion(body.version)
-    ) {
-      return this.fallback(name, builtin, label, 'invalid_response', version);
-    }
-    if (String(body.version) !== String(version)) {
-      return this.fallback(name, builtin, label, 'version_mismatch', version);
-    }
-    return {
-      name,
-      version: String(body.version),
-      content: body.prompt,
-      contentHash: sha256(body.prompt),
-      label,
-      source: 'langfuse' as const,
-      isFallback: false,
-    };
-  }
+	private async resolveOne(
+		key: HarnessPromptKey,
+		name: string,
+		builtin: string,
+	) {
+		const label = this.options.label ?? "production";
+		const version = this.options.versions?.[key];
+		if (
+			!this.options.baseUrl?.trim() ||
+			!this.options.publicKey?.trim() ||
+			!this.options.secretKey?.trim()
+		) {
+			return this.fallback(name, builtin, label, "unconfigured", version);
+		}
+		if (version === undefined) {
+			return this.fallback(name, builtin, label, "unpinned");
+		}
+		const url = `${this.options.baseUrl.replace(/\/$/u, "")}/api/public/v2/prompts/${encodeURIComponent(name)}?version=${encodeURIComponent(String(version))}`;
+		let response: Response;
+		try {
+			response = await this.fetch(url, {
+				headers: {
+					authorization: `Basic ${Buffer.from(
+						`${this.options.publicKey}:${this.options.secretKey}`,
+					).toString("base64")}`,
+				},
+				signal: AbortSignal.timeout(this.options.timeoutMs ?? 10_000),
+			});
+		} catch {
+			return this.fallback(name, builtin, label, "request_failed", version);
+		}
+		if (!response.ok) {
+			return this.fallback(
+				name,
+				builtin,
+				label,
+				`http_${response.status}`,
+				version,
+			);
+		}
+		const body = await response.json().catch(() => undefined);
+		if (
+			!isRecord(body) ||
+			body.type !== "text" ||
+			typeof body.prompt !== "string" ||
+			body.prompt.trim().length === 0 ||
+			!validVersion(body.version)
+		) {
+			return this.fallback(name, builtin, label, "invalid_response", version);
+		}
+		if (String(body.version) !== String(version)) {
+			return this.fallback(name, builtin, label, "version_mismatch", version);
+		}
+		return {
+			name,
+			version: String(body.version),
+			content: body.prompt,
+			contentHash: sha256(body.prompt),
+			label,
+			source: "langfuse" as const,
+			isFallback: false,
+		};
+	}
 
-  private fallback(
-    name: string,
-    builtin: string,
-    label: string,
-    reason: string,
-    version?: number,
-  ) {
-    if ((this.options.policy ?? 'strict') === 'strict') {
-      const pin = version === undefined ? '' : ` version=${version}`;
-      const message =
-        `Strict Langfuse prompt resolution failed: ${name}${pin} (${reason}).`;
-      if (isPromptAuthorityUnavailableReason(reason)) {
-        throw new HarnessPromptAuthorityUnavailableError(reason, message);
-      }
-      throw new Error(message);
-    }
-    (this.options.warn ?? warnPromptFallback)({
-      name,
-      reason,
-      ...(version === undefined ? {} : { version }),
-    });
-    return fallbackPrompt(name, builtin, label, reason);
-  }
+	private fallback(
+		name: string,
+		builtin: string,
+		label: string,
+		reason: string,
+		version?: number,
+	) {
+		if ((this.options.policy ?? "strict") === "strict") {
+			const pin = version === undefined ? "" : ` version=${version}`;
+			const message = `Strict Langfuse prompt resolution failed: ${name}${pin} (${reason}).`;
+			if (isPromptAuthorityUnavailableReason(reason)) {
+				throw new HarnessPromptAuthorityUnavailableError(reason, message);
+			}
+			throw new Error(message);
+		}
+		(this.options.warn ?? warnPromptFallback)({
+			name,
+			reason,
+			...(version === undefined ? {} : { version }),
+		});
+		return fallbackPrompt(name, builtin, label, reason);
+	}
 }
 
 function isPromptAuthorityUnavailableReason(reason: string) {
-  if (reason === 'request_failed') return true;
-  const status = /^http_(\d{3})$/u.exec(reason)?.[1];
-  if (!status) return false;
-  const code = Number(status);
-  return code === 408 || code === 425 || code === 429 || code >= 500;
+	if (reason === "request_failed") return true;
+	const status = /^http_(\d{3})$/u.exec(reason)?.[1];
+	if (!status) return false;
+	const code = Number(status);
+	return code === 408 || code === 425 || code === 429 || code >= 500;
 }
 
 export function assertLangfusePromptRuntimePolicy(
-  env: Record<string, string | undefined> = process.env,
+	env: Record<string, string | undefined> = process.env,
 ) {
-  readLangfusePromptRuntimeConfig(env);
+	readLangfusePromptRuntimeConfig(env);
 }
 
 function readLangfusePromptRuntimeConfig(
-  env: Record<string, string | undefined>,
+	env: Record<string, string | undefined>,
 ) {
-  const policy = promptPolicyFromEnv(env.LANGFUSE_PROMPT_POLICY);
-  const baseUrl = env.LANGFUSE_BASE_URL?.trim();
-  const publicKey = env.LANGFUSE_PUBLIC_KEY?.trim();
-  const secretKey = env.LANGFUSE_SECRET_KEY?.trim();
-  if (policy === 'strict') {
-    const missing = [
-      ...(baseUrl ? [] : ['LANGFUSE_BASE_URL']),
-      ...(publicKey ? [] : ['LANGFUSE_PUBLIC_KEY']),
-      ...(secretKey ? [] : ['LANGFUSE_SECRET_KEY']),
-      ...(env.LANGFUSE_PROMPT_VERSIONS?.trim()
-        ? []
-        : ['LANGFUSE_PROMPT_VERSIONS']),
-    ];
-    if (missing.length > 0) {
-      throw new Error(
-        `Strict Langfuse prompt policy requires ${missing.join(', ')}.`,
-      );
-    }
-  }
-  const versions = promptVersionsFromEnv(
-    env.LANGFUSE_PROMPT_VERSIONS,
-    policy,
-  );
-  return {
-    policy,
-    ...(baseUrl ? { baseUrl } : {}),
-    ...(publicKey ? { publicKey } : {}),
-    ...(secretKey ? { secretKey } : {}),
-    versions,
-  };
+	const policy = promptPolicyFromEnv(env.LANGFUSE_PROMPT_POLICY);
+	const baseUrl = env.LANGFUSE_BASE_URL?.trim();
+	const publicKey = env.LANGFUSE_PUBLIC_KEY?.trim();
+	const secretKey = env.LANGFUSE_SECRET_KEY?.trim();
+	if (policy === "strict") {
+		const missing = [
+			...(baseUrl ? [] : ["LANGFUSE_BASE_URL"]),
+			...(publicKey ? [] : ["LANGFUSE_PUBLIC_KEY"]),
+			...(secretKey ? [] : ["LANGFUSE_SECRET_KEY"]),
+			...(env.LANGFUSE_PROMPT_VERSIONS?.trim()
+				? []
+				: ["LANGFUSE_PROMPT_VERSIONS"]),
+		];
+		if (missing.length > 0) {
+			throw new Error(
+				`Strict Langfuse prompt policy requires ${missing.join(", ")}.`,
+			);
+		}
+	}
+	const versions = promptVersionsFromEnv(env.LANGFUSE_PROMPT_VERSIONS, policy);
+	return {
+		policy,
+		...(baseUrl ? { baseUrl } : {}),
+		...(publicKey ? { publicKey } : {}),
+		...(secretKey ? { secretKey } : {}),
+		versions,
+	};
 }
 
 export function langfusePromptResolverFromEnv(
-  env: Record<string, string | undefined> = process.env,
+	env: Record<string, string | undefined> = process.env,
 ) {
-  const runtime = readLangfusePromptRuntimeConfig(env);
-  return new LangfuseHarnessPromptResolver({
-    ...runtime,
-    label: env.LANGFUSE_PROMPT_LABEL ?? 'production',
-    ...(env.LANGFUSE_REQUEST_TIMEOUT_MS
-      ? { timeoutMs: positiveInteger(env.LANGFUSE_REQUEST_TIMEOUT_MS) }
-      : {}),
-  });
+	const runtime = readLangfusePromptRuntimeConfig(env);
+	return new LangfuseHarnessPromptResolver({
+		...runtime,
+		label: env.LANGFUSE_PROMPT_LABEL ?? "production",
+		...(env.LANGFUSE_REQUEST_TIMEOUT_MS
+			? { timeoutMs: positiveInteger(env.LANGFUSE_REQUEST_TIMEOUT_MS) }
+			: {}),
+	});
 }
 
 export function promptRevisionReferences(
-  prompts: HarnessFrozenPrompts,
+	prompts: HarnessFrozenPrompts,
 ): Record<string, HarnessPromptRevisionReference> {
-  return Object.fromEntries(
-    Object.entries(prompts).map(([key, prompt]) => [
-      key,
-      promptTraceReference(prompt),
-    ]),
-  ) as Record<string, HarnessPromptRevisionReference>;
+	return Object.fromEntries(
+		Object.entries(prompts).map(([key, prompt]) => [
+			key,
+			promptTraceReference(prompt),
+		]),
+	) as Record<string, HarnessPromptRevisionReference>;
 }
 
 export function promptTraceReference(prompt: HarnessFrozenPrompt | undefined) {
-  if (!prompt) return undefined;
-  return {
-    name: prompt.name,
-    version: prompt.version,
-    contentHash: prompt.contentHash,
-    label: prompt.label,
-    source: prompt.source,
-    isFallback: prompt.isFallback,
-    ...(prompt.fallbackReason
-      ? { fallbackReason: prompt.fallbackReason }
-      : {}),
-  };
+	if (!prompt) return undefined;
+	return {
+		name: prompt.name,
+		version: prompt.version,
+		contentHash: prompt.contentHash,
+		label: prompt.label,
+		source: prompt.source,
+		isFallback: prompt.isFallback,
+		...(prompt.fallbackReason ? { fallbackReason: prompt.fallbackReason } : {}),
+	};
 }
 
 function fallbackPrompt(
-  name: string,
-  content: string,
-  label: string,
-  fallbackReason: string,
+	name: string,
+	content: string,
+	label: string,
+	fallbackReason: string,
 ): HarnessFrozenPrompt {
-  return {
-    name,
-    version: 'builtin-v1',
-    content,
-    contentHash: sha256(content),
-    label,
-    source: 'builtin',
-    isFallback: true,
-    fallbackReason,
-  };
+	return {
+		name,
+		version: "builtin-v1",
+		content,
+		contentHash: sha256(content),
+		label,
+		source: "builtin",
+		isFallback: true,
+		fallbackReason,
+	};
 }
 
 function sha256(value: string) {
-  return createHash('sha256').update(value).digest('hex');
+	return createHash("sha256").update(value).digest("hex");
 }
 
 function validVersion(value: unknown) {
-  return (
-    (typeof value === 'number' && Number.isInteger(value) && value > 0) ||
-    (typeof value === 'string' && value.trim().length > 0)
-  );
+	return (
+		(typeof value === "number" && Number.isInteger(value) && value > 0) ||
+		(typeof value === "string" && value.trim().length > 0)
+	);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function positiveInteger(value: string) {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error('LANGFUSE_REQUEST_TIMEOUT_MS must be a positive integer.');
-  }
-  return parsed;
+	const parsed = Number(value);
+	if (!Number.isInteger(parsed) || parsed <= 0) {
+		throw new Error("LANGFUSE_REQUEST_TIMEOUT_MS must be a positive integer.");
+	}
+	return parsed;
 }
 
 function promptPolicyFromEnv(value: string | undefined): LangfusePromptPolicy {
-  const normalized = value?.trim() || 'strict';
-  if (normalized === 'pilot' || normalized === 'strict') return normalized;
-  throw new Error('LANGFUSE_PROMPT_POLICY must be pilot or strict.');
+	const normalized = value?.trim() || "strict";
+	if (normalized === "pilot" || normalized === "strict") return normalized;
+	throw new Error("LANGFUSE_PROMPT_POLICY must be pilot or strict.");
 }
 
 function warnPromptFallback(input: {
-  name: string;
-  reason: string;
-  version?: number;
+	name: string;
+	reason: string;
+	version?: number;
 }) {
-  const pin = input.version === undefined ? '' : ` version=${input.version}`;
-  console.warn(
-    `[harness] Langfuse prompt downgraded to builtin: ${input.name}${pin} (${input.reason}).`,
-  );
+	const pin = input.version === undefined ? "" : ` version=${input.version}`;
+	console.warn(
+		`[harness] Langfuse prompt downgraded to builtin: ${input.name}${pin} (${input.reason}).`,
+	);
 }
 
 function promptVersionsFromEnv(
-  value: string | undefined,
-  policy: LangfusePromptPolicy,
+	value: string | undefined,
+	policy: LangfusePromptPolicy,
 ): Partial<Record<HarnessPromptKey, number>> {
-  if (!value?.trim()) return {};
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(value);
-  } catch {
-    if (policy === 'pilot') return {};
-    throw new Error('LANGFUSE_PROMPT_VERSIONS must be a JSON object.');
-  }
-  if (!isRecord(parsed)) {
-    if (policy === 'pilot') return {};
-    throw new Error('LANGFUSE_PROMPT_VERSIONS must be a JSON object.');
-  }
-  const versions: Partial<Record<HarnessPromptKey, number>> = {};
-  for (const [key, version] of Object.entries(parsed)) {
-    if (!(key in HARNESS_LANGFUSE_PROMPT_NAMES)) {
-      if (policy === 'pilot') continue;
-      throw new Error(`LANGFUSE_PROMPT_VERSIONS contains unknown key: ${key}.`);
-    }
-    if (typeof version !== 'number' || !Number.isInteger(version) || version <= 0) {
-      if (policy === 'pilot') continue;
-      throw new Error(`LANGFUSE_PROMPT_VERSIONS.${key} must be a positive integer.`);
-    }
-    versions[key as HarnessPromptKey] = version;
-  }
-  if (policy === 'strict') {
-    const missing = Object.keys(HARNESS_LANGFUSE_PROMPT_NAMES).filter(
-      (key) => versions[key as HarnessPromptKey] === undefined,
-    );
-    if (missing.length > 0) {
-      throw new Error(
-        `LANGFUSE_PROMPT_VERSIONS is missing pinned prompts: ${missing.join(', ')}.`,
-      );
-    }
-  }
-  return versions;
+	if (!value?.trim()) return {};
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(value);
+	} catch {
+		if (policy === "pilot") return {};
+		throw new Error("LANGFUSE_PROMPT_VERSIONS must be a JSON object.");
+	}
+	if (!isRecord(parsed)) {
+		if (policy === "pilot") return {};
+		throw new Error("LANGFUSE_PROMPT_VERSIONS must be a JSON object.");
+	}
+	const versions: Partial<Record<HarnessPromptKey, number>> = {};
+	for (const [key, version] of Object.entries(parsed)) {
+		if (!(key in HARNESS_LANGFUSE_PROMPT_NAMES)) {
+			if (policy === "pilot") continue;
+			throw new Error(`LANGFUSE_PROMPT_VERSIONS contains unknown key: ${key}.`);
+		}
+		if (
+			typeof version !== "number" ||
+			!Number.isInteger(version) ||
+			version <= 0
+		) {
+			if (policy === "pilot") continue;
+			throw new Error(
+				`LANGFUSE_PROMPT_VERSIONS.${key} must be a positive integer.`,
+			);
+		}
+		versions[key as HarnessPromptKey] = version;
+	}
+	if (policy === "strict") {
+		const missing = Object.keys(HARNESS_LANGFUSE_PROMPT_NAMES).filter(
+			(key) => versions[key as HarnessPromptKey] === undefined,
+		);
+		if (missing.length > 0) {
+			throw new Error(
+				`LANGFUSE_PROMPT_VERSIONS is missing pinned prompts: ${missing.join(", ")}.`,
+			);
+		}
+	}
+	return versions;
 }

@@ -36,7 +36,7 @@ test('journey: chip → sourcing → confirm (source method) → ready intent', 
   assert.equal(canAdvanceViralSourcing(state.draft), false);
   state = updateViralPasteDraft(state, {
     noteText: '油皮夏日护理\n三步到店',
-    imageLabels: ['ref-1.png'],
+    imageAssetIds: ['asset-reference-1'],
   });
   assert.equal(canAdvanceViralSourcing(state.draft), true);
 
@@ -66,7 +66,7 @@ test('journey: chip → sourcing → confirm (source method) → ready intent', 
 
 test('confirm contract projection lists 取材方式 and OpenCLI honesty', () => {
   const view = projectViralAdaptConfirmView({
-    draft: { noteText: '正文', imageLabels: [] },
+    draft: { noteText: '正文', imageAssetIds: [] },
     liveGate: defaultViralOpenCliLiveGate(),
   });
   assert.equal(view.sourceMethod.track, 'paste');
@@ -95,11 +95,12 @@ test('cancel resets journey', () => {
 test('submit intent composer is paste-honest', () => {
   const intent = composeViralAdaptSubmitIntent({
     noteText: '参考笔记',
-    imageLabels: ['a.jpg'],
+    imageAssetIds: ['asset-reference-1'],
   });
   assert.ok(intent.startsWith(VIRAL_ADAPT_SOURCE_MARKER));
   assert.doesNotMatch(intent, /爬虫|账号池|fetchNote/u);
   assert.match(intent, /商家粘贴/u);
+  assert.match(intent, /参考图资产：asset-reference-1/u);
 });
 
 test('recipe intent detector matches chip handoff copy', () => {

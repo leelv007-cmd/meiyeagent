@@ -8,19 +8,18 @@ import {
 	IMAGE_INTENT_SLOT_KINDS,
 	type ModelCapabilityProfile,
 } from "@meiye/contracts";
-
-import {
-	createCreationExecutionSnapshot,
-	creationExecutionSnapshotSchema,
-} from "../execution-spine/creation-execution-snapshot.js";
 import {
 	AgentPrimitiveObservabilityAdapter,
 	MemoryObservabilityEventAudit,
 } from "../creation-experience/index.js";
 import {
-	MemoryContentPackageRevisionWritePort,
 	type ContentPackageRevisionWriteInput,
+	MemoryContentPackageRevisionWritePort,
 } from "../execution-spine/content-package-revision-port.js";
+import {
+	createCreationExecutionSnapshot,
+	creationExecutionSnapshotSchema,
+} from "../execution-spine/creation-execution-snapshot.js";
 import {
 	fingerprintValue,
 	JobRuntimeError,
@@ -30,21 +29,43 @@ import {
 	createDefaultDeployments,
 	MemoryModelAssetStorage,
 	ModelSupplyApplicationService,
-	RecordedAdapterRouter,
 	type ModelSupplyResult,
 	type ModelSupplySubmission,
+	RecordedAdapterRouter,
 	type RouteSnapshot,
 } from "../model-supply/index.js";
+import { buildContentPackage } from "../operations/content-package.js";
+import { ContentPackageRightsBasisResolver } from "../operations/content-package-rights-basis.js";
+import { MemoryContextBundleRepository } from "../operations/context-bundle-repository.js";
+import { MemoryMarketingIdentityRepository } from "../operations/marketing-identity.js";
+import { MemoryStoreFactLedger } from "../operations/store-fact-ledger.js";
 import {
 	CapabilityHotAssemblyRegistry,
 	projectCapabilityRevision,
 	toRuntimeCapabilityEntry,
 } from "../supply-registry/hot-assembly.js";
-import { buildContentPackage } from "../operations/content-package.js";
-import { MemoryContextBundleRepository } from "../operations/context-bundle-repository.js";
-import { ContentPackageRightsBasisResolver } from "../operations/content-package-rights-basis.js";
-import { MemoryMarketingIdentityRepository } from "../operations/marketing-identity.js";
-import { MemoryStoreFactLedger } from "../operations/store-fact-ledger.js";
+import { resumeWithRaisedServerLimit } from "./bounded-execution-controller.js";
+import {
+	assessImageExactText,
+	HarnessSelectionError,
+} from "./execution-selection.js";
+import {
+	HARNESS_BUILTIN_PROMPTS,
+	HARNESS_LANGFUSE_PROMPT_NAMES,
+	type HarnessFrozenPrompts,
+	promptRevisionReferences,
+} from "./langfuse-prompts.js";
+import {
+	mediaBoundedCurrentBestSchema,
+	mediaBoundedRequestFingerprint,
+} from "./media-bounded-execution.js";
+import { merchantVisibleLanguageIssues } from "./merchant-delivery-language.js";
+import type {
+	NoteMediaAdmissionPort,
+	NoteMediaAdmissionToken,
+} from "./note-media-admission.js";
+import { unconfiguredNotePlanEnhancementJudgeResolver } from "./note-plan-structured-port.js";
+import { LedgerBackedHarnessContextPort } from "./production-context-port.js";
 import type { HarnessStructuredNodeRunnerFactory } from "./production-stage-ports.js";
 import type {
 	ExecutionBrief,
@@ -59,31 +80,11 @@ import {
 	ModelSupplyImageExactTextVerifier,
 	UnifiedHarnessStagePorts,
 } from "./unified-media-stage-ports.js";
-import {
-	assessImageExactText,
-	HarnessSelectionError,
-} from "./execution-selection.js";
-import { merchantVisibleLanguageIssues } from "./merchant-delivery-language.js";
-import { LedgerBackedHarnessContextPort } from "./production-context-port.js";
+import { composeViralAdaptRawInput } from "./viral-adapt.js";
 import type {
 	HarnessContextSnapshot,
 	HarnessStagePorts,
 } from "./workflow-core.js";
-import type {
-	NoteMediaAdmissionPort,
-	NoteMediaAdmissionToken,
-} from "./note-media-admission.js";
-import {
-	HARNESS_LANGFUSE_PROMPT_NAMES,
-	promptRevisionReferences,
-	type HarnessFrozenPrompts,
-} from "./langfuse-prompts.js";
-import { unconfiguredNotePlanEnhancementJudgeResolver } from "./note-plan-structured-port.js";
-import { resumeWithRaisedServerLimit } from "./bounded-execution-controller.js";
-import {
-	mediaBoundedCurrentBestSchema,
-	mediaBoundedRequestFingerprint,
-} from "./media-bounded-execution.js";
 
 test("unified stages forward bounded copy selection to the production copy port", async () => {
 	const copy = unsupportedCopyPorts();
@@ -208,9 +209,7 @@ test("bounded media submits once with the same authorization and resumes through
 	}
 	assert.equal(resumed.boundedExecution?.consumption.iterations, 1);
 	assert.equal(resumed.boundedExecution?.consumption.costCents, 120);
-	assert.ok(
-		(resumed.boundedExecution?.consumption.wallClockMs ?? -1) >= 25,
-	);
+	assert.ok((resumed.boundedExecution?.consumption.wallClockMs ?? -1) >= 25);
 	assert.equal(resumed.boundedExecution?.consumption.delegations, 0);
 	assert.equal(resumed.asset.id, "image-asset-1");
 });
@@ -449,10 +448,8 @@ test("top-level bounded media execution turns Model Supply fallback exhaustion i
 		attempts: [rejectedAttempt, fallback.attempt],
 		providerCosts: [estimatedCost, fallback.providerCost],
 	};
-	const {
-		latencyMs: _providerLifecycleLatency,
-		...durableSuspendedResult
-	} = suspendedResult;
+	const { latencyMs: _providerLifecycleLatency, ...durableSuspendedResult } =
+		suspendedResult;
 	let durableResult = durableSuspendedResult;
 	const adapter = new ModelSupplyHarnessMediaExecutionPort({
 		async submit() {
@@ -531,10 +528,8 @@ test("top-level bounded media execution turns Model Supply fallback exhaustion i
 	);
 	assert.equal(resumes, 0);
 
-	const {
-		endedAt: _forgedTerminalTime,
-		...forgedCanonicalResult
-	} = durableSuspendedResult;
+	const { endedAt: _forgedTerminalTime, ...forgedCanonicalResult } =
+		durableSuspendedResult;
 	const forgedBaselineCheckpoint = {
 		...first,
 		currentBest: {
@@ -674,8 +669,12 @@ test("bounded media ignores provisional estimates and converts observed CNY deci
 		});
 
 		assert.equal("state" in selected, false);
-		if ("state" in selected) assert.fail("Observed cost remains below the bound.");
-		assert.equal(selected.boundedExecution?.consumption.costCents, expectedCents);
+		if ("state" in selected)
+			assert.fail("Observed cost remains below the bound.");
+		assert.equal(
+			selected.boundedExecution?.consumption.costCents,
+			expectedCents,
+		);
 		assert.equal(
 			mediaBoundedCurrentBestSchema.parse(selected.boundedCurrentBest)
 				.countedProviderCostIds.length,
@@ -848,7 +847,10 @@ test("bounded media rejects an unaffordable exact-text verification before text.
 
 test("bounded exact-text retry keeps its stable key and never resubmits the primary job", async () => {
 	const submissions: ModelSupplySubmission[] = [];
-	const results = [completedResult("image", "1"), completedResult("image", "2")];
+	const results = [
+		completedResult("image", "1"),
+		completedResult("image", "2"),
+	];
 	const durable = new Map(results.map((result) => [result.jobId, result]));
 	let verification = 0;
 	const adapter = new ModelSupplyHarnessMediaExecutionPort(
@@ -943,7 +945,10 @@ test("bounded exact-text retry keeps its stable key and never resubmits the prim
 });
 
 test("bounded exact-text retry must pass verification before a limit suspension can become ready", async () => {
-	const results = [completedResult("image", "1"), completedResult("image", "2")];
+	const results = [
+		completedResult("image", "1"),
+		completedResult("image", "2"),
+	];
 	let submissions = 0;
 	const adapter = new ModelSupplyHarnessMediaExecutionPort(
 		{
@@ -3471,10 +3476,7 @@ test("the production exact-text verifier reuses multimodal text.respond without 
 		{ assetId: "image-asset-1", role: "reference_image" },
 	]);
 	assert.equal(submissions[0]?.promptBinding?.content, "frozen:textResponse");
-	assert.equal(
-		submissions[0]?.productUsageQuantity,
-		0,
-	);
+	assert.equal(submissions[0]?.productUsageQuantity, 0);
 });
 
 test("the production exact-text verifier fails closed without a frozen text.respond price", async () => {
@@ -3774,6 +3776,272 @@ test("the production exact-text verifier rejects a conflicting value even when t
 	assert.match(assessment.reason, /conflicting/u);
 });
 
+test("viral image vision sends real reference assets through the frozen text.respond route", async () => {
+	const submissions: ModelSupplySubmission[] = [];
+	let routeFreezes = 0;
+	const adapter = new ModelSupplyHarnessMediaExecutionPort({
+		async submit(input) {
+			submissions.push(structuredClone(input));
+			return {
+				...completedResult("image", "viral-vision"),
+				asset: undefined,
+				operation: "text.respond",
+				text: JSON.stringify({
+					styleSummary: "裸粉柔光杂志风",
+					englishImagePrompt: "soft editorial beauty salon scene",
+					onImageChineseText: ["夏日清爽护理"],
+					negativePrompt: "watermark, medical wound",
+					sourceTrack: "paste",
+				}),
+			};
+		},
+		async freezeAutoTextRouteForExecution() {
+			routeFreezes += 1;
+			return approvedExactTextRoute();
+		},
+	});
+	const request = harnessInputWithExecutionAssembly(
+		"image",
+		"package-viral-vision",
+		"image.generate",
+		1,
+	);
+	request.prompts = {
+		...request.prompts!,
+		xhsViralImageVision: {
+			...request.prompts!.xhsViralImageVision,
+			content: HARNESS_BUILTIN_PROMPTS.xhsViralImageVision,
+		},
+	};
+
+	const analysis = await adapter.analyzeViralReferenceImages!({
+		assetIds: ["asset-1"],
+		request,
+		shopContext: "项目名：夏日清爽护理",
+		workflowId: "workflow-viral-vision",
+	});
+
+	assert.equal(routeFreezes, 1);
+	assert.equal(analysis.styleSummary, "裸粉柔光杂志风");
+	assert.deepEqual(submissions[0]?.input?.inputAssets, [
+		{ assetId: "asset-1", role: "reference_image" },
+	]);
+	assert.equal(
+		submissions[0]?.promptBinding?.name,
+		HARNESS_LANGFUSE_PROMPT_NAMES.xhsViralImageVision,
+	);
+	assert.equal(
+		submissions[0]?.billingTaskId,
+		request.executionSnapshot?.task.id,
+	);
+	assert.equal(
+		submissions[0]?.billingQuoteRevision,
+		request.executionSnapshot?.quote.revision,
+	);
+	assert.equal(submissions[0]?.selection.mode, "fixed");
+	assert.equal(submissions[0]?.productUsageQuantity, 0);
+	assert.deepEqual(
+		submissions[0]?.frozenRouteSnapshot,
+		approvedExactTextRoute(),
+	);
+	assert.match(submissions[0]?.prompt ?? "", /夏日清爽护理/u);
+	assert.doesNotMatch(
+		submissions[0]?.prompt ?? "",
+		/\{imageNotes\}|\{shopContext\}/u,
+	);
+});
+
+test("viral image vision fails closed on an invalid provider observation", async () => {
+	const adapter = new ModelSupplyHarnessMediaExecutionPort({
+		async submit() {
+			return {
+				...completedResult("image", "viral-vision-invalid"),
+				asset: undefined,
+				operation: "text.respond" as const,
+				text: JSON.stringify({ styleSummary: "missing required fields" }),
+			};
+		},
+		async freezeAutoTextRouteForExecution() {
+			return approvedExactTextRoute();
+		},
+	});
+	const request = harnessInputWithExecutionAssembly(
+		"image",
+		"package-viral-vision-invalid",
+		"image.generate",
+		1,
+	);
+
+	await assert.rejects(
+		adapter.analyzeViralReferenceImages({
+			assetIds: ["asset-1"],
+			request,
+			shopContext: "项目名：夏日清爽护理",
+			workflowId: "workflow-viral-vision-invalid",
+		}),
+		(error: unknown) =>
+			error instanceof HarnessMediaExecutionError &&
+			error.code === "VIRAL_IMAGE_VISION_FAILED" &&
+			error.status === 502,
+	);
+});
+
+test("formal viral note planning consumes image vision and skips it when no image was attached", async () => {
+	const media = {
+		visionCalls: 0,
+		async analyzeViralReferenceImages() {
+			this.visionCalls += 1;
+			return {
+				styleSummary: "裸粉柔光杂志风",
+				englishImagePrompt: "soft editorial beauty salon scene",
+				onImageChineseText: ["夏日清爽护理"],
+				negativePrompt: "watermark, medical wound",
+				sourceTrack: "paste" as const,
+			};
+		},
+		async execute(): Promise<never> {
+			throw new Error("Note planning must not generate page media yet.");
+		},
+	};
+	const ports = new UnifiedHarnessStagePorts(
+		noteCopyPorts(),
+		noteRunnerFactory(),
+		media,
+		undefined as never,
+		() => "2026-08-02T00:00:00.000Z",
+		{
+			async read() {
+				return {
+					styles: {
+						styles: [
+							{
+								id: "facts",
+								name: "干货版",
+								writingGuide: "清楚说明",
+								structureTemplate: "结论、依据、行动",
+								platforms: ["xiaohongshu" as const],
+							},
+						],
+					},
+				};
+			},
+		},
+		undefined,
+		notBilledExecutionChildObservability(),
+	);
+	const declaration = {
+		normalizedIntent: "介绍夏日护理项目",
+		taskType: "daily_service_exposure" as const,
+		deliveryLayer: "finished_media" as const,
+		relevantAssetCategories: ["product_service" as const],
+		usedAssetCategories: ["product_service" as const],
+		route: "customized" as const,
+		routingSource: "model" as const,
+		implicitConstraints: [],
+	};
+
+	const withImage = viralNoteRequest(["asset-reference-1"]);
+	const imageBrief = await ports.compileNoteBrief({
+		workflowId: "workflow-viral-with-image",
+		request: withImage,
+		declaration,
+		context: contextSnapshot(["asset-reference-1"]),
+		allowedFactRefs: ["fact-service-1"],
+	});
+	assert.equal(media.visionCalls, 1);
+	assert.match(
+		imageBrief.candidates.candidates[0]!.plan.pages[0]!.imageIntent.scene,
+		/裸粉柔光杂志风/u,
+	);
+	assert.match(
+		imageBrief.candidates.candidates[0]!.plan.pages[0]!.imageIntent.composition,
+		/soft editorial beauty salon scene/u,
+	);
+	assert.match(
+		imageBrief.candidates.candidates[0]!.plan.pages[0]!.imageIntent.composition,
+		/夏日清爽护理/u,
+	);
+
+	const withoutImage = viralNoteRequest([]);
+	await ports.compileNoteBrief({
+		workflowId: "workflow-viral-without-image",
+		request: withoutImage,
+		declaration,
+		context: contextSnapshot([]),
+		allowedFactRefs: ["fact-service-1"],
+	});
+	assert.equal(
+		media.visionCalls,
+		1,
+		"no image must make zero additional VLM calls",
+	);
+
+	const mismatchedRecipe = {
+		...withoutImage,
+		executionSnapshot: creationExecutionSnapshotSchema.parse({
+			...withoutImage.executionSnapshot!,
+			recipe: {
+				id: "recipe-image_text_note-1",
+				revision: "recipe-image_text_note-r1",
+			},
+		}),
+		executionAssembly: {
+			...withoutImage.executionAssembly!,
+			rootAxes: {
+				...withoutImage.executionAssembly!.rootAxes,
+				scene: { kind: "bound" as const, value: "recipe-image_text_note-1" },
+			},
+		},
+	};
+	await assert.rejects(
+		ports.compileNoteBrief({
+			workflowId: "workflow-viral-wrong-recipe",
+			request: mismatchedRecipe,
+			declaration,
+			context: contextSnapshot([]),
+			allowedFactRefs: ["fact-service-1"],
+		}),
+		(error: unknown) =>
+			error instanceof HarnessMediaExecutionError &&
+			error.code === "VIRAL_ADAPT_RECIPE_MISMATCH",
+	);
+
+	const unauthorizedImage = viralNoteRequest(["asset-reference-unauthorized"]);
+	await assert.rejects(
+		ports.compileNoteBrief({
+			workflowId: "workflow-viral-unauthorized-image",
+			request: unauthorizedImage,
+			declaration,
+			context: contextSnapshot([]),
+			allowedFactRefs: ["fact-service-1"],
+		}),
+		(error: unknown) =>
+			error instanceof HarnessMediaExecutionError &&
+			error.code === "VIRAL_ADAPT_SOURCE_MISMATCH",
+	);
+	assert.equal(
+		media.visionCalls,
+		1,
+		"unauthorized images must not reach the VLM",
+	);
+
+	const withdrawnContext = contextSnapshot(["asset-reference-1"]);
+	withdrawnContext.policyReferences.rightsRefs[0]!.status = "withdrawn";
+	await assert.rejects(
+		ports.compileNoteBrief({
+			workflowId: "workflow-viral-withdrawn-image",
+			request: withImage,
+			declaration,
+			context: withdrawnContext,
+			allowedFactRefs: ["fact-service-1"],
+		}),
+		(error: unknown) =>
+			error instanceof HarnessMediaExecutionError &&
+			error.code === "VIRAL_ADAPT_SOURCE_MISMATCH",
+	);
+	assert.equal(media.visionCalls, 1, "withdrawn rights must not reach the VLM");
+});
+
 function harnessInput(
 	kind: "image" | "image_text_note" | "video",
 	packageId: string,
@@ -3877,6 +4145,54 @@ function harnessInput(
 		},
 		executionSnapshot: snapshot,
 		frozenRouteSnapshot: frozenMediaRoute(snapshot),
+	};
+}
+
+function viralNoteRequest(
+	imageAssetIds: readonly string[],
+): HarnessWorkflowInput {
+	const request = harnessInputWithExecutionAssembly(
+		"image_text_note",
+		`package-viral-note-${imageAssetIds.length}`,
+	);
+	const rawInput = composeViralAdaptRawInput({
+		track: "paste",
+		noteText: "姐妹们，清爽护理三步走",
+		imageAssetIds,
+	});
+	const sourceAssets = imageAssetIds.map((id, index) => ({
+		id,
+		revision: `asset-r${index + 1}`,
+		role: "reference" as const,
+	}));
+	const executionSnapshot = creationExecutionSnapshotSchema.parse({
+		...request.executionSnapshot!,
+		intent: {
+			...request.executionSnapshot!.intent,
+			text: rawInput,
+		},
+		recipe: { id: "recipe.viral_adapt", revision: "recipe.viral_adapt@2" },
+		sources: { assets: sourceAssets },
+	});
+	return {
+		...request,
+		rawInput,
+		intent: {
+			...request.intent,
+			assetReferences: [...imageAssetIds],
+			context: {
+				...request.intent.context,
+				intent: rawInput,
+			},
+		},
+		executionSnapshot,
+		executionAssembly: {
+			...request.executionAssembly!,
+			rootAxes: {
+				...request.executionAssembly!.rootAxes,
+				scene: { kind: "bound", value: "recipe.viral_adapt" },
+			},
+		},
 	};
 }
 

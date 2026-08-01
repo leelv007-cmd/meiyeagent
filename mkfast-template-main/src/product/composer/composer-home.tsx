@@ -98,11 +98,12 @@ import {
   DashboardHomeGreeting,
   DashboardHomeSurface,
 } from '@/product/dashboard-home-surface';
-import { applyRecommendationHandoff } from '@/product/recommendation-handoff';
+import { applyRecommendationHandoffWithRecipe } from '@/product/recommendation-handoff';
 import type { RecommendationHandoff } from '@/product/recommendation-handoff';
 import type { ConfirmedAssetFacts } from '@/product/creation-entry-model';
 import { ViralAdaptPanel } from '@/product/viral-adapt/viral-adapt-panel';
 import {
+  VIRAL_ADAPT_SOURCE_MARKER,
   advanceViralSourcingToConfirm,
   cancelViralAdaptJourney,
   confirmViralAdaptJourney,
@@ -701,6 +702,57 @@ export function ComposerHome({
     }),
     queryFn: ({ signal }) => fetchComposerSurface(signal),
   });
+  useEffect(() => {
+    if (viralAdaptJourney.phase !== 'sourcing') return;
+    const attachedAssetIds = sourceReferences
+      .map(({ id }) => id)
+      .filter((assetId) => sourceFactsRef.current.has(assetId));
+    setViralAdaptJourney((current) => {
+      if (
+        current.phase !== 'sourcing' ||
+        (current.draft.imageAssetIds.length === attachedAssetIds.length &&
+          current.draft.imageAssetIds.every(
+            (assetId, index) => assetId === attachedAssetIds[index]
+          ))
+      ) {
+        return current;
+      }
+      return updateViralPasteDraft(current, {
+        imageAssetIds: attachedAssetIds,
+      });
+    });
+  }, [sourceReferences, viralAdaptJourney.phase]);
+  useEffect(() => {
+    if (
+      !surfaceQuery.data ||
+      !userText.includes(VIRAL_ADAPT_SOURCE_MARKER) ||
+      surfaceQuery.data.recipeRefs.some(
+        (reference) =>
+          reference.visible &&
+          reference.recipeRevisionId === lensState.draft.recipeRevisionId &&
+          surfaceQuery.data?.recipes.some(
+            (recipe) =>
+              recipe.recipeId === 'recipe.viral_adapt' &&
+              recipe.status === 'published' &&
+              recipe.revisionId === reference.recipeRevisionId
+          )
+      )
+    ) {
+      return;
+    }
+    setLensState(
+      (current) =>
+        applyRecommendationHandoffWithRecipe({
+          state: current,
+          handoff: {
+            intent: current.draft.userText,
+            outputHint: 'image_text',
+            recipeChipId: 'viral_adapt',
+          },
+          surface: surfaceQuery.data,
+        }).state
+    );
+  }, [lensState.draft.recipeRevisionId, surfaceQuery.data, userText]);
   const identitiesQuery = useQuery(marketingIdentityProjectionQuery);
   const identitySelection = useMemo(
     () =>
@@ -873,6 +925,13 @@ export function ComposerHome({
         visibleRevisions.has(recipe.revisionId)
     );
   }, [lensId, lensState.draft.recipeRevisionId, surfaceQuery.data]);
+  const viralSubmissionRecipeReady =
+    submissionRecipe?.recipeId === 'recipe.viral_adapt' &&
+    surfaceQuery.data?.recipeRefs.some(
+      (reference) =>
+        reference.visible &&
+        reference.recipeRevisionId === submissionRecipe.revisionId
+    ) === true;
   /**
    * Which model runs, and *why* that one (#240①).
    *
@@ -2314,6 +2373,13 @@ export function ComposerHome({
       setSubmitBlockedMessage(COMPOSER_LENS_REQUIRED_MESSAGE);
       return;
     }
+    if (
+      lensState.draft.userText.includes(VIRAL_ADAPT_SOURCE_MARKER) &&
+      !viralSubmissionRecipeReady
+    ) {
+      setSubmitBlockedMessage('爆款复刻模板尚未就绪，当前不会按默认图文提交。');
+      return;
+    }
     const destinationDecision = decideComposerDestinationPreflight({
       hasExplicitDestination:
         lensState.draft.fieldMeta.deliveryPlatform?.ownership === 'user' &&
@@ -3040,8 +3106,13 @@ export function ComposerHome({
             // P0-4 / F1: typed handoff. Respect outputHint when present;
             // never hard-code copy lens when the recommendation has no hint.
             focusIntentAfterPrefillRef.current = true;
-            setLensState((current) =>
-              applyRecommendationHandoff(current, handoff)
+            setLensState(
+              (current) =>
+                applyRecommendationHandoffWithRecipe({
+                  state: current,
+                  handoff,
+                  surface: surfaceQuery.data,
+                }).state
             );
             // #324: 爆款复刻 chip opens paste-track sourcing journey (no scrape).
             if (handoff.recipeChipId === 'viral_adapt') {
@@ -3121,24 +3192,22 @@ export function ComposerHome({
         {viralAdaptJourney.phase === 'sourcing' ||
         viralAdaptJourney.phase === 'confirm' ? (
           <ViralAdaptPanel
-            onAddImageLabel={(label) =>
-              setViralAdaptJourney((current) =>
-                updateViralPasteDraft(current, {
-                  imageLabels: [...current.draft.imageLabels, label],
-                })
-              )
-            }
             onConfirm={() => {
               setViralAdaptJourney((current) => {
                 const next = confirmViralAdaptJourney(current);
                 if ('error' in next) return current;
                 if (next.submitIntent) {
-                  setLensState((lens) =>
-                    applyRecommendationHandoff(lens, {
-                      intent: next.submitIntent!,
-                      outputHint: 'image_text',
-                      recipeChipId: 'viral_adapt',
-                    })
+                  setLensState(
+                    (lens) =>
+                      applyRecommendationHandoffWithRecipe({
+                        state: lens,
+                        handoff: {
+                          intent: next.submitIntent!,
+                          outputHint: 'image_text',
+                          recipeChipId: 'viral_adapt',
+                        },
+                        surface: surfaceQuery.data,
+                      }).state
                   );
                   focusIntentAfterPrefillRef.current = true;
                 }
@@ -3158,6 +3227,13 @@ export function ComposerHome({
                 updateViralPasteDraft(current, patch)
               )
             }
+            onRequestImageUpload={() => {
+              sourcePickerRef.current?.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center',
+              });
+              sourcePickerRef.current?.focus();
+            }}
             onSourcingCancel={() =>
               setViralAdaptJourney((current) =>
                 cancelViralAdaptJourney(current)

@@ -23,8 +23,8 @@ export type ViralAdaptSourcingCardProps = {
   onDraftChange: (patch: Partial<ViralPasteDraft>) => void;
   onContinue: () => void;
   onCancel: () => void;
-  /** Optional: merchant picked image labels (host owns file upload). */
-  onAddImageLabel?: (label: string) => void;
+  /** Opens/focuses the host's real upload + rights-aware Composer seam. */
+  onRequestImageUpload?: () => void;
   busy?: boolean;
   className?: string;
 };
@@ -34,7 +34,7 @@ export function ViralAdaptSourcingCard({
   onDraftChange,
   onContinue,
   onCancel,
-  onAddImageLabel,
+  onRequestImageUpload,
   busy = false,
   className,
 }: ViralAdaptSourcingCardProps) {
@@ -53,13 +53,18 @@ export function ViralAdaptSourcingCard({
       data-testid="viral-adapt-sourcing-card"
     >
       <header className="flex flex-col gap-1">
-        <h2 className="text-sm font-semibold text-foreground">爆款复刻 · 取材</h2>
+        <h2 className="text-sm font-semibold text-foreground">
+          爆款复刻 · 取材
+        </h2>
         <p className="meiye-type-aux">
           粘贴参考笔记文字，或上传参考图。系统不会匿名抓取链接。
         </p>
       </header>
 
-      <div className="flex flex-col gap-2" data-testid="viral-adapt-track-paste">
+      <div
+        className="flex flex-col gap-2"
+        data-testid="viral-adapt-track-paste"
+      >
         <label
           className="text-sm font-medium text-foreground"
           htmlFor="viral-adapt-paste-text"
@@ -79,31 +84,33 @@ export function ViralAdaptSourcingCard({
         />
       </div>
 
-      <div className="flex flex-col gap-2" data-testid="viral-adapt-track-images">
-        <p className="text-sm font-medium text-foreground">上传参考图（可选）</p>
-        {state.draft.imageLabels.length > 0 ? (
-          <ul className="meiye-type-aux list-disc pl-5">
-            {state.draft.imageLabels.map((label) => (
-              <li key={label}>{label}</li>
-            ))}
-          </ul>
+      <div
+        className="flex flex-col gap-2"
+        data-testid="viral-adapt-track-images"
+      >
+        <p className="text-sm font-medium text-foreground">
+          上传参考图（可选）
+        </p>
+        {state.draft.imageAssetIds.length > 0 ? (
+          <p className="meiye-type-aux">
+            已附加 {state.draft.imageAssetIds.length} 张经 Composer 授权的参考图
+          </p>
         ) : (
-          <p className="meiye-type-aux">尚未添加参考图</p>
+          <p className="meiye-type-aux">尚未附加参考图</p>
         )}
-        {onAddImageLabel ? (
+        <p className="meiye-type-aux">
+          上传与授权在下方 Composer 完成，只有成功附加的资产会进入仿写。
+        </p>
+        {onRequestImageUpload ? (
           <Button
             data-testid="viral-adapt-add-image"
             disabled={busy}
-            onClick={() =>
-              onAddImageLabel(
-                `参考图 ${state.draft.imageLabels.length + 1}`
-              )
-            }
+            onClick={onRequestImageUpload}
             size="sm"
             type="button"
             variant="outline"
           >
-            添加参考图
+            前往上传参考图
           </Button>
         ) : null}
       </div>
@@ -119,10 +126,7 @@ export function ViralAdaptSourcingCard({
         <p className="text-sm font-medium text-foreground">
           链接取材（OpenCLI 本机登录态）
         </p>
-        <p
-          className="meiye-type-aux"
-          data-testid="viral-adapt-opencli-status"
-        >
+        <p className="meiye-type-aux" data-testid="viral-adapt-opencli-status">
           {state.liveGate.statusLabel}
         </p>
         {!opencliEnabled ? (
