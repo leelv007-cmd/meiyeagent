@@ -5,19 +5,26 @@ import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 
 import {
+  HARNESS_BUILTIN_PROMPTS,
+  HARNESS_CORE_PROMPT_KEYS,
+  HARNESS_PROMPT_SITE_COUNT,
   HARNESS_PROMPT_SITES,
   HARNESS_LANGFUSE_PROMPT_NAMES,
   LangfuseHarnessPromptResolver,
+  XHS_VERTICAL_PROMPT_KEYS,
   assertLangfusePromptRuntimePolicy,
   harnessPromptCapabilityRequirement,
 } from './langfuse-prompts.js';
 
-test('the single 14-site registry owns prompt names and capability requirements', () => {
+test('the single registry owns prompt names and capability requirements (14 core + 6 xhs)', () => {
   assert.deepEqual(
     Object.keys(HARNESS_PROMPT_SITES).sort(),
     Object.keys(HARNESS_LANGFUSE_PROMPT_NAMES).sort(),
   );
-  assert.equal(Object.keys(HARNESS_PROMPT_SITES).length, 14);
+  assert.equal(Object.keys(HARNESS_PROMPT_SITES).length, HARNESS_PROMPT_SITE_COUNT);
+  assert.equal(HARNESS_CORE_PROMPT_KEYS.length, 14);
+  assert.equal(XHS_VERTICAL_PROMPT_KEYS.length, 6);
+  assert.equal(HARNESS_PROMPT_SITE_COUNT, 20);
   assert.deepEqual(
     Object.fromEntries(
       Object.entries(HARNESS_PROMPT_SITES).map(([key, site]) => [
@@ -27,6 +34,11 @@ test('the single 14-site registry owns prompt names and capability requirements'
     ),
     HARNESS_LANGFUSE_PROMPT_NAMES,
   );
+
+  for (const key of XHS_VERTICAL_PROMPT_KEYS) {
+    assert.equal(HARNESS_PROMPT_SITES[key].name, `harness/xhs-${kebabFromXhsKey(key)}`);
+    assert.ok(HARNESS_BUILTIN_PROMPTS[key].length > 80);
+  }
 
   assert.deepEqual(
     harnessPromptCapabilityRequirement('briefImage'),
@@ -57,6 +69,157 @@ test('the single 14-site registry owns prompt names and capability requirements'
       referenceImage: true,
     }).requiredModalities,
     ['text/plain', 'image/*'],
+  );
+  // XHS style analysis keeps text/plain on the base pin; vision is opt-in.
+  assert.deepEqual(
+    harnessPromptCapabilityRequirement('xhsStyleAnalysis').requiredModalities,
+    ['text/plain'],
+  );
+  assert.deepEqual(
+    harnessPromptCapabilityRequirement('xhsStyleAnalysis', {
+      referenceImage: true,
+    }).requiredModalities,
+    ['text/plain', 'image/*'],
+  );
+});
+
+test('XHS vertical builtins are beauty-rewritten and not generic xhswork clones', () => {
+  const genericLeakMarkers = [
+    '京都穷游',
+    '冰岛极光',
+    '迪拜奢华',
+    'xiaohongshu（小红书风）',
+    'collage（拼图对比）',
+  ];
+  const beautyMarkers = ['美业', '门店', '小红书'];
+
+  for (const key of XHS_VERTICAL_PROMPT_KEYS) {
+    const content = HARNESS_BUILTIN_PROMPTS[key];
+    for (const leak of genericLeakMarkers) {
+      assert.equal(
+        content.includes(leak),
+        false,
+        `${key} must not retain unrewritten generic marker: ${leak}`,
+      );
+    }
+    assert.ok(
+      beautyMarkers.some((marker) => content.includes(marker)),
+      `${key} must carry beauty-industry framing`,
+    );
+  }
+
+  assert.match(HARNESS_BUILTIN_PROMPTS.xhsCoverPrompt, /beauty_soft/);
+  assert.match(HARNESS_BUILTIN_PROMPTS.xhsCoverPrompt, /spa_minimal/);
+  assert.match(HARNESS_BUILTIN_PROMPTS.xhsCoverPrompt, /salon_photo/);
+  assert.match(HARNESS_BUILTIN_PROMPTS.xhsOutline, /\{topic\}/);
+  assert.match(HARNESS_BUILTIN_PROMPTS.xhsOutline, /\{pageCount\}/);
+  assert.match(HARNESS_BUILTIN_PROMPTS.xhsImagePrompt, /\{pageContent\}/);
+  assert.match(HARNESS_BUILTIN_PROMPTS.xhsNoteGen, /\{tone\}/);
+});
+
+test('XHS vertical sites resolve with version pin and pilot builtin fallback', async (t) => {
+  const server = createServer((request, response) => {
+    const name = decodeURIComponent(
+      request.url?.split('/api/public/v2/prompts/')[1]?.split('?')[0] ?? '',
+    );
+    sendJson(response, 200, {
+      name,
+      version: 3,
+      type: 'text',
+      prompt: `Langfuse pinned body for ${name} with enough production detail.`,
+    });
+  });
+  const baseUrl = await listen(t, server);
+
+  const strict = new LangfuseHarnessPromptResolver({
+    baseUrl,
+    publicKey: 'pk-prompt',
+    secretKey: 'sk-prompt',
+    policy: 'strict',
+    versions: promptVersions(() => 3),
+  });
+  const frozenStrict = await strict.resolve();
+  for (const key of XHS_VERTICAL_PROMPT_KEYS) {
+    assert.equal(frozenStrict[key].isFallback, false);
+    assert.equal(frozenStrict[key].source, 'langfuse');
+    assert.equal(frozenStrict[key].version, '3');
+    assert.equal(frozenStrict[key].name, HARNESS_LANGFUSE_PROMPT_NAMES[key]);
+    assert.match(frozenStrict[key].contentHash, /^[a-f0-9]{64}$/u);
+  }
+
+  const warnings: Array<{ name: string; reason: string }> = [];
+  const pilot = new LangfuseHarnessPromptResolver({
+    policy: 'pilot',
+    warn: (warning) => warnings.push(warning),
+  });
+  const frozenPilot = await pilot.resolve();
+  for (const key of XHS_VERTICAL_PROMPT_KEYS) {
+    assert.equal(frozenPilot[key].isFallback, true);
+    assert.equal(frozenPilot[key].source, 'builtin');
+    assert.equal(frozenPilot[key].version, 'builtin-v1');
+    assert.equal(frozenPilot[key].fallbackReason, 'unconfigured');
+    assert.equal(frozenPilot[key].content, HARNESS_BUILTIN_PROMPTS[key]);
+  }
+  assert.ok(
+    warnings.some((warning) =>
+      warning.name === HARNESS_LANGFUSE_PROMPT_NAMES.xhsOutline &&
+      warning.reason === 'unconfigured'
+    ),
+  );
+});
+
+test('strict policy rejects incomplete pins including new XHS vertical keys', () => {
+  assert.throws(
+    () =>
+      assertLangfusePromptRuntimePolicy({
+        LANGFUSE_BASE_URL: 'https://langfuse.example',
+        LANGFUSE_PUBLIC_KEY: 'pk-prompt',
+        LANGFUSE_SECRET_KEY: 'sk-prompt',
+        LANGFUSE_PROMPT_VERSIONS: JSON.stringify({ intentNaming: 7 }),
+      }),
+    /xhsOutline|briefCompilation/u,
+  );
+
+  const completePins = Object.fromEntries(
+    Object.keys(HARNESS_LANGFUSE_PROMPT_NAMES).map((key) => [key, 1]),
+  );
+  assert.doesNotThrow(() =>
+    assertLangfusePromptRuntimePolicy({
+      LANGFUSE_BASE_URL: 'https://langfuse.example',
+      LANGFUSE_PUBLIC_KEY: 'pk-prompt',
+      LANGFUSE_SECRET_KEY: 'sk-prompt',
+      LANGFUSE_PROMPT_VERSIONS: JSON.stringify(completePins),
+    }),
+  );
+});
+
+test('production base prompts must come from the registry (anti-drift)', () => {
+  // Every registered site has a non-empty builtin and a stable Langfuse name.
+  // Downstream production code must freeze via LangfuseHarnessPromptResolver /
+  // HARNESS_BUILTIN_PROMPTS rather than re-embedding base templates.
+  for (const key of Object.keys(HARNESS_PROMPT_SITES) as Array<
+    keyof typeof HARNESS_PROMPT_SITES
+  >) {
+    const site = HARNESS_PROMPT_SITES[key];
+    const builtin = HARNESS_BUILTIN_PROMPTS[key];
+    assert.equal(typeof site.name, 'string');
+    assert.match(site.name, /^harness\//u);
+    assert.equal(typeof builtin, 'string');
+    assert.ok(builtin.trim().length > 40, `${key} builtin too short`);
+    assert.equal(HARNESS_LANGFUSE_PROMPT_NAMES[key], site.name);
+  }
+
+  // XHS vertical sites are part of the same pin set — no shadow inline catalog.
+  assert.deepEqual(
+    [...XHS_VERTICAL_PROMPT_KEYS].sort(),
+    [
+      'xhsContent',
+      'xhsCoverPrompt',
+      'xhsImagePrompt',
+      'xhsNoteGen',
+      'xhsOutline',
+      'xhsStyleAnalysis',
+    ],
   );
 });
 
@@ -286,6 +449,15 @@ function promptVersions(
       versionFor(key as keyof typeof HARNESS_LANGFUSE_PROMPT_NAMES),
     ]),
   ) as Record<keyof typeof HARNESS_LANGFUSE_PROMPT_NAMES, number>;
+}
+
+function kebabFromXhsKey(key: (typeof XHS_VERTICAL_PROMPT_KEYS)[number]) {
+  // xhsOutline → outline, xhsImagePrompt → image-prompt, xhsNoteGen → note-gen
+  const withoutPrefix = key.slice('xhs'.length);
+  return withoutPrefix
+    .replace(/([a-z0-9])([A-Z])/gu, '$1-$2')
+    .replace(/([A-Z]+)([A-Z][a-z])/gu, '$1-$2')
+    .toLowerCase();
 }
 
 function sendJson(response: ServerResponse, status: number, body: unknown) {

@@ -68,12 +68,14 @@ persists each returned version, label, source, and content hash in the durable
 task request. If Langfuse is unavailable, fixture runs remain green but emit an
 explicit downgrade warning and record the builtin version in the audit trace.
 
-The prompt catalog contains the 14 registered real consumers: intent naming,
-copy/image/video brief compilation, fact satisfaction/criticality, copy
-candidate generation, the three NotePlan nodes, destination mapping, copy
-generation, platform adaptation, and text response. `execution-selection.ts`
-remains outside this lane; its existing consumer is listed for follow-up rather
-than being replaced with a fake call.
+The prompt catalog contains 20 registered sites: the original 14 core consumers
+(intent naming, copy/image/video brief compilation, fact satisfaction/criticality,
+copy candidate generation, the three NotePlan nodes, destination mapping, copy
+generation, platform adaptation, and text response) plus 6 XHS vertical beauty
+assets (`harness/xhs-outline|content|note-gen|image-prompt|cover-prompt|style-analysis`,
+issue #315). `execution-selection.ts` remains outside this lane; its existing
+consumer is listed for follow-up rather than being replaced with a fake call.
+Strict deploys must pin all 20 keys in `LANGFUSE_PROMPT_VERSIONS`.
 
 The metrics exporter upserts deterministic items into the dataset named
 `harness-structured-node-metrics`. Create that dataset once in Langfuse before

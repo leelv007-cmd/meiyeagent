@@ -34,7 +34,7 @@ import type { RouteSnapshot } from '../model-supply/index.js';
 import { serverAuditReference } from '../creation-experience/creation-experience-events.js';
 import type { ResolvedSkillInstruction } from '../skills/types.js';
 import {
-  HARNESS_PROMPT_SITES,
+  HARNESS_CORE_PROMPT_KEYS,
   harnessPromptCapabilityRequirement,
   promptRevisionReferences,
   promptTraceReference,
@@ -630,11 +630,13 @@ function primaryTaskCapabilityRequirements(
   snapshot: CreationExecutionSnapshot,
 ): ModelCapabilityRequirementAxis[] {
   if (snapshot.lens === 'copy') {
-    return (
-      Object.keys(HARNESS_PROMPT_SITES) as Array<
-        keyof typeof HARNESS_PROMPT_SITES
-      >
-    ).map((key) => harnessPromptCapabilityRequirement(key));
+    // Pin the historical 14 core harness axes only. XHS vertical sites
+    // (#315) stay in the prompt registry for resolve/versioning/fallback but
+    // are not part of every copy-lens admission surface until their pipeline
+    // tickets wire explicit consumers.
+    return HARNESS_CORE_PROMPT_KEYS.map((key) =>
+      harnessPromptCapabilityRequirement(key),
+    );
   }
   // D-165 deliberately defers per-site multi-model pins. A media task's sole
   // durable RouteSnapshot therefore remains the generation route; controller
