@@ -1767,13 +1767,6 @@ async function runNoteHarnessWorkflow(
     }, `r${context.bundle.revision}`);
   }
 
-  activeRequest = await confirmPaidGenerationExecution({
-    workflowId,
-    request: activeRequest,
-    runtime,
-    reportProgress,
-  });
-
   const executionSkills = stageSkills.execution_selection;
   const noteSelectionInput = {
     workflowId,
@@ -2993,6 +2986,11 @@ const PAID_MEDIA_USAGE_RESOURCES = new Set(['image', 'video']);
  *
  * Judgment is operation-based (quote + reserved media units / media lens),
  * not "media workflow path only".
+ *
+ * Note: note-path call site activates at P1 (xhs-spec §8.2: note paid-media
+ * gate + in-stream presentation + fixture sync land together). At P0 the
+ * predicate may still return true for `image_text_note` lens fallback, but no
+ * note Harness path invokes this gate yet.
  */
 export function triggersPaidMediaExecution(
   request: HarnessWorkflowInput,

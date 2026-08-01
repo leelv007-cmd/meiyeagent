@@ -2163,6 +2163,63 @@ test('a copy snapshot with paid media units holds for pre-run confirmation', asy
   assert.ok(order.includes('selection'));
 });
 
+test('P0 image_text_note path does not produce execution_confirmation hold (note gate deferred to P1)', async () => {
+  // P0 现状 = 无门: note 路径调用点已删（xhs-spec §8.2 把 note 付费媒体过卡
+  // 排在 P1，与流内呈现 + e2e fixture 同步一体落地）。
+  // 即使 quote + usageReservation 命中 image_text_note lens 回落
+  // （triggersPaidMediaExecution === true），旅程也不会挂 execution_confirmation。
+  //
+  // P1 激活 note 路径调用点时，这条测试的断言应反转为正向（期望产生 hold）。
+  const request: HarnessWorkflowInput = {
+    ...mediaTaskInput('image_text_note'),
+    usageReservation: {
+      id: 'usage-reservation-note-lens-fallback',
+      // empty units → lens fallback: image_text_note ⇒ true
+      units: [],
+    },
+    decisionReferences: [
+      {
+        id: 'decision-note-style-p0-no-hold',
+        field: 'note_style',
+        value: '故事版',
+        revision: 1,
+      },
+    ],
+  };
+  assert.equal(triggersPaidMediaExecution(request), true);
+  const stages = noteStages();
+  const executeNoteAndSelect = stages.executeNoteAndSelect.bind(stages);
+  let selectionCalls = 0;
+  stages.executeNoteAndSelect = async (input) => {
+    selectionCalls += 1;
+    return executeNoteAndSelect(input);
+  };
+
+  await runHarnessWorkflow(
+    'task-image-text-note-p0-no-confirm',
+    request,
+    stages,
+    {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision(question) {
+        if (question.response.field === 'execution_confirmation') {
+          throw new Error(
+            'P0 note path must not hold on paid confirmation (gate deferred to P1).',
+          );
+        }
+        throw new Error(`Unexpected question: ${question.questionId}`);
+      },
+      async recordTrace() {},
+    },
+  );
+
+  assert.equal(selectionCalls, 1);
+});
+
 test('semantic resubmission rejects a forged workspace before persistence', () => {
   const original = snapshotTaskInput();
   const request = {
