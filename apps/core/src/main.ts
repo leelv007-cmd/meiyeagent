@@ -1262,7 +1262,8 @@ operationsService = new OperationsApplicationService(operationsRepository, {
   canvasExporter: new PersistentCanvasExportAdapter(assetStorage),
   creationExecutor: new ModelSupplyCreationExecutor(
     modelControlPlane,
-    referenceAssets
+    referenceAssets,
+    productQuoteService,
   ),
   groundingResolver: new ProductCreativeGroundingResolver(
     relationalProductRepository

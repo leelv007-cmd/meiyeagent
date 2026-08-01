@@ -63,6 +63,16 @@ export interface MerchantExecutionInputSnapshot {
   prompt: string;
 }
 
+/** Server-only first binding of the exact submission that will reach a provider. */
+export interface MerchantExecutionInputBindingPort {
+  bindMerchantExecutionInput(input: {
+    inputSnapshot: MerchantExecutionInputSnapshot;
+    quoteRevision: string;
+    taskId: string;
+    workspaceId: string;
+  }): MaybePromise<void>;
+}
+
 export function merchantExecutionInputHashes(input: MerchantExecutionInputSnapshot) {
   const source = input.input ?? {};
   const referenceAssetIds = Array.isArray(source.referenceAssetIds)
@@ -206,7 +216,8 @@ export class DurableProductBillingService
   implements
     ProductBillingApplicationPort,
     BillingLifecyclePort,
-    MerchantExecutionBillingPort
+    MerchantExecutionBillingPort,
+    MerchantExecutionInputBindingPort
 {
   constructor(
     private readonly repository: ProductBillingRepository,
@@ -306,6 +317,76 @@ export class DurableProductBillingService
 
   getUsage(taskId: string, workspaceId?: string) {
     return this.repository.getUsage(this.workspace(workspaceId), taskId);
+  }
+
+  async bindMerchantExecutionInput(input: {
+    inputSnapshot: MerchantExecutionInputSnapshot;
+    quoteRevision: string;
+    taskId: string;
+    workspaceId: string;
+  }): Promise<void> {
+    const workspaceId = this.workspace(input.workspaceId);
+    const hashes = merchantExecutionInputHashes(input.inputSnapshot);
+    await this.run(() =>
+      this.repository.withTransaction(
+        workspaceId,
+        [`task:${input.taskId}`],
+        async (transaction) => {
+          const [quote, usage] = await Promise.all([
+            transaction.getQuoteByTask(workspaceId, input.taskId),
+            transaction.getUsage(workspaceId, input.taskId),
+          ]);
+          if (
+            !quote ||
+            !usage ||
+            quote.workspaceId !== workspaceId ||
+            quote.taskId !== input.taskId ||
+            quote.revision !== input.quoteRevision ||
+            (quote.lifecycleStatus !== 'reserved' &&
+              quote.lifecycleStatus !== 'dispatched') ||
+            usage.workspaceId !== workspaceId ||
+            usage.taskId !== input.taskId ||
+            usage.quoteId !== quote.quoteId ||
+            usage.status !== 'reserved'
+          ) {
+            throw new P1DomainError(
+              'INVALID_STATE',
+              'Merchant execution input must bind to the exact reserved credit quote.',
+            );
+          }
+          const existing = [
+            quote.submissionPromptHash,
+            quote.submissionReferenceAssetsHash,
+            quote.submissionInputAssetsHash,
+          ];
+          if (existing.some(Boolean) && existing.some((value) => !value)) {
+            throw new P1DomainError(
+              'INVALID_STATE',
+              'Merchant execution input binding is incomplete.',
+            );
+          }
+          if (existing.every(Boolean)) {
+            if (
+              quote.submissionPromptHash !== hashes.promptHash ||
+              quote.submissionReferenceAssetsHash !== hashes.referenceAssetsHash ||
+              quote.submissionInputAssetsHash !== hashes.inputAssetsHash
+            ) {
+              throw new P1DomainError(
+                'INVALID_STATE',
+                'Merchant execution input is already bound to another submission.',
+              );
+            }
+            return;
+          }
+          await transaction.saveQuote(workspaceId, {
+            ...quote,
+            submissionInputAssetsHash: hashes.inputAssetsHash,
+            submissionPromptHash: hashes.promptHash,
+            submissionReferenceAssetsHash: hashes.referenceAssetsHash,
+          });
+        },
+      ),
+    );
   }
 
   async readMerchantExecutionContract(input: {

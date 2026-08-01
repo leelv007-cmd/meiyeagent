@@ -829,6 +829,8 @@ export interface CreationExecutionResult {
     sizeBytes?: number;
     compositionEvidence?: VideoCompositionEvidence;
   };
+  /** All generated media; `asset` remains the first-item compatibility projection. */
+  assets?: Array<NonNullable<CreationExecutionResult['asset']>>;
   copyCandidates?: Array<{
     title: string;
     body: string;

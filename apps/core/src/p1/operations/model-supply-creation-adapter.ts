@@ -6,6 +6,7 @@ import type {
   ModelSupplyResult,
   ReferenceAssetResolverPort,
 } from '../model-supply/index.js';
+import type { MerchantExecutionInputBindingPort } from '../product-billing/durable-service.js';
 import { OperationsError } from './application-service.js';
 import { nativeSupplyOperation } from '../harness/image-intent-compiler.js';
 import type {
@@ -221,7 +222,8 @@ function structuredCreativeIntent(
 export class ModelSupplyCreationExecutor implements CreationExecutorPort {
   constructor(
     private readonly controlPlane: ModelSupplyControlPlaneService,
-    private readonly referenceAssets?: ReferenceAssetResolverPort
+    private readonly referenceAssets?: ReferenceAssetResolverPort,
+    private readonly merchantExecutionInputBinding?: MerchantExecutionInputBindingPort,
   ) {}
 
   async inspect(
@@ -372,9 +374,7 @@ export class ModelSupplyCreationExecutor implements CreationExecutorPort {
         );
       }
     }
-    const result = await this.controlPlane.submitGeneration(
-      context,
-      {
+    const submission = {
         ...(input.billingTaskId && input.billingQuoteRevision
           ? {
               billingQuoteRevision: input.billingQuoteRevision,
@@ -408,7 +408,28 @@ export class ModelSupplyCreationExecutor implements CreationExecutorPort {
           catalogModelId: input.contract.catalogModelId,
           mode: 'fixed',
         },
-      },
+      } as const;
+    if (input.billingTaskId && input.billingQuoteRevision) {
+      if (!this.merchantExecutionInputBinding) {
+        throw new OperationsError(
+          'MERCHANT_EXECUTION_BINDING_UNAVAILABLE',
+          'Merchant execution input binding is unavailable.',
+          503,
+        );
+      }
+      await this.merchantExecutionInputBinding.bindMerchantExecutionInput({
+        inputSnapshot: {
+          input: structuredClone(submission.input),
+          prompt: submission.prompt,
+        },
+        quoteRevision: input.billingQuoteRevision,
+        taskId: input.billingTaskId,
+        workspaceId: input.context.workspaceId,
+      });
+    }
+    const result = await this.controlPlane.submitGeneration(
+      context,
+      submission,
       input.idempotencyKey
     );
     if (!input.contract.operation.startsWith('copy.')) {
@@ -467,7 +488,8 @@ export class ModelSupplyCreationExecutor implements CreationExecutorPort {
     result: ModelSupplyResult,
     lifecycleStatus?: DurableMediaGenerationJobView['status']
   ): CreationExecutionResult {
-    if (result.asset?.contentType === 'application/zip') {
+    const assets = result.assets ?? (result.asset ? [result.asset] : []);
+    if (assets.some((asset) => asset.contentType === 'application/zip')) {
       throw new Error('Creative generation cannot return an export archive.');
     }
     const selectedCandidate = result.snapshot.allowedCandidates?.find(
@@ -492,15 +514,10 @@ export class ModelSupplyCreationExecutor implements CreationExecutorPort {
           ? 'unknown'
           : 'failed';
     return {
-      ...(result.asset
+      ...(assets.length > 0
         ? {
-            asset: {
-              contentType: result.asset.contentType,
-              id: result.asset.id,
-              objectKey: result.asset.objectKey,
-              sha256: result.asset.sha256,
-              sizeBytes: result.asset.sizeBytes,
-            },
+            asset: this.creationAsset(assets[0]!),
+            assets: assets.map((asset) => this.creationAsset(asset)),
           }
         : {}),
       ...(result.copyCandidates
@@ -552,6 +569,21 @@ export class ModelSupplyCreationExecutor implements CreationExecutorPort {
       retryable: result.attempt.acceptance === 'rejected_before_accept',
       routeSnapshotId: result.snapshot.id,
       status,
+    };
+  }
+
+  private creationAsset(
+    asset: NonNullable<ModelSupplyResult['asset']>,
+  ): NonNullable<CreationExecutionResult['asset']> {
+    if (asset.contentType === 'application/zip') {
+      throw new Error('Creative generation cannot return an export archive.');
+    }
+    return {
+      contentType: asset.contentType,
+      id: asset.id,
+      objectKey: asset.objectKey,
+      sha256: asset.sha256,
+      sizeBytes: asset.sizeBytes,
     };
   }
 }

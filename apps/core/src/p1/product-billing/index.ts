@@ -11,6 +11,7 @@ export { ProductBillingFoundationModule } from './foundation-module.js';
 export {
   DurableProductBillingService,
   type ClaimMerchantExecutionInput,
+  type MerchantExecutionInputBindingPort,
   type MerchantExecutionBillingPort,
   type MerchantExecutionContract,
   type ProductBillingApplicationPort,

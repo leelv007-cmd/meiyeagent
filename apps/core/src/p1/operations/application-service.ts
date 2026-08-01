@@ -5963,7 +5963,7 @@ export class OperationsApplicationService {
             }
           : currentJob.contract.operation !== 'copy.generate' &&
               outcome.status === 'completed' &&
-              !outcome.asset
+              !(outcome.assets ?? (outcome.asset ? [outcome.asset] : [])).length
             ? {
                 executionProvenance: outcome.executionProvenance,
                 failureCode: 'MISSING_MEDIA_ASSET',
@@ -5971,6 +5971,17 @@ export class OperationsApplicationService {
                 routeSnapshotId: outcome.routeSnapshotId,
                 status: 'failed',
               }
+            : currentJob.contract.operation !== 'copy.generate' &&
+                outcome.status === 'completed' &&
+                (outcome.assets ?? (outcome.asset ? [outcome.asset] : [])).length !==
+                  currentJob.contract.outputCount
+              ? {
+                  executionProvenance: outcome.executionProvenance,
+                  failureCode: 'INVALID_MEDIA_ASSET_COUNT',
+                  providerJobId: outcome.providerJobId,
+                  routeSnapshotId: outcome.routeSnapshotId,
+                  status: 'failed',
+                }
             : outcome;
       const previousStatus = currentJob.status;
       const timestamp = this.timestamp();
@@ -5996,48 +6007,50 @@ export class OperationsApplicationService {
 
       if (
         appliedOutcome.status === 'completed' &&
-        appliedOutcome.asset &&
         currentJob.contract.operation !== 'copy.generate'
       ) {
-        const assetId = `creative-asset-${createHash('sha256')
-          .update(`${currentJob.id}:${appliedOutcome.asset.id}`)
-          .digest('hex')
-          .slice(0, 24)}`;
-        if (!state.creativeAssets.some((asset) => asset.id === assetId)) {
-          state.creativeAssets.push({
-            contentType: appliedOutcome.asset.contentType,
-            createdAt: timestamp,
-            id: assetId,
-            jobId: currentJob.id,
-            kind:
-              appliedOutcome.asset.contentType === 'video/mp4'
-                ? 'video'
-                : appliedOutcome.asset.contentType.startsWith('audio/')
-                  ? 'audio'
-                  : 'image',
-            objectKey: appliedOutcome.asset.objectKey,
-            ownedAssetId: appliedOutcome.asset.id,
-            sha256: appliedOutcome.asset.sha256,
-            ...(appliedOutcome.asset.compositionEvidence
-              ? {
-                  compositionEvidence: structuredClone(
-                    appliedOutcome.asset.compositionEvidence,
-                  ),
-                }
-              : {}),
-            ...(typeof appliedOutcome.asset.sizeBytes === 'number'
-              ? { sizeBytes: appliedOutcome.asset.sizeBytes }
-              : {}),
-            title: currentWork.intent.slice(0, 80),
-            workId: currentWork.id,
-            workspaceId: context.workspaceId,
-          });
-          currentJob.outputAssetIds.push(assetId);
-          this.creationEvent(state, context, 'first_assets_visible', {
-            assetId,
-            jobId: currentJob.id,
-            workId: currentWork.id,
-          });
+        for (const output of appliedOutcome.assets ??
+          (appliedOutcome.asset ? [appliedOutcome.asset] : [])) {
+          const assetId = `creative-asset-${createHash('sha256')
+            .update(`${currentJob.id}:${output.id}`)
+            .digest('hex')
+            .slice(0, 24)}`;
+          if (!state.creativeAssets.some((asset) => asset.id === assetId)) {
+            state.creativeAssets.push({
+              contentType: output.contentType,
+              createdAt: timestamp,
+              id: assetId,
+              jobId: currentJob.id,
+              kind:
+                output.contentType === 'video/mp4'
+                  ? 'video'
+                  : output.contentType.startsWith('audio/')
+                    ? 'audio'
+                    : 'image',
+              objectKey: output.objectKey,
+              ownedAssetId: output.id,
+              sha256: output.sha256,
+              ...(output.compositionEvidence
+                ? {
+                    compositionEvidence: structuredClone(
+                      output.compositionEvidence,
+                    ),
+                  }
+                : {}),
+              ...(typeof output.sizeBytes === 'number'
+                ? { sizeBytes: output.sizeBytes }
+                : {}),
+              title: currentWork.intent.slice(0, 80),
+              workId: currentWork.id,
+              workspaceId: context.workspaceId,
+            });
+            currentJob.outputAssetIds.push(assetId);
+            this.creationEvent(state, context, 'first_assets_visible', {
+              assetId,
+              jobId: currentJob.id,
+              workId: currentWork.id,
+            });
+          }
         }
       }
 

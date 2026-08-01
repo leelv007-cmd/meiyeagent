@@ -187,6 +187,7 @@ export class CatalogProductQuoteAuthority implements ProductQuoteAuthority {
       catalogModelId: model.id,
       operation: input.operation,
       catalogModelRevision: view.revisionId,
+      currency: 'CREDITS',
       creditCost,
       failureRefundsCredits: pricing.failureRefundsCredits,
       outputCount: quantity,

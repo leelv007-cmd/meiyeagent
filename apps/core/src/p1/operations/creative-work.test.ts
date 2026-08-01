@@ -1584,6 +1584,65 @@ describe('creative work lifecycle', () => {
     assert.equal(result.work.status, 'completed');
   });
 
+  it('delivers every provider image through the Creative Work projection', async () => {
+    const executor = new RecordedCreationExecutor();
+    executor.results.push({
+      assets: [
+        {
+          contentType: 'image/png',
+          id: 'provider-image-set-a',
+          objectKey: 'workspace-a/generated/image-set-a.png',
+          sha256: 'image-set-a-sha256',
+        },
+        {
+          contentType: 'image/png',
+          id: 'provider-image-set-b',
+          objectKey: 'workspace-a/generated/image-set-b.png',
+          sha256: 'image-set-b-sha256',
+        },
+      ],
+      providerJobId: 'provider-image-set',
+      routeSnapshotId: 'route-image-set',
+      status: 'completed',
+    });
+    const { service } = setup(executor);
+    const imageContract: CreativeExecutionContract = {
+      ...contract,
+      aspectRatio: '3:4',
+      catalogModelId: 'image-live',
+      operation: 'image.generate',
+      outputCount: 2,
+      outputLabel: '2 张 3:4 图片',
+      quoteRevision: 'quote-image-set-v1',
+    };
+    const work = await service.createCreativeWork(owner, {
+      intent: '生成两张门店主图',
+      mode: 'agent',
+      sessionId: 'session-image-set',
+      sourceReferences: [],
+    });
+    await service.updateCreativeWorkBrief(owner, work.id, {
+      action: 'adopt',
+      aiDraft: '生成两张门店主图',
+      field: 'intent',
+    });
+    await service.confirmCreativeWorkBrief(owner, work.id);
+
+    const result = await service.submitCreativeWork(
+      owner,
+      work.id,
+      imageContract,
+      'submit-image-set',
+    );
+
+    assert.equal(result.job.outputAssetIds.length, 2);
+    assert.equal(result.assets.length, 2);
+    assert.deepEqual(
+      result.assets.map((asset) => asset.ownedAssetId),
+      ['provider-image-set-a', 'provider-image-set-b'],
+    );
+  });
+
   it('fails media generation that reports completion without a usable Asset', async () => {
     const executor = new RecordedCreationExecutor();
     executor.results.push({

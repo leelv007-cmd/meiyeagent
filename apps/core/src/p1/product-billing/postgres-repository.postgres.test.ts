@@ -1,15 +1,76 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { after, before, describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { Pool } from 'pg';
 import { P1DomainError } from '../foundation/domain.js';
+import {
+  MemoryModelAssetStorage,
+  ModelSupplyApplicationService,
+  createDefaultCatalogModels,
+  createDefaultDeployments,
+} from '../model-supply/index.js';
+import type { ModelSupplyControlPlaneService } from '../model-supply/foundation-module.js';
+import {
+  MemoryOperationsRepository,
+  ModelSupplyCreationExecutor,
+  OperationsApplicationService,
+} from '../operations/index.js';
 import {
   DurableProductBillingService,
   merchantExecutionInputHashes,
 } from './durable-service.js';
 import { PostgresProductBillingRepository } from './postgres-repository.js';
+import {
+  CatalogProductQuoteAuthority,
+  type PublicProductQuoteIntent,
+} from './server-quote-authority.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
+const execFileAsync = promisify(execFile);
+
+async function buildComposerImageSetQuote() {
+  const composerModule = new URL(
+    '../../../../../mkfast-template-main/src/product/composer/composer-live.ts',
+    import.meta.url,
+  ).href;
+  const workspaceRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
+  const script = `
+    import { buildLiveQuoteInput } from ${JSON.stringify(composerModule)};
+    console.log(JSON.stringify(buildLiveQuoteInput({
+      sessionId: 'composer-credit-image-set',
+      lensId: 'image_text',
+      quantity: 2,
+      model: {
+        id: 'seedream-5-pro',
+        displayName: 'Seedream',
+        modality: 'image',
+        qualityRank: 1,
+        capabilityLabels: [],
+        available: true,
+        availabilityKind: 'production',
+        unitPrice: { amountMicros: 5_000_000, currency: 'CNY', revision: 'price-r1', unit: 'image' },
+      },
+      submission: {
+        creationMode: 'customized',
+        intent: '生成两张门店项目主图',
+        catalogModel: { id: 'seedream-5-pro', revision: 'catalog-composer-r1' },
+        recipe: { id: 'recipe-image-set', revision: 'recipe-image-set@1' },
+        contentPackagePlatform: 'xiaohongshu',
+        distributionTarget: 'export',
+        deliverable: { kind: 'image_text_package', quantity: 2, aspectRatio: '3:4' },
+      },
+    })));
+  `;
+  const { stdout } = await execFileAsync(
+    'pnpm',
+    ['--filter', '@meiye/web', 'exec', 'tsx', '--eval', script],
+    { cwd: workspaceRoot },
+  );
+  return JSON.parse(stdout) as PublicProductQuoteIntent;
+}
 
 describe(
   'Postgres ProductBillingRepository',
@@ -563,6 +624,242 @@ describe(
           promptHash: 'prompt-hash-drifted-before-replay',
         }),
         /another merchant execution|exactly match/i,
+      );
+    });
+
+    it('binds a server-derived first submission to a reserved quote exactly once', async () => {
+      const workspaceId = workspace();
+      const service = new DurableProductBillingService(repository);
+      const quote = await service.buildQuote({
+        ...quoteInput(workspaceId, 'server-bound-submission-quote'),
+        submissionInputAssetsHash: undefined,
+        submissionPromptHash: undefined,
+        submissionReferenceAssetsHash: undefined,
+      });
+      await service.confirm({
+        quoteId: quote.quoteId,
+        taskId: 'server-bound-submission-task',
+        workspaceId,
+      });
+      await service.beforeSubmit({
+        quoteRevision: quote.revision,
+        resource: 'video',
+        taskId: 'server-bound-submission-task',
+        workspaceId,
+      });
+
+      await assert.rejects(
+        service.readMerchantExecutionContract({
+          taskId: 'server-bound-submission-task',
+          workspaceId,
+        }),
+        /complete reserved credit quote contract/i,
+      );
+      await service.bindMerchantExecutionInput({
+        inputSnapshot: {
+          input: { durationSeconds: 10, referenceAssetIds: ['asset-b', 'asset-a'] },
+          prompt: 'server authoritative video prompt',
+        },
+        quoteRevision: quote.revision,
+        taskId: 'server-bound-submission-task',
+        workspaceId,
+      });
+      const bound = await service.readMerchantExecutionContract({
+        taskId: 'server-bound-submission-task',
+        workspaceId,
+      });
+      assert.ok(bound.submissionPromptHash);
+      assert.ok(bound.submissionReferenceAssetsHash);
+      assert.ok(bound.submissionInputAssetsHash);
+      await assert.rejects(
+        service.bindMerchantExecutionInput({
+          inputSnapshot: { input: { durationSeconds: 10 }, prompt: 'drifted prompt' },
+          quoteRevision: quote.revision,
+          taskId: 'server-bound-submission-task',
+          workspaceId,
+        }),
+        /already bound to another submission/i,
+      );
+    });
+
+    it('binds the real Composer quote to its server submission before delivering every image', async () => {
+      const workspaceId = workspace();
+      const composerQuote = await buildComposerImageSetQuote();
+      const authority = new CatalogProductQuoteAuthority({
+        async getCatalog() {
+          return {
+            models: [
+              {
+                creditPricing: {
+                  'image.generate': {
+                    creditCost: 5,
+                    failureRefundsCredits: true,
+                  },
+                },
+                id: 'seedream-5-pro',
+              },
+            ],
+            revisionId: 'catalog-composer-r1',
+          };
+        },
+      });
+      const service = new DurableProductBillingService(repository);
+      const quote = await service.buildQuote(
+        await authority.resolve({ ...composerQuote, workspaceId }),
+      );
+      assert.equal(quote.submissionInputAssetsHash, undefined);
+      assert.equal(quote.submissionPromptHash, undefined);
+      assert.equal(quote.submissionReferenceAssetsHash, undefined);
+
+      const operationsRepository = new MemoryOperationsRepository();
+      operationsRepository.grantMembership('owner-a', workspaceId);
+      const supplyResults = new Map<string, Awaited<ReturnType<ModelSupplyApplicationService['submit']>>>();
+      let providerOutputCount: number | undefined;
+      const supply = new ModelSupplyApplicationService({
+        assetStorage: new MemoryModelAssetStorage(),
+        deployments: createDefaultDeployments({
+          activatedDeploymentIds: ['seedream-5-pro-direct'],
+          activationEvidenceStatus: 'recorded',
+        }),
+        execution: {
+          async execute(request) {
+            providerOutputCount = request.submission.outputCount;
+            return {
+              assets: [
+                {
+                  bytes: Uint8Array.from([1, 2, 3]),
+                  contentType: 'image/png' as const,
+                },
+                {
+                  bytes: Uint8Array.from([4, 5, 6]),
+                  contentType: 'image/png' as const,
+                },
+              ],
+              kind: 'completed' as const,
+              providerCost: {
+                amount: 0.2,
+                currency: 'CNY' as const,
+                usage: { mediaUnits: 2 },
+              },
+            };
+          },
+        },
+        merchantExecutionBilling: service,
+        models: createDefaultCatalogModels(),
+        resultSink: {
+          async saveResult(_workspaceId, result) {
+            supplyResults.set(result.jobId, result);
+          },
+        },
+      });
+      const controlPlane = {
+        async getCatalog() {
+          return {
+            models: [
+              {
+                activationEvidence: { status: 'live_verified' as const },
+                availability: 'available' as const,
+                id: quote.catalogModelId,
+              },
+            ],
+            revisionId: quote.catalogModelRevision,
+          };
+        },
+        async getJob(_workspaceId: string, jobId: string) {
+          const result = supplyResults.get(jobId);
+          if (!result) throw new Error(`missing Model Supply result ${jobId}`);
+          return { result, status: 'completed' as const };
+        },
+        async submitGeneration(
+          context: { userId: string; workspaceId: string },
+          submission: Parameters<ModelSupplyApplicationService['submit']>[0],
+          idempotencyKey: string,
+        ) {
+          return supply.submit({
+            ...submission,
+            actorId: context.userId,
+            idempotencyKey,
+            workspaceId: context.workspaceId,
+          });
+        },
+      } as unknown as ModelSupplyControlPlaneService;
+      const operations = new OperationsApplicationService(operationsRepository, {
+        billingLifecycle: service,
+        canvasExporter: { async export() { throw new Error('not used'); } },
+        creationExecutor: new ModelSupplyCreationExecutor(
+          controlPlane,
+          undefined,
+          service,
+        ),
+        imageGenerator: { async submit() { throw new Error('not used'); } },
+        notifier: { async send() {} },
+      });
+      const context = {
+        actor: 'owner' as const,
+        correlationId: 'composer-credit-image-set',
+        userId: 'owner-a',
+        workspaceId,
+      };
+      const work = await operations.createCreativeWork(context, {
+        autoConfirmBrief: true,
+        intent: '生成两张门店项目主图',
+        mode: 'direct',
+        operation: 'image.generate',
+        sessionId: 'composer-credit-image-set',
+        sourceReferences: [],
+      });
+      const acceptedQuote = await service.confirm({
+        quoteId: quote.quoteId,
+        taskId: work.id,
+        workspaceId,
+      });
+      const {
+        catalogModelRevision,
+        confirmedAmount,
+        outputCount,
+        outputLabel,
+      } = acceptedQuote;
+      const currency = acceptedQuote.formula.currency;
+      if (
+        !catalogModelRevision ||
+        confirmedAmount === undefined ||
+        outputCount === undefined ||
+        !outputLabel ||
+        !currency
+      ) {
+        throw new Error('Composer quote must provide a complete execution contract.');
+      }
+      const result = await operations.submitCreativeWork(
+        context,
+        work.id,
+        {
+          aigcLabelEnabled: true,
+          aspectRatio: '3:4',
+          catalogModelId: quote.catalogModelId,
+          catalogRevision: catalogModelRevision,
+          currency,
+          dataClass: [],
+          estimatedAmount: confirmedAmount,
+          operation: 'image.generate',
+          outputCount,
+          outputLabel,
+          quoteAcceptedAt: '2026-08-01T00:00:00.000Z',
+          quoteRevision: quote.revision,
+          watermarkEnabled: false,
+        },
+        'composer-credit-image-set-submit',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        quote.quoteId,
+      );
+
+      assert.equal(providerOutputCount, quote.outputCount);
+      assert.equal(result.assets.length, quote.outputCount);
+      assert.equal(result.job.outputAssetIds.length, quote.outputCount);
+      assert.ok(
+        (await service.getQuote(quote.quoteId, workspaceId))?.submissionPromptHash,
       );
     });
 

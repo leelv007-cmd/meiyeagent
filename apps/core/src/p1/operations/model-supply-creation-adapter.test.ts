@@ -219,13 +219,28 @@ test('forwards the canonical Operations billing task into Model Supply', async (
   let captured:
     | { billingTaskId?: string; billingQuoteRevision?: string }
     | undefined;
+  let bound:
+    | {
+        inputSnapshot: {
+          input: Record<string, unknown> | null;
+          prompt: string;
+        };
+        quoteRevision: string;
+        taskId: string;
+        workspaceId: string;
+      }
+    | undefined;
   const expectedError = new Error('stop after billing capture');
   const creation = new ModelSupplyCreationExecutor({
     async submitGeneration(_context: unknown, request: typeof captured) {
       captured = structuredClone(request);
       throw expectedError;
     },
-  } as unknown as ModelSupplyControlPlaneService);
+  } as unknown as ModelSupplyControlPlaneService, undefined, {
+    async bindMerchantExecutionInput(input) {
+      bound = structuredClone(input);
+    },
+  });
 
   await assert.rejects(
     creation.submit({
@@ -256,6 +271,15 @@ test('forwards the canonical Operations billing task into Model Supply', async (
     prompt: '写三条内容\n\n本次成套内容结构（按顺序全部覆盖）：社交媒体封面。',
     promptRevision: 'creative-brief-grounding-v3',
     selection: { catalogModelId: 'llm-live', mode: 'fixed' },
+  });
+  assert.deepEqual(bound, {
+    inputSnapshot: {
+      input: {},
+      prompt: '写三条内容\n\n本次成套内容结构（按顺序全部覆盖）：社交媒体封面。',
+    },
+    quoteRevision: contract.quoteRevision,
+    taskId: 'creative-work-billing-1',
+    workspaceId: 'workspace-a',
   });
 });
 
