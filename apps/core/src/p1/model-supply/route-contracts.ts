@@ -207,6 +207,8 @@ export interface ModelSupplySubmission {
     generateAudio?: boolean;
     watermark?: boolean;
     maxOutputTokens?: number;
+    reasoningEffort?: 'high';
+    thinking?: { type: 'enabled' | 'disabled' };
     temperature?: number;
     strength?: number;
     format?: string;

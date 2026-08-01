@@ -66,7 +66,7 @@ test('normalizedGenerationParams: customized injects owner + standard', () => {
       beautyVoiceRole: 'customer',
       thinkingLevel: 'deep',
     }),
-    { beautyVoiceRole: 'customer', thinkingLevel: 'standard' },
+    { beautyVoiceRole: 'owner', thinkingLevel: 'standard' },
   );
 });
 
@@ -128,6 +128,6 @@ test('createCreationExecutionSnapshot customized forces standard thinking', () =
     },
     '2026-08-01T00:00:00.000Z',
   );
-  assert.equal(snapshot.beautyVoiceRole, 'beautician');
+  assert.equal(snapshot.beautyVoiceRole, 'owner');
   assert.equal(snapshot.thinkingLevel, 'standard');
 });

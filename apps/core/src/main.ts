@@ -241,7 +241,10 @@ import {
 } from './p1/harness/production-context-port.js';
 import { createProductionHarnessMediaAssembly } from './p1/harness/production-media-assembly.js';
 import { ProductionHarnessFrozenRouteSnapshotResolver } from './p1/harness/production-frozen-route.js';
-import { ProductionHarnessStagePorts } from './p1/harness/production-stage-ports.js';
+import {
+  ProductionHarnessStagePorts,
+  type HarnessStructuredNodeRunnerFactory,
+} from './p1/harness/production-stage-ports.js';
 import { IMAGE_MODEL_RECIPE_PROFILE } from './p1/harness/image-intent-compiler.js';
 import {
   FixtureImageExactTextVerifier,
@@ -1958,13 +1961,9 @@ if (harnessRuntimeConfig) {
       billingTaskId,
       billingQuoteRevision,
       frozenRouteSnapshot,
-    }: {
-      workspaceId: string;
-      actorId: string;
-      billingTaskId?: string;
-      billingQuoteRevision?: string;
-      frozenRouteSnapshot?: import('./p1/model-supply/index.js').RouteSnapshot;
-    }) {
+      providerOptions,
+      selection,
+    }: Parameters<HarnessStructuredNodeRunnerFactory['create']>[0]) {
       if (!billingTaskId || !billingQuoteRevision) {
         throw new Error(
           'Structured model jobs require the Coordinator billing lineage.',
@@ -1977,7 +1976,12 @@ if (harnessRuntimeConfig) {
         actorId,
         ...(frozenRouteSnapshot
           ? { frozenRouteSnapshot }
-          : { selection: { mode: 'auto' as const, profile: 'quality' as const } }),
+          : {
+              selection:
+                selection ??
+                ({ mode: 'auto', profile: 'quality' } as const),
+            }),
+        ...(providerOptions ? { providerOptions } : {}),
         billingTaskId,
         billingQuoteRevision,
       });

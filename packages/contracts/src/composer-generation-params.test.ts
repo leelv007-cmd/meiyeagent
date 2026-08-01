@@ -69,6 +69,17 @@ test('customized always injects owner + standard; free keeps unselected voice op
   );
   assert.deepEqual(
     resolveComposerGenerationParams({
+      creationMode: 'customized',
+      beautyVoiceRole: 'customer',
+      thinkingLevel: 'deep',
+    }),
+    {
+      beautyVoiceRole: DEFAULT_BEAUTY_VOICE_ROLE,
+      thinkingLevel: DEFAULT_THINKING_LEVEL,
+    },
+  );
+  assert.deepEqual(
+    resolveComposerGenerationParams({
       creationMode: 'free',
       thinkingLevel: 'deep',
     }),

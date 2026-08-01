@@ -8,6 +8,7 @@ import type {
 } from "@meiye/contracts";
 import {
 	boundedExecutionSnapshotSchema,
+	mapThinkingLevelToModelOptions,
 } from "@meiye/contracts";
 import { z } from "zod";
 
@@ -732,6 +733,14 @@ export class UnifiedHarnessStagePorts
 	) {
 		const snapshot = requireSnapshot(input.request);
 		const runner = this.structuredRunner(input.request, "execution_selection");
+		const xhsGenerationParams =
+			snapshot.contentPackagePlatform === "xiaohongshu" &&
+			snapshot.beautyVoiceRole
+				? {
+						beautyVoiceRole: snapshot.beautyVoiceRole,
+						topic: snapshot.intent.text,
+					}
+				: undefined;
 		return new NotePlanCompiler(
 			new ModelSupplyNotePlanStructuredPort(
 				runner,
@@ -749,8 +758,12 @@ export class UnifiedHarnessStagePorts
 							...(input.request.prompts.noteConsistency
 								? { noteConsistency: input.request.prompts.noteConsistency }
 								: {}),
+							...(input.request.prompts.xhsNoteGen
+								? { xhsNoteGen: input.request.prompts.xhsNoteGen }
+								: {}),
 						}
-					: undefined,
+						: undefined,
+				xhsGenerationParams,
 			),
 			{
 				generate: async ({ page, reason, evaluationReason }) => {
@@ -791,10 +804,20 @@ export class UnifiedHarnessStagePorts
 	) {
 		assertHarnessExecutionAssemblyPinned(request);
 		const snapshot = requireSnapshot(request);
+		const modelOptions = mapThinkingLevelToModelOptions(
+			snapshot.thinkingLevel ?? "standard",
+		);
 		const runner = this.runners.create({
 			actorId: request.actorId,
 			billingQuoteRevision: snapshot.quote.revision,
 			billingTaskId: snapshot.task.id,
+			selection: { mode: "auto", profile: modelOptions.routeProfile },
+			providerOptions: {
+				...(modelOptions.reasoningEffort
+					? { reasoningEffort: modelOptions.reasoningEffort }
+					: {}),
+				thinking: modelOptions.thinking,
+			},
 			workspaceId: request.workspaceId,
 		});
 		if (!request.executionAssembly) return runner;

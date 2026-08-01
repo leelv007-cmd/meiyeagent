@@ -1,5 +1,9 @@
 import { Button } from '@/components/ui/button';
-import type { BeautyVoiceRole, CreationMode, ThinkingLevel } from '@meiye/contracts';
+import type {
+  BeautyVoiceRole,
+  CreationMode,
+  ThinkingLevel,
+} from '@meiye/contracts';
 
 import {
   BEAUTY_VOICE_ROLE_OPTIONS,
@@ -31,7 +35,10 @@ export function ComposerGenerationParamsPanel({
       data-testid="composer-generation-params"
     >
       {showVoice ? (
-        <fieldset className="space-y-2" data-testid="composer-beauty-voice-role">
+        <fieldset
+          className="space-y-2"
+          data-testid="composer-beauty-voice-role"
+        >
           <legend className="text-sm font-medium">这次用谁的口吻写</legend>
           <div className="flex flex-wrap gap-2">
             {BEAUTY_VOICE_ROLE_OPTIONS.map((option) => (

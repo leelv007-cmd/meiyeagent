@@ -9,7 +9,9 @@ import type {
   ReuseTaskSeed,
   StoreFactKind,
   HarnessStage,
+  ThinkingProviderOptions,
 } from '@meiye/contracts';
+import type { RequestedSelection } from '../model-supply/index.js';
 
 import type {
   ContentPackageRevisionWriteInput,
@@ -180,6 +182,11 @@ export interface HarnessStructuredNodeRunnerFactory {
     billingQuoteRevision?: string;
     frozenRouteSnapshot?: NonNullable<
       HarnessWorkflowInput['frozenRouteSnapshot']
+    >;
+    selection?: RequestedSelection;
+    providerOptions?: Pick<
+      ThinkingProviderOptions,
+      'reasoningEffort' | 'thinking'
     >;
   }): StructuredNodeRunner;
 }
@@ -1006,6 +1013,7 @@ function executionChildLifecycleInput(
   node: StructuredNodeRunnerRequest<unknown>,
 ): Omit<AgentPrimitiveLifecycleInput, 'phase'> {
   const promptKey =
+    node.promptKey ??
     PROMPT_KEY_BY_SCHEMA_NAME[
       node.schemaName as keyof typeof PROMPT_KEY_BY_SCHEMA_NAME
     ];

@@ -5,6 +5,7 @@
 | Issue | #321 |
 | Spec | `docs/specs/xhs-vertical-integration-spec-2026-08-01.md` §4.5 / §4.7 |
 | Date | 2026-08-01 |
+| Merge-review follow-up | 2026-08-02 |
 | Branch | `leelv007-cmd/lane-321` |
 | Baseline | `69cf06e1a6e18734fcefef8122a833e8a4b8e3a7` |
 
@@ -37,7 +38,7 @@
 约束：
 
 - **不**引入 `thinkingPointsCost` / 独立 entitlement bucket（「不另建开关」）。
-- 不支持 thinking 的模型可忽略 provider 字段；routeProfile 供未来 auto 路由消费。
+- 不支持 thinking 的模型可忽略 provider 字段；routeProfile 由现有 NotePlan auto 路由消费。
 - **定制创作强制 `standard` 且隐藏控件**；**自由创作展开区显露**。
 
 ### 1.3 美业口吻词汇
@@ -54,22 +55,24 @@
 | --- | --- |
 | contracts | `packages/contracts/src/composer-generation-params.ts` |
 | core snapshot | `apps/core/src/p1/execution-spine/creation-execution-snapshot.ts`（`beautyVoiceRole` / `thinkingLevel` 可选冻结） |
+| core consumer | `apps/core/src/p1/harness/note-plan-structured-port.ts` + `unified-media-stage-ports.ts`（XHS NotePlan prompt / model route） |
+| provider options | `apps/core/src/p1/model-supply/structured-node-runner.ts`（request-scoped thinking） |
 | web pure | `mkfast-template-main/src/product/composer/composer-generation-params.ts` |
 | web UI | `…/composer-generation-params-panel.tsx`；挂 `composer-home` free 展开区（attachment 槽） |
 | 提交注入 | `composer-home` → `buildSubmissionGenerationParams` → `composer-submission-client` body |
 
-**非本票：** 不重写 workbench 双栏壳、不接 Tiptap、不改 note 写方全链、不接 xhsNoteGen 运行时 pipeline（位点已在 #315；本票只保证参数进生成请求合同与快照）。
+**2026-08-02 合入审核修复：** 原交底只停在请求合同与快照，造成生产零消费者。现在参数从冻结快照进入既有 XHS NotePlan / `xhsNoteGen` 文本节点与 Model Supply auto profile/provider options；仍不重写 note 全链、不新建 runtime、不改前端计价。
 
 ## 3. 验收映射
 
 | 票面验收 | 证据 |
 | --- | --- |
-| 选择器选择注入生成请求（interaction + core 合同） | web interaction + `composer-submission-client` 合同；core snapshot freeze |
+| 选择器选择注入生成请求（interaction + core 合同） | web interaction + `composer-submission-client` 合同；core snapshot freeze + XHS NotePlan 生产消费测试 |
 | 深度思考定制隐藏 / 自由显露（interaction） | `composer-generation-params.interaction.test.tsx` |
-| 档位映射行为测试绿 | contracts + core `mapThinkingLevelToModelOptions` |
+| 档位映射行为测试绿 | contracts + core `mapThinkingLevelToModelOptions`；Model Supply route + request-scoped provider body |
 
 ## 4. 语义锁 / 边界
 
-- 只动 Composer 参数选择器与请求注入。
+- 只动 Composer 参数选择器、请求注入与既有 NotePlan / Model Supply 消费缝。
 - 不改 `docs/design` / `docs/adr` / `docs/specs`。
 - 不 push、不关票、不写 merge-ledger。

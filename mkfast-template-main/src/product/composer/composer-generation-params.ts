@@ -61,7 +61,9 @@ export function shouldShowThinkingLevel(creationMode: CreationMode): boolean {
 
 /** Whether free-mode should mount the explicit beauty voice selector. */
 export function shouldShowBeautyVoiceRole(creationMode: CreationMode): boolean {
-  return generationParamsVisibility(creationMode).beautyVoiceRole === 'explicit';
+  return (
+    generationParamsVisibility(creationMode).beautyVoiceRole === 'explicit'
+  );
 }
 
 /**

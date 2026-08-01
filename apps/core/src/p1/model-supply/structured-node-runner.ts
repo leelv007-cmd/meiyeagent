@@ -26,6 +26,8 @@ export interface StructuredNodeRunnerRequest<Output> {
   schema: ZodType<Output>;
   schemaName: string;
   schemaRevision: string;
+  /** Frozen prompt lineage selected by the owning Harness node. */
+  promptKey?: string;
   abortSignal?: AbortSignal;
   /** Revalidates live execution facts immediately before every provider effect. */
   beforeProviderAttempt?: () => Promise<void>;
@@ -90,6 +92,10 @@ export class ModelSupplyStructuredNodeRunner implements StructuredNodeRunner {
       dataClass?: DataClass[];
       billingTaskId?: string;
       billingQuoteRevision?: string;
+      providerOptions?: {
+        reasoningEffort?: 'high';
+        thinking: { type: 'enabled' | 'disabled' };
+      };
     },
   ) {
     if (!options.selection && !options.frozenRouteSnapshot) {
@@ -168,6 +174,9 @@ export class ModelSupplyStructuredNodeRunner implements StructuredNodeRunner {
         promptRevision: request.schemaRevision,
         exampleSetRevision: request.schemaName,
         productUsageQuantity: 0,
+        ...(this.options.providerOptions
+          ? { input: structuredClone(this.options.providerOptions) }
+          : {}),
         ...(frozenRoute
           ? { frozenRouteSnapshot: structuredClone(frozenRoute) }
           : {}),
@@ -343,9 +352,7 @@ export class AiSdkStructuredObjectExecutor
     schemaName: string;
   }) {
     const { providerRequest, ...structuredInput } = input;
-    const runner = providerRequest?.submission.frozenRouteSnapshot
-      ? this.pinnedRunner(providerRequest)
-      : this.runner;
+    const runner = this.runnerForRequest(providerRequest);
     const generated = await runner.generateStructured({
       ...structuredInput,
       telemetryContext: providerRequest
@@ -374,13 +381,24 @@ export class AiSdkStructuredObjectExecutor
     usage: { inputTokens: number; outputTokens: number },
     providerRequest?: ProviderExecutionRequest,
   ) {
-    const runner = providerRequest?.submission.frozenRouteSnapshot
-      ? this.pinnedRunner(providerRequest)
-      : this.runner;
+    const runner = this.runnerForRequest(providerRequest);
     return runner.providerCost(usage);
   }
 
-  private pinnedRunner(request: ProviderExecutionRequest) {
+  private runnerForRequest(request?: ProviderExecutionRequest) {
+    if (!request) return this.runner;
+    const options = requestScopedAiSdkOptions(this.options, request);
+    return request.submission.frozenRouteSnapshot
+      ? this.pinnedRunner(request, options)
+      : options === this.options
+        ? this.runner
+        : new OpenAiCompatibleAiSdkRunner(options);
+  }
+
+  private pinnedRunner(
+    request: ProviderExecutionRequest,
+    options: OpenAiCompatibleAiSdkOptions,
+  ) {
     const route = request.submission.frozenRouteSnapshot;
     const binding = request.runtimeBinding;
     if (!route?.capabilityRevisionId) {
@@ -429,10 +447,24 @@ export class AiSdkStructuredObjectExecutor
     return openAiCompatibleRunnerForRequest(
       request,
       {
-        ...this.options,
+        ...options,
         catalogModelId: request.model.id,
       },
       this.runner,
     );
   }
+}
+
+function requestScopedAiSdkOptions(
+  options: OpenAiCompatibleAiSdkOptions,
+  request: ProviderExecutionRequest,
+): OpenAiCompatibleAiSdkOptions {
+  const reasoningEffort = request.submission.input?.reasoningEffort;
+  const thinking = request.submission.input?.thinking;
+  if (!reasoningEffort && !thinking) return options;
+  return {
+    ...options,
+    ...(reasoningEffort ? { reasoningEffort } : {}),
+    ...(thinking ? { thinking } : {}),
+  };
 }

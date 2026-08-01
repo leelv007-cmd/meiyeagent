@@ -10,7 +10,10 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const home = readFileSync(join(here, 'composer-home.tsx'), 'utf8');
-const client = readFileSync(join(here, 'composer-submission-client.ts'), 'utf8');
+const client = readFileSync(
+  join(here, 'composer-submission-client.ts'),
+  'utf8'
+);
 
 test('ComposerHome mounts generation params panel and injects on submit', () => {
   assert.match(home, /ComposerGenerationParamsPanel/);

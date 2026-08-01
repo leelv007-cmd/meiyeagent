@@ -143,7 +143,8 @@ export function generationParamsVisibility(creationMode: CreationMode): {
 /**
  * Resolve what the submission should carry given creation mode + UI state.
  *
- * - customized: always inject owner (or provided default) + standard thinking
+ * - customized: always inject owner + standard thinking, ignoring hidden free
+ *   mode state
  * - free: pass merchant selection; unselected beauty role stays undefined so
  *   MarketingIdentity remains the default voice (selector = explicit override)
  */
@@ -158,8 +159,7 @@ export function resolveComposerGenerationParams(input: {
   const visibility = generationParamsVisibility(input.creationMode);
   if (visibility.beautyVoiceRole === 'default_inject') {
     return {
-      beautyVoiceRole:
-        input.beautyVoiceRole ?? DEFAULT_BEAUTY_VOICE_ROLE,
+      beautyVoiceRole: DEFAULT_BEAUTY_VOICE_ROLE,
       thinkingLevel: DEFAULT_THINKING_LEVEL,
     };
   }

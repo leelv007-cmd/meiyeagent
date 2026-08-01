@@ -1574,6 +1574,143 @@ test("image-text note page generation uses the existing image executor without c
 	assert.equal(submissions[1]?.selection.catalogModelId, "model-image-1");
 });
 
+test("frozen XHS generation params drive the existing note prompt and model route", async () => {
+	const baseRequest = harnessInputWithExecutionAssembly(
+		"image_text_note",
+		"package-note-generation-params",
+	);
+	const snapshot = creationExecutionSnapshotSchema.parse({
+		...baseRequest.executionSnapshot,
+		beautyVoiceRole: "customer",
+		contentPackagePlatform: "xiaohongshu",
+		creationMode: "free",
+		platform: { id: "xiaohongshu" },
+		thinkingLevel: "deep",
+	});
+	const request: HarnessWorkflowInput = {
+		...baseRequest,
+		creationMode: "free",
+		executionSnapshot: snapshot,
+	};
+	const factoryInputs: Array<
+		Parameters<HarnessStructuredNodeRunnerFactory["create"]>[0]
+	> = [];
+	const structuredRequests: StructuredNodeRunnerRequest<unknown>[] = [];
+	const fixtureFactory = noteRunnerFactory();
+	const createPorts = () =>
+		new UnifiedHarnessStagePorts(
+			noteCopyPorts(),
+			{
+				create(input) {
+					factoryInputs.push(structuredClone(input));
+					const runner = fixtureFactory.create(input);
+					return {
+						async run<Output>(structured: StructuredNodeRunnerRequest<Output>) {
+							structuredRequests.push(
+								structured as StructuredNodeRunnerRequest<unknown>,
+							);
+							return runner.run(structured);
+						},
+					};
+				},
+			},
+			undefined as never,
+			new MemoryContentPackageRevisionWritePort(),
+			() => "2026-08-02T00:00:00.000Z",
+			{
+				async read() {
+					return {
+						styles: {
+							styles: [
+								{
+									id: "facts",
+									name: "干货版",
+									writingGuide: "清楚说明",
+									structureTemplate: "结论、依据、行动",
+									platforms: ["xiaohongshu"],
+								},
+							],
+						},
+					};
+				},
+			},
+			undefined,
+			notBilledExecutionChildObservability(),
+		);
+	const ports = createPorts();
+
+	await ports.compileNoteBrief({
+		workflowId: snapshot.task.id,
+		request,
+		declaration: {
+			normalizedIntent: "介绍夏日护理项目",
+			taskType: "daily_service_exposure",
+			deliveryLayer: "finished_media",
+			relevantAssetCategories: ["product_service"],
+			usedAssetCategories: ["product_service"],
+			route: "customized",
+			routingSource: "model",
+			implicitConstraints: [],
+		},
+		context: contextSnapshot(),
+	});
+
+	assert.deepEqual(factoryInputs[0]?.selection, {
+		mode: "auto",
+		profile: "quality",
+	});
+	assert.deepEqual(factoryInputs[0]?.providerOptions, {
+		reasoningEffort: "high",
+		thinking: { type: "enabled" },
+	});
+	const noteTextRequest = structuredRequests.find(
+		({ schemaName }) => schemaName === "harness_note_text_block_v1",
+	);
+	assert.match(noteTextRequest?.instructions ?? "", /frozen:xhsNoteGen/u);
+	assert.match(noteTextRequest?.instructions ?? "", /闺蜜聊天/u);
+	assert.match(noteTextRequest?.instructions ?? "", /到店体验顾客/u);
+
+	const nonXhsSnapshot = creationExecutionSnapshotSchema.parse({
+		...snapshot,
+		beautyVoiceRole: undefined,
+		contentPackagePlatform: "douyin",
+		id: "snapshot-note-generation-params-negative",
+		platform: { id: "douyin" },
+		thinkingLevel: "standard",
+	});
+	await createPorts().compileNoteBrief({
+		workflowId: nonXhsSnapshot.task.id,
+		request: {
+			...request,
+			executionSnapshot: nonXhsSnapshot,
+		},
+		declaration: {
+			normalizedIntent: "介绍夏日护理项目",
+			taskType: "daily_service_exposure",
+			deliveryLayer: "finished_media",
+			relevantAssetCategories: ["product_service"],
+			usedAssetCategories: ["product_service"],
+			route: "customized",
+			routingSource: "model",
+			implicitConstraints: [],
+		},
+		context: contextSnapshot(),
+	});
+
+	assert.deepEqual(factoryInputs.at(-1)?.selection, {
+		mode: "auto",
+		profile: "balanced",
+	});
+	assert.deepEqual(factoryInputs.at(-1)?.providerOptions, {
+		thinking: { type: "disabled" },
+	});
+	const nonXhsTextRequest = structuredRequests
+		.filter(({ schemaName }) => schemaName === "harness_note_text_block_v1")
+		.at(-1);
+	assert.equal(nonXhsTextRequest?.promptKey, "noteTextBlock");
+	assert.doesNotMatch(nonXhsTextRequest?.instructions ?? "", /xhsNoteGen/u);
+});
+
 test("media delivery writes the shared ContentPackage once with asset, usage, cost, and snapshot lineage", async () => {
 	for (const kind of ["image", "video"] as const) {
 		const packageId = `package-${kind}`;

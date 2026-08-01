@@ -1,7 +1,9 @@
 import {
+  type BeautyVoiceRole,
   notePlanConsistencyEvaluationSchema,
   notePlanSchema,
   notePlanTextBlockSchema,
+  resolveBeautyVoiceInjection,
 } from '@meiye/contracts';
 
 import type { StructuredNodeRunner } from './structured-nodes.js';
@@ -52,6 +54,11 @@ export class ModelSupplyNotePlanStructuredPort
       notePlan?: HarnessFrozenPrompt;
       noteTextBlock?: HarnessFrozenPrompt;
       noteConsistency?: HarnessFrozenPrompt;
+      xhsNoteGen?: HarnessFrozenPrompt;
+    },
+    private readonly generationParams?: {
+      beautyVoiceRole: BeautyVoiceRole;
+      topic: string;
     },
   ) {}
 
@@ -93,11 +100,10 @@ export class ModelSupplyNotePlanStructuredPort
     const result = await this.runEffect(effectIdempotencyKey, () =>
       this.runner.run({
         effectIdempotencyKey,
+        promptKey: this.generationParams ? 'xhsNoteGen' : 'noteTextBlock',
         schemaName: 'harness_note_text_block_v1',
         schemaRevision: 'note-text-block-v1',
-        instructions:
-          this.prompts?.noteTextBlock?.content ??
-          HARNESS_BUILTIN_PROMPTS.noteTextBlock,
+        instructions: this.noteTextInstructions(),
         prompt: JSON.stringify(input),
         schema: notePlanTextBlockSchema,
       }),
@@ -127,4 +133,43 @@ export class ModelSupplyNotePlanStructuredPort
     );
     return notePlanConsistencyEvaluationSchema.parse(result.output);
   }
+
+  private noteTextInstructions() {
+    const noteTextBlock =
+      this.prompts?.noteTextBlock?.content ??
+      HARNESS_BUILTIN_PROMPTS.noteTextBlock;
+    if (!this.generationParams) return noteTextBlock;
+
+    const voice = resolveBeautyVoiceInjection(
+      this.generationParams.beautyVoiceRole,
+    );
+    const xhsNoteGen =
+      this.prompts?.xhsNoteGen?.content ?? HARNESS_BUILTIN_PROMPTS.xhsNoteGen;
+    const compiled = replacePromptVariables(xhsNoteGen, {
+      topic: this.generationParams.topic,
+      tone: voice.tone,
+      roleBlock: voice.roleBlock,
+    });
+    return [
+      compiled,
+      [
+        '本次冻结的生成参数：',
+        `内容主题：${this.generationParams.topic}`,
+        `语气风格：${voice.tone}`,
+        voice.roleBlock,
+      ].join('\n'),
+      noteTextBlock,
+      '执行边界：XHS 模板在这里只提供主题、口吻和平台约束；当前节点仍只返回 NotePlan 单页结构。',
+    ].join('\n\n');
+  }
+}
+
+function replacePromptVariables(
+  prompt: string,
+  variables: Record<'roleBlock' | 'tone' | 'topic', string>,
+) {
+  return Object.entries(variables).reduce(
+    (compiled, [key, value]) => compiled.split(`{${key}}`).join(value),
+    prompt,
+  );
 }

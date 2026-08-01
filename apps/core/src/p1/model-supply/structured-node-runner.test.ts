@@ -165,6 +165,10 @@ test('frozen structured execution uses the historical deployment and capability 
     frozenRouteSnapshot: frozenRoute,
     billingTaskId: 'task-1',
     billingQuoteRevision: 'quote-r1',
+    providerOptions: {
+      reasoningEffort: 'high',
+      thinking: { type: 'enabled' },
+    },
   });
 
   await runner.run({
@@ -193,6 +197,10 @@ test('frozen structured execution uses the historical deployment and capability 
     'credential-a-r1',
   );
   assert.deepEqual(executor.requests[0]?.routeSnapshot, frozenRoute);
+  assert.deepEqual(executor.requests[0]?.submission.input, {
+    reasoningEffort: 'high',
+    thinking: { type: 'enabled' },
+  });
 
   assembledCredentialVersion = 'credential-a-r2';
   await assert.rejects(
@@ -302,6 +310,66 @@ test('AI SDK structured executor sends pinned adapter endpoint, model, and crede
     currency: 'CNY',
     usage: { inputTokens: 8, outputTokens: 13 },
   });
+});
+
+test('AI SDK structured executor applies request-scoped thinking options', async () => {
+  const observed: Array<Record<string, unknown>> = [];
+  const modelId = 'deepseek-v4-pro';
+  const executor = new AiSdkStructuredObjectExecutor({
+    apiKey: 'deepseek-test-key',
+    baseUrl: 'https://api.deepseek.com',
+    catalogModelId: modelId,
+    fetch: (async (_input, init) => {
+      observed.push(
+        JSON.parse(String(init?.body)) as Record<string, unknown>,
+      );
+      return openAiStructuredResponse('chatcmpl-deep-thinking', {
+        normalized: 'deep',
+      });
+    }) as typeof fetch,
+    inputCostPerMillion: 1,
+    model: modelId,
+    outputCostPerMillion: 2,
+  });
+  const providerRequest: ProviderExecutionRequest = {
+    jobId: 'job-deep-thinking',
+    model: {
+      id: modelId,
+      modality: 'llm',
+      operations: ['text.respond'],
+      displayName: 'DeepSeek V4 Pro',
+      qualityRank: 100,
+    },
+    deployment: deploymentFixture(
+      'deployment-deep-thinking',
+      modelId,
+      modelId,
+    ),
+    submission: {
+      workspaceId: 'workspace-1',
+      actorId: 'user-1',
+      idempotencyKey: 'effect-deep-thinking',
+      operation: 'text.respond',
+      selection: { mode: 'fixed', catalogModelId: modelId },
+      dataClass: [],
+      prompt: '{"value":"deep"}',
+      input: {
+        reasoningEffort: 'high',
+        thinking: { type: 'enabled' },
+      },
+    },
+  };
+
+  await executor.generate({
+    instructions: 'Return a structured answer.',
+    prompt: '{"value":"deep"}',
+    providerRequest,
+    schema: z.object({ normalized: z.string() }).strict(),
+    schemaName: 'deep_thinking_schema',
+  });
+
+  assert.equal(observed[0]?.reasoning_effort, 'high');
+  assert.deepEqual(observed[0]?.thinking, { type: 'enabled' });
 });
 
 test('frozen structured repair failure settles request-bound runner cost', async () => {

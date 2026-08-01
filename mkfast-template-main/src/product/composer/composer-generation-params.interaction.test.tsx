@@ -42,7 +42,9 @@ describe('P2-09 generation params visibility (C5)', () => {
       'data-creation-mode',
       'free'
     );
-    expect(screen.getByTestId('composer-beauty-voice-role')).toBeInTheDocument();
+    expect(
+      screen.getByTestId('composer-beauty-voice-role')
+    ).toBeInTheDocument();
     expect(screen.getByTestId('composer-thinking-level')).toBeInTheDocument();
     expect(screen.getByText('美容师口吻')).toBeInTheDocument();
     expect(screen.getByText('店主口吻')).toBeInTheDocument();
@@ -60,7 +62,9 @@ describe('P2-09 generation params visibility (C5)', () => {
       />
     );
 
-    await userEvent.click(screen.getByTestId('composer-beauty-voice-role-beautician'));
+    await userEvent.click(
+      screen.getByTestId('composer-beauty-voice-role-beautician')
+    );
     expect(onChange).toHaveBeenCalledWith({
       beautyVoiceRole: 'beautician',
       thinkingLevel: 'standard',
@@ -75,7 +79,7 @@ describe('P2-09 generation params visibility (C5)', () => {
 });
 
 describe('P2-09 submission injection', () => {
-  it('customized injects default owner + standard; free injects selection', () => {
+  it('clears hidden free-mode choices when switching to customized', () => {
     expect(
       buildSubmissionGenerationParams({
         creationMode: 'customized',
@@ -85,10 +89,12 @@ describe('P2-09 submission injection', () => {
         },
       })
     ).toEqual({
-      beautyVoiceRole: 'customer',
+      beautyVoiceRole: 'owner',
       thinkingLevel: 'standard',
     });
+  });
 
+  it('free injects the visible selection', () => {
     expect(
       buildSubmissionGenerationParams({
         creationMode: 'free',

@@ -11,6 +11,7 @@ import { z } from 'zod';
 import {
   HARNESS_BUILTIN_PROMPTS,
   type HarnessFrozenPrompt,
+  type HarnessPromptKey,
 } from './langfuse-prompts.js';
 import type { CreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import {
@@ -40,6 +41,7 @@ export interface StructuredNodeRepairObservation {
 export type StructuredNodeRunnerRequest<Output> =
   ModelSupplyStructuredNodeRunnerRequest<Output> & {
     onRepair?: (event: StructuredNodeRepairEvent) => void;
+    promptKey?: HarnessPromptKey;
   };
 
 export type StructuredNodeRunnerResult<Output> =
