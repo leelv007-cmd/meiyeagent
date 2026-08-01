@@ -137,6 +137,54 @@ function RouteNotice({ message }: { message: string }) {
   );
 }
 
+/**
+ * P0-3 / D7 / F8: once a delivery turn is on the transcript (Delivered),
+ * collapse the full candidate body into a one-line capsule so the delivery
+ * card is the summary face — not a second full-text copy. While still
+ * drafting / settling, keep the full candidate readable.
+ */
+function candidateShouldCollapse(session: ComposerSession): boolean {
+  if (session.phase === 'delivered') return true;
+  return session.turns.some((turn) => turn.kind === 'delivery');
+}
+
+function CandidateSummaryCapsule({
+  stream,
+}: {
+  stream: ResultTokenStreamProjection;
+}) {
+  const primary = stream.primary;
+  const title = primary?.title?.trim() || '已生成候选';
+  const body = primary?.body?.trim() ?? '';
+  const snippet =
+    body.length > 40 ? `${body.slice(0, 40)}…` : body.length > 0 ? body : null;
+
+  return (
+    <section
+      aria-live="polite"
+      className="meiye-porcelain inline-flex max-w-full flex-wrap items-center gap-2 rounded-full px-3 py-1.5"
+      data-collapsed="true"
+      data-has-token={stream.hasFirstToken ? 'true' : 'false'}
+      data-testid="composer-candidate-summary"
+    >
+      <span
+        className="text-foreground text-xs font-medium"
+        data-testid="composer-candidate-summary-title"
+      >
+        {title}
+      </span>
+      {snippet ? (
+        <span
+          className="text-muted max-w-[16rem] truncate text-xs"
+          data-testid="composer-candidate-summary-snippet"
+        >
+          {snippet}
+        </span>
+      ) : null}
+    </section>
+  );
+}
+
 function CandidateStream({ stream }: { stream: ResultTokenStreamProjection }) {
   const primary = stream.primary;
   // D-113 / story 15: one primary candidate by default. Alternatives are an
@@ -316,16 +364,18 @@ export function ComposerConversation({
           </div>
         ) : null;
       case 'candidate':
-        return <CandidateStream key={turn.id} stream={stream} />;
+        // P0-3: after delivery lands, collapse to a capsule; drafting stays full.
+        return candidateShouldCollapse(session) ? (
+          <CandidateSummaryCapsule key={turn.id} stream={stream} />
+        ) : (
+          <CandidateStream key={turn.id} stream={stream} />
+        );
       case 'delivery':
+        // P0-3 / F8: delivery is the summary face (statement + actions). Do not
+        // re-paste the candidate body as a second full excerpt beside the stream.
         return (
           <ComposerDeliveryCard
             aspectRatio={deliveryAspectRatio}
-            excerpt={
-              stream.primary
-                ? { body: stream.primary.body, title: stream.primary.title }
-                : undefined
-            }
             key={turn.id}
             lensId={deliveryLensId}
             onFollowUp={onDeliveryFollowUp}
@@ -370,12 +420,11 @@ export function ComposerConversation({
 
   return (
     /*
-      ChatConversation owns「跟住最新一条」— the behaviour the retired
-      `endRef` + `scrollIntoView` pair hand-rolled. It only works inside a
-      bounded pane (the component scrolls itself and fades its own edges), so
-      the transcript gets a height cap here rather than growing the page
-      forever; the prompt bar below therefore stays reachable without scrolling
-      past the whole run.
+      ChatConversation owns「跟住最新一条」and the scroll-to-latest control.
+      P0-2 / F7: do not cap the pane with a nested max-height — that created a
+      second scroll axis fighting the page. The transcript grows with the page
+      so there is a single scroll main axis; follow-newest still works when the
+      pane itself overflows for other layout reasons.
 
       `aria-live="off"` on purpose: the component's `role="log"` would make the
       entire transcript one live region and re-announce whole cards. The
@@ -384,7 +433,7 @@ export function ComposerConversation({
     */
     <ChatConversation
       aria-live="off"
-      className="meiye-conversation-pane max-h-[min(70svh,44rem)]"
+      className="meiye-conversation-pane"
       data-motion={prefersReducedMotion ? 'off' : 'on'}
       data-phase={session.phase}
       data-testid="composer-conversation"

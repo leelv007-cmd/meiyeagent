@@ -35,6 +35,7 @@ import {
   writeCreationDraftIntent,
 } from './creation-entry-model';
 import { ExampleStoreShowcase } from './example-store-showcase';
+import type { RecommendationHandoff } from './recommendation-handoff';
 import { TodayRecommendationCard } from './today-recommendation-card';
 import { workbenchGreetingName } from './workbench-state-model';
 
@@ -115,7 +116,8 @@ export function DashboardHomeSurface({
   state,
 }: {
   loading: boolean;
-  onPrefill: (intent: string) => void;
+  /** P0-4 typed handoff: intent + optional outputHint (never force copy). */
+  onPrefill: (handoff: RecommendationHandoff) => void;
   onRefresh: () => Promise<void>;
   onStart: () => void;
   state: ProductState | undefined;
@@ -142,11 +144,11 @@ export function DashboardHomeSurface({
     }
   };
 
-  const prefill = (intent: string) => {
+  const prefill = (handoff: RecommendationHandoff) => {
     if (typeof window !== 'undefined') {
-      writeCreationDraftIntent(sessionStorage, intent);
+      writeCreationDraftIntent(sessionStorage, handoff.intent);
     }
-    onPrefill(intent);
+    onPrefill(handoff);
   };
 
   return (
@@ -162,7 +164,7 @@ export function DashboardHomeSurface({
           hideError={visibilityError}
           hiding={pendingVisibility}
           onHide={() => void setExampleHidden(true)}
-          onRemix={prefill}
+          onRemix={(intent) => prefill({ intent })}
           stores={stores}
         />
       ) : null}

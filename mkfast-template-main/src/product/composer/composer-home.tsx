@@ -91,6 +91,7 @@ import {
   DashboardHomeGreeting,
   DashboardHomeSurface,
 } from '@/product/dashboard-home-surface';
+import { applyRecommendationHandoff } from '@/product/recommendation-handoff';
 import type { ConfirmedAssetFacts } from '@/product/creation-entry-model';
 import {
   missingCreativeGrounding,
@@ -149,6 +150,7 @@ import {
   updateUserText,
   type ComposerLensState,
 } from './lens-state-machine';
+import { isWorkbenchShelfCollapsed } from './workbench-mode';
 import { LensRadiogroup } from './lens-radiogroup';
 import { LensSwitchPreviewPanel } from './lens-switch-preview-panel';
 import { ComposerIdentityCard } from './composer-identity-card';
@@ -2595,6 +2597,10 @@ export function ComposerHome({
     storeFactsPending: showProgressiveFact,
   });
 
+  // P0-1 / F6: once a run is Active (or Delivered), collapse 段①/段③ so the
+  // transcript owns the first screen. Idle and recovery phases keep the shelf.
+  const shelfCollapsed = isWorkbenchShelfCollapsed(session.phase);
+
   return (
     <div
       // `meiye-heroui-glass` — the class the DESIGN.md → HeroUI token bridge
@@ -2606,6 +2612,7 @@ export function ComposerHome({
       // same tokens (C-02 regression guard), and T33's「一个 Glass 壳根」contract
       // now has exactly one element to count.
       className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6 sm:px-6"
+      data-shelf-collapsed={shelfCollapsed ? 'true' : 'false'}
       data-testid="composer-home"
       data-viewport={viewportKind}
     >
@@ -2616,41 +2623,41 @@ export function ComposerHome({
        */}
       <DashboardHomeGreeting state={product.state} />
 
-      <section data-testid="dashboard-section-proposal">
-        {/*
-         * 段① 提议位 — D-164①. The recommendation opens the workbench because the
-         * first question a shop owner has is "what should I post today", not
-         * "what shall I type". It used to sit below the whole Composer cluster:
-         * an empty panel above the axis was worse than no panel, so it was moved
-         * out of the way. D-164① settles the order the other way and the cold
-         * case is handled instead of avoided — a workspace with nothing in it
-         * shows the sample shops here, so the slot is never empty.
-         * Both CTAs prefill this same draft — never submit.
-         */}
-        <DashboardHomeSurface
-          loading={product.loading}
-          onPrefill={(intent) => {
-            // Same idiom as the landing handoff restore above: pick the lens the
-            // recommendation/sample is written for, then seed the draft. Leaving
-            // the lens unselected would make the merchant re-pick it before the
-            // draft can be submitted.
-            focusIntentAfterPrefillRef.current = true;
-            setLensState((current) =>
-              updateUserText(selectLens(current, 'copy'), intent)
-            );
-          }}
-          onRefresh={product.refresh}
-          onStart={() => {
-            // A completed run can still be leaving its mutation state while the
-            // next-action card is already visible. Try now, then retry when that
-            // pending state clears so the merchant never lands on an enabled but
-            // unfocused prompt.
-            focusIntentAfterPrefillRef.current = true;
-            focusComposerIntentInput();
-          }}
-          state={product.state}
-        />
-      </section>
+      {!shelfCollapsed ? (
+        <section data-testid="dashboard-section-proposal">
+          {/*
+           * 段① 提议位 — D-164①. The recommendation opens the workbench because the
+           * first question a shop owner has is "what should I post today", not
+           * "what shall I type". It used to sit below the whole Composer cluster:
+           * an empty panel above the axis was worse than no panel, so it was moved
+           * out of the way. D-164① settles the order the other way and the cold
+           * case is handled instead of avoided — a workspace with nothing in it
+           * shows the sample shops here, so the slot is never empty.
+           * Both CTAs prefill this same draft — never submit.
+           */}
+          <DashboardHomeSurface
+            loading={product.loading}
+            onPrefill={(handoff) => {
+              // P0-4 / F1: typed handoff. Respect outputHint when present;
+              // never hard-code copy lens when the recommendation has no hint.
+              focusIntentAfterPrefillRef.current = true;
+              setLensState((current) =>
+                applyRecommendationHandoff(current, handoff)
+              );
+            }}
+            onRefresh={product.refresh}
+            onStart={() => {
+              // A completed run can still be leaving its mutation state while the
+              // next-action card is already visible. Try now, then retry when that
+              // pending state clears so the merchant never lands on an enabled but
+              // unfocused prompt.
+              focusIntentAfterPrefillRef.current = true;
+              focusComposerIntentInput();
+            }}
+            state={product.state}
+          />
+        </section>
+      ) : null}
 
       {/* 段② 创作面 — the axis itself (D-139 lens + input + affordances). */}
       <section
@@ -3213,8 +3220,8 @@ export function ComposerHome({
         </div>
       </section>
 
-      {/* 段③ 继续上次工作 — D-164① / D-126. */}
-      <DashboardContinueSection />
+      {/* 段③ 继续上次工作 — D-164① / D-126. Collapsed with 段① in Active (P0-1). */}
+      {!shelfCollapsed ? <DashboardContinueSection /> : null}
     </div>
   );
 }

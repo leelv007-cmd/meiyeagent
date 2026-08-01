@@ -33,9 +33,14 @@ import {
 } from '@/locale/paraglide/messages';
 import { operationsQuery, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
-import { todayRecommendationIntent } from '@/product/creation-entry-model';
 import { readDashboardHomeRecommendation } from '@/product/dashboard-home-recommendation';
+import {
+  buildRecommendationHandoff,
+  type RecommendationHandoff,
+} from '@/product/recommendation-handoff';
 import { HotTopicOpportunityCardView } from './hot-topic-opportunity-card';
+
+export type { RecommendationHandoff };
 
 /** Fact references are minted as `store_fact:<factId>:<revision>` (core production-context-port.ts:664). */
 const STORE_FACT_REFERENCE_PATTERN = /^store_fact:(.+):\d+$/u;
@@ -192,8 +197,11 @@ export function TodayRecommendationCard({
   workspaceId,
 }: {
   onStart: () => void;
-  /** D-126: prefills the Composer draft — never auto-submits, never charges. */
-  onUse: (intent: string) => void;
+  /**
+   * D-126 / P0-4: typed handoff prefills the Composer draft — never auto-submits,
+   * never charges. Carries optional outputHint; absent hint must not force copy.
+   */
+  onUse: (handoff: RecommendationHandoff) => void;
   workspaceId?: string;
 }) {
   const recommendation = useQuery({
@@ -277,7 +285,7 @@ function CurrentRecommendation({
   recommendation,
   workspaceId,
 }: {
-  onUse: (intent: string) => void;
+  onUse: (handoff: RecommendationHandoff) => void;
   recommendation: TodayRecommendation;
   workspaceId?: string;
 }) {
@@ -367,7 +375,7 @@ function CurrentRecommendation({
         <div className="min-w-0">
           <Button
             data-testid="today-recommendation-use"
-            onClick={() => onUse(todayRecommendationIntent(recommendation))}
+            onClick={() => onUse(buildRecommendationHandoff(recommendation))}
             size="sm"
             type="button"
           >
