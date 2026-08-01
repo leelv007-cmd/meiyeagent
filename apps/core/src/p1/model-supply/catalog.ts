@@ -3,10 +3,34 @@ import type { SupplierPricingTier } from '@meiye/contracts';
 import type {
   CanvasGenerationCapability,
   CatalogModel,
+  CreditPricing,
   DataClass,
   ModelDeployment,
   ModelOperation,
 } from './index.js';
+
+const copyCreditPricing: CreditPricing = {
+  'copy.generate': { creditCost: 1, failureRefundsCredits: true },
+  'copy.adapt': { creditCost: 1, failureRefundsCredits: true },
+};
+const imageCreditPricing: CreditPricing = {
+  'image.generate': { creditCost: 5, failureRefundsCredits: true },
+  'image.edit': { creditCost: 5, failureRefundsCredits: true },
+  'image.reference_transform': { creditCost: 5, failureRefundsCredits: true },
+};
+const videoCreditPricing: CreditPricing = {
+  'video.generate': {
+    creditCost: 50,
+    failureRefundsCredits: true,
+    videoCreditCosts: { 15: 50, 30: 90, 60: 160 },
+  },
+};
+const audioSpeechCreditPricing: CreditPricing = {
+  'audio.speech': { creditCost: 2, failureRefundsCredits: true },
+};
+const audioSfxCreditPricing: CreditPricing = {
+  'audio.sfx': { creditCost: 2, failureRefundsCredits: true },
+};
 
 function canvasCapabilitiesFor(
   deployment: Pick<ModelDeployment, 'apiFamily' | 'catalogModelId'>,
@@ -432,6 +456,7 @@ export function createDefaultCatalogModels(): CatalogModel[] {
       modality: 'llm',
       operations: ['copy.generate', 'copy.adapt', 'text.respond'],
       capabilities: ['copy.generate', 'copy.adapt', 'text.respond'],
+      creditPricing: copyCreditPricing,
       qualityRank: 100,
     },
     {
@@ -443,6 +468,7 @@ export function createDefaultCatalogModels(): CatalogModel[] {
       modality: 'llm',
       operations: ['copy.generate', 'copy.adapt', 'text.respond'],
       capabilities: ['copy.generate', 'copy.adapt', 'text.respond'],
+      creditPricing: copyCreditPricing,
       qualityRank: 96,
     },
     {
@@ -454,6 +480,7 @@ export function createDefaultCatalogModels(): CatalogModel[] {
       modality: 'llm',
       operations: ['copy.generate', 'copy.adapt', 'text.respond'],
       capabilities: ['copy.generate', 'copy.adapt', 'text.respond'],
+      creditPricing: copyCreditPricing,
       qualityRank: 95,
       selectionPolicy: 'manual_only',
     },
@@ -466,6 +493,7 @@ export function createDefaultCatalogModels(): CatalogModel[] {
       modality: 'llm',
       operations: ['copy.generate', 'copy.adapt', 'text.respond'],
       capabilities: ['copy.generate', 'copy.adapt', 'text.respond'],
+      creditPricing: copyCreditPricing,
       qualityRank: 90,
     },
     {
@@ -477,6 +505,7 @@ export function createDefaultCatalogModels(): CatalogModel[] {
       modality: 'llm',
       operations: ['copy.generate', 'copy.adapt', 'text.respond'],
       capabilities: ['copy.generate', 'copy.adapt', 'text.respond'],
+      creditPricing: copyCreditPricing,
       qualityRank: 88,
     },
     {
@@ -488,6 +517,7 @@ export function createDefaultCatalogModels(): CatalogModel[] {
       modality: 'llm',
       operations: ['copy.generate', 'copy.adapt', 'text.respond'],
       capabilities: ['copy.generate', 'copy.adapt', 'text.respond'],
+      creditPricing: copyCreditPricing,
       qualityRank: 86,
     },
     {
@@ -499,6 +529,7 @@ export function createDefaultCatalogModels(): CatalogModel[] {
       modality: 'llm',
       operations: ['copy.generate', 'copy.adapt', 'text.respond'],
       capabilities: ['copy.generate', 'copy.adapt', 'text.respond'],
+      creditPricing: copyCreditPricing,
       qualityRank: 0,
     },
     {
@@ -510,6 +541,7 @@ export function createDefaultCatalogModels(): CatalogModel[] {
       modality: 'image',
       operations: ['image.generate', 'image.edit'],
       capabilities: ['image.generate', 'image.edit'],
+      creditPricing: imageCreditPricing,
       qualityRank: 95,
     },
     {
@@ -521,6 +553,7 @@ export function createDefaultCatalogModels(): CatalogModel[] {
       modality: 'image',
       operations: ['image.generate', 'image.edit'],
       capabilities: ['image.generate', 'image.edit'],
+      creditPricing: imageCreditPricing,
       qualityRank: 82,
     },
     {
@@ -532,6 +565,7 @@ export function createDefaultCatalogModels(): CatalogModel[] {
       modality: 'image',
       operations: ['image.generate', 'image.edit'],
       capabilities: ['image.generate', 'image.edit'],
+      creditPricing: imageCreditPricing,
       qualityRank: 90,
     },
     {
@@ -543,6 +577,7 @@ export function createDefaultCatalogModels(): CatalogModel[] {
       modality: 'image',
       operations: ['image.generate', 'image.edit'],
       capabilities: ['image.generate', 'image.edit'],
+      creditPricing: imageCreditPricing,
       qualityRank: 86,
     },
     {
@@ -554,6 +589,7 @@ export function createDefaultCatalogModels(): CatalogModel[] {
       modality: 'image',
       operations: ['image.generate', 'image.edit'],
       capabilities: ['image.generate', 'image.edit'],
+      creditPricing: imageCreditPricing,
       qualityRank: 88,
     },
     {
@@ -565,6 +601,7 @@ export function createDefaultCatalogModels(): CatalogModel[] {
       modality: 'video',
       operations: ['video.generate'],
       capabilities: ['video.generate'],
+      creditPricing: videoCreditPricing,
       qualityRank: 0,
     },
     {
@@ -576,6 +613,7 @@ export function createDefaultCatalogModels(): CatalogModel[] {
       modality: 'video',
       operations: ['video.generate'],
       capabilities: ['video.generate'],
+      creditPricing: videoCreditPricing,
       qualityRank: 90,
     },
     {
@@ -587,6 +625,7 @@ export function createDefaultCatalogModels(): CatalogModel[] {
       modality: 'video',
       operations: ['video.generate'],
       capabilities: ['video.generate'],
+      creditPricing: videoCreditPricing,
       qualityRank: 89,
     },
     {
@@ -598,6 +637,7 @@ export function createDefaultCatalogModels(): CatalogModel[] {
       modality: 'video',
       operations: ['video.generate'],
       capabilities: ['video.generate'],
+      creditPricing: videoCreditPricing,
       qualityRank: 87,
     },
     {
@@ -609,6 +649,7 @@ export function createDefaultCatalogModels(): CatalogModel[] {
       modality: 'video',
       operations: ['video.generate'],
       capabilities: ['video.generate'],
+      creditPricing: videoCreditPricing,
       qualityRank: 92,
     },
     {
@@ -620,6 +661,7 @@ export function createDefaultCatalogModels(): CatalogModel[] {
       modality: 'audio',
       operations: ['audio.speech'],
       capabilities: ['audio.speech'],
+      creditPricing: audioSpeechCreditPricing,
       qualityRank: 90,
     },
     {
@@ -631,6 +673,7 @@ export function createDefaultCatalogModels(): CatalogModel[] {
       modality: 'audio',
       operations: ['audio.speech'],
       capabilities: ['audio.speech'],
+      creditPricing: audioSpeechCreditPricing,
       qualityRank: 1,
     },
     {
@@ -642,6 +685,7 @@ export function createDefaultCatalogModels(): CatalogModel[] {
       modality: 'audio',
       operations: ['audio.sfx'],
       capabilities: ['audio.sfx'],
+      creditPricing: audioSfxCreditPricing,
       qualityRank: 1,
     },
   ];

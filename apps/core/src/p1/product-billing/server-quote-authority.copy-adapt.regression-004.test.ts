@@ -11,11 +11,11 @@ test('quotes copy.adapt as one formal three-platform delivery', async () => {
         models: [
           {
             id: 'llm-openai',
-            unitPrice: {
-              amountMicros: 60_000,
-              currency: 'CNY' as const,
-              revision: 'price-current',
-              unit: 'request',
+            creditPricing: {
+              'copy.adapt': {
+                creditCost: 1,
+                failureRefundsCredits: true,
+              },
             },
           },
         ],
@@ -33,5 +33,6 @@ test('quotes copy.adapt as one formal three-platform delivery', async () => {
 
   assert.equal(quote.outputCount, 3);
   assert.equal(quote.outputLabel, '三平台版本');
-  assert.equal(quote.unitRate, 0.18);
+  assert.equal(quote.creditCost, 3);
+  assert.equal(quote.unitRate, 3);
 });

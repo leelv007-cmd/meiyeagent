@@ -31,6 +31,8 @@ import {
   MODEL_OPERATIONS,
   QUALITY_NORTH_STAR_MIN_SAMPLE_SIZE,
   type CatalogModel,
+  type CreditPricing,
+  CREDIT_PRICING_OPERATIONS,
   type CanvasGenerationInputAsset,
   type CanvasGenerationParameterName,
   type AdvancedCanvasGenerationOriginRef,
@@ -1288,6 +1290,7 @@ export interface CatalogModelView {
   operations: ModelOperation[];
   capabilities: ModelOperation[];
   qualityRank: number;
+  creditPricing?: CreditPricing;
   available?: boolean;
   availability: 'available' | 'recorded' | 'unavailable';
   unavailableReason?: string;
@@ -1461,6 +1464,9 @@ function toCatalogModelView(
     operations: [...model.operations],
     capabilities: [...(model.capabilities ?? model.operations)],
     qualityRank: model.qualityRank,
+    ...(model.creditPricing
+      ? { creditPricing: structuredClone(model.creditPricing) }
+      : {}),
     ...(allowRecordedExecution && rank >= 2 ? { available: true } : {}),
     availability: rank === 3 ? 'available' : rank === 2 ? 'recorded' : 'unavailable',
     ...(deployment?.unitPrice && deployment.priceRevision
@@ -1503,6 +1509,9 @@ function adminCatalogPayload(payload: CatalogRevisionPayload) {
       ...(model.version ? { version: model.version } : {}),
       ...(model.capabilities
         ? { capabilities: [...model.capabilities] }
+        : {}),
+      ...(model.creditPricing
+        ? { creditPricing: structuredClone(model.creditPricing) }
         : {}),
     })),
     deployments: payload.deployments.map((deployment) => ({
@@ -4432,6 +4441,61 @@ function validateCatalogPayload(payload: CatalogRevisionPayload) {
       )
     ) {
       throw new P1DomainError('INVALID_STATE', `CatalogModel ${model.id} has an unknown capability.`);
+    }
+    for (const [operation, pricing] of Object.entries(
+      model.creditPricing ?? {},
+    )) {
+      if (!CREDIT_PRICING_OPERATIONS.includes(operation as never)) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          `CatalogModel ${model.id} has an unknown credit pricing operation.`,
+        );
+      }
+      const supported =
+        model.operations.includes(operation as ModelOperation) ||
+        (operation === 'image.reference_transform' &&
+          model.operations.includes('image.edit'));
+      if (!supported) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          `CatalogModel ${model.id} prices an unsupported operation.`,
+        );
+      }
+      if (
+        !pricing ||
+        !Number.isSafeInteger(pricing.creditCost) ||
+        pricing.creditCost < 1 ||
+        typeof pricing.failureRefundsCredits !== 'boolean'
+      ) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          `CatalogModel ${model.id} has invalid credit pricing.`,
+        );
+      }
+      if (operation === 'video.generate') {
+        const durations = pricing.videoCreditCosts;
+        if (
+          !durations ||
+          ![15, 30, 60].every(
+            (duration) =>
+              Number.isSafeInteger(durations[duration as 15 | 30 | 60]) &&
+              durations[duration as 15 | 30 | 60]! > 0,
+          ) ||
+          Object.keys(durations).some(
+            (duration) => !['15', '30', '60'].includes(duration),
+          )
+        ) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            `CatalogModel ${model.id} requires 15/30/60 second video credit pricing.`,
+          );
+        }
+      } else if (pricing.videoCreditCosts !== undefined) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          `CatalogModel ${model.id} has video durations on a non-video price.`,
+        );
+      }
     }
     modelIds.add(model.id);
   }

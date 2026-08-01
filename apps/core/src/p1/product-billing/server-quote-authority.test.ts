@@ -3,18 +3,21 @@ import { describe, it } from 'node:test';
 
 import { CatalogProductQuoteAuthority } from './server-quote-authority.js';
 
-function authority(amountMicros = 500_000) {
+function authority(credits = 5) {
   return new CatalogProductQuoteAuthority({
     async getCatalog(_workspaceId, operation) {
       return {
         models: [
           {
             id: operation === 'video.generate' ? 'video-model' : 'image-model',
-            unitPrice: {
-              amountMicros,
-              currency: 'CNY' as const,
-              revision: 'supplier-price-r7',
-              unit: operation === 'video.generate' ? 'second' : 'request',
+            creditPricing: {
+              [operation]: {
+                creditCost: credits,
+                failureRefundsCredits: true,
+                ...(operation === 'video.generate'
+                  ? { videoCreditCosts: { 15: 50, 30: 90, 60: 160 } }
+                  : {}),
+              },
             },
           },
         ],
@@ -38,15 +41,15 @@ describe('CatalogProductQuoteAuthority', () => {
     assert.equal(quote.billingMode, 'per_request');
     assert.equal(quote.catalogModelRevision, 'catalog-r11');
     assert.equal(quote.quotePolicyRevision, 'quote.policy@1');
-    assert.equal(quote.unitRate, 1.5);
+    assert.equal(quote.creditCost, 15);
+    assert.equal(quote.failureRefundsCredits, true);
+    assert.equal(quote.unitRate, 15);
     assert.equal(quote.outputCount, 3);
     assert.equal(quote.outputLabel, '3 张 1:1 图片');
     assert.equal(quote.authorizedCeiling, undefined);
     assert.equal(quote.routeSnapshotRef, undefined);
     assert.equal(quote.frozenCandidateDeploymentIds, undefined);
-    assert.deepEqual(quote.debitUnits, [
-      { resource: 'image', quantity: 3 },
-    ]);
+    assert.equal(quote.debitUnits, undefined);
   });
 
   it('preflights both copy and image buckets for an image-text package', async () => {
@@ -71,10 +74,7 @@ describe('CatalogProductQuoteAuthority', () => {
       workspaceId: 'workspace-1',
     });
 
-    assert.deepEqual(quote.debitUnits, [
-      { resource: 'copy', quantity: 1 },
-      { resource: 'image', quantity: 4 },
-    ]);
+    assert.equal(quote.creditCost, 20);
   });
 
   it('uses the signed note page bound for the image-text debit preview', async () => {
@@ -99,29 +99,25 @@ describe('CatalogProductQuoteAuthority', () => {
       workspaceId: 'workspace-1',
     });
 
-    assert.deepEqual(quote.debitUnits, [
-      { resource: 'copy', quantity: 1 },
-      { resource: 'image', quantity: 3 },
-    ]);
+    assert.equal(quote.creditCost, 15);
   });
 
-  it('derives video billing rules and rejects a model absent from the catalog', async () => {
-    const quote = await authority(250_000).resolve({
+  it('selects the explicit video duration tier and rejects a model absent from the catalog', async () => {
+    const quote = await authority().resolve({
       catalogModelId: 'video-model',
       operation: 'video.generate',
       quoteId: 'quote-video',
-      targetSeconds: 8,
+      targetSeconds: 30,
       workspaceId: 'workspace-1',
     });
 
     assert.equal(quote.billingMode, 'per_request');
-    assert.equal(quote.unitRate, 2);
-    assert.equal(quote.targetSeconds, 8);
+    assert.equal(quote.creditCost, 90);
+    assert.equal(quote.unitRate, 90);
+    assert.equal(quote.targetSeconds, 30);
     assert.equal(quote.minChargeSeconds, undefined);
     assert.equal(quote.roundingStepSeconds, undefined);
-    assert.deepEqual(quote.debitUnits, [
-      { resource: 'video', quantity: 1 },
-    ]);
+    assert.equal(quote.debitUnits, undefined);
 
     await assert.rejects(
       authority().resolve({
@@ -134,7 +130,7 @@ describe('CatalogProductQuoteAuthority', () => {
     );
   });
 
-  it('fails closed on malformed server pricing and invalid quantity', async () => {
+  it('fails closed on malformed credit pricing and invalid quantity', async () => {
     await assert.rejects(
       authority(Number.NaN).resolve({
         catalogModelId: 'image-model',
@@ -142,7 +138,7 @@ describe('CatalogProductQuoteAuthority', () => {
         quoteId: 'quote-invalid-price',
         workspaceId: 'workspace-1',
       }),
-      /server pricing/i,
+      /credit pricing/i,
     );
     await assert.rejects(
       authority().resolve({

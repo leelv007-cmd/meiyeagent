@@ -10,6 +10,7 @@ export {
 
 import { P1DomainError } from '../foundation/domain.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
+import type { CreditPricing } from '../model-supply/supply-contracts.js';
 
 export const publicProductQuoteOperations = [
   'copy.generate',
@@ -44,46 +45,9 @@ export interface ProductPricingCatalogPort {
     revisionId: string;
     models: Array<{
       id: string;
-      unitPrice?: {
-        amountMicros: number;
-        currency: 'CNY' | 'USD';
-        revision: string;
-        unit: string;
-      };
+      creditPricing?: CreditPricing;
     }>;
   }>;
-}
-
-function debitUnitsFor(
-  input: PublicProductQuoteIntent,
-  quantity: number,
-): BuildProductQuoteInput['debitUnits'] {
-  switch (input.submission?.deliverable.kind) {
-    case 'image_text_package':
-    case 'note':
-      return [
-        { resource: 'copy', quantity: 1 },
-        {
-          resource: 'image',
-          quantity: input.submission.deliverable.notePageBound ?? quantity,
-        },
-      ];
-    case 'image_set':
-    case 'poster':
-      return [{ resource: 'image', quantity }];
-    case 'video_package':
-      return [{ resource: 'video', quantity }];
-    case 'copy_document':
-      return [{ resource: 'copy', quantity }];
-    default:
-      if (input.operation === 'image.generate') {
-        return [{ resource: 'image', quantity }];
-      }
-      if (input.operation === 'video.generate') {
-        return [{ resource: 'video', quantity }];
-      }
-      return [{ resource: 'copy', quantity }];
-  }
 }
 
 /** Resolves every money and policy fact from the current server catalog. */
@@ -106,19 +70,21 @@ export class CatalogProductQuoteAuthority implements ProductQuoteAuthority {
         `CatalogModel ${input.catalogModelId} is not available for ${input.operation}.`,
       );
     }
-    if (!model.unitPrice) {
+    const pricing = model.creditPricing?.[input.operation];
+    if (!pricing) {
       throw new P1DomainError(
         'INVALID_STATE',
-        `CatalogModel ${input.catalogModelId} has no server pricing revision.`,
+        `CatalogModel ${input.catalogModelId} has no credit pricing for ${input.operation}.`,
       );
     }
     if (
-      !Number.isSafeInteger(model.unitPrice.amountMicros) ||
-      model.unitPrice.amountMicros < 0
+      !Number.isSafeInteger(pricing.creditCost) ||
+      pricing.creditCost < 1 ||
+      typeof pricing.failureRefundsCredits !== 'boolean'
     ) {
       throw new P1DomainError(
         'INVALID_STATE',
-        `CatalogModel ${input.catalogModelId} has invalid server pricing.`,
+        `CatalogModel ${input.catalogModelId} has invalid credit pricing.`,
       );
     }
     if (
@@ -140,18 +106,38 @@ export class CatalogProductQuoteAuthority implements ProductQuoteAuthority {
       );
     }
     const billingMode = 'per_request' as const;
-    if (
-      input.operation === 'video.generate' &&
-      (input.targetSeconds === undefined ||
-        !Number.isFinite(input.targetSeconds) ||
-        input.targetSeconds <= 0)
-    ) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'video.generate quotes require positive targetSeconds.',
-      );
+    const billableQuantity =
+      input.operation === 'image.generate'
+        ? input.submission?.deliverable.notePageBound ?? quantity
+        : quantity;
+    let unitCreditCost = pricing.creditCost;
+    if (input.operation === 'video.generate') {
+      const targetSeconds = input.targetSeconds;
+      if (
+        targetSeconds === undefined ||
+        !Number.isSafeInteger(targetSeconds) ||
+        ![15, 30, 60].includes(targetSeconds)
+      ) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'video.generate quotes require a 15, 30, or 60 second target.',
+        );
+      }
+      const durationPricing = pricing.videoCreditCosts?.[
+        targetSeconds as 15 | 30 | 60
+      ];
+      if (
+        durationPricing === undefined ||
+        !Number.isSafeInteger(durationPricing) ||
+        durationPricing < 1
+      ) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          `CatalogModel ${input.catalogModelId} has invalid video credit pricing.`,
+        );
+      }
+      unitCreditCost = durationPricing as number;
     }
-    const baseUnitRate = model.unitPrice.amountMicros / 1_000_000;
     const outputLabel =
       input.operation === 'copy.generate'
         ? `${quantity} 条内容候选`
@@ -160,29 +146,31 @@ export class CatalogProductQuoteAuthority implements ProductQuoteAuthority {
         : input.operation === 'image.generate'
           ? `${quantity} 张 ${input.aspectRatio ?? '3:4'} 图片`
           : `${quantity} 段竖屏视频`;
-    const unitRate =
-      input.operation === 'video.generate'
-        ? baseUnitRate * (input.targetSeconds as number) * quantity
-        : baseUnitRate * quantity;
+    const creditCost = unitCreditCost * billableQuantity;
+    if (!Number.isSafeInteger(creditCost) || creditCost < 1) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `CatalogModel ${input.catalogModelId} has an invalid quoted credit cost.`,
+      );
+    }
     return {
       billingMode,
       catalogModelId: model.id,
       catalogModelRevision: view.revisionId,
-      currency: model.unitPrice.currency,
-      debitUnits: debitUnitsFor(input, quantity),
+      creditCost,
+      failureRefundsCredits: pricing.failureRefundsCredits,
       outputCount: quantity,
       outputLabel,
-      formulaExpression: `per_request × ${unitRate}`,
+      formulaExpression: `${unitCreditCost} credits × ${billableQuantity} = ${creditCost} credits`,
       ...(input.operation === 'video.generate'
         ? { targetSeconds: input.targetSeconds }
         : {}),
       quoteId: input.quoteId,
-      // Product policy is code-owned. Supplier price revision is separate.
       quotePolicyRevision: 'quote.policy@1',
       ...(input.submission
         ? { submissionContractHash: fingerprintValue(input.submission) }
         : {}),
-      unitRate,
+      unitRate: creditCost,
       workspaceId: input.workspaceId,
     };
   }

@@ -23,6 +23,30 @@ export const MODEL_OPERATIONS = [
   'audio.sfx',
 ] as const;
 export type ModelOperation = (typeof MODEL_OPERATIONS)[number];
+export const CREDIT_PRICING_OPERATIONS = [
+  'copy.generate',
+  'copy.adapt',
+  'image.generate',
+  'image.edit',
+  'image.reference_transform',
+  'video.generate',
+  'audio.speech',
+  'audio.sfx',
+] as const;
+export type CreditPricingOperation = (typeof CREDIT_PRICING_OPERATIONS)[number];
+export type VideoCreditDuration = 15 | 30 | 60;
+
+/** Merchant-facing pricing, governed with the CatalogModel revision. */
+export interface CreditPricingEntry {
+  creditCost: number;
+  failureRefundsCredits: boolean;
+  /** Required only for video.generate; price each supported duration explicitly. */
+  videoCreditCosts?: Partial<Record<VideoCreditDuration, number>>;
+}
+
+export type CreditPricing = Partial<
+  Record<CreditPricingOperation, CreditPricingEntry>
+>;
 export type DataClass = 'contains_face' | 'pii' | 'medical';
 export const CANVAS_GENERATION_PARAMETER_NAMES = [
   'width',
@@ -114,6 +138,8 @@ export interface CatalogModel {
   stableModelName?: string;
   version?: string;
   capabilities?: ModelOperation[];
+  /** Product-side credits; supplier costs remain on ModelDeployment.unitPrice. */
+  creditPricing?: CreditPricing;
 }
 
 export interface ModelDeployment {
