@@ -44,12 +44,48 @@
 - Waffo 已实测事实（CB-0 资解，详见 #297 评论）：SDK `@waffo/pancake-ts@0.16.1`；store=`meiyeagent`（storeWebhooks 现为空，需 `client.webhooks.add` 注册）；续费事件＝`subscription.payment_succeeded`（eventId=Payment ID）；`subscription.updated` Waffo 侧未激活——我方升级走「取消+新 checkout」，无依赖。
 - `docs/_private/reui.env`：REUI_LICENSE_KEY（.mcp.json 引用，与本轮无直接关系）。
 
-## 五、环境铁律速记（血泪已付学费，勿复交）
+## 五、多路并发：资源占用规则与故障排查（血泪已付学费，勿复交）
 
-- 每票独立 worktree（`git worktree add ../lane-<票号> main`）；**typecheck/test/test:interaction/e2e 四条命令都会重写共享 paraglide 产物**，同 worktree 不并跑、跨 lane 靠 worktree 隔离，换端口无效。
-- 同一 lane 只许一个 driver：见重号「主控」评论先查 `/tmp/lane-*-driver.{pid,lock,sig}` 与重复 codex 进程。
-- 本机连续高负载 e2e 会假红（形态每次不同）：先查 git diff 命中+单文件隔离重跑；不行走 draft PR 用 CI 亲验（runbook：`docs/ops/local-e2e-host-degradation-runbook-2026-08-01.md`）。
-- readiness gate 前置只准写外部事实（台账 sha/主控评论/worktree dirty），rebase 类动作是本轮第一项任务不是前置；跨 lane 判据必须按路径交集收窄。
+本轮 #298 合入后将有最多四路 lane 同时开发，以下是撞车高发区与排查顺序。
+
+### 5.1 资源占用规则（派活前先算槽）
+
+- **并发额度：全局同时 ≤3 个「占槽面」**。占槽＝PG-backed 测试（带 `TEST_DATABASE_URL`）、dev server、playwright/e2e 浏览器面。**不占槽**＝纯 Node 单测+typecheck（无 DB、无 dev、无浏览器）、设计/schema/文档/只读分析。四路并行时至少一路应处于不占槽阶段，主控调度时错峰。
+- 每票独立 worktree（`git worktree add ../lane-<票号> main`）；主 checkout 只留主控复核合入，**不跑长驻 dev**。
+
+### 5.2 locale:compile 冲突（本项目第一大假红源）
+
+- **typecheck / test / test:interaction / e2e 四条命令都以 `locale:compile` 开头**，会重写共享 paraglide 产物（`src/locale/paraglide/`），任何一条都能掀掉正在跑的 dev 与并行测试，**换端口无效，只有 worktree 隔离有效**。
+- 症状：正在跑的 dev 突然模块解析错乱、测试中途莫名崩溃、`matchCache` 相关报错。**`matchCache` 报错＝残留产物非产品缺陷**，清理重跑即可。
+- 纪律：同一 worktree 内上述命令与 dev 串行；跨 lane 靠 worktree 天然隔离，无须全局静默。
+
+### 5.3 e2e 锁与秘密纪律
+
+- e2e 走 `e2e-lock.sh` 全局锁（同类面互斥）；**该脚本会把命令 argv 记录到 `/tmp/meiye-e2e.log`**——一切 DB URL/provider secret（含 Waffo 凭据）只准以子进程 env 受控注入，禁止写进锁脚本或任何包装脚本的 argv；证据文件与命令输出不得含连接串。
+- lane 报「等锁不动」：先看 `/tmp/meiye-e2e.log` 尾部确认持锁方，再判断是真在跑还是死锁残留。
+
+### 5.4 lane-driver 生命周期（重复实例＝冒名评论根源）
+
+- `lane-driver.sh` 是事件循环，**关终端不会停它**。彻底清理三步：`pkill` driver → 杀其 codex 子进程 → 删 `/tmp/lane-<N>-driver.{pid,lock,sig}`。
+- 同一票下出现多条重复「主控」前缀评论：**先查有无重号 driver**（两个 driver 写同一 worktree/同一票），不要先怀疑人为冒名。
+- codex 续跑注意：DB/网络类任务 resume 不继承 sandbox 旗标，必须 `codex exec --dangerously-bypass-approvals-and-sandbox resume <id>`，否则 Postgres 报 `Operation not permitted`。
+
+### 5.5 高负载假红判别（判红标准流程，按序执行）
+
+多路并发 + 连续 e2e 会把宿主拖进退化态，失败形态**每次都不同**（超时/端口/渲染各异），不要按报错字面追产品缺陷。判红顺序：
+
+1. **先查 git diff 是否命中报错文件**——没命中的报错优先怀疑环境。
+2. **单文件隔离重跑**该失败用例；隔离绿＝并发撞车。
+3. 查全局负载：`ps aux | sort -nrk3 | head`——若 `fseventsd`/`appstoreagent` 等系统进程高 CPU 且杀不动＝**宿主维护积压退化态，无孤儿可清，唯一解＝重启 Mac**。
+4. 重启后仍疑难：**fallback＝开 draft PR 走 CI 亲验**（先例：PR #283 本机三败 CI 一把绿）。CI 是最终裁判，本机三连败不等于代码有错。
+5. 详版 runbook：`docs/ops/local-e2e-host-degradation-runbook-2026-08-01.md`。
+- 已知本地绿≠CI 绿的反例：CI 缺 CJK 字体问题已修（core-quality.yml 装 fonts-wqy-zenhei），若新增烧录/渲染类测试报字体缺失，按此先例查 CI 字体安装。
+
+### 5.6 readiness gate 写法红线
+
+- gate 前置只准写**外部事实**（台账 sha / 主控评论 / worktree 是否 dirty）；rebase/对齐/清理是本轮第一项任务，**不是前置**（曾自锁 10 小时）。
+- 跨 lane 判据必须按**路径交集**收窄（`overlap_pattern` 推广到所有 lane），禁止「任何生产路径有改动就拦」——十路并行时该条件恒不成立。
+- lane 长时间无进展，主控第一件事＝把它的 gate 脚本拿出来实跑并逐条算判据，不要等 lane 自己报。
 
 ## 六、交接时刻的待办清单
 
