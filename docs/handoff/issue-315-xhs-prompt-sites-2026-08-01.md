@@ -37,12 +37,21 @@
 
 原则：`harness/` 前缀保持推送/钉扎通道一致；`xhs-` 段区分垂直资产，避免与 `note-plan` / `copy-generation` 等核心位点语义撞车。
 
-### 1.3 运维注意（合入后）
+### 1.3 运维注意（合入后）— 全表 freeze 可用性耦合（有意保留）
 
-strict 部署须：
+`LangfuseHarnessPromptResolver.resolve()` **仍一次性冻结全部 20 位点** 写入每次 admitted task 的 `prompts` / `promptRevisionRefs`（与能力轴 copy 只 pin 14 是两条线）：
+
+| 面 | 范围 | 说明 |
+| --- | --- | --- |
+| copy 能力轴 pin | 核心 14 | `task-admission` 不把 `xhs*` 塞进 route requirements |
+| prompt resolve / strict pin | **全 20** | 单一注册表 + 统一 pin 政策（D-036 / D-149 扩展）；缺任一 XHS pin 在 strict 下会 **boot 或 admission resolve 失败** |
+
+这是本票有意设计，**不做** selective freeze 范围拆分（留给未来若运维成本过高再开票）。
+
+strict 部署 **强制**：
 
 1. `pnpm --filter @meiye/core langfuse:prompts:push` 推送含 6 新位点的 builtin 正文；
-2. `LANGFUSE_PROMPT_VERSIONS` JSON **补齐全部 20 key**（缺任一 key 会 boot 失败）。
+2. `LANGFUSE_PROMPT_VERSIONS` JSON **补齐全部 20 key**（缺任一 key → strict boot / resolve 失败关闭）。
 
 pilot 本地未配置时 6 新位点自动 `builtin-v1` fallback（已单测）。
 
@@ -53,8 +62,8 @@ pilot 本地未配置时 6 新位点自动 `builtin-v1` fallback（已单测）�
 | 位点 | 源通用语境（xhswork） | 美业改写要点（本仓 builtin） | 保留协议 |
 | --- | --- | --- | --- |
 | `xhsOutline` | 「任意主题」信息图策划；示例为京都穷游/旅行贴纸 | 角色改为美业门店图文策划；转化钩子（到店/预约/肤质）；合规禁极限医疗承诺；示例改为夏日控油三步护理 | `<page>` / `[封面\|内容\|总结]` / `{topic,pageCount,category,styleAnalysisBlock}` |
-| `xhsContent` | 泛小红书爆款文案专家 | 美业门店转化；顾问/店长语气；禁虚假疗效；标签偏项目/肤质 | `【标题】/正文/【标签】` / `{topic,outline,category}` |
-| `xhsNoteGen` | 泛爆款笔记 + tone/role | 明确美容师/店主/顾客口吻；门店转化与事实边界 | 同标题标签协议 / `{topic,tone,roleBlock}` |
+| `xhsContent` | 泛小红书爆款文案专家 | 美业门店转化；顾问/店长语气；禁虚假疗效；标签偏项目/肤质 | `【标题】/正文/【标签】`；标签**不加 #**、空格分隔 / `{topic,outline,category}` |
+| `xhsNoteGen` | 泛爆款笔记 + tone/role | 明确美容师/店主/顾客口吻；门店转化与事实边界 | **与 xhsContent 同一标签协议**（不加 #、空格分隔） / `{topic,tone,roleBlock}` |
 | `xhsImagePrompt` | 泛视觉总监 + 旅游美食决策树 | 美业静物/柔光/知识卡；禁血腥手术实景；negative 增 medical wound | 英文 prompt + 中文图上字 / 原占位符集 |
 | `xhsCoverPrompt` | 5 通用预设：xiaohongshu/minimal/collage/gradient/photo | **美业预设替换**：`beauty_soft` / `beauty_editorial` / `before_after` / `spa_minimal` / `salon_photo` | `{userPrompt,style,size}` |
 | `xhsStyleAnalysis` | 通用七维视觉分析 | 美业可复用词表（门店台面、产品剪影、轻医美科普风）；面部只描述光线构图 | 七行中文冒号协议 |
@@ -97,3 +106,84 @@ pilot 本地未配置时 6 新位点自动 `builtin-v1` fallback（已单测）�
 - 不实现爆款复刻 / Tiptap 选区 AI 运行时（P2）。
 - 不引入 AG-UI / assistant-ui / CopilotKit runtime。
 - 不搬 xhswork 抓取代码；不提交 `references/` 资产。
+- 不做 selective freeze（全 20 resolve 有意保留；见 §1.3）。
+
+---
+
+## 6. 票下留言草稿（供主控/编排发帖；lane 不 push、不关票）
+
+> 以下两段为 **可直接粘贴** 的 issue #315 评论正文（markdown）。编排在 0 open review 后发帖即可完成 §11.3 留痕。
+
+### 6.1 认领评论（claim）
+
+```markdown
+## 领票留痕（#315 / P1-03）
+
+- **worktree**: `/Users/bin/orca/workspaces/美业内容2/lane-315`
+- **branch**: `leelv007-cmd/lane-315`
+- **开工基线 sha**: `08288ac50f98c5a12544dc6554b2dd27b3204a9f`
+- **实现 commit**: `66f156fa67ae8277e47e31f53d0cc177b778b074`（首版）+ `572cd44e13c9dfd5e0d00c758fb66313a21d17ac`（复核修复）
+- **范围**: 六 prompt 美业改写挂 `HARNESS_PROMPT_SITES`；四处内联评估写交底；不接线 pipeline 运行时
+
+交底：`docs/handoff/issue-315-xhs-prompt-sites-2026-08-01.md`
+```
+
+### 6.2 实施时定 + 交验评论（verification / leave-trace）
+
+```markdown
+## 方案定案 + 交验（#315）
+
+### A. 「实施时定」闭合（规格 §10.3-5）
+
+**14 位点表扩展方式（定案）**：单一扁平注册表扩展，不建第二 resolver。
+
+| 项 | 值 |
+| --- | --- |
+| 注册表 | 唯一 `HARNESS_PROMPT_SITES` |
+| 核心 | `HARNESS_CORE_PROMPT_KEYS` = 14（D-149） |
+| 增量 | `XHS_VERTICAL_PROMPT_KEYS` = 6 |
+| 总计 | `HARNESS_PROMPT_SITE_COUNT` = **20** |
+| 解析 | 全表统一 strict pin / pilot fallback |
+| copy 能力轴 | 仍只 pin 核心 14（`task-admission`） |
+| resolve 冻结 | **仍冻全 20**（有意可用性耦合；合入前必须 push+pin 6 新 key） |
+
+**命名表**
+
+| Key | Langfuse name |
+| --- | --- |
+| xhsOutline | harness/xhs-outline |
+| xhsContent | harness/xhs-content |
+| xhsNoteGen | harness/xhs-note-gen |
+| xhsImagePrompt | harness/xhs-image-prompt |
+| xhsCoverPrompt | harness/xhs-cover-prompt |
+| xhsStyleAnalysis | harness/xhs-style-analysis |
+
+交底全文：`docs/handoff/issue-315-xhs-prompt-sites-2026-08-01.md` §1–§3。
+
+### B. 四处内联 prompt 裁决摘要
+
+| 源 | 裁决 | 消费票 |
+| --- | --- | --- |
+| viral rewrite JSON | 后续 Langfuse（本票不注册空 key） | P2-12 |
+| viral image vision | 后续 Langfuse | P2-12 |
+| FloatingToolbar 6 动作 | 对象工作区本地模板 | P2-10 |
+| aiAssist 直拼 | 本地编排，不占基础位点 | P2-10 |
+
+### C. 票面验收 → 证据
+
+| 验收 | 证据 |
+| --- | --- |
+| 新位点版本化 + fallback | `apps/core/src/p1/harness/langfuse-prompts.test.ts` — `XHS vertical sites resolve with version pin and pilot builtin fallback` |
+| 禁漂移 | 同文件 anti-drift + beauty rewrite non-clone；tag 协议 content/note 对齐（均无 `#`） |
+| 六 prompt 差异对照表 | 交底 §2 |
+| 命名/扩展定案 | 交底 §1 + 本评论 A |
+| 四处内联裁决 | 交底 §3 + 本评论 B |
+| core 回归 | `langfuse-prompts` + `task-admission` focused 绿；全量非 PG unit 2670 pass / 0 fail（首版） |
+
+### D. 运维红线（合入前）
+
+1. `pnpm --filter @meiye/core langfuse:prompts:push`
+2. `LANGFUSE_PROMPT_VERSIONS` 补齐 **全部 20 key**（strict 缺一即失败）
+
+lane 不 push、不关票；「已合入」以 merge-ledger 为准。
+```

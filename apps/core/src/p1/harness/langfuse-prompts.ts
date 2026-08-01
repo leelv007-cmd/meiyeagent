@@ -131,9 +131,8 @@ export const HARNESS_PROMPT_SITES = {
   xhsStyleAnalysis: {
     name: 'harness/xhs-style-analysis',
     operation: 'text.respond',
-    // Base pin stays text/plain so copy-lens admission does not force vision.
-    // Callers that pass reference images add image/* via
-    // harnessPromptCapabilityRequirement(key, { referenceImage: true }).
+    // Base pin stays text/plain. Callers that pass reference images add
+    // image/* via harnessPromptCapabilityRequirement(key, { referenceImage: true }).
     requirement: STRUCTURED_TEXT_REQUIREMENT,
   },
 } as const;
@@ -378,13 +377,13 @@ export const HARNESS_BUILTIN_PROMPTS = {
 
 然后空一行，输出正文（200-500字，分段，适当 emoji，小红书风格，美业门店转化导向）。
 
-最后空一行，输出标签行：
-【标签】#标签1 #标签2 #标签3 #标签4 #标签5
+最后空一行，输出标签行（与 xhsContent 同一协议：标签不加 #，空格分隔）：
+【标签】标签1 标签2 标签3 标签4 标签5
 
 要求：
 1. 标题有吸引力（后悔体、合集体、对比体、场景体等），且符合指定语气
 2. 正文有价值：步骤/体验/注意事项/到店引导清晰
-3. 标签 5-6 个，与美业主题高度相关
+3. 标签 5-6 个，与美业主题高度相关；不加 #，空格分隔（同 xhsContent）
 4. 禁止 markdown（不要 **、# 标题、* 列表、> 引用）；纯文本+emoji
 5. 禁止医疗极限承诺、虚假疗效与未授权病例细节
 6. 若 role 为顾客口吻，保持真实体验感但仍可核对的事实边界`,

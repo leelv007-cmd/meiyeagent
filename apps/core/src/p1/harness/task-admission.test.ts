@@ -24,7 +24,10 @@ import type {
   HarnessFrozenPrompts,
   HarnessPromptResolver,
 } from './langfuse-prompts.js';
-import { HARNESS_LANGFUSE_PROMPT_NAMES } from './langfuse-prompts.js';
+import {
+  HARNESS_CORE_PROMPT_KEYS,
+  HARNESS_LANGFUSE_PROMPT_NAMES,
+} from './langfuse-prompts.js';
 
 test('same task and payload returns the original workflow handle', async () => {
   const registry = new MemoryRequestRegistry();
@@ -325,26 +328,23 @@ test('Composer admission assembles manifest, binding, prompts, pin, then starts'
   const resolver: HarnessFrozenRouteSnapshotResolver = {
     async resolve(_input, assembly) {
       order.push('hot-assembly');
-      assert.deepEqual(
-        assembly?.requirements.map((requirement) => requirement.axisId),
-        [
-          'intentNaming',
-          'briefCompilation',
-          'briefImage',
-          'briefVideo',
-          'factSatisfaction',
-          'factCriticality',
-          'copyCandidate',
-          'notePlan',
-          'noteTextBlock',
-          'noteConsistency',
-          'destinationMapping',
-          'copyGeneration',
-          'platformAdaptation',
-          'textResponse',
-          'skill:skill.intent@3',
-        ],
+      const axisIds =
+        assembly?.requirements.map((requirement) => requirement.axisId) ?? [];
+      const promptAxisIds = axisIds.filter(
+        (axisId) => !axisId.startsWith('skill:'),
       );
+      // Copy-lens pins only the historical core 14; XHS vertical axisIds stay out.
+      assert.equal(promptAxisIds.length, HARNESS_CORE_PROMPT_KEYS.length);
+      assert.equal(promptAxisIds.length, 14);
+      assert.deepEqual(promptAxisIds, [...HARNESS_CORE_PROMPT_KEYS]);
+      assert.equal(
+        promptAxisIds.some((axisId) => axisId.startsWith('xhs')),
+        false,
+      );
+      assert.deepEqual(axisIds, [
+        ...HARNESS_CORE_PROMPT_KEYS,
+        'skill:skill.intent@3',
+      ]);
       return {
         ...structuredClone(route),
         capabilityRequirements: structuredClone(assembly?.requirements ?? []),

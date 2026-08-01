@@ -75,7 +75,14 @@ generation, platform adaptation, and text response) plus 6 XHS vertical beauty
 assets (`harness/xhs-outline|content|note-gen|image-prompt|cover-prompt|style-analysis`,
 issue #315). `execution-selection.ts` remains outside this lane; its existing
 consumer is listed for follow-up rather than being replaced with a fake call.
-Strict deploys must pin all 20 keys in `LANGFUSE_PROMPT_VERSIONS`.
+
+**Deploy gate (strict):** `LANGFUSE_PROMPT_VERSIONS` must pin **all 20 keys**.
+`LangfuseHarnessPromptResolver.resolve()` freezes the full registry into each
+admitted task even when copy-lens capability requirements only list the core 14
+axes. Missing any of the 6 XHS pins fails closed under strict policy (intentional
+availability coupling for #315; selective freeze is out of scope). Always run
+`pnpm --filter @meiye/core langfuse:prompts:push` for the six new builtins
+before promoting a strict environment.
 
 The metrics exporter upserts deterministic items into the dataset named
 `harness-structured-node-metrics`. Create that dataset once in Langfuse before

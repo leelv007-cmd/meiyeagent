@@ -25,6 +25,19 @@ test('the single registry owns prompt names and capability requirements (14 core
   assert.equal(HARNESS_CORE_PROMPT_KEYS.length, 14);
   assert.equal(XHS_VERTICAL_PROMPT_KEYS.length, 6);
   assert.equal(HARNESS_PROMPT_SITE_COUNT, 20);
+
+  // CORE ∪ XHS must equal site keys exactly; CORE ∩ XHS must be empty.
+  const coreSet = new Set<string>(HARNESS_CORE_PROMPT_KEYS);
+  const xhsSet = new Set<string>(XHS_VERTICAL_PROMPT_KEYS);
+  const union = [...coreSet, ...xhsSet].sort();
+  assert.deepEqual(union, Object.keys(HARNESS_PROMPT_SITES).sort());
+  assert.equal(new Set(union).size, HARNESS_PROMPT_SITE_COUNT);
+  assert.equal(
+    [...coreSet].filter((key) => xhsSet.has(key)).length,
+    0,
+    'CORE and XHS key partitions must be disjoint',
+  );
+
   assert.deepEqual(
     Object.fromEntries(
       Object.entries(HARNESS_PROMPT_SITES).map(([key, site]) => [
@@ -108,9 +121,23 @@ test('XHS vertical builtins are beauty-rewritten and not generic xhswork clones'
     );
   }
 
-  assert.match(HARNESS_BUILTIN_PROMPTS.xhsCoverPrompt, /beauty_soft/);
-  assert.match(HARNESS_BUILTIN_PROMPTS.xhsCoverPrompt, /spa_minimal/);
-  assert.match(HARNESS_BUILTIN_PROMPTS.xhsCoverPrompt, /salon_photo/);
+  for (const preset of [
+    'beauty_soft',
+    'beauty_editorial',
+    'before_after',
+    'spa_minimal',
+    'salon_photo',
+  ]) {
+    assert.match(
+      HARNESS_BUILTIN_PROMPTS.xhsCoverPrompt,
+      new RegExp(preset, 'u'),
+      `cover builtin must document beauty preset ${preset}`,
+    );
+  }
+  // Aligned tag protocol: no leading # on tag tokens (same as xhsContent).
+  assert.match(HARNESS_BUILTIN_PROMPTS.xhsContent, /【标签】标签1 标签2/);
+  assert.match(HARNESS_BUILTIN_PROMPTS.xhsNoteGen, /【标签】标签1 标签2/);
+  assert.equal(HARNESS_BUILTIN_PROMPTS.xhsNoteGen.includes('【标签】#标签'), false);
   assert.match(HARNESS_BUILTIN_PROMPTS.xhsOutline, /\{topic\}/);
   assert.match(HARNESS_BUILTIN_PROMPTS.xhsOutline, /\{pageCount\}/);
   assert.match(HARNESS_BUILTIN_PROMPTS.xhsImagePrompt, /\{pageContent\}/);
@@ -169,15 +196,21 @@ test('XHS vertical sites resolve with version pin and pilot builtin fallback', a
 });
 
 test('strict policy rejects incomplete pins including new XHS vertical keys', () => {
+  // All keys pinned except one XHS key — must name xhsOutline specifically.
+  const pinsMissingXhsOutline = Object.fromEntries(
+    Object.keys(HARNESS_LANGFUSE_PROMPT_NAMES)
+      .filter((key) => key !== 'xhsOutline')
+      .map((key) => [key, 1]),
+  );
   assert.throws(
     () =>
       assertLangfusePromptRuntimePolicy({
         LANGFUSE_BASE_URL: 'https://langfuse.example',
         LANGFUSE_PUBLIC_KEY: 'pk-prompt',
         LANGFUSE_SECRET_KEY: 'sk-prompt',
-        LANGFUSE_PROMPT_VERSIONS: JSON.stringify({ intentNaming: 7 }),
+        LANGFUSE_PROMPT_VERSIONS: JSON.stringify(pinsMissingXhsOutline),
       }),
-    /xhsOutline|briefCompilation/u,
+    /xhsOutline/u,
   );
 
   const completePins = Object.fromEntries(
