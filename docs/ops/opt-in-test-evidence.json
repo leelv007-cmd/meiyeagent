@@ -53,78 +53,78 @@
     },
     "apps/core/src/p1/harness/canonical-observability-emitters.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/harness/dbos-registration.smoke.test.ts": {
       "status": "green",
-      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/harness/delivery.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/harness/fixture-fact-fidelity.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/harness/interaction-service.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/harness/issue-255-live-collector.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/harness/issue-255-postgres-live-receipt.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock. Dedicated pair + RUN_ISSUE_255_SAFE_PROVISION_POSTGRES_TEST=1."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 separately on the dedicated meiye_issue255 pair with RUN_ISSUE_255_SAFE_PROVISION_POSTGRES_TEST=1 and the shared e2e lock: 3 pass, 0 fail, 0 skip; the suite safely removed both test databases."
     },
     "apps/core/src/p1/harness/langfuse-outbox-ops.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/harness/media-bounded-continuation.dbos.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/harness/note-media-admission.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/harness/observability-health.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/harness/postgres-billing-compensation-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/harness/postgres-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/harness/production-media-assembly.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/integrations/douyin-oauth-lifecycle.postgres.test.ts": {
       "status": "unverified",
@@ -178,63 +178,63 @@
     },
     "apps/core/src/p1/operations/composer-conversation-deletion.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "d5dd4107ba26d872c3002294553101f9fcc24a4b",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair for the P0 XHS workbench integration batch (#286/#287/#288)."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/operations/content-package-migration-cli.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "d5dd4107ba26d872c3002294553101f9fcc24a4b",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair for the P0 XHS workbench integration batch (#286/#287/#288)."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/operations/expired-fact-invalidation-outbox.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "d5dd4107ba26d872c3002294553101f9fcc24a4b",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair for the P0 XHS workbench integration batch (#286/#287/#288)."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/operations/harness-copy-work-asset.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "d5dd4107ba26d872c3002294553101f9fcc24a4b",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair for the P0 XHS workbench integration batch (#286/#287/#288)."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/operations/marketing-identity.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "d5dd4107ba26d872c3002294553101f9fcc24a4b",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair for the P0 XHS workbench integration batch (#286/#287/#288)."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/operations/media-custody.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "d5dd4107ba26d872c3002294553101f9fcc24a4b",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair for the P0 XHS workbench integration batch (#286/#287/#288)."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/operations/memory-sedimentation-pipeline.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "d5dd4107ba26d872c3002294553101f9fcc24a4b",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair for the P0 XHS workbench integration batch (#286/#287/#288)."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/operations/parse-asset-memory.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "d5dd4107ba26d872c3002294553101f9fcc24a4b",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair for the P0 XHS workbench integration batch (#286/#287/#288)."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/operations/postgres-content-package-write-adapter.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "d5dd4107ba26d872c3002294553101f9fcc24a4b",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair for the P0 XHS workbench integration batch (#286/#287/#288)."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/operations/store-intake-finalizer.behavior.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "d5dd4107ba26d872c3002294553101f9fcc24a4b",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair for the P0 XHS workbench integration batch (#286/#287/#288)."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/operations/store-intake-finalizer.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "d5dd4107ba26d872c3002294553101f9fcc24a4b",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair for the P0 XHS workbench integration batch (#286/#287/#288)."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "unverified",
@@ -243,13 +243,13 @@
     },
     "apps/core/src/p1/result-delivery/assisted-canonical-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3c7942ea6d4bcfe383ba1b6664c82c77b4099264",
-      "note": "Re-verified 2026-08-01 against a fresh golden-template clone; previous anchor was an orphaned pre-rebase SHA unreachable from origin (CI shallow/full clones both fail-close on it)."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/result-delivery/assisted-receipt-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3c7942ea6d4bcfe383ba1b6664c82c77b4099264",
-      "note": "Re-verified 2026-08-01 against a fresh golden-template clone; previous anchor was an orphaned pre-rebase SHA unreachable from origin (CI shallow/full clones both fail-close on it)."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     },
     "apps/core/src/p1/skills/dbos-governance-workflow.postgres.test.ts": {
       "status": "green",
@@ -323,8 +323,8 @@
     },
     "apps/core/src/p1/harness/reservation-sweeper.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "4b83122e93244143cc33f7495df9c2af1093d32a",
+      "note": "Re-verified 2026-08-02 in the coordinator P1 audit: full Core 3007 total, 2986 pass, 0 fail, 21 explicit skips on a fresh isolated PostgreSQL/DBOS pair under the e2e lock."
     }
   }
 }
