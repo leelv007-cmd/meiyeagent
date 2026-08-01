@@ -230,7 +230,6 @@ export type ComposerCreditQuote = {
  * before this helper runs.
  */
 export async function recoverComposerCredits(input: {
-  beforeCredits: number | null | undefined;
   quote: ComposerCreditQuote | null | undefined;
   currentQuote: () => ComposerCreditQuote | null | undefined;
   redeem: () => Promise<ComposerCreditRedemptionReceipt>;

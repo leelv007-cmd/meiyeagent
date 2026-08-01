@@ -4429,7 +4429,6 @@ export function ComposerHome({
                 <ComposerCreditRecoveryHost
                   blocked={quotaBlocked}
                   passive={quotaPassive}
-                  beforeCredits={usageQuery.data?.credits?.availableCredits}
                   quote={currentQuoteView}
                   redeem={({ command, idempotencyKey }) =>
                     commandP1<ComposerCreditRedemptionReceipt>(
@@ -4438,9 +4437,7 @@ export function ComposerHome({
                       idempotencyKey
                     )
                   }
-                  refreshCredits={async () =>
-                    (await usageQuery.refetch()).data
-                  }
+                  refreshCredits={async () => (await usageQuery.refetch()).data}
                   onRecoverySettled={() =>
                     queryClient.invalidateQueries({
                       queryKey: p1QueryKeys.request('entitlements', 'balance'),

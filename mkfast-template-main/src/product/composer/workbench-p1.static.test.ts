@@ -86,6 +86,18 @@ test('P1-2: Active sticky Composer clears mobile-nav (4.25rem family)', () => {
   assert.match(conversationSticky, /scrollIntoView/u);
 });
 
+test('credit recovery publishes quote changes during the layout commit', () => {
+  const card = readSource('src/product/composer/quota-blocking-card.tsx');
+  assert.match(
+    card,
+    /useLayoutEffect\(\(\) => \{\s*currentQuoteRef\.current = quote;\s*\}, \[quote\]\)/u
+  );
+  assert.doesNotMatch(
+    card,
+    /useEffect\(\(\) => \{\s*currentQuoteRef\.current = quote;/u
+  );
+});
+
 test('frame registry: conversation renders turns via AgentFrame host', () => {
   const conversation = readSource(
     'src/product/composer/composer-conversation.tsx'

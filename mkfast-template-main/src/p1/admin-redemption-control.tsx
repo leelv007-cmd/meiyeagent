@@ -97,15 +97,18 @@ export function AdminRedemptionControl() {
       }),
   });
 
+  const refreshRedemptionList = () =>
+    queryClient.invalidateQueries({
+      queryKey: ['admin', 'redemptions', 'list'],
+    });
+
   const createMutation = useMutation({
     mutationFn: async () => {
       const payload = {
         code: code.trim(),
         credits: Number(credits),
         grants: {},
-        ...(expiresAt
-          ? { expiresAt: new Date(expiresAt).toISOString() }
-          : {}),
+        ...(expiresAt ? { expiresAt: new Date(expiresAt).toISOString() } : {}),
       };
       const fingerprint = JSON.stringify(payload);
       if (createIntentRef.current?.fingerprint !== fingerprint) {
@@ -127,15 +130,11 @@ export function AdminRedemptionControl() {
       createIntentRef.current = null;
       toast.success(admin_redemption_create_success());
       setCode('');
-      void queryClient.invalidateQueries({
-        queryKey: ['admin', 'redemptions', 'list'],
-      });
+      void refreshRedemptionList();
     },
     onError: () => {
       toast.error(admin_redemption_create_failed());
-      void queryClient.invalidateQueries({
-        queryKey: ['admin', 'redemptions', 'list'],
-      });
+      void refreshRedemptionList();
     },
   });
 

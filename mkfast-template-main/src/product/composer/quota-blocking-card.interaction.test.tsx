@@ -84,7 +84,6 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
     const view = render(
       <ComposerCreditRecoveryHost
         blocked
-        beforeCredits={40}
         quote={{ quoteId: 'quote-low', revision: 'revision-low', amount: 50 }}
         redeem={redeem}
         refreshCredits={refreshCredits}
@@ -99,7 +98,6 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
     view.rerender(
       <ComposerCreditRecoveryHost
         blocked
-        beforeCredits={40}
         quote={{ quoteId: 'quote-high', revision: 'revision-high', amount: 80 }}
         redeem={redeem}
         refreshCredits={refreshCredits}
@@ -147,7 +145,6 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
       <UnlockHarness
         redeemImpl={() =>
           recoverComposerCredits({
-            beforeCredits: 40,
             quote: QUOTE_50,
             currentQuote: () => QUOTE_50,
             redeem,
@@ -168,26 +165,8 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
     ).toBeInTheDocument();
   });
 
-  it('unlocks an idempotent replay when the fresh balance already includes the grant', async () => {
+  it('unlocks an idempotent replay from its receipt and fresh balance', async () => {
     const result = await recoverComposerCredits({
-      beforeCredits: 70,
-      quote: QUOTE_50,
-      currentQuote: () => QUOTE_50,
-      redeem: async () => ({
-        creditGrant: {
-          originalCredits: 30,
-          transactionType: 'REDEMPTION_CODE',
-        },
-      }),
-      refreshCredits: async () => ({ credits: { availableCredits: 70 } }),
-    });
-
-    expect(result).toEqual({ ok: true });
-  });
-
-  it('unlocks from a real receipt and sufficient fresh balance without a cached before value', async () => {
-    const result = await recoverComposerCredits({
-      beforeCredits: undefined,
       quote: QUOTE_50,
       currentQuote: () => QUOTE_50,
       redeem: async () => ({
@@ -207,7 +186,6 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
       <UnlockHarness
         redeemImpl={() =>
           recoverComposerCredits({
-            beforeCredits: 40,
             quote: QUOTE_50,
             currentQuote: () => QUOTE_50,
             redeem: async () => ({
@@ -243,7 +221,6 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
 
   it('does not unlock from a sufficient balance without a credit receipt', async () => {
     const result = await recoverComposerCredits({
-      beforeCredits: 40,
       quote: QUOTE_50,
       currentQuote: () => QUOTE_50,
       redeem: async () => ({}),

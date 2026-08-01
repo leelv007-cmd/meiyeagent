@@ -6,7 +6,7 @@
  * Success unlocks continue-creation in place.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -229,7 +229,6 @@ export type ComposerCreditRecoveryHostProps = Omit<
   QuotaBlockingCardProps,
   'onRedeem'
 > & {
-  beforeCredits: number | null | undefined;
   quote: ComposerCreditQuote | null | undefined;
   redeem: (
     input: Parameters<QuotaBlockingCardProps['onRedeem']>[0]
@@ -246,7 +245,6 @@ export type ComposerCreditRecoveryHostProps = Omit<
  * unlock creation against a superseded price.
  */
 export function ComposerCreditRecoveryHost({
-  beforeCredits,
   quote,
   redeem,
   refreshCredits,
@@ -255,7 +253,7 @@ export function ComposerCreditRecoveryHost({
 }: ComposerCreditRecoveryHostProps) {
   const currentQuoteRef = useRef(quote);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     currentQuoteRef.current = quote;
   }, [quote]);
 
@@ -266,7 +264,6 @@ export function ComposerCreditRecoveryHost({
         const acceptedQuote = currentQuoteRef.current;
         try {
           const result = await recoverComposerCredits({
-            beforeCredits,
             quote: acceptedQuote,
             currentQuote: () => currentQuoteRef.current,
             redeem: () => redeem(input),
