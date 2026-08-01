@@ -18,8 +18,11 @@ import {
   isQuotaRedeemCodeValid,
   projectQuotaBlockingView,
   quotaShortNotice,
+  recoverComposerCredits,
   setQuotaRedeemCode,
   showQuotaBlocking,
+  type ComposerCreditQuote,
+  type ComposerCreditRedemptionReceipt,
   type QuotaBlockingState,
   type QuotaPassiveView,
   QUOTA_BLOCK_CONTACT_LABEL,
@@ -219,5 +222,66 @@ export function QuotaBlockingCard({
         </a>
       )}
     </div>
+  );
+}
+
+export type ComposerCreditRecoveryHostProps = Omit<
+  QuotaBlockingCardProps,
+  'onRedeem'
+> & {
+  beforeCredits: number | null | undefined;
+  quote: ComposerCreditQuote | null | undefined;
+  redeem: (
+    input: Parameters<QuotaBlockingCardProps['onRedeem']>[0]
+  ) => Promise<ComposerCreditRedemptionReceipt>;
+  refreshCredits: () => Promise<
+    { credits?: { availableCredits: number } } | null | undefined
+  >;
+  onRecoverySettled?: () => void | Promise<void>;
+};
+
+/**
+ * Binds a redemption attempt to the quote visible when it starts. A later
+ * render updates the current quote reference, so a pending redemption cannot
+ * unlock creation against a superseded price.
+ */
+export function ComposerCreditRecoveryHost({
+  beforeCredits,
+  quote,
+  redeem,
+  refreshCredits,
+  onRecoverySettled,
+  ...cardProps
+}: ComposerCreditRecoveryHostProps) {
+  const currentQuoteRef = useRef(quote);
+
+  useEffect(() => {
+    currentQuoteRef.current = quote;
+  }, [quote]);
+
+  return (
+    <QuotaBlockingCard
+      {...cardProps}
+      onRedeem={async (input) => {
+        const acceptedQuote = currentQuoteRef.current;
+        try {
+          const result = await recoverComposerCredits({
+            beforeCredits,
+            quote: acceptedQuote,
+            currentQuote: () => currentQuoteRef.current,
+            redeem: () => redeem(input),
+            refreshCredits,
+          });
+          await onRecoverySettled?.();
+          return result;
+        } catch (error) {
+          return {
+            ok: false,
+            message:
+              error instanceof Error ? error.message : '兑换失败，请重试',
+          };
+        }
+      }}
+    />
   );
 }

@@ -216,6 +216,12 @@ export type ComposerCreditRedemptionReceipt = {
   };
 };
 
+export type ComposerCreditQuote = {
+  quoteId: string;
+  revision: string;
+  amount: number;
+};
+
 /**
  * A redemption command is not an unlock receipt. Credit mode unlocks only
  * after the command proves it wrote a credit lot and a fresh authoritative
@@ -225,7 +231,8 @@ export type ComposerCreditRedemptionReceipt = {
  */
 export async function recoverComposerCredits(input: {
   beforeCredits: number | null | undefined;
-  requiredCredits: number | null | undefined;
+  quote: ComposerCreditQuote | null | undefined;
+  currentQuote: () => ComposerCreditQuote | null | undefined;
   redeem: () => Promise<ComposerCreditRedemptionReceipt>;
   refreshCredits: () => Promise<
     { credits?: { availableCredits: number } } | null | undefined
@@ -234,7 +241,6 @@ export async function recoverComposerCredits(input: {
   const receipt = await input.redeem();
   const projection = await input.refreshCredits();
   const after = projection?.credits?.availableCredits;
-  const required = input.requiredCredits;
   const creditGrant = receipt.creditGrant;
   if (
     !creditGrant ||
@@ -245,7 +251,21 @@ export async function recoverComposerCredits(input: {
   ) {
     return { ok: false, message: '兑换后积分未到账，请重试' };
   }
-  if (!Number.isSafeInteger(required) || required! <= 0 || after! < required!) {
+  const acceptedQuote = input.quote;
+  const currentQuote = input.currentQuote();
+  if (
+    !acceptedQuote ||
+    !currentQuote ||
+    acceptedQuote.quoteId !== currentQuote.quoteId ||
+    acceptedQuote.revision !== currentQuote.revision
+  ) {
+    return { ok: false, message: '报价已更新，请按最新报价重试' };
+  }
+  if (
+    !Number.isSafeInteger(currentQuote.amount) ||
+    currentQuote.amount <= 0 ||
+    after! < currentQuote.amount
+  ) {
     return { ok: false, message: '积分已到账，但仍不足以完成本次创作' };
   }
   return { ok: true };

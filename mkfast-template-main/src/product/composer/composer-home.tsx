@@ -259,13 +259,12 @@ import {
   listColdCardsFromSurface,
 } from './recipe-cards';
 import { RecipeCardsPanel } from './recipe-cards-panel';
-import { QuotaBlockingCard } from './quota-blocking-card';
+import { ComposerCreditRecoveryHost } from './quota-blocking-card';
 import {
   type ComposerCreditRedemptionReceipt,
   composerQuotaAvailability,
   composerQuotaRequirements,
   projectQuotaPassiveView,
-  recoverComposerCredits,
 } from './quota-blocking';
 import {
   buildLiveBriefInput,
@@ -4427,41 +4426,26 @@ export function ComposerHome({
             line is not a card and gates nothing; only a shortfall raises the
             blocking card. Kept inside sticky host so Active morph does not
             occlude quote / grounding / quota under the send control. */}
-                <QuotaBlockingCard
+                <ComposerCreditRecoveryHost
                   blocked={quotaBlocked}
                   passive={quotaPassive}
-                  onRedeem={async ({ command, idempotencyKey }) => {
-                    try {
-                      const result = await recoverComposerCredits({
-                        beforeCredits:
-                          usageQuery.data?.credits?.availableCredits,
-                        requiredCredits: currentQuoteView?.amount,
-                        redeem: () =>
-                          commandP1<ComposerCreditRedemptionReceipt>(
-                            'redemptions',
-                            command,
-                            idempotencyKey
-                          ),
-                        refreshCredits: async () =>
-                          (await usageQuery.refetch()).data,
-                      });
-                      await queryClient.invalidateQueries({
-                        queryKey: p1QueryKeys.request(
-                          'entitlements',
-                          'balance'
-                        ),
-                      });
-                      return result;
-                    } catch (error) {
-                      return {
-                        ok: false,
-                        message:
-                          error instanceof Error
-                            ? error.message
-                            : '兑换失败，请重试',
-                      };
-                    }
-                  }}
+                  beforeCredits={usageQuery.data?.credits?.availableCredits}
+                  quote={currentQuoteView}
+                  redeem={({ command, idempotencyKey }) =>
+                    commandP1<ComposerCreditRedemptionReceipt>(
+                      'redemptions',
+                      command,
+                      idempotencyKey
+                    )
+                  }
+                  refreshCredits={async () =>
+                    (await usageQuery.refetch()).data
+                  }
+                  onRecoverySettled={() =>
+                    queryClient.invalidateQueries({
+                      queryKey: p1QueryKeys.request('entitlements', 'balance'),
+                    })
+                  }
                   onUnlocked={() => setSubmissionQuotaBlocked(false)}
                 />
               </WorkbenchStickyComposerHost>

@@ -11,10 +11,14 @@ import {
 } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  ComposerCreditRecoveryHost,
   QuotaBlockingCard,
   type QuotaBlockingCardProps,
 } from './quota-blocking-card';
-import { recoverComposerCredits } from './quota-blocking';
+import {
+  recoverComposerCredits,
+  type ComposerCreditRedemptionReceipt,
+} from './quota-blocking';
 
 afterEach(() => {
   cleanup();
@@ -26,6 +30,12 @@ function setRedeemCode(code: string) {
   fireEvent.change(input, { target: { value: code } });
   return input;
 }
+
+const QUOTE_50 = {
+  quoteId: 'quote-50',
+  revision: 'revision-50',
+  amount: 50,
+};
 
 function UnlockHarness({
   redeemImpl,
@@ -59,6 +69,62 @@ function UnlockHarness({
 }
 
 describe('GL-23 quota blocking card — redeem unlocks continue', () => {
+  it('keeps the blocker when the current quote changes while redemption is pending', async () => {
+    let finishRedeem!: (receipt: ComposerCreditRedemptionReceipt) => void;
+    const redeem = vi.fn(
+      () =>
+        new Promise<ComposerCreditRedemptionReceipt>((resolve) => {
+          finishRedeem = resolve;
+        })
+    );
+    const refreshCredits = vi.fn(async () => ({
+      credits: { availableCredits: 70 },
+    }));
+    const onUnlocked = vi.fn();
+    const view = render(
+      <ComposerCreditRecoveryHost
+        blocked
+        beforeCredits={40}
+        quote={{ quoteId: 'quote-low', revision: 'revision-low', amount: 50 }}
+        redeem={redeem}
+        refreshCredits={refreshCredits}
+        onUnlocked={onUnlocked}
+      />
+    );
+
+    setRedeemCode('CREDIT-30');
+    fireEvent.click(screen.getByTestId('composer-quota-redeem-submit'));
+    await waitFor(() => expect(redeem).toHaveBeenCalledOnce());
+
+    view.rerender(
+      <ComposerCreditRecoveryHost
+        blocked
+        beforeCredits={40}
+        quote={{ quoteId: 'quote-high', revision: 'revision-high', amount: 80 }}
+        redeem={redeem}
+        refreshCredits={refreshCredits}
+        onUnlocked={onUnlocked}
+      />
+    );
+    finishRedeem({
+      creditGrant: {
+        originalCredits: 30,
+        transactionType: 'REDEMPTION_CODE',
+      },
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('composer-quota-redeem-error')
+      ).toHaveTextContent('报价已更新，请按最新报价重试')
+    );
+    expect(refreshCredits).toHaveBeenCalledOnce();
+    expect(onUnlocked).not.toHaveBeenCalled();
+    expect(
+      screen.queryByTestId('composer-quota-continue-ready')
+    ).not.toBeInTheDocument();
+  });
+
   it('unlocks only after a credit receipt is confirmed by the authoritative balance', async () => {
     const events: string[] = [];
     const redeem = vi.fn(async () => {
@@ -82,7 +148,8 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
         redeemImpl={() =>
           recoverComposerCredits({
             beforeCredits: 40,
-            requiredCredits: 50,
+            quote: QUOTE_50,
+            currentQuote: () => QUOTE_50,
             redeem,
             refreshCredits,
           })
@@ -104,7 +171,8 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
   it('unlocks an idempotent replay when the fresh balance already includes the grant', async () => {
     const result = await recoverComposerCredits({
       beforeCredits: 70,
-      requiredCredits: 50,
+      quote: QUOTE_50,
+      currentQuote: () => QUOTE_50,
       redeem: async () => ({
         creditGrant: {
           originalCredits: 30,
@@ -120,7 +188,8 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
   it('unlocks from a real receipt and sufficient fresh balance without a cached before value', async () => {
     const result = await recoverComposerCredits({
       beforeCredits: undefined,
-      requiredCredits: 50,
+      quote: QUOTE_50,
+      currentQuote: () => QUOTE_50,
       redeem: async () => ({
         creditGrant: {
           originalCredits: 30,
@@ -139,7 +208,8 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
         redeemImpl={() =>
           recoverComposerCredits({
             beforeCredits: 40,
-            requiredCredits: 50,
+            quote: QUOTE_50,
+            currentQuote: () => QUOTE_50,
             redeem: async () => ({
               code: { status: 'redeemed' },
               grantTransactions: [],
@@ -174,7 +244,8 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
   it('does not unlock from a sufficient balance without a credit receipt', async () => {
     const result = await recoverComposerCredits({
       beforeCredits: 40,
-      requiredCredits: 50,
+      quote: QUOTE_50,
+      currentQuote: () => QUOTE_50,
       redeem: async () => ({}),
       refreshCredits: async () => ({ credits: { availableCredits: 70 } }),
     });

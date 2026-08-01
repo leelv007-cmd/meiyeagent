@@ -62,7 +62,7 @@ test('P1-2: Active sticky Composer clears mobile-nav (4.25rem family)', () => {
   // Merchant-critical chrome rides the sticky host (quote / grounding / quota).
   assert.match(
     home,
-    /WorkbenchStickyComposerHost[\s\S]*composer-quote-line[\s\S]*QuotaBlockingCard[\s\S]*<\/WorkbenchStickyComposerHost>/u
+    /WorkbenchStickyComposerHost[\s\S]*composer-quote-line[\s\S]*ComposerCreditRecoveryHost[\s\S]*<\/WorkbenchStickyComposerHost>/u
   );
   const shell = readSource('src/product/composer/workbench-shell.ts');
   assert.match(shell, /WORKBENCH_MOBILE_NAV_HEIGHT = '4\.25rem'/u);

@@ -31,6 +31,84 @@ function renderControl(children: ReactNode = <AdminRedemptionControl />) {
 }
 
 describe('AdminRedemptionControl credit mode', () => {
+  it('recovers a committed create after response loss with the same intent key', async () => {
+    const user = userEvent.setup();
+    const persisted = {
+      id: 'redemption-recover-30',
+      code: 'RECOVER30',
+      status: 'active',
+      revision: 1,
+      credits: 30,
+      grants: {},
+      expiresAt: null,
+    };
+    let committed = false;
+    p1Client.queryP1.mockImplementation(async () =>
+      committed ? [persisted] : []
+    );
+    p1Client.commandP1
+      .mockImplementationOnce(async () => {
+        committed = true;
+        throw new Error('response lost after commit');
+      })
+      .mockResolvedValueOnce([persisted]);
+    const view = renderControl();
+
+    await waitFor(() => expect(p1Client.queryP1).toHaveBeenCalledOnce());
+    const credits = view.container.querySelector(
+      '#redeem-credits'
+    ) as HTMLInputElement;
+    await user.clear(credits);
+    await user.type(credits, '30');
+    await user.type(
+      view.container.querySelector('#redeem-code') as HTMLInputElement,
+      'RECOVER30'
+    );
+    const create = screen.getByRole('button', { name: /record|录入/u });
+    await user.click(create);
+
+    await waitFor(() => expect(p1Client.queryP1).toHaveBeenCalledTimes(2));
+    expect(await screen.findAllByText('RECOVER30')).toHaveLength(1);
+
+    await user.click(create);
+    await waitFor(() => expect(p1Client.commandP1).toHaveBeenCalledTimes(2));
+
+    const firstKey = p1Client.commandP1.mock.calls[0]?.[2];
+    const replayKey = p1Client.commandP1.mock.calls[1]?.[2];
+    expect(replayKey).toBe(firstKey);
+    await waitFor(() =>
+      expect(screen.getAllByText('RECOVER30')).toHaveLength(1)
+    );
+  });
+
+  it('rotates the create key when the operator changes the intent after failure', async () => {
+    const user = userEvent.setup();
+    p1Client.queryP1.mockResolvedValue([]);
+    p1Client.commandP1.mockRejectedValue(new Error('response lost'));
+    const view = renderControl();
+
+    await waitFor(() => expect(p1Client.queryP1).toHaveBeenCalledOnce());
+    const credits = view.container.querySelector(
+      '#redeem-credits'
+    ) as HTMLInputElement;
+    const code = view.container.querySelector(
+      '#redeem-code'
+    ) as HTMLInputElement;
+    const create = screen.getByRole('button', { name: /record|录入/u });
+    await user.type(code, 'ROTATE30');
+    await user.click(create);
+    await waitFor(() => expect(p1Client.commandP1).toHaveBeenCalledOnce());
+
+    await user.clear(credits);
+    await user.type(credits, '40');
+    await user.click(create);
+    await waitFor(() => expect(p1Client.commandP1).toHaveBeenCalledTimes(2));
+
+    expect(p1Client.commandP1.mock.calls[1]?.[2]).not.toBe(
+      p1Client.commandP1.mock.calls[0]?.[2]
+    );
+  });
+
   it('creates one positive credit grant without emitting legacy allowances', async () => {
     const user = userEvent.setup();
     p1Client.queryP1.mockResolvedValue([]);

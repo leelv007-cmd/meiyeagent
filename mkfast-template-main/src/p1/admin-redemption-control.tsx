@@ -3,7 +3,7 @@
  * Uses existing admin AdminPanel/Button patterns; calls redemptions P1 module.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import {
@@ -83,6 +83,10 @@ export function AdminRedemptionControl() {
   const [credits, setCredits] = useState('30');
   const [code, setCode] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
+  const createIntentRef = useRef<{
+    fingerprint: string;
+    idempotencyKey: string;
+  } | null>(null);
 
   const listQuery = useQuery({
     queryKey: ['admin', 'redemptions', 'list'],
@@ -95,23 +99,32 @@ export function AdminRedemptionControl() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
+      const payload = {
+        code: code.trim(),
+        credits: Number(credits),
+        grants: {},
+        ...(expiresAt
+          ? { expiresAt: new Date(expiresAt).toISOString() }
+          : {}),
+      };
+      const fingerprint = JSON.stringify(payload);
+      if (createIntentRef.current?.fingerprint !== fingerprint) {
+        createIntentRef.current = {
+          fingerprint,
+          idempotencyKey: `redeem-create-${crypto.randomUUID()}`,
+        };
+      }
       return commandP1<RedemptionCodeRow[]>(
         'redemptions',
         {
           action: 'create',
-          payload: {
-            code: code.trim(),
-            credits: Number(credits),
-            grants: {},
-            ...(expiresAt
-              ? { expiresAt: new Date(expiresAt).toISOString() }
-              : {}),
-          },
+          payload,
         },
-        `redeem-create-${crypto.randomUUID()}`
+        createIntentRef.current.idempotencyKey
       );
     },
     onSuccess: () => {
+      createIntentRef.current = null;
       toast.success(admin_redemption_create_success());
       setCode('');
       void queryClient.invalidateQueries({
@@ -120,6 +133,9 @@ export function AdminRedemptionControl() {
     },
     onError: () => {
       toast.error(admin_redemption_create_failed());
+      void queryClient.invalidateQueries({
+        queryKey: ['admin', 'redemptions', 'list'],
+      });
     },
   });
 
