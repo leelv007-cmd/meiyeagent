@@ -46,6 +46,9 @@ export interface ClaimMerchantExecutionInput extends MerchantExecutionContract {
 }
 
 export interface MerchantExecutionBillingPort {
+  readMerchantExecutionContract(
+    input: Pick<ClaimMerchantExecutionInput, 'taskId' | 'workspaceId'>,
+  ): MaybePromise<MerchantExecutionContract>;
   claimMerchantExecution<T = unknown>(
     input: ClaimMerchantExecutionInput,
   ): MaybePromise<
@@ -233,6 +236,40 @@ export class DurableProductBillingService
 
   getUsage(taskId: string, workspaceId?: string) {
     return this.repository.getUsage(this.workspace(workspaceId), taskId);
+  }
+
+  async readMerchantExecutionContract(input: {
+    taskId: string;
+    workspaceId: string;
+  }): Promise<MerchantExecutionContract> {
+    const workspaceId = this.workspace(input.workspaceId);
+    const quote = await this.repository.getQuoteByTask(workspaceId, input.taskId);
+    const outputCount = quote?.outputCount;
+    if (
+      !quote ||
+      quote.workspaceId !== workspaceId ||
+      quote.taskId !== input.taskId ||
+      !quote.catalogModelId ||
+      !quote.operation ||
+      !quote.revision ||
+      typeof outputCount !== 'number' ||
+      !Number.isSafeInteger(outputCount) ||
+      outputCount < 1
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Merchant execution requires a complete reserved credit quote contract.',
+      );
+    }
+    return {
+      catalogModelId: quote.catalogModelId,
+      operation: quote.operation,
+      outputCount,
+      quoteRevision: quote.revision,
+      ...(quote.targetSeconds === undefined
+        ? {}
+        : { targetSeconds: quote.targetSeconds }),
+    };
   }
 
   async claimMerchantExecution<T = unknown>(

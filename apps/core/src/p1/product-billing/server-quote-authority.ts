@@ -101,6 +101,22 @@ export class CatalogProductQuoteAuthority implements ProductQuoteAuthority {
         'quantity must match the signed deliverable quantity.',
       );
     }
+    if (
+      input.submission &&
+      input.catalogModelId !== input.submission.catalogModel.id
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'catalogModelId must match the signed submission model.',
+      );
+    }
+    const signedImageOperation = input.submission?.imageOperation;
+    if (signedImageOperation && input.operation !== signedImageOperation) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'operation must match the signed image operation.',
+      );
+    }
     const quantity =
       input.submission?.deliverable.quantity ?? input.quantity ?? 1;
     if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 20) {
@@ -116,7 +132,18 @@ export class CatalogProductQuoteAuthority implements ProductQuoteAuthority {
         : quantity;
     let unitCreditCost = pricing.creditCost;
     if (input.operation === 'video.generate') {
-      const targetSeconds = input.targetSeconds;
+      const signedTargetSeconds = input.submission?.deliverable.durationSeconds;
+      if (
+        signedTargetSeconds !== undefined &&
+        input.targetSeconds !== undefined &&
+        input.targetSeconds !== signedTargetSeconds
+      ) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'targetSeconds must match the signed deliverable duration.',
+        );
+      }
+      const targetSeconds = signedTargetSeconds ?? input.targetSeconds;
       if (
         targetSeconds === undefined ||
         !Number.isSafeInteger(targetSeconds) ||
@@ -161,7 +188,10 @@ export class CatalogProductQuoteAuthority implements ProductQuoteAuthority {
       outputLabel,
       formulaExpression: `${unitCreditCost} credits × ${billableQuantity} = ${creditCost} credits`,
       ...(input.operation === 'video.generate'
-        ? { targetSeconds: input.targetSeconds }
+        ? {
+            targetSeconds:
+              input.submission?.deliverable.durationSeconds ?? input.targetSeconds,
+          }
         : {}),
       quoteId: input.quoteId,
       quotePolicyRevision: 'quote.policy@1',

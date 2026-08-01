@@ -219,6 +219,42 @@ describe('CatalogProductQuoteAuthority', () => {
     );
   });
 
+  it('derives video duration from the signed submission instead of a caller override', async () => {
+    const submission = {
+      creationMode: 'customized' as const,
+      intent: '生成一支疗程介绍短片',
+      catalogModel: { id: 'video-model', revision: 'catalog-r11' },
+      recipe: { id: 'recipe-video', revision: 'recipe-video@1' },
+      contentPackagePlatform: 'douyin' as const,
+      distributionTarget: 'export' as const,
+      deliverable: {
+        kind: 'video_package' as const,
+        quantity: 1,
+        durationSeconds: 60,
+      },
+    };
+    const quote = await authority().resolve({
+      catalogModelId: 'video-model',
+      operation: 'video.generate',
+      quoteId: 'quote-signed-video-60',
+      submission,
+      workspaceId: 'workspace-1',
+    });
+    assert.equal(quote.targetSeconds, 60);
+    assert.equal(quote.creditCost, 160);
+    await assert.rejects(
+      authority().resolve({
+        catalogModelId: 'video-model',
+        operation: 'video.generate',
+        quoteId: 'quote-signed-video-15',
+        submission,
+        targetSeconds: 15,
+        workspaceId: 'workspace-1',
+      }),
+      /signed deliverable duration/i,
+    );
+  });
+
   it('fails closed on malformed credit pricing and invalid quantity', async () => {
     await assert.rejects(
       authority(Number.NaN).resolve({

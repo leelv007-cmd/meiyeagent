@@ -5875,43 +5875,15 @@ function productUsageQuantity(
   return value;
 }
 
-function billingOutputCount(value: unknown): number {
-  if (!Number.isSafeInteger(value) || Number(value) < 1) {
-    throw new P1DomainError(
-      'INVALID_STATE',
-      'billingOutputCount must be a positive integer.',
-    );
+function merchantProviderOperation(operation: string): ModelOperation {
+  if (operation === 'image.reference_transform') return 'image.edit';
+  if (MODEL_OPERATIONS.includes(operation as ModelOperation)) {
+    return operation as ModelOperation;
   }
-  return Number(value);
-}
-
-function merchantBillingOperation(
-  value: unknown,
-  executionOperation: ModelOperation,
-): CreditPricingOperation {
-  const requested =
-    typeof value === 'string' && value.trim()
-      ? value.trim()
-      : executionOperation;
-  if (!CREDIT_PRICING_OPERATIONS.includes(requested as never)) {
-    throw new P1DomainError(
-      'INVALID_STATE',
-      'billingOperation must be a published credit operation.',
-    );
-  }
-  if (
-    requested !== executionOperation &&
-    !(
-      requested === 'image.reference_transform' &&
-      executionOperation === 'image.edit'
-    )
-  ) {
-    throw new P1DomainError(
-      'INVALID_STATE',
-      'billingOperation does not match the provider execution operation.',
-    );
-  }
-  return requested as CreditPricingOperation;
+  throw new P1DomainError(
+    'INVALID_STATE',
+    'Reserved credit quote has an unsupported provider operation.',
+  );
 }
 
 export class ModelSupplyFoundationModule implements P1OperationModule {
@@ -6057,32 +6029,76 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
         const selection = object(payload.selection) as unknown as Parameters<
           ModelSupplyApplicationService['submit']
         >[0]['selection'];
-        const executionContract =
-          this.requireReservedBilling
-            ? {
-                catalogModelId:
-                  selection.mode === 'fixed' && selection.catalogModelId
-                    ? selection.catalogModelId
-                    : (() => {
-                        throw new P1DomainError(
-                          'INVALID_STATE',
-                          'Merchant execution must use the exact quoted CatalogModel.',
-                        );
-                      })(),
-                idempotencyKey: args.idempotencyKey,
-                operation: merchantBillingOperation(
-                  payload.billingOperation,
-                  requestedOperation,
-                ),
-                outputCount: billingOutputCount(payload.billingOutputCount),
-                quoteRevision: billingQuoteRevision!,
-                ...(requestedInput?.durationSeconds !== undefined
-                  ? { targetSeconds: requestedInput.durationSeconds }
-                  : {}),
+        if (
+          this.requireReservedBilling &&
+          (payload.billingOperation !== undefined ||
+            payload.billingOutputCount !== undefined)
+        ) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'billingOperation and billingOutputCount are derived from the reserved credit quote.',
+          );
+        }
+        let executionInput = requestedInput;
+        let executionOperation = requestedOperation;
+        let executionSelection = selection;
+        const executionContract = this.requireReservedBilling
+          ? await (async () => {
+              const reserved = await this.reservedBilling!.readMerchantExecutionContract({
                 taskId: billingTaskId!,
                 workspaceId: args.context.workspaceId,
+              });
+              if (reserved.quoteRevision !== billingQuoteRevision) {
+                throw new P1DomainError(
+                  'INVALID_STATE',
+                  'Merchant execution must use the exact reserved credit quote revision.',
+                );
               }
-            : null;
+              const providerOperation = merchantProviderOperation(reserved.operation);
+              if (requestedOperation !== providerOperation) {
+                throw new P1DomainError(
+                  'INVALID_STATE',
+                  'Merchant execution operation does not match the reserved credit quote.',
+                );
+              }
+              if (
+                selection.mode !== 'fixed' ||
+                selection.catalogModelId !== reserved.catalogModelId
+              ) {
+                throw new P1DomainError(
+                  'INVALID_STATE',
+                  'Merchant execution must use the exact quoted CatalogModel.',
+                );
+              }
+              if (
+                reserved.targetSeconds !== undefined &&
+                requestedInput?.durationSeconds !== undefined &&
+                requestedInput.durationSeconds !== reserved.targetSeconds
+              ) {
+                throw new P1DomainError(
+                  'INVALID_STATE',
+                  'Merchant execution duration does not match the reserved credit quote.',
+                );
+              }
+              executionOperation = providerOperation;
+              executionSelection = {
+                catalogModelId: reserved.catalogModelId,
+                mode: 'fixed',
+              };
+              executionInput = reserved.targetSeconds === undefined
+                ? requestedInput
+                : {
+                    ...requestedInput,
+                    durationSeconds: reserved.targetSeconds,
+                  };
+              return {
+                ...reserved,
+                idempotencyKey: args.idempotencyKey,
+                taskId: billingTaskId!,
+                workspaceId: args.context.workspaceId,
+              };
+            })()
+          : null;
         if (executionContract) {
           const claim = await this.reservedBilling!.claimMerchantExecution(
             executionContract,
@@ -6097,8 +6113,8 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
                   ModelSupplyApplicationService['submit']
                 >[0]['dataClass'])
               : [],
-            input: requestedInput,
-            operation: requestedOperation,
+            input: executionInput,
+            operation: executionOperation,
             ...(billingTaskId && billingQuoteRevision
               ? { billingTaskId, billingQuoteRevision }
               : {}),
@@ -6106,7 +6122,7 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
               ? {}
               : { productUsageQuantity: usageQuantity }),
             prompt: requiredString(payload, 'prompt'),
-            selection,
+            selection: executionSelection,
           },
           executionContract
             ? `merchant-execution:${executionContract.taskId}`

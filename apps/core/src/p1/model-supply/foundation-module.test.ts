@@ -137,6 +137,38 @@ function merchantExecutionBillingStub(input: {
     targetSeconds: claim.targetSeconds ?? null,
   });
   return {
+    async readMerchantExecutionContract(inputValue: {
+      taskId: string;
+      workspaceId: string;
+    }) {
+      const quote = input.getQuote(inputValue.taskId);
+      const outputCount = quote?.outputCount;
+      if (
+        !quote ||
+        quote.workspaceId !== inputValue.workspaceId ||
+        quote.taskId !== inputValue.taskId ||
+        !quote.catalogModelId ||
+        !quote.operation ||
+        !quote.revision ||
+        typeof outputCount !== 'number' ||
+        !Number.isSafeInteger(outputCount) ||
+        outputCount < 1
+      ) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'The reserved credit quote contract is incomplete.',
+        );
+      }
+      return {
+        catalogModelId: quote.catalogModelId,
+        operation: quote.operation,
+        outputCount,
+        quoteRevision: quote.revision,
+        ...(quote.targetSeconds === undefined
+          ? {}
+          : { targetSeconds: quote.targetSeconds }),
+      };
+    },
     async claimMerchantExecution<T>(claim: {
       catalogModelId: string;
       idempotencyKey: string;
@@ -3005,7 +3037,6 @@ describe('ModelSupplyFoundationModule', () => {
       reservedBilling,
     });
     const payload = {
-      billingOutputCount: 1,
       dataClass: [],
       operation: 'copy.generate',
       prompt: 'Return one concise campaign direction.',
@@ -3047,7 +3078,6 @@ describe('ModelSupplyFoundationModule', () => {
       { operation: 'copy.adapt' },
       { selection: { catalogModelId: 'llm-backup', mode: 'fixed' } },
       { billingOutputCount: 2 },
-      { input: { durationSeconds: 15 } },
     ]) {
       await assert.rejects(
         command(module, owner, 'submit_generation', {
@@ -3056,7 +3086,7 @@ describe('ModelSupplyFoundationModule', () => {
           billingTaskId: 'credit-task-valid',
           billingQuoteRevision: 'quote-r1',
         }),
-        /reserved credit quote/i,
+        /reserved credit (?:quote|billing)|quoted CatalogModel|derived/i,
       );
     }
     assert.equal(providerCalls, 0);
@@ -3114,7 +3144,6 @@ describe('ModelSupplyFoundationModule', () => {
         input: {
           action: 'submit_generation',
           payload: {
-            billingOutputCount: 1,
             billingQuoteRevision: 'quote-r1',
             billingTaskId: 'credit-task-exclusive',
             dataClass: [],
@@ -3175,7 +3204,6 @@ describe('ModelSupplyFoundationModule', () => {
       input: {
         action: 'submit_generation',
         payload: {
-          billingOutputCount: 1,
           billingQuoteRevision: quote.revision,
           billingTaskId: quote.taskId,
           dataClass: [],
