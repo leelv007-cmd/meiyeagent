@@ -527,6 +527,45 @@ test('future and old paid periods do not expand or regress current coverage', as
   assert.equal((await subscriptions.get(subscriptionId))?.status, 'active');
 });
 
+test('out-of-order paid periods fill the missing coverage cycle without minting a gap', async () => {
+  let now = new Date('2026-01-01T00:00:00.000Z');
+  const ledger = new MemoryCreditLedger();
+  const subscriptions = new MemoryCreditSubscriptionStore();
+  const service = creditBillingService(ledger, subscriptions, () => now);
+  const subscriptionId = 'subscription-out-of-order-periods';
+
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'activate',
+    paymentEventId: 'payment-out-of-order-activate',
+    paymentProductId: 'starter',
+    periodStartsAt: now.toISOString(),
+    subscriptionId,
+  });
+  now = new Date('2026-03-01T00:00:00.000Z');
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'renew',
+    paymentEventId: 'payment-out-of-order-march',
+    paymentProductId: 'starter',
+    periodStartsAt: now.toISOString(),
+    subscriptionId,
+  });
+  assert.equal((await subscriptions.get(subscriptionId))?.paidThroughCycle, 1);
+
+  now = new Date('2026-03-02T00:00:00.000Z');
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'renew',
+    paymentEventId: 'payment-out-of-order-february',
+    paymentProductId: 'starter',
+    periodStartsAt: '2026-02-01T00:00:00.000Z',
+    subscriptionId,
+  });
+
+  assert.equal((await subscriptions.get(subscriptionId))?.paidThroughCycle, 3);
+});
+
 test('out-of-order terminal events remain retryable after subscription activation', async () => {
   for (const lifecycle of [
     'past_due',

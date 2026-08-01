@@ -114,7 +114,7 @@ test(
             }),
         );
       }
-      assert.equal((await store.get(subscriptionId))?.paidThroughCycle, 15);
+      assert.equal((await store.get(subscriptionId))?.paidThroughCycle, 14);
 
       await assert.rejects(
         store.upsert({
@@ -166,7 +166,11 @@ test(
       } finally {
         client.release();
       }
-      for (const workspaceId of ['workspace-period-pg', 'workspace-annual-pg']) {
+      for (const workspaceId of [
+        'workspace-period-pg',
+        'workspace-annual-pg',
+        'workspace-period-gap-pg',
+      ]) {
         await pool.query(
           "INSERT INTO workspaces (id, name) VALUES ($1, 'Credit period test')",
           [workspaceId],
@@ -269,6 +273,41 @@ test(
         subscriptionId: 'pg-subscription-annual',
       });
       assert.equal((await store.get('pg-subscription-annual'))?.paidThroughCycle, 12);
+
+      await store.upsert({
+        anchorAt: '2026-01-01T00:00:00.000Z',
+        id: 'pg-subscription-period-gap',
+        interval: 'monthly',
+        paidThroughCycle: 1,
+        tier: 'starter',
+        workspaceId: 'workspace-period-gap-pg',
+      });
+      await store.recordInitialPaidPeriod({
+        subscriptionId: 'pg-subscription-period-gap',
+        periodStartsAt: '2026-01-01T00:00:00.000Z',
+        coverageCycles: 1,
+        at: '2026-01-01T00:00:00.000Z',
+      });
+      await store.recordPaidPeriod({
+        subscriptionId: 'pg-subscription-period-gap',
+        periodStartsAt: '2026-03-01T00:00:00.000Z',
+        coverageCycles: 1,
+        at: '2026-03-01T00:00:00.000Z',
+      });
+      assert.equal(
+        (await store.get('pg-subscription-period-gap'))?.paidThroughCycle,
+        1,
+      );
+      await store.recordPaidPeriod({
+        subscriptionId: 'pg-subscription-period-gap',
+        periodStartsAt: '2026-02-01T00:00:00.000Z',
+        coverageCycles: 1,
+        at: '2026-03-02T00:00:00.000Z',
+      });
+      assert.equal(
+        (await store.get('pg-subscription-period-gap'))?.paidThroughCycle,
+        3,
+      );
     } finally {
       await pool.query(`DROP SCHEMA ${schema} CASCADE`).catch(() => undefined);
       await pool.end();

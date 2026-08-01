@@ -176,6 +176,30 @@ export function currentCreditSubscriptionCycle(
   return current && now < Date.parse(current.endsAt) ? current : null;
 }
 
+/** Finds the UTC billing cycle containing a paid-period start. */
+export function creditSubscriptionCycleIndexAt(anchorAt: string, at: string) {
+  const anchor = date(anchorAt, 'anchorAt');
+  const target = date(at, 'periodStartsAt');
+  if (target.getTime() < anchor.getTime()) return -1;
+  let cycleIndex =
+    (target.getUTCFullYear() - anchor.getUTCFullYear()) * 12 +
+    target.getUTCMonth() -
+    anchor.getUTCMonth();
+  while (
+    cycleIndex > 0 &&
+    Date.parse(creditSubscriptionCycle(anchorAt, cycleIndex).startsAt) > target.getTime()
+  ) {
+    cycleIndex -= 1;
+  }
+  while (
+    Date.parse(creditSubscriptionCycle(anchorAt, cycleIndex + 1).startsAt) <=
+    target.getTime()
+  ) {
+    cycleIndex += 1;
+  }
+  return cycleIndex;
+}
+
 export function creditSubscriptionTierForCycle(
   subscription: CreditSubscription,
   cycleIndex: number,
@@ -473,6 +497,7 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
     if (subscription.status === 'cancelled') {
       throw new Error('Cancelled credit subscriptions cannot receive renewal coverage.');
     }
+    if (periodStartsAt > at) return structuredClone(subscription);
     const key = `${input.subscriptionId}\u0000${periodStartsAt}`;
     const existingCoverage = this.paidPeriods.get(key);
     if (existingCoverage !== undefined) {
@@ -482,25 +507,14 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
           'Credit subscription billing period has different coverage facts.',
         );
       }
-      return this.recordPaidCoverage(
-        input.subscriptionId,
-        subscription.paidThroughCycle,
-        at,
-      );
-    }
-    const latest = await this.latestPaidPeriodStartsAt(input.subscriptionId);
-    if (
-      periodStartsAt > at ||
-      (latest !== null && periodStartsAt < latest)
-    ) {
       return structuredClone(subscription);
     }
     this.paidPeriods.set(key, input.coverageCycles);
-    return this.recordPaidCoverage(
-      input.subscriptionId,
-      subscription.paidThroughCycle + input.coverageCycles,
-      at,
-    );
+    const paidThroughCycle = this.contiguousPaidThroughCycle(subscription);
+    if (paidThroughCycle <= subscription.paidThroughCycle) {
+      return structuredClone(subscription);
+    }
+    return this.recordPaidCoverage(input.subscriptionId, paidThroughCycle, at);
   }
 
   async recordInitialPaidPeriod(input: {
@@ -524,6 +538,10 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
       );
     }
     this.paidPeriods.set(key, input.coverageCycles);
+    subscription.paidThroughCycle = Math.max(
+      subscription.paidThroughCycle,
+      this.contiguousPaidThroughCycle(subscription),
+    );
     return structuredClone(subscription);
   }
 
@@ -674,6 +692,25 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
     const subscription = this.subscriptions.get(subscriptionId);
     if (!subscription) throw new Error(`Credit subscription ${subscriptionId} was not found.`);
     return subscription;
+  }
+
+  private contiguousPaidThroughCycle(subscription: CreditSubscription) {
+    const prefix = `${subscription.id}\u0000`;
+    const coveredCycles = new Set<number>();
+    for (const [key, coverageCycles] of this.paidPeriods) {
+      if (!key.startsWith(prefix)) continue;
+      const cycleStart = creditSubscriptionCycleIndexAt(
+        subscription.anchorAt,
+        key.slice(prefix.length),
+      );
+      if (cycleStart < 0) continue;
+      for (let cycle = cycleStart; cycle < cycleStart + coverageCycles; cycle += 1) {
+        coveredCycles.add(cycle);
+      }
+    }
+    let paidThroughCycle = 0;
+    while (coveredCycles.has(paidThroughCycle)) paidThroughCycle += 1;
+    return paidThroughCycle;
   }
 }
 
@@ -889,13 +926,11 @@ export class PostgresCreditSubscriptionStore
     }
     const periodStartsAt = iso(input.periodStartsAt);
     const at = iso(input.at);
-    const latest = await this.latestPaidPeriodStartsAt(input.subscriptionId);
-    if (
-      periodStartsAt > at ||
-      (latest !== null && periodStartsAt < latest)
-    ) {
-      return existing;
-    }
+    if (periodStartsAt > at) return existing;
+    await this.database.query(
+      'SELECT id FROM p1_credit_subscriptions WHERE id = $1 FOR UPDATE',
+      [input.subscriptionId],
+    );
     const inserted = await this.database.query<{ coverage_cycles: number | string }>(
       `INSERT INTO p1_credit_subscription_paid_periods
         (subscription_id, period_starts_at, coverage_cycles, created_at)
@@ -917,19 +952,17 @@ export class PostgresCreditSubscriptionStore
           'Credit subscription billing period has different coverage facts.',
         );
       }
-      return this.recordPaidCoverage(
-        input.subscriptionId,
-        existing.paidThroughCycle,
-        at,
-      );
+      return existing;
     }
+    const paidThroughCycle = await this.contiguousPaidThroughCycle(existing);
+    if (paidThroughCycle <= existing.paidThroughCycle) return existing;
     const updated = await this.database.query<CreditSubscriptionRow>(
       `UPDATE p1_credit_subscriptions
-          SET paid_through_cycle = paid_through_cycle + $2,
+          SET paid_through_cycle = $2,
               status = 'active', past_due_at = NULL, updated_at = $3
         WHERE id = $1 AND status <> 'cancelled'
         RETURNING *`,
-      [input.subscriptionId, input.coverageCycles, at],
+      [input.subscriptionId, paidThroughCycle, at],
     );
     if (!updated.rows[0]) {
       throw new Error(`Credit subscription ${input.subscriptionId} was not found.`);
@@ -968,7 +1001,9 @@ export class PostgresCreditSubscriptionStore
         );
       }
     }
-    return subscription;
+    const paidThroughCycle = await this.contiguousPaidThroughCycle(subscription);
+    if (paidThroughCycle <= subscription.paidThroughCycle) return subscription;
+    return this.recordPaidCoverage(subscription.id, paidThroughCycle, input.at);
   }
 
   async latestPaidPeriodStartsAt(subscriptionId: string) {
@@ -1162,6 +1197,33 @@ export class PostgresCreditSubscriptionStore
     const subscription = await this.get(subscriptionId);
     if (!subscription) throw new Error(`Credit subscription ${subscriptionId} was not found.`);
     return subscription;
+  }
+
+  private async contiguousPaidThroughCycle(subscription: CreditSubscription) {
+    const periods = await this.database.query<{
+      period_starts_at: Date | string;
+      coverage_cycles: number | string;
+    }>(
+      `SELECT period_starts_at, coverage_cycles
+         FROM p1_credit_subscription_paid_periods
+        WHERE subscription_id = $1`,
+      [subscription.id],
+    );
+    const coveredCycles = new Set<number>();
+    for (const period of periods.rows) {
+      const cycleStart = creditSubscriptionCycleIndexAt(
+        subscription.anchorAt,
+        iso(period.period_starts_at),
+      );
+      if (cycleStart < 0) continue;
+      const coverageCycles = Number(period.coverage_cycles);
+      for (let cycle = cycleStart; cycle < cycleStart + coverageCycles; cycle += 1) {
+        coveredCycles.add(cycle);
+      }
+    }
+    let paidThroughCycle = 0;
+    while (coveredCycles.has(paidThroughCycle)) paidThroughCycle += 1;
+    return paidThroughCycle;
   }
 }
 
