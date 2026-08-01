@@ -24,7 +24,6 @@ import type { CSSProperties } from 'react';
 import {
   ChatConversation,
   ChatLoader,
-  ChatMessage,
   PromptInput,
   PromptSuggestion,
   Segment,
@@ -51,6 +50,11 @@ import {
   ComposerReportCard,
   type ComposerRecoveryInput,
 } from './composer-report-card';
+import {
+  resolveAgentFrameKind,
+  type AgentFrameKind,
+  type ComposerTimelineTurnKind,
+} from './agent-frame-registry';
 import type {
   ComposerCandidateTurn,
   ComposerSession,
@@ -124,17 +128,53 @@ function foldTurns(turns: ComposerTurn[]) {
 }
 
 /**
+ * Document-timeline frame host (#313 / D1).
+ *
+ * Every turn renders through the AgentFrame registry. Agent content is full
+ * width; merchant input may keep a light right-aligned chip (not a chat bubble
+ * stream). data-agent-frame is the consumer hook for frame-family assertions.
+ */
+function AgentFrameHost({
+  turnKind,
+  frameKind,
+  children,
+  className,
+  testId,
+}: {
+  turnKind: ComposerTimelineTurnKind;
+  frameKind: AgentFrameKind;
+  children: React.ReactNode;
+  className?: string;
+  testId?: string;
+}) {
+  return (
+    <div
+      className={cn('w-full min-w-0', className)}
+      data-agent-frame={frameKind}
+      data-testid={testId ?? `agent-frame-${frameKind}`}
+      data-turn-kind={turnKind}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
  * D-111 分流告知. Identified by the `intent_naming` success frame, so the
  * wording stays T11's to own. Never silently downgrades: the merchant is told
  * which mode this run used.
+ *
+ * P1-01: full-width narrative frame (document timeline), not an assistant bubble.
  */
 function RouteNotice({ message }: { message: string }) {
   return (
-    <ChatMessage.Assistant data-testid="composer-route-notice">
-      <ChatMessage.Bubble className="meiye-glass-piece">
-        <ChatMessage.Content>{message}</ChatMessage.Content>
-      </ChatMessage.Bubble>
-    </ChatMessage.Assistant>
+    <AgentFrameHost
+      frameKind={resolveAgentFrameKind('route_notice')}
+      testId="composer-route-notice"
+      turnKind="route_notice"
+    >
+      <p className="meiye-porcelain rounded-2xl px-4 py-3 text-sm">{message}</p>
+    </AgentFrameHost>
   );
 }
 
@@ -344,19 +384,28 @@ export function ComposerConversation({
     switch (turn.kind) {
       case 'stages':
         return (
-          <ComposerProgressCard
+          <AgentFrameHost
+            frameKind={resolveAgentFrameKind('stages')}
             key={turn.stages[0]!.id}
-            running={running}
-            stages={turn.stages}
-          />
+            turnKind="stages"
+          >
+            <ComposerProgressCard running={running} stages={turn.stages} />
+          </AgentFrameHost>
         );
       case 'merchant':
+        // Merchant intent: light right-aligned chip allowed; still a registry frame.
         return (
-          <ChatMessage.User data-testid="composer-turn-merchant" key={turn.id}>
-            <ChatMessage.Bubble>
-              <ChatMessage.Content>{turn.text}</ChatMessage.Content>
-            </ChatMessage.Bubble>
-          </ChatMessage.User>
+          <AgentFrameHost
+            className="flex justify-end"
+            frameKind={resolveAgentFrameKind('merchant')}
+            key={turn.id}
+            testId="composer-turn-merchant"
+            turnKind="merchant"
+          >
+            <div className="meiye-porcelain max-w-[min(100%,28rem)] rounded-2xl px-3 py-2 text-sm">
+              {turn.text}
+            </div>
+          </AgentFrameHost>
         );
       case 'route_notice':
         return <RouteNotice key={turn.id} message={turn.message} />;
@@ -365,67 +414,94 @@ export function ComposerConversation({
         return null;
       case 'question':
         return questionSlot ? (
-          <div data-testid="composer-question-turn" key={turn.id}>
+          <AgentFrameHost
+            frameKind={resolveAgentFrameKind('question')}
+            key={turn.id}
+            testId="composer-question-turn"
+            turnKind="question"
+          >
             {questionSlot}
-          </div>
+          </AgentFrameHost>
         ) : null;
       case 'candidate':
         // P0-3: after this run's delivery lands, collapse to a capsule;
         // drafting stays full. The single stream projection follows the
         // current task, so a capsule left by an earlier run must not borrow
         // the live run's content.
-        return candidateShouldCollapse(session, turn) ? (
-          <CandidateSummaryCapsule
+        return (
+          <AgentFrameHost
+            frameKind={resolveAgentFrameKind('candidate')}
             key={turn.id}
-            stream={session.task?.taskId === turn.taskId ? stream : null}
-          />
-        ) : (
-          <CandidateStream key={turn.id} stream={stream} />
+            turnKind="candidate"
+          >
+            {candidateShouldCollapse(session, turn) ? (
+              <CandidateSummaryCapsule
+                stream={session.task?.taskId === turn.taskId ? stream : null}
+              />
+            ) : (
+              <CandidateStream stream={stream} />
+            )}
+          </AgentFrameHost>
         );
       case 'delivery':
         // P0-3 / F8: delivery is the summary face (statement + actions). Do not
         // re-paste the candidate body as a second full excerpt beside the stream.
         return (
-          <ComposerDeliveryCard
-            aspectRatio={deliveryAspectRatio}
+          <AgentFrameHost
+            frameKind={resolveAgentFrameKind('delivery')}
             key={turn.id}
-            lensId={deliveryLensId}
-            onFollowUp={onDeliveryFollowUp}
-            onOpen={onOpenDelivery}
-            onRate={
-              onRateDelivery && turn.revision
-                ? (transition) =>
-                    onRateDelivery({
-                      transition,
-                      revision: turn.revision!,
-                      taskId: turn.taskId,
-                    })
-                : undefined
-            }
-            revision={turn.revision}
-            statement={session.deliveryStatement}
-            taskId={turn.taskId}
-            workId={turn.workId}
-          />
+            turnKind="delivery"
+          >
+            <ComposerDeliveryCard
+              aspectRatio={deliveryAspectRatio}
+              lensId={deliveryLensId}
+              onFollowUp={onDeliveryFollowUp}
+              onOpen={onOpenDelivery}
+              onRate={
+                onRateDelivery && turn.revision
+                  ? (transition) =>
+                      onRateDelivery({
+                        transition,
+                        revision: turn.revision!,
+                        taskId: turn.taskId,
+                      })
+                  : undefined
+              }
+              revision={turn.revision}
+              statement={session.deliveryStatement}
+              taskId={turn.taskId}
+              workId={turn.workId}
+            />
+          </AgentFrameHost>
         );
       case 'report':
         return (
-          <ComposerReportCard
+          <AgentFrameHost
+            frameKind={resolveAgentFrameKind('report')}
             key={turn.id}
-            onRecover={(input) => onRecover?.(input)}
-            report={turn.report}
-          />
+            turnKind="report"
+          >
+            <ComposerReportCard
+              onRecover={(input) => onRecover?.(input)}
+              report={turn.report}
+            />
+          </AgentFrameHost>
         );
       case 'terminal':
         return (
-          <output
-            className="meiye-porcelain rounded-2xl p-4 text-sm"
-            data-outcome={turn.outcome}
-            data-testid="composer-terminal-outcome"
+          <AgentFrameHost
+            frameKind={resolveAgentFrameKind('terminal')}
             key={turn.id}
+            turnKind="terminal"
           >
-            {turn.message}
-          </output>
+            <output
+              className="meiye-porcelain rounded-2xl p-4 text-sm"
+              data-outcome={turn.outcome}
+              data-testid="composer-terminal-outcome"
+            >
+              {turn.message}
+            </output>
+          </AgentFrameHost>
         );
     }
   };

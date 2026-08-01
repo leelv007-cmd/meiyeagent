@@ -151,6 +151,18 @@ import {
   type ComposerLensState,
 } from './lens-state-machine';
 import { isWorkbenchShelfCollapsed } from './workbench-mode';
+import {
+  isWorkbenchComposerSticky,
+  isWorkbenchDualColumnEligible,
+  resolveWorkbenchWidthMode,
+} from './workbench-shell';
+import {
+  WorkbenchCreateLayout,
+  WorkbenchInspectorPanel,
+  WorkbenchInspectorSheet,
+  WorkbenchShellRoot,
+  WorkbenchStickyComposerHost,
+} from './workbench-shell-layout';
 import { LensRadiogroup } from './lens-radiogroup';
 import { LensSwitchPreviewPanel } from './lens-switch-preview-panel';
 import { ComposerIdentityCard } from './composer-identity-card';
@@ -588,6 +600,8 @@ export function ComposerHome({
     sessionIdentityDecisionReference,
     setSessionIdentityDecisionReference,
   ] = useState<{ id: string; revision: number } | null>(null);
+  /** Mobile Result Inspector sheet (dual-column right rail equivalent). */
+  const [inspectorSheetOpen, setInspectorSheetOpen] = useState(false);
 
   const width =
     viewportWidth ?? (typeof window !== 'undefined' ? window.innerWidth : 1280);
@@ -2600,20 +2614,21 @@ export function ComposerHome({
   // P0-1 / F6: once a run is Active (or Delivered), collapse 段①/段③ so the
   // transcript owns the first screen. Idle and recovery phases keep the shelf.
   const shelfCollapsed = isWorkbenchShelfCollapsed(session.phase);
+  // P1-01 / §8.2: dual column at ≥1240 Active/Delivered; sticky Composer; 800/1240.
+  const dualColumn = isWorkbenchDualColumnEligible(session.phase, width);
+  const stickyComposer = isWorkbenchComposerSticky(session.phase);
+  const widthMode = resolveWorkbenchWidthMode({ dualColumn });
+  const inspectorWorkId = session.task?.workId ?? null;
+  const inspectorSummary = session.deliveryStatement ?? null;
 
   return (
-    <div
-      // `meiye-heroui-glass` — the class the DESIGN.md → HeroUI token bridge
-      // keys on — used to sit here. S7 / U07 moved it to the shell root
-      // (`components/layout/sidebar-layout`), because the shell itself is now a
-      // HeroUI Pro Sidebar and every /dashboard route needs the bridge, not just
-      // the handful of pages that happened to render Pro components. The bridge's
-      // selector subject stays `html`, so portalled overlays still inherit the
-      // same tokens (C-02 regression guard), and T33's「一个 Glass 壳根」contract
-      // now has exactly one element to count.
-      className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6 sm:px-6"
+    <WorkbenchShellRoot
+      // `meiye-heroui-glass` lives on the app shell root (sidebar-layout), not
+      // here — T33「一个 Glass 壳根」. This root only owns the P1 width contract.
+      dualColumn={dualColumn}
+      stickyComposer={stickyComposer}
+      widthMode={widthMode}
       data-shelf-collapsed={shelfCollapsed ? 'true' : 'false'}
-      data-testid="composer-home"
       data-viewport={viewportKind}
     >
       {/*
@@ -2708,356 +2723,400 @@ export function ComposerHome({
           />
         ) : null}
 
-        {/* Layer ① — the conversation. Stage announcements, the 引导补问卡 and the
-            streaming candidate all land here; nothing navigates away. */}
-        <ComposerConversation
-          identitySlot={
-            <ComposerIdentityCard
-              defaultPending={defaultIdentityDecision.isPending}
-              onRemember={(identityId) =>
-                defaultIdentityDecision.mutate(identityId)
+        <WorkbenchCreateLayout
+          dualColumn={dualColumn}
+          inspector={
+            <WorkbenchInspectorPanel
+              onOpenFullWorkspace={
+                inspectorWorkId
+                  ? () =>
+                      openDelivery({
+                        action: 'open',
+                        revision: null,
+                        taskId: session.task?.taskId ?? '',
+                        workId: inspectorWorkId,
+                      })
+                  : undefined
               }
-              onRetry={() => void identitiesQuery.refetch()}
-              onSelect={(identityId) =>
-                sessionIdentityDecision.mutate(identityId)
-              }
-              selectionPending={sessionIdentityDecision.isPending}
-              selection={identitySelection}
+              summary={inspectorSummary}
+              workId={inspectorWorkId}
             />
           }
-          deliveryAspectRatio={submissionAspectRatio ?? undefined}
-          deliveryLensId={lensState.lensId ?? undefined}
-          onDeliveryFollowUp={(seed) => {
-            // D-164⑤: a chip prefills, never submits. The merchant reads the
-            // sentence in her own box and decides — the same contract the
-            // recommendation card's CTA already keeps.
-            setLensState((current) => updateUserText(current, seed.intent));
-            focusComposerIntentInput();
-          }}
-          onOpenDelivery={openDelivery}
-          onRateDelivery={async ({
-            transition,
-            revision,
-            taskId: deliveryTaskId,
-          }) => {
-            if (transition.action === 'copy') {
-              void navigator.clipboard?.writeText(
-                session.deliveryStatement ?? ''
-              );
-              return;
-            }
-            const identity = {
-              packageId: revision.packageId,
-              versionId: revision.versionId,
-              revision: revision.revision,
-            };
-            const event = (() => {
-              if (transition.nextVerdict) {
-                return {
-                  eventType: 'delivery_rating.recorded' as const,
+          stream={
+            <>
+              {/* Layer ① — the conversation. Stage announcements, the 引导补问卡 and the
+            streaming candidate all land here; nothing navigates away. */}
+              <ComposerConversation
+                identitySlot={
+                  <ComposerIdentityCard
+                    defaultPending={defaultIdentityDecision.isPending}
+                    onRemember={(identityId) =>
+                      defaultIdentityDecision.mutate(identityId)
+                    }
+                    onRetry={() => void identitiesQuery.refetch()}
+                    onSelect={(identityId) =>
+                      sessionIdentityDecision.mutate(identityId)
+                    }
+                    selectionPending={sessionIdentityDecision.isPending}
+                    selection={identitySelection}
+                  />
+                }
+                deliveryAspectRatio={submissionAspectRatio ?? undefined}
+                deliveryLensId={lensState.lensId ?? undefined}
+                onDeliveryFollowUp={(seed) => {
+                  // D-164⑤: a chip prefills, never submits. The merchant reads the
+                  // sentence in her own box and decides — the same contract the
+                  // recommendation card's CTA already keeps.
+                  setLensState((current) =>
+                    updateUserText(current, seed.intent)
+                  );
+                  focusComposerIntentInput();
+                }}
+                onOpenDelivery={openDelivery}
+                onRateDelivery={async ({
+                  transition,
+                  revision,
                   taskId: deliveryTaskId,
-                  payload: {
-                    ...identity,
-                    verdict: transition.nextVerdict,
-                  },
-                };
-              }
-              const previousVerdict = transition.previousVerdict;
-              if (!previousVerdict) {
-                throw new Error('Rating withdrawal requires a prior verdict.');
-              }
-              return {
-                eventType: 'delivery_rating.withdrawn' as const,
-                taskId: deliveryTaskId,
-                payload: {
-                  ...identity,
-                  previousVerdict,
-                },
-              };
-            })();
-            await appendObservabilityEvent(
-              event,
-              `delivery-rating:${deliveryTaskId}:${transition.idempotencyKey}`
-            );
-          }}
-          onRecover={recoverFromReport}
-          questionSlot={
-            <AskMerchantInteractionSlot
-              delivered={session.phase === 'delivered'}
-              fallback={
-                pendingExecutionConfirmation ? (
-                  <ExecutionConfirmationInteractionCard
+                }) => {
+                  if (transition.action === 'copy') {
+                    void navigator.clipboard?.writeText(
+                      session.deliveryStatement ?? ''
+                    );
+                    return;
+                  }
+                  const identity = {
+                    packageId: revision.packageId,
+                    versionId: revision.versionId,
+                    revision: revision.revision,
+                  };
+                  const event = (() => {
+                    if (transition.nextVerdict) {
+                      return {
+                        eventType: 'delivery_rating.recorded' as const,
+                        taskId: deliveryTaskId,
+                        payload: {
+                          ...identity,
+                          verdict: transition.nextVerdict,
+                        },
+                      };
+                    }
+                    const previousVerdict = transition.previousVerdict;
+                    if (!previousVerdict) {
+                      throw new Error(
+                        'Rating withdrawal requires a prior verdict.'
+                      );
+                    }
+                    return {
+                      eventType: 'delivery_rating.withdrawn' as const,
+                      taskId: deliveryTaskId,
+                      payload: {
+                        ...identity,
+                        previousVerdict,
+                      },
+                    };
+                  })();
+                  await appendObservabilityEvent(
+                    event,
+                    `delivery-rating:${deliveryTaskId}:${transition.idempotencyKey}`
+                  );
+                }}
+                onRecover={recoverFromReport}
+                questionSlot={
+                  <AskMerchantInteractionSlot
+                    delivered={session.phase === 'delivered'}
+                    fallback={
+                      pendingExecutionConfirmation ? (
+                        <ExecutionConfirmationInteractionCard
+                          onRendererReady={acknowledgeAskMerchantRenderer}
+                          onRendererRejected={
+                            refreshInteractionAfterRendererRejection
+                          }
+                          onSubmit={answerExecutionConfirmation}
+                          pending={questionPending}
+                          request={pendingExecutionConfirmation}
+                        />
+                      ) : pendingExecutionWaitingMessage ? (
+                        <ExecutionConfirmationWaitingMessageCard
+                          onSubmit={answerExecutionWaitingMessage}
+                          pending={questionPending}
+                          request={pendingExecutionWaitingMessage}
+                        />
+                      ) : pendingQuestion ? (
+                        <ComposerQuestionCard
+                          disabled={createWork.isPending}
+                          // D-116 safety edge ②: quota or an external effect means D-112
+                          // wants an explicit confirmation, so the card stops releasing
+                          // itself. v1's composer only signs export / assisted_handoff, so
+                          // the external branch is not reachable from here yet.
+                          hold={composerQuestionHold({
+                            externalEffect: Boolean(
+                              destination?.distributionTarget.startsWith(
+                                'publish:'
+                              )
+                            ),
+                            quotaBlocked,
+                          })}
+                          // Returned, not voided: the card awaits this and rolls its
+                          // settlement back if the post never reaches the ledger.
+                          onDecide={answerQuestion}
+                          pending={questionPending}
+                          question={pendingQuestion}
+                          resolutionSource={questionResolutionSource}
+                          timeoutSeconds={questionTimeoutSeconds}
+                        />
+                      ) : null
+                    }
+                    onEditingChange={(request, editing, editingSessionId) =>
+                      setHarnessInteractionEditing(taskId, {
+                        requestId: request.requestId,
+                        revision: request.revision,
+                        step: request.step,
+                        carrier: 'conversation',
+                        editing,
+                        editingSessionId,
+                      })
+                    }
                     onRendererReady={acknowledgeAskMerchantRenderer}
                     onRendererRejected={
                       refreshInteractionAfterRendererRejection
                     }
-                    onSubmit={answerExecutionConfirmation}
+                    onSubmit={answerAskMerchant}
                     pending={questionPending}
-                    request={pendingExecutionConfirmation}
+                    pendingRequest={pendingAskRequest}
+                    taskId={taskId}
                   />
-                ) : pendingExecutionWaitingMessage ? (
-                  <ExecutionConfirmationWaitingMessageCard
-                    onSubmit={answerExecutionWaitingMessage}
-                    pending={questionPending}
-                    request={pendingExecutionWaitingMessage}
-                  />
-                ) : pendingQuestion ? (
-                  <ComposerQuestionCard
-                    disabled={createWork.isPending}
-                    // D-116 safety edge ②: quota or an external effect means D-112
-                    // wants an explicit confirmation, so the card stops releasing
-                    // itself. v1's composer only signs export / assisted_handoff, so
-                    // the external branch is not reachable from here yet.
-                    hold={composerQuestionHold({
-                      externalEffect: Boolean(
-                        destination?.distributionTarget.startsWith('publish:')
-                      ),
-                      quotaBlocked,
-                    })}
-                    // Returned, not voided: the card awaits this and rolls its
-                    // settlement back if the post never reaches the ledger.
-                    onDecide={answerQuestion}
-                    pending={questionPending}
-                    question={pendingQuestion}
-                    resolutionSource={questionResolutionSource}
-                    timeoutSeconds={questionTimeoutSeconds}
-                  />
-                ) : null
-              }
-              onEditingChange={(request, editing, editingSessionId) =>
-                setHarnessInteractionEditing(taskId, {
-                  requestId: request.requestId,
-                  revision: request.revision,
-                  step: request.step,
-                  carrier: 'conversation',
-                  editing,
-                  editingSessionId,
-                })
-              }
-              onRendererReady={acknowledgeAskMerchantRenderer}
-              onRendererRejected={refreshInteractionAfterRendererRejection}
-              onSubmit={answerAskMerchant}
-              pending={questionPending}
-              pendingRequest={pendingAskRequest}
-              taskId={taskId}
-            />
-          }
-          session={session}
-          stream={tokenStream}
-        />
+                }
+                session={session}
+                stream={tokenStream}
+              />
 
-        {preferencesQuery.isError ? (
-          <div
-            className="rounded-2xl border border-danger/30 bg-danger/5 px-4 py-3 text-sm"
-            data-testid="composer-model-preferences-error"
-            role="alert"
-          >
-            <p>暂时没能读取你的模型偏好，当前不会提交创作任务。</p>
-            <button
-              className="mt-2 font-medium underline underline-offset-4"
-              onClick={() => void preferencesQuery.refetch()}
-              type="button"
-            >
-              重新读取
-            </button>
-          </div>
-        ) : null}
+              {preferencesQuery.isError ? (
+                <div
+                  className="rounded-2xl border border-danger/30 bg-danger/5 px-4 py-3 text-sm"
+                  data-testid="composer-model-preferences-error"
+                  role="alert"
+                >
+                  <p>暂时没能读取你的模型偏好，当前不会提交创作任务。</p>
+                  <button
+                    className="mt-2 font-medium underline underline-offset-4"
+                    onClick={() => void preferencesQuery.refetch()}
+                    type="button"
+                  >
+                    重新读取
+                  </button>
+                </div>
+              ) : null}
 
-        <ComposerPromptBar
-          ariaLabel={creation_entry_intent_aria()}
-          // DESIGN.md 白瓷 Composer 大卡 — pinned by the product shell contract.
-          className="meiye-composer meiye-entry-card rounded-3xl p-4 sm:p-5"
-          attachmentSlot={
-            <div data-testid="composer-source-picker">
-              {explicitImageOperation ? (
-                <ComposerImageOperationPicker
+              {/* P1-2: Active morph Composer to sticky bottom; clear mobile-nav. */}
+              <WorkbenchStickyComposerHost sticky={stickyComposer}>
+                <ComposerPromptBar
+                  ariaLabel={creation_entry_intent_aria()}
+                  // DESIGN.md 白瓷 Composer 大卡 — pinned by the product shell contract.
+                  className="meiye-composer meiye-entry-card rounded-3xl p-4 sm:p-5"
+                  attachmentSlot={
+                    <div data-testid="composer-source-picker">
+                      {explicitImageOperation ? (
+                        <ComposerImageOperationPicker
+                          disabled={
+                            createWork.isPending || lensState.phase === 'frozen'
+                          }
+                          onChange={setImageOperation}
+                          value={explicitImageOperation}
+                        />
+                      ) : null}
+                      <ComposerImageInput
+                        focusRef={sourcePickerRef}
+                        onAssetAdded={addSource}
+                        onAssetRemoved={removeSource}
+                        onAuthorize={authorizeComposerImage}
+                        onQueueChange={(uploads) =>
+                          setUploadsReady(
+                            uploads.every((upload) => upload.status === 'ready')
+                          )
+                        }
+                        onUpload={uploadComposerImage}
+                      >
+                        <p className="text-muted text-xs">
+                          {explicitImageOperation
+                            ? imageOperationAttachmentHint(
+                                explicitImageOperation
+                              )
+                            : '可选：上传门店图片、顾客案例或价目素材'}
+                        </p>
+                      </ComposerImageInput>
+                      {imageCardinality.message ? (
+                        <p
+                          className="mt-2 text-destructive text-xs"
+                          data-testid="composer-image-cardinality"
+                          role="alert"
+                        >
+                          {imageCardinality.message}
+                        </p>
+                      ) : null}
+                    </div>
+                  }
+                  creationMode={creationMode}
+                  destination={lensState.draft.delivery.platform ?? null}
+                  destinationCapability={
+                    destination
+                      ? composerDestinationCapability(
+                          destination.distributionTarget
+                        )
+                      : null
+                  }
                   disabled={
                     createWork.isPending || lensState.phase === 'frozen'
                   }
-                  onChange={setImageOperation}
-                  value={explicitImageOperation}
-                />
-              ) : null}
-              <ComposerImageInput
-                focusRef={sourcePickerRef}
-                onAssetAdded={addSource}
-                onAssetRemoved={removeSource}
-                onAuthorize={authorizeComposerImage}
-                onQueueChange={(uploads) =>
-                  setUploadsReady(
-                    uploads.every((upload) => upload.status === 'ready')
-                  )
-                }
-                onUpload={uploadComposerImage}
-              >
-                <p className="text-muted text-xs">
-                  {explicitImageOperation
-                    ? imageOperationAttachmentHint(explicitImageOperation)
-                    : '可选：上传门店图片、顾客案例或价目素材'}
-                </p>
-              </ComposerImageInput>
-              {imageCardinality.message ? (
-                <p
-                  className="mt-2 text-destructive text-xs"
-                  data-testid="composer-image-cardinality"
-                  role="alert"
-                >
-                  {imageCardinality.message}
-                </p>
-              ) : null}
-            </div>
-          }
-          creationMode={creationMode}
-          destination={lensState.draft.delivery.platform ?? null}
-          destinationCapability={
-            destination
-              ? composerDestinationCapability(destination.distributionTarget)
-              : null
-          }
-          disabled={createWork.isPending || lensState.phase === 'frozen'}
-          submitDisabled={
-            createWork.isPending ||
-            briefPending ||
-            destinationMapPending ||
-            !uploadsReady ||
-            !imageCardinality.valid ||
-            lensState.phase === 'frozen' ||
-            quotaBlocked ||
-            // Every state without a current price disables the button, except the
-            // one that means 「we have not asked yet」: pressing send there ends
-            // the settle window and asks now. Disabling it would make the click
-            // that resolves the wait the one click the merchant cannot make.
-            (lensId != null && !currentQuoteView && !quoteSettling)
-          }
-          lensSlot={
-            <>
-              <LensRadiogroup
-                value={lensId}
-                onChange={handleLensChange}
-                showRequiredHint={showRequiredHint}
-                disabled={createWork.isPending || lensState.phase === 'frozen'}
-              />
-              <LensSwitchPreviewPanel
-                state={lensState}
-                onChange={setLensState}
-              />
-            </>
-          }
-          recipePillSlot={
-            surfaceQuery.data ? (
-              <RecipeCardsPanel
-                lensId={lensId}
-                lensState={lensState}
-                onLensStateChange={setLensState}
-                surface={surfaceQuery.data}
-                requestServerPreview={({ lensState: state, recipe }) =>
-                  requestRecipePatchPreview({
-                    recipeRevisionId: recipe.revisionId,
-                    currentLens: state.lensId,
-                    surfaceRevisionId: surfaceQuery.data.revisionId,
-                    draft: composerDraftToRecipeFields(state),
-                  })
-                }
-                useBottomSheet={viewportKind === 'mobile'}
-              />
-            ) : (
-              <output
-                className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground"
-                data-testid="composer-surface-status"
-              >
-                {surfaceQuery.isError
-                  ? '创作模板暂时不可用，请稍后重试'
-                  : '正在读取创作模板…'}
-              </output>
-            )
-          }
-          onCreationModeChange={setCreationMode}
-          onDestinationChange={(platform) => {
-            const next = composerDestinationContract(platform);
-            setDestinationPreflight(null);
-            if (!next) return;
-            setLensState((current) =>
-              updateDeliverySuggestion(current, {
-                distributionTarget: next.distributionTarget,
-                platform: next.contentPackagePlatform,
-              })
-            );
-          }}
-          onReuseChip={(chip) => {
-            const next = composerDestinationContract(chip.id);
-            setDestinationPreflight(null);
-            // 旧内容换平台 becomes one sentence in the merchant's own draft.
-            setLensState((current) =>
-              updateDeliverySuggestion(
-                updateUserText(
-                  current,
-                  current.draft.userText.trim()
-                    ? `${current.draft.userText.trim()}\n${chip.intent}`
-                    : chip.intent
-                ),
-                {
-                  distributionTarget: next?.distributionTarget ?? null,
-                  platform: next?.contentPackagePlatform ?? chip.id,
-                }
-              )
-            );
-            focusComposerIntentInput();
-          }}
-          modelChannelReadiness={selectedModel?.channelReadiness ?? null}
-          onSubmit={() => void attemptSubmit()}
-          onValueChange={handleIntentChange}
-          placeholder={creation_entry_intent_placeholder()}
-          reuseChips={COMPOSER_REUSE_CHIPS}
-          running={session.phase === 'running'}
-          signedPreview={signedPreview}
-          submitHint={submitIntent.hint}
-          submitLabel={submitIntent.label}
-          intentError={submitBlockedMessage}
-          value={userText}
-        />
-
-        {destinationPreflight?.intent === userText.trim() &&
-        destinationPreflight.result.status === 'needs_clarification' ? (
-          <div
-            className="rounded-2xl border border-default-200 bg-content1/80 p-3"
-            data-testid="composer-destination-clarification"
-            role="alert"
-            tabIndex={-1}
-          >
-            <p className="text-sm">{destinationPreflight.result.question}</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {destinationPreflight.result.options.map((option) => (
-                <button
-                  className="rounded-full border border-default-300 px-3 py-1.5 text-sm"
-                  key={`${option.contentPackagePlatform}:${option.distributionTarget}`}
-                  onClick={() => {
+                  submitDisabled={
+                    createWork.isPending ||
+                    briefPending ||
+                    destinationMapPending ||
+                    !uploadsReady ||
+                    !imageCardinality.valid ||
+                    lensState.phase === 'frozen' ||
+                    quotaBlocked ||
+                    // Every state without a current price disables the button, except the
+                    // one that means 「we have not asked yet」: pressing send there ends
+                    // the settle window and asks now. Disabling it would make the click
+                    // that resolves the wait the one click the merchant cannot make.
+                    (lensId != null && !currentQuoteView && !quoteSettling)
+                  }
+                  lensSlot={
+                    <>
+                      <LensRadiogroup
+                        value={lensId}
+                        onChange={handleLensChange}
+                        showRequiredHint={showRequiredHint}
+                        disabled={
+                          createWork.isPending || lensState.phase === 'frozen'
+                        }
+                      />
+                      <LensSwitchPreviewPanel
+                        state={lensState}
+                        onChange={setLensState}
+                      />
+                    </>
+                  }
+                  recipePillSlot={
+                    surfaceQuery.data ? (
+                      <RecipeCardsPanel
+                        lensId={lensId}
+                        lensState={lensState}
+                        onLensStateChange={setLensState}
+                        surface={surfaceQuery.data}
+                        requestServerPreview={({ lensState: state, recipe }) =>
+                          requestRecipePatchPreview({
+                            recipeRevisionId: recipe.revisionId,
+                            currentLens: state.lensId,
+                            surfaceRevisionId: surfaceQuery.data.revisionId,
+                            draft: composerDraftToRecipeFields(state),
+                          })
+                        }
+                        useBottomSheet={viewportKind === 'mobile'}
+                      />
+                    ) : (
+                      <output
+                        className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground"
+                        data-testid="composer-surface-status"
+                      >
+                        {surfaceQuery.isError
+                          ? '创作模板暂时不可用，请稍后重试'
+                          : '正在读取创作模板…'}
+                      </output>
+                    )
+                  }
+                  onCreationModeChange={setCreationMode}
+                  onDestinationChange={(platform) => {
+                    const next = composerDestinationContract(platform);
                     setDestinationPreflight(null);
+                    if (!next) return;
                     setLensState((current) =>
                       updateDeliverySuggestion(current, {
-                        distributionTarget: option.distributionTarget,
-                        platform: option.contentPackagePlatform,
+                        distributionTarget: next.distributionTarget,
+                        platform: next.contentPackagePlatform,
                       })
                     );
                   }}
-                  type="button"
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
+                  onReuseChip={(chip) => {
+                    const next = composerDestinationContract(chip.id);
+                    setDestinationPreflight(null);
+                    // 旧内容换平台 becomes one sentence in the merchant's own draft.
+                    setLensState((current) =>
+                      updateDeliverySuggestion(
+                        updateUserText(
+                          current,
+                          current.draft.userText.trim()
+                            ? `${current.draft.userText.trim()}\n${chip.intent}`
+                            : chip.intent
+                        ),
+                        {
+                          distributionTarget: next?.distributionTarget ?? null,
+                          platform: next?.contentPackagePlatform ?? chip.id,
+                        }
+                      )
+                    );
+                    focusComposerIntentInput();
+                  }}
+                  modelChannelReadiness={
+                    selectedModel?.channelReadiness ?? null
+                  }
+                  onSubmit={() => void attemptSubmit()}
+                  onValueChange={handleIntentChange}
+                  placeholder={creation_entry_intent_placeholder()}
+                  reuseChips={COMPOSER_REUSE_CHIPS}
+                  running={session.phase === 'running'}
+                  signedPreview={signedPreview}
+                  submitHint={submitIntent.hint}
+                  submitLabel={submitIntent.label}
+                  intentError={submitBlockedMessage}
+                  value={userText}
+                />
+              </WorkbenchStickyComposerHost>
 
-        {currentQuoteView ? (
-          <p
-            className="text-muted text-xs"
-            data-quote-revision={quoteQuery.data?.revision}
-            data-submission-contract-hash={
-              quoteQuery.data?.submissionContractHash
-            }
-            data-testid="composer-quote-line"
-          >
-            {/*
+              {destinationPreflight?.intent === userText.trim() &&
+              destinationPreflight.result.status === 'needs_clarification' ? (
+                <div
+                  className="rounded-2xl border border-default-200 bg-content1/80 p-3"
+                  data-testid="composer-destination-clarification"
+                  role="alert"
+                  tabIndex={-1}
+                >
+                  <p className="text-sm">
+                    {destinationPreflight.result.question}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {destinationPreflight.result.options.map((option) => (
+                      <button
+                        className="rounded-full border border-default-300 px-3 py-1.5 text-sm"
+                        key={`${option.contentPackagePlatform}:${option.distributionTarget}`}
+                        onClick={() => {
+                          setDestinationPreflight(null);
+                          setLensState((current) =>
+                            updateDeliverySuggestion(current, {
+                              distributionTarget: option.distributionTarget,
+                              platform: option.contentPackagePlatform,
+                            })
+                          );
+                        }}
+                        type="button"
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {currentQuoteView ? (
+                <p
+                  className="text-muted text-xs"
+                  data-quote-revision={quoteQuery.data?.revision}
+                  data-submission-contract-hash={
+                    quoteQuery.data?.submissionContractHash
+                  }
+                  data-testid="composer-quote-line"
+                >
+                  {/*
               `预计消耗 0.06` used to print here: a bare float in an invisible
               unit, one line above 「本次用 1 条文案额度和 3 张图片额度 · 文案还剩
               5 条」 — two pricing systems on one screen, and the merchant unit is
@@ -3066,162 +3125,211 @@ export function ComposerHome({
               sentence cannot say (video is billed by finished seconds) and
               otherwise just states that the price is settled.
             */}
-            {currentQuoteView.billingNote ?? '本次用量已确认'}
-          </p>
-        ) : (
-          <ComposerQuoteStatusLine
-            onRetry={retryQuoteReadiness}
-            readiness={quoteReadiness}
-          />
-        )}
+                  {currentQuoteView.billingNote ?? '本次用量已确认'}
+                </p>
+              ) : (
+                <ComposerQuoteStatusLine
+                  onRetry={retryQuoteReadiness}
+                  readiness={quoteReadiness}
+                />
+              )}
 
-        {submissionGroundingBlocked === 'store' ? (
-          <p
-            className="text-destructive text-sm"
-            data-testid="composer-grounding-blocker"
-            role="alert"
-          >
-            {workbench_grounding_store_required()}{' '}
-            <Link
-              className="font-medium underline underline-offset-4"
-              to="/dashboard/store"
-            >
-              {workbench_grounding_go_to_store()}
-            </Link>
-          </p>
-        ) : submissionGroundingBlocked === 'qualification' ? (
-          <p
-            className="text-destructive text-sm"
-            data-testid="composer-grounding-blocker"
-            role="alert"
-          >
-            {workbench_grounding_qualification_required()}{' '}
-            <Link
-              className="font-medium underline underline-offset-4"
-              hash="store-qualification"
-              to="/dashboard/store"
-            >
-              {workbench_grounding_qualification_action()}
-            </Link>
-          </p>
-        ) : submissionGroundingBlocked === 'source' ? (
-          <p
-            className="text-destructive text-sm"
-            data-testid="composer-grounding-blocker"
-            role="alert"
-          >
-            {workbench_grounding_source_required()}
-          </p>
-        ) : createWork.isError ? (
-          <p className="text-destructive text-sm" role="alert">
-            {workbench_operation_failed()}
-          </p>
-        ) : null}
+              {submissionGroundingBlocked === 'store' ? (
+                <p
+                  className="text-destructive text-sm"
+                  data-testid="composer-grounding-blocker"
+                  role="alert"
+                >
+                  {workbench_grounding_store_required()}{' '}
+                  <Link
+                    className="font-medium underline underline-offset-4"
+                    to="/dashboard/store"
+                  >
+                    {workbench_grounding_go_to_store()}
+                  </Link>
+                </p>
+              ) : submissionGroundingBlocked === 'qualification' ? (
+                <p
+                  className="text-destructive text-sm"
+                  data-testid="composer-grounding-blocker"
+                  role="alert"
+                >
+                  {workbench_grounding_qualification_required()}{' '}
+                  <Link
+                    className="font-medium underline underline-offset-4"
+                    hash="store-qualification"
+                    to="/dashboard/store"
+                  >
+                    {workbench_grounding_qualification_action()}
+                  </Link>
+                </p>
+              ) : submissionGroundingBlocked === 'source' ? (
+                <p
+                  className="text-destructive text-sm"
+                  data-testid="composer-grounding-blocker"
+                  role="alert"
+                >
+                  {workbench_grounding_source_required()}
+                </p>
+              ) : createWork.isError ? (
+                <p className="text-destructive text-sm" role="alert">
+                  {workbench_operation_failed()}
+                </p>
+              ) : null}
 
-        {/* 额度：被动展示，不足才阻塞 (D-043 决定②). Always mounted — the passive
+              {/* 额度：被动展示，不足才阻塞 (D-043 决定②). Always mounted — the passive
             line is not a card and gates nothing; only a shortfall raises the
             blocking card. */}
-        <QuotaBlockingCard
-          blocked={quotaBlocked}
-          passive={quotaPassive}
-          onRedeem={async ({ command, idempotencyKey }) => {
-            try {
-              await commandP1('redemptions', command, idempotencyKey);
-              // Both entitlement reads on this page: the projection behind the
-              // pre-check and the three-bucket balance card above it. Refreshing
-              // one and not the other leaves 创作余额 quoting the old numbers
-              // next to a card that just said it unlocked.
-              await Promise.all([
-                queryClient.invalidateQueries({
-                  queryKey: p1QueryKeys.request('entitlements', 'projection'),
-                }),
-                queryClient.invalidateQueries({
-                  queryKey: p1QueryKeys.request('entitlements', 'balance'),
-                }),
-              ]);
-              return { ok: true };
-            } catch (error) {
-              return {
-                ok: false,
-                message:
-                  error instanceof Error ? error.message : '兑换失败，请重试',
-              };
-            }
-          }}
-          onUnlocked={() => setSubmissionQuotaBlocked(false)}
+              <QuotaBlockingCard
+                blocked={quotaBlocked}
+                passive={quotaPassive}
+                onRedeem={async ({ command, idempotencyKey }) => {
+                  try {
+                    await commandP1('redemptions', command, idempotencyKey);
+                    // Both entitlement reads on this page: the projection behind the
+                    // pre-check and the three-bucket balance card above it. Refreshing
+                    // one and not the other leaves 创作余额 quoting the old numbers
+                    // next to a card that just said it unlocked.
+                    await Promise.all([
+                      queryClient.invalidateQueries({
+                        queryKey: p1QueryKeys.request(
+                          'entitlements',
+                          'projection'
+                        ),
+                      }),
+                      queryClient.invalidateQueries({
+                        queryKey: p1QueryKeys.request(
+                          'entitlements',
+                          'balance'
+                        ),
+                      }),
+                    ]);
+                    return { ok: true };
+                  } catch (error) {
+                    return {
+                      ok: false,
+                      message:
+                        error instanceof Error
+                          ? error.message
+                          : '兑换失败，请重试',
+                    };
+                  }
+                }}
+                onUnlocked={() => setSubmissionQuotaBlocked(false)}
+              />
+
+              <ComposerToolsStrip
+                viewport={viewportKind}
+                surfaceRevisionId={surfaceQuery.data?.revisionId}
+                onOpenTool={(href) => {
+                  if (typeof window !== 'undefined') {
+                    window.location.assign(href);
+                  }
+                }}
+                onViewAll={(href) => {
+                  void navigate({ to: href as '/dashboard/catalog' });
+                }}
+              />
+
+              {briefView ? (
+                <BriefSurface
+                  view={briefView}
+                  onConfirm={handleBriefConfirm}
+                  onCancel={() => {
+                    setBriefState(cancelBriefSurface(briefState).state);
+                    // D-164⑥ 决定 B: backing out is still an outcome, and the
+                    // merchant is owed a straight answer about what it cost. Set
+                    // before the line below, which clears the transcript — the
+                    // feedback lives outside the session for exactly this reason.
+                    setCostFeedback(
+                      projectExecutionCostFeedback({ outcome: 'rejected' })
+                    );
+                    // Cancelling abandons this attempt, so the transcript goes back to
+                    // empty rather than keeping a turn that never ran.
+                    setSession(createComposerSession(sessionIdRef.current));
+                  }}
+                  disabled={createWork.isPending}
+                />
+              ) : null}
+
+              {/*
+               * D-164③/⑥ 的挂载点。确认卡与它的反馈尾行共用这一格：卡消失后反馈出现
+               * 在同一坐标，商家的视线不用移动，「就地」是字面成立而不是近似。
+               */}
+              <div data-testid="execution-confirm-slot">
+                <ExecutionConfirmCard
+                  {...projectExecutionConfirmCard(executionConfirm, {
+                    busy: createWork.isPending || briefPending,
+                    onConfirm: () => {
+                      const run = pendingRunRef.current;
+                      setExecutionConfirm(confirmExecution);
+                      if (!run) return;
+                      pendingRunRef.current = null;
+                      runCreate(
+                        run.lensId,
+                        run.videoConfirmAccepted,
+                        run.briefConfirmationId
+                      );
+                    },
+                    onReject: () => {
+                      pendingRunRef.current = null;
+                      setExecutionConfirm(
+                        (current) => rejectExecution(current).state
+                      );
+                      setCostFeedback(
+                        projectExecutionCostFeedback({ outcome: 'rejected' })
+                      );
+                    },
+                    staleNotice: currentQuoteView
+                      ? null
+                      : briefStaleQuoteNotice(),
+                  })}
+                />
+                <ExecutionCostFeedbackLine feedback={costFeedback} />
+              </div>
+            </>
+          }
         />
 
-        <ComposerToolsStrip
-          viewport={viewportKind}
-          surfaceRevisionId={surfaceQuery.data?.revisionId}
-          onOpenTool={(href) => {
-            if (typeof window !== 'undefined') {
-              window.location.assign(href);
-            }
-          }}
-          onViewAll={(href) => {
-            void navigate({ to: href as '/dashboard/catalog' });
-          }}
-        />
-
-        {briefView ? (
-          <BriefSurface
-            view={briefView}
-            onConfirm={handleBriefConfirm}
-            onCancel={() => {
-              setBriefState(cancelBriefSurface(briefState).state);
-              // D-164⑥ 决定 B: backing out is still an outcome, and the
-              // merchant is owed a straight answer about what it cost. Set
-              // before the line below, which clears the transcript — the
-              // feedback lives outside the session for exactly this reason.
-              setCostFeedback(
-                projectExecutionCostFeedback({ outcome: 'rejected' })
-              );
-              // Cancelling abandons this attempt, so the transcript goes back to
-              // empty rather than keeping a turn that never ran.
-              setSession(createComposerSession(sessionIdRef.current));
-            }}
-            disabled={createWork.isPending}
-          />
+        {/* Mobile dual-column equivalent: Inspector bottom sheet (P1-1). */}
+        {!dualColumn && stickyComposer && inspectorWorkId ? (
+          <div className="flex justify-end">
+            <button
+              className="text-muted hover:text-foreground text-xs font-medium underline-offset-4 hover:underline"
+              data-testid="workbench-open-inspector-sheet"
+              onClick={() => setInspectorSheetOpen(true)}
+              type="button"
+            >
+              查看上下文
+            </button>
+          </div>
         ) : null}
-
-        {/*
-         * D-164③/⑥ 的挂载点。确认卡与它的反馈尾行共用这一格：卡消失后反馈出现
-         * 在同一坐标，商家的视线不用移动，「就地」是字面成立而不是近似。
-         */}
-        <div data-testid="execution-confirm-slot">
-          <ExecutionConfirmCard
-            {...projectExecutionConfirmCard(executionConfirm, {
-              busy: createWork.isPending || briefPending,
-              onConfirm: () => {
-                const run = pendingRunRef.current;
-                setExecutionConfirm(confirmExecution);
-                if (!run) return;
-                pendingRunRef.current = null;
-                runCreate(
-                  run.lensId,
-                  run.videoConfirmAccepted,
-                  run.briefConfirmationId
-                );
-              },
-              onReject: () => {
-                pendingRunRef.current = null;
-                setExecutionConfirm(
-                  (current) => rejectExecution(current).state
-                );
-                setCostFeedback(
-                  projectExecutionCostFeedback({ outcome: 'rejected' })
-                );
-              },
-              staleNotice: currentQuoteView ? null : briefStaleQuoteNotice(),
-            })}
+        <WorkbenchInspectorSheet
+          onOpenChange={setInspectorSheetOpen}
+          open={inspectorSheetOpen}
+        >
+          <WorkbenchInspectorPanel
+            onOpenFullWorkspace={
+              inspectorWorkId
+                ? () => {
+                    setInspectorSheetOpen(false);
+                    openDelivery({
+                      action: 'open',
+                      revision: null,
+                      taskId: session.task?.taskId ?? '',
+                      workId: inspectorWorkId,
+                    });
+                  }
+                : undefined
+            }
+            summary={inspectorSummary}
+            workId={inspectorWorkId}
           />
-          <ExecutionCostFeedbackLine feedback={costFeedback} />
-        </div>
+        </WorkbenchInspectorSheet>
       </section>
 
       {/* 段③ 继续上次工作 — D-164① / D-126. Collapsed with 段① in Active (P0-1). */}
       {!shelfCollapsed ? <DashboardContinueSection /> : null}
-    </div>
+    </WorkbenchShellRoot>
   );
 }

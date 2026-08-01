@@ -1,0 +1,122 @@
+/**
+ * P1-01 workbench shell layout contract (#313 / xhs-vertical-integration §2.5 / §8.2).
+ *
+ * Width contract, dual-column eligibility, and Composer sticky morph are pure
+ * layout decisions. Hosts own the DOM; this module owns the numbers and gates.
+ *
+ * Spec authority: docs/specs/xhs-vertical-integration-spec-2026-08-01.md
+ *  - D3: dual column + Composer sticky morph → P1
+ *  - D8 / §2.5: conversation 800, media expand 1240
+ *  - P1-1 / P1-2 / P1-7 acceptance gates
+ */
+
+import type { ComposerSessionPhase } from './composer-session';
+
+/** Pure conversation column (Idle / non-media). */
+export const WORKBENCH_CONVERSATION_MAX_WIDTH_PX = 800;
+
+/** Media expand / dual-column outer shell. */
+export const WORKBENCH_MEDIA_EXPAND_MAX_WIDTH_PX = 1240;
+
+/**
+ * Desktop dual-column (event stream | Inspector) only when the viewport is at
+ * least this wide — P1-1.
+ */
+export const WORKBENCH_DUAL_COLUMN_MIN_WIDTH_PX =
+  WORKBENCH_MEDIA_EXPAND_MAX_WIDTH_PX;
+
+/**
+ * Mobile bottom nav height (mobile-nav.tsx h-[4.25rem]). Sticky Composer and
+ * fixed action bars must clear this plus safe-area; product shell already uses
+ * 5.25rem (= 4.25 + 1rem breathing) for page padding — sticky Composer matches.
+ */
+export const WORKBENCH_MOBILE_NAV_HEIGHT = '4.25rem';
+
+/** Clearance used by sticky Composer / fixed bars (nav + margin). */
+export const WORKBENCH_MOBILE_NAV_CLEARANCE =
+  'calc(5.25rem + env(safe-area-inset-bottom))';
+
+/** Tailwind class contract for sticky Active Composer bottom offset. */
+export const WORKBENCH_COMPOSER_STICKY_BOTTOM_CLASS =
+  'bottom-[calc(5.25rem+env(safe-area-inset-bottom))] md:bottom-4';
+
+const DUAL_COLUMN_PHASES: ReadonlySet<ComposerSessionPhase> = new Set([
+  'submitting',
+  'running',
+  'awaiting_answer',
+  'delivered',
+]);
+
+const STICKY_COMPOSER_PHASES: ReadonlySet<ComposerSessionPhase> = new Set([
+  'submitting',
+  'running',
+  'awaiting_answer',
+  'delivered',
+]);
+
+/**
+ * True when Active/Delivered desktop shell may mount event stream | Inspector
+ * (react-resizable-panels). Home never does a draggable three-column layout.
+ */
+export function isWorkbenchDualColumnEligible(
+  phase: ComposerSessionPhase,
+  viewportWidthPx: number
+): boolean {
+  return (
+    DUAL_COLUMN_PHASES.has(phase) &&
+    viewportWidthPx >= WORKBENCH_DUAL_COLUMN_MIN_WIDTH_PX
+  );
+}
+
+/** Active (and Delivered) morph Composer to sticky bottom — P1-2. */
+export function isWorkbenchComposerSticky(
+  phase: ComposerSessionPhase
+): boolean {
+  return STICKY_COMPOSER_PHASES.has(phase);
+}
+
+export type WorkbenchWidthMode = 'conversation' | 'media';
+
+/**
+ * Outer shell max width. Pure conversation stays ~800; media expand / dual
+ * column open to ~1240 (P1-7). Replaces the historical max-w-3xl clamp.
+ */
+export function workbenchShellMaxWidthPx(mode: WorkbenchWidthMode): number {
+  return mode === 'media'
+    ? WORKBENCH_MEDIA_EXPAND_MAX_WIDTH_PX
+    : WORKBENCH_CONVERSATION_MAX_WIDTH_PX;
+}
+
+/**
+ * Resolve shell width mode from phase + dual-column eligibility.
+ * Media mode also applies when dual column is open so the outer shell can host
+ * the Inspector without crushing the timeline.
+ */
+export function resolveWorkbenchWidthMode(input: {
+  dualColumn: boolean;
+  mediaExpanded?: boolean;
+}): WorkbenchWidthMode {
+  if (input.dualColumn || input.mediaExpanded) return 'media';
+  return 'conversation';
+}
+
+/** Tailwind max-width class for the outer workbench shell. */
+export function workbenchShellMaxWidthClass(mode: WorkbenchWidthMode): string {
+  return mode === 'media' ? 'max-w-[1240px]' : 'max-w-[800px]';
+}
+
+/**
+ * Sticky Composer host classes when Active. z-index sits above transcript
+ * content but below mobile-nav (z-50) and dialogs.
+ */
+export function workbenchComposerStickyHostClass(
+  sticky: boolean
+): string | undefined {
+  if (!sticky) return undefined;
+  return [
+    'sticky z-30',
+    WORKBENCH_COMPOSER_STICKY_BOTTOM_CLASS,
+    // Keep the send control clear of the floating mobile nav (P1-2).
+    'pb-[max(0.5rem,env(safe-area-inset-bottom))] md:pb-0',
+  ].join(' ');
+}

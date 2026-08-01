@@ -1,0 +1,86 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import type { ComposerSessionPhase } from './composer-session';
+import {
+  isWorkbenchComposerSticky,
+  isWorkbenchDualColumnEligible,
+  resolveWorkbenchWidthMode,
+  workbenchComposerStickyHostClass,
+  workbenchShellMaxWidthClass,
+  workbenchShellMaxWidthPx,
+  WORKBENCH_CONVERSATION_MAX_WIDTH_PX,
+  WORKBENCH_DUAL_COLUMN_MIN_WIDTH_PX,
+  WORKBENCH_MEDIA_EXPAND_MAX_WIDTH_PX,
+  WORKBENCH_MOBILE_NAV_HEIGHT,
+} from './workbench-shell';
+
+const ACTIVE_OR_DELIVERED: ComposerSessionPhase[] = [
+  'submitting',
+  'running',
+  'awaiting_answer',
+  'delivered',
+];
+
+const IDLE_LIKE: ComposerSessionPhase[] = ['idle', 'cancelled', 'failed'];
+
+test('P1-7: width contract is conversation 800 / media 1240', () => {
+  assert.equal(WORKBENCH_CONVERSATION_MAX_WIDTH_PX, 800);
+  assert.equal(WORKBENCH_MEDIA_EXPAND_MAX_WIDTH_PX, 1240);
+  assert.equal(workbenchShellMaxWidthPx('conversation'), 800);
+  assert.equal(workbenchShellMaxWidthPx('media'), 1240);
+  assert.equal(workbenchShellMaxWidthClass('conversation'), 'max-w-[800px]');
+  assert.equal(workbenchShellMaxWidthClass('media'), 'max-w-[1240px]');
+});
+
+test('P1-1: dual column only when width ≥1240 and Active/Delivered', () => {
+  for (const phase of ACTIVE_OR_DELIVERED) {
+    assert.equal(
+      isWorkbenchDualColumnEligible(phase, WORKBENCH_DUAL_COLUMN_MIN_WIDTH_PX),
+      true,
+      `expected dual column for ${phase} at 1240`
+    );
+    assert.equal(
+      isWorkbenchDualColumnEligible(phase, 1239),
+      false,
+      `expected no dual column for ${phase} below 1240`
+    );
+  }
+  for (const phase of IDLE_LIKE) {
+    assert.equal(
+      isWorkbenchDualColumnEligible(phase, 1600),
+      false,
+      `expected no dual column for ${phase}`
+    );
+  }
+});
+
+test('P1-2: Active/Delivered Composer is sticky; Idle is not', () => {
+  for (const phase of ACTIVE_OR_DELIVERED) {
+    assert.equal(isWorkbenchComposerSticky(phase), true, phase);
+  }
+  for (const phase of IDLE_LIKE) {
+    assert.equal(isWorkbenchComposerSticky(phase), false, phase);
+  }
+  assert.equal(isWorkbenchComposerSticky('idle'), false);
+  const stickyClass = workbenchComposerStickyHostClass(true);
+  assert.ok(stickyClass?.includes('sticky'));
+  assert.ok(stickyClass?.includes('5.25rem'));
+  assert.equal(workbenchComposerStickyHostClass(false), undefined);
+  assert.equal(WORKBENCH_MOBILE_NAV_HEIGHT, '4.25rem');
+});
+
+test('width mode: dual column or mediaExpanded → media shell', () => {
+  assert.equal(
+    resolveWorkbenchWidthMode({ dualColumn: false, mediaExpanded: false }),
+    'conversation'
+  );
+  assert.equal(
+    resolveWorkbenchWidthMode({ dualColumn: true, mediaExpanded: false }),
+    'media'
+  );
+  assert.equal(
+    resolveWorkbenchWidthMode({ dualColumn: false, mediaExpanded: true }),
+    'media'
+  );
+});
