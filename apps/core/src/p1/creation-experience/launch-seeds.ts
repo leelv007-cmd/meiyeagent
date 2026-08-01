@@ -1,5 +1,5 @@
 /**
- * First-ship Surface revision + eight Recipe variants (A2 / #89, D-082/D-083).
+ * First-ship Surface revision + Recipe variants (A2 / #89, D-082/D-083; #324 viral).
  *
  * Six user-visible cards → eight single-lens Recipe revisions:
  *   five single-lens cards + "旧内容换平台" familyId with three variants.
@@ -90,7 +90,7 @@ export interface LaunchRecipeSeedSpec {
 }
 
 /**
- * Eight Recipe seeds matching D-082/D-083 field table.
+ * Recipe seeds matching D-082/D-083 field table (+ #324 viral adapt).
  *
  * Contract notes:
  * - `variantKey` is carried in settingsPatches (contracts have no top-level field).
@@ -136,6 +136,50 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
     promptRevisionRef: 'prompt.case_to_xhs_note@1',
     quotePolicyRevisionRef: 'quote.policy@1',
     cardOrder: 0,
+    featured: true,
+  },
+  {
+    // #324 P2-12 爆款复刻 — paste-track first; OpenCLI live gate is #328.
+    recipeId: 'recipe.viral_adapt',
+    familyId: 'viral_adapt',
+    variantKey: 'viral_adapt',
+    lensId: 'image_text',
+    presentation: {
+      title: '爆款复刻',
+      summary: '粘贴参考笔记，按本店项目仿写成可发笔记',
+      actionLabel: '选择图文并套用',
+    },
+    delivery: {
+      contentPackagePlatform: 'xiaohongshu',
+      distributionTarget: 'export',
+      deliverableKind: 'note',
+      quantity: 1,
+      aspectRatio: '3:4',
+      notePageBound: 3,
+    },
+    factTypes: [],
+    sourceRequirements: [
+      {
+        // Optional reference images. Pasted note text rides in merchant rawInput
+        // (viral adapt journey) — never a server scrape slot.
+        slot: 'viral_reference_image',
+        required: false,
+        kinds: ['image'],
+      },
+    ],
+    contextPatches: {
+      viralAdapt: true,
+      sourcingTracks: ['paste', 'opencli_link'],
+      opencliLiveGated: true,
+      coverAspectRatio: '3:4',
+      noteCount: 1,
+    },
+    settingsPatches: { variantKey: 'viral_adapt' },
+    outputContractRef: 'output.xhs_note@1',
+    workflowRevisionRef: 'workflow.image_text@1',
+    promptRevisionRef: 'prompt.viral_adapt@1',
+    quotePolicyRevisionRef: 'quote.policy@1',
+    cardOrder: 1,
     featured: true,
   },
   {

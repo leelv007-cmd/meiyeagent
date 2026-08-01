@@ -99,7 +99,18 @@ import {
   DashboardHomeSurface,
 } from '@/product/dashboard-home-surface';
 import { applyRecommendationHandoff } from '@/product/recommendation-handoff';
+import type { RecommendationHandoff } from '@/product/recommendation-handoff';
 import type { ConfirmedAssetFacts } from '@/product/creation-entry-model';
+import { ViralAdaptPanel } from '@/product/viral-adapt/viral-adapt-panel';
+import {
+  advanceViralSourcingToConfirm,
+  cancelViralAdaptJourney,
+  confirmViralAdaptJourney,
+  createViralAdaptJourneyState,
+  startViralAdaptJourney,
+  updateViralPasteDraft,
+  type ViralAdaptJourneyState,
+} from '@/product/viral-adapt/viral-adapt-journey';
 import {
   missingCreativeGrounding,
   type CreativeGroundingRequirement,
@@ -572,6 +583,9 @@ export function ComposerHome({
   const [lensState, setLensState] = useState<ComposerLensState>(() =>
     createComposerLensState()
   );
+  /** #324 爆款复刻 paste-track journey (chip → sourcing → confirm → note intent). */
+  const [viralAdaptJourney, setViralAdaptJourney] =
+    useState<ViralAdaptJourneyState>(() => createViralAdaptJourneyState());
   const [showRequiredHint, setShowRequiredHint] = useState(false);
   /**
    * Why the last send press did not start a run (WCAG 3.3.1).
@@ -3022,13 +3036,25 @@ export function ComposerHome({
          */}
         <DashboardHomeSurface
           loading={product.loading}
-          onPrefill={(handoff) => {
+          onPrefill={(handoff: RecommendationHandoff) => {
             // P0-4 / F1: typed handoff. Respect outputHint when present;
             // never hard-code copy lens when the recommendation has no hint.
             focusIntentAfterPrefillRef.current = true;
             setLensState((current) =>
               applyRecommendationHandoff(current, handoff)
             );
+            // #324: 爆款复刻 chip opens paste-track sourcing journey (no scrape).
+            if (handoff.recipeChipId === 'viral_adapt') {
+              setViralAdaptJourney((current) =>
+                startViralAdaptJourney(current)
+              );
+            } else {
+              setViralAdaptJourney((current) =>
+                current.phase === 'idle'
+                  ? current
+                  : cancelViralAdaptJourney(current)
+              );
+            }
           }}
           onRefresh={product.refresh}
           onStart={() => {
@@ -3089,6 +3115,61 @@ export function ComposerHome({
             }
             store={product.state?.store}
             workspaceId={product.state?.workspaceId ?? ''}
+          />
+        ) : null}
+
+        {viralAdaptJourney.phase === 'sourcing' ||
+        viralAdaptJourney.phase === 'confirm' ? (
+          <ViralAdaptPanel
+            onAddImageLabel={(label) =>
+              setViralAdaptJourney((current) =>
+                updateViralPasteDraft(current, {
+                  imageLabels: [...current.draft.imageLabels, label],
+                })
+              )
+            }
+            onConfirm={() => {
+              setViralAdaptJourney((current) => {
+                const next = confirmViralAdaptJourney(current);
+                if ('error' in next) return current;
+                if (next.submitIntent) {
+                  setLensState((lens) =>
+                    applyRecommendationHandoff(lens, {
+                      intent: next.submitIntent!,
+                      outputHint: 'image_text',
+                      recipeChipId: 'viral_adapt',
+                    })
+                  );
+                  focusIntentAfterPrefillRef.current = true;
+                }
+                return next;
+              });
+            }}
+            onConfirmBack={() =>
+              setViralAdaptJourney((current) => ({
+                ...current,
+                phase: 'sourcing',
+                confirm: null,
+                submitIntent: null,
+              }))
+            }
+            onDraftChange={(patch) =>
+              setViralAdaptJourney((current) =>
+                updateViralPasteDraft(current, patch)
+              )
+            }
+            onSourcingCancel={() =>
+              setViralAdaptJourney((current) =>
+                cancelViralAdaptJourney(current)
+              )
+            }
+            onSourcingContinue={() =>
+              setViralAdaptJourney((current) => {
+                const next = advanceViralSourcingToConfirm(current);
+                return 'error' in next ? current : next;
+              })
+            }
+            state={viralAdaptJourney}
           />
         ) : null}
 

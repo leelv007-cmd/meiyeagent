@@ -17,6 +17,7 @@ import {
   HARNESS_BUILTIN_PROMPTS,
   type HarnessFrozenPrompt,
 } from './langfuse-prompts.js';
+import { notePlanInstructionsForViralAdapt } from './viral-adapt.js';
 
 export interface NotePlanEnhancementJudgeResolver {
   resolve(input: {
@@ -55,6 +56,8 @@ export class ModelSupplyNotePlanStructuredPort
       noteTextBlock?: HarnessFrozenPrompt;
       noteConsistency?: HarnessFrozenPrompt;
       xhsNoteGen?: HarnessFrozenPrompt;
+      /** #324 viral adapt paste-track rewrite (harness/xhs-viral-rewrite). */
+      xhsViralRewrite?: HarnessFrozenPrompt;
     },
     private readonly generationParams?: {
       beautyVoiceRole?: BeautyVoiceRole;
@@ -73,6 +76,14 @@ export class ModelSupplyNotePlanStructuredPort
   }
 
   async plan(input: Parameters<NotePlanStructuredPort['plan']>[0]) {
+    const baseInstructions =
+      this.prompts?.notePlan?.content ?? HARNESS_BUILTIN_PROMPTS.notePlan;
+    const prompt = JSON.stringify(input);
+    const { instructions } = notePlanInstructionsForViralAdapt({
+      baseInstructions,
+      planInput: prompt,
+      viralRewritePrompt: this.prompts?.xhsViralRewrite?.content,
+    });
     const result = await this.runEffect(
       `wf:${this.workflowId}:note:plan`,
       () =>
@@ -80,10 +91,8 @@ export class ModelSupplyNotePlanStructuredPort
           effectIdempotencyKey: `wf:${this.workflowId}:note:plan`,
           schemaName: 'harness_note_plan_v1',
           schemaRevision: 'note-plan-v1',
-          instructions:
-            this.prompts?.notePlan?.content ??
-            HARNESS_BUILTIN_PROMPTS.notePlan,
-          prompt: JSON.stringify(input),
+          instructions,
+          prompt,
           schema: notePlanSchema,
         }),
     );

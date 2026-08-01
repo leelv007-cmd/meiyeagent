@@ -16,15 +16,15 @@ import {
   harnessPromptCapabilityRequirement,
 } from './langfuse-prompts.js';
 
-test('the single registry owns prompt names and capability requirements (14 core + 6 xhs)', () => {
+test('the single registry owns prompt names and capability requirements (14 core + 8 xhs)', () => {
   assert.deepEqual(
     Object.keys(HARNESS_PROMPT_SITES).sort(),
     Object.keys(HARNESS_LANGFUSE_PROMPT_NAMES).sort(),
   );
   assert.equal(Object.keys(HARNESS_PROMPT_SITES).length, HARNESS_PROMPT_SITE_COUNT);
   assert.equal(HARNESS_CORE_PROMPT_KEYS.length, 14);
-  assert.equal(XHS_VERTICAL_PROMPT_KEYS.length, 6);
-  assert.equal(HARNESS_PROMPT_SITE_COUNT, 20);
+  assert.equal(XHS_VERTICAL_PROMPT_KEYS.length, 8);
+  assert.equal(HARNESS_PROMPT_SITE_COUNT, 22);
 
   // CORE ∪ XHS must equal site keys exactly; CORE ∩ XHS must be empty.
   const coreSet = new Set<string>(HARNESS_CORE_PROMPT_KEYS);
@@ -252,7 +252,29 @@ test('production base prompts must come from the registry (anti-drift)', () => {
       'xhsNoteGen',
       'xhsOutline',
       'xhsStyleAnalysis',
+      'xhsViralImageVision',
+      'xhsViralRewrite',
     ],
+  );
+});
+
+test('viral adapt prompts stay paste-track honest (no scrape language)', () => {
+  assert.match(HARNESS_BUILTIN_PROMPTS.xhsViralRewrite, /粘贴/u);
+  assert.match(HARNESS_BUILTIN_PROMPTS.xhsViralRewrite, /sourceTrack/u);
+  assert.match(HARNESS_BUILTIN_PROMPTS.xhsViralRewrite, /\{sourceNote\}/u);
+  assert.doesNotMatch(
+    HARNESS_BUILTIN_PROMPTS.xhsViralRewrite,
+    /fetchNote|__INITIAL_STATE__|x-s\s*sign/u,
+  );
+  assert.match(HARNESS_BUILTIN_PROMPTS.xhsViralRewrite, /禁止假设存在未授权/u);
+  assert.match(HARNESS_BUILTIN_PROMPTS.xhsViralImageVision, /上传/u);
+  assert.match(
+    HARNESS_LANGFUSE_PROMPT_NAMES.xhsViralRewrite,
+    /xhs-viral-rewrite/u,
+  );
+  assert.match(
+    HARNESS_LANGFUSE_PROMPT_NAMES.xhsViralImageVision,
+    /xhs-viral-image-vision/u,
   );
 });
 

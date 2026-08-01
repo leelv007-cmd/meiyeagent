@@ -1,5 +1,5 @@
 /**
- * A2 / #89 — first-ship Surface + eight Recipe seeds (D-082/D-083).
+ * A2 / #89 — first-ship Surface + Recipe seeds (D-082/D-083; #324 viral adapt).
  */
 
 import assert from 'node:assert/strict';
@@ -23,16 +23,25 @@ import { findForbiddenBrowserKey } from './browser-projection.js';
 import { RecipeStudioService } from './recipe-studio.js';
 
 describe('launch seeds (D-082 / D-083)', () => {
-  it('defines eight Recipe variants mapping to six cold cards', () => {
-    assert.equal(LAUNCH_RECIPE_SPECS.length, 8);
+  it('defines Recipe variants including viral_adapt paste-track (#324)', () => {
+    assert.equal(LAUNCH_RECIPE_SPECS.length, 9);
     assert.deepEqual(listLaunchCardFamilies(), [
       'case_to_xhs_note',
+      'viral_adapt',
       'project_intro',
       'campaign_visual_set',
       'promotion_poster',
       'douyin_project_video',
       'reuse_content',
     ]);
+    const viral = LAUNCH_RECIPE_SPECS.find(
+      (spec) => spec.recipeId === 'recipe.viral_adapt',
+    );
+    assert.ok(viral);
+    assert.equal(viral.lensId, 'image_text');
+    assert.equal(viral.delivery.deliverableKind, 'note');
+    assert.equal(viral.settingsPatches?.variantKey, 'viral_adapt');
+    assert.equal(viral.contextPatches?.viralAdapt, true);
   });
 
   it('uses structured factTypes instead of text upload slots', () => {
@@ -226,9 +235,9 @@ describe('launch seeds (D-082 / D-083)', () => {
     );
   });
 
-  it('publishes all eight formal seeds through the Recipe Studio four-gate chain', async () => {
+  it('publishes all formal seeds through the Recipe Studio four-gate chain', async () => {
     const { repository, service, result } = await seedLaunchCatalogInMemory();
-    assert.equal(result.recipes.length, 8);
+    assert.equal(result.recipes.length, 9);
     assert.ok(result.recipes.every((r) => r.status === 'published'));
     assert.ok(result.recipes.every((r) => r.studioRelease));
     for (const recipe of result.recipes) {
@@ -251,20 +260,20 @@ describe('launch seeds (D-082 / D-083)', () => {
         service.validateRecipe(recipe.recipeId, recipe.revision),
       ),
     );
-    assert.equal(validations.length, 8);
+    assert.equal(validations.length, 9);
     assert.ok(validations.every((validation) => validation.ok));
     assert.equal(result.surface.status, 'published');
     assert.equal(result.surface.surfaceId, LAUNCH_SURFACE_ID);
-    assert.equal(result.surface.recipeRefs.length, 8);
+    assert.equal(result.surface.recipeRefs.length, 9);
     assert.equal(result.surface.toolEntryRefs.length, 0);
 
     const browser = await service.projectBrowserSurface(LAUNCH_SURFACE_ID);
-    assert.equal(browser.recipes.length, 8);
+    assert.equal(browser.recipes.length, 9);
     assert.equal(findForbiddenBrowserKey(browser), null);
 
-    // Featured six-card grouping: five singles + reuse family at order 5.
+    // Featured cards: case + viral + four more singles + reuse family variants.
     const featured = browser.recipeRefs.filter((r) => r.featured);
-    assert.equal(featured.length, 8);
+    assert.equal(featured.length, 9);
     const orders = new Set(featured.map((r) => r.order));
     assert.deepEqual([...orders].sort((a, b) => a - b), [0, 1, 2, 3, 4, 5]);
 
@@ -290,7 +299,8 @@ describe('launch seeds (D-082 / D-083)', () => {
       assert.ok(recipe.publishedAt);
     }
     // The first gated seed creates Surface @3; each remaining seed switches one ref.
-    assert.equal(surface.revision, 24);
+    // 9 seeds → revision 27 (was 24 for 8 seeds).
+    assert.equal(surface.revision, 27);
     assert.equal(surface.status, 'published');
 
     // New revision path still works (later product adjustments).
@@ -343,7 +353,7 @@ describe('launch seeds (D-082 / D-083)', () => {
     });
 
     const first = await publishLaunchCatalog(service, { now });
-    assert.equal(first.recipes.length, 8);
+    assert.equal(first.recipes.length, 9);
     assert.deepEqual(
       (
         await repository.listRecipeHistory(firstSpec.recipeId)

@@ -19,6 +19,11 @@ export type RecommendationHandoff = {
   intent: string;
   /** When set, Composer selects this lens. Absent = leave lens alone. */
   outputHint?: CreationLensId;
+  /**
+   * Idle recipe chip id when the handoff comes from first-screen capsules.
+   * Host may start a structured journey (e.g. viral_adapt paste-track #324).
+   */
+  recipeChipId?: 'xhs_image_text' | 'viral_adapt';
 };
 
 /**

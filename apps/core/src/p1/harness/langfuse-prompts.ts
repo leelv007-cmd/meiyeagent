@@ -22,12 +22,13 @@ const PLAIN_TEXT_REQUIREMENT = {
  * The single registry for Harness prompt supply and request-time capability
  * matching. Prompt names and requirement axes must be derived from this table.
  *
- * Extension model (issue #315 / XHS §6.1 · §10.3-5):
+ * Extension model (issue #315 / XHS §6.1 · §10.3-5; #324 viral adapt):
  * - Keep ONE flat registry (no second resolver table).
  * - Core pipeline retains the historical 14 D-149 sites.
  * - XHS vertical assets append as `xhs*` keys with Langfuse names
  *   `harness/xhs-*` (beauty-rewritten builtins; version pin + fallback).
- * - Site count is therefore 20 = 14 core + 6 XHS vertical.
+ * - Site count is therefore 22 = 14 core + 8 XHS vertical
+ *   (6 from #315 + viral rewrite / viral image vision from #324).
  * - New vertical keys do not invent a parallel pin policy: strict still
  *   requires every key; pilot still falls back to builtin-v1.
  */
@@ -135,6 +136,18 @@ export const HARNESS_PROMPT_SITES = {
     // image/* via harnessPromptCapabilityRequirement(key, { referenceImage: true }).
     requirement: STRUCTURED_TEXT_REQUIREMENT,
   },
+  // P2-12 / #324 — viral adapt (paste-track first). Names locked by #315 §3.
+  xhsViralRewrite: {
+    name: 'harness/xhs-viral-rewrite',
+    operation: 'text.respond',
+    requirement: STRUCTURED_TEXT_REQUIREMENT,
+  },
+  xhsViralImageVision: {
+    name: 'harness/xhs-viral-image-vision',
+    operation: 'text.respond',
+    // Base pin text/plain; callers with reference images add image/* dynamically.
+    requirement: STRUCTURED_TEXT_REQUIREMENT,
+  },
 } as const;
 
 export type HarnessPromptKey = keyof typeof HARNESS_PROMPT_SITES;
@@ -157,7 +170,10 @@ export const HARNESS_CORE_PROMPT_KEYS = [
   'textResponse',
 ] as const satisfies readonly HarnessPromptKey[];
 
-/** XHS vertical sites added by issue #315 (beauty-rewritten xhswork assets). */
+/**
+ * XHS vertical sites: #315 beauty-rewritten assets + #324 viral adapt wiring.
+ * (Empty-key registration was deferred in #315 until a consumer existed.)
+ */
 export const XHS_VERTICAL_PROMPT_KEYS = [
   'xhsOutline',
   'xhsContent',
@@ -165,6 +181,8 @@ export const XHS_VERTICAL_PROMPT_KEYS = [
   'xhsImagePrompt',
   'xhsCoverPrompt',
   'xhsStyleAnalysis',
+  'xhsViralRewrite',
+  'xhsViralImageVision',
 ] as const satisfies readonly HarnessPromptKey[];
 
 export const HARNESS_PROMPT_SITE_COUNT =
@@ -480,6 +498,59 @@ photorealistic bloody surgery, dark messy clutter, realistic medical wound, Engl
 整体调性：xxx
 
 直接输出分析结果，不要前缀说明。若图含人物面部，只描述光线/构图/美业场景属性，不输出可识别隐私细节。`,
+  xhsViralRewrite: `你是美业门店小红书爆款仿写专家。输入是商家**自行粘贴**的参考笔记文字（及可选参考图说明），不是系统抓取结果。请按本店项目改写成可发笔记。
+
+参考笔记原文：
+{sourceNote}
+
+门店/项目语境：
+{shopContext}
+
+取材声明（必须遵守）：
+- 材料仅来自商家粘贴/上传；禁止假设存在未授权远程读取或代登接口
+- 不得编造未提供的门店资质、疗效数据、病例细节
+
+请输出严格 JSON（不要 markdown 围栏）：
+{
+  "title": "15-25字吸引标题",
+  "body": "200-500字正文，短段落+emoji，小红书风格",
+  "tags": ["标签1", "标签2", "标签3", "标签4", "标签5"],
+  "pageHints": [
+    { "role": "cover", "outline": "封面要点" },
+    { "role": "content", "outline": "内容页要点" },
+    { "role": "cta", "outline": "收尾行动号召" }
+  ],
+  "sourceTrack": "paste"
+}
+
+要求：
+1. 保留参考笔记的结构钩子与节奏，但事实与项目换成门店语境
+2. 标签不加 #，5-8 个，偏美业项目/肤质/场景
+3. 禁止极限医疗承诺与虚假前后对比
+4. sourceTrack 固定为 "paste"`,
+  xhsViralImageVision: `你是美业门店视觉复刻分析师。输入是商家**自行上传**的参考图片（非系统抓取）。请输出可指导文生图的英文 prompt 与中文图上字建议。
+
+参考图说明/商家备注：
+{imageNotes}
+
+门店/项目语境：
+{shopContext}
+
+取材声明：仅分析商家上传图；禁止假设存在远程笔记图床匿名下载或账号池。
+
+请输出严格 JSON：
+{
+  "styleSummary": "中文一句话风格总结",
+  "englishImagePrompt": "详细英文生图 prompt，竖版 3:4，美业干净台面/柔光",
+  "onImageChineseText": ["图上中文主标题", "副标题可选"],
+  "negativePrompt": "gore, medical wound, phone frame, watermark, English text on image",
+  "sourceTrack": "paste"
+}
+
+要求：
+1. 画面服务美业门店转化；禁止血腥医疗实景
+2. 图上文字用中文（prompt 内英文单引号包裹）
+3. sourceTrack 固定为 "paste"`,
 } as const;
 
 export interface HarnessFrozenPrompt {

@@ -775,6 +775,10 @@ export class UnifiedHarnessStagePorts
 							...(input.request.prompts.xhsNoteGen
 								? { xhsNoteGen: input.request.prompts.xhsNoteGen }
 								: {}),
+							// #324 paste-track viral rewrite (registered at admission freeze).
+							...(input.request.prompts.xhsViralRewrite
+								? { xhsViralRewrite: input.request.prompts.xhsViralRewrite }
+								: {}),
 						}
 						: undefined,
 				xhsGenerationParams,

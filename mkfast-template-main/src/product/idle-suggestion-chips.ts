@@ -28,6 +28,7 @@ export const IDLE_FIRST_SCREEN_RECIPE_CHIPS: readonly IdleRecipeChip[] = [
     handoff: {
       intent: '帮我做一篇小红书图文笔记：有封面和多页内容，适合本店项目种草。',
       outputHint: 'image_text' satisfies CreationLensId,
+      recipeChipId: 'xhs_image_text',
     },
   },
   {
@@ -38,6 +39,7 @@ export const IDLE_FIRST_SCREEN_RECIPE_CHIPS: readonly IdleRecipeChip[] = [
       intent:
         '帮我复刻一条爆款笔记：我会粘贴原文或参考内容，请按本店项目改写成可发版本。',
       outputHint: 'image_text' satisfies CreationLensId,
+      recipeChipId: 'viral_adapt',
     },
   },
 ];

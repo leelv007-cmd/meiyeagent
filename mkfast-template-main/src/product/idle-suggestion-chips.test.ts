@@ -17,13 +17,18 @@ test('first-screen recipe chips include 小红书图文 and 爆款复刻', () =>
   assert.equal(IDLE_FIRST_SCREEN_RECIPE_CHIPS.length, 2);
 });
 
-test('C3: recipe handoff shape is only intent + optional outputHint', () => {
+test('C3: recipe handoff shape is intent + outputHint + recipeChipId only', () => {
   for (const chip of IDLE_FIRST_SCREEN_RECIPE_CHIPS) {
     const handoff: RecommendationHandoff = chip.handoff;
     assert.ok(handoff.intent.length > 0);
     assert.equal(handoff.outputHint, 'image_text');
+    assert.equal(handoff.recipeChipId, chip.id);
     // Exact key set — no autoSubmit / charge / submit flags can sneak in.
-    assert.deepEqual(Object.keys(handoff).sort(), ['intent', 'outputHint']);
+    assert.deepEqual(Object.keys(handoff).sort(), [
+      'intent',
+      'outputHint',
+      'recipeChipId',
+    ]);
   }
 });
 

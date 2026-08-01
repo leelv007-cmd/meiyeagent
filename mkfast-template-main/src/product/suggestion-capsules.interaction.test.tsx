@@ -100,6 +100,7 @@ describe('suggestion capsules', () => {
     expect(onUse.mock.calls[0]?.[0]).toEqual({
       intent: expect.stringMatching(/小红书图文/u),
       outputHint: 'image_text',
+      recipeChipId: 'xhs_image_text',
     });
     expect(onStart).not.toHaveBeenCalled();
     expect(onSubmit).not.toHaveBeenCalled();
@@ -107,6 +108,7 @@ describe('suggestion capsules', () => {
     await user.click(screen.getByTestId('suggestion-chip-viral_adapt'));
     expect(onUse).toHaveBeenCalledTimes(2);
     expect(onUse.mock.calls[1]?.[0].intent).toMatch(/复刻|粘贴/u);
+    expect(onUse.mock.calls[1]?.[0].recipeChipId).toBe('viral_adapt');
     expect(onStart).not.toHaveBeenCalled();
   });
 
