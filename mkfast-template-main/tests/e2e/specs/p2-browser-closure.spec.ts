@@ -492,6 +492,8 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
     for (let index = 0; index < actionCount; index += 1) {
       await soft(actions.nth(index)).toBeDisabled();
     }
+    const assistedCta = page.getByTestId('delivery-assisted-cta');
+    await soft(assistedCta).toBeDisabled();
 
     const safeBody = sensitiveBody.replace(SENSITIVE_WORD, SAFE_REPLACEMENT);
     await setTiptapBody(body, safeBody);
@@ -512,6 +514,7 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
     await expect(check).toHaveAttribute('data-status', 'clear', {
       timeout: 60_000,
     });
+    await expect(assistedCta).toBeEnabled();
     await downloadFullPackage(page, imageTextContract);
   });
 
