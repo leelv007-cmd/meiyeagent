@@ -1,3 +1,15 @@
+/**
+ * Idle light-capsule suggestion row — xhs-spec §2.4 / D2 (#318).
+ *
+ * Default face is a horizontal capsule row (今日建议 first, highlighted when
+ * current; 小红书图文 / 爆款复刻 on the first screen). Opening 今日建议 reveals
+ * the three-element mini card (why / store facts / customer action). Every
+ * chip only prefills the Composer — never auto-submits, never charges (C3).
+ *
+ * Cold / pending / stale stay honest one-line chips, never a full empty card
+ * competing with the Composer for visual weight.
+ */
+
 import {
   STORE_FACT_KIND_LABELS,
   type CreativeJob,
@@ -13,17 +25,14 @@ import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   today_recommendation_cold_description,
-  today_recommendation_cold_title,
   today_recommendation_customer_action,
   today_recommendation_facts,
   today_recommendation_facts_count,
   today_recommendation_pending_description,
   today_recommendation_pending_title,
   today_recommendation_source,
-  today_recommendation_start,
   today_recommendation_stale_description,
   today_recommendation_stale_title,
   today_recommendation_title,
@@ -31,9 +40,14 @@ import {
   today_recommendation_use_description,
   today_recommendation_why,
 } from '@/locale/paraglide/messages';
+import { cn } from '@/lib/utils';
 import { operationsQuery, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import { readDashboardHomeRecommendation } from '@/product/dashboard-home-recommendation';
+import {
+  IDLE_FIRST_SCREEN_RECIPE_CHIPS,
+  todaySuggestionChipLabel,
+} from '@/product/idle-suggestion-chips';
 import {
   buildRecommendationHandoff,
   type RecommendationHandoff,
@@ -189,6 +203,9 @@ function jobHasOutput(job: CreativeJob) {
   );
 }
 
+const CAPSULE_BASE =
+  'inline-flex min-h-12 max-w-full items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition-colors focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none';
+
 export function TodayRecommendationCard({
   onStart,
   onUse,
@@ -202,6 +219,7 @@ export function TodayRecommendationCard({
   onUse: (handoff: RecommendationHandoff) => void;
   workspaceId?: string;
 }) {
+  const [todayOpen, setTodayOpen] = useState(false);
   const recommendation = useQuery({
     queryKey: ['harness', 'today-recommendation'],
     queryFn: ({ signal }) => readDashboardHomeRecommendation(signal),
@@ -223,52 +241,97 @@ export function TodayRecommendationCard({
   );
 
   return (
-    <Card
-      className="meiye-porcelain meiye-entry-card meiye-today-recommendation overflow-hidden"
+    <div
+      className="meiye-today-recommendation space-y-3"
       data-layer="base"
       data-recommendation-state={view.kind}
+      data-suggestion-capsules="true"
       data-testid="today-recommendation"
     >
-      <CardHeader className="pb-3">
-        <div className="flex items-center gap-2 text-foreground">
-          <IconSparkles aria-hidden="true" className="size-4 text-spark" />
-          <CardTitle
-            aria-level={2}
-            className="text-sm font-medium"
-            role="heading"
-          >
-            {today_recommendation_title()}
-          </CardTitle>
-        </div>
-      </CardHeader>
-      <CardContent>
+      <div
+        className="flex flex-wrap items-center gap-2"
+        data-testid="suggestion-capsule-row"
+      >
         {view.kind === 'current' ? (
-          <CurrentRecommendation
-            onUse={onUse}
-            recommendation={view.recommendation}
-            workspaceId={workspaceId}
-          />
+          <button
+            aria-expanded={todayOpen}
+            className={cn(
+              CAPSULE_BASE,
+              // Primary highlight chip for 今日建议 (D2).
+              'border-primary/40 bg-primary/10 text-foreground shadow-sm ring-1 ring-primary/20',
+              todayOpen && 'ring-2 ring-primary/40'
+            )}
+            data-highlight="true"
+            data-testid="suggestion-chip-today"
+            onClick={() => setTodayOpen((open) => !open)}
+            type="button"
+          >
+            <IconSparkles
+              aria-hidden="true"
+              className="size-3.5 shrink-0 text-spark"
+            />
+            <span className="truncate">
+              {todaySuggestionChipLabel(view.recommendation.title)}
+            </span>
+          </button>
         ) : (
-          <div className="space-y-2">
-            <h3 className="text-lg font-semibold">{emptyTitle(view.kind)}</h3>
-            <p className="text-sm leading-6 text-muted-foreground">
-              {emptyDescription(view.kind)}
-            </p>
-            <Button onClick={onStart} size="sm" type="button" variant="outline">
-              {today_recommendation_start()}
-            </Button>
-          </div>
+          <button
+            className={cn(
+              CAPSULE_BASE,
+              'border-input bg-background text-muted-foreground hover:bg-accent'
+            )}
+            data-highlight="false"
+            data-testid="suggestion-chip-today"
+            onClick={onStart}
+            type="button"
+          >
+            <IconSparkles aria-hidden="true" className="size-3.5 shrink-0" />
+            <span className="truncate">{emptyChipLabel(view.kind)}</span>
+          </button>
         )}
-      </CardContent>
-    </Card>
+
+        {IDLE_FIRST_SCREEN_RECIPE_CHIPS.map((chip) => (
+          <button
+            className={cn(
+              CAPSULE_BASE,
+              'border-input bg-background text-foreground hover:bg-accent'
+            )}
+            data-recipe-chip={chip.id}
+            data-testid={`suggestion-chip-${chip.id}`}
+            key={chip.id}
+            onClick={() => onUse(chip.handoff)}
+            type="button"
+          >
+            {chip.label}
+          </button>
+        ))}
+      </div>
+
+      {view.kind === 'current' && todayOpen ? (
+        <TodayMiniCard
+          onUse={onUse}
+          recommendation={view.recommendation}
+          workspaceId={workspaceId}
+        />
+      ) : null}
+
+      {view.kind !== 'current' ? (
+        <p
+          className="meiye-type-aux text-muted-foreground"
+          data-testid="suggestion-chip-today-hint"
+        >
+          {emptyDescription(view.kind)}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
-function emptyTitle(kind: 'cold' | 'pending' | 'stale') {
+function emptyChipLabel(kind: 'cold' | 'pending' | 'stale') {
   if (kind === 'stale') return today_recommendation_stale_title();
   return kind === 'pending'
     ? today_recommendation_pending_title()
-    : today_recommendation_cold_title();
+    : today_recommendation_title();
 }
 
 function emptyDescription(kind: 'cold' | 'pending' | 'stale') {
@@ -278,7 +341,11 @@ function emptyDescription(kind: 'cold' | 'pending' | 'stale') {
     : today_recommendation_cold_description();
 }
 
-function CurrentRecommendation({
+/**
+ * Three-element mini card revealed by the 今日建议 capsule (D2 / D-126).
+ * Compact porcelain — not the former full entry card that competed with Composer.
+ */
+function TodayMiniCard({
   onUse,
   recommendation,
   workspaceId,
@@ -313,35 +380,38 @@ function CurrentRecommendation({
   );
 
   return (
-    <article className="space-y-5">
+    <article
+      className="meiye-porcelain space-y-4 rounded-2xl border border-border/60 p-4"
+      data-testid="today-recommendation-mini-card"
+    >
       <div>
-        <h3 className="text-xl font-semibold">{recommendation.title}</h3>
-        <p className="mt-2 line-clamp-4 text-sm leading-6 text-muted-foreground">
+        <h3 className="text-base font-semibold leading-6">
+          {recommendation.title}
+        </h3>
+        <p className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground">
           {recommendation.body}
         </p>
       </div>
-      {/*
-        三格分区痕落在外层白瓷卡里，实底由卡供给，所以这里只需要一层痕，不再套
-        白瓷（§5 禁止嵌套卡片）。底走完整的 --tint-hover，不写 `bg-muted/NN`：
-        --muted 本身就是 alpha token，再乘一次痕就消失了。
-      */}
-      <dl className="grid gap-3 text-sm sm:grid-cols-3">
-        <div className="rounded-xl bg-muted p-3">
-          <dt className="font-medium">{today_recommendation_why()}</dt>
+      <dl
+        className="grid gap-2 text-sm sm:grid-cols-3"
+        data-testid="today-recommendation-three-elements"
+      >
+        <div className="rounded-xl bg-muted p-2.5">
+          <dt className="text-xs font-medium">{today_recommendation_why()}</dt>
           <dd className="mt-1 text-muted-foreground">
             {recommendation.whyNow}
           </dd>
         </div>
-        <div className="rounded-xl bg-muted p-3">
-          <dt className="font-medium">{today_recommendation_facts()}</dt>
-          {/* D-116: fact ids stay internal — the merchant reads the fact names
-              their own ledger carries, and the count when a name is not there. */}
+        <div className="rounded-xl bg-muted p-2.5">
+          <dt className="text-xs font-medium">
+            {today_recommendation_facts()}
+          </dt>
           <dd
-            className="mt-1 space-y-1.5"
+            className="mt-1 space-y-1"
             data-testid="today-recommendation-facts"
           >
             {factLabels.length > 0 ? (
-              <span className="flex flex-wrap gap-1.5">
+              <span className="flex flex-wrap gap-1">
                 {factLabels.map((label) => (
                   <Badge className="h-auto" key={label} variant="secondary">
                     {label}
@@ -356,8 +426,8 @@ function CurrentRecommendation({
             </span>
           </dd>
         </div>
-        <div className="rounded-xl bg-muted p-3">
-          <dt className="font-medium">
+        <div className="rounded-xl bg-muted p-2.5">
+          <dt className="text-xs font-medium">
             {today_recommendation_customer_action()}
           </dt>
           <dd className="mt-1 text-muted-foreground">
@@ -380,7 +450,7 @@ function CurrentRecommendation({
             {today_recommendation_use()}
             <IconArrowRight aria-hidden="true" />
           </Button>
-          <p className="mt-2 text-xs text-muted-foreground">
+          <p className="mt-1.5 text-xs text-muted-foreground">
             {today_recommendation_use_description()}
           </p>
         </div>

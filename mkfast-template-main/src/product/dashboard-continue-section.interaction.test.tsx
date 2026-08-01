@@ -1,10 +1,12 @@
 /**
- * 段③「继续上次工作」— D-164① / D-126.
+ * 段③ Activity Shelf — D-164① / D6 / P1-3 (#318).
  *
  * The distinction under test is the one the two surfaces on this page kept
  * getting wrong in different ways: a workspace with nothing in it, and a
  * workspace whose contents failed to load, must not look the same. Only the
  * first is the merchant's to fix.
+ *
+ * P1-3 adds object-card face: ≤3 cards, each with status + next action.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen } from '@testing-library/react';
@@ -41,8 +43,8 @@ function work(id: string, status: string, intent: string) {
   return { id, status, intent, works: [] } as never;
 }
 
-function projection(works: unknown[]) {
-  return { assets: [], contents: [], events: [], jobs: [], works };
+function projection(works: unknown[], assets: unknown[] = []) {
+  return { assets, contents: [], events: [], jobs: [], works };
 }
 
 function renderSection() {
@@ -91,7 +93,7 @@ describe('dashboardContinueItems', () => {
   });
 });
 
-describe('DashboardContinueSection', () => {
+describe('Activity Shelf (DashboardContinueSection)', () => {
   it('stays out of the way on a workspace that has produced nothing', async () => {
     p1.operationsQuery.mockResolvedValue(projection([]));
 
@@ -106,11 +108,13 @@ describe('DashboardContinueSection', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('lists work in hand and marks what is unfinished', async () => {
+  it('P1-3: lists ≤3 object cards with status + next action each', async () => {
     p1.operationsQuery.mockResolvedValue(
       projection([
         work('running-1', 'running', '母亲节朋友圈文案'),
         work('done-1', 'completed', '新客到店海报'),
+        work('done-2', 'completed', '第三张不该挤爆'),
+        work('done-3', 'completed', '第四张应被裁掉'),
       ])
     );
 
@@ -119,10 +123,29 @@ describe('DashboardContinueSection', () => {
     expect(
       await screen.findByTestId('dashboard-section-continue')
     ).toBeInTheDocument();
-    expect(screen.getAllByTestId('continue-item')).toHaveLength(2);
+    expect(screen.getByTestId('activity-shelf')).toBeInTheDocument();
+
+    const cards = screen.getAllByTestId('activity-shelf-card');
+    expect(cards.length).toBeLessThanOrEqual(3);
+    expect(cards).toHaveLength(3);
+
+    for (const card of cards) {
+      expect(
+        card.querySelector('[data-testid="activity-shelf-status"]')
+      ).not.toBeNull();
+      expect(
+        card.querySelector('[data-testid="activity-shelf-thumb"]')
+      ).not.toBeNull();
+    }
+
+    // Next-action entries (legacy continue-item = the action link).
+    const actions = screen.getAllByTestId('continue-item');
+    expect(actions).toHaveLength(3);
+    expect(actions[0]?.textContent).toMatch(/查看进度|继续/u);
+
     const marks = screen.getAllByTestId('continue-item-unfinished');
     expect(marks).toHaveLength(1);
-    expect(marks[0].textContent).toMatch(/未完成/u);
+    expect(marks[0]?.textContent).toMatch(/未完成/u);
   });
 
   it('says the work could not be loaded instead of looking like a new shop', async () => {
@@ -134,5 +157,6 @@ describe('DashboardContinueSection', () => {
     // The failure must read as ours, not as "you have not done anything".
     expect(pending.textContent).toMatch(/还在整理/u);
     expect(screen.queryByTestId('continue-item')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('activity-shelf-card')).not.toBeInTheDocument();
   });
 });

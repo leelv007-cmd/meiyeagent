@@ -158,6 +158,36 @@ test('P0-4: recommendation prefill is typed handoff, not hard-coded copy lens', 
   assert.doesNotMatch(home, /selectLens\(\s*current\s*,\s*['"]copy['"]\s*\)/u);
 });
 
+test('P1-06 / D2: Idle 建议 is light capsules, not a heavy entry card above Composer', () => {
+  const card = readSource('src/product/today-recommendation-card.tsx');
+  // Capsule row is the default face (visual weight below Composer main axis).
+  assert.match(card, /data-suggestion-capsules/u);
+  assert.match(card, /data-testid="suggestion-capsule-row"/u);
+  assert.match(card, /data-testid="suggestion-chip-today"/u);
+  // XHS first-screen recipes sit in the same light row (C4 — no new top nav).
+  assert.match(card, /IDLE_FIRST_SCREEN_RECIPE_CHIPS/u);
+  // Opening 今日建议 reveals the three-element mini card (D-126 elements preserved).
+  assert.match(card, /today-recommendation-mini-card/u);
+  assert.match(card, /today-recommendation-three-elements/u);
+  // Former heavy entry-card shell must not own the Idle face.
+  assert.doesNotMatch(card, /meiye-entry-card/u);
+});
+
+test('P1-3 / D6: Activity Shelf object cards (≤3, status + next action)', () => {
+  const shelf = readSource('src/product/activity-shelf.ts');
+  assert.match(shelf, /ACTIVITY_SHELF_MAX_CARDS = 3/u);
+  assert.match(shelf, /projectActivityShelfCards/u);
+  assert.match(shelf, /nextActionLabel/u);
+  assert.match(shelf, /statusLabel/u);
+  const section = readSource('src/product/dashboard-continue-section.tsx');
+  assert.match(section, /data-testid="activity-shelf"/u);
+  assert.match(section, /data-testid="activity-shelf-card"/u);
+  assert.match(section, /activity-shelf-status/u);
+  assert.match(section, /activity-shelf-thumb/u);
+  // Horizontal shelf — not a dense vertical link list.
+  assert.match(section, /flex gap-4 overflow-x-auto/u);
+});
+
 test('the greeting is fed by workbenchGreetingName, not by a new data source', () => {
   const surface = readSource('src/product/dashboard-home-surface.tsx');
 
