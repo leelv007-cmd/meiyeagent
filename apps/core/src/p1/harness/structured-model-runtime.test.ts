@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { z } from 'zod';
 
 import {
   ModelSupplyApplicationService,
@@ -123,6 +124,56 @@ test('production harness without a live direct model retains the hard failure', 
     new Error(
       'Harness production runtime requires a live direct structured model.',
     ),
+  );
+});
+
+test('XHS style analysis fixture stays e2e-only and returns deterministic seven dimensions', async () => {
+  const fixtureCatalog = modelRuntimeAssemblyFromEnv({
+    APP_ENV: 'e2e',
+    MODEL_EXECUTION_MODE: 'fixture',
+  });
+  const executor = createHarnessStructuredModelExecutor(
+    fixtureCatalog.runtime,
+    () => {},
+  );
+  const result = await executor.generate({
+    instructions: 'Analyze the authorized beauty reference image.',
+    prompt: JSON.stringify({
+      intent: '为夏日护理笔记分析参考图风格',
+      referenceAssetIds: ['asset-style-1'],
+    }),
+    schema: z.object({ raw: z.string().min(1) }).strict(),
+    schemaName: 'harness_xhs_style_analysis_v1',
+  });
+
+  assert.equal(
+    result.output.raw,
+    [
+      '画风：柔光实拍叠字',
+      '配色：裸粉+米白+香槟金点缀',
+      '背景：大理石台面浅景深',
+      '文字风格：粗体无衬线大标题',
+      '装饰元素：步骤箭头与产品剪影',
+      '排版结构：居中封面上下分栏',
+      '整体调性：干净专业的轻医美科普风',
+    ].join('\n'),
+  );
+  assert.throws(
+    () =>
+      modelRuntimeAssemblyFromEnv({
+        APP_ENV: 'production',
+        MODEL_EXECUTION_MODE: 'fixture',
+      }),
+    /fixture is restricted to APP_ENV=e2e/u,
+  );
+
+  const productionCatalog = modelRuntimeAssemblyFromEnv({
+    APP_ENV: 'production',
+    MODEL_EXECUTION_MODE: 'recorded',
+  });
+  assert.throws(
+    () => createHarnessStructuredModelExecutor(productionCatalog.runtime),
+    /production runtime requires a live direct structured model/u,
   );
 });
 

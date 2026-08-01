@@ -5,7 +5,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  VIRAL_ADAPT_SOURCE_MARKER,
   advanceViralSourcingToConfirm,
   canAdvanceViralSourcing,
   cancelViralAdaptJourney,
@@ -35,7 +34,8 @@ test('journey: chip → sourcing → confirm (source method) → ready intent', 
 
   assert.equal(canAdvanceViralSourcing(state.draft), false);
   state = updateViralPasteDraft(state, {
-    noteText: '油皮夏日护理\n三步到店',
+    noteText:
+      '油皮夏日护理\n三步到店\nhttps://xhs.invalid/explore/private-note?xsec_token=SECRET',
     imageAssetIds: ['asset-reference-1'],
   });
   assert.equal(canAdvanceViralSourcing(state.draft), true);
@@ -58,10 +58,21 @@ test('journey: chip → sourcing → confirm (source method) → ready intent', 
   assert.ok(!('error' in confirmed));
   state = confirmed;
   assert.equal(state.phase, 'ready');
-  assert.ok(state.submitIntent);
-  assert.ok(state.submitIntent.includes(VIRAL_ADAPT_SOURCE_MARKER));
-  assert.match(state.submitIntent, /油皮夏日护理/u);
-  assert.match(state.submitIntent, /商家粘贴/u);
+  assert.equal(
+    state.merchantIntent,
+    '请为本店项目复刻一篇小红书爆款笔记，参考素材已由商家确认。'
+  );
+  assert.deepEqual(state.sourcePayload, {
+    schemaVersion: 'viral-adapt-source/v1',
+    track: 'paste',
+    noteText:
+      '油皮夏日护理\n三步到店\nhttps://xhs.invalid/explore/private-note?xsec_token=SECRET',
+    authorizedAssetIds: ['asset-reference-1'],
+  });
+  assert.doesNotMatch(state.merchantIntent, /\[viral_adapt_source:/u);
+  assert.doesNotMatch(state.merchantIntent, /asset-reference-1/u);
+  assert.doesNotMatch(state.merchantIntent, /油皮夏日护理/u);
+  assert.doesNotMatch(state.merchantIntent, /https:\/\/|xsec_token|SECRET/u);
 });
 
 test('confirm contract projection lists 取材方式 and OpenCLI honesty', () => {
@@ -92,15 +103,22 @@ test('cancel resets journey', () => {
   assert.equal(state.draft.noteText, '');
 });
 
-test('submit intent composer is paste-honest', () => {
+test('submit intent is merchant-safe while the structured source stays hidden', () => {
+  const privateNoteToken =
+    'RAW_NOTE_TOKEN_9f71 https://xhs.invalid/explore/private-note?xsec_token=SECRET';
   const intent = composeViralAdaptSubmitIntent({
-    noteText: '参考笔记',
+    noteText: privateNoteToken,
     imageAssetIds: ['asset-reference-1'],
   });
-  assert.ok(intent.startsWith(VIRAL_ADAPT_SOURCE_MARKER));
   assert.doesNotMatch(intent, /爬虫|账号池|fetchNote/u);
-  assert.match(intent, /商家粘贴/u);
-  assert.match(intent, /参考图资产：asset-reference-1/u);
+  assert.doesNotMatch(intent, /\[viral_adapt_source:/u);
+  assert.doesNotMatch(intent, /参考图资产|asset-reference-1/u);
+  assert.doesNotMatch(intent, /RAW_NOTE_TOKEN_9f71/u);
+  assert.doesNotMatch(intent, /https:\/\/|xsec_token|SECRET/u);
+  assert.equal(
+    intent,
+    '请为本店项目复刻一篇小红书爆款笔记，参考素材已由商家确认。'
+  );
 });
 
 test('recipe intent detector matches chip handoff copy', () => {

@@ -57,7 +57,25 @@ export const composerSubmissionBodySchema = composerSubmissionSignedFieldsSchema
       .strict(),
     surface: revisionReferenceSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((submission, context) => {
+    if (!submission.viralAdaptSource) return;
+    const frozenAssetIds = new Set(
+      submission.sources.assets.map(({ id }) => id)
+    );
+    if (
+      submission.viralAdaptSource.authorizedAssetIds.some(
+        (assetId) => !frozenAssetIds.has(assetId)
+      )
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'Viral adapt reference images must belong to the submitted source set.',
+        path: ['viralAdaptSource', 'authorizedAssetIds'],
+      });
+    }
+  });
 
 const composerSubmissionResultSchema = z
   .object({

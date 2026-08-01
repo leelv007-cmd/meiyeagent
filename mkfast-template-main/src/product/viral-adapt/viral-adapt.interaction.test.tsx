@@ -38,7 +38,7 @@ function ViralAdaptHarness({
           setState((current) => {
             const next = confirmViralAdaptJourney(current);
             if ('error' in next) return current;
-            setReadyIntent(next.submitIntent);
+            setReadyIntent(next.merchantIntent);
             return next;
           });
         }}
@@ -47,7 +47,8 @@ function ViralAdaptHarness({
             ...current,
             phase: 'sourcing',
             confirm: null,
-            submitIntent: null,
+            merchantIntent: null,
+            sourcePayload: null,
           }))
         }
         onDraftChange={(patch) =>
@@ -111,7 +112,10 @@ describe('viral adapt paste-track journey', () => {
     render(<ViralAdaptHarness />);
 
     fireEvent.change(screen.getByTestId('viral-adapt-paste-text'), {
-      target: { value: '姐妹们！清爽护理三步走\n到店可体验' },
+      target: {
+        value:
+          '姐妹们！清爽护理三步走\n到店可体验\nhttps://xhs.invalid/explore/private-note?xsec_token=SECRET',
+      },
     });
     fireEvent.click(screen.getByTestId('viral-adapt-add-image'));
     expect(screen.getByTestId('viral-adapt-upload-requests')).toHaveTextContent(
@@ -143,10 +147,12 @@ describe('viral adapt paste-track journey', () => {
 
     fireEvent.click(screen.getByTestId('viral-adapt-confirm-submit'));
     const intent = screen.getByTestId('viral-adapt-ready-intent');
-    expect(intent).toHaveTextContent(/\[viral_adapt_source:paste\]/);
-    expect(intent).toHaveTextContent(/清爽护理/);
-    expect(intent).toHaveTextContent(/商家粘贴/);
-    expect(intent).toHaveTextContent(/参考图资产：asset-reference-1/);
+    expect(intent).not.toHaveTextContent(/\[viral_adapt_source:/);
+    expect(intent).not.toHaveTextContent(/清爽护理/);
+    expect(intent).toHaveTextContent(/参考素材已由商家确认/);
+    expect(intent).not.toHaveTextContent(/asset-reference-1/);
+    expect(intent).not.toHaveTextContent(/参考图资产/);
+    expect(intent).not.toHaveTextContent(/https:\/\/|xsec_token|SECRET/);
   });
 
   it('continue stays disabled until paste text is present', () => {

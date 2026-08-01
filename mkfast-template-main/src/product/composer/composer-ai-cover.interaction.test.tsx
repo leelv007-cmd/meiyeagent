@@ -9,7 +9,11 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ComposerDeliveryCard } from './composer-delivery-card';
-import { AI_COVER_ASPECT_RATIOS, AI_COVER_SIZE_MAP } from './ai-cover-action';
+import {
+  AI_COVER_ASPECT_RATIOS,
+  AI_COVER_BEAUTY_PRESETS,
+  AI_COVER_SIZE_MAP,
+} from './ai-cover-action';
 
 const revision: ContentPackageRevisionDelivery = {
   packageId: 'pkg-1',
@@ -22,7 +26,7 @@ afterEach(() => {
 });
 
 describe('Delivered AI cover secondary action', () => {
-  it('exposes three selectable ratios and prefills without opening Result Center', async () => {
+  it('exposes five beauty presets and three ratios in the signed prefill seed', async () => {
     const user = userEvent.setup();
     const onAiCover = vi.fn();
     const onOpen = vi.fn();
@@ -46,6 +50,15 @@ describe('Delivered AI cover secondary action', () => {
     ).toBeInTheDocument();
     await user.click(screen.getByTestId('composer-delivery-ai-cover-toggle'));
 
+    const presets = screen.getByTestId('composer-delivery-ai-cover-presets');
+    for (const preset of AI_COVER_BEAUTY_PRESETS) {
+      const button = within(presets).getByTestId(
+        `composer-delivery-ai-cover-preset-${preset}`
+      );
+      await user.click(button);
+      expect(button).toHaveAttribute('aria-pressed', 'true');
+    }
+
     const ratios = screen.getByTestId('composer-delivery-ai-cover-ratios');
     for (const ratio of AI_COVER_ASPECT_RATIOS) {
       const button = within(ratios).getByTestId(
@@ -53,6 +66,11 @@ describe('Delivered AI cover secondary action', () => {
       );
       expect(button).toHaveAttribute('data-aspect-ratio', ratio);
       expect(button).toHaveAttribute('data-size', AI_COVER_SIZE_MAP[ratio]);
+      expect(
+        Math.max(
+          ...AI_COVER_SIZE_MAP[ratio].split('x').map((value) => Number(value))
+        )
+      ).toBeLessThanOrEqual(2048);
     }
 
     await user.click(
@@ -63,7 +81,8 @@ describe('Delivered AI cover secondary action', () => {
     expect(onAiCover.mock.calls[0]?.[0]).toMatchObject({
       id: 'ai_cover',
       aspectRatio: '9:16',
-      size: '1440x2560',
+      style: 'salon_photo',
+      size: '1152x2048',
     });
     expect(onOpen).not.toHaveBeenCalled();
     expect(onFollowUp).not.toHaveBeenCalled();

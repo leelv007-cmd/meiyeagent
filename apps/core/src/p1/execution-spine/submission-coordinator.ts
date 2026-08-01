@@ -305,6 +305,7 @@ export class CreationSubmissionCoordinator {
 			rights: source.rights,
 			route: source.route,
 			signedSubmission,
+			viralAdaptSource: source.viralAdaptSource,
 			sources: {
 				assets: source.sources.assets,
 				contentPackage: {

@@ -25,7 +25,10 @@ test('three ratios are selectable and each maps to a size', () => {
   }
   assert.equal(AI_COVER_SIZE_MAP['3:4'], '1536x2048');
   assert.equal(AI_COVER_SIZE_MAP['1:1'], '2048x2048');
-  assert.equal(AI_COVER_SIZE_MAP['9:16'], '1440x2560');
+  assert.equal(AI_COVER_SIZE_MAP['9:16'], '1152x2048');
+  for (const size of Object.values(AI_COVER_SIZE_MAP)) {
+    assert.ok(Math.max(...size.split('x').map(Number)) <= 2048);
+  }
 });
 
 test('beauty presets are the five beauty replacements (not generic)', () => {

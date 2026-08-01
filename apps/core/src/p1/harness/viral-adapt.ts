@@ -16,10 +16,14 @@ import { z } from "zod";
 
 import { HARNESS_BUILTIN_PROMPTS } from "./langfuse-prompts.js";
 
-/** Embedded in merchant rawInput so the note path can detect viral paste track. */
-export const VIRAL_ADAPT_SOURCE_MARKER = "[viral_adapt_source:paste]" as const;
-
 export type ViralSourcingTrack = "paste" | "opencli_link";
+
+export type ViralAdaptSourcePayload = {
+	schemaVersion: "viral-adapt-source/v1";
+	track: ViralSourcingTrack;
+	noteText: string;
+	authorizedAssetIds: readonly string[];
+};
 
 export type ViralOpenCliLiveGate = {
 	/** True only after real-account OpenCLI note+download evidence (#328). */
@@ -96,7 +100,7 @@ export type ViralImageVisionResult = z.infer<
 >;
 
 export type ViralAdaptPlanContext = {
-	source: ViralPasteSource;
+	source: ViralAdaptSourcePayload;
 	shopContext: string;
 	imageVision?: ViralImageVisionResult;
 };
@@ -154,48 +158,6 @@ export function normalizeViralPasteSource(input: {
 		noteText,
 		imageAssetIds,
 	};
-}
-
-/** Compose durable rawInput for admission / note path. */
-export function composeViralAdaptRawInput(source: ViralPasteSource): string {
-	const images =
-		source.imageAssetIds.length > 0
-			? `\n参考图资产：${source.imageAssetIds.join(", ")}`
-			: "";
-	return [
-		VIRAL_ADAPT_SOURCE_MARKER,
-		"请按本店项目仿写复刻以下爆款笔记（取材=商家粘贴，非链接自动读取）：",
-		source.noteText,
-		images,
-	]
-		.filter((line) => line.length > 0)
-		.join("\n");
-}
-
-export function isViralAdaptPasteRequest(rawInput: string): boolean {
-	return rawInput.includes(VIRAL_ADAPT_SOURCE_MARKER);
-}
-
-export function parseViralAdaptPasteSource(
-	rawInput: string,
-): ViralPasteSource | null {
-	if (!isViralAdaptPasteRequest(rawInput)) return null;
-	const withoutMarker = rawInput
-		.replace(VIRAL_ADAPT_SOURCE_MARKER, "")
-		.replace(
-			/请按本店项目仿写复刻以下爆款笔记（取材=商家粘贴，非链接自动读取）：\n?/u,
-			"",
-		);
-	const imageMatch = withoutMarker.match(/参考图资产：([^\n]+)/u);
-	const imageAssetIds = imageMatch?.[1]
-		? imageMatch[1]
-				.split(",")
-				.map((part) => part.trim())
-				.filter(Boolean)
-		: [];
-	const noteText = withoutMarker.replace(/参考图资产：[^\n]*/u, "").trim();
-	if (!noteText) return null;
-	return { track: "paste", noteText, imageAssetIds };
 }
 
 /**
@@ -268,7 +230,8 @@ export function fixtureViralRewrite(
 		source.imageAssetIds.length > 0
 			? "取材：商家粘贴笔记文字 + 上传参考图（非链接自动读取）"
 			: "取材：商家粘贴笔记文字（非链接自动读取）";
-	const merchantIntent = composeViralAdaptRawInput(source);
+	const merchantIntent =
+		"请为本店项目复刻一篇小红书爆款笔记，参考素材已由商家确认。";
 	return {
 		schemaVersion: "viral-adapt-rewrite/v1",
 		sourceTrack: "paste",
@@ -341,9 +304,9 @@ export function runViralAdaptPasteToNoteProjection(input: {
 
 /**
  * Production consumer for `xhsViralRewrite` (#324 / D-150).
- * When the note-plan input carries the paste-track marker, prepend the viral
- * rewrite system prompt so the existing image_text_note plan stage adapts
- * merchant-pasted material instead of free-form creation.
+ * When the frozen snapshot carries a structured viral source, prepend the
+ * rewrite system prompt so the existing image_text_note plan stage adapts the
+ * confirmed material instead of treating the request as free-form creation.
  */
 export function notePlanInstructionsForViralAdapt(input: {
 	baseInstructions: string;

@@ -103,10 +103,19 @@ export const composerAiCoverSchema = z.discriminatedUnion('aspectRatio', [
     .object({
       aspectRatio: z.literal('9:16'),
       style: composerAiCoverBeautyPresetSchema,
-      size: z.literal('1440x2560'),
+      size: z.literal('1152x2048'),
     })
     .strict(),
 ]);
+
+export const composerViralAdaptSourceSchema = z
+  .object({
+    schemaVersion: z.literal('viral-adapt-source/v1'),
+    track: z.enum(['paste', 'opencli_link']),
+    noteText: z.string().trim().min(1).max(4_000),
+    authorizedAssetIds: z.array(identifierSchema).max(50),
+  })
+  .strict();
 
 /**
  * User-confirmed fields covered by the quote preview and admission freeze.
@@ -126,11 +135,21 @@ export const composerSubmissionSignedFieldsBaseSchema = z
     distributionTarget: composerDistributionTargetSchema,
     deliverable: composerSubmissionDeliverableSchema,
     aiCover: composerAiCoverSchema.optional(),
+    viralAdaptSource: composerViralAdaptSourceSchema.optional(),
   })
   .strict();
 
 export const composerSubmissionSignedFieldsSchema =
   composerSubmissionSignedFieldsBaseSchema.superRefine((submission, context) => {
+    const usesViralAdaptRecipe = submission.recipe.id === 'recipe.viral_adapt';
+    if (usesViralAdaptRecipe !== (submission.viralAdaptSource !== undefined)) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'Viral adapt requires both the exact recipe.viral_adapt binding and one structured source.',
+        path: ['viralAdaptSource'],
+      });
+    }
     if (
       submission.imageOperation !== undefined &&
       submission.creationMode !== 'free'

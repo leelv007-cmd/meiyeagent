@@ -152,3 +152,52 @@ test('taking over from a 申报 closes the mount-time restore', () => {
     /rebindComposerSession\(current, sessionIdRef\.current\)/u
   );
 });
+
+test('completed recommendation prefill rebinds a new run before applying the handoff', () => {
+  const start = home.indexOf('<DashboardHomeSurface');
+  const end = home.indexOf('onRefresh={product.refresh}', start);
+  const prefill = home.slice(start, end);
+  const newSession = prefill.indexOf('newComposerSessionId()');
+  const rebind = prefill.indexOf('rebindComposerSession(');
+  const handoff = prefill.indexOf('applyRecommendationHandoffWithRecipe({');
+
+  assert.ok(start >= 0 && end > start, 'recommendation prefill must exist');
+  assert.ok(newSession >= 0, 'completed prefill must mint a new session');
+  assert.ok(
+    rebind > newSession,
+    'the new session must be rebound after minting'
+  );
+  assert.ok(
+    handoff > rebind,
+    'rebind must happen before the handoff is applied'
+  );
+  assert.match(prefill, /state: reopenComposer\(current\)/u);
+});
+
+test('only terminal success refreshes the current task experience query', () => {
+  const start = home.indexOf("workflowStream.workflowState !== 'success' &&");
+  const end = home.indexOf('\n  useEffect(() => {', start + 1);
+  const terminal = home.slice(start, end);
+
+  assert.ok(start >= 0 && end > start, 'terminal cleanup effect must exist');
+  assert.match(terminal, /setViralAdaptBinding\(null\)/u);
+  assert.match(
+    terminal,
+    /if \(workflowStream\.workflowState === 'success'\) \{[\s\S]*?invalidateQueries\(\{[\s\S]*?queryKey: experienceEntriesQueryKey/u
+  );
+  assert.equal(
+    (terminal.match(/queryKey: experienceEntriesQueryKey/gu) ?? []).length,
+    1
+  );
+});
+
+test('recipe selection clears the run-scoped viral source before replacing lens state', () => {
+  const start = home.indexOf('<RecipeCardsPanel');
+  const end = home.indexOf('surface={surfaceQuery.data}', start);
+  const selection = home.slice(start, end);
+
+  assert.ok(start >= 0 && end > start, 'recipe selection callback must exist');
+  assert.match(selection, /setViralAdaptBinding\(null\)/u);
+  assert.match(selection, /cancelViralAdaptJourney\(current\)/u);
+  assert.match(selection, /setLensState\(next\)/u);
+});

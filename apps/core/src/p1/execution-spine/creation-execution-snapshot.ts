@@ -4,6 +4,7 @@ import {
 	composerDistributionTargetSchema,
 	composerSubmissionDeliverableSchema,
 	composerSubmissionSignedFieldsBaseSchema,
+	composerViralAdaptSourceSchema,
 	creationModeSchema,
 	creativeOperationSchema,
 	creativeContentModuleIds,
@@ -304,6 +305,7 @@ export const creationExecutionSnapshotSchema = z
 		briefContext: briefContextSchema,
 		briefConfirmation: revisionReferenceSchema.optional(),
 		contentModules: contentModulesSchema,
+		viralAdaptSource: composerViralAdaptSourceSchema.optional(),
 		semanticDecision: z
 			.object({
 				sourceSnapshotId: identifierSchema,
@@ -320,7 +322,8 @@ export const creationExecutionSnapshotSchema = z
 			.optional(),
 	})
 	.strict()
-	.superRefine(validateFrozenDeliverable);
+	.superRefine(validateFrozenDeliverable)
+	.superRefine(validateViralAdaptSource);
 
 export type CreationExecutionSnapshot = z.infer<
 	typeof creationExecutionSnapshotSchema
@@ -385,6 +388,7 @@ export function createCreationExecutionSnapshot(
 			briefContext: command.briefContext,
 			briefConfirmation: command.briefConfirmation,
 			contentModules: command.contentModules,
+			viralAdaptSource: command.viralAdaptSource,
 		}),
 	);
 }
@@ -447,9 +451,15 @@ function validateSubmission(
 			catalogModelId: string;
 			platformConfigRevision: string | null;
 		};
+		recipe?: { id: string };
+		sources?: { assets: Array<{ id: string }> };
+		viralAdaptSource?: {
+			authorizedAssetIds: string[];
+		};
 	},
 	context: z.RefinementCtx,
 ) {
+	validateViralAdaptSource(command, context);
 	if (
 		command.modelSelection &&
 		command.catalogModel &&
@@ -523,6 +533,39 @@ function validateSubmission(
 			code: "custom",
 			message: "Content modules must not be duplicated.",
 			path: ["contentModules"],
+		});
+	}
+}
+
+function validateViralAdaptSource(
+	input: {
+		recipe?: { id: string };
+		sources?: { assets: Array<{ id: string }> };
+		viralAdaptSource?: { authorizedAssetIds: string[] };
+	},
+	context: z.RefinementCtx,
+) {
+	const usesViralAdaptRecipe = input.recipe?.id === "recipe.viral_adapt";
+	if (usesViralAdaptRecipe !== (input.viralAdaptSource !== undefined)) {
+		context.addIssue({
+			code: "custom",
+			message:
+				"Viral adapt requires both the exact recipe.viral_adapt binding and one structured source.",
+			path: ["viralAdaptSource"],
+		});
+	}
+	if (!input.viralAdaptSource || !input.sources) return;
+	const submittedAssetIds = new Set(input.sources.assets.map(({ id }) => id));
+	if (
+		input.viralAdaptSource.authorizedAssetIds.some(
+			(assetId) => !submittedAssetIds.has(assetId),
+		)
+	) {
+		context.addIssue({
+			code: "custom",
+			message:
+				"Viral adapt reference images must belong to the submitted source set.",
+			path: ["viralAdaptSource", "authorizedAssetIds"],
 		});
 	}
 }

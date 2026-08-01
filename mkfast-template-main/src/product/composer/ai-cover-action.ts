@@ -29,7 +29,7 @@ export const DEFAULT_AI_COVER_PRESET: AiCoverBeautyPreset = 'beauty_soft';
 export const AI_COVER_SIZE_MAP = {
   '3:4': '1536x2048',
   '1:1': '2048x2048',
-  '9:16': '1440x2560',
+  '9:16': '1152x2048',
 } as const satisfies Record<AiCoverAspectRatio, string>;
 
 export const AI_COVER_PRESET_LABELS: Record<AiCoverBeautyPreset, string> = {

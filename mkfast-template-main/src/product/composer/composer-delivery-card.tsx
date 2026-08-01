@@ -25,9 +25,13 @@ import { cn } from '@/lib/utils';
 
 import { WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS } from './workbench-shell';
 import {
+  AI_COVER_BEAUTY_PRESETS,
+  AI_COVER_PRESET_LABELS,
+  DEFAULT_AI_COVER_PRESET,
   aiCoverAllowedOnSurface,
   listAiCoverRatioOptions,
   type AiCoverActionSeed,
+  type AiCoverBeautyPreset,
 } from './ai-cover-action';
 import { ComposerDeliveryFollowUps } from './composer-delivery-followups';
 import {
@@ -110,13 +114,18 @@ export function ComposerDeliveryCard({
   const [verdict, setVerdict] = useState<DeliveryRatingVerdict | null>(null);
   const [ratingPending, setRatingPending] = useState(false);
   const [aiCoverOpen, setAiCoverOpen] = useState(false);
+  const [aiCoverPreset, setAiCoverPreset] = useState<AiCoverBeautyPreset>(
+    DEFAULT_AI_COVER_PRESET
+  );
   const showAiCover =
     Boolean(onAiCover) &&
     aiCoverAllowedOnSurface({
       surface: 'delivered_secondary',
       lensId: lensId ?? null,
     });
-  const aiCoverOptions = showAiCover ? listAiCoverRatioOptions() : [];
+  const aiCoverOptions = showAiCover
+    ? listAiCoverRatioOptions({ style: aiCoverPreset })
+    : [];
   const ratingPendingRef = useRef(false);
   const retryTransitionRef = useRef<{
     signature: string;
@@ -243,28 +252,49 @@ export function ComposerDeliveryCard({
             生成 AI 封面
           </button>
           {aiCoverOpen ? (
-            <fieldset
-              aria-label="AI 封面比例"
-              className="flex flex-wrap gap-2"
-              data-testid="composer-delivery-ai-cover-ratios"
-            >
-              {aiCoverOptions.map((option) => (
-                <button
-                  className="meiye-glass-piece rounded-full px-3 py-1 text-xs"
-                  data-aspect-ratio={option.aspectRatio}
-                  data-size={option.size}
-                  data-testid={`composer-delivery-ai-cover-ratio-${option.aspectRatio.replace(':', '-')}`}
-                  key={option.aspectRatio}
-                  onClick={() => {
-                    onAiCover(option);
-                    setAiCoverOpen(false);
-                  }}
-                  type="button"
-                >
-                  {option.aspectRatio}
-                </button>
-              ))}
-            </fieldset>
+            <div className="space-y-2">
+              <fieldset
+                aria-label="AI 封面美业风格"
+                className="flex flex-wrap gap-2"
+                data-testid="composer-delivery-ai-cover-presets"
+              >
+                {AI_COVER_BEAUTY_PRESETS.map((preset) => (
+                  <button
+                    aria-pressed={aiCoverPreset === preset}
+                    className="meiye-glass-piece rounded-full px-3 py-1 text-xs"
+                    data-preset={preset}
+                    data-testid={`composer-delivery-ai-cover-preset-${preset}`}
+                    key={preset}
+                    onClick={() => setAiCoverPreset(preset)}
+                    type="button"
+                  >
+                    {AI_COVER_PRESET_LABELS[preset]}
+                  </button>
+                ))}
+              </fieldset>
+              <fieldset
+                aria-label="AI 封面比例"
+                className="flex flex-wrap gap-2"
+                data-testid="composer-delivery-ai-cover-ratios"
+              >
+                {aiCoverOptions.map((option) => (
+                  <button
+                    className="meiye-glass-piece rounded-full px-3 py-1 text-xs"
+                    data-aspect-ratio={option.aspectRatio}
+                    data-size={option.size}
+                    data-testid={`composer-delivery-ai-cover-ratio-${option.aspectRatio.replace(':', '-')}`}
+                    key={option.aspectRatio}
+                    onClick={() => {
+                      onAiCover(option);
+                      setAiCoverOpen(false);
+                    }}
+                    type="button"
+                  >
+                    {option.aspectRatio}
+                  </button>
+                ))}
+              </fieldset>
+            </div>
           ) : null}
         </div>
       ) : null}

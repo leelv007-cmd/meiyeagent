@@ -81,9 +81,10 @@ test("viral rewrite materializes merchant and fact context into the canonical No
 		undefined,
 		{
 			source: {
+				schemaVersion: "viral-adapt-source/v1",
 				track: "paste",
 				noteText: "姐妹们，清爽护理三步走",
-				imageAssetIds: [],
+				authorizedAssetIds: [],
 			},
 			shopContext: "项目名：夏日清爽护理；事实引用：fact-service-1",
 		},

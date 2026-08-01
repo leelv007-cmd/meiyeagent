@@ -42,7 +42,7 @@ export const DEFAULT_XHS_COVER_ASPECT_RATIO: XhsCoverAspectRatio = '3:4';
  * | ----- | ----------- | --------- |
  * | 3:4   | 1536x2048   | Classic XHS portrait; ~3.15MP → raised to ≥ min via adapter if needed |
  * | 1:1   | 2048x2048   | Moments / square; probe-proven safe square |
- * | 9:16  | 1440x2560   | Full-bleed vertical story cover |
+ * | 9:16  | 1152x2048   | Full-bleed vertical cover within the default model's 2048px maximum edge |
  */
 export const XHS_COVER_SIZE_MAP = {
   '3:4': {
@@ -56,9 +56,9 @@ export const XHS_COVER_SIZE_MAP = {
     size: '2048x2048',
   },
   '9:16': {
-    width: 1440,
-    height: 2560,
-    size: '1440x2560',
+    width: 1152,
+    height: 2048,
+    size: '1152x2048',
   },
 } as const satisfies Record<
   XhsCoverAspectRatio,

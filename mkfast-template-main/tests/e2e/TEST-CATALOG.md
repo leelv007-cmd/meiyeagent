@@ -395,11 +395,15 @@ The image-text-note branch deliberately configures `nano-banana-2`, a real
 fixture-executable catalog model that differs from the retired browser constant
 `seedream-5-pro`. Its complete journey reads preferences, submits through
 Composer, completes Harness, and reads the immutable selection evidence back
-through the ContentPackage projection.
+through the ContentPackage projection. The same fixture-only journey marks its
+authorized image as `role=style`, observes the seven-dimension UI/SSE stage and
+terminal package, then verifies the Delivered AI-cover affordance exposes all
+five beauty presets and all three bounded ratios without claiming live-provider
+evidence.
 
 | # | Test name | Flow |
 |---|---|---|
-| 1 | Composer confirmation → dual styles → selected pages → full revision and manifest | Register a Day-0 workspace; require its stored preference to retain `platform_default` origin and config revision without appearing as a merchant workspace default; require the current canonical preference and Composer submission to select `nano-banana-2`; complete the note confirmation/style/SSE journey; then read the ContentPackage and require its execution-snapshot projection to freeze `platform_default`, the same model id, and the exact platform config revision. |
+| 1 | Composer style reference → confirmation → dual styles → selected pages → full revision and AI-cover prefill | Register a Day-0 workspace; require its stored preference to retain `platform_default` origin and config revision without appearing as a merchant workspace default; require the current canonical preference and Composer submission to select `nano-banana-2` and carry the authorized source as `role=style`; require the seven-dimension stage in UI and SSE; complete the note confirmation/style journey; then read the terminal ContentPackage and require its execution-snapshot projection to freeze `platform_default`, the same model id, and the exact platform config revision. From the Delivered card, require five beauty presets and three ratios, select non-default `salon_photo` + `9:16`, and require the Composer prefill to retain the label and bounded `1152x2048` size. This fixture journey is not production-provider proof. |
 
 ## 29. Live Creation Catalog Capability Gate
 

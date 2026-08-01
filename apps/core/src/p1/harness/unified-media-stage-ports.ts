@@ -93,7 +93,6 @@ import type { HarnessWorkflowInput } from "./task-admission.js";
 import { assertHarnessExecutionAssemblyPinned } from "./task-admission.js";
 import {
 	materializeViralImageVisionPrompt,
-	parseViralAdaptPasteSource,
 	type ViralAdaptPlanContext,
 	type ViralImageVisionResult,
 	viralImageVisionResultSchema,
@@ -821,7 +820,7 @@ export class UnifiedHarnessStagePorts
 		input: Parameters<HarnessNoteStagePorts["compileNoteBrief"]>[0],
 	): Promise<ViralAdaptPlanContext | undefined> {
 		const snapshot = requireSnapshot(input.request);
-		const source = parseViralAdaptPasteSource(input.request.rawInput);
+		const source = snapshot.viralAdaptSource;
 		const usesViralRecipe = snapshot.recipe.id === "recipe.viral_adapt";
 		if (!usesViralRecipe && !source) return undefined;
 		if (!usesViralRecipe || !source) {
@@ -842,7 +841,7 @@ export class UnifiedHarnessStagePorts
 				.map(({ assetId }) => assetId),
 		);
 		if (
-			source.imageAssetIds.some(
+			source.authorizedAssetIds.some(
 				(assetId) =>
 					!frozenAssetIds.has(assetId) || !authorizedAssetIds.has(assetId),
 			)
@@ -858,7 +857,7 @@ export class UnifiedHarnessStagePorts
 			context: input.context,
 			intent: input.declaration.normalizedIntent,
 		});
-		if (source.imageAssetIds.length === 0) {
+		if (source.authorizedAssetIds.length === 0) {
 			return { source, shopContext };
 		}
 		const analyzeViralReferenceImages =
@@ -880,7 +879,7 @@ export class UnifiedHarnessStagePorts
 			},
 			() =>
 				analyzeViralReferenceImages({
-					assetIds: source.imageAssetIds,
+					assetIds: source.authorizedAssetIds,
 					request: input.request,
 					shopContext,
 					workflowId: input.workflowId,

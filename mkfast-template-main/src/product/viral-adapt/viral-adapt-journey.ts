@@ -4,11 +4,10 @@
  * chip → sourcing card (paste / upload; OpenCLI reserved) → confirm card
  * (explicit source method) → ready submit intent for the note path.
  *
- * Marker string must stay byte-identical to core `VIRAL_ADAPT_SOURCE_MARKER`
- * (`apps/core/src/p1/harness/viral-adapt.ts`).
+ * The merchant intent and the internal source carrier are deliberately
+ * separate. Asset ids and routing metadata must never enter the textarea or
+ * conversation transcript.
  */
-
-export const VIRAL_ADAPT_SOURCE_MARKER = '[viral_adapt_source:paste]' as const;
 
 export type ViralAdaptPhase = 'idle' | 'sourcing' | 'confirm' | 'ready';
 
@@ -21,6 +20,13 @@ export type ViralPasteDraft = {
   noteText: string;
   /** Real Composer asset ids that completed upload + rights attachment. */
   imageAssetIds: readonly string[];
+};
+
+export type ViralAdaptSourcePayload = {
+  schemaVersion: 'viral-adapt-source/v1';
+  track: 'paste' | 'opencli_link';
+  noteText: string;
+  authorizedAssetIds: readonly string[];
 };
 
 export type ViralAdaptConfirmView = {
@@ -44,7 +50,9 @@ export type ViralAdaptJourneyState = {
   liveGate: ViralOpenCliLiveGateView;
   confirm: ViralAdaptConfirmView | null;
   /** Intent text ready for Composer lens / submission. */
-  submitIntent: string | null;
+  merchantIntent: string | null;
+  /** Internal transport carrier. Never render this value as merchant copy. */
+  sourcePayload: ViralAdaptSourcePayload | null;
 };
 
 /** Default live gate: closed until #328 verifies OpenCLI. */
@@ -71,7 +79,8 @@ export function createViralAdaptJourneyState(input?: {
     draft: { noteText: '', imageAssetIds: [] },
     liveGate: defaultViralOpenCliLiveGate(input?.evidencePresent === true),
     confirm: null,
-    submitIntent: null,
+    merchantIntent: null,
+    sourcePayload: null,
   };
 }
 
@@ -83,7 +92,8 @@ export function startViralAdaptJourney(
     ...state,
     phase: 'sourcing',
     confirm: null,
-    submitIntent: null,
+    merchantIntent: null,
+    sourcePayload: null,
   };
 }
 
@@ -106,7 +116,8 @@ export function updateViralPasteDraft(
           : state.draft.imageAssetIds,
     },
     confirm: null,
-    submitIntent: null,
+    merchantIntent: null,
+    sourcePayload: null,
   };
 }
 
@@ -178,24 +189,25 @@ export function advanceViralSourcingToConfirm(
     ...state,
     phase: 'confirm',
     confirm,
-    submitIntent: null,
+    merchantIntent: null,
+    sourcePayload: null,
   };
 }
 
 export function composeViralAdaptSubmitIntent(draft: ViralPasteDraft): string {
-  const noteText = draft.noteText.replace(/\r\n/gu, '\n').trim();
-  const images =
-    draft.imageAssetIds.length > 0
-      ? `\n参考图资产：${draft.imageAssetIds.join(', ')}`
-      : '';
-  return [
-    VIRAL_ADAPT_SOURCE_MARKER,
-    '请按本店项目仿写复刻以下爆款笔记（取材=商家粘贴，非链接自动读取）：',
-    noteText,
-    images,
-  ]
-    .filter((line) => line.length > 0)
-    .join('\n');
+  void draft;
+  return '请为本店项目复刻一篇小红书爆款笔记，参考素材已由商家确认。';
+}
+
+export function composeViralAdaptSourcePayload(
+  draft: ViralPasteDraft
+): ViralAdaptSourcePayload {
+  return {
+    schemaVersion: 'viral-adapt-source/v1',
+    track: 'paste',
+    noteText: draft.noteText.replace(/\r\n/gu, '\n').trim(),
+    authorizedAssetIds: [...draft.imageAssetIds],
+  };
 }
 
 export function confirmViralAdaptJourney(
@@ -210,7 +222,8 @@ export function confirmViralAdaptJourney(
   return {
     ...state,
     phase: 'ready',
-    submitIntent: composeViralAdaptSubmitIntent(state.draft),
+    merchantIntent: composeViralAdaptSubmitIntent(state.draft),
+    sourcePayload: composeViralAdaptSourcePayload(state.draft),
   };
 }
 

@@ -5,18 +5,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
 	availableViralSourcingTracks,
-	composeViralAdaptRawInput,
 	fixtureViralRewrite,
 	isOpenCliTrackSelectable,
-	isViralAdaptPasteRequest,
 	normalizeViralPasteSource,
 	notePlanInstructionsForViralAdapt,
-	parseViralAdaptPasteSource,
 	projectViralAdaptConfirm,
 	projectViralAdaptNotePackage,
 	resolveOpenCliLiveGate,
 	runViralAdaptPasteToNoteProjection,
-	VIRAL_ADAPT_SOURCE_MARKER,
 } from "./viral-adapt.js";
 
 test("live gate defaults closed — OpenCLI not selectable; paste only", () => {
@@ -77,21 +73,20 @@ test("confirm card explicitly names sourcing method (contract)", () => {
 	);
 });
 
-test("rawInput marker round-trips paste source for note path", () => {
+test("structured paste source preserves private material outside merchant intent", () => {
 	const source = normalizeViralPasteSource({
-		noteText: "姐妹们！这家店的清爽护理也太懂了",
+		noteText:
+			"RAW_NOTE_TOKEN_9f71 https://xhs.invalid/explore/private-note?xsec_token=SECRET",
 		imageAssetIds: ["asset-ref-1"],
 	});
 	assert.ok(!("error" in source));
-	const raw = composeViralAdaptRawInput(source);
-	assert.ok(raw.includes(VIRAL_ADAPT_SOURCE_MARKER));
-	assert.ok(isViralAdaptPasteRequest(raw));
-	assert.equal(isViralAdaptPasteRequest("普通图文意图"), false);
-	const parsed = parseViralAdaptPasteSource(raw);
-	assert.ok(parsed);
-	assert.equal(parsed.track, "paste");
-	assert.match(parsed.noteText, /清爽护理/u);
-	assert.deepEqual(parsed.imageAssetIds, ["asset-ref-1"]);
+	const rewrite = fixtureViralRewrite(source);
+	assert.match(source.noteText, /RAW_NOTE_TOKEN_9f71/u);
+	assert.deepEqual(source.imageAssetIds, ["asset-ref-1"]);
+	assert.doesNotMatch(
+		rewrite.merchantIntent,
+		/RAW_NOTE_TOKEN_9f71|asset-ref-1|https:\/\/|xsec_token|SECRET/u,
+	);
 });
 
 test("fixture rewrite stays paste-honest and feeds merchantIntent", () => {
@@ -105,7 +100,10 @@ test("fixture rewrite stays paste-honest and feeds merchantIntent", () => {
 	assert.match(rewrite.title, /油皮救星/u);
 	assert.match(rewrite.sourceSummary, /粘贴/u);
 	assert.doesNotMatch(rewrite.sourceSummary, /爬虫|匿名抓取/u);
-	assert.ok(isViralAdaptPasteRequest(rewrite.merchantIntent));
+	assert.equal(
+		rewrite.merchantIntent,
+		"请为本店项目复刻一篇小红书爆款笔记，参考素材已由商家确认。",
+	);
 });
 
 test("note package projection yields carrier=note when assets present", () => {
@@ -163,9 +161,10 @@ test("note plan instructions inject xhsViralRewrite only with explicit viral con
 		baseInstructions: "BASE_NOTE_PLAN",
 		viralContext: {
 			source: {
+				schemaVersion: "viral-adapt-source/v1",
 				track: "paste",
 				noteText: "参考正文",
-				imageAssetIds: [],
+				authorizedAssetIds: [],
 			},
 			shopContext: "项目：夏日护理",
 		},

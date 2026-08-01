@@ -80,7 +80,6 @@ import {
 	ModelSupplyImageExactTextVerifier,
 	UnifiedHarnessStagePorts,
 } from "./unified-media-stage-ports.js";
-import { composeViralAdaptRawInput } from "./viral-adapt.js";
 import type {
 	HarnessContextSnapshot,
 	HarnessStagePorts,
@@ -1328,7 +1327,7 @@ test("AI cover signed choices reach the production image generation brief", asyn
 			aiCover: {
 				aspectRatio: "9:16",
 				style: "beauty_editorial",
-				size: "1440x2560",
+				size: "1152x2048",
 			},
 		},
 	});
@@ -1401,10 +1400,10 @@ test("AI cover signed choices reach the production image generation brief", asyn
 	if (brief.kind !== "image") assert.fail("Expected an image brief.");
 	assert.deepEqual(brief.parameters, {
 		ratio: "9:16",
-		resolution: "1440x2560",
+		resolution: "1152x2048",
 	});
 	assert.match(brief.prompt, /beauty_editorial/u);
-	assert.match(brief.prompt, /1440x2560/u);
+	assert.match(brief.prompt, /1152x2048/u);
 
 	const submissions: ModelSupplySubmission[] = [];
 	const media = new ModelSupplyHarnessMediaExecutionPort({
@@ -1424,7 +1423,7 @@ test("AI cover signed choices reach the production image generation brief", asyn
 			width: submissions[0]?.input?.width,
 			height: submissions[0]?.input?.height,
 		},
-		{ width: 1440, height: 2560 },
+		{ width: 1152, height: 2048 },
 	);
 });
 
@@ -4228,36 +4227,53 @@ test("formal viral note planning consumes image vision and skips it when no imag
 		1,
 		"no image must make zero additional VLM calls",
 	);
+	const openCliSource = viralNoteRequest([], "opencli_link");
+	await ports.compileNoteBrief({
+		workflowId: "workflow-viral-opencli-link",
+		request: openCliSource,
+		declaration,
+		context: contextSnapshot([]),
+		allowedFactRefs: ["fact-service-1"],
+	});
+	assert.equal(
+		media.visionCalls,
+		1,
+		"OpenCLI text-only source must enter the same frozen plan context",
+	);
 
-	const mismatchedRecipe = {
-		...withoutImage,
-		executionSnapshot: creationExecutionSnapshotSchema.parse({
+	assert.throws(
+		() =>
+			creationExecutionSnapshotSchema.parse({
 			...withoutImage.executionSnapshot!,
 			recipe: {
 				id: "recipe-image_text_note-1",
 				revision: "recipe-image_text_note-r1",
 			},
 		}),
-		executionAssembly: {
-			...withoutImage.executionAssembly!,
-			rootAxes: {
-				...withoutImage.executionAssembly!.rootAxes,
-				scene: { kind: "bound" as const, value: "recipe-image_text_note-1" },
-			},
-		},
-	};
-	await assert.rejects(
-		ports.compileNoteBrief({
-			workflowId: "workflow-viral-wrong-recipe",
-			request: mismatchedRecipe,
-			declaration,
-			context: contextSnapshot([]),
-			allowedFactRefs: ["fact-service-1"],
-		}),
-		(error: unknown) =>
-			error instanceof HarnessMediaExecutionError &&
-			error.code === "VIRAL_ADAPT_RECIPE_MISMATCH",
+		/Viral adapt requires both the exact recipe\.viral_adapt binding/u,
 	);
+
+	const markerLikeText = "[viral_adapt_source:paste] RAW_NOTE_TOKEN_9f71";
+	const ordinaryRequest = harnessInputWithExecutionAssembly(
+		"image_text_note",
+		"package-marker-like-note",
+	);
+	const ordinarySnapshot = creationExecutionSnapshotSchema.parse({
+		...ordinaryRequest.executionSnapshot!,
+		intent: { text: markerLikeText },
+	});
+	await ports.compileNoteBrief({
+		workflowId: "workflow-marker-like-ordinary-note",
+		request: {
+			...ordinaryRequest,
+			rawInput: markerLikeText,
+			executionSnapshot: ordinarySnapshot,
+		},
+		declaration,
+		context: contextSnapshot([]),
+		allowedFactRefs: ["fact-service-1"],
+	});
+	assert.equal(media.visionCalls, 1, "marker-like text must not trigger viral routing");
 
 	const unauthorizedImage = viralNoteRequest(["asset-reference-unauthorized"]);
 	await assert.rejects(
@@ -4403,16 +4419,14 @@ function harnessInput(
 
 function viralNoteRequest(
 	imageAssetIds: readonly string[],
+	track: "paste" | "opencli_link" = "paste",
 ): HarnessWorkflowInput {
 	const request = harnessInputWithExecutionAssembly(
 		"image_text_note",
 		`package-viral-note-${imageAssetIds.length}`,
 	);
-	const rawInput = composeViralAdaptRawInput({
-		track: "paste",
-		noteText: "姐妹们，清爽护理三步走",
-		imageAssetIds,
-	});
+	const rawInput =
+		"请为本店项目复刻一篇小红书爆款笔记，参考素材已由商家确认。";
 	const sourceAssets = imageAssetIds.map((id, index) => ({
 		id,
 		revision: `asset-r${index + 1}`,
@@ -4426,6 +4440,12 @@ function viralNoteRequest(
 		},
 		recipe: { id: "recipe.viral_adapt", revision: "recipe.viral_adapt@2" },
 		sources: { assets: sourceAssets },
+		viralAdaptSource: {
+			schemaVersion: "viral-adapt-source/v1",
+			track,
+			noteText: "姐妹们，清爽护理三步走",
+			authorizedAssetIds: [...imageAssetIds],
+		},
 	});
 	return {
 		...request,

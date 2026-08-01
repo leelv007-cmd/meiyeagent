@@ -107,7 +107,6 @@ import type { RecommendationHandoff } from '@/product/recommendation-handoff';
 import type { ConfirmedAssetFacts } from '@/product/creation-entry-model';
 import { ViralAdaptPanel } from '@/product/viral-adapt/viral-adapt-panel';
 import {
-  VIRAL_ADAPT_SOURCE_MARKER,
   advanceViralSourcingToConfirm,
   cancelViralAdaptJourney,
   confirmViralAdaptJourney,
@@ -116,6 +115,11 @@ import {
   updateViralPasteDraft,
   type ViralAdaptJourneyState,
 } from '@/product/viral-adapt/viral-adapt-journey';
+import {
+  bindViralAdaptSource,
+  viralAdaptSourceForSession,
+  type ViralAdaptRunBinding,
+} from '@/product/composer/viral-adapt-binding';
 import {
   missingCreativeGrounding,
   type CreativeGroundingRequirement,
@@ -620,6 +624,8 @@ export function ComposerHome({
   /** #324 爆款复刻 paste-track journey (chip → sourcing → confirm → note intent). */
   const [viralAdaptJourney, setViralAdaptJourney] =
     useState<ViralAdaptJourneyState>(() => createViralAdaptJourneyState());
+  const [viralAdaptBinding, setViralAdaptBinding] =
+    useState<ViralAdaptRunBinding | null>(null);
   const [showRequiredHint, setShowRequiredHint] = useState(false);
   /**
    * Why the last send press did not start a run (WCAG 3.3.1).
@@ -761,44 +767,18 @@ export function ComposerHome({
       });
     });
   }, [sourceReferences, viralAdaptJourney.phase]);
-  useEffect(() => {
-    if (
-      !surfaceQuery.data ||
-      !userText.includes(VIRAL_ADAPT_SOURCE_MARKER) ||
-      surfaceQuery.data.recipeRefs.some(
-        (reference) =>
-          reference.visible &&
-          reference.recipeRevisionId === lensState.draft.recipeRevisionId &&
-          surfaceQuery.data?.recipes.some(
-            (recipe) =>
-              recipe.recipeId === 'recipe.viral_adapt' &&
-              recipe.status === 'published' &&
-              recipe.revisionId === reference.recipeRevisionId
-          )
-      )
-    ) {
-      return;
-    }
-    setLensState(
-      (current) =>
-        applyRecommendationHandoffWithRecipe({
-          state: current,
-          handoff: {
-            intent: current.draft.userText,
-            outputHint: 'image_text',
-            recipeChipId: 'viral_adapt',
-          },
-          surface: surfaceQuery.data,
-        }).state
-    );
-  }, [lensState.draft.recipeRevisionId, surfaceQuery.data, userText]);
   const identitiesQuery = useQuery(marketingIdentityProjectionQuery);
   /** P2-13: shared experience producer for task-in basis / sediment surfaces. */
+  const experienceEntriesQueryKey = useMemo(
+    () =>
+      p1QueryKeys.request('memory', 'entries_page', {
+        limit: 20,
+        surface: 'composer-task-experience',
+      }),
+    []
+  );
   const experienceEntriesQuery = useQuery({
-    queryKey: p1QueryKeys.request('memory', 'entries_page', {
-      limit: 20,
-      surface: 'composer-task-experience',
-    }),
+    queryKey: experienceEntriesQueryKey,
     queryFn: ({ signal }) =>
       queryP1<MemoryEntriesPage>(
         'memory',
@@ -1020,6 +1000,10 @@ export function ComposerHome({
         reference.visible &&
         reference.recipeRevisionId === submissionRecipe.revisionId
     ) === true;
+  const activeViralAdaptSource = viralAdaptSourceForSession(
+    viralAdaptBinding,
+    sessionIdRef.current
+  );
   /**
    * Which model runs, and *why* that one (#240①).
    *
@@ -1130,6 +1114,9 @@ export function ComposerHome({
             ? { imageOperation: explicitImageOperation }
             : {}),
           ...(signedAiCover ? { aiCover: signedAiCover } : {}),
+          ...(viralSubmissionRecipeReady && activeViralAdaptSource
+            ? { viralAdaptSource: activeViralAdaptSource }
+            : {}),
           catalogModel: {
             id: selectedModel.id,
             revision: catalogRevision,
@@ -1503,6 +1490,7 @@ export function ComposerHome({
       return;
     }
     sessionIdRef.current = restored.session.sessionId;
+    setViralAdaptBinding(null);
     setSession(restored.session);
     setLensState((current) =>
       updateUserText(
@@ -1639,6 +1627,24 @@ export function ComposerHome({
     workflowStream.harnessCancellation,
     workflowStream.merchantReport,
   ]);
+
+  useEffect(() => {
+    if (
+      workflowStream.workflowState !== 'success' &&
+      workflowStream.workflowState !== 'failed'
+    ) {
+      return;
+    }
+    setViralAdaptBinding(null);
+    setViralAdaptJourney((current) =>
+      current.phase === 'idle' ? current : cancelViralAdaptJourney(current)
+    );
+    if (workflowStream.workflowState === 'success') {
+      void queryClient.invalidateQueries({
+        queryKey: experienceEntriesQueryKey,
+      });
+    }
+  }, [experienceEntriesQueryKey, queryClient, workflowStream.workflowState]);
 
   useEffect(() => {
     // 额度退还可见: a failed run gives the reservation back, so the passive quota
@@ -1969,6 +1975,7 @@ export function ComposerHome({
     setStyleReferenceAssetIds((current) =>
       current.filter((candidate) => candidate !== assetId)
     );
+    setViralAdaptBinding(null);
     setLensState((current) =>
       updateSources(
         current,
@@ -2115,6 +2122,22 @@ export function ComposerHome({
 
       if (!signedSubmission) {
         throw new Error('Composer delivery contract is incomplete.');
+      }
+      if (signedSubmission.viralAdaptSource) {
+        const rebound = bindViralAdaptSource({
+          sessionId: sessionIdRef.current,
+          payload: signedSubmission.viralAdaptSource,
+          sources: lensState.draft.sources,
+        });
+        if (
+          !activeViralAdaptSource ||
+          !rebound.ok ||
+          rebound.binding.sessionId !== sessionIdRef.current
+        ) {
+          throw new Error(
+            'Viral adapt source is no longer ready for this run.'
+          );
+        }
       }
       const catalogModelRevision = input.quote.catalogModelRevision;
       if (!catalogModelRevision) {
@@ -2319,6 +2342,10 @@ export function ComposerHome({
     // is a different ask, so the held press does not travel with it.
     armedQuoteIdRef.current = null;
     setActiveAiCover(null);
+    setViralAdaptBinding(null);
+    setViralAdaptJourney((current) =>
+      current.phase === 'idle' ? current : cancelViralAdaptJourney(current)
+    );
     setLensState(selectLens(lensState, next));
   };
 
@@ -2349,6 +2376,10 @@ export function ComposerHome({
       destinationAutoSubmitIntentRef.current = null;
       setDestinationPreflight(null);
       armedQuoteIdRef.current = null;
+      setViralAdaptBinding(null);
+      setViralAdaptJourney((current) =>
+        current.phase === 'idle' ? current : cancelViralAdaptJourney(current)
+      );
       if (lensState.phase === 'frozen' || session.phase === 'delivered') {
         sessionIdRef.current = newComposerSessionId();
         setSessionEpoch((current) => current + 1);
@@ -2409,6 +2440,10 @@ export function ComposerHome({
     setSubmitBlockedMessage(null);
     destinationAutoSubmitIntentRef.current = null;
     setDestinationPreflight(null);
+    setViralAdaptBinding(null);
+    setViralAdaptJourney((current) =>
+      current.phase === 'idle' ? current : cancelViralAdaptJourney(current)
+    );
     if (
       (lensState.phase === 'frozen' || session.phase === 'delivered') &&
       !reopeningCompletedAttemptRef.current
@@ -2486,6 +2521,10 @@ export function ComposerHome({
     // makes canSubmit refuse — so every entry has to thaw before it can act,
     // or the button is decoration.
     if (input.action !== 'review_partial') {
+      setViralAdaptBinding(null);
+      setViralAdaptJourney((current) =>
+        current.phase === 'idle' ? current : cancelViralAdaptJourney(current)
+      );
       setLensState((current) => {
         const reopened = reopenComposer(current);
         // Put their sentence back only when the composer lost it — once they
@@ -2578,10 +2617,13 @@ export function ComposerHome({
       return;
     }
     if (
-      lensState.draft.userText.includes(VIRAL_ADAPT_SOURCE_MARKER) &&
-      !viralSubmissionRecipeReady
+      (viralAdaptJourney.phase !== 'idle' ||
+        submissionRecipe?.recipeId === 'recipe.viral_adapt') &&
+      (!viralSubmissionRecipeReady || !activeViralAdaptSource)
     ) {
-      setSubmitBlockedMessage('爆款复刻模板尚未就绪，当前不会按默认图文提交。');
+      setSubmitBlockedMessage(
+        '爆款复刻的模板或参考素材尚未确认，当前不会按默认图文提交。'
+      );
       return;
     }
     const destinationDecision = decideComposerDestinationPreflight({
@@ -3310,10 +3352,21 @@ export function ComposerHome({
             // P0-4 / F1: typed handoff. Respect outputHint when present;
             // never hard-code copy lens when the recommendation has no hint.
             focusIntentAfterPrefillRef.current = true;
+            setViralAdaptBinding(null);
+            if (lensState.phase === 'frozen' || session.phase === 'delivered') {
+              sessionIdRef.current = newComposerSessionId();
+              setSessionEpoch((current) => current + 1);
+              briefContextRevisionRef.current = null;
+              briefInputRef.current = null;
+              restoredFromServerRef.current = true;
+              setSession((current) =>
+                rebindComposerSession(current, sessionIdRef.current)
+              );
+            }
             setLensState(
               (current) =>
                 applyRecommendationHandoffWithRecipe({
-                  state: current,
+                  state: reopenComposer(current),
                   handoff,
                   surface: surfaceQuery.data,
                 }).state
@@ -3397,35 +3450,48 @@ export function ComposerHome({
         viralAdaptJourney.phase === 'confirm' ? (
           <ViralAdaptPanel
             onConfirm={() => {
-              setViralAdaptJourney((current) => {
-                const next = confirmViralAdaptJourney(current);
-                if ('error' in next) return current;
-                if (next.submitIntent) {
-                  setLensState(
-                    (lens) =>
-                      applyRecommendationHandoffWithRecipe({
-                        state: lens,
-                        handoff: {
-                          intent: next.submitIntent!,
-                          outputHint: 'image_text',
-                          recipeChipId: 'viral_adapt',
-                        },
-                        surface: surfaceQuery.data,
-                      }).state
-                  );
-                  focusIntentAfterPrefillRef.current = true;
-                }
-                return next;
+              const next = confirmViralAdaptJourney(viralAdaptJourney);
+              if ('error' in next || !next.sourcePayload) return;
+              const bound = bindViralAdaptSource({
+                sessionId: sessionIdRef.current,
+                payload: next.sourcePayload,
+                sources: lensState.draft.sources,
               });
+              if (!bound.ok) {
+                setViralAdaptBinding(null);
+                setSubmitBlockedMessage(
+                  '参考图片尚未完成授权或版本登记，请重新上传并确认后再继续。'
+                );
+                return;
+              }
+              setViralAdaptBinding(bound.binding);
+              setViralAdaptJourney(next);
+              if (next.merchantIntent) {
+                setLensState(
+                  (lens) =>
+                    applyRecommendationHandoffWithRecipe({
+                      state: lens,
+                      handoff: {
+                        intent: next.merchantIntent!,
+                        outputHint: 'image_text',
+                        recipeChipId: 'viral_adapt',
+                      },
+                      surface: surfaceQuery.data,
+                    }).state
+                );
+                focusIntentAfterPrefillRef.current = true;
+              }
             }}
-            onConfirmBack={() =>
+            onConfirmBack={() => {
+              setViralAdaptBinding(null);
               setViralAdaptJourney((current) => ({
                 ...current,
                 phase: 'sourcing',
                 confirm: null,
-                submitIntent: null,
-              }))
-            }
+                merchantIntent: null,
+                sourcePayload: null,
+              }));
+            }}
             onDraftChange={(patch) =>
               setViralAdaptJourney((current) =>
                 updateViralPasteDraft(current, patch)
@@ -3438,11 +3504,12 @@ export function ComposerHome({
               });
               sourcePickerRef.current?.focus();
             }}
-            onSourcingCancel={() =>
+            onSourcingCancel={() => {
+              setViralAdaptBinding(null);
               setViralAdaptJourney((current) =>
                 cancelViralAdaptJourney(current)
-              )
-            }
+              );
+            }}
             onSourcingContinue={() =>
               setViralAdaptJourney((current) => {
                 const next = advanceViralSourcingToConfirm(current);
@@ -3553,6 +3620,12 @@ export function ComposerHome({
                   // D-164⑤: a chip prefills, never submits. The merchant reads the
                   // sentence in her own box and decides — the same contract the
                   // recommendation card's CTA already keeps.
+                  setViralAdaptBinding(null);
+                  setViralAdaptJourney((current) =>
+                    current.phase === 'idle'
+                      ? current
+                      : cancelViralAdaptJourney(current)
+                  );
                   setLensState((current) =>
                     updateUserText(current, seed.intent)
                   );
@@ -3910,7 +3983,15 @@ export function ComposerHome({
                       />
                       <LensSwitchPreviewPanel
                         state={lensState}
-                        onChange={setLensState}
+                        onChange={(next) => {
+                          setViralAdaptBinding(null);
+                          setViralAdaptJourney((current) =>
+                            current.phase === 'idle'
+                              ? current
+                              : cancelViralAdaptJourney(current)
+                          );
+                          setLensState(next);
+                        }}
                       />
                     </>
                   }
@@ -3919,7 +4000,15 @@ export function ComposerHome({
                       <RecipeCardsPanel
                         lensId={lensId}
                         lensState={lensState}
-                        onLensStateChange={setLensState}
+                        onLensStateChange={(next) => {
+                          setViralAdaptBinding(null);
+                          setViralAdaptJourney((current) =>
+                            current.phase === 'idle'
+                              ? current
+                              : cancelViralAdaptJourney(current)
+                          );
+                          setLensState(next);
+                        }}
                         surface={surfaceQuery.data}
                         requestServerPreview={({ lensState: state, recipe }) =>
                           requestRecipePatchPreview({

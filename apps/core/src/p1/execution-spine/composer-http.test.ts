@@ -280,7 +280,7 @@ test("AI cover admission freezes structured choices and reaches the paid-media c
 		aiCover: {
 			aspectRatio: "9:16",
 			style: "beauty_editorial",
-			size: "1440x2560",
+			size: "1152x2048",
 		},
 		deliverable: {
 			kind: "poster",
@@ -317,6 +317,71 @@ test("AI cover admission freezes structured choices and reaches the paid-media c
 			),
 		),
 		true,
+	);
+});
+
+test("viral adapt freezes a clean merchant intent and one server-validated structured source", async () => {
+	const submissions = new MemorySubmissionStore();
+	const starter = new RecordingHarnessStarter();
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		starter,
+		fixedIds(),
+		modalityAdmission(),
+	);
+	const payload: ComposerSubmissionBody = {
+		...modalitySubmissionPayload("image_text_note"),
+		idempotencyKey: "composer-viral-adapt-1",
+		intent: "请为本店项目复刻一篇小红书爆款笔记，参考素材已由商家确认。",
+		recipe: {
+			id: "recipe.viral_adapt",
+			revision: "recipe.viral_adapt@2",
+		},
+		sources: {
+			assets: [
+				{
+					id: "asset-reference-1",
+					revision: "asset-reference-r1",
+					role: "reference",
+				},
+			],
+		},
+		viralAdaptSource: {
+			schemaVersion: "viral-adapt-source/v1",
+			track: "paste",
+			noteText:
+				"RAW_NOTE_TOKEN_9f71 https://xhs.invalid/explore/private-note?xsec_token=SECRET",
+			authorizedAssetIds: ["asset-reference-1"],
+		},
+	};
+
+	await coordinator.submit({
+		...payload,
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+
+	const snapshot = starter.starts[0]?.snapshot;
+	assert.ok(snapshot);
+	assert.deepEqual(snapshot.viralAdaptSource, payload.viralAdaptSource);
+	assert.deepEqual(snapshot.signedSubmission?.viralAdaptSource, payload.viralAdaptSource);
+	assert.doesNotMatch(
+		snapshot.intent.text,
+		/\[viral_adapt_source:|asset-reference-1|RAW_NOTE_TOKEN_9f71|https:\/\/|xsec_token|SECRET/u,
+	);
+
+	await assert.rejects(
+		coordinator.submit({
+			...payload,
+			actorId: "owner-1",
+			idempotencyKey: "composer-viral-adapt-outside-source",
+			viralAdaptSource: {
+				...payload.viralAdaptSource!,
+				authorizedAssetIds: ["asset-outside-frozen-sources"],
+			},
+			workspaceId: "workspace-1",
+		}),
+		/Viral adapt reference images must belong to the submitted source set/u,
 	);
 });
 

@@ -88,6 +88,47 @@ test('browser submission preserves only a valid free-image operation', () => {
   );
 });
 
+test('browser submission keeps viral source structured and rejects unfrozen asset ids', () => {
+  const viral = {
+    ...submissionBody(),
+    contentPackagePlatform: 'xiaohongshu' as const,
+    deliverable: {
+      kind: 'note' as const,
+      quantity: 1,
+      aspectRatio: '3:4' as const,
+      notePageBound: 3,
+    },
+    intent: '请为本店项目复刻一篇小红书爆款笔记，参考素材已由商家确认。',
+    recipe: {
+      id: 'recipe.viral_adapt',
+      revision: 'recipe.viral_adapt@2',
+    },
+    viralAdaptSource: {
+      schemaVersion: 'viral-adapt-source/v1' as const,
+      track: 'paste' as const,
+      noteText:
+        'RAW_NOTE_TOKEN_9f71 https://xhs.invalid/explore/private-note?xsec_token=SECRET',
+      authorizedAssetIds: ['asset-store-1'],
+    },
+  };
+
+  const parsed = composerSubmissionBodySchema.parse(viral);
+  assert.deepEqual(parsed.viralAdaptSource, viral.viralAdaptSource);
+  assert.doesNotMatch(parsed.intent, /\[viral_adapt_source:|asset-store-1/u);
+  assert.doesNotMatch(parsed.intent, /RAW_NOTE_TOKEN_9f71/u);
+  assert.doesNotMatch(parsed.intent, /https:\/\/|xsec_token|SECRET/u);
+  assert.equal(
+    composerSubmissionBodySchema.safeParse({
+      ...viral,
+      viralAdaptSource: {
+        ...viral.viralAdaptSource,
+        authorizedAssetIds: ['asset-outside-frozen-sources'],
+      },
+    }).success,
+    false
+  );
+});
+
 test('submits the exact Composer body and returns the durable handles', async () => {
   const previousFetch = globalThis.fetch;
   let request: Request | undefined;

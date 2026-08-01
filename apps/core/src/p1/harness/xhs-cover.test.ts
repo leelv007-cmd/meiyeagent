@@ -52,7 +52,7 @@ test('AI cover exposes three product ratios and five beauty presets', () => {
 test('size mapping (实施时定) is closed and ratio-selectable for all three', () => {
   assert.equal(mapXhsCoverSize('3:4').size, '1536x2048');
   assert.equal(mapXhsCoverSize('1:1').size, '2048x2048');
-  assert.equal(mapXhsCoverSize('9:16').size, '1440x2560');
+  assert.equal(mapXhsCoverSize('9:16').size, '1152x2048');
   for (const ratio of XHS_COVER_ASPECT_RATIOS) {
     const params = compileAiCoverImageParameters({
       aspectRatio: ratio,
@@ -61,6 +61,8 @@ test('size mapping (实施时定) is closed and ratio-selectable for all three',
     assert.equal(params.ratio, ratio);
     assert.equal(params.resolution, XHS_COVER_SIZE_MAP[ratio].size);
     assert.equal(params.purpose, 'xiaohongshu_cover');
+    assert.ok(XHS_COVER_SIZE_MAP[ratio].width <= 2048);
+    assert.ok(XHS_COVER_SIZE_MAP[ratio].height <= 2048);
   }
 });
 
@@ -72,8 +74,8 @@ test('materializeXhsCoverPrompt fills beauty preset + mapped size', () => {
   });
   assert.match(out.prompt, /夏日控油三步护理封面/);
   assert.match(out.prompt, /spa_minimal/);
-  assert.match(out.prompt, /1440x2560/);
-  assert.equal(out.size, '1440x2560');
+  assert.match(out.prompt, /1152x2048/);
+  assert.equal(out.size, '1152x2048');
   assert.equal(out.aspectRatio, '9:16');
   assert.equal(out.style, 'spa_minimal');
   // No leftover unfilled placeholders for the three slots we own.

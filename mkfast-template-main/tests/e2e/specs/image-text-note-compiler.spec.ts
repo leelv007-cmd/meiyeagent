@@ -22,6 +22,16 @@ const EXPECTED_STAGES = [
   'execution_selection',
   'assembly_delivery',
 ] as const;
+const STYLE_ANALYSIS_STAGE_MESSAGE =
+  '正在分析参考图风格（七维），后续配图会按同一风格保持一致';
+const AI_COVER_PRESETS = [
+  'beauty_soft',
+  'beauty_editorial',
+  'before_after',
+  'spa_minimal',
+  'salon_photo',
+] as const;
+const AI_COVER_RATIOS = ['3:4', '1:1', '9:16'] as const;
 
 type NotePage = {
   id: string;
@@ -178,6 +188,15 @@ async function submitNoteJourney(
     expectedAssetId: authorized.id,
     fileName: 'note-case.png',
   });
+  const styleReference = page.getByTestId(
+    `composer-style-reference-${authorized.id}`
+  );
+  await expect(styleReference).toBeVisible();
+  await styleReference.click();
+  await expect(styleReference).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('composer-style-analysis-stage')).toHaveText(
+    STYLE_ANALYSIS_STAGE_MESSAGE
+  );
   const intent = '把这张美甲案例做成介绍本店夏日护理项目的小红书图文笔记';
   await page.getByTestId('composer-intent-input').fill(intent);
   await expect(page.getByTestId('composer-quote-line')).toBeVisible({
@@ -213,6 +232,7 @@ async function submitNoteJourney(
   const response = await responsePromise;
   const submissionBody = response.request().postDataJSON() as {
     catalogModel?: { id?: string };
+    sources?: { assets?: Array<{ id?: string; role?: string }> };
   };
   const envelope = (await response.json()) as {
     data?: {
@@ -224,6 +244,9 @@ async function submitNoteJourney(
     error?: { code?: string; message?: string };
   };
   expect(submissionBody.catalogModel?.id).toBe('nano-banana-2');
+  expect(submissionBody.sources?.assets).toContainEqual(
+    expect.objectContaining({ id: authorized.id, role: 'style' })
+  );
   expect(response.ok(), envelope.error?.message).toBeTruthy();
   expect(envelope.data?.contentPackage?.id).toBeTruthy();
   expect(envelope.data?.replayed).toBe(false);
@@ -430,7 +453,7 @@ test.describe
     test.beforeAll(async ({ request }) => cleanupE2EUsers(request));
     test.afterAll(async ({ request }) => cleanupE2EUsers(request));
 
-    test('Composer confirmation → dual styles → selected pages → full revision and manifest', async ({
+    test('Composer style reference → full note revision → AI-cover prefill', async ({
       page,
       request,
     }) => {
@@ -468,6 +491,13 @@ test.describe
 
       const stream = await streamPromise;
       expect(stream.status).toBe('success');
+      expect(stream.progress).toContainEqual(
+        expect.objectContaining({
+          message: STYLE_ANALYSIS_STAGE_MESSAGE,
+          stage: 'brief_compilation',
+          state: 'running',
+        })
+      );
       expect(
         Array.from(
           new Set(
@@ -569,6 +599,33 @@ test.describe
             versions.some(({ id }) => id === currentVersionId)
         )
       ).toBe(true);
+
+      const aiCoverToggle = page.getByTestId(
+        'composer-delivery-ai-cover-toggle'
+      );
+      await expect(aiCoverToggle).toBeVisible({ timeout: 30_000 });
+      await aiCoverToggle.click();
+      for (const preset of AI_COVER_PRESETS) {
+        await expect(
+          page.getByTestId(`composer-delivery-ai-cover-preset-${preset}`)
+        ).toBeVisible();
+      }
+      for (const ratio of AI_COVER_RATIOS) {
+        await expect(
+          page.getByTestId(
+            `composer-delivery-ai-cover-ratio-${ratio.replace(':', '-')}`
+          )
+        ).toBeVisible();
+      }
+      const salonPreset = page.getByTestId(
+        'composer-delivery-ai-cover-preset-salon_photo'
+      );
+      await salonPreset.click();
+      await expect(salonPreset).toHaveAttribute('aria-pressed', 'true');
+      await page.getByTestId('composer-delivery-ai-cover-ratio-9-16').click();
+      await expect(page.getByTestId('composer-intent-input')).toHaveValue(
+        /门店实拍感.*9:16.*1152x2048/u
+      );
 
       const adopted = await adoptRecommendedCandidate(page, contentPackage);
       expect(adopted.harnessSelection?.adoptedCandidateId).toBe(

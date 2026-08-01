@@ -1597,6 +1597,18 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
           conflict && pages[1]?.id ? [String(pages[1].id)] : [],
       };
     }
+    case 'harness_xhs_style_analysis_v1':
+      return {
+        raw: [
+          '画风：柔光实拍叠字',
+          '配色：裸粉+米白+香槟金点缀',
+          '背景：大理石台面浅景深',
+          '文字风格：粗体无衬线大标题',
+          '装饰元素：步骤箭头与产品剪影',
+          '排版结构：居中封面上下分栏',
+          '整体调性：干净专业的轻医美科普风',
+        ].join('\n'),
+      };
     case 'harness_copy_candidate_v1': {
       const candidateId =
         typeof payload.candidateId === 'string' ? payload.candidateId : 'c01';

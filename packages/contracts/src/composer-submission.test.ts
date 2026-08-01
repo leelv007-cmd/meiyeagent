@@ -90,7 +90,7 @@ test('AI cover choices are quote-signed and reject mismatched output dimensions'
     aiCover: {
       aspectRatio: '9:16' as const,
       style: 'beauty_editorial' as const,
-      size: '1440x2560' as const,
+      size: '1152x2048' as const,
     },
   };
 
@@ -100,6 +100,13 @@ test('AI cover choices are quote-signed and reject mismatched output dimensions'
     composerSubmissionSignedFieldsSchema.safeParse({
       ...aiCover,
       aiCover: { ...aiCover.aiCover, size: '2048x2048' },
+    }).success,
+    false,
+  );
+  assert.equal(
+    composerSubmissionSignedFieldsSchema.safeParse({
+      ...aiCover,
+      aiCover: { ...aiCover.aiCover, size: '1440x2560' },
     }).success,
     false,
   );
@@ -127,6 +134,47 @@ test('wechat_moments is a delivery target but not a variant platform', () => {
 test('distribution targets do not admit platform publishing', () => {
   assert.equal(
     composerDistributionTargetSchema.safeParse('publish:xiaohongshu').success,
+    false,
+  );
+});
+
+test('viral adapt freezes one structured source only with the exact formal recipe', () => {
+  const viral = {
+    ...signedFields,
+    intent: '请按本店项目仿写这篇由商家粘贴的笔记',
+    recipe: {
+      id: 'recipe.viral_adapt',
+      revision: 'recipe.viral_adapt@2',
+    },
+    viralAdaptSource: {
+      schemaVersion: 'viral-adapt-source/v1' as const,
+      track: 'paste' as const,
+      noteText: '姐妹们，夏日清爽护理三步走',
+      authorizedAssetIds: ['asset-reference-1'],
+    },
+  };
+
+  assert.deepEqual(pickComposerSubmissionSignedFields(viral), viral);
+  assert.equal(
+    composerSubmissionSignedFieldsSchema.safeParse({
+      ...viral,
+      viralAdaptSource: {
+        ...viral.viralAdaptSource,
+        track: 'opencli_link',
+      },
+    }).success,
+    true,
+  );
+  assert.equal(
+    composerSubmissionSignedFieldsSchema.safeParse({
+      ...viral,
+      recipe: signedFields.recipe,
+    }).success,
+    false,
+  );
+  const { viralAdaptSource: _source, ...missingSource } = viral;
+  assert.equal(
+    composerSubmissionSignedFieldsSchema.safeParse(missingSource).success,
     false,
   );
 });
