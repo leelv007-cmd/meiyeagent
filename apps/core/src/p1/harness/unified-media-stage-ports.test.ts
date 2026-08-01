@@ -7,6 +7,7 @@ import {
 	contentPackageCarrierOf,
 	IMAGE_INTENT_SLOT_KINDS,
 	type ModelCapabilityProfile,
+	type SensitiveWordRecord,
 } from "@meiye/contracts";
 import {
 	AgentPrimitiveObservabilityAdapter,
@@ -2086,6 +2087,209 @@ test("media delivery writes the shared ContentPackage once with asset, usage, co
 	}
 });
 
+test("image delivery hot-reads a newly enabled sensitive word before writing ContentPackage", async () => {
+	const packageId = "package-image-late-sensitive";
+	const request = harnessInput("image", packageId);
+	const snapshot = request.executionSnapshot!;
+	const writer = new MemoryContentPackageRevisionWritePort();
+	writer.seed(
+		buildContentPackage({
+			id: packageId,
+			kind: "image_text",
+			source: {
+				assetIds: ["asset-1"],
+				creationExecutionSnapshot: {
+					id: snapshot.id,
+					revision: snapshot.revision,
+					schemaVersion: snapshot.schemaVersion,
+				},
+				targetPlatform: "douyin",
+				workId: snapshot.work.id,
+				workflowId: snapshot.task.id,
+				workflowRevision: snapshot.revision,
+			},
+			timestamp: "2026-07-22T09:00:00.000Z",
+			workspaceId: "workspace-1",
+		}),
+	);
+	const media = new ModelSupplyHarnessMediaExecutionPort({
+		async submit() {
+			return completedResult("image");
+		},
+	});
+	const enabledLexicon: SensitiveWordRecord[] = [];
+	const ports = new UnifiedHarnessStagePorts(
+		unsupportedCopyPorts(),
+		{
+			create() {
+				throw new Error("Media delivery does not compile a copy brief.");
+			},
+		},
+		media,
+		writer,
+		() => "2026-07-22T09:00:01.000Z",
+		undefined,
+		undefined,
+		undefined,
+		{
+			async listEnabled() {
+				return structuredClone(enabledLexicon);
+			},
+		},
+	);
+	const brief = {
+		...mediaBrief("image"),
+		intent: {
+			...mediaBrief("image").intent,
+			scene: "本项目承诺根治色斑",
+		},
+	};
+	const context = contextSnapshot();
+	const selection = await media.execute({
+		brief,
+		context,
+		request,
+		workflowId: snapshot.task.id,
+	});
+	enabledLexicon.push({
+		id: "sw-late-root-cure",
+		word: "根治",
+		category: "medical",
+		replacements: ["明显改善"],
+		status: "enabled",
+		createdAt: "2026-07-22T09:00:00.000Z",
+		updatedAt: "2026-07-22T09:00:00.000Z",
+	});
+
+	await assert.rejects(
+		ports.assembleMediaAndDeliver({
+			workflowId: snapshot.task.id,
+			request,
+			declaration: {
+				normalizedIntent: "制作护理活动图片",
+				taskType: "daily_service_exposure",
+				deliveryLayer: "finished_media",
+				relevantAssetCategories: [],
+				usedAssetCategories: [],
+				route: "free",
+				routingSource: "model",
+				implicitConstraints: [],
+			},
+			context,
+			brief,
+			selection,
+		}),
+		(error: unknown) =>
+			error instanceof HarnessSelectionError &&
+			error.gateIds.includes("sensitive_words") &&
+			error.violations[0]?.sensitiveCheckBar?.items[0]?.word === "根治",
+	);
+	assert.equal(writer.get("workspace-1", packageId)?.revision, 0);
+});
+
+test("video delivery hot-reads a newly enabled sensitive word before writing ContentPackage", async () => {
+	const packageId = "package-video-late-sensitive";
+	const request = harnessInput("video", packageId);
+	const snapshot = request.executionSnapshot!;
+	const writer = new MemoryContentPackageRevisionWritePort();
+	writer.seed(
+		buildContentPackage({
+			id: packageId,
+			kind: "video",
+			source: {
+				assetIds: ["asset-1"],
+				creationExecutionSnapshot: {
+					id: snapshot.id,
+					revision: snapshot.revision,
+					schemaVersion: snapshot.schemaVersion,
+				},
+				targetPlatform: "douyin",
+				workId: snapshot.work.id,
+				workflowId: snapshot.task.id,
+				workflowRevision: snapshot.revision,
+			},
+			timestamp: "2026-07-22T09:00:00.000Z",
+			workspaceId: "workspace-1",
+		}),
+	);
+	const media = new ModelSupplyHarnessMediaExecutionPort({
+		async submit() {
+			return completedResult("video");
+		},
+	});
+	const enabledLexicon: SensitiveWordRecord[] = [];
+	const ports = new UnifiedHarnessStagePorts(
+		unsupportedCopyPorts(),
+		{
+			create() {
+				throw new Error("Media delivery does not compile a copy brief.");
+			},
+		},
+		media,
+		writer,
+		() => "2026-07-22T09:00:01.000Z",
+		undefined,
+		undefined,
+		undefined,
+		{
+			async listEnabled() {
+				return structuredClone(enabledLexicon);
+			},
+		},
+	);
+	const brief = {
+		...mediaBrief("video"),
+		storyboard: [
+			{
+				index: 1,
+				description: "本项目承诺根治色斑",
+				durationSeconds: 8,
+			},
+		],
+	};
+	const context = contextSnapshot();
+	const selection = await media.execute({
+		brief,
+		context,
+		request,
+		workflowId: snapshot.task.id,
+	});
+	enabledLexicon.push({
+		id: "sw-late-root-cure",
+		word: "根治",
+		category: "medical",
+		replacements: ["明显改善"],
+		status: "enabled",
+		createdAt: "2026-07-22T09:00:00.000Z",
+		updatedAt: "2026-07-22T09:00:00.000Z",
+	});
+
+	await assert.rejects(
+		ports.assembleMediaAndDeliver({
+			workflowId: snapshot.task.id,
+			request,
+			declaration: {
+				normalizedIntent: "制作护理活动视频",
+				taskType: "daily_service_exposure",
+				deliveryLayer: "finished_media",
+				relevantAssetCategories: [],
+				usedAssetCategories: [],
+				route: "free",
+				routingSource: "model",
+				implicitConstraints: [],
+			},
+			context,
+			brief,
+			selection,
+		}),
+		(error: unknown) =>
+			error instanceof HarnessSelectionError &&
+			error.gateIds.includes("sensitive_words") &&
+			error.violations[0]?.sensitiveCheckBar?.items[0]?.word === "根治",
+	);
+	assert.equal(writer.get("workspace-1", packageId)?.revision, 0);
+});
+
 test("source-free video production reaches AI generation terms through the real platform variant", async () => {
 	const packageId = "package-video-source-free";
 	const request = harnessInputWithExecutionAssembly(
@@ -2832,6 +3036,131 @@ test("production note assembly can disable an unavailable enhancement judge with
 	});
 	assert.equal(delivery.packageId, packageId);
 	assert.equal(writes, 1);
+});
+
+test("note delivery hot-reads a newly enabled sensitive word before writing ContentPackage", async () => {
+	const packageId = "package-note-late-sensitive";
+	const request = harnessInputWithExecutionAssembly(
+		"image_text_note",
+		packageId,
+	);
+	let generation = 0;
+	let writes = 0;
+	const enabledLexicon: SensitiveWordRecord[] = [];
+	const ports = new UnifiedHarnessStagePorts(
+		noteCopyPorts(),
+		noteRunnerFactory(true),
+		{
+			async execute() {
+				generation += 1;
+				const selection = completedResult("image", String(generation));
+				return {
+					asset: selection.asset!,
+					childRun: {
+						assetIds: [selection.asset!.id],
+						runId: `run-note-sensitive-${generation}`,
+						runType: "model_job" as const,
+						status: "succeeded" as const,
+					},
+					kind: "image" as const,
+					trace: {
+						stage: "execution_selection" as const,
+						winnerCandidateId: selection.asset!.id,
+						candidateScores: [],
+						blockedCandidates: [],
+						rubricVersion: "image-v1",
+						rubricHash: "a".repeat(64),
+					},
+				};
+			},
+		},
+		{
+			async write(input) {
+				writes += 1;
+				return {
+					packageId: input.packageId,
+					revision: input.expectedRevision + 1,
+					versionId: input.version.id,
+				};
+			},
+		},
+		() => "2026-07-29T00:00:00.000Z",
+		{
+			async read() {
+				return {
+					styles: {
+						styles: [
+							{
+								id: "facts",
+								name: "干货版",
+								writingGuide: "清楚说明",
+								structureTemplate: "结论、依据、行动",
+								platforms: ["xiaohongshu"],
+							},
+						],
+					},
+				};
+			},
+		},
+		unconfiguredNotePlanEnhancementJudgeResolver,
+		notBilledExecutionChildObservability(),
+		{
+			async listEnabled() {
+				return structuredClone(enabledLexicon);
+			},
+		},
+	);
+	const context = contextSnapshot();
+	const declaration = {
+		normalizedIntent: "介绍夏日护理项目",
+		taskType: "daily_service_exposure" as const,
+		deliveryLayer: "finished_media" as const,
+		relevantAssetCategories: ["product_service" as const],
+		usedAssetCategories: ["product_service" as const],
+		route: "customized" as const,
+		routingSource: "model" as const,
+		implicitConstraints: [],
+	};
+	const workflowId = request.executionSnapshot!.task.id;
+	const brief = await ports.compileNoteBrief({
+		workflowId,
+		request,
+		declaration,
+		context,
+	});
+	const selection = await ports.executeNoteAndSelect({
+		workflowId,
+		request,
+		brief,
+		context,
+		selectedStyleId: "facts",
+	});
+	selection.version.plan.pages[0]!.textBlock.body = "本项目承诺根治色斑";
+	enabledLexicon.push({
+		id: "sw-late-root-cure",
+		word: "根治",
+		category: "medical",
+		replacements: ["明显改善"],
+		status: "enabled",
+		createdAt: "2026-07-29T00:00:00.000Z",
+		updatedAt: "2026-07-29T00:00:00.000Z",
+	});
+
+	await assert.rejects(
+		ports.assembleNoteAndDeliver({
+			workflowId,
+			request,
+			declaration,
+			context,
+			brief,
+			selection,
+		}),
+		(error: unknown) =>
+			error instanceof HarnessSelectionError &&
+			error.gateIds.includes("sensitive_words") &&
+			error.violations[0]?.sensitiveCheckBar?.items[0]?.word === "根治",
+	);
+	assert.equal(writes, 0);
 });
 
 test("media delivery blocks malicious visible copy before the canonical writer", async () => {

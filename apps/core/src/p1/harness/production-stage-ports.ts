@@ -7,6 +7,7 @@ import type {
   MarketingPackageEvidence,
   ObservabilityAxisBinding,
   ReuseTaskSeed,
+  SensitiveWordRecord,
   StoreFactKind,
   HarnessStage,
   ThinkingProviderOptions,
@@ -113,6 +114,10 @@ export interface HarnessPrimitiveCheckPort {
     workflowRevision: number;
     workspaceId: string;
   }): Promise<CheckResult<'block', HarnessGateFailure>>;
+}
+
+export interface SensitiveLexiconReadPort {
+  listEnabled(): Promise<SensitiveWordRecord[]>;
 }
 
 export interface HarnessCandidatePrimitiveRunnerFactory {
@@ -386,6 +391,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     private readonly candidatePrimitiveRunner?: HarnessCandidatePrimitiveRunnerFactory,
     private readonly observabilityEvents?: ObservabilityEventAuditPort,
     private readonly memorySedimentation?: HarnessMemorySedimentationPort,
+    private readonly sensitiveLexicon?: SensitiveLexiconReadPort,
   ) {}
 
   async recordObservabilityEvent(
@@ -876,6 +882,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       );
     }
     const occurredAt = this.now();
+    const sensitiveLexicon = await this.sensitiveLexicon?.listEnabled();
     if (input.request.executionSnapshot) {
       if (input.request.executionSnapshot.lens !== 'copy') {
         throw new HarnessCopyScopeError();
@@ -894,6 +901,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       const claimExtraction = assertDeliverableCandidatesPassVisibleRedlines(
         input,
         occurredAt,
+        sensitiveLexicon,
       );
       const delivery = await this.executionDelivery.write(
         copyContentPackageRevisionWriteInput(
@@ -919,6 +927,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     const claimExtraction = assertDeliverableCandidatesPassVisibleRedlines(
       input,
       occurredAt,
+      sensitiveLexicon,
     );
     const delivery = await this.delivery.deliverCopyRevision({
       workflowId: input.workflowId,
@@ -1168,6 +1177,7 @@ function structuredControllerFrozenRoute(
 function assertDeliverableCandidatesPassVisibleRedlines(
   input: Parameters<HarnessStagePorts['assembleAndDeliver']>[0],
   evaluatedAt: string,
+  sensitiveLexicon?: readonly SensitiveWordRecord[],
 ) {
   const result = validateHarnessVisibleDelivery({
     assetRefs: input.brief.assetRefs,
@@ -1176,6 +1186,7 @@ function assertDeliverableCandidatesPassVisibleRedlines(
     context: input.context,
     allowedFactRefs: input.allowedFactRefs ?? [],
     evaluatedAt,
+    ...(sensitiveLexicon ? { sensitiveLexicon } : {}),
     expressionIdentityRef: input.brief.identityRefs[0],
     visibleText: input.selection.candidates.flatMap((candidate) => [
       { field: `${candidate.candidateId}.title`, text: candidate.title },
@@ -1189,6 +1200,12 @@ function assertDeliverableCandidatesPassVisibleRedlines(
       [...new Set(result.failures.map(({ gateId }) => gateId))],
       result.failures[0]?.reason,
       result.failures.flatMap(({ triggeredClaims }) => triggeredClaims ?? []),
+      [
+        ...new Set(
+          result.failures.flatMap(({ alternativePath }) => alternativePath),
+        ),
+      ],
+      structuredClone(result.failures),
     );
   }
   return result.claimExtraction!;
@@ -1202,6 +1219,7 @@ export function validateHarnessVisibleDelivery(input: {
   allowedFactRefs?: readonly string[];
   evaluatedAt?: string;
   expressionIdentityRef?: string;
+  sensitiveLexicon?: readonly SensitiveWordRecord[];
   visibleText: Array<{ field: string; text: string }>;
   workspaceId: string;
 }) {
@@ -1232,6 +1250,9 @@ export function validateHarnessVisibleDelivery(input: {
       workspaceId: input.workspaceId,
     },
     trustedFactClaims: trustedClaimsFromContext(input.context, allowedFactRefs),
+    ...(input.sensitiveLexicon
+      ? { sensitiveLexicon: input.sensitiveLexicon }
+      : {}),
     ...input.context.policyReferences,
     sourceRefs: input.context.policyReferences.sourceRefs.filter((reference) =>
       allowedFactRefs.has(reference.id),

@@ -2077,6 +2077,7 @@ if (harnessRuntimeConfig) {
     p1HarnessCandidateRunner,
     harnessObservabilityEvents,
     harnessMemorySedimentation,
+    sensitiveWordsRepository,
   );
   // Single wiring owner: wrap copy ports so image/video share the same
   // Coordinator → StagePort → Harness path (#139/#140).
@@ -2103,6 +2104,7 @@ if (harnessRuntimeConfig) {
     noteSettings: notePlanSettings,
     now: () => new Date().toISOString(),
     runners: structuredNodeRunnerFactory,
+    sensitiveLexicon: sensitiveWordsRepository,
     executionChildObservability: harnessExecutionChildObservability,
   });
   DBOS.setConfig(harnessRuntimeConfig.dbos);

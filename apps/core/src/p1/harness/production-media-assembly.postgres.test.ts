@@ -327,6 +327,11 @@ test(
         },
         now: () => now,
         runners,
+        sensitiveLexicon: {
+          async listEnabled() {
+            return [];
+          },
+        },
         executionChildObservability,
       });
       const workflow = registerHarnessDbosWorkflow(stages, harnessStore);

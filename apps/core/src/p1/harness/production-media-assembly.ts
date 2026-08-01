@@ -12,6 +12,7 @@ import type { NotePlanEnhancementJudgeResolver } from './note-plan-structured-po
 import type {
   HarnessExecutionChildObservabilityFactory,
   HarnessStructuredNodeRunnerFactory,
+  SensitiveLexiconReadPort,
 } from './production-stage-ports.js';
 import {
   type ImageExactTextVerifier,
@@ -45,6 +46,7 @@ export function createProductionHarnessMediaAssembly(input: {
   noteSettings: NotePlanSettingsSource;
   now: () => string;
   runners: HarnessStructuredNodeRunnerFactory;
+  sensitiveLexicon: SensitiveLexiconReadPort;
   executionChildObservability?: HarnessExecutionChildObservabilityFactory;
 }) {
   return new UnifiedHarnessStagePorts(
@@ -61,5 +63,6 @@ export function createProductionHarnessMediaAssembly(input: {
     input.noteSettings,
     input.noteEnhancementJudge,
     input.executionChildObservability,
+    input.sensitiveLexicon,
   );
 }

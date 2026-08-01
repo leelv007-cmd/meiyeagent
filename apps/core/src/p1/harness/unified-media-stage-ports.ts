@@ -5,6 +5,7 @@ import type {
 	ContentPackageRevisionDelivery,
 	ImageModelRecipeProfile,
 	NotePlan,
+	SensitiveWordRecord,
 	ThinkingLevel,
 } from "@meiye/contracts";
 import {
@@ -80,6 +81,7 @@ import { validateHarnessPolicy } from "./policy-gates.js";
 import {
 	type HarnessExecutionChildObservabilityFactory,
 	type HarnessStructuredNodeRunnerFactory,
+	type SensitiveLexiconReadPort,
 	harnessExecutionChildLifecycleInput,
 	observeHarnessStructuredNodeRunner,
 	validateHarnessVisibleDelivery,
@@ -199,6 +201,7 @@ export class UnifiedHarnessStagePorts
 		private readonly noteSettings?: NotePlanSettingsSource,
 		private readonly noteEnhancementJudge: NotePlanEnhancementJudgeResolver = configuredNotePlanEnhancementJudgeResolver,
 		private readonly executionChildObservability?: HarnessExecutionChildObservabilityFactory,
+		private readonly sensitiveLexicon?: SensitiveLexiconReadPort,
 	) {}
 
 	recordExecutionAssemblyStep(
@@ -379,6 +382,7 @@ export class UnifiedHarnessStagePorts
 		input: Parameters<HarnessMediaStagePorts["assembleMediaAndDeliver"]>[0],
 	): Promise<ContentPackageRevisionDelivery> {
 		const now = this.now();
+		const sensitiveLexicon = await this.sensitiveLexicon?.listEnabled();
 		const snapshot = requireSnapshot(input.request);
 		if (input.brief.kind === "image") {
 			const marketing = createMarketingPackageEvidence({
@@ -399,7 +403,12 @@ export class UnifiedHarnessStagePorts
 				title: input.brief.intent.purpose,
 				topics: [],
 			};
-			const claimExtraction = assertMediaVisibleDelivery(input, version, now);
+			const claimExtraction = assertMediaVisibleDelivery(
+				input,
+				version,
+				now,
+				sensitiveLexicon,
+			);
 			const revision = {
 				claimExtraction,
 				expectedRevision: input.request.expectedRevision,
@@ -464,7 +473,12 @@ export class UnifiedHarnessStagePorts
 			title: "视频成品",
 			topics: [],
 		};
-		const claimExtraction = assertMediaVisibleDelivery(input, version, now);
+		const claimExtraction = assertMediaVisibleDelivery(
+			input,
+			version,
+			now,
+			sensitiveLexicon,
+		);
 		const revision = {
 			billingTrustedUsage: {
 				kind: "media_duration" as const,
@@ -616,6 +630,7 @@ export class UnifiedHarnessStagePorts
 		input: Parameters<HarnessNoteStagePorts["assembleNoteAndDeliver"]>[0],
 	): Promise<ContentPackageRevisionDelivery> {
 		const now = this.now();
+		const sensitiveLexicon = await this.sensitiveLexicon?.listEnabled();
 		const snapshot = requireSnapshot(input.request);
 		const marketing = createMarketingPackageEvidence({
 			declaration: input.declaration,
@@ -677,7 +692,12 @@ export class UnifiedHarnessStagePorts
 		if (!winner) {
 			throw new Error("The selected NotePlan style must be delivered.");
 		}
-		const claimExtraction = assertNoteVisibleDelivery(input, winner, now);
+		const claimExtraction = assertNoteVisibleDelivery(
+			input,
+			winner,
+			now,
+			sensitiveLexicon,
+		);
 		const enhancementJudge =
 			input.selection.enhancementJudge ??
 			(input.selection.version.evaluation
@@ -1154,6 +1174,7 @@ function assertMediaVisibleDelivery(
 		title: string;
 	},
 	evaluatedAt: string,
+	sensitiveLexicon?: readonly SensitiveWordRecord[],
 ) {
 	const snapshot = requireSnapshot(input.request);
 	const expressionIdentityRef = isOfficialNeutralIdentity(snapshot.identity)
@@ -1166,6 +1187,7 @@ function assertMediaVisibleDelivery(
 		context: input.context,
 		allowedFactRefs: input.allowedFactRefs ?? [],
 		evaluatedAt,
+		...(sensitiveLexicon ? { sensitiveLexicon } : {}),
 		...(expressionIdentityRef ? { expressionIdentityRef } : {}),
 		visibleText: [
 			{ field: "title", text: version.title },
@@ -1187,6 +1209,12 @@ function assertMediaVisibleDelivery(
 			[...new Set(result.failures.map(({ gateId }) => gateId))],
 			result.failures[0]?.reason,
 			result.failures.flatMap(({ triggeredClaims }) => triggeredClaims ?? []),
+			[
+				...new Set(
+					result.failures.flatMap(({ alternativePath }) => alternativePath),
+				),
+			],
+			structuredClone(result.failures),
 		);
 	}
 	return result.claimExtraction!;
@@ -1201,6 +1229,7 @@ function assertNoteVisibleDelivery(
 		title: string;
 	},
 	evaluatedAt: string,
+	sensitiveLexicon?: readonly SensitiveWordRecord[],
 ) {
 	const snapshot = requireSnapshot(input.request);
 	const expressionIdentityRef = isOfficialNeutralIdentity(snapshot.identity)
@@ -1213,6 +1242,7 @@ function assertNoteVisibleDelivery(
 		context: input.context,
 		allowedFactRefs: input.allowedFactRefs ?? [],
 		evaluatedAt,
+		...(sensitiveLexicon ? { sensitiveLexicon } : {}),
 		...(expressionIdentityRef ? { expressionIdentityRef } : {}),
 		visibleText: [
 			{ field: "title", text: version.title },
@@ -1226,6 +1256,12 @@ function assertNoteVisibleDelivery(
 			[...new Set(result.failures.map(({ gateId }) => gateId))],
 			result.failures[0]?.reason,
 			result.failures.flatMap(({ triggeredClaims }) => triggeredClaims ?? []),
+			[
+				...new Set(
+					result.failures.flatMap(({ alternativePath }) => alternativePath),
+				),
+			],
+			structuredClone(result.failures),
 		);
 	}
 	return result.claimExtraction!;

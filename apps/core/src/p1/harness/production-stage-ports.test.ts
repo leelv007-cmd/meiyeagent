@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import type { SensitiveWordRecord } from '@meiye/contracts';
+
 import {
   HarnessIdentityPreflightError,
   HarnessSnapshotAssetReferenceError,
@@ -1057,6 +1059,101 @@ test('assembly blocks unsupported visible claims before writing a deliverable re
         (claim) =>
           claim.kind === 'qualification' && claim.value.includes('国家认证'),
       ) === true,
+  );
+  assert.equal(executionDelivery.inputs.length, 0);
+});
+
+test('copy delivery hot-reads a newly enabled sensitive word before writing ContentPackage', async () => {
+  const executionDelivery = new RecordingRevisionWriter();
+  const enabledLexicon: SensitiveWordRecord[] = [];
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => new QueueRunner([]) },
+    {
+      async compileAndFreeze() {
+        return contextSnapshot();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-22T10:00:00.000Z',
+    undefined,
+    executionDelivery,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      async listEnabled() {
+        return structuredClone(enabledLexicon);
+      },
+    },
+  );
+  const snapshot = composerSnapshot();
+  enabledLexicon.push({
+    id: 'sw-late-root-cure',
+    word: '根治',
+    category: 'medical',
+    replacements: ['明显改善'],
+    status: 'enabled',
+    createdAt: '2026-07-22T09:59:00.000Z',
+    updatedAt: '2026-07-22T09:59:00.000Z',
+  });
+
+  await assert.rejects(
+    ports.assembleAndDeliver({
+      workflowId: snapshot.task.id,
+      request: composerRequest(snapshot),
+      declaration: {
+        normalizedIntent: '介绍日常护理服务',
+        taskType: 'daily_service_exposure',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: [],
+        usedAssetCategories: [],
+        route: 'free',
+        routingSource: 'model',
+        implicitConstraints: [],
+      },
+      context: contextSnapshot(),
+      brief: {
+        kind: 'copy',
+        instructions: 'x'.repeat(80),
+        platform: 'douyin',
+        cta: '了解详情',
+        factRefs: [],
+        assetRefs: [],
+        identityRefs: [],
+        constraints: [],
+      },
+      selection: {
+        candidates: [
+          {
+            candidateId: 'candidate-late-sensitive-word',
+            title: '护理说明',
+            body: '本项目承诺根治色斑',
+            conversionHook: '了解详情',
+            score: 91,
+          },
+        ],
+        winner: {
+          candidateId: 'candidate-late-sensitive-word',
+          title: '护理说明',
+          body: '本项目承诺根治色斑',
+          conversionHook: '了解详情',
+        },
+        trace: {} as never,
+      },
+    }),
+    (error: unknown) =>
+      error instanceof HarnessSelectionError &&
+      error.gateIds.includes('sensitive_words') &&
+      error.violations[0]?.sensitiveCheckBar?.items[0]?.word === '根治',
   );
   assert.equal(executionDelivery.inputs.length, 0);
 });
