@@ -5,6 +5,7 @@ import {
   planSettlementIntentFromEvent,
   requireCheckoutWorkspaceBinding,
   settleVerifiedPlanPayment,
+  shouldCancelPlanBinding,
   type PlanCheckoutBindingFacts,
   type PlanSettlementIntent,
 } from './plan-commerce';
@@ -152,6 +153,31 @@ describe('plan-commerce settlement', () => {
     );
 
     assert.equal(failed?.lifecycle, 'past_due');
+  });
+
+  it('keeps the binding for past_due and cancels it only after expiry', () => {
+    const pastDue = planSettlementIntentFromEvent(
+      {
+        eventType: 'invoice.payment_failed',
+        provider: 'stripe',
+        providerEventId: 'evt_payment_failed_binding',
+        reference: { id: 'sub_1', kind: 'subscription' },
+      },
+      binding
+    );
+    const expired = planSettlementIntentFromEvent(
+      {
+        eventType: 'customer.subscription.deleted',
+        provider: 'stripe',
+        providerEventId: 'evt_expired_binding',
+        reference: { id: 'sub_1', kind: 'subscription' },
+      },
+      binding
+    );
+
+    assert.equal(shouldCancelPlanBinding(pastDue!, { id: 'sub_1', kind: 'subscription' }), false);
+    assert.equal(shouldCancelPlanBinding(expired!, { id: 'sub_1', kind: 'subscription' }), true);
+    assert.equal(shouldCancelPlanBinding(expired!, { id: 'cs_1', kind: 'checkout' }), false);
   });
 
   it('maps subscription delete, cancel, and resume lifecycle', () => {

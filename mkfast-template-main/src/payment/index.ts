@@ -6,6 +6,7 @@ import { PostgresPlanCheckoutBindingStore } from './plan-checkout-bindings';
 import {
   planGrantCommandFromIntent,
   settleVerifiedPlanPayment,
+  shouldCancelPlanBinding,
   type PlanSettlementIntent,
 } from './plan-commerce';
 import { StripeProvider } from './provider/stripe';
@@ -152,7 +153,7 @@ export async function settleVerifiedPlanPurchase(
             event.reference.kind === 'checkout' ? event.reference.id : null,
           subscriptionId: intent.subscriptionId,
         });
-      } else if (event.reference.kind === 'subscription') {
+      } else if (shouldCancelPlanBinding(intent, event.reference)) {
         await bindingStore.markCanceled({
           provider: intent.provider,
           subscriptionId: event.reference.id,

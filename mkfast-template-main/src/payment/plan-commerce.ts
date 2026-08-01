@@ -80,6 +80,14 @@ export function planGrantCommandFromIntent(intent: PlanSettlementIntent) {
   };
 }
 
+/** Only a terminal subscription expiry retires its durable checkout binding. */
+export function shouldCancelPlanBinding(
+  intent: PlanSettlementIntent,
+  reference: VerifiedPaymentWebhookEvent['reference']
+) {
+  return intent.lifecycle === 'expire' && reference.kind === 'subscription';
+}
+
 /**
  * Map a verified webhook event + binding facts into a settlement intent.
  * Returns null when the event should not drive plan entitlement changes.
