@@ -4,7 +4,7 @@
 **规格**：`docs/specs/xhs-vertical-integration-spec-2026-08-01.md` §8.2 P1 验收门  
 **原始合入 tip**：`cbcbe4da`（含 #313–#319 台账）；Codex 复核基线 `5f456dfe`
 **台账凭证**：`docs/ops/merge-ledger.md` 行 #313…#319  
-**当前状态**：Codex 修复候选本机齐验；尚未进入 main，exact-tip CI journey pending
+**当前状态**：Codex 修复链已进入 main（实现锚点 `4d04e7bf`）；exact-tip CI journey pending
 
 ## 票面收口
 
@@ -29,7 +29,7 @@
 | **P1-5** | note 时间线可编 ≥1 页大纲 + 配图状态 | **PASS** | `note-plan-timeline.test.ts` **5/5**（含 P1-5 edit outline）；interaction **3/3**；static 钉 C7 交付门 |
 | **P1-6** | 付费媒体流内 confirm；拒绝零执行 | **PASS** | `workflow-core.test.ts` **60/60** 含：paid media/note wait confirm；reject runs no execution；cancel terminates without execute；pure-copy skip（D-043）；composer-session **29/29** + agent-frame interaction **4/4** |
 | **P1-7** | 媒体 ~1240 / 对话 ~800 | **PASS** | `WORKBENCH_CONVERSATION_MAX_WIDTH_PX=800` / `MEDIA=1240`；shell class `max-w-[800px]`/`[1240px]`；unit 明示 P1-7 |
-| **P1-8** | typecheck + composer/image-text/dashboard-home e2e | **候选 PASS / main 待合** | 当前修复候选 contracts/core/web typecheck **exit 0**；最新 5-file diff 后复跑 `check-gates` **Overall PASS**；独立全新 PostgreSQL + Chromium 三文件 **15/15 pass、0 fail、0 skip（3.0m）**。该本机补证不改变“P2 合入前 exact-tip CI journey 一次绿”的用户裁决 |
+| **P1-8** | typecheck + composer/image-text/dashboard-home e2e | **本机 PASS / CI pending** | 修复链 contracts/core/web typecheck **exit 0**；最新 5-file diff 后复跑 `check-gates` **Overall PASS**；独立全新 PostgreSQL + Chromium 三文件 **15/15 pass、0 fail、0 skip（3.0m）**。该本机补证不替代 P2 合入前 exact-tip CI journey |
 
 ## 环境纪律注记
 
@@ -50,12 +50,12 @@
 | 口径 | 结论 |
 |---|---|
 | **代码面 P1-1…P1-7** | **齐 PASS**（合入态 focused 绿 + 台账齐） |
-| **严格 P1-1…P1-8 齐验（本机三文件）** | **候选齐 PASS、main 待合**——Codex 在独立全新 PostgreSQL 上补齐三文件 Chromium 15/15 |
-| **P2 合入闸**（用户覆盖） | P1 修复候选推送后，仍须等待该 **exact-tip `production-main-journey` success**；本机 15/15 不替代 CI 门禁 |
+| **严格 P1-1…P1-8 齐验（本机三文件）** | **main 修复链本机齐 PASS、CI pending**——Codex 在独立全新 PostgreSQL 上补齐三文件 Chromium 15/15 |
+| **P2 合入闸**（用户覆盖） | 本次 main exact-tip 推送后，仍须等待 **`production-main-journey` success**；本机 15/15 不替代 CI 门禁 |
 
 ## 欠账清单
 
-1. 候选已闭合、待进入 main：Playwright `composer-reshell` + `dashboard-home-mount` + `image-text-note-compiler`（15 tests）——见下节 Codex 复核终态。
+1. 本机已闭合：Playwright `composer-reshell` + `dashboard-home-mount` + `image-text-note-compiler`（15 tests）；仍待 main exact-tip CI journey——见下节 Codex 复核终态。
 2. 可选：将 `locale:compile` 列入 CI/验收 checklist 显式步骤（防假红）。
 
 ## P1-8 e2e 续跑记录（按 master-handoff §3.4）

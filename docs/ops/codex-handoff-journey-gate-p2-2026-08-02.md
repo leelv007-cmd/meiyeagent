@@ -203,7 +203,7 @@ Worktree 根：`/Users/bin/orca/workspaces/美业内容2/lane-<N>`
 | --- | --- |
 | `main` / `origin/main` | `5f456dfec152e2d836b6cf13c3e2964753fb4b48`（审核启动时一致） |
 | P1 #313–#319 | Issue 与原台账均已 CLOSED，原交付 commit 全部是 main 祖先；但本次行为审核发现合入后缺口，不能只凭 closed/ledger 判通过 |
-| P1 修复候选 | 独立集成分支 `audit/integrate-p1-p2-20260802`；Core 全量证据基线 `99f91995`，本节与浏览器补修待显式提交 |
+| P1 修复链 | `f54ce5c6`…`4d04e7bf` 已是包含本行 commit 的祖先；Core 全量证据基线 `99f91995`，浏览器补修锚点 `4d04e7bf`，exact-tip CI pending |
 | P2 #320–#325 | 原 lane 都基于旧 `69cf06e1`；经双轴审核后均有 follow-up HEAD，尚未合入 main |
 | P2 #326–#327 | 尚未实现；必须等 #320–#325 基于新 P1 主线集成后串行开发 |
 | P2 #328 | 除 #324 依赖外还需要真人已登录小红书浏览器 / live 核销；fixture 不能冒充 HITL |
@@ -251,4 +251,4 @@ Worktree 根：`/Users/bin/orca/workspaces/美业内容2/lane-<N>`
 | #324 | `0b3373ae` | 去假上传；真实 VLM reference；exact recipe；prompts materialized；fail closed |
 | #325 | `8b838141` | frozen experience basis、进度/终态、stale/foreign rejection |
 
-当前仍是 **候选已修、未合入**。下一硬门：提交 P1 修复 → ff/push main → 等该 exact-tip `production-main-journey` success；绿后才允许把 #320–#325 逐票集成复验并登记 ledger。
+P2 当前仍是 **候选已修、未合入**。下一硬门：推送 P1 修复链与本次台账 → 等该 exact-tip `production-main-journey` success；绿后才允许把 #320–#325 逐票集成复验并登记 ledger。

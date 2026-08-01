@@ -160,4 +160,4 @@ git merge --ff-only leelv007-cmd/lane-320   # 或 cherry-pick 8394b848
 | #327 | 未实现；依赖 #320 scanner + #322/#326 编辑器可达性，必须 bounded scan 与 decorations/replacements |
 | #328 | 未验收；依赖 #324 且需要真人已登录浏览器、真实小红书笔记 URL 与 live 核销，fixture 不得替代 |
 
-因此当前 checklist 是：P1 提交/推送 → exact-tip journey 绿 → 集成复验 #320–#325 → 实现 #326/#327 → #328 HITL。ledger 与 Issue 只在对应 commit 真正进入 main 且证据完成后更新。
+因此当前 checklist 是：推送已进入 main 的 P1 修复链与台账 → exact-tip journey 绿 → 集成复验 #320–#325 → 实现 #326/#327 → #328 HITL。ledger 与 Issue 只在对应 commit 真正进入 main 且证据完成后更新。
