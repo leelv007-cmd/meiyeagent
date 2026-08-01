@@ -172,6 +172,7 @@ test(
         'workspace-period-gap-pg',
         'workspace-state-machine-pg',
         'workspace-future-retry-pg',
+        'workspace-terminal-monotonic-pg',
       ]) {
         await pool.query(
           "INSERT INTO workspaces (id, name) VALUES ($1, 'Credit period test')",
@@ -244,16 +245,26 @@ test(
         subscriptionId: 'pg-subscription-old',
       });
       assert.equal((await store.get('pg-subscription-old'))?.status, 'active');
-      const replacement = await monthly.service.settlePayment(monthly.context, {
-        interval: 'month',
-        lifecycle: 'activate',
+      const replacement = {
+        interval: 'month' as const,
+        lifecycle: 'activate' as const,
         paymentEventId: 'pg-period-replacement',
         paymentProductId: 'starter',
         periodStartsAt: '2026-03-01T00:00:00.000Z',
         subscriptionId: 'pg-subscription-new',
-      });
-      assert.equal(replacement?.pendingTier, 'starter');
-      assert.equal(replacement?.pendingEffectiveCycle, 2);
+      };
+      assert.equal(
+        await monthly.service.settlePayment(monthly.context, replacement),
+        null,
+      );
+      assert.equal((await store.get('pg-subscription-new')), null);
+      now = new Date('2026-03-01T00:00:00.000Z');
+      const replayedReplacement = await monthly.service.settlePayment(
+        monthly.context,
+        replacement,
+      );
+      assert.equal(replayedReplacement?.pendingTier, 'starter');
+      assert.equal(replayedReplacement?.pendingEffectiveCycle, 2);
       assert.equal((await store.get('pg-subscription-old'))?.status, 'cancelled');
 
       const annual = serviceFor('workspace-annual-pg');
@@ -322,26 +333,38 @@ test(
         subscriptionId: 'pg-state-machine-old',
       });
       now = new Date('2026-01-15T00:00:00.000Z');
-      const intervalReplacement = await stateMachine.service.settlePayment(
-        stateMachine.context,
-        {
-          interval: 'year',
-          lifecycle: 'activate',
-          paymentEventId: 'pg-state-machine-interval-replacement',
-          paymentProductId: 'growth',
-          periodStartsAt: '2026-02-01T00:00:00.000Z',
-          subscriptionId: 'pg-state-machine-new',
-        },
+      const intervalReplacement = {
+        interval: 'year' as const,
+        lifecycle: 'activate' as const,
+        paymentEventId: 'pg-state-machine-interval-replacement',
+        paymentProductId: 'growth',
+        periodStartsAt: '2026-02-01T00:00:00.000Z',
+        subscriptionId: 'pg-state-machine-new',
+      };
+      assert.equal(
+        await stateMachine.service.settlePayment(
+          stateMachine.context,
+          intervalReplacement,
+        ),
+        null,
       );
-      assert.equal(intervalReplacement?.pendingInterval, 'yearly');
+      assert.equal((await store.get(intervalReplacement.subscriptionId)), null);
       now = new Date('2026-02-01T00:00:00.000Z');
+      await stateMachine.service.settlePayment(
+        stateMachine.context,
+        intervalReplacement,
+      );
+      assert.equal(
+        (await store.get(intervalReplacement.subscriptionId))?.pendingInterval,
+        'yearly',
+      );
       await stateMachine.service.settlePayment(stateMachine.context, {
         interval: 'year',
         lifecycle: 'renew',
         paymentEventId: 'pg-state-machine-yearly-renewal',
         paymentProductId: 'growth',
         periodStartsAt: now.toISOString(),
-        subscriptionId: 'pg-state-machine-new',
+        subscriptionId: intervalReplacement.subscriptionId,
       });
       assert.equal(
         (await store.get('pg-state-machine-new'))?.paidThroughCycle,
@@ -414,6 +437,44 @@ test(
         (await store.get(futureRenewal.subscriptionId))?.paidThroughCycle,
         2,
       );
+
+      now = new Date('2026-01-01T00:00:00.000Z');
+      const terminalMonotonic = serviceFor('workspace-terminal-monotonic-pg');
+      const terminalSubscriptionId = 'pg-terminal-monotonic';
+      await terminalMonotonic.service.settlePayment(terminalMonotonic.context, {
+        interval: 'month',
+        lifecycle: 'activate',
+        paymentEventId: 'pg-terminal-monotonic-activate',
+        paymentProductId: 'growth',
+        periodStartsAt: now.toISOString(),
+        subscriptionId: terminalSubscriptionId,
+      });
+      now = new Date('2026-02-01T00:00:00.000Z');
+      await terminalMonotonic.service.settlePayment(terminalMonotonic.context, {
+        interval: 'month',
+        lifecycle: 'renew',
+        paymentEventId: 'pg-terminal-monotonic-renew',
+        paymentProductId: 'growth',
+        periodStartsAt: now.toISOString(),
+        subscriptionId: terminalSubscriptionId,
+      });
+      for (const lifecycle of [
+        'past_due',
+        'cancel_at_period_end',
+        'expire',
+      ] as const) {
+        await terminalMonotonic.service.settlePayment(terminalMonotonic.context, {
+          interval: 'month',
+          lifecycle,
+          paymentEventId: `pg-terminal-monotonic-${lifecycle}`,
+          paymentProductId: 'growth',
+          periodStartsAt: now.toISOString(),
+          subscriptionId: terminalSubscriptionId,
+        });
+        const subscription = await store.get(terminalSubscriptionId);
+        assert.equal(subscription?.status, 'active');
+        assert.deepEqual(subscription?.scheduledChanges, []);
+      }
     } finally {
       await pool.query(`DROP SCHEMA ${schema} CASCADE`).catch(() => undefined);
       await pool.end();
@@ -500,14 +561,18 @@ test(
         assert.equal((await scheduler.run(now.toISOString())).grantedCycles, 1);
 
         now = new Date('2026-01-15T00:00:00.000Z');
-        await service.settlePayment(context, {
-          interval: 'month',
-          lifecycle: 'activate',
+        const replacementInput = {
+          interval: 'month' as const,
+          lifecycle: 'activate' as const,
           paymentEventId: `payment-grant-lineage-${replacement.label}-new`,
           paymentProductId: replacement.paymentProductId,
           periodStartsAt: '2026-02-01T00:00:00.000Z',
           subscriptionId: newId,
-        });
+        };
+        assert.equal(
+          await service.settlePayment(context, replacementInput),
+          null,
+        );
 
         const replayed = await Promise.all([
           scheduler.run(now.toISOString()),
@@ -529,6 +594,8 @@ test(
           (await ledger.project(workspaceId, now.toISOString())).availableCredits,
           1_300,
         );
+        now = new Date('2026-02-01T00:00:00.000Z');
+        await service.settlePayment(context, replacementInput);
         assert.equal((await subscriptions.get(newId))?.grantLineageId, oldId);
         now = new Date('2026-01-01T00:00:00.000Z');
       }
