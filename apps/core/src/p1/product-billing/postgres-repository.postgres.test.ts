@@ -9,6 +9,7 @@ import { P1DomainError } from '../foundation/domain.js';
 import {
   MemoryModelAssetStorage,
   ModelSupplyApplicationService,
+  type ProviderExecutionRequest,
   createDefaultCatalogModels,
   createDefaultDeployments,
 } from '../model-supply/index.js';
@@ -877,6 +878,26 @@ describe(
         }),
         /already bound to another submission/i,
       );
+      const providerInput = {
+        input: { durationSeconds: 10, resolvedAssetIds: ['provider-asset-1'] },
+        prompt: 'canonical provider prompt compiled after admission',
+      };
+      await service.bindMerchantExecutionInput({
+        inputSnapshot: providerInput,
+        quoteRevision: quote.revision,
+        taskId: 'server-bound-submission-task',
+        workspaceId,
+      });
+      assert.deepEqual(
+        (
+          await repository.getMerchantExecution(
+            workspaceId,
+            'server-bound-submission-task',
+            'merchant-execution:server-bound-submission-task',
+          )
+        )?.inputSnapshot,
+        providerInput,
+      );
     });
 
     it('binds the real Composer quote to its server submission before delivering every image', async () => {
@@ -912,6 +933,7 @@ describe(
       operationsRepository.grantMembership('owner-a', workspaceId);
       const supplyResults = new Map<string, Awaited<ReturnType<ModelSupplyApplicationService['submit']>>>();
       let providerOutputCount: number | undefined;
+      let providerRequest: ProviderExecutionRequest | undefined;
       const supply = new ModelSupplyApplicationService({
         assetStorage: new MemoryModelAssetStorage(),
         deployments: createDefaultDeployments({
@@ -920,6 +942,7 @@ describe(
         }),
         execution: {
           async execute(request) {
+            providerRequest = structuredClone(request);
             providerOutputCount = request.submission.outputCount;
             return {
               assets: [
@@ -987,6 +1010,36 @@ describe(
           controlPlane,
           undefined,
         ),
+        groundingResolver: {
+          async resolve() {
+            return {
+              snapshot: {
+                assets: [],
+                capturedAt: '2026-08-01T00:00:00.000Z',
+                store: {
+                  address: '88 号',
+                  booking: '提前预约',
+                  brandVoice: '真诚、不夸张',
+                  city: '成都',
+                  confirmedAt: '2026-08-01T00:00:00.000Z',
+                  district: '锦江区',
+                  name: '春日美甲',
+                  prohibitions: ['不得编造价格'],
+                  projects: [
+                    {
+                      durationMinutes: 90,
+                      id: 'project-a',
+                      name: '纯色美甲',
+                      price: 168,
+                    },
+                  ],
+                  regulated: false,
+                },
+              },
+              status: 'ready' as const,
+            };
+          },
+        },
         imageGenerator: { async submit() { throw new Error('not used'); } },
         notifier: { async send() {} },
       });
@@ -1021,6 +1074,22 @@ describe(
       assert.notEqual(outputCount, undefined);
       assert.ok(outputLabel);
       assert.ok(currency);
+      await service.beforeSubmit({
+        quoteId: quote.quoteId,
+        quoteRevision: quote.revision,
+        resource: 'image',
+        taskId: work.id,
+        workspaceId,
+      });
+      await service.bindMerchantSubmissionInput({
+        inputSnapshot: {
+          input: null,
+          prompt: 'Coordinator immutable Composer submission root.',
+        },
+        quoteRevision: quote.revision,
+        taskId: work.id,
+        workspaceId,
+      });
       const result = await operations.submitCreativeWork(
         context,
         work.id,
@@ -1048,8 +1117,34 @@ describe(
       );
 
       assert.equal(providerOutputCount, quote.outputCount);
+      const executedProviderRequest = providerRequest;
+      assert.ok(executedProviderRequest);
+      assert.deepEqual(executedProviderRequest.submission.input, {
+        height: 2048,
+        width: 1536,
+      });
+      assert.notEqual(
+        executedProviderRequest.submission.prompt,
+        work.intent,
+      );
+      assert.match(executedProviderRequest.submission.prompt, /春日美甲/);
+      assert.match(executedProviderRequest.submission.prompt, /纯色美甲/);
+      assert.match(executedProviderRequest.submission.prompt, /168/);
       assert.equal(result.assets.length, quote.outputCount);
       assert.equal(result.job.outputAssetIds.length, quote.outputCount);
+      assert.deepEqual(
+        (
+          await repository.getMerchantExecution(
+            workspaceId,
+            work.id,
+            `merchant-execution:${work.id}`,
+          )
+        )?.inputSnapshot,
+        {
+          input: executedProviderRequest.submission.input,
+          prompt: executedProviderRequest.submission.prompt,
+        },
+      );
       const boundQuote = await service.getQuote(quote.quoteId, workspaceId);
       assert.ok(boundQuote?.submissionPromptHash);
       assert.ok(boundQuote?.submissionReferenceAssetsHash);

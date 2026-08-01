@@ -382,7 +382,6 @@ export class DurableProductBillingService
     const workspaceId = this.workspace(input.workspaceId);
     const effectKey = `merchant-execution:${input.taskId}`;
     const inputFingerprint = fingerprintValue(input.inputSnapshot);
-    const hashes = merchantExecutionInputHashes(input.inputSnapshot);
     await this.run(() =>
       this.repository.withTransaction(
         workspaceId,
@@ -445,20 +444,9 @@ export class DurableProductBillingService
             );
           }
           if (rootBinding.every((value) => !value)) {
-            await transaction.saveQuote(workspaceId, {
-              ...quote,
-              submissionInputAssetsHash: hashes.inputAssetsHash,
-              submissionPromptHash: hashes.promptHash,
-              submissionReferenceAssetsHash: hashes.referenceAssetsHash,
-            });
-          } else if (
-            quote.submissionPromptHash !== hashes.promptHash ||
-            quote.submissionReferenceAssetsHash !== hashes.referenceAssetsHash ||
-            quote.submissionInputAssetsHash !== hashes.inputAssetsHash
-          ) {
             throw new P1DomainError(
               'INVALID_STATE',
-              'Primary provider input does not match the reserved merchant submission.',
+              'Merchant submission input must bind before primary provider input.',
             );
           }
           await transaction.saveMerchantExecution({

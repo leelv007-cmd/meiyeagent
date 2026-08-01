@@ -898,8 +898,7 @@ test(
       assert.deepEqual(supply.promotedEffects, [
         {
           quoteRevision: snapshot.quote.revision,
-          sourceEffectKey:
-            `merchant-execution:${snapshot.task.id}:${submission.idempotencyKey}`,
+          sourceEffectKey: submission.idempotencyKey,
           taskId: snapshot.task.id,
           workspaceId,
         },

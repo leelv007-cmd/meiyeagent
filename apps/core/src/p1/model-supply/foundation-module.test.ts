@@ -3099,7 +3099,7 @@ describe('ModelSupplyFoundationModule', () => {
       undefined,
       undefined,
       {
-        async resolve() {
+        async resolve({ operation }) {
           return {
             content: providerInstructions,
             contentHash: createHash('sha256')
@@ -3107,7 +3107,10 @@ describe('ModelSupplyFoundationModule', () => {
               .digest('hex'),
             isFallback: false,
             label: 'production',
-            name: 'harness/copy-generation',
+            name:
+              operation === 'copy.adapt'
+                ? 'harness/platform-adaptation'
+                : 'harness/copy-generation',
             source: 'langfuse',
             version: 'binding-r1',
           };
@@ -3228,18 +3231,23 @@ describe('ModelSupplyFoundationModule', () => {
         /reserved credit (?:billing task|quote)/i,
       );
     }
-    for (const drift of [
+    for (const [index, drift] of [
       { operation: 'copy.adapt' },
       { selection: { catalogModelId: 'llm-backup', mode: 'fixed' } },
       { billingOutputCount: 2 },
-    ]) {
+    ].entries()) {
       await assert.rejects(
-        command(module, owner, 'submit_generation', {
-          ...payload,
-          ...drift,
-          billingTaskId: 'credit-task-valid',
-          billingQuoteRevision: 'quote-r1',
-        }),
+        command(
+          module,
+          { ...owner, correlationId: `corr-owner-billing-drift-${index}` },
+          'submit_generation',
+          {
+            ...payload,
+            ...drift,
+            billingTaskId: 'credit-task-valid',
+            billingQuoteRevision: 'quote-r1',
+          },
+        ),
         /reserved credit (?:quote|billing)|quoted CatalogModel|derived/i,
       );
     }
@@ -3556,7 +3564,7 @@ describe('ModelSupplyFoundationModule', () => {
         prompt: 'Return a different campaign direction.',
         workspaceId: owner.workspaceId,
       }),
-      /another merchant execution|already claimed/i,
+      /another merchant execution|already claimed|already bound/i,
     );
     await assert.rejects(
       models.submit({
@@ -3566,7 +3574,7 @@ describe('ModelSupplyFoundationModule', () => {
         input: { referenceAssetIds: ['asset-reference-b'] },
         workspaceId: owner.workspaceId,
       }),
-      /another merchant execution|already claimed/i,
+      /another merchant execution|already claimed|already bound/i,
     );
   });
 

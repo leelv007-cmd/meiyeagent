@@ -177,6 +177,15 @@ test(
       taskId,
       workspaceId,
     });
+    await billing.bindMerchantSubmissionInput({
+      inputSnapshot: {
+        input: null,
+        prompt: 'Coordinator immutable usage submission root.',
+      },
+      quoteRevision: quote.revision,
+      taskId,
+      workspaceId,
+    });
     await assert.rejects(
       billing.beforeSubmit({
         quoteId,
@@ -390,6 +399,15 @@ test(
           quoteId: retryQuoteId,
           quoteRevision: retryQuote.revision,
           resource: 'copy',
+          taskId: retryTaskId,
+          workspaceId,
+        });
+        await billing.bindMerchantSubmissionInput({
+          inputSnapshot: {
+            input: null,
+            prompt: 'Coordinator immutable retry submission root.',
+          },
+          quoteRevision: retryQuote.revision,
           taskId: retryTaskId,
           workspaceId,
         });
