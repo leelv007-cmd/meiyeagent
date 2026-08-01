@@ -237,7 +237,8 @@ export class ContentPackageZipExportAdapter
       orderedAssetCount: input.version.orderedAssetIds.length,
     });
     if (carrier === 'media') {
-      // B-01: media main export path is the full delivery ZIP (manifest/v1).
+      // B-01: the media carrier's only wire kind today is `video`, whose main
+      // export path is the full delivery ZIP (manifest/v1).
       return this.exportVideoFullPackage(input);
     }
 

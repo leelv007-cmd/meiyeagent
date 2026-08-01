@@ -3,7 +3,6 @@ import test from 'node:test';
 
 import {
   contentPackageCarrierOf,
-  contentPackageCarrierSchema,
   contentPackageCarriers,
   contentPackageKindSchema,
 } from './content-package.js';
@@ -18,15 +17,8 @@ test('contentPackageKindSchema stays the two-value wire/storage kind', () => {
   assert.equal(contentPackageKindSchema.safeParse('copy').success, false);
 });
 
-test('contentPackageCarrierSchema is the media/copy/note product口径', () => {
+test('contentPackageCarriers is the media/copy/note product口径', () => {
   assert.deepEqual([...contentPackageCarriers], ['media', 'copy', 'note']);
-  for (const carrier of contentPackageCarriers) {
-    assert.equal(contentPackageCarrierSchema.parse(carrier), carrier);
-  }
-  assert.equal(
-    contentPackageCarrierSchema.safeParse('image_text').success,
-    false,
-  );
 });
 
 test('contentPackageCarrierOf maps video packages to the media carrier', () => {

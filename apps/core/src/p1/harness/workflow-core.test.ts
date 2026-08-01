@@ -2261,7 +2261,8 @@ test('a cancelled paid media confirmation terminates the workflow without execut
 test('a reserved run without a unit breakdown fails closed into confirmation', async () => {
   // 花钱类硬门的失败方向：拿不到单位明细就当作会花钱，宁可多问一次也不放过。
   // 生产不会走到这里（submission-coordinator 为每个 lens 都预留单位，
-  // storedUsageUnits 拒收空明细），这条钉的是失败方向本身。
+  // storedUsageUnits 拒收空明细），这条钉的是失败方向本身 —— 所以走完整旅程，
+  // 断言真的挂起了确认卡，而不是只问谓词。
   const request: HarnessWorkflowInput = {
     ...snapshotTaskInput(),
     usageReservation: {
@@ -2269,7 +2270,35 @@ test('a reserved run without a unit breakdown fails closed into confirmation', a
       units: [],
     },
   };
-  assert.equal(triggersPaidMediaExecution(request), true);
+  const stages = fixtureStages();
+  const executeAndSelect = stages.executeAndSelect!;
+  const order: string[] = [];
+  stages.executeAndSelect = async (input) => {
+    order.push('selection');
+    return executeAndSelect(input);
+  };
+
+  await runHarnessWorkflow('task-copy', request, stages, {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision(question, stage) {
+      assert.equal(stage, 'execution_selection');
+      assert.equal(question.response.field, 'execution_confirmation');
+      assert.equal(order.length, 0);
+      order.push('confirmation');
+      return approvePaidGenerationConfirmation(question);
+    },
+    async recordTrace() {},
+  });
+
+  assert.deepEqual(order, ['confirmation', 'selection']);
+});
+
+test('a malformed usage breakdown also fails the paid-media judgment closed', async () => {
+  // 明细字段本身损坏（durable JSON 不是数组）时同样判定为会花钱。
   assert.equal(
     triggersPaidMediaExecution({
       ...snapshotTaskInput(),

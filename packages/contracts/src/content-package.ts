@@ -33,7 +33,6 @@ export const contentPackageKindSchema = z.enum(['image_text', 'video']);
  * dispatch downstream sound: no branch can receive a value it cannot handle.
  */
 export const contentPackageCarriers = ['media', 'copy', 'note'] as const;
-export const contentPackageCarrierSchema = z.enum(contentPackageCarriers);
 export type ContentPackageCarrier = (typeof contentPackageCarriers)[number];
 
 export const contentPackagePlatformSchema = z.enum([

@@ -2976,8 +2976,23 @@ async function applyCurrentTaskDecision(
   };
 }
 
-/** Usage resources that count as paid media execution (not pure copy). */
-const PAID_MEDIA_USAGE_RESOURCES = new Set(['image', 'video']);
+type SnapshotBackedHarnessWorkflowInput = HarnessWorkflowInput & {
+  executionSnapshot: NonNullable<HarnessWorkflowInput['executionSnapshot']>;
+};
+
+type ReservedUsageResource = NonNullable<
+  HarnessWorkflowInput['usageReservation']
+>['units'][number]['resource'];
+
+/**
+ * Usage resources that count as paid media execution (not pure copy).
+ * Typed against the reservation union on purpose: this set guards spend, and an
+ * untyped `Set<string>` would let a rename of the resource union pass silently.
+ */
+const PAID_MEDIA_USAGE_RESOURCES = new Set<ReservedUsageResource>([
+  'image',
+  'video',
+]);
 
 /**
  * xhs-vertical-integration-spec §3.2 / D-164③:
@@ -2994,7 +3009,7 @@ const PAID_MEDIA_USAGE_RESOURCES = new Set(['image', 'video']);
  */
 export function triggersPaidMediaExecution(
   request: HarnessWorkflowInput,
-): boolean {
+): request is SnapshotBackedHarnessWorkflowInput {
   const reservation = request.usageReservation;
   if (!request.executionSnapshot?.quote || !reservation) {
     return false;
@@ -3042,7 +3057,7 @@ async function confirmPaidGenerationExecution(input: {
     if (!triggersPaidMediaExecution(request)) {
       return request;
     }
-    const snapshot = request.executionSnapshot!;
+    const snapshot = request.executionSnapshot;
     const question = questionCardSchema.parse({
       questionId: `execution-confirmation:${snapshot.id}`,
       workflowId: input.workflowId,
