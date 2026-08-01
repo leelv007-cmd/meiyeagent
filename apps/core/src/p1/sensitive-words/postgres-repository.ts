@@ -9,7 +9,11 @@ import type {
 import type { Pool, PoolClient } from 'pg';
 
 import { BEAUTY_FIXTURE_SENSITIVE_LEXICON } from './beauty-fixture-lexicon.js';
-import type { SensitiveWordsRepository } from './repository.js';
+import {
+  type SensitiveWordsCommandIdentity,
+  SensitiveWordsIdempotencyConflictError,
+  type SensitiveWordsRepository,
+} from './repository.js';
 
 interface SensitiveWordRow {
   id: string;
@@ -61,10 +65,17 @@ function newId(): string {
 export class PostgresSensitiveWordsRepository
   implements SensitiveWordsRepository
 {
-  constructor(private readonly pool: Pool) {}
+  constructor(
+    private readonly pool: Pool,
+    private readonly client?: PoolClient
+  ) {}
+
+  private get database() {
+    return this.client ?? this.pool;
+  }
 
   async migrate(client?: PoolClient) {
-    await (client ?? this.pool).query(`
+    await (client ?? this.database).query(`
       CREATE TABLE IF NOT EXISTS sensitive_words (
         id text PRIMARY KEY,
         word text NOT NULL,
@@ -83,6 +94,15 @@ export class PostgresSensitiveWordsRepository
         ON sensitive_words (category);
       CREATE UNIQUE INDEX IF NOT EXISTS sensitive_words_word_unique_idx
         ON sensitive_words (lower(word));
+      CREATE TABLE IF NOT EXISTS sensitive_words_command_receipts (
+        workspace_id text NOT NULL,
+        action text NOT NULL CHECK (action IN ('create','update','delete')),
+        idempotency_key text NOT NULL,
+        payload_hash text NOT NULL,
+        result jsonb NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (workspace_id, action, idempotency_key)
+      );
     `);
   }
 
@@ -104,7 +124,7 @@ export class PostgresSensitiveWordsRepository
       );
     }
     const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
-    const result = await this.pool.query<SensitiveWordRow>(
+    const result = await this.database.query<SensitiveWordRow>(
       `SELECT id, word, category, replacements, status, created_at, updated_at
        FROM sensitive_words
        ${where}
@@ -119,7 +139,7 @@ export class PostgresSensitiveWordsRepository
   }
 
   async get(id: string) {
-    const result = await this.pool.query<SensitiveWordRow>(
+    const result = await this.database.query<SensitiveWordRow>(
       `SELECT id, word, category, replacements, status, created_at, updated_at
        FROM sensitive_words WHERE id = $1`,
       [id],
@@ -130,7 +150,7 @@ export class PostgresSensitiveWordsRepository
 
   async create(input: CreateSensitiveWordCommand) {
     const id = newId();
-    const result = await this.pool.query<SensitiveWordRow>(
+    const result = await this.database.query<SensitiveWordRow>(
       `INSERT INTO sensitive_words (id, word, category, replacements, status)
        VALUES ($1, $2, $3, $4::jsonb, $5)
        RETURNING id, word, category, replacements, status, created_at, updated_at`,
@@ -156,7 +176,7 @@ export class PostgresSensitiveWordsRepository
       replacements: input.replacements ?? current.replacements,
       status: input.status ?? current.status,
     };
-    const result = await this.pool.query<SensitiveWordRow>(
+    const result = await this.database.query<SensitiveWordRow>(
       `UPDATE sensitive_words
        SET word = $2,
            category = $3,
@@ -177,7 +197,7 @@ export class PostgresSensitiveWordsRepository
   }
 
   async delete(id: string) {
-    const result = await this.pool.query(
+    const result = await this.database.query(
       `DELETE FROM sensitive_words WHERE id = $1 RETURNING id`,
       [id],
     );
@@ -185,6 +205,72 @@ export class PostgresSensitiveWordsRepository
       throw new Error(`Sensitive word ${id} was not found.`);
     }
     return { id, deleted: true as const };
+  }
+
+  async executeIdempotentCommand<T>(
+    identity: SensitiveWordsCommandIdentity,
+    action: (repository: SensitiveWordsRepository) => Promise<T>
+  ): Promise<T> {
+    if (this.client) {
+      return this.executeIdempotentCommandInsideTransaction(identity, action);
+    }
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await new PostgresSensitiveWordsRepository(
+        this.pool,
+        client
+      ).executeIdempotentCommandInsideTransaction(identity, action);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async executeIdempotentCommandInsideTransaction<T>(
+    identity: SensitiveWordsCommandIdentity,
+    action: (repository: SensitiveWordsRepository) => Promise<T>
+  ): Promise<T> {
+    await this.database.query(
+      'SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))',
+      [identity.workspaceId, `${identity.action}:${identity.idempotencyKey}`]
+    );
+    const existing = await this.database.query<{
+      payload_hash: string;
+      result: T;
+    }>(
+      `SELECT payload_hash, result
+         FROM sensitive_words_command_receipts
+        WHERE workspace_id = $1 AND action = $2 AND idempotency_key = $3
+        FOR UPDATE`,
+      [identity.workspaceId, identity.action, identity.idempotencyKey]
+    );
+    const receipt = existing.rows[0];
+    if (receipt) {
+      if (receipt.payload_hash !== identity.payloadHash) {
+        throw new SensitiveWordsIdempotencyConflictError();
+      }
+      return receipt.result;
+    }
+
+    const result = await action(this);
+    await this.database.query(
+      `INSERT INTO sensitive_words_command_receipts
+         (workspace_id, action, idempotency_key, payload_hash, result)
+       VALUES ($1, $2, $3, $4, $5::jsonb)`,
+      [
+        identity.workspaceId,
+        identity.action,
+        identity.idempotencyKey,
+        identity.payloadHash,
+        JSON.stringify(result),
+      ]
+    );
+    return result;
   }
 
   async ensurePlatformBaseline() {

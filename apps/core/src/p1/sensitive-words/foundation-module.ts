@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   createSensitiveWordCommandSchema,
   deleteSensitiveWordCommandSchema,
@@ -11,7 +13,10 @@ import { type P1Context, P1DomainError } from '../foundation/domain.js';
 import type { P1OperationModule } from '../foundation/ports.js';
 import { buildSensitiveCheckBar } from './check-bar.js';
 import { runGenerationChainSensitiveCheck } from './generation-chain-check.js';
-import type { SensitiveWordsRepository } from './repository.js';
+import {
+  SensitiveWordsIdempotencyConflictError,
+  type SensitiveWordsRepository,
+} from './repository.js';
 import {
   SensitiveScanLimitError,
   scanSensitiveText,
@@ -60,6 +65,24 @@ function payloadOf(input: Record<string, unknown>): Record<string, unknown> {
   return payload as Record<string, unknown>;
 }
 
+function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, stableValue(item)])
+    );
+  }
+  return value;
+}
+
+function commandPayloadHash(action: string, payload: Record<string, unknown>) {
+  return createHash('sha256')
+    .update(JSON.stringify(stableValue({ action, payload })))
+    .digest('hex');
+}
+
 /**
  * Ops CRUD + scan/check-bar queries for the platform sensitive-words lexicon.
  * Object-workspace inline UI is out of scope (#327).
@@ -72,15 +95,36 @@ export class SensitiveWordsFoundationModule implements P1OperationModule {
   async execute(args: {
     context: P1Context;
     input: Record<string, unknown>;
+    idempotencyKey?: string;
   }) {
     const action = actionOf(args.input);
     const payload = payloadOf(args.input);
+    const executeIdempotent = <T>(
+      commandAction: 'create' | 'update' | 'delete',
+      execute: (repository: SensitiveWordsRepository) => Promise<T>
+    ) =>
+      args.idempotencyKey
+        ? this.repository.executeIdempotentCommand(
+            {
+              action: commandAction,
+              idempotencyKey: args.idempotencyKey,
+              payloadHash: commandPayloadHash(action, payload),
+              workspaceId: args.context.workspaceId,
+            },
+            execute
+          )
+        : execute(this.repository);
 
     if (action === 'create') {
       const command = createSensitiveWordCommandSchema.parse(payload);
       try {
-        return await this.repository.create(command);
+        return await executeIdempotent('create', (repository) =>
+          repository.create(command)
+        );
       } catch (error) {
+        if (error instanceof SensitiveWordsIdempotencyConflictError) {
+          throw new P1DomainError('IDEMPOTENCY_CONFLICT', error.message);
+        }
         throw new P1DomainError(
           'INVALID_STATE',
           error instanceof Error ? error.message : 'Failed to create sensitive word.',
@@ -91,8 +135,13 @@ export class SensitiveWordsFoundationModule implements P1OperationModule {
     if (action === 'update') {
       const command = updateSensitiveWordCommandSchema.parse(payload);
       try {
-        return await this.repository.update(command);
+        return await executeIdempotent('update', (repository) =>
+          repository.update(command)
+        );
       } catch (error) {
+        if (error instanceof SensitiveWordsIdempotencyConflictError) {
+          throw new P1DomainError('IDEMPOTENCY_CONFLICT', error.message);
+        }
         const message =
           error instanceof Error ? error.message : 'Failed to update sensitive word.';
         if (/not found/i.test(message)) {
@@ -105,8 +154,13 @@ export class SensitiveWordsFoundationModule implements P1OperationModule {
     if (action === 'delete') {
       const command = deleteSensitiveWordCommandSchema.parse(payload);
       try {
-        return await this.repository.delete(command.id);
+        return await executeIdempotent('delete', (repository) =>
+          repository.delete(command.id)
+        );
       } catch (error) {
+        if (error instanceof SensitiveWordsIdempotencyConflictError) {
+          throw new P1DomainError('IDEMPOTENCY_CONFLICT', error.message);
+        }
         const message =
           error instanceof Error ? error.message : 'Failed to delete sensitive word.';
         if (/not found/i.test(message)) {

@@ -7,6 +7,22 @@ import type {
 
 import { BEAUTY_FIXTURE_SENSITIVE_LEXICON } from './beauty-fixture-lexicon.js';
 
+export type SensitiveWordsCommandAction = 'create' | 'update' | 'delete';
+
+export interface SensitiveWordsCommandIdentity {
+  workspaceId: string;
+  action: SensitiveWordsCommandAction;
+  idempotencyKey: string;
+  payloadHash: string;
+}
+
+export class SensitiveWordsIdempotencyConflictError extends Error {
+  constructor() {
+    super('Sensitive-words idempotency key was reused with a different payload.');
+    this.name = 'SensitiveWordsIdempotencyConflictError';
+  }
+}
+
 export interface SensitiveWordsRepository {
   list(query?: ListSensitiveWordsQuery): Promise<SensitiveWordRecord[]>;
   listEnabled(): Promise<SensitiveWordRecord[]>;
@@ -14,6 +30,10 @@ export interface SensitiveWordsRepository {
   create(input: CreateSensitiveWordCommand): Promise<SensitiveWordRecord>;
   update(input: UpdateSensitiveWordCommand): Promise<SensitiveWordRecord>;
   delete(id: string): Promise<{ id: string; deleted: true }>;
+  executeIdempotentCommand<T>(
+    identity: SensitiveWordsCommandIdentity,
+    action: (repository: SensitiveWordsRepository) => Promise<T>
+  ): Promise<T>;
   /** Seed platform baseline when empty (idempotent). */
   ensurePlatformBaseline(): Promise<{ seeded: number }>;
 }
@@ -101,6 +121,16 @@ export class MemorySensitiveWordsRepository implements SensitiveWordsRepository 
     }
     this.byId.delete(id);
     return { id, deleted: true as const };
+  }
+
+  async executeIdempotentCommand<T>(
+    _identity: SensitiveWordsCommandIdentity,
+    action: (repository: SensitiveWordsRepository) => Promise<T>
+  ): Promise<T> {
+    // This repository is a process-local test fixture and makes no crash-replay
+    // durability claim. Production idempotency is implemented transactionally
+    // by PostgresSensitiveWordsRepository.
+    return action(this);
   }
 
   async ensurePlatformBaseline() {
