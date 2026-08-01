@@ -540,6 +540,63 @@ test('explicit frozen prompt binding wins on replay and resolver failures stop b
   assert.equal(providerCalls, 1);
 });
 
+test('text.respond accepts the frozen viral image-vision prompt binding', async () => {
+  let providerCalls = 0;
+  const content = 'frozen:viral-image-vision';
+  const explicit = {
+    name: 'harness/xhs-viral-image-vision',
+    version: '1',
+    content,
+    contentHash: contentHash(content),
+    label: 'production',
+    source: 'langfuse' as const,
+    isFallback: false,
+  };
+  const textModel = {
+    ...models[0]!,
+    id: 'viral-image-vision-prompt-binding',
+    operations: ['text.respond' as const],
+  };
+  const app = new ModelSupplyApplicationService({
+    models: [textModel],
+    deployments: [
+      {
+        ...deployments[0]!,
+        id: 'viral-image-vision-prompt-binding-direct',
+        catalogModelId: textModel.id,
+      },
+    ],
+    execution: {
+      async execute(request) {
+        providerCalls += 1;
+        assert.deepEqual(request.submission.promptBinding, explicit);
+        return {
+          kind: 'completed' as const,
+          text: '{"styleSummary":"observed"}',
+          providerCost: {
+            amount: 0,
+            currency: 'USD' as const,
+            usage: {},
+          },
+        };
+      },
+    },
+  });
+
+  await app.submit({
+    workspaceId: 'workspace-viral-image-vision',
+    actorId: 'owner-viral-image-vision',
+    idempotencyKey: 'viral-image-vision-1',
+    operation: 'text.respond',
+    selection: { mode: 'fixed', catalogModelId: textModel.id },
+    dataClass: [],
+    prompt: 'Observe the attached image.',
+    promptBinding: explicit,
+  });
+
+  assert.equal(providerCalls, 1);
+});
+
 function contentHash(content: string) {
   return createHash('sha256').update(content).digest('hex');
 }

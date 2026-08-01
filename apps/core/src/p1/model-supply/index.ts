@@ -82,6 +82,7 @@ export {
   assertModelSupplyPromptBinding,
   LANGUAGE_MODEL_PROMPT_KEY_BY_OPERATION,
   LANGUAGE_MODEL_PROMPT_NAME_BY_OPERATION,
+  LANGUAGE_MODEL_SPECIALIZED_PROMPT_NAMES_BY_OPERATION,
   type RequestedSelection,
   type LanguageModelOperation,
   type ModelSupplyPromptBinding,
@@ -166,6 +167,7 @@ import {
   assertModelSupplyPromptBinding,
   LANGUAGE_MODEL_PROMPT_KEY_BY_OPERATION,
   LANGUAGE_MODEL_PROMPT_NAME_BY_OPERATION,
+  LANGUAGE_MODEL_SPECIALIZED_PROMPT_NAMES_BY_OPERATION,
   mediaBoundedExecutionAuthorizationSchema,
   promptFallbackAuditId,
 } from './route-contracts.js';
@@ -717,7 +719,16 @@ function assertPromptBinding(
   binding: NonNullable<ModelSupplySubmission['promptBinding']>,
 ) {
   const expectedName = LANGUAGE_MODEL_PROMPT_NAME_BY_OPERATION[operation];
-  assertModelSupplyPromptBinding(binding, expectedName);
+  const acceptsSpecializedName =
+    LANGUAGE_MODEL_SPECIALIZED_PROMPT_NAMES_BY_OPERATION[operation].includes(
+      binding.name,
+    );
+  assertModelSupplyPromptBinding(
+    binding,
+    binding.name === expectedName || acceptsSpecializedName
+      ? binding.name
+      : expectedName,
+  );
 }
 
 function canonicalPromptBinding(

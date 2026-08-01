@@ -42,6 +42,15 @@ export const LANGUAGE_MODEL_PROMPT_NAME_BY_OPERATION = {
   'text.respond': 'harness/text-response',
 } as const satisfies Record<LanguageModelOperation, string>;
 
+export const LANGUAGE_MODEL_SPECIALIZED_PROMPT_NAMES_BY_OPERATION: Record<
+  LanguageModelOperation,
+  readonly string[]
+> = {
+  'copy.generate': [],
+  'copy.adapt': [],
+  'text.respond': ['harness/xhs-viral-image-vision'],
+};
+
 export const LANGUAGE_MODEL_PROMPT_KEY_BY_OPERATION = {
   'copy.generate': 'copyGeneration',
   'copy.adapt': 'platformAdaptation',

@@ -170,8 +170,12 @@ async function tiptapPlainText(editor: Locator) {
   );
 }
 
-async function waitForDeliveryOrFailure(page: Page) {
-  const delivery = page.getByTestId('composer-delivery-card');
+async function waitForDeliveryOrFailure(page: Page, workId?: string) {
+  const delivery = workId
+    ? page.locator(
+        '[data-testid="composer-delivery-card"][data-work-id="' + workId + '"]'
+      )
+    : page.getByTestId('composer-delivery-card');
   const failure = page.locator(
     '[data-testid="composer-report-card"], [data-testid="composer-terminal-outcome"][data-outcome="failed"]'
   );
@@ -592,6 +596,11 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
     });
     await page.getByTestId('composer-submit').click();
     const accepted = await acceptedPromise;
+    const acceptedEnvelope = (await accepted.json()) as {
+      data?: { work?: { id?: string } };
+    };
+    const coverWorkId = acceptedEnvelope.data?.work?.id;
+    expect(coverWorkId).toBeTruthy();
     const signed = accepted.request().postDataJSON() as ComposerSubmission;
     expect(accepted.status()).toBe(202);
     soft(
@@ -630,14 +639,19 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
     );
     await expect(executionConfirm).toBeVisible({ timeout: 60_000 });
     await executionConfirm.getByRole('button', { name: '确认执行' }).click();
-    const outcome = await waitForDeliveryOrFailure(page);
+    const outcome = await waitForDeliveryOrFailure(page, coverWorkId);
     soft(
       outcome.deliveryVisible,
       'fixture Chromium style-role run must reach a delivery card; terminal=' +
         (outcome.failureText ?? 'none')
     ).toBe(true);
     if (outcome.deliveryVisible) {
-      await page.getByTestId('composer-delivery-card').click();
+      const deliveryCard = page.locator(
+        '[data-testid="composer-delivery-card"][data-work-id="' +
+          coverWorkId +
+          '"]'
+      );
+      await clickComposerDeliveryCard(deliveryCard);
       await expect(page).toHaveURL(/\/dashboard\/results\//u);
       await expect(
         page.getByTestId('image-worksurface').locator('img').first()
