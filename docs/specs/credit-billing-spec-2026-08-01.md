@@ -250,6 +250,8 @@ refund 回到**原扣批次**；若退还发生时原批次已过效期，退还
 | L4 前台四面 | 价格页 A 结构、工作台三位、明细页、账单卡、i18n | L1 合同、L2 面板合同 |
 | L5 退役清扫与验收 | #291 退役清单收尾、文档 supersede 对照、§9 验收门全绿 | L1-L4 |
 
+**细粒度拆票（2026-08-01 增补）**：L1（#298）整票执行不拆；L2–L5 按开发序拆为十张子票（sub-issue 挂各 lane 票下，blocked-by 边为机器判据），领票/交底/交验/合入以子票为单位，lane 票转跟踪父票：CB-01 运营定价后台 #303（←#298）、CB-02 Waffo 订阅主链 #304（←#298）、CB-03 工作台三露脸位 #305（←#298）、CB-04 积分明细页与账单卡 #306（←#298）、CB-05 参考数字面板 #307（←CB-01）、CB-06 加油包结算与续费退款 #308（←#298、CB-02）、CB-07 Creem 退役 #309（←CB-02、CB-06）、CB-08 价格页方向 A #310（←CB-05、CB-02、CB-06）、CB-09 条数退役清扫 #311（←#298、CB-03、CB-04、CB-08）、CB-10 全门回归验收 #312（←全部）。§11.4 的 lane×验收门映射按子票承接细分（门 4 后台半边=CB-05、前台半边=CB-08；门 5=CB-02/CB-06；门 6=CB-04；门 10=CB-06；L5 两票=清扫与全门回归）。
+
 ## §11 开发纪律与提交合并规范（Codex 实施轮）
 
 实施票 = [#298](https://github.com/leelv007-cmd/meiyeweb-agent/issues/298)（L1）/ [#299](https://github.com/leelv007-cmd/meiyeweb-agent/issues/299)（L2）/ [#300](https://github.com/leelv007-cmd/meiyeweb-agent/issues/300)（L3）/ [#301](https://github.com/leelv007-cmd/meiyeweb-agent/issues/301)（L4）/ [#302](https://github.com/leelv007-cmd/meiyeweb-agent/issues/302)（L5）。通用纪律全文以 `docs/ops/agent-dispatch-runbook-2026-07-29.md` 为准（环境铁律／关票纪律／受阻轮询协议全部适用），本节只列本效力面的增量与收束，冲突时以手册为底、本节为特化。
