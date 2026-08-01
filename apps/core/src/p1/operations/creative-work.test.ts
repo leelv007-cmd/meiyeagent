@@ -1643,6 +1643,80 @@ describe('creative work lifecycle', () => {
     );
   });
 
+  it('keeps duplicate provider media in distinct accepted output slots', async () => {
+    const executor = new RecordedCreationExecutor();
+    executor.results.push({
+      assets: [
+        {
+          contentType: 'image/png',
+          id: 'provider-image-duplicate',
+          objectKey: 'workspace-a/generated/duplicate.png',
+          sha256: 'duplicate-sha256',
+        },
+        {
+          contentType: 'image/png',
+          id: 'provider-image-duplicate',
+          objectKey: 'workspace-a/generated/duplicate.png',
+          sha256: 'duplicate-sha256',
+        },
+      ],
+      providerJobId: 'provider-image-duplicate-set',
+      routeSnapshotId: 'route-image-duplicate-set',
+      status: 'completed',
+    });
+    const { service } = setup(executor);
+    const imageContract: CreativeExecutionContract = {
+      ...contract,
+      aspectRatio: '3:4',
+      catalogModelId: 'image-live',
+      operation: 'image.generate',
+      outputCount: 2,
+      outputLabel: '2 张 3:4 图片',
+      quoteRevision: 'quote-image-duplicate-v1',
+    };
+    const work = await service.createCreativeWork(owner, {
+      intent: '保留两个相同素材的输出槽位',
+      mode: 'agent',
+      operation: 'image.generate',
+      sessionId: 'session-image-duplicate',
+      sourceReferences: [],
+    });
+    await service.updateCreativeWorkBrief(owner, work.id, {
+      action: 'adopt',
+      aiDraft: '保留两个相同素材的输出槽位',
+      field: 'intent',
+    });
+    await service.confirmCreativeWorkBrief(owner, work.id);
+
+    const result = await service.submitCreativeWork(
+      owner,
+      work.id,
+      imageContract,
+      'submit-image-duplicate',
+    );
+
+    assert.equal(result.job.status, 'completed');
+    assert.equal(result.job.outputAssetIds.length, 2);
+    assert.equal(result.assets.length, 2);
+    assert.deepEqual(
+      result.assets.map((asset) => asset.ownedAssetId),
+      ['provider-image-duplicate', 'provider-image-duplicate'],
+    );
+    assert.notEqual(result.assets[0]?.id, result.assets[1]?.id);
+
+    const replay = await service.submitCreativeWork(
+      owner,
+      work.id,
+      imageContract,
+      'submit-image-duplicate',
+    );
+    assert.deepEqual(replay.job.outputAssetIds, result.job.outputAssetIds);
+    assert.deepEqual(
+      replay.assets.map((asset) => asset.id),
+      result.assets.map((asset) => asset.id),
+    );
+  });
+
   it('fails media generation that reports completion without a usable Asset', async () => {
     const executor = new RecordedCreationExecutor();
     executor.results.push({

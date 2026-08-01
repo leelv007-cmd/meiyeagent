@@ -5950,6 +5950,8 @@ export class OperationsApplicationService {
       if (currentJob.status === 'completed' || currentJob.status === 'failed') {
         return this.creativeResult(state, currentWork.id, currentJob.id);
       }
+      const mediaAssets =
+        outcome.assets ?? (outcome.asset ? [outcome.asset] : []);
       const appliedOutcome: CreationExecutionResult =
         currentJob.contract.operation === 'copy.generate' &&
         outcome.status === 'completed' &&
@@ -5963,7 +5965,7 @@ export class OperationsApplicationService {
             }
           : currentJob.contract.operation !== 'copy.generate' &&
               outcome.status === 'completed' &&
-              !(outcome.assets ?? (outcome.asset ? [outcome.asset] : [])).length
+              !mediaAssets.length
             ? {
                 executionProvenance: outcome.executionProvenance,
                 failureCode: 'MISSING_MEDIA_ASSET',
@@ -5973,8 +5975,7 @@ export class OperationsApplicationService {
               }
             : currentJob.contract.operation !== 'copy.generate' &&
                 outcome.status === 'completed' &&
-                (outcome.assets ?? (outcome.asset ? [outcome.asset] : [])).length !==
-                  currentJob.contract.outputCount
+                mediaAssets.length !== currentJob.contract.outputCount
               ? {
                   executionProvenance: outcome.executionProvenance,
                   failureCode: 'INVALID_MEDIA_ASSET_COUNT',
@@ -6009,10 +6010,9 @@ export class OperationsApplicationService {
         appliedOutcome.status === 'completed' &&
         currentJob.contract.operation !== 'copy.generate'
       ) {
-        for (const output of appliedOutcome.assets ??
-          (appliedOutcome.asset ? [appliedOutcome.asset] : [])) {
+        for (const [ordinal, output] of mediaAssets.entries()) {
           const assetId = `creative-asset-${createHash('sha256')
-            .update(`${currentJob.id}:${output.id}`)
+            .update(`${currentJob.id}:output:${ordinal}:${output.id}`)
             .digest('hex')
             .slice(0, 24)}`;
           if (!state.creativeAssets.some((asset) => asset.id === assetId)) {
