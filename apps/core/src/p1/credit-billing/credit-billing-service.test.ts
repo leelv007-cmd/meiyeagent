@@ -320,6 +320,50 @@ test('an upgrade with a replacement subscription id clears the old active cycle'
   );
 });
 
+test('out-of-order terminal events remain retryable after subscription activation', async () => {
+  for (const lifecycle of [
+    'past_due',
+    'cancel_at_period_end',
+    'expire',
+  ] as const) {
+    const now = new Date('2026-01-01T00:00:00.000Z');
+    const ledger = new MemoryCreditLedger();
+    const subscriptions = new MemoryCreditSubscriptionStore();
+    const service = creditBillingService(ledger, subscriptions, () => now);
+    const subscriptionId = `subscription-out-of-order-${lifecycle}`;
+    const terminalEvent = {
+      interval: 'month' as const,
+      lifecycle,
+      paymentEventId: `payment-out-of-order-${lifecycle}`,
+      paymentProductId: 'starter',
+      subscriptionId,
+    };
+
+    await assert.rejects(
+      service.settlePayment(context, terminalEvent),
+      /before activation|not found/i,
+    );
+    await service.settlePayment(context, {
+      interval: 'month',
+      lifecycle: 'activate',
+      paymentEventId: `payment-activate-${lifecycle}`,
+      paymentProductId: 'starter',
+      periodStartsAt: now.toISOString(),
+      subscriptionId,
+    });
+    await service.settlePayment(context, terminalEvent);
+
+    const subscription = await subscriptions.get(subscriptionId);
+    if (lifecycle === 'past_due') {
+      assert.equal(subscription?.status, 'past_due');
+    } else if (lifecycle === 'expire') {
+      assert.equal(subscription?.status, 'cancelled');
+    } else {
+      assert.equal(subscription?.pendingEffectiveCycle, 1);
+    }
+  }
+});
+
 function creditBillingService(
   ledger: MemoryCreditLedger,
   subscriptions: MemoryCreditSubscriptionStore,

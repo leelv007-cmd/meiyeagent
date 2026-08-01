@@ -154,11 +154,11 @@ export class CreditBillingService {
       ? creditSubscriptionIntervalForCycle(active, currentCycleIndex)
       : null;
     if (input.lifecycle === 'past_due') {
-      if (!active) return null;
+      assertExistingSubscription(active, input.lifecycle);
       return subscriptions.markPastDue(active.id, now);
     }
     if (input.lifecycle === 'cancel_at_period_end') {
-      if (!active) return null;
+      assertExistingSubscription(active, input.lifecycle);
       return subscriptions.scheduleChange({
         subscriptionId: active.id,
         tier: currentTier!,
@@ -168,7 +168,7 @@ export class CreditBillingService {
       });
     }
     if (input.lifecycle === 'expire') {
-      if (!active) return null;
+      assertExistingSubscription(active, input.lifecycle);
       return subscriptions.cancel(active.id, now);
     }
 
@@ -385,5 +385,17 @@ function planRank(tier: Exclude<CreditSubscription['tier'], 'trial'>) {
 function assertText(value: string, field: string) {
   if (!value.trim()) {
     throw new P1DomainError('INVALID_STATE', `${field} is required.`);
+  }
+}
+
+function assertExistingSubscription(
+  subscription: CreditSubscription | null,
+  lifecycle: CreditPaymentLifecycle,
+): asserts subscription is CreditSubscription {
+  if (!subscription) {
+    throw new P1DomainError(
+      'NOT_FOUND',
+      `Credit subscription ${lifecycle} cannot settle before activation.`,
+    );
   }
 }
