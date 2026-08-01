@@ -7,9 +7,139 @@ import {
   type TransactionalJobPort,
 } from './p1/job-runtime/tracer-worker.js';
 import { PostgresOperationsRepository } from './p1/operations/index.js';
-import { migratePostgresSchema } from './postgres-schema-migration.js';
+import {
+  CORE_SCHEMA_MIGRATION_LOCK_ID,
+  migratePostgresSchema,
+  runIfPostgresSchemaStable,
+} from './postgres-schema-migration.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
+
+test('schema-stable work runs under one session lock and always releases it', async () => {
+  const events: string[] = [];
+  const client = {
+    async query(sql: string) {
+      events.push(sql);
+      return { rows: [{ acquired: true }] };
+    },
+    release() {
+      events.push('release');
+    },
+  } as unknown as PoolClient;
+  const pool = {
+    async connect() {
+      return client;
+    },
+  } as unknown as Pool;
+
+  const ran = await runIfPostgresSchemaStable(pool, async () => {
+    events.push('iteration');
+  });
+
+  assert.equal(ran, true);
+  assert.deepEqual(events, [
+    'SELECT pg_try_advisory_lock($1::bigint) AS acquired',
+    'iteration',
+    'SELECT pg_advisory_unlock($1::bigint)',
+    'release',
+  ]);
+});
+
+test('schema-stable work skips the iteration while another process migrates', async () => {
+  let iterations = 0;
+  let releases = 0;
+  const client = {
+    async query() {
+      return { rows: [{ acquired: false }] };
+    },
+    release() {
+      releases += 1;
+    },
+  } as unknown as PoolClient;
+  const pool = {
+    async connect() {
+      return client;
+    },
+  } as unknown as Pool;
+
+  const ran = await runIfPostgresSchemaStable(pool, async () => {
+    iterations += 1;
+  });
+
+  assert.equal(ran, false);
+  assert.equal(iterations, 0);
+  assert.equal(releases, 1);
+});
+
+test('schema-stable work unlocks and releases after an iteration failure', async () => {
+  const events: string[] = [];
+  const client = {
+    async query(sql: string) {
+      events.push(sql);
+      return { rows: [{ acquired: true }] };
+    },
+    release() {
+      events.push('release');
+    },
+  } as unknown as PoolClient;
+  const pool = {
+    async connect() {
+      return client;
+    },
+  } as unknown as Pool;
+
+  await assert.rejects(
+    runIfPostgresSchemaStable(pool, async () => {
+      events.push('iteration');
+      throw new Error('iteration failed');
+    }),
+    /iteration failed/u,
+  );
+  assert.deepEqual(events, [
+    'SELECT pg_try_advisory_lock($1::bigint) AS acquired',
+    'iteration',
+    'SELECT pg_advisory_unlock($1::bigint)',
+    'release',
+  ]);
+});
+
+test(
+  'schema-stable work skips while another process holds the migration lock',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async (t) => {
+    const migrationPool = new Pool({ connectionString });
+    const runtimePool = new Pool({ connectionString });
+    const migrationClient = await migrationPool.connect();
+    let migrationOpen = true;
+    t.after(async () => {
+      if (migrationOpen) await migrationClient.query('ROLLBACK');
+      migrationClient.release();
+      await Promise.all([migrationPool.end(), runtimePool.end()]);
+    });
+    await migrationClient.query('BEGIN');
+    await migrationClient.query(
+      'SELECT pg_advisory_xact_lock($1::bigint)',
+      [CORE_SCHEMA_MIGRATION_LOCK_ID],
+    );
+    let iterations = 0;
+
+    assert.equal(
+      await runIfPostgresSchemaStable(runtimePool, async () => {
+        iterations += 1;
+      }),
+      false,
+    );
+    await migrationClient.query('COMMIT');
+    migrationOpen = false;
+    assert.equal(
+      await runIfPostgresSchemaStable(runtimePool, async () => {
+        iterations += 1;
+      }),
+      true,
+    );
+    assert.equal(iterations, 1);
+  },
+);
 
 test('operations migration keeps all DDL on the supplied transaction client', async () => {
   const queries: string[] = [];

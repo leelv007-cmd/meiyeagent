@@ -333,7 +333,10 @@ import {
   StoreIntakeFinalizer,
 } from './p1/operations/store-intake-finalizer.js';
 import { StoreProfileImportPreparer } from './p1/operations/store-profile-import.js';
-import { migratePostgresSchema } from './postgres-schema-migration.js';
+import {
+  migratePostgresSchema,
+  runIfPostgresSchemaStable,
+} from './postgres-schema-migration.js';
 import {
   HarnessWorkflowEventSource,
   VideoWorkflowEventSource,
@@ -2340,17 +2343,21 @@ if (harnessRuntimeConfig) {
     }),
     productQuoteService,
   );
-  await composerSubmissionCoordinator.recoverPendingStarts();
   const pendingStartCoordinator = composerSubmissionCoordinator;
+  await runIfPostgresSchemaStable(pool, async () => {
+    await pendingStartCoordinator.recoverPendingStarts();
+  });
   let pendingStartRecoveryRunning = false;
   const runPendingStartRecovery = async () => {
     if (pendingStartRecoveryRunning) return;
     pendingStartRecoveryRunning = true;
     try {
-      const result = await pendingStartCoordinator.recoverPendingStarts();
-      if (result.failed > 0) {
-        console.error('Harness pending-start recovery failed.', result);
-      }
+      await runIfPostgresSchemaStable(pool, async () => {
+        const result = await pendingStartCoordinator.recoverPendingStarts();
+        if (result.failed > 0) {
+          console.error('Harness pending-start recovery failed.', result);
+        }
+      });
     } catch (error) {
       console.error('Harness pending-start recovery iteration failed.', error);
     } finally {
@@ -2395,17 +2402,24 @@ if (harnessRuntimeConfig) {
     if (compensationRunning) return;
     compensationRunning = true;
     try {
-      const results = await Promise.allSettled([
-        resumeReconciler.runOnce(),
-        harnessSystemDefaults.runOnce(),
-        billingCompensationWorker.runOnce(),
-        reservationSweeper.runOnce(),
-      ]);
-      for (const result of results) {
-        if (result.status === 'rejected') {
-          console.error('Harness compensation iteration failed.', result.reason);
+      await runIfPostgresSchemaStable(pool, async () => {
+        const results = await Promise.allSettled([
+          resumeReconciler.runOnce(),
+          harnessSystemDefaults.runOnce(),
+          billingCompensationWorker.runOnce(),
+          reservationSweeper.runOnce(),
+        ]);
+        for (const result of results) {
+          if (result.status === 'rejected') {
+            console.error(
+              'Harness compensation iteration failed.',
+              result.reason,
+            );
+          }
         }
-      }
+      });
+    } catch (error) {
+      console.error('Harness compensation iteration failed.', error);
     } finally {
       compensationRunning = false;
     }
