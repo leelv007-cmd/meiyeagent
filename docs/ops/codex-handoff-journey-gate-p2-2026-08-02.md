@@ -203,7 +203,7 @@ Worktree 根：`/Users/bin/orca/workspaces/美业内容2/lane-<N>`
 | --- | --- |
 | `main` / `origin/main` | `5f456dfec152e2d836b6cf13c3e2964753fb4b48`（审核启动时一致） |
 | P1 #313–#319 | Issue 与原台账均已 CLOSED，原交付 commit 全部是 main 祖先；但本次行为审核发现合入后缺口，不能只凭 closed/ledger 判通过 |
-| P1 修复链 | `f54ce5c6`…`4d04e7bf` 已是包含本行 commit 的祖先；Core 全量证据基线 `99f91995`，浏览器补修锚点 `4d04e7bf`，exact-tip CI pending |
+| P1 修复链 | `f54ce5c6`…`4d04e7bf` 与审核记录已进入 main exact tip `a55193f0`；Core 全量证据基线 `99f91995`，浏览器补修锚点 `4d04e7bf`，CI run `30716928507` required journey success |
 | P2 #320–#325 | 原 lane 都基于旧 `69cf06e1`；经双轴审核后均有 follow-up HEAD，尚未合入 main |
 | P2 #326–#327 | 尚未实现；必须等 #320–#325 基于新 P1 主线集成后串行开发 |
 | P2 #328 | 除 #324 依赖外还需要真人已登录小红书浏览器 / live 核销；fixture 不能冒充 HITL |
@@ -237,6 +237,7 @@ Worktree 根：`/Users/bin/orca/workspaces/美业内容2/lane-<N>`
 | UI/UX gates | `Overall PASS` |
 | Chromium 针对性热租户 | `1/1 pass`（23.9s；整轮 56.5s） |
 | Chromium 三文件最终门禁 | `15/15 pass / 0 fail / 0 skip`（3.0m） |
+| main exact-tip CI | `a55193f0` / run `30716928507`：`completed/success`；`production-main-journey`、`core-persistence`、`root-quality`、`core`、聚合 `required` 均 success |
 
 上述浏览器证据使用 fixture structured model + 真实本机 PostgreSQL/Chromium；live provider / 生产部署 / #328 HITL 明确不在该证据内。
 
