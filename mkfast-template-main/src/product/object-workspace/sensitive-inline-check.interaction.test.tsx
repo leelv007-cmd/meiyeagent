@@ -14,6 +14,7 @@ import { CopyImageTextWorksurface } from '@/product/results/copy-image-text-work
 
 const baseFacts = {
   workId: 'work-note-327',
+  packageId: 'package-note-327',
   baseRevisionId: 'rev-327-a',
   document: {
     title: '护理笔记',
