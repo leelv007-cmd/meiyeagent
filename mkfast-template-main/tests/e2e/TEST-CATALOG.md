@@ -224,6 +224,7 @@ palette without introducing hidden business writes.
 | 6 | Shelf and global add-to-creation share the inheritance confirmation | Open the same source from the contextual shelf and global palette, verify both paths show five inheritance choices with the same four checked defaults, and prove no hidden write occurs before confirmation. |
 | 7 | Global palette returns an add-to-creation action without creating a Work or Job | From the first-level Asset page, open the global palette with both `Cmd+K` and `Ctrl+K`, verify the navigation and add-to-creation groups, add the copy tool in one click, return to the workbench with the pending action, and prove no Work or Job was created. |
 | 8 | Empty workbench leads with one editable request and one primary action | Open an empty workspace, verify the editable request appears before template choices and read-only “今日建议”, and require exactly one visually primary action before any Work is created. |
+| 9 | XHS note generation exposes role and thinking only in free mode | Apply the XHS note recipe, switch to free mode, verify the role and thinking controls are interactive, then prove customized mode and a non-note lens hide the controls. |
 
 ## 17. UI/UX Upgrade B Result Contracts
 

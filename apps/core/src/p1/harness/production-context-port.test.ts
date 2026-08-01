@@ -972,6 +972,51 @@ test('Composer context binds only its frozen identity revision', async () => {
   );
 });
 
+test('free XHS note context binds its frozen MarketingIdentity default', async () => {
+  const identities = new MemoryMarketingIdentityRepository();
+  await registerBrandIdentity(
+    identities,
+    'identity-free-xhs',
+    '自由创作门店口吻',
+    ['xiaohongshu'],
+  );
+  const port = new LedgerBackedHarnessContextPort(
+    new MemoryStoreFactLedger(),
+    new MemoryContextBundleRepository(),
+    () => '2026-08-02T09:01:00.000Z',
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    identities,
+  );
+  const snapshot = freeXhsNoteSnapshot(
+    'task-free-xhs-identity',
+    'identity-free-xhs',
+    '1',
+  );
+
+  const context = await port.compileAndFreeze({
+    workflowId: snapshot.task.id,
+    request: composerRequest(snapshot),
+    declaration: freeXhsNoteDeclaration(),
+  });
+
+  assert.deepEqual(context.policyReferences.identityRefs, [
+    {
+      id: 'marketing_identity:identity-free-xhs:1',
+      workspaceId: 'workspace-1',
+      status: 'registered',
+    },
+  ]);
+  assert.equal(
+    context.bundle.dimensions.expression_identity[
+      'identity_identity-free-xhs'
+    ]?.sourceRef,
+    'marketing_identity:identity-free-xhs:1',
+  );
+});
+
 test('Composer context carries safe source-package metadata and fences it again', async () => {
   const identities = new MemoryMarketingIdentityRepository();
   await registerBrandIdentity(identities, 'identity-source', '来源内容身份');
@@ -1173,6 +1218,72 @@ function customizedDeclaration(
   };
 }
 
+function freeXhsNoteDeclaration(): IntentDeclaration {
+  return {
+    normalizedIntent: '完成本次小红书笔记创作',
+    taskType: 'daily_service_exposure',
+    deliveryLayer: 'finished_media',
+    relevantAssetCategories: [],
+    usedAssetCategories: [],
+    route: 'free',
+    routingSource: 'entry',
+    implicitConstraints: [],
+  };
+}
+
+function freeXhsNoteSnapshot(
+  taskId: string,
+  identityId: string,
+  identityRevision: string,
+) {
+  return createCreationExecutionSnapshot(
+    {
+      actorId: 'owner-1',
+      briefConfirmation: { id: 'brief-1', revision: 'brief-r1' },
+      briefContext: { id: 'brief-context-1', revision: 1 },
+      catalogModel: { id: 'model-1', revision: 'model-r1' },
+      contentModules: ['social_cover'],
+      contentPackageId: `package-${taskId}`,
+      contentPackagePlatform: 'xiaohongshu',
+      creationMode: 'free',
+      deliverable: {
+        kind: 'note',
+        quantity: 1,
+        aspectRatio: '3:4',
+        notePageBound: 3,
+      },
+      deliverables: [
+        {
+          id: 'note-main',
+          kind: 'image_text_note',
+          order: 0,
+          quantity: 1,
+          aspectRatio: '3:4',
+          notePageBound: 3,
+        },
+      ],
+      distributionTarget: 'export',
+      expectedContentPackageRevision: 0,
+      identity: { id: identityId, revision: identityRevision },
+      idempotencyKey: `submission-${taskId}`,
+      intent: '写一条小红书护理笔记',
+      lens: 'image_text_note',
+      modelPolicy: { id: 'policy-1', mode: 'fixed', revision: 'policy-r1' },
+      platform: { id: 'xiaohongshu' },
+      quote: { id: 'quote-1', revision: 'quote-r1' },
+      recipe: { id: 'recipe-xhs-note', revision: 'recipe-xhs-note-r1' },
+      rights: { revision: 'rights-r1', summary: 'authorized source assets' },
+      route: { id: 'route-1', revision: 'route-r1' },
+      sources: { assets: [] },
+      surface: { id: 'surface-1', revision: 'surface-r1' },
+      taskId,
+      workId: `work-${taskId}`,
+      workspaceId: 'workspace-1',
+    },
+    '2026-08-02T09:00:00.000Z',
+  );
+}
+
 function composerSnapshot(
   taskId: string,
   identityId: string,
@@ -1243,6 +1354,7 @@ async function registerBrandIdentity(
   identities: MemoryMarketingIdentityRepository,
   identityId: string,
   displayName: string,
+  allowedPlatforms: ['douyin'] | ['xiaohongshu'] = ['douyin'],
 ) {
   await identities.register({
     workspaceId: 'workspace-1',
@@ -1255,7 +1367,7 @@ async function registerBrandIdentity(
       displayName,
       owner: '门店',
       professionalBoundaries: ['只表达已核验项目与品牌主张'],
-      allowedPlatforms: ['douyin'],
+      allowedPlatforms,
       allowedScenes: ['brand_personal_ip'],
       expressionSamples: ['以专业克制的方式说明项目价值。'],
       effectiveFrom: '2026-07-22T09:00:00.000Z',

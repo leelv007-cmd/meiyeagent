@@ -5,6 +5,7 @@ import type {
 	ContentPackageRevisionDelivery,
 	ImageModelRecipeProfile,
 	NotePlan,
+	ThinkingLevel,
 } from "@meiye/contracts";
 import {
 	boundedExecutionSnapshotSchema,
@@ -732,12 +733,25 @@ export class UnifiedHarnessStagePorts
 		enhancementJudge?: NotePlanEnhancementJudgeState,
 	) {
 		const snapshot = requireSnapshot(input.request);
-		const runner = this.structuredRunner(input.request, "execution_selection");
+		const isXhsNote = snapshot.contentPackagePlatform === "xiaohongshu";
+		const runner = this.structuredRunner(
+			input.request,
+			"execution_selection",
+			isXhsNote ? snapshot.thinkingLevel : undefined,
+		);
+		const marketingIdentityContext =
+			isXhsNote && !snapshot.beautyVoiceRole
+				? frozenMarketingIdentityContext(input.context, snapshot)
+				: undefined;
 		const xhsGenerationParams =
-			snapshot.contentPackagePlatform === "xiaohongshu" &&
-			snapshot.beautyVoiceRole
+			isXhsNote
 				? {
-						beautyVoiceRole: snapshot.beautyVoiceRole,
+						...(snapshot.beautyVoiceRole
+							? { beautyVoiceRole: snapshot.beautyVoiceRole }
+							: {}),
+						...(marketingIdentityContext
+							? { marketingIdentityContext }
+							: {}),
 						topic: snapshot.intent.text,
 					}
 				: undefined;
@@ -801,23 +815,31 @@ export class UnifiedHarnessStagePorts
 	private structuredRunner(
 		request: HarnessWorkflowInput,
 		stage: Parameters<typeof observeHarnessStructuredNodeRunner>[0]["stage"],
+		thinkingLevel?: ThinkingLevel,
 	) {
 		assertHarnessExecutionAssemblyPinned(request);
 		const snapshot = requireSnapshot(request);
-		const modelOptions = mapThinkingLevelToModelOptions(
-			snapshot.thinkingLevel ?? "standard",
-		);
+		const modelOptions = thinkingLevel
+			? mapThinkingLevelToModelOptions(thinkingLevel)
+			: undefined;
 		const runner = this.runners.create({
 			actorId: request.actorId,
 			billingQuoteRevision: snapshot.quote.revision,
 			billingTaskId: snapshot.task.id,
-			selection: { mode: "auto", profile: modelOptions.routeProfile },
-			providerOptions: {
-				...(modelOptions.reasoningEffort
-					? { reasoningEffort: modelOptions.reasoningEffort }
-					: {}),
-				thinking: modelOptions.thinking,
-			},
+			...(modelOptions
+				? {
+						selection: {
+							mode: "auto" as const,
+							profile: modelOptions.routeProfile,
+						},
+						providerOptions: {
+							...(modelOptions.reasoningEffort
+								? { reasoningEffort: modelOptions.reasoningEffort }
+								: {}),
+							thinking: modelOptions.thinking,
+						},
+					}
+				: {}),
 			workspaceId: request.workspaceId,
 		});
 		if (!request.executionAssembly) return runner;
@@ -893,6 +915,26 @@ function noteVersionId(workflowId: string, packageId: string, styleId: string) {
 		.update(JSON.stringify({ workflowId, styleId }))
 		.digest("hex")
 		.slice(0, 16)}`;
+}
+
+function frozenMarketingIdentityContext(
+	context: HarnessContextSnapshot,
+	snapshot: ReturnType<typeof requireSnapshot>,
+) {
+	if (isOfficialNeutralIdentity(snapshot.identity)) return undefined;
+	const sourceRef =
+		`marketing_identity:${snapshot.identity.id}:${snapshot.identity.revision}`;
+	const registered = context.policyReferences.identityRefs.some(
+		(reference) =>
+			reference.id === sourceRef &&
+			reference.workspaceId === snapshot.workspaceId &&
+			reference.status === "registered",
+	);
+	if (!registered) return undefined;
+	const contribution = Object.values(
+		context.bundle.dimensions.expression_identity,
+	).find((candidate) => candidate.sourceRef === sourceRef);
+	return contribution ? JSON.stringify(contribution.value) : undefined;
 }
 
 function assertMediaVisibleDelivery(

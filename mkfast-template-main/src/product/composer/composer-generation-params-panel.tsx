@@ -1,9 +1,10 @@
-import { Button } from '@/components/ui/button';
 import type {
   BeautyVoiceRole,
   CreationMode,
   ThinkingLevel,
 } from '@meiye/contracts';
+
+import { Button } from '@/components/ui/button';
 
 import {
   BEAUTY_VOICE_ROLE_OPTIONS,

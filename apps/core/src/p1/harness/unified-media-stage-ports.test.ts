@@ -41,10 +41,14 @@ import {
 	toRuntimeCapabilityEntry,
 } from "../supply-registry/hot-assembly.js";
 import { buildContentPackage } from "../operations/content-package.js";
+import { MemoryContextBundleRepository } from "../operations/context-bundle-repository.js";
 import { ContentPackageRightsBasisResolver } from "../operations/content-package-rights-basis.js";
+import { MemoryMarketingIdentityRepository } from "../operations/marketing-identity.js";
+import { MemoryStoreFactLedger } from "../operations/store-fact-ledger.js";
 import type { HarnessStructuredNodeRunnerFactory } from "./production-stage-ports.js";
 import type {
 	ExecutionBrief,
+	IntentDeclaration,
 	StructuredNodeRunnerRequest,
 } from "./structured-nodes.js";
 import type { HarnessWorkflowInput } from "./task-admission.js";
@@ -60,6 +64,7 @@ import {
 	HarnessSelectionError,
 } from "./execution-selection.js";
 import { merchantVisibleLanguageIssues } from "./merchant-delivery-language.js";
+import { LedgerBackedHarnessContextPort } from "./production-context-port.js";
 import type {
 	HarnessContextSnapshot,
 	HarnessStagePorts,
@@ -1646,10 +1651,10 @@ test("frozen XHS generation params drive the existing note prompt and model rout
 			normalizedIntent: "介绍夏日护理项目",
 			taskType: "daily_service_exposure",
 			deliveryLayer: "finished_media",
-			relevantAssetCategories: ["product_service"],
-			usedAssetCategories: ["product_service"],
-			route: "customized",
-			routingSource: "model",
+			relevantAssetCategories: [],
+			usedAssetCategories: [],
+			route: "free",
+			routingSource: "entry",
 			implicitConstraints: [],
 		},
 		context: contextSnapshot(),
@@ -1669,6 +1674,90 @@ test("frozen XHS generation params drive the existing note prompt and model rout
 	assert.match(noteTextRequest?.instructions ?? "", /frozen:xhsNoteGen/u);
 	assert.match(noteTextRequest?.instructions ?? "", /闺蜜聊天/u);
 	assert.match(noteTextRequest?.instructions ?? "", /到店体验顾客/u);
+
+	const defaultIdentitySnapshot = creationExecutionSnapshotSchema.parse({
+		...snapshot,
+		beautyVoiceRole: undefined,
+		id: "snapshot-note-generation-params-default-identity",
+		identity: { id: "identity-1", revision: "1" },
+		thinkingLevel: "standard",
+	});
+	const defaultIdentityRequest: HarnessWorkflowInput = {
+		...request,
+		executionSnapshot: defaultIdentitySnapshot,
+	};
+	const defaultIdentityDeclaration: IntentDeclaration = {
+		normalizedIntent: "介绍夏日护理项目",
+		taskType: "daily_service_exposure",
+		deliveryLayer: "finished_media",
+		relevantAssetCategories: [],
+		usedAssetCategories: [],
+		route: "free",
+		routingSource: "entry",
+		implicitConstraints: [],
+	};
+	const identities = new MemoryMarketingIdentityRepository();
+	await identities.register({
+		workspaceId: "workspace-1",
+		actorId: "owner-1",
+		occurredAt: "2026-08-02T00:00:00.000Z",
+		command: {
+			identityId: "identity-1",
+			kind: "brand",
+			expectedVersion: 0,
+			displayName: "夏日美研社",
+			owner: "门店",
+			professionalBoundaries: ["只表达已核验的护理项目"],
+			allowedPlatforms: ["xiaohongshu"],
+			allowedScenes: ["brand_personal_ip"],
+			expressionSamples: ["专业、克制、不夸大"],
+			effectiveFrom: "2026-08-02T00:00:00.000Z",
+			expiresAt: null,
+			departureHandling: "品牌停用后停止生成新内容。",
+			sourceRef: "identity-1-policy",
+			brandClaims: ["专业护理服务"],
+			forbiddenClaims: ["疗效保证"],
+			visualPrinciples: ["真实服务细节"],
+			seriesAnchors: ["门店护理指南"],
+		},
+	});
+	const defaultIdentityContext = await new LedgerBackedHarnessContextPort(
+		new MemoryStoreFactLedger(),
+		new MemoryContextBundleRepository(),
+		() => "2026-08-02T00:01:00.000Z",
+		undefined,
+		undefined,
+		undefined,
+		undefined,
+		identities,
+	).compileAndFreeze({
+		workflowId: defaultIdentitySnapshot.task.id,
+		request: defaultIdentityRequest,
+		declaration: defaultIdentityDeclaration,
+	});
+	await createPorts().compileNoteBrief({
+		workflowId: defaultIdentitySnapshot.task.id,
+		request: defaultIdentityRequest,
+		declaration: defaultIdentityDeclaration,
+		context: defaultIdentityContext,
+	});
+
+	assert.deepEqual(factoryInputs.at(-1)?.selection, {
+		mode: "auto",
+		profile: "balanced",
+	});
+	assert.deepEqual(factoryInputs.at(-1)?.providerOptions, {
+		thinking: { type: "disabled" },
+	});
+	const defaultIdentityTextRequest = structuredRequests
+		.filter(({ schemaName }) => schemaName === "harness_note_text_block_v1")
+		.at(-1);
+	assert.equal(defaultIdentityTextRequest?.promptKey, "xhsNoteGen");
+	assert.match(defaultIdentityTextRequest?.instructions ?? "", /夏日美研社/u);
+	assert.match(
+		defaultIdentityTextRequest?.instructions ?? "",
+		/专业、克制、不夸大/u,
+	);
 
 	const nonXhsSnapshot = creationExecutionSnapshotSchema.parse({
 		...snapshot,
@@ -1697,13 +1786,8 @@ test("frozen XHS generation params drive the existing note prompt and model rout
 		context: contextSnapshot(),
 	});
 
-	assert.deepEqual(factoryInputs.at(-1)?.selection, {
-		mode: "auto",
-		profile: "balanced",
-	});
-	assert.deepEqual(factoryInputs.at(-1)?.providerOptions, {
-		thinking: { type: "disabled" },
-	});
+	assert.equal(factoryInputs.at(-1)?.selection, undefined);
+	assert.equal(factoryInputs.at(-1)?.providerOptions, undefined);
 	const nonXhsTextRequest = structuredRequests
 		.filter(({ schemaName }) => schemaName === "harness_note_text_block_v1")
 		.at(-1);

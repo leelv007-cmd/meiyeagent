@@ -57,7 +57,8 @@ export class ModelSupplyNotePlanStructuredPort
       xhsNoteGen?: HarnessFrozenPrompt;
     },
     private readonly generationParams?: {
-      beautyVoiceRole: BeautyVoiceRole;
+      beautyVoiceRole?: BeautyVoiceRole;
+      marketingIdentityContext?: string;
       topic: string;
     },
   ) {}
@@ -140,23 +141,30 @@ export class ModelSupplyNotePlanStructuredPort
       HARNESS_BUILTIN_PROMPTS.noteTextBlock;
     if (!this.generationParams) return noteTextBlock;
 
-    const voice = resolveBeautyVoiceInjection(
-      this.generationParams.beautyVoiceRole,
-    );
+    const voice = this.generationParams.beautyVoiceRole
+      ? resolveBeautyVoiceInjection(this.generationParams.beautyVoiceRole)
+      : undefined;
+    const tone =
+      voice?.tone ?? '遵循冻结的门店 MarketingIdentity 默认表达';
+    const roleBlock =
+      voice?.roleBlock ??
+      (this.generationParams.marketingIdentityContext
+        ? `默认门店表达身份（MarketingIdentity）：${this.generationParams.marketingIdentityContext}`
+        : '创作角色：门店官方中性口吻，不虚构个人身份或资质');
     const xhsNoteGen =
       this.prompts?.xhsNoteGen?.content ?? HARNESS_BUILTIN_PROMPTS.xhsNoteGen;
     const compiled = replacePromptVariables(xhsNoteGen, {
       topic: this.generationParams.topic,
-      tone: voice.tone,
-      roleBlock: voice.roleBlock,
+      tone,
+      roleBlock,
     });
     return [
       compiled,
       [
         '本次冻结的生成参数：',
         `内容主题：${this.generationParams.topic}`,
-        `语气风格：${voice.tone}`,
-        voice.roleBlock,
+        `语气风格：${tone}`,
+        roleBlock,
       ].join('\n'),
       noteTextBlock,
       '执行边界：XHS 模板在这里只提供主题、口吻和平台约束；当前节点仍只返回 NotePlan 单页结构。',

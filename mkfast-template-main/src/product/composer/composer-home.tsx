@@ -249,6 +249,7 @@ import {
 import {
   buildSubmissionGenerationParams,
   initialGenerationParamsState,
+  isComposerGenerationParamsSupported,
   type ComposerGenerationParamsState,
 } from './composer-generation-params';
 import { ComposerGenerationParamsPanel } from './composer-generation-params-panel';
@@ -924,6 +925,11 @@ export function ComposerHome({
       submissionRecipe?.delivery.contentPackagePlatform ??
       null,
   };
+  const generationParamsEnabled = isComposerGenerationParamsSupported({
+    deliverableKind: submissionDelivery.deliverableKind,
+    lensId,
+    platform: submissionDelivery.platform,
+  });
   const submissionSettings = {
     ...lensState.draft.settings,
     aspectRatio: submissionAspectRatio ?? null,
@@ -1942,10 +1948,12 @@ export function ComposerHome({
       if (assets.length !== sourceReferences.length) {
         throw new Error('Composer source revisions are incomplete.');
       }
-      const generation = buildSubmissionGenerationParams({
-        creationMode,
-        state: generationParams,
-      });
+      const generation = generationParamsEnabled
+        ? buildSubmissionGenerationParams({
+            creationMode,
+            state: generationParams,
+          })
+        : undefined;
       return submitComposerSubmission({
         ...signedSubmission,
         ...(input.briefConfirmationId
@@ -1975,10 +1983,10 @@ export function ComposerHome({
         ...(input.identityDecision
           ? { identityDecision: input.identityDecision }
           : {}),
-        ...(generation.beautyVoiceRole
+        ...(generation?.beautyVoiceRole
           ? { beautyVoiceRole: generation.beautyVoiceRole }
           : {}),
-        thinkingLevel: generation.thinkingLevel,
+        ...(generation ? { thinkingLevel: generation.thinkingLevel } : {}),
         idempotencyKey: `composer-submit:${sessionIdRef.current}:${input.quote.revision}`,
         creationMode,
         intent: input.intent,
@@ -3372,14 +3380,16 @@ export function ComposerHome({
                           value={explicitImageOperation}
                         />
                       ) : null}
-                      <ComposerGenerationParamsPanel
-                        creationMode={creationMode}
-                        disabled={
-                          createWork.isPending || lensState.phase === 'frozen'
-                        }
-                        onChange={setGenerationParams}
-                        state={generationParams}
-                      />
+                      {generationParamsEnabled ? (
+                        <ComposerGenerationParamsPanel
+                          creationMode={creationMode}
+                          disabled={
+                            createWork.isPending || lensState.phase === 'frozen'
+                          }
+                          onChange={setGenerationParams}
+                          state={generationParams}
+                        />
+                      ) : null}
                       <ComposerImageInput
                         focusRef={sourcePickerRef}
                         onAssetAdded={addSource}

@@ -66,6 +66,19 @@ export function shouldShowBeautyVoiceRole(creationMode: CreationMode): boolean {
   );
 }
 
+/** P2-09 belongs to the XHS image-text note route, not every Composer lens. */
+export function isComposerGenerationParamsSupported(input: {
+  deliverableKind: string | null;
+  lensId: string | null;
+  platform: string | null;
+}): boolean {
+  return (
+    input.lensId === 'image_text' &&
+    input.deliverableKind === 'note' &&
+    input.platform === 'xiaohongshu'
+  );
+}
+
 /**
  * Build the optional generation-param fields for the Composer submission body.
  * Customized always injects owner + standard; free only sends an explicit role.

@@ -529,7 +529,7 @@ export class LedgerBackedHarnessContextPort
     input: Parameters<ProductionHarnessContextPort['compileAndFreeze']>[0],
     at: string,
   ) {
-    return input.declaration.route === 'customized'
+    return shouldBindSnapshotIdentity(input)
       ? this.activeIdentitiesForRequest(input.request, at)
       : Promise.resolve([]);
   }
@@ -553,7 +553,7 @@ export class LedgerBackedHarnessContextPort
     const snapshot = input.request.executionSnapshot;
     if (!snapshot) return;
     const expectedIdentityRef =
-      input.declaration.route === 'customized'
+      shouldBindSnapshotIdentity(input)
         ? snapshotIdentityReference(snapshot)
         : null;
     const identityRefs = Object.values(bundle.dimensions.expression_identity)
@@ -811,6 +811,21 @@ function snapshotIdentityReference(
 ) {
   if (isOfficialNeutralIdentity(snapshot.identity)) return null;
   return `marketing_identity:${snapshot.identity.id}:${snapshot.identity.revision}`;
+}
+
+function shouldBindSnapshotIdentity(
+  input: Parameters<ProductionHarnessContextPort['compileAndFreeze']>[0],
+) {
+  if (input.declaration.route === 'customized') return true;
+  const snapshot = input.request.executionSnapshot;
+  return (
+    input.declaration.route === 'free' &&
+    snapshot?.creationMode === 'free' &&
+    snapshot.lens === 'image_text_note' &&
+    snapshot.contentPackagePlatform === 'xiaohongshu' &&
+    snapshot.deliverable.kind === 'note' &&
+    snapshot.beautyVoiceRole === undefined
+  );
 }
 
 function factReference(factId: string, revision: number) {

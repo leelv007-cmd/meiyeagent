@@ -18,6 +18,12 @@ const client = readFileSync(
 test('ComposerHome mounts generation params panel and injects on submit', () => {
   assert.match(home, /ComposerGenerationParamsPanel/);
   assert.match(home, /buildSubmissionGenerationParams/);
+  assert.match(home, /isComposerGenerationParamsSupported/);
+  assert.match(home, /generationParamsEnabled \? \(/);
+  assert.match(
+    home,
+    /const generation = generationParamsEnabled\s+\? buildSubmissionGenerationParams/u
+  );
   assert.match(home, /beautyVoiceRole/);
   assert.match(home, /thinkingLevel/);
   assert.match(home, /creationMode=\{creationMode\}/);

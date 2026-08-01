@@ -102,6 +102,48 @@ test('XHS NotePlan text generation consumes the frozen beauty voice prompt', asy
   assert.equal(request.promptKey, 'xhsNoteGen');
 });
 
+test('XHS NotePlan uses the frozen MarketingIdentity when free mode has no role override', async () => {
+  const runner = new RecordingFixtureRunner();
+  const port = new ModelSupplyNotePlanStructuredPort(
+    runner,
+    'workflow-xhs-default-identity',
+    () => '2026-08-02T00:00:00.000Z',
+    undefined,
+    {
+      noteTextBlock: frozenPrompt(
+        'harness/note-text-block',
+        'frozen:note-text-block',
+      ),
+      xhsNoteGen: frozenPrompt(
+        'harness/xhs-note-gen',
+        'frozen:xhs-note-gen {topic} {tone} {roleBlock}',
+      ),
+    },
+    {
+      marketingIdentityContext:
+        '{"displayName":"夏日美研社","expressionSamples":["专业、克制、不夸大"]}',
+      topic: '介绍夏日控油护理',
+    },
+  );
+
+  await port.draftPage({
+    page: notePlanPage(),
+    style: {
+      id: 'practical_guide',
+      name: '干货科普版',
+      writingGuide: '先讲问题，再讲方法。',
+    },
+    themeAnchor: '夏日控油护理',
+  });
+
+  const request = runner.requests.at(-1)!;
+  assert.equal(request.promptKey, 'xhsNoteGen');
+  assert.match(request.instructions, /门店 MarketingIdentity 默认表达/u);
+  assert.match(request.instructions, /夏日美研社/u);
+  assert.match(request.instructions, /专业、克制、不夸大/u);
+  assert.doesNotMatch(request.instructions, /美容师口吻|店主口吻|顾客口吻/u);
+});
+
 class RecordingFixtureRunner implements StructuredNodeRunner {
   readonly requests: StructuredNodeRunnerRequest<unknown>[] = [];
   private readonly executor = new FixtureAiStructuredObjectExecutor();

@@ -6,9 +6,45 @@ import {
   DEFAULT_BEAUTY_VOICE_ROLE,
   DEFAULT_THINKING_LEVEL,
   initialGenerationParamsState,
+  isComposerGenerationParamsSupported,
   shouldShowBeautyVoiceRole,
   shouldShowThinkingLevel,
 } from './composer-generation-params';
+
+test('generation params are supported only for the XHS image-text note route', () => {
+  assert.equal(
+    isComposerGenerationParamsSupported({
+      deliverableKind: 'note',
+      lensId: 'image_text',
+      platform: 'xiaohongshu',
+    }),
+    true
+  );
+  assert.equal(
+    isComposerGenerationParamsSupported({
+      deliverableKind: 'note',
+      lensId: 'copy',
+      platform: 'xiaohongshu',
+    }),
+    false
+  );
+  assert.equal(
+    isComposerGenerationParamsSupported({
+      deliverableKind: 'note',
+      lensId: 'image_text',
+      platform: 'douyin',
+    }),
+    false
+  );
+  assert.equal(
+    isComposerGenerationParamsSupported({
+      deliverableKind: 'image_set',
+      lensId: 'image_text',
+      platform: 'xiaohongshu',
+    }),
+    false
+  );
+});
 
 test('free mode exposes both selectors; customized hides thinking and injects defaults', () => {
   assert.equal(shouldShowBeautyVoiceRole('free'), true);
