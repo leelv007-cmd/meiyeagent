@@ -38,11 +38,14 @@ function renderPage() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
-    <QueryClientProvider client={client}>
-      <MemoryVaultPage />
-    </QueryClientProvider>
-  );
+  return {
+    client,
+    ...render(
+      <QueryClientProvider client={client}>
+        <MemoryVaultPage />
+      </QueryClientProvider>
+    ),
+  };
 }
 
 const identity = {
@@ -331,7 +334,49 @@ describe('memory vault', () => {
     ]);
   });
 
-  it('shows an honest cold-start empty state when nothing has been learned', async () => {
+  it('renders nested structures without a raw JSON blob or duplicate handles', async () => {
+    p1.queryP1.mockImplementation(
+      (module: string, input: { action: string }) =>
+        module === 'memory' && input.action === 'entries_page'
+          ? Promise.resolve({
+              items: [
+                {
+                  entryId: 'candidate-nested',
+                  semanticKey: 'style.nested',
+                  value: {
+                    palette: { primary: 'warm-white' },
+                    tags: ['温和', '熟客'],
+                    retired: null,
+                  },
+                  status: 'pending',
+                  proposedAt: '2026-07-30T06:00:00.000Z',
+                  source: null,
+                },
+              ],
+              nextCursor: null,
+            })
+          : Promise.resolve({
+              identities: [],
+              defaultDecision: null,
+              defaultIdentity: null,
+              decisionRevision: 0,
+            })
+    );
+
+    renderPage();
+
+    // findByTestId throws on multiple matches, so this also proves the nested
+    // level does not clone the handle.
+    const value = await screen.findByTestId('memory-entry-value');
+    expect(value).toHaveTextContent('warm-white');
+    expect(value).toHaveTextContent('温和');
+    expect(value).toHaveTextContent('熟客');
+    // P0-5: no brace/bracket blob anywhere in the merchant-facing body, and a
+    // null leaf must not surface as the word "null".
+    expect(value.textContent).not.toMatch(/[{}[\]"]|null/u);
+  });
+
+  it('shows an honest cold-start note when nothing has been learned', async () => {
     p1.queryP1.mockImplementation(
       (module: string, input: { action: string }) =>
         module === 'memory' && input.action === 'entries_page'
@@ -346,15 +391,78 @@ describe('memory vault', () => {
 
     renderPage();
 
-    const empty = await screen.findByTestId('memory-entry-empty');
-    // Scheme-one cold start: say nothing was learned — do not pretend mastery.
-    expect(empty.textContent).toMatch(/还没学到/u);
-    expect(empty.textContent).not.toMatch(/已经记住|越懂你/u);
+    const cold = await screen.findByTestId('memory-cold-start');
+    // Scheme-one cold start: say nothing was learned, name what will appear
+    // later, and mark it as future rather than as something already learned.
+    expect(cold.textContent).toMatch(/还没学到/u);
+    expect(cold.textContent).toMatch(/你常用的表达方式/u);
+    expect(cold.textContent).toMatch(/还没有生成/u);
+    // The standing page description claims the product knows the shop better
+    // the longer she uses it. With nothing sedimented that is a lie, so it must
+    // not be on screen at all.
+    expect(screen.queryByText(/越懂你的店/u)).not.toBeInTheDocument();
+    // And the cold note is said once, not repeated as a per-section empty.
+    expect(screen.queryByTestId('memory-entry-empty')).not.toBeInTheDocument();
     // Unbuilt domains stay distinct from "you have no history".
     const notes = screen.getAllByTestId('memory-unbuilt-note');
     expect(notes).toHaveLength(3);
     for (const note of notes) {
       expect(note.textContent).toMatch(/还在建/u);
     }
+  });
+
+  it('does not call the shop cold when the memory read failed', async () => {
+    p1.queryP1.mockImplementation(
+      (module: string, input: { action: string }) =>
+        module === 'memory' && input.action === 'entries_page'
+          ? Promise.reject(new Error('core unavailable'))
+          : Promise.resolve({
+              identities: [],
+              defaultDecision: null,
+              defaultIdentity: null,
+              decisionRevision: 0,
+            })
+    );
+
+    const { client } = renderPage();
+
+    // Assert only after the failure has actually been processed — otherwise
+    // this passes on the loading frame and proves nothing.
+    await waitFor(() =>
+      expect(
+        client
+          .getQueryCache()
+          .getAll()
+          .some((query) => query.state.status === 'error')
+      ).toBe(true)
+    );
+    // An unanswered read is not evidence that the shop has learned nothing.
+    expect(screen.queryByTestId('memory-cold-start')).not.toBeInTheDocument();
+    expect(screen.getByText(/越懂你的店/u)).toBeInTheDocument();
+  });
+
+  it('keeps the standing description once the shop has sediment', async () => {
+    p1.queryP1.mockImplementation(
+      (module: string, input: { action: string }) =>
+        module === 'memory' && input.action === 'entries_page'
+          ? Promise.resolve({ items: [], nextCursor: null })
+          : Promise.resolve({
+              identities: [identity],
+              defaultDecision: null,
+              defaultIdentity: { identityId: 'identity-1', version: 1 },
+              decisionRevision: 1,
+            })
+    );
+
+    renderPage();
+
+    await screen.findByTestId('memory-identity-name');
+    expect(screen.queryByTestId('memory-cold-start')).not.toBeInTheDocument();
+    expect(screen.getByText(/越懂你的店/u)).toBeInTheDocument();
+    // A shop with a persona but no candidates gets the scoped empty state —
+    // that one is about the review queue, not about the product being cold.
+    expect(screen.getByTestId('memory-entry-empty').textContent).toMatch(
+      /还没有待确认的门店偏好/u
+    );
   });
 });

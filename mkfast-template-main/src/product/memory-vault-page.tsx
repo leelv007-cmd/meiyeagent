@@ -37,6 +37,12 @@ import type {
 import { formatLocaleDate } from '@/lib/locale';
 import { Routes } from '@/lib/routes';
 import {
+  memory_cold_start_disclaimer,
+  memory_cold_start_item_campaigns,
+  memory_cold_start_item_corrections,
+  memory_cold_start_item_expression,
+  memory_cold_start_item_workflows,
+  memory_cold_start_lead,
   memory_domain_campaigns_description,
   memory_domain_campaigns_title,
   memory_domain_corrections_description,
@@ -68,7 +74,7 @@ import { p1QueryKeys } from '@/p1/query-keys';
 import { marketingIdentityProjectionQuery } from './marketing-identity-queries';
 
 /** Pending first; within a status, newest proposedAt first. */
-export function sortMemoryEntries(
+function sortMemoryEntries(
   items: MemoryEntryProjection[]
 ): MemoryEntryProjection[] {
   const rank = (status: MemoryEntryProjection['status']) =>
@@ -95,37 +101,43 @@ function humanizeKey(key: string): string {
 /**
  * Merchant-facing value body. Non-string JSON must never appear as a raw
  * stringify blob — use key/value rows, lists, or short primitive text.
+ *
+ * Only the outermost node carries the testid: a nested structure would
+ * otherwise hand the same handle to several elements, and an assertion that
+ * silently matches the wrong depth is worse than no assertion.
  */
-export function MemoryValueView({ value }: { value: unknown }) {
+function MemoryValueView({
+  value,
+  root = true,
+}: {
+  value: unknown;
+  root?: boolean;
+}) {
+  const testId = root ? 'memory-entry-value' : undefined;
+  const blank = (
+    <p className="meiye-type-aux" data-testid={testId}>
+      —
+    </p>
+  );
   if (typeof value === 'string') {
-    return <p data-testid="memory-entry-value">{value}</p>;
+    return <p data-testid={testId}>{value}</p>;
   }
   if (isPrimitive(value)) {
-    return <p data-testid="memory-entry-value">{String(value)}</p>;
+    return <p data-testid={testId}>{String(value)}</p>;
   }
   if (value === null || value === undefined) {
-    return (
-      <p className="meiye-type-aux" data-testid="memory-entry-value">
-        —
-      </p>
-    );
+    return blank;
   }
   if (Array.isArray(value)) {
-    if (value.length === 0) {
-      return (
-        <p className="meiye-type-aux" data-testid="memory-entry-value">
-          —
-        </p>
-      );
-    }
+    if (value.length === 0) return blank;
     return (
-      <ul className="list-disc space-y-1 pl-4" data-testid="memory-entry-value">
+      <ul className="list-disc space-y-1 pl-4" data-testid={testId}>
         {value.map((item, index) => (
           <li key={index}>
-            {isPrimitive(item) || item === null ? (
+            {isPrimitive(item) ? (
               String(item)
             ) : (
-              <MemoryValueView value={item} />
+              <MemoryValueView root={false} value={item} />
             )}
           </li>
         ))}
@@ -134,23 +146,17 @@ export function MemoryValueView({ value }: { value: unknown }) {
   }
   if (typeof value === 'object') {
     const entries = Object.entries(value as Record<string, unknown>);
-    if (entries.length === 0) {
-      return (
-        <p className="meiye-type-aux" data-testid="memory-entry-value">
-          —
-        </p>
-      );
-    }
+    if (entries.length === 0) return blank;
     return (
-      <dl className="grid gap-2 text-sm" data-testid="memory-entry-value">
+      <dl className="grid gap-2 text-sm" data-testid={testId}>
         {entries.map(([key, nested]) => (
           <div key={key}>
             <dt className="meiye-type-aux">{humanizeKey(key)}</dt>
             <dd className="mt-0.5">
-              {isPrimitive(nested) || nested === null ? (
+              {isPrimitive(nested) ? (
                 String(nested)
               ) : (
-                <MemoryValueView value={nested} />
+                <MemoryValueView root={false} value={nested} />
               )}
             </dd>
           </div>
@@ -158,10 +164,30 @@ export function MemoryValueView({ value }: { value: unknown }) {
       </dl>
     );
   }
+  return blank;
+}
+
+/**
+ * Cold start. The page's standing description promises the product knows this
+ * shop better the longer she uses it — true eventually, a lie on day one. With
+ * nothing sedimented at all, say so plainly and name what will show up here
+ * later, framed as future rather than as something already learned.
+ */
+function ColdStartNote() {
   return (
-    <p className="meiye-type-aux" data-testid="memory-entry-value">
-      —
-    </p>
+    <div
+      className="meiye-porcelain rounded-2xl p-5 sm:p-6"
+      data-testid="memory-cold-start"
+    >
+      <p>{memory_cold_start_lead()}</p>
+      <ul className="mt-2 list-disc space-y-1 pl-4 text-sm">
+        <li>{memory_cold_start_item_expression()}</li>
+        <li>{memory_cold_start_item_campaigns()}</li>
+        <li>{memory_cold_start_item_corrections()}</li>
+        <li>{memory_cold_start_item_workflows()}</li>
+      </ul>
+      <p className="meiye-type-aux mt-3">{memory_cold_start_disclaimer()}</p>
+    </div>
   );
 }
 
@@ -253,10 +279,18 @@ export function MemoryVaultPage() {
       )
     : undefined;
   const entries = sortMemoryEntries(entriesQuery.data?.items ?? []);
+  // Only claim coldness once both reads have actually answered — a pending or
+  // failed query is not evidence that the shop has nothing sedimented.
+  const settled = Boolean(entriesQuery.data) && Boolean(identityQuery.data);
+  const cold = settled && entries.length === 0 && !defaultIdentity;
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="meiye-type-aux">{memory_page_description()}</p>
+      {cold ? (
+        <ColdStartNote />
+      ) : (
+        <p className="meiye-type-aux">{memory_page_description()}</p>
+      )}
 
       <MemorySection
         title={memory_domain_identity_title()}
@@ -279,7 +313,10 @@ export function MemoryVaultPage() {
                 }
               />
             ))
-          ) : (
+          ) : cold ? null : (
+            // On a cold page the note above already says nothing was learned;
+            // repeating it per section is the four-empty-blocks screen the
+            // cold state exists to replace.
             <p className="meiye-type-aux" data-testid="memory-entry-empty">
               {memory_entry_empty()}
             </p>
