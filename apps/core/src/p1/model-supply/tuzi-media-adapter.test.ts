@@ -190,6 +190,52 @@ test('Tuzi image edits upload square PNG references as multipart form data', asy
   assert.doesNotMatch(receipt.error ?? '', /tuzi-test-secret/);
 });
 
+test('Tuzi reference transforms preserve the reserved image quantity', async () => {
+  const store = await sampleImageDataUrl({
+    format: 'png',
+    height: 512,
+    width: 512,
+  });
+  const fetchMock: typeof globalThis.fetch = async (input, init) => {
+    assert.equal(String(input), 'https://api.tu-zi.example/v1/images/edits');
+    assert.ok(init?.body instanceof FormData);
+    assert.equal(init.body.get('n'), '2');
+    return Response.json({
+      created: 1_786_400_000,
+      data: [
+        { url: 'https://media.example.test/generated-a.png' },
+        { url: 'https://media.example.test/generated-b.png' },
+      ],
+      usage: { generated_images: 2 },
+    });
+  };
+  const effect = request('seedream-5-pro', store);
+  effect.submission.outputCount = 2;
+
+  const downloaded: string[] = [];
+  const adapter = provider(fetchMock, {
+    async get(target) {
+      downloaded.push(target);
+      return {
+        bytes: Uint8Array.from(store.bytes),
+        finalUrl: target,
+        mimeType: 'image/png',
+      };
+    },
+  });
+  const receipt = await adapter.submit(effect);
+
+  assert.equal(receipt.acceptance, 'accepted', receipt.error);
+  const execution = await adapter.execute(effect);
+  assert.equal(execution.kind, 'completed');
+  if (execution.kind !== 'completed') return;
+  assert.equal(execution.assets?.length, 2);
+  assert.deepEqual(downloaded, [
+    'https://media.example.test/generated-a.png',
+    'https://media.example.test/generated-b.png',
+  ]);
+});
+
 test('Tuzi image edits map non-square size hints to allowed square outputs', async () => {
   const store = await sampleImageDataUrl({
     format: 'png',

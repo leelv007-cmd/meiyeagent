@@ -89,6 +89,7 @@ interface ArkTaskReference {
   scope: string;
   providerTaskId?: string;
   sourceUrl?: string;
+  sourceUrls?: string[];
   sourceExpiresAt?: string;
   usage?: {
     mediaUnits?: number;
@@ -366,15 +367,16 @@ export class ArkMediaExecutionPort<
         providerCost: state.providerCost,
       };
     }
-    const asset = await this.download({
+    const assets = await this.downloadAll({
       ...effectRequest,
       taskRef: receipt.taskRef,
     });
     return {
       kind: 'completed',
       providerTaskRef: receipt.taskRef,
-      assetBytes: asset.bytes,
-      contentType: asset.contentType,
+      assetBytes: assets[0]!.bytes,
+      contentType: assets[0]!.contentType,
+      assets: assets.map(({ bytes, contentType }) => ({ bytes, contentType })),
       providerCost: state.providerCost,
     };
   }
@@ -610,19 +612,32 @@ export class ArkMediaExecutionPort<
   }
 
   async download(request: MediaProviderEffectRequest & { taskRef: string }) {
+    const [asset] = await this.downloadAll(request);
+    if (!asset) {
+      throw new ArkAdapterError(
+        'invalid_task_reference',
+        false,
+        'Ark media task receipt has no downloadable assets.',
+      );
+    }
+    return asset;
+  }
+
+  async downloadAll(request: MediaProviderEffectRequest & { taskRef: string }) {
     this.assertCompatible(request);
     const reference = this.decodeTaskRef(request.taskRef, request);
-    let sourceUrl: string;
+    let sourceUrls: string[];
     let sourceExpiresAt = reference.sourceExpiresAt;
     if (reference.kind === 'image') {
-      if (!reference.sourceUrl) {
+      sourceUrls = reference.sourceUrls ??
+        (reference.sourceUrl ? [reference.sourceUrl] : []);
+      if (sourceUrls.length === 0) {
         throw new ArkAdapterError(
           'invalid_task_reference',
           false,
           'Ark image task receipt has no source URL.',
         );
       }
-      sourceUrl = reference.sourceUrl;
     } else {
       const task = await this.readVideoTask(reference, request);
       if (task.status !== 'succeeded' || !task.content?.video_url) {
@@ -632,54 +647,57 @@ export class ArkMediaExecutionPort<
           'Ark video asset is not ready for download.',
         );
       }
-      sourceUrl = task.content.video_url;
+      sourceUrls = [task.content.video_url];
       sourceExpiresAt = this.taskSourceExpiresAt(task);
     }
-    this.assertHttpsSourceUrl(sourceUrl);
-    let fetched: SafeFetchResult;
-    try {
-      fetched = await this.assetFetch.get(sourceUrl, {
-        allowedMimeTypes:
-          reference.kind === 'image'
-            ? ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
-            : ['video/mp4'],
-        authorization: {
-          host: this.assetAuthorizationHost,
-          value: `Bearer ${this.options.apiKey}`,
-        },
-        maxBytes:
-          reference.kind === 'image'
-            ? MAX_PROVIDER_IMAGE_BYTES
-            : MAX_PROVIDER_VIDEO_BYTES,
-      });
-    } catch (error) {
-      throw new ArkAdapterError(
-        'download_failed',
-        providerAssetFetchRetryable(error),
-        this.redact(error instanceof Error ? error.message : 'Ark download failed.'),
-      );
-    }
-    const bytes = fetched.bytes;
-    if (bytes.byteLength === 0) {
-      throw new ArkAdapterError(
-        'download_failed',
-        true,
-        'Ark asset download returned an empty body.',
-      );
-    }
-    if (reference.kind === 'image') {
-      const png = await sharp(bytes).png().toBuffer();
-      return {
-        bytes: Uint8Array.from(png),
-        contentType: 'image/png' as const,
-        ...(sourceExpiresAt ? { sourceExpiresAt } : {}),
-      };
-    }
-    return {
-      bytes,
-      contentType: 'video/mp4' as const,
-      ...(sourceExpiresAt ? { sourceExpiresAt } : {}),
-    };
+    return Promise.all(
+      sourceUrls.map(async (sourceUrl) => {
+        this.assertHttpsSourceUrl(sourceUrl);
+        let fetched: SafeFetchResult;
+        try {
+          fetched = await this.assetFetch.get(sourceUrl, {
+            allowedMimeTypes:
+              reference.kind === 'image'
+                ? ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
+                : ['video/mp4'],
+            authorization: {
+              host: this.assetAuthorizationHost,
+              value: `Bearer ${this.options.apiKey}`,
+            },
+            maxBytes:
+              reference.kind === 'image'
+                ? MAX_PROVIDER_IMAGE_BYTES
+                : MAX_PROVIDER_VIDEO_BYTES,
+          });
+        } catch (error) {
+          throw new ArkAdapterError(
+            'download_failed',
+            providerAssetFetchRetryable(error),
+            this.redact(error instanceof Error ? error.message : 'Ark download failed.'),
+          );
+        }
+        if (fetched.bytes.byteLength === 0) {
+          throw new ArkAdapterError(
+            'download_failed',
+            true,
+            'Ark asset download returned an empty body.',
+          );
+        }
+        if (reference.kind === 'image') {
+          const png = await sharp(fetched.bytes).png().toBuffer();
+          return {
+            bytes: Uint8Array.from(png),
+            contentType: 'image/png' as const,
+            ...(sourceExpiresAt ? { sourceExpiresAt } : {}),
+          };
+        }
+        return {
+          bytes: fetched.bytes,
+          contentType: 'video/mp4' as const,
+          ...(sourceExpiresAt ? { sourceExpiresAt } : {}),
+        };
+      }),
+    );
   }
 
   async cancel(request: MediaProviderEffectRequest & { taskRef: string }) {
@@ -808,6 +826,15 @@ export class ArkMediaExecutionPort<
       request.effectIdempotencyKey,
     );
     const parsed = this.parseImage(body);
+    const expectedOutputCount = request.submission.outputCount ?? 1;
+    if (parsed.data.length !== expectedOutputCount) {
+      throw new ArkAdapterError(
+        'invalid_response',
+        false,
+        `Ark image generation returned ${parsed.data.length} assets for ${expectedOutputCount} requested outputs.`,
+        'acceptance_unknown',
+      );
+    }
     const usage = {
       mediaUnits: parsed.usage?.generated_images ?? parsed.data.length,
       ...(typeof parsed.usage?.output_tokens === 'number'
@@ -827,7 +854,7 @@ export class ArkMediaExecutionPort<
         version: 1,
         kind: 'image',
         scope: this.scope(request),
-        sourceUrl: parsed.data[0]!.url,
+        sourceUrls: parsed.data.map((item) => item.url),
         sourceExpiresAt,
         usage,
         usageEvidenceKind,
@@ -1011,8 +1038,15 @@ export class ArkMediaExecutionPort<
     if (!isRecord(value) || !Array.isArray(value.data)) {
       throw new Error('Ark image generation returned an invalid response.');
     }
-    const first = value.data[0];
-    if (!isRecord(first) || typeof first.url !== 'string' || !first.url.trim()) {
+    if (
+      value.data.length === 0 ||
+      value.data.some(
+        (item) =>
+          !isRecord(item) ||
+          typeof item.url !== 'string' ||
+          !item.url.trim(),
+      )
+    ) {
       throw new Error('Ark image generation returned no source URL.');
     }
     return value as unknown as ArkImageResponse;

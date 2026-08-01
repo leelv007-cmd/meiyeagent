@@ -6,6 +6,7 @@ import type {
   ProviderCostSnapshot,
 } from '@meiye/contracts';
 import { P1DomainError } from '../foundation/domain.js';
+import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import {
   providerBillingMode,
   type BillingAttemptCost,
@@ -38,6 +39,9 @@ export interface MerchantExecutionContract {
   outputCount: number;
   quoteRevision: string;
   submissionContractHash: string;
+  submissionInputAssetsHash?: string;
+  submissionPromptHash?: string;
+  submissionReferenceAssetsHash?: string;
   targetSeconds?: number;
 }
 
@@ -57,6 +61,30 @@ export interface ClaimMerchantExecutionInput extends MerchantExecutionContract {
 export interface MerchantExecutionInputSnapshot {
   input: Record<string, unknown> | null;
   prompt: string;
+}
+
+export function merchantExecutionInputHashes(input: MerchantExecutionInputSnapshot) {
+  const source = input.input ?? {};
+  const referenceAssetIds = Array.isArray(source.referenceAssetIds)
+    ? source.referenceAssetIds.filter((value): value is string => typeof value === 'string').sort()
+    : [];
+  const inputAssets = Array.isArray(source.inputAssets)
+    ? source.inputAssets
+        .filter(
+          (value): value is { assetId: string; role: string } =>
+            typeof value === 'object' &&
+            value !== null &&
+            typeof (value as { assetId?: unknown }).assetId === 'string' &&
+            typeof (value as { role?: unknown }).role === 'string',
+        )
+        .map(({ assetId, role }) => ({ assetId, role }))
+        .sort((left, right) => fingerprintValue(left).localeCompare(fingerprintValue(right)))
+    : [];
+  return {
+    inputAssetsHash: fingerprintValue(inputAssets),
+    promptHash: fingerprintValue(input.prompt),
+    referenceAssetsHash: fingerprintValue(referenceAssetIds),
+  };
 }
 
 export interface MerchantExecutionBillingPort {
@@ -86,6 +114,9 @@ function merchantExecutionContractHash(
         outputCount: input.outputCount,
         quoteRevision: input.quoteRevision,
         submissionContractHash: input.submissionContractHash,
+        submissionPromptHash: input.submissionPromptHash,
+        submissionReferenceAssetsHash: input.submissionReferenceAssetsHash,
+        submissionInputAssetsHash: input.submissionInputAssetsHash,
         targetSeconds: input.targetSeconds ?? null,
         promptHash: 'promptHash' in input ? input.promptHash : null,
         referenceAssetsHash:
@@ -292,6 +323,9 @@ export class DurableProductBillingService
       !quote.operation ||
       !quote.revision ||
       !quote.submissionContractHash ||
+      !quote.submissionPromptHash ||
+      !quote.submissionReferenceAssetsHash ||
+      !quote.submissionInputAssetsHash ||
       typeof outputCount !== 'number' ||
       !Number.isSafeInteger(outputCount) ||
       outputCount < 1
@@ -307,6 +341,9 @@ export class DurableProductBillingService
       outputCount,
       quoteRevision: quote.revision,
       submissionContractHash: quote.submissionContractHash,
+      submissionPromptHash: quote.submissionPromptHash,
+      submissionReferenceAssetsHash: quote.submissionReferenceAssetsHash,
+      submissionInputAssetsHash: quote.submissionInputAssetsHash,
       ...(quote.targetSeconds === undefined
         ? {}
         : { targetSeconds: quote.targetSeconds }),
@@ -362,6 +399,8 @@ export class DurableProductBillingService
             transaction.getQuoteByTask(workspaceId, input.taskId),
             transaction.getUsage(workspaceId, input.taskId),
           ]);
+          const primaryMerchantEffect =
+            input.effectKey === `merchant-execution:${input.taskId}`;
           if (
             !quote ||
             !usage ||
@@ -374,6 +413,19 @@ export class DurableProductBillingService
             quote.catalogModelId !== input.catalogModelId ||
             quote.outputCount !== input.outputCount ||
             quote.submissionContractHash !== input.submissionContractHash ||
+            (primaryMerchantEffect &&
+              (!input.submissionPromptHash ||
+                !input.submissionReferenceAssetsHash ||
+                !input.submissionInputAssetsHash ||
+                quote.submissionPromptHash !== input.submissionPromptHash ||
+                quote.submissionReferenceAssetsHash !==
+                  input.submissionReferenceAssetsHash ||
+                quote.submissionInputAssetsHash !==
+                  input.submissionInputAssetsHash ||
+                input.promptHash !== input.submissionPromptHash ||
+                input.referenceAssetsHash !==
+                  input.submissionReferenceAssetsHash ||
+                input.inputAssetsHash !== input.submissionInputAssetsHash)) ||
             (quote.targetSeconds ?? null) !== (input.targetSeconds ?? null) ||
             usage.workspaceId !== workspaceId ||
             usage.taskId !== input.taskId ||

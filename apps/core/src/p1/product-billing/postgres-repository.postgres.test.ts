@@ -3,7 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { after, before, describe, it } from 'node:test';
 import { Pool } from 'pg';
 import { P1DomainError } from '../foundation/domain.js';
-import { DurableProductBillingService } from './durable-service.js';
+import {
+  DurableProductBillingService,
+  merchantExecutionInputHashes,
+} from './durable-service.js';
 import { PostgresProductBillingRepository } from './postgres-repository.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
@@ -49,6 +52,10 @@ describe(
     }
 
     function quoteInput(workspaceId: string, quoteId: string) {
+      const hashes = merchantExecutionInputHashes({
+        input: { durationSeconds: 10 },
+        prompt: 'merchant prompt',
+      });
       return {
         billingMode: 'per_output_second' as const,
         catalogModelId: 'video-model',
@@ -58,6 +65,9 @@ describe(
         quoteId,
         quotePolicyRevision: 'product-policy-1',
         submissionContractHash: `signed-snapshot:${quoteId}`,
+        submissionInputAssetsHash: hashes.inputAssetsHash,
+        submissionPromptHash: hashes.promptHash,
+        submissionReferenceAssetsHash: hashes.referenceAssetsHash,
         targetSeconds: 10,
         unitRate: 0.5,
         workspaceId,
@@ -448,18 +458,30 @@ describe(
         effectKey: 'merchant-execution:merchant-execution-task',
         operation: 'video.generate',
         outputCount: 1,
-        inputAssetsHash: 'input-assets-hash',
+        inputAssetsHash: quote.submissionInputAssetsHash!,
         inputSnapshot: { input: { durationSeconds: 10 }, prompt: 'merchant prompt' },
-        promptHash: 'prompt-hash',
+        promptHash: quote.submissionPromptHash!,
         providerCatalogModelId: 'video-model',
         providerOperation: 'video.generate',
         quoteRevision: quote.revision,
-        referenceAssetsHash: 'reference-assets-hash',
+        referenceAssetsHash: quote.submissionReferenceAssetsHash!,
         submissionContractHash: quote.submissionContractHash!,
+        submissionInputAssetsHash: quote.submissionInputAssetsHash!,
+        submissionPromptHash: quote.submissionPromptHash!,
+        submissionReferenceAssetsHash: quote.submissionReferenceAssetsHash!,
         targetSeconds: 10,
         taskId: 'merchant-execution-task',
         workspaceId,
       };
+
+      await assert.rejects(
+        service.claimMerchantExecution({
+          ...contract,
+          idempotencyKey: 'merchant-forged-first-prompt',
+          promptHash: 'forged-first-prompt-hash',
+        }),
+        /exactly match/i,
+      );
 
       const claims = await Promise.allSettled([
         new DurableProductBillingService(repository).claimMerchantExecution({

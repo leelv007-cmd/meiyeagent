@@ -35,9 +35,10 @@ import {
 } from './failover-semantics.js';
 import type { PriceRevision } from './catalog.js';
 import { P1DomainError } from '../foundation/domain.js';
-import type {
-  ClaimMerchantExecutionInput,
-  MerchantExecutionBillingPort,
+import {
+  merchantExecutionInputHashes,
+  type ClaimMerchantExecutionInput,
+  type MerchantExecutionBillingPort,
 } from '../product-billing/durable-service.js';
 
 const EXECUTION_ATTEMPT_BUDGET_SUSPENSION_CODE =
@@ -765,22 +766,6 @@ function merchantCopyCandidateCount(
   return undefined;
 }
 
-function merchantExecutionInputHashes(submission: ModelSupplySubmission) {
-  const referenceAssetIds = [
-    ...(submission.input?.referenceAssetIds ?? []),
-  ].sort();
-  const inputAssets = [...(submission.input?.inputAssets ?? [])]
-    .map((asset) => ({ assetId: asset.assetId, role: asset.role }))
-    .sort((left, right) =>
-      JSON.stringify(left).localeCompare(JSON.stringify(right)),
-    );
-  return {
-    inputAssetsHash: merchantExecutionHash(inputAssets),
-    promptHash: merchantExecutionHash(submission.prompt),
-    referenceAssetsHash: merchantExecutionHash(referenceAssetIds),
-  };
-}
-
 function merchantExecutionInputSnapshot(submission: ModelSupplySubmission) {
   return {
     input: submission.input
@@ -807,10 +792,6 @@ function bindMerchantExecutionInput(
         }),
     prompt: inputSnapshot.prompt,
   };
-}
-
-function merchantExecutionHash(value: unknown) {
-  return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
 function assertPromptBinding(
@@ -2095,12 +2076,13 @@ export class ModelSupplyApplicationService {
         mode: 'fixed' as const,
       },
     } satisfies ModelSupplySubmission;
+    const inputSnapshot = merchantExecutionInputSnapshot(bound);
     const claim: ClaimMerchantExecutionInput = {
       ...reserved,
-      ...merchantExecutionInputHashes(bound),
+      ...merchantExecutionInputHashes(inputSnapshot),
       effectKey,
       idempotencyKey: effectKey,
-      inputSnapshot: merchantExecutionInputSnapshot(bound),
+      inputSnapshot,
       providerCatalogModelId: bound.selection.catalogModelId,
       providerOperation: bound.operation,
       taskId,
@@ -4122,17 +4104,23 @@ export class ModelSupplyApplicationService {
         continue;
       }
 
-      const asset =
-        response.assetBytes && response.contentType
-          ? await this.assetStorage.persistGeneratedAsset({
-              workspaceId: attemptSubmission.workspaceId,
-              bytes: response.assetBytes,
-              contentType: response.contentType,
-              ...(response.providerTaskRef
-                ? { sourceTaskRef: response.providerTaskRef }
-                : {}),
-            })
-          : undefined;
+      const providerAssets = response.assets ??
+        (response.assetBytes && response.contentType
+          ? [{ bytes: response.assetBytes, contentType: response.contentType }]
+          : []);
+      const assets = await Promise.all(
+        providerAssets.map(({ bytes, contentType }) =>
+          this.assetStorage.persistGeneratedAsset({
+            workspaceId: attemptSubmission.workspaceId,
+            bytes,
+            contentType,
+            ...(response.providerTaskRef
+              ? { sourceTaskRef: response.providerTaskRef }
+              : {}),
+          }),
+        ),
+      );
+      const [asset] = assets;
       const result: ModelSupplyResult = {
         jobId,
         operation: attemptSubmission.operation,
@@ -4145,6 +4133,7 @@ export class ModelSupplyApplicationService {
         attempt,
         attempts: [...attemptChain],
         ...(asset ? { asset } : {}),
+        ...(assets.length > 1 ? { assets } : {}),
         ...(response.copyCandidates
           ? { copyCandidates: response.copyCandidates }
           : {}),

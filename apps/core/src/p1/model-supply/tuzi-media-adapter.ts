@@ -205,6 +205,7 @@ async function imageEditFormData(
   source: {
     image: string[];
     model: string;
+    n?: number;
     prompt: string;
     size?: string;
   }
@@ -212,7 +213,7 @@ async function imageEditFormData(
   const form = new FormData();
   form.set('model', source.model);
   form.set('prompt', source.prompt);
-  form.set('n', '1');
+  form.set('n', String(source.n ?? 1));
   form.set('response_format', 'url');
   form.set('size', tuziEditOutputSize(source.size));
   let totalBytes = 0;
@@ -388,6 +389,7 @@ async function rewriteTuziRequest(
   const source = JSON.parse(init.body) as {
     image?: string[];
     model: string;
+    n?: number;
     prompt: string;
     size?: string;
   };

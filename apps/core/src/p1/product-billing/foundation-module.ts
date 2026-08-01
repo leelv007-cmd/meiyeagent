@@ -75,6 +75,35 @@ function numberField(
   return value;
 }
 
+function executionInput(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'executionInput must be an object.',
+    );
+  }
+  const input = value as Record<string, unknown>;
+  if (typeof input.prompt !== 'string' || input.prompt.trim().length === 0) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'executionInput.prompt must be a non-empty string.',
+    );
+  }
+  if (
+    input.input !== undefined &&
+    (typeof input.input !== 'object' || input.input === null || Array.isArray(input.input))
+  ) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'executionInput.input must be an object when provided.',
+    );
+  }
+  return {
+    input: (input.input ?? null) as Record<string, unknown> | null,
+    prompt: input.prompt,
+  };
+}
+
 const SERVER_AUTHORITATIVE_QUOTE_FIELDS = [
   'authorizedCeiling',
   'billingMode',
@@ -136,6 +165,9 @@ function publicQuoteIntent(
       ? { aspectRatio }
       : {}),
     catalogModelId: stringField(value, 'catalogModelId'),
+    ...(value.executionInput !== undefined
+      ? { executionInput: executionInput(value.executionInput) }
+      : {}),
     operation: operation as PublicProductQuoteIntent['operation'],
     ...(numberField(value, 'quantity', { optional: true }) !== undefined
       ? { quantity: numberField(value, 'quantity', { optional: true }) }

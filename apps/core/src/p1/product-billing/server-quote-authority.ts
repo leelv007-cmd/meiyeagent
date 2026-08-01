@@ -11,6 +11,7 @@ export {
 import { P1DomainError } from '../foundation/domain.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import type { CreditPricing } from '../model-supply/supply-contracts.js';
+import { merchantExecutionInputHashes } from './durable-service.js';
 
 export const publicProductQuoteOperations = [
   'copy.generate',
@@ -29,6 +30,10 @@ export type PublicProductQuoteOperation =
 export interface PublicProductQuoteIntent {
   aspectRatio?: '1:1' | '3:4' | '9:16';
   catalogModelId: string;
+  executionInput?: {
+    input: Record<string, unknown> | null;
+    prompt: string;
+  };
   operation: PublicProductQuoteOperation;
   quantity?: number;
   quoteId: string;
@@ -197,6 +202,16 @@ export class CatalogProductQuoteAuthority implements ProductQuoteAuthority {
       quotePolicyRevision: 'quote.policy@1',
       ...(input.submission
         ? { submissionContractHash: fingerprintValue(input.submission) }
+        : {}),
+      ...(input.executionInput
+        ? (() => {
+            const hashes = merchantExecutionInputHashes(input.executionInput);
+            return {
+              submissionInputAssetsHash: hashes.inputAssetsHash,
+              submissionPromptHash: hashes.promptHash,
+              submissionReferenceAssetsHash: hashes.referenceAssetsHash,
+            };
+          })()
         : {}),
       unitRate: creditCost,
       workspaceId: input.workspaceId,

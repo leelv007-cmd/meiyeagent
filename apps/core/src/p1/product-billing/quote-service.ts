@@ -112,6 +112,9 @@ function revisionFor(input: BuildProductQuoteInput): string {
         operation: input.operation,
         quotePolicyRevision: input.quotePolicyRevision,
         submissionContractHash: input.submissionContractHash,
+        submissionPromptHash: input.submissionPromptHash,
+        submissionReferenceAssetsHash: input.submissionReferenceAssetsHash,
+        submissionInputAssetsHash: input.submissionInputAssetsHash,
         roundingStepSeconds: input.roundingStepSeconds,
         targetSeconds: input.targetSeconds,
         unitRate: input.unitRate,
@@ -269,6 +272,15 @@ export class ProductQuoteService {
       quotePolicyRevision: input.quotePolicyRevision,
       ...(input.submissionContractHash
         ? { submissionContractHash: input.submissionContractHash }
+        : {}),
+      ...(input.submissionPromptHash
+        ? { submissionPromptHash: input.submissionPromptHash }
+        : {}),
+      ...(input.submissionReferenceAssetsHash
+        ? { submissionReferenceAssetsHash: input.submissionReferenceAssetsHash }
+        : {}),
+      ...(input.submissionInputAssetsHash
+        ? { submissionInputAssetsHash: input.submissionInputAssetsHash }
         : {}),
       extraConfirmThreshold: extraConfirmThresholdFor(
         input.quotePolicyRevision,

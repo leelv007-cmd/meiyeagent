@@ -74,6 +74,10 @@ export interface ProductQuoteSnapshot {
   quotePolicyRevision: string;
   /** Hash of the user-confirmed Composer fields covered by this preview. */
   submissionContractHash?: string;
+  /** Server-signed provider-input hashes; never expose them to browser callers. */
+  submissionPromptHash?: string;
+  submissionReferenceAssetsHash?: string;
+  submissionInputAssetsHash?: string;
   /** Server-resolved extra-confirm threshold frozen from quotePolicyRevision. */
   extraConfirmThreshold?: number;
   billingMode: ProductBillingMode;
@@ -146,7 +150,11 @@ export interface ProductQuoteSnapshot {
  */
 export type PublicProductQuoteSnapshot = Omit<
   ProductQuoteSnapshot,
-  'frozenCandidateDeploymentIds' | 'routeSnapshotRef'
+  | 'frozenCandidateDeploymentIds'
+  | 'routeSnapshotRef'
+  | 'submissionPromptHash'
+  | 'submissionReferenceAssetsHash'
+  | 'submissionInputAssetsHash'
 >;
 
 /**
@@ -159,6 +167,9 @@ export function toPublicProductQuoteSnapshot(
   const {
     frozenCandidateDeploymentIds: _frozenCandidateDeploymentIds,
     routeSnapshotRef: _routeSnapshotRef,
+    submissionPromptHash: _submissionPromptHash,
+    submissionReferenceAssetsHash: _submissionReferenceAssetsHash,
+    submissionInputAssetsHash: _submissionInputAssetsHash,
     ...publicQuote
   } = quote;
   return publicQuote;
@@ -274,6 +285,9 @@ export interface BuildProductQuoteInput {
   catalogModelRevision?: string;
   quotePolicyRevision: string;
   submissionContractHash?: string;
+  submissionPromptHash?: string;
+  submissionReferenceAssetsHash?: string;
+  submissionInputAssetsHash?: string;
   billingMode: ProductBillingMode;
   /** Server-authoritative price in merchant credits, never supplier currency. */
   creditCost?: number;

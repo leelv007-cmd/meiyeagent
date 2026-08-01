@@ -11,7 +11,10 @@ import {
   ModelSupplyApplicationService,
   RecordedProviderExecutionPort,
 } from '../model-supply/index.js';
-import { DurableProductBillingService } from '../product-billing/durable-service.js';
+import {
+  DurableProductBillingService,
+  merchantExecutionInputHashes,
+} from '../product-billing/durable-service.js';
 import { PostgresProductBillingRepository } from '../product-billing/postgres-repository.js';
 import type {
   AccountAllocation,
@@ -1107,6 +1110,11 @@ test(
       const workspaceId = `workspace-billing-bridge-${randomUUID()}`;
       const actorId = 'account-billing-bridge';
       const billingTaskId = `billing-task-${randomUUID()}`;
+      const merchantInput = {
+        input: null,
+        prompt: '真实 PostgreSQL 双侧账本',
+      };
+      const merchantInputHashes = merchantExecutionInputHashes(merchantInput);
       const billingRepository = new PostgresProductBillingRepository(pool);
       await billingRepository.migrate();
       const billing = new DurableProductBillingService(billingRepository);
@@ -1119,6 +1127,10 @@ test(
         quoteId: `quote-${randomUUID()}`,
         quotePolicyRevision: 'product-policy-billing-r1',
         submissionContractHash: 'billing-bridge-signed-snapshot',
+        submissionInputAssetsHash: merchantInputHashes.inputAssetsHash,
+        submissionPromptHash: merchantInputHashes.promptHash,
+        submissionReferenceAssetsHash:
+          merchantInputHashes.referenceAssetsHash,
         unitRate: 1,
         workspaceId,
       });
@@ -1195,7 +1207,7 @@ test(
         dataClass: [],
         idempotencyKey: `submit-${randomUUID()}`,
         operation: 'image.generate' as const,
-        prompt: '真实 PostgreSQL 双侧账本',
+        prompt: merchantInput.prompt,
         selection: { catalogModelId: model.id, mode: 'fixed' as const },
         workspaceId,
       };

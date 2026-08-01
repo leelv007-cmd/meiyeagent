@@ -86,6 +86,8 @@ export interface ModelSupplyResult {
   attempt: ProviderAttempt;
   attempts: ProviderAttempt[];
   asset?: OwnedAsset;
+  /** All provider outputs for a multi-image merchant quote, in provider order. */
+  assets?: OwnedAsset[];
   copyCandidates?: CopyCandidate[];
   platformVariants?: GeneratedPlatformVariants;
   text?: string;

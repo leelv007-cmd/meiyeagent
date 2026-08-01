@@ -190,6 +190,14 @@ function merchantExecutionBillingStub(input: {
         quoteRevision: quote.revision,
         submissionContractHash:
           quote.submissionContractHash ?? `snapshot:${quote.taskId}`,
+        submissionPromptHash:
+          quote.submissionPromptHash ?? 'test-submission-prompt-hash',
+        submissionReferenceAssetsHash:
+          quote.submissionReferenceAssetsHash ??
+          'test-submission-reference-assets-hash',
+        submissionInputAssetsHash:
+          quote.submissionInputAssetsHash ??
+          'test-submission-input-assets-hash',
         ...(quote.targetSeconds === undefined
           ? {}
           : { targetSeconds: quote.targetSeconds }),
@@ -252,6 +260,12 @@ function merchantExecutionBillingStub(input: {
         (quote.submissionContractHash ?? `snapshot:${quote.taskId}`) !==
           claim.submissionContractHash ||
         (quote.targetSeconds ?? null) !== (claim.targetSeconds ?? null) ||
+        (quote.submissionPromptHash !== undefined &&
+          quote.submissionPromptHash !== claim.promptHash) ||
+        (quote.submissionReferenceAssetsHash !== undefined &&
+          quote.submissionReferenceAssetsHash !== claim.referenceAssetsHash) ||
+        (quote.submissionInputAssetsHash !== undefined &&
+          quote.submissionInputAssetsHash !== claim.inputAssetsHash) ||
         usage.workspaceId !== claim.workspaceId ||
         usage.taskId !== claim.taskId ||
         usage.quoteId !== quote.quoteId ||
@@ -3537,7 +3551,18 @@ describe('ModelSupplyFoundationModule', () => {
       {
         async execute(request) {
           providerOutputCount = request.submission.outputCount;
-          return new RecordedProviderExecutionPort().execute(request);
+          return {
+            kind: 'completed' as const,
+            assets: [
+              { bytes: Uint8Array.from([1, 2, 3]), contentType: 'image/png' as const },
+              { bytes: Uint8Array.from([4, 5, 6]), contentType: 'image/png' as const },
+            ],
+            providerCost: {
+              amount: 0.2,
+              currency: 'CNY' as const,
+              usage: { mediaUnits: 2 },
+            },
+          };
         },
       },
       [],
@@ -3563,6 +3588,92 @@ describe('ModelSupplyFoundationModule', () => {
 
     assert.equal(result.status, 'completed');
     assert.equal(providerOutputCount, quote.outputCount);
+    assert.equal(result.assets?.length, quote.outputCount);
+  });
+
+  it('rejects a forged first merchant submission before provider I/O', async () => {
+    let providerCalls = 0;
+    const quote = {
+      catalogModelId: 'seedream-5-pro',
+      lifecycleStatus: 'reserved',
+      operation: 'image.edit',
+      outputCount: 1,
+      quoteId: 'quote-first-input-bound',
+      revision: 'quote-r1',
+      submissionContractHash: 'opaque-signed-submission',
+      submissionInputAssetsHash: '0'.repeat(64),
+      submissionPromptHash: '0'.repeat(64),
+      submissionReferenceAssetsHash: '0'.repeat(64),
+      taskId: 'credit-task-first-input-bound',
+      workspaceId: owner.workspaceId,
+    } as ProductQuoteSnapshot;
+    const reservedBilling = merchantExecutionBillingStub({
+      getQuote: () => quote,
+      getUsage: () =>
+        ({
+          quoteId: quote.quoteId,
+          status: 'reserved',
+          taskId: quote.taskId,
+          workspaceId: owner.workspaceId,
+        }) as ProductUsageRecord,
+    });
+    const { controlPlane } = setup(
+      {
+        async execute(request) {
+          providerCalls += 1;
+          return new RecordedProviderExecutionPort().execute(request);
+        },
+      },
+      [],
+      undefined,
+      {
+        async inspect(_workspaceId, assetIds) {
+          return assetIds.map((assetId) => ({
+            assetId,
+            classificationSource: 'server_fact' as const,
+            contentType: 'image/png',
+            dataClass: [],
+            kind: 'resolved' as const,
+            rightsRevision: 'rights-r1',
+            sha256: '0'.repeat(64),
+          }));
+        },
+        async resolve(_workspaceId, assetIds) {
+          return assetIds.map((assetId) => ({
+            assetId,
+            bytes: new Uint8Array([1, 2, 3]),
+            contentType: 'image/png',
+            kind: 'resolved' as const,
+            providerReadableUrl: 'data:image/png;base64,AQID',
+            sha256: '0'.repeat(64),
+          }));
+        },
+      },
+      undefined,
+      undefined,
+      reservedBilling,
+    );
+
+    await assert.rejects(
+      controlPlane.submitGeneration(
+        owner,
+        {
+          billingQuoteRevision: quote.revision,
+          billingTaskId: quote.taskId,
+          dataClass: [],
+          input: {
+            inputAssets: [{ assetId: 'forged-input', role: 'reference_image' }],
+            referenceAssetIds: ['forged-reference'],
+          },
+          operation: 'image.edit',
+          prompt: 'FORGED FIRST PROMPT',
+          selection: { catalogModelId: quote.catalogModelId, mode: 'fixed' },
+        },
+        'first-input-forgery',
+      ),
+      /reserved credit quote/i,
+    );
+    assert.equal(providerCalls, 0);
   });
 
   it('derives video duration from the reserved quote before provider execution', async () => {

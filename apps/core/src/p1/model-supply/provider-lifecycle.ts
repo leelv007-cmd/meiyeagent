@@ -129,6 +129,10 @@ export type ProviderExecutionResponse =
       };
       assetBytes?: Uint8Array;
       contentType?: OwnedAsset['contentType'];
+      assets?: Array<{
+        bytes: Uint8Array;
+        contentType: OwnedAsset['contentType'];
+      }>;
       providerCost: Omit<ProviderCost, 'id' | 'status'>;
     }
   | {

@@ -218,6 +218,47 @@ test('Ark Seedream derives per-image usage from the returned response when usage
   assert.equal(requests, 1);
 });
 
+test('Ark preserves every requested image through receipt recovery and execution', async () => {
+  const fetched: string[] = [];
+  const fetchMock: typeof globalThis.fetch = async (_input, init) => {
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    assert.equal(body.n, 2);
+    return Response.json({
+      created: 1_786_400_000,
+      data: [
+        { url: 'https://media.example.test/generated-a.png' },
+        { url: 'https://media.example.test/generated-b.png' },
+      ],
+      usage: { generated_images: 2 },
+    });
+  };
+  const provider = adapter(fetchMock, {
+    async get(target) {
+      fetched.push(target);
+      return {
+        bytes: PNG_1X1,
+        finalUrl: target,
+        mimeType: 'image/png',
+      };
+    },
+  });
+  const request = effectRequest('seedream-5-pro');
+  request.submission.outputCount = 2;
+
+  const receipt = await provider.submit(request);
+  const recovered = await provider.recover(request);
+  assert.deepEqual(recovered, receipt);
+  const result = await provider.execute(request);
+
+  assert.equal(result.kind, 'completed');
+  if (result.kind !== 'completed') return;
+  assert.equal(result.assets?.length, 2);
+  assert.deepEqual(fetched, [
+    'https://media.example.test/generated-a.png',
+    'https://media.example.test/generated-b.png',
+  ]);
+});
+
 test('Ark Seedream still rejects an image response without a usable source URL', async () => {
   const provider = adapter(async () =>
     Response.json({
