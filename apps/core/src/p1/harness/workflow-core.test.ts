@@ -6,6 +6,7 @@ import {
   HarnessSnapshotDecisionError,
   HarnessWorkflowCancellation,
   runHarnessWorkflow,
+  triggersPaidMediaExecution,
   type HarnessMediaSelectionResult,
   type HarnessMediaStagePorts,
   type HarnessNoteBrief,
@@ -2017,6 +2018,8 @@ test('a snapshot-backed semantic answer resubmits the same task and work before 
 });
 
 test('a paid media snapshot waits for execution confirmation before selection', async () => {
+  // Positive: quote + reserved media units ⇒ pre-run confirmation hold
+  // (xhs-spec §3.2: 含付费媒体执行必过卡).
   const request: HarnessWorkflowInput = {
     ...mediaTaskInput('image'),
     usageReservation: {
@@ -2024,6 +2027,7 @@ test('a paid media snapshot waits for execution confirmation before selection', 
       units: [{ resource: 'image' as const, quantity: 1 }],
     },
   };
+  assert.equal(triggersPaidMediaExecution(request), true);
   const stages = mediaStages('image');
   const executeMediaAndSelect = stages.executeMediaAndSelect.bind(stages);
   const order: string[] = [];
@@ -2082,9 +2086,8 @@ test('a media snapshot without usage reservation does not wait for execution con
 });
 
 test('a paid copy snapshot delivers without a pre-run confirmation hold', async () => {
-  // Current journey-family contract (composer-card-family T31): the copy main
-  // path has no pre-run cost confirmation. Extending D-164③ confirmation to
-  // copy/note is deliberate product work with its own spec migration.
+  // Negative: pure copy reservation never holds (D-043 / composer-card-family T31).
+  // Gate is operation-based (paid media units), not workflow-path-based.
   const request: HarnessWorkflowInput = {
     ...snapshotTaskInput(),
     usageReservation: {
@@ -2092,6 +2095,7 @@ test('a paid copy snapshot delivers without a pre-run confirmation hold', async 
       units: [{ resource: 'copy' as const, quantity: 1 }],
     },
   };
+  assert.equal(triggersPaidMediaExecution(request), false);
   const stages = fixtureStages();
   const executeAndSelect = stages.executeAndSelect!;
   let selectionCalls = 0;
@@ -2116,6 +2120,47 @@ test('a paid copy snapshot delivers without a pre-run confirmation hold', async 
   });
 
   assert.equal(selectionCalls, 1);
+});
+
+test('a copy snapshot with paid media units holds for pre-run confirmation', async () => {
+  // Positive pair for pure-copy exemption: even on the copy Harness path,
+  // reserved image/video units trigger the paid-media confirmation gate.
+  const request: HarnessWorkflowInput = {
+    ...snapshotTaskInput(),
+    usageReservation: {
+      id: 'usage-reservation-copy-path-media',
+      units: [
+        { resource: 'copy' as const, quantity: 1 },
+        { resource: 'image' as const, quantity: 2 },
+      ],
+    },
+  };
+  assert.equal(triggersPaidMediaExecution(request), true);
+  const stages = fixtureStages();
+  const executeAndSelect = stages.executeAndSelect!;
+  const order: string[] = [];
+  stages.executeAndSelect = async (input) => {
+    order.push('selection');
+    return executeAndSelect(input);
+  };
+
+  await runHarnessWorkflow('task-copy', request, stages, {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision(question, stage) {
+      order.push('confirmation');
+      assert.equal(stage, 'execution_selection');
+      assert.equal(question.response.field, 'execution_confirmation');
+      return approvePaidGenerationConfirmation(question);
+    },
+    async recordTrace() {},
+  });
+
+  assert.equal(order[0], 'confirmation');
+  assert.ok(order.includes('selection'));
 });
 
 test('semantic resubmission rejects a forged workspace before persistence', () => {

@@ -1303,6 +1303,13 @@ export async function runHarnessWorkflow(
       : merchantProgressMessage('brief_compilation'),
   });
 
+  activeRequest = await confirmPaidGenerationExecution({
+    workflowId,
+    request: activeRequest,
+    runtime,
+    reportProgress,
+  });
+
   const executionSkills = stageSkills.execution_selection;
   let selection: HarnessSelectionResult =
     await executeSelectionToCompletion(
@@ -1759,6 +1766,13 @@ async function runNoteHarnessWorkflow(
       ...skillTraceLineage(contextSkills),
     }, `r${context.bundle.revision}`);
   }
+
+  activeRequest = await confirmPaidGenerationExecution({
+    workflowId,
+    request: activeRequest,
+    runtime,
+    reportProgress,
+  });
 
   const executionSkills = stageSkills.execution_selection;
   const noteSelectionInput = {
@@ -2969,18 +2983,47 @@ async function applyCurrentTaskDecision(
   };
 }
 
+/** Usage resources that count as paid media execution (not pure copy). */
+const PAID_MEDIA_USAGE_RESOURCES = new Set(['image', 'video']);
+
 /**
- * D-164③ paid-generation execution confirmation.
+ * xhs-vertical-integration-spec §3.2 / D-164③:
+ * Whether this request would trigger paid media execution and therefore needs
+ * a pre-run confirmation hold. Pure copy remains free of confirmation (D-043).
  *
- * Trigger: frozen executionSnapshot with a quote AND a billing usageReservation
- * (Composer admission freeze). This is generation-point cost confirmation, not
- * D-013 class-7 external publish approval.
+ * Judgment is operation-based (quote + reserved media units / media lens),
+ * not "media workflow path only".
+ */
+export function triggersPaidMediaExecution(
+  request: HarnessWorkflowInput,
+): boolean {
+  const snapshot = request.executionSnapshot;
+  if (!snapshot?.quote || !request.usageReservation) {
+    return false;
+  }
+  const units = request.usageReservation.units;
+  if (Array.isArray(units) && units.length > 0) {
+    return units.some((unit) => PAID_MEDIA_USAGE_RESOURCES.has(unit.resource));
+  }
+  // Reservation without unit breakdown: media-like lenses imply paid media;
+  // pure copy lens stays exempt (D-043).
+  const lens = snapshot.lens;
+  return (
+    lens === 'image' || lens === 'video' || lens === 'image_text_note'
+  );
+}
+
+/**
+ * D-164③ paid-generation execution confirmation (xhs-spec §3.2).
  *
- * Scope: the media workflow path only. That matches the contract the journey
- * spec family encodes today (the card appears in video/image journeys; copy
- * journeys deliver without a pre-run hold, see composer-card-family T31).
- * Extending confirmation to copy/note paths is deliberate product work with
- * its own spec-family migration, not part of the publish:* retirement.
+ * Trigger: the operation would execute paid media generation — frozen
+ * executionSnapshot quote + usageReservation that includes media units
+ * (image|video), or media/note lens when units are absent. Pure copy units
+ * alone never hold (D-043 / composer-card-family T31).
+ *
+ * This is generation-point cost confirmation, not D-013 class-7 external
+ * publish approval. Called from copy/media/note Harness paths; the gate itself
+ * decides whether to hold.
  *
  * Wire kind stays `external_action` so the existing interaction renderer gate
  * (`executionConfirmationInteractionRequestFromQuestion`) and e2e fixtures keep
@@ -2997,10 +3040,10 @@ async function confirmPaidGenerationExecution(input: {
 }) {
   let request = input.request;
   for (;;) {
-    const snapshot = request.executionSnapshot;
-    if (!snapshot?.quote || !request.usageReservation) {
+    if (!triggersPaidMediaExecution(request)) {
       return request;
     }
+    const snapshot = request.executionSnapshot!;
     const question = questionCardSchema.parse({
       questionId: `execution-confirmation:${snapshot.id}`,
       workflowId: input.workflowId,
