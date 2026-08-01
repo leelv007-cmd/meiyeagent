@@ -123,6 +123,62 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('keeps the blocker when the current quote changes while recovery settlement is pending', async () => {
+    let finishSettlement!: () => void;
+    const onRecoverySettled = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishSettlement = resolve;
+        })
+    );
+    const onUnlocked = vi.fn();
+    const view = render(
+      <ComposerCreditRecoveryHost
+        blocked
+        quote={{ quoteId: 'quote-low', revision: 'revision-low', amount: 50 }}
+        redeem={async () => ({
+          creditGrant: {
+            originalCredits: 30,
+            transactionType: 'REDEMPTION_CODE',
+          },
+        })}
+        refreshCredits={async () => ({
+          credits: { availableCredits: 70 },
+        })}
+        onRecoverySettled={onRecoverySettled}
+        onUnlocked={onUnlocked}
+      />
+    );
+
+    setRedeemCode('CREDIT-30');
+    fireEvent.click(screen.getByTestId('composer-quota-redeem-submit'));
+    await waitFor(() => expect(onRecoverySettled).toHaveBeenCalledOnce());
+
+    view.rerender(
+      <ComposerCreditRecoveryHost
+        blocked
+        quote={{ quoteId: 'quote-high', revision: 'revision-high', amount: 80 }}
+        redeem={async () => ({})}
+        refreshCredits={async () => ({
+          credits: { availableCredits: 70 },
+        })}
+        onRecoverySettled={onRecoverySettled}
+        onUnlocked={onUnlocked}
+      />
+    );
+    finishSettlement();
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('composer-quota-redeem-error')
+      ).toHaveTextContent('报价已更新，请按最新报价重试')
+    );
+    expect(onUnlocked).not.toHaveBeenCalled();
+    expect(
+      screen.queryByTestId('composer-quota-continue-ready')
+    ).not.toBeInTheDocument();
+  });
+
   it('unlocks only after a credit receipt is confirmed by the authoritative balance', async () => {
     const events: string[] = [];
     const redeem = vi.fn(async () => {

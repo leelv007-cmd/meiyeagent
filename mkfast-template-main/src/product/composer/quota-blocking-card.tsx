@@ -270,6 +270,16 @@ export function ComposerCreditRecoveryHost({
             refreshCredits,
           });
           await onRecoverySettled?.();
+          const settledQuote = currentQuoteRef.current;
+          if (
+            result.ok &&
+            (!acceptedQuote ||
+              !settledQuote ||
+              acceptedQuote.quoteId !== settledQuote.quoteId ||
+              acceptedQuote.revision !== settledQuote.revision)
+          ) {
+            return { ok: false, message: '报价已更新，请按最新报价重试' };
+          }
           return result;
         } catch (error) {
           return {
