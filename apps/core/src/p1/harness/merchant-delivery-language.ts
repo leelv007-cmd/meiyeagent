@@ -93,6 +93,14 @@ export function merchantNoteSelectionReason(selected: boolean) {
   return selected ? '店主选择了这一图文方向' : '保留为未选中的风格草稿';
 }
 
+/**
+ * P2-11 / #323: independent style-analysis stage on the note/image timeline.
+ * Keep wording aligned with `STYLE_ANALYSIS_STAGE_MESSAGE` in xhs-style-analysis.
+ */
+export function merchantStyleAnalysisProgress() {
+  return '正在分析参考图风格（七维），后续配图会按同一风格保持一致';
+}
+
 export function merchantNoteStyleUnavailable() {
   return '你刚选的图文方向已不在当前配置中，请重新选择后再继续。';
 }

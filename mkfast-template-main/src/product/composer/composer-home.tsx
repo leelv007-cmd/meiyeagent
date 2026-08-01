@@ -3298,6 +3298,14 @@ export function ComposerHome({
                   );
                   focusComposerIntentInput();
                 }}
+                onDeliveryAiCover={(seed) => {
+                  // P2-11 / #323: AI cover secondary — prefill ratio+preset intent,
+                  // never auto-submit (same contract as follow-ups / paid-media gate).
+                  setLensState((current) =>
+                    updateUserText(current, seed.intent)
+                  );
+                  focusComposerIntentInput();
+                }}
                 onNotePlanOutlineEdit={({ pageId, title, body }) => {
                   setNotePlanOutlineSaveError((current) =>
                     current?.pageId === pageId ? null : current

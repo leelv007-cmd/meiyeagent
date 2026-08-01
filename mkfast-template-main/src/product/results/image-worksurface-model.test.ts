@@ -45,6 +45,14 @@ function facts(
   };
 }
 
+test('object-workspace projects AI cover tool (P2-11 / #323)', () => {
+  const view = projectImageWorksurface(facts());
+  assert.ok(view.aiCoverTool);
+  assert.equal(view.aiCoverTool?.id, 'ai_cover');
+  assert.equal(view.aiCoverTool?.enabled, true);
+  assert.match(view.aiCoverTool?.label ?? '', /AI 封面/);
+});
+
 test('≥2 candidates default to set mode; switchable to single', () => {
   const view = projectImageWorksurface(facts({ candidates: candidates(2) }));
   assert.equal(view.mode, 'set');

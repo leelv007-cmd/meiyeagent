@@ -48,6 +48,8 @@ export type ImageWorksurfaceProps = {
       | { kind: 'asset'; assetId: string }
       | { kind: 'set'; assetIds: string[] }
   ) => void;
+  /** P2-11 / #323: object-workspace AI cover tool exit (prefill / open cover flow). */
+  onAiCover?: () => void;
   onCreateFromThis?: () => void;
   onModeChange?: (mode: 'single' | 'set') => void;
   /** Injectable for tests; the wall clock is used by default. */
@@ -531,6 +533,19 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
             onClick={() => props.onCreateFromThis?.()}
           >
             {view.createFromThis.label}
+          </Button>
+        ) : null}
+
+        {/* P2-11 / #323: object-workspace AI cover tool (secondary, not Idle primary). */}
+        {view.aiCoverTool ? (
+          <Button
+            type="button"
+            variant="outline"
+            data-testid="image-ai-cover-tool"
+            disabled={!view.aiCoverTool.enabled || !props.onAiCover}
+            onClick={() => props.onAiCover?.()}
+          >
+            {view.aiCoverTool.label}
           </Button>
         ) : null}
       </div>

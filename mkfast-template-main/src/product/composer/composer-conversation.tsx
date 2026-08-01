@@ -45,6 +45,7 @@ import {
   type DeliveryRatingTransition,
   type ComposerDeliveryOpenInput,
 } from './composer-delivery-card';
+import type { AiCoverActionSeed } from './ai-cover-action';
 import type { DeliveryFollowUpSeed } from './delivery-followup-seeds';
 import { ComposerProgressCard } from './composer-progress-card';
 import { WORKBENCH_STICKY_COMPOSER_INTERRUPT_CLASS } from './workbench-shell';
@@ -339,6 +340,8 @@ export type ComposerConversationProps = {
     taskId: string;
   }) => Promise<unknown> | unknown;
   onDeliveryFollowUp?: (seed: DeliveryFollowUpSeed) => void;
+  /** P2-11 / #323: Delivered secondary AI cover (ratio-selectable prefill). */
+  onDeliveryAiCover?: (seed: AiCoverActionSeed) => void;
   /** 交付物自己的创作类型与画幅 — chip 集合按它取，横版上不再问要不要横版。 */
   deliveryLensId?: CreationLensId;
   deliveryAspectRatio?: string;
@@ -396,6 +399,7 @@ export function ComposerConversation({
   onOpenDelivery,
   onRateDelivery,
   onDeliveryFollowUp,
+  onDeliveryAiCover,
   deliveryLensId,
   deliveryAspectRatio,
   onRecover,
@@ -558,6 +562,7 @@ export function ComposerConversation({
             <ComposerDeliveryCard
               aspectRatio={deliveryAspectRatio}
               lensId={deliveryLensId}
+              onAiCover={onDeliveryAiCover}
               onFollowUp={onDeliveryFollowUp}
               onOpen={onOpenDelivery}
               onRate={

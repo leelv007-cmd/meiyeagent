@@ -29,6 +29,7 @@ import {
   type WholeSetAdoptCandidate,
   type WholeSetAdoptValidation,
 } from './whole-set-adopt';
+import { projectAiCoverWorkspaceTool } from '../composer/ai-cover-action';
 
 // ---------------------------------------------------------------------------
 // Candidate / facts
@@ -201,6 +202,11 @@ export type ImageWorksurfaceView = {
     scopeActions: { id: 'adjust_one' | 'adjust_set'; label: string }[];
   };
   createFromThis: CreateFromThisCommand | null;
+  /**
+   * P2-11 / #323: object-workspace AI cover tool (not Idle primary).
+   * Present for image_text note/image surfaces when generation is complete.
+   */
+  aiCoverTool: { id: 'ai_cover'; label: string; enabled: boolean } | null;
   mobileDesktopGate: null;
   feedback: string | null;
 };
@@ -359,6 +365,9 @@ export function projectImageWorksurface(
       ],
     },
     createFromThis,
+    // Object-workspace tool hang for AI cover (§4.2 / §4.10). Image worksurface
+    // is the image_text/note refine surface — always eligible when projected.
+    aiCoverTool: projectAiCoverWorkspaceTool({ lensId: 'image_text' }),
     mobileDesktopGate: null,
     feedback: options?.lastFeedback ?? null,
   };

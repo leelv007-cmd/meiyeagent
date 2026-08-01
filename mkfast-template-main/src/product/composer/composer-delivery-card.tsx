@@ -24,6 +24,11 @@ import { useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 
 import { WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS } from './workbench-shell';
+import {
+  aiCoverAllowedOnSurface,
+  listAiCoverRatioOptions,
+  type AiCoverActionSeed,
+} from './ai-cover-action';
 import { ComposerDeliveryFollowUps } from './composer-delivery-followups';
 import {
   ComposerDeliveryRatingBar,
@@ -81,6 +86,11 @@ export type ComposerDeliveryCardProps = {
   onRate?: (transition: DeliveryRatingTransition) => Promise<unknown> | unknown;
   /** 后续动作出口：把整句交出去预填 Composer，禁止在此提交。 */
   onFollowUp?: (seed: DeliveryFollowUpSeed) => void;
+  /**
+   * P2-11 / #323: AI cover secondary action. Prefills Composer with ratio +
+   * beauty preset intent — same non-submit contract as follow-ups.
+   */
+  onAiCover?: (seed: AiCoverActionSeed) => void;
   className?: string;
 };
 
@@ -94,10 +104,19 @@ export function ComposerDeliveryCard({
   aspectRatio,
   onRate,
   onFollowUp,
+  onAiCover,
   className,
 }: ComposerDeliveryCardProps) {
   const [verdict, setVerdict] = useState<DeliveryRatingVerdict | null>(null);
   const [ratingPending, setRatingPending] = useState(false);
+  const [aiCoverOpen, setAiCoverOpen] = useState(false);
+  const showAiCover =
+    Boolean(onAiCover) &&
+    aiCoverAllowedOnSurface({
+      surface: 'delivered_secondary',
+      lensId: lensId ?? null,
+    });
+  const aiCoverOptions = showAiCover ? listAiCoverRatioOptions() : [];
   const ratingPendingRef = useRef(false);
   const retryTransitionRef = useRef<{
     signature: string;
@@ -206,6 +225,49 @@ export function ComposerDeliveryCard({
           lensId={lensId}
           onFollowUp={onFollowUp}
         />
+      ) : null}
+
+      {/* P2-11 / #323: Delivered secondary — AI cover with three selectable ratios. */}
+      {showAiCover && onAiCover ? (
+        <div
+          className="mt-3 space-y-2"
+          data-testid="composer-delivery-ai-cover"
+        >
+          <button
+            aria-expanded={aiCoverOpen}
+            className="rounded-full border border-border/60 bg-transparent px-3 py-2.5 text-xs text-muted-foreground outline-none transition-colors duration-150 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+            data-testid="composer-delivery-ai-cover-toggle"
+            onClick={() => setAiCoverOpen((open) => !open)}
+            type="button"
+          >
+            生成 AI 封面
+          </button>
+          {aiCoverOpen ? (
+            <div
+              className="flex flex-wrap gap-2"
+              data-testid="composer-delivery-ai-cover-ratios"
+              role="group"
+              aria-label="AI 封面比例"
+            >
+              {aiCoverOptions.map((option) => (
+                <button
+                  className="meiye-glass-piece rounded-full px-3 py-1 text-xs"
+                  data-aspect-ratio={option.aspectRatio}
+                  data-size={option.size}
+                  data-testid={`composer-delivery-ai-cover-ratio-${option.aspectRatio.replace(':', '-')}`}
+                  key={option.aspectRatio}
+                  onClick={() => {
+                    onAiCover(option);
+                    setAiCoverOpen(false);
+                  }}
+                  type="button"
+                >
+                  {option.aspectRatio}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
       ) : null}
 
       {revision ? (
