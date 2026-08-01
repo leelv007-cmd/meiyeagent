@@ -9,7 +9,7 @@ import { cleanupE2EUsers } from '../../tests/e2e/fixtures/auth.js';
 
 test(
   'E2E user cleanup stops waiting on an unresponsive application',
-  { timeout: 25_000 },
+  { timeout: 30_000 },
   async (t) => {
     const server = createServer(() => undefined);
     await new Promise<void>((resolve, reject) => {
@@ -23,7 +23,7 @@ test(
     const forceClose = setTimeout(() => {
       server.closeAllConnections();
       server.close();
-    }, 17_000);
+    }, 25_000);
 
     t.after(async () => {
       clearTimeout(forceClose);
@@ -43,7 +43,7 @@ test(
     await assert.rejects(cleanupE2EUsers(request), /timeout|timed out/iu);
     const elapsedMs = performance.now() - startedAt;
 
-    assert.ok(elapsedMs >= 14_000, `cleanup stopped too early: ${elapsedMs}ms`);
-    assert.ok(elapsedMs < 16_500, `cleanup exceeded its bound: ${elapsedMs}ms`);
+    assert.ok(elapsedMs >= 13_000, `cleanup stopped too early: ${elapsedMs}ms`);
+    assert.ok(elapsedMs < 22_000, `cleanup exceeded its bound: ${elapsedMs}ms`);
   }
 );

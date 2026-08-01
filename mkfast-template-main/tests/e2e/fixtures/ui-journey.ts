@@ -160,10 +160,13 @@ export async function chooseImageTextDirection(page: Page) {
 
   // Ask-merchant group is the production renderer; legacy composer-question-card
   // remains as fallback when the interaction projection lags.
-  const directionCard = page
+  const productionDirectionCard = page
     .getByTestId('ask-merchant-group-card')
-    .or(page.getByTestId('composer-question-card'))
     .filter({ hasText: /两种图文方向/u });
+  const legacyDirectionCard = page
+    .getByTestId('composer-question-card')
+    .filter({ hasText: /两种图文方向/u });
+  const directionCard = productionDirectionCard.or(legacyDirectionCard);
   const resumedLine = page
     .getByTestId('composer-stage-line')
     .filter({ hasText: '已按你选的方向继续准备整套图文' });
@@ -197,12 +200,15 @@ export async function chooseImageTextDirection(page: Page) {
       .scrollIntoViewIfNeeded()
       .catch(() => undefined);
   }
-  await directionCard
+  const productionRenderer = await productionDirectionCard
     .first()
-    .scrollIntoViewIfNeeded()
-    .catch(() => undefined);
-  const direction = directionCard
-    .first()
+    .isVisible()
+    .catch(() => false);
+  const activeDirectionCard = (
+    productionRenderer ? productionDirectionCard : legacyDirectionCard
+  ).first();
+  await activeDirectionCard.scrollIntoViewIfNeeded().catch(() => undefined);
+  const direction = activeDirectionCard
     .getByRole('button')
     .filter({ hasNotText: /暂未确定|继续|这次先跳过/u })
     .first();
@@ -217,7 +223,14 @@ export async function chooseImageTextDirection(page: Page) {
       throw error;
     }
   }
-  await expect(direction).toHaveAttribute('aria-pressed', 'true');
+  if (productionRenderer) {
+    await expect(direction).toHaveAttribute('aria-pressed', 'true');
+  } else {
+    await expect(activeDirectionCard).toHaveAttribute(
+      'data-settlement',
+      'answered'
+    );
+  }
   await expect(
     resumedLine.first(),
     'the direction must land after the merchant click'

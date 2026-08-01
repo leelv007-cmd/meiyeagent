@@ -112,7 +112,11 @@ test('the image-text direction helper fails fast on real click errors', () => {
 
   assert.doesNotMatch(helper, /force:\s*true/u);
   assert.match(helper, /\.click\(\{ timeout: 3_000 \}\)/u);
-  assert.match(helper, /toHaveAttribute\('aria-pressed', 'true'\)/u);
+  assert.match(
+    helper,
+    /if \(productionRenderer\) \{[\s\S]*?toHaveAttribute\('aria-pressed', 'true'\)[\s\S]*?else \{[\s\S]*?toHaveAttribute\([\s\S]*?'data-settlement',[\s\S]*?'answered'/u,
+    'each renderer must prove its own settled state after the click'
+  );
   assert.match(
     helper,
     /\.toPass\(\s*\{\s*timeout: 300_000,?\s*\}\s*\);[\s\S]*?direction\.click/u,
