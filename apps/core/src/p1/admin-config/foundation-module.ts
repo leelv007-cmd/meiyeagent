@@ -215,6 +215,8 @@ const MAX_QUEUE_PRIORITY = 100;
 const MAX_ADD_ON_QUANTITY = 1_000_000;
 const MAX_ADD_ON_AMOUNT_MICROS = 1_000_000_000_000;
 const MAX_ADD_ON_OFFERS = 100;
+const MAX_CREDIT_PLAN_AMOUNT = 10_000_000;
+const MAX_CREDIT_ADD_ON_EXPIRY_DAYS = 3_650;
 export const HARNESS_WOZ_RECIPE_CONFIG_KEY = 'harness.woz.recipe';
 export const HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY =
   'harness.confirmation_card.timeout_seconds';
@@ -295,6 +297,23 @@ const trialPlanAllowanceSchema = planAllowanceSchema.extend({
   /** Trial fixed_days length. */
   expireDays: z.number().int().positive().max(366).optional(),
 });
+const creditPlanSchema = z
+  .object({
+    credits: z.number().int().positive().max(MAX_CREDIT_PLAN_AMOUNT),
+    concurrencyLimit: z.number().int().positive().max(MAX_PLAN_CONCURRENCY),
+    queuePriority: z.number().int().positive().max(MAX_QUEUE_PRIORITY),
+    supportLabel: z.enum(['standard', 'priority']),
+  })
+  .strict();
+const creditAddOnSchema = z
+  .object({
+    id: z.string().trim().min(1).max(100),
+    credits: z.number().int().positive().max(MAX_CREDIT_PLAN_AMOUNT),
+    amountMicros: z.number().int().nonnegative().max(MAX_ADD_ON_AMOUNT_MICROS),
+    currency: z.string().length(3).regex(/^[A-Z]{3}$/),
+    expireDays: z.number().int().positive().max(MAX_CREDIT_ADD_ON_EXPIRY_DAYS),
+  })
+  .strict();
 const activationEvidenceConfigSchema = z
   .object({
     configurationRevision: z.string().regex(/^[a-f0-9]{64}$/),
@@ -483,6 +502,42 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
     key: 'plan.trial.enabled',
     scope: 'global',
     description: 'Trial grants for newly registered workspaces.',
+    valueSchema: z.boolean(),
+  },
+  ...(['growth', 'pro', 'starter'] as const).map((plan) => ({
+    key: `plan.credits.${plan}`,
+    scope: 'global' as const,
+    description: `${plan} plan credits recorded by platform administration.`,
+    valueSchema: creditPlanSchema,
+  })),
+  {
+    key: 'plan.credits.trial',
+    scope: 'global',
+    description: 'One-time trial credits recorded by platform administration.',
+    valueSchema: creditPlanSchema,
+  },
+  {
+    key: 'plan.credits.addons',
+    scope: 'global',
+    description: 'Credit top-up packages recorded by platform administration.',
+    valueSchema: z.array(creditAddOnSchema).max(MAX_ADD_ON_OFFERS).superRefine((offers, context) => {
+      const ids = new Set<string>();
+      offers.forEach((offer, index) => {
+        if (ids.has(offer.id)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Credit add-on offer ids must be unique.',
+            path: [index, 'id'],
+          });
+        }
+        ids.add(offer.id);
+      });
+    }),
+  },
+  {
+    key: 'plan.credits.trial.enabled',
+    scope: 'global',
+    description: 'Whether one-time trial credit grants are enabled.',
     valueSchema: z.boolean(),
   },
   // #240①: the four platform default model keys are generated from the one
