@@ -410,6 +410,24 @@ test('failure keeps the transcript so the merchant can retry in place', () => {
   assert.equal(rejected.task, null);
 });
 
+test('late interrupt polls cannot revive a failed run', () => {
+  const failed = applyComposerWorkflowState(runningSession(), 'failed');
+
+  const afterLateQuestion = applyComposerQuestion(failed, 'stale-question');
+  const afterLateConfirm = applyComposerExecutionConfirm(
+    failed,
+    'stale-execution-confirm'
+  );
+  const afterLatePoll = applyComposerPendingInterrupts(failed, {
+    questionId: 'stale-question',
+    executionConfirmId: 'stale-execution-confirm',
+  });
+
+  assert.deepEqual(afterLateQuestion, failed);
+  assert.deepEqual(afterLateConfirm, failed);
+  assert.deepEqual(afterLatePoll, failed);
+});
+
 /**
  * P0-2 / W03. Before this the transcript simply stopped on failure and the only
  * thing a merchant saw was a generic toast.

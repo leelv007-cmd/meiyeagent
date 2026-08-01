@@ -403,7 +403,7 @@ export function updateComposerNotePlan(
  * by interrupt apply paths.
  */
 function isTerminalComposerPhase(phase: ComposerSessionPhase): boolean {
-  return phase === 'delivered' || phase === 'cancelled';
+  return phase === 'delivered' || phase === 'cancelled' || phase === 'failed';
 }
 
 function upsertInterruptTurn(
@@ -429,6 +429,9 @@ export function applyComposerQuestion(
   session: ComposerSession,
   questionId: string | null
 ): ComposerSession {
+  if (session.phase === 'failed') {
+    return session;
+  }
   const existing = session.turns.find(
     (turn): turn is ComposerQuestionTurn => turn.kind === 'question'
   );
@@ -489,6 +492,9 @@ export function applyComposerExecutionConfirm(
   session: ComposerSession,
   confirmId: string | null
 ): ComposerSession {
+  if (session.phase === 'failed') {
+    return session;
+  }
   const existing = session.turns.find(
     (turn): turn is ComposerExecutionConfirmTurn =>
       turn.kind === 'execution_confirm'
@@ -542,6 +548,9 @@ export function applyComposerPendingInterrupts(
     executionConfirmId: string | null;
   }
 ): ComposerSession {
+  if (session.phase === 'failed') {
+    return session;
+  }
   let turns = session.turns;
 
   const existingQuestion = turns.find(
