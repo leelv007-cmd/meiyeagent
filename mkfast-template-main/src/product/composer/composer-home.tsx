@@ -167,6 +167,7 @@ import {
   WorkbenchInspectorPanel,
   WorkbenchInspectorSheet,
   WorkbenchShellRoot,
+  WorkbenchStickyComposerClearance,
   WorkbenchStickyComposerHost,
 } from './workbench-shell-layout';
 import { useWorkbenchViewportWidth } from './use-workbench-viewport-width';
@@ -3064,6 +3065,8 @@ export function ComposerHome({
                 </div>
               ) : null}
 
+              {/* P1-2: scroll room so delivery cards clear the stuck Composer scrim. */}
+              <WorkbenchStickyComposerClearance sticky={stickyComposer} />
               {/* P1-2: Active morph Composer to sticky bottom; clear mobile-nav. */}
               <WorkbenchStickyComposerHost sticky={stickyComposer}>
                 <ComposerPromptBar

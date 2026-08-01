@@ -19,6 +19,7 @@ import {
   WorkbenchCreateLayout,
   WorkbenchInspectorPanel,
   WorkbenchShellRoot,
+  WorkbenchStickyComposerClearance,
   WorkbenchStickyComposerHost,
 } from './workbench-shell-layout';
 import { useWorkbenchViewportWidth } from './use-workbench-viewport-width';
@@ -63,6 +64,7 @@ function ShellProbe({
         stream={
           <>
             <div data-testid="probe-timeline">timeline</div>
+            <WorkbenchStickyComposerClearance sticky={stickyComposer} />
             <WorkbenchStickyComposerHost sticky={stickyComposer}>
               <button data-testid="composer-submit" type="button">
                 发送
@@ -108,6 +110,10 @@ describe('P1-01 workbench shell host layout', () => {
     expect(sticky).toHaveAttribute('data-sticky', 'true');
     expect(sticky.className).toMatch(/sticky/);
     expect(sticky.className).toMatch(/bg-background\/95/);
+    // Spacer above sticky so delivery cards can scroll clear of the scrim.
+    expect(
+      screen.getByTestId('workbench-sticky-composer-clearance')
+    ).toBeInTheDocument();
     expect(screen.getByTestId('composer-submit')).toBeInTheDocument();
     expect(screen.getByTestId('composer-quote-line')).toBeInTheDocument();
   });

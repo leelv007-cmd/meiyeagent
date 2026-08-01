@@ -9,6 +9,21 @@ import { unzipSync } from 'fflate';
 
 export type JourneyModality = 'copy' | 'image_text' | 'video';
 
+/**
+ * Click the 成品交付卡 after clearing P1 sticky Composer overlay.
+ * Product ships scroll-margin + clearance spacer; e2e still centers the card
+ * so Playwright does not click through the stuck prompt bar.
+ */
+export async function clickComposerDeliveryCard(
+  deliveryCard: Locator
+): Promise<void> {
+  await deliveryCard.scrollIntoViewIfNeeded();
+  await deliveryCard.evaluate((node) => {
+    node.scrollIntoView({ block: 'center', inline: 'nearest' });
+  });
+  await deliveryCard.click();
+}
+
 export type JourneyContract = {
   deliveryTarget: 'wechat_moments' | 'xiaohongshu' | 'douyin' | 'video_account';
   modality: JourneyModality;
@@ -340,7 +355,7 @@ export async function submitComposerJourney(
   await expect(page).toHaveURL(/\/dashboard(?:\?|$)/u);
 
   await options.onDeliveryCardVisible?.();
-  await deliveryCard.click();
+  await clickComposerDeliveryCard(deliveryCard);
   await expect(page).toHaveURL(/\/dashboard\/results\/[^/?#]+(?:\?|$)/u, {
     timeout: 60_000,
   });

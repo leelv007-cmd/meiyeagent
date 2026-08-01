@@ -58,6 +58,7 @@ test('P1-2: Active sticky Composer clears mobile-nav (4.25rem family)', () => {
   const home = readSource('src/product/composer/composer-home.tsx');
   assert.match(home, /isWorkbenchComposerSticky/u);
   assert.match(home, /WorkbenchStickyComposerHost/u);
+  assert.match(home, /WorkbenchStickyComposerClearance/u);
   // Merchant-critical chrome rides the sticky host (quote / grounding / quota).
   assert.match(
     home,
@@ -68,6 +69,11 @@ test('P1-2: Active sticky Composer clears mobile-nav (4.25rem family)', () => {
   assert.match(shell, /5\.25rem\+env\(safe-area-inset-bottom\)/u);
   assert.match(shell, /bg-background\/95/u);
   assert.match(shell, /backdrop-blur/u);
+  assert.match(shell, /WORKBENCH_STICKY_COMPOSER_CLEARANCE_CLASS/u);
+  const delivery = readSource(
+    'src/product/composer/composer-delivery-card.tsx'
+  );
+  assert.match(delivery, /WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS/u);
 });
 
 test('frame registry: conversation renders turns via AgentFrame host', () => {

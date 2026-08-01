@@ -7,6 +7,7 @@ import {
 } from '../fixtures/auth';
 import { seedConfirmedStore } from '../fixtures/product';
 import { setTheme } from '../fixtures/page-health';
+import { clickComposerDeliveryCard } from '../fixtures/ui-journey';
 
 /**
  * T30 / #224 — D-114 定制创作主容器 acceptance.
@@ -142,7 +143,7 @@ test.describe('D-114 Composer conversation container', () => {
     const deliveryCard = page.getByTestId('composer-delivery-card');
     await expect(deliveryCard).toBeVisible({ timeout: 180_000 });
     await expect(page).not.toHaveURL(/\/dashboard\/results\//u);
-    await deliveryCard.click();
+    await clickComposerDeliveryCard(deliveryCard);
     await expect(page).toHaveURL(
       new RegExp(`/dashboard/results/${encodeURIComponent(run.workId)}`, 'u'),
       { timeout: 60_000 }
@@ -180,10 +181,11 @@ test.describe('D-114 Composer conversation container', () => {
     await expect(page.getByTestId('composer-stage-line').first()).toBeVisible({
       timeout: 120_000,
     });
-    await expect(page.getByTestId('composer-delivery-card')).toBeVisible({
+    const deliveryCard = page.getByTestId('composer-delivery-card');
+    await expect(deliveryCard).toBeVisible({
       timeout: 180_000,
     });
-    await page.getByTestId('composer-delivery-card').click();
+    await clickComposerDeliveryCard(deliveryCard);
     await expect(page).toHaveURL(
       new RegExp(`/dashboard/results/${encodeURIComponent(run.workId)}`, 'u'),
       { timeout: 60_000 }

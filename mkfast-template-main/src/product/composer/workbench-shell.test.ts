@@ -13,6 +13,8 @@ import {
   WORKBENCH_DUAL_COLUMN_MIN_WIDTH_PX,
   WORKBENCH_MEDIA_EXPAND_MAX_WIDTH_PX,
   WORKBENCH_MOBILE_NAV_HEIGHT,
+  WORKBENCH_STICKY_COMPOSER_CLEARANCE_CLASS,
+  WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS,
 } from './workbench-shell';
 
 const ACTIVE_OR_DELIVERED: ComposerSessionPhase[] = [
@@ -70,6 +72,9 @@ test('P1-2: Active/Delivered Composer is sticky; Idle is not', () => {
   assert.ok(stickyClass?.includes('backdrop-blur'));
   assert.equal(workbenchComposerStickyHostClass(false), undefined);
   assert.equal(WORKBENCH_MOBILE_NAV_HEIGHT, '4.25rem');
+  // Delivery-card click path needs explicit clearance above sticky host.
+  assert.match(WORKBENCH_STICKY_COMPOSER_CLEARANCE_CLASS, /16rem/u);
+  assert.match(WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS, /scroll-mb/u);
 });
 
 test('width mode: dual column or mediaExpanded → media shell', () => {

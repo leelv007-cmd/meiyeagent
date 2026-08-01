@@ -40,6 +40,22 @@ export const WORKBENCH_MOBILE_NAV_CLEARANCE =
 export const WORKBENCH_COMPOSER_STICKY_BOTTOM_CLASS =
   'bottom-[calc(5.25rem+env(safe-area-inset-bottom))] md:bottom-4';
 
+/**
+ * Spacer height above the sticky Composer host so timeline / delivery cards can
+ * scroll clear of the stuck scrim. Without this, Active sticky (z-30) covers
+ * the last delivery card and intercepts pointer events (CI journey 2026-08-01).
+ * Sized for prompt bar + attachment strip + mobile-nav clearance breathing room.
+ */
+export const WORKBENCH_STICKY_COMPOSER_CLEARANCE_CLASS =
+  'h-[calc(16rem+env(safe-area-inset-bottom))] shrink-0 md:h-64';
+
+/**
+ * scroll-margin on delivery / timeline blocks so browser scrollIntoView and
+ * Playwright leave the target above the sticky Composer overlay.
+ */
+export const WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS =
+  'scroll-mb-[calc(16rem+env(safe-area-inset-bottom))] md:scroll-mb-64';
+
 const DUAL_COLUMN_PHASES: ReadonlySet<ComposerSessionPhase> = new Set([
   'submitting',
   'running',

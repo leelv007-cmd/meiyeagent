@@ -10,6 +10,7 @@ import {
 import { setTheme, type ThemeMode } from '../fixtures/page-health';
 import { seedConfirmedStore } from '../fixtures/product';
 import {
+  clickComposerDeliveryCard,
   JOURNEY_CONTRACTS,
   waitForResultJourney,
 } from '../fixtures/ui-journey';
@@ -190,7 +191,7 @@ async function submitPrefilledCopy(page: Page, prefilled = false) {
   // must exercise that real click instead of assuming the retired redirect.
   const deliveryCard = page.getByTestId('composer-delivery-card');
   await expect(deliveryCard).toBeVisible({ timeout: 180_000 });
-  await deliveryCard.click();
+  await clickComposerDeliveryCard(deliveryCard);
   await expect(page).toHaveURL(
     new RegExp(`/dashboard/results/${encodeURIComponent(workId!)}`, 'u'),
     { timeout: 60_000 }

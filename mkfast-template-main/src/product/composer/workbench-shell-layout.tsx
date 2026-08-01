@@ -26,6 +26,7 @@ import {
 import { cn } from '@/lib/utils';
 
 import {
+  WORKBENCH_STICKY_COMPOSER_CLEARANCE_CLASS,
   workbenchComposerStickyHostClass,
   workbenchShellMaxWidthClass,
   type WorkbenchWidthMode,
@@ -193,6 +194,29 @@ export function WorkbenchStickyComposerHost({
     >
       {children}
     </div>
+  );
+}
+
+/**
+ * Document-flow spacer immediately above the sticky Composer host. Lets the
+ * stream scroll the last delivery card clear of the stuck z-30 scrim so it
+ * remains clickable (P1-2 / journey gate).
+ */
+export function WorkbenchStickyComposerClearance({
+  sticky,
+}: {
+  sticky: boolean;
+}) {
+  if (!sticky) return null;
+  return (
+    <div
+      aria-hidden="true"
+      className={cn(
+        WORKBENCH_STICKY_COMPOSER_CLEARANCE_CLASS,
+        'pointer-events-none'
+      )}
+      data-testid="workbench-sticky-composer-clearance"
+    />
   );
 }
 

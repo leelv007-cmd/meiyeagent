@@ -6,6 +6,7 @@ import { cleanupE2EUsers } from '../fixtures/auth';
 import { createE2EUser } from '../fixtures/test-data';
 import {
   assertThreeModalDiscovery,
+  clickComposerDeliveryCard,
   downloadFullPackage,
   JOURNEY_CONTRACTS,
   openDeliveryPanel,
@@ -88,7 +89,7 @@ async function submitFirstCopy(page: Page, intent: string) {
   ).not.toHaveURL(/\/dashboard\/results\//u);
   const deliveryCard = page.getByTestId('composer-delivery-card');
   await expect(deliveryCard).toBeVisible({ timeout: 180_000 });
-  await deliveryCard.click();
+  await clickComposerDeliveryCard(deliveryCard);
   await expect(page).toHaveURL(
     new RegExp(`/dashboard/results/${encodeURIComponent(workId!)}`, 'u'),
     { timeout: 60_000 }

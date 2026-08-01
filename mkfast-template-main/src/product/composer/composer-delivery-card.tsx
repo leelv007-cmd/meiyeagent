@@ -23,6 +23,7 @@ import { useRef, useState } from 'react';
 
 import { cn } from '@/lib/utils';
 
+import { WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS } from './workbench-shell';
 import { ComposerDeliveryFollowUps } from './composer-delivery-followups';
 import {
   ComposerDeliveryRatingBar,
@@ -141,7 +142,13 @@ export function ComposerDeliveryCard({
 
   return (
     <section
-      className={cn('meiye-porcelain rounded-2xl p-4', className)}
+      className={cn(
+        'meiye-porcelain rounded-2xl p-4',
+        // Clear Active sticky Composer (z-30) so scrollIntoView / clicks land
+        // on the card face, not the stuck prompt bar (P1-2 journey gate).
+        WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS,
+        className
+      )}
       data-package-id={revision?.packageId}
       data-revision={revision?.revision}
       data-testid="composer-delivery-turn"
