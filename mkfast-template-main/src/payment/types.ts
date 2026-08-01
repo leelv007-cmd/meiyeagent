@@ -193,7 +193,6 @@ export type VerifiedPaymentEventType =
   | 'invoice.paid'
   | 'invoice.payment_failed'
   | 'subscription.renewed'
-  | 'subscription.past_due'
   | 'customer.subscription.updated'
   | 'customer.subscription.resumed'
   | 'customer.subscription.deleted'

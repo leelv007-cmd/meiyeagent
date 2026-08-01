@@ -140,7 +140,7 @@ describe('plan-commerce settlement', () => {
     assert.equal(grants, 0);
   });
 
-  it('maps Stripe payment failure lifecycle without inventing Creem past_due', () => {
+  it('maps Stripe payment failure lifecycle', () => {
     const failed = planSettlementIntentFromEvent(
       {
         eventType: 'invoice.payment_failed',
@@ -150,18 +150,8 @@ describe('plan-commerce settlement', () => {
       },
       binding
     );
-    const pastDue = planSettlementIntentFromEvent(
-      {
-        eventType: 'subscription.past_due',
-        provider: 'creem',
-        providerEventId: 'evt_past_due',
-        reference: { id: 'sub_1', kind: 'subscription' },
-      },
-      binding
-    );
 
     assert.equal(failed?.lifecycle, 'past_due');
-    assert.equal(pastDue, null);
   });
 
   it('maps subscription delete, cancel, and resume lifecycle', () => {
