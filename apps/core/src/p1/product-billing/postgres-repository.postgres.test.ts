@@ -23,6 +23,10 @@ describe(
     after(async () => {
       for (const workspaceId of workspaces) {
         await pool.query(
+          'DELETE FROM p1_product_billing_merchant_executions WHERE workspace_id = $1',
+          [workspaceId],
+        );
+        await pool.query(
           'DELETE FROM p1_product_billing_provider_costs WHERE workspace_id = $1',
           [workspaceId],
         );
@@ -48,6 +52,8 @@ describe(
       return {
         billingMode: 'per_output_second' as const,
         catalogModelId: 'video-model',
+        operation: 'video.generate',
+        outputCount: 1,
         frozenCandidateDeploymentIds: ['deployment-a', 'deployment-b'],
         quoteId,
         quotePolicyRevision: 'product-policy-1',
@@ -416,6 +422,73 @@ describe(
       assert.equal(
         (await service.getQuote(quote.quoteId, workspaceId))?.taskId,
         boundTaskId,
+      );
+    });
+
+    it('claims one durable merchant execution per reserved task and replays its result', async () => {
+      const workspaceId = workspace();
+      const service = new DurableProductBillingService(repository);
+      const quote = await service.buildQuote(
+        quoteInput(workspaceId, 'merchant-execution-quote'),
+      );
+      await service.confirm({
+        quoteId: quote.quoteId,
+        taskId: 'merchant-execution-task',
+        workspaceId,
+      });
+      await service.beforeSubmit({
+        quoteRevision: quote.revision,
+        resource: 'video',
+        taskId: 'merchant-execution-task',
+        workspaceId,
+      });
+      const contract = {
+        catalogModelId: 'video-model',
+        operation: 'video.generate',
+        outputCount: 1,
+        quoteRevision: quote.revision,
+        targetSeconds: 10,
+        taskId: 'merchant-execution-task',
+        workspaceId,
+      };
+
+      const claims = await Promise.allSettled([
+        new DurableProductBillingService(repository).claimMerchantExecution({
+          ...contract,
+          idempotencyKey: 'merchant-command-a',
+        }),
+        new DurableProductBillingService(repository).claimMerchantExecution({
+          ...contract,
+          idempotencyKey: 'merchant-command-b',
+        }),
+      ]);
+      assert.equal(
+        claims.filter((claim) => claim.status === 'fulfilled').length,
+        1,
+      );
+      const winner = claims[0]?.status === 'fulfilled'
+        ? 'merchant-command-a'
+        : 'merchant-command-b';
+      const original = { jobId: 'job-durable', status: 'completed' };
+      await service.completeMerchantExecution({
+        ...contract,
+        idempotencyKey: winner,
+        result: original,
+      });
+      const replay = await new DurableProductBillingService(
+        repository,
+      ).claimMerchantExecution<typeof original>({
+        ...contract,
+        idempotencyKey: winner,
+      });
+      assert.deepEqual(replay, { decision: 'replay', result: original });
+      await assert.rejects(
+        service.claimMerchantExecution({
+          ...contract,
+          idempotencyKey: winner,
+          outputCount: 2,
+        }),
+        /another merchant execution|exactly match/i,
       );
     });
 

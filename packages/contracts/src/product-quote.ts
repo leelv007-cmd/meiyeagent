@@ -66,6 +66,8 @@ export interface ProductQuoteSnapshot {
   taskId?: string;
   workspaceId?: string;
   catalogModelId: string;
+  /** Merchant operation frozen by the server quote authority. */
+  operation?: string;
   /** CatalogModel revision ref frozen at quote time. */
   catalogModelRevision?: string;
   /** Product QuotePolicy revision (not SupplierPriceRevision). */
@@ -267,6 +269,8 @@ export interface ProductUsageUnit {
 export interface BuildProductQuoteInput {
   quoteId: string;
   catalogModelId: string;
+  /** Merchant operation frozen by the server quote authority. */
+  operation?: string;
   catalogModelRevision?: string;
   quotePolicyRevision: string;
   submissionContractHash?: string;

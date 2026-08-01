@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type {
   BuildProductQuoteInput,
   ProductQuoteSnapshot,
@@ -29,6 +30,48 @@ import {
 
 type MaybePromise<T> = T | Promise<T>;
 type WorkspaceInput = { workspaceId?: string };
+
+export interface MerchantExecutionContract {
+  catalogModelId: string;
+  operation: string;
+  outputCount: number;
+  quoteRevision: string;
+  targetSeconds?: number;
+}
+
+export interface ClaimMerchantExecutionInput extends MerchantExecutionContract {
+  idempotencyKey: string;
+  taskId: string;
+  workspaceId: string;
+}
+
+export interface MerchantExecutionBillingPort {
+  claimMerchantExecution<T = unknown>(
+    input: ClaimMerchantExecutionInput,
+  ): MaybePromise<
+    | { decision: 'execute' }
+    | { decision: 'replay'; result: T }
+  >;
+  completeMerchantExecution<T>(
+    input: ClaimMerchantExecutionInput & { result: T },
+  ): MaybePromise<T>;
+}
+
+function merchantExecutionContractHash(
+  input: MerchantExecutionContract,
+): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        catalogModelId: input.catalogModelId,
+        operation: input.operation,
+        outputCount: input.outputCount,
+        quoteRevision: input.quoteRevision,
+        targetSeconds: input.targetSeconds ?? null,
+      }),
+    )
+    .digest('hex');
+}
 
 export interface ProductBillingApplicationPort {
   buildQuote(input: BuildProductQuoteInput): MaybePromise<ProductQuoteSnapshot>;
@@ -87,7 +130,10 @@ export interface ProductBillingApplicationPort {
 
 /** Durable, transaction-scoped use of the canonical ProductQuote algorithms. */
 export class DurableProductBillingService
-  implements ProductBillingApplicationPort, BillingLifecyclePort
+  implements
+    ProductBillingApplicationPort,
+    BillingLifecyclePort,
+    MerchantExecutionBillingPort
 {
   constructor(
     private readonly repository: ProductBillingRepository,
@@ -187,6 +233,109 @@ export class DurableProductBillingService
 
   getUsage(taskId: string, workspaceId?: string) {
     return this.repository.getUsage(this.workspace(workspaceId), taskId);
+  }
+
+  async claimMerchantExecution<T = unknown>(
+    input: ClaimMerchantExecutionInput,
+  ): Promise<{ decision: 'execute' } | { decision: 'replay'; result: T }> {
+    const workspaceId = this.workspace(input.workspaceId);
+    const contractHash = merchantExecutionContractHash(input);
+    return this.run(() =>
+      this.repository.withTransaction(
+        workspaceId,
+        [`task:${input.taskId}`],
+        async (transaction) => {
+          const existing = await transaction.getMerchantExecution(
+            workspaceId,
+            input.taskId,
+          );
+          if (existing) {
+            if (
+              existing.contractHash !== contractHash ||
+              existing.idempotencyKey !== input.idempotencyKey
+            ) {
+              throw new P1DomainError(
+                'IDEMPOTENCY_CONFLICT',
+                `Billing task ${input.taskId} is already bound to another merchant execution.`,
+              );
+            }
+            return existing.status === 'completed'
+              ? { decision: 'replay' as const, result: existing.result as T }
+              : { decision: 'execute' as const };
+          }
+
+          const [quote, usage] = await Promise.all([
+            transaction.getQuoteByTask(workspaceId, input.taskId),
+            transaction.getUsage(workspaceId, input.taskId),
+          ]);
+          if (
+            !quote ||
+            !usage ||
+            quote.workspaceId !== workspaceId ||
+            quote.taskId !== input.taskId ||
+            quote.revision !== input.quoteRevision ||
+            quote.lifecycleStatus !== 'reserved' ||
+            quote.operation !== input.operation ||
+            quote.catalogModelId !== input.catalogModelId ||
+            quote.outputCount !== input.outputCount ||
+            (quote.targetSeconds ?? null) !== (input.targetSeconds ?? null) ||
+            usage.workspaceId !== workspaceId ||
+            usage.taskId !== input.taskId ||
+            usage.quoteId !== quote.quoteId ||
+            usage.status !== 'reserved'
+          ) {
+            throw new P1DomainError(
+              'INVALID_STATE',
+              'Merchant execution must exactly match the reserved credit quote contract.',
+            );
+          }
+          await transaction.saveMerchantExecution({
+            contractHash,
+            idempotencyKey: input.idempotencyKey,
+            status: 'claimed',
+            taskId: input.taskId,
+            workspaceId,
+          });
+          return { decision: 'execute' as const };
+        },
+      ),
+    );
+  }
+
+  async completeMerchantExecution<T>(
+    input: ClaimMerchantExecutionInput & { result: T },
+  ): Promise<T> {
+    const workspaceId = this.workspace(input.workspaceId);
+    const contractHash = merchantExecutionContractHash(input);
+    return this.run(() =>
+      this.repository.withTransaction(
+        workspaceId,
+        [`task:${input.taskId}`],
+        async (transaction) => {
+          const existing = await transaction.getMerchantExecution(
+            workspaceId,
+            input.taskId,
+          );
+          if (
+            !existing ||
+            existing.contractHash !== contractHash ||
+            existing.idempotencyKey !== input.idempotencyKey
+          ) {
+            throw new P1DomainError(
+              'IDEMPOTENCY_CONFLICT',
+              `Billing task ${input.taskId} merchant execution claim no longer matches.`,
+            );
+          }
+          if (existing.status === 'completed') return existing.result as T;
+          await transaction.saveMerchantExecution({
+            ...existing,
+            result: structuredClone(input.result),
+            status: 'completed',
+          });
+          return input.result;
+        },
+      ),
+    );
   }
 
   getUsageProjection(workspaceId: string) {

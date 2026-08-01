@@ -10,6 +10,9 @@ export {
 export { ProductBillingFoundationModule } from './foundation-module.js';
 export {
   DurableProductBillingService,
+  type ClaimMerchantExecutionInput,
+  type MerchantExecutionBillingPort,
+  type MerchantExecutionContract,
   type ProductBillingApplicationPort,
 } from './durable-service.js';
 export {
@@ -36,6 +39,7 @@ export {
   PostgresProductBillingRepository,
   type ProductBillingRepository,
   type ProductBillingTransaction,
+  type MerchantExecutionRecord,
 } from './postgres-repository.js';
 export {
   ProductQuoteService,

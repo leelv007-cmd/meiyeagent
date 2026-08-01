@@ -109,6 +109,7 @@ function revisionFor(input: BuildProductQuoteInput): string {
         minChargeSeconds: input.minChargeSeconds,
         outputCount: input.outputCount,
         outputLabel: input.outputLabel,
+        operation: input.operation,
         quotePolicyRevision: input.quotePolicyRevision,
         submissionContractHash: input.submissionContractHash,
         roundingStepSeconds: input.roundingStepSeconds,
@@ -261,6 +262,7 @@ export class ProductQuoteService {
       ...(input.taskId ? { taskId: input.taskId } : {}),
       ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
       catalogModelId: input.catalogModelId,
+      ...(input.operation ? { operation: input.operation } : {}),
       ...(input.catalogModelRevision
         ? { catalogModelRevision: input.catalogModelRevision }
         : {}),

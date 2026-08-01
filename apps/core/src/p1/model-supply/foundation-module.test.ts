@@ -115,6 +115,115 @@ async function command(
   });
 }
 
+function merchantExecutionBillingStub(input: {
+  getQuote(taskId: string): ProductQuoteSnapshot | null;
+  getUsage(taskId: string): ProductUsageRecord | null;
+}) {
+  const executions = new Map<
+    string,
+    { contract: string; idempotencyKey: string; result?: unknown }
+  >();
+  const contractFor = (claim: {
+    catalogModelId: string;
+    operation: string;
+    outputCount: number;
+    quoteRevision: string;
+    targetSeconds?: number;
+  }) => JSON.stringify({
+    catalogModelId: claim.catalogModelId,
+    operation: claim.operation,
+    outputCount: claim.outputCount,
+    quoteRevision: claim.quoteRevision,
+    targetSeconds: claim.targetSeconds ?? null,
+  });
+  return {
+    async claimMerchantExecution<T>(claim: {
+      catalogModelId: string;
+      idempotencyKey: string;
+      operation: string;
+      outputCount: number;
+      quoteRevision: string;
+      targetSeconds?: number;
+      taskId: string;
+      workspaceId: string;
+    }): Promise<{ decision: 'execute' } | { decision: 'replay'; result: T }> {
+      const contract = contractFor(claim);
+      const existing = executions.get(claim.taskId);
+      if (existing) {
+        if (
+          existing.contract !== contract ||
+          existing.idempotencyKey !== claim.idempotencyKey
+        ) {
+          throw new P1DomainError(
+            'IDEMPOTENCY_CONFLICT',
+            'The billing task is already claimed.',
+          );
+        }
+        return 'result' in existing
+          ? { decision: 'replay', result: existing.result as T }
+          : { decision: 'execute' };
+      }
+      const quote = input.getQuote(claim.taskId);
+      const usage = input.getUsage(claim.taskId);
+      if (
+        !quote ||
+        !usage ||
+        quote.workspaceId !== claim.workspaceId ||
+        quote.taskId !== claim.taskId ||
+        quote.revision !== claim.quoteRevision ||
+        quote.lifecycleStatus !== 'reserved' ||
+        quote.operation !== claim.operation ||
+        quote.catalogModelId !== claim.catalogModelId ||
+        quote.outputCount !== claim.outputCount ||
+        (quote.targetSeconds ?? null) !== (claim.targetSeconds ?? null) ||
+        usage.workspaceId !== claim.workspaceId ||
+        usage.taskId !== claim.taskId ||
+        usage.quoteId !== quote.quoteId ||
+        usage.status !== 'reserved'
+      ) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'Merchant execution must match the reserved credit quote.',
+        );
+      }
+      executions.set(claim.taskId, {
+        contract,
+        idempotencyKey: claim.idempotencyKey,
+      });
+      return { decision: 'execute' };
+    },
+    async completeMerchantExecution<T>(claim: {
+      catalogModelId: string;
+      idempotencyKey: string;
+      operation: string;
+      outputCount: number;
+      quoteRevision: string;
+      result: T;
+      targetSeconds?: number;
+      taskId: string;
+    }): Promise<T> {
+      const existing = executions.get(claim.taskId);
+      const contract = contractFor(claim);
+      if (
+        !existing ||
+        existing.contract !== contract ||
+        existing.idempotencyKey !== claim.idempotencyKey
+      ) {
+        throw new P1DomainError(
+          'IDEMPOTENCY_CONFLICT',
+          'The billing task claim no longer matches.',
+        );
+      }
+      if ('result' in existing) return existing.result as T;
+      executions.set(claim.taskId, {
+        ...existing,
+        result: structuredClone(claim.result),
+      });
+      return claim.result;
+    },
+  };
+}
+
 async function query(
   module: ModelSupplyFoundationModule,
   context: P1Context,
@@ -2826,7 +2935,10 @@ describe('ModelSupplyFoundationModule', () => {
       [
         'credit-task-valid',
         {
+          catalogModelId: 'llm-openai',
           lifecycleStatus: 'reserved',
+          operation: 'text.respond',
+          outputCount: 1,
           quoteId: 'quote-valid',
           revision: 'quote-r1',
           taskId: 'credit-task-valid',
@@ -2864,11 +2976,11 @@ describe('ModelSupplyFoundationModule', () => {
         } as ProductQuoteSnapshot,
       ],
     ]);
-    const reservedBilling = {
-      async getQuoteByTask(taskId: string) {
+    const reservedBilling = merchantExecutionBillingStub({
+      getQuote(taskId: string) {
         return quoteByTask.get(taskId) ?? null;
       },
-      async getUsage(taskId: string) {
+      getUsage(taskId: string) {
         if (taskId === 'credit-task-valid') {
           return {
             quoteId: 'quote-valid',
@@ -2887,12 +2999,13 @@ describe('ModelSupplyFoundationModule', () => {
         }
         return null;
       },
-    };
+    });
     const module = new ModelSupplyFoundationModule(controlPlane, {
       requireReservedBilling: true,
       reservedBilling,
     });
     const payload = {
+      billingOutputCount: 1,
       dataClass: [],
       operation: 'text.respond',
       prompt: 'Return one concise campaign direction.',
@@ -2927,7 +3040,23 @@ describe('ModelSupplyFoundationModule', () => {
     ]) {
       await assert.rejects(
         command(module, owner, 'submit_generation', { ...payload, ...invalid }),
-        /reserved credit billing task/i,
+        /reserved credit (?:billing task|quote)/i,
+      );
+    }
+    for (const drift of [
+      { operation: 'copy.generate' },
+      { selection: { catalogModelId: 'llm-backup', mode: 'fixed' } },
+      { billingOutputCount: 2 },
+      { input: { durationSeconds: 15 } },
+    ]) {
+      await assert.rejects(
+        command(module, owner, 'submit_generation', {
+          ...payload,
+          ...drift,
+          billingTaskId: 'credit-task-valid',
+          billingQuoteRevision: 'quote-r1',
+        }),
+        /reserved credit quote/i,
       );
     }
     assert.equal(providerCalls, 0);
@@ -2937,6 +3066,132 @@ describe('ModelSupplyFoundationModule', () => {
       billingQuoteRevision: 'quote-r1',
     })) as { status: string };
     assert.equal(result.status, 'completed');
+    assert.equal(providerCalls, 1);
+  });
+
+  it('allows only one provider effect for a reserved task across command keys', async () => {
+    let providerCalls = 0;
+    const { controlPlane } = setup({
+      async execute(request) {
+        providerCalls += 1;
+        return new RecordedProviderExecutionPort().execute(request);
+      },
+    });
+    const reservedBilling = merchantExecutionBillingStub({
+      getQuote(taskId: string) {
+        return taskId === 'credit-task-exclusive'
+          ? ({
+              catalogModelId: 'llm-openai',
+              lifecycleStatus: 'reserved',
+              operation: 'copy.generate',
+              outputCount: 1,
+              quoteId: 'quote-exclusive',
+              revision: 'quote-r1',
+              taskId,
+              workspaceId: owner.workspaceId,
+            } as ProductQuoteSnapshot)
+          : null;
+      },
+      getUsage(taskId: string) {
+        return taskId === 'credit-task-exclusive'
+          ? ({
+              quoteId: 'quote-exclusive',
+              status: 'reserved',
+              taskId,
+              workspaceId: owner.workspaceId,
+            } as ProductUsageRecord)
+          : null;
+      },
+    });
+    const module = new ModelSupplyFoundationModule(controlPlane, {
+      requireReservedBilling: true,
+      reservedBilling,
+    });
+    const execute = (idempotencyKey: string) =>
+      module.execute({
+        context: owner,
+        idempotencyKey,
+        input: {
+          action: 'submit_generation',
+          payload: {
+            billingOutputCount: 1,
+            billingQuoteRevision: 'quote-r1',
+            billingTaskId: 'credit-task-exclusive',
+            dataClass: [],
+            operation: 'copy.generate',
+            prompt: 'Return one campaign direction.',
+            selection: { catalogModelId: 'llm-openai', mode: 'fixed' },
+          },
+        },
+      });
+
+    const results = await Promise.allSettled([
+      execute('merchant-command-a'),
+      execute('merchant-command-b'),
+    ]);
+
+    assert.equal(providerCalls, 1);
+    assert.equal(
+      results.filter((result) => result.status === 'fulfilled').length,
+      1,
+    );
+  });
+
+  it('replays a completed merchant execution before terminal quote rejection', async () => {
+    let providerCalls = 0;
+    const { controlPlane } = setup({
+      async execute(request) {
+        providerCalls += 1;
+        return new RecordedProviderExecutionPort().execute(request);
+      },
+    });
+    const quote = {
+      catalogModelId: 'llm-openai',
+      lifecycleStatus: 'reserved',
+      operation: 'text.respond',
+      outputCount: 1,
+      quoteId: 'quote-replay',
+      revision: 'quote-r1',
+      taskId: 'credit-task-replay',
+      workspaceId: owner.workspaceId,
+    } as ProductQuoteSnapshot;
+    const usage = {
+      quoteId: quote.quoteId,
+      status: 'reserved',
+      taskId: quote.taskId,
+      workspaceId: owner.workspaceId,
+    } as ProductUsageRecord;
+    const reservedBilling = merchantExecutionBillingStub({
+      getQuote: () => quote,
+      getUsage: () => usage,
+    });
+    const module = new ModelSupplyFoundationModule(controlPlane, {
+      requireReservedBilling: true,
+      reservedBilling,
+    });
+    const args = {
+      context: owner,
+      idempotencyKey: 'merchant-replay-key',
+      input: {
+        action: 'submit_generation',
+        payload: {
+          billingOutputCount: 1,
+          billingQuoteRevision: quote.revision,
+          billingTaskId: quote.taskId,
+          dataClass: [],
+          operation: 'text.respond',
+          prompt: 'Return one durable result.',
+          selection: { catalogModelId: 'llm-openai', mode: 'fixed' },
+        },
+      },
+    };
+
+    const first = await module.execute(args);
+    quote.lifecycleStatus = 'settled';
+    usage.status = 'committed';
+    const replay = await module.execute(args);
+
+    assert.deepEqual(replay, first);
     assert.equal(providerCalls, 1);
   });
 

@@ -17,6 +17,15 @@ export type ProductUsageProjection = Record<
   ProductUsageBucketProjection
 >;
 
+export interface MerchantExecutionRecord {
+  contractHash: string;
+  idempotencyKey: string;
+  result?: unknown;
+  status: 'claimed' | 'completed';
+  taskId: string;
+  workspaceId: string;
+}
+
 export interface ProductBillingTransaction {
   getQuote(workspaceId: string, quoteId: string): Promise<ProductQuoteSnapshot | null>;
   getQuoteByTask(
@@ -24,6 +33,10 @@ export interface ProductBillingTransaction {
     taskId: string,
   ): Promise<ProductQuoteSnapshot | null>;
   getUsage(workspaceId: string, taskId: string): Promise<ProductUsageRecord | null>;
+  getMerchantExecution(
+    workspaceId: string,
+    taskId: string,
+  ): Promise<MerchantExecutionRecord | null>;
   getUsageProjection(workspaceId: string): Promise<ProductUsageProjection>;
   getMonthlyOutput(
     workspaceId: string,
@@ -39,6 +52,7 @@ export interface ProductBillingTransaction {
     workspaceId: string,
     cost: ProviderCostSnapshot,
   ): Promise<void>;
+  saveMerchantExecution(record: MerchantExecutionRecord): Promise<void>;
 }
 
 export interface ProductBillingRepository extends ProductBillingTransaction {
@@ -109,6 +123,21 @@ export class PostgresProductBillingRepository
         CHECK (payload->>'attemptId' = attempt_id),
         CHECK (payload->>'taskId' = task_id),
         CHECK (payload->>'deploymentId' = deployment_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS p1_product_billing_merchant_executions (
+        workspace_id text NOT NULL,
+        task_id text NOT NULL,
+        idempotency_key text NOT NULL,
+        contract_hash text NOT NULL,
+        status text NOT NULL,
+        result jsonb,
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (workspace_id, task_id),
+        FOREIGN KEY (workspace_id, task_id)
+          REFERENCES p1_product_billing_usage (workspace_id, task_id),
+        CHECK (status IN ('claimed', 'completed')),
+        CHECK (status = 'claimed' OR result IS NOT NULL)
       );
 
       CREATE INDEX IF NOT EXISTS p1_product_billing_quotes_workspace_status_idx
@@ -184,6 +213,33 @@ export class PostgresProductBillingRepository
     );
     return result.rows[0]?.payload
       ? structuredClone(result.rows[0].payload)
+      : null;
+  }
+
+  async getMerchantExecution(workspaceId: string, taskId: string) {
+    const result = await this.database.query<{
+      contract_hash: string;
+      idempotency_key: string;
+      result: unknown;
+      status: MerchantExecutionRecord['status'];
+    }>(
+      `SELECT idempotency_key, contract_hash, status, result
+         FROM p1_product_billing_merchant_executions
+        WHERE workspace_id = $1 AND task_id = $2`,
+      [workspaceId, taskId],
+    );
+    const row = result.rows[0];
+    return row
+      ? {
+          contractHash: row.contract_hash,
+          idempotencyKey: row.idempotency_key,
+          ...(row.status === 'completed'
+            ? { result: structuredClone(row.result) }
+            : {}),
+          status: row.status,
+          taskId,
+          workspaceId,
+        }
       : null;
   }
 
@@ -401,6 +457,28 @@ export class PostgresProductBillingRepository
         cost.taskId,
         cost.deploymentId,
         JSON.stringify(cost),
+      ],
+    );
+  }
+
+  async saveMerchantExecution(record: MerchantExecutionRecord) {
+    await this.database.query(
+      `INSERT INTO p1_product_billing_merchant_executions
+        (workspace_id, task_id, idempotency_key, contract_hash, status, result, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, now())
+       ON CONFLICT (workspace_id, task_id) DO UPDATE SET
+         idempotency_key = EXCLUDED.idempotency_key,
+         contract_hash = EXCLUDED.contract_hash,
+         status = EXCLUDED.status,
+         result = EXCLUDED.result,
+         updated_at = now()`,
+      [
+        record.workspaceId,
+        record.taskId,
+        record.idempotencyKey,
+        record.contractHash,
+        record.status,
+        JSON.stringify(record.status === 'completed' ? record.result : null),
       ],
     );
   }
