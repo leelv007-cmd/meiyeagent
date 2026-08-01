@@ -3196,12 +3196,13 @@ function observedLifecycleMilliseconds(result: ModelSupplyResult) {
 }
 
 function mediaRouteDurableResultDigest(
-	result: ModelSupplyResult,
+	result: ModelSupplyResult & { merchantExecutionEffectKey?: string },
 	lifecycleBaselineMs = observedLifecycleMilliseconds(result),
 ) {
 	const {
 		endedAt: _durableTerminalTime,
 		latencyMs: _providerLifecycleLatency,
+		merchantExecutionEffectKey: _harnessMerchantEffectKey,
 		...canonical
 	} = result;
 	return mediaBoundedRequestFingerprint({

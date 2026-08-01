@@ -453,18 +453,18 @@ test("top-level bounded media execution turns Model Supply fallback exhaustion i
 	const adapter = new ModelSupplyHarnessMediaExecutionPort({
 		async submit() {
 			submissions += 1;
-			return {
+			return structuredClone({
 				...suspendedResult,
 				asset: undefined,
 				status: "unknown" as const,
-			};
+			});
 		},
 		async getDurableMediaJob(workspaceId, jobId) {
 			assert.equal(workspaceId, "workspace-1");
 			assert.equal(jobId, suspendedResult.jobId);
 			durableReads += 1;
 			return {
-				result: durableResult,
+				result: structuredClone(durableResult),
 				providerLifecycleLatencyMs: 25,
 			};
 		},
@@ -495,6 +495,17 @@ test("top-level bounded media execution turns Model Supply fallback exhaustion i
 	assert.equal(first.currentBest.phase, "provider_route_suspended");
 	assert.equal(first.currentBest.providerRoute?.jobId, suspendedResult.jobId);
 	assert.equal(first.currentBest.providerRoute?.lifecycleBaselineMs, 25);
+	const {
+		endedAt: _durableTerminalTime,
+		...canonicalDurableResult
+	} = durableSuspendedResult;
+	assert.equal(
+		first.currentBest.providerRoute?.resultDigest,
+		mediaBoundedRequestFingerprint({
+			result: canonicalDurableResult,
+			lifecycleBaselineMs: 25,
+		}),
+	);
 	assert.equal(first.snapshot.triggeredLimit, "maxIterations");
 	assert.equal(first.snapshot.consumption.iterations, 1);
 	assert.equal(first.snapshot.consumption.wallClockMs, 25);
